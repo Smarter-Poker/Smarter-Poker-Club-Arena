@@ -1,0 +1,208 @@
+[
+  {
+    "name": "ca_op_claims",
+    "schema": "public",
+    "columns": [
+      {
+        "name": "op_id",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "fn_name",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "result",
+        "type": "jsonb",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "claimed_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "finalized_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "claimed_by",
+        "type": "uuid",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      }
+    ],
+    "indexes": [
+      {
+        "name": "ca_op_claims_pkey",
+        "definition": "CREATE UNIQUE INDEX ca_op_claims_pkey ON public.ca_op_claims USING btree (op_id, fn_name)"
+      }
+    ],
+    "constraints": [
+      {
+        "name": "ca_op_claims_pkey",
+        "type": "p",
+        "definition": "PRIMARY KEY (op_id, fn_name)"
+      }
+    ]
+  },
+  {
+    "name": "union_admins",
+    "schema": "public",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "default": "gen_random_uuid()",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "union_id",
+        "type": "uuid",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "user_id",
+        "type": "uuid",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "role",
+        "type": "text",
+        "default": "'union_admin'::text",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "permissions",
+        "type": "jsonb",
+        "default": "'{\"manage_clubs\": true, \"manage_settlements\": true}'::jsonb",
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      }
+    ],
+    "indexes": [
+      {
+        "name": "union_admins_pkey",
+        "definition": "CREATE UNIQUE INDEX union_admins_pkey ON public.union_admins USING btree (id)"
+      },
+      {
+        "name": "union_admins_union_id_user_id_key",
+        "definition": "CREATE UNIQUE INDEX union_admins_union_id_user_id_key ON public.union_admins USING btree (union_id, user_id)"
+      }
+    ],
+    "constraints": [
+      {
+        "name": "fk_union_admins_user_id_profiles",
+        "type": "f",
+        "definition": "FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE"
+      },
+      {
+        "name": "union_admins_pkey",
+        "type": "p",
+        "definition": "PRIMARY KEY (id)"
+      },
+      {
+        "name": "union_admins_role_check",
+        "type": "c",
+        "definition": "CHECK (role = ANY (ARRAY['union_lead'::text, 'union_admin'::text]))"
+      },
+      {
+        "name": "union_admins_union_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (union_id) REFERENCES unions(id) ON DELETE CASCADE"
+      },
+      {
+        "name": "union_admins_union_id_user_id_key",
+        "type": "u",
+        "definition": "UNIQUE (union_id, user_id)"
+      },
+      {
+        "name": "union_admins_user_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE"
+      }
+    ]
+  },
+  {
+    "name": "chip_ledger_idem",
+    "schema": "public",
+    "columns": [
+      {
+        "name": "idempotency_key",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "leg_id",
+        "type": "uuid",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      }
+    ],
+    "indexes": [
+      {
+        "name": "chip_ledger_idem_pkey",
+        "definition": "CREATE UNIQUE INDEX chip_ledger_idem_pkey ON public.chip_ledger_idem USING btree (idempotency_key)"
+      }
+    ],
+    "constraints": [
+      {
+        "name": "chip_ledger_idem_pkey",
+        "type": "p",
+        "definition": "PRIMARY KEY (idempotency_key)"
+      }
+    ]
+  }
+]

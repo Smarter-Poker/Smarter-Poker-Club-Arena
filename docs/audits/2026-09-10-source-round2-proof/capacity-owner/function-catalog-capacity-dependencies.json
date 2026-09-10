@@ -1,0 +1,55 @@
+[
+  {
+    "signature": "fn_credit_treasury(uuid,numeric,text,jsonb,text)",
+    "body_md5": "22384cde912eac3a859971400dd971ee",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_credit_treasury(p_club_id uuid, p_amount numeric, p_reason text DEFAULT NULL::text, p_metadata jsonb DEFAULT '{}'::jsonb, p_op_id text DEFAULT NULL::text)\n RETURNS jsonb\n LANGUAGE plpgsql\n SET search_path TO 'public', 'extensions'\nAS $function$\nDECLARE\n  v_prior jsonb;\n  v_res jsonb;\nBEGIN\n  IF p_op_id IS NULL THEN\n    RETURN public.fn_credit_treasury_zd4core(p_club_id, p_amount, p_reason, p_metadata);\n  END IF;\n\n  SELECT result INTO v_prior\n    FROM public.ca_op_claims\n   WHERE op_id = p_op_id AND fn_name = 'fn_credit_treasury';\n  IF FOUND AND v_prior IS NOT NULL THEN\n    RETURN v_prior || jsonb_build_object('replayed', true, 'op_id', p_op_id);\n  ELSIF FOUND THEN\n    DELETE FROM public.ca_op_claims\n     WHERE op_id = p_op_id AND fn_name = 'fn_credit_treasury';\n  END IF;\n\n  INSERT INTO public.ca_op_claims (op_id, fn_name, claimed_by)\n  VALUES (p_op_id, 'fn_credit_treasury', auth.uid());\n\n  v_res := public.fn_credit_treasury_zd4core(p_club_id, p_amount, p_reason, p_metadata);\n\n  IF COALESCE(v_res->>'success', '') = 'true' THEN\n    UPDATE public.ca_op_claims\n       SET result = v_res, finalized_at = now()\n     WHERE op_id = p_op_id AND fn_name = 'fn_credit_treasury';\n  ELSE\n    DELETE FROM public.ca_op_claims\n     WHERE op_id = p_op_id AND fn_name = 'fn_credit_treasury';\n  END IF;\n\n  RETURN v_res;\nEND;\n$function$\n",
+    "acl": "{postgres=X/postgres,service_role=X/postgres}",
+    "grants": "{postgres=X/postgres,service_role=X/postgres}",
+    "owner": "postgres"
+  },
+  {
+    "signature": "fn_debit_treasury(uuid,numeric,text,jsonb)",
+    "body_md5": "8f43bf345fba1310ca8c3c40d6f8439d",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_debit_treasury(p_club_id uuid, p_amount numeric, p_reason text DEFAULT NULL::text, p_metadata jsonb DEFAULT '{}'::jsonb)\n RETURNS jsonb\n LANGUAGE plpgsql\n SET search_path TO 'public', 'extensions'\nAS $function$\nDECLARE\n  v_before numeric;\n  v_after numeric;\nBEGIN\n  IF p_club_id IS NULL OR p_amount IS NULL OR p_amount <= 0 THEN\n    RETURN jsonb_build_object('success', false, 'error', 'invalid parameters');\n  END IF;\n\n  SELECT COALESCE(chip_treasury, 0) INTO v_before\n  FROM clubs WHERE id = p_club_id FOR UPDATE;\n\n  IF v_before IS NULL THEN\n    RETURN jsonb_build_object('success', false, 'error', 'club not found');\n  END IF;\n\n  IF v_before < p_amount THEN\n    RETURN jsonb_build_object(\n      'success', false,\n      'error', 'insufficient treasury',\n      'balance', v_before,\n      'requested', p_amount\n    );\n  END IF;\n\n  UPDATE clubs\n  SET chip_treasury = chip_treasury - p_amount,\n      updated_at = NOW()\n  WHERE id = p_club_id;\n  v_after := v_before - p_amount;\n\n  INSERT INTO chip_transactions (\n    id, club_id, amount, transaction_type, notes, metadata, balance_after, created_at\n  ) VALUES (\n    gen_random_uuid(), p_club_id, p_amount,\n    'treasury_debit', COALESCE(p_reason, 'Treasury debit'), p_metadata, v_after, NOW()\n  );\n\n  RETURN jsonb_build_object(\n    'success', true,\n    'amount', p_amount,\n    'balance_before', v_before,\n    'balance_after', v_after\n  );\nEND;\n$function$\n",
+    "acl": "{postgres=X/postgres,service_role=X/postgres}",
+    "grants": "{postgres=X/postgres,service_role=X/postgres}",
+    "owner": "postgres"
+  },
+  {
+    "signature": "fn_is_union_overseer(uuid,uuid)",
+    "body_md5": "5a42c5e7097a527856f56fc7224f9457",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_is_union_overseer(p_union_id uuid, p_user_id uuid)\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\n  SELECT p_union_id IS NOT NULL AND p_user_id IS NOT NULL AND (\n       EXISTS (SELECT 1 FROM public.unions u WHERE u.id = p_union_id AND u.owner_id = p_user_id)\n    OR EXISTS (SELECT 1 FROM public.union_admins a WHERE a.union_id = p_union_id AND a.user_id = p_user_id)\n    OR EXISTS (SELECT 1 FROM public.clubs c\n                WHERE c.id = p_union_id AND COALESCE(c.is_union, false) AND c.owner_id = p_user_id)\n    OR EXISTS (SELECT 1 FROM public.club_members m\n                WHERE m.club_id = p_union_id AND m.user_id = p_user_id\n                  AND m.role IN ('owner','co_owner','admin')\n                  AND m.status IN ('active','approved'))\n  );\n$function$\n",
+    "acl": "{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+    "grants": "{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+    "owner": "postgres"
+  },
+  {
+    "signature": "fn_union_week_start(timestamp with time zone)",
+    "body_md5": "271c8a1269dc2e570ee20bd781493e9d",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_union_week_start(p_at timestamp with time zone DEFAULT now())\n RETURNS timestamp with time zone\n LANGUAGE sql\n IMMUTABLE\n SET search_path TO 'public', 'extensions'\nAS $function$\n  SELECT date_trunc('week', (p_at AT TIME ZONE 'America/Los_Angeles'))\n           AT TIME ZONE 'America/Los_Angeles';\n$function$\n",
+    "acl": "{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+    "grants": "{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+    "owner": "postgres"
+  },
+  {
+    "signature": "recompute_union_levels(uuid,boolean)",
+    "body_md5": "ec045b0e840ed76bc166b891084ee337",
+    "definition": "CREATE OR REPLACE FUNCTION public.recompute_union_levels(p_union_id uuid DEFAULT NULL::uuid, p_force boolean DEFAULT false)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE v_id uuid;\nBEGIN\n  FOR v_id IN SELECT id FROM public.unions WHERE p_union_id IS NULL OR id = p_union_id LOOP\n    PERFORM public.fn_apply_union_ladder(v_id);\n  END LOOP;\nEND;\n$function$\n",
+    "grants": "{postgres=X/postgres,service_role=X/postgres}",
+    "owner": "postgres"
+  },
+  {
+    "signature": "fn_apply_union_ladder(uuid)",
+    "body_md5": "516b9cb69d37cc4777259c1cd7f2b726",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_apply_union_ladder(p_union_id uuid)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  v_members bigint;\n  v_level   smallint;\n  v_clubs integer; v_admins integer; v_supers integer; v_agents integer;\n  v_units numeric; v_units_up integer; v_hlevel integer; v_cursor integer;\nBEGIN\n  IF p_union_id IS NULL THEN RETURN; END IF;\n  IF NOT EXISTS (SELECT 1 FROM public.unions WHERE id = p_union_id) THEN RETURN; END IF;\n\n  SELECT member_count INTO v_members\n    FROM public.fn_batch_union_realtime_member_counts(ARRAY[p_union_id]);\n  v_members := COALESCE(v_members, 0);\n  v_level := public.fn_club_level_for_members(v_members::integer);\n\n  SELECT count(DISTINCT uc.club_id),\n         COALESCE(sum(c.admin_count), 0),\n         COALESCE(sum(c.super_agent_count), 0),\n         COALESCE(sum(c.agent_count), 0)\n    INTO v_clubs, v_admins, v_supers, v_agents\n    FROM public.union_clubs uc\n    JOIN public.clubs c ON c.id = uc.club_id\n   WHERE uc.union_id = p_union_id;\n  v_units := (v_admins * 1.00) + (v_supers * 1.00) + (v_agents * 0.25);\n  v_units_up := CEIL(v_units);\n  v_hlevel := 1;\n  FOR v_cursor IN 1..50 LOOP\n    IF v_units_up >= ROUND(2 * POWER(1.086, v_cursor - 1)) THEN v_hlevel := v_cursor; ELSE EXIT; END IF;\n  END LOOP;\n\n  UPDATE public.unions SET\n    member_count               = v_members,\n    total_players              = v_members,\n    club_count                 = v_clubs,\n    level                      = v_level,\n    player_level               = v_level,\n    player_threshold_current   = public.fn_club_level_min_members(v_level),\n    player_threshold_next      = public.fn_club_level_min_members(v_level + 1),\n    total_admins               = v_admins,\n    total_super_agents         = v_supers,\n    total_agents               = v_agents,\n    hierarchy_units            = v_units,\n    hierarchy_units_rounded_up = v_units_up,\n    hierarchy_level            = v_hlevel,\n    hierarchy_threshold_current = ROUND(2 * POWER(1.086, v_hlevel - 1)),\n    hierarchy_threshold_next    = ROUND(2 * POWER(1.086, LEAST(v_hlevel, 49))),\n    updated_at                 = now()\n  WHERE id = p_union_id;\nEND;\n$function$\n",
+    "grants": "{postgres=X/postgres,service_role=X/postgres}",
+    "owner": "postgres"
+  },
+  {
+    "signature": "fn_batch_union_realtime_member_counts(uuid[])",
+    "body_md5": "472e8774a3d01436a89284f7948111f8",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_batch_union_realtime_member_counts(p_union_ids uuid[])\n RETURNS TABLE(union_id uuid, member_count bigint)\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public', 'extensions'\nAS $function$\n  SELECT requested.union_id, count(cm.user_id)::bigint\n    FROM unnest(p_union_ids) requested(union_id)\n    LEFT JOIN public.union_clubs uc ON uc.union_id = requested.union_id\n    LEFT JOIN public.club_members cm ON cm.club_id = uc.club_id\n      AND (cm.status IS NULL OR cm.status IN ('active', 'approved'))\n   GROUP BY requested.union_id;\n$function$\n",
+    "grants": "{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+    "owner": "postgres"
+  }
+]

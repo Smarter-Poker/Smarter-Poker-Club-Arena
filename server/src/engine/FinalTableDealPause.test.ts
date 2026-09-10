@@ -86,3 +86,90 @@ describe('final-table deal pause authority', () => {
     expect(released).not.toHaveBeenCalled();
   });
 });
+
+describe('operator resume owns only the operator pause', () => {
+  it.each([
+    [
+      'maintenance',
+      (e: any) => e.pauseForMaintenance(300_000),
+      (e: any) => e.resumeFromMaintenance(),
+    ],
+    [
+      'deal discussion',
+      (e: any) => e.pauseForFinalTableDeal(60_000),
+      (e: any) => e.resumeFromFinalTableDeal(),
+    ],
+    ['hand-for-hand', (e: any) => e.pauseAfterHand(), (e: any) => e.resumeDealing()],
+  ] as const)('keeps the %s gate and state parked', async (_name, arm, release) => {
+    const engine = new ServerTableEngine(TABLE_ID) as any;
+    engine.running = true;
+    engine.tableFSM.transition('waiting');
+    engine.tableFSM.transition('seating');
+    engine.tableFSM.transition('running');
+    engine.hub = { emitEvent: vi.fn() };
+    engine.persistPresenceForRestart = vi.fn(async () => {});
+    engine.adminPause();
+    arm(engine);
+    const parked = engine.awaitPauseGate();
+    const resolver = engine.handForHandResolve;
+    try {
+      engine.adminResume();
+      expect(engine.adminPauseLock).toBe(false);
+      expect(engine.tableFSM.state).toBe('paused');
+      expect(engine.handForHandResolve).toBe(resolver);
+      expect(
+        engine.hub.emitEvent.mock.calls.some((call: any[]) => call[1].type === 'table_resumed')
+      ).toBe(false);
+    } finally {
+      release(engine);
+      await parked;
+      engine.preciseTimer.dispose();
+    }
+  });
+
+  it('cannot clear the separately requested maintenance lock', () => {
+    const engine = new ServerTableEngine(TABLE_ID) as any;
+    engine.tableFSM.transition('waiting');
+    engine.tableFSM.transition('seating');
+    engine.tableFSM.transition('running');
+    engine.setMaintenanceLock(true);
+    engine.adminPause();
+    engine.adminResume();
+    expect(engine.maintenanceLock).toBe(true);
+    expect(engine.tableFSM.state).toBe('paused');
+    engine.setMaintenanceLock(false);
+    expect(engine.tableFSM.state).toBe('running');
+    engine.preciseTimer.dispose();
+  });
+});
+
+describe('another pause release preserves an operator hold', () => {
+  it.each([
+    [
+      'maintenance',
+      (e: any) => e.pauseForMaintenance(300_000),
+      (e: any) => e.resumeFromMaintenance(),
+    ],
+    [
+      'deal discussion',
+      (e: any) => e.pauseForFinalTableDeal(60_000),
+      (e: any) => e.resumeFromFinalTableDeal(),
+    ],
+    ['hand-for-hand', (e: any) => e.pauseAfterHand(), (e: any) => e.resumeDealing()],
+  ] as const)('keeps the operator state after %s ends', async (_name, arm, release) => {
+    const engine = new ServerTableEngine(TABLE_ID) as any;
+    engine.running = true;
+    for (const state of ['waiting', 'seating', 'running']) engine.tableFSM.transition(state);
+    engine.persistPresenceForRestart = vi.fn(async () => {});
+    engine.adminPause();
+    arm(engine);
+    const gate = engine.awaitPauseGate();
+    release(engine);
+    await gate;
+    expect(engine.adminPauseLock).toBe(true);
+    expect(engine.tableFSM.state).toBe('paused');
+    engine.adminResume();
+    expect(engine.tableFSM.state).toBe('running');
+    engine.preciseTimer.dispose();
+  });
+});

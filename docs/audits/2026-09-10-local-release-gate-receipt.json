@@ -1,0 +1,16 @@
+{
+  "head": "8919f49e6c21d0401f1b9df8fa17443f3ecc3e27",
+  "remote_head_used_for_diff": "75eb72e546b71958bf05f719f4c64d3143a03d59",
+  "exit_code": 0,
+  "finished_at": "2026-09-10T07:28:22.924058+00:00",
+  "mode": "local hook validation only",
+  "push_executed": false,
+  "changed_client_tests": 107,
+  "affected_client_tests": 593,
+  "source_assertions": 1432,
+  "changed_server_tests": 209,
+  "affected_server_tests": 3045,
+  "affected_server_existing_skips": 145,
+  "counts_overlap": true,
+  "server_build_exit": 0
+}

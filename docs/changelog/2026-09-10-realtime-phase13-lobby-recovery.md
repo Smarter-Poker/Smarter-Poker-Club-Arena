@@ -18,12 +18,14 @@ The focused suite passed 71 tests across seven files, including existing card
 fidelity, scoped inventory, waterfall and refresh-frequency guards.
 TypeScript passed. The production bundle compiled in 15.16 seconds; the local
 publication freshness gate correctly refused a base three commits behind main.
-The normal integrated CI and publisher must close that release gate.
+Integrated CI34428955104 and publisher34429315574 passed, closing that gate.
 
 This change adds no cron, database migration, engine or deployment mutation.
 It preserves the existing visible-tab polling floor and admission rules.
 The earlier narrowed publication does not include tables or tournaments; this
 repair does not claim those streams deliver events or restore the WAL firehose.
 The existing engine lobby broadcast carries presence counts, not full inventory.
-Live publication, natural recovery and physical iPad/PWA acceptance remain to be
-verified separately. Stage-B and engine release coordination belong to their owner.
+PR4085 publication is verified in `docs/audits/2026-09-10-realtime-phase13-release.md`.
+Post-release browser control timed out on the check and supported recovery retry.
+Natural recovery and physical iPad/PWA acceptance remain open.
+Stage-B and engine release coordination belong to their owner.

@@ -2,6 +2,10 @@
 
 ## Every Change, Documented. No Exceptions.
 
+## 2026-09-10: Players Explicitly Request A Bounded Deal Review
+
+The client now reads review state before exposing a proposal, explicitly requests a safe-boundary pause, displays the server deadline, and cancels only the displayed review identity. Unknown responses only trigger readback; terminal states never reuse consent or automatically request another pause. One hundred six focused tests and full client TypeScript pass. Re-read: yes. Requires matching lifecycle SQL and engine; no production publication or activation. See docs/changelog/2026-09-10-explicit-bounded-deal-review.md.
+
 ## 2026-09-10: Final Deal Review Binds Consent To The Displayed Proposal
 
 The final-table screen now displays the server's versioned recipient allocations and submits only the reviewed proposal. Exact strings, actor and proposal identity, total consistency, stale responses, ambiguous readback, and account/event changes are verified. Seventy-four focused tests and full client TypeScript pass; two account/event regressions failed before correction. Re-read: yes. This source requires the matching SQL expansion and engine before coordinated activation. No production mutation or publication; full Phase 3 remains open. See docs/changelog/2026-09-10-final-deal-review-binds-consent.md.

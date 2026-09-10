@@ -1,6 +1,8 @@
 import { getAuthUser, supabase } from '../lib/supabase';
 
 export interface TournamentDealProposal {
+  reviewId: string;
+  expiresAt: string;
   actorId: string;
   tournamentId: string;
   proposalId: string;
@@ -12,6 +14,9 @@ export interface TournamentDealProposal {
 }
 
 const messages: Record<string, string> = {
+  review_not_ready: 'Waiting For Play To Pause Before Reviewing A Split.',
+  review_stale: 'This Review Changed. Refresh The Current Review.',
+  review_expired: 'This Review Expired. Request A New Review To Continue.',
   proposal_authority_not_active: 'Deal Review Is Not Available Yet. Please Retry.',
   pool_not_finalized: 'The Prize Pool Must Be Finalized Before A Deal.',
   deal_not_ready: 'A Deal Is Not Ready Yet.',
@@ -52,10 +57,16 @@ function successful(raw: unknown): Record<string, unknown> {
 export function parseTournamentDealProposal(
   raw: unknown,
   tournamentId: string,
-  actorId: string
+  actorId: string,
+  review: TournamentDealReviewState
 ): TournamentDealProposal {
   const value = successful(raw);
   if (
+    review.state !== 'reviewing' ||
+    value.review_id !== review.reviewId ||
+    value.expires_at !== review.expiresAt ||
+    value.proposal_id !== review.proposalId ||
+    value.revision !== review.revision ||
     value.tournament_id !== tournamentId ||
     value.actor_id !== actorId ||
     value.state !== 'ready' ||
@@ -102,6 +113,8 @@ export function parseTournamentDealProposal(
   )
     throw invalid();
   return {
+    reviewId: uuid(value.review_id),
+    expiresAt: deadline(value.expires_at),
     actorId,
     tournamentId,
     proposalId: uuid(value.proposal_id),
@@ -123,13 +136,14 @@ export function formatDealCents(value: string): string {
 
 export async function getTournamentDealProposal(
   tournamentId: string,
-  actorId: string
+  actorId: string,
+  review: TournamentDealReviewState
 ): Promise<TournamentDealProposal> {
   const { data, error } = await supabase.rpc('fn_get_tournament_deal_proposal', {
     p_tournament_id: tournamentId,
   });
   if (error) throw error;
-  return parseTournamentDealProposal(data, tournamentId, actorId);
+  return parseTournamentDealProposal(data, tournamentId, actorId, review);
 }
 
 export async function castTournamentDealVote(proposal: TournamentDealProposal): Promise<void> {
@@ -148,6 +162,120 @@ export async function castTournamentDealVote(proposal: TournamentDealProposal): 
     result.revision !== proposal.revision ||
     result.voted !== true ||
     typeof result.already !== 'boolean'
+  )
+    throw invalid();
+}
+
+export type TournamentDealReviewPhase =
+  | 'none'
+  | 'requested'
+  | 'reviewing'
+  | 'completed'
+  | 'cancelled'
+  | 'expired';
+export interface TournamentDealReviewState {
+  actorId: string;
+  tournamentId: string;
+  reviewId: string | null;
+  state: TournamentDealReviewPhase;
+  expiresAt: string | null;
+  proposalId: string | null;
+  revision: string | null;
+  proposal: TournamentDealProposal | null;
+}
+function deadline(value: unknown): string {
+  if (
+    typeof value !== 'string' ||
+    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(value) ||
+    !Number.isFinite(Date.parse(value))
+  )
+    throw invalid();
+  return value;
+}
+export function parseTournamentDealReview(
+  raw: unknown,
+  tournamentId: string,
+  actorId: string
+): TournamentDealReviewState {
+  const value = successful(raw);
+  const phases = ['none', 'requested', 'reviewing', 'completed', 'cancelled', 'expired'];
+  if (
+    value.actor_id !== actorId ||
+    value.tournament_id !== tournamentId ||
+    typeof value.state !== 'string' ||
+    !phases.includes(value.state)
+  )
+    throw invalid();
+  if (value.state === 'none') {
+    if (
+      value.review_id !== null ||
+      value.expires_at !== null ||
+      value.proposal_id !== null ||
+      value.revision !== null
+    )
+      throw invalid();
+  } else {
+    uuid(value.review_id);
+    deadline(value.expires_at);
+    if (value.state === 'reviewing') {
+      uuid(value.proposal_id);
+      if (typeof value.revision !== 'string' || !/^[0-9a-f]{64}$/.test(value.revision))
+        throw invalid();
+    } else if (value.proposal_id !== null || value.revision !== null) throw invalid();
+  }
+  return {
+    actorId,
+    tournamentId,
+    reviewId: value.review_id as string | null,
+    state: value.state as TournamentDealReviewPhase,
+    expiresAt: value.expires_at as string | null,
+    proposalId: value.proposal_id as string | null,
+    revision: value.revision as string | null,
+    proposal: null,
+  };
+}
+export async function getTournamentDealReview(
+  tournamentId: string,
+  actorId: string
+): Promise<TournamentDealReviewState> {
+  const { data, error } = await supabase.rpc('fn_get_tournament_deal_review', {
+    p_tournament_id: tournamentId,
+  });
+  if (error) throw error;
+  const review = parseTournamentDealReview(data, tournamentId, actorId);
+  if (review.state === 'reviewing')
+    review.proposal = await getTournamentDealProposal(tournamentId, actorId, review);
+  return review;
+}
+async function requireReviewActor(actorId: string): Promise<void> {
+  const { data: auth, error } = await getAuthUser();
+  if (error || auth.user?.id !== actorId)
+    throw new Error('Your Account Changed. Reopen The Deal Before Continuing.');
+}
+export async function requestTournamentDealReview(
+  tournamentId: string,
+  actorId: string
+): Promise<void> {
+  await requireReviewActor(actorId);
+  const { data, error } = await supabase.rpc('fn_request_tournament_deal_review', {
+    p_tournament_id: tournamentId,
+  });
+  if (error) throw error;
+  const review = parseTournamentDealReview(data, tournamentId, actorId);
+  if (!['requested', 'reviewing'].includes(review.state)) throw invalid();
+}
+export async function cancelTournamentDealReview(review: TournamentDealReviewState): Promise<void> {
+  if (!review.reviewId || !['requested', 'reviewing'].includes(review.state)) throw invalid();
+  await requireReviewActor(review.actorId);
+  const { data, error } = await supabase.rpc('fn_cancel_tournament_deal_review', {
+    p_tournament_id: review.tournamentId,
+    p_review_id: review.reviewId,
+  });
+  if (error) throw error;
+  const result = parseTournamentDealReview(data, review.tournamentId, review.actorId);
+  if (
+    result.reviewId !== review.reviewId ||
+    !['cancelled', 'expired', 'completed'].includes(result.state)
   )
     throw invalid();
 }

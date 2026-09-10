@@ -9,7 +9,8 @@ sole progress path. See `docs/standards/EVENT-DRIVEN-EXECUTION.md`.
 The Supabase email has been reconciled against current schema, cron history,
 subscriptions, and delivery records in
 `docs/audits/2026-09-09-supabase-email-reconciliation.md`. The reminder ownership
-replacement and the missing detailed-log/device evidence remain open.
+replacement is published and verified in `docs/audits/2026-09-09-tournament-reminder-release.md`.
+The missing detailed-log/device evidence remains open.
 
 Dan, 2026-09-04, after a 22-hour "Reconnecting To The Table" outage that
 every monitor slept through: "TAKE EVERYTHING YOU JUST SUGGESTED, AND CREATE
@@ -33,6 +34,10 @@ verification when it lands.
 | 8     | Connection ownership and refusal recovery    | Retire superseded wake listeners; handle protocol and capacity refusals consistently across table and channel sockets                                                                     | published; device acceptance open |
 | 9     | Financial reconnect and refresh ownership    | Refresh after every channel open; bypass stale cashier cache; retain invalidations during reads; reject retired balance responses                                                         | published; device acceptance open |
 | 10    | Cashier history recovery and scope ownership | Retain history invalidations; isolate user and club results/cache; preserve confirmed rows on read failure                                                                                | published; device acceptance open |
+| 11    | Tournament lobby snapshot recovery           | Re-read on channel subscription; coalesce invalidations; replay live patches over snapshots; isolate retired tournament/account reads; preserve confirmed data on failure                 | published; device acceptance open |
+
+Phase 11 scope and regression evidence: `docs/changelog/2026-09-09-realtime-phase11-tournament-snapshots.md`.
+Published release and controlled-browser evidence: `docs/audits/2026-09-09-realtime-phase11-release.md`.
 
 Phase 10 scope and regression evidence: `docs/changelog/2026-09-09-realtime-phase10-cashier-history.md`.
 

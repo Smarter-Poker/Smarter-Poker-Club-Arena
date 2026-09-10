@@ -2755,3 +2755,12 @@
     aspect-ratio: 2 / 3;
   }
 }
+
+/* The shared arena entrance uses the original Diamond card without chip-club overlays. */
+.arenaTitle {
+  margin: 0;
+  padding: 8px 16px;
+  text-align: center;
+  font-size: clamp(20px, 3vw, 28px);
+  color: #f4f7ff;
+}

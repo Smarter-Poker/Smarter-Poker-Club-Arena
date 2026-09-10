@@ -69,8 +69,8 @@ function finishStage(
           const av = a[column],
             bv = b[column];
           if (av === bv) return 0;
-          if (av === null) return -1;
-          if (bv === null) return 1;
+          if (av === null || av === undefined) return -1;
+          if (bv === null || bv === undefined) return 1;
           return (av < bv ? -1 : 1) * (order.ascending ? 1 : -1);
         });
         return query;

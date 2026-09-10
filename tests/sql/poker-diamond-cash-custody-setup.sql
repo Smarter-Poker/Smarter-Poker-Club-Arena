@@ -82,3 +82,10 @@ SELECT fixture_assert((SELECT bool_and(balance=300) FROM poker_diamond_custody W
 SELECT fixture_assert((SELECT count(*)=0 FROM poker_diamond_hand_receipts),
  'failed hand retains no success receipt');
 DROP TRIGGER fixture_fail_second_custody ON poker_diamond_custody;
+
+SELECT fixture_assert(NOT has_function_privilege('authenticated',
+ 'fn_poker_diamond_release(uuid,uuid)','EXECUTE')
+ AND has_function_privilege('service_role','fn_poker_diamond_release(uuid,uuid)','EXECUTE')
+ AND NOT has_function_privilege('service_role',
+ 'fn_ca_settle_hand_stacks_absolute(uuid,bigint,jsonb,numeric,numeric,text,numeric)','EXECUTE'),
+ 'replacement writers retain service release and owner-only settlement ACLs');

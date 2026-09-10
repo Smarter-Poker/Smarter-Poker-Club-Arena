@@ -1084,4 +1084,10 @@ BEGIN
   END;
 END $function$
 ;
+-- Restate the existing privilege contract alongside both replaced writers.
+REVOKE ALL ON FUNCTION public.fn_poker_diamond_release(uuid,uuid)
+  FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_poker_diamond_release(uuid,uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.fn_ca_settle_hand_stacks_absolute(uuid,bigint,jsonb,numeric,numeric,text,numeric)
+  FROM PUBLIC,anon,authenticated,service_role;
 COMMIT;

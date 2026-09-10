@@ -1,0 +1,143 @@
+{
+  "generated_at": "2026-09-10T13:51:19.799Z",
+  "elapsed_seconds": 0.832418791,
+  "runtime": {
+    "node": "v26.3.0",
+    "postgres": "PostgreSQL 17.11 (Homebrew) on aarch64-apple-darwin25.6.0, compiled by Apple clang version 21.0.0 (clang-2100.1.1.101), 64-bit"
+  },
+  "installed_treasury_body_md5": "8f43bf345fba1310ca8c3c40d6f8439d",
+  "inputs": [
+    {
+      "file": "fixture.sql",
+      "sha256": "72b2a77c0d805989e7b3bb48593321258dfd79dc698d42d167397d57394ca42d"
+    },
+    {
+      "file": "money-guards.sql",
+      "sha256": "e7ac35f1cc08f6b947c386532a39bcc460a94e0c75949b5071e4098cbf3b9958"
+    },
+    {
+      "file": "money-guards-coverage.json",
+      "sha256": "d2f132a2f40eb181beee515beb0a46d63c04a51cfe9b5ce2c5847b76646b4b7b"
+    },
+    {
+      "file": "source-facts-schema-fixture.sql",
+      "sha256": "289da2f3855b0f5027a54765c303f432a8773a6262454779c4801fe3cd833c7a"
+    },
+    {
+      "file": "receipt-schema-fixture.sql",
+      "sha256": "0010ee706c81d372a5cea6be7ca5f817b23df6d7910cedf26101ca98e1542895"
+    },
+    {
+      "file": "union-auth-fixture.sql",
+      "sha256": "b8938e168d113fbe5998e7c0ae74606298a380245907fa6901ca70a9416d6316"
+    },
+    {
+      "file": "installed-treasury.sql",
+      "sha256": "ad210f2ed7aa7ba1f5be8fb6d010c1b8853c4c87d2f1ce21af97f37a10ffe002"
+    },
+    {
+      "file": "installed-catalog.json",
+      "sha256": "1cad8ba59d8d3c697f4551f182a5447f42d86e8bdc0e3fd334f0e7872f6d593e"
+    },
+    {
+      "file": "source-payment-proposal.sql",
+      "sha256": "981644720a345dd0058804c663518d07118b083c895ff5474ccf60533b3654ae"
+    },
+    {
+      "file": "native-probe.mjs",
+      "sha256": "4068f2000640891fb9c9ba60769d547e052c31c3473b91aa181b3a2af8699af3"
+    },
+    {
+      "file": "run-local.sh",
+      "sha256": "865c17c14377f3413b5541a991be95a2ec5b7a30476254f1b506d09f093e7255"
+    }
+  ],
+  "passed": 17,
+  "results": [
+    {
+      "name": "SQL counterexamples expose per-hand lost fractions and decreasing rounded hierarchy differences",
+      "pass": true
+    },
+    {
+      "name": "Sunday earning week survives Monday admission and captured recipient deactivation",
+      "pass": true
+    },
+    {
+      "name": "100 sequential one-cent sources carry exactly 25 cents across changing captured agent identities",
+      "pass": true
+    },
+    {
+      "name": "late source cannot claw back an already released parent cent",
+      "pass": true
+    },
+    {
+      "name": "tiny tier payouts cannot exceed exact provisional allocation",
+      "pass": true
+    },
+    {
+      "name": "missing accrual receipt and legacy receipt generation create no new accrual or payment",
+      "pass": true
+    },
+    {
+      "name": "synthetic earlier timestamp does not replace explicit generation1 and envelope identity",
+      "pass": true
+    },
+    {
+      "name": "short treasury defers exact liabilities and synthetic treasury funding permits one payment",
+      "pass": true
+    },
+    {
+      "evidence": "same_request_wait",
+      "wait": {
+        "wait_event": "advisory",
+        "blockers": [84045],
+        "shared_club_admission": false
+      }
+    },
+    {
+      "name": "exact claim UUID replay survives new sources and concurrent request overlap",
+      "pass": true
+    },
+    {
+      "name": "late source payment receipt failure rolls every public fixture row back",
+      "pass": true
+    },
+    {
+      "evidence": "claim_vs_payer_shared_club_wait",
+      "wait": {
+        "wait_event": "advisory",
+        "blockers": [84049],
+        "shared_club_admission": true
+      }
+    },
+    {
+      "name": "direct source payer and separate claim serialize at the shared club admission lock",
+      "pass": true
+    },
+    {
+      "name": "second recipient failure rolls back the whole multi-recipient transaction",
+      "pass": true
+    },
+    {
+      "name": "accepted complete-envelope hash mismatch cannot admit an accrual",
+      "pass": true
+    },
+    {
+      "name": "claim expected-user binding rejects account switch and immutable request scope conflicts",
+      "pass": true
+    },
+    {
+      "name": "source payment keeps linked wallet and ledger evidence immutable",
+      "pass": true
+    },
+    {
+      "name": "last claim receipt failure rolls back allocations and every public fixture row",
+      "pass": true
+    },
+    {
+      "name": "API roles cannot mutate source accrual or cash receipt evidence",
+      "pass": true
+    }
+  ],
+  "scope": "Source-payment prototype with captured treasury primitive and financial trigger subset; synthetic source admission; no whole production cascade, legacy claim cutover or source-final certification"
+}

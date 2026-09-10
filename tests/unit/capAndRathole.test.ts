@@ -68,14 +68,14 @@ describe('Cap', () => {
     expect(fn).toMatch(/normalizedAction = state\.currentBet > 0 \? 'raise' : 'bet'/);
   });
 
-  it('does NOT cap a call, and says why', () => {
-    // A short call is an under-call the pot logic must turn into a side pot —
-    // a real integrity hazard. It is also unnecessary: every wager that can be
-    // called has already been clamped, so a caller can never pass a ceiling
-    // the bettor in front of them already respects.
-    const call = sliceEnclosingBlock(TURNS, 'A CALL IS DELIBERATELY NOT CAPPED');
-    expect(call).toContain('side pot');
-    expect(TURNS).toContain("if (normalizedAction === 'call') amount = toCall;");
+  it('refuses a full call that crosses the caller cap without inventing an under-call', () => {
+    // Forced/dead contributions can make caller and bettor whole-hand totals
+    // unequal. The legal menu and authoritative action path both fail closed;
+    // neither truncates a call into a non-all-in partial call.
+    expect(TURNS).toContain('source.toCall > capRemaining + 0.005');
+    expect(TURNS).toContain('toCall > capRemaining + 0.005');
+    expect(TURNS).toContain("Calling would exceed this table's per-hand commitment cap");
+    expect(TURNS).not.toContain('Math.min(toCall, capRemaining)');
   });
 
   it('leaves a capped player with chips in front of them', () => {

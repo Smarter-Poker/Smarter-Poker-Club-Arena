@@ -102,6 +102,27 @@ describe('the sweep actually reports itself', () => {
 });
 
 describe('the gauge cannot drift', () => {
+  it('starts at causal recovery with no periodic seatless mutation stage', () => {
+    const sweep = sliceMethod(SWEEP, 'private async runEliminationSweep(');
+    expect(sweep).not.toContain('seatingStage:');
+    expect(sweep).not.toContain('ensureLateRegSeated');
+    const stages = [
+      ['recoveryStage:', 0, 1],
+      ['bustStage:', 1, 2],
+      ['finishStage:', 2, 3],
+      ['finalDealStage:', 3, 4],
+      ['addOnStage:', 4, 5],
+      ['balanceStage:', 5, 6],
+      ['expansionStage:', 6, 7],
+      ['handForHandStage:', 7, 8],
+    ] as const;
+    for (const [label, current, next] of stages) {
+      expect(sweep.match(new RegExp(`\\b${label}`, 'g'))).toHaveLength(1);
+      expect(sweep).toContain(`this.eliminationSweepCursor.nextStage > ${current}`);
+      expect(sweep).toContain(`completedStage(${next})`);
+    }
+  });
+
   it('does not release either physical or logical inflight ownership on a warning', () => {
     const warning = sliceEnclosingBlock(SCHEDULER, 'if (settled) return;', 1);
     expect(warning).toContain("dispatchTotal.inc(1, { outcome: 'timed_out' })");
@@ -263,12 +284,12 @@ describe('the measured fan-out is replaced, not merely charted', () => {
     expect(pendingVerdict).not.toContain('requestUrgentEliminationSweepAfter');
   });
 
-  it('preserves narrow feature cadence and re-drives a promoted full-table entrant', () => {
+  it('preserves narrow feature cadence and re-drives durable capacity hand-offs', () => {
     expect(SCHEDULER).toContain('wakeAfter(tournamentId: string, delayMs: number)');
     expect(SWEEP).toContain('TournamentManagerBase.ADD_ON_RETRY_MS');
     expect(SWEEP).toContain('TournamentManagerBase.FINAL_TABLE_DEAL_POLL_MS');
     expect(SWEEP).toContain('TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS');
-    expect(MANAGER).toContain('TournamentManagerBase.LATE_REG_REDRIVE_MS');
+    expect(MANAGER).toContain('TournamentManagerBase.BALANCE_REDRIVE_MS');
     expect(MANAGER).toContain('this.requestUrgentEliminationSweepAfter(0)');
   });
 

@@ -12,6 +12,7 @@ import {
   evaluateOmahaHand,
   evaluateOmahaLowHand,
   calculatePots,
+  calculateContestablePot,
   calculateBettingState,
   validateAction,
   calculateRake,
@@ -3386,6 +3387,20 @@ export class HandController {
   /** Live side pots computed from current contributions (not the cached ones). */
   public computeLivePots(): import('../types.js').Pot[] {
     return calculatePots(this.state.players);
+  }
+
+  /**
+   * Pot already in the middle that this player can win after matching the
+   * current wager, excluding the player's own not-yet-committed call.
+   */
+  public getContestablePotForCall(userId: string): number | null {
+    const player = this.state.players.find((candidate) => candidate.user_id === userId);
+    if (!player) return null;
+    return calculateContestablePot(
+      this.state.players,
+      userId,
+      this.buildBettingState(player).toCall
+    );
   }
 
   /**

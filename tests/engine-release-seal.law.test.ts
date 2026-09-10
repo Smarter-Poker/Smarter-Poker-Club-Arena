@@ -1070,7 +1070,23 @@ describe('every host mutation path obeys the durable release authority', () => {
       writeFileSync(join(server, 'tsconfig.json'), '{}\n');
       writeFileSync(join(source, 'tracked.ts'), 'export const tracked = true;\n');
 
-      const runGit = (args: string[]) => spawnSync('git', args, { cwd: repo, encoding: 'utf8' });
+      // Git exports its own repository variables while running hooks. Strip
+      // them so this nested fixture repository behaves identically inside a
+      // pre-push hook and in a direct Vitest invocation.
+      const isolatedEnv = { ...process.env };
+      for (const name of [
+        'GIT_DIR',
+        'GIT_WORK_TREE',
+        'GIT_INDEX_FILE',
+        'GIT_OBJECT_DIRECTORY',
+        'GIT_ALTERNATE_OBJECT_DIRECTORIES',
+        'GIT_COMMON_DIR',
+        'GIT_PREFIX',
+      ]) {
+        delete isolatedEnv[name];
+      }
+      const runGit = (args: string[]) =>
+        spawnSync('git', args, { cwd: repo, encoding: 'utf8', env: isolatedEnv });
       expect(runGit(['init', '-q']).status).toBe(0);
       expect(runGit(['config', 'user.email', 'release-law@example.invalid']).status).toBe(0);
       expect(runGit(['config', 'user.name', 'Release Law']).status).toBe(0);
@@ -1143,8 +1159,8 @@ exit 5
       writeFileSync(join(dockerState, 'built'), '');
       writeFileSync(join(dockerState, 'revision'), targetSha);
       const env = {
-        ...process.env,
-        PATH: `${bin}:${process.env.PATH ?? ''}`,
+        ...isolatedEnv,
+        PATH: `${bin}:${isolatedEnv.PATH ?? ''}`,
         FAKE_DOCKER_STATE_DIR: dockerState,
         ENGINE_BUILD_CONTEXT_ROOT: contextRoot,
       };

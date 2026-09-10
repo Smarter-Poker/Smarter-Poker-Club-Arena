@@ -27,7 +27,9 @@ root = Path(tempfile.mkdtemp(prefix='ca-registration-funding-pg17-'))
 cluster, sock = root/'cluster', root/'socket'
 sock.mkdir()
 port = str(35000 + os.getpid() % 10000)
-args = []
+node = os.environ.get('PGNODE')
+database = 'postgres'
+query_helper = repo / 'scripts/ci/probes/chip-journal-atomicity/postgres-runtime/registration-query.mjs'
 passed = []
 started = False
 event = 'c3000000-0000-4000-8000-000000000001'
@@ -44,8 +46,20 @@ with (root/'results.log').open('w') as log:
         log.flush()
         assert result.returncode == 0, 'Command failed; see '+str(root/'results.log')
 
+    def client_command():
+        if node:
+            return [node, str(query_helper)]
+        return [str(pg/'psql'), '-X', '-qAt', '-v', 'ON_ERROR_STOP=1']
+
+    def connection_env():
+        return dict(os.environ, PGHOST=str(sock), PGHOSTADDR='', PGPORT=port,
+                    PGUSER='registration_test', PGDATABASE=database)
+
+    def encode(sql):
+        return (json.dumps(sql) if node else sql) + '\n'
+
     def q(sql, expected_error=None):
-        result = subprocess.run(args+['-c',sql],capture_output=True,text=True,timeout=15)
+        result = subprocess.run(client_command(),input=encode(sql),capture_output=True,text=True,timeout=15,env=connection_env())
         log.write(result.stdout+result.stderr)
         log.flush()
         if expected_error:
@@ -55,15 +69,16 @@ with (root/'results.log').open('w') as log:
         return result.stdout.strip()
 
     def fresh(name, cap=100):
-        global args
-        run([str(pg/'createdb'),'-h',str(sock),'-p',port,'-U','registration_test',name])
-        args=[str(pg/'psql'),'-h',str(sock),'-p',port,'-U','registration_test','-d',name,'-X','-qAt','-v','ON_ERROR_STOP=1']
-        run(args+['-f',str(fixture)])
-        run(args+['-f',str(overlay)])
+        global database
+        database='postgres'
+        q('CREATE DATABASE "'+name+'";')
+        database=name
+        q(fixture.read_text())
+        q(overlay.read_text())
         if '--baseline' not in sys.argv:
-            run(args+['-f',str(migration)])
+            q(migration.read_text())
             if name == 'single':
-                run(args+['-f',str(migration)])  # Verify the source pin permits clean replay.
+                q(migration.read_text())  # Verify the source pin permits clean replay.
         q("INSERT INTO clubs(id) VALUES ('"+club+"');")
         for n in range(1,5):
             q("INSERT INTO profiles(id,username,display_name) VALUES ('%s','Fixture %s','Fixture %s'); INSERT INTO club_members(club_id,user_id,chip_balance,status,role) VALUES ('%s','%s',500,'active','player');" % (uid(n),n,n,club,uid(n)))
@@ -98,11 +113,11 @@ with (root/'results.log').open('w') as log:
         print('PASS '+name,flush=True)
 
     def overlap(first, second, closing=False):
-        owner=subprocess.Popen(args,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,bufsize=1)
+        owner=subprocess.Popen(client_command(),stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,bufsize=1,env=connection_env())
         try:
             # Execute the real entry route before holding its transaction open.
             # Pre-acquiring a deeper lock would manufacture an impossible outer lock order.
-            owner.stdin.write("BEGIN; "+first+" SELECT 'owner-ready';\n")
+            owner.stdin.write(encode("BEGIN; "+first+" SELECT 'owner-ready';"))
             owner.stdin.flush()
             first_lines=[]
             while True:
@@ -118,7 +133,7 @@ with (root/'results.log').open('w') as log:
                     if waiting: break
                     time.sleep(0.025)
                 assert waiting,'competing transaction did not overlap the real database lock'
-                owner.stdin.write("COMMIT;\n")
+                owner.stdin.write(encode("COMMIT;"))
                 owner.stdin.close()
                 owner.stdout.read()
                 assert owner.wait(timeout=15)==0,owner.stderr.read()

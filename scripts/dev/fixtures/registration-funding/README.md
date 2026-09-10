@@ -1,6 +1,6 @@
 # Pre-Start Registration Funding Rehearsal
 
-Run `python3 scripts/dev/probe-tournament-registration-funding-pg17.py`. It creates and stops its own PostgreSQL 17 cluster over a private local socket and accepts no database URL. Set POKER_AUDIT_PG_BIN to an existing PostgreSQL 17 bin directory when Homebrew is unavailable.
+Run `python3 scripts/dev/probe-tournament-registration-funding-pg17.py`. It creates and stops its own PostgreSQL 17 cluster over a private local socket and accepts no database URL. Set POKER_AUDIT_PG_BIN to an existing PostgreSQL 17 bin directory when Homebrew is unavailable. CI sets PGNODE to use its existing pinned pg 8.16.3 client, including transaction barriers, so no psql or createdb binary is required.
 
 The runner uses the installed request receipt, registration wrappers, debit, club wallet, journal, immutable charge entitlement, wallet receipt, escrow, fee and roster functions. It reuses the recorded satellite-refund table/financial fixture and adds the current entry contract. The source manifest records catalog function hashes; no player data is captured.
 

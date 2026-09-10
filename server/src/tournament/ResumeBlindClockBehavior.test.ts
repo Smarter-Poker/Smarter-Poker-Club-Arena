@@ -40,7 +40,10 @@ function fixture(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function harness(tournament: ReturnType<typeof fixture>) {
+function harness(
+  tournament: ReturnType<typeof fixture>,
+  opts: { maintenanceFrozen?: boolean } = {}
+) {
   const writes: Record<string, unknown>[] = [];
   const timers = new Set<{ callback: () => unknown; delay: number; unref: () => void }>();
   const supabase = {
@@ -60,7 +63,9 @@ function harness(tournament: ReturnType<typeof fixture>) {
     'reportError',
     'isMaintenanceFrozen',
     runtime
-  )(supabase, { LAST_HAND_GRACE_MS: 120000, BREAK_DURATION_MS: 300000 }, vi.fn(), () => false);
+  )(supabase, { LAST_HAND_GRACE_MS: 120000, BREAK_DURATION_MS: 300000 }, vi.fn(), () =>
+    Boolean(opts.maintenanceFrozen)
+  );
   const state: any = {
     ...actual,
     tournamentId: 'clock-restart',
@@ -131,6 +136,24 @@ describe('the persisted blind clock survives an engine restart during a break', 
     expect(second.state.blindTimer.delay).toBe(300000);
     expect(second.state.savedBlindTimerRemaining).toBe(0);
     expect(second.writes).toEqual([{ level_started_at: '2026-09-09T12:55:00.000Z' }]);
+  });
+
+  it('ends a break whose countdown was never written with the maintenance break (2026-09-10)', async () => {
+    // A deploy cutover lands inside the break before the old engine writes
+    // the tournament countdown. With the maintenance break holding the fleet,
+    // every table had finished its hand by :55, so the adopted break ends at
+    // :00 with the cash tables - not at :02 on the last-hand grace.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-09T12:57:00.000Z'));
+    const tournament = fixture({ break_ends_at: null });
+    const held = harness(tournament, { maintenanceFrozen: true });
+    await held.state.restore(tournament);
+    expect(held.state.onBreak).toBe(true);
+    expect([...held.timers].map((timer) => timer.delay)).toContain(180000);
+
+    const unheld = harness(fixture({ break_ends_at: null }));
+    await unheld.state.restore(fixture({ break_ends_at: null }));
+    expect([...unheld.timers].map((timer) => timer.delay)).toContain(300000);
   });
 
   it('keeps the remainder during the existing last-hand grace fallback', async () => {

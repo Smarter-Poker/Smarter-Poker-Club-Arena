@@ -128,6 +128,24 @@ export interface TournamentUtilityInput {
   context: TournamentUtilityContext;
 }
 
+export type TournamentUtilityUnavailableReason =
+  | 'invalid_input'
+  | 'no_action_candidates'
+  | 'field_reconciliation'
+  | 'sample_calibration'
+  | 'candidate_settlement'
+  | 'recovery_option'
+  | 'operation_budget'
+  | 'baseline_not_modeled';
+
+export interface TournamentUtilityEvaluation {
+  result: {
+    decision: HorseDecision;
+    ledger: HorseTournamentUtilityLedger;
+  } | null;
+  unavailableReason: TournamentUtilityUnavailableReason | null;
+}
+
 type CandidateKind = 'fold' | 'check' | 'call' | 'bet' | 'raise' | 'jam';
 
 interface ActionCandidate {
@@ -181,6 +199,23 @@ interface WeightedMoment {
   sum: number;
   square: number;
 }
+
+interface CandidateEvaluationSuccess {
+  ledger: HorseTournamentUtilityCandidateLedger;
+  icmError: number;
+  methods: Set<IcmMethod>;
+  unavailableReason: null;
+}
+
+interface CandidateEvaluationFailure {
+  ledger: null;
+  unavailableReason: Extract<
+    TournamentUtilityUnavailableReason,
+    'candidate_settlement' | 'recovery_option'
+  >;
+}
+
+type CandidateEvaluation = CandidateEvaluationSuccess | CandidateEvaluationFailure;
 
 function objectiveOf(context: TournamentUtilityContext): HorseTournamentUtilityObjective {
   if (context.satellite) return 'satellite_seat_equity';
@@ -1095,11 +1130,7 @@ function evaluateCandidate(args: {
   effectiveSamples: number;
   estimate: (vector: number[]) => Estimate;
   payoutWeight: number;
-}): {
-  ledger: HorseTournamentUtilityCandidateLedger;
-  icmError: number;
-  methods: Set<IcmMethod>;
-} | null {
+}): CandidateEvaluation {
   const chipMoment = { sum: 0, square: 0 };
   const payoutMoment = { sum: 0, square: 0 };
   const bountyMoment = { sum: 0, square: 0 };
@@ -1126,7 +1157,9 @@ function evaluateCandidate(args: {
       sampleIndex: index,
       payoutWeight: args.payoutWeight,
     });
-    if (!branch || branch.conservationError > EPS) return null;
+    if (!branch || branch.conservationError > EPS) {
+      return { ledger: null, unavailableReason: 'candidate_settlement' };
+    }
     const icm = args.estimate(branch.vector);
     const option = optionValue(
       args.input,
@@ -1136,7 +1169,7 @@ function evaluateCandidate(args: {
       branch.heroFinishedPaid,
       args.estimate
     );
-    if (!option) return null;
+    if (!option) return { ledger: null, unavailableReason: 'recovery_option' };
     const payout = icm.payout + branch.realizedPayoutPct;
     const bounty = branch.bountyWonPct - branch.bountyDeniedPct;
     const utility = payout + bounty + option.value;
@@ -1186,7 +1219,7 @@ function evaluateCandidate(args: {
     sidePotCount,
     stackConservationError: conservationError,
   };
-  return { ledger, icmError, methods };
+  return { ledger, icmError, methods, unavailableReason: null };
 }
 
 function strongestMethod(methods: Set<IcmMethod>): IcmMethod {
@@ -1229,13 +1262,16 @@ function terminalForHero(
   return !input.opponents.some((opponent) => opponent.actsAfterHero);
 }
 
-export function evaluateTournamentUtility(input: TournamentUtilityInput): {
-  decision: HorseDecision;
-  ledger: HorseTournamentUtilityLedger;
-} | null {
-  if (!validateInput(input)) return null;
+export function evaluateTournamentUtilityDetailed(
+  input: TournamentUtilityInput
+): TournamentUtilityEvaluation {
+  if (!validateInput(input)) {
+    return { result: null, unavailableReason: 'invalid_input' };
+  }
   const actionCandidates = buildTournamentActionCandidates(input);
-  if (actionCandidates.length === 0) return null;
+  if (actionCandidates.length === 0) {
+    return { result: null, unavailableReason: 'no_action_candidates' };
+  }
   const field = buildField(input);
   if (
     field.heroIndex < 0 ||
@@ -1249,7 +1285,7 @@ export function evaluateTournamentUtility(input: TournamentUtilityInput): {
     field.aggregateReconciliationErrorChips > EPS ||
     !Number.isFinite(field.conservationTarget)
   ) {
-    return null;
+    return { result: null, unavailableReason: 'field_reconciliation' };
   }
 
   const payoutWeight = payoutPoolWeight(input);
@@ -1291,24 +1327,31 @@ export function evaluateTournamentUtility(input: TournamentUtilityInput): {
     calibrated.calibrationError > MAX_EQUITY_CALIBRATION_ERROR ||
     calibrated.effectiveSamples < MIN_EFFECTIVE_OUTCOMES
   ) {
-    return null;
+    return { result: null, unavailableReason: 'sample_calibration' };
   }
-  const evaluated = actionCandidates
-    .map((candidate) =>
-      evaluateCandidate({
-        input,
-        candidate,
-        field,
-        sampleWeights: calibrated.weights,
-        effectiveSamples: calibrated.effectiveSamples,
-        estimate,
-        payoutWeight,
-      })
-    )
-    .filter(
-      (result): result is NonNullable<ReturnType<typeof evaluateCandidate>> => result !== null
-    );
-  if (operationBudgetHit || evaluated.length !== actionCandidates.length) return null;
+  const candidateEvaluations = actionCandidates.map((candidate) =>
+    evaluateCandidate({
+      input,
+      candidate,
+      field,
+      sampleWeights: calibrated.weights,
+      effectiveSamples: calibrated.effectiveSamples,
+      estimate,
+      payoutWeight,
+    })
+  );
+  if (operationBudgetHit) {
+    return { result: null, unavailableReason: 'operation_budget' };
+  }
+  const failedCandidate = candidateEvaluations.find(
+    (evaluation): evaluation is CandidateEvaluationFailure => evaluation.unavailableReason !== null
+  );
+  if (failedCandidate) {
+    return { result: null, unavailableReason: failedCandidate.unavailableReason };
+  }
+  const evaluated = candidateEvaluations.filter(
+    (evaluation): evaluation is CandidateEvaluationSuccess => evaluation.unavailableReason === null
+  );
 
   const ranked = evaluated.slice().sort((left, right) => {
     const utility = right.ledger.combinedUtility - left.ledger.combinedUtility;
@@ -1324,7 +1367,9 @@ export function evaluateTournamentUtility(input: TournamentUtilityInput): {
   const baselineCandidate = evaluated.find((result) =>
     sameDecision(result.ledger, input.baseline)
   )?.ledger;
-  if (!baselineCandidate) return null;
+  if (!baselineCandidate) {
+    return { result: null, unavailableReason: 'baseline_not_modeled' };
+  }
   let baselineRetainedForUncertainty = false;
   let baselineRetainedForContinuation = false;
   if (!sameDecision(selected, input.baseline) && !selected.terminalForHero) {
@@ -1413,5 +1458,12 @@ export function evaluateTournamentUtility(input: TournamentUtilityInput): {
     componentReconciliationError: reconciliationError,
     candidates: evaluated.map((item) => item.ledger),
   };
-  return { decision, ledger };
+  return { result: { decision, ledger }, unavailableReason: null };
+}
+
+export function evaluateTournamentUtility(input: TournamentUtilityInput): {
+  decision: HorseDecision;
+  ledger: HorseTournamentUtilityLedger;
+} | null {
+  return evaluateTournamentUtilityDetailed(input).result;
 }

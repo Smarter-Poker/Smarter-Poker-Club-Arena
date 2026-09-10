@@ -2984,6 +2984,29 @@ export class GameServer {
       uptime: Math.floor((Date.now() - this.startTime) / 1000),
       activeTables: this.tableEngines.size,
       activeTournaments: this.tournamentEngines.size,
+      // Spin launches the atomic authority refused and the engine parked
+      // (2026-09-10, tournament/spinLaunchParking.ts). Same numbers as the
+      // poker_spin_launches_parked* gauges, plus the ids and reasons so the
+      // operator reading /health can go straight to the row.
+      spinLaunchParks: (() => {
+        const m = spinLaunchParks.metrics(now);
+        return {
+          count: m.parked,
+          terminal: m.terminal,
+          oldestAgeMs: m.oldestAgeMs,
+          parked: spinLaunchParks
+            .snapshot(now)
+            .slice(0, 20)
+            .map((p) => ({
+              tournamentId: p.tournamentId,
+              reason: p.reason,
+              kind: p.kind,
+              strikes: p.strikes,
+              parkedUntil: new Date(p.until).toISOString(),
+              ageMs: now - p.since,
+            })),
+        };
+      })(),
       totalHandsDealt: totalHands,
       telemetry: {
         avgHandDurationMs,
@@ -3149,6 +3172,26 @@ export class GameServer {
       // EQUALITY the Spin format is sold on, and watch the punctuality of
       // the wheel that sells it. See services/SpinMetrics.ts.
       ...this.spinMetrics.toPrometheus(),
+      // ── PARKED SPIN LAUNCHES (2026-09-10) ────────────────────────────
+      // A Spin whose draw the atomic authority refused for a terminal
+      // reason is parked instead of retried every second
+      // (tournament/spinLaunchParking.ts). Three paid seats are waiting on
+      // every one of these, so the count and the age of the oldest are on
+      // the scrape: an operator sees a parked Spin without reading logs.
+      ...(() => {
+        const parks = spinLaunchParks.metrics(now);
+        return [
+          '# HELP poker_spin_launches_parked Spin launches inside a park window right now because fn_spin_draw_and_settle_atomic refused the draw; each one holds three paid seats',
+          '# TYPE poker_spin_launches_parked gauge',
+          `poker_spin_launches_parked ${parks.parked}`,
+          '# HELP poker_spin_launches_parked_terminal Of the parked launches, those refused for a reason only a data change can lift',
+          '# TYPE poker_spin_launches_parked_terminal gauge',
+          `poker_spin_launches_parked_terminal ${parks.terminal}`,
+          '# HELP poker_spin_launch_park_oldest_age_ms Milliseconds since the longest-parked launch was first refused; 0 when nothing is parked',
+          '# TYPE poker_spin_launch_park_oldest_age_ms gauge',
+          `poker_spin_launch_park_oldest_age_ms ${parks.oldestAgeMs}`,
+        ];
+      })(),
       // ── REPLICATION OBSERVABILITY (2026-09-04) ───────────────────────
       // How far behind the realtime replication slot is, in bytes, per slot.
       // See services/ReplicationMetrics.ts.
@@ -4669,6 +4712,7 @@ export class GameServer {
     while (this.directAdmissionIsCurrent(generation)) {
       try {
         // Find REGISTERING tournaments ready to start
+        const registeringReadAt = Date.now();
         const { data: registering, error: registeringErr } = await supabase
           .from('tournaments')
           .select(
@@ -4977,6 +5021,12 @@ export class GameServer {
             ) {
               continue;
             }
+            /* A parked launch is not a stall this watchdog can cure: the
+               front door would refuse the force-start anyway, and reporting
+               "force-starting" every stall window for a game the authority
+               has refused would be a lie in Sentry. The clock is left
+               running, so the pass after the park ends acts at once. */
+            if (spinLaunchParks.isParked(id, stallNow)) continue;
 
             const held = this.tournamentEngines.get(id);
             if (held && !held.isRunning()) {
@@ -5076,11 +5126,16 @@ export class GameServer {
         // The ramp map only ever holds tournaments still in REGISTERING.
         // Without this it grows by every event the engine has ever seen and
         // is never freed for the life of the process.
-        if (this.lastMttRampAt.size > 0) {
+        if (this.lastMttRampAt.size > 0 || spinLaunchParks.size > 0) {
           const stillRegistering = new Set((registering || []).map((r) => String(r.id)));
           for (const id of this.lastMttRampAt.keys()) {
             if (!stillRegistering.has(id)) this.lastMttRampAt.delete(id);
           }
+          // The park registry is bounded the same way (2026-09-10): a park
+          // gates a 'start', and a Spin that has left REGISTERING (RUNNING,
+          // COMPLETED, CANCELLED) can never be started again. Only entries
+          // older than this pass's board read are judged by it.
+          spinLaunchParks.retain(stillRegistering, registeringReadAt);
         }
 
         // Clean up completed tournaments

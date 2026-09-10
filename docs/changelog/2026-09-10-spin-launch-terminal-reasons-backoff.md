@@ -101,3 +101,50 @@ this change. A transient refusal: 3 calls then 5 s, 3 then 10 s, 3 then 20 s.
 - The engine still never refunds or cancels on a terminal reason. Parking plus
   the alert is the whole action; a money decision is a migration with a
   receipt (CLAUDE.md 10.9).
+
+## Review pass (same day, same branch)
+
+Line-by-line review of the first commit; each finding fixed here, with a test.
+
+- `spinLaunchParking.ts` (registry): nothing ever dropped the entry of a
+  tournament that later left REGISTERING. `forgetIdle` ran only inside
+  `park()` and only after the entry had been idle for twice the cap, so a
+  Spin cancelled or completed while parked stayed in the map until some
+  other tournament's park swept it. Added `retain(stillRegistering, readAt)`;
+  the main discovery loop calls it with the REGISTERING board it just read
+  (the same place `lastMttRampAt` is pruned). An entry written after the read
+  is kept, so a Spin created and refused inside one pass is not un-parked by
+  a board that predates it.
+- `spinLaunchParking.ts` (alert): `deps.raiseAlert` was awaited unwrapped.
+  `raiseFinancialAlert` never throws by contract, but the loop takes the
+  function by injection; a rejection would have escaped into `start()` as an
+  unhandled failure of a launch holding three paid seats. Wrapped; a failed
+  alert is reported under `Tournament.spin_launch_parked_alert_failed` and
+  the park stands.
+- `GameServer.ts` (stall watchdog): the fully-paid stall watchdog reported
+  `seat_first_fully_paid_never_started` ("force-starting") once per stall
+  window for a parked id, then had its start refused at the front door. It
+  now skips a parked id without touching its clock, so the first pass after
+  the park ends acts at once.
+- Observability: `/metrics` gains `poker_spin_launches_parked`,
+  `poker_spin_launches_parked_terminal` and
+  `poker_spin_launch_park_oldest_age_ms` (age measured from the streak's
+  first strike, not its latest park); `/health` gains `spinLaunchParks`
+  with the same numbers plus up to twenty ids with reason, kind, strikes and
+  `parkedUntil`. An operator sees a parked Spin without reading logs.
+
+Checked and left as is: every reason string in the live
+`fn_spin_draw_and_settle_atomic` body (read again via `pg_get_functiondef`,
+twelve reasons) is in exactly one of the two sets; the front door gates only
+`'start'`, and the registry is written only from the Spin branch of
+`start()`, so a non-Spin admission is never refused; jitter is subtracted
+from a cap-clamped base, so no park exceeds fifteen minutes; the registry is
+module-level, so it survives the stop-and-rebuild of the manager; only the
+leader runs the launch path, so leader and standby do not park independently.
+
+Verified: `cd server && npx tsc --noEmit` clean; `spinLaunchParking.test.ts`
+(30 tests), the five engine pins, `spinsAreObservable.law`,
+`seatFirstStartStall`, `DirectEngineRecovery.guard`,
+`theFleetNobodyIsRunning`, and in the client tree `spinEngineWiring`,
+`spinNullMultiplierRepair`, `humanIsNeverLeftWaiting`, `GameServerAPI`: all
+green.

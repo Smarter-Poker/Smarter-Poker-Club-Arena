@@ -211,6 +211,26 @@ describe('a terminal refusal', () => {
     expect(h.warns[0]).toContain('projected_spin_draw_has_no_funding_proof');
   });
 
+  it('stands the park up even when the alert itself fails, and reports the failure instead of throwing', async () => {
+    const h = harness([refused('spin_field_unproven')]);
+    const deps = {
+      ...h.deps(),
+      raiseAlert: async () => {
+        throw new Error('alerts table unreachable');
+      },
+    };
+    const result = await proveSpinDrawWithParking(deps);
+
+    expect(result.ok).toBe(false);
+    expect(h.parks.isParked(h.id, h.now())).toBe(true);
+    expect(h.parks.get(h.id)?.alertedReason).toBe('spin_field_unproven');
+    expect(h.reports.map((r) => r.context)).toEqual([
+      'Tournament.spin_draw_refused_terminal',
+      'Tournament.spin_launch_parked_alert_failed',
+    ]);
+    expect(h.reports[1].message).toContain('alerts table unreachable');
+  });
+
   it('is not retried inside the window, and the second park after it doubles without a second alert', async () => {
     const h = harness([
       refused('spin_rule_manifest_invalid'),
@@ -437,6 +457,46 @@ describe('the registry', () => {
     expect(parks.get('t1')).toBeNull();
   });
 
+  it('drops a park whose tournament has left the REGISTERING board, and keeps one written after the read', () => {
+    const parks = new SpinLaunchParkRegistry();
+    const readAt = 1_000_000;
+    parks.park('completed', 'invalid_spin_contract', 'terminal', readAt - 10, () => 0);
+    parks.park('cancelled', 'spin_field_unproven', 'terminal', readAt - 10, () => 0);
+    parks.park('still-registering', 'spin_field_unproven', 'terminal', readAt - 10, () => 0);
+    // Parked AFTER the board was read: the board it is absent from is older
+    // than the park, so it is not judged by it.
+    parks.park('created-mid-pass', 'invalid_spin_contract', 'terminal', readAt + 10, () => 0);
+
+    const dropped = parks.retain(new Set(['still-registering']), readAt);
+
+    expect(dropped).toBe(2);
+    expect(parks.get('completed')).toBeNull();
+    expect(parks.get('cancelled')).toBeNull();
+    expect(parks.get('still-registering')).not.toBeNull();
+    expect(parks.get('created-mid-pass')).not.toBeNull();
+    expect(parks.size).toBe(2);
+  });
+
+  it('counts the parked launches and ages the oldest streak from its first strike, for /metrics and /health', () => {
+    const parks = new SpinLaunchParkRegistry();
+    expect(parks.metrics(0)).toEqual({ parked: 0, terminal: 0, oldestAgeMs: 0 });
+
+    parks.park('t1', 'invalid_spin_contract', 'terminal', 1_000, () => 0);
+    parks.park('t2', 'launch_lease_lost', 'transient', 2_000, () => 0);
+    // A second strike on t1 renews the window but not the streak's start.
+    parks.park('t1', 'invalid_spin_contract', 'terminal', 31_000, () => 0);
+
+    expect(parks.metrics(32_000)).toEqual({ parked: 1, terminal: 1, oldestAgeMs: 31_000 });
+    // Inside both windows.
+    expect(parks.metrics(3_000)).toEqual({ parked: 2, terminal: 1, oldestAgeMs: 2_000 });
+    // Every window closed: nothing is parked, nothing is old.
+    expect(parks.metrics(200_000)).toEqual({ parked: 0, terminal: 0, oldestAgeMs: 0 });
+    // An ok clears the streak, so the age starts over on the next strike.
+    parks.clear('t1');
+    parks.park('t1', 'invalid_spin_contract', 'terminal', 300_000, () => 0);
+    expect(parks.metrics(300_500).oldestAgeMs).toBe(500);
+  });
+
   it('reports only live parks in its snapshot', () => {
     const parks = new SpinLaunchParkRegistry();
     parks.park('t1', 'invalid_spin_contract', 'terminal', 0, () => 0);
@@ -488,6 +548,53 @@ describe('the wiring', () => {
     expect(gate).toBeGreaterThan(lane);
     expect(gate).toBeLessThan(stop);
     expect(stop).toBeLessThan(start);
+  });
+
+  it('the main discovery loop bounds the registry to the REGISTERING board it just read', () => {
+    const loop = SERVER.indexOf('private async discoverTournaments(');
+    expect(loop).toBeGreaterThan(0);
+    const readAt = SERVER.indexOf('const registeringReadAt = Date.now();', loop);
+    const read = SERVER.indexOf(".eq('status', 'REGISTERING')", loop);
+    const retain = SERVER.indexOf(
+      'spinLaunchParks.retain(stillRegistering, registeringReadAt);',
+      loop
+    );
+    expect(readAt).toBeGreaterThan(loop);
+    expect(readAt).toBeLessThan(read);
+    expect(retain).toBeGreaterThan(read);
+  });
+
+  it('the fully-paid stall watchdog leaves a parked id alone without dropping its clock', () => {
+    const watchdog = SERVER.indexOf("'GameServer.seat_first_fully_paid_never_started'");
+    expect(watchdog).toBeGreaterThan(0);
+    const gate = SERVER.lastIndexOf(
+      'if (spinLaunchParks.isParked(id, stallNow)) continue;',
+      watchdog
+    );
+    const rearm = SERVER.lastIndexOf('this.seatFirstFullSince.set(id, stallNow);', watchdog);
+    expect(gate).toBeGreaterThan(0);
+    // The gate sits after the clock is armed and before the force-start is reported.
+    expect(gate).toBeGreaterThan(rearm);
+    expect(watchdog - gate).toBeLessThan(1500);
+  });
+
+  it('an operator can see a parked Spin on /metrics and /health without reading logs', () => {
+    const scrape = SERVER.indexOf('getPrometheusMetrics(): string {');
+    expect(scrape).toBeGreaterThan(0);
+    for (const gauge of [
+      'poker_spin_launches_parked',
+      'poker_spin_launches_parked_terminal',
+      'poker_spin_launch_park_oldest_age_ms',
+    ]) {
+      expect(SERVER.indexOf(`# TYPE ${gauge} gauge`, scrape)).toBeGreaterThan(scrape);
+      expect(SERVER.indexOf(`\`${gauge} \${parks.`, scrape)).toBeGreaterThan(scrape);
+    }
+    const status = SERVER.indexOf('getStatus() {');
+    expect(status).toBeGreaterThan(0);
+    const field = SERVER.indexOf('spinLaunchParks: (() => {', status);
+    expect(field).toBeGreaterThan(status);
+    expect(field).toBeLessThan(scrape);
+    expect(SERVER.slice(field, field + 900)).toContain('oldestAgeMs: m.oldestAgeMs');
   });
 
   it('the one admission front door refuses a parked start, so the watchdog and the main loop hold too', () => {

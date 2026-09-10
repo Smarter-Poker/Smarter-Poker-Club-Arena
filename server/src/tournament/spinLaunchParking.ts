@@ -35,9 +35,17 @@
  * launch the authority refuses is a game somebody has to look at, and the
  * loop that was hammering it was the one thing hiding that.
  *
- * The registry is in-process. An engine restart forgets every park, which is
- * harmless: the worst case is one fresh attempt per tournament at boot, after
- * which the schedule resumes from its first step.
+ * The registry is in-process and module-level, so it survives the manager
+ * being stopped and rebuilt (which is exactly the cycle it exists to slow).
+ * An engine restart forgets every park, which is harmless: the worst case is
+ * one fresh attempt per tournament at boot, after which the schedule resumes
+ * from its first step. Only the leader runs the launch path (a standby claims
+ * nothing), so there is one registry that matters at a time.
+ *
+ * It is bounded two ways: an idle entry is forgotten after twice the cap, and
+ * the main discovery loop drops every entry whose tournament has left the
+ * REGISTERING board (`retain`). The count and the oldest age are on /metrics
+ * as poker_spin_launches_parked* and on /health as `spinLaunchParks`.
  */
 
 /** Refusals of fn_spin_draw_and_settle_atomic that only a data change can lift. */
@@ -122,8 +130,19 @@ export interface SpinLaunchPark {
   until: number;
   /** When this entry was last written (epoch ms). */
   at: number;
+  /** When the current streak began: the first strike since the last ok (epoch ms). */
+  since: number;
   /** The reason the one financial alert was raised for, if any. */
   alertedReason: string | null;
+}
+
+export interface SpinLaunchParkMetrics {
+  /** Tournaments inside a park window right now. */
+  parked: number;
+  /** Of those, how many were parked for a terminal reason. */
+  terminal: number;
+  /** Age of the longest-running streak among them, ms; 0 when nothing is parked. */
+  oldestAgeMs: number;
 }
 
 export interface SpinLaunchParkOutcome {
@@ -175,6 +194,7 @@ export class SpinLaunchParkRegistry {
       strikes,
       until,
       at: now,
+      since: previous?.since ?? now,
       alertedReason: previous?.alertedReason ?? null,
     };
     this.parks.set(tournamentId, park);
@@ -197,6 +217,45 @@ export class SpinLaunchParkRegistry {
   /** The authority answered ok: the streak is over. */
   clear(tournamentId: string): boolean {
     return this.parks.delete(tournamentId);
+  }
+
+  /**
+   * Drop every entry whose tournament is no longer on the REGISTERING board.
+   * A park only ever gates a 'start', and a row that has moved on (RUNNING,
+   * COMPLETING, COMPLETED, CANCELLED) can never be started again, so its
+   * entry is dead weight: without this the map grows by every tournament the
+   * authority ever refused and is freed only when a LATER park happens to
+   * sweep it. `readAt` is when the caller read the board; an entry written
+   * after that read is kept, because the board it was absent from is older
+   * than the park.
+   */
+  retain(stillRegistering: ReadonlySet<string>, readAt: number = Date.now()): number {
+    let dropped = 0;
+    for (const [id, park] of this.parks) {
+      if (park.at < readAt && !stillRegistering.has(id)) {
+        this.parks.delete(id);
+        dropped += 1;
+      }
+    }
+    return dropped;
+  }
+
+  /**
+   * The two numbers an operator needs to see a parked Spin without reading
+   * logs: how many launches are inside a park window right now, and how long
+   * the oldest of them has been in its streak (ms since its first strike).
+   */
+  metrics(now: number = Date.now()): SpinLaunchParkMetrics {
+    let parked = 0;
+    let terminal = 0;
+    let oldestAgeMs = 0;
+    for (const park of this.parks.values()) {
+      if (park.until <= now) continue;
+      parked += 1;
+      if (park.kind === 'terminal') terminal += 1;
+      oldestAgeMs = Math.max(oldestAgeMs, now - park.since);
+    }
+    return { parked, terminal, oldestAgeMs };
   }
 
   /** Every tournament currently inside a park window. */
@@ -350,18 +409,30 @@ export async function proveSpinDrawWithParking<T>(
       );
     }
     if (parks.claimAlert(deps.tournamentId, lastReason)) {
-      await deps.raiseAlert(
-        'critical',
-        SPIN_LAUNCH_PARKED_ALERT_SOURCE,
-        `Spin ${short} cannot launch: fn_spin_draw_and_settle_atomic refused with ${lastReason}. Three paid seats are waiting; the engine has parked the launch and will not retry faster than its backoff.`,
-        {
-          tournament_id: deps.tournamentId,
-          launch_id: deps.launchId,
-          reason: lastReason,
-          strikes: park.strikes,
-          parked_until: untilIso,
-        }
-      );
+      /* raiseFinancialAlert never throws by contract, but this is the launch
+         path of a game holding three paid seats: an alert that failed to
+         send must not turn a parked launch into an unhandled rejection, and
+         the park stands either way. */
+      try {
+        await deps.raiseAlert(
+          'critical',
+          SPIN_LAUNCH_PARKED_ALERT_SOURCE,
+          `Spin ${short} cannot launch: fn_spin_draw_and_settle_atomic refused with ${lastReason}. Three paid seats are waiting; the engine has parked the launch and will not retry faster than its backoff.`,
+          {
+            tournament_id: deps.tournamentId,
+            launch_id: deps.launchId,
+            reason: lastReason,
+            strikes: park.strikes,
+            parked_until: untilIso,
+          }
+        );
+      } catch (alertErr: any) {
+        deps.reportError(
+          alertErr instanceof Error ? alertErr : new Error(String(alertErr)),
+          'Tournament.spin_launch_parked_alert_failed',
+          { tournamentId: deps.tournamentId, reason: lastReason }
+        );
+      }
     }
   } else {
     deps.reportError(

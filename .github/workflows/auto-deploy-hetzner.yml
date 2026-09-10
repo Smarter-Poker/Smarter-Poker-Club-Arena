@@ -1229,9 +1229,19 @@ jobs:
             CONTROL=/usr/local/lib/club-arena/engine-control
             exec 9>/var/lock/club-arena-engine-up.lock
             flock -w 30 9
+            # Revocation can be durably committed even when its append-only
+            # audit response fails. Recovery must run before propagating that
+            # audit failure; never leave a cancelled candidate serving until a
+            # later timer happens to notice it.
+            ABORT_RC=0
+            set +e
             \$CONTROL/engine-release-seal.py abort --run-id '${{ github.run_id }}'
+            ABORT_RC=\$?
+            set -e
             ENGINE_SUPERVISOR_LOCK_HELD=1 ENGINE_CONTROL_DIR=\$CONTROL CONTAINER='$CONTAINER' \
-              \$CONTROL/engine-supervisor.sh"
+              \$CONTROL/engine-supervisor.sh
+            [ "\$ABORT_RC" -eq 0 ] \
+              || { echo 'release authority was reconciled, but its abort audit failed'; exit "\$ABORT_RC"; }"
 
       - name: Retention — keep the last 5 builds, never the rollback target
         if: success() && steps.dedupe.outputs.skip != 'true' && steps.drain.outputs.skip != 'true'

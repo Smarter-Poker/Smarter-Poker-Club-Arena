@@ -752,6 +752,34 @@ exit 0
       runSeal(['attest-commit', '--sha', B_SHA, '--image-id', B_IMAGE, '--run-id', '305']).stdout
     ).toBe(`2 ${B_SHA} ${B_IMAGE} 305`);
   });
+
+  it('durably revokes a candidate even if the abort audit response is uncertain', () => {
+    runSeal([
+      'bootstrap-running',
+      '--container',
+      'club-arena-engine',
+      ...auditArgs('306', 'bootstrap existing production'),
+    ]);
+    runSeal([
+      'prepare',
+      '--sha',
+      B_SHA,
+      '--image',
+      'candidate-ref',
+      '--mode',
+      'deploy',
+      '--repo',
+      sandbox,
+      ...auditArgs('307', 'normal deployment from origin main'),
+    ]);
+
+    const auditPath = join(sandbox, 'state', 'audit.jsonl');
+    rmSync(auditPath, { force: true });
+    mkdirSync(auditPath);
+    const uncertain = runSeal(['abort', '--run-id', '307']);
+    expect(uncertain.status).toBe(1);
+    expect(state().pending).toBeNull();
+  });
 });
 
 describe('every host mutation path obeys the durable release authority', () => {
@@ -1044,6 +1072,12 @@ describe('every host mutation path obeys the durable release authority', () => {
     expect(guarantee).toContain("steps.seal.outcome == 'success'");
     expect(guarantee.indexOf('engine-release-seal.py abort')).toBeLessThan(
       guarantee.indexOf('engine-supervisor.sh')
+    );
+    expect(guarantee.indexOf('set +e')).toBeLessThan(
+      guarantee.indexOf('engine-release-seal.py abort')
+    );
+    expect(guarantee.indexOf('engine-supervisor.sh')).toBeLessThan(
+      guarantee.indexOf('release authority was reconciled')
     );
     expect(guarantee).toContain('ENGINE_SUPERVISOR_LOCK_HELD=1');
     expect(guarantee).not.toMatch(/ENGINE_RELEASE_TOKEN|IMAGE=.*\$SHA|engine-up\.sh/);

@@ -56,3 +56,32 @@ Keep K02 hand snapshots intact: an in-flight hand uses the blind snapshot it alr
 - Actual manager composition: delayed successful RPC, delayed refusal, unknown response resolved by receipt, local lifecycle retired during await, newer response arriving before an older replay, break before/after advance, and restart with an overdue canonical anchor.
 - Actual approved short-format matrix from the resolver lane remains unchanged, and generic MTT duration/acceleration behavior is captured before adding any database due-time calculation.
 - Exact database catalog postconditions, normal engine publication/adoption, and observed live table/level/anchor agreement are required before K01 can close.
+
+## Review Addendum: Membership And Restart Boundaries
+
+The current `origin/main` review at `0323423b4` includes `5b7469a5c` and `c50dc3abd`. Its lease contract is transaction-lifetime `FOR KEY SHARE`, claimant `FOR UPDATE`, and heartbeat `FOR NO KEY UPDATE`. The word nonblocking refers to heartbeats, not elimination of the transaction lease fence. The live request hook body `ab227471f29f2944ebd64909622b6af7` was read directly and agrees.
+
+A live catalog scan found table membership writers beyond capacity creation. These need the common table trigger boundary and actual execution coverage; naming the parent tournament lock does not serialize all of them:
+
+| Writer                                                                                                             | Membership Effect                                                                                      |
+| ------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
+| `fn_create_seat_first_game_atomic`                                                                                 | Inserts a waiting tournament table.                                                                    |
+| `fn_ensure_late_registration_capacity`                                                                             | Inserts a running table after locking the tournament.                                                  |
+| `fn_seat_late_registrant_before_maintenance_gate`                                                                  | Legacy creation route that can insert another waiting table.                                           |
+| `fn_clear_table_seats`                                                                                             | Can reopen a nonclosed table as waiting.                                                               |
+| `fn_close_empty_tournament_table`                                                                                  | Closes a specific empty tournament table.                                                              |
+| `fn_close_managed_game`                                                                                            | Generic close entry point also needs classification at the actual row.                                 |
+| `atomic_cancel_tournament`, `fn_complete_tournament_terminal`                                                      | Close the complete tournament table set.                                                               |
+| `fn_settle_final_table_deal_atomic`, `fn_settle_tournament_places_atomic`, `fn_settle_tournament_places_by_ruling` | Settlement closures of tournament tables.                                                              |
+| `fn_settle_satellite_tournament_pre_money_path_gate`                                                               | Closes the captured satellite table cohort.                                                            |
+| `fn_reconcile_tournament_denormals`                                                                                | Closes duplicate empty tables.                                                                         |
+| `fn_table_lifecycle_pass`                                                                                          | Contains waiting/reopen writes; its tournament exclusion must be verified in the actual function body. |
+| `TournamentManagerBase.createTablesAndSeatPlayers`                                                                 | Direct server table insertion, including rebuilds.                                                     |
+
+The scan is evidence for these candidates, not an exhaustive dynamic SQL proof. Generic table writers that do not mention `tournament_id` still reach the same schema trigger when their actual row belongs to an activated tournament. `fn_union_close_club_tables_for_join` explicitly limits its close to `tournament_id IS NULL`, so that particular union close path is excluded from this clock contract.
+
+Activation cannot be deleted or downgraded by ordinary service work, manager replacement, or old-engine rollback. A new lease generation adopts the already-active contract; it cannot restore legacy direct writers. Replays of an old generation's operation are resolved through a separate read-only receipt resolver authorized by the current lease generation. Resolving an outcome never re-executes the old write, and the old receipt's generation/payload remain immutable. The old manager cannot use this read path after losing its own lease.
+
+A `40001` from the membership trigger aborts the complete containing operation. Local tests must run actual paid entry/capacity composition and prove that wallet debit, roster, receipt, table, and wake all roll back. The exact originating operation identity must survive the retry. A generic unbounded transport retry is not acceptable.
+
+Finally, add-on and synchronized pause overlap must be composed with already-credited global maintenance intervals. Incrementing the revision when global thaw moves the anchor is necessary but does not alone prevent double credit. The proposed pause/resume function must subtract maintenance credit already applied to the same interval and level, using the existing thaw target receipt for that tournament. A blanket `app.freeze_bypass` exception without the exact maintenance provenance is insufficient. The concrete current maintenance writer integration requires review before any atomic clock SQL is created.

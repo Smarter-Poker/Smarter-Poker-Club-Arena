@@ -18,6 +18,11 @@ import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { fetchAllRows } from './supabase/pagination.js';
 import { IN_LIST_CHUNK, selectInChunks } from './supabase/chunkedIn.js';
 import { reportError } from './errorReporter.js';
+import {
+  emptySeatFirstPrecheckTally,
+  recordSeatFirstPrecheck,
+  type SeatFirstPrecheckTally,
+} from './seatFirstPrecheckMetrics.js';
 import nodeCrypto from 'node:crypto';
 import {
   BUY_IN_LADDER,
@@ -1669,24 +1674,48 @@ export function seatFirstNoteTableFull(ledger: SeatFirstSeatLedger): void {
   ledger.rpcSaidFull = true;
 }
 
+/**
+ * A SKIP IS VERIFIED BEFORE IT IS TAKEN.
+ *
+ * The rows behind the ledger were read before the candidate pickers ran and
+ * before every RPC call ahead of this one in the loop, and each of those calls
+ * spends a mean 590 ms in the lock queue. By the third candidate the ledger is
+ * a second old. A horse that left its seat in that second, or a seat that
+ * opened after the RPC said `table_full`, would read as a skip and stay empty
+ * until the next five-second pass - where the RPC would have seated it.
+ *
+ * So the ledger never skips on the rows it was built from. When the pre-check
+ * says skip, the caller re-reads the same rows (a primary-key-indexed read of
+ * at most a handful of rows, no advisory lock) and folds them in here; the
+ * pre-check is then asked again against rows that are milliseconds old, and
+ * only that second answer can skip. A stale row therefore falls through to
+ * the RPC. This costs one cheap read per skip in place of one locked call.
+ *
+ * The RPC's own `table_full` yields to a fresh read that shows a free seat in
+ * 1..capacity: the read is newer than the answer. It stands when the capacity
+ * is unknown, because then the rows cannot say whether the table is full and
+ * the RPC's word under its lock is the better evidence.
+ */
+export function seatFirstLedgerRefresh(
+  ledger: SeatFirstSeatLedger,
+  freshRows: Array<{ user_id?: string | null; seat_number?: number | null }> | null | undefined
+): void {
+  const fresh = seatFirstSeatLedger(freshRows, undefined, undefined);
+  ledger.seatedUsers = fresh.seatedUsers;
+  ledger.occupiedSeats = fresh.occupiedSeats;
+  if (ledger.capacity !== null) ledger.rpcSaidFull = false;
+}
+
 /** The grep-able production evidence for the skip. One line per fill pass that had candidates. */
 export function seatFirstPrecheckLogLine(
   tournamentId: string,
-  tally: {
-    rpcCalled: number;
-    skippedAlreadySeated: number;
-    skippedTableFull: number;
-    seated: number;
-    rpcAlreadySeated: number;
-    rpcTableFull: number;
-    rpcRefused: number;
-    rpcOtherNoop: number;
-  }
+  tally: SeatFirstPrecheckTally
 ): string {
   return (
     `[TournamentRecurring] seat-first-precheck ${tournamentId.slice(0, 8)}: ` +
     `rpc_called=${tally.rpcCalled} skipped_already_seated=${tally.skippedAlreadySeated} ` +
-    `skipped_table_full=${tally.skippedTableFull} seated=${tally.seated} ` +
+    `skipped_table_full=${tally.skippedTableFull} verify_reads=${tally.verifyReads} ` +
+    `seated=${tally.seated} ` +
     `rpc_already_seated=${tally.rpcAlreadySeated} rpc_table_full=${tally.rpcTableFull} ` +
     `rpc_refused=${tally.rpcRefused} rpc_other_noop=${tally.rpcOtherNoop}`
   );
@@ -5345,16 +5374,7 @@ export class TournamentRecurringService {
             tableMaxPlayers,
             (tRow as { max_players?: number | null } | null)?.max_players ?? null
           );
-          const tally = {
-            rpcCalled: 0,
-            skippedAlreadySeated: 0,
-            skippedTableFull: 0,
-            seated: 0,
-            rpcAlreadySeated: 0,
-            rpcTableFull: 0,
-            rpcRefused: 0,
-            rpcOtherNoop: 0,
-          };
+          const tally = emptySeatFirstPrecheckTally();
 
           for (const horse of candidates) {
             // The slack above is there to absorb REFUSALS, not to seat extras: a
@@ -5370,7 +5390,30 @@ export class TournamentRecurringService {
                still decides for everybody else. A skipped already_seated is not
                a covered seat (it never was, see the note under the RPC result
                below), so the loop moves on to the next candidate. */
-            const precheck = seatFirstSeatPrecheck(ledger, horse);
+            let precheck = seatFirstSeatPrecheck(ledger, horse);
+            if (precheck !== 'call') {
+              /* VERIFY BEFORE SKIPPING (see seatFirstLedgerRefresh). The rows
+                 behind that answer are as old as every call made ahead of this
+                 one. Re-read them - same index, same predicate, no lock - and
+                 ask again. A seat that opened in the meantime goes to the RPC
+                 on THIS pass, as it always did; only a skip the fresh rows
+                 still support is taken. A failed re-read cannot verify
+                 anything, so it does not skip: the RPC decides. */
+              precheck = 'call';
+              if (primaryTableId) {
+                tally.verifyReads++;
+                const { data: freshRows, error: freshErr } = await supabase
+                  .from('table_seats')
+                  .select('user_id, seat_number')
+                  .eq('table_id', primaryTableId)
+                  .is('left_at', null)
+                  .limit(1000);
+                if (!freshErr) {
+                  seatFirstLedgerRefresh(ledger, freshRows as typeof liveSeatRows);
+                  precheck = seatFirstSeatPrecheck(ledger, horse);
+                }
+              }
+            }
             if (precheck === 'already_seated') {
               tally.skippedAlreadySeated++;
               continue;
@@ -5447,6 +5490,8 @@ export class TournamentRecurringService {
 
           if (candidates.length > 0) {
             console.log(seatFirstPrecheckLogLine(tournamentId, tally));
+            // The same numbers on /metrics, so the saving is visible without log access.
+            recordSeatFirstPrecheck(tally);
           }
 
           if (added === 0 && candidates.length > 0) {

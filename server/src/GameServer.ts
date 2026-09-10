@@ -48,6 +48,7 @@ import {
 } from './services/TournamentRecurringService.js';
 import { ScheduledTournamentService } from './services/ScheduledTournamentService.js';
 import { TournamentMetrics } from './services/TournamentMetrics.js';
+import { seatFirstPrecheckPrometheusLines } from './services/seatFirstPrecheckMetrics.js';
 import { SpinMetrics } from './services/SpinMetrics.js';
 import { ReplicationMetrics } from './services/ReplicationMetrics.js';
 import {
@@ -3192,6 +3193,13 @@ export class GameServer {
           `poker_spin_launch_park_oldest_age_ms ${parks.oldestAgeMs}`,
         ];
       })(),
+      // ── SEAT-FIRST FILL PRE-CHECK (2026-09-10) ───────────────────────
+      // How many fn_seat_horse_in_seat_first_game calls the fill loop made,
+      // and how many the seat rows made unnecessary. That RPC takes the
+      // platform-wide exclusive lock every hand settlement waits on, so a
+      // skipped call is time off the hand path. Counted in the process because
+      // three services drive the same top-up. See services/seatFirstPrecheckMetrics.ts.
+      ...seatFirstPrecheckPrometheusLines(),
       // ── REPLICATION OBSERVABILITY (2026-09-04) ───────────────────────
       // How far behind the realtime replication slot is, in bytes, per slot.
       // See services/ReplicationMetrics.ts.

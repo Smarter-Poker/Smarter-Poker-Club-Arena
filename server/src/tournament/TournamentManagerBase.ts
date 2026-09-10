@@ -96,6 +96,7 @@ import {
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { horseAddsOnImmediately } from '../services/FreeBuy.js';
 import { tournamentLeaseMonotonicNow } from '../services/tournamentLease.js';
+import { registerTournamentManagerFenceHandler } from '../services/supabase/tournamentManagerFence.js';
 import { bindTournamentDataAuthorityMethods } from '../services/supabase/dataActorContext.js';
 import {
   publicTournamentTableFormat,
@@ -169,6 +170,8 @@ export abstract class TournamentManagerBase {
   private tournamentLeaseProofDeadlineMonotonicMs: number | null;
   private tournamentLeaseExpiryTimer: ReturnType<typeof setTimeout> | null = null;
   private tournamentLeaseAuthorityExpired = false;
+  /** Removes this generation's database-fence stand-down registration. */
+  private unregisterDatabaseFenceHandler: (() => void) | null = null;
   protected running: boolean = false;
   /**
    * Exact ownership of asynchronous manager work.
@@ -421,6 +424,37 @@ export abstract class TournamentManagerBase {
     this.gameServer = gameServer;
     this.tournamentLeaseGeneration = tournamentLeaseGeneration;
     this.tournamentLeaseProofDeadlineMonotonicMs = tournamentLeaseProofDeadlineMonotonicMs;
+    if (tournamentLeaseGeneration) {
+      this.unregisterDatabaseFenceHandler = registerTournamentManagerFenceHandler(
+        { tournamentId, leaseGeneration: tournamentLeaseGeneration },
+        () => this.standDownForDatabaseFence()
+      );
+    }
+  }
+
+  /**
+   * The database answered one of this generation's requests with
+   * TOURNAMENT_MANAGER_FENCED: its lease generation is no longer current there,
+   * whatever the in-process proof still says. That answer is final for this
+   * generation. Fence every async continuation now and tear down; nothing is
+   * re-armed, and no request is repeated. GameServer retires the manager on
+   * its next lease pass because current authority is no longer reported.
+   */
+  standDownForDatabaseFence(): void {
+    if (!this.tournamentLeaseGeneration || this.tournamentLeaseAuthorityExpired) return;
+    this.fenceForTournamentLeaseLoss();
+    reportError(
+      new Error(
+        `Tournament ${this.tournamentId} manager generation ${this.tournamentLeaseGeneration} was fenced by the database and stood down`
+      ),
+      'Tournament.manager_fenced_by_database'
+    );
+    const teardown = this.stop();
+    void teardown.catch((error) =>
+      reportError(error, 'Tournament.database_fence_stop_failed', {
+        tournamentId: this.tournamentId,
+      })
+    );
   }
 
   /** Every dealer owned by this manager carries the same tournament fence. */
@@ -4441,6 +4475,8 @@ export abstract class TournamentManagerBase {
     const lifecycleOperation = this.lifecycleOperation;
     if (this.stopFenceApplied) return lifecycleOperation;
     this.stopFenceApplied = true;
+    this.unregisterDatabaseFenceHandler?.();
+    this.unregisterDatabaseFenceHandler = null;
     return this.applyManagerMutationFence(true);
   }
 

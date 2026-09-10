@@ -4,6 +4,7 @@ import ts from 'typescript';
 import { describe, expect, it, vi } from 'vitest';
 import { spinPostRevealMs } from '../config/spinSpec.js';
 import { readFundedSpinDraw, spinRuleManifest } from './SpinDrawReceipt.js';
+import { SpinLaunchParkRegistry, proveSpinDrawWithParking } from './spinLaunchParking.js';
 
 // Execute the real start fragment, including the RPC loop and the presentation
 // transformation. Only external I/O is stubbed; the booked receipt remains the
@@ -34,8 +35,15 @@ const execute = new Function(
   'TournamentLifecycleAbortedError',
   'tableStateHub',
   'spinPostRevealMs',
+  'proveSpinDrawWithParking',
+  'raiseFinancialAlert',
   compiled
 );
+
+/* The classified draw loop (2026-09-10), with a registry of its own per run
+   so one test's park never leaks into the next. */
+const proveWithFreshRegistry: typeof proveSpinDrawWithParking = (deps) =>
+  proveSpinDrawWithParking({ ...deps, parks: new SpinLaunchParkRegistry() });
 
 function receipt(booked: number) {
   const ruleManifest = spinRuleManifest(1, 1000);
@@ -78,12 +86,14 @@ async function run(drawn: number, booked: number) {
     readFundedSpinDraw,
     'launch',
     vi.fn(),
-    { log: vi.fn() },
+    { log: vi.fn(), warn: vi.fn() },
     null,
     { generation: 1 },
     TestTournamentLifecycleAbortedError,
     { emitEvent: vi.fn() },
-    spinPostRevealMs
+    spinPostRevealMs,
+    proveWithFreshRegistry,
+    vi.fn(async () => ({ persisted: true, alertId: 'alert' }))
   );
   return { patch, rpc };
 }

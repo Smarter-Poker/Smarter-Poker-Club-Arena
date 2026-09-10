@@ -1,0 +1,55 @@
+{
+  "catalog_date_utc": "2026-09-10",
+  "functions": [
+    {
+      "body_md5": "4f921617438bfcfb0b9db32ff490b81d",
+      "signature": "fn_apply_prize_guarantee(uuid,text)"
+    },
+    {
+      "body_md5": "94da16bc96c962220defa690338d75ec",
+      "signature": "fn_ca_apply_prize_guarantee_core(uuid,text)"
+    },
+    {
+      "body_md5": "6684789511427780f35e15b8bf1d9277",
+      "signature": "fn_apply_prize_guarantee_before_atomic_proof(uuid,text)"
+    },
+    {
+      "body_md5": "936fc64feb1ee48cd7d4ea0ac8d2c121",
+      "signature": "fn_ca_autoledger()"
+    },
+    {
+      "body_md5": "9dc93e1a464e6694f588345f19640869",
+      "signature": "fn_cancelled_tournament_evidence_is_immutable()"
+    },
+    {
+      "body_md5": "e6fbb738a0528aa0f32e33d004bf2045",
+      "signature": "fn_terminal_tournament_evidence_is_immutable()"
+    },
+    {
+      "body_md5": "d59358cb9ddfc8f84c48aa2469f68897",
+      "signature": "fn_ca_escrow_on_overlay_leg()"
+    },
+    {
+      "body_md5": "3c9ce32b45c11b7372654c6efa89f667",
+      "signature": "fn_ca_terminal_marker_transition_is_exact(jsonb,jsonb,uuid)"
+    }
+  ],
+  "tables": ["financial_alerts", "union_wallet_transactions", "union_wallets"],
+  "triggers": [
+    "CREATE TRIGGER trg_ca_autoledger AFTER INSERT OR UPDATE OF chip_treasury, chip_pool, promo_balance, insurance_balance ON public.clubs FOR EACH ROW EXECUTE FUNCTION fn_ca_autoledger('chip_treasury=club_treasury', 'chip_pool=club_treasury', 'promo_balance=promo_wallet', 'insurance_balance=insurance_bank')",
+    "CREATE TRIGGER cancelled_tournament_evidence_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.tournament_guarantee_overlays FOR EACH ROW EXECUTE FUNCTION fn_cancelled_tournament_evidence_is_immutable()",
+    "CREATE TRIGGER terminal_tournament_evidence_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.tournament_guarantee_overlays FOR EACH ROW EXECUTE FUNCTION fn_terminal_tournament_evidence_is_immutable()",
+    "CREATE TRIGGER trg_ca_autoledger AFTER INSERT OR UPDATE OF chip_balance, rake_wallet, bbj_wallet, promo_wallet, insurance_wallet, spin_reserve_wallet ON public.union_wallets FOR EACH ROW EXECUTE FUNCTION fn_ca_autoledger('chip_balance=union_bank', 'rake_wallet=union_wallet', 'bbj_wallet=union_wallet', 'promo_wallet=union_wallet', 'insurance_wallet=union_wallet', 'spin_reserve_wallet=union_wallet')",
+    "CREATE TRIGGER cancelled_tournament_evidence_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.chip_ledger FOR EACH ROW EXECUTE FUNCTION fn_cancelled_tournament_evidence_is_immutable()",
+    "CREATE TRIGGER terminal_tournament_evidence_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.chip_ledger FOR EACH ROW EXECUTE FUNCTION fn_terminal_tournament_evidence_is_immutable()",
+    "CREATE TRIGGER zz_ca_escrow_overlay_leg AFTER INSERT ON public.chip_ledger FOR EACH ROW WHEN (((new.to_type = 'prize_liability'::text) AND ((new.category = 'overlay'::text) OR ((new.category = 'correction'::text) AND (new.from_type = ANY (ARRAY['union_bank'::text, 'club_treasury'::text])))))) EXECUTE FUNCTION fn_ca_escrow_on_overlay_leg()"
+  ],
+  "scope": "Exact guarantee wrapper, atomic proof core, legacy bank debit, overlay escrow, autojournal and terminal evidence functions. Existing registration fixture supplies actual entry funding; auth/session/freeze and empty terminal receipt reads are synthetic.",
+  "indexes": [
+    {
+      "indexdef": "CREATE UNIQUE INDEX ux_chip_ledger_idempotency_key ON public.chip_ledger USING btree (idempotency_key) WHERE (idempotency_key IS NOT NULL)",
+      "indexname": "ux_chip_ledger_idempotency_key",
+      "tablename": "chip_ledger"
+    }
+  ]
+}

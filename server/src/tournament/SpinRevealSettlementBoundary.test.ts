@@ -4,6 +4,11 @@ import ts from 'typescript';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { spinPostRevealMs } from '../config/spinSpec.js';
 import { readFundedSpinDraw, spinRuleManifest } from './SpinDrawReceipt.js';
+import {
+  SPIN_LAUNCH_PARKED_ALERT_SOURCE,
+  SpinLaunchParkRegistry,
+  proveSpinDrawWithParking,
+} from './spinLaunchParking.js';
 
 // Execute the real production launch fragment with controlled transport and
 // hub. The presentation patch remains deliberately separate from the money
@@ -34,8 +39,15 @@ const execute = new Function(
   'TournamentLifecycleAbortedError',
   'tableStateHub',
   'spinPostRevealMs',
+  'proveSpinDrawWithParking',
+  'raiseFinancialAlert',
   compiled
 );
+
+/* The classified draw loop (2026-09-10), with a registry of its own per run
+   so one test's park never leaks into the next. */
+const proveWithFreshRegistry: typeof proveSpinDrawWithParking = (deps) =>
+  proveSpinDrawWithParking({ ...deps, parks: new SpinLaunchParkRegistry() });
 
 function receipt(multiplier = 2) {
   const rule_manifest = spinRuleManifest(1, 1000);
@@ -70,6 +82,7 @@ function start(
 ) {
   const emitEvent = vi.fn();
   const reportError = vi.fn();
+  const raiseFinancialAlert = vi.fn(async () => ({ persisted: true, alertId: 'alert' }));
   const context = {
     tournamentId: 'spin',
     tournamentLeaseGeneration: 'lease',
@@ -100,14 +113,16 @@ function start(
     readFundedSpinDraw,
     'launch',
     reportError,
-    { log: vi.fn() },
+    { log: vi.fn(), warn: vi.fn() },
     options.playedSpinRecovery ?? null,
     { generation: 1 },
     Aborted,
     { emitEvent },
-    spinPostRevealMs
+    spinPostRevealMs,
+    proveWithFreshRegistry,
+    raiseFinancialAlert
   );
-  return { emitEvent, outcome, context, reportError };
+  return { emitEvent, outcome, context, reportError, raiseFinancialAlert };
 }
 
 afterEach(() => {
@@ -234,9 +249,50 @@ describe('a Spin reveals its immutable funded rule receipt', () => {
     expect(run.context.running).toBe(false);
     expect(run.reportError).toHaveBeenCalledWith(
       expect.any(Error),
-      'Tournament.spin_draw_unavailable'
+      'Tournament.spin_draw_unavailable',
+      expect.objectContaining({ tournamentId: 'spin' })
     );
+    // A transient refusal is not a money alarm.
+    expect(run.raiseFinancialAlert).not.toHaveBeenCalled();
   });
+
+  /**
+   * 2026-09-10: a refusal the database has said is deterministic for this
+   * launch state is asked ONCE, not three times, and it is the operator who
+   * hears about it, through one financial alert (spinLaunchParking.ts).
+   */
+  it.each([
+    'projected_spin_draw_has_no_funding_proof',
+    'spin_rule_manifest_invalid',
+    'invalid_spin_contract',
+    'spin_field_unproven',
+  ])(
+    'stands down after ONE call for the terminal refusal %s and raises one alert',
+    async (reason) => {
+      vi.useFakeTimers();
+      const rpc = vi.fn(async () => ({ data: { ok: false, reason }, error: null }));
+      const run = start(rpc);
+
+      await vi.runAllTimersAsync();
+
+      expect(await run.outcome).toBeUndefined();
+      expect(rpc).toHaveBeenCalledTimes(1);
+      expect(run.emitEvent).not.toHaveBeenCalled();
+      expect(run.context.running).toBe(false);
+      expect(run.raiseFinancialAlert).toHaveBeenCalledTimes(1);
+      expect(run.raiseFinancialAlert).toHaveBeenCalledWith(
+        'critical',
+        SPIN_LAUNCH_PARKED_ALERT_SOURCE,
+        expect.stringContaining(reason),
+        expect.objectContaining({ tournament_id: 'spin', launch_id: 'launch', reason })
+      );
+      expect(run.reportError).toHaveBeenCalledWith(
+        expect.any(Error),
+        'Tournament.spin_draw_refused_terminal',
+        expect.objectContaining({ reason })
+      );
+    }
+  );
 
   it('does not replay a wheel and preserves historical reveal timing for played recovery', async () => {
     const booked = receipt(10);

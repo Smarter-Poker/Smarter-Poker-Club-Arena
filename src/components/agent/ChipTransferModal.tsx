@@ -43,7 +43,11 @@ import { useAuthUser } from '../../hooks/useAuthUser';
 import { useToast } from '../common/Toast';
 import { CLUB_BANK_ROLES, canHoldAgentWallet } from '../wallet/walletRows';
 import { normaliseRole } from '../../types/clubRoles';
-import { uuid } from '../../utils/uuid';
+import {
+  assertChipAmount,
+  runAgentWalletOperation,
+  confirmedAgentWalletReceipt,
+} from '../../services/AgentWalletIntent';
 import { resolveClubIdFilter, resolveClubUUID } from '../../utils/clubIdResolver';
 import './ChipTransferModal.css';
 import { reportError } from '../../utils/errorReporter';
@@ -108,14 +112,6 @@ export default function ChipTransferModal({
   const modalRef = useRef<HTMLDivElement | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   const successCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  /* A PER-INTENT idempotency key, the same shape CashierPage uses. A key minted
-     inside the call protects nothing: the dangerous shape is commit, lost
-     response, user retry - and that retry must present the SAME key so the
-     server replays instead of debiting twice. It is held across a failed
-     attempt and rotated only when the recipient or the amount changes. */
-  const sendOpIdRef = useRef<string>(uuid());
-  const opIdSeedRef = useRef<string>('');
 
   /* The four bank roles spend the club treasury; everyone else spends their own
      agent wallet. walletRows is the one place this rule lives, and
@@ -499,7 +495,7 @@ export default function ChipTransferModal({
   };
 
   const handleTransfer = async () => {
-    const transferAmount = parseFloat(amount);
+    const transferAmount = Number(amount);
 
     if (!selectedRecipient) {
       setError('Please Select A Recipient');
@@ -521,8 +517,10 @@ export default function ChipTransferModal({
       );
       return;
     }
-    if (isNaN(transferAmount) || transferAmount <= 0) {
-      setError('Please Enter A Valid Amount');
+    try {
+      assertChipAmount(transferAmount);
+    } catch {
+      setError('Enter A Positive Chip Amount With At Most Two Decimal Places');
       return;
     }
     // Only the club bank is a hard ceiling. An agent wallet can draw on a
@@ -550,52 +548,53 @@ export default function ChipTransferModal({
          runs and never defaulted. */
       const resolvedForSend = (await resolveClubUUID(clubId)) || clubId;
 
-      // Rotate the key only when the intent changes, so a retry of the SAME
-      // send replays server-side instead of debiting a second time.
-      const seed = `${selectedRecipient}:${transferAmount}`;
-      if (opIdSeedRef.current !== seed) {
-        opIdSeedRef.current = seed;
-        sendOpIdRef.current = uuid();
-      }
-
-      const { data: sendData, error: sendError } = await supabase.rpc(
-        viaClubBank ? 'fn_club_bank_send' : 'fn_agent_wallet_send',
+      const destination = canHoldAgentWallet(recipientData.role) ? 'agent_wallet' : 'player_wallet';
+      const kind = viaClubBank ? 'club_bank_send' : 'agent_send';
+      let confirmationHeadline: string | undefined;
+      await runAgentWalletOperation(
         {
-          p_club_id: resolvedForSend,
-          p_to_user_id: selectedRecipient,
-          p_amount: transferAmount,
-          p_destination: canHoldAgentWallet(recipientData.role) ? 'agent_wallet' : 'player_wallet',
-          p_reason: description,
-          p_op_id: sendOpIdRef.current,
+          userId: user.id,
+          clubId: resolvedForSend,
+          targetId: selectedRecipient,
+          kind,
+          destination,
+          amount: transferAmount,
+        },
+        async (operation) => {
+          const { data: sendData, error: sendError } = await supabase.rpc(
+            viaClubBank ? 'fn_club_bank_send' : 'fn_agent_wallet_send',
+            {
+              p_club_id: resolvedForSend,
+              p_to_user_id: selectedRecipient,
+              p_amount: transferAmount,
+              p_destination: destination,
+              p_reason: description,
+              p_op_id: operation.operationId,
+            }
+          );
+          if (sendError) throw sendError;
+          if (!confirmedAgentWalletReceipt(sendData, transferAmount, kind, destination)) {
+            throw new Error(sendData?.error || 'The Cashier Did Not Confirm That Transfer');
+          }
+          const drawn = Number(sendData.credit_drawn ?? 0) || 0;
+          const drawnNote = drawn > 0 ? ` (${drawn.toLocaleString()} On Credit)` : '';
+          confirmationHeadline = sendData.replayed
+            ? `That Transfer Had Already Gone Through. ${transferAmount.toLocaleString()} Chips Are With ${recipientData.username || 'Them'}`
+            : `Transferred ${transferAmount.toLocaleString()} To ${recipientData.username || 'Them'}${drawnNote}`;
         }
       );
-      if (sendError) throw sendError;
-
-      /* The RPC reports a refusal as { success: false, error }. The old path
-         checked nothing at all, so a refusal still printed "Transferred". */
-      const sendRes = (Array.isArray(sendData) ? sendData[0] : sendData) as {
-        success?: boolean;
-        error?: string;
-        replayed?: boolean;
-        credit_drawn?: number;
-      } | null;
-      if (!sendRes?.success) {
-        throw new Error(sendRes?.error || 'The Cashier Refused That Transfer');
-      }
-
-      // A send funded from the credit line says so, because it is a debt the
-      // agent owes back and not float they found in their wallet.
-      const drawn = Number(sendRes.credit_drawn ?? 0) || 0;
-      const drawnNote = drawn > 0 ? ` (${drawn.toLocaleString()} On Credit)` : '';
-      const headline = sendRes.replayed
-        ? `That Transfer Had Already Gone Through. ${transferAmount.toLocaleString()} Chips Are With ${recipientData?.username || 'Them'}`
-        : `Transferred ${transferAmount.toLocaleString()} To ${recipientData?.username || 'Them'}${drawnNote}`;
-
-      // The intent is spent: the next identical send is a new one.
-      opIdSeedRef.current = '';
-
+      if (!isMounted.current) return;
+      // A remounted caller can join the original request while its callback
+      // still belongs to the old instance. Resolution proves a strict receipt;
+      // show that confirmation even when this instance did not receive it.
+      const headline =
+        confirmationHeadline ??
+        'Transfer Confirmed. ' +
+          transferAmount.toLocaleString() +
+          ' Chips Are With ' +
+          (recipientData.username || 'Them');
       setSuccess(headline);
-      if (isMounted.current) toast.success(headline);
+      toast.success(headline);
       setAmount('');
       setNote('');
 

@@ -396,16 +396,12 @@ BEGIN
 END;
 $function$;
 
--- CREATE OR REPLACE preserves production's existing ACL, but a fresh database
--- would otherwise inherit PostgreSQL's PUBLIC execute default. This is an
--- engine-only money writer: the pre-request hook fences the manager headers,
--- and the function ACL independently makes every browser role unreachable.
-REVOKE ALL ON FUNCTION public.fn_spin_draw_and_settle_atomic(
-  uuid, uuid, uuid, jsonb
-) FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.fn_spin_draw_and_settle_atomic(
-  uuid, uuid, uuid, jsonb
-) TO service_role;
+-- Only the engine (service_role) may call this money-moving SECURITY DEFINER
+-- function. Production already had exactly this grant set (postgres,
+-- service_role); stated here so the migration is self-describing and the
+-- definer-authorization gate can see it.
+REVOKE ALL ON FUNCTION public.fn_spin_draw_and_settle_atomic(uuid, uuid, uuid, jsonb) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_spin_draw_and_settle_atomic(uuid, uuid, uuid, jsonb) TO service_role;
 
 COMMIT;
 

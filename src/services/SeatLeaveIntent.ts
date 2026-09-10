@@ -16,6 +16,7 @@ export type SeatLeaveResult = {
   success: boolean;
   chipsReturned: number;
   deferred?: boolean;
+  occupancyId?: string;
   error?: string;
 };
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -206,7 +207,7 @@ async function requestSeatWithIntent(
         outcome = { success: true, chipsReturned: receipt.stack };
       }
       storage.setItem(key, JSON.stringify({ ...intent, state: 'resolved' }));
-      return outcome;
+      return { ...outcome, occupancyId: intent.occupancyId };
     } catch (error) {
       return {
         success: false,

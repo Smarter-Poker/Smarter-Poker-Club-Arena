@@ -15,6 +15,35 @@
 
 import { supabase } from '../lib/supabase';
 import { reportError } from '../utils/errorReporter';
+import { resolveClubUUID } from '../utils/clubIdResolver';
+
+const CREDIT_INVOICE_HEADERS = [
+  'ID',
+  'Agent ID',
+  'Period Start',
+  'Period End',
+  'Debt Owed',
+  'Amount Paid',
+  'Amount Remaining',
+  'Status',
+  'Due Date',
+  'Created At',
+];
+
+/** Apply the optional created_at window every fetcher accepts. */
+function boundToPeriod<Q extends object>(
+  query: Q,
+  options: Pick<ExportOptions, 'periodStart' | 'periodEnd'>
+): Q {
+  // PostgREST filters return `this`; the casts only tell the compiler so.
+  type Filterable = { gte: (c: string, v: string) => Q; lte: (c: string, v: string) => Q };
+  let bounded = query;
+  if (options.periodStart)
+    bounded = (bounded as unknown as Filterable).gte('created_at', options.periodStart);
+  if (options.periodEnd)
+    bounded = (bounded as unknown as Filterable).lte('created_at', options.periodEnd);
+  return bounded;
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -238,17 +267,22 @@ export const FinancialExportService = {
   },
 
   async fetchWalletTransactions(options: ExportOptions) {
-    let query = supabase
+    /* ONE PLAYER, NAMED (2026-09-10). wallet_transactions has no club column,
+       and user_id was applied only when the caller supplied it, so a caller
+       that omitted it exported every wallet movement RLS let it read. A
+       wallet export is a statement for one player; without one it is refused. */
+    if (!options.userId) {
+      throw new Error('A Wallet Export Needs A Player. No Export Was Produced.');
+    }
+    const query = supabase
       .from('wallet_transactions')
       .select('id, user_id, wallet_type, amount, type, category, description, created_at')
+      .eq('user_id', options.userId)
       .order('created_at', { ascending: false })
       .limit(options.limit || 1000);
+    const bounded = boundToPeriod(query, options);
 
-    if (options.userId) query = query.eq('user_id', options.userId);
-    if (options.periodStart) query = query.gte('created_at', options.periodStart);
-    if (options.periodEnd) query = query.lte('created_at', options.periodEnd);
-
-    const { data, error } = await query;
+    const { data, error } = await bounded;
     if (error) throw error;
 
     return {
@@ -335,6 +369,15 @@ export const FinancialExportService = {
     // amount_paid, due_date, ...) belongs to `credit_invoices` — it was written
     // against the wrong table name. `settlement_invoices` is the union<->club
     // invoice table and has none of these columns. Repointed to credit_invoices.
+    /* A CLUB'S INVOICES ARE ITS AGENTS' INVOICES (2026-09-10). credit_invoices
+       has no club column, and options.clubId was silently ignored, so a
+       club-scoped CSV carried every club's agents' debt and payment records
+       RLS let the caller read. The club is applied through the agents that
+       belong to it; a club with no agents exports no rows, and a call that
+       names neither a club nor an agent is refused rather than exporting all. */
+    if (!options.clubId && !options.agentId) {
+      throw new Error('An Invoice Export Needs A Club Or An Agent. No Export Was Produced.');
+    }
     let query = supabase
       .from('credit_invoices')
       .select(
@@ -344,27 +387,25 @@ export const FinancialExportService = {
       .limit(options.limit || 1000);
 
     if (options.agentId) query = query.eq('agent_id', options.agentId);
-    if (options.periodStart) query = query.gte('created_at', options.periodStart);
-    if (options.periodEnd) query = query.lte('created_at', options.periodEnd);
+    if (options.clubId) {
+      const resolvedClub = await resolveClubUUID(options.clubId);
+      const { data: clubAgents, error: agentsError } = await supabase
+        .from('agents')
+        .select('id')
+        .eq('club_id', resolvedClub);
+      if (agentsError) throw agentsError;
+      const agentIds = (clubAgents || []).map((a) => a.id).filter(Boolean);
+      if (agentIds.length === 0) {
+        return { headers: CREDIT_INVOICE_HEADERS, rows: [] };
+      }
+      query = query.in('agent_id', agentIds);
+    }
+    const bounded = boundToPeriod(query, options);
 
-    const { data, error } = await query;
+    const { data, error } = await bounded;
     if (error) throw error;
 
-    return {
-      headers: [
-        'ID',
-        'Agent ID',
-        'Period Start',
-        'Period End',
-        'Debt Owed',
-        'Amount Paid',
-        'Amount Remaining',
-        'Status',
-        'Due Date',
-        'Created At',
-      ],
-      rows: data || [],
-    };
+    return { headers: CREDIT_INVOICE_HEADERS, rows: data || [] };
   },
 
   // ─── CSV Generation ────────────────────────────────────────────────────────

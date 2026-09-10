@@ -18,6 +18,8 @@ import { ResponsiveContainer, AreaChart, Area, XAxis, Tooltip } from 'recharts';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { reportError } from '../utils/errorReporter';
 import UnionOpsPanel from '../components/union/UnionOpsPanel';
+import FinancialAdminScopeState from '../components/common/FinancialAdminScopeState';
+import { clubScoped, useFinancialAdminScope } from '../hooks/useFinancialAdminScope';
 
 interface HubStats {
   totalAlerts: number;
@@ -159,12 +161,23 @@ export default function FinancialAdminHub() {
   const [revenueData, setRevenueData] = useState<{ day: string; amount: number }[]>([]);
 
   const loadingRef = useRef(false);
+  /* WHOSE MONEY (2026-09-10). rake_records was read with a 7-day filter and
+     no club, so the revenue chart summed every club's rake RLS let the viewer
+     see into one operator's dashboard; disputes and the two rate-audit counts
+     had the same shape. The scope names the club (or the platform, for
+     platform staff) and every club-keyed read below is filtered to it. */
+  const scope = useFinancialAdminScope();
+  const scopeStatus = scope.status;
+  const scopeClubId = scope.clubId;
+  const scopePlatformWide = scope.platformWide;
 
   // ── loadStats: parallelized queries (~4x faster than sequential) ──
   const loadStats = useCallback(async () => {
+    if (scopeStatus !== 'ready') return;
     if (loadingRef.current) return;
     loadingRef.current = true;
     setLoading(true);
+    const scopeKey = { status: scopeStatus, clubId: scopeClubId, platformWide: scopePlatformWide };
     try {
       // All KPI counts + data in parallel
       const [
@@ -179,10 +192,14 @@ export default function FinancialAdminHub() {
       ] = await Promise.all([
         (async () => {
           try {
-            const r = await supabase
-              .from('disputes')
-              .select('*', { count: 'exact', head: true })
-              .in('status', ['open', 'under_review', 'escalated']);
+            const r = await clubScoped(
+              supabase
+                .from('disputes')
+                .select('*', { count: 'exact', head: true })
+                .in('status', ['open', 'under_review', 'escalated']),
+              scopeKey
+            );
+            if (r.error) throw r.error;
             return r.count || 0;
           } catch (e) {
             reportError(e, 'FinancialAdminHub.async');
@@ -191,9 +208,11 @@ export default function FinancialAdminHub() {
         })(),
         (async () => {
           try {
-            const r = await supabase
-              .from('commission_rate_audit')
-              .select('*', { count: 'exact', head: true });
+            const r = await clubScoped(
+              supabase.from('commission_rate_audit').select('*', { count: 'exact', head: true }),
+              scopeKey
+            );
+            if (r.error) throw r.error;
             return r.count || 0;
           } catch (e) {
             reportError(e, 'FinancialAdminHub.async');
@@ -202,9 +221,11 @@ export default function FinancialAdminHub() {
         })(),
         (async () => {
           try {
-            const r = await supabase
-              .from('rake_rate_audit')
-              .select('*', { count: 'exact', head: true });
+            const r = await clubScoped(
+              supabase.from('rake_rate_audit').select('*', { count: 'exact', head: true }),
+              scopeKey
+            );
+            if (r.error) throw r.error;
             return r.count || 0;
           } catch (e) {
             reportError(e, 'FinancialAdminHub.async');
@@ -269,12 +290,16 @@ export default function FinancialAdminHub() {
         })(),
         (async () => {
           try {
-            const r = await supabase
-              .from('rake_records')
-              .select('rake_amount, created_at')
-              .gte('created_at', new Date(Date.now() - 7 * 86400000).toISOString())
+            const r = await clubScoped(
+              supabase
+                .from('rake_records')
+                .select('rake_amount, created_at')
+                .gte('created_at', new Date(Date.now() - 7 * 86400000).toISOString()),
+              scopeKey
+            )
               .order('created_at', { ascending: true })
               .limit(5000);
+            if (r.error) throw r.error;
             return r.data;
           } catch (e) {
             reportError(e, 'FinancialAdminHub.async');
@@ -320,7 +345,7 @@ export default function FinancialAdminHub() {
       loadingRef.current = false;
       if (isMounted.current) setLoading(false);
     }
-  }, [toast]);
+  }, [toast, scopeStatus, scopeClubId, scopePlatformWide]);
 
   useVisibilityRefresh(loadStats);
 
@@ -409,6 +434,17 @@ export default function FinancialAdminHub() {
       glow: stats.totalAlerts > 0 ? 'rgba(239,68,68,0.2)' : 'rgba(16,185,129,0.2)',
     },
   ];
+
+  if (scope.status !== 'ready') {
+    return (
+      <div style={{ padding: '16px', maxWidth: '900px', margin: '0 auto' }}>
+        <h1 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: '24px' }}>
+          Financial Admin Hub
+        </h1>
+        <FinancialAdminScopeState scope={scope} />
+      </div>
+    );
+  }
 
   if (loading && stats.healthChecks === 0 && stats.totalAlerts === 0) {
     return (

@@ -41,3 +41,6 @@ PG17_BINDIR="$PGBIN" python3 "$probe_dir/../../../dev/probe-hand-seat-generation
 
 # Entry funding and the corrected charged-club receipt use real local transactions.
 POKER_AUDIT_PG_BIN="$PGBIN" python3 "$probe_dir/../../../dev/probe-tournament-registration-funding-pg17.py"
+
+# Mystery inventory, generation binding and concurrent replay use the same PG17 binaries.
+POKER_AUDIT_PG_BIN="$PGBIN" python3 "$probe_dir/../../../dev/probe-mystery-reservation-pg17.py"

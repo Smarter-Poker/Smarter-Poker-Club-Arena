@@ -15,6 +15,7 @@ export async function getArenaContext(clubKey: string): Promise<ArenaAccessConte
     arena,
     member: data.member,
     automaticMembership: diamond,
+    cashGamesEnabled: diamond && data.cashGamesEnabled === true,
     role: typeof data.role === 'string' ? data.role : null,
     capabilities: {
       join: !diamond,

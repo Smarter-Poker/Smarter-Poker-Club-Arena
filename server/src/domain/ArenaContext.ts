@@ -8,6 +8,7 @@ export interface ArenaAccessContext {
   arena: ArenaIdentity;
   member: boolean;
   automaticMembership: boolean;
+  cashGamesEnabled?: boolean;
   role: string | null;
   capabilities: {
     join: boolean;

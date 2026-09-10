@@ -33,6 +33,16 @@ export function useRealtimeFinancials() {
 
       console.debug('[RealtimeFinancials] Financial update received:', msg);
 
+      if (msg.walletType === 'DIAMOND') {
+        if (Number.isSafeInteger(msg.available) && msg.available >= 0) {
+          masterBus.emit('DIAMOND_BALANCE_CHANGED', {
+            newBalance: msg.available,
+            delta: 0,
+            source: 'engine_ws_financial_update',
+          });
+        }
+        return;
+      }
       masterBus.emit('BALANCE_UPDATED', { source: 'engine_ws_financial_update' });
       masterBus.emit('WALLET_REFRESHED', {
         // Cast: msg.walletType arrives as string from WebSocket JSON;

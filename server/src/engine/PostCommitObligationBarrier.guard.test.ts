@@ -76,7 +76,9 @@ describe('an accepted hand cannot outrun its durable post-commit obligations', (
       postHand.indexOf("runStep('pending_addons'"),
       postHand.indexOf("runStep('horse_rebuys'")
     );
-    expect(pending).toContain('if (!durablePostCommitObligations && !this.isTournamentTable())');
+    expect(pending).toContain(
+      'if (!durablePostCommitObligations && !isDiamondCash && !this.isTournamentTable())'
+    );
     expect(pending).toContain('await this.processPendingAddOns(players)');
     expect(pending).toContain('if (!this.lifecycleCanMutate()) return;');
   });

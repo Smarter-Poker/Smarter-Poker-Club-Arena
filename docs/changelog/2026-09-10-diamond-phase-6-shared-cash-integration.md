@@ -90,3 +90,23 @@ The production-backed schema declaration is scripts/ci/schema-manifest.d/codex-d
 CI 34438319928 on c73b2ce871 passed 18,590 client tests, 8,560 server tests with 145 skipped, PostgreSQL accounting, server TypeScript, production build/performance and browser suites of 150 CSS, 13 Studio and 3 mobile cases. Client TypeScript compilation passed; the subsequent phantom-RPC gate failed because fn_poker_diamond_cashout_receipt had not yet been applied or declared. Later schema checks and live/postdeploy checks were skipped, not passed. The approved application and schema declaration address that concrete failed gate; required CI must pass on the subsequent pushed head.
 
 Phase 6 release remains open until required CI, normal merge/publication, actual frontend and engine adoption, and permitted authenticated live acceptance are verified. Public funded games remain closed, and the seven-clean-day public accounting prerequisite is unchanged.
+
+## Required CI And Normal Release Dispatch
+
+PR [4088](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/4088) auto-merged September 10, 2026 at 05:40:25 UTC as 85da6479df7286673a2ace057a6988b7e4c18111, from 2ea518146b0f5c05493533d3895d39227df63b9f. Final required [CI 34440835759](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/34440835759) completed successfully.
+
+- Client: 18,616 passed across four shards (5,567 + 4,542 + 4,400 + 4,107).
+- Server: 8,626 passed, 145 skipped. The separate 99 freeze/watchdog cases overlap and are not added.
+- Client/server TypeScript, schema/invariant gates, PostgreSQL accounting and production build/performance passed.
+- Browser: 150 CSS, 13 Studio and 3 mobile cases passed.
+- Live Production E2E and Post-Deploy Verification were skipped, not passed.
+
+The intermediate 2bda391a8d run 34440735496 lost a PostgreSQL shared-memory segment (58P01) in its unchanged agent-context probe. Its failing probe and caller had identical Git blobs to the passing prior run. A targeted retry was initially held by automatic review, then the API refused it while the workflow was still running. No retry executed. Autopilot advanced the branch instead; the final head passed the same 82 agent-context assertions at 05:27:20 UTC and all required gates. The superseded failure was not hidden, allowlisted or called a pass.
+
+The normal Club Arena frontend publisher [34442016349](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/34442016349) was queued automatically for the merge. The engine still served healthy c4163531 with zero blocked settlements at the 05:30 UTC read; this predates the full Phase 6 integration.
+
+After verifying that no engine run targeted a Phase 6-containing commit, the normal auto-deploy-hetzner.yml workflow was dispatched once on main with ref_sha=85da6479df7286673a2ace057a6988b7e4c18111. [Run 34442107723](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/34442107723) was created at 05:41:53 UTC and is pending behind the existing shared deployment. No shared run was canceled, and no engine restart, host checkout, container or tag was changed manually. Dispatch and staging do not establish production adoption.
+
+The managed authenticated browser could create a verification tab but repeatedly timed out while refreshing tab state, navigating, reading the visible DOM and requesting a screenshot. The same documented browser binding was preserved; no external control workaround or player mutation was attempted. This is an unverified live-acceptance gate, not proof of an application regression.
+
+Only actual publisher/engine adoption and permitted authenticated live acceptance remain open after the verified database application, source integration and required CI. The public admission setting remains false. Do not mark Phase 6 complete or begin Phase 7 until deployment and live verification pass.

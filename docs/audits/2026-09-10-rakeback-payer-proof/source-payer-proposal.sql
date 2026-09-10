@@ -84,7 +84,7 @@ BEGIN
  IF v_period.user_id IS NULL OR v_period.status NOT IN ('pending','paid') THEN
   RETURN jsonb_build_object('success',false,'deferred','invalid_period_state');
  END IF;
- IF v_period.period_end>=CURRENT_DATE THEN
+ IF v_period.period_end>=(now() AT TIME ZONE 'UTC')::date THEN
   RETURN jsonb_build_object('success',false,'deferred','period_not_closed');
  END IF;
  SELECT * INTO v_authority FROM public.ca_cash_commission_authority WHERE singleton;
@@ -102,8 +102,8 @@ BEGIN
   JOIN public.ca_cash_commission_sources s USING(hand_id)
   WHERE facts.booked_club_id=v_club AND facts.player_id=v_period.user_id
    AND s.accepted_at>=v_authority.activated_at
-   AND s.settled_at>=v_period.period_start::timestamptz
-   AND s.settled_at<(v_period.period_end+1)::timestamptz
+   AND s.settled_at>=(v_period.period_start::timestamp AT TIME ZONE 'UTC')
+   AND s.settled_at<((v_period.period_end+1)::timestamp AT TIME ZONE 'UTC')
   ORDER BY facts.hand_id,facts.player_id
  LOOP
   v_week:=date_trunc('week',f.settled_at AT TIME ZONE 'UTC')::date;

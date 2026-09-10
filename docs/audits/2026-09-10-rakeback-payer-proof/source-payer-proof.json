@@ -1,7 +1,7 @@
 {
-  "captured_at": "2026-09-10T07:27:19.482Z",
+  "captured_at": "2026-09-10T07:34:28.258Z",
   "scope": "Prospective primitive only; captured financial guard subset, no production/wrapper/UI completeness claim",
-  "passed": 12,
+  "passed": 13,
   "results": [
     {
       "name": "mixed captured payers survive current assignment change and preserve treasury",
@@ -40,12 +40,12 @@
       "waitA": {
         "wait_event_type": "Lock",
         "wait_event": "transactionid",
-        "blockers": [40357]
+        "blockers": [64973]
       },
       "waitB": {
         "wait_event_type": "Lock",
         "wait_event": "advisory",
-        "blockers": [40358]
+        "blockers": [64974]
       }
     },
     {
@@ -58,6 +58,10 @@
     },
     {
       "name": "paid receipt protects wallet identity and ledger metadata from later mutation",
+      "pass": true
+    },
+    {
+      "name": "UTC earning bounds include both week edges across Chicago session and DST",
       "pass": true
     },
     {

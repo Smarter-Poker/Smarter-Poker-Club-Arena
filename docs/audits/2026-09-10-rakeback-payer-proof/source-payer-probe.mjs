@@ -15,13 +15,13 @@ const q=async(sql,args=[]) =>(await db.query(sql,args)).rows;
 const id=n=>'00000000-0000-4000-8000-'+String(n).padStart(12,'0');
 let serial=1000,hand=100000;
 const results=[];
-await q("INSERT INTO ca_cash_commission_authority VALUES(true,1,'2026-08-31','fixture-before','fixture-after')");
-async function setup({balance=100,status='pending'}={}){
+await q("INSERT INTO ca_cash_commission_authority VALUES(true,1,'2025-01-01','fixture-before','fixture-after')");
+async function setup({balance=100,status='pending',start='2026-08-31',end='2026-09-06'}={}){
  const n=serial;serial+=1000;
  const x={club:id(n),user:id(n+1),payer:id(n+2),second:id(n+3),period:id(n+4)};
  await q("INSERT INTO clubs(id,name,owner_id,chip_treasury) VALUES($1,'Synthetic source payer', $2,1000)",[x.club,id(n+5)]);
  await q("INSERT INTO club_members(club_id,user_id,chip_balance,role,agent_id) VALUES($1,$2,0,'player',$3),($1,$3,$5,'agent',NULL),($1,$4,$5,'agent',NULL)",[x.club,x.user,x.payer,x.second,balance]);
- await q("INSERT INTO rakeback_periods(id,user_id,club_id,period_start,period_end,status,rakeback_earned,rakeback_amount) VALUES($1,$2,$3,'2026-08-31','2026-09-06',$4,999,999)",[x.period,x.user,x.club,status]);
+ await q("INSERT INTO rakeback_periods(id,user_id,club_id,period_start,period_end,status,rakeback_earned,rakeback_amount) VALUES($1,$2,$3,$5,$6,$4,999,999)",[x.period,x.user,x.club,status,start,end]);
  return x;
 }
 async function source(x,{payer=x.payer,rake='100',rate='.15',direct='.25',state='assigned',errors=[],terms=[],accepted='2026-09-02',settled='2026-09-02'}={}){
@@ -76,7 +76,7 @@ try{
   const r=await pay(x);assert.equal(r.new_payout,0);assert.equal(r.deferred.length,4);assert.equal((await snapshot(x)).accruals,0);
  });
  await test('pre-contract legacy sources and pending estimates cannot initiate backpay',async()=>{
-  const x=await setup();await source(x,{accepted:'2026-08-30'});const before=await snapshot(x),r=await pay(x);
+  const x=await setup();await source(x,{accepted:'2024-12-31'});const before=await snapshot(x),r=await pay(x);
   assert.equal(r.new_payout,0);assert.equal(r.source_accruals_added,0);assert.deepEqual(await snapshot(x),before);
  });
  await test('overlapping noncanonical period cannot pay a source twice',async()=>{
@@ -117,6 +117,20 @@ try{
   await assert.rejects(q("UPDATE wallet_transactions SET related_entity_id=NULL WHERE id=$1",[p.wallet_transaction_id]),e=>e.code==='55000');
   await assert.rejects(q("UPDATE wallet_transactions SET user_id=$2 WHERE id=$1",[p.wallet_transaction_id,id(999999)]),e=>e.code==='55000');
   await assert.rejects(q("UPDATE chip_ledger SET metadata='{}' WHERE id=$1",[p.ledger_id]),e=>e.code==='55000');
+ });
+ await test('UTC earning bounds include both week edges across Chicago session and DST',async()=>{
+  for(const [start,end] of [['2026-08-31','2026-09-06'],['2026-03-02','2026-03-08']]){
+   for(const zone of ['UTC','America/Chicago']){
+    const x=await setup({start,end});
+    await source(x,{settled:start+'T00:00:00Z',accepted:start+'T00:00:00Z'});
+    await source(x,{settled:end+'T23:59:59Z',accepted:end+'T23:59:59Z'});
+    const following=new Date(end+'T00:00:00Z');following.setUTCDate(following.getUTCDate()+1);
+    await source(x,{settled:following.toISOString(),accepted:following.toISOString()});
+    await q("SELECT set_config('TimeZone',$1,false)",[zone]);
+    try{const r=await pay(x);assert.equal(r.new_payout,30);assert.equal((await snapshot(x)).accruals,2);}
+    finally{await q("SET TIME ZONE 'UTC'");}
+   }
+  }
  });
  await test('API roles cannot mutate source evidence or directly invoke internal payer',async()=>{
   for(const role of ['anon','authenticated']){

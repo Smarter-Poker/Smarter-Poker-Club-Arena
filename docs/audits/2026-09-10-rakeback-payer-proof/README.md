@@ -8,13 +8,13 @@ The broader source payer is a tested proposal, not a production migration or a w
 
 ## Reproduce The Evidence
 
-Run `bash docs/audits/2026-09-10-rakeback-payer-proof/run-local.sh guards` for three installed-function reproductions. Run the same script with `source` for twelve prospective source-payer groups. Each invocation creates and removes a disposable PostgreSQL 17 cluster with a private Unix socket and no network listener. The Node runners reject any other host or database.
+Run `bash docs/audits/2026-09-10-rakeback-payer-proof/run-local.sh guards` for three installed-function reproductions. Run the same script with `source` for thirteen prospective source-payer groups. Each invocation creates and removes a disposable PostgreSQL 17 cluster with a private Unix socket and no network listener. The Node runners reject any other host or database.
 
 The historical fixture includes captured table columns, constraints and installed function definitions. The money-guards file adds seventeen captured financial triggers on top of three append-only triggers. The exact additions and body hashes are listed in money-guards-coverage.json. This is a financial guard subset, not a claim that every production trigger is loaded. Auth identity reads simulate JWT settings, and platform-freeze/overseer predicates are synthetic fixture dependencies.
 
 With the actual key-claim trigger present, overlapping Round 3 calls do not double-pay: the second transaction fails with 23505 and rolls back. However, an actual authenticated fn_claim_rakeback call while Round 3 waits on the agent wallet still pays the same fifteen-chip entitlement twice, once from the club and once from the agent. Both calls use their captured installed bodies, and PostgreSQL lock waits are observed before release. The independent close also leaves its payout wallet_transaction_id unlinked.
 
-The earlier before-proof.json was generated before these extra money guards were loaded and is superseded by guards-proof.json. It must never be described as production-equivalent duplicate-payment proof.
+The earlier unguarded experiment is superseded by guards-proof.json and must never be described as production-equivalent duplicate-payment proof.
 
 ## Prospective Source Payer
 
@@ -24,7 +24,7 @@ Each accepted hand/player has one immutable exact entitlement accrual. The cash 
 
 Every positive payment debits the captured agent wallet, credits the earning-club player wallet, and records an actual linked wallet transaction and journal leg. A funded club never replaces a short original payer. Source receipts, cash receipts and their referenced wallet/journal evidence reject later mutation. Repeated calls return the existing paid receipts while reporting zero new payout.
 
-Twelve groups cover mixed captured payers after reassignment, fractional carry, shortage and retry, invalid and unbound terms, the prospective cutover gate, overlapping period refusal, preserving legacy paid fields, journal failure rollback, observed concurrent payment, append-only/ACL protections and immutable linked money evidence.
+Thirteen groups cover mixed captured payers after reassignment, fractional carry, shortage and retry, invalid and unbound terms, the prospective cutover gate, overlapping period refusal, preserving legacy paid fields, journal failure rollback, observed concurrent payment, append-only/ACL protections and immutable linked money evidence.
 
 ## Required Before Integration
 
@@ -39,3 +39,5 @@ The source prototype is intentionally not callable from current claim, batch or 
 - Rehearse all real wrapper overlaps, grants and rollback with that complete fixture before reserving a production migration, then verify the actual deployed release.
 
 No source proposal SQL has been applied to production. No historical wallet repair, backpay, table lockout, forced engine restart or separate repair cron was introduced.
+
+Independent review found session-timezone casts at source week boundaries. Explicit UTC half-open bounds and UTC today now match the source week, with UTC/Chicago boundary cases including the March DST week passing. The old worker uses UTC weeks but buckets rake_records.created_at, while new source periods must use accepted-hand settled_at to avoid retagging delayed Sunday banking into Monday.

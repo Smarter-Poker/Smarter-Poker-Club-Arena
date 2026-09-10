@@ -110,6 +110,8 @@ interface QueuedJob {
   deadlineTimer: ReturnType<typeof setTimeout> | null;
   /** Worker-integrity deadline measured only after this job is posted. */
   executionTimer: ReturnType<typeof setTimeout> | null;
+  /** One poll-turn grace for a worker response already waiting on its port. */
+  executionDeadlineCheck: ReturnType<typeof setImmediate> | null;
 }
 
 const stoppedStatus = (): LiveHorseDecisionWorkerStatus => ({
@@ -436,6 +438,7 @@ export class LiveHorseDecisionWorkerClient {
         enqueuedAt,
         deadlineTimer: null,
         executionTimer: null,
+        executionDeadlineCheck: null,
       };
       job.deadlineTimer = setTimeout(() => this.onJobDeadline(job), this.jobTimeoutMs);
       job.deadlineTimer.unref?.();
@@ -724,11 +727,21 @@ export class LiveHorseDecisionWorkerClient {
 
   private onExecutionDeadline(job: QueuedJob): void {
     if (this.active !== job || this.phase === 'failed' || this.phase === 'stopped') return;
-    this.fail(
-      new Error(
-        `live horse decision worker job ${job.request.requestId} (${job.request.type}) exceeded its ${this.jobTimeoutMs}ms execution deadline after dispatch`
-      )
-    );
+    job.executionTimer = null;
+    // A worker may have posted its response before this timer became runnable
+    // while the main loop was busy. Timers run before MessagePort's poll work,
+    // so give that already-completed response one poll turn to clear `active`.
+    // A genuinely wedged worker still fails in this same event-loop cycle.
+    job.executionDeadlineCheck = setImmediate(() => {
+      job.executionDeadlineCheck = null;
+      if (this.active !== job || this.phase === 'failed' || this.phase === 'stopped') return;
+      this.fail(
+        new Error(
+          `live horse decision worker job ${job.request.requestId} (${job.request.type}) exceeded its ${this.jobTimeoutMs}ms execution deadline after dispatch`
+        )
+      );
+    });
+    job.executionDeadlineCheck.unref?.();
   }
 
   private noteExpiredJob(job: QueuedJob, phase: 'queued' | 'active'): void {
@@ -743,6 +756,8 @@ export class LiveHorseDecisionWorkerClient {
     job.deadlineTimer = null;
     if (job.executionTimer) clearTimeout(job.executionTimer);
     job.executionTimer = null;
+    if (job.executionDeadlineCheck) clearImmediate(job.executionDeadlineCheck);
+    job.executionDeadlineCheck = null;
   }
 
   private clearActiveDeadline(): void {

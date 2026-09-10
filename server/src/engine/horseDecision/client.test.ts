@@ -315,6 +315,7 @@ describe('LiveHorseDecisionWorkerClient', () => {
       const rejection = expect(pending).rejects.toBeInstanceOf(HorseDecisionExpiredError);
 
       await vi.advanceTimersByTimeAsync(5);
+      await vi.runOnlyPendingTimersAsync();
       await rejection;
       await new Promise<void>((resolve) => queueMicrotask(resolve));
       expect(client.status()).toMatchObject({
@@ -330,6 +331,40 @@ describe('LiveHorseDecisionWorkerClient', () => {
           message: expect.stringContaining('execution deadline after dispatch'),
         })
       );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('accepts an on-time worker response already waiting when the execution timer becomes runnable', async () => {
+    vi.useFakeTimers();
+    try {
+      const worker = new FakeWorker();
+      const onFatal = vi.fn();
+      const client = new LiveHorseDecisionWorkerClient({
+        workerFactory: () => worker,
+        onFatal,
+        jobTimeoutMs: 50,
+      });
+      worker.emitMessage(ready);
+      const pending = client.decideFast(snapshot('deadline-edge'));
+      const rejection = expect(pending).rejects.toBeInstanceOf(HorseDecisionExpiredError);
+
+      // Registration order mirrors a timer becoming runnable before a worker
+      // message already posted to its port. The caller expires, but the poll
+      // turn consumes the valid response before the integrity recheck.
+      setTimeout(() => worker.emitMessage(fastResult(1, 'deadline-edge')), 50);
+      await vi.advanceTimersByTimeAsync(50);
+      await rejection;
+      expect(client.status()).toMatchObject({
+        phase: 'ready',
+        activeRequestId: null,
+        completedJobs: 1,
+        expiredJobs: 1,
+        lastError: null,
+      });
+      expect(worker.terminateCalls).toBe(0);
+      expect(onFatal).not.toHaveBeenCalled();
     } finally {
       vi.useRealTimers();
     }
@@ -426,6 +461,7 @@ describe('LiveHorseDecisionWorkerClient', () => {
       expect(onFatal).not.toHaveBeenCalled();
 
       await vi.advanceTimersByTimeAsync(1);
+      await vi.runOnlyPendingTimersAsync();
       await new Promise<void>((resolve) => queueMicrotask(resolve));
       expect(client.status()).toMatchObject({
         phase: 'failed',

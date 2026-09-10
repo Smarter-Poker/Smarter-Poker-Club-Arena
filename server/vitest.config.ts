@@ -18,7 +18,12 @@ export default defineConfig({
     // only when vitest is started from inside `server/`. This refuses to run
     // from anywhere else and says so, instead of letting every one of them
     // fail with an ENOENT that names no cause. See the file's header.
-    setupFiles: ['./src/testing/theSuiteRunsFromTheServerDirectory.ts'],
+    setupFiles: [
+      './src/testing/theSuiteRunsFromTheServerDirectory.ts',
+      // One process-wide scheduler, stopped after every test so that no tick
+      // loop and no deadline crosses from one test into the next. See the file.
+      './src/testing/theSchedulerStopsBetweenTests.ts',
+    ],
     // The equity load governor reads the live event loop; a busy test runner
     // must not shrink the samples the precision tests depend on.
     env: { EQUITY_GOVERNOR: 'off' },

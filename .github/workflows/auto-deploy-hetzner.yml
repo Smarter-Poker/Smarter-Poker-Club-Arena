@@ -1365,7 +1365,7 @@ jobs:
           # here used to tell the watchdog a different commit than the one the
           # host actually checked out, tagged, and verified.
           TARGET_SHA: ${{ steps.target.outputs.sha }}
-          SHIPPED: ${{ steps.dedupe.outputs.skip != 'true' && steps.drain.outputs.skip != 'true' && steps.cutover.outcome == 'success' && steps.cutover.outputs.success == 'true' && steps.health.outputs.verified == 'true' && steps.prove.outcome == 'success' && (steps.seal_commit.outcome == 'success' || steps.rollback.outputs.target_committed == 'true') }}
+          SHIPPED: ${{ steps.dedupe.outputs.skip != 'true' && steps.drain.outputs.skip != 'true' && steps.cutover.outcome == 'success' && steps.cutover.outputs.success == 'true' && steps.health.outputs.verified == 'true' && steps.prove.outcome == 'success' && (steps.seal_commit.outcome == 'success' || (steps.rollback.outcome == 'success' && steps.rollback.outputs.target_committed == 'true')) }}
           RUN_ID: ${{ github.run_id }}
           RUN_ACTOR: ${{ github.event_name }}
           # ONE REASON, WRITTEN ONCE, READ EVERYWHERE. The drain branch used to

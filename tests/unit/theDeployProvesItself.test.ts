@@ -55,6 +55,9 @@ describe('the workflow records before and proves after', () => {
     expect(WF).toMatch(/SHIPPED: .*steps\.cutover\.outputs\.success == 'true'/);
     expect(WF).toMatch(/SHIPPED: .*steps\.prove\.outcome == 'success'/);
     expect(WF).not.toMatch(/SHIPPED: .*steps\.prove\.outcome != 'failure'/);
+    expect(WF).toMatch(
+      /SHIPPED: .*steps\.rollback\.outcome == 'success'.*steps\.rollback\.outputs\.target_committed == 'true'/
+    );
     expect(WF).toContain("steps.prove.outcome == 'failure' &&");
   });
 

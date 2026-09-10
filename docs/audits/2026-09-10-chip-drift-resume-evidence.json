@@ -1,0 +1,187 @@
+{
+  "engine": {
+    "status": "ok",
+    "version": "b4c427a6",
+    "running": true,
+    "uptime": 516,
+    "stalledTableCount": 0,
+    "blockedSettlementCount": 0,
+    "settlementStatus": "ok",
+    "maintenance": {
+      "active": false,
+      "phase": "idle",
+      "durableConfirmed": false,
+      "breakEndsAt": null,
+      "remainingMs": 0,
+      "unparkedTables": 0,
+      "readyForRestart": false,
+      "reason": "Scheduled Engine Maintenance",
+      "resumeWaves": {
+        "total": 8,
+        "done": 8,
+        "startedAt": 1789005606130,
+        "finishedAt": 1789005616632,
+        "tables": 282,
+        "tablesResumed": 282,
+        "gapMs": 1500
+      },
+      "dbClockSkewMs": -33
+    },
+    "full_sha": "b4c427a6e8474d796d29b682a9e153e03d78755d",
+    "contains_exact_hand_fix": true
+  },
+  "origin": {
+    "ca_sha": "37cd6a1c17b6ef92ba1ffd7c86f36a667e6aabd2",
+    "built_at": "2026-09-10T01:52:33Z",
+    "built_by": "publish-club-arena.yml",
+    "run_id": "34427041848",
+    "contains_registration": true,
+    "contains_durable_seat_refund": true
+  },
+  "rewrite": {
+    "ca_sha": "37cd6a1c17b6ef92ba1ffd7c86f36a667e6aabd2",
+    "built_at": "2026-09-10T01:52:33Z",
+    "built_by": "publish-club-arena.yml",
+    "run_id": "34427041848",
+    "contains_registration": true,
+    "contains_durable_seat_refund": true
+  },
+  "exact_hand_source_blobs": {
+    "server/src/engine/ServerTableEngineBase.ts": {
+      "original": "a89c20595d26062ec50371c60f4e17dc7987dcd2",
+      "served": "a89c20595d26062ec50371c60f4e17dc7987dcd2",
+      "identical": true
+    },
+    "server/src/engine/ServerTableEngineDealing.ts": {
+      "original": "4c930ec5e3987f3a09b062551add7e0fb0ba5676",
+      "served": "bbcbfaf11e911f0bcb52965050179ecd626658da",
+      "identical": false
+    },
+    "server/src/engine/ServerTableEngineSettlement.ts": {
+      "original": "57630c758c9b5f238d3e31f9e058c60663f16316",
+      "served": "57630c758c9b5f238d3e31f9e058c60663f16316",
+      "identical": true
+    },
+    "server/src/engine/handSeatGeneration.ts": {
+      "original": "ddf2ec05d4046b82dd276b6d4db2baa8bcfaa5ec",
+      "served": "ddf2ec05d4046b82dd276b6d4db2baa8bcfaa5ec",
+      "identical": true
+    },
+    "server/src/services/supabase/tables.ts": {
+      "original": "f55446b3802e809e751e9521068bc4ece605413b",
+      "served": "f55446b3802e809e751e9521068bc4ece605413b",
+      "identical": true
+    },
+    "server/src/types.ts": {
+      "original": "88e3abbb3b1d4e634fcfb03a390f7c5ef7bfcbb0",
+      "served": "f6c7defadc773e42d9adb0ac2fbbb4d122eb4a9a",
+      "identical": false
+    }
+  },
+  "recorded_at": "2026-09-10T02:11:15.901846+00:00",
+  "programme": "109-item comprehensive Club Arena accounting audit",
+  "phase": 3,
+  "phase_complete": false,
+  "exact_hand_source_review": "Four source blobs are identical. The only changes in the other two files add the arena asset to TableInfo/HandConfig and pass it to the hand; dealt seat generation remains intact.",
+  "catalog": {
+    "functions": [
+      {
+        "acl": "{postgres=X/postgres,service_role=X/postgres}",
+        "definition_md5": "f93a85ebe5a509ccb7dfedb9be1ed3fa",
+        "exact_joined_at": true,
+        "signature": "fn_ca_commit_hand_settlement(uuid,bigint,jsonb,numeric,numeric,text,numeric,jsonb,jsonb,text,uuid,jsonb)",
+        "time_bank_generation_refusal": true
+      },
+      {
+        "acl": "{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+        "definition_md5": "0b05e2e7905caf71f14c8327a172cea0",
+        "exact_joined_at": false,
+        "signature": "fn_entry_purchases_frozen()",
+        "time_bank_generation_refusal": false
+      }
+    ],
+    "heartbeat_tables": [
+      "solver_worker_heartbeats",
+      "solver_compact_heartbeats",
+      "probe_heartbeats",
+      "ca_horse_fleet_heartbeat",
+      "money_check_heartbeat"
+    ]
+  },
+  "verification": {
+    "server_suite": {
+      "passed": 1398,
+      "files": 132,
+      "head": "b4c427a6e8474d796d29b682a9e153e03d78755d"
+    },
+    "source_law": {
+      "passed": 31
+    },
+    "root_typescript": "passed",
+    "maintenance_pg17": {
+      "canonical": "passed",
+      "behavior_scenarios": 8,
+      "refusal_scenarios": 7
+    },
+    "full_hand_pg17": {
+      "legacy": "passed",
+      "exact": "passed",
+      "wrong_generation_scenarios": 4,
+      "scope": "Hand acceptance, rollback and replay only. The independent rebuy section is excluded and remains open."
+    },
+    "registration_funding_pg17": {
+      "groups": 7,
+      "scope": "Real pre-start standalone-club funding, rollback, concurrent retries, last place, closure wait and cross-club receipt. Synthetic auth and maintenance. No late entry, union, promotional, re-entry or launch acceptance."
+    }
+  },
+  "cutover": {
+    "production_applied_by_this_continuation": false,
+    "stage_b": "Applied successfully only to an isolated schema with exact observed owner-only private-core ACLs and the real Stage A request hook. This proves installation, not full financial acceptance.",
+    "production_seven_guards": "disabled",
+    "production_seat_move_and_receipt_resolver": "absent",
+    "full_money_suite": "Not passing on the inherited Stage 1 schema. Dependency/layout and fixture-provenance failures make it unsuitable for live defect or acceptance claims. Guarantee overlay behavior alone passed. The rebuy assertion remains unresolved.",
+    "schema_export": "Read-only direct schema export timed out. No row data exported.",
+    "dispatch": "A compatible engine deployment was already active; this continuation did not create a duplicate or force a restart."
+  },
+  "publication": {
+    "status": "merged_and_published",
+    "repository": "Smarter-Poker/Smarter-Poker-Club-Arena",
+    "branch": "agent/codex-chip-drift-resume/fix/phase-three-acceptance",
+    "prepared_head": "f264cb86581b398487246cb1173bbea3247ca438",
+    "remote_verified": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena.git",
+    "push_completed": true,
+    "pr_created": true,
+    "required_ci": "34428840067 passed",
+    "safe_work_complete": "Reviewed, tested, merged through required CI, and verified on public and origin publication stamps.",
+    "pr": 4084,
+    "merge_commit": "566b66e07582fd97b77d90abfd20e9f2068ea941",
+    "release": {
+      "origin": {
+        "ca_sha": "80d76e0b2fe5ad9593a82cbb0580b50d03a62896",
+        "built_at": "2026-09-10T02:26:33Z",
+        "built_by": "publish-club-arena.yml",
+        "run_id": "34429315574",
+        "contains_PR4084": true
+      },
+      "rewrite": {
+        "ca_sha": "80d76e0b2fe5ad9593a82cbb0580b50d03a62896",
+        "built_at": "2026-09-10T02:26:33Z",
+        "built_by": "publish-club-arena.yml",
+        "run_id": "34429315574",
+        "contains_PR4084": true
+      }
+    },
+    "user_authorization": "2026-09-10: User explicitly authorized pushing and publishing this work and future repository pushes/publications, and instructed no repeat confirmation.",
+    "previous_rejection": "Automatic approval review rejected pushing potentially sensitive repository contents to an external remote without explicit publication authorization."
+  },
+  "next_correction": {
+    "control": "CA-03-09",
+    "source": "scripts/deploy/phase-three-strict-tournament-cutover.sql",
+    "status": "source_corrected_local_verification_passed",
+    "defect": "Current fn_move_tournament_player missing from manager-exclusive route fence; reproduced unmarked service admission.",
+    "behavioral_scenarios": 32,
+    "full_script_installation": "passed on owned isolated schema; no full financial acceptance claim",
+    "production_cutover_applied": false,
+    "evidence": "docs/changelog/2026-09-10-seat-moves-require-current-manager-authority.md"
+  }
+}

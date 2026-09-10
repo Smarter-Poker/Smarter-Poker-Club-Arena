@@ -1428,6 +1428,7 @@ export abstract class ServerTableEngineBase {
    * outlast the short hand-for-hand window without self-resuming.
    */
   protected pauseMaxWaitMs: number | null = null;
+  protected pauseRequiresExplicitResume = false;
   /**
    * DOES THIS PAUSE FORBID THE NEXT HAND, OR ONLY THE ONE AFTER IT?
    *
@@ -3943,12 +3944,16 @@ export abstract class ServerTableEngineBase {
    * pause now say so; the safety net still exists, it is just sized to the
    * pause being requested.
    */
-  pauseAfterHand(maxWaitMs?: number, opts?: { beforeNextHand?: boolean }): void {
+  pauseAfterHand(
+    maxWaitMs?: number,
+    opts?: { beforeNextHand?: boolean; untilResumed?: boolean }
+  ): void {
     this.handForHandPaused = true;
     this.pauseMaxWaitMs = maxWaitMs && maxWaitMs > 0 ? maxWaitMs : null;
     // See holdBeforeNextHand. Sticky within one pause: a break already holding
     // the table must not be downgraded by a later ordinary pause request.
     if (opts?.beforeNextHand) this.holdBeforeNextHand = true;
+    if (opts?.untilResumed) this.pauseRequiresExplicitResume = true;
     if (this.pausedSinceMs === 0) this.pausedSinceMs = Date.now();
   }
 
@@ -4441,6 +4446,7 @@ export abstract class ServerTableEngineBase {
     this.pausedSinceMs = 0;
     this.lastPauseAlarmAtMs = 0;
     this.pauseMaxWaitMs = null;
+    this.pauseRequiresExplicitResume = false;
     this.holdBeforeNextHand = false;
     // Bible V8 §3.1: Table FSM — paused → running
     if (this.tableFSM.state === 'paused' && !this.adminPauseLock && !this.maintenanceLock) {
@@ -4570,7 +4576,13 @@ export abstract class ServerTableEngineBase {
       const maxWaitMs = this.pauseMaxWaitMs ?? 120000;
       this.pauseGateTimer = setTimeout(() => {
         if (this.handForHandResolve === resolve) {
-          if (this.terminalCloseoutPaused || this.claimedTournamentMovePauseOwners.size > 0) {
+          if (
+            this.pauseRequiresExplicitResume ||
+            this.terminalCloseoutPaused ||
+            this.claimedTournamentMovePauseOwners.size > 0
+          ) {
+            // A synchronized break can outlast its initial drain estimate.
+            // Only its manager can release that pause after all hands finish.
             // Terminal closeout is fail-closed. Its caller has its own bounded
             // wait, but this table stays fenced until that caller explicitly
             // proves the transaction did not commit and releases it.

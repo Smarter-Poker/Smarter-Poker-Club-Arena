@@ -1552,6 +1552,7 @@ export abstract class TournamentManagerBase {
         // the break ends. (Hand-for-hand deliberately does NOT pass this.)
         engine.pauseAfterHand(breakDurationMs + TournamentManagerBase.LAST_HAND_GRACE_MS, {
           beforeNextHand: true,
+          untilResumed: true,
         });
       } catch (err) {
         reportError(err, 'TournamentManagerBase.pauseForBreak_pause_engine');
@@ -1574,8 +1575,8 @@ export abstract class TournamentManagerBase {
       try {
         return e.isWaitingForHandForHand();
       } catch {
-        // An engine we cannot interrogate must not block the break.
-        return true;
+        // A failed inspection is not proof that the active hand has settled.
+        return false;
       }
     });
   }
@@ -1585,7 +1586,10 @@ export abstract class TournamentManagerBase {
    * tournament. Writes the real end time so the countdown players see reflects
    * when the break ACTUALLY started, not when the last hand was announced.
    */
-  async beginBreakCountdown(breakDurationMs: number): Promise<void> {
+  async beginBreakCountdown(
+    breakDurationMs: number,
+    deadlineMs = Date.now() + breakDurationMs
+  ): Promise<void> {
     const lifecycle = this.captureLifecycleToken();
     if (!lifecycle || !this.lifecycleIsCurrent(lifecycle) || !this.onBreak) return;
     /**
@@ -1603,7 +1607,7 @@ export abstract class TournamentManagerBase {
      */
     if (this.breakCountdownStarted) return;
     this.breakCountdownStarted = true;
-    const endsAt = new Date(Date.now() + breakDurationMs).toISOString();
+    const endsAt = new Date(deadlineMs).toISOString();
     try {
       await supabase
         .from('tournaments')
@@ -4276,6 +4280,7 @@ export abstract class TournamentManagerBase {
             try {
               engine.pauseAfterHand(remainingMs + TournamentManagerBase.LAST_HAND_GRACE_MS, {
                 beforeNextHand: true,
+                untilResumed: true,
               });
             } catch (err) {
               reportError(err, 'TournamentManagerBase.resume_rebreak_pause');

@@ -1,0 +1,164 @@
+{
+  "phase": 3,
+  "scope": ["K01", "K03", "K04", "K05", "K07", "K12", "BX08"],
+  "source_commit": "40886c94ab69fd37a47957b3ea3b23b5a0c0e375",
+  "status": "focused_correction_behavior_verified_pending_publication",
+  "full_phase_complete": false,
+  "full_controls_closed": false,
+  "correction": {
+    "control": "K05",
+    "title": "A Synchronized Break Waits For Its Hands And Uses One Deadline",
+    "baseline": {
+      "failed": 6,
+      "passed": 2,
+      "log": "/tmp/codex-clock-complete-baseline.log",
+      "cases": [
+        "Two managers persisting sequentially with two seconds of latency receive different break deadlines.",
+        "A late entrant receives a deadline two seconds beyond the existing shared deadline.",
+        "An entrant joining during the drain receives a fabricated countdown before hands finish.",
+        "An exception from a table's parked-state inspection is counted as a successful drain.",
+        "A hand reaching its boundary at 121 seconds is rejected by the 120-second grace limit.",
+        "A manager-owned synchronized break self-releases at its 420-second initial budget."
+      ]
+    },
+    "verification": {
+      "new_behavior_cases_passed": 8,
+      "existing_lifecycle_fence_cases_passed": 4,
+      "log": "/tmp/codex-clock-fixed.log",
+      "server_types": "passed",
+      "server_types_exit_code": 0,
+      "server_types_log": "/tmp/codex-clock-types.log",
+      "diff_check": "passed"
+    },
+    "behavior": [
+      "GameServer waits for all participating table boundaries until its server generation stops owning the drain.",
+      "Unknown table inspection remains unproven and cannot open the countdown.",
+      "Live and restored synchronized breaks request explicit manager release; the ordinary hand-for-hand safety timeout remains.",
+      "One absolute deadline reaches each persisted tournament countdown and the shared resume timer.",
+      "A newcomer during the drain is paused without being shown a fabricated countdown; current managers join the countdown participant set."
+    ],
+    "execution_paths": [
+      "GameServer.scheduleSynchronizedBreaks -> triggerSynchronizedBreak -> waitForAllTablesParked -> TournamentManagerBase.areAllTablesParked",
+      "TournamentManagerBase.pauseForBreak/resume -> ServerTableEngineBase.pauseAfterHand(untilResumed) -> awaitPauseGate -> resumeDealing/releasePauseGate",
+      "GameServer.triggerSynchronizedBreak/holdIfBreakIsRunning -> TournamentManagerBase.beginBreakCountdown"
+    ],
+    "limits": [
+      "Tests invoke actual imported runtime methods with controlled time and mocked persistence/table-boundary responses; they do not execute production settlement or payment writes.",
+      "Required CI, merged-source integration and production engine adoption remain unverified for this correction.",
+      "Complete K05 acceptance still requires integrated real-hand settlement, restart and published UI deadline evidence."
+    ]
+  },
+  "inherited_evidence": {
+    "break_clock": {
+      "pr": 4016,
+      "merge_commit": "b30e1b8513bf51937276c8d57b44c03ff038cb51",
+      "behavior_cases": 8,
+      "verified_live_engine": "b53ad9b2",
+      "reference": "docs/audits/2026-09-09-phase3-progress.json#break_clock_correction",
+      "rerun": false
+    },
+    "utc_cadence": {
+      "pr": 4063,
+      "merge_commit": "9eac7cab76d90bcaabefcdb932169d5f0ab60781",
+      "scheduler_cases": 9,
+      "maintenance_cases": 66,
+      "verified_live_engine": "b4c427a6",
+      "reference": "docs/audits/2026-09-09-phase3-progress.json#utc_break_cadence_correction",
+      "rerun": false
+    }
+  },
+  "thaw_catalog_review": {
+    "observed_at": "2026-09-10T03:19:13Z",
+    "production_read_only": true,
+    "functions": [
+      {
+        "signature": "fn_thaw_platform(timestamptz,numeric,text)",
+        "body_md5": "f058bfbb8fb26b8412868fc9a2cbf900"
+      },
+      {
+        "signature": "fn_thaw_platform(timestamptz,timestamptz,numeric,uuid,text)",
+        "body_md5": "071941c4f82d9f676622dc671fb0db40"
+      },
+      {
+        "signature": "fn_thaw_platform_checkpointed(timestamptz,numeric,text)",
+        "body_md5": "8390ea3b5e92685cc29c806c494a680a"
+      },
+      {
+        "signature": "fn_snapshot_maintenance_thaw_targets(timestamptz,numeric)",
+        "body_md5": "43455b0ff86f51f524b6190fc6bf7dd2"
+      },
+      {
+        "signature": "fn_credit_maintenance_thaw_targets(timestamptz,numeric)",
+        "body_md5": "c12308b00489adce1376ba1c1e4ea9d5"
+      }
+    ],
+    "steps": [
+      "sit_out_at",
+      "hold_expires_at",
+      "addon_period_ends_at",
+      "reversible_until",
+      "reveal_deadline_at",
+      "rebuy_prompt_until",
+      "bomb_pot_next_due_at",
+      "cash_stay_last_tick_at",
+      "cash_rejoin_expires_at",
+      "level_started_at",
+      "cluster_break_eligible_since",
+      "cluster_move_expires_at",
+      "reconnect_presence",
+      "reconnect_snapshots"
+    ],
+    "current_caller": "The inspected GameServer uses the three-argument fn_thaw_platform overload. Presence of the newer ownership-aware overload does not prove that caller adopts its complete release contract.",
+    "limits": "Catalog review only. No deadline row was shifted, no migration was applied and no production financial operation was invoked."
+  },
+  "controls": [
+    {
+      "id": "K01",
+      "status": "partial",
+      "requirement": "Use one durable tournament clock and level definition across all tables. Restart must restore elapsed active-play time.",
+      "remaining": "Existing break-restart remainder behavior is verified; full durable authority and all restart/level boundaries remain."
+    },
+    {
+      "id": "K03",
+      "status": "partial",
+      "requirement": "Define registration wall time separately from blind time and maintenance extensions. Test daylight saving and UTC conversion.",
+      "remaining": "UTC/DST cadence is already verified. Current late-registration formula and its maintenance extension contract remain unverified."
+    },
+    {
+      "id": "K04",
+      "status": "partial",
+      "requirement": "Publish break cadence, duration and exceptions. Track requested, draining, on-break and resumed states explicitly.",
+      "remaining": "This correction distinguishes the drain from a real countdown; player-visible cadence, duration and exception publication are not fully certified."
+    },
+    {
+      "id": "K05",
+      "status": "partial_behavior_verified_pending_publication",
+      "requirement": "Finish active hands before a tournament break begins; release participating tables using one authoritative deadline.",
+      "remaining": "Integrate this correction, pass required CI, verify engine adoption and exercise the complete real-hand settlement/restart/UI boundary."
+    },
+    {
+      "id": "K07",
+      "status": "partial_catalog_review",
+      "requirement": "Transfer all applicable deadlines across the approved maintenance freeze. No hidden time-bank, rebuy or offer expiry.",
+      "remaining": "Actual installed thaw behavior across all player deadlines and rolling restart callers remains unverified."
+    },
+    {
+      "id": "K12",
+      "status": "partial",
+      "requirement": "Test missed scheduler ticks, engine failover and long-running hands at :53/:55/:00 without restarting active settlement.",
+      "remaining": "UTC missed-tick behavior and the focused 121-second drain test are covered; combined active settlement/failover scenario remains."
+    },
+    {
+      "id": "BX08",
+      "status": "partial",
+      "requirement": "Blind expiry, registration closure, :53 drain and :55 maintenance overlap a long hand: assigned forced bets stay fixed; each clock follows its documented policy.",
+      "remaining": "The combined blind/registration/drain/maintenance scenario remains; root owns the blind snapshot and pause-edge corrections."
+    }
+  ],
+  "tested_files_sha256": {
+    "server/src/GameServer.ts": "23cf13f478d94e3d708586ca00967b5585a5384aeb77e6b7086965663a5027e3",
+    "server/src/tournament/TournamentManagerBase.ts": "3260efaddd9fa8bb3210b5d7bc04f78a14ab8b53a0cdb551f85a20aac8fe408e",
+    "server/src/engine/ServerTableEngineBase.ts": "fb06fe97b509bcef00ffe8972ecbf58eb3568f2e3b0f9a859257f0e1b650fcbd",
+    "server/src/SynchronizedBreakDeadline.test.ts": "bb9e760227a934af8372e39f6c251be645cf9e78e8754e1af4155e3eb3f9dc05"
+  }
+}

@@ -2,6 +2,51 @@
 
 ## Every Change, Documented. No Exceptions.
 
+## 2026-09-10: Diamond Shared Cash Lifecycle Integration
+
+The shared table buy-in, accepted-hand settlement and occupancy cash-out now have a distinct whole-Diamond custody branch; existing chip contracts remain separate. Three forward migrations and exact isolated database acceptance are recorded in docs/changelog/2026-09-10-diamond-phase-6-shared-cash-integration.md. Client departure summaries retain the already verified original occupancy instead of performing a second network read before leave. Re-read: yes. The client regression repair passed 72 focused cases and the engine SELECT contract passed 48. Exact user approval was received; all three financial migrations applied once as 20260910050142, 20260910050156 and 20260910050209. Eighteen function bodies, access controls, triggers and closed public admission were verified. Complete Phase 6 publication and live acceptance are not yet claimed. Final integrated client build and server TypeScript passed on clean source 71f57c9585. Connected real-engine/SQL play conserved all 2000 fixture Diamonds; current settlement-lane compatibility passed 50 SQL assertions. Normal push and production release checks remain required.
+
+## 2026-09-10: Mystery CI Uses Its Available PostgreSQL Client
+
+The embedded CI runtime has no psql, so the mystery probe now uses the existing PGNODE client when configured. All thirteen groups pass in both client modes, including observed concurrent reservation, isolated role identity and rollback. Node mode was verified with no psql binary and invalid inherited connection variables. Client failure still stops execution. No financial assertion, shared client, application runtime or production change. Re-read: yes. See docs/changelog/2026-09-10-mystery-ci-uses-the-available-postgres-client.md.
+
+## 2026-09-10: Cancellation Acceptance Uses The Approved Origin-Wallet Policy
+
+The cancellation probe still used a retired registration alias, an obsolete wallet-routing assumption and satellite-ticket refund expectations. Its prepared assertions now use request-bound host-club registration and require exact origin-wallet cash refunds with no new ticket. A synthetic native run restored only the exact tracked platform-source seed, then refused the mixed-schema ticket outcome. Current downstream parity is unproved and a known satellite receipt fingerprint/ACL gap remains; no live defect is inferred. All temporary changes and synthetic rows rolled back. Source guards are not native acceptance. CA-03-11 and Phase 3 stay open. Re-read: yes. See docs/audits/2026-09-10-entry-refund-cancellation-acceptance-gate.json.
+
+## 2026-09-10: Native Spin Draw Survives A Late Receipt Failure
+
+The replay rehearsal now injects failure after actual entry/rake, draw journals, reserve receipts and escrow writes, proves complete rollback, then retries the same event once. Current saved function fingerprints and real accounting triggers pass the full direct-draw replay probe on PostgreSQL 17.11; function hashes and fixture state are restored afterward. No runtime or production change. Final winner settlement, immutable launch-wrapper composition and complete Phase 3 acceptance remain separate gates. Re-read: yes. See docs/changelog/2026-09-10-native-spin-draw-rollback-and-replay.md.
+
+## 2026-09-10: Release Fixtures Own Their Git Configuration And Drain Archive Padding
+
+The disposable release Git fixture now clears inherited Git repository and configuration selectors and uses sandbox-owned global configuration. Three adversarial cases prove caller configuration, HEAD and index stay unchanged. A separate pre-push failure exposed BSD tar closing the archive pipe before Git finished zero block padding. The image builder now consumes through EOF while retaining pipefail. A deterministic real-archive padding regression fails before the change and passes after; a producer that exits 47 after extraction still blocks Docker and cleans staging. All 30 release-seal law tests pass. No live engine, host checkout, image, tag or release mutation was performed. Re-read: yes. See docs/changelog/2026-09-10-release-fixtures-own-their-git-configuration.md.
+
+## 2026-09-10: Registration Rehearsal Preserves JSON Strings Across Clients
+
+The current-dependency rehearsal parsed PostgreSQL JSON scalar text with json.loads. psql retained the JSON quotes, while the CI Node client decoded the scalar first, failing before the accounting assertions. Both scalar projections now cast their JSON encoding to PostgreSQL text so each client returns identical encoded text. All source fingerprints and financial assertions remain in force. Verified: all 23 native PostgreSQL behavior groups passed independently through psql and PGNODE, including rollback, concurrent replay and exact charged-wallet receipts. Re-read: yes; no application money function or production database changed.
+
+## 2026-09-10: Played Spin Recovery Requires A Real Hand Count
+
+`server/src/tournament/playedSpinLaunchRecovery.ts` previously admitted missing or malformed hand evidence through `Number(hand_count) < 1`. The parser now requires a positive safe integer JSON number before the played-game recovery exception. Ten failing adversarial regressions reproduced the hole; 27 parser tests and 170 focused Spin/launch tests pass. The separate compact funding proof passes 42 PostgreSQL checks, with its atomic authority definition verified against production. Full current lower-money-function composition and ordinary engine publication remain open. Re-read: yes. Full server TypeScript: pass. No database or financial mutation. See docs/changelog/2026-09-10-played-spin-recovery-requires-a-real-hand-count.md.
+
+## 2026-09-10: Accounting CI Runs The Mystery Reservation Probe
+
+Before: the compact mystery probe was not called by the existing accounting PostgreSQL CI runner, whose PGUSER also differed from its local initdb default. The runner now invokes it with the existing PostgreSQL binary path, and initdb/psql explicitly share one local test role. Thirteen groups pass under inherited CI connection variables. An unavailable-binary fault proves nonzero propagation with no following command execution. Re-read: yes. Shell syntax and diff checks pass; no TypeScript or runtime source changed.
+
+## 2026-09-10: Mystery Reservation Replays Its Exact Generation
+
+Before: Phase 3 had source guards and inventory unit tests but no bounded actual-function PostgreSQL seed/reserve/reveal runner. Added the current catalog fixture and thirteen behavior groups proving exact inventory, immutable retry, persisted recipient binding, authorization and observed concurrent reservation. Eight existing satellite origin-wallet refund groups also pass. No application function, financial policy or production database changed. Re-read: yes. Full wallet payout/terminal and pending bounty rebuy acceptance remain open. See docs/changelog/2026-09-10-mystery-generation-reservation-rehearsal.md.
+
+## 2026-09-10: Terminal Rehearsals Start After Published Entry Windows Close
+
+**Files:** scripts/ci/probes/atomic-terminal-rehearsal-fixture.sql (prior lines 40-50), scripts/ci/probes/atomic-terminal-rehearsal-entry-windows.sql.
+**What existed:** terminal fixtures inherited current_level 0 and a level 4 registration cutoff, so financial rollback/replay probes failed at an unrelated valid guard.
+**What changed:** the shared template explicitly closes its promised level and timed entry windows; a temporary-table probe exercises the real guard without modifying it. Rebuy hand probes retain their explicit open-window overrides.
+**Why:** meaningful terminal acceptance must reach its actual money assertions while keeping early-finalization refusals intact.
+**Verified:** YES, re-read; six native PostgreSQL scenarios pass and roll back. All 61 existing source assertions passed across the main and isolated resource-timeout retry.
+**TypeScript:** NOT CERTIFIED, incomplete dependencies and full disk prevented a reliable run; no TypeScript source changed. See docs/audits/2026-09-10-payout-cutover-swarm-evidence.md for the blocked full cutover and unresolved deal consent binding.
+
 ## 2026-09-10: Current Tournament Seat Moves Require Manager Authority
 
 The prepared strict cutover named only an obsolete seat-move RPC. Its current RPC could enter as an unmarked service actor after a callback lost manager context. The current name now uses the existing exact fresh lease gate, with the old route still denied. Real PostgreSQL reproduced the gap and passes 32 request admission scenarios after correction, preserving receipt recovery and player purchases. No production cutover or financial mutation is part of this source correction. See docs/changelog/2026-09-10-seat-moves-require-current-manager-authority.md.

@@ -1,0 +1,186 @@
+{
+  "scope": "Phase 14 lobby inventory and waitlist recovery",
+  "evidenceState": "Phase 14 release verification snapshot; production UI and device acceptance remain open",
+  "sourceHead": "7e2ebc05bc52d28e26e257e01c8df663cfa3a75e",
+  "pr": 4095,
+  "mergedAt": "2026-09-10T04:04:09Z",
+  "merge": "c41635319207842a45b9dc65d87ba9f00da130ed",
+  "regressions": {
+    "inventoryBefore": { "failed": 3, "passed": 11 },
+    "drawerBefore": { "failed": 4, "passed": 1 },
+    "focusedAfter": { "passed": 96, "files": 8 },
+    "normalPushGates": [
+      { "passed": 206, "files": 17 },
+      { "passed": 902, "files": 59 }
+    ],
+    "pushGateCounting": "Overlapping suites; do not add totals",
+    "localBuild": "ENOSPC; production compilation subsequently verified by actual CI and publisher builds"
+  },
+  "ci": {
+    "run": 34434704916,
+    "conclusion": "success",
+    "typeScript": "success",
+    "productionBuild": "success",
+    "routePerformanceBudget": "success",
+    "clientShards": 4,
+    "clientShardResults": "all success",
+    "cssBeatE2e": "success",
+    "tableStudioPurchaseSyncAccessibility": "success",
+    "insuranceRabbitHunt375px": "success",
+    "liveProductionE2e": "skipped",
+    "postDeployVerification": "skipped",
+    "updatedAt": "2026-09-10T04:04:01Z"
+  },
+  "autopilot": { "run": 34434704961, "conclusion": "success", "enableSquashAutoMerge": "success" },
+  "publisher": {
+    "run": 34435729782,
+    "conclusion": "success",
+    "head": "c41635319207842a45b9dc65d87ba9f00da130ed",
+    "buildClubArena": "success",
+    "distCompleteness": "success",
+    "provenanceStamp": "success",
+    "clientShards": 4,
+    "clientShardResults": "all success",
+    "publishJob": 102740809309,
+    "actualRsyncAndSymlinkSwap": "success",
+    "exactOriginVerification": "success",
+    "capgoOta": "skipped",
+    "logProof": [
+      {
+        "at": "2026-09-10T04:07:30.4472134Z",
+        "result": "/srv/club-arena/releases/c41635319207842a45b9dc65d87ba9f00da130ed"
+      },
+      { "at": "2026-09-10T04:07:31.7419005Z", "result": "origin serves c416353" },
+      {
+        "at": "2026-09-10T04:07:32.2836931Z",
+        "result": "CONVERGED: production is being served c416353, which is the tip of main."
+      }
+    ],
+    "updatedAt": "2026-09-10T04:07:37Z"
+  },
+  "checkedAt": "2026-09-10T04:10:55.384929+00:00",
+  "stamps": [
+    {
+      "url": "https://smarter.poker/hub/club-arena/build-info.json",
+      "ca_sha": "c41635319207842a45b9dc65d87ba9f00da130ed",
+      "built_at": "2026-09-10T04:06:36Z",
+      "built_by": "publish-club-arena.yml",
+      "run_id": "34435729782"
+    },
+    {
+      "url": "https://ca-static.smarter.poker/build-info.json",
+      "ca_sha": "c41635319207842a45b9dc65d87ba9f00da130ed",
+      "built_at": "2026-09-10T04:06:36Z",
+      "built_by": "publish-club-arena.yml",
+      "run_id": "34435729782"
+    }
+  ],
+  "assets": [
+    {
+      "url": "https://smarter.poker/hub/club-arena/assets/index-LJBeiXa3-v6.js",
+      "sha256": "1afef37ca6a025dc2b6f1f8e947a8f9e39daec83d1379e4a30f327d4ee6375d6"
+    },
+    {
+      "url": "https://smarter.poker/hub/club-arena/assets/ClubHomePage-C3UbTFs2-v6.js",
+      "originUrl": "https://ca-static.smarter.poker/assets/ClubHomePage-C3UbTFs2-v6.js",
+      "sha256": "a30f1fe8bdffae1ee008f697905ef045662ae613c905cdb13c70ad85be21d6e9",
+      "publicEqualsOrigin": true
+    }
+  ],
+  "runtimeBlobs": [
+    {
+      "blob": "e48e1a73236e8f527831eac5bb9d7b5ca2c212ee",
+      "path": "src/pages/ClubHomePage.tsx",
+      "ref": "7e2ebc05bc52d28e26e257e01c8df663cfa3a75e"
+    },
+    {
+      "blob": "7ec4fa662caba2cf76c894f467cd5863f7ee2112",
+      "path": "src/components/lobby/GameLobbyPanel.tsx",
+      "ref": "7e2ebc05bc52d28e26e257e01c8df663cfa3a75e"
+    },
+    {
+      "blob": "e48e1a73236e8f527831eac5bb9d7b5ca2c212ee",
+      "path": "src/pages/ClubHomePage.tsx",
+      "ref": "c41635319207842a45b9dc65d87ba9f00da130ed"
+    },
+    {
+      "blob": "7ec4fa662caba2cf76c894f467cd5863f7ee2112",
+      "path": "src/components/lobby/GameLobbyPanel.tsx",
+      "ref": "c41635319207842a45b9dc65d87ba9f00da130ed"
+    }
+  ],
+  "runtimeBlobComparison": "Tested and merged blobs match for both runtime files",
+  "compiledInspection": [
+    "Single occupancy owner and finally release",
+    "Scoped and bounded omission/reload decision outside React updater",
+    "Projection scope fields retained",
+    "Busy-operation and membership waitlist effect, including null and thrown-result invalidations"
+  ],
+  "browser": {
+    "attemptScope": "Phase 13 acceptance recheck earlier in this run, before Phase 14 publication",
+    "phase14PostpublicationSession": "not verified",
+    "initialCheck": "CDP operation refresh tabs timed out after 20000ms",
+    "boundedRecoveryAttempt": "CDP operation refresh tabs timed out after 20000ms",
+    "postReleaseDom": "unverified",
+    "naturalReconnect": "unverified",
+    "physicalIpadPwa": "unverified"
+  },
+  "prescribedFinalStatusReader": {
+    "script": "scripts/ci/pr-status.mjs",
+    "state": "obtained",
+    "checkedAt": "2026-09-10T04:35:13.333Z",
+    "pr": 4095,
+    "prState": "closed",
+    "merged": true,
+    "merge": "c41635319207842a45b9dc65d87ba9f00da130ed",
+    "classification": "RED_NON_BLOCKING",
+    "nonblockingReason": {
+      "run": 34434624113,
+      "name": "Agent Open PR",
+      "conclusion": "cancelled",
+      "required": false,
+      "successfulDuplicateRun": 34434624167
+    },
+    "sourceCi": "success",
+    "publisher": "success",
+    "watchdog": { "run": 34435949753, "conclusion": "success" },
+    "macAccess": "recovered; previous timeout is no longer an active blocker"
+  },
+  "coordination": {
+    "engineMutations": false,
+    "containerTagHostCheckoutMutations": false,
+    "stageBDdl": false,
+    "hooksBypassed": false,
+    "manualPrOpenOrMerge": false,
+    "workflowRetriesForced": false,
+    "liveBalanceOrSeatProbes": false,
+    "newCron": false
+  },
+  "postDeployProductionE2e": {
+    "run": 34435949773,
+    "triggerHead": "c41635319207842a45b9dc65d87ba9f00da130ed",
+    "checkedAt": "2026-09-10T04:37:22Z",
+    "status": "in_progress",
+    "conclusion": null,
+    "job": 102742573443,
+    "completedSteps": {
+      "productionReadiness": "success",
+      "alignSpecsToActuallyServingCommit": "success",
+      "isolatedAccountSetup": "success",
+      "isolatedStaffAccess": "success",
+      "liveCashierDatabaseContract": "success",
+      "authenticatedProductionCashier": "failure"
+    },
+    "deployedPageSuite": "in_progress",
+    "honestyCheck": "pending",
+    "isolatedAccountCleanup": "pending",
+    "reportUpload": "pending",
+    "activeJobLogRead": "404 BlobNotFound; exact failing assertion unavailable",
+    "phase14FailureAttribution": "not established",
+    "configuredRelevantCoverage": [
+      "tests/e2e/club-lobby.spec.ts: Chromium, one worker, retries 0",
+      "tests/e2e/production-live-table-realtime.spec.ts: webkit-live-table-realtime, one worker, retries 0"
+    ],
+    "acceptanceLimit": "Configured coverage is not a passed result; no browser/reconnect/device gap closed"
+  }
+}

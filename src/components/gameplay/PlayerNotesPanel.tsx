@@ -57,6 +57,9 @@ export default function PlayerNotesPanel({
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [selectedColor, setSelectedColor] = useState('none');
   const [loading, setLoading] = useState(true);
+  /* When the existing note could not be read, saving would overwrite a note
+     the player cannot see. The save button refuses until a reload succeeds. */
+  const [noteLoadFailed, setNoteLoadFailed] = useState(false);
   const [saving, setSaving] = useState(false);
   /** In-flight latch for the paid tag purchase — see toggleTag. */
   const tagPurchaseRef = useRef(false);
@@ -67,28 +70,44 @@ export default function PlayerNotesPanel({
   const { style: staggerStyle } = useStaggerAnimation(notes.length);
 
   useEffect(() => {
-    if (user?.id) {
-      if (targetUserId) {
-        loadSingleNote();
-      } else {
-        loadAllNotes();
-      }
-      // Check VIP status for tag gating
-      vipService
-        .checkVIPStatus(user.id)
-        .then((status) => setIsVIP(status.isVIP))
-        .catch((e) => console.warn('[PlayerNotesPanel] Failed to check VIP status:', e));
+    if (!user?.id) return undefined;
+    /* THE NOTE ON SCREEN IS THE NOTE ON THIS PLAYER (2026-09-10). The load
+       wrote state only inside `if (data)`, so switching to a player with no
+       saved note kept the PREVIOUS player's text, tags and colour on screen -
+       and saveNote then upserted them against the new target_user_id. The
+       form is reset the moment the target changes, and a read that resolves
+       after the target has moved on is dropped. */
+    let cancelled = false;
+    if (targetUserId) {
+      loadSingleNote(() => cancelled);
+    } else {
+      loadAllNotes();
     }
+    // Check VIP status for tag gating
+    vipService
+      .checkVIPStatus(user.id)
+      .then((status) => {
+        if (!cancelled) setIsVIP(status.isVIP);
+      })
+      .catch((e) => console.warn('[PlayerNotesPanel] Failed to check VIP status:', e));
+    return () => {
+      cancelled = true;
+    };
   }, [user?.id, targetUserId]);
 
-  const loadSingleNote = async () => {
+  const loadSingleNote = async (isCancelled: () => boolean) => {
     setLoading(true);
+    setNoteLoadFailed(false);
+    setCurrentNote('');
+    setSelectedTags([]);
+    setSelectedColor('none');
     const { data, error } = await supabase
       .from('player_notes')
       .select('id, user_id, target_user_id, notes, color_label, tags')
       .eq('user_id', user?.id)
       .eq('target_user_id', targetUserId)
       .maybeSingle();
+    if (isCancelled()) return;
 
     /* A FAILED READ IS NOT "NO NOTE ON THIS PLAYER" (2026-08-29). Only `data`
        was destructured, and a Supabase builder resolves with {data: null,
@@ -96,7 +115,11 @@ export default function PlayerNotesPanel({
        empty note -- and the player, believing they had never written one,
        types a fresh one over the top of the note they already had. The sibling
        loadAllNotes twenty lines below already destructures `error`. */
-    if (error) reportError(error, 'PlayerNotesPanel.loadSingleNote');
+    if (error) {
+      reportError(error, 'PlayerNotesPanel.loadSingleNote');
+      setNoteLoadFailed(true);
+      toast.error('Your Note On This Player Could Not Be Loaded');
+    }
 
     if (data) {
       setCurrentNote(data.notes || '');
@@ -148,6 +171,10 @@ export default function PlayerNotesPanel({
 
   const saveNote = async () => {
     if (!user?.id || !targetUserId || !currentNote.trim()) return;
+    if (noteLoadFailed) {
+      toast.error('Your Existing Note Could Not Be Read. Reopen The Panel Before Saving.');
+      return;
+    }
     setSaving(true);
 
     const { error } = await supabase.from('player_notes').upsert(

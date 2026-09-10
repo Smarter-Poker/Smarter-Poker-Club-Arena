@@ -20,7 +20,13 @@ const compiled = ts.transpile(`const handler = ${source.slice(start, end)}\n};`,
 });
 
 function fixture() {
-  let state: any = { players: Array(6).fill(null), heroSeat: 0, tableName: 'Test' };
+  let state: any = {
+    players: Array(6).fill(null),
+    heroSeat: 0,
+    tableName: 'Test',
+    arenaAsset: 'chips',
+    arenaId: 'a0000000-0000-4000-8000-000000000001',
+  };
   const ref = (current: any) => ({ current });
   const local = new Map<string, string>();
   const session = new Map<string, string>();

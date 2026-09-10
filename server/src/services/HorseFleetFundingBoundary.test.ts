@@ -44,7 +44,9 @@ describe('the fleet sits in chip arenas and in the platform Diamond Arena', () =
     expect(source).toContain('arena:clubs!fk_tables_club_id(id, asset, is_platform, union_id)');
     expect(source).toContain('const tables = tablePage.rows.filter(isFleetTable);');
     // The arena roll is the horse's own diamonds, never a club_members row.
-    expect(source).toContain('bankrolls.set(`${arena}:${h.id}`, Number.isFinite(diamonds) ? diamonds : 0)');
+    expect(source).toContain(
+      'bankrolls.set(`${arena}:${h.id}`, Number.isFinite(diamonds) ? diamonds : 0)'
+    );
     // A diamond door needs a receipt key; the chip door keeps its old call.
     expect(source).toContain("p_idempotency_key: funding === 'diamonds' ? randomUUID() : null");
   });

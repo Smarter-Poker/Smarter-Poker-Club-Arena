@@ -69,7 +69,7 @@ Two written contracts collide, and no table shape satisfies both:
 
 - **Gate 7** (`20260905034937_gate_7_every_cash_table_is_a_game`, OPORD 1.4
   s18): an open cash table must belong to a game (`tables.cluster_id ->
-  cash_games.id`). All 143 open cash tables do.
+cash_games.id`). All 143 open cash tables do.
 - **Phase 6 admission** (`fn_poker_diamond_buyin`, `assertDiamondCashTable`):
   a diamond table must have `cluster_id IS NULL`, `rake_percent = 0` and
   `bbj_percent = 0`. The game maker also stamps a chip rake (-1, inherit) and
@@ -93,7 +93,7 @@ Also still closed, and Dan's:
   diamonds (max buy-ins 200 / 500 / 1,000 / 2,000). That is a price and stays
   Dan's call (10.9).
 - Diamond tournaments (the freerolls) are Phase 8: `fn_register_horse_for_
-  tournament` funds from the chip treasury and the fleet's tournament pool is
+tournament` funds from the chip treasury and the fleet's tournament pool is
   membership-scoped. Both need the same "the arena is everyone's club, funded
   in diamonds" treatment when that phase lands; nothing was changed there.
 

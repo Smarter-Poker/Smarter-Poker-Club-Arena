@@ -50,13 +50,22 @@ Owned worktree: `codex-chip-drift-resume`. Owned isolated PostgreSQL cluster:
 `/tmp/codex-chip-drift-cutover-e2iav203`, port 55473, local socket only.
 Do not modify the earlier chat's donor cluster or another agent's worktree.
 
-## Publication Block
+## Publication And Standing Authorization
 
-The corrections and evidence are committed locally. Automatic approval review
-rejected the normal feature-branch push, stating that potentially sensitive
-repository contents could be published without explicit authorization.
-The canonical remote was verified as
-`https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena.git`.
-No push or PR creation occurred. Request approval for that exact destination
-and the prepared `agent/codex-chip-drift-resume/fix/phase-three-acceptance` branch.
-Required remote CI has therefore not started. Do not bypass the rejection.
+The user explicitly authorized pushing and publishing this work and future
+repository pushes/publications on 2026-09-10, and requested no repeat
+confirmation. The earlier automatic-review blocker is resolved. Normal push
+opened PR 4084, required CI 34428840067 passed, and it merged as
+566b66e07582fd97b77d90abfd20e9f2068ea941. Both frontend endpoints serve
+80d76e0b2fe5ad9593a82cbb0580b50d03a62896, which contains that merge.
+
+## Next Correction
+
+The prepared strict cutover names the old seat-move RPC but omits the current
+engine route. PostgreSQL reproduced admission of an unmarked service actor
+without manager authority. The current route now uses the existing fresh
+lease check, and its postflight requires that route. All 32 real-hook admission
+scenarios pass. The full prepared SQL also installs on the isolated schema.
+Receipt recovery after lease loss and authenticated player rebuys remain valid.
+This source correction does not authorize prematurely activating the whole
+financial cutover. Phase 3 remains open.

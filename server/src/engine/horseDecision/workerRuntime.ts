@@ -612,7 +612,7 @@ export class HorseDecisionWorkerRuntime {
         throw new Error('cash horse state cannot carry tournament context');
       }
     } else {
-      if (!['mtt', 'spin', 'hu_sng'].includes(gs.format ?? '')) {
+      if (!['mtt', 'sng', 'spin', 'hu_sng'].includes(gs.format ?? '')) {
         throw new Error('tournament horse state format is invalid');
       }
       this.assertPhase6TournamentSnapshot(request);
@@ -674,6 +674,14 @@ export class HorseDecisionWorkerRuntime {
     ];
     if (requiredBooleans.some((value) => typeof value !== 'boolean')) {
       throw new Error('Phase 6 tournament context boolean state is incomplete');
+    }
+    const mysteryBountyStage = tournament.mysteryBountyStage ?? 'none';
+    if (
+      !['none', 'pending', 'active', 'complete'].includes(mysteryBountyStage) ||
+      (tournament.isMysteryBounty === true && mysteryBountyStage === 'none') ||
+      (tournament.isMysteryBounty === false && mysteryBountyStage !== 'none')
+    ) {
+      throw new Error('Phase 7 mystery bounty stage is invalid');
     }
     if (
       !nonNegative(tournament.entrants) ||
@@ -739,7 +747,7 @@ export class HorseDecisionWorkerRuntime {
         !Number.isSafeInteger(gs.dealerSeat) ||
         !gs.players.some((seat) => seat.seat === gs.dealerSeat) ||
         tournament.gameVariant !== gs.gameVariant ||
-        !['mtt', 'spin', 'hu_sng'].includes(gs.format ?? '') ||
+        !['mtt', 'sng', 'spin', 'hu_sng'].includes(gs.format ?? '') ||
         tournament.levelDurationMin === null ||
         tournament.levelElapsedMin === null ||
         !Array.isArray(tournament.stacks) ||
@@ -756,6 +764,14 @@ export class HorseDecisionWorkerRuntime {
     if (
       !Array.isArray(tournament.stacks) ||
       tournament.stacks.some((stack) => !positive(stack)) ||
+      (tournament.stackByUser !== undefined &&
+        (!tournament.stackByUser ||
+          typeof tournament.stackByUser !== 'object' ||
+          Array.isArray(tournament.stackByUser) ||
+          Object.entries(tournament.stackByUser).some(
+            ([userId, stack]) =>
+              !gs.players.some((player) => player.user_id === userId) || !positive(stack)
+          ))) ||
       !Array.isArray(tournament.payoutPct) ||
       tournament.payoutPct.some((share) => !positive(share)) ||
       !tournament.bountyByUser ||
@@ -769,7 +785,31 @@ export class HorseDecisionWorkerRuntime {
       !nonNegative(tournament.mysteryMeanCents) ||
       !nonNegative(tournament.mysteryTopCents) ||
       !nonNegative(tournament.meanBountyCents) ||
-      !nonNegative(tournament.satelliteSeats)
+      !nonNegative(tournament.satelliteSeats) ||
+      (tournament.prizePoolCents !== undefined && !nonNegative(tournament.prizePoolCents)) ||
+      (tournament.bountyPoolCents !== undefined && !nonNegative(tournament.bountyPoolCents)) ||
+      (tournament.buyInCents !== undefined && !nullableNonNegative(tournament.buyInCents)) ||
+      (tournament.startingStackChips !== undefined &&
+        !nullableNonNegative(tournament.startingStackChips)) ||
+      (tournament.rebuyCostCents !== undefined &&
+        !nullableNonNegative(tournament.rebuyCostCents)) ||
+      (tournament.rebuyChips !== undefined && !nullableNonNegative(tournament.rebuyChips)) ||
+      (tournament.rebuyPrizeContributionCents !== undefined &&
+        !nullableNonNegative(tournament.rebuyPrizeContributionCents)) ||
+      (tournament.rebuyBountyContributionCents !== undefined &&
+        !nullableNonNegative(tournament.rebuyBountyContributionCents)) ||
+      (tournament.reloadsUsed !== undefined &&
+        tournament.reloadsUsed !== null &&
+        (!Number.isSafeInteger(tournament.reloadsUsed) || tournament.reloadsUsed < 0)) ||
+      (tournament.addOnTaken !== undefined &&
+        tournament.addOnTaken !== null &&
+        typeof tournament.addOnTaken !== 'boolean') ||
+      (tournament.rebuyAffordable !== undefined &&
+        tournament.rebuyAffordable !== null &&
+        typeof tournament.rebuyAffordable !== 'boolean') ||
+      (tournament.addOnAffordable !== undefined &&
+        tournament.addOnAffordable !== null &&
+        typeof tournament.addOnAffordable !== 'boolean')
     ) {
       throw new Error('Phase 6 tournament payout or bounty state is invalid');
     }

@@ -1,26 +1,46 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const h = vi.hoisted(() => {
-  type Result = { data: unknown; error: { message: string } | null };
+  type Result = {
+    data: unknown;
+    error: { message: string } | null;
+    count?: number | null;
+  };
   const responses = new Map<string, Result | PromiseLike<Result>>();
+  const rangeResponses = new Map<string, Result | PromiseLike<Result>>();
   const calls: string[] = [];
   const reportError = vi.fn();
   const from = vi.fn((table: string) => {
     calls.push(table);
-    const result = (): Result | PromiseLike<Result> =>
-      responses.get(table) ?? { data: [], error: null };
+    let requestedRange: string | null = null;
+    const result = async (): Promise<Result> => {
+      const resolved = await ((requestedRange
+        ? rangeResponses.get(`${table}:${requestedRange}`)
+        : undefined) ??
+        responses.get(table) ?? { data: [], error: null });
+      return table === 'tournament_players' && resolved.count === undefined
+        ? {
+            ...resolved,
+            count: Array.isArray(resolved.data) ? resolved.data.length : null,
+          }
+        : resolved;
+    };
     const chain: Record<string, unknown> = {};
-    for (const method of ['select', 'eq', 'order', 'limit']) {
+    for (const method of ['select', 'eq', 'order', 'limit', 'in']) {
       chain[method] = vi.fn(() => chain);
     }
-    chain.maybeSingle = vi.fn(() => Promise.resolve(result()));
+    chain.range = vi.fn((from: number, to: number) => {
+      requestedRange = `${from}-${to}`;
+      return chain;
+    });
+    chain.maybeSingle = vi.fn(() => result());
     chain.then = (
       resolve: (value: Result) => unknown,
       reject: (reason: unknown) => unknown
-    ): Promise<unknown> => Promise.resolve(result()).then(resolve, reject);
+    ): Promise<unknown> => result().then(resolve, reject);
     return chain;
   });
-  return { responses, calls, reportError, from };
+  return { responses, rangeResponses, calls, reportError, from };
 });
 
 vi.mock('./supabase.js', () => ({ supabase: { from: h.from } }));
@@ -32,6 +52,7 @@ import {
   refreshTournamentBrainContext,
 } from './TournamentBrainContext.js';
 import { TOURNAMENT_CONTEXT_INCOMPLETE } from '../engine/HorseTournamentPreflop.js';
+import { horseRebuyAllowance } from './FreeBuy.js';
 
 const NOW = Date.parse('2026-09-09T18:00:00.000Z');
 
@@ -113,6 +134,7 @@ beforeEach(() => {
   vi.setSystemTime(NOW);
   __clearTournamentBrainCache();
   h.responses.clear();
+  h.rangeResponses.clear();
   h.calls.length = 0;
   h.from.mockClear();
   h.reportError.mockClear();
@@ -216,5 +238,279 @@ describe('TournamentBrainContext lifecycle cache', () => {
     const stale = getTournamentBrainContextSnapshot('t-5', NOW + 60_001);
     expect(stale.status).toBe('stale');
     expect(stale.issues).toContain('tournament_context_stale');
+  });
+
+  it('pages the complete roster instead of truncating a field at the first 1,000 rows', async () => {
+    h.responses.set('tournaments', {
+      data: { ...tournamentRow(), max_players: 2_000 },
+      error: null,
+    });
+    const players = Array.from({ length: 1_001 }, (_, index) => ({
+      user_id: `player-${String(index).padStart(4, '0')}`,
+      chips: 1_000,
+      status: 'active',
+      current_bounty: 0,
+    }));
+    h.rangeResponses.set('tournament_players:0-999', {
+      data: players.slice(0, 1_000),
+      error: null,
+      count: players.length,
+    });
+    h.rangeResponses.set('tournament_players:1000-1999', {
+      data: players.slice(1_000),
+      error: null,
+    });
+    h.responses.set('tournament_bounty_chests', { data: [], error: null });
+    h.responses.set('tournament_satellite_entitlements', { data: [], error: null });
+
+    refreshTournamentBrainContext('t-large');
+    await settleRefresh();
+
+    const snapshot = getTournamentBrainContextSnapshot('t-large');
+    expect(snapshot.status).toBe('complete');
+    expect(snapshot.context?.entrants).toBe(1_001);
+    expect(snapshot.context?.playersLeft).toBe(1_001);
+    expect(snapshot.context?.stacks).toHaveLength(1_001);
+    expect(Object.keys(snapshot.context?.stackByUser ?? {})).toHaveLength(1_001);
+    expect(snapshot.context?.stackByUser['player-1000']).toBe(1_000);
+    expect(h.calls.filter((table) => table === 'tournament_players')).toHaveLength(2);
+  });
+
+  it('caches exact recovery affordability from each player funding club off the action clock', async () => {
+    const row = {
+      ...tournamentRow(),
+      buy_in_amount: 90,
+      buy_in_fee: 10,
+      starting_chips: 1_000,
+      rebuy_cost: 100,
+      rebuy_chips: 1_000,
+      // The canonical RPC preserves the head to cents after rounding the total charge.
+      bounty_amount: 40.5,
+      is_rebuy: true,
+      rebuy_levels: 2,
+      max_rebuys: 2,
+      add_on_available: true,
+      addon_cost: 50,
+      addon_chips: 500,
+      addon_levels: 1,
+      addon_period_triggered: true,
+      addon_period_started_at: new Date(NOW - 60_000).toISOString(),
+      addon_period_ends_at: new Date(NOW + 60_000).toISOString(),
+    };
+    h.responses.set('tournaments', { data: row, error: null });
+    h.responses.set('tournament_players', {
+      data: [
+        {
+          user_id: 'horse-funded',
+          club_id: 'club-a',
+          chips: 1_500,
+          status: 'active',
+          current_bounty: 40,
+          rebuys: 1,
+          add_on: false,
+        },
+        {
+          user_id: 'horse-short',
+          club_id: 'club-a',
+          chips: 1_000,
+          status: 'active',
+          current_bounty: 40,
+          rebuys: 0,
+          add_on: false,
+        },
+      ],
+      error: null,
+    });
+    h.responses.set('tournament_bounty_chests', { data: [], error: null });
+    h.responses.set('tournament_satellite_entitlements', { data: [], error: null });
+    h.responses.set('club_members', {
+      data: [
+        { user_id: 'horse-funded', club_id: 'club-a', chip_balance: 100 },
+        { user_id: 'horse-short', club_id: 'club-a', chip_balance: 49 },
+      ],
+      error: null,
+    });
+
+    refreshTournamentBrainContext('t-funded');
+    await settleRefresh();
+
+    const snapshot = getTournamentBrainContextSnapshot('t-funded');
+    expect(snapshot.status).toBe('complete');
+    expect(snapshot.context).toMatchObject({
+      rebuyCostCents: 10_000,
+      rebuyPrizeContributionCents: 4_950,
+      rebuyBountyContributionCents: 4_050,
+      rebuyAffordableByUser: { 'horse-funded': true, 'horse-short': false },
+      addOnAffordableByUser: { 'horse-funded': true, 'horse-short': false },
+    });
+    expect(h.calls).toContain('club_members');
+  });
+
+  it('mirrors the purchase authority when zero chip grants fall back to the starting stack', async () => {
+    const row = {
+      ...tournamentRow(),
+      free_buy: true,
+      buy_in_amount: 90,
+      buy_in_fee: 10,
+      starting_chips: 1_000,
+      rebuy_cost: 0,
+      rebuy_chips: 0,
+      is_rebuy: true,
+      rebuy_levels: 2,
+      max_rebuys: 2,
+      add_on_available: true,
+      addon_cost: 0,
+      addon_chips: 0,
+      addon_levels: 1,
+    };
+    h.responses.set('tournaments', { data: row, error: null });
+    h.responses.set('tournament_players', {
+      data: [
+        {
+          user_id: 'horse-funded',
+          club_id: 'club-a',
+          chips: 1_000,
+          status: 'active',
+          current_bounty: 0,
+          rebuys: 0,
+          add_on: false,
+        },
+      ],
+      error: null,
+    });
+    h.responses.set('tournament_bounty_chests', { data: [], error: null });
+    h.responses.set('tournament_satellite_entitlements', { data: [], error: null });
+    h.responses.set('club_members', {
+      data: [{ user_id: 'horse-funded', club_id: 'club-a', chip_balance: 100 }],
+      error: null,
+    });
+
+    refreshTournamentBrainContext('t-zero-fallback');
+    await settleRefresh();
+
+    expect(getTournamentBrainContextSnapshot('t-zero-fallback').context).toMatchObject({
+      rebuyCostCents: 9_000,
+      rebuyChips: 1_000,
+      addOnCost: 90,
+      addOnChips: 1_000,
+      horseRebuyCapByUser: {
+        'horse-funded': Math.min(2, horseRebuyAllowance('horse-funded', 't-zero-fallback')),
+      },
+    });
+  });
+
+  it('applies the deterministic Free Buy cap to a re-entry-only product', async () => {
+    const row = {
+      ...tournamentRow(),
+      free_buy: true,
+      buy_in_amount: 10,
+      buy_in_fee: 0,
+      starting_chips: 1_000,
+      rebuy_cost: 10,
+      rebuy_chips: 1_000,
+      is_rebuy: false,
+      max_rebuys: 0,
+      is_reentry: true,
+      max_reentries: 3,
+    };
+    h.responses.set('tournaments', { data: row, error: null });
+    h.responses.set('tournament_players', {
+      data: [
+        {
+          user_id: 'horse-reentry',
+          club_id: 'club-a',
+          chips: 1_000,
+          status: 'active',
+          current_bounty: 0,
+          rebuys: 0,
+          add_on: false,
+        },
+      ],
+      error: null,
+    });
+    h.responses.set('tournament_bounty_chests', { data: [], error: null });
+    h.responses.set('tournament_satellite_entitlements', { data: [], error: null });
+    h.responses.set('club_members', {
+      data: [{ user_id: 'horse-reentry', club_id: 'club-a', chip_balance: 10 }],
+      error: null,
+    });
+
+    refreshTournamentBrainContext('t-reentry-only');
+    await settleRefresh();
+
+    expect(getTournamentBrainContextSnapshot('t-reentry-only').context).toMatchObject({
+      horseRebuyCapByUser: {
+        'horse-reentry': Math.min(3, horseRebuyAllowance('horse-reentry', 't-reentry-only')),
+      },
+    });
+  });
+
+  it('invalidates affordability on a funding failure without discarding fresh ICM context', async () => {
+    const row = {
+      ...tournamentRow(),
+      buy_in_amount: 100,
+      starting_chips: 1_000,
+      rebuy_cost: 100,
+      rebuy_chips: 1_000,
+      is_rebuy: true,
+      rebuy_levels: 2,
+      max_rebuys: 2,
+    };
+    h.responses.set('tournaments', { data: row, error: null });
+    h.responses.set('tournament_players', {
+      data: [
+        {
+          user_id: 'horse-1',
+          club_id: 'club-a',
+          chips: 1_000,
+          status: 'active',
+          current_bounty: 0,
+          rebuys: 0,
+          add_on: false,
+        },
+        {
+          user_id: 'horse-2',
+          club_id: 'club-a',
+          chips: 2_000,
+          status: 'active',
+          current_bounty: 0,
+          rebuys: 0,
+          add_on: false,
+        },
+      ],
+      error: null,
+    });
+    h.responses.set('tournament_bounty_chests', { data: [], error: null });
+    h.responses.set('tournament_satellite_entitlements', { data: [], error: null });
+    h.responses.set('club_members', {
+      data: [
+        { user_id: 'horse-1', club_id: 'club-a', chip_balance: 100 },
+        { user_id: 'horse-2', club_id: 'club-a', chip_balance: 100 },
+      ],
+      error: null,
+    });
+    refreshTournamentBrainContext('t-funding-failure');
+    await settleRefresh();
+    expect(
+      getTournamentBrainContextSnapshot('t-funding-failure').context?.rebuyAffordableByUser
+    ).toEqual({ 'horse-1': true, 'horse-2': true });
+
+    vi.setSystemTime(NOW + 20_001);
+    h.responses.set('club_members', {
+      data: null,
+      error: { message: 'wallet read failed' },
+    });
+    refreshTournamentBrainContext('t-funding-failure');
+    await settleRefresh();
+
+    const snapshot = getTournamentBrainContextSnapshot('t-funding-failure', NOW + 20_001);
+    expect(snapshot.status).toBe('complete');
+    expect(snapshot.context?.stacks).toEqual([2_000, 1_000]);
+    expect(snapshot.context?.rebuyAffordableByUser).toEqual({});
+    expect(snapshot.context?.addOnAffordableByUser).toEqual({});
+    expect(h.reportError).toHaveBeenCalledWith(
+      expect.any(Error),
+      'TournamentBrainContext.recovery_funding_unavailable'
+    );
   });
 });

@@ -278,10 +278,10 @@ describe('a query that fails does not render as a fact about the tournament', ()
   });
 
   it('DetailOverviewTab reports a failed deal-vote read', () => {
-    const src = strip(read('components/tournament/details/DetailOverviewTab.tsx'));
+    const src = strip(read('components/tournament/TournamentDealReview.tsx'));
     // Was `if (!alive || error || !data) return;` -- a permission failure left
     // the panel showing "0/6 Votes" as a fact, with nothing reported.
-    expect(src).toMatch(/reportError\(error, 'DetailOverviewTab\.dealVotes'\)/);
+    expect(src).toMatch(/reportError\(failure, 'TournamentDealReview\.proposal'\)/);
   });
 });
 
@@ -293,14 +293,15 @@ describe('polls and timers only run when something reads them', () => {
     // Gated on `dealEnabled` alone, a 500-runner event polled every 15s from
     // level one for a panel that cannot render until one table is left.
     const src = strip(read('components/tournament/details/DetailOverviewTab.tsx'));
-    expect(src).toMatch(/dealPanelPossible/);
-    expect(src).toMatch(/if \(!dealPanelPossible \|\| !tournament\?\.id\) return/);
+    expect(src).toContain('dealPanel &&');
+    expect(src).toMatch(/dealPanel\.amSeated\s*&&\s*currentUserId/);
+    expect(src).toContain('<TournamentDealReview');
   });
 
   it('the deal-vote poll drops a response that a newer one has overtaken', () => {
-    const src = strip(read('components/tournament/details/DetailOverviewTab.tsx'));
-    expect(src).toMatch(/const mine = \+\+seq/);
-    expect(src).toMatch(/mine !== seq/);
+    const src = strip(read('components/tournament/TournamentDealReview.tsx'));
+    expect(src).toMatch(/const mine = \+\+request.current/);
+    expect(src).toMatch(/mine !== request.current/);
   });
 
   it('BlindsTab stops ticking once the event is over', () => {

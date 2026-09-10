@@ -26,9 +26,9 @@
       "reason": "Automatic review blocked the requested source/error disclosure."
     }
   ],
-  "checked_at": "2026-09-10T04:31:49.109729+00:00",
+  "checked_at": "2026-09-10T05:44:27.583155+00:00",
   "coordination": "The existing release task owns the production engine release seal and Stage-B cutover. This swarm performs isolated source and verification work and normal repository publication; it does not race that production owner.",
-  "integration_branch": "agent/codex-chip-drift-resume/fix/phase-three-swarm",
+  "integration_branch": "agent/codex-chip-entry-swarm/fix/phase-three-deal-rollout-proposal",
   "lanes": [
     {
       "owner": "entry_refund",
@@ -51,14 +51,14 @@
     {
       "owner": "payout_cutover",
       "controls": ["CA-03-04", "CA-03-05", "CA-03-06", "CA-03-07"],
-      "status": "fixture_correction_integrated_exact_consent_followup_in_progress",
+      "status": "prepared_exact_consent_native_cash_proofs_integrated_full_terminal_parity_open",
       "commit": "2a55d077d532d9e594fb7c500f8f78609f2eb64f",
       "evidence": "docs/audits/2026-09-10-payout-cutover-swarm-evidence.md"
     },
     {
       "owner": "spin_acceptance",
       "controls": ["CA-03-08"],
-      "status": "parser_correction_integrated",
+      "status": "parser_frontend_publication_recorded_engine_adoption_open_native_funding_and_concurrency_verified",
       "commit": "c0aa15a94754eac456077ec6784c2c43bfbc1a88",
       "evidence": "docs/audits/2026-09-10-accounting-phase-three-spin-swarm.json"
     },
@@ -70,7 +70,7 @@
     {
       "owner": "tournament_ui",
       "controls": ["CA-03-12"],
-      "status": "archive_corrections_integrated_exact_consent_followup_in_progress",
+      "status": "archive_fix_published_exact_consent_and_deadline_prepared_in_draft",
       "commit": "0f41a5c7f404678c0f60573ffcad6fefad468ec7",
       "evidence": "docs/audits/2026-09-10-phase-three-client-wiring-acceptance.md"
     }
@@ -85,11 +85,16 @@
   "phase_four_started": false,
   "production_cutover": {
     "bounty_rebuy_generation_helper": "absent",
-    "committed_move_receipt_resolver": "absent",
+    "committed_move_receipt_resolver": "present; runtime acceptance not certified here",
     "mutations_by_this_swarm": false,
-    "new_seat_move": "absent",
-    "observed_at": "2026-09-10T04:31:49.109729+00:00",
-    "seven_guards": "All seven remain disabled; do not enable them without replacement and composition acceptance."
+    "new_seat_move": "present; runtime and receipt acceptance not certified here",
+    "observed_at": "2026-09-10T05:42:09.401324Z",
+    "seven_guards": "All seven remain disabled; coordinated replacement and composition acceptance remains required.",
+    "authority_body_hashes": {
+      "fn_complete_tournament_terminal(uuid,uuid,text)": "f4275f9fa8cb2711f19ffdf7b16a04e6",
+      "fn_resolve_tournament_terminal_outcome(uuid,uuid,text)": "022c1883533939caf8ebed0cb5699e8c",
+      "fn_settle_tournament_rake(uuid,text)": "05a512317bb7bdcecfaec19ef8ee4e63"
+    }
   },
   "programme": "109-item comprehensive Club Arena accounting audit",
   "public_runtime": {
@@ -111,11 +116,34 @@
     "version": "1695880b"
   },
   "publication": {
-    "status": "PR4096_CI_fix_verified_locally_pending_rerun",
+    "status": "PR4096_frontend_published_and_verified",
     "push_completed": true,
-    "normal_hooks": "passed on integrated conflict resolutions; no hooks bypassed",
+    "normal_hooks": "passed; no bypass",
     "pr": 4096,
-    "initial_head": "82bca2280b96cf06aad11fd67c8d20af61af525a"
+    "head": "3413a2ac8478ae6e64646c18a5576c06d6c593a7",
+    "merge_sha": "02b267443d6d304f885fd6494a4a30309bc515b9",
+    "merged_at": "2026-09-10T05:17:23Z",
+    "ci_run": 34439368293,
+    "ci_status": "success",
+    "publisher_run": 34440474031,
+    "publisher_status": "success",
+    "frontend_proof": {
+      "ca_sha": "02b267443d6d304f885fd6494a4a30309bc515b9",
+      "built_at": "2026-09-10T05:19:55Z",
+      "http_status": 200,
+      "endpoints": [
+        "https://ca-static.smarter.poker/build-info.json",
+        "https://smarter.poker/hub/club-arena/build-info.json"
+      ]
+    },
+    "engine_deployment": {
+      "run": 34440541284,
+      "status": "failure",
+      "failed_step": "Stage the current release proof control",
+      "reason": "this deployment workflow was not dispatched from current main; refusing rollbackable control-plane code",
+      "manual_dispatch_by_this_swarm": false,
+      "engine_adoption_verified": false
+    }
   },
   "verification": {
     "client": {
@@ -133,7 +161,10 @@
     "mystery": {
       "pg_groups": 13,
       "ci_environment": "passed with inherited PGUSER/PGHOST/PGPORT",
-      "ci_failure_propagation": "verified"
+      "ci_failure_propagation": "verified",
+      "psql_groups": 13,
+      "node_groups": 13,
+      "required_ci": "13 native groups passed in final PR4096 CI"
     },
     "satellite_origin_refund": {
       "pg_groups": 8,
@@ -149,28 +180,55 @@
       "source_assertions": 61,
       "scope": "Real guard with correctly closed fixture entry windows; no full M5 financial acceptance claim."
     },
-    "integrated_required_ci": "pending",
+    "integrated_required_ci": {
+      "pr": 4096,
+      "run": 34439368293,
+      "status": "success",
+      "server_passed": 8605,
+      "server_skipped": 145,
+      "server_files_passed": 641,
+      "server_files_skipped": 1,
+      "client_shards_passed": 4,
+      "live_browser_acceptance": "not executed by these CI checks"
+    },
     "registration_client_parity": {
       "psql_groups": 23,
       "node_groups": 23,
       "both_exit_codes": 0,
       "initial_ci_failure": "JSON scalar decoded by Node before json.loads; repaired with explicit text projection",
-      "required_ci": "pending rerun"
+      "required_ci": "23 native groups passed in final PR4096 CI"
+    },
+    "integrated_deal_followup": {
+      "source_head": "37204f892",
+      "client_passed": 143,
+      "client_files": 5,
+      "server_passed": 175,
+      "server_files": 9,
+      "client_typescript": "passed",
+      "server_typescript": "passed",
+      "native_assertions_per_tail_variant": 68,
+      "tail_variants": ["paid", "unpaid", "partial"],
+      "unique_count_note": "Same 68 assertions repeated for each tail variant; not 204 unique cases.",
+      "two_session_lock_assertions": 3,
+      "native_evidence": "docs/audits/2026-09-10-versioned-final-deal-native-acceptance.json",
+      "spin_native_flow_evidence": "docs/audits/2026-09-10-spin-native-immutable-launch-evidence.json",
+      "spin_concurrency_evidence": "docs/audits/2026-09-10-spin-native-concurrency-evidence.json",
+      "browser": "Cloud browser connection timed out before opening the page; no live browser acceptance."
     }
   },
   "remaining_acceptance": {
-    "CA-03-01": "Actual late-seat lifecycle and knockout rebuy generations under missing M6/bounty helper authority; current ordinary purchase dependency parity is verified.",
+    "CA-03-01": "Final seat lifecycle and knockout rebuy generations; seat functions are now present, bounty helper remains absent, ordinary purchase dependency parity is verified.",
     "CA-03-02": "Actual bounty/PKO wallet, progressive carry and final winner conservation after coordinated dependency installation.",
     "CA-03-03": "Complete mystery wallet payment and terminal residual closure beyond reserve/reveal identity.",
     "CA-03-04": "Full immutable payout-plan and all-recipient terminal composition against current money authorities.",
     "CA-03-05": "Test all replacements and activate/retire seven guards only through coordinated Stage-B acceptance.",
-    "CA-03-06": "Versioned exact-plan preview/consent and bound engine terminal request/receipt; source followup in progress.",
+    "CA-03-06": "Prepared exact-plan SQL, engine and client pass focused verification; whole terminal completion/recovery against matching current authorities and coordinated activation remain open.",
     "CA-03-07": "Full funded-overlay and published-commitment immutability acceptance through terminal composition.",
-    "CA-03-08": "Current M1 lower funding composition and coordinated engine adoption of source corrections.",
+    "CA-03-08": "Native funding, launch recovery, same-event replay races and shared-reserve contention are verified. Final winner/terminal closure and coordinated engine adoption remain open.",
     "CA-03-09": "Final seat authority, concurrent moves and clocks; unresolved stalls/hand receipt diagnostics blocked by review.",
     "CA-03-10": "Satellite target funding and existing ticket redemption under final seat authority, preserving approved cash refunds.",
     "CA-03-11": "Cancellation after prior awards/persisted Spin draw and interrupted-event policy; refund-only cases are insufficient.",
-    "CA-03-12": "Integrated client publication/browser verification and exact deal-plan consent."
+    "CA-03-12": "PR4096 frontend identity is verified on both endpoints. Draft exact-consent client and deadline fix require paired SQL/engine rollout and live browser acceptance."
   },
   "environment": {
     "disk": "Parallel disposable dependency provisioning exhausted free disk. Agents stopped their own provisioning and removed only their new disposable copies; space recovered.",
@@ -178,5 +236,25 @@
     "worktree_metadata": "Other activity changed shared core.bare and test identity. Affected agents repaired only their own worktree configuration and retained normal guards.",
     "root_disposable_cluster": "Still intact. Automatic review rejected stop/copy/delete; no cleanup workaround attempted."
   },
-  "integration_base": "4d29dce4c: PR4083 release-seal update merged from main before publication."
+  "integration_base": "4d29dce4c: PR4083 release-seal update merged from main before publication.",
+  "prepared_followup": {
+    "pr": 4106,
+    "draft": true,
+    "status": "integrated_and_locally_verified_pending_normal_push_and_CI",
+    "sql_applied": false,
+    "activated": false,
+    "engine_source_commits": [
+      "e5e1b8eeec1cd52e51ec80de680ff32e89818068",
+      "eda3074e473b53e753080b39ca6506f32308a997"
+    ],
+    "payout_source_commit": "fc64229b38015d546b6fb1725c19a21bab68e2a3",
+    "spin_evidence_commits": [
+      "58b2dc21c7efb20ba3c941f2b00df8418934d8fc",
+      "8bd5b8c0181e160c0189eeebb1cd7cbb536dcb71"
+    ],
+    "deadline_source_commit": "1ccb091e85ce8e84b021491a3e8bc13b45781c24",
+    "deadline_integrated_commit": "37204f892",
+    "integration_note": "The root ESLint hook required const timer initialization before abort listener registration. Fixed normally and all focused checks repeated successfully.",
+    "independent_source_review": "No new source blockers; exact SQL, engine and client contracts agree."
+  }
 }

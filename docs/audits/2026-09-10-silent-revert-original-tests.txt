@@ -1,0 +1,110 @@
+
+ RUN  v4.1.11 /Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-chip-entry-swarm
+
+ ❯ tests/unit/silentRevertPreservesAcceptedBase.test.ts (6 tests | 2 failed) 6680ms
+     × accepts unchanged main content after concurrent history and later context edits 869ms
+     × accepts added entries when main additions survive later context edits 1114ms
+     ✓ still rejects removal of protected content from the accepted base  1164ms
+     ✓ still rejects a full clobber restoring the prior pre-state  1205ms
+     ✓ cannot use the base proof for a prior introduced only on this branch  1058ms
+     ✓ still rejects reintroducing deleted bad code alongside unrelated additions  1268ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/silentRevertPreservesAcceptedBase.test.ts > Silent Revert Guard accepted-base survival proof > accepts unchanged main content after concurrent history and later context edits
+AssertionError:
+
+REVERT DETECTED
+===============
+
+A commit below restores a file to exactly the state it had before an
+earlier commit, without saying so. This is what happens when work is
+committed from a checkout that predates someone else’s change: the
+older content wins and the newer fix disappears with no diff anyone
+would think to read.
+
+  guarded.ts
+    this commit : 8dbc15c9e  restore before concurrent main changes
+    undoes      : e344d2de4  protect main content  (2026-09-10)
+
+If this revert is NOT intentional (it usually is not): rebase onto
+current origin/main and re-apply your change on top of theirs.
+
+If the revert IS intentional: since 2026-09-01 an intentional revert
+needs the `revert-approved` LABEL on this pull request, applied by a
+human. Say in the PR body which commit you are undoing and why, and
+this workflow has already filed an issue asking for the label — do
+NOT edit the commit message to route around this check; that is the
+exact move this rule was written to stop (2026-08-31 incident).
+If main is broken right now, prefer a forward fix: it needs no label.
+
+: expected 1 to be +0 // Object.is equality
+
+- Expected
++ Received
+
+- 0
++ 1
+
+ ❯ expectStatus tests/unit/silentRevertPreservesAcceptedBase.test.ts:74:63
+     72| function expectStatus(result: ReturnType<ReturnType<typeof fixture>['s…
+     73|   expect(result.error).toBeUndefined();
+     74|   expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(sta…
+       |                                                               ^
+     75| }
+     76|
+ ❯ tests/unit/silentRevertPreservesAcceptedBase.test.ts:80:5
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  tests/unit/silentRevertPreservesAcceptedBase.test.ts > Silent Revert Guard accepted-base survival proof > accepts added entries when main additions survive later context edits
+AssertionError:
+
+REVERT DETECTED
+===============
+
+A commit below restores a file to exactly the state it had before an
+earlier commit, without saying so. This is what happens when work is
+committed from a checkout that predates someone else’s change: the
+older content wins and the newer fix disappears with no diff anyone
+would think to read.
+
+  guarded.ts
+    this commit : 27f5daf4f  restore before concurrent main changes
+    undoes      : 4e6c391ff  protect main content  (2026-09-10)
+
+If this revert is NOT intentional (it usually is not): rebase onto
+current origin/main and re-apply your change on top of theirs.
+
+If the revert IS intentional: since 2026-09-01 an intentional revert
+needs the `revert-approved` LABEL on this pull request, applied by a
+human. Say in the PR body which commit you are undoing and why, and
+this workflow has already filed an issue asking for the label — do
+NOT edit the commit message to route around this check; that is the
+exact move this rule was written to stop (2026-08-31 incident).
+If main is broken right now, prefer a forward fix: it needs no label.
+
+: expected 1 to be +0 // Object.is equality
+
+- Expected
++ Received
+
+- 0
++ 1
+
+ ❯ expectStatus tests/unit/silentRevertPreservesAcceptedBase.test.ts:74:63
+     72| function expectStatus(result: ReturnType<ReturnType<typeof fixture>['s…
+     73|   expect(result.error).toBeUndefined();
+     74|   expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(sta…
+       |                                                               ^
+     75| }
+     76|
+ ❯ tests/unit/silentRevertPreservesAcceptedBase.test.ts:87:5
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 4 passed (6)
+   Start at  09:28:12
+   Duration  7.15s (transform 31ms, setup 139ms, import 7ms, tests 6.68s, environment 248ms)

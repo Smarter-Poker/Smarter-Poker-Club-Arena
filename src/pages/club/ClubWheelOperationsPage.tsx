@@ -13,6 +13,11 @@
  * allowance) that the arithmetic makes impossible to break and
  * fn_wheel_metrics re-derives anyway.
  *
+ * THE FREE SPIN (2026-09-09) has its own console here: the switch and the
+ * daily pot post to fn_wheel_set_free_spin, the day's count and what it has
+ * paid come from fn_wheel_free_state. It pays diamonds only, so it never
+ * touches the bank, the exposure or the invariant printed above it.
+ *
  * Every control posts a patch to fn_wheel_set_config, which decides who may:
  * fn_wheel_can_operate (union owner, co-owner or admin through
  * fn_union_can_manage_wallets; a standalone club's owner, co_owner or admin;
@@ -34,6 +39,8 @@ import { ErrorState, LoadingState } from '../../components/common/EmptyState';
 import { SpadeConsole, type ConsoleInk } from '../../components/console/SpadeConsole';
 import DiamondWheelService, {
   type WheelConfigPatch,
+  type WheelFreeSpinPatch,
+  type WheelFreeState,
   type WheelMetrics,
 } from '../../services/DiamondWheelService';
 import { compactChips } from '../../utils/format';
@@ -54,6 +61,7 @@ interface Draft {
   min_seconds_between_spins: string;
   purchased_only: boolean;
   allow_fixture_accounts: boolean;
+  free_spin_daily_budget_diamonds: string;
 }
 
 function draftFrom(m: WheelMetrics | null): Draft {
@@ -66,6 +74,7 @@ function draftFrom(m: WheelMetrics | null): Draft {
     min_seconds_between_spins: String(c?.min_seconds_between_spins ?? 3),
     purchased_only: c?.purchased_only ?? true,
     allow_fixture_accounts: c?.allow_fixture_accounts ?? false,
+    free_spin_daily_budget_diamonds: String(c?.free_spin_daily_budget_diamonds ?? 2000),
   };
 }
 
@@ -151,6 +160,7 @@ export default function ClubWheelOperationsPage() {
 
   const [clubUuid, setClubUuid] = useState<string | null>(null);
   const [metrics, setMetrics] = useState<WheelMetrics | null>(null);
+  const [free, setFree] = useState<WheelFreeState | null>(null);
   const [draft, setDraft] = useState<Draft>(draftFrom(null));
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -164,13 +174,20 @@ export default function ClubWheelOperationsPage() {
       const uuid = await resolveClubUUID(routeClubId);
       if (!isMountedRef.current) return;
       setClubUuid(uuid);
-      const m = await DiamondWheelService.metrics(uuid);
+      const [m, f] = await Promise.all([
+        DiamondWheelService.metrics(uuid),
+        DiamondWheelService.freeState(uuid).catch((err) => {
+          reportError(err, 'ClubWheelOperationsPage.free');
+          return null;
+        }),
+      ]);
       if (!isMountedRef.current) return;
       if (!m.ok) {
         setError(m.error || 'The Wheel Readings Could Not Be Loaded');
         return;
       }
       setMetrics(m);
+      setFree(f);
       setDraft(draftFrom(m));
     } catch (err) {
       reportError(err, 'ClubWheelOperationsPage.load');
@@ -206,6 +223,36 @@ export default function ClubWheelOperationsPage() {
     },
     [clubUuid, isMountedRef, toast, load]
   );
+
+  const applyFree = useCallback(
+    async (patch: WheelFreeSpinPatch, done: string) => {
+      if (!clubUuid) return;
+      setSaving(true);
+      try {
+        const res = await DiamondWheelService.setFreeSpin(clubUuid, patch);
+        if (!isMountedRef.current) return;
+        if (!res.ok) {
+          toast.error(res.error || 'That Change Was Refused');
+          return;
+        }
+        toast.success(done);
+        await load();
+      } catch (err) {
+        reportError(err, 'ClubWheelOperationsPage.applyFree');
+        if (isMountedRef.current) toast.error('That Change Did Not Go Through');
+      } finally {
+        if (isMountedRef.current) setSaving(false);
+      }
+    },
+    [clubUuid, isMountedRef, toast, load]
+  );
+
+  const saveFreePot = () => {
+    const pot = Number(draft.free_spin_daily_budget_diamonds);
+    if (!Number.isInteger(pot) || pot < 0)
+      return toast.error('The Daily Pot Must Be A Whole Number Of Diamonds, Zero Or More');
+    void applyFree({ free_spin_daily_budget_diamonds: pot }, 'The Daily Pot Is Saved');
+  };
 
   const saveNumbers = () => {
     const price = Number(draft.spin_price_diamonds);
@@ -249,6 +296,7 @@ export default function ClubWheelOperationsPage() {
   const cfg = metrics?.config;
   const pool = metrics?.pool;
   const enabled = Boolean(cfg?.enabled);
+  const freeOn = Boolean(cfg?.free_spin_enabled);
   const hostWord = metrics?.host_kind === 'union' ? 'Union Bank' : 'Club Treasury';
   const set = (key: keyof Draft) => (v: string) => setDraft((d) => ({ ...d, [key]: v }));
 
@@ -440,6 +488,59 @@ export default function ClubWheelOperationsPage() {
             onToggle={() =>
               setDraft((d) => ({ ...d, allow_fixture_accounts: !d.allow_fixture_accounts }))
             }
+          />
+        </div>
+      </SpadeConsole>
+
+      <SpadeConsole
+        eyebrow="On The House"
+        title="Free Spin"
+        pill={freeOn ? 'On' : 'Off'}
+        pillInk={freeOn ? 'green' : 'red'}
+        plates={{
+          secondary: {
+            label: freeOn ? 'Turn It Off' : 'Turn It On',
+            ink: freeOn ? 'red' : 'gold',
+            disabled: saving,
+            onClick: () =>
+              void applyFree(
+                { free_spin_enabled: !freeOn },
+                freeOn ? 'The Free Spin Is Off' : 'The Free Spin Is On'
+              ),
+          },
+          primary: {
+            label: saving ? 'Saving' : 'Save The Pot',
+            ink: 'white',
+            onClick: saveFreePot,
+            disabled: saving,
+          },
+        }}
+      >
+        <p className="sc-copy">
+          Every Member May Spin Once A Day For Diamonds Only, From A Five-Prize Table Worth 9.75
+          Diamonds A Spin On Average. The Pot Is The Most The Free Spins May Pay In A Day; When It
+          Is Spent, The Offer Closes Until Tomorrow.
+          {enabled ? '' : ' The Wheel Is Closed, So The Free Spin Is Closed With It.'}
+        </p>
+        <div className={`${styles.rows} ${styles.rowsCompact}`}>
+          <Row label="Free Spins Today" value={(free?.spins_today ?? 0).toLocaleString()} />
+          <Row
+            label="Given Today"
+            value={`${(free?.pot_paid_today ?? 0).toLocaleString()} Of ${(free?.pot_diamonds ?? 0).toLocaleString()}`}
+            ink="blue"
+            meta={
+              free?.reason === 'pot_empty'
+                ? 'The Pot Is Spent For Today'
+                : 'Diamonds From The Daily Pot'
+            }
+          />
+        </div>
+        <div className={styles.fields}>
+          <Field
+            label="Daily Pot (Diamonds)"
+            value={draft.free_spin_daily_budget_diamonds}
+            onChange={set('free_spin_daily_budget_diamonds')}
+            hint="Zero Closes The Free Spin For The Day Without Turning It Off."
           />
         </div>
       </SpadeConsole>

@@ -16,6 +16,13 @@
  * too: fn_wheel_commit hands the player the hash of a seed before Spin, the
  * spin reveals the seed, and `src/utils/wheelFairness.ts` lets the browser
  * recompute the roll. The whole design: supabase/migrations/20260907233833.
+ *
+ * THE FREE SPIN (2026-09-09, supabase/migrations/20260909234101). One spin a
+ * day on the house, per player per host, paying diamonds only and never
+ * chips: a free spin takes nothing in, and the games never pay out more than
+ * they take in. It has its own table (fn_wheel_free_state hands it back), its
+ * own record (fn_wheel_free_spin, fn_wheel_free_history) and the SAME commit
+ * and derivation as a paid spin, so the verifier below checks it unchanged.
  */
 
 import { supabase } from '../lib/supabase';
@@ -95,6 +102,31 @@ export interface WheelCommit {
   expires_at: string;
 }
 
+export type WheelFreeReason = 'closed' | 'used' | 'pot_empty' | 'not_member';
+
+export interface WheelFreeState {
+  ok: boolean;
+  error?: string;
+  /** The host runs a free spin at all (the wheel and the switch both on). */
+  enabled: boolean;
+  /** This player may take today's free spin right now. */
+  available: boolean;
+  reason: WheelFreeReason | null;
+  used_today: boolean;
+  /** The host's daily pot in diamonds, and what it has paid out today. */
+  pot_diamonds: number;
+  pot_paid_today: number;
+  spins_today: number;
+  segments: WheelSegment[];
+  /** The day the count is kept by (America/Chicago), as YYYY-MM-DD. */
+  day: string;
+}
+
+export interface WheelFreeSpinPatch {
+  free_spin_enabled?: boolean;
+  free_spin_daily_budget_diamonds?: number;
+}
+
 export interface WheelFairness {
   commit_id: string;
   server_seed_hash: string;
@@ -112,6 +144,8 @@ export interface WheelSpinResult {
   error?: string;
   detail?: string;
   replayed?: boolean;
+  /** True for a spin on the house: paid in diamonds, priced at nothing. */
+  free: boolean;
   spin_id: string;
   club_id: string;
   host_id: string;
@@ -158,6 +192,8 @@ export interface WheelMetrics {
     allow_fixture_accounts: boolean;
     max_spins_per_player_per_day: number;
     min_seconds_between_spins: number;
+    free_spin_enabled: boolean;
+    free_spin_daily_budget_diamonds: number;
     updated_at: string;
   };
   pool?: {
@@ -299,6 +335,7 @@ function normaliseSpin(raw: Record<string, unknown>): WheelSpinResult {
     error: raw.error ? String(raw.error) : undefined,
     detail: raw.detail ? String(raw.detail) : undefined,
     replayed: Boolean(raw.replayed),
+    free: Boolean(raw.free),
     spin_id: String(raw.spin_id ?? ''),
     club_id: String(raw.club_id ?? ''),
     host_id: String(raw.host_id ?? ''),
@@ -338,6 +375,38 @@ function normaliseSpin(raw: Record<string, unknown>): WheelSpinResult {
       diamond_float: num(pool.diamond_float),
     },
     created_at: String(raw.created_at ?? ''),
+  };
+}
+
+/** Paid and free spins in one list, newest first, for the player's own history. */
+export function mergeSpinHistory(
+  paid: WheelSpinResult[],
+  free: WheelSpinResult[]
+): WheelSpinResult[] {
+  return [...paid, ...free].sort(
+    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+  );
+}
+
+function normaliseFreeState(raw: Record<string, unknown>): WheelFreeState {
+  const reason = raw.reason ? String(raw.reason) : null;
+  return {
+    ok: Boolean(raw.ok),
+    error: raw.error ? String(raw.error) : undefined,
+    enabled: Boolean(raw.enabled),
+    available: Boolean(raw.available),
+    reason:
+      reason === 'closed' || reason === 'used' || reason === 'pot_empty' || reason === 'not_member'
+        ? reason
+        : null,
+    used_today: Boolean(raw.used_today),
+    pot_diamonds: num(raw.pot_diamonds),
+    pot_paid_today: num(raw.pot_paid_today),
+    spins_today: num(raw.spins_today),
+    segments: Array.isArray(raw.segments)
+      ? (raw.segments as Record<string, unknown>[]).map(normaliseSegment)
+      : [],
+    day: String(raw.day ?? ''),
   };
 }
 
@@ -386,6 +455,51 @@ const DiamondWheelService = {
     return Array.isArray(data) ? (data as Record<string, unknown>[]).map(normaliseSpin) : [];
   },
 
+  /** Today's free spin: whether this player has one, and the table it pays from. */
+  async freeState(clubId: string): Promise<WheelFreeState> {
+    const { data, error } = await supabase.rpc('fn_wheel_free_state', { p_club_id: clubId });
+    if (error) throw error;
+    return normaliseFreeState((data ?? {}) as Record<string, unknown>);
+  },
+
+  /**
+   * The free spin. The same commit as a paid spin, the same derivation over
+   * the free table's weights, idempotent on the commit, and one a day: the
+   * server refuses the second with its reason.
+   */
+  async freeSpin(clubId: string, commitId: string, clientSeed: string): Promise<WheelSpinResult> {
+    const { data, error } = await supabase.rpc('fn_wheel_free_spin', {
+      p_club_id: clubId,
+      p_commit_id: commitId,
+      p_client_seed: clientSeed,
+    });
+    if (error) throw error;
+    return normaliseSpin((data ?? {}) as Record<string, unknown>);
+  },
+
+  async freeHistory(clubId: string, limit = 25): Promise<WheelSpinResult[]> {
+    const { data, error } = await supabase.rpc('fn_wheel_free_history', {
+      p_club_id: clubId,
+      p_limit: limit,
+    });
+    if (error) throw error;
+    return Array.isArray(data) ? (data as Record<string, unknown>[]).map(normaliseSpin) : [];
+  },
+
+  /** The operator's switch and daily pot for the free spin. The RPC decides who may. */
+  async setFreeSpin(
+    clubId: string,
+    patch: WheelFreeSpinPatch
+  ): Promise<{ ok: boolean; error?: string }> {
+    const { data, error } = await supabase.rpc('fn_wheel_set_free_spin', {
+      p_club_id: clubId,
+      p_patch: patch,
+    });
+    if (error) throw error;
+    const raw = (data ?? {}) as Record<string, unknown>;
+    return { ok: Boolean(raw.ok), error: raw.error ? String(raw.error) : undefined };
+  },
+
   /** Operator readings: exposure, realised return, the invariant, the z-score. */
   async metrics(clubId: string): Promise<WheelMetrics> {
     const { data, error } = await supabase.rpc('fn_wheel_metrics', { p_club_id: clubId });
@@ -423,6 +537,8 @@ const DiamondWheelService = {
             allow_fixture_accounts: Boolean(cfg.allow_fixture_accounts),
             max_spins_per_player_per_day: num(cfg.max_spins_per_player_per_day),
             min_seconds_between_spins: num(cfg.min_seconds_between_spins),
+            free_spin_enabled: Boolean(cfg.free_spin_enabled),
+            free_spin_daily_budget_diamonds: num(cfg.free_spin_daily_budget_diamonds),
             updated_at: String(cfg.updated_at ?? ''),
           }
         : undefined,

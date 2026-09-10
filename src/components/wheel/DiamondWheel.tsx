@@ -19,6 +19,11 @@
  * and a locked segment (one the host cannot pay right now) is drawn dimmed with
  * a lock glyph rather than hidden, so the player sees what is off the table.
  *
+ * THE FREE TABLE (2026-09-09). The free spin's five prizes are all diamonds,
+ * so the paid rule would cut the whole wheel in one blue. With `free` set the
+ * inks follow the prize instead: the 250 wears gold, the 50 the steel-blue
+ * glass, the rest the club's blue. The paid wheel is untouched.
+ *
  * The spin is a CSS transition on the wheel group's rotation. It is a
  * duration-carrying animation (the landing IS the result), so the element
  * carries data-motion="keep" and its duration scales with the player's
@@ -41,6 +46,8 @@ export interface DiamondWheelProps {
   spinning: boolean;
   onLanded: () => void;
   size?: number;
+  /** The free spin's table is on the rim: ink by amount, not by kind. */
+  free?: boolean;
 }
 
 const BASE_SPIN_SECONDS = 5.2;
@@ -88,7 +95,11 @@ export function arrangeForDisplay(segments: WheelSegment[]): WheelSegment[] {
 }
 
 /** Gold is the top ink and stays rare: the two biggest chip prizes wear it. */
-function materialClass(seg: WheelSegment): string {
+function materialClass(seg: WheelSegment, free = false): string {
+  if (free && seg.kind === 'diamonds') {
+    if (seg.amount >= 250) return styles.segGoldHot;
+    return seg.amount >= 50 ? styles.segGlass : styles.segBlue;
+  }
   if (seg.kind === 'chips') return seg.value_chips >= 20 ? styles.segGoldHot : styles.segGlass;
   if (seg.kind === 'diamonds') return styles.segBlue;
   return styles.segDark;
@@ -110,6 +121,7 @@ export default function DiamondWheel({
   spinning,
   onLanded,
   size = 340,
+  free = false,
 }: DiamondWheelProps) {
   const arranged = useMemo(() => arrangeForDisplay(segments), [segments]);
   const n = Math.max(arranged.length, 1);
@@ -289,7 +301,7 @@ export default function DiamondWheel({
               <g key={seg.ord} className={seg.locked ? styles.segLocked : undefined}>
                 <path
                   d={arcPath(cx, cy, rOuter, rInner, a0, a1)}
-                  className={materialClass(seg)}
+                  className={materialClass(seg, free)}
                   stroke="rgba(226,232,238,0.42)"
                   strokeWidth="1.1"
                 />

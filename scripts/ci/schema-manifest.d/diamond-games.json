@@ -7,7 +7,9 @@
     "diamond_game_commits",
     "plinko_tables",
     "plinko_drops",
-    "crash_rounds"
+    "crash_rounds",
+    "wheel_free_segments",
+    "wheel_free_spins"
   ],
   "functions": [
     "fn_diamond_game_append_only",
@@ -34,10 +36,15 @@
     "fn_diamond_game_set_config",
     "fn_diamond_game_metrics",
     "fn_wheel_pool_seed",
-    "fn_diamond_game_floor"
+    "fn_diamond_game_floor",
+    "fn_wheel_free_history",
+    "fn_wheel_free_spin_result",
+    "fn_wheel_free_state",
+    "fn_wheel_free_spin",
+    "fn_wheel_set_free_spin"
   ],
   "columns": {
-    "wheel_configs": ["diamond_seed"],
+    "wheel_configs": ["diamond_seed", "free_spin_enabled", "free_spin_daily_budget_diamonds"],
     "wheel_pools": ["diamond_seed"]
   }
 }

@@ -103,6 +103,8 @@ test.describe('Production Cashier Certification', () => {
     await expect(quickActions).toBeVisible({ timeout: 60_000 });
     const cashierTile = quickActions.getByRole('button', { name: /^Cashier\b/ });
     await expect(cashierTile).toBeVisible();
+    // The shell can paint before the wallet directory exposes its menu.
+    await expect(cashierTile).toHaveAttribute('aria-haspopup', 'menu', { timeout: 30_000 });
 
     await cashierTile.click({ button: 'right' });
     const desktopMenu = page.getByRole('menu', { name: 'Open Cashier For' });

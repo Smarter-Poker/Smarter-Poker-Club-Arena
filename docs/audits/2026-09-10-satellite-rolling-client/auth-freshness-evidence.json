@@ -1,10 +1,11 @@
 {
-  "captured_at": "2026-09-10T15:21:44.467224+00:00",
+  "captured_at": "2026-09-10T15:54:46.048023+00:00",
   "scope": "Held qualification UI terminal-result auth scope; no deployed caller or authenticated browser claim",
   "tests": {
-    "files": 2,
-    "passed": 67,
-    "new_actual_auth_callback_races": 5
+    "files": 3,
+    "passed": 69,
+    "new_actual_auth_callback_races": 5,
+    "archive_gate": "Moved durableCompletionHandled above its deferred callback; no source-law baseline change"
   },
   "typecheck": {
     "command": "npx tsc --noEmit -p tsconfig.app.json",
@@ -50,9 +51,10 @@
     }
   ],
   "files": {
-    "src/pages/TablePage.tsx": "dbbf574f0924ec67e4b5fbef9935df4c2d4f93426cbc1e60ed8194ab552f7e8f",
+    "src/pages/TablePage.tsx": "f388e2920a236559447a703a3d7cc952bd735312710ff4d3c1382bbdfba74ba9",
     "tests/unit/satelliteQualificationOutcome.test.tsx": "27cf57e7b65a4cfbd1a6e0bbc5eb564912366727459bec6614291f19d01d0573",
-    "tests/config/tournamentWinnerExit.test.ts": "41e89546ebc8f8550a82706b74e43d4e85d4809adcf3ec728f8509055eebdbc7"
+    "tests/config/tournamentWinnerExit.test.ts": "41e89546ebc8f8550a82706b74e43d4e85d4809adcf3ec728f8509055eebdbc7",
+    "tests/no-tdz-in-table-route.law.test.ts": "57495c41c7944ab496109a3c5f75905d35784769f303240de072a381752503b1"
   },
   "holds": [
     "External Stage-B final-seat private core absent live",

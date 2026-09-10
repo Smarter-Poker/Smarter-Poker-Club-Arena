@@ -12633,6 +12633,7 @@ export default function TablePage({
              was the last one. Single-table mode has no such subscriber, so it
              still navigates here. */
           let exitStarted = false;
+          let durableCompletionHandled = false;
 
           const goToLobbyWithResult = (
             position: number | null,
@@ -12825,7 +12826,6 @@ export default function TablePage({
              row becomes COMPLETED. `goToLobbyWithResult` is already one-shot,
              so this safely races the normal broadcast without two exits. */
           let durableCompletionLookupInFlight = false;
-          let durableCompletionHandled = false;
           function scheduleDurableCompletionRetry(): void {
             if (!isMounted || durableCompletionHandled || durableCompletionRetryTimer) return;
             const delayMs = Math.min(30_000, 1_000 * 2 ** Math.min(durableCompletionRetryCycle, 5));

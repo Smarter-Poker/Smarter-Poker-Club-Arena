@@ -1,0 +1,7 @@
+{
+  "_owner": "fix/hand-projection-wakes-by-notify-with-a-poll-net",
+  "_comment": "AFTER INSERT trigger on hand_projection_outbox sends pg_notify('hand_projection_outbox', hand_id:table_id) so the engine wakes its projection worker over LISTEN instead of Realtime WAL decoding (20260910052523).",
+  "tables": [],
+  "functions": ["trg_notify_hand_projection_outbox"],
+  "columns": {}
+}

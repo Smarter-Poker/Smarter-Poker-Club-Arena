@@ -288,6 +288,27 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
             // before the restart, and without it buttonEligible() falls back
             // to the whole roster for a full orbit after every deploy.
             if (this.waitingForBB.has(p.user_id)) continue;
+            /* A ROW HOLD THE RESTORE NEVER SAW (2026-09-09, must-move audit).
+               restoreEntryHoldsFromSeats runs ONCE per process, and the
+               start-up wait loop runs it first - so a chair that arrived
+               while the table was still waiting for players (a must-move or a
+               balance move landing `entry_hold = 'moved'`, a seat change
+               landing `'waiting'` + agreed) was never restored and was then
+               seeded here as a veteran with its row marker left standing. The
+               marker is a lie the moment the deal includes them, and it is a
+               lie that costs money at the next :55 restart: the restore reads
+               'waiting' on a player who has been dealt for an hour and holds
+               them for the big blind again. This first deal is the table's
+               first hand, so the blinds post by position and nobody enters
+               behind them - the marker is cleared, and the chair is NOT
+               seeded as a veteran, because it has never been dealt a hand
+               here ("a new player never gets the button"). A 'posting' hold
+               the restore DID see is left alone: its billing clears it. */
+            const rowHold = (p as { entry_hold?: string | null }).entry_hold ?? null;
+            if (rowHold !== null && !this.postingBBToEnter.has(p.user_id)) {
+              this.persistEntryHold(p.user_id, { hold: null, agreed: false });
+              continue;
+            }
             // Dan 2026-08-25, BINDING (restart fidelity): anyone already seated
             // when this engine booted was PLAYING before the restart, so they
             // are a veteran for button purposes. Without this, dealtInUserIds is
@@ -358,6 +379,28 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
             // B2: a player who has left owes this table nothing. If they come
             // back they are a fresh arrival and get classified again.
             this.mustPostBB.delete(id);
+            /* NO STALE PRESENCE ON THE OLD TABLE (2026-09-09, must-move
+               audit). A cash player can leave a roster through a path this
+               engine never ran: the OTHER table's transaction landing a swap
+               (the partner never executes here), the tab-close beacon
+               (player_leave_table), the controller cashing out a second chair
+               on a breaking table. Every leave this engine DOES run tears the
+               per-player mirrors down (settlement step 6, the idle sweep, the
+               move executor); this one left them standing, so the departed
+               player kept a presence entry the heartbeat checker marked
+               disconnected on a chair nobody sat in, a time bank, a straddle
+               and a pre-action - and getFsmStatesForTable wrote the phantom
+               into every snapshot and into the :55 park. Same teardown as the
+               other leave paths, cash only: a tournament chair is released by
+               releaseDeadTournamentSeats with its own teardown. */
+            if (!this.isTournamentTable()) {
+              this.disconnectEngine.unregisterPlayer(this.tableId, id);
+              this.timeBankEngine.removePlayer(this.tableId, id);
+              this.straddleEngine.removePlayer(this.tableId, id);
+              this.preActionEngine.removePlayer(this.tableId, id);
+              this.forcedLeaves.delete(id);
+              this.leaveHeldByClock.delete(id);
+            }
           }
         }
         if (rosterChanged) this.wakeClusterGame('seat_change');

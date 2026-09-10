@@ -1,6 +1,16 @@
 /* NEW CASH GAME - the locked six-step flow. Mobile first (375px), the
    controls themselves reuse TableConfigPage.css (config-toggle, config-slider,
-   config-preset-chip, config-footer). */
+   config-preset-chip, config-footer).
+
+   MATERIAL (2026-09-09 must-move audit, lane I). This sheet used to carry its
+   own amber palette - rgba(38,24,8) wells, #ff9e2c rims, #d9c9a8 and #b8a888
+   copy - which is the brown ramp Dan's colour law forbids ("ALWAYS USE
+   SMARTER.POKER COLOR SCHEMA COLORS, NO BROWNS OR PINKS") and the ninth
+   private palette tests/realism-is-one-vocabulary.law.test.ts exists to stop.
+   Every colour here now comes from the --realism-* tokens club-engine.css
+   defines once: gunmetal edges, a lit top bevel over a dark cavity, chrome
+   labels, cyan for the live selection, blue for the house. No :hover -
+   feedback is :active and :focus-visible, because phones do not hover. */
 
 .cash-create {
   display: flex;
@@ -11,7 +21,7 @@
 
 .cash-create__step {
   padding: 0.75rem 0.5rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
   transition: opacity 0.2s ease;
 }
 
@@ -22,10 +32,12 @@
 
 .cash-create__title {
   margin: 0 0 0.5rem;
-  color: #ffcf7d;
+  color: var(--realism-cyan, #00d4ff);
+  font-family: var(--realism-font-label, 'Roboto Condensed', Inter, system-ui, sans-serif);
   font-size: 0.95rem;
   font-weight: 700;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 .cash-create__cards {
@@ -40,33 +52,55 @@
   }
 }
 
+/* A template card is a machined plate: gunmetal edge, lit top, dark cavity. */
 .cash-create__card {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
   text-align: left;
   padding: 0.75rem;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 158, 44, 0.35);
-  background: rgba(38, 24, 8, 0.6);
-  color: #fff;
+  border-radius: var(--realism-radius, 8px);
+  border: 1px solid var(--realism-gunmetal, #27313c);
+  background: linear-gradient(
+    180deg,
+    var(--realism-panel-raised, #111925) 0%,
+    var(--realism-panel, #0b1017) 100%
+  );
+  box-shadow: var(--realism-bevel), var(--realism-cavity);
+  color: var(--realism-chrome-hot, #e6edf3);
   cursor: pointer;
 }
 
+.cash-create__card:active:not(:disabled) {
+  box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.7);
+  filter: brightness(0.94);
+}
+
+.cash-create__card:focus-visible {
+  outline: 2px solid var(--realism-cyan, #00d4ff);
+  outline-offset: 2px;
+}
+
 .cash-create__card.is-selected {
-  border-color: #ff9e2c;
-  background: rgba(255, 158, 44, 0.18);
-  box-shadow: 0 0 0 1px rgba(255, 158, 44, 0.6) inset;
+  border-color: var(--realism-cyan, #00d4ff);
+  background: linear-gradient(180deg, #13263a 0%, var(--realism-panel-raised, #111925) 100%);
+  box-shadow:
+    var(--realism-bevel),
+    var(--realism-cavity),
+    0 0 0 1px rgba(0, 212, 255, 0.35) inset;
 }
 
 .cash-create__card-title {
+  font-family: var(--realism-font-display, 'Rajdhani', 'Roboto Condensed', Inter, sans-serif);
   font-weight: 700;
-  font-size: 1rem;
+  font-size: 1.05rem;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
 }
 
 .cash-create__card-blurb {
   font-size: 0.8rem;
-  color: #d9c9a8;
+  color: var(--realism-chrome, #b8c3cd);
 }
 
 .cash-create__chips {
@@ -76,32 +110,70 @@
   align-items: center;
 }
 
-.cash-create__chip.is-selected {
-  background: rgba(255, 158, 44, 0.3);
-  border-color: #ff9e2c;
-  color: #fff;
+/* The chip's shape is TableConfigPage.css's preset chip; its ink is ours, so
+   the shared tournament chip keeps its own dress. The extra ancestor is
+   specificity, so this wins whatever order the two sheets bundle in. */
+.cash-create__chips .cash-create__chip {
+  border-color: var(--realism-gunmetal-lit, #3a4756);
+  background: linear-gradient(
+    180deg,
+    var(--realism-panel-raised, #111925) 0%,
+    var(--realism-panel, #0b1017) 100%
+  );
+  box-shadow: var(--realism-bevel);
+  color: var(--realism-chrome, #b8c3cd);
 }
 
-.cash-create__chip:disabled,
-.cash-create__chip.is-unavailable {
+.cash-create__chips .cash-create__chip:active:not(:disabled) {
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.7);
+}
+
+.cash-create__chip:focus-visible {
+  outline: 2px solid var(--realism-cyan, #00d4ff);
+  outline-offset: 2px;
+}
+
+.cash-create__chips .cash-create__chip.is-selected {
+  background: linear-gradient(180deg, #13263a 0%, var(--realism-panel-raised, #111925) 100%);
+  border-color: var(--realism-cyan, #00d4ff);
+  color: var(--realism-chrome-hot, #e6edf3);
+}
+
+.cash-create__chips .cash-create__chip:disabled,
+.cash-create__chips .cash-create__chip.is-unavailable {
   opacity: 0.45;
   cursor: not-allowed;
 }
 
+/* A rung the club already holds (one game per blind band, or one must-move
+   game per exact stakes). Struck through rather than merely dimmed, so it
+   reads as "taken", not "not yet". */
+.cash-create__chips .cash-create__chip.is-taken {
+  text-decoration: line-through;
+  text-decoration-color: var(--realism-muted, #7f8c9b);
+  border-style: dashed;
+}
+
 .cash-create__note {
   margin: 0.4rem 0 0;
-  color: #b8a888;
+  color: var(--realism-muted, #7f8c9b);
   font-size: 0.8rem;
+  line-height: 1.4;
 }
 
 .cash-create__link {
   margin-top: 0.5rem;
   background: none;
   border: none;
-  color: #ffcf7d;
+  color: var(--realism-cyan, #00d4ff);
   text-decoration: underline;
   cursor: pointer;
   font-size: 0.85rem;
+}
+
+.cash-create__link:focus-visible {
+  outline: 2px solid var(--realism-cyan, #00d4ff);
+  outline-offset: 2px;
 }
 
 .cash-create__options {
@@ -128,44 +200,75 @@
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
-   A RULE THE HOST READS, NOT ONE THEY SET (Dan 2026-09-07)
+   A RULE THE HOST READS, NOT ONE THEY SET
    ─────────────────────────────────────────────────────────────────────────────
-   "vpip for action is supposed to be 30% and vpip for madness is 50%."
-
-   Two sliders stood where this readout is. They are gone because the server
-   stopped honouring them: a BEFORE trigger on cash_games normalises the floor
-   and the window to fn_cash_template_defaults on every write, so a host who
-   dragged to 65% would have had it replaced the instant it landed and been
-   told nothing. This says what the template carries, in the place they used to
-   set it.
+   Dan 2026-09-07: "vpip for action is supposed to be 30% and vpip for madness
+   is 50%." Two sliders stood where the VPIP readout is; they went because the
+   server stopped honouring them. On 2026-09-09 the same happened to the ante
+   radio and the bomb-pot switch (docs/changelog/2026-09-09-a-classic-game-has-
+   no-antes-and-no-bombs.md): fn_cash_game_create takes all four from the
+   template. So the group below prints the template's promise - Ante, VPIP
+   Floor, Bomb Pots - as engraved rows on the glass: lit label, chrome value,
+   muted note, a rule between them. Nothing here is a control.
    ───────────────────────────────────────────────────────────────────────────── */
+.cash-create__promise {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin: 0.5rem 0;
+  border-radius: var(--realism-radius, 8px);
+  border: 1px solid var(--realism-gunmetal, #27313c);
+  background: linear-gradient(
+    180deg,
+    var(--realism-panel-raised, #111925) 0%,
+    var(--realism-panel, #0b1017) 100%
+  );
+  box-shadow: var(--realism-bevel), var(--realism-cavity);
+  overflow: hidden;
+}
+
+.cash-create__promise-title {
+  padding: 8px 12px;
+  font-family: var(--realism-font-label, 'Roboto Condensed', Inter, system-ui, sans-serif);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--realism-cyan, #00d4ff);
+  border-bottom: 1px solid #000;
+  box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.06);
+}
+
 .cash-create__rule-readout {
   display: flex;
   flex-direction: column;
   gap: 3px;
   padding: 10px 12px;
-  border: 1px solid rgb(255 255 255 / 10%);
-  border-radius: 10px;
-  background: rgb(255 255 255 / 4%);
+}
+
+.cash-create__promise .cash-create__rule-readout + .cash-create__rule-readout {
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
 .cash-create__rule-readout__label {
+  font-family: var(--realism-font-label, 'Roboto Condensed', Inter, system-ui, sans-serif);
   font-size: 0.7rem;
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: rgb(255 255 255 / 55%);
+  color: var(--realism-chrome, #b8c3cd);
 }
 
 .cash-create__rule-readout__value {
   font-size: 0.95rem;
   font-weight: 800;
-  color: var(--sp-text-bright, rgb(236 242 252 / 95%));
+  color: var(--realism-chrome-hot, #e6edf3);
   font-variant-numeric: tabular-nums;
 }
 
 .cash-create__rule-readout__note {
   font-size: 0.72rem;
   line-height: 1.35;
-  color: rgb(255 255 255 / 52%);
+  color: var(--realism-muted, #7f8c9b);
 }

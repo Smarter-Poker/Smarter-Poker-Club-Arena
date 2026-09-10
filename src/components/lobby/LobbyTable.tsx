@@ -856,7 +856,9 @@ const COL_ACTIONS: ColumnDef = {
     };
 
     if (e.kind === 'cash') {
-      const seated = ctx.seatedIds.has(e.id);
+      /* Through playerStateOf: a seat on any table of a must-move game counts
+         (the game id is in seatedIds), not only a seat on the row's Main 1. */
+      const seated = playerStateOf(e, ctx) === 'seated';
       const headsUp = e.capacity === 2;
       /* GATE 6 (OPORD 1.4 s2.9): a must-move game is joined and viewed as a
          GAME. `full` is already impossible for one (capacity 0) - a full
@@ -867,6 +869,11 @@ const COL_ACTIONS: ColumnDef = {
          the waitlist offer. */
       const full = !seated && e.capacity > 0 && e.players >= e.capacity;
       const waiting = ctx.waitlistedIds.has(e.id);
+      /* A disabled game (or a paused table) is not taking players: its door
+         refuses, so the button says so instead of offering a Join that can
+         only fail. A seat the player already holds still wins - they finish
+         their hand through Return To Game. */
+      const closed = !seated && e.status === 'closed';
       return (
         <span className="lt-actions">
           {ctx.onViewTable && (
@@ -880,7 +887,12 @@ const COL_ACTIONS: ColumnDef = {
               {game ? 'View Game' : 'View Table'}
             </button>
           )}
-          {full && ctx.onWaitlistToggle && (
+          {closed && (
+            <button type="button" className="lt-act lt-act--done" disabled aria-disabled="true">
+              {game ? 'Game' : 'Table'} {e.statusLabel}
+            </button>
+          )}
+          {!closed && full && ctx.onWaitlistToggle && (
             <button
               type="button"
               className={`lt-act ${waiting ? 'lt-act--done' : 'lt-act--primary'}`}
@@ -891,7 +903,7 @@ const COL_ACTIONS: ColumnDef = {
               {waiting ? 'Leave Waitlist' : 'Join Waitlist'}
             </button>
           )}
-          {!full && ctx.onJoinTable && (
+          {!closed && !full && ctx.onJoinTable && (
             <button
               type="button"
               className="lt-act lt-act--primary"

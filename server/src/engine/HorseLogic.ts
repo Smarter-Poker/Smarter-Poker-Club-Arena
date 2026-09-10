@@ -1713,22 +1713,95 @@ function moodOf(userId: string, decisionTimeMs = Date.now()): number {
  * HorsePreflop), so open, call, defend and 3-bet ranges all widen together -
  * VPIP is voluntary money in preflop by any route.
  */
+/**
+ * THE WINDOW THE FLOOR IS JUDGED OVER. `tables.maintain_hands`, pinned at 10
+ * on every surface by migration 20260904231353 (`v_vpip_window := 10`,
+ * `SET maintain_hands = 10`, `'{vpip_window}'` in the ruleset snapshot).
+ */
+export const VPIP_JUDGED_OVER_HANDS = 10;
+
+/**
+ * HOW FAR ABOVE THE FLOOR A HORSE AIMS, IN STANDARD ERRORS OF THAT WINDOW.
+ *
+ * ── DERIVED, NOT GUESSED (2026-09-09) ─────────────────────────────────────
+ *
+ * The cushion used to be a flat ten points, and the fleet hit it exactly -
+ * which was the problem. `fn_nit_check` judges the CUMULATIVE VPIP of a
+ * sitting the moment it reaches ten hands, and a ten-hand proportion has a
+ * standard error near 15 points, so aiming ten points over a floor puts the
+ * floor about two thirds of one standard error away and roughly a sixth of
+ * all sittings under it at the very first check.
+ *
+ * Measured on production over the 24 hours to 2026-09-09 22:00, horse
+ * sittings at floored tables that reached ten hands:
+ *
+ *   | template | floor | sittings | mean VPIP over first 10 | under floor at hand 10 |
+ *   | action   |  30   |   392    |         47.1%           |    25  (6.4%)          |
+ *   | madness  |  50   |   597    |         59.2%           |   104 (17.4%)          |
+ *
+ * The mean cleared both floors; the SAMPLE did not. And because the check
+ * re-runs on every hand after the tenth, that first-check risk compounds into
+ * the observed outcome over the same window: of every horse sitting that
+ * ENDED, 56% of Madness and 27% of Action ended in `vpip_evicted`, median at
+ * hand 11 - the first moment the rule can fire. Each one also writes a
+ * two-hour bar on that game (`fn_cash_session_close`), which is why 42 Action
+ * and Madness tables were holding 13 horses between them.
+ *
+ * `tests/a-vpip-floor-must-be-reachable.law.test.ts` was written for exactly
+ * this and states the acceptance criterion being missed: "a horse that is
+ * booted every ten hands is not obeying the floor, it is churning the game."
+ *
+ * 1.3 standard errors puts about a tenth of windows under the floor instead
+ * of a sixth, and it is the largest margin that still leaves the widening
+ * layer room to steer at the highest floor the product may set: at floor 50
+ * the prior multiplier becomes 0.40, comfortably above the 0.35 clamp that
+ * means "this floor cannot be reached by widening at all".
+ *
+ * THE FLOOR VALUES THEMSELVES ARE NOT TOUCHED HERE. 30 and 50 are Dan's
+ * (2026-09-05) and a migration asserts no live table carries anything else.
+ * This is only how hard the horse plays to clear one.
+ */
+export const VPIP_FLOOR_MARGIN_SIGMAS = 1.3;
+
+/** The fleet's own preflop width with no floor applied. */
+const BASE_VPIP = 0.28;
+/** The most this layer may widen. A bar at a third of its height is already
+ *  playing nearly everything; past that the floor is unreachable and the
+ *  table churns however long the horse sits there. */
+const VPIP_FLOOR_MUL = 0.35;
+
+/**
+ * The frequency a horse aims at on a table whose floor is `floorPct`: the
+ * floor plus enough margin that an ordinary ten-hand sample does not fall
+ * under it. Exported so the law that judges reachability asks the SAME
+ * function the brain uses, rather than restating the arithmetic and drifting
+ * from it.
+ */
+export function vpipTargetFor(floorPct: number): number {
+  const floor = Number(floorPct) / 100;
+  if (!(floor > 0)) return 0;
+  /* The standard error of a proportion over the judged window, taken AT THE
+     FLOOR - the horse is steering from below, so the floor is the relevant
+     variance, and it is the figure that does not move as the horse's own
+     rate does. */
+  const se = Math.sqrt((floor * (1 - floor)) / VPIP_JUDGED_OVER_HANDS);
+  return Math.min(0.95, floor + VPIP_FLOOR_MARGIN_SIGMAS * se);
+}
+
 export function vpipFloorMul(gs: {
   vpipFloor?: number;
   ownVpip?: { hands: number; vpip: number | null };
 }): number {
   const floor = Number(gs.vpipFloor ?? 0);
   if (!(floor > 0)) return 1;
-  const target = Math.min(0.95, floor / 100 + 0.1);
-  const BASE_VPIP = 0.28;
-  const FLOOR_MUL = 0.35;
+  const target = vpipTargetFor(floor);
   const own = gs.ownVpip;
   if (!own || own.hands < 3 || own.vpip === null || !Number.isFinite(own.vpip)) {
-    return Math.max(FLOOR_MUL, Math.min(1, BASE_VPIP / target));
+    return Math.max(VPIP_FLOOR_MUL, Math.min(1, BASE_VPIP / target));
   }
   const gap = target - own.vpip / 100;
   if (gap <= 0) return 1;
-  return Math.max(FLOOR_MUL, 1 - 1.5 * gap);
+  return Math.max(VPIP_FLOOR_MUL, 1 - 1.5 * gap);
 }
 
 /**

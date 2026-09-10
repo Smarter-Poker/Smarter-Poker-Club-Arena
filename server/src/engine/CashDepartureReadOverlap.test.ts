@@ -114,7 +114,28 @@ describe('a prefetched move still goes through the authoritative executor', () =
     ]);
     expect(rpc).toHaveBeenCalledTimes(1);
     expect(rpc).toHaveBeenCalledWith('fn_cash_seat_move_execute', { p_move_id: 'move' });
-    expect(result).toEqual({ done: [], held: [] });
+    /* PIN MOVED 2026-09-09 (must-move audit lane D, CLAUDE.md 5.8). The
+       behaviour this guards is unchanged - the candidate is executed once and
+       nothing lands - but the outcome now also REPORTS the refusal, because a
+       player who was promised "Moving After This Hand" and then was not moved
+       used to be told nothing at all. `player_not_seated` is terminal, so it
+       belongs in `refused`; the freeze and a retryable deadlock never do. */
+    expect(result).toEqual({
+      done: [],
+      held: [],
+      refused: [{ move_id: 'move', player_id: 'player', reason: 'player_not_seated' }],
+    });
+  });
+
+  it('a read that FAILED executes nothing and is not an empty boundary', async () => {
+    /* D1: `null` is "could not read". Before this it was `[]`, which every
+       caller took for "no moves pending" - and the announce path PRUNES from
+       that answer, releasing swap holds that are the only thing keeping a
+       player out of a hand the other table is about to move them out of. */
+    const rpc = vi.spyOn(db.supabase, 'rpc');
+    const result = await moves.executePendingSeatMoves('table', { announcedOnly: true }, null);
+    expect(rpc).not.toHaveBeenCalled();
+    expect(result).toEqual({ done: [], held: [], refused: [] });
   });
   it('does not execute unannounced candidates or re-read a known empty boundary', async () => {
     const rpc = vi.spyOn(db.supabase, 'rpc');

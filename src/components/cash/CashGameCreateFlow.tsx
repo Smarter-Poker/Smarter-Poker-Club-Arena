@@ -16,17 +16,27 @@
  *   5. Handedness classic NLH 9 or 6; action / madness NLH 6 (host may
  *                 change); PLO family 6, locked; short deck / pineapple 6,
  *                 host 2-8
- *   6. Overrides  every field of section 8; stay clock and rejoin window
- *                 can only be raised
+ *   6. Rules      what the HOST edits: buy-in band, stay clock and rejoin
+ *                 window (raise only), the table options. What the TEMPLATE
+ *                 promised - ante, VPIP floor and window, bomb pots - is
+ *                 printed read-only as "Set By The <Template> Template" and
+ *                 is never sent: since 2026-09-09 fn_cash_game_create resolves
+ *                 those four from fn_cash_template_defaults and reads nothing
+ *                 the caller offers for them (docs/changelog/2026-09-09-a-
+ *                 classic-game-has-no-antes-and-no-bombs.md). A control the
+ *                 server ignores is a lie to the host, so there is none.
  *   7. Confirm    one RPC, fn_cash_game_create, which persists the game and
  *                 its resolved ruleset snapshot and opens Main 1
  *
  * Nothing here writes `tables`. The database resolves the snapshot and
  * refuses anything the rules refuse; this component renders the server's
- * defaults and reports the server's answer.
+ * defaults and reports the server's answer. The one thing it does read is the
+ * club's existing games, so a stakes rung the club already holds (Action and
+ * Madness are one game per blind band; a must-move game is one per exact
+ * stakes) is greyed with the reason before the database has to refuse it.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
@@ -46,9 +56,13 @@ import {
   cashGameCreateRefusalText,
   isDealtVariant,
   overridesFromSnapshot,
+  stakesRungTaken,
+  templateLabel,
+  templatePromiseLines,
   type CashGameOverrides,
   type CashRulesetSnapshot,
   type CashTemplate,
+  type ExistingCashGame,
 } from '../../config/cashGames';
 import { Slider, Toggle } from '../table-config/controls';
 import './CashGameCreateFlow.css';
@@ -91,6 +105,14 @@ export default function CashGameCreateFlow({
   const [name, setName] = useState('');
   const [busy, setBusy] = useState<'save' | 'start' | null>(null);
   const [loadingDefaults, setLoadingDefaults] = useState(false);
+  /* The club's live games, so a rung it already holds is greyed rather than
+     refused. Advisory only: the database is the authority, and a read the
+     host's role cannot see simply leaves the chip enabled. */
+  const [existingGames, setExistingGames] = useState<ExistingCashGame[]>([]);
+  const [existingGamesEpoch, setExistingGamesEpoch] = useState(0);
+  /* Two taps inside one render tick both see busy === null; the ref is the
+     guard that makes a network failure mid-create a single create, not two. */
+  const inFlight = useRef(false);
 
   const limitGame = isFixedLimitVariant(variant);
   const presets = useMemo(() => presetsFor(limitGame), [limitGame]);
@@ -136,6 +158,71 @@ export default function CashGameCreateFlow({
     if (blindsIndex >= presets.length) setBlindsIndex(presets.length - 1);
   }, [presets, blindsIndex]);
 
+  useEffect(() => {
+    if (!clubId) return;
+    let live = true;
+    void (async () => {
+      try {
+        const resolvedClubId = await resolveClubUUID(clubId);
+        const { data, error } = await supabase
+          .from('cash_games')
+          .select('name, template_name, variant, sb, bb, must_move')
+          .eq('club_id', resolvedClubId)
+          .eq('enabled', true);
+        if (!live) return;
+        if (error) {
+          reportError(error, 'CashGameCreateFlow.existingGames');
+          return;
+        }
+        setExistingGames(
+          ((data ?? []) as Array<Record<string, unknown>>).map((g) => ({
+            name: String(g.name ?? ''),
+            template_name: String(g.template_name ?? ''),
+            variant: String(g.variant ?? ''),
+            sb: Number(g.sb),
+            bb: Number(g.bb),
+            must_move: g.must_move === true,
+          }))
+        );
+      } catch (err) {
+        if (live) reportError(err, 'CashGameCreateFlow.existingGames');
+      }
+    })();
+    return () => {
+      live = false;
+    };
+  }, [clubId, existingGamesEpoch]);
+
+  /* Why each rung of the ladder is closed to this template, variant and mode,
+     or null when it is open. */
+  const rungTaken = useCallback(
+    (sb: number, bb: number): string | null =>
+      template && variant && tableMode
+        ? stakesRungTaken(existingGames, template, variant, sb, bb, tableMode === 'must_move')
+        : null,
+    [existingGames, template, variant, tableMode]
+  );
+
+  /* A rung that closes under the chosen row (the template, variant or mode
+     changed, or the club opened that game meanwhile) un-picks it rather than
+     leaving a choice the server will refuse. */
+  useEffect(() => {
+    if (blindsIndex === null) return;
+    const p = presets[blindsIndex];
+    if (p && rungTaken(p.sb, p.bb)) setBlindsIndex(null);
+  }, [blindsIndex, presets, rungTaken]);
+
+  const usualStakesIndex = useMemo(() => {
+    const start = Math.min(DEFAULT_BLINDS_INDEX, presets.length - 1);
+    for (let d = 0; d < presets.length; d++) {
+      for (const i of [start + d, start - d]) {
+        const p = presets[i];
+        if (p && !rungTaken(p.sb, p.bb)) return i;
+      }
+    }
+    return null;
+  }, [presets, rungTaken]);
+
   const stakes = blindsIndex !== null ? presets[blindsIndex] : null;
   const stepTemplateDone = template !== null;
   const stepVariantDone = stepTemplateDone && variant !== null;
@@ -159,6 +246,8 @@ export default function CashGameCreateFlow({
         toast.error(deniedMessage || 'You Cannot Create Games In This Club');
         return;
       }
+      if (inFlight.current) return;
+      inFlight.current = true;
       setBusy(mode);
       try {
         const resolvedClubId = await resolveClubUUID(clubId);
@@ -207,7 +296,13 @@ export default function CashGameCreateFlow({
         if (!refusal) reportError(err, 'CashGameCreateFlow.create_failed');
         const serverMessage = err instanceof Error && err.message ? err.message : null;
         toast.error(refusal ?? serverMessage ?? 'Could Not Create The Game');
+        // The club holds a rung this screen did not know about: re-read the
+        // ladder so the chip greys out instead of refusing a second time.
+        if (/GAME_EXISTS|ONE_GAME_PER_BLIND_CATEGORY/.test(String(serverMessage ?? ''))) {
+          setExistingGamesEpoch((n) => n + 1);
+        }
       } finally {
+        inFlight.current = false;
         setBusy(null);
       }
     },
@@ -308,7 +403,7 @@ export default function CashGameCreateFlow({
             <span className="cash-create__card-title">Automated Must Move</span>
             <span className="cash-create__card-blurb">
               One Game, Many Tables. Main 1 Is Always On; Feeders Open And Close Themselves. One Per
-              Stakes Per Club.
+              Stakes Per Club; Action And Madness Run One Per Blind Band.
             </span>
           </button>
           <button
@@ -335,24 +430,35 @@ export default function CashGameCreateFlow({
       >
         <h2 className="cash-create__title">4. Stakes</h2>
         <div className="cash-create__chips">
-          {presets.map((p, i) => (
-            <button
-              key={p.label}
-              type="button"
-              className={`config-preset-chip cash-create__chip${blindsIndex === i ? ' is-selected' : ''}`}
-              disabled={!stepModeDone}
-              onClick={() => setBlindsIndex(i)}
-              aria-pressed={blindsIndex === i}
-            >
-              {stakesLabel(p.sb, p.bb, variant)}
-            </button>
-          ))}
+          {presets.map((p, i) => {
+            const taken = stepModeDone ? rungTaken(p.sb, p.bb) : null;
+            return (
+              <button
+                key={p.label}
+                type="button"
+                className={`config-preset-chip cash-create__chip${blindsIndex === i ? ' is-selected' : ''}${taken ? ' is-taken' : ''}`}
+                disabled={!stepModeDone || taken !== null}
+                onClick={() => setBlindsIndex(i)}
+                aria-pressed={blindsIndex === i}
+                title={taken ?? undefined}
+                data-taken={taken ? 'true' : undefined}
+              >
+                {stakesLabel(p.sb, p.bb, variant)}
+              </button>
+            );
+          })}
         </div>
-        {stepModeDone && blindsIndex === null && (
+        {stepModeDone && template !== 'classic' && (
+          <p className="cash-create__note">
+            {templateLabel(template)} Runs One Game Per Blind Band Per Variant. A Greyed Rung Is
+            One This Club Already Holds.
+          </p>
+        )}
+        {stepModeDone && blindsIndex === null && usualStakesIndex !== null && (
           <button
             type="button"
             className="cash-create__link"
-            onClick={() => setBlindsIndex(Math.min(DEFAULT_BLINDS_INDEX, presets.length - 1))}
+            onClick={() => setBlindsIndex(usualStakesIndex)}
           >
             Use The Usual Stakes
           </button>
@@ -375,13 +481,12 @@ export default function CashGameCreateFlow({
               players={0}
               tables={1}
               rulesLine={rulesLineFor({
+                /* Ante, VPIP floor and bombs are the snapshot's: the template
+                   promised them and the host cannot change them. */
                 ...snapshot,
                 seats: handedness ?? snapshot.seats,
                 min_buyin_bb: overrides.min_buyin_bb,
                 max_buyin_bb: overrides.max_buyin_bb,
-                regular_ante: overrides.regular_ante,
-                vpip_floor: overrides.vpip_floor,
-                bombs: overrides.bombs,
               })}
               joinDisabled
             />
@@ -459,116 +564,40 @@ export default function CashGameCreateFlow({
               format={(v) => `${v} BB (${stakesLabelChips(stakes.bb * v)})`}
             />
 
-            <div className="config-radio-group">
-              <span className="radio-group-label">Ante Each Dealt In Player</span>
-              <div className="radio-options">
-                {(['none', 'sb', 'bb'] as const).map((a) => (
-                  <label key={a} className="radio-option">
-                    <input
-                      type="radio"
-                      name="regular_ante"
-                      checked={overrides.regular_ante === a}
-                      onChange={() => setOverride('regular_ante', a)}
-                    />
-                    <span>
-                      {a === 'none' ? 'None' : a === 'sb' ? 'One Small Blind' : 'One Big Blind'}
-                    </span>
-                  </label>
-                ))}
-              </div>
+            {/* ═══ THE TEMPLATE'S PROMISE IS PRINTED, NOT OFFERED ═════════════
+                2026-09-09 (docs/changelog/2026-09-09-a-classic-game-has-no-
+                antes-and-no-bombs.md): the ante, the VPIP floor and window and
+                the whole bombs object come from fn_cash_template_defaults and
+                fn_cash_game_create reads NOTHING the caller sends for them. An
+                ante radio and a bomb-pot switch stood here until this date -
+                a host would set "One Big Blind" on a Classic game, the server
+                would create a game with no ante, and nobody would tell them.
+                That is worse than no control. So the four fields are read-only
+                copy in Title Case, each saying which template set it, and
+                p_overrides never carries them (pinned by
+                tests/cash-games-are-created-from-a-template.law.test.tsx). */}
+            <div
+              className="cash-create__promise"
+              role="group"
+              aria-label={`Set By The ${templateLabel(template)} Template`}
+              data-testid="cash-create-promise"
+            >
+              <span className="cash-create__promise-title">
+                Set By The {templateLabel(template)} Template
+              </span>
+              {templatePromiseLines(snapshot).map((line) => (
+                <div
+                  key={line.key}
+                  className="cash-create__rule-readout"
+                  data-rule={line.key}
+                  aria-readonly="true"
+                >
+                  <span className="cash-create__rule-readout__label">{line.label}</span>
+                  <span className="cash-create__rule-readout__value">{line.value}</span>
+                  <span className="cash-create__rule-readout__note">{line.note}</span>
+                </div>
+              ))}
             </div>
-
-            {/* ═══ THE VPIP FLOOR IS THE TEMPLATE'S, NOT THE HOST'S ═══════════
-                Dan 2026-09-07: "vpip for action is supposed to be 30% and vpip
-                for madness is 50%."
-
-                Two sliders stood here, 0-100 in steps of 5 and 10-200 hands.
-                They are gone because the server no longer honours them: a
-                BEFORE trigger on cash_games normalises both fields to
-                fn_cash_template_defaults on every write, so whatever a host
-                dragged to would have been silently replaced the instant it
-                landed. A control that appears to set something and does not is
-                worse than no control - the host would have believed their 65%
-                table was a 65% table.
-
-                It is read-only copy now: the rule the template carries, stated
-                where the host used to set it. Classic runs no floor and prints
-                nothing. */}
-            {(snapshot?.vpip_floor ?? 0) > 0 && (
-              <div className="cash-create__rule-readout">
-                <span className="cash-create__rule-readout__label">VPIP Floor</span>
-                <span className="cash-create__rule-readout__value">
-                  {snapshot?.vpip_floor}% Over {snapshot?.vpip_window} Hands
-                </span>
-                <span className="cash-create__rule-readout__note">
-                  Set By The {template === 'action' ? 'Action' : 'Madness'} Template. Players Under
-                  This Voluntarily Put In Pot Rate Are Cashed Out After The Hand.
-                </span>
-              </div>
-            )}
-
-            <Toggle
-              label="Bomb Pots"
-              value={overrides.bombs.enabled}
-              onChange={(v) => setOverride('bombs', { ...overrides.bombs, enabled: v })}
-              tooltip="Two Boards. No Preflop. Every Dealt In Player Posts The Bomb Ante Instead Of The Blinds."
-            />
-            {overrides.bombs.enabled && (
-              <>
-                <div className="config-radio-group">
-                  <span className="radio-group-label">Bomb Trigger</span>
-                  <div className="radio-options">
-                    <label className="radio-option">
-                      <input
-                        type="radio"
-                        name="bomb_trigger"
-                        checked={overrides.bombs.trigger === 'timed_15m'}
-                        onChange={() =>
-                          setOverride('bombs', { ...overrides.bombs, trigger: 'timed_15m' })
-                        }
-                      />
-                      <span>Every 15 Minutes</span>
-                    </label>
-                    <label className="radio-option">
-                      <input
-                        type="radio"
-                        name="bomb_trigger"
-                        checked={overrides.bombs.trigger === 'every_orbit'}
-                        onChange={() =>
-                          setOverride('bombs', { ...overrides.bombs, trigger: 'every_orbit' })
-                        }
-                      />
-                      <span>Every Orbit</span>
-                    </label>
-                  </div>
-                </div>
-                <Slider
-                  label="Bomb Ante"
-                  value={overrides.bombs.ante_bb}
-                  onChange={(v) => setOverride('bombs', { ...overrides.bombs, ante_bb: v })}
-                  min={1}
-                  max={20}
-                  step={1}
-                  suffix=" BB"
-                />
-                <div className="config-radio-group">
-                  <span className="radio-group-label">Boards</span>
-                  <div className="radio-options">
-                    {[2, 3].map((b) => (
-                      <label key={b} className="radio-option">
-                        <input
-                          type="radio"
-                          name="bomb_boards"
-                          checked={overrides.bombs.boards === b}
-                          onChange={() => setOverride('bombs', { ...overrides.bombs, boards: b })}
-                        />
-                        <span>{b === 2 ? 'Double Board' : 'Triple Board'}</span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              </>
-            )}
 
             {/* ROE 7: the two clocks may only be raised. The floor IS the slider minimum. */}
             <Slider
@@ -579,7 +608,7 @@ export default function CashGameCreateFlow({
               max={60}
               step={5}
               suffix=" Minutes"
-              tooltip="A Player Ahead Of The Money They Put In Stays Seated This Long Before They Can Leave. Ten Minutes Is The Minimum."
+              tooltip={`A Player Ahead Of The Money They Put In Stays Seated This Long Before They Can Leave. ${snapshot.stay_clock_min} Minutes Is The Minimum.`}
             />
             <Slider
               label="Rejoin Window"
@@ -591,7 +620,7 @@ export default function CashGameCreateFlow({
               max={720}
               step={30}
               suffix=" Minutes"
-              tooltip="A Player Who Returns To This Game Inside The Window Buys In For At Least The Stack They Left With. Two Hours Is The Minimum."
+              tooltip={`A Player Who Returns To This Game Inside The Window Buys In For At Least The Stack They Left With. ${snapshot.rejoin_window_min} Minutes Is The Minimum.`}
             />
 
             <Toggle

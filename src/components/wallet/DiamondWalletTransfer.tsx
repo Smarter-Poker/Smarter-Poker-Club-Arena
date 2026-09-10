@@ -122,7 +122,9 @@ export default function DiamondWalletTransfer({
       });
       if (!alive.current) return;
       if (error) {
-        if (['42501', '22023', 'P0001'].includes(error.code)) {
+        // This refusal follows receipt lookup, proving no transfer committed.
+        // Session and other errors cannot resolve a previous lost response.
+        if (error.code === '42501' && error.message === 'accepted_friend_required') {
           sessionStorage.removeItem(storageKey);
           setRequest(null);
           setReview(null);

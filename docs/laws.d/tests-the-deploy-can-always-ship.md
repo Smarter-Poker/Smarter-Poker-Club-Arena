@@ -1,20 +1,26 @@
 # tests/the-deploy-can-always-ship.law.test.ts
 
 A deploy run is green only when production serves its commit or not shipping
-was deliberate (already live, coalesced, superseded, the window held by
+was deliberate (already live, superseded and handed on, the window held by
 another owner); a run that should have shipped and did not is red, and EVERY
-start minute - not only the cron tick - must be able to wait for the next :55
-(2026-09-10: runs dispatched by the engine watchdog at other minutes staged
-their image, went green and shipped nothing while production crash-looped).
+start minute must be able to wait for the next :55 (2026-09-10: runs
+dispatched by the engine watchdog at other minutes staged their image, went
+green and shipped nothing while production crash-looped). Since the same
+evening there is no cron and no watchdog dispatch at all: every engine push
+starts its own run, a superseded run dispatches current main, and a run its
+break gate could not serve dispatches its successor - so the start-minute law
+is the whole arithmetic, and the restart-spacing ("coalescing") skip is gone,
+because the :55 break is the spacing and nothing would come back for a
+coalesced commit.
 Pins the three ways it stopped doing that on 2026-09-05, when 52 of 98
 attempts in 72 hours shipped nothing and every one reported success: the job
 timeout and the break gate's wait budget must be the same number and must
 leave every scheduled tick able to reach the next :55 (a budget that shrank
 under a growing build is what made an off-cycle dispatch arithmetically
-incapable of landing); the restart-spacing gate must measure the last deploy
-WE shipped, from `ca_engine_deploy_attempts`, never `/health.uptime`, which
-anything restarting the container resets — and must report an engine younger
-than our own last deploy as an unplanned, unannounced restart; every path
+incapable of landing); the deploy must measure the last deploy WE shipped,
+from `ca_engine_deploy_attempts`, never `/health.uptime`, which anything
+restarting the container resets, and must report an engine younger than our
+own last deploy as an unplanned, unannounced restart; every path
 that declines the cutover must record its own `gate_reason`, which the run
 warning, the job summary and the deploy ledger all read, so one run can never
 again give three different answers; the deleted 7am/7pm restart-window gate

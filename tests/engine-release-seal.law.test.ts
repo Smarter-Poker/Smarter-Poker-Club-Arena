@@ -1230,6 +1230,32 @@ exit 5
       writeFileSync(join(bin, 'docker'), fakeDocker);
       chmodSync(join(bin, 'docker'), 0o755);
 
+      // A tar reader may finish at end markers before its producer finishes
+      // trailing block padding. Force that race beyond the pipe buffer so a
+      // successful extraction cannot hide a failed archive producer.
+      const realGit = spawnSync('which', ['git'], {
+        encoding: 'utf8',
+        env: isolatedEnv,
+      }).stdout.trim();
+      expect(realGit.startsWith('/')).toBe(true);
+      writeFileSync(
+        join(bin, 'git'),
+        `#!/usr/bin/env python3
+import os, subprocess, sys
+real_git = ${JSON.stringify(realGit)}
+args = sys.argv[1:]
+if 'archive' not in args:
+    os.execv(real_git, [real_git, *args])
+result = subprocess.run([real_git, *args])
+if result.returncode:
+    sys.exit(result.returncode)
+sys.stdout.buffer.write(bytes(1024 * 1024))
+sys.stdout.buffer.flush()
+sys.exit(int(os.environ.get('FAKE_GIT_ARCHIVE_FAILURE', '0')))
+`
+      );
+      chmodSync(join(bin, 'git'), 0o755);
+
       // A legacy revision-only tag must rebuild once; revision alone never
       // proves which bytes the mutable checkout contributed.
       writeFileSync(join(dockerState, 'built'), '');
@@ -1266,6 +1292,18 @@ exit 5
       expect(second.status, `${second.stdout}\n${second.stderr}`).toBe(0);
       expect(second.stdout).toContain('ENGINE_IMAGE_REUSED=true');
       expect(readFileSync(join(dockerState, 'builds'), 'utf8')).toBe('build\n');
+
+      // Consuming padding must not turn an archive producer failure into a
+      // successful Docker build, even after tar extracted every required file.
+      rmSync(join(dockerState, 'source-tree'));
+      const failedArchive = spawnSync(
+        'bash',
+        [imageBuilder, repo, targetSha, `club-arena-engine:${targetSha}`],
+        { encoding: 'utf8', env: { ...env, FAKE_GIT_ARCHIVE_FAILURE: '47' } }
+      );
+      expect(failedArchive.status, failedArchive.stderr).toBe(47);
+      expect(readFileSync(join(dockerState, 'builds'), 'utf8')).toBe('build\n');
+      expect(readdirSync(contextRoot)).toEqual([]);
     } finally {
       rmSync(sandbox, { recursive: true, force: true });
     }

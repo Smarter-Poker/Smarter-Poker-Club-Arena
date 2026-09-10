@@ -2,6 +2,10 @@
 
 ## Every Change, Documented. No Exceptions.
 
+## 2026-09-10: Release Fixtures Own Their Git Configuration And Drain Archive Padding
+
+The disposable release Git fixture now clears inherited Git repository and configuration selectors and uses sandbox-owned global configuration. Three adversarial cases prove caller configuration, HEAD and index stay unchanged. A separate pre-push failure exposed BSD tar closing the archive pipe before Git finished zero block padding. The image builder now consumes through EOF while retaining pipefail. A deterministic real-archive padding regression fails before the change and passes after; a producer that exits 47 after extraction still blocks Docker and cleans staging. All 30 release-seal law tests pass. No live engine, host checkout, image, tag or release mutation was performed. Re-read: yes. See docs/changelog/2026-09-10-release-fixtures-own-their-git-configuration.md.
+
 ## 2026-09-10: Registration Rehearsal Preserves JSON Strings Across Clients
 
 The current-dependency rehearsal parsed PostgreSQL JSON scalar text with json.loads. psql retained the JSON quotes, while the CI Node client decoded the scalar first, failing before the accounting assertions. Both scalar projections now cast their JSON encoding to PostgreSQL text so each client returns identical encoded text. All source fingerprints and financial assertions remain in force. Verified: all 23 native PostgreSQL behavior groups passed independently through psql and PGNODE, including rollback, concurrent replay and exact charged-wallet receipts. Re-read: yes; no application money function or production database changed.

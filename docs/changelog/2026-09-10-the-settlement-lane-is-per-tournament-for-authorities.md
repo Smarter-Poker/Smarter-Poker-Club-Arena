@@ -72,3 +72,21 @@ The diff of every replaced body against production is only the lines above.
   matches in the log are the migration's own statements.
 - `pg_stat_database.deadlocks` unchanged across the change (50); the three
   `deadlock detected` lines of the preceding 15 minutes were all before it.
+
+## Follow-up: the bounty sweep takes one tournament's lane per call
+
+`20260910174349_the_bounty_sweep_takes_one_tournament_lane_per_call.sql`,
+applied 17:43:49 UTC. The engine calls `fn_sweep_pending_tournament_bounties`
+with no tournament on every pending-obligation notification, i.e. on every
+bounty bust, and with no tournament the lane helper takes the whole lane: G
+and B exclusive, which holds every hand settlement and every rolling authority
+on the platform for the length of the sweep. Seven mystery-chest obligations
+refused with `inventory_exhausted` are retried every 60 s (about 200 attempts
+each today), so that barrier was being raised at least once a minute, and at
+17:34:56-17:35:19 one such sweep queued sixteen hand settlements behind B with
+nineteen statement timeouts in the minute. Called without a tournament, the
+sweep now settles only the tournament of the first order-eligible due
+obligation, under that tournament's lane; `pending` and `retry_after_ms` still
+describe the whole platform, so the engine's existing loop calls again at once
+while other tournaments have due work. A transaction never holds two
+tournaments' lanes.

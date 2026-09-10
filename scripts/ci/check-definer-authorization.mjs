@@ -240,15 +240,38 @@ function effectiveGrants(sql, name) {
      stray "revoke" ahead of a real GRANT - it clears a function that is wide
      open, which is the whole failure this file exists to prevent. `[^;]*?`
      keeps a verb inside its own statement. */
+  /* ONE ACL STATEMENT MAY NAME MANY FUNCTIONS. PostgreSQL accepts:
+
+       REVOKE ALL ON FUNCTION public.first(uuid), public.second(uuid)
+         FROM PUBLIC, anon, authenticated;
+
+     The old matcher stopped at `first(...)`. That made every later target look
+     as though it still held the default PUBLIC/anon grants, even though
+     PostgreSQL had revoked them all. It blocked the already-applied Phase-3
+     deal migration on four false findings while the live catalogue correctly
+     showed those functions as owner-only or service-role-only.
+
+     Capture the complete target list up to the verb-specific role delimiter,
+     then enumerate every function identity in it. Keep `[^;]` on every gap:
+     the statement-boundary law above still matters, and a word in a function
+     body or RAISE string must never relabel a later ACL statement. */
   const re = new RegExp(
-    String.raw`\b(GRANT|REVOKE)\b([^;]*?)\bON\s+FUNCTION\s+(?:public\.)?(\w+)\s*\(([^)]*)\)([^;]*?);`,
+    String.raw`\b(GRANT|REVOKE)\b([^;]*?)\bON\s+FUNCTION\s+([^;]*?)\b(TO|FROM)\b([^;]*?);`,
     'gi'
   );
   let m;
   while ((m = re.exec(sql))) {
-    if (m[3].toLowerCase() !== name.toLowerCase()) continue;
     const verb = m[1].toUpperCase();
-    const named = `${m[2]} ${m[5]}`.toLowerCase();
+    const delimiter = m[4].toUpperCase();
+    if ((verb === 'GRANT' && delimiter !== 'TO') || (verb === 'REVOKE' && delimiter !== 'FROM')) {
+      continue;
+    }
+    const targets = [];
+    const target = /(?:public\.)?([A-Za-z_]\w*)\s*\([^)]*\)/gi;
+    let targetMatch;
+    while ((targetMatch = target.exec(m[3]))) targets.push(targetMatch[1].toLowerCase());
+    if (!targets.includes(name.toLowerCase())) continue;
+    const named = m[5].toLowerCase();
     for (const role of BROWSER_ROLES) {
       if (new RegExp(String.raw`\b${role}\b`).test(named)) {
         held[role] = verb === 'GRANT';

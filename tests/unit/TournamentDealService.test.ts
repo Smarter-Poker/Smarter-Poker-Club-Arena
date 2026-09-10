@@ -155,6 +155,7 @@ describe('Exact tournament deal consent', () => {
     expect(mocks.rpc).toHaveBeenCalledExactlyOnceWith('fn_cast_tournament_deal_vote', {
       p_tournament_id: event,
       p_proposal_id: proposal,
+      p_expected_actor_id: actor,
     });
   });
   it.each(['actor_id', 'proposal_id', 'revision'])(
@@ -243,6 +244,7 @@ describe('Explicit bounded deal review lifecycle', () => {
     await requestTournamentDealReview(event, actor);
     expect(mocks.rpc).toHaveBeenCalledExactlyOnceWith('fn_request_tournament_deal_review', {
       p_tournament_id: event,
+      p_expected_actor_id: actor,
     });
   });
   it('cancels only the displayed review identity', async () => {
@@ -251,6 +253,7 @@ describe('Explicit bounded deal review lifecycle', () => {
     expect(mocks.rpc).toHaveBeenCalledExactlyOnceWith('fn_cancel_tournament_deal_review', {
       p_tournament_id: event,
       p_review_id: reviewId,
+      p_expected_actor_id: actor,
     });
   });
   it('refuses cancellation acknowledgment for a different review', async () => {
@@ -281,6 +284,56 @@ describe('Closed review cancellation readback', () => {
       mocks.rpc.mockResolvedValue({ data: reviewPayload(state), error: null });
       await cancelTournamentDealReview(review());
       expect(mocks.rpc).toHaveBeenCalledTimes(1);
+    }
+  );
+});
+
+describe('Review mutation actor identity across token acquisition', () => {
+  it.each(['request', 'cancel', 'vote'])(
+    'binds the displayed actor before %s can record a side effect',
+    async (action) => {
+      let tokenActor = actor;
+      const recorded: string[] = [];
+      mocks.auth.mockImplementation(async () => {
+        const checked = tokenActor;
+        tokenActor = other;
+        return { data: { user: { id: checked } }, error: null };
+      });
+      mocks.rpc.mockImplementation(async (_name, args: Record<string, unknown>) => {
+        // The old contract accepts its current authenticated actor. The new expected-actor
+        // input lets the server refuse before writing, even after client preflight succeeded.
+        if ('p_expected_actor_id' in args && args.p_expected_actor_id !== tokenActor)
+          return { data: { ok: false, reason: 'actor_mismatch' }, error: null };
+        recorded.push(tokenActor);
+        return {
+          data:
+            action === 'vote'
+              ? {
+                  ok: true,
+                  actor_id: tokenActor,
+                  proposal_id: proposal,
+                  revision: 'a'.repeat(64),
+                  voted: true,
+                  already: false,
+                }
+              : {
+                  ...reviewPayload(action === 'request' ? 'requested' : 'cancelled'),
+                  actor_id: tokenActor,
+                },
+          error: null,
+        };
+      });
+      const run =
+        action === 'request'
+          ? requestTournamentDealReview(event, actor)
+          : action === 'cancel'
+            ? cancelTournamentDealReview(review())
+            : castTournamentDealVote(
+                parseTournamentDealProposal(payload(), event, actor, review())
+              );
+      await expect(run).rejects.toThrow();
+      expect(recorded).toEqual([]);
+      expect(mocks.rpc.mock.calls[0][1].p_expected_actor_id).toBe(actor);
     }
   );
 });

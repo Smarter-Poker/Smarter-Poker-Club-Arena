@@ -14,6 +14,7 @@ export interface TournamentDealProposal {
 }
 
 const messages: Record<string, string> = {
+  actor_mismatch: 'Your Account Changed. Reopen The Deal Before Continuing.',
   review_not_ready: 'Waiting For Play To Pause Before Reviewing A Split.',
   review_stale: 'This Review Changed. Refresh The Current Review.',
   review_expired: 'This Review Expired. Request A New Review To Continue.',
@@ -153,6 +154,7 @@ export async function castTournamentDealVote(proposal: TournamentDealProposal): 
   const { data, error } = await supabase.rpc('fn_cast_tournament_deal_vote', {
     p_tournament_id: proposal.tournamentId,
     p_proposal_id: proposal.proposalId,
+    p_expected_actor_id: proposal.actorId,
   });
   if (error) throw error;
   const result = successful(data);
@@ -259,6 +261,7 @@ export async function requestTournamentDealReview(
   await requireReviewActor(actorId);
   const { data, error } = await supabase.rpc('fn_request_tournament_deal_review', {
     p_tournament_id: tournamentId,
+    p_expected_actor_id: actorId,
   });
   if (error) throw error;
   const review = parseTournamentDealReview(data, tournamentId, actorId);
@@ -270,6 +273,7 @@ export async function cancelTournamentDealReview(review: TournamentDealReviewSta
   const { data, error } = await supabase.rpc('fn_cancel_tournament_deal_review', {
     p_tournament_id: review.tournamentId,
     p_review_id: review.reviewId,
+    p_expected_actor_id: review.actorId,
   });
   if (error) throw error;
   const result = parseTournamentDealReview(data, review.tournamentId, review.actorId);

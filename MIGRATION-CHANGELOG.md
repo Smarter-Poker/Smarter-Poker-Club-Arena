@@ -2,6 +2,10 @@
 
 ## Every Change, Documented. No Exceptions.
 
+## 2026-09-10: Deal Review Mutations Bind The Displayed Actor
+
+Requests, cancellation, and votes now send the displayed actor as a mandatory server precondition, closing the account-switch gap between auth preflight and request token acquisition. Three client regressions failed before correction; 109 focused client tests and full TypeScript pass. Re-read: yes. Matching SQL rejects actor mismatch before writes; native proof remains with the payout lane. No production publication or activation. See docs/changelog/2026-09-10-deal-review-mutations-bind-the-actor.md.
+
 ## 2026-09-10: Players Explicitly Request A Bounded Deal Review
 
 The client now reads review state before exposing a proposal, explicitly requests a safe-boundary pause, displays the server deadline, and cancels only the displayed review identity. Unknown responses only trigger readback; terminal states never reuse consent or automatically request another pause. One hundred six focused tests and full client TypeScript pass. Re-read: yes. Requires matching lifecycle SQL and engine; no production publication or activation. See docs/changelog/2026-09-10-explicit-bounded-deal-review.md.

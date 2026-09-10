@@ -1,0 +1,63 @@
+{
+  "captured_at": "2026-09-10T07:08:36.612Z",
+  "isolation": "temporary Unix socket, no network listener",
+  "results": [
+    {
+      "name": "changed body refuses retirement",
+      "pass": true
+    },
+    {
+      "name": "unexpected role grant refuses retirement",
+      "pass": true
+    },
+    {
+      "name": "new stored caller refuses retirement",
+      "pass": true
+    },
+    {
+      "name": "catalog dependency refuses retirement",
+      "pass": true
+    },
+    {
+      "name": "anon door 1 denied before execution",
+      "pass": true
+    },
+    {
+      "name": "anon door 2 denied before execution",
+      "pass": true
+    },
+    {
+      "name": "anon door 3 denied before execution",
+      "pass": true
+    },
+    {
+      "name": "authenticated door 1 denied before execution",
+      "pass": true
+    },
+    {
+      "name": "authenticated door 2 denied before execution",
+      "pass": true
+    },
+    {
+      "name": "authenticated door 3 denied before execution",
+      "pass": true
+    },
+    {
+      "name": "service_role door 1 denied before execution",
+      "pass": true
+    },
+    {
+      "name": "service_role door 2 denied before execution",
+      "pass": true
+    },
+    {
+      "name": "service_role door 3 denied before execution",
+      "pass": true
+    },
+    {
+      "name": "denied calls leave evidence unchanged and preserve installed bodies",
+      "pass": true
+    }
+  ],
+  "passed": 14
+}

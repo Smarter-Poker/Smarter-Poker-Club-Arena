@@ -1,0 +1,20 @@
+[
+  {
+    "acl": "{postgres=X/postgres,service_role=X/postgres}",
+    "definition": "CREATE OR REPLACE FUNCTION public.atomic_pay_player_rakeback(p_user_id uuid, p_amount numeric)\n RETURNS void\n LANGUAGE plpgsql\n SET search_path TO 'public', 'extensions'\nAS $function$\nBEGIN\n  IF p_amount <= 0 THEN RETURN; END IF;\n  -- UNION LAW: rakeback goes back to the club whose chips generated the rake.\n  PERFORM public.fn_pay_player_chips(p_user_id, p_amount, 'rakeback', 'Rakeback payout', NULL, NULL);\nEND; $function$\n",
+    "md5": "f208633d1947dd8513dd0e85dbc20edc",
+    "signature": "atomic_pay_player_rakeback(uuid,numeric)"
+  },
+  {
+    "acl": "{postgres=X/postgres,service_role=X/postgres}",
+    "definition": "CREATE OR REPLACE FUNCTION public.atomic_pay_player_rakeback(p_snapshot_id uuid, p_player_id uuid, p_amount numeric, p_period_id uuid, p_idempotency_key text DEFAULT NULL::text)\n RETURNS void\n LANGUAGE plpgsql\n SET search_path TO 'public'\nAS $function$\nDECLARE v_inserted integer;\nBEGIN\n  IF p_amount IS NULL OR p_amount <= 0 THEN RETURN; END IF;\n\n  IF p_idempotency_key IS NOT NULL THEN\n    INSERT INTO wallet_credit_idempotency (key, user_id, amount)\n    VALUES (p_idempotency_key, p_player_id, p_amount)\n    ON CONFLICT (key) DO NOTHING;\n    GET DIAGNOSTICS v_inserted = ROW_COUNT;\n    IF v_inserted = 0 THEN RETURN; END IF;\n  END IF;\n\n  PERFORM public.fn_pay_player_chips(\n    p_player_id, p_amount, 'rakeback',\n    'Rakeback payout (snapshot ' || p_snapshot_id::text || ', period ' || p_period_id::text || ')',\n    NULL, p_snapshot_id);\nEND;\n$function$\n",
+    "md5": "095b6ffaa3b0d0fa0683d4674796b305",
+    "signature": "atomic_pay_player_rakeback(uuid,uuid,numeric,uuid,text)"
+  },
+  {
+    "acl": "{postgres=X/postgres,service_role=X/postgres}",
+    "definition": "CREATE OR REPLACE FUNCTION public.credit_player_rakeback(p_user_id uuid, p_amount numeric, p_description text DEFAULT ''::text, p_idempotency_key text DEFAULT NULL::text)\n RETURNS boolean\n LANGUAGE plpgsql\n SET search_path TO 'public', 'extensions'\nAS $function$\nDECLARE\n  v_club_id uuid;\n  v_inserted integer;\n  v_res jsonb;\nBEGIN\n  IF p_amount <= 0 THEN RETURN false; END IF;\n\n  IF p_idempotency_key IS NOT NULL THEN\n    INSERT INTO wallet_credit_idempotency (key, user_id, amount)\n    VALUES (p_idempotency_key, p_user_id, p_amount)\n    ON CONFLICT (key) DO NOTHING;\n    GET DIAGNOSTICS v_inserted = ROW_COUNT;\n    IF v_inserted = 0 THEN RETURN false; END IF;\n  END IF;\n\n  v_res := public.fn_pay_player_chips(\n    p_user_id, p_amount, 'rakeback',\n    COALESCE(NULLIF(p_description, ''), 'Rakeback credit'), NULL, NULL);\n\n  -- Audit row. The club is the RESOLVED payout club; the old code fell back to\n  -- a hardcoded SHARK CLUB id, misattributing other clubs' rakeback.\n  v_club_id := NULLIF(v_res->>'club_id','')::uuid;\n  IF v_club_id IS NULL THEN\n    SELECT club_id INTO v_club_id FROM club_members WHERE user_id = p_user_id\n     ORDER BY joined_at ASC NULLS LAST LIMIT 1;\n  END IF;\n\n  IF v_club_id IS NOT NULL THEN\n    INSERT INTO chip_transactions (club_id, to_user_id, amount, transaction_type, notes)\n    VALUES (v_club_id, p_user_id, p_amount, 'rakeback',\n            COALESCE(NULLIF(p_description, ''), 'Rakeback credit'));\n  END IF;\n\n  RETURN true;\nEND; $function$\n",
+    "md5": "c8954025415debb1957b3f1fb1ddbc1c",
+    "signature": "credit_player_rakeback(uuid,numeric,text,text)"
+  }
+]

@@ -1827,12 +1827,20 @@ test.describe('production Daily Missions certification', () => {
 
       await test.step('an injected dashboard outage fails visibly and retry restores the live board', async () => {
         let abortedAttempts = 0;
+        let recoveryArmed = false;
+        let releaseRecovery!: () => void;
+        const retryClicked = new Promise<void>((resolve) => {
+          releaseRecovery = resolve;
+        });
         await page.route('**/rest/v1/rpc/get_daily_challenge_dashboard_v3', async (route) => {
-          if (abortedAttempts < 3) {
+          if (!recoveryArmed) {
             abortedAttempts += 1;
             await route.abort('failed');
             return;
           }
+          // Hold any automatic recovery request until the manual click has
+          // happened, so it cannot remove the Retry button before the click.
+          await retryClicked;
           await route.continue();
         });
         // Remount through the already-loaded SPA. page.route() deliberately
@@ -1849,20 +1857,28 @@ test.describe('production Daily Missions certification', () => {
         });
         await expect(page.getByText('Spendable Balance', { exact: true })).toHaveCount(0);
         await expect(page.getByRole('heading', { name: '0 Day Streak' })).toHaveCount(0);
-        expect(abortedAttempts).toBe(3);
-        await page.unroute('**/rest/v1/rpc/get_daily_challenge_dashboard_v3');
+        // The first dashboard exhausts its three network attempts. A joined
+        // channel may make another legitimate recovery attempt, so the outage
+        // must remain active instead of expiring after a fixed request count.
+        expect(abortedAttempts).toBeGreaterThanOrEqual(3);
         const recovered = page.waitForResponse(
           (response) => response.url().includes('/rest/v1/rpc/get_daily_challenge_dashboard'),
           { timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT }
         );
         const retry = page.getByRole('button', { name: 'Retry Challenge Ledger' });
         await missions.placeControlInSafeViewport(retry);
-        await retry.click();
+        recoveryArmed = true;
+        try {
+          await retry.click();
+        } finally {
+          releaseRecovery();
+        }
         expect((await recovered).ok()).toBe(true);
         await expect(page.getByRole('alert')).toHaveCount(0, {
           timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT,
         });
         await expect(page.getByRole('heading', { name: 'Daily Challenge Ledger' })).toBeVisible();
+        await page.unroute('**/rest/v1/rpc/get_daily_challenge_dashboard_v3');
       });
 
       await test.step('mobile layout has no overflow, usable controls, and keyboard-correct tabs', async () => {

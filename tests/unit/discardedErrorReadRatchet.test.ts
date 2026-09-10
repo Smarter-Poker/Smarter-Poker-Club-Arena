@@ -131,7 +131,7 @@ const BASELINE = new Map<string, number>([
      table for a single row. */
   ['src/services/AchievementTriggerService.ts', 0],
   ['src/pages/UnionGamesPage.tsx', 2],
-  ['src/pages/MultiTablePage.tsx', 2],
+  ['src/pages/MultiTablePage.tsx', 1],
   ['src/pages/FlashPoolPage.tsx', 0],
   ['src/pages/CreditAdminPanel.tsx', 1],
   ['src/pages/ClubAnnouncementsPage.tsx', 1],

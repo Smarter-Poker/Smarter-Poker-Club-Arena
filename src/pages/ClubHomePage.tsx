@@ -911,7 +911,8 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
    */
   const listsPaintedRef = useRef(false);
   const loadingRef = useRef(false);
-  const [wsConnected, setWsConnected] = useState(true);
+  const reloadPendingRef = useRef(false);
+  const [wsConnected, setWsConnected] = useState(false);
 
   // ── CRITICAL: Reset per-club state when navigating between clubs ──
   // React Router reuses the component when only the clubId param changes.
@@ -963,6 +964,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
     setTournaments([]);
     setLoading(true);
     loadingRef.current = false;
+    reloadPendingRef.current = false;
     hasDataRef.current = false;
     listsPaintedRef.current = false;
   }, [clubId]);
@@ -1037,6 +1039,8 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
   useEffect(() => {
     if (!clubId) return;
     let isMounted = true;
+    let realtimeEpoch = 0;
+    let firstSubscribe = true;
     let playingRefreshTimer: ReturnType<typeof setTimeout> | null = null;
     let occupancyTimer: ReturnType<typeof setInterval> | null = null;
     /* The jackpot feeds are ref-counted per club and per pool, so a table open
@@ -1045,8 +1049,28 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
     let stopBbjHits: (() => void) | null = null;
     let watchedBbjPoolId: string | null = null;
 
+    const stopRealtimeFeeds = () => {
+      if (playingRefreshTimer) clearTimeout(playingRefreshTimer);
+      if (occupancyTimer) clearInterval(occupancyTimer);
+      playingRefreshTimer = null;
+      occupancyTimer = null;
+      stopBbjPool?.();
+      stopBbjHits?.();
+      stopBbjPool = null;
+      stopBbjHits = null;
+      watchedBbjPoolId = null;
+    };
+
     const setupRealtime = async () => {
+      if (!isMounted) return;
+      const epoch = ++realtimeEpoch;
+      const isCurrent = () => isMounted && epoch === realtimeEpoch;
+      // A factory rebuild replaces every feed it created, including timers.
+      // Async work from the replaced setup loses authority immediately.
+      stopRealtimeFeeds();
+      setWsConnected(false);
       const resolvedId = await resolveClubUUID(clubId);
+      if (!isCurrent()) return;
       // UNION LAW (Dan 2026-08-20): remember the club the player entered
       // through. Buy-ins draw chips from THIS club and rake is earned for it,
       // so the club context must survive the hop into a union table.
@@ -1055,7 +1079,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       } catch {
         /* non-fatal */
       }
-      if (!isMounted) return;
+      if (!isCurrent()) return;
 
       // Check if this club is in a union — if so, listen on union_id in addition to club_id
       let unionId: string | null = null;
@@ -1093,7 +1117,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         }
       }
 
-      if (!isMounted) return;
+      if (!isCurrent()) return;
 
       const channelKey = `club-tables-${clubId}`;
       /**
@@ -1109,10 +1133,9 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
        * connected. The only recovery was the 90s poll, which is itself
        * visibility-gated.
        *
-       * setupRealtime is idempotent (getOrCreateChannel returns the existing
-       * channel, and the cleanup below removes it), so it is safe as the
-       * factory. Registered BEFORE the handlers so a reap that lands mid-setup
-       * still has something to call.
+       * Each setup has an epoch and replaces the feeds from its predecessor.
+       * Registered BEFORE the handlers so a reap that lands mid-setup still
+       * has something to call; only the latest setup may attach callbacks.
        */
       masterBus.registerChannelFactory(channelKey, () => {
         setupRealtime().catch((e) =>
@@ -1170,7 +1193,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           const { data, error } = await supabase.rpc('get_club_players_playing', {
             p_club_key: resolvedId,
           });
-          if (!isMounted) return;
+          if (!isCurrent()) return;
           if (error) {
             reportError(error, 'ClubHomePage.players_playing_realtime_refresh_failed');
             return;
@@ -1181,7 +1204,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       };
 
       const handleTableChange = (payload: any) => {
-        if (!isMounted) return;
+        if (!isCurrent()) return;
         if (payload.eventType === 'UPDATE' && payload.new) {
           const updated = payload.new as any;
           // P2-2: closeTable/deleteTable flip status='closed'/'deleted' or
@@ -1216,7 +1239,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       };
 
       const handleTournamentChange = (payload: any) => {
-        if (!isMounted) return;
+        if (!isCurrent()) return;
         if (payload.eventType === 'UPDATE' && payload.new) {
           const updated = payload.new as any;
           // A tournament leaving a joinable state (CANCELLED/COMPLETED) used to
@@ -1289,7 +1312,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
          `bbj_winners` INSERT per hit, straight to BBJ_HIT_GLOBAL, which
          BBJHitAnnouncer already owns (lib/bbjHitFeed). */
       stopBbjPool = watchBbjPool(resolvedId, (snap) => {
-        if (!isMounted) return;
+        if (!isCurrent()) return;
         setJackpotAmount(snap.mainBalance);
         if (snap.poolId && snap.poolId !== watchedBbjPoolId) {
           watchedBbjPoolId = snap.poolId;
@@ -1312,8 +1335,8 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
        *
        * Realtime gives no backlog on resubscribe: the events fired during the
        * gap are simply gone. The only way to close it is to re-read once the
-       * channel is live again. `firstSubscribe` keeps the initial SUBSCRIBED
-       * from firing a second fetch on top of the one already in flight.
+       * channel is live again. `firstSubscribe` belongs to this club visit,
+       * not each replacement channel, so a factory rebuild still refreshes.
        */
       /* THE LOBBY DOES NOT DEPEND ON REALTIME TO BE RIGHT (Dan 2026-09-02:
          "FIX THE REAL TIME CONNECTION FOR THE MIDWAY UNION, CLUB JAQK AND
@@ -1337,7 +1360,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
          by construction because it is the lobby's own behaviour, not a
          per-club setting. */
       const pollOccupancy = async () => {
-        if (!isMounted) return;
+        if (!isCurrent()) return;
         if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
         const q = supabase
           .from('tables')
@@ -1350,7 +1373,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           .order('current_players', { ascending: false })
           .order('created_at', { ascending: false })
           .limit(QUERY_LIMITS.LIST);
-        if (!isMounted) return;
+        if (!isCurrent()) return;
         if (error) {
           reportError(error, 'ClubHomePage.occupancy_poll_failed');
           return;
@@ -1392,14 +1415,13 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         void pollOccupancy();
       }, 20_000);
 
-      let firstSubscribe = true;
+      let subscribed = false;
       channel.subscribe((status: string, err?: Error) => {
-        /* Every other handler in this effect checks isMounted; this one did
-           not, so a late CHANNEL_ERROR or TIMED_OUT arriving after the page
-           unmounted set state on a torn-down component. */
-        if (!isMounted) return;
+        if (!isCurrent()) return;
         setWsConnected(status === 'SUBSCRIBED');
         if (status === 'SUBSCRIBED') {
+          if (subscribed) return;
+          subscribed = true;
           if (firstSubscribe) {
             firstSubscribe = false;
           } else {
@@ -1408,6 +1430,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           }
           return;
         }
+        subscribed = false;
         if (status === 'CHANNEL_ERROR') {
           if (err) reportError(err?.message || err, 'ClubHomePage._Tables_RT_channel_error');
         } else if (status === 'TIMED_OUT') {
@@ -1420,13 +1443,10 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
 
     return () => {
       isMounted = false;
-      if (playingRefreshTimer) clearTimeout(playingRefreshTimer);
-      if (occupancyTimer) clearInterval(occupancyTimer);
+      stopRealtimeFeeds();
       // Drop the factory FIRST. Removing the channel while its factory is
       // still registered is an invitation for the health monitor to rebuild
       // the one we are deliberately tearing down.
-      if (stopBbjPool) stopBbjPool();
-      if (stopBbjHits) stopBbjHits();
       masterBus.removeChannelFactory(`club-tables-${clubId}`);
       masterBus.removeRegisteredChannel(`club-tables-${clubId}`);
     };
@@ -1928,10 +1948,21 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
   });
 
   const loadClubData = async (getIsMounted?: () => boolean) => {
-    if (!clubId) return;
-    // Request deduplication — skip if already loading
-    if (loadingRef.current) return;
+    if (!clubId || !isMountedRef.current || (getIsMounted && !getIsMounted())) return;
+    // One read plus one retained invalidation. Dropping the busy request
+    // discarded reconnects and mutations that the in-flight snapshot missed.
+    if (loadingRef.current) {
+      reloadPendingRef.current = true;
+      return;
+    }
     loadingRef.current = true;
+    reloadPendingRef.current = false;
+    const loadToken = ++loadTokenRef.current;
+    const callerIsMounted = getIsMounted;
+    getIsMounted = () =>
+      isMountedRef.current &&
+      loadToken === loadTokenRef.current &&
+      (!callerIsMounted || callerIsMounted());
     // Only show loading spinner on initial load (no cached data), not background refreshes
     if (!hasDataRef.current && (!getIsMounted || getIsMounted())) setLoading(true);
 
@@ -1953,6 +1984,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         { maxRetries: 4, baseDelayMs: 500, isMountedRef }
       );
 
+      if (!getIsMounted()) return;
       if (clubError || !clubData) {
         /* reportError only for an ACTUAL error - "no row matched" arrives as
            `clubError === null` and was being reported as a fault every time.
@@ -2026,7 +2058,6 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
          landing after the user has moved to club B still painted A's tables,
          A's role and A's jackpot over B. The token is bumped by every new
          load and by unmount, so a late answer knows it is stale. */
-      const loadToken = ++loadTokenRef.current;
       const stale = () => loadToken !== loadTokenRef.current;
       Promise.resolve(supabase.rpc('get_club_home', { p_club_key: clubId }))
         .then(async ({ data: home, error: homeErr }) => {
@@ -2830,6 +2861,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       }
       setClubLevel(levelInfo);
     } catch (error: any) {
+      if (!getIsMounted()) return;
       reportError(error, 'ClubHomePage.Error_loading_club_data');
       /* error.message on a PostgREST failure is text like "JSON object
          requested, multiple (or no) rows returned" - Title-Cased by the toast
@@ -2837,8 +2869,14 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
          which is where it is useful. */
       toast.error('Failed to load club data');
     } finally {
-      loadingRef.current = false;
-      if (!getIsMounted || getIsMounted()) setLoading(false);
+      // A previous club's finally must not unlock the current club's request.
+      if (loadToken === loadTokenRef.current) {
+        loadingRef.current = false;
+        if (getIsMounted()) {
+          setLoading(false);
+          if (reloadPendingRef.current) loadClubDataRef.current();
+        }
+      }
     }
   };
 

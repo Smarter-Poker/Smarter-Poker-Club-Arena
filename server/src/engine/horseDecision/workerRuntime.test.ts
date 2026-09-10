@@ -361,7 +361,8 @@ const pineappleCards = [
 function pineappleRequest(
   stage: 'preflop' | 'flop' | 'pineapple_discard' | 'turn' | 'river',
   cardCount: 2 | 3,
-  discardProof = stage === 'flop' || stage === 'turn' || stage === 'river'
+  discardProof = stage === 'flop' || stage === 'turn' || stage === 'river',
+  requestId = 1
 ): FastHorseDecisionRequest {
   const actionHistory = discardProof
     ? [
@@ -377,7 +378,7 @@ function pineappleRequest(
     : [];
   const boardCount = stage === 'preflop' ? 0 : stage === 'turn' ? 4 : stage === 'river' ? 5 : 3;
   return rekey({
-    ...fastRequest(),
+    ...fastRequest(requestId),
     player: { ...snapshot.player, cards: pineappleCards.slice(0, cardCount) },
     gameState: {
       ...snapshot.gameState,
@@ -824,7 +825,26 @@ describe('HorseDecisionWorkerRuntime', () => {
     expect(h.messages.at(-1)).toMatchObject({
       type: 'ERROR',
       message: 'horse state hero card count does not match variant/street rules',
+      recoverable: true,
     });
+  });
+
+  it('continues its real FIFO after isolating an invalid Pineapple snapshot', async () => {
+    const h = harness();
+    h.runtime.receive(pineappleRequest('flop', 3, true, 1));
+    h.runtime.receive(fastRequest(2));
+    await h.runtime.drain();
+
+    expect(h.decisionsAtRng).toHaveLength(1);
+    expect(h.messages.slice(-2)).toMatchObject([
+      {
+        type: 'ERROR',
+        requestId: 1,
+        recoverable: true,
+        message: 'horse state hero card count does not match variant/street rules',
+      },
+      { type: 'FAST_RESULT', requestId: 2 },
+    ]);
   });
 
   it('requires the authoritative hero discard before accepting two Pineapple flop cards', async () => {
@@ -982,6 +1002,7 @@ describe('HorseDecisionWorkerRuntime', () => {
       fence: 'table:hand:turn',
       message: 'synthetic decision failure',
     });
+    expect(h.messages.at(-1)).not.toHaveProperty('recoverable');
   });
 
   it('serializes completed-hand learning with decisions and drains services on shutdown', async () => {
@@ -1166,6 +1187,7 @@ describe('HorseDecisionWorkerRuntime', () => {
       fence: 'throwing-fast-turn',
       message: 'synthetic decision failure',
     });
+    expect(h.messages.at(-1)).not.toHaveProperty('recoverable');
   });
 
   it('cancels a FIFO entry before it begins without running HorseLogic', async () => {

@@ -8,6 +8,8 @@ The cases prove one funded entry, rollback after a late receipt failure, overlap
 
 `--cross-club --baseline` deliberately omits the correction and exits nonzero: an entry charges its tournament club from 500 to 300 but logs the older membership's 1,000 balance. The correction records 300. It changes no debit amount, wallet balance or historical receipt.
 
+The default runner also includes the separate tournament-purchase-funding rehearsal. Its limits and source capture are documented in that fixture directory.
+
 ## Limits
 
 Only ordinary pre-start entries at a standalone club are exercised. Auth identity/session liveness and maintenance state are synthetic. Membership management, RLS/HTTP, notification/reporting/VIP triggers, late-entry seating, union funding, promotional entries, re-entry, SNG launch and actual tournament pool finalization are outside this fixture. Closure is represented by a transaction committing the finalized field while a real registration waits on its row. The production ledger, entitlement and escrow writers for the tested route are retained, but this is not a full production-schema clone or closure of all T01/S01/S02 controls.

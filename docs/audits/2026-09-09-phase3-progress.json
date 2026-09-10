@@ -28,13 +28,15 @@
       "id": "T04",
       "requirement": "Give each re-entry a distinct identity; enforce eliminated status, limits and deadline. Never mistake retries for another entry.",
       "priority": "P0",
-      "status": "pending_full_requirement_verification"
+      "status": "partial_atomic_purchase_and_generation_verified",
+      "evidence": "tournament_purchase_funding_rehearsal"
     },
     {
       "id": "T05",
       "requirement": "Process rebuy/add-on eligibility and funding atomically, with tournament chips separate from spendable cash.",
       "priority": "P0",
-      "status": "pending_full_requirement_verification"
+      "status": "partial_atomic_purchase_and_generation_verified",
+      "evidence": "tournament_purchase_funding_rehearsal"
     },
     {
       "id": "T06",
@@ -852,7 +854,15 @@
     "dispatch_staged_hetzner_immediately": true,
     "passive_wait_for_engine_window": false,
     "engine_force_restart": false,
-    "continue_audit_during_deployment": true
+    "continue_audit_during_deployment": true,
+    "latest_staged_successor_dispatch": {
+      "requested_at": "2026-09-10T02:06:23.376326+00:00",
+      "status": 204,
+      "sha": "1695880b4a3fef292bba096c6604759cf167bc17",
+      "force": false,
+      "workflow": "auto-deploy-hetzner.yml",
+      "reason": "Continue the staged normal deployment toward the next maintenance window; no active or pending successor exists."
+    }
   },
   "satellite_cash_correction": {
     "status": "production_database_verified_source_followup_merged",
@@ -1326,6 +1336,39 @@
     ],
     "scope": "The real dealable count, blind predictors, eviction method, deal configuration and HandController are exercised. External reads are synthetic and the fixture stops before time-bank transport and settlement. This closes forced-bet eligibility only; persistence across table moves and settlement remain separate controls.",
     "deployed_code_comparison": "No difference in ServerTableEngineBase, ServerTableEngineDealing, DisconnectEngine or HandController between the observed engine build and tested source.",
-    "full_control_closed": true
+    "full_control_closed": true,
+    "publication": {
+      "pull_request": 4081,
+      "merge_commit": "3bb214433b981fe9df52d0991333634343c0f22c",
+      "merged_at": "2026-09-10T02:08:05Z",
+      "ci_run": 34428007551,
+      "ci_conclusion": "success"
+    }
+  },
+  "tournament_purchase_funding_rehearsal": {
+    "controls": ["T04", "T05"],
+    "status": "isolated_atomic_purchase_evidence_verified",
+    "runner": "scripts/dev/probe-tournament-registration-funding-pg17.py --purchases-only",
+    "fixture_manifest": "scripts/dev/fixtures/tournament-purchase-funding/source-manifest.json",
+    "scenario_groups_passed": 13,
+    "installed_function_hashes_checked": 33,
+    "contract_triggers": 23,
+    "psql_evidence": "13 groups passed",
+    "ci_pg_client_local_evidence": "13 groups passed with pinned pg 8.16.3",
+    "full_controls_closed": false,
+    "live_catalog_recheck": {
+      "status": "unavailable",
+      "errors": [
+        "FATAL 57P03: the database system is shutting down",
+        "Connection terminated due to connection timeout"
+      ],
+      "no_production_mutation": true
+    },
+    "limits": [
+      "Accepted-hand/settlement records are synthetic; real hand commit is not invoked.",
+      "Auth/session, engine identity and maintenance state are synthetic.",
+      "Full HTTP/RLS, funded bounty re-entry, union funding, table expansion and engine consumption of a grant are not certified.",
+      "The full production trigger and foreign-key graph is not cloned; selected funding and seat contract triggers are retained."
+    ]
   }
 }

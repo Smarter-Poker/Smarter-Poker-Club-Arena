@@ -14,7 +14,7 @@ Use a server-owned, configurable review deadline with a 120-second default. Stor
 
 ## Required Evidence
 
-- A complete current PostgreSQL dependency graph, including the M5 terminal settlement authority and proposal-bound wrappers. A mixed schema, missing `fn_complete_tournament_terminal(uuid,uuid,text)`, or mismatched receipt body/privileges cannot certify this rollout.
+- A complete current PostgreSQL dependency graph, including the M5 terminal settlement authority and proposal-bound wrappers. The coordinator's production read at 2026-09-10 05:03:52 UTC confirms `fn_complete_tournament_terminal(uuid,uuid,text)` exists live; existing synthetic rehearsals lack it. That local M5 coverage gap and mismatched receipt bodies/privileges prevent native certification.
 - Current manager lease and generation admission on every relevant service route, including lost-context, lease-expiry and concurrent-owner refusal. Reuse the owning Stage B evidence; do not activate disabled safeguards from this proposal alone.
 - Native real-money authority tests for exact unanimous consent, stale participants or generations, changed shares, expiry, identical retries, concurrent requests, and failure after a downstream credit. Prove complete rollback or one exact committed receipt, with no duplicate payment or mutable finalized pool.
 - Verified SQL expansion, compatible runtime/client identities and authorized activation, followed by the complete user flow. Focused unit or source-contract checks and an approved proposal PR do not close Phase 3.

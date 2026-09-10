@@ -129,4 +129,19 @@ Production fn_save_engine_maintenance_break and fn_clear_engine_maintenance_brea
 
 The matching source is already present in [draft PR 3908](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/3908), agent/codex-live-realtime/stage-b-v2, inspected head 3eed8d571180d93c7d371baba46f5035000b7d30. Its persistLastHandUntilBoundary retries the same declaration and lifecycle generation with a bounded delay until announcedAt plus 120 seconds. It integrates ambiguous-write recovery, lifecycle fencing and the dedicated eight-second maintenance transport. The retry is not an independent snippet that can safely be transplanted without those protections. The applied migration and matching engine work originated together in that existing owner branch.
 
-At inspection PR 3908 was draft, open and mergeable false. Its main reconciliation, required checks and normal publication are a shared compatibility dependency, not new Diamond scope. No copy of its migration, second retry implementation, relaxed timeout, manual release seal or forced restart was introduced. Phase 6 frontend publication and isolated play certification remain valid; actual engine adoption and authenticated live acceptance remain open. Phase 7 has not started.
+At the historical inspection PR 3908 was draft, open and mergeable false. Its reconciliation belongs to the existing shared maintenance work. No copy of its migration, second retry implementation, relaxed timeout, manual release seal or forced restart was introduced. The later successful normal cutover below proves that this draft PR is not an absolute blocker to Phase 6 engine adoption. The prior missing-certificate observations remain historical evidence.
+
+## Verified Engine Adoption
+
+Normal [deployment 34449341468](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/34449341468), job 102781237201, completed September 10, 2026 at 07:57:09 UTC. Its exact target was 86aab0e645b1842e83fca808cf956c9733af66ba. GitHub comparison from implementation merge 85da6479 reports ahead 24, behind zero and that exact merge base.
+
+- A valid maintenance certificate appeared at the normal 07:55 boundary.
+- Actual image replacement occurred at 07:55:59.196 UTC.
+- Container version and liveness verification passed at 07:56:52 UTC; the public hostname served 86aab0e6 at 07:56:53.315 UTC.
+- At 07:56:55.221 UTC engine_leader proved movement from 56962e04 to 86aab0e6, with a five-second heartbeat age.
+- The durable release seal was committed at 07:56:56.799 UTC. Deployment attempt 354 recorded shipped=true at 07:57:02.344 UTC.
+- Cutover, runtime verification, promotion, database movement and sealing passed. Rollback and DID NOT DEPLOY were skipped.
+
+Fresh read-only production checks at 12:31:09-12:31:11 UTC show both frontend endpoints serving f1992eeb825918d6614d72a10c66988d0cdd292c, built 12:24:27 UTC by publisher 34476335321. Engine health serves f1992eeb with status, liveness and settlementStatus ok and blockedSettlementCount zero. GitHub comparisons prove the served full commit includes implementation 85da6479 (ahead 33, behind zero) and release-document merge 1434f002 (ahead 10, behind zero), with the required commits as exact merge bases.
+
+Actual frontend and engine adoption are complete. Authenticated live acceptance remains unverified: the supported bound browser still times out refreshing tabs after 20 seconds and advertises no browser recovery capability. Desktop Commander connectivity does not establish browser connectivity. No application regression, route pass or phase completion is inferred from this tool failure. No production player mutation, repeated migration, forced restart, redundant implementation test or shared deployment cancellation was performed. Phase 6 remains open solely for permitted authenticated live acceptance and its final evidence; Phase 7 has not started and public funded games remain closed.

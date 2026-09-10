@@ -28,22 +28,18 @@
  * Registered in docs/LAWS.md.
  */
 import { describe, expect, it } from 'vitest';
-import { readFileSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
-
-const MIGRATIONS = join(__dirname, '..', 'supabase', 'migrations');
+import { migrationCorpus } from './helpers/migrationCorpus';
 
 const DURABLE = ['ca_hand_player_stat', 'ca_hand_facts', 'ca_hand_transfers'] as const;
 
 /** The body of the newest migration that (re)defines `fn`, by version order. */
 function newestDefinition(fn: string): { file: string; body: string } {
   const re = new RegExp(`create\\s+(or\\s+replace\\s+)?function\\s+public\\.${fn}\\s*\\(`, 'i');
-  const files = readdirSync(MIGRATIONS)
-    .filter((f) => f.endsWith('.sql'))
-    .sort();
+  /* READ THE DIRECTORY ONCE (2026-09-10): this walked all 2,849 migrations for
+     every function it was asked about and crossed vitest's 5s default on a
+     busy machine. tests/helpers/migrationCorpus reads it once per file. */
   let found: { file: string; body: string } | null = null;
-  for (const file of files) {
-    const text = readFileSync(join(MIGRATIONS, file), 'utf8');
+  for (const { name: file, sql: text } of migrationCorpus()) {
     const m = re.exec(text);
     if (!m) continue;
     // From the CREATE to the end of that function's dollar-quoted body.
@@ -83,12 +79,8 @@ describe('LAW: the stats a player reads survive the hand prune', () => {
 
   it('ca_prune_hand_player_stat keeps at least the page analysis window per player', () => {
     const keep = newestDefinition('ca_prune_hand_player_stat');
-    const files = readdirSync(MIGRATIONS)
-      .filter((f) => f.endsWith('.sql'))
-      .sort();
     let def: RegExpExecArray | null = null;
-    for (const f of files) {
-      const t = readFileSync(join(MIGRATIONS, f), 'utf8');
+    for (const { sql: t } of migrationCorpus()) {
       const m =
         /function\s+public\.ca_prune_hand_player_stat\s*\(\s*p_keep\s+int(?:eger)?\s+DEFAULT\s+(\d+)/i.exec(
           t

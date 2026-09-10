@@ -1,0 +1,54 @@
+{
+  "verified_at": "2026-09-10T04:42:34.372298+00:00",
+  "programme": "109-item comprehensive Club Arena accounting audit",
+  "control": "CA-03-08",
+  "scope": "Native direct Spin draw financial rollback and played-state replay",
+  "status": "direct_draw_composition_passed_overall_control_open",
+  "production_mutations": false,
+  "postgres": "17.11 Homebrew arm64",
+  "owned_database": "full_stage1, local socket port 55473",
+  "definition_provenance": {
+    "source": "Existing exact production catalog snapshot saved by Spin lane before reconnection",
+    "snapshot_sha256": "de833f4d4f9fa7fbcddc2d609f054863b64e46c0e7c099d5b600b1afdb048944",
+    "functions": [
+      {
+        "signature": "fn_spin_book_entry(uuid)",
+        "body_md5": "604113bd4172433183cdd1d59af04e0f"
+      },
+      {
+        "signature": "fn_spin_draw_and_settle(uuid,jsonb)",
+        "body_md5": "ae40e68edb69f702859a326532b29bed"
+      },
+      {
+        "signature": "fn_spin_settle_game(uuid,uuid,numeric,integer,numeric,numeric)",
+        "body_md5": "a0f5a4d8edb0c0e403d3c00a9aadaa95"
+      }
+    ]
+  },
+  "probe": "scripts/ci/probes/spin-draw-replay-after-play.sql",
+  "probe_sha256": "9583434bd175c51e2086f35987b876b327a85dbc48bf5b9da4926bbdb436f87d",
+  "execution": "Install the three fingerprint-checked definitions and run the probe in one transaction; expected final AUDIT_TEST_PASS exception rolls all work back. PostgreSQL client ON_ERROR_STOP exits 3 on that exact sentinel.",
+  "passed": [
+    "Fault after actual entry, rake, both Spin journals, reserve receipts and escrow writes restores the complete financial snapshot",
+    "Same event succeeds once after fault removal; exact reserve, journal, rake, escrow and contract amounts reconcile",
+    "Replay after 0/1000/2000 chip redistribution preserves four immutable evidence IDs and all financial/contract state",
+    "Replay after a busted seat is vacated accepts a null caller ladder and preserves identical evidence/state",
+    "New draw rejects caller-defined economics before money",
+    "New draw with canonical economics refuses played starting stacks before money",
+    "Original function hashes, no synthetic tournament rows and no fault trigger verified after outer rollback"
+  ],
+  "fixture_notes": [
+    "Existing owned synthetic schema retains native reserve receipt, append-only journal, escrow and auto-ledger triggers. No financial function or accounting trigger is stubbed.",
+    "Synthetic users, events, source wallet debit evidence and opening escrow are seeded with replication_role=replica; native execution and assertions run with origin triggers. This does not prove the registration purchase path.",
+    "The only injected fault is a temporary AFTER INSERT trigger on the native reserve receipt table.",
+    "The existing older three function bodies are restored after the probe; no persistent schema change."
+  ],
+  "remaining": [
+    "Immutable launch-wrapper and final winner settlement composition against the coordinated production-matching schema",
+    "Concurrent draw/launch acceptance with the latest full native dependency set",
+    "Production engine adoption and remaining Phase 3 gates"
+  ],
+  "log": "/tmp/codex-chip-bounty-spin-native-rollback.log",
+  "git_diff_check": "passed",
+  "typescript": "not run: no TypeScript or application runtime changes"
+}

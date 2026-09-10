@@ -968,11 +968,47 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
               // hand and same starting stack. Hand order must never be skipped:
               // doing so would advance a PKO watermark past unpaid money.
               const refusedId = bustedOrdered[i].user_id;
-              this.bustRefusalStreak.set(
-                refusedId,
-                (this.bustRefusalStreak.get(refusedId) ?? 0) + 1
+              const streak = (this.bustRefusalStreak.get(refusedId) ?? 0) + 1;
+              this.bustRefusalStreak.set(refusedId, streak);
+
+              /**
+               * ONE PLAYER THE DOOR CANNOT ACCEPT IS NOT A REASON TO STOP THE
+               * WHOLE EVENT (2026-09-10).
+               *
+               * Aborting the pass is right for a TRANSIENT refusal - a CAS miss
+               * or an evidence defer clears itself in seconds, and retrying in
+               * hand order costs nothing. It is wrong for a PERMANENT one. The
+               * door refuses deterministically for several real reasons
+               * (`unresolved_knockout_generation_chain`,
+               * `pko_order_already_advanced`,
+               * `knockout_generation_has_new_live_seat`), and every one of them
+               * used to freeze the event: no other bust could be recorded, the
+               * field never shrank, the event never finished, and its escrow
+               * was never paid to anybody. Measured today: seven events stuck
+               * that way for up to eighteen hours, one refusing the same player
+               * every fifteen seconds since 2026-09-08, together holding
+               * thousands of chips no player could be given.
+               *
+               * So the abort stands for the first two refusals of the same
+               * player, and after that this pass records the rest of the field
+               * and says out loud who it could not record. Skipping is the
+               * lesser harm and it is bounded: hand order is preserved for
+               * everyone the door accepts, the blocked player keeps their
+               * chronological `eliminated_at` when they are finally recorded,
+               * and fn_normalize_tournament_final_standings re-derives every
+               * finishing place from that chronology before the event pays.
+               */
+              if (streak < TournamentManagerBase.BUST_REFUSAL_SKIP_AFTER) return;
+              reportError(
+                new Error(
+                  `[Tournament:${this.tournamentId.slice(0, 8)}] the knockout door has refused ${refusedId.slice(0, 8)} ${streak} times running; recording the rest of the field and leaving that bust for the door to accept. The event no longer waits on one player it cannot record.`
+                ),
+                'Tournament.bust_blocked_player_skipped'
               );
-              return;
+              this.requestUrgentEliminationSweepAfter(
+                TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS
+              );
+              continue;
             }
             this.bustRefusalStreak.delete(bustedOrdered[i].user_id);
             committedThisPass++;

@@ -390,6 +390,60 @@ describe('LiveHorseDecisionWorkerClient', () => {
     }
   });
 
+  it('gives a near-deadline dispatch its complete worker-integrity window before failing a wedge', async () => {
+    vi.useFakeTimers();
+    try {
+      const worker = new FakeWorker();
+      const onFatal = vi.fn();
+      const client = new LiveHorseDecisionWorkerClient({
+        workerFactory: () => worker,
+        onFatal,
+        jobTimeoutMs: 50,
+      });
+      worker.emitMessage(ready);
+      const first = client.decideFast(snapshot('first'));
+      const wedged = client.decideFast(snapshot('late-wedge'));
+      const wedgedRejection = expect(wedged).rejects.toBeInstanceOf(HorseDecisionExpiredError);
+
+      await vi.advanceTimersByTimeAsync(49);
+      worker.emitMessage(fastResult(1, 'first'));
+      await first;
+      expect(client.status()).toMatchObject({ phase: 'ready', activeRequestId: 2 });
+
+      // The caller's original queue-plus-compute budget ends after only 1 ms
+      // of execution. That expires the table action, but does not condemn the
+      // sole worker before its independently measured 50 ms integrity budget.
+      await vi.advanceTimersByTimeAsync(1);
+      await wedgedRejection;
+      await vi.advanceTimersByTimeAsync(48);
+      expect(client.status()).toMatchObject({
+        phase: 'ready',
+        activeRequestId: 2,
+        expiredJobs: 1,
+        lastError: null,
+      });
+      expect(worker.terminateCalls).toBe(0);
+      expect(onFatal).not.toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(1);
+      await new Promise<void>((resolve) => queueMicrotask(resolve));
+      expect(client.status()).toMatchObject({
+        phase: 'failed',
+        activeRequestId: null,
+        expiredJobs: 1,
+      });
+      expect(worker.terminateCalls).toBe(1);
+      expect(onFatal).toHaveBeenCalledTimes(1);
+      expect(onFatal).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: expect.stringContaining('execution deadline after dispatch'),
+        })
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('expires queued work against enqueue time without dispatching it or killing a healthy worker', async () => {
     vi.useFakeTimers();
     try {

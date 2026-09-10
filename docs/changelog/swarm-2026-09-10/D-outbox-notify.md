@@ -10,12 +10,12 @@ proposal (diffs), not committed anywhere.
 `public.hand_projection_outbox` (RLS on, no policies; grants: service_role SELECT, postgres ALL;
 REPLICA IDENTITY default):
 
-| column | type | default |
-|---|---|---|
-| hand_id | uuid PK | |
-| table_id | uuid | |
-| hand_number | bigint UNIQUE (global sequence) | |
-| created_at | timestamptz | clock_timestamp() |
+| column      | type                            | default           |
+| ----------- | ------------------------------- | ----------------- |
+| hand_id     | uuid PK                         |                   |
+| table_id    | uuid                            |                   |
+| hand_number | bigint UNIQUE (global sequence) |                   |
+| created_at  | timestamptz                     | clock_timestamp() |
 
 Indexes: `hand_projection_outbox_pkey(hand_id)`, `hand_projection_outbox_hand_number_key(hand_number)`,
 `idx_hand_projection_outbox_table_hand(table_id, hand_number)`.
@@ -45,14 +45,14 @@ The row is therefore a durable claim, and the engine's Realtime subscription is 
 
 ### 1.3 Volume (pg_stat reset 2026-09-10 02:34:36 at the 2XL resize; measured at 03:09, 35 min)
 
-| table in `supabase_realtime` | ins | upd | del | writes | live subscribers (realtime.subscription) |
-|---|---|---|---|---|---|
-| public.hand_projection_outbox | 8,244 | 0 | 10,234 | **18,478 (95.5%)** | service_role x1, no filter |
-| public.club_members | 2 | 581 | 2 | 585 | authenticated x2, filter club_id=... |
-| public.tournament_manager_wakes | 64 | 76 | 0 | 140 | service_role x2, no filter |
-| public.tournament_bounty_obligations | 10 | 127 | 0 | 137 | service_role x2, no filter |
-| public.notifications | 9 | 0 | 0 | 9 | authenticated x6, filter user_id=... |
-| public.tournament_deal_votes | 0 | 0 | 0 | 0 | service_role x1, no filter |
+| table in `supabase_realtime`         | ins   | upd | del    | writes             | live subscribers (realtime.subscription) |
+| ------------------------------------ | ----- | --- | ------ | ------------------ | ---------------------------------------- |
+| public.hand_projection_outbox        | 8,244 | 0   | 10,234 | **18,478 (95.5%)** | service_role x1, no filter               |
+| public.club_members                  | 2     | 581 | 2      | 585                | authenticated x2, filter club_id=...     |
+| public.tournament_manager_wakes      | 64    | 76  | 0      | 140                | service_role x2, no filter               |
+| public.tournament_bounty_obligations | 10    | 127 | 0      | 137                | service_role x2, no filter               |
+| public.notifications                 | 9     | 0   | 0      | 9                  | authenticated x6, filter user_id=...     |
+| public.tournament_deal_votes         | 0     | 0   | 0      | 0                  | service_role x1, no filter               |
 
 Only six tables are published. The outbox is 95.5% of all published-table changes. Every
 service_role subscription was created at 02:56:38 (the last engine start).
@@ -81,12 +81,13 @@ worsens it. Flagging for the orchestrator: the drain could run one chain per tab
 (the DB already serialises per table with `pg_advisory_xact_lock('hand-projection:'||table_id)`).
 
 ### 1.5 Engine side (origin/main - the Mac working tree is at a 2026-09-06 commit and does not
+
 contain this code; everything below was read with `git show origin/main:...`)
 
 `server/src/services/supabase/handProjection.ts`:
 
 - **Subscribe** (lines 278-297): `supabase.channel('hand-projection-outbox:' + pid).on('postgres_changes',
-  { event: 'INSERT', schema: 'public', table: 'hand_projection_outbox' }, () => { void wakeHandProjection(); })`.
+{ event: 'INSERT', schema: 'public', table: 'hand_projection_outbox' }, () => { void wakeHandProjection(); })`.
   The callback **ignores the payload entirely**; it only calls `wakeHandProjection()`.
 - **Wake** (248-255): `wakeHandProjection()` cancels any pending backoff and calls `beginDrain()`, which
   coalesces onto one process-wide drain promise (217-245).
@@ -106,9 +107,9 @@ contain this code; everything below was read with `git show origin/main:...`)
   2. one drain at start (`startHandProjectionWorker()`, GameServer.ts:2061, leader boot only) and
      on `SUBSCRIBED`;
   3. a bounded causal retry (250 ms .. 15 s, x2) only after a drain that failed or deferred.
-  Since the engine is the only writer of the outbox and wakes itself on every commit, the Realtime
-  signal is redundant on the happy path; it matters only for a wake lost across a worker restart or
-  a commit from a different process.
+     Since the engine is the only writer of the outbox and wakes itself on every commit, the Realtime
+     signal is redundant on the happy path; it matters only for a wake lost across a worker restart or
+     a commit from a different process.
 - Lifecycle: started in `GameServer.ts:2061` (leader boot), stopped in `GameServer.ts:2511`
   (`await stopHandProjectionWorker()` before lease release).
 
@@ -147,11 +148,11 @@ listener a last-seen id for logs.
 `LISTEN` is a session-level feature. It **does not work through Supavisor transaction mode
 (port 6543)** and not through the dedicated PgBouncer pooler (transaction mode only). Options:
 
-| endpoint | LISTEN | reachable from Hetzner (IPv4) |
-|---|---|---|
-| direct `db.kuklfnapbkmacvwxktbh.supabase.co:5432` | yes | **no** - IPv6 only unless the IPv4 add-on is bought |
-| Supavisor **session** mode `aws-?-us-west-2.pooler.supabase.com:5432`, user `postgres.kuklfnapbkmacvwxktbh` | **yes** | yes |
-| Supavisor transaction mode `...pooler.supabase.com:6543` | no | yes |
+| endpoint                                                                                                    | LISTEN  | reachable from Hetzner (IPv4)                       |
+| ----------------------------------------------------------------------------------------------------------- | ------- | --------------------------------------------------- |
+| direct `db.kuklfnapbkmacvwxktbh.supabase.co:5432`                                                           | yes     | **no** - IPv6 only unless the IPv4 add-on is bought |
+| Supavisor **session** mode `aws-?-us-west-2.pooler.supabase.com:5432`, user `postgres.kuklfnapbkmacvwxktbh` | **yes** | yes                                                 |
+| Supavisor transaction mode `...pooler.supabase.com:6543`                                                    | no      | yes                                                 |
 
 So the engine needs ONE new env var, `ENGINE_PG_LISTEN_URL`, holding the **session-mode pooler**
 connection string (copy it from Dashboard > Connect > "Session pooler"; the exact `aws-N-` host is
@@ -336,7 +337,9 @@ export class HandOutboxListener {
     this.connectsTotal++;
     this.attempt = 0;
     this.startHeartbeat(client);
-    console.log(`[HandOutboxListener] LISTEN ${HAND_OUTBOX_CHANNEL} established (connect #${this.connectsTotal})`);
+    console.log(
+      `[HandOutboxListener] LISTEN ${HAND_OUTBOX_CHANNEL} established (connect #${this.connectsTotal})`
+    );
     // Anything committed while this process had no LISTEN produced no
     // notification it could see. One drain covers the gap; duplicates are
     // harmless because the outbox row is the claim.
@@ -360,7 +363,9 @@ export class HandOutboxListener {
     const jittered = Math.round(delay * (0.75 + Math.random() * 0.5));
     this.attempt++;
     reportError(
-      new Error(`[HandOutboxListener] LISTEN connection lost (${describeError(err)}); reconnect in ${jittered} ms`),
+      new Error(
+        `[HandOutboxListener] LISTEN connection lost (${describeError(err)}); reconnect in ${jittered} ms`
+      ),
       'HandOutboxListener.connection_lost',
       { attempt: this.attempt, wasConnected }
     );
@@ -388,7 +393,9 @@ export class HandOutboxListener {
 
   toPrometheus(): string[] {
     const sinceLast =
-      this.lastNotificationAt === 0 ? -1 : Math.round((Date.now() - this.lastNotificationAt) / 1000);
+      this.lastNotificationAt === 0
+        ? -1
+        : Math.round((Date.now() - this.lastNotificationAt) / 1000);
     return [
       '# HELP poker_hand_outbox_listener_enabled 1 when ENGINE_PG_LISTEN_URL is configured.',
       '# TYPE poker_hand_outbox_listener_enabled gauge',

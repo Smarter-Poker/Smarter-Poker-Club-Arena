@@ -18,7 +18,11 @@ describe('stuck-tournament recovery logs only receipt-backed settlement counts',
   it('resolves a lost response behind the same terminal lock and validates its receipt', () => {
     expect(receiptRpc).toContain("rpc('fn_complete_tournament_terminal'");
     expect(receiptRpc).toContain("rpc('fn_resolve_tournament_terminal_outcome'");
-    expect(receiptRpc.match(/verifyTournamentCompletionReceipt\(/g)).toHaveLength(2);
+    // Three verifications since 2026-09-10: the first attempt, the serialized
+    // resolver, and the replay with the STORED receipt's parameters when the
+    // database refuses this process's observation against that receipt
+    // (terminal-replay-disagreement-is-not-retried-forever). Never fewer.
+    expect(receiptRpc.match(/verifyTournamentCompletionReceipt\(/g)).toHaveLength(3);
     expect(receiptRpc).toContain('terminal_committed === true');
     expect(receiptRpc).toContain('definitively_not_committed === true');
   });

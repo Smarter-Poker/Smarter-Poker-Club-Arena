@@ -2,6 +2,10 @@
 
 ## Every Change, Documented. No Exceptions.
 
+## 2026-09-10: Native Spin Funding Reaches Played Launch Completion
+
+The immutable draw wrapper now has a native rehearsal with actual entry/reserve/journal/escrow functions and a final receipt failure. Exact retry, changed-rule replay, stale-owner refusal, receipt immutability and played/vacated recovery pass, then the lease-bound completion RPC commits RUNNING without moving money. Every tracked prerequisite guard remains intact and all DDL/fixtures roll back. Native concurrency, final winner settlement and production adoption remain open. Re-read: yes. See docs/changelog/2026-09-10-native-spin-funded-launch-recovery.md.
+
 ## 2026-09-10: Final Deals Require A Bounded Review Of Exact Server Amounts
 
 Prepared SQL creates actor-bound review requests, immutable post-hand proposals, exact consent and proposal-bound terminal receipts. A central 120-second policy bounds requests and reviews, while consumed hand identity prevents repeated pauses. GET never starts review; request/vote/cancel compare the displayed actor before any mutation. Engine begin/close/complete routes use the existing manager fence. Verification: 68 native assertions passed for each paid/unpaid/partial fixed tail, plus 3 two-session terminal-lock assertions; all local transactions rolled back. Actual cash authority, journal, escrow and payout replay were exercised. Native full-terminal recovery and production activation remain open because live terminal/resolver/rake hashes differ from tracked candidates. No mismatching body or production DDL applied. Re-read: yes. See docs/changelog/2026-09-10-versioned-final-deal-consent.md and docs/audits/2026-09-10-versioned-final-deal-native-acceptance.json.

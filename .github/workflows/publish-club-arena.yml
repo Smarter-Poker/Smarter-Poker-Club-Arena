@@ -611,12 +611,16 @@ jobs:
     # is skipped and the web publish is untouched. On, the job must have the
     # CAPGO_TOKEN secret too, and fails loudly if it does not - an enabled
     # switch with no token is a misconfiguration, not a quiet no-op.
+    # A successful origin job can also mean it stood down for a newer bundle.
+    # Only the exact target confirmed by its HTTP verification may reach OTA.
     if: >-
       always() &&
       vars.CAPGO_OTA_ENABLED == 'true' &&
       needs.publish-needed.outputs.skip != 'true' &&
       needs.build-and-store.result == 'success' &&
       needs.publish-to-origin.result == 'success' &&
+      needs.publish-to-origin.outputs.verified_sha != '' &&
+      needs.publish-to-origin.outputs.verified_sha == needs.publish-needed.outputs.target_sha &&
       (needs.client-tests.result == 'success' ||
        (needs.client-tests.result == 'skipped' &&
         needs.publish-needed.outputs.tests_proven == 'true'))
@@ -695,6 +699,8 @@ jobs:
           echo "- OTA: bundle \`${VERSION}\` (\`${SHA:0:7}\`) uploaded to channel \`${CHANNEL}\`" >> $GITHUB_STEP_SUMMARY
 
   publish-to-origin:
+    outputs:
+      verified_sha: ${{ steps.verified.outputs.sha }}
     # ── THE PUBLISH (rewritten 2026-09-03) ────────────────────────────────────
     # Club Arena no longer travels through the World Hub repository. Until today
     # this job committed dist/ into World Hub's public/hub/club-arena/ and Vercel
@@ -845,6 +851,7 @@ jobs:
           $SSH "set -e; cd $ORIGIN_ROOT && N=\$(find pool -type f -name '*.map' | wc -l) && find pool -type f -name '*.map' -delete && echo \"source maps removed from the additive pool: \$N\""
 
       - name: Verify the origin serves this bundle
+        id: verified
         if: steps.verdict.outputs.verdict == 'publish'
         run: |
           set -euo pipefail
@@ -853,6 +860,7 @@ jobs:
             LIVE=$(curl -fsS --max-time 15 -H 'Cache-Control: no-cache' "$ORIGIN_URL/build-info.json?cb=$RANDOM" 2>/dev/null | sed -n 's/.*"ca_sha"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' || true)
             if [ "$LIVE" = "$SHA" ]; then
               echo "origin serves ${SHA:0:7}"
+              echo "sha=$SHA" >> "$GITHUB_OUTPUT"
               echo "### Published" >> $GITHUB_STEP_SUMMARY
               echo "\`${SHA:0:7}\` is live at the origin; World Hub's rewrite serves it at smarter.poker/hub/club-arena." >> $GITHUB_STEP_SUMMARY
               exit 0

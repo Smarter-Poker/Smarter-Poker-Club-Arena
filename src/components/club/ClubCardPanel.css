@@ -350,6 +350,41 @@
   margin-top: 4px;
 }
 
+/* Dan 2026-09-09: ACTIVE was one figure that mixed cash seats with tournament
+   seats. The split prints under the total in the label ink, one line, no
+   wrap: "21 CASH  270 EVENTS". Sized in cqw like the rest of the rail so it
+   never leaves its third of the card. */
+.club-card-stat-split {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  margin-top: 1px;
+  font-family: 'Inter', 'Roboto', sans-serif;
+  font-weight: 600;
+  font-size: 7px;
+  letter-spacing: 0.2px;
+  line-height: 1.2;
+  color: #a5eff0;
+  text-shadow:
+    0 0 5px rgba(0, 212, 255, 0.35),
+    0 0 10px rgba(0, 212, 255, 0.15);
+  text-transform: uppercase;
+  white-space: nowrap;
+  animation: statLabelReveal 0.4s ease-out 0.45s both;
+}
+.club-card-stat-split-part {
+  white-space: nowrap;
+}
+.club-card-stat-split-dot {
+  width: 2px;
+  height: 2px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.7;
+  flex: 0 0 auto;
+}
+
 /* Active players — green pulse when online */
 .club-card-stat--active .club-card-stat-value {
   color: #00ff88;
@@ -457,6 +492,24 @@
   .club-card-stat-value--level {
     font-size: clamp(12px, 8cqw, 16px);
     line-height: 1;
+  }
+  .club-card-stat-split {
+    font-size: clamp(6px, 4cqw, 8px);
+    letter-spacing: 0.1px;
+  }
+  /* A phone card (165px) has no room for "94 CASH · 544 EVENTS" on one line
+     inside its third of the rail (Dan: "MAKE SURE FONT SIZES NEVER GO OVER THE
+     EDGES OF THE FRAME"), so the split stacks: CASH above, EVENTS below, and
+     the dot between them goes. */
+  @container (max-width: 230px) {
+    .club-card-stat-split {
+      flex-direction: column;
+      gap: 0;
+      line-height: 1.25;
+    }
+    .club-card-stat-split-dot {
+      display: none;
+    }
   }
   /* Two figures on the rail (the Diamond Arena card) share the width a
      third-each row spreads over three, so the labels come down a step. */

@@ -1,0 +1,32 @@
+{
+  "status": "passed",
+  "checks": [
+    "unknown local hook refuses before replacement",
+    "unknown reveal identity refuses before player exception activation",
+    "exact live preimage bundle applies with postconditions",
+    "independent postflight verifies all five function identities and inactive feature",
+    "identical bundle replay accepts exact postimage",
+    "all function and trigger fingerprints and empty fixture restored after rollback"
+  ],
+  "before": {
+    "users": 0,
+    "events": 0,
+    "leases": 0,
+    "triggers": "85ecaa18202ed02e0f35fc02c02d522b",
+    "functions": "1fd512054a00ca1665f06e32c6765fb5"
+  },
+  "after": {
+    "users": 0,
+    "events": 0,
+    "leases": 0,
+    "triggers": "85ecaa18202ed02e0f35fc02c02d522b",
+    "functions": "1fd512054a00ca1665f06e32c6765fb5"
+  },
+  "production_ddl_applied": false,
+  "source_sha256": {
+    "scripts/deploy/2026-09-10-preserve-manager-heartbeat-admission.sql": "67216e864b076fcaa5e5114d5641c7e935ce044df6dfd1e506a06e337cd792c6",
+    "scripts/ci/probes/manager-heartbeat-admission-postflight.sql": "241aedf73a0fe2c3cf0f6254dd2b170d3d3c77ef99d0c3151ad5164d1028f085"
+  },
+  "function_bodies_covered_by": "docs/audits/2026-09-10-stage-b-manager-heartbeat-native.json",
+  "fixture_composition": "Rollback-only source-exact live hook, takeover, heartbeat and hardened reveal definitions with exact grants. Historical root database restored completely."
+}

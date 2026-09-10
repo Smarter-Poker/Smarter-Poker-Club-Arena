@@ -75,26 +75,26 @@
     "limit": "Pure rule methods only; lifecycle changes in PR4105 are absent from this deployed engine."
   },
   "publication": {
-    "observed_at": "2026-09-10T14:07:43.456687+00:00",
+    "observed_at": "2026-09-10T14:34:10.048900+00:00",
     "urls": [
       {
         "url": "https://ca-static.smarter.poker/build-info.json",
         "status": 200,
         "body": {
-          "ca_sha": "bb7a6ba30639fdfc5ae81df52d4e9f0b7c6afa9a",
-          "built_at": "2026-09-10T13:57:30Z",
+          "ca_sha": "cb11503fd0d6bf45433ef0a364361652b8ce0170",
+          "built_at": "2026-09-10T14:29:04Z",
           "built_by": "publish-club-arena.yml",
-          "run_id": "34485513194"
+          "run_id": "34489048445"
         }
       },
       {
         "url": "https://smarter.poker/hub/club-arena/build-info.json",
         "status": 200,
         "body": {
-          "ca_sha": "bb7a6ba30639fdfc5ae81df52d4e9f0b7c6afa9a",
-          "built_at": "2026-09-10T13:57:30Z",
+          "ca_sha": "cb11503fd0d6bf45433ef0a364361652b8ce0170",
+          "built_at": "2026-09-10T14:29:04Z",
           "built_by": "publish-club-arena.yml",
-          "run_id": "34485513194"
+          "run_id": "34489048445"
         }
       }
     ]
@@ -111,7 +111,14 @@
     "publisher_run": 34485513194,
     "web_publisher": "success",
     "native_ota": "skipped",
-    "sentry_upload": "nonblocking HTTP403; unresolved"
+    "sentry_upload": "nonblocking HTTP403; unresolved",
+    "spin_pr": 4169,
+    "spin_merge": "cb11503fd0d6bf45433ef0a364361652b8ce0170",
+    "spin_ci_run": 34488005796,
+    "spin_ci_result": "all required checks passed;53 native funding groups;0 unapplied objects",
+    "spin_publisher_run": 34489048445,
+    "spin_publisher_web": "success",
+    "spin_native_ota": "skipped"
   },
   "engine": {
     "run": 34481538139,
@@ -119,7 +126,11 @@
     "leader_observed_at": "2026-09-10T14:06:47.36504Z",
     "version": "6aee0b67",
     "heartbeat_at": "2026-09-10T14:06:37.933255Z",
-    "audit_pr4105_ancestor": false
+    "audit_pr4105_ancestor": false,
+    "next_owner_workflow_run": 34488625832,
+    "next_target": "0a76896196c1bea84de06d14ff998b83ab921117",
+    "next_target_includes_pr4105_and_pr4163": true,
+    "next_target_adoption": "pending actual cutover and release seal"
   },
   "phase": 3,
   "original_controls": 58,
@@ -143,5 +154,7 @@
       "path": "docs/audits/2026-09-10-spin-production-helper-proof/installed-helper-parity.sql",
       "sha256": "d591e78d3d2d27ae74927b374c15366dec040eb64c5f83a85e8a93101d818869"
     }
-  ]
+  ],
+  "migration_ledger_bytes": 12053,
+  "migration_ledger_md5": "b6aee3c6d65e2e61284af991ec992da8"
 }

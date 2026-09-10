@@ -52,7 +52,7 @@ const wake = vi.fn(async (source: string) => {
   wakes.push(source);
   return { projected: 0, alreadyCompleted: 0, deferred: 0, failed: 0 };
 });
-const createClient = vi.fn(() => {
+const openSession = vi.fn(() => {
   const client = new FakeClient();
   clients.push(client);
   return client;
@@ -61,7 +61,7 @@ const createClient = vi.fn(() => {
 function makeListener(connectionString = 'postgresql://listener@pooler.invalid:5432/postgres') {
   return new HandOutboxListener({
     connectionString,
-    createClient,
+    openSession,
     wake,
     random: () => 0.5, // jitter factor exactly 1.0 so delays are deterministic
   });
@@ -75,7 +75,7 @@ beforeEach(() => {
   clients.length = 0;
   wakes.length = 0;
   wake.mockClear();
-  createClient.mockClear();
+  openSession.mockClear();
   mockReportError.mockReset();
 });
 
@@ -92,7 +92,7 @@ describe('HandOutboxListener', () => {
       listener.start();
       await vi.advanceTimersByTimeAsync(RECONNECT_MAX_MS * 2);
 
-      expect(createClient).not.toHaveBeenCalled();
+      expect(openSession).not.toHaveBeenCalled();
       expect(wake).not.toHaveBeenCalled();
       expect(warn).toHaveBeenCalledTimes(1);
       expect(String(warn.mock.calls[0][0])).toContain('ENGINE_PG_LISTEN_URL is not set');
@@ -109,11 +109,11 @@ describe('HandOutboxListener', () => {
     process.env.ENGINE_PG_LISTEN_URL = secret;
     const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
     try {
-      const listener = new HandOutboxListener({ createClient, wake, random: () => 0.5 });
+      const listener = new HandOutboxListener({ openSession, wake, random: () => 0.5 });
       expect(listener.enabled).toBe(true);
       listener.start();
       await flush();
-      expect(createClient).toHaveBeenCalledWith(secret);
+      expect(openSession).toHaveBeenCalledWith(secret);
       clients[0].emit('error', new Error('boom'));
       await flush();
       const everything = [
@@ -163,7 +163,7 @@ describe('HandOutboxListener', () => {
 
   it('reconnects after a lost session with growing backoff and resyncs on every reconnect', async () => {
     const failNextConnect = () =>
-      createClient.mockImplementationOnce(() => {
+      openSession.mockImplementationOnce(() => {
         const client = new FakeClient();
         client.connectImpl = async () => {
           throw new Error('connect refused');
@@ -237,7 +237,7 @@ describe('HandOutboxListener', () => {
   });
 
   it('a failed connect schedules a retry with the next delay instead of giving up', async () => {
-    createClient.mockImplementationOnce(() => {
+    openSession.mockImplementationOnce(() => {
       const client = new FakeClient();
       client.connectImpl = async () => {
         throw new Error('ENOTFOUND');

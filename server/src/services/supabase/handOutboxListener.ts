@@ -55,8 +55,14 @@ export interface OutboxListenerClient {
 export type HandOutboxListenerOptions = {
   /** Defaults to process.env.ENGINE_PG_LISTEN_URL. Empty disables the service. */
   connectionString?: string;
-  /** Builds the dedicated session. Defaults to a TLS pg.Client. */
-  createClient?: (connectionString: string) => OutboxListenerClient;
+  /**
+   * Opens the dedicated LISTEN session. Defaults to a TLS pg.Client. This is
+   * a raw Postgres session for LISTEN only, never a Data API client: the
+   * only Supabase client on the engine is built in ./client.ts, where the
+   * actor-authority fence stamps every PostgREST request
+   * (TournamentManagerRequestFence.guard.test.ts).
+   */
+  openSession?: (connectionString: string) => OutboxListenerClient;
   /** Defaults to wakeHandProjection. Injected so the spec can count wakes. */
   wake?: (source: HandProjectionWakeSource) => Promise<unknown>;
   /** Jitter source in [0, 1). Defaults to Math.random. */
@@ -69,7 +75,7 @@ function sslConfig(): pg.ClientConfig['ssl'] {
   return { rejectUnauthorized: true };
 }
 
-function defaultCreateClient(connectionString: string): OutboxListenerClient {
+function defaultOpenSession(connectionString: string): OutboxListenerClient {
   return new pg.Client({
     connectionString,
     application_name: `club-arena-engine-outbox-listener:${process.pid}`,
@@ -87,7 +93,7 @@ export function reconnectDelayMs(attempt: number, random: () => number = Math.ra
 
 export class HandOutboxListener {
   private readonly connectionString: string;
-  private readonly createClient: (connectionString: string) => OutboxListenerClient;
+  private readonly openSession: (connectionString: string) => OutboxListenerClient;
   private readonly wake: (source: HandProjectionWakeSource) => Promise<unknown>;
   private readonly random: () => number;
 
@@ -105,7 +111,7 @@ export class HandOutboxListener {
 
   constructor(options: HandOutboxListenerOptions = {}) {
     this.connectionString = options.connectionString ?? process.env.ENGINE_PG_LISTEN_URL ?? '';
-    this.createClient = options.createClient ?? defaultCreateClient;
+    this.openSession = options.openSession ?? defaultOpenSession;
     this.wake = options.wake ?? wakeHandProjection;
     this.random = options.random ?? Math.random;
   }
@@ -152,7 +158,7 @@ export class HandOutboxListener {
 
   private async connect(): Promise<void> {
     if (this.stopped || this.client) return;
-    const client = this.createClient(this.connectionString);
+    const client = this.openSession(this.connectionString);
     this.client = client;
 
     client.on('notification', (msg) => {

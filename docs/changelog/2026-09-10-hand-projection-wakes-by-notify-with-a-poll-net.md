@@ -276,3 +276,14 @@ Added to the existing `alert-rules.yml`, so `prometheus.yml`'s `rule_files`,
 - `infra/monitoring/alert-rules.yml` parses (yaml) and the new group lists four alerts.
 - Live database read (SELECT only): 100,888 outbox rows, 1,329 tables, oldest 00:31 UTC;
   the two triggers on the outbox; the function bodies quoted above.
+
+### CI fix (review 2, follow-up)
+
+`TournamentManagerRequestFence.guard.test.ts` requires that `services/supabase/client.ts` is the
+only runtime file matching `createClient(`: every Data API request must pass through the one
+fetch wrapper that stamps actor authority. The listener's session factory option was named
+`createClient`, which the guard read as a second Supabase client. It is a raw `pg` LISTEN
+session (LISTEN plus a `SELECT 1` heartbeat; no PostgREST request, no Data API), so it is
+renamed `openSession` in `handOutboxListener.ts` and its spec. Nothing about the fence is
+weakened: the engine still builds exactly one Supabase client. Full `cd server && npx vitest
+run`: 647 files, 8,678 tests passed; `npx tsc --noEmit` clean.

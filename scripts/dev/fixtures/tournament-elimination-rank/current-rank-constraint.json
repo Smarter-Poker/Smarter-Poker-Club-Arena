@@ -1,0 +1,13 @@
+{
+  "acl": "{postgres=X/postgres,service_role=X/postgres}",
+  "body_md5": "1d00219cefe6de725da5d33fe0b38002",
+  "function_definition": "CREATE OR REPLACE FUNCTION public.fn_tournament_elimination_has_a_place()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nDECLARE\n  v_status text;\n  v_position integer;\n  v_tournament text;\nBEGIN\n  /* THE KNOCKOUT DOOR OWNS EVERY BUST A HAND TOOK (2026-09-10). An eliminated\n     row is a finishing place: fn_complete_tournament_entry_reprice reads a row\n     without one as an unfinished reprice and refuses the event for ever, and\n     the engine's elimination sweep will not run until that proof passes.\n\n     A DEFERRED CHECK READS THE ROW AT COMMIT, NOT THE STATEMENT. NEW is the\n     tuple the firing statement produced, so a settlement that writes the status\n     first and the place second would be refused on a row that is about to be\n     correct - which is what happened to five satellites between 07:24 and\n     07:52. Re-read; if the row is gone, there is nothing to judge. */\n  SELECT tp.status, tp.position INTO v_status, v_position\n    FROM public.tournament_players tp\n   WHERE tp.id = NEW.id;\n  IF NOT FOUND THEN RETURN NULL; END IF;\n\n  IF v_status = 'eliminated' AND v_position IS NULL THEN\n    SELECT t.status INTO v_tournament FROM public.tournaments t WHERE t.id = NEW.tournament_id;\n    IF v_tournament IN ('RUNNING', 'COMPLETING', 'COMPLETED') THEN\n      RAISE EXCEPTION 'tournament % player % was recorded eliminated with no finishing place; a bust is recorded through the knockout door, which assigns the place',\n        NEW.tournament_id, NEW.user_id USING ERRCODE = '23514';\n    END IF;\n  END IF;\n  RETURN NULL;\nEND;\n$function$\n",
+  "owner": "postgres",
+  "proconfig": ["search_path=public, pg_temp"],
+  "signature": "fn_tournament_elimination_has_a_place()",
+  "tgdeferrable": true,
+  "tgenabled": "O",
+  "tginitdeferred": true,
+  "tgname": "tournament_elimination_has_a_place",
+  "trigger_definition": "CREATE CONSTRAINT TRIGGER tournament_elimination_has_a_place AFTER INSERT OR UPDATE OF status, \"position\" ON public.tournament_players DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION fn_tournament_elimination_has_a_place()"
+}

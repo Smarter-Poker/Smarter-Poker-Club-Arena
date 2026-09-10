@@ -261,6 +261,10 @@ with (root/'results.log').open('w') as log:
             verify(q,fresh,overlap,call,check)
             from tournament_cancellation_policy_cases import verify
             verify(q,fresh,overlap,call,check)
+            from tournament_obligation_funding_cases import verify
+            verify(q,fresh,overlap,call,check)
+            from tournament_elimination_rank_cases import verify
+            verify(q,fresh,overlap,call,check)
 
     finally:
         if started:

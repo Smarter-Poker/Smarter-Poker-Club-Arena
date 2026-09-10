@@ -1,0 +1,19 @@
+{
+  "passed": [
+    "cancellation refuses started evidence before its first financial write",
+    "cancellation refuses running evidence before its first financial write",
+    "cancellation refuses launch evidence before its first financial write",
+    "cancellation refuses multiplier evidence before its first financial write",
+    "cancellation refuses draw evidence before its first financial write",
+    "cancellation refuses reserve evidence before its first financial write",
+    "cancellation refuses hand evidence before its first financial write",
+    "cancellation refuses legacy_hand evidence before its first financial write",
+    "cancellation refuses paid_award evidence before its first financial write",
+    "cancellation unstarted remains routed to the existing financial authority",
+    "cancellation default_zero remains routed to the existing financial authority",
+    "cancellation past_schedule remains routed to the existing financial authority",
+    "stored cancellation replay reaches its existing receipt reader before the new refusal",
+    "cancellation waiting behind a committed draw refuses without releasing the draw"
+  ],
+  "production_database_used": false
+}

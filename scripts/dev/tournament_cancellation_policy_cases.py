@@ -22,6 +22,8 @@ def verify(q,fresh,overlap,entry,check):
         q((FIXTURE/'installed.sql').read_text())
         helper=manifest['lock_helper']
         assert q("SELECT md5(prosrc) FROM pg_proc WHERE oid='%s'::regprocedure;"%helper['signature'])==helper['body_md5']
+        from tournament_guard_fixture_roles import align
+        align(q,'atomic_cancel_tournament(uuid,uuid)',service=True,search_path='public, extensions, pg_temp',runtime_timeout='120s')
         expected=manifest['baseline_body_md5']
         if not baseline:
             q(migrations[0].read_text())

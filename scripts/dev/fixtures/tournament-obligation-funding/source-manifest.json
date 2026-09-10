@@ -39,16 +39,12 @@
     }
   ],
   "production_database_used": false,
-  "tables": [
-    "ca_manual_adjustments",
-    "ca_payout_freeze",
-    "financial_alerts"
-  ],
+  "tables": ["ca_manual_adjustments", "ca_payout_freeze", "financial_alerts"],
   "unique_indices": [
     "ux_tournament_obligations_place",
     "ux_tournament_obligations_user",
     "uq_tournament_payouts_idempotency_key"
   ],
-  "candidate_body_md5": "d30af6aca3dcbd9a2ca9ff2aa9849488",
+  "candidate_body_md5": "ebabbaf0456d80335aaa2e04471d0ab6",
   "candidate_migration": "supabase/migrations/20260910040332_a_refused_finishing_place_creates_no_debt.sql"
 }

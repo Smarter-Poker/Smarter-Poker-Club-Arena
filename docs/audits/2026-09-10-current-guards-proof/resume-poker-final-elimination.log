@@ -1,0 +1,9 @@
+PASS accepted same-hand candidates persist supplied distinct ranks and monotonic sequences once without money movement
+PASS overlapping exact elimination requests persist one rank and one sequence
+PASS a replay cannot change an already persisted finishing rank
+PASS missing or contradictory hand, receipt, decision and seat evidence cannot persist a rank
+PASS seat release failure rolls back rank, sequence row and candidate mutation together
+PASS the current deferred constraint rolls back the old wrapper NULL-rank write
+NULL_RANK_RESULT {"response": {"ok": false, "reason": "invalid_place_or_prize"}, "rows": [{"user": "c1000000-0000-4000-8000-000000000001", "closed": false, "status": "playing", "position": null, "sequence": null, "candidate_state": "pending"}, {"user": "c1000000-0000-4000-8000-000000000002", "closed": false, "status": "playing", "position": null, "sequence": null, "candidate_state": "pending"}]}
+PASS a missing rank is refused before elimination and leaves the valid rank claim available
+7 groups passed; evidence: /tmp/ca-registration-funding-pg17-0ljy0z3m/results.json

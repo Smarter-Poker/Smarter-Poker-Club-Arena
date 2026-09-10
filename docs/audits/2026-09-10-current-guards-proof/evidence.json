@@ -1,0 +1,170 @@
+{
+  "native": [
+    {
+      "name": "cancellation",
+      "exit": 0,
+      "expected_exit": 0,
+      "seconds": 51.46,
+      "log": "/tmp/resume-poker-final-cancellation.log",
+      "tail": "PASS cancellation refuses started evidence before its first financial write\nPASS cancellation refuses running evidence before its first financial write\nPASS cancellation refuses launch evidence before its first financial write\nPASS cancellation refuses multiplier evidence before its first financial write\nPASS cancellation refuses draw evidence before its first financial write\nPASS cancellation refuses reserve evidence before its first financial write\nPASS cancellation refuses hand evidence before its first financial write\nPASS cancellation refuses legacy_hand evidence before its first financial write\nPASS cancellation refuses paid_award evidence before its first financial write\nPASS cancellation unstarted remains routed to the existing financial authority\nPASS cancellation default_zero remains routed to the existing financial authority\nPASS cancellation past_schedule remains routed to the existing financial authority\nPASS stored cancellation replay reaches its existing receipt reader before the new refusal\nPASS cancellation waiting behind a committed draw refuses without releasing the draw\n14 groups passed; evidence: /tmp/ca-registration-funding-pg17-ejd36dgo/results.json\n"
+    },
+    {
+      "name": "obligations",
+      "exit": 0,
+      "expected_exit": 0,
+      "seconds": 52.07,
+      "log": "/tmp/resume-poker-final-obligations.log",
+      "tail": "EXISTING_REFUSAL_STATE {\"fee\": 40, \"owed\": 110, \"paid\": 100, \"pool\": 360, \"prize\": 260, \"credits\": 1, \"journal\": 3, \"ob_paid\": 100, \"payouts\": 1, \"wallets\": 1700, \"receipts\": 1, \"obligations\": 2}\nPASS a refused existing second place preserves its unpaid debt and no-payment replay\nPASS early award and final adjustment move only cumulative deltas and exhaust only prize escrow\nPASS overlapping identical obligations credit once under the real database lock\nPASS overlapping early and final totals produce only the unpaid increment\nPASS another user cannot take an already paid place or raise its debt\nPASS late payout evidence failure rolls back the real wallet and escrow writers\nPASS a short prize bank pays what it holds and preserves debt and the fee bank\nPASS paid history cannot be rewritten or deleted through normal table operations\nSECOND_PLACE_REFUSAL_STATE {\"fee\": 40, \"owed\": 100, \"paid\": 100, \"pool\": 360, \"prize\": 260, \"credits\": 1, \"journal\": 3, \"ob_paid\": 100, \"payouts\": 1, \"wallets\": 1700, \"receipts\": 1, \"obligations\": 1}\nPASS a refused second place creates no debt and leaves the place available to its recipient\nPASS a zero second-place request reserves no obligation and the correct recipient owns the later payment\nPASS an existing legacy payment is still seeded and replayed without another credit\n11 groups passed; evidence: /tmp/ca-registration-funding-pg17-rtyy2jn3/results.json\n"
+    },
+    {
+      "name": "elimination",
+      "exit": 0,
+      "expected_exit": 0,
+      "seconds": 53.87,
+      "log": "/tmp/resume-poker-final-elimination.log",
+      "tail": "PASS accepted same-hand candidates persist supplied distinct ranks and monotonic sequences once without money movement\nPASS overlapping exact elimination requests persist one rank and one sequence\nPASS a replay cannot change an already persisted finishing rank\nPASS missing or contradictory hand, receipt, decision and seat evidence cannot persist a rank\nPASS seat release failure rolls back rank, sequence row and candidate mutation together\nPASS the current deferred constraint rolls back the old wrapper NULL-rank write\nNULL_RANK_RESULT {\"response\": {\"ok\": false, \"reason\": \"invalid_place_or_prize\"}, \"rows\": [{\"user\": \"c1000000-0000-4000-8000-000000000001\", \"closed\": false, \"status\": \"playing\", \"position\": null, \"sequence\": null, \"candidate_state\": \"pending\"}, {\"user\": \"c1000000-0000-4000-8000-000000000002\", \"closed\": false, \"status\": \"playing\", \"position\": null, \"sequence\": null, \"candidate_state\": \"pending\"}]}\nPASS a missing rank is refused before elimination and leaves the valid rank claim available\n7 groups passed; evidence: /tmp/ca-registration-funding-pg17-0ljy0z3m/results.json\n"
+    },
+    {
+      "name": "obligation-baseline",
+      "exit": 1,
+      "expected_exit": 1,
+      "seconds": 6.19,
+      "log": "/tmp/resume-poker-final-obligation-baseline.log",
+      "tail": "EXISTING_REFUSAL_STATE {\"fee\": 40, \"owed\": 150, \"paid\": 100, \"pool\": 360, \"prize\": 260, \"credits\": 1, \"journal\": 3, \"ob_paid\": 100, \"payouts\": 1, \"wallets\": 1700, \"receipts\": 1, \"obligations\": 2}\nTraceback (most recent call last):\n  File \"/Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-poker-audit-sep09/scripts/dev/probe-tournament-registration-funding-pg17.py\", line 201, in <module>\n    verify(q,fresh,overlap,call,check)\n    ~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-poker-audit-sep09/scripts/dev/tournament_obligation_funding_cases.py\", line 85, in verify\n    assert state()==before, 'a refused existing second place increased debt or moved money'\n           ^^^^^^^^^^^^^^^\nAssertionError: a refused existing second place increased debt or moved money\n",
+      "expected_failure_confirmed": true
+    },
+    {
+      "name": "elimination-baseline",
+      "exit": 0,
+      "expected_exit": 0,
+      "seconds": 51.26,
+      "log": "/tmp/resume-poker-final-elimination-baseline.log",
+      "tail": "PASS accepted same-hand candidates persist supplied distinct ranks and monotonic sequences once without money movement\nPASS overlapping exact elimination requests persist one rank and one sequence\nPASS a replay cannot change an already persisted finishing rank\nPASS missing or contradictory hand, receipt, decision and seat evidence cannot persist a rank\nPASS seat release failure rolls back rank, sequence row and candidate mutation together\nPASS the current deferred constraint rolls back the old wrapper NULL-rank write\n6 groups passed; evidence: /tmp/ca-registration-funding-pg17-pipyeah2/results.json\n"
+    }
+  ],
+  "source_sha256": {
+    "supabase/migrations/20260910040332_a_refused_finishing_place_creates_no_debt.sql": "69d77f9968d49008f7069fe63b618b802937338e439f631806f02dba0da1220d",
+    "supabase/migrations/20260910035015_started_tournaments_resume_or_settle_instead_of_cancelling.sql": "85e02d3f2350b4c1c7229ab2b58e789b3b8651869c0c3834a3318d7547b10bf6",
+    "supabase/migrations/20260910051131_a_tournament_elimination_requires_a_finishing_rank.sql": "cba4981055d5dd9278d7a882e3b8f0d954cd8ffccb37b6426cf4964c32504b68",
+    "scripts/dev/tournament_guard_fixture_roles.py": "4d6e93212c7d933fedb48d3982e7546ba7f345f0c8a926f557374534dd9aaa94",
+    "scripts/dev/tournament_obligation_funding_cases.py": "56ac828b882e903eb53b4f97a7eeef6e14c927127dc716812ae7ef36110a7023",
+    "scripts/dev/tournament_elimination_rank_cases.py": "49e58a5c3ee59063b6ce4055b40c55ef4bea448230f40427475d4985ccbef035",
+    "scripts/dev/tournament_cancellation_policy_cases.py": "252beedb7780fa2411eb8c7c9be3697457030ece7c610ce34d406616cdf4375a"
+  },
+  "source_unchanged": true,
+  "observed_at": "2026-09-10T16:16:20.557689+00:00",
+  "project": "kuklfnapbkmacvwxktbh",
+  "preflight": [
+    {
+      "observed_at": "2026-09-10 16:12:16.807794+00",
+      "signature": "atomic_cancel_tournament(uuid,uuid)",
+      "body_md5": "8c2641c634de919487c7bbb7eb8c5c22",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "proconfig": ["search_path=public, extensions, pg_temp", "statement_timeout=120s"],
+      "prosecdef": true,
+      "proisstrict": false,
+      "provolatile": "v",
+      "proparallel": "u",
+      "proargnames": ["p_tournament_id", "p_admin_id"],
+      "pronargdefaults": 0,
+      "defaults": null
+    },
+    {
+      "observed_at": "2026-09-10 16:12:16.807803+00",
+      "signature": "fn_eliminate_tournament_player_atomic(uuid,uuid,integer,numeric,numeric)",
+      "body_md5": "04a2e93dd8afe35fbc0cdd2829daf0f8",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "proconfig": ["search_path=public, pg_temp"],
+      "prosecdef": true,
+      "proisstrict": false,
+      "provolatile": "v",
+      "proparallel": "u",
+      "proargnames": ["p_tournament_id", "p_user_id", "p_position", "p_prize", "p_bubble_refund"],
+      "pronargdefaults": 1,
+      "defaults": "0"
+    },
+    {
+      "observed_at": "2026-09-10 16:12:16.807805+00",
+      "signature": "fn_settle_tournament_obligation_before_atomic_batch_gate(uuid,text,integer,uuid,numeric,text,text,uuid)",
+      "body_md5": "68f74f87580ea2c2a1cacbe30f9b4289",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres}",
+      "proconfig": ["search_path=public"],
+      "prosecdef": true,
+      "proisstrict": false,
+      "provolatile": "v",
+      "proparallel": "u",
+      "proargnames": [
+        "p_tournament_id",
+        "p_kind",
+        "p_place",
+        "p_user_id",
+        "p_amount",
+        "p_source",
+        "p_description",
+        "p_adjustment_id"
+      ],
+      "pronargdefaults": 2,
+      "defaults": "NULL::text, NULL::uuid"
+    },
+    {
+      "observed_at": "2026-09-10 16:12:16.807808+00",
+      "signature": "fn_settle_tournament_obligation(uuid,text,integer,uuid,numeric,text,text,uuid)",
+      "body_md5": "915f3ebd5c4a2efb97ad3a354dfeb365",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "proconfig": ["search_path=public, pg_temp"],
+      "prosecdef": true,
+      "proisstrict": false,
+      "provolatile": "v",
+      "proparallel": "u",
+      "proargnames": [
+        "p_tournament_id",
+        "p_kind",
+        "p_place",
+        "p_user_id",
+        "p_amount",
+        "p_source",
+        "p_description",
+        "p_adjustment_id"
+      ],
+      "pronargdefaults": 2,
+      "defaults": "NULL::text, NULL::uuid"
+    },
+    {
+      "observed_at": "2026-09-10 16:12:16.80781+00",
+      "signature": "fn_tournament_elimination_has_a_place()",
+      "body_md5": "1d00219cefe6de725da5d33fe0b38002",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "proconfig": ["search_path=public, pg_temp"],
+      "prosecdef": true,
+      "proisstrict": false,
+      "provolatile": "v",
+      "proparallel": "u",
+      "proargnames": null,
+      "pronargdefaults": 0,
+      "defaults": null
+    }
+  ],
+  "status": "Verified locally and independently reviewed; production application blocked by automatic approval review",
+  "production_applied": false,
+  "approval_block": {
+    "action": "Apply persistent function and ACL migration to PokerIQ-Production",
+    "reason": "Explicit approval of the database target and deployment side effect was not accepted from the existing push authorization",
+    "first_refused_migration": "started_tournaments_resume_or_settle_instead_of_cancelling"
+  },
+  "scope": [
+    "Started tournaments refuse cancellation before identity or financial writes, after stored replay and current lock owner",
+    "A refused second finishing place neither creates nor increases debt; historical unpaid rows and no-payment replay remain intact",
+    "Missing finishing rank is refused at the RPC input boundary; current production deferred constraint already prevents a NULL-rank commit"
+  ],
+  "limits": [
+    "Cancellation rehearsal traps the first old financial authority; it does not certify a funded cancellation",
+    "Fixture postgres inherits local registration_test relation rights only; this does not claim production HTTP/RLS verification",
+    "No production balances or historical rows were repaired",
+    "Original programme remains Phase3 with4 of58 controls fully verified"
+  ]
+}

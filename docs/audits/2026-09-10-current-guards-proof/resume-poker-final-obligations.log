@@ -1,0 +1,14 @@
+EXISTING_REFUSAL_STATE {"fee": 40, "owed": 110, "paid": 100, "pool": 360, "prize": 260, "credits": 1, "journal": 3, "ob_paid": 100, "payouts": 1, "wallets": 1700, "receipts": 1, "obligations": 2}
+PASS a refused existing second place preserves its unpaid debt and no-payment replay
+PASS early award and final adjustment move only cumulative deltas and exhaust only prize escrow
+PASS overlapping identical obligations credit once under the real database lock
+PASS overlapping early and final totals produce only the unpaid increment
+PASS another user cannot take an already paid place or raise its debt
+PASS late payout evidence failure rolls back the real wallet and escrow writers
+PASS a short prize bank pays what it holds and preserves debt and the fee bank
+PASS paid history cannot be rewritten or deleted through normal table operations
+SECOND_PLACE_REFUSAL_STATE {"fee": 40, "owed": 100, "paid": 100, "pool": 360, "prize": 260, "credits": 1, "journal": 3, "ob_paid": 100, "payouts": 1, "wallets": 1700, "receipts": 1, "obligations": 1}
+PASS a refused second place creates no debt and leaves the place available to its recipient
+PASS a zero second-place request reserves no obligation and the correct recipient owns the later payment
+PASS an existing legacy payment is still seeded and replayed without another credit
+11 groups passed; evidence: /tmp/ca-registration-funding-pg17-rtyy2jn3/results.json

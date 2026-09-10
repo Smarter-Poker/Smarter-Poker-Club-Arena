@@ -1,0 +1,15 @@
+PASS cancellation refuses started evidence before its first financial write
+PASS cancellation refuses running evidence before its first financial write
+PASS cancellation refuses launch evidence before its first financial write
+PASS cancellation refuses multiplier evidence before its first financial write
+PASS cancellation refuses draw evidence before its first financial write
+PASS cancellation refuses reserve evidence before its first financial write
+PASS cancellation refuses hand evidence before its first financial write
+PASS cancellation refuses legacy_hand evidence before its first financial write
+PASS cancellation refuses paid_award evidence before its first financial write
+PASS cancellation unstarted remains routed to the existing financial authority
+PASS cancellation default_zero remains routed to the existing financial authority
+PASS cancellation past_schedule remains routed to the existing financial authority
+PASS stored cancellation replay reaches its existing receipt reader before the new refusal
+PASS cancellation waiting behind a committed draw refuses without releasing the draw
+14 groups passed; evidence: /tmp/ca-registration-funding-pg17-ejd36dgo/results.json

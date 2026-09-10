@@ -1,0 +1,9 @@
+EXISTING_REFUSAL_STATE {"fee": 40, "owed": 150, "paid": 100, "pool": 360, "prize": 260, "credits": 1, "journal": 3, "ob_paid": 100, "payouts": 1, "wallets": 1700, "receipts": 1, "obligations": 2}
+Traceback (most recent call last):
+  File "/Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-poker-audit-sep09/scripts/dev/probe-tournament-registration-funding-pg17.py", line 201, in <module>
+    verify(q,fresh,overlap,call,check)
+    ~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-poker-audit-sep09/scripts/dev/tournament_obligation_funding_cases.py", line 85, in verify
+    assert state()==before, 'a refused existing second place increased debt or moved money'
+           ^^^^^^^^^^^^^^^
+AssertionError: a refused existing second place increased debt or moved money

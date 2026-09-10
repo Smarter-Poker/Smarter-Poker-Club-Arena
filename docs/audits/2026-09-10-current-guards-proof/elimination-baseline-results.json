@@ -1,0 +1,11 @@
+{
+  "passed": [
+    "accepted same-hand candidates persist supplied distinct ranks and monotonic sequences once without money movement",
+    "overlapping exact elimination requests persist one rank and one sequence",
+    "a replay cannot change an already persisted finishing rank",
+    "missing or contradictory hand, receipt, decision and seat evidence cannot persist a rank",
+    "seat release failure rolls back rank, sequence row and candidate mutation together",
+    "the current deferred constraint rolls back the old wrapper NULL-rank write"
+  ],
+  "production_database_used": false
+}

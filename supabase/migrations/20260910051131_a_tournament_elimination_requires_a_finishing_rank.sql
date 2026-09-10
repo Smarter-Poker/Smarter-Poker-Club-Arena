@@ -1,13 +1,31 @@
 -- A missing rank cannot claim an elimination or close its seat.
 -- Valid ranks, exact hand evidence, replay and all money paths are unchanged.
 BEGIN;
+SET LOCAL lock_timeout='1s';
+SET LOCAL statement_timeout='10s';
+
 DO $guard$
-DECLARE v_md5 text;
 BEGIN
-  SELECT md5(prosrc) INTO v_md5 FROM pg_proc
-   WHERE oid=to_regprocedure('public.fn_eliminate_tournament_player_atomic(uuid,uuid,integer,numeric,numeric)');
-  IF v_md5 IS NULL OR v_md5 NOT IN ('04a2e93dd8afe35fbc0cdd2829daf0f8','b4937067d9bf337e1466095b9e1d5424') THEN
-    RAISE EXCEPTION 'Unexpected atomic elimination body; review current source before applying';
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_catalog.pg_proc p
+     WHERE p.oid=to_regprocedure('public.fn_eliminate_tournament_player_atomic(uuid,uuid,integer,numeric,numeric)')
+       AND md5(p.prosrc) IN ('04a2e93dd8afe35fbc0cdd2829daf0f8','b4937067d9bf337e1466095b9e1d5424')
+       AND p.proowner='postgres'::regrole
+       AND p.proacl::text='{postgres=X/postgres,service_role=X/postgres}'
+       AND p.prosecdef
+       AND NOT p.proisstrict
+       AND p.provolatile='v'
+       AND p.proargnames=ARRAY['p_tournament_id','p_user_id','p_position','p_prize','p_bubble_refund']::text[]
+       AND p.proargmodes IS NULL AND p.proallargtypes IS NULL
+       AND p.pronargdefaults=1
+       AND pg_catalog.pg_get_expr(p.proargdefaults,0)='0'
+       AND NOT p.proretset
+       AND p.prorettype='jsonb'::regtype
+       AND p.prolang=(SELECT oid FROM pg_catalog.pg_language WHERE lanname='plpgsql')
+       AND p.proconfig=ARRAY['search_path=public, pg_temp']::text[]
+  ) THEN
+    RAISE EXCEPTION 'Source function body or authority changed; review before applying'
+      USING ERRCODE='55000';
   END IF;
 END;
 $guard$;
@@ -217,4 +235,36 @@ BEGIN
   RETURN v_result;
 END;
 $function$;
+
+-- Restate the current authority explicitly; no new caller is admitted.
+REVOKE ALL ON FUNCTION public.fn_eliminate_tournament_player_atomic(uuid,uuid,integer,numeric,numeric)
+  FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_eliminate_tournament_player_atomic(uuid,uuid,integer,numeric,numeric)
+  TO service_role;
+
+DO $postflight$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_catalog.pg_proc p
+     WHERE p.oid=to_regprocedure('public.fn_eliminate_tournament_player_atomic(uuid,uuid,integer,numeric,numeric)')
+       AND md5(p.prosrc)='b4937067d9bf337e1466095b9e1d5424'
+       AND p.proowner='postgres'::regrole
+       AND p.proacl::text='{postgres=X/postgres,service_role=X/postgres}'
+       AND p.prosecdef
+       AND NOT p.proisstrict
+       AND p.provolatile='v'
+       AND p.proargnames=ARRAY['p_tournament_id','p_user_id','p_position','p_prize','p_bubble_refund']::text[]
+       AND p.proargmodes IS NULL AND p.proallargtypes IS NULL
+       AND p.pronargdefaults=1
+       AND pg_catalog.pg_get_expr(p.proargdefaults,0)='0'
+       AND NOT p.proretset
+       AND p.prorettype='jsonb'::regtype
+       AND p.prolang=(SELECT oid FROM pg_catalog.pg_language WHERE lanname='plpgsql')
+       AND p.proconfig=ARRAY['search_path=public, pg_temp']::text[]
+  ) THEN
+    RAISE EXCEPTION 'Reviewed function body or authority changed during migration'
+      USING ERRCODE='55000';
+  END IF;
+END;
+$postflight$;
 COMMIT;

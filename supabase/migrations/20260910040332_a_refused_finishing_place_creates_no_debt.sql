@@ -1,13 +1,31 @@
 -- A refused second finishing place must not create a new unpaid obligation.
 -- Existing debts, payment amounts, keys, receipt replay and ACLs are preserved.
 BEGIN;
+SET LOCAL lock_timeout='1s';
+SET LOCAL statement_timeout='10s';
+
 DO $guard$
-DECLARE v_md5 text;
 BEGIN
-  SELECT md5(prosrc) INTO v_md5 FROM pg_proc
-   WHERE oid=to_regprocedure('public.fn_settle_tournament_obligation_before_atomic_batch_gate(uuid,text,integer,uuid,numeric,text,text,uuid)');
-  IF v_md5 IS NULL OR v_md5 NOT IN ('68f74f87580ea2c2a1cacbe30f9b4289','d30af6aca3dcbd9a2ca9ff2aa9849488') THEN
-    RAISE EXCEPTION 'Unexpected cumulative obligation body; review current source before applying';
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_catalog.pg_proc p
+     WHERE p.oid=to_regprocedure('public.fn_settle_tournament_obligation_before_atomic_batch_gate(uuid,text,integer,uuid,numeric,text,text,uuid)')
+       AND md5(p.prosrc) IN ('68f74f87580ea2c2a1cacbe30f9b4289','ebabbaf0456d80335aaa2e04471d0ab6')
+       AND p.proowner='postgres'::regrole
+       AND p.proacl::text='{postgres=X/postgres}'
+       AND p.prosecdef
+       AND NOT p.proisstrict
+       AND p.provolatile='v'
+       AND p.proargnames=ARRAY['p_tournament_id','p_kind','p_place','p_user_id','p_amount','p_source','p_description','p_adjustment_id']::text[]
+       AND p.proargmodes IS NULL AND p.proallargtypes IS NULL
+       AND p.pronargdefaults=2
+       AND pg_catalog.pg_get_expr(p.proargdefaults,0)='NULL::text, NULL::uuid'
+       AND NOT p.proretset
+       AND p.prorettype='jsonb'::regtype
+       AND p.prolang=(SELECT oid FROM pg_catalog.pg_language WHERE lanname='plpgsql')
+       AND p.proconfig=ARRAY['search_path=public']::text[]
+  ) THEN
+    RAISE EXCEPTION 'Source function body or authority changed; review before applying'
+      USING ERRCODE='55000';
   END IF;
 END;
 $guard$;
@@ -182,6 +200,29 @@ BEGIN
     RETURN jsonb_build_object('ok', false, 'paid', 0, 'already_paid', v_ob.amount_paid,
       'refused_reason', 'place_paid_to_another_user', 'obligation_id', v_ob.id, 'idempotency_key', NULL);
   END IF;
+
+    -- An existing unpaid second-place row also remains unchanged on refusal.
+    -- A no-payment replay still reports the durable unpaid amount.
+    IF v_row_kind = 'place' AND v_amount > v_ob.amount_paid
+       AND EXISTS (
+         SELECT 1 FROM public.tournament_obligations o
+          WHERE o.tournament_id = p_tournament_id AND o.kind = 'place'
+            AND o.user_id = p_user_id AND o.place <> v_place
+            AND o.amount_paid > 0
+       ) THEN
+      v_pay := round(v_amount - v_ob.amount_paid, 2);
+      v_alert_ctx := jsonb_build_object(
+        'kind','second_place_prize_refused','tournament_id',p_tournament_id,
+        'user_id',p_user_id,'place',v_place,'amount',v_pay,'source',p_source);
+      PERFORM public.fn_raise_server_financial_alert(
+        'critical','fn_settle_tournament_obligation',
+        format('Refused a second structure place: this player already holds a paid place in tournament %s', p_tournament_id),
+        v_alert_ctx, 'obl:second_place:' || p_tournament_id::text || ':' || p_user_id::text);
+      RETURN jsonb_build_object(
+        'ok',false,'paid',0,'already_paid',v_ob.amount_paid,
+        'refused_reason','player_already_holds_a_place',
+        'obligation_id',v_ob.id,'idempotency_key',NULL);
+    END IF;
 
     IF v_amount > v_ob.amount_owed THEN
       UPDATE public.tournament_obligations
@@ -366,4 +407,36 @@ BEGIN
     'refused_reason', NULL, 'obligation_id', v_ob.id, 'idempotency_key', v_key);
 END;
 $function$;
+
+-- Restate the current authority explicitly; no new caller is admitted.
+REVOKE ALL ON FUNCTION public.fn_settle_tournament_obligation_before_atomic_batch_gate(uuid,text,integer,uuid,numeric,text,text,uuid)
+  FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.fn_settle_tournament_obligation_before_atomic_batch_gate(uuid,text,integer,uuid,numeric,text,text,uuid)
+  TO postgres;
+
+DO $postflight$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_catalog.pg_proc p
+     WHERE p.oid=to_regprocedure('public.fn_settle_tournament_obligation_before_atomic_batch_gate(uuid,text,integer,uuid,numeric,text,text,uuid)')
+       AND md5(p.prosrc)='ebabbaf0456d80335aaa2e04471d0ab6'
+       AND p.proowner='postgres'::regrole
+       AND p.proacl::text='{postgres=X/postgres}'
+       AND p.prosecdef
+       AND NOT p.proisstrict
+       AND p.provolatile='v'
+       AND p.proargnames=ARRAY['p_tournament_id','p_kind','p_place','p_user_id','p_amount','p_source','p_description','p_adjustment_id']::text[]
+       AND p.proargmodes IS NULL AND p.proallargtypes IS NULL
+       AND p.pronargdefaults=2
+       AND pg_catalog.pg_get_expr(p.proargdefaults,0)='NULL::text, NULL::uuid'
+       AND NOT p.proretset
+       AND p.prorettype='jsonb'::regtype
+       AND p.prolang=(SELECT oid FROM pg_catalog.pg_language WHERE lanname='plpgsql')
+       AND p.proconfig=ARRAY['search_path=public']::text[]
+  ) THEN
+    RAISE EXCEPTION 'Reviewed function body or authority changed during migration'
+      USING ERRCODE='55000';
+  END IF;
+END;
+$postflight$;
 COMMIT;

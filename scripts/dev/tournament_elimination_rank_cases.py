@@ -2,6 +2,7 @@
 from pathlib import Path
 import json
 import sys
+import re
 
 HERE=Path(__file__).resolve().parent
 EVENT='c3000000-0000-4000-8000-000000000001'
@@ -34,6 +35,8 @@ def verify(q,fresh,overlap,register,check):
         for row in manifest['functions']:
             observed=q("SELECT md5(prosrc) FROM pg_proc WHERE oid='public.%s'::regprocedure;" % row['signature'])
             assert observed==row['body_md5'],(row,observed)
+        from tournament_guard_fixture_roles import align
+        align(q,'fn_eliminate_tournament_player_atomic(uuid,uuid,integer,numeric,numeric)',service=True,search_path='public, pg_temp')
         if manifest.get('candidate_migration') and '--elimination-baseline' not in sys.argv:
             q((HERE.parents[1]/manifest['candidate_migration']).read_text())
             observed=q("SELECT md5(prosrc) FROM pg_proc WHERE oid='public.fn_eliminate_tournament_player_atomic(uuid,uuid,integer,numeric,numeric)'::regprocedure;")
@@ -81,6 +84,9 @@ def verify(q,fresh,overlap,register,check):
         if mutation:
             q(mutation)
         q((purchase/'triggers.sql').read_text())
+        q((source/'current-rank-constraint.sql').read_text())
+        assert q("SELECT md5(prosrc) FROM pg_proc WHERE oid='public.fn_tournament_elimination_has_a_place()'::regprocedure;")=='1d00219cefe6de725da5d33fe0b38002'
+        assert q("SELECT tgenabled='O' AND tgdeferrable AND tginitdeferred FROM pg_trigger WHERE tgrelid='public.tournament_players'::regclass AND tgname='tournament_elimination_has_a_place';")=='t'
 
     def fingerprint(money_only=False):
         names=['club_members','chip_ledger','chip_ledger_idem','wallet_transactions',
@@ -160,6 +166,22 @@ def verify(q,fresh,overlap,register,check):
         check('seat release failure rolls back rank, sequence row and candidate mutation together')
 
     setup('null_rank')
+    # Today's deferred constraint already refuses the old wrapper's NULL-rank
+    # commit. The new boundary returns a clear input refusal before those writes.
+    old_defs=list(re.finditer(
+        r'CREATE OR REPLACE FUNCTION public[.]fn_eliminate_tournament_player_atomic\b.*?AS (\$[A-Za-z_0-9]*\$).*?\1;',
+        (source/'installed.sql').read_text(),re.S))
+    assert len(old_defs)==1, 'one captured original elimination wrapper required'
+    q(old_defs[0].group(0))
+    before=fingerprint()
+    q('BEGIN; '+eliminate(1,None)+' SET CONSTRAINTS ALL IMMEDIATE; COMMIT;',
+      'was recorded eliminated with no finishing place')
+    assert fingerprint()==before,'current deferred constraint left old NULL-rank writes'
+    check('the current deferred constraint rolls back the old wrapper NULL-rank write')
+    if '--elimination-baseline' in sys.argv:
+        assert json.loads(q(eliminate(1,3))).get('claimed') is True
+        return
+    q((HERE.parents[1]/manifest['candidate_migration']).read_text())
     before=fingerprint()
     refused=json.loads(q(eliminate(1,None)))
     observed=ranked()

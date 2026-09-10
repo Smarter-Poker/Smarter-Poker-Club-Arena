@@ -2,6 +2,7 @@
 from pathlib import Path
 import json
 import sys
+import re
 
 fixture = Path(__file__).resolve().parent / 'fixtures/tournament-obligation-funding'
 event = 'c3000000-0000-4000-8000-000000000001'
@@ -21,6 +22,8 @@ def verify(q, fresh, overlap, call, check):
         for row in manifest['functions']:
             actual = q("SELECT md5(prosrc) FROM pg_proc WHERE oid='public.%s'::regprocedure;" % row['signature'])
             assert actual == row['body_md5'], (row['signature'],actual,row['body_md5'])
+        from tournament_guard_fixture_roles import align
+        align(q,'fn_settle_tournament_obligation_before_atomic_batch_gate(uuid,text,integer,uuid,numeric,text,text,uuid)',service=False,search_path='public')
         if '--obligation-baseline' not in sys.argv:
             patch = fixture.parents[3] / manifest['candidate_migration']
             q(patch.read_text())
@@ -54,6 +57,39 @@ def verify(q, fresh, overlap, call, check):
         return q("SELECT jsonb_build_object(" + ','.join(
             "'%s',(SELECT md5(COALESCE(jsonb_agg(to_jsonb(r) ORDER BY to_jsonb(r)::text)::text,'[]')) FROM %s r)" % (n,n)
             for n in names) + ");")
+
+    setup('existing_refused_debt')
+    assert json.loads(q(settle(1,1,100)))['paid']==100
+    # Reproduce a preexisting unpaid debt through the actual older owner.
+    # This is an explicit synthetic historical shape, never a production repair.
+    legacy_source=(fixture / 'installed.sql').read_text()
+    legacy_defs=re.findall(
+        r'CREATE OR REPLACE FUNCTION public[.]fn_settle_tournament_obligation_before_atomic_batch_gate\b.*?AS (\$[A-Za-z_0-9]*\$).*?\1;',
+        legacy_source,re.S)
+    legacy_match=re.search(
+        r'CREATE OR REPLACE FUNCTION public[.]fn_settle_tournament_obligation_before_atomic_batch_gate\b.*?AS (\$[A-Za-z_0-9]*\$).*?\1;',
+        legacy_source,re.S)
+    assert len(legacy_defs)==1 and legacy_match, 'one captured legacy obligation owner required'
+    q(legacy_match.group(0))
+    prior=json.loads(q(settle(1,2,10)))
+    assert prior.get('refused_reason')=='player_already_holds_a_place',prior
+    assert q("SELECT amount_owed FROM tournament_obligations WHERE place=2;")=='10.00'
+    if '--obligation-baseline' not in sys.argv:
+        q((fixture.parents[3] / manifest['candidate_migration']).read_text())
+    # Baseline deliberately retains the old owner and must fail the debt invariant.
+    before=state()
+    debt_before=q("SELECT to_jsonb(o)::text FROM tournament_obligations o WHERE place=2;")
+    refused=json.loads(q(settle(1,2,50)))
+    assert refused.get('refused_reason')=='player_already_holds_a_place',refused
+    print('EXISTING_REFUSAL_STATE '+json.dumps(state()),flush=True)
+    assert state()==before, 'a refused existing second place increased debt or moved money'
+    assert q("SELECT to_jsonb(o)::text FROM tournament_obligations o WHERE place=2;")==debt_before, 'refusal rewrote the existing debt'
+    zero=json.loads(q(settle(1,2,0)))
+    assert zero['paid']==0 and zero['remaining']==10 and zero['fully_settled'] is False,zero
+    assert state()==before, 'no-payment replay changed old unpaid debt'
+    check('a refused existing second place preserves its unpaid debt and no-payment replay')
+    if '--obligation-existing-refusal-only' in sys.argv:
+        return
 
     setup('cumulative')
     first=json.loads(q(settle(1,1,50)))

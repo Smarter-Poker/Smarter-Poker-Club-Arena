@@ -1,0 +1,16 @@
+{
+  "passed": [
+    "a refused existing second place preserves its unpaid debt and no-payment replay",
+    "early award and final adjustment move only cumulative deltas and exhaust only prize escrow",
+    "overlapping identical obligations credit once under the real database lock",
+    "overlapping early and final totals produce only the unpaid increment",
+    "another user cannot take an already paid place or raise its debt",
+    "late payout evidence failure rolls back the real wallet and escrow writers",
+    "a short prize bank pays what it holds and preserves debt and the fee bank",
+    "paid history cannot be rewritten or deleted through normal table operations",
+    "a refused second place creates no debt and leaves the place available to its recipient",
+    "a zero second-place request reserves no obligation and the correct recipient owns the later payment",
+    "an existing legacy payment is still seeded and replayed without another credit"
+  ],
+  "production_database_used": false
+}

@@ -1,0 +1,7 @@
+PASS accepted same-hand candidates persist supplied distinct ranks and monotonic sequences once without money movement
+PASS overlapping exact elimination requests persist one rank and one sequence
+PASS a replay cannot change an already persisted finishing rank
+PASS missing or contradictory hand, receipt, decision and seat evidence cannot persist a rank
+PASS seat release failure rolls back rank, sequence row and candidate mutation together
+PASS the current deferred constraint rolls back the old wrapper NULL-rank write
+6 groups passed; evidence: /tmp/ca-registration-funding-pg17-pipyeah2/results.json

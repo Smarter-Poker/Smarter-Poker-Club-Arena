@@ -1,0 +1,169 @@
+{
+  "observed_at": "2026-09-10T05:02:44Z",
+  "functions": [
+    {
+      "signature": "fn_ca_process_tournament_chip_purchase_money_v1(uuid,uuid,text,numeric,numeric,integer,text)",
+      "body_md5": "ebff39bd84c1a1ac9a75e7b09ceaa74b"
+    },
+    {
+      "signature": "process_tournament_rebuy(uuid,uuid,text,numeric,numeric,integer,text)",
+      "body_md5": "3db2678ad2b17093ba8dd85ab6af2339"
+    },
+    {
+      "signature": "fn_ca_assign_tournament_player_seat_locked(uuid,uuid,uuid,integer)",
+      "body_md5": "16a587f7567336fe4379135f22e3fb41"
+    },
+    {
+      "signature": "fn_ca_choose_tournament_seat_locked(uuid,uuid,uuid,integer)",
+      "body_md5": "cd199b528866665d702100c86b5a89ee"
+    },
+    {
+      "signature": "fn_ca_latest_committed_knockout_candidate(uuid,uuid)",
+      "body_md5": "0602827901be20bbb6e0dce6ece17f94"
+    },
+    {
+      "signature": "fn_ca_tournament_rebuy_window(uuid)",
+      "body_md5": "b9b7ba44728a4f9a72a0c8f77934dbc3"
+    },
+    {
+      "signature": "fn_emit_tournament_manager_wake(uuid,text)",
+      "body_md5": "bc71b7d556d72d7d85c7fb2f0ea22406"
+    },
+    {
+      "signature": "fn_seat_club_for_user(uuid,uuid,uuid)",
+      "body_md5": "685ccf0299798df1ebfeefba331e901d"
+    },
+    {
+      "signature": "fn_ca_tournament_seat_cap(uuid)",
+      "body_md5": "177e2e82ef01b126d16e7706f9d29e12"
+    },
+    {
+      "signature": "fn_ensure_late_registration_capacity(uuid,integer)",
+      "body_md5": "b36dd36a9348d29be1092c7d42954c03"
+    },
+    {
+      "signature": "fn_ca_guard_seat_creation()",
+      "body_md5": "534207f17003588a6ada8b6ea894442d"
+    },
+    {
+      "signature": "fn_clear_sitout_on_turnover()",
+      "body_md5": "6ded94049da680cfcd5eb679c27d3da2"
+    },
+    {
+      "signature": "fn_guard_one_live_tournament_seat()",
+      "body_md5": "8750784ecac2800db5c6b0867730abdf"
+    },
+    {
+      "signature": "fn_new_seat_clear_sitout()",
+      "body_md5": "84c78b67385e6807a6b8ee72a16fcddd"
+    },
+    {
+      "signature": "fn_refuse_reentry_with_pending_bounty()",
+      "body_md5": "bf6c3702af679b2189515d094ee3a3d3"
+    },
+    {
+      "signature": "fn_require_live_seat_parent()",
+      "body_md5": "22412833cfa9e0617492c5261f9a4069"
+    },
+    {
+      "signature": "fn_seat_change_syncs_seat_first_count()",
+      "body_md5": "d105db62a249ba49b267d8d28bb55b2f"
+    },
+    {
+      "signature": "fn_stamp_active_seat_game_scope()",
+      "body_md5": "43179b85d6717e3b512dc34cfad9d89c"
+    },
+    {
+      "signature": "fn_stamp_seat_club()",
+      "body_md5": "aae09b5c2a9a82e0d72bbc7ab5020467"
+    },
+    {
+      "signature": "fn_stamp_seat_horse_id()",
+      "body_md5": "890d7343f1f79736cce8b572aa583355"
+    },
+    {
+      "signature": "fn_stamp_seat_occupancy()",
+      "body_md5": "aa11dad7e910735d01c28c8638698a3f"
+    },
+    {
+      "signature": "fn_stamp_sit_out_at()",
+      "body_md5": "0fe6f1a355f1caf1ac7ae7d164019e74"
+    },
+    {
+      "signature": "fn_stamp_tournament_elimination_sequence()",
+      "body_md5": "78943d7a0d060e33830281500f08dfca"
+    },
+    {
+      "signature": "fn_sync_tournament_current_players()",
+      "body_md5": "ecb120c2c6a4ecee6c2e04d4c9b5ebc7"
+    },
+    {
+      "signature": "fn_tournament_live_seat_acquisition_requires_authority()",
+      "body_md5": "7a50958787ad79ffbb8b9f175f1d90a7"
+    },
+    {
+      "signature": "trg_assert_live_tournament_seat_has_roster()",
+      "body_md5": "b756632b7e50ef84a232a19afb0264dd"
+    },
+    {
+      "signature": "trg_entry_purchase_receipt_is_immutable()",
+      "body_md5": "1581e33b8712d4773406e4ab858ec654"
+    },
+    {
+      "signature": "trg_lock_and_validate_tournament_live_seat()",
+      "body_md5": "27e86e2b51bb6cfb17c13569c8870f10"
+    },
+    {
+      "signature": "trg_refuse_live_seat_on_closed_tournament_table()",
+      "body_md5": "37bcf8042464443094bd0709e1062747"
+    },
+    {
+      "signature": "trg_seat_parent_keys_match()",
+      "body_md5": "10bd21d1a3e607818ea0a4ad7c0723fd"
+    },
+    {
+      "signature": "fn_sync_seat_first_player_count(uuid)",
+      "body_md5": "609983772f8468d96b7b3d8dcfeafaea"
+    },
+    {
+      "signature": "fn_tournament_primary_table(uuid)",
+      "body_md5": "9844a7c70aeca43795cdbf856cf50311"
+    },
+    {
+      "signature": "fn_bounty_obligation_has_complete_marker(uuid)",
+      "body_md5": "bd29069e8d07bedf84e24e57242c2afe"
+    },
+    {
+      "signature": "fn_ca_lock_settlement_lane_for_tournament(uuid,uuid)",
+      "body_md5": "2bc939035496d764ff9d6c14b52fa1e7"
+    }
+  ],
+  "changed_bodies": [
+    {
+      "signature": "process_tournament_rebuy(uuid,uuid,text,numeric,numeric,integer,text)",
+      "before_md5": "63e4762f2f293da5f2c66ae03fd92947",
+      "after_md5": "3db2678ad2b17093ba8dd85ab6af2339",
+      "before": "g_advisory_xact_lock(\n    hashtextextended('ca:tournament-terminal-settlement:v1',0)",
+      "after": "ublic.fn_ca_lock_settlement_lane_for_tournament(p_tournament_id"
+    },
+    {
+      "signature": "trg_lock_and_validate_tournament_live_seat()",
+      "before_md5": "1daab0d4125165fa5b501506299965d3",
+      "after_md5": "27e86e2b51bb6cfb17c13569c8870f10",
+      "before": "SELECT EXISTS (\n      SELECT 1\n        FROM public.tournaments t\n        LEFT JOIN public.tournament_launch_receipts r\n          ON r.tournament_id = t.id\n       WHERE t.id = ANY(v_ids",
+      "after": "-- THE SAME ROWS AS `t.id = ANY(v_ids)`, WITHOUT A RE-PLAN PER CALL\n    -- (2026-09-10). v_ids is {new} / {old} / {old,new} for INSERT / DELETE /\n    -- UPDATE, and the side that is not assigned is NULL, which matches nothing\n    -- in either form. With an array parameter PL/pgSQL keeps a custom plan and\n    -- re-plans this statement on every seat write (0.83-0.99 ms measured);\n    -- with two scalar parameters it adopts the generic plan (0.026 ms).\n    SELECT EXISTS (\n      SELECT 1\n        FROM public.tournaments t\n        LEFT JOIN public.tournament_launch_receipts r\n          ON r.tournament_id = t.id\n       WHERE (t.id = v_old_tournament_id OR t.id = v_new_tournament_id"
+    }
+  ],
+  "scope": "Real PKO initial entry and add-on funding; no bounty payout marker is synthesized.",
+  "registration_authority_read_only_recheck": [
+    {
+      "signature": "fn_register_for_tournament_request(uuid,uuid)",
+      "body_md5": "c80d08529c03284adc51c6cb03764a55"
+    },
+    {
+      "signature": "fn_register_for_tournament(uuid,boolean)",
+      "body_md5": "233acf6219e11af17d2c44b4b4460bc0"
+    }
+  ],
+  "registration_request_dispatch": "fn_register_for_tournament(p_tournament_id, false)"
+}

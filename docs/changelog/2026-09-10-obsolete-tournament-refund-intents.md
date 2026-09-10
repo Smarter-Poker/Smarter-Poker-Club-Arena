@@ -1,0 +1,7 @@
+# Obsolete Tournament Refund Requests
+
+A refund response lost in one tab could remain pending there after another tab confirmed that refund and the player registered again. The database correctly refused the older refund identity against the new registration. The client treated that definitive refusal as an unknown transport outcome and retained the old identity through every refresh, preventing the player from making a new refund request in that tab.
+
+TournamentService now recognizes only the exact P0404 prior-registration-lifecycle refusal. TournamentUnregistrationIntent retires that local request while preserving any newer shared request. The current operation still rejects with an explanation; a later user action is required for a new refund. Other P0404 errors, transport failures, invalid receipts and failed storage acknowledgement retain the original identity. Both tournament-details unregistration and the reserved-seat exit use this path. Registration and purchase funding policies are unchanged.
+
+The native rehearsal now composes the actual public funded registration with the actual public unregistration owner, including original wallet, fee and escrow provenance. It runs through the existing required isolated-accounting CI entry. Its limits and evidence are in docs/audits/2026-09-10-phase3-funded-entry-unregistration.md. No migration or production financial transaction accompanies the client correction.

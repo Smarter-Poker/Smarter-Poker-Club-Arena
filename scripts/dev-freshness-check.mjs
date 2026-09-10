@@ -111,6 +111,8 @@ try {
   say('[dev] now current. Starting Vite.');
 } catch {
   say(`[dev] this tree is ${behind} commit(s) behind and could not fast-forward`);
-  say(`[dev] (${branch} has diverged from main). Run: bash scripts/git-unstick.sh`);
+  say(
+    `[dev] (${branch} has diverged from main). Preserve its commits, then create a fresh isolated worktree from origin/main; see CLAUDE.md section 12.`
+  );
   process.exit(1);
 }

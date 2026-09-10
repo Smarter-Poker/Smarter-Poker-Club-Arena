@@ -119,18 +119,19 @@ describe('the three that had no reader now do', () => {
     'check-realtime-publication.mjs',
     'check-bbj-functions-match-production.mjs',
     'check-cosmetic-catalog-drift.mjs',
-  ])('%s is wired into the publish watchdog', (file) => {
-    const wf = readFileSync(join(ROOT, '.github/workflows/publish-watchdog.yml'), 'utf8');
+  ])('%s is wired into the read-only production integrity audit', (file) => {
+    const wf = readFileSync(join(ROOT, '.github/workflows/production-integrity-audit.yml'), 'utf8');
     expect(wf).toContain(file);
   });
 
   it('their job reports "could not ask" as loudly as a failure (10.86 rule 1)', () => {
-    const wf = readFileSync(join(ROOT, '.github/workflows/publish-watchdog.yml'), 'utf8');
+    const wf = readFileSync(join(ROOT, '.github/workflows/production-integrity-audit.yml'), 'utf8');
     const job = wf.slice(wf.indexOf('  live_drift:'), wf.indexOf('  main_is_green:'));
-    // The alarm fires on any non-zero code, not only on 1.
-    expect(job).toContain("steps.realtime.outputs.code != '0'");
-    expect(job).toContain("steps.bbj.outputs.code != '0'");
-    expect(job).toContain("steps.cosmetics.outputs.code != '0'");
-    expect(job).toContain('Exit 2 is not a pass');
+    // The native job conclusion fails unless all three exact verdicts are 0;
+    // a missing/non-numeric answer is also explicitly rejected.
+    expect(job).toContain('for code in "$RT" "$BBJ" "$COS"');
+    expect(job).toContain('[[ "$code" =~ ^[0-9]+$ ]]');
+    expect(job).toContain('[ "$RT" = 0 ] && [ "$BBJ" = 0 ] && [ "$COS" = 0 ]');
+    expect(job).toContain('LIVE DRIFT OR UNKNOWN');
   });
 });

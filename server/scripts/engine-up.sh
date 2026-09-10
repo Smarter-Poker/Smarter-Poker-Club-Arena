@@ -83,7 +83,9 @@ save_outgoing_log() {
   out="$LOG_DIR/engine-${stamp}-started${started:-unknown}-${id:-unknown}-${img:-unknown}.log.gz"
   # -t: every line carries the daemon's timestamp, so the file is usable
   # without the process's own clock.
-  if docker logs -t "$c" 2>&1 | gzip -6 > "$out"; then
+  if timeout --signal=TERM --kill-after=5s 20s \
+    bash -c 'set -o pipefail; docker logs -t "$1" 2>&1 | gzip -6 > "$2"' \
+    _ "$c" "$out"; then
     log "saved the outgoing log to $out ($(du -h "$out" | cut -f1))"
   else
     rm -f "$out"; return 1
@@ -135,10 +137,22 @@ if [ ! -x "$RELEASE_SEAL" ]; then
   exit 1
 fi
 AUTH_ARGS=(authorize --image "$IMAGE")
-if [ -n "${ENGINE_RELEASE_TOKEN:-}" ]; then
-  AUTH_ARGS+=(--token "$ENGINE_RELEASE_TOKEN")
+TOKEN_VALUE=''
+[ -z "${ENGINE_RELEASE_TOKEN:-}" ] \
+  || { log 'FATAL: release tokens in environment variables are forbidden'; exit 1; }
+if [ -n "${ENGINE_RELEASE_TOKEN_FD:-}" ]; then
+  [[ "$ENGINE_RELEASE_TOKEN_FD" =~ ^[3-9]$ ]] \
+    || { log 'FATAL: release token descriptor is invalid'; exit 1; }
+  IFS= read -r TOKEN_VALUE <&"$ENGINE_RELEASE_TOKEN_FD" \
+    || { log 'FATAL: release token descriptor is unreadable'; exit 1; }
+  AUTH_ARGS+=(--token-stdin)
 fi
-AUTHORIZATION="$("$RELEASE_SEAL" "${AUTH_ARGS[@]}")" \
+if [ -n "$TOKEN_VALUE" ]; then
+  AUTHORIZATION="$(printf '%s' "$TOKEN_VALUE" | "$RELEASE_SEAL" "${AUTH_ARGS[@]}")"
+  TOKEN_VALUE=''
+else
+  AUTHORIZATION="$("$RELEASE_SEAL" "${AUTH_ARGS[@]}")"
+fi \
   || { log "FATAL: release seal rejected image $IMAGE — refusing to touch the running engine"; exit 1; }
 read -r AUTHORIZED_CLASS AUTHORIZED_SHA AUTHORIZED_IMAGE_ID EXTRA <<< "$AUTHORIZATION"
 case "$AUTHORIZED_CLASS" in

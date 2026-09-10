@@ -10,19 +10,8 @@
 // from the 2026-08-26 swarm, median 1,215 commits behind main and median ONE
 // commit ahead.
 //
-// Two machines already look at that pile and neither one resolves it:
-//
-//   * agent-autopilot.yml correctly refuses to touch a DIRTY branch - updating
-//     a conflicted branch cannot succeed and only churns CI - and prints
-//     "an agent must resolve this". Nobody does.
-//   * close-superseded-prs.sh closes a pull request only when EVERY added line
-//     already exists in main (MISSING -eq 0). On a swarm repo one stray comment
-//     defeats that, so its last ten runs closed 0 of 100 candidates every time.
-//
-// close-superseded-prs.sh's own header names the gap this file fills:
-// "ninety-six rows of 'resolve it hunk by hunk' is not a task list, it is
-// wallpaper." It solved that for the superseded case. Everything else stayed
-// wallpaper.
+// This is a manual read-only report. Scheduled pull-request reconcilers and
+// automatic closure were retired; this script ranks work but changes nothing.
 //
 // THE POINT IS RANKING, NOT CLOSING. This script closes nothing and changes
 // nothing. It reads what each pull request CONTAINS and sorts by it, because
@@ -57,10 +46,10 @@ const argOf = (name, dflt) => {
 const REPO = argOf('--repo', process.env.REPO || 'Smarter-Poker/Smarter-Poker-Club-Arena');
 const JSON_OUT = argOf('--json', null);
 const LIMIT = Number(argOf('--limit', '0')) || 0;
-const TOKEN = process.env.GITHUB_TOKEN || process.env.GH_PAT || process.env.GH_TOKEN;
+const TOKEN = process.env.GH_TOKEN || process.env.GITHUB_TOKEN;
 
 if (!TOKEN) {
-  console.error('triage-open-prs: no GITHUB_TOKEN / GH_PAT / GH_TOKEN in the environment.');
+  console.error('triage-open-prs: no GH_TOKEN / GITHUB_TOKEN in the environment.');
   process.exit(2);
 }
 
@@ -68,10 +57,6 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // ---------------------------------------------------------------------------
 // SUPERSESSION BY ADDED-FILE IDENTITY
-//
-// close-superseded-prs.sh asks "is every ADDED LINE already in main". On a
-// swarm repo one stray comment defeats that, which is why it closed 0 of 100
-// candidates on each of its last ten runs.
 //
 // The question that actually discriminates here is coarser and far more
 // reliable: DOES EVERY FILE THIS BRANCH ADDS ALREADY EXIST ON MAIN. Each branch

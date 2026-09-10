@@ -13,7 +13,7 @@ PART B — DID YOU FOLLOW THE RULES?
 pwd # must be under .agent-trees/
 git log -1 --format='%an <%ae>' # must be Smarter-Poker # <254329056+...@users.noreply.github.com>
 git log --oneline origin/main..HEAD | wc -l
-State plainly whether you used --no-verify at any point. If you did, say where and why.
+Confirm that every repository hook ran and no bypass mechanism was used.
 
 PART C — IS THE CODE ACTUALLY DONE?
 Re-read your own diff before answering: `git diff origin/main...HEAD`
@@ -76,7 +76,7 @@ PART B — DID YOU FOLLOW THE RULES?
 pwd # must be under .agent-trees/
 git log -1 --format='%an <%ae>' # must be Smarter-Poker # <254329056+...@users.noreply.github.com>
 git log --oneline origin/main..HEAD | wc -l
-State plainly whether you used --no-verify at any point. If you did, say where and why.
+Confirm that every repository hook ran and no bypass mechanism was used.
 
 PART C — IS THE CODE ACTUALLY DONE?
 Re-read your own diff before answering: `git diff origin/main...HEAD`
@@ -129,7 +129,8 @@ to drive the merge itself.** So agents no longer merge. At all.
 ```bash
 git checkout -b fix/<short-slug> origin/main   # ALWAYS branch from fresh main
 # ... make the change ...
-git add -A && git commit -m "fix(scope): what changed"
+git add path/to/file path/to/other-file
+git commit -m "fix(scope): what changed"
 git push -u origin HEAD
 gh pr create --fill
 ```
@@ -148,9 +149,9 @@ neither agent is told. Then the Antigravity `git reset --hard origin/main` loop
 destroys whatever is still uncommitted.
 
 This repo was carrying the evidence: **eight abandoned stashes and six
-`backup/*` branches** from `git-unstick.sh` rescues, each one somebody's work
-being saved from somebody else's checkout. Branch protection cannot help — the
-damage happens before anything is pushed.
+historical rescue branches**, each one somebody's work being saved from
+somebody else's checkout. Branch protection cannot help — the damage happens
+before anything is pushed.
 
 **Start every task by claiming your own tree:**
 
@@ -174,9 +175,8 @@ never stashes and never checks anything out: moving an agent off its own
 uncommitted work is the exact destruction being prevented, so it refuses,
 prints the `agent-workspace.sh` line to run, and stops.
 
-Callers that legitimately commit in the one-and-only tree — `git-safe-push.sh`,
-the World Hub sync, any CI checkout — set `AGENT_SHARED_CLONE_OK=1`. Say it
-explicitly at the call site; do not weaken the guard to accommodate a script.
+No caller commits in the shared clone. Release automation consumes reviewed
+commits; it does not create them or copy Club Arena output through World Hub.
 
 And a per-agent tree is not the same as safe: it stops agents overwriting each
 other, not an agent leaving hours of work where the Antigravity
@@ -200,7 +200,7 @@ uncommitted files whose newest edit was 3h 43m old.
 | Background polling scripts (`wait_and_merge.sh`, `while true; do gh run list ...`) | Fragile, unobservable, and the source of both failures above. Autopilot already does this, server-side.                            |
 | `git push` directly to `main`                                                      | Blocked by the ruleset. Attempting it wastes a cycle.                                                                              |
 | `git push --force` / `--force-with-lease` on main                                  | Rewound main and dropped four commits that were already live in production.                                                        |
-| `git pull --rebase origin main` on the Mac clone                                   | Strands the clone mid-rebase. Use `bash scripts/git-unstick.sh`.                                                                   |
+| `git pull --rebase origin main` on the Mac clone                                   | Strands the clone mid-rebase. Preserve explicit work and continue in a fresh isolated worktree from `origin/main`.                 |
 | Asking Dan to click merge, run a script, or "approve" anything                     | The entire point of this file.                                                                                                     |
 
 If a PR is not merging, **read the failing check and fix the code**. Never
@@ -254,50 +254,34 @@ A green tick answers "did it merge". It does not answer "did it reach
 production", and three incidents here were merges that never published while
 the agent reported success.
 
-`.github/workflows/publish-watchdog.yml` asks production directly — it compares
-`build-info.json` against `main` after every publish attempt and every 15
-minutes — and it tells lag apart from a rewind, because only one of those fixes
-itself. It re-dispatches the publisher **once** per sha before telling anyone,
-then stops and says why.
+`.github/workflows/production-integrity-audit.yml` asks production directly and
+compares cache-busted `build-info.json` with `main`. It is read-only: it cannot
+retry, dispatch, reconcile, or publish. A mismatch remains red until the sole
+Hetzner publisher succeeds for the exact merged SHA.
 
-You do not need to run it. You do need to not break the two things it protects:
-`cancel-in-progress: false` on the publisher, and the client suite running
-inside the publisher rather than in `ci.yml`. Both are pinned in
-`tests/shipped-invariants.test.ts`.
+Do not break `cancel-in-progress: false` on the publisher or the client suite
+inside that publisher. Both are pinned in `tests/shipped-invariants.test.ts`.
 
-## 6b. Work that stops moving gets named, not logged
+## 6b. Branch delivery is event-driven
 
-A pull request nobody comes back for does not ship, and from outside the repo
-that is indistinguishable from the feature regressing. Every sweep now files
-one issue per repo listing:
+`agent-branch-proposal.yml` records an unprivileged signal for a newly pushed
+branch. The trusted default-branch `agent-open-pr.yml` consumes that completed
+signal and opens the pull request once. `agent-autopilot.yml` then responds only
+to native pull-request events. No schedule scans, relabels, closes, rebases,
+retries, or repairs pull-request state in the background.
 
-- pull requests that cannot merge, split by cause — conflicts, a red required
-  check, or **no check ever reporting** (that last one waits forever for a
-  context that will never arrive, and the UI just says "pending");
-- branches pushed and never proposed, which nothing else here can see because
-  Autopilot queues pull requests and there is nothing to queue.
+## 6c. A ref update cannot silently orphan a commit
 
-The issue is edited in place and closes itself when the list empties. An
-`agent/*` branch under a day old gets a pull request opened for it
-automatically — that namespace exists to become one.
-
-## 6c. A reset can no longer destroy a commit or an edit
-
-`.husky/reference-transaction` fires before any ref update lands and refuses one
-that would orphan local commits — and it **writes them to
-`refs/wip/orphan-guard/<stamp>` first**, so even an override leaves the work
-recoverable. `scripts/agent-trees-snapshot.sh` does the same for uncommitted
-edits every ten minutes, using `git stash create`, which cannot disturb the tree
-it is reading.
-
-If you deliberately need to move a ref backwards, say so:
-`AGENT_REF_GUARD_OK=1`. `agent-workspace.sh` and `git-safe-push.sh` already do.
+`.husky/reference-transaction` fires before a ref update lands and refuses one
+that would make local commits unreachable. It is read-only: it creates no
+snapshot or rescue ref and never repairs an operation after the fact.
+`scripts/agent-workspace.sh` creates new branches without moving an existing ref
+backward. There is no environment-variable rewind bypass.
 
 To see what is exposed right now:
 
 ```bash
 bash scripts/agent-trees-audit.sh       # trees holding work that exists once
-bash scripts/agent-trees-snapshot.sh --list
 ```
 
 ## 7. If something is genuinely stuck

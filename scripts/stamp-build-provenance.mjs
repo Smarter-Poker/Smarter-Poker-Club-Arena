@@ -3,7 +3,8 @@
  * stamp-build-provenance.mjs — LAYER 1 of the anti-regression system
  * ═══════════════════════════════════════════════════════════════════════════
  * Writes dist/ca-provenance.json describing WHERE this build came from, so the
- * World Hub can refuse a bundle that would move production BACKWARDS.
+ * Club Arena publisher can refuse a bundle that would move production
+ * BACKWARDS.
  *
  * WHY THIS EXISTS (2026-08-21)
  * Production silently lost the 49-item dynamic throwables. Nothing was
@@ -108,17 +109,17 @@ console.log(
 // A build from a checkout that is behind canonical main is exactly the
 // regression that happened. Refuse it outright in CI, and warn loudly
 // locally (where a developer may legitimately be testing an older tree but
-// must never SHIP it — the World Hub gate is the backstop either way).
+// must never ship it — the Club Arena publisher is the backstop either way).
 const BEHIND_LIMIT = 0;
 if (typeof behindMain === 'number' && behindMain > BEHIND_LIMIT) {
   const msg =
     `\n✗ This build is ${behindMain} commit(s) BEHIND origin/main.\n` +
     `  Shipping it would erase whatever landed in those commits — that is\n` +
     `  precisely the 2026-08-21 throwables regression.\n\n` +
-    `  FIX: git pull --rebase origin main, then rebuild.\n`;
+    `  FIX: merge current origin/main into this feature branch, then rebuild.\n`;
   if (process.env.GITHUB_ACTIONS || process.env.STRICT_PROVENANCE === '1') {
     console.error(msg);
-    console.log("bypassed");
+    process.exit(1);
   }
   console.warn(msg);
 }

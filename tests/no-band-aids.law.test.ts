@@ -27,6 +27,11 @@ const ROOT = resolve(__dirname, '..');
 const ALLOWLIST_PATH = resolve(ROOT, 'scripts/ci/band-aid.allowlist.json');
 const REGISTER_PATH = resolve(ROOT, 'docs/BAND-AIDS-REGISTER.md');
 const CLAUDE_MD = resolve(ROOT, 'CLAUDE.md');
+const EXECUTION_STANDARD = resolve(ROOT, 'docs/standards/EVENT-DRIVEN-EXECUTION.md');
+const CANONICAL_ARCHITECTURE = resolve(
+  ROOT,
+  '.agent/architecture/CLUB-ARENA-CANONICAL-ARCHITECTURE-2026-04-28.md'
+);
 
 let isBandAidName: (n: string) => boolean;
 let declaredFunctions: (sql: string) => string[];
@@ -192,5 +197,15 @@ describe('the law is written down where agents read it', () => {
   it('says plainly that a repair job firing is an incident, not a success', () => {
     expect(md).toMatch(/repair\s+job\s+firing\s+is\s+a\s+P0/i);
     expect(md).toMatch(/run\s+twice\s+for\s+the\s+same\s+cause\s+is\s+proof/i);
+  });
+
+  it('never describes cron as a correctness or release reconciler', () => {
+    const standard = readFileSync(EXECUTION_STANDARD, 'utf8');
+    const architecture = readFileSync(CANONICAL_ARCHITECTURE, 'utf8');
+    expect(standard).toMatch(/Cron is limited to product-time behavior/);
+    expect(standard).toMatch(/may not reconcile, heal,\s*retry, backfill, re-drive, or recover/);
+    expect(standard).not.toMatch(/Cron may provide secondary reconciliation/i);
+    expect(architecture).toMatch(/Cron is limited to product-time behavior/);
+    expect(architecture).not.toMatch(/Cron may provide secondary reconciliation/i);
   });
 });

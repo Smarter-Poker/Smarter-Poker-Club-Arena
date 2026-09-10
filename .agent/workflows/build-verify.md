@@ -102,21 +102,25 @@ git worktree add -b fix/<slug> ~/Documents/.agent-trees/club-arena/<name> origin
 # 2. Build locally if you touched src/ - the pre-push hook typechecks anyway
 npm run build
 
-# 3. Push the branch. THIS IS THE END OF YOUR JOB.
+# 3. Push the branch to start the Club Arena release path.
 git push origin HEAD:refs/heads/fix/<slug>
 ```
 
-`agent-open-pr.yml` opens the pull request within seconds, `agent-autopilot.yml`
-squash-merges it when the six required checks are green, and
-`publish-club-arena.yml` rsyncs `dist/` to `ca-static.smarter.poker`. Do not
-open the PR yourself, do not merge, and do not sit watching CI (CLAUDE.md
-10.8.3).
+`agent-open-pr.yml` opens the pull request, `agent-autopilot.yml`
+squash-merges only after required checks pass, and the Club Arena-owned
+Hetzner workflow publishes it. Follow that chain to a terminal result and fix
+red checks forward.
 
 **The only claim of "deployed" that counts:**
 
 ```bash
-curl -s https://smarter.poker/hub/club-arena/build-info.json   # ca_sha == main
+curl -fsS -H 'Cache-Control: no-cache' https://ca-static.smarter.poker/build-info.json
+curl -fsS -H 'Cache-Control: no-cache' https://smarter.poker/hub/club-arena/build-info.json
 ```
+
+Both `ca_sha` values must equal current Club Arena `main`. For
+`server/` changes, separately require the sealed engine workflow and a
+cache-busted health response reporting that exact SHA.
 
 ---
 

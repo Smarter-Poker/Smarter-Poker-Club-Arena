@@ -45,7 +45,8 @@ law does not help a reader who skims into the middle of it.
 ```bash
 # In your own worktree, never the shared clone
 npx tsc --noEmit
-git add -A && git commit -m "type(scope): what changed"
+git add path/to/file path/to/other-file
+git commit -m "type(scope): what changed"
 git push origin HEAD:refs/heads/fix/<slug>
 ```
 

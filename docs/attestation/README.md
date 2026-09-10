@@ -11,16 +11,16 @@ content-addressed history, and a record Supabase cannot rewrite.
 ## The file is append-only, and that is the whole point
 
 A day already anchored is never rewritten. `scripts/ci/anchor-ledger-days.mjs`
-runs from `.github/workflows/schema-manifest-refresh.yml` on the schedules that
-workflow already had - daily at 05:20 UTC and hourly at :40, so the first run
-after the 04:25 manifest cron carries the new day and an unexplained change is
-seen within the hour (no new scheduled trigger, CLAUDE.md 10.85) - and:
+runs from `.github/workflows/schema-manifest-refresh.yml` in a disposable
+checkout and:
 
-- appends a line for any day not yet anchored;
+- generates a line for any day not yet anchored, making the audit fail until a
+  reviewed source change records it;
 - **fails** if a day this file already carries now hashes differently in the
   database and no restatement explains it.
 
-That failure is the alarm. It means the journal for an already-attested day
+The workflow never commits, pushes, or opens a pull request. Its failure is the
+alarm. It means the journal for an already-attested day
 changed with nothing recording why, which is either a change made outside the
 sanctioned maintenance path or a change nobody wrote down.
 
@@ -36,9 +36,9 @@ on `ca_ledger_day_manifests` writes the row in
 `ca_ledger_day_manifest_restatements` - old sha, new sha, reason, who - itself.
 Nobody has to remember. A manifest cannot be edited or deleted by hand, and an
 attested day cannot be emptied (the maintenance statement is refused whole).
-The anchor then appends a NEW line marked `restated` and leaves the original
-line untouched, so the file carries both what was attested and what replaced
-it.
+The audit then expects a NEW line marked `restated` beside the untouched
+original. A reviewed source change must add that line, so the file carries both
+what was attested and what replaced it.
 
 Every day is also re-read from the journal on a rotation:
 `fn_ca_ledger_day_manifest_verify_all()` re-reads the least-recently-checked

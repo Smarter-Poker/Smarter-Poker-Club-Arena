@@ -13,7 +13,7 @@ next is phase 4 (thaw installments). The plan is
 Read it before touching `server/src/maintenance/**`,
 `server/src/engine/ServerTableEngineBase.ts`,
 `.github/workflows/auto-deploy-hetzner.yml` or
-`.github/scripts/engine-watchdog.sh`. It records three separate guards that
+`.github/scripts/audit-engine-provenance.sh`. It records three separate guards that
 read as armed while being unreachable, and one trap where a metric reaching
 zero means the opposite of success.
 
@@ -85,11 +85,13 @@ exact-SHA production proof completes it.
    then follow its checks, merge, and owning Club Arena release workflows to a
    terminal result. Fix red checks forward; do not report a branch push as a
    release.
-3. `agent-open-pr.yml` opens the pull request within seconds of the push - on
-   `create` AND on `push`, for any branch name.
+3. `agent-branch-proposal.yml` records the branch push without credentials;
+   trusted default-branch `agent-open-pr.yml` consumes that completed signal
+   and opens the pull request for any eligible branch name.
 4. `agent-autopilot.yml` enables squash auto-merge. The required checks run on
-   the estate's own Hetzner runners (`vars.CI_RUNNER`), and GitHub merges when
-   they are green. Red checks never merge (5.8).
+   on their declared isolated runners, and GitHub merges when they are green.
+   Privileged PR/release control never reuses a runner that executed branch
+   code. Red checks never merge (5.8).
 5. **`publish-club-arena.yml` publishes - to Club Arena's own origin.** On
    merge it builds the bundle, runs the four-way sharded test gate, and
    rsyncs `dist/` to the static origin (Caddy on `estate-ci-1`,
@@ -130,16 +132,13 @@ pruned by age (30 days) only. Do not "clean up" the pool by removing what is
 not in the current bundle - that is the 404 the old sync's retention logic
 existed to prevent.
 
-**Three nets catch a publish that fails, all automatic:** the `*/30` catch-up
-cron inside the publisher, `publish-watchdog.yml` (re-dispatches up to three
-times, then raises an in-app notification), and the orphan sweep - which lives
-in `publish-watchdog.yml` too, at its "Find work that nothing will ever
-publish" step running `.github/scripts/orphan-work-watchdog.sh`. It was
-attributed to `agent-autopilot.yml` here until 2026-09-08; autopilot's only
-orphan-shaped step reaps stuck workflow RUNS, which is a different thing, and
-an agent sent to the wrong file finds nothing and concludes the net does not
-exist. If production is behind `main` for more than ~25
-minutes, something is genuinely broken - read the watchdog issue it filed.
+**A failed publish has one repair path.** `production-integrity-audit.yml`
+compares production to `main` and reports drift, but it is deliberately
+read-only: it cannot retry, dispatch, open a pull request, toggle a workflow,
+or publish. Inspect the failed owning workflow, fix the root cause, and send
+`publish-club-arena` with the exact full current-main SHA through reviewed
+default-branch authority. No timer, watcher, World Hub job, or workstation
+script is a release fallback.
 
 **There is no second publisher.** `tests/no-commit-left-behind.law.test.ts`
 counts publishers and requires exactly one. Club Arena's own `vercel.json`
@@ -240,15 +239,16 @@ GitHub enforces for every client. Private repos need GitHub Pro for that.
 `scripts/ci/apply-main-ruleset.mjs` applies it in one command the moment Pro is
 on, in two stages:
 
-    GH_PAT=... node scripts/ci/apply-main-ruleset.mjs --stage=1   # block force-push + deletion
-    GH_PAT=... node scripts/ci/apply-main-ruleset.mjs --stage=2   # + PR required, checks must pass
+    GH_TOKEN=<fresh GitHub App token> node scripts/ci/apply-main-ruleset.mjs --stage=1
+    GH_TOKEN=<fresh GitHub App token> node scripts/ci/apply-main-ruleset.mjs --stage=2
 
 Stage 1 changes nothing about how you work and would have prevented the
 2026-08-21 rewind that dropped four commits already serving in production.
 Stage 2 is the one that makes a red test impossible to land - and it ends
 direct pushes to main, so read section 1.3 again after it is applied. The two
-required checks (`TypeScript Check`, `Client Unit Tests (vitest)`) already exist
-in ci.yml and already run on pull_request.
+required checks listed in section 1.2.5 already exist in CI and run on pull
+requests. The ruleset script installs the complete list; a partial subset is
+not an acceptable release gate.
 
 The token also needs `Administration: Read and write`; one that can push code
 cannot change protection rules. The script says which of the two is missing.
@@ -943,8 +943,8 @@ issue asking for it). If main is broken, prefer a forward fix; it needs no
 label. Do not edit commit messages to route around the guard.
 
 **3. NEVER SET A TIMER TO WATCH CI.** Playbook 7b is binding: push, open the
-PR, report the PR number, END YOUR SESSION. Autopilot merges it, the publisher
-ships it, the watchdogs verify it — all server-side. "I've set another brief
+PR, report the PR number, END YOUR SESSION. Native events open it, Autopilot
+arms protected merge, and read-only production audits provide evidence. "I've set another brief
 timer and will be back shortly" is the forbidden `wait_and_merge.sh` written
 in prose; it burns tokens and adds nothing. Checking ONCE at the end to say
 why something is BLOCKED is fine. Sitting in a loop is not.
@@ -974,10 +974,8 @@ accident, while looking at something else.
 1. **A follow-up commit needs a NEW BRANCH off current `main`.** Not a second
    push to the branch you already opened a pull request from.
    `scripts/guard-merged-branch.sh` refuses that push from `.husky/pre-push` and
-   prints the recovery. It fails OPEN on a missing token, no network, or any
-   answer it cannot read, so it can never block you because GitHub is unwell.
-   Override, when you truly mean to move a merged branch:
-   `AGENT_MERGED_BRANCH_OK=1 git push ...`
+   prints the recovery. Missing authority or an unreadable answer fails closed;
+   there is no environment-variable or hook bypass.
 
 2. **Verify the FILES, never the tick.** `git fetch origin main` then
    `git cat-file -e origin/main:<path>`. This is section 1.4's rule - only
@@ -1005,22 +1003,21 @@ its test, and two em dashes. **All three were correct changes that left one half
 behind** - the ordinary way a repo goes red, and exactly why somebody has to be
 told.
 
-`scripts/ci/check-main-is-green.mjs` raises one issue for any workflow red on
-`main` past a threshold **with no open issue naming it**. It reports a workflow
-as `loud` when something already tracks it, so a watchdog raising its own alarm
+The `production-integrity-audit.yml` reader raises one issue when
+`scripts/ci/check-main-is-green.mjs` finds any workflow red on `main` past a
+threshold **with no open issue naming it**. The detector reports a workflow
+as `loud` when something already tracks it, so an audit raising its own alarm
 is not mistaken for a defect - the first run flagged `Publish Watchdog` doing
 precisely that, which would have taught everyone to ignore the detector inside
 a week. It counts only `failure`: a `cancelled` run is the publisher being
 superseded by a newer merge, and paging on that would cry wolf several times an
 hour.
 
-**CORRECTED 2026-09-06, the same day this section was written.** It said "(World
-Hub, in `publish-watchdog.yml`)" and stopped there, so this paragraph - in CLUB
-ARENA's CLAUDE.md - described a guard watching a different repo. **Club Arena
-did not have it.** Every agent reading this file was told something was watching
-when nothing was, which is worse than the gap itself. Both repos run it now,
-each in its own `publish-watchdog.yml`, on `ubuntu-latest` so the alarm never
-shares a failure domain with the boxes it watches.
+**CORRECTED 2026-09-10.** Club Arena owns this detector and its durable issue
+reader in `production-integrity-audit.yml`; it runs on `ubuntu-latest` so the
+alarm does not share a failure domain with the boxes it observes. The issue is
+its only write path. It never repairs, retries, re-dispatches, or mutates
+production, and it closes the issue only after every latest verdict is green.
 
 What it found on its first Club Arena run, three workflows red with no issue
 naming any of them: `CI - Build & Type Safety` (1.4h), `Applied Migrations Are
@@ -1108,9 +1105,10 @@ Dan's own address into `PROBE_LOGIN_EMAIL` in Vercel, the login probe signed in
 as him every fifteen minutes and called a global `signOut()`, and every table he
 opened said "Reconnecting To The Table" until somebody noticed by hand.
 
-So: an agent may READ a credential from the place AGENT-PLAYBOOK.md names
-(`.env.local`, `.env`, the Keychain entry, the Vercel dashboard), and may say
-which place a value belongs in. An agent may NOT write, rotate, paste or
+So: an agent may use an already-configured credential through its owning
+client or trusted workflow, and may say which secret store a value belongs in.
+It may not scrape a local `.env`, sibling repository, remote URL, or document.
+An agent may NOT write, rotate, paste or
 "correct" a credential in Vercel, Supabase, GitHub Actions, a `.env` on a
 server, or anywhere else - not even to fix an outage it can see. Those edits
 are Dan's, and they are the one class of change where being wrong is invisible
@@ -1206,8 +1204,8 @@ somebody stops watching the thing it claimed to watch.
 
 If you catch yourself wanting a timer to "come back and check whether the PR
 merged", stop: Playbook 7b already forbids that. Push, open the PR, report the
-number, end the session. Autopilot merges it and the watchdogs verify it, all
-server-side, on infrastructure that does not care which account you were.
+number, end the session. Native repository events, protected merge, the owning
+publisher, and read-only production evidence continue server-side.
 
 ### The one thing this does NOT forbid
 
@@ -1482,8 +1480,10 @@ and `api.github.com` is reachable. Then:
   covering your diff). Launch the push with
   `nohup git push > /tmp/push.log 2>&1 < /dev/null & disown`, return
   immediately, and poll the log in later calls. Never `--no-verify`.
-- **`gh` is not installed.** Open pull requests with `curl` against the REST
-  API. The token is `GITHUB_TOKEN` in `~/Documents/club-arena/.env`.
+- **Use the authenticated `gh` CLI for GitHub reads and pull requests.** Never
+  scrape a repository `.env` for GitHub credentials and never put a token on a
+  command line. A pushed agent branch emits the no-secret proposal signal;
+  the reviewed default-branch workflow opens and queues its pull request.
 - **Rebasing your branch onto main is refused by a ref-guard hook.** Use
   `git merge origin/main` instead. Section 12 still forbids rebasing `main`.
 
@@ -1531,9 +1531,10 @@ ask Dan for a manual handoff again:
 ### What works from the cloud sandbox
 
 - Supabase MCP: full production DB access (migrations, SQL). USE IT.
-- GitHub MCP via device bridge (`mcp__remote-devices__github__*`): full repo
-  read/write with Dan's token. `push_files` works for files up to ~65KB each
-  (HorseLogic.ts at 63KB pushed clean). Branch -> PR -> merge = ONE deploy.
+- GitHub MCP via device bridge (`mcp__remote-devices__github__*`): repository
+  reads and branch writes when that bridge is available. A branch write is
+  only a proposal; the protected pull-request gates and Club Arena-owned
+  publisher remain the sole route to `main` and Hetzner.
 - Device bridge: stage files FROM Dan's disk, commit files TO Dan's disk.
   `device_bash` runs in a NO-NETWORK Linux VM with the folders mounted.
   rm is forbidden — mv junk into a `_to_delete/` folder instead.
@@ -1566,32 +1567,31 @@ ask Dan for a manual handoff again:
   cosmetically from what you authored. Adopt the formatted HEAD as your base
   before editing, or diffs will lie to you.
 
-### Pushing code (in order of preference)
+### Pushing code
 
-1. Files < ~65KB: GitHub MCP `push_files` to a branch, then
-   `create_pull_request` + `merge_pull_request`. One merge = one deploy.
-2. Large files (e.g. ServerTableEngine.ts, 227KB): CHUNK them. Write base64
-   chunks to Dan's disk via device_commit_files, reassemble with `device_bash`
-   (cat chunks | base64 -d > file). Commit/push must then happen on the Mac
-   HOST (VM git is broken, see traps): the Antigravity CLI on the host
-   (`agy run "cd ~/Documents/club-arena && git add -A && git commit -m msg && git push"`)
-   — agy is NOT in the VM PATH; it must be invoked through an
-   Antigravity-reachable surface, not device_bash.
-3. Last resort: write an executable `deploy.command` to Dan's Desktop with the
-   exact commands so the handoff is one double-click, never copy-paste.
+1. Work in an isolated Club Arena worktree on an explicit feature branch.
+2. Stage only the reviewed files, commit with the repository identity, run the
+   normal hooks, and push `HEAD` to that feature branch. Never push to `main`,
+   bypass a hook, force-push, or manufacture a workstation deployment script.
+3. The unprivileged branch-proposal signal hands the branch name to the trusted
+   default-branch PR workflow. Required checks and the protected auto-merge
+   path are the only route to `main`; neither an agent nor a local credential
+   merges around them.
 
 ### Deploying + verifying the engine
 
-- Push to `main` touching `server/**` auto-deploys Hetzner via
-  `.github/workflows/auto-deploy-hetzner.yml`. No SSH needed. Docs-only
-  pushes (CLAUDE.md, MIGRATION-CHANGELOG.md) do NOT trigger a deploy.
-- VERIFY VIA SUPABASE, never the health endpoint: per-minute hand counts in
-  `hand_history` show a restart dip right after the workflow finishes, and
-  boot-time effects (fleet table creation/reactivation in `tables`, new
-  variant tables seating horses) prove the new code is executing. Do NOT
-  claim deployed until a DB-visible behavioral change confirms it.
-- After deploy, mirror the exact pushed content back to Dan's working tree
-  with device_commit_files so his next host-side `git pull` is clean.
+- A trusted default-branch producer dispatches
+  `deploy-club-arena-engine` with the exact full server-changing `main` SHA.
+  `.github/workflows/auto-deploy-hetzner.yml` validates that SHA and is the only
+  engine publisher. Never use direct SSH, a selectable-ref workflow dispatch,
+  a World Hub job, or a workstation script.
+- Do not passively wait for the hourly schedule when an already-staged exact
+  SHA needs deployment. Coordinate with the current engine-release owner and
+  dispatch through that one lane toward the certified :55 break immediately;
+  never race or duplicate an active owner run.
+- Verify the cache-busted engine `/health` version and the database-visible
+  behavior appropriate to the change. Do not claim deployment from a workflow
+  conclusion or an inferred restart alone.
 
 ---
 
@@ -1729,20 +1729,17 @@ fallback.
 
 ### If a clone is already stranded
 
-```bash
-bash scripts/git-unstick.sh
-```
-
-Aborts any rebase/merge/cherry-pick, clears a stale `index.lock` (only when no
-git process is running), saves local-only commits to a dated `backup/unstick-*`
-branch, stashes uncommitted edits, and resets `main` to `origin/main`. **Nothing
-is deleted** — the backup branch and the stash are both printed at the end.
+Stop before writing. Record `git status`, the current branch, and
+`git rev-list --left-right --count origin/main...HEAD`. Preserve each explicit
+local commit on a named backup branch and move the work into a fresh isolated
+worktree from `origin/main`. Do not run an automatic abort/reset helper against
+a shared clone and do not discard an unclassified edit.
 
 ### The rule
 
 1. The Mac's `main` is a **mirror of origin**, not a place work originates.
    Ship from an isolated feature branch through its normal hooks.
-2. To sync it, **fetch + fast-forward** (or `git-unstick.sh`). Never rebase it.
+2. To sync it, **fetch + fast-forward** only. Never rebase it.
 3. Do not create a bypass variable for a rebase or force-push.
 4. Never run git WRITE commands against the mounted worktree from a sandbox —
    that mount cannot `unlink`, so a `.git/index.lock` it creates is stranded and

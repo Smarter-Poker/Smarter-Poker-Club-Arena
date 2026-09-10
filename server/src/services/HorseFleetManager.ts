@@ -3395,10 +3395,9 @@ export class HorseFleetManager {
          left switched off - the two failures that leave the engine healthy and
          the floor unmanaged.
 
-         It does NOT catch a dead engine, and is not meant to: engine-watchdog
-         and the deploy watchdogs own that from outside the box. Said plainly,
-         because a watchdog whose limits are not written down gets trusted for
-         things it never covered. */
+         It does NOT catch a dead engine, and is not meant to. Engine health and
+         exact-SHA adoption are independently proven by the Club Arena release
+         workflow and read-only production audit. */
         if (nowMs - this.lastBeatCheckAt >= 10 * 60_000) {
           this.lastBeatCheckAt = nowMs;
           try {

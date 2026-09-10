@@ -44,10 +44,8 @@ const SKIP = new Set(['node_modules', 'dist', '.git', '.next', 'playwright-repor
                       'test-results', '_to_delete', 'coverage', '.venv']);
 const EXTS = /\.(sh|ya?ml|mjs|cjs|js|ts|json|command)$/;
 
-/* The forbidden thing is INVOKING a deploy, not the word "vercel". Reading the
-   Vercel API to ask what a deployment did is how publish-watchdog diagnoses a
-   failure, and banning that would remove the tool that catches this class of
-   problem. So: match the command forms only. */
+/* The forbidden thing is INVOKING a deploy, not historical prose or a
+   read-only API query. Match executable deployment forms only. */
 const PATTERNS = [
   [/\bvercel\s+(--prod|deploy\b)/, 'invokes `vercel --prod` / `vercel deploy`'],
   [/\bnpx\s+vercel\s+(--prod|deploy\b)/, 'invokes `npx vercel --prod`'],
@@ -89,7 +87,7 @@ console.error(
     '\nclub-arena.vercel.app, which CLAUDE.md 1.3 says never to push to or test' +
     '\non, and leaves a red Production badge on a repo that is not supposed to' +
     '\ndeploy at all — which teaches everyone that red here means nothing.' +
-    '\n\nReading the Vercel API is fine and is not what this matches; publish-' +
-    '\nwatchdog does it to diagnose a failed deploy. INVOKING one is not.'
+    '\n\nRead-only provenance checks are fine and are not what this matches.' +
+    '\nINVOKING a Vercel deployment is not.'
 );
 process.exit(1);

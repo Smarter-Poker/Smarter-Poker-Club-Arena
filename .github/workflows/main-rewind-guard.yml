@@ -123,11 +123,14 @@ jobs:
               'running code main no longer has, and the next sync will delete it.',
               '',
               '### Recovering',
-              'The objects usually still exist. From a clone that has them:',
+              'The objects usually still exist. Preserve them on a recovery branch,',
+              'then merge current main and restore the work with a reviewed PR:',
               '```bash',
               `git branch recover/dropped ${BEFORE}`,
-              'git pull --rebase origin main   # replays the dropped work on top',
-              'git push origin main',
+              'git switch recover/dropped',
+              'git fetch origin main',
+              'git merge origin/main',
+              'git push origin recover/dropped',
               '```',
             ].join('\n');
 

@@ -184,11 +184,6 @@ scripts/ci/production-e2e-account.mjs,4,node:fs,"{ appendFileSync, existsSync, r
 scripts/ci/production-e2e-account.mjs,5,node:path,"{ join, resolve }",,External Or Requires Dynamic/Alias Review
 scripts/ci/production-e2e-account.mjs,6,node:url,{ pathToFileURL },,External Or Requires Dynamic/Alias Review
 scripts/ci/production-e2e-account.mjs,7,./supabase-auth-headers.mjs,{ supabaseServerHeaders },scripts/ci/supabase-auth-headers.mjs,Resolved Local File
-scripts/ci/prove-engine-version-moved.mjs,37,node:process,process,,External Or Requires Dynamic/Alias Review
-scripts/ci/prove-engine-version-moved.mjs,38,./supabase-auth-headers.mjs,{ supabaseServerHeaders },scripts/ci/supabase-auth-headers.mjs,Resolved Local File
-scripts/ci/prove-engine-version-moved.mjs,55,node:fs,dynamic import,,External Or Requires Dynamic/Alias Review
-scripts/ci/prove-engine-version-moved.mjs,64,pg,dynamic import,,External Or Requires Dynamic/Alias Review
-scripts/ci/prove-engine-version-moved.mjs,187,node:fs,dynamic import,,External Or Requires Dynamic/Alias Review
 scripts/ci/prune-schema-fragments.mjs,23,node:fs,"{ existsSync, readFileSync, rmSync, writeFileSync }",,External Or Requires Dynamic/Alias Review
 scripts/ci/prune-schema-fragments.mjs,24,node:path,{ join },,External Or Requires Dynamic/Alias Review
 scripts/ci/prune-schema-fragments.mjs,25,node:child_process,{ execFileSync },,External Or Requires Dynamic/Alias Review

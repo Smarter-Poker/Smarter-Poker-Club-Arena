@@ -2,8 +2,8 @@
 
 For every Claude agent (Cowork, CLI, Antigravity, subagents) on this platform.
 Written 2026-08-19 after a session that hit every trap below and paid for it.
-Companion to `.agent/SELF-PUBLISH-PROTOCOL.md` (push mechanics) and
-`.agent/CLAUDE_AGENT_RULES.md` (RULES 1-12). If this file and reality
+The current release mechanics live in `.agent/architecture/deploy-paths.md`
+and the binding repository rules live in `CLAUDE.md`. If this file and reality
 disagree, verify reality, then fix this file.
 
 ## 1. KNOW WHICH SHELL YOU ARE IN — the single biggest source of wasted time
@@ -27,12 +27,10 @@ disagree, verify reality, then fix this file.
 
 ## 2. PUSH AND PUBLISH — never end a session unpushed, never hand off
 
-Full mechanics in `.agent/SELF-PUBLISH-PROTOCOL.md`. Summary:
+Full mechanics are in `.agent/architecture/deploy-paths.md`. Summary:
 
-- World Hub: host shell -> clear stale locks -> ensure upstream
-  (`git branch --set-upstream-to=origin/main main` if `git status -sb` shows a
-  bare `## main`) -> `nohup bash scripts/git-safe-push.sh "msg" > /tmp/push-wh.log 2>&1 &`
-  -> poll for DEPLOY_VERIFIED:true and SHA_MATCHED:true.
+- World Hub changes use that repository's own protected branch, pull request,
+  and release procedure. They never carry or publish a Club Arena bundle.
 - Club Arena: work in an isolated branch/worktree, merge current `origin/main`
   into that branch when main moves, run the required checks, and push the
   branch with normal hooks. Never push directly to protected `main` and never
@@ -46,19 +44,18 @@ Full mechanics in `.agent/SELF-PUBLISH-PROTOCOL.md`. Summary:
 - Vercel is not in either Club Arena release path. The World Hub only carries
   the public rewrite to the already-published static origin.
 
-## 3. CREDENTIALS — where things actually are (post-rotation, 2026-08-19)
+## 3. CREDENTIALS — authority and isolation
 
 - `VERCEL_TOKEN` belongs to the separate World Hub deployment only. Club Arena
   does not read or require a Vercel credential.
-- Supabase: NEW-format keys (`sb_secret_...`, `sb_publishable_...`) in
-  `WH/.env.local` and `CA/.env`. Legacy JWT-format keys are REVOKED --
-  placeholders marked `<REVOKED-2026-08-16-...>` are intentional, leave them.
-  Server work goes through the Supabase MCP when available (project
-  kuklfnapbkmacvwxktbh); it needs no local key.
-- GitHub: the host's git remotes and `gh` CLI are already authenticated --
-  just use them from host_terminal. Do NOT copy tokens into new files, do NOT
-  print token values into chat/logs, ever. `GH_PAT`/`AUTOFIX_GITHUB_TOKEN`/
-  `NPM_TOKEN` placeholders marked `<ROTATED-2026-08-16>` are intentional.
+- A local ignored `.env` is development input only. It is never a deployment
+  authority and must never be consulted by a release script, guard, workflow,
+  or another repository. Production Supabase access is supplied to the owning
+  Club Arena workflow or through the approved database integration.
+- GitHub: the host's git remotes and `gh` CLI are already authenticated. Use
+  that credential store for workstation operations and a freshly minted
+  GitHub App installation token for privileged automation. Do not copy tokens
+  into files, read them from `.env`, or print them in chat or logs.
 - Hetzner engine: the Club Arena repository owns
   `HETZNER_SSH_PRIVATE_KEY`, `HETZNER_HOST`, and the pinned
   `HETZNER_HOST_KEY`. There is no legacy key-name fallback and no World Hub
@@ -79,8 +76,9 @@ Every serious incident this month traces to trusting a stale artifact:
   gates and broken every buy-in (uuid vs text). The live definition is truth.
 - THE SCHEMA MANIFEST GOES STALE. CI "phantom RPC" failures usually mean the
   manifest lags production, not that the code is wrong. Check pg_proc first;
-  regenerate with `node scripts/ci/gen-schema-manifest.mjs` (CA repo, needs
-  SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY from CA/.env).
+  regenerate through the trusted Club Arena schema-manifest workflow, whose
+  database credential comes from the repository secret store. A workstation
+  `.env` is never production authority.
 - A REPORTED SHA IS NOT A DEPLOY. Prove pushes on content:
   `git show origin/main:<file> | grep <symbol>`. A coordinator once reported
   "deployed" while origin had not moved.
@@ -111,10 +109,9 @@ writing code: unknown stays unknown, caps fail closed, never render a guess.
 - When origin moved under you: MERGE, do not rebase (rebasing under
   concurrent writers churns SHAs and broke handoffs twice).
 - Never stash or revert another agent's dirty files; use the worktree pattern.
-- Commit early and often -- Antigravity's `git reset --hard origin/main`
-  destroys uncommitted work AND unpushed local-only commits. If you must stop
-  with unpushed work, `git bundle create .agent/backup-<date>.bundle
-origin/main..HEAD` first (untracked files survive resets).
+- Commit coherent, reviewed slices and push the feature branch promptly.
+  Destructive reset/rebase shortcuts are forbidden in shared repositories;
+  preserve another agent's work and merge current `origin/main` hunk by hunk.
 
 ## 7. HOUSE RULES QUICK LIST
 
@@ -176,10 +173,11 @@ deploy, or second publisher. Diagnose runner-wide failures with `gh run view`
 and `gh run list`, then re-dispatch the owning Club Arena workflow as soon as
 the runner path is available.
 
-For an engine SHA that is already staged, dispatch
-`auto-deploy-hetzner.yml` toward the current certified maintenance break with
-`force=false`; do not wait passively for another scheduled tick and never
-force a restart. For a frontend SHA, dispatch `publish-club-arena.yml`.
+For an engine SHA that is already staged, send the
+`deploy-club-arena-engine` repository event with the exact full main SHA toward
+the current certified maintenance break; do not wait passively for another
+scheduled tick and never force a restart. For a frontend SHA, send the
+`publish-club-arena` repository event with the exact full main SHA.
 Both paths retain their exact-SHA gates, pinned-host verification, atomic
 release mechanics, and audit trail.
 

@@ -3,9 +3,10 @@
  *  LAW: A SCRIPT NEVER WEARS A PERSON'S FACE
  * ═══════════════════════════════════════════════════════════════════════════
  *
- * Dan, 2026-09-04, twice in one hour: "DON'T USE MY ACCOUNT FOR THE CRON ...
- * KEEP MY ACCOUNT CLEAN." and "Do not hardcode any credentials. Always read
- * from the .env.local files."
+ * Dan, 2026-09-04: "DON'T USE MY ACCOUNT FOR THE CRON ... KEEP MY ACCOUNT
+ * CLEAN." The current release boundary also forbids scripts from discovering
+ * production authority in a workstation `.env`; trusted workflows inject only
+ * the credential required for a dedicated fixture.
  *
  * WHY. A World Hub cron was signing in as his personal account and calling a
  * bare signOut() - global scope - every 15 minutes, revoking every session
@@ -23,15 +24,14 @@
  *      __tests__/synthetic-probes-never-sign-out-a-person.law.test.mjs.)
  *   2. Dan's personal address appears in no source file outside docs/ and
  *      comments - not as a default, not as a fallback, not in
- *      .env.example. The account a script uses comes from the environment
- *      (SP_EMAIL / TEST_USER_EMAIL in .env.local), and a script without one
- *      refuses to guess.
+ *      .env.example. A retained probe accepts an explicitly injected dedicated
+ *      fixture identity and refuses to guess or discover one from local files.
  *
  * IF THIS FILE GOES RED, YOUR CHANGE IS THE BUG. Do not add the address back
  * "just as a default". Do not add an allowlist.
  */
 import { describe, it, expect } from 'vitest';
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, type Dirent } from 'node:fs';
 import { join, relative } from 'node:path';
 
 const ROOT = join(__dirname, '..');
@@ -43,25 +43,37 @@ const ROOT_SCRIPTS = readdirSync(ROOT).filter(
 );
 const SOURCE_EXT = /\.(m?js|cjs|ts|tsx|sh|ya?ml|json|example)$/;
 const SKIP = new Set(['node_modules', 'dist', '.next', 'build', '_archive', 'coverage']);
+const RETIRED_LOCAL_CREDENTIAL_PROBES = [
+  'test_query.ts',
+  'test_union_tables.ts',
+  'test_online.ts',
+  'test_profile_join.ts',
+  'test_missing_tables.ts',
+  'test_union_wallets.ts',
+  'test_unions.ts',
+  'test_club_find.ts',
+  'test_union_columns.ts',
+  'test_db.ts',
+  'test_union_query.ts',
+  'query_shark_club.js',
+  'check_messages_schema.ts',
+  'reset_test_user.ts',
+  'e2e-live/tournament-lobby-audit.mjs',
+];
 
 function walk(dir: string, out: string[] = []): string[] {
-  let entries: string[];
+  let entries: Dirent[];
   try {
-    entries = readdirSync(dir);
+    entries = readdirSync(dir, { withFileTypes: true });
   } catch {
     return out;
   }
-  for (const name of entries) {
+  for (const entry of entries) {
+    const name = entry.name;
     if (SKIP.has(name)) continue;
     const p = join(dir, name);
-    let st;
-    try {
-      st = statSync(p);
-    } catch {
-      continue;
-    }
-    if (st.isDirectory()) walk(p, out);
-    else if (SOURCE_EXT.test(name)) out.push(p);
+    if (entry.isDirectory()) walk(p, out);
+    else if (entry.isFile() && SOURCE_EXT.test(name)) out.push(p);
   }
   return out;
 }
@@ -154,21 +166,21 @@ describe("LAW 2 - Dan's personal account is not a default anywhere", () => {
         : src.replace(/^\s*#.*$/gm, '');
       if (code.includes(PERSONAL)) offenders.push(relative(ROOT, file));
     }
-    expect(
-      offenders,
-      'read the account from SP_EMAIL / TEST_USER_EMAIL in .env.local instead'
-    ).toEqual([]);
+    expect(offenders, 'use only an explicitly injected dedicated fixture identity').toEqual([]);
   });
 
-  it('the scripts that used to default to it now refuse to run without an account', () => {
-    for (const f of [
-      'scripts/e2e-avatar-audit.mjs',
-      'scripts/e2e-mobile-overflow-audit.mjs',
-      'e2e-live/tournament-lobby-audit.mjs',
-      'reset_test_user.ts',
-    ]) {
-      const src = readFileSync(join(ROOT, f), 'utf8');
-      expect(src, f).toMatch(/refusing to guess an account/);
+  it('the orphaned local-secret and personal-account probes stay retired', () => {
+    for (const file of RETIRED_LOCAL_CREDENTIAL_PROBES) {
+      expect(existsSync(join(ROOT, file)), `${file} must stay deleted`).toBe(false);
+    }
+  });
+
+  it('retained browser probes never instruct callers to load a workstation env file', () => {
+    for (const file of ['scripts/e2e-avatar-audit.mjs', 'scripts/e2e-mobile-overflow-audit.mjs']) {
+      const source = readFileSync(join(ROOT, file), 'utf8');
+      expect(source, file).toMatch(/refusing to guess an account/);
+      const code = stripComments(source);
+      expect(code, file).not.toMatch(/dotenv|readFileSync\([^)]*\.env|homedir\(\)[^\n]*\.env/);
     }
   });
 });

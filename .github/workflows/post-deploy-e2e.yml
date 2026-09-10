@@ -42,7 +42,10 @@ on:
     # refuses any workflow_run listener whose name no workflow carries.
     workflows: ['Publish Club Arena']
     types: [completed]
-  workflow_dispatch:
+  schedule:
+    - cron: '35 6 * * *'
+  repository_dispatch:
+    types: [run-post-deploy-e2e]
 
 # One at a time, and the NEWEST wins: an older run is measuring a bundle that is
 # no longer serving, so finishing it would report a verdict about the past.
@@ -86,25 +89,14 @@ jobs:
     # is still serving the previous bundle, and testing that proves nothing
     # about this commit.
     if: >-
-      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'schedule' ||
+      github.event_name == 'repository_dispatch' ||
       github.event.workflow_run.conclusion == 'success'
     name: Specs that need a real deployed page
-    # OFFLOADED 2026-09-02. Measured at ~29 minutes a run and firing on every
-    # publish, this was the single largest remaining GitHub-billed job on the
-    # repo - more than half the residual bill on its own. It tests LIVE
-    # production over the public internet, so where it runs changes nothing
-    # about what it proves. The estate box carries the chromium+webkit system
-    # libraries permanently and caches the browser binaries between runs.
-    #
-    # WHY THIS ONE AND NOT CSS Beat E2E. The first attempt routed both. CSS
-    # Beat E2E is a REQUIRED merge check, and on the 4-core box, under four
-    # concurrent heavy jobs, a browser-flow spec timed out waiting 20s for a
-    # control - the same suite is 3/3 green on hosted runners at ~10.5 minutes.
-    # A cost saving that turns a green merge gate red is not a saving. This job
-    # is not a merge gate, so a load-induced slowdown here costs minutes, never
-    # a merge. CSS Beat E2E follows once the box has the headroom (or a second
-    # box) to run browser flows without contention.
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    # This trusted workflow can receive production database credentials. Run it
+    # on a fresh hosted image, never on a persistent runner that has executed
+    # pull-request code.
+    runs-on: ubuntu-latest
     # Cashier plus six isolated stateful groups and the 138-test responsive
     # sweep take 20-24 minutes when production is under normal publish load.
     # The old 20-minute ceiling cancelled the honesty/report steps just as the
@@ -134,24 +126,29 @@ jobs:
       - name: Install Dependencies
         run: npm ci --ignore-scripts
 
-      # See the note in ci.yml: apt-get on every run is correct for a throwaway
-      # hosted image and pure waste on a box where the libraries are permanent.
-      # Keyed on runner.environment since 2026-09-07, not on vars.CI_RUNNER.
-      # The old condition was right, but only by coincidence: this workflow has
-      # one job and it routes on that same variable, so "the variable is set"
-      # happened to mean "this job is on the box". Nothing holds those two
-      # facts together - add a second job here, or pin this one back to
-      # ubuntu-latest for an afternoon, and the condition starts skipping
-      # --with-deps on a hosted image that has no browser libraries at all,
-      # which is a browser that cannot start rather than a browser that is
-      # slow. runner.environment answers the question actually being asked.
-      - name: Install Chromium and WebKit
+      # Production credentials are confined to this trusted default-branch
+      # workflow. Pull-request CI validates committed source and never receives
+      # them; every successful publish runs this read-only production audit.
+      # Keep this chip-safety proof in its own first step. A failure in another
+      # catalogue audit must not prevent the FK question from being asked.
+      - name: Prove every club foreign key remains deletable
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: node scripts/ci/check-club-fk-indexes.mjs
+
+      - name: Audit the remaining live schema from trusted code
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
-          if [ "${{ runner.environment }}" = "self-hosted" ]; then
-            npx playwright install chromium webkit
-          else
-            npx playwright install chromium webkit --with-deps
-          fi
+          set -euo pipefail
+          node scripts/ci/check-phantom-tables.mjs
+          node scripts/ci/check-phantom-columns.mjs
+          node scripts/ci/check-embed-relationships.mjs
+
+      - name: Install Chromium and WebKit
+        run: npx playwright install chromium webkit --with-deps
 
       # Production must be reachable and serving a bundle before any of this
       # means anything. This is a readiness check, NOT a sha match: see the

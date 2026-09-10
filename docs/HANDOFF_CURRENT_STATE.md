@@ -1,5 +1,18 @@
 # CONTINUATION HANDOFF - Club Arena Engine-Restart & Platform-Hardening Programme
 
+## 2026-09-10 Release Authority Addendum
+
+This file contains historical measurements from the engine-restart programme.
+The current release authority is `.github/DEPLOYMENT.md` and
+`.agent/architecture/deploy-paths.md`. Club Arena frontend and engine releases
+run only from reviewed default-branch workflows in this repository and publish
+only to Club Arena Hetzner infrastructure. Do not use a World Hub sync, Vercel,
+workstation SSH, a local credential file, or an Actions workflow dispatch.
+
+The database deploy dispatcher and its start-marker reconciler are retired by
+migration `20260910050100`. Their historical rows are preserved in the locked
+`ca_archive` schema, and their crons and callable functions are removed.
+
 ## 2026-09-09 Release Blocker Addendum
 
 The 23:55 cutover on September 8 did not occur. A foreign expired 22:53
@@ -42,8 +55,8 @@ STATE OF THE PROGRAMME'S OWN SURFACES (measured 2026-09-08 01:55 UTC):
   1 call on every one, recovery ~60s, hands in freeze 0-1, kill-rebuilds 0.
 - freeze_conserved TRUE on every break since the balancer fix (#3560); it had
   been flipping false on table-balance moves caught halfway by the :00 mark.
-- The DB dispatcher (ca-deploy-dispatch, :41) fires hourly (HTTP 204) and
-  dedupes correctly against GitHub's own :45 cron; one restart per hour.
+- The former database deploy dispatcher is historical and retired. GitHub's
+  Club Arena-owned sealed engine workflow is the only deployment authority.
 - Engine logs survive every deploy: /var/log/club-arena-engine/ holds one
   gzipped file per hourly cutover (~14 MB), 14 days / 6 GB retention (#3539).
 
@@ -140,21 +153,17 @@ WHAT CHANGED SINCE 22:25.
   freeze_conserved=false (+1.28M) for exactly this reason. The engine-side
   freeze flag does not gate every seating/launch writer. Details and the
   acceptance pin are in the Phase 6 addendum of ENGINE-RESTART-PROGRAMME.md.
-- Deploy dispatch: GitHub's cron dropped 22:40/45/50 AGAIN; the run was
-  dispatched by hand at 23:41 (run 33696270143). The disarmed DB dispatcher
-  (Decision 1, section 19) is still the fix; it is still Dan's call.
-- Dan rotated GITHUB_TOKEN (2026-09-02 ~23:40). Source it from
-  ~/Documents/club-arena/.env at CALL time; a long-lived background script
-  that sourced it once holds a revoked value. Dan also flagged that CI now
-  runs on the self-hosted Hetzner box (docs/HANDOFF-2026-09-02-push-publish-
-  cost-audit.md): branch -> autopilot opens the PR -> checks on the estate
-  runners -> autopilot merges -> **publish-club-arena.yml** publishes. (That
-  last name was `build-for-world-hub` until 2026-09-03; the publisher no longer
-  commits anything to the World Hub, it rsyncs dist/ to
-  ca-static.smarter.poker. Corrected 2026-09-04 - CLAUDE.md line 3 sends every
-  engine-restart agent to this file first, so a dead workflow name here is read
-  before anything else.) Nothing in this programme's workflow changes; the
-  engine deploy is still auto-deploy-hetzner.yml.
+- Historical dispatch evidence: GitHub's old 22:40/45/50 cron missed its
+  windows and run 33696270143 was manually dispatched at 23:41. That recovery
+  route and the database dispatcher are now retired. Current engine recovery
+  is a reviewed-default-branch `deploy-club-arena-engine` repository event
+  carrying one exact full `ref_sha`; the owner workflow deploys only from this
+  repository to Club Arena's Hetzner engine.
+- CI runs on the estate runners. The current path is feature branch -> trusted
+  default-branch PR automation -> required checks -> protected merge ->
+  **publish-club-arena.yml** to `ca-static.smarter.poker`. Credential values
+  are never sourced from a workstation file or copied into instructions. The
+  World Hub only rewrites the public URL and never receives a Club Arena build.
 - Worktrees: cowork-maintbreak (this programme) and cowork-thawidx (#2703
   fix, disposable). Both clean. Node modules in cowork-thawidx are symlinks
   into cowork-maintbreak.
@@ -254,13 +263,12 @@ Locked, from Dan, treat as binding:
 - Build ONE phase at a time; report "Phase N of 9 done ... ready for N+1"
   before moving on.
 
-Working-environment preferences that MUST be followed (see section 13 for the
-exact commands): work from Dan's Mac via the host terminal; `gh` is NOT
-installed - use curl + $GITHUB_TOKEN; commits MUST be authored
-"Smarter-Poker <254329056+Smarter-Poker@users.noreply.github.com>" or a repo
-guard refuses them (and Vercel refuses to build an unresolved author); push via
-the perl setsid pattern because the pre-push hook takes minutes; NEVER rebase,
-always `git merge origin/main` (CLAUDE.md 12).
+Working-environment preferences that MUST be followed (see the current release
+documents named at the top of this file): use an isolated worktree and an
+explicit feature branch, preserve the verified Smarter-Poker commit identity,
+run every hook, push the feature branch, and let protected automation open and
+merge the pull request. Never source credentials from a local `.env`, push
+directly to `main`, rebase shared `main`, bypass a hook, or manually publish.
 
 ---
 
@@ -288,7 +296,9 @@ Engine host: engine.smarter.poker = Hetzner 5.161.252.33,
 hostname "club-arena-engine" (verified 2026-09-07), also running
 Grafana, Prometheus, sp-autoheal. The retired tenant is absent. Container name
 club-arena-engine. CONFIRMED
-Hosting (web): Vercel (World Hub / smarter.poker) CONFIRMED (from prior handoffs)
+Hosting (web): Club Arena Hetzner static origin (`ca-static.smarter.poker`),
+served publicly through the World Hub's route-only rewrite. The World Hub and
+Vercel do not build, copy, mutate, or publish Club Arena assets. CONFIRMED.
 CI: GitHub Actions, 8 self-hosted runners on one 4-vCPU
 box; plus ubuntu-latest for the deploy workflow. CONFIRMED (prior)
 Deploy pipeline: .github/workflows/auto-deploy-hetzner.yml CONFIRMED
@@ -356,7 +366,7 @@ speculatively.
 
 server/src/services/record-... (CI scripts under scripts/ci/):
 scripts/ci/record-engine-deploy-attempt.mjs - writes ca_engine_deploy_attempts on run END (pre-existing)
-scripts/ci/record-engine-deploy-start.mjs - NEW (Phase 1): writes ca_engine_deploy_runs_started on run START
+The former database deploy-start recorder was retired with its dispatcher.
 scripts/ci/schema-manifest.d/cowork-restart-phase1.json - Phase 1 schema manifest fragment
 scripts/ci/schema-manifest.d/cowork-restart-phase2.json - Phase 2 schema manifest fragment
 scripts/ci/check-migrations-applied.mjs, check-definer-authorization.mjs,
@@ -364,10 +374,10 @@ check-telemetry-exposure.mjs, check-new-migration-version-collisions.mjs,
 check-title-case.mjs - the pre-push / CI gates you must satisfy.
 
 .github/workflows/auto-deploy-hetzner.yml
-The deploy. crons '40,45,50 \* \* \* \*'. workflow_dispatch with input `force`
-(NEVER pass force:true - it restarts on live tables). concurrency group
-deploy-hetzner, cancel-in-progress:false (runs QUEUE). Phase 1 added a
-"Record that this deploy run started" step near the top. Poll gate waits up
+The sole sealed engine deploy path. A schedule stages current `main`; an exact
+full merged SHA may be sent with the `deploy-club-arena-engine` repository
+event. There is no force input or branch-selectable manual trigger. Concurrency
+group `deploy-hetzner` serializes runs. The poll gate waits up
 to 14 min for maintenance.readyForRestart; escalates in-break if production
 is >=190 min behind main.
 
@@ -453,10 +463,13 @@ load only makes the restart fail more politely - which is why the programme has
 a dedicated DB-relief phase (Phase 8), and why #2711 (already merged) and
 #2704 (already merged) attack it.
 
-DEPLOY / RESTART ARCHITECTURE (as it works today):
+DEPLOY / RESTART ARCHITECTURE (current authority; the measurements below are
+historical):
 
-- .github/workflows/auto-deploy-hetzner.yml runs on cron (40,45,50 \* \* \* \*)
-  and workflow_dispatch. Concurrency group deploy-hetzner, runs QUEUE
+- .github/workflows/auto-deploy-hetzner.yml runs at :35 and accepts the
+  `deploy-club-arena-engine` repository event from trusted default-branch
+  producers. The event must carry an exact full `ref_sha`; selectable-ref
+  workflow dispatch is disabled. Concurrency group deploy-hetzner, runs QUEUE
   (cancel-in-progress:false). It: checks out the exact sha; skips if
   production already serves it; runs the server test suite; runs the ADVISORY
   financial health-gate; SSHes to the Hetzner host; builds an immutable image;
@@ -578,24 +591,17 @@ WORKSTREAM B - PHASE 1: EVERY BREAK IS MEASURED, EVERY DEPLOY FIRES
 - Failure push: fn_ca_break_scorecard_push - a failed break notifies
   ca_incident_recipients once, deduped by a per-break key
   (type='engine_break_failed').
-- DB-side dispatcher: fn_ca_deploy_dispatch_tick(dry_run) via cron
-  ca-deploy-dispatch at :41, using pg_net to POST workflow_dispatch when no
-  run is in flight. SHIPS DISARMED: ca_deploy_dispatch_config.enabled=false and
-  the vault secret ca_deploy_dispatch_token is absent. Putting a code-pushing
-  token in the DB is DAN'S CALL. Until armed it logs 'disarmed' /
-  'skipped_existing_run' each hour (liveness proof).
-- Start marker: ca_engine_deploy_runs_started + fn_ca_record_engine_deploy_start
-  - a new workflow step (record-engine-deploy-start.mjs) writes it on run START,
-    because ca_engine_deploy_attempts only writes on run END - so at :41 the
-    dispatcher can see runs IN FLIGHT, not just finished ones.
-- Migrations 20260902203100, 20260902204600, 20260902211500. All APPLIED live.
-- Verified live: scorecards scored 19:00 fail/1224, 20:00 fail/1732 (matching
-  by-hand measurement); freeze marks captured 20:55+21:00; one real failure
-  push (deduped); all 5 crons active; dispatcher dry-run returns the right
-  action. Files: the 3 migrations, scripts/ci/record-engine-deploy-start.mjs,
-  scripts/ci/schema-manifest.d/cowork-restart-phase1.json,
-  .github/workflows/auto-deploy-hetzner.yml (start step),
-  docs/ENGINE-RESTART-PROGRAMME.md (the plan).
+- Retired automation: the database deploy dispatcher, deploy-start marker,
+  associated crons, and callable functions were removed by forward migration
+  `20260910050100`. Historical rows were moved to locked `ca_archive` tables.
+  The database no longer stores or uses a GitHub deployment token.
+- Migrations 20260902203100, 20260902204600, 20260902211500 were applied. Their
+  historical dispatcher and deploy-marker machinery was subsequently retired
+  by migration 20260910050100; the historical data remains in `ca_archive`.
+- Historical verification: scorecards scored 19:00 fail/1224 and 20:00
+  fail/1732; freeze marks captured 20:55+21:00; one real failure push was
+  deduped. Current release code no longer contains the deploy-start recorder or
+  a database-to-GitHub deployment producer.
 
 WORKSTREAM B2 - PHASE 1 REVIEW FIXES (Dan's "review before next phase" rule;
 migration 20260902211500, in #2710).
@@ -753,9 +759,8 @@ club-arena-zero-drift and -round2 for that state.
   It will be replaced at the 23:55 window by the escalation.
 - Migrations applied live (all): 20260902194600, 203100, 204600, 211500, 213000. engine_maintenance_break_log has 0 rows (its writer deploys with
   #2715). engine_maintenance_thaws has 2 rows today (thaw now works).
-- Crons live: ca-break-scorecard @ :12, ca-deploy-dispatch @ :41 (disarmed),
-  ca-deploy-run-marker-prune @ 04:23, ca-freeze-mark-post @ :00,
-  ca-freeze-mark-pre @ :55.
+- Relevant crons: ca-break-scorecard @ :12, ca-freeze-mark-post @ :00, and
+  ca-freeze-mark-pre @ :55. The two deploy-dispatch marker crons are retired.
 - Latest scorecards: 22:00 fail/3110 hands/thaw 300s/recovery 300s/freeze
   delta -55662 (dealt through the freeze); 21:00 fail/955/thaw 300/shipped
   true; 20:00 fail/1732/thaw did-not-run.
@@ -778,7 +783,7 @@ PHASE 1 (PR #2710, MERGED to main; DB objects applied):
 | supabase/migrations/20260902203100_engine_restart_phase1_scorecard_freezeproof_dispatcher.sql | Merged+Applied | scorecard, freeze marks, dispatcher, start-marker | yes |
 | supabase/migrations/20260902204600_engine_restart_phase1_deploy_start_marker.sql | Merged+Applied | deploy start marker table+fn | yes |
 | supabase/migrations/20260902211500_engine_restart_phase1_review_fixes.sql | Merged+Applied | cron :12, pre-mark waits for freeze, dispatcher marker guard | yes |
-| scripts/ci/record-engine-deploy-start.mjs | Merged | writes ca_engine_deploy_runs_started on run start | yes |
+| former deploy-start recorder | Retired | database dispatch reconciliation removed in `20260910050100` | n/a |
 | scripts/ci/schema-manifest.d/cowork-restart-phase1.json | Merged | schema manifest fragment | yes |
 | .github/workflows/auto-deploy-hetzner.yml | Merged | "Record that this deploy run started" step | yes |
 | docs/ENGINE-RESTART-PROGRAMME.md | Merged | the 9-phase plan | yes |
@@ -823,66 +828,22 @@ of this programme.
 
 ---
 
-All run from Dan's Mac via the host terminal (the agent had no local repo in
-the cloud container; the Mac is reached via the remote-devices bridge). `gh` is
-NOT installed. Node is via nvm and NOT on the default PATH.
+Use the current repository tools and `.github/DEPLOYMENT.md`; do not reuse the
+historical workstation commands that previously occupied this section.
 
-Setup (prepend to node/psql work):
-export PATH="$HOME/.nvm/versions/node/$(ls ~/.nvm/versions/node | tail -1)/bin:/opt/homebrew/bin:$PATH"
-set -a; source ~/Documents/club-arena/.env; set +a
+1. Work on an isolated feature branch, stage explicit paths, run the relevant
+   tests, and merge current `origin/main` forward without rebasing.
+2. Push normally with every hook enabled and open a protected pull request.
+3. Let the Club Arena-owned workflows publish only from reviewed `main`.
+4. For an exact merged engine SHA, send the
+   `deploy-club-arena-engine` repository event with
+   `client_payload.ref_sha`. Do not use a branch-selectable workflow trigger.
+5. Verify the direct Hetzner endpoint, the public route, and cache-busted engine
+   health before reporting a release.
 
-Repo:
-cd ~/Documents/.agent-trees/club-arena/cowork-maintbreak (the worktree used)
-git fetch origin; git merge origin/main (NEVER rebase)
-git config user.name Smarter-Poker; git config user.email 254329056+Smarter-Poker@users.noreply.github.com (RE-SET after every push; the hook resets it)
-
-Push (the pre-push hook takes minutes and kills a normal tool call; use setsid,
-which survives, then poll the log):
-perl -MPOSIX -e 'POSIX::setsid(); exec "bash","-c","cd <worktree> && export PATH=... && git push > /tmp/push.log 2>&1; echo EXIT=$? >> /tmp/push.log; git config user.name Smarter-Poker; git config user.email 254329056+Smarter-Poker@users.noreply.github.com"' &
-then: tail -2 /tmp/push.log
-
-GitHub API (gh absent):
-R=https://api.github.com/repos/Smarter-Poker/Smarter-Poker-Club-Arena
-curl -s -H "Authorization: Bearer $GITHUB_TOKEN" "$R/pulls/2715"
-dispatch a deploy: curl -s -X POST -H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github+json" "$R/actions/workflows/auto-deploy-hetzner.yml/dispatches" -d '{"ref":"main","inputs":{}}' (NEVER inputs.force:true)
-NOTE: PR bodies contain control chars; parse with python json.loads(text, strict=False), not the default.
-
-DB via psql (direct pooler; the Mac .env has SUPABASE_DB_PASSWORD):
-export PGPASSWORD=$(printf '%s' "$SUPABASE_DB_PASSWORD" | tr -d '"')
-psql "host=aws-0-us-west-2.pooler.supabase.com port=5432 dbname=postgres user=postgres.kuklfnapbkmacvwxktbh sslmode=require" -X -q -f file.sql
-This connects as `postgres` (2min statement_timeout) - GOOD for applying
-migrations and for rolled-back probes, but it does NOT reproduce the
-service_role 8s cap; use `SET LOCAL ROLE service_role` + set the jwt claims
-to reproduce the engine's path.
-ALTERNATIVELY the Supabase MCP execute_sql tool runs as the service and is
-fine for reads and single statements.
-
-Engine host (read-only diagnosis; the RIGHT key is hetzner_engine_key):
-ssh -o BatchMode=yes -i ~/.ssh/hetzner_engine_key root@5.161.252.33 'docker logs -t club-arena-engine --since ... 2>&1 | grep MaintenanceBreak'
-
-Health:
-curl -sf https://engine.smarter.poker/health -H 'Cache-Control: no-cache' | python3 -c 'import json,sys; d=json.load(sys.stdin); m=d.get("maintenance") or {}; print(d.get("version"), int(d.get("uptime",0)), m.get("phase"), m.get("unparkedTables"), m.get("readyForRestart"))'
-
-Server tests / typecheck (in the worktree's server/ dir):
-cd server && npx tsc --noEmit
-npx vitest run (full suite, ~3660 tests)
-npx vitest run src/maintenance/MaintenanceBreak.test.ts
-
-CI gates locally (need SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY exported from
-.env, quotes stripped):
-node scripts/ci/check-definer-authorization.mjs
-node scripts/ci/check-migrations-applied.mjs
-node scripts/ci/check-telemetry-exposure.mjs
-node scripts/ci/check-new-migration-version-collisions.mjs
-
-Applying a migration live: run the .sql via psql (one transaction = one schema
-reload). CREATE INDEX must be CONCURRENTLY and OUTSIDE a txn. Then record it:
-INSERT INTO supabase_migrations.schema_migrations(version,name) VALUES ('...','...') ON CONFLICT DO NOTHING;
-
-GOTCHAS learned: host-terminal tool calls die past ~60s (poll in <=55s steps);
-`sleep`>~2min in the cloud Bash tool also times out; `grep -v` on empty output
-returns exit 1 (not a failure); `cd` inside a compound command changes cwd for
-later parts of THAT call only (each call is a fresh shell).
+Credential values are never sourced, copied, printed, or documented as part of
+the release procedure. Database changes use a reviewed forward migration and
+the repository's migration gates; direct host mutation is not a release path.
 
 ---
 
@@ -987,29 +948,20 @@ NOT TESTED / NEVER RUN (be honest):
 
 ---
 
-All in ~/Documents/club-arena/.env on Dan's Mac (source it; never print values):
-GITHUB_TOKEN - classic PAT; all GitHub API work (gh is absent).
-SUPABASE_DB_PASSWORD - direct Postgres via the pooler (strip quotes).
-VITE_SUPABASE_URL - export as SUPABASE_URL for the CI gate scripts.
-SUPABASE_SERVICE_ROLE_KEY - export as SUPABASE_SERVICE_ROLE_KEY for gates.
-Also present: TWILIO_AUTH_TOKEN, SENTRY_AUTH_TOKEN, VERCEL_TOKEN,
-VITE_SUPABASE_ANON_KEY.
+The release workflows read credential values only from this Club Arena
+repository's GitHub Actions secret store:
 
-GitHub Actions secrets (already set, used by auto-deploy-hetzner.yml):
-DATABASE_URL (IPv4 Supavisor pooler - was set because the DB host is
-IPv6-only from Actions), SUPABASE_DB_PASSWORD, plus the Hetzner SSH secrets.
+- Engine: `HETZNER_SSH_PRIVATE_KEY`, `HETZNER_HOST`, `HETZNER_HOST_KEY`.
+- Static origin: `CA_ORIGIN_SSH_KEY`, `CA_ORIGIN_HOST`,
+  `CA_ORIGIN_HOST_KEY`.
+- Database verification uses the narrowly scoped repository secrets named by
+  the workflow that performs it.
 
-Engine host SSH: ~~/.ssh/hetzner_engine_key (READ-ONLY diagnosis is enough;
-root@5.161.252.33). The daily-horse-audit task references a DIFFERENT key
-(~~/.ssh/hetzner_deploy_ed25519_new) - both exist; hetzner_engine_key is the one
-proven to work for docker logs.
-
-Supabase vault: secret name ca_deploy_dispatch_token is EXPECTED-BUT-ABSENT by
-design (the DB dispatcher stays disarmed until Dan decides to store a
-workflow_dispatch-capable token there). No secret was exposed this session.
-
-DO NOT touch Supabase project ydsaqnnuwyvtyxgvrnys. Production is
-kuklfnapbkmacvwxktbh only.
+No Club Arena publisher reads a World Hub secret, Vercel token, workstation
+SSH key, or local `.env` value. Local files may hold development credentials,
+but they are not release authority and their values must never be copied into
+Markdown, commands, logs, or chat. The retired database dispatcher no longer
+expects or stores a GitHub token in Supabase Vault.
 
 ---
 
@@ -1017,16 +969,14 @@ kuklfnapbkmacvwxktbh only.
 
 ---
 
-Provider: Supabase Postgres, project kuklfnapbkmacvwxktbh. pg_cron 1.6.4 and
-pg_net 0.19.5 are installed (the dispatcher uses pg_net). supabase_vault is
-installed.
+Provider: Supabase Postgres, project kuklfnapbkmacvwxktbh. Historical versions
+used pg_net for a database deploy dispatcher; that release path is retired.
 
 New tables this session (all RLS-enabled, service_role only, no money path):
 ca_break_scorecards (PK break_ended_at)
 ca_freeze_circulation_marks (PK window_hour, kind)
-ca_deploy_dispatch_config (single-row config; enabled=false)
-ca_deploy_dispatch_log
-ca_engine_deploy_runs_started (PK run_id)
+The former deploy-dispatch configuration, log, and start-marker tables are
+archived outside `public` by migration `20260910050100`.
 engine_maintenance_break_log (PK break_started_at) - written by the engine
 (deploys with #2715; 0 rows until then)
 
@@ -1034,9 +984,8 @@ New/updated functions (all SECURITY DEFINER, revoked from PUBLIC/anon/
 authenticated, service_role only):
 fn_ca_circulation_total, fn_ca_capture_freeze_mark,
 fn_ca_record_break_scorecard (redefined in Phase 2 to read the break log),
-fn_ca_break_scorecard_push, fn_ca_deploy_run_exists_this_hour,
-fn_ca_deploy_dispatch_tick, fn_ca_record_engine_deploy_start,
-fn_ca_prune_deploy_run_markers.
+fn_ca_break_scorecard_push. The former deploy-dispatch and start-marker
+functions are removed by migration `20260910050100`.
 
 New indexes (LIVE, CREATE INDEX CONCURRENTLY, from #2703):
 idx_tournaments_addon_period_open, idx_tables_bomb_pot_due,
@@ -1055,7 +1004,7 @@ Seeds: none written this session. The programme adds no seed data.
 
 Production-data risk: LOW. No money path, no data migration, no destructive
 DDL. The indexes were built CONCURRENTLY (no writer blocked). The scorecard/
-mark/dispatch tables are new and empty-to-append. The one behavioral DB change
+mark tables are new and empty-to-append. The one behavioral DB change
 that touches live reads is the redefined fn_ca_record_break_scorecard, proven
 rolled-back.
 
@@ -1068,15 +1017,10 @@ Local vs remote: there is no local database; all work was against production
 
 ---
 
-DECISION 1 (Dan's authority) - ARM THE DB-SIDE DEPLOY DISPATCHER? It is built
-and disarmed. Arming means storing a GitHub token that can dispatch the deploy
-workflow in the Supabase vault (secret ca_deploy_dispatch_token) and setting
-ca_deploy_dispatch_config.enabled=true. UPSIDE: the database (always up) fires
-the :41 deploy when GitHub's cron drops a tick, so "every hour" stops silently
-becoming "every few hours." RISK: a code-dispatch-capable token lives in the
-DB. RECOMMENDED: use a FINE-GRAINED token limited to workflow_dispatch on this
-one repo; then arm. SAFE INTERIM (current state): GitHub cron + manual/agent
-dispatch; acceptable but drops occasionally.
+DECISION 1 - CLOSED. The database-side deploy dispatcher must not be armed.
+Migration `20260910050100` removes its crons and callable functions and moves
+its historical rows to locked `ca_archive`. Default-branch Club Arena GitHub
+workflows are the only engine deployment authority.
 
 DECISION 2 (Dan's authority) - the horse-freeroll prize destination, the
 buy_in_fee / spins / bounty / VIP restitution questions, and the CERT-FLEET
@@ -1212,37 +1156,35 @@ merges on green), and MEASURE on the next live break before claiming done.
 
 ---
 
-## 22. EXACT FIRST ACTIONS FOR THE NEXT AGENT
+## 22. CURRENT FIRST ACTIONS FOR THE NEXT AGENT
 
 ---
 
-1. Reconnect the Mac bridge if needed: ToolSearch "mcp**remote-devices**
-   counselors\_\_host_terminal". All shell work runs there.
-2. cd ~/Documents/.agent-trees/club-arena/cowork-maintbreak
-   git fetch origin --quiet && git status --porcelain (expect clean)
-   export PATH="$HOME/.nvm/versions/node/$(ls ~/.nvm/versions/node | tail -1)/bin:/opt/homebrew/bin:$PATH"
-   set -a; source ~/Documents/club-arena/.env; set +a
-   git config user.name Smarter-Poker; git config user.email 254329056+Smarter-Poker@users.noreply.github.com
-3. Read: docs/ENGINE-RESTART-PROGRAMME.md, CLAUDE.md (10.5, 10.7, 11.5, 12, 13),
-   .agents/rules/00-agent-playbook.md, and this file.
-4. Verify merge state:
-   R=https://api.github.com/repos/Smarter-Poker/Smarter-Poker-Club-Arena
-   for n in 2715 2703; do curl -s -H "Authorization: Bearer $GITHUB_TOKEN" "$R/pulls/$n" | python3 -c "import json,sys;d=json.loads(sys.stdin.read(),strict=False);print(d['number'],d['state'],'merged='+str(d.get('merged')))"; done
-   If #2715 is OPEN and CI green, it should auto-merge; if it is blocked on a
-   red check, read the failing job and FIX FORWARD (do not weaken pins; move a
-   pin WITH the behavior it guards). If it is behind main, git merge origin/main
-   (never rebase) and push.
-5. curl -sf https://engine.smarter.poker/health -H 'Cache-Control: no-cache'
-   and record version + uptime.
-6. Around :41 of the coming hour, ensure a deploy run exists for the next :55
+1. Work only in a named isolated worktree. Fetch `origin/main`, inspect branch
+   and worktree state, and read `.github/DEPLOYMENT.md` plus
+   `.agent/architecture/deploy-paths.md` before changing release machinery.
+2. Never source a local credential file. GitHub Actions obtains only the named
+   repository secrets required by the owning workflow; local tools use their
+   configured credential stores without printing values.
+3. Push an explicit feature branch and let the trusted default-branch signal,
+   required checks, and protected auto-merge path land it. If CI is red, fix
+   forward; never weaken a pin, manually merge, or push directly to `main`.
+4. Verify the cache-busted Club Arena origin and public `build-info.json`, and
+   record their full SHA. For engine work, coordinate with the existing engine
+   release owner and verify the cache-busted `/health` version; do not race or
+   replace the owner lane.
+5. If a validated server-changing `main` SHA is not already represented by an
+   active run, the trusted producer emits `deploy-club-arena-engine` immediately
+   with that exact full SHA toward the certified :55 window. Never wait for a
+   future hourly tick in place of dispatching already-staged work.
    window; if none, dispatch on main WITHOUT force (section 13). NEVER force.
-7. After the next :00, run PHASE 0.5's queries (section 21) to measure the
+6. After the next :00, run PHASE 0.5's queries (section 21) to measure the
    break. This is the acceptance evidence for phases 2+3.
-8. DO NOT MODIFY: other worktrees' uncommitted files; the adoption control law
+7. DO NOT MODIFY: other worktrees' uncommitted files; the adoption control law
    (engineStartBudget.ts / discoverCashTables) without a measured reason; the
    freeze triggers; any _.law.test._ or pinned test without moving the pin in
    the same commit; the :previous rollback image.
-9. Resume at PHASE 4 (thaw installments + fn_stamp_sit_out_at) once the 23:55
+8. Resume at PHASE 4 (thaw installments + fn_stamp_sit_out_at) once the 23:55
    measurement confirms phases 2+3, OR fix-forward if the measurement shows
    hands still dealt in the break.
 
@@ -1330,9 +1272,8 @@ GREATEST VISUAL RISK: the client break UI has never been verified against a
 server that actually pauses (Phase 9); once tables truly park, the overlay/
 countdown/resume may misbehave.
 
-DECISION STILL REQUIRING DAN: whether to arm the DB-side deploy dispatcher
-(store a workflow_dispatch token in the Supabase vault). It is built and safely
-disarmed; nothing blocks on it.
+DEPLOY DISPATCH DECISION: closed. The database reconciler is retired and must
+not be recreated or armed.
 
 HOW TO CONTINUE WITHOUT RESTARTING DISCOVERY: everything you need is in this
 file and docs/ENGINE-RESTART-PROGRAMME.md. The working playbook (commands,

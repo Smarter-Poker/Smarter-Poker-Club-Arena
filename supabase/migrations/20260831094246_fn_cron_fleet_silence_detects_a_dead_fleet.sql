@@ -35,10 +35,8 @@
 -- in a normal week, which makes a false alarm unlikely and still catches a
 -- dead fleet inside half an hour instead of never.
 --
--- WHO CALLS IT: a GitHub-side watchdog, deliberately NOT an Open Claw cron. A
--- monitor that shares a failure domain with the thing it monitors is not a
--- monitor - if the fleet is dead, a cron-scheduled alarm is dead with it. Same
--- reasoning CLAUDE.md 11.4 records for publish-watchdog.yml.
+-- WHO CALLS IT: Club Arena's read-only production integrity audit, outside the
+-- cron fleet's failure domain. It reports but never retries or mutates runtime.
 --
 -- ROLLBACK: DROP FUNCTION IF EXISTS public.fn_cron_fleet_silence(int);
 -- ─────────────────────────────────────────────────────────────────────────────

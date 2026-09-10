@@ -60,22 +60,22 @@ describe('CI box provisioning', () => {
     expect(mb).toBeLessThanOrEqual(4096); // 8 x this must fit RAM + swap
   });
 
-  it('installs the GC, the swap and the idle sweeper - the three things a hosted runner never needs', () => {
+  it('installs GC and swap but no background runner reconciler', () => {
     const sh = repo(PROVISION);
     expect(sh).toContain('/usr/local/bin/ci-gc.sh');
     expect(sh).toMatch(/17 4 \* \* \* \/usr\/local\/bin\/ci-gc\.sh/);
     expect(sh).toContain('/swapfile none swap sw 0 0');
-    expect(sh).toContain('/usr/local/bin/ci-restart-idle-runners.sh');
-    // The sweeper must never restart a runner that is mid-job.
-    expect(sh).toMatch(/pgrep -f "\$d\/bin\/Runner\.Worker"/);
+    expect(sh).not.toMatch(/cron_set ci-restart-idle/);
+    expect(sh).not.toMatch(/\*\/5 \* \* \* \* \/usr\/local\/bin\/ci-restart-idle-runners\.sh/);
+    expect(sh).toContain('rm -f /usr/local/bin/ci-restart-idle-runners.sh');
   });
 
-  it('the idle sweeper cannot restart a runner that has just accepted a job', () => {
+  it('the bounded activation refuses every busy or just-accepted runner', () => {
     // 2026-09-02: two CI jobs died with "The runner has received a shutdown
     // signal", which reads like an infrastructure blip and was this script.
-    // The sweeper decided "idle" from `pgrep Runner.Worker` alone, and between
+    // The old sweeper decided "idle" from `pgrep Runner.Worker` alone, and between
     // the Listener ACCEPTING a job and the Worker appearing there is a window
-    // where a committed runner shows no Worker. The sweeper looked in exactly
+    // where a committed runner shows no Worker. It looked in exactly
     // that window and restarted it. A sweeper whose entire promise is "never
     // kills a job" must not have a window.
     const sh = repo(PROVISION);
@@ -84,11 +84,15 @@ describe('CI box provisioning', () => {
     expect(sh).toMatch(/_work.*-newermt/);
     // The Worker check stays - it is the fast path, not the only path.
     expect(sh).toMatch(/pgrep -f "\$d\/bin\/Runner\.Worker"/);
-    // Checked twice, so a job accepted mid-decision is still caught.
-    expect(sh).toMatch(/runner_busy "\$d"[\s\S]{0,400}?sleep[\s\S]{0,200}?runner_busy "\$d"/);
-    // And only one sweeper may run: the provisioner invokes it directly AND
-    // installs it on cron, and the two raced.
-    expect(sh).toMatch(/flock -n 9/);
+    // The complete fleet is checked twice, so a job accepted mid-decision is
+    // still caught before any service is restarted.
+    expect(sh).toMatch(
+      /assert_all_runners_idle[\s\S]{0,120}?sleep 3[\s\S]{0,120}?assert_all_runners_idle/
+    );
+    expect(sh.indexOf('assert_all_runners_idle\nsleep 3')).toBeLessThan(
+      sh.indexOf('systemctl restart "$svc"')
+    );
+    expect(sh).toContain('Re-run this explicit provision command after those jobs finish.');
   });
 
   it('can never wipe the crontab - every cron edit goes through cron_set and is read back', () => {
@@ -99,8 +103,10 @@ describe('CI box provisioning', () => {
     // nightly GC vanished. Read-modify-write through a variable, then read back.
     const sh = repo(PROVISION);
     expect(sh).toMatch(/^cron_set\(\) \{/m);
+    expect(sh).toMatch(/^cron_del\(\) \{/m);
     expect(sh).toMatch(/grep -v -- "\$key" \|\| true/);
     expect(sh).toMatch(/crontab -l \| grep -qF -- "\$line" \|\| \{ echo " {3}FATAL/);
+    expect(sh).toMatch(/FATAL: crontab retirement for \$key did not stick/);
     // The dangerous idiom must not appear in the top-level script's CODE.
     // Comments are stripped first: the helper's own header quotes the idiom
     // to explain why it is banned, and a pin that matched the explanation
@@ -111,16 +117,16 @@ describe('CI box provisioning', () => {
       .filter((l) => !/^\s*#/.test(l))
       .join('\n');
     expect(topLevel).not.toMatch(/\( crontab -l[^\n]*; echo[^\n]*\) \| crontab -/);
-    // Both cron installs use the helper.
+    // The one retained housekeeping cron uses the helper.
     expect(sh).toMatch(/cron_set ci-gc\.sh /);
-    expect(sh).toMatch(/cron_set ci-restart-idle /);
+    expect(sh).not.toMatch(/cron_set ci-restart-idle /);
   });
 
   it('is idempotent by construction - every install is guarded', () => {
     const sh = repo(PROVISION);
     expect(sh).toMatch(/swapon --show --noheadings \| grep -q/);
     expect(sh).toMatch(/cron_set ci-gc\.sh /);
-    expect(sh).toMatch(/cron_set ci-restart-idle /);
+    expect(sh).toMatch(/cron_del ci-restart-idle-runners/);
     expect(sh).toMatch(/command -v node >\/dev\/null/);
     expect(sh).toMatch(/command -v gh >\/dev\/null/);
   });

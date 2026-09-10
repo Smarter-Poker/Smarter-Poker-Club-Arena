@@ -4,9 +4,11 @@
 > The user directed that significant Club Arena work have built-in execution
 > anchors rather than depend on cron. The owning engine, operations API, or
 > always-running service must carry the primary path, with durable obligations,
-> idempotency, and restart recovery. Cron may provide secondary reconciliation
-> or housekeeping. The cron routes listed below describe existing deployment
-> locations, not a requirement that business correctness wait for a scheduler.
+> idempotency, and restart recovery. Cron is limited to product-time behavior,
+> read-only reporting/observability, and bounded housekeeping; it may never be a
+> reconciliation, healing, retry, backfill, or release-recovery path. The cron
+> routes listed below describe existing deployment locations, not authority for
+> business correctness to wait for a scheduler.
 > Existing tier ownership remains in force. Replace and verify each primary path
 > before retiring its existing schedule. Read the full standard in
 > `docs/standards/EVENT-DRIVEN-EXECUTION.md`.

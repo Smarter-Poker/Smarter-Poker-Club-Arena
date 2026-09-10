@@ -35,6 +35,29 @@ describe('Club Arena owns every Club Arena release path', () => {
     }
   });
 
+  it('executes production-credential workflows only through default-branch events', () => {
+    expect(publisher).toContain('types: [publish-club-arena]');
+    expect(engineDeploy).toContain('types: [deploy-club-arena-engine]');
+    expect(monitoringDeploy).toContain('types: [deploy-club-arena-monitoring]');
+    for (const workflow of [publisher, engineDeploy, monitoringDeploy]) {
+      expect(workflow).not.toMatch(/^\s*workflow_dispatch:/m);
+    }
+  });
+
+  it('retires the generic Sentry error-watcher and automated repair path', () => {
+    for (const path of [
+      '.github/workflows/sentry-autofix.yml',
+      '.github/workflows/deploy-sentry-autofix.yml',
+      'scripts/sentry-autofix/package.json',
+      'services/sentry-autofix/package.json',
+      'docs/sentry-autofix.md',
+      'docs/runbooks/09-sentry-autofix.md',
+    ]) {
+      expect(existsSync(resolve(process.cwd(), path)), path).toBe(false);
+    }
+    expect(read('vercel.json')).not.toContain('sentry-autofix');
+  });
+
   it('keeps deploy credentials out of local env examples while naming their homes', () => {
     const env = read('.env.example');
     expect(env).toContain('CA_ORIGIN_SSH_KEY');
@@ -43,6 +66,7 @@ describe('Club Arena owns every Club Arena release path', () => {
     expect(env).not.toMatch(
       /^\s*(?:CA_ORIGIN_(?:SSH_KEY|HOST|HOST_KEY)|HETZNER_(?:SSH_PRIVATE_KEY|HOST|HOST_KEY))\s*=/m
     );
+    expect(env).not.toMatch(/^\s*SENTRY_AUTH_TOKEN\s*=/m);
   });
 
   it('keeps the credential inventory aligned with the two Hetzner authorities', () => {
@@ -53,6 +77,9 @@ describe('Club Arena owns every Club Arena release path', () => {
     expect(names).toContain('HETZNER_SSH_PRIVATE_KEY');
     expect(names).toContain('CA_ORIGIN_SSH_KEY / CA_ORIGIN_HOST / CA_ORIGIN_HOST_KEY');
     expect(names).not.toContain('HETZNER_SSH_PRIVATE_KEY / hetzner_engine_key');
+    expect(names).not.toContain('HETZNER_SSH_KEY');
+    expect(names).not.toContain('WORLD_HUB_SYNC_TOKEN');
+    expect(names).not.toContain('VERCEL_TOKEN');
   });
 
   it('the active quick-start documents cannot send a Club Arena release through World Hub', () => {
@@ -68,8 +95,21 @@ describe('Club Arena owns every Club Arena release path', () => {
       '.agent/workflows/deploy-troubleshooting.md',
       '.agent/workflows/browser-testing.md',
       '.agent/workflows/agent-execution-modes.md',
+      '.agent/workflows/build-verify.md',
       '.agents/workflows/build-verify.md',
       '.agents/rules/00-automated-janitor.md',
+      '.claude/commands/deploy.md',
+      '.claude/skills/deploy-hetzner/SKILL.md',
+      '_antigravity-prompts/deploy-hetzner-rounds-39-40.md',
+      '.memory/SUMMARY.md',
+      '.memory/context/001-architecture.md',
+      '.memory/preferences/002-no-terminal-prompts-only-antigravity.md',
+      '.memory/context/003-hetzner-vps.md',
+      '.memory/context/004-vercel-deploy.md',
+      'AGENTS-PUSH-GUIDE.md',
+      'skills/mandatory-typecheck/SKILL.md',
+      'skills/browser-recovery/SKILL.md',
+      'server/src/scale/README.md',
       'scripts/build-and-verify.sh',
     ]
       .map(read)
@@ -81,8 +121,15 @@ describe('Club Arena owns every Club Arena release path', () => {
     expect(activeDocs).not.toMatch(/\bHETZNER_SSH_KEY\b/);
     expect(activeDocs).not.toMatch(/^\s*git push origin main\s*$/m);
     expect(activeDocs).not.toMatch(/^\s*(?:ssh|rsync)\b.*\/srv\/club-arena/m);
+    expect(activeDocs).not.toMatch(/^\s*ssh\b/m);
+    expect(activeDocs).not.toMatch(
+      /^\s*(?:docker\s+(?:restart|run)|vercel\s+(?:--prod|deploy))\b/m
+    );
+    expect(activeDocs).not.toMatch(/\bWORLD_HUB_SYNC_TOKEN\b/);
+    expect(activeDocs).not.toMatch(/-f\s+force(?:=|\s)/);
     expect(activeDocs).not.toMatch(/publish it yourself/i);
     expect(activeDocs).not.toMatch(/estate-ci-ip/);
+    expect(activeDocs).not.toMatch(/SELF-PUBLISH-PROTOCOL|CLAUDE_AGENT_RULES/);
     expect(activeDocs).toContain('ca-static.smarter.poker');
     expect(activeDocs).toContain('publish-club-arena.yml');
   });
@@ -93,5 +140,22 @@ describe('Club Arena owns every Club Arena release path', () => {
     expect(existsSync(resolve(process.cwd(), 'scripts/step1-verify-commit.sh'))).toBe(false);
     expect(existsSync(resolve(process.cwd(), 'scripts/commit-step2.sh'))).toBe(false);
     expect(existsSync(resolve(process.cwd(), 'scripts/step3-verify-commit.sh'))).toBe(false);
+    expect(existsSync(resolve(process.cwd(), 'DEPLOY-TOURNEY-SWEEP4.sh'))).toBe(false);
+    expect(existsSync(resolve(process.cwd(), 'DEPLOY-TOURNEY-SWEEP5.sh'))).toBe(false);
+    expect(existsSync(resolve(process.cwd(), 'DEPLOY-TOURNEY-SWEEP6.sh'))).toBe(false);
+    expect(existsSync(resolve(process.cwd(), 'DEPLOY-TOURNEY-AUDIT.sh'))).toBe(false);
+    expect(existsSync(resolve(process.cwd(), 'DEPLOY-LOBBY-CARDS.sh'))).toBe(false);
+    expect(existsSync(resolve(process.cwd(), 'DEPLOY-RAKE-AUDIT.sh'))).toBe(false);
+    expect(existsSync(resolve(process.cwd(), 'wait_for_deploy.sh'))).toBe(false);
+    expect(existsSync(resolve(process.cwd(), 'services/sentry-autofix/deploy-engine01.sh'))).toBe(
+      false
+    );
+  });
+
+  it('keeps the build provenance gate fail-closed', () => {
+    const provenance = read('scripts/stamp-build-provenance.mjs');
+    expect(provenance).toContain('process.exit(1)');
+    expect(provenance).not.toContain('console.log("bypassed")');
+    expect(provenance).not.toContain('World Hub gate');
   });
 });

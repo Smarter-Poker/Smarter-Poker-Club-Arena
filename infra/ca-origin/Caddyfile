@@ -57,7 +57,8 @@ ca-static.smarter.poker {
 		# pool is additive, so a stale shell is a working shell.
 		@shell not path /cards/* /images/* /club-logos/* /videos/* /game-card-icons/*
 		header @shell Cache-Control "public, max-age=0, s-maxage=60, stale-while-revalidate=60, stale-if-error=86400"
-		# build-info.json is the deploy's own proof and both watchdogs read it.
+		# build-info.json is the deploy's own proof; release certification and
+		# the read-only production audit both read it.
 		# It must never be answered from a cache, or "production is serving X"
 		# becomes "an edge node remembers X".
 		header /build-info.json Cache-Control "no-store, no-cache, must-revalidate"

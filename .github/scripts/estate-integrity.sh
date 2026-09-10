@@ -2,7 +2,7 @@
 # WHO WATCHES THE GUARDS.
 #
 # Everything built on 2026-08-22 - the rulesets, the shared-clone guard, the
-# reference-transaction hook, the stuck-work report, the publish watchdogs -
+# reference-transaction hook, and the event-driven proposal/merge chain -
 # has the same weakness: any of it can be reverted, edited or drift out of sync
 # in one repo, and nothing would say so. A ruleset is a few API calls away from
 # having no required checks. A guard script is one merge away from being a
@@ -16,7 +16,7 @@
 # reason.
 #
 # So this compares all seven repos against each other and against what they are
-# supposed to be, hourly, and files one self-closing issue when they diverge.
+# supposed to be and files one self-closing issue when they diverge.
 #
 # It asserts SHAPE, not content: that a ruleset still has its rules and no
 # unexpected bypass actor, that a guard file is byte-identical everywhere it
@@ -46,25 +46,15 @@ REPOS=(
 SHARED_FILES=(
   AGENT-PLAYBOOK.md
   .agents/rules/00-agent-playbook.md
-  .github/scripts/report-stuck-prs.sh
   .github/scripts/check-token.sh
   .github/scripts/queue-pr.sh
   .github/workflows/agent-autopilot.yml
-  # agent-open-pr.yml joins 2026-09-03. It was already identical in all seven
-  # repos by convention; now the check holds it there. The day it drifted it
-  # would be one repo quietly force-pushing a `ci-marker/*` branch again, and
-  # every push to that branch was a failed Vercel deployment.
   .github/workflows/agent-open-pr.yml
-  # orphan-work-watchdog.sh joins 2026-09-03 with the same reasoning: it is
-  # the only thing that reports stranded work, and five repos were running a
-  # copy that could not see a conflicted pull request.
-  .github/scripts/orphan-work-watchdog.sh
   scripts/guard-shared-clone.sh
   scripts/guard-commit-identity.sh
   scripts/check-unpushed-work.sh
   scripts/check-canonical-clone.sh
   scripts/ensure-hooks.sh
-  scripts/agent-trees-snapshot.sh
   scripts/agent-trees-audit.sh
   scripts/agent-workspace.sh
   .husky/reference-transaction
@@ -91,8 +81,8 @@ SHARED_FILES=(
 # it means the guarantee lives in a shell script's `case` rather than in GitHub
 # refusing. With no bypass actor the refusal is structural.
 #
-# REMOVE IT WITH: node scripts/ci/remove-world-hub-bypass.mjs --apply
-# (needs a token with Administration: Read and write; the ordinary one 404s.)
+# Remove any unexpected bypass through a separately reviewed administration
+# change. The audit never mutates a ruleset itself.
 
 PROBLEMS=()
 NOTES=()
@@ -129,10 +119,10 @@ for r in "${REPOS[@]}"; do
   case ",$TYPES," in *,pull_request,*)    ;; *) add "**$r** — no \`pull_request\` rule. Anyone can push straight to \`main\`, and no check has to pass first." ;; esac
   [ "${NCHECKS:-0}" -gt 0 ] || add "**$r** — ZERO required status checks. Autopilot then merges on \`CLEAN\`, which means \"nothing is failing\" — indistinguishable from \"nothing was checked\"."
 
-  # Bypass actors, the quiet way to disable everything above.
+  # Bypass actors are the quiet way to disable everything above.
   N_BYPASS=$(printf '%s' "$BYPASS" | jq 'length')
   if [ "$N_BYPASS" -gt 0 ]; then
-    add "**$r** — has $N_BYPASS bypass actor(s): \`$BYPASS\`. No repo may have any. World Hub's exemption existed for the Club Arena bundle sync, which was deleted on 2026-09-03, so nothing needs to bypass \`main\` anywhere any more. Remove with \`node scripts/ci/remove-world-hub-bypass.mjs --apply\` and a token carrying Administration: Read and write."
+    add "**$r** — has $N_BYPASS bypass actor(s): \`$BYPASS\`. No repo may have any. Remove it through a separately reviewed administration change; do not teach this audit to repair its own finding."
   fi
   note "$r: enforcement=$ENF rules=[$TYPES] checks=$NCHECKS bypass=$N_BYPASS"
 done
@@ -175,7 +165,7 @@ for r in "${REPOS[@]}"; do
   esac
 done
 
-# ── 4. Every hook is executable, so git will actually run it ──────────────
+# ── 4. Shared file modes are part of the contract ─────────────────────────
 #
 # 2026-08-23. This check exists because the entire hook layer was inert and
 # nothing anywhere said so. Two silent faults:
@@ -194,16 +184,33 @@ done
 # for every repo at once. A hook committed 644 is a hook that will be skipped
 # in every clone and every worktree made from that commit, forever.
 for r in "${REPOS[@]}"; do
-  TREE=$(gh_ro "repos/Smarter-Poker/$r/git/trees/main?recursive=1" \
-           --jq '.tree[]? | select(.type=="blob") | select(.path|startswith(".husky/") or startswith(".githooks/")) | "\(.mode) \(.path)"')
-  [ -z "$TREE" ] && { note "$r: no hook directory"; continue; }
-  BAD=$(printf '%s\n' "$TREE" | awk '$1!="100755" && $2 !~ /\.(md|txt)$/ {print "    " $2 "  mode " substr($1,4)}')
+  DEFAULT_BRANCH=$(gh_ro "repos/Smarter-Poker/$r" --jq '.default_branch')
+  [ -n "$DEFAULT_BRANCH" ] || { add "**$r** — could not resolve its default branch, so file modes are unverified."; continue; }
+  TREE_JSON=$(gh_ro "repos/Smarter-Poker/$r/git/trees/$DEFAULT_BRANCH?recursive=1")
+  [ -n "$TREE_JSON" ] || { add "**$r** — could not read its default-branch tree, so file modes are unverified."; continue; }
+
+  BAD=""
+  for f in "${SHARED_FILES[@]}"; do
+    MODE=$(printf '%s' "$TREE_JSON" | jq -r --arg f "$f" '.tree[]? | select(.type=="blob" and .path==$f) | .mode' | head -1)
+    [ -n "$MODE" ] || continue
+    case "$f" in
+      *.sh|.husky/*|.githooks/*) EXPECTED=100755 ;;
+      *)                         EXPECTED=100644 ;;
+    esac
+    [ "$MODE" = "$EXPECTED" ] || BAD="$BAD
+    $f  mode $MODE, expected $EXPECTED"
+  done
+
+  HOOK_BAD=$(printf '%s' "$TREE_JSON" | jq -r '.tree[]? | select(.type=="blob") | select(.path|startswith(".husky/") or startswith(".githooks/")) | "\(.mode) \(.path)"' \
+    | awk '$1!="100755" && $2 !~ /\.(md|txt)$/ {print "    " $2 "  mode " $1 ", expected 100755"}')
+  [ -z "$HOOK_BAD" ] || BAD="$BAD
+$HOOK_BAD"
   if [ -n "$BAD" ]; then
-    add "**$r** — hook file(s) committed non-executable. git skips these WITHOUT failing, so they are guards in name only in every clone and worktree made from this commit:
+    add "**$r** — shared file mode mismatch. Executable guards are skipped when committed 100644, while docs/workflows must not masquerade as executables:
 $BAD
   Fix in that repo with \`bash scripts/ensure-hooks.sh\`, which also repoints core.hooksPath at the tracked hook directory."
   else
-    note "$r: all $(printf '%s\n' "$TREE" | grep -c .) hook file(s) executable"
+    note "$r: shared file and hook modes match the contract"
   fi
 done
 
@@ -256,7 +263,7 @@ A drifted guard reads as protection and is not. That is worse than no guard, bec
 
 **Fix by making the repos agree again, not by relaxing the check.** If a difference is deliberate, the guard belongs in this script's expectations — edit \`.github/scripts/estate-integrity.sh\` and say why in the commit, so the next person inherits the reason rather than the exception.
 
-_Raised automatically by \`.github/workflows/estate-integrity.yml\`, hourly. It closes itself when the estate agrees again._"
+_Raised automatically by \`.github/workflows/estate-integrity.yml\`. It closes itself when the estate agrees again._"
 
 if [ -n "${EXISTING:-}" ]; then
   gh_write "update issue #$EXISTING" issue edit "$EXISTING" --repo "$HOME_REPO" --body "$BODY" || true

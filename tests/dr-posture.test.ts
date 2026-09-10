@@ -26,13 +26,17 @@ describe('disaster recovery is documented and wired', () => {
     expect(t).toMatch(/human action|Dan/);
   });
 
-  it('the engine-secret backup script exists and encrypts, never commits plaintext', () => {
+  it('the engine-secret backup is explicit, pinned and never reads local env authority', () => {
     expect(existsSync(root(BACKUP))).toBe(true);
     const s = readFileSync(root(BACKUP), 'utf8');
     expect(s).toContain('openssl enc -aes-256-cbc');
     expect(s).toContain('.dr-backups');
-    // The passphrase comes from the keychain, is never written to the repo.
     expect(s).toContain('security find-generic-password');
+    expect(s).toContain('--authorized-offline-backup');
+    expect(s).toContain('DR_ENGINE_SSH_KEY_FILE');
+    expect(s).toContain('DR_ENGINE_HOST_KEY');
+    expect(s).toContain('StrictHostKeyChecking=yes');
+    expect(s).not.toMatch(/source\s+.*\.env|hetzner_engine_key|ENGINE_HOST:-engine/);
   });
 
   it('.dr-backups is gitignored so an encrypted secret can never be committed', () => {

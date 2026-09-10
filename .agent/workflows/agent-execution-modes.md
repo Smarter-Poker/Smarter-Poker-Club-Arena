@@ -89,8 +89,7 @@ npm run build            # must reach a completed build
 git add -- <your paths>
 git diff --cached --name-only | wc -l    # sanity-check the count
 
-# 4. Commit. --no-verify only if the pre-commit hook trips on a
-#    PRE-EXISTING pattern you did not introduce (see below).
+# 4. Commit. Hooks are mandatory; fix every refusal at its source.
 git commit -m "..."
 
 # 5. Merge current main without rewriting branch history, then push the branch
@@ -104,22 +103,11 @@ curl -fsS -H 'Cache-Control: no-cache' https://ca-static.smarter.poker/build-inf
 curl -fsS -H 'Cache-Control: no-cache' https://smarter.poker/hub/club-arena/build-info.json
 ```
 
-### The pre-commit hook
+### The Pre-Commit Hook
 
-It blocks two things: `supabase.auth.getUser` / `supabase.auth.getSession`,
-and merge-conflict markers.
-
-The auth rule targets **client** code, where `getAuthUser` from
-`src/lib/authUtils` is the safe alternative. It is **not** correct for API
-routes: `authUtils` is client-only (localStorage), and server-side Bearer
-token verification legitimately calls `supabase.auth.getUser(token)`. If your
-staged set trips the hook only on pre-existing server-side auth in
-`pages/api/**`, `--no-verify` is appropriate — but check for conflict
-markers yourself first, because you are also skipping that check:
-
-```bash
-grep -rl '<<<<<<<' <your staged paths>
-```
+Hook refusals are release evidence, not optional lint. There is no
+`--no-verify` exception. Repair an incorrect rule in a reviewed change or fix
+the source that violates it; never bypass all checks to move a commit.
 
 ---
 

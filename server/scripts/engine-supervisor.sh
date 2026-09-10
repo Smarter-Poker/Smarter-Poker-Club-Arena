@@ -38,6 +38,19 @@ CHURN_FILE="$STATE_DIR/boot-churn"
 RESTARTING_FILE="$STATE_DIR/restarting-samples"
 LOCK_FILE="${LOCK_FILE:-/var/lock/club-arena-engine-up.lock}"
 AUTOHEAL_CONTAINER="${AUTOHEAL_CONTAINER:-sp-autoheal}"
+FORCE_DESIRED="${ENGINE_SUPERVISOR_FORCE_DESIRED:-0}"
+REQUIRE_EXACT_HEALTH="${ENGINE_SUPERVISOR_REQUIRE_EXACT_HEALTH:-0}"
+RECOVERY_DEADLINE_EPOCH="${ENGINE_RECOVERY_DEADLINE_EPOCH:-0}"
+PUBLIC_URL="${ENGINE_URL:-https://engine.smarter.poker}"
+
+case "$FORCE_DESIRED:$REQUIRE_EXACT_HEALTH" in
+  0:0|1:0|1:1) ;;
+  *) echo '[engine-supervisor] FATAL: invalid force-desired recovery mode' >&2; exit 1 ;;
+esac
+if [ "$FORCE_DESIRED" = 1 ]; then
+  [[ "$RECOVERY_DEADLINE_EPOCH" =~ ^[1-9][0-9]*$ ]] \
+    || { echo '[engine-supervisor] FATAL: force-desired recovery requires an absolute deadline' >&2; exit 1; }
+fi
 
 # /health must fail this many consecutive runs (60s apart) before we restart.
 # The engine's own HEALTHCHECK + autoheal react faster; this is the backstop for
@@ -127,7 +140,7 @@ emit_metrics() {
   restarting=$(readnum "$RESTARTING_FILE")
   mkdir -p "$TEXTFILE_DIR" 2>/dev/null || return 0
   local tmp="$METRIC_FILE.$$"
-  {
+  if {
     echo "# HELP club_arena_supervisor_last_run_timestamp_seconds Unix time of the last supervisor run."
     echo "# TYPE club_arena_supervisor_last_run_timestamp_seconds gauge"
     echo "club_arena_supervisor_last_run_timestamp_seconds $(date +%s)"
@@ -146,7 +159,14 @@ emit_metrics() {
     echo "# HELP club_arena_engine_restarting_samples Consecutive supervisor runs that found the container in Docker's 'restarting' state."
     echo "# TYPE club_arena_engine_restarting_samples gauge"
     echo "club_arena_engine_restarting_samples $restarting"
-  } > "$tmp" 2>/dev/null && mv -f "$tmp" "$METRIC_FILE" 2>/dev/null || rm -f "$tmp" 2>/dev/null
+  } > "$tmp" 2>/dev/null; then
+    if mv -f "$tmp" "$METRIC_FILE" 2>/dev/null; then
+      return 0
+    fi
+  fi
+  if [ -e "$tmp" ]; then
+    rm -f "$tmp" 2>/dev/null
+  fi
 }
 
 recreate() {
@@ -195,9 +215,86 @@ recreate_or_die() {
   fi
 }
 
+recovery_remaining() {
+  local remaining=$((RECOVERY_DEADLINE_EPOCH - $(date +%s)))
+  [ "$remaining" -gt 1 ] || return 1
+  printf '%s\n' "$remaining"
+}
+
+bounded_recovery_command() {
+  local requested="$1" remaining allowed
+  shift
+  remaining="$(recovery_remaining)" || return 124
+  allowed=$((remaining - 1))
+  [ "$requested" -le "$allowed" ] || requested="$allowed"
+  [ "$requested" -gt 0 ] || return 124
+  timeout --signal=TERM --kill-after=1s "${requested}s" "$@"
+}
+
+health_identity() {
+  local url="$1" body instance remaining curl_timeout
+  remaining="$(recovery_remaining)" || return 1
+  curl_timeout=$((remaining - 1))
+  [ "$curl_timeout" -le "$HEALTH_TIMEOUT_SEC" ] || curl_timeout="$HEALTH_TIMEOUT_SEC"
+  [ "$curl_timeout" -gt 0 ] || return 1
+  body="$(curl -fsS --max-time "$curl_timeout" -H 'Cache-Control: no-cache, no-store' \
+    "$url" 2>/dev/null)" || return 1
+  instance="$(printf '%s' "$body" | EXPECTED_SHA="$DESIRED_SHA" python3 -c '
+import json, os, re, sys
+d=json.load(sys.stdin)
+instance=d.get("instanceId")
+ok=(d.get("running") is True and d.get("releaseSha")==os.environ["EXPECTED_SHA"] and d.get("liveness")=="ok" and isinstance(instance,str) and re.fullmatch(r"[1-9][0-9]*-[0-9a-f]{8}",instance))
+if not ok: raise SystemExit(1)
+print(instance)
+' 2>/dev/null)" || return 1
+  printf '%s\n' "$instance"
+}
+
+prove_exact_desired_recovery() {
+  local local_instance public_instance state image_id release_label autoheal_label role_label restart_policy
+  while recovery_remaining >/dev/null; do
+    state="$(bounded_recovery_command 5 docker container inspect -f '{{.State.Status}}' "$CONTAINER" 2>/dev/null || true)"
+    image_id="$(bounded_recovery_command 5 docker container inspect -f '{{.Image}}' "$CONTAINER" 2>/dev/null || true)"
+    release_label="$(bounded_recovery_command 5 docker container inspect \
+      -f '{{index .Config.Labels "sp.release.sha"}}' "$CONTAINER" 2>/dev/null || true)"
+    autoheal_label="$(bounded_recovery_command 5 docker container inspect \
+      -f '{{index .Config.Labels "autoheal"}}' "$CONTAINER" 2>/dev/null || true)"
+    role_label="$(bounded_recovery_command 5 docker container inspect \
+      -f '{{index .Config.Labels "sp.role"}}' "$CONTAINER" 2>/dev/null || true)"
+    restart_policy="$(bounded_recovery_command 5 docker container inspect \
+      -f '{{.HostConfig.RestartPolicy.Name}}' "$CONTAINER" 2>/dev/null || true)"
+    if [ "$state" = running ] \
+      && [ "$image_id" = "$DESIRED_IMAGE_ID" ] \
+      && { [ "$release_label" = "$DESIRED_SHA" ] \
+        || { [ "$DESIRED_LEGACY_UNLABELLED" = true ] && [ -z "$release_label" ]; }; } \
+      && [ "$autoheal_label" = true ] \
+      && [ "$role_label" = engine ] \
+      && [ "$restart_policy" = always ]; then
+      local_instance="$(health_identity "http://127.0.0.1:${PORT}/health")" || local_instance=''
+      if [ -n "$local_instance" ]; then
+        public_instance="$(health_identity "$PUBLIC_URL/health?nocache=$(date +%s%N)")" \
+          || public_instance=''
+        if [ "$public_instance" = "$local_instance" ]; then
+          log "exact desired release $DESIRED_SHA is healthy locally and publicly as $local_instance"
+          writenum "$STATE_FILE" 0
+          writenum "$CHURN_FILE" 0
+          writenum "$RESTARTING_FILE" 0
+          emit_metrics 1 1
+          return 0
+        fi
+      fi
+    fi
+    bounded_recovery_command 5 sleep 5 || break
+  done
+  log "FATAL: exact desired release $DESIRED_SHA did not become locally and publicly healthy before the recovery deadline"
+  emit_metrics 0 0
+  return 1
+}
+
 if ! docker info >/dev/null 2>&1; then
   log "docker daemon unreachable — nothing this script can do; leaving it to docker.service"
   emit_metrics 0 0
+  [ "$FORCE_DESIRED" = 1 ] && exit 1
   exit 0
 fi
 
@@ -241,13 +338,60 @@ if ! docker image inspect "$DESIRED_IMAGE_ID" >/dev/null 2>&1; then
 fi
 IMAGE="$DESIRED_IMAGE_ID"
 
+RUNNING_IMAGE_ID=$(docker container inspect -f '{{.Image}}' "$CONTAINER" 2>/dev/null || echo "")
+CURRENT_IMAGE_ID=$(docker image inspect -f '{{.Id}}' "$IMAGE_REPO:current" 2>/dev/null || echo "")
+
+# Transaction and ExecStopPost recovery are stricter than a periodic timer
+# tick. They must evict an uncommitted candidate even when its pending receipt
+# still classifies it as temporarily authorized, and they may report success
+# only after the sealed desired image is the exact locally and publicly healthy
+# process. This path deliberately bypasses boot grace: boot grace prevents a
+# watchdog restart storm, but it is not evidence that service was restored.
+if [ "$FORCE_DESIRED" = 1 ]; then
+  RUNNING_STATUS="$(bounded_recovery_command 5 docker container inspect \
+    -f '{{.State.Status}}' "$CONTAINER" 2>/dev/null || true)"
+  RUNNING_RELEASE="$(bounded_recovery_command 5 docker container inspect \
+    -f '{{index .Config.Labels "sp.release.sha"}}' "$CONTAINER" 2>/dev/null || true)"
+  RUNNING_AUTOHEAL_LABEL="$(bounded_recovery_command 5 docker container inspect \
+    -f '{{index .Config.Labels "autoheal"}}' "$CONTAINER" 2>/dev/null || true)"
+  RUNNING_ROLE_LABEL="$(bounded_recovery_command 5 docker container inspect \
+    -f '{{index .Config.Labels "sp.role"}}' "$CONTAINER" 2>/dev/null || true)"
+  RUNNING_RESTART_POLICY="$(bounded_recovery_command 5 docker container inspect \
+    -f '{{.HostConfig.RestartPolicy.Name}}' "$CONTAINER" 2>/dev/null || true)"
+  if [ "$RUNNING_IMAGE_ID" != "$DESIRED_IMAGE_ID" ] \
+    || [ "$RUNNING_AUTOHEAL_LABEL" != true ] \
+    || [ "$RUNNING_ROLE_LABEL" != engine ] \
+    || { [ "$RUNNING_RELEASE" != "$DESIRED_SHA" ] \
+      && { [ "$DESIRED_LEGACY_UNLABELLED" != true ] || [ -n "$RUNNING_RELEASE" ]; }; }; then
+    act "force-desired recovery is evicting every unsealed runtime and restoring sealed $DESIRED_SHA"
+    recreate_or_die
+  else
+    case "$RUNNING_STATUS" in
+      running) ;;
+      paused) bounded_recovery_command 10 docker unpause "$CONTAINER" >/dev/null || recreate_or_die ;;
+      created|exited) bounded_recovery_command 20 docker start "$CONTAINER" >/dev/null || recreate_or_die ;;
+      *) recreate_or_die ;;
+    esac
+  fi
+  RUNNING_RESTART_POLICY="$(bounded_recovery_command 5 docker container inspect \
+    -f '{{.HostConfig.RestartPolicy.Name}}' "$CONTAINER" 2>/dev/null || true)"
+  if [ "$RUNNING_RESTART_POLICY" != always ]; then
+    bounded_recovery_command 10 docker update --restart always "$CONTAINER" >/dev/null \
+      || { log "FATAL: could not arm sealed desired restart policy"; emit_metrics 0 0; exit 1; }
+  fi
+  ensure_autoheal_running \
+    || { log "FATAL: exact desired recovery could not start $AUTOHEAL_CONTAINER"; emit_metrics 0 0; exit 1; }
+  if [ "$REQUIRE_EXACT_HEALTH" = 1 ]; then
+    prove_exact_desired_recovery || exit 1
+  fi
+  exit 0
+fi
+
 RELEASE_DESCRIPTION=$("$RELEASE_SEAL" classify-running --container "$CONTAINER" --with-sha 2>/dev/null) \
   || { log "FATAL: cannot classify the running release — refusing to mutate it"; emit_metrics 0 0; exit 1; }
 read -r RELEASE_CLASS EXPECTED_RELEASE_SHA EXTRA <<< "$RELEASE_DESCRIPTION"
 [ -z "${EXTRA:-}" ] \
   || { log "FATAL: release classification is ambiguous — refusing to mutate it"; emit_metrics 0 0; exit 1; }
-RUNNING_IMAGE_ID=$(docker container inspect -f '{{.Image}}' "$CONTAINER" 2>/dev/null || echo "")
-CURRENT_IMAGE_ID=$(docker image inspect -f '{{.Id}}' "$IMAGE_REPO:current" 2>/dev/null || echo "")
 
 # A prepared candidate may run only during its short, consumed authorization
 # window while the workflow proves it. It is never a recovery source. Anything

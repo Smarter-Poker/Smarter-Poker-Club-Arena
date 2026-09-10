@@ -55,16 +55,16 @@ The deprecated repo `Smarter-Poker/Club-Arena-Design` is archived (read-only). D
 
 ### Tier 1: Game engine → Hetzner
 
-| Source               | Where in repo                                                                                                    |
-| -------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| Build root           | `server/` subdirectory                                                                                           |
-| Hetzner server       | Resolved only from Club Arena repository secrets; no documented or workstation fallback host                     |
-| Hostname             | `engine.smarter.poker`                                                                                           |
-| Process manager      | systemd + Docker container `club-arena-engine`                                                                   |
-| Auto-deploy on push? | **YES**: automatic workflow, with cutover gated on scheduled maintenance                                         |
-| How to deploy        | Push an agent branch; autopilot merges; `auto-deploy-hetzner.yml` stages and verifies the engine                 |
-| Protocol             | WebSocket: `wss://engine.smarter.poker/ws/table/:tableId`, Bearer JWT auth                                       |
-| Bible governance     | V8 Bible Law 1.16 — discrete named events only, no snapshot-diffs, no polling. Latency budget < 100ms broadcast. |
+| Source           | Where in repo                                                                                                                                                    |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Build root       | `server/` subdirectory                                                                                                                                           |
+| Hetzner server   | Resolved only from Club Arena repository secrets; no documented or workstation fallback host                                                                     |
+| Hostname         | `engine.smarter.poker`                                                                                                                                           |
+| Process manager  | systemd + Docker container `club-arena-engine`                                                                                                                   |
+| Deploy trigger   | `stage-engine-release.yml` immediately sends each protected-main `server/**` SHA through `deploy-club-arena-engine`; there is no scheduled or World Hub fallback |
+| How to deploy    | Push a feature branch; protected merge; the Club Arena producer immediately stages and verifies the exact SHA                                                    |
+| Protocol         | WebSocket: `wss://engine.smarter.poker/ws/table/:tableId`, Bearer JWT auth                                                                                       |
+| Bible governance | V8 Bible Law 1.16 — discrete named events only, no snapshot-diffs, no polling. Latency budget < 100ms broadcast.                                                 |
 
 ### Tier 2: Vite frontend → Club Arena's own origin (rewritten 2026-09-03)
 
@@ -113,9 +113,10 @@ run a sync script, that document is stale; this table is the current truth.
 | Auth                  | Server-side Supabase JWT validation per route                                           |
 | Caveats               | Each route is its own Pages Router file; not a shared Hono router                       |
 
-**The desync warning is smaller than it was (2026-09-03).** Tier 2 now deploys
-itself on merge, and Tier 1 deploys itself on merge as well
-(`auto-deploy-hetzner.yml`, preparation scheduled at `:35`, cutover gated on the `:55` break). Only Tier 3 still rides the
+**The desync warning is smaller than it was (2026-09-03).** Tier 2 publishes
+itself on protected merge, and Tier 1 accepts only the immediate Club
+Arena-owned exact-SHA repository event before its cutover at the certified
+table break. There is no timer or alternate publisher. Only Tier 3 still rides the
 World Hub's own Vercel build, which happens from that repo's merged `main`. A
 fix touching Tier 3 therefore needs a World Hub pull request; a fix touching
 Tier 1 or 2 must pass this repository's gates, merge, publish through the
@@ -195,4 +196,4 @@ Do not bypass the push gates. A failed gate requires a source correction, not `-
 
 The active workflow uses `/opt/club-arena` on the engine host, with runtime configuration in `/opt/club-arena/server/.env`. The Club Arena repository exclusively owns the Actions secrets `HETZNER_SSH_PRIVATE_KEY`, `HETZNER_HOST`, and pinned `HETZNER_HOST_KEY`; there is no legacy key-name or cross-repository fallback. Frontend publishing separately uses the Club Arena repository secrets `CA_ORIGIN_HOST`, `CA_ORIGIN_SSH_KEY`, and `CA_ORIGIN_HOST_KEY`. Never print or commit their values. Verify these names against the current workflows before using them.
 
-A green engine workflow does not prove cutover: a deferred run can finish green with Cut over, Verify and runtime-write proof skipped. Read those job steps and fetch cache-busted `https://engine.smarter.poker/health`; verify the running version contains the intended merged commits. Verify both frontend build-info endpoints independently. The frontend SHA does not prove engine adoption. Do not force a restart to close deployment lag.
+A green engine workflow does not prove cutover: a deferred run can finish green with Cut over, Verify and runtime-write proof skipped. Read those job steps and fetch cache-busted `https://engine.smarter.poker/health`; verify the running version contains the intended merged commits. Verify both frontend build-info endpoints independently. The frontend SHA does not prove engine adoption. Do not force a restart to close deployment lag. `stage-engine-release.yml` immediately dispatches every merged server SHA; if an owning run exists, never duplicate or race it.

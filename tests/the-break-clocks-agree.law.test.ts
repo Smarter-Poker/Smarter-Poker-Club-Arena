@@ -5,7 +5,7 @@
  *
  * The :55 maintenance break is coordinated by constants that live in FIVE
  * places that cannot import each other: the engine (TypeScript), the deploy
- * workflow (cron), the engine watchdog (bash), two SQL migrations, and the
+ * workflow (cron), two SQL migrations, and the
  * browser hook. Nothing but this file makes them agree.
  *
  * Each pin below is a real failure, not a hypothetical - the watchdog HAS
@@ -22,8 +22,9 @@ import { resolve } from 'path';
 const read = (p: string) => readFileSync(resolve(__dirname, '..', p), 'utf8');
 
 const ENGINE = read('server/src/maintenance/MaintenanceBreak.ts');
-const WATCHDOG = read('.github/scripts/engine-watchdog.sh');
 const DEPLOY = read('.github/workflows/auto-deploy-hetzner.yml');
+const RELEASE_TRANSACTION = read('server/scripts/engine-release-transaction.sh');
+const RELEASE_OBSERVER = read('server/scripts/observe-engine-release.sh');
 const FREEZE_SQL = read(
   'supabase/migrations/20260902090000_the_platform_freezes_at_the_tables_not_the_functions.sql'
 );
@@ -134,25 +135,30 @@ describe('the break minute is the same minute everywhere', () => {
     expect(engineMinute).toBe(55);
   });
 
-  it('the watchdog waits for the same minute', () => {
-    // 2026-09-01: these two disagreed (watchdog still on five Chicago hours)
-    // and the engine served a 14.5-hour-old image behind green runs.
-    const wd = Number(WATCHDOG.match(/RESTART_MINUTE="\$\{RESTART_MINUTE:-(\d+)\}"/)![1]);
-    expect(wd).toBe(engineMinute);
-  });
-
-  it('every deploy cron tick lands before the break with time to build', () => {
-    const minutes = DEPLOY.match(/cron: '([\d,]+) \* \* \* \*'/)![1]
-      .split(',')
-      .map(Number);
-    for (const m of minutes) {
-      // Late enough that the runner is fresh, early enough to check out,
-      // test and build before the engine parks the platform at :55. A tick
-      // AT or AFTER :55 would wait ~59 minutes for the next break.
-      expect(m, `cron tick :${m}`).toBeGreaterThanOrEqual(35);
-      expect(m, `cron tick :${m}`).toBeLessThanOrEqual(50);
-      expect(m).toBeLessThan(engineMinute);
-    }
+  it('the event-owned deploy spans a cold build, a full-hour wait, and proof', () => {
+    const timeoutMin = Math.max(
+      ...[...DEPLOY.matchAll(/timeout-minutes: (\d+)/g)].map((match) => Number(match[1]))
+    );
+    const transactionS = Number(
+      RELEASE_TRANSACTION.match(
+        /MAX_RUNTIME_SECONDS="\$\{ENGINE_RELEASE_MAX_RUNTIME_SECONDS:-(\d+)\}"/
+      )![1]
+    );
+    const observeS = Number(
+      RELEASE_OBSERVER.match(/OBSERVE_SECONDS="\$\{ENGINE_RELEASE_OBSERVE_SECONDS:-(\d+)\}"/)![1]
+    );
+    const handoffS = Number(
+      RELEASE_OBSERVER.match(
+        /INVOCATION_WAIT_SECONDS="\$\{ENGINE_RELEASE_INVOCATION_WAIT_SECONDS:-(\d+)\}"/
+      )![1]
+    );
+    expect(transactionS).toBeGreaterThanOrEqual(18 * 60 + 60 * 60);
+    expect(observeS).toBeGreaterThanOrEqual(transactionS);
+    expect(timeoutMin * 60).toBeGreaterThanOrEqual(handoffS + observeS + 20 * 60);
+    expect(RELEASE_TRANSACTION).toContain('persist_result sealed');
+    expect(DEPLOY.slice(DEPLOY.indexOf('\non:'), DEPLOY.indexOf('\nconcurrency:'))).not.toMatch(
+      /^\s{2}schedule:/m
+    );
   });
 });
 

@@ -44,7 +44,34 @@ describe('the deploy step ships the checkout it has, never a URL it cannot read'
   it('sends infra/monitoring over the deploy key and runs deploy.sh from that copy', () => {
     expect(WF).toContain('tar -C . -cf - infra/monitoring');
     expect(WF).toMatch(
-      /MONITORING_SRC_FROM_CHECKOUT=1 bash \/opt\/smarter-poker-monitoring-src\/infra\/monitoring\/deploy\.sh/
+      /MONITORING_SRC_FROM_CHECKOUT=1 DEPLOY_CONTROL_SHA='\$DEPLOY_CONTROL_SHA' bash \/opt\/smarter-poker-monitoring-src\/infra\/monitoring\/deploy\.sh/
+    );
+  });
+
+  it('converges on current main and strands no payload behind an unrelated push', () => {
+    expect(WF).toContain(
+      "TIP=\"$(timeout 30s gh api 'repos/${{ github.repository }}/commits/main'"
+    );
+    expect(WF).toContain('echo "DEPLOY_CONTROL_SHA=$TIP" >> "$GITHUB_ENV"');
+    expect(WF).toContain('ref: ${{ steps.target.outputs.sha }}');
+    expect(WF).toContain('MAIN_SHA="$(git rev-parse --verify \'origin/main^{commit}\')"');
+    expect(WF).toContain('git merge-base --is-ancestor "$DEPLOY_CONTROL_SHA" "$MAIN_SHA"');
+    expect(WF).toContain('git diff --quiet "$DEPLOY_CONTROL_SHA" "$MAIN_SHA" --');
+    expect(WF).toContain(
+      'infra/monitoring server/scripts/install-caddy-websocket-log-redaction.sh'
+    );
+    expect(WF).not.toContain('Stale monitoring request');
+  });
+
+  it('compare-and-swaps a fsynced host receipt and verifies every shipped payload byte', () => {
+    expect(WF).toContain('.club-arena-monitoring-release');
+    expect(WF).toContain('.club-arena-monitoring-payload.sha256');
+    expect(WF).toContain('git merge-base --is-ancestor "$LIVE_SHA" "$DEPLOY_CONTROL_SHA"');
+    expect(DEPLOY).toContain('Monitoring release compare-and-swap failed');
+    expect(DEPLOY).toContain('sha256sum --strict --check "$PAYLOAD_MANIFEST"');
+    expect(DEPLOY).toContain('os.fsync(descriptor)');
+    expect(DEPLOY.indexOf('if [[ $FAIL -gt 0 ]]')).toBeLessThan(
+      DEPLOY.indexOf('mv -T "$RECEIPT_TMP" "$RELEASE_RECEIPT"')
     );
   });
 
@@ -62,7 +89,7 @@ describe('the deploy step ships the checkout it has, never a URL it cannot read'
 
   it('deploy.sh refuses a checkout mode with nothing shipped, and asks both services to reload', () => {
     expect(DEPLOY).toContain('MONITORING_SRC_FROM_CHECKOUT');
-    expect(DEPLOY).toContain('nothing was shipped. Refusing.');
+    expect(DEPLOY).toContain('prometheus.yml is missing - refusing.');
     expect(DEPLOY).toContain('http://127.0.0.1:9090/-/reload');
     expect(DEPLOY).toContain('http://127.0.0.1:9093/-/reload');
   });
@@ -73,8 +100,9 @@ describe('the verify step can reach the box', () => {
     expect(WF).toContain('echo "Host $HETZNER_HOST"');
     expect(WF).toContain('echo "  IdentityFile ~/.ssh/id_deploy"');
     expect(WF).toContain('node scripts/ci/check-alert-rules-match.mjs');
-    expect(WF).toContain('docker compose up -d --force-recreate prometheus');
-    expect(WF).toContain('rebinding its file mounts');
+    expect(DEPLOY).toContain('docker compose up -d');
+    expect(DEPLOY).toContain('Reloading Prometheus and Alertmanager');
+    expect(WF).not.toContain('docker compose up -d --force-recreate prometheus');
   });
 });
 
@@ -94,12 +122,13 @@ describe('a working deploy cannot unmount the pager', () => {
 
 describe('a deploy never puts a placeholder over a live password', () => {
   it('deploy.sh leaves a Caddyfile that carries a real hash alone', () => {
-    expect(DEPLOY).toContain('leaving the live file alone');
-    const guard = DEPLOY.indexOf(
-      '! grep -q \'REPLACE_WITH_CADDY_HASH_PASSWORD_OUTPUT\' "$CADDY_DST"'
+    expect(DEPLOY).toContain(
+      'live credential-bearing Caddy configuration is present and unchanged'
     );
-    const copy = DEPLOY.indexOf('cp "$CADDY_SRC" "$CADDY_DST"');
+    const guard = DEPLOY.indexOf(
+      'grep -q \'REPLACE_WITH_CADDY_HASH_PASSWORD_OUTPUT\' "$CADDY_DST"'
+    );
     expect(guard).toBeGreaterThan(0);
-    expect(guard).toBeLessThan(copy);
+    expect(DEPLOY).not.toContain('cp "$CADDY_SRC" "$CADDY_DST"');
   });
 });

@@ -282,9 +282,10 @@ Only after all four steps pass may you mark the work complete.
 - Read the Club Arena workflow run, not a World Hub or Vercel dashboard.
 - A queued, in-progress, cancelled, failed, staged-only, or deferred run is not
   a release.
-- If an engine SHA is already staged, immediately dispatch the owning workflow
-  toward the current certified break with `force=false`; never wait passively
-  for another tick or force a restart.
+- If an engine SHA is already staged, immediately send the exact full main SHA
+  through the owning `deploy-club-arena-engine` repository event toward the
+  current certified break; never wait passively for another tick or force a
+  restart. The workflow has no force input.
 - On any red or mismatched state, investigate and fix forward through the same
   Club Arena path. Do not create a manual or cross-repository publisher.
 

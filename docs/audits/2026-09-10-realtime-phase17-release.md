@@ -32,3 +32,17 @@ triggered after this publisher had not completed at the time of this receipt.
 The preceding Phase 16 run's green Daily Missions certification tests the
 earlier release and is not represented as Phase 17 UI evidence. Natural-event
 and physical iPad/PWA acceptance remain open.
+
+## Production Follow-Through
+
+Post-deploy run 34501771061 passed the full Daily Missions certification,
+including the sustained-outage retry fixture from PR4183. Its fixture account
+was hard-deleted and absence verified. The broader run executed 290 tests: 283
+passed, seven failed, four additional skips, and zero flaky tests. Four failures
+were the coordinated engine-release prerequisite. The others were the recurring
+player-pagination race and two WebSocket gateway errors on financial routes.
+The pagination diagnostics enabled the source repair described in
+2026-09-10-player-pagination-query-ownership.md. Broader programme acceptance,
+including physical-device and unavailable detailed diagnostic evidence, remains
+open; this successful Daily Missions result is not a claim that the full run
+passed.

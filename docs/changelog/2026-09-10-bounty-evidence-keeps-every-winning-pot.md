@@ -46,9 +46,10 @@ The current reader was observed read-only at 2026-09-10 05:36:22 UTC.
 | Required Existing Reader | 193de04c64c285ba0bf0cb20bb38c28d |
 | Proposed Reader          | 6ead779d2261848571713f0220953082 |
 
-The migration refuses a changed baseline, replaces the existing function in
-place, retains its fixed search path and service-only execution, and reloads
-the API schema. Apply this reader before the engine rollout. It accepts old
+The migration is one self-contained transaction. It refuses a changed
+baseline, replaces the existing function in place, proves the final body hash
+and service-only execution grants, and reloads the API schema. The fixed
+search path is retained. Apply this reader before the engine rollout. It accepts old
 complete pot histories, making the database-first order compatible. No table,
 trigger, wallet mutation, payout rail, historical repair or manual backpay is
 introduced. Previously incomplete historical hands are not reconstructed.

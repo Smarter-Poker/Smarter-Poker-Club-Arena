@@ -21,7 +21,7 @@
   ],
   "baseline_md5": "193de04c64c285ba0bf0cb20bb38c28d",
   "proposed_md5": "6ead779d2261848571713f0220953082",
-  "cluster": "/tmp/ca-bounty-pot-pg17-a8nygwkx",
+  "cluster": "/tmp/ca-bounty-pot-pg17-7svfs8zn",
   "scope": "claimant read authority only",
   "production_mutations": false,
   "reader_live_observed_at": "2026-09-10T05:36:22.796408Z",
@@ -29,5 +29,6 @@
   "client_tests": 58,
   "server_typecheck": "passed",
   "private_cluster_stopped": true,
-  "recorded_at": "2026-09-10T05:52:23.248768+00:00"
+  "recorded_at": "2026-09-10T05:54:34.963364+00:00",
+  "exact_migration_transaction": "passed with hash and ACL postconditions"
 }

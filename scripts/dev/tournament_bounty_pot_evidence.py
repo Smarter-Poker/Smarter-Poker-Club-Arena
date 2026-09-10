@@ -93,7 +93,7 @@ INSERT INTO tournament_players VALUES """ +
                     dict(index=1, eligible=[A, BUSTED], amount=300)]
         check('baseline reproduces missing later-pot claimant from merged winner',
               claim(old_pots) is None)
-        query('BEGIN;\n' + MIGRATION.read_text() + '\nCOMMIT;')
+        query(MIGRATION.read_text())
         new_hash = query("SELECT md5(prosrc) FROM pg_proc WHERE oid='" + SIGNATURE + "'::regprocedure;")
         expected_hash = hashlib.md5(definition(MIGRATION).split('$function$')[1].encode()).hexdigest()
         assert new_hash == expected_hash

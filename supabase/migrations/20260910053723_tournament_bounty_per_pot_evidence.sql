@@ -1,6 +1,7 @@
 -- Phase 3 B02: preserve exact winning-pot identities for future hands.
 -- Apply this reader before deploying the engine that writes pots[].awards.
 -- No historical reconstruction, new payout rail, trigger or wallet mutation.
+BEGIN;
 SET LOCAL lock_timeout = '3s';
 SET LOCAL statement_timeout = '15s';
 DO $preflight$
@@ -152,4 +153,19 @@ REVOKE ALL ON FUNCTION public.fn_exact_tournament_knockout_claimants(uuid,uuid,u
   FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.fn_exact_tournament_knockout_claimants(uuid,uuid,uuid)
   TO service_role;
+DO $verify$
+BEGIN
+  IF (SELECT md5(prosrc) FROM pg_proc
+      WHERE oid='public.fn_exact_tournament_knockout_claimants(uuid,uuid,uuid)'::regprocedure)
+       IS DISTINCT FROM '6ead779d2261848571713f0220953082' THEN
+    RAISE EXCEPTION 'Bounty claimant authority postcondition failed';
+  END IF;
+  IF has_function_privilege('anon', 'public.fn_exact_tournament_knockout_claimants(uuid,uuid,uuid)', 'EXECUTE')
+     OR has_function_privilege('authenticated', 'public.fn_exact_tournament_knockout_claimants(uuid,uuid,uuid)', 'EXECUTE')
+     OR NOT has_function_privilege('service_role', 'public.fn_exact_tournament_knockout_claimants(uuid,uuid,uuid)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'Bounty claimant authority execution grants changed';
+  END IF;
+END;
+$verify$;
 NOTIFY pgrst, 'reload schema';
+COMMIT;

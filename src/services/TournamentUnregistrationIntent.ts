@@ -12,6 +12,16 @@ function read(raw: string | null): Intent | null {
   return value;
 }
 
+/** The database proved this request belongs to a completed, older registration. */
+export class ObsoleteTournamentUnregistrationIntentError extends Error {
+  constructor() {
+    super(
+      'This Refund Request Belongs To An Earlier Registration. Refresh The Tournament Before Requesting A New Refund.'
+    );
+    this.name = 'ObsoleteTournamentUnregistrationIntentError';
+  }
+}
+
 /** Retain the original refund request until its matching server receipt is confirmed. */
 export function withTournamentUnregistrationIntent<T>(
   userId: string,
@@ -55,16 +65,27 @@ export function withTournamentUnregistrationIntent<T>(
         if (storage.getItem(key) !== raw)
           throw new Error('The Tournament Transaction Request Could Not Be Saved.');
       }
-      const result = await submit(intent.requestId);
+      const resolve = () => {
+        try {
+          const resolved = JSON.stringify({ ...intent, state: 'resolved' });
+          session.setItem(key, resolved);
+          if (read(storage.getItem(key))?.requestId === intent.requestId)
+            storage.setItem(key, resolved);
+        } catch {
+          // A known server outcome remains known; failed storage retains the old identity.
+        }
+      };
       try {
-        const resolved = JSON.stringify({ ...intent, state: 'resolved' });
-        session.setItem(key, resolved);
-        if (read(storage.getItem(key))?.requestId === intent.requestId)
-          storage.setItem(key, resolved);
-      } catch {
-        // A confirmed refund remains confirmed; retained identity safely replays it.
+        const result = await submit(intent.requestId);
+        resolve();
+        return result;
+      } catch (error) {
+        // An old response lost in this tab can outlive a refund and a new
+        // registration elsewhere. Only the exact server refusal retires it.
+        // This invocation still rejects; a new refund needs another user action.
+        if (error instanceof ObsoleteTournamentUnregistrationIntentError) resolve();
+        throw error;
       }
-      return result;
     });
   })();
   running.set(key, work);

@@ -84,6 +84,30 @@ describe('TournamentManager source move ownership', () => {
     expect(moveRpc).not.toHaveBeenCalled();
   });
 
+  it('releases the source boundary when the actual RPC was never routable', async () => {
+    const { manager, engine } = liveHarness();
+    const actual = await vi.importActual<typeof import('./tournamentSeatMoveRpc.js')>(
+      './tournamentSeatMoveRpc.js'
+    );
+    const { supabase } = await import('../services/supabase.js');
+    const rpcSpy = vi.spyOn(supabase, 'rpc').mockResolvedValue({
+      data: null,
+      error: { code: 'PGRST202', message: 'function missing', details: '', hint: '' },
+      count: null,
+      status: 404,
+      statusText: 'Not Found',
+    } as never);
+    moveRpc.mockImplementation(actual.moveTournamentPlayerAtomically);
+    try {
+      await expect(manager.executePlayerMoves([move()])).resolves.toBe(0);
+      expect(manager.pendingTournamentSeatMoveOutcomes.size).toBe(0);
+      expect(engine.releaseTournamentMovePause).toHaveBeenCalledTimes(1);
+      expect(rpcSpy).toHaveBeenCalledTimes(2);
+    } finally {
+      rpcSpy.mockRestore();
+    }
+  });
+
   it('holds one physical source boundary across every move from that source', async () => {
     const { manager, engine } = liveHarness();
     moveRpc.mockImplementation(async (input) => receipt(input));

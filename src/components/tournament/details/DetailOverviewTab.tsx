@@ -180,6 +180,10 @@ export default function DetailOverviewTab({
   const status = String(tournament?.status || '').toUpperCase();
   const isRunning = status === 'RUNNING';
   const isCompleted = status === 'COMPLETED';
+  const isSatellite =
+    String(tournament?.variant ?? '').toLowerCase() === 'satellite' ||
+    String(tournament?.tournament_type ?? '').toUpperCase() === 'SATELLITE' ||
+    Boolean(tournament?.satellite_target_id || tournament?.satellite_target);
 
   /**
    * A finished event has nothing left that moves, and an event three days out
@@ -219,7 +223,7 @@ export default function DetailOverviewTab({
 
   /* ── Final-table deal votes. Own state, own poll: the tab contract does not
         carry them and no other tab needs them. ── */
-  const dealEnabled = Boolean(tournament?.final_table_deal_enabled) && isRunning;
+  const dealEnabled = Boolean(tournament?.final_table_deal_enabled) && isRunning && !isSatellite;
   const [dealVoteCount, setDealVoteCount] = useState(0);
   const [hasVotedDeal, setHasVotedDeal] = useState(false);
   const [votingDeal, setVotingDeal] = useState(false);
@@ -375,10 +379,6 @@ export default function DetailOverviewTab({
 
   /* ── Prize pool: the stored pool is authoritative, the guarantee is a floor. ── */
   const prize = useMemo(() => {
-    const isSatellite =
-      String(tournament?.variant ?? '').toLowerCase() === 'satellite' ||
-      String(tournament?.tournament_type ?? '').toUpperCase() === 'SATELLITE' ||
-      Boolean(tournament?.satellite_target_id || tournament?.satellite_target);
     return {
       effective: effectivePrizePool(tournament?.prize_pool, tournament?.guaranteed_prize),
       ladder: effectivePlaceLadderPool(
@@ -392,7 +392,7 @@ export default function DetailOverviewTab({
       ),
       guarantee: Number(tournament?.guaranteed_prize) || 0,
     };
-  }, [tournament, field.entries, payoutStructure]);
+  }, [tournament, field.entries, payoutStructure, isSatellite]);
 
   const lateRegText = useMemo(() => {
     const levels = Number(tournament?.late_reg_levels) || 0;
@@ -479,13 +479,14 @@ export default function DetailOverviewTab({
       out.push({ label: 'BB Ante', kind: 'default' });
     if (t.accelerated_mtt) out.push({ label: 'Accelerated', kind: 'action' });
     if (t.bubble_protection) out.push({ label: 'Bubble Protection', kind: 'good' });
-    if (t.final_table_deal_enabled) out.push({ label: 'Final Table Deal', kind: 'default' });
+    if (t.final_table_deal_enabled && !isSatellite)
+      out.push({ label: 'Final Table Deal', kind: 'default' });
     if (t.ban_chat) out.push({ label: 'No Chat', kind: 'mute' });
     if (t.early_bird_enabled && Number(t.early_bird_chips) > 0)
       out.push({ label: `Early Bird +${chipsCompact(Number(t.early_bird_chips))}`, kind: 'good' });
     if (isRegistered) out.push({ label: 'You Are In', kind: 'good' });
     return out;
-  }, [tournament, blindLevels, isRegistered]);
+  }, [tournament, blindLevels, isRegistered, isSatellite]);
 
   /* ── The former label/value list, minus everything the stat grid already
         answers (prize pool, entries, late reg). ── */
@@ -844,11 +845,18 @@ export default function DetailOverviewTab({
               {chips(dealVoteCount)}/{chips(dealPanel.remaining)} Votes
             </span>
           </div>
+          <p className="dov-deal__note">
+            A Deal Requires Every Remaining Player’s Vote And Ends The Tournament After A Settled
+            Hand. Prizes And Bubble Protection Already Paid Or Still Owed To Eliminated Players Are
+            Deducted First. The Remaining Pool Is Split In Proportion To Chip Stacks At Settlement.
+          </p>
+          <p className="dov-deal__note">
+            Shares Are Rounded Down To Cents. Rounding Cents Go To The Chip Leader, With Ties Broken
+            By Earlier Registration And Then Player ID.
+          </p>
           {dealPanel.amSeated &&
             (hasVotedDeal ? (
-              <p className="dov-deal__note">
-                Your Vote Is In. A Deal Happens When Every Remaining Player Votes.
-              </p>
+              <p className="dov-deal__note">Your Vote Is In.</p>
             ) : (
               <button
                 type="button"

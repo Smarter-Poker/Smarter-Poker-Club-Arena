@@ -75,17 +75,18 @@ describe('LAW: the next hand deals two seconds after completion (Dan 2026-09-07)
       awaited + 'await this.awaitNextHandRest();'.length,
       deal
     );
-    // A terminal closeout or a claimed tournament move is allowed to take
-    // ownership while the rest timer is pending. Their shared gate has no
-    // normal-path wait: it only parks when one of those authorities is armed.
-    // Remove those exact fail-closed gates and the lifecycle re-proof remains
-    // the sole ordinary-path work.
+    // A requested pause can arrive under the rest. These exact owner gates
+    // have no unpaused-path wait; the lease re-proof remains the only other
+    // work before the deal, preserving the ordinary two-second rest.
     const boundaryGate =
       /if \(\s*this\.terminalCloseoutPaused\s*\|\|\s*this\.tournamentMovePauseOwners\.size > 0\s*\) \{\s*await this\.awaitPauseGate\(\);\s*if \(!this\.running\) break;\s*continue;\s*\}/g;
+    const requestedPauseGate =
+      /if \(this\.isNextHandPaused\(\)\) \{\s*if \(!this\.adminPauseLock && !this\.maintenanceLock\) await this\.awaitPauseGate\(\);\s*if \(!this\.running\) break;\s*continue;\s*\}/g;
     expect(betweenRestAndDeal.match(boundaryGate)?.length ?? 0).toBeGreaterThanOrEqual(1);
-    expect(betweenRestAndDeal.replace(boundaryGate, '').trim()).toBe(
-      'if (!this.lifecycleCanMutate()) return;'
-    );
+    expect(betweenRestAndDeal.match(requestedPauseGate)).toHaveLength(1);
+    expect(
+      betweenRestAndDeal.replace(boundaryGate, '').replace(requestedPauseGate, '').trim()
+    ).toBe('if (!this.lifecycleCanMutate()) return;');
   });
 
   it('the old separate sleeps are gone - the clear and the window live inside the rest', () => {

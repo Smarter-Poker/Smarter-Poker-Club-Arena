@@ -1,6 +1,9 @@
--- Production-shaped, rollback-only proof for a cancellation with entrants.
--- One player buys in from a club wallet that is different from the tournament
--- fee recipient. One player holds a satellite-funded seat. Fixture-only rows
+-- Current-policy, rollback-only cancellation acceptance probe.
+-- The 2026-09-10 local mixed-schema attempt did not pass native acceptance.
+-- See docs/audits/2026-09-10-entry-refund-cancellation-acceptance-gate.json.
+-- This SQL must pass against a complete current dependency graph before release acceptance.
+-- One player has two club wallets and buys in at the tournament host club.
+-- One player holds a satellite-funded seat returned to its origin wallet. Fixture-only rows
 -- are inserted with triggers disabled, then every operation under test calls
 -- the installed production authorities with all production triggers enabled.
 \set ON_ERROR_STOP on
@@ -12,8 +15,8 @@ SET LOCAL lock_timeout='8s';
 
 DO $prerequisites$
 BEGIN
-  IF current_user<>'postgres'
-     OR to_regprocedure('public.fn_register_for_tournament(uuid)') IS NULL
+  IF current_user<>'postgres' OR inet_server_addr() IS NOT NULL
+     OR to_regprocedure('public.fn_register_for_tournament_request(uuid,uuid)') IS NULL
      OR to_regprocedure('public.atomic_cancel_tournament(uuid,uuid)') IS NULL
      OR to_regprocedure(
           'public.fn_ca_tournament_cancellation_receipt(uuid,uuid)') IS NULL
@@ -25,6 +28,11 @@ BEGIN
   END IF;
 END;
 $prerequisites$;
+
+-- Restore only the tracked platform source seed omitted by the schema-only rehearsal.
+-- Provenance: 20260905203123, exact tuple ('atomic_cancel_tournament', 'DB caller').
+INSERT INTO public.ca_settle_sources(source,note)
+VALUES('atomic_cancel_tournament','DB caller') ON CONFLICT(source) DO NOTHING;
 
 -- Only fixture construction is trigger-free. In particular, the cash entry,
 -- cancellation, replay verifier, and every immutability attempt below all run
@@ -100,7 +108,7 @@ VALUES(
 SET LOCAL session_replication_role=origin;
 
 -- The public production registration door creates the cash player's actual
--- wallet debit, source-club journal, immutable entitlement, target fee record,
+-- wallet debit, host-club journal, immutable entitlement, target fee record,
 -- escrow funding and roster row.
 SELECT set_config(
   'request.jwt.claims',
@@ -118,8 +126,9 @@ CREATE TEMP TABLE cancellation_probe_results(
 INSERT INTO cancellation_probe_results(name,value)
 VALUES(
   'registration',
-  public.fn_register_for_tournament(
-    'd3000000-0000-4000-8000-000000000002'));
+  public.fn_register_for_tournament_request(
+    'd3000000-0000-4000-8000-000000000002',
+    'd4000000-0000-4000-8000-000000000002'));
 RESET ROLE;
 
 DO $cash_entry_is_exact$
@@ -133,17 +142,17 @@ BEGIN
      OR (SELECT chip_balance FROM public.club_members
           WHERE club_id='d2000000-0000-4000-8000-000000000001'
             AND user_id='d1000000-0000-4000-8000-000000000001')
-          IS DISTINCT FROM 900::numeric
+          IS DISTINCT FROM 1000::numeric
      OR (SELECT chip_balance FROM public.club_members
           WHERE club_id='d2000000-0000-4000-8000-000000000002'
             AND user_id='d1000000-0000-4000-8000-000000000001')
-          IS DISTINCT FROM 200::numeric
+          IS DISTINCT FROM 100::numeric
      OR (SELECT count(*) FROM public.tournament_refund_entitlements e
           WHERE e.tournament_id='d3000000-0000-4000-8000-000000000002'
             AND e.user_id='d1000000-0000-4000-8000-000000000001'
             AND e.entitlement_kind='wallet_charge'
             AND e.refund_wallet_club_id=
-                  'd2000000-0000-4000-8000-000000000001'
+                  'd2000000-0000-4000-8000-000000000002'
             AND e.gross=100 AND e.refund_prize=90
             AND e.refund_bounty=0 AND e.refund_fee=10)<>1
      OR (SELECT count(*) FROM public.rake_records r
@@ -153,7 +162,7 @@ BEGIN
             AND r.metadata->>'user_id'=
                   'd1000000-0000-4000-8000-000000000001')<>1 THEN
     RAISE EXCEPTION
-      'FAIL production registration did not separate the source wallet and fee recipient: %',
+      'FAIL request registration did not charge and stamp the host-club wallet: %',
       v_registration;
   END IF;
 END;
@@ -287,15 +296,10 @@ DECLARE
     SELECT value FROM cancellation_probe_results
      WHERE name='durable_verifier');
   v_receipt public.tournament_cancellation_receipts%ROWTYPE;
-  v_ticket public.tournament_tickets%ROWTYPE;
 BEGIN
   SELECT * INTO STRICT v_receipt
     FROM public.tournament_cancellation_receipts r
    WHERE r.tournament_id=v_target;
-  SELECT * INTO STRICT v_ticket
-    FROM public.tournament_tickets tk
-   WHERE tk.source_refund_entitlement_id=
-           'd7000000-0000-4000-8000-000000000001';
 
   IF v_replay IS DISTINCT FROM v_first
      OR v_verified IS DISTINCT FROM v_first
@@ -305,18 +309,18 @@ BEGIN
      OR v_first->>'status' IS DISTINCT FROM 'CANCELLED'
      OR (v_first->>'source_player_count')::integer IS DISTINCT FROM 2
      OR (v_first->>'refunded_count')::integer IS DISTINCT FROM 2
-     OR (v_first->>'refund_line_count')::integer IS DISTINCT FROM 1
-     OR (v_first->>'ticket_return_count')::integer IS DISTINCT FROM 1
-     OR (v_first->>'total_refunded')::numeric IS DISTINCT FROM 100::numeric
+     OR (v_first->>'refund_line_count')::integer IS DISTINCT FROM 2
+     OR (v_first->>'ticket_return_count')::integer IS DISTINCT FROM 0
+     OR (v_first->>'total_refunded')::numeric IS DISTINCT FROM 200::numeric
      OR (v_first->>'total_ticket_returned')::numeric
-          IS DISTINCT FROM 100::numeric
+          IS DISTINCT FROM 0::numeric
      OR (v_first->>'fees_reversed')::numeric IS DISTINCT FROM 20::numeric
      OR v_receipt.receipt IS DISTINCT FROM v_first
      OR v_receipt.source_player_count IS DISTINCT FROM 2
-     OR v_receipt.refund_line_count IS DISTINCT FROM 1
-     OR v_receipt.ticket_return_count IS DISTINCT FROM 1
-     OR v_receipt.total_refunded IS DISTINCT FROM 100::numeric
-     OR v_receipt.total_ticket_returned IS DISTINCT FROM 100::numeric
+     OR v_receipt.refund_line_count IS DISTINCT FROM 2
+     OR v_receipt.ticket_return_count IS DISTINCT FROM 0
+     OR v_receipt.total_refunded IS DISTINCT FROM 200::numeric
+     OR v_receipt.total_ticket_returned IS DISTINCT FROM 0::numeric
      OR v_receipt.fees_reversed IS DISTINCT FROM 20::numeric
      OR v_receipt.total_rake_before IS DISTINCT FROM 20::numeric
      OR v_receipt.total_rake_after IS DISTINCT FROM 0::numeric
@@ -324,20 +328,20 @@ BEGIN
      OR (SELECT count(*) FROM public.tournament_cancellation_receipts r
           WHERE r.tournament_id=v_target)<>1
      OR (SELECT count(*) FROM public.tournament_refund_tranches tr
-          WHERE tr.tournament_id=v_target)<>1
+          WHERE tr.tournament_id=v_target)<>2
      OR (SELECT count(*) FROM public.wallet_transactions w
           WHERE w.related_entity_id=v_target AND w.type='credit'
-            AND lower(w.category) IN ('refund','tournament_refund'))<>1
+            AND lower(w.category) IN ('refund','tournament_refund'))<>2
      OR (SELECT count(*) FROM public.wallet_transactions w
           WHERE w.related_entity_id=v_target AND w.type='credit'
             AND w.user_id=v_cash_user AND w.amount=100)<>1
-     OR EXISTS(
-       SELECT 1 FROM public.wallet_transactions w
+     OR (SELECT count(*) FROM public.wallet_transactions w
         WHERE w.related_entity_id=v_target AND w.type='credit'
-          AND w.user_id=v_sat_user)
-     OR EXISTS(
-       SELECT 1 FROM public.tournament_refund_tranches tr
-        WHERE tr.tournament_id=v_target AND tr.user_id=v_sat_user)
+          AND w.user_id=v_sat_user AND w.amount=100)<>1
+     OR (SELECT count(*) FROM public.tournament_refund_tranches tr
+        WHERE tr.tournament_id=v_target AND tr.user_id=v_sat_user
+          AND tr.source_wallet_club_id=v_fee_club
+          AND tr.refund_prize=90 AND tr.refund_fee=10)<>1
      OR (SELECT chip_balance FROM public.club_members
           WHERE club_id=v_funding_club AND user_id=v_cash_user)
           IS DISTINCT FROM 1000::numeric
@@ -346,21 +350,11 @@ BEGIN
           IS DISTINCT FROM 200::numeric
      OR (SELECT chip_balance FROM public.club_members
           WHERE club_id=v_fee_club AND user_id=v_sat_user)
-          IS DISTINCT FROM 300::numeric
-     OR v_ticket.holder_id IS DISTINCT FROM v_sat_user
-     OR v_ticket.club_id IS DISTINCT FROM v_fee_club
-     OR v_ticket.value IS DISTINCT FROM 100::numeric
-     OR v_ticket.status IS DISTINCT FROM 'issued'
-     OR v_ticket.redemption_mode IS DISTINCT FROM 'tournament_entry_only'
-     OR v_ticket.source_tournament_id IS DISTINCT FROM v_target
-     OR v_ticket.source_satellite_id IS DISTINCT FROM
-          'd3000000-0000-4000-8000-000000000001'
-     OR v_ticket.entry_prize IS DISTINCT FROM 90::numeric
-     OR v_ticket.entry_bounty IS DISTINCT FROM 0::numeric
-     OR v_ticket.entry_fee IS DISTINCT FROM 10::numeric
-     OR (SELECT count(*) FROM public.tournament_tickets tk
-          WHERE tk.source_refund_entitlement_id=
-                  'd7000000-0000-4000-8000-000000000001')<>1
+          IS DISTINCT FROM 400::numeric
+     OR EXISTS(SELECT 1 FROM public.tournament_tickets tk
+          WHERE tk.source_tournament_id=v_target
+             OR tk.source_refund_entitlement_id=
+                  'd7000000-0000-4000-8000-000000000001')
      OR (SELECT count(*) FROM public.rake_records r
           WHERE r.tournament_id=v_target
             AND r.source='atomic_cancel_tournament'
@@ -378,9 +372,9 @@ BEGIN
         JOIN public.chip_ledger l ON l.id=tr.credit_ledger_id
        WHERE w.related_entity_id=v_target AND w.user_id=v_cash_user
          AND w.type='credit' AND w.amount=100
-         AND tr.source_wallet_club_id=v_funding_club
+         AND tr.source_wallet_club_id=v_fee_club
          AND tr.refund_prize=90 AND tr.refund_bounty=0 AND tr.refund_fee=10
-         AND l.club_id=v_funding_club
+         AND l.club_id=v_fee_club
          AND l.from_type='prize_liability' AND l.from_entity_id=v_target
          AND l.to_type='player_wallet' AND l.to_entity_id=v_cash_user
          AND l.amount=100)
@@ -403,7 +397,7 @@ BEGIN
   END IF;
 
   RAISE NOTICE
-    'AUDIT_TEST_PASS: cancellation returned 100 chips only to the cash entrant exact source club, issued the satellite entrant one 100 tournament-entry-only ticket and zero chips, reversed both 10 fees only at the actual fee recipient, stored one exact receipt, and same-command replay returned identical bytes without duplicate money';
+    'AUDIT_TEST_PASS: cancellation returned each entrant exactly 100 chips to its recorded host-club wallet and created no ticket, reversed both 10 fees only at the actual fee recipient, stored one exact receipt, and same-command replay returned identical bytes without duplicate money';
 END;
 $assert_exact_cancellation$;
 
@@ -426,7 +420,8 @@ BEGIN
    WHERE r.tournament_id='d3000000-0000-4000-8000-000000000002';
   SELECT w.id INTO STRICT v_wallet_id
     FROM public.wallet_transactions w
-   WHERE w.related_entity_id=v_receipt.tournament_id AND w.type='credit';
+   WHERE w.related_entity_id=v_receipt.tournament_id AND w.type='credit'
+     AND w.user_id='d1000000-0000-4000-8000-000000000001';
   SELECT r.id INTO STRICT v_cash_rake_id
     FROM public.rake_records r
    WHERE r.tournament_id=v_receipt.tournament_id AND r.rake_amount>0

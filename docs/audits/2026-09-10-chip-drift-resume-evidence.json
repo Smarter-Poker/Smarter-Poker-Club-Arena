@@ -177,11 +177,24 @@
   "next_correction": {
     "control": "CA-03-09",
     "source": "scripts/deploy/phase-three-strict-tournament-cutover.sql",
-    "status": "source_corrected_local_verification_passed",
+    "status": "merged_and_frontend_publication_verified_production_cutover_pending",
     "defect": "Current fn_move_tournament_player missing from manager-exclusive route fence; reproduced unmarked service admission.",
     "behavioral_scenarios": 32,
     "full_script_installation": "passed on owned isolated schema; no full financial acceptance claim",
     "production_cutover_applied": false,
-    "evidence": "docs/changelog/2026-09-10-seat-moves-require-current-manager-authority.md"
-  }
+    "evidence": "docs/changelog/2026-09-10-seat-moves-require-current-manager-authority.md",
+    "pr": 4087,
+    "merge_commit": "0b9cbd8dfa0ff01fa8e9cb21fd86c7f7a652b9f7",
+    "required_ci": {
+      "run": 34429795745,
+      "conclusion": "success"
+    },
+    "publisher": {
+      "run": 34430036268,
+      "conclusion": "success",
+      "built_at": "2026-09-10T02:37:35Z",
+      "origin_and_rewrite_sha": "0b9cbd8dfa0ff01fa8e9cb21fd86c7f7a652b9f7"
+    }
+  },
+  "superseded_by": "docs/audits/2026-09-10-chip-drift-phase-three-swarm.json"
 }

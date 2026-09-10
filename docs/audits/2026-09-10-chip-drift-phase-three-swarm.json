@@ -1,0 +1,103 @@
+{
+  "programme": "109-item comprehensive Club Arena accounting audit",
+  "phase": 3,
+  "phase_complete": false,
+  "phase_four_started": false,
+  "checked_at": "2026-09-10T03:17:38.972351+00:00",
+  "integration_branch": "agent/codex-chip-drift-resume/fix/phase-three-swarm",
+  "authorization": "The user explicitly requested a six-agent swarm to finish Phase 3 and authorized repository pushes/publications without repeat confirmation.",
+  "coordination": "The existing release task owns the production engine release seal and Stage-B cutover. This swarm performs isolated source and verification work and normal repository publication; it does not race that production owner.",
+  "lanes": [
+    {
+      "owner": "entry_refund",
+      "controls": ["CA-03-01", "CA-03-11"],
+      "status": "verification_and_commit_in_progress"
+    },
+    {
+      "owner": "bounties_tickets",
+      "controls": ["CA-03-02", "CA-03-03", "CA-03-10"],
+      "status": "verification_and_commit_in_progress"
+    },
+    {
+      "owner": "payout_cutover",
+      "controls": ["CA-03-04", "CA-03-05", "CA-03-06", "CA-03-07"],
+      "status": "source_correction_in_progress_rehearsal_blocked"
+    },
+    {
+      "owner": "spin_acceptance",
+      "controls": ["CA-03-08"],
+      "status": "source_correction_in_progress"
+    },
+    {
+      "owner": "seating_runtime",
+      "controls": ["CA-03-09"],
+      "status": "blocked_by_automatic_review"
+    },
+    {
+      "owner": "tournament_ui",
+      "controls": ["CA-03-12"],
+      "status": "source_correction_in_progress"
+    }
+  ],
+  "production_cutover": {
+    "observed_at": "2026-09-10T03:17:38.972351+00:00",
+    "seven_guards": "All seven remain disabled; do not enable them without replacement and composition acceptance.",
+    "new_seat_move": "absent",
+    "committed_move_receipt_resolver": "absent",
+    "bounty_rebuy_generation_helper": "absent",
+    "mutations_by_this_swarm": false
+  },
+  "public_runtime": {
+    "observed_at": "2026-09-10T03:16:32.239804Z",
+    "reported_by": "seating_runtime",
+    "version": "1695880b",
+    "instance": "1-e1790665",
+    "uptime_seconds": 1234,
+    "status": "ok",
+    "liveness": "ok",
+    "settlement_status": "blocked",
+    "blocked_settlements": 18,
+    "stalled_tables": 9,
+    "dead_stalled_count": 0,
+    "humans_seated": 0,
+    "tournament_lease_claim_errors": 1,
+    "tournament_lease_heartbeat_errors": 0,
+    "rake_checksum": "engine and database matched",
+    "limits": "One public response. Individual rows for the four earlier stalls were truncated; recovery, hand receipts and rejection causes remain unverified. A subsequent narrower request was rejected by automatic review."
+  },
+  "automatic_review_blocks": [
+    {
+      "lane": "seating_runtime",
+      "action": "Private repository source inspection through Desktop Commander",
+      "reason": "Reviewer classified broad, narrow and derived-only source results as unauthorized private-source disclosure.",
+      "disposition": "Stopped those reads. No alternate transport, source edits, tests or deployment in that lane."
+    },
+    {
+      "lane": "seating_runtime",
+      "action": "Targeted Supabase diagnostics and narrower public engine-health inspection",
+      "reason": "Reviewer classified the project/destination as unverified and the operational data disclosure as unauthorized.",
+      "disposition": "Stopped the rejected paths. Retained only the earlier readable public snapshot."
+    },
+    {
+      "lane": "payout_cutover",
+      "action": "Restoring the satellite receipt definition and owner-only ACL in disposable current_replay",
+      "reason": "Reviewer rejected both live-definition transfer and subsequent tracked-source restoration as an indirect retry/broad local database mutation.",
+      "disposition": "M5 rehearsal rolled back. No further restoration attempts. Continue independent fixture verification only."
+    },
+    {
+      "lane": "entry_refund",
+      "action": "Deeper cancellation-function source/error inspection",
+      "reason": "Automatic review blocked the requested source/error disclosure.",
+      "disposition": "Do not infer interrupted-event or prior-award cancellation acceptance from refund-only cases."
+    }
+  ],
+  "publication": {
+    "status": "preparing",
+    "push_completed": false
+  },
+  "phase_four": {
+    "status": "not_started",
+    "next_register": "docs/audits/2026-09-08-comprehensive-club-arena-backlog/feature-backlog.csv",
+    "gate": "Complete all twelve Phase 3 behavioral and release acceptance controls first."
+  }
+}

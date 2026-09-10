@@ -1,0 +1,194 @@
+{
+  "passed": [
+    "all admitted target states count one funded seat and replay after closure",
+    "target prize bounty and fee escrows preserve the funded satellite split",
+    "late satellite receipt failure rolls back source target escrow journal and seat",
+    "a genuinely funded but insufficient source refuses without partial writes",
+    "overlapping same-award requests commit one funded seat",
+    "a target close commits before a waiting award and prevents every transfer write",
+    "two funded qualifiers racing for the final target place create one award",
+    "a concurrent paid target entry wins without consuming the satellite source",
+    "reconciled award applies twice waits on hand barrier funds once and replays after closure",
+    "current reader baseline reproduces phantom bounty, duplicate seat count and duplicate fee subtraction",
+    "actual service role awards and replays; authenticated and anon cannot execute private money helpers",
+    "late receipt observes all funded components then rolls back all11 relations; bounty=0",
+    "late receipt observes all funded components then rolls back all11 relations; bounty=5",
+    "current ticket-redemption reader inflow is byte-preserved and numerically unchanged on synthetic ledger input",
+    "source gate refuses default argument drift and retains every financial row",
+    "source gate refuses missing lock helper drift and retains every financial row",
+    "source gate refuses strict drift and retains every financial row",
+    "source gate refuses path drift and retains every financial row",
+    "source gate refuses owner drift and retains every financial row",
+    "source gate refuses acl drift and retains every financial row",
+    "source gate refuses body drift and retains every financial row",
+    "source gate refuses trigger disabled drift and retains every financial row",
+    "source gate refuses trigger update only drift and retains every financial row",
+    "source gate refuses trigger columns drift and retains every financial row"
+  ],
+  "observed_waits": [
+    {
+      "database": "satellite_award_closeout_sep10_9057283_06",
+      "observed": [
+        {
+          "pid": 31352,
+          "blockers": [31348],
+          "wait_event": "advisory"
+        }
+      ]
+    },
+    {
+      "database": "satellite_award_closeout_sep10_9057283_07",
+      "observed": [
+        {
+          "pid": 31445,
+          "blockers": [31441],
+          "wait_event": "transactionid"
+        }
+      ]
+    },
+    {
+      "database": "satellite_award_closeout_sep10_9057283_08",
+      "observed": [
+        {
+          "pid": 31561,
+          "blockers": [31558],
+          "wait_event": "advisory"
+        }
+      ]
+    },
+    {
+      "database": "satellite_award_closeout_sep10_9057283_09",
+      "observed": [
+        {
+          "pid": 31667,
+          "blockers": [31663],
+          "wait_event": "advisory"
+        }
+      ]
+    },
+    {
+      "database": "satellite_award_closeout_sep10_9057283_10",
+      "observed": [
+        {
+          "pid": 31776,
+          "blockers": [31773],
+          "wait_event": "advisory"
+        }
+      ]
+    }
+  ],
+  "databases": [
+    {
+      "database": "satellite_award_closeout_sep10_9057283_00",
+      "case": "satellite_funded"
+    },
+    {
+      "database": "satellite_award_closeout_sep10_9057283_01",
+      "case": "satellite_announced"
+    },
+    {
+      "database": "satellite_award_closeout_sep10_9057283_02",
+      "case": "satellite_running"
+    },
+    {
+      "database": "satellite_award_closeout_sep10_9057283_03",
+      "case": "satellite_bounty"
+    },
+    {
+      "database": "satellite_award_closeout_sep10_9057283_04",
+      "case": "satellite_receipt_failure"
+    },
+    {
+      "database": "satellite_award_closeout_sep10_9057283_05",
+      "case": "satellite_short_source"
+    },
+    {
+      "database": "satellite_award_closeout_sep10_9057283_06",
+      "case": "satellite_overlap_replay"
+    },
+    {
+      "database": "satellite_award_closeout_sep10_9057283_07",
+      "case": "satellite_closed_contender"
+    },
+    {
+      "database": "satellite_award_closeout_sep10_9057283_08",
+      "case": "satellite_last_place"
+    },
+    {
+      "database": "satellite_award_closeout_sep10_9057283_09",
+      "case": "satellite_paid_entry_wins"
+    },
+    {
+      "database": "satellite_award_closeout_sep10_9057283_10",
+      "case": "satellite_funded"
+    },
+    {
+      "database": "satellite_award_closeout_sep10_9057283_11",
+      "case": "current_baseline"
+    },
+    {
+      "database": "satellite_award_closeout_sep10_9057283_12",
+      "case": "service_role"
+    },
+    {
+      "database": "satellite_award_closeout_sep10_9057283_13",
+      "case": "witnessed_late_receipt_0"
+    },
+    {
+      "database": "satellite_award_closeout_sep10_9057283_14",
+      "case": "witnessed_late_receipt_5"
+    },
+    {
+      "database": "satellite_award_closeout_sep10_9057283_15",
+      "case": "ticket_reader_only"
+    },
+    {
+      "database": "satellite_award_closeout_sep10_9057283_16",
+      "case": "source_gates"
+    }
+  ],
+  "production_database_used": false,
+  "fixture_auth_and_relation_grants_are_synthetic": true,
+  "files": {
+    "scripts/dev/fixtures/satellite-refund/fixture.sql": "e2226b4ec69a16113a088db5ea71d72c6342adbf308e9a535d211c4a18455972",
+    "scripts/dev/fixtures/registration-funding/installed.sql": "5e78455fcb7b3a4eba04dff7b5ccfa74c3a813d1ed13c81d78ec990b85826b9a",
+    "supabase/migrations/20260910012633_tournament_entry_receipts_use_the_charged_club_wallet.sql": "08bc3f0012fb887d2cc2157430685a110254ae248d8b97889b640ee9db497e4f",
+    "scripts/dev/fixtures/satellite-award-funding/installed.sql": "ba3a1fd990b13689acafc94ead4b998ea9c7f0eab73bbcc730111593abea8777",
+    "scripts/dev/fixtures/satellite-award-funding/source-manifest.json": "9a394d5c945016b544404cfb6840a63a7a97389ad8f719a73b058a0080f976d8",
+    "scripts/dev/fixtures/satellite-award-funding/current-closeout-source.json": "93df680a7937aa52c41fc8c619c434d2cf50f0481b6f4b39ac91ff572b221d5e",
+    "scripts/dev/fixtures/satellite-award-funding/current-reader.sql": "e34f8c00224245fdb8abe79bf8e6177b43abbbe604c1859032bd0f64d837057b",
+    "scripts/dev/fixtures/satellite-award-funding/current-callable-envelope.json": "3db3fe2c3a0117296c6bab5364d7eee43c8c8367ab2a3164b11b762ff8485ed9",
+    "scripts/dev/fixtures/satellite-award-funding/current-dependency-hashes.json": "e63781b582ab38bd39f5727b669bc24d20d76d5783ac48e29c69729c1bfe2803",
+    "scripts/dev/satellite_award_closeout_cases.py": "cf347c41d182fcfd84b7a3a2fd9722b0adae6ef189b8caacfc934f06f5177046",
+    "scripts/dev/satellite_award_funding_cases.py": "e72d30cc8744827132657b74cfa27729e03b67a72acefbbd8c462fbea5703207",
+    "scripts/dev/probe-satellite-award-closeout-pg17.py": "5f59791ba4a531aa2bc375ed07ae70fb666e55df1f796b83db32ecaf38520c5f",
+    "supabase/migrations/20260910160106_satellite_seats_count_once_and_keep_the_funded_prize.sql": "9a00bc662f729d5a6db25c4f10a5ceeb45509b230e35f48252620fe9dcef3fc3"
+  },
+  "verified_at": "2026-09-10T16:24:59.597473+00:00",
+  "base_commit": "852218608f3b67404c5fb3f95f105740eb3454f3",
+  "migration_sha256": "9a00bc662f729d5a6db25c4f10a5ceeb45509b230e35f48252620fe9dcef3fc3",
+  "source_body_comparison": [
+    {
+      "signature": "fn_award_satellite_seat(uuid,uuid,uuid,text,integer)",
+      "installed_body_md5": "cc53a9560c7b211c9c052a186dabc96c",
+      "proposed_body_md5": "2c21c56c6a9d4a2f8ee79082bd4fef57",
+      "diff": "--- current-installed\n+++ proposed\n@@ -138,7 +138,12 @@\n   END;\n \n   UPDATE public.tournaments\n-     SET current_players = COALESCE(current_players, 0) + 1,\n+     SET current_players = CASE\n+           -- Pre-start insertion already synchronized the count from the roster.\n+           WHEN v_t.status IN ('ANNOUNCED','REGISTERING') THEN current_players\n+           -- The roster count trigger deliberately leaves running entry totals alone.\n+           ELSE COALESCE(current_players, 0) + 1\n+         END,\n          prize_pool      = COALESCE(prize_pool, 0) + v_split.prize,\n          bounty_pool     = COALESCE(bounty_pool, 0) + v_split.bounty,\n          total_rake      = COALESCE(total_rake, 0) + COALESCE(v_t.buy_in_fee, 0)\n"
+    },
+    {
+      "signature": "fn_ca_escrow_on_rake_record()",
+      "installed_body_md5": "233661d2164a417c2a76c8e0cbfbe9cc",
+      "proposed_body_md5": "3e628d6a57a93eeb61d494ee33f989a3",
+      "diff": "--- current-installed\n+++ proposed\n@@ -13,7 +13,10 @@\n   IF NEW.source = 'fn_award_satellite_seat' THEN\n     PERFORM public.fn_ca_escrow_apply(\n       NEW.tournament_id,'satellite seat fee',\n-      p_satellite_fee_in => v_fee,p_satellite_in => -v_fee);\n+      p_satellite_fee_in => v_fee,\n+      -- Version 2 transfer gross already excludes its fee; legacy gross does not.\n+      p_satellite_in => CASE WHEN NEW.metadata->>'entry_split_version'='2'\n+                            THEN 0 ELSE -v_fee END);\n   ELSE\n     PERFORM public.fn_ca_escrow_apply(\n       NEW.tournament_id,'entry fee',p_fee_entries_in => v_fee);\n"
+    },
+    {
+      "signature": "fn_ca_tournament_escrow(uuid)",
+      "installed_body_md5": "52c3b25be3904e86f1a8558ce542ec61",
+      "proposed_body_md5": "56663389f8348d2ab35a54460c0b7632",
+      "diff": "--- current-installed\n+++ proposed\n@@ -31,7 +31,7 @@\n           ELSE 0.1 END)*100+0.000001)/100,\n         trunc(round(l.amount,2)*0.1*100+0.000001)/100))\n     END),0),2) AS amount\n-  FROM t LEFT JOIN public.chip_ledger l\n+  FROM t JOIN public.chip_ledger l\n     ON l.tournament_id=p_tournament_id\n    AND l.from_type='player_wallet' AND l.to_type='prize_liability'\n    AND l.to_entity_id=p_tournament_id\n"
+    }
+  ],
+  "all16_dependency_body_pins_match_fresh_read_only_catalog": true,
+  "original_case_module_byte_equal_to_commit": "df72341a360bbf9126a0603c1eb12dadfeb0d00b",
+  "production_application": "not performed; explicit project deployment approval pending",
+  "stage_b_dependency": "none for this helper; held exact-K core/UI remain separate"
+}

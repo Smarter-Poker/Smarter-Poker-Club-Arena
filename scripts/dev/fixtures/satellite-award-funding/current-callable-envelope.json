@@ -1,0 +1,43 @@
+{
+  "functions": [
+    {
+      "arguments": "",
+      "result": "trigger",
+      "signature": "fn_sync_tournament_current_players()",
+      "strict": false
+    },
+    {
+      "arguments": "p_satellite_id uuid, p_target_id uuid, p_user_id uuid, p_username text DEFAULT NULL::text, p_position integer DEFAULT NULL::integer",
+      "result": "jsonb",
+      "signature": "fn_award_satellite_seat(uuid,uuid,uuid,text,integer)",
+      "strict": false
+    },
+    {
+      "arguments": "p_tournament_id uuid",
+      "result": "TABLE(prize_in numeric, bounty_in numeric, fee_in numeric, overlay_in numeric, satellite_in numeric, prize_out numeric, bounty_out numeric, fee_out numeric, refund_out numeric, prize_balance numeric, bounty_balance numeric, fee_balance numeric)",
+      "signature": "fn_ca_tournament_escrow(uuid)",
+      "strict": false
+    },
+    {
+      "arguments": "",
+      "result": "trigger",
+      "signature": "fn_ca_escrow_on_rake_record()",
+      "strict": false
+    },
+    {
+      "arguments": "",
+      "result": "void",
+      "signature": "fn_ca_lock_settlement_lane_global()",
+      "strict": false
+    }
+  ],
+  "trigger": {
+    "arguments_count": 0,
+    "columns": ["status", "tournament_id"],
+    "condition": null,
+    "deferrable": false,
+    "definition": "CREATE TRIGGER trg_sync_tournament_current_players AFTER INSERT OR DELETE OR UPDATE OF status, tournament_id ON public.tournament_players FOR EACH ROW EXECUTE FUNCTION fn_sync_tournament_current_players()",
+    "initially_deferred": false,
+    "type": 29
+  }
+}

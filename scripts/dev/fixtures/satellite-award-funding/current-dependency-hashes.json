@@ -1,0 +1,46 @@
+[
+  {
+    "signature": "fn_ca_escrow_apply(uuid,text,numeric,numeric,numeric,numeric,numeric,numeric,numeric,numeric,numeric,numeric,numeric,numeric)",
+    "body_md5": "e084726dde176e51a8b1b0d64b0c2f0b"
+  },
+  {
+    "signature": "fn_ca_escrow_on_seat_payout()",
+    "body_md5": "a9150743200c8e366964a7867e8c23f9"
+  },
+  {
+    "signature": "fn_ca_escrow_on_seat_transfer_leg()",
+    "body_md5": "227d11db5fe0b4ad403b2f45d098a166"
+  },
+  {
+    "signature": "fn_ca_has_committed_tournament_receipt(uuid)",
+    "body_md5": "7043d39510db7db89173bc98d47a5ce1"
+  },
+  {
+    "signature": "fn_ca_terminal_marker_transition_is_exact(jsonb,jsonb,uuid)",
+    "body_md5": "3c9ce32b45c11b7372654c6efa89f667"
+  },
+  {
+    "signature": "fn_satellite_target_player_provenance_is_immutable()",
+    "body_md5": "cbe5f2c1f5947a8b1d2f85de5c1abe0d"
+  },
+  {
+    "signature": "fn_satellite_target_rake_is_immutable()",
+    "body_md5": "640f0819d80f769ce4f224413fd359b5"
+  },
+  {
+    "signature": "fn_satellite_transfer_ledger_is_immutable()",
+    "body_md5": "6f0c873ffaa7ed73f0936fb681da1a66"
+  },
+  {
+    "signature": "fn_tournament_club_for_user(uuid,uuid,uuid)",
+    "body_md5": "f80eff4c311820670f1b71d15c29452d"
+  },
+  {
+    "signature": "fn_tournament_late_registration_open(uuid)",
+    "body_md5": "ba1c6218246bddd37dc68f746df9e5ef"
+  },
+  {
+    "signature": "trg_seed_bounty_head()",
+    "body_md5": "ee35755452ea00f700ccd08a7cc77f7e"
+  }
+]

@@ -1,0 +1,25 @@
+PASS all admitted target states count one funded seat and replay after closure
+PASS target prize bounty and fee escrows preserve the funded satellite split
+PASS late satellite receipt failure rolls back source target escrow journal and seat
+PASS a genuinely funded but insufficient source refuses without partial writes
+PASS overlapping same-award requests commit one funded seat
+PASS a target close commits before a waiting award and prevents every transfer write
+PASS two funded qualifiers racing for the final target place create one award
+PASS a concurrent paid target entry wins without consuming the satellite source
+PASS reconciled award applies twice waits on hand barrier funds once and replays after closure
+PASS current reader baseline reproduces phantom bounty, duplicate seat count and duplicate fee subtraction
+PASS actual service role awards and replays; authenticated and anon cannot execute private money helpers
+PASS late receipt observes all funded components then rolls back all11 relations; bounty=0
+PASS late receipt observes all funded components then rolls back all11 relations; bounty=5
+PASS current ticket-redemption reader inflow is byte-preserved and numerically unchanged on synthetic ledger input
+PASS source gate refuses default argument drift and retains every financial row
+PASS source gate refuses missing lock helper drift and retains every financial row
+PASS source gate refuses strict drift and retains every financial row
+PASS source gate refuses path drift and retains every financial row
+PASS source gate refuses owner drift and retains every financial row
+PASS source gate refuses acl drift and retains every financial row
+PASS source gate refuses body drift and retains every financial row
+PASS source gate refuses trigger disabled drift and retains every financial row
+PASS source gate refuses trigger update only drift and retains every financial row
+PASS source gate refuses trigger columns drift and retains every financial row
+Evidence: /tmp/ca-satellite-award-closeout-ve1i6qq0/results.json

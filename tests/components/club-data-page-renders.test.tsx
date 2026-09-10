@@ -1248,6 +1248,174 @@ describe('ClubDataPage', () => {
     }
   });
 
+  it('revalidates a cached game sort without accepting the previous sort response', async () => {
+    const endDate = new Date().toISOString().slice(0, 10);
+    const start = new Date(endDate + 'T00:00:00Z');
+    start.setUTCDate(start.getUTCDate() - 13);
+    const cachedFee = { ...snapshot.rows[0], id: 'cached-fee', name: 'Cached Fee Game' };
+    for (const sort of ['recent', 'fee'] as const) {
+      writeClubDataCache(
+        'owner-1',
+        CLUB_ID,
+        clubDataQueryKey({
+          kind: 'games',
+          startDate: start.toISOString().slice(0, 10),
+          endDate,
+          game: 'ALL',
+          stakes: 'ALL',
+          search: '',
+          gameSort: sort,
+        }),
+        {
+          snapshot: { ...snapshot, rows: sort === 'fee' ? [cachedFee] : snapshot.rows },
+          cursor: null,
+          hasMore: false,
+        }
+      );
+    }
+    type Reply = { data: Record<string, unknown>; error: null };
+    let resolveRecent: ((result: Reply) => void) | undefined;
+    let resolveFee: ((result: Reply) => void) | undefined;
+    rpcMock.mockImplementation(async (fn: string, args?: Record<string, unknown>) => {
+      if (fn === 'ca_club_data_snapshot' && args?.p_limit === 100) {
+        return new Promise<Reply>((resolve) => {
+          resolveRecent = resolve;
+        });
+      }
+      if (fn === 'ca_club_data_snapshot') return { data: snapshot, error: null };
+      if (fn === 'ca_club_game_page') {
+        return new Promise<Reply>((resolve) => {
+          resolveFee = resolve;
+        });
+      }
+      if (fn === 'ca_club_union_invoices') return { data: [], error: null };
+      return { data: null, error: null };
+    });
+    try {
+      render(<ClubDataPage />);
+      await screen.findByText('Shark Table One');
+      await waitFor(() => expect(resolveRecent).toBeTypeOf('function'));
+      fireEvent.click(screen.getByRole('button', { name: 'Highest Fee' }));
+      await screen.findByText('Cached Fee Game');
+      await waitFor(() => expect(resolveFee).toBeTypeOf('function'));
+      await act(async () => {
+        resolveRecent?.({
+          data: { ...snapshot, rows: [{ ...snapshot.rows[0], name: 'Retired Recent Game' }] },
+          error: null,
+        });
+      });
+      expect(screen.getByText('Cached Fee Game')).toBeInTheDocument();
+      expect(screen.queryByText('Retired Recent Game')).not.toBeInTheDocument();
+      await act(async () => {
+        resolveFee?.({
+          data: { ...gamePage, rows: [{ ...cachedFee, name: 'Verified Fee Game' }] },
+          error: null,
+        });
+      });
+      await screen.findByText('Verified Fee Game');
+    } finally {
+      await act(async () => {
+        resolveRecent?.({ data: snapshot, error: null });
+        resolveFee?.({ data: gamePage, error: null });
+      });
+    }
+  });
+
+  it('keeps new game pagination owned when an old sort prefetch settles', async () => {
+    const recentRows = Array.from({ length: 200 }, (_, index) => ({
+      ...snapshot.rows[0],
+      id: 'recent-owner-' + index,
+      name: 'Recent Owner ' + index,
+      started_at: new Date(Date.UTC(2026, 7, 30, 12) - index * 1_000).toISOString(),
+    }));
+    const feeRows = Array.from({ length: 250 }, (_, index) => ({
+      ...snapshot.rows[0],
+      id: 'fee-owner-' + index,
+      name: 'Fee Owner ' + index,
+      fee: 10_000 - index,
+    }));
+    const feeCursor = { value: 9_801, time: 1, kind: 'CASH', id: 'fee-owner-199' };
+    type Reply = { data: Record<string, unknown>; error: null };
+    let resolveRecent: ((result: Reply) => void) | undefined;
+    let resolveFeePage: ((result: Reply) => void) | undefined;
+    rpcMock.mockImplementation(async (fn: string, args?: Record<string, unknown>) => {
+      if (fn === 'ca_club_data_snapshot')
+        return {
+          data: { ...snapshot, rows: recentRows.slice(0, 100), row_count: 250 },
+          error: null,
+        };
+      if (fn === 'ca_club_game_page' && args?.p_sort === 'recent') {
+        return new Promise<Reply>((resolve) => {
+          resolveRecent = resolve;
+        });
+      }
+      if (fn === 'ca_club_game_page' && args?.p_cursor) {
+        return new Promise<Reply>((resolve) => {
+          resolveFeePage = resolve;
+        });
+      }
+      if (fn === 'ca_club_game_page')
+        return {
+          data: {
+            ...gamePage,
+            rows: feeRows.slice(0, 200),
+            next_cursor: feeCursor,
+            has_more: true,
+            filtered_count: 250,
+          },
+          error: null,
+        };
+      if (fn === 'ca_club_union_invoices') return { data: [], error: null };
+      return { data: null, error: null };
+    });
+    try {
+      render(<ClubDataPage />);
+      const first = await screen.findByRole('button', { name: 'Load More Games - 100 Of 250' });
+      await waitFor(() => expect(resolveRecent).toBeTypeOf('function'));
+      fireEvent.click(first);
+      await screen.findByRole('button', { name: 'Loading More Games' });
+      fireEvent.click(screen.getByRole('button', { name: 'Highest Fee' }));
+      await screen.findByText('Fee Owner 0');
+      const cachedPage = screen.getByRole('button', { name: 'Load More Games - 100 Of 250' });
+      await waitFor(() => expect(cachedPage).toBeEnabled());
+      fireEvent.click(cachedPage);
+      fireEvent.click(await screen.findByRole('button', { name: 'Load More Games - 200 Of 250' }));
+      await waitFor(() => expect(resolveFeePage).toBeTypeOf('function'));
+      await act(async () => {
+        resolveRecent?.({
+          data: { ...gamePage, rows: recentRows.slice(100), has_more: true, filtered_count: 250 },
+          error: null,
+        });
+      });
+      const pending = screen.getByRole('button', { name: 'Loading More Games' });
+      expect(pending).toBeDisabled();
+      fireEvent.click(pending);
+      const feePages = rpcMock.mock.calls.filter(
+        ([fn, args]) => fn === 'ca_club_game_page' && args?.p_sort === 'fee' && args?.p_cursor
+      );
+      expect(feePages).toHaveLength(1);
+      expect(feePages[0][1].p_cursor).toEqual(feeCursor);
+      expect(screen.queryByText('Recent Owner 0')).not.toBeInTheDocument();
+      await act(async () => {
+        resolveFeePage?.({
+          data: { ...gamePage, rows: feeRows.slice(200), filtered_count: 250 },
+          error: null,
+        });
+      });
+      await waitFor(() =>
+        expect(
+          screen.queryByRole('button', { name: /Load More Games|Loading More Games/ })
+        ).not.toBeInTheDocument()
+      );
+      expect(screen.getByText('Fee Owner 0')).toBeInTheDocument();
+    } finally {
+      await act(async () => {
+        resolveRecent?.({ data: gamePage, error: null });
+        resolveFeePage?.({ data: gamePage, error: null });
+      });
+    }
+  });
+
   it('retires stale game pagination when a sort establishes a new cursor', async () => {
     const recentRows = Array.from({ length: 200 }, (_, index) => ({
       ...snapshot.rows[0],

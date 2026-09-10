@@ -1,4 +1,4 @@
-# Player Pagination Keeps Its Query Owner
+# Club Data Pagination Keeps Its Query Owner
 
 The production canary reproduced a player ledger stuck at 100 rows after
 switching from Biggest Winners to Biggest Losers. Its bounded request
@@ -26,4 +26,14 @@ page's loading state. Both now pass. All 27 mounted Club Data cases, 22 query
 contracts and five export contracts pass (54 total). Existing source contracts
 now recognize the query-owned cursor and completion guard.
 
+The matching Games ledger had the same defect. Two more mounted regressions
+reproduced a cached game sort skipping its read and an old Recent prefetch
+clearing a newer ranked page's loading state. The Games repair retires its
+read, cursor, prefetched page and pagination when the query changes, restores
+cache before paint, and gates both prefetch and network-page completion on
+the current owner. It preserves the 100-row first render and the existing
+200-row ranked fetch.
+
+All four new regressions now pass. The complete focused result is 29 mounted
+Club Data cases, 22 query contracts and five export contracts (56 total).
 The production canary must still verify this repair after publication.

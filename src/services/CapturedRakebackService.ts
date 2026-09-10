@@ -1,4 +1,7 @@
 import { supabase } from '../lib/supabase';
+import type { CapturedRakebackReadV2, CapturedRakebackClaimV2 } from '../types/capturedRakeback';
+import { parseCapturedRakeback, parseCapturedRakebackClaim } from './CapturedRakebackV2';
+export { parseCapturedRakeback } from './CapturedRakebackV2';
 
 export interface LegacyRakebackPeriod {
   id: string;
@@ -11,50 +14,16 @@ export interface LegacyRakebackPeriod {
   status: string;
 }
 
-export interface CapturedRakebackPeriod extends Omit<LegacyRakebackPeriod, 'id'> {
-  paid_amount: number;
-  pending_amount: number;
-  exact_entitlement: number;
-  unpaid_exact_entitlement: number;
-  unresolved_sources: number;
-  status: 'open' | 'needs_review' | 'pending' | 'fraction_pending' | 'settled_so_far';
-}
-
-export interface CapturedRakeback {
-  source_active: boolean;
-  source_final: false;
-  periods: CapturedRakebackPeriod[];
-}
-
 export interface RakebackClaimRequest {
+  // Storage envelope version stays stable so unresolved requests survive the ABI upgrade.
   version: 1;
   requestId: string;
   expectedUserId: string;
   clubId: string | null;
 }
 
-export interface CapturedRakebackPeriodClaim {
-  success: boolean;
-  period_id: string;
-  new_payout: number;
-  source_accruals_added: number;
-  paid_receipts: unknown[];
-  deferred: unknown[];
-  source_final: false;
-}
-
-export interface CapturedRakebackClaim {
-  success: true;
-  request_id: string;
-  total_payout: number;
-  periods_claimed: number;
-  periods: CapturedRakebackPeriodClaim[];
-  source_final: false;
-}
-
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const PREFIX = 'ca:captured-rakeback:v1:';
-const STATUSES = new Set(['open', 'needs_review', 'pending', 'fraction_pending', 'settled_so_far']);
 
 function record(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -96,84 +65,10 @@ function cash(value: unknown): number {
   return cents(value) / 100;
 }
 
-function week(start: unknown, end: unknown): void {
-  if (
-    typeof start !== 'string' ||
-    typeof end !== 'string' ||
-    !/^\d{4}-\d{2}-\d{2}$/.test(start) ||
-    !/^\d{4}-\d{2}-\d{2}$/.test(end)
-  ) {
-    throw new Error('Rakeback Week Could Not Be Verified.');
-  }
-  const first = new Date(start + 'T00:00:00Z');
-  const last = new Date(end + 'T00:00:00Z');
-  if (
-    !Number.isFinite(first.getTime()) ||
-    !Number.isFinite(last.getTime()) ||
-    first.toISOString().slice(0, 10) !== start ||
-    last.toISOString().slice(0, 10) !== end ||
-    first.getUTCDay() !== 1 ||
-    last.getUTCDay() !== 0 ||
-    last.getTime() - first.getTime() !== 6 * 86400000
-  ) {
-    throw new Error('Rakeback Week Could Not Be Verified.');
-  }
-}
-
-export function parseCapturedRakeback(value: unknown): CapturedRakeback {
-  const data = record(value);
-  if (
-    typeof data.source_active !== 'boolean' ||
-    data.source_final !== false ||
-    !Array.isArray(data.periods)
-  ) {
-    throw new Error('Rakeback Availability Could Not Be Verified. Please Retry.');
-  }
-  if (!data.source_active && data.periods.length > 0) {
-    throw new Error('Rakeback Availability Contradicts Its Periods. Please Retry.');
-  }
-  const seen = new Set<string>();
-  const periods = data.periods.map((value) => {
-    const row = record(value);
-    if (
-      typeof row.club_id !== 'string' ||
-      !UUID.test(row.club_id) ||
-      typeof row.period_start !== 'string' ||
-      !Number.isFinite(Date.parse(row.period_start)) ||
-      typeof row.period_end !== 'string' ||
-      !Number.isFinite(Date.parse(row.period_end)) ||
-      typeof row.status !== 'string' ||
-      !STATUSES.has(row.status)
-    )
-      throw new Error('Rakeback Period Could Not Be Verified. Please Retry.');
-    week(row.period_start, row.period_end);
-    const key = row.club_id.toLowerCase() + ':' + row.period_start;
-    if (seen.has(key) || !Number.isSafeInteger(amount(row.unresolved_sources))) {
-      throw new Error('Rakeback Period Could Not Be Verified.');
-    }
-    seen.add(key);
-    return {
-      club_id: row.club_id,
-      period_start: row.period_start,
-      period_end: row.period_end,
-      status: row.status as CapturedRakebackPeriod['status'],
-      rake_generated: amount(row.rake_generated),
-      rakeback_rate: amount(row.rakeback_rate),
-      rakeback_earned: cash(row.rakeback_earned),
-      paid_amount: cash(row.paid_amount),
-      pending_amount: cash(row.pending_amount),
-      exact_entitlement: amount(row.exact_entitlement),
-      unpaid_exact_entitlement: amount(row.unpaid_exact_entitlement),
-      unresolved_sources: amount(row.unresolved_sources),
-    };
-  });
-  return { source_active: data.source_active, source_final: false, periods };
-}
-
-export async function getCapturedRakeback(): Promise<CapturedRakeback> {
-  const { data, error } = await supabase.rpc('fn_get_captured_rakeback');
+export async function getCapturedRakeback(userId: string): Promise<CapturedRakebackReadV2> {
+  const { data, error } = await supabase.rpc('fn_get_captured_rakeback', { p_club_id: null });
   if (error) throw error;
-  return parseCapturedRakeback(data);
+  return parseCapturedRakeback(data, userId);
 }
 
 export async function getLegacyRakeback(userId: string): Promise<LegacyRakebackPeriod[]> {
@@ -272,57 +167,14 @@ export function clearRakebackRequest(request: RakebackClaimRequest): void {
 
 export async function claimCapturedRakeback(
   request: RakebackClaimRequest
-): Promise<CapturedRakebackClaim> {
+): Promise<CapturedRakebackClaimV2> {
   const { data, error } = await supabase.rpc('fn_claim_captured_rakeback', {
     p_request_id: request.requestId,
     p_expected_user_id: request.expectedUserId,
     p_club_id: request.clubId,
   });
   if (error) throw error;
-  const result = record(data);
-  if (
-    result.success !== true ||
-    result.request_id !== request.requestId ||
-    result.source_final !== false ||
-    !Array.isArray(result.periods) ||
-    !Number.isInteger(result.periods_claimed) ||
-    Number(result.periods_claimed) < 0
-  )
-    throw new Error(
-      'Claim Response Could Not Be Verified. Use Recover Claim To Check The Same Request.'
-    );
-  const totalCents = cents(result.total_payout);
-  let periodCents = 0;
-  let paidPeriods = 0;
-  const seenPeriods = new Set<string>();
-  for (const value of result.periods) {
-    const period = record(value);
-    if (
-      typeof period.success !== 'boolean' ||
-      typeof period.period_id !== 'string' ||
-      !UUID.test(period.period_id) ||
-      seenPeriods.has(period.period_id.toLowerCase()) ||
-      period.source_final !== false ||
-      !Array.isArray(period.paid_receipts) ||
-      !Array.isArray(period.deferred) ||
-      !Number.isSafeInteger(period.source_accruals_added) ||
-      Number(period.source_accruals_added) < 0
-    ) {
-      throw new Error('Claim Period Receipt Could Not Be Verified. Use Recover Claim.');
-    }
-    seenPeriods.add(period.period_id.toLowerCase());
-    const paid = cents(period.new_payout);
-    if (period.success === false && (paid !== 0 || period.deferred.length === 0)) {
-      throw new Error('Deferred Claim Could Not Be Verified. Use Recover Claim.');
-    }
-    periodCents += paid;
-    if (!Number.isSafeInteger(periodCents)) throw new Error('Claim Total Could Not Be Verified.');
-    if (paid > 0) paidPeriods++;
-  }
-  if (periodCents !== totalCents || paidPeriods !== result.periods_claimed) {
-    throw new Error('Claim Period Totals Could Not Be Verified. Use Recover Claim.');
-  }
-  return { ...result, total_payout: totalCents / 100 } as unknown as CapturedRakebackClaim;
+  return parseCapturedRakebackClaim(data, request);
 }
 
 export async function claimLegacyRakeback(clubId: string | null): Promise<number> {

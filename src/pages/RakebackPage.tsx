@@ -7,6 +7,7 @@ import { useAuthUser } from '../hooks/useAuthUser';
 import { useMasterBusChannel } from '../hooks/useMasterBusChannel';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { useRakeback } from '../hooks/useRakeback';
+import { capturedScopeKey, formatRakebackCash } from '../services/CapturedRakebackV2';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { ErrorState } from '../components/common/EmptyState';
@@ -20,13 +21,18 @@ const periodDate = new Intl.DateTimeFormat(undefined, {
 });
 const formatDate = (value: string) =>
   periodDate.format(new Date(value.length === 10 ? value + 'T00:00:00Z' : value));
-const statusLabels = {
-  open: 'Open Period',
-  needs_review: 'Needs Review',
-  pending: 'Unpaid Rakeback',
-  fraction_pending: 'Fraction Carried Forward',
-  settled_so_far: 'Paid So Far',
-};
+const formatPaymentDate = (value: string) =>
+  new Intl.DateTimeFormat(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    timeZone: 'UTC',
+  }).format(new Date(value));
+const fundingContext = (unionId: string | null) =>
+  unionId ? 'Original Union ' + unionId.slice(0, 8) : 'Club Funding';
 const chips = (value: number) =>
   value.toLocaleString(undefined, {
     minimumFractionDigits: 2,
@@ -37,7 +43,7 @@ export default function RakebackPage() {
   const { user } = useAuthUser();
   const {
     legacyPeriods,
-    capturedPeriods,
+    captured,
     sourceActive,
     loading,
     loadError,
@@ -77,16 +83,23 @@ export default function RakebackPage() {
   const capturedMode =
     sourceActive === true ||
     !!pendingRequest ||
-    (sourceActive === null && capturedPeriods.length > 0);
-  const periods = capturedMode ? capturedPeriods : legacyPeriods;
+    (sourceActive === null && captured?.source_active === true);
+  const periods = legacyPeriods;
   const totalEarned = periods.reduce((sum, period) => sum + Number(period.rakeback_earned || 0), 0);
-  const pendingAmount = capturedMode
-    ? capturedPeriods.reduce((sum, period) => sum + period.pending_amount, 0)
-    : sourceActive === false
+  const legacyPending =
+    sourceActive === false
       ? legacyPeriods
           .filter((period) => period.status === 'pending')
           .reduce((sum, period) => sum + Number(period.rakeback_earned || 0), 0)
       : 0;
+  const pendingAmount = capturedMode
+    ? (captured?.pending_amount ?? '0.00')
+    : legacyPending.toFixed(2);
+  const totalLabel = capturedMode ? 'Closed Earnings' : 'Recorded Earnings';
+  const totalDisplay = capturedMode
+    ? (captured?.closed_entitlement_exact ?? '0')
+    : chips(totalEarned);
+  const hasPending = pendingAmount !== '0.00';
   const rates = new Set(periods.map((period) => Number(period.rakeback_rate || 0)));
   const rateLabel =
     rates.size === 1
@@ -118,14 +131,17 @@ export default function RakebackPage() {
         }
         metrics={[
           {
-            label: capturedMode ? 'Captured Earnings' : 'Recorded Earnings',
-            value: chips(totalEarned),
+            label: totalLabel,
+            value: totalDisplay,
             tone: 'live',
           },
-          { label: 'Period Rate', value: rateLabel },
+          {
+            label: capturedMode ? 'Paid Chips' : 'Period Rate',
+            value: capturedMode ? formatRakebackCash(captured?.paid_amount ?? '0.00') : rateLabel,
+          },
           {
             label: capturedMode ? 'Unpaid Rakeback' : 'Ready To Claim',
-            value: chips(pendingAmount),
+            value: formatRakebackCash(pendingAmount),
             tone: 'attention',
           },
         ]}
@@ -133,23 +149,23 @@ export default function RakebackPage() {
       <div className="rakeback-summary">
         <div className="summary-card main">
           <div className="card-content">
-            <span className="card-value">{chips(totalEarned)}</span>
-            <span className="card-label">
-              {capturedMode ? 'Captured Earnings' : 'Recorded Earnings'}
-            </span>
+            <span className="card-value">{totalDisplay}</span>
+            <span className="card-label">{totalLabel}</span>
           </div>
         </div>
         <div className="summary-row">
           <div className="summary-card">
-            <span className="card-value">{rateLabel}</span>
-            <span className="card-label">Period Rate</span>
+            <span className="card-value">
+              {capturedMode ? formatRakebackCash(captured?.paid_amount ?? '0.00') : rateLabel}
+            </span>
+            <span className="card-label">{capturedMode ? 'Paid Chips' : 'Period Rate'}</span>
           </div>
           <div className="summary-card pending">
-            <span className="card-value">{chips(pendingAmount)}</span>
+            <span className="card-value">{formatRakebackCash(pendingAmount)}</span>
             <span className="card-label">
               {capturedMode ? 'Unpaid Rakeback' : 'Ready To Claim'}
             </span>
-            {(pendingAmount > 0 || pendingRequest) && (
+            {(hasPending || pendingRequest) && (
               <button
                 className="claim-btn"
                 onClick={() => void claim()}
@@ -194,7 +210,7 @@ export default function RakebackPage() {
       {loadError && <ErrorState message={loadError} onRetry={refreshData} />}
       {!user?.id && <p>Please Sign In To View Your Rakeback.</p>}
 
-      {chartData.length > 0 && (
+      {!capturedMode && chartData.length > 0 && (
         <div className="rakeback-chart">
           <h3>Earnings History</h3>
           <ResponsiveContainer width="100%" height={200}>
@@ -222,41 +238,113 @@ export default function RakebackPage() {
         )}
       </div>
       {capturedMode && (
-        <div className="rakeback-history">
-          <h3>Captured Rakeback History</h3>
-          <p>
-            Each Row Represents One Club And Earning Period. Paid So Far Does Not Close An Earning
-            Period.
-          </p>
-          {capturedPeriods.length === 0 && !loading ? (
-            <p>No Captured Rakeback Yet.</p>
-          ) : (
-            <div className="periods-list">
-              {capturedPeriods.map((period) => (
-                <div key={period.club_id + ':' + period.period_start} className="period-row">
-                  <div className="period-dates">
-                    <span>
-                      {formatDate(period.period_start)} - {formatDate(period.period_end)}
-                    </span>
-                  </div>
-                  <div className="period-details">
-                    <span className="rake-generated">Rake: {chips(period.rake_generated)}</span>
-                    <span className="rakeback-rate">
-                      {(period.rakeback_rate * 100).toFixed(1)}%
-                    </span>
-                    <span>Earned: {chips(period.rakeback_earned)}</span>
-                    <span>Paid: {chips(period.paid_amount)}</span>
-                    <span>Whole Cents: {chips(period.pending_amount)}</span>
-                    <span>Unpaid Earnings: {String(period.unpaid_exact_entitlement)}</span>
-                  </div>
-                  <div className="period-earned">
-                    <span className={`status ${period.status}`}>{statusLabels[period.status]}</span>
-                  </div>
+        <>
+          <div className="rakeback-history">
+            <h3>Rakeback Earning Agreements</h3>
+            <p>
+              Compatible Closed Weeks Carry Fractions Forward Together. Different Payers And Funding
+              Agreements Stay Separate. Weekly Allocations Are Exact Earnings, Not Separate Cash
+              Payments.
+            </p>
+            {!captured?.balances.length && !loading ? (
+              <p>No Captured Rakeback Yet.</p>
+            ) : (
+              <div className="periods-list">
+                {captured?.balances.map((balance) => (
+                  <section
+                    key={capturedScopeKey(balance.scope)}
+                    className="rakeback-agreement"
+                    aria-label={
+                      'Earning Agreement ' +
+                      balance.scope.club_id +
+                      ' ' +
+                      balance.scope.payer_user_id +
+                      ' ' +
+                      fundingContext(balance.scope.funding_union_id)
+                    }
+                  >
+                    <h4>
+                      Club {balance.scope.club_id.slice(0, 8)} / Payer{' '}
+                      {balance.scope.payer_user_id.slice(0, 8)}
+                    </h4>
+                    <p>{fundingContext(balance.scope.funding_union_id)}</p>
+                    <p>
+                      Unpaid Rakeback: {formatRakebackCash(balance.pending_amount)} / Paid Chips:{' '}
+                      {formatRakebackCash(balance.paid_amount)}
+                    </p>
+                    <p>Unpaid Earnings: {balance.unpaid_exact}</p>
+                    {balance.pool_id === null && <p>Funding Not Yet Recorded.</p>}
+                    {balance.unpaid_exact !== '0' && balance.pending_amount === '0.00' && (
+                      <p>Fraction Carried Forward</p>
+                    )}
+                    {balance.earning_weeks.map((earning) => (
+                      <div key={earning.week_start} className="period-row">
+                        <div className="period-dates">
+                          <span>
+                            {formatDate(earning.week_start)} - {formatDate(earning.week_end)}
+                          </span>
+                          <span>
+                            {earning.closed ? 'Closed Earning Period' : 'Open Earning Period'}
+                          </span>
+                        </div>
+                        <div className="period-details">
+                          <span>Earned: {earning.entitlement_exact}</span>
+                          <span>Allocated To Payments: {earning.consumed_exact}</span>
+                          <span>Remaining Earnings: {earning.remaining_exact}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </section>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="rakeback-history">
+            <h3>Cash Payment History</h3>
+            <p>
+              These Are Actual Whole-Cent Payments. Their Payment Dates Are Separate From Earning
+              Weeks.
+            </p>
+            {!captured?.cash_payments.length ? (
+              <p>No Captured Cash Payments Yet.</p>
+            ) : (
+              captured.cash_payments.map((payment) => (
+                <details key={payment.payment_id} className="period-row rakeback-payment">
+                  <summary>
+                    Paid {formatRakebackCash(payment.amount)} Chips /{' '}
+                    <time dateTime={payment.paid_at}>{formatPaymentDate(payment.paid_at)} UTC</time>
+                  </summary>
+                  <p>Receipt {payment.payment_id}</p>
+                  <p>
+                    Club {payment.scope.club_id.slice(0, 8)} / Payer{' '}
+                    {payment.scope.payer_user_id.slice(0, 8)}
+                  </p>
+                  <p>{fundingContext(payment.scope.funding_union_id)}</p>
+                  {payment.earning_slices.map((slice) => (
+                    <p key={slice.hand_id + ':' + slice.contributor_id}>
+                      Earning Week {formatDate(slice.week_start)}: {slice.amount_exact}
+                    </p>
+                  ))}
+                </details>
+              ))
+            )}
+          </div>
+          {!!captured?.unresolved_earnings.length && (
+            <div className="rakeback-history">
+              <h3>Earnings Under Review</h3>
+              <p>These Earning Records Need Review Before An Amount Can Be Confirmed.</p>
+              {captured.unresolved_earnings.map((earning) => (
+                <div key={earning.club_id + ':' + earning.week_start} className="period-row">
+                  <span>
+                    Club {earning.club_id.slice(0, 8)} / {formatDate(earning.week_start)} -{' '}
+                    {formatDate(earning.week_end)}
+                  </span>
+                  <span>{earning.source_count} Earning Records Need Review</span>
                 </div>
               ))}
             </div>
           )}
-        </div>
+        </>
       )}
       <div className="rakeback-history">
         <h3>{capturedMode ? 'Previous Rakeback History' : 'History'}</h3>

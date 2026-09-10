@@ -1,0 +1,83 @@
+{
+  "balances": [
+    {
+      "scope": {
+        "club_id": "00000000-0000-4000-8000-000000000900",
+        "funding_route": "union_rake_wallet",
+        "payer_user_id": "00000000-0000-4000-8000-000000000303",
+        "contract_version": 1,
+        "funding_union_id": "00000000-0000-4000-8000-000000000901"
+      },
+      "pool_id": "b96c82aa-c193-42ac-adc8-d98595e91228",
+      "paid_amount": "0.01",
+      "unpaid_exact": "0.008",
+      "earning_weeks": [
+        {
+          "closed": true,
+          "week_end": "2026-08-30",
+          "week_start": "2026-08-24",
+          "source_count": 1,
+          "consumed_exact": "0.009",
+          "remaining_exact": "0",
+          "entitlement_exact": "0.009",
+          "funding_admitted_source_count": 1
+        },
+        {
+          "closed": true,
+          "week_end": "2026-09-06",
+          "week_start": "2026-08-31",
+          "source_count": 1,
+          "consumed_exact": "0.001",
+          "remaining_exact": "0.008",
+          "entitlement_exact": "0.009",
+          "funding_admitted_source_count": 1
+        }
+      ],
+      "consumed_exact": "0.01",
+      "pending_amount": "0.00",
+      "closed_entitlement_exact": "0.018"
+    }
+  ],
+  "paid_amount": "0.01",
+  "source_final": false,
+  "unpaid_exact": "0.008",
+  "cash_payments": [
+    {
+      "scope": {
+        "club_id": "00000000-0000-4000-8000-000000000900",
+        "funding_route": "union_rake_wallet",
+        "payer_user_id": "00000000-0000-4000-8000-000000000303",
+        "contract_version": 1,
+        "funding_union_id": "00000000-0000-4000-8000-000000000901"
+      },
+      "amount": "0.01",
+      "paid_at": "2026-09-10T15:59:43.255578Z",
+      "pool_id": "b96c82aa-c193-42ac-adc8-d98595e91228",
+      "payment_id": "3cfac104-7d96-454d-bad4-4eb8c55c5201",
+      "earning_slices": [
+        {
+          "hand_id": "00000000-0000-4000-8000-000001500001",
+          "week_start": "2026-08-24",
+          "amount_exact": "0.009",
+          "contributor_id": "00000000-0000-4000-8000-000000000201"
+        },
+        {
+          "hand_id": "00000000-0000-4000-8000-000001500002",
+          "week_start": "2026-08-31",
+          "amount_exact": "0.001",
+          "contributor_id": "00000000-0000-4000-8000-000000000201"
+        }
+      ],
+      "beneficiary_user_id": "00000000-0000-4000-8000-000000000201",
+      "earning_closed_through": "2026-09-07"
+    }
+  ],
+  "source_active": true,
+  "consumed_exact": "0.01",
+  "pending_amount": "0.00",
+  "schema_version": 2,
+  "beneficiary_user_id": "00000000-0000-4000-8000-000000000201",
+  "unresolved_earnings": [],
+  "earning_closed_through": "2026-09-07",
+  "closed_entitlement_exact": "0.018"
+}

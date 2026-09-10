@@ -1,0 +1,104 @@
+{
+  "scopes": [
+    {
+      "scope": {
+        "club_id": "00000000-0000-4000-8000-000000000900",
+        "funding_route": "club_chip_treasury",
+        "payer_user_id": "00000000-0000-4000-8000-000000000303",
+        "contract_version": 1,
+        "funding_union_id": null
+      },
+      "pool_id": "1c82edfa-6cda-4d24-ac21-b9ef74c41407",
+      "deferred": [],
+      "new_payout": "0.00",
+      "payment_ids": []
+    },
+    {
+      "scope": {
+        "club_id": "00000000-0000-4000-8000-000000000900",
+        "funding_route": "union_rake_wallet",
+        "payer_user_id": "00000000-0000-4000-8000-000000000303",
+        "contract_version": 1,
+        "funding_union_id": "00000000-0000-4000-8000-000000000902"
+      },
+      "pool_id": "34bba548-5245-44af-8ad3-f6bb11c2965b",
+      "deferred": [
+        {
+          "reason": "fraction_pending"
+        }
+      ],
+      "new_payout": "0.00",
+      "payment_ids": []
+    },
+    {
+      "scope": {
+        "club_id": "00000000-0000-4000-8000-000000000900",
+        "funding_route": "union_rake_wallet",
+        "payer_user_id": "00000000-0000-4000-8000-000000000303",
+        "contract_version": 1,
+        "funding_union_id": "00000000-0000-4000-8000-000000000901"
+      },
+      "pool_id": "a7b0cf0f-6ad3-4a5c-b3c7-6acbb61af2f8",
+      "deferred": [
+        {
+          "reason": "fraction_pending"
+        }
+      ],
+      "new_payout": "0.00",
+      "payment_ids": []
+    },
+    {
+      "scope": {
+        "club_id": "00000000-0000-4000-8000-000000000900",
+        "funding_route": "union_rake_wallet",
+        "payer_user_id": "00000000-0000-4000-8000-000000000303",
+        "contract_version": 1,
+        "funding_union_id": "00000000-0000-4000-8000-000000000903"
+      },
+      "pool_id": "f0a6b6c7-e064-422f-a609-5578176f525b",
+      "deferred": [
+        {
+          "reason": "fraction_pending"
+        }
+      ],
+      "new_payout": "0.01",
+      "payment_ids": [
+        "db8831b7-af57-46dc-930a-6b95b77df0af"
+      ]
+    }
+  ],
+  "club_id": null,
+  "success": true,
+  "payments": [
+    {
+      "scope": {
+        "club_id": "00000000-0000-4000-8000-000000000900",
+        "funding_route": "union_rake_wallet",
+        "payer_user_id": "00000000-0000-4000-8000-000000000303",
+        "contract_version": 1,
+        "funding_union_id": "00000000-0000-4000-8000-000000000903"
+      },
+      "amount": "0.01",
+      "paid_at": "2026-09-10T16:17:28.739640Z",
+      "pool_id": "f0a6b6c7-e064-422f-a609-5578176f525b",
+      "payment_id": "db8831b7-af57-46dc-930a-6b95b77df0af",
+      "earning_slices": [
+        {
+          "hand_id": "00000000-0000-4000-8000-000001500100",
+          "week_start": "2026-08-31",
+          "amount_exact": "0.01",
+          "contributor_id": "00000000-0000-4000-8000-000000000201"
+        }
+      ],
+      "beneficiary_user_id": "00000000-0000-4000-8000-000000000201",
+      "earning_closed_through": "2026-09-07"
+    }
+  ],
+  "new_payout": "0.01",
+  "request_id": "00000000-0000-4000-8000-000001500201",
+  "source_final": false,
+  "payment_count": 1,
+  "schema_version": 2,
+  "beneficiary_user_id": "00000000-0000-4000-8000-000000000201",
+  "earning_closed_through": "2026-09-07"
+}

@@ -395,3 +395,35 @@
     text-align: left;
   }
 }
+
+/* Exact earning allocations and expandable cash receipts stay readable on narrow screens. */
+.rakeback-agreement,
+.rakeback-payment,
+.rakeback-page .card-content,
+.rakeback-page .summary-card {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.rakeback-agreement .period-row {
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+
+.rakeback-agreement .period-dates,
+.rakeback-agreement .period-details {
+  display: grid;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.rakeback-payment {
+  display: block;
+  margin-top: 0.5rem;
+}
+
+.rakeback-payment summary {
+  min-height: 44px;
+  line-height: 1.5;
+  cursor: pointer;
+}

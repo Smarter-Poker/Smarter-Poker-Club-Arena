@@ -1,0 +1,110 @@
+{
+  "schema_version": 2,
+  "date": "2026-09-10",
+  "status": "verified_browser_candidate_archival_only",
+  "branch": "agent/codex-phase3-acceptance-sep10/fix/captured-rakeback-v2",
+  "prior_checkpoint": "b369ae4d82f69c203457bb5b50b853944b2ebf19",
+  "scope": "Replace per-earning-week cash assumptions with exact original-funding-scope liability and immutable whole-cent receipts.",
+  "release_gate": {
+    "publish_allowed": false,
+    "source_activation_allowed": false,
+    "requirements": [
+      "Integrate with current main and the real reviewed V2 getter/claim backend before any browser publication. A missing getter deliberately blocks claims.",
+      "Complete coordinated source, bank, funding and player ownership, common finality and legacy exclusion before the exact capability may report source_active:true.",
+      "Keep exact definition pins and the legacy exclusion attestation at the capability boundary; captured records alone do not authorize source claims.",
+      "Legacy fn_claim_rakeback must refuse the cutover race. An account that observed captured activation never falls back to that mutation.",
+      "No placeholder or bootstrap getter merely to publish this page early."
+    ],
+    "archive_branch": "backup/resume-poker-sep10/rakeback-browser"
+  },
+  "behavior": [
+    "Canonical exact decimal strings use BigInt reconciliation; cash strings have exactly two decimals. No earning week is independently rounded into claimable cash.",
+    "Compatible closed weeks carry fractions within the original club, Union, funding route, generation and captured payer. Separate payers never mix fractional entitlement.",
+    "Funding-pool absence remains visible before bank admission; presence and identity agree across payer balances within the same original pool tuple.",
+    "Payment receipts reconcile exactly to scope and global cash totals. Their earning slices reconcile to exact week consumption and preserve original hand/contributor/scope/pool/week identity across partial payments.",
+    "Open weeks remain visible but never contribute to closed pending cash. Unresolved source records remain visible without invented entitlement.",
+    "The page separates exact earned/allocated/remaining values from dated whole-cent payments, with original Union or Club Funding context.",
+    "The immutable request UUID, actor and optional club survive lost responses, reload and schema upgrades in the existing version1 storage envelope. Only validated V2 authoritative receipts clear recovery.",
+    "Recovery works with zero pending or unavailable capability. Account and render-session fences suppress stale reads, payout completion, messages and bus events, including A-to-B-to-A.",
+    "Zero and partial receipts leave explicit unpaid deferrals visible. A cleanup failure is distinguished from an unconfirmed transfer.",
+    "Legacy history remains separate from captured totals. The optional numeric refresh hint is emitted only when cents survive a roundtrip; displayed cash remains exact."
+  ],
+  "validation": {
+    "contract_and_rendered_cases": 85,
+    "route_family_cases": 23,
+    "realtime_cases": 13,
+    "source_window_cases": 2,
+    "total_passed": 123,
+    "focused_exit": 0,
+    "app_typecheck_exit": 0,
+    "eslint_exit": 0,
+    "eslint_warnings": 0,
+    "full_build_exit": 0,
+    "full_build_seconds": 18.01,
+    "vite_seconds": 9.59,
+    "external_uploads": "CA_SENTRY_UPLOAD and SENTRY_AUTH_TOKEN explicitly empty.",
+    "artifact": "Local DIRTY build on prior held checkpoint, behind origin/main by19; this dist is not a publication artifact.",
+    "limits": "Actual page, hook, service and parser run under React DOM with controlled transport. Three JSON response witnesses with unchanged data come from actual native SQL composition. This is not a live account payout, a browser-to-production network test, activation, or programme completion.",
+    "post_hook_witness_check": {
+      "production_and_test_code_unchanged": true,
+      "change": "Prettier only collapsed the single-item payment_ids array.",
+      "original_bytes_preserved": "tests/fixtures/captured-rakeback-v2/native-claim-paid-v2.raw.txt",
+      "parsed_json_equal": true
+    }
+  },
+  "native_witnesses": [
+    {
+      "owner": "commission_capture",
+      "archive_commit": "27fdaf5d83c4368251bc79f4bb932b423017c9ef",
+      "file": "native-read-cross-week-payment.json",
+      "sha256": "d57f954f59b4f39658fde5d96c94e87f13800e0d3589f6504838f23806ce94b2",
+      "result": ".009 + .009 across two UTC weeks pays .01, consumes .009 + .001 and retains .008."
+    },
+    {
+      "owner": "commission_capture",
+      "archive_commit": "27fdaf5d83c4368251bc79f4bb932b423017c9ef",
+      "file": "native-read-prebank.json",
+      "sha256": "6722f100d300b6ea5a2cd9261d63c9130c08fc2f4cbd7a5dc3cb6880b62a54aa",
+      "result": "Prebank .009 liability is visible with no invented funding pool or cash payment."
+    },
+    {
+      "owner": "payer_completion",
+      "file": "native-claim-paid-v2.json",
+      "sha256": "a915964fad275456c7dcd75447c46acc547fc2fb6c028a93ee6978dc7b23f4b5",
+      "source_path": "docs/audits/2026-09-10-rakeback-payer-proof/round1-owner/native-claim-paid-v2.json",
+      "result": "Four original funding scopes partition one new .01 cash receipt; parser and rendered persisted-request recovery both accept the exact result.",
+      "raw_fixture": "tests/fixtures/captured-rakeback-v2/native-claim-paid-v2.raw.txt",
+      "formatted_fixture_sha256": "e4e079e3a8eb77a5ab7f4d79f4d1aa8913386acf9805f990ca808744583233f3",
+      "parsed_json_equality_verified": true
+    }
+  ],
+  "independent_review": {
+    "reviewer": "payer_completion",
+    "verdict": "Final narrow API/UI signoff: no remaining concrete blocker in the gated candidate.",
+    "reviewed": "Exact arithmetic, pool presence, immutable source binding, self-payer exclusion, numeric hint precision, original funding context and recovery/session isolation.",
+    "native_proof_reported": "15 player groups plus25 API groups; getter lane17 native groups. Their production activation gates remain open."
+  },
+  "source_sha256": {
+    "src/services/CapturedRakebackV2.ts": "eb1ce5759f920d4cfedaec4fbe0f58500c004529dd1d9956a1f3fb13b88627f5",
+    "src/services/CapturedRakebackService.ts": "4a2237ce16f3d77694cab8381a0eb4eef1257f212d75403cf4635affafe8f1d3",
+    "src/hooks/useRakeback.ts": "a35d0b4b6a4a66f07f372d4a174171c290028b5a18d1275cde26af3f386f723f",
+    "src/pages/RakebackPage.tsx": "4edc7db8220d5e8d7a067841bc67f1ab9f9ce62cf0bd2092d11ee00065936f07",
+    "src/pages/RakebackPage.css": "476f18e01df9afb951cbea07da25ab87b152d206a7a5e5171307828d19254fac",
+    "src/types/capturedRakeback.ts": "54f18be24597f6a20d52824686a2b427d081a0186a21698a9a960105a4649676",
+    "tests/helpers/capturedRakebackV2Fixtures.ts": "6683f654f7f79f16944338b873058fc4c6773a649834f91791429e250f514339",
+    "tests/unit/capturedRakebackBrowser.test.tsx": "bb206e3aadb95bdb27d1d52c05e846a1ba3cd034e642d81c740371a4314a64de",
+    "tests/fixtures/captured-rakeback-v2/native-claim-paid-v2.json": "e4e079e3a8eb77a5ab7f4d79f4d1aa8913386acf9805f990ca808744583233f3",
+    "tests/fixtures/captured-rakeback-v2/native-read-cross-week-payment.json": "d57f954f59b4f39658fde5d96c94e87f13800e0d3589f6504838f23806ce94b2",
+    "tests/fixtures/captured-rakeback-v2/native-read-prebank.json": "6722f100d300b6ea5a2cd9261d63c9130c08fc2f4cbd7a5dc3cb6880b62a54aa",
+    "tests/fixtures/captured-rakeback-v2/native-claim-paid-v2.raw.txt": "a915964fad275456c7dcd75447c46acc547fc2fb6c028a93ee6978dc7b23f4b5"
+  },
+  "log_sha256": {
+    "/tmp/codex-rakeback-v2-focused.log": "1eb2593e2bad9ca8762cd62276e3ee4ca67d4e3a2fdaa7f9d31adc82915d2c8c",
+    "/tmp/codex-rakeback-v2-typecheck.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "/tmp/codex-rakeback-v2-eslint.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "/tmp/codex-rakeback-v2-build.log": "822e2d0c9512dac070c07c7075c5db6bb6b890ec532ce7155077e5edd5dddde6"
+  },
+  "phase_controls_closed": 0,
+  "production_writes": 0,
+  "no_verify_used": false
+}

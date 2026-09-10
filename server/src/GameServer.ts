@@ -167,6 +167,7 @@ import { createSupabaseMaintenanceBreakStore } from './maintenance/maintenanceBr
 import { StatsHealthMonitor } from './observability/StatsHealthMonitor.js';
 import { runThawInstallments } from './maintenance/thawInstallments.js';
 import { ENGINE_START_BUDGET_MAX, nextEngineStartBudget } from './engineStartBudget.js';
+import { resumesHoldingASlot, selectRunningResumes } from './tournamentResumeBudget.js';
 import { isWakeableCashTable } from './services/onDemandTableWake.js';
 // 2026-08-16: single-owner table leases + per-process identity. See
 // services/tableLease.ts for the dual-container incident that motivated them.
@@ -187,6 +188,8 @@ export { TournamentManager };
 
 const TABLE_DISCOVERY_INTERVAL = 5000; // Check for new tables every 5 seconds
 const TOURNAMENT_DISCOVERY_INTERVAL = 5000; // Check for tournaments every 5 seconds
+/** C19's 40ms start stagger, applied to RUNNING re-adoption as well. */
+const TOURNAMENT_RESUME_STAGGER_MS = 40;
 /**
  * Ownership renewal is a primary lifecycle, not part of table discovery.
  * Start each pass at least four times inside the shorter conservative proof
@@ -700,6 +703,10 @@ export class GameServer {
       lostManagers.push([tournamentId, manager]);
     }
 
+    // A manager whose lease lapsed is the re-adoption storm's signature: tell
+    // the RUNNING re-adoption budget, as a failed cash start tells C20.
+    this.tournamentResumeDistress += lostManagers.length;
+
     for (const [tableId, engine] of lostCashEngines) {
       void this.recoverDirectTableEngine(tableId, engine, 'cash_table_lease_lost').catch((error) =>
         reportError(error, 'GameServer.table_lease_lost_recovery_failed', { tableId })
@@ -826,6 +833,23 @@ export class GameServer {
    * because that RPC is one cheap indexed read and a start is many.
    */
   private engineStartFailures: number = 0;
+  /**
+   * C20 for RUNNING re-adoption (2026-09-10). discoverTournaments used to resume
+   * every managerless RUNNING tournament in one pass: ~740 claims and ~1000
+   * table engines in three seconds, which starved the lease heartbeats, fenced
+   * the managers, and handed the same ~740 back to the next pass. Same AIMD law
+   * as the cash fleet (nextEngineStartBudget), its own instance so neither loop
+   * adjusts the other's budget. See tournamentResumeBudget.ts.
+   */
+  private tournamentResumeBudget: number = ENGINE_START_BUDGET_MAX;
+  /**
+   * Distress since the last tournament pass, read and cleared once per pass:
+   * a discovery resume that threw or had to schedule a retry, and every manager
+   * the lease renewal pass found had lost or outlived its lease.
+   */
+  private tournamentResumeDistress: number = 0;
+  /** Discovery-launched resume admissions not yet settled, by launch time. */
+  private tournamentResumesInFlight = new Map<string, number>();
 
   /** Applies the C20 control law to this instance. Returns the new budget. */
   private adjustEngineStartBudget(distressed: boolean): number {
@@ -2924,6 +2948,13 @@ export class GameServer {
        * database tier, not the engine, is the constraint.
        */
       engineStartBudget: this.engineStartBudget,
+      /**
+       * The same law for RUNNING tournament re-adoption, and how many resumes
+       * discovery has in flight. Pinned at the floor means managers keep
+       * losing their leases or failing to resume.
+       */
+      tournamentResumeBudget: this.tournamentResumeBudget,
+      tournamentResumesInFlight: this.tournamentResumesInFlight.size,
       tournamentLease: tournamentLeaseDiagnostics(),
       leadership: leadershipDiagnostics(),
       stalledTableCount: stalledTables.length,
@@ -4915,6 +4946,11 @@ export class GameServer {
   private async discoverTournaments(): Promise<void> {
     const generation = this.lifecycleGeneration;
     while (this.directAdmissionIsCurrent(generation)) {
+      // RUNNING re-adoption budget: exactly one verdict per pass, applied in
+      // the finally below on every path, as C20 does for the cash fleet.
+      const resumeDistressSinceLastPass = this.tournamentResumeDistress;
+      this.tournamentResumeDistress = 0;
+      let resumePassDistressed = resumeDistressSinceLastPass > 0;
       try {
         // Find REGISTERING tournaments ready to start
         const registeringReadAt = Date.now();
@@ -4934,6 +4970,7 @@ export class GameServer {
             new Error(`[GameServer] REGISTERING board read failed: ${registeringErr.message}`),
             'GameServer.registering_board_read_failed'
           );
+          resumePassDistressed = true;
           await this.sleep(TOURNAMENT_DISCOVERY_INTERVAL);
           continue;
         }
@@ -5309,20 +5346,59 @@ export class GameServer {
             new Error(`[GameServer] RUNNING board read failed: ${runningErr.message}`),
             'GameServer.running_board_read_failed'
           );
+          resumePassDistressed = true;
         }
 
-        for (const tournament of running || []) {
+        /**
+         * RUNNING RE-ADOPTION IS BUDGETED (2026-09-10). This loop used to
+         * resume every managerless RUNNING tournament in one pass. The burst
+         * starved the lease heartbeats, the fenced managers left
+         * tournamentEngines, and the next pass resumed the same ~740 again.
+         * The budget bounds how many resumes this loop has IN FLIGHT; the
+         * board order (oldest started_at first) still decides which, and the
+         * rest are read again next pass rather than dropped. An id already
+         * being admitted (by a retry or another path) spends nothing.
+         */
+        const resumes = selectRunningResumes(running || [], {
+          hasManager: (id) => this.tournamentEngines.has(id),
+          admissionInFlight: (id) => this.tournamentManagerAdmissionOperations.has(id),
+          resumesInFlight: resumesHoldingASlot(this.tournamentResumesInFlight.values(), Date.now()),
+          budget: this.tournamentResumeBudget,
+        });
+        for (const [index, tournament] of resumes.entries()) {
           if (!this.directAdmissionIsCurrent(generation)) break;
+          if (index > 0) await this.sleep(TOURNAMENT_RESUME_STAGGER_MS);
+          // The stagger yields, so re-check: a retry may have admitted it.
           if (this.tournamentEngines.has(tournament.id)) continue;
 
           const tournamentId = String(tournament.id);
+          if (this.tournamentManagerAdmissionOperations.has(tournamentId)) continue;
+
+          const launchedAt = Date.now();
+          this.tournamentResumesInFlight.set(tournamentId, launchedAt);
           this.launchDiscoveryJob(
             this.ensureTournamentManagerAdmission(
               tournamentId,
               'resume',
               `Resuming tournament: ${tournament.name}`,
               generation
-            ),
+            )
+              .then(() => {
+                // A claim that could not be settled returns normally after
+                // scheduling its retry. That is still a failed resume.
+                if (this.tournamentManagerAdmissionRetryTimers.has(tournamentId)) {
+                  this.tournamentResumeDistress++;
+                }
+              })
+              .catch((error) => {
+                this.tournamentResumeDistress++;
+                throw error;
+              })
+              .finally(() => {
+                if (this.tournamentResumesInFlight.get(tournamentId) === launchedAt) {
+                  this.tournamentResumesInFlight.delete(tournamentId);
+                }
+              }),
             'GameServer.Tournament_resume_failed_for_t',
             { tournamentId }
           );
@@ -5868,6 +5944,12 @@ export class GameServer {
         }
       } catch (err) {
         reportError(err, 'GameServer.Tournament_discovery_error');
+        resumePassDistressed = true;
+      } finally {
+        this.tournamentResumeBudget = nextEngineStartBudget(
+          this.tournamentResumeBudget,
+          resumePassDistressed
+        );
       }
 
       await this.sleep(TOURNAMENT_DISCOVERY_INTERVAL);

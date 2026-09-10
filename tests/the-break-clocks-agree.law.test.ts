@@ -3,12 +3,14 @@
  *  THE BREAK CLOCKS AGREE (law, to-do #2563 item 12)
  * ═══════════════════════════════════════════════════════════════════════════
  *
- * The :55 maintenance break is coordinated by constants that live in FIVE
+ * The :55 maintenance break is coordinated by constants that live in SIX
  * places that cannot import each other: the engine (TypeScript), the deploy
- * workflow (cron), two SQL migrations, and the
- * browser hook. Nothing but this file makes them agree.
+ * workflow, two SQL migrations, the browser hook, and the database DDL guard.
+ * Nothing but this file makes them agree. Since 2026-09-10 the database has a
+ * clock of its own too: the window in which it refuses migrations, which has
+ * to enclose the announcement and the thaw.
  *
- * Each pin below is a real failure, not a hypothetical - the watchdog HAS
+ * Each pin below is a real failure, not a hypothetical - the former watchdog
  * already desynchronised from the deploy once (2026-09-01: it still carried
  * the five Chicago windows after the deploy went hourly, stayed silent for
  * fourteen and a half hours of stranded code, and reported success the whole
@@ -237,6 +239,147 @@ describe('the break duration is five minutes, once', () => {
     expect(ENGINE).toMatch(/BREAK_DURATION_MS = 5 \* 60 \* 1000/);
     const GS = read('server/src/GameServer.ts');
     expect(GS).toMatch(/BREAK_DURATION_MS = 5 \* 60 \* 1000/);
+  });
+});
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  THE DATABASE REFUSES MIGRATIONS ACROSS THE WHOLE BREAK (2026-09-10)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * At 23:52:36 UTC on 2026-09-09 a migration landed on top of the :53
+ * announcement; the announcement failed and the 00:00 break was cancelled.
+ * Every DDL statement makes PostgREST reload its schema cache (~28 s on this
+ * database) and holds its locks until it commits. The database now refuses
+ * migration DDL inside minute-of-hour [:50, :03) UTC: event triggers
+ * ca_break_window_refuses_ddl / ca_break_window_refuses_drops, deciding with
+ * fn_ca_break_window_refuses_migrations.
+ *
+ * That window is one more clock that has to agree with the engine's. It must
+ * open early enough before the :53 announcement that a migration committed
+ * just before it has finished reloading, and close late enough after the :00
+ * thaw that every resume wave is out. The pins read the NEWEST migration that
+ * defines each function, as the scorecard pins below do, because the
+ * definition Postgres ends up with is the one that counts.
+ */
+describe('the database refuses migrations across the whole break window', () => {
+  const MIGRATIONS_DIR = resolve(__dirname, '..', 'supabase/migrations');
+
+  /** The newest migration containing `marker` - the one Postgres ends up with. */
+  const governing = (marker: string): string => {
+    const all = readdirSync(MIGRATIONS_DIR)
+      .filter((f) => f.endsWith('.sql'))
+      .sort()
+      .filter((f) => readFileSync(resolve(MIGRATIONS_DIR, f), 'utf8').includes(marker));
+    expect(all.length, `no migration contains ${marker}`).toBeGreaterThan(0);
+    return readFileSync(resolve(MIGRATIONS_DIR, all[all.length - 1]), 'utf8');
+  };
+
+  const WINDOW_SQL = governing(
+    'CREATE OR REPLACE FUNCTION public.fn_ca_break_window_refuses_migrations'
+  );
+  const GOVERNS_SQL = governing('CREATE OR REPLACE FUNCTION public.fn_ca_break_window_governs');
+  const GUARD_SQL = governing('CREATE OR REPLACE FUNCTION public.fn_ca_break_window_ddl_guard');
+  const TRIGGERS_SQL = governing('CREATE EVENT TRIGGER ca_break_window_refuses_ddl');
+
+  const minuteConstant = (name: string): number => {
+    const m = WINDOW_SQL.match(new RegExp(`${name}\\s+CONSTANT\\s+integer\\s*:=\\s*(\\d+);`));
+    expect(m, `${name} is not in fn_ca_break_window_refuses_migrations any more`).not.toBeNull();
+    return Number(m![1]);
+  };
+  const opens = minuteConstant('c_window_opens_minute');
+  const closes = minuteConstant('c_window_closes_minute');
+
+  const breakMinute = Number(ENGINE.match(/BREAK_START_MINUTE = (\d+)/)![1]);
+  const leadMinutes = Number(ENGINE.match(/LAST_HAND_LEAD_MS = (\d+) \* 60 \* 1000/)![1]);
+  const breakMinutes = Number(ENGINE.match(/BREAK_DURATION_MS = (\d+) \* 60 \* 1000/)![1]);
+  const announceMinute = breakMinute - leadMinutes; // :53
+  const thawMinute = (breakMinute + breakMinutes) % 60; // :00
+
+  it('opens at :50 and closes at :03, in UTC', () => {
+    expect(opens).toBe(50);
+    expect(closes).toBe(3);
+    expect(WINDOW_SQL).toContain("AT TIME ZONE 'UTC'");
+    // The window wraps the hour: [:50, :60) and [:00, :03). An AND here would
+    // be a window that is never open.
+    expect(WINDOW_SQL).toMatch(
+      /v_minute >= c_window_opens_minute OR v_minute < c_window_closes_minute/
+    );
+  });
+
+  it('opens at least three minutes before the announcement', () => {
+    // The guard reads the clock per DDL statement, not at COMMIT, and a
+    // commit is followed by ~28 s of schema reload. Three minutes is that
+    // slack, and the announcement's advisory lock is what it protects.
+    expect(announceMinute).toBe(53);
+    expect(announceMinute - opens).toBeGreaterThanOrEqual(3);
+  });
+
+  it('closes at least two minutes after the thaw, past the last resume wave', () => {
+    const waves = Number(ENGINE.match(/RESUME_WAVES = (\d+);/)![1]);
+    const gapMs = Number(ENGINE.match(/RESUME_WAVE_GAP_MS = (\d+);/)![1]);
+    expect(thawMinute).toBe(0);
+    expect(closes - thawMinute).toBeGreaterThanOrEqual(2);
+    expect((closes - thawMinute) * 60_000).toBeGreaterThan((waves - 1) * gapMs);
+  });
+
+  it('is enforced by the database on both DDL events, not by a sentence', () => {
+    expect(TRIGGERS_SQL).toMatch(
+      /CREATE EVENT TRIGGER ca_break_window_refuses_ddl\s+ON ddl_command_end\s+EXECUTE FUNCTION public\.fn_ca_break_window_ddl_guard\(\)/
+    );
+    // A DROP is reported to sql_drop only; without this trigger every DROP
+    // walks straight through the window.
+    expect(TRIGGERS_SQL).toMatch(
+      /CREATE EVENT TRIGGER ca_break_window_refuses_drops\s+ON sql_drop\s+EXECUTE FUNCTION public\.fn_ca_break_window_ddl_guard\(\)/
+    );
+    expect(GUARD_SQL).toMatch(/RAISE EXCEPTION USING/);
+  });
+
+  it('never refuses pg_cron, temporary objects, or anyone but a migration login', () => {
+    // pg_cron refreshes a materialized view every minute, the window included.
+    expect(GOVERNS_SQL).toContain("<> 'pg_cron'");
+    // Supabase's own roles and PostgREST are not postgres or a member of it;
+    // supabase_admin counts as a member only because it is a superuser, and
+    // superusers are excluded.
+    expect(GOVERNS_SQL).toContain('NOT r.rolsuper');
+    expect(GOVERNS_SQL).toContain("pg_has_role(r.oid, 'postgres', 'MEMBER')");
+    // The login role, which SECURITY DEFINER and SET ROLE cannot change.
+    expect(GUARD_SQL).toContain('fn_ca_break_window_governs(session_user::text, v_app)');
+    expect(GUARD_SQL).toContain("c.schema_name IS DISTINCT FROM 'pg_temp'");
+    expect(GUARD_SQL).toContain('NOT d.is_temporary');
+  });
+
+  it('CLAUDE.md, the refusal and the guard name the same window and override', () => {
+    const CLAUDE = read('CLAUDE.md');
+    const start = CLAUDE.indexOf('### Production DDL policy');
+    const policy = CLAUDE.slice(start, CLAUDE.indexOf('## 3. ACTIVE MIGRATION', start));
+    expect(start, 'CLAUDE.md lost its Production DDL policy section').toBeGreaterThan(0);
+    expect(policy).toContain(':50-:03 UTC');
+    expect(policy).toContain('ca.break_window_migration_override');
+    expect(WINDOW_SQL).toContain('SET LOCAL ca.break_window_migration_override');
+    expect(GUARD_SQL).toContain("current_setting('ca.break_window_migration_override', true)");
+  });
+
+  it('the refusal sends the agent to the rule that governs it, by its real number', () => {
+    // 2026-09-10: the first guard cited "rule 7", which was already the probe
+    // rule - the break-window rule is 8. Read the number from CLAUDE.md so a
+    // renumbering fails here instead of pointing refused agents elsewhere.
+    const CLAUDE = read('CLAUDE.md');
+    const start = CLAUDE.indexOf('### Production DDL policy');
+    const policy = CLAUDE.slice(start, CLAUDE.indexOf('## 3. ACTIVE MIGRATION', start));
+    const rule = policy.match(
+      /\n(\d+)\. \*\*THE DATABASE REFUSES MIGRATIONS INSIDE THE HOURLY BREAK WINDOW/
+    );
+    expect(rule, 'the break-window rule is gone from the Production DDL policy').not.toBeNull();
+    expect(GUARD_SQL).toContain(`Production DDL policy, rule ${rule![1]} (the break window).`);
+  });
+
+  it('a refused list_migrations is told how to read the history without DDL', () => {
+    // Both refusals in the guard's first window (2026-09-10 15:58 and 16:02)
+    // were the Supabase MCP's no-op ALTERs on supabase_migrations, which it
+    // runs before list_migrations and which reload PostgREST every time.
+    expect(GUARD_SQL).toContain("WHEN v_schema = 'supabase_migrations' THEN");
+    expect(GUARD_SQL).toContain('SELECT version, name FROM supabase_migrations.schema_migrations');
   });
 });
 

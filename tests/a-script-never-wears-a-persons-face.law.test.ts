@@ -167,7 +167,22 @@ describe("LAW 2 - Dan's personal account is not a default anywhere", () => {
       if (code.includes(PERSONAL)) offenders.push(relative(ROOT, file));
     }
     expect(offenders, 'use only an explicitly injected dedicated fixture identity').toEqual([]);
-  });
+    /* A LAW THAT RUNS OUT OF TIME HAS NOT ANSWERED (2026-09-10). This walks
+       eight directories plus every root script and reads each file, and it
+       lands around 5.2s - just past vitest's 5,000ms default. Measured on
+       2026-09-10 it timed out three full-suite runs in a row on a busy Mac
+       while every assertion in it would have passed; alone on the same machine
+       it finishes in 0.8s.
+
+       `Test timed out in 5000ms` names no cause and proves nothing - the
+       assertion never ran. This is a SECURITY law: it is what keeps Dan's
+       personal address out of every script after a cron wearing it signed him
+       out of every table for twenty-two hours. A security law that flakes is
+       one people learn to re-run instead of read (CLAUDE.md 10.86 - a signal
+       that answers when it does not know). The budget below is the measurement
+       plus headroom, not a guess, and it changes nothing about what is
+       asserted. */
+  }, 30_000);
 
   it('the orphaned local-secret and personal-account probes stay retired', () => {
     for (const file of RETIRED_LOCAL_CREDENTIAL_PROBES) {

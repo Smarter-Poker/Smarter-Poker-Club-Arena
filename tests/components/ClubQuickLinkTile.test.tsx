@@ -143,6 +143,46 @@ describe('ClubQuickLinkTile', () => {
     expect(screen.queryByRole('menu')).not.toBeInTheDocument();
   });
 
+  it('keeps the directory outside transformed scrollers while its desktop anchor follows the tile', async () => {
+    const { container, unmount } = renderTile();
+    container.style.transform = 'translateZ(0)';
+    container.style.overflow = 'hidden';
+    const trigger = screen.getByRole('button', { name: /Hold To Choose A Wallet/ });
+    let rect = new DOMRect(200, 600, 60, 90);
+    const measureTrigger = vi
+      .spyOn(trigger, 'getBoundingClientRect')
+      .mockImplementation(() => rect);
+
+    fireEvent.contextMenu(trigger);
+    const directory = screen.getByRole('menu').parentElement as HTMLDivElement;
+    const overlay = document.querySelector('[class*="cashierSwitchOverlay"]');
+    expect(container).not.toContainElement(directory);
+    expect(directory.parentElement).toBe(document.body);
+    expect(overlay?.parentElement).toBe(document.body);
+    expect(directory.style.getPropertyValue('--quick-link-anchor-x')).toBe('230px');
+    expect(directory.style.getPropertyValue('--quick-link-anchor-bottom')).toBe(
+      `${window.innerHeight - 600 + 8}px`
+    );
+
+    rect = new DOMRect(200, 500, 60, 90);
+    fireEvent.scroll(container);
+    expect(directory.style.getPropertyValue('--quick-link-anchor-bottom')).toBe(
+      `${window.innerHeight - 500 + 8}px`
+    );
+    rect = new DOMRect(100, 500, 60, 90);
+    fireEvent.resize(window);
+    expect(directory.style.getPropertyValue('--quick-link-anchor-x')).toBe('130px');
+
+    await act(async () => {});
+    unmount();
+    expect(directory).not.toBeInTheDocument();
+    expect(overlay).not.toBeInTheDocument();
+    const measurementsBeforeViewportEvents = measureTrigger.mock.calls.length;
+    fireEvent.scroll(document.body);
+    fireEvent.resize(window);
+    expect(measureTrigger).toHaveBeenCalledTimes(measurementsBeforeViewportEvents);
+  });
+
   it('labels an owned union treasury and does not mislabel it as club chips', async () => {
     renderTile({ clubs: [A, UNION] });
     fireEvent.contextMenu(screen.getByRole('button', { name: /Hold To Choose A Wallet/ }));

@@ -1,0 +1,182 @@
+{
+  "authorization": "The user explicitly requested a six-agent swarm to finish Phase 3 and authorized repository pushes/publications without repeat confirmation.",
+  "automatic_review_blocks": [
+    {
+      "action": "Private repository source inspection through Desktop Commander",
+      "disposition": "Stopped those reads. No alternate transport, source edits, tests or deployment in that lane.",
+      "lane": "seating_runtime",
+      "reason": "Reviewer classified broad, narrow and derived-only source results as unauthorized private-source disclosure."
+    },
+    {
+      "action": "Targeted Supabase diagnostics and narrower public engine-health inspection",
+      "disposition": "Stopped the rejected paths. Retained only the earlier readable public snapshot.",
+      "lane": "seating_runtime",
+      "reason": "Reviewer classified the project/destination as unverified and the operational data disclosure as unauthorized."
+    },
+    {
+      "action": "Restoring the satellite receipt definition and owner-only ACL in disposable current_replay",
+      "disposition": "M5 rehearsal rolled back. No further restoration attempts. Continue independent fixture verification only.",
+      "lane": "payout_cutover",
+      "reason": "Reviewer rejected both live-definition transfer and subsequent tracked-source restoration as an indirect retry/broad local database mutation."
+    },
+    {
+      "action": "Deeper cancellation-function source/error inspection",
+      "disposition": "Do not infer interrupted-event or prior-award cancellation acceptance from refund-only cases.",
+      "lane": "entry_refund",
+      "reason": "Automatic review blocked the requested source/error disclosure."
+    }
+  ],
+  "checked_at": "2026-09-10T04:31:49.109729+00:00",
+  "coordination": "The existing release task owns the production engine release seal and Stage-B cutover. This swarm performs isolated source and verification work and normal repository publication; it does not race that production owner.",
+  "integration_branch": "agent/codex-chip-drift-resume/fix/phase-three-swarm",
+  "lanes": [
+    {
+      "owner": "entry_refund",
+      "controls": ["CA-03-01", "CA-03-11"],
+      "status": "ordinary_purchase_current_dependency_parity_verified_and_integrated",
+      "commit": "f3a0d1e4e",
+      "evidence": "docs/changelog/2026-09-10-rebuy-rollback-and-concurrent-replay-acceptance.md",
+      "commits": ["f3a0d1e4e", "2f83c51b85986c6ea32ac97eeb4913676d908240"]
+    },
+    {
+      "owner": "bounties_tickets",
+      "controls": ["CA-03-02", "CA-03-03", "CA-03-10"],
+      "status": "focused_tests_integrated_and_ci_wiring_verified",
+      "commits": [
+        "2f48e0ebf5024fe636b58d212169fccb288453b6",
+        "495a0ee9dbf48c39c3f11a50ea179a3857a08923"
+      ],
+      "evidence": "docs/audits/2026-09-10-phase-three-bounty-mystery-satellite-evidence.json"
+    },
+    {
+      "owner": "payout_cutover",
+      "controls": ["CA-03-04", "CA-03-05", "CA-03-06", "CA-03-07"],
+      "status": "fixture_correction_integrated_exact_consent_followup_in_progress",
+      "commit": "2a55d077d532d9e594fb7c500f8f78609f2eb64f",
+      "evidence": "docs/audits/2026-09-10-payout-cutover-swarm-evidence.md"
+    },
+    {
+      "owner": "spin_acceptance",
+      "controls": ["CA-03-08"],
+      "status": "parser_correction_integrated",
+      "commit": "c0aa15a94754eac456077ec6784c2c43bfbc1a88",
+      "evidence": "docs/audits/2026-09-10-accounting-phase-three-spin-swarm.json"
+    },
+    {
+      "owner": "seating_runtime",
+      "controls": ["CA-03-09"],
+      "status": "blocked_by_automatic_review"
+    },
+    {
+      "owner": "tournament_ui",
+      "controls": ["CA-03-12"],
+      "status": "archive_corrections_integrated_exact_consent_followup_in_progress",
+      "commit": "0f41a5c7f404678c0f60573ffcad6fefad468ec7",
+      "evidence": "docs/audits/2026-09-10-phase-three-client-wiring-acceptance.md"
+    }
+  ],
+  "phase": 3,
+  "phase_complete": false,
+  "phase_four": {
+    "gate": "Complete all twelve Phase 3 behavioral and release acceptance controls first.",
+    "next_register": "docs/audits/2026-09-08-comprehensive-club-arena-backlog/feature-backlog.csv",
+    "status": "not_started"
+  },
+  "phase_four_started": false,
+  "production_cutover": {
+    "bounty_rebuy_generation_helper": "absent",
+    "committed_move_receipt_resolver": "absent",
+    "mutations_by_this_swarm": false,
+    "new_seat_move": "absent",
+    "observed_at": "2026-09-10T04:31:49.109729+00:00",
+    "seven_guards": "All seven remain disabled; do not enable them without replacement and composition acceptance."
+  },
+  "programme": "109-item comprehensive Club Arena accounting audit",
+  "public_runtime": {
+    "blocked_settlements": 18,
+    "dead_stalled_count": 0,
+    "humans_seated": 0,
+    "instance": "1-e1790665",
+    "limits": "One public response. Individual rows for the four earlier stalls were truncated; recovery, hand receipts and rejection causes remain unverified. A subsequent narrower request was rejected by automatic review.",
+    "liveness": "ok",
+    "observed_at": "2026-09-10T03:16:32.239804Z",
+    "rake_checksum": "engine and database matched",
+    "reported_by": "seating_runtime",
+    "settlement_status": "blocked",
+    "stalled_tables": 9,
+    "status": "ok",
+    "tournament_lease_claim_errors": 1,
+    "tournament_lease_heartbeat_errors": 0,
+    "uptime_seconds": 1234,
+    "version": "1695880b"
+  },
+  "publication": {
+    "status": "PR4096_CI_fix_verified_locally_pending_rerun",
+    "push_completed": true,
+    "normal_hooks": "passed on integrated conflict resolutions; no hooks bypassed",
+    "pr": 4096,
+    "initial_head": "82bca2280b96cf06aad11fd67c8d20af61af525a"
+  },
+  "verification": {
+    "client": {
+      "passed": 260,
+      "files": 14,
+      "typescript": "passed in UI lane"
+    },
+    "spin": {
+      "passed": 170,
+      "files": 15,
+      "typescript": "passed in Spin lane",
+      "reproduced_failure_cases": 10,
+      "compact_pg_checks": 42
+    },
+    "mystery": {
+      "pg_groups": 13,
+      "ci_environment": "passed with inherited PGUSER/PGHOST/PGPORT",
+      "ci_failure_propagation": "verified"
+    },
+    "satellite_origin_refund": {
+      "pg_groups": 8,
+      "scope": "Common origin-wallet cash refund and historical ticket provenance, rollback and concurrent retry; not terminal award composition."
+    },
+    "rebuy": {
+      "pg_groups": 23,
+      "cleanup": "passed, clean shutdown",
+      "source_dependencies": "Exact20626 resolver and23919 deduction fingerprints asserted in every fresh scenario; historical repairs and named live-event probes excluded."
+    },
+    "terminal_fixture": {
+      "native_pg_cases": 6,
+      "source_assertions": 61,
+      "scope": "Real guard with correctly closed fixture entry windows; no full M5 financial acceptance claim."
+    },
+    "integrated_required_ci": "pending",
+    "registration_client_parity": {
+      "psql_groups": 23,
+      "node_groups": 23,
+      "both_exit_codes": 0,
+      "initial_ci_failure": "JSON scalar decoded by Node before json.loads; repaired with explicit text projection",
+      "required_ci": "pending rerun"
+    }
+  },
+  "remaining_acceptance": {
+    "CA-03-01": "Actual late-seat lifecycle and knockout rebuy generations under missing M6/bounty helper authority; current ordinary purchase dependency parity is verified.",
+    "CA-03-02": "Actual bounty/PKO wallet, progressive carry and final winner conservation after coordinated dependency installation.",
+    "CA-03-03": "Complete mystery wallet payment and terminal residual closure beyond reserve/reveal identity.",
+    "CA-03-04": "Full immutable payout-plan and all-recipient terminal composition against current money authorities.",
+    "CA-03-05": "Test all replacements and activate/retire seven guards only through coordinated Stage-B acceptance.",
+    "CA-03-06": "Versioned exact-plan preview/consent and bound engine terminal request/receipt; source followup in progress.",
+    "CA-03-07": "Full funded-overlay and published-commitment immutability acceptance through terminal composition.",
+    "CA-03-08": "Current M1 lower funding composition and coordinated engine adoption of source corrections.",
+    "CA-03-09": "Final seat authority, concurrent moves and clocks; unresolved stalls/hand receipt diagnostics blocked by review.",
+    "CA-03-10": "Satellite target funding and existing ticket redemption under final seat authority, preserving approved cash refunds.",
+    "CA-03-11": "Cancellation after prior awards/persisted Spin draw and interrupted-event policy; refund-only cases are insufficient.",
+    "CA-03-12": "Integrated client publication/browser verification and exact deal-plan consent."
+  },
+  "environment": {
+    "disk": "Parallel disposable dependency provisioning exhausted free disk. Agents stopped their own provisioning and removed only their new disposable copies; space recovered.",
+    "connector": "Repeated HTTP504 responses occurred after some commands had actually completed. Saved unique logs are checked before any retry.",
+    "worktree_metadata": "Other activity changed shared core.bare and test identity. Affected agents repaired only their own worktree configuration and retained normal guards.",
+    "root_disposable_cluster": "Still intact. Automatic review rejected stop/copy/delete; no cleanup workaround attempted."
+  },
+  "integration_base": "4d29dce4c: PR4083 release-seal update merged from main before publication."
+}

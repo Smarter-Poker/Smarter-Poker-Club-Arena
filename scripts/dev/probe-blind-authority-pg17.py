@@ -56,7 +56,7 @@ with log_path.open('w') as log:
             return run.stdout.strip()
 
         installed = (repo / 'scripts/dev/fixtures/blind-authority/installed.sql').read_text()
-        q('CREATE ROLE postgres SUPERUSER;')
+        q('CREATE ROLE postgres SUPERUSER; CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role;')
         def restore():
             q(installed)
             q(f'ALTER FUNCTION {signature} OWNER TO postgres; REVOKE ALL ON FUNCTION {signature} FROM PUBLIC;')
@@ -123,6 +123,16 @@ with log_path.open('w') as log:
         for continuation in invalid:
             stored[-1]['spinContinuation'] = continuation
             q(call(stored, 12, 'spin', 'SPIN', 900), 'frozen formula')
+        # PostgreSQL numeric accepts a wider domain than finite JS numbers.
+        for raw in ['1e400', '1e-400']:
+            stored[-1]['spinContinuation'] = {'version': 1, 'anchorLevel': 10,
+                'anchorBigBlind': '__outside_js_domain__', 'growth': 1.4, 'roundBigTo': 10}
+            sql = call(stored, 12, 'spin', 'SPIN', 900).replace(
+                '"__outside_js_domain__"', raw)
+            q(sql, 'frozen formula')
+        stored[-1]['spinContinuation'] = {'version': 1, 'anchorLevel': 10,
+            'anchorBigBlind': 210, 'growth': 1e200, 'roundBigTo': 10}
+        q(call(stored, 12, 'spin', 'SPIN', 900), 'frozen formula')
         del stored[-1]['spinContinuation']
         assert json.loads(q(call(stored, 12, 'spin', 'SPIN', 900)))['big_blind'] == 580
         for variant, kind in [('sng', 'MTT'), ('standard', 'SNG')]:
@@ -137,7 +147,7 @@ with log_path.open('w') as log:
             'proposed_sql_mismatches': sum(not r['proposed_sql_matches_expected'] for r in captured['rows']),
             'manager_mismatches': sum(not r['manager_matches_expected'] for r in captured['rows']),
             'generic_mtt_unchanged_cases': len(generic),
-            'malformed_receipts_rejected': len(invalid),
+            'malformed_receipts_rejected': len(invalid) + 3,
             'preflight_refusals': 3,
             'private_acl_preserved': True,
         }

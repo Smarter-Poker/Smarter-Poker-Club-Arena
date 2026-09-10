@@ -104,12 +104,33 @@ BEGIN
         RAISE EXCEPTION 'Spin blind continuation is missing its frozen formula'
           USING ERRCODE='55000';
       END IF;
+      -- JSON numbers are consumed as finite JavaScript numbers by the engine.
+      -- PostgreSQL numeric has a larger range; reject a stored formula whose
+      -- inputs or intermediate arithmetic cannot exist in the engine domain.
+      BEGIN
+        PERFORM (e.value #>> '{}')::double precision
+          FROM jsonb_each(v_continuation) e
+         WHERE e.key IN ('anchorLevel','anchorBigBlind','growth','roundBigTo');
+        PERFORM ((v_continuation->>'anchorBigBlind')::double precision
+          * power((v_continuation->>'growth')::double precision,
+                  v_index::double precision+1-(v_continuation->>'anchorLevel')::double precision))
+          / (v_continuation->>'roundBigTo')::double precision;
+      EXCEPTION WHEN numeric_value_out_of_range THEN
+        RAISE EXCEPTION 'Spin blind continuation is missing its finite frozen formula'
+          USING ERRCODE='55000';
+      END;
       v_bb := round(
         ((v_continuation->>'anchorBigBlind')::numeric
           * power((v_continuation->>'growth')::numeric,
                   v_index::numeric+1-(v_continuation->>'anchorLevel')::numeric))
         / (v_continuation->>'roundBigTo')::numeric
       ) * (v_continuation->>'roundBigTo')::numeric;
+      BEGIN
+        PERFORM v_bb::double precision;
+      EXCEPTION WHEN numeric_value_out_of_range THEN
+        RAISE EXCEPTION 'Spin blind continuation overflowed its stored formula'
+          USING ERRCODE='55000';
+      END;
       IF v_bb <= 0 THEN
         RAISE EXCEPTION 'Spin blind continuation overflowed its stored formula'
           USING ERRCODE='55000';
@@ -247,12 +268,16 @@ BEGIN
 END;
 $function$;
 
+-- Explicitly preserve the installed internal-only execution boundary.
+REVOKE ALL ON FUNCTION public.fn_resolve_tournament_blinds(text,integer,text,text,numeric)
+  FROM PUBLIC, anon, authenticated, service_role;
+
 DO $postflight$
 BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM pg_proc p
     WHERE p.oid='public.fn_resolve_tournament_blinds(text,integer,text,text,numeric)'::regprocedure
-      AND md5(p.prosrc)='9c80eddf5784982bad2585ec39cca0ad'
+      AND md5(p.prosrc)='2eb470a52fe0d2bf3b1b5f38a05f3bc6'
       AND p.prosecdef AND p.proconfig=ARRAY['search_path=public, pg_temp']
       AND p.proacl::text='{postgres=X/postgres}'
   ) THEN

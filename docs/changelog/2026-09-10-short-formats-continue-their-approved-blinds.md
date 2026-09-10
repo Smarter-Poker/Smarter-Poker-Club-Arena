@@ -11,13 +11,13 @@ The installed SQL's Spin formula already matched all 80 approved Spin cases, eig
 ## Verification
 
 - `python3 scripts/dev/probe-blind-authority-pg17.py`: 91 actual manager/SQL cases, no proposed mismatch. The installed SQL has eight Heads-Up mismatches and one frozen Spin compatibility mismatch.
-- The same disposable PostgreSQL 17 run preserves all 60 generic MTT cases byte-for-byte as JSON results; rejects ten malformed stored continuations; verifies the missing function, changed function body, and changed privilege preflights; verifies legacy Spin fallback and SNG identification by either persisted discriminator.
+- The same disposable PostgreSQL 17 run preserves all 60 generic MTT cases byte-for-byte as JSON results; rejects thirteen malformed stored continuations; verifies the missing function, changed function body, and changed privilege preflights; verifies legacy Spin fallback and SNG identification by either persisted discriminator.
 - `server: npx vitest run src/tournament/HeadsUpBlindContinuation.test.ts src/tournament/SpinDrawReceipt.test.ts src/tournament/BlindLevelTransitionRecovery.test.ts`: 14 tests passed across three files. The new Heads-Up test reproduced the level-13 regression before the source correction.
 - `server: npm run build`: TypeScript build passed.
 - Evidence: `docs/audits/2026-09-10-phase3-short-format-blind-authority.json` includes source hashes, actual matrix rows, and the installed/proposed body fingerprints.
 
 ## Deployment Contract
 
-Proposal `20260910070354_short_format_blinds_continue_their_approved_rules.sql` is a single short transaction. It requires the installed resolver body `b5769b647e5b106caaf51982ac245ee8`, its existing security-definer search path, and its exact postgres-only ACL before replacing anything. The proposal preserves that ACL and asserts the new body `9c80eddf5784982bad2585ec39cca0ad` afterward. The current public wrapper remains service-only. No production DDL or data writes were performed by this lane, and the engine changes have not been published by this lane.
+Proposal `20260910070354_short_format_blinds_continue_their_approved_rules.sql` is a single short transaction. It requires the installed resolver body `b5769b647e5b106caaf51982ac245ee8`, its existing security-definer search path, and its exact postgres-only ACL before replacing anything. The proposal preserves that ACL and asserts the new body `2eb470a52fe0d2bf3b1b5f38a05f3bc6` afterward. The current public wrapper remains service-only. No production DDL or data writes were performed by this lane, and the engine changes have not been published by this lane.
 
 Roll out the reviewed database correction before normal engine adoption, then verify actual live versions and actual short-format levels. This local proof does not satisfy the remaining K01 atomic clock publication, stale writer, maintenance, late response, or live acceptance requirements.

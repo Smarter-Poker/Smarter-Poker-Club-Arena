@@ -11,7 +11,7 @@ beforeAll(async () => {
   ({ TournamentManagerBase } = await import('./tournament/TournamentManagerBase.js'));
   ({ supabase } = await import('./services/supabase.js'));
   ({ ServerTableEngineBase } = await import('./engine/ServerTableEngineBase.js'));
-});
+}, 60_000); // importing GameServer alone can pass 10s on a loaded CI runner
 beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(new Date('2026-09-10T12:55:00.000Z'));
@@ -39,19 +39,35 @@ function manager(id: string) {
   });
 }
 
-function server(managers: ReturnType<typeof manager>[]) {
+/**
+ * `maintenanceEndsAt` is what MaintenanceBreak.endsAt() answers: 0 when no
+ * maintenance break is on (the default, and every case written before
+ * 2026-09-10), otherwise the instant the platform comes off it.
+ */
+function server(managers: ReturnType<typeof manager>[], maintenanceEndsAt = 0) {
   return Object.assign(Object.create(GameServer.prototype), {
     lifecycleGeneration: 1,
     running: true,
     breakCountdownStarted: true,
+    breakEndsWithMaintenance: false,
     synchronizedBreakGeneration: 0,
     directAdmissionIsCurrent: () => true,
     tournamentEngines: new Map(managers.map((entry) => [entry.tournamentId, entry])),
     breakEndsAt: 0,
     breakResumeTimer: null,
+    maintenanceBreak: { endsAt: vi.fn(() => maintenanceEndsAt) },
     waitForAllTablesParked: vi.fn().mockResolvedValue(true),
     launchServerLifecycleJob: vi.fn(),
   });
+}
+
+/**
+ * Let every queued continuation run without moving the fake clock. The pauses
+ * and countdown writes are awaited together (Promise.all), which costs a few
+ * more microtask turns than the one-at-a-time loop did.
+ */
+async function settle(turns = 10) {
+  for (let i = 0; i < turns; i++) await Promise.resolve();
 }
 
 function persistence(delayMs = 0) {
@@ -116,8 +132,7 @@ describe('Synchronized Break Deadline', () => {
     );
     const writes = persistence();
     const pending = owner.triggerSynchronizedBreak();
-    await Promise.resolve();
-    await Promise.resolve();
+    await settle();
     expect(owner.waitForAllTablesParked).toHaveBeenCalledOnce();
     expect(writes).toEqual([]);
     expect(participant.broadcast).not.toHaveBeenCalled();
@@ -361,5 +376,183 @@ describe('A table the maintenance break holds is parked', () => {
     expect(Date.now() - started).toBeGreaterThanOrEqual(5 * 60 * 1000);
     expect(Date.now() - started).toBeLessThan(5 * 60 * 1000 + 1_000);
     expect(warn.mock.calls.some(([line]) => String(line).includes('wedged-e'))).toBe(true);
+  });
+});
+
+/*
+ * 2026-09-10: THE TOURNAMENT BREAK ENDS WITH THE MAINTENANCE BREAK.
+ *
+ * At 15:55 the pause loop told 45 tournaments one after another
+ * (break_started_at 15:55:00.002 to 15:55:13.6) and only then began a
+ * five-minute countdown, so the tournaments came off their break at about
+ * 16:00:14 and were then resumed one after another as well, while the
+ * maintenance break had handed the platform back at 16:00:00. While a
+ * maintenance break is on, its end is the tournament break's end, and every
+ * event is paused, counted down and resumed at once.
+ */
+describe('The tournament break ends with the maintenance break', () => {
+  const onTheHour = Date.parse('2026-09-10T13:00:00.000Z');
+
+  /** Each pause costs seven seconds of wall clock, as 45 x 0.2-0.3s did. */
+  function slowPauses(...participants: ReturnType<typeof manager>[]) {
+    for (const participant of participants) {
+      participant.pauseForBreak.mockImplementation(async () => {
+        vi.setSystemTime(Date.now() + 7_000);
+      });
+    }
+  }
+
+  it('stamps the maintenance end on every countdown and resumes at it, however long the pauses took', async () => {
+    const first = manager('first');
+    const second = manager('second');
+    slowPauses(first, second);
+    const owner = server([first, second], onTheHour);
+    const writes = persistence();
+    await owner.triggerSynchronizedBreak();
+
+    // Fourteen seconds went on pausing. The old rule would now run to 13:00:14.
+    expect(Date.now()).toBe(Date.parse('2026-09-10T12:55:14.000Z'));
+    expect(owner.breakEndsAt).toBe(onTheHour);
+    expect(writes).toEqual([
+      { id: 'first', deadline: new Date(onTheHour).toISOString() },
+      { id: 'second', deadline: new Date(onTheHour).toISOString() },
+    ]);
+    for (const participant of [first, second]) {
+      expect(participant.broadcast).toHaveBeenCalledWith(
+        'tournament_break_started',
+        expect.objectContaining({ breakEndsAt: new Date(onTheHour).toISOString() })
+      );
+    }
+
+    await vi.advanceTimersByTimeAsync(onTheHour - Date.now() - 1);
+    expect(first.resumeFromBreak).not.toHaveBeenCalled();
+    expect(second.resumeFromBreak).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(Date.now()).toBe(onTheHour);
+    expect(first.resumeFromBreak).toHaveBeenCalledOnce();
+    expect(second.resumeFromBreak).toHaveBeenCalledOnce();
+  });
+
+  it('keeps the old rule without a maintenance break: five minutes from the moment every table parked', async () => {
+    const first = manager('first');
+    const second = manager('second');
+    slowPauses(first, second);
+    const owner = server([first, second]);
+    const writes = persistence();
+    await owner.triggerSynchronizedBreak();
+
+    const fiveMinutesAfterParking = Date.parse('2026-09-10T13:00:14.000Z');
+    expect(owner.breakEndsAt).toBe(fiveMinutesAfterParking);
+    expect(writes.map((write) => write.deadline)).toEqual([
+      new Date(fiveMinutesAfterParking).toISOString(),
+      new Date(fiveMinutesAfterParking).toISOString(),
+    ]);
+    for (const participant of [first, second]) {
+      expect(participant.broadcast).toHaveBeenCalledWith(
+        'tournament_break_started',
+        expect.objectContaining({ breakDurationMinutes: 5 })
+      );
+    }
+    await vi.advanceTimersByTimeAsync(fiveMinutesAfterParking - Date.now() - 1);
+    expect(first.resumeFromBreak).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(first.resumeFromBreak).toHaveBeenCalledOnce();
+  });
+
+  it('ends at once when the drain outran the maintenance end, instead of five minutes later', async () => {
+    const participant = manager('parked-after-the-hour');
+    const owner = server([participant], onTheHour);
+    owner.waitForAllTablesParked.mockImplementation(async () => {
+      vi.setSystemTime(onTheHour + 1_000);
+      return true;
+    });
+    const writes = persistence();
+    await owner.triggerSynchronizedBreak();
+    expect(writes).toEqual([
+      { id: 'parked-after-the-hour', deadline: new Date(onTheHour + 1_000).toISOString() },
+    ]);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(participant.resumeFromBreak).toHaveBeenCalledOnce();
+  });
+
+  it('holds a tournament that starts during the drain until the same end, not the seven-minute worst case', async () => {
+    const participant = manager('draining');
+    const owner = server([participant], onTheHour);
+    let finish!: (parked: boolean) => void;
+    owner.waitForAllTablesParked.mockImplementation(
+      () =>
+        new Promise<boolean>((resolve) => {
+          finish = resolve;
+        })
+    );
+    const writes = persistence();
+    const pending = owner.triggerSynchronizedBreak();
+    await settle();
+
+    vi.setSystemTime(new Date('2026-09-10T12:56:00.000Z'));
+    const entrant = manager('newcomer');
+    owner.tournamentEngines.set(entrant.tournamentId, entrant);
+    await owner.holdIfBreakIsRunning(entrant);
+    expect(entrant.pauseForBreak).toHaveBeenCalledWith(onTheHour - Date.now());
+    // Still no countdown while a hand is in the air.
+    expect(writes).toEqual([]);
+
+    finish(true);
+    await pending;
+    expect(writes).toEqual([
+      { id: 'draining', deadline: new Date(onTheHour).toISOString() },
+      { id: 'newcomer', deadline: new Date(onTheHour).toISOString() },
+    ]);
+  });
+
+  it('tells every event to stop in the same instant, and checks the server generation once they have settled', async () => {
+    const first = manager('first');
+    const second = manager('second');
+    let release!: () => void;
+    first.pauseForBreak.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        })
+    );
+    const owner = server([first, second], onTheHour);
+    let current = true;
+    owner.directAdmissionIsCurrent = () => current;
+    persistence();
+    const pending = owner.triggerSynchronizedBreak();
+    // The second event is not queued behind the first one's pause.
+    expect(first.pauseForBreak).toHaveBeenCalledOnce();
+    expect(second.pauseForBreak).toHaveBeenCalledOnce();
+    await settle();
+    expect(owner.waitForAllTablesParked).not.toHaveBeenCalled();
+
+    // This server is fenced while a pause is still in flight.
+    current = false;
+    release();
+    await pending;
+    expect(owner.waitForAllTablesParked).not.toHaveBeenCalled();
+    expect(owner.breakEndsAt).toBe(0);
+  });
+
+  it('resumes every event at once: one still waiting holds nobody, one that throws stops nobody', async () => {
+    const waiting = manager('waiting-for-the-thaw');
+    const broken = manager('broken');
+    const ready = manager('ready');
+    waiting.resumeFromBreak.mockImplementation(() => new Promise<void>(() => {}));
+    broken.resumeFromBreak.mockRejectedValue(new Error('resume failed'));
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const owner = server([waiting, broken, ready]);
+    owner.breakEndsAt = onTheHour;
+    void owner.resumeSynchronizedBreak([waiting, broken, ready], 1);
+
+    expect(waiting.resumeFromBreak).toHaveBeenCalledOnce();
+    expect(broken.resumeFromBreak).toHaveBeenCalledOnce();
+    expect(ready.resumeFromBreak).toHaveBeenCalledOnce();
+    expect(owner.breakEndsAt).toBe(0);
+    await settle();
+    expect(errors).toHaveBeenCalledWith(
+      '[GameServer.Failed_to_resume_tournament]',
+      expect.objectContaining({ message: 'resume failed' })
+    );
   });
 });

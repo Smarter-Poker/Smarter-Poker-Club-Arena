@@ -2,6 +2,10 @@
 
 ## Every Change, Documented. No Exceptions.
 
+## 2026-09-10: Phase Three Records Verified Publication And Prepared Consent
+
+PR4096 is merged and both frontend build stamps match its merge commit. The automatic engine release failed its current-main control check, so engine adoption is explicitly open. Integrated draft consent SQL, engine and client pass 143 client tests, 175 engine tests and both TypeScript checks. Native cash rollback/replay, bounded review and Spin reserve contention evidence are recorded without claiming unmatched terminal authority or production acceptance. A fresh read confirms seat functions now exist, seven guards remain disabled and bounty-rebuy generation remains absent. Re-read: yes. Phase3 stays open; Phase4 has not started. See docs/audits/2026-09-10-chip-drift-phase-three-swarm.json.
+
 ## 2026-09-10: Deal Review Operations Have A Complete Request Deadline
 
 Deal operations reuse the extracted shared roster deadline across auth, RPC, and response parsing. Abort reaches the request and is checked after auth before any late mutation; unknown responses use readback with no mutation retry. All 143 focused tests pass, including actual PostgREST stalled-operation UI tests and the existing 29 roster resilience tests; full TypeScript passes. Re-read: yes. No production publication or activation. See docs/changelog/2026-09-10-deal-review-operations-have-a-deadline.md.

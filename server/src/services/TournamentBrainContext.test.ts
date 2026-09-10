@@ -37,11 +37,27 @@ const row = (over: Record<string, unknown> = {}) => ({
 });
 
 describe('TournamentBrainContext V12 - derivation', () => {
-  it('derives formats: spin, hu_sng, mtt', () => {
+  it('derives formats: spin, multi-seat sng, hu_sng, mtt', () => {
     expect(deriveContext(row({ tournament_type: 'SPIN' }) as never, 3, 3, 3000).format).toBe(
       'spin'
     );
     expect(deriveContext(row({ variant: 'spin' }) as never, 3, 3, 3000).format).toBe('spin');
+    expect(
+      deriveContext(
+        row({ tournament_type: 'SNG', variant: 'sng', table_size: 6, max_players: 6 }) as never,
+        6,
+        6,
+        6000
+      ).format
+    ).toBe('sng');
+    expect(
+      deriveContext(
+        row({ tournament_type: 'SNG', variant: 'sng', table_size: 2, max_players: 2 }) as never,
+        2,
+        2,
+        3000
+      ).format
+    ).toBe('hu_sng');
     expect(deriveContext(row({ table_size: 2 }) as never, 2, 2, 3000).format).toBe('hu_sng');
     expect(deriveContext(row() as never, 40, 60, 100000).format).toBe('mtt');
   });

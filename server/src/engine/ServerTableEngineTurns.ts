@@ -145,6 +145,28 @@ export function applyTableCommitmentCap(
 }
 
 /**
+ * Compose the host's preflop all-in-or-fold rule into the same immutable menu
+ * the worker and Phase 7 evaluate. This only removes actions; in particular it
+ * never resurrects an all-in already removed by the commitment cap.
+ */
+export function applyAllInOrFoldActionState(
+  source: CappedActionState,
+  enabled: boolean,
+  stage: HandStage
+): CappedActionState {
+  if (!enabled || stage !== 'preflop') return source;
+  const allowed = new Set<ActionType>(
+    source.toCall > 0.005 ? ['fold', 'all_in'] : ['check', 'all_in']
+  );
+  return {
+    ...source,
+    legalActions: source.legalActions.filter((action) => allowed.has(action)),
+    minRaiseTo: null,
+    maxRaiseTo: null,
+  };
+}
+
+/**
  * One telemetry key per gate, fired as LITERALS.
  *
  * A lookup table would be tidier and would break the ledger law
@@ -2273,7 +2295,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     dealerSeat: number | undefined,
     activeVariant: string
   ): {
-    format: 'cash' | 'mtt' | 'spin' | 'hu_sng';
+    format: 'cash' | 'mtt' | 'sng' | 'spin' | 'hu_sng';
     tournament?: NonNullable<HorseGameStateV2['tournament']>;
   } {
     if (!this.isTournamentTable()) return { format: 'cash' as const };
@@ -2364,6 +2386,11 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       previousZone,
     });
     this.horseTournamentMZones.set(player.user_id, m.zone);
+    const horseRecoveryCap =
+      tctx?.horseRebuyCapByUser &&
+      Object.prototype.hasOwnProperty.call(tctx.horseRebuyCapByUser, player.user_id)
+        ? tctx.horseRebuyCapByUser[player.user_id]
+        : null;
 
     return {
       // Tournament metadata may name a Spin/MTT/HU structure only after the
@@ -2412,12 +2439,19 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         isPko: tctx?.isPko ?? false,
         isBounty: tctx?.isBounty ?? false,
         isMysteryBounty: tctx?.isMysteryBounty ?? false,
+        mysteryBountyStage: tctx?.mysteryBountyStage ?? 'none',
         reentryAllowed: tctx?.reentryAllowed ?? false,
         reentryOpen: tctx?.reentryOpen ?? false,
-        maxReentries: tctx?.maxReentries ?? null,
+        maxReentries:
+          tctx?.reentryAllowed === true && tctx.rebuyAllowed !== true && horseRecoveryCap !== null
+            ? horseRecoveryCap
+            : (tctx?.maxReentries ?? null),
         rebuyAllowed: tctx?.rebuyAllowed ?? false,
         rebuyOpen: tctx?.rebuyOpen ?? false,
-        maxRebuys: tctx?.maxRebuys ?? null,
+        maxRebuys:
+          tctx?.rebuyAllowed === true && horseRecoveryCap !== null
+            ? horseRecoveryCap
+            : (tctx?.maxRebuys ?? null),
         addOnAvailable: tctx?.addOnAvailable ?? false,
         addOnPeriodOpen: tctx?.addOnPeriodOpen ?? false,
         addOnCost: tctx?.addOnCost ?? null,
@@ -2431,6 +2465,18 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         // V16 ICM: the payout curve + live stack distribution feed the real
         // Malmuth-Harville pressure model in HorseLogic.icmRisk.
         stacks: tctx?.stacks ?? [],
+        // Keep only this table's identities on the worker message. Phase 7
+        // uses them to remove the cached local stack values exactly before it
+        // substitutes the authoritative in-hand values; remote identities are
+        // unnecessary for ICM and never cross the action boundary.
+        stackByUser: Object.fromEntries(
+          players.flatMap((candidate) => {
+            const observed = tctx?.stackByUser?.[candidate.user_id];
+            return Number.isFinite(observed) && (observed as number) > 0
+              ? [[candidate.user_id, observed as number]]
+              : [];
+          })
+        ),
         payoutPct: tctx?.payoutPct ?? [],
         // V26 PRIZE LANDSCAPE: what a bust is actually worth right now -
         // how many chests are left, their mean, and whether the big one is
@@ -2440,6 +2486,34 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         mysteryTopCents: tctx?.mysteryTopCents ?? 0,
         mysteryTopLive: tctx?.mysteryTopLive ?? false,
         meanBountyCents: tctx?.meanBountyCents ?? 0,
+        prizePoolCents: tctx?.prizePoolCents ?? 0,
+        bountyPoolCents: tctx?.bountyPoolCents ?? 0,
+        buyInCents: tctx?.buyInCents ?? null,
+        startingStackChips: tctx?.startingStackChips ?? null,
+        rebuyCostCents: tctx?.rebuyCostCents ?? null,
+        rebuyChips: tctx?.rebuyChips ?? null,
+        rebuyPrizeContributionCents: tctx?.rebuyPrizeContributionCents ?? null,
+        rebuyBountyContributionCents: tctx?.rebuyBountyContributionCents ?? null,
+        reloadsUsed:
+          tctx?.reloadsByUser &&
+          Object.prototype.hasOwnProperty.call(tctx.reloadsByUser, player.user_id)
+            ? tctx.reloadsByUser[player.user_id]
+            : null,
+        addOnTaken:
+          tctx?.addOnTakenByUser &&
+          Object.prototype.hasOwnProperty.call(tctx.addOnTakenByUser, player.user_id)
+            ? tctx.addOnTakenByUser[player.user_id]
+            : null,
+        rebuyAffordable:
+          tctx?.rebuyAffordableByUser &&
+          Object.prototype.hasOwnProperty.call(tctx.rebuyAffordableByUser, player.user_id)
+            ? tctx.rebuyAffordableByUser[player.user_id]
+            : null,
+        addOnAffordable:
+          tctx?.addOnAffordableByUser &&
+          Object.prototype.hasOwnProperty.call(tctx.addOnAffordableByUser, player.user_id)
+            ? tctx.addOnAffordableByUser[player.user_id]
+            : null,
         // V23 ENDGAME: final-table flag + the blind clock (jam BEFORE the
         // blinds halve the M, not after).
         finalTable: tctx?.finalTable ?? false,
@@ -2482,6 +2556,15 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     const fence = [this.tableId, handNumber, seat, leaseGeneration ?? 'unverified', turnToken].join(
       ':'
     );
+    let pendingUtilityLedger: HorseDecision['tournamentUtility'];
+
+    const markPendingUtilityNotExecuted = (): void => {
+      if (!pendingUtilityLedger || pendingUtilityLedger.executionStatus !== 'pending') return;
+      pendingUtilityLedger.executedAction = null;
+      pendingUtilityLedger.executedAmount = null;
+      pendingUtilityLedger.executionStatus = 'not_executed';
+      noteFire('phase7_utility_not_executed');
+    };
 
     const fenceIsCurrent = (): boolean => {
       if (
@@ -2494,14 +2577,16 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         !this.lifecycleCanMutate() ||
         handControllerRef.getState().currentPlayerSeat !== seat
       ) {
+        markPendingUtilityNotExecuted();
         return false;
       }
       const currentLease = this.getEngineLeaseAuthority();
-      return (
+      const current =
         leaseGeneration !== null &&
         currentLease?.verified === true &&
-        currentLease.generation === leaseGeneration
-      );
+        currentLease.generation === leaseGeneration;
+      if (!current) markPendingUtilityNotExecuted();
+      return current;
     };
 
     if (!fenceIsCurrent()) {
@@ -2524,12 +2609,16 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       this.cancelHorseDecisionWork();
       return;
     }
-    const boundedActions = applyTableCommitmentCap(
-      controllerActions,
-      authoritativePlayer,
-      this.tableInfo?.cap_enabled === true,
-      Number(this.tableInfo?.cap_bb) || 0,
-      Number(this.tableInfo?.big_blind) || 0
+    const boundedActions = applyAllInOrFoldActionState(
+      applyTableCommitmentCap(
+        controllerActions,
+        authoritativePlayer,
+        this.tableInfo?.cap_enabled === true,
+        Number(this.tableInfo?.cap_bb) || 0,
+        Number(this.tableInfo?.big_blind) || 0
+      ),
+      this.tableInfo?.all_in_or_fold === true,
+      state.stage
     );
     const toCall = boundedActions.toCall;
     const contestablePot = handControllerRef.getContestablePotForCall(player.user_id);
@@ -2732,6 +2821,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
           return;
         }
         let decision = fastResult.decision;
+        pendingUtilityLedger = decision.tournamentUtility;
 
         // Humanlike think time comes from the decision engine itself (style- and
         // situation-aware, 0.7-8s). Clamp inside the table's action timer window.
@@ -2896,10 +2986,16 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
                 if (verdict) {
                   noteFire('v44_second_look_flipped');
                   decision = {
-                    ...decision,
+                    // The deep replay owns the Phase 7 utility receipt too.
+                    // Keeping the fast object while changing only its action
+                    // made the ledger claim a different selected action from
+                    // the one the table was about to execute.
+                    ...deepResult.decision,
                     action: verdict.action as ActionType,
                     amount: verdict.amount,
+                    thinkTime: decision.thinkTime,
                   };
+                  pendingUtilityLedger = decision.tournamentUtility;
                 }
               })
               .catch((error) => {
@@ -2923,8 +3019,13 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         }
         this.horseActionTimer = setTimeout(() => {
           this.horseActionTimer = null;
+          const utilityLedger = decision.tournamentUtility;
+          pendingUtilityLedger = utilityLedger;
           if (!fenceIsCurrent()) return;
-          if (!handControllerRef) return;
+          if (!handControllerRef) {
+            markPendingUtilityNotExecuted();
+            return;
+          }
           // The action is now authoritative. Cancel a queued/running deep read
           // before it can race the mutation below; this also retires the local
           // turn token so no later continuation can become current again.
@@ -2932,25 +3033,41 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
 
           // Verify it's still this player's turn (timer might have expired)
           const currentState = handControllerRef.getState();
-          if (currentState.currentPlayerSeat !== seat) return;
+          if (currentState.currentPlayerSeat !== seat) {
+            markPendingUtilityNotExecuted();
+            return;
+          }
 
           let action = decision.action as string;
           let amount = decision.amount;
 
+          if (action === 'allin') action = 'all_in';
+
           // ── ALL-IN-OR-FOLD (2026-08-22 parity) ────────────────────────────────
-          // At an AoF table the preflop menu is fold or shove, and HandController
-          // rejects everything else. The Phase 5 snapshot and brain both know
-          // about AoF; this commit-side coercion remains as a final legality belt.
-          // (A fold with nothing owed still normalizes to the legal check below.)
+          // Phase 7 already received the AoF-filtered authoritative menu. This
+          // belt may only degrade an impossible stale answer; it must never
+          // synthesize an unpriced shove or resurrect one removed by the cap.
           if (this.tableInfo?.all_in_or_fold && currentState.stage === 'preflop') {
-            if (action !== 'fold') {
-              action = 'all_in';
+            const allInOrFoldActions = gameState.legalActions ?? [];
+            const allowed = new Set(allInOrFoldActions);
+            if (!allowed.has(action as ActionType)) {
+              if (action !== 'fold' && allowed.has('all_in')) {
+                // Preserve the host rule for a stale non-fold intent, but only
+                // while the authoritative capped menu still contains a shove.
+                action = 'all_in';
+              } else {
+                action =
+                  toCall > 0 && allowed.has('fold')
+                    ? 'fold'
+                    : allowed.has('check')
+                      ? 'check'
+                      : (allInOrFoldActions[0] ?? 'fold');
+              }
               amount = undefined;
             }
           }
 
           // Normalize actions
-          if (action === 'allin') action = 'all_in';
           if (action === 'check' && toCall > 0) action = 'call';
           if (action === 'call' && toCall === 0) action = 'check';
           if (action === 'call') amount = toCall;
@@ -3029,6 +3146,13 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
             }
           }
 
+          const normalizedAmount =
+            typeof amount === 'number' && Number.isFinite(amount) ? amount : null;
+          const matchesUtilitySelection =
+            !utilityLedger ||
+            (utilityLedger.selectedAction === action &&
+              utilityLedger.selectedAmount === normalizedAmount);
+
           // 2026-08-15 FREEZE FIX. HandController.performAction RETURNS FALSE on an
           // illegal action - it does not throw (HandController.ts:416/430/437). So
           // this catch never fired, and a horse whose decision the engine rejected
@@ -3041,6 +3165,8 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
           // action, because the broadcast happens inside performAction.
           let applied = false;
           let intendedApplied = false;
+          let executedAction: ActionType | null = null;
+          let executedAmount: number | null = null;
           const horseClockWasArmed = this.lastActionAcceptedAtMs;
           this.lastActionAcceptedAtMs = Date.now();
           const worker = getLiveHorseDecisionWorker();
@@ -3048,6 +3174,10 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
             try {
               applied = handControllerRef.performAction(seat, action as any, amount);
               intendedApplied = applied;
+              if (applied) {
+                executedAction = action as ActionType;
+                executedAmount = normalizedAmount;
+              }
             } catch (err) {
               reportError(err, 'ServerTableEngine.' + this.tableId + '.horse_action_threw');
             }
@@ -3088,11 +3218,39 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
                 // above produced no broadcast, so the clock must start again for
                 // whichever of these two lands.
                 this.lastActionAcceptedAtMs = Date.now();
-                applied =
-                  handControllerRef.performAction(seat, 'check' as any) ||
-                  handControllerRef.performAction(seat, 'fold' as any);
+                applied = handControllerRef.performAction(seat, 'check' as any);
+                if (applied) {
+                  executedAction = 'check';
+                  executedAmount = null;
+                } else {
+                  applied = handControllerRef.performAction(seat, 'fold' as any);
+                  if (applied) {
+                    executedAction = 'fold';
+                    executedAmount = null;
+                  }
+                }
               } catch {
                 /* Hand already resolved. */
+              }
+            }
+            if (utilityLedger) {
+              utilityLedger.executedAction = executedAction;
+              utilityLedger.executedAmount = executedAmount;
+              utilityLedger.executionStatus = !applied
+                ? 'not_executed'
+                : !intendedApplied
+                  ? 'fallback'
+                  : matchesUtilitySelection
+                    ? 'intended'
+                    : 'coerced';
+              if (utilityLedger.executionStatus === 'intended') {
+                noteFire('phase7_utility_committed');
+              } else if (utilityLedger.executionStatus === 'coerced') {
+                noteFire('phase7_utility_coerced');
+              } else if (utilityLedger.executionStatus === 'fallback') {
+                noteFire('phase7_utility_fallback');
+              } else {
+                noteFire('phase7_utility_not_executed');
               }
             }
           });

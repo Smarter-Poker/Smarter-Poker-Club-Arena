@@ -18,7 +18,13 @@ import './EngineDashboard.css';
 export default function EngineDashboard() {
   const [stats, setStats] = useState<CashEngineStats>(getCashStats());
   const [tStats, setTStats] = useState<TournamentEngineStats>(getTournamentStats());
-  const [hydraStats, setHydraStats] = useState({ available: 0, seated: 0 });
+  /* A FAILED COUNT IS NOT "ZERO HORSES" (2026-09-10). This started at
+     {0, 0} and loadHydraStats returned early on an RPC error, so a refused
+     or failed query left the initial zeros on screen and an operator read a
+     dead fleet where there was a failed read. Unknown is null, and null
+     renders as unknown. */
+  const [hydraStats, setHydraStats] = useState<{ available: number; seated: number } | null>(null);
+  const [hydraError, setHydraError] = useState<string | null>(null);
   const toast = useToast();
 
   // Initial + polled refresh of engine stats from Supabase. (Phase U2 Stage B:
@@ -113,9 +119,16 @@ export default function EngineDashboard() {
     const { data, error } = await supabase.rpc('fn_admin_horse_fleet_counts');
     if (error) {
       reportError(error, 'EngineDashboard.loadHydraStats');
+      setHydraStats(null);
+      setHydraError(
+        error.code === '42501'
+          ? 'Fleet Counts Are Available To Platform Admins Only'
+          : 'The Fleet Counts Could Not Be Read'
+      );
       return;
     }
     const counts = (data ?? {}) as { available?: number; seated?: number };
+    setHydraError(null);
     setHydraStats({
       available: Number(counts.available) || 0,
       seated: Number(counts.seated) || 0,
@@ -206,13 +219,18 @@ export default function EngineDashboard() {
           <div className="card-metrics">
             <div className="metric">
               <span className="label">Available Horses</span>
-              <span className="value">{hydraStats.available}</span>
+              <span className="value">{hydraStats ? hydraStats.available : '--'}</span>
             </div>
             <div className="metric">
               <span className="label">Seated Horses</span>
-              <span className="value text-green">{hydraStats.seated}</span>
+              <span className="value text-green">{hydraStats ? hydraStats.seated : '--'}</span>
             </div>
           </div>
+          {hydraError && (
+            <p className="card-desc" role="alert" style={{ color: '#f87171' }}>
+              {hydraError}
+            </p>
+          )}
           <div className="card-metrics" style={{ marginTop: 8 }}>
             <div className="metric">
               <span className="label">3-Player Min</span>

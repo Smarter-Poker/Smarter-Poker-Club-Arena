@@ -393,6 +393,8 @@ export abstract class TournamentManagerBase {
    * one thing the whole anchor exists to keep in step.
    */
   protected spinRevealEmitted = false;
+  /** Tables whose early reveal completed without an emitter exception. */
+  protected spinRevealEmittedTableIds = new Set<string>();
   // Tournament metadata cache
   protected tournamentCache: any = null;
   // FIX 151: ChipRaceEngine for denomination removal on level-up
@@ -3415,10 +3417,12 @@ export abstract class TournamentManagerBase {
                      replay packet once `replay_until` passes, so on exactly the
                      bad day the extension exists for, a player reconnecting
                      between the planned hold and the real one got NO reveal at
-                     all while the cards were still legally undealt. Same floor,
-                     computed the same way. */
+                     all while the cards were still legally undealt. The later
+                     admission pass refreshes this packet if its actual hold
+                     extends beyond the deadline available here. */
                   replay_until: Math.max(holdUntil, Date.now() + spinPostRevealMs()),
                 });
+                this.spinRevealEmittedTableIds.add(tableId);
               } catch (err) {
                 /* The reveal is theatre; it must never stop a game starting. */
                 reportError(
@@ -3754,11 +3758,15 @@ export abstract class TournamentManagerBase {
                must happen for every table whether or not the wheel was
                already announced to it. */
             engine.holdDealingUntil(effectiveHold);
-            /* Already announced to this table by the early pass — the wheel
-               is turning on those exact numbers. Re-emitting is harmless (the
-               client guards a second open) but pointless, and skipping keeps
-               one reveal to one table. */
-            if (this.spinRevealEmitted && this.seatFirstTableIds.includes(tableId)) continue;
+            /* Skip only a successful early delivery with the same hold. A slow
+               table build extends dealing here, so the hub must also receive
+               that exact deadline before its original replay expires. The
+               reveal instant and funded result stay fixed; the client already
+               guards a second wheel. An early emitter failure never counts as
+               delivery, and the normal admission path delivers it here. */
+            if (this.spinRevealEmittedTableIds.has(tableId) && effectiveHold === holdUntil) {
+              continue;
+            }
             tableStateHub.emitEvent(tableId, {
               type: 'spin_reveal',
               table_id: tableId,

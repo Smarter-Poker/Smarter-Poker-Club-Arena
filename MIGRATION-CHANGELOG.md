@@ -2,6 +2,10 @@
 
 ## Every Change, Documented. No Exceptions.
 
+## 2026-09-10: Cancellation Acceptance Uses The Approved Origin-Wallet Policy
+
+The cancellation probe still used a retired registration alias, an obsolete wallet-routing assumption and satellite-ticket refund expectations. Its prepared assertions now use request-bound host-club registration and require exact origin-wallet cash refunds with no new ticket. A synthetic native run restored only the exact tracked platform-source seed, then refused the mixed-schema ticket outcome. Current downstream parity is unproved and a known satellite receipt fingerprint/ACL gap remains; no live defect is inferred. All temporary changes and synthetic rows rolled back. Source guards are not native acceptance. CA-03-11 and Phase 3 stay open. Re-read: yes. See docs/audits/2026-09-10-entry-refund-cancellation-acceptance-gate.json.
+
 ## 2026-09-10: Native Spin Draw Survives A Late Receipt Failure
 
 The replay rehearsal now injects failure after actual entry/rake, draw journals, reserve receipts and escrow writes, proves complete rollback, then retries the same event once. Current saved function fingerprints and real accounting triggers pass the full direct-draw replay probe on PostgreSQL 17.11; function hashes and fixture state are restored afterward. No runtime or production change. Final winner settlement, immutable launch-wrapper composition and complete Phase 3 acceptance remain separate gates. Re-read: yes. See docs/changelog/2026-09-10-native-spin-draw-rollback-and-replay.md.

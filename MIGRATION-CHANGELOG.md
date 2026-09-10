@@ -6,6 +6,14 @@ Prepare an exact-source guarded restoration of the committed attribution retry l
 
 Declare the existing overview stylesheet used by the standalone deal review. Update terminal source contracts to require parked roster validation and exact proposal identity through completion and recovery. The affected client suite passed 81 tests and the server suite passed 75 tests. No schema change. See docs/changelog/2026-09-10-final-deal-ci-contracts.md.
 
+## 2026-09-10: Agent Transfer Source Contracts
+
+Align the existing money-path law with durable reservations and strict receipt confirmation, and reduce the financial portal discarded-error baseline after handling its lookup error. Seventy-two affected tests passed. See docs/changelog/2026-09-10-phase-four-agent-transfer-integrity.md.
+
+## 2026-09-10: Phase Four Agent Transfer Integrity
+
+Bind portal wallet and commission responses to their current identity and read generation. Preserve durable operation IDs across dashboard and modal retries, and validate exact transfer receipts. Add deferred-response component regressions. No SQL migration. See docs/changelog/2026-09-10-phase-four-agent-transfer-integrity.md.
+
 # MIGRATION CHANGELOG
 
 ## 2026-09-10: Prepared deal consent follows the current hand barrier

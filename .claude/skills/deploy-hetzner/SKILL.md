@@ -27,21 +27,21 @@ the supervisor within sixty seconds.
 
 ## Infrastructure (verified 2026-09-10)
 
-| Component        | Detail                                                                  |
-| ---------------- | ----------------------------------------------------------------------- |
-| VPS IP           | `5.161.252.33` (hostname `club-arena-engine`; host clock is America/Chicago) |
-| SSH user         | `root` — key auth; the Mac Studio's `~/.ssh` already holds it            |
-| Repo on VPS      | `/opt/club-arena` — reset to the EXACT deployed commit by the workflow   |
-| Container        | `club-arena-engine`, image `club-arena-engine:<full git sha>`            |
-| Port             | `8080` (Caddy fronts it as `https://engine.smarter.poker`)               |
-| Env file         | `/opt/club-arena/server/.env`                                            |
-| Run-spec         | `server/scripts/engine-up.sh` — the ONLY definition of the run flags     |
-| Release seal     | `/var/lib/club-arena/engine-release-seal.json` (root-owned; the authority) |
-| Supervisor       | `club-arena-supervisor.timer` every 60 s → `engine-supervisor.sh`        |
-| Self-heal        | `sp-autoheal` restarts the container when Docker's healthcheck says unhealthy |
-| Health URL       | `https://engine.smarter.poker/health` — **CDN-cached; never use it to verify a deploy** |
-| Engine log archive | `/var/log/club-arena-engine/engine-<archived>-started<...>-<sha>.log.gz`, one per container |
-| Metrics          | Prometheus on the box at `localhost:9090` (`poker_*`, `process_cpu_seconds_total`, node exporter) |
+| Component          | Detail                                                                                            |
+| ------------------ | ------------------------------------------------------------------------------------------------- |
+| VPS IP             | `5.161.252.33` (hostname `club-arena-engine`; host clock is America/Chicago)                      |
+| SSH user           | `root` — key auth; the Mac Studio's `~/.ssh` already holds it                                     |
+| Repo on VPS        | `/opt/club-arena` — reset to the EXACT deployed commit by the workflow                            |
+| Container          | `club-arena-engine`, image `club-arena-engine:<full git sha>`                                     |
+| Port               | `8080` (Caddy fronts it as `https://engine.smarter.poker`)                                        |
+| Env file           | `/opt/club-arena/server/.env`                                                                     |
+| Run-spec           | `server/scripts/engine-up.sh` — the ONLY definition of the run flags                              |
+| Release seal       | `/var/lib/club-arena/engine-release-seal.json` (root-owned; the authority)                        |
+| Supervisor         | `club-arena-supervisor.timer` every 60 s → `engine-supervisor.sh`                                 |
+| Self-heal          | `sp-autoheal` restarts the container when Docker's healthcheck says unhealthy                     |
+| Health URL         | `https://engine.smarter.poker/health` — **CDN-cached; never use it to verify a deploy**           |
+| Engine log archive | `/var/log/club-arena-engine/engine-<archived>-started<...>-<sha>.log.gz`, one per container       |
+| Metrics            | Prometheus on the box at `localhost:9090` (`poker_*`, `process_cpu_seconds_total`, node exporter) |
 
 ## How a deploy actually happens
 

@@ -893,10 +893,21 @@ function HomePageInner() {
         // Batch ALL clubs' active-player counts into ONE RPC instead of one per
         // club (was a fan-out on the hottest page).
         const activeCountMap = new Map<string, number>();
+        /* Dan 2026-09-09: "each club shows 300-549 active players, but only
+           showing a handful of cash games open and players sitting". One
+           number mixed cash seats with tournament seats. The RPC now splits
+           it - cash_count / event_count, both distinct players - and the card
+           prints the split under the total. */
+        const activeSplitMap = new Map<string, { cash: number; events: number }>();
         try {
           const { data: batchCounts } = await activeCountsPromise;
-          for (const r of batchCounts || [])
+          for (const r of batchCounts || []) {
             activeCountMap.set(r.club_id, Number(r.active_count) || 0);
+            activeSplitMap.set(r.club_id, {
+              cash: Number((r as any).cash_count) || 0,
+              events: Number((r as any).event_count) || 0,
+            });
+          }
         } catch (e) {
           reportError(e, 'HomePage.batchActiveCounts');
         }
@@ -924,6 +935,7 @@ function HomePageInner() {
             if (memberCount == null) return;
 
             const activePlayers = activeCountMap.get(club.id) ?? null;
+            const activeSplit = activeSplitMap.get(club.id) ?? null;
 
             /* Dan 2026-08-20: "a true 'club level' level 1-55 that is
                determined based on how many players are inside a club."
@@ -951,6 +963,8 @@ function HomePageInner() {
                     : memberCount > 0
                       ? Math.min(activePlayers, memberCount)
                       : activePlayers,
+                activeCash: activeSplit?.cash ?? null,
+                activeEvents: activeSplit?.events ?? null,
               };
             }
           })
@@ -1009,10 +1023,16 @@ function HomePageInner() {
                  clubs, in one query. */
               const unionMemberMap: Record<string, number> = {};
               const unionActiveMap: Record<string, number> = {};
+              const unionSplitMap: Record<string, { cash: number; events: number }> = {};
               for (const r of unionMembersResult.data || [])
                 unionMemberMap[(r as any).union_id] = Number((r as any).member_count) || 0;
-              for (const r of unionActiveResult.data || [])
+              for (const r of unionActiveResult.data || []) {
                 unionActiveMap[(r as any).union_id] = Number((r as any).active_count) || 0;
+                unionSplitMap[(r as any).union_id] = {
+                  cash: Number((r as any).cash_count) || 0,
+                  events: Number((r as any).event_count) || 0,
+                };
+              }
 
               for (const u of unionRows) {
                 const clubId = unionIdToClubId[u.id]; // Map back to clubs.id for statsMap
@@ -1035,6 +1055,8 @@ function HomePageInner() {
                       : totalMembers > 0
                         ? Math.min(unionActive, totalMembers)
                         : unionActive,
+                  activeCash: unionSplitMap[u.id]?.cash ?? null,
+                  activeEvents: unionSplitMap[u.id]?.events ?? null,
                 };
               }
             }

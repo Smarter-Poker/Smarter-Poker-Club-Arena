@@ -193,6 +193,7 @@ export interface HandRecord {
   serial_number: string;
   table_id: string;
   table_name: string;
+  arenaAsset?: 'chips' | 'diamonds';
   /** Seats at the table, when the table row still exists. */
   table_max_seats?: number | null;
   played_at: string;
@@ -470,14 +471,17 @@ class HandHistoryServiceClass {
    */
   private async fetchTableNames(
     rows: Array<{ table_id?: string | null }>
-  ): Promise<Map<string, { name?: string; maxSeats?: number }>> {
-    const out = new Map<string, { name?: string; maxSeats?: number }>();
+  ): Promise<Map<string, { name?: string; maxSeats?: number; arenaAsset?: 'chips' | 'diamonds' }>> {
+    const out = new Map<
+      string,
+      { name?: string; maxSeats?: number; arenaAsset?: 'chips' | 'diamonds' }
+    >();
     const ids = [...new Set(rows.map((r) => r?.table_id).filter(Boolean))] as string[];
     if (ids.length === 0) return out;
     try {
       const { data, error } = await supabase
         .from('tables')
-        .select('id, name, max_players')
+        .select('id, name, max_players, arena:clubs!fk_tables_club_id(asset)')
         .in('id', ids);
       if (error) {
         reportError(error, 'HandHistoryService.fetchTableNames');
@@ -486,11 +490,13 @@ class HandHistoryServiceClass {
       for (const t of data || []) {
         const row = t as any;
         if (!row?.id) continue;
-        const entry: { name?: string; maxSeats?: number } = {};
+        const entry: { name?: string; maxSeats?: number; arenaAsset?: 'chips' | 'diamonds' } = {};
         if (typeof row.name === 'string' && row.name.trim()) entry.name = row.name.trim();
+        const arena = Array.isArray(row.arena) ? row.arena[0] : row.arena;
+        if (arena?.asset === 'chips' || arena?.asset === 'diamonds') entry.arenaAsset = arena.asset;
         const seats = Number(row.max_players);
         if (Number.isFinite(seats) && seats > 0) entry.maxSeats = seats;
-        if (entry.name || entry.maxSeats) out.set(String(row.id), entry);
+        if (entry.name || entry.maxSeats || entry.arenaAsset) out.set(String(row.id), entry);
       }
     } catch (e) {
       reportError(e, 'HandHistoryService.fetchTableNames_threw');
@@ -584,7 +590,10 @@ class HandHistoryServiceClass {
     profileMap: Map<string, { username: string; avatar_url: string | null }>,
     discardsByHand?: Map<string, { seat: number; card: { rank: string; suit: string } }>,
     privateByHand?: Map<string, { user_id: string; cards: Card[]; facts: HeroHandFacts }>,
-    tableNames?: Map<string, { name?: string; maxSeats?: number }>
+    tableNames?: Map<
+      string,
+      { name?: string; maxSeats?: number; arenaAsset?: 'chips' | 'diamonds' }
+    >
   ): HandRecord | null {
     if (!row?.id) return null;
     const jsonbPlayers: any[] = Array.isArray(row.players) ? row.players : [];
@@ -832,6 +841,7 @@ class HandHistoryServiceClass {
       serial_number: String(Number(row.hand_number) || row.id),
       table_id: row.table_id,
       table_name: tableNames?.get(String(row.table_id))?.name || 'Table',
+      arenaAsset: tableNames?.get(String(row.table_id))?.arenaAsset,
       /* The table's real seat count, for the tracker export's `N-max`. Absent
          when the table row has been recycled; the writer then derives a floor
          from the occupied seats rather than assuming one. */

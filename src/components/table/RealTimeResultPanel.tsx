@@ -43,6 +43,7 @@ export interface RealTimeResultPanelProps {
   userId: string;
   initialStack: number;
   bigBlind: number;
+  arenaAsset?: 'chips' | 'diamonds';
   /** Opens the deeper PokerCraft-style panel. Omit to hide the button. */
   onOpenDetailed?: () => void;
 }
@@ -100,8 +101,9 @@ function gameIdFor(uuid: string): string {
   return String(10_000_000 + (h % 90_000_000));
 }
 
-function money(n: number): string {
-  return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+function money(n: number, arenaAsset?: 'chips' | 'diamonds'): string {
+  const dp = arenaAsset === 'diamonds' ? 0 : 2;
+  return n.toLocaleString('en-US', { minimumFractionDigits: dp, maximumFractionDigits: dp });
 }
 
 export default function RealTimeResultPanel({
@@ -111,6 +113,7 @@ export default function RealTimeResultPanel({
   userId,
   initialStack,
   bigBlind,
+  arenaAsset,
   onOpenDetailed,
 }: RealTimeResultPanelProps) {
   const [meta, setMeta] = useState<TableMeta | null>(null);
@@ -122,12 +125,18 @@ export default function RealTimeResultPanel({
      defensively when none exists — a panel opened from an observer seat should
      render honest zeros, not a null. */
   useEffect(() => {
-    if (!isOpen || !tableId) return;
+    if (!isOpen || !tableId || !arenaAsset) return;
     if (!sessionStatsService.getStats(tableId)) {
-      sessionStatsService.startSession(tableId, userId, initialStackRef.current, bigBlind);
+      sessionStatsService.startSession(
+        tableId,
+        userId,
+        initialStackRef.current,
+        bigBlind,
+        arenaAsset
+      );
     }
     setStats(sessionStatsService.getStats(tableId));
-  }, [isOpen, tableId, userId, bigBlind]);
+  }, [isOpen, tableId, userId, bigBlind, arenaAsset]);
 
   /* The bus types SESSION_STATS_UPDATE.stats as Record<string, unknown> — it is
      a generic envelope shared by several producers. The only producer of this
@@ -331,11 +340,14 @@ export default function RealTimeResultPanel({
         </div>
 
         {/* ── Profile data ── */}
-        <div className="rtr__section">Profile Data</div>
+        <div className="rtr__section">
+          Profile Data{' '}
+          {arenaAsset === 'diamonds' ? '(Diamonds)' : arenaAsset === 'chips' ? '(Chips)' : ''}
+        </div>
         <div className="rtr__rows rtr__rows--wide">
           <div className="rtr__row">
             <span className="rtr__label">Buy-In</span>
-            <span className="rtr__value">{money(stats?.buyInTotal ?? 0)}</span>
+            <span className="rtr__value">{money(stats?.buyInTotal ?? 0, arenaAsset)}</span>
           </div>
           <div className="rtr__row">
             <span className="rtr__label">Winnings</span>
@@ -343,7 +355,7 @@ export default function RealTimeResultPanel({
               className={`rtr__value ${winnings > 0 ? 'rtr__value--up' : winnings < 0 ? 'rtr__value--down' : ''}`}
             >
               {winnings > 0 ? '+' : ''}
-              {money(winnings)}
+              {money(winnings, arenaAsset)}
             </span>
           </div>
           <div className="rtr__row">

@@ -85,7 +85,7 @@ beforeEach(() => {
       return Promise.resolve(true);
     }),
   });
-});
+}, 60_000); // importing GameServer alone can pass 10s on a loaded CI runner
 
 afterEach(() => vi.restoreAllMocks());
 

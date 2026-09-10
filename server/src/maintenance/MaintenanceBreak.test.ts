@@ -1921,3 +1921,33 @@ describe('the real engine treats a maintenance pause as paused', () => {
     SLOW_RUNNER_MS
   );
 });
+
+/*
+ * 2026-09-10: GameServer ends the synchronized tournament break when this break
+ * ends, instead of counting its own five minutes from whenever its pause loop
+ * finished. So the instant has to be readable from outside, in both halves of
+ * the break, and it has to be the one the players were shown.
+ */
+describe('endsAt: the instant the platform comes off the break', () => {
+  it('is the announced hour through the last hand and the countdown, and 0 when no break is on', async () => {
+    vi.setSystemTime(new Date('2026-09-10T15:53:00.000Z'));
+    const onTheHour = Date.parse('2026-09-10T16:00:00.000Z');
+    const { mb, engines, emitted } = build(2);
+    expect(mb.endsAt()).toBe(0);
+
+    await mb.announceLastHand();
+    expect(mb.snapshot().phase).toBe('last_hand');
+    expect(mb.endsAt()).toBe(onTheHour);
+    expect(emitted.at(-1)?.payload.resume_expected_at).toBe(onTheHour);
+
+    parkAll(engines);
+    await vi.advanceTimersByTimeAsync(MaintenanceBreak.LAST_HAND_LEAD_MS);
+    expect(mb.snapshot().phase).toBe('counting_down');
+    expect(mb.endsAt()).toBe(onTheHour);
+    expect(emitted.at(-1)?.payload.break_ends_at).toBe(onTheHour);
+
+    await vi.advanceTimersByTimeAsync(MaintenanceBreak.BREAK_DURATION_MS);
+    expect(mb.isActive()).toBe(false);
+    expect(mb.endsAt()).toBe(0);
+  });
+});

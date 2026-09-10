@@ -94,7 +94,9 @@ describe('Stage-B classifies every current tournament-manager RPC', () => {
   it('permits only the shared receipt helpers used by live play and recovery', () => {
     for (const name of [
       'fn_complete_tournament_terminal',
+      'fn_get_tournament_deal_consensus',
       'fn_resolve_committed_tournament_seat_move',
+      'fn_resolve_tournament_terminal_proposal_outcome',
       'fn_resolve_tournament_terminal_outcome',
       'fn_settle_satellite_tournament',
       'fn_resolve_satellite_settlement_outcome',

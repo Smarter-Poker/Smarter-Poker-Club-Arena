@@ -161,6 +161,9 @@ function HomePageInner() {
   /** True when the membership fetch threw. Distinguishes "you have no clubs"
    *  from "we could not find out", which the lobby previously conflated. */
   const [loadFailed, setLoadFailed] = useState(false);
+  // Directory readiness follows the request, not the six-second spinner or
+  // a partial cache. Only a settled read can confirm an empty wallet list.
+  const [directoryPending, setDirectoryPending] = useState(true);
 
   // The cache is account-scoped and may only be hydrated after getAuthUser has
   // established which account is active. Starting from a bare cached array
@@ -284,6 +287,7 @@ function HomePageInner() {
       const isCurrentRequest = () =>
         directoryRequestGenerationRef.current === requestGeneration &&
         (!getIsMounted || getIsMounted());
+      setDirectoryPending(true);
       if (!skipLoading) setIsLoading(true);
 
       // Safety timeout: never show loading spinner for more than 6 seconds.
@@ -433,6 +437,7 @@ function HomePageInner() {
       } finally {
         clearTimeout(loadingTimeout);
         if (isCurrentRequest()) {
+          setDirectoryPending(false);
           setIsLoading(false);
           hasFetchedOnceRef.current = true;
         }
@@ -558,6 +563,7 @@ function HomePageInner() {
         // replacement fetch in this branch to advance the generation for us.
         directoryRequestGenerationRef.current += 1;
         directoryOwnerRef.current = null;
+        setDirectoryPending(false);
         setUserClubs([]);
         setOwnedUnionWallets([]);
         // Clear SWR cache to prevent stale club data leaking across logins
@@ -676,6 +682,8 @@ function HomePageInner() {
                 ? `/unions/${target.slug || unionRouteRef(String(target.union_id || target.id))}/operations?tab=wallet`
                 : `/clubs/${target.slug || target.id}/cashier`
             );
+          } else if (directoryPending) {
+            toast.info('Loading Cashier Directory');
           } else if (loadFailed) {
             toast.info('Retrying Cashier Directory');
             void fetchUserData(false, () => isMountedRef.current);
@@ -723,6 +731,7 @@ function HomePageInner() {
     ownedUnionWallets,
     quickLinkClubId,
     loadFailed,
+    directoryPending,
     fetchUserData,
     showJoinModal,
     showCreateClubModal,
@@ -1133,6 +1142,10 @@ function HomePageInner() {
 
   const cashierEmpty = useCallback(() => {
     haptic.light();
+    if (directoryPending) {
+      toast.info('Loading Cashier Directory');
+      return;
+    }
     if (loadFailed) {
       toast.info('Retrying Cashier Directory');
       void fetchUserData(false, () => isMountedRef.current);
@@ -1140,7 +1153,7 @@ function HomePageInner() {
     }
     toast.info('Join a club to access the cashier');
     setShowJoinModal(true);
-  }, [fetchUserData, loadFailed, toast]);
+  }, [directoryPending, fetchUserData, loadFailed, toast]);
 
   const marketplaceEmpty = useCallback(() => {
     haptic.light();

@@ -708,6 +708,7 @@ export default function UnionDetailPage() {
   return (
     <div className={styles.page}>
       <CasinoSurfaceHeader
+        crest="club"
         eyebrow="Union Network / Overview"
         title={union.name}
         description={

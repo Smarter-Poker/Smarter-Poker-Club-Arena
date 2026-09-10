@@ -392,6 +392,7 @@ export default function TransactionHistoryPage() {
         description="Audit Deposits, Withdrawals, Transfers, Rake, And Settlements From One Filterable Record. Exported Results Preserve The Active Date And Transaction Filters."
         art="vault"
         status="TRANSACTION INDEX // LIVE"
+        crest="diamond"
         metrics={[
           { label: 'Inflow', value: `+${totals.deposits.toLocaleString()}`, tone: 'live' },
           { label: 'Outflow', value: `-${totals.withdrawals.toLocaleString()}` },

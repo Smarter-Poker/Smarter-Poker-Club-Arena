@@ -159,7 +159,15 @@ describe('it fixes what it finds, and only then complains', () => {
     expect(SH_CODE).toContain('select(.status != \\"completed\\")');
     // ...ignores only a run older than the deploy's own ceiling (55m + margin),
     // which GitHub has timed out or which is a pre-queued zombie...
-    expect(SH).toContain('INFLIGHT_STALE_MIN=${INFLIGHT_STALE_MIN:-65}');
+    // Since 2026-09-10 a run legitimately waits up to an hour in its break
+    // gate, so the line is derived from the deploy's own timeout-minutes.
+    const stale = Number(SH.match(/INFLIGHT_STALE_MIN=\$\{INFLIGHT_STALE_MIN:-(\d+)\}/)![1]);
+    const deployTimeout = Number(
+      read('.github/workflows/auto-deploy-hetzner.yml').match(
+        /^\s*timeout-minutes:\s*(\d+)\s*$/m
+      )![1]
+    );
+    expect(stale).toBeGreaterThan(deployTimeout);
     // ...and the dispatch is the ELSE branch of finding one. The in-flight run
     // is the fix; a second dispatch would cancel it, not hurry it.
     expect(SH_CODE).toMatch(

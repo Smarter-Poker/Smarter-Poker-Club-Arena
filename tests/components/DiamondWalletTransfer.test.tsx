@@ -108,3 +108,38 @@ it('rejects an amount outside the database integer contract before creating a re
   expect(mocks.rpc).not.toHaveBeenCalled();
   expect(sessionStorage.length).toBe(0);
 });
+
+it('preserves a lost-response identity through session refusal and returns its original receipt', async () => {
+  const done = vi.fn();
+  mocks.rpc.mockResolvedValueOnce({ data: null, error: { message: 'Connection Lost' } });
+  const view = render(<DiamondWalletTransfer userId={sender} onComplete={done} />);
+  await review();
+  fireEvent.click(screen.getByRole('button', { name: 'Confirm Transfer' }));
+  await screen.findByRole('button', { name: 'Retry This Transfer' });
+  const original = mocks.rpc.mock.calls[0][1];
+  mocks.rpc.mockResolvedValueOnce({
+    data: null,
+    error: { code: '42501', message: 'authentication_required' },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Retry This Transfer' }));
+  await waitFor(() => expect(mocks.rpc).toHaveBeenCalledTimes(2));
+  await screen.findByText(/Transfer Not Yet Confirmed/);
+  expect(sessionStorage.getItem('diamond-transfer:' + sender)).toBeTruthy();
+  expect(done).not.toHaveBeenCalled();
+  view.unmount();
+  mocks.rpc.mockResolvedValueOnce({
+    data: {
+      success: true,
+      sender_id: sender,
+      recipient_id: recipient,
+      request_id: original.p_reference_id,
+      amount: original.p_amount,
+    },
+    error: null,
+  });
+  render(<DiamondWalletTransfer userId={sender} onComplete={done} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Retry This Transfer' }));
+  await waitFor(() => expect(done).toHaveBeenCalledOnce());
+  expect(mocks.rpc.mock.calls.map((call) => call[1])).toEqual([original, original, original]);
+  expect(sessionStorage.getItem('diamond-transfer:' + sender)).toBeNull();
+});

@@ -1,0 +1,182 @@
+{
+  "src/assets/customization-thumbs/backgrounds/bg_carbon_grid.webp": {
+    "source": "src/assets/backgrounds/bg_carbon_grid.jpg",
+    "sha256": "9e61ce7b5385a7d50ee7e1b7dead2ed0350ec12e2d21a0530e0324d7b24ce626"
+  },
+  "src/assets/customization-thumbs/backgrounds/bg_crimson_lounge.webp": {
+    "source": "src/assets/backgrounds/bg_crimson_lounge.jpg",
+    "sha256": "c98c839fd3f97ff442470a4579a7ba988517a9fa8ad3ee5fb1705a8ec369d17f"
+  },
+  "src/assets/customization-thumbs/backgrounds/bg_emerald_room.webp": {
+    "source": "src/assets/backgrounds/bg_emerald_room.jpg",
+    "sha256": "5994dbef4cd7871359970b8441a20bfaca04a79c51ad5bd0c603a05ba7541b31"
+  },
+  "src/assets/customization-thumbs/backgrounds/bg_final_table_broadcast.webp": {
+    "source": "src/assets/backgrounds/bg_final_table_broadcast.jpg",
+    "sha256": "328dc0b2b10751351ffe46fd5d70194c4e2c5bb7791563b240bbd4b3e8156030"
+  },
+  "src/assets/customization-thumbs/backgrounds/bg_galaxy.webp": {
+    "source": "src/assets/backgrounds/bg_galaxy.jpg",
+    "sha256": "003ce476343d07f9e331d9933f73c6c622a20738aca2e6bf992b84bf6895d651"
+  },
+  "src/assets/customization-thumbs/backgrounds/bg_golden_dusk.webp": {
+    "source": "src/assets/backgrounds/bg_golden_dusk.jpg",
+    "sha256": "9573b10b7fe156653460fa27a1bcc3daa0ca9bb50408a214aca14934e10699fd"
+  },
+  "src/assets/customization-thumbs/backgrounds/bg_ice_frost.webp": {
+    "source": "src/assets/backgrounds/bg_ice_frost.jpg",
+    "sha256": "ccea0cdcb2b5ba2b7ab2fef62b609c2a7e201c4c33163ef4c3945c6b5852e7db"
+  },
+  "src/assets/customization-thumbs/backgrounds/bg_jade_neon.webp": {
+    "source": "src/assets/backgrounds/bg_jade_neon.jpg",
+    "sha256": "4ae622f08dbce81d351d5b5c6cd6ea8eb84127c7d600fe334ee0bea0bd0433be"
+  },
+  "src/assets/customization-thumbs/backgrounds/bg_midnight.webp": {
+    "source": "src/assets/backgrounds/bg_midnight.jpg",
+    "sha256": "489ca750115734e570553ad873eeadc1e65b4f82cfef80d4f6db862485ee598d"
+  },
+  "src/assets/customization-thumbs/backgrounds/bg_ocean_abyss.webp": {
+    "source": "src/assets/backgrounds/bg_ocean_abyss.jpg",
+    "sha256": "7927731054c2161bb701b895cca2b11be69e12045fae035c6b8a68a2cd5ae1ef"
+  },
+  "src/assets/customization-thumbs/backgrounds/bg_place_dubai.webp": {
+    "source": "src/assets/backgrounds/bg_place_dubai.jpg",
+    "sha256": "97bb4a616f99425db50d016c36f56ba78b6579a25fb786564b07e030be17d5e3"
+  },
+  "src/assets/customization-thumbs/backgrounds/bg_place_las_vegas.webp": {
+    "source": "src/assets/backgrounds/bg_place_las_vegas.jpg",
+    "sha256": "92506d2d899fafb17a52add0001605993f931a19cea1602b749faf99b426c617"
+  },
+  "src/assets/customization-thumbs/backgrounds/bg_place_london.webp": {
+    "source": "src/assets/backgrounds/bg_place_london.jpg",
+    "sha256": "801bb7ec467d39e7859be69e288eb2730b2528af8c5581c67c80308eade9093c"
+  },
+  "src/assets/customization-thumbs/backgrounds/bg_place_monaco.webp": {
+    "source": "src/assets/backgrounds/bg_place_monaco.jpg",
+    "sha256": "0ec345e33b100838dabfab52ad9efe446dff9fc1f0d8d9f7a3317bd8c297434c"
+  },
+  "src/assets/customization-thumbs/backgrounds/bg_place_new_york.webp": {
+    "source": "src/assets/backgrounds/bg_place_new_york.jpg",
+    "sha256": "faefb4e2afb6ce95114a87c396e5826f582e9741f07361040c02ac69caadd921"
+  },
+  "src/assets/customization-thumbs/backgrounds/bg_place_paris.webp": {
+    "source": "src/assets/backgrounds/bg_place_paris.jpg",
+    "sha256": "e67a8778128166a694483868abccb7b9832afcdb7c222b3537fd0631bc09df29"
+  },
+  "src/assets/customization-thumbs/backgrounds/bg_place_rio.webp": {
+    "source": "src/assets/backgrounds/bg_place_rio.jpg",
+    "sha256": "1d40e011035657fbb7e97049f057e396f0f77f8b3ae0fd1871488dd0f650f0e5"
+  },
+  "src/assets/customization-thumbs/backgrounds/bg_place_santorini.webp": {
+    "source": "src/assets/backgrounds/bg_place_santorini.jpg",
+    "sha256": "589c0f21c1f2ef476e2714511d15e7ec544a7c11167c082321fe43b6562fea6b"
+  },
+  "src/assets/customization-thumbs/backgrounds/bg_place_sydney.webp": {
+    "source": "src/assets/backgrounds/bg_place_sydney.jpg",
+    "sha256": "3278f8d6ee02d1d1fa87fab8de4c85eebb5e2e291edc0ea55427bc14f98074ac"
+  },
+  "src/assets/customization-thumbs/backgrounds/bg_place_tokyo.webp": {
+    "source": "src/assets/backgrounds/bg_place_tokyo.jpg",
+    "sha256": "13d57013d6a1d74a153b7888b5a45727304a8cdf763b54b6524a03478efcd655"
+  },
+  "src/assets/customization-thumbs/backgrounds/bg_royal_indigo.webp": {
+    "source": "src/assets/backgrounds/bg_royal_indigo.jpg",
+    "sha256": "d6ed1bf357e90b28a6831f885b08e07c28fa6bceb71dad53d9f4595768ce8177"
+  },
+  "src/assets/customization-thumbs/backgrounds/bg_skin_black_gold_chips.webp": {
+    "source": "src/assets/backgrounds/bg_skin_black_gold_chips.jpg",
+    "sha256": "48924a9796b20be4e6fb39d9b958298ed1deb0e72b3c6dbc1755061a09fa2de2"
+  },
+  "src/assets/customization-thumbs/backgrounds/bg_skin_crimson_damask.webp": {
+    "source": "src/assets/backgrounds/bg_skin_crimson_damask.jpg",
+    "sha256": "0df9e8bb5d37bfac31b6d0af7640ef686213ec1ed1058506013ef59b29290745"
+  },
+  "src/assets/customization-thumbs/backgrounds/bg_skin_emerald_argyle.webp": {
+    "source": "src/assets/backgrounds/bg_skin_emerald_argyle.jpg",
+    "sha256": "80a21d1d728ebbd689029c448a4d573041022c399a8b11bdd0cbb7304de6568d"
+  },
+  "src/assets/customization-thumbs/backgrounds/bg_skin_gilded_fall.webp": {
+    "source": "src/assets/backgrounds/bg_skin_gilded_fall.jpg",
+    "sha256": "22841c664c56e39f1df74759d87c091919942cac4d375e1a46aaccb629420da0"
+  },
+  "src/assets/customization-thumbs/backgrounds/bg_skin_golden_sparks.webp": {
+    "source": "src/assets/backgrounds/bg_skin_golden_sparks.jpg",
+    "sha256": "6a3574e05846a4ee06f1f85b67723c85b15f9efc9074dc1165098e940764cca3"
+  },
+  "src/assets/customization-thumbs/backgrounds/bg_skin_graphite_embossed.webp": {
+    "source": "src/assets/backgrounds/bg_skin_graphite_embossed.jpg",
+    "sha256": "ba0efa0b7bf7b81b5d7bc83606c75d574bc01442c254e3240747da0b283b4c9d"
+  },
+  "src/assets/customization-thumbs/backgrounds/bg_skin_obsidian_micro.webp": {
+    "source": "src/assets/backgrounds/bg_skin_obsidian_micro.jpg",
+    "sha256": "a2f39d71b8af2a7c0c98625cb037d04a14a1ee9c4a55971fcfadf45d53613fe2"
+  },
+  "src/assets/customization-thumbs/backgrounds/bg_skin_platinum_deco.webp": {
+    "source": "src/assets/backgrounds/bg_skin_platinum_deco.jpg",
+    "sha256": "2df87760b64595bcd4309d5ffe3b0b999ecf9ae96bec84ee1683d9dc902f24de"
+  },
+  "src/assets/customization-thumbs/backgrounds/bg_skin_shadow_suits.webp": {
+    "source": "src/assets/backgrounds/bg_skin_shadow_suits.jpg",
+    "sha256": "e9d29bdfb30f5260f66058717d217a7437d09d32ef2700ed02546a74847658d0"
+  },
+  "src/assets/customization-thumbs/backgrounds/bg_skin_ultraviolet_suits.webp": {
+    "source": "src/assets/backgrounds/bg_skin_ultraviolet_suits.jpg",
+    "sha256": "211f3ccb63bd1bc4be95d5f3711d60610422b74546b3af4f9ac3c524be73061b"
+  },
+  "src/assets/customization-thumbs/tables/skin_amethyst_cavern.webp": {
+    "source": "src/assets/tables/skin_amethyst_cavern.png",
+    "sha256": "6688d5d5727c2e8a086fcfd1e9200642895153948acfa666dca059be715539aa"
+  },
+  "src/assets/customization-thumbs/tables/skin_arctic_white.webp": {
+    "source": "src/assets/tables/skin_arctic_white.png",
+    "sha256": "1ab487d324514a1b333ee260ef95ab374087e67dbf853c61e26693a330c73add"
+  },
+  "src/assets/customization-thumbs/tables/skin_carbon_ion.webp": {
+    "source": "src/assets/tables/skin_carbon_ion.png",
+    "sha256": "5c8276e92a4c5a0e91019375fb0d7ba2e8b5a3f1e98f6639bf5f2d3899c92f1a"
+  },
+  "src/assets/customization-thumbs/tables/skin_carbon_red.webp": {
+    "source": "src/assets/tables/skin_carbon_red.png",
+    "sha256": "de378a40390b673839a50c86b6655814d03ce0b2878dc4e5f70f046dce1678e1"
+  },
+  "src/assets/customization-thumbs/tables/skin_classic_green.webp": {
+    "source": "src/assets/tables/skin_classic_green.png",
+    "sha256": "13fb9657186e1f1d58f266495d0dc1c624e1e8cbb890d65f07e354e370895c14"
+  },
+  "src/assets/customization-thumbs/tables/skin_crimson.webp": {
+    "source": "src/assets/tables/skin_crimson.png",
+    "sha256": "40c76553ad3a7576b5d8ea98d0e52f76ba8f5ddd6fe9a72071894419148ad236"
+  },
+  "src/assets/customization-thumbs/tables/skin_electric_purple.webp": {
+    "source": "src/assets/tables/skin_electric_purple.png",
+    "sha256": "02061dcb0e470367ca9712849cb5ef38656412a332f46e059d136463fafa8654"
+  },
+  "src/assets/customization-thumbs/tables/skin_final_table.webp": {
+    "source": "src/assets/tables/skin_final_table.png",
+    "sha256": "35b650e2ab2fadcb082998de7467a4dc4fdc17a3c7857538ebe24158d461a31a"
+  },
+  "src/assets/customization-thumbs/tables/skin_golden_sand.webp": {
+    "source": "src/assets/tables/skin_golden_sand.png",
+    "sha256": "7b497edf7c272a4b6672b1cbddcd871502a3c457c75d5168fa72fee9b27ffc84"
+  },
+  "src/assets/customization-thumbs/tables/skin_ice_cavern.webp": {
+    "source": "src/assets/tables/skin_ice_cavern.png",
+    "sha256": "5097df41472ef05923f01f016f598f62e99bc928b49cae41c993c640a4daa872"
+  },
+  "src/assets/customization-thumbs/tables/skin_jade_city.webp": {
+    "source": "src/assets/tables/skin_jade_city.png",
+    "sha256": "eb13c35e7a2cf878446d63d4a28dca396b8fd819dc3098e94be1577a538bd93a"
+  },
+  "src/assets/customization-thumbs/tables/skin_mahogany_red.webp": {
+    "source": "src/assets/tables/skin_mahogany_red.png",
+    "sha256": "c5e09ad76f48694b9e7ed29028361849f689f0afe5cd91d1b6604df3be626164"
+  },
+  "src/assets/customization-thumbs/tables/skin_neon_city.webp": {
+    "source": "src/assets/tables/skin_neon_city.png",
+    "sha256": "371c40ba008c996d58c37180d792fd97698dfa5a15a0c1c87ed22c9fa5f8b529"
+  },
+  "src/assets/customization-thumbs/tables/skin_ocean_blue.webp": {
+    "source": "src/assets/tables/skin_ocean_blue.png",
+    "sha256": "2ccf1c97c20e4917d1e6d8968682c37b9f2f28a102626bf74f589c3e8bd1c5d7"
+  }
+}

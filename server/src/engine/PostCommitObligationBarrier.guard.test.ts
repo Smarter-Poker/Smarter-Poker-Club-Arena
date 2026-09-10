@@ -141,9 +141,10 @@ describe('the database owns exactly-once obligation completion', () => {
     // retry: it stands down while a drain runs or a retry is armed, so a
     // failed durable row is still owned by its bounded retry chain.
     expect(projection.match(/setInterval\s*\(/g)).toHaveLength(1);
-    expect(projection).toContain(
-      'if (drainPromise || retryTimer || !workerActive || stopping) return;'
-    );
+    // The poll yields to a running drain and to an armed retry (pollIsDue),
+    // and the retry itself is still what a failed row owns.
+    expect(projection).toContain('drainRunning: drainPromise !== null,');
+    expect(projection).toContain('retryArmed: retryTimer !== null,');
     expect(projection).toContain('causalRetryOwed = summary.failed > 0 || summary.deferred > 0');
     expect(migration).toContain('BEFORE DELETE ON public.hand_projection_outbox');
   });

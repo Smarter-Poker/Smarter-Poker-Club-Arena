@@ -51,6 +51,7 @@ import { TournamentMetrics } from './services/TournamentMetrics.js';
 import { SpinMetrics } from './services/SpinMetrics.js';
 import { ReplicationMetrics } from './services/ReplicationMetrics.js';
 import { HandOutboxListener } from './services/supabase/handOutboxListener.js';
+import { HandOutboxMetrics } from './services/supabase/handOutboxMetrics.js';
 import { handProjectionWakesToPrometheus } from './services/supabase/handProjection.js';
 import {
   wsAuthRefusalPrometheusLines,
@@ -1481,6 +1482,12 @@ export class GameServer {
    * local commit wakes still run. See services/supabase/handOutboxListener.ts.
    */
   private handOutboxListener = new HandOutboxListener();
+  /**
+   * Outbox depth and oldest-row age, one cheap query a minute, so the
+   * projection backlog is on /metrics (2026-09-10: it was 100k rows deep and
+   * nothing said so). See services/supabase/handOutboxMetrics.ts.
+   */
+  private handOutboxMetrics = new HandOutboxMetrics();
   private lifecycle = new HorseLifecycleManager();
 
   /**
@@ -2068,8 +2075,11 @@ export class GameServer {
       // one database transaction. The projection worker drains that durable
       // outbox; there is no process-local hand-history recovery owner.
       startHandProjectionWorker();
+      this.handOutboxMetrics.start();
       // Step 8c: LISTEN hand_projection_outbox. Started after the worker so
-      // its first (re)connect resync wake lands on a live worker.
+      // its first (re)connect resync wake lands on a live worker. Disabled
+      // (warns once) while ENGINE_PG_LISTEN_URL is unset on the engine host;
+      // the local commit wake and the worker's 5 s poll carry every hand.
       this.handOutboxListener.start();
 
       if (!this.publishDealerPrerequisitesReady(generation)) return;
@@ -2521,6 +2531,7 @@ export class GameServer {
       ownershipFailures.push(error);
     }
     await this.handOutboxListener.stop();
+    this.handOutboxMetrics.stop();
     await stopHandProjectionWorker();
 
     /**
@@ -3164,6 +3175,7 @@ export class GameServer {
       // publication. See services/supabase/handOutboxListener.ts.
       ...handProjectionWakesToPrometheus(),
       ...this.handOutboxListener.toPrometheus(),
+      ...this.handOutboxMetrics.toPrometheus(),
       // ── IS ANYBODY ACTUALLY PLAYING? (2026-09-04) ────────────────────
       //
       // THE BLIND SPOT THESE FILL. On 2026-09-03 a cron revoked Dan's session

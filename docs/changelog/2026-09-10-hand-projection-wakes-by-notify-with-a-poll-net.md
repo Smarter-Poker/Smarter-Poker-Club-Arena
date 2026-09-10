@@ -2,7 +2,14 @@
 
 Branch `fix/hand-projection-wakes-by-notify-with-a-poll-net` (engine swarm, workstream H,
 implementing workstream D's design). Migration `20260910052523_hand_projection_outbox_notifies_its_listener`
-is written, NOT applied.
+was APPLIED to production by the orchestrator on 2026-09-10 (verified: `pg_trigger` on the outbox
+lists `a0_finish_hand_post_commit_obligations` and `z9_notify_hand_projection_outbox`).
+
+**Plan change during review (2026-09-10, see "Review 2" below):** the engine host has no
+database password and will not get one, so `ENGINE_PG_LISTEN_URL` stays unset and the LISTEN
+path stays disabled. The outbox leaves the Realtime publication as soon as this deploys. From
+then on the worker is woken by (a) the local wake after every committed hand and (b) the 5 s
+poll, and the drain runs N tables in parallel so it can outrun the arrival rate.
 
 ## What changed and why
 
@@ -145,9 +152,127 @@ running drain and an armed retry`.
 - No database change was applied. No credential is in the branch; `.env.example` gains the
   variable names with empty values.
 
-## What this does not fix
+## What review 1 did not fix (fixed in review 2 below)
 
 The outbox was 64,485 rows deep at 03:09 because the serial drain (one PostgREST round-trip per
 hand, ~195 ms wall) runs at ~300 hands/min against a daytime arrival of ~600/min. NOTIFY neither
-helps nor hurts that; the drain could run one chain per `table_id` concurrently (the database
-already serialises per table with an advisory lock). Separate work.
+helps nor hurts that. Review 2 makes the drain run one chain per `table_id` concurrently.
+
+## Review 2 (reviewer-fixer, 2026-09-10): the poll is the only net, so it carries the load
+
+Read with the new fact above. Everything below is in this branch.
+
+### Findings on the poll path, and what changed
+
+1. **Leader only, survives restart, no double interval.** `startHandProjectionWorker()` is
+   called at Step 8b of `GameServer.performStart`, which a standby never reaches (it returns
+   after `renewLeadership()`; a promoted standby exits and re-boots as leader). The :55 restart
+   is a process restart; in-process `stop()` then `start()` is also covered, and `start()` twice
+   arms one interval (`workerActive` guard). Pinned by the new spec
+   `start() twice arms one poll interval; stop() then start() arms a fresh one`.
+2. **A drain that keeps failing is never starved.** The gate skipped the poll while a causal
+   retry was armed; that is correct because the retry itself drains at 250 ms .. 15 s, but it
+   put the poll's liveness in the hands of one `setTimeout`. `pollIsDue()` (pure, spec-pinned)
+   now lets the poll drain anyway if no drain has STARTED for `RETRY_MAX_MS + 2 * poll`
+   (25 s at defaults), so a lost timer or a fenced epoch cannot silence the worker.
+3. **A wake during a drain is a follow-up drain.** `beginDrain()` sets `wakeAfterDrain` when a
+   drain is running and the completion callback starts one more pass. Now pinned by the spec
+   `a wake during a drain is kept as a follow-up drain, not dropped`.
+4. **`HAND_PROJECTION_POLL_MS=` (empty) was a 0 ms interval.** `Number('')` is 0. All three
+   env vars now read through `boundedEnvInt`: empty or non-numeric means the default; the
+   poll is clamped to 250 ms .. 60 s, concurrency to 1 .. 16, the sampler to 5 s .. 10 min.
+5. Listener when disabled: `start()` logs once and returns before any `pg.Client` is built; no
+   timer, no metrics beyond `poker_hand_outbox_listener_enabled 0` and its zero counters.
+   Unchanged, verified against the spec `empty URL -> no client, one warning`.
+
+### The parallel drain (shipped)
+
+`runDrain()` still reads the outbox in global `hand_number` order, `limit 100`, up to 1,000
+rows a pass. Each page is split into one chain per `table_id` (first-row order) and projected
+by `HAND_PROJECTION_DRAIN_CONCURRENCY` lanes (default 4, max 16, read per drain). Inside a
+chain the order is strict and a chain stops at its first failed or `predecessor_pending` hand;
+every later row of that table in the pass is counted `deferred` with no round-trip, and the
+table stays blocked across pages of the same pass. `not_pending` (another process finished the
+row) does not stop a chain. Pages are projected one after another, so a table split across
+two pages keeps its order, and because the page is globally ordered it always holds each
+table's OLDEST pending rows - no chain ever starts behind a row the pass has not seen.
+
+Why cross-table parallelism is safe, read from the live definitions
+(`pg_get_functiondef`): `fn_project_hand_side_effects` takes
+`pg_advisory_xact_lock('hand-post-commit:<table>')` then `('hand-projection:<table>')`, and
+`fn_project_hand_side_effects_after_post_commit_20260908` locks the outbox row `FOR UPDATE`,
+refuses to leapfrog an earlier row of the same table (`predecessor_pending`), and shards
+`club_hand_daily_shard` by `pg_backend_pid() % 16` - it was written for concurrent backends.
+The post-commit half already runs concurrently across tables today from the dealing path
+(`processHandPostCommitObligations`). Residual risk: `player_stats` and the positional
+upserts lock per-user rows in seat order, so two tables in one club sharing two or more players
+can deadlock; Postgres aborts one after `deadlock_timeout`, the RPC fails, the row stays, the
+pass arms its causal retry and the next pass finishes it. That is the same `failed` path a
+transport error takes, and `poker_hand_projection_drain_results_total{result="failed"}`
+shows it if it ever matters.
+
+Error handling per table is what the serial code did implicitly (the next hand at a failed
+table answered `predecessor_pending` after a wasted ~200 ms round-trip); the causal retry is
+still per pass and re-reads the outbox. `stop()` lets in-flight RPCs finish and starts no new
+chain (spec-pinned).
+
+Expected effect: ~195 ms per hand serially was ~300/min; four lanes are ~1,100-1,200/min
+against ~600/min arriving, so the 100k backlog measured at 05:40 UTC should clear in about
+two to three hours after deploy. The `HandProjectionOutboxBacklog*` alerts WILL be firing
+until it does; that is the backlog being visible for the first time, not a regression.
+
+### Metrics added (all on the engine `/metrics`)
+
+- `poker_hand_projection_wakes_total{source}` (from review 1; sources `local`, `realtime`,
+  `listen`, `listen_resync`, `poll`, `startup`)
+- `poker_hand_projection_drain_results_total{result="projected|already_completed|deferred|failed"}`
+- `poker_hand_projection_drains_total`, `poker_hand_projection_drain_concurrency`,
+  `poker_hand_projection_poll_interval_seconds`
+- `poker_hand_projection_outbox_depth`, `poker_hand_projection_outbox_oldest_age_seconds`,
+  `poker_hand_projection_outbox_sample_age_seconds` from the new
+  `server/src/services/supabase/handOutboxMetrics.ts`: one PostgREST GET a minute with
+  `Prefer: count=exact` and `order=hand_number.asc&limit=1` (indexed; the lowest pending
+  `hand_number` is the oldest row because `hand_number` is a platform-wide sequence). Started
+  beside the worker on the leader, stopped with it, a failed sample never zeroes a good one.
+
+### Alert rules (infra/monitoring/alert-rules.yml, group `hand-projection`)
+
+`HandProjectionOutboxBacklog` (oldest > 300 s for 10 m, warning),
+`HandProjectionOutboxBacklogCritical` (> 1800 s for 15 m), `HandProjectionDrainStalled`
+(depth > 0 and nothing projected in 10 m), `HandProjectionMetricsBlind` (sample stale > 600 s).
+Added to the existing `alert-rules.yml`, so `prometheus.yml`'s `rule_files`,
+`docker-compose.yml`'s mounts and `deploy.sh`'s symlink loop are unchanged and still agree
+(`tests/what-a-monitor-reads-is-what-the-repo-says.law.test.ts`). **They are live only after
+`bash infra/monitoring/deploy.sh` on engine-01** (CLAUDE.md 10.84); verify with
+`curl -s localhost:9090/api/v1/rules | grep -c HandProjection` = 4.
+
+### Cutover, revised
+
+1. Migration: applied (above).
+2. `ENGINE_PG_LISTEN_URL`: NOT set; stays unset until the engine host has a way to hold a
+   database credential. The listener code stays so it is one env var away.
+3. Deploy this branch on the :55 cycle. Watch, over the next hour:
+   `poker_hand_projection_wakes_total{source="poll"}` climbing (~12/min idle);
+   `rate(poker_hand_projection_drain_results_total{result="projected"}[5m])` around
+   15-20/s while the backlog drains; `poker_hand_projection_outbox_oldest_age_seconds`
+   falling; `{result="failed"}` flat.
+4. Orchestrator, by hand at a quiet moment:
+   `ALTER PUBLICATION supabase_realtime DROP TABLE public.hand_projection_outbox;`
+   The engine's Realtime channel reports `CHANNEL_ERROR` (one budgeted `reportError`);
+   `{source="realtime"}` stops climbing, `{source="local"}` and `{source="poll"}` carry on.
+5. Cleanup branch later: delete the `supabase.channel(...)` block and `'realtime'` from
+   `HandProjectionWakeSource`.
+
+### How verified (review 2)
+
+- `cd server && npx tsc --noEmit`: clean.
+- `npx vitest run src/services/supabase/handProjection.test.ts src/services/supabase/handOutboxMetrics.test.ts src/services/supabase/handOutboxListener.test.ts src/engine/PostCommitObligationBarrier.guard.test.ts`:
+  49 passed (26 + 7 + 8 + 8). New specs: ordering inside a table with a gated fake RPC at
+  concurrency 2 (in-flight never exceeds 2, every table's RPCs ascend); a failed hand stops
+  only its table and later rows are deferred without a round-trip; a deferred table stays
+  blocked across pages; `not_pending` does not stop a chain; outcome counters; stop during
+  fan-out; start twice / stop-start; wake during drain; `pollIsDue`; env-var bounds; the
+  outbox sampler's request shape, empty/failed/stale behaviour, one interval per start.
+- `infra/monitoring/alert-rules.yml` parses (yaml) and the new group lists four alerts.
+- Live database read (SELECT only): 100,888 outbox rows, 1,329 tables, oldest 00:31 UTC;
+  the two triggers on the outbox; the function bodies quoted above.

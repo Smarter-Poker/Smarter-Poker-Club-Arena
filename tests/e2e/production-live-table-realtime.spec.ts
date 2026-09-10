@@ -6,6 +6,11 @@ import {
   whileConnectionBannerStaysHidden,
   type CausalHandCycle,
 } from './support/liveTableRealtime';
+import {
+  CASH_SPECTATOR_ACTION,
+  CASH_TABLE_CARD_SELECTOR,
+  collectVisibleCashCandidates,
+} from './support/cashTableCandidates';
 
 const CERTIFICATION_ENABLED = process.env.LIVE_TABLE_REALTIME_CERTIFICATION === '1';
 const CLUB_ID = process.env.E2E_CLUB_ID || 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4';
@@ -165,42 +170,11 @@ async function dismissClubMessage(page: Page): Promise<void> {
 }
 
 async function visibleRunningCashCandidates(page: Page): Promise<RunningTableCandidate[]> {
+  // Cluster game cards retain the representative table id. Their View/Watch
+  // Game action uses the same spectator table route as manual cash tables.
   const candidates = await page
-    .locator(
-      '.club-home__games [data-testid="arena-lobby-game-card"]' +
-        '[data-kind="cash"][data-target="table"][data-live="true"]'
-    )
-    .evaluateAll((cards) =>
-      cards
-        .map((card) => {
-          const id = card.getAttribute('data-id') || '';
-          const name =
-            card
-              .querySelector('.arena-game-card')
-              ?.getAttribute('aria-label')
-              ?.split(',')[0]
-              ?.trim() || id;
-          const players = Number(card.getAttribute('data-players'));
-          const view = [...card.querySelectorAll<HTMLElement>('button')].find((button) =>
-            /^(?:View|Watch) Table$/i.test(
-              button.getAttribute('aria-label') || button.textContent?.trim() || ''
-            )
-          );
-          const style = view ? getComputedStyle(view) : null;
-          const viewIsVisible =
-            !!view &&
-            style?.display !== 'none' &&
-            style?.visibility !== 'hidden' &&
-            view.getBoundingClientRect().width > 0 &&
-            view.getBoundingClientRect().height > 0;
-          return { id, name, players, viewIsVisible };
-        })
-        .filter(
-          (card) => /^[0-9a-f-]{8,}$/i.test(card.id) && card.players >= 2 && card.viewIsVisible
-        )
-        .sort((a, b) => b.players - a.players)
-        .map(({ id, name, players }) => ({ id, name, players }))
-    );
+    .locator(CASH_TABLE_CARD_SELECTOR)
+    .evaluateAll(collectVisibleCashCandidates, CASH_SPECTATOR_ACTION.source);
   return candidates.map((candidate) => ({ ...candidate, gameFormat: 'cash' }));
 }
 
@@ -248,7 +222,7 @@ async function selectOccupiedRunningCashTable(
   }
 
   throw new Error(
-    'The fixture club exposed no occupied (2+ players), running cash table with a read-only View Table action'
+    'The fixture club exposed no occupied (2+ players), running cash table with a read-only View/Watch Table or Game action'
   );
 }
 
@@ -806,10 +780,10 @@ test.describe('production mobile WebKit live-table realtime continuity', () => {
     const card = page.locator(
       `[data-testid="arena-lobby-game-card"][data-kind="cash"][data-id="${candidate.id}"]`
     );
-    const view = card.getByRole('button', { name: /^(?:View|Watch) Table$/i });
+    const view = card.getByRole('button', { name: CASH_SPECTATOR_ACTION });
     await expect(
       view,
-      `occupied table ${candidate.name} lost its visible read-only View/Watch Table action`
+      `occupied table ${candidate.name} lost its visible read-only View/Watch Table or Game action`
     ).toBeVisible();
 
     const navigationStartedAt = Date.now();

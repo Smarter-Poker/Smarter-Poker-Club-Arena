@@ -1,0 +1,147 @@
+{
+  "scope": "Spin-only private helper correction; no tournament, seat, wallet or historical rows rewritten",
+  "project_id": "kuklfnapbkmacvwxktbh",
+  "migration_file": "supabase/migrations/20260910132723_booked_spin_continuation_preserves_floating_point_rounding.sql",
+  "migration_sha256": "5965e38e5bafa0568b263332ad448d84340ebc4d50317983474f684ef1529e6f",
+  "applied_migration_version": "20260910141101",
+  "before_body_md5": "b5769b647e5b106caaf51982ac245ee8",
+  "after_body_md5": "4f83c09a69eecc766a1f3984feeb9823",
+  "postflight_at": "2026-09-10T14:12:00.100815Z",
+  "postflight": {
+    "owner": "postgres",
+    "security_definer": true,
+    "search_path": "public, pg_temp",
+    "acl": "{postgres=X/postgres}",
+    "anon_execute": false,
+    "authenticated_execute": false,
+    "service_execute": false
+  },
+  "host_constant_parity": {
+    "observed_at": "2026-09-10T14:05:31.189267Z",
+    "postgres_version": "17.6",
+    "cases": 77,
+    "matches": 77,
+    "mismatches": []
+  },
+  "installed_helper_parity": {
+    "observed_at": "2026-09-10T14:13:13.209787Z",
+    "cases": 93,
+    "matches": 93,
+    "mismatches": [],
+    "all_inputs": "synthetic constants; no application data reads or writes"
+  },
+  "actual_engine_compatibility": {
+    "ref": "6aee0b67da8b0b8c4e1cee9c6223aac4d3867e04",
+    "runtime_command": "POKER_AUDIT_MANAGER_REF=6aee0b67da8b0b8c4e1cee9c6223aac4d3867e04 node scripts/dev/booked-spin-authority-runtime.mjs",
+    "exit_code": 0,
+    "manager_rows": 93,
+    "expected_zero_round_refusal": 1,
+    "mismatches": [],
+    "artifact_sha256": "96b925b5c57a27258576282dc27f0da4bffa8006ed675fba2a5e7d3b5445a033",
+    "sources": [
+      {
+        "source": "server/src/config/spinSpec.ts",
+        "sha256": "5a30cbcc3089da4ae49232d3c50afdcc5f8c787817d39cd9d7361205d1446c54"
+      },
+      {
+        "source": "server/src/config/headsUpSpec.ts",
+        "sha256": "cbda0e02f09a39e4ff7a146b6355f2a86416f407a390801934f3d50b6f151606"
+      },
+      {
+        "source": "server/src/tournament/SpinDrawReceipt.ts",
+        "sha256": "2a63498d705aefae65c1d0b3fab754b953b8f3384deb84a5adaf51eae23ab79a"
+      },
+      {
+        "source": "server/src/tournament/blindEscalation.ts",
+        "sha256": "a2731e2a5364840b5df255cbdd58430a74c9699e4416dd4b26935bc9de210109"
+      },
+      {
+        "source": "server/src/tournament/blindLadder.ts",
+        "sha256": "9749bf02258934609ca6b7c6522c28cae4ab1193c1048a7eeab2b850f43df72e"
+      },
+      {
+        "source": "server/src/tournament/acceleratedLevels.ts",
+        "sha256": "d805d42dc9c52d6942b5cd1d7b9f69086692d26703108f90ac54353cf069f32e"
+      },
+      {
+        "source": "server/src/testHelpers/sourceWindow.ts",
+        "sha256": "1f6253cc75f4dedcea4d4fa76731f915c15c33cb0df025e2f30d5ac0671e1e9c"
+      },
+      {
+        "source": "server/src/tournament/TournamentManagerBase.ts",
+        "sha256": "cee059d76cdfcdbcf2834ff7bfd817699c4b429f3502fa41d62362ed8330db86"
+      }
+    ],
+    "limit": "Pure rule methods only; lifecycle changes in PR4105 are absent from this deployed engine."
+  },
+  "publication": {
+    "observed_at": "2026-09-10T14:07:43.456687+00:00",
+    "urls": [
+      {
+        "url": "https://ca-static.smarter.poker/build-info.json",
+        "status": 200,
+        "body": {
+          "ca_sha": "bb7a6ba30639fdfc5ae81df52d4e9f0b7c6afa9a",
+          "built_at": "2026-09-10T13:57:30Z",
+          "built_by": "publish-club-arena.yml",
+          "run_id": "34485513194"
+        }
+      },
+      {
+        "url": "https://smarter.poker/hub/club-arena/build-info.json",
+        "status": 200,
+        "body": {
+          "ca_sha": "bb7a6ba30639fdfc5ae81df52d4e9f0b7c6afa9a",
+          "built_at": "2026-09-10T13:57:30Z",
+          "built_by": "publish-club-arena.yml",
+          "run_id": "34485513194"
+        }
+      }
+    ]
+  },
+  "ci": {
+    "audit_pr": 4105,
+    "audit_merge": "d9dbf1388617ebfad71b00040aac22819c4103af",
+    "audit_run": 34480594248,
+    "publisher_repair_pr": 4163,
+    "publisher_repair_merge": "bb7a6ba30639fdfc5ae81df52d4e9f0b7c6afa9a",
+    "publisher_repair_ci_run": 34484574334,
+    "required_ci": "success",
+    "native_funding_groups": 53,
+    "publisher_run": 34485513194,
+    "web_publisher": "success",
+    "native_ota": "skipped",
+    "sentry_upload": "nonblocking HTTP403; unresolved"
+  },
+  "engine": {
+    "run": 34481538139,
+    "cutover_and_database_version_and_release_seal": "success for6aee0b67 only",
+    "leader_observed_at": "2026-09-10T14:06:47.36504Z",
+    "version": "6aee0b67",
+    "heartbeat_at": "2026-09-10T14:06:37.933255Z",
+    "audit_pr4105_ancestor": false
+  },
+  "phase": 3,
+  "original_controls": 58,
+  "fully_verified_controls": ["T12", "K02", "K11", "S09"],
+  "open_controls": 54,
+  "remaining_gates": [
+    "PR4105 engine lifecycle adoption",
+    "coordinated Heads-Up clock authority",
+    "canonical clock production composition",
+    "source/bank/Union/agent/player funding composition",
+    "externally owned satellite Stage-B activation",
+    "native OTA publication",
+    "Sentry upload permission"
+  ],
+  "proof_inputs": [
+    {
+      "path": "docs/audits/2026-09-10-spin-production-helper-proof/host-constant-parity.sql",
+      "sha256": "b98754f2fd461b8fc37ef320723fda28925fc097217620a4eccbeb1595fcd0c6"
+    },
+    {
+      "path": "docs/audits/2026-09-10-spin-production-helper-proof/installed-helper-parity.sql",
+      "sha256": "d591e78d3d2d27ae74927b374c15366dec040eb64c5f83a85e8a93101d818869"
+    }
+  ]
+}

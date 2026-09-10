@@ -226,6 +226,8 @@ Exit: correct shell/selection/access behavior without old iframe or simulated ga
 
 Release verified September 10, 2026: Club Arena implementation bc72ffc6 plus footer repair d600427d are published through both shared frontend endpoints; World Hub entry and evidence are live at b1250716. Exact CI, authenticated navigation/table preservation, retired-route checks and the managed-browser WebGL limitation are recorded in docs/changelog/2026-09-09-poker-arena-shell-phase-5.md. No engine or database deployment was needed.
 
+Phases 3 Through 5 Recheck: the September 10 audit repaired and published the transfer session/retry defects through PR 4078, verified production contracts and live routes, and retained the user-owned World Hub image exclusion. Exact evidence is in [the prior-phase recheck](audits/2026-09-10-diamond-phases-3-through-5-recheck.md).
+
 ### Phase 6 Of 12: First Fully Playable Diamond Cash Game
 
 - [ ] Wire shared NLH engine to Diamond buy-in, actions, settlement and leave.

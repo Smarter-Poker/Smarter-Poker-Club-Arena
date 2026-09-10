@@ -2,6 +2,10 @@
 
 ## Every Change, Documented. No Exceptions.
 
+## 2026-09-10: Native Spin Draw Survives A Late Receipt Failure
+
+The replay rehearsal now injects failure after actual entry/rake, draw journals, reserve receipts and escrow writes, proves complete rollback, then retries the same event once. Current saved function fingerprints and real accounting triggers pass the full direct-draw replay probe on PostgreSQL 17.11; function hashes and fixture state are restored afterward. No runtime or production change. Final winner settlement, immutable launch-wrapper composition and complete Phase 3 acceptance remain separate gates. Re-read: yes. See docs/changelog/2026-09-10-native-spin-draw-rollback-and-replay.md.
+
 ## 2026-09-10: Release Fixtures Own Their Git Configuration And Drain Archive Padding
 
 The disposable release Git fixture now clears inherited Git repository and configuration selectors and uses sandbox-owned global configuration. Three adversarial cases prove caller configuration, HEAD and index stay unchanged. A separate pre-push failure exposed BSD tar closing the archive pipe before Git finished zero block padding. The image builder now consumes through EOF while retaining pipefail. A deterministic real-archive padding regression fails before the change and passes after; a producer that exits 47 after extraction still blocks Docker and cleans staging. All 30 release-seal law tests pass. No live engine, host checkout, image, tag or release mutation was performed. Re-read: yes. See docs/changelog/2026-09-10-release-fixtures-own-their-git-configuration.md.

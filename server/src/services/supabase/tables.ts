@@ -116,9 +116,11 @@ export async function loadSeatedPlayers(tableId: string) {
 }
 
 const SEAT_SELECT =
-  'user_id, occupancy_id, stack, seat_number, time_bank_remaining, time_bank_uses_remaining, is_sitting_out, sit_out_at, entry_hold, entry_post_agreed';
+  'id, joined_at, user_id, occupancy_id, stack, seat_number, time_bank_remaining, time_bank_uses_remaining, is_sitting_out, sit_out_at, entry_hold, entry_post_agreed';
 
 interface SeatRow {
+  id: string;
+  joined_at: string;
   user_id: string;
   occupancy_id: string;
   stack: number;
@@ -149,6 +151,8 @@ interface SeatedProfileRow {
 /** One seat + its profile -> the SeatedPlayer shape the engine deals from. Shared by both read paths. */
 function seatedPlayerFrom(seat: SeatRow, profile: SeatedProfileRow) {
   return {
+    seat_id: seat.id,
+    seat_joined_at: seat.joined_at,
     user_id: seat.user_id,
     occupancy_id: seat.occupancy_id,
     username: profile.is_horse

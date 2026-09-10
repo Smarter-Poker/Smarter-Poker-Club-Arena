@@ -28,6 +28,7 @@
  * is 44px.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import TournamentPaymentStatus from '../tournament/TournamentPaymentStatus';
 import { supabase } from '../../lib/supabase';
 import { isAuthzError } from '../../utils/clubDashboard';
 import { reportError } from '../../utils/errorReporter';
@@ -267,112 +268,120 @@ export default function ChipStatement({ scope, clubId, pageSize = 50, title }: P
   }
 
   return (
-    <section className="chip-statement" aria-label={heading} data-scope={scope}>
-      <header className="chip-statement__header">
-        <h3 className="chip-statement__title">{heading}</h3>
-        <div className="chip-statement__balance">
-          <span className="chip-statement__balance-label">Balance Now</span>
-          <span className="chip-statement__balance-value">{chips(statement.balance_now)}</span>
-        </div>
-      </header>
+    <>
+      <section className="chip-statement" aria-label={heading} data-scope={scope}>
+        <header className="chip-statement__header">
+          <h3 className="chip-statement__title">{heading}</h3>
+          <div className="chip-statement__balance">
+            <span className="chip-statement__balance-label">Balance Now</span>
+            <span className="chip-statement__balance-value">{chips(statement.balance_now)}</span>
+          </div>
+        </header>
 
-      {scope === 'player' && statement.clubs.length > 1 && (
-        <ul className="chip-statement__clubs" aria-label="Balance By Club">
-          {statement.clubs.map((c) => (
-            <li key={c.club_id} className="chip-statement__club">
-              <span>{c.club_name}</span>
-              <span>{chips(c.balance)}</span>
-            </li>
-          ))}
-        </ul>
-      )}
-
-      {audit && (
-        <div className={`chip-statement__audit chip-statement__audit--${auditTone}`} role="status">
-          {audit.status === 'reconciles' && (
-            <>
-              <strong>Reconciles.</strong> Read At {when(audit.read_at || '')} As{' '}
-              {chips(audit.balance_at_reading)}, Plus {chips(audit.in_since)} In, Minus{' '}
-              {chips(audit.out_since)} Out ({audit.legs_since} Movements) Equals{' '}
-              {chips(audit.expected_now)}, Which Is Your Balance.
-            </>
-          )}
-          {audit.status === 'does_not_reconcile' && (
-            <>
-              <strong>Does Not Reconcile.</strong> Read At {when(audit.read_at || '')} As{' '}
-              {chips(audit.balance_at_reading)}, Plus {chips(audit.in_since)} In, Minus{' '}
-              {chips(audit.out_since)} Out Should Be {chips(audit.expected_now)}; The Balance Is{' '}
-              {chips(audit.balance_now)}. Difference {chips(audit.unexplained)}. The Platform Makes
-              This Same Comparison Every Night And Files It When It Fails.
-            </>
-          )}
-          {audit.status === 'no_reading_yet' && (
-            <>
-              <strong>No Reading Yet.</strong> This Wallet Has Not Yet Been Read By The Nightly
-              Ledger Check. The Movements Below Are Complete; The Comparison Arrives After The Next
-              06:40 UTC Reading.
-            </>
-          )}
-          {audit.status === 'no_balance' && (
-            <>
-              <strong>No Balance.</strong> There Is No Wallet Row To Compare The Journal Against.
-            </>
-          )}
-        </div>
-      )}
-
-      {legs.length === 0 ? (
-        <div className="chip-statement__empty">No Chip Movements Yet.</div>
-      ) : (
-        <ol className="chip-statement__legs" aria-label="Chip Movements">
-          {legs.map((leg) => (
-            <li
-              key={leg.id}
-              className={`chip-statement__leg chip-statement__leg--${leg.direction}`}
-            >
-              <div className="chip-statement__leg-main">
-                <span className="chip-statement__leg-category">{categoryLabel(leg.category)}</span>
-                <span
-                  className={`chip-statement__leg-amount chip-statement__leg-amount--${leg.direction}`}
-                >
-                  {leg.direction === 'in' ? '+' : '-'}
-                  {chips(leg.amount)}
-                </span>
-              </div>
-              <div className="chip-statement__leg-meta">
-                <span>
-                  {leg.direction === 'in' ? 'From ' : 'To '}
-                  {counterpartyLabel(leg)}
-                </span>
-                <time dateTime={leg.at}>{when(leg.at)}</time>
-              </div>
-            </li>
-          ))}
-        </ol>
-      )}
-
-      {statement.has_more && (
-        <button
-          type="button"
-          className="chip-statement__btn chip-statement__more"
-          onClick={loadMore}
-          disabled={loadingMore}
-        >
-          {loadingMore ? 'Loading...' : 'Load Earlier Movements'}
-        </button>
-      )}
-
-      <footer className="chip-statement__footer">
-        Generated {when(statement.generated_at)} From The Chip Journal. Every Line Is A Journal Leg;
-        Nothing Is Summarised Away.
-        {scope === 'player' && (
-          <>
-            {' '}
-            The Balance Is Your Wallet Only: Chips Sitting On A Table Or In A Tournament Are Not In
-            It Until They Come Back, And Promo Chips Are A Separate Wallet.
-          </>
+        {scope === 'player' && statement.clubs.length > 1 && (
+          <ul className="chip-statement__clubs" aria-label="Balance By Club">
+            {statement.clubs.map((c) => (
+              <li key={c.club_id} className="chip-statement__club">
+                <span>{c.club_name}</span>
+                <span>{chips(c.balance)}</span>
+              </li>
+            ))}
+          </ul>
         )}
-      </footer>
-    </section>
+
+        {audit && (
+          <div
+            className={`chip-statement__audit chip-statement__audit--${auditTone}`}
+            role="status"
+          >
+            {audit.status === 'reconciles' && (
+              <>
+                <strong>Reconciles.</strong> Read At {when(audit.read_at || '')} As{' '}
+                {chips(audit.balance_at_reading)}, Plus {chips(audit.in_since)} In, Minus{' '}
+                {chips(audit.out_since)} Out ({audit.legs_since} Movements) Equals{' '}
+                {chips(audit.expected_now)}, Which Is Your Balance.
+              </>
+            )}
+            {audit.status === 'does_not_reconcile' && (
+              <>
+                <strong>Does Not Reconcile.</strong> Read At {when(audit.read_at || '')} As{' '}
+                {chips(audit.balance_at_reading)}, Plus {chips(audit.in_since)} In, Minus{' '}
+                {chips(audit.out_since)} Out Should Be {chips(audit.expected_now)}; The Balance Is{' '}
+                {chips(audit.balance_now)}. Difference {chips(audit.unexplained)}. The Platform
+                Makes This Same Comparison Every Night And Files It When It Fails.
+              </>
+            )}
+            {audit.status === 'no_reading_yet' && (
+              <>
+                <strong>No Reading Yet.</strong> This Wallet Has Not Yet Been Read By The Nightly
+                Ledger Check. The Movements Below Are Complete; The Comparison Arrives After The
+                Next 06:40 UTC Reading.
+              </>
+            )}
+            {audit.status === 'no_balance' && (
+              <>
+                <strong>No Balance.</strong> There Is No Wallet Row To Compare The Journal Against.
+              </>
+            )}
+          </div>
+        )}
+
+        {legs.length === 0 ? (
+          <div className="chip-statement__empty">No Chip Movements Yet.</div>
+        ) : (
+          <ol className="chip-statement__legs" aria-label="Chip Movements">
+            {legs.map((leg) => (
+              <li
+                key={leg.id}
+                className={`chip-statement__leg chip-statement__leg--${leg.direction}`}
+              >
+                <div className="chip-statement__leg-main">
+                  <span className="chip-statement__leg-category">
+                    {categoryLabel(leg.category)}
+                  </span>
+                  <span
+                    className={`chip-statement__leg-amount chip-statement__leg-amount--${leg.direction}`}
+                  >
+                    {leg.direction === 'in' ? '+' : '-'}
+                    {chips(leg.amount)}
+                  </span>
+                </div>
+                <div className="chip-statement__leg-meta">
+                  <span>
+                    {leg.direction === 'in' ? 'From ' : 'To '}
+                    {counterpartyLabel(leg)}
+                  </span>
+                  <time dateTime={leg.at}>{when(leg.at)}</time>
+                </div>
+              </li>
+            ))}
+          </ol>
+        )}
+
+        {statement.has_more && (
+          <button
+            type="button"
+            className="chip-statement__btn chip-statement__more"
+            onClick={loadMore}
+            disabled={loadingMore}
+          >
+            {loadingMore ? 'Loading...' : 'Load Earlier Movements'}
+          </button>
+        )}
+
+        <footer className="chip-statement__footer">
+          Generated {when(statement.generated_at)} From The Chip Journal. Every Line Is A Journal
+          Leg; Nothing Is Summarised Away.
+          {scope === 'player' && (
+            <>
+              {' '}
+              The Balance Is Your Wallet Only: Chips Sitting On A Table Or In A Tournament Are Not
+              In It Until They Come Back, And Promo Chips Are A Separate Wallet.
+            </>
+          )}
+        </footer>
+      </section>
+      {scope === 'player' && <TournamentPaymentStatus clubId={clubId ?? null} />}
+    </>
   );
 }

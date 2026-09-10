@@ -103,7 +103,7 @@ const BASELINE = new Map<string, number>([
   ['src/pages/VIPPage.tsx', 2],
   ['src/pages/RakebackDashboard.tsx', 3],
   ['src/pages/PlayerSessionsPage.tsx', 2],
-  ['src/pages/NotificationsPage.tsx', 3],
+  ['src/pages/NotificationsPage.tsx', 0],
   ['src/pages/ClubRulesPage.tsx', 0],
   ['src/pages/CashierTradePage.tsx', 0],
   ['src/pages/AntiCheatPage.tsx', 3],

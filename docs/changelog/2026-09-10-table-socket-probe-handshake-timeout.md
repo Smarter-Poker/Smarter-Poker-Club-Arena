@@ -6,21 +6,21 @@
 
 ## Timeline (UTC)
 
-| when | what |
-| --- | --- |
-| 02:55 | scheduled break; container `1-e1790665` (build `1695880b`) starts |
-| 03:05→03:13 | engine log fills with `table_lease_lost` / `lease_proof_expired` / `supabase_timeout`; hands/min falls from ~19k log lines/min to ~5k |
-| 03:18, 03:23, 03:28 | probe: `handshake_timeout` (socket never opened in 15 s) |
-| 03:33 | probe: `pick_table` finds no table that dealt a hand in 10 min |
-| 03:34:18 | Docker healthcheck finally flips unhealthy; `sp-autoheal` restarts the container at 03:34:30 |
-| 03:54 | **fix 1 applied**: `20260910035245_the_settlement_lane_is_per_tournament_not_platform_wide` |
-| 04:00–04:11 | fleet ramps to ~1,000 hands/min on ~400 tables (best of the night) |
-| 04:12→04:22 | tables bleed 400 → 55; DB idle, event loop p50 20 ms — not the lane |
-| 04:23–04:43 | probe: `handshake_timeout` ×5 |
-| 04:55 | scheduled break restarts; same bleed begins again at 05:05 |
-| 05:13 | **fix 2 applied**: `20260910051125_the_seat_move_door_the_engine_calls_exists` |
-| 05:15 | last `Could not find the function public.fn_move_tournament_player` in the log |
-| 05:56 | scheduled break; new container passes the 12-minute mark at 922 hands/min / 356 tables and holds |
+| when                | what                                                                                                                                  |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| 02:55               | scheduled break; container `1-e1790665` (build `1695880b`) starts                                                                     |
+| 03:05→03:13         | engine log fills with `table_lease_lost` / `lease_proof_expired` / `supabase_timeout`; hands/min falls from ~19k log lines/min to ~5k |
+| 03:18, 03:23, 03:28 | probe: `handshake_timeout` (socket never opened in 15 s)                                                                              |
+| 03:33               | probe: `pick_table` finds no table that dealt a hand in 10 min                                                                        |
+| 03:34:18            | Docker healthcheck finally flips unhealthy; `sp-autoheal` restarts the container at 03:34:30                                          |
+| 03:54               | **fix 1 applied**: `20260910035245_the_settlement_lane_is_per_tournament_not_platform_wide`                                           |
+| 04:00–04:11         | fleet ramps to ~1,000 hands/min on ~400 tables (best of the night)                                                                    |
+| 04:12→04:22         | tables bleed 400 → 55; DB idle, event loop p50 20 ms — not the lane                                                                   |
+| 04:23–04:43         | probe: `handshake_timeout` ×5                                                                                                         |
+| 04:55               | scheduled break restarts; same bleed begins again at 05:05                                                                            |
+| 05:13               | **fix 2 applied**: `20260910051125_the_seat_move_door_the_engine_calls_exists`                                                        |
+| 05:15               | last `Could not find the function public.fn_move_tournament_player` in the log                                                        |
+| 05:56               | scheduled break; new container passes the 12-minute mark at 922 hands/min / 356 tables and holds                                      |
 
 ## Root cause 1 — a platform-wide lock convoy (fix: #4111)
 
@@ -28,7 +28,7 @@
 
 **Fix.** Three keys instead of one, no authority loses its exclusion: G (unchanged, exclusive for all 28, still what the trigger guards verify), B `ca:hand-settlement-barrier:v1` (shared by every hand; exclusive after G for the 20 terminal/rare authorities — yesterday's exclusion, unchanged), T(tournament) (exclusive after G for the 8 rolling per-tournament authorities; shared by that tournament's hands only). Cash hands take B only. Lock order everywhere: G → B → T → `atomic-table:<id>` → rows. The migration rewrites the 30 bodies from `pg_get_functiondef` with counts asserted, so it cannot revert a concurrent edit.
 
-**Measured:** hand settlement 69 ms avg (from 239); advisory-lock waits 73 per 5 min (from 1,239 on the *healthy* pre-fix engine).
+**Measured:** hand settlement 69 ms avg (from 239); advisory-lock waits 73 per 5 min (from 1,239 on the _healthy_ pre-fix engine).
 
 ## Root cause 2 — the engine called functions that did not exist (fix: #4108)
 

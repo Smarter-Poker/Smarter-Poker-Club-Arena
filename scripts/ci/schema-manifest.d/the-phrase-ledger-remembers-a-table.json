@@ -1,0 +1,4 @@
+{
+  "_owner": "fix/a-horse-speaks-at-the-table - migration 20260908034246. A horse had never sent a table_chat message: 6 in the whole history, all from one human, across 1,000 horses and 1,271 seats. HorseTableTalk gives it the same door a player uses, and reuses horse_phrase_ledger so it never repeats itself; the ledger gains a nullable table_id and loses its inert anon/authenticated grant.",
+  "columns": { "horse_phrase_ledger": ["table_id"] }
+}

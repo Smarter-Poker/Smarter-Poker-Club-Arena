@@ -54,6 +54,7 @@ import { selectRevealedShowdownResults } from './revealedShowdown.js';
 import { ServerTableEngineDealing } from './ServerTableEngineDealing.js';
 import { atRebuyStopLoss, horseRebuyAmount } from '../services/HorseRebuyPolicy.js';
 import { buildDailyMissionHandEvents } from './dailyMissionEvents.js';
+import { maybeSpeak } from './HorseTableTalk.js';
 import { checkTournamentChipConservation } from './tournamentChipConservation.js';
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { INSTANCE_ID } from '../services/tableLease.js';
@@ -1813,6 +1814,44 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
                 hand_description: r.handDescription ?? '',
               };
         });
+
+        /* A HORSE SPEAKS AT THE TABLE, THE SAME WAY A PLAYER DOES.
+           Measured 2026-09-08: `table_chat` held 6 messages ever, all from one
+           human, and across 1,000 horses and 1,271 occupied seats a horse had
+           never sent one. Chat is a feature every human seat has, so silence
+           was an exclusion (10.5, and Dan's rebuy-pause ruling: "IF YOU DIDN'T
+           GIVE THEM THE SAME EXACT FEATURES AND FUNCTIONALITY, PEOPLE WOULD
+           NOTICE"). The module owns every gate - odds, per-horse chattiness,
+           cooldowns, the mute check a human gets, and the typing delay - so
+           this call site only says WHAT JUST HAPPENED. It is deliberately not
+           awaited: chat is the least important thing at a table and must never
+           hold up a pot. */
+        try {
+          const bigBlind = Number(this.tableInfo?.big_blind) || 0;
+          const bigWin = bigBlind > 0 ? bigBlind * 25 : Infinity;
+          const wonBy = new Map<string, number>();
+          for (const w of snap.winners) {
+            wonBy.set(w.userId, (wonBy.get(w.userId) ?? 0) + Number(w.amount || 0));
+          }
+          const wentToShowdown = (snap.showdownResults?.length ?? 0) > 1;
+          for (const p of players) {
+            if (!p.is_horse) continue;
+            const won = wonBy.get(p.user_id) ?? 0;
+            const lost = !won && (snap.contributions?.get?.(p.user_id) ?? 0) > 0;
+            const moment =
+              won >= bigWin
+                ? 'won_big'
+                : lost && (snap.contributions?.get?.(p.user_id) ?? 0) >= bigWin
+                  ? 'lost_big'
+                  : wentToShowdown
+                    ? 'showdown'
+                    : null;
+            if (!moment) continue;
+            void maybeSpeak({ tableId: this.tableId, userId: p.user_id, moment });
+          }
+        } catch (err) {
+          reportError(err, 'ServerTableEngine.horse_table_talk');
+        }
 
         const dailyMissionEvents = buildDailyMissionHandEvents({
           dealtPlayerIds: snap.holeCards.keys(),

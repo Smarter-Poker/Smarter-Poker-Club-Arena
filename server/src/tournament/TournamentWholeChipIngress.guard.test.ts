@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import ts from 'typescript';
 import {
   canonicalTournamentBlindStructure,
   cashHandCapChips,
@@ -11,6 +12,26 @@ import {
 } from '../engine/TournamentChipIntegrity.js';
 
 const read = (file: string) => readFileSync(join(__dirname, file), 'utf8');
+
+function classMethod(
+  source: string,
+  fileName: string,
+  className: string,
+  methodName: string
+): string {
+  const tree = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true);
+  const owner = tree.statements.find(
+    (node): node is ts.ClassDeclaration =>
+      ts.isClassDeclaration(node) && node.name?.text === className
+  );
+  if (!owner) throw new Error(`${className} class missing from ${fileName}`);
+  const method = owner.members.find(
+    (node): node is ts.MethodDeclaration =>
+      ts.isMethodDeclaration(node) && node.name.getText(tree) === methodName
+  );
+  if (!method) throw new Error(`${className}.${methodName} method missing from ${fileName}`);
+  return method.getText(tree);
+}
 
 describe('persisted tournament configuration stays in the whole-chip denomination', () => {
   const healthy = {
@@ -111,20 +132,24 @@ describe('manager launch, recovery and ranking refuse before mutation', () => {
     expect(base).not.toContain(".update({ status: 'playing', chips:");
   });
 
-  it('lets the atomic late-seat authority derive and validate the stack', () => {
-    const methodStart = manager.indexOf('protected async ensureLateRegSeated()');
-    const methodEnd = manager.indexOf('FIX 155: Dynamic table creation', methodStart);
-    const method = manager.slice(methodStart, methodEnd);
+  it('lets the atomic launch-seat authority derive and validate the stack', () => {
+    const method = classMethod(
+      base,
+      'TournamentManagerBase.ts',
+      'TournamentManagerBase',
+      'createTablesAndSeatPlayers'
+    );
     const assignmentAt = method.indexOf('assignTournamentPlayerSeatAtomically({');
     const assignmentEnd = method.indexOf('});', assignmentAt);
     const assignment = method.slice(assignmentAt, assignmentEnd);
-    expect(methodStart).toBeGreaterThan(-1);
-    expect(methodEnd).toBeGreaterThan(methodStart);
     expect(assignmentAt).toBeGreaterThan(-1);
+    expect(assignmentEnd).toBeGreaterThan(assignmentAt);
+    expect(method.match(/assignTournamentPlayerSeatAtomically\(\{/g)).toHaveLength(1);
     expect(assignment).toContain('tournamentId: this.tournamentId');
-    expect(assignment).toContain('userId: player.user_id');
+    expect(assignment).toContain('userId: toSeat[i].user_id');
     expect(assignment).not.toContain('chips');
     expect(method).not.toMatch(/\.from\('table_seats'\)[\s\S]{0,160}\.(?:insert|update|upsert)\(/);
+    expect(manager).not.toContain('assignTournamentPlayerSeatAtomically');
   });
 
   it('routes both human and horse cap calculations through the cash-only boundary', () => {

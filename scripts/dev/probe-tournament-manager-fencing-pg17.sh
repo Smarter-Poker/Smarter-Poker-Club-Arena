@@ -40,6 +40,7 @@ seat_first_atomic_migration="$(migration_by_suffix seat_first_board_creation_is_
 post_commit_migration="$(migration_by_suffix post_commit_obligations_are_atomic_and_resumable.sql)"
 seat_first_retirement_migration="$(migration_by_suffix seat_first_inventory_is_created_atomically.sql)"
 restore_exact_receipt_migration="$(migration_by_suffix restore_exact_hand_generation_after_terminal_writer.sql)"
+seat_exit_authority_migration="$(migration_by_suffix tournament_seat_exits_stay_inside_tournament_authority.sql)"
 stage_b_migration="$(optional_migration_by_suffix tournament_manager_request_fencing_is_strict.sql)"
 
 if [[ "$stage_a_request_migration" > "$seat_first_atomic_migration" ]] ||
@@ -112,6 +113,54 @@ if [[ "$("${psql_cmd[@]}" -Atc \
   "SELECT md5(pg_get_functiondef('public.fn_ca_settle_hand_stacks_absolute(uuid,bigint,jsonb,numeric,numeric,text,numeric)'::regprocedure)) || '|' || md5(pg_get_functiondef('public.fn_ca_commit_hand_settlement(uuid,bigint,jsonb,numeric,numeric,text,numeric,jsonb,jsonb,text,uuid,jsonb)'::regprocedure));")" != \
   '9be5d1da12d8f674a47a50ffb9a6df81|f93a85ebe5a509ccb7dfedb9be1ed3fa' ]]; then
   echo 'The Stage-B fixture did not install the current production settlement preimage.' >&2
+  exit 1
+fi
+
+# The seat-exit cutover runs after the restored exact writer and before Stage B.
+# Its complete migration chain has dedicated PostgreSQL 17 rehearsals; this
+# focused request-fencing probe installs the exact composed settlement surface
+# that Stage B authenticates, rather than weakening that production precondition
+# or copying a marker-only wrapper into the fixture.
+"${psql_cmd[@]}" >/dev/null <<'SQL'
+CREATE TABLE public.settlement_idempotency_keys (
+  table_id uuid NOT NULL,
+  hand_id uuid NOT NULL,
+  status text NOT NULL,
+  PRIMARY KEY (table_id,hand_id)
+);
+CREATE FUNCTION public.fn_ca_open_tournament_hand_seat_exit_authority(
+  uuid,uuid,uuid[]
+) RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER AS $function$
+BEGIN
+  RAISE EXCEPTION 'focused fixture has no tournament zero-stack exit';
+END;
+$function$;
+CREATE FUNCTION public.fn_ca_close_tournament_seat_exit_authority(
+  uuid,boolean
+) RETURNS integer LANGUAGE sql SECURITY DEFINER AS $function$
+  SELECT 0
+$function$;
+ALTER FUNCTION public.fn_ca_settle_hand_stacks_absolute(
+  uuid,bigint,jsonb,numeric,numeric,text,numeric)
+  RENAME TO fn_ca_settle_hand_stacks_absolute_pre_seat_exit_authority;
+REVOKE ALL ON FUNCTION
+  public.fn_ca_settle_hand_stacks_absolute_pre_seat_exit_authority(
+    uuid,bigint,jsonb,numeric,numeric,text,numeric)
+  FROM PUBLIC,anon,authenticated,service_role;
+SQL
+
+awk '
+  !capture && index($0, "CREATE FUNCTION public.fn_ca_settle_hand_stacks_absolute(") == 1 {
+    capture = 1
+  }
+  capture { print }
+  capture && /^\$accepted_hand_stack_with_seat_authority\$;$/ { exit }
+' "$seat_exit_authority_migration" | "${psql_cmd[@]}" >/dev/null
+
+if [[ "$("${psql_cmd[@]}" -Atc \
+  "SELECT md5(pg_get_functiondef('public.fn_ca_settle_hand_stacks_absolute_pre_seat_exit_authority(uuid,bigint,jsonb,numeric,numeric,text,numeric)'::regprocedure)) || '|' || md5(pg_get_functiondef('public.fn_ca_commit_hand_settlement(uuid,bigint,jsonb,numeric,numeric,text,numeric,jsonb,jsonb,text,uuid,jsonb)'::regprocedure)) || '|' || md5((SELECT p.prosrc FROM pg_proc p WHERE p.oid='public.fn_ca_settle_hand_stacks_absolute(uuid,bigint,jsonb,numeric,numeric,text,numeric)'::regprocedure));")" != \
+  'ba1cdf1b56e5bb0c1c199b65390ee1f2|f93a85ebe5a509ccb7dfedb9be1ed3fa|9d6a12c82aa260c22e1c013e95faca0e' ]]; then
+  echo 'The Stage-B fixture did not install the canonical seat-exit settlement composition.' >&2
   exit 1
 fi
 "${psql_cmd[@]}" -f \

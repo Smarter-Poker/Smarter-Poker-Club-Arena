@@ -74,11 +74,24 @@ function legacyPlannerRuntimeReferences(): string[] {
 }
 
 function satelliteSettlementMethod(): string {
-  const start = manager.indexOf('protected async processSatelliteAwards');
-  const end = manager.indexOf('protected async ensureLateRegSeated', start);
-  expect(start, 'processSatelliteAwards exists').toBeGreaterThan(-1);
-  expect(end, 'the next TournamentManager method bounds settlement').toBeGreaterThan(start);
-  return manager.slice(start, end);
+  const source = ts.createSourceFile(
+    'TournamentManager.ts',
+    manager,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TS
+  );
+  const owner = source.statements.find(
+    (node): node is ts.ClassDeclaration =>
+      ts.isClassDeclaration(node) && node.name?.text === 'TournamentManager'
+  );
+  expect(owner, 'TournamentManager class exists').toBeTruthy();
+  const method = owner?.members.find(
+    (node): node is ts.MethodDeclaration =>
+      ts.isMethodDeclaration(node) && node.name.getText(source) === 'processSatelliteAwards'
+  );
+  expect(method, 'processSatelliteAwards exists').toBeTruthy();
+  return method?.getText(source) ?? '';
 }
 
 describe('the database is the only satellite settlement planner', () => {

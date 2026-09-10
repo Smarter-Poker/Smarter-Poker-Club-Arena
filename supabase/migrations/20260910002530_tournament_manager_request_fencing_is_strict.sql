@@ -782,6 +782,7 @@ DECLARE
     'rpc/fn_begin_tournament_launch_atomic',
     'rpc/fn_bounty_obligation_has_complete_marker',
     'rpc/fn_ca_paid_spin_launch_entitlements',
+    'rpc/fn_ca_reprice_unpaid_tournament_place',
     'rpc/fn_ca_tournament_launch_supply_version',
     'rpc/fn_claim_tournament_bounty_elimination',
     'rpc/fn_close_tournament_addon_period',

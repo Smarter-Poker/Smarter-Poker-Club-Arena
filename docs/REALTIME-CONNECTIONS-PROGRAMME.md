@@ -44,6 +44,8 @@ known cached wallets stay usable. PR4125 is published; exact public/origin bytes
 were verified on September 10 at 07:02:36 UTC. Production UI, natural reconnect,
 and physical-device acceptance remain open.
 Exact evidence: `docs/audits/2026-09-10-realtime-phase16-release.md`.
+Subsequent production acceptance, the Cashier canary readiness correction, and
+loaded-fleet qualifications: `docs/audits/2026-09-10-realtime-acceptance-follow-through.md`.
 Scope: `docs/changelog/2026-09-10-realtime-phase16-cashier-directory.md`.
 
 Phase 15: Confirmed tournament inventory. Seven stale-card and realtime-race

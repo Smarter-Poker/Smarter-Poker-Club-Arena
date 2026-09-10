@@ -9,13 +9,15 @@
     "ref": "refs/heads/backup/resume-poker-sep10/tournament-guards"
   },
   "satellite_supersession": {
-    "status": "Current-reader narrow recomposition in final native/commit verification; database apply awaits explicit approval",
+    "status": "Verified archive checkpoint; database application remains unapplied pending explicit approval",
     "current_reader_md5": "52c3b25be3904e86f1a8558ce542ec61",
     "candidate_migration": "20260910160106_satellite_seats_count_once_and_keep_the_funded_prize.sql",
     "old_bundled_commits": [
       "d5beef474dc2558307d1bb9af31a9fda0421a074",
       "df72341a360bbf9126a0603c1eb12dadfeb0d00b"
-    ]
+    ],
+    "commit": "473bd2d41b88ad352819c77031ddc4dad209917b",
+    "ref": "refs/heads/backup/resume-poker-sep10/satellite-funded-helper"
   },
   "runtime_verification": {
     "paths": ["server/", "src/", "tests/"],

@@ -83,6 +83,7 @@ export interface HandHistoryStreet {
  * legacy flat shape the share link is built from; `replay` is what is drawn.
  */
 export interface HandRecord {
+  arenaAsset?: 'chips' | 'diamonds';
   id: string;
   handNumber: number;
   timestamp: number;
@@ -208,6 +209,14 @@ function handToText(hand: HandRecord): string {
       (hand.tableName ? ` - ${hand.tableName}` : '')
   );
   lines.push(`Time: ${stamp(m.playedAt) || new Date(hand.timestamp).toLocaleString()}`);
+  lines.push(
+    'Asset: ' +
+      (hand.arenaAsset === 'diamonds'
+        ? 'Diamonds'
+        : hand.arenaAsset === 'chips'
+          ? 'Chips'
+          : 'Unclassified')
+  );
   lines.push('');
 
   for (const p of m.players) {
@@ -351,6 +360,7 @@ function HandEntry({
           )}
         </span>
         <span className="hh-entry__tags">
+          {hand.arenaAsset === 'diamonds' && <span className="hh-entry__tag">Diamonds</span>}
           {runs > 1 && (
             <span className="hh-entry__tag">
               {hand.bombPot ? 'Bomb' : runs >= 3 ? 'Run 3x' : 'Run 2x'}

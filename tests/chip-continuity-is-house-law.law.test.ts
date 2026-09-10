@@ -205,7 +205,8 @@ describe('6.1 / 6.3 - the leave control renders the engine clock and nothing els
     // The floor is read from the server at mount AND every time the buy-in
     // sheet opens (whitespace-tolerant: Prettier owns the layout).
     expect((TABLE_PAGE.match(/supabase\.rpc\(\s*'fn_cash_effective_buyin'/g) ?? []).length).toBe(2);
-    expect(TABLE_PAGE).toContain('}, [showBuyInModal, tableId, userId]);');
+    expect(TABLE_PAGE).toContain('}, [showBuyInModal, tableId, userId, tableState.arenaAsset]);');
+    expect(TABLE_PAGE).toContain("if (tableState.arenaAsset !== 'chips')");
     const BUYIN = read('src/components/table/BuyInModal.tsx');
     expect(stripComments(BUYIN)).not.toContain('For 2 Hours');
     expect(stripComments(BUYIN)).not.toContain('You Cashed Out');

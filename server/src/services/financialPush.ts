@@ -32,6 +32,8 @@ import { channelHub } from '../hub/ChannelHub.js';
 import { reportError } from './errorReporter.js';
 
 export interface FinancialPushOptions {
+  /** Authoritative asset from the committed custody receipt. */
+  asset?: 'chips' | 'diamonds';
   /** The club whose wallet moved, when the caller knows it. */
   clubId?: string | null;
   /** The table the mutation happened at; resolves the club when clubId is absent. */
@@ -46,6 +48,24 @@ export async function pushFinancialUpdateNow(
   opts: FinancialPushOptions = {}
 ): Promise<boolean> {
   if (!userId || userId === 'undefined') return false;
+  if (opts.asset === 'diamonds') {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('diamonds')
+      .eq('id', userId)
+      .maybeSingle();
+    if (error) throw error;
+    const balance = data?.diamonds;
+    if (typeof balance !== 'number' || !Number.isSafeInteger(balance) || balance < 0) return false;
+    channelHub.sendToUser(userId, {
+      type: 'FINANCIAL_UPDATE',
+      userId,
+      walletType: 'DIAMOND',
+      available: balance,
+      total: balance,
+    });
+    return true;
+  }
   let clubId = opts.clubId ?? null;
   if (!clubId && opts.tableId) {
     const { data, error } = await supabase

@@ -40,16 +40,35 @@ export function useClubRole(clubId: string): {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
+    /* THE LAST ANSWER TO LAND IS NOT THE ANSWER TO THE CURRENT QUESTION
+       (2026-09-10). This had no cancellation flag and no ordering fence, so
+       switching clubs while a read was in flight let the PREVIOUS club's
+       membership resolve last and win - and isAdmin / canManageMembers /
+       canViewFinancials then described the wrong club. The stale membership
+       is also cleared on every change so nothing renders the old club's
+       permissions while the new club's are being read. */
     if (!user?.id || !clubId) {
+      setMembership(null);
       setIsLoading(false);
-      return;
+      return undefined;
     }
 
+    let cancelled = false;
+    setMembership(null);
     setIsLoading(true);
     MembershipService.getMembership(clubId, user.id)
-      .then(setMembership)
-      .catch((e) => reportError(e, 'catch'))
-      .finally(() => setIsLoading(false));
+      .then((m) => {
+        if (!cancelled) setMembership(m);
+      })
+      .catch((e) => {
+        if (!cancelled) reportError(e, 'useClubRole.getMembership');
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [clubId, user?.id]);
 
   const role = membership?.role || null;
@@ -111,14 +130,25 @@ export function useIsMember(clubId: string): boolean {
   const [isMember, setIsMember] = useState(false);
 
   useEffect(() => {
+    // Same fence as useClubRole: a stale answer for the previous club must
+    // not land after the current club's.
     if (!user?.id || !clubId) {
       setIsMember(false);
-      return;
+      return undefined;
     }
 
+    let cancelled = false;
+    setIsMember(false);
     MembershipService.getMembership(clubId, user.id)
-      .then((m) => setIsMember(m?.status === 'active'))
-      .catch(() => setIsMember(false));
+      .then((m) => {
+        if (!cancelled) setIsMember(m?.status === 'active');
+      })
+      .catch(() => {
+        if (!cancelled) setIsMember(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [clubId, user?.id]);
 
   return isMember;

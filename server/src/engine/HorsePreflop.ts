@@ -96,7 +96,7 @@ export interface PreflopCtx {
    *  (shallow, high blind pressure). NOT "winner-take-all": below 10x the
    *  tier pays one place, but 10x pays 80/20 and 25x and up pay 80/12/8, and
    *  that ladder is priced by `riskAdd` (HorseLogic.icmRisk), never here. */
-  format?: 'cash' | 'mtt' | 'spin' | 'hu_sng';
+  format?: 'cash' | 'mtt' | 'sng' | 'spin' | 'hu_sng';
   /** V12 ANTI-EXPLOIT: 0..1 — how hard the current raiser is TARGETING this
    *  horse specifically (HorseMind.targetingOf). A hunter's raises get less
    *  credit: the horse defends wider and fights back with more re-raises,

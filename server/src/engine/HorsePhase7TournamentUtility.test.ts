@@ -1113,6 +1113,11 @@ describe('Phase 7 action-specific utility', () => {
     expect(callOf(exhausted).optionEv).toBe(0);
     expect(unknown).toBeNull();
     expect(reloadUnknown).toBeNull();
+    expect(
+      evaluateTournamentUtilityDetailed(
+        headsUpAllIn({ context: { ...recovery, rebuyAffordable: null } })
+      ).unavailableReason
+    ).toBe('recovery_option');
     expect(callOf(unfunded).optionEv).toBe(0);
 
     const bountyRecovery = evaluateTournamentUtility(

@@ -33,7 +33,7 @@ PR 4070 merged as 81e4c6daefa47f6b6883596f3b62d2d3498e195a. CI 34424324769 passe
 
 ## Remaining Production Acceptance
 
-- [ ] Obtain exact production financial migration approval and apply the three pending Phase 6 migrations once. Automatic approval review rejected the earlier application; no alternate write path was used.
+- [x] Exact production approval received for source migrations 20260910022036, 20260910023541 and 20260910030442. Applied once as production versions 20260910050142, 20260910050156 and 20260910050209. All 18 resulting function bodies match the approved source; trigger, access and closed-admission checks passed. See the integration evidence for the exact mapping.
 - [ ] Pass required CI and normal auto-merge/publication.
 - [ ] Verify actual served frontend/engine source and permitted authenticated routes.
 

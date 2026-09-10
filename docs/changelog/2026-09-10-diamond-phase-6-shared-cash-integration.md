@@ -10,9 +10,9 @@ The engine refuses unsupported configurations and deductions. Chip add-ons, cont
 
 The client uses the shared table route and immutable buy-in recovery door, reads Diamond available balances, carries the actual arena asset through result/history views and recovers a deferred result from an authenticated exact-occupancy Diamond receipt. Unknown history assets do not enter monetary totals. No new dealer or wallet writer was introduced.
 
-## Database Changes Awaiting Production Application
+## Approved Database Changes
 
-Apply these forward migrations once, in order, after checking current source prerequisites:
+The following source migrations were applied once in order, after exact user approval and a fresh prerequisite check. Their actual production versions are recorded below; do not reapply them:
 
 1. `20260910022036_diamond_cash_custody_settles_exact_seat_generations.sql`
 2. `20260910023541_diamond_cash_admission_binds_existing_purchase_receipts.sql`
@@ -20,7 +20,7 @@ Apply these forward migrations once, in order, after checking current source pre
 
 The first adds seat identity, consumed purchase-lot holds and append-only hand receipts, and updates custody settlement/release. The second connects the existing buy-in/cash-out doors, enforces seat/custody consistency, adds the default-false admission setting and authenticated read-only access/result responses. The third connects Diamond acceptance and projection to the existing protocol without chip or hierarchy obligations.
 
-These migrations change production financial functions. Automatic approval review rejected the first application because it requires approval of these exact Phase 6 production changes rather than the earlier general custody authorization. No alternate write path was attempted and none of these migrations is claimed as applied. The production preflight found no custody rows; current settlement/release definitions matched the inspected prerequisites exactly.
+These migrations change production financial functions. The earlier attempt was rejected pending exact approval; no alternate write path was used. The user subsequently approved all three named migrations, and the normal Supabase migration tool applied them successfully. The fresh production preflight found no custody rows and all twelve prerequisites matched the tested source.
 
 ## Verification And Remaining Gates
 
@@ -30,7 +30,7 @@ The separate accepted-hand database passed 48 assertions, including 27 accepted-
 
 Engine/client test and build evidence is finalized below after the integrated checks. The earlier foundation PR 4088 CI 34430999353 failed at the unapplied-migration gate. Its client/server checks passed; that does not turn the failed gate into success. Do not rerun until the actual migration and schema evidence have been updated.
 
-No public funded game was enabled. `cash_games_enabled` defaults false. The existing accounting release condition is unchanged. Final production migration application, required CI, normal merge/publication, actual frontend/engine ancestry and permitted live acceptance remain open. Phase 6 is not declared complete and Phase 7 is not declared ready.
+No public funded game was enabled. `cash_games_enabled` defaults false. The existing accounting release condition is unchanged. Production application is verified below. Required CI, normal merge/publication, actual frontend/engine ancestry and permitted live acceptance remain open. Phase 6 is not declared complete and Phase 7 is not declared ready.
 
 ## Integrated Local Evidence
 
@@ -43,7 +43,7 @@ No public funded game was enabled. `cash_games_enabled` defaults false. The exis
 
 The completed implementation is commit `26c006880c`, consolidated into the existing Phase 6 foundation branch for PR 4088. Latest main and the normal autopilot branch update merged without conflicts as `dad35dfeeb`. The subsequent complete client build passed on that clean source, with build provenance `behind-main=0`. Final server TypeScript passed after integration. The 14 merge-specific next-hand, tournament-blind and Diamond accepted-hand cases passed. The earlier dirty development build was not used as release proof.
 
-Production application remains blocked by the automatic approval review described above. The code push and subsequent CI must preserve that failed migration gate until application is authorized and verified. No engine/container/tag/host checkout changes or Stage-B tournament DDL were performed by this Diamond task.
+Production application is now authorized and verified as recorded below. The earlier failed migration gate remains historical evidence; a new source push with a production-backed schema fragment must pass the normal gates. No engine/container/tag/host checkout changes or Stage-B tournament DDL were performed by this Diamond task.
 
 ## Required Push Regression Repairs
 
@@ -67,6 +67,26 @@ The final wallets were `[1100, 900]`, preserving the initial 2000 Diamonds, with
 
 This closes the connected local play evidence gap. It is not a browser/WebSocket transport certificate or proof of production application and publication. Public `cash_games_enabled` remains false in production; it was enabled only inside this isolated fixture.
 
-The settlement-lane compatibility repair is now complete: the pending migration preserves the inspected production helper, its exact body preflight, and current private execution grants. The accepted-hand runner passed 50 assertions (the previous 48 plus two actual lock-ownership checks). See [the settlement-lane evidence](2026-09-10-diamond-phase-6-settlement-lane-compatibility.md). The connected-play run above used these updated prerequisites. This closes the local source-compatibility gate while production application remains blocked.
+The settlement-lane compatibility repair is now complete: the pending migration preserves the inspected production helper, its exact body preflight, and current private execution grants. The accepted-hand runner passed 50 assertions (the previous 48 plus two actual lock-ownership checks). See [the settlement-lane evidence](2026-09-10-diamond-phase-6-settlement-lane-compatibility.md). The connected-play run above used these updated prerequisites. This closes the local source-compatibility gate. Subsequent approved production application is recorded below.
 
 The normal integration push then exposed four exact-return expectations in TableService.cashoutReceipt that had not included the newly returned verified occupancy ID. All four now assert that identity while retaining their original amounts, deferred state, logging-failure and tournament protections. All 18 TableService receipt cases passed. No runtime change was needed. The normal push hook is rerun because it is a required gate, not an optional duplicate test pass.
+
+## Approved Production Application And Schema Evidence
+
+On September 10, 2026 at 05:01-05:02 UTC the user-approved source from commit c73b2ce871b32909908fa68600c943571bb39ccb was applied through the normal Supabase migration tool to kuklfnapbkmacvwxktbh, once per migration.
+
+| Source Version | Actual Production Version | Name                                                         |
+| -------------- | ------------------------- | ------------------------------------------------------------ |
+| 20260910022036 | 20260910050142            | diamond_cash_custody_settles_exact_seat_generations          |
+| 20260910023541 | 20260910050156            | diamond_cash_admission_binds_existing_purchase_receipts      |
+| 20260910030442 | 20260910050209            | diamond_accepted_hands_retain_history_without_chip_obligatio |
+
+The source files remain byte-identical to the approved SQL. The repository records applied migrations by exact name as well as version, so their original filenames are retained. Do not reapply them.
+
+Read-only post-application verification matched all 18 affected public function body MD5s to the approved source. The seat-binding and append-only hand-receipt triggers are enabled; the seat/custody constraint is enabled and initially deferred. The new hand-receipt table has RLS enabled. The own cash-out receipt is executable by authenticated users, not anon or service_role; the internal whole-hand settlement function is owner-only. New custody identity, consumed-lot, receipt and admission columns exist. No custody rows existed, and cash_games_enabled remains false. No player balance, seat or public admission setting was modified during verification.
+
+The production-backed schema declaration is scripts/ci/schema-manifest.d/codex-diamond-phase-6.json, following the repository's fragment policy. No shared snapshot, missing-RPC allowlist or CI protection was edited.
+
+CI 34438319928 on c73b2ce871 passed 18,590 client tests, 8,560 server tests with 145 skipped, PostgreSQL accounting, server TypeScript, production build/performance and browser suites of 150 CSS, 13 Studio and 3 mobile cases. Client TypeScript compilation passed; the subsequent phantom-RPC gate failed because fn_poker_diamond_cashout_receipt had not yet been applied or declared. Later schema checks and live/postdeploy checks were skipped, not passed. The approved application and schema declaration address that concrete failed gate; required CI must pass on the subsequent pushed head.
+
+Phase 6 release remains open until required CI, normal merge/publication, actual frontend and engine adoption, and permitted authenticated live acceptance are verified. Public funded games remain closed, and the seven-clean-day public accounting prerequisite is unchanged.

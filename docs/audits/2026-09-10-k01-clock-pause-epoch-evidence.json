@@ -1,0 +1,84 @@
+{
+  "captured_at": "2026-09-10T13:04:45.876Z",
+  "scope": "Disposable epoch and pause credit design; exact snapshot, checkpoint, suffix and reconnect SQL with minimal empty dependent tables",
+  "passed": 17,
+  "actual_maintenance_helper_bodies": 4,
+  "production_writes": false,
+  "complete_clock_implemented": false,
+  "evidence": [
+    {
+      "case": "Four Maintenance Helpers Execute Exact Captured Bodies",
+      "pass": true
+    },
+    {
+      "case": "Snapshot Binds Exact Epoch Before Broad Credit",
+      "pass": true
+    },
+    {
+      "case": "Broad Credit And Add-On Resume Count Their Union Once",
+      "pass": true
+    },
+    {
+      "case": "Incremental Future Target Rebase Subtracts Only Actual Credited Suffix",
+      "pass": true
+    },
+    {
+      "case": "Two Maintenance Windows In One Epoch Never Double Count Local Pause",
+      "pass": true
+    },
+    {
+      "case": "Overlapping Add-On And Synchronized Owners Receive Union Credit",
+      "pass": true
+    },
+    {
+      "case": "Synchronized Snapshot Exclusion Is Proved By Actual Snapshot And Checkpoint",
+      "pass": true
+    },
+    {
+      "case": "Pause Resume Refuses Before A Partial Thaw Is Final",
+      "pass": true
+    },
+    {
+      "case": "Lost Resume Response Replays Without Adding Credit",
+      "pass": true
+    },
+    {
+      "case": "Delayed Old Maintenance Retry Resolves And Cannot Extend A Closed Window",
+      "pass": true
+    },
+    {
+      "case": "Old Epoch Maintenance Cannot Credit A New Level",
+      "pass": true
+    },
+    {
+      "case": "Old Epoch Local Pause Cannot Credit A New Level",
+      "pass": true
+    },
+    {
+      "case": "Adoption Preserves Existing Durable Pause Start",
+      "pass": true
+    },
+    {
+      "case": "Pause Beginning Before Epoch Receives Only Epoch Overlap",
+      "pass": true
+    },
+    {
+      "case": "Earlier Pause Receipt Replays After Another Owner Was Credited",
+      "pass": true
+    },
+    {
+      "case": "Actual Broad Helper Failure Rolls Back Snapshot Binding And All Credit",
+      "pass": true
+    },
+    {
+      "case": "Concurrent Pause Retry Rechecks The Durable Owner After Its Lock Wait",
+      "pass": true
+    }
+  ],
+  "limitations": [
+    "Five-argument outer ownership, admission freeze, future release hold and current production triggers are not executed",
+    "Timestamp inputs and audit write witnesses are test controls, not production APIs",
+    "Epoch and target binding ACLs, manager lifecycle, actual adoption and native paid/settlement composition remain unimplemented",
+    "Partial completion modeled by withholding fixture finalization, not by forcing a real four-second checkpoint budget"
+  ]
+}

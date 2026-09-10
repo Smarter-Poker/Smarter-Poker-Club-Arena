@@ -1,0 +1,68 @@
+{
+  "captured_at": "2026-09-10T07:27:19.482Z",
+  "scope": "Prospective primitive only; captured financial guard subset, no production/wrapper/UI completeness claim",
+  "passed": 12,
+  "results": [
+    {
+      "name": "mixed captured payers survive current assignment change and preserve treasury",
+      "pass": true
+    },
+    {
+      "name": "fractional source zero stays provisional and later fractions pay aggregate cents",
+      "pass": true
+    },
+    {
+      "name": "short original payer never falls back to funded club and exact retry pays once",
+      "pass": true
+    },
+    {
+      "name": "invalid assigned source and unbound legacy policy never become zero paid",
+      "pass": true
+    },
+    {
+      "name": "pre-contract legacy sources and pending estimates cannot initiate backpay",
+      "pass": true
+    },
+    {
+      "name": "overlapping noncanonical period cannot pay a source twice",
+      "pass": true
+    },
+    {
+      "name": "paid legacy period fields are not rewritten by prospective source receipts",
+      "pass": true
+    },
+    {
+      "name": "final journal error rolls back wallets source accrual and receipt together",
+      "pass": true
+    },
+    {
+      "evidence": "observed_source_overlap",
+      "waitA": {
+        "wait_event_type": "Lock",
+        "wait_event": "transactionid",
+        "blockers": [40357]
+      },
+      "waitB": {
+        "wait_event_type": "Lock",
+        "wait_event": "advisory",
+        "blockers": [40358]
+      }
+    },
+    {
+      "name": "observed concurrent source payment shares advisory lock and pays once",
+      "pass": true
+    },
+    {
+      "name": "new immutable accrual and payment reject owner updates deletes and truncation",
+      "pass": true
+    },
+    {
+      "name": "paid receipt protects wallet identity and ledger metadata from later mutation",
+      "pass": true
+    },
+    {
+      "name": "API roles cannot mutate source evidence or directly invoke internal payer",
+      "pass": true
+    }
+  ]
+}

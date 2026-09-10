@@ -601,6 +601,84 @@ groups:
           description: 'fn_settlement_health has not returned in over ten minutes. Whether hands are settling is currently unknown, and unknown is what thirteen hours of this looked like.'
           runbook: 'docs/changelog/2026-09-04-settlement-was-failing-a-third-of-every-hand.md'
 
+  # ── HAND PROJECTION OUTBOX (2026-09-10) ────────────────────────────────
+  # Every accepted hand leaves one row in public.hand_projection_outbox; the
+  # engine's projection worker (server/src/services/supabase/handProjection.ts)
+  # turns it into club stats, player stats and the post-commit obligations
+  # (rake, BBJ, insurance, add-ons) and deletes it. Until today nothing on
+  # /metrics said how far behind that was. Measured 2026-09-10 05:40 UTC:
+  # 100,888 rows waiting across 1,329 tables, oldest 00:31 UTC (five hours),
+  # because a serial drain at ~300 hands/min met ~600/min arriving.
+  #
+  # Gauges from server/src/services/supabase/handOutboxMetrics.ts, sampled once
+  # a minute on the leader. Counters from handProjection.ts.
+  #
+  # Thresholds, derived: a healthy row waits under one poll interval (5 s)
+  # plus one causal-retry chain (at most 15 s), so 300 s is fifteen times the
+  # worst normal case and is not reached by a quiet minute. At deploy these
+  # WILL fire until the backlog above is gone (at ~4x throughput, about two
+  # to three hours) - that is the truth, not noise; watch the age fall.
+  - name: hand-projection
+    interval: 30s
+    rules:
+      - alert: HandProjectionOutboxBacklog
+        expr: |
+          poker_hand_projection_outbox_oldest_age_seconds > 300
+          and poker_hand_projection_outbox_sample_age_seconds < 300
+          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 10m
+        labels:
+          severity: warning
+          component: hand-projection
+        annotations:
+          summary: 'Oldest unprojected hand has waited {{ $value | humanizeDuration }}'
+          description: 'hand_projection_outbox is not draining as fast as hands settle. Club and player stats, rake and BBJ bookings for those hands are late. Read poker_hand_projection_drain_results_total by result on /metrics: failed climbing means the RPC is refusing (Sentry HandProjection.*); projected flat with depth > 0 is the stall alert below. Raise HAND_PROJECTION_DRAIN_CONCURRENCY (default 4, max 16) only after reading pg_stat_activity for lock waits on hand-projection:<table>.'
+          runbook: 'docs/changelog/2026-09-10-hand-projection-wakes-by-notify-with-a-poll-net.md'
+
+      - alert: HandProjectionOutboxBacklogCritical
+        expr: |
+          poker_hand_projection_outbox_oldest_age_seconds > 1800
+          and poker_hand_projection_outbox_sample_age_seconds < 300
+          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 15m
+        labels:
+          severity: critical
+          component: hand-projection
+        annotations:
+          summary: 'Oldest unprojected hand has waited {{ $value | humanizeDuration }}'
+          description: 'Half an hour of hands have not reached club stats, player stats or their rake/BBJ bookings. The durable rows are safe; do not delete or hand-mark them. Find the reason in poker_hand_projection_drain_results_total{result="failed"} and Sentry HandProjection.rpc_failed / semantic_refusal before changing anything.'
+          runbook: 'docs/changelog/2026-09-10-hand-projection-wakes-by-notify-with-a-poll-net.md'
+
+      # Rows waiting and nothing projected for ten minutes is the worker not
+      # running at all (no leader boot, poll timer gone) or every RPC failing.
+      - alert: HandProjectionDrainStalled
+        expr: |
+          poker_hand_projection_outbox_depth > 0
+          and poker_hand_projection_outbox_sample_age_seconds < 300
+          and on() increase(poker_hand_projection_drain_results_total{result="projected"}[10m]) == 0
+          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 10m
+        labels:
+          severity: critical
+          component: hand-projection
+        annotations:
+          summary: 'The hand projection drain has projected nothing in ten minutes with rows waiting (poker_hand_projection_outbox_depth)'
+          description: 'Check poker_hand_projection_wakes_total{source="poll"} is still climbing (the 5 s poll is the only cross-process wake while ENGINE_PG_LISTEN_URL is unset). If wakes climb and projected does not, every fn_project_hand_side_effects call is failing: read Sentry HandProjection.rpc_failed and pg_stat_activity.'
+          runbook: 'docs/changelog/2026-09-10-hand-projection-wakes-by-notify-with-a-poll-net.md'
+
+      - alert: HandProjectionMetricsBlind
+        expr: |
+          poker_hand_projection_outbox_sample_age_seconds > 600
+          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 10m
+        labels:
+          severity: warning
+          component: hand-projection
+        annotations:
+          summary: 'Outbox backlog gauges are stale ({{ $value }}s)'
+          description: 'HandOutboxMetrics has not refreshed in ten minutes (Sentry HandOutboxMetrics.refresh_failed). The backlog alerts above cannot fire while this is true, and unknown is what five hours of a 100k-row backlog looked like.'
+          runbook: 'docs/changelog/2026-09-10-hand-projection-wakes-by-notify-with-a-poll-net.md'
+
   # ── MONEY HEALTH (2026-09-04) ───────────────────────────────────────────
   # Two findings from one day, the same failure at two layers.
   #

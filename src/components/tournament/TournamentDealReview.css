@@ -1,0 +1,53 @@
+.deal-review {
+  min-width: 0;
+}
+.deal-review h3 {
+  margin: 0;
+}
+.deal-review p {
+  font-size: 12px;
+  line-height: 1.5;
+}
+.deal-review__totals {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  font-size: 12px;
+}
+.deal-review__totals dd {
+  margin: 4px 0 0;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.deal-review__shares {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 12px;
+}
+.deal-review__shares caption {
+  text-align: left;
+  font-weight: 700;
+  padding: 8px 0;
+}
+.deal-review__shares th,
+.deal-review__shares td {
+  text-align: left;
+  padding: 8px 4px;
+  border-bottom: 1px solid var(--tl-border, #334155);
+  overflow-wrap: anywhere;
+}
+.deal-review__shares td {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.deal-review__shares small {
+  display: block;
+  font-weight: 400;
+  color: var(--tl-text-dim, #94a3b8);
+}
+.deal-review button {
+  min-height: 44px;
+  margin-top: 12px;
+  touch-action: manipulation;
+}

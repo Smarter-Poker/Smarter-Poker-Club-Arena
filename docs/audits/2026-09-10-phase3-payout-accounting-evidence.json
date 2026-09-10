@@ -1,12 +1,6 @@
 {
   "phase": 3,
-  "scope": [
-    "T07",
-    "T08",
-    "T09",
-    "T10",
-    "T11"
-  ],
+  "scope": ["T07", "T08", "T09", "T10", "T11"],
   "status": "partial_controls_remain_open",
   "source_commit": "40886c94ab69fd37a47957b3ea3b23b5a0c0e375",
   "amount_rehearsal": {

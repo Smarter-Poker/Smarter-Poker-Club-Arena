@@ -1,0 +1,86 @@
+{
+  "verified_at": "2026-09-10T05:10:55.164462+00:00",
+  "programme": "109-item comprehensive Club Arena accounting audit",
+  "control": "CA-03-08",
+  "scope": "Native immutable funded draw and lease-bound played launch recovery",
+  "status": "native_sequential_composition_passed_control_still_open",
+  "production_mutations": false,
+  "postgres": "17.11, owned local full_stage1 database on socket port 55473",
+  "probe": "scripts/ci/probes/spin-funded-launch-native.sql",
+  "probe_sha256": "a63ba1c09de81e911f3299272ca7c6522a0fd66cf96befc519c351dee6202c31",
+  "migration_chain": [
+    {
+      "path": "supabase/migrations/20260909020315_the_launch_completion_tells_a_bust_from_an_uncredited_stack.sql",
+      "sha256": "82b985c61bf94edbdcdb3e7844d6d777c8a571310d46826c46fe65ea7a5d545e"
+    },
+    {
+      "path": "supabase/migrations/20260909174722_spin_draw_books_one_funded_rule_receipt.sql",
+      "sha256": "1c14cea8740b48326c02af496c9f3ca72b7cdc42c56b2209c93c3d1788156295"
+    },
+    {
+      "path": "supabase/migrations/20260909183217_a_played_spin_with_one_vacated_busted_seat_can_complete_laun.sql",
+      "sha256": "31cba487cf36b86393f5d9e232175500f96d401c92b90bdfaf349cc99a387a52"
+    },
+    {
+      "path": "supabase/migrations/20260909193732_a_booked_played_spin_replays_its_original_funded_draw.sql",
+      "sha256": "60b01aafa82f4b4953bc61070fb0ba8d6682f2c0b96a99ecf854f4795e3fc4fb"
+    }
+  ],
+  "composition": "Exact complete tracked migrations composed into one outer rollback transaction; only transaction BEGIN/COMMIT boundaries removed, every source preflight/postcondition and all financial guards retained. Saved exact current entry and direct-draw bodies then installed inside the same transaction. No satellite/M5 restoration involved.",
+  "exact_functions": {
+    "fn_spin_draw_and_settle_atomic(uuid,uuid,uuid,jsonb)": {
+      "body_md5": "b303d83aadd381950dfe658578767a4c",
+      "definition_md5": "1c911e3ada50ffe0493b9b375e3fa9ae"
+    },
+    "fn_spin_book_entry(uuid)": {
+      "body_md5": "604113bd4172433183cdd1d59af04e0f"
+    },
+    "fn_spin_settle_game(uuid,uuid,numeric,integer,numeric,numeric)": {
+      "body_md5": "a0f5a4d8edb0c0e403d3c00a9aadaa95",
+      "definition_md5": "366a1981c2ea9f0f54b41fe50a5d19b4"
+    },
+    "fn_prove_played_spin_launch_recovery(uuid)": {
+      "body_md5": "b7bc1bb46141fb6bd415b3658e622a3b",
+      "definition_md5": "8bc978cc105c18b2e3350016b48a50eb"
+    }
+  },
+  "saved_definition_snapshot_sha256": "de833f4d4f9fa7fbcddc2d609f054863b64e46c0e7c099d5b600b1afdb048944",
+  "passed": [
+    "Late final immutable receipt fault follows actual entry, rake, both journals, reserve and escrow writes; complete snapshot rolls back",
+    "Same event retries successfully exactly once with exact reserve balance, counts, funded prize and fixed rake",
+    "Response-loss retry returns original immutable receipt despite changed incoming rules and moves no money",
+    "Stale lease owner is refused and changes no financial state",
+    "Privileged deletion of immutable draw receipt is refused without state change",
+    "Actual funded receipt projects through enabled native lifecycle and ladder guards using engine request claims",
+    "Persisted paid three-player proof admits exactly two live seats after one busted player vacates",
+    "Played/vacated immutable draw replay preserves the entire original receipt and all financial state",
+    "A missing persisted hand or 2999 of 3000 starting chips refuses replay before money",
+    "Actual fn_complete_tournament_launch_atomic commits RUNNING and completed_at through current lease generation without moving money",
+    "After outer rollback original function hashes restored; new receipt table absent; synthetic event, lease and fault trigger counts zero"
+  ],
+  "fixture_limits": [
+    "Opening paid-entry wallet receipts, source ledger/entitlements and escrow are synthetic fixture inputs seeded with replication_role=replica; this does not prove registration deduction.",
+    "A balanced 2x/10x rule manifest exercises real unmodified RNG and native money functions; no payment, reserve, ownership, maintenance or RNG stubs.",
+    "Played hand and 0/1000/2000 distribution are seeded as accepted-history fixture inputs; actual hand settlement is a separate gate.",
+    "Engine JWT role claims model the normal projection request; all native lifecycle/financial guards stay enabled."
+  ],
+  "remaining": [
+    "Observed full-native concurrent draw/launch requests against this latest dependency composition",
+    "Final winner payout and terminal closure against coordinated production-matching dependencies",
+    "Production release adoption and complete Phase 3 acceptance"
+  ],
+  "native_exit": 3,
+  "expected_exit_reason": "Exact final AUDIT_TEST_PASS exception rolls back all fixture and composed DDL",
+  "post_rollback_catalog": [
+    "fn_complete_tournament_launch_before_lease_generation(uuid,uuid)|a5ed1b4c4a9e03f48a37093078c05f44|9f286b03441fb609016718a5902b88de",
+    "fn_spin_book_entry(uuid)|c6686fe56a264132a98f8eae232f2b19|5e4b9f81455696b75dd41c2807ca372a",
+    "fn_spin_draw_and_settle(uuid,jsonb)|35e21a16b7cf87366b12c4ff13415429|4d081e738de0dd1de14ce712ecd7bb78",
+    "fn_spin_ladder_is_the_drawn_one()|590c52d952269c248dd1888ee3ecddc4|0b3e2d6c78407ca10e12a6dae6ef88d1",
+    "fn_spin_settle_game(uuid,uuid,numeric,integer,numeric,numeric)|5e2e4092af6d888fcd7c1cd738d9796e|107ce74bc2bd8d36f7b5838b58061e41",
+    "",
+    "0",
+    "0",
+    "0"
+  ],
+  "log": "/tmp/codex-chip-bounty-spin-wrapper-native-final.log"
+}

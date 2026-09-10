@@ -1,5 +1,15 @@
 # Real-Time Connections Programme
 
+## Current Continuation Checkpoint (September 10, 2026)
+
+The interrupted September 10 continuation has been recovered. PR #4195 is
+merged, published and covered by passing production pagination acceptance.
+An older uncommitted ticker query is preserved and completed in the closeout
+branch. See `docs/audits/2026-09-10-realtime-closeout-checkpoint.md` and its JSON
+for source identities, production evidence and the remaining engine/device/log
+acceptance. The historical receipts below remain intact; this is not a claim
+that the full programme is certified complete.
+
 ## Built-In Execution Standard (September 9, 2026)
 
 Significant Club Arena work must have a built-in server owner and durable

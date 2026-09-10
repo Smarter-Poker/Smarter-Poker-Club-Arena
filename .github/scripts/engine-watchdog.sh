@@ -335,13 +335,19 @@ NEXT_WINDOW_LOCAL=$(chicago_stamp "$NEXT_WINDOW_EPOCH")
 # things this dispatch is going to do. The cost of being wrong is now one
 # minute of runner time, not fifteen.
 #
-# The threshold below is the deploy's own budget, not a guess: timeout minus a
-# cold build minus the cutover reserve. Keep it in step with
-# auto-deploy-hetzner.yml - tests/the-deploy-can-always-ship.law.test.ts pins
-# that the deploy's arithmetic works, and this number is how this script
-# describes it.
+# ── AND NOW EVERY DISPATCH SHIPS AT A BREAK (2026-09-10) ────────────────────
+#
+# "stages the image and the :35 tick cuts over" stopped being true: GitHub
+# delivered 3 of ~19 ticks on 2026-09-10 and the DB dispatcher was retired, so
+# the tick that was meant to finish the job did not come, and this script's
+# own dispatches - at whatever minute a sweep ran - were the green runs that
+# shipped nothing. auto-deploy-hetzner.yml's ceiling is now derived so a run
+# started at ANY minute waits in its break gate for the next :55 it can reach.
+# The only thing left to say is WHICH break: a run needs GATE_REACH_MIN to get
+# to the gate (checkout, the ~9 minute server suite, adopt or build), so a
+# dispatch closer than that to a :55 cuts over at the one after it.
 MINS_TO_WINDOW=$(( (NEXT_WINDOW_EPOCH - NOW_TS) / 60 ))
-CUTOVER_REACH_MIN=${CUTOVER_REACH_MIN:-30}
+GATE_REACH_MIN=${GATE_REACH_MIN:-12}
 # ── ONE DEPLOY AT A TIME (2026-09-09) ───────────────────────────────────────
 #
 # This dispatched unconditionally, and this job runs on EVERY completion of
@@ -363,10 +369,14 @@ CUTOVER_REACH_MIN=${CUTOVER_REACH_MIN:-30}
 # So: if a deploy run is already queued, pending on the concurrency group, or
 # in progress, this sweep does NOT dispatch. The one in flight is the fix. The
 # only run this ignores is one older than the deploy's own ceiling
-# (timeout-minutes 55, plus a margin): GitHub will have timed it out, or it is
-# one of the pre-queued zombies publish-watchdog.sh describes, and a dispatch
-# is then the right answer again.
-INFLIGHT_STALE_MIN=${INFLIGHT_STALE_MIN:-65}
+# (timeout-minutes 110 since 2026-09-10, plus a margin): GitHub will have timed
+# it out, or it is one of the pre-queued zombies publish-watchdog.sh describes,
+# and a dispatch is then the right answer again. This MUST stay above the
+# deploy's timeout-minutes: a run legitimately waits up to an hour in its break
+# gate, and treating it as stale would dispatch a second run that cancels
+# nothing useful and replaces whatever is pending.
+# tests/the-deploy-can-always-ship.law.test.ts compares the two numbers.
+INFLIGHT_STALE_MIN=${INFLIGHT_STALE_MIN:-120}
 INFLIGHT=$(gh run list --repo "$REPO" --workflow "$DEPLOY_WORKFLOW" --limit 20 \
   --json databaseId,status,createdAt,headSha,event,url \
   --jq "[.[] | select(.status != \"completed\")
@@ -379,12 +389,12 @@ if [ -n "${INFLIGHT:-}" ]; then
   say "  not dispatching: a deploy run is already in flight ($INFLIGHT)"
   say "  the break at $NEXT_WINDOW_LOCAL is ${MINS_TO_WINDOW}m away; that run is the fix"
 elif gh workflow run "$DEPLOY_WORKFLOW" --repo "$REPO" --ref main >/dev/null 2>&1; then
-  if [ "$MINS_TO_WINDOW" -le "$CUTOVER_REACH_MIN" ]; then
-    DISPATCHED="yes - the break at $NEXT_WINDOW_LOCAL is ${MINS_TO_WINDOW}m away, inside the run's wait budget, so this dispatch should cut over"
-    say "  dispatched $DEPLOY_WORKFLOW on main (${MINS_TO_WINDOW}m to the break - should cut over)"
+  if [ "$MINS_TO_WINDOW" -ge "$GATE_REACH_MIN" ]; then
+    DISPATCHED="yes - the break at $NEXT_WINDOW_LOCAL is ${MINS_TO_WINDOW}m away; the run reaches its break gate first, waits there, and cuts over in that break"
+    say "  dispatched $DEPLOY_WORKFLOW on main (${MINS_TO_WINDOW}m to the break - waits in the break gate and cuts over there)"
   else
-    DISPATCHED="yes - the break at $NEXT_WINDOW_LOCAL is ${MINS_TO_WINDOW}m away, beyond the run's wait budget, so this dispatch stages the image and the :35 tick cuts over"
-    say "  dispatched $DEPLOY_WORKFLOW on main (${MINS_TO_WINDOW}m to the break - stages the image for the next tick)"
+    DISPATCHED="yes - the break at $NEXT_WINDOW_LOCAL is only ${MINS_TO_WINDOW}m away, closer than the ${GATE_REACH_MIN}m a run needs to reach its gate, so the run waits in the break gate for the following :${RESTART_MINUTE} and cuts over there"
+    say "  dispatched $DEPLOY_WORKFLOW on main (${MINS_TO_WINDOW}m to the break - too close; waits in the break gate for the following one)"
   fi
 else
   say "::error::could not dispatch $DEPLOY_WORKFLOW -- the engine is behind and this run could not even try to fix it."

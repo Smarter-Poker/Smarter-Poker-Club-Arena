@@ -2,6 +2,10 @@
 
 ## Every Change, Documented. No Exceptions.
 
+## 2026-09-10: Diamond Shared Cash Lifecycle Integration
+
+The shared table buy-in, accepted-hand settlement and occupancy cash-out now have a distinct whole-Diamond custody branch; existing chip contracts remain separate. Three forward migrations and exact isolated database acceptance are recorded in docs/changelog/2026-09-10-diamond-phase-6-shared-cash-integration.md. Client departure summaries retain the already verified original occupancy instead of performing a second network read before leave. Re-read: yes. The client regression repair passed 72 focused cases and the engine SELECT contract passed 48. Exact user approval was received; all three financial migrations applied once as 20260910050142, 20260910050156 and 20260910050209. Eighteen function bodies, access controls, triggers and closed public admission were verified. Complete Phase 6 publication and live acceptance are not yet claimed. Final integrated client build and server TypeScript passed on clean source 71f57c9585. Connected real-engine/SQL play conserved all 2000 fixture Diamonds; current settlement-lane compatibility passed 50 SQL assertions. Normal push and production release checks remain required.
+
 ## 2026-09-10: Mystery CI Uses Its Available PostgreSQL Client
 
 The embedded CI runtime has no psql, so the mystery probe now uses the existing PGNODE client when configured. All thirteen groups pass in both client modes, including observed concurrent reservation, isolated role identity and rollback. Node mode was verified with no psql binary and invalid inherited connection variables. Client failure still stops execution. No financial assertion, shared client, application runtime or production change. Re-read: yes. See docs/changelog/2026-09-10-mystery-ci-uses-the-available-postgres-client.md.

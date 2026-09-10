@@ -48,7 +48,7 @@ BEGIN
       FROM pg_proc p
       JOIN pg_language l ON l.oid = p.prolang
      WHERE p.oid = v_predicate
-       AND md5(p.prosrc) = 'cff283a255830f34ad7488bbfbf70bc6'
+       AND md5(p.prosrc) = 'a29498531e4b7d3889532e80fafc8d57'
        AND p.proowner = v_relation_owner
        AND p.prokind = 'f' AND p.provolatile = 'v'
        AND NOT p.prosecdef AND NOT p.proretset

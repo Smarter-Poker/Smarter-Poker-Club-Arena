@@ -9,6 +9,7 @@
  */
 
 import { HandController } from './HandController.js';
+import type { HandSeatGeneration } from './handSeatGeneration.js';
 import { playerActionContext } from './PlayerActionContext.js';
 import { PreciseActionTimer } from './PreciseActionTimer.js';
 import { ServerActionValidator } from './ServerActionValidator.js';
@@ -1188,6 +1189,7 @@ export abstract class ServerTableEngineBase {
   // exactly these players must sum to exactly this - see
   // tournamentChipConservation.ts and the persist gate in postHandTasks.
   protected currentHandDealtStacks: Map<string, number> = new Map();
+  protected currentHandSeatGenerations: Map<string, HandSeatGeneration> = new Map();
   // Bible V8 §2.5: Action Record requires seat, userId, action, amount, timestamp, stage
   protected currentHandActions: {
     seat: number;

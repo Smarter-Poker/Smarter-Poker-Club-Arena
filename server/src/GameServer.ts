@@ -3416,10 +3416,11 @@ export class GameServer {
      */
     const now = new Date();
     const nextBreak = new Date(now);
-    nextBreak.setMinutes(GameServer.BREAK_START_MINUTE, 0, 0);
+    // The shared hourly boundary uses UTC, including repeated DST hours.
+    nextBreak.setUTCMinutes(GameServer.BREAK_START_MINUTE, 0, 0);
     // Already past :55 this hour — go to :55 of the next hour.
     if (nextBreak.getTime() <= now.getTime()) {
-      nextBreak.setHours(nextBreak.getHours() + 1);
+      nextBreak.setUTCHours(nextBreak.getUTCHours() + 1);
     }
     const msUntilNextBreak = nextBreak.getTime() - now.getTime();
 

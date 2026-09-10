@@ -25,6 +25,7 @@ import { lazyWithRetry } from '../../utils/lazyWithRetry';
 // Lazy-load heavy component
 
 const ClubCardPanel = lazyWithRetry(() => import('../club/ClubCardPanel'));
+const DiamondArenaCard = lazyWithRetry(() => import('../club/DiamondArenaCard'));
 
 // ── Types ─────────────────────────────────────────
 export interface UserClub {
@@ -232,11 +233,7 @@ export default function CarouselSection({
              the feeder was left running, so this was pure cost - a reflow per
              pointer move, per card - buying a value no stylesheet consumes. */
           role="button"
-          aria-label={
-            club.automatic_entry
-              ? `${club.name || 'Arena'} - Automatic Entry`
-              : `${club.name || 'Club'} - Click To Enter Lobby`
-          }
+          aria-label={`${club.name || 'Club'} - Click To Enter Lobby`}
           tabIndex={0}
           onKeyDown={(e) => {
             if (e.key === 'Enter' || e.key === ' ') {
@@ -256,12 +253,10 @@ export default function CarouselSection({
           <Suspense fallback={<div className={styles.cardSkeleton} />}>
             <PageErrorBoundary pageName={club.name || 'Club Card'}>
               {club.automatic_entry ? (
-                <img
-                  className={styles.diamondArenaCard}
-                  src={`${import.meta.env.BASE_URL}cards/diamond-arena.png`}
-                  alt="Diamond Arena - Automatic Entry"
-                  draggable={false}
-                />
+                /* Dan 2026-09-09: the Diamond Arena rides the same card chassis
+                   as every club, not a poster - active players and the next
+                   freeroll countdown on the bottom rail. */
+                <DiamondArenaCard activePlayers={stats?.activePlayers ?? null} />
               ) : (
                 <ClubCardPanel
                   clubName={club.name?.toUpperCase() || 'MY CLUB'}

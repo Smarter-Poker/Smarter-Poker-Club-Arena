@@ -216,8 +216,8 @@
       "id": "S09",
       "requirement": "Apply multiplier-specific payout places, starting stack and levels. Test every probability tier, not only the common result.",
       "priority": "P0",
-      "status": "partial_behavioral_correction_deployed",
-      "evidence": "Atomic Spin Funding And Frozen Rule Receipt in the companion report"
+      "status": "verified",
+      "evidence": "spin_every_tier_acceptance"
     },
     {
       "id": "S10",
@@ -1261,7 +1261,7 @@
     "full_control_closed": false,
     "current_rehearsal": "registration_funding_and_receipt_correction"
   },
-  "verified_control_count": 3,
+  "verified_control_count": 4,
   "blind_snapshot_rehearsal": {
     "control": "K02",
     "test": "server/src/engine/TournamentBlindSnapshot.test.ts",
@@ -1457,5 +1457,22 @@
     "behavior": "Recheck all next-hand pause owners after prepared rest and before controller start. Ordinary hand-for-hand re-arm still permits one shared hand. Operator resume cannot clear maintenance lock or transition another owner to running; other resumes preserve the operator state.",
     "limits": "Synthetic transport, roster and lease inputs; real dealing loop, controller preparation and pause methods. Does not certify durable synchronized deadlines, drain-timeout policy, database move cutover, or engine adoption.",
     "full_controls_closed": false
+  },
+  "spin_every_tier_acceptance": {
+    "control": "S09",
+    "status": "verified_against_deployed_sources",
+    "full_control_closed": true,
+    "evidence": "docs/audits/2026-09-10-phase3-spin-tier-acceptance.md",
+    "results": "docs/audits/2026-09-10-phase3-spin-tier-results.json",
+    "postgresql_scenarios_passed": 16,
+    "actual_engine_receipts_passed": 16,
+    "deployed_source_commit": "4d29dce4cd36ada84722b80af1c1d19efd3d0608",
+    "rule_supersession": "September 1 board-stack rule retains 300 Turbo or 1000 Deep Stack chips across all eight tiers; tier-specific payout places and three-minute levels were verified.",
+    "atomic_function_identity": {
+      "definition_md5": "1c911e3ada50ffe0493b9b375e3fa9ae",
+      "body_md5": "b303d83aadd381950dfe658578767a4c",
+      "note": "Different hashes name the full definition and its body, not different source versions."
+    },
+    "limits": "Controlled RNG selects each tier. This verifies frozen tier rules, funding projection and engine consumption, not statistical randomness, startup races or final financial settlement."
   }
 }

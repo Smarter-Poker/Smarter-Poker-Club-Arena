@@ -258,6 +258,7 @@ export default function RakebackPage() {
         description="See The Value Returning From Completed Play, Inspect Every Earning Period, And Claim Eligible Funds Through The Existing Settlement Workflow."
         art="diamonds"
         status="RAKEBACK ENGINE // LIVE"
+        crest="flat"
         metrics={[
           { label: 'Total Earned', value: totalEarned.toLocaleString(), tone: 'live' },
           { label: 'Current Rate', value: `${(currentRate * 100).toFixed(1)}%` },

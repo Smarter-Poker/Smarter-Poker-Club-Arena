@@ -1,0 +1,53 @@
+
+ RUN  v2.1.9 /Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-clock-final-sep10/server
+
+ ✓ src/tournament/levelDurationGuard.test.ts (3 tests) 2ms
+ ✓ src/tournament/LevelClockAcrossBreaks.test.ts (6 tests) 2ms
+ ✓ src/tournament/blindEscalation.test.ts (13 tests) 3ms
+ ✓ src/tournament/BreakClockIntegrity.test.ts (10 tests) 3ms
+stdout | src/tournament/ResumeBlindClockBehavior.test.ts > the persisted blind clock survives an engine restart during a break > keeps an already overdue level due while restoring a recorded break
+[Tournament:clock-re] Resumed DURING a break - re-pausing for the remaining 180s
+
+stdout | src/tournament/ResumeBlindClockBehavior.test.ts > the persisted blind clock survives an engine restart during a break > preserves five minutes of play and its durable anchor without arming a level timer
+[Tournament:clock-re] Resumed DURING a break - re-pausing for the remaining 180s
+
+stdout | src/tournament/ResumeBlindClockBehavior.test.ts > the persisted blind clock survives an engine restart during a break > keeps the same remainder through a second restart and resumes one timer at break end
+[Tournament:clock-re] Resumed DURING a break - re-pausing for the remaining 180s
+[Tournament:clock-re] Resumed DURING a break - re-pausing for the remaining 120s
+[Tournament:clock-re] BREAK ENDED - resuming play
+
+stdout | src/tournament/ResumeBlindClockBehavior.test.ts > the persisted blind clock survives an engine restart during a break > ends a break whose countdown was never written with the maintenance break (2026-09-10)
+[Tournament:clock-re] Resumed DURING a break - re-pausing for the remaining 180s
+[Tournament:clock-re] Resumed DURING a break - re-pausing for the remaining 300s
+
+stdout | src/tournament/ResumeBlindClockBehavior.test.ts > the persisted blind clock survives an engine restart during a break > keeps the remainder during the existing last-hand grace fallback
+[Tournament:clock-re] Resumed DURING a break - re-pausing for the remaining 360s
+
+stdout | src/tournament/ResumeBlindClockBehavior.test.ts > the persisted blind clock survives an engine restart during a break > preserves the paused remainder when an add-on break starts during reconciliation
+[Tournament:clock-re] Resumed DURING a break - re-pausing for the remaining 60s
+
+stdout | src/tournament/ResumeBlindClockBehavior.test.ts > a running tournament comes off its break only after the maintenance thaw > waits for the thaw when an adopted break ends at :00 while the platform is still frozen
+[Tournament:clock-re] Resumed DURING a break - re-pausing for the remaining 180s
+
+ ✓ src/tournament/LevelDurationComposition.test.ts (61 tests) 7ms
+stdout | src/tournament/ResumeBlindClockBehavior.test.ts > a running tournament comes off its break only after the maintenance thaw > waits for the thaw when an adopted break ends at :00 while the platform is still frozen
+[Tournament:clock-re] BREAK ENDED - resuming play
+
+stdout | src/tournament/ResumeBlindClockBehavior.test.ts > a running tournament comes off its break only after the maintenance thaw > resumes after the ceiling when the freeze never lifts, naming the event
+[Tournament:clock-re] BREAK ENDED - resuming play
+
+stdout | src/tournament/ResumeBlindClockBehavior.test.ts > a running tournament comes off its break only after the maintenance thaw > takes the event off its break once when two resumes wait on the same thaw
+[Tournament:clock-re] BREAK ENDED - resuming play
+
+ ✓ src/tournament/ResumeBlindClockBehavior.test.ts (18 tests) 22ms
+stdout | src/tournament/ResumeBlindClockBehavior.test.ts > a running tournament comes off its break only after the maintenance thaw > does not wait at all when the platform is not frozen, or for a stopped tournament
+[Tournament:clock-re] BREAK ENDED - resuming play
+
+ ✓ src/tournament/TournamentIntegrity.2026-08-27.guard.test.ts (23 tests) 12ms
+ ✓ src/services/TournamentBrainContext.test.ts (14 tests) 4ms
+
+ Test Files  8 passed (8)
+      Tests  148 passed (148)
+   Start at  13:15:16
+   Duration  1.16s (transform 455ms, setup 81ms, collect 2.08s, tests 56ms, environment 1ms, prepare 293ms)
+

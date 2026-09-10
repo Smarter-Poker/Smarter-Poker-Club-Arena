@@ -1,0 +1,221 @@
+
+ RUN  v2.1.9 /Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-clock-final-sep10/server
+
+stdout | src/tournament/LevelDurationComposition.test.ts > level publication carries the duration the actual manager timer uses > publishes 3 minutes for a 5-minute row, Spin false
+[Tournament:publishe] Auto-escalated blinds (level 1, structure has 1): 7/14 ante 0
+[Tournament:publishe] Level 1: 7/14 ante 0
+
+stdout | src/tournament/LevelDurationComposition.test.ts > level publication carries the duration the actual manager timer uses > publishes 5 minutes for a 10-minute row, Spin false
+[Tournament:publishe] Auto-escalated blinds (level 1, structure has 1): 7/14 ante 0
+[Tournament:publishe] Level 1: 7/14 ante 0
+
+stdout | src/tournament/LevelDurationComposition.test.ts > level publication carries the duration the actual manager timer uses > publishes 3 minutes for a 3-minute row, Spin true
+[Tournament:publishe] Level 1: 15/30 ante 0
+
+ ❯ src/tournament/LevelDurationComposition.test.ts (64 tests | 3 failed) 30ms
+   × level publication carries the duration the actual manager timer uses > publishes 3 minutes for a 5-minute row, Spin false 11ms
+     → expected "spy" to be called with arguments: [ 'table-clock', ObjectContaining{…} ]
+
+Received: 
+
+  1st spy call:
+
+  Array [
+    "table-clock",
+-   ObjectContaining {
+-     "duration_minutes": 3,
++   Object {
++     "ante": 0,
++     "big_blind": 14,
++     "duration_minutes": 5,
++     "new_level": 1,
++     "previous_level": 0,
++     "small_blind": 7,
++     "table_id": "table-clock",
++     "timestamp": 0,
++     "tournament_id": "published-clock",
+      "type": "level_up",
+    },
+  ]
+
+
+Number of calls: 1
+
+   × level publication carries the duration the actual manager timer uses > publishes 5 minutes for a 10-minute row, Spin false 1ms
+     → expected "spy" to be called with arguments: [ 'table-clock', ObjectContaining{…} ]
+
+Received: 
+
+  1st spy call:
+
+  Array [
+    "table-clock",
+-   ObjectContaining {
+-     "duration_minutes": 5,
++   Object {
++     "ante": 0,
++     "big_blind": 14,
++     "duration_minutes": 10,
++     "new_level": 1,
++     "previous_level": 0,
++     "small_blind": 7,
++     "table_id": "table-clock",
++     "timestamp": 0,
++     "tournament_id": "published-clock",
+      "type": "level_up",
+    },
+  ]
+
+
+Number of calls: 1
+
+   × level publication carries the duration the actual manager timer uses > publishes 3 minutes for a 3-minute row, Spin true 1ms
+     → expected "spy" to be called with arguments: [ 'table-clock', ObjectContaining{…} ]
+
+Received: 
+
+  1st spy call:
+
+  Array [
+    "table-clock",
+-   ObjectContaining {
+-     "duration_minutes": 3,
++   Object {
++     "ante": 0,
++     "big_blind": 30,
++     "duration_minutes": undefined,
++     "new_level": 1,
++     "previous_level": 0,
++     "small_blind": 15,
++     "table_id": "table-clock",
++     "timestamp": 0,
++     "tournament_id": "published-clock",
+      "type": "level_up",
+    },
+  ]
+
+
+Number of calls: 1
+
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/tournament/LevelDurationComposition.test.ts > level publication carries the duration the actual manager timer uses > publishes 3 minutes for a 5-minute row, Spin false
+AssertionError: expected "spy" to be called with arguments: [ 'table-clock', ObjectContaining{…} ]
+
+Received: 
+
+  1st spy call:
+
+  Array [
+    "table-clock",
+-   ObjectContaining {
+-     "duration_minutes": 3,
++   Object {
++     "ante": 0,
++     "big_blind": 14,
++     "duration_minutes": 5,
++     "new_level": 1,
++     "previous_level": 0,
++     "small_blind": 7,
++     "table_id": "table-clock",
++     "timestamp": 0,
++     "tournament_id": "published-clock",
+      "type": "level_up",
+    },
+  ]
+
+
+Number of calls: 1
+
+ ❯ src/tournament/LevelDurationComposition.test.ts:125:39
+    123|       const structure = [{ level: 1, smallBlind: 5, bigBlind: 10, ante…
+    124|       await state.advanceBlindLevel(structure);
+    125|       expect(tableStateHub.emitEvent).toHaveBeenCalledWith('table-cloc…
+       |                                       ^
+    126|         type: 'level_up', duration_minutes: expected,
+    127|       }));
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  src/tournament/LevelDurationComposition.test.ts > level publication carries the duration the actual manager timer uses > publishes 5 minutes for a 10-minute row, Spin false
+AssertionError: expected "spy" to be called with arguments: [ 'table-clock', ObjectContaining{…} ]
+
+Received: 
+
+  1st spy call:
+
+  Array [
+    "table-clock",
+-   ObjectContaining {
+-     "duration_minutes": 5,
++   Object {
++     "ante": 0,
++     "big_blind": 14,
++     "duration_minutes": 10,
++     "new_level": 1,
++     "previous_level": 0,
++     "small_blind": 7,
++     "table_id": "table-clock",
++     "timestamp": 0,
++     "tournament_id": "published-clock",
+      "type": "level_up",
+    },
+  ]
+
+
+Number of calls: 1
+
+ ❯ src/tournament/LevelDurationComposition.test.ts:125:39
+    123|       const structure = [{ level: 1, smallBlind: 5, bigBlind: 10, ante…
+    124|       await state.advanceBlindLevel(structure);
+    125|       expect(tableStateHub.emitEvent).toHaveBeenCalledWith('table-cloc…
+       |                                       ^
+    126|         type: 'level_up', duration_minutes: expected,
+    127|       }));
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+ FAIL  src/tournament/LevelDurationComposition.test.ts > level publication carries the duration the actual manager timer uses > publishes 3 minutes for a 3-minute row, Spin true
+AssertionError: expected "spy" to be called with arguments: [ 'table-clock', ObjectContaining{…} ]
+
+Received: 
+
+  1st spy call:
+
+  Array [
+    "table-clock",
+-   ObjectContaining {
+-     "duration_minutes": 3,
++   Object {
++     "ante": 0,
++     "big_blind": 30,
++     "duration_minutes": undefined,
++     "new_level": 1,
++     "previous_level": 0,
++     "small_blind": 15,
++     "table_id": "table-clock",
++     "timestamp": 0,
++     "tournament_id": "published-clock",
+      "type": "level_up",
+    },
+  ]
+
+
+Number of calls: 1
+
+ ❯ src/tournament/LevelDurationComposition.test.ts:125:39
+    123|       const structure = [{ level: 1, smallBlind: 5, bigBlind: 10, ante…
+    124|       await state.advanceBlindLevel(structure);
+    125|       expect(tableStateHub.emitEvent).toHaveBeenCalledWith('table-cloc…
+       |                                       ^
+    126|         type: 'level_up', duration_minutes: expected,
+    127|       }));
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯
+
+ Test Files  1 failed (1)
+      Tests  3 failed | 61 passed (64)
+   Start at  13:26:27
+   Duration  850ms (transform 94ms, setup 20ms, collect 398ms, tests 30ms, environment 0ms, prepare 71ms)
+

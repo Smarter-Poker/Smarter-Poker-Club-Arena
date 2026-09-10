@@ -1,12 +1,17 @@
 # Chip Drift Continuation
 
-This is Phase 3 of the 109-item accounting programme. Phase 3 is still open.
+This is the historical 02:11 UTC checkpoint for Phase 3 of the 109-item
+accounting programme. Phase 3 is still open. See
+`2026-09-10-chip-drift-phase-three-swarm.json` for the later swarm findings,
+production gates and runtime snapshot. The earlier healthy sample below does
+not establish continued health or recovery of later stalls.
 The separate 58-control tournament audit remains a source of reusable work.
 
 ## Recovered And Verified
 
-The exact-seat hand correction is now adopted by the engine. Live health shows
-no stalled tables or blocked settlements and completed resumption of 282 tables.
+At that checkpoint, the exact-seat hand correction was adopted by the engine.
+The health sample then showed no stalled tables or blocked settlements and
+completed resumption of 282 tables.
 Registration request receipts, legacy alias retirement and durable seat refunds
 are already published. Their stale pending fields in the accounting register
 are corrected, with exact release and catalog evidence in

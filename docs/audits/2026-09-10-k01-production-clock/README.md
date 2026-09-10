@@ -1,0 +1,13 @@
+# Prospective atomic-clock duration and due-time contract
+
+This is executable proposal code outside migrations. The service clock RPC, full maintenance composition and actual manager/client adoption are still pending. No production clock was activated.
+
+Raw advertised duration reads durationMinutes, then duration_minutes, then duration in seconds, with the existing ten-minute fallback. Conflicting positive minute aliases refuse, rather than allowing the current server and client to select different lengths. The generic overflow's existing two-minute raw floor remains. Acceleration is applied once to the raw length using ceil(minutes / 2), with a one-minute minimum. The effective duration is to be frozen when an epoch is accepted; a later entry-window observation does not reprice time already played.
+
+The current manager's actual generic overflow composes two effective-duration calls. Executed counterexamples include a ten-minute accelerated tail becoming three minutes and a five-minute tail becoming two. The prospective contract produces five and three minutes respectively. The actual current client also omits acceleration and grants a fresh full countdown after an anchor is at least four durations old; the latter is preserved as an executed regression witness.
+
+The database due function samples clock_timestamp itself. It refuses early, absent, nonpositive or unrepresentable canonical time, uses the accepted prior deadline as the next anchor, and skips exact boolean break rows without charging their duration. It never resets overdue time to the time the request arrived. Typed timestamps are normalized to epoch microseconds for immutable request equality. Interval credit is clipped to the epoch's original start, including a future first-deal anchor.
+
+The final disposable PG17 run passes 241 duration comparisons with the prospective TypeScript helper, seven refusals, and nine deadline/epoch checks. Old manager/client comparisons are observations of existing behavior; their discrepancy counts include deliberately accelerated short-format fixtures and display precision, so they are not counts of separate production bugs. The source commit is pinned and source hashes are recorded. The cluster was stopped and deleted.
+
+Run: `python3 scripts/dev/probe-clock-duration-pg17.py`. Evidence: `duration-evidence.json`. Production-shaped private SQL: `clock-duration.sql`. The TypeScript helper is not yet imported into a live manager or client. Full adoption must consume the same database-accepted effective duration and pause snapshot, with server/client lifecycle tests; agreement between this pure helper and SQL is not that final integration proof.

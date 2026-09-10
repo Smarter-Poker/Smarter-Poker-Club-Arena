@@ -1,0 +1,8309 @@
+{
+  "manager_source_ref": "d9dbf1388617ebfad71b00040aac22819c4103af",
+  "sources": [
+    {
+      "source": "server/src/config/spinSpec.ts",
+      "sha256": "5a30cbcc3089da4ae49232d3c50afdcc5f8c787817d39cd9d7361205d1446c54"
+    },
+    {
+      "source": "server/src/config/headsUpSpec.ts",
+      "sha256": "cbda0e02f09a39e4ff7a146b6355f2a86416f407a390801934f3d50b6f151606"
+    },
+    {
+      "source": "server/src/tournament/SpinDrawReceipt.ts",
+      "sha256": "2a63498d705aefae65c1d0b3fab754b953b8f3384deb84a5adaf51eae23ab79a"
+    },
+    {
+      "source": "server/src/tournament/blindEscalation.ts",
+      "sha256": "a2731e2a5364840b5df255cbdd58430a74c9699e4416dd4b26935bc9de210109"
+    },
+    {
+      "source": "server/src/tournament/blindLadder.ts",
+      "sha256": "9749bf02258934609ca6b7c6522c28cae4ab1193c1048a7eeab2b850f43df72e"
+    },
+    {
+      "source": "server/src/tournament/acceleratedLevels.ts",
+      "sha256": "d805d42dc9c52d6942b5cd1d7b9f69086692d26703108f90ac54353cf069f32e"
+    },
+    {
+      "source": "server/src/testHelpers/sourceWindow.ts",
+      "sha256": "1f6253cc75f4dedcea4d4fa76731f915c15c33cb0df025e2f30d5ac0671e1e9c"
+    },
+    {
+      "source": "server/src/tournament/TournamentManagerBase.ts",
+      "sha256": "18099bb5ca8677bd13037d7013c9b630a08cab1c39273c70b6046352e054cfc1"
+    },
+    {
+      "source": "server/src/tournament/clockDuration.ts",
+      "sha256": "5d09a05a6ce842fa6235695bc33518d86cb9e2a70ffb0488384ea0f376fd048e"
+    },
+    {
+      "source": "src/services/TournamentService.ts",
+      "sha256": "d8c8d41af6a8436b36c066bf3c9e5b0b8ce49afc14cc08e11616f935ffefab72"
+    },
+    {
+      "source": "src/components/lobby/tournamentFigures.ts",
+      "sha256": "70d43403c58cf9f646b4eaac634063d4ac9eb4ebde177a990df89551c3ead774"
+    }
+  ],
+  "rows": [
+    {
+      "format": "mtt",
+      "tag": "one-minute",
+      "index": 0,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 1
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 1
+        }
+      ],
+      "oldManagerMs": 60000,
+      "oldClientMs": 60000,
+      "proposed": {
+        "rawDurationMs": 60000,
+        "durationMs": 60000,
+        "sourceIndex": 0,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 60000,
+        "accelerated": false,
+        "sourceIndex": 0,
+        "rawDurationMs": 60000
+      }
+    },
+    {
+      "format": "mtt",
+      "tag": "one-minute",
+      "index": 0,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 1
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 1
+        }
+      ],
+      "oldManagerMs": 60000,
+      "oldClientMs": 60000,
+      "proposed": {
+        "rawDurationMs": 60000,
+        "durationMs": 60000,
+        "sourceIndex": 0,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 60000,
+        "accelerated": true,
+        "sourceIndex": 0,
+        "rawDurationMs": 60000
+      }
+    },
+    {
+      "format": "mtt",
+      "tag": "one-minute",
+      "index": 1,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 1
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 1
+        }
+      ],
+      "oldManagerMs": 60000,
+      "oldClientMs": 60000,
+      "proposed": {
+        "rawDurationMs": 60000,
+        "durationMs": 60000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 60000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 60000
+      }
+    },
+    {
+      "format": "mtt",
+      "tag": "one-minute",
+      "index": 1,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 1
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 1
+        }
+      ],
+      "oldManagerMs": 60000,
+      "oldClientMs": 60000,
+      "proposed": {
+        "rawDurationMs": 60000,
+        "durationMs": 60000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 60000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 60000
+      }
+    },
+    {
+      "format": "mtt",
+      "tag": "one-minute",
+      "index": 2,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 1
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 1
+        }
+      ],
+      "oldManagerMs": 120000,
+      "oldClientMs": 60000,
+      "proposed": {
+        "rawDurationMs": 120000,
+        "durationMs": 120000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 120000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 120000
+      }
+    },
+    {
+      "format": "mtt",
+      "tag": "one-minute",
+      "index": 2,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 1
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 1
+        }
+      ],
+      "oldManagerMs": 60000,
+      "oldClientMs": 60000,
+      "proposed": {
+        "rawDurationMs": 120000,
+        "durationMs": 60000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 60000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 120000
+      }
+    },
+    {
+      "format": "mtt",
+      "tag": "one-minute",
+      "index": 10,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 1
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 1
+        }
+      ],
+      "oldManagerMs": 120000,
+      "oldClientMs": 60000,
+      "proposed": {
+        "rawDurationMs": 120000,
+        "durationMs": 120000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 120000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 120000
+      }
+    },
+    {
+      "format": "mtt",
+      "tag": "one-minute",
+      "index": 10,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 1
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 1
+        }
+      ],
+      "oldManagerMs": 60000,
+      "oldClientMs": 60000,
+      "proposed": {
+        "rawDurationMs": 120000,
+        "durationMs": 60000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 60000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 120000
+      }
+    },
+    {
+      "format": "mtt",
+      "tag": "five-minutes",
+      "index": 0,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 5
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 5
+        }
+      ],
+      "oldManagerMs": 300000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 300000,
+        "sourceIndex": 0,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 300000,
+        "accelerated": false,
+        "sourceIndex": 0,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "mtt",
+      "tag": "five-minutes",
+      "index": 0,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 5
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 5
+        }
+      ],
+      "oldManagerMs": 180000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 180000,
+        "sourceIndex": 0,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 180000,
+        "accelerated": true,
+        "sourceIndex": 0,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "mtt",
+      "tag": "five-minutes",
+      "index": 1,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 5
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 5
+        }
+      ],
+      "oldManagerMs": 300000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 300000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 300000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "mtt",
+      "tag": "five-minutes",
+      "index": 1,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 5
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 5
+        }
+      ],
+      "oldManagerMs": 180000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 180000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 180000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "mtt",
+      "tag": "five-minutes",
+      "index": 2,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 5
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 5
+        }
+      ],
+      "oldManagerMs": 300000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 300000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 300000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "mtt",
+      "tag": "five-minutes",
+      "index": 2,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 5
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 5
+        }
+      ],
+      "oldManagerMs": 120000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 180000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 180000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "mtt",
+      "tag": "five-minutes",
+      "index": 10,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 5
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 5
+        }
+      ],
+      "oldManagerMs": 300000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 300000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 300000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "mtt",
+      "tag": "five-minutes",
+      "index": 10,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 5
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 5
+        }
+      ],
+      "oldManagerMs": 120000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 180000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 180000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "mtt",
+      "tag": "ten-minutes",
+      "index": 0,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 10
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 10
+        }
+      ],
+      "oldManagerMs": 600000,
+      "oldClientMs": 600000,
+      "proposed": {
+        "rawDurationMs": 600000,
+        "durationMs": 600000,
+        "sourceIndex": 0,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 600000,
+        "accelerated": false,
+        "sourceIndex": 0,
+        "rawDurationMs": 600000
+      }
+    },
+    {
+      "format": "mtt",
+      "tag": "ten-minutes",
+      "index": 0,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 10
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 10
+        }
+      ],
+      "oldManagerMs": 300000,
+      "oldClientMs": 600000,
+      "proposed": {
+        "rawDurationMs": 600000,
+        "durationMs": 300000,
+        "sourceIndex": 0,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 300000,
+        "accelerated": true,
+        "sourceIndex": 0,
+        "rawDurationMs": 600000
+      }
+    },
+    {
+      "format": "mtt",
+      "tag": "ten-minutes",
+      "index": 1,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 10
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 10
+        }
+      ],
+      "oldManagerMs": 600000,
+      "oldClientMs": 600000,
+      "proposed": {
+        "rawDurationMs": 600000,
+        "durationMs": 600000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 600000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 600000
+      }
+    },
+    {
+      "format": "mtt",
+      "tag": "ten-minutes",
+      "index": 1,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 10
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 10
+        }
+      ],
+      "oldManagerMs": 300000,
+      "oldClientMs": 600000,
+      "proposed": {
+        "rawDurationMs": 600000,
+        "durationMs": 300000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 300000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 600000
+      }
+    },
+    {
+      "format": "mtt",
+      "tag": "ten-minutes",
+      "index": 2,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 10
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 10
+        }
+      ],
+      "oldManagerMs": 600000,
+      "oldClientMs": 600000,
+      "proposed": {
+        "rawDurationMs": 600000,
+        "durationMs": 600000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 600000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 600000
+      }
+    },
+    {
+      "format": "mtt",
+      "tag": "ten-minutes",
+      "index": 2,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 10
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 10
+        }
+      ],
+      "oldManagerMs": 180000,
+      "oldClientMs": 600000,
+      "proposed": {
+        "rawDurationMs": 600000,
+        "durationMs": 300000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 300000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 600000
+      }
+    },
+    {
+      "format": "mtt",
+      "tag": "ten-minutes",
+      "index": 10,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 10
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 10
+        }
+      ],
+      "oldManagerMs": 600000,
+      "oldClientMs": 600000,
+      "proposed": {
+        "rawDurationMs": 600000,
+        "durationMs": 600000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 600000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 600000
+      }
+    },
+    {
+      "format": "mtt",
+      "tag": "ten-minutes",
+      "index": 10,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 10
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 10
+        }
+      ],
+      "oldManagerMs": 180000,
+      "oldClientMs": 600000,
+      "proposed": {
+        "rawDurationMs": 600000,
+        "durationMs": 300000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 300000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 600000
+      }
+    },
+    {
+      "format": "mtt",
+      "tag": "snake-five",
+      "index": 0,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "duration_minutes": 5
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "duration_minutes": 5
+        }
+      ],
+      "oldManagerMs": 300000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 300000,
+        "sourceIndex": 0,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 300000,
+        "accelerated": false,
+        "sourceIndex": 0,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "mtt",
+      "tag": "snake-five",
+      "index": 0,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "duration_minutes": 5
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "duration_minutes": 5
+        }
+      ],
+      "oldManagerMs": 180000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 180000,
+        "sourceIndex": 0,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 180000,
+        "accelerated": true,
+        "sourceIndex": 0,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "mtt",
+      "tag": "snake-five",
+      "index": 1,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "duration_minutes": 5
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "duration_minutes": 5
+        }
+      ],
+      "oldManagerMs": 300000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 300000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 300000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "mtt",
+      "tag": "snake-five",
+      "index": 1,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "duration_minutes": 5
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "duration_minutes": 5
+        }
+      ],
+      "oldManagerMs": 180000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 180000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 180000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "mtt",
+      "tag": "snake-five",
+      "index": 2,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "duration_minutes": 5
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "duration_minutes": 5
+        }
+      ],
+      "oldManagerMs": 300000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 300000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 300000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "mtt",
+      "tag": "snake-five",
+      "index": 2,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "duration_minutes": 5
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "duration_minutes": 5
+        }
+      ],
+      "oldManagerMs": 120000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 180000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 180000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "mtt",
+      "tag": "snake-five",
+      "index": 10,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "duration_minutes": 5
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "duration_minutes": 5
+        }
+      ],
+      "oldManagerMs": 300000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 300000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 300000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "mtt",
+      "tag": "snake-five",
+      "index": 10,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "duration_minutes": 5
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "duration_minutes": 5
+        }
+      ],
+      "oldManagerMs": 120000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 180000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 180000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "mtt",
+      "tag": "seconds-three",
+      "index": 0,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "duration": 180
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "duration": 180
+        }
+      ],
+      "oldManagerMs": 180000,
+      "oldClientMs": 180000,
+      "proposed": {
+        "rawDurationMs": 180000,
+        "durationMs": 180000,
+        "sourceIndex": 0,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 180000,
+        "accelerated": false,
+        "sourceIndex": 0,
+        "rawDurationMs": 180000
+      }
+    },
+    {
+      "format": "mtt",
+      "tag": "seconds-three",
+      "index": 0,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "duration": 180
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "duration": 180
+        }
+      ],
+      "oldManagerMs": 120000,
+      "oldClientMs": 180000,
+      "proposed": {
+        "rawDurationMs": 180000,
+        "durationMs": 120000,
+        "sourceIndex": 0,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 120000,
+        "accelerated": true,
+        "sourceIndex": 0,
+        "rawDurationMs": 180000
+      }
+    },
+    {
+      "format": "mtt",
+      "tag": "seconds-three",
+      "index": 1,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "duration": 180
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "duration": 180
+        }
+      ],
+      "oldManagerMs": 180000,
+      "oldClientMs": 180000,
+      "proposed": {
+        "rawDurationMs": 180000,
+        "durationMs": 180000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 180000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 180000
+      }
+    },
+    {
+      "format": "mtt",
+      "tag": "seconds-three",
+      "index": 1,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "duration": 180
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "duration": 180
+        }
+      ],
+      "oldManagerMs": 120000,
+      "oldClientMs": 180000,
+      "proposed": {
+        "rawDurationMs": 180000,
+        "durationMs": 120000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 120000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 180000
+      }
+    },
+    {
+      "format": "mtt",
+      "tag": "seconds-three",
+      "index": 2,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "duration": 180
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "duration": 180
+        }
+      ],
+      "oldManagerMs": 180000,
+      "oldClientMs": 180000,
+      "proposed": {
+        "rawDurationMs": 180000,
+        "durationMs": 180000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 180000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 180000
+      }
+    },
+    {
+      "format": "mtt",
+      "tag": "seconds-three",
+      "index": 2,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "duration": 180
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "duration": 180
+        }
+      ],
+      "oldManagerMs": 60000,
+      "oldClientMs": 180000,
+      "proposed": {
+        "rawDurationMs": 180000,
+        "durationMs": 120000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 120000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 180000
+      }
+    },
+    {
+      "format": "mtt",
+      "tag": "seconds-three",
+      "index": 10,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "duration": 180
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "duration": 180
+        }
+      ],
+      "oldManagerMs": 180000,
+      "oldClientMs": 180000,
+      "proposed": {
+        "rawDurationMs": 180000,
+        "durationMs": 180000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 180000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 180000
+      }
+    },
+    {
+      "format": "mtt",
+      "tag": "seconds-three",
+      "index": 10,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "duration": 180
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "duration": 180
+        }
+      ],
+      "oldManagerMs": 60000,
+      "oldClientMs": 180000,
+      "proposed": {
+        "rawDurationMs": 180000,
+        "durationMs": 120000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 120000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 180000
+      }
+    },
+    {
+      "format": "mtt",
+      "tag": "fractional",
+      "index": 0,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 6.1
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 6.1
+        }
+      ],
+      "oldManagerMs": 366000,
+      "oldClientMs": 366000,
+      "proposed": {
+        "rawDurationMs": 366000,
+        "durationMs": 366000,
+        "sourceIndex": 0,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 366000,
+        "accelerated": false,
+        "sourceIndex": 0,
+        "rawDurationMs": 366000
+      }
+    },
+    {
+      "format": "mtt",
+      "tag": "fractional",
+      "index": 0,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 6.1
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 6.1
+        }
+      ],
+      "oldManagerMs": 240000,
+      "oldClientMs": 366000,
+      "proposed": {
+        "rawDurationMs": 366000,
+        "durationMs": 240000,
+        "sourceIndex": 0,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 240000,
+        "accelerated": true,
+        "sourceIndex": 0,
+        "rawDurationMs": 366000
+      }
+    },
+    {
+      "format": "mtt",
+      "tag": "fractional",
+      "index": 1,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 6.1
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 6.1
+        }
+      ],
+      "oldManagerMs": 366000,
+      "oldClientMs": 366000,
+      "proposed": {
+        "rawDurationMs": 366000,
+        "durationMs": 366000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 366000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 366000
+      }
+    },
+    {
+      "format": "mtt",
+      "tag": "fractional",
+      "index": 1,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 6.1
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 6.1
+        }
+      ],
+      "oldManagerMs": 240000,
+      "oldClientMs": 366000,
+      "proposed": {
+        "rawDurationMs": 366000,
+        "durationMs": 240000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 240000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 366000
+      }
+    },
+    {
+      "format": "mtt",
+      "tag": "fractional",
+      "index": 2,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 6.1
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 6.1
+        }
+      ],
+      "oldManagerMs": 366000,
+      "oldClientMs": 366000,
+      "proposed": {
+        "rawDurationMs": 366000,
+        "durationMs": 366000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 366000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 366000
+      }
+    },
+    {
+      "format": "mtt",
+      "tag": "fractional",
+      "index": 2,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 6.1
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 6.1
+        }
+      ],
+      "oldManagerMs": 120000,
+      "oldClientMs": 366000,
+      "proposed": {
+        "rawDurationMs": 366000,
+        "durationMs": 240000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 240000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 366000
+      }
+    },
+    {
+      "format": "mtt",
+      "tag": "fractional",
+      "index": 10,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 6.1
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 6.1
+        }
+      ],
+      "oldManagerMs": 366000,
+      "oldClientMs": 366000,
+      "proposed": {
+        "rawDurationMs": 366000,
+        "durationMs": 366000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 366000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 366000
+      }
+    },
+    {
+      "format": "mtt",
+      "tag": "fractional",
+      "index": 10,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 6.1
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 6.1
+        }
+      ],
+      "oldManagerMs": 120000,
+      "oldClientMs": 366000,
+      "proposed": {
+        "rawDurationMs": 366000,
+        "durationMs": 240000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 240000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 366000
+      }
+    },
+    {
+      "format": "mtt",
+      "tag": "default",
+      "index": 0,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30
+        }
+      ],
+      "oldManagerMs": 600000,
+      "oldClientMs": 600000,
+      "proposed": {
+        "rawDurationMs": 600000,
+        "durationMs": 600000,
+        "sourceIndex": 0,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 600000,
+        "accelerated": false,
+        "sourceIndex": 0,
+        "rawDurationMs": 600000
+      }
+    },
+    {
+      "format": "mtt",
+      "tag": "default",
+      "index": 0,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30
+        }
+      ],
+      "oldManagerMs": 300000,
+      "oldClientMs": 600000,
+      "proposed": {
+        "rawDurationMs": 600000,
+        "durationMs": 300000,
+        "sourceIndex": 0,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 300000,
+        "accelerated": true,
+        "sourceIndex": 0,
+        "rawDurationMs": 600000
+      }
+    },
+    {
+      "format": "mtt",
+      "tag": "default",
+      "index": 1,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30
+        }
+      ],
+      "oldManagerMs": 600000,
+      "oldClientMs": 600000,
+      "proposed": {
+        "rawDurationMs": 600000,
+        "durationMs": 600000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 600000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 600000
+      }
+    },
+    {
+      "format": "mtt",
+      "tag": "default",
+      "index": 1,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30
+        }
+      ],
+      "oldManagerMs": 300000,
+      "oldClientMs": 600000,
+      "proposed": {
+        "rawDurationMs": 600000,
+        "durationMs": 300000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 300000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 600000
+      }
+    },
+    {
+      "format": "mtt",
+      "tag": "default",
+      "index": 2,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30
+        }
+      ],
+      "oldManagerMs": 600000,
+      "oldClientMs": 600000,
+      "proposed": {
+        "rawDurationMs": 600000,
+        "durationMs": 600000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 600000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 600000
+      }
+    },
+    {
+      "format": "mtt",
+      "tag": "default",
+      "index": 2,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30
+        }
+      ],
+      "oldManagerMs": 180000,
+      "oldClientMs": 600000,
+      "proposed": {
+        "rawDurationMs": 600000,
+        "durationMs": 300000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 300000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 600000
+      }
+    },
+    {
+      "format": "mtt",
+      "tag": "default",
+      "index": 10,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30
+        }
+      ],
+      "oldManagerMs": 600000,
+      "oldClientMs": 600000,
+      "proposed": {
+        "rawDurationMs": 600000,
+        "durationMs": 600000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 600000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 600000
+      }
+    },
+    {
+      "format": "mtt",
+      "tag": "default",
+      "index": 10,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30
+        }
+      ],
+      "oldManagerMs": 180000,
+      "oldClientMs": 600000,
+      "proposed": {
+        "rawDurationMs": 600000,
+        "durationMs": 300000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 300000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 600000
+      }
+    },
+    {
+      "format": "mtt",
+      "tag": "minute-precedence",
+      "index": 0,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 2,
+          "duration": 180
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 2,
+          "duration": 180
+        }
+      ],
+      "oldManagerMs": 120000,
+      "oldClientMs": 120000,
+      "proposed": {
+        "rawDurationMs": 120000,
+        "durationMs": 120000,
+        "sourceIndex": 0,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 120000,
+        "accelerated": false,
+        "sourceIndex": 0,
+        "rawDurationMs": 120000
+      }
+    },
+    {
+      "format": "mtt",
+      "tag": "minute-precedence",
+      "index": 0,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 2,
+          "duration": 180
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 2,
+          "duration": 180
+        }
+      ],
+      "oldManagerMs": 60000,
+      "oldClientMs": 120000,
+      "proposed": {
+        "rawDurationMs": 120000,
+        "durationMs": 60000,
+        "sourceIndex": 0,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 60000,
+        "accelerated": true,
+        "sourceIndex": 0,
+        "rawDurationMs": 120000
+      }
+    },
+    {
+      "format": "mtt",
+      "tag": "minute-precedence",
+      "index": 1,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 2,
+          "duration": 180
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 2,
+          "duration": 180
+        }
+      ],
+      "oldManagerMs": 120000,
+      "oldClientMs": 120000,
+      "proposed": {
+        "rawDurationMs": 120000,
+        "durationMs": 120000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 120000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 120000
+      }
+    },
+    {
+      "format": "mtt",
+      "tag": "minute-precedence",
+      "index": 1,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 2,
+          "duration": 180
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 2,
+          "duration": 180
+        }
+      ],
+      "oldManagerMs": 60000,
+      "oldClientMs": 120000,
+      "proposed": {
+        "rawDurationMs": 120000,
+        "durationMs": 60000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 60000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 120000
+      }
+    },
+    {
+      "format": "mtt",
+      "tag": "minute-precedence",
+      "index": 2,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 2,
+          "duration": 180
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 2,
+          "duration": 180
+        }
+      ],
+      "oldManagerMs": 120000,
+      "oldClientMs": 120000,
+      "proposed": {
+        "rawDurationMs": 120000,
+        "durationMs": 120000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 120000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 120000
+      }
+    },
+    {
+      "format": "mtt",
+      "tag": "minute-precedence",
+      "index": 2,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 2,
+          "duration": 180
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 2,
+          "duration": 180
+        }
+      ],
+      "oldManagerMs": 60000,
+      "oldClientMs": 120000,
+      "proposed": {
+        "rawDurationMs": 120000,
+        "durationMs": 60000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 60000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 120000
+      }
+    },
+    {
+      "format": "mtt",
+      "tag": "minute-precedence",
+      "index": 10,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 2,
+          "duration": 180
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 2,
+          "duration": 180
+        }
+      ],
+      "oldManagerMs": 120000,
+      "oldClientMs": 120000,
+      "proposed": {
+        "rawDurationMs": 120000,
+        "durationMs": 120000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 120000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 120000
+      }
+    },
+    {
+      "format": "mtt",
+      "tag": "minute-precedence",
+      "index": 10,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 2,
+          "duration": 180
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 2,
+          "duration": 180
+        }
+      ],
+      "oldManagerMs": 60000,
+      "oldClientMs": 120000,
+      "proposed": {
+        "rawDurationMs": 120000,
+        "durationMs": 60000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 60000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 120000
+      }
+    },
+    {
+      "format": "mtt",
+      "tag": "null-minute",
+      "index": 0,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": null,
+          "duration_minutes": 5
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": null,
+          "duration_minutes": 5
+        }
+      ],
+      "oldManagerMs": 300000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 300000,
+        "sourceIndex": 0,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 300000,
+        "accelerated": false,
+        "sourceIndex": 0,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "mtt",
+      "tag": "null-minute",
+      "index": 0,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": null,
+          "duration_minutes": 5
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": null,
+          "duration_minutes": 5
+        }
+      ],
+      "oldManagerMs": 180000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 180000,
+        "sourceIndex": 0,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 180000,
+        "accelerated": true,
+        "sourceIndex": 0,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "mtt",
+      "tag": "null-minute",
+      "index": 1,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": null,
+          "duration_minutes": 5
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": null,
+          "duration_minutes": 5
+        }
+      ],
+      "oldManagerMs": 300000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 300000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 300000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "mtt",
+      "tag": "null-minute",
+      "index": 1,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": null,
+          "duration_minutes": 5
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": null,
+          "duration_minutes": 5
+        }
+      ],
+      "oldManagerMs": 180000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 180000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 180000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "mtt",
+      "tag": "null-minute",
+      "index": 2,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": null,
+          "duration_minutes": 5
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": null,
+          "duration_minutes": 5
+        }
+      ],
+      "oldManagerMs": 300000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 300000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 300000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "mtt",
+      "tag": "null-minute",
+      "index": 2,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": null,
+          "duration_minutes": 5
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": null,
+          "duration_minutes": 5
+        }
+      ],
+      "oldManagerMs": 120000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 180000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 180000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "mtt",
+      "tag": "null-minute",
+      "index": 10,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": null,
+          "duration_minutes": 5
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": null,
+          "duration_minutes": 5
+        }
+      ],
+      "oldManagerMs": 300000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 300000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 300000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "mtt",
+      "tag": "null-minute",
+      "index": 10,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": null,
+          "duration_minutes": 5
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": null,
+          "duration_minutes": 5
+        }
+      ],
+      "oldManagerMs": 120000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 180000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 180000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "mtt",
+      "tag": "string-minute",
+      "index": 0,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": "5"
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": "5"
+        }
+      ],
+      "oldManagerMs": 300000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 300000,
+        "sourceIndex": 0,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 300000,
+        "accelerated": false,
+        "sourceIndex": 0,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "mtt",
+      "tag": "string-minute",
+      "index": 0,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": "5"
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": "5"
+        }
+      ],
+      "oldManagerMs": 180000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 180000,
+        "sourceIndex": 0,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 180000,
+        "accelerated": true,
+        "sourceIndex": 0,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "mtt",
+      "tag": "string-minute",
+      "index": 1,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": "5"
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": "5"
+        }
+      ],
+      "oldManagerMs": 300000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 300000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 300000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "mtt",
+      "tag": "string-minute",
+      "index": 1,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": "5"
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": "5"
+        }
+      ],
+      "oldManagerMs": 180000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 180000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 180000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "mtt",
+      "tag": "string-minute",
+      "index": 2,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": "5"
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": "5"
+        }
+      ],
+      "oldManagerMs": 300000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 300000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 300000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "mtt",
+      "tag": "string-minute",
+      "index": 2,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": "5"
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": "5"
+        }
+      ],
+      "oldManagerMs": 120000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 180000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 180000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "mtt",
+      "tag": "string-minute",
+      "index": 10,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": "5"
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": "5"
+        }
+      ],
+      "oldManagerMs": 300000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 300000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 300000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "mtt",
+      "tag": "string-minute",
+      "index": 10,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": "5"
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": "5"
+        }
+      ],
+      "oldManagerMs": 120000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 180000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 180000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "spin",
+      "tag": "one-minute",
+      "index": 0,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 1
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 1
+        }
+      ],
+      "oldManagerMs": 60000,
+      "oldClientMs": 60000,
+      "proposed": {
+        "rawDurationMs": 60000,
+        "durationMs": 60000,
+        "sourceIndex": 0,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 60000,
+        "accelerated": false,
+        "sourceIndex": 0,
+        "rawDurationMs": 60000
+      }
+    },
+    {
+      "format": "spin",
+      "tag": "one-minute",
+      "index": 0,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 1
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 1
+        }
+      ],
+      "oldManagerMs": 60000,
+      "oldClientMs": 60000,
+      "proposed": {
+        "rawDurationMs": 60000,
+        "durationMs": 60000,
+        "sourceIndex": 0,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 60000,
+        "accelerated": true,
+        "sourceIndex": 0,
+        "rawDurationMs": 60000
+      }
+    },
+    {
+      "format": "spin",
+      "tag": "one-minute",
+      "index": 1,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 1
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 1
+        }
+      ],
+      "oldManagerMs": 60000,
+      "oldClientMs": 60000,
+      "proposed": {
+        "rawDurationMs": 60000,
+        "durationMs": 60000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 60000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 60000
+      }
+    },
+    {
+      "format": "spin",
+      "tag": "one-minute",
+      "index": 1,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 1
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 1
+        }
+      ],
+      "oldManagerMs": 60000,
+      "oldClientMs": 60000,
+      "proposed": {
+        "rawDurationMs": 60000,
+        "durationMs": 60000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 60000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 60000
+      }
+    },
+    {
+      "format": "spin",
+      "tag": "one-minute",
+      "index": 2,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 1
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 1
+        }
+      ],
+      "oldManagerMs": 60000,
+      "oldClientMs": 60000,
+      "proposed": {
+        "rawDurationMs": 60000,
+        "durationMs": 60000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 60000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 60000
+      }
+    },
+    {
+      "format": "spin",
+      "tag": "one-minute",
+      "index": 2,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 1
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 1
+        }
+      ],
+      "oldManagerMs": 60000,
+      "oldClientMs": 60000,
+      "proposed": {
+        "rawDurationMs": 60000,
+        "durationMs": 60000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 60000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 60000
+      }
+    },
+    {
+      "format": "spin",
+      "tag": "one-minute",
+      "index": 10,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 1
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 1
+        }
+      ],
+      "oldManagerMs": 60000,
+      "oldClientMs": 60000,
+      "proposed": {
+        "rawDurationMs": 60000,
+        "durationMs": 60000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 60000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 60000
+      }
+    },
+    {
+      "format": "spin",
+      "tag": "one-minute",
+      "index": 10,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 1
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 1
+        }
+      ],
+      "oldManagerMs": 60000,
+      "oldClientMs": 60000,
+      "proposed": {
+        "rawDurationMs": 60000,
+        "durationMs": 60000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 60000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 60000
+      }
+    },
+    {
+      "format": "spin",
+      "tag": "five-minutes",
+      "index": 0,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 5
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 5
+        }
+      ],
+      "oldManagerMs": 300000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 300000,
+        "sourceIndex": 0,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 300000,
+        "accelerated": false,
+        "sourceIndex": 0,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "spin",
+      "tag": "five-minutes",
+      "index": 0,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 5
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 5
+        }
+      ],
+      "oldManagerMs": 180000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 180000,
+        "sourceIndex": 0,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 180000,
+        "accelerated": true,
+        "sourceIndex": 0,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "spin",
+      "tag": "five-minutes",
+      "index": 1,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 5
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 5
+        }
+      ],
+      "oldManagerMs": 300000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 300000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 300000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "spin",
+      "tag": "five-minutes",
+      "index": 1,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 5
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 5
+        }
+      ],
+      "oldManagerMs": 180000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 180000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 180000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "spin",
+      "tag": "five-minutes",
+      "index": 2,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 5
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 5
+        }
+      ],
+      "oldManagerMs": 300000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 300000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 300000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "spin",
+      "tag": "five-minutes",
+      "index": 2,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 5
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 5
+        }
+      ],
+      "oldManagerMs": 180000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 180000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 180000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "spin",
+      "tag": "five-minutes",
+      "index": 10,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 5
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 5
+        }
+      ],
+      "oldManagerMs": 300000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 300000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 300000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "spin",
+      "tag": "five-minutes",
+      "index": 10,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 5
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 5
+        }
+      ],
+      "oldManagerMs": 180000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 180000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 180000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "spin",
+      "tag": "ten-minutes",
+      "index": 0,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 10
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 10
+        }
+      ],
+      "oldManagerMs": 600000,
+      "oldClientMs": 600000,
+      "proposed": {
+        "rawDurationMs": 600000,
+        "durationMs": 600000,
+        "sourceIndex": 0,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 600000,
+        "accelerated": false,
+        "sourceIndex": 0,
+        "rawDurationMs": 600000
+      }
+    },
+    {
+      "format": "spin",
+      "tag": "ten-minutes",
+      "index": 0,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 10
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 10
+        }
+      ],
+      "oldManagerMs": 300000,
+      "oldClientMs": 600000,
+      "proposed": {
+        "rawDurationMs": 600000,
+        "durationMs": 300000,
+        "sourceIndex": 0,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 300000,
+        "accelerated": true,
+        "sourceIndex": 0,
+        "rawDurationMs": 600000
+      }
+    },
+    {
+      "format": "spin",
+      "tag": "ten-minutes",
+      "index": 1,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 10
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 10
+        }
+      ],
+      "oldManagerMs": 600000,
+      "oldClientMs": 600000,
+      "proposed": {
+        "rawDurationMs": 600000,
+        "durationMs": 600000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 600000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 600000
+      }
+    },
+    {
+      "format": "spin",
+      "tag": "ten-minutes",
+      "index": 1,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 10
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 10
+        }
+      ],
+      "oldManagerMs": 300000,
+      "oldClientMs": 600000,
+      "proposed": {
+        "rawDurationMs": 600000,
+        "durationMs": 300000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 300000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 600000
+      }
+    },
+    {
+      "format": "spin",
+      "tag": "ten-minutes",
+      "index": 2,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 10
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 10
+        }
+      ],
+      "oldManagerMs": 600000,
+      "oldClientMs": 600000,
+      "proposed": {
+        "rawDurationMs": 600000,
+        "durationMs": 600000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 600000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 600000
+      }
+    },
+    {
+      "format": "spin",
+      "tag": "ten-minutes",
+      "index": 2,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 10
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 10
+        }
+      ],
+      "oldManagerMs": 300000,
+      "oldClientMs": 600000,
+      "proposed": {
+        "rawDurationMs": 600000,
+        "durationMs": 300000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 300000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 600000
+      }
+    },
+    {
+      "format": "spin",
+      "tag": "ten-minutes",
+      "index": 10,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 10
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 10
+        }
+      ],
+      "oldManagerMs": 600000,
+      "oldClientMs": 600000,
+      "proposed": {
+        "rawDurationMs": 600000,
+        "durationMs": 600000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 600000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 600000
+      }
+    },
+    {
+      "format": "spin",
+      "tag": "ten-minutes",
+      "index": 10,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 10
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 10
+        }
+      ],
+      "oldManagerMs": 300000,
+      "oldClientMs": 600000,
+      "proposed": {
+        "rawDurationMs": 600000,
+        "durationMs": 300000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 300000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 600000
+      }
+    },
+    {
+      "format": "spin",
+      "tag": "snake-five",
+      "index": 0,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "duration_minutes": 5
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "duration_minutes": 5
+        }
+      ],
+      "oldManagerMs": 300000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 300000,
+        "sourceIndex": 0,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 300000,
+        "accelerated": false,
+        "sourceIndex": 0,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "spin",
+      "tag": "snake-five",
+      "index": 0,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "duration_minutes": 5
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "duration_minutes": 5
+        }
+      ],
+      "oldManagerMs": 180000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 180000,
+        "sourceIndex": 0,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 180000,
+        "accelerated": true,
+        "sourceIndex": 0,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "spin",
+      "tag": "snake-five",
+      "index": 1,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "duration_minutes": 5
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "duration_minutes": 5
+        }
+      ],
+      "oldManagerMs": 300000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 300000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 300000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "spin",
+      "tag": "snake-five",
+      "index": 1,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "duration_minutes": 5
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "duration_minutes": 5
+        }
+      ],
+      "oldManagerMs": 180000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 180000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 180000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "spin",
+      "tag": "snake-five",
+      "index": 2,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "duration_minutes": 5
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "duration_minutes": 5
+        }
+      ],
+      "oldManagerMs": 300000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 300000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 300000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "spin",
+      "tag": "snake-five",
+      "index": 2,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "duration_minutes": 5
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "duration_minutes": 5
+        }
+      ],
+      "oldManagerMs": 180000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 180000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 180000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "spin",
+      "tag": "snake-five",
+      "index": 10,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "duration_minutes": 5
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "duration_minutes": 5
+        }
+      ],
+      "oldManagerMs": 300000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 300000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 300000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "spin",
+      "tag": "snake-five",
+      "index": 10,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "duration_minutes": 5
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "duration_minutes": 5
+        }
+      ],
+      "oldManagerMs": 180000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 180000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 180000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "spin",
+      "tag": "seconds-three",
+      "index": 0,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "duration": 180
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "duration": 180
+        }
+      ],
+      "oldManagerMs": 180000,
+      "oldClientMs": 180000,
+      "proposed": {
+        "rawDurationMs": 180000,
+        "durationMs": 180000,
+        "sourceIndex": 0,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 180000,
+        "accelerated": false,
+        "sourceIndex": 0,
+        "rawDurationMs": 180000
+      }
+    },
+    {
+      "format": "spin",
+      "tag": "seconds-three",
+      "index": 0,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "duration": 180
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "duration": 180
+        }
+      ],
+      "oldManagerMs": 120000,
+      "oldClientMs": 180000,
+      "proposed": {
+        "rawDurationMs": 180000,
+        "durationMs": 120000,
+        "sourceIndex": 0,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 120000,
+        "accelerated": true,
+        "sourceIndex": 0,
+        "rawDurationMs": 180000
+      }
+    },
+    {
+      "format": "spin",
+      "tag": "seconds-three",
+      "index": 1,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "duration": 180
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "duration": 180
+        }
+      ],
+      "oldManagerMs": 180000,
+      "oldClientMs": 180000,
+      "proposed": {
+        "rawDurationMs": 180000,
+        "durationMs": 180000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 180000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 180000
+      }
+    },
+    {
+      "format": "spin",
+      "tag": "seconds-three",
+      "index": 1,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "duration": 180
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "duration": 180
+        }
+      ],
+      "oldManagerMs": 120000,
+      "oldClientMs": 180000,
+      "proposed": {
+        "rawDurationMs": 180000,
+        "durationMs": 120000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 120000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 180000
+      }
+    },
+    {
+      "format": "spin",
+      "tag": "seconds-three",
+      "index": 2,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "duration": 180
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "duration": 180
+        }
+      ],
+      "oldManagerMs": 180000,
+      "oldClientMs": 180000,
+      "proposed": {
+        "rawDurationMs": 180000,
+        "durationMs": 180000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 180000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 180000
+      }
+    },
+    {
+      "format": "spin",
+      "tag": "seconds-three",
+      "index": 2,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "duration": 180
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "duration": 180
+        }
+      ],
+      "oldManagerMs": 120000,
+      "oldClientMs": 180000,
+      "proposed": {
+        "rawDurationMs": 180000,
+        "durationMs": 120000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 120000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 180000
+      }
+    },
+    {
+      "format": "spin",
+      "tag": "seconds-three",
+      "index": 10,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "duration": 180
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "duration": 180
+        }
+      ],
+      "oldManagerMs": 180000,
+      "oldClientMs": 180000,
+      "proposed": {
+        "rawDurationMs": 180000,
+        "durationMs": 180000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 180000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 180000
+      }
+    },
+    {
+      "format": "spin",
+      "tag": "seconds-three",
+      "index": 10,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "duration": 180
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "duration": 180
+        }
+      ],
+      "oldManagerMs": 120000,
+      "oldClientMs": 180000,
+      "proposed": {
+        "rawDurationMs": 180000,
+        "durationMs": 120000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 120000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 180000
+      }
+    },
+    {
+      "format": "spin",
+      "tag": "fractional",
+      "index": 0,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 6.1
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 6.1
+        }
+      ],
+      "oldManagerMs": 366000,
+      "oldClientMs": 366000,
+      "proposed": {
+        "rawDurationMs": 366000,
+        "durationMs": 366000,
+        "sourceIndex": 0,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 366000,
+        "accelerated": false,
+        "sourceIndex": 0,
+        "rawDurationMs": 366000
+      }
+    },
+    {
+      "format": "spin",
+      "tag": "fractional",
+      "index": 0,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 6.1
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 6.1
+        }
+      ],
+      "oldManagerMs": 240000,
+      "oldClientMs": 366000,
+      "proposed": {
+        "rawDurationMs": 366000,
+        "durationMs": 240000,
+        "sourceIndex": 0,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 240000,
+        "accelerated": true,
+        "sourceIndex": 0,
+        "rawDurationMs": 366000
+      }
+    },
+    {
+      "format": "spin",
+      "tag": "fractional",
+      "index": 1,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 6.1
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 6.1
+        }
+      ],
+      "oldManagerMs": 366000,
+      "oldClientMs": 366000,
+      "proposed": {
+        "rawDurationMs": 366000,
+        "durationMs": 366000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 366000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 366000
+      }
+    },
+    {
+      "format": "spin",
+      "tag": "fractional",
+      "index": 1,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 6.1
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 6.1
+        }
+      ],
+      "oldManagerMs": 240000,
+      "oldClientMs": 366000,
+      "proposed": {
+        "rawDurationMs": 366000,
+        "durationMs": 240000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 240000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 366000
+      }
+    },
+    {
+      "format": "spin",
+      "tag": "fractional",
+      "index": 2,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 6.1
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 6.1
+        }
+      ],
+      "oldManagerMs": 366000,
+      "oldClientMs": 366000,
+      "proposed": {
+        "rawDurationMs": 366000,
+        "durationMs": 366000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 366000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 366000
+      }
+    },
+    {
+      "format": "spin",
+      "tag": "fractional",
+      "index": 2,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 6.1
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 6.1
+        }
+      ],
+      "oldManagerMs": 240000,
+      "oldClientMs": 366000,
+      "proposed": {
+        "rawDurationMs": 366000,
+        "durationMs": 240000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 240000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 366000
+      }
+    },
+    {
+      "format": "spin",
+      "tag": "fractional",
+      "index": 10,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 6.1
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 6.1
+        }
+      ],
+      "oldManagerMs": 366000,
+      "oldClientMs": 366000,
+      "proposed": {
+        "rawDurationMs": 366000,
+        "durationMs": 366000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 366000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 366000
+      }
+    },
+    {
+      "format": "spin",
+      "tag": "fractional",
+      "index": 10,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 6.1
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 6.1
+        }
+      ],
+      "oldManagerMs": 240000,
+      "oldClientMs": 366000,
+      "proposed": {
+        "rawDurationMs": 366000,
+        "durationMs": 240000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 240000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 366000
+      }
+    },
+    {
+      "format": "spin",
+      "tag": "default",
+      "index": 0,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30
+        }
+      ],
+      "oldManagerMs": 600000,
+      "oldClientMs": 600000,
+      "proposed": {
+        "rawDurationMs": 600000,
+        "durationMs": 600000,
+        "sourceIndex": 0,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 600000,
+        "accelerated": false,
+        "sourceIndex": 0,
+        "rawDurationMs": 600000
+      }
+    },
+    {
+      "format": "spin",
+      "tag": "default",
+      "index": 0,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30
+        }
+      ],
+      "oldManagerMs": 300000,
+      "oldClientMs": 600000,
+      "proposed": {
+        "rawDurationMs": 600000,
+        "durationMs": 300000,
+        "sourceIndex": 0,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 300000,
+        "accelerated": true,
+        "sourceIndex": 0,
+        "rawDurationMs": 600000
+      }
+    },
+    {
+      "format": "spin",
+      "tag": "default",
+      "index": 1,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30
+        }
+      ],
+      "oldManagerMs": 600000,
+      "oldClientMs": 600000,
+      "proposed": {
+        "rawDurationMs": 600000,
+        "durationMs": 600000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 600000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 600000
+      }
+    },
+    {
+      "format": "spin",
+      "tag": "default",
+      "index": 1,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30
+        }
+      ],
+      "oldManagerMs": 300000,
+      "oldClientMs": 600000,
+      "proposed": {
+        "rawDurationMs": 600000,
+        "durationMs": 300000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 300000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 600000
+      }
+    },
+    {
+      "format": "spin",
+      "tag": "default",
+      "index": 2,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30
+        }
+      ],
+      "oldManagerMs": 600000,
+      "oldClientMs": 600000,
+      "proposed": {
+        "rawDurationMs": 600000,
+        "durationMs": 600000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 600000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 600000
+      }
+    },
+    {
+      "format": "spin",
+      "tag": "default",
+      "index": 2,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30
+        }
+      ],
+      "oldManagerMs": 300000,
+      "oldClientMs": 600000,
+      "proposed": {
+        "rawDurationMs": 600000,
+        "durationMs": 300000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 300000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 600000
+      }
+    },
+    {
+      "format": "spin",
+      "tag": "default",
+      "index": 10,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30
+        }
+      ],
+      "oldManagerMs": 600000,
+      "oldClientMs": 600000,
+      "proposed": {
+        "rawDurationMs": 600000,
+        "durationMs": 600000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 600000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 600000
+      }
+    },
+    {
+      "format": "spin",
+      "tag": "default",
+      "index": 10,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30
+        }
+      ],
+      "oldManagerMs": 300000,
+      "oldClientMs": 600000,
+      "proposed": {
+        "rawDurationMs": 600000,
+        "durationMs": 300000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 300000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 600000
+      }
+    },
+    {
+      "format": "spin",
+      "tag": "minute-precedence",
+      "index": 0,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 2,
+          "duration": 180
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 2,
+          "duration": 180
+        }
+      ],
+      "oldManagerMs": 120000,
+      "oldClientMs": 120000,
+      "proposed": {
+        "rawDurationMs": 120000,
+        "durationMs": 120000,
+        "sourceIndex": 0,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 120000,
+        "accelerated": false,
+        "sourceIndex": 0,
+        "rawDurationMs": 120000
+      }
+    },
+    {
+      "format": "spin",
+      "tag": "minute-precedence",
+      "index": 0,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 2,
+          "duration": 180
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 2,
+          "duration": 180
+        }
+      ],
+      "oldManagerMs": 60000,
+      "oldClientMs": 120000,
+      "proposed": {
+        "rawDurationMs": 120000,
+        "durationMs": 60000,
+        "sourceIndex": 0,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 60000,
+        "accelerated": true,
+        "sourceIndex": 0,
+        "rawDurationMs": 120000
+      }
+    },
+    {
+      "format": "spin",
+      "tag": "minute-precedence",
+      "index": 1,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 2,
+          "duration": 180
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 2,
+          "duration": 180
+        }
+      ],
+      "oldManagerMs": 120000,
+      "oldClientMs": 120000,
+      "proposed": {
+        "rawDurationMs": 120000,
+        "durationMs": 120000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 120000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 120000
+      }
+    },
+    {
+      "format": "spin",
+      "tag": "minute-precedence",
+      "index": 1,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 2,
+          "duration": 180
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 2,
+          "duration": 180
+        }
+      ],
+      "oldManagerMs": 60000,
+      "oldClientMs": 120000,
+      "proposed": {
+        "rawDurationMs": 120000,
+        "durationMs": 60000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 60000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 120000
+      }
+    },
+    {
+      "format": "spin",
+      "tag": "minute-precedence",
+      "index": 2,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 2,
+          "duration": 180
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 2,
+          "duration": 180
+        }
+      ],
+      "oldManagerMs": 120000,
+      "oldClientMs": 120000,
+      "proposed": {
+        "rawDurationMs": 120000,
+        "durationMs": 120000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 120000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 120000
+      }
+    },
+    {
+      "format": "spin",
+      "tag": "minute-precedence",
+      "index": 2,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 2,
+          "duration": 180
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 2,
+          "duration": 180
+        }
+      ],
+      "oldManagerMs": 60000,
+      "oldClientMs": 120000,
+      "proposed": {
+        "rawDurationMs": 120000,
+        "durationMs": 60000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 60000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 120000
+      }
+    },
+    {
+      "format": "spin",
+      "tag": "minute-precedence",
+      "index": 10,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 2,
+          "duration": 180
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 2,
+          "duration": 180
+        }
+      ],
+      "oldManagerMs": 120000,
+      "oldClientMs": 120000,
+      "proposed": {
+        "rawDurationMs": 120000,
+        "durationMs": 120000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 120000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 120000
+      }
+    },
+    {
+      "format": "spin",
+      "tag": "minute-precedence",
+      "index": 10,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 2,
+          "duration": 180
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 2,
+          "duration": 180
+        }
+      ],
+      "oldManagerMs": 60000,
+      "oldClientMs": 120000,
+      "proposed": {
+        "rawDurationMs": 120000,
+        "durationMs": 60000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 60000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 120000
+      }
+    },
+    {
+      "format": "spin",
+      "tag": "null-minute",
+      "index": 0,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": null,
+          "duration_minutes": 5
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": null,
+          "duration_minutes": 5
+        }
+      ],
+      "oldManagerMs": 300000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 300000,
+        "sourceIndex": 0,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 300000,
+        "accelerated": false,
+        "sourceIndex": 0,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "spin",
+      "tag": "null-minute",
+      "index": 0,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": null,
+          "duration_minutes": 5
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": null,
+          "duration_minutes": 5
+        }
+      ],
+      "oldManagerMs": 180000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 180000,
+        "sourceIndex": 0,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 180000,
+        "accelerated": true,
+        "sourceIndex": 0,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "spin",
+      "tag": "null-minute",
+      "index": 1,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": null,
+          "duration_minutes": 5
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": null,
+          "duration_minutes": 5
+        }
+      ],
+      "oldManagerMs": 300000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 300000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 300000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "spin",
+      "tag": "null-minute",
+      "index": 1,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": null,
+          "duration_minutes": 5
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": null,
+          "duration_minutes": 5
+        }
+      ],
+      "oldManagerMs": 180000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 180000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 180000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "spin",
+      "tag": "null-minute",
+      "index": 2,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": null,
+          "duration_minutes": 5
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": null,
+          "duration_minutes": 5
+        }
+      ],
+      "oldManagerMs": 300000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 300000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 300000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "spin",
+      "tag": "null-minute",
+      "index": 2,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": null,
+          "duration_minutes": 5
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": null,
+          "duration_minutes": 5
+        }
+      ],
+      "oldManagerMs": 180000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 180000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 180000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "spin",
+      "tag": "null-minute",
+      "index": 10,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": null,
+          "duration_minutes": 5
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": null,
+          "duration_minutes": 5
+        }
+      ],
+      "oldManagerMs": 300000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 300000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 300000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "spin",
+      "tag": "null-minute",
+      "index": 10,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": null,
+          "duration_minutes": 5
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": null,
+          "duration_minutes": 5
+        }
+      ],
+      "oldManagerMs": 180000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 180000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 180000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "spin",
+      "tag": "string-minute",
+      "index": 0,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": "5"
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": "5"
+        }
+      ],
+      "oldManagerMs": 300000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 300000,
+        "sourceIndex": 0,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 300000,
+        "accelerated": false,
+        "sourceIndex": 0,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "spin",
+      "tag": "string-minute",
+      "index": 0,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": "5"
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": "5"
+        }
+      ],
+      "oldManagerMs": 180000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 180000,
+        "sourceIndex": 0,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 180000,
+        "accelerated": true,
+        "sourceIndex": 0,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "spin",
+      "tag": "string-minute",
+      "index": 1,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": "5"
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": "5"
+        }
+      ],
+      "oldManagerMs": 300000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 300000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 300000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "spin",
+      "tag": "string-minute",
+      "index": 1,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": "5"
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": "5"
+        }
+      ],
+      "oldManagerMs": 180000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 180000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 180000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "spin",
+      "tag": "string-minute",
+      "index": 2,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": "5"
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": "5"
+        }
+      ],
+      "oldManagerMs": 300000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 300000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 300000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "spin",
+      "tag": "string-minute",
+      "index": 2,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": "5"
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": "5"
+        }
+      ],
+      "oldManagerMs": 180000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 180000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 180000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "spin",
+      "tag": "string-minute",
+      "index": 10,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": "5"
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": "5"
+        }
+      ],
+      "oldManagerMs": 300000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 300000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 300000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "spin",
+      "tag": "string-minute",
+      "index": 10,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": "5"
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": "5"
+        }
+      ],
+      "oldManagerMs": 180000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 180000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 180000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "sng",
+      "tag": "one-minute",
+      "index": 0,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 1
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 1
+        }
+      ],
+      "oldManagerMs": 60000,
+      "oldClientMs": 60000,
+      "proposed": {
+        "rawDurationMs": 60000,
+        "durationMs": 60000,
+        "sourceIndex": 0,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 60000,
+        "accelerated": false,
+        "sourceIndex": 0,
+        "rawDurationMs": 60000
+      }
+    },
+    {
+      "format": "sng",
+      "tag": "one-minute",
+      "index": 0,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 1
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 1
+        }
+      ],
+      "oldManagerMs": 60000,
+      "oldClientMs": 60000,
+      "proposed": {
+        "rawDurationMs": 60000,
+        "durationMs": 60000,
+        "sourceIndex": 0,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 60000,
+        "accelerated": true,
+        "sourceIndex": 0,
+        "rawDurationMs": 60000
+      }
+    },
+    {
+      "format": "sng",
+      "tag": "one-minute",
+      "index": 1,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 1
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 1
+        }
+      ],
+      "oldManagerMs": 60000,
+      "oldClientMs": 60000,
+      "proposed": {
+        "rawDurationMs": 60000,
+        "durationMs": 60000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 60000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 60000
+      }
+    },
+    {
+      "format": "sng",
+      "tag": "one-minute",
+      "index": 1,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 1
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 1
+        }
+      ],
+      "oldManagerMs": 60000,
+      "oldClientMs": 60000,
+      "proposed": {
+        "rawDurationMs": 60000,
+        "durationMs": 60000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 60000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 60000
+      }
+    },
+    {
+      "format": "sng",
+      "tag": "one-minute",
+      "index": 2,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 1
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 1
+        }
+      ],
+      "oldManagerMs": 120000,
+      "oldClientMs": 60000,
+      "proposed": {
+        "rawDurationMs": 60000,
+        "durationMs": 60000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 60000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 60000
+      }
+    },
+    {
+      "format": "sng",
+      "tag": "one-minute",
+      "index": 2,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 1
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 1
+        }
+      ],
+      "oldManagerMs": 60000,
+      "oldClientMs": 60000,
+      "proposed": {
+        "rawDurationMs": 60000,
+        "durationMs": 60000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 60000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 60000
+      }
+    },
+    {
+      "format": "sng",
+      "tag": "one-minute",
+      "index": 10,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 1
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 1
+        }
+      ],
+      "oldManagerMs": 120000,
+      "oldClientMs": 60000,
+      "proposed": {
+        "rawDurationMs": 60000,
+        "durationMs": 60000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 60000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 60000
+      }
+    },
+    {
+      "format": "sng",
+      "tag": "one-minute",
+      "index": 10,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 1
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 1
+        }
+      ],
+      "oldManagerMs": 60000,
+      "oldClientMs": 60000,
+      "proposed": {
+        "rawDurationMs": 60000,
+        "durationMs": 60000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 60000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 60000
+      }
+    },
+    {
+      "format": "sng",
+      "tag": "five-minutes",
+      "index": 0,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 5
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 5
+        }
+      ],
+      "oldManagerMs": 300000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 300000,
+        "sourceIndex": 0,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 300000,
+        "accelerated": false,
+        "sourceIndex": 0,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "sng",
+      "tag": "five-minutes",
+      "index": 0,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 5
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 5
+        }
+      ],
+      "oldManagerMs": 180000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 180000,
+        "sourceIndex": 0,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 180000,
+        "accelerated": true,
+        "sourceIndex": 0,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "sng",
+      "tag": "five-minutes",
+      "index": 1,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 5
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 5
+        }
+      ],
+      "oldManagerMs": 300000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 300000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 300000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "sng",
+      "tag": "five-minutes",
+      "index": 1,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 5
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 5
+        }
+      ],
+      "oldManagerMs": 180000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 180000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 180000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "sng",
+      "tag": "five-minutes",
+      "index": 2,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 5
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 5
+        }
+      ],
+      "oldManagerMs": 300000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 300000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 300000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "sng",
+      "tag": "five-minutes",
+      "index": 2,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 5
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 5
+        }
+      ],
+      "oldManagerMs": 120000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 180000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 180000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "sng",
+      "tag": "five-minutes",
+      "index": 10,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 5
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 5
+        }
+      ],
+      "oldManagerMs": 300000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 300000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 300000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "sng",
+      "tag": "five-minutes",
+      "index": 10,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 5
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 5
+        }
+      ],
+      "oldManagerMs": 120000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 180000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 180000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "sng",
+      "tag": "ten-minutes",
+      "index": 0,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 10
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 10
+        }
+      ],
+      "oldManagerMs": 600000,
+      "oldClientMs": 600000,
+      "proposed": {
+        "rawDurationMs": 600000,
+        "durationMs": 600000,
+        "sourceIndex": 0,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 600000,
+        "accelerated": false,
+        "sourceIndex": 0,
+        "rawDurationMs": 600000
+      }
+    },
+    {
+      "format": "sng",
+      "tag": "ten-minutes",
+      "index": 0,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 10
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 10
+        }
+      ],
+      "oldManagerMs": 300000,
+      "oldClientMs": 600000,
+      "proposed": {
+        "rawDurationMs": 600000,
+        "durationMs": 300000,
+        "sourceIndex": 0,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 300000,
+        "accelerated": true,
+        "sourceIndex": 0,
+        "rawDurationMs": 600000
+      }
+    },
+    {
+      "format": "sng",
+      "tag": "ten-minutes",
+      "index": 1,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 10
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 10
+        }
+      ],
+      "oldManagerMs": 600000,
+      "oldClientMs": 600000,
+      "proposed": {
+        "rawDurationMs": 600000,
+        "durationMs": 600000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 600000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 600000
+      }
+    },
+    {
+      "format": "sng",
+      "tag": "ten-minutes",
+      "index": 1,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 10
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 10
+        }
+      ],
+      "oldManagerMs": 300000,
+      "oldClientMs": 600000,
+      "proposed": {
+        "rawDurationMs": 600000,
+        "durationMs": 300000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 300000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 600000
+      }
+    },
+    {
+      "format": "sng",
+      "tag": "ten-minutes",
+      "index": 2,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 10
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 10
+        }
+      ],
+      "oldManagerMs": 600000,
+      "oldClientMs": 600000,
+      "proposed": {
+        "rawDurationMs": 600000,
+        "durationMs": 600000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 600000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 600000
+      }
+    },
+    {
+      "format": "sng",
+      "tag": "ten-minutes",
+      "index": 2,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 10
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 10
+        }
+      ],
+      "oldManagerMs": 180000,
+      "oldClientMs": 600000,
+      "proposed": {
+        "rawDurationMs": 600000,
+        "durationMs": 300000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 300000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 600000
+      }
+    },
+    {
+      "format": "sng",
+      "tag": "ten-minutes",
+      "index": 10,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 10
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 10
+        }
+      ],
+      "oldManagerMs": 600000,
+      "oldClientMs": 600000,
+      "proposed": {
+        "rawDurationMs": 600000,
+        "durationMs": 600000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 600000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 600000
+      }
+    },
+    {
+      "format": "sng",
+      "tag": "ten-minutes",
+      "index": 10,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 10
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 10
+        }
+      ],
+      "oldManagerMs": 180000,
+      "oldClientMs": 600000,
+      "proposed": {
+        "rawDurationMs": 600000,
+        "durationMs": 300000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 300000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 600000
+      }
+    },
+    {
+      "format": "sng",
+      "tag": "snake-five",
+      "index": 0,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "duration_minutes": 5
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "duration_minutes": 5
+        }
+      ],
+      "oldManagerMs": 300000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 300000,
+        "sourceIndex": 0,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 300000,
+        "accelerated": false,
+        "sourceIndex": 0,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "sng",
+      "tag": "snake-five",
+      "index": 0,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "duration_minutes": 5
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "duration_minutes": 5
+        }
+      ],
+      "oldManagerMs": 180000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 180000,
+        "sourceIndex": 0,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 180000,
+        "accelerated": true,
+        "sourceIndex": 0,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "sng",
+      "tag": "snake-five",
+      "index": 1,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "duration_minutes": 5
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "duration_minutes": 5
+        }
+      ],
+      "oldManagerMs": 300000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 300000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 300000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "sng",
+      "tag": "snake-five",
+      "index": 1,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "duration_minutes": 5
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "duration_minutes": 5
+        }
+      ],
+      "oldManagerMs": 180000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 180000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 180000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "sng",
+      "tag": "snake-five",
+      "index": 2,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "duration_minutes": 5
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "duration_minutes": 5
+        }
+      ],
+      "oldManagerMs": 300000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 300000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 300000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "sng",
+      "tag": "snake-five",
+      "index": 2,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "duration_minutes": 5
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "duration_minutes": 5
+        }
+      ],
+      "oldManagerMs": 120000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 180000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 180000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "sng",
+      "tag": "snake-five",
+      "index": 10,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "duration_minutes": 5
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "duration_minutes": 5
+        }
+      ],
+      "oldManagerMs": 300000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 300000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 300000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "sng",
+      "tag": "snake-five",
+      "index": 10,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "duration_minutes": 5
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "duration_minutes": 5
+        }
+      ],
+      "oldManagerMs": 120000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 180000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 180000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "sng",
+      "tag": "seconds-three",
+      "index": 0,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "duration": 180
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "duration": 180
+        }
+      ],
+      "oldManagerMs": 180000,
+      "oldClientMs": 180000,
+      "proposed": {
+        "rawDurationMs": 180000,
+        "durationMs": 180000,
+        "sourceIndex": 0,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 180000,
+        "accelerated": false,
+        "sourceIndex": 0,
+        "rawDurationMs": 180000
+      }
+    },
+    {
+      "format": "sng",
+      "tag": "seconds-three",
+      "index": 0,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "duration": 180
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "duration": 180
+        }
+      ],
+      "oldManagerMs": 120000,
+      "oldClientMs": 180000,
+      "proposed": {
+        "rawDurationMs": 180000,
+        "durationMs": 120000,
+        "sourceIndex": 0,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 120000,
+        "accelerated": true,
+        "sourceIndex": 0,
+        "rawDurationMs": 180000
+      }
+    },
+    {
+      "format": "sng",
+      "tag": "seconds-three",
+      "index": 1,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "duration": 180
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "duration": 180
+        }
+      ],
+      "oldManagerMs": 180000,
+      "oldClientMs": 180000,
+      "proposed": {
+        "rawDurationMs": 180000,
+        "durationMs": 180000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 180000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 180000
+      }
+    },
+    {
+      "format": "sng",
+      "tag": "seconds-three",
+      "index": 1,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "duration": 180
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "duration": 180
+        }
+      ],
+      "oldManagerMs": 120000,
+      "oldClientMs": 180000,
+      "proposed": {
+        "rawDurationMs": 180000,
+        "durationMs": 120000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 120000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 180000
+      }
+    },
+    {
+      "format": "sng",
+      "tag": "seconds-three",
+      "index": 2,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "duration": 180
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "duration": 180
+        }
+      ],
+      "oldManagerMs": 180000,
+      "oldClientMs": 180000,
+      "proposed": {
+        "rawDurationMs": 180000,
+        "durationMs": 180000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 180000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 180000
+      }
+    },
+    {
+      "format": "sng",
+      "tag": "seconds-three",
+      "index": 2,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "duration": 180
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "duration": 180
+        }
+      ],
+      "oldManagerMs": 60000,
+      "oldClientMs": 180000,
+      "proposed": {
+        "rawDurationMs": 180000,
+        "durationMs": 120000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 120000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 180000
+      }
+    },
+    {
+      "format": "sng",
+      "tag": "seconds-three",
+      "index": 10,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "duration": 180
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "duration": 180
+        }
+      ],
+      "oldManagerMs": 180000,
+      "oldClientMs": 180000,
+      "proposed": {
+        "rawDurationMs": 180000,
+        "durationMs": 180000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 180000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 180000
+      }
+    },
+    {
+      "format": "sng",
+      "tag": "seconds-three",
+      "index": 10,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "duration": 180
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "duration": 180
+        }
+      ],
+      "oldManagerMs": 60000,
+      "oldClientMs": 180000,
+      "proposed": {
+        "rawDurationMs": 180000,
+        "durationMs": 120000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 120000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 180000
+      }
+    },
+    {
+      "format": "sng",
+      "tag": "fractional",
+      "index": 0,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 6.1
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 6.1
+        }
+      ],
+      "oldManagerMs": 366000,
+      "oldClientMs": 366000,
+      "proposed": {
+        "rawDurationMs": 366000,
+        "durationMs": 366000,
+        "sourceIndex": 0,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 366000,
+        "accelerated": false,
+        "sourceIndex": 0,
+        "rawDurationMs": 366000
+      }
+    },
+    {
+      "format": "sng",
+      "tag": "fractional",
+      "index": 0,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 6.1
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 6.1
+        }
+      ],
+      "oldManagerMs": 240000,
+      "oldClientMs": 366000,
+      "proposed": {
+        "rawDurationMs": 366000,
+        "durationMs": 240000,
+        "sourceIndex": 0,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 240000,
+        "accelerated": true,
+        "sourceIndex": 0,
+        "rawDurationMs": 366000
+      }
+    },
+    {
+      "format": "sng",
+      "tag": "fractional",
+      "index": 1,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 6.1
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 6.1
+        }
+      ],
+      "oldManagerMs": 366000,
+      "oldClientMs": 366000,
+      "proposed": {
+        "rawDurationMs": 366000,
+        "durationMs": 366000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 366000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 366000
+      }
+    },
+    {
+      "format": "sng",
+      "tag": "fractional",
+      "index": 1,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 6.1
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 6.1
+        }
+      ],
+      "oldManagerMs": 240000,
+      "oldClientMs": 366000,
+      "proposed": {
+        "rawDurationMs": 366000,
+        "durationMs": 240000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 240000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 366000
+      }
+    },
+    {
+      "format": "sng",
+      "tag": "fractional",
+      "index": 2,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 6.1
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 6.1
+        }
+      ],
+      "oldManagerMs": 366000,
+      "oldClientMs": 366000,
+      "proposed": {
+        "rawDurationMs": 366000,
+        "durationMs": 366000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 366000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 366000
+      }
+    },
+    {
+      "format": "sng",
+      "tag": "fractional",
+      "index": 2,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 6.1
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 6.1
+        }
+      ],
+      "oldManagerMs": 120000,
+      "oldClientMs": 366000,
+      "proposed": {
+        "rawDurationMs": 366000,
+        "durationMs": 240000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 240000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 366000
+      }
+    },
+    {
+      "format": "sng",
+      "tag": "fractional",
+      "index": 10,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 6.1
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 6.1
+        }
+      ],
+      "oldManagerMs": 366000,
+      "oldClientMs": 366000,
+      "proposed": {
+        "rawDurationMs": 366000,
+        "durationMs": 366000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 366000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 366000
+      }
+    },
+    {
+      "format": "sng",
+      "tag": "fractional",
+      "index": 10,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 6.1
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 6.1
+        }
+      ],
+      "oldManagerMs": 120000,
+      "oldClientMs": 366000,
+      "proposed": {
+        "rawDurationMs": 366000,
+        "durationMs": 240000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 240000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 366000
+      }
+    },
+    {
+      "format": "sng",
+      "tag": "default",
+      "index": 0,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30
+        }
+      ],
+      "oldManagerMs": 600000,
+      "oldClientMs": 600000,
+      "proposed": {
+        "rawDurationMs": 600000,
+        "durationMs": 600000,
+        "sourceIndex": 0,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 600000,
+        "accelerated": false,
+        "sourceIndex": 0,
+        "rawDurationMs": 600000
+      }
+    },
+    {
+      "format": "sng",
+      "tag": "default",
+      "index": 0,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30
+        }
+      ],
+      "oldManagerMs": 300000,
+      "oldClientMs": 600000,
+      "proposed": {
+        "rawDurationMs": 600000,
+        "durationMs": 300000,
+        "sourceIndex": 0,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 300000,
+        "accelerated": true,
+        "sourceIndex": 0,
+        "rawDurationMs": 600000
+      }
+    },
+    {
+      "format": "sng",
+      "tag": "default",
+      "index": 1,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30
+        }
+      ],
+      "oldManagerMs": 600000,
+      "oldClientMs": 600000,
+      "proposed": {
+        "rawDurationMs": 600000,
+        "durationMs": 600000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 600000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 600000
+      }
+    },
+    {
+      "format": "sng",
+      "tag": "default",
+      "index": 1,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30
+        }
+      ],
+      "oldManagerMs": 300000,
+      "oldClientMs": 600000,
+      "proposed": {
+        "rawDurationMs": 600000,
+        "durationMs": 300000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 300000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 600000
+      }
+    },
+    {
+      "format": "sng",
+      "tag": "default",
+      "index": 2,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30
+        }
+      ],
+      "oldManagerMs": 600000,
+      "oldClientMs": 600000,
+      "proposed": {
+        "rawDurationMs": 600000,
+        "durationMs": 600000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 600000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 600000
+      }
+    },
+    {
+      "format": "sng",
+      "tag": "default",
+      "index": 2,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30
+        }
+      ],
+      "oldManagerMs": 180000,
+      "oldClientMs": 600000,
+      "proposed": {
+        "rawDurationMs": 600000,
+        "durationMs": 300000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 300000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 600000
+      }
+    },
+    {
+      "format": "sng",
+      "tag": "default",
+      "index": 10,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30
+        }
+      ],
+      "oldManagerMs": 600000,
+      "oldClientMs": 600000,
+      "proposed": {
+        "rawDurationMs": 600000,
+        "durationMs": 600000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 600000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 600000
+      }
+    },
+    {
+      "format": "sng",
+      "tag": "default",
+      "index": 10,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30
+        }
+      ],
+      "oldManagerMs": 180000,
+      "oldClientMs": 600000,
+      "proposed": {
+        "rawDurationMs": 600000,
+        "durationMs": 300000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 300000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 600000
+      }
+    },
+    {
+      "format": "sng",
+      "tag": "minute-precedence",
+      "index": 0,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 2,
+          "duration": 180
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 2,
+          "duration": 180
+        }
+      ],
+      "oldManagerMs": 120000,
+      "oldClientMs": 120000,
+      "proposed": {
+        "rawDurationMs": 120000,
+        "durationMs": 120000,
+        "sourceIndex": 0,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 120000,
+        "accelerated": false,
+        "sourceIndex": 0,
+        "rawDurationMs": 120000
+      }
+    },
+    {
+      "format": "sng",
+      "tag": "minute-precedence",
+      "index": 0,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 2,
+          "duration": 180
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 2,
+          "duration": 180
+        }
+      ],
+      "oldManagerMs": 60000,
+      "oldClientMs": 120000,
+      "proposed": {
+        "rawDurationMs": 120000,
+        "durationMs": 60000,
+        "sourceIndex": 0,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 60000,
+        "accelerated": true,
+        "sourceIndex": 0,
+        "rawDurationMs": 120000
+      }
+    },
+    {
+      "format": "sng",
+      "tag": "minute-precedence",
+      "index": 1,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 2,
+          "duration": 180
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 2,
+          "duration": 180
+        }
+      ],
+      "oldManagerMs": 120000,
+      "oldClientMs": 120000,
+      "proposed": {
+        "rawDurationMs": 120000,
+        "durationMs": 120000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 120000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 120000
+      }
+    },
+    {
+      "format": "sng",
+      "tag": "minute-precedence",
+      "index": 1,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 2,
+          "duration": 180
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 2,
+          "duration": 180
+        }
+      ],
+      "oldManagerMs": 60000,
+      "oldClientMs": 120000,
+      "proposed": {
+        "rawDurationMs": 120000,
+        "durationMs": 60000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 60000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 120000
+      }
+    },
+    {
+      "format": "sng",
+      "tag": "minute-precedence",
+      "index": 2,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 2,
+          "duration": 180
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 2,
+          "duration": 180
+        }
+      ],
+      "oldManagerMs": 120000,
+      "oldClientMs": 120000,
+      "proposed": {
+        "rawDurationMs": 120000,
+        "durationMs": 120000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 120000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 120000
+      }
+    },
+    {
+      "format": "sng",
+      "tag": "minute-precedence",
+      "index": 2,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 2,
+          "duration": 180
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 2,
+          "duration": 180
+        }
+      ],
+      "oldManagerMs": 60000,
+      "oldClientMs": 120000,
+      "proposed": {
+        "rawDurationMs": 120000,
+        "durationMs": 60000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 60000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 120000
+      }
+    },
+    {
+      "format": "sng",
+      "tag": "minute-precedence",
+      "index": 10,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 2,
+          "duration": 180
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 2,
+          "duration": 180
+        }
+      ],
+      "oldManagerMs": 120000,
+      "oldClientMs": 120000,
+      "proposed": {
+        "rawDurationMs": 120000,
+        "durationMs": 120000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 120000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 120000
+      }
+    },
+    {
+      "format": "sng",
+      "tag": "minute-precedence",
+      "index": 10,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 2,
+          "duration": 180
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": 2,
+          "duration": 180
+        }
+      ],
+      "oldManagerMs": 60000,
+      "oldClientMs": 120000,
+      "proposed": {
+        "rawDurationMs": 120000,
+        "durationMs": 60000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 60000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 120000
+      }
+    },
+    {
+      "format": "sng",
+      "tag": "null-minute",
+      "index": 0,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": null,
+          "duration_minutes": 5
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": null,
+          "duration_minutes": 5
+        }
+      ],
+      "oldManagerMs": 300000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 300000,
+        "sourceIndex": 0,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 300000,
+        "accelerated": false,
+        "sourceIndex": 0,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "sng",
+      "tag": "null-minute",
+      "index": 0,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": null,
+          "duration_minutes": 5
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": null,
+          "duration_minutes": 5
+        }
+      ],
+      "oldManagerMs": 180000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 180000,
+        "sourceIndex": 0,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 180000,
+        "accelerated": true,
+        "sourceIndex": 0,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "sng",
+      "tag": "null-minute",
+      "index": 1,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": null,
+          "duration_minutes": 5
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": null,
+          "duration_minutes": 5
+        }
+      ],
+      "oldManagerMs": 300000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 300000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 300000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "sng",
+      "tag": "null-minute",
+      "index": 1,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": null,
+          "duration_minutes": 5
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": null,
+          "duration_minutes": 5
+        }
+      ],
+      "oldManagerMs": 180000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 180000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 180000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "sng",
+      "tag": "null-minute",
+      "index": 2,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": null,
+          "duration_minutes": 5
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": null,
+          "duration_minutes": 5
+        }
+      ],
+      "oldManagerMs": 300000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 300000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 300000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "sng",
+      "tag": "null-minute",
+      "index": 2,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": null,
+          "duration_minutes": 5
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": null,
+          "duration_minutes": 5
+        }
+      ],
+      "oldManagerMs": 120000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 180000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 180000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "sng",
+      "tag": "null-minute",
+      "index": 10,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": null,
+          "duration_minutes": 5
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": null,
+          "duration_minutes": 5
+        }
+      ],
+      "oldManagerMs": 300000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 300000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 300000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "sng",
+      "tag": "null-minute",
+      "index": 10,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": null,
+          "duration_minutes": 5
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": null,
+          "duration_minutes": 5
+        }
+      ],
+      "oldManagerMs": 120000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 180000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 180000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "sng",
+      "tag": "string-minute",
+      "index": 0,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": "5"
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": "5"
+        }
+      ],
+      "oldManagerMs": 300000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 300000,
+        "sourceIndex": 0,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 300000,
+        "accelerated": false,
+        "sourceIndex": 0,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "sng",
+      "tag": "string-minute",
+      "index": 0,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": "5"
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": "5"
+        }
+      ],
+      "oldManagerMs": 180000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 180000,
+        "sourceIndex": 0,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 180000,
+        "accelerated": true,
+        "sourceIndex": 0,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "sng",
+      "tag": "string-minute",
+      "index": 1,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": "5"
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": "5"
+        }
+      ],
+      "oldManagerMs": 300000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 300000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 300000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "sng",
+      "tag": "string-minute",
+      "index": 1,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": "5"
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": "5"
+        }
+      ],
+      "oldManagerMs": 180000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 180000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 180000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "sng",
+      "tag": "string-minute",
+      "index": 2,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": "5"
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": "5"
+        }
+      ],
+      "oldManagerMs": 300000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 300000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 300000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "sng",
+      "tag": "string-minute",
+      "index": 2,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": "5"
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": "5"
+        }
+      ],
+      "oldManagerMs": 120000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 180000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 180000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "sng",
+      "tag": "string-minute",
+      "index": 10,
+      "entryClosed": false,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": "5"
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": "5"
+        }
+      ],
+      "oldManagerMs": 300000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 300000,
+        "sourceIndex": 1,
+        "accelerated": false
+      },
+      "sql": {
+        "durationMs": 300000,
+        "accelerated": false,
+        "sourceIndex": 1,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "sng",
+      "tag": "string-minute",
+      "index": 10,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": "5"
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "durationMinutes": "5"
+        }
+      ],
+      "oldManagerMs": 120000,
+      "oldClientMs": 300000,
+      "proposed": {
+        "rawDurationMs": 300000,
+        "durationMs": 180000,
+        "sourceIndex": 1,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 180000,
+        "accelerated": true,
+        "sourceIndex": 1,
+        "rawDurationMs": 300000
+      }
+    },
+    {
+      "format": "mtt",
+      "tag": "trailing-breaks",
+      "index": 3,
+      "entryClosed": true,
+      "structure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "durationMinutes": 10
+        },
+        {
+          "isBreak": true,
+          "durationMinutes": 5
+        },
+        {
+          "isBreak": true,
+          "durationMinutes": 5
+        }
+      ],
+      "proposed": {
+        "rawDurationMs": 600000,
+        "durationMs": 300000,
+        "sourceIndex": 0,
+        "accelerated": true
+      },
+      "sql": {
+        "durationMs": 300000,
+        "accelerated": true,
+        "sourceIndex": 0,
+        "rawDurationMs": 600000
+      }
+    }
+  ],
+  "old_client_overdue_reset_seconds": 600,
+  "summary": {
+    "native_duration_rows": 241,
+    "proposed_mismatches": 0,
+    "old_manager_duration_mismatches": 34,
+    "old_client_duration_mismatches": 110,
+    "refusal_cases": 7,
+    "deadline_and_epoch_cases": 9,
+    "production_writes": false
+  },
+  "sql_sha256": "b8db3b66acd11d31e4addf3263f40290831f09b1ac7bf2ef0c72f909db494395",
+  "limitations": [
+    "Prospective duration/deadline layer only; no migration or clock activation.",
+    "Actual old manager/client methods are executed from pinned source; new helper and native SQL agree but live manager/client wiring remains pending.",
+    "No maintenance ownership, financial, lease or all-trigger composition closure is claimed."
+  ]
+}

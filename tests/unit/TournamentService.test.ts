@@ -475,6 +475,32 @@ describe('TournamentService', () => {
   // on either side of the read.
 
   describe('getCurrentLevelState - level indexing', () => {
+    it.each([600000, 2399999, 2400000, 2400001, 86400000])(
+      'keeps an overdue persisted level at zero after %i milliseconds',
+      (elapsedMs) => {
+        const now = Date.now();
+        const dateNow = vi.spyOn(Date, 'now').mockReturnValue(now);
+        try {
+          const state = tournamentService.getCurrentLevelState({
+            id: 'overdue-clock',
+            status: 'RUNNING',
+            started_at: new Date(now - 86400000).toISOString(),
+            level_started_at: new Date(now - elapsedMs).toISOString(),
+            current_level: 1,
+            blind_structure: [
+              { level: 1, smallBlind: 25, bigBlind: 50, ante: 0, durationMinutes: 10 },
+              { level: 2, smallBlind: 50, bigBlind: 100, ante: 0, durationMinutes: 10 },
+            ],
+          } as never);
+          expect(state.levelIndex).toBe(1);
+          expect(state.currentLevel.bigBlind).toBe(100);
+          expect(state.timeRemainingSeconds).toBe(0);
+        } finally {
+          dateNow.mockRestore();
+        }
+      }
+    );
+
     // Four levels, each distinguishable by every field.
     const structure = [
       { level: 1, smallBlind: 25, bigBlind: 50, ante: 0, durationMinutes: 10 },

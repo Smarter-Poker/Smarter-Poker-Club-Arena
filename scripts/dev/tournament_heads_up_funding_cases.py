@@ -13,7 +13,7 @@ generation = 'c6000000-0000-4000-8000-000000000001'
 
 def uid(n): return 'c1000000-0000-4000-8000-' + str(n).zfill(12)
 
-def verify(q, fresh, overlap, register, check):
+def verify(q, fresh, overlap, register, check, prepare=None, after_launch=None):
     functions = json.loads((directory/'captured-functions.json').read_text())
     functions += json.loads((directory/'dependencies.json').read_text())
     schema = json.loads((directory/'columns.json').read_text())
@@ -99,6 +99,9 @@ def verify(q, fresh, overlap, register, check):
                 assert actual_trigger == dict(enabled=t['enabled'],definition=t['definition']),(t,actual_trigger)
         q("INSERT INTO tables(id,club_id,tournament_id,name,game_type,game_variant,max_players,starting_chips,status,current_players) VALUES('%s','%s','%s','Isolated Heads-Up','tournament','%s',2,%s,'waiting',0); INSERT INTO engine_tournament_leases(tournament_id,instance_id,lease_generation,protocol_version) VALUES('%s','isolated-hu-probe','%s',2);" % (table,club,event,variant,chips,event,generation))
 
+        if prepare is not None:
+            prepare(q)
+
     def state():
         return json.loads(q("""SELECT jsonb_build_object(
         'wallets',(SELECT sum(chip_balance) FROM club_members),
@@ -179,6 +182,8 @@ def verify(q, fresh, overlap, register, check):
             assert replay.get('replay') is True,replay
             assert snapshot() == before
             check(variant + ' ' + str(chips) + ': last seat race funds two entries and lease-bound launch replays unchanged')
+            if after_launch is not None:
+                after_launch(q, snapshot, variant, chips, check)
 
     setup('seat_failure')
     before = snapshot()

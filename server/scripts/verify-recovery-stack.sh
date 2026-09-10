@@ -19,6 +19,9 @@ set -uo pipefail
 CONTAINER="${CONTAINER:-club-arena-engine}"
 IMAGE_REPO="${IMAGE_REPO:-club-arena-engine}"
 PORT="${PORT:-8080}"
+CONTROL_DIR="${ENGINE_CONTROL_DIR:-/usr/local/lib/club-arena/engine-control}"
+RELEASE_SEAL="${ENGINE_RELEASE_SEAL:-$CONTROL_DIR/engine-release-seal.py}"
+UP_SCRIPT="${UP_SCRIPT:-$CONTROL_DIR/engine-up.sh}"
 METRIC_FILE="${METRIC_FILE:-/var/lib/node-exporter-textfile/club_arena_supervisor.prom}"
 HEALTH_TIMEOUT_SEC="${HEALTH_TIMEOUT_SEC:-15}"
 # Docker reports health timing fields as integer nanoseconds. These floors are
@@ -30,6 +33,7 @@ MIN_HEALTH_START_PERIOD_NS="${MIN_HEALTH_START_PERIOD_NS:-300000000000}"
 PASS=0; FAIL=0
 ok()   { printf '  PASS  %s\n' "$1"; PASS=$((PASS+1)); }
 bad()  { printf '  FAIL  %s\n' "$1"; FAIL=$((FAIL+1)); }
+note() { printf '  INFO  %s\n' "$1"; }
 head_() { printf '\n%s\n' "$1"; }
 
 echo "Club Arena recovery-stack verification — $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
@@ -39,8 +43,9 @@ STATE=$(docker container inspect -f '{{.State.Status}}' "$CONTAINER" 2>/dev/null
 [ "$STATE" = "running" ] && ok "container is running" || bad "container state is '$STATE'"
 
 POLICY=$(docker container inspect -f '{{.HostConfig.RestartPolicy.Name}}' "$CONTAINER" 2>/dev/null || echo none)
-[ "$POLICY" = "always" ] && ok "restart policy is 'always' (covers crash, daemon restart, reboot)" \
-  || bad "restart policy is '$POLICY' — a crash would not be recovered"
+# The correct value depends on release authority and is checked below after the
+# seal classifies this exact container. A proof candidate must be `no`; the
+# durable desired release must be `always`.
 
 HC=$(docker container inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$CONTAINER" 2>/dev/null || echo none)
 [ "$HC" != "none" ] && ok "HEALTHCHECK is defined (status: $HC)" \
@@ -81,7 +86,8 @@ LABEL=$(docker container inspect -f '{{index .Config.Labels "autoheal"}}' "$CONT
   || bad "engine is MISSING autoheal=true — HEALTHCHECK is wired to nothing"
 
 AH=$(docker container inspect -f '{{.State.Status}}' sp-autoheal 2>/dev/null || echo absent)
-[ "$AH" = "running" ] && ok "sp-autoheal sidecar is running" || bad "sp-autoheal is '$AH'"
+# A pending candidate is deliberately excluded from autoheal until the seal is
+# committed. The authority-aware verdict is emitted below after classification.
 
 head_ "Layer 3 — host supervisor (independent of GitHub and of autoheal)"
 if systemctl is-active --quiet club-arena-supervisor.timer; then
@@ -103,24 +109,63 @@ else
 fi
 
 head_ "Layer 3b — the supervisor cannot fight a deploy"
-if grep -q 'flock' "${UP_SCRIPT:-/opt/club-arena/server/scripts/engine-up.sh}" 2>/dev/null; then
+if grep -q 'flock' "$UP_SCRIPT" 2>/dev/null; then
   ok "engine-up.sh takes the mutual-exclusion lock"
 else
   bad "engine-up.sh has no flock — a supervisor tick can recreate the container a deploy just made, failing that deploy's verification"
 fi
 
-head_ "Layer 4 — rollback is actually possible"
-# A deploy pipeline with no rollback target is one bad build away from an
-# outage it cannot exit.
-if docker image inspect "$IMAGE_REPO:previous" >/dev/null 2>&1; then
-  ok ":previous image exists ($(docker image inspect -f '{{.Id}}' "$IMAGE_REPO:previous" | cut -c8-19))"
+head_ "Layer 4 — release identity is sealed outside mutable tags and checkout"
+if [ -x "$RELEASE_SEAL" ]; then
+  DESIRED_SHA=$("$RELEASE_SEAL" get desired-sha 2>/dev/null || echo "")
+  DESIRED_IMAGE_ID=$("$RELEASE_SEAL" get desired-image-id 2>/dev/null || echo "")
+  RELEASE_CLASS=$("$RELEASE_SEAL" classify-running --container "$CONTAINER" 2>/dev/null || echo "invalid")
 else
-  bad "no $IMAGE_REPO:previous image — a bad deploy could NOT be rolled back"
+  DESIRED_SHA=""; DESIRED_IMAGE_ID=""; RELEASE_CLASS="invalid"
 fi
-if docker image inspect "$IMAGE_REPO:current" >/dev/null 2>&1; then
-  ok ":current image exists"
+RUNNING_IMAGE_ID=$(docker container inspect -f '{{.Image}}' "$CONTAINER" 2>/dev/null || echo "")
+CURRENT_IMAGE_ID=$(docker image inspect -f '{{.Id}}' "$IMAGE_REPO:current" 2>/dev/null || echo "")
+if [ -n "$DESIRED_SHA" ] && [ -n "$DESIRED_IMAGE_ID" ]; then
+  ok "durable release seal names $DESIRED_SHA / $DESIRED_IMAGE_ID"
 else
-  bad "no $IMAGE_REPO:current image — the supervisor cannot recreate the container"
+  bad "durable release seal is missing or corrupt — recovery has no release authority"
+fi
+if [ "$RELEASE_CLASS" = "desired" ]; then
+  ok "running container image ID matches the durable release seal"
+  [ "$POLICY" = "always" ] \
+    && ok "desired release restart policy is 'always' (covers crash, daemon restart, reboot)" \
+    || bad "desired release restart policy is '$POLICY' instead of 'always'"
+  [ "$AH" = "running" ] && ok "sp-autoheal sidecar protects the desired release" \
+    || bad "sp-autoheal is '$AH' while the desired release is serving"
+elif [ "$RELEASE_CLASS" = "pending" ]; then
+  ok "running container is the one-use audited candidate inside its proof window"
+  [ "$POLICY" = "no" ] \
+    && ok "pending candidate is non-persistent until its compatibility proof commits" \
+    || bad "pending candidate restart policy is '$POLICY' — unsealed bytes could survive a reboot"
+  [ "$AH" != "running" ] && ok "sp-autoheal is fenced from the pending candidate" \
+    || bad "sp-autoheal is running during candidate proof and can restart unsealed bytes"
+else
+  bad "running container image $RUNNING_IMAGE_ID disagrees with sealed $DESIRED_IMAGE_ID"
+fi
+if [ "$CURRENT_IMAGE_ID" = "$DESIRED_IMAGE_ID" ] \
+   || { [ "$RELEASE_CLASS" = "pending" ] && [ "$CURRENT_IMAGE_ID" = "$RUNNING_IMAGE_ID" ]; }; then
+  ok ":current agrees with sealed desired or the active audited candidate"
+else
+  note ":current is a repairable cache (currently '${CURRENT_IMAGE_ID:-absent}'); the sealed image ID remains recovery authority"
+fi
+
+head_ "Layer 4b — the sealed recovery image exists locally"
+if docker image inspect "$DESIRED_IMAGE_ID" >/dev/null 2>&1; then
+  ok "sealed desired image exists locally and can be recovered by immutable ID"
+else
+  bad "sealed desired image $DESIRED_IMAGE_ID is missing locally — recovery cannot start it"
+fi
+# :previous is retained only as an operator breadcrumb. It is never trusted by
+# the supervisor or rollback; both resolve the durable desired image ID.
+if docker image inspect "$IMAGE_REPO:previous" >/dev/null 2>&1; then
+  note "optional :previous cache exists ($(docker image inspect -f '{{.Id}}' "$IMAGE_REPO:previous" | cut -c8-19))"
+else
+  note "optional :previous cache is absent; rollback still uses the sealed desired image ID"
 fi
 
 head_ "Layer 5 — the engine is genuinely serving, and can say what it is"
@@ -136,10 +181,10 @@ else
   bad "liveness is NOT ok — one or more tables are stalled"
 fi
 VER=$(echo "$BODY" | grep -o '"version":"[^"]*"' | cut -d'"' -f4)
-if [ -n "$VER" ] && [ "$VER" != "local" ] && [ "$VER" != "unknown" ]; then
-  ok "engine reports its build ($VER) — a stale-image deploy would be detectable"
+if [ -n "$DESIRED_SHA" ] && [ "$VER" = "${DESIRED_SHA:0:8}" ]; then
+  ok "engine reports the exact sealed desired build ($VER)"
 else
-  bad "engine reports version='$VER' — it cannot tell you what code it is running"
+  bad "engine reports version='$VER' but the sealed desired build is '${DESIRED_SHA:0:8}'"
 fi
 
 head_ "Layer 6 — someone is watching, and alerts reach a human"

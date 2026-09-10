@@ -49,6 +49,8 @@ CONTAINER="${CONTAINER:-club-arena-engine}"
 IMAGE="${IMAGE:-club-arena-engine:current}"
 ENV_FILE="${ENV_FILE:-/opt/club-arena/server/.env}"
 PORT="${PORT:-8080}"
+CONTROL_DIR="${ENGINE_CONTROL_DIR:-/usr/local/lib/club-arena/engine-control}"
+RELEASE_SEAL="${ENGINE_RELEASE_SEAL:-$CONTROL_DIR/engine-release-seal.py}"
 
 # HEALTHCHECK is also an availability control: sp-autoheal restarts the whole
 # engine when Docker marks it unhealthy. Under a saturated event loop the
@@ -116,7 +118,39 @@ if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
   exit 1
 fi
 
-log "replacing $CONTAINER with image $IMAGE"
+# GIT_COMMIT_SHA is an image property. Docker applies --env-file after image
+# ENV, so allowing either version key here would let old bytes claim the sealed
+# SHA to /health and engine_leader. Refuse before stopping the serving engine.
+if grep -Eq '^[[:space:]]*(GIT_COMMIT_SHA|ENGINE_VERSION)[[:space:]]*=' "$ENV_FILE"; then
+  log "FATAL: $ENV_FILE overrides a reserved image-version key — refusing to touch the running engine"
+  exit 1
+fi
+
+# Mutable tags are only caches. The root-owned seal outside /opt/club-arena is
+# the authority for the exact image ID and full commit that recovery may run.
+# A deploy candidate needs the one-use token issued by the audited prepare
+# step; the already-sealed desired image is always allowed for recovery.
+if [ ! -x "$RELEASE_SEAL" ]; then
+  log "FATAL: release authority is missing or not executable: $RELEASE_SEAL"
+  exit 1
+fi
+AUTH_ARGS=(authorize --image "$IMAGE")
+if [ -n "${ENGINE_RELEASE_TOKEN:-}" ]; then
+  AUTH_ARGS+=(--token "$ENGINE_RELEASE_TOKEN")
+fi
+AUTHORIZATION="$("$RELEASE_SEAL" "${AUTH_ARGS[@]}")" \
+  || { log "FATAL: release seal rejected image $IMAGE — refusing to touch the running engine"; exit 1; }
+read -r AUTHORIZED_SHA AUTHORIZED_IMAGE_ID EXTRA <<< "$AUTHORIZATION"
+[[ "$AUTHORIZED_SHA" =~ ^[0-9a-f]{40}$ ]] \
+  || { log "FATAL: release authority returned an invalid SHA"; exit 1; }
+[[ "$AUTHORIZED_IMAGE_ID" =~ ^sha256:[0-9a-f]{64}$ ]] \
+  || { log "FATAL: release authority returned an invalid image ID"; exit 1; }
+[ -z "${EXTRA:-}" ] \
+  || { log "FATAL: release authority returned an ambiguous identity"; exit 1; }
+docker image inspect "$AUTHORIZED_IMAGE_ID" >/dev/null 2>&1 \
+  || { log "FATAL: authorized image $AUTHORIZED_IMAGE_ID disappeared before cutover"; exit 1; }
+
+log "replacing $CONTAINER with sealed image $AUTHORIZED_IMAGE_ID ($AUTHORIZED_SHA; requested as $IMAGE)"
 # STOP, then remove. NOT `docker rm -f`, which is SIGKILL with no grace period.
 # The engine drains its table engines and flushes hand-state snapshots on
 # SIGTERM; killing it outright loses whatever was mid-flush. Docker's default
@@ -164,11 +198,12 @@ docker run -d \
   --health-cmd="node -e \"const fs=require('fs');const s=fs.readFileSync('/proc/1/stat','utf8');const f=s.slice(s.lastIndexOf(')')+2).trim().split(' ').filter(Boolean);const u=Number(fs.readFileSync('/proc/uptime','utf8').split(' ')[0]);const a=u-Number(f[19])/100;if(a<300)process.exit(0);fetch('http://0.0.0.0:8080/health').then(r=>r.json()).then(j=>{const l=j.liveness;process.exit(j.running===true&&(l==='ok'||l==='standby')?0:1)}).catch(()=>process.exit(1))\"" \
   --label autoheal=true \
   --label sp.role=engine \
+  --label "sp.release.sha=$AUTHORIZED_SHA" \
   --log-driver json-file \
   --log-opt max-size=50m \
   --log-opt max-file=5 \
   -p "${PORT}:8080" \
   --env-file "$ENV_FILE" \
-  "$IMAGE"
+  "$AUTHORIZED_IMAGE_ID"
 
-log "started $(docker inspect -f '{{.Id}}' "$CONTAINER" | cut -c1-12) from $IMAGE"
+log "started $(docker inspect -f '{{.Id}}' "$CONTAINER" | cut -c1-12) from $AUTHORIZED_IMAGE_ID"

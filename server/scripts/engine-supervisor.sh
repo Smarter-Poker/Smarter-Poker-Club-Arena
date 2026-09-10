@@ -23,9 +23,12 @@
 set -uo pipefail
 
 CONTAINER="${CONTAINER:-club-arena-engine}"
-IMAGE="${IMAGE:-club-arena-engine:current}"
 PORT="${PORT:-8080}"
-UP_SCRIPT="${UP_SCRIPT:-/opt/club-arena/server/scripts/engine-up.sh}"
+IMAGE_REPO="${IMAGE_REPO:-club-arena-engine}"
+CONTROL_DIR="${ENGINE_CONTROL_DIR:-/usr/local/lib/club-arena/engine-control}"
+UP_SCRIPT="${UP_SCRIPT:-$CONTROL_DIR/engine-up.sh}"
+RELEASE_SEAL="${ENGINE_RELEASE_SEAL:-$CONTROL_DIR/engine-release-seal.py}"
+IMAGE=""
 STATE_DIR="${STATE_DIR:-/var/lib/club-arena}"
 STATE_FILE="$STATE_DIR/supervisor-fails"
 COUNTER_FILE="$STATE_DIR/recoveries"
@@ -165,6 +168,64 @@ if ! flock -n 9 2>/dev/null; then
   exit 0
 fi
 
+# The root-owned release seal is the authority. Docker tags and /opt/club-arena
+# are mutable caches: the exact incident this guard closes retagged :current,
+# restarted from it, and reset the checkout to an older commit. Missing or
+# corrupt authority fails closed before the supervisor mutates a container.
+if [ ! -x "$RELEASE_SEAL" ]; then
+  log "FATAL: release seal controller missing: $RELEASE_SEAL — refusing an unsealed recovery"
+  emit_metrics 0 0
+  exit 1
+fi
+DESIRED_SHA=$("$RELEASE_SEAL" get desired-sha 2>/dev/null) \
+  || { log "FATAL: durable release SHA is unreadable — refusing an unsealed recovery"; emit_metrics 0 0; exit 1; }
+DESIRED_IMAGE_ID=$("$RELEASE_SEAL" get desired-image-id 2>/dev/null) \
+  || { log "FATAL: durable release image ID is unreadable — refusing an unsealed recovery"; emit_metrics 0 0; exit 1; }
+DESIRED_LEGACY_UNLABELLED=$("$RELEASE_SEAL" get desired-legacy-unlabelled 2>/dev/null) \
+  || { log "FATAL: durable legacy-bootstrap state is unreadable — refusing an unsealed recovery"; emit_metrics 0 0; exit 1; }
+case "$DESIRED_LEGACY_UNLABELLED" in
+  true|false) ;;
+  *) log "FATAL: durable legacy-bootstrap state is invalid — refusing an unsealed recovery"; emit_metrics 0 0; exit 1 ;;
+esac
+if ! docker image inspect "$DESIRED_IMAGE_ID" >/dev/null 2>&1; then
+  log "FATAL: sealed desired image $DESIRED_IMAGE_ID ($DESIRED_SHA) is absent — refusing to guess from :current"
+  emit_metrics 0 0
+  exit 1
+fi
+IMAGE="$DESIRED_IMAGE_ID"
+
+RELEASE_DESCRIPTION=$("$RELEASE_SEAL" classify-running --container "$CONTAINER" --with-sha 2>/dev/null) \
+  || { log "FATAL: cannot classify the running release — refusing to mutate it"; emit_metrics 0 0; exit 1; }
+read -r RELEASE_CLASS EXPECTED_RELEASE_SHA EXTRA <<< "$RELEASE_DESCRIPTION"
+[ -z "${EXTRA:-}" ] \
+  || { log "FATAL: release classification is ambiguous — refusing to mutate it"; emit_metrics 0 0; exit 1; }
+RUNNING_IMAGE_ID=$(docker container inspect -f '{{.Image}}' "$CONTAINER" 2>/dev/null || echo "")
+CURRENT_IMAGE_ID=$(docker image inspect -f '{{.Id}}' "$IMAGE_REPO:current" 2>/dev/null || echo "")
+
+# A prepared candidate may run only during its short, consumed authorization
+# window while the workflow proves it. It is never a recovery source. Anything
+# else which disagrees with the durable seal is an out-of-band drift and is
+# immediately replaced from the exact sealed image ID.
+if [ "$RELEASE_CLASS" = "drift" ]; then
+  act "container image $RUNNING_IMAGE_ID disagrees with sealed desired $DESIRED_IMAGE_ID ($DESIRED_SHA) — restoring sealed release"
+  recreate
+  docker tag "$DESIRED_IMAGE_ID" "$IMAGE_REPO:current" >/dev/null 2>&1 \
+    || log "WARN: could not repair $IMAGE_REPO:current to the sealed image"
+  writenum "$STATE_FILE" 0; writenum "$CHURN_FILE" 0; writenum "$RESTARTING_FILE" 0
+  emit_metrics 0 1
+  exit 0
+fi
+
+if [ "$CURRENT_IMAGE_ID" != "$DESIRED_IMAGE_ID" ]; then
+  if [ "$RELEASE_CLASS" = "pending" ] && [ "$CURRENT_IMAGE_ID" = "$RUNNING_IMAGE_ID" ]; then
+    log "audited candidate is inside its proof window — leaving :current unchanged until the seal commits"
+  else
+    act "$IMAGE_REPO:current disagrees with sealed desired image — repairing the cache without changing release authority"
+    docker tag "$DESIRED_IMAGE_ID" "$IMAGE_REPO:current" >/dev/null 2>&1 \
+      || { log "FATAL: could not repair mutable :current tag"; emit_metrics 0 1; exit 1; }
+  fi
+fi
+
 # ── 1. Does the container exist at all? ──────────────────────────────────────
 if ! docker container inspect "$CONTAINER" >/dev/null 2>&1; then
   act "container '$CONTAINER' does not exist — recreating from $IMAGE"
@@ -182,12 +243,30 @@ STATUS=$(docker container inspect -f '{{.State.Status}}' "$CONTAINER" 2>/dev/nul
 # sp-autoheal sidecar is what acts on it, and it selects by this label. An
 # engine without it looks perfectly healthy while its self-healing is off.
 LABEL=$(docker container inspect -f '{{index .Config.Labels "autoheal"}}' "$CONTAINER" 2>/dev/null || echo "")
-if [ "$LABEL" != "true" ]; then
-  act "container is missing autoheal=true (label='$LABEL') — its healthcheck is wired to nothing; recreating from $IMAGE"
+RELEASE_LABEL=$(docker container inspect -f '{{index .Config.Labels "sp.release.sha"}}' "$CONTAINER" 2>/dev/null || echo "")
+LEGACY_BOOTSTRAP_RUNSPEC=false
+if [ "$RELEASE_CLASS" = "desired" ] \
+  && [ "$DESIRED_LEGACY_UNLABELLED" = "true" ] \
+  && [ -z "$RELEASE_LABEL" ]; then
+  # First seal installation happens before the next maintenance break. The b4
+  # container already running at that moment predates sp.release.sha. Its exact
+  # image ID and baked full SHA were sealed during bootstrap, and autoheal is
+  # still mandatory, so accepting this one missing label is strictly narrower
+  # than recreating it outside the announced break. The first certified
+  # cutover commits a labelled image and permanently clears this marker.
+  LEGACY_BOOTSTRAP_RUNSPEC=true
+fi
+if [ "$LABEL" != "true" ] \
+  || { [ "$RELEASE_LABEL" != "$EXPECTED_RELEASE_SHA" ] \
+    && [ "$LEGACY_BOOTSTRAP_RUNSPEC" != "true" ]; }; then
+  act "container run-spec identity is invalid (autoheal='$LABEL', release='$RELEASE_LABEL', expected='$EXPECTED_RELEASE_SHA') — recreating from $IMAGE"
   recreate
   writenum "$STATE_FILE" 0; writenum "$CHURN_FILE" 0; writenum "$RESTARTING_FILE" 0
   emit_metrics 0 1
   exit 0
+fi
+if [ "$LEGACY_BOOTSTRAP_RUNSPEC" = "true" ]; then
+  log "sealed legacy desired container has no release label — preserving its exact image until the first certified cutover"
 fi
 
 case "$STATUS" in
@@ -338,7 +417,10 @@ fi
 if [ "$FAILS" -ge "$FAIL_THRESHOLD" ]; then
   act "engine unresponsive or liveness=dead for ${FAILS} consecutive checks - restarting container"
   docker logs --tail 60 "$CONTAINER" 2>&1 | tail -60 | sed 's/^/[pre-restart-log] /' || true
-  if ! docker restart -t 45 "$CONTAINER" >/dev/null 2>&1; then
+  if [ "$RELEASE_CLASS" = "pending" ]; then
+    act "unproved candidate failed health — restoring sealed desired image instead of restarting the candidate"
+    recreate
+  elif ! docker restart -t 45 "$CONTAINER" >/dev/null 2>&1; then
     act "docker restart failed — recreating from $IMAGE"
     recreate
   fi

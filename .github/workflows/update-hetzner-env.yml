@@ -73,6 +73,12 @@ jobs:
             [A-Z_][A-Z0-9_]*) ;;
             *) echo "::error::key must match [A-Z_][A-Z0-9_]* — got '$KEY'"; exit 1 ;;
           esac
+          case "$KEY" in
+            GIT_COMMIT_SHA | ENGINE_VERSION)
+              echo "::error::$KEY is immutable image identity, not runtime configuration"
+              exit 1
+              ;;
+          esac
 
       - name: Setup SSH key
         run: |
@@ -117,8 +123,12 @@ jobs:
 
       - name: Restart via engine-up.sh (the only sanctioned run-spec)
         run: |
-          ~/hssh "IMAGE=club-arena-engine:current CONTAINER=club-arena-engine \
-            ENV_FILE=$REPO_DIR/server/.env $REPO_DIR/server/scripts/engine-up.sh"
+          ~/hssh '
+            set -e
+            CONTROL=/usr/local/lib/club-arena/engine-control
+            IMAGE_ID=$($CONTROL/engine-release-seal.py get desired-image-id)
+            IMAGE=$IMAGE_ID CONTAINER=club-arena-engine \
+              ENV_FILE=/opt/club-arena/server/.env $CONTROL/engine-up.sh'
 
       - name: Verify
         run: |
@@ -136,15 +146,8 @@ jobs:
       - name: GUARANTEE the engine is running
         if: always()
         run: |
-          ~/hssh '
-            set +e
-            STATE=$(docker container inspect -f "{{.State.Status}}" club-arena-engine 2>/dev/null)
-            if [ -z "$STATE" ]; then
-              IMAGE=club-arena-engine:current CONTAINER=club-arena-engine \
-                ENV_FILE=/opt/club-arena/server/.env /opt/club-arena/server/scripts/engine-up.sh
-            elif [ "$STATE" = "paused" ]; then docker unpause club-arena-engine
-            elif [ "$STATE" != "running" ]; then docker start club-arena-engine
-            else echo "container running"; fi' || true
+          ~/hssh 'ENGINE_CONTROL_DIR=/usr/local/lib/club-arena/engine-control \
+            /usr/local/lib/club-arena/engine-control/engine-supervisor.sh' || true
 
       - name: Cleanup
         if: always()

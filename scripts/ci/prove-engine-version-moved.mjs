@@ -47,6 +47,7 @@ const PRE = (process.env.PRE_CUTOVER_VERSION || '').trim();
 const PRE_SOURCE = (process.env.PRE_CUTOVER_SOURCE || 'unknown').trim();
 const TIMEOUT_S = Number(process.env.TIMEOUT_S || 240);
 const POLL_S = Number(process.env.POLL_S || 10);
+const STRICT_PROOF = process.env.STRICT_PROOF === '1';
 const RUN_URL = process.env.RUN_URL || '';
 
 const say = (m) => console.log(m);
@@ -226,9 +227,12 @@ async function prove() {
   }
 
   if (!last) {
-    say(`::warning title=DEPLOY PROOF INCONCLUSIVE::Neither engine_leader nor ${ENGINE_URL}/health could be read for ${TIMEOUT_S}s. Not treating silence as a failed deploy; the verify step already saw ${TARGET} in the container.`);
-    summary(`### Deploy proof inconclusive\n\nNo witness answered for ${TIMEOUT_S}s. Not treated as a failure.`);
-    process.exit(0);
+    const verdict = STRICT_PROOF
+      ? 'The durable release seal was NOT advanced.'
+      : 'Not treating silence as a failed deploy; the verify step already saw the target in the container.';
+    say(`::warning title=DEPLOY PROOF INCONCLUSIVE::Neither engine_leader nor ${ENGINE_URL}/health could be read for ${TIMEOUT_S}s. ${verdict}`);
+    summary(`### Deploy proof inconclusive\n\nNo witness answered for ${TIMEOUT_S}s. ${verdict}`);
+    process.exit(STRICT_PROOF ? 1 : 0);
   }
 
   const unchanged = PRE && last.version === PRE;

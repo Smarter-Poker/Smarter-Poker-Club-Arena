@@ -1,0 +1,665 @@
+import { chmodSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+import { spawnSync } from 'node:child_process';
+
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+
+const ROOT = resolve(import.meta.dirname, '..');
+const read = (path: string) => readFileSync(resolve(ROOT, path), 'utf8');
+const sealScript = resolve(ROOT, 'server/scripts/engine-release-seal.py');
+
+const A_SHA = 'a'.repeat(40);
+const B_SHA = 'b'.repeat(40);
+const C_SHA = 'c'.repeat(40);
+const A_IMAGE = `sha256:${'a'.repeat(64)}`;
+const B_IMAGE = `sha256:${'b'.repeat(64)}`;
+const C_IMAGE = `sha256:${'c'.repeat(64)}`;
+
+describe('the durable engine release seal', () => {
+  let sandbox = '';
+  let bin = '';
+  let baseEnv: NodeJS.ProcessEnv;
+
+  beforeEach(() => {
+    sandbox = mkdtempSync(join(tmpdir(), 'engine-release-seal-'));
+    bin = join(sandbox, 'bin');
+    mkdirSync(bin);
+
+    const docker = `#!/usr/bin/env bash
+set -euo pipefail
+kind="$1"; action="$2"; shift 2
+[ "$action" = inspect ]
+while [ "$1" = --format ]; do shift 2; done
+ref="$1"
+if [ "$kind" = image ]; then
+  case "$ref" in
+    desired-ref|${A_IMAGE}) id='${A_IMAGE}'; sha='${A_SHA}' ;;
+    candidate-ref|${B_IMAGE}) id='${B_IMAGE}'; sha='${B_SHA}' ;;
+    divergent-ref|${C_IMAGE}) id='${C_IMAGE}'; sha='${C_SHA}' ;;
+    *) exit 1 ;;
+  esac
+  if [ "\${FAKE_LEGACY_IMAGE:-0}" = 1 ] && [ "$id" = '${A_IMAGE}' ]; then
+    printf '{"Id":"%s","Config":{"Labels":{},"Env":["GIT_COMMIT_SHA=%s"]}}\\n' "$id" "$sha"
+  else
+    printf '{"Id":"%s","Config":{"Labels":{"org.opencontainers.image.revision":"%s"},"Env":["GIT_COMMIT_SHA=%s"]}}\\n' "$id" "$sha" "$sha"
+  fi
+elif [ "$kind" = container ]; then
+  [ "$ref" = club-arena-engine ] || exit 1
+  printf '{"Image":"%s","State":{"Status":"%s"}}\\n' "\${FAKE_CONTAINER_IMAGE:-${A_IMAGE}}" "\${FAKE_CONTAINER_STATUS:-running}"
+else
+  exit 1
+fi
+`;
+    writeFileSync(join(bin, 'docker'), docker);
+    chmodSync(join(bin, 'docker'), 0o755);
+
+    const git = `#!/usr/bin/env bash
+set -euo pipefail
+if [ "$1" = -C ]; then shift 2; fi
+case "$1" in
+  cat-file) exit 0 ;;
+  merge-base)
+    [ "$2" = --is-ancestor ]
+    older="$3"; newer="$4"
+    [ "$older" = "$newer" ] && exit 0
+    [ "$newer" = origin/main ] && exit 0
+    [ "$older" = '${A_SHA}' ] && [ "$newer" = '${B_SHA}' ] && exit 0
+    exit 1
+    ;;
+  *) exit 1 ;;
+esac
+`;
+    writeFileSync(join(bin, 'git'), git);
+    chmodSync(join(bin, 'git'), 0o755);
+
+    baseEnv = {
+      ...process.env,
+      PATH: `${bin}:${process.env.PATH ?? ''}`,
+      ENGINE_RELEASE_STATE_DIR: join(sandbox, 'state'),
+      ENGINE_RELEASE_STATE_FILE: join(sandbox, 'state', 'seal.json'),
+      ENGINE_RELEASE_AUDIT_FILE: join(sandbox, 'state', 'audit.jsonl'),
+      ENGINE_RELEASE_LOCK_FILE: join(sandbox, 'seal.lock'),
+    };
+  });
+
+  afterEach(() => rmSync(sandbox, { recursive: true, force: true }));
+
+  const auditArgs = (runId: string, reason: string) => [
+    '--run-id',
+    runId,
+    '--run-url',
+    `https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/${runId}`,
+    '--actor',
+    'release-test',
+    '--reason',
+    reason,
+  ];
+
+  const runSeal = (
+    args: string[],
+    overrides: NodeJS.ProcessEnv = {}
+  ): { status: number | null; stdout: string; stderr: string } => {
+    const result = spawnSync('python3', [sealScript, ...args], {
+      encoding: 'utf8',
+      env: { ...baseEnv, ...overrides },
+    });
+    return { status: result.status, stdout: result.stdout.trim(), stderr: result.stderr.trim() };
+  };
+
+  const state = () =>
+    JSON.parse(readFileSync(join(sandbox, 'state', 'seal.json'), 'utf8')) as {
+      desired: { sha: string; imageId: string; legacyUnlabelled: boolean };
+      highWaterSha: string;
+      pending: null | { used: boolean; mode: string; expiresAt: number };
+      generation: number;
+    };
+
+  it('blocks a retag/reset start unless the exact prepared SHA and image ID consume one token', () => {
+    expect(
+      runSeal([
+        'bootstrap-running',
+        '--container',
+        'club-arena-engine',
+        ...auditArgs('101', 'bootstrap existing production'),
+      ]).status
+    ).toBe(0);
+    expect(state()).toMatchObject({
+      desired: { sha: A_SHA, imageId: A_IMAGE },
+      highWaterSha: A_SHA,
+      pending: null,
+    });
+
+    const directRetag = runSeal(['authorize', '--image', 'candidate-ref']);
+    expect(directRetag.status).toBe(1);
+    expect(directRetag.stderr).toContain('no live cutover authorization exists');
+
+    const prepared = runSeal([
+      'prepare',
+      '--sha',
+      B_SHA,
+      '--image',
+      'candidate-ref',
+      '--mode',
+      'deploy',
+      '--repo',
+      sandbox,
+      ...auditArgs('102', 'normal deployment from origin main'),
+    ]);
+    expect(prepared.status).toBe(0);
+    expect(prepared.stdout).toMatch(/^[0-9a-f]{64}$/);
+
+    expect(
+      runSeal(['authorize', '--image', 'candidate-ref', '--token', prepared.stdout]).stdout
+    ).toBe(`${B_SHA} ${B_IMAGE}`);
+    const replay = runSeal(['authorize', '--image', 'candidate-ref', '--token', prepared.stdout]);
+    expect(replay.status).toBe(1);
+    expect(replay.stderr).toContain('already consumed');
+
+    const committed = runSeal(
+      [
+        'commit',
+        '--sha',
+        B_SHA,
+        '--image',
+        'candidate-ref',
+        '--container',
+        'club-arena-engine',
+        ...auditArgs('102', 'all compatibility proofs passed'),
+      ],
+      { FAKE_CONTAINER_IMAGE: B_IMAGE }
+    );
+    expect(committed.status).toBe(0);
+    expect(state()).toMatchObject({
+      desired: { sha: B_SHA, imageId: B_IMAGE, legacyUnlabelled: false },
+      highWaterSha: B_SHA,
+      pending: null,
+      generation: 2,
+    });
+  });
+
+  it('bootstraps the first seal from the currently running pre-label b4 image', () => {
+    const bootstrapped = runSeal(
+      [
+        'bootstrap-running',
+        '--container',
+        'club-arena-engine',
+        ...auditArgs('150', 'bootstrap current b4 production'),
+      ],
+      { FAKE_LEGACY_IMAGE: '1' }
+    );
+    expect(bootstrapped.status).toBe(0);
+    expect(bootstrapped.stdout).toBe(A_SHA);
+    expect(state()).toMatchObject({
+      desired: { sha: A_SHA, imageId: A_IMAGE, legacyUnlabelled: true },
+      highWaterSha: A_SHA,
+      pending: null,
+    });
+    expect(runSeal(['get', 'desired-legacy-unlabelled']).stdout).toBe('true');
+  });
+
+  it('preserves the exact sealed pre-label container when the first supervisor tick runs', () => {
+    expect(
+      runSeal(
+        [
+          'bootstrap-running',
+          '--container',
+          'club-arena-engine',
+          ...auditArgs('151', 'bootstrap current b4 production before supervisor activation'),
+        ],
+        { FAKE_LEGACY_IMAGE: '1' }
+      ).status
+    ).toBe(0);
+
+    const mutationLog = join(sandbox, 'mutations.log');
+    const upScript = join(sandbox, 'engine-up-stub.sh');
+    writeFileSync(mutationLog, '');
+    writeFileSync(
+      upScript,
+      `#!/usr/bin/env bash
+printf 'engine-up invoked\\n' >> "$FAKE_MUTATION_LOG"
+exit 0
+`
+    );
+    chmodSync(upScript, 0o755);
+
+    // The first production image has no OCI revision label and its existing
+    // container has no sp.release.sha label. Its immutable image ID and baked
+    // SHA are nevertheless sealed. Any start/stop/rm/run call here would be an
+    // off-break replacement caused solely by installing the supervisor.
+    writeFileSync(
+      join(bin, 'docker'),
+      `#!/usr/bin/env bash
+set -eo pipefail
+if [ "$1" = info ]; then exit 0; fi
+kind="$1"; action="$2"; shift 2
+if [ "$action" != inspect ]; then
+  printf 'docker %s %s %s\\n' "$kind" "$action" "$*" >> "$FAKE_MUTATION_LOG"
+  exit 0
+fi
+format=''
+if [ "\${1:-}" = -f ] || [ "\${1:-}" = --format ]; then
+  format="$2"
+  shift 2
+fi
+ref="\${1:-}"
+if [ "$kind" = image ]; then
+  case "$ref" in '${A_IMAGE}'|club-arena-engine:current) ;; *) exit 1 ;; esac
+  case "$format" in
+    '{{.Id}}') printf '%s\\n' '${A_IMAGE}' ;;
+    *) printf '{"Id":"%s"}\\n' '${A_IMAGE}' ;;
+  esac
+  exit 0
+fi
+[ "$kind" = container ] && [ "$ref" = club-arena-engine ] || exit 1
+case "$format" in
+  '{{json .}}'|'') printf '{"Image":"%s","State":{"Status":"running"}}\\n' '${A_IMAGE}' ;;
+  '{{.Image}}') printf '%s\\n' '${A_IMAGE}' ;;
+  '{{.State.Status}}') printf 'running\\n' ;;
+  '{{index .Config.Labels "autoheal"}}') printf 'true\\n' ;;
+  '{{index .Config.Labels "sp.release.sha"}}') printf '\\n' ;;
+  '{{.State.StartedAt}}') printf '\\n' ;;
+  *) exit 1 ;;
+esac
+`
+    );
+    chmodSync(join(bin, 'docker'), 0o755);
+    writeFileSync(
+      join(bin, 'curl'),
+      '#!/usr/bin/env bash\nprintf \'{"running":true,"liveness":"ok"}\\n\'\n'
+    );
+    chmodSync(join(bin, 'curl'), 0o755);
+    writeFileSync(join(bin, 'logger'), '#!/usr/bin/env bash\nexit 0\n');
+    chmodSync(join(bin, 'logger'), 0o755);
+    writeFileSync(join(bin, 'flock'), '#!/usr/bin/env bash\nexit 0\n');
+    chmodSync(join(bin, 'flock'), 0o755);
+
+    const supervisor = spawnSync('bash', [resolve(ROOT, 'server/scripts/engine-supervisor.sh')], {
+      encoding: 'utf8',
+      env: {
+        ...baseEnv,
+        CONTAINER: 'club-arena-engine',
+        ENGINE_RELEASE_SEAL: sealScript,
+        FAKE_MUTATION_LOG: mutationLog,
+        IMAGE_REPO: 'club-arena-engine',
+        LOCK_FILE: join(sandbox, 'engine-up.lock'),
+        STATE_DIR: join(sandbox, 'supervisor-state'),
+        TEXTFILE_DIR: join(sandbox, 'metrics'),
+        UP_SCRIPT: upScript,
+      },
+    });
+    expect(supervisor.status, supervisor.stderr).toBe(0);
+    expect(supervisor.stdout).toContain(
+      'preserving its exact image until the first certified cutover'
+    );
+    expect(readFileSync(mutationLog, 'utf8')).toBe('');
+  });
+
+  it('expires a prepared token at its TTL boundary before it can authorize a start', () => {
+    runSeal([
+      'bootstrap-running',
+      '--container',
+      'club-arena-engine',
+      ...auditArgs('160', 'bootstrap existing production'),
+    ]);
+    const prepared = runSeal(
+      [
+        'prepare',
+        '--sha',
+        B_SHA,
+        '--image',
+        'candidate-ref',
+        '--mode',
+        'deploy',
+        '--repo',
+        sandbox,
+        ...auditArgs('161', 'normal deployment from origin main'),
+      ],
+      { ENGINE_RELEASE_PENDING_TTL_SECONDS: '0' }
+    );
+    expect(prepared.status).toBe(0);
+    const expired = runSeal(['authorize', '--image', 'candidate-ref', '--token', prepared.stdout]);
+    expect(expired.status).toBe(1);
+    expect(expired.stderr).toContain('no live cutover authorization exists');
+  });
+
+  it('rejects a normal downgrade but permits an explicit audited rollback without lowering high-water', () => {
+    runSeal([
+      'bootstrap-running',
+      '--container',
+      'club-arena-engine',
+      ...auditArgs('201', 'bootstrap existing production'),
+    ]);
+    const forward = runSeal([
+      'prepare',
+      '--sha',
+      B_SHA,
+      '--image',
+      'candidate-ref',
+      '--mode',
+      'deploy',
+      '--repo',
+      sandbox,
+      ...auditArgs('202', 'normal deployment from origin main'),
+    ]);
+    runSeal(['authorize', '--image', 'candidate-ref', '--token', forward.stdout]);
+    runSeal(
+      [
+        'commit',
+        '--sha',
+        B_SHA,
+        '--image',
+        'candidate-ref',
+        '--container',
+        'club-arena-engine',
+        ...auditArgs('202', 'all compatibility proofs passed'),
+      ],
+      { FAKE_CONTAINER_IMAGE: B_IMAGE }
+    );
+
+    const accidental = runSeal([
+      'prepare',
+      '--sha',
+      A_SHA,
+      '--image',
+      'desired-ref',
+      '--mode',
+      'deploy',
+      '--repo',
+      sandbox,
+      ...auditArgs('203', 'ordinary deploy accidentally named old ref'),
+    ]);
+    expect(accidental.status).toBe(1);
+    expect(accidental.stderr).toContain('move behind or diverge');
+
+    const rollback = runSeal([
+      'prepare',
+      '--sha',
+      A_SHA,
+      '--image',
+      'desired-ref',
+      '--mode',
+      'rollback',
+      '--repo',
+      sandbox,
+      ...auditArgs('204', 'incident rollback after failed engine release'),
+    ]);
+    expect(rollback.status).toBe(0);
+    runSeal(['authorize', '--image', 'desired-ref', '--token', rollback.stdout]);
+    expect(
+      runSeal(
+        [
+          'commit',
+          '--sha',
+          A_SHA,
+          '--image',
+          'desired-ref',
+          '--container',
+          'club-arena-engine',
+          ...auditArgs('204', 'rollback compatibility proofs passed'),
+        ],
+        { FAKE_CONTAINER_IMAGE: A_IMAGE }
+      ).status
+    ).toBe(0);
+
+    expect(state()).toMatchObject({
+      desired: { sha: A_SHA, imageId: A_IMAGE },
+      highWaterSha: B_SHA,
+      pending: null,
+      generation: 3,
+    });
+    expect(runSeal(['authorize', '--image', 'desired-ref']).stdout).toBe(`${A_SHA} ${A_IMAGE}`);
+
+    const events = readFileSync(join(sandbox, 'state', 'audit.jsonl'), 'utf8')
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line).event);
+    expect(events).toContain('prepare');
+    expect(events).toContain('candidate_start_authorized');
+    expect(events).toContain('commit');
+  });
+
+  it('will not seal a target whose image identity or running container disagrees', () => {
+    runSeal([
+      'bootstrap-running',
+      '--container',
+      'club-arena-engine',
+      ...auditArgs('301', 'bootstrap existing production'),
+    ]);
+    const wrongRevision = runSeal([
+      'prepare',
+      '--sha',
+      B_SHA,
+      '--image',
+      'divergent-ref',
+      '--mode',
+      'deploy',
+      '--repo',
+      sandbox,
+      ...auditArgs('302', 'normal deployment from origin main'),
+    ]);
+    expect(wrongRevision.status).toBe(1);
+    expect(wrongRevision.stderr).toContain('does not equal requested commit');
+
+    const prepared = runSeal([
+      'prepare',
+      '--sha',
+      B_SHA,
+      '--image',
+      'candidate-ref',
+      '--mode',
+      'deploy',
+      '--repo',
+      sandbox,
+      ...auditArgs('303', 'normal deployment from origin main'),
+    ]);
+    runSeal(['authorize', '--image', 'candidate-ref', '--token', prepared.stdout]);
+    const notRunning = runSeal([
+      'commit',
+      '--sha',
+      B_SHA,
+      '--image',
+      'candidate-ref',
+      '--container',
+      'club-arena-engine',
+      ...auditArgs('303', 'all compatibility proofs passed'),
+    ]);
+    expect(notRunning.status).toBe(1);
+    expect(notRunning.stderr).toContain('not the running container');
+    expect(state().desired.sha).toBe(A_SHA);
+  });
+});
+
+describe('every host mutation path obeys the durable release authority', () => {
+  const workflow = read('.github/workflows/auto-deploy-hetzner.yml');
+  const envWorkflow = read('.github/workflows/update-hetzner-env.yml');
+  const engineUp = read('server/scripts/engine-up.sh');
+  const supervisor = read('server/scripts/engine-supervisor.sh');
+  const installer = read('server/scripts/install-engine-supervisor.sh');
+  const recoveryVerifier = read('server/scripts/verify-recovery-stack.sh');
+  const dockerfile = read('server/Dockerfile');
+
+  it('authorizes immutable identity before engine-up stops the serving container', () => {
+    const authorize = engineUp.indexOf('authorize --image');
+    const stop = engineUp.indexOf('docker stop -t 45', authorize);
+    expect(authorize).toBeGreaterThan(0);
+    expect(authorize).toBeLessThan(stop);
+    expect(engineUp).toContain('GIT_COMMIT_SHA|ENGINE_VERSION');
+    expect(engineUp).toContain('--label "sp.release.sha=$AUTHORIZED_SHA"');
+    expect(dockerfile).toContain('LABEL org.opencontainers.image.revision=$GIT_COMMIT_SHA');
+  });
+
+  it('runs the authorized image ID, so retagging the requested name after authorization is inert', () => {
+    const authorize = engineUp.indexOf('AUTHORIZATION="$("$RELEASE_SEAL"');
+    const immutable = engineUp.indexOf('AUTHORIZED_IMAGE_ID', authorize);
+    const run = engineUp.indexOf('docker run -d');
+    const runBlock = engineUp.slice(run, engineUp.indexOf('\n\nlog "started', run));
+    expect(authorize).toBeGreaterThan(0);
+    expect(immutable).toBeGreaterThan(authorize);
+    expect(run).toBeGreaterThan(immutable);
+    expect(runBlock).toContain('"$AUTHORIZED_IMAGE_ID"');
+    expect(runBlock).not.toMatch(/^\s*"\$IMAGE"\s*$/m);
+  });
+
+  it('installs the control plane outside the rollbackable application checkout', () => {
+    expect(installer).toContain('/usr/local/lib/club-arena/engine-control');
+    expect(installer).toContain('ENGINE_CONTROL_SOURCE_DIR');
+    expect(installer).toMatch(/ExecStart=\$SUPERVISOR/);
+    expect(workflow).toContain(
+      "CONTROL_STAGE='/var/lib/club-arena/control-staging/${{ github.run_id }}'"
+    );
+    expect(workflow).toContain('git archive \\"\\$CONTROL_SHA\\"');
+    expect(workflow).toContain('/usr/local/lib/club-arena/engine-control/engine-up.sh');
+  });
+
+  it('activates one complete control-plane generation atomically under the engine lock', () => {
+    const lock = installer.indexOf('flock -w 180 9');
+    const stage = installer.indexOf('GENERATION_DIR=');
+    const validateShell = installer.indexOf('bash -n "$GENERATION_DIR/$script"');
+    const nextLink = installer.indexOf('ln -s "$GENERATION_DIR" "$NEXT_LINK"');
+    const durableNextLink = installer.indexOf('fsync_paths "$CONTROL_PARENT"', nextLink);
+    const activate = installer.indexOf('mv -Tf "$NEXT_LINK" "$CONTROL_DIR"');
+    const durableActivation = installer.indexOf('fsync_paths "$CONTROL_PARENT"', activate);
+    expect(lock).toBeGreaterThan(0);
+    expect(stage).toBeGreaterThan(lock);
+    expect(validateShell).toBeGreaterThan(stage);
+    expect(nextLink).toBeGreaterThan(validateShell);
+    expect(durableNextLink).toBeGreaterThan(nextLink);
+    expect(activate).toBeGreaterThan(nextLink);
+    expect(activate).toBeGreaterThan(durableNextLink);
+    expect(durableActivation).toBeGreaterThan(activate);
+    expect(installer).toContain('"$GENERATION_DIR/engine-release-seal.py" \\');
+    expect(installer.indexOf('fsync_paths \\')).toBeLessThan(nextLink);
+    expect(installer).not.toContain('install -d -m 0755 "$CONTROL_DIR"');
+  });
+
+  it('verifies the sealed recovery image without treating mutable tags as authority', () => {
+    expect(recoveryVerifier).toContain('sealed desired image exists locally');
+    expect(recoveryVerifier).toContain(':current is a repairable cache');
+    expect(recoveryVerifier).not.toContain('a bad deploy could NOT be rolled back');
+    expect(recoveryVerifier).not.toContain('the supervisor cannot recreate the container');
+  });
+
+  it('makes the supervisor restore the sealed image ID, never mutable current', () => {
+    expect(supervisor).toContain('DESIRED_IMAGE_ID=$("$RELEASE_SEAL" get desired-image-id');
+    expect(supervisor).toContain('IMAGE="$DESIRED_IMAGE_ID"');
+    expect(supervisor).toContain('if [ "$RELEASE_CLASS" = "drift" ]');
+    expect(supervisor).toContain('docker tag "$DESIRED_IMAGE_ID" "$IMAGE_REPO:current"');
+    expect(supervisor).not.toContain('IMAGE="${IMAGE:-club-arena-engine:current}"');
+    expect(supervisor).toContain('RELEASE_LABEL" != "$EXPECTED_RELEASE_SHA');
+  });
+
+  it('commits the seal only after HTTP, proxy, and strict database proof', () => {
+    const verify = workflow.indexOf('name: Verify — liveness');
+    const prove = workflow.indexOf("name: 'PROVE the version moved");
+    const commit = workflow.indexOf('name: Commit the verified SHA/image-ID release seal');
+    expect(verify).toBeGreaterThan(0);
+    expect(prove).toBeGreaterThan(verify);
+    expect(commit).toBeGreaterThan(prove);
+    expect(workflow).toContain("STRICT_PROOF: '1'");
+    expect(workflow).toContain('rollback:');
+    expect(workflow).toContain('rollback_reason:');
+    expect(workflow).toContain("steps.cutover.outputs.attempted == 'true'");
+    expect(workflow).toContain("steps.seal_commit.outcome == 'success'");
+  });
+
+  it('prepares one-use authority only after the long drain wait and immediately before cutover', () => {
+    const drain = workflow.indexOf('name: Wait for the maintenance break to park every table');
+    const prepare = workflow.indexOf('name: Prepare one-use sealed cutover authority');
+    const cutover = workflow.indexOf('name: Cut over to the new image');
+    expect(drain).toBeGreaterThan(0);
+    expect(prepare).toBeGreaterThan(drain);
+    expect(cutover).toBeGreaterThan(prepare);
+    const prepareBlock = workflow.slice(prepare, cutover);
+    expect(prepareBlock).toContain(
+      "if: steps.dedupe.outputs.skip != 'true' && steps.drain.outputs.skip != 'true'"
+    );
+    expect(prepareBlock).not.toMatch(/sleep\s|for i in|ATTEMPTS=/);
+  });
+
+  it('builds every target, including pre-seal rollback commits, with immutable revision metadata', () => {
+    const build = workflow.slice(
+      workflow.indexOf('name: Build immutable image'),
+      workflow.indexOf('name: Install/refresh host supervisor')
+    );
+    expect(build).toContain('--label org.opencontainers.image.revision=$SHA');
+    const equality = build
+      .split('\n')
+      .find((line) => line.includes("= '$SHA' ") && line.includes('REV'));
+    expect(equality).toContain('\\$REV');
+    expect(build.indexOf('--label org.opencontainers.image.revision=$SHA')).toBeLessThan(
+      build.indexOf(equality!)
+    );
+  });
+
+  it('revalidates restart authority under the shared lock and starts in that same shell', () => {
+    const cutover = workflow.slice(
+      workflow.indexOf('name: Cut over to the new image'),
+      workflow.indexOf('name: Verify — liveness')
+    );
+    const lock = cutover.indexOf('exec 9>/var/lock/club-arena-engine-up.lock');
+    const localHealth = cutover.indexOf('http://127.0.0.1:8080/health');
+    const certificate = cutover.indexOf('m.get(\\"readyForRestart\\") is True');
+    const mutationMarker = cutover.indexOf("echo '$MUTATION_MARKER'");
+    const start = cutover.indexOf('ENGINE_UP_LOCK_HELD=1');
+    const attempted = cutover.indexOf('echo "attempted=true"');
+    expect(lock).toBeGreaterThan(0);
+    expect(localHealth).toBeGreaterThan(lock);
+    expect(certificate).toBeGreaterThan(localHealth);
+    expect(mutationMarker).toBeGreaterThan(certificate);
+    expect(start).toBeGreaterThan(mutationMarker);
+    expect(attempted).toBeGreaterThan(start);
+    expect(cutover).toContain('m.get(\\"active\\") is True');
+    expect(cutover).toContain('m.get(\\"phase\\")==\\"counting_down\\"');
+    expect(cutover).toContain('m.get(\\"durableConfirmed\\") is True');
+    expect(cutover).toContain('m.get(\\"unparkedTables\\")==0');
+    expect(cutover).toContain('int(m.get(\\"remainingMs\\") or 0)>=180000');
+  });
+
+  it('guarantee and rollback can only recover the durable desired image', () => {
+    const rollback = workflow.slice(
+      workflow.indexOf('name: ROLLBACK'),
+      workflow.indexOf('name: GUARANTEE')
+    );
+    const guarantee = workflow.slice(
+      workflow.indexOf('name: GUARANTEE'),
+      workflow.indexOf('name: Expire this run')
+    );
+    const abort = rollback.indexOf('engine-release-seal.py abort');
+    const reconcile = rollback.indexOf('engine-supervisor.sh');
+    expect(abort).toBeGreaterThan(0);
+    expect(reconcile).toBeGreaterThan(abort);
+    expect(rollback).not.toContain('ENGINE_RELEASE_TOKEN');
+    expect(rollback).not.toMatch(/\\$CONTROL\/engine-up\.sh/);
+    expect(guarantee).toContain('engine-supervisor.sh');
+    expect(guarantee).toContain("steps.cutover.outcome != 'skipped'");
+    expect(guarantee).not.toMatch(/ENGINE_RELEASE_TOKEN|IMAGE=.*\$SHA|engine-up\.sh/);
+  });
+
+  it('a rejected locked certificate cannot mark mutation or trigger a blind restart', () => {
+    const cutover = workflow.slice(
+      workflow.indexOf('name: Cut over to the new image'),
+      workflow.indexOf('name: Verify — liveness')
+    );
+    const certificate = cutover.indexOf('m.get(\\"readyForRestart\\") is True');
+    const remoteMarker = cutover.indexOf("echo '$MUTATION_MARKER'");
+    const localAttempted = cutover.indexOf('echo "attempted=true"');
+    expect(certificate).toBeGreaterThan(0);
+    expect(remoteMarker).toBeGreaterThan(certificate);
+    expect(localAttempted).toBeGreaterThan(remoteMarker);
+
+    const rollback = workflow.slice(
+      workflow.indexOf('name: ROLLBACK'),
+      workflow.indexOf('name: Expire this run')
+    );
+    expect(rollback).toContain("steps.cutover.outputs.attempted == 'true'");
+    expect(rollback.match(/engine-supervisor\.sh/g)).toHaveLength(2);
+    expect(rollback).not.toMatch(/\\$CONTROL\/engine-up\.sh/);
+  });
+
+  it('does not let the env editor forge image identity', () => {
+    expect(envWorkflow).toMatch(/GIT_COMMIT_SHA \| ENGINE_VERSION/);
+    expect(envWorkflow).toContain('engine-release-seal.py get desired-image-id');
+    expect(envWorkflow).not.toContain('IMAGE=club-arena-engine:current');
+  });
+});

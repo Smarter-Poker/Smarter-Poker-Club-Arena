@@ -8,11 +8,98 @@
 set -euo pipefail
 
 REPO_DIR="${REPO_DIR:-/opt/club-arena}"
-SUPERVISOR="$REPO_DIR/server/scripts/engine-supervisor.sh"
+SOURCE_DIR="${ENGINE_CONTROL_SOURCE_DIR:-$REPO_DIR/server/scripts}"
+CONTROL_DIR="${ENGINE_CONTROL_DIR:-/usr/local/lib/club-arena/engine-control}"
+CONTROL_PARENT="$(dirname "$CONTROL_DIR")"
+GENERATION_ROOT="$CONTROL_PARENT/engine-control-generations"
+SUPERVISOR="$CONTROL_DIR/engine-supervisor.sh"
+LOCK_FILE="${LOCK_FILE:-/var/lock/club-arena-engine-up.lock}"
 
-[ -f "$SUPERVISOR" ] || { echo "FATAL: $SUPERVISOR not found"; exit 1; }
-chmod +x "$SUPERVISOR" "$REPO_DIR/server/scripts/engine-up.sh"
-mkdir -p /var/lib/club-arena
+fsync_paths() {
+  python3 - "$@" <<'PY'
+import os
+import sys
+
+for path in sys.argv[1:]:
+    flags = os.O_RDONLY
+    if os.path.isdir(path):
+        flags |= getattr(os, "O_DIRECTORY", 0)
+    descriptor = os.open(path, flags)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+PY
+}
+
+for file in engine-supervisor.sh engine-up.sh engine-release-seal.py verify-recovery-stack.sh; do
+  [ -f "$SOURCE_DIR/$file" ] || { echo "FATAL: $SOURCE_DIR/$file not found"; exit 1; }
+done
+
+# Serialize the control-plane swap with every engine mutation. The supervisor
+# takes this same lock non-blocking, so no timer can execute a mixed generation
+# while these files are staged or activated.
+exec 9>"$LOCK_FILE"
+flock -w 180 9 || { echo "FATAL: could not acquire $LOCK_FILE for control-plane refresh"; exit 1; }
+
+# This path did not exist before the seal rollout. Refuse to replace an
+# unexpected physical directory: renaming a directory away and creating a
+# symlink leaves a crash window with no control plane at all.
+if [ -e "$CONTROL_DIR" ] && [ ! -L "$CONTROL_DIR" ]; then
+  echo "FATAL: $CONTROL_DIR exists and is not the managed generation symlink"
+  exit 1
+fi
+
+# The recovery authority must survive `git reset --hard` of the application
+# checkout. Install a complete immutable generation, validate it, then replace
+# one symlink atomically. Copying live files one-by-one can expose new
+# supervisor bytes with an old seal (or the reverse) if the installer dies.
+install -d -m 0755 "$CONTROL_PARENT" "$GENERATION_ROOT"
+GENERATION_ID="${ENGINE_RELEASE_RUN_ID:-manual}-$(date -u +%Y%m%dT%H%M%SZ)-$$"
+case "$GENERATION_ID" in (*[!A-Za-z0-9._-]*) echo "FATAL: unsafe control generation id"; exit 1;; esac
+GENERATION_DIR="$GENERATION_ROOT/$GENERATION_ID"
+[ ! -e "$GENERATION_DIR" ] || { echo "FATAL: control generation already exists: $GENERATION_DIR"; exit 1; }
+install -d -m 0755 "$GENERATION_DIR"
+install -m 0755 \
+  "$SOURCE_DIR/engine-supervisor.sh" \
+  "$SOURCE_DIR/engine-up.sh" \
+  "$SOURCE_DIR/engine-release-seal.py" \
+  "$SOURCE_DIR/verify-recovery-stack.sh" \
+  "$GENERATION_DIR/"
+for script in engine-supervisor.sh engine-up.sh verify-recovery-stack.sh; do
+  bash -n "$GENERATION_DIR/$script"
+done
+python3 -c 'compile(open(__import__("sys").argv[1], encoding="utf-8").read(), __import__("sys").argv[1], "exec")' \
+  "$GENERATION_DIR/engine-release-seal.py"
+install -d -m 0700 /var/lib/club-arena
+
+# One-time migration for an already-serving host. Bootstrap from the running
+# container's immutable image ID and baked full SHA, never from :current or the
+# mutable repository checkout. Once present, bootstrap-running is a no-op.
+"$GENERATION_DIR/engine-release-seal.py" bootstrap-running \
+  --container "${CONTAINER:-club-arena-engine}" \
+  --run-id "${ENGINE_RELEASE_RUN_ID:-0}" \
+  --run-url "${ENGINE_RELEASE_RUN_URL:-https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/0}" \
+  --actor "${ENGINE_RELEASE_ACTOR:-installer}" \
+  --reason "${ENGINE_RELEASE_REASON:-install durable engine release authority}"
+
+# Make the complete generation and its directory entries durable before it can
+# become active. The two parent-directory syncs around the rename make the
+# symlink swap atomic across power loss, not merely atomic to live readers.
+fsync_paths \
+  "$GENERATION_DIR/engine-supervisor.sh" \
+  "$GENERATION_DIR/engine-up.sh" \
+  "$GENERATION_DIR/engine-release-seal.py" \
+  "$GENERATION_DIR/verify-recovery-stack.sh" \
+  "$GENERATION_DIR" \
+  "$GENERATION_ROOT" \
+  "$CONTROL_PARENT"
+NEXT_LINK="$CONTROL_PARENT/.engine-control.next.$$"
+rm -f "$NEXT_LINK"
+ln -s "$GENERATION_DIR" "$NEXT_LINK"
+fsync_paths "$CONTROL_PARENT"
+mv -Tf "$NEXT_LINK" "$CONTROL_DIR"
+fsync_paths "$CONTROL_PARENT"
 
 cat > /etc/systemd/system/club-arena-supervisor.service <<UNIT
 [Unit]
@@ -27,6 +114,7 @@ StartLimitIntervalSec=0
 [Service]
 Type=oneshot
 ExecStart=$SUPERVISOR
+Environment=ENGINE_CONTROL_DIR=$CONTROL_DIR
 UNIT
 
 cat > /etc/systemd/system/club-arena-supervisor.timer <<'UNIT'
@@ -58,7 +146,8 @@ After=docker.service
 
 [Service]
 Type=oneshot
-ExecStart=$REPO_DIR/server/scripts/verify-recovery-stack.sh
+ExecStart=$CONTROL_DIR/verify-recovery-stack.sh
+Environment=ENGINE_CONTROL_DIR=$CONTROL_DIR
 UNIT
 
 cat > /etc/systemd/system/club-arena-verify.timer <<'UNIT'

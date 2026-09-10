@@ -1677,13 +1677,35 @@ export abstract class TournamentManagerBase {
    * True once every table of this tournament has finished the hand that was in
    * progress at :55 and is parked between hands. A tournament with no tables
    * counts as parked so it can never hold the whole platform's break hostage.
+   *
+   * PARKED MEANS NO CARDS IN THE AIR, WHOEVER IS HOLDING THE TABLE (2026-09-10).
+   *
+   * This asked `isWaitingForHandForHand()`, which is true only for a table
+   * held at the gate by THIS pause with its loop sitting on it. The
+   * maintenance break announces the last hand at :53, so by the time this runs
+   * at :55 every table on the platform has already finished its hand and is
+   * held by that break - and a table held by another authority, or an engine
+   * that has already stopped, never answered true. At 12:55 on 2026-09-10 the
+   * countdown waited out the whole 120 s grace ("Last hand did not land on
+   * every table within 120s") and all 50 tournaments resumed at 13:02:30, two
+   * and a half minutes after every cash table. Across that day tournament
+   * tables took a median 136-176 s after :00 to deal again, cash tables 18-61 s.
+   * #4105 removed the grace, so the same wait would now have no end at all.
+   *
+   * So a table counts when its loop is on the pause gate for ANY authority,
+   * when its engine has stopped, or when the maintenance break is holding it
+   * with no hand in flight (`handController === null`, the same proof the
+   * maintenance restart gate trusts to replace the whole process). A table
+   * with cards in the air still holds the countdown, and an inspection that
+   * throws is still not proof.
    */
   areAllTablesParked(): boolean {
     const engines = Array.from(this.tableEngines.values());
     if (engines.length === 0) return true;
     return engines.every((e) => {
       try {
-        return e.isWaitingForHandForHand();
+        if (e.isParkedBetweenHands()) return true;
+        return e.isMaintenancePaused() && e.isBetweenHands();
       } catch {
         // A failed inspection is not proof that the active hand has settled.
         return false;

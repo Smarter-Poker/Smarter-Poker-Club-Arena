@@ -126,6 +126,29 @@ describe('TableStateHub reveal retention (D3)', () => {
     expect(events(slow)).toHaveLength(1);
   });
 
+  it('a failed replay send remains deliverable on the same subscriber resync', () => {
+    hub.emitEvent(TABLE, reveal(Date.now() + 15_000));
+    const sub = makeSub('retry-replay');
+    const send = sub.send.bind(sub);
+    const attempt = vi
+      .spyOn(sub, 'send')
+      .mockImplementationOnce(() => {
+        throw new Error('socket send interrupted');
+      })
+      .mockImplementation(send);
+
+    hub.subscribe(TABLE, sub);
+    expect(events(sub)).toHaveLength(0);
+    expect(hub.replayStats().replayedEvents).toBe(0);
+    hub.resync(TABLE, sub);
+    expect(events(sub)).toHaveLength(1);
+    expect(events(sub)[0].payload).toMatchObject({ multiplier: 25, replayed: true });
+    expect(hub.replayStats().replayedEvents).toBe(1);
+    hub.resync(TABLE, sub);
+    expect(attempt).toHaveBeenCalledTimes(2);
+    expect(events(sub)).toHaveLength(1);
+  });
+
   it('stops replaying once the event passes its own deadline', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-08-25T00:00:00Z'));

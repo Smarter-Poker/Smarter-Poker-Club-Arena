@@ -1,0 +1,874 @@
+{
+  "created_at": "2026-09-10T12:45:40.026806+00:00",
+  "scope": "Bounded native paid Heads-Up seat, launch and refund proof; no production mutation",
+  "base_commit": "f78a7c7b4d75a7b25d19a8154bb85fcc4e966ac1",
+  "approved_matrix": {
+    "variants": ["nlh", "plo4"],
+    "starting_stacks": [300, 1000],
+    "seats": 2,
+    "level_duration_minutes": 3
+  },
+  "synthetic_funding": {
+    "wallets_before": 2000,
+    "gross_entry": 200,
+    "prize_component": 190,
+    "fee_component": 10,
+    "fee_percent": 5
+  },
+  "verification": {
+    "final_hu_node": {
+      "command": "PGNODE=/opt/homebrew/bin/node python3 scripts/dev/probe-tournament-registration-funding-pg17.py --heads-up-only",
+      "exit_code": 0,
+      "groups": 16,
+      "result": {
+        "passed": [
+          "Heads-Up first seat binds the paid entry and exact starting stack",
+          "same-seat and changed-seat retries reuse one funded entry without moving it",
+          "overlapping same-seat retry buys one entry and one stack",
+          "overlapping changed-seat retry buys one entry and one stack",
+          "nlh 300: last seat race funds two entries and lease-bound launch replays unchanged",
+          "nlh 1000: last seat race funds two entries and lease-bound launch replays unchanged",
+          "plo4 300: last seat race funds two entries and lease-bound launch replays unchanged",
+          "plo4 1000: last seat race funds two entries and lease-bound launch replays unchanged",
+          "failure after the funded seat write rolls back wallet ledger entitlement escrow roster and seat",
+          "last refund receipt failure rolls back all financial and seat relations",
+          "refund replays exactly; physical seat revival buys a new registration and rejects an old refund",
+          "refund waiting behind actual launch completion cannot unwind the started entry",
+          "launch waiting behind the actual refund rechecks the surviving one-player field",
+          "launch waits for the funded last seat before proving and starting the field",
+          "last-seat readiness does not itself start play or erase the prestart refund right",
+          "last launch receipt failure rolls status and every proof relation back together"
+        ],
+        "production_database_used": false
+      },
+      "rollback_snapshot": "Every public fixture table, including escrow journals and alert/support records"
+    },
+    "recovered_full_psql": {
+      "command": "python3 scripts/dev/probe-tournament-registration-funding-pg17.py",
+      "exit_code": 0,
+      "groups": 53,
+      "result": {
+        "passed": [
+          "one real registration binds one debit, journal, entitlement, escrow and operation receipt",
+          "late operation receipt failure rolls back every funding and entry write",
+          "overlapping retry requests fund one entry",
+          "overlapping duplicate requests fund one entry",
+          "two real contenders for the last place commit one funded entry",
+          "registration waiting behind pool closure rechecks eligibility without charging",
+          "entry receipt balance belongs to the club wallet actually charged",
+          "rebuy atomically binds exact wallet funding, ledger, escrow, seat, generation and receipt",
+          "reentry atomically binds exact wallet funding, ledger, escrow, seat, generation and receipt",
+          "addon atomically binds exact wallet funding, ledger, escrow, seat, generation and receipt",
+          "rebuy rolls back the debit, grant, generation, pool, journal and wake on final receipt failure",
+          "reentry rolls back the debit, grant, generation, pool, journal and wake on final receipt failure",
+          "addon rolls back the debit, grant, generation, pool, journal and wake on final receipt failure",
+          "rebuy concurrent retries commit one funded grant",
+          "rebuy concurrent competing tokens commit one funded grant",
+          "reentry concurrent retries commit one funded grant",
+          "reentry concurrent competing tokens commit one funded grant",
+          "addon concurrent retries commit one funded grant",
+          "seatless reentry commits its funded replacement chair in the same transaction",
+          "successive reentries have distinct bust/seat generations and old-token replay cannot bypass the entry limit",
+          "reentry rejects live/paid entries, closed level/time windows, missing or contradictory bust proofs and insufficient funds without writes",
+          "an expired add-on window cannot charge or grant chips",
+          "rebuy requires an open decision prompt, the offered format and an unused purchase limit",
+          "real entry and public refund close original wallet escrow fees and roster once",
+          "refund preserves charged club wallet after another older membership appears",
+          "refund returns immutable original charge when displayed entry price changes",
+          "late unregistration receipt failure rolls back every funded relation",
+          "overlapping same_request unregistrations pay one original entry",
+          "overlapping different_request unregistrations pay one original entry",
+          "unregistration waiting behind committed start preserves funded entry",
+          "scheduled start cutoff refuses voluntary refund without financial writes",
+          "lost prestart refund response remains an exact read after start",
+          "free entry unregisters with zero spendable credit and a durable receipt",
+          "old refund identity cannot unregister a later paid registration",
+          "cutoff reached during refund reverses the whole uncommitted transaction",
+          "configured 1 5 10 25 and 40 entries fund disclosed components and refund exact cents",
+          "bounty PKO and mystery entry components return through the common funded refund",
+          "Heads-Up first seat binds the paid entry and exact starting stack",
+          "same-seat and changed-seat retries reuse one funded entry without moving it",
+          "overlapping same-seat retry buys one entry and one stack",
+          "overlapping changed-seat retry buys one entry and one stack",
+          "nlh 300: last seat race funds two entries and lease-bound launch replays unchanged",
+          "nlh 1000: last seat race funds two entries and lease-bound launch replays unchanged",
+          "plo4 300: last seat race funds two entries and lease-bound launch replays unchanged",
+          "plo4 1000: last seat race funds two entries and lease-bound launch replays unchanged",
+          "failure after the funded seat write rolls back wallet ledger entitlement escrow roster and seat",
+          "last refund receipt failure rolls back all financial and seat relations",
+          "refund replays exactly; physical seat revival buys a new registration and rejects an old refund",
+          "refund waiting behind actual launch completion cannot unwind the started entry",
+          "launch waiting behind the actual refund rechecks the surviving one-player field",
+          "launch waits for the funded last seat before proving and starting the field",
+          "last-seat readiness does not itself start play or erase the prestart refund right",
+          "last launch receipt failure rolls status and every proof relation back together"
+        ],
+        "production_database_used": false
+      },
+      "note": "Completed before snapshot expansion; final Node HU run verifies the expanded snapshot."
+    },
+    "read_only_installed_function_witnesses": {
+      "functions": [
+        {
+          "expected": "1835dbd974d8ba219cf37ab712a9ccbd",
+          "installed": "1835dbd974d8ba219cf37ab712a9ccbd",
+          "matches": true,
+          "signature": "atomic_deduct_wallet_and_log(uuid,numeric,text,text,uuid,uuid,uuid)"
+        },
+        {
+          "expected": "9b13958f57a83cef5a563bfccbc4e4d9",
+          "installed": "9b13958f57a83cef5a563bfccbc4e4d9",
+          "matches": true,
+          "signature": "enforce_chip_ledger_performed_by()"
+        },
+        {
+          "expected": "66f0ca0e4ebf27a74dd4b7c211c4fd0f",
+          "installed": "66f0ca0e4ebf27a74dd4b7c211c4fd0f",
+          "matches": true,
+          "signature": "fn_active_maintenance_release_boundary()"
+        },
+        {
+          "expected": "2ae3184bbea06198a00b8409cf808083",
+          "installed": "2ae3184bbea06198a00b8409cf808083",
+          "matches": true,
+          "signature": "fn_begin_tournament_launch_atomic(uuid,uuid,timestamp with time zone,uuid)"
+        },
+        {
+          "expected": "0db85bdca3cea07627408f27e6c563a5",
+          "installed": "0db85bdca3cea07627408f27e6c563a5",
+          "matches": true,
+          "signature": "fn_begin_tournament_launch_atomic(uuid,uuid,timestamp with time zone)"
+        },
+        {
+          "expected": "6cc03b69671fc2a1aa6c998717d513af",
+          "installed": "6cc03b69671fc2a1aa6c998717d513af",
+          "matches": true,
+          "signature": "fn_begin_tournament_launch_before_lease_generation(uuid,uuid,timestamp with time zone)"
+        },
+        {
+          "expected": "38ab35fd89aca4874777025a0537efed",
+          "installed": "38ab35fd89aca4874777025a0537efed",
+          "matches": true,
+          "signature": "fn_block_browser_balance_writes()"
+        },
+        {
+          "expected": "814ac29a8ce63deaade4aa763d1b9ab8",
+          "installed": "814ac29a8ce63deaade4aa763d1b9ab8",
+          "matches": true,
+          "signature": "fn_ca_attested_day_is_restated()"
+        },
+        {
+          "expected": "068d3b8072fa0b3ea4d025630f6d43d1",
+          "installed": "068d3b8072fa0b3ea4d025630f6d43d1",
+          "matches": true,
+          "signature": "fn_ca_autoledger_delete()"
+        },
+        {
+          "expected": "936fc64feb1ee48cd7d4ea0ac8d2c121",
+          "installed": "936fc64feb1ee48cd7d4ea0ac8d2c121",
+          "matches": true,
+          "signature": "fn_ca_autoledger()"
+        },
+        {
+          "expected": "90e2944fd1af031edd2cc4c791fa5a5b",
+          "installed": "90e2944fd1af031edd2cc4c791fa5a5b",
+          "matches": true,
+          "signature": "fn_ca_capture_tournament_charge_entitlement()"
+        },
+        {
+          "expected": "f9f8a8946bc474c4dad9941869f69399",
+          "installed": "f9f8a8946bc474c4dad9941869f69399",
+          "matches": true,
+          "signature": "fn_ca_chip_ledger_enrich()"
+        },
+        {
+          "expected": "d59358cb9ddfc8f84c48aa2469f68897",
+          "installed": "d59358cb9ddfc8f84c48aa2469f68897",
+          "matches": true,
+          "signature": "fn_ca_escrow_on_overlay_leg()"
+        },
+        {
+          "expected": "233661d2164a417c2a76c8e0cbfbe9cc",
+          "installed": "233661d2164a417c2a76c8e0cbfbe9cc",
+          "matches": true,
+          "signature": "fn_ca_escrow_on_rake_record()"
+        },
+        {
+          "expected": "81de14870f02c55604fc56eedfbb9ef9",
+          "installed": "81de14870f02c55604fc56eedfbb9ef9",
+          "matches": true,
+          "signature": "fn_ca_escrow_on_reserve_leg()"
+        },
+        {
+          "expected": "227d11db5fe0b4ad403b2f45d098a166",
+          "installed": "227d11db5fe0b4ad403b2f45d098a166",
+          "matches": true,
+          "signature": "fn_ca_escrow_on_seat_transfer_leg()"
+        },
+        {
+          "expected": "e773958f21214ee1aa4dd622234477a6",
+          "installed": "e773958f21214ee1aa4dd622234477a6",
+          "matches": true,
+          "signature": "fn_ca_escrow_on_wallet_tx()"
+        },
+        {
+          "expected": "0b9e38ced818aa52f0f25ec75d74d7bc",
+          "installed": "0b9e38ced818aa52f0f25ec75d74d7bc",
+          "matches": true,
+          "signature": "fn_ca_fund_overlay_on_lock()"
+        },
+        {
+          "expected": "534207f17003588a6ada8b6ea894442d",
+          "installed": "534207f17003588a6ada8b6ea894442d",
+          "matches": true,
+          "signature": "fn_ca_guard_seat_creation()"
+        },
+        {
+          "expected": "7043d39510db7db89173bc98d47a5ce1",
+          "installed": "7043d39510db7db89173bc98d47a5ce1",
+          "matches": true,
+          "signature": "fn_ca_has_committed_tournament_receipt(uuid)"
+        },
+        {
+          "expected": "02f32035383ba2a0d8e89b421f97bf04",
+          "installed": "02f32035383ba2a0d8e89b421f97bf04",
+          "matches": true,
+          "signature": "fn_ca_incident_notify(uuid,text,text,boolean)"
+        },
+        {
+          "expected": "2646dc4a6080f470d6646c3bb970298d",
+          "installed": "2646dc4a6080f470d6646c3bb970298d",
+          "matches": true,
+          "signature": "fn_ca_is_midway_scope(uuid,uuid,uuid,uuid,jsonb)"
+        },
+        {
+          "expected": "c1d8a753e3f9b70d417c6106d4364668",
+          "installed": "c1d8a753e3f9b70d417c6106d4364668",
+          "matches": true,
+          "signature": "fn_ca_issuance_leg_is_registered()"
+        },
+        {
+          "expected": "398286e00164ff8224a29c6223349118",
+          "installed": "398286e00164ff8224a29c6223349118",
+          "matches": true,
+          "signature": "fn_ca_journal_append_only()"
+        },
+        {
+          "expected": "1c5397358ecedad0b3f160eb0880a489",
+          "installed": "1c5397358ecedad0b3f160eb0880a489",
+          "matches": true,
+          "signature": "fn_ca_ledger_day_manifest(date,text)"
+        },
+        {
+          "expected": "2bc939035496d764ff9d6c14b52fa1e7",
+          "installed": "2bc939035496d764ff9d6c14b52fa1e7",
+          "matches": true,
+          "signature": "fn_ca_lock_settlement_lane_for_tournament(uuid,uuid)"
+        },
+        {
+          "expected": "c6fef0645b730d53e5c4135f13d8e052",
+          "installed": "c6fef0645b730d53e5c4135f13d8e052",
+          "matches": true,
+          "signature": "fn_ca_lock_tournament_contract_from_entitlement()"
+        },
+        {
+          "expected": "b7d371b05e543f1fa9ac3131288bca13",
+          "installed": "b7d371b05e543f1fa9ac3131288bca13",
+          "matches": true,
+          "signature": "fn_ca_lock_tournament_seat_acquisition(uuid,uuid,uuid)"
+        },
+        {
+          "expected": "4562bb4a99a3dd40aef10ab4acc91e6b",
+          "installed": "4562bb4a99a3dd40aef10ab4acc91e6b",
+          "matches": true,
+          "signature": "fn_ca_mint_issued_24h(text,uuid)"
+        },
+        {
+          "expected": "50950bedd50824104879be8d13ec4739",
+          "installed": "50950bedd50824104879be8d13ec4739",
+          "matches": true,
+          "signature": "fn_ca_money_path_log()"
+        },
+        {
+          "expected": "6f8ab0521ef43f137a39059498111300",
+          "installed": "6f8ab0521ef43f137a39059498111300",
+          "matches": true,
+          "signature": "fn_ca_noncirculating_chip_stores()"
+        },
+        {
+          "expected": "869a4e87108481934c4cdb985d489051",
+          "installed": "869a4e87108481934c4cdb985d489051",
+          "matches": true,
+          "signature": "fn_ca_payout_structure(integer,integer)"
+        },
+        {
+          "expected": "d19505141af920386651fbd6e23f11a9",
+          "installed": "d19505141af920386651fbd6e23f11a9",
+          "matches": true,
+          "signature": "fn_ca_player_restricted(uuid,text)"
+        },
+        {
+          "expected": "8eb4a12c20590bf608883db58b6b4efa",
+          "installed": "8eb4a12c20590bf608883db58b6b4efa",
+          "matches": true,
+          "signature": "fn_ca_player_restriction_for(uuid,text)"
+        },
+        {
+          "expected": "afb801e7a261c303f3a83387bed8f24b",
+          "installed": "afb801e7a261c303f3a83387bed8f24b",
+          "matches": true,
+          "signature": "fn_ca_raise_drift_incident(text,text,text,text,numeric,numeric,numeric,text,text,uuid,uuid,uuid,uuid,uuid,uuid,text,uuid[],uuid[],text,boolean,jsonb)"
+        },
+        {
+          "expected": "b3a3353b87e0e0afbfaeef29a42fb154",
+          "installed": "b3a3353b87e0e0afbfaeef29a42fb154",
+          "matches": true,
+          "signature": "fn_ca_refund_entitlement_commit_valid()"
+        },
+        {
+          "expected": "a0330da6f7ec990e183b89432de7ae93",
+          "installed": "a0330da6f7ec990e183b89432de7ae93",
+          "matches": true,
+          "signature": "fn_ca_refuse_restricted_entry()"
+        },
+        {
+          "expected": "530dfe266e19c7e80477707fc21f0bee",
+          "installed": "530dfe266e19c7e80477707fc21f0bee",
+          "matches": true,
+          "signature": "fn_ca_register_issuance_leg(uuid)"
+        },
+        {
+          "expected": "c95f4c17c68876cda3abe8504ec12bd8",
+          "installed": "c95f4c17c68876cda3abe8504ec12bd8",
+          "matches": true,
+          "signature": "fn_ca_stable_dedupe_key(text)"
+        },
+        {
+          "expected": "3c9ce32b45c11b7372654c6efa89f667",
+          "installed": "3c9ce32b45c11b7372654c6efa89f667",
+          "matches": true,
+          "signature": "fn_ca_terminal_marker_transition_is_exact(jsonb,jsonb,uuid)"
+        },
+        {
+          "expected": "a653aec1cdebd0a3964d31b9ea02eb53",
+          "installed": "a653aec1cdebd0a3964d31b9ea02eb53",
+          "matches": true,
+          "signature": "fn_ca_tournament_entry_gate()"
+        },
+        {
+          "expected": "177e2e82ef01b126d16e7706f9d29e12",
+          "installed": "177e2e82ef01b126d16e7706f9d29e12",
+          "matches": true,
+          "signature": "fn_ca_tournament_seat_cap(uuid)"
+        },
+        {
+          "expected": "36e18a86ba143ac90e90648b0bc020ea",
+          "installed": "36e18a86ba143ac90e90648b0bc020ea",
+          "matches": true,
+          "signature": "fn_caller_is_engine()"
+        },
+        {
+          "expected": "9dc93e1a464e6694f588345f19640869",
+          "installed": "9dc93e1a464e6694f588345f19640869",
+          "matches": true,
+          "signature": "fn_cancelled_tournament_evidence_is_immutable()"
+        },
+        {
+          "expected": "823939b280e838b99c806aeb499bd3e3",
+          "installed": "823939b280e838b99c806aeb499bd3e3",
+          "matches": true,
+          "signature": "fn_cancelled_tournament_seat_is_immutable()"
+        },
+        {
+          "expected": "6ded94049da680cfcd5eb679c27d3da2",
+          "installed": "6ded94049da680cfcd5eb679c27d3da2",
+          "matches": true,
+          "signature": "fn_clear_sitout_on_turnover()"
+        },
+        {
+          "expected": "6d6cfda08515d6bdd4f3ed4fabe7b36d",
+          "installed": "6d6cfda08515d6bdd4f3ed4fabe7b36d",
+          "matches": true,
+          "signature": "fn_club_members_ledger_writer()"
+        },
+        {
+          "expected": "fa896f26316e62d8270bc0191523b1e9",
+          "installed": "fa896f26316e62d8270bc0191523b1e9",
+          "matches": true,
+          "signature": "fn_club_settlement_frozen(uuid)"
+        },
+        {
+          "expected": "5f6597231e323454438ab66aa7defcb3",
+          "installed": "5f6597231e323454438ab66aa7defcb3",
+          "matches": true,
+          "signature": "fn_complete_tournament_launch_atomic(uuid,uuid,uuid)"
+        },
+        {
+          "expected": "fcb8cec35d672f897eb8db852b33b4d0",
+          "installed": "fcb8cec35d672f897eb8db852b33b4d0",
+          "matches": true,
+          "signature": "fn_complete_tournament_launch_atomic(uuid,uuid)"
+        },
+        {
+          "expected": "dce5d1ac72e862f3c30c9a9a73f56d18",
+          "installed": "dce5d1ac72e862f3c30c9a9a73f56d18",
+          "matches": true,
+          "signature": "fn_complete_tournament_launch_before_lease_generation(uuid,uuid)"
+        },
+        {
+          "expected": "4ecd7a690da622a1d18eaec13206e5a5",
+          "installed": "4ecd7a690da622a1d18eaec13206e5a5",
+          "matches": true,
+          "signature": "fn_concurrent_game_load(uuid,uuid,uuid,uuid)"
+        },
+        {
+          "expected": "9de8cacda0717418221e0bcd3e24b85f",
+          "installed": "9de8cacda0717418221e0bcd3e24b85f",
+          "matches": true,
+          "signature": "fn_enforce_four_table_limit()"
+        },
+        {
+          "expected": "002d409f182d90f7e802ca2723d8ec18",
+          "installed": "002d409f182d90f7e802ca2723d8ec18",
+          "matches": true,
+          "signature": "fn_enforce_tournament_capacity()"
+        },
+        {
+          "expected": "455e80fbd8c07c99bf0e9f8fb146e889",
+          "installed": "455e80fbd8c07c99bf0e9f8fb146e889",
+          "matches": true,
+          "signature": "fn_freeze_bypass_active()"
+        },
+        {
+          "expected": "8750784ecac2800db5c6b0867730abdf",
+          "installed": "8750784ecac2800db5c6b0867730abdf",
+          "matches": true,
+          "signature": "fn_guard_one_live_tournament_seat()"
+        },
+        {
+          "expected": "20f3cc5c7929540d5b65242f94043c44",
+          "installed": "20f3cc5c7929540d5b65242f94043c44",
+          "matches": true,
+          "signature": "fn_guard_rake_belongs_to_club()"
+        },
+        {
+          "expected": "6f4e413db6a3c821e09b21c5a0968ab2",
+          "installed": "6f4e413db6a3c821e09b21c5a0968ab2",
+          "matches": true,
+          "signature": "fn_guard_registered_tournament_contract()"
+        },
+        {
+          "expected": "f056528dab49bf3260faed436a1dee71",
+          "installed": "f056528dab49bf3260faed436a1dee71",
+          "matches": true,
+          "signature": "fn_guard_retired_club_mutation()"
+        },
+        {
+          "expected": "f1aa482e02078c60520c8345d83525f0",
+          "installed": "f1aa482e02078c60520c8345d83525f0",
+          "matches": true,
+          "signature": "fn_guard_tournament_start_readiness()"
+        },
+        {
+          "expected": "82916752c750ea7a088cd810015ad866",
+          "installed": "82916752c750ea7a088cd810015ad866",
+          "matches": true,
+          "signature": "fn_leave_seat_and_refund(uuid,uuid)"
+        },
+        {
+          "expected": "ab45a5d5d2b3f5b6d08a4bac04abf16a",
+          "installed": "ab45a5d5d2b3f5b6d08a4bac04abf16a",
+          "matches": true,
+          "signature": "fn_leave_seat_and_refund(uuid)"
+        },
+        {
+          "expected": "a0a32c47d6ec20b05796b6b5a1f451af",
+          "installed": "a0a32c47d6ec20b05796b6b5a1f451af",
+          "matches": true,
+          "signature": "fn_lock_tournament_launch_proof_parents(uuid[])"
+        },
+        {
+          "expected": "3c3a426b379feef857de3072973dc657",
+          "installed": "3c3a426b379feef857de3072973dc657",
+          "matches": true,
+          "signature": "fn_log_seat_stack_exit()"
+        },
+        {
+          "expected": "b2c5092671ec7aaec54050f62e2be7d0",
+          "installed": "b2c5092671ec7aaec54050f62e2be7d0",
+          "matches": true,
+          "signature": "fn_managed_game_contract_document(text,jsonb)"
+        },
+        {
+          "expected": "84c78b67385e6807a6b8ee72a16fcddd",
+          "installed": "84c78b67385e6807a6b8ee72a16fcddd",
+          "matches": true,
+          "signature": "fn_new_seat_clear_sitout()"
+        },
+        {
+          "expected": "7a77aaba2548aba8479b5ae1a14f9f75",
+          "installed": "7a77aaba2548aba8479b5ae1a14f9f75",
+          "matches": true,
+          "signature": "fn_no_live_seat_on_finished_game()"
+        },
+        {
+          "expected": "112b1265824ee082b8adc67ea367d826",
+          "installed": "112b1265824ee082b8adc67ea367d826",
+          "matches": true,
+          "signature": "fn_platform_frozen()"
+        },
+        {
+          "expected": "eb611027ff49792b4b4191e28e23c23b",
+          "installed": "eb611027ff49792b4b4191e28e23c23b",
+          "matches": true,
+          "signature": "fn_poker_guard_chip_seat()"
+        },
+        {
+          "expected": "b7bc1bb46141fb6bd415b3658e622a3b",
+          "installed": "b7bc1bb46141fb6bd415b3658e622a3b",
+          "matches": true,
+          "signature": "fn_prove_played_spin_launch_recovery(uuid)"
+        },
+        {
+          "expected": "13c75f3339f7f21f7dd1345447befab6",
+          "installed": "13c75f3339f7f21f7dd1345447befab6",
+          "matches": true,
+          "signature": "fn_raise_server_financial_alert(text,text,text,jsonb,text,text)"
+        },
+        {
+          "expected": "d21668d1254e1bdb49661f6365fd9cfc",
+          "installed": "d21668d1254e1bdb49661f6365fd9cfc",
+          "matches": true,
+          "signature": "fn_refuse_new_entries_while_frozen()"
+        },
+        {
+          "expected": "17d032048fecb62ca9efeaa84b97ae3b",
+          "installed": "17d032048fecb62ca9efeaa84b97ae3b",
+          "matches": true,
+          "signature": "fn_refuse_operator_move_while_settling()"
+        },
+        {
+          "expected": "a59262bfde6629f86f884434f94c7cb0",
+          "installed": "a59262bfde6629f86f884434f94c7cb0",
+          "matches": true,
+          "signature": "fn_refuse_seat_on_closed_cluster_table()"
+        },
+        {
+          "expected": "ead41fa15e6cb9aaa37e65d3eef8a682",
+          "installed": "ead41fa15e6cb9aaa37e65d3eef8a682",
+          "matches": true,
+          "signature": "fn_refuse_while_frozen()"
+        },
+        {
+          "expected": "22412833cfa9e0617492c5261f9a4069",
+          "installed": "22412833cfa9e0617492c5261f9a4069",
+          "matches": true,
+          "signature": "fn_require_live_seat_parent()"
+        },
+        {
+          "expected": "f7d50c875a67fb5a84ae4f1c32bdf941",
+          "installed": "f7d50c875a67fb5a84ae4f1c32bdf941",
+          "matches": true,
+          "signature": "fn_safe_jsonb_array(text)"
+        },
+        {
+          "expected": "37b49d2bcd18b8eddeb160c1cfed5050",
+          "installed": "37b49d2bcd18b8eddeb160c1cfed5050",
+          "matches": true,
+          "signature": "fn_satellite_settlement_receipts_are_append_only()"
+        },
+        {
+          "expected": "6f0c873ffaa7ed73f0936fb681da1a66",
+          "installed": "6f0c873ffaa7ed73f0936fb681da1a66",
+          "matches": true,
+          "signature": "fn_satellite_transfer_ledger_is_immutable()"
+        },
+        {
+          "expected": "d105db62a249ba49b267d8d28bb55b2f",
+          "installed": "d105db62a249ba49b267d8d28bb55b2f",
+          "matches": true,
+          "signature": "fn_seat_change_syncs_seat_first_count()"
+        },
+        {
+          "expected": "0a26aceb553b004737977cad2e540c01",
+          "installed": "0a26aceb553b004737977cad2e540c01",
+          "matches": true,
+          "signature": "fn_seat_club_for_user_membership_unchecked(uuid,uuid,uuid)"
+        },
+        {
+          "expected": "685ccf0299798df1ebfeefba331e901d",
+          "installed": "685ccf0299798df1ebfeefba331e901d",
+          "matches": true,
+          "signature": "fn_seat_club_for_user(uuid,uuid,uuid)"
+        },
+        {
+          "expected": "0be1afe552ac9f2f6bdaefb616b57928",
+          "installed": "0be1afe552ac9f2f6bdaefb616b57928",
+          "matches": true,
+          "signature": "fn_serialize_entry_statement()"
+        },
+        {
+          "expected": "541f6bd03a10c456f237d1e9c6be91d4",
+          "installed": "541f6bd03a10c456f237d1e9c6be91d4",
+          "matches": true,
+          "signature": "fn_short_formats_never_break()"
+        },
+        {
+          "expected": "36839eba4fd68de02b7f45b56f95913e",
+          "installed": "36839eba4fd68de02b7f45b56f95913e",
+          "matches": true,
+          "signature": "fn_spin_escrow_is_enforced()"
+        },
+        {
+          "expected": "43179b85d6717e3b512dc34cfad9d89c",
+          "installed": "43179b85d6717e3b512dc34cfad9d89c",
+          "matches": true,
+          "signature": "fn_stamp_active_seat_game_scope()"
+        },
+        {
+          "expected": "a80d14951fce3b3a7ac32ae2897c8b69",
+          "installed": "a80d14951fce3b3a7ac32ae2897c8b69",
+          "matches": true,
+          "signature": "fn_stamp_entry_club()"
+        },
+        {
+          "expected": "aae09b5c2a9a82e0d72bbc7ab5020467",
+          "installed": "aae09b5c2a9a82e0d72bbc7ab5020467",
+          "matches": true,
+          "signature": "fn_stamp_seat_club()"
+        },
+        {
+          "expected": "aa11dad7e910735d01c28c8638698a3f",
+          "installed": "aa11dad7e910735d01c28c8638698a3f",
+          "matches": true,
+          "signature": "fn_stamp_seat_occupancy()"
+        },
+        {
+          "expected": "0fe6f1a355f1caf1ac7ae7d164019e74",
+          "installed": "0fe6f1a355f1caf1ac7ae7d164019e74",
+          "matches": true,
+          "signature": "fn_stamp_sit_out_at()"
+        },
+        {
+          "expected": "bb828ee15e0f4f853aac042a6d8cfa9a",
+          "installed": "bb828ee15e0f4f853aac042a6d8cfa9a",
+          "matches": true,
+          "signature": "fn_stamp_table_game_scope()"
+        },
+        {
+          "expected": "748de44da616b45a2aaa912b857bffb2",
+          "installed": "748de44da616b45a2aaa912b857bffb2",
+          "matches": true,
+          "signature": "fn_stamp_table_seat_admission()"
+        },
+        {
+          "expected": "609983772f8468d96b7b3d8dcfeafaea",
+          "installed": "609983772f8468d96b7b3d8dcfeafaea",
+          "matches": true,
+          "signature": "fn_sync_seat_first_player_count(uuid)"
+        },
+        {
+          "expected": "ecb120c2c6a4ecee6c2e04d4c9b5ebc7",
+          "installed": "ecb120c2c6a4ecee6c2e04d4c9b5ebc7",
+          "matches": true,
+          "signature": "fn_sync_tournament_current_players()"
+        },
+        {
+          "expected": "1f6a9e611514f186bd9aeeab3cd78bed",
+          "installed": "1f6a9e611514f186bd9aeeab3cd78bed",
+          "matches": true,
+          "signature": "fn_take_seat_and_buy_in_before_maintenance_announcement_gate(uuid,integer)"
+        },
+        {
+          "expected": "b5edb7220bf27dd671baa750f2fc6c04",
+          "installed": "b5edb7220bf27dd671baa750f2fc6c04",
+          "matches": true,
+          "signature": "fn_take_seat_and_buy_in_before_terminal_seat_gate(uuid,integer)"
+        },
+        {
+          "expected": "f797562b85484b760d8c4f46d5b234fb",
+          "installed": "f797562b85484b760d8c4f46d5b234fb",
+          "matches": true,
+          "signature": "fn_take_seat_and_buy_in(uuid,integer)"
+        },
+        {
+          "expected": "f750599449d5dbf52fe092ad4b59a2db",
+          "installed": "f750599449d5dbf52fe092ad4b59a2db",
+          "matches": true,
+          "signature": "fn_terminal_tournament_escrow_is_immutable()"
+        },
+        {
+          "expected": "e6fbb738a0528aa0f32e33d004bf2045",
+          "installed": "e6fbb738a0528aa0f32e33d004bf2045",
+          "matches": true,
+          "signature": "fn_terminal_tournament_evidence_is_immutable()"
+        },
+        {
+          "expected": "415ce333108620c25b9f25ec19f304ce",
+          "installed": "415ce333108620c25b9f25ec19f304ce",
+          "matches": true,
+          "signature": "fn_terminal_tournament_seat_is_immutable()"
+        },
+        {
+          "expected": "f80eff4c311820670f1b71d15c29452d",
+          "installed": "f80eff4c311820670f1b71d15c29452d",
+          "matches": true,
+          "signature": "fn_tournament_club_for_user(uuid,uuid,uuid)"
+        },
+        {
+          "expected": "1340c820635fa41ed6633aa2f9250f64",
+          "installed": "1340c820635fa41ed6633aa2f9250f64",
+          "matches": true,
+          "signature": "fn_tournament_fee_names_its_player()"
+        },
+        {
+          "expected": "7a50958787ad79ffbb8b9f175f1d90a7",
+          "installed": "7a50958787ad79ffbb8b9f175f1d90a7",
+          "matches": true,
+          "signature": "fn_tournament_live_seat_acquisition_requires_authority()"
+        },
+        {
+          "expected": "5e94202dfa8e694fb012dbe25abfdf27",
+          "installed": "5e94202dfa8e694fb012dbe25abfdf27",
+          "matches": true,
+          "signature": "fn_tournament_management_readiness_for_row(jsonb)"
+        },
+        {
+          "expected": "9844a7c70aeca43795cdbf856cf50311",
+          "installed": "9844a7c70aeca43795cdbf856cf50311",
+          "matches": true,
+          "signature": "fn_tournament_primary_table(uuid)"
+        },
+        {
+          "expected": "dc6d39f7dd8ec69162d8404d8bc79d7c",
+          "installed": "dc6d39f7dd8ec69162d8404d8bc79d7c",
+          "matches": true,
+          "signature": "fn_unregister_from_tournament(uuid,uuid)"
+        },
+        {
+          "expected": "cc93302253f3cc5b23265665f8cf86e3",
+          "installed": "cc93302253f3cc5b23265665f8cf86e3",
+          "matches": true,
+          "signature": "fn_unregister_from_tournament(uuid)"
+        },
+        {
+          "expected": "b756632b7e50ef84a232a19afb0264dd",
+          "installed": "b756632b7e50ef84a232a19afb0264dd",
+          "matches": true,
+          "signature": "trg_assert_live_tournament_seat_has_roster()"
+        },
+        {
+          "expected": "1581e33b8712d4773406e4ab858ec654",
+          "installed": "1581e33b8712d4773406e4ab858ec654",
+          "matches": true,
+          "signature": "trg_entry_purchase_receipt_is_immutable()"
+        },
+        {
+          "expected": "c476675ef9790936e8af9556c03f90c7",
+          "installed": "c476675ef9790936e8af9556c03f90c7",
+          "matches": true,
+          "signature": "trg_freeze_registered_tournament_settlement_contract()"
+        },
+        {
+          "expected": "d6dee7feba0b911c6ade99ce7e4c2b72",
+          "installed": "d6dee7feba0b911c6ade99ce7e4c2b72",
+          "matches": true,
+          "signature": "trg_lock_and_classify_tournament_table()"
+        },
+        {
+          "expected": "27e86e2b51bb6cfb17c13569c8870f10",
+          "installed": "27e86e2b51bb6cfb17c13569c8870f10",
+          "matches": true,
+          "signature": "trg_lock_and_validate_tournament_live_seat()"
+        },
+        {
+          "expected": "658d42f0c063778870e085341f08a050",
+          "installed": "658d42f0c063778870e085341f08a050",
+          "matches": true,
+          "signature": "trg_lock_tournament_player_launch_proof()"
+        },
+        {
+          "expected": "a2d8e8319f729d34b79961d016eea08c",
+          "installed": "a2d8e8319f729d34b79961d016eea08c",
+          "matches": true,
+          "signature": "trg_lock_tournament_start_time_during_launch()"
+        },
+        {
+          "expected": "18a3e548dd4820047e9e45203f35f3e3",
+          "installed": "18a3e548dd4820047e9e45203f35f3e3",
+          "matches": true,
+          "signature": "trg_refuse_finalized_tournament_entry()"
+        },
+        {
+          "expected": "37bcf8042464443094bd0709e1062747",
+          "installed": "37bcf8042464443094bd0709e1062747",
+          "matches": true,
+          "signature": "trg_refuse_live_seat_on_closed_tournament_table()"
+        },
+        {
+          "expected": "10bd21d1a3e607818ea0a4ad7c0723fd",
+          "installed": "10bd21d1a3e607818ea0a4ad7c0723fd",
+          "matches": true,
+          "signature": "trg_seat_parent_keys_match()"
+        },
+        {
+          "expected": "7a9a92c77f745ff3c63f8341dfec45e2",
+          "installed": "7a9a92c77f745ff3c63f8341dfec45e2",
+          "matches": true,
+          "signature": "trg_table_parent_keys_guard()"
+        },
+        {
+          "expected": "7ee7bf5f706b29ae531daec7a45a968c",
+          "installed": "7ee7bf5f706b29ae531daec7a45a968c",
+          "matches": true,
+          "signature": "trg_table_scope_cascade()"
+        },
+        {
+          "expected": "1d7c6bbe680abdb190fd418d4276016f",
+          "installed": "1d7c6bbe680abdb190fd418d4276016f",
+          "matches": true,
+          "signature": "trg_tournament_launch_receipt_is_immutable()"
+        },
+        {
+          "expected": "df6c766cb88a9a23adf0ba638a1118a5",
+          "installed": "df6c766cb88a9a23adf0ba638a1118a5",
+          "matches": true,
+          "signature": "trg_tournament_table_close_requires_empty()"
+        },
+        {
+          "expected": "0f12b7a71b1920e854850dd713d631c5",
+          "installed": "0f12b7a71b1920e854850dd713d631c5",
+          "matches": true,
+          "signature": "zz_chip_ledger_key_is_claimed_once()"
+        }
+      ],
+      "observed_at": "2026-09-10 12:38:23.376352+00"
+    },
+    "read_only_installed_trigger_witnesses": {
+      "observed_at": "2026-09-10 12:40:00.921024+00",
+      "matched": 94,
+      "definition_and_enabled_state_match": true
+    },
+    "ci_caller": "scripts/ci/probes/chip-journal-atomicity/run-isolated.sh calls the default registration funding runner, which includes HU cases"
+  },
+  "files": {
+    "scripts/dev/probe-tournament-registration-funding-pg17.py": "35480c90a8d4c50df4899f1f261e6e3f3bc105ae14c15837ad7117c19c4b469c",
+    "scripts/dev/tournament_heads_up_funding_cases.py": "f79c041de680ef949127000a18490aa7bd0630a01359b27a4f6cb560944de6b6",
+    "scripts/dev/fixtures/heads-up-funding/README.md": "a965af508bc4e3abb37d67c1ab4bb5e2eadc67d0b9bb2de1c48f1ab0f1f3e905",
+    "scripts/dev/fixtures/heads-up-funding/captured-functions.json": "2d8bbf1410ddf87670bb3e1fee7ea3d76c43878d5f171b8f0d92b3f83ee66a98",
+    "scripts/dev/fixtures/heads-up-funding/columns.json": "64cc7b1c5aca6ae5b8c35dc35f5f00a52ca4ee3288cd7100bce2868e3d9609bb",
+    "scripts/dev/fixtures/heads-up-funding/dependencies.json": "d69dd24fec72c79d51995befa1d0a830c57379f04bd69a3069edada35cd4a094",
+    "scripts/dev/fixtures/heads-up-funding/financial-columns.json": "63c4b1b2dd939fc92f283b69f072ac693981832594463173f8b7a4ec7032b34e",
+    "scripts/dev/fixtures/heads-up-funding/refund-constraints.json": "18deb63bb7ffe5e9ab644bfae39437f6a4fa2cd1e08dcc85bc90ba8467cb150c",
+    "scripts/dev/fixtures/heads-up-funding/support-schema.json": "289e9f6e2e7b23f6571cbc0bf9a0529ef87fe01e898b5a2c9877206506d16c94",
+    "scripts/dev/fixtures/heads-up-funding/trigger-inventory.json": "c420e93c36db0ef884fdee68aed0de1c4bae181e2e72a549ce06376e437daece",
+    "scripts/dev/fixtures/heads-up-funding/triggers.sql": "b9cc91b7af6f489af2b7bbea7dbfa97aaa51194f73dc15ebd6b5c793389d2d01"
+  },
+  "limits": [
+    "No production wallet or historical payment changed.",
+    "The native fixture is not a full production schema clone. Auth/session and realtime delivery are synthetic. RLS and HTTP grants are not exercised.",
+    "Operational support tables are empty and catalog-shaped; their foreign keys and triggers are not cloned. The trigger inventory records the selected 94 imported triggers.",
+    "UI, actual engine/dealer execution, live maintenance transitions, Union accounting, Diamonds, guarantees and historical records are outside this bounded proof.",
+    "Production current bodies matching the local fixture does not certify player end-to-end behavior or complete the 12-phase audit."
+  ]
+}

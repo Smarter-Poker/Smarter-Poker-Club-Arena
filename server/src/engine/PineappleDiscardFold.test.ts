@@ -72,11 +72,36 @@ describe('pineapple discard round', () => {
   it('is a REAL round: every active seat is dealt 3 and owes a discard', () => {
     const { hc, st } = toDiscardRound();
     expect(st().stage).toBe('pineapple_discard');
+    expect(st().currentPlayerSeat, 'a simultaneous discard round has no ordinary actor').toBe(-1);
     const remaining = (hc as unknown as { pineappleDiscardsRemaining: Set<number> })
       .pineappleDiscardsRemaining;
     const active = st().players.filter((p: SeatPlayer) => !p.is_folded);
     expect(remaining.size).toBe(active.length);
     for (const p of active) expect(p.cards.length).toBe(3);
+  });
+
+  it('rejects stale ordinary actions without advancing or inventing a discard', () => {
+    const { hc, st, events } = toDiscardRound();
+    const remaining = (hc as unknown as { pineappleDiscardsRemaining: Set<number> })
+      .pineappleDiscardsRemaining;
+    const seats = [...remaining];
+    const historyBefore = st().actionHistory.length;
+    events.length = 0;
+
+    // Recreate the old stale-timer shape even if a future refactor accidentally
+    // leaves a seat pointer populated. The controller boundary must still refuse
+    // a betting action during the simultaneous discard round.
+    st().currentPlayerSeat = seats[0];
+    expect(hc.performAction(seats[0], 'check')).toBe(false);
+    expect(hc.performAction(seats[0], 'fold')).toBe(false);
+
+    expect(st().stage).toBe('pineapple_discard');
+    expect(st().actionHistory).toHaveLength(historyBefore);
+    expect([...remaining]).toEqual(seats);
+    expect(events.some((event) => event.type === 'PLAYER_ACTION')).toBe(false);
+    for (const player of st().players.filter((candidate: SeatPlayer) => !candidate.is_folded)) {
+      expect(player.cards).toHaveLength(3);
+    }
   });
 
   it('a missed discard FOLDS that player and nobody else', () => {

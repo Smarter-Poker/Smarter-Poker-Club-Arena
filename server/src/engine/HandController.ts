@@ -881,6 +881,12 @@ export class HandController {
     if (this.config.asset === 'diamonds' && amount !== undefined && !Number.isSafeInteger(amount)) {
       return false;
     }
+    // Crazy Pineapple's discard is a simultaneous, non-betting round. The
+    // ordinary turn pointer is deliberately parked while it is open, but this
+    // guard is the authoritative backstop: a late turn timer, delayed horse
+    // callback, or reconnect re-arm must never turn a check/fold into a discard
+    // or advance the hand with a live seat still holding three cards.
+    if (this.state.stage === 'pineapple_discard') return false;
     const player = this.state.players.find((p) => p.seat === seat);
     if (!player || seat !== this.state.currentPlayerSeat) return false;
     // 2026-08-15 BACKSTOP: a folded, all-in or sitting-out seat can never act,
@@ -1488,6 +1494,13 @@ export class HandController {
 
         // FIX 120: Crazy Pineapple — after dealing flop, enter discard phase
         if (this.config.gameVariant === 'pineapple') {
+          // There is no actor during the simultaneous discard round. Leaving
+          // the final preflop seat here let an old ordinary action-clock expiry
+          // pass its seat-identity guard and auto-check during
+          // `pineapple_discard`, advancing to flop betting before that seat had
+          // discarded. The first subsequent Horse snapshot then carried three
+          // cards on the flop and terminal-failed the process-wide worker.
+          this.state.currentPlayerSeat = -1;
           this.transitionStage('pineapple_discard');
           const activePlayers = this.getActivePlayers();
           this.pineappleDiscardsRemaining = new Set(activePlayers.map((p) => p.seat));

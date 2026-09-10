@@ -1054,6 +1054,12 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
   protected handlePineappleDiscard(event: HandEvent): void {
     if (event.type !== 'PINEAPPLE_DISCARD_REQUIRED' || !this.handController) return;
 
+    // The discard round owns per-seat discard deadlines, not an ordinary turn
+    // clock. Cancel every preflop turn deadline and speculative Horse action at
+    // this boundary. HandController also parks currentPlayerSeat at -1 and
+    // rejects ordinary actions during the round; both sides are intentional so
+    // a delayed callback cannot manufacture a `check` in pineapple_discard.
+    this.clearTurnTimer();
     const seats = (event as any).seats as number[];
     const timeoutMs = (this.tableInfo?.action_time_seconds || 15) * 1000;
     const deadline = Date.now() + timeoutMs;

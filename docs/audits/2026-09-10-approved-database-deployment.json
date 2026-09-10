@@ -1,0 +1,709 @@
+{
+  "scope": "Four explicitly approved production database migrations only",
+  "repository": "Smarter-Poker/Smarter-Poker-Club-Arena",
+  "project": {
+    "id": "kuklfnapbkmacvwxktbh",
+    "name": "PokerIQ-Production"
+  },
+  "authorization": {
+    "user_message": "YES APPROVED... FINISH THIS UP NOW",
+    "approved_request": "Apply the exact four migrations in c1447e69ed39f3be093972bf722960b29a02ad79/docs/audits/2026-09-10-current-work-closeout.md to PokerIQ-Production kuklfnapbkmacvwxktbh",
+    "prior_automatic_review_rejection_resolved_by_explicit_target_approval": true
+  },
+  "source_candidates": [
+    {
+      "file": "20260910035015_started_tournaments_resume_or_settle_instead_of_cancelling.sql",
+      "hash": "85e02d3f2350b4c1c7229ab2b58e789b3b8651869c0c3834a3318d7547b10bf6",
+      "sha": "24217c5024a4c031aec51dbddba531cd3c1b7842",
+      "recorded_file": "supabase/migrations/20260910171843_started_tournaments_resume_or_settle_instead_of_cancelling.sql"
+    },
+    {
+      "file": "20260910040332_a_refused_finishing_place_creates_no_debt.sql",
+      "hash": "69d77f9968d49008f7069fe63b618b802937338e439f631806f02dba0da1220d",
+      "sha": "24217c5024a4c031aec51dbddba531cd3c1b7842",
+      "recorded_file": "supabase/migrations/20260910171857_a_refused_finishing_place_creates_no_debt.sql"
+    },
+    {
+      "file": "20260910051131_a_tournament_elimination_requires_a_finishing_rank.sql",
+      "hash": "cba4981055d5dd9278d7a882e3b8f0d954cd8ffccb37b6426cf4964c32504b68",
+      "sha": "24217c5024a4c031aec51dbddba531cd3c1b7842",
+      "recorded_file": "supabase/migrations/20260910171911_a_tournament_elimination_requires_a_finishing_rank.sql"
+    },
+    {
+      "file": "20260910160106_satellite_seats_count_once_and_keep_the_funded_prize.sql",
+      "hash": "9a00bc662f729d5a6db25c4f10a5ceeb45509b230e35f48252620fe9dcef3fc3",
+      "sha": "473bd2d41b88ad352819c77031ddc4dad209917b",
+      "recorded_file": "supabase/migrations/20260910171924_satellite_seats_count_once_and_keep_the_funded_prize.sql"
+    }
+  ],
+  "preflight": {
+    "functions": [
+      {
+        "acl": "{postgres=X/postgres,service_role=X/postgres}",
+        "arguments": "p_tournament_id uuid, p_admin_id uuid",
+        "body_md5": "8c2641c634de919487c7bbb7eb8c5c22",
+        "defaults": null,
+        "language": "plpgsql",
+        "observed_at": "2026-09-10T17:18:30.257779+00:00",
+        "owner": "postgres",
+        "proargmodes": null,
+        "proargnames": ["p_tournament_id", "p_admin_id"],
+        "proconfig": ["search_path=public, extensions, pg_temp", "statement_timeout=120s"],
+        "proisstrict": false,
+        "pronargdefaults": 0,
+        "proretset": false,
+        "prosecdef": true,
+        "provolatile": "v",
+        "result": "jsonb",
+        "signature": "atomic_cancel_tournament(uuid,uuid)"
+      },
+      {
+        "acl": "{postgres=X/postgres,service_role=X/postgres}",
+        "arguments": "p_satellite_id uuid, p_target_id uuid, p_user_id uuid, p_username text DEFAULT NULL::text, p_position integer DEFAULT NULL::integer",
+        "body_md5": "cc53a9560c7b211c9c052a186dabc96c",
+        "defaults": "NULL::text, NULL::integer",
+        "language": "plpgsql",
+        "observed_at": "2026-09-10T17:18:30.257828+00:00",
+        "owner": "postgres",
+        "proargmodes": null,
+        "proargnames": ["p_satellite_id", "p_target_id", "p_user_id", "p_username", "p_position"],
+        "proconfig": ["search_path=public"],
+        "proisstrict": false,
+        "pronargdefaults": 2,
+        "proretset": false,
+        "prosecdef": true,
+        "provolatile": "v",
+        "result": "jsonb",
+        "signature": "fn_award_satellite_seat(uuid,uuid,uuid,text,integer)"
+      },
+      {
+        "acl": "{postgres=X/postgres,service_role=X/postgres}",
+        "arguments": "",
+        "body_md5": "233661d2164a417c2a76c8e0cbfbe9cc",
+        "defaults": null,
+        "language": "plpgsql",
+        "observed_at": "2026-09-10T17:18:30.257849+00:00",
+        "owner": "postgres",
+        "proargmodes": null,
+        "proargnames": null,
+        "proconfig": ["search_path=public"],
+        "proisstrict": false,
+        "pronargdefaults": 0,
+        "proretset": false,
+        "prosecdef": true,
+        "provolatile": "v",
+        "result": "trigger",
+        "signature": "fn_ca_escrow_on_rake_record()"
+      },
+      {
+        "acl": "{postgres=X/postgres,service_role=X/postgres}",
+        "arguments": "",
+        "body_md5": "343015440ea5c84ee4ca7ae583c73d30",
+        "defaults": null,
+        "language": "plpgsql",
+        "observed_at": "2026-09-10T17:18:30.257865+00:00",
+        "owner": "postgres",
+        "proargmodes": null,
+        "proargnames": null,
+        "proconfig": ["search_path=public, pg_temp"],
+        "proisstrict": false,
+        "pronargdefaults": 0,
+        "proretset": false,
+        "prosecdef": false,
+        "provolatile": "v",
+        "result": "void",
+        "signature": "fn_ca_lock_settlement_lane_global()"
+      },
+      {
+        "acl": "{postgres=X/postgres,service_role=X/postgres}",
+        "arguments": "p_tournament_id uuid",
+        "body_md5": "52c3b25be3904e86f1a8558ce542ec61",
+        "defaults": null,
+        "language": "sql",
+        "observed_at": "2026-09-10T17:18:30.25788+00:00",
+        "owner": "postgres",
+        "proargmodes": ["i", "t", "t", "t", "t", "t", "t", "t", "t", "t", "t", "t", "t"],
+        "proargnames": [
+          "p_tournament_id",
+          "prize_in",
+          "bounty_in",
+          "fee_in",
+          "overlay_in",
+          "satellite_in",
+          "prize_out",
+          "bounty_out",
+          "fee_out",
+          "refund_out",
+          "prize_balance",
+          "bounty_balance",
+          "fee_balance"
+        ],
+        "proconfig": ["search_path=public"],
+        "proisstrict": false,
+        "pronargdefaults": 0,
+        "proretset": true,
+        "prosecdef": true,
+        "provolatile": "s",
+        "result": "TABLE(prize_in numeric, bounty_in numeric, fee_in numeric, overlay_in numeric, satellite_in numeric, prize_out numeric, bounty_out numeric, fee_out numeric, refund_out numeric, prize_balance numeric, bounty_balance numeric, fee_balance numeric)",
+        "signature": "fn_ca_tournament_escrow(uuid)"
+      },
+      {
+        "acl": "{postgres=X/postgres,service_role=X/postgres}",
+        "arguments": "p_tournament_id uuid, p_user_id uuid, p_position integer, p_prize numeric, p_bubble_refund numeric DEFAULT 0",
+        "body_md5": "04a2e93dd8afe35fbc0cdd2829daf0f8",
+        "defaults": "0",
+        "language": "plpgsql",
+        "observed_at": "2026-09-10T17:18:30.257906+00:00",
+        "owner": "postgres",
+        "proargmodes": null,
+        "proargnames": ["p_tournament_id", "p_user_id", "p_position", "p_prize", "p_bubble_refund"],
+        "proconfig": ["search_path=public, pg_temp"],
+        "proisstrict": false,
+        "pronargdefaults": 1,
+        "proretset": false,
+        "prosecdef": true,
+        "provolatile": "v",
+        "result": "jsonb",
+        "signature": "fn_eliminate_tournament_player_atomic(uuid,uuid,integer,numeric,numeric)"
+      },
+      {
+        "acl": "{postgres=X/postgres}",
+        "arguments": "p_tournament_id uuid, p_kind text, p_place integer, p_user_id uuid, p_amount numeric, p_source text, p_description text DEFAULT NULL::text, p_adjustment_id uuid DEFAULT NULL::uuid",
+        "body_md5": "68f74f87580ea2c2a1cacbe30f9b4289",
+        "defaults": "NULL::text, NULL::uuid",
+        "language": "plpgsql",
+        "observed_at": "2026-09-10T17:18:30.257924+00:00",
+        "owner": "postgres",
+        "proargmodes": null,
+        "proargnames": [
+          "p_tournament_id",
+          "p_kind",
+          "p_place",
+          "p_user_id",
+          "p_amount",
+          "p_source",
+          "p_description",
+          "p_adjustment_id"
+        ],
+        "proconfig": ["search_path=public"],
+        "proisstrict": false,
+        "pronargdefaults": 2,
+        "proretset": false,
+        "prosecdef": true,
+        "provolatile": "v",
+        "result": "jsonb",
+        "signature": "fn_settle_tournament_obligation_before_atomic_batch_gate(uuid,text,integer,uuid,numeric,text,text,uuid)"
+      },
+      {
+        "acl": "{postgres=X/postgres,service_role=X/postgres}",
+        "arguments": "p_tournament_id uuid, p_kind text, p_place integer, p_user_id uuid, p_amount numeric, p_source text, p_description text DEFAULT NULL::text, p_adjustment_id uuid DEFAULT NULL::uuid",
+        "body_md5": "915f3ebd5c4a2efb97ad3a354dfeb365",
+        "defaults": "NULL::text, NULL::uuid",
+        "language": "plpgsql",
+        "observed_at": "2026-09-10T17:18:30.257943+00:00",
+        "owner": "postgres",
+        "proargmodes": null,
+        "proargnames": [
+          "p_tournament_id",
+          "p_kind",
+          "p_place",
+          "p_user_id",
+          "p_amount",
+          "p_source",
+          "p_description",
+          "p_adjustment_id"
+        ],
+        "proconfig": ["search_path=public, pg_temp"],
+        "proisstrict": false,
+        "pronargdefaults": 2,
+        "proretset": false,
+        "prosecdef": true,
+        "provolatile": "v",
+        "result": "jsonb",
+        "signature": "fn_settle_tournament_obligation(uuid,text,integer,uuid,numeric,text,text,uuid)"
+      },
+      {
+        "acl": "{postgres=X/postgres,service_role=X/postgres}",
+        "arguments": "",
+        "body_md5": "ecb120c2c6a4ecee6c2e04d4c9b5ebc7",
+        "defaults": null,
+        "language": "plpgsql",
+        "observed_at": "2026-09-10T17:18:30.257969+00:00",
+        "owner": "postgres",
+        "proargmodes": null,
+        "proargnames": null,
+        "proconfig": ["search_path=public"],
+        "proisstrict": false,
+        "pronargdefaults": 0,
+        "proretset": false,
+        "prosecdef": true,
+        "provolatile": "v",
+        "result": "trigger",
+        "signature": "fn_sync_tournament_current_players()"
+      },
+      {
+        "acl": "{postgres=X/postgres,service_role=X/postgres}",
+        "arguments": "",
+        "body_md5": "1d00219cefe6de725da5d33fe0b38002",
+        "defaults": null,
+        "language": "plpgsql",
+        "observed_at": "2026-09-10T17:18:30.257985+00:00",
+        "owner": "postgres",
+        "proargmodes": null,
+        "proargnames": null,
+        "proconfig": ["search_path=public, pg_temp"],
+        "proisstrict": false,
+        "pronargdefaults": 0,
+        "proretset": false,
+        "prosecdef": true,
+        "provolatile": "v",
+        "result": "trigger",
+        "signature": "fn_tournament_elimination_has_a_place()"
+      }
+    ],
+    "migrations": [],
+    "observed_at": "2026-09-10T17:18:30.256754+00:00",
+    "triggers": [
+      {
+        "definition": "CREATE TRIGGER trg_sync_tournament_current_players AFTER INSERT OR DELETE OR UPDATE OF status, tournament_id ON public.tournament_players FOR EACH ROW EXECUTE FUNCTION fn_sync_tournament_current_players()",
+        "fn": "fn_sync_tournament_current_players()",
+        "observed_at": "2026-09-10T17:18:30.263488+00:00",
+        "tgdeferrable": false,
+        "tgenabled": "O",
+        "tginitdeferred": false,
+        "tgisinternal": false,
+        "tgname": "trg_sync_tournament_current_players",
+        "tgnargs": 0,
+        "tgqual": null,
+        "tgtype": 29
+      },
+      {
+        "definition": "CREATE CONSTRAINT TRIGGER tournament_elimination_has_a_place AFTER INSERT OR UPDATE OF status, \"position\" ON public.tournament_players DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION fn_tournament_elimination_has_a_place()",
+        "fn": "fn_tournament_elimination_has_a_place()",
+        "observed_at": "2026-09-10T17:18:30.265363+00:00",
+        "tgdeferrable": true,
+        "tgenabled": "O",
+        "tginitdeferred": true,
+        "tgisinternal": false,
+        "tgname": "tournament_elimination_has_a_place",
+        "tgnargs": 0,
+        "tgqual": null,
+        "tgtype": 21
+      }
+    ]
+  },
+  "apply_results": [
+    {
+      "file": "20260910035015_started_tournaments_resume_or_settle_instead_of_cancelling.sql",
+      "result": {
+        "content": [
+          {
+            "text": "{\"success\":true}",
+            "type": "text"
+          }
+        ],
+        "isError": false
+      }
+    },
+    {
+      "file": "20260910040332_a_refused_finishing_place_creates_no_debt.sql",
+      "result": {
+        "content": [
+          {
+            "text": "{\"success\":true}",
+            "type": "text"
+          }
+        ],
+        "isError": false
+      }
+    },
+    {
+      "file": "20260910051131_a_tournament_elimination_requires_a_finishing_rank.sql",
+      "result": {
+        "content": [
+          {
+            "text": "{\"success\":true}",
+            "type": "text"
+          }
+        ],
+        "isError": false
+      }
+    },
+    {
+      "file": "20260910160106_satellite_seats_count_once_and_keep_the_funded_prize.sql",
+      "result": {
+        "content": [
+          {
+            "text": "{\"success\":true}",
+            "type": "text"
+          }
+        ],
+        "isError": false
+      }
+    }
+  ],
+  "postflight": {
+    "functions": [
+      {
+        "acl": "{postgres=X/postgres,service_role=X/postgres}",
+        "arguments": "p_tournament_id uuid, p_admin_id uuid",
+        "body_md5": "16ea7acbbf76613a0a1193dff18f1330",
+        "defaults": null,
+        "language": "plpgsql",
+        "observed_at": "2026-09-10T17:20:23.974419+00:00",
+        "owner": "postgres",
+        "proargmodes": null,
+        "proargnames": ["p_tournament_id", "p_admin_id"],
+        "proconfig": ["search_path=public, extensions, pg_temp", "statement_timeout=120s"],
+        "proisstrict": false,
+        "pronargdefaults": 0,
+        "proretset": false,
+        "prosecdef": true,
+        "provolatile": "v",
+        "result": "jsonb",
+        "signature": "atomic_cancel_tournament(uuid,uuid)"
+      },
+      {
+        "acl": "{postgres=X/postgres,service_role=X/postgres}",
+        "arguments": "p_satellite_id uuid, p_target_id uuid, p_user_id uuid, p_username text DEFAULT NULL::text, p_position integer DEFAULT NULL::integer",
+        "body_md5": "2c21c56c6a9d4a2f8ee79082bd4fef57",
+        "defaults": "NULL::text, NULL::integer",
+        "language": "plpgsql",
+        "observed_at": "2026-09-10T17:20:23.974461+00:00",
+        "owner": "postgres",
+        "proargmodes": null,
+        "proargnames": ["p_satellite_id", "p_target_id", "p_user_id", "p_username", "p_position"],
+        "proconfig": ["search_path=public"],
+        "proisstrict": false,
+        "pronargdefaults": 2,
+        "proretset": false,
+        "prosecdef": true,
+        "provolatile": "v",
+        "result": "jsonb",
+        "signature": "fn_award_satellite_seat(uuid,uuid,uuid,text,integer)"
+      },
+      {
+        "acl": "{postgres=X/postgres,service_role=X/postgres}",
+        "arguments": "",
+        "body_md5": "3e628d6a57a93eeb61d494ee33f989a3",
+        "defaults": null,
+        "language": "plpgsql",
+        "observed_at": "2026-09-10T17:20:23.974482+00:00",
+        "owner": "postgres",
+        "proargmodes": null,
+        "proargnames": null,
+        "proconfig": ["search_path=public"],
+        "proisstrict": false,
+        "pronargdefaults": 0,
+        "proretset": false,
+        "prosecdef": true,
+        "provolatile": "v",
+        "result": "trigger",
+        "signature": "fn_ca_escrow_on_rake_record()"
+      },
+      {
+        "acl": "{postgres=X/postgres,service_role=X/postgres}",
+        "arguments": "",
+        "body_md5": "343015440ea5c84ee4ca7ae583c73d30",
+        "defaults": null,
+        "language": "plpgsql",
+        "observed_at": "2026-09-10T17:20:23.974497+00:00",
+        "owner": "postgres",
+        "proargmodes": null,
+        "proargnames": null,
+        "proconfig": ["search_path=public, pg_temp"],
+        "proisstrict": false,
+        "pronargdefaults": 0,
+        "proretset": false,
+        "prosecdef": false,
+        "provolatile": "v",
+        "result": "void",
+        "signature": "fn_ca_lock_settlement_lane_global()"
+      },
+      {
+        "acl": "{postgres=X/postgres,service_role=X/postgres}",
+        "arguments": "p_tournament_id uuid",
+        "body_md5": "56663389f8348d2ab35a54460c0b7632",
+        "defaults": null,
+        "language": "sql",
+        "observed_at": "2026-09-10T17:20:23.974514+00:00",
+        "owner": "postgres",
+        "proargmodes": ["i", "t", "t", "t", "t", "t", "t", "t", "t", "t", "t", "t", "t"],
+        "proargnames": [
+          "p_tournament_id",
+          "prize_in",
+          "bounty_in",
+          "fee_in",
+          "overlay_in",
+          "satellite_in",
+          "prize_out",
+          "bounty_out",
+          "fee_out",
+          "refund_out",
+          "prize_balance",
+          "bounty_balance",
+          "fee_balance"
+        ],
+        "proconfig": ["search_path=public"],
+        "proisstrict": false,
+        "pronargdefaults": 0,
+        "proretset": true,
+        "prosecdef": true,
+        "provolatile": "s",
+        "result": "TABLE(prize_in numeric, bounty_in numeric, fee_in numeric, overlay_in numeric, satellite_in numeric, prize_out numeric, bounty_out numeric, fee_out numeric, refund_out numeric, prize_balance numeric, bounty_balance numeric, fee_balance numeric)",
+        "signature": "fn_ca_tournament_escrow(uuid)"
+      },
+      {
+        "acl": "{postgres=X/postgres,service_role=X/postgres}",
+        "arguments": "p_tournament_id uuid, p_user_id uuid, p_position integer, p_prize numeric, p_bubble_refund numeric DEFAULT 0",
+        "body_md5": "b4937067d9bf337e1466095b9e1d5424",
+        "defaults": "0",
+        "language": "plpgsql",
+        "observed_at": "2026-09-10T17:20:23.974539+00:00",
+        "owner": "postgres",
+        "proargmodes": null,
+        "proargnames": ["p_tournament_id", "p_user_id", "p_position", "p_prize", "p_bubble_refund"],
+        "proconfig": ["search_path=public, pg_temp"],
+        "proisstrict": false,
+        "pronargdefaults": 1,
+        "proretset": false,
+        "prosecdef": true,
+        "provolatile": "v",
+        "result": "jsonb",
+        "signature": "fn_eliminate_tournament_player_atomic(uuid,uuid,integer,numeric,numeric)"
+      },
+      {
+        "acl": "{postgres=X/postgres}",
+        "arguments": "p_tournament_id uuid, p_kind text, p_place integer, p_user_id uuid, p_amount numeric, p_source text, p_description text DEFAULT NULL::text, p_adjustment_id uuid DEFAULT NULL::uuid",
+        "body_md5": "ebabbaf0456d80335aaa2e04471d0ab6",
+        "defaults": "NULL::text, NULL::uuid",
+        "language": "plpgsql",
+        "observed_at": "2026-09-10T17:20:23.974557+00:00",
+        "owner": "postgres",
+        "proargmodes": null,
+        "proargnames": [
+          "p_tournament_id",
+          "p_kind",
+          "p_place",
+          "p_user_id",
+          "p_amount",
+          "p_source",
+          "p_description",
+          "p_adjustment_id"
+        ],
+        "proconfig": ["search_path=public"],
+        "proisstrict": false,
+        "pronargdefaults": 2,
+        "proretset": false,
+        "prosecdef": true,
+        "provolatile": "v",
+        "result": "jsonb",
+        "signature": "fn_settle_tournament_obligation_before_atomic_batch_gate(uuid,text,integer,uuid,numeric,text,text,uuid)"
+      },
+      {
+        "acl": "{postgres=X/postgres,service_role=X/postgres}",
+        "arguments": "p_tournament_id uuid, p_kind text, p_place integer, p_user_id uuid, p_amount numeric, p_source text, p_description text DEFAULT NULL::text, p_adjustment_id uuid DEFAULT NULL::uuid",
+        "body_md5": "915f3ebd5c4a2efb97ad3a354dfeb365",
+        "defaults": "NULL::text, NULL::uuid",
+        "language": "plpgsql",
+        "observed_at": "2026-09-10T17:20:23.974577+00:00",
+        "owner": "postgres",
+        "proargmodes": null,
+        "proargnames": [
+          "p_tournament_id",
+          "p_kind",
+          "p_place",
+          "p_user_id",
+          "p_amount",
+          "p_source",
+          "p_description",
+          "p_adjustment_id"
+        ],
+        "proconfig": ["search_path=public, pg_temp"],
+        "proisstrict": false,
+        "pronargdefaults": 2,
+        "proretset": false,
+        "prosecdef": true,
+        "provolatile": "v",
+        "result": "jsonb",
+        "signature": "fn_settle_tournament_obligation(uuid,text,integer,uuid,numeric,text,text,uuid)"
+      },
+      {
+        "acl": "{postgres=X/postgres,service_role=X/postgres}",
+        "arguments": "",
+        "body_md5": "ecb120c2c6a4ecee6c2e04d4c9b5ebc7",
+        "defaults": null,
+        "language": "plpgsql",
+        "observed_at": "2026-09-10T17:20:23.974596+00:00",
+        "owner": "postgres",
+        "proargmodes": null,
+        "proargnames": null,
+        "proconfig": ["search_path=public"],
+        "proisstrict": false,
+        "pronargdefaults": 0,
+        "proretset": false,
+        "prosecdef": true,
+        "provolatile": "v",
+        "result": "trigger",
+        "signature": "fn_sync_tournament_current_players()"
+      },
+      {
+        "acl": "{postgres=X/postgres,service_role=X/postgres}",
+        "arguments": "",
+        "body_md5": "1d00219cefe6de725da5d33fe0b38002",
+        "defaults": null,
+        "language": "plpgsql",
+        "observed_at": "2026-09-10T17:20:23.974613+00:00",
+        "owner": "postgres",
+        "proargmodes": null,
+        "proargnames": null,
+        "proconfig": ["search_path=public, pg_temp"],
+        "proisstrict": false,
+        "pronargdefaults": 0,
+        "proretset": false,
+        "prosecdef": true,
+        "provolatile": "v",
+        "result": "trigger",
+        "signature": "fn_tournament_elimination_has_a_place()"
+      }
+    ],
+    "migrations": [
+      {
+        "name": "started_tournaments_resume_or_settle_instead_of_cancelling",
+        "sql_bytes": 4722,
+        "sql_sha256": "85e02d3f2350b4c1c7229ab2b58e789b3b8651869c0c3834a3318d7547b10bf6",
+        "statement_count": 1,
+        "version": "20260910171843"
+      },
+      {
+        "name": "a_refused_finishing_place_creates_no_debt",
+        "sql_bytes": 24703,
+        "sql_sha256": "69d77f9968d49008f7069fe63b618b802937338e439f631806f02dba0da1220d",
+        "statement_count": 1,
+        "version": "20260910171857"
+      },
+      {
+        "name": "a_tournament_elimination_requires_a_finishing_rank",
+        "sql_bytes": 10914,
+        "sql_sha256": "cba4981055d5dd9278d7a882e3b8f0d954cd8ffccb37b6426cf4964c32504b68",
+        "statement_count": 1,
+        "version": "20260910171911"
+      },
+      {
+        "name": "satellite_seats_count_once_and_keep_the_funded_prize",
+        "sql_bytes": 31628,
+        "sql_sha256": "9a00bc662f729d5a6db25c4f10a5ceeb45509b230e35f48252620fe9dcef3fc3",
+        "statement_count": 1,
+        "version": "20260910171924"
+      }
+    ],
+    "observed_at": "2026-09-10T17:20:23.97349+00:00",
+    "triggers": [
+      {
+        "definition": "CREATE TRIGGER trg_sync_tournament_current_players AFTER INSERT OR DELETE OR UPDATE OF status, tournament_id ON public.tournament_players FOR EACH ROW EXECUTE FUNCTION fn_sync_tournament_current_players()",
+        "fn": "fn_sync_tournament_current_players()",
+        "observed_at": "2026-09-10T17:20:23.979866+00:00",
+        "tgdeferrable": false,
+        "tgenabled": "O",
+        "tginitdeferred": false,
+        "tgisinternal": false,
+        "tgname": "trg_sync_tournament_current_players",
+        "tgnargs": 0,
+        "tgqual": null,
+        "tgtype": 29
+      },
+      {
+        "definition": "CREATE CONSTRAINT TRIGGER tournament_elimination_has_a_place AFTER INSERT OR UPDATE OF status, \"position\" ON public.tournament_players DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION fn_tournament_elimination_has_a_place()",
+        "fn": "fn_tournament_elimination_has_a_place()",
+        "observed_at": "2026-09-10T17:20:23.981675+00:00",
+        "tgdeferrable": true,
+        "tgenabled": "O",
+        "tginitdeferred": true,
+        "tgisinternal": false,
+        "tgname": "tournament_elimination_has_a_place",
+        "tgnargs": 0,
+        "tgqual": null,
+        "tgtype": 21
+      }
+    ]
+  },
+  "assertions": {
+    "all_six_changed_bodies_match": true,
+    "all_ten_function_metadata_unchanged": true,
+    "four_dependency_bodies_unchanged": true,
+    "four_ledger_sql_sha256_match": true,
+    "two_triggers_unchanged": true
+  },
+  "independent_reviews": [
+    {
+      "lane": "approved_guard_verification",
+      "observed_at": "2026-09-10T17:20:20.390493Z",
+      "result": "Passed all three exact post bodies and all metadata; outer obligation and rank-constraint bodies and enabled deferred trigger unchanged"
+    },
+    {
+      "lane": "approved_satellite_verification",
+      "observed_at": "2026-09-10T17:20:09.532812Z",
+      "trigger_observed_at": "2026-09-10T17:20:24.316214Z",
+      "result": "Passed all three exact installed prosrc bytes and all metadata; global/roster bodies, actual trigger and ticket redemption CTE and gross inflow byte-preserved"
+    }
+  ],
+  "verification_limits": {
+    "live_economic_functions_invoked": false,
+    "new_native_test_replays": false,
+    "prior_native_proof": "14 cancellation,11 obligation,7 elimination and24 funded satellite groups with5 observed waits. Existing prechange baselines preserved at their reviewed source archives.",
+    "full_programme_complete": false,
+    "programme_controls_verified": 4,
+    "programme_controls_total": 58,
+    "other_activation_limits_unchanged": true
+  },
+  "no_new_caller": true,
+  "no_historical_balance_rewrite": true,
+  "no_stage_b_activation": true,
+  "no_engine_restart": true,
+  "security_advisor_review": {
+    "changed_or_pinned_function_findings": [],
+    "groups": [
+      {
+        "count": 400,
+        "level": "INFO",
+        "name": "rls_enabled_no_policy",
+        "remediation": "https://supabase.com/docs/guides/database/database-linter?lint=0008_rls_enabled_no_policy"
+      },
+      {
+        "count": 8,
+        "level": "WARN",
+        "name": "function_search_path_mutable",
+        "remediation": "https://supabase.com/docs/guides/database/database-linter?lint=0011_function_search_path_mutable"
+      },
+      {
+        "count": 4,
+        "level": "WARN",
+        "name": "extension_in_public",
+        "remediation": "https://supabase.com/docs/guides/database/database-linter?lint=0014_extension_in_public"
+      },
+      {
+        "count": 2,
+        "level": "WARN",
+        "name": "materialized_view_in_api",
+        "remediation": "https://supabase.com/docs/guides/database/database-linter?lint=0016_materialized_view_in_api"
+      },
+      {
+        "count": 44,
+        "level": "WARN",
+        "name": "anon_security_definer_function_executable",
+        "remediation": "https://supabase.com/docs/guides/database/database-linter?lint=0028_anon_security_definer_function_executable"
+      },
+      {
+        "count": 699,
+        "level": "WARN",
+        "name": "authenticated_security_definer_function_executable",
+        "remediation": "https://supabase.com/docs/guides/database/database-linter?lint=0029_authenticated_security_definer_function_executable"
+      }
+    ],
+    "observed_scope": "Security advisor after the four migrations; global findings are not attributed to this release without a baseline"
+  },
+  "source_publication": {
+    "branch": "agent/codex-poker-audit-sep09/fix/approved-database-release",
+    "purpose": "Record the exact approved SQL under actual production ledger versions on main; no reapplication or SQL byte change"
+  }
+}

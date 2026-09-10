@@ -117,8 +117,10 @@ describe('Pineapple discard worker ownership', () => {
       cancelPineappleSettle: vi.fn(),
     };
     const engine = engineHarness(controller);
+    const clearTurnTimer = vi.spyOn(engine, 'clearTurnTimer');
 
     engine.handlePineappleDiscard({ type: 'PINEAPPLE_DISCARD_REQUIRED', seats: [1] });
+    expect(clearTurnTimer).toHaveBeenCalledTimes(1);
     expect(worker.decideDiscard).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(1_201);
 

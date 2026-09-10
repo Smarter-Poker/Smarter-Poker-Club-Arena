@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { supabase } from '../services/supabase.js';
 import { TournamentManagerBase } from './TournamentManagerBase.js';
 import type { GameServer } from '../GameServer.js';
+import { setMaintenanceFrozen } from '../maintenance/freezeState.js';
 
 const TOURNAMENT_ID = 'aaaaaaaa-0000-4000-8000-000000000001';
 
@@ -239,5 +240,61 @@ describe('tournament break lifecycle fence', () => {
       'tournament_break_started',
       expect.objectContaining({ breakEndsAt: '2026-09-09T19:02:00.000Z' })
     );
+  });
+});
+
+/*
+ * 2026-09-10: resumeFromBreak waits out the maintenance thaw before it takes a
+ * running tournament off its break (see the comment there). stop() drains the
+ * job that is waiting, so the wait must end the moment the manager is fenced,
+ * and a fenced manager must leave the break exactly where it was for the
+ * engine that adopts the event next.
+ */
+describe('tournament break resume waits for the maintenance thaw', () => {
+  afterEach(() => {
+    setMaintenanceFrozen(false);
+    vi.useRealTimers();
+  });
+
+  it('comes off its break once the maintenance freeze lifts, not before', async () => {
+    vi.useFakeTimers();
+    setMaintenanceFrozen(true);
+    const manager = new BreakHarness();
+    manager.activate();
+    manager.forceBreakState();
+    const persist = stubBreakPersistence();
+
+    const resuming = manager.resumeFromBreak();
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect(manager.breakIsActive()).toBe(true);
+    expect(persist.update).not.toHaveBeenCalled();
+    expect(manager.broadcastCall).not.toHaveBeenCalled();
+
+    setMaintenanceFrozen(false);
+    await vi.advanceTimersByTimeAsync(TournamentManagerBase.MAINTENANCE_THAW_POLL_MS);
+    await resuming;
+    expect(manager.breakIsActive()).toBe(false);
+    expect(persist.update).toHaveBeenCalledWith({ on_break: false, break_ends_at: null });
+    expect(manager.broadcastCall).toHaveBeenCalledWith('break_ended', expect.anything());
+  });
+
+  it('stops waiting the moment the manager is fenced, and leaves the break for the next owner', async () => {
+    vi.useFakeTimers();
+    setMaintenanceFrozen(true);
+    const manager = new BreakHarness();
+    manager.activate();
+    manager.forceBreakState();
+    const persist = stubBreakPersistence();
+
+    const resuming = manager.resumeFromBreak();
+    await vi.advanceTimersByTimeAsync(1_000);
+    // A deploy cutover fences the manager while the thaw is still running.
+    manager.fence();
+    await vi.advanceTimersByTimeAsync(TournamentManagerBase.MAINTENANCE_THAW_POLL_MS);
+    await resuming;
+
+    expect(manager.breakIsActive()).toBe(true);
+    expect(persist.from).not.toHaveBeenCalled();
+    expect(manager.broadcastCall).not.toHaveBeenCalled();
   });
 });

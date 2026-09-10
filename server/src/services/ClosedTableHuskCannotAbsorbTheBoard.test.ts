@@ -29,11 +29,19 @@ const RECURRING = readFileSync(
   'utf8'
 );
 const GAME_SERVER = readFileSync(join(process.cwd(), 'src/GameServer.ts'), 'utf8');
-const SEAT_EXIT_MIGRATION = readFileSync(
+const SEAT_EXIT_SCHEMA = readFileSync(
   join(
     process.cwd(),
     '..',
-    'supabase/migrations/20260909014545_tournament_seat_exits_stay_inside_tournament_authority.sql'
+    'supabase/migrations/20260910042007_stage_b_forward_authority_expansion.sql'
+  ),
+  'utf8'
+);
+const SEAT_EXIT_REPAIR = readFileSync(
+  join(
+    process.cwd(),
+    '..',
+    'supabase/migrations/20260910042020_stage_b_exact_precondition_repairs.sql'
   ),
   'utf8'
 );
@@ -211,12 +219,12 @@ describe('terminal table closeout belongs to its source transaction', () => {
   });
 
   it('moves the exact historical backlog once under the migration write barrier', () => {
-    expect(SEAT_EXIT_MIGRATION).toContain('DO $terminal_orphan_cutover$');
-    expect(SEAT_EXIT_MIGRATION).toContain('repaired_seat_ids uuid[] NOT NULL');
-    expect(SEAT_EXIT_MIGRATION).toContain('repaired_table_ids uuid[] NOT NULL');
-    expect(SEAT_EXIT_MIGRATION).toContain(
+    expect(SEAT_EXIT_SCHEMA).toContain('repaired_seat_ids uuid[] NOT NULL');
+    expect(SEAT_EXIT_SCHEMA).toContain('repaired_table_ids uuid[] NOT NULL');
+    expect(SEAT_EXIT_REPAIR).toContain('DO $terminal_orphan_cutover$');
+    expect(SEAT_EXIT_REPAIR).toContain(
       'a committed terminal receipt disagrees with durable table or seat state'
     );
-    expect(SEAT_EXIT_MIGRATION).toContain('terminal table and seat backlog did not close exactly');
+    expect(SEAT_EXIT_REPAIR).toContain('terminal table and seat backlog did not close exactly');
   });
 });

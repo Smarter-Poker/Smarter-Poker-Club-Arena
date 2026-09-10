@@ -5,17 +5,11 @@ import { join } from 'node:path';
 const root = process.cwd();
 const read = (path: string): string => readFileSync(join(root, path), 'utf8');
 const migrationName = readdirSync(join(root, 'supabase/migrations')).find((name) =>
-  name.endsWith('_tournament_seat_moves_are_one_atomic_receipt.sql')
+  name.endsWith('_stage_b_current_postimage_contraction.sql')
 );
 if (!migrationName) throw new Error('tournament move authority contraction is missing');
 
 const contraction = read(`supabase/migrations/${migrationName}`);
-const managerFenceName = readdirSync(join(root, 'supabase/migrations')).find((name) =>
-  name.endsWith('_tournament_manager_request_fencing_is_strict.sql')
-);
-if (!managerFenceName) throw new Error('strict tournament manager fence is missing');
-
-const managerFence = read(`supabase/migrations/${managerFenceName}`);
 const runtime = read('server/src/tournament/tournamentSeatMoveRpc.ts');
 
 describe('tournament seat movement has one mutation authority', () => {
@@ -49,7 +43,7 @@ describe('tournament seat movement has one mutation authority', () => {
   it('fences exactly the endpoint the runtime calls', () => {
     expect(runtime).toContain("supabase.rpc('fn_move_tournament_player', request)");
     expect(runtime).not.toContain("rpc('fn_move_tournament_player_atomic'");
-    expect(managerFence).toContain("'rpc/fn_move_tournament_player'");
-    expect(managerFence).not.toContain("'rpc/fn_move_tournament_player_atomic'");
+    expect(contraction).toContain("'rpc/fn_move_tournament_player'");
+    expect(contraction).not.toContain("'rpc/fn_move_tournament_player_atomic'");
   });
 });

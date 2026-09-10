@@ -251,16 +251,15 @@ BEGIN
     SELECT 1
       FROM (VALUES
         ('hand_settlement_targets_exact_seat_generation'),
-        ('tournament_manager_request_fencing_is_strict'),
-        ('hand_settlement_requires_exact_seat_generation'),
-        ('tournament_seat_moves_are_one_atomic_receipt')
+        ('stage_b_current_postimage_contraction'),
+        ('stage_b_lease_keyshare_once')
       ) AS required(name)
      WHERE (SELECT count(*)
               FROM supabase_migrations.schema_migrations m
              WHERE m.name = required.name) <> 1
   ) THEN
     RAISE EXCEPTION
-      'FRACTIONAL_STACK_PREREQUISITE_MISSING: exact-seat expansion, both strict Stage-B contractions, and DB-first atomic seat moves must already be installed'
+      'FRACTIONAL_STACK_PREREQUISITE_MISSING: exact-seat expansion and the complete current Stage-B contraction/key-share chain must already be installed'
       USING ERRCODE = '55000';
   END IF;
 

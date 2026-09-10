@@ -48,7 +48,7 @@ if (!terminalSettlementName) {
 }
 const TERMINAL_SETTLEMENT = read(`../supabase/migrations/${terminalSettlementName}`);
 const seatExitSettlementName = migrationNames.find((name) =>
-  name.includes('tournament_seat_exits_stay_inside_tournament_authority')
+  name.includes('stage_b_current_postimage_contraction')
 );
 if (!seatExitSettlementName) {
   throw new Error('current tournament seat-exit authority migration is missing');

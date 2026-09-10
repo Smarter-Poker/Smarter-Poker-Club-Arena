@@ -18,16 +18,14 @@ if (migrationBasenames.length !== 1) {
   );
 }
 const migrationBasename = migrationBasenames[0];
-const atomicMoveBasenames = readdirSync(repoPath('supabase/migrations')).filter((name) =>
-  name.endsWith('_tournament_seat_moves_are_one_atomic_receipt.sql')
+const contractionBasenames = readdirSync(repoPath('supabase/migrations')).filter((name) =>
+  name.endsWith('_stage_b_current_postimage_contraction.sql')
 );
-if (atomicMoveBasenames.length !== 1) {
-  throw new Error(
-    `Expected one atomic tournament-seat move migration, found ${atomicMoveBasenames.length}`
-  );
+if (contractionBasenames.length !== 1) {
+  throw new Error(`Expected one current Stage-B contraction, found ${contractionBasenames.length}`);
 }
-const atomicMoveBasename = atomicMoveBasenames[0];
-const atomicMoveMigration = readRepo(`supabase/migrations/${atomicMoveBasename}`);
+const contractionBasename = contractionBasenames[0];
+const contractionMigration = readRepo(`supabase/migrations/${contractionBasename}`);
 const filename = `supabase/migrations/${migrationBasename}`;
 const migration = readRepo(filename);
 const receiptFilename = `${filename}.receipt`;
@@ -59,11 +57,11 @@ const harness = readRepo('scripts/dev/probe-tournament-fractional-stack-normaliz
 const eliminationManager = readRepo('server/src/tournament/TournamentManagerEliminations.ts');
 
 describe('fractional tournament stacks are normalized once at a stopped exact-build cutover', () => {
-  it('sorts in the exact expansion, contractions, DB-first move, normalization order', () => {
+  it('sorts the exact expansion before the complete Stage-B postimage and key-share boundary', () => {
     const prerequisiteBasenames = [
       '_hand_settlement_targets_exact_seat_generation.sql',
-      '_tournament_manager_request_fencing_is_strict.sql',
-      '_hand_settlement_requires_exact_seat_generation.sql',
+      '_stage_b_current_postimage_contraction.sql',
+      '_stage_b_lease_keyshare_once.sql',
     ].map((prerequisiteSuffix) => {
       const matches = readdirSync(repoPath('supabase/migrations')).filter((name) =>
         name.endsWith(prerequisiteSuffix)
@@ -72,12 +70,12 @@ describe('fractional tournament stacks are normalized once at a stopped exact-bu
       return matches[0];
     });
     expect(migrationBasenames).toHaveLength(1);
-    const totalOrder = [...prerequisiteBasenames, atomicMoveBasename, migrationBasename];
-    for (let index = 1; index < totalOrder.length; index++) {
-      expect(totalOrder[index - 1] < totalOrder[index]).toBe(true);
+    for (let index = 1; index < prerequisiteBasenames.length; index++) {
+      expect(prerequisiteBasenames[index - 1] < prerequisiteBasenames[index]).toBe(true);
     }
-    expect(atomicMoveMigration).toContain("NOTIFY pgrst, 'reload schema'");
-    expect(migration).toContain("('tournament_seat_moves_are_one_atomic_receipt')");
+    expect(contractionMigration).toContain("NOTIFY pgrst, 'reload schema'");
+    expect(migration).toContain("('stage_b_current_postimage_contraction')");
+    expect(migration).toContain("('stage_b_lease_keyshare_once')");
     expect(migration).toContain("to_regclass('public.tournament_seat_move_receipts') IS NULL");
     expect(migration).toContain('index_catalog.indisunique');
     expect(migration).toContain("ARRAY['tournament_id', 'table_id', 'seat_number']::text[]");
@@ -239,9 +237,9 @@ describe('fractional tournament stacks are normalized once at a stopped exact-bu
     expect(runbook).toContain('verify-tournament-fractional-stack-zero-authority.sh "$SHA8"');
     expect(runbook).toContain('tournament-fractional-stack-cutover.sql PREAPPLY');
     expect(runbook).toContain('verify-tournament-fractional-stack-cutover-postconditions.sh');
-    expect(runbook).toContain('tournament_seat_moves_are_one_atomic_receipt PREAPPLY');
+    expect(runbook).toContain('stage_b_current_postimage_contraction PREAPPLY');
     expect(runbook).toContain(
-      'tournament_seat_moves_are_one_atomic_receipt "$MOVE_APPLIED_VERSION" "$MOVE_FILE"'
+      'stage_b_lease_keyshare_once "$KEYSHARE_APPLIED_VERSION" "$KEYSHARE_FILE"'
     );
     expect(runbook).toContain('atomic seat move < fractional normalization');
     expect(runbook).toContain('must not be submitted again here');
@@ -253,9 +251,8 @@ describe('fractional tournament stacks are normalized once at a stopped exact-bu
   it('identifies prerequisites by unique exact name, independent of remote ledger version', () => {
     for (const name of [
       'hand_settlement_targets_exact_seat_generation',
-      'tournament_manager_request_fencing_is_strict',
-      'hand_settlement_requires_exact_seat_generation',
-      'tournament_seat_moves_are_one_atomic_receipt',
+      'stage_b_current_postimage_contraction',
+      'stage_b_lease_keyshare_once',
     ]) {
       expect(migration).toContain(`('${name}')`);
       expect(fixture).toContain(`'${name}'`);
@@ -265,10 +262,8 @@ describe('fractional tournament stacks are normalized once at a stopped exact-bu
     expect(fixture).toContain(
       "('20260908161534', 'hand_settlement_targets_exact_seat_generation')"
     );
-    expect(fixture).toContain("('20260908162211', 'tournament_manager_request_fencing_is_strict')");
-    expect(fixture).toContain(
-      "('20260908162847', 'hand_settlement_requires_exact_seat_generation')"
-    );
+    expect(fixture).toContain("('20260910042112', 'stage_b_current_postimage_contraction')");
+    expect(fixture).toContain("('20260910042137', 'stage_b_lease_keyshare_once')");
   });
 
   it('takes the global realtime lock first and every moving authority NOWAIT', () => {

@@ -30,15 +30,15 @@ const cutovers = [
     gate: 'require_live_terminal_cutover_freeze',
   },
   {
-    file: '20260909014545_tournament_seat_exits_stay_inside_tournament_authority.sql',
+    file: '20260910042020_stage_b_exact_precondition_repairs.sql',
     gate: 'require_live_seat_exit_cutover_freeze',
   },
   {
-    file: '20260909041438_retire_legacy_tournament_hold_refund_door.sql',
+    file: '20260910042112_stage_b_current_postimage_contraction.sql',
     gate: 'require_live_legacy_hold_retirement_freeze',
   },
   {
-    file: '20260909043000_tournament_terminal_roots_are_db_first_hardened.sql',
+    file: '20260910042112_stage_b_current_postimage_contraction.sql',
     gate: 'require_live_terminal_acl_cutover_freeze',
   },
   {

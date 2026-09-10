@@ -9,7 +9,7 @@ const cancellation = read('20260909014444_tournament_cancellation_commits_one_st
 const terminal = read(
   '20260909014534_non_satellite_terminal_settlement_commits_one_stored_receipt.sql'
 );
-const seatExit = read('20260909014545_tournament_seat_exits_stay_inside_tournament_authority.sql');
+const seatExit = read('20260910042112_stage_b_current_postimage_contraction.sql');
 const satelliteMoneyPath = read(
   '20260909211115_complete_known_satellite_adoptions_after_freeze.sql'
 );
@@ -88,9 +88,7 @@ describe('pending stage-one cutovers retain newer installed authorities', () => 
       'CREATE OR REPLACE FUNCTION public.fn_spin_expire_unfilled(',
       'REVOKE ALL ON FUNCTION public.fn_spin_expire_unfilled(integer)'
     );
-    const terminalRoot = expiry.indexOf(
-      "hashtextextended('ca:tournament-terminal-settlement:v1',0)"
-    );
+    const terminalRoot = expiry.indexOf('public.fn_ca_lock_settlement_lane_global()');
     const parentLock = expiry.indexOf('FOR UPDATE SKIP LOCKED');
     const freshRead = expiry.indexOf('SELECT t.status,t.variant,t.started_at');
     const cancellationCall = expiry.indexOf('v_result:=public.atomic_cancel_tournament(g.id,NULL)');

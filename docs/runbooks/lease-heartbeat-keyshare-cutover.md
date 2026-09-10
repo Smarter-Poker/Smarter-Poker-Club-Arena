@@ -1,7 +1,7 @@
 # Lease-heartbeat lock cutover
 
 This is the only supported production path for
-`lease_heartbeats_do_not_starve_behind_live_transactions`. It is a root-cause,
+`stage_b_lease_keyshare_once`. It is a root-cause,
 stopped-engine schema cutover. It does not add a retry daemon, cron, watchlist,
 lease redrive, or longer expiry window.
 
@@ -26,21 +26,19 @@ drops the legacy capacity bridge and both rolling hand-settlement doors. Apply
 and byte-seal these boundaries in this exact order, inside one continuously
 held maintenance freeze while the engine remains stopped:
 
-1. `terminal_tournaments_cannot_reenter_a_break`
-2. `precertify_stage_a_atomic_tournament_finishes`
-3. `tournament_manager_request_fencing_is_strict`
-4. `hand_settlement_requires_exact_seat_generation`
-5. `tournament_seat_moves_are_one_atomic_receipt`
-6. `lease_heartbeats_do_not_starve_behind_live_transactions`
+1. `stage_b_forward_authority_expansion`
+2. `stage_b_exact_precondition_repairs`
+3. `stage_b_terminal_break_invariant`
+4. `stage_b_atomic_finish_precertification`
+5. `stage_b_current_postimage_contraction`
+6. `stage_b_lease_keyshare_once`
 
-The terminal migration first records and clears every historical terminal-break
-preimage, installs the permanent terminal shape guard, and makes the completion
-certificate candidate-aware without weakening the ordinary readiness RPC. The
-precertification migration then evaluates the finite Stage-A completion cohort
-under frozen evidence locks and fills only empty fields on already-existing
-immutable finish claims. It never creates a claim or moves money. Stage B only
-checks that no candidate remains while its trigger locks are held; the 5,661-row
-proof is not part of Stage B's 30-second DDL transaction.
+The exact-precondition repair first restores the current frozen preimage. The
+terminal and precertification boundaries then clear and guard terminal break
+state and certify only already-existing immutable finish claims. The current
+postimage contraction composes the manager fence, exact-generation settlement,
+DB-first seat move, and current tournament authorities in one reviewed source.
+It never replays the archived incident migrations individually.
 
 The sixth migration refuses while either Stage-A/rolling settlement door is
 still installed. Do not patch the six Stage-A locks in place: doing so would
@@ -60,9 +58,8 @@ preserves terminal receipts while removing the legacy payload fallback.
 From the reviewed, still-unmerged release branch:
 
 ```sh
-scripts/dev/probe-tournament-manager-fencing-pg17.sh
+scripts/dev/probe-stage-b-forward-chain-pg17.sh --resolve-only
 scripts/dev/probe-lease-heartbeat-keyshare-pg17.sh
-scripts/dev/probe-terminal-tournament-break-pg17.sh
 scripts/dev/probe-stage-a-atomic-finish-precertification-pg17.sh
 cd server
 npx vitest run src/services/LeaseHeartbeatKeyShare.guard.test.ts \
@@ -85,9 +82,9 @@ migration name:
 source scripts/ops/lib/resolve-staged-or-promoted-migration.sh
 KEYSHARE_FILE="$(resolve_staged_or_promoted_migration \
   "$PWD/supabase/migrations" \
-  lease_heartbeats_do_not_starve_behind_live_transactions)"
+  stage_b_lease_keyshare_once)"
 scripts/ops/verify-migration-ledger-artifact.sh \
-  lease_heartbeats_do_not_starve_behind_live_transactions PREAPPLY
+  stage_b_lease_keyshare_once PREAPPLY
 ```
 
 ## Scale authority to zero

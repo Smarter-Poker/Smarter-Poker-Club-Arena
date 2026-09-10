@@ -3,7 +3,7 @@ set -euo pipefail
 
 repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 migration="$(find "$repo_dir/supabase/migrations" -maxdepth 1 -type f \
-  -name '*_precertify_stage_a_atomic_tournament_finishes.sql' -print)"
+  -name '*_stage_b_atomic_finish_precertification.sql' -print)"
 if [[ "$(printf '%s\n' "$migration" | sed '/^$/d' | wc -l | tr -d ' ')" != '1' ]]; then
   echo 'Expected exactly one Stage-A atomic finish precertification migration.' >&2
   exit 1

@@ -14,10 +14,10 @@ ROOT = Path(__file__).resolve().parents[2]
 BINDIR = Path(os.environ.get("PG17_BINDIR", "/opt/homebrew/opt/postgresql@17/bin"))
 strict_candidates = sorted(
     (ROOT / "supabase/migrations").glob(
-        "*_tournament_manager_request_fencing_is_strict.sql"
+        "*_stage_b_current_postimage_contraction.sql"
     )
 )
-assert len(strict_candidates) == 1, "expected one strict tournament-manager migration"
+assert len(strict_candidates) == 1, "expected one current Stage-B contraction"
 source = strict_candidates[0].read_text()
 match = re.search(
     r"CREATE OR REPLACE FUNCTION smarter_private\.fn_smarter_data_api_pre_request\(\)"

@@ -191,7 +191,7 @@ describe('the seat guard is armed', () => {
       /_the_seat_guard_is_armed\.sql$/,
       /_the_seat_guard_says_what_it_actually_does\.sql$/,
       /_spin_reserve_settlement_commits_its_journal_or_nothing\.sql$/,
-      /_tournament_reseating_uses_one_database_chosen_legal_chair\.sql$/,
+      /_stage_b_current_postimage_contraction\.sql$/,
     ];
     expect(
       SANCTIONED_REDECLARATIONS.some((re) => re.test(file)),

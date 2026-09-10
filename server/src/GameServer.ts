@@ -20,6 +20,7 @@ import {
 } from './engine/horseDecision/client.js';
 import {
   EquityWorkerPoolAbortedError,
+  equityWorkerPoolPreservesDealerLiveness,
   equityWorkerPoolStatus,
   startEquityWorkerPool,
   stopEquityWorkerPool,
@@ -1871,8 +1872,10 @@ export class GameServer {
     /**
      * All-in equity and insurance are also hard realtime dependencies. Every
      * configured worker must author a READY handshake before table discovery
-     * can route a hand here; degraded capacity removes this process from
-     * routing instead of moving calculator work back onto the table thread.
+     * can route a hand here. After that startup boundary, a timed-out worker
+     * is replaced without moving calculator work back onto the table thread;
+     * callers already omit optional equity/insurance and continue the runout
+     * while the pool reports its separate degraded telemetry.
      */
     try {
       await startEquityWorkerPool();
@@ -2975,11 +2978,15 @@ export class GameServer {
       stalledTables: stalledTables.slice(0, 20),
       discoveryStaleMs,
       tableLiveness,
+      // A post-ready worker timeout is a local, recoverable calculator outage,
+      // not a stopped dealer. The pool remains separately degraded in this
+      // payload and in Prometheus. Startup, exhausted recovery, shutdown, and
+      // the authoritative HorseDecision worker still fail routing readiness.
       status:
         this.running &&
         this.dealerPrerequisitesReady &&
         liveHorseDecision.phase === 'ready' &&
-        equityWorkers.phase === 'ready'
+        equityWorkerPoolPreservesDealerLiveness(equityWorkers)
           ? 'ok'
           : 'degraded',
       version: process.env.GIT_COMMIT_SHA?.substring(0, 8) || process.env.ENGINE_VERSION || 'local',
@@ -4359,10 +4366,10 @@ export class GameServer {
             await recoverStuckCompletingTournaments('startup-cleanup');
 
             // Terminal table and seat closeout is now owned by the atomic
-            // settlement/cancellation transaction. Migration 20260909014545
-            // closes the exact historical backlog once under the same write
-            // barrier, records every affected id, and arms the permanent
-            // seat-exit guard. Process startup never repairs this state.
+            // settlement/cancellation transaction. The Stage-B exact-precondition
+            // repair closes and receipts the historical backlog once; the
+            // current-postimage contraction arms the permanent seat-exit guard.
+            // Process startup never repairs this state.
           } catch (bgErr) {
             reportError(bgErr, 'GameServer.background_stale_cleanup_error');
           }

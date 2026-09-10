@@ -13,8 +13,8 @@ const migrationPath = (suffix: string): string => {
   return matches[0] ?? '';
 };
 
-const strictStageBPath = migrationPath('tournament_manager_request_fencing_is_strict.sql');
-const keySharePath = migrationPath('lease_heartbeats_do_not_starve_behind_live_transactions.sql');
+const currentPostimagePath = migrationPath('stage_b_current_postimage_contraction.sql');
+const keySharePath = migrationPath('stage_b_lease_keyshare_once.sql');
 const SQL = readFileSync(keySharePath, 'utf8');
 const RUNNER = readFileSync(
   join(repo, 'scripts', 'dev', 'probe-lease-heartbeat-keyshare-pg17.sh'),
@@ -27,7 +27,9 @@ const FIXTURE = readFileSync(
 
 describe('lease heartbeat locks remain live without weakening exact ownership', () => {
   it('is a fail-closed post-Stage-B stopped-engine cutover', () => {
-    expect(strictStageBPath < keySharePath).toBe(true);
+    expect(currentPostimagePath < keySharePath).toBe(true);
+    expect(keySharePath.endsWith('20260910042137_stage_b_lease_keyshare_once.sql')).toBe(true);
+    expect(SQL).toContain('-- 20260910042137_stage_b_lease_keyshare_once');
     expect(SQL.match(/^BEGIN;$/gm)).toHaveLength(1);
     expect(SQL.match(/^COMMIT;$/gm)).toHaveLength(1);
     expect(SQL).toContain("SET LOCAL lock_timeout = '5s';");

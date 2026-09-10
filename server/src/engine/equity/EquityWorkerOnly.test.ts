@@ -9,6 +9,7 @@ import {
   EquityWorkerPool,
   EquityWorkerPoolAbortedError,
   EquityWorkerUnavailableError,
+  equityWorkerPoolPreservesDealerLiveness,
 } from './EquityWorkerPool.js';
 import { computeInsuranceComponentsForHands } from './equityWorker.js';
 
@@ -171,12 +172,85 @@ describe('EquityWorkerPool fail-closed lifecycle', () => {
       respawnBudget: 0,
     });
     const readiness = pool.ready();
-    expect(pool.status()).toMatchObject({ phase: 'starting', readyWorkers: 0 });
+    expect(pool.status()).toMatchObject({
+      phase: 'starting',
+      routingReady: false,
+      acceptingWork: false,
+      readyWorkers: 0,
+    });
     expect(worker.sent).toEqual([]);
 
     worker.emitMessage({ type: 'READY' });
     await expect(readiness).resolves.toMatchObject({ configuredWorkers: 1, readyWorkers: 1 });
-    expect(pool.status().phase).toBe('ready');
+    expect(pool.status()).toMatchObject({
+      phase: 'ready',
+      routingReady: true,
+      acceptingWork: true,
+    });
+    await pool.shutdown();
+  });
+
+  it('keeps initial size-two boot non-routing until every configured worker is READY', async () => {
+    const workers = [new FakeWorker(), new FakeWorker()];
+    let workerIndex = 0;
+    const pool = new EquityWorkerPool({
+      size: 2,
+      workerFactory: () => workers[workerIndex++],
+      readyTimeoutMs: 100,
+      respawnBudget: 0,
+    });
+    const ready = pool.ready();
+
+    workers[0].emitMessage({ type: 'READY' });
+    expect(pool.status()).toMatchObject({
+      phase: 'starting',
+      readyWorkers: 1,
+      routingReady: false,
+      acceptingWork: false,
+    });
+    await expect(pool.estimateEquity(hands, [])).rejects.toBeInstanceOf(
+      EquityWorkerUnavailableError
+    );
+
+    workers[1].emitMessage({ type: 'READY' });
+    await expect(ready).resolves.toMatchObject({
+      phase: 'ready',
+      readyWorkers: 2,
+      routingReady: true,
+      acceptingWork: true,
+    });
+    await pool.shutdown();
+  });
+
+  it('fails a stuck initial boot and ignores a worker that reports READY after its deadline', async () => {
+    vi.useFakeTimers();
+    const workers = [new FakeWorker(), new FakeWorker()];
+    let workerIndex = 0;
+    const pool = new EquityWorkerPool({
+      size: 2,
+      workerFactory: () => workers[workerIndex++],
+      readyTimeoutMs: 100,
+      respawnBudget: 0,
+    });
+    const readiness = pool.ready();
+    const rejection = expect(readiness).rejects.toThrow(
+      'Equity workers did not become ready within 100ms'
+    );
+    workers[0].emitMessage({ type: 'READY' });
+
+    await vi.advanceTimersByTimeAsync(100);
+    await rejection;
+    expect(pool.status()).toMatchObject({
+      phase: 'failed',
+      readyWorkers: 0,
+      routingReady: false,
+      acceptingWork: false,
+    });
+    expect(workers[0].terminateCalls).toBe(1);
+    expect(workers[1].terminateCalls).toBe(1);
+
+    workers[1].emitMessage({ type: 'READY' });
+    expect(pool.status()).toMatchObject({ phase: 'failed', readyWorkers: 0 });
     await pool.shutdown();
   });
 
@@ -268,6 +342,13 @@ describe('EquityWorkerPool fail-closed lifecycle', () => {
     await vi.advanceTimersByTimeAsync(25);
     await rejection;
     expect(worker.terminateCalls).toBe(1);
+    expect(pool.status()).toMatchObject({
+      phase: 'failed',
+      routingReady: false,
+      acceptingWork: false,
+      recoveryInFlight: false,
+    });
+    expect(equityWorkerPoolPreservesDealerLiveness(pool.status())).toBe(false);
     await pool.shutdown();
   });
 
@@ -307,12 +388,207 @@ describe('EquityWorkerPool fail-closed lifecycle', () => {
     await ready;
 
     workers[0].emitExit(1);
-    expect(pool.status().phase).toBe('degraded');
+    expect(pool.status()).toMatchObject({
+      phase: 'degraded',
+      readyWorkers: 0,
+      routingReady: true,
+      acceptingWork: false,
+      recoveryInFlight: true,
+    });
+    await expect(pool.estimateEquity(hands, [])).rejects.toBeInstanceOf(
+      EquityWorkerUnavailableError
+    );
+    expect(pool.status().queueDepth).toBe(0);
     await vi.advanceTimersByTimeAsync(250);
     expect(workers).toHaveLength(2);
+    expect(pool.status()).toMatchObject({
+      phase: 'degraded',
+      readyWorkers: 0,
+      routingReady: true,
+      acceptingWork: false,
+      recoveryInFlight: true,
+    });
     workers[1].emitMessage({ type: 'READY' });
-    expect(pool.status()).toMatchObject({ phase: 'ready', readyWorkers: 1 });
+    expect(pool.status()).toMatchObject({
+      phase: 'ready',
+      readyWorkers: 1,
+      routingReady: true,
+      acceptingWork: true,
+      recoveryInFlight: false,
+    });
     await pool.shutdown();
+  });
+
+  it('retries a sole replacement only within budget, then fails routing', async () => {
+    vi.useFakeTimers();
+    const workers: FakeWorker[] = [];
+    const pool = new EquityWorkerPool({
+      size: 1,
+      workerFactory: () => {
+        const worker = new FakeWorker();
+        workers.push(worker);
+        return worker;
+      },
+      readyTimeoutMs: 100,
+      jobTimeoutMs: 25,
+      respawnBudget: 2,
+    });
+    const ready = pool.ready();
+    workers[0].emitMessage({ type: 'READY' });
+    await ready;
+
+    const pending = pool.estimateEquity(hands, []);
+    const rejection = expect(pending).rejects.toThrow('timed out after 25ms');
+    await vi.advanceTimersByTimeAsync(25);
+    await rejection;
+
+    expect(pool.status()).toMatchObject({
+      phase: 'degraded',
+      readyWorkers: 0,
+      routingReady: true,
+      acceptingWork: false,
+      recoveryInFlight: true,
+    });
+    expect(equityWorkerPoolPreservesDealerLiveness(pool.status())).toBe(true);
+    await expect(pool.estimateEquity(hands, [])).rejects.toBeInstanceOf(
+      EquityWorkerUnavailableError
+    );
+    expect(pool.status().queueDepth).toBe(0);
+
+    await vi.advanceTimersByTimeAsync(250);
+    expect(workers).toHaveLength(2);
+    expect(pool.status()).toMatchObject({
+      phase: 'degraded',
+      routingReady: true,
+      acceptingWork: false,
+      recoveryInFlight: true,
+    });
+
+    await vi.advanceTimersByTimeAsync(100);
+    expect(workers[1].terminateCalls).toBe(1);
+    expect(pool.status()).toMatchObject({
+      phase: 'degraded',
+      routingReady: true,
+      acceptingWork: false,
+      recoveryInFlight: true,
+    });
+
+    await vi.advanceTimersByTimeAsync(250);
+    expect(workers).toHaveLength(3);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(workers[2].terminateCalls).toBe(1);
+    expect(pool.status()).toMatchObject({
+      phase: 'failed',
+      readyWorkers: 0,
+      routingReady: false,
+      acceptingWork: false,
+      recoveryInFlight: false,
+    });
+    await pool.shutdown();
+  });
+
+  it('fails routing immediately when the last worker dies with no respawn budget', async () => {
+    const worker = new FakeWorker();
+    const pool = new EquityWorkerPool({
+      size: 1,
+      workerFactory: () => worker,
+      readyTimeoutMs: 100,
+      respawnBudget: 0,
+    });
+    const ready = pool.ready();
+    worker.emitMessage({ type: 'READY' });
+    await ready;
+
+    worker.emitExit(1);
+    expect(pool.status()).toMatchObject({
+      phase: 'failed',
+      readyWorkers: 0,
+      routingReady: false,
+      acceptingWork: false,
+      recoveryInFlight: false,
+    });
+    await pool.shutdown();
+  });
+
+  it('keeps a size-two pool routing-ready on one healthy worker', async () => {
+    const workers = [new FakeWorker(), new FakeWorker()];
+    let workerIndex = 0;
+    const pool = new EquityWorkerPool({
+      size: 2,
+      workerFactory: () => workers[workerIndex++],
+      readyTimeoutMs: 100,
+      respawnBudget: 0,
+    });
+    const ready = pool.ready();
+    workers[0].emitMessage({ type: 'READY' });
+    workers[1].emitMessage({ type: 'READY' });
+    await ready;
+
+    workers[0].emitExit(1);
+    expect(pool.status()).toMatchObject({
+      phase: 'degraded',
+      readyWorkers: 1,
+      routingReady: true,
+      acceptingWork: true,
+      recoveryInFlight: false,
+    });
+
+    const result = pool.estimateEquity(hands, []);
+    const request = workers[1].sent.at(-1) as { id: number };
+    workers[1].emitMessage({ type: 'EQUITY_RESULT', id: request.id, equities: [0.8, 0.2] });
+    await expect(result).resolves.toEqual([0.8, 0.2]);
+    await pool.shutdown();
+  });
+
+  it('cancels a scheduled respawn before shutdown can create another worker', async () => {
+    vi.useFakeTimers();
+    const workers: FakeWorker[] = [];
+    const pool = new EquityWorkerPool({
+      size: 1,
+      workerFactory: () => {
+        const worker = new FakeWorker();
+        workers.push(worker);
+        return worker;
+      },
+      readyTimeoutMs: 100,
+      respawnBudget: 1,
+    });
+    const ready = pool.ready();
+    workers[0].emitMessage({ type: 'READY' });
+    await ready;
+    workers[0].emitExit(1);
+
+    await pool.shutdown();
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(workers).toHaveLength(1);
+    expect(pool.status().phase).toBe('stopped');
+  });
+
+  it('cancels a spawned replacement READY deadline during shutdown', async () => {
+    vi.useFakeTimers();
+    const workers: FakeWorker[] = [];
+    const pool = new EquityWorkerPool({
+      size: 1,
+      workerFactory: () => {
+        const worker = new FakeWorker();
+        workers.push(worker);
+        return worker;
+      },
+      readyTimeoutMs: 100,
+      respawnBudget: 2,
+    });
+    const ready = pool.ready();
+    workers[0].emitMessage({ type: 'READY' });
+    await ready;
+    workers[0].emitExit(1);
+    await vi.advanceTimersByTimeAsync(250);
+    expect(workers).toHaveLength(2);
+
+    await pool.shutdown();
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(workers).toHaveLength(2);
+    expect(workers[1].terminateCalls).toBe(1);
+    expect(pool.status().phase).toBe('stopped');
   });
 
   it('runs queued insurance before cosmetic equity and keeps FIFO within each class', async () => {

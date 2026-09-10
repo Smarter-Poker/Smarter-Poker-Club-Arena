@@ -24,7 +24,7 @@ const terminalHand = readFileSync(
 const seatExit = readFileSync(
   resolve(
     here,
-    '../../../supabase/migrations/20260909014545_tournament_seat_exits_stay_inside_tournament_authority.sql'
+    '../../../supabase/migrations/20260910042112_stage_b_current_postimage_contraction.sql'
   ),
   'utf8'
 );

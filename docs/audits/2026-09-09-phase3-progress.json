@@ -982,15 +982,19 @@
     "resolver": "fn_resolve_committed_tournament_seat_move",
     "receipt_table": "tournament_seat_move_receipts",
     "active_caller": "TournamentManager.executePlayerMovesOwned -> requestTournamentSeatMoveAtBoundary -> moveTournamentPlayerAtomically",
-    "source_migration": "20260909014545_tournament_seat_exits_stay_inside_tournament_authority.sql",
-    "resolver_migration": "20260909182952_a_committed_tournament_move_receipt_survives_lease_loss.sql",
-    "scope_boundary": "Existing writer migration also contains historical repairs and a maintenance cutover. It was not applied or split to evade those controls. No manual repair or alternate move writer introduced.",
+    "historical_source_migration": "20260909014545_tournament_seat_exits_stay_inside_tournament_authority.sql",
+    "historical_resolver_migration": "20260909182952_a_committed_tournament_move_receipt_survives_lease_loss.sql",
+    "historical_sources_superseded": true,
+    "source_migration": "stage_b_current_postimage_contraction",
+    "resolver_migration": "stage_b_current_postimage_contraction",
+    "supported_execution_path": "stage_b_forward_authority_expansion through stage_b_lease_keyshare_once",
+    "scope_boundary": "The historical writer and resolver candidates were never applied and are retained only as byte-sealed non-executable evidence. Their current composed authority is applied only through the complete six-migration Stage-B forward chain. No manual repair or alternate move writer is introduced.",
     "source_tests_reviewed": [
       "TournamentMoveManagerBoundary.test.ts",
       "tournamentSeatMoveRpc.test.ts",
       "TournamentTableBreakRetirement.test.ts"
     ],
-    "source_test_limit": "Manager and transport tests stub database effects; the separate PostgreSQL probe validates preseeded receipt lookup, not execution of a complete live move.",
+    "source_test_limit": "Manager and transport tests stub database effects; isolated historical probes are superseded by the current-production-clone Stage-B forward-chain rehearsal.",
     "full_controls_closed": false,
     "latest_catalog_read": {
       "observed_at": "2026-09-09T22:29:42.145802Z",

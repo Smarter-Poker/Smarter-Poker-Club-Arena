@@ -7,7 +7,8 @@ or production `psql -f` mutation is permitted.
 
 The cutover is complete only when all six evidence boundaries agree:
 
-1. the strict manager, settlement, and DB-first atomic-move authorities are
+1. the six-migration Stage-B forward chain, including the strict manager,
+   settlement, DB-first atomic-move, and lease-keyshare authorities, is
    ledgered before any application caller is published;
 2. the exact capable engine SHA owns the enforced normalization break;
 3. the engine and every host-side restart authority are demonstrably stopped;
@@ -25,27 +26,25 @@ door, the live database must contain exactly one migration row for each
 prerequisite name:
 
 - `hand_settlement_targets_exact_seat_generation`
-- `tournament_manager_request_fencing_is_strict`
-- `hand_settlement_requires_exact_seat_generation`
-- `tournament_seat_moves_are_one_atomic_receipt`
+- `stage_b_current_postimage_contraction`
+- `stage_b_lease_keyshare_once`
 
 If exact-seat expansion is absent, abort this runbook and complete its dedicated
-stopped-engine rollout first; never begin at the manager fence on a rebuilt or
-partially restored database. If **any** of the last three prerequisites is
-absent, use a separate earlier maintenance window on the currently deployed
-Stage-A engine. Keep every branch containing the atomic-move caller unmerged and
-undeployed, and do not render or apply normalization in that window. It is
-permitted for the reviewed DB-first migration and the still-unmerged caller to
-share one release branch: database publication and source sealing must finish
-before that branch can merge. Record the running image as
+stopped-engine rollout first; never begin in the middle of Stage B on a rebuilt
+or partially restored database. If **either** Stage-B prerequisite is absent,
+use a separate earlier maintenance window on the currently deployed Stage-A
+engine and apply the one reviewed `stage_b_forward_authority_expansion` through
+`stage_b_lease_keyshare_once` chain. Keep every branch containing the
+atomic-move caller unmerged and undeployed, and do not render or apply
+normalization in that window. Database publication and source sealing must
+finish before that branch can merge. Record the running image as
 `STAGE_A_FULL_SHA`/`STAGE_A_SHA8`, prove it is the sole build, scale it to zero
-with section 2's host sequence, then apply the missing strict manager fence,
-settlement contraction, and DB-first atomic move in exactly that order through
-Supabase `apply_migration`. The atomic move accepts both the current integer
-roster and its later bigint shape, while the live Stage-A application has no
-caller yet. Before each apply, require a pristine name; afterward, require one
-globally unique name, one statement, and byte equality with the reviewed source
-file:
+with section 2's host sequence, then apply all six forward migrations in the
+exact resolver order through Supabase `apply_migration`. The atomic move inside
+the contraction accepts both the current integer roster and its later bigint
+shape, while the live Stage-A application has no caller yet. Before each apply,
+require a pristine name; afterward, require one globally unique name, one
+statement, and byte equality with the reviewed source file:
 
 For this prerequisite window only, set `FULL_SHA="$STAGE_A_FULL_SHA"` and
 `SHA8="$STAGE_A_SHA8"` before using sections 2 and 5. Those sections always act
@@ -53,23 +52,15 @@ on the exact image named by `FULL_SHA`; never carry these aliases into the later
 normalization window.
 
 ```sh
+scripts/dev/probe-stage-b-forward-chain-pg17.sh --resolve-only
 scripts/ops/verify-migration-ledger-artifact.sh \
-  tournament_manager_request_fencing_is_strict PREAPPLY
-# apply the sole *_tournament_manager_request_fencing_is_strict.sql via MCP
+  stage_b_current_postimage_contraction PREAPPLY
+# apply all six resolved stage_b_* files via MCP in the printed order
 scripts/ops/verify-migration-ledger-artifact.sh \
-  tournament_manager_request_fencing_is_strict "$FENCE_VERSION" "$FENCE_FILE"
-
+  stage_b_current_postimage_contraction \
+  "$CONTRACTION_APPLIED_VERSION" "$CONTRACTION_FILE"
 scripts/ops/verify-migration-ledger-artifact.sh \
-  hand_settlement_requires_exact_seat_generation PREAPPLY
-# apply the sole *_hand_settlement_requires_exact_seat_generation.sql via MCP
-scripts/ops/verify-migration-ledger-artifact.sh \
-  hand_settlement_requires_exact_seat_generation "$CONTRACT_VERSION" "$CONTRACT_FILE"
-
-scripts/ops/verify-migration-ledger-artifact.sh \
-  tournament_seat_moves_are_one_atomic_receipt PREAPPLY
-# apply the sole *_tournament_seat_moves_are_one_atomic_receipt.sql via MCP
-scripts/ops/verify-migration-ledger-artifact.sh \
-  tournament_seat_moves_are_one_atomic_receipt "$MOVE_APPLIED_VERSION" "$MOVE_FILE"
+  stage_b_lease_keyshare_once "$KEYSHARE_APPLIED_VERSION" "$KEYSHARE_FILE"
 ```
 
 Restart and certify the exact same Stage-A image as in section 5. Wait for it to
@@ -86,13 +77,16 @@ lease exists. This is only a schema-publication probe and writes no game row or
 receipt.
 
 Then add one source-sealing commit to the same still-unmerged release branch. It
-renames all three applied prerequisite files to their real ledger versions and
+renames all six applied Stage-B files to their real ledger versions and
 advances only the still-unapplied normalization reservation after them,
 preserving this total order in every tree:
 
 ```text
-exact-seat expansion < manager fence < settlement contraction
-  < atomic seat move < fractional normalization
+exact-seat expansion < Stage-B #1 < #2 < #3 < #4 < #5 < #6
+  < fractional normalization
+
+The atomic seat move < fractional normalization semantic order is therefore
+preserved without replaying any archived one-off migration.
 ```
 
 The static guard enforces that order. Merge the caller only after all four live
@@ -225,14 +219,15 @@ It must print both `RENDERED_ARTIFACT_VERIFIED` and
 outcome: query the ledger and run this verifier before considering a retry.
 The migration's exact-postimage branch is the only permitted replay path.
 
-The DB-first atomic seat-move migration is already a uniquely ledgered
-prerequisite and its application caller is already the exact running build; it
-must not be submitted again here. A timeout from the normalization apply is an
-unknown outcome. Re-read the global name count and exact ledger bytes before any
-retry; never submit a second named migration speculatively. Repeat section 2's
-timer/service/container/process readbacks and the checked-in zero-authority
-verifier immediately before the MCP apply. The same host lock remains held
-throughout; a changing or stale proof aborts.
+The complete Stage-B chain containing the DB-first atomic seat-move authority
+is already a uniquely ledgered prerequisite and its application caller is
+already the exact running build; it must not be submitted again here. A timeout
+from the normalization apply is an unknown outcome. Re-read the global name
+count and exact ledger bytes before any retry; never submit a second named
+migration speculatively. Repeat section 2's timer/service/container/process
+readbacks and the checked-in zero-authority verifier immediately before the MCP
+apply. The same host lock remains held throughout; a changing or stale proof
+aborts.
 
 Before restarting, run the checked-in read-only postcondition verifier:
 

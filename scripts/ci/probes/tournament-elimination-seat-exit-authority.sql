@@ -1,5 +1,5 @@
 -- Run as postgres on a disposable production-shape clone after
--- 20260909014545. Both fixtures carry the complete accepted-hand chain. The
+-- the Stage-B current-postimage contraction. Both fixtures carry the complete accepted-hand chain. The
 -- hand-history UUID deliberately differs from the internal settlement request
 -- UUID, proving that no layer conflates those identities. One exact live zero
 -- seat remains only to exercise the cutover seat-exit capability. The final

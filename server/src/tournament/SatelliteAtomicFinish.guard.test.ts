@@ -25,7 +25,7 @@ const PLACE_SQL = readFileSync(
   ),
   'utf8'
 );
-const STRICT_SQL = migrationBySuffix('tournament_manager_request_fencing_is_strict.sql');
+const STRICT_SQL = migrationBySuffix('stage_b_current_postimage_contraction.sql');
 const MANAGER = readFileSync(join(here, 'TournamentManager.ts'), 'utf8');
 const ELIMINATIONS = readFileSync(join(here, 'TournamentManagerEliminations.ts'), 'utf8');
 const SETTLEMENT_RPC = readFileSync(join(here, 'satelliteSettlementRpc.ts'), 'utf8');

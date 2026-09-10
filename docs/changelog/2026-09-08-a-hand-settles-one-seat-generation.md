@@ -1,5 +1,11 @@
 # A hand settles the seat generation it dealt
 
+> **Historical expansion record, superseded for Stage-B execution.** The
+> original isolated contraction files were never applied and now exist only in
+> the byte-sealed retired archive. Execute the current ordered six-migration
+> `stage_b_*` chain; exact-generation contraction is composed into
+> `stage_b_current_postimage_contraction`.
+
 **Production expansion:** Applied to `kuklfnapbkmacvwxktbh` on 2026-09-08
 (migration ledger version `20260908161534`). The exact-sender engine and strict
 contractions remain pending the staged application release and sole-engine
@@ -64,16 +70,13 @@ Release order:
 2. Deploy the engine which sends the composite generation.
 3. Prove the exact engine is the sole live process and all legacy requests have
    drained.
-4. Only then apply the already-reserved Stage-B contraction
-   `20260910002530_tournament_manager_request_fencing_is_strict.sql`, which
-   removes the legacy 9- and 11-argument doors. Do not batch that contraction
+4. Only then apply the ordered `stage_b_forward_authority_expansion` through
+   `stage_b_current_postimage_contraction` boundaries. The fifth boundary both
+   removes the legacy 9- and 11-argument doors and enforces exact generation in
+   every nonempty surviving settlement narrative. Do not place any contraction
    ahead of the exact-engine cutover.
-5. Apply
-   `20260910002540_hand_settlement_requires_exact_seat_generation.sql`. It
-   rejects any nonempty 12-argument or direct stack narrative missing either
-   generation field, removes every legacy user-only lookup branch, and makes
-   the seven-argument stack writer owner-only. The Stage-B door contraction
-   alone does not enforce those JSON fields inside the surviving functions.
+5. Apply `stage_b_lease_keyshare_once` last, in the same continuously frozen
+   six-migration window.
 
 The contraction is intentionally not folded into expansion. Requiring new
 fields before the old process drains would replace the original race with a

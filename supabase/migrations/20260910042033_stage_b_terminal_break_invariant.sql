@@ -1,0 +1,507 @@
+-- 20260910042033_stage_b_terminal_break_invariant
+--
+-- The preceding repair boundary captures every dirty terminal break preimage
+-- and normalizes only those rows. This migration deliberately contains none of
+-- that repair DML. It installs the permanent database invariant after proving
+-- the repair receipt cohort and current rows, so a stale tournament manager can
+-- never put a completed or cancelled tournament back on break.
+--
+-- The private readiness adapter changes only the completion trigger's view of
+-- its already-canonical NEW tuple. The ordinary readiness function retains its
+-- strict stored-row contract. The unique asserted substitution fails closed if
+-- the production completion guard differs from the audited postimage.
+
+BEGIN;
+
+SET LOCAL lock_timeout = '1s';
+SET LOCAL statement_timeout = '30s';
+SET LOCAL transaction_timeout = '60s';
+
+SELECT pg_advisory_xact_lock(
+  hashtextextended('ca:tournament-terminal-settlement:v1', 0)
+);
+
+DO $lock_stage_b_maintenance_window$
+BEGIN
+  IF NOT pg_try_advisory_xact_lock_shared(530090, 1) THEN
+    RAISE EXCEPTION
+      'terminal break invariant could not lock the durable platform freeze'
+      USING ERRCODE = '55006';
+  END IF;
+END;
+$lock_stage_b_maintenance_window$;
+
+LOCK TABLE realtime.subscription IN ACCESS EXCLUSIVE MODE NOWAIT;
+LOCK TABLE public.engine_maintenance_break IN SHARE MODE NOWAIT;
+LOCK TABLE public.tournaments IN SHARE ROW EXCLUSIVE MODE NOWAIT;
+LOCK TABLE public.engine_leader IN EXCLUSIVE MODE NOWAIT;
+LOCK TABLE public.engine_table_leases IN EXCLUSIVE MODE NOWAIT;
+LOCK TABLE public.engine_tournament_leases IN EXCLUSIVE MODE NOWAIT;
+
+DO $require_repaired_terminal_break_postimage$
+DECLARE
+  v_database_is_pristine boolean;
+  v_receipt_count bigint;
+  v_wrong_version_count bigint;
+BEGIN
+  SELECT NOT (
+       EXISTS (SELECT 1 FROM auth.users)
+    OR EXISTS (SELECT 1 FROM public.clubs)
+    OR EXISTS (SELECT 1 FROM public.tournaments)
+    OR EXISTS (SELECT 1 FROM public.tables)
+    OR EXISTS (SELECT 1 FROM public.chip_ledger)
+    OR EXISTS (SELECT 1 FROM public.tournament_tickets)
+  ) INTO v_database_is_pristine;
+
+  IF to_regprocedure('public.fn_platform_frozen()') IS NULL THEN
+    RAISE EXCEPTION
+      'terminal break invariant requires the durable platform freeze authority'
+      USING ERRCODE = '55000';
+  END IF;
+
+  IF NOT v_database_is_pristine
+     AND (
+       NOT public.fn_platform_frozen()
+       OR NOT EXISTS (
+         SELECT 1
+           FROM public.engine_maintenance_break b
+          WHERE b.id
+            AND b.enforce_freeze
+            AND b.phase = 'counting_down'
+            AND b.break_started_at IS NOT NULL
+            AND b.break_ends_at >= clock_timestamp() + interval '3 minutes'
+       )
+     ) THEN
+    RAISE EXCEPTION
+      'terminal break invariant requires three minutes of durable freeze headroom'
+      USING ERRCODE = '55006';
+  END IF;
+
+  IF NOT v_database_is_pristine
+     AND (
+       EXISTS (
+         SELECT 1 FROM public.engine_leader l
+          WHERE l.heartbeat_at >= clock_timestamp() - interval '30 seconds'
+       )
+       OR EXISTS (
+         SELECT 1 FROM public.engine_table_leases l
+          WHERE l.heartbeat_at >= clock_timestamp() - interval '30 seconds'
+       )
+       OR EXISTS (
+         SELECT 1 FROM public.engine_tournament_leases l
+          WHERE l.heartbeat_at >= clock_timestamp() - interval '30 seconds'
+       )
+     ) THEN
+    RAISE EXCEPTION
+      'terminal break invariant requires every engine heartbeat to be stale'
+      USING ERRCODE = '55006';
+  END IF;
+
+  IF to_regclass(
+       'public.tournament_terminal_break_normalization_receipts'
+     ) IS NULL
+     OR to_regprocedure(
+       'public.fn_tournament_terminal_break_normalization_receipt_immutable()'
+     ) IS NULL THEN
+    RAISE EXCEPTION
+      'terminal break invariant requires the forward expansion first'
+      USING ERRCODE = '55000';
+  END IF;
+
+  SELECT count(*),
+         count(*) FILTER (
+           WHERE normalization_version <>
+             '20260910042020_stage_b_exact_precondition_repairs'
+         )
+    INTO v_receipt_count, v_wrong_version_count
+    FROM public.tournament_terminal_break_normalization_receipts;
+
+  IF (v_database_is_pristine AND v_receipt_count <> 0)
+     OR (NOT v_database_is_pristine AND v_receipt_count = 0)
+     OR v_wrong_version_count <> 0 THEN
+    RAISE EXCEPTION
+      'terminal break repair receipt cohort changed: pristine %, rows %, wrong-version %',
+      v_database_is_pristine, v_receipt_count, v_wrong_version_count
+      USING ERRCODE = '55000';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+      FROM public.tournaments t
+     WHERE upper(t.status::text) IN ('COMPLETED', 'CANCELLED')
+       AND (
+         COALESCE(t.on_break, false)
+         OR t.break_started_at IS NOT NULL
+         OR t.break_ends_at IS NOT NULL
+       )
+  ) THEN
+    RAISE EXCEPTION
+      'terminal break invariant found uncaptured terminal break residue'
+      USING ERRCODE = '55000';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+      FROM public.tournament_terminal_break_normalization_receipts r
+      LEFT JOIN public.tournaments t ON t.id = r.tournament_id
+     WHERE t.id IS NULL
+        OR NOT (
+          r.on_break_before
+          OR r.break_started_at_before IS NOT NULL
+          OR r.break_ends_at_before IS NOT NULL
+        )
+        OR upper(t.status::text) IS DISTINCT FROM r.terminal_status
+        OR COALESCE(t.on_break, false)
+        OR t.break_started_at IS NOT NULL
+        OR t.break_ends_at IS NOT NULL
+  ) THEN
+    RAISE EXCEPTION
+      'terminal break repair receipts do not match the canonical terminal rows'
+      USING ERRCODE = '55000';
+  END IF;
+
+  IF to_regprocedure(
+       'public.fn_guard_terminal_tournament_break_state()'
+     ) IS NOT NULL
+     OR to_regprocedure(
+       'smarter_private.fn_tournament_finish_readiness_for_terminal_candidate(uuid,uuid,text,boolean,timestamp with time zone,timestamp with time zone)'
+     ) IS NOT NULL
+     OR EXISTS (
+       SELECT 1
+         FROM pg_trigger t
+        WHERE t.tgrelid = 'public.tournaments'::regclass
+          AND t.tgname = 'aaa_guard_terminal_tournament_break_state'
+          AND NOT t.tgisinternal
+     )
+     OR EXISTS (
+       SELECT 1
+         FROM pg_constraint c
+        WHERE c.conrelid = 'public.tournaments'::regclass
+          AND c.conname = 'tournaments_terminal_break_state_is_clear'
+     ) THEN
+    RAISE EXCEPTION
+      'terminal break invariant already exists outside this forward boundary'
+      USING ERRCODE = '42710';
+  END IF;
+
+  IF to_regprocedure(
+       'public.trg_lock_and_validate_tournament_live_seat()'
+     ) IS NULL
+     OR to_regprocedure(
+       'public.fn_active_maintenance_release_boundary()'
+     ) IS NULL
+     OR to_regclass('public.idx_tournaments_updated_at') IS NULL THEN
+    RAISE EXCEPTION
+      'terminal break invariant requires the 20260910034411 postimage'
+      USING ERRCODE = '55000';
+  END IF;
+END;
+$require_repaired_terminal_break_postimage$;
+
+CREATE FUNCTION public.fn_guard_terminal_tournament_break_state()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public','pg_temp'
+AS $function$
+BEGIN
+  IF upper(NEW.status::text) NOT IN ('COMPLETED','CANCELLED') THEN
+    RETURN NEW;
+  END IF;
+
+  /* A terminal transition owns the canonical clear even when an older caller
+     omitted one of the three columns.  Once terminal, however, a later writer
+     receives a hard refusal instead of silently manufacturing a live break. */
+  IF TG_OP='UPDATE'
+     AND upper(OLD.status::text) IN ('COMPLETED','CANCELLED')
+     AND (
+       COALESCE(NEW.on_break,false)
+       OR NEW.break_started_at IS NOT NULL
+       OR NEW.break_ends_at IS NOT NULL
+     ) THEN
+    RAISE EXCEPTION 'terminal tournament % cannot re-enter a break',NEW.id
+      USING ERRCODE='check_violation';
+  END IF;
+
+  NEW.on_break := false;
+  NEW.break_started_at := NULL;
+  NEW.break_ends_at := NULL;
+  RETURN NEW;
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.fn_guard_terminal_tournament_break_state()
+  FROM PUBLIC, anon, authenticated, service_role;
+
+CREATE TRIGGER aaa_guard_terminal_tournament_break_state
+BEFORE INSERT OR UPDATE OF status,on_break,break_started_at,break_ends_at
+ON public.tournaments
+FOR EACH ROW EXECUTE FUNCTION public.fn_guard_terminal_tournament_break_state();
+
+ALTER TABLE public.tournaments
+  ADD CONSTRAINT tournaments_terminal_break_state_is_clear
+  CHECK (
+    upper(status::text) NOT IN ('COMPLETED','CANCELLED')
+    OR (
+      on_break IS FALSE
+      AND break_started_at IS NULL
+      AND break_ends_at IS NULL
+    )
+  ) NOT VALID;
+
+ALTER TABLE public.tournaments
+  VALIDATE CONSTRAINT tournaments_terminal_break_state_is_clear;
+
+/* A BEFORE trigger that queries its own relation sees the stored OLD row, not
+   the candidate NEW tuple modified by an earlier BEFORE trigger. The ordinary
+   two-argument readiness contract must continue to flag every stored
+   COMPLETING/on_break row, so do not weaken it globally. This private adapter
+   removes only that one visibility artifact, and only for the exact terminal
+   candidate passed by the completion trigger after the earlier terminal guard
+   has canonicalized all three NEW break columns. Every unrelated readiness
+   failure is retained in its original order. */
+CREATE FUNCTION smarter_private.fn_tournament_finish_readiness_for_terminal_candidate(
+  p_tournament_id uuid,
+  p_winner_user_id uuid,
+  p_previous_status text,
+  p_candidate_on_break boolean,
+  p_candidate_break_started_at timestamptz,
+  p_candidate_break_ends_at timestamptz
+) RETURNS jsonb
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path TO 'public','pg_temp'
+AS $function$
+DECLARE
+  v_ready jsonb;
+  v_failures jsonb;
+  v_stored_status text;
+  v_stored_on_break boolean;
+  v_terminal_break_failures integer;
+BEGIN
+  v_ready := public.fn_tournament_finish_readiness(
+    p_tournament_id,
+    p_winner_user_id
+  );
+
+  /* These arguments come from the trigger's real OLD and already-canonical
+     NEW records. The stored-row proof prevents this adapter from becoming a
+     general-purpose way to forgive terminal break residue. */
+  IF upper(COALESCE(p_previous_status,'')) <> 'COMPLETING'
+     OR p_candidate_on_break IS DISTINCT FROM false
+     OR p_candidate_break_started_at IS NOT NULL
+     OR p_candidate_break_ends_at IS NOT NULL
+     OR jsonb_typeof(v_ready) IS DISTINCT FROM 'object'
+     OR jsonb_typeof(v_ready->'failures') IS DISTINCT FROM 'array' THEN
+    RETURN v_ready;
+  END IF;
+
+  SELECT upper(t.status::text),COALESCE(t.on_break,false)
+    INTO v_stored_status,v_stored_on_break
+    FROM public.tournaments t
+   WHERE t.id=p_tournament_id;
+  IF NOT FOUND
+     OR v_stored_status IS DISTINCT FROM 'COMPLETING'
+     OR v_stored_on_break IS DISTINCT FROM true THEN
+    RETURN v_ready;
+  END IF;
+
+  SELECT count(*)::integer
+    INTO v_terminal_break_failures
+    FROM jsonb_array_elements(v_ready->'failures') AS failure(value)
+   WHERE failure.value->>'code'='terminal_break_flag_set';
+  IF v_terminal_break_failures <> 1 THEN
+    RETURN v_ready;
+  END IF;
+
+  SELECT COALESCE(jsonb_agg(failure.value ORDER BY failure.ordinality),'[]'::jsonb)
+    INTO v_failures
+    FROM jsonb_array_elements(v_ready->'failures')
+         WITH ORDINALITY AS failure(value,ordinality)
+   WHERE failure.value->>'code'<>'terminal_break_flag_set';
+
+  v_ready := jsonb_set(v_ready,'{failures}',v_failures,true);
+  v_ready := jsonb_set(
+    v_ready,
+    '{ok}',
+    to_jsonb(jsonb_array_length(v_failures)=0),
+    true
+  );
+  v_ready := jsonb_set(
+    v_ready,
+    '{reason}',
+    CASE WHEN jsonb_array_length(v_failures)=0
+         THEN 'null'::jsonb
+         ELSE to_jsonb(v_failures->0->>'code') END,
+    true
+  );
+  RETURN v_ready;
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION
+  smarter_private.fn_tournament_finish_readiness_for_terminal_candidate(
+    uuid,uuid,text,boolean,timestamptz,timestamptz
+  ) FROM PUBLIC, anon, authenticated, service_role;
+
+/* Patch only the completion trigger's call site, with an asserted unique
+   substitution. The already-applied readiness function and all of its direct
+   callers retain their original two-argument semantics. */
+DO $make_finish_certificate_candidate_aware$
+DECLARE
+  v_definition text;
+  v_next text;
+  v_old constant text := $old$  v_ready := public.fn_tournament_finish_readiness(NEW.id,v_winner);$old$;
+  v_new constant text := $new$  v_ready := smarter_private.fn_tournament_finish_readiness_for_terminal_candidate(
+    NEW.id,
+    v_winner,
+    OLD.status::text,
+    NEW.on_break,
+    NEW.break_started_at,
+    NEW.break_ends_at
+  );$new$;
+BEGIN
+  IF to_regprocedure('public.fn_tournament_finish_readiness(uuid,uuid)') IS NULL
+     OR to_regprocedure('public.fn_guard_tournament_completed_certificate()') IS NULL THEN
+    RAISE EXCEPTION
+      'terminal break invariant requires finish readiness and its completion guard';
+  END IF;
+
+  SELECT pg_get_functiondef(
+           'public.fn_guard_tournament_completed_certificate()'::regprocedure
+         )
+    INTO STRICT v_definition;
+
+  IF position(v_old IN v_definition) > 0 THEN
+    IF length(v_definition) - length(replace(v_definition,v_old,''))
+         <> length(v_old) THEN
+      RAISE EXCEPTION 'finish-certificate readiness call is not unique';
+    END IF;
+    v_next := replace(v_definition,v_old,v_new);
+    EXECUTE v_next;
+  ELSIF position(v_new IN v_definition) = 0 THEN
+    RAISE EXCEPTION
+      'finish-certificate readiness call changed; inspect before applying';
+  END IF;
+END;
+$make_finish_certificate_candidate_aware$;
+
+
+DO $verify_terminal_break_invariant$
+DECLARE
+  v_bad bigint;
+  v_database_is_pristine boolean;
+  v_receipt_count bigint;
+  v_wrong_version_count bigint;
+  v_terminal_trigger "char";
+  v_receipt_trigger "char";
+  v_constraint_valid boolean;
+  v_certificate_source text;
+BEGIN
+  SELECT count(*) INTO v_bad
+    FROM public.tournaments t
+   WHERE upper(t.status::text) IN ('COMPLETED', 'CANCELLED')
+     AND (
+       COALESCE(t.on_break, false)
+       OR t.break_started_at IS NOT NULL
+       OR t.break_ends_at IS NOT NULL
+     );
+  IF v_bad <> 0 THEN
+    RAISE EXCEPTION
+      'terminal break invariant left % invalid terminal rows', v_bad
+      USING ERRCODE = '55000';
+  END IF;
+
+  SELECT t.tgenabled
+    INTO v_terminal_trigger
+    FROM pg_trigger t
+   WHERE t.tgrelid = 'public.tournaments'::regclass
+     AND t.tgname = 'aaa_guard_terminal_tournament_break_state'
+     AND NOT t.tgisinternal;
+
+  SELECT t.tgenabled
+    INTO v_receipt_trigger
+    FROM pg_trigger t
+   WHERE t.tgrelid =
+         'public.tournament_terminal_break_normalization_receipts'::regclass
+     AND t.tgname =
+         'tournament_terminal_break_normalization_receipt_immutable'
+     AND NOT t.tgisinternal;
+
+  SELECT c.convalidated
+    INTO v_constraint_valid
+    FROM pg_constraint c
+   WHERE c.conrelid = 'public.tournaments'::regclass
+     AND c.conname = 'tournaments_terminal_break_state_is_clear';
+
+  IF v_terminal_trigger IS DISTINCT FROM 'O'
+     OR v_receipt_trigger IS DISTINCT FROM 'O'
+     OR v_constraint_valid IS DISTINCT FROM true THEN
+    RAISE EXCEPTION
+      'terminal break trigger, receipt guard, or validated constraint is absent'
+      USING ERRCODE = '55000';
+  END IF;
+
+  SELECT NOT (
+       EXISTS (SELECT 1 FROM auth.users)
+    OR EXISTS (SELECT 1 FROM public.clubs)
+    OR EXISTS (SELECT 1 FROM public.tournaments)
+    OR EXISTS (SELECT 1 FROM public.tables)
+    OR EXISTS (SELECT 1 FROM public.chip_ledger)
+    OR EXISTS (SELECT 1 FROM public.tournament_tickets)
+  ) INTO v_database_is_pristine;
+
+  SELECT count(*),
+         count(*) FILTER (
+           WHERE r.normalization_version <>
+             '20260910042020_stage_b_exact_precondition_repairs'
+         )
+    INTO v_receipt_count, v_wrong_version_count
+    FROM public.tournament_terminal_break_normalization_receipts r;
+
+  IF (v_database_is_pristine AND v_receipt_count <> 0)
+     OR (NOT v_database_is_pristine AND v_receipt_count = 0)
+     OR v_wrong_version_count <> 0 THEN
+    RAISE EXCEPTION
+      'terminal break receipt cohort changed during invariant activation'
+      USING ERRCODE = '55000';
+  END IF;
+
+  IF has_function_privilege(
+       'service_role',
+       'public.fn_guard_terminal_tournament_break_state()',
+       'EXECUTE'
+     )
+     OR has_function_privilege(
+       'service_role',
+       'smarter_private.fn_tournament_finish_readiness_for_terminal_candidate(uuid,uuid,text,boolean,timestamp with time zone,timestamp with time zone)',
+       'EXECUTE'
+     ) THEN
+    RAISE EXCEPTION
+      'service_role can invoke a private terminal break authority'
+      USING ERRCODE = '55000';
+  END IF;
+
+  SELECT p.prosrc
+    INTO STRICT v_certificate_source
+    FROM pg_proc p
+   WHERE p.oid =
+     'public.fn_guard_tournament_completed_certificate()'::regprocedure;
+
+  IF position(
+       'smarter_private.fn_tournament_finish_readiness_for_terminal_candidate('
+       IN v_certificate_source
+     ) = 0
+     OR position(
+       'IF COALESCE(NEW.on_break,false) THEN'
+       IN v_certificate_source
+     ) = 0 THEN
+    RAISE EXCEPTION
+      'finish certificate lost candidate-aware terminal break enforcement'
+      USING ERRCODE = '55000';
+  END IF;
+END;
+$verify_terminal_break_invariant$;
+
+COMMIT;

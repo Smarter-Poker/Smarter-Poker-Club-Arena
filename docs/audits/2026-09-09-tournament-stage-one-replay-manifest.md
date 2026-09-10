@@ -14,7 +14,12 @@ This release is rehearsed from the supported current production schema baseline,
 
 `20260909061222` deliberately refuses a database without its exact affected production cohort. Its source remains byte-exact to the production ledger. Current-schema rehearsals must begin after this incident history; they must not seed fake incidents or manipulate `supabase_migrations.schema_migrations` to force a false from-zero replay claim.
 
-## Forward Cutover Order
+## Superseded Proposed Cutover Order
+
+The list below is retained only to explain the historical review sequence. The
+unapplied Stage-B candidates named there were never applied to production.
+Those exact bytes are sealed under `supabase/retired-unapplied/` and must never
+be resolved or replayed as active migrations.
 
 The logical IDs embedded inside these files are immutable. After each production apply, only the physical filename and exact path references are changed to the version assigned by the Supabase migration ledger.
 
@@ -32,6 +37,24 @@ The logical IDs embedded inside these files are immutable. After each production
 12. Freeze B: `20260909014534_non_satellite_terminal_settlement_commits_one_stored_receipt.sql`
 13. Freeze B: `20260909014545_tournament_seat_exits_stay_inside_tournament_authority.sql`
 14. Freeze B: `20260909043000_tournament_terminal_roots_are_db_first_hardened.sql`
+
+## Current Forward Cutover Order
+
+The supported executable sequence is one continuously frozen current-postimage
+chain. After the final production-head rebase, each physical filename must sort
+in this order and its exact statement bytes must be sealed to the migration
+ledger before moving to the next boundary:
+
+1. `stage_b_forward_authority_expansion`
+2. `stage_b_exact_precondition_repairs`
+3. `stage_b_terminal_break_invariant`
+4. `stage_b_atomic_finish_precertification`
+5. `stage_b_current_postimage_contraction`
+6. `stage_b_lease_keyshare_once`
+
+Resolve and validate the chain with
+`scripts/dev/probe-stage-b-forward-chain-pg17.sh --resolve-only`; never begin
+from an archived intermediate boundary.
 
 The two add-on definitions are contiguous because the second pins the installed processor and predecessor bodies. The two closeouts refuse a frozen platform and therefore run between the two freeze windows. The terminal migrations remain frozen through their final postconditions.
 

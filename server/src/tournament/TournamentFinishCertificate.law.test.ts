@@ -21,7 +21,7 @@ if (!migrationName) throw new Error('financial completion migration is missing')
 const SQL = readFileSync(join(migrations, migrationName), 'utf8');
 const CODE = SQL.replace(/^\s*--.*$/gm, '');
 const strictMigrationNames = readdirSync(migrations).filter((name) =>
-  name.endsWith('_tournament_manager_request_fencing_is_strict.sql')
+  name.endsWith('_stage_b_current_postimage_contraction.sql')
 );
 expect(
   strictMigrationNames,
@@ -30,7 +30,7 @@ expect(
 const STRICT_SQL = readFileSync(join(migrations, strictMigrationNames[0] ?? ''), 'utf8');
 const STRICT_CODE = STRICT_SQL.replace(/^\s*--.*$/gm, '');
 const precertificationMigrationNames = readdirSync(migrations).filter((name) =>
-  name.endsWith('_precertify_stage_a_atomic_tournament_finishes.sql')
+  name.endsWith('_stage_b_atomic_finish_precertification.sql')
 );
 expect(
   precertificationMigrationNames,

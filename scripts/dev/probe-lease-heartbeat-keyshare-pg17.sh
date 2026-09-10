@@ -21,7 +21,7 @@ migration_by_suffix() {
 }
 
 migration="$({
-  migration_by_suffix lease_heartbeats_do_not_starve_behind_live_transactions.sql
+  migration_by_suffix stage_b_lease_keyshare_once.sql
 })"
 heartbeat_migration="$({
   migration_by_suffix lease_heartbeats_skip_busy_generations.sql

@@ -33,6 +33,9 @@ export type EquityWorkerPoolPhase =
 
 export interface EquityWorkerPoolStatus {
   phase: EquityWorkerPoolPhase;
+  routingReady: boolean;
+  acceptingWork: boolean;
+  recoveryInFlight: boolean;
   configuredWorkers: number;
   readyWorkers: number;
   busyWorkers: number;
@@ -40,6 +43,16 @@ export interface EquityWorkerPoolStatus {
   oldestQueuedAgeMs: number;
   lastCompletionAgeMs: number | null;
   lastError: string | null;
+}
+
+/**
+ * Dealer routing follows the pool's full status, not its telemetry phase.
+ * `degraded` can mean either useful partial capacity or a bounded zero-capacity
+ * replacement window; only the latter must reject new calculator work while
+ * allowing an otherwise-live dealer to keep routing hands.
+ */
+export function equityWorkerPoolPreservesDealerLiveness(status: EquityWorkerPoolStatus): boolean {
+  return status.routingReady;
 }
 
 export class EquityWorkerUnavailableError extends Error {
@@ -123,6 +136,7 @@ interface WorkerSlot {
   ready: boolean;
   down: boolean;
   job?: Job;
+  readyTimer?: ReturnType<typeof setTimeout>;
 }
 
 export interface EquityWorkerPoolOptions {
@@ -147,7 +161,7 @@ export class EquityWorkerPool {
   private readonly idle: WorkerSlot[] = [];
   private readonly queue: Job[] = [];
   private nextId = 1;
-  private pendingRespawns = 0;
+  private readonly respawnTimers = new Set<ReturnType<typeof setTimeout>>();
   private hasReachedReady = false;
   private lastCompletedAt: number | null = null;
   private lastError: string | null = null;
@@ -179,10 +193,18 @@ export class EquityWorkerPool {
 
   status(): EquityWorkerPoolStatus {
     const now = Date.now();
-    const readyWorkers = [...this.slots].filter((slot) => slot.ready && !slot.down).length;
+    const readyWorkers = this.readyWorkerCount();
     const busyWorkers = [...this.slots].filter((slot) => slot.job && !slot.down).length;
+    const recoveryInFlight = this.recoveryInFlight();
+    const routingReady =
+      this.hasReachedReady &&
+      (this.phase === 'ready' || this.phase === 'degraded') &&
+      (readyWorkers > 0 || recoveryInFlight);
     return {
       phase: this.phase,
+      routingReady,
+      acceptingWork: routingReady && readyWorkers > 0,
+      recoveryInFlight,
       configuredWorkers: this.size,
       readyWorkers,
       busyWorkers,
@@ -198,8 +220,7 @@ export class EquityWorkerPool {
   }
 
   isAvailable(): boolean {
-    const status = this.status();
-    return (status.phase === 'ready' || status.phase === 'degraded') && status.readyWorkers > 0;
+    return this.status().acceptingWork;
   }
 
   /** Start all configured workers and wait for worker-authored READY messages. */
@@ -225,10 +246,7 @@ export class EquityWorkerPool {
       const error = new EquityWorkerUnavailableError(
         `Equity workers did not become ready within ${this.readyTimeoutMs}ms`
       );
-      this.lastError = error.message;
-      this.phase = 'failed';
-      this.rejectReadiness?.(error);
-      this.clearReadinessWaiters();
+      this.failStartup(error);
     }, this.readyTimeoutMs);
     this.readinessTimer.unref?.();
     for (let i = 0; i < this.size; i++) this.spawnWorker();
@@ -425,7 +443,7 @@ export class EquityWorkerPool {
     payload: EquityPayload | InsurancePayload | LayeredEquityPayload,
     validate: (message: Record<string, unknown>) => T
   ): Promise<T> {
-    if (this.phase !== 'ready' && this.phase !== 'degraded') {
+    if (!this.status().acceptingWork) {
       return Promise.reject(new EquityWorkerUnavailableError());
     }
     return new Promise<T>((resolve, reject) => {
@@ -453,7 +471,7 @@ export class EquityWorkerPool {
     });
   }
 
-  private spawnWorker(): void {
+  private spawnWorker(isReplacement = false): void {
     if (this.phase === 'stopping' || this.phase === 'stopped' || this.disabled) return;
     let worker: WorkerLike;
     try {
@@ -461,6 +479,7 @@ export class EquityWorkerPool {
     } catch (error) {
       this.lastError = this.errorMessage(error);
       this.scheduleRespawn();
+      this.updatePhaseAfterCapacityChange();
       return;
     }
     const slot: WorkerSlot = { worker, ready: false, down: false };
@@ -469,6 +488,19 @@ export class EquityWorkerPool {
     worker.on('error', (error) => this.onWorkerDown(slot, error));
     worker.on('exit', (code) => this.onWorkerDown(slot, new Error(`Equity worker exited ${code}`)));
     worker.unref?.();
+    if (isReplacement) {
+      slot.readyTimer = setTimeout(() => {
+        if (slot.down || slot.ready || !this.slots.has(slot)) return;
+        this.retireWorker(
+          slot,
+          new EquityWorkerUnavailableError(
+            `Equity replacement worker did not become ready within ${this.readyTimeoutMs}ms`
+          )
+        );
+      }, this.readyTimeoutMs);
+      slot.readyTimer.unref?.();
+    }
+    this.updatePhaseAfterCapacityChange();
   }
 
   private onMessage(slot: WorkerSlot, rawMessage: unknown): void {
@@ -483,6 +515,7 @@ export class EquityWorkerPool {
         return;
       }
       if (!slot.ready) {
+        this.clearSlotReadyTimer(slot);
         slot.ready = true;
         this.idle.push(slot);
       }
@@ -544,6 +577,7 @@ export class EquityWorkerPool {
   private retireWorker(slot: WorkerSlot, reason: unknown): void {
     if (slot.down) return;
     slot.down = true;
+    this.clearSlotReadyTimer(slot);
     this.lastError = this.errorMessage(reason);
     this.slots.delete(slot);
     const idleIndex = this.idle.indexOf(slot);
@@ -552,9 +586,9 @@ export class EquityWorkerPool {
       this.rejectJob(slot.job, new EquityWorkerUnavailableError(this.lastError));
       slot.job = undefined;
     }
-    if (this.phase !== 'starting') this.phase = 'degraded';
     void slot.worker.terminate().catch(() => {});
     this.scheduleRespawn();
+    this.updatePhaseAfterCapacityChange();
   }
 
   private onWorkerDown(slot: WorkerSlot, reason: unknown): void {
@@ -566,37 +600,82 @@ export class EquityWorkerPool {
       this.phase === 'stopping' ||
       this.phase === 'stopped' ||
       this.respawnBudget <= 0 ||
-      this.slots.size + this.pendingRespawns >= this.size
+      this.slots.size + this.respawnTimers.size >= this.size
     ) {
-      if (
-        this.hasReachedReady &&
-        this.respawnBudget <= 0 &&
-        this.slots.size === 0 &&
-        this.pendingRespawns === 0
-      ) {
-        this.phase = 'failed';
-      }
       return;
     }
     this.respawnBudget -= 1;
-    this.pendingRespawns += 1;
     const timer = setTimeout(() => {
-      this.pendingRespawns -= 1;
-      this.spawnWorker();
+      this.respawnTimers.delete(timer);
+      if (this.phase === 'stopping' || this.phase === 'stopped' || this.disabled) return;
+      this.spawnWorker(true);
     }, RESPAWN_DELAY_MS);
+    this.respawnTimers.add(timer);
     timer.unref?.();
   }
 
   private updatePhaseAfterCapacityChange(): void {
-    const readyWorkers = [...this.slots].filter((slot) => slot.ready && !slot.down).length;
-    if (readyWorkers === this.size) {
+    if (this.phase === 'stopping' || this.phase === 'stopped') return;
+    const readyWorkers = this.readyWorkerCount();
+    if (!this.hasReachedReady && readyWorkers === this.size && this.phase === 'starting') {
       this.hasReachedReady = true;
       this.phase = 'ready';
       this.resolveReadiness?.(this.status());
       this.clearReadinessWaiters();
-    } else if (this.phase !== 'starting') {
-      this.phase = readyWorkers > 0 ? 'degraded' : 'failed';
+      return;
     }
+    if (!this.hasReachedReady) return;
+
+    if (readyWorkers === this.size) this.phase = 'ready';
+    else if (readyWorkers > 0 || this.recoveryInFlight()) this.phase = 'degraded';
+    else this.phase = 'failed';
+
+    if (readyWorkers === 0) this.rejectQueuedJobsWithoutCapacity();
+  }
+
+  private readyWorkerCount(): number {
+    return [...this.slots].filter((slot) => slot.ready && !slot.down).length;
+  }
+
+  private recoveryInFlight(): boolean {
+    if (!this.hasReachedReady) return false;
+    return (
+      this.respawnTimers.size > 0 ||
+      [...this.slots].some((slot) => !slot.down && !slot.ready && slot.readyTimer !== undefined)
+    );
+  }
+
+  private rejectQueuedJobsWithoutCapacity(): void {
+    if (this.readyWorkerCount() > 0 || this.queue.length === 0) return;
+    const error = new EquityWorkerUnavailableError(
+      this.lastError ?? 'Equity worker pool has no ready workers'
+    );
+    for (const job of this.queue.splice(0)) this.rejectJob(job, error);
+  }
+
+  private clearSlotReadyTimer(slot: WorkerSlot): void {
+    if (slot.readyTimer) clearTimeout(slot.readyTimer);
+    slot.readyTimer = undefined;
+  }
+
+  private cancelRespawnTimers(): void {
+    for (const timer of this.respawnTimers) clearTimeout(timer);
+    this.respawnTimers.clear();
+  }
+
+  private failStartup(error: Error): void {
+    this.lastError = error.message;
+    this.phase = 'failed';
+    this.rejectReadiness?.(error);
+    this.clearReadinessWaiters();
+    this.cancelRespawnTimers();
+    for (const slot of this.slots) {
+      slot.down = true;
+      this.clearSlotReadyTimer(slot);
+      void slot.worker.terminate().catch(() => {});
+    }
+    this.slots.clear();
+    this.idle.length = 0;
   }
 
   private resolveJob<T>(job: Job<T>, result: T): void {
@@ -639,10 +718,12 @@ export class EquityWorkerPool {
     const aborted = new EquityWorkerPoolAbortedError();
     this.rejectReadiness?.(aborted);
     this.clearReadinessWaiters();
+    this.cancelRespawnTimers();
     for (const job of this.queue.splice(0)) this.rejectJob(job, aborted);
     const terminations: Promise<number>[] = [];
     for (const slot of this.slots) {
       slot.down = true;
+      this.clearSlotReadyTimer(slot);
       if (slot.job) this.rejectJob(slot.job, aborted);
       terminations.push(slot.worker.terminate().catch(() => 0));
     }
@@ -669,6 +750,9 @@ export function equityWorkerPoolStatus(): EquityWorkerPoolStatus {
   return (
     pool?.status() ?? {
       phase: 'idle',
+      routingReady: false,
+      acceptingWork: false,
+      recoveryInFlight: false,
       configuredWorkers: 0,
       readyWorkers: 0,
       busyWorkers: 0,

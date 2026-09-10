@@ -47,7 +47,7 @@ BEGIN
   SELECT count(*) INTO v_count
     FROM public.tournament_seat_exit_authority_cutover c
    WHERE c.authority='tournament_seat_exit_authority:v1'
-     AND c.migration_version='20260909014545'
+     AND c.migration_version='20260910042020_stage_b_exact_precondition_repairs'
      AND c.installed_at IS NOT NULL
      AND c.installed_at<=clock_timestamp()
      AND c.repaired_seat_count=cardinality(c.repaired_seat_ids)

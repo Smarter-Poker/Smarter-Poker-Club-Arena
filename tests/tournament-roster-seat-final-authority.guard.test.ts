@@ -3,17 +3,17 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { sliceSqlStatement } from './helpers/sourceWindow';
 
-const schedulerFenceMigration = resolve(
+const expansionMigration = resolve(
   process.cwd(),
-  'supabase/migrations/20260910000850_tournament_mutation_jobs_are_disabled_before_retirement.sql'
+  'supabase/migrations/20260910042007_stage_b_forward_authority_expansion.sql'
 );
 const finalMigration = resolve(
   process.cwd(),
-  'supabase/migrations/20260910000905_final_tournament_roster_seat_authority_after_scheduler_fence.sql'
+  'supabase/migrations/20260910042112_stage_b_current_postimage_contraction.sql'
 );
-const schedulerFenceSql = readFileSync(schedulerFenceMigration, 'utf8');
+const expansionSql = readFileSync(expansionMigration, 'utf8');
 const finalSql = readFileSync(finalMigration, 'utf8');
-const sql = `${schedulerFenceSql}\n${finalSql}`;
+const sql = `${expansionSql}\n${finalSql}`;
 
 function taggedBody(tag: string): string {
   const delimiter = `$${tag}$`;
@@ -76,9 +76,7 @@ describe('the final tournament seat authority converges after M6', () => {
 
   it('seats every RUNNING-target satellite award inside the settlement transaction', () => {
     const satellite = taggedBody('satellite_with_final_seat_authority');
-    const terminalRoot = satellite.indexOf(
-      "hashtextextended('ca:tournament-terminal-settlement:v1',0)"
-    );
+    const terminalRoot = satellite.indexOf('public.fn_ca_lock_settlement_lane_global()');
     const missionLock = satellite.indexOf('fn_lock_daily_mission_user', terminalRoot);
     const exitAuthority = satellite.indexOf(
       'fn_ca_open_tournament_seat_exit_authority',
@@ -146,7 +144,8 @@ describe('pending accepted zero stacks cannot be resurrected from a stale chair'
     expect(proof).toContain('a pending accepted zero-stack candidate still has a live seat');
     expect(sql).not.toContain('ca_pending_zero_seat_repairs');
     expect(sql).not.toContain('vacate_proven_pending_zero_seats');
-    expect(sql).not.toContain('tournament_pending_zero_seat_cutover_receipts');
+    expect(sql).not.toContain('INSERT INTO public.tournament_pending_zero_seat_cutover_receipts');
+    expect(sql).not.toMatch(/UPDATE\s+public\.tournament_pending_zero_seat_cutover_receipts/i);
     expect(proof).not.toContain('fn_emit_tournament_manager_wake');
     expect(proof).not.toMatch(/\b(?:UPDATE|INSERT|DELETE)\b/);
     expect(sql).toContain(
@@ -198,16 +197,17 @@ describe('periodic tournament mutation is retired at its root', () => {
 
   it('commits fail-closed bodies and disabling before final drain and drop', () => {
     const fence = taggedBody('commit_retired_tournament_mutator_schedule_fence');
-    const absent = taggedBody('retired_absent_player_mutator_fence');
     const broke = taggedBody('retired_broke_seat_mutator_fence');
-    expect(absent).toContain("hashtextextended('ca:job:eliminate-absent-tournament-players:v1',0)");
+    expect(finalSql).toContain(
+      "hashtextextended('ca:job:eliminate-absent-tournament-players:v1',0)"
+    );
     expect(broke).toContain("hashtextextended('ca:job:release-broke-seats:v1',0)");
     expect(fence).toContain('cron.alter_job(job_id=>r.jobid,active=>false)');
     expect(fence).toContain('cardinality(v_job_ids)<>2');
-    expect(schedulerFenceSql).toContain(
+    expect(expansionSql).toContain(
       'CREATE TABLE public.tournament_mutator_scheduler_retirement_receipts'
     );
-    expect(schedulerFenceSql).toContain('array_agg(j.jobid ORDER BY j.jobid)');
+    expect(finalSql).toContain('array_agg(j.jobid ORDER BY j.jobid)');
     const drain = taggedBody('drain_pre_tombstone_tournament_mutator_invocations');
     expect(drain).toContain('FROM public.tournament_mutator_scheduler_retirement_receipts r');
     expect(drain).toContain('LEFT JOIN cron.job_run_details d');
@@ -220,8 +220,8 @@ describe('periodic tournament mutation is retired at its root', () => {
     expect(unschedule).toContain('AND j.active');
     expect(unschedule).toContain('cron.unschedule(r.jobid)');
     expect(sql).not.toContain('LOCK TABLE cron.job');
-    expect(schedulerFenceSql).toContain('cardinality(job_ids)=2');
-    expect(schedulerFenceSql).toContain('jsonb_array_length(jobs)=2');
+    expect(expansionSql).toContain('cardinality(job_ids)=2');
+    expect(expansionSql).toContain('jsonb_array_length(jobs)=2');
     for (const field of [
       'jobid',
       'jobname',
@@ -233,13 +233,19 @@ describe('periodic tournament mutation is retired at its root', () => {
       'nodeport',
       'active',
     ]) {
-      expect(schedulerFenceSql).toContain(`'${field}',j.${field}`);
+      expect(finalSql).toContain(`'${field}',j.${field}`);
     }
     expect(sql).toContain("'ca-eliminate-absent-players','ca-release-broke-seats'");
-    expect(schedulerFenceSql).toContain('$commit_retired_tournament_mutator_schedule_fence$;');
-    expect(Number('20260910000850')).toBeLessThan(Number('20260910000905'));
-    expect(Number('20260910000850')).toBeGreaterThan(Number('20260909235935'));
-    expect(sql).toContain('DROP FUNCTION public.fn_ca_eliminate_absent_tournament_players(');
+    expect(finalSql).toContain('$commit_retired_tournament_mutator_schedule_fence$;');
+    expect(expansionMigration < finalMigration).toBe(true);
+    expect(finalSql).not.toContain(
+      'DROP FUNCTION public.fn_ca_eliminate_absent_tournament_players('
+    );
+    expect(finalSql).toContain('the owner-only felt-aware eliminator was lost');
+    expect(finalSql).toContain('felt-aware eliminator is not owner-only');
+    expect(finalSql).toMatch(
+      /REVOKE ALL ON FUNCTION public\.fn_ca_eliminate_absent_tournament_players\([\s\S]*?FROM PUBLIC,anon,authenticated,service_role;/
+    );
     expect(sql).toContain('DROP FUNCTION public.fn_ca_absent_tournament_players(integer)');
     expect(sql).toContain('DROP FUNCTION public.fn_ca_release_broke_seats(');
     expect(sql).toContain('DROP TABLE public.ca_broke_seat_sightings RESTRICT');
@@ -253,7 +259,9 @@ describe('prize repricing has one service-only compare-and-set door', () => {
   const reprice = taggedBody('reprice_unpaid_tournament_place');
 
   it('locks the terminal root and refuses every prepared or paid boundary', () => {
-    const root = reprice.indexOf("hashtextextended('ca:tournament-terminal-settlement:v1',0)");
+    const root = reprice.indexOf(
+      'public.fn_ca_lock_settlement_lane_for_tournament(p_tournament_id)'
+    );
     const parent = reprice.indexOf('FROM public.tournaments t', root);
     const roster = reprice.indexOf('FROM public.tournament_players tp', parent);
     expect(root).toBeGreaterThan(-1);

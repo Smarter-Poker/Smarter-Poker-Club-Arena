@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 const repo = join(process.cwd(), '..');
 const migrations = join(repo, 'supabase', 'migrations');
 const strictNames = readdirSync(migrations).filter((name) =>
-  name.endsWith('_tournament_manager_request_fencing_is_strict.sql')
+  name.endsWith('_stage_b_current_postimage_contraction.sql')
 );
 expect(strictNames, 'expected one strict tournament-manager migration').toHaveLength(1);
 const strict = readFileSync(join(migrations, strictNames[0] ?? ''), 'utf8');

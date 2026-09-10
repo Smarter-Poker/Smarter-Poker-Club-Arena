@@ -4,9 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 const root = (path: string) => resolve(__dirname, '..', path);
 const migration = readFileSync(
-  root(
-    'supabase/migrations/20260909182952_a_committed_tournament_move_receipt_survives_lease_loss.sql'
-  ),
+  root('supabase/migrations/20260910042112_stage_b_current_postimage_contraction.sql'),
   'utf8'
 );
 const transport = readFileSync(root('server/src/tournament/tournamentSeatMoveRpc.ts'), 'utf8');
@@ -29,7 +27,7 @@ describe('a committed tournament move receipt survives manager lease loss', () =
     const resolver = body('committed_move_receipt');
     expect(resolver).toContain("auth.role() IS DISTINCT FROM 'service_role'");
     expect(resolver).toContain("v_actor IS DISTINCT FROM 'service'");
-    expect(resolver).toContain('ca:tournament-terminal-settlement:v1');
+    expect(resolver).toContain('public.fn_ca_lock_settlement_lane_for_tournament(p_tournament_id)');
     expect(resolver).toContain('fn_ca_tournament_seat_move_receipt(p_request_id)');
     expect(resolver).toContain('RETURN NULL');
     expect(resolver).toContain('tournament move request id belongs to another operation');

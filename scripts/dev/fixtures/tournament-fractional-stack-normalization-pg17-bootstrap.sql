@@ -15,9 +15,8 @@ CREATE TABLE supabase_migrations.schema_migrations (
 INSERT INTO supabase_migrations.schema_migrations(version, name)
 VALUES
   ('20260908161534', 'hand_settlement_targets_exact_seat_generation'),
-  ('20260908162211', 'tournament_manager_request_fencing_is_strict'),
-  ('20260908162847', 'hand_settlement_requires_exact_seat_generation'),
-  ('20260908163409', 'tournament_seat_moves_are_one_atomic_receipt');
+  ('20260910042112', 'stage_b_current_postimage_contraction'),
+  ('20260910042137', 'stage_b_lease_keyshare_once');
 
 CREATE SCHEMA extensions;
 CREATE EXTENSION pgcrypto WITH SCHEMA extensions;

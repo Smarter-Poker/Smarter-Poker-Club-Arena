@@ -1229,11 +1229,28 @@ export abstract class TournamentManagerBase {
     this.lifecycleIntervals.clear();
   }
 
-  /** Install the process-wide sweep runner once for this manager. */
+  /**
+   * Install the process-wide sweep runner for this manager's CURRENT lifecycle.
+   *
+   * A REGISTRATION BOUND TO A DEAD LIFECYCLE SWEEPS NOTHING, SILENTLY
+   * (2026-09-10). Both `run` and `isActive` close over the lifecycle token
+   * taken here. `resume()` begins a NEW epoch, and it does not always pass
+   * through the stop fence that clears this handle first - so returning early
+   * because "a registration exists" left the manager wired to an epoch that is
+   * no longer current: the scheduler then skips it in `pump()` (isActive false)
+   * or dispatches a run that returns at its first line, for ever, with nothing
+   * logged. Its blind clock keeps ticking on the new epoch, which is why the
+   * event looks alive - `236d8826` reached level 989 of a 24-level structure
+   * with ten busted players it could not record.
+   *
+   * So a re-registration replaces the old one instead of being ignored. The
+   * scheduler's own `register()` already removes any previous entry for the
+   * same tournament, and dropping our stale handle first keeps the two in step.
+   */
   protected registerEliminationScheduler(run: (signal: AbortSignal) => Promise<void>): void {
-    if (this.eliminationSchedulerUnregister) return;
     const lifecycle = this.lifecycleEpoch.current();
     if (!this.lifecycleIsCurrent(lifecycle)) return;
+    if (this.eliminationSchedulerUnregister) this.unregisterEliminationScheduler();
     this.eliminationSchedulerUnregister = tournamentEliminationScheduler.register({
       tournamentId: this.tournamentId,
       run: (signal) => {

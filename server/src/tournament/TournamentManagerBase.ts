@@ -85,7 +85,15 @@ import {
   parsePlayedSpinLaunchRecoveryProof,
   type PlayedSpinLaunchRecoveryProof,
 } from './playedSpinLaunchRecovery.js';
-import { assignTournamentPlayerSeatAtomically } from './tournamentSeatAssignmentRpc.js';
+import {
+  assignTournamentPlayerSeatAtomically,
+  TournamentSeatAssignmentOutcomeUnknownError,
+  TournamentSeatAssignmentRefusedError,
+} from './tournamentSeatAssignmentRpc.js';
+import {
+  classifySeatRefusal,
+  releaseUnseatableRegistrantAtLaunch,
+} from './tournamentLaunchReleaseRpc.js';
 import type { GameServer } from '../GameServer.js';
 import { tournamentEliminationScheduler } from './TournamentEliminationScheduler.js';
 import {
@@ -3866,7 +3874,12 @@ export abstract class TournamentManagerBase {
       }
 
       // Create tables and seat players
-      await this.createTablesAndSeatPlayers(tournament);
+      this.seatingLaunchId = launchId;
+      try {
+        await this.createTablesAndSeatPlayers(tournament);
+      } finally {
+        this.seatingLaunchId = null;
+      }
       this.assertLifecycleCurrent(lifecycle);
 
       /* FREE BUY: open only AFTER the field has real live seats. The old call
@@ -5315,7 +5328,18 @@ export abstract class TournamentManagerBase {
     });
   }
 
+  /**
+   * The incomplete launch receipt the current seating belongs to, set by
+   * start() around createTablesAndSeatPlayers. With it, a registrant the
+   * database refuses to seat is RELEASED with his exact refund through the
+   * launch-release door and the field starts without him. Without it (the
+   * resume rebuild path) a refused registrant is reported and left for the
+   * next pass, as before.
+   */
+  private seatingLaunchId: string | null = null;
+
   protected async createTablesAndSeatPlayers(tournament: any): Promise<void> {
+    const launchId = this.seatingLaunchId;
     const { data: players, error: playersErr } = await supabase
       .from('tournament_players')
       .select('user_id, chips, status')
@@ -5562,6 +5586,32 @@ export abstract class TournamentManagerBase {
     // player to a fixed table whether or not that table has a seat left, which
     // is how a full adopted table was handed an eleventh player.
     let cursor = 0;
+    /**
+     * ONE REFUSED CHAIR DOES NOT FAIL THE LAUNCH (2026-09-09).
+     *
+     * This loop used to throw on the first seat the database refused, which
+     * left the receipt incomplete and every other player parked on felt that
+     * never dealt: 19 events, 881 seats, a day. The database is the seating
+     * authority; each seat is its own transaction; so each answer is handled
+     * on its own and the loop always finishes the roster:
+     *
+     *   seat_taken / table_not_assignable  the inventory was stale for THAT
+     *                                       chair - mark it and try the next;
+     *   player_already_seated_elsewhere     he is seated; move on;
+     *   not registered / not assignable    nothing on the roster to seat;
+     *   any other refusal                   the platform cannot seat him at
+     *                                       start - released with his exact
+     *                                       refund through the launch door;
+     *   unknown outcome                     the write may have committed -
+     *                                       left for the next pass to reread.
+     *
+     * Completion still proves the whole active roster is on the felt, so a
+     * player who is neither seated nor released keeps the launch open until
+     * the next pass resolves him. Nothing here writes a seat or a wallet row.
+     */
+    const refusedAtLaunch: Array<{ userId: string; reason: string }> = [];
+    const unknownAtLaunch: string[] = [];
+    const retiredTables = new Set<string>();
     for (let i = 0; i < toSeat.length; i++) {
       // Next table, from the cursor, that has a genuinely free seat number
       // within its own capacity.
@@ -5569,6 +5619,7 @@ export abstract class TournamentManagerBase {
       let seatNumber = 0;
       for (let probe = 0; probe < tableIds.length; probe++) {
         const candidate = tableIds[(cursor + probe) % tableIds.length];
+        if (retiredTables.has(candidate)) continue;
         const cap = capacityOf.get(candidate) ?? maxPerTable;
         const taken = occupiedSeats.get(candidate) ?? new Set<number>();
         let n = 1;
@@ -5621,16 +5672,80 @@ export abstract class TournamentManagerBase {
           `[Tournament:${this.tournamentId.slice(0, 8)}] Atomic launch seat certified for ${receipt.userId.slice(0, 8)} at table ${receipt.tableId.slice(0, 8)} seat ${receipt.seatNumber} (${receipt.stack} chips, table count ${receipt.currentPlayers})`
         );
       } catch (seatError) {
+        const userId = String(toSeat[i].user_id);
         reportError(seatError, 'Tournament.atomic_launch_seat_refused_or_unknown', {
           tournamentId: this.tournamentId,
-          playerId: toSeat[i].user_id,
+          playerId: userId,
           tableId,
           seatNumber,
         });
+        if (seatError instanceof TournamentSeatAssignmentRefusedError) {
+          const reason = seatError.message;
+          switch (classifySeatRefusal(reason)) {
+            case 'retry_seat': {
+              const taken = occupiedSeats.get(tableId) ?? new Set<number>();
+              taken.add(seatNumber);
+              occupiedSeats.set(tableId, taken);
+              i--; // same player, next free chair
+              continue;
+            }
+            case 'retry_table':
+              retiredTables.add(tableId);
+              i--; // same player, next table
+              continue;
+            case 'skip':
+              continue;
+            case 'release':
+              refusedAtLaunch.push({ userId, reason });
+              continue;
+          }
+        }
+        if (seatError instanceof TournamentSeatAssignmentOutcomeUnknownError) {
+          unknownAtLaunch.push(userId);
+          continue;
+        }
+        throw seatError;
+      }
+    }
+
+    if (refusedAtLaunch.length > 0) {
+      if (!launchId) {
         throw new Error(
-          `Tournament atomic seat assignment failed for ${toSeat[i].user_id}: ${(seatError as Error)?.message ?? seatError}`
+          `Tournament seat assignment refused for ${refusedAtLaunch.length} player(s) with no launch to release them: ${refusedAtLaunch.map((r) => `${r.userId.slice(0, 8)}=${r.reason}`).join(', ')}`
         );
       }
+      const unresolved: string[] = [];
+      for (const { userId, reason } of refusedAtLaunch) {
+        const release = await releaseUnseatableRegistrantAtLaunch({
+          tournamentId: this.tournamentId,
+          userId,
+          launchId,
+          reason,
+        });
+        if (release.released) {
+          console.log(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] Released ${userId.slice(0, 8)} at launch (${reason}): ${release.refundedChips} chips refunded${release.replayed ? ' (replayed)' : ''}`
+          );
+          continue;
+        }
+        // player_is_seated: the inventory was stale and he is on the felt.
+        if (release.reason === 'player_is_seated') continue;
+        unresolved.push(`${userId.slice(0, 8)}=${reason}->${release.reason ?? 'unreleased'}`);
+      }
+      if (unresolved.length > 0) {
+        reportError(
+          new Error(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] ${unresolved.length} refused registrant(s) could not be released at launch: ${unresolved.join(', ')}`
+          ),
+          'Tournament.launch_release_unresolved'
+        );
+        throw new Error('Tournament launch left refused registrants unreleased');
+      }
+    }
+    if (unknownAtLaunch.length > 0) {
+      throw new Error(
+        `Tournament seat assignment outcome unknown for ${unknownAtLaunch.length} player(s) - the next pass rereads the felt`
+      );
     }
   }
 

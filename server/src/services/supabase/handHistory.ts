@@ -16,6 +16,7 @@ import { recordHorseHandReviews } from '../HorseHandReview.js';
 import { readScopeOf } from '../../engine/HorseMind.js';
 import { getLiveHorseDecisionWorker } from '../../engine/horseDecision/index.js';
 import { wakeHandProjection } from './handProjection.js';
+import { UUID_SHAPE } from '../../lib/uuidShape.js';
 
 export interface AtomicHandCommitInput {
   stacks: Array<{
@@ -661,9 +662,7 @@ async function insertHandHistoryRow(
   if (
     hasLeaseInstance &&
     (atomicCommit.leaseInstanceId!.trim().length === 0 ||
-      !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-        atomicCommit.leaseGeneration!
-      ))
+      !UUID_SHAPE.test(atomicCommit.leaseGeneration!))
   ) {
     throw new Error('atomic hand commit refused (invalid_lease_authority)');
   }

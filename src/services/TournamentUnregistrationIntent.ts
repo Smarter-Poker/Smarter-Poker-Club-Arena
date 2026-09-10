@@ -1,8 +1,8 @@
 import { uuid as createRequestId } from '../utils/uuid';
+import { UUID_SHAPE as uuid } from '../utils/uuidShape';
 type Intent = { requestId: string; state: 'pending' | 'resolved' };
 const prefix = 'ca:tournament-unregister:v1:';
 const running = new Map<string, Promise<unknown>>();
-const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function read(raw: string | null): Intent | null {
   if (raw === null) return null;

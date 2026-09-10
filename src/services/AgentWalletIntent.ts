@@ -1,9 +1,9 @@
 import { uuid } from '../utils/uuid';
+import { UUID_SHAPE as UUID } from '../utils/uuidShape';
 
 // No payload or account data is persisted: only a SHA-256 scope and operation UUID.
 // Keep uncertain identities across logout/reload; never expire an unknown outcome.
 const PREFIX = 'smarter-poker:agent-wallet-operation:v1:';
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export function assertChipAmount(amount: number): void {
   if (

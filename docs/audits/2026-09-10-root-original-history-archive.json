@@ -20,7 +20,18 @@
     "ref": "refs/heads/backup/resume-poker-sep10/satellite-funded-helper"
   },
   "runtime_verification": {
-    "paths": ["server/", "src/", "tests/"],
+    "paths": [
+      "server/",
+      "src/",
+      "tests/",
+      "supabase/migrations/",
+      ".github/",
+      ".husky/",
+      "scripts/ci/",
+      "scripts/dev/probe-tournament-registration-funding-pg17.py",
+      "scripts/dev/probe-spin-funding-pg17.py",
+      "scripts/dev/probe-tournament-payout-amounts-pg17.py"
+    ],
     "byte_identical_to_published_main": true
   },
   "original_commits": [
@@ -400,5 +411,32 @@
       "git_blob": "990c1455f9eb399c5fe4ba0a22c66844dda9a892",
       "sha256": "ac25347165468ee40bc362d4da695c66e78cf8339e8bafe4c211d1f37be50491"
     }
-  ]
+  ],
+  "historical_migration_relocations": [
+    {
+      "original_path": "supabase/migrations/20260910035015_started_tournaments_resume_or_settle_instead_of_cancelling.sql",
+      "archive_path": "docs/audits/2026-09-10-root-original-history/migrations/20260910035015_started_tournaments_resume_or_settle_instead_of_cancelling.sql",
+      "sha256": "915fd9fd9f638e34df0d6b4c0f3fca184d8f16c87f53d8ab81d6873d61e6cb62",
+      "git_blob": "81397c429a713874def1618142eb9d2c809b88cc"
+    },
+    {
+      "original_path": "supabase/migrations/20260910040332_a_refused_finishing_place_creates_no_debt.sql",
+      "archive_path": "docs/audits/2026-09-10-root-original-history/migrations/20260910040332_a_refused_finishing_place_creates_no_debt.sql",
+      "sha256": "29dcbf8ae6679147df472f252074b5f6b3e344afdc6be1d432e2c0f0ff61d093",
+      "git_blob": "134bde5f37255d3c4d4788ee77bfca340f9973ec"
+    },
+    {
+      "original_path": "supabase/migrations/20260910043237_satellite_seats_count_once_and_keep_the_funded_prize.sql",
+      "archive_path": "docs/audits/2026-09-10-root-original-history/migrations/20260910043237_satellite_seats_count_once_and_keep_the_funded_prize.sql",
+      "sha256": "b5749da2d44874dec75baadf2fd8e4cef46127c39dbb52a519b854bf75f48774",
+      "git_blob": "115006e15d7ed1ba1ca21ec33061fb00a88c8d12"
+    },
+    {
+      "original_path": "supabase/migrations/20260910051131_a_tournament_elimination_requires_a_finishing_rank.sql",
+      "archive_path": "docs/audits/2026-09-10-root-original-history/migrations/20260910051131_a_tournament_elimination_requires_a_finishing_rank.sql",
+      "sha256": "acbec02dd6192abe844cf3372be71d2f199e4e9353c40dc2d76a2cad52f8b5fb",
+      "git_blob": "2a760240dde6b803d229366c237c6082c1eb2728"
+    }
+  ],
+  "historical_one_off_proofs": "Original one-off selector scripts/manifests remain historical and superseded; not rerun or recertified after migration relocation. Reproduce original file layout from original_head."
 }

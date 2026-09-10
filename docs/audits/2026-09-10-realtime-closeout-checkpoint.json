@@ -1,0 +1,148 @@
+{
+  "observed_at": "2026-09-10T18:48:14.843648+00:00",
+  "pagination_pr": 4195,
+  "pagination_merge": "904171acc4f143da4c8c6619ba73cfbc12293753",
+  "public_build": {
+    "ca_sha": "0e49f48409afb11d28f9e380ce19838aaddae9ec",
+    "built_at": "2026-09-10T18:46:51Z",
+    "built_by": "publish-club-arena.yml",
+    "run_id": "34516159193"
+  },
+  "origin_build": {
+    "ca_sha": "0e49f48409afb11d28f9e380ce19838aaddae9ec",
+    "built_at": "2026-09-10T18:46:51Z",
+    "built_by": "publish-club-arena.yml",
+    "run_id": "34516159193"
+  },
+  "assets": {
+    "entry_url": "https://smarter.poker/hub/club-arena/assets/index-BAGCiQl3-v6.js",
+    "entry_sha256": "eb89d7a0165f782bde5e1742ab50572775b460e9ce0363968c1ab5b72b6a5096",
+    "club_data_asset": "assets/ClubDataPage-COWpYR9J-v6.js",
+    "public_sha256": "eccc71180610fc6f03151f1b695f991d9c1373dd0ae6a63505c8fb874ff8562b",
+    "origin_sha256": "eccc71180610fc6f03151f1b695f991d9c1373dd0ae6a63505c8fb874ff8562b",
+    "bytes_equal": true,
+    "byte_length": 53555
+  },
+  "public_build_after": {
+    "ca_sha": "0e49f48409afb11d28f9e380ce19838aaddae9ec",
+    "built_at": "2026-09-10T18:46:51Z",
+    "built_by": "publish-club-arena.yml",
+    "run_id": "34516159193"
+  },
+  "origin_build_after": {
+    "ca_sha": "0e49f48409afb11d28f9e380ce19838aaddae9ec",
+    "built_at": "2026-09-10T18:46:51Z",
+    "built_by": "publish-club-arena.yml",
+    "run_id": "34516159193"
+  },
+  "source_blobs": {
+    "src/pages/club/ClubDataPage.tsx": {
+      "a1f4f60b1e": "05b6260059f1c4e3cf1078329ce51f6452a46cd7",
+      "origin/main": "05b6260059f1c4e3cf1078329ce51f6452a46cd7"
+    },
+    "tests/components/club-data-page-renders.test.tsx": {
+      "a1f4f60b1e": "7a518fe140149512c1153451b2661100129ac8f7",
+      "origin/main": "7a518fe140149512c1153451b2661100129ac8f7"
+    },
+    "tests/club-data-query-performance-contract.test.ts": {
+      "a1f4f60b1e": "c7a81d19250f9f7ecdd84aab0ef4dc09fa11a7e8",
+      "origin/main": "c7a81d19250f9f7ecdd84aab0ef4dc09fa11a7e8"
+    }
+  },
+  "runs": {
+    "34511362353": {
+      "status": "completed",
+      "conclusion": "failure",
+      "head_sha": "904171acc4f143da4c8c6619ba73cfbc12293753",
+      "created_at": "2026-09-10T17:57:27Z",
+      "updated_at": "2026-09-10T18:24:12Z",
+      "jobs": [
+        {
+          "id": 102986979570,
+          "status": "completed",
+          "conclusion": "failure",
+          "completed_at": "2026-09-10T18:24:12Z"
+        }
+      ],
+      "artifacts": [
+        {
+          "id": 10166952031,
+          "name": "post-deploy-playwright-report",
+          "size_in_bytes": 7897980,
+          "digest": "sha256:0591fcb78a9519506b0a3038b03cff72ace9e034a5202420364004c8e989bfdd",
+          "expired": false
+        }
+      ]
+    },
+    "34512870801": {
+      "status": "in_progress",
+      "conclusion": null,
+      "head_sha": "e6286a0d06e28290b58ac1da7dbe314423e0ade5",
+      "created_at": "2026-09-10T18:12:16Z",
+      "updated_at": "2026-09-10T18:24:46Z",
+      "jobs": [
+        {
+          "id": 102995134256,
+          "status": "in_progress",
+          "conclusion": null,
+          "completed_at": null
+        }
+      ],
+      "artifacts": []
+    }
+  },
+  "engine": {
+    "version": "7732b971",
+    "status": "ok",
+    "maintenance": {
+      "active": false,
+      "phase": "idle",
+      "durableConfirmed": false,
+      "breakEndsAt": null,
+      "remainingMs": 0,
+      "unparkedTables": 0,
+      "readyForRestart": false,
+      "reason": "Scheduled Engine Maintenance",
+      "resumeWaves": null,
+      "dbClockSkewMs": -37
+    },
+    "activeTables": 82,
+    "stalledTables": [],
+    "blockedSettlements": []
+  },
+  "ticker_anonymous_query": {
+    "http_status": 200,
+    "row_count": 0,
+    "purpose": "Validate unchanged public read authorization and composite filter parsing; no user visibility claim."
+  },
+  "fetched_main_sha": "f0798352d9f7644d6f0ee274dead8ec065be55f5",
+  "pagination_in_public_release": true,
+  "public_release_source_blobs": {
+    "src/pages/club/ClubDataPage.tsx": "05b6260059f1c4e3cf1078329ce51f6452a46cd7",
+    "tests/components/club-data-page-renders.test.tsx": "7a518fe140149512c1153451b2661100129ac8f7",
+    "tests/club-data-query-performance-contract.test.ts": "c7a81d19250f9f7ecdd84aab0ef4dc09fa11a7e8"
+  },
+  "completed_run_observations": {
+    "run_id": 34511362353,
+    "job_id": 102986979570,
+    "executed": 292,
+    "passed": 288,
+    "failed": 4,
+    "skipped_additional": 2,
+    "flaky": 0,
+    "spec_files": 34,
+    "failure_disposition": "All four production live-table continuity cases stopped at engine 7732b971 versus expected 904171acc4f143da4c8c6619ba73cfbc12293753. Gameplay continuity did not execute.",
+    "sweep_passed": 259,
+    "cleanup_verified_at": "2026-09-10T18:24:06.2494227Z"
+  },
+  "recovered_ticker": {
+    "source_worktree": "/Users/smarter.poker/Documents/.agent-trees/club-arena/codex-realtime-continuation-sep07",
+    "preservation_ref": "refs/wip/codex-realtime-continuation-sep07/closeout-20260910T184110Z",
+    "preservation_commit": "21ec035f2d26cec80c1afeab30cf93f5b472225a",
+    "implemented_in": "agent/codex-realtime-closeout-sep10/fix/ticker-draft-closeout",
+    "focused_tests": 174,
+    "focused_files": 10,
+    "build_exit_code": 0,
+    "publication": "Requires normal branch merge and public byte verification after this checkpoint."
+  }
+}

@@ -104,9 +104,10 @@ try {
   out.push(`### What the deploy pipeline says it did (last ${LOOKBACK_HOURS}h)`);
   out.push('');
   out.push(
-    `**${t.shipped} of ${t.total} attempts shipped.** ${t.skipped} reported success ` +
-      `having deployed nothing. Read from \`ca_engine_deploy_attempts\`, which the ` +
-      `pipeline writes itself - a green tick in \`gh run list\` does not mean a deploy.`
+    `**${t.shipped} of ${t.total} attempts shipped.** ${t.skipped} deployed nothing ` +
+      `(since 2026-09-10 a run that should have shipped and did not is RED; already-live, ` +
+      `coalesced and superseded runs are green by design, and cancelled runs are recorded ` +
+      `too). Read from \`ca_engine_deploy_attempts\`, which the pipeline writes itself.`
   );
 
   if (reasons.length) {

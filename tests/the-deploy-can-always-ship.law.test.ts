@@ -127,6 +127,12 @@ describe('the wait budget can actually reach the break', () => {
   const REUSED_ELAPSED_MIN = 12;
   /** A run that builds cold: everything above plus the worst observed build. */
   const COLD_ELAPSED_MIN = REUSED_ELAPSED_MIN + WORST_BUILD_MIN;
+  /**
+   * What a FAILED cutover still needs after the reserve: the ROLLBACK's proxy
+   * polls and strict proof (~8m) plus the always() tail (~2m). The job timeout
+   * must never be the thing that ends a rollback halfway.
+   */
+  const ROLLBACK_TAIL_MIN = 10;
   /** The gate polls until the next :56 — one minute past the flag opening. */
   const GATE_MINUTE = 56;
 
@@ -202,6 +208,15 @@ describe('the wait budget can actually reach the break', () => {
     }
   });
 
+  it('the worst start minute still leaves room for a rollback to finish', () => {
+    const worst = COLD_ELAPSED_MIN + 60 + reserveS / 60 + ROLLBACK_TAIL_MIN;
+    expect(
+      timeoutMin,
+      `a cold build reaching the gate just after :${GATE_MINUTE} needs ${worst}m including a ` +
+        `rollback, but the job is killed at ${timeoutMin}m`
+    ).toBeGreaterThanOrEqual(worst);
+  });
+
   it('the watchdog never treats a run waiting for its break as stale', () => {
     // A run can now legitimately hold the deploy group for up to an hour. If
     // the watchdog's in-flight window were shorter than the job ceiling, it
@@ -212,10 +227,13 @@ describe('the wait budget can actually reach the break', () => {
       sh,
       'INFLIGHT_STALE_MIN'
     );
+    // Age is measured from createdAt, which includes time spent PENDING behind
+    // another run of the group, so one run can be in flight for two ceilings.
     expect(
       stale,
-      `engine-watchdog.sh treats runs older than ${stale}m as stale, but a deploy may run ${timeoutMin}m`
-    ).toBeGreaterThan(timeoutMin);
+      `engine-watchdog.sh treats runs older than ${stale}m as stale, but a deploy may be in ` +
+        `flight for ${2 * timeoutMin}m (pending behind one ceiling, then running its own)`
+    ).toBeGreaterThanOrEqual(2 * timeoutMin + 10);
   });
 
   it('refusing to wait says the image is staged, and does not blame the break', () => {

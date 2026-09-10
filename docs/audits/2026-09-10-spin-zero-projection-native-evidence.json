@@ -1,0 +1,84 @@
+{
+  "verified_at": "2026-09-10T07:03:45.776179+00:00",
+  "source_sha256": "0634d1da3856c1db483ea99fb9713838a5c7c5158e1d2f3ee6daf58f335dcf7f",
+  "probe_sha256": "e2ce5b201e91b9329987dbfa5e458ff6c1a86b4859a1524f15d96f5ce1362645",
+  "composed_sha256": "f7d18524d3a00d4db8e38c22ea96f9559318053582d336a757d108c9cb573d3b",
+  "preimage": {
+    "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+    "owner": "postgres",
+    "config": ["search_path=public, extensions, pg_temp", "statement_timeout=30s"],
+    "body_md5": "b303d83aadd381950dfe658578767a4c",
+    "definition_md5": "1c911e3ada50ffe0493b9b375e3fa9ae",
+    "security_definer": true
+  },
+  "native_exit": 3,
+  "expected_pass_exception": true,
+  "all_catalog_and_fixture_state_restored": true,
+  "catalog_before_sha256": "0beba8588cc7797641941d3cfbbade868a49e4634a1f5c98af7f12150dfeadc9",
+  "catalog_after_sha256": "0beba8588cc7797641941d3cfbbade868a49e4634a1f5c98af7f12150dfeadc9",
+  "state_before_sha256": "4e5a72611173d5d0fe382a64c5be10055a9b54ef2740e1ae9a811e7f2f92dd91",
+  "state_after_sha256": "4e5a72611173d5d0fe382a64c5be10055a9b54ef2740e1ae9a811e7f2f92dd91",
+  "fixture_tables_compared": [
+    "auth.users",
+    "public.profiles",
+    "public.clubs",
+    "public.club_members",
+    "public.tournaments",
+    "public.tournament_players",
+    "public.tables",
+    "public.table_seats",
+    "public.engine_tournament_leases",
+    "public.hand_history",
+    "public.wallet_transactions",
+    "public.chip_ledger",
+    "public.tournament_escrow",
+    "public.rake_records",
+    "public.spin_bonus_pools",
+    "public.spin_reserve_ledger",
+    "public.spin_draw_receipts",
+    "public.tournament_launch_receipts",
+    "public.tournament_refund_entitlements"
+  ],
+  "production_mutations": false,
+  "connection": {
+    "user": "postgres",
+    "local": true,
+    "database": "full_stage1",
+    "other_sessions": 0
+  },
+  "programme": "109-item comprehensive Club Arena accounting audit",
+  "control": "CA-03-08",
+  "status": "current_native_zero_default_draw_projection_and_launch_passed_control_open",
+  "runner": "scripts/ci/rehearse-spin-zero-projection.py",
+  "probe": "scripts/ci/probes/spin-zero-projection-native.sql",
+  "source": "Complete tracked 20260910034412_spin_draw_gate_reads_zero_as_undrawn_and_stamps_the_row.sql; supply the unchanged source to --source. Only its two outer transaction boundaries are removed to compose the enclosing rollback. Every source preflight and grant is retained.",
+  "tested_authority": {
+    "body_md5": "8b8cf19c75a21fb898f559ac5d73f422",
+    "definition_md5": "6d2328689637d1d28c9ce9256a0d6252"
+  },
+  "passed": [
+    "Real omitted-column spin_multiplier DEFAULT 0 is admitted by the current funded draw.",
+    "Positive unfunded projection is refused without a money change.",
+    "Native entry, reserve contribution, draw, rake and both journals precede the immutable receipt.",
+    "Fault after the receipt rolls back money, escrow, receipt and contract.",
+    "Later fault after automatic row projection independently rolls back all the same state.",
+    "Exact same event retries once with one funded immutable receipt and exact reserve conservation.",
+    "Changed incoming rules replay the stored receipt unchanged; stale lease owner is refused.",
+    "All at_draw row fields are stamped by the atomic SQL authority, without a client or engine projection UPDATE.",
+    "Privileged receipt deletion fails; played/vacated replay retains original funded receipt and money.",
+    "Missing persisted hand and short starting stack refuse recovery before money.",
+    "Actual lease-bound launch completion reaches RUNNING without a financial change.",
+    "Outer rollback restores the exact function definition, owner, ACL, configuration, all native triggers, and every row in all 19 compared fixture tables."
+  ],
+  "fixture_limits": [
+    "Synthetic opening paid receipts, source entitlements, escrow and table/seat structure are seeded with session_replication_role=replica, restored to origin before every native money call. This is not a registration deduction proof.",
+    "Played history and conserved chip distribution are synthetic accepted-history inputs. Actual hand settlement is a separate acceptance gate.",
+    "Exact tracked complete migration is applied only inside the enclosing aborted local transaction; no production write and no persistent local authority change.",
+    "The previous b303/1c911 native concurrency evidence remains historical scoped; this new current-wrapper proof is sequential."
+  ],
+  "remaining": [
+    "Full native current final winner payout and terminal closure through exact current public obligation dependencies.",
+    "Current-wrapper concurrent draw and reserve contention acceptance.",
+    "Coordinated production engine adoption and complete Phase3 acceptance."
+  ]
+}

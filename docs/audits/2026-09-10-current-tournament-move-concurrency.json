@@ -1,0 +1,158 @@
+{
+  "production_mutations": false,
+  "scope": "Actual PostgreSQL committed move races on one retained synthetic local fixture",
+  "function_body_md5": "466c39065b59cf7922a5859df9f26bd3",
+  "lane_body_md5": "2bc939035496d764ff9d6c14b52fa1e7",
+  "source_sha256": {
+    "move": "1023dedb635e62d3e267637e862c0d2c1bb789a657f8b5ec89b72110e71f826d",
+    "lane": "d07cbe35f62ef4a18e29779c812526c27420da4a82c891c0bf2f136b9e6a31fe"
+  },
+  "receipt_reader_body_md5": "68813ee03e355e2eec053e15bf40f98d",
+  "receipt_reader_original_body_md5": "38445b82bd77ebd2990fda8ce993fd24",
+  "fixture_tournament": "97010000-0000-0000-0000-000000000001",
+  "fixtures_retained": true,
+  "cases": [
+    {
+      "name": "same_entry_different_destination",
+      "actual_lock_wait": true,
+      "owner_committed": true,
+      "rival_exit": 1,
+      "rival_refusal": "source roster is not exact",
+      "committed_state_unchanged_by_rival": true,
+      "one_seat_per_entry": true,
+      "chips_conserved": true,
+      "clock_unchanged": true,
+      "state_sha256": "5c40bb43ef7b8ac0391114d15ab929ac04f11e4a4bec6297c9543ad8c460bf2e"
+    },
+    {
+      "name": "competing_entries_one_slot",
+      "actual_lock_wait": true,
+      "owner_committed": true,
+      "rival_exit": 1,
+      "rival_refusal": "destination seat is occupied",
+      "committed_state_unchanged_by_rival": true,
+      "one_seat_per_entry": true,
+      "chips_conserved": true,
+      "clock_unchanged": true,
+      "state_sha256": "bc4887c62106bce49c57f57d15bdbefd5b0b17b19549cbf8318c44a183a9a821"
+    },
+    {
+      "name": "same_request_exact_replay",
+      "actual_lock_wait": true,
+      "owner_committed": true,
+      "rival_exit": 0,
+      "rival_refusal": null,
+      "committed_state_unchanged_by_rival": true,
+      "one_seat_per_entry": true,
+      "chips_conserved": true,
+      "clock_unchanged": true,
+      "state_sha256": "d9f9514f8ffb79bda1c4d98cdbbb6571ad325b0324eb7e4532eac44badd32e0d"
+    }
+  ],
+  "catalog_restored": true,
+  "catalog_scope": "All public/smarter_private function definitions, owners, ACLs; all noninternal trigger definitions/enabled state",
+  "event_count_before": 12,
+  "intentional_retained_schema_extension": {
+    "table": "public.tournament_seat_move_receipts",
+    "column": "source_mode",
+    "type": "text",
+    "not_null": true,
+    "allowed_values": ["live_source", "closed_orphan"],
+    "source_sha256": "1023dedb635e62d3e267637e862c0d2c1bb789a657f8b5ec89b72110e71f826d"
+  },
+  "limitations": [
+    "Synthetic local fixture; no production mutations",
+    "Function and trigger catalog restored; fixture rows, immutable real move receipts and source_mode column intentionally retained",
+    "Existing native ACLs are preserved; this does not certify production role grants",
+    "This proves concurrent movement and clock preservation, not integrated heads-up hands or complete break and restart lifecycle"
+  ],
+  "passed": true,
+  "event_count_after": 12,
+  "receipt_count_after": 3,
+  "other_sessions_after": 0,
+  "authority_rows_after": 0,
+  "function_trigger_catalog_sha256": "ac50f1651cfeed8db1fc10416f4a03e64ae89f13ebac0e82d8322c764906b4f7",
+  "restoration_note": "The runner first omitted a semicolon after pg_get_functiondef; that cleanup transaction rolled back. The corrected exact restoration succeeded and the full function/trigger catalog matched its pre-run fingerprint.",
+  "recorded_at": "2026-09-10T14:00:54.231236+00:00",
+  "retained_fixture_counts": {
+    "events": 1,
+    "tables": 3,
+    "entrants": 2,
+    "initial_seats": 2,
+    "committed_move_receipts": 3
+  },
+  "fixture_creation_event_count_before": 11,
+  "fixture_creation_event_count_after": 12,
+  "runner_sha256": "38dfd2c0793efca87f12341b514ea4e57b35561392135a8e9badf3087425d94e",
+  "source_checkout": "42adaa258068f0ec5d4d4ae483315286eff0cfcd",
+  "runner_notes": [
+    "The executed race path is unchanged; the final runner fixes the observed cleanup semicolon and emits PASS only after exact restoration.",
+    "This one-time committed fixture intentionally remains. The runner refuses a used fixture and does not erase immutable receipts."
+  ],
+  "current_checkout_regression": {
+    "checkout_at_result_capture": "b5ef43380732efaf066a73f9c553d25476d63d97",
+    "command": "cd server && ./node_modules/.bin/vitest run src/engine/TableBalancer.consolidation.test.ts src/engine/TableBalancer.bigblind.test.ts src/engine/TournamentMoveBoundary.test.ts src/engine/HeadsUpButtonFairness.test.ts src/tournament/TournamentMoveManagerBoundary.test.ts src/tournament/ResumeBlindClockBehavior.test.ts src/tournament/TournamentTableBreakRetirement.test.ts src/tournament/BreakClockIntegrity.test.ts src/tournament/LevelClockAcrossBreaks.test.ts --maxWorkers=2 --minWorkers=1 --reporter=json --outputFile=/tmp/codex-current-tournament-move-behavior-tests.json",
+    "exit_code": 0,
+    "tests_passed": 87,
+    "test_files_passed": 9,
+    "failed": 0,
+    "json_report_sha256": "72012b4ee7e70f759da2ef034b22317d942fb5d4b2a43810a25f25f271e6f3ef",
+    "files": [
+      {
+        "path": "server/src/engine/HeadsUpButtonFairness.test.ts",
+        "assertions": 16,
+        "status": "passed",
+        "source_sha256": "42b54846338d267951ab8bf462042d2b22ae31acf50dbc9aabf548ebd818e105"
+      },
+      {
+        "path": "server/src/engine/TableBalancer.bigblind.test.ts",
+        "assertions": 7,
+        "status": "passed",
+        "source_sha256": "2eb683196a5b57d11742574037e4b58531242f8fea8081423f16fbd942938790"
+      },
+      {
+        "path": "server/src/engine/TableBalancer.consolidation.test.ts",
+        "assertions": 22,
+        "status": "passed",
+        "source_sha256": "e29e61b30b1ae7399cbf3ecf0a8f3de937918963d504ea6ad58a394d956d6c03"
+      },
+      {
+        "path": "server/src/engine/TournamentMoveBoundary.test.ts",
+        "assertions": 6,
+        "status": "passed",
+        "source_sha256": "bae06012b595aeddb51815ff0eabc01b6687575f5bb396be72ec094c80025ed8"
+      },
+      {
+        "path": "server/src/tournament/BreakClockIntegrity.test.ts",
+        "assertions": 10,
+        "status": "passed",
+        "source_sha256": "a28a1bce9c0acaccf657e6972b63f4e1a7cc3529bd8e29a95be258a5b9f7a95e"
+      },
+      {
+        "path": "server/src/tournament/LevelClockAcrossBreaks.test.ts",
+        "assertions": 6,
+        "status": "passed",
+        "source_sha256": "f7a6a3887de41fa208eba65476bae0f2414b2f503f5bf2f48adccc12c2683ba1"
+      },
+      {
+        "path": "server/src/tournament/ResumeBlindClockBehavior.test.ts",
+        "assertions": 8,
+        "status": "passed",
+        "source_sha256": "076bd38d01261864682169e90ad9992261c880be541a1ce9a0924568225dc5d5"
+      },
+      {
+        "path": "server/src/tournament/TournamentMoveManagerBoundary.test.ts",
+        "assertions": 9,
+        "status": "passed",
+        "source_sha256": "026a8ff6d30825eb6c481aef5f3ec1e0a3a5aa7e253178988631d783b2a59fbd"
+      },
+      {
+        "path": "server/src/tournament/TournamentTableBreakRetirement.test.ts",
+        "assertions": 3,
+        "status": "passed",
+        "source_sha256": "7b53e18349c3309e5c6db3c470834f0f8652046f1307a7821c9e3488aa4f786d"
+      }
+    ],
+    "qualification": "Existing suites mix dynamic behavior and source assertions. They do not replace a real integrated full tournament hand/break/restart scenario."
+  }
+}

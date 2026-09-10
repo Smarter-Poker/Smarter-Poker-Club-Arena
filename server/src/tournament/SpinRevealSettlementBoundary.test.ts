@@ -2,7 +2,8 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import ts from 'typescript';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { spinPostRevealMs } from '../config/spinSpec.js';
+import { spinPostRevealMs, spinRevealTotalMs } from '../config/spinSpec.js';
+import { TableStateHub, type HubSubscriber } from '../transport/TableStateHub.js';
 import { readFundedSpinDraw, spinRuleManifest } from './SpinDrawReceipt.js';
 import {
   SPIN_LAUNCH_PARKED_ALERT_SOURCE,
@@ -23,6 +24,25 @@ const compiled = ts.transpileModule(
     '\nreturn spinPresentationPatch; }\nreturn run.call(this);',
   { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }
 ).outputText;
+
+const admissionBegin = source.indexOf('let spinFirstDealHoldUntil = 0;');
+const admissionEnd = source.indexOf('const launchSetupProven =', admissionBegin);
+if (admissionBegin < 0 || admissionEnd <= admissionBegin) {
+  throw new Error('Spin admission reveal fragment was not found');
+}
+const executeAdmission = new Function(
+  'tournament',
+  'launchStartMs',
+  'playedSpinRecovery',
+  'tableStateHub',
+  'spinPostRevealMs',
+  'spinRevealTotalMs',
+  'reportError',
+  'console',
+  ts.transpileModule(source.slice(admissionBegin, admissionEnd), {
+    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },
+  }).outputText
+);
 
 class Aborted extends Error {}
 
@@ -78,9 +98,10 @@ function start(
   options: {
     playedSpinRecovery?: Record<string, unknown> | null;
     tournament?: Record<string, unknown>;
+    hub?: Pick<TableStateHub, 'emitEvent'>;
   } = {}
 ) {
-  const emitEvent = vi.fn();
+  const emitEvent = options.hub ? vi.fn(options.hub.emitEvent.bind(options.hub)) : vi.fn();
   const reportError = vi.fn();
   const raiseFinancialAlert = vi.fn(async () => ({ persisted: true, alertId: 'alert' }));
   const context = {
@@ -91,6 +112,9 @@ function start(
     spinRevealLagMs: 0,
     spinRevealAt: 0,
     spinRevealEmitted: false,
+    spinRevealEmittedTableIds: new Set<string>(),
+    tableEngines: new Map([['table', { holdDealingUntil: vi.fn() }]]),
+    scheduleSpinPostReveal: vi.fn(),
     assertLifecycleCurrent: vi.fn(),
     resolveSpinReveal() {
       this.spinRevealAt = 1000;
@@ -312,5 +336,144 @@ describe('a Spin reveals its immutable funded rule receipt', () => {
     expect(patch.spin_reveal_at).toBe(historicalRevealAt);
     expect(patch.blind_structure).toEqual(booked.blind_structure);
     expect(patch.payout_structure).toEqual(booked.payout_structure);
+  });
+});
+
+function subscriber(id: string) {
+  const outbox: string[] = [];
+  const value: HubSubscriber = {
+    id,
+    readyState: 1,
+    bufferedAmount: 0,
+    send: (data: string) => {
+      outbox.push(data);
+    },
+  };
+  return {
+    value,
+    reveals: () =>
+      outbox
+        .map((data) => JSON.parse(data))
+        .filter((frame) => frame.type === 'EVENT' && frame.payload?.type === 'spin_reveal'),
+  };
+}
+
+function admit(
+  context: ReturnType<typeof start>['context'],
+  hub: Pick<TableStateHub, 'emitEvent'>
+) {
+  executeAdmission.call(
+    context,
+    {
+      variant: 'spin',
+      tournament_type: 'SPIN',
+      spin_multiplier: 10,
+      buy_in_amount: 1,
+      prize_pool: 10,
+      spin_locked_tiers: receipt(10).locked,
+    },
+    0,
+    null,
+    hub,
+    spinPostRevealMs,
+    spinRevealTotalMs,
+    vi.fn(),
+    { log: vi.fn() }
+  );
+}
+
+describe('the admitted Spin hold stays reachable through the real replay hub', () => {
+  it('keeps the identical funded draw available throughout an extended first-deal hold', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1000);
+    const hub = new TableStateHub();
+    const participants = ['first', 'second', 'third'].map(subscriber);
+    for (const participant of participants) hub.subscribe('table', participant.value);
+    const run = start(
+      vi.fn(async () => ({ data: receipt(10), error: null })),
+      { hub }
+    );
+    await run.outcome;
+    const original = participants[0].reveals()[0].payload;
+    for (const participant of participants) {
+      expect(participant.reveals()).toHaveLength(1);
+      expect(participant.reveals()[0].payload).toEqual(original);
+    }
+    expect(original.hold_until).toBe(10000);
+
+    vi.setSystemTime(9500);
+    admit(run.context, hub);
+    const extendedHold = 9500 + spinPostRevealMs();
+    expect(extendedHold).toBeGreaterThan(original.hold_until);
+    expect(run.context.tableEngines.get('table')!.holdDealingUntil).toHaveBeenLastCalledWith(
+      extendedHold
+    );
+
+    vi.setSystemTime(10001);
+    const reconnected = subscriber('reconnected');
+    hub.subscribe('table', reconnected.value);
+    expect(reconnected.reveals()).toHaveLength(1);
+    expect(reconnected.reveals()[0].payload).toMatchObject({
+      tournament_id: original.tournament_id,
+      multiplier: original.multiplier,
+      prize_pool: original.prize_pool,
+      locked_tiers: original.locked_tiers,
+      reveal_at: original.reveal_at,
+      hold_until: extendedHold,
+      replay_until: extendedHold,
+      replayed: true,
+    });
+    hub.resync('table', reconnected.value);
+    expect(reconnected.reveals()).toHaveLength(1);
+
+    vi.setSystemTime(extendedHold);
+    const afterDeal = subscriber('after-deal');
+    hub.subscribe('table', afterDeal.value);
+    expect(afterDeal.reveals()).toHaveLength(0);
+  });
+
+  it('does not send an unchanged reveal twice on an ordinary quick admission', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1000);
+    const hub = new TableStateHub();
+    const first = subscriber('first');
+    hub.subscribe('table', first.value);
+    const run = start(
+      vi.fn(async () => ({ data: receipt(10), error: null })),
+      { hub }
+    );
+    await run.outcome;
+    vi.setSystemTime(2000);
+    admit(run.context, hub);
+    expect(first.reveals()).toHaveLength(1);
+    expect(run.context.tableEngines.get('table')!.holdDealingUntil).toHaveBeenLastCalledWith(10000);
+  });
+
+  it('the admission pass sends a reveal that the early emitter failed to retain', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1000);
+    const hub = new TableStateHub();
+    const first = subscriber('first');
+    hub.subscribe('table', first.value);
+    const run = start(
+      vi.fn(async () => ({ data: receipt(10), error: null })),
+      {
+        hub: {
+          emitEvent: vi.fn(() => {
+            throw new Error('early emit failed');
+          }),
+        },
+      }
+    );
+    await run.outcome;
+    expect(first.reveals()).toHaveLength(0);
+    vi.setSystemTime(2000);
+    admit(run.context, hub);
+    expect(first.reveals()).toHaveLength(1);
+    expect(first.reveals()[0].payload).toMatchObject({
+      multiplier: 10,
+      prize_pool: 10,
+      reveal_at: 1000,
+    });
   });
 });

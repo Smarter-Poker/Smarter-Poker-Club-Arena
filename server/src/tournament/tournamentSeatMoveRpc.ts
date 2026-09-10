@@ -225,7 +225,19 @@ export async function moveTournamentPlayerAtomically(
       } else {
         lastFailure = message(error);
         const code = String((error as { code?: unknown }).code ?? '');
-        knownRefusal = ['22023', '23505', '28000', '55000', 'P0002', 'P0404'].includes(code);
+        // PostgREST cannot execute an RPC it cannot resolve. A missing or
+        // ambiguous function is a refused attempt, not a possibly moved seat.
+        // Earlier ambiguous attempts still require their exact stored receipt.
+        knownRefusal = [
+          '22023',
+          '23505',
+          '28000',
+          '55000',
+          'P0002',
+          'P0404',
+          'PGRST202',
+          'PGRST203',
+        ].includes(code);
         if (!knownRefusal) sawAmbiguousAttempt = true;
       }
     } catch (error) {

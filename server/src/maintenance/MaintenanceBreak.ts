@@ -134,7 +134,10 @@ export interface PausableTableEngine {
 
 export type MaintenanceBreakPhase = 'last_hand' | 'counting_down';
 
-type LastHandPersistenceResult = 'confirmed' | 'uncertain' | 'cancelled';
+type LastHandPersistenceResult =
+  | { status: 'confirmed' }
+  | { status: 'uncertain'; error: unknown }
+  | { status: 'cancelled' };
 
 export interface PersistedMaintenanceBreak {
   phase: MaintenanceBreakPhase;
@@ -1301,12 +1304,12 @@ export class MaintenanceBreak {
     const declared = this.persistedState();
     try {
       const persistence = await this.persistLastHandUntilBoundary(declared, generation);
-      if (persistence === 'cancelled') return;
-      if (persistence === 'uncertain') {
+      if (persistence.status === 'cancelled') return;
+      if (persistence.status === 'uncertain') {
         this.reportFault(
           'announcement',
           'held_without_restart',
-          new Error('last-hand persistence reached the fixed boundary without durable proof'),
+          persistence.error,
           declared.announcedAt
         );
         this.honorPotentiallyDurableBreak(declared, generation);
@@ -1430,6 +1433,13 @@ export class MaintenanceBreak {
     // that commits while the response is still in flight.
     this.rememberPotentiallyDurable(announced);
     this.rememberPotentiallyDurable(countingDown);
+
+    if (this.now() >= this.breakEndsAt) {
+      // A delayed callback must never flash a countdown whose absolute end is
+      // already past. Finish the durable last-hand freeze through normal thaw.
+      await this.end();
+      return;
+    }
 
     // The durable last-hand row already freezes database admission at :55.
     // Publish the promised player clock on time; persistence below controls
@@ -2130,11 +2140,16 @@ export class MaintenanceBreak {
 
       if (outcome.kind === 'saved') {
         this.cancelLastHandPersistRetryWait();
-        if (!this.lastHandDeclarationIsCurrent(state, generation)) return 'cancelled';
+        if (!this.lastHandDeclarationIsCurrent(state, generation)) return { status: 'cancelled' };
         // Promise.race orders completions, not wall-clock authority. An I/O
         // completion can run before an overdue timer after the event loop was
         // blocked. Never turn that late receipt into a last-hand frame.
-        return this.now() < boundaryAt ? 'confirmed' : 'uncertain';
+        return this.now() < boundaryAt
+          ? { status: 'confirmed' }
+          : {
+              status: 'uncertain',
+              error: new Error('last-hand persistence completed after the fixed boundary'),
+            };
       }
       if (outcome.kind === 'cancelled') {
         // stop() woke the boundary wait. Keep the in-flight save owned until
@@ -2144,7 +2159,7 @@ export class MaintenanceBreak {
           persistence.then(() => undefined),
           'cancelled last-hand persistence did not settle'
         );
-        return 'cancelled';
+        return { status: 'cancelled' };
       }
       if (outcome.kind === 'boundary') {
         /* The transport may conceal a commit made before :55. Do not clear and
@@ -2154,7 +2169,10 @@ export class MaintenanceBreak {
           persistence.then(() => undefined),
           'late last-hand persistence did not settle'
         );
-        return 'uncertain';
+        return {
+          status: 'uncertain',
+          error: new Error('last-hand persistence remained pending at the fixed boundary'),
+        };
       }
 
       this.cancelLastHandPersistRetryWait();
@@ -2171,7 +2189,7 @@ export class MaintenanceBreak {
       // local gate holds silently to the fixed boundary instead of failing open.
       if (!MaintenanceBreak.isRetryablePersistenceError(lastError)) break;
 
-      if (!this.lastHandDeclarationIsCurrent(state, generation)) return 'cancelled';
+      if (!this.lastHandDeclarationIsCurrent(state, generation)) return { status: 'cancelled' };
       const retryDeadline = Math.min(
         boundaryAt,
         state.announcedAt + MaintenanceBreak.ANNOUNCE_PERSIST_BUDGET_MS
@@ -2192,20 +2210,24 @@ export class MaintenanceBreak {
           }`
       );
       const waitResult = await this.waitForLastHandPersistRetry(delayMs);
-      if (waitResult === 'cancelled') return 'cancelled';
+      if (waitResult === 'cancelled') return { status: 'cancelled' };
       if (!lockOrStatementTimeout) {
         retryMs = Math.min(MaintenanceBreak.LAST_HAND_PERSIST_RETRY_MAX_MS, retryMs * 2);
       }
     }
 
-    if (!this.lastHandDeclarationIsCurrent(state, generation)) return 'cancelled';
+    if (!this.lastHandDeclarationIsCurrent(state, generation)) return { status: 'cancelled' };
     if (lastError) {
       console.error(
         '[MaintenanceBreak] last-hand persistence reached the fixed boundary without proof',
         lastError
       );
     }
-    return 'uncertain';
+    return {
+      status: 'uncertain',
+      error:
+        lastError ?? new Error('last-hand persistence reached the fixed boundary without proof'),
+    };
   }
 
   /**

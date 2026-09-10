@@ -771,6 +771,27 @@ describe('the countdown', () => {
     expect(store.row).toBeNull();
   });
 
+  it('never emits a countdown whose fixed end is already past', async () => {
+    vi.setSystemTime(new Date('2026-09-10T06:53:00.000Z'));
+    const { mb, store, emitted } = build(1);
+    await mb.announceLastHand();
+
+    vi.setSystemTime(new Date('2026-09-10T07:00:00.001Z'));
+    await mb.beginCountdown();
+
+    expect(emitted.map((frame) => frame.payload.phase)).toEqual(['last_hand', undefined]);
+    expect(
+      emitted.some(
+        (frame) =>
+          frame.payload.phase === 'counting_down' &&
+          typeof frame.payload.break_ends_at === 'number' &&
+          frame.payload.break_ends_at < Date.now()
+      )
+    ).toBe(false);
+    expect(store.row).toBeNull();
+    expect(mb.isActive()).toBe(false);
+  });
+
   it('starts five minutes only once, and writes an absolute end time', async () => {
     const { mb, engines, store } = build();
     await mb.announceLastHand();

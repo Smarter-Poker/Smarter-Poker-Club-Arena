@@ -244,7 +244,7 @@ describe('a committed final-table deal cannot be stranded by a lost receipt or t
 
   it('never releases the hard gate for an unclassified or outcome-unknown error', () => {
     const unknown = checkDeal.indexOf('if (!provenRefusal)');
-    const release = checkDeal.indexOf('engine.releaseTerminalCloseoutPause()');
+    const release = checkDeal.indexOf("await this.closeFinalTableDealReview('stale')", unknown);
     const refusal = checkDeal.slice(unknown, release);
     expect(unknown).toBeGreaterThanOrEqual(0);
     expect(refusal).toContain(
@@ -252,6 +252,9 @@ describe('a committed final-table deal cannot be stranded by a lost receipt or t
     );
     expect(refusal).toContain('return false;');
     expect(release).toBeGreaterThan(unknown);
+    expect(sliceMethod(checkDeal, 'if (!provenRefusal)')).not.toContain(
+      'closeFinalTableDealReview'
+    );
   });
 
   it('keeps the ordinary receipt tail on the same idempotent table and manager cleanup', () => {

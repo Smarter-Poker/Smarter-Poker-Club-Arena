@@ -170,6 +170,64 @@ test.describe('Club Data production experience', () => {
         .toBe(true);
     }
 
+    // Keep a bounded, identity-free receipt if player pagination stalls. The
+    // failure screenshot alone cannot distinguish a refused/slow request from
+    // a successful page that the UI later discarded.
+    const playerPageReceipts: Array<Record<string, unknown>> = [];
+    const notePlayerPage = (receipt: Record<string, unknown>) => {
+      playerPageReceipts.push({ at: new Date().toISOString(), ...receipt });
+      if (playerPageReceipts.length > 25) playerPageReceipts.shift();
+    };
+    page.on('request', (request) => {
+      if (
+        request.method() !== 'POST' ||
+        !request.url().includes('/rest/v1/rpc/ca_club_player_page')
+      )
+        return;
+      try {
+        const payload = request.postDataJSON();
+        notePlayerPage({
+          phase: 'requested',
+          sort: payload?.p_sort,
+          continuation: Boolean(payload?.p_cursor),
+          limit: payload?.p_limit,
+        });
+      } catch {
+        notePlayerPage({ phase: 'requested', unreadableRequest: true });
+      }
+    });
+    page.on('response', async (response) => {
+      if (
+        response.request().method() !== 'POST' ||
+        !response.url().includes('/rest/v1/rpc/ca_club_player_page')
+      )
+        return;
+      try {
+        const request = response.request().postDataJSON();
+        const payload = await response.json();
+        notePlayerPage({
+          phase: 'response',
+          status: response.status(),
+          sort: request?.p_sort,
+          continuation: Boolean(request?.p_cursor),
+          limit: request?.p_limit,
+          rows: Array.isArray(payload?.rows) ? payload.rows.length : null,
+          uniqueRows: Array.isArray(payload?.rows)
+            ? new Set(payload.rows.map((row: { user_id?: string }) => row.user_id)).size
+            : null,
+          hasMore: payload?.has_more,
+          hasCursor: Boolean(payload?.next_cursor),
+          errorCode: payload?.code,
+        });
+      } catch {
+        notePlayerPage({ status: response.status(), unreadableResponse: true });
+      }
+    });
+    page.on('requestfailed', (request) => {
+      if (request.url().includes('/rest/v1/rpc/ca_club_player_page')) {
+        notePlayerPage({ transportFailure: request.failure()?.errorText || 'unknown' });
+      }
+    });
     await page.getByRole('tab', { name: 'Players' }).click();
     const playersList = page.getByRole('list', { name: 'Players' });
     await expect(playersList.getByRole('listitem').first()).toBeVisible({ timeout: 60_000 });
@@ -182,9 +240,17 @@ test.describe('Club Data production experience', () => {
     if (await loadMorePlayers.isVisible()) {
       const before = (await loadMorePlayers.textContent()) || '';
       await loadMorePlayers.click();
-      await expect
-        .poll(async () => (await loadMorePlayers.textContent()) || '', { timeout: 60_000 })
-        .not.toBe(before);
+      try {
+        await expect
+          .poll(async () => (await loadMorePlayers.textContent()) || '', { timeout: 60_000 })
+          .not.toBe(before);
+      } catch (error) {
+        await testInfo.attach('player-pagination-receipts', {
+          body: JSON.stringify({ before, receipts: playerPageReceipts }, null, 2),
+          contentType: 'application/json',
+        });
+        throw error;
+      }
       expandedPlayerCount =
         ((await loadMorePlayers.textContent()) || '').match(/- ([\d,]+) Of/i)?.[1] || '';
     }

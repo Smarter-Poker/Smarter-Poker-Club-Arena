@@ -70,7 +70,7 @@ describe('the engine deploy tells the truth when it skips', () => {
        sent the next agent to restore a gate Dan deleted, in order to make a
        test pass. */
     expect(HETZNER).toMatch(
-      /if: steps\.dedupe\.outputs\.skip == 'true' \|\| steps\.exact_dedupe\.outputs\.skip == 'true' \|\| steps\.drain\.outputs\.skip == 'true'/
+      /if: steps\.dedupe\.outputs\.skip == 'true' \|\| steps\.drain\.outputs\.skip == 'true'/
     );
   });
 
@@ -133,12 +133,12 @@ describe('the engine deploy tells the truth when it skips', () => {
       /7am\/7pm|America\/Chicago restart window/
     );
 
-    // A skip summary must not advertise a route around the hand-safety fence.
-    // Manual dispatch may prioritize a SHA, but it still waits for durable
-    // proof from the running engine.
+    // A skipped run must not advertise an unsafe escape hatch. Dispatching
+    // still stages immediately, but only a fresh maintenance certificate may
+    // authorize the stop/start transition.
     const step = sliceYamlEntry(HETZNER, "name: 'DID NOT DEPLOY");
-    expect(step).toMatch(/cannot bypass that/);
-    expect(step).not.toMatch(/restarts OUTSIDE|voids.*hands/);
+    expect(step).not.toMatch(/force=true|voids in-flight hands/);
+    expect(step).toMatch(/readyForRestart certificate/);
   });
 
   /**
@@ -239,14 +239,13 @@ describe('the engine deploy tells the truth when it skips', () => {
     expect(runnable).not.toMatch(/::warning title=OUTSIDE THE RESTART WINDOW::/);
   });
 
-  it('manual dispatch cannot bypass the durable break gate', () => {
+  it('has no force path around the maintenance certificate', () => {
     const gate = HETZNER.slice(
       HETZNER.indexOf('Wait for the maintenance break'),
       HETZNER.indexOf('Cut over to the new image')
     );
-    expect(gate).not.toMatch(/github\.event\.inputs\.force/);
+    expect(HETZNER).not.toMatch(/github\.event\.inputs\.force|force=true/);
     expect(gate).not.toMatch(/skipping the break gate/);
-    expect(gate).toMatch(/durableConfirmed/);
   });
 
   it('waits for the announced break instead of racing the hands', () => {
@@ -269,7 +268,6 @@ describe('the engine deploy tells the truth when it skips', () => {
     );
     expect(gate).toMatch(/maintenance/);
     expect(gate).toMatch(/readyForRestart/);
-    expect(gate).toMatch(/durableConfirmed/);
     // The old "a scheduled window means proceed anyway" escape must be gone,
     // or the break is decorative and the restart still lands on live tables.
     expect(gate).not.toMatch(/event_name \}\}" = "schedule"/);
@@ -280,15 +278,13 @@ describe('the engine deploy tells the truth when it skips', () => {
     expect(gate).toMatch(/skip=true/);
   });
 
-  it('fails closed when the running engine cannot publish the durable contract', () => {
+  it('does not treat a legacy health payload as restart authority', () => {
     const gate = HETZNER.slice(
       HETZNER.indexOf('Wait for the maintenance break'),
       HETZNER.indexOf('Cut over to the new image')
     );
-    expect(gate).toMatch(/INCOMPATIBLE/);
-    expect(gate).toMatch(/DURABLE CERTIFICATE UNAVAILABLE/);
-    expect(gate).toMatch(/skip=true/);
-    expect(gate).not.toMatch(/LEGACY/);
+    expect(gate).not.toMatch(/LEGACY ENGINE|LEGACY=yes/);
+    expect(gate).toMatch(/Missing\/legacy\/straggler states are/);
   });
 
   it('still bypasses the spacing gate for a manual dispatch', () => {

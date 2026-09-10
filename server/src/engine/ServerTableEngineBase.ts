@@ -30,7 +30,10 @@ import { ChipRaceEngine } from './ChipRaceEngine.js';
 import { TableBalancer } from './TableBalancer.js';
 import { TableBreakEngine } from './TableBreakEngine.js';
 import { EngineTelemetry } from './EngineTelemetry.js';
-import { getTournamentBrainContext } from '../services/TournamentBrainContext.js';
+import {
+  peekTournamentBrainContext,
+  refreshTournamentBrainContext,
+} from '../services/TournamentBrainContext.js';
 import {
   getFullRakeConfig,
   getPlayerCountCaps,
@@ -2393,12 +2396,12 @@ export abstract class ServerTableEngineBase {
       // V22 (2026-08-27, Phase 2): pre-warm the tournament ICM context the
       // moment the engine knows which tournament it serves. The cache used to
       // warm on the FIRST HORSE DECISION — with 7,000+ spins a day, the
-      // opening hands of every event ran on the flat premium while the fetch
-      // was still in flight. The call is synchronous-cheap: it only kicks the
-      // background refresh.
+      // opening hands of every event lacked real context while the fetch was
+      // still in flight. The call is synchronous-cheap: it only kicks the
+      // background refresh; Phase 6 labels any remaining warm-up explicitly.
       if (this.tableInfo?.tournament_id) {
         try {
-          getTournamentBrainContext(String(this.tableInfo.tournament_id));
+          refreshTournamentBrainContext(String(this.tableInfo.tournament_id));
         } catch {
           /* warming is best-effort */
         }
@@ -3410,6 +3413,11 @@ export abstract class ServerTableEngineBase {
           }
           this.disconnectEngine.checkStaleHeartbeats(this.tableId);
           this.runTableWatchdog();
+          // Phase 6: refresh cached tournament facts from a lifecycle-owned
+          // tick, never while a horse's action clock is being constructed.
+          if (this.tableInfo?.tournament_id) {
+            refreshTournamentBrainContext(String(this.tableInfo.tournament_id));
+          }
           // CHIP CONTINUITY: presence just got re-evaluated above (stale
           // heartbeats -> disconnected), so this is the moment to tell the
           // database which stay clocks pause and which resume. Only
@@ -4897,7 +4905,7 @@ export abstract class ServerTableEngineBase {
     if (!this.isTournamentTable()) return 'cash';
     try {
       const id = this.tableInfo?.tournament_id;
-      const ctx = id ? getTournamentBrainContext(String(id)) : null;
+      const ctx = id ? peekTournamentBrainContext(String(id)) : null;
       return ctx?.format ?? 'mtt';
     } catch {
       return 'mtt';

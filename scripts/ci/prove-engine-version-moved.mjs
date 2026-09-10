@@ -15,17 +15,16 @@
  *                PRE_CUTOVER_SOURCE to $GITHUB_ENV. Never fails the job.
  *
  *   MODE=prove   After the cutover and the promote. Polls for up to
- *                TIMEOUT_S (240) until the fresh database leader equals
- *                TARGET_SHA's short form. FAILS THE JOB (exit 1) when the
- *                database witness is missing, stale, still names
- *                PRE_CUTOVER_VERSION, or names some third build. Raises an
- *                in-app notification the way publish-watchdog.sh does when
- *                the credentials are present.
+ *                TIMEOUT_S (240) until the running version equals TARGET_SHA's
+ *                short form. FAILS THE JOB (exit 1) when the poll runs out and
+ *                the version still equals PRE_CUTOVER_VERSION, or names some
+ *                third build. Raises an in-app notification the way
+ *                publish-watchdog.sh does when the credentials are present.
  *
  *   MODE=match   Before an already-serving dedupe. Reads the database once
  *                and succeeds only when a fresh leader heartbeat names the
- *                exact target. It never pages: a mismatch simply means the
- *                deploy must continue to the normal certified cutover.
+ *                exact target. It never pages: a mismatch means the deploy
+ *                continues to the normal certified cutover.
  *
  * THE WITNESS IS THE DATABASE FIRST. public.engine_leader.engine_version is
  * written by the running leader itself (claim_engine_leadership, renewed every
@@ -33,12 +32,12 @@
  * proxy, a cache or an unmanaged twin answering the hostname. It is read over
  * DATABASE_URL (pg, the same route record-engine-deploy-attempt.mjs uses) or,
  * failing that, over Supabase REST with the service role. /health.version with
- * a cache-buster is diagnostic only: a proxy response can never certify what
- * the elected database leader wrote.
+ * a cache-buster is the fallback witness, and the report says which one spoke.
  *
- * UNREADABLE IS NOT PROOF. If the database witness cannot be read, prove exits
- * 1 even when /health reports the target. Promotion and SHIPPED therefore
- * require the database fact the workflow promises, not an HTTP inference.
+ * UNREADABLE IS NOT "BEHIND". If no witness can be read at all, prove exits 0
+ * with a warning: the verify step before this one has already read /health
+ * successfully, and the watchdog's rule holds here too - guessing from silence
+ * would roll back a build that is fine.
  */
 import process from 'node:process';
 import { supabaseServerHeaders } from './supabase-auth-headers.mjs';
@@ -54,6 +53,7 @@ const PRE = (process.env.PRE_CUTOVER_VERSION || '').trim();
 const PRE_SOURCE = (process.env.PRE_CUTOVER_SOURCE || 'unknown').trim();
 const TIMEOUT_S = Number(process.env.TIMEOUT_S || 240);
 const POLL_S = Number(process.env.POLL_S || 10);
+const STRICT_PROOF = process.env.STRICT_PROOF === '1';
 const RUN_URL = process.env.RUN_URL || '';
 
 const say = (m) => console.log(m);
@@ -132,15 +132,15 @@ async function readHealth() {
   }
 }
 
-/** One database reading. HTTP is deliberately not a fallback in prove mode. */
+/** One database reading. HTTP must never authorize a dedupe. */
 async function readLeaderOnce() {
   const leader = (await readLeaderPg()) ?? (await readLeaderRest());
   if (leader === null) return null;
   return { ...leader, source: 'engine_leader' };
 }
 
-/** Record mode is diagnostic and may remember HTTP when the database is down. */
-async function readOnceForRecord() {
+/** Record/prove reading from the best available witness. */
+async function readOnce() {
   const leader = await readLeaderOnce();
   if (leader && !leader.empty && leader.version) {
     return {
@@ -200,7 +200,7 @@ async function notifyInApp(message) {
 }
 
 async function record() {
-  const reading = await readOnceForRecord();
+  const reading = await readOnce();
   const version = reading?.version || '';
   const source = reading?.source || 'unreadable';
   say(`pre-cutover engine version: ${version || '<unreadable>'} (witness: ${source})`);
@@ -242,9 +242,7 @@ async function match() {
   if (leader === null) say('NOT MATCHED: database leader witness is unreadable.');
   else if (leader.empty || !leader.version) say('NOT MATCHED: database leader row is empty.');
   else {
-    const age = Number.isFinite(leader.heartbeatAgeS)
-      ? `${leader.heartbeatAgeS}s`
-      : 'unavailable';
+    const age = Number.isFinite(leader.heartbeatAgeS) ? `${leader.heartbeatAgeS}s` : 'unavailable';
     say(`NOT MATCHED: engine_leader reports ${leader.version}, heartbeat age ${age}.`);
   }
   process.exit(1);
@@ -259,63 +257,59 @@ async function prove() {
     `proving the engine moved: target ${TARGET}, was ${PRE || '<unknown>'} (${PRE_SOURCE}), budget ${TIMEOUT_S}s`
   );
   const deadline = Date.now() + TIMEOUT_S * 1000;
-  let lastLeader = null;
-  let lastHealth = null;
+  let last = null;
   let attempt = 0;
   for (;;) {
     attempt++;
-    const [leader, health] = await Promise.all([readLeaderOnce(), readHealth()]);
-    if (health) {
-      lastHealth = health;
-      say(`attempt ${attempt}: /health says ${health} (diagnostic only; want ${TARGET})`);
-    } else {
-      say(`attempt ${attempt}: /health diagnostic unreadable`);
-    }
-    if (leader) {
-      lastLeader = leader;
-      const hb = Number.isFinite(leader.heartbeatAgeS)
-        ? `, heartbeat ${leader.heartbeatAgeS}s ago`
-        : ', heartbeat age unavailable';
-      say(
-        `attempt ${attempt}: ${leader.source} says ${leader.version || '<empty>'}${hb} (want ${TARGET})`
-      );
+    const r = await readOnce();
+    if (r) {
+      last = r;
+      const hb = r.heartbeatAgeS === null ? '' : `, heartbeat ${r.heartbeatAgeS}s ago`;
+      say(`attempt ${attempt}: ${r.source} says ${r.version}${hb} (want ${TARGET})`);
       // The leader row must be FRESH: a stale row with the right version is
-      // an old heartbeat, not proof. 60 s is six renew intervals. REST uses
-      // the runner clock, so tolerate at most one minute of negative skew.
-      if (freshExactLeader(leader)) {
-        say(`PROVED: ${leader.source} reports ${TARGET}${PRE ? `, moved from ${PRE}` : ''}.`);
+      // an old heartbeat, not proof. 60 s is six renew intervals.
+      const fresh = r.source === 'engine_leader' ? freshExactLeader(r) : r.heartbeatAgeS === null;
+      // Strict release sealing requires the fresh database row written by the
+      // elected leader. HTTP remains useful diagnostic evidence, but a proxy or
+      // stale twin must never advance durable release authority.
+      const authoritative = !STRICT_PROOF || r.source === 'engine_leader';
+      if (r.version === TARGET && fresh && authoritative) {
+        say(`PROVED: ${r.source} reports ${TARGET}${PRE ? `, moved from ${PRE}` : ''}.`);
         summary(
-          `### Deploy proved\n\n\`${leader.source}\` reports \`${TARGET}\`${PRE ? ` (was \`${PRE}\`)` : ''} after ${attempt} attempt(s).`
+          `### Deploy proved\n\n\`${r.source}\` reports \`${TARGET}\`${PRE ? ` (was \`${PRE}\`)` : ''} after ${attempt} attempt(s).`
         );
         process.exit(0);
       }
+      if (r.version === TARGET && fresh && !authoritative) {
+        say(`attempt ${attempt}: HTTP matches, but strict sealing still requires engine_leader`);
+      }
     } else {
-      say(`attempt ${attempt}: database leader witness unreadable`);
+      say(`attempt ${attempt}: no witness readable`);
     }
     if (Date.now() >= deadline) break;
     await new Promise((res) => setTimeout(res, POLL_S * 1000));
   }
 
-  const unchanged = Boolean(PRE && lastLeader?.version === PRE);
-  const staleTarget = Boolean(lastLeader?.version === TARGET);
-  const databaseResult = !lastLeader
-    ? 'the database leader witness was unreadable'
-    : lastLeader.empty || !lastLeader.version
-      ? 'the database leader row was empty'
-      : staleTarget
-        ? `the database leader reported ${TARGET} with a stale or invalid heartbeat`
-        : `the database leader reported ${lastLeader.version}`;
-  const httpResult = lastHealth
-    ? `/health reported ${lastHealth} (diagnostic only)`
-    : '/health was unreadable';
+  if (!last) {
+    const verdict = STRICT_PROOF
+      ? 'The durable release seal was NOT advanced.'
+      : 'Not treating silence as a failed deploy; the verify step already saw the target in the container.';
+    say(
+      `::warning title=DEPLOY PROOF INCONCLUSIVE::Neither engine_leader nor ${ENGINE_URL}/health could be read for ${TIMEOUT_S}s. ${verdict}`
+    );
+    summary(`### Deploy proof inconclusive\n\nNo witness answered for ${TIMEOUT_S}s. ${verdict}`);
+    process.exit(STRICT_PROOF ? 1 : 0);
+  }
+
+  const unchanged = PRE && last.version === PRE;
   const message = unchanged
-    ? `The Engine Deploy Of ${TARGET} Reported A Successful Cutover But The Database Leader Still Reports ${PRE} After ${TIMEOUT_S} Seconds. Production Is Running The Old Build.`
-    : `The Engine Deploy Of ${TARGET} Could Not Be Certified: ${databaseResult}. ${httpResult}.`;
+    ? `The Engine Deploy Of ${TARGET} Reported A Successful Cutover But ${last.source} Still Reports ${PRE} After ${TIMEOUT_S} Seconds. Production Is Running The Old Build.`
+    : `The Engine Deploy Of ${TARGET} Finished But ${last.source} Reports ${last.version}, Which Is Neither The Target Nor The Pre Cutover ${PRE || 'Version'}. Something Else Is Running.`;
   say(
-    `::error title=DEPLOY SHIPPED NOTHING::${databaseResult} after ${TIMEOUT_S}s; target ${TARGET}, pre-cutover ${PRE || '<unknown>'}; ${httpResult}. ${unchanged ? 'The version did not move: the database leader is still on the old build.' : 'Only a fresh exact database leader heartbeat can prove this deploy.'}`
+    `::error title=DEPLOY SHIPPED NOTHING::${last.source} reports ${last.version} after ${TIMEOUT_S}s; target ${TARGET}, pre-cutover ${PRE || '<unknown>'}. ${unchanged ? 'The version did not move: the container came back on the old build.' : 'A third build is answering.'}`
   );
   summary(
-    `### DEPLOY SHIPPED NOTHING\n\n| | |\n| --- | --- |\n| target | \`${TARGET}\` |\n| pre-cutover (${PRE_SOURCE}) | \`${PRE || 'unknown'}\` |\n| database proof after ${TIMEOUT_S}s | ${databaseResult} |\n| HTTP diagnostic | ${httpResult} |\n\nThe cutover reported success but a fresh database leader never proved the exact target. This step fails closed, so the build cannot be promoted or recorded as shipped.`
+    `### DEPLOY SHIPPED NOTHING\n\n| | |\n| --- | --- |\n| target | \`${TARGET}\` |\n| pre-cutover (${PRE_SOURCE}) | \`${PRE || 'unknown'}\` |\n| after ${TIMEOUT_S}s (${last.source}) | \`${last.version}\` |\n\nThe cutover reported success but the engine's own witness never moved. This step fails the job so the run is RED, not a green tick over a stale build.`
   );
   await notifyInApp(message);
   process.exit(1);

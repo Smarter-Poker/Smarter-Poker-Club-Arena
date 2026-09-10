@@ -79,6 +79,15 @@ import {
   PLO_MIN_OPEN_BB,
   type PreflopPosition,
 } from './HorsePreflop.js';
+import {
+  classifyTournamentPreflopBranch,
+  tournamentMZone,
+  tournamentPositionForSeat,
+  tournamentPreflopPolicy,
+  type TournamentAnteType,
+  type TournamentContextStatus,
+  type TournamentMState,
+} from './HorseTournamentPreflop.js';
 import { potLimitRaiseTo } from './BettingStructure.js';
 import { reportError } from '../services/errorReporter.js';
 // V16 ICM: real Malmuth-Harville pressure from the live stack distribution.
@@ -627,7 +636,8 @@ function classifyPosition(
   heroSeat: number,
   dealerSeat: number | undefined,
   players: SeatPlayer[],
-  v13: boolean = true
+  v13: boolean = true,
+  allPlayersDealt: boolean = false
 ): PositionClass {
   // ── V13 (2026-08-23): position comes from who was DEALT IN ───────────────
   // Filtering on `!is_folded` derived position from who is still LIVE, so
@@ -641,6 +651,7 @@ function classifyPosition(
   // and let the 13-20bb reshove jam over an under-the-gun open. A player who
   // has folded still occupied their seat when the button was set.
   const dealtIn = (p: SeatPlayer): boolean =>
+    allPlayersDealt ||
     p.seat === heroSeat ||
     (p.totalInvested ?? 0) > 0 ||
     (Array.isArray(p.cards) && p.cards.length > 0) ||
@@ -942,11 +953,55 @@ export interface HorseGameStateV2 extends HorseGameState {
    *  heuristic is a legacy fallback only - ServerTableEngine always passes
    *  gameMode, and isTournamentMode() trusts it first. */
   tournament?: {
+    /** Phase 6 context contract. Every live tournament decision carries it. */
+    schemaVersion?: 1;
+    contextStatus?: TournamentContextStatus;
+    contextIssues?: string[];
+    sourceAgeMs?: number | null;
+    tournamentId?: string | null;
+    tournamentType?: string;
+    tournamentStatus?: string;
+    gameVariant?: string;
+    entrants?: number;
     nearBubble?: boolean;
     inMoney?: boolean;
     playersLeft?: number;
     spotsPaid?: number;
     avgStackChips?: number;
+    medianStackChips?: number;
+    seatsPerTable?: number;
+    playersAtTable?: number;
+    currentLevel?: number;
+    currentSmallBlind?: number;
+    currentBigBlind?: number;
+    currentAnte?: number;
+    anteType?: TournamentAnteType;
+    nextSmallBlind?: number | null;
+    nextBigBlind?: number | null;
+    nextAnte?: number | null;
+    levelDurationMin?: number | null;
+    levelElapsedMin?: number | null;
+    registrationOpen?: boolean;
+    lateRegistrationOpen?: boolean;
+    registrationRequiresAuthorization?: boolean;
+    isPko?: boolean;
+    isBounty?: boolean;
+    isMysteryBounty?: boolean;
+    reentryAllowed?: boolean;
+    reentryOpen?: boolean;
+    maxReentries?: number | null;
+    rebuyAllowed?: boolean;
+    rebuyOpen?: boolean;
+    maxRebuys?: number | null;
+    addOnAvailable?: boolean;
+    addOnPeriodOpen?: boolean;
+    addOnCost?: number | null;
+    addOnChips?: number | null;
+    addOnLevels?: number | null;
+    onBreak?: boolean;
+    handForHand?: boolean;
+    handForHandExpected?: boolean;
+    m?: TournamentMState;
     bountyFactor?: number;
     /** V16 ICM: live stacks (chips, desc) + payout percentages by place. */
     stacks?: number[];
@@ -1025,6 +1080,21 @@ function isTournamentMode(gs: HorseGameStateV2): boolean {
 }
 
 /**
+ * Phase 6 keeps partial tournament snapshots on the decision payload so the
+ * engine can emit an honest `TOURNAMENT_CONTEXT_INCOMPLETE` receipt.  Those
+ * observable facts are not strategy inputs until the complete-context
+ * contract holds, however.  Legacy/offline callers have no schema marker and
+ * retain their historical behavior.
+ */
+function trustedTournamentContext(
+  gs: HorseGameStateV2
+): NonNullable<HorseGameStateV2['tournament']> | undefined {
+  const t = gs.tournament;
+  if (t?.schemaVersion === 1 && t.contextStatus !== 'complete') return undefined;
+  return t;
+}
+
+/**
  * V7 ICM-lite: the survival premium in tournament play. Chips lost hurt more
  * than chips won help, so every calling threshold rises and bluff volume
  * drops — hardest around the bubble, gone again deep in the money with a big
@@ -1049,7 +1119,7 @@ export function endgameAdjust(
   stackBB: number,
   on: boolean
 ): number {
-  const t = gs.tournament;
+  const t = trustedTournamentContext(gs);
   if (!on || !t) return risk;
   if ((t.playersLeft ?? 0) === 2) return Math.min(risk, 0.01);
   if (t.finalTable === true && (t.inMoney ?? true)) {
@@ -1115,7 +1185,7 @@ export function satelliteRead(
   stackBB: number,
   on: boolean = true
 ): SatelliteRead {
-  const t = gs.tournament;
+  const t = trustedTournamentContext(gs);
   if (!on || !t || t.satellite !== true) return NO_SATELLITE;
   const seats = t.satelliteSeats ?? t.spotsPaid ?? 0;
   const left = t.playersLeft ?? 0;
@@ -1217,7 +1287,7 @@ export function satelliteRead(
  *    per-player map is absent (older context), so nothing regresses.
  */
 export function prizeLandscapeScale(gs: HorseGameStateV2, on: boolean = true): number {
-  const t = gs.tournament;
+  const t = trustedTournamentContext(gs);
   if (!on || !t) return 1;
   const meanCents = Math.max(0, t.mysteryMeanCents ?? t.meanBountyCents ?? 0);
   const chestsLeft = Math.max(0, t.mysteryChestsLeft ?? 0);
@@ -1234,7 +1304,7 @@ export function prizeLandscapeScale(gs: HorseGameStateV2, on: boolean = true): n
 }
 
 export function headBountyScale(gs: HorseGameStateV2, userId: string | undefined): number {
-  const t = gs.tournament;
+  const t = trustedTournamentContext(gs);
   if (!t || !userId || !t.bountyByUser) return 1;
   const head = Number(t.bountyByUser[userId]) || 0;
   const mean = Math.max(0, t.meanBountyCents ?? 0);
@@ -1263,7 +1333,7 @@ export function bubblePressure(
   raiserSeat: number,
   on: boolean = true
 ): number {
-  const t = gs.tournament;
+  const t = trustedTournamentContext(gs);
   if (!on || !t || !isTournamentMode(gs) || gs.format === 'spin') return 0;
   if (t.satellite === true) return 0;
   const pl = t.playersLeft ?? 0;
@@ -1305,7 +1375,7 @@ function icmRiskBase(
 ): number {
   lastIcmPath = 'legacy';
   // icmRisk v2 (V12, 2026-08-22): real bubble model from TournamentBrainContext.
-  const explicit = gs.tournament;
+  const explicit = trustedTournamentContext(gs);
   if (!isTournamentMode(gs)) return 0;
   // A SPIN IS NOT AUTOMATICALLY WINNER-TAKE-ALL (corrected 2026-08-31). The
   // ladder pays one place below 10x, but 10x pays 80/20 and 25x/50x/100x pay
@@ -2168,6 +2238,19 @@ export class HorseLogic {
     if (tele) {
       noteFire('decide');
       noteFire(`decide_${vi.isOmaha ? 'omaha' : vi.isShortDeck ? 'short_deck' : 'nlh'}`);
+      if (isTournamentMode(gs)) {
+        noteFire('decide_tournament');
+        if (gs.stage === 'preflop') noteFire('decide_tournament_preflop');
+      }
+      if (isTournamentMode(gs) && gs.tournament?.schemaVersion === 1) {
+        noteFire('phase6_tournament_context');
+        if (gs.tournament.contextStatus === 'complete') {
+          noteFire('phase6_tournament_context_complete');
+        } else {
+          noteFire('phase6_tournament_context_incomplete');
+        }
+        if (gs.tournament.m?.schemaVersion === 1) noteFire('phase6_m_engine');
+      }
     }
     let decision: HorseDecision;
     if (gs.stage === 'preflop') {
@@ -2219,6 +2302,7 @@ export class HorseLogic {
     opts: HorseDecideOpts = {}
   ): HorseDecision {
     const bb = gs.bigBlind > 0 ? gs.bigBlind : 2;
+    const trustedTournament = trustedTournamentContext(gs);
     const toCall = Math.max(0, gs.currentBet - player.bet);
     const effectiveCall = Math.min(toCall, player.stack);
     const contestablePot = Number.isFinite(gs.contestablePot)
@@ -2268,6 +2352,7 @@ export class HorseLogic {
      */
     let callersOfPreviousRaise = 0;
     let lastRaiserSeat = -1;
+    let firstRaiserSeat = -1;
     for (const a of history) {
       /**
        * ═══ V28 AUDIT FIX (2026-08-29): AN ALL-IN IS NEVER INVISIBLE ═══
@@ -2299,6 +2384,7 @@ export class HorseLogic {
         raises++;
         callersOfPreviousRaise = callers; // the squeeze shape, before the reset
         callers = 0; // callers-of-THE-raise reset when a new raise lands
+        if (firstRaiserSeat < 0) firstRaiserSeat = a.seat;
         lastRaiserSeat = a.seat;
       } else if (a.action === 'call' || a.action === 'all_in') {
         // an all-in call-off (isFullRaise undefined) is a caller of the price
@@ -2333,10 +2419,23 @@ export class HorseLogic {
       raises = gs.currentBet > bb * 4.5 ? 2 : 1;
     }
 
-    const position = classifyPosition(player.seat, gs.dealerSeat, gs.players, opts.v13 !== false);
+    const phase6DealtRoster = gs.tournament?.schemaVersion === 1;
+    const position = classifyPosition(
+      player.seat,
+      gs.dealerSeat,
+      gs.players,
+      opts.v13 !== false,
+      phase6DealtRoster
+    );
     const raiserPosition: PreflopPosition | null =
       lastRaiserSeat >= 0
-        ? classifyPosition(lastRaiserSeat, gs.dealerSeat, gs.players, opts.v13 !== false)
+        ? classifyPosition(
+            lastRaiserSeat,
+            gs.dealerSeat,
+            gs.players,
+            opts.v13 !== false,
+            phase6DealtRoster
+          )
         : null;
     // V13: a sitting-out player counted as an opponent, so a two-handed table
     // with one sitter reported oppsLeft = 2 and switched OFF the heads-up and
@@ -2346,6 +2445,127 @@ export class HorseLogic {
       (p) => !p.is_folded && p.seat !== player.seat && (opts.v13 === false || !p.is_sitting_out)
     ).length;
     const stackBB = player.stack / bb;
+    const heroPreviouslyActed = history.some(
+      (action) =>
+        action.seat === player.seat && action.action !== 'fold' && action.action !== 'check'
+    );
+    const heroWasInitialRaiser = firstRaiserSeat === player.seat;
+    const squeezed =
+      (opts.v18Squeeze ?? true) !== false &&
+      raises === 2 &&
+      callersOfPreviousRaise >= 1 &&
+      heroWasInitialRaiser;
+
+    // Phase 6 exact tournament coordinate. The schema gate preserves every
+    // older/offline fixture; every live tournament worker snapshot is v1.
+    const phase6 = (() => {
+      const tournament = gs.tournament;
+      if (!isTournamentMode(gs) || tournament?.schemaVersion !== 1 || !tournament.m) return;
+      // A schema-v1 live snapshot is built from HandController.state.players,
+      // which is already the dealt roster. A player who disconnects or folds
+      // remains part of the positional ring for this hand.
+      const dealtInSeats = gs.players.map((candidate) => candidate.seat);
+      const heroPosition = tournamentPositionForSeat(player.seat, gs.dealerSeat, dealtInSeats);
+      const exactRaiserPosition =
+        lastRaiserSeat >= 0
+          ? tournamentPositionForSeat(lastRaiserSeat, gs.dealerSeat, dealtInSeats)
+          : null;
+      // A player whose blind consumed a short stack is marked is_all_in but
+      // made no strategic all-in action. Count only seats with an actual
+      // preflop all-in record, otherwise two forced blinds can manufacture a
+      // multiway-all-in node and suppress a profitable price-in call.
+      const voluntaryAllInSeats = new Set(
+        history.filter((action) => action.action === 'all_in').map((action) => action.seat)
+      );
+      const imminentLevel =
+        typeof tournament.nextBlindInMin === 'number' &&
+        tournament.nextBlindInMin <= 3 &&
+        (tournament.nextBlindMult ?? 1) > 1.15;
+      const branchMZone = imminentLevel
+        ? tournamentMZone(
+            Math.min(tournament.m.effectiveM, tournament.m.projectedEffectiveM),
+            tournament.m.zone
+          )
+        : tournament.m.zone;
+      const branch = classifyTournamentPreflopBranch({
+        raises,
+        limpers,
+        callers,
+        callersOfPreviousRaise,
+        opponentsAllIn: gs.players.filter(
+          (candidate) =>
+            candidate.seat !== player.seat &&
+            !candidate.is_folded &&
+            !candidate.is_sitting_out &&
+            candidate.is_all_in &&
+            voluntaryAllInSeats.has(candidate.seat)
+        ).length,
+        opponentsLeft: oppsLeft,
+        stackBB,
+        mZone: branchMZone,
+        heroPosition,
+        raiserPosition: exactRaiserPosition,
+        heroPreviouslyActed,
+        heroWasInitialRaiser,
+        squeezed,
+      });
+      const gameFamily = vi.isOmaha
+        ? ('omaha' as const)
+        : !vi.isShortDeck && vi.holeCount === 2 && !vi.isFixedLimit
+          ? ('nlh' as const)
+          : ('other' as const);
+      const heroTotalStack = Math.max(0, player.stack + player.bet);
+      const policyOpponent =
+        lastRaiserSeat >= 0
+          ? gs.players.find(
+              (candidate) =>
+                candidate.seat === lastRaiserSeat &&
+                !candidate.is_folded &&
+                !candidate.is_sitting_out
+            )
+          : undefined;
+      // A response range is indexed by the stack that can actually be won or
+      // lost against the current aggressor, not by hero's stack in isolation.
+      // Unopened nodes retain hero depth because there is no opposing actor.
+      const effectivePolicyDepthBB =
+        policyOpponent && bb > 0
+          ? Math.min(heroTotalStack, Math.max(0, policyOpponent.stack + policyOpponent.bet)) / bb
+          : heroTotalStack / bb;
+      const policy = tournamentPreflopPolicy({
+        gameFamily,
+        contextStatus: tournament.contextStatus ?? 'incomplete',
+        tableSize:
+          tournament.playersAtTable ??
+          gs.players.filter((candidate) => !candidate.is_sitting_out).length,
+        heroPosition,
+        raiserPosition: exactRaiserPosition,
+        anteType:
+          tournament.anteType ??
+          (gs.bigBlindAnte === true ? 'big_blind' : (gs.ante ?? 0) > 0 ? 'per_player' : 'none'),
+        branch,
+        stackBB: effectivePolicyDepthBB,
+        m: tournament.m,
+      });
+      if (telemetryOn(opts)) {
+        noteFire('phase6_tournament_preflop');
+      }
+      return { policy, m: tournament.m };
+    })();
+
+    let phase6RouteNoted = false;
+    const notePhase6Route = (route: 'atlas' | 'solver' | 'variant_fallback'): void => {
+      if (!phase6 || phase6RouteNoted || !telemetryOn(opts)) return;
+      phase6RouteNoted = true;
+      noteFire(`phase6_route_${route}`);
+      noteFire(`phase6_branch_${phase6.policy.branch}`);
+      if (route === 'atlas') {
+        noteFire(
+          `phase6_atlas_${
+            phase6.policy.source === 'deterministic_baseline' ? 'baseline' : 'fallback'
+          }`
+        );
+      }
+    };
 
     // ═══ V27 GTO CHARTS (Dan 2026-08-29) ══════════════════════════════════
     // "THEY'RE NOT JUST GUESSING — THEY HAVE SPECIFIC GTO RENDERED PLAYS."
@@ -2442,9 +2662,16 @@ export class HorseLogic {
             // The chart gives the mixed strategy; the horse rolls it. A 77%
             // jam is jammed 77% of the time, not rounded to always.
             const pushProb = advice.action === 'push' ? advice.freq : 1 - advice.freq;
-            if (fastRandom() < pushProb) return { action: 'all_in', thinkTime: 0 };
+            if (fastRandom() < pushProb) {
+              notePhase6Route('solver');
+              return { action: 'all_in', thinkTime: 0 };
+            }
             // SB folding still surrenders the small blind; check when free.
-            if (toCall <= 0) return { action: 'check', thinkTime: 0 };
+            if (toCall <= 0) {
+              notePhase6Route('solver');
+              return { action: 'check', thinkTime: 0 };
+            }
+            notePhase6Route('solver');
             return { action: 'fold', thinkTime: 0 };
           }
         }
@@ -2470,8 +2697,10 @@ export class HorseLogic {
             if (telemetryOn(opts)) noteFire('v27_gto_bb_defend');
             const callProb = advice.action === 'call' ? advice.freq : 1 - advice.freq;
             if (fastRandom() < callProb) {
+              notePhase6Route('solver');
               return { action: 'call', amount: Math.min(toCall, player.stack), thinkTime: 0 };
             }
+            notePhase6Route('solver');
             return { action: 'fold', thinkTime: 0 };
           }
         }
@@ -2570,10 +2799,13 @@ export class HorseLogic {
             // Clearly ahead of the price with chips behind and others still
             // to act: put them in, so nobody gets a cheap look.
             if (gap38 >= 0.12 && player.stack > effCall38 * 1.5 && live38 > 1) {
+              notePhase6Route('variant_fallback');
               return { action: 'all_in', thinkTime: 0 };
             }
+            notePhase6Route('variant_fallback');
             return { action: 'call', amount: Math.min(toCall, player.stack), thinkTime: 0 };
           }
+          notePhase6Route('variant_fallback');
           return { action: 'fold', thinkTime: 0 };
         } catch {
           /* the price read is best-effort; the range play below decides */
@@ -2682,7 +2914,7 @@ export class HorseLogic {
       // this existed before; icmRisk only trimmed its own premium slightly.
       ...(() => {
         const useV24 = (opts.v24Bounty ?? true) !== false;
-        const bf = useV24 ? (gs.tournament?.bountyFactor ?? 0) : 0;
+        const bf = useV24 ? (trustedTournament?.bountyFactor ?? 0) : 0;
         if (!(bf > 0) || lastRaiserSeat < 0) return {};
         const raiser = gs.players.find((p) => p.seat === lastRaiserSeat);
         if (!raiser) return {};
@@ -2696,7 +2928,7 @@ export class HorseLogic {
         // does: the mean live chest IS the EV of a bust, and comparing it
         // to the pot in the same unit turns "there is a bounty" into a
         // number the thresholds can use.
-        const t26 = gs.tournament;
+        const t26 = trustedTournament;
         const useV26 = (opts.v26Prizes ?? true) !== false;
         // Cents -> chips is not a conversion the engine can make (real money
         // and tournament chips are different scales), so the bust is priced
@@ -2724,9 +2956,10 @@ export class HorseLogic {
       // V23 BLIND CLOCK: jam BEFORE the level halves the M, not after.
       nextBlindInMin:
         (opts.v23Endgame ?? true) !== false
-          ? (gs.tournament?.nextBlindInMin ?? undefined)
+          ? (trustedTournament?.nextBlindInMin ?? undefined)
           : undefined,
-      nextBlindMult: (opts.v23Endgame ?? true) !== false ? gs.tournament?.nextBlindMult : undefined,
+      nextBlindMult:
+        (opts.v23Endgame ?? true) !== false ? trustedTournament?.nextBlindMult : undefined,
       // V12: table format — spins widen (3-max, shallow, high blind
       // pressure), HU SNGs ride the heads-up ranges. Not "winner-take-all
       // chip EV": at 10x and above a spin pays two or three places, and that
@@ -2744,6 +2977,7 @@ export class HorseLogic {
       // V18 SQUEEZE: hero opened, at least one caller came along, and then
       // a 3-bet arrived - the classic squeeze shape. Squeeze ranges are
       // polarized toward air, so the opener defends wider.
+      // Callers of the OPEN are captured before the squeeze resets `callers`.
       squeezed:
         (opts.v18Squeeze ?? true) !== false &&
         raises === 2 &&
@@ -2759,6 +2993,7 @@ export class HorseLogic {
           }
           return false;
         })(),
+      phase6,
       // V16 PLO POLARITY: AAxx is the premium the generic percentile cannot
       // see past double-counted side cards; rundowns without it flat more.
       omahaAA:
@@ -2819,6 +3054,9 @@ export class HorseLogic {
       })(),
       rand: fastRandom,
     });
+    notePhase6Route(
+      phase6?.policy.fallbackReason === 'unsupported_variant' ? 'variant_fallback' : 'atlas'
+    );
     // V20 proof-of-receipt: the M-zone wiring reached the preflop engine.
     if (telemetryOn(opts) && (opts.v20Mzone ?? true) !== false && isTournamentMode(gs) && bb > 0) {
       noteFire('v20_mzone_wired');
@@ -3121,6 +3359,7 @@ export class HorseLogic {
     const useRake10 = (opts.v10Rake ?? opts.v10) !== false;
     const useThin10 = (opts.v10ThinValue ?? opts.v10) !== false;
     const { currentBet } = gs;
+    const trustedTournament = trustedTournamentContext(gs);
     // PROOF OF RECEIPT: declared once, up front — several stamped blocks run
     // before the equity/risk section.
     const tele15 = telemetryOn(opts);
@@ -4070,13 +4309,13 @@ export class HorseLogic {
         objective31 = 'cash_ev';
       } else if (gs.format === 'spin') {
         family31 = 'spin';
-        objective31 = (gs.tournament?.spotsPaid ?? 1) <= 1 ? 'chip_ev' : 'icm';
+        objective31 = (trustedTournament?.spotsPaid ?? 1) <= 1 ? 'chip_ev' : 'icm';
       } else if (
-        Array.isArray(gs.tournament?.stacks) &&
-        gs.tournament.stacks.length >= 2 &&
-        Array.isArray(gs.tournament?.payoutPct) &&
-        gs.tournament.payoutPct.length >= 1 &&
-        !((gs.tournament?.playersLeft ?? 0) <= 2 && (gs.tournament?.spotsPaid ?? 1) <= 1)
+        Array.isArray(trustedTournament?.stacks) &&
+        trustedTournament.stacks.length >= 2 &&
+        Array.isArray(trustedTournament?.payoutPct) &&
+        trustedTournament.payoutPct.length >= 1 &&
+        !((trustedTournament?.playersLeft ?? 0) <= 2 && (trustedTournament?.spotsPaid ?? 1) <= 1)
       ) {
         family31 = 'tourney_icm';
         objective31 = 'icm';
@@ -4089,7 +4328,7 @@ export class HorseLogic {
           ? gtoV31UtilityContext({
               family: family31,
               objective: objective31,
-              tournament: gs.tournament,
+              tournament: trustedTournament,
             })
           : null;
       const potType31 = gtoV31PotType(gs.actionHistory);
@@ -5436,7 +5675,7 @@ export class HorseLogic {
       if (
         (opts.v23Endgame ?? true) !== false &&
         isTournamentMode(gs) &&
-        (gs.tournament?.bountyFactor ?? 0) >= 0.1 &&
+        (trustedTournament?.bountyFactor ?? 0) >= 0.1 &&
         seriousAllIns20 >= 1
       ) {
         let biggestAllIn = 0;
@@ -5453,7 +5692,7 @@ export class HorseLogic {
           const scale37 =
             prizeLandscapeScale(gs, (opts.v26Prizes ?? true) !== false) *
             headBountyScale(gs, allInId);
-          bounty23 = Math.min(0.08, (gs.tournament?.bountyFactor ?? 0) * 0.12 * scale37);
+          bounty23 = Math.min(0.08, (trustedTournament?.bountyFactor ?? 0) * 0.12 * scale37);
           if (tele15) noteFire('v23_bounty_call');
           if (tele15 && scale37 !== 1) noteFire('v37_bounty_call_scaled');
         }

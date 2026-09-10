@@ -213,16 +213,32 @@ export default function RealTimeResultPanel({
           config: { presence: { key: uid } },
         });
         ch.on('presence', { event: 'sync' }, () => {
+          if (cancelled) return;
           const state = ch.presenceState() as Record<string, Array<{ name?: string }>>;
           const list = Object.entries(state)
             .filter(([id]) => id !== uid)
             .map(([id, metas]) => ({ id, name: metas?.[0]?.name || 'Observer' }));
           setObservers(list);
         });
+        /* THE REF IS CLAIMED BEFORE THE AWAIT (2026-09-10). It used to be
+           assigned after `await ch.subscribe(...)`, and the cleanup below
+           reads the ref - so closing the card mid-subscribe found the ref
+           empty and leaked one live channel plus a presence track per
+           open/close, on a table that stays mounted for hours. Now the
+           cleanup always finds the channel, and a subscribe that completes
+           after cancellation removes itself. */
+        channelRef.current = ch;
         await ch.subscribe(async (status: string) => {
+          if (cancelled) return;
           if (status === 'SUBSCRIBED') await ch.track({ name: 'Observer' });
         });
-        channelRef.current = ch;
+        if (cancelled && channelRef.current !== ch) {
+          try {
+            supabase.removeChannel(ch);
+          } catch {
+            /* already gone */
+          }
+        }
       } catch (e) {
         reportError(e, 'RealTimeResultPanel.presence');
       }

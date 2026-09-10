@@ -58,6 +58,7 @@ try {
     'capLevelToTournamentChips',
     'chipsInPlayEstimate',
     'levelDurationMs',
+    ...(content.includes('protected rawLevelDurationMs(') ? ['rawLevelDurationMs'] : []),
   ]
     .map((name) =>
       windows.sliceMethod(

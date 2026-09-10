@@ -20,13 +20,14 @@ const compiled = ts.transpileModule(
   { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }
 ).outputText;
 
-const admissionBegin = source.indexOf('const revealVariant = String(tournament.variant');
+const admissionBegin = source.indexOf('let spinFirstDealHoldUntil = 0;');
 const admissionEnd = source.indexOf('const launchSetupProven =', admissionBegin);
 if (admissionBegin < 0 || admissionEnd <= admissionBegin) {
   throw new Error('Spin admission reveal fragment was not found');
 }
 const executeAdmission = new Function(
   'tournament',
+  'launchStartMs',
   'playedSpinRecovery',
   'tableStateHub',
   'spinPostRevealMs',
@@ -315,6 +316,7 @@ function admit(
       prize_pool: 10,
       spin_locked_tiers: receipt(10).locked,
     },
+    0,
     null,
     hub,
     spinPostRevealMs,

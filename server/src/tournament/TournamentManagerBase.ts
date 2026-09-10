@@ -3703,6 +3703,7 @@ export abstract class TournamentManagerBase {
        * start-up happened to take about 22 seconds, which is luck, not a
        * contract.
        */
+      let spinFirstDealHoldUntil = 0;
       const revealVariant = String(tournament.variant ?? '').toLowerCase();
       const revealIsSpin =
         revealVariant === 'spin' ||
@@ -3750,6 +3751,7 @@ export abstract class TournamentManagerBase {
          * is the floor below which a card would land on a moving wheel.
          */
         const effectiveHold = Math.max(holdUntil, Date.now() + spinPostRevealMs());
+        spinFirstDealHoldUntil = Math.max(launchStartMs, effectiveHold);
         for (const [tableId, engine] of this.tableEngines) {
           try {
             /* THE HOLD IS APPLIED EITHER WAY (round 18). The early emit above
@@ -3960,11 +3962,19 @@ export abstract class TournamentManagerBase {
        * (see the start() stand-down paths) must not arm a clock on a tournament
        * that is no longer being managed by this process.
        */
-      if (this.preStartLeadMs > 0) {
+      // A fresh Spin's first level belongs to the same hold as its first
+      // hand. Setup can extend that hold, and completion can consume it: use
+      // the admitted absolute deadline after those awaits, never a fresh full
+      // reveal delay. Other formats keep their advertised pre-seat lead.
+      const blindStartDelayMs =
+        spinFirstDealHoldUntil > 0
+          ? Math.max(0, spinFirstDealHoldUntil - Date.now())
+          : this.preStartLeadMs;
+      if (blindStartDelayMs > 0) {
         const structure = tournament.blind_structure || [];
         this.setLifecycleTimeout(() => {
           this.startBlindTimer(structure);
-        }, this.preStartLeadMs);
+        }, blindStartDelayMs);
       } else {
         this.startBlindTimer(tournament.blind_structure || []);
       }

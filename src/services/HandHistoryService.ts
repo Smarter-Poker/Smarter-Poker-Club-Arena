@@ -12,6 +12,7 @@ import { derivePositions } from '../utils/pokerPositions';
 import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
 import { buildReplay, replayInputFromRow, type ReplayModel } from '../utils/handReplay';
 import { reportError } from '../utils/errorReporter';
+import { readLocalSession } from '../lib/authUtils';
 
 /**
  * ONE SELECT LIST (2026-09-04). `getHand` and `getPlayerHands` each carried
@@ -395,7 +396,13 @@ class HandHistoryServiceClass {
    * other question - "what did I have?" - and it is read here the same way
    * `fetchOwnDiscards` reads `hand_discards`: NO USER ID IN THE QUERY. The
    * table's RLS policy (`ca_hand_facts_own_read`, user_id = auth.uid()) is what
-   * narrows the result to the caller, so a bug here cannot widen it.
+   * narrows the result to the caller, so a bug here cannot widen it
+   * (`tests/previous-hand-shows-this-tables-hands.law.test.ts` pins that the
+   * query never names a user). Since 2026-09-10 the MAPPER is the second lock:
+   * it reads the viewer from the local session and drops any row that is not
+   * theirs, so a policy regression handing back an opponent's row for the
+   * same hand cannot end as their hole cards drawn on the rundown. A viewer
+   * whose id cannot be read gets no private cards at all.
    *
    * Keyed by hand_history id (`ca_hand_facts.hand_id` IS that id). Absent for
    * hands before the facts table existed (2026-08-21, no backfill) and for
@@ -407,6 +414,8 @@ class HandHistoryServiceClass {
     const out = new Map<string, { user_id: string; cards: Card[]; facts: HeroHandFacts }>();
     const ids = [...new Set(rows.map((r) => r?.id).filter(Boolean))] as string[];
     if (ids.length === 0) return out;
+    const viewerId = readLocalSession()?.userId;
+    if (!viewerId) return out;
     try {
       /* Phase 2: the same row carries the all-in equity and EV facts, so the
          rundown's "All-In" block costs no extra query. */
@@ -427,6 +436,8 @@ class HandHistoryServiceClass {
       for (const d of data || []) {
         const row = d as any;
         if (!row?.hand_id || !row?.user_id) continue;
+        // Never map a row that is not the viewer's, whatever the policy said.
+        if (String(row.user_id) !== viewerId) continue;
         /* A row with cards nulled (folded for free) still carries the facts. */
         const cards = Array.isArray(row.hole_cards)
           ? ((row.hole_cards as any[]).filter((c) => c && c.rank && c.suit) as Card[])

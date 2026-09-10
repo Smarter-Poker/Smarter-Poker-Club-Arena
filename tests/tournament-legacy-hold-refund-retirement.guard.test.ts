@@ -28,14 +28,14 @@ describe('the obsolete tournament-hold refund door is retired', () => {
   it('freezes the hold table, refuses unresolved tournament holds, and drops the function', () => {
     expect(migration).toMatch(/^BEGIN;$/m);
     expect(migration).toContain("SET LOCAL lock_timeout = '10s';");
-    expect(migration).toContain("SET LOCAL statement_timeout = '300s';");
-    expect(migration).toContain("SET LOCAL transaction_timeout = '600s';");
+    expect(migration).toContain("SET LOCAL statement_timeout = '120s';");
+    expect(migration).toContain("SET LOCAL transaction_timeout = '150s';");
     expect(holdBoundary).toContain('remained executable by service_role');
     expect(holdBoundary).not.toContain('retained PUBLIC execution through its default ACL');
     expect(holdBoundary).toContain(
       'LOCK TABLE public.chip_escrow_holds IN SHARE ROW EXCLUSIVE MODE'
     );
-    expect(migration.indexOf("SET LOCAL statement_timeout = '300s';")).toBeLessThan(
+    expect(migration.indexOf("SET LOCAL statement_timeout = '120s';")).toBeLessThan(
       holdBoundaryStart
     );
     expect(holdBoundary).toContain("h.hold_type = 'tournament_register'");

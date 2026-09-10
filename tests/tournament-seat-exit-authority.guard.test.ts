@@ -75,14 +75,14 @@ describe('tournament seat exits have one hard authority', () => {
     expect(repairSql.indexOf("SET LOCAL statement_timeout = '120s';", begin)).toBeGreaterThan(
       begin
     );
-    expect(repairSql.indexOf("SET LOCAL transaction_timeout = '180s';", begin)).toBeGreaterThan(
+    expect(repairSql.indexOf("SET LOCAL transaction_timeout = '150s';", begin)).toBeGreaterThan(
       begin
     );
     expect(repairSql.indexOf("SET LOCAL lock_timeout = '10s';", begin)).toBeLessThan(firstLock);
     expect(repairSql.indexOf("SET LOCAL statement_timeout = '120s';", begin)).toBeLessThan(
       firstLock
     );
-    expect(repairSql.indexOf("SET LOCAL transaction_timeout = '180s';", begin)).toBeLessThan(
+    expect(repairSql.indexOf("SET LOCAL transaction_timeout = '150s';", begin)).toBeLessThan(
       firstLock
     );
   });

@@ -38,9 +38,25 @@ describe('lease heartbeat locks remain live without weakening exact ownership', 
     expect(SQL).toContain(
       'LOCK TABLE public.engine_tournament_leases IN ACCESS EXCLUSIVE MODE NOWAIT;'
     );
-    expect(SQL.indexOf('DO $require_strict_stage_b_topology$')).toBeLessThan(
-      SQL.indexOf('LOCK TABLE public.engine_table_leases')
-    );
+    const stoppedEngineBoundary = [
+      'SELECT pg_advisory_xact_lock_shared(530090,1);',
+      'DO $authenticate_stage_b_stopped_engine_authority$',
+      'LOCK TABLE realtime.subscription IN ACCESS EXCLUSIVE MODE NOWAIT;',
+      'LOCK TABLE public.engine_maintenance_break IN SHARE MODE NOWAIT;',
+      'LOCK TABLE public.engine_leader IN EXCLUSIVE MODE NOWAIT;',
+      'LOCK TABLE public.engine_table_leases IN ACCESS EXCLUSIVE MODE NOWAIT;',
+      'LOCK TABLE public.engine_tournament_leases IN ACCESS EXCLUSIVE MODE NOWAIT;',
+      'DO $require_stage_b_stopped_engine_authority$',
+      'DO $require_strict_stage_b_topology$',
+      'CREATE TEMP TABLE pg_temp.lease_keyshare_cutover_mode',
+    ].map((marker) => SQL.indexOf(marker));
+
+    for (const position of stoppedEngineBoundary) {
+      expect(position).toBeGreaterThan(-1);
+    }
+    for (let index = 1; index < stoppedEngineBoundary.length; index += 1) {
+      expect(stoppedEngineBoundary[index - 1]).toBeLessThan(stoppedEngineBoundary[index]);
+    }
     expect(SQL).toContain('LEASE_KEYSHARE_REQUIRES_STRICT_STAGE_B');
     expect(SQL).toContain('public.fn_stage_a_bridge_legacy_capacity_receipt(uuid,uuid)');
     expect(SQL).toContain(

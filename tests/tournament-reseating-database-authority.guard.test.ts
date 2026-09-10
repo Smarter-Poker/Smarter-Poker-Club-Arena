@@ -31,8 +31,8 @@ describe('tournament reseating has one database authority', () => {
     expect(SQL.match(/^BEGIN;$/gm)).toHaveLength(1);
     expect(SQL.trimEnd().endsWith('COMMIT;')).toBe(true);
     expect(SQL).toContain("SET LOCAL lock_timeout = '10s';");
-    expect(SQL).toContain("SET LOCAL statement_timeout = '300s';");
-    expect(SQL).toContain("SET LOCAL transaction_timeout = '600s';");
+    expect(SQL).toContain("SET LOCAL statement_timeout = '120s';");
+    expect(SQL).toContain("SET LOCAL transaction_timeout = '150s';");
     expect(reseating).not.toMatch(/^BEGIN;|^COMMIT;$/m);
     expect(reseating).toContain('DO $prove_database_owned_tournament_reseating$');
   });

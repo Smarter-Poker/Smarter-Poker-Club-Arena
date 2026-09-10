@@ -15,10 +15,11 @@ export default function DailyBonusPage() {
     <StandardContentLayout className="daily-bonus-page">
       <RewardsSurfaceHeader
         eyebrow="Rewards Circuit / Daily Bonus"
-        title="Daily Club Arena Bonus"
-        description="Show Up Every Day And Claim Each Tile By Hand: Diamonds, Throwables, Rabbit Hunts And Time Bank, Paid To Your Account The Moment You Tap. Unclaimed Tiles Are Gone At Midnight Central."
+        title="Daily Bonus"
+        description="Show Up Every Day And Claim Each Tile By Hand. Diamonds, Throwables, Rabbit Hunts And Time Bank Are Paid The Moment You Tap, And Unclaimed Tiles Are Gone At Midnight Central."
         art="diamonds"
         status="DAILY SHEET // LIVE"
+        crest="diamond"
       />
       <div className="daily-bonus-page__sheet">
         <DailyBonusSheet mode="inline" />

@@ -12,6 +12,10 @@ interface ClubCardPanelProps {
   totalMembers: number | null;
   clubLevel: number | null;
   activePlayers: number | null;
+  /** Of the active players, how many are at cash tables (distinct). */
+  activeCash?: number | null;
+  /** Of the active players, how many are in tournaments, Spins and SNGs. */
+  activeEvents?: number | null;
   clubId?: number | string;
   /**
    * Where the club sits between its current level and the next, 0-100, on the
@@ -32,6 +36,8 @@ export const ClubCardPanel: React.FC<ClubCardPanelProps> = ({
   totalMembers,
   clubLevel,
   activePlayers,
+  activeCash = null,
+  activeEvents = null,
   clubId,
   levelProgressPercent,
   membersToNextLevel,
@@ -95,8 +101,10 @@ export const ClubCardPanel: React.FC<ClubCardPanelProps> = ({
       members: totalMembers,
       level: clubLevel == null ? null : Math.max(1, clubLevel),
       active: activePlayers,
+      cash: activeCash,
+      events: activeEvents,
     });
-  }, [scope, totalMembers, clubLevel, activePlayers]);
+  }, [scope, totalMembers, clubLevel, activePlayers, activeCash, activeEvents]);
 
   const membersText = figureOr(
     totalMembers == null ? null : totalMembers.toLocaleString(),
@@ -106,6 +114,16 @@ export const ClubCardPanel: React.FC<ClubCardPanelProps> = ({
   const activeText = figureOr(
     activePlayers == null ? null : activePlayers.toLocaleString(),
     cached.active
+  );
+  /* Dan 2026-09-09: ACTIVE was one figure that mixed cash seats with
+     tournament seats, so 291 beside a lobby of 21 cash players looked wrong.
+     The split prints under the total: who is at cash tables, who is in
+     events. Both are distinct players; a player doing both counts once above
+     and once in each below. */
+  const cashText = figureOr(activeCash == null ? null : activeCash.toLocaleString(), cached.cash);
+  const eventsText = figureOr(
+    activeEvents == null ? null : activeEvents.toLocaleString(),
+    cached.events
   );
 
   return (
@@ -191,6 +209,11 @@ export const ClubCardPanel: React.FC<ClubCardPanelProps> = ({
           >
             <span className="club-card-stat-label">ACTIVE</span>
             <span className="club-card-stat-value">{activeText}</span>
+            <span className="club-card-stat-split" aria-label="Active Players By Game">
+              <span className="club-card-stat-split-part">{cashText} CASH</span>
+              <span className="club-card-stat-split-dot" aria-hidden="true" />
+              <span className="club-card-stat-split-part">{eventsText} EVENTS</span>
+            </span>
           </div>
         </div>
 

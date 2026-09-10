@@ -144,8 +144,9 @@ TRAIN_TITLE="Engine watchdog: the hourly deploy train is failing"
 train_check() {
   local RUNS latest prev url rid step n
   RUNS=$(gh run list --repo "$REPO" --workflow "$DEPLOY_WORKFLOW" --limit 12 \
-    --json conclusion,status,url,databaseId \
-    --jq '[.[] | select(.status=="completed" and .conclusion!="cancelled")] | .[0:2]' 2>/dev/null || echo "")
+    --json conclusion,status,url,databaseId,workflowName \
+    --jq '[.[] | select(.status=="completed" and .conclusion!="cancelled")
+               | .conclusion |= (if . == "timed_out" or . == "startup_failure" then "failure" else . end)] | .[0:2]' 2>/dev/null || echo "")
   latest=$(printf '%s' "$RUNS" | jq -r '.[0].conclusion // "none"' 2>/dev/null || echo none)
   prev=$(printf '%s' "$RUNS" | jq -r '.[1].conclusion // "none"' 2>/dev/null || echo none)
   url=$(printf '%s' "$RUNS" | jq -r '.[0].url // ""' 2>/dev/null || echo "")
@@ -154,6 +155,15 @@ train_check() {
     step=$(gh run view "$rid" --repo "$REPO" --json jobs \
       --jq '[.jobs[].steps[] | select(.conclusion=="failure")][0].name // "unknown step"' 2>/dev/null || echo "unknown step")
     say "::warning title=DEPLOY TRAIN FAILING::the last two completed deploy runs failed. Latest failing step: $step"
+    # Since 2026-09-10 the LAST step, "Verdict", fails a run that should have
+    # shipped and did not. That is not a gate refusing on a broken main: the
+    # reason is the run's own DID NOT SHIP annotation and its ledger row.
+    local advice="Start at the failing step above - it is the gate that is refusing, and the gate is usually right (fix main, never the gate)."
+    case "$step" in
+      Verdict*) advice="The Verdict step failed: the run should have shipped and did not. Its DID NOT SHIP annotation, and the reason column of ca_engine_deploy_attempts for that run_id, name the gate that held (budget, or no readyForRestart certificate). Fix that gate's cause; do not bypass the certificate." ;;
+    esac
+    local wname
+    wname=$(printf '%s' "$RUNS" | jq -r '.[0].workflowName // ""' 2>/dev/null || echo "")
     n=$(find_issue "$TRAIN_TITLE")
     if [ -n "${n:-}" ]; then
       gh_write "comment on #$n" issue comment "$n" --repo "$REPO" \
@@ -163,10 +173,11 @@ train_check() {
 
 | | |
 | --- | --- |
+| workflow | ${wname:-$DEPLOY_WORKFLOW} (\`$DEPLOY_WORKFLOW\`) |
 | latest failing step | **$step** |
 | latest run | $url |
 
-A failing train strands every merge whether or not the engine is currently behind. On 2026-09-02 main went red on a migrations-only merge while nothing server-touching was queued: the staleness alarm had nothing to say, and every window for the next three hours was already lost. Start at the failing step above - it is the gate that is refusing, and the gate is usually right (fix main, never the gate).
+A failing train strands every merge whether or not the engine is currently behind. On 2026-09-02 main went red on a migrations-only merge while nothing server-touching was queued: the staleness alarm had nothing to say, and every window for the next three hours was already lost. $advice
 
 This issue closes itself on the first completed deploy run that succeeds." || true
     fi
@@ -369,14 +380,15 @@ GATE_REACH_MIN=${GATE_REACH_MIN:-12}
 # So: if a deploy run is already queued, pending on the concurrency group, or
 # in progress, this sweep does NOT dispatch. The one in flight is the fix. The
 # only run this ignores is one older than the deploy's own ceiling
-# (timeout-minutes 110 since 2026-09-10, plus a margin): GitHub will have timed
-# it out, or it is one of the pre-queued zombies publish-watchdog.sh describes,
-# and a dispatch is then the right answer again. This MUST stay above the
-# deploy's timeout-minutes: a run legitimately waits up to an hour in its break
-# gate, and treating it as stale would dispatch a second run that cancels
-# nothing useful and replaces whatever is pending.
-# tests/the-deploy-can-always-ship.law.test.ts compares the two numbers.
-INFLIGHT_STALE_MIN=${INFLIGHT_STALE_MIN:-120}
+# (timeout-minutes 130 since 2026-09-10): GitHub will have timed it out, or it
+# is one of the pre-queued zombies publish-watchdog.sh describes, and a
+# dispatch is then the right answer again. The age is measured from createdAt,
+# which INCLUDES the time a run spent pending behind another one, so a run can
+# be legitimately in flight for two full ceilings - one waiting for the group,
+# one waiting in its break gate. Hence 2 x 130 + 10. Treating such a run as
+# stale would dispatch a second one behind it for nothing.
+# tests/the-deploy-can-always-ship.law.test.ts derives this from the ceiling.
+INFLIGHT_STALE_MIN=${INFLIGHT_STALE_MIN:-270}
 INFLIGHT=$(gh run list --repo "$REPO" --workflow "$DEPLOY_WORKFLOW" --limit 20 \
   --json databaseId,status,createdAt,headSha,event,url \
   --jq "[.[] | select(.status != \"completed\")

@@ -14,7 +14,14 @@
  */
 
 import { supabase } from './supabase.js';
-import { isChipFleetTable } from './HorseFleetFundingBoundary.js';
+import { randomUUID } from 'node:crypto';
+import {
+  fleetFundingFor,
+  isDiamondArenaTable,
+  isFleetTable,
+  wholeDiamondBuyIn,
+  type FleetFunding,
+} from './HorseFleetFundingBoundary.js';
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import {
   bodiesOnHostFrom,
@@ -962,7 +969,7 @@ export class HorseFleetManager {
         );
         return;
       }
-      const tables = tablePage.rows.filter(isChipFleetTable);
+      const tables = tablePage.rows.filter(isFleetTable);
 
       /* WHO MAY SIT WHERE (Dan 2026-09-02, verbatim: "FREE THEM TO PLAY OPENLY
          INSIDE THE DEEP STACK SOCIETY ONLY. THEY HAVE NO AFFILIATION OR ARE A
@@ -1181,11 +1188,15 @@ export class HorseFleetManager {
         id: string;
         display_name: string | null;
         username: string | null;
+        /* The horse's own diamonds: its roll in the Diamond Arena (ruling 16,
+           "diamond-only funding"). Read with the pool so the arena costs no
+           second read; ignored on a floor with no diamond table open. */
+        diamonds: number | string | null;
       }>(
         (cursor, want) => {
           let q = supabase
             .from('profiles')
-            .select('id, display_name, username')
+            .select('id, display_name, username, diamonds')
             .eq('is_horse', true)
             .neq('horse_status', 'disabled') // 'disabled' is the only status that prevents playing
             .order('id', { ascending: true })
@@ -1331,6 +1342,42 @@ export class HorseFleetManager {
         }
       } catch (err) {
         reportError(err, 'HorseFleet.bankroll_load_failed');
+      }
+
+      /* ── THE DIAMOND ARENA: EVERY HORSE IS A MEMBER, ITS OWN DIAMONDS PAY ──
+         (Dan 2026-09-10: "giving all the horses across all clubs access to
+         the diamond arena ... fully play in the diamond arena, just like
+         they can in the club arena.")
+
+         The arena keeps no membership rows: every platform user is a member
+         by entitlement, a horse included, so the club_members read above can
+         never learn who belongs there. Derived here instead, for every horse
+         in the pool, and keyed on the arena club so that resolveSeatClub, the
+         bankroll gate, the rejoin floors and the buy-in sizing all work
+         unchanged - the arena is simply one more club every horse holds a
+         roll in. The roll is the horse's own `profiles.diamonds` (ruling 16:
+         diamond-only funding; ruling 9: a horse's diamonds follow it into the
+         arena as anyone's do). A horse never buys diamonds, so it holds no
+         purchase lots and the whole wallet is spendable at the door.
+
+         Only when the bankroll read completed: on a fail-open cycle the
+         memberships are deliberately empty so the database decides alone,
+         and the arena is no exception to that. Costs nothing on a floor
+         with no diamond table open. */
+      if (bankrollsLoaded && tables.some(isDiamondArenaTable)) {
+        const arenas = new Set<string>();
+        for (const t of tables) {
+          if (isDiamondArenaTable(t) && t.club_id) arenas.add(String(t.club_id));
+        }
+        for (const arena of arenas) {
+          clubsWithRolls.add(arena);
+          for (const h of validHorses) {
+            const diamonds = Number(h.diamonds);
+            bankrolls.set(`${arena}:${h.id}`, Number.isFinite(diamonds) ? diamonds : 0);
+            if (!memberships.has(h.id)) memberships.set(h.id, new Set());
+            memberships.get(h.id)!.add(arena);
+          }
+        }
       }
 
       /* ── THE DOOR RULES, READ ONCE (2026-09-05) ──────────────────────────
@@ -3008,6 +3055,7 @@ export class HorseFleetManager {
               buyIn,
               table.name,
               seatClub ?? null,
+              fleetFundingFor(table) ?? 'chips',
               (reason) => {
                 buyInRefused.set(reason, (buyInRefused.get(reason) ?? 0) + 1);
                 noteSkip(diag, `buyin_${reason}`);
@@ -3964,7 +4012,8 @@ export class HorseFleetManager {
           seatNumber,
           buyIn,
           table.name,
-          seatClub ?? null
+          seatClub ?? null,
+          fleetFundingFor(table) ?? 'chips'
         );
         if (!ok) continue;
 
@@ -4050,7 +4099,11 @@ export class HorseFleetManager {
        decides what is sensible, the floor decides what is possible, and
        possible wins or the horse does not sit. The candidate filter has
        already dropped a horse whose known roll cannot cover it. */
-    return applyRejoinFloor(buyIn, rejoinFloor, maxB);
+    const sized = applyRejoinFloor(buyIn, rejoinFloor, maxB);
+    /* A diamond seat is bought in whole diamonds: the door refuses a fraction
+       (fn_poker_diamond_buyin) and the table's own limits are whole by the
+       same rule. A chip seat keeps its cents. */
+    return isDiamondArenaTable(table) ? wholeDiamondBuyIn(sized, minB, maxB) : sized;
   }
 
   private async seatHorse(
@@ -4060,6 +4113,11 @@ export class HorseFleetManager {
     buyIn: number,
     tableName: string,
     clubId: string | null,
+    /* Which wallet this seat draws from (fleetFundingFor). A diamond seat
+       goes through the same atomic_table_buyin door and is routed to
+       fn_poker_diamond_buyin, which reserves the horse's own diamonds and
+       requires a receipt key; a chip seat keeps the call it always made. */
+    funding: FleetFunding,
     /* A REFUSED BUY-IN SAYS WHY (2026-09-06). Seven refusal messages below are
        deliberately not reported - a seeding race is not an incident - and the
        cost of that silence was two days of "selected 4, seated 0" with nothing
@@ -4093,6 +4151,7 @@ export class HorseFleetManager {
         p_amount: buyIn,
         p_auto_rebuy: false,
         p_club_id: clubId,
+        p_idempotency_key: funding === 'diamonds' ? randomUUID() : null,
       });
 
       // CHIP CONTINUITY / HORSES ARE PLAYERS (CLAUDE.md 10.5). A horse that
@@ -4114,6 +4173,8 @@ export class HorseFleetManager {
             p_amount: required,
             p_auto_rebuy: false,
             p_club_id: clubId,
+            // A different amount is a different purchase: a fresh receipt key.
+            p_idempotency_key: funding === 'diamonds' ? randomUUID() : null,
           }));
         }
       }

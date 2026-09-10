@@ -67,92 +67,79 @@ export function useMysteryBounty(
   const [isLoading, setIsLoading] = useState(false);
   const [pendingReveals, setPendingReveals] = useState(0);
 
-  const mountedRef = useRef(true);
-  /**
-   * Refetches are collapsed: a five-way split knockout broadcasts once, but a
-   * final table busting three players in a minute would otherwise fire three
-   * full triples of RPC calls that all answer the same question.
-   */
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const inFlightRef = useRef(false);
-  const queuedRef = useRef(false);
+  const refreshRef = useRef<() => void>(() => {});
 
   useEffect(() => {
-    mountedRef.current = true;
-    return () => {
-      mountedRef.current = false;
-      if (timerRef.current) clearTimeout(timerRef.current);
-    };
-  }, []);
-
-  const load = useCallback(async () => {
+    setInventory(null);
+    setAwards(EMPTY_AWARDS);
+    setAwardsTotal(0);
+    setLeaderboard(EMPTY_LEADERBOARD);
+    setPendingReveals(0);
+    setIsLoading(Boolean(tournamentId && enabled));
     if (!tournamentId || !enabled) return;
-    if (inFlightRef.current) {
-      queuedRef.current = true;
-      return;
-    }
-    inFlightRef.current = true;
-    try {
-      const [inv, aw, lb] = await Promise.all([
-        MysteryBountyService.getInventory(tournamentId),
-        MysteryBountyService.getAllAwards(tournamentId),
-        MysteryBountyService.getLeaderboard(tournamentId),
-      ]);
-      if (!mountedRef.current) return;
-      setInventory(inv);
-      setAwards(aw.rows);
-      setAwardsTotal(aw.total);
-      setLeaderboard(lb);
-      setPendingReveals(0);
-    } catch (err) {
-      reportError(err, 'useMysteryBounty.load');
-    } finally {
-      inFlightRef.current = false;
-      if (mountedRef.current) setIsLoading(false);
-      if (queuedRef.current && mountedRef.current) {
-        queuedRef.current = false;
-        void load();
+
+    // Requests, queued refreshes and channel callbacks belong to this effect's
+    // event. A new event starts independently of any old transport response.
+    let active = true;
+    let inFlight = false;
+    let queued = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const load = async () => {
+      if (!active) return;
+      if (inFlight) {
+        queued = true;
+        return;
       }
-    }
-  }, [tournamentId, enabled]);
+      inFlight = true;
+      try {
+        const [inv, aw, lb] = await Promise.all([
+          MysteryBountyService.getInventory(tournamentId),
+          MysteryBountyService.getAllAwards(tournamentId),
+          MysteryBountyService.getLeaderboard(tournamentId),
+        ]);
+        if (!active) return;
+        setInventory(inv);
+        setAwards(aw.rows);
+        setAwardsTotal(aw.total);
+        setLeaderboard(lb);
+        setPendingReveals(0);
+      } catch (err) {
+        if (active) reportError(err, 'useMysteryBounty.load');
+      } finally {
+        inFlight = false;
+        if (active) {
+          setIsLoading(false);
+          if (queued) {
+            queued = false;
+            void load();
+          }
+        }
+      }
+    };
+    const scheduleRefresh = () => {
+      if (!active) return;
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        timer = null;
+        void load();
+      }, 350);
+    };
+    refreshRef.current = () => void load();
 
-  const scheduleRefresh = useCallback(() => {
-    if (timerRef.current) clearTimeout(timerRef.current);
-    timerRef.current = setTimeout(() => {
-      timerRef.current = null;
-      void load();
-    }, 350);
-  }, [load]);
-
-  // ── First load, and any time the event changes. ──
-  useEffect(() => {
-    if (!tournamentId || !enabled) {
-      setInventory(null);
-      setAwards(EMPTY_AWARDS);
-      setAwardsTotal(0);
-      setLeaderboard(EMPTY_LEADERBOARD);
-      setIsLoading(false);
-      return;
-    }
-    setIsLoading(true);
-    void load();
-  }, [tournamentId, enabled, load]);
-
-  // ── Live updates. ──
-  useEffect(() => {
-    if (!tournamentId || !enabled) return;
     const key = `t-break-${tournamentId}`;
     const preExisting = masterBus.hasChannel(key);
     const channel = masterBus.getOrCreateChannel(key);
-
     const onEvent = (message: { payload?: { type?: string } }) => {
+      // A table may still hold this shared channel after the lobby has moved.
+      if (!active) return;
       const type = message?.payload?.type;
       if (
         type === 'mystery_bounty_activated' ||
         type === 'mystery_bounty_revealed' ||
         type === 'mystery_bounty_complete'
       ) {
-        if (type === 'mystery_bounty_revealed' && mountedRef.current) {
+        if (type === 'mystery_bounty_revealed') {
           setPendingReveals((n) => n + 1);
         }
         scheduleRefresh();
@@ -160,31 +147,28 @@ export function useMysteryBounty(
     };
 
     channel.on('broadcast', { event: 'tournament_event' }, onEvent);
-
     if (!preExisting) {
       channel.subscribe((status: string, err?: Error) => {
+        if (!active) return;
+        if (status === 'SUBSCRIBED') scheduleRefresh();
         if (status === 'CHANNEL_ERROR' && err) {
           reportError(err.message || err, 'useMysteryBounty.channel_error');
         }
       });
     }
+    void load();
 
     return () => {
-      /* REFCOUNTED 2026-08-28: `removeRegisteredChannel` now releases ONE
-         reference and tears the channel down only when the last consumer lets
-         go, so every consumer must release exactly once — including this one.
-         The old `if (!preExisting)` guard was an attempt at the same
-         protection from the wrong side ("I created it" is not "nobody else is
-         reading it"), and with a real refcount underneath it would now LEAK:
-         a non-creator took a reference at getOrCreateChannel and never gave
-         it back, so the channel could never reach zero. */
+      active = false;
+      queued = false;
+      if (timer) clearTimeout(timer);
+      refreshRef.current = () => {};
+      // Release this consumer only; the table may own another reference.
       masterBus.removeRegisteredChannel(key);
     };
-  }, [tournamentId, enabled, scheduleRefresh]);
+  }, [tournamentId, enabled]);
 
-  const refresh = useCallback(() => {
-    void load();
-  }, [load]);
+  const refresh = useCallback(() => refreshRef.current(), []);
 
   return {
     inventory,

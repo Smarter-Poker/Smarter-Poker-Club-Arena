@@ -173,9 +173,38 @@ interface RakeCursor {
  * Outcome of one batch, so the drain loop knows whether to go round again.
  *   'idle'   — fewer than FETCH_LIMIT rows: fully caught up, nothing to drain
  *   'more'   — exactly FETCH_LIMIT rows: the cursor advanced, call again
- *   'halted' — a read failed: the cursor did NOT advance, stop and retry later
+ *   'halted' - a read or attribution failed: retain the cursor and retry later
  */
 type CycleResult = 'idle' | 'more' | 'halted';
+
+/** Commission counts acknowledge inputs; stats counts report new inserts, so
+ * a successful idempotent stats replay can acknowledge zero new rows. */
+function readAttributionBatchReceipt(
+  data: unknown,
+  submitted: number,
+  countsEveryInput: boolean
+): { ok: number; failed: number } {
+  const receipt = Array.isArray(data) && data.length === 1 ? data[0] : data;
+  if (!receipt || typeof receipt !== 'object' || Array.isArray(receipt)) {
+    throw new Error('Missing attribution batch receipt');
+  }
+  const { ok, failed, error, first_error } = receipt as Record<string, unknown>;
+  if (
+    typeof ok !== 'number' ||
+    !Number.isSafeInteger(ok) ||
+    ok < 0 ||
+    typeof failed !== 'number' ||
+    !Number.isSafeInteger(failed) ||
+    failed < 0 ||
+    ok + failed > submitted ||
+    (countsEveryInput && ok + failed !== submitted) ||
+    (error !== undefined && error !== null) ||
+    (failed === 0 && first_error !== undefined && first_error !== null)
+  ) {
+    throw new Error('Invalid attribution batch receipt');
+  }
+  return { ok, failed };
+}
 
 /**
  * PostgREST embeds filter values in a comma/parenthesis-delimited grammar, so a
@@ -1696,8 +1725,8 @@ export class RakebackSettlerService {
             'RakebackSettler.commission_batch'
           );
         } else {
-          const r = (Array.isArray(data) ? data[0] : data) as Record<string, unknown> | null;
-          agentCreditsFailed += Number(r?.failed ?? 0);
+          const r = readAttributionBatchReceipt(data, chunk.length, true);
+          agentCreditsFailed += r.failed;
         }
       } catch (e) {
         agentCreditsFailed += chunk.length;
@@ -1772,9 +1801,9 @@ export class RakebackSettlerService {
             'RakebackSettler.player_stats_batch'
           );
         } else {
-          const r = (Array.isArray(data) ? data[0] : data) as Record<string, unknown> | null;
-          psApplied += Number(r?.ok ?? 0);
-          psFailures += Number(r?.failed ?? 0);
+          const r = readAttributionBatchReceipt(data, chunk.length, false);
+          psApplied += r.ok;
+          psFailures += r.failed;
         }
       } catch (e) {
         psFailures += chunk.length;
@@ -1788,6 +1817,20 @@ export class RakebackSettlerService {
       console.log(
         `[RakebackSettler] player_stats idempotent applies: ${psApplied} OK (failures: ${psFailures})`
       );
+    }
+
+    // Both operations commit independently and dedupe their own retries. A
+    // failure must retain the source page: later period recomputation cannot
+    // reconstruct a missing agent commission or player_stats application.
+    if (agentCreditsFailed > 0 || psFailures > 0) {
+      reportError(
+        new Error(
+          `[RakebackSettler] ${agentCreditsFailed} commission item(s) and ${psFailures} player stats item(s) failed; ` +
+            `holding the watermark at ${this.cursor?.createdAt ?? 'start'} for an idempotent retry.`
+        ),
+        'RakebackSettler.attribution_failures_hold_cursor'
+      );
+      return 'halted';
     }
 
     // 3. Upsert into rakeback_periods. Round 45 RE-RUN fix: recompute the

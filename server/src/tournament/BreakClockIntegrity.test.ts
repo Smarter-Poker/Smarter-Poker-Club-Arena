@@ -102,10 +102,14 @@ describe('DEFECT 1 - the level clock neither ticks nor advances during a break',
 
   it('does not arm a live level timer when a break began mid-transition', () => {
     // The tail used to be a bare `this.startBlindTimer(blindStructure);`.
-    const tail = advance.slice(advance.lastIndexOf('startBlindTimer') - 400);
-    expect(tail).toMatch(/if\s*\(this\.isOnBreak\(\)\)/);
-    expect(tail).toMatch(/this\.savedBlindTimerRemaining\s*=\s*this\.levelDurationMs\(/);
-    expect(tail).toMatch(/else\s*\{[\s\S]{0,120}this\.startBlindTimer\(blindStructure\);/);
+    const tail = advance.slice(advance.lastIndexOf('if (this.isOnBreak())'));
+    const breakBranch = methodBody(tail, 'if (this.isOnBreak())');
+    expect(breakBranch).toMatch(/this\.savedBlindTimerRemaining\s*=\s*this\.levelDurationMs\(/);
+    expect(breakBranch).not.toContain('this.startBlindTimer(');
+    const liveBranch = methodBody(tail, 'else');
+    expect(liveBranch).toMatch(
+      /this\.startBlindTimer\(\s*blindStructure,\s*this\.levelDurationMs\(level\)\s*-\s*\(Date\.now\(\)\s*-\s*levelStartedAt\)\s*\);/
+    );
   });
 });
 

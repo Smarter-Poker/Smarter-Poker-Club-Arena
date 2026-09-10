@@ -34,7 +34,7 @@ export interface WorkerLike {
 export interface LiveHorseDecisionWorkerClientOptions {
   workerFactory?: () => WorkerLike;
   readyTimeoutMs?: number;
-  /** Terminal deadline for one posted FIFO operation. */
+  /** Caller deadline from enqueue and worker-integrity deadline from dispatch. */
   jobTimeoutMs?: number;
   /**
    * Sole-worker failure is process-fatal in production. Invoked once, after
@@ -56,6 +56,11 @@ export interface LiveHorseDecisionWorkerStatus {
   lastCompletedAt: number | null;
   lastComputeMs: number | null;
   completedJobs: number;
+  /** Accepted operations whose queue-plus-compute caller deadline elapsed. */
+  expiredJobs: number;
+  lastExpiredAt: number | null;
+  lastExpiredRequestType: HorseDecisionJobRequest['type'] | null;
+  lastExpiredPhase: 'queued' | 'active' | null;
   lastError: string | null;
   solverStores: HorseDecisionWorkerReady['solverStores'] | null;
   solverPolicyArtifact: HorseDecisionWorkerReady['solverPolicyArtifact'] | null;
@@ -72,9 +77,10 @@ export class HorseDecisionAbortedError extends Error {
 }
 
 /**
- * The request remained queued until its action-clock budget expired. This is
- * not an authority cancellation: the turn may still be current and must take
- * the caller's fail-safe action instead of being silently abandoned.
+ * The request used its complete queue-plus-compute action budget. This is not
+ * an authority cancellation: the turn may still be current and must take the
+ * caller's fail-safe action instead of being silently abandoned. A separately
+ * measured execution deadline still terminal-fails a genuinely wedged worker.
  */
 export class HorseDecisionExpiredError extends Error {
   override readonly name = 'TimeoutError';
@@ -100,7 +106,10 @@ interface QueuedJob {
   abortListener?: () => void;
   settled: boolean;
   enqueuedAt: number;
+  /** Caller/action-clock deadline measured from enqueue. */
   deadlineTimer: ReturnType<typeof setTimeout> | null;
+  /** Worker-integrity deadline measured only after this job is posted. */
+  executionTimer: ReturnType<typeof setTimeout> | null;
 }
 
 const stoppedStatus = (): LiveHorseDecisionWorkerStatus => ({
@@ -114,6 +123,10 @@ const stoppedStatus = (): LiveHorseDecisionWorkerStatus => ({
   lastCompletedAt: null,
   lastComputeMs: null,
   completedJobs: 0,
+  expiredJobs: 0,
+  lastExpiredAt: null,
+  lastExpiredRequestType: null,
+  lastExpiredPhase: null,
   lastError: null,
   solverStores: null,
   solverPolicyArtifact: null,
@@ -155,6 +168,10 @@ export class LiveHorseDecisionWorkerClient {
   private lastCompletedAt: number | null = null;
   private lastComputeMs: number | null = null;
   private completedJobs = 0;
+  private expiredJobs = 0;
+  private lastExpiredAt: number | null = null;
+  private lastExpiredRequestType: HorseDecisionJobRequest['type'] | null = null;
+  private lastExpiredPhase: 'queued' | 'active' | null = null;
   private nextRequestId = 1;
   private readonly queue: QueuedJob[] = [];
   private active: QueuedJob | null = null;
@@ -234,6 +251,10 @@ export class LiveHorseDecisionWorkerClient {
       lastCompletedAt: this.lastCompletedAt,
       lastComputeMs: this.lastComputeMs,
       completedJobs: this.completedJobs,
+      expiredJobs: this.expiredJobs,
+      lastExpiredAt: this.lastExpiredAt,
+      lastExpiredRequestType: this.lastExpiredRequestType,
+      lastExpiredPhase: this.lastExpiredPhase,
       lastError: this.lastError,
       solverStores: this.solverStores ? structuredClone(this.solverStores) : null,
       solverPolicyArtifact: this.solverPolicyArtifact
@@ -414,6 +435,7 @@ export class LiveHorseDecisionWorkerClient {
         settled: false,
         enqueuedAt,
         deadlineTimer: null,
+        executionTimer: null,
       };
       job.deadlineTimer = setTimeout(() => this.onJobDeadline(job), this.jobTimeoutMs);
       job.deadlineTimer.unref?.();
@@ -460,6 +482,13 @@ export class LiveHorseDecisionWorkerClient {
       if (job.settled) continue;
       this.active = job;
       this.activeStartedAt = Date.now();
+      // The enqueue timer is the table/action-clock budget. A separate timer
+      // starts here so a request that spent most of that budget waiting in a
+      // saturated FIFO cannot be mistaken for a wedged worker after only a
+      // few milliseconds of actual execution. A real posted-job wedge is
+      // still terminal after a full worker execution budget.
+      job.executionTimer = setTimeout(() => this.onExecutionDeadline(job), this.jobTimeoutMs);
+      job.executionTimer.unref?.();
       this.safePost(job.request);
       return;
     }
@@ -664,30 +693,56 @@ export class LiveHorseDecisionWorkerClient {
   }
 
   private onJobDeadline(job: QueuedJob): void {
-    if (this.active === job) {
-      this.fail(
-        new Error(
-          `live horse decision worker job ${job.request.requestId} (${job.request.type}) exceeded its ${this.jobTimeoutMs}ms queue-plus-compute deadline`
-        )
-      );
-      return;
-    }
     if (job.settled) return;
-    const index = this.queue.indexOf(job);
-    if (index >= 0) this.queue.splice(index, 1);
+    // This callback owns the elapsed enqueue timer. Keep the independently
+    // armed execution timer intact when the job is already running.
+    job.deadlineTimer = null;
+    const active = this.active === job;
+    this.noteExpiredJob(job, active ? 'active' : 'queued');
     job.settled = true;
     this.detachAbort(job);
     job.reject(
       new HorseDecisionExpiredError(
-        `horse decision expired after ${this.jobTimeoutMs}ms before worker dispatch`
+        active
+          ? `horse decision expired after ${this.jobTimeoutMs}ms of queue-plus-compute time`
+          : `horse decision expired after ${this.jobTimeoutMs}ms before worker dispatch`
       )
     );
+    if (active) {
+      // HorseLogic is synchronous. Keep this request as the FIFO owner until
+      // its terminal response arrives, then stale-discard that response just
+      // like an active authority abort. Killing the sole worker here caused a
+      // full-fleet restart when a 7.8-second queue wait left a healthy request
+      // only milliseconds of the enqueue deadline to compute.
+      this.safePost({ type: 'CANCEL', requestId: job.request.requestId });
+      return;
+    }
+    const index = this.queue.indexOf(job);
+    if (index >= 0) this.queue.splice(index, 1);
     this.maybeDispatch();
+  }
+
+  private onExecutionDeadline(job: QueuedJob): void {
+    if (this.active !== job || this.phase === 'failed' || this.phase === 'stopped') return;
+    this.fail(
+      new Error(
+        `live horse decision worker job ${job.request.requestId} (${job.request.type}) exceeded its ${this.jobTimeoutMs}ms execution deadline after dispatch`
+      )
+    );
+  }
+
+  private noteExpiredJob(job: QueuedJob, phase: 'queued' | 'active'): void {
+    this.expiredJobs += 1;
+    this.lastExpiredAt = Date.now();
+    this.lastExpiredRequestType = job.request.type;
+    this.lastExpiredPhase = phase;
   }
 
   private clearJobDeadline(job: QueuedJob): void {
     if (job.deadlineTimer) clearTimeout(job.deadlineTimer);
     job.deadlineTimer = null;
+    if (job.executionTimer) clearTimeout(job.executionTimer);
+    job.executionTimer = null;
   }
 
   private clearActiveDeadline(): void {

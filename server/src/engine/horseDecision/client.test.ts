@@ -300,24 +300,94 @@ describe('LiveHorseDecisionWorkerClient', () => {
     expect(onFatal).toHaveBeenCalledTimes(1);
   });
 
-  it('terminal-fails a posted job that never returns instead of wedging the FIFO', async () => {
-    const worker = new FakeWorker();
-    const onFatal = vi.fn();
-    const client = new LiveHorseDecisionWorkerClient({
-      workerFactory: () => worker,
-      onFatal,
-      jobTimeoutMs: 5,
-    });
-    worker.emitMessage(ready);
-    const pending = client.decideFast(snapshot('wedged'));
+  it('terminal-fails a posted job that never returns after its full execution budget', async () => {
+    vi.useFakeTimers();
+    try {
+      const worker = new FakeWorker();
+      const onFatal = vi.fn();
+      const client = new LiveHorseDecisionWorkerClient({
+        workerFactory: () => worker,
+        onFatal,
+        jobTimeoutMs: 5,
+      });
+      worker.emitMessage(ready);
+      const pending = client.decideFast(snapshot('wedged'));
+      const rejection = expect(pending).rejects.toBeInstanceOf(HorseDecisionExpiredError);
 
-    await expect(pending).rejects.toThrow(
-      'DECIDE_FAST) exceeded its 5ms queue-plus-compute deadline'
-    );
-    await new Promise<void>((resolve) => queueMicrotask(resolve));
-    expect(client.status()).toMatchObject({ phase: 'failed', activeRequestId: null });
-    expect(worker.terminateCalls).toBe(1);
-    expect(onFatal).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(5);
+      await rejection;
+      await new Promise<void>((resolve) => queueMicrotask(resolve));
+      expect(client.status()).toMatchObject({
+        phase: 'failed',
+        activeRequestId: null,
+        expiredJobs: 1,
+        lastExpiredPhase: 'active',
+      });
+      expect(worker.terminateCalls).toBe(1);
+      expect(onFatal).toHaveBeenCalledTimes(1);
+      expect(onFatal).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: expect.stringContaining('execution deadline after dispatch'),
+        })
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('expires near-deadline work after dispatch without poisoning the healthy FIFO', async () => {
+    vi.useFakeTimers();
+    try {
+      const worker = new FakeWorker();
+      const onFatal = vi.fn();
+      const client = new LiveHorseDecisionWorkerClient({
+        workerFactory: () => worker,
+        onFatal,
+        jobTimeoutMs: 50,
+      });
+      worker.emitMessage(ready);
+      const first = client.decideFast(snapshot('first'));
+      const nearDeadline = client.decideFast(snapshot('near-deadline'));
+      const nearDeadlineRejection =
+        expect(nearDeadline).rejects.toBeInstanceOf(HorseDecisionExpiredError);
+
+      await vi.advanceTimersByTimeAsync(49);
+      worker.emitMessage(fastResult(1, 'first'));
+      await first;
+      expect(worker.sent.at(-1)).toMatchObject({ type: 'DECIDE_FAST', requestId: 2 });
+
+      // Request 2 has used its table deadline, but only 1 ms of worker time.
+      // It takes the fail-safe action while the sole deterministic worker
+      // remains authoritative and drains the already-posted request.
+      await vi.advanceTimersByTimeAsync(1);
+      await nearDeadlineRejection;
+      expect(client.status()).toMatchObject({
+        phase: 'ready',
+        activeRequestId: 2,
+        expiredJobs: 1,
+        lastExpiredRequestType: 'DECIDE_FAST',
+        lastExpiredPhase: 'active',
+        lastError: null,
+      });
+      expect(worker.sent.at(-1)).toEqual({ type: 'CANCEL', requestId: 2 });
+      expect(worker.terminateCalls).toBe(0);
+      expect(onFatal).not.toHaveBeenCalled();
+
+      const successor = client.decideFast(snapshot('successor'));
+      worker.emitMessage(fastResult(2, 'near-deadline'));
+      expect(worker.sent.at(-1)).toMatchObject({ type: 'DECIDE_FAST', requestId: 3 });
+      worker.emitMessage(fastResult(3, 'successor'));
+      await expect(successor).resolves.toMatchObject({ fence: 'successor' });
+      expect(client.status()).toMatchObject({
+        phase: 'ready',
+        queueDepth: 0,
+        completedJobs: 3,
+        expiredJobs: 1,
+      });
+      expect(onFatal).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('expires queued work against enqueue time without dispatching it or killing a healthy worker', async () => {
@@ -337,7 +407,12 @@ describe('LiveHorseDecisionWorkerClient', () => {
       await vi.advanceTimersByTimeAsync(50);
       await queuedRejection;
       expect(worker.sent).toEqual([]);
-      expect(client.status()).toMatchObject({ phase: 'starting', queueDepth: 0 });
+      expect(client.status()).toMatchObject({
+        phase: 'starting',
+        queueDepth: 0,
+        expiredJobs: 1,
+        lastExpiredPhase: 'queued',
+      });
       expect(onFatal).not.toHaveBeenCalled();
 
       worker.emitMessage(ready);

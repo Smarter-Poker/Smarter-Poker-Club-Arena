@@ -54,6 +54,10 @@ import {
 } from './satelliteSettlementRpc.js';
 
 interface FinalTableDealConsensus {
+  reviewId: string | null;
+  reviewState: 'none' | 'requested' | 'reviewing' | 'completed' | 'cancelled' | 'expired';
+  reviewExpiresAt: number | null;
+  stale: boolean;
   proposalId: string | null;
   revision: string | null;
   voters: Set<string>;
@@ -1078,9 +1082,9 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       finalDealStage: {
         if (this.eliminationSweepCursor.nextStage > 3) break finalDealStage;
         // FINAL TABLE DEAL (2026-08-22 parity): while the field is down to one
-        // table and the feature is on, watch tournament_deal_votes; unanimity
-        // executes fn_settle_final_table_deal_atomic. Cheap by construction - it stands down
-        // immediately unless the flag is set, and throttles its own polling.
+        // table and the feature is on, an explicit review parks the dealer.
+        // Consent then refers to the stable post-hand proposal; the shared
+        // scheduler keeps that bounded review reachable until it closes.
         if (!(await this.checkFinalTableDeal())) return;
         if (sweepStopped()) return;
         if (completedStage(4)) return;
@@ -3441,6 +3445,14 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
   private static readonly FINAL_TABLE_DEAL_PAUSE_MS = 15 * 60_000;
   private lastDealPollAt = 0;
   private lastDealVoteCount = -1;
+  private finalTableDealReview: {
+    reviewId: string;
+    tableId: string;
+    engine: ServerTableEngine;
+    proposalId: string | null;
+    revision: string | null;
+    closingReason?: 'stale' | 'expired' | 'cancelled';
+  } | null = null;
 
   /**
    * Resume only the non-money tail of an already committed terminal receipt.
@@ -3720,20 +3732,25 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     }
   }
 
-  /** Read only consent attached to the database's exact current proposal. */
+  /** Read the authoritative session, or claim its snapshot after a physical park. */
   private async readFinalTableDealConsensus(
-    alive: ReadonlyArray<{ user_id: string }>
+    alive: ReadonlyArray<{ user_id: string }>,
+    beginReviewId?: string
   ): Promise<FinalTableDealConsensus | null> {
     let result;
     try {
-      result = await supabase.rpc('fn_get_tournament_deal_consensus', {
-        p_tournament_id: this.tournamentId,
-      });
+      result = beginReviewId
+        ? await supabase.rpc('fn_begin_tournament_deal_review', {
+            p_tournament_id: this.tournamentId,
+            p_review_id: beginReviewId,
+          })
+        : await supabase.rpc('fn_get_tournament_deal_consensus', {
+            p_tournament_id: this.tournamentId,
+          });
     } catch {
-      // No terminal writer has run. A failed consent read proves admission
-      // unavailable and must release a parked dealer through the refusal path.
       return null;
     }
+    if (!result || typeof result !== 'object') return null;
     const { data, error } = result;
     if (
       error ||
@@ -3743,9 +3760,25 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       data.ok !== true ||
       typeof data.ready !== 'boolean' ||
       !Number.isSafeInteger(data.required) ||
-      data.required !== alive.length ||
-      data.required < 2 ||
-      !Array.isArray(data.voter_ids)
+      data.required < 0 ||
+      !Array.isArray(data.voter_ids) ||
+      !['none', 'requested', 'reviewing', 'completed', 'cancelled', 'expired'].includes(
+        data.review_state
+      )
+    )
+      return null;
+
+    const noReview = data.review_state === 'none';
+    if (data.reason === 'review_stale' && data.ready) return null;
+    const stale = data.reason === 'review_stale';
+    const reviewExpiresAt =
+      typeof data.review_expires_at === 'string' ? Date.parse(data.review_expires_at) : NaN;
+    if (noReview) {
+      if (data.review_id !== null || data.review_expires_at !== null) return null;
+    } else if (
+      typeof data.review_id !== 'string' ||
+      !UUID.test(data.review_id) ||
+      !Number.isFinite(reviewExpiresAt)
     )
       return null;
 
@@ -3755,7 +3788,15 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     if (aliveIds.size !== alive.length) return null;
     if (data.voter_ids.some((id: unknown) => typeof id !== 'string' || !UUID.test(id))) return null;
     const voters = new Set<string>(data.voter_ids.map((id: string) => id.toLowerCase()));
-    if (voters.size !== data.voter_ids.length || [...voters].some((id) => !aliveIds.has(id)))
+    if (
+      voters.size !== data.voter_ids.length ||
+      (!stale && [...voters].some((id) => !aliveIds.has(id)))
+    )
+      return null;
+    if (
+      data.review_state === 'reviewing' &&
+      (data.required < 2 || (!stale && data.required !== alive.length))
+    )
       return null;
 
     const hasProposal =
@@ -3763,13 +3804,21 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       UUID.test(data.proposal_id) &&
       typeof data.revision === 'string' &&
       /^[0-9a-f]{64}$/.test(data.revision);
-    if (
-      !hasProposal &&
-      (data.proposal_id !== null || data.revision !== null || voters.size !== 0 || data.ready)
+    if (data.review_state === 'reviewing') {
+      if (!hasProposal || (data.ready && voters.size !== data.required)) return null;
+    } else if (
+      data.proposal_id !== null ||
+      data.revision !== null ||
+      voters.size !== 0 ||
+      data.ready ||
+      data.required !== 0
     )
       return null;
-    if (data.ready && voters.size !== data.required) return null;
     return {
+      reviewId: noReview ? null : data.review_id.toLowerCase(),
+      reviewState: data.review_state,
+      reviewExpiresAt: noReview ? null : reviewExpiresAt,
+      stale,
       proposalId: hasProposal ? data.proposal_id.toLowerCase() : null,
       revision: hasProposal ? data.revision : null,
       voters,
@@ -3778,15 +3827,75 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     };
   }
 
+  /** Close the exact pre-money review in the database before lifting its dealer fence. */
+  private async closeFinalTableDealReview(
+    reason: 'stale' | 'expired' | 'cancelled'
+  ): Promise<boolean> {
+    const review = this.finalTableDealReview;
+    if (!review) return true;
+    review.closingReason = reason;
+    try {
+      const { data, error } = await supabase.rpc('fn_close_tournament_deal_review', {
+        p_tournament_id: this.tournamentId,
+        p_review_id: review.reviewId,
+        p_reason: reason,
+      });
+      if (!error && data?.ok === true && data.review_id === review.reviewId) {
+        if (data.review_state === 'completed') {
+          this.finalTableDealHandled = true;
+          this.tournamentFinished = true;
+          this.fenceUnknownTerminalOutcome(
+            'Tournament.final_table_deal_review_completed_without_receipt'
+          );
+          return false;
+        }
+        if (
+          (data.review_state === 'cancelled' || data.review_state === 'expired') &&
+          data.proposal_id === null &&
+          data.revision === null &&
+          data.required === 0 &&
+          data.ready === false &&
+          Array.isArray(data.voter_ids) &&
+          data.voter_ids.length === 0 &&
+          typeof data.review_expires_at === 'string' &&
+          Number.isFinite(Date.parse(data.review_expires_at))
+        ) {
+          const running = review.engine.isRunning();
+          const ownsEngine =
+            this.tableEngines.get(review.tableId) === review.engine &&
+            this.gameServer.getTableEngine(review.tableId) === review.engine;
+          if (running && !ownsEngine) {
+            // The replacement owner must finish retiring this old dealer. Its
+            // former manager may not restart a detached, still-running engine.
+            this.requestUrgentEliminationSweepAfter(TournamentManagerBase.FINAL_TABLE_DEAL_POLL_MS);
+            return false;
+          }
+          if (running) review.engine.releaseTerminalCloseoutPause();
+          this.finalTableDealReview = null;
+          this.requestUrgentEliminationSweepAfter(0);
+          return true;
+        }
+      }
+    } catch (error) {
+      reportError(error, 'Tournament.final_table_deal_review_close_unavailable');
+    }
+    this.requestUrgentEliminationSweepAfter(TournamentManagerBase.FINAL_TABLE_DEAL_POLL_MS);
+    return false;
+  }
+
   /**
-   * Once unanimity is observed, await the engine-owned no-new-hand gate in
-   * this admission. No poll or timer is allowed to infer a physical boundary.
+   * An explicit review request parks the exact dealer before players see and
+   * accept a stable proposal. The shared scheduler checks consent while that
+   * fence remains owned. Only database-confirmed closure can resume play.
    */
   protected async checkFinalTableDeal(): Promise<boolean> {
     if (this.committedFinalTableDealCleanupPending && this.committedFinalTableDealReceipt) {
       return this.settleFinalTableDeal(this.committedFinalTableDealReceipt);
     }
     if (this.finalTableDealHandled || this.tournamentFinished) return true;
+    if (this.finalTableDealReview?.closingReason) {
+      return this.closeFinalTableDealReview(this.finalTableDealReview.closingReason);
+    }
 
     const t = this.tournamentCache as {
       status?: string;
@@ -3797,7 +3906,9 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       satellite_target_id?: string | null;
       satellite_target?: string | null;
     } | null;
-    if (!t || t.final_table_deal_enabled !== true || t.status !== 'RUNNING') return true;
+    if (!t || t.final_table_deal_enabled !== true || t.status !== 'RUNNING') {
+      return this.closeFinalTableDealReview('stale');
+    }
 
     // A satellite has a separate whole-format receipt and can never enter the
     // cash prize-chop authority, regardless of which legacy marker identifies it.
@@ -3805,10 +3916,14 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       String(t.variant ?? '').toLowerCase() === 'satellite' ||
       String(t.tournament_type ?? '').toUpperCase() === 'SATELLITE' ||
       Boolean(t.satellite_target_id || t.satellite_target);
-    if (isSatelliteDeal) return true;
+    if (isSatelliteDeal) return this.closeFinalTableDealReview('stale');
 
     const now = Date.now();
-    if (now - this.lastDealPollAt < 2_000) return true;
+    if (now - this.lastDealPollAt < 2_000) {
+      if (!this.finalTableDealReview) return true;
+      this.requestUrgentEliminationSweepAfter(TournamentManagerBase.FINAL_TABLE_DEAL_POLL_MS);
+      return false;
+    }
     this.lastDealPollAt = now;
     const tableSize = Math.max(2, Number(t.table_size) || 9);
 
@@ -3818,29 +3933,121 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         .select('user_id')
         .eq('tournament_id', this.tournamentId)
         .eq('status', 'playing');
-      if (aliveError || !alive || alive.length < 2 || alive.length > tableSize) return true;
+      if (aliveError || !alive || alive.length < 2 || alive.length > tableSize) {
+        return this.closeFinalTableDealReview('stale');
+      }
 
-      const consensus = await this.readFinalTableDealConsensus(alive);
-      if (!consensus) return true;
+      let consensus = await this.readFinalTableDealConsensus(alive);
+      if (!consensus) {
+        if (!this.finalTableDealReview) return true;
+        this.requestUrgentEliminationSweepAfter(TournamentManagerBase.FINAL_TABLE_DEAL_POLL_MS);
+        return false;
+      }
+      if (this.finalTableDealReview && consensus.reviewId !== this.finalTableDealReview.reviewId) {
+        return this.closeFinalTableDealReview('stale');
+      }
+      if (!consensus.reviewId || !['requested', 'reviewing'].includes(consensus.reviewState)) {
+        return this.closeFinalTableDealReview(
+          consensus.reviewState === 'expired' ? 'expired' : 'cancelled'
+        );
+      }
+      if (isMaintenanceFrozen() || this.isOnBreak() || this.handForHandActive) {
+        return this.closeFinalTableDealReview('stale');
+      }
+
+      const held = await this.authoritativeFinalTableDealEngine();
+      if (
+        !held ||
+        (this.finalTableDealReview &&
+          (held.engine !== this.finalTableDealReview.engine ||
+            held.tableId !== this.finalTableDealReview.tableId))
+      )
+        return this.closeFinalTableDealReview('stale');
+      const { tableId, engine } = held;
+      if (!this.finalTableDealReview) {
+        this.finalTableDealReview = {
+          reviewId: consensus.reviewId,
+          tableId,
+          engine,
+          proposalId: consensus.proposalId,
+          revision: consensus.revision,
+        };
+        const parked = await engine.parkForTerminalCloseout(
+          TournamentManagerEliminations.FINAL_TABLE_DEAL_PAUSE_MS
+        );
+        if (!parked) return this.closeFinalTableDealReview('stale');
+        if (
+          isMaintenanceFrozen() ||
+          this.isOnBreak() ||
+          this.handForHandActive ||
+          this.tableEngines.get(tableId) !== engine ||
+          this.gameServer.getTableEngine(tableId) !== engine ||
+          !engine.isRunning()
+        )
+          return this.closeFinalTableDealReview('stale');
+        const { data: parkedAlive, error: parkedAliveError } = await supabase
+          .from('tournament_players')
+          .select('user_id')
+          .eq('tournament_id', this.tournamentId)
+          .eq('status', 'playing');
+        if (
+          parkedAliveError ||
+          !parkedAlive ||
+          parkedAlive.length < 2 ||
+          parkedAlive.length > tableSize
+        ) {
+          return this.closeFinalTableDealReview('stale');
+        }
+        consensus = await this.readFinalTableDealConsensus(
+          parkedAlive,
+          this.finalTableDealReview.reviewId
+        );
+        if (!consensus || consensus.reviewId !== this.finalTableDealReview.reviewId) {
+          return this.closeFinalTableDealReview('stale');
+        }
+        if (
+          this.finalTableDealReview.proposalId &&
+          (consensus.proposalId !== this.finalTableDealReview.proposalId ||
+            consensus.revision !== this.finalTableDealReview.revision)
+        )
+          return this.closeFinalTableDealReview('stale');
+        this.finalTableDealReview.proposalId = consensus.proposalId;
+        this.finalTableDealReview.revision = consensus.revision;
+      }
+      if (consensus.reviewState !== 'reviewing') {
+        return this.closeFinalTableDealReview(
+          consensus.reviewState === 'expired' ? 'expired' : 'stale'
+        );
+      }
+      if (
+        consensus.stale ||
+        consensus.proposalId !== this.finalTableDealReview.proposalId ||
+        consensus.revision !== this.finalTableDealReview.revision
+      ) {
+        return this.closeFinalTableDealReview('stale');
+      }
+      if (consensus.reviewExpiresAt !== null && Date.now() >= consensus.reviewExpiresAt) {
+        return this.closeFinalTableDealReview('expired');
+      }
       const { voters } = consensus;
       if (voters.size !== this.lastDealVoteCount) {
         this.lastDealVoteCount = voters.size;
         await this.broadcast('final_table_deal_votes', {
           votes: voters.size,
           required: consensus.required,
+          review_id: consensus.reviewId,
+          review_state: consensus.reviewState,
           proposal_id: consensus.proposalId,
           revision: consensus.revision,
         });
       }
-      if (!consensus.ready) return true;
-      if (isMaintenanceFrozen() || this.isOnBreak() || this.handForHandActive) return false;
-
-      const held = await this.authoritativeFinalTableDealEngine();
-      if (!held) return false;
+      if (!consensus.ready) {
+        this.requestUrgentEliminationSweepAfter(TournamentManagerBase.FINAL_TABLE_DEAL_POLL_MS);
+        return false;
+      }
 
       this.finalTableDealHandled = true;
       this.tournamentFinished = true;
-      const { tableId, engine } = held;
       try {
         return await this.completeFinalTableDealAtBoundary(tableId, engine, tableSize, consensus);
       } catch (err) {
@@ -3886,21 +4093,22 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
 
         // Only the serialized resolver or an explicit pre-RPC boundary check
         // may prove that no terminal transaction committed and lift the gate.
-        engine.releaseTerminalCloseoutPause();
         this.finalTableDealHandled = false;
         this.tournamentFinished = false;
+        await this.closeFinalTableDealReview('stale');
         reportError(err, 'Tournament.final_table_deal_refused');
         return false;
       }
     } catch (err) {
       reportError(err, 'Tournament.final_table_deal_poll_failed');
+      if (!this.tournamentFinished) await this.closeFinalTableDealReview('stale');
       return false;
     }
   }
 
   /**
    * Re-prove the unanimous deal only after the engine has installed its hard
-   * between-hands gate. The terminal RPC is the first and only durable writer.
+   * between-hands gate. The terminal RPC is the first and only money writer.
    */
   private async completeFinalTableDealAtBoundary(
     tableId: string,
@@ -3948,6 +4156,11 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     const consensus = await this.readFinalTableDealConsensus(alive);
     if (
       !consensus?.ready ||
+      consensus.reviewState !== 'reviewing' ||
+      consensus.reviewId !== expectedConsensus.reviewId ||
+      consensus.stale ||
+      consensus.reviewExpiresAt === null ||
+      Date.now() >= consensus.reviewExpiresAt ||
       !consensus.proposalId ||
       !consensus.revision ||
       consensus.proposalId !== expectedConsensus.proposalId ||

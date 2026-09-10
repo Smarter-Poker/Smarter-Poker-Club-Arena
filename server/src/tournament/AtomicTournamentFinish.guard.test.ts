@@ -111,11 +111,14 @@ describe('terminal means complete, not merely ok', () => {
     expect(terminal).toMatch(/receipt\.table_closure/);
   });
 
-  it('a malformed or partial final-deal receipt releases both local guards', () => {
+  it('preserves receipt certainty before any review fence can release', () => {
     const poll = code(sliceMethod(SOURCE, 'protected async checkFinalTableDeal'));
     const boundary = code(sliceMethod(SOURCE, 'private async completeFinalTableDealAtBoundary'));
     expect(boundary).toContain('if (!payoutShapeIsExact)');
-    expect(poll).toContain('engine.releaseTerminalCloseoutPause()');
+    expect(poll).toContain("await this.closeFinalTableDealReview('stale')");
+    const close = code(sliceMethod(SOURCE, 'private async closeFinalTableDealReview'));
+    expect(close).toContain('review.engine.releaseTerminalCloseoutPause()');
+    expect(close).toContain("data.review_state === 'cancelled' || data.review_state === 'expired'");
     expect(poll).toMatch(
       /catch \(err\) \{[\s\S]*this\.finalTableDealHandled = false;[\s\S]*this\.tournamentFinished = false;/
     );

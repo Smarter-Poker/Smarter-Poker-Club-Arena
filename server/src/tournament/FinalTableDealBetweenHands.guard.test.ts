@@ -59,14 +59,21 @@ describe('a final-table deal is settled only from a physically parked table', ()
       "this.fenceUnknownTerminalOutcome('Tournament.final_table_deal_manager_stop_failed')",
       proven
     );
-    const release = check.indexOf('engine.releaseTerminalCloseoutPause()', stop);
+    const release = check.indexOf("await this.closeFinalTableDealReview('stale')", stop);
     expect(proven).toBeGreaterThanOrEqual(0);
     expect(stop).toBeGreaterThan(proven);
     expect(release).toBeGreaterThan(stop);
     expect(check.slice(proven, release)).toContain('if (!provenRefusal)');
-    expect(check.slice(release)).toMatch(
+    expect(check.slice(stop, release)).toMatch(
       /this\.finalTableDealHandled = false;[\s\S]*?this\.tournamentFinished = false/
     );
+    const close = sliceMethod(eliminations, 'private async closeFinalTableDealReview');
+    const proof = close.indexOf(
+      "data.review_state === 'cancelled' || data.review_state === 'expired'"
+    );
+    expect(proof).toBeGreaterThan(close.indexOf("supabase.rpc('fn_close_tournament_deal_review'"));
+    expect(close.indexOf('review.engine.releaseTerminalCloseoutPause()')).toBeGreaterThan(proof);
+    expect(close).toContain('data.review_id === review.reviewId');
   });
 
   it('wires the terminal authority into every engine pause and resume gate', () => {

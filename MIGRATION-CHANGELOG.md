@@ -2,6 +2,10 @@
 
 ## Every Change, Documented. No Exceptions.
 
+## 2026-09-10: Final Deal Review Parks Before Consent
+
+An exact deal proposal could expire while the engine waited for the active hand to finish, repeatedly preventing unanimous consent. Explicit review requests now park the exact dealer before the stable proposal is published. The current roster is refreshed after the hand, partial consent retains the owned fence through the shared scheduler, and only serialized database closure permits normal play to resume. Detached running engines and unknown money outcomes remain fenced. Nine failing regression cases exposed the liveness, roster and release edges; 175 focused tests and full server TypeScript pass after correction. Re-read: yes. Paired SQL/native composition and ordered publication remain open; no production mutation. See docs/changelog/2026-09-10-final-deal-review-parks-before-consent.md.
+
 ## 2026-09-10: Engine Deals Bind The Current Proposal
 
 Final-table deal admission previously counted unversioned tournament vote rows before and after parking, then called an unversioned terminal writer. Both reads now require the exact current proposal, roster and revision. Terminal retries and the serialized outcome resolver retain that same proposal identity and reject mismatched receipts. The prepared database RPC contract is confirmed; SQL deployment must precede this engine integration. The focused suite passes 154 tests in nine files, and full server TypeScript passes. Re-read: yes. No production write or deployment in this lane; native composition and Phase 3 acceptance remain open. See docs/changelog/2026-09-10-engine-deals-bind-current-proposal.md.

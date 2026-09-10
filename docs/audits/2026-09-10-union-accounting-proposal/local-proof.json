@@ -1,0 +1,63 @@
+{
+  "baseline": "09c01fba4",
+  "cursor_fix_commit": "6e3d0fc80",
+  "environment": "isolated local PostgreSQL 17 on Mac Unix socket; synthetic identities only",
+  "production_applied": false,
+  "cursor_tests": {
+    "before": {
+      "failed": 23,
+      "passed": 15
+    },
+    "after": {
+      "failed": 0,
+      "passed": 45
+    },
+    "server_typescript": "passed"
+  },
+  "verified_at_utc": "2026-09-10T06:05:19.869472+00:00",
+  "passing_checks": 34,
+  "checks": [
+    "both contributors earn every tier, total 140 of 200 gross",
+    "one gross basis yields 25 + 25 + 20, 30 remains outside this commission accrual",
+    "each upline volume reflects all contributors",
+    "same-payload replay creates no new accrual",
+    "committed contributor receipts cover both contributions",
+    "altered amount rejected",
+    "altered club rejected",
+    "rate changes after receipt do not reprice old source",
+    "cumulative rounding conserves tiny rake",
+    "negative, subcent, NaN and infinite amounts rejected",
+    "invalid inputs leave no receipt",
+    "self-agent fallback cannot select foreign club agent",
+    "cross-club parent rejected",
+    "invalid hierarchy rolls receipt back",
+    "full-chain cycle rejected",
+    "invalid configured gap never over-allocates rake",
+    "margin violation raises management alert",
+    "audit does not rewrite assigned rates",
+    "legacy source is preserved without historical repair",
+    "legacy exclusion remains explicit",
+    "injected middle-tier failure observed",
+    "middle-tier failure rolls back all accruals and receipt",
+    "recovery applies whole contributor exactly once",
+    "browser cannot invoke accrual",
+    "browser cannot invoke alternate calculator",
+    "browser cannot mutate or enumerate contributor receipts",
+    "new receipt table has RLS",
+    "alternate source-ID calculator is retired for service callers",
+    "retired tournament_fee identity domain rejected",
+    "captured live resolver books union-host play to member club",
+    "receipt distinguishes union host context from charged member club",
+    "concurrent same-contributor retry creates three accruals totaling 70.00 once",
+    "concurrent contributors sharing all ancestors create six accruals totaling 140.00",
+    "later response-loss retry changes no committed rows"
+  ],
+  "log_path": "/tmp/union-commission-reviewed-proof.log",
+  "production_ready": false,
+  "remaining_financial_acceptance_blockers": [
+    "Canonical committed source UUID/contributor/amount authority is not yet enforced",
+    "Historical zero-row/no-agent attempts lack a durable cutover boundary",
+    "Weekly and independent player rebate claims use competing payer paths; economic conservation unproved"
+  ],
+  "baseline_reproduction": "Actual old SQL: two contributors with three uplines produce only two rows totaling 62.50; super agent receives zero"
+}

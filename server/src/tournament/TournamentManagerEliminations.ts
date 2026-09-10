@@ -32,12 +32,13 @@ import {
   eliminationSweepMs,
   eliminationSweepsInflight,
 } from '../observability/engineInstruments.js';
-import { computePlacePrize } from './payoutMath.js';
+import { computePlacePrize, prizePoolAvailableToPlaces } from './payoutMath.js';
 import { resolvePayoutStructure, parsePayoutStructure } from './payoutStructure.js';
 import type { ServerTableEngine } from '../engine/ServerTableEngine.js';
 import type { VerifiedTournamentCompletionReceipt } from './completionSettlementReceipt.js';
 import {
   requestTournamentTerminalReceipt,
+  TerminalSettlementDisagreementError,
   TerminalSettlementOutcomeUnknownError,
   TerminalSettlementRefusedError,
 } from './terminalSettlementRpc.js';
@@ -51,6 +52,7 @@ import {
   SatelliteSettlementOutcomeUnknownError,
   SatelliteSettlementRefusedError,
 } from './satelliteSettlementRpc.js';
+import { horseRebuyAllowance } from '../services/FreeBuy.js';
 
 interface QueuedBountyReveal {
   awardId: string;
@@ -353,6 +355,9 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     this.isProcessingEliminations = true;
     this.eliminationSweepSignal = signal;
     this.eliminationSweepDeadlineAt = Date.now() + TournamentManagerBase.SWEEP_WORK_BUDGET_MS;
+    // One grace per admitted sweep (SWEEP_MUTATION_GRACE_MS). Reset with the
+    // deadline it extends, never carried between sweeps.
+    this.eliminationMutationGraceGranted = false;
     // How many of these the single JS thread is carrying at once, and how
     // long one takes. Both are measurement only - see engineInstruments.
     const sweepStartedAt = Date.now();
@@ -886,8 +891,41 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           }
 
           let nextPosition = Math.max(unplacedCount, playingCount, bustedOrdered.length + 1);
+          let committedThisPass = 0;
           for (let i = 0; i < bustedOrdered.length; i++) {
             if (!this.running || signal.aborted) return;
+
+            /**
+             * A SWEEP THAT CANNOT AFFORD ITS FIRST MUTATION NEVER MAKES ONE.
+             *
+             * Everything above this line is READS, and on a large backlog they
+             * can spend the whole work budget. Every mutation below asks
+             * `eliminationMutationAllowed()`, which is false once the budget is
+             * gone - so `eliminatePlayer` used to refuse silently, the pass
+             * aborted as though the database had said no, the durable wake was
+             * never acknowledged, and the next sweep repeated the same reads on
+             * the same backlog. Fifteen tournaments were in that livelock for up
+             * to 100 minutes on 2026-09-10, three of them holding more than 150
+             * busted players each.
+             *
+             * Yielding is still the rule; buying one bounded extension when this
+             * pass has committed NOTHING is what makes the yield a yield rather
+             * than a stall. See SWEEP_MUTATION_GRACE_MS for the measurement.
+             */
+            if (this.eliminationWorkBudgetExpired()) {
+              if (committedThisPass > 0 || !this.grantEliminationMutationGrace()) {
+                this.requestUrgentEliminationSweepAfter(
+                  TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS
+                );
+                return;
+              }
+              reportError(
+                new Error(
+                  `[Tournament:${this.tournamentId.slice(0, 8)}] bust preparation spent the whole ${TournamentManagerBase.SWEEP_WORK_BUDGET_MS}ms budget with ${bustedOrdered.length} player(s) to record; extending once by ${TournamentManagerBase.SWEEP_MUTATION_GRACE_MS}ms so this sweep commits at least one finish`
+                ),
+                'Tournament.bust_mutation_grace_granted'
+              );
+            }
 
             // Place 1 belongs to the winner and is never handed out here.
             let place = nextPosition;
@@ -930,13 +968,50 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
               // hand and same starting stack. Hand order must never be skipped:
               // doing so would advance a PKO watermark past unpaid money.
               const refusedId = bustedOrdered[i].user_id;
-              this.bustRefusalStreak.set(
-                refusedId,
-                (this.bustRefusalStreak.get(refusedId) ?? 0) + 1
+              const streak = (this.bustRefusalStreak.get(refusedId) ?? 0) + 1;
+              this.bustRefusalStreak.set(refusedId, streak);
+
+              /**
+               * ONE PLAYER THE DOOR CANNOT ACCEPT IS NOT A REASON TO STOP THE
+               * WHOLE EVENT (2026-09-10).
+               *
+               * Aborting the pass is right for a TRANSIENT refusal - a CAS miss
+               * or an evidence defer clears itself in seconds, and retrying in
+               * hand order costs nothing. It is wrong for a PERMANENT one. The
+               * door refuses deterministically for several real reasons
+               * (`unresolved_knockout_generation_chain`,
+               * `pko_order_already_advanced`,
+               * `knockout_generation_has_new_live_seat`), and every one of them
+               * used to freeze the event: no other bust could be recorded, the
+               * field never shrank, the event never finished, and its escrow
+               * was never paid to anybody. Measured today: seven events stuck
+               * that way for up to eighteen hours, one refusing the same player
+               * every fifteen seconds since 2026-09-08, together holding
+               * thousands of chips no player could be given.
+               *
+               * So the abort stands for the first two refusals of the same
+               * player, and after that this pass records the rest of the field
+               * and says out loud who it could not record. Skipping is the
+               * lesser harm and it is bounded: hand order is preserved for
+               * everyone the door accepts, the blocked player keeps their
+               * chronological `eliminated_at` when they are finally recorded,
+               * and fn_normalize_tournament_final_standings re-derives every
+               * finishing place from that chronology before the event pays.
+               */
+              if (streak < TournamentManagerBase.BUST_REFUSAL_SKIP_AFTER) return;
+              reportError(
+                new Error(
+                  `[Tournament:${this.tournamentId.slice(0, 8)}] the knockout door has refused ${refusedId.slice(0, 8)} ${streak} times running; recording the rest of the field and leaving that bust for the door to accept. The event no longer waits on one player it cannot record.`
+                ),
+                'Tournament.bust_blocked_player_skipped'
               );
-              return;
+              this.requestUrgentEliminationSweepAfter(
+                TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS
+              );
+              continue;
             }
             this.bustRefusalStreak.delete(bustedOrdered[i].user_id);
+            committedThisPass++;
             takenPositions.add(place);
             nextPosition = Math.min(nextPosition, place) - 1;
           }
@@ -1028,32 +1103,73 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
               if (sweepStopped()) return;
               this.rearmIfTheFinishWasRefused();
             } else if ((remainingCount || 0) === 0) {
-              // All players busted simultaneously — pick the last eliminated as winner
-              const { data: lastEliminated, error: lastEliminatedErr } = await supabase
+              // THE DURABLE WINNER OUTRANKS THE LAST BUST (2026-09-10). Once the
+              // terminal authority has settled the event, the champion is no
+              // longer 'playing' but 'winner'; a manager that reads the field
+              // only now (re-admitted after a lease loss, or a second engine)
+              // used to see zero live players and hand the runner-up in as its
+              // observed winner. The database then refused every replay of that
+              // contradiction. Ask for the witness that was there first.
+              const { data: durableWinner, error: durableWinnerErr } = await supabase
                 .from('tournament_players')
                 .select('user_id')
                 .eq('tournament_id', this.tournamentId)
-                .eq('status', 'eliminated')
-                .order('eliminated_at', { ascending: false })
-                .limit(1)
+                .eq('status', 'winner')
+                .eq('position', 1)
                 .maybeSingle();
-
               if (sweepStopped()) return;
-              if (lastEliminatedErr) {
-                reportError(lastEliminatedErr, 'Tournament.last_eliminated_unreadable');
+              if (durableWinnerErr) {
+                reportError(durableWinnerErr, 'Tournament.finish_durable_winner_unreadable');
                 this.requestUrgentEliminationSweepAfter(
                   TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS
                 );
                 return;
               }
-
-              if (lastEliminated) {
-                console.log(
-                  `[Tournament:${this.tournamentId.slice(0, 8)}] All busted simultaneously - last eliminated wins`
-                );
-                await this.finishTournament(lastEliminated.user_id);
+              if (durableWinner) {
+                await this.finishTournament(durableWinner.user_id);
                 if (sweepStopped()) return;
                 this.rearmIfTheFinishWasRefused();
+              } else {
+                // Without a committed winner, use the durable elimination sequence.
+                // Timestamp ties and out-of-order callbacks cannot nominate a winner.
+                const { data: lastEliminated, error: lastEliminatedErr } = await supabase
+                  .from('tournament_players')
+                  .select('user_id')
+                  .eq('tournament_id', this.tournamentId)
+                  .eq('status', 'eliminated')
+                  .not('elimination_sequence', 'is', null)
+                  .order('elimination_sequence', { ascending: false })
+                  .limit(1)
+                  .maybeSingle();
+
+                if (sweepStopped()) return;
+                if (lastEliminatedErr) {
+                  reportError(lastEliminatedErr, 'Tournament.last_eliminated_unreadable');
+                  this.requestUrgentEliminationSweepAfter(
+                    TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS
+                  );
+                  return;
+                }
+
+                if (lastEliminated) {
+                  console.log(
+                    `[Tournament:${this.tournamentId.slice(0, 8)}] No survivor - final durable elimination submitted to terminal authority`
+                  );
+                  await this.finishTournament(lastEliminated.user_id);
+                  if (sweepStopped()) return;
+                  this.rearmIfTheFinishWasRefused();
+                } else {
+                  reportError(
+                    new Error(
+                      `[Tournament:${this.tournamentId.slice(0, 8)}] No survivor or durable final elimination witness`
+                    ),
+                    'Tournament.finish_elimination_witness_unavailable'
+                  );
+                  this.requestUrgentEliminationSweepAfter(
+                    TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS
+                  );
+                  return;
+                }
               }
             }
           } catch (finishErr) {
@@ -1378,10 +1494,11 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
   }
 
   /**
-   * Give busted HORSES their rebuy, exactly as a human would take one.
+   * Give busted HORSES their configured recovery, subject to the event and
+   * deterministic horse policy.
    *
-   * Every eligibility rule (rebuys offered, inside the rebuy level window,
-   * under max_rebuys, stack low enough) is enforced inside
+   * Every eligibility rule (the configured product, its level window,
+   * database cap, stack state and funding) is enforced inside
    * process_tournament_rebuy, which also does the chip debit, the prize-pool
    * increment and the single rake booking in one transaction. So this asks
    * and lets the database say no -- the refusals ('Rebuy limit reached',
@@ -1391,8 +1508,8 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
    * Horses only. A real player's rebuy is their own decision and is taken
    * through the client.
    *
-   * Bounded by construction: max_rebuys (2 on the scheduled events) and the
-   * rebuy level window, both enforced server-side, so this cannot loop.
+   * Bounded by construction: the database event cap/window plus the Free Buy
+   * horse's deterministic 0-5 allowance, so this cannot loop indefinitely.
    */
   private async tryTournamentRebuys(
     bustedUserIds: string[]
@@ -1412,9 +1529,21 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       return { rebought, answered };
     }
     const t = this.tournamentCache as
-      | { is_rebuy?: boolean; rebuy_levels?: number | null; late_reg_levels?: number | null }
+      | {
+          is_rebuy?: boolean;
+          is_reentry?: boolean;
+          free_buy?: boolean;
+          rebuy_levels?: number | null;
+          late_reg_levels?: number | null;
+        }
       | undefined;
-    if (!t?.is_rebuy || bustedUserIds.length === 0) return { rebought, answered };
+    if ((!t?.is_rebuy && !t?.is_reentry) || bustedUserIds.length === 0) {
+      return { rebought, answered };
+    }
+    // The horse input device follows the event's executable recovery product.
+    // Prefer a rebuy when both legacy flags are present; a re-entry-only event
+    // must not silently eliminate every horse while humans retain the option.
+    const recoveryType = t.is_rebuy ? 'rebuy' : 'reentry';
     if (!this.eliminationMutationAllowed()) return { rebought, answered };
     const batch = bustedUserIds.slice(0, TournamentManagerBase.SWEEP_MUTATION_BATCH_SIZE);
     if (bustedUserIds.length > batch.length) this.requestEliminationSweep();
@@ -1435,12 +1564,45 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       if (horseErr || !horseRows || horseRows.length === 0) return { rebought, answered };
 
       const declined = new Map<string, number>();
+      let freeBuyReloads: Map<string, number> | null = null;
+      if (t.free_buy === true) {
+        const horseIds = horseRows.map((horse) => String(horse.id));
+        const { data: reloadRows, error: reloadErr } = await supabase
+          .from('tournament_players')
+          .select('user_id, rebuys')
+          .eq('tournament_id', this.tournamentId)
+          .in('user_id', horseIds);
+        if (!this.eliminationMutationAllowed()) return { rebought, answered };
+        if (reloadErr || !Array.isArray(reloadRows)) {
+          // Unknown allowance state is not a decline. Preserve the decision
+          // window and retry rather than either charging or eliminating.
+          this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
+          return { rebought, answered };
+        }
+        freeBuyReloads = new Map(
+          reloadRows.map((row) => [
+            String(row.user_id),
+            Math.max(0, Math.floor(Number(row.rebuys) || 0)),
+          ])
+        );
+      }
       for (const h of horseRows) {
         if (!this.eliminationMutationAllowed()) return { rebought, answered };
+        if (freeBuyReloads) {
+          const used = freeBuyReloads.get(h.id);
+          if (used === undefined) {
+            this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
+            continue;
+          }
+          if (used >= horseRebuyAllowance(h.id, this.tournamentId)) {
+            answered.add(h.id);
+            continue;
+          }
+        }
         const { data, error } = await supabase.rpc('process_tournament_rebuy', {
           p_tournament_id: this.tournamentId,
           p_user_id: h.id,
-          p_rebuy_type: 'rebuy',
+          p_rebuy_type: recoveryType,
           // null: let the server price it. Passing a client-side quote here
           // would only risk a spurious 'Price mismatch'.
           p_cost: null,
@@ -1780,7 +1942,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         // spin_multiplier + tournament_type: a Spin's payout split is a pure
         // function of its multiplier, so the spec can rebuild the structure
         // when the stored column is unreadable. See payoutStructure.ts.
-        'payout_structure, prize_pool, is_bounty, is_pko, is_mystery_bounty, bounty_amount, mystery_bounty_min, mystery_bounty_max, variant, tournament_type, satellite_target_id, spin_multiplier'
+        'payout_structure, prize_pool, bubble_protection, buy_in_amount, is_bounty, is_pko, is_mystery_bounty, bounty_amount, mystery_bounty_min, mystery_bounty_max, variant, tournament_type, satellite_target_id, spin_multiplier'
       )
       .eq('id', this.tournamentId)
       .maybeSingle(); // FIX 168: Bible safety rule — use maybeSingle over single
@@ -1875,7 +2037,24 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       const safeField = field !== undefined && field >= position ? field : undefined;
       const payouts = resolvePayoutStructure(tournament as any, safeField);
       if (payouts) {
-        prize = computePlacePrize(Number(tournament.prize_pool || 0), payouts, position);
+        // Once entry is closed, result facts and the elimination broadcast
+        // must price the same pool-funded Bubble Promise as terminal SQL.
+        // Before that cutoff the field and ladder remain provisional.
+        const ladderPool = prizePoolAvailableToPlaces(
+          Number(tournament.prize_pool || 0),
+          payouts,
+          safeField ?? deepestCanonicalPaidPlace(payouts),
+          tournament.bubble_protection === true,
+          Number(tournament.buy_in_amount)
+        );
+        if (ladderPool === null) {
+          reportError(
+            new Error('Cannot price an unfunded or malformed Bubble Promise'),
+            'Tournament.elimination_ladder_pool_invalid'
+          );
+          return false;
+        }
+        prize = computePlacePrize(ladderPool, payouts, position);
       }
     }
 
@@ -3286,12 +3465,31 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       return false;
     }
 
+    const isSatellite =
+      String(this.tournamentCache?.variant ?? '').toLowerCase() === 'satellite' ||
+      String(this.tournamentCache?.tournament_type ?? '').toUpperCase() === 'SATELLITE' ||
+      Boolean(this.tournamentCache?.satellite_target_id);
+    const ladderPool = prizePoolAvailableToPlaces(
+      finalPrizePool,
+      payouts,
+      finalField,
+      !isSatellite && this.tournamentCache?.bubble_protection === true,
+      Number(this.tournamentCache?.buy_in_amount)
+    );
+    if (ladderPool === null) {
+      reportError(
+        new Error('Cannot reprice an unfunded or malformed Bubble Promise'),
+        'Tournament.prize_recalc_ladder_pool_invalid'
+      );
+      return false;
+    }
+
     let complete = true;
     let mutations = 0;
     for (const player of eliminated) {
       const payoutEntry = payouts.find((p: any) => Number(p.place) === Number(player.position));
       const correctPrize = payoutEntry
-        ? computePlacePrize(finalPrizePool, payouts, Number(player.position))
+        ? computePlacePrize(ladderPool, payouts, Number(player.position))
         : 0;
 
       /**
@@ -3954,6 +4152,57 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     }
     return cleaned;
   }
+  /**
+   * One record, never a retry: the terminal authority refused this manager's
+   * parameters against its stored receipt and the receipt could not be read
+   * back. Names the tournament, what was observed and what is stored.
+   */
+  private async reportTerminalReceiptDisagreement(
+    error: TerminalSettlementDisagreementError
+  ): Promise<void> {
+    reportError(error, 'Tournament.atomic_finish_receipt_disagreement');
+    try {
+      await raiseFinancialAlert(
+        'critical',
+        'Tournament.atomic_finish_receipt_disagreement',
+        `Tournament ${this.tournamentId} has a stored terminal receipt that disagrees with this manager's finish parameters, and the receipt could not be adopted. The manager stood down without retrying. ${error.message}`,
+        {
+          tournament_id: this.tournamentId,
+          observed_settlement_mode: error.observed.settlementMode,
+          observed_winner_id: error.observed.winnerId,
+          stored_settlement_mode: error.stored?.settlementMode ?? null,
+          stored_winner_id: error.stored?.winnerId ?? null,
+          proven_refusal: true,
+          outcome_unknown: false,
+        }
+      );
+    } catch (alertErr) {
+      reportError(alertErr, 'Tournament.atomic_finish_alert_failed');
+    }
+  }
+
+  /** The receipt won over this process's observation; say so once, then continue from the receipt. */
+  private async reportAdoptedTerminalReceipt(
+    observedWinnerId: string,
+    receipt: VerifiedTournamentCompletionReceipt
+  ): Promise<void> {
+    const message =
+      `[Tournament:${this.tournamentId.slice(0, 8)}] adopted the stored terminal receipt ` +
+      `(${receipt.settlementMode}, winner ${receipt.winnerId.slice(0, 8)}) over this manager's ` +
+      `observed winner ${observedWinnerId.slice(0, 8)}; no money moved on this process's view`;
+    reportError(new Error(message), 'Tournament.atomic_finish_receipt_adopted');
+    try {
+      await raiseFinancialAlert('warning', 'Tournament.atomic_finish_receipt_adopted', message, {
+        tournament_id: this.tournamentId,
+        observed_winner_id: observedWinnerId,
+        stored_winner_id: receipt.winnerId,
+        stored_settlement_mode: receipt.settlementMode,
+      });
+    } catch (alertErr) {
+      reportError(alertErr, 'Tournament.atomic_finish_alert_failed');
+    }
+  }
+
   protected async finishTournament(winnerId: string): Promise<void> {
     // A committed receipt makes this cleanup-only work. It must remain
     // reachable ahead of every local latch and maintenance admission guard.
@@ -4058,6 +4307,16 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     try {
       receipt = await requestTournamentTerminalReceipt(this.tournamentId, 'places', winnerId);
     } catch (settlementErr) {
+      if (settlementErr instanceof TerminalSettlementDisagreementError) {
+        // The database holds a receipt this request contradicts and the
+        // receipt could not be adopted. Nothing about that is transient:
+        // one alert names the disagreement, and this manager stands down.
+        // It is neither re-armed (that was the 5,575-replay loop of
+        // 2026-09-10) nor treated as an unknown outcome.
+        await this.reportTerminalReceiptDisagreement(settlementErr);
+        this.fenceUnknownTerminalOutcome('Tournament.atomic_finish_disagreement_stop_failed');
+        return;
+      }
       const provenRefusal = settlementErr instanceof TerminalSettlementRefusedError;
       const outcomeUnknown =
         settlementErr instanceof TerminalSettlementOutcomeUnknownError || !provenRefusal;
@@ -4094,12 +4353,19 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     }
 
     this.committedFinishReceipt = receipt;
+    if (receipt.winnerId.toLowerCase() !== winnerId.toLowerCase()) {
+      // The stored receipt was adopted over this manager's own observation.
+      // The money is already right (the receipt is the immutable settlement);
+      // what needs a record is that this process read the field wrong.
+      await this.reportAdoptedTerminalReceipt(winnerId, receipt);
+    }
     const winnerPrize = receipt.winnerAmount;
     console.log(
       `[Tournament:${this.tournamentId.slice(0, 8)}] COMPLETE - winner ${receipt.winnerId.slice(0, 8)} received ${winnerPrize}`
     );
     await this.cleanupCommittedTournament(receipt);
   }
+
   // ── Implemented by TournamentManager (layer 3/3) ──
   protected abstract checkTableBalance(): Promise<void>;
   protected abstract processSatelliteAwards(

@@ -290,6 +290,8 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ needs.publish-needed.outputs.target_sha }}
+          # Strict provenance requires complete ancestry for this exact target.
+          fetch-depth: 0
 
       # STAGE MARKERS REMOVED (2026-08-21).
       #
@@ -574,6 +576,8 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ needs.publish-needed.outputs.target_sha }}
+          # Strict provenance requires complete ancestry for this exact target.
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4

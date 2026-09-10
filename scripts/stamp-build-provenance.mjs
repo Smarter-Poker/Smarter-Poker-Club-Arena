@@ -74,8 +74,13 @@ const dirty = git('status --porcelain', '') !== '';
 // In CI the checkout is detached with a fetched origin/main, so this is
 // usually available on both sides.
 const hasOriginMain = git('rev-parse --verify --quiet origin/main', '') !== '';
-const behindMain = hasOriginMain ? gitCount('HEAD..origin/main') : null;
-const aheadMain = hasOriginMain ? gitCount('origin/main..HEAD') : null;
+// rev-list treats shallow boundaries as roots. Even a merge of current main
+// can then appear to be thousands of commits behind it on a reused runner.
+const shallowRepository = git('rev-parse --is-shallow-repository', 'unknown');
+const historyComplete =
+  shallowRepository === 'false' ? true : shallowRepository === 'true' ? false : null;
+const behindMain = hasOriginMain && historyComplete ? gitCount('HEAD..origin/main') : null;
+const aheadMain = hasOriginMain && historyComplete ? gitCount('origin/main..HEAD') : null;
 
 const info = {
   schema: 1,
@@ -84,6 +89,7 @@ const info = {
   buildTime: new Date().toISOString(),
   branch,
   dirty,
+  historyComplete,
   behindMain,
   aheadMain,
   ciRun:
@@ -110,6 +116,17 @@ console.log(
 // regression that happened. Refuse it outright in CI, and warn loudly
 // locally (where a developer may legitimately be testing an older tree but
 // must never ship it — the Club Arena publisher is the backstop either way).
+const strictProvenance = process.env.GITHUB_ACTIONS || process.env.STRICT_PROVENANCE === '1';
+if (commit !== 'unknown' && historyComplete !== true) {
+  const msg =
+    '\n✗ Build ancestry cannot be verified: incomplete Git history.\n' +
+    '  FIX: fetch full history (actions/checkout fetch-depth: 0), then rebuild.\n';
+  if (strictProvenance) {
+    console.error(msg);
+    process.exit(1);
+  }
+  console.warn(msg);
+}
 const BEHIND_LIMIT = 0;
 if (typeof behindMain === 'number' && behindMain > BEHIND_LIMIT) {
   const msg =
@@ -117,7 +134,7 @@ if (typeof behindMain === 'number' && behindMain > BEHIND_LIMIT) {
     `  Shipping it would erase whatever landed in those commits — that is\n` +
     `  precisely the 2026-08-21 throwables regression.\n\n` +
     `  FIX: merge current origin/main into this feature branch, then rebuild.\n`;
-  if (process.env.GITHUB_ACTIONS || process.env.STRICT_PROVENANCE === '1') {
+  if (strictProvenance) {
     console.error(msg);
     process.exit(1);
   }

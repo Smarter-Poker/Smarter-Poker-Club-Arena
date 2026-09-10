@@ -93,8 +93,11 @@ trap cleanup_build EXIT
 trap 'exit 130' INT
 trap 'exit 143' HUP TERM
 
+# Read through the producer's final block padding. BSD tar can otherwise
+# close at the end markers early and turn a valid archive into SIGPIPE under
+# pipefail. Archive or extraction errors still fail the complete pipeline.
 GIT_NO_REPLACE_OBJECTS=1 git -C "$REPO_DIR" archive --format=tar "$SERVER_TREE" \
-  | tar --no-same-owner -xf - -C "$BUILD_CONTEXT"
+  | tar --ignore-zeros --no-same-owner -xf - -C "$BUILD_CONTEXT"
 
 for required in Dockerfile package.json tsconfig.json src; do
   [ -e "$BUILD_CONTEXT/$required" ] || die "committed server tree is missing $required"

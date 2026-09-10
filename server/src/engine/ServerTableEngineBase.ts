@@ -30,7 +30,10 @@ import { ChipRaceEngine } from './ChipRaceEngine.js';
 import { TableBalancer } from './TableBalancer.js';
 import { TableBreakEngine } from './TableBreakEngine.js';
 import { EngineTelemetry } from './EngineTelemetry.js';
-import { getTournamentBrainContext } from '../services/TournamentBrainContext.js';
+import {
+  peekTournamentBrainContext,
+  refreshTournamentBrainContext,
+} from '../services/TournamentBrainContext.js';
 import {
   getFullRakeConfig,
   getPlayerCountCaps,
@@ -1428,6 +1431,7 @@ export abstract class ServerTableEngineBase {
    * outlast the short hand-for-hand window without self-resuming.
    */
   protected pauseMaxWaitMs: number | null = null;
+  protected pauseRequiresExplicitResume = false;
   /**
    * DOES THIS PAUSE FORBID THE NEXT HAND, OR ONLY THE ONE AFTER IT?
    *
@@ -1749,7 +1753,8 @@ export abstract class ServerTableEngineBase {
 
     this.chipContinuity = new ChipContinuityTracker({
       tableId,
-      isCash: () => !!this.tableInfo && !this.isTournamentTable(),
+      isCash: () =>
+        !!this.tableInfo && this.tableInfo.arena?.asset !== 'diamonds' && !this.isTournamentTable(),
       isFrozen: () => isMaintenanceFrozen(),
       canMutate: () => this.lifecycleCanMutate(),
       evaluate: evaluateCashSessions,
@@ -2373,12 +2378,12 @@ export abstract class ServerTableEngineBase {
       // V22 (2026-08-27, Phase 2): pre-warm the tournament ICM context the
       // moment the engine knows which tournament it serves. The cache used to
       // warm on the FIRST HORSE DECISION — with 7,000+ spins a day, the
-      // opening hands of every event ran on the flat premium while the fetch
-      // was still in flight. The call is synchronous-cheap: it only kicks the
-      // background refresh.
+      // opening hands of every event lacked real context while the fetch was
+      // still in flight. The call is synchronous-cheap: it only kicks the
+      // background refresh; Phase 6 labels any remaining warm-up explicitly.
       if (this.tableInfo?.tournament_id) {
         try {
-          getTournamentBrainContext(String(this.tableInfo.tournament_id));
+          refreshTournamentBrainContext(String(this.tableInfo.tournament_id));
         } catch {
           /* warming is best-effort */
         }
@@ -3390,6 +3395,11 @@ export abstract class ServerTableEngineBase {
           }
           this.disconnectEngine.checkStaleHeartbeats(this.tableId);
           this.runTableWatchdog();
+          // Phase 6: refresh cached tournament facts from a lifecycle-owned
+          // tick, never while a horse's action clock is being constructed.
+          if (this.tableInfo?.tournament_id) {
+            refreshTournamentBrainContext(String(this.tableInfo.tournament_id));
+          }
           // CHIP CONTINUITY: presence just got re-evaluated above (stale
           // heartbeats -> disconnected), so this is the moment to tell the
           // database which stay clocks pause and which resume. Only
@@ -3943,12 +3953,16 @@ export abstract class ServerTableEngineBase {
    * pause now say so; the safety net still exists, it is just sized to the
    * pause being requested.
    */
-  pauseAfterHand(maxWaitMs?: number, opts?: { beforeNextHand?: boolean }): void {
+  pauseAfterHand(
+    maxWaitMs?: number,
+    opts?: { beforeNextHand?: boolean; untilResumed?: boolean }
+  ): void {
     this.handForHandPaused = true;
     this.pauseMaxWaitMs = maxWaitMs && maxWaitMs > 0 ? maxWaitMs : null;
     // See holdBeforeNextHand. Sticky within one pause: a break already holding
     // the table must not be downgraded by a later ordinary pause request.
     if (opts?.beforeNextHand) this.holdBeforeNextHand = true;
+    if (opts?.untilResumed) this.pauseRequiresExplicitResume = true;
     if (this.pausedSinceMs === 0) this.pausedSinceMs = Date.now();
   }
 
@@ -4260,13 +4274,22 @@ export abstract class ServerTableEngineBase {
     this.releasePauseGate();
   }
 
-  /**
-   * Drop a controller that was prepared but has not crossed start().  This is
-   * local lifecycle cleanup only: no table, seat, stack, or wallet write is
-   * performed here.
-   */
-  protected discardPreparedHandForTerminalCloseout(): boolean {
-    if (!this.terminalCloseoutPaused) return false;
+  /** Owners that forbid opening the next hand, including an operator hold. */
+  protected isNextHandPaused(): boolean {
+    return (
+      this.adminPauseLock ||
+      this.maintenanceLock ||
+      this.maintenancePaused ||
+      this.finalTableDealPaused ||
+      this.terminalCloseoutPaused ||
+      this.tournamentMovePauseOwners.size > 0 ||
+      (this.handForHandPaused && this.holdBeforeNextHand)
+    );
+  }
+
+  /** Drop an unstarted controller without a table, seat, stack or wallet write. */
+  protected discardPreparedHandForPause(): boolean {
+    if (!this.isNextHandPaused()) return false;
     this.handController = null;
     this.currentHandDealtStacks.clear();
     if (this.handSpan) {
@@ -4432,9 +4455,10 @@ export abstract class ServerTableEngineBase {
     this.pausedSinceMs = 0;
     this.lastPauseAlarmAtMs = 0;
     this.pauseMaxWaitMs = null;
+    this.pauseRequiresExplicitResume = false;
     this.holdBeforeNextHand = false;
     // Bible V8 §3.1: Table FSM — paused → running
-    if (this.tableFSM.state === 'paused') {
+    if (this.tableFSM.state === 'paused' && !this.adminPauseLock && !this.maintenanceLock) {
       this.tableFSM.transition('running');
     }
     this.releasePendingPauseWait();
@@ -4561,7 +4585,13 @@ export abstract class ServerTableEngineBase {
       const maxWaitMs = this.pauseMaxWaitMs ?? 120000;
       this.pauseGateTimer = setTimeout(() => {
         if (this.handForHandResolve === resolve) {
-          if (this.terminalCloseoutPaused || this.claimedTournamentMovePauseOwners.size > 0) {
+          if (
+            this.pauseRequiresExplicitResume ||
+            this.terminalCloseoutPaused ||
+            this.claimedTournamentMovePauseOwners.size > 0
+          ) {
+            // A synchronized break can outlast its initial drain estimate.
+            // Only its manager can release that pause after all hands finish.
             // Terminal closeout is fail-closed. Its caller has its own bounded
             // wait, but this table stays fenced until that caller explicitly
             // proves the transaction did not commit and releases it.
@@ -4877,8 +4907,12 @@ export abstract class ServerTableEngineBase {
     if (!this.isTournamentTable()) return 'cash';
     try {
       const id = this.tableInfo?.tournament_id;
-      const ctx = id ? getTournamentBrainContext(String(id)) : null;
-      return ctx?.format ?? 'mtt';
+      const ctx = id ? peekTournamentBrainContext(String(id)) : null;
+      // Phase 7 distinguishes multi-seat SNG utility from MTT utility inside
+      // the horse snapshot. The table-feel metric deliberately keeps its
+      // established four-value cardinality, so those SNG tables share the MTT
+      // transport series rather than creating an unbounded label change.
+      return ctx?.format === 'sng' ? 'mtt' : (ctx?.format ?? 'mtt');
     } catch {
       return 'mtt';
     }

@@ -1,0 +1,3152 @@
+[
+  {
+    "table": "chip_ledger",
+    "name": "id",
+    "type": "uuid",
+    "not_null": true,
+    "default": "gen_random_uuid()",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "chip_ledger",
+    "name": "performed_by",
+    "type": "uuid",
+    "not_null": true,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "chip_ledger",
+    "name": "from_type",
+    "type": "text",
+    "not_null": true,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "chip_ledger",
+    "name": "from_entity_id",
+    "type": "uuid",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "chip_ledger",
+    "name": "from_label",
+    "type": "text",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "chip_ledger",
+    "name": "to_type",
+    "type": "text",
+    "not_null": true,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "chip_ledger",
+    "name": "to_entity_id",
+    "type": "uuid",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "chip_ledger",
+    "name": "to_label",
+    "type": "text",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "chip_ledger",
+    "name": "amount",
+    "type": "numeric(15,2)",
+    "not_null": true,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "chip_ledger",
+    "name": "category",
+    "type": "text",
+    "not_null": true,
+    "default": "'transfer'::text",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "chip_ledger",
+    "name": "description",
+    "type": "text",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "chip_ledger",
+    "name": "notes",
+    "type": "text",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "chip_ledger",
+    "name": "club_id",
+    "type": "uuid",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "chip_ledger",
+    "name": "union_id",
+    "type": "uuid",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "chip_ledger",
+    "name": "table_id",
+    "type": "uuid",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "chip_ledger",
+    "name": "hand_id",
+    "type": "uuid",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "chip_ledger",
+    "name": "tournament_id",
+    "type": "uuid",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "chip_ledger",
+    "name": "created_at",
+    "type": "timestamp with time zone",
+    "not_null": true,
+    "default": "now()",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "chip_ledger",
+    "name": "idempotency_key",
+    "type": "text",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "chip_ledger",
+    "name": "correlation_id",
+    "type": "uuid",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "chip_ledger",
+    "name": "causation_id",
+    "type": "uuid",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "chip_ledger",
+    "name": "settlement_id",
+    "type": "text",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "chip_ledger",
+    "name": "epoch_id",
+    "type": "integer",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "chip_ledger",
+    "name": "actor_service",
+    "type": "text",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "chip_ledger",
+    "name": "db_role",
+    "type": "text",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "chip_ledger",
+    "name": "pre_from_balance",
+    "type": "numeric",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "chip_ledger",
+    "name": "post_from_balance",
+    "type": "numeric",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "chip_ledger",
+    "name": "pre_to_balance",
+    "type": "numeric",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "chip_ledger",
+    "name": "post_to_balance",
+    "type": "numeric",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "chip_ledger",
+    "name": "status",
+    "type": "text",
+    "not_null": true,
+    "default": "'posted'::text",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "chip_ledger",
+    "name": "metadata",
+    "type": "jsonb",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "chip_ledger",
+    "name": "chain_seq",
+    "type": "bigint",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "chip_ledger",
+    "name": "prev_hash",
+    "type": "text",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "chip_ledger",
+    "name": "row_hash",
+    "type": "text",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "club_members",
+    "name": "club_id",
+    "type": "uuid",
+    "not_null": true,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "club_members",
+    "name": "user_id",
+    "type": "uuid",
+    "not_null": true,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "club_members",
+    "name": "role",
+    "type": "text",
+    "not_null": false,
+    "default": "'player'::text",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "club_members",
+    "name": "agent_id",
+    "type": "uuid",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "club_members",
+    "name": "joined_at",
+    "type": "timestamp with time zone",
+    "not_null": false,
+    "default": "now()",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "club_members",
+    "name": "parent_agent_id",
+    "type": "uuid",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "club_members",
+    "name": "invited_by",
+    "type": "uuid",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "club_members",
+    "name": "notes",
+    "type": "text",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "club_members",
+    "name": "last_active_at",
+    "type": "timestamp with time zone",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "club_members",
+    "name": "created_at",
+    "type": "timestamp with time zone",
+    "not_null": false,
+    "default": "now()",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "club_members",
+    "name": "updated_at",
+    "type": "timestamp with time zone",
+    "not_null": false,
+    "default": "now()",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "club_members",
+    "name": "is_bot",
+    "type": "boolean",
+    "not_null": false,
+    "default": "false",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "club_members",
+    "name": "status",
+    "type": "text",
+    "not_null": false,
+    "default": "'active'::text",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "club_members",
+    "name": "chip_balance",
+    "type": "numeric(20,2)",
+    "not_null": true,
+    "default": "0",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "club_members",
+    "name": "diamonds",
+    "type": "integer",
+    "not_null": true,
+    "default": "0",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "club_members",
+    "name": "is_active",
+    "type": "boolean",
+    "not_null": false,
+    "default": "true",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "club_members",
+    "name": "orange_ball_status",
+    "type": "text",
+    "not_null": false,
+    "default": "'inactive'::text",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "club_members",
+    "name": "rank_level",
+    "type": "integer",
+    "not_null": false,
+    "default": "1",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "club_members",
+    "name": "credit_limit",
+    "type": "numeric(15,2)",
+    "not_null": false,
+    "default": "0",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "club_members",
+    "name": "credit_used",
+    "type": "numeric(15,2)",
+    "not_null": false,
+    "default": "0",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "club_members",
+    "name": "nickname",
+    "type": "text",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "club_members",
+    "name": "last_active",
+    "type": "timestamp with time zone",
+    "not_null": false,
+    "default": "now()",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "club_members",
+    "name": "tier",
+    "type": "text",
+    "not_null": false,
+    "default": "'bronze'::text",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "club_members",
+    "name": "trust_score",
+    "type": "integer",
+    "not_null": false,
+    "default": "50",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "club_members",
+    "name": "sessions_played",
+    "type": "integer",
+    "not_null": false,
+    "default": "0",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "club_members",
+    "name": "promo_balance",
+    "type": "numeric(14,2)",
+    "not_null": false,
+    "default": "0",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "club_members",
+    "name": "chips_won",
+    "type": "bigint",
+    "not_null": false,
+    "default": "0",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "club_members",
+    "name": "chips_lost",
+    "type": "bigint",
+    "not_null": false,
+    "default": "0",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "club_members",
+    "name": "commission_rate",
+    "type": "numeric(5,2)",
+    "not_null": false,
+    "default": "0",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "club_members",
+    "name": "rakeback_rate",
+    "type": "numeric(5,2)",
+    "not_null": false,
+    "default": "0",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "club_members",
+    "name": "hands_played",
+    "type": "integer",
+    "not_null": false,
+    "default": "0",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "club_members",
+    "name": "total_rake_paid",
+    "type": "bigint",
+    "not_null": false,
+    "default": "0",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "club_members",
+    "name": "biggest_pot",
+    "type": "bigint",
+    "not_null": false,
+    "default": "0",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "club_members",
+    "name": "locked_chips",
+    "type": "integer",
+    "not_null": false,
+    "default": "0",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "club_members",
+    "name": "player_rakeback_pct",
+    "type": "numeric(5,4)",
+    "not_null": false,
+    "default": "0.0000",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "club_members",
+    "name": "held_chips",
+    "type": "numeric",
+    "not_null": false,
+    "default": "0",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "club_members",
+    "name": "display_name",
+    "type": "text",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "club_members",
+    "name": "is_prepaid",
+    "type": "boolean",
+    "not_null": false,
+    "default": "true",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "club_members",
+    "name": "promo_received_total",
+    "type": "numeric(14,2)",
+    "not_null": false,
+    "default": "0",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "club_members",
+    "name": "promo_wagered",
+    "type": "numeric(14,2)",
+    "not_null": false,
+    "default": "0",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "club_members",
+    "name": "promo_playthrough_required",
+    "type": "numeric(14,2)",
+    "not_null": false,
+    "default": "0",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "club_members",
+    "name": "missions_completed",
+    "type": "integer",
+    "not_null": false,
+    "default": "0",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "club_members",
+    "name": "membership_lifecycle_status",
+    "type": "text",
+    "not_null": true,
+    "default": "'active'::text",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "club_members",
+    "name": "departed_at",
+    "type": "timestamp with time zone",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "club_members",
+    "name": "departed_by",
+    "type": "uuid",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "club_members",
+    "name": "departure_reason",
+    "type": "text",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "id",
+    "type": "uuid",
+    "not_null": true,
+    "default": "uuid_generate_v4()",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "name",
+    "type": "text",
+    "not_null": true,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "description",
+    "type": "text",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "owner_id",
+    "type": "uuid",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "created_at",
+    "type": "timestamp with time zone",
+    "not_null": false,
+    "default": "now()",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "is_union",
+    "type": "boolean",
+    "not_null": false,
+    "default": "false",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "club_id",
+    "type": "integer",
+    "not_null": false,
+    "default": "(((10000)::double precision + floor((random() * (90000)::double precision))))::integer",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "avatar_url",
+    "type": "text",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "is_public",
+    "type": "boolean",
+    "not_null": false,
+    "default": "true",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "requires_approval",
+    "type": "boolean",
+    "not_null": false,
+    "default": "false",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "gps_restricted",
+    "type": "boolean",
+    "not_null": false,
+    "default": "false",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "settings",
+    "type": "jsonb",
+    "not_null": false,
+    "default": "'{\"rake_cap\": 15, \"max_buy_in_bb\": 200, \"min_buy_in_bb\": 40, \"allow_straddle\": true, \"time_bank_seconds\": 30, \"allow_run_it_twice\": true, \"default_rake_percent\": 5}'::jsonb",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "updated_at",
+    "type": "timestamp with time zone",
+    "not_null": false,
+    "default": "now()",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "union_id",
+    "type": "uuid",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "color_theme",
+    "type": "text",
+    "not_null": false,
+    "default": "'royal-blue'::text",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "slug",
+    "type": "text",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "chip_treasury",
+    "type": "numeric(18,2)",
+    "not_null": false,
+    "default": "100000",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "total_rake",
+    "type": "numeric(18,2)",
+    "not_null": true,
+    "default": "0",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "online_count",
+    "type": "integer",
+    "not_null": false,
+    "default": "0",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "game_types",
+    "type": "text[]",
+    "not_null": false,
+    "default": "ARRAY['NLH'::text]",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "member_count",
+    "type": "integer",
+    "not_null": false,
+    "default": "0",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "table_count",
+    "type": "integer",
+    "not_null": false,
+    "default": "0",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "promo_balance",
+    "type": "numeric(14,2)",
+    "not_null": false,
+    "default": "0",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "code",
+    "type": "text",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "rake_percent",
+    "type": "numeric(5,2)",
+    "not_null": false,
+    "default": "5.0",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "rake_cap_bb",
+    "type": "numeric(8,2)",
+    "not_null": false,
+    "default": "3.0",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "max_tables",
+    "type": "integer",
+    "not_null": false,
+    "default": "20",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "max_members",
+    "type": "integer",
+    "not_null": false,
+    "default": "500",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "status",
+    "type": "text",
+    "not_null": false,
+    "default": "'active'::text",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "hands_played",
+    "type": "bigint",
+    "not_null": false,
+    "default": "0",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "logo_url",
+    "type": "text",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "banner_url",
+    "type": "text",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "game_variants",
+    "type": "text[]",
+    "not_null": false,
+    "default": "ARRAY['nlh'::text]",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "settlement_locked",
+    "type": "boolean",
+    "not_null": false,
+    "default": "false",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "settlement_locked_until",
+    "type": "timestamp with time zone",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "auto_settlement_enabled",
+    "type": "boolean",
+    "not_null": false,
+    "default": "true",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "auto_settlement_day",
+    "type": "text",
+    "not_null": false,
+    "default": "'monday'::text",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "auto_settlement_hour",
+    "type": "integer",
+    "not_null": false,
+    "default": "10",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "club_commission_rate",
+    "type": "numeric(5,4)",
+    "not_null": false,
+    "default": "0.9000",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "insurance_balance",
+    "type": "numeric(14,2)",
+    "not_null": false,
+    "default": "0",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "bbj_enabled",
+    "type": "boolean",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "player_level",
+    "type": "integer",
+    "not_null": false,
+    "default": "1",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "hierarchy_level",
+    "type": "integer",
+    "not_null": false,
+    "default": "1",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "level",
+    "type": "integer",
+    "not_null": false,
+    "default": "1",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "player_threshold_current",
+    "type": "integer",
+    "not_null": false,
+    "default": "0",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "player_threshold_next",
+    "type": "integer",
+    "not_null": false,
+    "default": "30",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "hierarchy_units",
+    "type": "numeric(10,2)",
+    "not_null": false,
+    "default": "0",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "hierarchy_units_rounded_up",
+    "type": "integer",
+    "not_null": false,
+    "default": "0",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "hierarchy_threshold_current",
+    "type": "integer",
+    "not_null": false,
+    "default": "0",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "hierarchy_threshold_next",
+    "type": "integer",
+    "not_null": false,
+    "default": "2",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "tags",
+    "type": "text[]",
+    "not_null": false,
+    "default": "'{}'::text[]",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "average_rating",
+    "type": "numeric(3,2)",
+    "not_null": false,
+    "default": "0",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "game_type",
+    "type": "text",
+    "not_null": false,
+    "default": "'Texas Holdem'::text",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "settlement_lock_until",
+    "type": "timestamp with time zone",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "card_image_url",
+    "type": "text",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "active_players",
+    "type": "integer",
+    "not_null": false,
+    "default": "0",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "default_rake_percent",
+    "type": "numeric(5,2)",
+    "not_null": false,
+    "default": "'-1'::integer",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "rake_cap",
+    "type": "numeric(18,4)",
+    "not_null": false,
+    "default": "'-1'::integer",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "min_buyin_bb",
+    "type": "integer",
+    "not_null": false,
+    "default": "20",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "max_buyin_bb",
+    "type": "integer",
+    "not_null": false,
+    "default": "200",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "allow_straddle",
+    "type": "boolean",
+    "not_null": false,
+    "default": "true",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "allow_run_it_twice",
+    "type": "boolean",
+    "not_null": false,
+    "default": "true",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "allow_rabbit_hunt",
+    "type": "boolean",
+    "not_null": false,
+    "default": "false",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "logo",
+    "type": "text",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "is_private",
+    "type": "boolean",
+    "not_null": false,
+    "default": "false",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "min_buy_in",
+    "type": "numeric(18,4)",
+    "not_null": false,
+    "default": "0",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "max_buy_in",
+    "type": "numeric(18,4)",
+    "not_null": false,
+    "default": "0",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "default_game_type",
+    "type": "text",
+    "not_null": false,
+    "default": "'NLHE'::text",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "allow_insurance",
+    "type": "boolean",
+    "not_null": false,
+    "default": "false",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "auto_approve_agents",
+    "type": "boolean",
+    "not_null": false,
+    "default": "false",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "auto_settlement",
+    "type": "boolean",
+    "not_null": false,
+    "default": "false",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "active_tables",
+    "type": "integer",
+    "not_null": false,
+    "default": "0",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "admin_count",
+    "type": "integer",
+    "not_null": false,
+    "default": "0",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "super_agent_count",
+    "type": "integer",
+    "not_null": false,
+    "default": "0",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "agent_count",
+    "type": "integer",
+    "not_null": false,
+    "default": "0",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "chip_pool",
+    "type": "numeric(18,2)",
+    "not_null": true,
+    "default": "0",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "bbj_rake_enabled",
+    "type": "boolean",
+    "not_null": false,
+    "default": "true",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "spins_enabled",
+    "type": "boolean",
+    "not_null": false,
+    "default": "false",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "spins_preseed_amount",
+    "type": "integer",
+    "not_null": false,
+    "default": "0",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "spins_wallet_funding",
+    "type": "text",
+    "not_null": false,
+    "default": "'PROMO'::text",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "ticker_enabled",
+    "type": "boolean",
+    "not_null": true,
+    "default": "true",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "guarantee_treasury_floor",
+    "type": "numeric",
+    "not_null": true,
+    "default": "0",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "guarantee_enforcement_enabled",
+    "type": "boolean",
+    "not_null": true,
+    "default": "true",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "tagline",
+    "type": "text",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "opening_checklist_started_at",
+    "type": "timestamp with time zone",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "lobby_message",
+    "type": "text",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "lobby_message_updated_at",
+    "type": "timestamp with time zone",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "message_revision",
+    "type": "bigint",
+    "not_null": true,
+    "default": "1",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "lifecycle_status",
+    "type": "text",
+    "not_null": true,
+    "default": "'active'::text",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "retired_at",
+    "type": "timestamp with time zone",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "retired_by",
+    "type": "uuid",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "retirement_reason",
+    "type": "text",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "asset",
+    "type": "text",
+    "not_null": true,
+    "default": "'chips'::text",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "clubs",
+    "name": "is_platform",
+    "type": "boolean",
+    "not_null": true,
+    "default": "false",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "id",
+    "type": "uuid",
+    "not_null": true,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "full_name",
+    "type": "text",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "display_name",
+    "type": "text",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "first_name",
+    "type": "text",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "last_name",
+    "type": "text",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "username",
+    "type": "text",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "email",
+    "type": "text",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "phone",
+    "type": "text",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "bio",
+    "type": "text",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "city",
+    "type": "text",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "state",
+    "type": "text",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "alias",
+    "type": "text",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "avatar_url",
+    "type": "text",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "role",
+    "type": "text",
+    "not_null": false,
+    "default": "'user'::text",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "status",
+    "type": "text",
+    "not_null": false,
+    "default": "'active'::text",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "is_vip",
+    "type": "boolean",
+    "not_null": false,
+    "default": "false",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "is_horse",
+    "type": "boolean",
+    "not_null": false,
+    "default": "false",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "is_admin",
+    "type": "boolean",
+    "not_null": false,
+    "default": "false",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "is_online",
+    "type": "boolean",
+    "not_null": false,
+    "default": "false",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "player_number",
+    "type": "text",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "diamonds",
+    "type": "integer",
+    "not_null": true,
+    "default": "0",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "diamond_balance",
+    "type": "integer",
+    "not_null": false,
+    "default": "0",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "diamond_multiplier",
+    "type": "numeric(3,2)",
+    "not_null": false,
+    "default": "1.00",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "level",
+    "type": "integer",
+    "not_null": false,
+    "default": "1",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "tier",
+    "type": "text",
+    "not_null": false,
+    "default": "'Newcomer'::text",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "skill_tier",
+    "type": "text",
+    "not_null": false,
+    "default": "'Newcomer'::text",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "login_streak",
+    "type": "integer",
+    "not_null": false,
+    "default": "0",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "streak_days",
+    "type": "integer",
+    "not_null": false,
+    "default": "0",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "settings",
+    "type": "jsonb",
+    "not_null": false,
+    "default": "'{}'::jsonb",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "preferences",
+    "type": "jsonb",
+    "not_null": false,
+    "default": "'{}'::jsonb",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "social_page_id",
+    "type": "uuid",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "favorite_venue",
+    "type": "uuid",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "home_poker_club",
+    "type": "uuid",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "referred_by",
+    "type": "uuid",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "friends_count",
+    "type": "integer",
+    "not_null": false,
+    "default": "0",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "hendon_total_cashes",
+    "type": "integer",
+    "not_null": false,
+    "default": "0",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "hendon_total_earnings",
+    "type": "numeric",
+    "not_null": false,
+    "default": "0",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "email_verified",
+    "type": "boolean",
+    "not_null": false,
+    "default": "false",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "phone_verified",
+    "type": "boolean",
+    "not_null": false,
+    "default": "false",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "onboarding_complete",
+    "type": "boolean",
+    "not_null": false,
+    "default": "false",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "last_login",
+    "type": "timestamp with time zone",
+    "not_null": false,
+    "default": "now()",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "last_login_date",
+    "type": "date",
+    "not_null": false,
+    "default": "CURRENT_DATE",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "last_seen",
+    "type": "timestamp with time zone",
+    "not_null": false,
+    "default": "now()",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "created_at",
+    "type": "timestamp with time zone",
+    "not_null": false,
+    "default": "now()",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "updated_at",
+    "type": "timestamp with time zone",
+    "not_null": false,
+    "default": "now()",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "training_view_mode",
+    "type": "text",
+    "not_null": false,
+    "default": "'grid'::text",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "last_trivia_date",
+    "type": "date",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "trivia_streak",
+    "type": "integer",
+    "not_null": false,
+    "default": "0",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "trivia_high_score",
+    "type": "integer",
+    "not_null": false,
+    "default": "0",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "total_hands_played",
+    "type": "integer",
+    "not_null": false,
+    "default": "0",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "notification_token",
+    "type": "text",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "referral_code",
+    "type": "text",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "horse_status",
+    "type": "character varying",
+    "not_null": false,
+    "default": "'available'::character varying",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "horse_profile",
+    "type": "jsonb",
+    "not_null": false,
+    "default": "'{}'::jsonb",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "sounds_enabled",
+    "type": "boolean",
+    "not_null": false,
+    "default": "true",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "vibrations_enabled",
+    "type": "boolean",
+    "not_null": false,
+    "default": "true",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "show_stack_bb",
+    "type": "boolean",
+    "not_null": false,
+    "default": "false",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "birth_year",
+    "type": "integer",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "favorite_hand_type",
+    "type": "text",
+    "not_null": false,
+    "default": "'holdem'::text",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "card_back_preference",
+    "type": "text",
+    "not_null": false,
+    "default": "'white'::text",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "country",
+    "type": "text",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "website",
+    "type": "text",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "twitter",
+    "type": "text",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "instagram",
+    "type": "text",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "hendon_url",
+    "type": "text",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "favorite_game",
+    "type": "text",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "favorite_hand",
+    "type": "text",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "home_casino",
+    "type": "text",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "cover_photo_url",
+    "type": "text",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "favorite_hand_plo",
+    "type": "text",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "app_settings",
+    "type": "jsonb",
+    "not_null": false,
+    "default": "'{}'::jsonb",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "display_name_preference",
+    "type": "text",
+    "not_null": false,
+    "default": "'full_name'::text",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "cover_photo_position",
+    "type": "text",
+    "not_null": false,
+    "default": "'50% 50%'::text",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "tiktok",
+    "type": "text",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "telegram",
+    "type": "text",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "birthday",
+    "type": "date",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "hendon_biggest_cash",
+    "type": "numeric",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "use_real_name",
+    "type": "boolean",
+    "not_null": false,
+    "default": "false",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "streak_count",
+    "type": "integer",
+    "not_null": false,
+    "default": "0",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "access_tier",
+    "type": "text",
+    "not_null": false,
+    "default": "'Full_Access'::text",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "vip_tier",
+    "type": "text",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "vip_expires_at",
+    "type": "timestamp with time zone",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "last_active",
+    "type": "timestamp with time zone",
+    "not_null": false,
+    "default": "now()",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "poker_near_me_preferences",
+    "type": "jsonb",
+    "not_null": false,
+    "default": "'{\"geofenceAlerts\": true, \"locationEnabled\": true, \"showNewcomerFriendly\": true}'::jsonb",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "can_review",
+    "type": "boolean",
+    "not_null": false,
+    "default": "true",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "deleted_reviews_count",
+    "type": "integer",
+    "not_null": false,
+    "default": "0",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "kyc_status",
+    "type": "text",
+    "not_null": true,
+    "default": "'NONE'::text",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "kyc_provider",
+    "type": "text",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "kyc_inquiry_id",
+    "type": "text",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "kyc_completed_at",
+    "type": "timestamp with time zone",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "kyc_rejection_reason",
+    "type": "text",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "age_verified",
+    "type": "boolean",
+    "not_null": true,
+    "default": "false",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "age_verified_at",
+    "type": "timestamp with time zone",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "jurisdiction_country",
+    "type": "text",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "mfa_required",
+    "type": "boolean",
+    "not_null": true,
+    "default": "false",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "hub_preferences",
+    "type": "jsonb",
+    "not_null": true,
+    "default": "'{}'::jsonb",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "friend_preferences",
+    "type": "jsonb",
+    "not_null": true,
+    "default": "'{}'::jsonb",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "store_preferences",
+    "type": "jsonb",
+    "not_null": true,
+    "default": "'{}'::jsonb",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "messenger_preferences",
+    "type": "jsonb",
+    "not_null": true,
+    "default": "'{}'::jsonb",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "reels_preferences",
+    "type": "jsonb",
+    "not_null": true,
+    "default": "'{}'::jsonb",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "over_18_attested_at",
+    "type": "timestamp with time zone",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "jurisdiction_region",
+    "type": "text",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "jurisdiction_acknowledged_at",
+    "type": "timestamp with time zone",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "home_games_onboarded_at",
+    "type": "timestamp with time zone",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "social_profile_completed",
+    "type": "boolean",
+    "not_null": true,
+    "default": "false",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "is_farming_flagged",
+    "type": "boolean",
+    "not_null": false,
+    "default": "false",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "stripe_customer_id",
+    "type": "text",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "club_arena_tos_accepted_at",
+    "type": "timestamp with time zone",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "bankroll_preferences",
+    "type": "jsonb",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "diamond_arena_preferences",
+    "type": "jsonb",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "memory_games_preferences",
+    "type": "jsonb",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "news_preferences",
+    "type": "jsonb",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "video_library_preferences",
+    "type": "jsonb",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "memory_elo",
+    "type": "integer",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "arena_avatar_url",
+    "type": "text",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "equipped_frame",
+    "type": "text",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "equipped_aura",
+    "type": "text",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "use_avatar_as_profile_pic",
+    "type": "boolean",
+    "not_null": false,
+    "default": "false",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "status_text",
+    "type": "text",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "profiles",
+    "name": "player_tags",
+    "type": "text[]",
+    "not_null": false,
+    "default": "'{}'::text[]",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "rake_records",
+    "name": "id",
+    "type": "uuid",
+    "not_null": true,
+    "default": "gen_random_uuid()",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "rake_records",
+    "name": "hand_id",
+    "type": "uuid",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "rake_records",
+    "name": "table_id",
+    "type": "uuid",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "rake_records",
+    "name": "club_id",
+    "type": "uuid",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "rake_records",
+    "name": "rake_amount",
+    "type": "numeric(18,4)",
+    "not_null": true,
+    "default": "0",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "rake_records",
+    "name": "bbj_contribution",
+    "type": "numeric(18,4)",
+    "not_null": false,
+    "default": "0",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "rake_records",
+    "name": "pot_size",
+    "type": "numeric(18,4)",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "rake_records",
+    "name": "num_players",
+    "type": "integer",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "rake_records",
+    "name": "created_at",
+    "type": "timestamp with time zone",
+    "not_null": false,
+    "default": "now()",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "rake_records",
+    "name": "player_contributions",
+    "type": "jsonb",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "rake_records",
+    "name": "global_hand_id",
+    "type": "bigint",
+    "not_null": false,
+    "default": "nextval('hand_id_seq'::regclass)",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "rake_records",
+    "name": "is_tournament",
+    "type": "boolean",
+    "not_null": true,
+    "default": "false",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "rake_records",
+    "name": "tournament_id",
+    "type": "uuid",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "rake_records",
+    "name": "source",
+    "type": "text",
+    "not_null": false,
+    "default": "'cash_game'::text",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "rake_records",
+    "name": "metadata",
+    "type": "jsonb",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "rake_records",
+    "name": "rake_method",
+    "type": "text",
+    "not_null": true,
+    "default": "'DEALT_EQUAL'::text",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "rake_records",
+    "name": "returned_uncalled",
+    "type": "jsonb",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "rake_records",
+    "name": "terminal_closed_at",
+    "type": "timestamp with time zone",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "tournament_escrow",
+    "name": "tournament_id",
+    "type": "uuid",
+    "not_null": true,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "tournament_escrow",
+    "name": "enforced",
+    "type": "boolean",
+    "not_null": true,
+    "default": "true",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "tournament_escrow",
+    "name": "gross_in",
+    "type": "numeric",
+    "not_null": true,
+    "default": "0",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "tournament_escrow",
+    "name": "fee_entries_in",
+    "type": "numeric",
+    "not_null": true,
+    "default": "0",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "tournament_escrow",
+    "name": "satellite_fee_in",
+    "type": "numeric",
+    "not_null": true,
+    "default": "0",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "tournament_escrow",
+    "name": "bounty_in",
+    "type": "numeric",
+    "not_null": true,
+    "default": "0",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "tournament_escrow",
+    "name": "overlay_in",
+    "type": "numeric",
+    "not_null": true,
+    "default": "0",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "tournament_escrow",
+    "name": "satellite_in",
+    "type": "numeric",
+    "not_null": true,
+    "default": "0",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "tournament_escrow",
+    "name": "prize_out",
+    "type": "numeric",
+    "not_null": true,
+    "default": "0",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "tournament_escrow",
+    "name": "bounty_out",
+    "type": "numeric",
+    "not_null": true,
+    "default": "0",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "tournament_escrow",
+    "name": "fee_out",
+    "type": "numeric",
+    "not_null": true,
+    "default": "0",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "tournament_escrow",
+    "name": "refund_prize",
+    "type": "numeric",
+    "not_null": true,
+    "default": "0",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "tournament_escrow",
+    "name": "refund_bounty",
+    "type": "numeric",
+    "not_null": true,
+    "default": "0",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "tournament_escrow",
+    "name": "refund_fee",
+    "type": "numeric",
+    "not_null": true,
+    "default": "0",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "tournament_escrow",
+    "name": "prize_balance",
+    "type": "numeric(15,2)",
+    "not_null": true,
+    "default": "0",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "tournament_escrow",
+    "name": "bounty_balance",
+    "type": "numeric(15,2)",
+    "not_null": true,
+    "default": "0",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "tournament_escrow",
+    "name": "fee_balance",
+    "type": "numeric(15,2)",
+    "not_null": true,
+    "default": "0",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "tournament_escrow",
+    "name": "opened_at",
+    "type": "timestamp with time zone",
+    "not_null": true,
+    "default": "now()",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "tournament_escrow",
+    "name": "opened_from",
+    "type": "text",
+    "not_null": true,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "tournament_escrow",
+    "name": "updated_at",
+    "type": "timestamp with time zone",
+    "not_null": true,
+    "default": "now()",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "tournament_escrow",
+    "name": "closed_at",
+    "type": "timestamp with time zone",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "tournament_escrow",
+    "name": "close_note",
+    "type": "text",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "tournament_escrow",
+    "name": "reserve_out",
+    "type": "numeric",
+    "not_null": true,
+    "default": "0",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "tournament_escrow",
+    "name": "reserve_in",
+    "type": "numeric",
+    "not_null": true,
+    "default": "0",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "tournament_escrow",
+    "name": "terminal_closed_at",
+    "type": "timestamp with time zone",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "wallet_transactions",
+    "name": "id",
+    "type": "uuid",
+    "not_null": true,
+    "default": "gen_random_uuid()",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "wallet_transactions",
+    "name": "user_id",
+    "type": "uuid",
+    "not_null": true,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "wallet_transactions",
+    "name": "wallet_type",
+    "type": "text",
+    "not_null": true,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "wallet_transactions",
+    "name": "amount",
+    "type": "numeric(15,2)",
+    "not_null": true,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "wallet_transactions",
+    "name": "type",
+    "type": "text",
+    "not_null": true,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "wallet_transactions",
+    "name": "category",
+    "type": "text",
+    "not_null": true,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "wallet_transactions",
+    "name": "description",
+    "type": "text",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "wallet_transactions",
+    "name": "related_entity_id",
+    "type": "uuid",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "wallet_transactions",
+    "name": "table_id",
+    "type": "uuid",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "wallet_transactions",
+    "name": "hand_id",
+    "type": "uuid",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "wallet_transactions",
+    "name": "created_at",
+    "type": "timestamp with time zone",
+    "not_null": false,
+    "default": "now()",
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "wallet_transactions",
+    "name": "balance_after",
+    "type": "numeric",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  },
+  {
+    "table": "wallet_transactions",
+    "name": "terminal_closed_at",
+    "type": "timestamp with time zone",
+    "not_null": false,
+    "default": null,
+    "generated": "",
+    "identity": ""
+  }
+]

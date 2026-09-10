@@ -1274,6 +1274,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # Provenance compares ancestry against origin/main. A shallow merge
+          # can falsely appear behind even when main is its direct parent.
+          fetch-depth: 0
 
       - name: Setup Node 20
         uses: actions/setup-node@v4
@@ -1712,6 +1716,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # Provenance compares ancestry against origin/main. A shallow merge
+          # can falsely appear behind even when main is its direct parent.
+          fetch-depth: 0
 
       - name: Setup Node 20
         uses: actions/setup-node@v4

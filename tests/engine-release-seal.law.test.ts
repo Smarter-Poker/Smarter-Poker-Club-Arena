@@ -31,6 +31,94 @@ const A_IMAGE = `sha256:${'a'.repeat(64)}`;
 const B_IMAGE = `sha256:${'b'.repeat(64)}`;
 const C_IMAGE = `sha256:${'c'.repeat(64)}`;
 
+const fixtureGitEnvironment = (
+  emptyGlobalConfig: string,
+  inherited: NodeJS.ProcessEnv = process.env
+): NodeJS.ProcessEnv => {
+  // Git hooks can export repository paths and config selectors independently.
+  // Keep every Git subprocess inside its disposable repository and config.
+  const env = Object.fromEntries(
+    Object.entries(inherited).filter(([name]) => !name.startsWith('GIT_'))
+  );
+  return { ...env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: emptyGlobalConfig };
+};
+
+describe('disposable Git fixtures preserve the calling repository', () => {
+  it.each(['repository pointers', 'configuration file', 'injected configuration'])(
+    'keeps init, identity and commit writes local with inherited %s',
+    (contamination) => {
+      const sandbox = mkdtempSync(join(tmpdir(), 'release-git-isolation-'));
+      try {
+        const sentinel = join(sandbox, 'sentinel.git');
+        const repo = join(sandbox, 'fixture');
+        const emptyGlobalConfig = join(sandbox, 'empty-global.gitconfig');
+        mkdirSync(repo);
+        writeFileSync(emptyGlobalConfig, '');
+        const cleanEnv = fixtureGitEnvironment(emptyGlobalConfig);
+        const initialized = spawnSync('git', ['init', '--bare', '-q', sentinel], {
+          cwd: sandbox,
+          encoding: 'utf8',
+          env: cleanEnv,
+        });
+        expect(initialized.status, initialized.stderr).toBe(0);
+        const sentinelConfig = readFileSync(join(sentinel, 'config'));
+        const sentinelHead = readFileSync(join(sentinel, 'HEAD'));
+        const inherited: NodeJS.ProcessEnv = { ...process.env };
+
+        if (contamination === 'repository pointers') {
+          Object.assign(inherited, {
+            GIT_DIR: sentinel,
+            GIT_COMMON_DIR: sentinel,
+            GIT_WORK_TREE: repo,
+            GIT_INDEX_FILE: join(sentinel, 'index'),
+            GIT_OBJECT_DIRECTORY: join(sentinel, 'objects'),
+            GIT_ALTERNATE_OBJECT_DIRECTORIES: join(sentinel, 'objects'),
+            GIT_PREFIX: 'caller/',
+          });
+        } else if (contamination === 'configuration file') {
+          inherited.GIT_CONFIG = join(sentinel, 'config');
+        } else {
+          Object.assign(inherited, {
+            GIT_CONFIG_COUNT: '1',
+            GIT_CONFIG_KEY_0: 'core.bare',
+            GIT_CONFIG_VALUE_0: 'true',
+            GIT_CONFIG_PARAMETERS: "'core.bare=true'",
+            GIT_CONFIG_GLOBAL: join(sentinel, 'config'),
+            GIT_CONFIG_SYSTEM: join(sentinel, 'config'),
+          });
+        }
+
+        const env = fixtureGitEnvironment(emptyGlobalConfig, inherited);
+        const runGit = (args: string[]) =>
+          spawnSync('git', args, { cwd: repo, encoding: 'utf8', env });
+        expect(runGit(['init', '-q']).status).toBe(0);
+        expect(runGit(['config', 'user.name', 'Release Law']).status).toBe(0);
+        expect(runGit(['config', 'user.email', 'release-law@example.invalid']).status).toBe(0);
+        writeFileSync(join(repo, 'owned.txt'), 'Only the disposable fixture owns this commit.\n');
+        expect(runGit(['add', 'owned.txt']).status).toBe(0);
+        const committed = runGit(['commit', '-qm', 'isolated fixture']);
+        expect(committed.status, committed.stderr).toBe(0);
+        expect(runGit(['rev-parse', '--is-bare-repository']).stdout.trim()).toBe('false');
+        expect(runGit(['log', '-1', '--format=%ae']).stdout.trim()).toBe(
+          'release-law@example.invalid'
+        );
+        expect(readFileSync(join(sentinel, 'config'))).toEqual(sentinelConfig);
+        expect(readFileSync(join(sentinel, 'HEAD'))).toEqual(sentinelHead);
+        expect(existsSync(join(sentinel, 'index'))).toBe(false);
+        expect(
+          spawnSync('git', ['--git-dir', sentinel, 'rev-parse', '--verify', 'HEAD'], {
+            cwd: sandbox,
+            encoding: 'utf8',
+            env: cleanEnv,
+          }).status
+        ).not.toBe(0);
+      } finally {
+        rmSync(sandbox, { recursive: true, force: true });
+      }
+    }
+  );
+});
+
 describe('the durable engine release seal', () => {
   let sandbox = '';
   let bin = '';
@@ -1722,21 +1810,9 @@ describe('every host mutation path obeys the durable release authority', () => {
       writeFileSync(join(server, 'tsconfig.json'), '{}\n');
       writeFileSync(join(source, 'tracked.ts'), 'export const tracked = true;\n');
 
-      // Git exports its own repository variables while running hooks. Strip
-      // them so this nested fixture repository behaves identically inside a
-      // pre-push hook and in a direct Vitest invocation.
-      const isolatedEnv = { ...process.env };
-      for (const name of [
-        'GIT_DIR',
-        'GIT_WORK_TREE',
-        'GIT_INDEX_FILE',
-        'GIT_OBJECT_DIRECTORY',
-        'GIT_ALTERNATE_OBJECT_DIRECTORIES',
-        'GIT_COMMON_DIR',
-        'GIT_PREFIX',
-      ]) {
-        delete isolatedEnv[name];
-      }
+      const emptyGlobalConfig = join(sandbox, 'empty-global.gitconfig');
+      writeFileSync(emptyGlobalConfig, '');
+      const isolatedEnv = fixtureGitEnvironment(emptyGlobalConfig);
       const runGit = (args: string[]) =>
         spawnSync('git', args, { cwd: repo, encoding: 'utf8', env: isolatedEnv });
       expect(runGit(['init', '-q']).status).toBe(0);
@@ -1815,6 +1891,32 @@ exit 5
       );
       chmodSync(join(bin, 'timeout'), 0o755);
 
+      // A tar reader may finish at end markers before its producer finishes
+      // trailing block padding. Force that race beyond the pipe buffer so a
+      // successful extraction cannot hide a failed archive producer.
+      const realGit = spawnSync('which', ['git'], {
+        encoding: 'utf8',
+        env: isolatedEnv,
+      }).stdout.trim();
+      expect(realGit.startsWith('/')).toBe(true);
+      writeFileSync(
+        join(bin, 'git'),
+        `#!/usr/bin/env python3
+import os, subprocess, sys
+real_git = ${JSON.stringify(realGit)}
+args = sys.argv[1:]
+if 'archive' not in args:
+    os.execv(real_git, [real_git, *args])
+result = subprocess.run([real_git, *args])
+if result.returncode:
+    sys.exit(result.returncode)
+sys.stdout.buffer.write(bytes(1024 * 1024))
+sys.stdout.buffer.flush()
+sys.exit(int(os.environ.get('FAKE_GIT_ARCHIVE_FAILURE', '0')))
+`
+      );
+      chmodSync(join(bin, 'git'), 0o755);
+
       // A legacy revision-only tag must rebuild once; revision alone never
       // proves which bytes the mutable checkout contributed.
       writeFileSync(join(dockerState, 'built'), '');
@@ -1852,6 +1954,18 @@ exit 5
       expect(second.status, `${second.stdout}\n${second.stderr}`).toBe(0);
       expect(second.stdout).toContain('ENGINE_IMAGE_REUSED=true');
       expect(readFileSync(join(dockerState, 'builds'), 'utf8')).toBe('build\n');
+
+      // Consuming padding must not turn an archive producer failure into a
+      // successful Docker build, even after tar extracted every required file.
+      rmSync(join(dockerState, 'source-tree'));
+      const failedArchive = spawnSync(
+        'bash',
+        [imageBuilder, repo, targetSha, `club-arena-engine:${targetSha}`],
+        { encoding: 'utf8', env: { ...env, FAKE_GIT_ARCHIVE_FAILURE: '47' } }
+      );
+      expect(failedArchive.status, failedArchive.stderr).toBe(47);
+      expect(readFileSync(join(dockerState, 'builds'), 'utf8')).toBe('build\n');
+      expect(readdirSync(contextRoot)).toEqual([]);
     } finally {
       rmSync(sandbox, { recursive: true, force: true });
     }

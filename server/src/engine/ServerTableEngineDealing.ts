@@ -808,8 +808,10 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // this waits out whatever of it is left, records how long the felt
         // actually waited, and only then deals.
         await this.awaitNextHandRest();
-        if (this.terminalCloseoutPaused || this.tournamentMovePauseOwners.size > 0) {
-          await this.awaitPauseGate();
+        // A pause may arrive while the roster, rest or blind read is pending.
+        // Return through the owner's gate before using the prepared hand.
+        if (this.isNextHandPaused()) {
+          if (!this.adminPauseLock && !this.maintenanceLock) await this.awaitPauseGate();
           if (!this.running) break;
           continue;
         }
@@ -1584,7 +1586,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       // about to be dealt; a number held for longer than that is discarded and a
       // fresh one taken here, so the ascending-by-deal-order property holds.
       this.handCount = this.takePreparedHandNumber() ?? (await this.allocateGlobalHandNumber());
-      if (this.discardPreparedHandForTerminalCloseout()) return;
+      if (this.discardPreparedHandForPause()) return;
       this.handsDealtThisSession++;
       const handNumber = this.handCount;
       const handStartMs = Date.now(); // FIX 149: Capture hand start time for telemetry
@@ -2617,7 +2619,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         (p) => !this.timeBankEngine.getPlayerBank(this.tableId, p.user_id)
       );
       const tbExtras = await this.fetchTimeBankExtras(tbNewPlayers.map((p) => p.user_id));
-      if (this.discardPreparedHandForTerminalCloseout()) return;
+      if (this.discardPreparedHandForPause()) return;
       /**
        * THE ENGINE MAY HAVE BEEN TORN DOWN DURING THAT AWAIT (2026-09-06).
        *
@@ -2871,7 +2873,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           // ANIMATION AUDIT 2026-08-19: defensive — a fresh hand must never
           // inherit a stale all-in reveal flag from an abnormal exit.
           this.runoutRevealActive = false;
-          if (this.discardPreparedHandForTerminalCloseout()) {
+          if (this.discardPreparedHandForPause()) {
             releaseHandWait('terminal_closeout_before_start');
             return;
           }
@@ -3110,6 +3112,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
    * cost of a wrong `false` is taking a rebuy away from someone who could pay.
    */
   protected async anyBustedPlayerCanAffordARebuy(busted: SeatedPlayer[]): Promise<boolean> {
+    if (this.tableInfo?.arena?.asset === 'diamonds') return false;
     if (busted.length === 0) return false;
 
     const minBuyIn = cashMinBuyIn(this.tableInfo);
@@ -3277,6 +3280,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
   }
 
   protected async recoverBustedSeatedHorses(): Promise<void> {
+    if (this.tableInfo?.arena?.asset === 'diamonds') return;
     if (isMaintenanceFrozen()) return;
     const bustHorses = this.seatedPlayers.filter((p) => p.is_horse && p.stack <= 0);
     if (bustHorses.length === 0) return;

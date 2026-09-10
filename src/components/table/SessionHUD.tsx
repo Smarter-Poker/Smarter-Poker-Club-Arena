@@ -16,6 +16,7 @@ interface SessionHUDProps {
   userId: string;
   initialStack: number;
   bigBlind: number;
+  arenaAsset?: 'chips' | 'diamonds';
 }
 
 // ── Tier classification helpers ──
@@ -39,6 +40,7 @@ export const SessionHUD: React.FC<SessionHUDProps> = ({
   userId,
   initialStack,
   bigBlind,
+  arenaAsset,
 }) => {
   const [stats, setStats] = useState<SessionStats | null>(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -60,11 +62,18 @@ export const SessionHUD: React.FC<SessionHUDProps> = ({
   // the panel opened from an observer context that never seated hero — so the
   // HUD renders honest zeros instead of a null.
   useEffect(() => {
+    if (!arenaAsset) return;
     if (!sessionStatsService.getStats(tableId)) {
-      sessionStatsService.startSession(tableId, userId, initialStackRef.current, bigBlind);
+      sessionStatsService.startSession(
+        tableId,
+        userId,
+        initialStackRef.current,
+        bigBlind,
+        arenaAsset
+      );
     }
     setStats(sessionStatsService.getStats(tableId));
-  }, [tableId, userId, bigBlind]); // initialStack intentionally omitted — captured in ref
+  }, [tableId, userId, bigBlind, arenaAsset]); // initialStack intentionally omitted — captured in ref
 
   // ── Listen for stats updates ──
   useMasterBusSubscription('SESSION_STATS_UPDATE', (payload: any) => {
@@ -179,7 +188,10 @@ export const SessionHUD: React.FC<SessionHUDProps> = ({
 
         {/* ── P&L Display ── */}
         <div className="sh-pl-section">
-          <span className={`sh-pl-value ${plClass}`}>{formatPL(stats.profitLoss)}</span>
+          <span className={`sh-pl-value ${plClass}`}>
+            {formatPL(stats.profitLoss)}
+            {arenaAsset === 'diamonds' ? ' Diamonds' : ''}
+          </span>
           <span className="sh-pl-bb">({formatPL(stats.bigBlindsWon)} BB)</span>
         </div>
 
@@ -217,7 +229,9 @@ export const SessionHUD: React.FC<SessionHUDProps> = ({
               hour and win rate did not exist at all. */}
           <div className="sh-qstat">
             <span className={`sh-qstat-value ${plClass}`}>{formatPL(profitPerHour)}</span>
-            <span className="sh-qstat-label">$/Hr</span>
+            <span className="sh-qstat-label">
+              {arenaAsset === 'diamonds' ? 'Diamonds/Hr' : '$/Hr'}
+            </span>
           </div>
           <div className="sh-qstat">
             <span className="sh-qstat-value">{stats.vpipPercent}%</span>

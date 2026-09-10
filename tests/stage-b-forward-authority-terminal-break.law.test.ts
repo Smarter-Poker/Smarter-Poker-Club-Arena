@@ -62,6 +62,7 @@ const expansion = migration(expansionFile);
 const repair = migration(repairFile);
 const invariant = migration(invariantFile);
 const contraction = migration(stageBFiles[4]);
+const keyshare = migration(stageBFiles[5]);
 const forwardBoundaries = `${expansion}\n${invariant}`;
 const harness = readFileSync(
   resolve(root, 'scripts/dev/probe-stage-b-forward-chain-pg17.sh'),
@@ -1581,6 +1582,10 @@ describe('the reserved Stage-B forward authority boundaries stay split', () => {
       expect(fingerprint).toContain(identity);
     }
     expect(fingerprint).toContain('count(*) FROM function_rows WHERE oid IS NOT NULL)<>6');
+    expect(keyshare.match(/045833fa30c9eb80f4dc1eff3c30ca2f/g)).toHaveLength(3);
+    expect(keyshare.match(/e67df4835f9155f7d78225f787f36f01/g)).toHaveLength(3);
+    expect(keyshare).not.toContain('f85b1aa5d752c9ca90a50cefc7e2dbf7');
+    expect(keyshare).not.toContain('37a538d5284da673b4334ad7fe655f6b');
   });
 
   it('admits only the authenticated transaction-local terminal-break normalization', () => {

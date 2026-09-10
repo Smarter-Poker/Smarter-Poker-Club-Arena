@@ -9,6 +9,7 @@ import { masterBus } from '../../core/MasterBus';
 import { reportError } from '../../utils/errorReporter';
 import { useVisibilityRefresh } from '../../hooks/useVisibilityRefresh';
 import { useAuthUser } from '../../hooks/useAuthUser';
+import { useIsMounted } from '../../hooks/useIsMounted';
 
 interface AgentPortalProps {
   agentId: string;
@@ -25,8 +26,13 @@ export const AgentFinancialPortal: React.FC<AgentPortalProps> = ({ agentId }) =>
   const toast = useToast();
   const { user } = useAuthUser();
   const [walletOwnerId, setWalletOwnerId] = useState<string | null>(null);
-  const agentScope = useRef(agentId);
-  agentScope.current = agentId;
+  const renderScope = JSON.stringify([agentId, user?.id]);
+  const agentScope = useRef(renderScope);
+  agentScope.current = renderScope;
+  const walletRequest = useRef(0);
+  const commissionRequest = useRef(0);
+  const [loadedWalletScope, setLoadedWalletScope] = useState<string | null>(null);
+  const isMounted = useIsMounted();
   const [wallet, setWallet] = useState({
     agentBal: 0,
     playerBal: 0,
@@ -39,6 +45,7 @@ export const AgentFinancialPortal: React.FC<AgentPortalProps> = ({ agentId }) =>
   const transferInFlight = useRef(false);
   const [agentClubId, setAgentClubId] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
+  const walletReady = loadedWalletScope === renderScope && !!agentClubId;
 
   useEffect(() => {
     // BUG FIX (mount-timer): track timer so it cancels on unmount — prevents stale setState
@@ -47,9 +54,10 @@ export const AgentFinancialPortal: React.FC<AgentPortalProps> = ({ agentId }) =>
   }, []);
 
   useEffect(() => {
+    setCommissionData([]);
     fetchWalletData();
     fetchCommissionHistory();
-  }, [agentId]);
+  }, [agentId, user?.id]);
 
   // Hook to handle visibility state changes (prevents zombie subscriptions)
   useVisibilityRefresh(() => {
@@ -87,9 +95,14 @@ export const AgentFinancialPortal: React.FC<AgentPortalProps> = ({ agentId }) =>
       unsubSettlement();
       unsubCommission();
     };
-  }, [agentId]);
+  }, [agentId, user?.id]);
 
   const fetchCommissionHistory = async () => {
+    const scope = renderScope;
+    if (!isMounted.current || scope !== agentScope.current) return;
+    const request = ++commissionRequest.current;
+    const isCurrent = () =>
+      isMounted.current && scope === agentScope.current && request === commissionRequest.current;
     // Fetch last 7 days of commission data
     const days: string[] = [];
     for (let i = 6; i >= 0; i--) {
@@ -104,12 +117,14 @@ export const AgentFinancialPortal: React.FC<AgentPortalProps> = ({ agentId }) =>
       // agent's user_id (= auth.uid) with `amount` = commission earned. agentId
       // here is the agents.id PK, so resolve to user_id first. (There is no
       // commission_ledger table.)
-      const { data: agentRow } = await supabase
+      const { data: agentRow, error: agentError } = await supabase
         .from('agents')
-        .select('user_id')
+        .select('user_id, club_id')
         .eq('id', agentId)
         .maybeSingle();
-      if (!agentRow?.user_id) {
+      if (!isCurrent()) return;
+      if (agentError) throw agentError;
+      if (!agentRow?.user_id || !agentRow.club_id) {
         setCommissionData(days.map((d) => ({ name: d, rake: 0, commissions: 0 })));
         return;
       }
@@ -118,10 +133,12 @@ export const AgentFinancialPortal: React.FC<AgentPortalProps> = ({ agentId }) =>
         .from('agent_commissions')
         .select('amount, created_at')
         .eq('user_id', agentRow.user_id)
+        .eq('club_id', agentRow.club_id)
         .gte('created_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
         .order('created_at', { ascending: true })
         .limit(5000);
 
+      if (!isCurrent()) return;
       if (error) throw error;
 
       if (data && data.length > 0) {
@@ -129,7 +146,7 @@ export const AgentFinancialPortal: React.FC<AgentPortalProps> = ({ agentId }) =>
         const grouped: Record<string, number> = {};
         data.forEach((d: any) => {
           const day = new Date(d.created_at).toLocaleDateString('en-US', { weekday: 'short' });
-          grouped[day] = (grouped[day] || 0) + (d.amount || 0);
+          grouped[day] = (grouped[day] || 0) + (Number(d.amount) || 0);
         });
         setCommissionData(days.map((d) => ({ name: d, rake: 0, commissions: grouped[d] || 0 })));
       } else {
@@ -148,8 +165,13 @@ export const AgentFinancialPortal: React.FC<AgentPortalProps> = ({ agentId }) =>
   };
 
   const fetchWalletData = async () => {
-    const scope = agentId;
+    const scope = renderScope;
+    if (!isMounted.current || scope !== agentScope.current) return;
+    const request = ++walletRequest.current;
+    const isCurrent = () =>
+      isMounted.current && scope === agentScope.current && request === walletRequest.current;
     setAgentClubId(null);
+    setLoadedWalletScope(null);
     try {
       const { data, error } = await supabase
         .from('agents')
@@ -169,12 +191,13 @@ export const AgentFinancialPortal: React.FC<AgentPortalProps> = ({ agentId }) =>
         .eq('user_id', data.user_id)
         .maybeSingle();
       if (memberError || !member) throw memberError || new Error('Player Wallet Not Found');
-      if (scope !== agentScope.current) return;
+      if (!isCurrent()) return;
 
       // Calculate Sunday Debt
       const calculatedDebt = await CreditService.calculateDebt(agentId);
 
-      if (scope !== agentScope.current) return;
+      if (!isCurrent()) return;
+      setLoadedWalletScope(scope);
       setAgentClubId(data.club_id);
       setWalletOwnerId(data.user_id);
       setWallet({
@@ -190,7 +213,10 @@ export const AgentFinancialPortal: React.FC<AgentPortalProps> = ({ agentId }) =>
   };
 
   const handleTransferToPlayer = async () => {
-    if (transferInFlight.current || !agentClubId || walletOwnerId !== user?.id) return;
+    const scope = renderScope;
+    const isCurrent = () => isMounted.current && scope === agentScope.current;
+    if (transferInFlight.current || !walletReady || !isCurrent() || walletOwnerId !== user?.id)
+      return;
     const amountStr = prompt('Amount To Transfer To Player Wallet?');
     const amount = Number(amountStr);
     if (!Number.isFinite(amount) || amount <= 0) return;
@@ -198,7 +224,8 @@ export const AgentFinancialPortal: React.FC<AgentPortalProps> = ({ agentId }) =>
     transferInFlight.current = true;
     setIsTransferring(true);
     try {
-      const success = await WalletService.agentSelfTransfer(agentClubId, amount);
+      const success = await WalletService.agentSelfTransfer(agentClubId!, amount);
+      if (!isCurrent()) return;
       if (success) {
         await fetchWalletData(); // Refresh wallet data
       } else {
@@ -206,10 +233,10 @@ export const AgentFinancialPortal: React.FC<AgentPortalProps> = ({ agentId }) =>
       }
     } catch (err) {
       reportError(err, 'AgentFinancialPortal.Transfer_error');
-      toast.error('Transfer failed: ' + (err as Error).message);
+      if (isCurrent()) toast.error('Transfer failed: ' + (err as Error).message);
     } finally {
       transferInFlight.current = false;
-      setIsTransferring(false);
+      if (isMounted.current) setIsTransferring(false);
     }
   };
 
@@ -248,7 +275,7 @@ export const AgentFinancialPortal: React.FC<AgentPortalProps> = ({ agentId }) =>
           <div className="text-xs text-gray-500">For Playing At Tables</div>
           <button
             onClick={handleTransferToPlayer}
-            disabled={isTransferring || !agentClubId || walletOwnerId !== user?.id}
+            disabled={isTransferring || !walletReady || walletOwnerId !== user?.id}
             className="mt-2 w-full py-1 text-xs bg-green-900 hover:bg-green-800 text-green-200 rounded"
           >
             LOAD FROM BIZ ➔

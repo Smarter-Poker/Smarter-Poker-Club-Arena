@@ -32,7 +32,10 @@ import { PLATFORM_FROZEN_MESSAGE } from '../utils/platformFrozen';
 import { uuid } from '../utils/uuid';
 import { DEFAULT_RAKE_RATE, splitBuyIn } from '../utils/buyIn';
 import { withTournamentPurchaseIntent } from './TournamentPurchaseIntent';
-import { withTournamentUnregistrationIntent } from './TournamentUnregistrationIntent';
+import {
+  withTournamentUnregistrationIntent,
+  ObsoleteTournamentUnregistrationIntentError,
+} from './TournamentUnregistrationIntent';
 
 /** A transport success alone does not confirm a tournament chip purchase. */
 function confirmedTournamentPurchaseStack(
@@ -228,6 +231,16 @@ async function invokeTournamentUnregisterRpc(
   }
 }
 
+function rejectObsoleteTournamentUnregistration(error: unknown): void {
+  const failure = error as { code?: unknown; message?: unknown } | null;
+  if (
+    failure?.code === 'P0404' &&
+    failure.message === 'unregistration request id belongs to a prior registration lifecycle'
+  ) {
+    throw new ObsoleteTournamentUnregistrationIntentError();
+  }
+}
+
 async function executeTournamentUnregisterRpc(
   invoke: TournamentUnregisterRpcCall,
   requestId: string,
@@ -238,7 +251,9 @@ async function executeTournamentUnregisterRpc(
   // exact request once is therefore the only safe answer to a response that
   // may have been lost after commit. Never mint a second id for the retry.
   let rpcCall = await invokeTournamentUnregisterRpc(invoke);
+  rejectObsoleteTournamentUnregistration(rpcCall.error);
   if (rpcCall.error) rpcCall = await invokeTournamentUnregisterRpc(invoke);
+  rejectObsoleteTournamentUnregistration(rpcCall.error);
   const { data, error } = rpcCall;
 
   if (error) {

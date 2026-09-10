@@ -33,6 +33,11 @@ DECLARE
   v_last jsonb;
   v_is_spin boolean;
   v_continuation jsonb;
+  v_float_round double precision;
+  v_float_units double precision;
+  v_float_integral double precision;
+  v_float_bb double precision;
+  v_float_sb double precision;
   v_tail_count integer;
   v_tail_first numeric;
   v_tail_last numeric;
@@ -104,39 +109,42 @@ BEGIN
         RAISE EXCEPTION 'Spin blind continuation is missing its frozen formula'
           USING ERRCODE='55000';
       END IF;
-      -- JSON numbers are consumed as finite JavaScript numbers by the engine.
-      -- PostgreSQL numeric has a larger range; reject a stored formula whose
-      -- inputs or intermediate arithmetic cannot exist in the engine domain.
+      -- The booked engine formula consumes JavaScript Number values. Keep
+      -- IEEE-754 arithmetic through power, division, both rounds and the
+      -- final multiplication. Decimal numeric changes 100 * 1.15 / 10.
       BEGIN
         PERFORM (e.value #>> '{}')::double precision
           FROM jsonb_each(v_continuation) e
          WHERE e.key IN ('anchorLevel','anchorBigBlind','growth','roundBigTo');
-        PERFORM ((v_continuation->>'anchorBigBlind')::double precision
+        v_float_round := (v_continuation->>'roundBigTo')::double precision;
+        v_float_units := ((v_continuation->>'anchorBigBlind')::double precision
           * power((v_continuation->>'growth')::double precision,
                   v_index::double precision+1-(v_continuation->>'anchorLevel')::double precision))
-          / (v_continuation->>'roundBigTo')::double precision;
+          / v_float_round;
+        -- PostgreSQL round(float8) rounds ties to even. JavaScript rounds
+        -- positive ties upward. Adding 0.5 first also changes near-half
+        -- values, so compare the fractional part without shifting it.
+        v_float_integral := floor(v_float_units);
+        IF v_float_units-v_float_integral >= 0.5::double precision THEN
+          v_float_integral := v_float_integral+1::double precision;
+        END IF;
+        v_float_bb := v_float_integral*v_float_round;
+        v_float_units := v_float_bb/2::double precision;
+        v_float_sb := floor(v_float_units);
+        IF v_float_units-v_float_sb >= 0.5::double precision THEN
+          v_float_sb := v_float_sb+1::double precision;
+        END IF;
       EXCEPTION WHEN numeric_value_out_of_range THEN
         RAISE EXCEPTION 'Spin blind continuation is missing its finite frozen formula'
           USING ERRCODE='55000';
       END;
-      v_bb := round(
-        ((v_continuation->>'anchorBigBlind')::numeric
-          * power((v_continuation->>'growth')::numeric,
-                  v_index::numeric+1-(v_continuation->>'anchorLevel')::numeric))
-        / (v_continuation->>'roundBigTo')::numeric
-      ) * (v_continuation->>'roundBigTo')::numeric;
-      BEGIN
-        PERFORM v_bb::double precision;
-      EXCEPTION WHEN numeric_value_out_of_range THEN
-        RAISE EXCEPTION 'Spin blind continuation overflowed its stored formula'
-          USING ERRCODE='55000';
-      END;
-      IF v_bb <= 0 THEN
+      IF v_float_bb <= 0 OR v_float_bb IN ('Infinity'::double precision,'-Infinity'::double precision,'NaN'::double precision)
+         OR v_float_sb IN ('Infinity'::double precision,'-Infinity'::double precision,'NaN'::double precision) THEN
         RAISE EXCEPTION 'Spin blind continuation overflowed its stored formula'
           USING ERRCODE='55000';
       END IF;
       RETURN jsonb_build_object(
-        'small_blind',round(v_bb/2),'big_blind',v_bb,'ante',0,
+        'small_blind',v_float_sb,'big_blind',v_float_bb,'ante',0,
         'level_index',v_index,'source','spin_receipt_overflow','blind_capped',false
       );
     END IF;
@@ -277,7 +285,7 @@ BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM pg_proc p
     WHERE p.oid='public.fn_resolve_tournament_blinds(text,integer,text,text,numeric)'::regprocedure
-      AND md5(p.prosrc)='2eb470a52fe0d2bf3b1b5f38a05f3bc6'
+      AND md5(p.prosrc)='7de62fdaee5b22decc10ccd044f8a96d'
       AND p.prosecdef AND p.proconfig=ARRAY['search_path=public, pg_temp']
       AND p.proacl::text='{postgres=X/postgres}'
   ) THEN

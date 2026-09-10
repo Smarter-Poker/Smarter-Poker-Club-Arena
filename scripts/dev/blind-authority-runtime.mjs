@@ -145,6 +145,60 @@ try {
     { small_blind: historical.small, big_blind: historical.big, ante: 0, duration_ms: 180000 },
     'versioned-receipt-fault-case'
   );
+  // Probe the actual booked-rule producer at representable half boundaries.
+  // Decimal arithmetic is not interchangeable with its JavaScript Number contract.
+  for (const [anchorBigBlind, growth, roundBigTo, level] of [
+    [100, 1.15, 10, 13],
+    [100, 1.1499999999999997, 10, 13],
+    [100, 1.1500000000000001, 10, 13],
+    [100, 1.25, 10, 13],
+    [100, 1.2499999999999998, 10, 13],
+    [100, 1.2500000000000002, 10, 13],
+    [0.24999999999999997, 2, 1, 13],
+    [0.25, 2, 1, 13],
+    [0.25000000000000006, 2, 1, 13],
+    [1.25, 2, 0.3, 13],
+    [19.166666666666668, 3, 5, 13],
+    [100, 1.15, 10, 14],
+    [100, 1.15, 10, 15],
+  ]) {
+    const frozen = receipt.spinRuleManifest(1, 300).tiers[0].blind_structure;
+    frozen[11].spinContinuation = {
+      version: 1,
+      anchorLevel: 12,
+      anchorBigBlind,
+      growth,
+      roundBigTo,
+    };
+    let expected;
+    try {
+      expected = receipt.continueBookedSpinBlinds(frozen[11], level);
+    } catch (error) {
+      if (anchorBigBlind === 0.24999999999999997) {
+        rows.push({
+          format: 'spin',
+          stack: 300,
+          multiplier: 2,
+          level,
+          tag: 'rounding-rejected-zero',
+          structure: frozen,
+          total_chips: 900,
+          expected_error: 'overflowed',
+        });
+        continue;
+      }
+      throw error;
+    }
+    capture(
+      'spin',
+      300,
+      2,
+      frozen,
+      level,
+      { small_blind: expected.small, big_blind: expected.big, ante: 0, duration_ms: 180000 },
+      'frozen-number-rounding'
+    );
+  }
   process.stdout.write(JSON.stringify({ sources: hashes, rows }) + '\n');
 } finally {
   rmSync(root, { recursive: true, force: true });

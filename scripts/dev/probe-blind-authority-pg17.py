@@ -24,6 +24,8 @@ proposal = repo / 'supabase/migrations/20260910070354_short_format_blinds_contin
 captured = json.loads(subprocess.check_output(
     [os.environ.get('POKER_AUDIT_NODE', 'node'), str(repo / 'scripts/dev/blind-authority-runtime.mjs')],
     text=True))
+expected_errors = [r for r in captured['rows'] if 'expected_error' in r]
+captured['rows'] = [r for r in captured['rows'] if 'expected_error' not in r]
 captured['source_commit'] = subprocess.check_output(['git', '-C', str(repo), 'rev-parse', 'HEAD'], text=True).strip()
 signature = 'public.fn_resolve_tournament_blinds(text,integer,text,text,numeric)'
 installed_md5 = 'b5769b647e5b106caaf51982ac245ee8'
@@ -80,6 +82,22 @@ with log_path.open('w') as log:
             item['installed_sql'] = json.loads(q(call(item['structure'], item['level'] - 1,
                 item['format'], item['format'].upper(), item['total_chips'])))
 
+        # Execute the previously reviewed numeric candidate in this same small
+        # cluster, before the forward correction, to preserve the regression witness.
+        prior_candidate = subprocess.check_output(['git','-C',str(repo),'show',
+            '2346cb9dc:supabase/migrations/20260910070354_short_format_blinds_continue_their_approved_rules.sql'],text=True)
+        q(prior_candidate)
+        prior_rounding = []
+        for item in captured['rows']:
+            if item['tag'] != 'frozen-number-rounding': continue
+            value = json.loads(q(call(item['structure'],item['level']-1,'spin','SPIN',900)))
+            prior_rounding.append({'level':item['level'],'continuation':item['structure'][-1]['spinContinuation'],
+                'manager':item['manager'],'prior_sql':value,
+                'matches':all(value[k] == item['expected'][k] for k in ['small_blind','big_blind','ante'])})
+        assert any(not r['matches'] for r in prior_rounding), 'rounding regression was not reproduced'
+        captured['prior_numeric_candidate_rounding'] = prior_rounding
+        restore()
+
         # Review guards must fail before installing any body if the authority
         # disappeared, changed, or gained executable privileges.
         migration = proposal.read_text()
@@ -111,6 +129,9 @@ with log_path.open('w') as log:
             assert item['manager']['duration_ms'] == item['expected']['duration_ms'], item
         for sql, before in generic:
             assert json.loads(q(sql)) == before, sql
+        for item in expected_errors:
+            q(call(item['structure'],item['level']-1,'spin','SPIN',900),item['expected_error'])
+        captured['rounding_zero_refusals'] = len(expected_errors)
 
         stored = copy.deepcopy(captured['rows'][0]['structure'])
         invalid = [None, [], {}, {'version': 99},
@@ -142,6 +163,9 @@ with log_path.open('w') as log:
         captured['production_writes'] = False
         captured['summary'] = {
             'rows_executed': len(captured['rows']),
+            'rounding_rows': len(prior_rounding),
+            'prior_numeric_rounding_mismatches': sum(not r['matches'] for r in prior_rounding),
+            'rounding_zero_refusals': len(expected_errors),
             'approved_spin_rows': sum(r['format'] == 'spin' and r['tag'] == 'approved-current' for r in captured['rows']),
             'installed_sql_mismatches': sum(not r['installed_sql_matches_expected'] for r in captured['rows']),
             'proposed_sql_mismatches': sum(not r['proposed_sql_matches_expected'] for r in captured['rows']),

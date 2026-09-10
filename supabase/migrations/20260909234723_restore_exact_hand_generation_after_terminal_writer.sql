@@ -1461,6 +1461,11 @@ BEGIN
 END;
 $function$;
 
+-- Only the bound outer engine entrypoint is callable by an application role.
+REVOKE ALL ON FUNCTION public.fn_ca_settle_hand_stacks_absolute(uuid,bigint,jsonb,numeric,numeric,text,numeric) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.fn_ca_commit_hand_settlement(uuid,bigint,jsonb,numeric,numeric,text,numeric,jsonb,jsonb,text,uuid,jsonb) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.fn_ca_commit_hand_settlement(uuid,bigint,jsonb,numeric,numeric,text,numeric,jsonb,jsonb,text,uuid,jsonb) TO service_role;
+
 DO $verify_restored_hand_generation$
 DECLARE
  v_core regprocedure;

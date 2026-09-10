@@ -1,0 +1,123 @@
+{
+  "catalog_date_utc": "2026-09-10",
+  "functions": [
+    {
+      "body_md5": "67004d0697386ae3ced5411c0360eb34",
+      "signature": "atomic_deduct_wallet_and_log(uuid,numeric,text,text,uuid,uuid,uuid)"
+    },
+    {
+      "body_md5": "24e6b8e732c77b831c16d321b1d6fa61",
+      "signature": "fn_ca_lock_tournament_seat_acquisition(uuid,uuid,uuid)"
+    },
+    {
+      "body_md5": "797c1eac824f1cff55279c53f4094bce",
+      "signature": "fn_register_for_tournament_before_atomic_capacity_20260907(uuid,boolean)"
+    },
+    {
+      "body_md5": "4aaaba86492ea2bd9e4e89ff5210f68c",
+      "signature": "fn_register_for_tournament_before_maintenance_announcement_gate(uuid,boolean)"
+    },
+    {
+      "body_md5": "0cdd7a818340195567415a63baece39b",
+      "signature": "fn_register_for_tournament_before_terminal_seat_gate(uuid,boolean)"
+    },
+    {
+      "body_md5": "c80d08529c03284adc51c6cb03764a55",
+      "signature": "fn_register_for_tournament_request(uuid,uuid)"
+    },
+    {
+      "body_md5": "233acf6219e11af17d2c44b4b4460bc0",
+      "signature": "fn_register_for_tournament(uuid,boolean)"
+    },
+    {
+      "body_md5": "14d25f13e1ceca68cf4da1e231cc342b",
+      "signature": "log_wallet_transaction(uuid,text,numeric,text,text,text,uuid,uuid,uuid)"
+    },
+    {
+      "body_md5": "5ef42a66919bb5b84676a250ed0cf176",
+      "signature": "fn_claim_entry_purchase_receipt(text,text,jsonb)"
+    },
+    {
+      "body_md5": "9a9fb5c1f8a4a88bbeed01710af6c4c2",
+      "signature": "fn_ensure_club_wallet(uuid,uuid)"
+    },
+    {
+      "body_md5": "23b5a637e3c5bdbda3ac3c5441063910",
+      "signature": "fn_lock_daily_mission_user(uuid)"
+    },
+    {
+      "body_md5": "2d052a4815d033295d98772989224800",
+      "signature": "fn_player_home_club(uuid,uuid)"
+    },
+    {
+      "body_md5": "a3f605ec417d2977dc684ffc0656a982",
+      "signature": "fn_record_entry_purchase_receipt(text,text,jsonb,jsonb)"
+    },
+    {
+      "body_md5": "3ff08e4dd812c8b0cc8a823fd78a95e4",
+      "signature": "fn_register_for_tournament_before_atomic_lifecycle_gate(uuid,boolean)"
+    },
+    {
+      "body_md5": "121d57c389c5f74809e833154ef28f12",
+      "signature": "fn_release_entry_purchase_claim(text,text,jsonb)"
+    },
+    {
+      "body_md5": "f9f8a8946bc474c4dad9941869f69399",
+      "signature": "fn_ca_chip_ledger_enrich()"
+    },
+    {
+      "body_md5": "e773958f21214ee1aa4dd622234477a6",
+      "signature": "fn_ca_escrow_on_wallet_tx()"
+    },
+    {
+      "body_md5": "a790f58ade80215ee422416fc1690dd8",
+      "signature": "fn_ca_tournament_charge_split(uuid,text,numeric)"
+    },
+    {
+      "body_md5": "6d6cfda08515d6bdd4f3ed4fabe7b36d",
+      "signature": "fn_club_members_ledger_writer()"
+    },
+    {
+      "body_md5": "90e2944fd1af031edd2cc4c791fa5a5b",
+      "signature": "fn_ca_capture_tournament_charge_entitlement()"
+    },
+    {
+      "body_md5": "a653aec1cdebd0a3964d31b9ea02eb53",
+      "signature": "fn_ca_tournament_entry_gate()"
+    },
+    {
+      "body_md5": "002d409f182d90f7e802ca2723d8ec18",
+      "signature": "fn_enforce_tournament_capacity()"
+    },
+    {
+      "body_md5": "0be1afe552ac9f2f6bdaefb616b57928",
+      "signature": "fn_serialize_entry_statement()"
+    },
+    {
+      "body_md5": "a80d14951fce3b3a7ac32ae2897c8b69",
+      "signature": "fn_stamp_entry_club()"
+    },
+    {
+      "body_md5": "658d42f0c063778870e085341f08a050",
+      "signature": "trg_lock_tournament_player_launch_proof()"
+    },
+    {
+      "body_md5": "18a3e548dd4820047e9e45203f35f3e3",
+      "signature": "trg_refuse_finalized_tournament_entry()"
+    },
+    {
+      "body_md5": "73344fa74743d9e6a4085d85a9a5261a",
+      "signature": "fn_ca_entry_scope_ok(uuid,uuid)"
+    },
+    {
+      "body_md5": "a0a32c47d6ec20b05796b6b5a1f451af",
+      "signature": "fn_lock_tournament_launch_proof_parents(uuid[])"
+    },
+    {
+      "body_md5": "2b581783af79bb0f21d18a8e3e6af7d3",
+      "signature": "fn_tournament_club_for_user(uuid,uuid,uuid)"
+    }
+  ],
+  "reused_fixture": "scripts/dev/fixtures/satellite-refund/fixture.sql",
+  "reused_fixture_sha256": "e2226b4ec69a16113a088db5ea71d72c6342adbf308e9a535d211c4a18455972"
+}

@@ -2088,6 +2088,13 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     const enginePlayer = state.players.find((p) => p.seat === seat);
     if (!enginePlayer) return;
 
+    // Crazy Pineapple owns a simultaneous per-seat discard round with its own
+    // worker request and deadline. currentPlayerSeat deliberately has no
+    // meaning during that round and can still contain the final preflop seat;
+    // a reconnect or stale TURN_CHANGE must not turn it into an ordinary
+    // betting decision while cards are being discarded.
+    if (state.stage === 'pineapple_discard') return;
+
     // STALE-HANDLER GUARD (2026-08-22), defense in depth with the caller's
     // check in ServerTableEngineHandEvents: never arm a clock or run
     // disconnect/pre-action logic for a seat that is no longer on the clock.

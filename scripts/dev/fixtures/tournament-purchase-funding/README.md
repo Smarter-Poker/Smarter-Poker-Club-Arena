@@ -13,3 +13,5 @@ This is an isolated contract rehearsal, not a full production-schema clone. Init
 Auth identity, session liveness, engine identity and maintenance state are synthetic. The three bounty read relations are empty shapes: bounty payment execution and a funded bounty re-entry are not certified. Foreign keys to excluded parent programmes, notification/reporting/membership guards, full HTTP/RLS, union funding, table expansion, engine consumption of a grant, and accepted-hand settlement racing the grant remain separate acceptance boundaries. The captured public RPC still checks its real bounty-completion predicate; no replacement money or seat writer is invented.
 
 No production data is copied and no production financial writes occur.
+
+The 2026-09-10 02:50 UTC recheck retained 31 function bodies and recaptured two installed seat-trigger optimizations: `fn_stamp_seat_club` skips an unchanged club derivation, and `trg_lock_and_validate_tournament_live_seat` reuses the table lookup and skips cash-only launch-proof work. All 13 purchase groups passed with the reconciled bodies and manifest through the pinned pg client.

@@ -5,3 +5,5 @@ The applied cash entry-close replacement already required service-only execution
 Applied as 20260910071131, read back at 07:12:25 UTC with unchanged body and service-only ACL. Independent review passed. The native PostgreSQL 17 probe passes 24 groups, including actual browser denial, service execution, idempotent ACL declaration and changed-body refusal.
 
 Two source assertions now require the reserved place pool and the remaining Spin first-deal hold, matching the existing behavioral fixes. All 91 selected source/gate assertions pass. The failed push is still recorded as failed until a normal push and CI complete. Phase 3 and the wider audit remain in progress.
+
+Integration with main 0323423b4 preserves both terminal witness fixes: the already recorded first-place champion takes precedence, then an absent champion permits the durable final elimination sequence. Read failures never nominate a fallback. Independent satellite-core review passed; 57 focused behavior/receipt/lease tests and the server TypeScript build pass.

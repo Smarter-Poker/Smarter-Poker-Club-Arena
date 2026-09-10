@@ -38,6 +38,7 @@ import type { ServerTableEngine } from '../engine/ServerTableEngine.js';
 import type { VerifiedTournamentCompletionReceipt } from './completionSettlementReceipt.js';
 import {
   requestTournamentTerminalReceipt,
+  TerminalSettlementDisagreementError,
   TerminalSettlementOutcomeUnknownError,
   TerminalSettlementRefusedError,
 } from './terminalSettlementRpc.js';
@@ -1028,46 +1029,73 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
               if (sweepStopped()) return;
               this.rearmIfTheFinishWasRefused();
             } else if ((remainingCount || 0) === 0) {
-              // The terminal authority uses the durable elimination sequence,
-              // not a wall-clock timestamp. Equal timestamps or out-of-order
-              // callbacks must not nominate a different winner on every retry.
-              const { data: lastEliminated, error: lastEliminatedErr } = await supabase
+              // THE DURABLE WINNER OUTRANKS THE LAST BUST (2026-09-10). Once the
+              // terminal authority has settled the event, the champion is no
+              // longer 'playing' but 'winner'; a manager that reads the field
+              // only now (re-admitted after a lease loss, or a second engine)
+              // used to see zero live players and hand the runner-up in as its
+              // observed winner. The database then refused every replay of that
+              // contradiction. Ask for the witness that was there first.
+              const { data: durableWinner, error: durableWinnerErr } = await supabase
                 .from('tournament_players')
                 .select('user_id')
                 .eq('tournament_id', this.tournamentId)
-                .eq('status', 'eliminated')
-                .not('elimination_sequence', 'is', null)
-                .order('elimination_sequence', { ascending: false })
-                .limit(1)
+                .eq('status', 'winner')
+                .eq('position', 1)
                 .maybeSingle();
-
               if (sweepStopped()) return;
-              if (lastEliminatedErr) {
-                reportError(lastEliminatedErr, 'Tournament.last_eliminated_unreadable');
+              if (durableWinnerErr) {
+                reportError(durableWinnerErr, 'Tournament.finish_durable_winner_unreadable');
                 this.requestUrgentEliminationSweepAfter(
                   TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS
                 );
                 return;
               }
-
-              if (lastEliminated) {
-                console.log(
-                  `[Tournament:${this.tournamentId.slice(0, 8)}] No survivor - final durable elimination submitted to terminal authority`
-                );
-                await this.finishTournament(lastEliminated.user_id);
+              if (durableWinner) {
+                await this.finishTournament(durableWinner.user_id);
                 if (sweepStopped()) return;
                 this.rearmIfTheFinishWasRefused();
               } else {
-                reportError(
-                  new Error(
-                    `[Tournament:${this.tournamentId.slice(0, 8)}] No survivor or durable final elimination witness`
-                  ),
-                  'Tournament.finish_elimination_witness_unavailable'
-                );
-                this.requestUrgentEliminationSweepAfter(
-                  TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS
-                );
-                return;
+                // Without a committed winner, use the durable elimination sequence.
+                // Timestamp ties and out-of-order callbacks cannot nominate a winner.
+                const { data: lastEliminated, error: lastEliminatedErr } = await supabase
+                  .from('tournament_players')
+                  .select('user_id')
+                  .eq('tournament_id', this.tournamentId)
+                  .eq('status', 'eliminated')
+                  .not('elimination_sequence', 'is', null)
+                  .order('elimination_sequence', { ascending: false })
+                  .limit(1)
+                  .maybeSingle();
+
+                if (sweepStopped()) return;
+                if (lastEliminatedErr) {
+                  reportError(lastEliminatedErr, 'Tournament.last_eliminated_unreadable');
+                  this.requestUrgentEliminationSweepAfter(
+                    TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS
+                  );
+                  return;
+                }
+
+                if (lastEliminated) {
+                  console.log(
+                    `[Tournament:${this.tournamentId.slice(0, 8)}] No survivor - final durable elimination submitted to terminal authority`
+                  );
+                  await this.finishTournament(lastEliminated.user_id);
+                  if (sweepStopped()) return;
+                  this.rearmIfTheFinishWasRefused();
+                } else {
+                  reportError(
+                    new Error(
+                      `[Tournament:${this.tournamentId.slice(0, 8)}] No survivor or durable final elimination witness`
+                    ),
+                    'Tournament.finish_elimination_witness_unavailable'
+                  );
+                  this.requestUrgentEliminationSweepAfter(
+                    TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS
+                  );
+                  return;
+                }
               }
             }
           } catch (finishErr) {
@@ -4004,6 +4032,57 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     }
     return cleaned;
   }
+  /**
+   * One record, never a retry: the terminal authority refused this manager's
+   * parameters against its stored receipt and the receipt could not be read
+   * back. Names the tournament, what was observed and what is stored.
+   */
+  private async reportTerminalReceiptDisagreement(
+    error: TerminalSettlementDisagreementError
+  ): Promise<void> {
+    reportError(error, 'Tournament.atomic_finish_receipt_disagreement');
+    try {
+      await raiseFinancialAlert(
+        'critical',
+        'Tournament.atomic_finish_receipt_disagreement',
+        `Tournament ${this.tournamentId} has a stored terminal receipt that disagrees with this manager's finish parameters, and the receipt could not be adopted. The manager stood down without retrying. ${error.message}`,
+        {
+          tournament_id: this.tournamentId,
+          observed_settlement_mode: error.observed.settlementMode,
+          observed_winner_id: error.observed.winnerId,
+          stored_settlement_mode: error.stored?.settlementMode ?? null,
+          stored_winner_id: error.stored?.winnerId ?? null,
+          proven_refusal: true,
+          outcome_unknown: false,
+        }
+      );
+    } catch (alertErr) {
+      reportError(alertErr, 'Tournament.atomic_finish_alert_failed');
+    }
+  }
+
+  /** The receipt won over this process's observation; say so once, then continue from the receipt. */
+  private async reportAdoptedTerminalReceipt(
+    observedWinnerId: string,
+    receipt: VerifiedTournamentCompletionReceipt
+  ): Promise<void> {
+    const message =
+      `[Tournament:${this.tournamentId.slice(0, 8)}] adopted the stored terminal receipt ` +
+      `(${receipt.settlementMode}, winner ${receipt.winnerId.slice(0, 8)}) over this manager's ` +
+      `observed winner ${observedWinnerId.slice(0, 8)}; no money moved on this process's view`;
+    reportError(new Error(message), 'Tournament.atomic_finish_receipt_adopted');
+    try {
+      await raiseFinancialAlert('warning', 'Tournament.atomic_finish_receipt_adopted', message, {
+        tournament_id: this.tournamentId,
+        observed_winner_id: observedWinnerId,
+        stored_winner_id: receipt.winnerId,
+        stored_settlement_mode: receipt.settlementMode,
+      });
+    } catch (alertErr) {
+      reportError(alertErr, 'Tournament.atomic_finish_alert_failed');
+    }
+  }
+
   protected async finishTournament(winnerId: string): Promise<void> {
     // A committed receipt makes this cleanup-only work. It must remain
     // reachable ahead of every local latch and maintenance admission guard.
@@ -4108,6 +4187,16 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     try {
       receipt = await requestTournamentTerminalReceipt(this.tournamentId, 'places', winnerId);
     } catch (settlementErr) {
+      if (settlementErr instanceof TerminalSettlementDisagreementError) {
+        // The database holds a receipt this request contradicts and the
+        // receipt could not be adopted. Nothing about that is transient:
+        // one alert names the disagreement, and this manager stands down.
+        // It is neither re-armed (that was the 5,575-replay loop of
+        // 2026-09-10) nor treated as an unknown outcome.
+        await this.reportTerminalReceiptDisagreement(settlementErr);
+        this.fenceUnknownTerminalOutcome('Tournament.atomic_finish_disagreement_stop_failed');
+        return;
+      }
       const provenRefusal = settlementErr instanceof TerminalSettlementRefusedError;
       const outcomeUnknown =
         settlementErr instanceof TerminalSettlementOutcomeUnknownError || !provenRefusal;
@@ -4144,12 +4233,19 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     }
 
     this.committedFinishReceipt = receipt;
+    if (receipt.winnerId.toLowerCase() !== winnerId.toLowerCase()) {
+      // The stored receipt was adopted over this manager's own observation.
+      // The money is already right (the receipt is the immutable settlement);
+      // what needs a record is that this process read the field wrong.
+      await this.reportAdoptedTerminalReceipt(winnerId, receipt);
+    }
     const winnerPrize = receipt.winnerAmount;
     console.log(
       `[Tournament:${this.tournamentId.slice(0, 8)}] COMPLETE - winner ${receipt.winnerId.slice(0, 8)} received ${winnerPrize}`
     );
     await this.cleanupCommittedTournament(receipt);
   }
+
   // ── Implemented by TournamentManager (layer 3/3) ──
   protected abstract checkTableBalance(): Promise<void>;
   protected abstract processSatelliteAwards(

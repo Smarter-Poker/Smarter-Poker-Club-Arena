@@ -39,6 +39,8 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
    ask for — `fromCalls` counts the asks. */
 const ledgerRows: Array<{ amount: number; created_at: string } | null> = [];
 let fromCalls = 0;
+const diamondRows: Array<Record<string, unknown> | null> = [];
+const diamondCalls: Array<{ name: string; args: unknown }> = [];
 vi.mock('../../src/lib/supabase', () => {
   const builder: any = {
     select: () => builder,
@@ -50,6 +52,11 @@ vi.mock('../../src/lib/supabase', () => {
   };
   return {
     supabase: {
+      rpc: async (name: string, args: unknown) => {
+        if (name !== 'fn_poker_diamond_cashout_receipt') return { data: [], error: null };
+        diamondCalls.push({ name, args });
+        return { data: diamondRows.shift() ?? null, error: null };
+      },
       from: () => {
         fromCalls += 1;
         return builder;
@@ -86,6 +93,8 @@ describe('SessionSummaryHost — Pending Settlement annotation', () => {
     clearSessionSummary();
     ledgerRows.length = 0;
     fromCalls = 0;
+    diamondRows.length = 0;
+    diamondCalls.length = 0;
   });
   afterEach(() => {
     cleanup();
@@ -161,5 +170,87 @@ describe('SessionSummaryHost — Pending Settlement annotation', () => {
     });
     expect(screen.getByText('Pending Settlement')).toBeTruthy();
     expect(fromCalls).toBeGreaterThan(0);
+  });
+  it.each([0, 150])(
+    'settles Diamond gross cashout %s through its occupancy receipt only',
+    async (amount) => {
+      diamondRows.push({ asset: 'diamonds', table_id: 'd-1', occupancy_id: 'occ-1', amount });
+      render(
+        <MemoryRouter>
+          <SessionSummaryHost />
+        </MemoryRouter>
+      );
+      await act(async () => {
+        publishSessionSummary(
+          cashPayload({
+            arenaAsset: 'diamonds',
+            plPending: true,
+            totalBuyIn: 100,
+            pendingCashout: {
+              tableId: 'd-1',
+              userId: 'u-hero',
+              sinceMs: Date.now(),
+              occupancyId: 'occ-1',
+            },
+          })
+        );
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(screen.queryByText('Pending Settlement')).toBeNull();
+      expect(fromCalls).toBe(0);
+      expect(diamondCalls).toEqual([
+        {
+          name: 'fn_poker_diamond_cashout_receipt',
+          args: { p_table_id: 'd-1', p_occupancy_id: 'occ-1' },
+        },
+      ]);
+    }
+  );
+
+  it('keeps a Diamond estimate pending when the receipt belongs to another occupancy', async () => {
+    diamondRows.push({ asset: 'diamonds', table_id: 'd-1', occupancy_id: 'old-occ', amount: 150 });
+    render(
+      <MemoryRouter>
+        <SessionSummaryHost />
+      </MemoryRouter>
+    );
+    await act(async () => {
+      publishSessionSummary(
+        cashPayload({
+          arenaAsset: 'diamonds',
+          plPending: true,
+          pendingCashout: {
+            tableId: 'd-1',
+            userId: 'u-hero',
+            sinceMs: Date.now(),
+            occupancyId: 'occ-1',
+          },
+        })
+      );
+      await Promise.resolve();
+    });
+    expect(screen.getByText('Pending Settlement')).toBeTruthy();
+    expect(fromCalls).toBe(0);
+  });
+
+  it('never falls back to a chip ledger when Diamond occupancy is missing', async () => {
+    render(
+      <MemoryRouter>
+        <SessionSummaryHost />
+      </MemoryRouter>
+    );
+    await act(async () =>
+      publishSessionSummary(
+        cashPayload({
+          arenaAsset: 'diamonds',
+          plPending: true,
+          pendingCashout: { tableId: 'd-1', userId: 'u-hero', sinceMs: Date.now() },
+        })
+      )
+    );
+    expect(screen.getByText('Pending Settlement')).toBeTruthy();
+    expect(fromCalls).toBe(0);
+    expect(diamondCalls).toHaveLength(0);
   });
 });

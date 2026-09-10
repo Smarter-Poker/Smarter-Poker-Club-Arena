@@ -216,6 +216,11 @@ import TimebankCounter from '../components/table/TimebankCounter';
 // Dan 2026-08-21, item 3: buy more time banks with diamonds (1/10/25/100/500).
 import TimeBankStoreModal from '../components/table/TimeBankStoreModal';
 import { sessionStatsService } from '../services/SessionStatsService';
+import { parseTableArenaIdentity } from '../../server/src/domain/ArenaContext';
+import {
+  readTableFundingBalance,
+  readDiamondDepartureOccupancy,
+} from '../services/TableFundingService';
 import { soundService, haptic } from '../services/SoundService';
 import {
   ChipAnimationManager,
@@ -592,6 +597,8 @@ async function fetchTournamentResult(
 // ═══════════════════════════════════════════════════════════════════════════════
 
 interface TableState {
+  arenaAsset?: 'chips' | 'diamonds';
+  arenaId?: string;
   tableId: string;
   tableName: string;
   gameType: 'NLH' | 'PLO4' | 'PLO5' | 'PLO6' | 'PLO8' | 'SHORT_DECK' | string;
@@ -4638,6 +4645,7 @@ export default function TablePage({
         void handleSitOut();
         break;
       case 'REBUY':
+        if (tableState.arenaAsset !== 'chips') break;
         if (tableState.isTournament) {
           handleTournamentRebuy();
         } else {
@@ -7384,6 +7392,10 @@ export default function TablePage({
      same game while this page was open was invisible until the server refused
      the buy-in, and a floor that had expired kept the slider's minimum high. */
   useEffect(() => {
+    if (tableState.arenaAsset !== 'chips') {
+      setCashoutMinBuyIn(0);
+      return;
+    }
     if (!showBuyInModal || !tableId || !userId || userId === 'guest') return;
     let live = true;
     void (async () => {
@@ -7420,7 +7432,7 @@ export default function TablePage({
     };
     // `toast` is the provider's stable object; the law test pins these three.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showBuyInModal, tableId, userId]);
+  }, [showBuyInModal, tableId, userId, tableState.arenaAsset]);
 
   // Handle cashier add chips (deducts from wallet, adds to table stack)
   // Returns TRUE only when the engine actually credited the stack. The cashier
@@ -7440,6 +7452,7 @@ export default function TablePage({
     opId?: string,
     opts?: { source?: 'manual' | 'auto' }
   ): Promise<boolean> => {
+    if (tableStateRef.current.arenaAsset !== 'chips') return false;
     if (!userId || userId === 'guest' || !tableId) {
       reportError(
         new Error('Cannot add chips: not authenticated'),
@@ -8589,7 +8602,7 @@ export default function TablePage({
   const readBustBalance = useCallback(async (uid: string, tid: string) => {
     for (let attempt = 0; attempt < 2; attempt += 1) {
       try {
-        const r = await WalletService.readPlayerBalance(uid, { tableId: tid });
+        const r = await readTableFundingBalance(uid, { tableId: tid });
         if (r.balance !== null && r.balance !== undefined) return r.balance;
       } catch {
         /* fall through to the retry */
@@ -8619,7 +8632,7 @@ export default function TablePage({
   // in rebuy mode). The existing `atomic_table_rebuy` RPC tops up the seat.
   useEffect(() => {
     if (!tableId || !userId || tableState.heroSeat <= 0) return;
-    if (tableState.isTournament) return; // Tournaments have their own rebuy flow
+    if (tableState.isTournament || tableState.arenaAsset !== 'chips') return; // Diamond re-entry uses a new custody occupancy.
     const heroPlayer = tableState.players[tableState.heroSeat - 1];
     if (!heroPlayer) return;
     const stack = heroPlayer.stack ?? 0;
@@ -9011,7 +9024,7 @@ export default function TablePage({
 
   const confirmBustRebuy = useCallback(
     async (requested: number) => {
-      if (!tableId || !userId) return;
+      if (tableStateRef.current.arenaAsset !== 'chips' || !tableId || !userId) return;
       /* TO THE CENT (2026-09-08 sweep). This lands as a table_pending_addons
          row, and the post-commit obligation check refuses a receipt whose
          applied + refunded (both ROUND(..., 2)) differ from the row's
@@ -9424,6 +9437,10 @@ export default function TablePage({
     showLobbyNow();
 
     try {
+      const departureOccupancy =
+        tableState.arenaAsset === 'diamonds'
+          ? await readDiamondDepartureOccupancy(tableId, userId)
+          : undefined;
       const result = await tableService.leaveTable(tableId, tableState.heroSeat, userId);
       if (result.success) {
         // FIX 132: Clear heroSeatRef so player can re-seat at another table
@@ -9479,6 +9496,7 @@ export default function TablePage({
           : undefined;
 
         publishSessionSummary({
+          arenaAsset: tableState.arenaAsset,
           duration: Math.floor((Date.now() - sessionStartRef.current) / 1000),
           handsPlayed: handsPlayedRef.current,
           handsWon: handsWonRef.current,
@@ -9506,7 +9524,9 @@ export default function TablePage({
           // swaps the estimate for the settled figure. This component is
           // about to navigate away and unmount, so the host must be able to
           // find the row on its own.
-          pendingCashout: result.deferred ? { tableId, userId, sinceMs: Date.now() } : undefined,
+          pendingCashout: result.deferred
+            ? { tableId, userId, sinceMs: Date.now(), occupancyId: departureOccupancy }
+            : undefined,
         });
 
         // Now actually leave. These three used to fire together from the
@@ -9530,8 +9550,14 @@ export default function TablePage({
               userId,
               type: 'system',
               title: 'Session Complete',
-              message: `Session ended at ${tableState.tableName}. P/L: ${plText} chips over ${handsPlayedRef.current} hands.`,
-              metadata: { tableId: tableId || '', plChips: pl, hands: handsPlayedRef.current },
+              message: `Session ended at ${tableState.tableName}. P/L: ${plText} ${tableState.arenaAsset === 'diamonds' ? 'Diamonds' : 'chips'} over ${handsPlayedRef.current} hands.`,
+              metadata: {
+                tableId: tableId || '',
+                ...(tableState.arenaAsset === 'diamonds'
+                  ? { asset: 'diamonds', plDiamonds: pl }
+                  : { plChips: pl }),
+                hands: handsPlayedRef.current,
+              },
             })
             .catch(() => {
               /* non-critical — don't block leave flow */
@@ -9658,6 +9684,10 @@ export default function TablePage({
       // lobby believing they had cashed out while their seat stayed active and
       // kept posting blinds with their chips in it. The sibling handler at the
       // normal leave path already checks this; the tab X did not.
+      const departureOccupancy =
+        tableState.arenaAsset === 'diamonds'
+          ? await readDiamondDepartureOccupancy(tableId, userId)
+          : undefined;
       const forced = await tableService.leaveTable(tableId, tableState.heroSeat, userId);
       if (!forced?.success && forced?.error) {
         // Engine explicitly refused a REAL seated leave — chips are live, stay.
@@ -9711,6 +9741,7 @@ export default function TablePage({
           : undefined;
 
         publishSessionSummary({
+          arenaAsset: tableState.arenaAsset,
           duration: Math.floor((Date.now() - sessionStartRef.current) / 1000),
           handsPlayed: handsPlayedRef.current,
           handsWon: handsWonRef.current,
@@ -9728,7 +9759,9 @@ export default function TablePage({
           sessionStart: sessionStartRef.current,
           sessionEnd: Date.now(),
           plPending: forceDeferred,
-          pendingCashout: forceDeferred ? { tableId, userId, sinceMs: Date.now() } : undefined,
+          pendingCashout: forceDeferred
+            ? { tableId, userId, sinceMs: Date.now(), occupancyId: departureOccupancy }
+            : undefined,
         });
       }
 
@@ -11666,7 +11699,7 @@ export default function TablePage({
         maintain_percent_min: number | null;
         maintain_hands: number | null;
       };
-      let table: TableBootstrapRow | null = null;
+      let table: (TableBootstrapRow & { union_id?: string | null; arena?: unknown }) | null = null;
       let error: unknown = null;
       for (let attempt = 0; attempt < 5 && isMounted; attempt++) {
         if (attempt > 0) {
@@ -11676,7 +11709,7 @@ export default function TablePage({
         const res = await supabase
           .from('tables')
           .select(
-            'id, name, game_variant, game_type, tournament_id, stakes, small_blind, big_blind, max_players, club_id, settings, min_buy_in, max_buy_in, straddle_enabled, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_ante_multiplier, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_variant, bomb_pot_announce_seconds, bomb_pot_ante_fixed, bomb_pot_min_players, bomb_pot_button_policy, cluster_id, nit_game, maintain_percent_min, maintain_hands'
+            'id, union_id, arena:clubs!fk_tables_club_id(id, asset, is_platform, union_id), name, game_variant, game_type, tournament_id, stakes, small_blind, big_blind, max_players, club_id, settings, min_buy_in, max_buy_in, straddle_enabled, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_ante_multiplier, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_variant, bomb_pot_announce_seconds, bomb_pot_ante_fixed, bomb_pot_min_players, bomb_pot_button_policy, cluster_id, nit_game, maintain_percent_min, maintain_hands'
           )
           .eq('id', tableId)
           .maybeSingle();
@@ -11714,10 +11747,20 @@ export default function TablePage({
       if (isMounted) setTableLoadFailure(null);
 
       if (table && !error) {
+        let arenaIdentity;
+        try {
+          arenaIdentity = parseTableArenaIdentity(table);
+        } catch (error) {
+          reportError(error, 'TablePage.arena_identity_invalid');
+          if (isMounted) setTableLoadFailure('unreachable');
+          return;
+        }
         let loadedTournamentStatus: string | null = null;
         setTableState((prev) => ({
           ...prev,
           tableId: table.id,
+          arenaAsset: arenaIdentity.asset,
+          arenaId: arenaIdentity.id,
           tableName: formatGameTitle(table.name) || 'Poker Table',
           gameType: (table.game_variant || table.game_type || 'NLH') as any,
           isTournament: table.game_type === 'tournament' || !!table.tournament_id,
@@ -11879,7 +11922,7 @@ export default function TablePage({
             // parallel so reconnect recovery adds no serial network waterfall.
             if (!userId || userId === 'guest' || !table.tournament_id || !tableId) return;
             const [balance, playerProof, seatProof] = await Promise.all([
-              WalletService.readPlayerBalance(userId, { tableId }),
+              readTableFundingBalance(userId, { tableId }),
               supabase
                 .from('tournament_players')
                 .select('status, add_on')
@@ -12638,6 +12681,7 @@ export default function TablePage({
                   ? await awaitTournamentResultEnrichment(fetchTournamentResult(tid, userId))
                   : undefined;
                 publishSessionSummary({
+                  arenaAsset: tableState.arenaAsset,
                   duration: Math.floor((Date.now() - sessionStartRef.current) / 1000),
                   handsPlayed: handsPlayedRef.current,
                   handsWon: handsWonRef.current,
@@ -13790,7 +13834,7 @@ export default function TablePage({
              the buy-in RPC is the authority either way and refuses an
              underfunded entry. */
           const balanceRevision = readBalanceRevision();
-          const rb = await WalletService.readPlayerBalance(userId, { tableId });
+          const rb = await readTableFundingBalance(userId, { tableId });
           /* AUDIT 2026-08-28 — THE TAIL OF THIS EFFECT STOPPED CHECKING
              isMounted. Every write from here to the end ran unconditionally,
              and the bootstrap above is a 5-attempt 1s/2s/4s/8s backoff ladder
@@ -13811,10 +13855,10 @@ export default function TablePage({
              regardless of what the slider showed.
              The error is reported, never discarded: a failed read looking like
              "no floor" is the one outcome this rule exists to prevent. */
-          const { data: effectiveBuyIn, error: floorErr } = await supabase.rpc(
-            'fn_cash_effective_buyin',
-            { p_table_id: table.id }
-          );
+          const { data: effectiveBuyIn, error: floorErr } =
+            arenaIdentity.asset === 'chips'
+              ? await supabase.rpc('fn_cash_effective_buyin', { p_table_id: table.id })
+              : { data: null, error: null };
 
           if (!isMounted) return;
           if (floorErr) reportError(floorErr, 'TablePage.effective_buyin_read');
@@ -14161,6 +14205,10 @@ export default function TablePage({
 
   // ── Bus Listener: cross-tab live balance sync (Triple-Wallet sync) ──
   useMasterBusSubscription('BALANCE_UPDATED', (payload: any) => {
+    if (tableState.arenaAsset !== 'chips') {
+      retryAccountBalance();
+      return;
+    }
     if (!payload.userId || payload.userId === userId) {
       if (payload.balance !== undefined) {
         setAccountBalance(payload.balance);
@@ -14171,13 +14219,20 @@ export default function TablePage({
            2026-08-28: fenced — this read is awaited, so an optimistic debit
            issued while it was in flight must not be undone by its answer. */
         const resyncRevision = readBalanceRevision();
-        WalletService.readPlayerBalance(userId, { tableId })
+        readTableFundingBalance(userId, { tableId })
           .then((rb) => {
             if (rb.balance !== null) setBalanceIfCurrent(resyncRevision, rb.balance);
           })
           .catch((e) => reportError(e, 'TablePage.balanceSync'));
       }
     }
+  });
+
+  useMasterBusSubscription('DIAMOND_BALANCE_CHANGED', () => {
+    if (tableState.arenaAsset === 'diamonds') retryAccountBalance();
+  });
+  useMasterBusSubscription('DIAMOND_SPENT', () => {
+    if (tableState.arenaAsset === 'diamonds') retryAccountBalance();
   });
 
   // ── Bus Listener: live settings sync (theme, sound, deck changes) ──
@@ -18367,13 +18422,19 @@ export default function TablePage({
     const seated = tableState.heroSeat > 0;
     const key = `${tableId}:${userId}`;
 
-    if (seated && sessionStartedForRef.current !== key) {
+    if (seated && tableState.arenaAsset && sessionStartedForRef.current !== key) {
       const heroStack = tableState.players[tableState.heroSeat - 1]?.stack || 0;
       // Guard against seeding the session with a 0 stack from a snapshot that
       // has the seat but not yet the chips — buyInTotal would be wrong for the
       // whole session and every P&L reading would be inflated by the buy-in.
       if (heroStack > 0) {
-        sessionStatsService.startSession(tableId, userId, heroStack, safeBB(tableState.blinds));
+        sessionStatsService.startSession(
+          tableId,
+          userId,
+          heroStack,
+          safeBB(tableState.blinds),
+          tableState.arenaAsset
+        );
         sessionStartedForRef.current = key;
         prevHandStackRef.current = heroStack;
       }
@@ -18381,7 +18442,14 @@ export default function TablePage({
       sessionStatsService.endSession(tableId);
       sessionStartedForRef.current = null;
     }
-  }, [tableId, userId, tableState.heroSeat, tableState.players, tableState.blinds]);
+  }, [
+    tableId,
+    userId,
+    tableState.heroSeat,
+    tableState.players,
+    tableState.blinds,
+    tableState.arenaAsset,
+  ]);
 
   // End the session on unmount too (navigating away, or MultiTablePage
   // closing this tab) so the session_history row is written.
@@ -18966,6 +19034,10 @@ export default function TablePage({
 
   // Handle seat click (sit down at empty seat)
   const handleSeatClick = (seatNumber: number) => {
+    if (!tableState.arenaAsset) {
+      toast.warning('Verifying Table Funding');
+      return;
+    }
     // Validate seat is empty before showing buy-in modal
     const seatIdx = seatNumber - 1;
     if (seatIdx >= 0 && seatIdx < tableState.players.length && tableState.players[seatIdx]) {
@@ -21765,7 +21837,12 @@ export default function TablePage({
       // handleAddChips -> GameServerAPI.addChips -> atomic_table_addon is the
       // authoritative, atomic debit, and it rejects anything over the table's
       // real cap without charging the wallet.
-      if (isAutoRebuyEnabled && !tableState.isTournament && !autoTopUpInFlightRef.current) {
+      if (
+        isAutoRebuyEnabled &&
+        tableState.arenaAsset === 'chips' &&
+        !tableState.isTournament &&
+        !autoTopUpInFlightRef.current
+      ) {
         const maxBuyIn = tableState.maxBuyIn;
         const currentStack = Number(heroSeatData.stack || 0);
 
@@ -22183,24 +22260,26 @@ export default function TablePage({
               />
             </svg>
           </button>
-          <button
-            className="header-btn add-chips-icon"
-            onClick={() => {
-              soundService.playButtonClick();
-              if (tableState.heroSeat > 0) setShowCashier(true);
-            }}
-            title="Add Chips"
-          >
-            <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-              <circle cx="9" cy="9" r="7" stroke="currentColor" strokeWidth="1.5" />
-              <path
-                d="M9 6v6M6 9h6"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-              />
-            </svg>
-          </button>
+          {tableState.arenaAsset === 'chips' && (
+            <button
+              className="header-btn add-chips-icon"
+              onClick={() => {
+                soundService.playButtonClick();
+                if (tableState.heroSeat > 0) setShowCashier(true);
+              }}
+              title="Add Chips"
+            >
+              <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+                <circle cx="9" cy="9" r="7" stroke="currentColor" strokeWidth="1.5" />
+                <path
+                  d="M9 6v6M6 9h6"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                />
+              </svg>
+            </button>
+          )}
         </div>
         <div className="header-center">
           <div className="header-center__top-row">
@@ -22254,36 +22333,42 @@ export default function TablePage({
                         badge: standUpNextBB ? 'ON' : undefined,
                         onClick: () => setStandUpNextBB(!standUpNextBB),
                       },
-                      ...(tableState.isTournament
+                      ...(tableState.arenaAsset !== 'chips'
+                        ? []
+                        : tableState.isTournament
+                          ? [
+                              {
+                                id: 'rebuy',
+                                label: 'Rebuy',
+                                icon: <RebuyIcon />,
+                                onClick: handleTournamentRebuy,
+                              },
+                              {
+                                id: 'addon',
+                                label: 'Add-On',
+                                icon: <AddOnIcon />,
+                                onClick: handleTournamentAddOn,
+                              },
+                            ]
+                          : [
+                              {
+                                id: 'rebuy',
+                                label: 'Top Up',
+                                icon: <RebuyIcon />,
+                                onClick: () => setShowCashier(true),
+                              },
+                            ]),
+                      ...(tableState.arenaAsset === 'chips'
                         ? [
                             {
-                              id: 'rebuy',
-                              label: 'Rebuy',
+                              id: 'auto-top-up',
+                              label: 'Auto Top Up',
                               icon: <RebuyIcon />,
-                              onClick: handleTournamentRebuy,
-                            },
-                            {
-                              id: 'addon',
-                              label: 'Add-On',
-                              icon: <AddOnIcon />,
-                              onClick: handleTournamentAddOn,
+                              badge: isAutoRebuyEnabled ? 'ON' : undefined,
+                              onClick: () => setIsAutoRebuyEnabled(!isAutoRebuyEnabled),
                             },
                           ]
-                        : [
-                            {
-                              id: 'rebuy',
-                              label: 'Top Up',
-                              icon: <RebuyIcon />,
-                              onClick: () => setShowCashier(true),
-                            },
-                          ]),
-                      {
-                        id: 'auto-top-up',
-                        label: 'Auto Top Up',
-                        icon: <RebuyIcon />,
-                        badge: isAutoRebuyEnabled ? 'ON' : undefined,
-                        onClick: () => setIsAutoRebuyEnabled(!isAutoRebuyEnabled),
-                      },
+                        : []),
                       {
                         id: 'marketplace',
                         label: 'Club Marketplace',
@@ -25188,25 +25273,29 @@ export default function TablePage({
         <>
           <div className="menu-overlay" onClick={toggleSideMenu} />
           <nav className="side-menu">
-            <button
-              className="menu-item"
-              onClick={() => navigate(withClubContext('/cashier', lobbyClubIdRef.current))}
-            >
-              <span className="menu-item-icon">◉</span>
-              <span className="menu-item-label">Cashier</span>
-              <span className="menu-item-arrow">›</span>
-            </button>
-            <button
-              className="menu-item"
-              onClick={() => {
-                if (tableState.heroSeat > 0) setShowCashier(true);
-                setIsSideMenuOpen(false);
-              }}
-            >
-              <span className="menu-item-icon">+</span>
-              <span className="menu-item-label">Top Up</span>
-              <span className="menu-item-arrow">›</span>
-            </button>
+            {tableState.arenaAsset === 'chips' && (
+              <button
+                className="menu-item"
+                onClick={() => navigate(withClubContext('/cashier', lobbyClubIdRef.current))}
+              >
+                <span className="menu-item-icon">◉</span>
+                <span className="menu-item-label">Cashier</span>
+                <span className="menu-item-arrow">›</span>
+              </button>
+            )}
+            {tableState.arenaAsset === 'chips' && (
+              <button
+                className="menu-item"
+                onClick={() => {
+                  if (tableState.heroSeat > 0) setShowCashier(true);
+                  setIsSideMenuOpen(false);
+                }}
+              >
+                <span className="menu-item-icon">+</span>
+                <span className="menu-item-label">Top Up</span>
+                <span className="menu-item-arrow">›</span>
+              </button>
+            )}
             {/* 2026-08-20: DiamondWalletModal was mounted in TableModalsLayer and
                 `setShowDiamondWallet(true)` was never called anywhere, so the
                 wallet was unreachable from the table — while diamonds are spent
@@ -25653,7 +25742,11 @@ export default function TablePage({
         waitListPlayers={waitListPlayers}
         onCloseWaitList={() => setShowWaitList(false)}
         onWaitListError={(m) => toast?.error?.(m)}
-        onTopUpAccount={() => navigate(withClubContext('/cashier', lobbyClubIdRef.current))}
+        onTopUpAccount={() =>
+          tableState.arenaAsset === 'diamonds'
+            ? setShowDiamondWallet(true)
+            : navigate(withClubContext('/cashier', lobbyClubIdRef.current))
+        }
         // Insurance
         showInsurance={showInsurance}
         insuranceOffer={insuranceOffer}
@@ -25734,6 +25827,7 @@ export default function TablePage({
         /* NULL STAYS NULL on every balance surface (2026-09-04 second sweep).
            The bust rebuy was fixed on 2026-09-04; this `?? 0` fed the normal
            Add Chips sheet and the table cashier the same lie one line over. */
+        arenaAsset={tableState.arenaAsset}
         accountBalance={accountBalance}
         onRetryAccountBalance={retryAccountBalance}
         cashoutMinBuyIn={cashoutMinBuyIn}
@@ -25772,6 +25866,11 @@ export default function TablePage({
           // Its durable payload and operation ID remain available for recovery.
         }}
         onConfirmBuyIn={async (amount, autoRebuy) => {
+          if (
+            !tableState.arenaAsset ||
+            (tableState.arenaAsset === 'diamonds' && !Number.isSafeInteger(amount))
+          )
+            return false;
           if (buyInProcessingRef.current) return false;
           buyInProcessingRef.current = true;
           const operation = Symbol('cash-buy-in');
@@ -25796,7 +25895,10 @@ export default function TablePage({
               p_seat_number: selectedSeat,
               p_amount: amount,
               p_auto_rebuy: autoRebuy || false,
-              p_club_id: useUserStore.getState().currentClubId ?? null,
+              p_club_id:
+                tableState.arenaAsset === 'diamonds'
+                  ? (tableState.arenaId ?? null)
+                  : (useUserStore.getState().currentClubId ?? null),
             };
             const { attempt, recovered } = await cashBuyInJournal.reserve(intent);
             if (!stillCurrent()) return false;
@@ -25878,7 +25980,11 @@ export default function TablePage({
               seatAcquiredAtRef.current = Date.now();
               bootNoticeShownRef.current = false;
               void Promise.resolve()
-                .then(() => HydraService.onRealPlayerJoined(tableId, userId))
+                .then(() =>
+                  tableState.arenaAsset === 'chips'
+                    ? HydraService.onRealPlayerJoined(tableId, userId)
+                    : undefined
+                )
                 .catch((error) => reportError(error, 'TablePage.buyin_hydra_notification_failed'));
               masterBus.emit('TABLE_SEATED', {
                 tableId,

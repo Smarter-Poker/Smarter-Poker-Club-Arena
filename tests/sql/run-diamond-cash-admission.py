@@ -5,6 +5,7 @@ import json
 import pathlib
 import subprocess
 import sys
+import tempfile
 
 ROOT=pathlib.Path(__file__).resolve().parents[2]
 CMD=['/opt/homebrew/opt/postgresql@17/bin/psql','-X','-q','-At',
@@ -16,7 +17,10 @@ A='10000000-0000-0000-0000-000000000001'
 B='10000000-0000-0000-0000-000000000002'
 KEY='40000000-0000-0000-0000-000000000006'
 def run(sql):
- r=subprocess.run(CMD,input=sql,text=True,capture_output=True,cwd=ROOT/'tests/sql')
+ with tempfile.NamedTemporaryFile(mode='w+',suffix='.sql',dir=ROOT/'tests/sql') as script:
+  script.write(sql)
+  script.flush()
+  r=subprocess.run(CMD+['-P','pager=off','-f',script.name],text=True,capture_output=True,cwd=ROOT/'tests/sql',timeout=60)
  if r.returncode: raise RuntimeError(r.stderr)
  for line in r.stderr.splitlines():
   if 'PASS:' in line: print(line.split('PASS:',1)[1].strip())

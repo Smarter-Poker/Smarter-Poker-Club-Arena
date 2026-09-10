@@ -5,6 +5,7 @@ import json
 import pathlib
 import subprocess
 import sys
+import tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 PSQL = '/opt/homebrew/opt/postgresql@17/bin/psql'
@@ -12,7 +13,11 @@ CMD = [PSQL, '-X', '-h', '/tmp/codex-diamond-phase2-pg', '-p', '55472',
        '-d', 'poker_diamond_phase6_test', '-v', 'ON_ERROR_STOP=1', '-At']
 SQL_DIR = ROOT / 'tests/sql'
 def run(sql):
-    r = subprocess.run(CMD, input=sql, text=True, cwd=SQL_DIR, capture_output=True)
+    with tempfile.NamedTemporaryFile(mode='w+', suffix='.sql', dir=SQL_DIR) as script:
+        script.write(sql)
+        script.flush()
+        r = subprocess.run(CMD + ['-P', 'pager=off', '-f', script.name],
+                           text=True, cwd=SQL_DIR, capture_output=True, timeout=60)
     if r.returncode:
         print(r.stdout)
         print(r.stderr, file=sys.stderr)

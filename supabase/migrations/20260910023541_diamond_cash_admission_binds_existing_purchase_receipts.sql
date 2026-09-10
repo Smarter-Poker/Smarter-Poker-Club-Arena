@@ -49,15 +49,25 @@ BEGIN
  END IF;
  IF v_t.game_variant IS DISTINCT FROM 'nlh' OR v_t.tournament_id IS NOT NULL
     OR v_t.cluster_id IS NOT NULL
-    OR coalesce(v_t.is_template,false) OR v_t.status NOT IN ('waiting','playing','active')
+    OR coalesce(v_t.is_template,false) OR v_t.status NOT IN ('waiting','running','playing','active')
     OR coalesce(v_t.rake_percent,0)<>0 OR coalesce(v_t.bbj_percent,0)<>0
     OR coalesce(v_t.insurance_enabled,false) OR coalesce(v_t.bomb_pot_enabled,false)
     OR coalesce(v_t.run_it_twice_enabled,false) OR coalesce(v_t.run_it_twice,false)
     OR coalesce(v_t.allow_run_it_twice,false) OR coalesce(v_t.straddle_enabled,false)
     OR coalesce(v_t.seven_deuce_enabled,false) OR coalesce(v_t.nit_game,false)
     OR coalesce(v_t.all_in_or_fold,false) OR coalesce(v_t.pineapple_holdem,false)
-    OR coalesce(v_t.cap_enabled,false) THEN
+    OR coalesce(v_t.cap_enabled,false) OR coalesce(v_t.auto_utg_straddle,false)
+    OR coalesce(v_t.voluntary_straddle,false) THEN
    RAISE EXCEPTION 'diamond_plain_cash_table_required' USING ERRCODE='23514';
+ END IF;
+ -- Match the shared engine load boundary before reserving any Diamonds.
+ IF EXISTS(SELECT 1 FROM (VALUES(v_t.small_blind),(v_t.big_blind),
+      (v_t.min_buy_in),(v_t.max_buy_in)) AS amount(value)
+      WHERE value IS NULL OR value NOT BETWEEN 1 AND 2147483647
+        OR value<>trunc(value))
+    OR COALESCE(v_t.ante,0) NOT BETWEEN 0 AND 9007199254740991
+    OR COALESCE(v_t.ante,0)<>trunc(COALESCE(v_t.ante,0)) THEN
+   RAISE EXCEPTION 'diamond_cash_requires_whole_amounts' USING ERRCODE='23514';
  END IF;
  IF p_club_id IS NOT NULL AND p_club_id<>v_t.club_id THEN
    RAISE EXCEPTION 'diamond_purchase_arena_mismatch' USING ERRCODE='22023';
@@ -651,4 +661,71 @@ GRANT EXECUTE ON FUNCTION public.atomic_table_buyin(uuid,uuid,integer,numeric,bo
 REVOKE ALL ON FUNCTION public.fn_cashout_seat_occupancy(uuid,uuid,integer,uuid,text) FROM PUBLIC,anon,authenticated;
 GRANT EXECUTE ON FUNCTION public.fn_cashout_seat_occupancy(uuid,uuid,integer,uuid,text) TO service_role;
 REVOKE ALL ON FUNCTION public.fn_log_seat_stack_exit() FROM PUBLIC,anon,authenticated;
+-- Client access reflects the same authoritative admission switch; no public setter.
+CREATE OR REPLACE FUNCTION public.fn_poker_arena_context(p_club_key text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+DECLARE v_uid uuid := auth.uid(); v_club public.clubs%ROWTYPE; v_role text; v_member boolean;
+BEGIN
+  IF v_uid IS NULL OR NOT EXISTS (SELECT 1 FROM public.profiles WHERE id = v_uid) THEN
+    RAISE EXCEPTION 'Authentication Required' USING ERRCODE = '28000';
+  END IF;
+  SELECT c.* INTO v_club FROM public.clubs c
+  WHERE c.id::text = btrim(p_club_key) OR c.club_id::text = btrim(p_club_key)
+     OR lower(c.slug) = lower(btrim(p_club_key))
+  ORDER BY (c.id::text = btrim(p_club_key)) DESC LIMIT 1;
+  IF NOT FOUND OR v_club.lifecycle_status = 'retired' THEN RETURN NULL; END IF;
+  IF v_club.asset = 'diamonds' THEN
+    IF v_club.is_platform IS DISTINCT FROM true OR v_club.union_id IS NOT NULL
+       OR NOT EXISTS (SELECT 1 FROM public.ca_arena_settings WHERE club_id = v_club.id) THEN
+      RAISE EXCEPTION 'Invalid Diamond Arena Identity' USING ERRCODE = '23514';
+    END IF;
+    v_member := true; v_role := 'player';
+  ELSIF v_club.asset = 'chips' AND v_club.is_platform = false THEN
+    SELECT m.role INTO v_role FROM public.club_members m
+      WHERE m.club_id = v_club.id AND m.user_id = v_uid AND m.status IN ('active','approved');
+    v_member := FOUND;
+  ELSE RAISE EXCEPTION 'Invalid Arena Asset' USING ERRCODE = '23514';
+  END IF;
+  RETURN jsonb_build_object('arena',jsonb_build_object('id',v_club.id,'asset',v_club.asset,
+    'is_platform',v_club.is_platform,'union_id',v_club.union_id), 'member',v_member,'role',v_role,
+    'cashGamesEnabled',v_club.asset='diamonds' AND COALESCE(
+      (SELECT s.cash_games_enabled FROM public.ca_arena_settings s WHERE s.club_id=v_club.id),false));
+END $function$
+;
+REVOKE ALL ON FUNCTION public.fn_poker_arena_context(text) FROM PUBLIC,anon;
+GRANT EXECUTE ON FUNCTION public.fn_poker_arena_context(text) TO authenticated;
+
+-- Recover a displayed cash-out after response loss without reading a chip ledger.
+CREATE OR REPLACE FUNCTION public.fn_poker_diamond_cashout_receipt(
+ p_table_id uuid,p_occupancy_id uuid
+) RETURNS jsonb LANGUAGE plpgsql STABLE SECURITY DEFINER
+SET search_path=public,pg_temp SET statement_timeout='5s' AS $fn$
+DECLARE v_uid uuid:=auth.uid(); v_r public.seat_cashout_receipts%ROWTYPE;
+BEGIN
+ IF v_uid IS NULL OR NOT public.fn_caller_session_is_live() THEN
+   RAISE EXCEPTION 'Authentication Required' USING ERRCODE='28000';
+ END IF;
+ IF p_table_id IS NULL OR p_occupancy_id IS NULL THEN
+   RAISE EXCEPTION 'CASHOUT_OCCUPANCY_REQUIRED' USING ERRCODE='22023';
+ END IF;
+ SELECT * INTO v_r FROM public.seat_cashout_receipts
+   WHERE occupancy_id=p_occupancy_id AND user_id=v_uid;
+ IF NOT FOUND THEN RETURN NULL; END IF;
+ IF v_r.table_id IS DISTINCT FROM p_table_id
+    OR v_r.receipt->>'asset' IS DISTINCT FROM 'diamonds'
+    OR NOT EXISTS(SELECT 1 FROM public.tables t JOIN public.clubs c ON c.id=t.club_id
+      WHERE t.id=p_table_id AND c.asset='diamonds' AND c.is_platform AND c.union_id IS NULL) THEN
+   RAISE EXCEPTION 'CASHOUT_OCCUPANCY_SCOPE_MISMATCH' USING ERRCODE='22023';
+ END IF;
+ RETURN jsonb_build_object('asset','diamonds','table_id',p_table_id,
+   'occupancy_id',p_occupancy_id,'amount',(v_r.receipt->>'stack')::bigint);
+END $fn$;
+REVOKE ALL ON FUNCTION public.fn_poker_diamond_cashout_receipt(uuid,uuid)
+ FROM PUBLIC,anon,service_role;
+GRANT EXECUTE ON FUNCTION public.fn_poker_diamond_cashout_receipt(uuid,uuid) TO authenticated;
+
 COMMIT;

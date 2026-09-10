@@ -58,3 +58,20 @@ SELECT fixture_assert((SELECT consumed=350 AND arena_reserved=0 FROM diamond_pur
  'partial hand loss consumes only lost purchased units and releases the remainder');
 SELECT fixture_assert((SELECT count(*)=0 FROM club_members),
  'complete custody path creates no chip membership');
+
+SELECT set_config('request.jwt.claim.role','authenticated',false);
+SELECT set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000001',false);
+SELECT set_config('request.jwt.claims','{"role":"authenticated","session_id":"60000000-0000-0000-0000-000000000001"}',false);
+SELECT fixture_assert((SELECT fn_poker_diamond_cashout_receipt(table_id,occupancy_id)
+ =jsonb_build_object('asset','diamonds','table_id',table_id,'occupancy_id',occupancy_id,'amount',50)
+ FROM fixture_occupancy_exits WHERE seat_number=1),'owner recovers the exact Diamond cashout result');
+SELECT fixture_assert((SELECT fn_poker_diamond_cashout_receipt(table_id,occupancy_id) IS NULL
+ FROM fixture_occupancy_exits WHERE seat_number=2),'other players cannot read a Diamond cashout receipt');
+SELECT fixture_refuses($q$SELECT fn_poker_diamond_cashout_receipt(gen_random_uuid(),occupancy_id)
+ FROM fixture_occupancy_exits WHERE seat_number=1$q$,'CASHOUT_OCCUPANCY_SCOPE_MISMATCH');
+SELECT set_config('request.jwt.claims','{"role":"authenticated","session_id":"60000000-0000-0000-0000-000000000009"}',false);
+SELECT fixture_refuses($q$SELECT fn_poker_diamond_cashout_receipt(table_id,occupancy_id)
+ FROM fixture_occupancy_exits WHERE seat_number=1$q$,'Authentication Required');
+SELECT fixture_assert(NOT has_function_privilege('anon','fn_poker_diamond_cashout_receipt(uuid,uuid)','EXECUTE')
+ AND has_function_privilege('authenticated','fn_poker_diamond_cashout_receipt(uuid,uuid)','EXECUTE'),
+ 'receipt read is authenticated only');

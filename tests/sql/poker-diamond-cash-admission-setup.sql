@@ -3,7 +3,11 @@ DO $$ BEGIN
  IF current_database()<>'poker_diamond_phase6_test' OR inet_server_addr() IS NOT NULL
     OR current_setting('port')<>'55472' THEN RAISE EXCEPTION 'isolated phase6 fixture only'; END IF;
 END $$;
-ALTER TABLE public.tables ADD COLUMN max_players integer DEFAULT 6,
+ALTER TABLE public.clubs ADD COLUMN club_id integer, ADD COLUMN slug text, ADD COLUMN lifecycle_status text DEFAULT 'active';
+ALTER TABLE public.club_members ADD COLUMN user_id uuid, ADD COLUMN role text, ADD COLUMN status text;
+ALTER TABLE public.tables ADD COLUMN small_blind numeric DEFAULT 1,
+ ADD COLUMN big_blind numeric DEFAULT 2, ADD COLUMN ante numeric DEFAULT 0,
+ ADD COLUMN max_players integer DEFAULT 6,
  ADD COLUMN is_template boolean DEFAULT false, ADD COLUMN current_players integer DEFAULT 0,
  ADD COLUMN is_vip_only boolean DEFAULT false, ADD COLUMN rake_percent numeric DEFAULT 0,
  ADD COLUMN bbj_percent numeric DEFAULT 0, ADD COLUMN cluster_id uuid,
@@ -12,7 +16,8 @@ ALTER TABLE public.tables ADD COLUMN max_players integer DEFAULT 6,
  ADD COLUMN allow_run_it_twice boolean DEFAULT false, ADD COLUMN straddle_enabled boolean DEFAULT false,
  ADD COLUMN seven_deuce_enabled boolean DEFAULT false, ADD COLUMN nit_game boolean DEFAULT false,
  ADD COLUMN all_in_or_fold boolean DEFAULT false, ADD COLUMN pineapple_holdem boolean DEFAULT false,
- ADD COLUMN cap_enabled boolean DEFAULT false;
+ ADD COLUMN cap_enabled boolean DEFAULT false,
+ ADD COLUMN auto_utg_straddle boolean DEFAULT false, ADD COLUMN voluntary_straddle boolean DEFAULT false;
 ALTER TABLE public.profiles ADD COLUMN is_vip boolean DEFAULT false, ADD COLUMN vip_expires_at timestamptz;
 ALTER TABLE public.tournaments ADD COLUMN variant text, ADD COLUMN max_players integer, ADD COLUMN starting_chips numeric;
 ALTER TABLE public.table_seats ADD COLUMN status text DEFAULT 'active',
@@ -59,8 +64,13 @@ SELECT fixture_refuses('SELECT fixture_diamond_buyin()','diamond_cash_not_open')
 SELECT fixture_assert((SELECT sum(diamonds)=2000 FROM profiles)
  AND (SELECT count(*)=0 FROM entry_purchase_idempotency_receipts),
  'closed release gate leaves wallets and purchase receipts unchanged');
+SELECT set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000001',false);
+SELECT fixture_assert((fn_poker_arena_context('20000000-0000-0000-0000-000000000001')->>'cashGamesEnabled')::boolean=false,
+ 'authenticated arena context reflects closed cash admission');
 -- Local-only certification enables its own fixture settings. Never run on production.
 UPDATE ca_arena_settings SET cash_games_enabled=true WHERE id=1;
+SELECT fixture_assert((fn_poker_arena_context('20000000-0000-0000-0000-000000000001')->>'cashGamesEnabled')::boolean=true,
+ 'authenticated arena context reflects enabled isolated cash admission');
 INSERT INTO auth.sessions(id) VALUES('60000000-0000-0000-0000-000000000001');
 SELECT set_config('request.jwt.claim.role','authenticated',false);
 SELECT set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000001',false);
@@ -73,6 +83,15 @@ SELECT set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000001'
 INSERT INTO engine_maintenance_break(phase,announced_at) VALUES('last_hand',now());
 SELECT fixture_refuses('SELECT fixture_diamond_buyin()','PLATFORM_FROZEN');
 DELETE FROM engine_maintenance_break WHERE phase='last_hand';
+BEGIN;
+UPDATE tables SET small_blind=0.5 WHERE id='30000000-0000-0000-0000-000000000001';
+SELECT fixture_refuses('SELECT fixture_diamond_buyin()','diamond_cash_requires_whole_amounts');
+SELECT fixture_assert((SELECT sum(diamonds)=2000 FROM profiles)
+ AND (SELECT count(*)=0 FROM table_seats WHERE left_at IS NULL)
+ AND (SELECT count(*)=0 FROM poker_diamond_custody WHERE state IN ('active','reserved'))
+ AND (SELECT count(*)=0 FROM entry_purchase_idempotency_receipts),
+ 'fractional table blind refuses before wallet custody seat or purchase receipt writes');
+ROLLBACK;
 SELECT fixture_refuses('SELECT fixture_diamond_buyin(100.5)','invalid_diamond_cash_purchase');
 SELECT fixture_refuses('SELECT fixture_diamond_buyin(100,NULL)','invalid_diamond_cash_purchase');
 UPDATE tables SET cluster_id='70000000-0000-0000-0000-000000000001' WHERE id='30000000-0000-0000-0000-000000000001';

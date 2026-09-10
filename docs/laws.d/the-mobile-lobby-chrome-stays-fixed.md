@@ -1,17 +1,17 @@
 # tests/the-mobile-lobby-chrome-stays-fixed.law.test.ts
 
 The three things Dan photographed on a phone on 2026-09-09, pinned where they
-broke. The MY WALLETS plate printed "LOADING BALANC": a zone 26.5% of the plate
-wide holding a string wider than that, and `place-items: center` on a bare text
-node, which centres the anonymous grid item and then lets `text-align` default
-to `start`. The filter row scrolled up behind the FIND YOUR GAME deck and off
+broke. The MY WALLETS plate printed "LOADING BALANC": a placeholder string
+wider than a zone 26.5% of the plate, which an `overflow: hidden` grid cell
+snaps to its start edge and clips (a count that fits was always centred). The
+filter row scrolled up behind the FIND YOUR GAME deck and off
 the page, because the deck is sticky and the row was not. The footer floated
 above the bottom edge with the lobby travelling through the strip below it,
 because `padding-bottom: env(safe-area-inset-bottom)` reserved the
 home-indicator inset INSIDE a box that is deliberately transparent, and a
 desktop browser reports that inset as 0. Each is the kind of change a later
 edit undoes silently, so this asserts the count line is centred on the painted
-title at 54.65% by `text-align` and never says Loading, that the count is
+title at 54.65% with room for any real count and never says Loading, that the count is
 published from a layout effect BEFORE the loading skeleton returns (it comes
 from the viewer's role, not from their money, so a dropped connection cannot
 strand it), that the sort row is sticky at the deck's measured height, and that

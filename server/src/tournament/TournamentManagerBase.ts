@@ -100,6 +100,7 @@ import {
   type PublicLiveTableFormat,
 } from '../observability/liveTableFormat.js';
 import { launchStacksMeetFundingFloor } from './tournamentLaunchStackProof.js';
+import { isUuidShape } from '../lib/uuidShape.js';
 
 /** How many places this payout structure pays, whichever shape it arrived in. */
 function countPaidPlaces(structure: unknown): number {
@@ -2433,9 +2434,7 @@ export abstract class TournamentManagerBase {
         result.lease_generation.toLowerCase() === this.tournamentLeaseGeneration.toLowerCase() &&
         typeof result.replay === 'boolean' &&
         typeof result.completed === 'boolean' &&
-        /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-          returnedLaunchId
-        ) &&
+        isUuidShape(returnedLaunchId) &&
         Number.isFinite(returnedStartedAtMs) &&
         (requestedStartedAtIso === null ||
           this.launchTimestampMatches(result.started_at, requestedStartedAtIso) ||

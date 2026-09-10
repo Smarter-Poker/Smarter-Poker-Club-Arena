@@ -4,6 +4,7 @@ import react from '@vitejs/plugin-react';
 import { sentryVitePlugin } from '@sentry/vite-plugin';
 import path from 'path';
 import { writeFileSync } from 'fs';
+import { resolveSentryUpload } from './scripts/sentry-upload-policy';
 
 /**
  * NATIVE BUILD TARGET (2026-09-07, docs/changelog/2026-09-07-capacitor-shell.md)
@@ -21,6 +22,10 @@ import { writeFileSync } from 'fs';
  */
 const NATIVE = process.env.VITE_NATIVE === '1';
 const WEB_BASE = '/hub/club-arena/';
+const sentryUpload = resolveSentryUpload(process.env);
+if (process.env.CA_SENTRY_UPLOAD === '1' && !sentryUpload.enabled) {
+  console.warn('[sentry-upload] Upload Disabled:', sentryUpload.reason);
+}
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -37,8 +42,7 @@ export default defineConfig({
      * raw). It originally read that list out of the entry chunk's sourcemap,
      * which worked locally and could never have worked in CI: the Sentry
      * plugin below uploads sourcemaps and then DELETES them from dist/, and it
-     * only runs when SENTRY_AUTH_TOKEN is set, which is exactly CI and never a
-     * developer's machine.
+     * runs only for an explicitly enabled, verified release build.
      *
      * Rollup already knows the answer, so ask it. Written on writeBundle
      * rather than emitted into the bundle so the list never ships to players.
@@ -66,13 +70,13 @@ export default defineConfig({
     },
 
     // Sentry source-map upload + release tagging (Phase U5.1, task #133).
-    // Gated on NODE_ENV=production AND SENTRY_AUTH_TOKEN so dev builds stay fast.
-    // CI passes both via GitHub Actions secrets (`.github/workflows/ci.yml`).
+    // The publisher explicitly opts in. A token on a developer machine is
+    // never enough: the complete, clean Git tree must match its release SHA.
     // Org/project slugs default to the LIVE Sentry values verified 2026-04-23
     // via the Sentry API: org `smarter-software-inc`, project `javascript-react`.
     // The earlier defaults (smarter-poker / club-arena) referenced a non-existent
     // org slug and uploads silently no-op'd — see task #133.
-    !!(process.env.NODE_ENV === 'production' && process.env.SENTRY_AUTH_TOKEN) &&
+    sentryUpload.enabled &&
       sentryVitePlugin({
         org: process.env.SENTRY_ORG || 'smarter-software-inc',
         project: process.env.SENTRY_PROJECT || 'javascript-react',
@@ -96,9 +100,9 @@ export default defineConfig({
         // `club-arena@${VITE_APP_VERSION}` - the publishing commit's sha. Two
         // different releases, so no event could ever find its maps. The
         // publisher sets VITE_APP_VERSION to the sha it is shipping; the
-        // fallbacks below keep a local production build from throwing.
+        // upload uses that verified identity without a package-version fallback.
         release: {
-          name: `club-arena@${process.env.VITE_APP_VERSION || process.env.npm_package_version || '1.0.0'}`,
+          name: sentryUpload.release,
           setCommits: {
             auto: true, // Automatically associate commits
           },

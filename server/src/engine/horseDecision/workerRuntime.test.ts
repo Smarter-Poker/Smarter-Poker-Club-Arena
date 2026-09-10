@@ -247,6 +247,59 @@ const rekey = (request: FastHorseDecisionRequest): FastHorseDecisionRequest => (
   decisionKey: buildHorseDecisionKey(request),
 });
 
+const pineappleCards = [
+  { rank: 'A' as const, suit: 'spades' as const },
+  { rank: 'K' as const, suit: 'spades' as const },
+  { rank: 'Q' as const, suit: 'hearts' as const },
+];
+
+function pineappleRequest(
+  stage: 'preflop' | 'flop' | 'pineapple_discard' | 'turn' | 'river',
+  cardCount: 2 | 3,
+  discardProof = stage === 'flop' || stage === 'turn' || stage === 'river'
+): FastHorseDecisionRequest {
+  const actionHistory = discardProof
+    ? [
+        {
+          seat: 2,
+          userId: 'horse-2',
+          action: 'discard' as const,
+          amount: 0,
+          timestamp: 100,
+          stage: 'pineapple_discard' as const,
+        },
+      ]
+    : [];
+  const boardCount = stage === 'preflop' ? 0 : stage === 'turn' ? 4 : stage === 'river' ? 5 : 3;
+  return rekey({
+    ...fastRequest(),
+    player: { ...snapshot.player, cards: pineappleCards.slice(0, cardCount) },
+    gameState: {
+      ...snapshot.gameState,
+      gameVariant: 'pineapple',
+      stage,
+      bettingStructure: 'no_limit',
+      communityCards: (
+        [
+          { rank: '2', suit: 'clubs' },
+          { rank: '7', suit: 'diamonds' },
+          { rank: '9', suit: 'hearts' },
+          { rank: 'T', suit: 'clubs' },
+          { rank: 'J', suit: 'diamonds' },
+        ] as const
+      ).slice(0, boardCount),
+      actionHistory,
+      variantRules: {
+        holeCardsDealt: 3,
+        holeCardsUse: 'discard_to_two',
+        boardCardsUse: 'any',
+        deckSize: 52,
+        splitLow8OrBetter: false,
+      },
+    },
+  });
+}
+
 describe('HorseDecisionWorkerRuntime', () => {
   it('gates on owned-service hydration and returns fast RNG/latency/governor receipts', async () => {
     const h = harness();
@@ -328,6 +381,83 @@ describe('HorseDecisionWorkerRuntime', () => {
     expect(h.messages.at(-1)).toMatchObject({
       type: 'ERROR',
       message: 'horse state variant rules do not match gameVariant',
+    });
+  });
+
+  it.each([
+    ['preflop', 3],
+    ['flop', 2],
+    ['turn', 2],
+    ['river', 2],
+  ] as const)('accepts the legal Pineapple %s hero-card state', async (stage, cardCount) => {
+    const h = harness();
+    h.runtime.receive(pineappleRequest(stage, cardCount));
+    await h.runtime.drain();
+
+    expect(h.decisionsAtRng).toHaveLength(1);
+    expect(h.messages.at(-1)).toMatchObject({ type: 'FAST_RESULT', requestId: 1 });
+  });
+
+  it.each([
+    ['preflop', 2],
+    ['flop', 3],
+    ['turn', 3],
+    ['river', 3],
+  ] as const)('rejects the illegal Pineapple %s hero-card state', async (stage, cardCount) => {
+    const h = harness();
+    h.runtime.receive(pineappleRequest(stage, cardCount));
+    await h.runtime.drain();
+
+    expect(h.decisionsAtRng).toEqual([]);
+    expect(h.messages.at(-1)).toMatchObject({
+      type: 'ERROR',
+      message: 'horse state hero card count does not match variant/street rules',
+    });
+  });
+
+  it('requires the authoritative hero discard before accepting two Pineapple flop cards', async () => {
+    const h = harness();
+    h.runtime.receive(pineappleRequest('flop', 2, false));
+    await h.runtime.drain();
+
+    expect(h.decisionsAtRng).toEqual([]);
+    expect(h.messages.at(-1)).toMatchObject({
+      type: 'ERROR',
+      message: 'horse state pineapple post-discard cards lack authoritative discard proof',
+    });
+  });
+
+  it('refuses ordinary fast work during the simultaneous Pineapple discard round', async () => {
+    const h = harness();
+    h.runtime.receive(pineappleRequest('pineapple_discard', 3, false));
+    await h.runtime.drain();
+
+    expect(h.decisionsAtRng).toEqual([]);
+    expect(h.messages.at(-1)).toMatchObject({
+      type: 'ERROR',
+      message: 'horse fast decisions cannot run during the pineapple discard round',
+    });
+  });
+
+  it('binds the authoritative Pineapple discard record into the canonical key', async () => {
+    const h = harness();
+    const request = pineappleRequest('flop', 2);
+    h.runtime.receive({
+      ...request,
+      gameState: {
+        ...request.gameState,
+        actionHistory: (request.gameState.actionHistory ?? []).map((action) => ({
+          ...action,
+          timestamp: action.timestamp + 1,
+        })),
+      },
+    });
+    await h.runtime.drain();
+
+    expect(h.decisionsAtRng).toEqual([]);
+    expect(h.messages.at(-1)).toMatchObject({
+      type: 'ERROR',
+      message: 'decisionKey does not bind the canonical decision snapshot',
     });
   });
 

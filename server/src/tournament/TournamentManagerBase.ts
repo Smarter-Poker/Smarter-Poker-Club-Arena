@@ -78,6 +78,8 @@ import {
   type MysteryBountyStage,
 } from './mysteryBountyActivation.js';
 import { applySpinDrawPatch, launchPatchValueMatches } from './spinDrawSync.js';
+import { proveSpinDrawWithParking } from './spinLaunchParking.js';
+import { raiseFinancialAlert } from '../services/financialAlerts.js';
 import {
   parsePlayedSpinLaunchRecoveryProof,
   type PlayedSpinLaunchRecoveryProof,
@@ -93,6 +95,7 @@ import {
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { horseAddsOnImmediately } from '../services/FreeBuy.js';
 import { tournamentLeaseMonotonicNow } from '../services/tournamentLease.js';
+import { registerTournamentManagerFenceHandler } from '../services/supabase/tournamentManagerFence.js';
 import { bindTournamentDataAuthorityMethods } from '../services/supabase/dataActorContext.js';
 import {
   publicTournamentTableFormat,
@@ -254,6 +257,8 @@ export abstract class TournamentManagerBase {
   private tournamentLeaseProofDeadlineMonotonicMs: number | null;
   private tournamentLeaseExpiryTimer: ReturnType<typeof setTimeout> | null = null;
   private tournamentLeaseAuthorityExpired = false;
+  /** Removes this generation's database-fence stand-down registration. */
+  private unregisterDatabaseFenceHandler: (() => void) | null = null;
   protected running: boolean = false;
   /**
    * Exact ownership of asynchronous manager work.
@@ -508,6 +513,37 @@ export abstract class TournamentManagerBase {
     this.gameServer = gameServer;
     this.tournamentLeaseGeneration = tournamentLeaseGeneration;
     this.tournamentLeaseProofDeadlineMonotonicMs = tournamentLeaseProofDeadlineMonotonicMs;
+    if (tournamentLeaseGeneration) {
+      this.unregisterDatabaseFenceHandler = registerTournamentManagerFenceHandler(
+        { tournamentId, leaseGeneration: tournamentLeaseGeneration },
+        () => this.standDownForDatabaseFence()
+      );
+    }
+  }
+
+  /**
+   * The database answered one of this generation's requests with
+   * TOURNAMENT_MANAGER_FENCED: its lease generation is no longer current there,
+   * whatever the in-process proof still says. That answer is final for this
+   * generation. Fence every async continuation now and tear down; nothing is
+   * re-armed, and no request is repeated. GameServer retires the manager on
+   * its next lease pass because current authority is no longer reported.
+   */
+  standDownForDatabaseFence(): void {
+    if (!this.tournamentLeaseGeneration || this.tournamentLeaseAuthorityExpired) return;
+    this.fenceForTournamentLeaseLoss();
+    reportError(
+      new Error(
+        `Tournament ${this.tournamentId} manager generation ${this.tournamentLeaseGeneration} was fenced by the database and stood down`
+      ),
+      'Tournament.manager_fenced_by_database'
+    );
+    const teardown = this.stop();
+    void teardown.catch((error) =>
+      reportError(error, 'Tournament.database_fence_stop_failed', {
+        tournamentId: this.tournamentId,
+      })
+    );
   }
 
   /** Every dealer owned by this manager carries the same tournament fence. */
@@ -3840,8 +3876,6 @@ export abstract class TournamentManagerBase {
       if (tournament.variant === 'spin' || tournament.tournament_type === 'SPIN') {
         const buyIn = Number(tournament.buy_in_amount) || 0;
         const ruleManifest = spinRuleManifest(buyIn, Number(tournament.starting_chips) || 0);
-        let fundedSpin: FundedSpinDraw | null = null;
-        let drawFailure = 'atomic authority returned no funded receipt';
 
         /*
          * THE DRAW, ENTRY BOOKING, RESERVE DEBIT, JOURNAL AND TOURNAMENT
@@ -3854,43 +3888,53 @@ export abstract class TournamentManagerBase {
          * same receipt, but it does not reveal or project the presentation a
          * second time.
          */
-        for (let attempt = 1; attempt <= 3 && !fundedSpin; attempt++) {
-          try {
+        /*
+         * THE ANSWER IS READ BEFORE IT IS RETRIED (2026-09-10).
+         *
+         * Every refusal used to be three calls 250/500 ms apart and a stand
+         * down, and the fast lane restarted the manager one second later. On
+         * 2026-09-10 the authority refused every Spin on the board with
+         * `projected_spin_draw_has_no_funding_proof`, an answer that could not
+         * change until a migration changed it, and the engine asked it 87 times
+         * a second for hours. spinLaunchParking.ts now classifies the reason:
+         * a terminal one parks the tournament (30 s, doubling, 15-minute cap)
+         * and raises ONE financial alert; a transient one keeps the three
+         * attempts and then parks briefly (5 s, doubling) so that the restart
+         * cadence is bounded too. An ok clears the park.
+         */
+        const proven = await proveSpinDrawWithParking<FundedSpinDraw>({
+          tournamentId: this.tournamentId,
+          launchId,
+          callDraw: async () => {
             const { data, error } = await supabase.rpc('fn_spin_draw_and_settle_atomic', {
               p_tournament_id: this.tournamentId,
               p_launch_id: launchId,
               p_lease_generation: this.tournamentLeaseGeneration,
               p_rule_manifest: ruleManifest,
             });
-            this.assertLifecycleCurrent(lifecycle);
-            if (error || !data?.ok) {
-              throw new Error(error?.message || data?.reason || 'spin_draw_receipt_unavailable');
-            }
-            fundedSpin = readFundedSpinDraw(data, {
+            return { data, error };
+          },
+          readReceipt: (data) =>
+            readFundedSpinDraw(data, {
               tournamentId: this.tournamentId,
               launchId,
               buyIn,
-            });
-          } catch (err: any) {
-            if (err instanceof TournamentLifecycleAbortedError) throw err;
-            drawFailure = err?.message ? String(err.message) : String(err);
-            if (attempt < 3) {
-              await new Promise((resolve) => setTimeout(resolve, 250 * attempt));
-              this.assertLifecycleCurrent(lifecycle);
-            }
-          }
-        }
+            }),
+          assertLifecycleCurrent: () => this.assertLifecycleCurrent(lifecycle),
+          sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+          raiseAlert: raiseFinancialAlert,
+          warn: (message) => console.warn(message),
+          reportError,
+        });
         this.assertLifecycleCurrent(lifecycle);
-        if (!fundedSpin) {
-          reportError(
-            new Error(
-              `[Tournament:${this.tournamentId.slice(0, 8)}] Immutable funded Spin receipt was not proven after 3 attempts (${drawFailure}) - standing down before reveal and RUNNING; the incomplete launch will replay the same database authority`
-            ),
-            'Tournament.spin_draw_unavailable'
-          );
+        if (!proven.ok) {
+          // Parked and reported by proveSpinDrawWithParking: once at warn for a
+          // terminal reason, through reportError for a transient one. The
+          // fast lane skips this id until the park ends.
           this.running = false;
           return;
         }
+        const fundedSpin: FundedSpinDraw = proven.receipt;
 
         const spinMultiplier = fundedSpin.multiplier;
         const prizePool = fundedSpin.prizePool;
@@ -5052,6 +5096,8 @@ export abstract class TournamentManagerBase {
     const lifecycleOperation = this.lifecycleOperation;
     if (this.stopFenceApplied) return lifecycleOperation;
     this.stopFenceApplied = true;
+    this.unregisterDatabaseFenceHandler?.();
+    this.unregisterDatabaseFenceHandler = null;
     return this.applyManagerMutationFence(true);
   }
 

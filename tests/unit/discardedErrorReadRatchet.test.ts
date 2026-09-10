@@ -101,8 +101,6 @@ const BASELINE = new Map<string, number>([
   // rule: shrink what you touch).
   ['src/pages/tournament/TournamentLobbyPage.tsx', 3],
   ['src/pages/VIPPage.tsx', 2],
-  ['src/pages/RakebackDashboard.tsx', 3],
-  ['src/pages/PlayerSessionsPage.tsx', 2],
   ['src/pages/NotificationsPage.tsx', 0],
   ['src/pages/ClubRulesPage.tsx', 0],
   ['src/pages/CashierTradePage.tsx', 0],

@@ -7,6 +7,7 @@ import {
   type Page,
 } from '@playwright/test';
 
+import { ensureAcceptedTerms } from './support/ensureAcceptedTerms';
 import { ensurePlayableProfile } from './support/ensurePlayableProfile';
 import { ensureAcceptedTerms } from './support/ensureAcceptedTerms';
 import {

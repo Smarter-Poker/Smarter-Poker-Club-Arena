@@ -415,6 +415,76 @@ describe('the announcement', () => {
     expect(liveTimers[0].ms).toBe(MaintenanceBreak.BREAK_DURATION_MS);
   });
 
+  it('retries a save that timed out behind an entry, and keeps the announced :55', async () => {
+    vi.setSystemTime(new Date('2026-09-10T06:53:00.000Z'));
+    const announcedAt = Date.now();
+    const { mb, engines, store, emitted } = build(2);
+    let attempts = 0;
+    const realSave = store.save.bind(store);
+    store.save = async (state) => {
+      attempts++;
+      if (attempts <= 2) throw new Error('canceling statement due to lock timeout');
+      await realSave(state);
+    };
+
+    const announcing = mb.announceLastHand();
+    await vi.advanceTimersByTimeAsync(MaintenanceBreak.ANNOUNCE_PERSIST_RETRY_MS * 2);
+    await announcing;
+
+    expect(attempts).toBe(3);
+    expect(mb.isActive()).toBe(true);
+    expect(store.row).toMatchObject({ phase: 'last_hand', announcedAt });
+    expect(emitted).toHaveLength(engines.size);
+    expect(new Set(emitted.map((frame) => frame.payload.phase))).toEqual(new Set(['last_hand']));
+    for (const engine of engines.values()) expect(engine.paused).toBe(true);
+
+    await vi.advanceTimersByTimeAsync(
+      announcedAt + MaintenanceBreak.LAST_HAND_LEAD_MS - Date.now() - 1
+    );
+    expect(store.row?.phase).toBe('last_hand');
+    await vi.advanceTimersByTimeAsync(1);
+    expect(store.row).toMatchObject({
+      phase: 'counting_down',
+      breakStartedAt: announcedAt + MaintenanceBreak.LAST_HAND_LEAD_MS,
+    });
+  });
+
+  it('stops retrying a proven statement cancellation before the fixed boundary', async () => {
+    vi.setSystemTime(new Date('2026-09-10T06:53:00.000Z'));
+    const { mb, engines, store, emitted } = build(2);
+    let attempts = 0;
+    store.save = async () => {
+      attempts++;
+      throw new Error('canceling statement due to lock timeout');
+    };
+
+    const announcing = mb.announceLastHand();
+    const failed = announcing.catch((error: Error) => error);
+    await vi.advanceTimersByTimeAsync(MaintenanceBreak.ANNOUNCE_PERSIST_BUDGET_MS);
+    const error = await failed;
+
+    expect((error as Error).message).toMatch(/lock timeout/);
+    expect(attempts).toBeGreaterThan(1);
+    expect(attempts).toBeLessThanOrEqual(
+      MaintenanceBreak.ANNOUNCE_PERSIST_BUDGET_MS / MaintenanceBreak.ANNOUNCE_PERSIST_RETRY_MS + 1
+    );
+    expect(mb.isActive()).toBe(false);
+    expect(emitted).toHaveLength(0);
+    for (const engine of engines.values()) expect(engine.paused).toBe(false);
+  });
+
+  it('does not retry an ownership loss or an expired boundary', async () => {
+    const { mb, store } = build(1);
+    let attempts = 0;
+    store.save = async () => {
+      attempts++;
+      throw new Error('MAINTENANCE_LAST_HAND_BOUNDARY_EXPIRED');
+    };
+    await expect(mb.announceLastHand()).rejects.toThrow('BOUNDARY_EXPIRED');
+    expect(attempts).toBe(1);
+    expect(mb.isActive()).toBe(false);
+  });
+
   it('accepts a lost save response only after exact durable read-back', async () => {
     const { mb, store, emitted } = build(1);
     store.save = async (state) => {

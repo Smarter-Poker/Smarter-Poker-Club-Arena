@@ -51,6 +51,9 @@ const CODE = code(BASE);
 const RECEIPT_CODE = code(
   fs.readFileSync(path.join(process.cwd(), 'src/tournament/SpinDrawReceipt.ts'), 'utf8')
 );
+const PARKING_CODE = code(
+  fs.readFileSync(path.join(process.cwd(), 'src/tournament/spinLaunchParking.ts'), 'utf8')
+);
 
 describe('an immutable funded Spin receipt that cannot be proven is UNKNOWN', () => {
   it('never assigns a multiplier from the tier table as a fallback', () => {
@@ -58,10 +61,18 @@ describe('an immutable funded Spin receipt that cannot be proven is UNKNOWN', ()
     expect(CODE).not.toMatch(/spinMultiplier\s*=\s*SPIN_TIERS\s*\[\s*0\s*\]/);
   });
 
+  /**
+   * 2026-09-10: the draw loop moved into spinLaunchParking.ts so that its
+   * refusals can be classified (a terminal reason parks the launch instead of
+   * being retried 87 times a second). The shapes forbidden here are the same;
+   * they are now checked where the loop lives.
+   */
   it('reads the combined RPC error and validates its complete funded receipt', () => {
     const call = sliceEnclosingBlock(CODE, 'fn_spin_draw_and_settle_atomic');
     expect(call).toMatch(/const\s*\{\s*data,\s*error\s*\}/);
-    expect(call).toContain('if (error || !data?.ok)');
+    expect(call).toContain('return { data, error }');
+    // The ok gate: an error, or anything but a literal ok:true, is a refusal.
+    expect(PARKING_CODE).toContain('if (!result.error && data && data.ok === true)');
     expect(CODE).toContain('readFundedSpinDraw(data,');
     expect(CODE).not.toMatch(/supabase\.rpc\('fn_spin_(?:draw_multiplier|settle_game)'/);
   });
@@ -70,14 +81,18 @@ describe('an immutable funded Spin receipt that cannot be proven is UNKNOWN', ()
     // `catch { }` / `catch (e) { }` with nothing in it is what swallowed it.
     const drawBlock = CODE.slice(
       CODE.indexOf("supabase.rpc('fn_spin_draw_and_settle_atomic'"),
-      CODE.indexOf('Tournament.spin_draw_unavailable')
+      CODE.indexOf('const fundedSpin: FundedSpinDraw = proven.receipt')
     );
     expect(drawBlock).not.toMatch(/catch\s*(\([^)]*\))?\s*\{\s*\}/);
+    const loop = PARKING_CODE.slice(
+      PARKING_CODE.indexOf('export async function proveSpinDrawWithParking')
+    );
+    expect(loop).not.toMatch(/catch\s*(\([^)]*\))?\s*\{\s*\}/);
   });
 
   it('stands the start down rather than resolving to a value', () => {
-    expect(CODE).toMatch(/Tournament\.spin_draw_unavailable/);
-    const failure = sliceEnclosingBlock(CODE, 'if (!fundedSpin)');
+    expect(PARKING_CODE).toMatch(/Tournament\.spin_draw_unavailable/);
+    const failure = sliceEnclosingBlock(CODE, 'if (!proven.ok)');
     // The stand-down pattern the short-field and unpaid-seat gates already use.
     expect(failure).toMatch(/this\.running\s*=\s*false/);
     // And the old error tag, which named a state that no longer exists, is gone.

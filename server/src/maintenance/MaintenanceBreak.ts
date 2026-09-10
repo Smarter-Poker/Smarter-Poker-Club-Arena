@@ -298,6 +298,39 @@ export class MaintenanceBreak {
   static readonly LAST_HAND_PERSIST_RETRY_MAX_MS = 15_000;
 
   /**
+   * PostgreSQL lock/statement timeouts prove that the attempted statement was
+   * cancelled, so they may be retried on a fixed cadence and ultimately
+   * rejected before :55. Transport failures do not provide that proof and
+   * continue to use the full fixed-boundary ambiguity protocol below.
+   */
+  static readonly ANNOUNCE_PERSIST_BUDGET_MS = 90 * 1000;
+  static readonly ANNOUNCE_PERSIST_RETRY_MS = 5 * 1000;
+
+  static isLockOrStatementTimeout(error: unknown): boolean {
+    const message = String((error as Error)?.message ?? error ?? '');
+    if (
+      /MAINTENANCE_(OWNERSHIP_LOST|LAST_HAND_BOUNDARY_EXPIRED|COUNTDOWN_BOUNDARY_EXPIRED)/.test(
+        message
+      )
+    ) {
+      return false;
+    }
+    return /lock timeout|statement timeout|lock_not_available|55P03|canceling statement/i.test(
+      message
+    );
+  }
+
+  private static isDefinitiveLastHandRejection(error: unknown): boolean {
+    const message = String((error as Error)?.message ?? error ?? '');
+    return (
+      MaintenanceBreak.isLockOrStatementTimeout(error) ||
+      /MAINTENANCE_(OWNERSHIP_LOST|LAST_HAND_BOUNDARY_EXPIRED|COUNTDOWN_BOUNDARY_EXPIRED)/.test(
+        message
+      )
+    );
+  }
+
+  /**
    * A thaw is a required phase transition, not best-effort bookkeeping. The
    * database function checkpoints each installment, so retrying joins the same
    * work and cannot double-credit clocks. Keep one lifecycle-owned retry loop
@@ -1125,6 +1158,10 @@ export class MaintenanceBreak {
         return;
       }
     } catch (error) {
+      if (MaintenanceBreak.isDefinitiveLastHandRejection(error)) {
+        this.cancelUnpublishedLastHand();
+        throw error;
+      }
       // A transport/database failure cannot prove that the serialized write
       // did not commit. Honor the fixed break locally so a durable row can
       // never tell players "maintenance" while the tables keep dealing.
@@ -1957,10 +1994,29 @@ export class MaintenanceBreak {
       this.cancelLastHandPersistRetryWait();
       lastError = outcome.error;
 
+      const lockOrStatementTimeout = MaintenanceBreak.isLockOrStatementTimeout(lastError);
+      const message = String((lastError as Error)?.message ?? lastError ?? '');
+      if (
+        /MAINTENANCE_(OWNERSHIP_LOST|LAST_HAND_BOUNDARY_EXPIRED|COUNTDOWN_BOUNDARY_EXPIRED)/.test(
+          message
+        )
+      ) {
+        throw lastError;
+      }
+
       if (!this.lastHandDeclarationIsCurrent(state, generation)) return 'cancelled';
-      const remainingMs = boundaryAt - this.now();
-      if (remainingMs <= 0) break;
-      const delayMs = Math.min(retryMs, remainingMs);
+      const retryDeadline = lockOrStatementTimeout
+        ? Math.min(boundaryAt, state.announcedAt + MaintenanceBreak.ANNOUNCE_PERSIST_BUDGET_MS)
+        : boundaryAt;
+      const remainingMs = retryDeadline - this.now();
+      if (remainingMs <= 0) {
+        if (lockOrStatementTimeout) throw lastError;
+        break;
+      }
+      const delayMs = Math.min(
+        lockOrStatementTimeout ? MaintenanceBreak.ANNOUNCE_PERSIST_RETRY_MS : retryMs,
+        remainingMs
+      );
       console.warn(
         `[MaintenanceBreak] could not persist the last-hand boundary (attempt ${attempt}); ` +
           `keeping every table gated and retrying in ${delayMs}ms: ${
@@ -1969,7 +2025,9 @@ export class MaintenanceBreak {
       );
       const waitResult = await this.waitForLastHandPersistRetry(delayMs);
       if (waitResult === 'cancelled') return 'cancelled';
-      retryMs = Math.min(MaintenanceBreak.LAST_HAND_PERSIST_RETRY_MAX_MS, retryMs * 2);
+      if (!lockOrStatementTimeout) {
+        retryMs = Math.min(MaintenanceBreak.LAST_HAND_PERSIST_RETRY_MAX_MS, retryMs * 2);
+      }
     }
 
     if (!this.lastHandDeclarationIsCurrent(state, generation)) return 'cancelled';
@@ -1980,6 +2038,35 @@ export class MaintenanceBreak {
       );
     }
     return 'uncertain';
+  }
+
+  /**
+   * A database rejection such as lock timeout or ownership loss proves that
+   * no last-hand row committed. Undo only this unpublished local hold; an
+   * ambiguous transport failure never reaches this path.
+   */
+  private cancelUnpublishedLastHand(): void {
+    this.cancelLastHandPersistRetryWait();
+    for (const timer of [this.countdownTimer, this.endTimer]) {
+      if (timer) this.clearTimer(timer);
+    }
+    this.countdownTimer = null;
+    this.endTimer = null;
+    this.resumeToken += 1;
+    for (const timer of this.resumeWaveTimers) this.clearTimer(timer);
+    this.resumeWaveTimers.clear();
+
+    this.phase = 'idle';
+    this.releaseCertificateOnly = false;
+    this.durablePhaseConfirmed = false;
+    this.potentiallyDurableStates = [];
+    this.playerAnnouncementVisible = false;
+    this.announcedAt = 0;
+    this.breakStartedAt = 0;
+    this.breakEndsAt = 0;
+    this.ending = false;
+    setMaintenanceFrozen(false);
+    this.resumeEveryEngine();
   }
 
   /**

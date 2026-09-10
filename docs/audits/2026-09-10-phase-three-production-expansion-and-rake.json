@@ -1,0 +1,52 @@
+{
+  "date": "2026-09-10",
+  "status": "two_production_database_changes_verified",
+  "deal_expansion": {
+    "version": "20260910125453",
+    "source": "scripts/deploy/phase-three-versioned-final-deal.sql",
+    "source_sha256": "6a122c52afea42df937c9f41e6845c49362d783beb1fdcd375a6b8aa402ab636",
+    "source_bytes": 45658,
+    "functions_matched": 16,
+    "tables_matched": 5,
+    "immutable_triggers_matched": 3,
+    "policy_request_seconds": 120,
+    "policy_consent_seconds": 120,
+    "approved_registry": true,
+    "activation": false,
+    "legacy_vote_body_and_permissions_unchanged": true,
+    "function_body_md5": {
+      "public.fn_get_tournament_deal_review(uuid)": "9db8d596c585990444b2e15f42e0a4e2",
+      "public.fn_ca_tournament_deal_snapshot(uuid)": "6eee1f2e33f6a62bbc0dd59086c98c1c",
+      "public.fn_get_tournament_deal_proposal(uuid)": "b9176e96f19f8b76f91e797f21e23334",
+      "public.fn_get_tournament_deal_consensus(uuid)": "0d2c4b7ac54354ab0501337e0e2364fc",
+      "public.fn_require_exact_final_deal_proposal()": "35f32e6768be09006753ba07f994a93b",
+      "public.fn_ca_tournament_deal_proposals_active()": "6fa3e31adb6fa1ff7c7564d70cb9f62a",
+      "public.fn_ca_tournament_deal_hand_revision(uuid)": "1af5fcc1e105b514e6d9998fac7c46fc",
+      "public.fn_begin_tournament_deal_review(uuid,uuid)": "5f4e9ba1a3adcc84fcf62b3e22253b25",
+      "public.fn_tournament_deal_proposal_is_immutable()": "1dfcaac9540ad15c6de981c8c443d0bc",
+      "public.fn_cast_tournament_deal_vote(uuid,uuid,uuid)": "fdf96aac6d5d5e089b92638aa48fb49f",
+      "public.fn_request_tournament_deal_review(uuid,uuid)": "48ddc5818b9105059c37151cf78f52ce",
+      "public.fn_close_tournament_deal_review(uuid,uuid,text)": "27471182d604538bb1a9562871b5870c",
+      "public.fn_cancel_tournament_deal_review(uuid,uuid,uuid)": "036efbd357a591f69e5727b790b87cd8",
+      "public.fn_ca_tournament_deal_review_result(uuid,uuid,uuid)": "6f266e527ecd674ab4aeccfe72305a52",
+      "public.fn_complete_tournament_terminal_proposal(uuid,uuid,text,uuid,text)": "5d796d4b26601b4fe6e1d30b1531c6e2",
+      "public.fn_resolve_tournament_terminal_proposal_outcome(uuid,uuid,text,uuid,text)": "8b9acfb4802f04723d87069607225588"
+    }
+  },
+  "rake_restoration": {
+    "version": "20260910130319",
+    "source": "scripts/deploy/2026-09-10-restore-rake-attribution-retries.sql",
+    "source_sha256": "f912f858c7f35004bfc2447fdf70329afc8a52029970e052c85c8e106fc83f2c",
+    "source_bytes": 8151,
+    "body_before": "05a512317bb7bdcecfaec19ef8ee4e63",
+    "body_after": "be08a61e1a867519048c4692b41ab1fd",
+    "metadata_and_privileges_unchanged": true,
+    "lane_helper_and_attribution_unchanged": true,
+    "native_assertions": 35
+  },
+  "limits": [
+    "Deal authority remains inactive.",
+    "Strict cutover and manager request-fence compatibility remain under native verification.",
+    "Database postflight proves installed definitions and permissions; it does not certify completed tournaments or client/engine adoption."
+  ]
+}

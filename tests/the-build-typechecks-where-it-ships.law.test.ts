@@ -32,6 +32,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { parse } from 'yaml';
 
 const ROOT = join(__dirname, '..');
 const read = (p: string) => readFileSync(join(ROOT, p), 'utf8');
@@ -86,6 +87,13 @@ describe('the build typechecks where it ships', () => {
     const job = nextJob === -1 ? rest : rest.slice(0, nextJob + 1);
     expect(job, 'the typecheck job disappeared').toContain('TypeScript Check');
     expect(job).toMatch(/tsc --noEmit/);
+    const step = parse(ci).jobs.typecheck.steps.find(
+      (step: { name?: string }) => step.name === 'TypeScript Check'
+    );
+    expect(step.run.trim().split('\n')).toEqual([
+      'npx tsc --noEmit',
+      'npx tsc -p tsconfig.node.json --noEmit',
+    ]);
     // It must not be gated on the `changes` job. A skipped required check
     // counts as SATISFIED by the ruleset, so a filter here is how the whole
     // typecheck quietly stops happening.

@@ -42,6 +42,72 @@ def lane_helpers(path: Path) -> list[tuple[str, str, str, str]]:
     return helpers
 
 
+# These are source/catalog preconditions, not definitions to install. The shared
+# obligation wrapper is the only function read from its containing migration.
+CASH_LEAF_SOURCES = (
+    (
+        "20260909042455_tournament_cash_settlement_has_one_atomic_authority.sql",
+        "fn_ca_settle_tournament_place_raw",
+        "fn_ca_settle_tournament_place_raw(uuid,integer,uuid,numeric)",
+        "329237bd65214e17d4ca3298f363f248",
+        "f3a1ddf283835776198be8a470fd5611cbc496c6bea9a505b6d41c3cecae09e5",
+        "search_path=public",
+    ),
+    (
+        "20260909042455_tournament_cash_settlement_has_one_atomic_authority.sql",
+        "fn_ca_settle_final_table_deal_share_raw",
+        "fn_ca_settle_final_table_deal_share_raw(uuid,uuid,numeric)",
+        "58e2768644b692f23a9a071a8a5d1ee8",
+        "a0b39fd6f04259c8c0ae40fcfa6abfe504b79196ccd7db767a4ae3cc523be223",
+        "search_path=public",
+    ),
+    (
+        "20260909165629_satellite_settlement_has_one_atomic_authority.sql",
+        "fn_settle_tournament_obligation",
+        "fn_settle_tournament_obligation(uuid,text,integer,uuid,numeric,text,text,uuid)",
+        "915f3ebd5c4a2efb97ad3a354dfeb365",
+        "c6d0fdefeec1442e9b60ca0d8926897f543d86a7fce062442e7ab7f3e3d5edd8",
+        "search_path=public, pg_temp",
+    ),
+    (
+        "20260908011408_tournament_settlement_rejects_invalid_amounts_and_places.sql",
+        "fn_settle_tournament_obligation",
+        "fn_settle_tournament_obligation_before_atomic_batch_gate(uuid,text,integer,uuid,numeric,text,text,uuid)",
+        "68f74f87580ea2c2a1cacbe30f9b4289",
+        "1cacb1c8ee4a1f807ea49e617c25f93b82c9b772013808c09e76a2fcfa7a748a",
+        "search_path=public",
+    ),
+)
+
+
+def cash_leaf_gates(root: Path) -> str:
+    """Reject unreviewed source or existing cash leaves before fixture writes."""
+    gates = []
+    for filename, source_name, identity, digest, source_sha, config in CASH_LEAF_SOURCES:
+        path = root / "supabase/migrations" / filename
+        definitions = re.findall(
+            r"(CREATE OR REPLACE FUNCTION public\." + source_name
+            + r"\(.*?AS (\$[^$]*\$)(.*?)\2;)", path.read_text(), re.S)
+        if len(definitions) != 1:
+            raise ValueError(f"{identity}: expected one tracked cash leaf definition")
+        definition, _, body = definitions[0]
+        if (hashlib.sha256(definition.encode()).hexdigest() != source_sha
+                or hashlib.md5(body.encode()).hexdigest() != digest):
+            raise ValueError(f"{identity}: tracked cash leaf source changed")
+        gates.append(
+            f"-- CASH_LEAF_SOURCE_SHA256 {source_sha} {path.relative_to(root)}::{source_name}\n"
+            + "DO $cash_leaf_gate$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_proc p "
+            + "JOIN pg_language l ON l.oid=p.prolang "
+            + f"WHERE p.oid=to_regprocedure('public.{identity}') "
+            + f"AND md5(p.prosrc)='{digest}' AND p.prosecdef "
+            + "AND pg_get_userbyid(p.proowner)='postgres' AND l.lanname='plpgsql' "
+            + f"AND p.proconfig=ARRAY['{config}']::text[]) "
+            + f"THEN RAISE EXCEPTION 'native cash leaf differs: {identity}'; "
+            + "END IF; END; $cash_leaf_gate$;\n"
+        )
+    return "".join(gates)
+
+
 def compose(root: Path, probe: Path, fixed_tail: str, lane_path: Path) -> str:
     expansion_path = root / "scripts/deploy/phase-three-versioned-final-deal.sql"
     activation_path = root / "scripts/deploy/phase-three-activate-versioned-final-deal.sql"
@@ -124,7 +190,7 @@ BEGIN
 END;
 $disposable_only$;
 """
-    expansion = once(expansion, "BEGIN;", "BEGIN;\n" + preflight + authority_gate + lane_fixture + cash_fixture + scope_fixture, "expansion begin")
+    expansion = once(expansion, "BEGIN;", "BEGIN;\n" + preflight + authority_gate + cash_leaf_gates(root) + lane_fixture + cash_fixture + scope_fixture, "expansion begin")
     fixture = fixture_path.read_text()
     fixture = once(fixture, "BEGIN;", "", "fixture begin")
     fixture = once(fixture, "COMMIT;", "", "fixture commit")
@@ -164,7 +230,11 @@ $disposable_only$;
 SELECT oid::regprocedure::text AS native_authority,md5(prosrc) AS native_body_md5
 FROM pg_proc WHERE oid IN (
   'public.fn_settle_tournament_final_table_deal(uuid)'::regprocedure,
-  'public.fn_ca_tournament_place_amounts(uuid)'::regprocedure)
+  'public.fn_ca_tournament_place_amounts(uuid)'::regprocedure,
+  'public.fn_ca_settle_tournament_place_raw(uuid,integer,uuid,numeric)'::regprocedure,
+  'public.fn_ca_settle_final_table_deal_share_raw(uuid,uuid,numeric)'::regprocedure,
+  'public.fn_settle_tournament_obligation(uuid,text,integer,uuid,numeric,text,text,uuid)'::regprocedure,
+  'public.fn_settle_tournament_obligation_before_atomic_batch_gate(uuid,text,integer,uuid,numeric,text,text,uuid)'::regprocedure)
 ORDER BY oid::regprocedure::text;
 """
     return (

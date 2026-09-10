@@ -17261,3 +17261,13 @@ Correct below-half wager completion and counted-wager caps across engine validat
 ## 2026-09-09: Phase 3 Tournament Break Ownership
 
 Hand-for-hand retains synchronized/add-on break pauses, preserves their budgets and resumes from the final break end. Nine behavioral cases and the 1343-test tournament/maintenance/pause suite pass; no database migration. See docs/audits/2026-09-09-phase3-tournament-lifecycle.md. Phase 3 remains in progress.
+
+
+## Change: Authenticate The Native Final Deal Cash Leaves (2026-09-10)
+
+**File:** `scripts/dev/build-versioned-final-deal-probe.py` (before lines 49-72, 164-171).
+**What existed:** The rollback composer checked the calculator and top cash payer, but did not authenticate the raw place/share helpers, public obligation wrapper, or renamed settlement core before exercising real credits.
+**What changes:** Require exact tracked function definition SHA256 and body MD5 for those four cash leaves, and check their catalog signature, body, owner, language, security mode and search path before any fixture or authority writes. Read only the shared obligation definition from its containing migration; do not replay that migration or install any leaf.
+**Why:** A green native result must not silently accept an older raw payer that bypasses the current public obligation boundary. Source and catalog mismatch must stop the probe before writes.
+**Verified:** YES. Diff reread, Python composer imported successfully, 68 native assertions passed in each paid/unpaid/partial fixture with rollback. Four altered source definitions and six read-only catalog mismatch cases refused before writes. Empty fixture state and original authority/helper state restored. No production or whole-terminal acceptance is claimed.
+**TypeScript:** Not applicable to Python composer and audit documentation only.

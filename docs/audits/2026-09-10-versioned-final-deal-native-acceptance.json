@@ -1,5 +1,5 @@
 {
-  "recorded_at": "2026-09-10T06:05:20.778070+00:00",
+  "recorded_at": "2026-09-10T07:04:45.600570+00:00",
   "programme": "109-item accounting programme",
   "phase": 3,
   "control": "CA-03-06",
@@ -10,20 +10,20 @@
     {
       "variant": "paid",
       "exit_code": 0,
-      "assertions": 68,
-      "rollback": true
+      "rollback": true,
+      "assertions": 68
     },
     {
       "variant": "unpaid",
       "exit_code": 0,
-      "assertions": 68,
-      "rollback": true
+      "rollback": true,
+      "assertions": 68
     },
     {
       "variant": "partial",
       "exit_code": 0,
-      "assertions": 68,
-      "rollback": true
+      "rollback": true,
+      "assertions": 68
     }
   ],
   "count_note": "The same 68 assertions run for paid, unpaid and partial fixed-tail starting states; these are not 204 distinct tests.",
@@ -58,7 +58,11 @@
   },
   "native_authority_body_md5": {
     "fn_ca_tournament_place_amounts(uuid)": "8f6cde5f5b799949506259f3064568b9",
-    "fn_settle_tournament_final_table_deal(uuid)": "141c723b5225bcec588b8957cf039184"
+    "fn_settle_tournament_final_table_deal(uuid)": "141c723b5225bcec588b8957cf039184",
+    "fn_ca_settle_tournament_place_raw(uuid,integer,uuid,numeric)": "329237bd65214e17d4ca3298f363f248",
+    "fn_ca_settle_final_table_deal_share_raw(uuid,uuid,numeric)": "58e2768644b692f23a9a071a8a5d1ee8",
+    "fn_settle_tournament_obligation(uuid,text,integer,uuid,numeric,text,text,uuid)": "915f3ebd5c4a2efb97ad3a354dfeb365",
+    "fn_settle_tournament_obligation_before_atomic_batch_gate(uuid,text,integer,uuid,numeric,text,text,uuid)": "68f74f87580ea2c2a1cacbe30f9b4289"
   },
   "fixture_authorities": [
     "Exact local calculator and cash baseline fingerprints are checked before writes. The cash body is transformed using the exact tracked lane regex/replacement, requires exactly one lock occurrence, and must match verified live MD5 141c723b5225bcec588b8957cf039184 before installation and native tests inside the rollback fixture.",
@@ -66,7 +70,8 @@
     "The canonical final_table_deal source row is extracted from tracked20260905203123; no payer or journal stub is installed.",
     "Synthetic committed-hand witness rows exercise the review consumer; hand production is covered separately.",
     "All three scope-change attempts are refused by existing native lifecycle/asset guards without disabling them.",
-    "Only two fingerprint-matched lane helpers and the exact transformed current cash authority are installed transactionally. Existing native payout/financial guards remain enabled and unchanged; no M5 or satellite body is installed."
+    "Only two fingerprint-matched lane helpers and the exact transformed current cash authority are installed transactionally. Existing native payout/financial guards remain enabled and unchanged; no M5 or satellite body is installed.",
+    "Four tracked cash leaf definitions and existing local catalog bodies are now pinned before fixture writes. Both raw payers call the current shared obligation wrapper, which calls the renamed exact core; no bypassing raw baseline is accepted and no leaf is installed."
   ],
   "acceptance": [
     "side-effect-free review and proposal reads",
@@ -141,7 +146,7 @@
     "scripts/deploy/phase-three-versioned-final-deal.sql": "6a122c52afea42df937c9f41e6845c49362d783beb1fdcd375a6b8aa402ab636",
     "scripts/deploy/phase-three-activate-versioned-final-deal.sql": "65aa9e7ec5231aaee2017460032d2e26f9d8bdc95f90473382ac2b4b673352ec",
     "scripts/deploy/phase-three-strict-tournament-cutover.sql": "09154d18e6ee6bdbcf8a36bc4b13b98ade60ed07c445b29b5338df546fc3e4af",
-    "scripts/dev/build-versioned-final-deal-probe.py": "d61d3a992d7821cf5244515c4075ff48482a106a65dcd5bf7be3e9fabfaa2ee6",
+    "scripts/dev/build-versioned-final-deal-probe.py": "e75bb5e19be5ff787caa8cda53782f3ca62cee06007b53af1167a68e6e171a8e",
     "scripts/dev/probe-versioned-final-deal-lock-wait.py": "90beeb063d0777361576a545ac2a923b599b922c304e491dad6a7c31da2f74ed",
     "scripts/ci/probes/versioned-final-deal-native.sql": "a7f3bda59622d6a5e4b523b3d60e86beaf59abb25e2b9ae3df07413e9ce34c9b"
   },
@@ -153,5 +158,58 @@
     "global_lane_helper_absent": true,
     "shared_lane_helper_absent": true,
     "temporary_scope_validator_absent": true
+  },
+  "cash_leaf_source_gates": {
+    "verified": true,
+    "catalog_fields": [
+      "exact signature",
+      "body MD5",
+      "postgres owner",
+      "plpgsql language",
+      "SECURITY DEFINER",
+      "exact search_path"
+    ],
+    "definitions": [
+      {
+        "migration": "20260909042455_tournament_cash_settlement_has_one_atomic_authority.sql",
+        "source_function": "fn_ca_settle_tournament_place_raw",
+        "catalog_identity": "fn_ca_settle_tournament_place_raw(uuid,integer,uuid,numeric)",
+        "body_md5": "329237bd65214e17d4ca3298f363f248",
+        "definition_sha256": "f3a1ddf283835776198be8a470fd5611cbc496c6bea9a505b6d41c3cecae09e5",
+        "search_path": "search_path=public"
+      },
+      {
+        "migration": "20260909042455_tournament_cash_settlement_has_one_atomic_authority.sql",
+        "source_function": "fn_ca_settle_final_table_deal_share_raw",
+        "catalog_identity": "fn_ca_settle_final_table_deal_share_raw(uuid,uuid,numeric)",
+        "body_md5": "58e2768644b692f23a9a071a8a5d1ee8",
+        "definition_sha256": "a0b39fd6f04259c8c0ae40fcfa6abfe504b79196ccd7db767a4ae3cc523be223",
+        "search_path": "search_path=public"
+      },
+      {
+        "migration": "20260909165629_satellite_settlement_has_one_atomic_authority.sql",
+        "source_function": "fn_settle_tournament_obligation",
+        "catalog_identity": "fn_settle_tournament_obligation(uuid,text,integer,uuid,numeric,text,text,uuid)",
+        "body_md5": "915f3ebd5c4a2efb97ad3a354dfeb365",
+        "definition_sha256": "c6d0fdefeec1442e9b60ca0d8926897f543d86a7fce062442e7ab7f3e3d5edd8",
+        "search_path": "search_path=public, pg_temp"
+      },
+      {
+        "migration": "20260908011408_tournament_settlement_rejects_invalid_amounts_and_places.sql",
+        "source_function": "fn_settle_tournament_obligation",
+        "catalog_identity": "fn_settle_tournament_obligation_before_atomic_batch_gate(uuid,text,integer,uuid,numeric,text,text,uuid)",
+        "body_md5": "68f74f87580ea2c2a1cacbe30f9b4289",
+        "definition_sha256": "1cacb1c8ee4a1f807ea49e617c25f93b82c9b772013808c09e76a2fcfa7a748a",
+        "search_path": "search_path=public"
+      }
+    ],
+    "negative_checks": {
+      "altered_source_definitions_refused": 4,
+      "altered_catalog_body_expectations_refused": 4,
+      "wrong_search_path_refused": true,
+      "missing_function_refused": true,
+      "catalog_negative_probes_read_only": true
+    },
+    "scope": "Existing local leaf bodies only, checked before any fixture writes. No leaf definitions or ACLs are installed or changed. Shared obligation is the only extracted definition from its containing migration. Catalog ACLs are NULL in this local replay; these source gates do not certify production ACL parity."
   }
 }

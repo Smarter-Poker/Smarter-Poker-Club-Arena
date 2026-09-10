@@ -1,6 +1,6 @@
 {
-  "tables": 118,
-  "functions": 195,
-  "triggers": 132,
+  "tables": 120,
+  "functions": 224,
+  "triggers": 174,
   "missing_foreign_tables": []
 }

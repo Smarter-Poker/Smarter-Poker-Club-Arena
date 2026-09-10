@@ -12,7 +12,7 @@ The last-fact failure checks whole-owner stack, history, outbox, settlement,
 ledger and source rollback. Exact request replay preserves original captured
 terms after the real membership row is changed.
 
-Catalog inputs contain 118 tables, 195 functions and 132 trigger definitions.
+Catalog inputs contain 120 tables, 224 functions and 174 enabled trigger definitions.
 The generator preserves captured columns, defaults, generated expressions,
 primary/unique/check constraints, foreign keys and indexes. All captured
 function owners are postgres. The exercised owner and source API grants are
@@ -24,6 +24,4 @@ Generated schema SQL is reproducible from the catalog and is not an additional
 production migration. The runner removes its stopped temporary database data
 and keeps the proof log directory.
 
-The current complete cash accepted owner is exercised. Rake banking, the Union
-funding bridge, full payer/Round2 outer cascade and other game variants are
-explicitly outside this proof until composed.
+The current complete cash accepted owner is exercised. The adjacent bank-owner proof composes actual rake banking and the cash commission batch. The Union funding bridge, full payer/Round2 outer cascade and other game variants remain outside this accepted-owner proof.

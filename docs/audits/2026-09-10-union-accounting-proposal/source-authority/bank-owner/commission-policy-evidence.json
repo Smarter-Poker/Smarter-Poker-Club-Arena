@@ -1,0 +1,32 @@
+{
+  "captured_date": "2026-09-10",
+  "production_mutations": false,
+  "chip_club_agents_with_commission_rate_above_one": 0,
+  "storage_type": "numeric(5,4)",
+  "storage_check": "commission_rate >= 0 AND commission_rate <= 0.70",
+  "booked_producers": [
+    {
+      "signature": "fn_create_agent(uuid,uuid,text,uuid,numeric,numeric,numeric,boolean)",
+      "body_md5": "fce4b7c5ee003bfc2b3b772acbf65e45",
+      "units": "fraction",
+      "max": 0.7
+    },
+    {
+      "signature": "fn_admin_update_agent(uuid,text,text,numeric,numeric,numeric,uuid,text,boolean)",
+      "body_md5": "084072db7fc3598ce60ebabbc907e50e",
+      "units": "fraction",
+      "max": 0.7
+    }
+  ],
+  "cash_caller": "server/src/services/RakebackSettlerService.ts -> fn_credit_agent_commissions_batch(jsonb) -> credit_agent_commission_from_rake(uuid,uuid,numeric,text,uuid,text)",
+  "cash_credit_body_md5": "1583ac138b7687091e7c5a049f0639e9",
+  "cash_credit_units": "raw fraction multiplication",
+  "enabled_rake_record_trigger_direct_commission_callers": 0,
+  "other_path_normalizer": {
+    "function": "calculate_cascading_commission(uuid,uuid,uuid,numeric,uuid,uuid)",
+    "body_md5": "7b9638f98b36f8f73e5ccb2b666830a0",
+    "interpretation": "greater than 1 divided by 100",
+    "cash_service_path": false
+  },
+  "conclusion": "Preserve deployed 70% booked/storage policy and raw fractions. A normalizer on another path is not evidence of live overcredit. No history, balances, schema caps, or producer policies changed."
+}

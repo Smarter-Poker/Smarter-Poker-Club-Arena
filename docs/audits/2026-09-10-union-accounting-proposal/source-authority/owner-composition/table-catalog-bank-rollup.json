@@ -1,0 +1,149 @@
+[
+  {
+    "schema": "public",
+    "name": "ca_club_rake_daily_user",
+    "rls": true,
+    "force_rls": false,
+    "grants": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+    "columns": [
+      {
+        "name": "club_id",
+        "type": "uuid",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "day",
+        "type": "date",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "user_id",
+        "type": "uuid",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "rake_cents",
+        "type": "bigint",
+        "default": "0",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "hands",
+        "type": "bigint",
+        "default": "0",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "updated_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      }
+    ],
+    "constraints": [
+      {
+        "name": "ca_club_rake_daily_user_pkey",
+        "type": "p",
+        "definition": "PRIMARY KEY (club_id, day, user_id)"
+      }
+    ],
+    "indexes": [
+      {
+        "name": "ca_club_rake_daily_user_pkey",
+        "valid": true,
+        "unique": true,
+        "definition": "CREATE UNIQUE INDEX ca_club_rake_daily_user_pkey ON public.ca_club_rake_daily_user USING btree (club_id, day, user_id)"
+      }
+    ]
+  },
+  {
+    "schema": "public",
+    "name": "union_rake_weekly",
+    "rls": true,
+    "force_rls": false,
+    "grants": "{postgres=arwdDxtm/postgres,anon=arwdxtm/postgres,authenticated=arwdxtm/postgres,service_role=arwdDxtm/postgres}",
+    "columns": [
+      {
+        "name": "union_id",
+        "type": "uuid",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "club_id",
+        "type": "uuid",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "week_start",
+        "type": "date",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "rake_total",
+        "type": "numeric",
+        "default": "0",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "updated_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      }
+    ],
+    "constraints": [
+      {
+        "name": "union_rake_weekly_key",
+        "type": "u",
+        "definition": "UNIQUE NULLS NOT DISTINCT (union_id, club_id, week_start)"
+      },
+      {
+        "name": "union_rake_weekly_pkey",
+        "type": "p",
+        "definition": "PRIMARY KEY (union_id, club_id, week_start)"
+      }
+    ],
+    "indexes": [
+      {
+        "name": "union_rake_weekly_key",
+        "valid": true,
+        "unique": true,
+        "definition": "CREATE UNIQUE INDEX union_rake_weekly_key ON public.union_rake_weekly USING btree (union_id, club_id, week_start) NULLS NOT DISTINCT"
+      },
+      {
+        "name": "union_rake_weekly_pkey",
+        "valid": true,
+        "unique": true,
+        "definition": "CREATE UNIQUE INDEX union_rake_weekly_pkey ON public.union_rake_weekly USING btree (union_id, club_id, week_start)"
+      }
+    ]
+  }
+]

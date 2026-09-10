@@ -8,7 +8,7 @@ from pathlib import Path
 p=Path(__file__).resolve().parent
 tables={x['schema']+'.'+x['name']:x for f in p.glob('table-catalog-*.json') for x in json.loads(f.read_text())}
 funcs={x['signature']:x for f in p.glob('function-catalog-*.json') for x in json.loads(f.read_text())}
-triggers=[x for f in p.glob('trigger-catalog*.json') for x in json.loads(f.read_text())]
+triggers=list({x['definition']:x for f in p.glob('trigger-catalog*.json') for x in json.loads(f.read_text())}.values())
 for t in triggers:
  if 'function_definition' in t: funcs[t['signature']]={'signature':t['signature'],'definition':t['function_definition'],'body_md5':t['body_md5'],'grants':t['grants'],'owner':t['owner']}
 q=lambda s:'"'+s.replace('"','""')+'"'
@@ -19,6 +19,7 @@ sql=["CREATE SCHEMA auth; CREATE SCHEMA extensions; CREATE EXTENSION pg_trgm; CR
 "CREATE FUNCTION auth.jwt() RETURNS jsonb LANGUAGE sql STABLE AS $$SELECT coalesce(nullif(current_setting('request.jwt.claims',true),''),'{}')::jsonb$$;"]
 for seq in sorted({m[1] for t in tables.values() for c in t['columns'] if c['default'] for m in re.finditer(r"nextval\('([^']+)'::regclass\)",c['default'])}):
  sql.append('CREATE SEQUENCE '+seq+';')
+sql.append('CREATE SEQUENCE public.chip_ledger_chain_seq AS bigint START 1 INCREMENT 1 MINVALUE 1 MAXVALUE 9223372036854775807 CACHE 1 NO CYCLE;')
 for name,t in sorted(tables.items()):
  cols=[]
  for c in t['columns']:

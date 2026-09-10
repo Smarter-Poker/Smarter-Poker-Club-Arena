@@ -1,0 +1,9 @@
+[
+  {
+    "signature": "fn_credit_agent_commissions_batch(jsonb)",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_credit_agent_commissions_batch(p_items jsonb)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\n SET statement_timeout TO '300s'\nAS $function$\nDECLARE\n  it jsonb;\n  v_ok integer := 0;\n  v_failed integer := 0;\n  v_first_error text := NULL;\nBEGIN\n  IF p_items IS NULL OR jsonb_typeof(p_items) <> 'array' THEN\n    RETURN jsonb_build_object('ok', 0, 'failed', 0, 'error', 'p_items must be a jsonb array');\n  END IF;\n\n  FOR it IN SELECT * FROM jsonb_array_elements(p_items)\n  LOOP\n    BEGIN\n      PERFORM public.credit_agent_commission_from_rake(\n        (it->>'user_id')::uuid,\n        (it->>'club_id')::uuid,\n        COALESCE((it->>'rake_credit')::numeric, 0),\n        it->>'source_type',\n        NULLIF(it->>'source_id', '')::uuid,\n        it->>'notes'\n      );\n      v_ok := v_ok + 1;\n    EXCEPTION WHEN OTHERS THEN\n      v_failed := v_failed + 1;\n      IF v_first_error IS NULL THEN v_first_error := SQLERRM; END IF;\n    END;\n  END LOOP;\n\n  RETURN jsonb_build_object('ok', v_ok, 'failed', v_failed, 'first_error', v_first_error);\nEND $function$\n",
+    "body_md5": "19a0175361a2d68bc15b0d4b22c28b85",
+    "grants": "{postgres=X/postgres,service_role=X/postgres}",
+    "owner": "postgres"
+  }
+]

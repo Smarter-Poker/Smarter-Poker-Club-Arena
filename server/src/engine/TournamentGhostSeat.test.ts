@@ -1,183 +1,59 @@
 /**
- * GHOST SEATS IN TOURNAMENTS (2026-08-28).
+ * TOURNAMENT SEAT RELEASE HAS ONE TRANSACTIONAL AUTHORITY.
  *
- * Reported: one horse (ShoveWhale) sat with 0 chips, not marked eliminated,
- * for 22 minutes, in a running 326-player freeroll that had recorded ZERO
- * eliminations. Nothing was wedged — the 5-second elimination sweep was
- * arriving minutes late, because it issued one awaited seat read PER TABLE and
- * that event had 37 of them. The bigger the field, the later the sweep, which
- * is precisely backwards.
- *
- * A ghost seat is not cosmetic: it holds a chair other players are waiting
- * for, it counts toward the four-table limit so the account cannot be seated
- * anywhere else, and it cannot act, so every orbit burns a full turn timer
- * folding somebody who is not there.
- *
- * A cash table has had rebuy-or-remove on every idle tick since 2026-08-15
- * (recoverBustedSeatedHorses). A tournament table had nothing of its own.
- * These tests cover the counterpart, and — just as importantly — the two
- * things it must NOT do.
+ * The engine used to poll the roster on every idle tick and repair a seat
+ * after another writer had already changed the tournament row. That watcher
+ * was evidence of a split transaction, and it could race the next deal. The
+ * database hand/elimination authorities now close the exact seat generation
+ * in the same transaction as the zero stack and knockout evidence.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const markSeatAsLeft = vi.fn();
+const here = dirname(fileURLToPath(import.meta.url));
+const dealing = readFileSync(resolve(here, 'ServerTableEngineDealing.ts'), 'utf8');
+const terminalHand = readFileSync(
+  resolve(
+    here,
+    '../../../supabase/migrations/20260909014534_non_satellite_terminal_settlement_commits_one_stored_receipt.sql'
+  ),
+  'utf8'
+);
+const seatExit = readFileSync(
+  resolve(
+    here,
+    '../../../supabase/migrations/20260909014545_tournament_seat_exits_stay_inside_tournament_authority.sql'
+  ),
+  'utf8'
+);
 
-vi.mock('../services/supabase.js', async () => {
-  const actual = await vi.importActual<Record<string, unknown>>('../services/supabase.js');
-  return {
-    ...actual,
-    markSeatAsLeft: (...a: unknown[]) => markSeatAsLeft(...a),
-  };
-});
-
-const { ServerTableEngine } = await import('./ServerTableEngine.js');
-const { supabase } = await import('../services/supabase.js');
-
-const TABLE = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
-const TOURNEY = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee';
-
-type Seat = { user_id: string; username: string; seat_number: number; stack: number };
-
-/** A tournament table holding `seated`, whose roster reads `roster`. */
-function engineWith(
-  seated: Seat[],
-  roster: Array<{ user_id: string; status: string }> | { error: true }
-) {
-  const engine = new ServerTableEngine(TABLE) as any;
-  engine.seatedPlayers = seated.map((s) => ({ ...s, is_horse: true }));
-  engine.tableInfo = { id: TABLE, tournament_id: TOURNEY };
-  engine.disconnectEngine = { unregisterPlayer: vi.fn() };
-  engine.timeBankEngine = { removePlayer: vi.fn() };
-  engine.straddleEngine = { removePlayer: vi.fn() };
-  engine.preActionEngine = { removePlayer: vi.fn() };
-
-  vi.spyOn(supabase, 'from').mockReturnValue({
-    select: () => ({
-      eq: () => ({
-        in: () =>
-          Promise.resolve(
-            'error' in roster
-              ? { data: null, error: new Error('roster unreadable') }
-              : { data: roster, error: null }
-          ),
-      }),
-    }),
-  } as never);
-
-  return engine;
-}
-
-beforeEach(() => {
-  vi.restoreAllMocks();
-  markSeatAsLeft.mockReset().mockResolvedValue(undefined);
-});
-
-describe('a chair is released when the field says the player is out', () => {
-  it('releases the seat of an eliminated player still sitting there', () => {
-    const engine = engineWith(
-      [{ user_id: 'ghost', username: 'ShoveWhale', seat_number: 3, stack: 0 }],
-      [{ user_id: 'ghost', status: 'eliminated' }]
-    );
-    return engine.releaseDeadTournamentSeats().then(() => {
-      expect(markSeatAsLeft).toHaveBeenCalledWith(TABLE, 'ghost', 3);
-      // And the chair is free for the hand about to be dealt, not the next one.
-      expect(engine.seatedPlayers).toHaveLength(0);
-    });
+describe('tournament seat release is committed at the root', () => {
+  it('contains no engine ghost-seat watcher, timer, poll, or repair RPC', () => {
+    expect(dealing).not.toContain('releaseDeadTournamentSeats');
+    expect(dealing).not.toContain('release_dead_tournament_seats');
+    expect(dealing).not.toContain('ghostSeatFirstSeen');
+    expect(dealing).not.toContain('GHOST_SEAT_ESCALATE_MS');
+    expect(dealing).not.toContain('tournament_ghost_seat');
+    expect(dealing).not.toContain('tournament_seat_without_entrant');
   });
 
-  it('releases a winner who is still holding a chair', async () => {
-    const engine = engineWith(
-      [{ user_id: 'champ', username: 'Champ', seat_number: 1, stack: 5000 }],
-      [{ user_id: 'champ', status: 'winner' }]
-    );
-    await engine.releaseDeadTournamentSeats();
-    expect(markSeatAsLeft).toHaveBeenCalledWith(TABLE, 'champ', 1);
+  it('the accepted hand returns and consumes one exact pre-vacate generation', () => {
+    expect(terminalHand).toContain('v_zero_stack_seat_generations');
+    expect(terminalHand).toContain('SET left_at = v_zero_stack_vacated_at');
+    expect(terminalHand).toContain("'tournament_zero_stack_seat_generations'");
+    expect(terminalHand).toContain("'tournament_zero_stack_vacated_at'");
+    expect(terminalHand).toContain('accepted tournament hand lost exact closed seat generation');
+    expect(terminalHand).toContain('INSERT INTO public.tournament_knockout_candidates(');
+    expect(terminalHand).toContain('AND s.left_at=');
   });
 
-  it('releases a seat held by somebody with no row in this tournament at all', async () => {
-    const engine = engineWith(
-      [{ user_id: 'stranger', username: 'Stranger', seat_number: 5, stack: 100 }],
-      []
-    );
-    await engine.releaseDeadTournamentSeats();
-    expect(markSeatAsLeft).toHaveBeenCalledWith(TABLE, 'stranger', 5);
-  });
-
-  it('tears down the per-player engines with the seat', async () => {
-    // Or every released player strands an FSM entry, a time bank, a straddle
-    // and a pre-action behind them — the same teardown settlement performs.
-    const engine = engineWith(
-      [{ user_id: 'ghost', username: 'Ghost', seat_number: 2, stack: 0 }],
-      [{ user_id: 'ghost', status: 'eliminated' }]
-    );
-    await engine.releaseDeadTournamentSeats();
-    expect(engine.disconnectEngine.unregisterPlayer).toHaveBeenCalledWith(TABLE, 'ghost');
-    expect(engine.timeBankEngine.removePlayer).toHaveBeenCalledWith(TABLE, 'ghost');
-    expect(engine.straddleEngine.removePlayer).toHaveBeenCalledWith(TABLE, 'ghost');
-    expect(engine.preActionEngine.removePlayer).toHaveBeenCalledWith(TABLE, 'ghost');
-  });
-});
-
-describe('what it must never do', () => {
-  it('never eliminates a busted player itself', async () => {
-    // Eliminating is assigning a finishing place and paying a prize against
-    // it. Two writers of finishing places is the exact shape of the 206
-    // duplicated places found on 2026-08-27. A bust that is still 'playing'
-    // belongs to the sweep, however late the sweep is.
-    const engine = engineWith(
-      [{ user_id: 'busted', username: 'Busted', seat_number: 4, stack: 0 }],
-      [{ user_id: 'busted', status: 'playing' }]
-    );
-    await engine.releaseDeadTournamentSeats();
-    expect(markSeatAsLeft).not.toHaveBeenCalled();
-    expect(engine.seatedPlayers).toHaveLength(1);
-  });
-
-  it('leaves a live player alone', async () => {
-    const engine = engineWith(
-      [{ user_id: 'live', username: 'Live', seat_number: 6, stack: 12_000 }],
-      [{ user_id: 'live', status: 'playing' }]
-    );
-    await engine.releaseDeadTournamentSeats();
-    expect(markSeatAsLeft).not.toHaveBeenCalled();
-  });
-
-  it('releases nobody when the roster read fails', async () => {
-    // An unreadable roster is UNKNOWN, not "everybody is fine". Releasing on a
-    // failed read takes a live player off the felt mid-hand, which is far
-    // worse than a ghost that waits one more tick.
-    const engine = engineWith(
-      [{ user_id: 'live', username: 'Live', seat_number: 6, stack: 12_000 }],
-      { error: true }
-    );
-    await engine.releaseDeadTournamentSeats();
-    expect(markSeatAsLeft).not.toHaveBeenCalled();
-    expect(engine.seatedPlayers).toHaveLength(1);
-  });
-
-  it('does nothing on a cash table', async () => {
-    const engine = engineWith(
-      [{ user_id: 'anyone', username: 'Anyone', seat_number: 1, stack: 0 }],
-      [{ user_id: 'anyone', status: 'eliminated' }]
-    );
-    engine.tableInfo = { id: TABLE, tournament_id: null };
-    await engine.releaseDeadTournamentSeats();
-    expect(markSeatAsLeft).not.toHaveBeenCalled();
-  });
-
-  it('has no is_horse test in it - CLAUDE.md 10.5', async () => {
-    // A human whose seat release failed is sitting in the same ghost chair for
-    // the same reason. The reported case being a horse says nothing about who
-    // it happens to.
-    const engine = engineWith(
-      [{ user_id: 'human', username: 'Human', seat_number: 7, stack: 0 }],
-      [{ user_id: 'human', status: 'eliminated' }]
-    );
-    engine.seatedPlayers = engine.seatedPlayers.map((p: { is_horse: boolean }) => ({
-      ...p,
-      is_horse: false,
-    }));
-    await engine.releaseDeadTournamentSeats();
-    expect(markSeatAsLeft).toHaveBeenCalledWith(TABLE, 'human', 7);
+  it('ordinary and bounty eliminations hold the same scoped seat-exit capability', () => {
+    expect(seatExit).toContain('fn_eliminate_tournament_player_atomic_pre_seat_guard');
+    expect(seatExit).toContain('fn_claim_tournament_bounty_elimination_pre_seat_guard');
+    expect(seatExit).toContain('fn_ca_open_tournament_seat_exit_authority');
+    expect(seatExit).toContain('fn_ca_close_tournament_seat_exit_authority');
+    expect(seatExit).toContain('zy_tournament_live_seat_exit_requires_authority');
   });
 });

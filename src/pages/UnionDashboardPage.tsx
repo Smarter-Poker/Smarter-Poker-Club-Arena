@@ -37,6 +37,7 @@ import { safeErrorMessage } from '../utils/safeErrorMessage';
 import { EmptyState, ErrorState } from '../components/common/EmptyState';
 import CasinoSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
 import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
+import { downloadCsv } from '../utils/downloadCsv';
 // ── Helpers ─────────────────────────────────────────────────
 const pct = (n: number | null | undefined) => `${((Number(n) || 0) * 100).toFixed(1)}%`;
 
@@ -916,13 +917,7 @@ export default function UnionDashboardPage() {
       headers.join(','),
       ...rows.map((r) => r.map((c) => `"${String(c ?? '').replace(/"/g, '""')}"`).join(',')),
     ].join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadCsv(filename, csv);
   };
 
   const exportRoster = () => {
@@ -1011,6 +1006,7 @@ export default function UnionDashboardPage() {
         {success && <div className="admin-success-banner">{success}</div>}
 
         <CasinoSurfaceHeader
+          crest="club"
           eyebrow="Union Network / Operations"
           title={union?.name || 'Union Operations'}
           description="Govern Member Clubs, Agents, Treasury, Applications, Analytics, And Network Controls From One Permission-Backed Command Deck."

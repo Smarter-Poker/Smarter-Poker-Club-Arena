@@ -1,5 +1,35 @@
 # CONTINUATION HANDOFF - Club Arena Engine-Restart & Platform-Hardening Programme
 
+## 2026-09-10 Addendum: the break failures of 00:00 and 07:00, and what closed them
+
+The 2026-09-09 blocker above is closed: every break from 09:00 to 16:00 UTC on
+2026-09-10 passed its scorecard (0 hands in the window, thaw ok, shipped true).
+
+What failed: the :53 announcement (`fn_save_engine_maintenance_break`, key
+530090 exclusive) hit a 5 s lock_timeout behind entry doors holding 530090
+shared, and one timeout cancelled the whole hour (no last-hand row, no
+countdown, no readyForRestart, no deploy, no alert). What is now in place:
+
+| change                                                                                                                                                                | where                                             | state                                            |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- | ------------------------------------------------ |
+| writer budgets 32 s lock / 35 s statement                                                                                                                             | migration 20260910073818                          | live                                             |
+| announcement retries a lock/statement timeout for 90 s                                                                                                                | #4142                                             | live                                             |
+| hourly break clock is UTC; boot adopts or abandons a break by the clock                                                                                               | #3813                                             | live                                             |
+| countdown and adoption hold on the durable announcement; transport retries; faults recorded in `engine_maintenance_break_faults`                                      | #4167                                             | live                                             |
+| scorecard names why a break never started                                                                                                                             | #4164, migration 20260910132747                   | live                                             |
+| tournament drain counts a maintenance-held table as parked; 5-minute liveness ceiling                                                                                 | #4170                                             | live                                             |
+| an adopted tournament break ends with the maintenance break                                                                                                           | #4173                                             | live                                             |
+| tournaments come off the break with the platform, after the thaw, all at once                                                                                         | #4192                                             | ships with the first :55 cutover after it merges |
+| the database refuses DDL from postgres sessions :50-:03 UTC                                                                                                           | #4186, migrations 20260910154446 + 20260910160841 | live                                             |
+| rolling tournament authorities take the settlement lane per tournament (G shared, T(id) exclusive); the no-tournament bounty sweep takes one tournament lane per call | #4197, migrations 20260910173147 + 20260910174349 | live since 17:31 / 17:43 UTC                     |
+
+Baselines to compare against: first hand after the hour at 16:00 UTC, cash
+p50 17.0 s / p90 20.2 s, tournament p50 15.9 s / p90 37.9 s (the query is in
+`docs/changelog/2026-09-10-tournaments-resume-with-the-platform.md`). Settlement
+lane: 55-450 `still waiting for ExclusiveLock on advisory lock
+[5,4265093629,1253463894,1]` per busy five minutes before 17:31 UTC, none
+after the no-tournament sweep change at 17:43 UTC.
+
 ## 2026-09-09 Release Blocker Addendum
 
 The 23:55 cutover on September 8 did not occur. A foreign expired 22:53
@@ -999,9 +1029,9 @@ GitHub Actions secrets (already set, used by auto-deploy-hetzner.yml):
 DATABASE_URL (IPv4 Supavisor pooler - was set because the DB host is
 IPv6-only from Actions), SUPABASE_DB_PASSWORD, plus the Hetzner SSH secrets.
 
-Engine host SSH: ~/.ssh/hetzner_engine_key (READ-ONLY diagnosis is enough;
+Engine host SSH: ~~/.ssh/hetzner_engine_key (READ-ONLY diagnosis is enough;
 root@5.161.252.33). The daily-horse-audit task references a DIFFERENT key
-(~/.ssh/hetzner_deploy_ed25519_new) - both exist; hetzner_engine_key is the one
+(~~/.ssh/hetzner_deploy_ed25519_new) - both exist; hetzner_engine_key is the one
 proven to work for docker logs.
 
 Supabase vault: secret name ca_deploy_dispatch_token is EXPECTED-BUT-ABSENT by

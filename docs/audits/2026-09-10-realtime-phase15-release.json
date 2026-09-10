@@ -1,0 +1,92 @@
+{
+  "autopilot": 34439338663,
+  "baseline": "c41635319207842a45b9dc65d87ba9f00da130ed",
+  "baselineTests": { "failed": 7, "fixtureSetupFailuresExcluded": true, "passed": 19 },
+  "branchIntegration": "Unpushed rebase was blocked by the normal reference guard; aborted without bypass; original repair retained and main merged normally",
+  "controlledBrowser": "Fresh tab discovery on September 10 timed out after 20000ms; no alternate control mechanism used",
+  "coordination": {
+    "containerTagHostCheckoutMutations": false,
+    "engineDeploymentMutations": false,
+    "forcedWorkflowRetries": false,
+    "hooksBypassed": false,
+    "liveBalanceOrSeatProbes": false,
+    "manualPrOpenOrMerge": false,
+    "newCronOrFeed": false,
+    "stageBDdl": false
+  },
+  "focusedTests": { "antiFlickerContracts": 24, "mounted": 26, "scopeContracts": 15 },
+  "integratedMain": "c064df4a50b5a09a0bdd3f18a52953139f195b58",
+  "localBuild": "compiled successfully; precommit provenance warned about one newer engine-only main commit, subsequently integrated with a normal merge",
+  "merge": "dc2f45705344564fb9574bb55378cd19680681b6",
+  "mergedAt": "2026-09-10T05:18:35Z",
+  "mountedTestBlob": "e5eed967c889c97402faff51cfab555399de614f",
+  "naturalReconnect": "unverified",
+  "normalPush": "success",
+  "normalPushGates": {
+    "changedTests": 26,
+    "overlapNotAdded": true,
+    "relatedFiles": 53,
+    "relatedTests": 836
+  },
+  "opener": 34439233090,
+  "originJob": 102755735732,
+  "originProof": [
+    {
+      "at": "2026-09-10T05:25:49.7449555Z",
+      "result": "/srv/club-arena/releases/56962e048d024cb3215a255529c7b1491873db72"
+    },
+    { "at": "2026-09-10T05:25:51.2489215Z", "result": "origin serves 56962e0" },
+    { "at": "2026-09-10T05:25:51.7193036Z", "result": "CONVERGED at tip main" }
+  ],
+  "physicalIpadPwa": "unverified",
+  "pr": 4104,
+  "publication": {
+    "assets": [
+      {
+        "sha256": "46742352945074e34d3fcba0cf15ec004d7f379260f0c48294237632afa544c4",
+        "url": "https://smarter.poker/hub/club-arena/assets/index-Dgr2XHij-v6.js"
+      },
+      {
+        "originUrl": "https://ca-static.smarter.poker/assets/ClubHomePage-3V9V-n3G-v6.js",
+        "publicEqualsOrigin": true,
+        "sha256": "e2ae470004348b36e4ca22ee42ec4039051ad2e432bad0e03c8a9232866e1111",
+        "url": "https://smarter.poker/hub/club-arena/assets/ClubHomePage-3V9V-n3G-v6.js"
+      }
+    ],
+    "checkedAt": "2026-09-10T05:26:52.516164+00:00",
+    "release": "56962e048d024cb3215a255529c7b1491873db72",
+    "stamps": [
+      {
+        "built_at": "2026-09-10T05:23:47Z",
+        "built_by": "publish-club-arena.yml",
+        "ca_sha": "56962e048d024cb3215a255529c7b1491873db72",
+        "run_id": "34440733509",
+        "url": "https://smarter.poker/hub/club-arena/build-info.json"
+      },
+      {
+        "built_at": "2026-09-10T05:23:47Z",
+        "built_by": "publish-club-arena.yml",
+        "ca_sha": "56962e048d024cb3215a255529c7b1491873db72",
+        "run_id": "34440733509",
+        "url": "https://ca-static.smarter.poker/build-info.json"
+      }
+    ],
+    "testedHead": "be15312bc12b4a16642e8eb2bdd163235a16ce1c"
+  },
+  "publisher": 34440733509,
+  "publisherConclusion": "success",
+  "pushedHead": "be15312bc12b4a16642e8eb2bdd163235a16ce1c",
+  "releaseGateState": {
+    "liveUiAndPhysicalDevice": "unverified",
+    "merge": "verified",
+    "publication": "verified",
+    "sourceCi": "success"
+  },
+  "repairCommit": "bc58268f7525e2754ed9d434ab58e1dee3edbf85",
+  "runtimeBlob": "00d0dfb7fd1c4701dfc0e6b343c6e48fe276a567",
+  "scope": "Phase 15 confirmed tournament inventory",
+  "scopeAudit": "Only the page, its mounted tests and four documentation files differ from integrated main",
+  "sourceCi": 34439338703,
+  "sourceReview": "No actionable findings after the positive-row revision correction",
+  "typeScript": "passed locally and through normal pre-push"
+}

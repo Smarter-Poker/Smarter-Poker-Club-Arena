@@ -48,6 +48,11 @@ const codeOnly = (src: string) =>
 
 const MODAL = read('src/components/agent/ChipTransferModal.tsx');
 const MODAL_CODE = codeOnly(MODAL);
+const INTENT_CODE = codeOnly(read('src/services/AgentWalletIntent.ts'));
+const TRANSFER_CODE = MODAL_CODE.slice(
+  MODAL_CODE.indexOf('const handleTransfer = async () => {'),
+  MODAL_CODE.indexOf('const handleClose = () => {')
+);
 const CHIPFLOW = read('src/services/ChipFlowService.ts');
 const CHIPFLOW_CODE = codeOnly(CHIPFLOW);
 
@@ -80,16 +85,24 @@ describe('the modal is no longer a fourth money path', () => {
     // fn_club_bank_send honours p_destination, so funding a freshly promoted
     // agent could land in their player wallet.
     expect(MODAL_CODE).toMatch(
-      /p_destination: canHoldAgentWallet\(recipientData\.role\) \? 'agent_wallet' : 'player_wallet'/
+      /const destination = canHoldAgentWallet\(recipientData\.role\) \? 'agent_wallet' : 'player_wallet'/
     );
     expect(MODAL_CODE).not.toMatch(/canHoldAgentWallet\(recipientData\?\.role\)/);
     expect(MODAL_CODE).toMatch(/if \(!selectedRecipientData\) \{/);
+    expect(TRANSFER_CODE).toMatch(/p_destination: destination/);
+    expect(TRANSFER_CODE.indexOf('if (!selectedRecipientData)')).toBeLessThan(
+      TRANSFER_CODE.indexOf('const destination =')
+    );
   });
 });
 
 describe('a lost response cannot send twice', () => {
   it('every send carries a uuid op_id', () => {
-    expect(MODAL_CODE).toMatch(/p_op_id: sendOpIdRef\.current/);
+    expect(TRANSFER_CODE).toMatch(/await runAgentWalletOperation\(/);
+    expect(TRANSFER_CODE).toMatch(/async \(operation\) => \{/);
+    expect(TRANSFER_CODE).toMatch(/p_op_id: operation\.operationId/);
+    expect(INTENT_CODE).toMatch(/const operation = await reserveAgentWalletOperation\(intent\);/);
+    expect(INTENT_CODE).toMatch(/await submit\(operation\);/);
   });
 
   /**
@@ -98,10 +111,23 @@ describe('a lost response cannot send twice', () => {
    * so the server replays instead of debiting again.
    */
   it('holds the key across a retry and rotates it only when the intent changes', () => {
-    expect(MODAL_CODE).toMatch(/const seed = `\$\{selectedRecipient\}:\$\{transferAmount\}`/);
-    expect(MODAL_CODE).toMatch(
-      /if \(opIdSeedRef\.current !== seed\) \{[\s\S]{0,120}sendOpIdRef\.current = uuid\(\)/
+    expect(TRANSFER_CODE).toMatch(
+      /runAgentWalletOperation\(\s*\{\s*userId: user\.id,\s*clubId: resolvedForSend,\s*targetId: selectedRecipient,\s*kind,\s*destination,\s*amount: transferAmount,/
     );
+    for (const field of ['userId', 'clubId', 'targetId']) {
+      expect(INTENT_CODE).toContain(`intent.${field}.toLowerCase()`);
+    }
+    expect(INTENT_CODE).toContain('intent.kind');
+    expect(INTENT_CODE).toContain('intent.amount.toFixed(2)');
+    expect(INTENT_CODE).toContain("intent.destination === 'agent_wallet' ? ['agent_wallet'] : []");
+    expect(INTENT_CODE).toMatch(
+      /const prior = session\.getItem\(key\) \?\? storage\.getItem\(key\);/
+    );
+    expect(INTENT_CODE).toMatch(/return \{ key, operationId: prior \};/);
+    expect(INTENT_CODE).toMatch(
+      /await submit\(operation\);\s*await completeAgentWalletOperation\(operation\);/
+    );
+    expect(TRANSFER_CODE).not.toMatch(/sendOpIdRef|opIdSeedRef|uuid\(\)/);
   });
 
   /**
@@ -111,12 +137,16 @@ describe('a lost response cannot send twice', () => {
    * implementation; a fourth local copy is how they drift.
    */
   it('uses the shared uuid helper rather than a fourth local shim', () => {
-    expect(MODAL_CODE).toMatch(/import \{ uuid \} from '\.\.\/\.\.\/utils\/uuid'/);
-    expect(MODAL_CODE).not.toMatch(/function newOpId/);
+    expect(MODAL_CODE).toContain("from '../../services/AgentWalletIntent'");
+    expect(INTENT_CODE).toContain("import { uuid } from '../utils/uuid'");
+    expect(INTENT_CODE).toContain('const operationId = uuid();');
+    expect(MODAL_CODE).not.toMatch(/function newOpId|crypto\.randomUUID|uuid\(\)/);
   });
 
   it('reports a replayed send as already done, not as a second transfer', () => {
-    expect(MODAL_CODE).toMatch(/sendRes\.replayed/);
+    expect(TRANSFER_CODE).toMatch(
+      /confirmationHeadline = sendData\.replayed\s*\? `That Transfer Had Already Gone Through/
+    );
   });
 });
 
@@ -172,8 +202,29 @@ describe('the list agrees with the server', () => {
   });
 
   it('checks the result, so a refusal cannot print success', () => {
-    expect(MODAL_CODE).toMatch(/if \(!sendRes\?\.success\)/);
-    expect(MODAL_CODE).toMatch(/The Cashier Refused That Transfer/);
+    expect(TRANSFER_CODE).toMatch(/if \(sendError\) throw sendError;/);
+    expect(TRANSFER_CODE).toMatch(
+      /if \(!confirmedAgentWalletReceipt\(sendData, transferAmount, kind, destination\)\) \{\s*throw new Error\(sendData\?\.error \|\| 'The Cashier Did Not Confirm That Transfer'\);\s*\}/
+    );
+    for (const proof of [
+      'r.success === true',
+      'UUID.test(r.transaction_id)',
+      'r.amount === amount',
+      'Number.isFinite(sourceBalance)',
+      'sourceBalance >= 0',
+      'Number.isFinite(balance)',
+      'balance >= 0',
+      "kind === 'self_stake' || r.destination === destination",
+    ]) {
+      expect(INTENT_CODE).toContain(proof);
+    }
+    expect(TRANSFER_CODE.indexOf('if (!confirmedAgentWalletReceipt(')).toBeLessThan(
+      TRANSFER_CODE.indexOf('confirmationHeadline = sendData.replayed')
+    );
+    expect(TRANSFER_CODE).toMatch(/\n {8}\}\n {6}\);\n {6}if \(!isMounted\.current\) return;/);
+    expect(TRANSFER_CODE.indexOf('confirmationHeadline = sendData.replayed')).toBeLessThan(
+      TRANSFER_CODE.indexOf('setSuccess(headline)')
+    );
   });
 
   /** Phase 2 made the line drawable; a send funded by it is a debt, not float. */
@@ -203,7 +254,9 @@ describe('the ledger reason names the account that actually paid', () => {
   it('never prints a transfer to "undefined" when the recipient arrived as a prop', () => {
     const messages = MODAL_CODE.match(/Transferred \$\{transferAmount[^`]*/g) ?? [];
     expect(messages.length).toBeGreaterThan(0);
-    for (const m of messages) expect(m).toMatch(/recipientData\?\.username \|\| 'Them'/);
+    expect(TRANSFER_CODE).toMatch(/if \(!selectedRecipientData\) \{[\s\S]*?return;\s*\}/);
+    expect(TRANSFER_CODE).toContain('const recipientData = selectedRecipientData;');
+    for (const m of messages) expect(m).toMatch(/recipientData\.username \|\| 'Them'/);
   });
 });
 

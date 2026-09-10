@@ -8,6 +8,8 @@
  * authority token by itself.
  */
 
+import { createHash } from 'node:crypto';
+
 import type { HorseDecideOpts, HorseGameStateV2, HorseProfileMods } from '../HorseLogic.js';
 import type { HorseMindDecisionEffect, ReadScope } from '../HorseMind.js';
 import type { GovernorSnapshot } from '../EquityLoadGovernor.js';
@@ -33,11 +35,65 @@ export type LiveHorseDecideOpts = Omit<
 export interface LiveHorseDecisionSnapshot extends HorseDecisionFence {
   /** Epoch captured while this turn snapshot was authoritative, before FIFO wait. */
   decisionTimeMs: number;
+  /** Stable serialization of the hand/decision state that keys mixed strategy. */
+  decisionKey: string;
   player: SeatPlayer;
   gameState: HorseGameStateV2;
   style?: HorseStyle;
   mods?: HorseProfileMods;
   opts?: LiveHorseDecideOpts;
+}
+
+type HorseDecisionKeyInput = Pick<
+  LiveHorseDecisionSnapshot,
+  'fence' | 'decisionTimeMs' | 'player' | 'gameState' | 'style' | 'mods' | 'opts'
+>;
+
+/** JSON-compatible canonicalizer with sorted object keys and finite numbers. */
+function canonicalDecisionValue(value: unknown, path = '$'): unknown {
+  if (value === null || typeof value === 'string' || typeof value === 'boolean') return value;
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value))
+      throw new Error(`decision key contains non-finite number at ${path}`);
+    return Object.is(value, -0) ? 0 : value;
+  }
+  if (Array.isArray(value)) {
+    return value.map((item, index) => canonicalDecisionValue(item, `${path}[${index}]`));
+  }
+  if (typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    const out: Record<string, unknown> = {};
+    for (const key of Object.keys(record).sort()) {
+      const item = record[key];
+      // Structured clone cannot carry functions or symbols. Undefined object
+      // fields are behaviorally identical to omission when options are spread.
+      if (item !== undefined) out[key] = canonicalDecisionValue(item, `${path}.${key}`);
+    }
+    return out;
+  }
+  throw new Error(`decision key contains unsupported value at ${path}`);
+}
+
+/**
+ * Bind deterministic mixed-strategy sampling to every input HorseLogic can
+ * read. The raw millisecond clock is reduced to the exact hour bucket used by
+ * moodOf(), so same-hour replay is stable while an actual strategy input is
+ * not omitted. The digest keeps hero cards and public hand history out of log
+ * keys without weakening worker-side equality validation.
+ */
+export function buildHorseDecisionKey(input: HorseDecisionKeyInput): string {
+  const material = canonicalDecisionValue({
+    schemaVersion: 1,
+    fence: input.fence,
+    decisionHour: Math.floor(input.decisionTimeMs / 3_600_000),
+    player: input.player,
+    gameState: input.gameState,
+    style: input.style ?? null,
+    mods: input.mods ?? null,
+    opts: input.opts ?? null,
+  });
+  const digest = createHash('sha256').update(JSON.stringify(material)).digest('hex');
+  return `phase5-v1:${digest}`;
 }
 
 export interface FastHorseDecisionRequest extends LiveHorseDecisionSnapshot {
@@ -116,11 +172,57 @@ export interface HorseDecisionWorkerReady {
     charts: number;
     postflop: number;
     postflopV31: number;
+    /** Exact promoted corpus currently owned by this worker; null iff empty. */
+    postflopV31Dataset: { id: string; checksum: string } | null;
   };
   /** Worker-owned snapshot; the main-thread module store is intentionally empty. */
   solverPolicyArtifact: ReturnType<typeof solverPolicyArtifactStatus>;
   /** Governor for the worker event loop where live Monte Carlo actually runs. */
   governor: GovernorSnapshot;
+}
+
+const SOLVER_STORE_UUID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+const SOLVER_STORE_CHECKSUM = /^[0-9a-f]{64}$/;
+
+/**
+ * Runtime guard for the structured-clone boundary.
+ *
+ * TypeScript types disappear before a worker message arrives. In particular,
+ * a positive V31 cell count without the exact promoted dataset identity must
+ * never leave the engine in READY or let nightly evidence compare two
+ * anonymous stores that merely have the same size.
+ */
+export function horseDecisionSolverStoresAreValid(
+  value: unknown
+): value is HorseDecisionWorkerReady['solverStores'] {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const stores = value as Record<string, unknown>;
+  if (
+    Object.keys(stores).length !== 4 ||
+    !['charts', 'postflop', 'postflopV31', 'postflopV31Dataset'].every((key) =>
+      Object.prototype.hasOwnProperty.call(stores, key)
+    ) ||
+    !['charts', 'postflop', 'postflopV31'].every(
+      (key) => Number.isSafeInteger(stores[key]) && (stores[key] as number) >= 0
+    )
+  ) {
+    return false;
+  }
+
+  const count = stores.postflopV31 as number;
+  const dataset = stores.postflopV31Dataset;
+  if (count === 0) return dataset === null;
+  if (!dataset || typeof dataset !== 'object' || Array.isArray(dataset)) return false;
+  const identity = dataset as Record<string, unknown>;
+  return (
+    Object.keys(identity).length === 2 &&
+    typeof identity.id === 'string' &&
+    SOLVER_STORE_UUID.test(identity.id) &&
+    typeof identity.checksum === 'string' &&
+    SOLVER_STORE_CHECKSUM.test(identity.checksum) &&
+    identity.checksum !== '0'.repeat(64)
+  );
 }
 
 export type HorseDecisionWorkerReadiness = Omit<HorseDecisionWorkerReady, 'type'>;
@@ -178,6 +280,11 @@ export interface HorseDecisionWorkerError {
   generation?: number;
   fence?: string;
   message: string;
+  /**
+   * The worker rejected this one request at its structured-clone validation
+   * boundary and remains safe to use. Missing means terminal runtime failure.
+   */
+  recoverable?: true;
 }
 
 export type HorseDecisionWorkerResponse =

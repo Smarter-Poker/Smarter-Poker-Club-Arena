@@ -1,0 +1,103 @@
+{
+  "phase": 16,
+  "recordedAt": "2026-09-10T07:02:36.532428Z",
+  "result": "Source repair merged; origin and public referenced bytes verified. Full live and physical-device acceptance remains incomplete.",
+  "repair": {
+    "description": "Cashier tile and shortcut 4 distinguish pending directory reads from confirmed empty memberships; the existing directory owner settles readiness.",
+    "pullRequest": 4125,
+    "pullRequestUrl": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/4125",
+    "base": "5800a2b9db366b831e7c01ce2cead1dca80911bb",
+    "sourceCommit": "9c49de71df1438bb50f284827d3f2ce22d554baf",
+    "testedHead": "0635c7261a2aa0d71ad6dbedb345a1ebd17d5c60",
+    "merge": "1dac6fe01fcb9eea5aabdc26afc3e32ef4deb3e8",
+    "mergedAt": "2026-09-10T06:17:02Z",
+    "sourceBlob": "27937ea0b6f4812a6811186b19fde6bb00a69ea2",
+    "mountedTestBlob": "e9ccffb5968b9d9bacdee98083683cc9a390a8be",
+    "servedReleaseContainsMerge": true,
+    "servedReleaseSourceAndTestMatchTestedBlobs": true
+  },
+  "validation": {
+    "baseline": {
+      "failed": 5,
+      "passed": 3
+    },
+    "repairedMountedCases": {
+      "passed": 8
+    },
+    "focused": {
+      "passed": 49,
+      "files": 4,
+      "includesMountedCases": true
+    },
+    "typecheck": "passed",
+    "integratedBuild": "passed",
+    "normalPushGates": {
+      "changedTests": 8,
+      "relatedTests": 213,
+      "sourceReadingPins": 970,
+      "countsOverlap": true
+    },
+    "sourceCi": {
+      "run": 34443914612,
+      "result": "success",
+      "coverage": "Four client shards, build, TypeScript and CSS/Table Studio browser gates; live jobs skipped."
+    },
+    "autopilot": {
+      "run": 34443914674,
+      "result": "success"
+    }
+  },
+  "publication": {
+    "initialPublisherRun": 34444526280,
+    "initialOriginJob": 102766905779,
+    "initialOriginRelease": "1dac6fe01fcb9eea5aabdc26afc3e32ef4deb3e8",
+    "initialOriginVerifiedAt": "2026-09-10T06:20:32.6619200Z",
+    "freshReadAt": "2026-09-10T07:02:36.532428Z",
+    "publicBuildInfoUrl": "https://smarter.poker/hub/club-arena/build-info.json",
+    "originBuildInfoUrl": "https://ca-static.smarter.poker/build-info.json",
+    "publicAndOriginRelease": "c50dc3abd9f6195577d7fd1ea07a442559632256",
+    "builtAt": "2026-09-10T06:56:27Z",
+    "buildInfoRun": 34447315196,
+    "publicEntry": "index-nKuGglWA-v6.js",
+    "publicEntrySha256": "98a5be8fbda1afbe1bef1c19b29eade368b020db6667593f5890ce85b39a3322",
+    "referencedHomePage": "HomePage-DNbi6FCq-v6.js",
+    "publicAndOriginHomePageSha256": "6373768d049c90e8e1d2117a3eeed05ae6a0d8af368d95b7fbe9f051a1e92bd5",
+    "publicAndOriginHomePageBytesEqual": true,
+    "compiledEvidence": "Both pending-first Cashier entry branches inspected in the actually referenced public HomePage asset."
+  },
+  "earlierPhase15Acceptance": {
+    "run": 34440738779,
+    "release": "56962e048d024cb3215a255529c7b1491873db72",
+    "predatesPhase16": true,
+    "overall": {
+      "executed": 292,
+      "failed": 9,
+      "skipped": 2,
+      "flaky": 0,
+      "files": 34
+    },
+    "cashier": {
+      "passed": 2
+    },
+    "clubLobby": {
+      "passed": 6,
+      "skipped": 2
+    },
+    "failures": {
+      "fleetPrerequisite21Stalled": 3,
+      "missingEligibleCashFixture": 1,
+      "profileGatePreflightTimeout": 3,
+      "mobileTapTarget32Box24Reachable": 1,
+      "staleHamburgerBrandingExpectation": 1
+    },
+    "cleanupVerifiedAt": "2026-09-10T06:15:07.2920327Z",
+    "reportArtifact": 10139081088,
+    "scope": "These results are earlier acceptance evidence, not a live test of the Phase 16 repair."
+  },
+  "remaining": [
+    "Production acceptance of Phase 16's actual pending-directory behavior and natural reconnect.",
+    "The nine earlier acceptance failures require their own disposition; this release receipt does not close them.",
+    "Supported controlled-browser access and physical iPad/PWA acceptance remain unverified."
+  ],
+  "boundaries": "No engine, host, container, tag or Stage-B mutations; no live balance or seat probes; no added cron, timer, subscription, dependency or database change. Normal hooks, auto-PR, CI, autopilot and publisher preserved."
+}

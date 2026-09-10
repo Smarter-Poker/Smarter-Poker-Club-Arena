@@ -762,19 +762,24 @@ export default function AntiCheatPage() {
         playerId,
         'Anti-cheat review - removed by club admin'
       );
-      if (outcome.removed === 0) {
+      if (outcome.removed === 0 && !outcome.pending) {
         throw new Error(outcome.firstError || 'The engine did not remove this player.');
       }
       if (outcome.failed > 0) {
         toast.warning(
-          `Removed From ${fmt(outcome.removed)} Of ${fmt(tableIds.length)} Tables. ${
+          `Removed From ${fmt(outcome.removed)} Of ${fmt(tableIds.length)} Tables; ${fmt(outcome.pending || 0)} Pending. ${
             outcome.firstError || ''
           }`.trim()
+        );
+      } else if (outcome.pending > 0) {
+        toast.info(
+          `Removed From ${fmt(outcome.removed)} Tables. ${fmt(outcome.pending)} Removals Pending Until Their Hands Finish.`
         );
       } else {
         toast.success(`Player Removed From ${fmt(outcome.removed)} Table(s).`);
       }
-      masterBus.emit('PLAYER_KICKED', { clubId: clubId ?? '', userId: playerId });
+      if (outcome.removed > 0)
+        masterBus.emit('PLAYER_KICKED', { clubId: clubId ?? '', userId: playerId });
       setEventsLoaded(false);
       loadStats(clubId);
     } catch (err: unknown) {

@@ -1,0 +1,296 @@
+{
+  "phase": 3,
+  "of": 12,
+  "status": "in_progress",
+  "programme": "109-item comprehensive Club Arena accounting audit",
+  "source_register": "docs/audits/2026-09-08-comprehensive-club-arena-backlog/feature-backlog.csv",
+  "phase_two": "Complete: all 13 acceptance controls verified, retirement applied and published, final acceptance PR 4031 on main. Its completed publication task is disabled.",
+  "controls": [
+    {
+      "id": "CA-03-01",
+      "phase": "3",
+      "phase_name": "Tournaments, SNGs, Spins and satellites",
+      "priority": "P0",
+      "status": "Open: Requires Full Behavioral And Release Evidence",
+      "title": "Entry and re-entry",
+      "required_work": "Trace registration, late registration, rebuy and addon through wallet debit, prize allocation and seat creation.",
+      "source_or_register": "live-rpc-register.csv",
+      "acceptance": "Atomic failure injection and concurrent retry tests prove one funded entry per operation."
+    },
+    {
+      "id": "CA-03-02",
+      "phase": "3",
+      "phase_name": "Tournaments, SNGs, Spins and satellites",
+      "priority": "P0",
+      "status": "Open: Requires Full Behavioral And Release Evidence",
+      "title": "Bounty PKO accounting",
+      "required_work": "Trace entry bounty split, knockout allocation, progressive carry and final winner disposition.",
+      "source_or_register": "page-and-tab-register.csv",
+      "acceptance": "Prize, fee and bounty liabilities reconcile algebraically within each committed operation."
+    },
+    {
+      "id": "CA-03-03",
+      "phase": "3",
+      "phase_name": "Tournaments, SNGs, Spins and satellites",
+      "priority": "P0",
+      "status": "Open: Requires Full Behavioral And Release Evidence",
+      "title": "Mystery bounty commitments",
+      "required_work": "Review funded award inventory, eligibility, random draw, reveal and retry identity.",
+      "source_or_register": "live-rpc-register.csv",
+      "acceptance": "One funded award per eligible draw; retries cannot reroll or consume multiple awards."
+    },
+    {
+      "id": "CA-03-04",
+      "phase": "3",
+      "phase_name": "Tournaments, SNGs, Spins and satellites",
+      "priority": "P0",
+      "status": "Open: Requires Full Behavioral And Release Evidence",
+      "title": "Payout plan authority",
+      "required_work": "Review current canonical payout plan, rank finalization and idempotent awards; recheck concurrent fixes before opening defects.",
+      "source_or_register": "live-rpc-register.csv",
+      "acceptance": "No partial completion; each recipient and retained liability matches the immutable approved plan."
+    },
+    {
+      "id": "CA-03-05",
+      "phase": "3",
+      "phase_name": "Tournaments, SNGs, Spins and satellites",
+      "priority": "P0",
+      "status": "Open: Requires Full Behavioral And Release Evidence",
+      "title": "Disabled tournament safeguards",
+      "required_work": "Explain all seven disabled triggers and prove replacement invariants and authorized retirement.",
+      "source_or_register": "live-trigger-register.csv",
+      "acceptance": "Each disabled guard has replacement evidence or a tested source correction; no blind re-enabling."
+    },
+    {
+      "id": "CA-03-06",
+      "phase": "3",
+      "phase_name": "Tournaments, SNGs, Spins and satellites",
+      "priority": "P0",
+      "status": "Open: Requires Full Behavioral And Release Evidence",
+      "title": "Deals and final table completion",
+      "required_work": "Review deal acceptance, participant binding, chip-based calculations and post-deal completion.",
+      "source_or_register": "live-rpc-register.csv",
+      "acceptance": "All required consents match one versioned plan; no double payout or mutable finalized pool."
+    },
+    {
+      "id": "CA-03-07",
+      "phase": "3",
+      "phase_name": "Tournaments, SNGs, Spins and satellites",
+      "priority": "P0",
+      "status": "Open: Requires Full Behavioral And Release Evidence",
+      "title": "Guarantees and overlays",
+      "required_work": "Review funding source, fee separation, minimum entries and guarantee changes.",
+      "source_or_register": "live-rpc-register.csv",
+      "acceptance": "Every overlay is funded and journaled; published commitments cannot silently change."
+    },
+    {
+      "id": "CA-03-08",
+      "phase": "3",
+      "phase_name": "Tournaments, SNGs, Spins and satellites",
+      "priority": "P0",
+      "status": "Open: Requires Full Behavioral And Release Evidence",
+      "title": "Spin multiplier and prizes",
+      "required_work": "Review draw commitment, multiplier persistence, funding and restart behavior.",
+      "source_or_register": "existing-repair-debt-register.csv",
+      "acceptance": "A started game has one funded immutable prize; retry and outage cannot redraw."
+    },
+    {
+      "id": "CA-03-09",
+      "phase": "3",
+      "phase_name": "Tournaments, SNGs, Spins and satellites",
+      "priority": "P1",
+      "status": "Open: Requires Full Behavioral And Release Evidence",
+      "title": "Tournament seating and clocks",
+      "required_work": "Review balancing, table merges, breaks, blind levels, heads-up transitions and duplicate seats.",
+      "source_or_register": "page-and-tab-register.csv",
+      "acceptance": "Concurrent moves preserve one seat per entry and one authoritative tournament clock."
+    },
+    {
+      "id": "CA-03-10",
+      "phase": "3",
+      "phase_name": "Tournaments, SNGs, Spins and satellites",
+      "priority": "P0",
+      "status": "Open: Requires Full Behavioral And Release Evidence",
+      "title": "Satellite awards and ticket liabilities",
+      "required_work": "Review the hardened funding path plus ticket mint, ownership, redemption and award completion.",
+      "source_or_register": "live-rpc-register.csv",
+      "acceptance": "Tickets and underlying liabilities are created/redeemed once with recipient and tournament binding."
+    },
+    {
+      "id": "CA-03-11",
+      "phase": "3",
+      "phase_name": "Tournaments, SNGs, Spins and satellites",
+      "priority": "P0",
+      "status": "Open: Requires Full Behavioral And Release Evidence",
+      "title": "Unregister, cancellation and outage",
+      "required_work": "Review approved pre-start unregister and common origin-wallet refund; inspect cancellation and interrupted-event policy.",
+      "source_or_register": "docs/CLUB-ARENA-12-PHASE-AUDIT.md",
+      "acceptance": "Refunds return once to the proper origin; no invented satellite refund subsystem."
+    },
+    {
+      "id": "CA-03-12",
+      "phase": "3",
+      "phase_name": "Tournaments, SNGs, Spins and satellites",
+      "priority": "P1",
+      "status": "Open: Requires Full Behavioral And Release Evidence",
+      "title": "Tournament client wiring",
+      "required_work": "Exercise all create/edit/register/rebuy/addon/deal/results pages and permission states.",
+      "source_or_register": "page-and-tab-register.csv",
+      "acceptance": "Displayed options, server acceptance and persisted state agree for MTT, SNG and Spins."
+    }
+  ],
+  "first_correction": {
+    "controls": ["CA-03-01", "CA-03-12"],
+    "source": "src/services/TournamentService.ts",
+    "tests": "tests/unit/TournamentService.test.ts",
+    "before": {
+      "failed": 35,
+      "passed": 44
+    },
+    "after": {
+      "passed": 89,
+      "files": 2
+    },
+    "typescript": "passed",
+    "status": "verified_live_in_PR3991",
+    "production_build": "Published and verified in PR3991"
+  },
+  "remaining_entry_findings": [
+    "Rebuy/reentry/addon durable payload replay is published and verified. Reuse docs/audits/2026-09-09-tournament-retry-release-evidence.json.",
+    "Trace initial registration and server-side atomic funding, rollback and concurrency for every entry path.",
+    "Review explicit refusal lifecycle, changed configuration and cross-device retries against retained server receipts."
+  ],
+  "shared_work": "Existing docs/audits/2026-09-09-phase3-progress.json tracks a separate 58-control tournament audit. Reuse verified changes and inspect latest source before duplicating work.",
+  "durable_purchase_intent": {
+    "status": "verified_live_in_PR3991",
+    "focused_tests": 131,
+    "typescript": "passed",
+    "sources": ["src/services/TournamentPurchaseIntent.ts", "src/services/TournamentService.ts"],
+    "evidence": "docs/changelog/2026-09-09-tournament-durable-purchase-intent.md",
+    "native_browser_scenarios": 6,
+    "native_browser_script": "scripts/dev/probe-tournament-purchase-browser.mjs",
+    "integrated_typescript": "passed",
+    "integrated_build": "passed locally without Sentry upload; behind-main=0",
+    "release": "Verified public and origin SHA 5001c683d53de005fdf96d04f916b4de09aec020 includes merge 0ed94e26141be46f0d4aa7bf9b0ade9ac025a526; source blobs identical. Required CI passed. Overall phase open.",
+    "full_client_verification": {
+      "first": {
+        "passed": 17690,
+        "timeouts": 7
+      },
+      "four_workers": {
+        "passed": 17682,
+        "timeouts": 15
+      },
+      "isolated_affected_files": {
+        "files": 14,
+        "result": "passed unchanged; one worker"
+      },
+      "entire_phase": "not complete"
+    }
+  },
+  "registration_trace": {
+    "verified": "read-only live function catalog on 2026-09-09",
+    "core": "fn_register_for_tournament_before_atomic_capacity_20260907(uuid,boolean)",
+    "core_body_md5": "797c1eac824f1cff55279c53f4094bce",
+    "findings": [
+      "Registration locks the tournament and atomically debits, creates the roster row, books fees and pool funding. Unique insert failure raises40001 to roll back the debit. Late seating failure rolls back before capacity retry.",
+      "Live unregister now has a UUID request-id overload. Inspect the owning concurrent work before duplicating it.",
+      "Initial wallet registration request receipts and the compatible client are live; the unbound alias is retired. Verified on both frontend endpoints on 2026-09-10."
+    ]
+  },
+  "refund_client_contract": {
+    "controls": ["CA-03-11", "CA-03-12"],
+    "status": "PR4013_verified_on_public_and_origin",
+    "tests_passed": 89,
+    "typescript": "passed",
+    "evidence": "docs/changelog/2026-09-09-tournament-refund-client-contract.md",
+    "service_tests": 91,
+    "storage_tests": 4,
+    "request_identity": "wired to deployed request-id overload; auth account and returned request ID verified",
+    "pr": 4013,
+    "integrated_tests": {
+      "passed": 106,
+      "files": 3,
+      "typescript": "passed",
+      "reason": "merge overlapping receipt/ticket implementation; reuse canonical parser and return value"
+    },
+    "release": {
+      "merge": "48b3cd18af05b3c9f62b4d281102f8f7ae5665f6",
+      "served_sha": "48b3cd18af05b3c9f62b4d281102f8f7ae5665f6",
+      "built_at": "2026-09-09T20:40:23Z",
+      "publisher": "34402203356"
+    }
+  },
+  "prepared_batch_publication": {
+    "status": "verified_live",
+    "evidence": "docs/audits/2026-09-09-tournament-retry-release-evidence.json",
+    "phase_complete": false
+  },
+  "seat_refund_identity": {
+    "status": "verified_live_on_public_and_origin_2026_09_10",
+    "tests": 108,
+    "typescript": "passed",
+    "build": "passed",
+    "evidence": "docs/changelog/2026-09-09-durable-tournament-seat-refund.md"
+  },
+  "registration_operation_receipt": {
+    "status": "database_applied_client_published_legacy_alias_retired",
+    "function": "fn_register_for_tournament_request(uuid,uuid)",
+    "body_md5": "c80d08529c03284adc51c6cb03764a55",
+    "applied_version": "20260909211745",
+    "client_tests": 115,
+    "postgres_wrapper_assertions": 10,
+    "postgres_harness_exit": 0,
+    "typescript": "passed",
+    "build": "passed_on_24bfeda9_behind_main_0",
+    "evidence": "docs/changelog/2026-09-09-tournament-registration-operation-receipts.md",
+    "limitations": [
+      "Original wrapper tests use a funding test double. The newly merged real pre-start funding fixture passes seven groups; its narrower scope does not close all entry economics.",
+      "Late entry, re-entry, rebuy, addon, promotional and union paths still need their complete behavioral and release evidence."
+    ],
+    "registry_applied_version": "20260909212058"
+  },
+  "registration_retirement": {
+    "status": "applied_and_privileges_verified",
+    "live_version": "20260909221729",
+    "receipt_client_release": "24a22ade8ac865b6f3ae4d3e0bc047e4bddff88d",
+    "evidence": "docs/changelog/2026-09-09-unbound-tournament-registration-is-retired.md",
+    "full_phase_acceptance": false
+  },
+  "resume_checkpoint": "docs/audits/2026-09-10-chip-drift-continuation-status.md",
+  "exact_hand_generation": {
+    "status": "database_and_engine_adoption_verified",
+    "engine_sha": "b4c427a6e8474d796d29b682a9e153e03d78755d",
+    "full_hand_pg17": "legacy and exact modes passed, including four invalid-generation scenarios",
+    "evidence": "docs/audits/2026-09-10-chip-drift-resume-evidence.json",
+    "full_phase_acceptance": false
+  },
+  "registration_funding_rehearsal": {
+    "status": "seven_pre_start_groups_passed",
+    "source": "scripts/dev/probe-tournament-registration-funding-pg17.py",
+    "limits": "Real pre-start standalone-club funding, rollback, concurrent retries, last place, closure wait and cross-club receipt. Synthetic auth and maintenance. No late entry, union, promotional, re-entry or launch acceptance."
+  },
+  "swarm_checkpoint": {
+    "date": "2026-09-10",
+    "status": "in_progress",
+    "phase_complete": false,
+    "phase_four_started": false,
+    "evidence": "docs/audits/2026-09-10-chip-drift-phase-three-swarm.json",
+    "scope": "Six independent lanes cover all twelve controls. Focused acceptance results do not certify missing production authorities, terminal composition or unresolved live stalls.",
+    "production_gate": "As of03:17:38UTC all seven guards remain disabled; new move, committed move receipt and bounty rebuy-generation authorities are absent. The coordinating task owns the engine release seal and Stage-B cutover."
+  },
+  "latest_continuation": {
+    "phase_complete": false,
+    "production_expansion_and_rake_verified": true,
+    "full_stage_b_applied": false,
+    "proposal_activated": false,
+    "final_deal_v2_implementation_blocked_by_automatic_review": true,
+    "phase_four_first_batch": {
+      "pr": 4146,
+      "merge": "146128eb5c89edb1880473905524556b956b613f",
+      "frontend_publisher": 34451807707,
+      "status": "merged_and_frontend_publication_verified"
+    },
+    "historical_notes": "Older observations are retained as historical evidence. Use resume_checkpoint for current prerequisites, native acceptance, release state and remaining gaps."
+  }
+}

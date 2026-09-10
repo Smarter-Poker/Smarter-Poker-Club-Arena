@@ -1,0 +1,23 @@
+{
+  "captured": "2026-09-10",
+  "project": "kuklfnapbkmacvwxktbh",
+  "functions": [
+    {
+      "signature": "fn_ca_lock_settlement_lane_global()",
+      "body_md5": "343015440ea5c84ee4ca7ae583c73d30"
+    },
+    {
+      "signature": "fn_ca_lock_settlement_lane_for_tournament(uuid,uuid)",
+      "body_md5": "2bc939035496d764ff9d6c14b52fa1e7"
+    },
+    {
+      "signature": "fn_ca_tournament_unregistration_receipt(uuid,uuid,uuid,uuid)",
+      "body_md5": "090ec08f6c51b6258a6c9c5898f0603e"
+    },
+    {
+      "signature": "fn_ca_unregister_tournament_player_exact(uuid,uuid,uuid,text,uuid)",
+      "body_md5": "bf288f33ae7e17e4bb03e89f3a242409"
+    }
+  ],
+  "limits": "Only current refund receipt/core and settlement locks recaptured. Registration and wallet writers compose the existing exact-source fixtures plus #4096 source transformations. Auth/session and absent hand/launch evidence are synthetic. No production rows or remote mutation."
+}

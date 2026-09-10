@@ -26,7 +26,13 @@ interface ClubArenaNavigationContext {
 }
 
 const CLUB_STAFF_ROLES = new Set(['owner', 'co_owner', 'admin', 'manager', 'super_agent', 'agent']);
-const CLUB_FINANCE_ROLES = new Set(['owner', 'co_owner', 'admin', 'super_agent']);
+/** The roles that may see a club's money. Mirrors ca_can_view_club_finances. */
+export const CLUB_FINANCE_ROLES: ReadonlySet<string> = new Set([
+  'owner',
+  'co_owner',
+  'admin',
+  'super_agent',
+]);
 const CLUB_CONTROL_ROLES = new Set(['owner', 'co_owner', 'admin']);
 
 export interface ClubNavigationCapabilities {

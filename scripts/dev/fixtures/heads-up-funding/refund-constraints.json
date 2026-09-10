@@ -1,0 +1,92 @@
+[
+  {
+    "table": "tournament_unregistration_receipts",
+    "name": "tournament_unregistration_actual_start_check",
+    "definition": "CHECK ((((start_authority = 'scheduled_clock'::text) AND (settled_at < scheduled_start_at)) OR (start_authority = ANY (ARRAY['spin_actual_start'::text, 'heads_up_sng_actual_start'::text, 'launch_release'::text]))))"
+  },
+  {
+    "table": "tournament_unregistration_receipts",
+    "name": "tournament_unregistration_receipts_check",
+    "definition": "CHECK (((array_position(entitlement_ids, NULL::uuid) IS NULL) AND (array_position(ticket_ids, NULL::uuid) IS NULL) AND (array_position(source_wallet_club_ids, NULL::uuid) IS NULL) AND (array_position(credit_ledger_ids, NULL::uuid) IS NULL) AND (array_position(wallet_transaction_ids, NULL::uuid) IS NULL) AND (array_position(fee_reversal_ids, NULL::uuid) IS NULL) AND (array_position(fee_source_rake_record_ids, NULL::uuid) IS NULL)))"
+  },
+  {
+    "table": "tournament_unregistration_receipts",
+    "name": "tournament_unregistration_receipts_check1",
+    "definition": "CHECK ((cardinality(entitlement_ids) = cardinality(source_wallet_club_ids)))"
+  },
+  {
+    "table": "tournament_unregistration_receipts",
+    "name": "tournament_unregistration_receipts_check2",
+    "definition": "CHECK ((cardinality(entitlement_ids) = (cardinality(ticket_ids) + cardinality(wallet_transaction_ids))))"
+  },
+  {
+    "table": "tournament_unregistration_receipts",
+    "name": "tournament_unregistration_receipts_check3",
+    "definition": "CHECK ((cardinality(credit_ledger_ids) = cardinality(wallet_transaction_ids)))"
+  },
+  {
+    "table": "tournament_unregistration_receipts",
+    "name": "tournament_unregistration_receipts_check4",
+    "definition": "CHECK (((returned_ticket_value = (0)::numeric) = (cardinality(ticket_ids) = 0)))"
+  },
+  {
+    "table": "tournament_unregistration_receipts",
+    "name": "tournament_unregistration_receipts_check5",
+    "definition": "CHECK (((refunded_chips = (0)::numeric) = (cardinality(wallet_transaction_ids) = 0)))"
+  },
+  {
+    "table": "tournament_unregistration_receipts",
+    "name": "tournament_unregistration_receipts_check6",
+    "definition": "CHECK (((fees_reversed = (0)::numeric) = (cardinality(fee_reversal_ids) = 0)))"
+  },
+  {
+    "table": "tournament_unregistration_receipts",
+    "name": "tournament_unregistration_receipts_check7",
+    "definition": "CHECK (((fees_reversed = (0)::numeric) = (cardinality(fee_source_rake_record_ids) = 0)))"
+  },
+  {
+    "table": "tournament_unregistration_receipts",
+    "name": "tournament_unregistration_receipts_check8",
+    "definition": "CHECK ((((source_table_id IS NULL) AND (seat_number IS NULL)) OR ((source_table_id IS NOT NULL) AND (seat_number IS NOT NULL))))"
+  },
+  {
+    "table": "tournament_unregistration_receipts",
+    "name": "tournament_unregistration_receipts_fees_reversed_check",
+    "definition": "CHECK (((fees_reversed >= (0)::numeric) AND ((fees_reversed)::text <> ALL (ARRAY['NaN'::text, 'Infinity'::text, '-Infinity'::text])) AND (fees_reversed = round(fees_reversed, 2))))"
+  },
+  {
+    "table": "tournament_unregistration_receipts",
+    "name": "tournament_unregistration_receipts_pkey",
+    "definition": "PRIMARY KEY (registration_id)"
+  },
+  {
+    "table": "tournament_unregistration_receipts",
+    "name": "tournament_unregistration_receipts_refunded_chips_check",
+    "definition": "CHECK (((refunded_chips >= (0)::numeric) AND ((refunded_chips)::text <> ALL (ARRAY['NaN'::text, 'Infinity'::text, '-Infinity'::text])) AND (refunded_chips = round(refunded_chips, 2))))"
+  },
+  {
+    "table": "tournament_unregistration_receipts",
+    "name": "tournament_unregistration_receipts_request_id_key",
+    "definition": "UNIQUE (request_id)"
+  },
+  {
+    "table": "tournament_unregistration_receipts",
+    "name": "tournament_unregistration_receipts_returned_ticket_value_check",
+    "definition": "CHECK (((returned_ticket_value >= (0)::numeric) AND ((returned_ticket_value)::text <> ALL (ARRAY['NaN'::text, 'Infinity'::text, '-Infinity'::text])) AND (returned_ticket_value = round(returned_ticket_value, 2))))"
+  },
+  {
+    "table": "tournament_unregistration_receipts",
+    "name": "tournament_unregistration_receipts_source_table_id_fkey",
+    "definition": "FOREIGN KEY (source_table_id) REFERENCES tables(id) ON DELETE RESTRICT"
+  },
+  {
+    "table": "tournament_unregistration_receipts",
+    "name": "tournament_unregistration_receipts_tournament_id_fkey",
+    "definition": "FOREIGN KEY (tournament_id) REFERENCES tournaments(id) ON DELETE RESTRICT"
+  },
+  {
+    "table": "tournament_unregistration_receipts",
+    "name": "tournament_unregistration_receipts_user_id_fkey",
+    "definition": "FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE RESTRICT"
+  }
+]

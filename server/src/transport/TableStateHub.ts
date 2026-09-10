@@ -560,7 +560,6 @@ export class TableStateHub {
 
     for (const entry of list) {
       if (entry.delivered.has(sub)) continue;
-      entry.delivered.add(sub);
       const message: EventMessage = {
         type: 'EVENT',
         tableId,
@@ -569,7 +568,10 @@ export class TableStateHub {
         ts: Date.now(),
         payload: { ...entry.payload, replayed: true },
       };
-      if (this.safeSend(sub, JSON.stringify(message))) this.replayedEvents++;
+      if (this.safeSend(sub, JSON.stringify(message))) {
+        entry.delivered.add(sub);
+        this.replayedEvents++;
+      }
     }
   }
 

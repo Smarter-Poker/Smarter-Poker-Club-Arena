@@ -371,6 +371,8 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ needs.publish-needed.outputs.target_sha }}
+          # Strict provenance requires complete ancestry for this exact target.
+          fetch-depth: 0
 
       # STAGE MARKERS REMOVED (2026-08-21).
       #
@@ -453,7 +455,7 @@ jobs:
       # required `TypeScript Check` job has already checked that same tree.
       #
       # SENTRY_AUTH_TOKEN lives HERE now, and only here (moved 2026-09-04).
-      # The sentry-vite-plugin activates on
+      # Originally the sentry-vite-plugin activated on
       # `NODE_ENV === 'production' && SENTRY_AUTH_TOKEN`, which was true in
       # ci.yml's build - the bundle that is thrown away - and false in this
       # one, the bundle that ships. So maps were uploaded for an artifact no
@@ -475,6 +477,8 @@ jobs:
           VITE_SENTRY_DSN: 'https://842977a65e398b038728a05e8d892089@o4510810580779008.ingest.us.sentry.io/4510816835600384'
           VITE_APP_VERSION: ${{ needs.publish-needed.outputs.target_sha }}
           VITE_ONESIGNAL_APP_ID: '2fde0e83-cd01-4f93-a9a0-9be6cfe36e8c'
+          # Only this verified web release may upload source maps.
+          CA_SENTRY_UPLOAD: '1'
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
           # Verified 2026-04-23 via the Sentry API: the live org is
           # `smarter-software-inc`, the CA project is `javascript-react`.
@@ -568,7 +572,135 @@ jobs:
           echo "dist uploaded as artifact \`club-arena-dist-${{ needs.publish-needed.outputs.target_sha }}\`" >> $GITHUB_STEP_SUMMARY
           echo "Proceeding to publish to the origin..." >> $GITHUB_STEP_SUMMARY
 
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  #  THE APP (store readiness, phase 6): the same merge reaches installed
+  #  phones over the air.
+  # ═══════════════════════════════════════════════════════════════════════════
+  #
+  # A web change that just went live on smarter.poker is also the app's web
+  # bundle. Capgo (`@capgo/capacitor-updater`, capacitor.config.ts) downloads
+  # a new bundle on the next launch and swaps it in - no store review for CSS,
+  # copy and fixes (Apple 3.3.2: a plugin, a permission or a change of purpose
+  # is a new binary, never an OTA). The native shell calls notifyAppReady() on
+  # every launch, which is what lets Capgo roll a broken bundle back.
+  #
+  # This is NOT a second publisher - it is a job in the one publisher, gated
+  # on the same build and the same test shards, and it ships only after the
+  # origin was verified serving the same commit (`needs: publish-to-origin`;
+  # it sits above that job in this file only because the no-commit-left-behind
+  # law reads everything after the Converge step as part of that step).
+  # `tests/no-commit-left-behind` counts workflows with a publish-to-origin
+  # job, and there is still one.
+  #
+  # The bundle version is `<native.version>.<run number>`: the binary's
+  # marketing version (iOS MARKETING_VERSION, Android versionName, pinned to
+  # native.version by tests/unit/nativeAssetsAndOta.test.ts) followed by a
+  # monotonic patch, so every upload is unique, ordered, and never below the
+  # binary that will install it (Capgo refuses a bundle older than the app).
+  #
+  # CAPGO_TOKEN is Dan's to create (CLAUDE.md 10.84). The job is switched on
+  # by the repository variable CAPGO_OTA_ENABLED='true' (set it together with
+  # the secret); until then the job is skipped and the web publish is never
+  # held hostage to a store account that does not exist yet.
+  publish-to-app:
+    name: Publish the app bundle (Capgo OTA)
+    needs: [publish-needed, build-and-store, client-tests, publish-to-origin]
+    # The repository VARIABLE `CAPGO_OTA_ENABLED` is the switch (secrets are
+    # not readable in a job-level `if`; variables are). Off, or absent, the job
+    # is skipped and the web publish is untouched. On, the job must have the
+    # CAPGO_TOKEN secret too, and fails loudly if it does not - an enabled
+    # switch with no token is a misconfiguration, not a quiet no-op.
+    # A successful origin job can also mean it stood down for a newer bundle.
+    # Only the exact target confirmed by its HTTP verification may reach OTA.
+    if: >-
+      always() &&
+      vars.CAPGO_OTA_ENABLED == 'true' &&
+      needs.publish-needed.outputs.skip != 'true' &&
+      needs.build-and-store.result == 'success' &&
+      needs.publish-to-origin.result == 'success' &&
+      needs.publish-to-origin.outputs.verified_sha != '' &&
+      needs.publish-to-origin.outputs.verified_sha == needs.publish-needed.outputs.target_sha &&
+      (needs.client-tests.result == 'success' ||
+       (needs.client-tests.result == 'skipped' &&
+        needs.publish-needed.outputs.tests_proven == 'true'))
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    permissions:
+      contents: read
+    env:
+      HUSKY: '0'
+      CAPGO_TOKEN: ${{ secrets.CAPGO_TOKEN }}
+
+    steps:
+      - name: The switch is on, so the token must exist
+        run: |
+          if [ -z "${CAPGO_TOKEN:-}" ]; then
+            echo "::error::CAPGO_OTA_ENABLED is 'true' but the CAPGO_TOKEN secret is not set (docs/APP-STORE-RUNBOOK.md)."
+            exit 1
+          fi
+
+      - name: Checkout Club Arena at the publish target
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.publish-needed.outputs.target_sha }}
+          # Strict provenance requires complete ancestry for this exact target.
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Restore node_modules
+        id: nm-cache
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: nm-publish-${{ runner.os }}-node22-${{ hashFiles('package-lock.json') }}
+
+      - name: Install dependencies
+        if: steps.nm-cache.outputs.cache-hit != 'true'
+        run: npm ci
+
+      # The native bundle: base '/', no source maps, dist-native/. Same tree,
+      # same env as the web build above; the native flag build:native sets in
+      # package.json is the only difference (the web job never sets it).
+      - name: Build the app bundle
+        env:
+          NODE_ENV: production
+          VITE_ANTIGRAVITY_ENABLED: 'true'
+          VITE_SUPABASE_URL: 'https://kuklfnapbkmacvwxktbh.supabase.co'
+          VITE_SUPABASE_ANON_KEY: 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx'
+          VITE_ENGINE_URL: 'https://engine.smarter.poker'
+          VITE_APP_ENV: production
+          VITE_SENTRY_DSN: 'https://842977a65e398b038728a05e8d892089@o4510810580779008.ingest.us.sentry.io/4510816835600384'
+          VITE_APP_VERSION: ${{ needs.publish-needed.outputs.target_sha }}
+          VITE_REVENUECAT_IOS_KEY: ${{ secrets.VITE_REVENUECAT_IOS_KEY }}
+          VITE_REVENUECAT_ANDROID_KEY: ${{ secrets.VITE_REVENUECAT_ANDROID_KEY }}
+        run: npm run build:native
+
+      - name: Upload to Capgo
+        env:
+          SHA: ${{ needs.publish-needed.outputs.target_sha }}
+          CHANNEL: ${{ vars.CAPGO_CHANNEL || 'production' }}
+        run: |
+          set -euo pipefail
+          test -f dist-native/index.html
+          NATIVE=$(tr -d '[:space:]' < native.version)
+          VERSION="${NATIVE}.${{ github.run_number }}"
+          echo "uploading bundle ${VERSION} (${SHA:0:7}) to channel ${CHANNEL}"
+          npx --yes @capgo/cli@latest bundle upload \
+            --apikey "$CAPGO_TOKEN" \
+            --path dist-native \
+            --channel "$CHANNEL" \
+            --bundle "$VERSION" \
+            --no-key
+          echo "- OTA: bundle \`${VERSION}\` (\`${SHA:0:7}\`) uploaded to channel \`${CHANNEL}\`" >> $GITHUB_STEP_SUMMARY
+
   publish-to-origin:
+    outputs:
+      verified_sha: ${{ steps.verified.outputs.sha }}
     # ── THE PUBLISH (rewritten 2026-09-03) ────────────────────────────────────
     # Club Arena no longer travels through the World Hub repository. Until today
     # this job committed dist/ into World Hub's public/hub/club-arena/ and Vercel
@@ -719,6 +851,7 @@ jobs:
           $SSH "set -e; cd $ORIGIN_ROOT && N=\$(find pool -type f -name '*.map' | wc -l) && find pool -type f -name '*.map' -delete && echo \"source maps removed from the additive pool: \$N\""
 
       - name: Verify the origin serves this bundle
+        id: verified
         if: steps.verdict.outputs.verdict == 'publish'
         run: |
           set -euo pipefail
@@ -727,6 +860,7 @@ jobs:
             LIVE=$(curl -fsS --max-time 15 -H 'Cache-Control: no-cache' "$ORIGIN_URL/build-info.json?cb=$RANDOM" 2>/dev/null | sed -n 's/.*"ca_sha"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' || true)
             if [ "$LIVE" = "$SHA" ]; then
               echo "origin serves ${SHA:0:7}"
+              echo "sha=$SHA" >> "$GITHUB_OUTPUT"
               echo "### Published" >> $GITHUB_STEP_SUMMARY
               echo "\`${SHA:0:7}\` is live at the origin; World Hub's rewrite serves it at smarter.poker/hub/club-arena." >> $GITHUB_STEP_SUMMARY
               exit 0

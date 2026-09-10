@@ -14,6 +14,7 @@
  */
 
 import { supabase } from './supabase.js';
+import { isChipFleetTable } from './HorseFleetFundingBoundary.js';
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import {
   bodiesOnHostFrom,
@@ -934,12 +935,13 @@ export class HorseFleetManager {
         lifecycle?: string | null;
         role?: string | null;
         main_index?: number | null;
+        arena?: unknown;
       }>(
         (cursor, want) => {
           let q = supabase
             .from('tables')
             .select(
-              'id, name, max_players, small_blind, big_blind, game_variant, club_id, union_id, min_buy_in, max_buy_in, current_players, created_at, settings, cluster_id, lifecycle, role, main_index'
+              'id, name, max_players, small_blind, big_blind, game_variant, club_id, union_id, arena:clubs!fk_tables_club_id(id, asset, is_platform, union_id), min_buy_in, max_buy_in, current_players, created_at, settings, cluster_id, lifecycle, role, main_index'
             )
             .is('tournament_id', null)
             .in('status', ['waiting', 'running'])
@@ -965,7 +967,7 @@ export class HorseFleetManager {
         );
         return;
       }
-      const tables = tablePage.rows;
+      const tables = tablePage.rows.filter(isChipFleetTable);
 
       /* WHO MAY SIT WHERE (Dan 2026-09-02, verbatim: "FREE THEM TO PLAY OPENLY
          INSIDE THE DEEP STACK SOCIETY ONLY. THEY HAVE NO AFFILIATION OR ARE A

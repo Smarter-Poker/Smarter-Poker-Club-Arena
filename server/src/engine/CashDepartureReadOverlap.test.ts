@@ -16,10 +16,9 @@ function setup(cluster = true) {
   const engine = Object.create(ServerTableEngine.prototype) as any;
   engine.tableId = 'aaaaaaaa-1111-4111-8111-111111111111';
   engine.tableInfo = { club_id: 'club', cluster_id: cluster ? 'game' : null };
-  engine.forcedLeaves = new Set(['forced']);
   engine.lifecycleCanMutate = vi.fn(() => true);
   engine.onLeaveRefusedAtSettlement = vi.fn();
-  const leaves = deferred<string[]>();
+  const leaves = deferred<Array<{ userId: string; occupancyId: string }>>();
   const pending = deferred<moves.PendingSeatMove[]>();
   const leaveCall = vi.spyOn(db, 'processLeavePending').mockReturnValue(leaves.promise);
   const moveRead = vi.spyOn(moves, 'pendingSeatMoves').mockReturnValue(pending.promise);
@@ -32,20 +31,18 @@ describe('cash boundary overlaps candidate reads without moving ahead of departu
     const h = setup();
     const completed = vi.fn();
     const boundary = h.engine.readCashHandDepartures().then(completed);
-    expect(h.leaveCall).toHaveBeenCalledWith(
-      h.engine.tableId,
-      'club',
-      expect.any(Function),
-      h.engine.forcedLeaves
-    );
+    expect(h.leaveCall).toHaveBeenCalledWith(h.engine.tableId, 'club', expect.any(Function));
     expect(h.moveRead).toHaveBeenCalledWith(h.engine.tableId);
     h.pending.resolve([]);
     await Promise.resolve();
     await Promise.resolve();
     expect(completed).not.toHaveBeenCalled();
-    h.leaves.resolve(['departed']);
+    h.leaves.resolve([{ userId: 'departed', occupancyId: 'original' }]);
     await boundary;
-    expect(completed).toHaveBeenCalledWith({ cashedOutIds: ['departed'], pendingMoves: [] });
+    expect(completed).toHaveBeenCalledWith({
+      cashedOutIds: [{ userId: 'departed', occupancyId: 'original' }],
+      pendingMoves: [],
+    });
   });
   it('observes a move-read rejection immediately but waits for the leave result', async () => {
     const h = setup();
@@ -90,7 +87,7 @@ describe('cash boundary overlaps candidate reads without moving ahead of departu
     h.engine.lifecycleCanMutate.mockReturnValue(true);
     const boundary = h.engine.readCashHandDepartures();
     h.engine.lifecycleCanMutate.mockReturnValue(false);
-    h.leaveCall.mock.calls[0][2]?.('forced', 4000);
+    h.leaveCall.mock.calls[0][2]?.('forced', 4000, 'original');
     expect(h.engine.onLeaveRefusedAtSettlement).not.toHaveBeenCalled();
     h.leaves.resolve([]);
     h.pending.resolve([]);
@@ -127,15 +124,21 @@ describe('a prefetched move still goes through the authoritative executor', () =
     });
   });
 
-  it('a read that FAILED executes nothing and is not an empty boundary', async () => {
-    /* D1: `null` is "could not read". Before this it was `[]`, which every
-       caller took for "no moves pending" - and the announce path PRUNES from
-       that answer, releasing swap holds that are the only thing keeping a
-       player out of a hand the other table is about to move them out of. */
-    const rpc = vi.spyOn(db.supabase, 'rpc');
-    const result = await moves.executePendingSeatMoves('table', { announcedOnly: true }, null);
-    expect(rpc).not.toHaveBeenCalled();
-    expect(result).toEqual({ done: [], held: [], refused: [] });
+  it('a read that FAILED throws out of the boundary rather than reading as empty', async () => {
+    /* D1, through main's contract (merged 2026-09-10): an unreadable
+       enumeration must never be mistaken for "no moves pending", because the
+       announce path PRUNES from that answer and would release a swap hold -
+       the only thing keeping a player out of a hand the OTHER table's
+       transaction is about to move them out of. The service throws; the
+       engine translates that into "change nothing" at its two call sites, and
+       settlement's runStep owns it as a reported, alerted step failure. */
+    const rpc = vi
+      .spyOn(db.supabase, 'rpc')
+      .mockResolvedValue({ data: null, error: { message: 'read failed' } } as any);
+    await expect(moves.executePendingSeatMoves('table', { announcedOnly: true })).rejects.toThrow(
+      'read failed'
+    );
+    expect(rpc).toHaveBeenCalledWith('fn_cash_seat_moves_pending', { p_table_id: 'table' });
   });
   it('does not execute unannounced candidates or re-read a known empty boundary', async () => {
     const rpc = vi.spyOn(db.supabase, 'rpc');

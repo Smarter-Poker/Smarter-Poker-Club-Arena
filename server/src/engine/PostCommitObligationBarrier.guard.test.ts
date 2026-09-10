@@ -76,7 +76,9 @@ describe('an accepted hand cannot outrun its durable post-commit obligations', (
       postHand.indexOf("runStep('pending_addons'"),
       postHand.indexOf("runStep('horse_rebuys'")
     );
-    expect(pending).toContain('if (!durablePostCommitObligations && !this.isTournamentTable())');
+    expect(pending).toContain(
+      'if (!durablePostCommitObligations && !isDiamondCash && !this.isTournamentTable())'
+    );
     expect(pending).toContain('await this.processPendingAddOns(players)');
     expect(pending).toContain('if (!this.lifecycleCanMutate()) return;');
   });
@@ -136,7 +138,16 @@ describe('the database owns exactly-once obligation completion', () => {
   it('matches downstream insurance uniqueness and has no polling substitute', () => {
     expect(migration).toContain("SELECT count(DISTINCT x->>'player_id')");
     expect(migration).not.toMatch(/cron\.schedule|pg_cron|setInterval/i);
-    expect(projection).not.toMatch(/setInterval/);
+    // 2026-09-10: the worker gained ONE interval, a 5 s wake-up net under the
+    // LISTEN/Realtime signal paths. It is not a substitute for the causal
+    // retry: it stands down while a drain runs or a retry is armed, so a
+    // failed durable row is still owned by its bounded retry chain.
+    expect(projection.match(/setInterval\s*\(/g)).toHaveLength(1);
+    // The poll yields to a running drain and to an armed retry (pollIsDue),
+    // and the retry itself is still what a failed row owns.
+    expect(projection).toContain('drainRunning: drainPromise !== null,');
+    expect(projection).toContain('retryArmed: retryTimer !== null,');
+    expect(projection).toContain('causalRetryOwed = summary.failed > 0 || summary.deferred > 0');
     expect(migration).toContain('BEFORE DELETE ON public.hand_projection_outbox');
   });
 

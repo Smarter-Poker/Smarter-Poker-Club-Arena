@@ -96,14 +96,17 @@ describe('the money bubble reads the last paid place, not how many places pay', 
     expect(lastPaidPlace(gapped)).toBe(5);
   });
 
-  it('handles a range row, where the count is furthest from the place', () => {
-    // One row paying 2nd through 9th: eight paid places, deepest is NINTH.
+  it('refuses a retired range row instead of advertising a ladder SQL will not settle', () => {
+    // Range rows were once expanded only in the browser. The atomic database
+    // authority accepts the single persisted contract used by all new events:
+    // explicit integer places. Treating this legacy shape as nine paid places
+    // would now make the UI promise money the settlement transaction rejects.
     const range = JSON.stringify([
       { place: 1, percentage: 30 },
       { from: 2, to: 9, percentage: 8.75 },
     ]);
-    expect(paidPlaceCount(range)).toBe(9);
-    expect(lastPaidPlace(range)).toBe(9);
+    expect(paidPlaceCount(range)).toBe(0);
+    expect(lastPaidPlace(range)).toBe(0);
   });
 
   it('returns zero rather than guessing when no structure is published', () => {
@@ -113,14 +116,23 @@ describe('the money bubble reads the last paid place, not how many places pay', 
     expect(lastPaidPlace('[]')).toBe(0);
   });
 
-  it('both callers now use it', () => {
+  it('every bubble-distance caller now uses it', () => {
     const rewards = strip(read('components/tournament/details/RewardsTab.tsx'));
-    expect(rewards).toMatch(/bubblePlace = useMemo\(\(\) => lastPaidPlace/);
+    expect(rewards).toMatch(/parsedPlaces = useMemo\(\(\) => resolvePayoutStructure\(tournament\)/);
+    expect(rewards).toMatch(/finalPaidPlace = useMemo\(\(\) => lastPaidPlace\(parsedPlaces\)/);
     const detail = strip(read('components/tournament/details/DetailOverviewTab.tsx'));
-    expect(detail).toMatch(/lastPaidPlace\(tournament\?\.payout_structure\)/);
+    expect(detail).toMatch(
+      /payoutStructure = useMemo\(\(\) => resolvePayoutStructure\(tournament\)/
+    );
+    expect(detail).toMatch(/lastPaidPlace\(payoutStructure\)/);
+    const ranking = strip(read('components/tournament/details/RankingTab.tsx'));
+    expect(ranking).toMatch(
+      /deepestPaidPlace = useMemo\([\s\S]{0,100}lastPaidPlace\(resolvePayoutStructure\(tournament\)\)/
+    );
     // paidPlaceCount is still right for "N Paid Places"; it must not be the
     // thing feeding hand-for-hand.
     expect(detail).not.toMatch(/paidPositions[\s\S]{0,80}paidPlaceCount/);
+    expect(ranking).not.toMatch(/const paidPlaces[\s\S]{0,100}paidPlaceCount/);
   });
 });
 
@@ -266,10 +278,10 @@ describe('a query that fails does not render as a fact about the tournament', ()
   });
 
   it('DetailOverviewTab reports a failed deal-vote read', () => {
-    const src = strip(read('components/tournament/details/DetailOverviewTab.tsx'));
+    const src = strip(read('components/tournament/TournamentDealReview.tsx'));
     // Was `if (!alive || error || !data) return;` -- a permission failure left
     // the panel showing "0/6 Votes" as a fact, with nothing reported.
-    expect(src).toMatch(/reportError\(error, 'DetailOverviewTab\.dealVotes'\)/);
+    expect(src).toMatch(/reportError\(failure, 'TournamentDealReview\.proposal'\)/);
   });
 });
 
@@ -281,14 +293,15 @@ describe('polls and timers only run when something reads them', () => {
     // Gated on `dealEnabled` alone, a 500-runner event polled every 15s from
     // level one for a panel that cannot render until one table is left.
     const src = strip(read('components/tournament/details/DetailOverviewTab.tsx'));
-    expect(src).toMatch(/dealPanelPossible/);
-    expect(src).toMatch(/if \(!dealPanelPossible \|\| !tournament\?\.id\) return/);
+    expect(src).toContain('dealPanel &&');
+    expect(src).toMatch(/dealPanel\.amSeated\s*&&\s*currentUserId/);
+    expect(src).toContain('<TournamentDealReview');
   });
 
   it('the deal-vote poll drops a response that a newer one has overtaken', () => {
-    const src = strip(read('components/tournament/details/DetailOverviewTab.tsx'));
-    expect(src).toMatch(/const mine = \+\+seq/);
-    expect(src).toMatch(/mine !== seq/);
+    const src = strip(read('components/tournament/TournamentDealReview.tsx'));
+    expect(src).toMatch(/const mine = \+\+request.current/);
+    expect(src).toMatch(/mine !== request.current/);
   });
 
   it('BlindsTab stops ticking once the event is over', () => {

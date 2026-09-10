@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 const rpc = vi.hoisted(() => vi.fn());
+const alert = vi.hoisted(() => vi.fn());
+vi.mock('./financialAlerts.js', () => ({ raiseFinancialAlert: alert }));
 vi.mock('./supabase/client.js', () => ({ supabase: { rpc } }));
 import { reserveDiamondEntry, releaseDiamondEntry } from './DiamondCustody.js';
 
@@ -20,7 +22,11 @@ const receipt = {
   custody_balance: 100,
   journal_id: 'journal',
 };
-beforeEach(() => rpc.mockReset());
+beforeEach(() => {
+  rpc.mockReset();
+  alert.mockReset();
+  alert.mockResolvedValue({ persisted: true, alertId: 'alert' });
+});
 describe('Diamond custody server contract', () => {
   it('preserves the stable reservation identity and authoritative price', async () => {
     rpc.mockResolvedValue({ data: receipt, error: null });
@@ -73,6 +79,22 @@ describe('Diamond custody server contract', () => {
     expect(await releaseDiamondEntry('custody', 'request')).toMatchObject({ success: true });
     expect(rpc.mock.calls[0]).toEqual(rpc.mock.calls[1]);
   });
+  it('accepts a busted zero release without inventing a wallet journal', async () => {
+    const zero = { ...receipt, amount: 0, custody_balance: 0, journal_id: null, debt_settled: 0 };
+    rpc.mockResolvedValue({ data: zero, error: null });
+    expect(await releaseDiamondEntry('custody', 'request')).toEqual(zero);
+    expect(alert).not.toHaveBeenCalled();
+  });
+  it.each([
+    { amount: 0, journal_id: 'fabricated' },
+    { amount: 100, journal_id: null },
+    { amount: 0, journal_id: null, debt_settled: 1 },
+  ])('rejects an incoherent release journal or debt: %j', async (fields) => {
+    rpc.mockResolvedValue({ data: { ...receipt, custody_balance: 0, ...fields }, error: null });
+    await expect(releaseDiamondEntry('custody', 'request')).rejects.toThrow(
+      'Invalid Diamond Custody Receipt'
+    );
+  });
   it('rejects release receipts belonging to another custody', async () => {
     rpc.mockResolvedValue({ data: { ...receipt, custody_id: 'other' }, error: null });
     await expect(releaseDiamondEntry('custody', 'request')).rejects.toThrow(
@@ -96,5 +118,55 @@ describe('Diamond custody server contract', () => {
     await expect(reserveDiamondEntry(input)).rejects.toThrow(
       'Diamond Reservation Balance Mismatch'
     );
+  });
+});
+
+describe('custody failures stay visible without a second money writer', () => {
+  it('reports a lost response with its stable identity and does not retry the RPC', async () => {
+    rpc.mockRejectedValue(new Error('response lost'));
+    await expect(releaseDiamondEntry('custody', 'request')).rejects.toThrow('response lost');
+    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(alert).toHaveBeenCalledWith(
+      'critical',
+      'DiamondCustody.release_unverified',
+      'Diamond Custody Did Not Return A Verified Receipt',
+      expect.objectContaining({
+        custodyId: 'custody',
+        requestId: 'request',
+        asset: 'diamonds',
+        operation: 'release',
+        error: 'response lost',
+      })
+    );
+  });
+  it('retains the original failure when durable alert delivery fails', async () => {
+    alert.mockResolvedValue({ persisted: false, alertId: null });
+    rpc.mockResolvedValue({ data: null, error: { message: 'credit refused' } });
+    await expect(releaseDiamondEntry('custody', 'request')).rejects.toThrow('credit refused');
+    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(alert).toHaveBeenCalledTimes(1);
+  });
+  it('reports an invalid reservation receipt with the reservation identity', async () => {
+    rpc.mockResolvedValue({ data: { ...receipt, amount: 99 }, error: null });
+    await expect(reserveDiamondEntry(input)).rejects.toThrow('Diamond Reservation Amount Mismatch');
+    expect(alert).toHaveBeenCalledWith(
+      'critical',
+      'DiamondCustody.reserve_unverified',
+      'Diamond Custody Did Not Return A Verified Receipt',
+      expect.objectContaining({
+        userId: 'user',
+        targetId: 'table',
+        requestId: 'request',
+        asset: 'diamonds',
+      })
+    );
+  });
+  it('does not alarm on success or locally rejected invalid input', async () => {
+    rpc.mockResolvedValue({ data: receipt, error: null });
+    await reserveDiamondEntry(input);
+    await expect(reserveDiamondEntry({ ...input, amount: 0 })).rejects.toThrow(
+      'Invalid Diamond Amount'
+    );
+    expect(alert).not.toHaveBeenCalled();
   });
 });

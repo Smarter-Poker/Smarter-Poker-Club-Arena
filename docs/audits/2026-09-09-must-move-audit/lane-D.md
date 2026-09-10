@@ -497,6 +497,96 @@ The `[Supabase.FATAL] SUPABASE_SERVICE_ROLE_KEY is not set` lines in the vitest
 stderr are pre-existing environment noise, present identically in the baseline
 run, and no test asserts against them.
 
+## The 2026-09-10 merge: main solved D1 the other way, and its way won
+
+Main moved 171 commits under this branch and had fixed the SAME defect with the
+OPPOSITE mechanism. `seatMoves.ts` came back with three conflict hunks; the
+integrator resolved the other three files and left this one to me because I
+wrote both call sites.
+
+**Adopted: main's THROW contract. Kept: this lane's invariant and `refused[]`.**
+
+The invariant was never "returns null" - it is *a read that FAILED must never
+cause a held swap side to be pruned*, because the first half of a swap is
+landed by the OTHER table's transaction and a released hold is a player that
+transaction can move out of a live hand. A throw enforces that MORE strongly
+than a null did: a caller cannot ignore it by accident, because there is no
+value to ignore. Main's contract is also the shipped one and the occupancy
+receipt work (#3974) and its own tests depend on it (CLAUDE.md 10.8: deployed
+code is evidence, and here the written law and the shipped mechanism agree once
+you state the law properly).
+
+| hunk | resolution |
+| --- | --- |
+| `SeatMoveOutcome.held` | MAIN's shape, with `source_occupancy_id` |
+| `pendingSeatMoves` signature | MAIN's `Promise<PendingSeatMove[]>` |
+| the error branch | MAIN's `throw new Error(... 'Seat move enumeration failed')` |
+| `SEAT_MOVE_NON_TERMINAL_REASONS`, `refused[]`, `seatMoveCancelledNotice` | MINE, kept - main did not do D3 |
+| the refusal arm | BOTH, composed: main's `Seat move outcome was not confirmed` throw proves the reason is real, and only then does this lane classify it terminal or not. `res.reason ?? 'unknown'` is gone, because by that line the reason is proven to be a non-empty string |
+| the service's `prefetched` | main's non-nullable shape; `| null` now lives only in the engine |
+
+**Call sites changed (2), and one deliberately NOT changed:**
+
+1. `ServerTableEngineBase.readPendingSeatMoves()` - NEW, private, one place. It
+   catches the throw, reports `pending_seat_moves_unreadable`, and returns
+   `null`. Both `announcePendingSeatMoves` and `executePendingSeatMoves` use it
+   and keep their existing `if (pending === null) return` branch untouched. A
+   notice that could not be read must never stop a table dealing, which is why
+   the throw is translated rather than propagated at these two.
+2. `ServerTableEngineDealing` gone-player prune - dropped `this.forcedLeaves`,
+   which main retired at this merge (the leave path is occupancy-keyed now).
+   `tsc` caught it; the teardown is now exactly settlement step 6's list.
+3. **NOT changed: `readCashHandDepartures`.** Main already owns that rejection
+   (`Promise.allSettled` then `if (moves.status === 'rejected') throw`), and
+   `runStep('leave_pending', moneyCritical=true)` catches it, reports it and
+   raises a financial alert while settlement continues. The throw lands BEFORE
+   anything is pruned or executed, so main's own structure already takes this
+   law's branch. A second catch would only have hidden the alert.
+
+**`PendingSeatMove[] | null` does not leak.** It is confined to the engine:
+`readPendingSeatMoves`, the engine's own `executePendingSeatMoves(prefetched)`,
+and `readCashHandDepartures`'s `pendingMoves` field - where `null` now arises
+only from the `!lifecycleCanMutate()` early return. The integrator's resolution
+of that field to `PendingSeatMove[] | null` is correct and I kept it.
+
+**Two pins moved with their mechanisms, none weakened or deleted:**
+
+- MY D1 pin was `pendingSeatMoves returns null on error, never []` - a claim
+  about a return type. It is now BEHAVIOURAL and stronger: a throwing read
+  leaves `heldForSwap` and `announcedSeatMoves` intact and emits nothing, **with
+  a control** proving the same call DOES release the hold on a read that
+  succeeded (without the control the test would pass on a method that simply
+  never prunes, which is a different bug). Plus pins that the service still
+  throws, that the translation exists in exactly one place with exactly two
+  callers, and that settlement is not double-wrapped.
+- MY D2 pin read the idle branch for `executePendingSeatMoves()`. Main wrapped
+  both loops in `executeIdleSeatMoves` (seat boundary + step budget), so the
+  pin now follows that wrapper and additionally asserts the wrapper reaches the
+  executor and takes `acquireSeatBoundary()`.
+- MAIN's `SeatMoveReceipt.test.ts` "treats a refused move as no transfer"
+  asserted `toEqual({done: [], held: []})`. Its meaning is unchanged and still
+  asserted - nothing done, nothing held - and it now also carries the `refused`
+  entry, with the reasoning written beside it. Nothing of main's was deleted.
+
+Gate after the resolution, read-only, `node_modules` present:
+
+```
+$ cd server && npx tsc --noEmit -p .
+(0 bytes - clean; it is what caught the retired `forcedLeaves`)
+
+$ cd server && npx vitest run src/engine/TheMoveIsNeverMidHand.law.test.ts \
+      src/services/supabase/SeatMoveReceipt.test.ts \
+      src/engine/CashDepartureReadOverlap.test.ts
+ Test Files  3 passed (3)
+      Tests  54 passed (54)
+
+$ cd server && npx vitest run <the three above> src/cluster src/engine/PresenceFollowsTheMove.test.ts
+ Test Files  8 passed (8)
+      Tests  219 passed (219)
+```
+
+Nothing was committed; the merge is the integrator's to drive.
+
 ## What I could not do, precisely
 
 1. **Nothing was applied to production, committed or pushed** - per the brief.

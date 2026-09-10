@@ -125,7 +125,9 @@ describe('Item 1 - a running tournament can be watched', () => {
     // Not the exact select string — adding a column must not break this.
     for (const feed of [DETAILS, ENTRIES_HOOK]) {
       const src = code(read(feed));
-      expect(src).toMatch(/\.select\(\s*'[^']*\btable_id\b[^']*'\s*\)/);
+      const playersQuery = src.slice(src.indexOf(".from('tournament_players')"));
+      expect(playersQuery.startsWith(".from('tournament_players')")).toBe(true);
+      expect(sliceCall(playersQuery, '.select(')).toMatch(/\btable_id\b/);
       expect(src).toMatch(/table_id: \(e\.table_id as string \| null\) \|\| null/);
     }
 
@@ -766,7 +768,9 @@ describe('Audit - the dialog cannot confirm a buy-in nobody was shown', () => {
        funded player whose read failed saw "Insufficient Balance" with Confirm
        disabled. Assert the property at BOTH ends: the gate treats null as
        unknown, AND the reader it calls can actually produce a null. */
-    expect(src).toMatch(/const short = balance !== null && balance < cost;/);
+    expect(src).toMatch(
+      /const short = !usesTournamentTicket && balance !== null && balance < cost;/
+    );
     expect(src).not.toMatch(/getPlayerBalance\(/);
     const wallet = code(read('src/services/WalletService.ts'));
     expect(wallet).toMatch(/async readPlayerBalance\(/);

@@ -44,26 +44,26 @@
  * announces itself once a second is a screen-reader denial-of-service.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { TournamentTabProps, NormalisedBlindLevel } from './types';
 import {
   chips,
   chipsCompact,
   clockText,
+  effectivePlaceLadderPool,
   effectivePrizePool,
   isPlayerLive,
   lastPaidPlace,
   ordinal,
-  parsePayoutStructure,
   placePrize,
+  resolvePayoutStructure,
 } from './types';
 import { tournamentService } from '../../../services/TournamentService';
-import { supabase } from '../../../lib/supabase';
 import { reportError } from '../../../utils/errorReporter';
 import { formatBuyIn, money } from '../../../utils/buyIn';
 import { spinMultiplierLabel } from '../../../utils/spinReveal';
-import { useToast } from '../../common/Toast';
 import RegistrationApprovalsPanel from '../RegistrationApprovalsPanel';
+import TournamentDealReview from '../TournamentDealReview';
 import TournamentLobbyCard from '../TournamentLobbyCard';
 import { HandForHandBanner } from '../HandForHandBanner';
 import {
@@ -171,14 +171,16 @@ export default function DetailOverviewTab({
     retry: satRetry,
   } = useSatellites(tournament?.id, currentUserId);
 
-  const toast = useToast();
-
   /* ── The one-second heartbeat. Only runs when something on screen actually
         moves: a running level clock, or a countdown to a start time. ── */
   const [tick, setTick] = useState(0);
   const status = String(tournament?.status || '').toUpperCase();
   const isRunning = status === 'RUNNING';
   const isCompleted = status === 'COMPLETED';
+  const isSatellite =
+    String(tournament?.variant ?? '').toLowerCase() === 'satellite' ||
+    String(tournament?.tournament_type ?? '').toUpperCase() === 'SATELLITE' ||
+    Boolean(tournament?.satellite_target_id || tournament?.satellite_target);
 
   /**
    * A finished event has nothing left that moves, and an event three days out
@@ -214,92 +216,22 @@ export default function DetailOverviewTab({
     () => (Array.isArray(entries) ? entries : []).filter(isPlayerLive),
     [entries]
   );
-  const aliveCount = aliveList.length;
 
-  /* ── Final-table deal votes. Own state, own poll: the tab contract does not
-        carry them and no other tab needs them. ── */
-  const dealEnabled = Boolean(tournament?.final_table_deal_enabled) && isRunning;
-  const [dealVoteCount, setDealVoteCount] = useState(0);
-  const [hasVotedDeal, setHasVotedDeal] = useState(false);
-  const [votingDeal, setVotingDeal] = useState(false);
-
-  /**
-   * The poll only runs once the panel it feeds can actually appear.
-   *
-   * It used to be gated on `dealEnabled` alone -- `final_table_deal_enabled &&
-   * isRunning` -- while the PANEL additionally requires the field to be down to
-   * one table. So a 500-runner event with final-table deals turned on polled
-   * `tournament_deal_votes` every fifteen seconds from level one, for hours,
-   * for a number nothing on screen was reading. `dealPanel` is declared below
-   * this effect, so the gate is recomputed here rather than referenced.
-   */
-  const ftSize = Number(tournament?.table_size) || 9;
-  const dealPanelPossible = dealEnabled && aliveCount >= 2 && aliveCount <= ftSize;
-
-  useEffect(() => {
-    if (!dealPanelPossible || !tournament?.id) return;
-    let alive = true;
-    /* Request ordering. Two loads can be in flight across a vote -- the
-       optimistic +1 in handleVoteForDeal and a poll issued just before the
-       insert landed -- and whichever RESOLVES last used to win. A sequence
-       number means a stale response is dropped instead of overwriting a fresher
-       count with an older one. */
-    let seq = 0;
-    const load = async () => {
-      const mine = ++seq;
-      const { data, error } = await supabase
-        .from('tournament_deal_votes')
-        .select('user_id')
-        .eq('tournament_id', tournament.id);
-      if (!alive || mine !== seq) return;
-      if (error) {
-        /* Was `if (!alive || error || !data) return;` -- a permission failure
-           left the panel showing "0/6 Votes", which is a factual claim about a
-           real vote count, with nothing reported anywhere. */
-        reportError(error, 'DetailOverviewTab.dealVotes');
-        return;
-      }
-      if (!data) return;
-      setDealVoteCount(data.length);
-      setHasVotedDeal(Boolean(currentUserId && data.some((v) => v.user_id === currentUserId)));
-    };
-    void load();
-    const iv = setInterval(load, 15_000);
-    return () => {
-      alive = false;
-      clearInterval(iv);
-    };
-  }, [dealPanelPossible, tournament?.id, currentUserId]);
-
-  const handleVoteForDeal = useCallback(async () => {
-    if (!currentUserId || !tournament?.id || votingDeal) return;
-    setVotingDeal(true);
-    try {
-      const { data, error } = await supabase.rpc('fn_cast_tournament_deal_vote', {
-        p_tournament_id: tournament.id,
-      });
-      if (error) {
-        throw error;
-      }
-      const result = (data ?? {}) as { ok?: boolean; voted?: boolean; reason?: string };
-      if (result.ok !== true || result.voted !== true) {
-        throw new Error(result.reason || 'The deal vote was refused');
-      }
-      setHasVotedDeal(true);
-      if ((result as { already?: boolean }).already !== true) {
-        setDealVoteCount((n) => n + 1);
-        toast.success('Your deal vote is in.');
-      } else {
-        toast.success('Your deal vote is already in.');
-      }
-    } catch (e) {
-      reportError(e, 'DetailOverviewTab.voteForDeal');
-      toast.error('Could not record your vote.');
-    } finally {
-      setVotingDeal(false);
-    }
-  }, [currentUserId, tournament?.id, votingDeal, toast]);
-
+  /* The review panel reads the exact proposal only for a remaining player. */
+  const dealEnabled = Boolean(tournament?.final_table_deal_enabled) && isRunning && !isSatellite;
+  const dealTerms = (
+    <>
+      <p className="dov-deal__note">
+        A Deal Requires Every Remaining Player’s Vote And Ends The Tournament After A Settled Hand.
+        Prizes And Bubble Protection Already Paid Or Still Owed To Eliminated Players Are Deducted
+        First. The Remaining Pool Is Split In Proportion To Chip Stacks At Settlement.
+      </p>
+      <p className="dov-deal__note">
+        Shares Are Rounded Down To Cents. Rounding Cents Go To The Chip Leader, With Ties Broken By
+        Earlier Registration And Then Player ID.
+      </p>
+    </>
+  );
   /* ── Field figures. ──
         Counted with the SHARED predicate. This block used to define "still in"
         as `playing | registered` while Ranking used `not out`, so a completed
@@ -370,14 +302,24 @@ export default function DetailOverviewTab({
     return Math.max(0, Math.floor((startAtMs - Date.now()) / 1000));
   }, [startAtMs, tick]);
 
+  const payoutStructure = useMemo(() => resolvePayoutStructure(tournament) ?? [], [tournament]);
+
   /* ── Prize pool: the stored pool is authoritative, the guarantee is a floor. ── */
-  const prize = useMemo(
-    () => ({
+  const prize = useMemo(() => {
+    return {
       effective: effectivePrizePool(tournament?.prize_pool, tournament?.guaranteed_prize),
+      ladder: effectivePlaceLadderPool(
+        tournament?.prize_pool,
+        tournament?.guaranteed_prize,
+        payoutStructure,
+        field.entries,
+        tournament?.bubble_protection === true,
+        Number(tournament?.buy_in_amount) || 0,
+        isSatellite
+      ),
       guarantee: Number(tournament?.guaranteed_prize) || 0,
-    }),
-    [tournament?.guaranteed_prize, tournament?.prize_pool]
-  );
+    };
+  }, [tournament, field.entries, payoutStructure, isSatellite]);
 
   const lateRegText = useMemo(() => {
     const levels = Number(tournament?.late_reg_levels) || 0;
@@ -464,13 +406,14 @@ export default function DetailOverviewTab({
       out.push({ label: 'BB Ante', kind: 'default' });
     if (t.accelerated_mtt) out.push({ label: 'Accelerated', kind: 'action' });
     if (t.bubble_protection) out.push({ label: 'Bubble Protection', kind: 'good' });
-    if (t.final_table_deal_enabled) out.push({ label: 'Final Table Deal', kind: 'default' });
+    if (t.final_table_deal_enabled && !isSatellite)
+      out.push({ label: 'Final Table Deal', kind: 'default' });
     if (t.ban_chat) out.push({ label: 'No Chat', kind: 'mute' });
     if (t.early_bird_enabled && Number(t.early_bird_chips) > 0)
       out.push({ label: `Early Bird +${chipsCompact(Number(t.early_bird_chips))}`, kind: 'good' });
     if (isRegistered) out.push({ label: 'You Are In', kind: 'good' });
     return out;
-  }, [tournament, blindLevels, isRegistered]);
+  }, [tournament, blindLevels, isRegistered, isSatellite]);
 
   /* ── The former label/value list, minus everything the stat grid already
         answers (prize pool, entries, late reg). ── */
@@ -590,21 +533,28 @@ export default function DetailOverviewTab({
   /* ── Podium, for a finished event. ── */
   const podium = useMemo(() => {
     if (!isCompleted) return [];
-    const structure = parsePayoutStructure(tournament?.payout_structure) ?? [];
     /* The EFFECTIVE pool, not the raw one. Rewards prints first place off the
        guarantee-floored figure; printing the raw `prize_pool` here made the two
        tabs quote different money for the same finish on any overlay event. */
-    const pool = prize.effective;
+    const pool = prize.ladder;
     return (Array.isArray(entries) ? entries : [])
       .filter((e) => typeof e.position === 'number' && (e.position as number) <= 3)
       .sort((a, b) => (a.position || 99) - (b.position || 99))
       .map((player) => {
-        const row = structure.find((p) => p.place === player.position);
+        const row = payoutStructure.find((p) => p.place === player.position);
         // The whole structure, not one percentage: the last paid place absorbs
         // the residual, so a place cannot be priced without the others.
-        return { player, prizeValue: row ? placePrize(pool, structure, row.place) : 0 };
+        const recorded = Number(player.prize);
+        return {
+          player,
+          prizeValue: Number.isFinite(recorded)
+            ? recorded
+            : row && pool !== null
+              ? placePrize(pool, payoutStructure, row.place)
+              : 0,
+        };
       });
-  }, [isCompleted, entries, tournament?.payout_structure, prize.effective]);
+  }, [isCompleted, entries, payoutStructure, prize.ladder]);
 
   /**
    * The runners-up list under the podium.
@@ -644,10 +594,7 @@ export default function DetailOverviewTab({
      types.ts: on a structure whose places do not run contiguously from 1, the
      count is a place that is not in the money, and hand-for-hand would start
      at the wrong point. */
-  const paidPositions = useMemo(
-    () => lastPaidPlace(tournament?.payout_structure),
-    [tournament?.payout_structure]
-  );
+  const paidPositions = useMemo(() => lastPaidPlace(payoutStructure), [payoutStructure]);
 
   if (!tournament) {
     return (
@@ -816,33 +763,23 @@ export default function DetailOverviewTab({
         </div>
       )}
 
-      {/* Final-table deal vote. Only at one table, only on an FT-deal event. */}
-      {dealPanel && (
-        <div className="tl-panel dov-deal">
-          <div className="dov-deal__head">
+      {dealPanel &&
+        (dealPanel.amSeated && currentUserId ? (
+          <TournamentDealReview
+            key={`${tournament.id}:${currentUserId}`}
+            tournamentId={tournament.id}
+            actorId={currentUserId}
+            players={aliveList}
+          >
+            {dealTerms}
+          </TournamentDealReview>
+        ) : (
+          <div className="tl-panel dov-deal">
             <span className="dov-deal__label">Final Table Deal</span>
-            <span className="dov-deal__count">
-              {chips(dealVoteCount)}/{chips(dealPanel.remaining)} Votes
-            </span>
+            <p className="dov-deal__note">Only Remaining Players Can Review And Vote On A Deal.</p>
+            {dealTerms}
           </div>
-          {dealPanel.amSeated &&
-            (hasVotedDeal ? (
-              <p className="dov-deal__note">
-                Your Vote Is In. A Deal Happens When Every Remaining Player Votes.
-              </p>
-            ) : (
-              <button
-                type="button"
-                className="dov-deal__btn"
-                onClick={handleVoteForDeal}
-                disabled={votingDeal}
-                aria-label="Vote To Split The Remaining Prize Pool"
-              >
-                {votingDeal ? 'Voting...' : 'Vote For Deal'}
-              </button>
-            ))}
-        </div>
-      )}
+        ))}
 
       {/* ── BAND 4 — the definition grid the long list became ──
            Every value in this band used to be an inline style, and three of

@@ -14,6 +14,28 @@
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.04);
 }
 
+/* On a console's glass the card paints nothing of its own (#ClubArenaConsole):
+   the frame is the master's, the standings print between its rails. */
+.card.glass {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: none;
+}
+
+.card.glass .empty {
+  padding: 0.5rem 0;
+  color: #9aa5b3;
+  font:
+    600 0.8rem/1.4 Inter,
+    system-ui,
+    sans-serif;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
 .header {
   display: flex;
   align-items: center;

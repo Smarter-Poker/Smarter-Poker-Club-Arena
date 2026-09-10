@@ -1,0 +1,123 @@
+{
+  "phase": 3,
+  "scope": ["T07", "T08", "T09", "T10", "T11"],
+  "status": "partial_controls_remain_open",
+  "source_commit": "40886c94ab69fd37a47957b3ea3b23b5a0c0e375",
+  "amount_rehearsal": {
+    "status": "verified_component",
+    "command": "PATH=/opt/homebrew/bin:$PATH python3 scripts/dev/probe-tournament-payout-amounts-pg17.py",
+    "passed_groups": 15,
+    "production_database_used": false,
+    "body_md5": "8f6cde5f5b799949506259f3064568b9",
+    "installed_recheck_utc": "2026-09-10T03:34:31.563532Z",
+    "result_path": "/tmp/ca-payout-amounts-pg17-0d3aksfq/results.json",
+    "log_path": "/tmp/codex-phase3-payout-amounts-test.log",
+    "limits": [
+      "Synthetic tournament and roster input tables only.",
+      "No payment, lifecycle trigger, elimination concurrency or terminal closeout certification.",
+      "No production correction was needed or applied."
+    ]
+  },
+  "controls": [
+    {
+      "id": "T07",
+      "status": "partial_amount_derivation_verified",
+      "verified": "Installed SQL derives whole-cent amounts and gives the final place the remaining cents. Repeated reads are identical and leave inputs unchanged.",
+      "remaining": "Prove the disclosed cutoff freezes the final ladder and stores the binding amounts across entry closure and restart. The installed finalized-pool and pool-finalization-window triggers remain disabled."
+    },
+    {
+      "id": "T08",
+      "status": "partial_installed_hand_evidence_reviewed",
+      "verified": "Installed ordinary elimination binds the latest entry generation to an exact accepted-hand atomic commit and settlement receipt before delegating the roster mutation. Elimination sequence is database-owned.",
+      "remaining": "Execute actual hand-to-elimination ranking for same-hand ties, simultaneous tables and final-table transitions. Catalog/source review does not prove callback order or ranking outcomes."
+    },
+    {
+      "id": "T09",
+      "status": "partial_installed_obligation_contract_reviewed",
+      "verified": "Current terminal cash authority calls fn_settle_tournament_places and its owner-only raw place payer. The current public obligation wrapper delegates non-refund requests to the cumulative obligation implementation.",
+      "remaining": "Execute early awards, final incremental awards, overlapping retries, paid-place ownership conflicts and late-credit rollback with actual wallet, payout, escrow and obligation writers."
+    },
+    {
+      "id": "T10",
+      "status": "partial_reserved_amount_derivation_verified",
+      "verified": "Installed SQL reserves one base buy-in when a stone bubble exists before allocating the remaining pool. A 1000 pool and 100 promise return places 450, 270 and 180; the total including the bubble remains 1000. Invalid or unfundable values are refused.",
+      "remaining": "Verify the displayed and frozen promise stays aligned through the binding cutoff and prove actual bubble-plus-place settlement spends the funded pool once. Disabled finalization guards prevent a full freeze claim."
+    },
+    {
+      "id": "T11",
+      "status": "partial_installed_terminal_contract_reviewed",
+      "verified": "Current terminal authority calls cash settlement, mystery settlement, bounty finalization and rake settlement; the non-satellite completed-receipt constraint remains enabled.",
+      "remaining": "Execute current integrated completion and replay with real prize, bounty and fee writers. Prove zero correct residuals, retained display history and durable unpaid debt on a refusal or short bank."
+    }
+  ],
+  "catalog": {
+    "observed_at_utc": "2026-09-10T03:20:57.997049Z",
+    "disabled_tournament_guards": [
+      "aa_guard_tournament_completing_claim",
+      "aaa_guard_atomic_satellite_completion",
+      "zzzz_freeze_finalized_tournament_prize_pool",
+      "zzzz_tournament_pool_finalization_window_guard",
+      "zzzz_tournaments_atomic_place_completion_guard",
+      "zzzzz_tournaments_atomic_final_table_deal_completion_guard",
+      "zzzzzz_tournaments_financial_certificate"
+    ],
+    "enabled_relevant_guards": [
+      "non_satellite_completed_requires_terminal_receipt",
+      "stamp_tournament_terminal_evidence_markers",
+      "zzzz_freeze_registered_tournament_settlement_contract"
+    ]
+  },
+  "installed_functions": [
+    {
+      "signature": "fn_ca_settle_tournament_place_raw(uuid,integer,uuid,numeric)",
+      "body_md5": "329237bd65214e17d4ca3298f363f248"
+    },
+    {
+      "signature": "fn_ca_tournament_place_amounts(uuid)",
+      "body_md5": "8f6cde5f5b799949506259f3064568b9"
+    },
+    {
+      "signature": "fn_complete_tournament_terminal(uuid,uuid,text)",
+      "body_md5": "589388ad7204fef460a1deebf32ecb69"
+    },
+    {
+      "signature": "fn_normalize_tournament_final_standings(uuid)",
+      "body_md5": "ad865880f99bc28896bec03c66ae55a9"
+    },
+    {
+      "signature": "fn_settle_tournament_places(uuid,uuid)",
+      "body_md5": "351bfe3e401ad90eeb9b40bad366bb0e"
+    },
+    {
+      "signature": "fn_tournament_place_prize_exact(numeric,text,integer)",
+      "body_md5": "3dea72d6b5ebeb278aed4c169faa3e4b"
+    },
+    {
+      "signature": "trg_freeze_finalized_tournament_prize_pool()",
+      "body_md5": "08b2e89dc6ad0026e5bc04260265ac48"
+    },
+    {
+      "signature": "fn_eliminate_tournament_player_atomic(uuid,uuid,integer,numeric,numeric)",
+      "body_md5": "04a2e93dd8afe35fbc0cdd2829daf0f8"
+    },
+    {
+      "signature": "fn_stamp_tournament_elimination_sequence()",
+      "body_md5": "78943d7a0d060e33830281500f08dfca"
+    },
+    {
+      "signature": "fn_settle_tournament_obligation(uuid,text,integer,uuid,numeric,text,text,uuid)",
+      "body_md5": "915f3ebd5c4a2efb97ad3a354dfeb365"
+    },
+    {
+      "signature": "fn_settle_tournament_obligation_before_atomic_batch_gate(uuid,text,integer,uuid,numeric,text,text,uuid)",
+      "body_md5": "68f74f87580ea2c2a1cacbe30f9b4289"
+    }
+  ],
+  "superseded_evidence": [
+    "The September 7 unfunded-bubble statement is not a finding against the current cash amount authority; it now reserves the bubble before pricing places.",
+    "Old source guards for fn_prepare_tournament_place_obligations do not execute the current terminal cash authority.",
+    "The previous partial-credit status probe substitutes bank and credit helpers and cannot close T09 or T11."
+  ],
+  "phase_complete": false,
+  "phase4_started": false
+}

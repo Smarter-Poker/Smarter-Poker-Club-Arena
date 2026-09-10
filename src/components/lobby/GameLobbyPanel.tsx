@@ -11,7 +11,7 @@
  * Desktop: right-side drawer. Small screens: full-width sheet. Esc closes.
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import CasinoPlaque, { PlaqueSeats } from './CasinoPlaque';
 import ArenaGameCard from './game-cards/ArenaGameCard';
@@ -30,7 +30,11 @@ import { formatBuyIn } from '../../utils/buyIn';
 import { reportError } from '../../utils/errorReporter';
 import { useInTabLobby } from '../../context/InTabLobbyContext';
 import type { Tournament, BlindLevel } from '../../types/database.types';
-import { parsePayoutStructure } from '../tournament/details/types';
+import {
+  effectivePlaceLadderPool,
+  placePrize,
+  resolvePayoutStructure,
+} from '../tournament/details/types';
 import type { PayoutPlace } from '../tournament/details/types';
 import { staffTickLine, tickIsStale } from './cashGameTick';
 import './GameLobbyPanel.css';
@@ -157,8 +161,10 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
 
   // ── Detail data (read-only enrichment; actions never depend on it) ──
   const [tournament, setTournament] = useState<Tournament | null>(null);
+  const [tournamentFieldSize, setTournamentFieldSize] = useState<number | null>(null);
   const [waitlist, setWaitlist] = useState<WaitlistEntry[]>([]);
   const [waitlistError, setWaitlistError] = useState(false);
+  const waitlistSnapshotRef = useRef<{ tableId: string; waitlisted: boolean } | null>(null);
   const [avgPot, setAvgPot] = useState<number | null>(null);
   const [seatMap, setSeatMap] = useState<{ seat_number: number; user_id: string }[] | null>(null);
   const [tick, setTick] = useState<{
@@ -172,34 +178,15 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
   useEffect(() => {
     let cancelled = false;
     setTournament(null);
+    setTournamentFieldSize(null);
     setWaitlist([]);
     setWaitlistError(false);
+    waitlistSnapshotRef.current = null;
     setAvgPot(null);
     setTab('overview');
     setDetailError(false);
 
     if (isCash) {
-      waitlistService
-        .getTableWaitlist(entry.id)
-        .then((rows) => {
-          if (cancelled) return;
-          /* NULL means the READ failed (query-level, which the .catch below
-             can never see — a Supabase builder only rejects on transport).
-             "Waiting 0" beside a Join Waitlist button is a promise that you
-             are first in line; on a failed read it was a guess. The service
-             now says which is which, and '-' renders for "could not find
-             out" (ITEM E audit, 2026-08-26). */
-          if (rows === null) {
-            setWaitlistError(true);
-          } else {
-            setWaitlist(rows);
-            setWaitlistError(false);
-          }
-        })
-        .catch((e) => {
-          if (!cancelled) setWaitlistError(true);
-          reportError(e, 'GameLobbyPanel.loadWaitlist');
-        });
       tableService
         .getAveragePot(entry.id)
         .then((v: number | null) => {
@@ -207,10 +194,23 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
         })
         .catch((e) => reportError(e, 'GameLobbyPanel.loadAveragePot'));
     } else {
-      tournamentService
-        .getTournament(entry.id)
-        .then((t) => {
-          if (!cancelled) setTournament(t);
+      Promise.all([
+        tournamentService.getTournament(entry.id),
+        supabase
+          .from('tournament_players')
+          .select('id', { count: 'exact', head: true })
+          .eq('tournament_id', entry.id),
+      ])
+        .then(([t, countResult]) => {
+          if (cancelled) return;
+          setTournament(t);
+          if (countResult.error) {
+            reportError(countResult.error, 'GameLobbyPanel.loadTournamentFieldSize');
+          } else {
+            setTournamentFieldSize(
+              typeof countResult.count === 'number' ? countResult.count : null
+            );
+          }
         })
         .catch((e) => {
           reportError(e, 'GameLobbyPanel.loadTournament');
@@ -221,6 +221,41 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
       cancelled = true;
     };
   }, [entry.id, isCash]);
+
+  // The parent changes waitlisted optimistically while busy. Refresh only
+  // after it settles, and remember completed reads so a refused action keeps
+  // the verified queue without another request.
+  useEffect(() => {
+    if (!isCash || busy) return;
+    const previous = waitlistSnapshotRef.current;
+    if (previous?.tableId === entry.id && previous.waitlisted === waitlisted) return;
+    let cancelled = false;
+    waitlistService
+      .getTableWaitlist(entry.id)
+      .then((rows) => {
+        if (cancelled) return;
+        if (rows === null) {
+          waitlistSnapshotRef.current = null;
+          setWaitlist([]);
+          setWaitlistError(true);
+        } else {
+          waitlistSnapshotRef.current = { tableId: entry.id, waitlisted };
+          setWaitlist(rows);
+          setWaitlistError(false);
+        }
+      })
+      .catch((e) => {
+        if (!cancelled) {
+          waitlistSnapshotRef.current = null;
+          setWaitlist([]);
+          setWaitlistError(true);
+        }
+        reportError(e, 'GameLobbyPanel.loadWaitlist');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [entry.id, isCash, busy, waitlisted]);
 
   // ── Seat map (cash only; table_seats is public-read). Keyed on
   //    entry.players so a realtime seat change refreshes the map without
@@ -541,9 +576,32 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
    * ranges to one entry per place, which also gives the rows a real key.
    */
   const panelPayouts = useMemo<PayoutPlace[]>(
-    () => parsePayoutStructure(tournament?.payout_structure) ?? [],
-    [tournament?.payout_structure]
+    () => resolvePayoutStructure(tournament) ?? [],
+    [tournament]
   );
+  const panelIsSatellite =
+    String(tournament?.variant ?? '').toLowerCase() === 'satellite' ||
+    String(tournament?.tournament_type ?? '').toUpperCase() === 'SATELLITE' ||
+    Boolean(tournament?.satellite_target_id || tournament?.satellite_target);
+  const panelPlaceLadderPool = useMemo<number | null>(() => {
+    if (!tournament) return 0;
+    if (
+      tournament.bubble_protection === true &&
+      !panelIsSatellite &&
+      tournamentFieldSize === null
+    ) {
+      return null;
+    }
+    return effectivePlaceLadderPool(
+      tournament.prize_pool,
+      tournament.guaranteed_prize,
+      panelPayouts,
+      tournamentFieldSize ?? 0,
+      tournament.bubble_protection === true,
+      Number(tournament.buy_in_amount) || 0,
+      panelIsSatellite
+    );
+  }, [panelIsSatellite, panelPayouts, tournament, tournamentFieldSize]);
 
   const cashRaw = isCash ? (entry.raw as LobbyTableRow) : null;
   /* One helper, so the panel and the card behind it cannot quote different
@@ -1071,7 +1129,10 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
                             <tr>
                               <th>Place</th>
                               <th>Share</th>
-                              {Number(tournament.prize_pool) > 0 && <th>Projected</th>}
+                              {Math.max(
+                                Number(tournament.prize_pool) || 0,
+                                Number(tournament.guaranteed_prize) || 0
+                              ) > 0 && <th>Projected</th>}
                             </tr>
                           </thead>
                           <tbody>
@@ -1079,17 +1140,19 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
                               <tr key={p.place}>
                                 <td>{p.place}</td>
                                 <td>{p.percentage}%</td>
-                                {Number(tournament.prize_pool) > 0 && (
+                                {Math.max(
+                                  Number(tournament.prize_pool) || 0,
+                                  Number(tournament.guaranteed_prize) || 0
+                                ) > 0 && (
                                   <td>
-                                    {/* To the cent (2026-09-09). This is the
-                                        advertised payout table; flooring each
-                                        place advertised 98 against the 98.72
-                                        the settlement actually pays. */}
-                                    {formatTableChips(
-                                      Math.round(
-                                        (Number(tournament.prize_pool) || 0) * p.percentage
-                                      ) / 100
-                                    )}
+                                    {/* The bubble promise is reserved before the
+                                        place ladder is projected. Display the
+                                        same cent-rounded amount settlement uses. */}
+                                    {panelPlaceLadderPool === null
+                                      ? '-'
+                                      : formatTableChips(
+                                          placePrize(panelPlaceLadderPool, panelPayouts, p.place)
+                                        )}
                                   </td>
                                 )}
                               </tr>

@@ -1,9 +1,4 @@
-/**
- * A durable COMPLETED re-read proves that a lost atomic receipt committed, but
- * it cannot recover the receipt's per-call place and payment counts. Recovery
- * must describe the durable proof instead of printing the failed receipt's
- * zero-valued fallback fields as if they were the committed settlement.
- */
+/** Recovery may report success only from an exact immutable receipt. */
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -14,36 +9,47 @@ const recovery = fs.readFileSync(
   'utf8'
 );
 const recover = sliceMethod(recovery, 'export async function recoverStuckCompletingTournaments(');
+const receiptRpc = fs.readFileSync(
+  path.join(process.cwd(), 'src/tournament/terminalSettlementRpc.ts'),
+  'utf8'
+);
 
 describe('stuck-tournament recovery logs only receipt-backed settlement counts', () => {
-  it('marks a failed atomic receipt as lost only after durable COMPLETED is proven', () => {
-    const failedReceipt = sliceMethod(recover, 'if (!settlement.ok || !settlement.completed)');
-    const durableProof = failedReceipt.indexOf("committed?.status !== 'COMPLETED'");
-    const accepted = failedReceipt.indexOf('durableCompletionAcceptedAfterLostReceipt = true');
-
-    expect(durableProof).toBeGreaterThanOrEqual(0);
-    expect(accepted).toBeGreaterThan(durableProof);
+  it('resolves a lost response behind the same terminal lock and validates its receipt', () => {
+    expect(receiptRpc).toContain("rpc('fn_complete_tournament_terminal'");
+    expect(receiptRpc).toContain("rpc('fn_resolve_tournament_terminal_outcome'");
+    // Three verifications since 2026-09-10: the first attempt, the serialized
+    // resolver, and the replay with the STORED receipt's parameters when the
+    // database refuses this process's observation against that receipt
+    // (terminal-replay-disagreement-is-not-retried-forever). Never fewer.
+    expect(receiptRpc.match(/verifyTournamentCompletionReceipt\(/g)).toHaveLength(3);
+    expect(receiptRpc).toContain('terminal_committed === true');
+    expect(receiptRpc).toContain('definitively_not_committed === true');
   });
 
-  it('logs durable completion and cleanup with settlement counts unavailable', () => {
-    const cleanup = recover.indexOf('if (!cleanupComplete)');
-    const durableLog = recover.indexOf('place/payment counts unavailable');
-    const lostReceiptLogBlock = sliceEnclosingBlock(recover, 'place/payment counts unavailable');
-
-    expect(durableLog).toBeGreaterThan(cleanup);
-    expect(lostReceiptLogBlock).toMatch(/durable COMPLETED/);
-    expect(lostReceiptLogBlock).toMatch(/table\/seat cleanup proven/);
-    expect(lostReceiptLogBlock).not.toMatch(/settlement\.places|settlement\.paid/);
-  });
-
-  it('preserves exact place and payment counts for a genuinely successful receipt', () => {
-    const receiptLogBlock = sliceEnclosingBlock(
+  it('logs exact counts only after the verified receipt helper returns', () => {
+    const terminalAttempt = sliceEnclosingBlock(
       recover,
-      'atomically settled ${settlement.places} place(s)'
+      'const receipt = await requestTournamentTerminalReceipt('
     );
+    const request = terminalAttempt.indexOf(
+      'const receipt = await requestTournamentTerminalReceipt('
+    );
+    const log = terminalAttempt.indexOf('receipt.cashPayoutTotal', request);
+    expect(request).toBeGreaterThan(-1);
+    expect(log).toBeGreaterThan(request);
+    expect(terminalAttempt).toMatch(/receipt\.bountyPayoutTotal/);
+    expect(terminalAttempt).toMatch(/receipt\.tableClosure\.closedTableCount/);
+  });
 
-    expect(receiptLogBlock).toMatch(/settlement\.places/);
-    expect(receiptLogBlock).toMatch(/settlement\.paid/);
-    expect(receiptLogBlock).not.toMatch(/counts unavailable/);
+  it('never converts a failed receipt request into a status-only success', () => {
+    expect(recover).toMatch(/error instanceof TerminalSettlementRefusedError/);
+    expect(recover).toMatch(
+      /reportUnknownRecoveryOutcome\(tournament, winnerId, reason, 'tournament', error\)/
+    );
+    expect(recover).not.toMatch(
+      /durableCompletionAcceptedAfterLostReceipt|place\/payment counts unavailable/
+    );
+    expect(receiptRpc).not.toMatch(/\.from\(['"]tournaments['"]\)/);
   });
 });

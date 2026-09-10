@@ -1,106 +1,142 @@
 /**
- * A REPRICED RESULT IS AN ENTITLEMENT, NOT A SECOND PAYMENT PATH.
- *
- * Late-registration finishers can be priced before the final pool is known.
- * Once entry closes, the engine rewrites those result rows to the final
- * structure. The database then freezes that complete result set and pays every
- * place plus the COMPLETED transition in one transaction.
- *
- * The former guard in this file executed the retired per-player top-up branch
- * and required a `fully_settled` receipt before writing `prize`. That shape is
- * incompatible with the atomic batch: the batch must read the corrected
- * entitlement before it can freeze and settle it. These laws pin the actual
- * safety boundary instead.
+ * A repriced result is presentation state, never a second payer. The terminal
+ * database authority derives the final ladder from its locked roster and pool,
+ * preflights the complete set, then pays and stamps every place in one commit.
  */
 import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { sliceMethod } from '../testHelpers/sourceWindow.js';
+import { blankNonCode, sliceMethod } from '../testHelpers/sourceWindow.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const migrations = join(here, '..', '..', '..', 'supabase', 'migrations');
-const atomicMigration = readdirSync(migrations).find((name) =>
-  name.includes('tournament_places_settle_and_complete_atomically')
-);
-if (!atomicMigration) throw new Error('atomic tournament place settlement migration is missing');
+const stripSqlComments = (source: string): string =>
+  source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*--.*$/gm, '');
 
-// Keep string literals for wiring assertions, but ensure comments cannot make
-// a positive or negative source law pass.
-const code = (source: string) =>
-  source
-    .replace(/\/\*[\s\S]*?\*\//g, (comment) => comment.replace(/[^\n]/g, ' '))
-    .replace(/^[ \t]*\/\/.*$/gm, (comment) => ' '.repeat(comment.length));
-const sql = (source: string) => source.replace(/^\s*--.*$/gm, '');
-
-const ELIMINATIONS = code(readFileSync(join(here, 'TournamentManagerEliminations.ts'), 'utf8'));
-const ATOMIC_SQL = sql(readFileSync(join(migrations, atomicMigration), 'utf8'));
-const REPRICE = sliceMethod(
-  ELIMINATIONS,
-  'recalculateEliminatedPrizes(finalPrizePool: number): Promise<boolean>'
-);
-const FINISH = sliceMethod(ELIMINATIONS, 'finishTournament(winnerId: string): Promise<void>');
-
-function sqlFunction(name: string): string {
-  const start = ATOMIC_SQL.indexOf(`CREATE OR REPLACE FUNCTION public.${name}`);
-  if (start < 0) throw new Error(`SQL function ${name} is missing`);
-  const bodyStart = ATOMIC_SQL.indexOf('AS $function$', start);
-  const end = ATOMIC_SQL.indexOf('$function$;', bodyStart);
-  if (bodyStart < 0 || end < 0) throw new Error(`SQL function ${name} has no complete body`);
-  return ATOMIC_SQL.slice(start, end + '$function$;'.length);
+function newestFunction(name: string, requiredFragment?: string): string {
+  let newest = '';
+  for (const filename of readdirSync(migrations)
+    .filter((entry) => entry.endsWith('.sql'))
+    .sort()) {
+    const source = stripSqlComments(readFileSync(join(migrations, filename), 'utf8'));
+    let start = source.indexOf(`CREATE OR REPLACE FUNCTION public.${name}(`);
+    while (start >= 0) {
+      const body = source.slice(start).match(/\bAS\s+(\$[A-Za-z0-9_]*\$)/);
+      if (!body || body.index == null) throw new Error(`${filename}: ${name} has no body`);
+      const tag = body[1];
+      const bodyStart = start + body.index + body[0].length;
+      const end = source.indexOf(`${tag};`, bodyStart);
+      if (end < 0) throw new Error(`${filename}: ${name} has an incomplete body`);
+      const definition = source.slice(start, end + tag.length + 1);
+      if (!requiredFragment || definition.includes(requiredFragment)) newest = definition;
+      start = source.indexOf(`CREATE OR REPLACE FUNCTION public.${name}(`, end + tag.length + 1);
+    }
+  }
+  if (!newest) throw new Error(`${name} is missing`);
+  return newest;
 }
 
-describe('late-reg repricing is settled only by the atomic place batch', () => {
-  it('records the corrected entitlement without moving money itself', () => {
-    expect(REPRICE).toMatch(
-      /\.from\('tournament_players'\)[\s\S]*?\.update\(\{ prize: correctPrize \}\)[\s\S]*?\.eq\('tournament_id', this\.tournamentId\)[\s\S]*?\.eq\('user_id', player\.user_id\)/
-    );
-    expect(REPRICE).not.toMatch(
-      /settleTournamentObligation|creditTournamentPrize|credit_player_wallet|wallet_transactions|tournament_payouts/
+const eliminations = readFileSync(join(here, 'TournamentManagerEliminations.ts'), 'utf8');
+const reprice = sliceMethod(
+  eliminations,
+  'recalculateEliminatedPrizes(finalPrizePool: number): Promise<boolean>'
+);
+const finish = sliceMethod(eliminations, 'finishTournament(winnerId: string): Promise<void>');
+const settlePlaces = newestFunction('fn_settle_tournament_places');
+const terminal = newestFunction(
+  'fn_complete_tournament_terminal',
+  'public.fn_settle_tournament_places('
+);
+
+describe('late-reg repricing is not a second money path', () => {
+  it('records the corrected cache without moving money itself', () => {
+    expect(reprice).toContain("supabase.rpc(\n          'fn_ca_reprice_unpaid_tournament_place'");
+    expect(reprice).toContain('p_expected_prize: expectedPrize');
+    expect(reprice).toContain('p_new_prize: correctPrize');
+    expect(reprice).toContain('record.tournament_id !== this.tournamentId');
+    expect(reprice).toContain('record.user_id !== player.user_id');
+    expect(reprice).not.toMatch(/\.from\('tournament_players'\)[\s\S]*?\.update\(/);
+    expect(blankNonCode(reprice)).not.toMatch(
+      /settleTournamentObligation|creditTournamentPrize|credit_player_wallet|wallet_transactions|tournament_payouts|requestTournamentTerminalReceipt/
     );
   });
 
-  it('keeps the finish retryable when any corrected entitlement is not durably recorded', () => {
-    expect(REPRICE).toMatch(/if \(recordErr\) \{[\s\S]*?complete = false;[\s\S]*?reportError\(/);
-    expect(REPRICE).toMatch(
-      /if \(!complete\) \{[\s\S]*?requestUrgentEliminationSweepAfter\([\s\S]*?\);[\s\S]*?\}[\s\S]*?return complete;/
+  it('finish never trusts or rewrites that cache before requesting the terminal receipt', () => {
+    expect(finish).toContain(
+      "requestTournamentTerminalReceipt(this.tournamentId, 'places', winnerId)"
     );
-
-    const reprice = FINISH.indexOf('await this.recalculateEliminatedPrizes(refreshedPool)');
-    const settlement = FINISH.indexOf('settleTournamentPlacesAtomically(');
-    expect(reprice).toBeGreaterThanOrEqual(0);
-    expect(settlement).toBeGreaterThan(reprice);
-    expect(FINISH).toMatch(
-      /if \(!\(await this\.recalculateEliminatedPrizes\(refreshedPool\)\)\) \{\s*this\.tournamentFinished = false;\s*return;\s*\}/
+    expect(blankNonCode(finish)).not.toMatch(
+      /recalculateEliminatedPrizes|correctPrize|fn_ca_reprice_unpaid_tournament_place|settleTournamentObligation/
     );
   });
+});
 
-  it('refuses to freeze a place plan whose recorded prizes disagree with the final structure', () => {
-    const prepare = sqlFunction('fn_prepare_tournament_place_obligations(');
-    const compare = prepare.indexOf('IF v_player_prize_cents <> v_expected_cents THEN');
-    const refusal = prepare.indexOf("'reason', 'recorded_prize_disagrees_with_structure'", compare);
-    const plan = prepare.indexOf('v_plan := v_plan ||', compare);
+describe('the database freezes and settles the complete final ladder', () => {
+  it('derives standings and amounts from locked durable evidence', () => {
+    const rosterLock = settlePlaces.indexOf('FROM public.tournament_players tp');
+    const ladder = settlePlaces.indexOf('fn_ca_tournament_place_amounts', rosterLock);
+    const winnerProof = settlePlaces.indexOf(
+      'v_winner.id IS NULL OR v_winner.user_id IS DISTINCT FROM p_observed_winner_id',
+      ladder
+    );
+    const sequenceProof = settlePlaces.indexOf(
+      'v_sequenced_count <> v_eliminated_count',
+      winnerProof
+    );
 
-    expect(compare).toBeGreaterThanOrEqual(0);
-    expect(refusal).toBeGreaterThan(compare);
-    expect(plan).toBeGreaterThan(refusal);
+    expect(rosterLock).toBeGreaterThanOrEqual(0);
+    expect(ladder).toBeGreaterThan(rosterLock);
+    expect(winnerProof).toBeGreaterThan(ladder);
+    expect(sequenceProof).toBeGreaterThan(winnerProof);
+    expect(settlePlaces).toMatch(/count\(DISTINCT tp\.elimination_sequence\)/);
   });
 
-  it('pays every frozen place before the same transaction marks the tournament completed', () => {
-    const settle = sqlFunction('fn_settle_tournament_places_atomic(');
-    const pay = settle.indexOf('FOR r IN');
-    const fullyPaid = settle.indexOf('IF v_open_count > 0 THEN', pay);
-    const completed = settle.indexOf("SET status = 'COMPLETED'", fullyPaid);
+  it('preflights every place before the first obligation or wallet credit', () => {
+    const preflight = settlePlaces.indexOf('FOR v_row IN');
+    const missing = settlePlaces.indexOf('IF v_user_id IS NULL THEN', preflight);
+    const malformed = settlePlaces.indexOf(
+      "v_amount::text IN ('NaN','Infinity','-Infinity')",
+      missing
+    );
+    const overpaid = settlePlaces.indexOf('IF v_evidence > v_amount THEN', malformed);
+    const materialize = settlePlaces.indexOf("IF v_status <> 'COMPLETED' THEN", overpaid);
+    const payer = settlePlaces.indexOf('public.fn_ca_settle_tournament_place_raw(', materialize);
 
-    expect(pay).toBeGreaterThanOrEqual(0);
-    expect(fullyPaid).toBeGreaterThan(pay);
-    expect(completed).toBeGreaterThan(fullyPaid);
-    expect(settle.slice(fullyPaid, completed)).toMatch(/RAISE EXCEPTION/);
+    expect(preflight).toBeGreaterThanOrEqual(0);
+    expect(missing).toBeGreaterThan(preflight);
+    expect(malformed).toBeGreaterThan(missing);
+    expect(overpaid).toBeGreaterThan(malformed);
+    expect(materialize).toBeGreaterThan(overpaid);
+    expect(payer).toBeGreaterThan(materialize);
+  });
 
-    const atomicCall = FINISH.indexOf('settleTournamentPlacesAtomically(');
-    const receiptGate = FINISH.indexOf('if (!settlement.ok || !settlement.completed)', atomicCall);
-    const successCleanup = FINISH.lastIndexOf('cleanupCommittedTournament()');
-    expect(receiptGate).toBeGreaterThan(atomicCall);
-    expect(successCleanup).toBeGreaterThan(receiptGate);
+  it('pays, proves, and stamps all places before the outer transaction completes', () => {
+    const payer = settlePlaces.indexOf('public.fn_ca_settle_tournament_place_raw(');
+    const paidProof = settlePlaces.indexOf("v_result->>'fully_settled'", payer);
+    const resetCache = settlePlaces.indexOf(
+      'UPDATE public.tournament_players SET prize = 0',
+      paidProof
+    );
+    const stampCache = settlePlaces.indexOf('SET prize = v_row.amount', resetCache);
+    const postProof = settlePlaces.indexOf('post-settlement proof failed', stampCache);
+    const cash = terminal.indexOf('public.fn_settle_tournament_places(');
+    const cashProof = terminal.indexOf("v_cash->>'fully_settled'", cash);
+    const complete = terminal.indexOf("SET status = 'COMPLETED'", cashProof);
+    const receipt = terminal.indexOf(
+      'INSERT INTO public.tournament_terminal_settlements',
+      complete
+    );
+
+    expect(payer).toBeGreaterThanOrEqual(0);
+    expect(paidProof).toBeGreaterThan(payer);
+    expect(resetCache).toBeGreaterThan(paidProof);
+    expect(stampCache).toBeGreaterThan(resetCache);
+    expect(postProof).toBeGreaterThan(stampCache);
+    expect(cash).toBeGreaterThanOrEqual(0);
+    expect(cashProof).toBeGreaterThan(cash);
+    expect(complete).toBeGreaterThan(cashProof);
+    expect(receipt).toBeGreaterThan(complete);
+    expect(terminal).not.toMatch(/EXCEPTION WHEN OTHERS/);
   });
 });

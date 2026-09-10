@@ -27,6 +27,34 @@ const migrationFiles = readdirSync(MIGRATIONS)
   .sort();
 const migration = migrationFiles.at(-1);
 const SQL = migration ? readFileSync(join(MIGRATIONS, migration), 'utf8') : '';
+const currentCashMigration = readdirSync(MIGRATIONS)
+  .filter((name) => name.endsWith('_tournament_cash_settlement_has_one_atomic_authority.sql'))
+  .sort()
+  .at(-1);
+const currentTerminalMigration = readdirSync(MIGRATIONS)
+  .filter((name) =>
+    name.endsWith('_non_satellite_terminal_settlement_commits_one_stored_receipt.sql')
+  )
+  .sort()
+  .at(-1);
+const CURRENT_CASH_SQL = currentCashMigration
+  ? readFileSync(join(MIGRATIONS, currentCashMigration), 'utf8')
+  : '';
+const CURRENT_TERMINAL_SQL = currentTerminalMigration
+  ? readFileSync(join(MIGRATIONS, currentTerminalMigration), 'utf8')
+  : '';
+const PLACE_AUTHORITY = CURRENT_CASH_SQL
+  ? sliceSqlStatement(
+      CURRENT_CASH_SQL,
+      'CREATE OR REPLACE FUNCTION public.fn_settle_tournament_places('
+    )
+  : '';
+const TERMINAL_AUTHORITY = CURRENT_TERMINAL_SQL
+  ? sliceSqlStatement(
+      CURRENT_TERMINAL_SQL,
+      'CREATE OR REPLACE FUNCTION public.fn_complete_tournament_terminal('
+    )
+  : '';
 
 /** Comments describe the old failure in detail; they cannot satisfy a pin. */
 const executableSql = SQL.replace(/^\s*--.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
@@ -122,6 +150,13 @@ const RECOVERY = stripTsComments(
   readFileSync(join(ROOT, 'server/src/tournament/tournamentRecovery.ts'), 'utf8')
 );
 const RECOVER = sliceMethod(RECOVERY, 'export async function recoverStuckCompletingTournaments(');
+const TERMINAL_CLIENT = stripTsComments(
+  readFileSync(join(ROOT, 'server/src/tournament/terminalSettlementRpc.ts'), 'utf8')
+);
+const REQUEST_TERMINAL = sliceMethod(
+  TERMINAL_CLIENT,
+  'export async function requestTournamentTerminalReceipt('
+);
 const RECOGNIZED_PAYOUT_SOURCES = [
   'structure',
   'reconcile',
@@ -704,10 +739,15 @@ describe('a tournament pays every place or none', () => {
     expect(exclusion).toBeGreaterThan(-1);
     expect(GUARD).toMatch(/p\.source = 'final_table_deal'/);
     expect(exclusion).toBeLessThan(batchGate);
+    expect(ELIMINATE).toMatch(
+      /String\(\(tournament as any\)\?\.variant \?\? ''\)\.toLowerCase\(\) === 'satellite'/
+    );
+    expect(FINISH).toMatch(
+      /String\(tournament\.variant \?\? ''\)\.toLowerCase\(\) === 'satellite'/
+    );
     for (const source of [ELIMINATE, FINISH]) {
-      expect(source).toMatch(
-        /String\(\(tournament as any\)\?\.variant \?\? ''\)\.toLowerCase\(\) === 'satellite'/
-      );
+      expect(source).toMatch(/tournament_type[\s\S]*?SATELLITE/);
+      expect(source).toMatch(/satellite_target_id/);
     }
   });
 
@@ -746,36 +786,40 @@ describe('a tournament pays every place or none', () => {
   });
 
   it('normal finish and recovery fund and prove the guarantee before pricing or settlement', () => {
-    const liveFunding = FINISH.indexOf("this.applyPrizeGuarantee('finish_fallback')");
-    const liveProof = FINISH.indexOf('refreshed.prize_pool_finalized !== true', liveFunding);
-    const liveFloor = FINISH.indexOf('refreshedPool + 0.005 < refreshedGuarantee', liveProof);
-    const liveReprice = FINISH.indexOf(
-      'this.recalculateEliminatedPrizes(refreshedPool)',
-      liveFloor
+    const funding = PLACE_AUTHORITY.indexOf(
+      'v_guarantee_result := public.fn_apply_prize_guarantee('
     );
-    const liveSettlement = FINISH.indexOf('settleTournamentPlacesAtomically(', liveReprice);
-    expect(liveFunding).toBeGreaterThan(-1);
-    expect(liveProof).toBeGreaterThan(liveFunding);
-    expect(liveFloor).toBeGreaterThan(liveProof);
-    expect(liveReprice).toBeGreaterThan(liveFloor);
-    expect(liveSettlement).toBeGreaterThan(liveReprice);
+    const proof = PLACE_AUTHORITY.indexOf(
+      'COALESCE(v_t.prize_pool_finalized, false) IS NOT TRUE',
+      funding
+    );
+    const floor = PLACE_AUTHORITY.indexOf(
+      'v_t.prize_pool < COALESCE(v_t.guaranteed_prize, 0)',
+      proof
+    );
+    const pricing = PLACE_AUTHORITY.indexOf(
+      'public.fn_ca_tournament_place_amounts(p_tournament_id)',
+      floor
+    );
+    const settlement = PLACE_AUTHORITY.indexOf(
+      'INSERT INTO public.tournament_obligations',
+      pricing
+    );
+    expect(funding).toBeGreaterThan(-1);
+    expect(proof).toBeGreaterThan(funding);
+    expect(floor).toBeGreaterThan(proof);
+    expect(pricing).toBeGreaterThan(floor);
+    expect(settlement).toBeGreaterThan(pricing);
 
-    const recoveryFunding = RECOVER.indexOf("'fn_apply_prize_guarantee'");
-    const recoveryProof = RECOVER.indexOf(
-      'fundedRow.prize_pool_finalized !== true',
-      recoveryFunding
+    const terminalPlace = TERMINAL_AUTHORITY.indexOf(
+      'v_cash := public.fn_settle_tournament_places('
     );
-    const recoveryFloor = RECOVER.indexOf('fundedPool + 0.005 < fundedGuarantee', recoveryProof);
-    const recoveryPricing = RECOVER.indexOf('computePlacePrize(', recoveryFloor);
-    const recoverySettlement = RECOVER.indexOf(
-      'settleTournamentPlacesAtomically(',
-      recoveryPricing
+    const terminalProof = TERMINAL_AUTHORITY.indexOf(
+      "COALESCE((v_cash->>'fully_settled')::boolean,false) IS NOT TRUE",
+      terminalPlace
     );
-    expect(recoveryFunding).toBeGreaterThan(-1);
-    expect(recoveryProof).toBeGreaterThan(recoveryFunding);
-    expect(recoveryFloor).toBeGreaterThan(recoveryProof);
-    expect(recoveryPricing).toBeGreaterThan(recoveryFloor);
-    expect(recoverySettlement).toBeGreaterThan(recoveryPricing);
+    expect(terminalPlace).toBeGreaterThan(-1);
+    expect(terminalProof).toBeGreaterThan(terminalPlace);
   });
 
   it('reprices eliminated zero-prize standings after funding and never pre-stamps add-on finalization', () => {
@@ -783,10 +827,15 @@ describe('a tournament pays every place or none', () => {
     expect(REPRICE).not.toMatch(/\.(?:gt|gte|neq)\('prize'/);
     expect(REPRICE).toMatch(/resolvePayoutStructure\(/);
     expect(REPRICE).toMatch(
-      /computePlacePrize\(finalPrizePool, payouts, Number\(player\.position\)\)/
+      /const ladderPool = prizePoolAvailableToPlaces\(\s*finalPrizePool,\s*payouts,\s*finalField,\s*!isSatellite && this\.tournamentCache\?\.bubble_protection === true,\s*Number\(this\.tournamentCache\?\.buy_in_amount\)\s*\)/
     );
+    expect(REPRICE).toMatch(/if \(ladderPool === null\) \{[\s\S]*?return false;/);
+    expect(REPRICE).toMatch(/computePlacePrize\(ladderPool, payouts, Number\(player\.position\)\)/);
+    expect(REPRICE).not.toMatch(/computePlacePrize\(finalPrizePool,/);
     expect(REPRICE).toMatch(/correctPrize - \(player\.prize \|\| 0\)/);
-    expect(REPRICE).toMatch(/\.update\(\{ prize: correctPrize \}\)/);
+    expect(REPRICE).toContain("'fn_ca_reprice_unpaid_tournament_place'");
+    expect(REPRICE).toContain('p_expected_prize: expectedPrize');
+    expect(REPRICE).not.toMatch(/\.from\('tournament_players'\)[\s\S]*?\.update\(/);
 
     const addOnFunding = FINALIZE_AFTER_ADD_ON.indexOf("'fn_close_tournament_addon_period'");
     const addOnReprice = FINALIZE_AFTER_ADD_ON.indexOf(
@@ -808,15 +857,26 @@ describe('a tournament pays every place or none', () => {
   });
 
   it('normal finish and recovery use the atomic door and require completion proof', () => {
-    expect(FINISH).toMatch(/await settleTournamentPlacesAtomically\(/);
-    expect(FINISH).toMatch(/'engine\.finishTournament'/);
-    expect(RECOVER).toMatch(/await settleTournamentPlacesAtomically\(/);
-    expect(RECOVER).toMatch(/'engine\.recoverStuckCompleting'/);
+    expect(FINISH).toMatch(
+      /receipt = await requestTournamentTerminalReceipt\(this\.tournamentId, 'places', winnerId\)/
+    );
+    expect(RECOVER).toMatch(
+      /const receipt = await requestTournamentTerminalReceipt\([\s\S]*?hasDeal \? 'final_table_deal' : 'places'/
+    );
     for (const path of [FINISH, RECOVER]) {
-      expect(path).toMatch(/if \(!settlement\.ok \|\| !settlement\.completed\)/);
       expect(path).not.toMatch(/fn_tournament_payout_reconcile/);
       expect(path).not.toMatch(/fn_settle_tournament_obligation/);
+      expect(path).not.toMatch(/settleTournamentPlacesAtomically\(/);
       expect(path).not.toMatch(/settleTournamentObligation\(/);
     }
+    expect(REQUEST_TERMINAL).toContain("supabase.rpc('fn_complete_tournament_terminal'");
+    expect(REQUEST_TERMINAL).toContain('verifyTournamentCompletionReceipt(');
+    expect(REQUEST_TERMINAL).toContain("supabase.rpc('fn_resolve_tournament_terminal_outcome'");
+    expect(REQUEST_TERMINAL).toMatch(
+      /if \(receipt && proposalIdentityIsExact\(data\)\) return receipt/
+    );
+    expect(REQUEST_TERMINAL).toMatch(
+      /if \(receipt && proposalIdentityIsExact\(outcome\.receipt\)\) return receipt/
+    );
   });
 });

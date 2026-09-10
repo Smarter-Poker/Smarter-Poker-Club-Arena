@@ -33,11 +33,6 @@ import {
 } from './observability/SettlementHealth.js';
 import {
   supabase,
-  startHandHistoryRetry,
-  stopHandHistoryRetry,
-  onHandHistoryRecovered,
-  drainHandHistoryQueue,
-  handHistoryQueueDepth,
   startHandProjectionWorker,
   stopHandProjectionWorker,
 } from './services/supabase.js';
@@ -53,8 +48,12 @@ import {
 } from './services/TournamentRecurringService.js';
 import { ScheduledTournamentService } from './services/ScheduledTournamentService.js';
 import { TournamentMetrics } from './services/TournamentMetrics.js';
+import { seatFirstPrecheckPrometheusLines } from './services/seatFirstPrecheckMetrics.js';
 import { SpinMetrics } from './services/SpinMetrics.js';
 import { ReplicationMetrics } from './services/ReplicationMetrics.js';
+import { HandOutboxListener } from './services/supabase/handOutboxListener.js';
+import { HandOutboxMetrics } from './services/supabase/handOutboxMetrics.js';
+import { handProjectionWakesToPrometheus } from './services/supabase/handProjection.js';
 import {
   wsAuthRefusalPrometheusLines,
   wsProtocolRefusalPrometheusLines,
@@ -79,6 +78,8 @@ import {
   horseDecisionWorkerLastComputeMs,
   horseDecisionWorkerOldestQueuedAgeMs,
   horseDecisionWorkerQueueDepth,
+  horseDecisionWorkerExpiredJobs,
+  horseDecisionWorkerRecoverableRequestErrors,
   horseDecisionWorkerReady,
   equityWorkerPoolReady,
   equityWorkerPoolConfiguredWorkers,
@@ -97,7 +98,6 @@ import {
   type LiveTournamentRow,
   type TournamentTableRow,
 } from './services/liveTournamentTableRecovery.js';
-import { tablesASweepMayClose } from './services/tableCloseGuard.js';
 import { HorseLifecycleManager } from './services/HorseLifecycleManager.js';
 import { DealRateVerifier } from './services/DealRateVerifier.js';
 import {
@@ -146,10 +146,11 @@ import {
 // Phase 1.1 PR-2: native WebSocket transport for authoritative state
 import { tableStateHub } from './transport/TableStateHub.js';
 
-// Dan 2026-08-19: refundAndCloseCancelledTournament is no longer imported here.
-// GameServer had four tournament-cancel paths; all four are gone. Nothing in
-// this file cancels a tournament any more — it fills, resumes or settles.
+// GameServer owns no tournament-cancellation path. It fills, resumes, or asks
+// the database terminal authority to settle completed play; operator-managed
+// cancellation enters through the authenticated database command authority.
 import { recoverStuckCompletingTournaments } from './tournament/tournamentRecovery.js';
+import { spinLaunchParks } from './tournament/spinLaunchParking.js';
 import { managerHasOverstayed, selectCompletingDue } from './tournament/completingDwell.js';
 import { fieldIsStillLive } from './tournament/recoveryFieldGuard.js';
 import { resolvePayoutStructure } from './tournament/payoutStructure.js';
@@ -1240,6 +1241,14 @@ export class GameServer {
       this.clearTournamentManagerAdmissionRetry(tournamentId);
       return Promise.resolve();
     }
+    /* The one front door every start passes through, so the park holds for
+       the main discovery loop and the fully-paid stall watchdog as well as
+       the fast lane. Only 'start' is gated: a RUNNING game being resumed was
+       never parked by the draw path, and the registry only ever holds ids the
+       draw path put there. */
+    if (mode === 'start' && spinLaunchParks.isParked(tournamentId)) {
+      return Promise.resolve();
+    }
     const existing = this.tournamentManagerAdmissionOperations.get(tournamentId);
     if (existing) return existing;
 
@@ -1418,8 +1427,6 @@ export class GameServer {
    * anything on it.
    */
   private seatFirstFullSince: Map<string, number> = new Map();
-  /** Last fn_sweep_unsettled_tournament_rake pass (2026-08-26 settlement integrity). */
-  private lastRakeSweepAt = 0;
   /** One seat-first finish sweep per minute - see the call site for why. */
   private lastSeatFirstFinishSweepAt = 0;
   /** One reopen sweep per minute for tables closed under a live tournament. */
@@ -1428,14 +1435,8 @@ export class GameServer {
   private lastConservationAt = 0;
   /** Last fn_detect_results_without_a_hand pass (2026-09-01 phase 7). */
   private lastNoHandResultCheckAt = 0;
-  /** Last fn_payout_guarantee_check pass (2026-09-01 every-earner-is-paid). */
-  private lastPayoutGuaranteeCheckAt = 0;
   /** Last fn_charge_place_overpays pass (2026-08-28 duplicate-place overpay). */
   private lastPlaceOverpayChargeAt = 0;
-  /** Last fn_repair_tournament_rake_attribution pass (2026-08-28). */
-  private lastRakeAttributionRepairAt = 0;
-  /** Last fn_backpay_spin_unpaid_winners pass (2026-08-28 spin deep dive). */
-  private lastSpinBackpayAt = 0;
   /** Last fn_spin_expire_unfilled pass (2026-08-31 phase 2 review). */
   private lastSpinExpireAt = 0;
   /** Last fn_requeue_unbanked_fees pass (2026-08-28 rake re-drive). */
@@ -1486,6 +1487,19 @@ export class GameServer {
   private tournamentMetrics = new TournamentMetrics();
   private spinMetrics = new SpinMetrics();
   private replicationMetrics = new ReplicationMetrics();
+  /**
+   * LISTEN hand_projection_outbox (2026-09-10). Wakes the projection worker
+   * from the insert trigger's NOTIFY instead of Realtime WAL decoding. Disabled
+   * (warns once) when ENGINE_PG_LISTEN_URL is unset; the worker's poll and the
+   * local commit wakes still run. See services/supabase/handOutboxListener.ts.
+   */
+  private handOutboxListener = new HandOutboxListener();
+  /**
+   * Outbox depth and oldest-row age, one cheap query a minute, so the
+   * projection backlog is on /metrics (2026-09-10: it was 100k rows deep and
+   * nothing said so). See services/supabase/handOutboxMetrics.ts.
+   */
+  private handOutboxMetrics = new HandOutboxMetrics();
   private lifecycle = new HorseLifecycleManager();
 
   /**
@@ -1597,6 +1611,22 @@ export class GameServer {
         this.requestPendingTournamentBountyRecovery();
       }
     },
+    // WHY A BREAK DID NOT RUN (2026-09-10): the 00:00 and 07:00 breaks were
+    // cancelled by a :53 save that timed out, and the reason lived only in a
+    // container log the next deploy deleted. One row per fault, read by
+    // fn_ca_record_break_scorecard so the page names the cause. Best-effort:
+    // MaintenanceBreak has already acted before this is called.
+    recordFault: async (fault) => {
+      const { error } = await supabase.from('engine_maintenance_break_faults').insert({
+        announced_at: new Date(fault.announcedAtMs).toISOString(),
+        stage: fault.stage,
+        outcome: fault.outcome,
+        error: fault.error,
+        engine_version:
+          process.env.GIT_COMMIT_SHA?.substring(0, 8) || process.env.ENGINE_VERSION || 'local',
+      });
+      if (error) throw new Error(error.message);
+    },
     // PHASE 4 (2026-09-02): the thaw runs in INSTALLMENTS. fn_thaw_platform
     // checkpoints each completed step in engine_maintenance_thaws.shifted and
     // returns complete:false when it has used its own ~4s budget, so no single
@@ -1687,6 +1717,14 @@ export class GameServer {
    * exactly the remainder rather than for a fresh five minutes.
    */
   private breakEndsAt = 0;
+  private breakCountdownStarted = false;
+  /**
+   * True when the maintenance break fixed this break's end at the trigger
+   * (2026-09-10), so `breakEndsAt` is the real end even before the countdown
+   * starts. See triggerSynchronizedBreak and remainingBreakMs.
+   */
+  private breakEndsWithMaintenance = false;
+  private synchronizedBreakGeneration = 0;
   private static readonly BREAK_DURATION_MS = 5 * 60 * 1000; // 5 minutes
   /**
    * Dan 2026-08-19: breaks start at the :55 mark of every hour and last five
@@ -2069,37 +2107,16 @@ export class GameServer {
       this.statsHealth.start();
       this.startBombLedgerRepairSweep();
 
-      // Step 8b (2026-08-20): drain the hand_history retry queue. hand_history
-      // writes go to zero platform-wide for 30-120s at a time under load (see
-      // the note above insertHandHistoryRow); a hand's payload only exists in
-      // memory at settlement, so a failed write is held and re-attempted here
-      // rather than losing the hand and leaving its rake unattributable.
+      // Step 8b: accepted-hand settlement stores history and projection work in
+      // one database transaction. The projection worker drains that durable
+      // outbox; there is no process-local hand-history recovery owner.
       startHandProjectionWorker();
-      startHandHistoryRetry();
-      // Tell the table when a hand the queue was holding finally lands, so the
-      // client can open the right replay. Without this the client falls back to
-      // "my most recent hand", which for a recovered hand is always wrong.
-      onHandHistoryRecovered(({ tableId, handNumber, handId }) => {
-        tableStateHub.emitEvent(tableId, {
-          type: 'hand_history_saved',
-          table_id: tableId,
-          hand_number: handNumber,
-          hand_id: handId,
-          recovered: true,
-          timestamp: Date.now(),
-        });
-        // A tournament bust wake is deliberately withheld until the knockout
-        // hand is queryable: eliminatePlayer derives bounty/PKO attribution
-        // and its hand_id from hand_history. If the inline write fell into the
-        // retry queue, re-wake the owning manager at the exact moment the row
-        // lands. Recovery is rare, so an O(managers) ownership lookup here is
-        // cheaper and safer than maintaining another mutable table index.
-        for (const manager of this.tournamentEngines.values()) {
-          if (!manager.getTableIds().includes(tableId)) continue;
-          manager.requestEliminationSweep();
-          break;
-        }
-      });
+      this.handOutboxMetrics.start();
+      // Step 8c: LISTEN hand_projection_outbox. Started after the worker so
+      // its first (re)connect resync wake lands on a live worker. Disabled
+      // (warns once) while ENGINE_PG_LISTEN_URL is unset on the engine host;
+      // the local commit wake and the worker's 5 s poll carry every hand.
+      this.handOutboxListener.start();
 
       if (!this.publishDealerPrerequisitesReady(generation)) return;
       this.leaderBootComplete = true;
@@ -2549,46 +2566,9 @@ export class GameServer {
       reportError(error, 'GameServer.horse_decision_worker_shutdown_failed');
       ownershipFailures.push(error);
     }
+    await this.handOutboxListener.stop();
+    this.handOutboxMetrics.stop();
     await stopHandProjectionWorker();
-
-    // ── Flush the hand_history retry queue ──────────────────────────────────
-    //
-    // REVIEW FIX 2026-08-20: this block used to run near the TOP of stop(),
-    // before releaseTables() and before the pauseAfterHand drain below. That
-    // was exactly backwards. `pauseAfterHand` parks each table AFTER its
-    // current hand, so every table settles one more hand during that window —
-    // and a rolling deploy, with its connection churn, is precisely when those
-    // writes fail. Each of those hands was enqueued into a queue whose timer
-    // had already been cleared and which nothing would ever drain again. They
-    // were discarded at process exit with no log and no alert, because the
-    // alert had already run minutes earlier against an empty queue.
-    //
-    // It belongs here: after every engine has stopped and no new hand can
-    // settle. The deadline is now passed INTO the drain, which checks it per
-    // entry, so it is a real bound rather than a between-passes hope.
-    if (handHistoryQueueDepth() > 0) {
-      const deadline = Date.now() + 6_000;
-      console.log(`[GameServer] flushing ${handHistoryQueueDepth()} queued hand_history row(s)...`);
-      while (handHistoryQueueDepth() > 0 && Date.now() < deadline) {
-        const before = handHistoryQueueDepth();
-        const summary = await drainHandHistoryQueue(deadline);
-        // `joined` means we awaited a drain someone else started; that one may
-        // have finished its own batch without touching ours, so a single
-        // no-progress pass is not proof there is nothing left to do.
-        if (!summary.joined && handHistoryQueueDepth() >= before) break;
-      }
-      if (handHistoryQueueDepth() > 0) {
-        reportError(
-          new Error(
-            `[GameServer] shutting down with ${handHistoryQueueDepth()} hand_history row(s) ` +
-              `still unwritten - those hands will have no history row.`
-          ),
-          'GameServer.hand_history_queue_lost_on_shutdown'
-        );
-      }
-    }
-    onHandHistoryRecovered(null);
-    stopHandHistoryRetry();
 
     /**
      * Distributed ownership is released only after all code that can deal or
@@ -3055,6 +3035,29 @@ export class GameServer {
       uptime: Math.floor((Date.now() - this.startTime) / 1000),
       activeTables: this.tableEngines.size,
       activeTournaments: this.tournamentEngines.size,
+      // Spin launches the atomic authority refused and the engine parked
+      // (2026-09-10, tournament/spinLaunchParking.ts). Same numbers as the
+      // poker_spin_launches_parked* gauges, plus the ids and reasons so the
+      // operator reading /health can go straight to the row.
+      spinLaunchParks: (() => {
+        const m = spinLaunchParks.metrics(now);
+        return {
+          count: m.parked,
+          terminal: m.terminal,
+          oldestAgeMs: m.oldestAgeMs,
+          parked: spinLaunchParks
+            .snapshot(now)
+            .slice(0, 20)
+            .map((p) => ({
+              tournamentId: p.tournamentId,
+              reason: p.reason,
+              kind: p.kind,
+              strikes: p.strikes,
+              parkedUntil: new Date(p.until).toISOString(),
+              ageMs: now - p.since,
+            })),
+        };
+      })(),
       totalHandsDealt: totalHands,
       telemetry: {
         avgHandDurationMs,
@@ -3220,10 +3223,45 @@ export class GameServer {
       // EQUALITY the Spin format is sold on, and watch the punctuality of
       // the wheel that sells it. See services/SpinMetrics.ts.
       ...this.spinMetrics.toPrometheus(),
+      // ── PARKED SPIN LAUNCHES (2026-09-10) ────────────────────────────
+      // A Spin whose draw the atomic authority refused for a terminal
+      // reason is parked instead of retried every second
+      // (tournament/spinLaunchParking.ts). Three paid seats are waiting on
+      // every one of these, so the count and the age of the oldest are on
+      // the scrape: an operator sees a parked Spin without reading logs.
+      ...(() => {
+        const parks = spinLaunchParks.metrics(now);
+        return [
+          '# HELP poker_spin_launches_parked Spin launches inside a park window right now because fn_spin_draw_and_settle_atomic refused the draw; each one holds three paid seats',
+          '# TYPE poker_spin_launches_parked gauge',
+          `poker_spin_launches_parked ${parks.parked}`,
+          '# HELP poker_spin_launches_parked_terminal Of the parked launches, those refused for a reason only a data change can lift',
+          '# TYPE poker_spin_launches_parked_terminal gauge',
+          `poker_spin_launches_parked_terminal ${parks.terminal}`,
+          '# HELP poker_spin_launch_park_oldest_age_ms Milliseconds since the longest-parked launch was first refused; 0 when nothing is parked',
+          '# TYPE poker_spin_launch_park_oldest_age_ms gauge',
+          `poker_spin_launch_park_oldest_age_ms ${parks.oldestAgeMs}`,
+        ];
+      })(),
+      // ── SEAT-FIRST FILL PRE-CHECK (2026-09-10) ───────────────────────
+      // How many fn_seat_horse_in_seat_first_game calls the fill loop made,
+      // and how many the seat rows made unnecessary. That RPC takes the
+      // platform-wide exclusive lock every hand settlement waits on, so a
+      // skipped call is time off the hand path. Counted in the process because
+      // three services drive the same top-up. See services/seatFirstPrecheckMetrics.ts.
+      ...seatFirstPrecheckPrometheusLines(),
       // ── REPLICATION OBSERVABILITY (2026-09-04) ───────────────────────
       // How far behind the realtime replication slot is, in bytes, per slot.
       // See services/ReplicationMetrics.ts.
       ...this.replicationMetrics.toPrometheus(),
+      // ── HAND PROJECTION WAKES (2026-09-10) ───────────────────────────
+      // Which signal wakes the outbox drain. During the Realtime -> LISTEN
+      // cutover, {source="listen"} must be >= {source="realtime"} and
+      // listener_connected must read 1 before the table leaves the
+      // publication. See services/supabase/handOutboxListener.ts.
+      ...handProjectionWakesToPrometheus(),
+      ...this.handOutboxListener.toPrometheus(),
+      ...this.handOutboxMetrics.toPrometheus(),
       // ── IS ANYBODY ACTUALLY PLAYING? (2026-09-04) ────────────────────
       //
       // THE BLIND SPOT THESE FILL. On 2026-09-03 a cron revoked Dan's session
@@ -3308,6 +3346,8 @@ export class GameServer {
         // healthy scale.
         horseDecisionWorkerReady.set(worker.phase === 'ready' ? 1 : 0);
         horseDecisionWorkerQueueDepth.set(worker.queueDepth);
+        horseDecisionWorkerExpiredJobs.set(worker.expiredJobs);
+        horseDecisionWorkerRecoverableRequestErrors.set(worker.recoverableRequestErrors);
         horseDecisionWorkerActiveJobAgeMs.set(worker.activeJobAgeMs ?? 0);
         horseDecisionWorkerOldestQueuedAgeMs.set(worker.oldestQueuedAgeMs ?? 0);
         horseDecisionWorkerLastCompletionAgeMs.set(
@@ -3496,10 +3536,11 @@ export class GameServer {
      */
     const now = new Date();
     const nextBreak = new Date(now);
-    nextBreak.setMinutes(GameServer.BREAK_START_MINUTE, 0, 0);
+    // The shared hourly boundary uses UTC, including repeated DST hours.
+    nextBreak.setUTCMinutes(GameServer.BREAK_START_MINUTE, 0, 0);
     // Already past :55 this hour — go to :55 of the next hour.
     if (nextBreak.getTime() <= now.getTime()) {
-      nextBreak.setHours(nextBreak.getHours() + 1);
+      nextBreak.setUTCHours(nextBreak.getUTCHours() + 1);
     }
     const msUntilNextBreak = nextBreak.getTime() - now.getTime();
 
@@ -3625,13 +3666,11 @@ export class GameServer {
           // Nine freerolls ranked a full field, crowned a winner and paid
           // nobody, silently. Detects only; the finish path does the funding.
           await auditGuaranteesKept(24);
-          // Restart-orphaned fees (2026-08-31): pendingHands is in-memory, so
-          // a process death between the inline write and the drain loses the
-          // claim entirely — and fn_bbj_repair_unbanked cannot see it because
-          // it heals BBJ *from* rake_records. Measured: 20 cash hands / 72.30
-          // chips in 24h, clustered at restarts. This files them back into
-          // the durable queue; banking still goes through the hand-gated,
-          // idempotent atomic_distribute_rake below.
+          // Historical pre-atomic fees (2026-08-31): a process death between
+          // the old independent hand and fee writes could leave no durable fee
+          // claim. Measured: 20 cash hands / 72.30 chips in 24h, clustered at
+          // restarts. This sweep files those historical rows into the durable
+          // database queue; accepted hands now commit both records atomically.
           // 6 hours, not 48: MEASURED 2026-08-31, the 48h scan takes 12.9s and
           // PostgREST cancels at ~8s, so the very first production run of this
           // sweep died with 57014 and it had never healed anything. The SQL now
@@ -3865,24 +3904,66 @@ export class GameServer {
     );
 
     /**
+     * THE TOURNAMENT BREAK ENDS WHEN THE PLATFORM'S BREAK ENDS (2026-09-10).
+     *
+     * CLAUDE.md 13, Dan: "EVERYTHING JUST FREEZES, THEN PICKS BACK UP EXACTLY
+     * AS IT WAS", every table together. The maintenance break has held every
+     * table since :53 and hands the platform back at :00, but this break
+     * counted its own five minutes from whenever the pause loop below had
+     * finished. At 16:55 on 2026-09-10 that loop paused 47 tournaments one
+     * after another (break_started_at 16:55:00.012 to 16:55:18.8), so their
+     * countdown ran to about 17:00:19, and they were then resumed one after
+     * another as well. The thaw was done at 17:00:04.7 and cash tables dealt
+     * from 6.5s after the hour; not one of the 46 tables of those events
+     * dealt before 30.7s (p50 31.7s).
+     *
+     * So while a maintenance break is on, its end IS this break's end, read
+     * once, here, at the trigger. Nothing that runs after this can move it:
+     * not the pauses, not the drain, not the countdown writes. Without one (it
+     * failed to announce, or there is none) this is exactly the old two-phase
+     * rule: five minutes from the moment every table has parked.
+     *
+     * Ending at :00 is safe for the level clocks only because resumeFromBreak
+     * waits for the maintenance thaw before it takes a running tournament off
+     * its break. See the comment there.
+     */
+    const maintenanceEndsAt = this.maintenanceBreak.endsAt();
+
+    /**
      * The break window opens NOW, at :55, not when the countdown starts. A
      * tournament that begins during the last-hand wait must be held too, so
-     * claim the window immediately using the worst case (grace + break) and
-     * tighten it below once the real countdown begins.
+     * claim the window immediately - with the platform's end when a
+     * maintenance break has fixed it, otherwise the worst case (grace + break)
+     * - and tighten it below once the real countdown begins.
      */
+    this.synchronizedBreakGeneration++;
+    this.breakCountdownStarted = false;
+    this.breakEndsWithMaintenance = maintenanceEndsAt > 0;
     this.breakEndsAt =
-      Date.now() + TournamentManager.LAST_HAND_GRACE_MS + GameServer.BREAK_DURATION_MS;
+      maintenanceEndsAt > 0
+        ? Math.max(maintenanceEndsAt, Date.now())
+        : Date.now() + TournamentManager.LAST_HAND_GRACE_MS + GameServer.BREAK_DURATION_MS;
 
-    for (const tm of breakEngines) {
-      try {
-        await tm.pauseForBreak(GameServer.BREAK_DURATION_MS);
-      } catch (err: any) {
-        reportError(err, 'GameServer.Failed_to_pause_tournament');
-      }
-      if (!this.directAdmissionIsCurrent(generation)) {
-        this.breakEndsAt = 0;
-        return;
-      }
+    /**
+     * EVERY TOURNAMENT IS TOLD AT ONCE (2026-09-10). One after another, the
+     * 47 pauses at 16:55 took 18.8s: the last event stamped its break that
+     * much after the first and, with no maintenance break holding its tables,
+     * would have gone on dealing that much longer. Each manager fences its own continuations on
+     * its own lifecycle, so this server's generation is checked once, after
+     * every pause has settled, and a fenced server still goes no further.
+     */
+    await Promise.all(
+      breakEngines.map(async (tm) => {
+        try {
+          await tm.pauseForBreak(GameServer.BREAK_DURATION_MS);
+        } catch (err: any) {
+          reportError(err, 'GameServer.Failed_to_pause_tournament');
+        }
+      })
+    );
+    if (!this.directAdmissionIsCurrent(generation)) {
+      this.breakEndsAt = 0;
+      return;
     }
 
     const waitStartedAt = Date.now();
@@ -3893,31 +3974,47 @@ export class GameServer {
       return;
     }
 
-    if (allParked) {
-      console.log(
-        `[GameServer] Last hand complete on every table after ${Math.round(lastHandMs / 1000)}s - starting the ${GameServer.BREAK_DURATION_MS / 60000} minute break`
-      );
-    } else {
-      console.warn(
-        `[GameServer] Last hand did not land on every table within ${Math.round(lastHandMs / 1000)}s - starting the break anyway so play resumes near the hour`
-      );
+    if (!allParked) {
+      // Shutdown/fencing can end the drain wait. It cannot prove a hand ended.
+      return;
     }
 
     // The countdown players see begins NOW, not at :55. Tighten the window
     // claimed above to the real end time, so a tournament starting during the
-    // break is held for exactly as long as everyone else.
-    this.breakEndsAt = Date.now() + GameServer.BREAK_DURATION_MS;
+    // break is held for exactly as long as everyone else. A maintenance break
+    // fixed that end at the trigger; the drain can have run past it (then the
+    // break is simply over), but it can never have moved it.
+    const countdownStartsAt = Date.now();
+    const countdownEndsAt =
+      maintenanceEndsAt > 0
+        ? Math.max(maintenanceEndsAt, countdownStartsAt)
+        : countdownStartsAt + GameServer.BREAK_DURATION_MS;
+    // What is actually left, for the minutes the break frame carries: exactly
+    // BREAK_DURATION_MS without a maintenance break, as before.
+    const countdownMs = countdownEndsAt - countdownStartsAt;
+    this.breakEndsAt = countdownEndsAt;
+    this.breakCountdownStarted = true;
+    console.log(
+      `[GameServer] Last hand complete on every table after ${Math.round(lastHandMs / 1000)}s - ` +
+        `the break runs ${Math.round(countdownMs / 1000)}s, to ${new Date(countdownEndsAt).toISOString()}` +
+        (maintenanceEndsAt > 0 ? ', the end of the maintenance break' : '')
+    );
+    const countdownParticipants = new Set([...breakEngines, ...this.tournamentEngines.values()]);
 
-    for (const tm of breakEngines) {
-      try {
-        await tm.beginBreakCountdown(GameServer.BREAK_DURATION_MS);
-      } catch (err: any) {
-        reportError(err, 'GameServer.Failed_to_begin_break_countdown');
-      }
-      if (!this.directAdmissionIsCurrent(generation)) {
-        this.breakEndsAt = 0;
-        return;
-      }
+    // Stamped on every event at once, for the reason the pauses above are: the
+    // deadline is shared, and so is the moment players are shown it.
+    await Promise.all(
+      [...countdownParticipants].map(async (tm) => {
+        try {
+          await tm.beginBreakCountdown(countdownMs, countdownEndsAt);
+        } catch (err: any) {
+          reportError(err, 'GameServer.Failed_to_begin_break_countdown');
+        }
+      })
+    );
+    if (!this.directAdmissionIsCurrent(generation)) {
+      this.breakEndsAt = 0;
+      return;
     }
 
     // Never leave two resume timers pending. If a previous break's last-hand
@@ -3930,13 +4027,16 @@ export class GameServer {
       clearTimeout(this.breakResumeTimer);
       this.breakResumeTimer = null;
     }
-    this.breakResumeTimer = setTimeout(() => {
-      this.breakResumeTimer = null;
-      this.launchServerLifecycleJob(
-        this.resumeSynchronizedBreak(breakEngines, generation),
-        'GameServer.synchronized_break_resume_failed'
-      );
-    }, GameServer.BREAK_DURATION_MS);
+    this.breakResumeTimer = setTimeout(
+      () => {
+        this.breakResumeTimer = null;
+        this.launchServerLifecycleJob(
+          this.resumeSynchronizedBreak(breakEngines, generation),
+          'GameServer.synchronized_break_resume_failed'
+        );
+      },
+      Math.max(0, countdownEndsAt - Date.now())
+    );
     this.breakResumeTimer.unref?.();
   }
 
@@ -3948,29 +4048,49 @@ export class GameServer {
     // Close the window FIRST. Anything starting from here on is not in a
     // break and must not be held.
     this.breakEndsAt = 0;
+    this.breakCountdownStarted = false;
+    this.breakEndsWithMaintenance = false;
     console.log(`[GameServer] ═══ BREAK ENDED ═══ Resuming ${breakEngines.length} tournament(s)`);
     // Resume everything on break, not just the :55 snapshot - a tournament
     // that started during the break was held by holdIfBreakIsRunning and is
     // not in breakEngines. resumeFromBreak no-ops on anything not on break.
     const toResume = new Set<TournamentManager>(breakEngines);
     for (const tm of this.tournamentEngines.values()) toResume.add(tm);
-    for (const tm of toResume) {
-      if (!this.directAdmissionIsCurrent(generation)) return;
-      try {
-        await tm.resumeFromBreak();
-      } catch (err: any) {
-        reportError(err, 'GameServer.Failed_to_resume_tournament');
-      }
-    }
+    /**
+     * ALL AT ONCE (2026-09-10). This walked the managers one after another,
+     * so the last of 47 events came back seconds after the first, and since
+     * resumeFromBreak now waits out the maintenance thaw, one event waiting
+     * would have held every event queued behind it. Every manager resumes on
+     * its own; a failure is reported for that manager alone and holds nobody
+     * else. The generation was checked above, in the same tick that launches
+     * every resume; from here each manager answers to its own lifecycle fence.
+     */
+    await Promise.all(
+      [...toResume].map(async (tm) => {
+        try {
+          await tm.resumeFromBreak();
+        } catch (err: any) {
+          reportError(err, 'GameServer.Failed_to_resume_tournament');
+        }
+      })
+    );
   }
 
   /**
    * How much of the platform-wide break is left, or 0 when none is running.
    * See the `breakEndsAt` field for why a tournament starting mid-break needs
    * to know this.
+   *
+   * Before the countdown the end is only known when a maintenance break fixed
+   * it at the trigger (2026-09-10); otherwise the worst case is claimed, as
+   * it always was.
    */
   remainingBreakMs(): number {
-    return this.breakEndsAt > 0 ? Math.max(0, this.breakEndsAt - Date.now()) : 0;
+    if (this.breakEndsAt <= 0) return 0;
+    if (!this.breakCountdownStarted && !this.breakEndsWithMaintenance) {
+      return TournamentManager.LAST_HAND_GRACE_MS + GameServer.BREAK_DURATION_MS;
+    }
+    return Math.max(0, this.breakEndsAt - Date.now());
   }
 
   /**
@@ -3985,6 +4105,7 @@ export class GameServer {
   private async holdIfBreakIsRunning(tm: TournamentManager): Promise<void> {
     const remaining = this.remainingBreakMs();
     if (remaining <= 1000) return;
+    const breakGeneration = this.synchronizedBreakGeneration;
     // Same single gate as triggerSynchronizedBreak — a Spin or Heads-Up that
     // fills at :57 must sit on the break screen with everyone else, not open
     // its first level alone.
@@ -3994,29 +4115,84 @@ export class GameServer {
         `[GameServer] Tournament started during the break - holding it for the remaining ${Math.round(remaining / 1000)}s`
       );
       await tm.pauseForBreak(remaining);
-      await tm.beginBreakCountdown(remaining);
+      // This pause may finish after its owner released the field. Reconcile
+      // only that owner; an older completion cannot lift a newer break.
+      if (this.synchronizedBreakGeneration !== breakGeneration) return;
+      const remainingAfterPause = this.remainingBreakMs();
+      if (remainingAfterPause <= 0) {
+        await tm.resumeFromBreak();
+        return;
+      }
+      if (this.breakCountdownStarted) {
+        await tm.beginBreakCountdown(remainingAfterPause, this.breakEndsAt);
+      }
     } catch (err: any) {
       reportError(err, 'GameServer.hold_new_tournament_for_break');
     }
   }
 
   /**
-   * Poll until every table of every supplied tournament has finished the hand
-   * that was in flight, or until the grace window expires.
-   *
-   * Returns true if everyone parked, false if the grace window won. A wedged
-   * table must never hold the whole platform's break open — play resuming near
-   * the hour matters more than one stuck table.
+   * Wait until every participating hand has finished. The old grace estimate
+   * is not authority to start a break while an accepted hand is still active.
+   * Return false only when this server generation stops owning the drain.
    */
   private async waitForAllTablesParked(managers: TournamentManager[]): Promise<boolean> {
-    const deadline = Date.now() + TournamentManager.LAST_HAND_GRACE_MS;
-    while (Date.now() < deadline) {
-      if (!this.running) return false;
-      if (managers.every((tm) => tm.areAllTablesParked())) return true;
+    const generation = this.lifecycleGeneration;
+    const startedAt = Date.now();
+    let nextReportAt = startedAt + GameServer.PARK_WAIT_REPORT_MS;
+    while (this.running && this.directAdmissionIsCurrent(generation)) {
+      const participants = new Set(managers);
+      for (const manager of this.tournamentEngines.values()) {
+        if (manager.isRunning() && manager.takesSynchronizedBreaks()) participants.add(manager);
+      }
+      const waitingOn = [...participants].filter((tm) => !tm.areAllTablesParked());
+      if (waitingOn.length === 0) return true;
+      const waitedMs = Date.now() - startedAt;
+      const names = waitingOn
+        .slice(0, 8)
+        .map((tm) =>
+          String((tm as unknown as { tournamentId?: string }).tournamentId ?? '?').slice(0, 8)
+        )
+        .join(', ');
+      /* A LIVENESS CEILING, NOT A GRACE ESTIMATE (2026-09-10).
+         #4105 was right that a guessed two minutes is no authority to start a
+         break over a hand that is still being played. But with no ceiling at
+         all, one wedged table holds every tournament on the platform on the
+         break screen for as long as it stays wedged - until a restart - and
+         nothing says which table it was. A hand still in the air a whole
+         break after :55 is not a slow hand; start the countdown, and say
+         loudly which events never parked. */
+      if (waitedMs >= GameServer.PARK_WAIT_CEILING_MS) {
+        reportError(
+          new Error(
+            `[GameServer] synchronized break: ${waitingOn.length} tournament(s) still had a table ` +
+              `in play ${Math.round(waitedMs / 1000)}s after the last hand was called (${names}); ` +
+              'starting the countdown so the platform is not held on a wedged table'
+          ),
+          'GameServer.synchronized_break_park_ceiling'
+        );
+        return true;
+      }
+      if (Date.now() >= nextReportAt) {
+        console.warn(
+          `[GameServer] synchronized break still waiting on ${waitingOn.length} tournament(s) ` +
+            `after ${Math.round(waitedMs / 1000)}s: ${names}`
+        );
+        nextReportAt = Date.now() + GameServer.PARK_WAIT_REPORT_MS;
+      }
       await this.sleep(500);
     }
-    return managers.every((tm) => tm.areAllTablesParked());
+    return false;
   }
+
+  /** How long the drain may run before it names who it is waiting on, and how often after. */
+  private static readonly PARK_WAIT_REPORT_MS = 15_000;
+  /**
+   * The drain's liveness ceiling: a whole break after the last hand was
+   * called. Far beyond any real hand (the maintenance break has had every
+   * table finishing since :53), so it only ever fires on a wedged table.
+   */
+  private static readonly PARK_WAIT_CEILING_MS = 5 * 60 * 1000;
 
   // ═════════════════════════════════════════════════════════════════════════════
   // STALE DATA CLEANUP — Run on startup
@@ -4375,10 +4551,10 @@ export class GameServer {
                 continue;
               }
 
-              // Silence is not a terminal result. Completion is now entered
-              // only through fn_claim_tournament_finish, which proves one
-              // canonical survivor and writes the immutable claim in the same
-              // transaction. Leave this contest RUNNING so normal lease-backed
+              // Silence is not a terminal result. Completion is now committed
+              // only through fn_complete_tournament_terminal, which derives the
+              // canonical survivor and stores the complete settlement receipt in
+              // one transaction. Leave this contest RUNNING so normal lease-backed
               // discovery can resume its manager; never rank a live field by a
               // timeout and never manufacture a COMPLETING recovery row.
               reportError(
@@ -4405,216 +4581,11 @@ export class GameServer {
             // structure) before completing.
             await recoverStuckCompletingTournaments('startup-cleanup');
 
-            // 8. TOURNEY-AUDIT 2026-07-24 (sweep 4): close ORPHANED tournament tables.
-            // A crashed/abandoned tournament left its tables status='running' forever
-            // (finishTournament only closes tables in the in-memory engine map). Any
-            // open table whose tournament is COMPLETED/CANCELLED gets closed here.
-            try {
-              const orphanPageSize = 500;
-
-              /**
-               * Candidate from evidence, not history (2026-09-07).
-               *
-               * This sweep briefly keyset-paged every tournament table so it could
-               * still find an already-closed table with a leaked live seat. That
-               * made each engine boot scan the complete historical table estate and
-               * then rewrite every terminal row, even when `status='closed'` and
-               * `current_players=0` were already exact. The returned rows were then
-               * reported as repairs, so a clean restart looked like a large cleanup.
-               *
-               * The evidence set is the union of (a) tournament tables whose own
-               * terminal fields need work and (b) table ids on live seats. The
-               * second set preserves the closed-table/leaked-seat case without
-               * reading or writing unrelated history. Both reads are keyset-paged;
-               * a failure makes the whole sweep UNKNOWN and therefore closes
-               * nothing.
-               */
-              const orphanCandidates = new Map<string, { tableId: string; tournamentId: string }>();
-              let afterTableId: string | null = null;
-              while (true) {
-                let nonterminalTableQuery = supabase
-                  .from('tables')
-                  .select('id, tournament_id, status, current_players')
-                  .not('tournament_id', 'is', null)
-                  .or(
-                    'status.neq.closed,status.is.null,current_players.neq.0,current_players.is.null'
-                  )
-                  .order('id', { ascending: true })
-                  .limit(orphanPageSize);
-                if (afterTableId) {
-                  nonterminalTableQuery = nonterminalTableQuery.gt('id', afterTableId);
-                }
-                const { data: nonterminalTables, error: openTableError } =
-                  await nonterminalTableQuery;
-                if (openTableError) {
-                  throw new Error(`orphan table list failed: ${openTableError.message}`);
-                }
-                if (!nonterminalTables || nonterminalTables.length === 0) break;
-                for (const table of nonterminalTables) {
-                  orphanCandidates.set(String(table.id), {
-                    tableId: String(table.id),
-                    tournamentId: String(table.tournament_id),
-                  });
-                }
-                afterTableId = String(nonterminalTables[nonterminalTables.length - 1].id);
-                if (nonterminalTables.length < orphanPageSize) break;
-              }
-
-              let afterSeatId: string | null = null;
-              while (true) {
-                let liveSeatQuery = supabase
-                  .from('table_seats')
-                  .select('id, table_id')
-                  .is('left_at', null)
-                  .order('id', { ascending: true })
-                  .limit(orphanPageSize);
-                if (afterSeatId) liveSeatQuery = liveSeatQuery.gt('id', afterSeatId);
-                const { data: liveSeats, error: liveSeatListError } = await liveSeatQuery;
-                if (liveSeatListError) {
-                  throw new Error(`orphan live-seat list failed: ${liveSeatListError.message}`);
-                }
-                if (!liveSeats || liveSeats.length === 0) break;
-                afterSeatId = String(liveSeats[liveSeats.length - 1].id);
-
-                const liveSeatTableIds = [
-                  ...new Set(liveSeats.map((seat) => String(seat.table_id))),
-                ];
-                for (let i = 0; i < liveSeatTableIds.length; i += 100) {
-                  const { data: tournamentTables, error: liveSeatTableError } = await supabase
-                    .from('tables')
-                    .select('id, tournament_id, status, current_players')
-                    .in('id', liveSeatTableIds.slice(i, i + 100))
-                    .not('tournament_id', 'is', null);
-                  if (liveSeatTableError) {
-                    throw new Error(
-                      `orphan live-seat table lookup failed: ${liveSeatTableError.message}`
-                    );
-                  }
-                  for (const table of tournamentTables ?? []) {
-                    orphanCandidates.set(String(table.id), {
-                      tableId: String(table.id),
-                      tournamentId: String(table.tournament_id),
-                    });
-                  }
-                }
-                if (liveSeats.length < orphanPageSize) break;
-              }
-
-              const orphanRows = [...orphanCandidates.values()].sort((a, b) =>
-                a.tableId.localeCompare(b.tableId)
-              );
-              let closedOrphans = 0;
-              let releasedOrphanSeats = 0;
-              for (let i = 0; i < orphanRows.length; i += 100) {
-                const batchRows = orphanRows.slice(i, i + 100);
-
-                /**
-                 * RE-READ THE TOURNAMENT IMMEDIATELY BEFORE THE WRITE
-                 * (2026-08-31). The candidate evidence above can become stale;
-                 * `tablesASweepMayClose` is the rule in one place: a sweep may
-                 * only close a table whose tournament is already COMPLETED or
-                 * CANCELLED, and an unreadable status leaves the table alone.
-                 */
-                const { data: freshStatuses, error: freshErr } = await supabase
-                  .from('tournaments')
-                  .select('id, status')
-                  .in('id', [...new Set(batchRows.map((r) => r.tournamentId))]);
-                if (freshErr) {
-                  reportError(
-                    new Error(
-                      `[GameServer] orphan sweep status re-read failed: ${freshErr.message}`
-                    ),
-                    'GameServer.orphan_status_reread_failed'
-                  );
-                  continue; // unreadable is UNKNOWN, and UNKNOWN never closes
-                }
-                const statusByTournament = new Map<string, string>(
-                  (freshStatuses ?? []).map((t) => [
-                    String((t as { id: string }).id),
-                    String((t as { status?: string }).status ?? ''),
-                  ])
-                );
-                const batch = tablesASweepMayClose(batchRows, statusByTournament);
-                if (batch.length === 0) continue;
-
-                const { data: releasedSeats, error: seatErr } = await supabase
-                  .from('table_seats')
-                  .update({ left_at: new Date().toISOString() })
-                  .in('table_id', batch)
-                  .is('left_at', null)
-                  .select('id');
-                if (seatErr) {
-                  reportError(
-                    new Error(`[GameServer] orphan seat release failed: ${seatErr.message}`),
-                    'GameServer.orphan_seat_release_failed'
-                  );
-                  continue;
-                }
-                releasedOrphanSeats += releasedSeats?.length ?? 0;
-
-                // Do not turn a clean historical row into a write. The final
-                // read below proves both changed and already-correct candidates.
-                const { data: closedRows, error: closeError } = await supabase
-                  .from('tables')
-                  .update({ status: 'closed', current_players: 0 })
-                  .in('id', batch)
-                  .or(
-                    'status.neq.closed,status.is.null,current_players.neq.0,current_players.is.null'
-                  )
-                  .select('id');
-                if (closeError) {
-                  reportError(
-                    new Error(`[GameServer] orphan table close failed: ${closeError.message}`),
-                    'GameServer.orphan_table_close_failed'
-                  );
-                  continue;
-                }
-
-                const [seatProof, tableProof] = await Promise.all([
-                  supabase
-                    .from('table_seats')
-                    .select('id', { count: 'exact', head: true })
-                    .in('table_id', batch)
-                    .is('left_at', null),
-                  supabase.from('tables').select('id, status, current_players').in('id', batch),
-                ]);
-                if (seatProof.error || seatProof.count !== 0) {
-                  reportError(
-                    new Error(
-                      `[GameServer] orphan seat release proof failed: ${seatProof.error?.message ?? `${seatProof.count ?? 'unknown'} live seat(s) remain`}`
-                    ),
-                    'GameServer.orphan_seat_release_unproven'
-                  );
-                  continue;
-                }
-                const terminalTables = tableProof.data ?? [];
-                if (
-                  tableProof.error ||
-                  terminalTables.length !== batch.length ||
-                  terminalTables.some(
-                    (table) => table.status !== 'closed' || table.current_players !== 0
-                  )
-                ) {
-                  reportError(
-                    new Error(
-                      `[GameServer] orphan table close proof failed: ${tableProof.error?.message ?? `${terminalTables.length}/${batch.length} rows read back terminal`}`
-                    ),
-                    'GameServer.orphan_table_close_unproven'
-                  );
-                  continue;
-                }
-                closedOrphans += closedRows?.length ?? 0;
-              }
-
-              if (closedOrphans > 0 || releasedOrphanSeats > 0) {
-                console.log(
-                  `[GameServer] Reconciled ${closedOrphans} terminal tournament table state(s) and released ${releasedOrphanSeats} leaked seat(s)`
-                );
-              }
-              console.log('[GameServer] Stale data cleanup complete');
-            } catch (orphanErr) {
-              reportError(orphanErr, 'GameServer.orphan_table_sweep');
-            }
+            // Terminal table and seat closeout is now owned by the atomic
+            // settlement/cancellation transaction. Migration 20260909014545
+            // closes the exact historical backlog once under the same write
+            // barrier, records every affected id, and arms the permanent
+            // seat-exit guard. Process startup never repairs this state.
           } catch (bgErr) {
             reportError(bgErr, 'GameServer.background_stale_cleanup_error');
           }
@@ -4946,6 +4917,7 @@ export class GameServer {
     while (this.directAdmissionIsCurrent(generation)) {
       try {
         // Find REGISTERING tournaments ready to start
+        const registeringReadAt = Date.now();
         const { data: registering, error: registeringErr } = await supabase
           .from('tournaments')
           .select(
@@ -5254,6 +5226,12 @@ export class GameServer {
             ) {
               continue;
             }
+            /* A parked launch is not a stall this watchdog can cure: the
+               front door would refuse the force-start anyway, and reporting
+               "force-starting" every stall window for a game the authority
+               has refused would be a lie in Sentry. The clock is left
+               running, so the pass after the park ends acts at once. */
+            if (spinLaunchParks.isParked(id, stallNow)) continue;
 
             const held = this.tournamentEngines.get(id);
             if (held && !held.isRunning()) {
@@ -5353,11 +5331,16 @@ export class GameServer {
         // The ramp map only ever holds tournaments still in REGISTERING.
         // Without this it grows by every event the engine has ever seen and
         // is never freed for the life of the process.
-        if (this.lastMttRampAt.size > 0) {
+        if (this.lastMttRampAt.size > 0 || spinLaunchParks.size > 0) {
           const stillRegistering = new Set((registering || []).map((r) => String(r.id)));
           for (const id of this.lastMttRampAt.keys()) {
             if (!stillRegistering.has(id)) this.lastMttRampAt.delete(id);
           }
+          // The park registry is bounded the same way (2026-09-10): a park
+          // gates a 'start', and a Spin that has left REGISTERING (RUNNING,
+          // COMPLETED, CANCELLED) can never be started again. Only entries
+          // older than this pass's board read are judged by it.
+          spinLaunchParks.retain(stillRegistering, registeringReadAt);
         }
 
         // Clean up completed tournaments
@@ -5526,51 +5509,6 @@ export class GameServer {
           );
         }
 
-        // ── TOURNAMENT RAKE SWEEP (2026-08-26) ──
-        // The last line of the settlement-integrity fix: any terminal
-        // tournament whose fee ledger has no tournament_rake_settlements row
-        // (engine died before settling, wallet credit failed three times,
-        // event completed by a path that predates the settler) is settled by
-        // fn_sweep_unsettled_tournament_rake. Idempotent by PK claim, so it
-        // can never double-pay a tournament something else settled. Every 10
-        // minutes - this is a safety net, not the primary path.
-        //
-        // THE BATCH IS SMALL ON PURPOSE. 2026-08-31: this ran with p_limit 200
-        // and settled nothing for two and a half hours while 29 terminal events
-        // holding 215.98 in union rake piled up behind it. The whole sweep is
-        // ONE transaction, and every settlement inside it updates the SAME
-        // club_wallets row and the same union wallet. At 200 candidates that is
-        // minutes of held row locks, against a live engine settling its own
-        // finishing tournaments on those exact rows, so the sweep deadlocked,
-        // lost, and rolled back, every single pass. The alert it left behind
-        // said only "deadlock detected".
-        //
-        // Ten per pass is ~5s of locking, and at one pass per 10 minutes it
-        // drains 60 events an hour against a normal arrival rate near one. A
-        // backlog costs a little latency; a batch that deadlocks costs the
-        // whole sweep, forever, which is what actually happened.
-        if (Date.now() - this.lastRakeSweepAt > 10 * 60 * 1000) {
-          this.lastRakeSweepAt = Date.now();
-          try {
-            const { data: sweep, error: sweepErr } = await supabase.rpc(
-              'fn_sweep_unsettled_tournament_rake',
-              { p_since_days: 60, p_limit: 10 }
-            );
-            if (sweepErr) {
-              reportError(
-                new Error(`[GameServer] tournament rake sweep failed: ${sweepErr.message}`),
-                'GameServer.rake_sweep_failed'
-              );
-            } else if (Number(sweep?.settled) > 0 || Number(sweep?.failed) > 0) {
-              console.log(
-                `[GameServer] Tournament rake sweep: settled ${sweep.settled} event(s), ${sweep.chips} chips (scanned ${sweep.scanned}, failed ${sweep.failed})`
-              );
-            }
-          } catch (sweepEx) {
-            reportError(sweepEx, 'GameServer.rake_sweep_threw');
-          }
-        }
-
         // Conservation: per-event money in vs money out (prizes + bounties +
         // refunds + booked rake + funded overlay). Every 6 hours; anything
         // beyond tolerance files a deduped financial_alert. This is the
@@ -5630,54 +5568,6 @@ export class GameServer {
           }
         }
 
-        // ── EVERY EARNER IS PAID (2026-09-01) ──
-        // Dan, verbatim: "IT IS AN ABSOLUTE MUST THAT PLAYERS ALWAYS 100% GET
-        // PAID OUT OF EVERY SINGLE MTT, SPIN OR HEADS UP THEY PLAY (IF THEY
-        // EARNED A PAYOUT)." This is the check that makes that verifiable, and
-        // it is the only one on the platform that asks the question against
-        // the WALLET rather than against tournament_payouts.
-        //
-        // It catches three things nothing else looked for:
-        //   - a paid place with no holder. Fifteen MTTs between 2026-05-08 and
-        //     2026-07-19 recorded finishing places 1, 2, then 6 onwards, so the
-        //     18/10/7 percent places had nobody in them and 193.10 chips went
-        //     to no one. The cause was fixed on 2026-07-19; the blindness was
-        //     not, and it had run for ten weeks.
-        //   - an earner whose wallet never saw the money. Across 150 days and
-        //     ~49,000 events that is exactly one player, short by 0.02.
-        //   - prizes paid with no payout record (61 events, 5,515.91 chips),
-        //     which is what arms fn_tournament_payout_reconcile to pay a second
-        //     time, because it reads that record to decide what is owed.
-        //
-        // Hourly, on its own timer, and it moves no money.
-        if (Date.now() - this.lastPayoutGuaranteeCheckAt > 60 * 60 * 1000) {
-          this.lastPayoutGuaranteeCheckAt = Date.now();
-          try {
-            const { data: pg, error: pgErr } = await supabase.rpc('fn_payout_guarantee_check', {
-              p_since_days: 7,
-            });
-            if (pgErr) {
-              reportError(
-                new Error(`[GameServer] payout guarantee check failed: ${pgErr.message}`),
-                'GameServer.payout_guarantee_check_failed'
-              );
-            } else if (
-              Number(pg?.vacant_paid_place_events) > 0 ||
-              Number(pg?.earners_not_paid) > 0 ||
-              Number(pg?.paid_but_unrecorded_events) > 0
-            ) {
-              console.log(
-                `[GameServer] Payout guarantee: ${pg.vacant_paid_place_events} event(s) with an unheld paid place ` +
-                  `(${pg.vacant_paid_place_chips} chips), ${pg.earners_not_paid} earner(s) unpaid ` +
-                  `(${pg.earners_not_paid_chips} chips), ${pg.paid_but_unrecorded_events} event(s) paid without a record ` +
-                  `(${pg.paid_but_unrecorded_chips} chips), ${pg.alerts_raised} new alert(s)`
-              );
-            }
-          } catch (pgEx) {
-            reportError(pgEx, 'GameServer.payout_guarantee_check_threw');
-          }
-        }
-
         // ── DUPLICATE-PLACE OVERPAY CHARGE (2026-08-28) ──
         // 259 duplicate finishing places were renumbered; 19 of the demoted
         // rows had collected more than their corrected place is worth. Dan's
@@ -5707,109 +5597,6 @@ export class GameServer {
             }
           } catch (chgEx) {
             reportError(chgEx, 'GameServer.place_overpay_charge_threw');
-          }
-        }
-
-        // ── RAKE ATTRIBUTION REPAIR (2026-08-28) ──
-        // fn_settle_tournament_rake banks the rake and then attributes it per
-        // player (VIP points, agent commission, rakeback stats). Attribution is
-        // allowed to fail without rolling the settlement back, which is right -
-        // but until now the whole remedy was a financial_alert, so a deadlock
-        // meant every player in that event lost their points permanently. The
-        // settle path records whether attribution happened; this retries the
-        // ones it did not. fn_attribute_tournament_rake is idempotent.
-        if (Date.now() - this.lastRakeAttributionRepairAt > 15 * 60 * 1000) {
-          this.lastRakeAttributionRepairAt = Date.now();
-          try {
-            const { data: att, error: attErr } = await supabase.rpc(
-              'fn_repair_tournament_rake_attribution',
-              { p_limit: 50 }
-            );
-            if (attErr) {
-              reportError(
-                new Error(`[GameServer] rake attribution repair failed: ${attErr.message}`),
-                'GameServer.rake_attribution_repair_failed'
-              );
-            } else if (Number(att?.repaired) > 0 || Number(att?.still_failing) > 0) {
-              console.log(
-                `[GameServer] Rake attribution repair: ${att.repaired} repaired, ` +
-                  `${att.still_failing} still failing (queue ${att.queue_before} -> ${att.queue_after})`
-              );
-            }
-          } catch (attEx) {
-            reportError(attEx, 'GameServer.rake_attribution_repair_threw');
-          }
-
-          // ── AND THE BACKLOG BEHIND IT (2026-08-31) ──
-          // fn_repair_ retries settlements the settle path recorded as FAILED.
-          // It cannot see the ones that were never measured at all, because
-          // before attributed_users existed there was nothing to record — and
-          // that was 40,055 rows on 2026-08-31, four years of VIP points and
-          // agent commission owed to 585 players and never paid. Draining it
-          // was a one-off by hand; keeping it drained cannot be, or the next
-          // outage rebuilds the same silent backlog. Small limit, on the same
-          // 15-minute clock: this is a floor sweeper, not a migration.
-          try {
-            const { data: bp, error: bpErr } = await supabase.rpc(
-              'fn_backpay_tournament_rake_attribution',
-              { p_limit: 200 }
-            );
-            if (bpErr) {
-              reportError(
-                new Error(`[GameServer] rake attribution back-pay failed: ${bpErr.message}`),
-                'GameServer.rake_attribution_backpay_failed'
-              );
-            } else if (Number(bp?.paid) > 0 || Number(bp?.errors) > 0) {
-              console.log(
-                `[GameServer] Rake attribution back-pay: ${bp.paid} paid ` +
-                  `(${bp.chips} chips), ${bp.retried} retried, ${bp.errors} threw, ` +
-                  `${bp.remaining} unmeasured left, ${bp.needs_a_human} need a human`
-              );
-            }
-          } catch (bpEx) {
-            reportError(bpEx, 'GameServer.rake_attribution_backpay_threw');
-          }
-        }
-
-        // ── SPIN WINNER BACK-PAY (2026-08-28) ──
-        // v_spin_unpaid_settlements compares what the reserve pool DREW for a
-        // Spin against what reached a player's wallet. 52 events had already
-        // diverged when it was built, every one of them with exactly one
-        // player at position 1 - the prize left the bank and landed nowhere.
-        // Spin is excluded from fn_tournament_money_conservation entirely
-        // (`variant NOT IN ('spin','satellite')`), so nothing else on the
-        // platform was ever going to notice. Its own timer, for the reason
-        // written above the HU back-pay: a repair gated on another job's clock
-        // runs at boot and then effectively never.
-        if (Date.now() - this.lastSpinBackpayAt > 10 * 60 * 1000) {
-          this.lastSpinBackpayAt = Date.now();
-          try {
-            const { data: sbp, error: sbpErr } = await supabase.rpc(
-              'fn_backpay_spin_unpaid_winners',
-              // p_since_hours EXPLICIT (2026-08-31). This call had been
-              // failing on EVERY invocation with 57014 statement timeout:
-              // the RPC read the unbounded v_spin_unpaid_settlements three
-              // times, ~2.4s each, against an 8s service_role limit, so the
-              // safety net under "a prize left the bank and landed nowhere"
-              // had not run in production. It now sweeps a window it can
-              // finish. Six hours covers thirty-six passes of this ten-minute
-              // loop; anything older than that is not a repair, it is an
-              // audit, and an audit passes its own window.
-              { p_apply: true, p_limit: 200, p_since_hours: 6 }
-            );
-            if (sbpErr) {
-              reportError(
-                new Error(`[GameServer] spin winner back-pay failed: ${sbpErr.message}`),
-                'GameServer.spin_backpay_failed'
-              );
-            } else if (Number(sbp?.winners_paid) > 0) {
-              console.log(
-                `[GameServer] Spin winner back-pay: ${sbp.winners_paid} winner(s), ${sbp.chips} chips ` +
-                  `(owed ${sbp.owed_before} -> ${sbp.owed_after})`
-              );
-            }
-          } catch (sbpEx) {
-            reportError(sbpEx, 'GameServer.spin_backpay_threw');
           }
         }
 
@@ -5843,10 +5630,18 @@ export class GameServer {
                 new Error(`[GameServer] unfilled-spin expiry failed: ${expErr.message}`),
                 'GameServer.spin_expire_unfilled_failed'
               );
+            } else if (exp?.ok === false || Number(exp?.failed) > 0) {
+              reportError(
+                new Error(
+                  `[GameServer] unfilled-spin expiry batch failed: ${Number(exp?.failed) || 0} ` +
+                    `failure(s), ${Number(exp?.expired) || 0} expired`
+                ),
+                'GameServer.spin_expire_unfilled_failed'
+              );
             } else if (Number(exp?.expired) > 0) {
               console.log(
                 `[GameServer] Unfilled-spin expiry: ${exp.expired} game(s) cancelled and refunded, ` +
-                  `~${exp.chips_refunded_estimate} chips returned (timeout ${exp.timeout_minutes}m)`
+                  `${exp.chips_refunded} chips returned (timeout ${exp.timeout_minutes}m)`
               );
             }
           } catch (expEx) {
@@ -7004,6 +6799,18 @@ export class GameServer {
 
             if (seats <= 0 || paid < seats) continue;
 
+            /**
+             * A PARKED LAUNCH IS LEFT ALONE (2026-09-10). The "stop the dead
+             * manager, start a fresh one" below is what turned one refused
+             * draw into ~87 database calls a second across the board: the
+             * manager stood down for a reason the database had just said was
+             * deterministic, and this pass restarted it a second later. The
+             * draw path (spinLaunchParking.ts) now parks the id with a
+             * doubling window; until that window ends, nothing here touches
+             * it, not even the stale-manager stop.
+             */
+            if (spinLaunchParks.isParked(id)) continue;
+
             const held = this.tournamentEngines.get(id);
             if (held && !held.isRunning()) {
               await this.stopTournamentManagerIfOwned(
@@ -7493,6 +7300,10 @@ export class GameServer {
     replacement: ServerTableEngine
   ): Promise<boolean> {
     if (!this.running) return false;
+    // A lost transport response may follow a committed seat move. The old
+    // source engine remains the physical fence until that exact UUID replays;
+    // replacing it here would let the successor deal from an unknown roster.
+    if (expected.hasClaimedTournamentMoveBoundary()) return false;
     let replaced = false;
     try {
       replaced = await replaceOwnedTableEngine(
@@ -7500,7 +7311,8 @@ export class GameServer {
         this.tournamentOwnedTables,
         tableId,
         expected,
-        replacement
+        replacement,
+        () => !expected.hasClaimedTournamentMoveBoundary()
       );
     } catch (error) {
       // ServerTableEngine reports cleanup failures only after releasing its
@@ -7607,8 +7419,14 @@ export class GameServer {
     try {
       await current.stop();
     } catch (stopError) {
-      reportError(stopError, 'GameServer.terminal_table_engine_stop_failed', { tableId });
-      return false;
+      if (!current.hasReleasedProcessOwnership()) {
+        reportError(stopError, 'GameServer.terminal_table_engine_stop_failed', { tableId });
+        return false;
+      }
+      // Durable table closure makes the snapshot recovery-only. Preserve the
+      // diagnostic while allowing only the exact, fully released generation
+      // captured above to leave the process registry.
+      reportError(stopError, 'GameServer.terminal_table_engine_stop_cleanup_failed', { tableId });
     }
     return this.unregisterTableEngine(tableId, current);
   }
@@ -7898,6 +7716,16 @@ export class GameServer {
    */
   getTableEngine(tableId: string): ServerTableEngine | undefined {
     return this.tableEngines.get(tableId);
+  }
+
+  /**
+   * Synchronous identity proof for a TournamentManager about to mutate a
+   * source table.  The engine object and the ownership classification must
+   * agree; a recovery swaps the global object before it swaps the manager's
+   * local map, and that post-await window may never authorize a seat move.
+   */
+  ownsTournamentTableEngine(tableId: string, engine: ServerTableEngine): boolean {
+    return this.tableEngines.get(tableId) === engine && this.tournamentOwnedTables.has(tableId);
   }
 
   private sleep(ms: number): Promise<void> {

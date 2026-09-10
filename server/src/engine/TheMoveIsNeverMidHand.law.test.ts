@@ -26,13 +26,40 @@
  *      pre-action on a chair nobody sat in - written into every snapshot and
  *      into the :55 park.
  */
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { ServerTableEngine } from './ServerTableEngine.js';
+import * as moves from '../services/supabase/seatMoves.js';
 import {
   SEAT_MOVE_NON_TERMINAL_REASONS,
   seatMoveCancelledNotice,
 } from '../services/supabase/seatMoves.js';
+
+vi.mock('../services/errorReporter.js', () => ({ reportError: vi.fn() }));
+
+const TABLE = 'aaaaaaaa-1111-4111-8111-111111111111';
+
+/**
+ * A table holding one swap side and remembering one announcement. Prototype
+ * only, like CashDepartureReadOverlap's harness: standing a real engine up is
+ * not needed to prove what happens to two Sets.
+ */
+function tableHoldingASwapSide() {
+  const engine = Object.create(ServerTableEngine.prototype) as any;
+  engine.tableId = TABLE;
+  engine.tableInfo = { club_id: 'club', cluster_id: 'game' };
+  engine.lifecycleCanMutate = vi.fn(() => true);
+  engine.isTournamentTable = vi.fn(() => false);
+  engine.heldForSwap = new Set<string>(['held-player']);
+  engine.announcedSeatMoves = new Set<string>(['announced-move']);
+  engine.depositPresenceForMove = vi.fn();
+  engine.seatedPlayers = [];
+  engine.hub = { emitEvent: vi.fn() };
+  return engine;
+}
+
+afterEach(() => vi.restoreAllMocks());
 
 const read = (p: string) => readFileSync(resolve(__dirname, p), 'utf8');
 const BASE = read('./ServerTableEngineBase.ts');
@@ -45,52 +72,81 @@ const TABLE_PAGE = readFileSync(
   'utf8'
 );
 
-describe('D1 - a read that failed is not an empty list', () => {
-  it('pendingSeatMoves returns null on error, never []', () => {
+describe('D1 - a read that FAILED changes nothing (the invariant, through main\'s throw)', () => {
+  /* THE MECHANISM CHANGED AT THE 2026-09-10 MERGE, THE LAW DID NOT.
+     This lane shipped `pendingSeatMoves` returning `null` on a failed read.
+     Main solved the same defect the other way, and harder: it THROWS (#3974,
+     the occupancy-receipt work), so a caller cannot ignore an unreadable
+     answer by accident because there is no value to ignore. Main's contract
+     is kept and this pin was moved onto it (CLAUDE.md 10.6), which makes it
+     stronger than it was: it no longer asserts a return type, it asserts the
+     thing that actually matters - NOTHING IS PRUNED AND NO HOLD IS RELEASED
+     when the read did not work. A released hold is a player the partner's
+     table can move out of a live hand. */
+
+  it('a throwing read leaves every hold intact, prunes nothing and tells nobody', async () => {
+    const engine = tableHoldingASwapSide();
+    vi.spyOn(moves, 'pendingSeatMoves').mockRejectedValue(new Error('read failed'));
+    await expect(engine.announcePendingSeatMoves()).resolves.toBeUndefined();
+    expect([...engine.heldForSwap]).toEqual(['held-player']);
+    expect([...engine.announcedSeatMoves]).toEqual(['announced-move']);
+    expect(engine.hub.emitEvent).not.toHaveBeenCalled();
+  });
+
+  it('THE CONTROL: on a read that WORKED the same call does release the hold', async () => {
+    /* Without this the test above would pass on a method that simply never
+       prunes anything, which is not the law - it is a different bug. */
+    const engine = tableHoldingASwapSide();
+    vi.spyOn(moves, 'pendingSeatMoves').mockResolvedValue([]);
+    await engine.announcePendingSeatMoves();
+    expect([...engine.heldForSwap]).toEqual([]);
+    expect([...engine.announcedSeatMoves]).toEqual([]);
+  });
+
+  it('the executor takes the same branch: nothing executed, nothing released', async () => {
+    const engine = tableHoldingASwapSide();
+    const read = vi.spyOn(moves, 'pendingSeatMoves').mockRejectedValue(new Error('read failed'));
+    const exec = vi.spyOn(moves, 'executePendingSeatMoves');
+    await expect(engine.executePendingSeatMoves()).resolves.toEqual([]);
+    expect(read).toHaveBeenCalled();
+    expect(exec).not.toHaveBeenCalled();
+    expect([...engine.heldForSwap]).toEqual(['held-player']);
+  });
+
+  it('a tournament table never asks at all', async () => {
+    const engine = tableHoldingASwapSide();
+    engine.isTournamentTable = vi.fn(() => true);
+    const read = vi.spyOn(moves, 'pendingSeatMoves');
+    await engine.announcePendingSeatMoves();
+    await engine.executePendingSeatMoves();
+    expect(read).not.toHaveBeenCalled();
+  });
+
+  it('the service keeps MAIN\'s contract: an unreadable enumeration throws', () => {
     const fn = MOVES.slice(
       MOVES.indexOf('export async function pendingSeatMoves'),
       MOVES.indexOf('export async function announceSeatMoves')
     );
-    expect(fn).toMatch(/Promise<PendingSeatMove\[\] \| null>/);
-    // The error branch returns null; the success branch is the only [] here.
-    expect(fn).toMatch(/reportError\(error, 'seatMoves\.pending_failed'[\s\S]{0,80}?return null;/);
-    expect(fn).not.toMatch(/pending_failed[\s\S]{0,80}?return \[\];/);
+    expect(fn).toMatch(/Promise<PendingSeatMove\[\]>/);
+    expect(fn).toMatch(/throw new Error\(error\.message \|\| 'Seat move enumeration failed'\)/);
+    expect(fn).toMatch(/if \(!Array\.isArray\(data\)\) throw new Error/);
+    // and it is translated to "change nothing" in exactly ONE place
+    expect((BASE.match(/private async readPendingSeatMoves\(\)/g) ?? []).length).toBe(1);
+    expect((BASE.match(/await this\.readPendingSeatMoves\(\)/g) ?? []).length).toBe(2);
+    expect(BASE).not.toMatch(/await pendingSeatMoves\(this\.tableId\)(?![\s\S]{0,40}catch)/);
   });
 
-  it('the announce changes NOTHING on a null: no prune, no announcement', () => {
-    const fn = BASE.slice(
-      BASE.indexOf('protected async announcePendingSeatMoves'),
-      BASE.indexOf('protected isHeldForSwap')
-    );
-    const read = fn.indexOf('await pendingSeatMoves(this.tableId)');
-    const guard = fn.indexOf('if (pending === null) return;');
-    const prune = fn.indexOf('this.reconcileSeatMoveHolds(pending)');
-    expect(read).toBeGreaterThan(0);
-    expect(guard).toBeGreaterThan(read);
-    expect(prune).toBeGreaterThan(guard);
-    // and the announcement itself is after the guard too
-    expect(fn.indexOf('await announceSeatMoves(fresh)')).toBeGreaterThan(guard);
-  });
-
-  it('the executor executes nothing on a null, at either layer', () => {
-    const engine = BASE.slice(
-      BASE.indexOf('protected async executePendingSeatMoves'),
-      BASE.indexOf('protected depositPresenceForMove')
-    );
-    expect(engine).toMatch(/if \(pending === null\) return \[\];/);
-    expect(engine.indexOf('if (pending === null) return [];')).toBeLessThan(
-      engine.indexOf('this.reconcileSeatMoveHolds(pending)')
-    );
-    const service = MOVES.slice(MOVES.indexOf('export async function executePendingSeatMoves'));
-    expect(service).toMatch(
-      /if \(pending === null\) return \{ done: \[\], held: \[\], refused: \[\] \};/
-    );
-  });
-
-  it('settlement carries the null through rather than flattening it to []', () => {
+  it('settlement is NOT double-wrapped: main already owns that rejection', () => {
+    /* readCashHandDepartures runs the read inside Promise.allSettled and
+       rethrows it, and runStep('leave_pending', moneyCritical=true) catches,
+       reports and raises a financial alert while settlement continues. The
+       throw therefore lands BEFORE anything is pruned or executed, which is
+       this law's branch reached by main's own structure. Adding a catch here
+       would only hide the alert. */
     const fn = SETTLEMENT.slice(SETTLEMENT.indexOf('protected async readCashHandDepartures'));
-    expect(fn).toMatch(/pendingMoves: PendingSeatMove\[\] \| null;/);
-    expect(fn).toMatch(/return \{ cashedOutIds: \[\], pendingMoves: null \};/);
+    expect(fn).toMatch(/if \(moves\.status === 'rejected'\) throw moves\.reason;/);
+    expect(fn).not.toMatch(/catch/);
+    expect(SETTLEMENT).toMatch(/runStep\('leave_pending', true,/);
   });
 });
 
@@ -106,16 +162,28 @@ describe('D2 - a hold is released wherever the table is, not only before a deal'
   });
 
   it('the idle branch and the wait loop both reach an execute, so both reach the release', () => {
+    /* PIN MOVED 2026-09-10 (CLAUDE.md 10.6): main wrapped both call sites in
+       `executeIdleSeatMoves`, which takes the seat boundary and budgets the
+       step before calling `executePendingSeatMoves`. Same two loops, same
+       release, one lock better - so the pin follows the mechanism rather than
+       being weakened to match. */
     const idle = DEALING.slice(
       DEALING.indexOf("this.setLoopPhase('idle_not_enough_players');"),
       DEALING.indexOf('SPIN REVEAL HOLD')
     );
-    expect(idle).toMatch(/this\.executePendingSeatMoves\(\)/);
+    expect(idle).toMatch(/await this\.executeIdleSeatMoves\(\)/);
     const wait = BASE.slice(
       BASE.indexOf("this.setLoopPhase('start_wait_for_players');"),
       BASE.indexOf("this.tableFSM.transition('seating');")
     );
-    expect(wait).toMatch(/await this\.executePendingSeatMoves\(\)\.catch\(/);
+    expect(wait).toMatch(/await this\.executeIdleSeatMoves\(\)\.catch\(/);
+    // and the wrapper really does reach the executor that does the release
+    const wrapper = BASE.slice(
+      BASE.indexOf('protected async executeIdleSeatMoves'),
+      BASE.indexOf('protected async executePendingSeatMoves')
+    );
+    expect(wrapper).toMatch(/this\.executePendingSeatMoves\(\)/);
+    expect(wrapper).toMatch(/acquireSeatBoundary\(\)/);
   });
 
   it('a held player is still out of the deal while the hold stands', () => {
@@ -152,8 +220,16 @@ describe('D3 - a move that did not happen is said out loud', () => {
 
   it('the service collects them and the engine tells the one player', () => {
     expect(MOVES).toMatch(/refused: Array<\{ move_id: string; player_id: string; reason: string \}>/);
-    expect(MOVES).toMatch(
-      /if \(!SEAT_MOVE_NON_TERMINAL_REASONS\.has\(reason\)\) \{\s*refused\.push/
+    /* MERGED 2026-09-10: main proves the outcome is a real refusal carrying a
+       real reason BEFORE this lane classifies it. The order is the pin - a
+       reason nobody could read must never be classified as anything. */
+    const arm = MOVES.slice(MOVES.indexOf("} else {", MOVES.indexOf('Seat swap hold does not prove')));
+    expect(arm.indexOf("throw new Error('Seat move outcome was not confirmed')")).toBeGreaterThan(-1);
+    expect(arm.indexOf("throw new Error('Seat move outcome was not confirmed')")).toBeLessThan(
+      arm.indexOf('SEAT_MOVE_NON_TERMINAL_REASONS.has(res.reason)')
+    );
+    expect(arm).toMatch(
+      /if \(!SEAT_MOVE_NON_TERMINAL_REASONS\.has\(res\.reason\)\) \{\s*refused\.push/
     );
     const engine = BASE.slice(
       BASE.indexOf('protected async executePendingSeatMoves'),

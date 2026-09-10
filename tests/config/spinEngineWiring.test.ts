@@ -28,7 +28,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { sliceEnclosingBlock } from '../helpers/sourceWindow';
+import { sliceMethod } from '../helpers/sourceWindow';
 
 const read = (p: string) => readFileSync(resolve(__dirname, '../../', p), 'utf8');
 
@@ -45,6 +45,8 @@ const tournamentServiceRaw = read('src/services/TournamentService.ts');
 
 const recurring = code(recurringRaw);
 const engine = code(engineRaw);
+const parking = code(read('server/src/tournament/spinLaunchParking.ts'));
+const receipt = code(read('server/src/tournament/SpinDrawReceipt.ts'));
 const orchestrator = code(orchestratorRaw);
 const tournamentService = code(tournamentServiceRaw);
 
@@ -117,8 +119,9 @@ describe('one multiplier table, in one place: the spec', () => {
 });
 
 describe('the draw happens at START, nowhere else', () => {
-  it('the engine start path calls the reserve-gated RPC', () => {
-    expect(engine).toMatch(/fn_spin_draw_multiplier/);
+  it('the engine start path calls the launch-bound funded reserve authority', () => {
+    expect(engine).toMatch(/supabase\.rpc\('fn_spin_draw_and_settle_atomic'/);
+    expect(engine).not.toMatch(/supabase\.rpc\('fn_spin_(?:draw_multiplier|settle_game)'/);
   });
 
   it('creation does NOT draw — not the recurring service, not the orchestrator', () => {
@@ -182,27 +185,45 @@ describe('the draw happens at START, nowhere else', () => {
      start stands down and retries, and no tier is ever substituted. */
   it('the engine never substitutes a tier for a draw it could not read', () => {
     expect(engine).not.toMatch(/spinMultiplier\s*=\s*SPIN_TIERS\s*\[\s*0\s*\]/);
-    // ...and the failure is explicit and retryable instead.
-    expect(engine).toMatch(/drawFailure/);
-    expect(engine).toMatch(/error:\s*drawErr/);
+    // ...and an incomplete database answer is explicit instead. Since
+    // 2026-09-10 the loop lives in spinLaunchParking.ts so a refusal can be
+    // classified (a terminal reason parks the launch rather than being retried
+    // 87 times a second); the ok gate and the stand-down are pinned there and
+    // at the call site.
+    expect(engine).toContain('proveSpinDrawWithParking<FundedSpinDraw>({');
+    expect(engine).toContain('if (!proven.ok)');
+    expect(parking).toContain('if (!result.error && data && data.ok === true)');
+    expect(engine).toContain('readFundedSpinDraw(data,');
   });
 });
 
 describe('every game is booked', () => {
-  it('settles through the ledger RPC', () => {
-    expect(engine).toMatch(/fn_spin_settle_game/);
+  it('settles through the one launch-bound atomic ledger RPC', () => {
+    expect(engine).toMatch(/fn_spin_draw_and_settle_atomic/);
+    expect(engine).not.toMatch(/supabase\.rpc\('fn_spin_(?:draw_multiplier|settle_game)'/);
   });
 
   it('reports loudly rather than swallowing a failed settlement', () => {
-    const i = engine.indexOf("supabase.rpc('fn_spin_settle_game'");
-    expect(i, 'expected a call to fn_spin_settle_game').toBeGreaterThan(-1);
-    const block = sliceEnclosingBlock(engine, "supabase.rpc('fn_spin_settle_game'", 0, 2);
-    expect(block).toMatch(/reportError/);
-    expect(block).toMatch(/spin_settle_failed/);
+    const startLifecycle = code(sliceMethod(engineRaw, 'private async startLifecycle('));
+    const call = startLifecycle.indexOf("supabase.rpc('fn_spin_draw_and_settle_atomic'");
+    expect(call, 'expected a call to fn_spin_draw_and_settle_atomic').toBeGreaterThan(-1);
+    // The call site hands the real reporter to the classified loop...
+    const loopEnd = startLifecycle.indexOf('if (!proven.ok)', call);
+    expect(loopEnd, 'the refused draw must stand the start down').toBeGreaterThan(call);
+    expect(startLifecycle.slice(call, loopEnd)).toMatch(/\breportError,/);
+    // ...and the loop reports every stand-down: a transient one under the
+    // tag the dashboards already know, a terminal one under its own.
+    const transient = parking.indexOf('Tournament.spin_draw_unavailable');
+    const terminal = parking.indexOf('Tournament.spin_draw_refused_terminal');
+    expect(transient, 'the atomic failure must be reported').toBeGreaterThan(-1);
+    expect(terminal, 'a terminal refusal must be reported').toBeGreaterThan(-1);
+    expect(parking.lastIndexOf('deps.reportError(', transient)).toBeGreaterThan(-1);
+    expect(parking.lastIndexOf('deps.reportError(', terminal)).toBeGreaterThan(-1);
+    expect(parking).toContain('await deps.raiseAlert(');
   });
 
-  it('books the rake at the rate the stake actually implies', () => {
-    expect(engine).toMatch(/p_rake_rate:\s*spinRakeRate\(buyIn\)/);
+  it('freezes the rake rate implied by the stake into the funded rule manifest', () => {
+    expect(receipt).toMatch(/rake_rate:\s*spinRakeRate\(buyIn\)/);
   });
 });
 
@@ -215,32 +236,30 @@ describe('the draw sets the prize and the payout shape - never the stack', () =>
    * three writes are unchanged - the prize, the blinds and the payout shape do
    * still come from the drawn tier.
    */
-  it('start rewrites blinds, payouts and pool from the tier', () => {
+  it('start derives presentation and in-memory contract from the committed tier', () => {
     expect(engine).toMatch(/blind_structure:\s*spinBlinds/);
-    expect(engine).toMatch(/payout_structure:/);
-    expect(engine).toMatch(/prize_pool:\s*prizePool/);
+    expect(engine).toMatch(/payout_structure:\s*fundedSpin\.payouts/);
+    expect(engine).toMatch(/const spinMemoryPatch = \{[\s\S]*prize_pool:\s*prizePool/);
   });
 
   it('and does NOT rewrite the stack from the tier', () => {
     expect(engine).not.toMatch(/starting_chips:\s*tier\?\.startingStack/);
     expect(engine).not.toMatch(/tournament\.starting_chips\s*=\s*tier\.startingStack/);
-    // What it does write is the board's own number, unchanged.
-    expect(engine).toMatch(/starting_chips:\s*tournament\.starting_chips/);
+    const presentation = engine.slice(
+      engine.indexOf('const spinPresentationPatch = {'),
+      engine.indexOf('let spinPresentationWritten')
+    );
+    expect(presentation).not.toMatch(/starting_chips|stack:/);
   });
 
   it('start updates the IN-MEMORY structure too, not just the row', () => {
     // The level timer and table creation read the in-memory object; a
     // DB-only write would leave this start running placeholder blinds.
     //
-    // 2026-09-02: the direct `tournament.blind_structure = spinBlinds` assignment
-    // was refactored into `applySpinDrawPatch(spinRowPatch, tournament, cache)`,
-    // which generically copies EVERY key of spinRowPatch (including blind_structure)
-    // onto both in-memory targets. `blind_structure: spinBlinds` is still in the
-    // patch object (pinned by the test above), and SpinDrawIntegrity.guard.test.ts
-    // pins that applySpinDrawPatch copies every key. Together they are the same
-    // guarantee — this test now verifies the new wiring pattern.
+    // The committed money receipt and presentation patch are merged once,
+    // then generically copied to both in-memory targets.
     expect(engine).toMatch(/applySpinDrawPatch\s*\(/);
-    expect(engine).toMatch(/applySpinDrawPatch\([^)]*spinRowPatch/);
+    expect(engine).toMatch(/applySpinDrawPatch\([^)]*spinMemoryPatch/);
   });
 
   it('creation writes an honest placeholder, not a fake tier', () => {

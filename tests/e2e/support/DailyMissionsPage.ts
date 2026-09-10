@@ -6,6 +6,7 @@ import {
   type Response,
 } from '@playwright/test';
 
+import { ensureAcceptedTerms } from './ensureAcceptedTerms';
 import { ensurePlayableProfile } from './ensurePlayableProfile';
 import type { TemporaryCustomizationAccount } from './temporaryCustomizationAccount';
 
@@ -102,7 +103,7 @@ export class DailyMissionsPage {
         .waitForFunction(
           () =>
             window.location.pathname.includes('/auth') ||
-            Boolean(document.querySelector('[data-profile-gate-status]')),
+            Boolean(document.querySelector('[data-tos-gate-status], [data-profile-gate-status]')),
           undefined,
           { timeout }
         )
@@ -124,7 +125,9 @@ export class DailyMissionsPage {
         timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT,
       });
       if (!(await waitForEntrySurface(30_000))) {
-        throw new Error('Club Arena shell did not expose Auth or the profile gate after recovery.');
+        throw new Error(
+          'Club Arena shell did not expose Auth, Terms, or the profile gate after recovery.'
+        );
       }
     }
 
@@ -183,6 +186,7 @@ export class DailyMissionsPage {
         `Daily Missions signed in as ${authenticatedUserId || 'no user'} instead of reserved account ${account.id}.`
       );
     }
+    await ensureAcceptedTerms(page);
     await ensurePlayableProfile(page);
     await expect(page.getByRole('button', { name: 'Open Menu' }).first()).toBeVisible({
       timeout: 30_000,
@@ -248,7 +252,7 @@ export class DailyMissionsPage {
       .poll(async () => {
         const [controlBox, footerBox] = await Promise.all([
           control.boundingBox(),
-          this.page.getByRole('navigation', { name: 'Club Arena' }).boundingBox(),
+          this.page.getByRole('navigation', { name: 'Poker Arena' }).boundingBox(),
         ]);
         if (!controlBox || !footerBox) return false;
         return controlBox.y + controlBox.height <= footerBox.y - 8;

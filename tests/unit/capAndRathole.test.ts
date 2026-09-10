@@ -41,8 +41,12 @@ describe('Cap', () => {
   });
 
   it('is Infinity when the table is uncapped, so every clamp is a no-op', () => {
-    const block = sliceStatement(TURNS, 'const capRemaining =');
-    expect(block).toContain('Infinity');
+    // The human action path retains Infinity as its arithmetic no-op. The
+    // Phase 5 canonical menu represents the same state as null so it can cross
+    // the worker boundary without serializing a non-finite number.
+    const humanCap = sliceEnclosingBlock(TURNS, '── CAP: A PER-HAND CEILING');
+    expect(humanCap).toMatch(/const capRemaining =[\s\S]*?: Infinity;/);
+    expect(TURNS).toContain('commitmentCapRemaining: null');
   });
 
   it('CLAMPS rather than rejects, like the pot-limit ceiling beside it', () => {
@@ -56,19 +60,22 @@ describe('Cap', () => {
   it('closes the all-in hole, which skips every amount clamp', () => {
     // validateAllIn returns sanitizedAmount: playerStack unconditionally, so
     // without this the cap would hold for every action EXCEPT the largest.
-    const fn = sliceBlockAfter(TURNS, "if (normalizedAction === 'all_in' && capRemaining !== Infinity)");
+    const fn = sliceBlockAfter(
+      TURNS,
+      "if (normalizedAction === 'all_in' && capRemaining !== Infinity)"
+    );
     expect(fn).toContain('Math.min(player.stack, capRemaining)');
     expect(fn).toMatch(/normalizedAction = state\.currentBet > 0 \? 'raise' : 'bet'/);
   });
 
-  it('does NOT cap a call, and says why', () => {
-    // A short call is an under-call the pot logic must turn into a side pot —
-    // a real integrity hazard. It is also unnecessary: every wager that can be
-    // called has already been clamped, so a caller can never pass a ceiling
-    // the bettor in front of them already respects.
-    const call = sliceEnclosingBlock(TURNS, 'A CALL IS DELIBERATELY NOT CAPPED');
-    expect(call).toContain('side pot');
-    expect(TURNS).toContain("if (normalizedAction === 'call') amount = toCall;");
+  it('refuses a full call that crosses the caller cap without inventing an under-call', () => {
+    // Forced/dead contributions can make caller and bettor whole-hand totals
+    // unequal. The legal menu and authoritative action path both fail closed;
+    // neither truncates a call into a non-all-in partial call.
+    expect(TURNS).toContain('source.toCall > capRemaining + 0.005');
+    expect(TURNS).toContain('toCall > capRemaining + 0.005');
+    expect(TURNS).toContain("Calling would exceed this table's per-hand commitment cap");
+    expect(TURNS).not.toContain('Math.min(toCall, capRemaining)');
   });
 
   it('leaves a capped player with chips in front of them', () => {

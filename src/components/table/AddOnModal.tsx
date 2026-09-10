@@ -13,7 +13,7 @@ import { haptic, soundService } from '../../services/SoundService';
 
 import { safeErrorMessage } from '../../utils/safeErrorMessage';
 // Whole-number tournament money (Dan 2026-08-20).
-import { money } from '../../utils/buyIn';
+import { money, moneyExact } from '../../utils/buyIn';
 
 interface AddOnModalProps {
   isVisible: boolean;
@@ -73,8 +73,10 @@ export default function AddOnModal({
   onDeclineRef.current = onDecline;
   const decidedRef = useRef(false);
 
-  // Whole chips (Dan 2026-08-20) - no decimal add-on prices.
-  const totalCost = Math.round(addOnCost) + Math.round(addOnFee);
+  // Add-ons are currently unraked, but preserve exact cents if a historical
+  // row supplies a split. Adding before formatting prevents component-wise
+  // rounding from inventing a higher charge.
+  const totalCost = Math.round((Number(addOnCost) + Number(addOnFee)) * 100) / 100;
   // Gate on the TOTAL, and never on a zero price. `addOnCost` is fed from a
   // realtime broadcast that defaults it to 0 when the field is missing; a 0
   // price made canAfford unconditionally true and let players buy at a price
@@ -239,7 +241,7 @@ export default function AddOnModal({
             >
               <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14 }}>Add-On Cost</span>
               <span style={{ color: '#fff', fontWeight: 600, fontSize: 14 }}>
-                {money(addOnCost)} Chips
+                {moneyExact(addOnCost)} Chips
               </span>
             </div>
             {addOnFee > 0 && (
@@ -253,7 +255,7 @@ export default function AddOnModal({
               >
                 <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14 }}>House Fee</span>
                 <span style={{ color: '#fff', fontWeight: 600, fontSize: 14 }}>
-                  {money(addOnFee)} Chips
+                  {moneyExact(addOnFee)} Chips
                 </span>
               </div>
             )}

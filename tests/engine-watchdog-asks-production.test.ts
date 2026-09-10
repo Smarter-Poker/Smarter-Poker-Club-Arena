@@ -143,6 +143,42 @@ describe('it fixes what it finds, and only then complains', () => {
     expect(SH_CODE).not.toContain('--search');
   });
 
+  it('does not dispatch while a deploy run is already in flight', () => {
+    /**
+     * 2026-09-09. This job runs on every completion of the publisher plus two
+     * crons, and the dispatch was unconditional. auto-deploy-hetzner.yml keeps
+     * one run active and ONE pending in its concurrency group, and each new
+     * dispatch cancels the pending one. So every sweep while the engine was
+     * behind cancelled the run that was sitting in the break gate waiting for
+     * :55 - the watchdog was the thing keeping the engine from catching up.
+     * Measured: nine engine commits, two breaks passed, engine three hours
+     * behind, about twenty dispatches.
+     */
+    // It asks the deploy workflow for runs that are not completed...
+    expect(SH_CODE).toContain('gh run list --repo "$REPO" --workflow "$DEPLOY_WORKFLOW"');
+    expect(SH_CODE).toContain('select(.status != \\"completed\\")');
+    // ...ignores only a run older than the deploy's own ceiling (55m + margin),
+    // which GitHub has timed out or which is a pre-queued zombie...
+    expect(SH).toContain('INFLIGHT_STALE_MIN=${INFLIGHT_STALE_MIN:-65}');
+    // ...and the dispatch is the ELSE branch of finding one. The in-flight run
+    // is the fix; a second dispatch would cancel it, not hurry it.
+    expect(SH_CODE).toMatch(
+      /if \[ -n "\$\{INFLIGHT:-\}" \]; then[\s\S]{0,600}?elif gh workflow run "\$DEPLOY_WORKFLOW"/
+    );
+    expect(SH_CODE.indexOf('INFLIGHT=$(gh run list')).toBeLessThan(
+      SH_CODE.indexOf('gh workflow run "$DEPLOY_WORKFLOW"')
+    );
+  });
+
+  it('comments on the open issue at most every COMMENT_EVERY_MIN, not every sweep', () => {
+    // Forty "Still behind" comments in three hours buried the one table that
+    // says why. The alarm is raised once; progress is reported on a clock.
+    expect(SH).toContain('COMMENT_EVERY_MIN=${COMMENT_EVERY_MIN:-30}');
+    expect(SH_CODE).toMatch(
+      /if \[ -n "\$\{LAST_COMMENT_AGE_MIN:-\}" \] && \[ "\$LAST_COMMENT_AGE_MIN" -lt "\$COMMENT_EVERY_MIN" \]; then/
+    );
+  });
+
   it('reads and writes issues with the same token', () => {
     // A read on the App token and a write on GITHUB_TOKEN disagreed about who
     // they were and filed six duplicate issues across two repos.

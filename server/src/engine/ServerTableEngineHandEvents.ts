@@ -103,7 +103,11 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
       return [];
     }
   }
-  protected async handleHandEvent(event: HandEvent, players: SeatedPlayer[]): Promise<void> {
+  protected async handleHandEvent(
+    event: HandEvent,
+    players: SeatedPlayer[],
+    persistenceGeneration?: number
+  ): Promise<void> {
     switch (event.type) {
       case 'HAND_START':
         // Watchdog liveness: a dealt hand is proof the table is alive.
@@ -1318,7 +1322,10 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
       }
 
       case 'HAND_COMPLETE': {
-        await this.handleHandCompleteEvent(event, players);
+        if (persistenceGeneration === undefined) {
+          throw new Error(`HAND_COMPLETE for table ${this.tableId} has no persistence generation`);
+        }
+        await this.handleHandCompleteEvent(event, players, persistenceGeneration);
         break;
       }
     }

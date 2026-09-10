@@ -35,11 +35,12 @@ import { describe, expect, it } from 'vitest';
  *      genuinely missing path is the correct fix in almost every case - so
  *      nothing here counts the entries; it only refuses to let one vanish.
  *
- *   3. THE ENGINE IS ASKED FIRST. `fn_caller_is_engine()` is consulted before
- *      the allowlist, so the engine (which declares no `app.money_path` and
- *      carries no JWT) can never be refused. That is the case that would have
- *      been a live outage rather than a bug report, and it is case 2 of the
- *      four that were probed rolled back against production before arming.
+ *   3. DATA INVARIANTS PRECEDE IDENTITY BYPASSES. A tournament seat must be
+ *      born with a positive stack, and a canonical seat-first seat must equal
+ *      `tournaments.starting_chips`, before engine identity can authorize it.
+ *      The engine is still consulted before the money-path allowlist and the
+ *      unfunded-seat refusal; identity authorizes a valid funded write but can
+ *      never waive the row's game-state contract.
  *
  *   4. A TOP-UP IS UNTOUCHED. `v_creating` is scoped to a seat ARRIVING: an
  *      INSERT with `left_at` NULL, or the revival of a seat that had left.
@@ -116,9 +117,10 @@ function liveBody(): { file: string; body: string } {
   const { file, sql } = latestDeclaring(DECLARES);
   expect(file, `no migration declares ${FUNCTION}`).not.toBe('');
   const start = sql.lastIndexOf(DECLARES);
-  const close = sql.indexOf('$function$;', start + DECLARES.length);
-  expect(close, 'the function body must stay dollar-quoted as $function$').toBeGreaterThan(start);
-  return { file, body: sql.slice(start, close) };
+  const declaration = sql.slice(start);
+  const quoted = /\bAS\s+(\$[A-Za-z0-9_]*\$)([\s\S]*?)\1\s*;/i.exec(declaration);
+  expect(quoted, 'the function body must stay dollar-quoted').not.toBeNull();
+  return { file, body: quoted?.[2] ?? '' };
 }
 
 /** The migration this law was written for. */
@@ -175,6 +177,8 @@ describe('the seat guard is armed', () => {
     const SANCTIONED_REDECLARATIONS = [
       /_the_seat_guard_is_armed\.sql$/,
       /_the_seat_guard_says_what_it_actually_does\.sql$/,
+      /_spin_reserve_settlement_commits_its_journal_or_nothing\.sql$/,
+      /_tournament_reseating_uses_one_database_chosen_legal_chair\.sql$/,
     ];
     expect(
       SANCTIONED_REDECLARATIONS.some((re) => re.test(file)),
@@ -199,7 +203,7 @@ describe('the seat guard is armed', () => {
     }
   });
 
-  it('the engine is asked before the allowlist, so it can never be refused', () => {
+  it('validates tournament stacks before identity, then asks the engine before the allowlist', () => {
     const { file, body } = liveBody();
 
     expect(body, 'the engine check must still exist').toMatch(
@@ -207,9 +211,16 @@ describe('the seat guard is armed', () => {
     );
 
     const engineAt = body.search(/public\.fn_caller_is_engine\(\)/i);
+    const positiveStackAt = body.indexOf('TOURNAMENT_SEAT_REQUIRES_POSITIVE_STACK');
+    const seatFirstStackAt = body.indexOf('SEAT_FIRST_STACK_MUST_EQUAL_STARTING_CHIPS');
     const allowlistAt = body.indexOf(`'${SANCTIONED_PATHS[0]}'`);
     const raiseAt = body.indexOf("RAISE EXCEPTION 'SEAT_NOT_FUNDED");
 
+    expect(positiveStackAt, `${file} must enforce a positive tournament stack`).toBeGreaterThan(-1);
+    expect(seatFirstStackAt, `${file} must enforce the exact seat-first stack`).toBeGreaterThan(
+      positiveStackAt
+    );
+    expect(engineAt).toBeGreaterThan(seatFirstStackAt);
     expect(
       engineAt,
       `${file} must consult fn_caller_is_engine() BEFORE the app.money_path ` +
@@ -232,11 +243,10 @@ describe('the seat guard is armed', () => {
     );
     expect(
       body,
-      `${file} must return early for anything that is not a seat arriving ` +
-        `with chips. Chips added to a seat already seated are a top-up and a ` +
-        `different control entirely (ca_seat_stack_exits guards the exit ` +
-        `side); guarding them here refuses every add-on on the platform.`
-    ).toMatch(/IF\s+NOT\s+v_creating\s+OR\s+COALESCE\(NEW\.stack,\s*0\)\s*<=\s*0\s+THEN/i);
+      `${file} must return early for anything that is not a seat arriving. ` +
+        `Chips added to a seat already seated are a top-up and a different ` +
+        `control entirely (ca_seat_stack_exits guards the exit side).`
+    ).toMatch(/IF\s+NOT\s+v_creating\s+THEN\s+RETURN\s+NEW;/i);
 
     // The trigger's own column list is the other half of the same promise.
     const trg = latestDeclaring(`CREATE TRIGGER ${TRIGGER}`);

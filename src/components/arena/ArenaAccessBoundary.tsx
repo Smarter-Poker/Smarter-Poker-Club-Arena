@@ -1,10 +1,14 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { Link, Navigate } from 'react-router-dom';
+import { Link, Navigate, useLocation } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { getArenaContext } from '../../services/ArenaContextService';
 import type { ArenaAccessContext } from '../../../server/src/domain/ArenaContext';
 import PageSkeleton from '../common/PageSkeleton';
 import DiamondCustodyBalance from './DiamondCustodyBalance';
+import DiamondArenaWallet from './DiamondArenaWallet';
+import PokerArenaNavigation from './PokerArenaNavigation';
+import DiamondCashLobby from './DiamondCashLobby';
+import './DiamondArenaShell.css';
 
 interface AccessState {
   key: string;
@@ -18,12 +22,16 @@ export default function ArenaAccessBoundary({
   clubKey,
   children,
   redirectToJoin = false,
+  cashLobby = false,
 }: {
   clubKey?: string;
   children: ReactNode;
   redirectToJoin?: boolean;
+  cashLobby?: boolean;
 }) {
   const key = clubKey?.trim() || '';
+  const path = useLocation().pathname;
+  const showCashLobby = cashLobby || /\/clubs\/[^/]+\/?$/.test(path);
   const [retry, setRetry] = useState(0);
   const [state, setState] = useState<AccessState>({
     key: '',
@@ -98,11 +106,16 @@ export default function ArenaAccessBoundary({
     );
   if (state.context.automaticMembership)
     return (
-      <section className="club-home" aria-label="Diamond Arena">
+      <section className="club-home diamond-arena-shell" aria-label="Diamond Arena">
+        <PokerArenaNavigation />
         <h2>Diamond Arena</h2>
         <p>You Are Already A Member.</p>
-        <p>Diamond Games Are Not Open For Play Yet.</p>
+        {state.context.cashGamesEnabled !== true && <p>Diamond Games Are Not Open For Play Yet.</p>}
+        {state.context.cashGamesEnabled === true && showCashLobby && (
+          <DiamondCashLobby key={state.context.arena.id} arenaId={state.context.arena.id} />
+        )}
         <DiamondCustodyBalance />
+        <DiamondArenaWallet />
       </section>
     );
   if (!state.context.member && redirectToJoin)
@@ -110,11 +123,17 @@ export default function ArenaAccessBoundary({
   if (!state.context.member)
     return (
       <section className="club-home error">
+        <PokerArenaNavigation />
         <h2>Join This Club To Enter</h2>
         <Link className="btn btn-primary" to={`/invite/${encodeURIComponent(key)}`}>
           Join This Club
         </Link>
       </section>
     );
-  return <>{children}</>;
+  return (
+    <>
+      <PokerArenaNavigation />
+      {children}
+    </>
+  );
 }

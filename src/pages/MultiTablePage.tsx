@@ -30,6 +30,7 @@ import { isSitOutUrgent } from '../lib/sitOutDeadline';
 import LiveTablesBar from '../components/table/LiveTablesBar';
 import {
   InTabLobbyContext,
+  arenaTargetFromTo,
   tournamentTargetFromTo,
   type InTabLobbyNav,
   type InTabTournamentTarget,
@@ -247,6 +248,9 @@ interface TableInstance {
    * exists to serve.
    */
   lobbyTournamentStack?: InTabTournamentTarget[];
+  /** undefined uses the home club; null displays the shared arena selector. */
+  lobbyClubId?: string | null;
+  lobbyArenaStack?: (string | null)[];
 }
 
 /**
@@ -805,7 +809,6 @@ export default function MultiTablePage() {
   // merged so observer-only tabs (open via URL, not seated) are never
   // removed. Seat at a 2nd/3rd/4th table in the lobby, come back, and every
   // seat is a tab again — the PokerBros flow.
-  const droppedRef = useRef(0);
   /** True once the server-truth rebuild has completed (or failed) at least
    *  once. Gates the drill-in restore; see DRILL_IN_KEY. */
   const [tablesReady, setTablesReady] = useState(false);
@@ -851,59 +854,153 @@ export default function MultiTablePage() {
    * hold no seats" and close every table the player is sitting at.
    */
   const [seatResyncToken, setSeatResyncToken] = useState(0);
-  const prunedRef = useRef(0);
+  const voluntarilyLeftTablesRef = useRef(new Set<string>());
+  const renderedSeatUserRef = useRef(user?.id ?? null);
+  const seatReadScopeRef = useRef({ userId: user?.id ?? null });
+  if (renderedSeatUserRef.current !== (user?.id ?? null)) {
+    renderedSeatUserRef.current = user?.id ?? null;
+    seatReadScopeRef.current = { userId: user?.id ?? null };
+    voluntarilyLeftTablesRef.current.clear();
+  }
+  const seatReadRequestRef = useRef(0);
+  const seatReadPendingRef = useRef(0);
+  const [seatRebuildNotice, setSeatRebuildNotice] = useState<{
+    request: number;
+    isCurrent: () => boolean;
+    previousSeatedIds: string[];
+    liveSeatIds: string[];
+  } | null>(null);
+  const deliveredSeatNoticeRef = useRef<typeof seatRebuildNotice>(null);
+  const seatMembershipRevisionRef = useRef(0);
+  const seatActivityRevisionRef = useRef(0);
+  const requestSeatResync = useCallback(() => {
+    // Invalidate synchronously, before React batches the new read or seat.
+    seatMembershipRevisionRef.current += 1;
+    setSeatResyncToken((n) => n + 1);
+  }, []);
+  useMasterBusSubscription('AUTH_STATE_CHANGED', (event) => {
+    // A new session for the same account also supersedes old HTTP responses.
+    seatReadScopeRef.current = {
+      userId: event.isAuthenticated ? event.userId : null,
+    };
+    requestSeatResync();
+  });
   useEffect(() => {
-    if (!user?.id) return;
+    if (!seatRebuildNotice || deliveredSeatNoticeRef.current === seatRebuildNotice) return;
+    deliveredSeatNoticeRef.current = seatRebuildNotice;
+    setSeatRebuildNotice(null);
+    if (seatReadPendingRef.current === seatRebuildNotice.request) seatReadPendingRef.current = 0;
+    if (!seatRebuildNotice.isCurrent()) return;
+    // Observe the committed result. State updaters remain pure under StrictMode.
+    const committedIds = new Set(tables.map((tab) => tab.id));
+    const closed = seatRebuildNotice.previousSeatedIds.filter((id) => !committedIds.has(id)).length;
+    const missing = seatRebuildNotice.liveSeatIds.filter((id) => !committedIds.has(id)).length;
+    if (closed > 0) {
+      toast.info(
+        closed === 1
+          ? 'Closed A Table You Are No Longer Seated At.'
+          : 'Closed ' + closed + ' Tables You Are No Longer Seated At.',
+        6000
+      );
+    }
+    if (missing > 0) {
+      toast.info(
+        'You Have ' +
+          missing +
+          ' More Live ' +
+          (missing === 1 ? 'Seat' : 'Seats') +
+          ' Than This Device Can Show (' +
+          MAX_TABLES +
+          ' At A Time). Close A Table To Bring ' +
+          (missing === 1 ? 'It' : 'Them') +
+          ' In.',
+        7000
+      );
+    }
+  }, [seatRebuildNotice, tables, toast]);
+  useEffect(() => {
+    const scope = seatReadScopeRef.current;
+    if (!user?.id || scope.userId !== user.id) return;
+    const request = ++seatReadRequestRef.current;
+    seatReadPendingRef.current = request;
+    let reconciliationQueued = false;
+    const membershipRevision = seatMembershipRevisionRef.current;
+    const activityRevision = seatActivityRevisionRef.current;
     let cancelled = false;
+    const isCurrent = () =>
+      !cancelled &&
+      seatReadScopeRef.current === scope &&
+      seatReadRequestRef.current === request &&
+      seatMembershipRevisionRef.current === membershipRevision &&
+      seatActivityRevisionRef.current === activityRevision;
     (async () => {
-      const { data: seatRows, error: seatErr } = await supabase
-        .from('table_seats')
-        .select('table_id')
-        .eq('user_id', user.id)
-        .is('left_at', null);
-      if (cancelled || seatErr || !seatRows || seatRows.length === 0) return;
-      const ids = seatRows.map((r) => r.table_id as string).filter(Boolean);
-      if (ids.length === 0) return;
-      const { data: tblRows } = await supabase
-        .from('tables')
-        // Dan 2026-08-21: game_type + max_players come along so a restored
-        // tab wears its game code on the FIRST paint, not a second later.
-        .select(
-          'id, name, game_variant, game_type, max_players, small_blind, big_blind, tournament_id'
-        )
-        .in('id', ids);
-      if (cancelled) return;
-      setTables((prev) => {
-        const known = new Set(prev.map((t) => t.id));
-        const room = Math.max(0, MAX_TABLES - prev.length);
-        const candidates = ids.filter((id) => !known.has(id));
-        /**
-         * Dan 2026-08-20 (audit): this used to `.slice(0, room)` straight off
-         * the raw query order — effectively an arbitrary four when a player had
-         * more live seats than the device can show, which is entirely possible
-         * because the server caps CASH seats at four but never caps tournament
-         * seats (registrations are uncapped by design).
-         *
-         * Arbitrary was the wrong four. A tournament seat cannot be walked away
-         * from — miss it and you blind out of something you paid to enter —
-         * while a cash seat can be left at any time with the stack refunded. So
-         * tournaments are restored first, and if anything still does not fit,
-         * the player is told rather than left to discover it.
-         */
-        const isTourney = (id: string) => !!tblRows?.find((r) => r.id === id)?.tournament_id;
-        const ordered = [...candidates].sort((a, b) => {
-          const ta = isTourney(a) ? 0 : 1;
-          const tb = isTourney(b) ? 0 : 1;
-          return ta - tb;
-        });
-        if (ordered.length > room) droppedRef.current = ordered.length - room;
-        const additions = ordered.slice(0, room).map((id, i) => {
-          const row = tblRows?.find((r) => r.id === id);
-          const stakes =
-            row && row.small_blind != null && row.big_blind != null
-              ? `${row.small_blind}/${row.big_blind}`
-              : '';
-          /* Dan 2026-08-30, second pass: this row already KNOWS whether it is a
+      try {
+        const { data: seatRows, error: seatErr } = await supabase
+          .from('table_seats')
+          .select('table_id')
+          .eq('user_id', user.id)
+          .is('left_at', null);
+        if (!isCurrent() || seatErr || !Array.isArray(seatRows)) return;
+        if (seatRows.some((row) => typeof row?.table_id !== 'string' || !row.table_id.trim()))
+          return;
+        const returnedIds = new Set(seatRows.map((row) => row.table_id as string));
+        // A leave can precede the cashout's durable left_at update. Do not
+        // reopen that table while its old admission is still being released.
+        for (const id of voluntarilyLeftTablesRef.current) {
+          if (!returnedIds.has(id)) voluntarilyLeftTablesRef.current.delete(id);
+        }
+        const ids = [...returnedIds].filter((id) => !voluntarilyLeftTablesRef.current.has(id));
+        // An authoritative empty seat set still reaches the prune. It needs no
+        // metadata query, and is distinct from an unknown or failed seat read.
+        const { data: tblRows, error: tableErr } =
+          ids.length > 0
+            ? await supabase
+                .from('tables')
+                // Dan 2026-08-21: game_type + max_players come along so a restored
+                // tab wears its game code on the FIRST paint, not a second later.
+                .select(
+                  'id, name, game_variant, game_type, max_players, small_blind, big_blind, tournament_id'
+                )
+                .in('id', ids)
+            : { data: [], error: null };
+        if (!isCurrent() || tableErr || !Array.isArray(tblRows)) return;
+        const previousSeatedIds = tablesRef.current
+          .filter((tab) => isTableTab(tab) && tab.seated === true)
+          .map((tab) => tab.id);
+        reconciliationQueued = true;
+        setTables((prev) => {
+          if (!isCurrent()) return prev;
+          const liveSeatIds = new Set(ids);
+          const survivors = pruneStaleSeatedTabs(prev, liveSeatIds);
+          const known = new Set(survivors.map((t) => t.id));
+          const room = Math.max(0, MAX_TABLES - survivors.length);
+          const candidates = ids.filter((id) => !known.has(id));
+          /**
+           * Dan 2026-08-20 (audit): this used to `.slice(0, room)` straight off
+           * the raw query order — effectively an arbitrary four when a player had
+           * more live seats than the device can show, which is entirely possible
+           * because the server caps CASH seats at four but never caps tournament
+           * seats (registrations are uncapped by design).
+           *
+           * Arbitrary was the wrong four. A tournament seat cannot be walked away
+           * from — miss it and you blind out of something you paid to enter —
+           * while a cash seat can be left at any time with the stack refunded. So
+           * tournaments are restored first, and if anything still does not fit,
+           * the player is told rather than left to discover it.
+           */
+          const isTourney = (id: string) => !!tblRows?.find((r) => r.id === id)?.tournament_id;
+          const ordered = [...candidates].sort((a, b) => {
+            const ta = isTourney(a) ? 0 : 1;
+            const tb = isTourney(b) ? 0 : 1;
+            return ta - tb;
+          });
+          const additions = ordered.slice(0, room).map((id, i) => {
+            const row = tblRows?.find((r) => r.id === id);
+            const stakes =
+              row && row.small_blind != null && row.big_blind != null
+                ? `${row.small_blind}/${row.big_blind}`
+                : '';
+            /* Dan 2026-08-30, second pass: this row already KNOWS whether it is a
              tournament — it computed the flag for `gameCode` on the next line
              and then threw it away. Four readers depend on the tab carrying it,
              and `undefined` reads as "cash" at every one of them:
@@ -923,147 +1020,151 @@ export default function MultiTablePage() {
              every reload, and the profit aggregation's first `compute()` runs
              inside it (then every 5s). Carrying the flag the row already has
              closes the window instead of racing it. */
-          const rowIsTournament = isTournamentRow(row);
-          return {
-            id,
-            name: formatGameTitle(row?.name as string) || `Table ${prev.length + i + 1}`,
-            stakes,
-            gameCode: gameCode({
-              variant: row?.game_variant as string | undefined,
+            const rowIsTournament = isTournamentRow(row);
+            return {
+              id,
+              name: formatGameTitle(row?.name as string) || `Table ${prev.length + i + 1}`,
+              stakes,
+              gameCode: gameCode({
+                variant: row?.game_variant as string | undefined,
+                isTournament: rowIsTournament,
+                maxPlayers: row?.max_players as number | undefined,
+              }),
               isTournament: rowIsTournament,
-              maxPlayers: row?.max_players as number | undefined,
-            }),
-            isTournament: rowIsTournament,
-            isMyTurn: false,
-            pot: 0,
-            // Dan 2026-08-30: `kind` was omitted here, and the prune below
-            // asked for it. Every other tab factory in this file sets it; this
-            // one now does too, so the tabs a reload restores are
-            // indistinguishable from the ones a live seat makes.
-            kind: 'table' as const,
-            // These ids came from table_seats WHERE left_at IS NULL, which is
-            // the definition of an active seat. Nothing else in this file has
-            // stronger evidence than that.
-            seated: true,
-          };
+              isMyTurn: false,
+              pot: 0,
+              // Dan 2026-08-30: `kind` was omitted here, and the prune below
+              // asked for it. Every other tab factory in this file sets it; this
+              // one now does too, so the tabs a reload restores are
+              // indistinguishable from the ones a live seat makes.
+              kind: 'table' as const,
+              // These ids came from table_seats WHERE left_at IS NULL, which is
+              // the definition of an active seat. Nothing else in this file has
+              // stronger evidence than that.
+              seated: true,
+            };
+          });
+          /**
+           * PRUNE (Dan 2026-08-28, bug 1). A tab claiming `seated: true` for a
+           * table that is NOT in the live seat set is a table the server moved
+           * the player off, or closed under them. Its TablePage is frozen on
+           * whatever it last saw.
+           *
+           * Only `seated` tabs. An observer tab has no seat by definition, and a
+           * lobby tab is not a table — pruning either would delete something the
+           * player deliberately opened.
+           *
+           * DAN 2026-08-30 — THIS PRUNE WAS INERT WHERE IT MATTERED MOST.
+           * It used to ask `t.kind === 'table' && t.seated === true`, and the
+           * `additions` built a few lines above carried NO `kind` field at all.
+           * So every tab this rebuild created was exempt from the rebuild's own
+           * prune — and after a page reload, rebuild-created tabs are the only
+           * tabs a player has. The 2026-08-28 fix therefore did nothing in the
+           * exact case it was written for: reload, reconnect, get moved, keep
+           * staring at a dead felt captioned "Connection Lost, Trying To Get You
+           * Back". `pruneStaleSeatedTabs` asks `!isLobbyLike` instead, which
+           * needs no field to be remembered by the next tab factory, and both
+           * halves are pinned behaviourally in tests/unit/tabSlots.test.ts.
+           */
+          const prunedCount = prev.length - survivors.length;
+          // A bare URL can already own a tab when its first seat read succeeds.
+          // Carry that confirmed admission so a later rebuild can reconcile it.
+          const confirmed = survivors.map((tab) =>
+            liveSeatIds.has(tab.id) && isTableTab(tab) && tab.seated !== true
+              ? { ...tab, seated: true }
+              : tab
+          );
+          if (
+            prunedCount === 0 &&
+            additions.length === 0 &&
+            confirmed.every((tab, index) => tab === prev[index])
+          )
+            return prev;
+          return [...confirmed, ...additions];
         });
+
         /**
-         * PRUNE (Dan 2026-08-28, bug 1). A tab claiming `seated: true` for a
-         * table that is NOT in the live seat set is a table the server moved
-         * the player off, or closed under them. Its TablePage is frozen on
-         * whatever it last saw.
+         * KEEP THE PLAYER ON THE TABLE THEY WERE LOOKING AT (Dan 2026-08-28,
+         * section 10.6: "YOU CAN NEVER EVER AUTO CHANGE TABLES FOR A USER").
          *
-         * Only `seated` tabs. An observer tab has no seat by definition, and a
-         * lobby tab is not a table — pruning either would delete something the
-         * player deliberately opened.
+         * `activeIndex` is a POSITION, and a prune above it shifts every
+         * position after it down one. Leaving the index alone would therefore
+         * land the player on a DIFFERENT table without them touching anything —
+         * which is the auto-switch the law forbids, arriving by accident rather
+         * than by design. The existing clamp only catches an index past the end,
+         * not one that silently now means something else.
          *
-         * DAN 2026-08-30 — THIS PRUNE WAS INERT WHERE IT MATTERED MOST.
-         * It used to ask `t.kind === 'table' && t.seated === true`, and the
-         * `additions` built a few lines above carried NO `kind` field at all.
-         * So every tab this rebuild created was exempt from the rebuild's own
-         * prune — and after a page reload, rebuild-created tabs are the only
-         * tabs a player has. The 2026-08-28 fix therefore did nothing in the
-         * exact case it was written for: reload, reconnect, get moved, keep
-         * staring at a dead felt captioned "Connection Lost, Trying To Get You
-         * Back". `pruneStaleSeatedTabs` asks `!isLobbyLike` instead, which
-         * needs no field to be remembered by the next tab factory, and both
-         * halves are pinned behaviourally in tests/unit/tabSlots.test.ts.
+         * So the identity is what is preserved, not the number. If the table
+         * they were watching survived, follow it to its new position; that is an
+         * index correction and moves nobody. If it is the one that was pruned,
+         * the clamp puts them somewhere valid — there is nothing else to honour.
+         *
+         * Deferred a tick for the same reason the focus restore below is:
+         * `tablesRef` reflects the committed array, and the setTables above has
+         * not committed at this line.
          */
-        const liveSeatIds = new Set(ids);
-        const survivors = pruneStaleSeatedTabs(prev, liveSeatIds);
-        prunedRef.current = prev.length - survivors.length;
-
-        if (prunedRef.current === 0 && additions.length === 0) return prev;
-        return [...survivors, ...additions];
-      });
-
-      /**
-       * KEEP THE PLAYER ON THE TABLE THEY WERE LOOKING AT (Dan 2026-08-28,
-       * section 10.6: "YOU CAN NEVER EVER AUTO CHANGE TABLES FOR A USER").
-       *
-       * `activeIndex` is a POSITION, and a prune above it shifts every
-       * position after it down one. Leaving the index alone would therefore
-       * land the player on a DIFFERENT table without them touching anything —
-       * which is the auto-switch the law forbids, arriving by accident rather
-       * than by design. The existing clamp only catches an index past the end,
-       * not one that silently now means something else.
-       *
-       * So the identity is what is preserved, not the number. If the table
-       * they were watching survived, follow it to its new position; that is an
-       * index correction and moves nobody. If it is the one that was pruned,
-       * the clamp puts them somewhere valid — there is nothing else to honour.
-       *
-       * Deferred a tick for the same reason the focus restore below is:
-       * `tablesRef` reflects the committed array, and the setTables above has
-       * not committed at this line.
-       */
-      if (!cancelled) {
-        const watchedId = tablesRef.current[activeIndexRef.current]?.id;
-        setTimeout(() => {
-          if (cancelled || !watchedId) return;
-          const idx = tablesRef.current.findIndex((t) => t.id === watchedId);
-          if (idx !== -1 && idx !== activeIndexRef.current) setActiveIndex(idx);
-        }, 0);
-      }
-      // Audit round 3: after a reload the rebuild used to land the player on
-      // whichever seat sorted first. If the table they were LOOKING AT before
-      // the reload came back, focus it. The id lives in sessionStorage; a
-      // table that did not come back simply fails the lookup.
-      if (!cancelled) {
-        // Deferred one tick: tablesRef reflects the committed array, and the
-        // setTables above has not committed yet at this line.
-        setTimeout(() => {
-          if (cancelled) return;
-          try {
-            const lastId = sessionStorage.getItem('ca_last_active_table');
-            if (lastId) {
-              const idx = tablesRef.current.findIndex((t) => t.id === lastId);
-              if (idx > 0) setActiveIndex(idx);
+        if (isCurrent()) {
+          const watchedId = tablesRef.current[activeIndexRef.current]?.id;
+          setTimeout(() => {
+            if (!isCurrent() || !watchedId) return;
+            const idx = tablesRef.current.findIndex((t) => t.id === watchedId);
+            if (idx !== -1 && idx !== activeIndexRef.current) setActiveIndex(idx);
+          }, 0);
+        }
+        // Audit round 3: after a reload the rebuild used to land the player on
+        // whichever seat sorted first. If the table they were LOOKING AT before
+        // the reload came back, focus it. The id lives in sessionStorage; a
+        // table that did not come back simply fails the lookup.
+        if (isCurrent()) {
+          // Deferred one tick: tablesRef reflects the committed array, and the
+          // setTables above has not committed yet at this line.
+          setTimeout(() => {
+            if (!isCurrent()) return;
+            try {
+              const lastId = sessionStorage.getItem('ca_last_active_table');
+              if (lastId) {
+                const idx = tablesRef.current.findIndex((t) => t.id === lastId);
+                if (idx > 0) setActiveIndex(idx);
+              }
+            } catch {
+              /* private-mode storage may throw */
             }
-          } catch {
-            /* private-mode storage may throw */
-          }
-        }, 250);
-      }
-      // Tell the player OUTSIDE the updater. A setTables callback must stay
-      // pure — React may run it twice under StrictMode, and this file has been
-      // bitten by side effects in updaters twice already (see TABLE_LEFT and
-      // CLOSE_TABLE_TAB above).
-      if (!cancelled && prunedRef.current > 0) {
-        const n = prunedRef.current;
-        prunedRef.current = 0;
-        // Silently closing a table someone was playing is worse than saying
-        // so. Toast layer applies the house capitalisation; no em dashes.
-        toast.info(
-          n === 1
-            ? 'You were moved to a new table. The old one has been closed.'
-            : `You were moved from ${n} tables. They have been closed.`,
-          6000
-        );
-      }
-      if (!cancelled && droppedRef.current > 0) {
-        const n = droppedRef.current;
-        droppedRef.current = 0;
-        toast.info(
-          `You have ${n} more live ${n === 1 ? 'seat' : 'seats'} than this device can show ` +
-            `(${MAX_TABLES} at a time). Close a table to bring ${n === 1 ? 'it' : 'them'} in.`,
-          7000
-        );
-      }
-      /* Server truth has landed (round 3). The drill-in restore waits on this
+          }, 250);
+        }
+        setSeatRebuildNotice({ request, isCurrent, previousSeatedIds, liveSeatIds: ids });
+        /* Server truth has landed (round 3). The drill-in restore waits on this
          so a restored lobby tab is placed BESIDE the player's real seats
          rather than racing them for the last slot — and so it never wins that
          race, because a seat is worth more than a page you were reading. Set
          even when the read failed: "we tried" is the signal, and a restore
          blocked forever by a bad network is just the old bug again. */
-      if (!cancelled) setTablesReady(true);
+      } catch {
+        // A rejected transport is unknown, never an empty authoritative set.
+        console.warn('[MultiTablePage] Seat Rebuild Could Not Be Completed');
+      } finally {
+        if (!reconciliationQueued && seatReadPendingRef.current === request) {
+          seatReadPendingRef.current = 0;
+        }
+        if (
+          !cancelled &&
+          seatReadScopeRef.current === scope &&
+          seatReadRequestRef.current === request &&
+          seatMembershipRevisionRef.current === membershipRevision
+        ) {
+          // New live cards or a newly active turn during this read require one
+          // fresh snapshot. Pot/clock updates do not advance this revision.
+          if (seatActivityRevisionRef.current !== activityRevision) requestSeatResync();
+          else setTablesReady(true);
+        }
+      }
     })();
     return () => {
       cancelled = true;
+      if (seatReadPendingRef.current === request) seatReadPendingRef.current = 0;
     };
     // seatResyncToken: bumped by WS_CONNECTED so a reconnect re-reads server
     // truth. See the block comment above (b).
-  }, [user?.id, seatResyncToken]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [user?.id, seatResyncToken, requestSeatResync]);
 
   /* ═══ THE BALANCER MOVED YOU: THE TAB FOLLOWS, IN PLACE, INSTANTLY ═══════
      Dan 2026-08-30, from the first live auto table break: the move opened the
@@ -1104,9 +1205,14 @@ export default function MultiTablePage() {
         (payload: { new?: { table_id?: string; left_at?: string | null } }) => {
           const row = payload.new;
           const newId = row?.table_id;
-          if (!newId || row?.left_at) return;
-          if (tablesRef.current.some((t) => t.id === newId)) return;
-          if (heroSeatMoveBusyRef.current) return;
+          if (!newId || row?.left_at || seatReadScopeRef.current.userId !== user.id) return;
+          voluntarilyLeftTablesRef.current.delete(newId);
+          seatMembershipRevisionRef.current += 1;
+          if (tablesRef.current.some((t) => t.id === newId) || heroSeatMoveBusyRef.current) {
+            requestSeatResync();
+            return;
+          }
+          const moveScope = seatReadScopeRef.current;
           heroSeatMoveBusyRef.current = true;
           void (async () => {
             try {
@@ -1117,10 +1223,11 @@ export default function MultiTablePage() {
                   'id, name, game_variant, game_type, max_players, small_blind, big_blind, tournament_id'
                 )
                 .in('id', [newId, ...tabIds]);
+              if (seatReadScopeRef.current !== moveScope) return;
               if (rowsErr) {
                 /* Cannot identify the move - the rebuild path re-reads server
                    truth with its own guards rather than guessing here. */
-                setSeatResyncToken((n) => n + 1);
+                requestSeatResync();
                 return;
               }
               const newRow = rows?.find((r) => r.id === newId);
@@ -1135,7 +1242,7 @@ export default function MultiTablePage() {
                 : undefined;
               if (!newRow || !oldTab) {
                 // Not a recognisable balancer move - let the rebuild sort it out.
-                setSeatResyncToken((n) => n + 1);
+                requestSeatResync();
                 return;
               }
               const name = formatGameTitle(newRow.name as string) || 'Your New Table';
@@ -1173,9 +1280,10 @@ export default function MultiTablePage() {
               );
               toast.info(`You Were Moved To ${name}`, 6000);
             } catch {
-              setSeatResyncToken((n) => n + 1);
+              requestSeatResync();
             } finally {
               heroSeatMoveBusyRef.current = false;
+              if (seatReadScopeRef.current === moveScope) requestSeatResync();
             }
           })();
         }
@@ -1188,7 +1296,7 @@ export default function MultiTablePage() {
         /* channel cleanup is best-effort */
       }
     };
-  }, [user?.id]);
+  }, [user?.id, requestSeatResync, toast]);
 
   useMasterBusSubscription('TABLE_SEATED', (payload: SeatedPayload) => {
     const e = payload;
@@ -1197,7 +1305,10 @@ export default function MultiTablePage() {
     // FIX: Only open a new tab if THIS user is the one being seated.
     // Without this guard, any other player joining any table on the platform
     // would spawn a rogue tab on the current user's screen.
-    if (e.userId && user?.id && e.userId !== user.id) return;
+    const seatUserId = seatReadScopeRef.current.userId;
+    if (!seatUserId || seatUserId !== user?.id || (e.userId && e.userId !== seatUserId)) return;
+    voluntarilyLeftTablesRef.current.delete(e.tableId);
+    requestSeatResync();
 
     // Functional updater handles dedup check via prev.find — no closure dep needed
     setTables((prev) => {
@@ -1480,7 +1591,10 @@ export default function MultiTablePage() {
 
   useMasterBusSubscription('TABLE_LEFT', (payload: LeftPayload) => {
     const e = payload;
+    if (!user?.id || seatReadScopeRef.current.userId !== user.id) return;
     if (e.tableId) {
+      voluntarilyLeftTablesRef.current.add(e.tableId);
+      requestSeatResync();
       // Dan 2026-08-19: goToLobby() (a navigate call) used to run INSIDE the
       // setTables updater — a side effect in a function React may invoke
       // during render, and twice under StrictMode. Compute outside, then
@@ -1533,7 +1647,7 @@ export default function MultiTablePage() {
     // Dan 2026-08-28 bug 1: a reconnect is exactly when this client's picture
     // of "which tables am I at" is most likely to be stale — the balancer may
     // have moved the player while the socket was down. Re-read server truth.
-    setSeatResyncToken((n) => n + 1);
+    requestSeatResync();
   });
 
   // ─── Derived state ───────────────────────────────────────────────────
@@ -2808,82 +2922,95 @@ export default function MultiTablePage() {
   // SAME array reference — React then skips the re-render, which breaks the
   // parent-render → new-callback-prop → child-effect → setTables feedback loop
   // that was pegging a CPU core for as long as any table was open.
-  const updateTableInfo = useCallback((tableId: string, updates: Partial<TableInstance>) => {
-    /**
-     * THE ADDRESS BAR FOLLOWS THE CHAIR TOO (audit 2026-09-09, lane H).
-     *
-     * The tab re-point below changes which table this tab IS, and the URL
-     * used to keep naming the old one: /table/<old> while the player sat at
-     * <dest>. That URL is what a reload, browser Back and the dock all read,
-     * so a reload after a must-move re-opened the OLD table as a tab - a table
-     * the hero is no longer seated at and, after a break, one that no longer
-     * exists - and painted it first. Same rule handleTabSelect already keeps
-     * ("keep the address bar on the table the player is looking at"): when the
-     * route names the table that just moved, replace it with the destination.
-     * `replace`, so the move leaves no history entry to Back into. Off-route
-     * (the container hidden under another page) the URL names nothing to fix.
-     *
-     * Outside the updater: a setTables callback must stay pure, and navigate
-     * is a router state change of its own. React 18 batches the two into one
-     * commit, so the route effect that runs on the new URL already finds
-     * `dest` among the tabs and focuses it in place - the same index, no
-     * table switch (10.6 is about activeIndex, which this leaves alone).
-     */
-    if (
-      updates.movedToTableId &&
-      updates.movedToTableId !== tableId &&
-      routeTableIdRef.current === tableId
-    ) {
-      navigateRef.current(`/table/${updates.movedToTableId}`, { replace: true });
-    }
-    setTables((prev) => {
-      const idx = prev.findIndex((t) => t.id === tableId);
-      if (idx === -1) return prev;
-      const current = prev[idx];
-      // THE TAB FOLLOWS THE CHAIR (Dan 2026-09-05). A must-move / seat change
-      // landed the hero at another table of the same game: this tab becomes
-      // that table, in place. Its per-hand figures are cleared (they belong
-      // to the old table); the name and stakes are re-reported by the
-      // remounted TablePage. If the destination is already open as a tab,
-      // the old one simply closes.
-      if (updates.movedToTableId && updates.movedToTableId !== tableId) {
-        const dest = updates.movedToTableId;
-        if (prev.some((t) => t.id === dest)) {
-          return prev.filter((t) => t.id !== tableId);
-        }
-        const next = prev.slice();
-        next[idx] = {
-          id: dest,
-          name: current.name,
-          stakes: current.stakes,
-          isMyTurn: false,
-          pot: 0,
-          /* THE GAME DOES NOT CHANGE WHEN THE TABLE DOES (2026-09-06). A
-             must-move / seat change / balance move re-points this tab at
+  const updateTableInfo = useCallback(
+    (tableId: string, updates: Partial<TableInstance>) => {
+      const before = tablesRef.current.find((tab) => tab.id === tableId);
+      if (
+        before &&
+        ((updates.holeCards && updates.holeCards !== before.holeCards) ||
+          (updates.isMyTurn === true && before.isMyTurn !== true))
+      ) {
+        seatActivityRevisionRef.current += 1;
+        if (seatReadPendingRef.current !== 0) requestSeatResync();
+      }
+      if (updates.movedToTableId && updates.movedToTableId !== tableId) requestSeatResync();
+      /**
+       * THE ADDRESS BAR FOLLOWS THE CHAIR TOO (audit 2026-09-09, lane H).
+       *
+       * The tab re-point below changes which table this tab IS, and the URL
+       * used to keep naming the old one: /table/<old> while the player sat at
+       * <dest>. That URL is what a reload, browser Back and the dock all read,
+       * so a reload after a must-move re-opened the OLD table as a tab - a
+       * table the hero is no longer seated at and, after a break, one that no
+       * longer exists - and painted it first. Same rule handleTabSelect already
+       * keeps ("keep the address bar on the table the player is looking at"):
+       * when the route names the table that just moved, replace it with the
+       * destination. `replace`, so the move leaves no history entry to Back
+       * into. Off-route (the container hidden under another page) the URL names
+       * nothing to fix.
+       *
+       * Outside the updater: a setTables callback must stay pure, and navigate
+       * is a router state change of its own. React 18 batches the two into one
+       * commit, so the route effect that runs on the new URL already finds
+       * `dest` among the tabs and focuses it in place - the same index, no
+       * table switch (10.6 is about activeIndex, which this leaves alone).
+       */
+      if (
+        updates.movedToTableId &&
+        updates.movedToTableId !== tableId &&
+        routeTableIdRef.current === tableId
+      ) {
+        navigateRef.current(`/table/${updates.movedToTableId}`, { replace: true });
+      }
+      setTables((prev) => {
+        const idx = prev.findIndex((t) => t.id === tableId);
+        if (idx === -1) return prev;
+        const current = prev[idx];
+        // THE TAB FOLLOWS THE CHAIR (Dan 2026-09-05). A must-move / seat change
+        // landed the hero at another table of the same game: this tab becomes
+        // that table, in place. Its per-hand figures are cleared (they belong
+        // to the old table); the name and stakes are re-reported by the
+        // remounted TablePage. If the destination is already open as a tab,
+        // the old one simply closes.
+        if (updates.movedToTableId && updates.movedToTableId !== tableId) {
+          const dest = updates.movedToTableId;
+          if (prev.some((t) => t.id === dest)) {
+            return prev.filter((t) => t.id !== tableId);
+          }
+          const next = prev.slice();
+          next[idx] = {
+            id: dest,
+            name: current.name,
+            stakes: current.stakes,
+            isMyTurn: false,
+            pot: 0,
+            /* THE GAME DOES NOT CHANGE WHEN THE TABLE DOES (2026-09-06). A             must-move / seat change / balance move re-points this tab at
              another table OF THE SAME GAME, so the cluster is the one thing
              that certainly survives it. Dropping it here blanked
              `activeClusterId` until the remounted TablePage reported it again -
              and in that gap the LOBBY button vanished and the 4-square jumped
              ~74px sideways, at the exact moment the player was being moved. */
-          clusterId: current.clusterId,
-          gameCode: current.gameCode,
-          isTournament: current.isTournament,
-        } as TableInstance;
-        return next;
-      }
-      let changed = false;
-      for (const key of Object.keys(updates) as (keyof TableInstance)[]) {
-        if (current[key] !== updates[key]) {
-          changed = true;
-          break;
+            clusterId: current.clusterId,
+            gameCode: current.gameCode,
+            isTournament: current.isTournament,
+          } as TableInstance;
+          return next;
         }
-      }
-      if (!changed) return prev; // no-op → same reference → no re-render
-      const next = prev.slice();
-      next[idx] = { ...current, ...updates };
-      return next;
-    });
-  }, []);
+        let changed = false;
+        for (const key of Object.keys(updates) as (keyof TableInstance)[]) {
+          if (current[key] !== updates[key]) {
+            changed = true;
+            break;
+          }
+        }
+        if (!changed) return prev; // no-op → same reference → no re-render
+        const next = prev.slice();
+        next[idx] = { ...current, ...updates };
+        return next;
+      });
+    },
+    [requestSeatResync]
+  );
 
   // P1-2 FIX: hand each child a STABLE callback (cached per table id) rather than
   // a fresh arrow on every render. A new prop identity was re-triggering the
@@ -3051,6 +3178,25 @@ export default function MultiTablePage() {
    * exactly like a schedule row in ClubHomePage. See InTabLobbyContext.tsx for
    * why a DOM click-capture could never do this job.
    */
+  /** Change only the lobby slot. Running table instances keep their identity. */
+  const openArenaTab = useCallback((clubKey: string | null): boolean => {
+    const cur = tablesRef.current[activeIndexRef.current];
+    if (!cur || !isLobbyTab(cur)) return false;
+    setTables((tabs) =>
+      tabs.map((tab) => {
+        if (tab.id !== cur.id) return tab;
+        const current = tab.lobbyClubId === undefined ? homeClubIdRef.current : tab.lobbyClubId;
+        if (current === clubKey && !tab.lobbyTournamentStack?.length) return tab;
+        return {
+          ...clearLobbyTournaments(tab),
+          lobbyClubId: clubKey,
+          lobbyArenaStack: [...(tab.lobbyArenaStack ?? []), current],
+        };
+      })
+    );
+    return true;
+  }, []);
+
   /**
    * ─── HUB TABS: THE "+" TAB IS AN INTERNAL BROWSER TAB (Dan 2026-09-04) ────
    *
@@ -3134,6 +3280,7 @@ export default function MultiTablePage() {
       const idx = prev.findIndex((t) => t.id === tabId);
       if (idx === -1) return;
       const tournament = tournamentTargetFromTo(caPath);
+      const arena = arenaTargetFromTo(caPath);
       const pathname = caPath.split('?')[0] ?? '/';
       /* The lobby ITSELF: the SPA root, the aliases, or the player's own home
          club. Another club's page is a real destination and navigates for
@@ -3162,7 +3309,10 @@ export default function MultiTablePage() {
               t.id === lobbyId
                 ? tournament
                   ? pushLobbyTournament(t, tournament)
-                  : clearLobbyTournaments(t)
+                  : {
+                      ...clearLobbyTournaments(t),
+                      ...(arena ? { lobbyClubId: arena.clubKey } : {}),
+                    }
                 : t
             )
         );
@@ -3174,10 +3324,10 @@ export default function MultiTablePage() {
               lobbyTournamentId: tournament.tournamentId,
               lobbyTournamentStack: [tournament],
             }
-          : makeLobbyTab();
+          : { ...makeLobbyTab(), ...(arena ? { lobbyClubId: arena.clubKey } : {}) };
         setTables((tabs) => tabs.map((t) => (t.id === tabId ? lobby : t)));
       }
-      if (tournament || isLobbyItself) return;
+      if (tournament || arena || isLobbyItself) return;
       navigate(caPath);
     },
     [navigate]
@@ -3191,6 +3341,20 @@ export default function MultiTablePage() {
     const cur = tablesRef.current[activeIndexRef.current];
     if (cur && isLobbyTab(cur) && (cur.lobbyTournamentStack?.length ?? 0) > 0) {
       setTables((tabs) => tabs.map((t) => (t.id === cur.id ? popLobbyTournament(t) : t)));
+      return;
+    }
+    if (cur && isLobbyTab(cur) && cur.lobbyArenaStack?.length) {
+      setTables((tabs) =>
+        tabs.map((tab) => {
+          if (tab.id !== cur.id) return tab;
+          const stack = tab.lobbyArenaStack ?? [];
+          return {
+            ...clearLobbyTournaments(tab),
+            lobbyClubId: stack[stack.length - 1],
+            lobbyArenaStack: stack.slice(0, -1),
+          };
+        })
+      );
       return;
     }
     window.history.back();
@@ -3221,8 +3385,13 @@ export default function MultiTablePage() {
   const hubKeysRef = useRef<((e: KeyboardEvent) => void) | null>(null);
 
   const inTabLobbyNav = useMemo<InTabLobbyNav>(
-    () => ({ openTournament: openTournamentTab, openHub: openHubTab, goBack: goBackInTab }),
-    [openTournamentTab, openHubTab, goBackInTab]
+    () => ({
+      openTournament: openTournamentTab,
+      openHub: openHubTab,
+      openArena: openArenaTab,
+      goBack: goBackInTab,
+    }),
+    [openTournamentTab, openHubTab, openArenaTab, goBackInTab]
   );
 
   // ─── In-tab lobby rendering (Dan 2026-08-19) ─────────────────────────
@@ -3392,6 +3561,7 @@ export default function MultiTablePage() {
    * separate navigate calls — dumped the player off the route every time.
    */
   const renderLobbyTab = (table: TableInstance) => {
+    const selectedClub = table.lobbyClubId === undefined ? homeClubId : table.lobbyClubId;
     const stack = table.lobbyTournamentStack ?? [];
     const top = stack[stack.length - 1];
     /* The back pill says where it actually goes. At depth 1 that is the club
@@ -3455,7 +3625,11 @@ export default function MultiTablePage() {
           <div className="multi-table-page__lobby-tab" onClickCapture={handleLobbyLinkCapture}>
             <GlobalHeader inTab={inTabLobbyNav} />
             {renderTakeSeatBar()}
-            {homeClubId ? <ClubHomePage clubIdOverride={homeClubId} /> : <HomePage />}
+            {selectedClub ? (
+              <ClubHomePage key={selectedClub} clubIdOverride={selectedClub} />
+            ) : (
+              <HomePage />
+            )}
           </div>
         )}
       </>
@@ -3966,10 +4140,11 @@ export default function MultiTablePage() {
   // app root when the tab on screen is a lobby, so the footer shows there and
   // ONLY there - never over a live felt, never for a lobby tab parked behind
   // one, and never after this container unmounts. See inTabLobbySurface.ts.
-  useEffect(() => {
+  useLayoutEffect(() => {
     const cur = tables[activeIndex];
-    publishInTabLobbyActive(!hidden && !!cur && isLobbyTab(cur));
-  }, [hidden, tables, activeIndex]);
+    const selectedClub = cur?.lobbyClubId === undefined ? homeClubId : cur.lobbyClubId;
+    publishInTabLobbyActive(!hidden && !!cur && isLobbyTab(cur), selectedClub);
+  }, [hidden, tables, activeIndex, homeClubId]);
   useEffect(() => () => publishInTabLobbyActive(false), []);
 
   // Remember the last REAL table the player had on screen, so the dock can

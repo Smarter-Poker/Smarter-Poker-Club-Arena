@@ -57,8 +57,6 @@ const code = (src: string): string =>
 vi.mock('../services/supabase.js', () => ({
   supabase: { rpc: vi.fn(), from: vi.fn() },
   loadTable: vi.fn(),
-  syncStacks: vi.fn(),
-  syncTournamentChips: vi.fn(),
   updateTableStatus: vi.fn(),
   autoRebuyHorse: vi.fn(),
   markSeatAsLeft: vi.fn(),
@@ -220,30 +218,31 @@ describe('LAW 2: the hand write is a difference, declared, and written once', ()
   });
 });
 
-describe('LAW 3: the write is atomic, in delta mode, with no absolute fallback', () => {
+describe('LAW 3: the accepted hand is the only runtime stack writer', () => {
   const tables = read('../services/supabase/tables.ts');
-  const fn = code(tables.slice(tables.indexOf('export async function syncStacks(')));
+  const history = read('../services/supabase/handHistory.ts');
+  const fn = code(sliceMethod(history, 'async function insertHandHistoryRow('));
 
-  it('delta mode is all-or-nothing and declares rake, bbj, ref and inflow', () => {
-    expect(fn).toMatch(/const deltaMode = players\.every\(/);
-    expect(fn).toMatch(/stack_before:\s*rounded\(p\.stack_before as number\)/);
+  it('one immutable hand payload declares stacks, rake, bbj, ref and inflow', () => {
+    expect(fn).toContain('p_stacks: atomicCommit.stacks');
     for (const key of ['p_rake', 'p_bbj', 'p_ref', 'p_inflow']) expect(fn).toContain(`${key}:`);
+    expect(fn.match(/const payload =/g)).toHaveLength(1);
   });
 
-  it('a refusal is final and a transport failure is retried, bounded, then named', () => {
-    expect(fn).toContain("'DB.settle_hand_stacks_conservation_refused'");
-    expect(fn).toContain("'DB.settle_hand_stacks_declined'");
-    expect(fn).toContain("'DB.settle_hand_stacks_unreachable'");
-    expect(fn).toMatch(/attempt <= STACK_WRITE_ATTEMPTS/);
-    expect(fn).toMatch(/JSON\.stringify\(payload\)/);
+  it('a semantic refusal is final and transport ambiguity retries only that payload', () => {
+    expect(fn).toContain("result.reason !== 'in_flight'");
+    expect(fn).toContain('if (/atomic hand commit refused/.test(lastError)) throw err');
+    expect(fn).toMatch(/attempt <= HAND_COMMIT_RETRY_DELAYS_MS\.length/);
+    expect(fn).toContain('identical attempts');
   });
 
-  it('nothing in syncStacks writes a stack outside the RPC', () => {
+  it('the runtime exposes no stack-only RPC or per-seat fallback', () => {
+    expect(code(tables)).not.toMatch(/\bsyncStacks\b/);
+    expect(code(tables)).not.toContain('fn_ca_settle_hand_stacks_absolute');
+    expect(fn).toContain("supabase.rpc('fn_ca_commit_hand_settlement', payload)");
     expect(fn).not.toMatch(/\.update\(\s*\{\s*stack/);
     expect(fn).not.toMatch(/updatePayload/);
-    expect(fn).not.toContain("'DB.settle_hand_stacks_fallback'");
-    // A write with no hand number is refused, not routed to a per-seat loop.
-    expect(fn).toContain("'DB.sync_stacks_without_hand'");
+    expect(fn).not.toContain('fn_ca_settle_hand_stacks_absolute');
   });
 });
 
@@ -340,17 +339,35 @@ describe('LAW 4: the database applies the difference and honours the declaration
     // 20260904130701 after the first ten minutes of delta mode debited 230
     // tournament chips from a real wallet. The live definition is what the
     // engine calls, so the pin reads the latest re-creation of the function.
-    const latest = readdirSync(migrationsDir)
+    const ordered = readdirSync(migrationsDir)
       .filter((f) => /^\d{14}_.*\.sql$/.test(f))
       .sort()
-      .reverse()
-      .find((f) =>
-        /CREATE (OR REPLACE )?FUNCTION public\.fn_ca_settle_hand_stacks_absolute\(/.test(
-          readFileSync(resolve(migrationsDir, f), 'utf8')
-        )
+      .reverse();
+    // A later forward migration may update the preserved core while retaining
+    // the capability wrapper. Find each authority by its actual operation,
+    // rather than assuming the latest file must be the original rename.
+    const wrapperFile = ordered.find((f) =>
+      /RENAME TO fn_ca_settle_hand_stacks_absolute_pre_seat_exit_authority/.test(
+        readFileSync(resolve(migrationsDir, f), 'utf8')
+      )
+    );
+    expect(wrapperFile).toBeTruthy();
+    const wrapper = readFileSync(resolve(migrationsDir, wrapperFile as string), 'utf8');
+    expect(wrapper).toMatch(/fn_ca_settle_hand_stacks_absolute_pre_seat_exit_authority\(/);
+    expect(wrapper).toMatch(/fn_ca_open_tournament_hand_seat_exit_authority\(/);
+    const implementationFile = ordered.find((f) => {
+      const body = readFileSync(resolve(migrationsDir, f), 'utf8');
+      return (
+        /CREATE (OR REPLACE )?FUNCTION public\.fn_ca_settle_hand_stacks_absolute\(/.test(body) &&
+        body.includes("'late_seat_settle:'")
       );
-    const live = readFileSync(resolve(migrationsDir, latest as string), 'utf8');
-    expect(live).toMatch(
+    });
+    expect(implementationFile).toBeTruthy();
+    const implementation = readFileSync(
+      resolve(migrationsDir, implementationFile as string),
+      'utf8'
+    );
+    expect(implementation).toMatch(
       /IF v_delta_mode AND NOT EXISTS \(SELECT 1 FROM public\.tables tb WHERE tb\.id = p_table_id AND tb\.tournament_id IS NOT NULL\) THEN/
     );
   });

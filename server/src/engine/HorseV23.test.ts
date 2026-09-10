@@ -83,7 +83,8 @@ describe('deriveBlindClock', () => {
   it('reads seconds-shaped durations and the next multiple', () => {
     const started = new Date('2026-08-28T00:00:00Z').toISOString();
     const now = Date.parse('2026-08-28T00:01:00Z'); // 1 min into a 3-min level
-    const clock = deriveBlindClock(structure, 1, started, now);
+    // tournaments.current_level is the zero-based schedule index.
+    const clock = deriveBlindClock(structure, 0, started, now);
     expect(clock.nextBlindInMin).toBe(2);
     expect(clock.nextBlindMult).toBeCloseTo(1.5);
   });
@@ -95,7 +96,7 @@ describe('deriveBlindClock', () => {
     ];
     const started = new Date('2026-08-28T00:00:00Z').toISOString();
     const now = Date.parse('2026-08-28T00:04:00Z');
-    const clock = deriveBlindClock(alt, 1, started, now);
+    const clock = deriveBlindClock(alt, 0, started, now);
     expect(clock.nextBlindInMin).toBe(1);
     expect(clock.nextBlindMult).toBeCloseTo(2);
   });
@@ -112,9 +113,12 @@ describe('deriveBlindClock', () => {
   it('degrades to unknown on missing inputs - never guesses', () => {
     expect(deriveBlindClock(null, 1, 'x', Date.now()).nextBlindInMin).toBeNull();
     expect(deriveBlindClock(structure, null, 'x', Date.now()).nextBlindInMin).toBeNull();
+    // Past the authored structure the TournamentManager and brain both use
+    // the deterministic overflow ladder rather than inventing a terminal
+    // level. A malformed negative index still degrades to unknown.
     expect(
-      deriveBlindClock(structure, 3, new Date().toISOString(), Date.now()).nextBlindInMin
-    ).toBeNull(); // last level
+      deriveBlindClock(structure, -1, new Date().toISOString(), Date.now()).nextBlindInMin
+    ).toBeNull();
   });
 });
 

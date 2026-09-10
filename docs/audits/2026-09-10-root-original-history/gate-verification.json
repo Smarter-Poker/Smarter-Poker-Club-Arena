@@ -64,6 +64,21 @@
         "[doctrine] CLAUDE.md differs from origin/main but carries no retired instruction.",
         "[club-arena pre-push] running the test files you changed..."
       ]
+    },
+    {
+      "normal_push_exit": 1,
+      "failure": "Unchanged published AgentPortalPage response-order test expected two calls and observed one in first broad group",
+      "log_sha256": "3a78cd1d0d03c3e262c814181d464efca37f5ab33376241056689f7a5b9a3f36",
+      "suite_summaries": [
+        "Test Files  1 failed | 411 passed (412)\n      Tests  1 failed | 5607 passed | 1 skipped (5609)\n   Start at  11:49:55\n   Duration  18.11s (transform 20.21s, setup 67.82s, import 37.45s, tests 141.55s, environment 145.87s)",
+        "Test Files  538 passed (538)\n      Tests  6810 passed (6810)\n   Start at  11:50:18\n   Duration  18.27s (transform 26.54s, setup 75.36s, import 47.11s, tests 97.83s, environment 170.82s)",
+        "Test Files  356 passed (356)\n      Tests  4749 passed (4749)\n   Start at  11:51:42\n   Duration  12.25s (transform 22.76s, setup 59.05s, import 34.78s, tests 37.01s, environment 124.58s)",
+        "Test Files  372 passed | 1 skipped (373)\n      Tests  4708 passed | 145 skipped (4853)\n   Start at  11:51:55\n   Duration  20.25s (transform 11.86s, setup 2.80s, collect 115.42s, tests 80.48s, environment 46ms, prepare 17.04s)",
+        "Test Files  436 passed | 1 skipped (437)\n      Tests  6657 passed | 145 skipped (6802)\n   Start at  11:52:15\n   Duration  23.55s (transform 30ms, setup 3.08s, collect 166.13s, tests 138.74s, environment 52ms, prepare 21.77s)"
+      ],
+      "failure_excerpts": [
+        "FAIL  tests/components/AgentPortalPage.atomic-wallet.test.tsx > agent page response ordering > keeps the newest commission read within the same club\nAssertionError: expected \"vi.fn()\" to be called 2 times, but got 1 times\n\nIgnored nodes: comments, script, style\n<html>"
+      ]
     }
   ],
   "focused_unchanged_timeout_rerun": {
@@ -84,5 +99,25 @@
     "superseded_sql_moves": 4,
     "moves_byte_preserved": true
   },
-  "next_action": "Repeat the complete unchanged normal push gate, then verify remote SHA, both parents, published runtime/CI/migration equality and clean worktree; final outcome belongs to the closeout receipt."
+  "next_action": "Execute unchanged normal hooks through named origin and verified command-scoped SSH push URL, then exact remote/ancestry/hash/clean-tree readback. Final observed outcome is reported in root closeout.",
+  "focused_unchanged_agent_portal_rerun": {
+    "command": "node_modules/.bin/vitest run tests/components/AgentPortalPage.atomic-wallet.test.tsx",
+    "result": "passed",
+    "tests": 7,
+    "test_runtime_ms": 326,
+    "vitest_duration_seconds": 1.25,
+    "timeouts_and_assertions_unchanged": true,
+    "file_sha256": "e4a98a929dd6a02fc821036ca0a2f9dfbf6b8b780aeb383c18a64625225e8e76"
+  },
+  "normal_named_remote_retry": {
+    "remote_name": "origin",
+    "push_url": "git@github.com:Smarter-Poker/Smarter-Poker-Club-Arena.git",
+    "comparison_ref": "origin/main",
+    "comparison_sha": "d88d6167811f59ce4123c1a8d47008d65044e354",
+    "merge_base": "780398afa772b69f491586c9092016d1aca8dff6",
+    "reason": "Passing raw URL as REMOTE made the unchanged hook search for URL/main then fall back to stale local main. Named origin uses the intended fetched comparison and judges actual archive changes.",
+    "hooks_unmodified": true,
+    "runtime_and_default_ci_identical_to_published_parent": true,
+    "not_a_certification_of_current_published_runtime": true
+  }
 }

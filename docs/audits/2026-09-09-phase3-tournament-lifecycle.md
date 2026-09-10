@@ -175,3 +175,29 @@ The preceding sit-out evidence merged as PR #4081, commit 3bb214433b981fe9df52d0
 A behavioral case reproduced a K02 defect: a level update during the prefetched rest left the next hand posting the old 20 big blind and 36 pot instead of 40 and 72. The existing budgeted blind read now runs after that rest and before the caller rechecks pause and lease authority. No database query was added. All nine shared hand cases, three input-preparation cases and server types pass. This correction awaits source publication and engine adoption; K02 is not yet closed.
 
 Purchase evidence merged as PR #4090, commit 78555488589b727122e1f073c3ed32a8c6d55c87, with required CI 34430313387 successful. The database recovered, and its 02:50 UTC catalog matched 31 of the 33 captured bodies. Two installed seat-trigger optimizations were recaptured in the fixture and manifest; all 13 purchase groups passed once against that updated composition with the pinned pg client. T04/T05 retain their stated limits. Phase 3 remains open and Phase 4 has not started.
+
+## Pause Ownership At The New-Hand Boundary
+
+Fifteen behavioral regressions reproduced two gaps: a pause received during rest or controller preparation still reached a new deal, and resume methods published or transitioned running state while another owner still held the table. The corrected dealing path rechecks all owners after the rest and at the existing unstarted-controller fences. Normal hand-for-hand re-arm still permits its next shared hand. Operator resume clears only its own request; maintenance locks and other pause owners remain in force.
+
+The four affected test files pass 39 cases and server types pass. These are actual loop/controller-preparation/pause methods with synthetic database and lease inputs. Source publication and engine adoption of this correction remain pending; K05 also retains separate durable deadline and drain acceptance. The blind-rest correction merged as PR #4092 after CI 34431826633 passed and was immediately dispatched with force=false. After two requests were cancelled, successor run 34433388061 was accepted at 03:27 UTC. Phase 3 remains open and Phase 4 has not started.
+
+## Blind Snapshot Correction Production Adoption, September 10
+
+K02 is verified and deployed. Normal deployment run `34434274214` shipped
+`4d29dce4cd36ada84722b80af1c1d19efd3d0608`, which is one commit ahead of the
+blind-rest correction merge `40886c94ab69fd37a47957b3ea3b23b5a0c0e375` and
+contains it. The completed job observed the public hostname serving `4d29dce4`
+at 03:56:54 UTC, then committed the verified release seal at 03:56:58 UTC.
+A separate read at 04:09:58 UTC found the same version in `engine_leader`,
+with a heartbeat 2.66 seconds old. These observations establish adoption of
+the existing nine-case blind-snapshot correction without repeating its tests.
+
+This does not establish publication or adoption of the newer pause-ownership
+or synchronized-break corrections. Phase 3 remains in progress; Phase 4 has
+not started. The attempted additional normal dispatch has no verified
+receipt, and must not be repeated solely because Desktop Commander timed out.
+
+## Every-Tier Spin Rule Acceptance
+
+S09 is verified against the deployed producer and receipt-consumer sources. The 16 PostgreSQL scenarios cover every multiplier at both approved board stacks, and all 16 resulting receipts pass the actual engine consumer. The documented September 1 board-stack rule supersedes the original multiplier-dependent stack bands. See `2026-09-10-phase3-spin-tier-acceptance.md` and its result artifact for exact scope and source identity. Four of the original 58 controls are now verified; Phase 3 remains open and Phase 4 has not started.

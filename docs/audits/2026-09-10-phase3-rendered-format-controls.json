@@ -1,0 +1,17 @@
+{
+  "observed_at": "2026-09-10T04:51:11.842512+00:00",
+  "head": "4b66c10df950aad70d07a40c1a76b8d8c77eb7be",
+  "branch": "agent/codex-poker-audit-sep09/fix/tournament-pause-release",
+  "source_status": "",
+  "source_sha256": {
+    "src/components/club/CreateTournamentModal.tsx": "00382555add6f3e90625efe54800e28a436db36d837b22b5efac693f54382290",
+    "src/components/tournament/details/DetailOverviewTab.tsx": "c9ec6ba044cb55ca18b2af176061c9066ddb028ba15a760dab0deb69b2e50252"
+  },
+  "test_log": "\n RUN  v4.1.11 /private/tmp\n\n \u2713 codex-b11-rendered-ui.test.tsx > B11 rendered UI verification on integrated source > shows multi-day as unavailable without a selectable checkbox or day count 49ms\n \u2713 codex-b11-rendered-ui.test.tsx > B11 rendered UI verification on integrated source > hides the satellite cash-deal panel, badge and vote poll on a satellite heads-up 7ms\n \u2713 codex-b11-rendered-ui.test.tsx > B11 rendered UI verification on integrated source > shows actual cash-deal terms before voting, including paid money and rounding 12ms\n\n Test Files  1 passed (1)\n      Tests  3 passed (3)\n   Start at  23:50:12\n   Duration  1.02s (transform 283ms, setup 178ms, import 297ms, tests 70ms, environment 345ms)\n\n",
+  "artifact_sizes": {
+    "codex-b11-modal-render.html": 7500,
+    "codex-b11-satellite-render.html": 3531,
+    "codex-b11-cash-deal-render.html": 4320
+  },
+  "scope": "Three rendered React component cases in happy-dom using root dependencies and isolated mocked data. No browser layout, production, settlement, typecheck or build acceptance asserted."
+}

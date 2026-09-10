@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { withTournamentUnregistrationIntent as submit } from '../../src/services/TournamentUnregistrationIntent';
+import {
+  withTournamentUnregistrationIntent as submit,
+  ObsoleteTournamentUnregistrationIntentError,
+} from '../../src/services/TournamentUnregistrationIntent';
 const key = 'ca:tournament-unregister:v1:player:event';
 beforeEach(() => {
   localStorage.clear();
@@ -60,6 +63,49 @@ describe('Original Tournament Unregistration Intent', () => {
     expect(send).toHaveBeenCalledWith(original);
     expect(localStorage.getItem(key)).toBe(shared);
   });
+  it('retires only this tab obsolete request and preserves a newer shared pending request', async () => {
+    const original = crypto.randomUUID();
+    const newer = crypto.randomUUID();
+    const shared = JSON.stringify({ requestId: newer, state: 'pending' });
+    localStorage.setItem(key, shared);
+    sessionStorage.setItem(key, JSON.stringify({ requestId: original, state: 'pending' }));
+    const send = vi.fn(async () => {
+      throw new ObsoleteTournamentUnregistrationIntentError();
+    });
+    await expect(submit('player', 'event', send)).rejects.toThrow('Earlier Registration');
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(localStorage.getItem(key)).toBe(shared);
+    expect(JSON.parse(sessionStorage.getItem(key)!)).toEqual({
+      requestId: original,
+      state: 'resolved',
+    });
+    const next = vi.fn(async (_requestId: string) => undefined);
+    await submit('player', 'event', next);
+    expect(next).toHaveBeenCalledWith(newer);
+  });
+
+  it('keeps the obsolete identity if its retirement cannot be saved', async () => {
+    const original = crypto.randomUUID();
+    const pending = JSON.stringify({ requestId: original, state: 'pending' });
+    localStorage.setItem(key, pending);
+    sessionStorage.setItem(key, pending);
+    const actual = sessionStorage;
+    vi.stubGlobal('sessionStorage', {
+      getItem: (key: string) => actual.getItem(key),
+      setItem: (key: string, value: string) => {
+        if (JSON.parse(value).state === 'resolved') throw new Error('Storage Failed');
+        actual.setItem(key, value);
+      },
+    });
+    const send = vi.fn(async () => {
+      throw new ObsoleteTournamentUnregistrationIntentError();
+    });
+    await expect(submit('player', 'event', send)).rejects.toThrow('Earlier Registration');
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(localStorage.getItem(key)).toBe(pending);
+    expect(sessionStorage.getItem(key)).toBe(pending);
+  });
+
   it('storage failure prevents the financial request', async () => {
     vi.stubGlobal('sessionStorage', {
       getItem: () => null,

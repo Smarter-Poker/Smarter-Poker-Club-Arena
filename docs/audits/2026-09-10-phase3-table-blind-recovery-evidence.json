@@ -1,0 +1,50 @@
+{
+  "phase": 3,
+  "scope": ["K01"],
+  "requirement": "Use one durable tournament clock and level definition across all tables. Restart must restore elapsed active-play time.",
+  "source_commit": "89bf0306d5cd4913d8cf6ece2a35ac1de64106a9",
+  "status": "focused_recovery_correction_behavior_verified_pending_publication",
+  "full_control_closed": false,
+  "defect": "A failed per-table blind update is logged by advanceBlindLevel while the new tournament level is persisted. Replacement resumeLifecycle admitted existing dealers with the mismatched table rows unchanged.",
+  "correction": [
+    "Before starting any existing table engine, derive the blinds from the durable tournament level and reconcile mismatched small_blind, big_blind, ante and stakes fields.",
+    "Do not rewrite a row already matching that level.",
+    "If reconciliation fails, use the existing failed-resume path before creating or starting any dealer."
+  ],
+  "baseline": {
+    "failed": 2,
+    "skipped_clock_cases": 2,
+    "log": "/tmp/codex-clock-table-recovery-baseline.log",
+    "observed": "Both replacement dealers were admitted with one row at 25/50 and the other at 50/100, including when the missing write remained unavailable."
+  },
+  "verification": {
+    "passed": 2,
+    "skipped_clock_cases": 2,
+    "log": "/tmp/codex-clock-table-recovery-fixed.log",
+    "server_types_exit_code": 0,
+    "server_types_log": "/tmp/codex-clock-table-recovery-types.log",
+    "diff_check": "passed",
+    "actual_methods": [
+      "TournamentManagerBase.advanceBlindLevel",
+      "TournamentManagerBase.resumeLifecycle",
+      "TournamentManagerBase.resolveBlindLevel"
+    ],
+    "outcomes": [
+      "Successful recovery attempts only the mismatched table row; both rows are 50/100 before either dealer starts.",
+      "Unavailable correction attempts only the mismatched row, leaves the manager stopped, and creates or admits no dealer."
+    ],
+    "test_scope": "Controlled time and mocked persistence/engine start boundaries around imported actual manager methods. This is runtime manager behavior, not a live-settlement proof."
+  },
+  "limits": [
+    "Live-manager fan-out remains non-atomic; its existing handling of a failed table write before any restart remains open.",
+    "Crash boundaries before durable current_level publication and level-transition overlap with a break remain unclosed acceptance.",
+    "No production writes, actual hand-controller admission, settlement, deployment or engine adoption was tested.",
+    "No level reconciliation is added for a missing/empty blind structure; existing fallback behavior is preserved."
+  ],
+  "reused_without_rerun": [
+    "Two prior atomic clock-publication cases",
+    "Previously passed UTC and break-remainder cases",
+    "Prior synchronized-break deadline/owner cases"
+  ],
+  "deployment": "Root owns normal integration, CI, publication and engine adoption. No push from this lane."
+}

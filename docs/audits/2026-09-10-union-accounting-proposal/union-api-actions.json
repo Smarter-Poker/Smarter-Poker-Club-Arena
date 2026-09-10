@@ -1,0 +1,33 @@
+{
+  "source": "src/services/UnionApiService.ts",
+  "scope": "Club Arena client only; World Hub route implementation deferred",
+  "actions": [
+    "add_admin",
+    "apply",
+    "approve",
+    "approve_leave",
+    "bbj_backup_transfer",
+    "create",
+    "deny_leave",
+    "fund_bbj_pool",
+    "fund_spin_reserve",
+    "get_balances",
+    "get_bbj_detail",
+    "get_rake_detail",
+    "get_transactions",
+    "list",
+    "list_leave",
+    "move_rake_to_chips",
+    "process_bbj_payout",
+    "promo_send",
+    "reject",
+    "remove_admin",
+    "remove_club",
+    "request_leave",
+    "send_to_club",
+    "status",
+    "union_announcement",
+    "update_club_commission",
+    "update_settings"
+  ]
+}

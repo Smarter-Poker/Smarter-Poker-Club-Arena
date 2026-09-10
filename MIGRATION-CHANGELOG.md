@@ -10,6 +10,15 @@
 
 Before: Phase 3 had source guards and inventory unit tests but no bounded actual-function PostgreSQL seed/reserve/reveal runner. Added the current catalog fixture and thirteen behavior groups proving exact inventory, immutable retry, persisted recipient binding, authorization and observed concurrent reservation. Eight existing satellite origin-wallet refund groups also pass. No application function, financial policy or production database changed. Re-read: yes. Full wallet payout/terminal and pending bounty rebuy acceptance remain open. See docs/changelog/2026-09-10-mystery-generation-reservation-rehearsal.md.
 
+## 2026-09-10: Terminal Rehearsals Start After Published Entry Windows Close
+
+**Files:** scripts/ci/probes/atomic-terminal-rehearsal-fixture.sql (prior lines 40-50), scripts/ci/probes/atomic-terminal-rehearsal-entry-windows.sql.
+**What existed:** terminal fixtures inherited current_level 0 and a level 4 registration cutoff, so financial rollback/replay probes failed at an unrelated valid guard.
+**What changed:** the shared template explicitly closes its promised level and timed entry windows; a temporary-table probe exercises the real guard without modifying it. Rebuy hand probes retain their explicit open-window overrides.
+**Why:** meaningful terminal acceptance must reach its actual money assertions while keeping early-finalization refusals intact.
+**Verified:** YES, re-read; six native PostgreSQL scenarios pass and roll back. All 61 existing source assertions passed across the main and isolated resource-timeout retry.
+**TypeScript:** NOT CERTIFIED, incomplete dependencies and full disk prevented a reliable run; no TypeScript source changed. See docs/audits/2026-09-10-payout-cutover-swarm-evidence.md for the blocked full cutover and unresolved deal consent binding.
+
 ## 2026-09-10: Current Tournament Seat Moves Require Manager Authority
 
 The prepared strict cutover named only an obsolete seat-move RPC. Its current RPC could enter as an unmarked service actor after a callback lost manager context. The current name now uses the existing exact fresh lease gate, with the old route still denied. Real PostgreSQL reproduced the gap and passes 32 request admission scenarios after correction, preserving receipt recovery and player purchases. No production cutover or financial mutation is part of this source correction. See docs/changelog/2026-09-10-seat-moves-require-current-manager-authority.md.

@@ -1,0 +1,22 @@
+
+ RUN  v2.1.9 /Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-clock-final-sep10/server
+
+ ✓ src/tournament/BreakClockIntegrity.test.ts (10 tests) 3ms
+stdout | src/tournament/LevelDurationComposition.test.ts > level publication carries the duration the actual manager timer uses > publishes 3 minutes for a 5-minute row, Spin false
+[Tournament:publishe] Auto-escalated blinds (level 1, structure has 1): 7/14 ante 0
+[Tournament:publishe] Level 1: 7/14 ante 0
+
+ ✓ src/tournament/LevelDurationComposition.test.ts (64 tests) 12ms
+stdout | src/tournament/LevelDurationComposition.test.ts > level publication carries the duration the actual manager timer uses > publishes 5 minutes for a 10-minute row, Spin false
+[Tournament:publishe] Auto-escalated blinds (level 1, structure has 1): 7/14 ante 0
+[Tournament:publishe] Level 1: 7/14 ante 0
+
+stdout | src/tournament/LevelDurationComposition.test.ts > level publication carries the duration the actual manager timer uses > publishes 3 minutes for a 3-minute row, Spin true
+[Tournament:publishe] Level 1: 15/30 ante 0
+
+
+ Test Files  2 passed (2)
+      Tests  74 passed (74)
+   Start at  13:27:09
+   Duration  547ms (transform 57ms, setup 18ms, collect 289ms, tests 14ms, environment 0ms, prepare 89ms)
+

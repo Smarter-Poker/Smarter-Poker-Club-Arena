@@ -246,7 +246,9 @@ class DeadlineHeap {
     let tracked = 0;
     for (const set of this.byTable.values()) tracked += set.size;
     if (tracked !== this.arr.length) {
-      throw new Error(`DeadlineHeap: byTable tracks ${tracked} keys for ${this.arr.length} entries`);
+      throw new Error(
+        `DeadlineHeap: byTable tracks ${tracked} keys for ${this.arr.length} entries`
+      );
     }
     for (let i = 0; i < this.arr.length; i++) {
       const d = this.arr[i];
@@ -317,9 +319,22 @@ export class DeadlineScheduler {
     // does the actual limiting.
     this.maxFirePerTick = opts.maxFirePerTick ?? 4096;
     this.maxTickBudgetMs = opts.maxTickBudgetMs ?? 20;
-    this.now = opts.now ?? Date.now;
-    this.setIntervalFn = opts.setInterval ?? setInterval;
-    this.clearIntervalFn = opts.clearInterval ?? clearInterval;
+    // BOUND AT CALL TIME, NOT AT CONSTRUCTION (2026-09-10). The process
+    // singleton below is built when this module loads. `?? Date.now` and
+    // `?? setInterval` took the functions that existed at that moment, so a
+    // test that installed fake timers afterwards got a scheduler that ticked
+    // on a REAL 100ms interval and compared every deadline against the REAL
+    // clock - while the engine registered deadlines from the FAKE clock, set
+    // to noon. Every deadline was hours past the moment it was scheduled and
+    // fired on the next real tick, which landed inside a test only when the
+    // machine was slow enough: SeatFirstActualDeal.test.ts folded the actor
+    // through an "expired" time bank on a loaded CI runner and passed in 29ms
+    // on an idle Mac. Reading the globals per call means whichever clock is
+    // installed when the scheduler runs is the clock it runs on. In
+    // production nothing is installed and nothing changes.
+    this.now = opts.now ?? (() => Date.now());
+    this.setIntervalFn = opts.setInterval ?? ((cb, ms) => setInterval(cb, ms));
+    this.clearIntervalFn = opts.clearInterval ?? ((h) => clearInterval(h));
   }
 
   /** Start the tick loop. Safe to call twice. */
@@ -345,6 +360,12 @@ export class DeadlineScheduler {
    * before re-scheduling.
    */
   schedule(d: Deadline): void {
+    // A deadline nobody will tick is a deadline that never fires. The engine
+    // starts this loop from every PreciseActionTimer it constructs; a test
+    // that stopped the singleton between tests (src/testing/
+    // theSchedulerStopsBetweenTests.ts) and then schedules on an engine built
+    // earlier would otherwise be waiting on a loop that is not running.
+    if (!this.running) this.start();
     // Idempotent: purge any prior entry with the same key
     this.heap.remove(d.tableId, d.eventId);
     this.heap.push(d);

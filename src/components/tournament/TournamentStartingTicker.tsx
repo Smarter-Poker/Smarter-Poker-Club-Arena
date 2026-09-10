@@ -346,14 +346,12 @@ export function TournamentStartingTicker() {
                 'id,name,status,start_time,started_at,ended_at,updated_at,guaranteed_prize,prize_pool,current_players,late_reg_levels,late_reg_mins,current_level,blind_structure,level_started_at,max_players'
               )
               .in('club_id', clubIds)
-              .in('status', [
-                'ANNOUNCED',
-                'REGISTERING',
-                'RUNNING',
-                'LATE_REG',
-                'LATE_REGISTRATION',
-                'COMPLETED',
-              ])
+              // Completed results only render for ten minutes. Exclude older
+              // history before it can consume the operational feed's row limit.
+              // Keep every existing live and upcoming status in the same scope.
+              .or(
+                `status.in.(ANNOUNCED,REGISTERING,RUNNING,LATE_REG,LATE_REGISTRATION),and(status.eq.COMPLETED,ended_at.gt.${new Date(Date.now() - 10 * 60_000).toISOString()})`
+              )
               .order('updated_at', { ascending: false })
               .limit(80)
           : Promise.resolve({ data: [], error: null } as const);

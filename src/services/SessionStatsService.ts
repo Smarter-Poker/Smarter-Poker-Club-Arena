@@ -25,6 +25,7 @@ const cents = (n: number): number => (Number.isFinite(n) ? Math.round(n * 100) /
 
 export interface SessionStats {
   tableId: string;
+  arenaAsset?: 'chips' | 'diamonds';
   userId: string;
   sessionStartTime: number;
   initialStack: number;
@@ -60,10 +61,17 @@ class SessionStatsServiceClass {
   /**
    * Start tracking a new session at a table
    */
-  startSession(tableId: string, userId: string, initialStack: number, bigBlind: number): void {
+  startSession(
+    tableId: string,
+    userId: string,
+    initialStack: number,
+    bigBlind: number,
+    arenaAsset: 'chips' | 'diamonds' = 'chips'
+  ): void {
     const now = Date.now();
     const session: SessionStats = {
       tableId,
+      arenaAsset,
       userId,
       sessionStartTime: now,
       initialStack,
@@ -89,9 +97,13 @@ class SessionStatsServiceClass {
       const stored = localStorage.getItem(this.STORAGE_PREFIX + tableId);
       if (stored) {
         const prev = JSON.parse(stored) as SessionStats;
-        if (prev.userId === userId && Date.now() - prev.sessionStartTime < 3600_000) {
+        if (
+          prev.userId === userId &&
+          (prev.arenaAsset ?? 'chips') === arenaAsset &&
+          Date.now() - prev.sessionStartTime < 3600_000
+        ) {
           // Resume session if same user and < 1 hour old
-          Object.assign(session, prev, { tableId, userId, bigBlind, initialStack });
+          Object.assign(session, prev, { tableId, userId, bigBlind, initialStack, arenaAsset });
         }
         localStorage.removeItem(this.STORAGE_PREFIX + tableId);
       }
@@ -227,7 +239,9 @@ class SessionStatsServiceClass {
     const durationMs = Date.now() - session.sessionStartTime;
     const durationMinutes = Math.round(durationMs / 60_000);
     // Feature 6: Persist to Supabase (fire-and-forget, non-blocking)
-    if (session.handsPlayed > 0) {
+    // Diamond history is the canonical accepted-hand record. The legacy
+    // session_history totals have no asset dimension and must remain chip-only.
+    if (session.handsPlayed > 0 && session.arenaAsset !== 'diamonds') {
       const insertPayload = {
         user_id: session.userId,
         table_id: tableId,

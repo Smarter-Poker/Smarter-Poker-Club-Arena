@@ -1,6 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { HorseLogic, type HorseGameStateV2 } from './HorseLogic.js';
+import { applyTableCommitmentCap, ServerTableEngineTurns } from './ServerTableEngineTurns.js';
+import { calculateContestablePot } from './PokerEngine.js';
+import { decidePreflopV7, type PreflopCtx } from './HorsePreflop.js';
 import type { HorseDecision, RakeConfig, SeatPlayer } from '../types.js';
 
 const hero: SeatPlayer = {
@@ -34,6 +37,7 @@ function state(overrides: Partial<HorseGameStateV2> = {}): HorseGameStateV2 {
     communityCards2: [],
     communityCards3: [],
     pot: 30,
+    contestablePot: 30,
     currentBet: 10,
     minRaise: 4,
     stage: 'turn',
@@ -61,6 +65,59 @@ const enforce = (
   (HorseLogic as any).__testables.enforceAuthoritativeDecision(decision, player, gameState);
 
 describe('Phase 5 canonical legality boundary', () => {
+  it('removes a cap-breaking call when unequal forced contributions change whole-hand totals', () => {
+    const bounded = applyTableCommitmentCap(
+      {
+        schemaVersion: 1,
+        heroSeat: 1,
+        currentPlayerSeat: 1,
+        canAct: true,
+        legalActions: ['fold', 'call', 'raise', 'all_in'],
+        toCall: 10,
+        minRaiseTo: 30,
+        maxRaiseTo: 110,
+        structure: 'no_limit',
+        fixedBetSize: null,
+        wagersCapped: false,
+      },
+      { stack: 100, bet: 10, totalInvested: 95 },
+      true,
+      50,
+      2
+    );
+
+    expect(bounded.commitmentCapRemaining).toBe(5);
+    expect(bounded.legalActions).toEqual(['fold']);
+    expect(bounded.minRaiseTo).toBeNull();
+    expect(bounded.maxRaiseTo).toBeNull();
+  });
+
+  it.each(['call', 'all_in'])('rejects a cap-breaking %s before chips move', (action) => {
+    const performAction = vi.fn();
+    const engine = Object.create(ServerTableEngineTurns.prototype) as any;
+    engine.handController = {
+      getState: () => ({
+        currentPlayerSeat: 1,
+        currentBet: 20,
+        minRaise: 10,
+        actionHistory: [],
+        stage: 'turn',
+        pot: 200,
+        players: [{ ...hero, stack: 100, bet: 10, totalInvested: 95 }],
+      }),
+      performAction,
+    };
+    engine.disconnectEngine = { recordPlayerActed: vi.fn() };
+    engine.activeHandVariant = () => 'nlh';
+    engine.tableInfo = { cap_enabled: true, cap_bb: 50, big_blind: 2 };
+
+    expect(engine._handlePlayerActionInner(hero.user_id, action)).toEqual({
+      success: false,
+      error: "Calling would exceed this table's per-hand commitment cap",
+    });
+    expect(performAction).not.toHaveBeenCalled();
+  });
+
   it('cannot raise or shove when a short all-in did not reopen action', () => {
     expect(enforce({ action: 'raise', amount: 40, thinkTime: 0 }, state())).toEqual({
       action: 'call',
@@ -115,6 +172,96 @@ describe('Phase 5 canonical legality boundary', () => {
       action: 'check',
       thinkTime: 0,
     });
+  });
+});
+
+describe('Phase 5 contestable side-pot pricing', () => {
+  it('excludes a side pot a short hero can never win', () => {
+    const seats: SeatPlayer[] = [
+      { ...hero, stack: 100, bet: 0, totalInvested: 0 },
+      {
+        ...hero,
+        seat: 2,
+        user_id: 'short-all-in',
+        stack: 0,
+        bet: 100,
+        totalInvested: 100,
+        is_all_in: true,
+      },
+      {
+        ...hero,
+        seat: 3,
+        user_id: 'deep-all-in',
+        stack: 0,
+        bet: 1_000,
+        totalInvested: 1_000,
+        is_all_in: true,
+      },
+    ];
+
+    // After hero calls 100, the 300-chip main pot is contestable and hero's
+    // own 100 is removed. The deep player's 900-chip side pot is not priced.
+    expect(calculateContestablePot(seats, hero.user_id, 1_000)).toBe(200);
+  });
+
+  it('keeps folded contributions and a shared dead blind in the winnable main pot', () => {
+    const seats: SeatPlayer[] = [
+      { ...hero, stack: 100, bet: 0, totalInvested: 0 },
+      {
+        ...hero,
+        seat: 2,
+        user_id: 'live-bettor',
+        stack: 80,
+        bet: 20,
+        totalInvested: 30,
+        deadInvested: 10,
+      },
+      {
+        ...hero,
+        seat: 3,
+        user_id: 'folded-dead-money',
+        stack: 50,
+        bet: 0,
+        totalInvested: 50,
+        is_folded: true,
+      },
+    ];
+
+    // Hero's 20-chip call can win every chip currently in the middle: the
+    // live bettor's 20, its shared 10-chip dead blind and the folded 50.
+    expect(calculateContestablePot(seats, hero.user_id, 20)).toBe(80);
+  });
+
+  it('changes a false full-pot price-in call into the correct fold', () => {
+    const base: PreflopCtx = {
+      strength: 0,
+      position: 'early',
+      raiserPosition: 'early',
+      raises: 2,
+      limpers: 0,
+      callers: 1,
+      oppsLeft: 2,
+      toCall: 100,
+      currentBet: 100,
+      pot: 1_100,
+      bigBlind: 2,
+      stack: 100,
+      stackBB: 50,
+      tightness: 1,
+      bluffFreq: 0,
+      aggression: 1,
+      slowplayFreq: 0,
+      sizingMultiplier: 1,
+      isOmaha: false,
+      isPotLimit: false,
+      riskAdd: 0,
+      mode: 'cash',
+      tableSize: 3,
+      rand: () => 0.5,
+    };
+
+    expect(decidePreflopV7(base).a).toBe('call');
+    expect(decidePreflopV7({ ...base, contestablePot: 200 }).a).toBe('fold');
   });
 });
 

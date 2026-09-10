@@ -161,7 +161,9 @@ describe('a hub tab is not a table, and not a lobby', () => {
   });
 
   it('the footer still follows the LOBBY only - a hub page has its own', () => {
-    expect(MULTI).toContain('publishInTabLobbyActive(!hidden && !!cur && isLobbyTab(cur))');
+    expect(MULTI).toContain(
+      'publishInTabLobbyActive(!hidden && !!cur && isLobbyTab(cur), selectedClub)'
+    );
   });
 });
 

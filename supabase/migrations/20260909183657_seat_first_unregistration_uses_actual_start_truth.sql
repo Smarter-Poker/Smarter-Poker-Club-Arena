@@ -3,8 +3,7 @@
 -- start_time is a human fill-window deadline, not a scheduled deal time.
 -- Unregistration is therefore governed by the locked tournament status,
 -- tournaments.started_at and the immutable launch receipt. The MTT clock
--- contract remains unchanged. Eligible funded satellite exits use the approved
--- cash correction; historical request receipts retain their original outcome.
+-- contract and every wallet/ticket refund rail remain unchanged.
 BEGIN;
 
 SET LOCAL lock_timeout = '10s';
@@ -278,7 +277,7 @@ BEGIN
     FROM public.tournament_refund_tranches tr
     JOIN public.tournament_refund_entitlements e ON e.id=tr.entitlement_id
    WHERE e.id=ANY(v_r.entitlement_ids)
-     AND e.entitlement_kind IN ('wallet_charge','satellite_seat','tournament_ticket')
+     AND e.entitlement_kind='wallet_charge'
      AND tr.wallet_transaction_id=ANY(v_r.wallet_transaction_ids)
      AND tr.credit_ledger_id=ANY(v_r.credit_ledger_ids)
      AND tr.tournament_id=v_r.tournament_id AND tr.user_id=v_r.user_id;
@@ -484,15 +483,7 @@ BEGIN
     'registration_id',v_r.registration_id,
     'refunded_chips',v_r.refunded_chips,
     'returned_ticket_value',v_r.returned_ticket_value,
-    'wallet_chips_from_satellite_entitlements',(
-      SELECT COALESCE(sum(tr.amount_paid_now),0)
-        FROM public.tournament_refund_tranches tr
-        JOIN public.tournament_refund_entitlements e ON e.id=tr.entitlement_id
-       WHERE e.id=ANY(v_r.entitlement_ids)
-         AND e.entitlement_kind IN ('satellite_seat','tournament_ticket')
-         AND tr.wallet_transaction_id=ANY(v_r.wallet_transaction_ids)
-         AND tr.credit_ledger_id=ANY(v_r.credit_ledger_ids)
-         AND tr.tournament_id=v_r.tournament_id AND tr.user_id=v_r.user_id),
+    'wallet_chips_from_satellite_entitlements',0,
     'entitlement_ids',to_jsonb(v_r.entitlement_ids),
     'ticket_ids',to_jsonb(v_r.ticket_ids),
     'source_wallet_club_ids',to_jsonb(v_r.source_wallet_club_ids),
@@ -530,6 +521,7 @@ DECLARE
   v_ent record;
   v_fee_group record;
   v_settle jsonb;
+  v_ticket jsonb;
   v_receipt jsonb;
   v_escrow_before public.tournament_escrow%ROWTYPE;
   v_escrow_after public.tournament_escrow%ROWTYPE;
@@ -735,8 +727,10 @@ BEGIN
          round(COALESCE(sum(e.refund_bounty),0),2),
          round(COALESCE(sum(e.refund_fee),0),2),
          round(COALESCE(sum(e.gross),0),2),
-         round(COALESCE(sum(e.gross),0),2),
-         0::numeric
+         round(COALESCE(sum(e.gross) FILTER(
+           WHERE e.entitlement_kind='wallet_charge'),0),2),
+         round(COALESCE(sum(e.gross) FILTER(
+           WHERE e.entitlement_kind IN ('satellite_seat','tournament_ticket')),0),2)
     INTO v_refund_prize,v_refund_bounty,v_refund_fee,v_refund_total,
          v_wallet_amount,v_ticket_amount
     FROM public.tournament_refund_entitlements e
@@ -755,18 +749,15 @@ BEGIN
     RAISE EXCEPTION 'registration % has invalid entitlement totals',v_reg.id
       USING ERRCODE='P0404';
   END IF;
-  -- A funded satellite entry does not invent a player-wallet debit.
-  -- It returns the same escrow value in cash through its exact source proof.
+  -- A satellite seat, including a returned ticket that was used for a later
+  -- target entry, is a noncash entry for its entire registration lifecycle.
+  -- Any wallet-charge entitlement attached to that registration is corrupt;
+  -- refuse the whole transaction instead of ever returning chips.
   IF COALESCE(v_reg.is_satellite_qualifier,false)
-     AND EXISTS (
-       SELECT 1 FROM public.tournament_refund_entitlements e
-        WHERE e.tournament_id=p_tournament_id AND e.user_id=p_user_id
-          AND e.entitlement_kind='wallet_charge'
-          AND NOT EXISTS (
-            SELECT 1 FROM public.tournament_refund_tranches tr
-             WHERE tr.entitlement_id=e.id)) THEN
+     AND (v_wallet_amount<>0 OR v_ticket_amount<=0
+       OR v_refund_total IS DISTINCT FROM v_ticket_amount) THEN
     RAISE EXCEPTION
-      'satellite-funded registration % has an unexpected wallet charge',
+      'satellite-funded registration % can return only a tournament ticket',
       v_reg.id USING ERRCODE='P0404';
   END IF;
 
@@ -789,13 +780,7 @@ BEGIN
    WHERE tr.tournament_id=p_tournament_id AND tr.user_id=p_user_id;
   IF v_wallet_debits IS DISTINCT FROM v_entitled_wallet_total
      OR v_wallet_refunds_before IS DISTINCT FROM v_tranche_total
-     OR v_wallet_refunds_before>(
-       SELECT COALESCE(sum(e.gross),0)
-         FROM public.tournament_refund_entitlements e
-        WHERE e.tournament_id=p_tournament_id AND e.user_id=p_user_id
-          AND NOT EXISTS (
-            SELECT 1 FROM public.tournament_tickets tk
-             WHERE tk.source_refund_entitlement_id=e.id)) THEN
+     OR v_wallet_refunds_before>v_wallet_debits THEN
     RAISE EXCEPTION 'registration % wallet and entitlement journals disagree',v_reg.id
       USING ERRCODE='P0404';
   END IF;
@@ -901,14 +886,14 @@ BEGIN
   FOR v_ent IN
     SELECT e.* FROM public.tournament_refund_entitlements e
      WHERE e.tournament_id=p_tournament_id AND e.user_id=p_user_id
-       AND (e.entitlement_kind='wallet_charge' OR e.registration_id=v_reg.id)
+       AND e.entitlement_kind='wallet_charge'
        AND NOT EXISTS(
          SELECT 1 FROM public.tournament_refund_tranches tr
           WHERE tr.entitlement_id=e.id)
        AND NOT EXISTS(
          SELECT 1 FROM public.tournament_tickets tk
           WHERE tk.source_refund_entitlement_id=e.id)
-     ORDER BY e.entitlement_kind,e.id
+     ORDER BY e.id
   LOOP
     v_running_owed:=round(v_running_owed+v_ent.gross,2);
     v_settle:=public.fn_settle_tournament_refund_exact(
@@ -931,6 +916,36 @@ BEGIN
       v_credit_ledger_ids,(v_settle->>'credit_ledger_id')::uuid);
     v_wallet_transaction_ids:=array_append(
       v_wallet_transaction_ids,(v_settle->>'wallet_transaction_id')::uuid);
+  END LOOP;
+
+  FOR v_ent IN
+    SELECT e.* FROM public.tournament_refund_entitlements e
+     WHERE e.tournament_id=p_tournament_id AND e.user_id=p_user_id
+       AND e.registration_id=v_reg.id
+       AND e.entitlement_kind IN ('satellite_seat','tournament_ticket')
+       AND NOT EXISTS(
+         SELECT 1 FROM public.tournament_refund_tranches tr
+          WHERE tr.entitlement_id=e.id)
+       AND NOT EXISTS(
+         SELECT 1 FROM public.tournament_tickets tk
+          WHERE tk.source_refund_entitlement_id=e.id)
+     ORDER BY e.id
+  LOOP
+    v_ticket:=public.fn_ca_return_satellite_entitlement_as_ticket(
+      v_ent.id,'fn_unregister_from_tournament',v_description);
+    IF COALESCE((v_ticket->>'ok')::boolean,false) IS NOT TRUE
+       OR (v_ticket->>'entitlement_id')::uuid IS DISTINCT FROM v_ent.id
+       OR (v_ticket->>'value')::numeric IS DISTINCT FROM v_ent.gross
+       OR (v_ticket->>'refund_wallet_club_id')::uuid
+            IS DISTINCT FROM v_ent.refund_wallet_club_id
+       OR (v_ticket->>'ticket_id') IS NULL THEN
+      RAISE EXCEPTION 'registration % tournament-ticket return failed',v_reg.id
+        USING ERRCODE='P0404';
+    END IF;
+    v_entitlement_ids:=array_append(v_entitlement_ids,v_ent.id);
+    v_source_wallet_club_ids:=array_append(
+      v_source_wallet_club_ids,v_ent.refund_wallet_club_id);
+    v_ticket_ids:=array_append(v_ticket_ids,(v_ticket->>'ticket_id')::uuid);
   END LOOP;
 
   FOR v_fee_group IN

@@ -2,6 +2,10 @@
 
 ## Every Change, Documented. No Exceptions.
 
+## 2026-09-09: Hand Settlement Retains Its Dealt Seat Generation
+
+A later terminal writer replaced the earlier exact-seat checks. The forward restoration preserves current terminal behavior and binds stack/time-bank writes to the dealt row and join timestamp. Database expansion applied as 20260909234808 with exact definitions and ACLs verified. Real PostgreSQL regression, rollback, replay and full hand-boundary checks pass. Engine identity capture is built; publication and complete accounting Phase 3 acceptance remain pending. Re-read: yes. See docs/audits/2026-09-09-hand-generation-overwrite-checkpoint.md.
+
 ## 2026-09-09: Unbound Initial Registration Is Retired
 
 After verified receipt-client publication, the old one-argument registration alias is denied to every application role. The authenticated receipt wrapper and internal seat-first core retain their exact privileges. Applied as live version 20260909221729 and verified read-only. The isolated PostgreSQL harness passed, including 15 registration assertions with actual retired-role denial and authenticated replay. Re-read: yes. This supersedes the pending initial-registration publication/alias notes below; full Phase 3 acceptance remains open. See docs/changelog/2026-09-09-unbound-tournament-registration-is-retired.md.

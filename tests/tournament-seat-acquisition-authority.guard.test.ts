@@ -267,14 +267,15 @@ describe('tournament seats are acquired below one hard root authority', () => {
     );
   });
 
-  it('leaves launch and late registration with no raw seat/count fallback', () => {
+  it('leaves launch authoritative and removes the periodic late-registration writer', () => {
     const launch = method(base, 'createTablesAndSeatPlayers(tournament: any)');
-    const late = method(manager, 'ensureLateRegSeated()');
-    for (const source of [launch, late]) {
-      expect(source).toContain('assignTournamentPlayerSeatAtomically({');
-      expect(source).not.toMatch(/from\('table_seats'\)[\s\S]{0,100}\.(?:insert|update|delete)\(/);
-      expect(source).not.toMatch(/\.update\(\{\s*current_players:/);
-    }
+    expect(launch).toContain('assignTournamentPlayerSeatAtomically({');
+    expect(launch).not.toMatch(/from\('table_seats'\)[\s\S]{0,100}\.(?:insert|update|delete)\(/);
+    expect(launch).not.toMatch(/\.update\(\{\s*current_players:/);
+    expect(manager).not.toContain('ensureLateRegSeated');
+    expect(manager).not.toContain('atomic_late_reg_seat');
+    expect(manager).not.toContain('for (const player of unseated)');
+    expect(manager).not.toContain('assignTournamentPlayerSeatAtomically');
     expect(transport).toContain("supabase.rpc('fn_assign_tournament_player_seat_atomic'");
     expect(transport).not.toMatch(/for\s*\([^)]*attempt|\.from\(/);
   });

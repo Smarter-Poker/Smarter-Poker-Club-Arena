@@ -274,7 +274,11 @@ describe('tournament break resume waits for the maintenance thaw', () => {
     await vi.advanceTimersByTimeAsync(TournamentManagerBase.MAINTENANCE_THAW_POLL_MS);
     await resuming;
     expect(manager.breakIsActive()).toBe(false);
-    expect(persist.update).toHaveBeenCalledWith({ on_break: false, break_ends_at: null });
+    expect(persist.update).toHaveBeenCalledWith({
+      on_break: false,
+      break_started_at: null,
+      break_ends_at: null,
+    });
     expect(manager.broadcastCall).toHaveBeenCalledWith('break_ended', expect.anything());
   });
 

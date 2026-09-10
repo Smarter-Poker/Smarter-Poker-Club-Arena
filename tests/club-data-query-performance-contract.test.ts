@@ -449,18 +449,19 @@ describe('Club Data reporting stays inside the authenticated query budget', () =
       expect(body).not.toContain('loadVersion.current !== myVersion');
       expect(body).not.toContain('playersVersion.current !== myVersion');
     }
-    // The epoch moves on a foreground load and on a club change, never on a
-    // background refresh.
+    // Foreground loads and query changes retire pagination; background
+    // refreshes of the same question do not.
     const load = sliceCall(page, 'const load = useCallback(');
     expect(load).toContain('if (!preserveOnError) gamesQueryEpoch.current += 1;');
     const loadPlayers = sliceCall(page, 'const loadPlayers = useCallback(');
     expect(loadPlayers).toContain('if (!preserveOnError) playersQueryEpoch.current += 1;');
-    // Whoever raised a Load More spinner puts it down, superseded or not.
+    // Games retain their existing spinner contract. Player query changes
+    // retire the old spinner; a stale page cannot clear its successor.
     expect(sliceCall(page, 'const loadMoreGames = useCallback(')).toContain(
       'if (!cancelledRef.current) setGamesLoadingMore(false);'
     );
-    expect(sliceCall(page, 'const loadMorePlayers = useCallback(')).toContain(
-      'if (!cancelledRef.current) setPlayersLoadingMore(false);'
+    expect(sliceCall(page, 'const loadMorePlayers = useCallback(')).toMatch(
+      /finally \{\s*if \(!stale\(\)\) \{\s*playersMoreRef\.current = false;\s*setPlayersLoadingMore\(false\);/
     );
   });
 
@@ -468,7 +469,9 @@ describe('Club Data reporting stays inside the authenticated query budget', () =
     expect(page).toContain("supabase.rpc('ca_club_game_page'");
     expect(page).toContain("supabase.rpc('ca_club_player_page'");
     expect(page).toContain('p_cursor: gameCursor');
-    expect(page).toContain('p_cursor: playerCursor');
+    const playersPage = sliceCall(page, 'const loadMorePlayers = useCallback(');
+    expect(playersPage).toContain('const cursor = playerCursorRef.current;');
+    expect(playersPage).toContain('p_cursor: cursor');
     expect(page).toContain('useVirtualScroll(gameRows');
     expect(page).toContain('useVirtualScroll(sortedPlayers');
     expect(page).toContain('aria-setsize={snapshot?.row_count}');

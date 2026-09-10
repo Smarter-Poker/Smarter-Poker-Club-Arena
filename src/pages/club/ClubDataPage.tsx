@@ -621,9 +621,6 @@ export default function ClubDataPage() {
   useEffect(() => {
     playersRef.current = players;
   }, [players]);
-  useEffect(() => {
-    playerCursorRef.current = playerCursor;
-  }, [playerCursor]);
 
   // debounce the search box so typing does not fire an RPC per keystroke
   useEffect(() => {
@@ -656,6 +653,7 @@ export default function ClubDataPage() {
     () => clubDataQueryKey({ kind: 'players', startDate, endDate, playerSort }),
     [startDate, endDate, playerSort]
   );
+  const playerScopeKey = [userId, clubUuid, playerCacheKey].join(':');
   const invoiceCacheKey = 'kind=invoices';
 
   // Invalidate every club-scoped value before the browser paints a new route.
@@ -1076,7 +1074,8 @@ export default function ClubDataPage() {
   // the same window and there is no reason to pay for it on every visit.
   const loadPlayers = useCallback(
     async (preserveOnError = false): Promise<boolean> => {
-      if (!clubUuid || isHydrating || !userId) return false;
+      if (!clubUuid || isHydrating || !userId || restoredPlayerKeyRef.current !== playerScopeKey)
+        return false;
       // Pagination owns the cursor while it is in flight. A heartbeat is a
       // recovery mechanism, not a reason to invalidate that user action.
       if (preserveOnError && playersMoreRef.current) return true;
@@ -1085,7 +1084,10 @@ export default function ClubDataPage() {
       if (preserveOnError && backgroundPlayersInFlight.current) return true;
       if (!preserveOnError) playersQueryEpoch.current += 1;
       const myVersion = ++playersVersion.current;
-      const stale = () => cancelledRef.current || playersVersion.current !== myVersion;
+      const stale = () =>
+        cancelledRef.current ||
+        playersVersion.current !== myVersion ||
+        restoredPlayerKeyRef.current !== playerScopeKey;
       // Player sort changes establish a new cursor and supersede pagination.
       // Retire the old spinner here because its now-stale finally block must
       // not mutate state owned by this newer request.
@@ -1100,6 +1102,7 @@ export default function ClubDataPage() {
       if (showSpinner) {
         playersSpinnerVersion.current = myVersion;
         setPlayersLoading(true);
+        backgroundPlayersInFlight.current = false;
       } else {
         backgroundPlayersInFlight.current = true;
       }
@@ -1189,7 +1192,8 @@ export default function ClubDataPage() {
         if (!preserveOnError) setPlayers(null);
         return false;
       } finally {
-        if (!showSpinner) backgroundPlayersInFlight.current = false;
+        if (!showSpinner && playersVersion.current === myVersion)
+          backgroundPlayersInFlight.current = false;
         // The skeleton comes down when the request that RAISED it settles, or
         // when a newer foreground load has taken it over. Never on the
         // ordering of background polls. See `spinnerVersion`.
@@ -1198,16 +1202,25 @@ export default function ClubDataPage() {
         }
       }
     },
-    [clubUuid, startDate, endDate, playerSort, isHydrating, userId, playerCacheKey]
+    [clubUuid, startDate, endDate, playerSort, isHydrating, userId, playerCacheKey, playerScopeKey]
   );
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (tab !== 'players') return;
     if (!clubUuid || isHydrating || !userId) return;
-    const restoreKey = `${userId}:${clubUuid}:${playerCacheKey}`;
+    const restoreKey = playerScopeKey;
     let preserveExistingRows = true;
     if (restoredPlayerKeyRef.current !== restoreKey) {
+      // A cached sort still asks a new question. Retire outgoing reads and
+      // pagination before restoring its rows, even if its refresh is silent.
       restoredPlayerKeyRef.current = restoreKey;
+      playersQueryEpoch.current += 1;
+      playersVersion.current += 1;
+      playersSpinnerVersion.current = playersVersion.current;
+      backgroundPlayersInFlight.current = false;
+      playersMoreRef.current = false;
+      setPlayersLoadingMore(false);
+      setPlayersPageError(null);
       const cached = readClubDataCache<CachedPlayerLedger>(userId, clubUuid, playerCacheKey);
       if (cached?.players && Array.isArray(cached.players.players)) {
         setPlayers(cached.players);
@@ -1229,7 +1242,7 @@ export default function ClubDataPage() {
       }
     }
     void loadPlayers(preserveExistingRows);
-  }, [tab, loadPlayers, clubUuid, isHydrating, userId, playerCacheKey]);
+  }, [tab, loadPlayers, clubUuid, isHydrating, userId, playerCacheKey, playerScopeKey]);
 
   const loadMoreGames = useCallback(async () => {
     if (!clubUuid || gamesMoreRef.current || loading || isHydrating || !userId) return;
@@ -1360,9 +1373,14 @@ export default function ClubDataPage() {
   ]);
 
   const loadMorePlayers = useCallback(async () => {
+    // A passive pagination effect may still hold the preceding render's
+    // cursor after the sort changed. Read the cursor restored for this query.
+    const cursor = playerCursorRef.current;
     if (
       !clubUuid ||
-      !playerCursor ||
+      !cursor ||
+      !playersRef.current ||
+      restoredPlayerKeyRef.current !== playerScopeKey ||
       !playersHasMore ||
       playersMoreRef.current ||
       playersLoading ||
@@ -1374,7 +1392,10 @@ export default function ClubDataPage() {
     setPlayersLoadingMore(true);
     setPlayersPageError(null);
     const myEpoch = playersQueryEpoch.current;
-    const stale = () => cancelledRef.current || playersQueryEpoch.current !== myEpoch;
+    const stale = () =>
+      cancelledRef.current ||
+      playersQueryEpoch.current !== myEpoch ||
+      restoredPlayerKeyRef.current !== playerScopeKey;
     try {
       const { data, error: pageError } = await withTimeout(
         supabase.rpc('ca_club_player_page', {
@@ -1383,7 +1404,7 @@ export default function ClubDataPage() {
           p_end: endDate,
           p_sort: playerSort,
           p_search: null,
-          p_cursor: playerCursor,
+          p_cursor: cursor,
           p_limit: PLAYER_PAGE_SIZE,
         }),
         'More players request timed out',
@@ -1424,8 +1445,10 @@ export default function ClubDataPage() {
       reportError(pageError, 'ClubDataPage.players_page_request');
       setPlayersPageError('Could Not Load More Players.');
     } finally {
-      playersMoreRef.current = false;
-      if (!cancelledRef.current) setPlayersLoadingMore(false);
+      if (!stale()) {
+        playersMoreRef.current = false;
+        setPlayersLoadingMore(false);
+      }
     }
   }, [
     clubUuid,
@@ -1437,6 +1460,7 @@ export default function ClubDataPage() {
     startDate,
     endDate,
     playerSort,
+    playerScopeKey,
   ]);
 
   // ca_club_player_page owns ordering before it applies the keyset cursor. A

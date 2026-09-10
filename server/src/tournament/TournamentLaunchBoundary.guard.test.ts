@@ -125,10 +125,15 @@ describe('a tournament launch crosses maintenance exactly once', () => {
     expect(start).toContain('if (regRowsErr)');
     expect(start).toContain('expectedLaunchPlayerIds = (regRows ?? []).map');
     expect(tableBuild).toContain('assignTournamentPlayerSeatAtomically({');
+    expect(tableBuild).toContain('occupiedSeats.get(receipt.tableId)');
+    expect(tableBuild).toContain('occupiedSeats.set(receipt.tableId, taken)');
     expect(tableBuild).toContain('taken.add(receipt.seatNumber)');
     expect(tableBuild).toContain('receipt.currentPlayers');
     expect(seatAssignment).toContain("supabase.rpc('fn_assign_tournament_player_seat_atomic'");
-    expect(seatAssignment).toContain('seatNumber !== expected.seatNumber');
+    expect(seatAssignment).toContain('const tableId = exactUuid(receipt.table_id)');
+    expect(seatAssignment).toContain('tableId === null');
+    expect(seatAssignment).toContain('seatNumber === null');
+    expect(seatAssignment).not.toContain('seatNumber !== expected.seatNumber');
     expect(seatAssignment).toContain('exactPositiveStack(receipt.stack)');
     expect(seatAssignment).toContain('exactCount(receipt.current_players)');
     expect(prove).toContain("tournamentProof.status !== 'REGISTERING'");

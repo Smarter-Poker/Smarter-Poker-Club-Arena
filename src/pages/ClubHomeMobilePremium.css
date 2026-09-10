@@ -138,27 +138,32 @@
     border: 0;
   }
 
-  /* The count line, printed into the title bay under MY WALLETS and CENTRED
-     ON THE PAINTED TITLE (Dan 2026-09-09: it "should just have 5 BALANCES ...
+  /* The count line, printed into the title bay under MY WALLETS and centred
+     on the painted title (Dan 2026-09-09: it "should just have 5 BALANCES ...
      and it centered inside that frame").
 
-     The old zone was x 900-1476 on the master (left 41.4%, width 26.5%), and
-     it was wrong twice over:
+     WHAT WAS WRONG, MEASURED (corrected 2026-09-09, same day). The first fix
+     for this line said the zone was wrong twice over: too narrow, and left-
+     aligned because `place-items: center` does not centre a bare text node.
+     The second half was not true and this comment carried it for a few hours.
+     Rendered with the old zone and no `text-align`, "5 Balances" sits at
+     54.65% of the plate, dead on the title: a grid item that FITS its cell is
+     centred by `place-items`, text node or not. What Dan photographed was the
+     OVERFLOW case. "Loading Balances" measured 109.7px in a 96.7px zone on a
+     393px phone; an item that overflows an `overflow: hidden` cell is given
+     safe alignment, which snaps it to the start edge, and the rest was cut off
+     the right. So: clipped, and left-aligned BECAUSE clipped. `text-align`
+     changes nothing in either case - a fitting string was already centred,
+     and an overflowing one stays start-aligned with it set - so it is not
+     declared here, and a future reader should not reach for it.
 
-     1. NOT CENTRED. `place-items: center` centres grid ITEMS. The count is a
-        bare text node, so it forms an anonymous item that fills the cell and
-        is then laid out by `text-align`, which was never set and therefore
-        started at the left edge. The line printed hard against the left of
-        the zone instead of under the middle of the painted title.
-     2. CLIPPED. 26.5% of the plate is 96.7px on a 393px phone. The string was
-        109.7px, and `overflow: hidden` took the difference off the right end
-        - which is the "LOADING BALANC" Dan photographed.
-
-     The zone is now symmetric about the painted title's own optical centre
-     (54.65% of the plate, measured off the master) and spans the bay between
-     the octagon and the chevron divider, so a two-digit count still fits with
-     room to spare. `text-align: center` is what does the centring for the
-     text node; `place-items` stays for an element child. */
+     Two things fixed the picture. ClubHomePage no longer prints a placeholder
+     into this bay at all (the count comes from the viewer's role, before any
+     balance loads), and the zone is now symmetric about the painted title's
+     own optical centre (54.65% of the plate, measured off the master art) and
+     spans the bay between the octagon and the chevron divider, so a two-digit
+     count has room to spare and nothing this bay can be asked to hold reaches
+     the overflow fallback again. */
   .club-home--unified-mobile .lobby-wallets-trigger__copy small {
     position: absolute;
     left: 32.65%;
@@ -168,7 +173,6 @@
     display: grid;
     place-items: center;
     overflow: hidden;
-    text-align: center;
     color: #5b83e8;
     font-family: Inter, system-ui, sans-serif;
     font-size: 2.35cqw;

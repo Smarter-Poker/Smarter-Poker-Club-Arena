@@ -15,11 +15,15 @@ TWO faults stacked, and only the first is the one he could see.
 tracking, so `overflow: hidden` took the last 13px off the right end. Measured
 in a headless render at 393px, not estimated.
 
-**Not centred.** `place-items: center` centres grid ITEMS. The count is a bare
-text node, so it forms an anonymous item that fills the cell and is then laid
-out by `text-align`, which was never set and defaults to `start`. The line
-printed hard against the left edge of the zone. Even a short count would have
-sat 1.8% of the plate left of the painted title above it.
+**Not centred, but only because it overflowed** (this paragraph was corrected
+the same day; see `2026-09-09-the-wallets-line-was-clipped-not-misaligned.md`).
+The first write-up here claimed `place-items: center` cannot centre a bare
+text node and that even a short count would have sat left of the title. It
+can, and it would not have: measured with the old zone and no `text-align`,
+"5 Balances" sits at 54.65% of the plate, dead on the painted title. The
+left-alignment Dan photographed is what an `overflow: hidden` grid cell does
+with an item wider than itself: safe alignment snaps it to the start edge.
+Clipped, and left-aligned because clipped.
 
 Fixed by re-cutting the zone symmetric about the painted title's own optical
 centre (54.65% of the plate, measured off the master art) with an explicit

@@ -58,6 +58,7 @@ import { maybeSpeak } from './HorseTableTalk.js';
 import { checkTournamentChipConservation } from './tournamentChipConservation.js';
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { INSTANCE_ID } from '../services/tableLease.js';
+import { requireHandSeatGeneration } from './handSeatGeneration.js';
 
 /**
  * A chip is two decimal places, everywhere it is stored (#3358).
@@ -1449,6 +1450,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       miniBbjHit: this.currentHandMiniBBJHit,
       miniBbjTierId: this.currentHandMiniBBJTierId,
       dealtStacks: new Map(this.currentHandDealtStacks),
+      seatGenerations: new Map(this.currentHandSeatGenerations),
       // Capture bank values before settlement yields, just like the hand's
       // money and cards. A late continuation must not read the next hand's bank.
       timeBanks: new Map(
@@ -1931,14 +1933,18 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         const postCommitObligations = durablePostCommitObligations
           ? {
               version: 1 as const,
-              time_banks: players.map((player) => ({
-                user_id: player.user_id,
-                uses_remaining: this.timeBankEngine.getUsesRemaining(this.tableId, player.user_id),
-                seconds_remaining: this.timeBankEngine.getRemainingSeconds(
-                  this.tableId,
-                  player.user_id
-                ),
-              })),
+              time_banks: playersForRecord.map((player) => {
+                const timeBank = snap.timeBanks.get(player.user_id);
+                if (!timeBank) {
+                  throw new Error('atomic hand commit refused (missing_time_bank_snapshot)');
+                }
+                return {
+                  ...requireHandSeatGeneration(snap.seatGenerations, player.user_id),
+                  user_id: player.user_id,
+                  uses_remaining: timeBank.time_bank_uses_remaining,
+                  seconds_remaining: timeBank.time_bank_remaining,
+                };
+              }),
               rake:
                 !this.isTournamentTable() && snap.rake > 0 && tableInfo.club_id
                   ? {
@@ -2093,6 +2099,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
                  two fields are the source of the non-cent rows in
                  club_member_table_state / club_member_daily_stats. */
               stacks: playersForRecord.map((p) => ({
+                ...requireHandSeatGeneration(snap.seatGenerations, p.user_id),
                 user_id: p.user_id,
                 stack: cents(p.stack),
                 stack_before: cents(snap.dealtStacks.get(p.user_id) ?? p.stack),

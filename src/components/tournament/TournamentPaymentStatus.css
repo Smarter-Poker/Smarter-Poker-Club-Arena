@@ -1,0 +1,85 @@
+.tournament-payments {
+  margin: 16px 0;
+  padding: 14px;
+  border: 1px solid #334155;
+  border-radius: 10px;
+  background: #0f172a;
+  color: #cbd5e1;
+  text-align: left;
+}
+.tournament-payments__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.tournament-payments h3 {
+  margin: 0;
+  font-size: 15px;
+  color: #f8fafc;
+}
+.tournament-payments button {
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid #475569;
+  border-radius: 6px;
+  background: #1e293b;
+  color: #f8fafc;
+  cursor: pointer;
+}
+.tournament-payments button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.tournament-payments button:focus-visible {
+  outline: 2px solid #6fdcff;
+  outline-offset: 2px;
+}
+.tournament-payments__note {
+  font-size: 12px;
+  line-height: 1.6;
+  color: #94a3b8;
+}
+.tournament-payments__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.tournament-payments__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px 12px;
+  padding: 12px 0;
+  border-top: 1px solid #334155;
+}
+.tournament-payments__identity {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 4px;
+}
+.tournament-payments__identity strong {
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.tournament-payments__identity span {
+  font-size: 12px;
+  color: #94a3b8;
+}
+.tournament-payments__state {
+  font-size: 12px;
+  color: #6fdcff;
+}
+.tournament-payments__state[data-state='owed'],
+.tournament-payments__state[data-state='partially_paid'] {
+  color: #fbbf24;
+}
+.tournament-payments__amounts {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}

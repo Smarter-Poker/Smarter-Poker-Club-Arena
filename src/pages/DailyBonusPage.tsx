@@ -3,7 +3,9 @@
  *
  * The same sheet the shell raises on entry, rendered inline for the nav link,
  * the wallet door, the profile's Bonus Center and any old bookmark. Sits in
- * the Rewards Circuit family with the shared surface header.
+ * the Rewards Circuit family with the shared surface header, and the sheet
+ * prints on that header's own glass (#ClubArenaConsole: one master per
+ * surface, never a frame inside a frame), so the page is one picture.
  */
 import StandardContentLayout from '../components/layouts/StandardContentLayout';
 import RewardsSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
@@ -16,14 +18,13 @@ export default function DailyBonusPage() {
       <RewardsSurfaceHeader
         eyebrow="Rewards Circuit / Daily Bonus"
         title="Daily Bonus"
-        description="Show Up Every Day And Claim Each Tile By Hand. Diamonds, Throwables, Rabbit Hunts And Time Bank Are Paid The Moment You Tap, And Unclaimed Tiles Are Gone At Midnight Central."
+        description="Show Up Every Day And Claim Each Tile By Hand. Diamonds, Throwables, Rabbit Hunts, Time Bank, Streak Shields And Mission Boosts Are Paid The Moment You Tap, And Unclaimed Tiles Are Gone At Midnight Central."
         art="diamonds"
         status="DAILY SHEET // LIVE"
         crest="diamond"
-      />
-      <div className="daily-bonus-page__sheet">
-        <DailyBonusSheet mode="inline" />
-      </div>
+      >
+        <DailyBonusSheet mode="inline" chassis="glass" />
+      </RewardsSurfaceHeader>
     </StandardContentLayout>
   );
 }

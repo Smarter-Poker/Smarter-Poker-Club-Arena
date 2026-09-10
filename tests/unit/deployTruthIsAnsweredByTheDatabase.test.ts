@@ -73,6 +73,23 @@ describe('the deploy pipeline leaves an append-only audit receipt', () => {
 describe('the legacy database deployment control plane is retired at the root', () => {
   const sql = read(RETIREMENT);
 
+  it('bounds every production lock and the lifetime of the DDL transaction', () => {
+    const begin = sql.indexOf('BEGIN;');
+    const firstCatalogRead = sql.indexOf('CREATE TEMP TABLE ca_retirement_relation_snapshot');
+
+    expect(begin).toBeGreaterThanOrEqual(0);
+    expect(sql.indexOf("SET LOCAL lock_timeout = '4s';", begin)).toBeLessThan(firstCatalogRead);
+    expect(sql.indexOf("SET LOCAL statement_timeout = '45s';", begin)).toBeLessThan(
+      firstCatalogRead
+    );
+    expect(
+      sql.indexOf("SET LOCAL idle_in_transaction_session_timeout = '45s';", begin)
+    ).toBeLessThan(firstCatalogRead);
+    expect(sql.indexOf("SET LOCAL transaction_timeout = '55s';", begin)).toBeLessThan(
+      firstCatalogRead
+    );
+  });
+
   it('unschedules every known job name and any renamed job invoking a retired function', () => {
     for (const jobName of [
       'ca-deploy-dispatch',

@@ -8,6 +8,14 @@
 
 BEGIN;
 
+-- Refuse immediately rather than queue behind a live automation relation or
+-- function dependency. Bound each statement and the whole PostgreSQL 17
+-- transaction so an interrupted client cannot leave production locks open.
+SET LOCAL lock_timeout = '4s';
+SET LOCAL statement_timeout = '45s';
+SET LOCAL idle_in_transaction_session_timeout = '45s';
+SET LOCAL transaction_timeout = '55s';
+
 -- Remember the exact objects and row counts that exist in this environment.
 -- Moving a table between schemas preserves its OID and rows; the final block
 -- proves both facts before this transaction may commit. The snapshot is

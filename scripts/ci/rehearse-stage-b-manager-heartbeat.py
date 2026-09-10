@@ -82,7 +82,7 @@ def main():
         restore.append({'signature': signature, 'definition': rows[0][0] if rows else None, 'acl': rows[0][1] if rows else None})
     Path(args.restore_journal).write_text(json.dumps({'before': before, 'functions': restore, 'lease':old_lease, 'tournament_id':TID}, indent=2)+'\n')
     paths = {
-      'stage_a':'supabase/migrations/20260908043200_tournament_manager_requests_carry_lease_authority.sql',
+      'stage_a':'supabase/migrations/20260908125958_tournament_manager_requests_carry_lease_authority.sql',
       'takeover':'supabase/migrations/20260908042900_tournament_leases_have_fencing_generations.sql',
       'heartbeat':'supabase/migrations/20260908221010_lease_heartbeats_skip_busy_generations.sql',
       'busy_fix':'supabase/migrations/20260910063559_a_busy_manager_keeps_its_lease.sql',

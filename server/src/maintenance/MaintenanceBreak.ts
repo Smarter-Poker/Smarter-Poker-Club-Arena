@@ -180,6 +180,30 @@ export interface MaintenanceBreakOutcome {
   thawOk: boolean | null;
 }
 
+/**
+ * Why a break did not run the way it was announced (2026-09-10).
+ *
+ * The 00:00 and 07:00 breaks of 2026-09-10 never started: the :53 save timed
+ * out behind an entry, one timeout cancelled the whole hour, and the tables
+ * dealt 750 and 2476 hands through the window. The only record of WHY was a
+ * container log that the next deploy deleted; the scorecard, twelve minutes
+ * later, could only list consequences ("it dealt hands", "the thaw did not
+ * run"). This is the durable half of that sentence.
+ */
+export interface MaintenanceBreakFault {
+  /** The :53 announcement instant that names the hour's break. */
+  announcedAtMs: number;
+  /** Which durable write could not be made. */
+  stage: 'announcement' | 'countdown' | 'adoption' | 'boot';
+  /**
+   * `cancelled`: no break ran, and the fleet dealt through the window.
+   * `held_without_restart`: the break ran to the hour on a row that was
+   * already durable, but carried no restart certificate.
+   */
+  outcome: 'cancelled' | 'held_without_restart';
+  error: string;
+}
+
 /** /health: `maintenance.resumeWaves`. Null when no rollout has run since the last announcement. */
 export interface ResumeWavesProgress {
   /** Waves in this rollout. */
@@ -220,6 +244,12 @@ export interface MaintenanceBreakDeps {
    * are reported and never delay the resume.
    */
   recordOutcome?: (outcome: MaintenanceBreakOutcome) => Promise<void>;
+  /**
+   * Receives the reason a break did not run as announced, so the scorecard can
+   * name the CAUSE rather than its symptoms. Optional and best-effort: it is
+   * called after the decision is taken and never delays or changes it.
+   */
+  recordFault?: (fault: MaintenanceBreakFault) => Promise<void>;
   /**
    * THE THAW (Dan 2026-09-01: "picks back up exactly as it was").
    *
@@ -358,6 +388,15 @@ export class MaintenanceBreak {
    * this process unless it is exactly true.
    */
   private durableConfirmed = false;
+  /**
+   * The last exact state this process knows the database holds: a save that
+   * returned, a read-back that matched, or an adoption receipt. The end of a
+   * break clears it as well as the final state, because a countdown that could
+   * not be saved leaves the LAST-HAND row in place - and that row keeps every
+   * entry door frozen until it is deleted (fn_entry_purchases_frozen has no
+   * end time for it).
+   */
+  private lastDurableState: PersistedMaintenanceBreak | null = null;
   /** Bumped each break; a scheduled resume wave from a superseded break is dropped. */
   private resumeToken = 0;
   /**
@@ -709,15 +748,17 @@ export class MaintenanceBreak {
     try {
       await this.persist(derived);
     } catch (error) {
-      /* The same call beginCountdown makes, for the same reason: a break
+      /* The same call announceLastHand makes, for the same reason: a break
          nobody else can see is worse than no break, because the database half
          stays disarmed - fn_platform_frozen reads this row - while the engine
-         half holds. Resume, and let the next hour try. */
+         half holds. Resume, and let the next hour try. (beginCountdown no
+         longer cancels: by :55 the last-hand row IS the database half.) */
       console.error(
         '[MaintenanceBreak] could not durably declare the clock-derived break; cancelling it',
         error
       );
       await this.cancelBreakAfterPersistenceFailure(false, derived);
+      this.reportFault('boot', 'cancelled', error, derived.announcedAt);
       return;
     }
     if (!this.lifecycleIsCurrent(generation)) return;
@@ -890,6 +931,7 @@ export class MaintenanceBreak {
       throw new Error('maintenance_break_ownership_changed_before_adoption');
     }
     saved = claimed;
+    this.lastDurableState = { ...claimed };
     if (!this.lifecycleIsCurrent(generation)) return;
 
     this.reason = saved.reason;
@@ -931,12 +973,21 @@ export class MaintenanceBreak {
       try {
         await this.persist(adopted);
       } catch (error) {
+        /* THE ADOPTED ROW IS ALREADY THE FREEZE (2026-09-10). The last-hand
+           row this process has just claimed is durable, and the database
+           honours it until it is deleted - fn_entry_purchases_frozen from the
+           announcement, fn_platform_frozen from :55. Cancelling here used to
+           resume the fleet under a countdown every screen was showing while
+           the database went on refusing entries: the two halves disagreeing,
+           which is the one outcome the row exists to prevent. So hold to the
+           same end. All that is lost is the countdown certificate, and an
+           adopting engine is not waiting for a restart. end() clears the
+           claimed row through lastDurableState. */
         console.error(
-          '[MaintenanceBreak] could not durably upgrade the adopted last-hand row; cancelling the local break',
+          '[MaintenanceBreak] could not durably upgrade the adopted last-hand row; holding the break on the adopted row until it ends',
           error
         );
-        await this.cancelBreakAfterPersistenceFailure(false, adopted, saved);
-        return;
+        this.reportFault('adoption', 'held_without_restart', error, saved.announcedAt);
       }
     }
     if (!this.lifecycleIsCurrent(generation)) return;
@@ -1088,6 +1139,7 @@ export class MaintenanceBreak {
       await this.persistAnnouncement(declared, generation);
     } catch (error) {
       await this.cancelBreakAfterPersistenceFailure(false, declared);
+      this.reportFault('announcement', 'cancelled', error, declared.announcedAt);
       throw error;
     }
     if (!this.lifecycleIsCurrent(generation)) return;
@@ -1153,7 +1205,6 @@ export class MaintenanceBreak {
       );
     }
 
-    const announced = this.persistedState();
     /* announcedAt is the durable schedule authority. A delayed save or a
        briefly delayed event loop may make this method execute after :55, but
        neither is permission to extend the break past the promised :00. These
@@ -1178,17 +1229,45 @@ export class MaintenanceBreak {
       } minutes. Play resumes on the hour.`
     );
 
-    const countingDown = this.persistedState();
-    try {
-      await this.persist(countingDown);
-    } catch (error) {
-      await this.cancelBreakAfterPersistenceFailure(true, countingDown, announced);
-      throw error;
-    }
-    if (!this.lifecycleIsCurrent(generation)) return;
+    /* THE BREAK NO LONGER DEPENDS ON THIS WRITE (2026-09-10).
 
+       The last-hand row committed at :53 is already the database half of the
+       freeze: fn_entry_purchases_frozen honours it from the announcement,
+       fn_platform_frozen from :55, and neither lets go until the row is
+       deleted. So from here the break runs to the promised :00 whatever this
+       save does, and the countdown players see starts on time.
+
+       What the save still decides is whether the hour carries a restart.
+       readyForRestart stays shut until the countdown row is exact and durable
+       (durableConfirmed), so the deploy never replaces this process on a break
+       a new one could not adopt. The save is retried like the announcement's -
+       it waits on the same exclusive boundary, behind the same entry doors -
+       and gives up once there is no longer room for a restart in the window.
+
+       It used to be the other way round. One failed save here cancelled a
+       break players had been watching for two minutes, resumed every table
+       at :55, and - if the cleanup failed too - left the database refusing
+       entries behind a felt that was dealing. */
     this.broadcast('counting_down');
     this.armEndTimer();
+
+    const countingDown = this.persistedState();
+    try {
+      await this.persistWithRetry(
+        countingDown,
+        generation,
+        this.breakEndsAt - MaintenanceBreak.MIN_REMAINING_FOR_RESTART_MS,
+        'countdown'
+      );
+    } catch (error) {
+      if (!this.lifecycleIsCurrent(generation)) return;
+      console.error(
+        '[MaintenanceBreak] the countdown could not be made durable; the break holds on the ' +
+          'durable announcement until the hour and carries no restart this hour',
+        error
+      );
+      this.reportFault('countdown', 'held_without_restart', error, countingDown.announcedAt);
+    }
   }
 
   private armEndTimer(): void {
@@ -1278,6 +1357,7 @@ export class MaintenanceBreak {
       thawOk,
     };
     const completedState = this.persistedState();
+    const durableState = this.lastDurableState;
     /**
      * THE BREAK IS OVER BEFORE THE FIRST TABLE WAKES (review fix, 2026-09-03).
      *
@@ -1298,6 +1378,7 @@ export class MaintenanceBreak {
      */
     this.phase = 'idle';
     this.durableConfirmed = false;
+    this.lastDurableState = null;
     this.breakStartedAt = 0;
     this.breakEndsAt = 0;
     this.announcedAt = 0;
@@ -1329,6 +1410,13 @@ export class MaintenanceBreak {
     );
     this.broadcastEnded();
     await this.safeClear(completedState);
+    /* A countdown or an adoption upgrade that never became durable leaves the
+       earlier row in the database, and that row freezes entries until it is
+       deleted. Both clears are exact compare-and-deletes on this process's
+       token, so whichever does not match the stored row is a no-op. */
+    if (durableState && !MaintenanceBreak.samePersistedState(durableState, completedState)) {
+      await this.safeClear(durableState);
+    }
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -1731,6 +1819,32 @@ export class MaintenanceBreak {
   static readonly ANNOUNCE_PERSIST_BUDGET_MS = 90 * 1000;
   static readonly ANNOUNCE_PERSIST_RETRY_MS = 5 * 1000;
 
+  /**
+   * A failure worth another try inside the same budget (2026-09-10).
+   *
+   * Lock and statement timeouts, as before, plus the transport failures that
+   * say nothing about the database's answer: the request timed out on this
+   * side, the socket dropped, or a gateway in front of PostgREST could not
+   * reach it. Re-sending is safe for exactly this write and no other: the save
+   * is a compare-and-set on this process's ownership token, so an attempt that
+   * did land makes the next one a no-op upsert of the same state, and
+   * `persist` has already done the exact read-back before this is asked.
+   * (The shared client deliberately retries none of these - CLAUDE.md,
+   * production DDL policy rule 6 - because replaying an arbitrary executed
+   * write is a money hazard. This one is idempotent by construction.)
+   *
+   * Every refusal the database gives on purpose - an ownership loss, an
+   * expired boundary, a missing token - is still a decision, not a queue.
+   */
+  static isRetryablePersistenceError(error: unknown): boolean {
+    const text = String((error as Error)?.message ?? error ?? '');
+    if (/MAINTENANCE_[A-Z_]+/.test(text)) return false;
+    if (MaintenanceBreak.isLockOrStatementTimeout(error)) return true;
+    return /supabase_timeout|fetch failed|AbortError|ECONNRESET|ECONNREFUSED|ETIMEDOUT|EAI_AGAIN|EPIPE|socket hang up|other side closed|PGRST00[0-3]|deadlock detected|40P01|Bad Gateway|Service Unavailable|Gateway Time-?out/i.test(
+      text
+    );
+  }
+
   static isLockOrStatementTimeout(error: unknown): boolean {
     const text = String((error as Error)?.message ?? error ?? '');
     if (
@@ -1749,27 +1863,48 @@ export class MaintenanceBreak {
     state: PersistedMaintenanceBreak,
     generation: number
   ): Promise<void> {
-    const deadline = state.announcedAt + MaintenanceBreak.ANNOUNCE_PERSIST_BUDGET_MS;
+    await this.persistWithRetry(
+      state,
+      generation,
+      state.announcedAt + MaintenanceBreak.ANNOUNCE_PERSIST_BUDGET_MS,
+      'announcement'
+    );
+  }
+
+  /**
+   * One durable write, retried every ANNOUNCE_PERSIST_RETRY_MS while the
+   * failure is retryable and there is budget left before `deadline`. Stops
+   * the moment the local phase has moved on, so a late success can never
+   * re-declare a phase this process has already left - and the database
+   * refuses a late one anyway (its boundary checks run after the lock).
+   */
+  private async persistWithRetry(
+    state: PersistedMaintenanceBreak,
+    generation: number,
+    deadline: number,
+    what: 'announcement' | 'countdown'
+  ): Promise<void> {
     for (let attempt = 1; ; attempt++) {
       try {
         await this.persist(state);
         if (attempt > 1) {
           console.warn(
-            `[MaintenanceBreak] the announcement became durable on attempt ${attempt}; the :55 boundary is unchanged`
+            `[MaintenanceBreak] the ${what} became durable on attempt ${attempt}; the announced boundaries are unchanged`
           );
         }
         return;
       } catch (error) {
         const rest = MaintenanceBreak.ANNOUNCE_PERSIST_RETRY_MS;
         if (
-          !MaintenanceBreak.isLockOrStatementTimeout(error) ||
+          !MaintenanceBreak.isRetryablePersistenceError(error) ||
           !this.lifecycleIsCurrent(generation) ||
+          this.phase !== state.phase ||
           this.now() + rest > deadline
         ) {
           throw error;
         }
         console.warn(
-          `[MaintenanceBreak] the announcement save waited behind an entry and timed out (attempt ${attempt}); retrying in ${
+          `[MaintenanceBreak] the ${what} save failed (attempt ${attempt}); retrying in ${
             rest / 1000
           }s, ${Math.max(0, Math.round((deadline - this.now()) / 1000))}s of budget left: ${
             (error as Error)?.message ?? error
@@ -1780,10 +1915,32 @@ export class MaintenanceBreak {
     }
   }
 
+  /** Hand the reason a break did not run as announced to recordFault, best-effort. */
+  private reportFault(
+    stage: MaintenanceBreakFault['stage'],
+    outcome: MaintenanceBreakFault['outcome'],
+    error: unknown,
+    announcedAtMs: number
+  ): void {
+    const record = this.deps.recordFault;
+    if (!record || !announcedAtMs) return;
+    const fault: MaintenanceBreakFault = {
+      announcedAtMs,
+      stage,
+      outcome,
+      error: String((error as Error)?.message ?? error ?? 'unknown').slice(0, 500),
+    };
+    this.launchLifecycleJob(
+      record(fault),
+      'could not record why the break did not run as announced'
+    );
+  }
+
   private async persist(state = this.persistedState()): Promise<void> {
     try {
       await this.deps.store.save(state);
       this.durableConfirmed = true;
+      this.lastDurableState = { ...state };
       return;
     } catch (saveError) {
       /* A timed-out HTTP response can hide a committed upsert. Read the row
@@ -1797,6 +1954,7 @@ export class MaintenanceBreak {
             '[MaintenanceBreak] persistence response was lost, but exact durable state was verified'
           );
           this.durableConfirmed = true;
+          this.lastDurableState = { ...state };
           return;
         }
       } catch (readError) {
@@ -1833,6 +1991,7 @@ export class MaintenanceBreak {
     // store implementation includes every field in the DELETE predicate, so
     // a newer owner or phase can never be erased by this cleanup.
     for (const state of ownedStates) await this.safeClear(state);
+    this.lastDurableState = null;
   }
 
   private async safeClear(expected: PersistedMaintenanceBreak): Promise<void> {

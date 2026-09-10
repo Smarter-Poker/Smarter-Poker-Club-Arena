@@ -17,6 +17,8 @@ import {
   loadFeaturePricing,
 } from '../../services/VIPService';
 import { useVIPStatus } from '../../hooks/useVIP';
+import { useDialogEscape } from '../../hooks/useDialogEscape';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
 import './VIPCardsModal.css';
 
 interface VIPInfoModalProps {
@@ -75,6 +77,10 @@ export function VIPCardsModal({ isOpen, onClose }: VIPInfoModalProps) {
    * patch would land after render and the stale number would stay on screen.
    */
   const [pricingRevision, setPricingRevision] = useState(0);
+  /* A paid overlay a keyboard user cannot leave: Escape closes it, focus is
+     held inside it, and the close control is named rather than a bare glyph. */
+  useDialogEscape(isOpen, onClose);
+  const dialogRef = useFocusTrap<HTMLDivElement>(isOpen);
 
   // Cleanup stagger timers on unmount
   useEffect(() => {
@@ -108,12 +114,24 @@ export function VIPCardsModal({ isOpen, onClose }: VIPInfoModalProps) {
 
   return (
     <div className="vip-modal-overlay" onClick={onClose}>
-      <div className="vip-modal" onClick={(e) => e.stopPropagation()}>
+      <div
+        className="vip-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="vip-cards-modal-title"
+        ref={dialogRef}
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Header */}
         <div className="vip-modal__header">
-          <h2>VIP</h2>
-          <button className="vip-modal__close" onClick={onClose}>
-            ×
+          <h2 id="vip-cards-modal-title">VIP</h2>
+          <button
+            type="button"
+            className="vip-modal__close"
+            onClick={onClose}
+            aria-label="Close VIP"
+          >
+            <span aria-hidden="true">×</span>
           </button>
         </div>
 

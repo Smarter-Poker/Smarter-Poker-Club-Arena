@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useId, useState } from 'react';
+import { formatChips } from '../../utils/format';
 import './AmountInput.css';
 
 interface AmountInputProps {
@@ -27,6 +28,12 @@ export const AmountInput: React.FC<AmountInputProps> = ({
   error,
 }) => {
   const [inputValue, setInputValue] = useState(value.toString());
+  /* A money field with no accessible name reads to a screen reader as an
+     unnamed spinbutton, and an error that is only a red span beside it is
+     never announced. The label is bound by htmlFor, the field carries
+     aria-invalid while rejected, and the error is its description. */
+  const inputId = useId();
+  const errorId = `${inputId}-error`;
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
@@ -44,18 +51,27 @@ export const AmountInput: React.FC<AmountInputProps> = ({
 
   return (
     <div className={`amount-input-wrapper ${error ? 'has-error' : ''}`}>
-      {label && <label className="amount-label">{label}</label>}
+      {label && (
+        <label className="amount-label" htmlFor={inputId}>
+          {label}
+        </label>
+      )}
 
       <div className="amount-container">
         {prefix && <span className="amount-prefix">{prefix}</span>}
         <input
+          id={inputId}
           type="number"
+          inputMode="decimal"
           className="amount-input"
           value={inputValue}
           onChange={handleChange}
           min={min}
           max={max}
           step={step}
+          aria-label={label ? undefined : 'Amount'}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={error ? errorId : undefined}
         />
         {suffix && <span className="amount-suffix">{suffix}</span>}
       </div>
@@ -65,19 +81,22 @@ export const AmountInput: React.FC<AmountInputProps> = ({
           {presets.map((preset) => (
             <button
               key={preset}
+              type="button"
               className={`preset-btn ${value === preset ? 'active' : ''}`}
+              aria-pressed={value === preset}
               onClick={() => handlePreset(preset)}
             >
-              {preset.toLocaleString('en-US', {
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2,
-              })}
+              {formatChips(preset)}
             </button>
           ))}
         </div>
       )}
 
-      {error && <span className="amount-error">{error}</span>}
+      {error && (
+        <span className="amount-error" id={errorId} role="alert">
+          {error}
+        </span>
+      )}
     </div>
   );
 };

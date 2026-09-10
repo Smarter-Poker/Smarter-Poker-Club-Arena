@@ -6,6 +6,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
+import { formatChips } from '../../utils/format';
 import './PayoutStructure.css';
 
 interface PayoutStructureProps {
@@ -49,16 +50,6 @@ export function PayoutStructure({
   const playersUntilMoney = Math.max(0, entries - paidPlaces - (entries - playersRemaining));
   const isInTheMoney = playersRemaining <= paidPlaces;
   const isOnBubble = playersRemaining === paidPlaces + 1;
-
-  const formatChips = (amount: number) => {
-    if (amount >= 1000000) {
-      return (amount / 1000000).toFixed(1) + 'M';
-    }
-    if (amount >= 1000) {
-      return (amount / 1000).toFixed(1) + 'K';
-    }
-    return amount.toLocaleString();
-  };
 
   return (
     <div

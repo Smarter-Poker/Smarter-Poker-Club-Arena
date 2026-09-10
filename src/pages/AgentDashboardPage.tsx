@@ -28,7 +28,7 @@ import { useIsMounted } from '../hooks/useIsMounted';
 import { useToast } from '../components/common/Toast';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { retryFetch } from '../utils/retryFetch';
-import { fmt, fmtChips, timeAgo } from '../utils/format';
+import { fmt, formatChips, timeAgo } from '../utils/format';
 import { reportError } from '../utils/errorReporter';
 import AgentBackOffice from '../components/agent/AgentBackOffice';
 
@@ -701,7 +701,7 @@ export default function AgentDashboardPage() {
       if (sendError) throw sendError;
       const outcome = (data || {}) as { success?: boolean; error?: string };
       if (!outcome.success) throw new Error(outcome.error || 'That transfer was refused.');
-      setSuccess(`Transferred ${fmtChips(amt)} chips.`);
+      setSuccess(`Transferred ${formatChips(amt)} chips.`);
       masterBus.emit('CHIPS_DISTRIBUTED', { clubId: uuid, amount: amt });
       setShowTransfer(false);
       setTransferTarget('');
@@ -851,7 +851,7 @@ export default function AgentDashboardPage() {
                 >
                   {processing
                     ? 'Processing...'
-                    : `Transfer ${transferAmount ? fmtChips(parseFloat(transferAmount)) : '0'} Chips`}
+                    : `Transfer ${transferAmount ? formatChips(parseFloat(transferAmount)) : '0'} Chips`}
                 </button>
               </div>
             </div>
@@ -962,7 +962,7 @@ export default function AgentDashboardPage() {
           >
             <strong>{pendingCashouts.length}</strong> Pending Cashout Request
             {pendingCashouts.length !== 1 ? 's' : ''} -{' '}
-            {fmtChips(
+            {formatChips(
               pendingCashouts.reduce((sum: number, c: CashoutRequest) => sum + (c.amount || 0), 0)
             )}{' '}
             Chips Waiting
@@ -1026,7 +1026,7 @@ export default function AgentDashboardPage() {
                 <div className="admin-stat-label">Online Now</div>
               </div>
               <div className="admin-stat-card">
-                <div className="admin-stat-value">{fmtChips(totalPlayerChips)}</div>
+                <div className="admin-stat-value">{formatChips(totalPlayerChips)}</div>
                 <div className="admin-stat-label">Player Chips</div>
               </div>
               <div className="admin-stat-card">
@@ -1037,7 +1037,7 @@ export default function AgentDashboardPage() {
               </div>
               <div className="admin-stat-card">
                 <div className="admin-stat-value" style={{ color: '#FA383E' }}>
-                  {fmtChips(
+                  {formatChips(
                     pendingCashouts.reduce((s: number, c: CashoutRequest) => s + (c.amount || 0), 0)
                   )}
                 </div>
@@ -1070,7 +1070,7 @@ export default function AgentDashboardPage() {
                           <td>
                             <span className="admin-badge">{tx.transaction_type || 'Transfer'}</span>
                           </td>
-                          <td style={{ fontWeight: 600 }}>{fmtChips(tx.amount)}</td>
+                          <td style={{ fontWeight: 600 }}>{formatChips(tx.amount)}</td>
                           <td style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
                             {tx.from_user_id?.substring(0, 8) || '-'}.. →{' '}
                             {tx.to_user_id?.substring(0, 8) || '-'}..
@@ -1132,7 +1132,7 @@ export default function AgentDashboardPage() {
               </div>
               <div className="admin-stat-card">
                 <div className="admin-stat-value">
-                  {fmtChips(
+                  {formatChips(
                     filteredPlayers.reduce(
                       (sum: number, p: DownlineMember) => sum + (p.chip_balance || 0),
                       0
@@ -1210,7 +1210,7 @@ export default function AgentDashboardPage() {
                       >
                         <span>
                           {' '}
-                          {p.chip_balance !== undefined ? fmtChips(p.chip_balance) : '...'}
+                          {p.chip_balance !== undefined ? formatChips(p.chip_balance) : '...'}
                         </span>
                         <span> {timeAgo(p.profile?.last_seen)}</span>
                       </div>
@@ -1253,7 +1253,9 @@ export default function AgentDashboardPage() {
                     {pendingCashouts.map((c) => (
                       <tr key={c.id}>
                         <td>{c.player_id?.substring(0, 8)}..</td>
-                        <td style={{ fontWeight: 700, color: '#F7C52A' }}>{fmtChips(c.amount)}</td>
+                        <td style={{ fontWeight: 700, color: '#F7C52A' }}>
+                          {formatChips(c.amount)}
+                        </td>
                         <td
                           style={{
                             fontSize: '12px',
@@ -1302,7 +1304,7 @@ export default function AgentDashboardPage() {
               </div>
               <div className="admin-stat-card">
                 <div className="admin-stat-value" style={{ color: '#FA383E' }}>
-                  {fmtChips(
+                  {formatChips(
                     pendingCashouts.reduce((s: number, c: CashoutRequest) => s + (c.amount || 0), 0)
                   )}
                 </div>
@@ -1336,7 +1338,9 @@ export default function AgentDashboardPage() {
                   <tbody>
                     {commissions.map((c: AgentCommission, i: number) => (
                       <tr key={c.id || i}>
-                        <td style={{ fontWeight: 700, color: '#31A24C' }}>{fmtChips(c.amount)}</td>
+                        <td style={{ fontWeight: 700, color: '#31A24C' }}>
+                          {formatChips(c.amount)}
+                        </td>
                         {/* Claimed or not. Until phase 6 there was no way to claim
                             commission at all, so every row here meant the same
                             thing; now they do not, and a list that cannot tell
@@ -1469,7 +1473,9 @@ export default function AgentDashboardPage() {
                           <td style={{ fontWeight: 600 }}>
                             {p.profile ? playerDisplayName(p.profile) : p.user_id?.substring(0, 8)}
                           </td>
-                          <td>{p.chip_balance !== undefined ? fmtChips(p.chip_balance) : '...'}</td>
+                          <td>
+                            {p.chip_balance !== undefined ? formatChips(p.chip_balance) : '...'}
+                          </td>
                           <td style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
                             {timeAgo(lastSeen)}
                           </td>
@@ -1507,7 +1513,7 @@ export default function AgentDashboardPage() {
                   {agents.map((a: DownlineMember) => (
                     <option key={a.user_id} value={a.user_id}>
                       {a.profile ? playerDisplayName(a.profile) : a.user_id?.slice(0, 8)} (
-                      {a.chip_balance !== undefined ? fmtChips(a.chip_balance) : '...'} Chips)
+                      {a.chip_balance !== undefined ? formatChips(a.chip_balance) : '...'} Chips)
                     </option>
                   ))}
                 </select>
@@ -1544,7 +1550,7 @@ export default function AgentDashboardPage() {
                         promoAmt,
                         'Promo granted from the club dashboard'
                       );
-                      setSuccess(`Granted ${fmtChips(promoAmt)} promo chips!`);
+                      setSuccess(`Granted ${formatChips(promoAmt)} promo chips!`);
                       setCreditTarget('');
                       setCreditAmount('');
                       loadDashboard(clubId);
@@ -1591,7 +1597,7 @@ export default function AgentDashboardPage() {
                                   : 'var(--text-secondary)',
                             }}
                           >
-                            {a.chip_balance !== undefined ? fmtChips(a.chip_balance) : '...'}
+                            {a.chip_balance !== undefined ? formatChips(a.chip_balance) : '...'}
                           </td>
                         </tr>
                       ))}
@@ -1745,7 +1751,7 @@ export default function AgentDashboardPage() {
                         add_prepaid: 'Prepaid balance sent',
                         revoke_credit: 'Credit line reduced by',
                       };
-                      setSuccess(`${labels[creditAction] || 'Done'} - ${fmtChips(amt)} chips`);
+                      setSuccess(`${labels[creditAction] || 'Done'} - ${formatChips(amt)} chips`);
                       masterBus.emit('CREDIT_UPDATED', {
                         clubId: clubId || '',
                         userId: creditTarget,

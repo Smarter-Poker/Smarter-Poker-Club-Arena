@@ -18,6 +18,7 @@ import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react'
 import { haptic } from '../../services/SoundService';
 import './CashierModal.css';
 import { reportError } from '../../utils/errorReporter';
+import { formatChips } from '../../utils/format';
 import { uuid } from '../../utils/uuid';
 
 import { safeErrorMessage } from '../../utils/safeErrorMessage';
@@ -63,14 +64,6 @@ export interface CashierModalProps {
 // ═══════════════════════════════════════════════════════════════════════════════
 // UTILITIES
 // ═══════════════════════════════════════════════════════════════════════════════
-
-// EXACT precision — no abbreviations, no rounding
-function formatAmount(amount: number, currency: string = ''): string {
-  if (Math.abs(amount - Math.round(amount)) < 0.005) {
-    return Math.round(amount).toLocaleString('en-US');
-  }
-  return amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
 
 /**
  * Parse a user-typed amount to a non-negative, cent-accurate number inside the
@@ -312,14 +305,12 @@ export function CashierModal({
         <div className="cashier-modal__summary">
           <div className="cashier-modal__balance-item">
             <span className="cashier-modal__balance-label">At Table</span>
-            <span className="cashier-modal__balance-value">
-              {formatAmount(currentStack, currency)}
-            </span>
+            <span className="cashier-modal__balance-value">{formatChips(currentStack)}</span>
           </div>
           <div className="cashier-modal__balance-item">
             <span className="cashier-modal__balance-label">Account</span>
             <span className="cashier-modal__balance-value">
-              {balanceKnown ? formatAmount(accountBalance, currency) : 'Unavailable'}
+              {balanceKnown ? formatChips(accountBalance) : 'Unavailable'}
             </span>
           </div>
         </div>
@@ -362,7 +353,7 @@ export function CashierModal({
             />
           </div>
           <div className="cashier-modal__limit">
-            <span>Available To Add: {formatAmount(canAddAmount, currency)}</span>
+            <span>Available To Add: {formatChips(canAddAmount)}</span>
           </div>
         </div>
 
@@ -394,7 +385,7 @@ export function CashierModal({
         <div className="cashier-modal__preview">
           <span className="cashier-modal__preview-label">New Stack:</span>
           <span className="cashier-modal__preview-value cashier-modal__preview-value--add">
-            {formatAmount(currentStack + amount, currency)}
+            {formatChips(currentStack + amount)}
           </span>
         </div>
 
@@ -419,7 +410,7 @@ export function CashierModal({
                 Processing...
               </>
             ) : (
-              `Add ${formatAmount(amount, currency)}`
+              `Add ${formatChips(amount)}`
             )}
           </button>
         </div>
@@ -433,7 +424,7 @@ export function CashierModal({
                 <div key={tx.id} className="cashier-modal__transaction">
                   <span className={`cashier-modal__tx-type cashier-modal__tx-type--${tx.type}`}>
                     {tx.type === 'add' ? '+' : '-'}
-                    {formatAmount(tx.amount, currency)}
+                    {formatChips(tx.amount)}
                   </span>
                   <span className="cashier-modal__tx-time">{formatTime(tx.timestamp)}</span>
                 </div>

@@ -22,7 +22,7 @@ import './AdminDashboardPage.css';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { retryFetch } from '../utils/retryFetch';
-import { fmt, fmtChips } from '../utils/format';
+import { fmt, formatChips } from '../utils/format';
 import { reportError } from '../utils/errorReporter';
 import { clubGamesOrFilter } from '../utils/unionScope';
 import { confirmDialog } from '../components/common/confirmDialog';
@@ -560,7 +560,7 @@ function DashboardTab({ clubId }: { clubId: string }) {
               label="Rake Trend (20%)"
               score={bd.rakeTrend.score}
               color="#F5A623"
-              detail={`This week: ${fmtChips(bd.rakeTrend.thisWeek)}`}
+              detail={`This week: ${formatChips(bd.rakeTrend.thisWeek)}`}
             />
           )}
           {bd.agentEngagement && (
@@ -596,14 +596,14 @@ function DashboardTab({ clubId }: { clubId: string }) {
           <h3 className="admin-card-title">
             <span>Recent Activity Volume</span>
             <span style={{ color: '#31A24C', fontSize: '18px' }}>
-              Total Vol: {fmtChips(stats.totalVolume)}
+              Total Vol: {formatChips(stats.totalVolume)}
             </span>
           </h3>
           <div className="admin-stats-grid">
             {Object.entries(stats.byActionType || {}).map(([type, data]) => (
               <div key={type} className="admin-stat-card">
                 <div className="admin-stat-label">{toTitleCase(type)}</div>
-                <div className="admin-stat-value">{fmtChips(data.volume)}</div>
+                <div className="admin-stat-value">{formatChips(data.volume)}</div>
                 <div className="admin-stat-detail">{fmt(data.count)} Transactions</div>
               </div>
             ))}
@@ -882,8 +882,8 @@ function SettlementsTab({ clubId }: { clubId: string }) {
             style={{ marginBottom: '16px' }}
           >
             <div className="admin-text-secondary">
-              Unclaimed This Period {fmtChips(owed)} · Club Bank{' '}
-              {bank == null ? 'Unavailable' : fmtChips(bank)}
+              Unclaimed This Period {formatChips(owed)} · Club Bank{' '}
+              {bank == null ? 'Unavailable' : formatChips(bank)}
             </div>
             <div style={{ marginTop: '6px' }}>
               {bank == null
@@ -922,7 +922,7 @@ function SettlementsTab({ clubId }: { clubId: string }) {
                     {((c.commission_rate || 0) * 100).toFixed(1)}%
                   </td>
                   <td style={{ textAlign: 'right', fontWeight: 700, color: '#F7C52A' }}>
-                    {fmtChips(c.amount)}
+                    {formatChips(c.amount)}
                   </td>
                   <td style={{ textAlign: 'center' }}>
                     {c.settled_at ? (
@@ -1193,7 +1193,9 @@ function AuditLogTab({ clubId }: { clubId: string }) {
                     color: 'var(--text-primary)',
                   }}
                 >
-                  {(l.details as any)?.amount != null ? fmtChips((l.details as any).amount) : '-'}
+                  {(l.details as any)?.amount != null
+                    ? formatChips((l.details as any).amount)
+                    : '-'}
                 </td>
                 <td
                   className="admin-mono"
@@ -1787,7 +1789,7 @@ function SettlementHistoryTab({ clubId }: { clubId: string }) {
                     {p.end_at ? formatDate(p.end_at) : 'Active'}
                   </td>
                   <td style={{ fontWeight: 700, color: '#F7C52A' }}>
-                    {fmtChips(p.total_volume || 0)}
+                    {formatChips(p.total_volume || 0)}
                   </td>
                 </tr>
               ))}
@@ -2602,7 +2604,7 @@ function MintChipsTab({ clubId }: { clubId: string }) {
                   amount: mintAmount,
                   notes: notes || undefined,
                 });
-                setMsg(`Minted ${fmtChips(mintAmount)} chips to treasury!`);
+                setMsg(`Minted ${formatChips(mintAmount)} chips to treasury!`);
                 masterBus.emit('CHIPS_DISTRIBUTED', { clubId });
                 setAmount('');
                 setNotes('');
@@ -2613,7 +2615,7 @@ function MintChipsTab({ clubId }: { clubId: string }) {
               }
             }}
           >
-            {processing ? 'Minting...' : `Mint ${amount ? fmtChips(Number(amount)) : '0'} Chips`}
+            {processing ? 'Minting...' : `Mint ${amount ? formatChips(Number(amount)) : '0'} Chips`}
           </button>
         </div>
       </div>

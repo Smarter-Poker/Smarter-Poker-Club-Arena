@@ -9,49 +9,36 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /**
- * Format a number as currency — EXACT to the penny, zero rounding.
- * All chip/currency values in the platform must show true, real-time
- * precision down to the cent. No abbreviations (K, M) allowed.
+ * MONEY IS DISPLAYED ONE WAY. Every chip formatter here is the canonical one
+ * in `src/utils/format.ts` (two places, thousands separators, truncated at the
+ * cent, never abbreviated). These re-exports keep the historical import path
+ * working; they are not a second implementation.
  */
 
 import { reportError } from '../utils/errorReporter';
+import { formatChips as canonicalFormatChips } from '../utils/format';
 
-export function formatCurrency(amount: number, currency = 'USD'): string {
-  return new Intl.NumberFormat('en-US', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(amount);
-}
+export { formatChips } from '../utils/format';
 
 /**
- * Format chip amounts — EXACT precision, NO rounding, NO abbreviations.
- *
- * CRITICAL DIRECTIVE: Every value must be true and 100% real, defined
- * down to the penny. Zero rounding allowed — not even K/M notation.
- *
- * Examples:
- *   1286.50  → "1,286.50"
- *   50000.00 → "50,000.00"
- *   455123   → "455,123.00"
- *   0.75     → "0.75"
- *   100      → "100.00"
+ * Format a number as currency - EXACT to the penny, zero rounding, no symbol.
+ * The platform has one currency (club chips), so there is no currency
+ * argument: the one this used to accept was never read, and a caller passing
+ * 'USD' got an unmarked bare number while believing it had asked for one.
  */
-export function formatChips(amount: number): string {
-  return amount.toLocaleString('en-US', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
+export function formatCurrency(amount: number): string {
+  return canonicalFormatChips(amount);
 }
 
 /**
- * Format chip amount with currency prefix — EXACT precision.
+ * Format chip amount with currency prefix - EXACT precision.
  */
 export function formatChipsWithCurrency(amount: number, currency: string = ''): string {
-  return `${currency}${formatChips(amount)}`;
+  return `${currency}${canonicalFormatChips(amount)}`;
 }
 
 /**
- * Format chip amount as integer when decimals are .00 — still no abbreviations.
+ * Format chip amount as integer when decimals are .00 - still no abbreviations.
  * Use ONLY for display contexts where the value is guaranteed to be whole chips
  * (e.g., blind levels, stack sizes in whole chips).
  */
@@ -59,10 +46,7 @@ export function formatChipsWhole(amount: number): string {
   if (Number.isInteger(amount)) {
     return amount.toLocaleString('en-US');
   }
-  return amount.toLocaleString('en-US', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
+  return canonicalFormatChips(amount);
 }
 
 /**

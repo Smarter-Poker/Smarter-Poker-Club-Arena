@@ -20,7 +20,7 @@ import { useIsMounted } from '../hooks/useIsMounted';
 import { retryFetch } from '../utils/retryFetch';
 import { exportToCSV } from '../lib/export';
 import { resolveClubUUID } from '../utils/clubIdResolver';
-import { fmt, fmtChips, timeAgo } from '../utils/format';
+import { fmt, formatChips, timeAgo } from '../utils/format';
 import { isAuthzError } from '../utils/clubDashboard';
 import { adminRemovePlayerFromClubTables } from '../services/IntegrityActionService';
 import { reportError } from '../utils/errorReporter';
@@ -1473,7 +1473,7 @@ export default function AntiCheatPage() {
                             <td className={styles.handRank}>
                               {String(a.hand_rank).replace(/_/g, ' ')}
                             </td>
-                            <td style={{ fontWeight: 600 }}>{fmtChips(a.pot_total)}</td>
+                            <td style={{ fontWeight: 600 }}>{formatChips(a.pot_total)}</td>
                             <td className={styles.timeCell}>{timeAgo(a.completed_at)}</td>
                           </tr>
                         ))}

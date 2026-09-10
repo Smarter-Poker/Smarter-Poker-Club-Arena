@@ -57,6 +57,7 @@ import {
 // WHOLE-NUMBER TOURNAMENT MONEY (Dan 2026-08-20). Every buy-in / fee / prize
 // figure on this page renders through these, never as a raw column value.
 import { formatBuyIn, money, totalBuyIn } from '../utils/buyIn';
+import { formatChips, formatTableChips } from '../utils/format';
 import { relayTournamentEvent } from '../services/tournamentEventBridge';
 import { useTournamentRegistration } from '../hooks/useTournamentRegistration';
 import { uuid } from '../utils/uuid';
@@ -1223,108 +1224,123 @@ export default function TournamentPage() {
               <p>No Tournaments Match Your Filters</p>
             </div>
           ) : (
-            filteredTournaments.map((tourn) => (
-              <div
-                key={tourn.id}
-                className={`tournament-card ${selectedTournament?.id === tourn.id ? 'selected' : ''} ${visibleTournaments.has(tourn.id) ? 'fadeInUp' : 'hidden'}`}
-                style={
-                  visibleTournaments.has(tourn.id)
-                    ? { cursor: 'pointer' }
-                    : { opacity: 0, transform: 'translateY(8px)', cursor: 'pointer' }
+            filteredTournaments.map((tourn) => {
+              /* A card is a control: keyboard and screen-reader users open a
+                 tournament with Enter or Space exactly as a pointer does. */
+              const openTournament = () => {
+                setSelectedTournament(tourn);
+                // On mobile, navigate to full detail page
+                if (window.innerWidth <= 768) {
+                  navigate(`/tournaments/${tourn.id}`);
                 }
-                onClick={() => {
-                  setSelectedTournament(tourn);
-                  // On mobile, navigate to full detail page
-                  if (window.innerWidth <= 768) {
-                    navigate(`/tournaments/${tourn.id}`);
+              };
+              return (
+                <div
+                  key={tourn.id}
+                  role="button"
+                  tabIndex={0}
+                  aria-pressed={selectedTournament?.id === tourn.id}
+                  aria-label={`Open ${tourn.name}`}
+                  className={`tournament-card ${selectedTournament?.id === tourn.id ? 'selected' : ''} ${visibleTournaments.has(tourn.id) ? 'fadeInUp' : 'hidden'}`}
+                  style={
+                    visibleTournaments.has(tourn.id)
+                      ? { cursor: 'pointer' }
+                      : { opacity: 0, transform: 'translateY(8px)', cursor: 'pointer' }
                   }
-                }}
-              >
-                <div className="tourn-header">
-                  <span className="tourn-name">{tourn.name}</span>
-                  <span className={`tourn-status ${tourn.status}`}>
-                    {tourn.status === 'REGISTERING'
-                      ? ' Open'
-                      : tourn.status === 'RUNNING'
-                        ? isLateRegOpen(tourn)
-                          ? ' Late Reg'
-                          : ' Running'
-                        : ' Soon'}
-                  </span>
-                </div>
-                <div className="tourn-info">
-                  <span className="tourn-type">
-                    {(
-                      {
-                        NLH: 'NLH',
-                        FLH: 'FLH',
-                        PLO4: 'PLO4',
-                        PLO5: 'PLO5',
-                        PLO6: 'PLO6',
-                        PLO8: 'PLO8',
-                        PLO_HILO: 'PLO Hi-Lo',
-                        SHORT_DECK: 'Short Deck',
-                        PINEAPPLE: 'Crazy Pineapple',
-                        MIXED: 'Mixed',
-                        CRAZY_PINEAPPLE: 'Crazy Pine',
-                        DOUBLE_BOARD: 'Double Board',
-                      } as Record<string, string>
-                    )[(tourn.game_type || tourn.variant || 'NLH').toUpperCase()] ||
-                      tourn.game_type ||
-                      'NLH'}
-                  </span>
-                  <span className="tourn-buyin">
-                    {formatBuyIn(tourn.buy_in_amount, tourn.buy_in_fee)}
-                  </span>
-                </div>
-                <div className="tourn-meta">
-                  <span>
-                    {' '}
-                    {tourn.current_players}/{tourn.max_players}
-                  </span>
-                  <span> {money(tourn.prize_pool)}</span>
-                </div>
-                {/* Registration Progress Bar (Initiative 2) */}
-                {(tourn.max_players ?? 0) > 0 && (
-                  <div className="tourn-progress-bar">
+                  onClick={openTournament}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      openTournament();
+                    }
+                  }}
+                >
+                  <div className="tourn-header">
+                    <span className="tourn-name">{tourn.name}</span>
+                    <span className={`tourn-status ${tourn.status}`}>
+                      {tourn.status === 'REGISTERING'
+                        ? ' Open'
+                        : tourn.status === 'RUNNING'
+                          ? isLateRegOpen(tourn)
+                            ? ' Late Reg'
+                            : ' Running'
+                          : ' Soon'}
+                    </span>
+                  </div>
+                  <div className="tourn-info">
+                    <span className="tourn-type">
+                      {(
+                        {
+                          NLH: 'NLH',
+                          FLH: 'FLH',
+                          PLO4: 'PLO4',
+                          PLO5: 'PLO5',
+                          PLO6: 'PLO6',
+                          PLO8: 'PLO8',
+                          PLO_HILO: 'PLO Hi-Lo',
+                          SHORT_DECK: 'Short Deck',
+                          PINEAPPLE: 'Crazy Pineapple',
+                          MIXED: 'Mixed',
+                          CRAZY_PINEAPPLE: 'Crazy Pine',
+                          DOUBLE_BOARD: 'Double Board',
+                        } as Record<string, string>
+                      )[(tourn.game_type || tourn.variant || 'NLH').toUpperCase()] ||
+                        tourn.game_type ||
+                        'NLH'}
+                    </span>
+                    <span className="tourn-buyin">
+                      {formatBuyIn(tourn.buy_in_amount, tourn.buy_in_fee)}
+                    </span>
+                  </div>
+                  <div className="tourn-meta">
+                    <span>
+                      {' '}
+                      {tourn.current_players}/{tourn.max_players}
+                    </span>
+                    <span> {money(tourn.prize_pool)}</span>
+                  </div>
+                  {/* Registration Progress Bar (Initiative 2) */}
+                  {(tourn.max_players ?? 0) > 0 && (
+                    <div className="tourn-progress-bar">
+                      <div
+                        className="tourn-progress-fill"
+                        style={{
+                          width: `${Math.min(100, (tourn.current_players / (tourn.max_players ?? 1)) * 100)}%`,
+                        }}
+                      />
+                    </div>
+                  )}
+                  {/* Countdown Timer (Initiative 2) */}
+                  {countdownStr[tourn.id] && (
                     <div
-                      className="tourn-progress-fill"
+                      className={`tourn-countdown ${countdownStr[tourn.id] === 'Starting...' ? 'starting' : ''}`}
+                    >
+                      {countdownStr[tourn.id]}
+                    </div>
+                  )}
+                  {/* SWEEP #6: live blind level + countdown for RUNNING tournaments */}
+                  {tourn.status === 'RUNNING' && levelChip[tourn.id] && (
+                    <div
+                      className="tourn-level-chip"
                       style={{
-                        width: `${Math.min(100, (tourn.current_players / (tourn.max_players ?? 1)) * 100)}%`,
+                        marginTop: 4,
+                        display: 'inline-block',
+                        padding: '2px 8px',
+                        borderRadius: 6,
+                        fontSize: 12,
+                        fontWeight: 600,
+                        fontVariantNumeric: 'tabular-nums',
+                        background: 'rgba(79,195,247,0.14)',
+                        color: '#4fc3f7',
+                        border: '1px solid rgba(79,195,247,0.28)',
                       }}
-                    />
-                  </div>
-                )}
-                {/* Countdown Timer (Initiative 2) */}
-                {countdownStr[tourn.id] && (
-                  <div
-                    className={`tourn-countdown ${countdownStr[tourn.id] === 'Starting...' ? 'starting' : ''}`}
-                  >
-                    {countdownStr[tourn.id]}
-                  </div>
-                )}
-                {/* SWEEP #6: live blind level + countdown for RUNNING tournaments */}
-                {tourn.status === 'RUNNING' && levelChip[tourn.id] && (
-                  <div
-                    className="tourn-level-chip"
-                    style={{
-                      marginTop: 4,
-                      display: 'inline-block',
-                      padding: '2px 8px',
-                      borderRadius: 6,
-                      fontSize: 12,
-                      fontWeight: 600,
-                      fontVariantNumeric: 'tabular-nums',
-                      background: 'rgba(79,195,247,0.14)',
-                      color: '#4fc3f7',
-                      border: '1px solid rgba(79,195,247,0.28)',
-                    }}
-                  >
-                    {levelChip[tourn.id]}
-                  </div>
-                )}
-              </div>
-            ))
+                    >
+                      {levelChip[tourn.id]}
+                    </div>
+                  )}
+                </div>
+              );
+            })
           )}
         </div>
 
@@ -1357,7 +1373,7 @@ export default function TournamentPage() {
                   <span className="stat-label">Starting Stack</span>
                   <span className="stat-value">
                     {selectedTournament.starting_chips
-                      ? selectedTournament.starting_chips.toLocaleString()
+                      ? formatTableChips(selectedTournament.starting_chips)
                       : '-'}
                   </span>
                 </div>
@@ -1593,9 +1609,7 @@ export default function TournamentPage() {
                         </span>
                         <span className="payout-percent">{payout.percentage}%</span>
                         <span className="payout-amount">
-                          {amount === null
-                            ? '-'
-                            : amount.toLocaleString('en-US', { maximumFractionDigits: 2 })}
+                          {amount === null ? '-' : formatChips(amount)}
                         </span>
                       </div>
                     );
@@ -1710,9 +1724,7 @@ export default function TournamentPage() {
                         <div key={i} className={`podium-place podium-${i + 1}`}>
                           <div className="podium-icon">{i === 0 ? '★' : i === 1 ? '☆' : '✧'}</div>
                           <div className="podium-payout">
-                            {amount === null
-                              ? '-'
-                              : amount.toLocaleString('en-US', { maximumFractionDigits: 2 })}
+                            {amount === null ? '-' : formatChips(amount)}
                           </div>
                         </div>
                       );

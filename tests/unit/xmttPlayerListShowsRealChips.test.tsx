@@ -5,7 +5,8 @@
  *
  * `XMTTPage` rendered each registered player's stack as
  *
- *     fmtChips(r.chip_count || r.starting_chips || 0)
+ *     fmtChips(r.chip_count || r.starting_chips || 0)   (fmtChips is retired; the
+ *     stack now reads through formatTableChips - a tournament chip is whole)
  *
  * and that expression could only ever evaluate to 0.
  *
@@ -38,7 +39,7 @@ const code = SRC.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 
 describe('the XMTT player list reads the column the engine writes', () => {
   it('renders each player stack from `chips`', () => {
-    expect(code).toMatch(/fmtChips\(\s*r\.chips\s*\?\?\s*0\s*\)/);
+    expect(code).toMatch(/formatTableChips\(\s*r\.chips\s*\?\?\s*0\s*\)/);
   });
 
   it('never reads chip_count, which nothing in the estate writes', () => {
@@ -53,6 +54,6 @@ describe('the XMTT player list reads the column the engine writes', () => {
 
   it('does not reintroduce an || fallback chain on the stack', () => {
     // `0 || undefined || 0` is how this shipped zeroes for months.
-    expect(code).not.toMatch(/fmtChips\([^)]*\|\|[^)]*\)/);
+    expect(code).not.toMatch(/formatTableChips\([^)]*\|\|[^)]*\)/);
   });
 });

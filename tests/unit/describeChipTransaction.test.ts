@@ -6,6 +6,10 @@
  * Every wallet-moving transaction type the cashier writes gets one sentence
  * that names the actor, the amount, the wallet the chips left and the wallet
  * they entered. Anything that is not a wallet move is left alone.
+ *
+ * The amount reads to the cent (2026-09-10, audit CL-10): 1,250.50 is
+ * "1,250.50", never "1,250.5" with the cent column dropped, through the one
+ * money formatter (tests/money-is-displayed-one-way.law.test.ts).
  */
 import { describe, it, expect } from 'vitest';
 import {
@@ -34,7 +38,7 @@ describe('a ledger line names both wallets', () => {
       names
     );
     expect(line).toBe(
-      "KINGFISH Transferred 500 From KINGFISH's Agent Wallet To KINGFISH's Player Wallet"
+      "KINGFISH Transferred 500.00 From KINGFISH's Agent Wallet To KINGFISH's Player Wallet"
     );
   });
 
@@ -49,7 +53,7 @@ describe('a ledger line names both wallets', () => {
       },
       names
     );
-    expect(line).toBe("KINGFISH Sent 1,250.5 From KINGFISH's Agent Wallet To Bob's Player Wallet");
+    expect(line).toBe("KINGFISH Sent 1,250.50 From KINGFISH's Agent Wallet To Bob's Player Wallet");
   });
 
   it('a club bank send says it came from the club bank, whatever the role', () => {
@@ -64,7 +68,7 @@ describe('a ledger line names both wallets', () => {
         },
         names
       )
-    ).toBe("KINGFISH Sent 100 From The Club Bank To Bob's Agent Wallet");
+    ).toBe("KINGFISH Sent 100.00 From The Club Bank To Bob's Agent Wallet");
   });
 
   it('an owner funding their own player wallet from the club bank', () => {
@@ -80,7 +84,7 @@ describe('a ledger line names both wallets', () => {
         names,
         KING
       )
-    ).toBe('You Transferred 2,000 From The Club Bank To Your Player Wallet');
+    ).toBe('You Transferred 2,000.00 From The Club Bank To Your Player Wallet');
   });
 
   it('a claim back travels the other way and says so', () => {
@@ -95,7 +99,7 @@ describe('a ledger line names both wallets', () => {
         },
         names
       )
-    ).toBe("KINGFISH Claimed Back 1 From Bob's Agent Wallet To The Club Bank");
+    ).toBe("KINGFISH Claimed Back 1.00 From Bob's Agent Wallet To The Club Bank");
   });
 
   it('never invents a route for a row that is not a wallet move', () => {

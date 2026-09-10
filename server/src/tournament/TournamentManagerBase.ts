@@ -29,6 +29,7 @@ import {
   spinRakeRate,
   spinBlindsForLevel,
 } from '../config/spinSpec.js';
+import { headsUpBlindsForLevel } from '../config/headsUpSpec.js';
 import { reportError } from '../services/errorReporter.js';
 import { selectInChunks } from '../services/supabase/chunkedIn.js';
 /**
@@ -5455,6 +5456,24 @@ export abstract class TournamentManagerBase {
           ante: 0,
         };
       }
+    }
+
+    // SNG is the approved two-seat Heads-Up product. Its published overflow
+    // belongs to headsUpSpec, just as Spin continuation belongs to its receipt.
+    // A generic MTT chip cap otherwise drops BB400 back to BB30/100 at level13.
+    const t = this.tournamentCache;
+    const isHeadsUp =
+      String(t?.variant ?? '').toLowerCase() === 'sng' ||
+      String(t?.tournament_type ?? '').toUpperCase() === 'SNG';
+    if (isHeadsUp) {
+      const b = headsUpBlindsForLevel(i + 1);
+      return {
+        ...blindStructure[blindStructure.length - 1],
+        level: i + 1,
+        smallBlind: b.small,
+        bigBlind: b.big,
+        ante: 0,
+      };
     }
 
     const lastLevel = blindStructure[lastPlayableIndex(blindStructure)];

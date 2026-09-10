@@ -1,0 +1,3612 @@
+{
+  "sources": [
+    {
+      "source": "server/src/config/spinSpec.ts",
+      "sha256": "5a30cbcc3089da4ae49232d3c50afdcc5f8c787817d39cd9d7361205d1446c54"
+    },
+    {
+      "source": "server/src/config/headsUpSpec.ts",
+      "sha256": "cbda0e02f09a39e4ff7a146b6355f2a86416f407a390801934f3d50b6f151606"
+    },
+    {
+      "source": "server/src/tournament/SpinDrawReceipt.ts",
+      "sha256": "2a63498d705aefae65c1d0b3fab754b953b8f3384deb84a5adaf51eae23ab79a"
+    },
+    {
+      "source": "server/src/tournament/blindEscalation.ts",
+      "sha256": "a2731e2a5364840b5df255cbdd58430a74c9699e4416dd4b26935bc9de210109"
+    },
+    {
+      "source": "server/src/tournament/blindLadder.ts",
+      "sha256": "9749bf02258934609ca6b7c6522c28cae4ab1193c1048a7eeab2b850f43df72e"
+    },
+    {
+      "source": "server/src/tournament/acceleratedLevels.ts",
+      "sha256": "d805d42dc9c52d6942b5cd1d7b9f69086692d26703108f90ac54353cf069f32e"
+    },
+    {
+      "source": "server/src/testHelpers/sourceWindow.ts",
+      "sha256": "1f6253cc75f4dedcea4d4fa76731f915c15c33cb0df025e2f30d5ac0671e1e9c"
+    },
+    {
+      "source": "server/src/tournament/TournamentManagerBase.ts",
+      "sha256": "c117fc851281dedbf0fbe7af088f992a078f980214c4dd7b38c2b560717e3a0e"
+    }
+  ],
+  "rows": [
+    {
+      "format": "spin",
+      "stack": 300,
+      "multiplier": 2,
+      "level": 12,
+      "tag": "approved-current",
+      "total_chips": 900,
+      "expected": {
+        "small_blind": 205,
+        "big_blind": 410,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 205,
+        "big_blind": 410,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "persisted",
+        "big_blind": 410,
+        "level_index": 11,
+        "small_blind": 205,
+        "blind_capped": false
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "persisted",
+        "big_blind": 410,
+        "level_index": 11,
+        "small_blind": 205,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": true,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "spin",
+      "stack": 300,
+      "multiplier": 2,
+      "level": 13,
+      "tag": "approved-current",
+      "total_chips": 900,
+      "expected": {
+        "small_blind": 290,
+        "big_blind": 580,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 290,
+        "big_blind": 580,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "spin_overflow",
+        "big_blind": 580,
+        "level_index": 12,
+        "small_blind": 290,
+        "blind_capped": false
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "spin_receipt_overflow",
+        "big_blind": 580,
+        "level_index": 12,
+        "small_blind": 290,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": true,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "spin",
+      "stack": 300,
+      "multiplier": 2,
+      "level": 14,
+      "tag": "approved-current",
+      "total_chips": 900,
+      "expected": {
+        "small_blind": 405,
+        "big_blind": 810,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 405,
+        "big_blind": 810,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "spin_overflow",
+        "big_blind": 810,
+        "level_index": 13,
+        "small_blind": 405,
+        "blind_capped": false
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "spin_receipt_overflow",
+        "big_blind": 810,
+        "level_index": 13,
+        "small_blind": 405,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": true,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "spin",
+      "stack": 300,
+      "multiplier": 2,
+      "level": 20,
+      "tag": "approved-current",
+      "total_chips": 900,
+      "expected": {
+        "small_blind": 3035,
+        "big_blind": 6070,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 3035,
+        "big_blind": 6070,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "spin_overflow",
+        "big_blind": 6070,
+        "level_index": 19,
+        "small_blind": 3035,
+        "blind_capped": false
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "spin_receipt_overflow",
+        "big_blind": 6070,
+        "level_index": 19,
+        "small_blind": 3035,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": true,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "spin",
+      "stack": 300,
+      "multiplier": 2,
+      "level": 32,
+      "tag": "approved-current",
+      "total_chips": 900,
+      "expected": {
+        "small_blind": 172190,
+        "big_blind": 344380,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 172190,
+        "big_blind": 344380,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "spin_overflow",
+        "big_blind": 344380,
+        "level_index": 31,
+        "small_blind": 172190,
+        "blind_capped": false
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "spin_receipt_overflow",
+        "big_blind": 344380,
+        "level_index": 31,
+        "small_blind": 172190,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": true,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "spin",
+      "stack": 300,
+      "multiplier": 3,
+      "level": 12,
+      "tag": "approved-current",
+      "total_chips": 900,
+      "expected": {
+        "small_blind": 205,
+        "big_blind": 410,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 205,
+        "big_blind": 410,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "persisted",
+        "big_blind": 410,
+        "level_index": 11,
+        "small_blind": 205,
+        "blind_capped": false
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "persisted",
+        "big_blind": 410,
+        "level_index": 11,
+        "small_blind": 205,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": true,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "spin",
+      "stack": 300,
+      "multiplier": 3,
+      "level": 13,
+      "tag": "approved-current",
+      "total_chips": 900,
+      "expected": {
+        "small_blind": 290,
+        "big_blind": 580,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 290,
+        "big_blind": 580,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "spin_overflow",
+        "big_blind": 580,
+        "level_index": 12,
+        "small_blind": 290,
+        "blind_capped": false
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "spin_receipt_overflow",
+        "big_blind": 580,
+        "level_index": 12,
+        "small_blind": 290,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": true,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "spin",
+      "stack": 300,
+      "multiplier": 3,
+      "level": 14,
+      "tag": "approved-current",
+      "total_chips": 900,
+      "expected": {
+        "small_blind": 405,
+        "big_blind": 810,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 405,
+        "big_blind": 810,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "spin_overflow",
+        "big_blind": 810,
+        "level_index": 13,
+        "small_blind": 405,
+        "blind_capped": false
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "spin_receipt_overflow",
+        "big_blind": 810,
+        "level_index": 13,
+        "small_blind": 405,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": true,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "spin",
+      "stack": 300,
+      "multiplier": 3,
+      "level": 20,
+      "tag": "approved-current",
+      "total_chips": 900,
+      "expected": {
+        "small_blind": 3035,
+        "big_blind": 6070,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 3035,
+        "big_blind": 6070,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "spin_overflow",
+        "big_blind": 6070,
+        "level_index": 19,
+        "small_blind": 3035,
+        "blind_capped": false
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "spin_receipt_overflow",
+        "big_blind": 6070,
+        "level_index": 19,
+        "small_blind": 3035,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": true,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "spin",
+      "stack": 300,
+      "multiplier": 3,
+      "level": 32,
+      "tag": "approved-current",
+      "total_chips": 900,
+      "expected": {
+        "small_blind": 172190,
+        "big_blind": 344380,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 172190,
+        "big_blind": 344380,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "spin_overflow",
+        "big_blind": 344380,
+        "level_index": 31,
+        "small_blind": 172190,
+        "blind_capped": false
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "spin_receipt_overflow",
+        "big_blind": 344380,
+        "level_index": 31,
+        "small_blind": 172190,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": true,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "spin",
+      "stack": 300,
+      "multiplier": 4,
+      "level": 12,
+      "tag": "approved-current",
+      "total_chips": 900,
+      "expected": {
+        "small_blind": 205,
+        "big_blind": 410,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 205,
+        "big_blind": 410,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "persisted",
+        "big_blind": 410,
+        "level_index": 11,
+        "small_blind": 205,
+        "blind_capped": false
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "persisted",
+        "big_blind": 410,
+        "level_index": 11,
+        "small_blind": 205,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": true,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "spin",
+      "stack": 300,
+      "multiplier": 4,
+      "level": 13,
+      "tag": "approved-current",
+      "total_chips": 900,
+      "expected": {
+        "small_blind": 290,
+        "big_blind": 580,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 290,
+        "big_blind": 580,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "spin_overflow",
+        "big_blind": 580,
+        "level_index": 12,
+        "small_blind": 290,
+        "blind_capped": false
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "spin_receipt_overflow",
+        "big_blind": 580,
+        "level_index": 12,
+        "small_blind": 290,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": true,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "spin",
+      "stack": 300,
+      "multiplier": 4,
+      "level": 14,
+      "tag": "approved-current",
+      "total_chips": 900,
+      "expected": {
+        "small_blind": 405,
+        "big_blind": 810,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 405,
+        "big_blind": 810,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "spin_overflow",
+        "big_blind": 810,
+        "level_index": 13,
+        "small_blind": 405,
+        "blind_capped": false
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "spin_receipt_overflow",
+        "big_blind": 810,
+        "level_index": 13,
+        "small_blind": 405,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": true,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "spin",
+      "stack": 300,
+      "multiplier": 4,
+      "level": 20,
+      "tag": "approved-current",
+      "total_chips": 900,
+      "expected": {
+        "small_blind": 3035,
+        "big_blind": 6070,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 3035,
+        "big_blind": 6070,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "spin_overflow",
+        "big_blind": 6070,
+        "level_index": 19,
+        "small_blind": 3035,
+        "blind_capped": false
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "spin_receipt_overflow",
+        "big_blind": 6070,
+        "level_index": 19,
+        "small_blind": 3035,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": true,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "spin",
+      "stack": 300,
+      "multiplier": 4,
+      "level": 32,
+      "tag": "approved-current",
+      "total_chips": 900,
+      "expected": {
+        "small_blind": 172190,
+        "big_blind": 344380,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 172190,
+        "big_blind": 344380,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "spin_overflow",
+        "big_blind": 344380,
+        "level_index": 31,
+        "small_blind": 172190,
+        "blind_capped": false
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "spin_receipt_overflow",
+        "big_blind": 344380,
+        "level_index": 31,
+        "small_blind": 172190,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": true,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "spin",
+      "stack": 300,
+      "multiplier": 5,
+      "level": 12,
+      "tag": "approved-current",
+      "total_chips": 900,
+      "expected": {
+        "small_blind": 205,
+        "big_blind": 410,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 205,
+        "big_blind": 410,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "persisted",
+        "big_blind": 410,
+        "level_index": 11,
+        "small_blind": 205,
+        "blind_capped": false
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "persisted",
+        "big_blind": 410,
+        "level_index": 11,
+        "small_blind": 205,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": true,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "spin",
+      "stack": 300,
+      "multiplier": 5,
+      "level": 13,
+      "tag": "approved-current",
+      "total_chips": 900,
+      "expected": {
+        "small_blind": 290,
+        "big_blind": 580,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 290,
+        "big_blind": 580,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "spin_overflow",
+        "big_blind": 580,
+        "level_index": 12,
+        "small_blind": 290,
+        "blind_capped": false
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "spin_receipt_overflow",
+        "big_blind": 580,
+        "level_index": 12,
+        "small_blind": 290,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": true,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "spin",
+      "stack": 300,
+      "multiplier": 5,
+      "level": 14,
+      "tag": "approved-current",
+      "total_chips": 900,
+      "expected": {
+        "small_blind": 405,
+        "big_blind": 810,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 405,
+        "big_blind": 810,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "spin_overflow",
+        "big_blind": 810,
+        "level_index": 13,
+        "small_blind": 405,
+        "blind_capped": false
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "spin_receipt_overflow",
+        "big_blind": 810,
+        "level_index": 13,
+        "small_blind": 405,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": true,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "spin",
+      "stack": 300,
+      "multiplier": 5,
+      "level": 20,
+      "tag": "approved-current",
+      "total_chips": 900,
+      "expected": {
+        "small_blind": 3035,
+        "big_blind": 6070,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 3035,
+        "big_blind": 6070,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "spin_overflow",
+        "big_blind": 6070,
+        "level_index": 19,
+        "small_blind": 3035,
+        "blind_capped": false
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "spin_receipt_overflow",
+        "big_blind": 6070,
+        "level_index": 19,
+        "small_blind": 3035,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": true,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "spin",
+      "stack": 300,
+      "multiplier": 5,
+      "level": 32,
+      "tag": "approved-current",
+      "total_chips": 900,
+      "expected": {
+        "small_blind": 172190,
+        "big_blind": 344380,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 172190,
+        "big_blind": 344380,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "spin_overflow",
+        "big_blind": 344380,
+        "level_index": 31,
+        "small_blind": 172190,
+        "blind_capped": false
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "spin_receipt_overflow",
+        "big_blind": 344380,
+        "level_index": 31,
+        "small_blind": 172190,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": true,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "spin",
+      "stack": 300,
+      "multiplier": 10,
+      "level": 12,
+      "tag": "approved-current",
+      "total_chips": 900,
+      "expected": {
+        "small_blind": 205,
+        "big_blind": 410,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 205,
+        "big_blind": 410,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "persisted",
+        "big_blind": 410,
+        "level_index": 11,
+        "small_blind": 205,
+        "blind_capped": false
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "persisted",
+        "big_blind": 410,
+        "level_index": 11,
+        "small_blind": 205,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": true,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "spin",
+      "stack": 300,
+      "multiplier": 10,
+      "level": 13,
+      "tag": "approved-current",
+      "total_chips": 900,
+      "expected": {
+        "small_blind": 290,
+        "big_blind": 580,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 290,
+        "big_blind": 580,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "spin_overflow",
+        "big_blind": 580,
+        "level_index": 12,
+        "small_blind": 290,
+        "blind_capped": false
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "spin_receipt_overflow",
+        "big_blind": 580,
+        "level_index": 12,
+        "small_blind": 290,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": true,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "spin",
+      "stack": 300,
+      "multiplier": 10,
+      "level": 14,
+      "tag": "approved-current",
+      "total_chips": 900,
+      "expected": {
+        "small_blind": 405,
+        "big_blind": 810,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 405,
+        "big_blind": 810,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "spin_overflow",
+        "big_blind": 810,
+        "level_index": 13,
+        "small_blind": 405,
+        "blind_capped": false
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "spin_receipt_overflow",
+        "big_blind": 810,
+        "level_index": 13,
+        "small_blind": 405,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": true,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "spin",
+      "stack": 300,
+      "multiplier": 10,
+      "level": 20,
+      "tag": "approved-current",
+      "total_chips": 900,
+      "expected": {
+        "small_blind": 3035,
+        "big_blind": 6070,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 3035,
+        "big_blind": 6070,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "spin_overflow",
+        "big_blind": 6070,
+        "level_index": 19,
+        "small_blind": 3035,
+        "blind_capped": false
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "spin_receipt_overflow",
+        "big_blind": 6070,
+        "level_index": 19,
+        "small_blind": 3035,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": true,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "spin",
+      "stack": 300,
+      "multiplier": 10,
+      "level": 32,
+      "tag": "approved-current",
+      "total_chips": 900,
+      "expected": {
+        "small_blind": 172190,
+        "big_blind": 344380,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 172190,
+        "big_blind": 344380,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "spin_overflow",
+        "big_blind": 344380,
+        "level_index": 31,
+        "small_blind": 172190,
+        "blind_capped": false
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "spin_receipt_overflow",
+        "big_blind": 344380,
+        "level_index": 31,
+        "small_blind": 172190,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": true,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "spin",
+      "stack": 300,
+      "multiplier": 25,
+      "level": 12,
+      "tag": "approved-current",
+      "total_chips": 900,
+      "expected": {
+        "small_blind": 205,
+        "big_blind": 410,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 205,
+        "big_blind": 410,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "persisted",
+        "big_blind": 410,
+        "level_index": 11,
+        "small_blind": 205,
+        "blind_capped": false
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "persisted",
+        "big_blind": 410,
+        "level_index": 11,
+        "small_blind": 205,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": true,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "spin",
+      "stack": 300,
+      "multiplier": 25,
+      "level": 13,
+      "tag": "approved-current",
+      "total_chips": 900,
+      "expected": {
+        "small_blind": 290,
+        "big_blind": 580,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 290,
+        "big_blind": 580,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "spin_overflow",
+        "big_blind": 580,
+        "level_index": 12,
+        "small_blind": 290,
+        "blind_capped": false
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "spin_receipt_overflow",
+        "big_blind": 580,
+        "level_index": 12,
+        "small_blind": 290,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": true,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "spin",
+      "stack": 300,
+      "multiplier": 25,
+      "level": 14,
+      "tag": "approved-current",
+      "total_chips": 900,
+      "expected": {
+        "small_blind": 405,
+        "big_blind": 810,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 405,
+        "big_blind": 810,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "spin_overflow",
+        "big_blind": 810,
+        "level_index": 13,
+        "small_blind": 405,
+        "blind_capped": false
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "spin_receipt_overflow",
+        "big_blind": 810,
+        "level_index": 13,
+        "small_blind": 405,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": true,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "spin",
+      "stack": 300,
+      "multiplier": 25,
+      "level": 20,
+      "tag": "approved-current",
+      "total_chips": 900,
+      "expected": {
+        "small_blind": 3035,
+        "big_blind": 6070,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 3035,
+        "big_blind": 6070,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "spin_overflow",
+        "big_blind": 6070,
+        "level_index": 19,
+        "small_blind": 3035,
+        "blind_capped": false
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "spin_receipt_overflow",
+        "big_blind": 6070,
+        "level_index": 19,
+        "small_blind": 3035,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": true,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "spin",
+      "stack": 300,
+      "multiplier": 25,
+      "level": 32,
+      "tag": "approved-current",
+      "total_chips": 900,
+      "expected": {
+        "small_blind": 172190,
+        "big_blind": 344380,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 172190,
+        "big_blind": 344380,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "spin_overflow",
+        "big_blind": 344380,
+        "level_index": 31,
+        "small_blind": 172190,
+        "blind_capped": false
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "spin_receipt_overflow",
+        "big_blind": 344380,
+        "level_index": 31,
+        "small_blind": 172190,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": true,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "spin",
+      "stack": 300,
+      "multiplier": 50,
+      "level": 12,
+      "tag": "approved-current",
+      "total_chips": 900,
+      "expected": {
+        "small_blind": 205,
+        "big_blind": 410,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 205,
+        "big_blind": 410,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "persisted",
+        "big_blind": 410,
+        "level_index": 11,
+        "small_blind": 205,
+        "blind_capped": false
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "persisted",
+        "big_blind": 410,
+        "level_index": 11,
+        "small_blind": 205,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": true,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "spin",
+      "stack": 300,
+      "multiplier": 50,
+      "level": 13,
+      "tag": "approved-current",
+      "total_chips": 900,
+      "expected": {
+        "small_blind": 290,
+        "big_blind": 580,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 290,
+        "big_blind": 580,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "spin_overflow",
+        "big_blind": 580,
+        "level_index": 12,
+        "small_blind": 290,
+        "blind_capped": false
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "spin_receipt_overflow",
+        "big_blind": 580,
+        "level_index": 12,
+        "small_blind": 290,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": true,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "spin",
+      "stack": 300,
+      "multiplier": 50,
+      "level": 14,
+      "tag": "approved-current",
+      "total_chips": 900,
+      "expected": {
+        "small_blind": 405,
+        "big_blind": 810,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 405,
+        "big_blind": 810,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "spin_overflow",
+        "big_blind": 810,
+        "level_index": 13,
+        "small_blind": 405,
+        "blind_capped": false
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "spin_receipt_overflow",
+        "big_blind": 810,
+        "level_index": 13,
+        "small_blind": 405,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": true,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "spin",
+      "stack": 300,
+      "multiplier": 50,
+      "level": 20,
+      "tag": "approved-current",
+      "total_chips": 900,
+      "expected": {
+        "small_blind": 3035,
+        "big_blind": 6070,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 3035,
+        "big_blind": 6070,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "spin_overflow",
+        "big_blind": 6070,
+        "level_index": 19,
+        "small_blind": 3035,
+        "blind_capped": false
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "spin_receipt_overflow",
+        "big_blind": 6070,
+        "level_index": 19,
+        "small_blind": 3035,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": true,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "spin",
+      "stack": 300,
+      "multiplier": 50,
+      "level": 32,
+      "tag": "approved-current",
+      "total_chips": 900,
+      "expected": {
+        "small_blind": 172190,
+        "big_blind": 344380,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 172190,
+        "big_blind": 344380,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "spin_overflow",
+        "big_blind": 344380,
+        "level_index": 31,
+        "small_blind": 172190,
+        "blind_capped": false
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "spin_receipt_overflow",
+        "big_blind": 344380,
+        "level_index": 31,
+        "small_blind": 172190,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": true,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "spin",
+      "stack": 300,
+      "multiplier": 100,
+      "level": 12,
+      "tag": "approved-current",
+      "total_chips": 900,
+      "expected": {
+        "small_blind": 205,
+        "big_blind": 410,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 205,
+        "big_blind": 410,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "persisted",
+        "big_blind": 410,
+        "level_index": 11,
+        "small_blind": 205,
+        "blind_capped": false
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "persisted",
+        "big_blind": 410,
+        "level_index": 11,
+        "small_blind": 205,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": true,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "spin",
+      "stack": 300,
+      "multiplier": 100,
+      "level": 13,
+      "tag": "approved-current",
+      "total_chips": 900,
+      "expected": {
+        "small_blind": 290,
+        "big_blind": 580,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 290,
+        "big_blind": 580,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "spin_overflow",
+        "big_blind": 580,
+        "level_index": 12,
+        "small_blind": 290,
+        "blind_capped": false
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "spin_receipt_overflow",
+        "big_blind": 580,
+        "level_index": 12,
+        "small_blind": 290,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": true,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "spin",
+      "stack": 300,
+      "multiplier": 100,
+      "level": 14,
+      "tag": "approved-current",
+      "total_chips": 900,
+      "expected": {
+        "small_blind": 405,
+        "big_blind": 810,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 405,
+        "big_blind": 810,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "spin_overflow",
+        "big_blind": 810,
+        "level_index": 13,
+        "small_blind": 405,
+        "blind_capped": false
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "spin_receipt_overflow",
+        "big_blind": 810,
+        "level_index": 13,
+        "small_blind": 405,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": true,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "spin",
+      "stack": 300,
+      "multiplier": 100,
+      "level": 20,
+      "tag": "approved-current",
+      "total_chips": 900,
+      "expected": {
+        "small_blind": 3035,
+        "big_blind": 6070,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 3035,
+        "big_blind": 6070,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "spin_overflow",
+        "big_blind": 6070,
+        "level_index": 19,
+        "small_blind": 3035,
+        "blind_capped": false
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "spin_receipt_overflow",
+        "big_blind": 6070,
+        "level_index": 19,
+        "small_blind": 3035,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": true,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "spin",
+      "stack": 300,
+      "multiplier": 100,
+      "level": 32,
+      "tag": "approved-current",
+      "total_chips": 900,
+      "expected": {
+        "small_blind": 172190,
+        "big_blind": 344380,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 172190,
+        "big_blind": 344380,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "spin_overflow",
+        "big_blind": 344380,
+        "level_index": 31,
+        "small_blind": 172190,
+        "blind_capped": false
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "spin_receipt_overflow",
+        "big_blind": 344380,
+        "level_index": 31,
+        "small_blind": 172190,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": true,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "sng",
+      "stack": 300,
+      "multiplier": null,
+      "level": 12,
+      "tag": "approved-current",
+      "total_chips": 600,
+      "expected": {
+        "small_blind": 200,
+        "big_blind": 400,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 200,
+        "big_blind": 400,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "persisted",
+        "big_blind": 400,
+        "level_index": 11,
+        "small_blind": 200,
+        "blind_capped": false
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "persisted",
+        "big_blind": 400,
+        "level_index": 11,
+        "small_blind": 200,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": true,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "sng",
+      "stack": 300,
+      "multiplier": null,
+      "level": 13,
+      "tag": "approved-current",
+      "total_chips": 600,
+      "expected": {
+        "small_blind": 280,
+        "big_blind": 560,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 280,
+        "big_blind": 560,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "mtt_overflow",
+        "big_blind": 30,
+        "level_index": 12,
+        "small_blind": 15,
+        "blind_capped": true,
+        "overflow_ratio": 1.2778862084925449
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "heads_up_overflow",
+        "big_blind": 560,
+        "level_index": 12,
+        "small_blind": 280,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": false,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "sng",
+      "stack": 300,
+      "multiplier": null,
+      "level": 14,
+      "tag": "approved-current",
+      "total_chips": 600,
+      "expected": {
+        "small_blind": 390,
+        "big_blind": 780,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 390,
+        "big_blind": 780,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "mtt_overflow",
+        "big_blind": 29,
+        "level_index": 13,
+        "small_blind": 14,
+        "blind_capped": true,
+        "overflow_ratio": 1.2778862084925449
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "heads_up_overflow",
+        "big_blind": 780,
+        "level_index": 13,
+        "small_blind": 390,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": false,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "sng",
+      "stack": 300,
+      "multiplier": null,
+      "level": 20,
+      "tag": "approved-current",
+      "total_chips": 600,
+      "expected": {
+        "small_blind": 2950,
+        "big_blind": 5900,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 2950,
+        "big_blind": 5900,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "mtt_overflow",
+        "big_blind": 30,
+        "level_index": 19,
+        "small_blind": 15,
+        "blind_capped": true,
+        "overflow_ratio": 1.2778862084925449
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "heads_up_overflow",
+        "big_blind": 5900,
+        "level_index": 19,
+        "small_blind": 2950,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": false,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "sng",
+      "stack": 300,
+      "multiplier": null,
+      "level": 32,
+      "tag": "approved-current",
+      "total_chips": 600,
+      "expected": {
+        "small_blind": 167335,
+        "big_blind": 334670,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 167335,
+        "big_blind": 334670,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "mtt_overflow",
+        "big_blind": 30,
+        "level_index": 31,
+        "small_blind": 15,
+        "blind_capped": true,
+        "overflow_ratio": 1.2778862084925449
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "heads_up_overflow",
+        "big_blind": 334670,
+        "level_index": 31,
+        "small_blind": 167335,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": false,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "spin",
+      "stack": 1000,
+      "multiplier": 2,
+      "level": 12,
+      "tag": "approved-current",
+      "total_chips": 3000,
+      "expected": {
+        "small_blind": 205,
+        "big_blind": 410,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 205,
+        "big_blind": 410,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "persisted",
+        "big_blind": 410,
+        "level_index": 11,
+        "small_blind": 205,
+        "blind_capped": false
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "persisted",
+        "big_blind": 410,
+        "level_index": 11,
+        "small_blind": 205,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": true,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "spin",
+      "stack": 1000,
+      "multiplier": 2,
+      "level": 13,
+      "tag": "approved-current",
+      "total_chips": 3000,
+      "expected": {
+        "small_blind": 290,
+        "big_blind": 580,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 290,
+        "big_blind": 580,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "spin_overflow",
+        "big_blind": 580,
+        "level_index": 12,
+        "small_blind": 290,
+        "blind_capped": false
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "spin_receipt_overflow",
+        "big_blind": 580,
+        "level_index": 12,
+        "small_blind": 290,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": true,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "spin",
+      "stack": 1000,
+      "multiplier": 2,
+      "level": 14,
+      "tag": "approved-current",
+      "total_chips": 3000,
+      "expected": {
+        "small_blind": 405,
+        "big_blind": 810,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 405,
+        "big_blind": 810,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "spin_overflow",
+        "big_blind": 810,
+        "level_index": 13,
+        "small_blind": 405,
+        "blind_capped": false
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "spin_receipt_overflow",
+        "big_blind": 810,
+        "level_index": 13,
+        "small_blind": 405,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": true,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "spin",
+      "stack": 1000,
+      "multiplier": 2,
+      "level": 20,
+      "tag": "approved-current",
+      "total_chips": 3000,
+      "expected": {
+        "small_blind": 3035,
+        "big_blind": 6070,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 3035,
+        "big_blind": 6070,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "spin_overflow",
+        "big_blind": 6070,
+        "level_index": 19,
+        "small_blind": 3035,
+        "blind_capped": false
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "spin_receipt_overflow",
+        "big_blind": 6070,
+        "level_index": 19,
+        "small_blind": 3035,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": true,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "spin",
+      "stack": 1000,
+      "multiplier": 2,
+      "level": 32,
+      "tag": "approved-current",
+      "total_chips": 3000,
+      "expected": {
+        "small_blind": 172190,
+        "big_blind": 344380,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 172190,
+        "big_blind": 344380,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "spin_overflow",
+        "big_blind": 344380,
+        "level_index": 31,
+        "small_blind": 172190,
+        "blind_capped": false
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "spin_receipt_overflow",
+        "big_blind": 344380,
+        "level_index": 31,
+        "small_blind": 172190,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": true,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "spin",
+      "stack": 1000,
+      "multiplier": 3,
+      "level": 12,
+      "tag": "approved-current",
+      "total_chips": 3000,
+      "expected": {
+        "small_blind": 205,
+        "big_blind": 410,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 205,
+        "big_blind": 410,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "persisted",
+        "big_blind": 410,
+        "level_index": 11,
+        "small_blind": 205,
+        "blind_capped": false
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "persisted",
+        "big_blind": 410,
+        "level_index": 11,
+        "small_blind": 205,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": true,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "spin",
+      "stack": 1000,
+      "multiplier": 3,
+      "level": 13,
+      "tag": "approved-current",
+      "total_chips": 3000,
+      "expected": {
+        "small_blind": 290,
+        "big_blind": 580,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 290,
+        "big_blind": 580,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "spin_overflow",
+        "big_blind": 580,
+        "level_index": 12,
+        "small_blind": 290,
+        "blind_capped": false
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "spin_receipt_overflow",
+        "big_blind": 580,
+        "level_index": 12,
+        "small_blind": 290,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": true,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "spin",
+      "stack": 1000,
+      "multiplier": 3,
+      "level": 14,
+      "tag": "approved-current",
+      "total_chips": 3000,
+      "expected": {
+        "small_blind": 405,
+        "big_blind": 810,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 405,
+        "big_blind": 810,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "spin_overflow",
+        "big_blind": 810,
+        "level_index": 13,
+        "small_blind": 405,
+        "blind_capped": false
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "spin_receipt_overflow",
+        "big_blind": 810,
+        "level_index": 13,
+        "small_blind": 405,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": true,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "spin",
+      "stack": 1000,
+      "multiplier": 3,
+      "level": 20,
+      "tag": "approved-current",
+      "total_chips": 3000,
+      "expected": {
+        "small_blind": 3035,
+        "big_blind": 6070,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 3035,
+        "big_blind": 6070,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "spin_overflow",
+        "big_blind": 6070,
+        "level_index": 19,
+        "small_blind": 3035,
+        "blind_capped": false
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "spin_receipt_overflow",
+        "big_blind": 6070,
+        "level_index": 19,
+        "small_blind": 3035,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": true,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "spin",
+      "stack": 1000,
+      "multiplier": 3,
+      "level": 32,
+      "tag": "approved-current",
+      "total_chips": 3000,
+      "expected": {
+        "small_blind": 172190,
+        "big_blind": 344380,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 172190,
+        "big_blind": 344380,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "spin_overflow",
+        "big_blind": 344380,
+        "level_index": 31,
+        "small_blind": 172190,
+        "blind_capped": false
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "spin_receipt_overflow",
+        "big_blind": 344380,
+        "level_index": 31,
+        "small_blind": 172190,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": true,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "spin",
+      "stack": 1000,
+      "multiplier": 4,
+      "level": 12,
+      "tag": "approved-current",
+      "total_chips": 3000,
+      "expected": {
+        "small_blind": 205,
+        "big_blind": 410,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 205,
+        "big_blind": 410,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "persisted",
+        "big_blind": 410,
+        "level_index": 11,
+        "small_blind": 205,
+        "blind_capped": false
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "persisted",
+        "big_blind": 410,
+        "level_index": 11,
+        "small_blind": 205,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": true,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "spin",
+      "stack": 1000,
+      "multiplier": 4,
+      "level": 13,
+      "tag": "approved-current",
+      "total_chips": 3000,
+      "expected": {
+        "small_blind": 290,
+        "big_blind": 580,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 290,
+        "big_blind": 580,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "spin_overflow",
+        "big_blind": 580,
+        "level_index": 12,
+        "small_blind": 290,
+        "blind_capped": false
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "spin_receipt_overflow",
+        "big_blind": 580,
+        "level_index": 12,
+        "small_blind": 290,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": true,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "spin",
+      "stack": 1000,
+      "multiplier": 4,
+      "level": 14,
+      "tag": "approved-current",
+      "total_chips": 3000,
+      "expected": {
+        "small_blind": 405,
+        "big_blind": 810,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 405,
+        "big_blind": 810,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "spin_overflow",
+        "big_blind": 810,
+        "level_index": 13,
+        "small_blind": 405,
+        "blind_capped": false
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "spin_receipt_overflow",
+        "big_blind": 810,
+        "level_index": 13,
+        "small_blind": 405,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": true,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "spin",
+      "stack": 1000,
+      "multiplier": 4,
+      "level": 20,
+      "tag": "approved-current",
+      "total_chips": 3000,
+      "expected": {
+        "small_blind": 3035,
+        "big_blind": 6070,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 3035,
+        "big_blind": 6070,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "spin_overflow",
+        "big_blind": 6070,
+        "level_index": 19,
+        "small_blind": 3035,
+        "blind_capped": false
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "spin_receipt_overflow",
+        "big_blind": 6070,
+        "level_index": 19,
+        "small_blind": 3035,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": true,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "spin",
+      "stack": 1000,
+      "multiplier": 4,
+      "level": 32,
+      "tag": "approved-current",
+      "total_chips": 3000,
+      "expected": {
+        "small_blind": 172190,
+        "big_blind": 344380,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 172190,
+        "big_blind": 344380,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "spin_overflow",
+        "big_blind": 344380,
+        "level_index": 31,
+        "small_blind": 172190,
+        "blind_capped": false
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "spin_receipt_overflow",
+        "big_blind": 344380,
+        "level_index": 31,
+        "small_blind": 172190,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": true,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "spin",
+      "stack": 1000,
+      "multiplier": 5,
+      "level": 12,
+      "tag": "approved-current",
+      "total_chips": 3000,
+      "expected": {
+        "small_blind": 205,
+        "big_blind": 410,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 205,
+        "big_blind": 410,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "persisted",
+        "big_blind": 410,
+        "level_index": 11,
+        "small_blind": 205,
+        "blind_capped": false
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "persisted",
+        "big_blind": 410,
+        "level_index": 11,
+        "small_blind": 205,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": true,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "spin",
+      "stack": 1000,
+      "multiplier": 5,
+      "level": 13,
+      "tag": "approved-current",
+      "total_chips": 3000,
+      "expected": {
+        "small_blind": 290,
+        "big_blind": 580,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 290,
+        "big_blind": 580,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "spin_overflow",
+        "big_blind": 580,
+        "level_index": 12,
+        "small_blind": 290,
+        "blind_capped": false
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "spin_receipt_overflow",
+        "big_blind": 580,
+        "level_index": 12,
+        "small_blind": 290,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": true,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "spin",
+      "stack": 1000,
+      "multiplier": 5,
+      "level": 14,
+      "tag": "approved-current",
+      "total_chips": 3000,
+      "expected": {
+        "small_blind": 405,
+        "big_blind": 810,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 405,
+        "big_blind": 810,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "spin_overflow",
+        "big_blind": 810,
+        "level_index": 13,
+        "small_blind": 405,
+        "blind_capped": false
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "spin_receipt_overflow",
+        "big_blind": 810,
+        "level_index": 13,
+        "small_blind": 405,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": true,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "spin",
+      "stack": 1000,
+      "multiplier": 5,
+      "level": 20,
+      "tag": "approved-current",
+      "total_chips": 3000,
+      "expected": {
+        "small_blind": 3035,
+        "big_blind": 6070,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 3035,
+        "big_blind": 6070,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "spin_overflow",
+        "big_blind": 6070,
+        "level_index": 19,
+        "small_blind": 3035,
+        "blind_capped": false
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "spin_receipt_overflow",
+        "big_blind": 6070,
+        "level_index": 19,
+        "small_blind": 3035,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": true,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "spin",
+      "stack": 1000,
+      "multiplier": 5,
+      "level": 32,
+      "tag": "approved-current",
+      "total_chips": 3000,
+      "expected": {
+        "small_blind": 172190,
+        "big_blind": 344380,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 172190,
+        "big_blind": 344380,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "spin_overflow",
+        "big_blind": 344380,
+        "level_index": 31,
+        "small_blind": 172190,
+        "blind_capped": false
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "spin_receipt_overflow",
+        "big_blind": 344380,
+        "level_index": 31,
+        "small_blind": 172190,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": true,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "spin",
+      "stack": 1000,
+      "multiplier": 10,
+      "level": 12,
+      "tag": "approved-current",
+      "total_chips": 3000,
+      "expected": {
+        "small_blind": 205,
+        "big_blind": 410,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 205,
+        "big_blind": 410,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "persisted",
+        "big_blind": 410,
+        "level_index": 11,
+        "small_blind": 205,
+        "blind_capped": false
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "persisted",
+        "big_blind": 410,
+        "level_index": 11,
+        "small_blind": 205,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": true,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "spin",
+      "stack": 1000,
+      "multiplier": 10,
+      "level": 13,
+      "tag": "approved-current",
+      "total_chips": 3000,
+      "expected": {
+        "small_blind": 290,
+        "big_blind": 580,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 290,
+        "big_blind": 580,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "spin_overflow",
+        "big_blind": 580,
+        "level_index": 12,
+        "small_blind": 290,
+        "blind_capped": false
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "spin_receipt_overflow",
+        "big_blind": 580,
+        "level_index": 12,
+        "small_blind": 290,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": true,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "spin",
+      "stack": 1000,
+      "multiplier": 10,
+      "level": 14,
+      "tag": "approved-current",
+      "total_chips": 3000,
+      "expected": {
+        "small_blind": 405,
+        "big_blind": 810,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 405,
+        "big_blind": 810,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "spin_overflow",
+        "big_blind": 810,
+        "level_index": 13,
+        "small_blind": 405,
+        "blind_capped": false
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "spin_receipt_overflow",
+        "big_blind": 810,
+        "level_index": 13,
+        "small_blind": 405,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": true,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "spin",
+      "stack": 1000,
+      "multiplier": 10,
+      "level": 20,
+      "tag": "approved-current",
+      "total_chips": 3000,
+      "expected": {
+        "small_blind": 3035,
+        "big_blind": 6070,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 3035,
+        "big_blind": 6070,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "spin_overflow",
+        "big_blind": 6070,
+        "level_index": 19,
+        "small_blind": 3035,
+        "blind_capped": false
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "spin_receipt_overflow",
+        "big_blind": 6070,
+        "level_index": 19,
+        "small_blind": 3035,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": true,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "spin",
+      "stack": 1000,
+      "multiplier": 10,
+      "level": 32,
+      "tag": "approved-current",
+      "total_chips": 3000,
+      "expected": {
+        "small_blind": 172190,
+        "big_blind": 344380,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 172190,
+        "big_blind": 344380,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "spin_overflow",
+        "big_blind": 344380,
+        "level_index": 31,
+        "small_blind": 172190,
+        "blind_capped": false
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "spin_receipt_overflow",
+        "big_blind": 344380,
+        "level_index": 31,
+        "small_blind": 172190,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": true,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "spin",
+      "stack": 1000,
+      "multiplier": 25,
+      "level": 12,
+      "tag": "approved-current",
+      "total_chips": 3000,
+      "expected": {
+        "small_blind": 205,
+        "big_blind": 410,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 205,
+        "big_blind": 410,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "persisted",
+        "big_blind": 410,
+        "level_index": 11,
+        "small_blind": 205,
+        "blind_capped": false
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "persisted",
+        "big_blind": 410,
+        "level_index": 11,
+        "small_blind": 205,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": true,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "spin",
+      "stack": 1000,
+      "multiplier": 25,
+      "level": 13,
+      "tag": "approved-current",
+      "total_chips": 3000,
+      "expected": {
+        "small_blind": 290,
+        "big_blind": 580,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 290,
+        "big_blind": 580,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "spin_overflow",
+        "big_blind": 580,
+        "level_index": 12,
+        "small_blind": 290,
+        "blind_capped": false
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "spin_receipt_overflow",
+        "big_blind": 580,
+        "level_index": 12,
+        "small_blind": 290,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": true,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "spin",
+      "stack": 1000,
+      "multiplier": 25,
+      "level": 14,
+      "tag": "approved-current",
+      "total_chips": 3000,
+      "expected": {
+        "small_blind": 405,
+        "big_blind": 810,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 405,
+        "big_blind": 810,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "spin_overflow",
+        "big_blind": 810,
+        "level_index": 13,
+        "small_blind": 405,
+        "blind_capped": false
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "spin_receipt_overflow",
+        "big_blind": 810,
+        "level_index": 13,
+        "small_blind": 405,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": true,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "spin",
+      "stack": 1000,
+      "multiplier": 25,
+      "level": 20,
+      "tag": "approved-current",
+      "total_chips": 3000,
+      "expected": {
+        "small_blind": 3035,
+        "big_blind": 6070,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 3035,
+        "big_blind": 6070,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "spin_overflow",
+        "big_blind": 6070,
+        "level_index": 19,
+        "small_blind": 3035,
+        "blind_capped": false
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "spin_receipt_overflow",
+        "big_blind": 6070,
+        "level_index": 19,
+        "small_blind": 3035,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": true,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "spin",
+      "stack": 1000,
+      "multiplier": 25,
+      "level": 32,
+      "tag": "approved-current",
+      "total_chips": 3000,
+      "expected": {
+        "small_blind": 172190,
+        "big_blind": 344380,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 172190,
+        "big_blind": 344380,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "spin_overflow",
+        "big_blind": 344380,
+        "level_index": 31,
+        "small_blind": 172190,
+        "blind_capped": false
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "spin_receipt_overflow",
+        "big_blind": 344380,
+        "level_index": 31,
+        "small_blind": 172190,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": true,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "spin",
+      "stack": 1000,
+      "multiplier": 50,
+      "level": 12,
+      "tag": "approved-current",
+      "total_chips": 3000,
+      "expected": {
+        "small_blind": 205,
+        "big_blind": 410,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 205,
+        "big_blind": 410,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "persisted",
+        "big_blind": 410,
+        "level_index": 11,
+        "small_blind": 205,
+        "blind_capped": false
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "persisted",
+        "big_blind": 410,
+        "level_index": 11,
+        "small_blind": 205,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": true,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "spin",
+      "stack": 1000,
+      "multiplier": 50,
+      "level": 13,
+      "tag": "approved-current",
+      "total_chips": 3000,
+      "expected": {
+        "small_blind": 290,
+        "big_blind": 580,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 290,
+        "big_blind": 580,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "spin_overflow",
+        "big_blind": 580,
+        "level_index": 12,
+        "small_blind": 290,
+        "blind_capped": false
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "spin_receipt_overflow",
+        "big_blind": 580,
+        "level_index": 12,
+        "small_blind": 290,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": true,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "spin",
+      "stack": 1000,
+      "multiplier": 50,
+      "level": 14,
+      "tag": "approved-current",
+      "total_chips": 3000,
+      "expected": {
+        "small_blind": 405,
+        "big_blind": 810,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 405,
+        "big_blind": 810,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "spin_overflow",
+        "big_blind": 810,
+        "level_index": 13,
+        "small_blind": 405,
+        "blind_capped": false
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "spin_receipt_overflow",
+        "big_blind": 810,
+        "level_index": 13,
+        "small_blind": 405,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": true,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "spin",
+      "stack": 1000,
+      "multiplier": 50,
+      "level": 20,
+      "tag": "approved-current",
+      "total_chips": 3000,
+      "expected": {
+        "small_blind": 3035,
+        "big_blind": 6070,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 3035,
+        "big_blind": 6070,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "spin_overflow",
+        "big_blind": 6070,
+        "level_index": 19,
+        "small_blind": 3035,
+        "blind_capped": false
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "spin_receipt_overflow",
+        "big_blind": 6070,
+        "level_index": 19,
+        "small_blind": 3035,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": true,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "spin",
+      "stack": 1000,
+      "multiplier": 50,
+      "level": 32,
+      "tag": "approved-current",
+      "total_chips": 3000,
+      "expected": {
+        "small_blind": 172190,
+        "big_blind": 344380,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 172190,
+        "big_blind": 344380,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "spin_overflow",
+        "big_blind": 344380,
+        "level_index": 31,
+        "small_blind": 172190,
+        "blind_capped": false
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "spin_receipt_overflow",
+        "big_blind": 344380,
+        "level_index": 31,
+        "small_blind": 172190,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": true,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "spin",
+      "stack": 1000,
+      "multiplier": 100,
+      "level": 12,
+      "tag": "approved-current",
+      "total_chips": 3000,
+      "expected": {
+        "small_blind": 205,
+        "big_blind": 410,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 205,
+        "big_blind": 410,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "persisted",
+        "big_blind": 410,
+        "level_index": 11,
+        "small_blind": 205,
+        "blind_capped": false
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "persisted",
+        "big_blind": 410,
+        "level_index": 11,
+        "small_blind": 205,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": true,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "spin",
+      "stack": 1000,
+      "multiplier": 100,
+      "level": 13,
+      "tag": "approved-current",
+      "total_chips": 3000,
+      "expected": {
+        "small_blind": 290,
+        "big_blind": 580,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 290,
+        "big_blind": 580,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "spin_overflow",
+        "big_blind": 580,
+        "level_index": 12,
+        "small_blind": 290,
+        "blind_capped": false
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "spin_receipt_overflow",
+        "big_blind": 580,
+        "level_index": 12,
+        "small_blind": 290,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": true,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "spin",
+      "stack": 1000,
+      "multiplier": 100,
+      "level": 14,
+      "tag": "approved-current",
+      "total_chips": 3000,
+      "expected": {
+        "small_blind": 405,
+        "big_blind": 810,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 405,
+        "big_blind": 810,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "spin_overflow",
+        "big_blind": 810,
+        "level_index": 13,
+        "small_blind": 405,
+        "blind_capped": false
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "spin_receipt_overflow",
+        "big_blind": 810,
+        "level_index": 13,
+        "small_blind": 405,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": true,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "spin",
+      "stack": 1000,
+      "multiplier": 100,
+      "level": 20,
+      "tag": "approved-current",
+      "total_chips": 3000,
+      "expected": {
+        "small_blind": 3035,
+        "big_blind": 6070,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 3035,
+        "big_blind": 6070,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "spin_overflow",
+        "big_blind": 6070,
+        "level_index": 19,
+        "small_blind": 3035,
+        "blind_capped": false
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "spin_receipt_overflow",
+        "big_blind": 6070,
+        "level_index": 19,
+        "small_blind": 3035,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": true,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "spin",
+      "stack": 1000,
+      "multiplier": 100,
+      "level": 32,
+      "tag": "approved-current",
+      "total_chips": 3000,
+      "expected": {
+        "small_blind": 172190,
+        "big_blind": 344380,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 172190,
+        "big_blind": 344380,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "spin_overflow",
+        "big_blind": 344380,
+        "level_index": 31,
+        "small_blind": 172190,
+        "blind_capped": false
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "spin_receipt_overflow",
+        "big_blind": 344380,
+        "level_index": 31,
+        "small_blind": 172190,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": true,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "sng",
+      "stack": 1000,
+      "multiplier": null,
+      "level": 12,
+      "tag": "approved-current",
+      "total_chips": 2000,
+      "expected": {
+        "small_blind": 200,
+        "big_blind": 400,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 200,
+        "big_blind": 400,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "persisted",
+        "big_blind": 400,
+        "level_index": 11,
+        "small_blind": 200,
+        "blind_capped": false
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "persisted",
+        "big_blind": 400,
+        "level_index": 11,
+        "small_blind": 200,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": true,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "sng",
+      "stack": 1000,
+      "multiplier": null,
+      "level": 13,
+      "tag": "approved-current",
+      "total_chips": 2000,
+      "expected": {
+        "small_blind": 280,
+        "big_blind": 560,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 280,
+        "big_blind": 560,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "mtt_overflow",
+        "big_blind": 99,
+        "level_index": 12,
+        "small_blind": 49,
+        "blind_capped": true,
+        "overflow_ratio": 1.2778862084925449
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "heads_up_overflow",
+        "big_blind": 560,
+        "level_index": 12,
+        "small_blind": 280,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": false,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "sng",
+      "stack": 1000,
+      "multiplier": null,
+      "level": 14,
+      "tag": "approved-current",
+      "total_chips": 2000,
+      "expected": {
+        "small_blind": 390,
+        "big_blind": 780,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 390,
+        "big_blind": 780,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "mtt_overflow",
+        "big_blind": 99,
+        "level_index": 13,
+        "small_blind": 49,
+        "blind_capped": true,
+        "overflow_ratio": 1.2778862084925449
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "heads_up_overflow",
+        "big_blind": 780,
+        "level_index": 13,
+        "small_blind": 390,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": false,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "sng",
+      "stack": 1000,
+      "multiplier": null,
+      "level": 20,
+      "tag": "approved-current",
+      "total_chips": 2000,
+      "expected": {
+        "small_blind": 2950,
+        "big_blind": 5900,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 2950,
+        "big_blind": 5900,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "mtt_overflow",
+        "big_blind": 99,
+        "level_index": 19,
+        "small_blind": 49,
+        "blind_capped": true,
+        "overflow_ratio": 1.2778862084925449
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "heads_up_overflow",
+        "big_blind": 5900,
+        "level_index": 19,
+        "small_blind": 2950,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": false,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "sng",
+      "stack": 1000,
+      "multiplier": null,
+      "level": 32,
+      "tag": "approved-current",
+      "total_chips": 2000,
+      "expected": {
+        "small_blind": 167335,
+        "big_blind": 334670,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 167335,
+        "big_blind": 334670,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "mtt_overflow",
+        "big_blind": 99,
+        "level_index": 31,
+        "small_blind": 49,
+        "blind_capped": true,
+        "overflow_ratio": 1.2778862084925449
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "heads_up_overflow",
+        "big_blind": 334670,
+        "level_index": 31,
+        "small_blind": 167335,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": false,
+      "proposed_sql_matches_expected": true
+    },
+    {
+      "format": "spin",
+      "stack": 300,
+      "multiplier": 2,
+      "level": 13,
+      "tag": "versioned-receipt-fault-case",
+      "total_chips": 900,
+      "expected": {
+        "small_blind": 230,
+        "big_blind": 460,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "manager": {
+        "small_blind": 230,
+        "big_blind": 460,
+        "ante": 0,
+        "duration_ms": 180000
+      },
+      "installed_sql": {
+        "ante": 0,
+        "source": "spin_overflow",
+        "big_blind": 580,
+        "level_index": 12,
+        "small_blind": 290,
+        "blind_capped": false
+      },
+      "proposed_sql": {
+        "ante": 0,
+        "source": "spin_receipt_overflow",
+        "big_blind": 460,
+        "level_index": 12,
+        "small_blind": 230,
+        "blind_capped": false
+      },
+      "manager_matches_expected": true,
+      "installed_sql_matches_expected": false,
+      "proposed_sql_matches_expected": true
+    }
+  ],
+  "source_commit": "a9992ef2350c8fdcf23fbf8433e0af0c4abe9346",
+  "proposal_body_md5": "9c80eddf5784982bad2585ec39cca0ad",
+  "installed_catalog_body_md5": "b5769b647e5b106caaf51982ac245ee8",
+  "proposal_file": "supabase/migrations/20260910070354_short_format_blinds_continue_their_approved_rules.sql",
+  "production_writes": false,
+  "summary": {
+    "rows_executed": 91,
+    "approved_spin_rows": 80,
+    "installed_sql_mismatches": 9,
+    "proposed_sql_mismatches": 0,
+    "manager_mismatches": 0,
+    "generic_mtt_unchanged_cases": 60,
+    "malformed_receipts_rejected": 10,
+    "preflight_refusals": 3,
+    "private_acl_preserved": true
+  },
+  "checked_at": "2026-09-10T07:09:52.974501+00:00"
+}

@@ -169,3 +169,9 @@ Thirteen additional PostgreSQL scenario groups passed through both local psql an
 The fixture verifies 33 captured function-body hashes and records its limits in scripts/dev/fixtures/tournament-purchase-funding. Accepted-hand records, auth and maintenance inputs are synthetic. Full hand settlement, funded bounty re-entry, union funding and engine grant adoption are not certified, so T04 and T05 gain bounded evidence and remain partial. A final live catalog read was unavailable because the database first reported shutdown and then a connection timeout. No new production correction is claimed.
 
 The preceding sit-out evidence merged as PR #4081, commit 3bb214433b981fe9df52d0991333634343c0f22c, after CI 34428007551 passed. At 02:06:23 UTC the normal staged-deployment successor was dispatched with force=false and HTTP 204 for main 1695880b4a3fef292bba096c6604759cf167bc17. Phase 3 remains open; Phase 4 has not started.
+
+## Blind Level At The End Of The Rest
+
+A behavioral case reproduced a K02 defect: a level update during the prefetched rest left the next hand posting the old 20 big blind and 36 pot instead of 40 and 72. The existing budgeted blind read now runs after that rest and before the caller rechecks pause and lease authority. No database query was added. All nine shared hand cases, three input-preparation cases and server types pass. This correction awaits source publication and engine adoption; K02 is not yet closed.
+
+Purchase evidence merged as PR #4090, commit 78555488589b727122e1f073c3ed32a8c6d55c87, with required CI 34430313387 successful. The database recovered, and its 02:50 UTC catalog matched 31 of the 33 captured bodies. Two installed seat-trigger optimizations were recaptured in the fixture and manifest; all 13 purchase groups passed once against that updated composition with the pinned pg client. T04/T05 retain their stated limits. Phase 3 remains open and Phase 4 has not started.

@@ -1,0 +1,89 @@
+{
+  "scope": "Phase 13 club lobby recovery ownership",
+  "baseline": "37cd6a1c17b6ef92ba1ffd7c86f36a667e6aabd2",
+  "sourceHead": "6db9ef06368881081f9151409acb02a41d8b8e85",
+  "pr": 4085,
+  "mergedAt": "2026-09-10T02:24:17Z",
+  "merge": "80d76e0b2fe5ad9593a82cbb0580b50d03a62896",
+  "regressions": {
+    "before": {
+      "failed": 8,
+      "total": 8
+    },
+    "after": {
+      "passed": 8,
+      "total": 8
+    },
+    "focused": {
+      "passed": 71,
+      "files": 7
+    },
+    "pushGate": {
+      "passed": 836,
+      "files": 53
+    }
+  },
+  "ci": {
+    "run": 34428955104,
+    "conclusion": "success",
+    "requiredBrowserGate": "success",
+    "productionBuild": "success",
+    "clientShards": 4
+  },
+  "publisher": {
+    "run": 34429315574,
+    "conclusion": "success",
+    "actualCopyAndSwap": "success",
+    "exactOriginVerification": "success"
+  },
+  "checkedAt": "2026-09-10T02:28:21.027Z",
+  "stamps": [
+    {
+      "url": "https://smarter.poker/hub/club-arena/build-info.json",
+      "ca_sha": "80d76e0b2fe5ad9593a82cbb0580b50d03a62896",
+      "built_at": "2026-09-10T02:26:33Z",
+      "built_by": "publish-club-arena.yml",
+      "run_id": "34429315574"
+    },
+    {
+      "url": "https://ca-static.smarter.poker/build-info.json",
+      "ca_sha": "80d76e0b2fe5ad9593a82cbb0580b50d03a62896",
+      "built_at": "2026-09-10T02:26:33Z",
+      "built_by": "publish-club-arena.yml",
+      "run_id": "34429315574"
+    }
+  ],
+  "runtimeFile": "src/pages/ClubHomePage.tsx",
+  "testedBlob": "840aca66a55ce38ecc66d5658c8a3dbb9e891afe",
+  "releasedBlob": "840aca66a55ce38ecc66d5658c8a3dbb9e891afe",
+  "assets": [
+    {
+      "url": "https://smarter.poker/hub/club-arena/assets/index--YpkXxdG-v6.js",
+      "sha256": "c881263216a930230e464e5e1c1f80e00ecdeadcc6b14443dac4449235843681"
+    },
+    {
+      "url": "https://smarter.poker/hub/club-arena/assets/ClubHomePage-CdLlP4QP-v6.js",
+      "originUrl": "https://ca-static.smarter.poker/assets/ClubHomePage-CdLlP4QP-v6.js",
+      "sha256": "6ba405d3a378568555a6e40b0989f5a314093014b8c4f96dd0b494d1c420a567",
+      "publicOriginBytesEqual": true
+    }
+  ],
+  "browser": {
+    "baseline": {
+      "club": "Shark Club",
+      "rows": 24,
+      "errorAlerts": 0
+    },
+    "publishedEntryScriptLoaded": true,
+    "postReleaseDOM": "blocked by browser-control timeout; supported recovery also timed out",
+    "naturalReconnect": "unverified",
+    "physicalIpadPwa": "unverified"
+  },
+  "coordination": {
+    "manualB4c427a6CutoverOwned": false,
+    "engineMutations": false,
+    "stageBDdl": false,
+    "hooksBypassed": false,
+    "manualPrOpenOrMerge": false
+  }
+}

@@ -18,6 +18,9 @@ CREATE TABLE public.ca_commission_contributor_receipts (
   PRIMARY KEY(source_type,source_id,contributing_user_id)
 );
 ALTER TABLE public.ca_commission_contributor_receipts ENABLE ROW LEVEL SECURITY;
-REVOKE ALL ON public.ca_commission_contributor_receipts FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON public.ca_commission_contributor_receipts FROM PUBLIC, anon, authenticated, service_role;
 GRANT SELECT,INSERT,UPDATE ON public.ca_commission_contributor_receipts TO service_role;
+-- Stage 3 retains the invoker contract; the prospective source cutover below
+-- changes it to the owner-only writer and removes INSERT/UPDATE again.
+REVOKE DELETE,TRUNCATE,REFERENCES,TRIGGER ON public.ca_commission_contributor_receipts FROM service_role;
 COMMIT;

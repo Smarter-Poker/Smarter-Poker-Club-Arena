@@ -1,0 +1,166 @@
+{
+  "passed": 40,
+  "scope": "real capture, cash admission and five actual agent_commissions triggers; isolated synthetic accepted envelope rows, not full stack-owner dependencies",
+  "checks": [
+    {
+      "name": "Activation binds actual owner patch",
+      "passed": true
+    },
+    {
+      "name": "Actual transition-table rollup includes every contributor",
+      "passed": true
+    },
+    {
+      "name": "Captured terms never read reassignment on replay",
+      "passed": true
+    },
+    {
+      "name": "Changed contributor amount refused",
+      "passed": true
+    },
+    {
+      "name": "Contributor identity guarded in actual append-only trigger stack",
+      "passed": true
+    },
+    {
+      "name": "Corrupt accepted hash refused",
+      "passed": true
+    },
+    {
+      "name": "Corrupt capture rollback includes accepted fixture",
+      "passed": true
+    },
+    {
+      "name": "Explicit missing assignment is not no-agent",
+      "passed": true
+    },
+    {
+      "name": "Explicit rollback preserves no source, receipt, accrual or rollup effect",
+      "passed": true
+    },
+    {
+      "name": "Final receipt delete refused",
+      "passed": true
+    },
+    {
+      "name": "Final receipt update refused",
+      "passed": true
+    },
+    {
+      "name": "Genuine no-agent commission receipt cannot invent a rebate",
+      "passed": true
+    },
+    {
+      "name": "Inactive assigned agent does not become unassigned",
+      "passed": true
+    },
+    {
+      "name": "Legacy or missing generation never borrows a new seat",
+      "passed": true
+    },
+    {
+      "name": "Legacy zero-row source is never adopted",
+      "passed": true
+    },
+    {
+      "name": "Matching total with different contribution envelope is refused",
+      "passed": true
+    },
+    {
+      "name": "Middle tier failure rolls all attribution back",
+      "passed": true
+    },
+    {
+      "name": "Missing assigned terms do not invent a volume ladder",
+      "passed": true
+    },
+    {
+      "name": "Next accepted source sees committed new terms",
+      "passed": true
+    },
+    {
+      "name": "No commission before banked source",
+      "passed": true
+    },
+    {
+      "name": "No partial receipt or rows after middle tier rollback",
+      "passed": true
+    },
+    {
+      "name": "Observed concurrent mutation cannot mix whole-hand terms",
+      "passed": true
+    },
+    {
+      "name": "Observed overlapping duplicate books exactly one contributor",
+      "passed": true
+    },
+    {
+      "name": "Owner cutover rollback restores body and leaves no activation",
+      "passed": true
+    },
+    {
+      "name": "Player margin violation preserves exact requested rate without clipping",
+      "passed": true
+    },
+    {
+      "name": "Receipt truncate refused",
+      "passed": true
+    },
+    {
+      "name": "Receipts cannot be forged through service table grants",
+      "passed": true
+    },
+    {
+      "name": "Replay preserves original payer and terms",
+      "passed": true
+    },
+    {
+      "name": "Service cannot fabricate source facts",
+      "passed": true
+    },
+    {
+      "name": "Service cannot invoke source helper",
+      "passed": true
+    },
+    {
+      "name": "Service reads source facts only despite broad default grants",
+      "passed": true
+    },
+    {
+      "name": "Source count and conserved allocation",
+      "passed": true
+    },
+    {
+      "name": "Source facts delete refused",
+      "passed": true
+    },
+    {
+      "name": "Source facts truncate refused",
+      "passed": true
+    },
+    {
+      "name": "Source facts update refused",
+      "passed": true
+    },
+    {
+      "name": "Source helper hidden from every API role",
+      "passed": true
+    },
+    {
+      "name": "Sub-cent rebate entitlement is never rounded away per hand",
+      "passed": true
+    },
+    {
+      "name": "Two contributors pay every tier once",
+      "passed": true
+    },
+    {
+      "name": "Unknown source refused",
+      "passed": true
+    },
+    {
+      "name": "Whole hierarchy captured",
+      "passed": true
+    }
+  ]
+}

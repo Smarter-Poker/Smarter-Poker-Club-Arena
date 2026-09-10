@@ -38,3 +38,9 @@ No public funded game was enabled. `cash_games_enabled` defaults false. The exis
 - Initial focused engine cases: 172 passed without skips. Latest integrated run: 59 passed across Diamond accepted-hand pipeline, Diamond config, horse funding boundary, restart behavior and occupancy leave behavior. Eight cases overlap the earlier run; do not add these runs as distinct totals.
 - Final server TypeScript passed. The client production build passed TypeScript, bundling and media/font processing. Its provenance correctly warned that the development branch was behind main and dirty, so this local artifact is not publication evidence. Main integration and normal pipeline checks follow.
 - No generated production artifact was uploaded manually. Git operations target this exact isolated worktree; the shared repository's bare setting was not changed.
+
+## Main Integration Proof
+
+The completed implementation is commit `26c006880c`, consolidated into the existing Phase 6 foundation branch for PR 4088. Latest main and the normal autopilot branch update merged without conflicts as `dad35dfeeb`. The subsequent complete client build passed on that clean source, with build provenance `behind-main=0`. Final server TypeScript passed after integration. The 14 merge-specific next-hand, tournament-blind and Diamond accepted-hand cases passed. The earlier dirty development build was not used as release proof.
+
+Production application remains blocked by the automatic approval review described above. The code push and subsequent CI must preserve that failed migration gate until application is authorized and verified. No engine/container/tag/host checkout changes or Stage-B tournament DDL were performed by this Diamond task.

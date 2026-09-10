@@ -21,12 +21,15 @@
       "bounty_per_pot": "payouts + root",
       "reserved_unpaid_results": "bounties + root",
       "commission_cascade": "entry_refunds + root; blockers remain",
-      "spin_first_deal_clock": "bounties; final commit pending"
+      "spin_first_deal_clock": "bounties + root; committed7e9933fb55d12c1c6a0389afa1af51989542b082 integrated asac019e328",
+      "strict_build_provenance": "root review +9 actual subprocess cases, commit85d5f089d integrated asd73220569"
     },
     "new_assignments": [
       "satellite qualification SQL/engine with payout UI lane",
       "canonical commission source with player rebate payer lane",
-      "release provenance strict CI enforcement"
+      "release provenance strict CI enforcement",
+      "HU funded last-seat/start/refund native PostgreSQL composition",
+      "Shared atomic blind transition and approved overflow comparison"
     ]
   },
   "database_changes": [
@@ -104,5 +107,23 @@
     "Forced engine restart or independent Stage-B cutover",
     "World Hub edits",
     "Horse strategy edits"
-  ]
+  ],
+  "final_integrated_checks": {
+    "source_head": "d73220569c299adfc2013bead3f567a8e5a962fb",
+    "client_behavior_tests": 57,
+    "client_test_files": 4,
+    "server_behavior_tests": 137,
+    "server_test_files": 10,
+    "root_build_exit": 0,
+    "server_build_exit": 0,
+    "client_receipt": "/tmp/resume-poker-final-client-results.json",
+    "server_receipt": "/tmp/resume-poker-final-server-results.json",
+    "coverage": "Merged bounty persistence with current Diamond accepted-hand path; actual Spin first-deal hold; cash result reserve; terminal witness; rake cursor; blind-row recovery; client obsolete intents, mystery event identity and real Git provenance subprocesses.",
+    "whole_phase_acceptance": false
+  },
+  "new_rule_recovery": {
+    "source": "Original user message, Header Redesign Done, 2026-08-30, recovered conversation context",
+    "assigned_player_rebate": "Paid from their agent allocation, subject to available upline allocation and minimum10 percentage-point margin.",
+    "scope": "Resolves assigned-player cost bearer; does not authorize rewriting existing assigned rates or historical balances. Unassigned-player and source-time assignment semantics require explicit evidence."
+  }
 }

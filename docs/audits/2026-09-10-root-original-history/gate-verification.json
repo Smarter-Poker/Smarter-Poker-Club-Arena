@@ -1,0 +1,88 @@
+{
+  "scope": "Finite backup archive verification; historical SQL/proof behavior is not recertified",
+  "prior_normal_push_attempts": [
+    {
+      "log_sha256": "448edc531ee9364734aae695421df58baac6be7ba2526078b6c732cbc0c79136",
+      "normal_push_exit": 1,
+      "failure": "Superseded bundled satellite migration anonymously reachable definer; corrected by byte-preserving historical relocation outside active migrations",
+      "suite_summaries": [
+        "Test Files  412 passed (412)\n      Tests  5608 passed | 1 skipped (5609)\n   Start at  11:31:12\n   Duration  18.34s (transform 24.30s, setup 69.61s, import 40.84s, tests 116.74s, environment 152.74s)",
+        "Test Files  538 passed (538)\n      Tests  6810 passed (6810)\n   Start at  11:31:35\n   Duration  17.99s (transform 24.51s, setup 73.99s, import 44.39s, tests 97.86s, environment 167.13s)",
+        "Test Files  356 passed (356)\n      Tests  4749 passed (4749)\n   Start at  11:32:54\n   Duration  12.56s (transform 19.46s, setup 61.39s, import 32.15s, tests 38.88s, environment 129.77s)",
+        "Test Files  372 passed | 1 skipped (373)\n      Tests  4708 passed | 145 skipped (4853)\n   Start at  11:33:08\n   Duration  20.42s (transform 12.09s, setup 3.44s, collect 130.36s, tests 85.37s, environment 42ms, prepare 19.99s)",
+        "Test Files  436 passed | 1 skipped (437)\n      Tests  6657 passed | 145 skipped (6802)\n   Start at  11:33:28\n   Duration  23.36s (transform 32ms, setup 3.21s, collect 160.68s, tests 135.57s, environment 57ms, prepare 20.22s)"
+      ],
+      "failure_excerpts": [
+        "[check-definer-authorization] BLOCKED \u2014 reachable without an account.\n\n  fn_ca_tournament_escrow\n    declared in supabase/migrations/20260910043237_satellite_seats_count_once_and_keep_the_funded_prize.sql\n    SECURITY DEFINER, anon can execute it, and it never calls auth.uid(),\n    auth.role() or auth.jwt(). It runs as the owner, past RLS, for a caller\n    with no account \u2014 and it never asks who that caller is.\n\n  READ-ONLY IS NOT THE SAME AS HARMLESS. On 2026-08-31 three functions\n  arrived this way in one afternoon, every one of them read-only, and the\n  writer check above cleared all three. One of them returned every table\n  name, index name and index size in the schema to anybody who asked.\n\n  Pick one, in this order of preference:\n\n  1. IT IS OPERATOR OR ENGINE TELEMETRY. Almost always true for a metrics,\n     audit or diagnostics function. Close it in the same migration:"
+      ],
+      "gate_header": [
+        "OK: all-in mode never disables pointer events on the hero action controls",
+        "OK: 7 rule file(s) loaded, mounted at matching paths, non-empty; alerts route to a receiver that delivers",
+        "check-no-skip-markers: OK - no commit suppresses its own publish.",
+        "[check-required-columns] OK \u2014 87 literal insert/upsert payload(s) checked against the live schema; 11 skipped as unjudgeable (spread or computed key).",
+        "",
+        "[check-definer-authorization] BLOCKED \u2014 reachable without an account.",
+        "",
+        "  fn_ca_tournament_escrow",
+        "    declared in supabase/migrations/20260910043237_satellite_seats_count_once_and_keep_the_funded_prize.sql",
+        "    SECURITY DEFINER, anon can execute it, and it never calls auth.uid(),",
+        "    auth.role() or auth.jwt(). It runs as the owner, past RLS, for a caller",
+        "    with no account \u2014 and it never asks who that caller is.",
+        "",
+        "  READ-ONLY IS NOT THE SAME AS HARMLESS. On 2026-08-31 three functions",
+        "  arrived this way in one afternoon, every one of them read-only, and the"
+      ]
+    },
+    {
+      "log_sha256": "c7cac5d4df012334f663798c8a008e30c5c3f4067c3e5b956fd47bb9e00ce93f",
+      "normal_push_exit": 1,
+      "failure": "One unchanged published promotion law test exceeded its existing5000ms timeout; no threshold/assertion changes",
+      "suite_summaries": [
+        "Test Files  1 failed | 411 passed (412)\n      Tests  1 failed | 5607 passed | 1 skipped (5609)\n   Start at  11:40:32\n   Duration  30.63s (transform 40.70s, setup 118.55s, import 75.84s, tests 221.06s, environment 272.63s)",
+        "Test Files  538 passed (538)\n      Tests  6810 passed (6810)\n   Start at  11:41:10\n   Duration  31.14s (transform 44.38s, setup 152.34s, import 81.80s, tests 113.50s, environment 334.96s)",
+        "Test Files  356 passed (356)\n      Tests  4749 passed (4749)\n   Start at  11:43:26\n   Duration  13.81s (transform 27.14s, setup 69.24s, import 39.93s, tests 35.89s, environment 145.67s)",
+        "Test Files  372 passed | 1 skipped (373)\n      Tests  4708 passed | 145 skipped (4853)\n   Start at  11:43:41\n   Duration  20.53s (transform 13.33s, setup 3.53s, collect 136.59s, tests 84.51s, environment 42ms, prepare 20.09s)",
+        "Test Files  436 passed | 1 skipped (437)\n      Tests  6657 passed | 145 skipped (6802)\n   Start at  11:44:02\n   Duration  30.29s (transform 50ms, setup 4.41s, collect 193.21s, tests 146.65s, environment 54ms, prepare 23.86s)"
+      ],
+      "failure_excerpts": [
+        "FAIL  tests/promotions-query-a-column-that-exists.law.test.ts > the money-path migrations that guard the bounty chests > a recipient is only marked paid when the credit moved\nError: Test timed out in 5000ms.\nIf this is a long-running test, pass a timeout value as the last argument or configure it globally with \"testTimeout\".\n \u276f tests/promotions-query-a-column-that-exists.law.test.ts:85:3\n     83|   });\n     84|\n     85|   it('a recipient is only marked paid when the credit moved', () => {\n       |   ^\n     86|     /**\n     87|      * `paid_at` was stamped before the credit result was read, and th\u2026\n\n\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af[1/1]\u23af\n\n\n Test Files  1 failed | 411 passed (412)\n      Tests  1 failed | 5607 passed | 1 skipped (5609)\n   Start at  11:40:32\n   Duration  30.63s (transform 40.70s, setup 118.55s, import 75.84s, tests 221.06s, environment 272.63s)"
+      ],
+      "gate_header": [
+        "OK: all-in mode never disables pointer events on the hero action controls",
+        "OK: 7 rule file(s) loaded, mounted at matching paths, non-empty; alerts route to a receiver that delivers",
+        "check-no-skip-markers: OK - no commit suppresses its own publish.",
+        "[check-required-columns] OK \u2014 87 literal insert/upsert payload(s) checked against the live schema; 11 skipped as unjudgeable (spread or computed key).",
+        "[check-definer-authorization] OK \u2014 2 SECURITY DEFINER function(s) declared across 2 migration(s); every writer a browser can reach consults the request, nothing new answers a caller with no account, every clone names its grants, and no unscoped set-returning definer is browser-reachable.",
+        "[check-unqualified-writes] OK \u2014 2 migration(s) checked; every UPDATE and DELETE carries a WHERE clause, so none of them is refused on the PostgREST path.",
+        "[check-no-new-band-aids] OK - 2 migration(s) checked; none declares a repair, back-pay, re-drive, catch-up, backfill or heal path.",
+        "[club-arena pre-push] type-checking src/ ...",
+        "check-title-case: OK - every static word on every page starts with a capital.",
+        "check-painted-text-case: OK - every painted string is Title Cased.",
+        "check-nav-title-case: OK - every navigation label is Title Cased at its source.",
+        "\u2713 All 6 protected commit(s) still on main.",
+        "check-ui-text: OK - no em dashes in UI text.",
+        "[doctrine] CLAUDE.md differs from origin/main but carries no retired instruction.",
+        "[club-arena pre-push] running the test files you changed..."
+      ]
+    }
+  ],
+  "focused_unchanged_timeout_rerun": {
+    "command": "node_modules/.bin/vitest run tests/promotions-query-a-column-that-exists.law.test.ts",
+    "result": "passed",
+    "tests": 7,
+    "test_runtime_ms": 529,
+    "vitest_duration_seconds": 1.09,
+    "default_timeout_unchanged": true,
+    "file_sha256": "6657e08c1f35b7511615549218b6eeb53b14fe69a1e12fa489776c9206189c4d",
+    "published_blob": "b4fe15d7c00595406d4a9ad25c6cb84fa923a61f"
+  },
+  "archive_preservation": {
+    "original_head": "d6b451b363916f7c4396dada7dd7f554cbc1879e",
+    "published_parent": "780398afa772b69f491586c9092016d1aca8dff6",
+    "original_commits": 14,
+    "original_file_hashes": 72,
+    "superseded_sql_moves": 4,
+    "moves_byte_preserved": true
+  },
+  "next_action": "Repeat the complete unchanged normal push gate, then verify remote SHA, both parents, published runtime/CI/migration equality and clean worktree; final outcome belongs to the closeout receipt."
+}

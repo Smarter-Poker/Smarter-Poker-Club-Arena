@@ -599,16 +599,16 @@ $assert_phase_three_125453$;
 
 SELECT pg_temp.assert_stage_b_phase_three_125453_postimage();
 
--- Production advanced through twenty-eight more byte-authenticated migrations after
+-- Production advanced through thirty-one more byte-authenticated migrations after
 -- the Phase-Three expansion. Prove their complete durable postimage before
 -- touching any Stage-B authority and again at the transaction boundary. The
 -- incident rows closed by three of these migrations are operational history;
 -- their identities and timestamps deliberately are not frozen here.
-CREATE OR REPLACE FUNCTION pg_temp.assert_stage_b_current_live_tail_174349_postimage()
+CREATE OR REPLACE FUNCTION pg_temp.assert_stage_b_current_live_tail_183316_postimage()
 RETURNS void
 LANGUAGE plpgsql
 SET search_path TO 'pg_catalog','public','extensions','pg_temp'
-AS $assert_current_live_tail_174349$
+AS $assert_current_live_tail_183316$
 DECLARE
   v_count integer;
   v_bad integer;
@@ -670,7 +670,13 @@ BEGIN
       ('20260910173147','the_settlement_lane_is_per_tournament_for_rolling_authorities',50176,
        'bc620a6b093ab9769615427168763bc35aaed44e60ee190202470dfcef0f744b'),
       ('20260910174349','the_bounty_sweep_takes_one_tournament_lane_per_call',14494,
-       '0e209beadad2f8b52e8c72c0bd3559b6fe64fab9917bfb8ac6516a6297f66a17')
+       '0e209beadad2f8b52e8c72c0bd3559b6fe64fab9917bfb8ac6516a6297f66a17'),
+      ('20260910181549','active_means_who_is_on_the_floor_cash_and_events_counted_apa',6683,
+       '1af938d32302276d1165e74942e0f2a8588329d9e18774d7280f7bb98298cfad'),
+      ('20260910181625','the_daily_bonus_learns_to_forgive_boost_and_gamble',40277,
+       '228794e1ff83afdcca1d5df1590009cd6fe63234a8d1666b6cb4d4b1a02930f2'),
+      ('20260910183316','retire_legacy_autofix_and_db_deploy_dispatch',16102,
+       '3da3b76f4f23e1c3161e9292c155e3a0fb0e93e3743b130c46e80b259eea395f')
   )
   SELECT count(*)::integer,
          count(*) FILTER (
@@ -688,13 +694,13 @@ BEGIN
     FROM expected
     LEFT JOIN supabase_migrations.schema_migrations m
       ON m.version=expected.version AND m.name=expected.name;
-  IF v_count<>28 OR v_bad<>0 OR (
+  IF v_count<>31 OR v_bad<>0 OR (
        SELECT max(m.version)
          FROM supabase_migrations.schema_migrations m
         WHERE m.version ~ '^[0-9]{14}$'
-     ) IS DISTINCT FROM '20260910174349' THEN
+     ) IS DISTINCT FROM '20260910183316' THEN
     RAISE EXCEPTION
-      'Stage-B requires all twenty-eight byte-exact 130319-174349 live-tail migrations and the exact 174349 ledger head; % rows drifted',
+      'Stage-B requires all thirty-one byte-exact 130319-183316 live-tail migrations and the exact 183316 ledger head; % rows drifted',
       v_bad USING ERRCODE='55000';
   END IF;
 
@@ -897,7 +903,7 @@ BEGIN
     LEFT JOIN pg_language l ON l.oid=p.prolang;
   IF v_count<>28 OR v_bad<>0 THEN
     RAISE EXCEPTION
-      'Stage-B found % missing or drifted 174349 live-tail function catalogs',
+      'Stage-B found % missing or drifted 183316 live-tail function catalogs',
       v_bad USING ERRCODE='55000';
   END IF;
 
@@ -1503,9 +1509,9 @@ BEGIN
       v_bad USING ERRCODE='55000';
   END IF;
 END;
-$assert_current_live_tail_174349$;
+$assert_current_live_tail_183316$;
 
-SELECT pg_temp.assert_stage_b_current_live_tail_174349_postimage();
+SELECT pg_temp.assert_stage_b_current_live_tail_183316_postimage();
 
 -- Four live-tail functions below are deliberately wrapped or have their ACL
 -- and trusted search path tightened later in this same transaction. Pin their
@@ -11755,6 +11761,6 @@ END;
 $verify_stage_b_171924_mutable_sources_carried$;
 
 SELECT pg_temp.assert_stage_b_phase_three_125453_postimage();
-SELECT pg_temp.assert_stage_b_current_live_tail_174349_postimage();
+SELECT pg_temp.assert_stage_b_current_live_tail_183316_postimage();
 
 COMMIT;

@@ -261,7 +261,7 @@ describe('the reserved Stage-B forward authority boundaries stay split', () => {
     ).toBe(2);
   });
 
-  it('requires the byte-authenticated 174349 live schema and a zero-player-data donor', () => {
+  it('requires the byte-authenticated 183316 live schema and a zero-player-data donor', () => {
     const currentLiveSources = [
       ['20260910034411', 'seat_proof_lock_generic_plan_lobby_policy_hashed_and_tick_in'],
       ['20260910034412', 'spin_draw_gate_reads_zero_as_undrawn_and_stamps_the_row'],
@@ -319,9 +319,12 @@ describe('the reserved Stage-B forward authority boundaries stay split', () => {
       ['20260910171924', 'satellite_seats_count_once_and_keep_the_funded_prize'],
       ['20260910173147', 'the_settlement_lane_is_per_tournament_for_rolling_authorities'],
       ['20260910174349', 'the_bounty_sweep_takes_one_tournament_lane_per_call'],
+      ['20260910181549', 'active_means_who_is_on_the_floor_cash_and_events_counted_apa'],
+      ['20260910181625', 'the_daily_bonus_learns_to_forgive_boost_and_gamble'],
+      ['20260910183316', 'retire_legacy_autofix_and_db_deploy_dispatch'],
     ] as const;
 
-    expect(currentLiveSources).toHaveLength(56);
+    expect(currentLiveSources).toHaveLength(59);
     for (const [version, name] of currentLiveSources) {
       expect(harness).toContain(version);
       expect(harness).toContain(name);
@@ -495,6 +498,24 @@ describe('the reserved Stage-B forward authority boundaries stay split', () => {
         14494,
         '0e209beadad2f8b52e8c72c0bd3559b6fe64fab9917bfb8ac6516a6297f66a17',
       ],
+      [
+        '20260910181549',
+        'active_means_who_is_on_the_floor_cash_and_events_counted_apa',
+        6683,
+        '1af938d32302276d1165e74942e0f2a8588329d9e18774d7280f7bb98298cfad',
+      ],
+      [
+        '20260910181625',
+        'the_daily_bonus_learns_to_forgive_boost_and_gamble',
+        40277,
+        '228794e1ff83afdcca1d5df1590009cd6fe63234a8d1666b6cb4d4b1a02930f2',
+      ],
+      [
+        '20260910183316',
+        'retire_legacy_autofix_and_db_deploy_dispatch',
+        16102,
+        '3da3b76f4f23e1c3161e9292c155e3a0fb0e93e3743b130c46e80b259eea395f',
+      ],
     ] as const) {
       expect(harness).toContain(`('${version}','${name}',1,${bytes},`);
       expect(harness).toContain(sha256);
@@ -590,19 +611,37 @@ describe('the reserved Stage-B forward authority boundaries stay split', () => {
         14494,
         '0e209beadad2f8b52e8c72c0bd3559b6fe64fab9917bfb8ac6516a6297f66a17',
       ],
+      [
+        '20260910181549',
+        'active_means_who_is_on_the_floor_cash_and_events_counted_apa',
+        6683,
+        '1af938d32302276d1165e74942e0f2a8588329d9e18774d7280f7bb98298cfad',
+      ],
+      [
+        '20260910181625',
+        'the_daily_bonus_learns_to_forgive_boost_and_gamble',
+        40277,
+        '228794e1ff83afdcca1d5df1590009cd6fe63234a8d1666b6cb4d4b1a02930f2',
+      ],
+      [
+        '20260910183316',
+        'retire_legacy_autofix_and_db_deploy_dispatch',
+        16102,
+        '3da3b76f4f23e1c3161e9292c155e3a0fb0e93e3743b130c46e80b259eea395f',
+      ],
     ] as const) {
       const source = migration(`${version}_${name}.sql`);
       expect(Buffer.byteLength(source), `${version} bytes`).toBe(bytes);
       expect(createHash('sha256').update(source).digest('hex'), `${version} SHA-256`).toBe(sha256);
     }
-    expect(harness).toContain("current_live_ledger_head='20260910174349'");
+    expect(harness).toContain("current_live_ledger_head='20260910183316'");
     expect(harness).toContain(
-      `if [[ "$anchor_receipts" != '56' || "$ledger_head" != "$current_live_ledger_head" ]]`
+      `if [[ "$anchor_receipts" != '59' || "$ledger_head" != "$current_live_ledger_head" ]]`
     );
     expect(harness).toContain(`if [[ "$exact_body_receipts" != '3' ]]`);
     expect(harness).toContain(`if [[ "$descriptor_receipts" != '2' ]]`);
     expect(harness).toContain(
-      `if [[ "$audited_tail_receipts" != '40' || "$audited_tail_statements" != '43' ]]`
+      `if [[ "$audited_tail_receipts" != '43' || "$audited_tail_statements" != '46' ]]`
     );
     expect(harness).toContain(`if [[ "$player_id_functions_exact" != '2' ]]`);
     expect(harness).toContain(`if [[ "$tail_functions_exact" != '14' ]]`);
@@ -819,11 +858,11 @@ describe('the reserved Stage-B forward authority boundaries stay split', () => {
     expect(harness).toContain('STAGE_B_125453_PHASE3_POSTIMAGE_OK');
   });
 
-  it('authenticates the complete 174349 live tail at both contraction boundaries', () => {
-    const guard = dollarBlock(contraction, 'assert_current_live_tail_174349');
-    const call = 'SELECT pg_temp.assert_stage_b_current_live_tail_174349_postimage();';
+  it('authenticates the complete 183316 live tail at both contraction boundaries', () => {
+    const guard = dollarBlock(contraction, 'assert_current_live_tail_183316');
+    const call = 'SELECT pg_temp.assert_stage_b_current_live_tail_183316_postimage();';
     const definition = contraction.indexOf(
-      'CREATE OR REPLACE FUNCTION pg_temp.assert_stage_b_current_live_tail_174349_postimage()'
+      'CREATE OR REPLACE FUNCTION pg_temp.assert_stage_b_current_live_tail_183316_postimage()'
     );
     const firstCall = contraction.indexOf(call);
     const finalCall = contraction.lastIndexOf(call);
@@ -834,13 +873,13 @@ describe('the reserved Stage-B forward authority boundaries stay split', () => {
     expect(
       occurrences(
         contraction,
-        /CREATE OR REPLACE FUNCTION pg_temp\.assert_stage_b_current_live_tail_174349_postimage\(\)/g
+        /CREATE OR REPLACE FUNCTION pg_temp\.assert_stage_b_current_live_tail_183316_postimage\(\)/g
       )
     ).toBe(1);
     expect(
       occurrences(
         contraction,
-        /^SELECT pg_temp\.assert_stage_b_current_live_tail_174349_postimage\(\);$/gm
+        /^SELECT pg_temp\.assert_stage_b_current_live_tail_183316_postimage\(\);$/gm
       )
     ).toBe(2);
     expect(definition).toBeGreaterThanOrEqual(0);
@@ -1022,12 +1061,30 @@ describe('the reserved Stage-B forward authority boundaries stay split', () => {
         14494,
         '0e209beadad2f8b52e8c72c0bd3559b6fe64fab9917bfb8ac6516a6297f66a17',
       ],
+      [
+        '20260910181549',
+        'active_means_who_is_on_the_floor_cash_and_events_counted_apa',
+        6683,
+        '1af938d32302276d1165e74942e0f2a8588329d9e18774d7280f7bb98298cfad',
+      ],
+      [
+        '20260910181625',
+        'the_daily_bonus_learns_to_forgive_boost_and_gamble',
+        40277,
+        '228794e1ff83afdcca1d5df1590009cd6fe63234a8d1666b6cb4d4b1a02930f2',
+      ],
+      [
+        '20260910183316',
+        'retire_legacy_autofix_and_db_deploy_dispatch',
+        16102,
+        '3da3b76f4f23e1c3161e9292c155e3a0fb0e93e3743b130c46e80b259eea395f',
+      ],
     ] as const) {
       expect(guard).toContain(`('${version}','${name}',${bytes},`);
       expect(guard).toContain(sha256);
     }
-    expect(guard).toContain("IS DISTINCT FROM '20260910174349' THEN");
-    expect(guard).toContain('all twenty-eight byte-exact 130319-174349 live-tail migrations');
+    expect(guard).toContain("IS DISTINCT FROM '20260910183316' THEN");
+    expect(guard).toContain('all thirty-one byte-exact 130319-183316 live-tail migrations');
     expect(guard).toContain('cardinality(m.statements) IS DISTINCT FROM 1');
     expect(guard).toContain('octet_length(m.statements[1]) IS DISTINCT FROM');
     expect(guard).toContain("convert_to(m.statements[1],'UTF8'),'sha256'");

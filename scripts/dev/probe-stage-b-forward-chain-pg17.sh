@@ -7,7 +7,7 @@ archive_dir="$repo_dir/supabase/retired-unapplied"
 manifest="$archive_dir/MANIFEST.sha256"
 resolver="$repo_dir/scripts/ops/lib/resolve-staged-or-promoted-migration.sh"
 diamond_fixture="$repo_dir/scripts/dev/fixtures/stage-b-diamond-accepted-hand-current-schema.sql"
-current_live_ledger_head='20260910174349'
+current_live_ledger_head='20260910183316'
 seat_move_hotfix_statement_sha256='b3f1bb62152627444b33c82b806c00ba3587aeebbe3d13800faf69fae7809ea2'
 manager_request_authority_statement_sha256='2cbcab5f263e8ca02b16f6c47ebbd7f6d47eb783d81c5939133c1e39b5d306f4'
 busy_manager_statement_sha256='2e95299dd7693a09ee310a4086b2dcdf16f0f942582007bdede0c4c81024e07d'
@@ -662,7 +662,10 @@ WITH expected_anchors(version,name) AS (
     ('20260910171911','a_tournament_elimination_requires_a_finishing_rank'),
     ('20260910171924','satellite_seats_count_once_and_keep_the_funded_prize'),
     ('20260910173147','the_settlement_lane_is_per_tournament_for_rolling_authorities'),
-    ('20260910174349','the_bounty_sweep_takes_one_tournament_lane_per_call')
+    ('20260910174349','the_bounty_sweep_takes_one_tournament_lane_per_call'),
+    ('20260910181549','active_means_who_is_on_the_floor_cash_and_events_counted_apa'),
+    ('20260910181625','the_daily_bonus_learns_to_forgive_boost_and_gamble'),
+    ('20260910183316','retire_legacy_autofix_and_db_deploy_dispatch')
 ), exact_body_rows(version,name,statement_sha256) AS (
   VALUES
     ('20260910051447','the_seat_move_door_the_engine_calls_exists',
@@ -718,7 +721,10 @@ WITH expected_anchors(version,name) AS (
     ('20260910171911','a_tournament_elimination_requires_a_finishing_rank',1),
     ('20260910171924','satellite_seats_count_once_and_keep_the_funded_prize',1),
     ('20260910173147','the_settlement_lane_is_per_tournament_for_rolling_authorities',1),
-    ('20260910174349','the_bounty_sweep_takes_one_tournament_lane_per_call',1)
+    ('20260910174349','the_bounty_sweep_takes_one_tournament_lane_per_call',1),
+    ('20260910181549','active_means_who_is_on_the_floor_cash_and_events_counted_apa',1),
+    ('20260910181625','the_daily_bonus_learns_to_forgive_boost_and_gamble',1),
+    ('20260910183316','retire_legacy_autofix_and_db_deploy_dispatch',1)
 ), audited_tail_statements(version,name,ordinal,statement_bytes,statement_sha256) AS (
   VALUES
     ('20260910072322','the_knockout_door_owns_every_bust_a_hand_took',1,13334,
@@ -806,7 +812,13 @@ WITH expected_anchors(version,name) AS (
     ('20260910173147','the_settlement_lane_is_per_tournament_for_rolling_authorities',1,50176,
      'bc620a6b093ab9769615427168763bc35aaed44e60ee190202470dfcef0f744b'),
     ('20260910174349','the_bounty_sweep_takes_one_tournament_lane_per_call',1,14494,
-     '0e209beadad2f8b52e8c72c0bd3559b6fe64fab9917bfb8ac6516a6297f66a17')
+     '0e209beadad2f8b52e8c72c0bd3559b6fe64fab9917bfb8ac6516a6297f66a17'),
+    ('20260910181549','active_means_who_is_on_the_floor_cash_and_events_counted_apa',1,6683,
+     '1af938d32302276d1165e74942e0f2a8588329d9e18774d7280f7bb98298cfad'),
+    ('20260910181625','the_daily_bonus_learns_to_forgive_boost_and_gamble',1,40277,
+     '228794e1ff83afdcca1d5df1590009cd6fe63234a8d1666b6cb4d4b1a02930f2'),
+    ('20260910183316','retire_legacy_autofix_and_db_deploy_dispatch',1,16102,
+     '3da3b76f4f23e1c3161e9292c155e3a0fb0e93e3743b130c46e80b259eea395f')
 ), journal_trigger_bindings(table_name,trigger_name,trigger_type,triggerdef_md5) AS (
   VALUES
     ('agent_commissions','trg_ca_append_only',27,
@@ -1427,8 +1439,8 @@ if [[ "$major_version" != '17' || "$locality" != 'local' ]]; then
   echo "Rehearsal requires local PostgreSQL 17; observed ${server_address:-unknown}." >&2
   exit 65
 fi
-if [[ "$anchor_receipts" != '56' || "$ledger_head" != "$current_live_ledger_head" ]]; then
-  echo "The donor is not the exact current live schema through ${current_live_ledger_head}: ${anchor_receipts:-0}/56 anchors, head ${ledger_head:-<missing>}." >&2
+if [[ "$anchor_receipts" != '59' || "$ledger_head" != "$current_live_ledger_head" ]]; then
+  echo "The donor is not the exact current live schema through ${current_live_ledger_head}: ${anchor_receipts:-0}/59 anchors, head ${ledger_head:-<missing>}." >&2
   exit 65
 fi
 if [[ "$exact_body_receipts" != '3' ]]; then
@@ -1439,8 +1451,8 @@ if [[ "$descriptor_receipts" != '2' ]]; then
   echo 'The donor does not contain the observed descriptor-only 055857 and 060034 ledger metadata.' >&2
   exit 65
 fi
-if [[ "$audited_tail_receipts" != '40' || "$audited_tail_statements" != '43' ]]; then
-  echo 'The donor does not contain the byte-authenticated 072322-174349 live ledger tail.' >&2
+if [[ "$audited_tail_receipts" != '43' || "$audited_tail_statements" != '46' ]]; then
+  echo 'The donor does not contain the byte-authenticated 072322-183316 live ledger tail.' >&2
   exit 65
 fi
 echo 'STAGE_B_CURRENT_LIVE_SCHEMA_MANIFEST_OK'
@@ -1478,7 +1490,7 @@ if [[ "$player_id_functions_exact" != '2' ]]; then
   exit 65
 fi
 if [[ "$tail_functions_exact" != '14' ]]; then
-  echo 'The donor does not preserve the exact 130319-174349 tail function catalog postimage.' >&2
+  echo 'The donor does not preserve the exact 130319-183316 tail function catalog postimage.' >&2
   exit 65
 fi
 if [[ "$journal_trigger_bindings_exact" != '10' \

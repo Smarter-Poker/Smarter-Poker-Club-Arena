@@ -77,9 +77,10 @@ describe('round 11: the Biggest Hits strip', () => {
     expect(RESULTS).toContain("if (typeFilter !== 'spin')");
   });
 
-  it('the prize comes from the stamped column, ladder arithmetic as fallback', () => {
+  it('the prize comes from the stamped column without inventing a pool-sized award', () => {
     const loader = sliceEnclosingBlock(RESULTS, 'biggest_hits_load_failed', 0, 2);
-    expect(loader).toContain('Number(w?.prize)');
+    expect(loader).toContain('Number(w.prize)');
+    expect(loader).not.toContain('(Number(h.buy_in_amount) || 0) *');
   });
 
   it('HORSES ARE PLAYERS: no is_horse filter anywhere in the strip', () => {

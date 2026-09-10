@@ -6,11 +6,16 @@ SET LOCAL statement_timeout='30s';
 DO $preflight$ BEGIN
  IF (SELECT md5(prosrc) FROM pg_proc WHERE oid=
    'public.fn_ca_commit_hand_settlement(uuid,bigint,jsonb,numeric,numeric,text,numeric,jsonb,jsonb,text,uuid,jsonb)'::regprocedure)
-   IS DISTINCT FROM '6685f27ebb50bc05afc04b106353714c' THEN
+   IS DISTINCT FROM '7735207b336d55c4953c17fdd3718c97' THEN
    RAISE EXCEPTION 'diamond_accepted_hand_prerequisite_changed';
  END IF;
  IF (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.fn_ca_process_hand_post_commit_obligations(uuid)'::regprocedure) IS DISTINCT FROM '28c67d957d3c60c264a1e0353ce3f250' OR (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.fn_project_hand_side_effects_after_post_commit_20260908(uuid)'::regprocedure) IS DISTINCT FROM '640f81cc7f8e1b1eb8f514b495dc0b2b' THEN
  RAISE EXCEPTION 'diamond_hand_projection_prerequisite_changed'; END IF;
+ IF (SELECT md5(prosrc) FROM pg_proc WHERE oid=
+   to_regprocedure('public.fn_ca_share_settlement_lane_for_table(uuid)'))
+   IS DISTINCT FROM '006d78a441e65d000d1d78929649bb44' THEN
+   RAISE EXCEPTION 'diamond_settlement_lane_prerequisite_changed';
+ END IF;
 END $preflight$;
 CREATE OR REPLACE FUNCTION public.fn_ca_commit_hand_settlement(p_table_id uuid, p_hand_number bigint, p_stacks jsonb, p_rake numeric, p_bbj numeric, p_ref text, p_inflow numeric, p_hand_row jsonb, p_units jsonb, p_instance_id text, p_lease_generation uuid, p_post_commit_obligations jsonb)
  RETURNS jsonb
@@ -40,8 +45,7 @@ BEGIN
   -- lock a lease, tournament or table. The owner-only nine-argument core
   -- re-enters this shared transaction lock defensively; that acquisition is
   -- harmless and keeps the private core safe from future owner-only callers.
-  PERFORM pg_advisory_xact_lock_shared(
-    hashtextextended('ca:tournament-terminal-settlement:v1',0));
+  PERFORM public.fn_ca_share_settlement_lane_for_table(p_table_id);
 
   IF jsonb_typeof(p_post_commit_obligations) IS DISTINCT FROM 'object'
      OR p_post_commit_obligations->>'version' <> '1'

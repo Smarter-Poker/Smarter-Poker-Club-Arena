@@ -28,6 +28,7 @@ run(base+'\n\\ir poker-diamond-cash-custody-setup.sql\n'
     '\\ir poker-diamond-accepted-hand-prerequisites.sql\n'
     '\\ir ../../supabase/migrations/20260910030442_diamond_accepted_hands_retain_history_without_chip_obligatio.sql\n'
     '\\ir poker-diamond-accepted-hand-setup.sql\n')
+run('\\ir poker-diamond-accepted-hand-lanes.sql')
 run('\\ir poker-diamond-accepted-hand-refusals.sql')
 with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
     results=list(pool.map(lambda _:json.loads(run("SELECT fixture_accept();")),range(2)))

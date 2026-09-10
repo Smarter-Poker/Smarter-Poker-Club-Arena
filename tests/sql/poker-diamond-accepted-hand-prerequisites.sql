@@ -1,3 +1,35 @@
+-- Current production settlement lane helper, exact body and execution ACL.
+CREATE OR REPLACE FUNCTION public.fn_ca_share_settlement_lane_for_table(p_table_id uuid)
+ RETURNS void
+ LANGUAGE plpgsql
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+DECLARE
+  v_tournament_id uuid;
+BEGIN
+  -- B shared: yields to terminal authorities, concurrent with every other
+  -- hand and with rolling authorities of OTHER tournaments.
+  PERFORM pg_advisory_xact_lock_shared(
+    hashtextextended('ca:hand-settlement-barrier:v1', 0));
+
+  IF p_table_id IS NULL THEN
+    RETURN;
+  END IF;
+
+  SELECT tb.tournament_id INTO v_tournament_id
+  FROM public.tables tb
+  WHERE tb.id = p_table_id;
+
+  IF v_tournament_id IS NOT NULL THEN
+    -- T(id) shared: yields to this tournament's own rolling authorities.
+    PERFORM pg_advisory_xact_lock_shared(
+      hashtextextended('ca:tournament-terminal-settlement:v1:' || v_tournament_id::text, 0));
+  END IF;
+END;
+$function$;
+ALTER FUNCTION public.fn_ca_share_settlement_lane_for_table(uuid) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.fn_ca_share_settlement_lane_for_table(uuid) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_ca_share_settlement_lane_for_table(uuid) TO service_role;
 -- Exact production accepted-hand contracts captured 2026-09-10.
 CREATE OR REPLACE FUNCTION public.fn_ca_commit_hand_settlement(p_table_id uuid, p_hand_number bigint, p_stacks jsonb, p_rake numeric, p_bbj numeric, p_ref text, p_inflow numeric, p_hand_row jsonb, p_units jsonb, p_instance_id text, p_lease_generation uuid, p_post_commit_obligations jsonb)
  RETURNS jsonb
@@ -26,8 +58,7 @@ BEGIN
   -- lock a lease, tournament or table. The owner-only nine-argument core
   -- re-enters this shared transaction lock defensively; that acquisition is
   -- harmless and keeps the private core safe from future owner-only callers.
-  PERFORM pg_advisory_xact_lock_shared(
-    hashtextextended('ca:tournament-terminal-settlement:v1',0));
+  PERFORM public.fn_ca_share_settlement_lane_for_table(p_table_id);
 
   IF jsonb_typeof(p_post_commit_obligations) IS DISTINCT FROM 'object'
      OR p_post_commit_obligations->>'version' <> '1'
@@ -782,8 +813,7 @@ BEGIN
   -- Lock order is global tournament lifecycle -> table -> exact table hand.
   -- Paid admissions take the global root exclusively before the same table
   -- lock; unrelated hands share the lifecycle root and remain concurrent.
-  PERFORM pg_advisory_xact_lock_shared(
-    hashtextextended('ca:tournament-terminal-settlement:v1',0));
+  PERFORM public.fn_ca_share_settlement_lane_for_table(p_table_id);
   PERFORM pg_advisory_xact_lock(
     hashtextextended('atomic-table:'||p_table_id::text,0));
   PERFORM pg_advisory_xact_lock(

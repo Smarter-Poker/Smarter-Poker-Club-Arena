@@ -1485,6 +1485,7 @@ export default function DailyChallengesPage() {
   // rather than flashing once for every challenge.
 
   const dismissFreezePurchase = useCallback(() => {
+    if (buyFreezeGuardRef.current) return;
     freezeFocusRestorePendingRef.current = true;
     setConfirmingFreeze(false);
   }, []);
@@ -1522,8 +1523,9 @@ export default function DailyChallengesPage() {
       return;
     }
 
+    // Keep the portal and inert shell until the request settles. Removing
+    // them on the first click lets a second click activate navigation below.
     freezeFocusRestorePendingRef.current = true;
-    setConfirmingFreeze(false);
     buyFreezeGuardRef.current = true;
     economyGuardRef.current = true;
     mutationEpochRef.current += 1;
@@ -1580,6 +1582,7 @@ export default function DailyChallengesPage() {
       buyFreezeGuardRef.current = false;
       economyGuardRef.current = false;
       if (isMountedRef.current) {
+        setConfirmingFreeze(false);
         setBuyingFreeze(false);
         setEconomyBusy(false);
       }
@@ -2409,14 +2412,25 @@ export default function DailyChallengesPage() {
                   <button
                     type="button"
                     className={styles.cancelButton}
+                    disabled={buyingFreeze}
                     onClick={dismissFreezePurchase}
                   >
                     <CasinoControlIcon variant="keep" state="idle" size="sm" />
                     Keep My Diamonds
                   </button>
-                  <button type="button" className={styles.confirmButton} onClick={handleBuyFreeze}>
-                    <CasinoControlIcon variant="freeze" state="attention" size="sm" />
-                    Buy Streak Freeze
+                  <button
+                    type="button"
+                    className={styles.confirmButton}
+                    onClick={handleBuyFreeze}
+                    disabled={buyingFreeze}
+                    aria-busy={buyingFreeze}
+                  >
+                    <CasinoControlIcon
+                      variant="freeze"
+                      state={buyingFreeze ? 'pending' : 'attention'}
+                      size="sm"
+                    />
+                    {buyingFreeze ? 'Confirming Purchase...' : 'Buy Streak Freeze'}
                   </button>
                 </div>
               </div>

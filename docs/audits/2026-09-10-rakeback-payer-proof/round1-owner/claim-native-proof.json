@@ -36,7 +36,7 @@
     "Composed browser release"
   ],
   "response_sha256": {
-    "native-claim-paid-v2.json": "a915964fad275456c7dcd75447c46acc547fc2fb6c028a93ee6978dc7b23f4b5",
+    "native-claim-paid-v2.json": "e4e079e3a8eb77a5ab7f4d79f4d1aa8913386acf9805f990ca808744583233f3",
     "native-read-after-claims-v2.json": "3f73b43b4032cc488064c49de38dd3aa53e96d1bba05f11ae8b97dee445f52a3"
   },
   "inputs": {
@@ -60,5 +60,13 @@
     "round1-owner/table-catalog-capacity-extra.json": "92cc9ad82592da9f27a6013e42597eedefe8a6a3a9f36e3b0c96bfda592ef22c",
     "round1-owner/table-catalog-round1.json": "66c097646c02d88d9ec2559cdb7ed5801081bd65e4cc8edd526e964e236c86ec",
     "round1-owner/trigger-catalog-capacity-extra.json": "1ed68ea5ece51d26fdccbb5e03a585f5a9a56cded458a1ebd9f646940b067a8d"
-  }
+  },
+  "native_response_sha256": {
+    "native-claim-paid-v2.json": "a915964fad275456c7dcd75447c46acc547fc2fb6c028a93ee6978dc7b23f4b5",
+    "native-read-after-claims-v2.json": "3f73b43b4032cc488064c49de38dd3aa53e96d1bba05f11ae8b97dee445f52a3"
+  },
+  "raw_response_artifacts": {
+    "native-claim-paid-v2.json": "native-claim-paid-v2.json.txt"
+  },
+  "response_formatting": "Normal commit hook formatted the readable claim JSON only. The original native bytes are preserved as .json.txt; parsed JSON equality was verified. SQL and executable input hashes are unchanged."
 }

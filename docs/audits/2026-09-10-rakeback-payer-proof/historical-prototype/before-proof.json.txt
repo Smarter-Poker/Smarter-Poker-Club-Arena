@@ -30,12 +30,16 @@
       "waitA": {
         "wait_event_type": "Lock",
         "wait_event": "transactionid",
-        "blockers": [30317]
+        "blockers": [
+          30317
+        ]
       },
       "waitB": {
         "wait_event_type": "Lock",
         "wait_event": "tuple",
-        "blockers": [30318]
+        "blockers": [
+          30318
+        ]
       }
     },
     {
@@ -56,7 +60,9 @@
       "waitA": {
         "wait_event_type": "Lock",
         "wait_event": "transactionid",
-        "blockers": [30321]
+        "blockers": [
+          30321
+        ]
       },
       "waitB": {
         "completed_while_weekly_waited": true

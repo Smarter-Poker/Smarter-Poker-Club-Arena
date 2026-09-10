@@ -3,10 +3,6 @@
     "original_path": "PLAN.md",
     "sha256": "f936614fd646fcd525893c50705206c9b0b7b02045ec7a8d5734c70f5483f870"
   },
-  "before-proof.json": {
-    "original_path": "before-proof.json",
-    "sha256": "6910a9a08794953b313f3b4b3632d213b05bc5faa7f8463c64888676bf0058d1"
-  },
   "installed.sql.txt": {
     "original_path": "installed.sql",
     "sha256": "5c15aa06a46ebef01d91b3621a8e0e979bea87df28086598a48ef10a6d0c18ed"
@@ -14,5 +10,9 @@
   "retirement.sql.txt": {
     "original_path": "retirement.sql",
     "sha256": "d87f4b22a7cb56fa50256e83f70f5f021d47353e70727c1c6e03d7b5524c3883"
+  },
+  "before-proof.json.txt": {
+    "original_path": "before-proof.json",
+    "sha256": "6910a9a08794953b313f3b4b3632d213b05bc5faa7f8463c64888676bf0058d1"
   }
 }

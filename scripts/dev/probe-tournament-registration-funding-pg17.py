@@ -8,6 +8,7 @@ Use --guarantees-only or --cancellation-policy-only for those focused groups.
 Use --obligations-only for cumulative finishing obligations.
 Use --unregistrations-only for funded entry/refund lifecycle groups.
 Use --heads-up-only for paid Heads-Up seat/start/refund groups.
+Use --eliminations-only --elimination-null-rank-only for the corrected rank guard.
 Fixture limits are in fixtures/registration-funding/README.md and
 fixtures/tournament-purchase-funding/README.md.
 """
@@ -191,6 +192,9 @@ with (root/'results.log').open('w') as log:
 
         if '--cancellation-policy-only' in sys.argv:
             from tournament_cancellation_policy_cases import verify
+            verify(q,fresh,overlap,call,check)
+        elif '--eliminations-only' in sys.argv:
+            from tournament_elimination_rank_cases import verify
             verify(q,fresh,overlap,call,check)
         elif '--obligations-only' in sys.argv:
             from tournament_obligation_funding_cases import verify

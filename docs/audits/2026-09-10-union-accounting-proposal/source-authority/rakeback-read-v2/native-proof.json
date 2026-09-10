@@ -1,0 +1,52 @@
+{
+  "hash_encoding": "Sorted compact semantic JSON UTF-8 for JSON; raw bytes otherwise",
+  "status": "native_v2_getter_candidate_verified_unactivated",
+  "checks": [
+    "Capture generation alone exposes no V2 source capability or amounts",
+    "Authenticated callers cannot insert a coordinated release witness",
+    "Real accepted prebank entitlement survives with null pool and exact fraction",
+    "Compatible closed weeks carry exact cents before all source funding arrives",
+    "Unbanked liability does not create actual player cash",
+    "Actual funded cross-week payment reconciles whole cash and fractional source slices",
+    "Open UTC earning week remains visible without adding closed cash",
+    "Departure and captured payer deactivation do not erase source debt or actual paid receipts",
+    "Different captured payers cannot combine unpaid fractional cents",
+    "Genuine unassigned policy is explicit and cannot invent entitlement",
+    "Actual member rate storage refuses whole-percent15 without mutation",
+    "Raw invalid player terms remain unresolved without clipping or whole-percent conversion",
+    "Account and club filters cannot expose another beneficiary source or payment",
+    "Getter requires an authenticated beneficiary",
+    "Coordinated capability evidence cannot be rewritten",
+    "Coordinated capability evidence cannot be truncated",
+    "A matching hash under the wrong legacy owner alias cannot activate capability"
+  ],
+  "runtime": "PostgreSQL 17.11 (Homebrew) on aarch64-apple-darwin25.6.0, compiled by Apple clang version 21.0.0 (clang-2100.1.1.101), 64-bit",
+  "limitations": [
+    "Closed source timestamps and capability witness are explicitly synthetic.",
+    "Actual accepted/bank/Round1/Round2/player money owners run; legacy declarations are neither excluded nor executed.",
+    "No production capability witness, final producer/funding closure or full outer cascade/browser activation."
+  ],
+  "inputs": {
+    "01-capability.sql": "5d9680308ff55fb7b86d231377b640d3f20ee75fa95b04b0d5ac6b52f4cda044",
+    "02-getter.sql": "2db8b751b5d759dc7420b0c24349c584d8f1c1364d472c875306a143b624b129",
+    "legacy-owner-catalog.json": "aaab29ef503f56fc22a8f6f6540f98bbe350837487f62f5249768c27f417be83",
+    "native-probe.py": "50118ce9aec9ded9fe0f9da61e9af6c79d3f7a9428470029ae4bed54a45b4384",
+    "run-local.sh": "6a7beeb6195ebb6242d880bc9b0a48234c2c2b01057b7f7ca11d49235d6cae59",
+    "synthetic-capability.sql": "d55f7706d107aa04ef364cbffa82c8d7326358a38132789b587a1d69fc1c8faf",
+    "vendor/player-capacity-proposal.sql": "25c4e565990ec519e5449df59d8e178058ba18626aaa98942d7c1a44e9ea6483",
+    "vendor/player-claim-wrapper.sql": "6a32adaefc47472f63a5f43cb1df48e12de60bc9efa82e4efe064d7e683ed0d0",
+    "vendor/player-payment-dto.sql": "e0aa5808bab378b1a649167aa47d1fd20b333e899a1948a479051a0e1a65add1"
+  },
+  "read_output_sha256": {
+    "native-read-cross-week-payment.json": "e4deb23875338e771312c76d8a7fbfa938904a09e3ca7495db1db2207db27fd7",
+    "native-read-prebank.json": "46ba63d73d23c04f95ac348cd6de5d632504503a226269ac41df8f6a88fe15d7"
+  },
+  "companion_runner_sha256": {
+    "round1-owner/run-local.sh": "fdb2a1c55f74b802e87a3ebd2b51423407ce28aeb4ba0c301a0770da4f07d6b9",
+    "round1-owner/activate-fixture.py": "937f10723aaec5fefdf1e46be78b6319d0fde99893ab9f94292febf11d2f1982",
+    "round1-owner/fixture_helpers.py": "4a69327fbc4c3dcf2d5180d9d1bb780d0ad6a8f9c3157e9900b28fe81a6d3d51",
+    "round1-owner/fixture-clock.sql": "0988e0559975003078ee5680bacbd03c000ce2752bf2a1473611c512b2175c8e",
+    "round1-owner/fixture-seed.sql": "38756283c830ac30622355e890d5a0d328e39c2da9acdca56f67e809b23cf53d",
+    "round1-owner/01-release-writer.sql": "c273641757388a1e6019b052e72f66aac6c6ca4db2deaa83ed6140a59f5378ce"
+  }
+}

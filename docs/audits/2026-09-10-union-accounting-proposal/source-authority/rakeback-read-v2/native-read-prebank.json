@@ -1,0 +1,43 @@
+{
+  "balances": [
+    {
+      "scope": {
+        "club_id": "00000000-0000-4000-8000-000000000900",
+        "funding_route": "union_rake_wallet",
+        "payer_user_id": "00000000-0000-4000-8000-000000000303",
+        "contract_version": 1,
+        "funding_union_id": "00000000-0000-4000-8000-000000000901"
+      },
+      "pool_id": null,
+      "paid_amount": "0.00",
+      "unpaid_exact": "0.009",
+      "earning_weeks": [
+        {
+          "closed": true,
+          "week_end": "2026-08-30",
+          "week_start": "2026-08-24",
+          "source_count": 1,
+          "consumed_exact": "0",
+          "remaining_exact": "0.009",
+          "entitlement_exact": "0.009",
+          "funding_admitted_source_count": 0
+        }
+      ],
+      "consumed_exact": "0",
+      "pending_amount": "0.00",
+      "closed_entitlement_exact": "0.009"
+    }
+  ],
+  "paid_amount": "0.00",
+  "source_final": false,
+  "unpaid_exact": "0.009",
+  "cash_payments": [],
+  "source_active": true,
+  "consumed_exact": "0",
+  "pending_amount": "0.00",
+  "schema_version": 2,
+  "beneficiary_user_id": "00000000-0000-4000-8000-000000000201",
+  "unresolved_earnings": [],
+  "earning_closed_through": "2026-09-07",
+  "closed_entitlement_exact": "0.009"
+}

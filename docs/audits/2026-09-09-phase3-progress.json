@@ -92,7 +92,7 @@
       "id": "K02",
       "requirement": "Snapshot level/blinds at hand creation; advance only the next eligible hand when a level boundary occurs mid-hand.",
       "priority": "P1",
-      "status": "behavior_verified_pending_engine_adoption",
+      "status": "verified_and_deployed",
       "evidence": "blind_snapshot_rehearsal"
     },
     {
@@ -1261,7 +1261,7 @@
     "full_control_closed": false,
     "current_rehearsal": "registration_funding_and_receipt_correction"
   },
-  "verified_control_count": 2,
+  "verified_control_count": 3,
   "blind_snapshot_rehearsal": {
     "control": "K02",
     "test": "server/src/engine/TournamentBlindSnapshot.test.ts",
@@ -1269,9 +1269,9 @@
     "production_method": "ServerTableEngineDealing.prepareNextHand, awaitNextHandRest, refreshBlinds and dealHand with the real HandController",
     "source_base": "043b9e0c6674b5dcb84f2209adc780dcce89bab0",
     "observed": "An active 10/20/2 hand keeps its original stakes and legal raise after a 20/40/4 level update. The next hand now reads and posts 20/40/4 even when that update occurs during the prepared between-hand rest. Delayed/failed reads cannot pass the deal boundary; the new rest case performs one blind read.",
-    "limits": "Synthetic database reads and roster; stops the engine at the unrelated time-bank read, then executes the actual controller. Production adoption of the new rest-boundary correction remains pending.",
-    "full_control_closed": false,
-    "status": "merged_pending_engine_adoption",
+    "limits": "Synthetic database reads and roster; stops the engine at the unrelated time-bank read, then executes the actual controller. Production adoption was verified by the deployment public-version proof, a fresh matching engine leader, and commit ancestry. This evidence does not verify the separate unpublished pause or break corrections.",
+    "full_control_closed": true,
+    "status": "verified_and_deployed",
     "baseline_rest_failure": {
       "current_bet": 20,
       "pot": 36,
@@ -1303,7 +1303,30 @@
       "workflow": "auto-deploy-hetzner.yml",
       "reason": "Prior two requests cancelled; no active or queued Hetzner run; live build does not contain PR4092."
     },
-    "successor_run": 34433388061
+    "successor_run": 34433388061,
+    "production_adoption": {
+      "merge_commit": "40886c94ab69fd37a47957b3ea3b23b5a0c0e375",
+      "deployed_commit": "4d29dce4cd36ada84722b80af1c1d19efd3d0608",
+      "ancestry": {
+        "status": "ahead",
+        "ahead_by": 1,
+        "behind_by": 0
+      },
+      "workflow_run": 34434274214,
+      "workflow_job": 102736008468,
+      "workflow_conclusion": "success",
+      "public_version": "4d29dce4",
+      "public_version_observed_at": "2026-09-10T03:56:54.1900030Z",
+      "public_version_evidence": "Completed deployment job logs: Public hostname serving 4d29dce4",
+      "release_seal_committed_at": "2026-09-10T03:56:58.2474312Z",
+      "leader_observed_at": "2026-09-10T04:09:58.707432Z",
+      "leader_version": "4d29dce4",
+      "leader_acquired_at": "2026-09-10T03:56:25.696977Z",
+      "leader_heartbeat_at": "2026-09-10T04:09:56.047268Z",
+      "leader_heartbeat_age_seconds": 2.660165,
+      "historical_verification_only": true,
+      "does_not_include_unpublished_pause_or_break_corrections": true
+    }
   },
   "registration_funding_and_receipt_correction": {
     "control": "T01",

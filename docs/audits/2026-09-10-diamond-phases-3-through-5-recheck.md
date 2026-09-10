@@ -47,6 +47,6 @@ Security advisors before and after show the same scoped notices: the deliberatel
 
 ## Phase 6 Continuation
 
-PR 4070's whole-Diamond engine and duplicate-runout payout correction is merged as 81e4c6daefa47f6b6883596f3b62d2d3498e195a. Its CI passed and a normal descendant engine deployment was already active; no duplicate dispatch, forced restart or shared-deploy cancellation was performed.
+PR 4070's whole-Diamond engine and duplicate-runout payout correction is merged as 81e4c6daefa47f6b6883596f3b62d2d3498e195a. Its CI passed. At 01:58:41 UTC the production engine served b4c427a6e8474d796d29b682a9e153e03d78755d with status/liveness/settlementStatus ok and zero blocked settlements; ancestry proves adoption of 81e4c6da. No duplicate dispatch, forced restart or shared-deploy cancellation was performed.
 
 This recheck clears the scoped Phases 3 through 5 audit. Atomic funded seating, accepted-hand custody settlement, cash-out, client wiring and controlled multi-user certification remain Phase 6 work, as recorded in the Phase 6 audit. Public funded games remain subject to their existing accounting/release gates.

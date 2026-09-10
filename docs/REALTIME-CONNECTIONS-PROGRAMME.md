@@ -37,6 +37,13 @@ verification when it lands.
 | 11    | Tournament lobby snapshot recovery               | Re-read on channel subscription; coalesce invalidations; replay live patches over snapshots; isolate retired tournament/account reads; preserve confirmed data on failure                 | published; device acceptance open                   |
 | 12    | Notification feed recovery and account isolation | Coalesced fresh reads, owned cache and mutations, truthful failure states, safe server feed queries, and restored notification publication                                                | published; natural-event and device acceptance open |
 
+Phase 17: Daily Missions subscription handoff. Seven mounted cases pass,
+including recovery of an update missed between the first read and channel
+acknowledgement. Current cursors avoid a duplicate dashboard read and retired
+subscriptions cannot apply late replies. Implementation and build verification:
+`docs/changelog/2026-09-10-realtime-phase17-mission-subscription-handoff.md`.
+Publication and production acceptance are pending.
+
 Phase 16: Cashier directory readiness. Five mounted failures reproduced and
 repaired. All eight new cases and 41 existing Cashier/membership contracts pass.
 Pending reads cannot give false Join guidance or trigger competing retries;
@@ -52,6 +59,13 @@ it and both unchanged production Cashier cases passed at exact release f1992eeb
 in run 34457185978. Fresh public/origin bytes still contained the repair at
 13:03 UTC. See `docs/audits/2026-09-10-realtime-phase16-cashier-acceptance.md`.
 Natural reconnect, physical iPad/PWA, and broader programme acceptance remain open.
+
+Phase 16 follow-through: PR4162 mobile targets are published and the production
+probe passed with 48 checked and zero misses. PR4166 freeze interaction and cash
+spectator selection repairs are merged with CI green; their production verdict
+is pending. The latest completed sweep still has six failures, including a new
+Club Data player pagination failure, so broader acceptance remains open.
+Evidence: `docs/audits/2026-09-10-realtime-phase16-mobile-follow-through.md`.
 
 Phase 15: Confirmed tournament inventory. Seven stale-card and realtime-race
 failures reproduced and repaired. All 26 mounted cases and 39 existing scope

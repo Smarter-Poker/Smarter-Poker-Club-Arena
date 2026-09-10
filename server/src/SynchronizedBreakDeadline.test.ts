@@ -267,3 +267,107 @@ describe('Synchronized Break Pause Completion', () => {
     }
   });
 });
+
+/*
+ * 2026-09-10: the maintenance break has every table finishing its hand from
+ * :53 and holds it at the gate by :55, but the tournament drain only accepted
+ * `isWaitingForHandForHand()`. At 12:55 it waited out the old 120 s grace and
+ * every tournament resumed at 13:02:30; with that grace removed (#4105) the
+ * same wait had no end. Parked means no cards in the air, whoever holds the
+ * table - and the drain now has a liveness ceiling and names who it waits on.
+ */
+describe('A table the maintenance break holds is parked', () => {
+  function stub(state: {
+    gate?: boolean;
+    running?: boolean;
+    maintenance?: boolean;
+    between?: boolean;
+    handForHand?: boolean;
+  }) {
+    return {
+      isWaitingForHandForHand: () => Boolean(state.handForHand && state.gate),
+      isParkedBetweenHands: () => Boolean(state.gate) || state.running === false,
+      isMaintenancePaused: () => Boolean(state.maintenance),
+      isBetweenHands: () => Boolean(state.between),
+    };
+  }
+
+  function heldEngine() {
+    const fsm = { state: 'running', transition: vi.fn() };
+    const engine = Object.assign(Object.create(ServerTableEngineBase.prototype), {
+      tableId: 'maintenance-held',
+      running: true,
+      handForHandPaused: false,
+      maintenancePaused: true,
+      finalTableDealPaused: false,
+      terminalCloseoutPaused: false,
+      holdBeforeNextHand: true,
+      pauseRequiresExplicitResume: false,
+      tournamentMovePauseOwners: new Map(),
+      claimedTournamentMovePauseOwners: new Set(),
+      handForHandResolve: null,
+      pausedSinceMs: 0,
+      pauseMaxWaitMs: 420_000,
+      pauseGateTimer: null,
+      tableFSM: fsm,
+      armUnclaimedTournamentMovePauseExpiry: vi.fn(),
+      notifyBoundaryPauseWaiters: vi.fn(),
+      markProgress: vi.fn(),
+    });
+    fsm.transition.mockImplementation((next: string) => {
+      fsm.state = next;
+    });
+    return engine;
+  }
+
+  it('counts a gate held by maintenance, a stopped engine, and a held table with no hand in flight', () => {
+    const participant = manager('held');
+    participant.tableEngines = new Map([
+      ['gate', stub({ gate: true, maintenance: true })],
+      ['stopped', stub({ running: false })],
+      ['between', stub({ maintenance: true, between: true })],
+    ]);
+    expect(participant.areAllTablesParked()).toBe(true);
+  });
+
+  it('still waits on a table with cards in the air', () => {
+    const participant = manager('live');
+    participant.tableEngines = new Map([
+      ['gate', stub({ gate: true, maintenance: true })],
+      ['live', stub({ maintenance: true, between: false })],
+    ]);
+    expect(participant.areAllTablesParked()).toBe(false);
+    // Between hands but held by nobody: it may deal the next one, so not yet.
+    participant.tableEngines.set('live', stub({ between: true }));
+    expect(participant.areAllTablesParked()).toBe(false);
+  });
+
+  it('parks a real engine the maintenance break holds, which the old predicate never did', async () => {
+    const engine = heldEngine();
+    void engine.awaitPauseGate();
+    await Promise.resolve();
+    expect(engine.isWaitingForHandForHand()).toBe(false);
+    const participant = manager('maintenance-held');
+    participant.tableEngines = new Map([['t', engine]]);
+    expect(participant.areAllTablesParked()).toBe(true);
+  });
+
+  it('starts the countdown after a liveness ceiling, naming the event it waited on', async () => {
+    const participant = manager('wedged-event');
+    const owner = server([participant]);
+    participant.areAllTablesParked = () => false;
+    owner.sleep = async (milliseconds: number) => {
+      vi.setSystemTime(Date.now() + milliseconds);
+    };
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const started = Date.now();
+    const parked = await (GameServer.prototype as any).waitForAllTablesParked.call(owner, [
+      participant,
+    ]);
+    expect(parked).toBe(true);
+    expect(Date.now() - started).toBeGreaterThanOrEqual(5 * 60 * 1000);
+    expect(Date.now() - started).toBeLessThan(5 * 60 * 1000 + 1_000);
+    expect(warn.mock.calls.some(([line]) => String(line).includes('wedged-e'))).toBe(true);
+  });
+});

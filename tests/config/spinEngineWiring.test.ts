@@ -45,6 +45,7 @@ const tournamentServiceRaw = read('src/services/TournamentService.ts');
 
 const recurring = code(recurringRaw);
 const engine = code(engineRaw);
+const parking = code(read('server/src/tournament/spinLaunchParking.ts'));
 const receipt = code(read('server/src/tournament/SpinDrawReceipt.ts'));
 const orchestrator = code(orchestratorRaw);
 const tournamentService = code(tournamentServiceRaw);
@@ -184,9 +185,14 @@ describe('the draw happens at START, nowhere else', () => {
      start stands down and retries, and no tier is ever substituted. */
   it('the engine never substitutes a tier for a draw it could not read', () => {
     expect(engine).not.toMatch(/spinMultiplier\s*=\s*SPIN_TIERS\s*\[\s*0\s*\]/);
-    // ...and an incomplete database answer is explicit and retryable instead.
-    expect(engine).toMatch(/drawFailure/);
-    expect(engine).toContain('if (error || !data?.ok)');
+    // ...and an incomplete database answer is explicit instead. Since
+    // 2026-09-10 the loop lives in spinLaunchParking.ts so a refusal can be
+    // classified (a terminal reason parks the launch rather than being retried
+    // 87 times a second); the ok gate and the stand-down are pinned there and
+    // at the call site.
+    expect(engine).toContain('proveSpinDrawWithParking<FundedSpinDraw>({');
+    expect(engine).toContain('if (!proven.ok)');
+    expect(parking).toContain('if (!result.error && data && data.ok === true)');
     expect(engine).toContain('readFundedSpinDraw(data,');
   });
 });
@@ -200,11 +206,20 @@ describe('every game is booked', () => {
   it('reports loudly rather than swallowing a failed settlement', () => {
     const startLifecycle = code(sliceMethod(engineRaw, 'private async startLifecycle('));
     const call = startLifecycle.indexOf("supabase.rpc('fn_spin_draw_and_settle_atomic'");
-    const failure = startLifecycle.indexOf('Tournament.spin_draw_unavailable', call);
-    const reporter = startLifecycle.lastIndexOf('reportError(', failure);
     expect(call, 'expected a call to fn_spin_draw_and_settle_atomic').toBeGreaterThan(-1);
-    expect(failure, 'the atomic failure must be reported').toBeGreaterThan(call);
-    expect(reporter, 'the failed authority must flow through reportError').toBeGreaterThan(call);
+    // The call site hands the real reporter to the classified loop...
+    const loopEnd = startLifecycle.indexOf('if (!proven.ok)', call);
+    expect(loopEnd, 'the refused draw must stand the start down').toBeGreaterThan(call);
+    expect(startLifecycle.slice(call, loopEnd)).toMatch(/\breportError,/);
+    // ...and the loop reports every stand-down: a transient one under the
+    // tag the dashboards already know, a terminal one under its own.
+    const transient = parking.indexOf('Tournament.spin_draw_unavailable');
+    const terminal = parking.indexOf('Tournament.spin_draw_refused_terminal');
+    expect(transient, 'the atomic failure must be reported').toBeGreaterThan(-1);
+    expect(terminal, 'a terminal refusal must be reported').toBeGreaterThan(-1);
+    expect(parking.lastIndexOf('deps.reportError(', transient)).toBeGreaterThan(-1);
+    expect(parking.lastIndexOf('deps.reportError(', terminal)).toBeGreaterThan(-1);
+    expect(parking).toContain('await deps.raiseAlert(');
   });
 
   it('freezes the rake rate implied by the stake into the funded rule manifest', () => {

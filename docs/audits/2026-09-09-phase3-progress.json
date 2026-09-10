@@ -183,7 +183,8 @@
       "id": "S03",
       "requirement": "Define seating, blinds, time banks and payouts for each SNG size, including heads-up and special payout formats.",
       "priority": "P1",
-      "status": "pending_full_requirement_verification"
+      "status": "partial_supported_heads_up_start_verified_overflow_open",
+      "evidence": "docs/audits/2026-09-10-phase3-seat-first-actual-deal.md"
     },
     {
       "id": "S04",
@@ -215,8 +216,8 @@
       "id": "S08",
       "requirement": "Reveal multiplier/prize before the first deal and action timer. All participants must receive the same stored result.",
       "priority": "P1",
-      "status": "partial_reveal_delivery_corrected_pending_engine_adoption",
-      "evidence": "docs/audits/2026-09-10-phase3-spin-reveal-delivery.md"
+      "status": "partial_actual_reveal_deal_timer_verified_pending_release",
+      "evidence": "docs/audits/2026-09-10-phase3-seat-first-actual-deal.md"
     },
     {
       "id": "S09",

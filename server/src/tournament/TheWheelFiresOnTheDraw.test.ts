@@ -52,7 +52,7 @@ describe('the reveal is emitted from the immutable funded draw receipt', () => {
     );
     expect(emit, 'the early emit is missing').toBeGreaterThan(-1);
     expect(settle, 'the atomic settlement call moved - re-check this pin').toBeGreaterThan(-1);
-    const settledGate = CODE.indexOf('if (!fundedSpin)', settle);
+    const settledGate = CODE.indexOf('if (!proven.ok)', settle);
     expect(settledGate, 'the parsed settlement receipt gate is missing').toBeGreaterThan(settle);
     expect(settle, 'uncommitted money may never be revealed').toBeLessThan(emit);
     expect(emit, 'the wheel must name a proven settlement receipt').toBeGreaterThan(settledGate);

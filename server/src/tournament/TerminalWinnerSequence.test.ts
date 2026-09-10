@@ -28,13 +28,19 @@ const lastUserId = '00000000-0000-4000-8000-000000000003';
 interface Entrant {
   user_id: string;
   status: string;
+  position?: number;
   elimination_sequence: number | null;
   eliminated_at: string | null;
 }
 
 function finishStage(
   entrants: Entrant[],
-  options: { countError?: boolean; witnessError?: boolean; variant?: string } = {}
+  options: {
+    countError?: boolean;
+    witnessError?: boolean;
+    durableWinnerError?: boolean;
+    variant?: string;
+  } = {}
 ) {
   // This transport applies the manager's actual filters and ordering to rows.
   // Reversing callback timestamps therefore reproduces the old wrong candidate.
@@ -49,6 +55,7 @@ function finishStage(
           status = String(value);
           rows = rows.filter((row) => row.status === value);
         }
+        if (column === 'position') rows = rows.filter((row) => row.position === value);
         return query;
       }),
       not: vi.fn((column: keyof Entrant, operation: string, value: unknown) => {
@@ -62,8 +69,8 @@ function finishStage(
           const av = a[column],
             bv = b[column];
           if (av === bv) return 0;
-          if (av === null) return -1;
-          if (bv === null) return 1;
+          if (av === null || av === undefined) return -1;
+          if (bv === null || bv === undefined) return 1;
           return (av < bv ? -1 : 1) * (order.ascending ? 1 : -1);
         });
         return query;
@@ -72,10 +79,15 @@ function finishStage(
         rows = rows.slice(0, count);
         return query;
       }),
-      maybeSingle: vi.fn(async () => ({
-        data: status === 'eliminated' && options.witnessError ? null : (rows[0] ?? null),
-        error: status === 'eliminated' && options.witnessError ? { message: 'read failed' } : null,
-      })),
+      maybeSingle: vi.fn(async () => {
+        const failed =
+          (status === 'eliminated' && options.witnessError) ||
+          (status === 'winner' && options.durableWinnerError);
+        return {
+          data: failed ? null : (rows[0] ?? null),
+          error: failed ? { message: 'read failed' } : null,
+        };
+      }),
       then: (resolve: any, reject: any) =>
         Promise.resolve({
           count: options.countError ? null : rows.length,
@@ -179,6 +191,29 @@ describe('terminal candidate follows the durable elimination authority', () => {
       expect(manager.requestUrgentEliminationSweepAfter).toHaveBeenCalledOnce();
     }
   );
+
+  it('adopts the durable first-place winner before consulting the last bust', async () => {
+    const rows = finalField(null);
+    rows[0] = { ...rows[0], status: 'winner', position: 1 };
+    const manager = finishStage(rows);
+    await manager.runEliminationSweep(new AbortController().signal);
+    expect(manager.finishTournament).toHaveBeenCalledOnce();
+    expect(manager.finishTournament).toHaveBeenCalledWith(firstUserId);
+    expect(fixture.from).toHaveBeenCalledTimes(3);
+    expect(fixture.reportError).not.toHaveBeenCalled();
+  });
+
+  it('never falls back to a bust after the durable winner read fails', async () => {
+    const manager = finishStage(finalField(null), { durableWinnerError: true });
+    await manager.runEliminationSweep(new AbortController().signal);
+    expect(manager.finishTournament).not.toHaveBeenCalled();
+    expect(manager.requestUrgentEliminationSweepAfter).toHaveBeenCalledOnce();
+    expect(fixture.from).toHaveBeenCalledTimes(3);
+    expect(fixture.reportError).toHaveBeenCalledWith(
+      { message: 'read failed' },
+      'Tournament.finish_durable_winner_unreadable'
+    );
+  });
 
   it('preserves the actual live survivor without consulting elimination order', async () => {
     const rows = finalField(null);

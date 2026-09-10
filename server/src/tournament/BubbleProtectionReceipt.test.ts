@@ -34,7 +34,13 @@ describe('Bubble Protection is paid only by the finalized tournament batch', () 
   it('submits zero to both provisional elimination paths and has no side payer', () => {
     expect(eliminate).toContain('const bubbleRefund = 0;');
     expect(eliminate.match(/p_bubble_refund: bubbleRefund/g)).toHaveLength(2);
-    expect(eliminate).not.toMatch(/bubble_protection === true|configuredRefund|paidPlaces \+ 1/);
+    expect(eliminate).not.toMatch(/configuredRefund|paidPlaces \+ 1/);
+    // The ordinary ladder reserves the final Bubble Protection award, while
+    // both provisional RPCs still submit zero and cannot pay it themselves.
+    expect(eliminate).toContain('const ladderPool = prizePoolAvailableToPlaces(');
+    expect(eliminate).toContain('tournament.bubble_protection === true');
+    expect(eliminate).toContain('if (ladderPool === null)');
+    expect(eliminate).toContain('prize = computePlacePrize(ladderPool, payouts, position);');
     expect(eliminate).not.toMatch(
       /settleTournamentObligation|fn_settle_tournament_obligation|bubble_protection_paid/
     );

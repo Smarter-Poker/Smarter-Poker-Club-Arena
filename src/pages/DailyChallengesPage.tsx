@@ -975,6 +975,7 @@ export default function DailyChallengesPage() {
   const queuedUnversionedRealtimeRef = useRef(false);
   const realtimeRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const realtimeStatusRef = useRef<'connecting' | 'live' | 'degraded'>('connecting');
+  const realtimeJoinEpochRef = useRef(0);
   const loadChallengesRef = useRef<
     (uid: string, mode: 'initial' | 'refresh' | 'silent') => Promise<void>
   >(async () => undefined);
@@ -1328,6 +1329,13 @@ export default function DailyChallengesPage() {
     []
   );
 
+  useEffect(
+    () => () => {
+      realtimeJoinEpochRef.current += 1;
+    },
+    [userId]
+  );
+
   useMasterBusBroadcastChannel({
     channelName: userId ? `daily-mission-revision:${userId}` : null,
     event: 'daily_mission_revision_changed',
@@ -1335,6 +1343,7 @@ export default function DailyChallengesPage() {
     private: true,
     onPayload: scheduleRealtimeRefresh,
     onSubscriptionError: () => {
+      realtimeJoinEpochRef.current += 1;
       realtimeStatusRef.current = 'degraded';
       setRealtimeState('degraded');
       recordDailyMissionOperation({ userId, event: 'realtime_degraded' });
@@ -1344,6 +1353,7 @@ export default function DailyChallengesPage() {
       scheduleRealtimeRefresh();
     },
     onSubscriptionStatus: (status) => {
+      const joinEpoch = ++realtimeJoinEpochRef.current;
       if (status !== 'SUBSCRIBED') return;
       const recovered = realtimeStatusRef.current === 'degraded';
       realtimeStatusRef.current = 'live';
@@ -1351,6 +1361,20 @@ export default function DailyChallengesPage() {
       if (recovered) {
         recordDailyMissionOperation({ userId, event: 'realtime_recovered' });
         scheduleRealtimeRefresh();
+      } else if (userId) {
+        // The first snapshot can precede the first joined channel. Reconcile
+        // that gap with the small cursor read, preserving one dashboard RPC
+        // when the cold receipt already covers the server's current revision.
+        void dailyChallengeService
+          .getDashboardRevision(userId)
+          .then((revision) => {
+            if (!isMountedRef.current || joinEpoch !== realtimeJoinEpochRef.current) return;
+            if (revision > dashboardRevisionRef.current) scheduleRealtimeRefresh({ revision });
+          })
+          .catch(() => {
+            // The service records the read failure. Keep the confirmed page;
+            // the existing visible-tab cursor watchdog remains its recovery.
+          });
       }
     },
   });
@@ -1485,6 +1509,7 @@ export default function DailyChallengesPage() {
   // rather than flashing once for every challenge.
 
   const dismissFreezePurchase = useCallback(() => {
+    if (buyFreezeGuardRef.current) return;
     freezeFocusRestorePendingRef.current = true;
     setConfirmingFreeze(false);
   }, []);
@@ -1522,8 +1547,9 @@ export default function DailyChallengesPage() {
       return;
     }
 
+    // Keep the portal and inert shell until the request settles. Removing
+    // them on the first click lets a second click activate navigation below.
     freezeFocusRestorePendingRef.current = true;
-    setConfirmingFreeze(false);
     buyFreezeGuardRef.current = true;
     economyGuardRef.current = true;
     mutationEpochRef.current += 1;
@@ -1580,6 +1606,7 @@ export default function DailyChallengesPage() {
       buyFreezeGuardRef.current = false;
       economyGuardRef.current = false;
       if (isMountedRef.current) {
+        setConfirmingFreeze(false);
         setBuyingFreeze(false);
         setEconomyBusy(false);
       }
@@ -2409,14 +2436,25 @@ export default function DailyChallengesPage() {
                   <button
                     type="button"
                     className={styles.cancelButton}
+                    disabled={buyingFreeze}
                     onClick={dismissFreezePurchase}
                   >
                     <CasinoControlIcon variant="keep" state="idle" size="sm" />
                     Keep My Diamonds
                   </button>
-                  <button type="button" className={styles.confirmButton} onClick={handleBuyFreeze}>
-                    <CasinoControlIcon variant="freeze" state="attention" size="sm" />
-                    Buy Streak Freeze
+                  <button
+                    type="button"
+                    className={styles.confirmButton}
+                    onClick={handleBuyFreeze}
+                    disabled={buyingFreeze}
+                    aria-busy={buyingFreeze}
+                  >
+                    <CasinoControlIcon
+                      variant="freeze"
+                      state={buyingFreeze ? 'pending' : 'attention'}
+                      size="sm"
+                    />
+                    {buyingFreeze ? 'Confirming Purchase...' : 'Buy Streak Freeze'}
                   </button>
                 </div>
               </div>

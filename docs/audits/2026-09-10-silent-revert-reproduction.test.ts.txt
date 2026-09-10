@@ -1,0 +1,128 @@
+import { execFileSync, spawnSync } from 'node:child_process';
+import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { afterEach, describe, expect, it } from 'vitest';
+
+const SCRIPT = path.resolve('scripts/ci/detect-silent-revert.mjs');
+const FILE = 'guarded.ts';
+const ownedRepos: string[] = [];
+const padding = Array.from({ length: 12 }, (_, i) => `padding_${i}();`).join('\n');
+const original = `header_old();\nbody();\n${padding}\ntail_old();\n`;
+const protectedLine = 'protected_call();\n';
+
+afterEach(() => {
+  for (const repo of ownedRepos.splice(0)) rmSync(repo, { recursive: true, force: true });
+});
+
+function fixture() {
+  const repo = mkdtempSync(path.join(tmpdir(), 'silent-revert-base-'));
+  ownedRepos.push(repo);
+  const env = { ...process.env, REVERT_APPROVED: 'false' };
+  // Git hooks can export worktree/index overrides. Fixtures own only their temp repository.
+  for (const name of Object.keys(env)) if (name.startsWith('GIT_')) delete env[name];
+  let timestamp = Math.floor(Date.now() / 1000) - 100;
+  const git = (...args: string[]) => execFileSync('git', [
+    '-c', 'user.name=guard-fixture', '-c', 'user.email=guard-fixture@example.test',
+    '-c', 'commit.gpgsign=false', '-c', 'core.hooksPath=/dev/null', ...args,
+  ], { cwd: repo, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  git('init', '-q', '-b', 'main');
+  expect(realpathSync(git('rev-parse', '--show-toplevel'))).toBe(realpathSync(repo));
+  const write = (contents: string) => writeFileSync(path.join(repo, FILE), contents);
+  const commit = (message: string) => {
+    const date = new Date(++timestamp * 1000).toISOString();
+    env.GIT_AUTHOR_DATE = date;
+    env.GIT_COMMITTER_DATE = date;
+    git('add', '--', FILE);
+    git('commit', '-q', '-m', message);
+    return git('rev-parse', 'HEAD');
+  };
+  const scan = (base: string) => spawnSync(process.execPath, [SCRIPT, '--base', base, '--days', '45'], {
+    cwd: repo, env, encoding: 'utf8', timeout: 30_000,
+  });
+  return { git, write, commit, scan };
+}
+
+function acceptedConcurrentHistory(removesBadLine = false) {
+  const f = fixture();
+  const start = removesBadLine ? original.replace('body();', 'unsafe_call();\nbody();') : original;
+  f.write(start);
+  f.commit('initial content');
+  f.git('switch', '-q', '-c', 'feature');
+  f.write(start.replace('tail_old();', 'tail_shared();'));
+  f.commit('independently update tail');
+  f.write(start);
+  f.commit('restore before concurrent main changes');
+  f.git('switch', '-q', 'main');
+  const protectedContent = removesBadLine
+    ? start.replace('unsafe_call();\n', '')
+    : start.replace('body();', `${protectedLine}body();`);
+  f.write(protectedContent);
+  const prior = f.commit('protect main content');
+  const accepted = protectedContent.replace('header_old();', 'header_current();')
+    .replace('tail_old();', 'tail_shared();');
+  f.write(accepted);
+  const base = f.commit('update surrounding context and shared tail');
+  f.git('switch', '-q', 'feature');
+  f.git('merge', '--no-ff', '--no-edit', 'main');
+  expect(f.git('merge-base', '--is-ancestor', prior, base)).toBe('');
+  return { ...f, base, accepted, start };
+}
+
+function expectStatus(result: ReturnType<ReturnType<typeof fixture>['scan']>, status: number) {
+  expect(result.error).toBeUndefined();
+  expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(status);
+}
+
+describe('Silent Revert Guard accepted-base survival proof', () => {
+  it('accepts unchanged main content after concurrent history and later context edits', () => {
+    const f = acceptedConcurrentHistory();
+    expectStatus(f.scan(f.base), 0);
+  });
+
+  it('accepts added entries when main additions survive later context edits', () => {
+    const f = acceptedConcurrentHistory();
+    f.write(`// new release entry\n// additional evidence\n${f.accepted}`);
+    f.commit('add current release entry');
+    expectStatus(f.scan(f.base), 0);
+  });
+
+  it('still rejects removal of protected content from the accepted base', () => {
+    const f = acceptedConcurrentHistory();
+    f.write(f.accepted.replace(protectedLine, ''));
+    f.commit('remove protected content');
+    expectStatus(f.scan(f.base), 1);
+  });
+
+  it('still rejects a full clobber restoring the prior pre-state', () => {
+    const f = acceptedConcurrentHistory();
+    f.write(f.start);
+    f.commit('replace with stale content');
+    expectStatus(f.scan(f.base), 1);
+  });
+
+  it('cannot use the base proof for a prior introduced only on this branch', () => {
+    const f = fixture();
+    f.write(original);
+    const base = f.commit('initial base');
+    f.git('switch', '-q', '-c', 'feature');
+    f.write(original.replace('body();', `${protectedLine}body();`));
+    const prior = f.commit('protect branch content');
+    f.write(original.replace('header_old();', 'header_current();').replace('body();', `${protectedLine}body();`));
+    f.commit('change nearby branch context');
+    f.write(original);
+    f.commit('restore stale branch content');
+    f.write(`// unrelated addition\n${original}`);
+    f.commit('add unrelated content');
+    expect(() => f.git('merge-base', '--is-ancestor', prior, base)).toThrow();
+    expectStatus(f.scan(base), 1);
+  });
+
+  it('still rejects reintroducing deleted bad code alongside unrelated additions', () => {
+    const f = acceptedConcurrentHistory(true);
+    f.write(`unsafe_call();\n// unrelated addition\n${f.accepted}`);
+    f.commit('reintroduce deleted bad code and unrelated content');
+    expect(f.git('diff', '--numstat', f.base, 'HEAD', '--', FILE)).toBe(`2\t0\t${FILE}`);
+    expectStatus(f.scan(f.base), 1);
+  });
+});

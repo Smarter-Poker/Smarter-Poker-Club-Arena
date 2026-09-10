@@ -824,10 +824,101 @@ export interface PerPotAward {
 
 export type HorseStyle = 'tag' | 'lag' | 'balanced' | 'tricky' | 'grinder';
 
+export type HorseTournamentUtilityObjective =
+  | 'mtt_payout'
+  | 'satellite_seat_equity'
+  | 'pko'
+  | 'mystery_bounty'
+  | 'sng'
+  | 'spin_chip_ev'
+  | 'spin_payout';
+
+/** One legal action evaluated by the Phase 7 tournament utility arbiter. */
+export interface HorseTournamentUtilityCandidateLedger {
+  id: string;
+  action: ActionType;
+  /** Absolute wager/raise-to amount; null for fold/check/call/jam. */
+  amount: number | null;
+  investment: number;
+  /** Expected change in hero's behind-stack, in tournament chips. */
+  chipEv: number;
+  /** Expected payout value, in percentage points of the total funded pools. */
+  payoutEv: number;
+  /** Bounties won less bounty value conceded, in the same pool-percentage unit. */
+  bountyEv: number;
+  /** Re-entry/rebuy and add-on option value, never included in payoutEv. */
+  optionEv: number;
+  /** payoutEv + bountyEv + optionEv. Chip EV is not added a second time. */
+  combinedUtility: number;
+  /** Sampling standard error of combined utility. */
+  utilityStandardError: number;
+  /** 99.9% selection half-width including equity and ICM uncertainty. */
+  utilityConfidenceHalfWidth: number;
+  winProbability: number;
+  allFoldProbability: number;
+  bustProbability: number;
+  bountyWinProbability: number;
+  outcomeCount: number;
+  /** Number of distinct post-action stack vectors represented. */
+  resultingStackVectors: number;
+  /** True when no later hero decision is omitted by the Round 1 rollout. */
+  terminalForHero: boolean;
+  /** Maximum number of main/side-pot layers produced by this action. */
+  sidePotCount: number;
+  /** Maximum absolute chip-conservation error over this action's outcomes. */
+  stackConservationError: number;
+}
+
+/**
+ * Phase 7's action-specific tournament receipt. It crosses the live worker
+ * boundary with the accepted HorseDecision; Phase 15 will add the complete
+ * policy-graph provenance around these already-explicit utility components.
+ */
+export interface HorseTournamentUtilityLedger {
+  schemaVersion: 1;
+  model: 'horse-tournament-utility-phase7-round1';
+  outcomeModel: 'conditioned_showdown_samples';
+  objective: HorseTournamentUtilityObjective;
+  utilityUnit: 'total_funded_pool_pct';
+  chipEvUnit: 'tournament_chips';
+  baselineAction: ActionType;
+  baselineAmount: number | null;
+  selectedAction: ActionType;
+  selectedAmount: number | null;
+  /** Filled by the authoritative table boundary after the action attempt. */
+  executedAction: ActionType | null;
+  executedAmount: number | null;
+  executionStatus: 'pending' | 'intended' | 'coerced' | 'fallback' | 'not_executed';
+  overrodeBaseline: boolean;
+  /** True when point utility favored another action but intervals overlapped. */
+  baselineRetainedForUncertainty: boolean;
+  /** True when Phase 8 future-action simulation is required before overriding. */
+  baselineRetainedForContinuation: boolean;
+  sidePotCount: number;
+  playersBehind: string[];
+  coveringPlayers: string[];
+  conditionedOpponentRanges: number;
+  equitySampleSize: number;
+  utilityOutcomeSamples: number;
+  equityStandardError: number;
+  equityCalibrationError: number;
+  effectiveOutcomeSamples: number;
+  fieldPlayersActual: number;
+  fieldPlayersModeled: number;
+  /** Closest-stack replacement error while restoring local player identities. */
+  fieldReconciliationErrorChips: number;
+  icmMethod: 'exact_mh' | 'plackett_luce_mc';
+  icmErrorBound: number;
+  componentReconciliationError: number;
+  candidates: HorseTournamentUtilityCandidateLedger[];
+}
+
 export interface HorseDecision {
   action: ActionType;
   amount?: number;
   thinkTime: number;
+  /** Present on complete-context tournament decisions after Phase 7. */
+  tournamentUtility?: HorseTournamentUtilityLedger;
 }
 
 /** @deprecated Use HorseDecision */

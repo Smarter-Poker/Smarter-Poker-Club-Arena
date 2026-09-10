@@ -1,0 +1,7 @@
+{
+  "_owner": "fix/a-declared-guard-change-is-recorded-not-raised. Applied to production as migration 20260910143032: fn_ca_declare_guard_redefinition lets a migration that deliberately redefines one of the 28 functions on fn_ca_guard_watchlist() move the baseline in the SAME transaction, naming itself, so fn_ca_guard_defs_watch has nothing to report. The watcher is untouched - a redefinition nobody declared still moves the hash away from its baseline and still raises. ca_guard_defs also gains declared_ref and declared_at, which are NULL when the watcher moved the baseline itself after observing an undeclared change.",
+  "functions": ["fn_ca_declare_guard_redefinition"],
+  "columns": {
+    "ca_guard_defs": ["declared_ref", "declared_at"]
+  }
+}

@@ -128,6 +128,23 @@ export interface TournamentUtilityInput {
   context: TournamentUtilityContext;
 }
 
+export type TournamentUtilityUnavailableReason =
+  | 'invalid_input'
+  | 'no_action_candidates'
+  | 'field_reconciliation'
+  | 'sample_calibration'
+  | 'candidate_evaluation'
+  | 'operation_budget'
+  | 'baseline_not_modeled';
+
+export interface TournamentUtilityEvaluation {
+  result: {
+    decision: HorseDecision;
+    ledger: HorseTournamentUtilityLedger;
+  } | null;
+  unavailableReason: TournamentUtilityUnavailableReason | null;
+}
+
 type CandidateKind = 'fold' | 'check' | 'call' | 'bet' | 'raise' | 'jam';
 
 interface ActionCandidate {
@@ -1229,13 +1246,16 @@ function terminalForHero(
   return !input.opponents.some((opponent) => opponent.actsAfterHero);
 }
 
-export function evaluateTournamentUtility(input: TournamentUtilityInput): {
-  decision: HorseDecision;
-  ledger: HorseTournamentUtilityLedger;
-} | null {
-  if (!validateInput(input)) return null;
+export function evaluateTournamentUtilityDetailed(
+  input: TournamentUtilityInput
+): TournamentUtilityEvaluation {
+  if (!validateInput(input)) {
+    return { result: null, unavailableReason: 'invalid_input' };
+  }
   const actionCandidates = buildTournamentActionCandidates(input);
-  if (actionCandidates.length === 0) return null;
+  if (actionCandidates.length === 0) {
+    return { result: null, unavailableReason: 'no_action_candidates' };
+  }
   const field = buildField(input);
   if (
     field.heroIndex < 0 ||
@@ -1249,7 +1269,7 @@ export function evaluateTournamentUtility(input: TournamentUtilityInput): {
     field.aggregateReconciliationErrorChips > EPS ||
     !Number.isFinite(field.conservationTarget)
   ) {
-    return null;
+    return { result: null, unavailableReason: 'field_reconciliation' };
   }
 
   const payoutWeight = payoutPoolWeight(input);
@@ -1291,7 +1311,7 @@ export function evaluateTournamentUtility(input: TournamentUtilityInput): {
     calibrated.calibrationError > MAX_EQUITY_CALIBRATION_ERROR ||
     calibrated.effectiveSamples < MIN_EFFECTIVE_OUTCOMES
   ) {
-    return null;
+    return { result: null, unavailableReason: 'sample_calibration' };
   }
   const evaluated = actionCandidates
     .map((candidate) =>
@@ -1308,7 +1328,12 @@ export function evaluateTournamentUtility(input: TournamentUtilityInput): {
     .filter(
       (result): result is NonNullable<ReturnType<typeof evaluateCandidate>> => result !== null
     );
-  if (operationBudgetHit || evaluated.length !== actionCandidates.length) return null;
+  if (operationBudgetHit) {
+    return { result: null, unavailableReason: 'operation_budget' };
+  }
+  if (evaluated.length !== actionCandidates.length) {
+    return { result: null, unavailableReason: 'candidate_evaluation' };
+  }
 
   const ranked = evaluated.slice().sort((left, right) => {
     const utility = right.ledger.combinedUtility - left.ledger.combinedUtility;
@@ -1324,7 +1349,9 @@ export function evaluateTournamentUtility(input: TournamentUtilityInput): {
   const baselineCandidate = evaluated.find((result) =>
     sameDecision(result.ledger, input.baseline)
   )?.ledger;
-  if (!baselineCandidate) return null;
+  if (!baselineCandidate) {
+    return { result: null, unavailableReason: 'baseline_not_modeled' };
+  }
   let baselineRetainedForUncertainty = false;
   let baselineRetainedForContinuation = false;
   if (!sameDecision(selected, input.baseline) && !selected.terminalForHero) {
@@ -1413,5 +1440,12 @@ export function evaluateTournamentUtility(input: TournamentUtilityInput): {
     componentReconciliationError: reconciliationError,
     candidates: evaluated.map((item) => item.ledger),
   };
-  return { decision, ledger };
+  return { result: { decision, ledger }, unavailableReason: null };
+}
+
+export function evaluateTournamentUtility(input: TournamentUtilityInput): {
+  decision: HorseDecision;
+  ledger: HorseTournamentUtilityLedger;
+} | null {
+  return evaluateTournamentUtilityDetailed(input).result;
 }

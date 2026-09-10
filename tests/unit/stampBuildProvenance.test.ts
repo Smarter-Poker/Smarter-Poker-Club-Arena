@@ -3,6 +3,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 const script = path.resolve('scripts/stamp-build-provenance.mjs');
 const fixtures: string[] = [];
@@ -68,6 +69,46 @@ function repository(state: 'current' | 'behind' | 'ahead' | 'diverged' | 'no-rem
     git(dir, 'commit', '--quiet', '--allow-empty', '-m', 'fixture branch advancement');
   }
   return dir;
+}
+
+function shallowMerge(mainDepth: 'shallow' | 'full') {
+  const source = repository('current');
+  for (let i = 0; i < 3; i++) {
+    git(source, 'commit', '--quiet', '--allow-empty', '-m', `fixture main ${i}`);
+  }
+  git(source, 'checkout', '--quiet', '-b', 'feature');
+  git(source, 'commit', '--quiet', '--allow-empty', '-m', 'fixture feature');
+  git(source, 'checkout', '--quiet', 'main');
+  git(source, 'commit', '--quiet', '--allow-empty', '-m', 'fixture main parent');
+  const main = git(source, 'rev-parse', 'HEAD');
+  git(source, 'checkout', '--quiet', '-b', 'pr');
+  git(source, 'merge', '--quiet', '--no-ff', 'feature', '-m', 'fixture PR merge');
+  const dir = directory();
+  git(
+    dir,
+    '-c',
+    'protocol.file.allow=always',
+    'clone',
+    '--quiet',
+    '--depth=1',
+    '--single-branch',
+    '--branch=pr',
+    pathToFileURL(source).href,
+    '.'
+  );
+  git(
+    dir,
+    '-c',
+    'protocol.file.allow=always',
+    'fetch',
+    '--quiet',
+    ...(mainDepth === 'shallow' ? ['--depth=1'] : []),
+    'origin',
+    'main:refs/remotes/origin/main'
+  );
+  expect(git(dir, 'cat-file', '-p', 'HEAD')).toContain(`parent ${main}`);
+  expect(git(dir, 'rev-parse', '--is-shallow-repository')).toBe('true');
+  return { source, dir };
 }
 
 function stamp(dir: string, overrides: Record<string, string> = {}) {
@@ -145,6 +186,58 @@ describe('actual build provenance subprocess', () => {
     expect(result.status).toBe(0);
     expect(result.info).toMatchObject({ behindMain: 0, aheadMain: 1 });
     expect(existsSync(path.join(dir, 'dist'))).toBe(false);
+  });
+
+  it.each(['shallow', 'full'] as const)(
+    'refuses incomplete PR ancestry with %s main history, then accepts the same unshallowed merge',
+    (mainDepth) => {
+      const { source, dir } = shallowMerge(mainDepth);
+      // Both runner histories falsely count main as behind its own merge.
+      expect(Number(git(dir, 'rev-list', '--count', 'HEAD..origin/main'))).toBeGreaterThan(0);
+      const incomplete = stamp(dir, { GITHUB_ACTIONS: 'true' });
+      expect(incomplete.status).toBe(1);
+      expect(incomplete.stderr).toContain('incomplete Git history');
+      expect(incomplete.stderr).not.toContain('commit(s) BEHIND');
+      expect(incomplete.info).toMatchObject({
+        historyComplete: false,
+        behindMain: null,
+        aheadMain: null,
+      });
+      git(dir, '-c', 'protocol.file.allow=always', 'fetch', '--quiet', '--unshallow', 'origin');
+      const complete = stamp(dir, { GITHUB_ACTIONS: 'true' });
+      expect(complete.status, complete.stdout + complete.stderr).toBe(0);
+      expect(complete.info).toMatchObject({
+        commit: incomplete.info.commit,
+        historyComplete: true,
+        behindMain: 0,
+      });
+      // Complete history must still reject real subsequent main advancement.
+      git(source, 'checkout', '--quiet', 'main');
+      git(source, 'commit', '--quiet', '--allow-empty', '-m', 'fixture newer main');
+      git(
+        dir,
+        '-c',
+        'protocol.file.allow=always',
+        'fetch',
+        '--quiet',
+        'origin',
+        'main:refs/remotes/origin/main'
+      );
+      const stale = stamp(dir, { GITHUB_ACTIONS: 'true' });
+      expect(stale.status).toBe(1);
+      expect(stale.stderr).toContain('1 commit(s) BEHIND origin/main');
+    }
+  );
+
+  it('warns on shallow local diagnostics but refuses a strict local release', () => {
+    const { dir } = shallowMerge('shallow');
+    const local = stamp(dir);
+    expect(local.status).toBe(0);
+    expect(local.stderr).toContain('incomplete Git history');
+    expect(local.info).toMatchObject({ historyComplete: false, behindMain: null });
+    const strict = stamp(dir, { STRICT_PROVENANCE: '1' });
+    expect(strict.status).toBe(1);
+    expect(strict.stderr).toContain('incomplete Git history');
   });
 
   it('preserves unknown-distance diagnostics when origin/main is unavailable', () => {

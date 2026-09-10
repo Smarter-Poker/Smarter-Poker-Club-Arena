@@ -1,4 +1,4 @@
-import { act, cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import DailyChallengesPage from '../src/pages/DailyChallengesPage';
@@ -232,6 +232,43 @@ describe('Daily Missions initial realtime subscription handoff', () => {
       await vi.advanceTimersByTimeAsync(251);
     });
     expect(mocks.dashboard).toHaveBeenCalledTimes(2);
+    expect(visibleBalance()).toBe('5,000');
+  });
+  it('recovers automatically when a temporary initial outage has already ended', async () => {
+    mocks.dashboard
+      .mockRejectedValueOnce(new Error('dashboard retry budget exhausted'))
+      .mockResolvedValue(dashboard(2));
+    mocks.revision.mockResolvedValue(2);
+    await mountPage();
+    expect(screen.getByRole('alert')).toHaveTextContent('Challenge Ledger Unavailable');
+    await subscribe();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(251);
+    });
+    expect(mocks.dashboard).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(visibleBalance()).toBe('5,000');
+  });
+
+  it('keeps a sustained outage visible through automatic recovery and supports manual retry', async () => {
+    mocks.dashboard.mockRejectedValue(new Error('dashboard unavailable'));
+    mocks.revision.mockResolvedValue(2);
+    await mountPage();
+    await subscribe();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(251);
+    });
+    expect(mocks.dashboard).toHaveBeenCalledTimes(2);
+    expect(screen.getByRole('alert')).toHaveTextContent('Challenge Ledger Unavailable');
+    expect(screen.queryByText('Spendable Balance', { exact: true })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: '0 Day Streak' })).not.toBeInTheDocument();
+
+    mocks.dashboard.mockResolvedValue(dashboard(2));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Retry Challenge Ledger' }));
+    });
+    expect(mocks.dashboard).toHaveBeenCalledTimes(3);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     expect(visibleBalance()).toBe('5,000');
   });
 });

@@ -5,7 +5,7 @@ ALTER TABLE public.rake_records ADD COLUMN terminal_closed_at timestamptz;
 CREATE TABLE public.tournament_terminal_settlements(tournament_id uuid PRIMARY KEY);
 CREATE TABLE public.tournament_satellite_settlements(tournament_id uuid PRIMARY KEY);
 CREATE TABLE public.tournament_cancellation_receipts(tournament_id uuid PRIMARY KEY);
--- Installed Body MD5: b0a05e8e90bced99d121375c9a7b9c88
+-- Installed Body MD5: cc53a9560c7b211c9c052a186dabc96c
 CREATE OR REPLACE FUNCTION public.fn_award_satellite_seat(p_satellite_id uuid, p_target_id uuid, p_user_id uuid, p_username text DEFAULT NULL::text, p_position integer DEFAULT NULL::integer)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -29,8 +29,7 @@ DECLARE
   v_moved    numeric := 0;
   v_short    numeric := 0;
 BEGIN
-  PERFORM pg_advisory_xact_lock(
-    hashtextextended('ca:tournament-terminal-settlement:v1',0));
+  PERFORM public.fn_ca_lock_settlement_lane_global();
   SELECT id, name, club_id, status, buy_in_amount, buy_in_fee,
          bounty_amount, is_bounty, is_pko, is_mystery_bounty,
          max_players, current_players, current_level,
@@ -870,3 +869,18 @@ CREATE TRIGGER zz_ca_escrow_seat_payout AFTER INSERT ON tournament_payouts FOR E
 CREATE TRIGGER satellite_target_player_provenance_is_immutable BEFORE INSERT OR DELETE OR UPDATE OF id, tournament_id, user_id, is_satellite_qualifier, source_satellite_id ON tournament_players FOR EACH ROW EXECUTE FUNCTION fn_satellite_target_player_provenance_is_immutable();
 CREATE TRIGGER seed_bounty_head AFTER INSERT ON tournament_players FOR EACH ROW EXECUTE FUNCTION trg_seed_bounty_head();
 CREATE TRIGGER trg_sync_tournament_current_players AFTER INSERT OR DELETE OR UPDATE OF status, tournament_id ON tournament_players FOR EACH ROW EXECUTE FUNCTION fn_sync_tournament_current_players();
+-- Installed Body MD5: 343015440ea5c84ee4ca7ae583c73d30
+CREATE OR REPLACE FUNCTION public.fn_ca_lock_settlement_lane_global()
+ RETURNS void
+ LANGUAGE plpgsql
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+BEGIN
+  -- G then B. Terminal / rare authorities: serialised against every other
+  -- authority AND against every hand settlement, as on 2026-09-09.
+  PERFORM pg_advisory_xact_lock(
+    hashtextextended('ca:tournament-terminal-settlement:v1', 0));
+  PERFORM pg_advisory_xact_lock(
+    hashtextextended('ca:hand-settlement-barrier:v1', 0));
+END;
+$function$;

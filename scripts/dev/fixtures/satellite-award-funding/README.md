@@ -2,7 +2,7 @@
 
 This overlay executes the current installed satellite award helper with the existing registration funding runtime. Source entries are paid through its real registration, wallet, entitlement and ledger authorities. The manifest pins captured bodies before the prospective correction is applied.
 
-The overlay adds 12 installed functions and seven selected actual triggers, replacing the base fixture's older roster-count trigger. It includes a captured nullable rake terminal marker and three empty terminal-receipt table shapes needed by read-only guards. These are explicitly limited fixture shapes, not a terminal settlement implementation or the full production schema.
+The overlay adds 13 installed functions and seven selected actual triggers, replacing the base fixture's older roster-count trigger. It includes a captured nullable rake terminal marker and three empty terminal-receipt table shapes needed by read-only guards. These are explicitly limited fixture shapes, not a terminal settlement implementation or the full production schema.
 
 Caller after entry/cancellation runner integration:
 

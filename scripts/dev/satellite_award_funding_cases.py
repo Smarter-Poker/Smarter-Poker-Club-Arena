@@ -92,6 +92,23 @@ def verify(q, fresh, overlap, register, check):
           registration=proof["player_registration"],player_registration=proof["player_registration"],
           amount=200,transfer=200),proof
 
+    if "--satellite-lock-reconciliation-only" in sys.argv:
+        prepare("satellite_funded")  # Apply and reapply the recomposed candidate.
+        # The fixture owner holds only B. A waiting award therefore proves that
+        # the actual installed global helper still acquires the hand barrier.
+        _, answer = overlap(
+            "SELECT pg_advisory_xact_lock(hashtextextended('ca:hand-settlement-barrier:v1',0));",
+            award(), closing=True)
+        assert answer.get("awarded") is True,answer
+        assert_funded()
+        q("UPDATE tournaments SET prize_pool_finalized=true WHERE id='%s';" % TARGET)
+        before=fingerprint()
+        replay=json.loads(q(award()))
+        assert replay.get("held_from_this_satellite") is True and replay.get("awarded") is False,replay
+        assert fingerprint()==before,"reconciled closed replay wrote financial state"
+        check("reconciled award applies twice waits on hand barrier funds once and replays after closure")
+        return
+
     for target_status in ("REGISTERING","ANNOUNCED","RUNNING"):
         name="satellite_funded" if target_status=="REGISTERING" else "satellite_"+target_status.lower()
         prepare(name)

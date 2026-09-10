@@ -6,7 +6,7 @@
 BEGIN;
 DO $guard$
 BEGIN
-  IF (SELECT md5(prosrc) FROM pg_proc WHERE oid='fn_award_satellite_seat(uuid,uuid,uuid,text,integer)'::regprocedure) NOT IN ('b0a05e8e90bced99d121375c9a7b9c88','92188570fbbac357ad55d83fb0e7a456') THEN
+  IF (SELECT md5(prosrc) FROM pg_proc WHERE oid='fn_award_satellite_seat(uuid,uuid,uuid,text,integer)'::regprocedure) NOT IN ('cc53a9560c7b211c9c052a186dabc96c','2c21c56c6a9d4a2f8ee79082bd4fef57') THEN
     RAISE EXCEPTION 'Satellite correction source changed: fn_award_satellite_seat(uuid,uuid,uuid,text,integer)';
   END IF;
   IF (SELECT md5(prosrc) FROM pg_proc WHERE oid='fn_ca_escrow_on_rake_record()'::regprocedure) NOT IN ('233661d2164a417c2a76c8e0cbfbe9cc','3e628d6a57a93eeb61d494ee33f989a3') THEN
@@ -14,6 +14,9 @@ BEGIN
   END IF;
   IF (SELECT md5(prosrc) FROM pg_proc WHERE oid='fn_ca_tournament_escrow(uuid)'::regprocedure) NOT IN ('99606ee5149e6734e99c9d4917a126ee','e13df51254ce46a49b1bf1f0e476599e') THEN
     RAISE EXCEPTION 'Satellite correction source changed: fn_ca_tournament_escrow(uuid)';
+  END IF;
+  IF (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.fn_ca_lock_settlement_lane_global()'::regprocedure) IS DISTINCT FROM '343015440ea5c84ee4ca7ae583c73d30' THEN
+    RAISE EXCEPTION 'Satellite correction requires the current settlement lane global helper';
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_trigger t JOIN pg_proc p ON p.oid=t.tgfoid WHERE t.tgrelid='public.tournament_players'::regclass AND t.tgname='trg_sync_tournament_current_players' AND t.tgenabled='O' AND md5(p.prosrc)='ecb120c2c6a4ecee6c2e04d4c9b5ebc7') THEN
     RAISE EXCEPTION 'Satellite correction requires the current enabled roster count authority';
@@ -44,8 +47,7 @@ DECLARE
   v_moved    numeric := 0;
   v_short    numeric := 0;
 BEGIN
-  PERFORM pg_advisory_xact_lock(
-    hashtextextended('ca:tournament-terminal-settlement:v1',0));
+  PERFORM public.fn_ca_lock_settlement_lane_global();
   SELECT id, name, club_id, status, buy_in_amount, buy_in_fee,
          bounty_amount, is_bounty, is_pko, is_mystery_bounty,
          max_players, current_players, current_level,

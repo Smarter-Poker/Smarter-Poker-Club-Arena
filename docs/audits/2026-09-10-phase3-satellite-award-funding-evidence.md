@@ -2,6 +2,8 @@
 
 Date: 2026-09-10. Candidate only; no production SQL was applied and no branch was pushed.
 
+Later installed-authority reconciliation and one additional composition proof are recorded in `2026-09-10-phase3-satellite-award-source-reconciliation.md`. The hashes and eight-group results below describe the original rehearsal.
+
 ## Controls
 
 | Control | Result | Remaining acceptance |

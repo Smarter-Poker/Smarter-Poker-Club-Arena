@@ -3,7 +3,7 @@
   "observed_date": "2026-09-10",
   "functions": [
     {
-      "body_md5": "b0a05e8e90bced99d121375c9a7b9c88",
+      "body_md5": "cc53a9560c7b211c9c052a186dabc96c",
       "signature": "fn_award_satellite_seat(uuid,uuid,uuid,text,integer)"
     },
     {
@@ -59,6 +59,10 @@
     {
       "signature": "fn_sync_tournament_current_players()",
       "body_md5": "ecb120c2c6a4ecee6c2e04d4c9b5ebc7"
+    },
+    {
+      "signature": "fn_ca_lock_settlement_lane_global()",
+      "body_md5": "343015440ea5c84ee4ca7ae583c73d30"
     }
   ],
   "triggers": [
@@ -141,5 +145,6 @@
       "nullable": true,
       "default": null
     }
-  ]
+  ],
+  "reconciled_on_utc": "2026-09-10"
 }

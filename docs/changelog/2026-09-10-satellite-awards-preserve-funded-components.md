@@ -7,3 +7,5 @@ The candidate migration preserves the roster trigger's pre-start count, retains 
 Eight planned groups passed, including real funded registration, the 175/5/20 bounty split, replay, transaction rollback, insufficient source funding, finalized-target contention, final-place contention and paid-entry contention. Passing groups were resumed without repeated optional tests. Read-only peer review checked the three narrowly changed behaviors.
 
 This is an unapplied, unpushed financial candidate. It does not rewrite historical rows; future escrow calculations for existing events can change. Production application, upper ticket delivery/cash alternatives and remaining B07/B09 acceptance are pending. See `docs/audits/2026-09-10-phase3-satellite-award-funding-evidence.md` for exact hashes, results and limits.
+
+The award authority subsequently adopted the actual G-then-B global lane helper. The recomposed candidate preserves it, pins the helper and passes one targeted apply/replay/barrier group; the original eight groups were retained without repetition. See `docs/audits/2026-09-10-phase3-satellite-award-source-reconciliation.md`.

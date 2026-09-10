@@ -22,6 +22,16 @@ import { resolveSentryUpload } from './scripts/sentry-upload-policy';
  */
 const NATIVE = process.env.VITE_NATIVE === '1';
 const WEB_BASE = '/hub/club-arena/';
+const maxParallelFileOps = process.env.ROLLUP_MAX_FILE_OPS
+  ? Number(process.env.ROLLUP_MAX_FILE_OPS)
+  : process.env.CI
+    ? Math.max(4, Math.floor(cpus().length / 2))
+    : 20;
+// Rollup treats nonpositive limits as unbounded and does not reject NaN.
+// Refuse an invalid cap before constructing any build or upload plugin.
+if (!Number.isSafeInteger(maxParallelFileOps) || maxParallelFileOps <= 0) {
+  throw new Error('ROLLUP_MAX_FILE_OPS must be a positive safe integer.');
+}
 const sentryUpload = resolveSentryUpload(process.env);
 if (process.env.CA_SENTRY_UPLOAD === '1' && !sentryUpload.enabled) {
   console.warn('[sentry-upload] Upload Disabled:', sentryUpload.reason);
@@ -178,29 +188,12 @@ export default defineConfig({
     // Native: off. The binary has no publisher to strip them, so a map here
     // is ~3 MB of source shipped inside the app to every player.
     sourcemap: !NATIVE,
-    // BUILD CONCURRENCY CAP, for the same reason vitest.config.ts caps its
-    // thread pool: on CI this build does not own the machine.
-    //
-    // Rollup defaults maxParallelFileOps to 20. On a laptop that is free
-    // speed. On an 8-core runner box hosting six runners it is six builds
-    // each asking for twenty concurrent file operations, and the box goes to
-    // load 63 - measured on estate-ci-eu-3, 2026-09-04, while estate-ci-eu-1
-    // sat at 38 doing the same thing.
-    //
-    // A thrashing box does not merely build slowly. It times out tests that
-    // pass in seconds elsewhere, and those timeouts are indistinguishable
-    // from real failures, which is how a green suite turns into a red pull
-    // request nobody can explain.
-    //
-    // Local builds are untouched: CI is capped, a laptop keeps the default.
-    // Sized from the BOX for the same reason as vitest.config.ts: this was a
-    // hard 4 for 8-core runners, and the boxes are 16-core since 2026-09-04.
-    maxParallelFileOps: process.env.ROLLUP_MAX_FILE_OPS
-      ? Number(process.env.ROLLUP_MAX_FILE_OPS)
-      : process.env.CI
-        ? Math.max(4, Math.floor(cpus().length / 2))
-        : 20,
     rollupOptions: {
+      // Rollup defaults to 1000 concurrent file operations. Our intended
+      // local cap is 20; shared CI hosts use half their CPUs, with a floor of 4.
+      // This is a Rollup input option, so it belongs inside rollupOptions.
+      // At the Vite build root it was ignored and the cap never took effect.
+      maxParallelFileOps,
       output: {
         // 2026-04-15 cache-bust: append a build-time tag to every emitted
         // file's name so that v5-broken immutable caches on users' browsers

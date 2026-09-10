@@ -2,6 +2,10 @@
 
 ## Every Change, Documented. No Exceptions.
 
+## 2026-09-10: Native Spin Contention Cannot Overbook Its Reserve
+
+Observed same-event races preserve the immutable funded receipt through changed rules and exact retries. A separate two-event native race starts with 3.28 available against four chips of minimum prizes: one funds two, the other refuses after waiting, leaving 1.28 and no losing draw receipt. Exact retries preserve the complete financial snapshot. Scarcity comes from actual entry bookings and a prior native draw, with no balance rewrite or stub. Owned local fixtures remain available; production is untouched. Re-read: yes. See docs/changelog/2026-09-10-native-spin-concurrency-keeps-funded-receipts.md.
+
 ## 2026-09-10: Native Spin Funding Reaches Played Launch Completion
 
 The immutable draw wrapper now has a native rehearsal with actual entry/reserve/journal/escrow functions and a final receipt failure. Exact retry, changed-rule replay, stale-owner refusal, receipt immutability and played/vacated recovery pass, then the lease-bound completion RPC commits RUNNING without moving money. Every tracked prerequisite guard remains intact and all DDL/fixtures roll back. Native concurrency, final winner settlement and production adoption remain open. Re-read: yes. See docs/changelog/2026-09-10-native-spin-funded-launch-recovery.md.

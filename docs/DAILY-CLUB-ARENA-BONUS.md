@@ -20,14 +20,14 @@ in Dan's Claude gallery; rulings and live state below are the source of truth.
 
 ## Phases
 
-| Phase | What                                                                                                                                                               | State                                       |
-| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------- |
-| 0     | Retire the chip ladder (`20260907232514_a_daily_bonus_pays_nothing_in_chips`), remove the wheel / Bonus page UI, `/bonuses` redirects to Promotions                | Live in prod; PR #3585                      |
-| 1     | Ledger: calendar, days, claims, `fn_ca_daily_bonus_status`, `fn_ca_daily_bonus_claim`, caps, budget counter, `feature_purchases.source`                            | Live in prod; PR #3588                      |
-| 2     | The sheet: tiles on the club-utility shell, week strip, countdown, per-tile Claim, entry trigger in the shell, header gift icon, Promotions card, `/bonuses` route | Live in prod; PRs #3593, #3621, #4021       |
-| 3     | Lucky multiplier on the mystery tile, 24h Mission Boost (`player_boosts`), Streak Shield, the day-14 / day-30 chests carry a shield                                | Ledger live in prod 2026-09-10; this branch |
-| 4     | Operator panel in the Financial Admin Hub: calendar editor (history-tracked), claims, streak distribution, retention                                               |                                             |
-| 5     | Cut over the World Hub `daily_login` action to this streak; seed existing streaks; burn-in                                                                         |                                             |
+| Phase | What                                                                                                                                                                      | State                                                |
+| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| 0     | Retire the chip ladder (`20260907232514_a_daily_bonus_pays_nothing_in_chips`), remove the wheel / Bonus page UI, `/bonuses` redirects to Promotions                       | Live in prod; PR #3585                               |
+| 1     | Ledger: calendar, days, claims, `fn_ca_daily_bonus_status`, `fn_ca_daily_bonus_claim`, caps, budget counter, `feature_purchases.source`                                   | Live in prod; PR #3588                               |
+| 2     | The sheet: tiles on the club-utility shell, week strip, countdown, per-tile Claim, entry trigger in the shell, header gift icon, Promotions card, `/bonuses` route        | Live in prod; PRs #3593, #3621, #4021                |
+| 3     | Lucky multiplier on the mystery tile, 24h Mission Boost (`player_boosts`), Streak Shield, the day-14 / day-30 chests carry a shield; the sheet moves to the spade console | Ledger live in prod 2026-09-10; sheet on this branch |
+| 4     | Operator panel in the Financial Admin Hub: calendar editor (history-tracked), claims, streak distribution, retention                                                      |                                                      |
+| 5     | Cut over the World Hub `daily_login` action to this streak; seed existing streaks; burn-in                                                                                |                                                      |
 
 ## How it pays (phase 1, live)
 
@@ -128,6 +128,15 @@ chip.
 - **Read side.** `fn_ca_daily_bonus_status()` adds `shield {held, expires_at}`,
   `streak_protected`, `boost {active, factor, kind, ends_at, seconds_left, applied_diamonds}`
   and per-tile `revealed`.
+- **The sheet.** `DailyBonusSheet` is the spade console wearing the diamond
+  crest (#ClubArenaConsole; the shark plaques are gone, Dan 2026-09-09):
+  every tile a row printed on the glass with its painted render, CLAIM a lit
+  word, the popup's controls on the two painted plates. Shield and boost
+  tiles, the lucky reveal, a protected day, a held shield and a running
+  boost's countdown all print from the status and claim payloads; the sheet
+  rolls and computes nothing. /bonuses prints the same content on the
+  Rewards Circuit header's glass (`chassis="glass"`).
+  `docs/changelog/2026-09-10-the-daily-bonus-learns-to-forgive-boost-and-gamble.md`.
 
 ### Verification record (2026-09-10, rolled-back probes on production, then the apply)
 

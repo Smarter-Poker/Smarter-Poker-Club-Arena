@@ -49,6 +49,9 @@ const status = (): DailyBonusStatus => ({
   ],
   week: [],
   tomorrow: [],
+  shield: { held: 0, expires_at: null },
+  boost: { active: false },
+  streak_protected: false,
   caps: {
     daily_cap: 150,
     daily_used: 70,
@@ -99,6 +102,92 @@ describe('applyClaim', () => {
     expect(next.caps).toEqual(status().caps);
     expect(next.tiles[1].claimed).toBe(true);
     expect(next.tiles[2].capped).toBe(false);
+  });
+
+  it('a shield grant is held, with the expiry the ledger gave it', () => {
+    const prev = status();
+    prev.tiles.push(
+      tile({
+        slot: 3,
+        kind: 'shield',
+        label: 'Streak Shield',
+        quantity: 1,
+        base_diamonds: 0,
+        diamonds: 0,
+      })
+    );
+    const next = applyClaim(prev, 3, {
+      success: true,
+      slot: 3,
+      granted: {
+        kind: 'shield',
+        feature: 'streak_shield',
+        quantity: 1,
+        diamonds: 0,
+        expires_at: '2026-10-08T05:00:00+00:00',
+        balance_after: 500,
+      },
+    });
+    expect(next.shield).toEqual({ held: 1, expires_at: '2026-10-08T05:00:00+00:00' });
+    expect(next.boost).toEqual({ active: false });
+    expect(next.caps).toEqual(prev.caps);
+    expect(next.tiles.find((t) => t.slot === 3)?.claimed).toBe(true);
+  });
+
+  it('a boost grant is running for the hours the ledger gave it, and moves no diamonds', () => {
+    const prev = status();
+    prev.tiles.push(
+      tile({
+        slot: 4,
+        kind: 'boost',
+        label: 'Mission Boost',
+        quantity: 24,
+        base_diamonds: 0,
+        diamonds: 0,
+      })
+    );
+    const next = applyClaim(prev, 4, {
+      success: true,
+      slot: 4,
+      granted: {
+        kind: 'boost',
+        factor: 2,
+        hours: 24,
+        quantity: 24,
+        diamonds: 0,
+        ends_at: '2026-09-09T18:00:00+00:00',
+        balance_after: 500,
+      },
+    });
+    expect(next.boost.active).toBe(true);
+    expect(next.boost.factor).toBe(2);
+    expect(next.boost.seconds_left).toBe(24 * 3600);
+    expect(next.boost.ends_at).toBe('2026-09-09T18:00:00+00:00');
+    expect(next.caps).toEqual(prev.caps);
+  });
+
+  it('a mystery claim keeps what it revealed, lucky roll included, and moves the caps by what was paid', () => {
+    const prev = status();
+    prev.tiles.push(
+      tile({
+        slot: 2,
+        kind: 'mystery',
+        label: 'Mystery Tile',
+        quantity: 0,
+        base_diamonds: 0,
+        diamonds: 0,
+      })
+    );
+    const next = applyClaim(prev, 2, {
+      success: true,
+      slot: 2,
+      granted: { kind: 'diamonds', diamonds: 20, quantity: 0, balance_after: 520, lucky: 2 },
+      revealed: { kind: 'diamonds', diamonds: 20, quantity: 0, lucky: 2 },
+    });
+    const t = next.tiles.find((x) => x.slot === 2);
+    expect(t?.revealed?.lucky).toBe(2);
+    expect(t?.granted?.diamonds).toBe(20);
+    expect(next.caps?.daily_used).toBe((prev.caps?.daily_used ?? 0) + 20);
   });
 
   it('is a no-op without a grant', () => {

@@ -58,13 +58,55 @@ transaction, 558 ms, recorded byte-exact in `schema_migrations`.
   the table now comes first without the reference, and the constraint comes
   last.
 
+## The sheet (this branch)
+
+- **The Daily Bonus is on the spade console, and the shark is gone.** Dan,
+  2026-09-09: "DON'T EVER USE THE SHARK, THAT WAS FOR A SPECIFIC CLUB ONLY."
+  The phase 2 sheet was cut from the shark console's plaques and button
+  faces. It is now `SpadeConsole crest="diamond"` (#ClubArenaConsole): the
+  head prints CLUB ARENA / DAILY BONUS and the streak in the painted pill
+  (gold on a chest day, green once today is claimed); the readouts, the
+  week and every tile print on the black glass between the rails - each
+  tile a row with its painted render beside the words, the figure and its
+  value line on one baseline, CLAIM a lit word at the end, engraved rules
+  between rows, the way the Promotions page prints its offers. Nothing is
+  drawn. The popup's controls are the two painted plates (NOT NOW / CLAIM
+  NEXT, or DONE once every tile is claimed); Escape and the backdrop still
+  close it, the focus trap and the once-a-day `markShown` are unchanged.
+- **/bonuses is one picture.** The page used to stack the Rewards Circuit
+  header's console over the sheet's own chassis (a frame under a frame).
+  The sheet now has a `chassis="glass"` mode that prints only its content,
+  and the page lays it on the header console's glass as children.
+- **Phase 3 on the sheet.** A Streak Shield tile (the kit's painted shield
+  render, the one Daily Missions' streak freeze wears: one render for one
+  idea), a Mission Boost tile printed as chrome 2x the way the Time Bank
+  prints its seconds, a mystery tile that says a lucky roll is coming and,
+  once claimed, shows the revealed prize with LUCKY ROLL xN in gold; the
+  streak readout says SHIELD COVERED YESTERDAY on a protected day; the
+  notes carry the held shield and its expiry, and a running boost with its
+  own countdown (a deadline, not a decremented counter, like the reset
+  clock) and the diamonds it has added so far. `boost_already_live` reads
+  as "A Mission Boost Is Already Running".
+- **Not painted yet.** The OpenAI image account had no credits
+  (`credit_balance_exhausted`) when this shipped, so no new badge was
+  painted for the boost. When credits are back, paint one in the kit's badge
+  family (the recipe is in `spade-console-v1/source/README.md`) and swap the
+  printed 2x for it.
+- `x1` rather than `x1.0` for a whole-number multiplier (no decimal where
+  there is nothing after it); `x1.5` keeps its one decimal because it is one.
+
 ## Verified
 
-Eight rolled-back probes on production before the apply (shielded miss,
+Rendered at 393 px on black through the harness (before and after, the
+popup, day 4, day 7, after claiming, a day-14 chest with a protected day,
+and the /bonuses page). Eight rolled-back probes on production before the
+apply (shielded miss,
 status, mystery x lucky with idempotent replay, two-day reset, boost claim,
 boost extra at 20 and at 5000 with journal classification, 10,000 rolls of
 each function, patch presence), then after the apply: every pre-existing ACL
 unchanged, `player_boosts` RLS with owner SELECT only, history row byte-exact
 to the mirrored file, and `fn_ca_daily_bonus_status()` for a real player
 carrying `shield`, `boost`, `streak_protected` and per-tile `revealed`.
-Pinned at the file level by `tests/unit/dailyBonusPhase3.law.test.ts`.
+Pinned at the file level by `tests/unit/dailyBonusPhase3.law.test.ts`; the
+sheet by `tests/unit/DailyBonusSheet.test.tsx`, `useDailyBonus.test.ts` and
+`DailyBonusService.test.ts`.

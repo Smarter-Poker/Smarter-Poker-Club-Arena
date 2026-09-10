@@ -26,7 +26,7 @@
       "reason": "Automatic review blocked the requested source/error disclosure."
     }
   ],
-  "checked_at": "2026-09-10T03:17:38.972351+00:00",
+  "checked_at": "2026-09-10T04:31:49.109729+00:00",
   "coordination": "The existing release task owns the production engine release seal and Stage-B cutover. This swarm performs isolated source and verification work and normal repository publication; it does not race that production owner.",
   "integration_branch": "agent/codex-chip-drift-resume/fix/phase-three-swarm",
   "lanes": [
@@ -88,7 +88,7 @@
     "committed_move_receipt_resolver": "absent",
     "mutations_by_this_swarm": false,
     "new_seat_move": "absent",
-    "observed_at": "2026-09-10T03:17:38.972351+00:00",
+    "observed_at": "2026-09-10T04:31:49.109729+00:00",
     "seven_guards": "All seven remain disabled; do not enable them without replacement and composition acceptance."
   },
   "programme": "109-item comprehensive Club Arena accounting audit",
@@ -111,9 +111,11 @@
     "version": "1695880b"
   },
   "publication": {
-    "status": "ready_for_normal_push_and_required_ci",
-    "push_completed": false,
-    "normal_hooks": "passed on integrated conflict resolutions; no hooks bypassed"
+    "status": "PR4096_CI_fix_verified_locally_pending_rerun",
+    "push_completed": true,
+    "normal_hooks": "passed on integrated conflict resolutions; no hooks bypassed",
+    "pr": 4096,
+    "initial_head": "82bca2280b96cf06aad11fd67c8d20af61af525a"
   },
   "verification": {
     "client": {
@@ -147,7 +149,14 @@
       "source_assertions": 61,
       "scope": "Real guard with correctly closed fixture entry windows; no full M5 financial acceptance claim."
     },
-    "integrated_required_ci": "pending"
+    "integrated_required_ci": "pending",
+    "registration_client_parity": {
+      "psql_groups": 23,
+      "node_groups": 23,
+      "both_exit_codes": 0,
+      "initial_ci_failure": "JSON scalar decoded by Node before json.loads; repaired with explicit text projection",
+      "required_ci": "pending rerun"
+    }
   },
   "remaining_acceptance": {
     "CA-03-01": "Actual late-seat lifecycle and knockout rebuy generations under missing M6/bounty helper authority; current ordinary purchase dependency parity is verified.",

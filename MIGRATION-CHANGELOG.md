@@ -2,6 +2,10 @@
 
 ## Every Change, Documented. No Exceptions.
 
+## 2026-09-10: Registration Rehearsal Preserves JSON Strings Across Clients
+
+The current-dependency rehearsal parsed PostgreSQL JSON scalar text with json.loads. psql retained the JSON quotes, while the CI Node client decoded the scalar first, failing before the accounting assertions. Both scalar projections now cast their JSON encoding to PostgreSQL text so each client returns identical encoded text. All source fingerprints and financial assertions remain in force. Verified: all 23 native PostgreSQL behavior groups passed independently through psql and PGNODE, including rollback, concurrent replay and exact charged-wallet receipts. Re-read: yes; no application money function or production database changed.
+
 ## 2026-09-10: Played Spin Recovery Requires A Real Hand Count
 
 `server/src/tournament/playedSpinLaunchRecovery.ts` previously admitted missing or malformed hand evidence through `Number(hand_count) < 1`. The parser now requires a positive safe integer JSON number before the played-game recovery exception. Ten failing adversarial regressions reproduced the hole; 27 parser tests and 170 focused Spin/launch tests pass. The separate compact funding proof passes 42 PostgreSQL checks, with its atomic authority definition verified against production. Full current lower-money-function composition and ordinary engine publication remain open. Re-read: yes. Full server TypeScript: pass. No database or financial mutation. See docs/changelog/2026-09-10-played-spin-recovery-requires-a-real-hand-count.md.

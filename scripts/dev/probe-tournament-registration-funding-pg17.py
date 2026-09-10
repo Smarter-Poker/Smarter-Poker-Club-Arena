@@ -93,8 +93,8 @@ with (root/'results.log').open('w') as log:
             for variable in ['v_a', 'v_b']:
                 expressions = re.findall(r'\b' + variable + r'\s*:=\s*(.*?);\s*\n', resolver_source, re.S)
                 assert len(expressions) == 1, 'resolver source expression must be unambiguous'
-                resolver_parts.append(json.loads(q('SELECT to_json(' + expressions[0] + ');')))
-            resolver_definition = json.loads(q("SELECT to_json(pg_get_functiondef('fn_tournament_club_for_user(uuid,uuid,uuid)'::regprocedure));"))
+                resolver_parts.append(json.loads(q('SELECT to_json(' + expressions[0] + ')::text;')))
+            resolver_definition = json.loads(q("SELECT to_json(pg_get_functiondef('fn_tournament_club_for_user(uuid,uuid,uuid)'::regprocedure))::text;"))
             assert resolver_definition.count(resolver_parts[0]) == 1, 'resolver source baseline must match exactly'
             q(resolver_definition.replace(resolver_parts[0], resolver_parts[1]) + ';')
             origin_source = (Path(__file__).resolve().parents[2] / 'supabase/migrations/20260910023919_the_entry_is_charged_to_the_wallet_the_entry_is_stamped_with.sql').read_text()

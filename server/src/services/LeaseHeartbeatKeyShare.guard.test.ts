@@ -202,7 +202,7 @@ describe('lease heartbeat locks remain live without weakening exact ownership', 
       'e3a2120fc6db33ad84fc4967126fe9b8',
       '276314a02cecc35607cde1afdc2fdf21',
       '0af954ab1264dc12ebce7741b7845343',
-      'f85b1aa5d752c9ca90a50cefc7e2dbf7',
+      '045833fa30c9eb80f4dc1eff3c30ca2f',
       '73abfc4523de42cb4b8bca5443602cbd',
       '4a41b0124e75e46ed8121e6a56014758',
     ]) {

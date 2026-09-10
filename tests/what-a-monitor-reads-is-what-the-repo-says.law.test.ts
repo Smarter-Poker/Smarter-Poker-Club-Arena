@@ -15,7 +15,7 @@
  *   3. `deploy.sh`'s symlink loop          - what a deploy actually UPDATES
  *
  * On 2026-09-06 list 3 named four of the seven files in list 1. So
- * `engine-freeze-rules.yml`, `supervisor-rules.yml`, `tournament-rules.yml` and
+ * `engine-freeze-rules.yml`, `recovery-rules.yml`, `tournament-rules.yml` and
  * `spin-rules.yml` were on the box only because somebody had put them there by
  * hand: a rule added to any of them in this repo could never reach production,
  * and a deploy would leave the hand-written copy in place for ever.

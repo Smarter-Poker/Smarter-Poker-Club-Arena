@@ -29,6 +29,7 @@ import { join } from 'node:path';
 
 const ROOT = join(__dirname, '..');
 const WF = readFileSync(join(ROOT, '.github/workflows/deploy-monitoring.yml'), 'utf8');
+const CHECKER = readFileSync(join(ROOT, 'scripts/ci/check-alert-rules-match.mjs'), 'utf8');
 const DEPLOY = readFileSync(join(ROOT, 'infra/monitoring/deploy.sh'), 'utf8');
 const COMPOSE = readFileSync(join(ROOT, 'infra/monitoring/docker-compose.yml'), 'utf8');
 const AM = readFileSync(join(ROOT, 'infra/monitoring/alertmanager.yml'), 'utf8');
@@ -79,6 +80,52 @@ describe('the deploy step ships the checkout it has, never a URL it cannot read'
     expect(WF).toContain('cp -R /opt/smarter-poker-monitoring-src.incoming/infra/monitoring/.');
   });
 
+  it('deletes the exact retired supervisor rule from both persistent host trees', () => {
+    expect(WF).toContain(
+      'rm -f -- /opt/smarter-poker-monitoring-src/infra/monitoring/supervisor-rules.yml'
+    );
+    expect(DEPLOY).toContain('rm -f -- "$RUN_DIR/supervisor-rules.yml"');
+  });
+
+  it('allows only the exact retired alerts and only under their successor contract', () => {
+    const retiredSet = WF.match(/const retiredSupervisorAlerts = new Set\(\[([\s\S]*?)\n\s*\]\);/);
+    expect(retiredSet).not.toBeNull();
+    const retiredNames = [...(retiredSet?.[1] ?? '').matchAll(/'([^']+)'/g)].map(
+      (match) => match[1]
+    );
+    expect(retiredNames).toEqual([
+      'EngineSupervisorStale',
+      'EngineSupervisorMetricsMissing',
+      'EngineFlappingUnderSupervisor',
+      'EngineRecoveredUnexpectedly',
+      'EngineBootChurn',
+      'EngineCrashLooping',
+      'EngineNotServingOnHost',
+      'EngineContainerNotRunning',
+    ]);
+
+    const preflight = WF.slice(
+      WF.indexOf('const retiredSupervisorAlerts'),
+      WF.indexOf("console.log('No unexpected orphans")
+    );
+    expect(preflight).toContain("!fs.existsSync(path.join(MON, 'supervisor-rules.yml'))");
+    expect(preflight).toContain("files.includes('recovery-rules.yml')");
+    expect(preflight).toContain('name:\\s*club-arena-recovery');
+    expect(preflight).toContain('alert:\\s*RecoveryStackDegraded');
+    expect(preflight).toContain('alert:\\s*RecoveryStackUnverified');
+    expect(preflight).toContain("successor.includes('club_arena_recovery_stack_failures')");
+    expect(preflight).toContain(
+      "successor.includes('club_arena_recovery_stack_last_verified_timestamp_seconds')"
+    );
+    expect(preflight).toContain('retiredSupervisorAlerts.has(alert)');
+    expect(preflight).toContain('const unexpectedOrphans = orphans.filter(');
+    expect(preflight).toContain(
+      '(alert) => !retirementAuthorized || !retiredSupervisorAlerts.has(alert)'
+    );
+    expect(preflight).toContain('if (unexpectedOrphans.length)');
+    expect(preflight).toContain('process.exit(1)');
+  });
+
   it('does not hide the deploy exit code behind a pipe', () => {
     const deployStep = WF.slice(
       WF.indexOf('- name: Deploy\n'),
@@ -103,6 +150,28 @@ describe('the verify step can reach the box', () => {
     expect(DEPLOY).toContain('docker compose up -d');
     expect(DEPLOY).toContain('Reloading Prometheus and Alertmanager');
     expect(WF).not.toContain('docker compose up -d --force-recreate prometheus');
+  });
+
+  it('pins every SSH call to the declared key and host key, then removes both', () => {
+    expect(WF).toContain('SSH_HOST_KEY: ${{ secrets.HETZNER_HOST_KEY }}');
+    expect(WF).not.toContain('echo "${{ secrets.HETZNER_HOST_KEY }}"');
+    expect(WF).toContain('[[ "$HETZNER_HOST" =~ ^[A-Za-z0-9.-]+$ ]]');
+    expect(WF).toContain('UserKnownHostsFile=$HOME/.ssh/hetzner_known_hosts');
+    expect(WF).toContain('GlobalKnownHostsFile=/dev/null');
+    expect(WF).toContain('StrictHostKeyChecking=yes');
+    expect(WF).toContain('IdentitiesOnly=yes');
+    expect(WF).toContain('echo "  StrictHostKeyChecking yes"');
+    expect(CHECKER).toContain("'StrictHostKeyChecking=yes'");
+    expect(CHECKER).not.toContain('StrictHostKeyChecking=accept-new');
+    expect(CHECKER.indexOf("'StrictHostKeyChecking=yes'")).toBeLessThan(
+      CHECKER.indexOf('        ssh,\n        `curl -sf')
+    );
+    const cleanup = WF.slice(WF.indexOf('- name: Remove Hetzner SSH credentials'));
+    expect(cleanup).toContain('if: always()');
+    expect(cleanup).toContain('"$HOME/.ssh/id_deploy"');
+    expect(cleanup).toContain('"$HOME/.ssh/hetzner_known_hosts"');
+    expect(cleanup).toContain('"$HOME/.ssh/config"');
+    expect(cleanup).toContain('"$HOME/hssh"');
   });
 });
 

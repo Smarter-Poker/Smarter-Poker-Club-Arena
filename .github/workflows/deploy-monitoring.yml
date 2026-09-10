@@ -112,24 +112,28 @@ jobs:
       - name: Setup SSH key
         env:
           SSH_KEY: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          SSH_HOST_KEY: ${{ secrets.HETZNER_HOST_KEY }}
         run: |
           set -euo pipefail
+          [[ "$HETZNER_HOST" =~ ^[A-Za-z0-9.-]+$ ]] \
+            || { echo "::error::HETZNER_HOST is empty or malformed."; exit 1; }
+          [[ "$SSH_USER" =~ ^[A-Za-z_][A-Za-z0-9_-]*$ ]] \
+            || { echo "::error::SSH_USER is malformed."; exit 1; }
+          [ -n "$SSH_KEY" ] && [ -n "$SSH_HOST_KEY" ] \
+            || { echo "::error::Hetzner SSH credentials are incomplete."; exit 1; }
+          umask 077
           mkdir -p ~/.ssh
-          if [ -z "$SSH_KEY" ]; then
-            echo "::error::HETZNER_SSH_PRIVATE_KEY is empty or unset."
-            exit 1
-          fi
           printf '%s\n' "$SSH_KEY" > ~/.ssh/id_deploy
           chmod 600 ~/.ssh/id_deploy
           ssh-keygen -y -f ~/.ssh/id_deploy > /dev/null \
             || { echo "::error::The Hetzner deploy key is not a valid private key."; exit 1; }
-          echo "${{ secrets.HETZNER_HOST_KEY }}" > ~/.ssh/known_hosts
-          chmod 644 ~/.ssh/known_hosts
-          test -s ~/.ssh/known_hosts \
-            || { echo "::error::HETZNER_HOST_KEY is empty or unset - every ssh below would fail."; exit 1; }
-          printf '#!/bin/bash\nexec ssh -i ~/.ssh/id_deploy -o BatchMode=yes -o ConnectTimeout=20 "%s@%s" "$@"\n' \
+          printf '%s\n' "$SSH_HOST_KEY" > ~/.ssh/hetzner_known_hosts
+          chmod 600 ~/.ssh/hetzner_known_hosts
+          ssh-keygen -l -f ~/.ssh/hetzner_known_hosts > /dev/null \
+            || { echo "::error::HETZNER_HOST_KEY is not a valid pinned host key."; exit 1; }
+          printf '#!/bin/bash\nexec ssh -i "$HOME/.ssh/id_deploy" -o "UserKnownHostsFile=$HOME/.ssh/hetzner_known_hosts" -o GlobalKnownHostsFile=/dev/null -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=20 "%s@%s" "$@"\n' \
             "$SSH_USER" "$HETZNER_HOST" > ~/hssh
-          chmod +x ~/hssh
+          chmod 700 ~/hssh
           # PLAIN `ssh root@host` MUST USE THE SAME KEY (2026-09-06).
           # check-alert-rules-match.mjs execs `ssh $ENGINE_MONITORING_SSH`
           # with no -i, so on the first run of this workflow the verify step
@@ -140,10 +144,13 @@ jobs:
             echo "Host $HETZNER_HOST"
             echo "  User $SSH_USER"
             echo "  IdentityFile ~/.ssh/id_deploy"
+            echo "  UserKnownHostsFile ~/.ssh/hetzner_known_hosts"
+            echo "  GlobalKnownHostsFile /dev/null"
+            echo "  StrictHostKeyChecking yes"
             echo "  IdentitiesOnly yes"
             echo "  BatchMode yes"
             echo "  ConnectTimeout 20"
-          } >> ~/.ssh/config
+          } > ~/.ssh/config
           chmod 600 ~/.ssh/config
 
       # WHAT IS RUNNING BEFORE WE TOUCH IT. If the box is running rules this
@@ -175,14 +182,51 @@ jobs:
             for (const r of g.rules) if (r.type === 'alerting') running.add(r.name);
           }
           const orphans = [...running].filter((a) => !declared.has(a)).sort();
+          // These are the exact alerts formerly owned by the retired periodic
+          // engine supervisor. They may disappear in this one migration only
+          // when the repository carries the complete read-only successor
+          // contract. Never widen this to a prefix: every other orphan remains
+          // an undeclared live rule and must stop the deployment.
+          const retiredSupervisorAlerts = new Set([
+            'EngineSupervisorStale',
+            'EngineSupervisorMetricsMissing',
+            'EngineFlappingUnderSupervisor',
+            'EngineRecoveredUnexpectedly',
+            'EngineBootChurn',
+            'EngineCrashLooping',
+            'EngineNotServingOnHost',
+            'EngineContainerNotRunning',
+          ]);
+          const successorPath = path.join(MON, 'recovery-rules.yml');
+          const successor = fs.existsSync(successorPath)
+            ? fs.readFileSync(successorPath, 'utf8').replace(/^\s*#[^\n]*$/gm, '')
+            : '';
+          const retirementAuthorized =
+            !fs.existsSync(path.join(MON, 'supervisor-rules.yml')) &&
+            files.includes('recovery-rules.yml') &&
+            /^\s*-\s*name:\s*club-arena-recovery\s*$/m.test(successor) &&
+            /^\s*-\s*alert:\s*RecoveryStackDegraded\s*$/m.test(successor) &&
+            /^\s*-\s*alert:\s*RecoveryStackUnverified\s*$/m.test(successor) &&
+            successor.includes('club_arena_recovery_stack_failures') &&
+            successor.includes('club_arena_recovery_stack_last_verified_timestamp_seconds');
+          const intentionalRetirements = orphans.filter(
+            (alert) => retirementAuthorized && retiredSupervisorAlerts.has(alert)
+          );
+          const unexpectedOrphans = orphans.filter(
+            (alert) => !retirementAuthorized || !retiredSupervisorAlerts.has(alert)
+          );
           console.log(`running ${running.size}, declared ${declared.size}`);
-          if (orphans.length) {
+          if (intentionalRetirements.length) {
+            console.log('Retiring the exact legacy supervisor alerts under the declared recovery contract:');
+            for (const a of intentionalRetirements) console.log(`  ${a}`);
+          }
+          if (unexpectedOrphans.length) {
             console.error('::error::These alerts are running on the box and are NOT in this repo.');
             console.error('Deploying would delete them. Bring them in here first.');
-            for (const a of orphans) console.error(`  ${a}`);
+            for (const a of unexpectedOrphans) console.error(`  ${a}`);
             process.exit(1);
           }
-          console.log('No orphans - every running alert is declared here. Safe to deploy.');
+          console.log('No unexpected orphans - every other running alert is declared here. Safe to deploy.');
           EOF
 
       # THE SAME HAZARD, FOR THE ROUTING. deploy.sh symlinks alertmanager.yml
@@ -262,6 +306,7 @@ jobs:
           ~/hssh "mkdir -p /opt/smarter-poker-monitoring-src/infra/monitoring \
             /opt/smarter-poker-monitoring-src/server/scripts \
             && cp -R /opt/smarter-poker-monitoring-src.incoming/infra/monitoring/. /opt/smarter-poker-monitoring-src/infra/monitoring/ \
+            && rm -f -- /opt/smarter-poker-monitoring-src/infra/monitoring/supervisor-rules.yml \
             && cp /opt/smarter-poker-monitoring-src.incoming/server/scripts/install-caddy-websocket-log-redaction.sh /opt/smarter-poker-monitoring-src/server/scripts/ \
             && chmod +x /opt/smarter-poker-monitoring-src/server/scripts/install-caddy-websocket-log-redaction.sh \
             && rm -rf /opt/smarter-poker-monitoring-src.incoming \
@@ -279,9 +324,19 @@ jobs:
       # lesson as "a green deploy run is not a deployment" one layer down.
       - name: The box is running what this repo declares
         env:
-          ENGINE_MONITORING_SSH: ${{ env.SSH_USER }}@${{ secrets.HETZNER_HOST }}
+          ENGINE_MONITORING_SSH: ${{ env.SSH_USER }}@${{ env.HETZNER_HOST }}
         run: |
           set -euo pipefail
           # Prometheus reloads asynchronously after the symlinks swap.
           sleep 20
           node scripts/ci/check-alert-rules-match.mjs
+
+      - name: Remove Hetzner SSH credentials
+        if: always()
+        run: |
+          set -euo pipefail
+          rm -f -- \
+            "$HOME/.ssh/id_deploy" \
+            "$HOME/.ssh/hetzner_known_hosts" \
+            "$HOME/.ssh/config" \
+            "$HOME/hssh"

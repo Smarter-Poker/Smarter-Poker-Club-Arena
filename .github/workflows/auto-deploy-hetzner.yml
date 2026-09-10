@@ -169,7 +169,7 @@ jobs:
           chmod 0600 "$SSH_DIR/known_hosts"
           ssh-keygen -l -f "$SSH_DIR/known_hosts" >/dev/null
           HSSH="$RUNNER_TEMP/hssh-$RUN_KEY"
-          printf '#!/usr/bin/env bash\nexec ssh -i %q -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=%q -o ConnectTimeout=20 -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -o TCPKeepAlive=yes %q "$@"\n' \
+          printf '#!/usr/bin/env bash\nexec ssh -i %q -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=%q -o GlobalKnownHostsFile=/dev/null -o ConnectTimeout=20 -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -o TCPKeepAlive=yes %q "$@"\n' \
             "$SSH_DIR/key" "$SSH_DIR/known_hosts" "$SSH_USER@$HETZNER_HOST" > "$HSSH"
           chmod 0700 "$HSSH"
           echo "HSSH=$HSSH" >> "$GITHUB_ENV"
@@ -506,3 +506,39 @@ jobs:
             echo "::error::remote staging cleanup failed inside its absolute budget ($REMOTE_CLEANUP_RC)"
             exit "$REMOTE_CLEANUP_RC"
           fi
+
+  certify-production:
+    name: Dispatch Exact Cross-Artifact Production Certification
+    needs: [preflight, deploy]
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - name: Dispatch and prove the exact post-deploy E2E receiver
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ENGINE_SHA: ${{ needs.preflight.outputs.target_sha }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          [[ "$ENGINE_SHA" =~ ^[0-9a-f]{40}$ ]] \
+            || { echo '::error::The sealed engine release did not expose one full lowercase SHA.'; exit 1; }
+          SENT_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          gh api --method POST "repos/$REPO/dispatches" \
+            -f event_type=run-post-deploy-e2e \
+            -F "client_payload[engine_sha]=$ENGINE_SHA"
+          echo "Production E2E dispatch accepted for exact engine component $ENGINE_SHA."
+
+          RECEIVER_ID=''
+          for _ in $(seq 1 12); do
+            RECEIVER_ID="$(gh api \
+              "repos/$REPO/actions/workflows/post-deploy-e2e.yml/runs?event=repository_dispatch&per_page=30" \
+              --jq "[.workflow_runs[] | select(.display_title == \"Post-Deploy E2E $ENGINE_SHA\" and .created_at >= \"$SENT_AT\")][0].id // empty")"
+            [ -n "$RECEIVER_ID" ] && break
+            sleep 5
+          done
+          [[ "$RECEIVER_ID" =~ ^[0-9]+$ ]] \
+            || { echo '::error::GitHub accepted the exact certification event but no correlated post-deploy E2E run appeared.'; exit 1; }
+          echo "Post-deploy E2E receiver $RECEIVER_ID accepted exact engine component $ENGINE_SHA."

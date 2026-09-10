@@ -45,7 +45,7 @@ never be hidden inside a code deployment.
 - `docker-compose.yml` defines the monitoring services and bind mounts.
 - `prometheus.yml` declares scrape targets and every loaded rule file.
 - `alertmanager.yml` declares alert routing.
-- `alert-rules.yml`, `engine-freeze-rules.yml`, `supervisor-rules.yml`,
+- `alert-rules.yml`, `engine-freeze-rules.yml`, `recovery-rules.yml`,
   `tournament-rules.yml`, `spin-rules.yml`, `slo-rules.yml`, and
   `slo-alerts.yml` contain the loaded rules.
 - `grafana-provisioning/` and `grafana-dashboards/` define Grafana state.

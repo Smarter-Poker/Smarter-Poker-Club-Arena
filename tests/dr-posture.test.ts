@@ -36,6 +36,10 @@ describe('disaster recovery is documented and wired', () => {
     expect(s).toContain('DR_ENGINE_SSH_KEY_FILE');
     expect(s).toContain('DR_ENGINE_HOST_KEY');
     expect(s).toContain('StrictHostKeyChecking=yes');
+    expect(s).toContain('UserKnownHostsFile="$DR_TMP_DIR/known_hosts"');
+    expect(s).toContain('GlobalKnownHostsFile=/dev/null');
+    expect(s).toContain('IdentitiesOnly=yes');
+    expect(s).not.toContain('StrictHostKeyChecking=accept-new');
     expect(s).not.toMatch(/source\s+.*\.env|hetzner_engine_key|ENGINE_HOST:-engine/);
   });
 

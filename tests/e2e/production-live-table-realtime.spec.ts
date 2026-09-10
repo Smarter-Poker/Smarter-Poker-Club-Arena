@@ -13,7 +13,7 @@ const UNION_ID = process.env.E2E_UNION_ID || 'fade0000-0000-0000-0000-0000000000
 const CLUB_LOBBY = `clubs/${CLUB_ID}`;
 const PROJECT_NAME = 'webkit-live-table-realtime';
 const ENGINE_HEALTH_URL = process.env.ENGINE_HEALTH_URL || 'https://engine.smarter.poker/health';
-const EXPECTED_ENGINE_SHA = (process.env.EXPECTED_ENGINE_SHA || '').trim().toLowerCase();
+const EXPECTED_ENGINE_SHA = (process.env.EXPECTED_ENGINE_SHA || '').trim();
 const CONNECT_DEADLINE_MS = 12_000;
 const MAX_GAMEPLAY_SILENCE_MS = 45_000;
 const CAUSAL_HAND_TIMEOUT_MS = 90_000;
@@ -43,6 +43,7 @@ interface EngineTableLiveness {
 
 interface EngineHealth {
   version: string;
+  releaseSha: string | null;
   liveness: string;
   activeTables: number;
   stalledTableCount: number;
@@ -76,7 +77,7 @@ function requireCertificationConfiguration(testInfo: TestInfo, browserName: stri
   if (!process.env.SP_EMAIL || !process.env.SP_PASS) {
     throw new Error('SP_EMAIL and SP_PASS must identify the isolated production E2E account');
   }
-  if (!/^[0-9a-f]{7,40}$/.test(EXPECTED_ENGINE_SHA)) {
+  if (!/^[0-9a-f]{40}$/.test(EXPECTED_ENGINE_SHA)) {
     throw new Error(
       'EXPECTED_ENGINE_SHA must name the exact Club Arena commit the production engine should serve'
     );
@@ -93,14 +94,6 @@ function requireCertificationConfiguration(testInfo: TestInfo, browserName: stri
   }
 }
 
-function engineVersionMatchesExpected(observed: string): boolean {
-  const normalized = observed.trim().toLowerCase();
-  return (
-    /^[0-9a-f]{7,40}$/.test(normalized) &&
-    (EXPECTED_ENGINE_SHA.startsWith(normalized) || normalized.startsWith(EXPECTED_ENGINE_SHA))
-  );
-}
-
 async function readEngineHealth(request: APIRequestContext): Promise<EngineHealth> {
   const separator = ENGINE_HEALTH_URL.includes('?') ? '&' : '?';
   const response = await request.get(`${ENGINE_HEALTH_URL}${separator}cb=${Date.now()}`, {
@@ -113,10 +106,15 @@ async function readEngineHealth(request: APIRequestContext): Promise<EngineHealt
   expect(health.stalledTableCount, 'production had stalled tables before observation').toBe(0);
   expect(health.deadStalledCount, 'production had dead stalled tables before observation').toBe(0);
   expect(health.wholeFleetStalled, 'production reported the whole fleet stalled').toBe(false);
+  const observedReleaseSha = String(health.releaseSha || '').trim();
   expect(
-    engineVersionMatchesExpected(String(health.version || '')),
-    `engine version ${health.version || '(missing)'} did not match ${EXPECTED_ENGINE_SHA}`
-  ).toBe(true);
+    observedReleaseSha,
+    'the production engine did not expose one full lowercase releaseSha'
+  ).toMatch(/^[0-9a-f]{40}$/);
+  expect(
+    observedReleaseSha,
+    `engine releaseSha ${observedReleaseSha || '(missing)'} did not exactly match ${EXPECTED_ENGINE_SHA}`
+  ).toBe(EXPECTED_ENGINE_SHA);
   if (health.maintenance?.active) {
     throw new Error(
       `production engine is in scheduled maintenance (${health.maintenance.phase || 'unknown phase'}); ` +
@@ -375,6 +373,7 @@ function compactHealthEvidence(
 ): Record<string, unknown> {
   return {
     version: health.version,
+    releaseSha: health.releaseSha,
     liveness: health.liveness,
     activeTables: health.activeTables,
     stalledTableCount: health.stalledTableCount,

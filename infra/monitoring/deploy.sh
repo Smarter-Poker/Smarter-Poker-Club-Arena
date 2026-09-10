@@ -131,7 +131,7 @@ fi
 # Symlink stack config files (keeps them git-tracked at $SRC_DIR, runnable at $RUN_DIR)
 # EVERY RULE FILE prometheus.yml LOADS MUST BE IN THIS LIST (phase 7,
 # 2026-09-06). It used to name four of the seven, so engine-freeze-rules.yml,
-# supervisor-rules.yml, tournament-rules.yml and spin-rules.yml existed on the
+# recovery-rules.yml, tournament-rules.yml and spin-rules.yml existed on the
 # box only because somebody had put them there by hand - a rule added to any of
 # them in this repo could never reach production, and a deploy would leave the
 # hand-written copy in place for ever. That is half of the drift phase 1 found;
@@ -139,11 +139,16 @@ fi
 # mounts. `tests/what-a-monitor-reads-is-what-the-repo-says.law.test.ts` now
 # fails if the three lists ever disagree again.
 for f in docker-compose.yml prometheus.yml alertmanager.yml \
-         alert-rules.yml engine-freeze-rules.yml supervisor-rules.yml \
+         alert-rules.yml engine-freeze-rules.yml recovery-rules.yml \
          tournament-rules.yml spin-rules.yml slo-rules.yml slo-alerts.yml \
          grafana-provisioning grafana-dashboards; do
   ln -sfn "$SRC_DIR/infra/monitoring/$f" "$RUN_DIR/$f"
 done
+
+# The checkout intentionally retired the periodic supervisor rules. An
+# in-place source copy cannot express deletion, so converge this exact legacy
+# path explicitly; never use a wildcard that could erase an unrelated rule.
+rm -f -- "$RUN_DIR/supervisor-rules.yml"
 
 # Runtime credentials are provisioned out of band. A placeholder is not a
 # deployable configuration and must never be written over the host.

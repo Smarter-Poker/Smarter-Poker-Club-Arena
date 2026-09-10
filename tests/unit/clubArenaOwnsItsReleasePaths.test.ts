@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const read = (path: string) => readFileSync(resolve(process.cwd(), path), 'utf8');
@@ -150,6 +150,29 @@ describe('Club Arena owns every Club Arena release path', () => {
     expect(existsSync(resolve(process.cwd(), 'services/sentry-autofix/deploy-engine01.sh'))).toBe(
       false
     );
+    for (const path of [
+      '.agent/handoffs/apply-and-push-2026-08-20.sh',
+      '.agent/handoffs/2026-08-20-bbj-popup-buyins-errors.md',
+      '.agent/handoffs/2026-08-20-bbj-popup-buyins-errors.patch',
+      '.deploy-retrigger',
+      'fix_hub.cjs',
+      'fix_hub2.cjs',
+      'fix_hub3.cjs',
+    ]) {
+      expect(existsSync(resolve(process.cwd(), path)), path).toBe(false);
+    }
+  });
+
+  it('leaves no runnable direct-main or World Hub publisher in operational handoffs', () => {
+    const handoffDir = resolve(process.cwd(), '.agent/handoffs');
+    const handoffs = readdirSync(handoffDir)
+      .filter((name) => name.endsWith('.md'))
+      .map((name) => read(`.agent/handoffs/${name}`))
+      .join('\n');
+    expect(handoffs).not.toMatch(/git push[^\n]*:main\b/);
+    expect(handoffs).not.toContain('sync-club-arena.sh');
+    expect(handoffs).not.toContain('CA_SRC_OVERRIDE=');
+    expect(handoffs).not.toContain('WH_OVERRIDE=');
   });
 
   it('keeps the build provenance gate fail-closed', () => {

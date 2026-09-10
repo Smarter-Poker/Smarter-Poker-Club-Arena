@@ -6,7 +6,7 @@ Club Arena still carried two legacy automation families after their source imple
 
 ## After
 
-Migration `20260910050100_retire_legacy_autofix_and_db_deploy_dispatch.sql` removes every executable function and exact cron entry for those retired paths in one transaction. It deletes only the named dispatcher secret, moves historical rows into the locked `ca_archive` schema, revokes runtime access, and fails closed if any executable route survives.
+Migration `20260910153400_retire_legacy_autofix_and_db_deploy_dispatch.sql` removes every executable function and exact cron entry for those retired paths in one transaction. It deletes only the named dispatcher secret, moves historical rows into the locked `ca_archive` schema, revokes runtime access, and fails closed if any executable route survives.
 
 The active release receipt remains deliberately separate. `ca_engine_deploy_attempts` and `fn_ca_record_engine_deploy_attempt` record the result of the reviewed Hetzner deployment itself. They cannot schedule, dispatch, retry, repair, or mutate a release.
 

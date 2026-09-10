@@ -41,6 +41,7 @@ ssh -i "$DR_ENGINE_SSH_KEY_FILE" \
   -o IdentitiesOnly=yes \
   -o StrictHostKeyChecking=yes \
   -o UserKnownHostsFile="$DR_TMP_DIR/known_hosts" \
+  -o GlobalKnownHostsFile=/dev/null \
   "root@$DR_ENGINE_HOST" \
   'cat /opt/club-arena/server/.env' > "$DR_TMP_DIR/engine.env"
 

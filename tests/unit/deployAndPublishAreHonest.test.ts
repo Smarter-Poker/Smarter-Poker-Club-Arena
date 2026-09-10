@@ -19,6 +19,7 @@ const job = (yaml: string, name: string) => {
 const deploy = read('.github/workflows/auto-deploy-hetzner.yml');
 const publish = read('.github/workflows/publish-club-arena.yml');
 const publishCode = uncommented(publish);
+const buildProvenance = read('scripts/stamp-build-provenance.mjs');
 
 describe('engine deployment reports what actually happened', () => {
   it('calls a release shipped only after the durable transaction and independent proof agree', () => {
@@ -37,6 +38,29 @@ describe('engine deployment reports what actually happened', () => {
     expect(code).not.toMatch(/workflow_dispatch:|github\.event\.inputs/);
     expect(code).not.toMatch(/force=true|inputs\.force/);
     expect(code).toContain('github.event.client_payload.ref_sha');
+  });
+
+  it('immediately hands a successful exact engine release to cross-artifact production E2E', () => {
+    const certification = job(deploy, 'certify-production');
+    expect(certification).toContain('needs: [preflight, deploy]');
+    expect(certification).toMatch(/^\s+contents:\s*write\s*$/m);
+    expect(certification).toMatch(/^\s+actions:\s*read\s*$/m);
+    expect(certification).toContain('ENGINE_SHA: ${{ needs.preflight.outputs.target_sha }}');
+    expect(certification).toContain('-f event_type=run-post-deploy-e2e');
+    expect(certification).toContain('-F "client_payload[engine_sha]=$ENGINE_SHA"');
+    expect(certification).toContain(
+      'actions/workflows/post-deploy-e2e.yml/runs?event=repository_dispatch'
+    );
+    expect(certification).toContain('Post-Deploy E2E $ENGINE_SHA');
+    expect(certification).not.toContain('if: always()');
+  });
+
+  it('pins the engine SSH transport to only the supplied host-key file', () => {
+    expect(deploy).toContain('StrictHostKeyChecking=yes');
+    expect(deploy).toContain('UserKnownHostsFile=%q');
+    expect(deploy).toContain('GlobalKnownHostsFile=/dev/null');
+    expect(deploy).toContain('IdentitiesOnly=yes');
+    expect(deploy).not.toContain('StrictHostKeyChecking=accept-new');
   });
 });
 
@@ -65,6 +89,19 @@ describe('the Club Arena bundle publishes directly to its Hetzner origin', () =>
     expect(origin).toContain('secrets.CA_ORIGIN_SSH_KEY');
     expect(origin).toContain('secrets.CA_ORIGIN_HOST_KEY');
     expect(origin).not.toMatch(/HETZNER_SSH_KEY|WORLD_HUB|VERCEL_TOKEN/);
+  });
+
+  it('uses the dedicated identity and pinned host key as the only SSH trust path', () => {
+    const origin = job(publish, 'publish-to-origin');
+    const count = (needle: string) => origin.split(needle).length - 1;
+    const transports = count('UserKnownHostsFile=$HOME/.ssh/ca_origin_known_hosts');
+
+    expect(transports).toBe(5);
+    expect(count('GlobalKnownHostsFile=/dev/null')).toBe(transports);
+    expect(count('StrictHostKeyChecking=yes')).toBe(transports);
+    expect(count('IdentitiesOnly=yes')).toBe(transports);
+    expect(origin).toContain('chmod 600 ~/.ssh/ca_origin_known_hosts');
+    expect(origin).not.toContain('StrictHostKeyChecking=accept-new');
   });
 
   it('runs every release job on a fresh hosted runner', () => {
@@ -102,14 +139,89 @@ describe('the Club Arena bundle publishes directly to its Hetzner origin', () =>
     expect(swap).toBeGreaterThan(manifest);
     expect(origin).not.toContain('$ORIGIN_ROOT/releases/$SHA/"');
     expect(publish).toContain('Seal the immutable release bytes');
-    expect(origin).toContain('cmp -s "$STAGE/.release-manifest.sha256"');
     expect(origin).toContain('(cd "$FINAL" && sha256sum --strict -c');
+  });
+
+  it('reuses a sealed same-SHA release even when a rebuild has new run-time metadata', () => {
+    const origin = job(publish, 'publish-to-origin');
+    const existingReleaseStart = origin.indexOf('if [ -e "$FINAL" ] || [ -L "$FINAL" ]');
+    const existingReleaseEnd = origin.indexOf('else\n            mv -- "$STAGE" "$FINAL"');
+    expect(existingReleaseStart).toBeGreaterThan(-1);
+    expect(existingReleaseEnd).toBeGreaterThan(existingReleaseStart);
+    const existingRelease = origin.slice(existingReleaseStart, existingReleaseEnd);
+
+    expect(publish).toContain('"built_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"');
+    expect(buildProvenance).toContain('buildTime: new Date().toISOString()');
+    expect(existingRelease).not.toContain(
+      'cmp -s "$STAGE/.release-manifest.sha256" "$FINAL/.release-manifest.sha256"'
+    );
+    expect(existingRelease).toContain('find "$FINAL" -type l -print -quit');
+    expect(existingRelease).toContain('sealed release contains a symlink');
+    expect(existingRelease).toContain('find "$FINAL" ! -type d ! -type f -print -quit');
+    expect(existingRelease).toContain('sealed release contains a special file');
+    expect(existingRelease).toContain(
+      '(cd "$FINAL" && sha256sum --strict -c .release-manifest.sha256 >/dev/null)'
+    );
+    expect(existingRelease).toContain('verify_complete_manifest "$FINAL"');
+    expect(existingRelease).toContain(
+      'python3 - "$FINAL/ca-provenance.json" "$FINAL/build-info.json" "$SHA" "$REPOSITORY"'
+    );
+    expect(existingRelease).toContain("provenance.get('schema')");
+    expect(existingRelease).toContain("provenance.get('commit') == expected_sha");
+    expect(existingRelease).toContain("provenance.get('builtBy') == 'github-actions'");
+    expect(existingRelease).toContain("provenance.get('dirty') is False");
+    expect(existingRelease).toContain("provenance.get('historyComplete') is True");
+    expect(existingRelease).toContain("provenance['behindMain'] == 0");
+    expect(existingRelease).toContain("provenance['aheadMain'] == 0");
+    expect(existingRelease).toContain("build_info.get('ca_sha') == expected_sha");
+    expect(existingRelease).toContain("build_info.get('built_by') == 'publish-club-arena.yml'");
+    expect(existingRelease).toContain("re.fullmatch(r'[0-9]+', build_info['run_id'])");
+    expect(existingRelease).toContain(
+      'expected_run = f"https://github.com/{repository}/actions/runs/{build_info[\'run_id\']}"'
+    );
+    expect(existingRelease).toContain("provenance.get('ciRun') == expected_run");
+    expect(existingRelease).toContain('rm -rf -- "$STAGE"');
+  });
+
+  it('carries the hidden release seal through the artifact courier', () => {
+    const upload = publish.slice(
+      publish.indexOf('- name: Upload dist for the sync job'),
+      publish.indexOf('- name: Verify dist is complete')
+    );
+    expect(upload).toContain('uses: actions/upload-artifact@v4');
+    expect(upload).toContain('include-hidden-files: true');
+    expect(publish).toContain('test -s dist/.release-manifest.sha256');
+  });
+
+  it('requires the artifact to prove its exact clean protected-main CI source', () => {
+    const origin = job(publish, 'publish-to-origin');
+    const gateStart = origin.indexOf(
+      'EXPECTED_SHA="${{ needs.publish-needed.outputs.target_sha }}"'
+    );
+    const gateEnd = origin.indexOf(
+      'OURS_SHA=$(node scripts/ci/production-e2e-provenance.mjs build-info'
+    );
+    expect(gateStart).toBeGreaterThan(-1);
+    expect(gateEnd).toBeGreaterThan(gateStart);
+    const gate = origin.slice(gateStart, gateEnd);
+    expect(gate).toContain("fs.readFileSync('dist/ca-provenance.json', 'utf8')");
+    expect(gate).toContain('provenance.schema === 1');
+    expect(gate).toContain('provenance.commit === expectedSha');
+    expect(gate).toContain("provenance.builtBy === 'github-actions'");
+    expect(gate).toContain('provenance.dirty === false');
+    expect(gate).toContain('provenance.historyComplete === true');
+    expect(gate).toContain('provenance.behindMain === 0');
+    expect(gate).toContain('provenance.aheadMain === 0');
+    expect(gate).toContain('provenance.ciRun === expectedRun');
   });
 
   it('performs the final decision as a host-locked compare-and-swap', () => {
     const origin = job(publish, 'publish-to-origin');
     const lock = origin.indexOf('flock -w 45 9');
-    const readCurrent = origin.indexOf('CURRENT_SHA=$(sed', lock);
+    const readCurrent = origin.indexOf(
+      'CURRENT_SHA=$(read_exact_build_info_sha "$ROOT/current/build-info.json")',
+      lock
+    );
     const compare = origin.indexOf('[ "$CURRENT_SHA" != "$EXPECTED_SHA" ]', readCurrent);
     const swap = origin.indexOf('mv -Tf "$NEXT" "$ROOT/current"', compare);
     expect(lock).toBeGreaterThan(-1);
@@ -117,6 +229,17 @@ describe('the Club Arena bundle publishes directly to its Hetzner origin', () =>
     expect(compare).toBeGreaterThan(readCurrent);
     expect(swap).toBeGreaterThan(compare);
     expect(origin).toContain('refusing stale activation');
+  });
+
+  it('parses every publish-authority build-info as strict JSON, never matching text with sed', () => {
+    const origin = job(publish, 'publish-to-origin');
+    expect(origin).toContain(
+      'OURS_SHA=$(node scripts/ci/production-e2e-provenance.mjs build-info < dist/build-info.json)'
+    );
+    expect(origin).toContain('node scripts/ci/production-e2e-provenance.mjs build-info); then');
+    expect(origin).toContain('read_exact_build_info_sha "$ROOT/current/build-info.json"');
+    expect(origin).toContain('read_exact_build_info_sha "$STAGE/build-info.json"');
+    expect(origin).not.toMatch(/sed -n[\s\S]*ca_sha/);
   });
 
   it('flushes release bytes before activation and the symlink rename before success', () => {
@@ -131,13 +254,21 @@ describe('the Club Arena bundle publishes directly to its Hetzner origin', () =>
   it('serializes the additive pool with activation and gives mutable fonts one pointer', () => {
     const origin = job(publish, 'publish-to-origin');
     const lock = origin.indexOf('flock -w 45 9');
-    const pool = origin.indexOf('rsync -a --fsync "$FINAL/assets/"', lock);
+    const collisionGuard = origin.indexOf(
+      'assert_additive_pool_has_no_collision "$FINAL/assets"',
+      lock
+    );
+    const pool = origin.indexOf('rsync -a --ignore-existing --fsync "$FINAL/assets/"', lock);
+    const poolProof = origin.indexOf('prove_additive_pool_contains_release "$FINAL/assets"', pool);
     const fontPointer = origin.indexOf('ln -s "$ROOT/current/fonts/fonts.css" "$FONT_NEXT"', pool);
     const swap = origin.indexOf('mv -Tf "$NEXT" "$ROOT/current"', fontPointer);
-    expect(pool).toBeGreaterThan(lock);
+    expect(collisionGuard).toBeGreaterThan(lock);
+    expect(pool).toBeGreaterThan(collisionGuard);
+    expect(poolProof).toBeGreaterThan(pool);
     expect(fontPointer).toBeGreaterThan(pool);
     expect(swap).toBeGreaterThan(fontPointer);
     expect(origin).not.toContain('dist/fonts/ "$ORIGIN_USER@$ORIGIN_HOST:$ORIGIN_ROOT/pool');
+    expect(origin).not.toContain('find "$ROOT/pool" -type f -mtime +30 -delete');
   });
 
   it('rejects both changed bytes and files omitted from an existing manifest', () => {
@@ -172,13 +303,49 @@ describe('the Club Arena bundle publishes directly to its Hetzner origin', () =>
 
   it('proves the exact ca_sha from the live origin before declaring success', () => {
     const origin = job(publish, 'publish-to-origin');
-    expect(origin).toContain('$ORIGIN_URL/build-info.json?cb=$RANDOM');
-    expect(origin).toContain('$PUBLIC_URL/build-info.json?cb=$RANDOM');
-    expect(origin).toContain('[ "$LIVE_ORIGIN" = "$SHA" ]');
-    expect(origin).toContain('[ "$LIVE_PUBLIC" = "$SHA" ]');
-    expect(origin).toContain('echo \'verified=true\' >> "$GITHUB_OUTPUT"');
-    expect(origin).toMatch(/origin serves '\$LIVE_ORIGIN'.*wanted \$SHA[\s\S]{0,80}exit 1/);
+    const proof = origin.slice(
+      origin.indexOf('- name: Verify the origin serves this bundle'),
+      origin.indexOf('- name: Restore the previously verified release after any publish failure')
+    );
+    expect(proof).toContain('$ORIGIN_URL/build-info.json?cb=$RANDOM');
+    expect(proof).toContain('$PUBLIC_URL/build-info.json?cb=$RANDOM');
+    expect(proof.match(/production-e2e-provenance\.mjs unchanged "\$SHA"/g)).toHaveLength(2);
+    expect(proof).toContain('[ "$LIVE_ORIGIN" = "$SHA" ]');
+    expect(proof).toContain('[ "$LIVE_PUBLIC" = "$SHA" ]');
+    expect(proof).toContain('echo \'verified=true\' >> "$GITHUB_OUTPUT"');
+    expect(proof).toMatch(/origin serves '\$LIVE_ORIGIN'.*wanted \$SHA[\s\S]{0,80}exit 1/);
+    expect(proof).not.toMatch(/sed -n[\s\S]*ca_sha/);
     const app = job(publish, 'publish-to-app');
     expect(app).toContain("needs.publish-to-origin.outputs.verified == 'true'");
+  });
+
+  it('restores the exact prior immutable release when post-activation proof fails', () => {
+    const origin = job(publish, 'publish-to-origin');
+    const verify = origin.indexOf('- name: Verify the origin serves this bundle');
+    const rollback = origin.indexOf(
+      '- name: Restore the previously verified release after any publish failure'
+    );
+    const credentialCleanup = origin.indexOf(
+      '- name: Remove origin credentials and control sockets'
+    );
+    expect(rollback).toBeGreaterThan(verify);
+    expect(credentialCleanup).toBeGreaterThan(rollback);
+    const body = origin.slice(rollback, credentialCleanup);
+    expect(body).toContain("if: failure() && steps.verdict.outputs.verdict == 'publish'");
+    expect(body).toContain('flock -w 45 9');
+    expect(body).toContain('if [ "$CURRENT_LINK" != "$CANDIDATE" ]');
+    expect(body).toContain('refusing to overwrite it');
+    expect(body).toContain('(cd "$PREVIOUS" && sha256sum --strict -c');
+    expect(body).toContain('cmp -s "$CHECK" "$PREVIOUS/.release-manifest.sha256"');
+    expect(body).toContain(
+      'python3 - "$PREVIOUS/build-info.json" "$EXPECTED_SHA" <<\'PYTHON_ROLLBACK_BUILD_INFO\''
+    );
+    expect(body).toContain('mv -Tf "$NEXT" "$ROOT/current"');
+    expect(body.match(/production-e2e-provenance\.mjs unchanged "\$EXPECTED_SHA"/g)).toHaveLength(
+      2
+    );
+    expect(body).toContain('[ "$LIVE_ORIGIN" = "$EXPECTED_SHA" ]');
+    expect(body).toContain('[ "$LIVE_PUBLIC" = "$EXPECTED_SHA" ]');
+    expect(body).not.toMatch(/sed -n[\s\S]*ca_sha/);
   });
 });

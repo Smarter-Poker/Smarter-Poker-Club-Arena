@@ -343,36 +343,10 @@ else
   fsync_paths "$CONTROL_PARENT"
 fi
 
-# Unit policy is static and generation-independent. The supervisor resolves the
-# active symlink per invocation; the release wrapper reads a request-bound
-# immutable generation. Thus every on-disk unit remains complete across a
-# crash, even before daemon-reload or control-symlink activation.
-cat > "$UNIT_STAGE/club-arena-supervisor.service" <<UNIT
-[Unit]
-Description=Club Arena engine supervisor (guarantees the engine is up and serving)
-After=docker.service
-Requires=docker.service
-StartLimitIntervalSec=0
-
-[Service]
-Type=oneshot
-ExecStart=$CONTROL_DIR/engine-supervisor.sh
-Environment=ENGINE_CONTROL_DIR=$CONTROL_DIR
-UNIT
-
-cat > "$UNIT_STAGE/club-arena-supervisor.timer" <<'UNIT'
-[Unit]
-Description=Run the Club Arena engine supervisor every 60s
-
-[Timer]
-OnBootSec=90s
-OnUnitActiveSec=60s
-AccuracySec=5s
-Unit=club-arena-supervisor.service
-
-[Install]
-WantedBy=timers.target
-UNIT
+# Unit policy is static and generation-independent. The release wrapper reads
+# a request-bound immutable generation. The historical 60-second supervisor
+# units are intentionally absent: exact desired restoration is a synchronous
+# release/ExecStopPost operation, never an autonomous mutation.
 
 cat > "$UNIT_STAGE/club-arena-verify.service" <<UNIT
 [Unit]
@@ -432,9 +406,7 @@ UNIT
 
 systemd-analyze verify "$UNIT_STAGE"/*
 fsync_paths "$UNIT_STAGE"/* "$UNIT_STAGE"
-for unit_name in \
-  club-arena-supervisor.service club-arena-supervisor.timer \
-  club-arena-verify.service club-arena-verify.timer; do
+for unit_name in club-arena-verify.service club-arena-verify.timer; do
   NEXT_UNIT="/etc/systemd/system/.$unit_name.next.$$"
   install -m 0644 "$UNIT_STAGE/$unit_name" "$NEXT_UNIT"
   fsync_paths "$NEXT_UNIT"
@@ -471,10 +443,45 @@ if [ "$ACTIVE_IS_CURRENT_GENERATION" != 1 ]; then
   fsync_paths "$CONTROL_PARENT"
 fi
 
-systemctl enable --now club-arena-supervisor.timer \
-  || retry 'could not activate the engine supervisor timer'
-systemctl is-enabled club-arena-supervisor.timer | grep -qx enabled \
-  || retry 'engine supervisor timer is not durably enabled'
+# Retire every installation edge for the old periodic mutator. `disable` is
+# best-effort because a clean host has no such unit; the explicit path removal
+# and postconditions are authoritative.
+systemctl disable --now club-arena-supervisor.timer >/dev/null 2>&1 || true
+systemctl stop club-arena-supervisor.service >/dev/null 2>&1 || true
+rm -f -- \
+  /etc/systemd/system/timers.target.wants/club-arena-supervisor.timer \
+  /etc/systemd/system/club-arena-supervisor.timer \
+  /etc/systemd/system/club-arena-supervisor.service
+
+# Remove the retired mutator's exported heartbeat and private sampling state.
+# Leaving either behind would make monitoring report a ghost supervisor or
+# allow a future accidental reinstall to inherit stale counters. These are the
+# complete, exact paths used by the former implementation.
+rm -f -- \
+  /var/lib/node-exporter-textfile/club_arena_supervisor.prom \
+  /var/lib/club-arena/supervisor-fails \
+  /var/lib/club-arena/recoveries \
+  /var/lib/club-arena/last-started-at \
+  /var/lib/club-arena/last-container-id \
+  /var/lib/club-arena/boot-churn \
+  /var/lib/club-arena/restarting-samples
+fsync_paths /etc/systemd/system
+fsync_paths /var/lib/club-arena
+if [ -d /etc/systemd/system/timers.target.wants ]; then
+  fsync_paths /etc/systemd/system/timers.target.wants
+fi
+if [ -d /var/lib/node-exporter-textfile ]; then
+  fsync_paths /var/lib/node-exporter-textfile
+fi
+systemctl daemon-reload || retry 'systemd daemon-reload failed after retiring the engine supervisor timer'
+for retired_unit in club-arena-supervisor.timer club-arena-supervisor.service; do
+  [ ! -e "/etc/systemd/system/$retired_unit" ] \
+    || retry "$retired_unit still exists after retirement"
+  ! systemctl is-active --quiet "$retired_unit" \
+    || retry "$retired_unit is still active after retirement"
+  ! systemctl is-enabled --quiet "$retired_unit" 2>/dev/null \
+    || retry "$retired_unit is still enabled after retirement"
+done
 systemctl enable --now club-arena-verify.timer \
   || retry 'could not activate the recovery verification timer'
 systemctl is-enabled club-arena-verify.timer | grep -qx enabled \

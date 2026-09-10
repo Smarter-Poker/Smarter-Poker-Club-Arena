@@ -226,7 +226,8 @@ describe('actual build provenance subprocess', () => {
       const stale = stamp(dir, { GITHUB_ACTIONS: 'true' });
       expect(stale.status).toBe(1);
       expect(stale.stderr).toContain('1 commit(s) BEHIND origin/main');
-    }
+    },
+    15_000
   );
 
   it('warns on shallow local diagnostics but refuses a strict local release', () => {

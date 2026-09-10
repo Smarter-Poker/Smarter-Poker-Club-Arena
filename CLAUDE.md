@@ -127,10 +127,10 @@ what changed is where Vercel fetches the bytes from.
 
 **The origin keeps old assets.** A player whose tab still holds the previous
 `index.html` asks for the previous hashed chunks mid-hand. `/assets/*` and
-`/fonts/*` are served from an ADDITIVE pool the publisher never `--delete`s,
-pruned by age (30 days) only. Do not "clean up" the pool by removing what is
-not in the current bundle - that is the 404 the old sync's retention logic
-existed to prevent.
+`/fonts/*` are served from an APPEND-ONLY pool: the publisher never `--delete`s
+or overwrites a runtime URL. Do not "clean up" the pool by removing what is not
+in the current bundle - that is the 404 the old sync's retention logic existed
+to prevent.
 
 **A failed publish has one repair path.** `production-integrity-audit.yml`
 compares production to `main` and reports drift, but it is deliberately

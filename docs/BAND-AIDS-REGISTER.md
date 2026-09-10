@@ -12,6 +12,43 @@ is the platform failing to do that and something else tidying up afterwards.
 > better instrumented. It closes when the live path cannot produce the wrong
 > outcome and the job is **deleted**.
 
+## 2026-09-10 control-plane retirement and fee boundary
+
+The 60-second `club-arena-supervisor.service` / `.timer` mutator is retired.
+The installer disables, stops, removes, reloads, and proves both units absent.
+Its historical `engine-supervisor.sh` filename remains only because release-v1
+freezes that generation entrypoint; the executable now refuses every call
+unless the release transaction or its ExecStopPost recovery supplies all three
+causal authorities (force desired, exact health, and caller-held engine lock)
+plus an absolute deadline. Sampling counters, cache-tag reconciliation,
+heartbeat metrics, and autonomous container mutation are gone. The monitoring
+rule file is consequently `recovery-rules.yml` and observes the daily read-only
+recovery audit rather than a mutating heartbeat.
+
+Two watcher-shaped surfaces are explicitly **not closed** by that change:
+
+- `sp-autoheal` still watches Docker health and restarts an unhealthy engine.
+  Plain Docker does not act on an unhealthy healthcheck, so deleting autoheal
+  before a separately audited, causal process-failure owner lands would remove
+  the only recovery for a live-but-wedged process. It remains a named blocker,
+  not a claimed retirement.
+- GameServer's `FeeReconciler` mixes a legitimate durable obligation drain with
+  historical scans, audits, and repair calls. In particular, a BBJ payout is
+  persisted to `pending_fee_distributions` before its first delivery attempt;
+  deleting the drain can strand a real jackpot obligation. The safe split is:
+  keep an atomic claim-and-deliver outbox worker, wake it from the write that
+  creates an obligation, retry only within that causal chain, and perform one
+  bounded startup drain for crash recovery; move read-only audits out of that
+  worker; then remove the five-minute interval and the hourly/30-minute repair
+  scans only after the accepted-hand post-commit envelope is proven universal
+  and the old backlog is zero. No fee/tournament runtime was changed in this
+  control-plane pass.
+
+`scripts/ci/band-aid.allowlist.json` has no supervisor exemption to delete. Its
+BBJ repair entries remain because those database repair functions and schedules
+were not safely retired in this pass; removing only their CI names would hide
+debt rather than remove it.
+
 ---
 
 ## What this costs today, measured

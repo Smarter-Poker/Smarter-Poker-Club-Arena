@@ -404,7 +404,7 @@ exit 1
     expect(readFileSync(runLog, 'utf8')).toContain('--restart always');
   });
 
-  it('preserves the exact sealed pre-label container when the first supervisor tick runs', () => {
+  it('preserves the exact sealed pre-label container during causal desired recovery', () => {
     expect(
       runSeal(
         [
@@ -431,8 +431,8 @@ exit 0
 
     // The first production image has no OCI revision label and its existing
     // container has no sp.release.sha label. Its immutable image ID and baked
-    // SHA are nevertheless sealed. Any start/stop/rm/run call here would be an
-    // off-break replacement caused solely by installing the supervisor.
+    // SHA are nevertheless sealed. Exact release recovery must prove that
+    // already-authoritative runtime without replacing it.
     writeFileSync(
       join(bin, 'docker'),
       `#!/usr/bin/env bash
@@ -466,6 +466,7 @@ case "$format" in
   '{{.State.Status}}') printf 'running\\n' ;;
   '{{index .Config.Labels "autoheal"}}') printf 'true\\n' ;;
   '{{index .Config.Labels "sp.release.sha"}}') printf '\\n' ;;
+  '{{index .Config.Labels "sp.role"}}') printf 'engine\\n' ;;
   '{{.HostConfig.RestartPolicy.Name}}') printf 'always\\n' ;;
   '{{.State.StartedAt}}') printf '\\n' ;;
   *) exit 1 ;;
@@ -475,13 +476,25 @@ esac
     chmodSync(join(bin, 'docker'), 0o755);
     writeFileSync(
       join(bin, 'curl'),
-      '#!/usr/bin/env bash\nprintf \'{"running":true,"liveness":"ok"}\\n\'\n'
+      `#!/usr/bin/env bash
+printf '%s\\n' '{"running":true,"releaseSha":"${A_SHA}","liveness":"ok","instanceId":"12345-deadbeef"}'
+`
     );
     chmodSync(join(bin, 'curl'), 0o755);
     writeFileSync(join(bin, 'logger'), '#!/usr/bin/env bash\nexit 0\n');
     chmodSync(join(bin, 'logger'), 0o755);
     writeFileSync(join(bin, 'flock'), '#!/usr/bin/env bash\nexit 0\n');
     chmodSync(join(bin, 'flock'), 0o755);
+    writeFileSync(
+      join(bin, 'timeout'),
+      `#!/usr/bin/env bash
+while [ "$#" -gt 0 ]; do
+  case "$1" in --signal=*|--kill-after=*|[0-9]*s) shift ;; *) break ;; esac
+done
+exec "$@"
+`
+    );
+    chmodSync(join(bin, 'timeout'), 0o755);
 
     const supervisor = spawnSync('bash', [resolve(ROOT, 'server/scripts/engine-supervisor.sh')], {
       encoding: 'utf8',
@@ -492,15 +505,16 @@ esac
         FAKE_MUTATION_LOG: mutationLog,
         IMAGE_REPO: 'club-arena-engine',
         LOCK_FILE: join(sandbox, 'engine-up.lock'),
-        STATE_DIR: join(sandbox, 'supervisor-state'),
-        TEXTFILE_DIR: join(sandbox, 'metrics'),
         UP_SCRIPT: upScript,
+        ENGINE_SUPERVISOR_LOCK_HELD: '1',
+        ENGINE_SUPERVISOR_FORCE_DESIRED: '1',
+        ENGINE_SUPERVISOR_REQUIRE_EXACT_HEALTH: '1',
+        ENGINE_RECOVERY_DEADLINE_EPOCH: String(Math.floor(Date.now() / 1000) + 20),
+        ENGINE_URL: 'https://engine.example.invalid',
       },
     });
     expect(supervisor.status, supervisor.stderr).toBe(0);
-    expect(supervisor.stdout).toContain(
-      'preserving its exact image until the first certified cutover'
-    );
+    expect(supervisor.stdout).toContain('is healthy locally and publicly as 12345-deadbeef');
     expect(readFileSync(mutationLog, 'utf8')).toBe('');
   });
 
@@ -527,12 +541,15 @@ esac
 
     const mutationLog = join(sandbox, 'pending-policy-mutations.log');
     const autohealState = join(sandbox, 'autoheal-state');
+    const containerState = join(sandbox, 'engine-state');
+    const switched = join(sandbox, 'desired-runtime');
     const upScript = join(sandbox, 'engine-up-stub.sh');
     writeFileSync(mutationLog, '');
     writeFileSync(autohealState, 'exited\n');
+    writeFileSync(containerState, 'running\n');
     writeFileSync(
       upScript,
-      '#!/usr/bin/env bash\nprintf \'engine-up %s\\n\' "$IMAGE" >> "$FAKE_MUTATION_LOG"\n'
+      '#!/usr/bin/env bash\nprintf \'engine-up %s\\n\' "$IMAGE" >> "$FAKE_MUTATION_LOG"\ntouch "$FAKE_SWITCHED"\n'
     );
     chmodSync(upScript, 0o755);
     writeFileSync(
@@ -555,12 +572,13 @@ if [ "$kind" = image ] && [ "$action" = inspect ]; then
 fi
 if [ "$kind" = container ] && [ "$action" = inspect ] && [ "$ref" = club-arena-engine ]; then
   case "$format" in
-    '{{json .}}'|'') printf '{"Image":"%s","State":{"Status":"%s"}}\\n' '${B_IMAGE}' "\${FAKE_CONTAINER_STATUS:-running}" ;;
-    '{{.Image}}') printf '%s\\n' '${B_IMAGE}' ;;
-    '{{.State.Status}}') printf '%s\\n' "\${FAKE_CONTAINER_STATUS:-running}" ;;
+    '{{json .}}'|'') printf '{"Image":"%s","State":{"Status":"%s"}}\\n' '${B_IMAGE}' "$(tr -d '\\n' < "$FAKE_CONTAINER_STATE")" ;;
+    '{{.Image}}') [ -e "$FAKE_SWITCHED" ] && printf '%s\\n' '${A_IMAGE}' || printf '%s\\n' '${B_IMAGE}' ;;
+    '{{.State.Status}}') tr -d '\\n' < "$FAKE_CONTAINER_STATE"; printf '\\n' ;;
     '{{index .Config.Labels "autoheal"}}') printf 'true\\n' ;;
-    '{{index .Config.Labels "sp.release.sha"}}') printf '%s\\n' '${B_SHA}' ;;
-    '{{.HostConfig.RestartPolicy.Name}}') printf '%s\\n' "\${FAKE_RESTART_POLICY:-always}" ;;
+    '{{index .Config.Labels "sp.release.sha"}}') [ -e "$FAKE_SWITCHED" ] && printf '%s\\n' '${A_SHA}' || printf '%s\\n' '${B_SHA}' ;;
+    '{{index .Config.Labels "sp.role"}}') printf 'engine\\n' ;;
+    '{{.HostConfig.RestartPolicy.Name}}') printf 'always\\n' ;;
     *) exit 1 ;;
   esac
   exit 0
@@ -571,6 +589,9 @@ if [ "$kind" = container ] && [ "$action" = inspect ] && [ "$ref" = sp-autoheal 
 fi
 if [ "$kind" = start ] && [ "$action" = sp-autoheal ]; then
   printf 'running\\n' > "$FAKE_AUTOHEAL_STATE"
+fi
+if [ "$kind" = start ] && [ "$action" = club-arena-engine ]; then
+  printf 'running\\n' > "$FAKE_CONTAINER_STATE"
 fi
 if [ "$kind" = stop ] && [ "$action" = -t ]; then
   printf 'exited\\n' > "$FAKE_AUTOHEAL_STATE"
@@ -584,59 +605,86 @@ exit 0
     chmodSync(join(bin, 'logger'), 0o755);
     writeFileSync(join(bin, 'flock'), '#!/usr/bin/env bash\nexit 0\n');
     chmodSync(join(bin, 'flock'), 0o755);
+    writeFileSync(
+      join(bin, 'timeout'),
+      `#!/usr/bin/env bash
+while [ "$#" -gt 0 ]; do
+  case "$1" in --signal=*|--kill-after=*|[0-9]*s) shift ;; *) break ;; esac
+done
+exec "$@"
+`
+    );
+    chmodSync(join(bin, 'timeout'), 0o755);
+    writeFileSync(
+      join(bin, 'curl'),
+      `#!/usr/bin/env bash
+printf '%s\\n' '{"running":true,"releaseSha":"${A_SHA}","liveness":"ok","instanceId":"12345-deadbeef"}'
+`
+    );
+    chmodSync(join(bin, 'curl'), 0o755);
 
     const supervisorEnv: NodeJS.ProcessEnv = {
       ...baseEnv,
       CONTAINER: 'club-arena-engine',
       ENGINE_RELEASE_SEAL: sealScript,
       FAKE_AUTOHEAL_STATE: autohealState,
+      FAKE_CONTAINER_STATE: containerState,
       FAKE_MUTATION_LOG: mutationLog,
+      FAKE_SWITCHED: switched,
       IMAGE_REPO: 'club-arena-engine',
       LOCK_FILE: join(sandbox, 'engine-up.lock'),
-      STATE_DIR: join(sandbox, 'supervisor-state'),
-      TEXTFILE_DIR: join(sandbox, 'metrics'),
       UP_SCRIPT: upScript,
+      ENGINE_SUPERVISOR_LOCK_HELD: '1',
+      ENGINE_SUPERVISOR_FORCE_DESIRED: '1',
+      ENGINE_SUPERVISOR_REQUIRE_EXACT_HEALTH: '1',
+      ENGINE_RECOVERY_DEADLINE_EPOCH: String(Math.floor(Date.now() / 1000) + 20),
+      ENGINE_URL: 'https://engine.example.invalid',
     };
     const supervisor = spawnSync('bash', [resolve(ROOT, 'server/scripts/engine-supervisor.sh')], {
       encoding: 'utf8',
       env: supervisorEnv,
     });
     expect(supervisor.status, supervisor.stderr).toBe(0);
-    expect(supervisor.stdout).toContain('restoring sealed desired release');
+    expect(supervisor.stdout).toContain('restoring exact sealed desired release');
     const mutations = readFileSync(mutationLog, 'utf8');
     expect(mutations).toContain(`engine-up ${A_IMAGE}`);
     expect(mutations).not.toContain('update --restart no');
 
+    writeFileSync(containerState, 'exited\n');
     writeFileSync(mutationLog, '');
-    writeFileSync(
-      upScript,
-      '#!/usr/bin/env bash\nprintf \'engine-up %s\\n\' "$IMAGE" >> "$FAKE_MUTATION_LOG"\n'
-    );
-    chmodSync(upScript, 0o755);
-    const rebootRecovery = spawnSync(
+    const stoppedDesiredRecovery = spawnSync(
       'bash',
       [resolve(ROOT, 'server/scripts/engine-supervisor.sh')],
       {
         encoding: 'utf8',
         env: {
           ...supervisorEnv,
-          FAKE_CONTAINER_STATUS: 'exited',
-          FAKE_RESTART_POLICY: 'no',
+          ENGINE_RECOVERY_DEADLINE_EPOCH: String(Math.floor(Date.now() / 1000) + 20),
         },
       }
     );
-    expect(rebootRecovery.status, rebootRecovery.stderr).toBe(0);
-    expect(rebootRecovery.stdout).toContain('disagrees with sealed desired');
-    expect(rebootRecovery.stdout).toContain('restoring sealed release');
-    expect(readFileSync(mutationLog, 'utf8')).toContain(`engine-up ${A_IMAGE}`);
-    expect(readFileSync(mutationLog, 'utf8')).not.toContain('start club-arena-engine');
+    expect(stoppedDesiredRecovery.status, stoppedDesiredRecovery.stderr).toBe(0);
+    expect(stoppedDesiredRecovery.stdout).toContain(
+      'is healthy locally and publicly as 12345-deadbeef'
+    );
+    expect(readFileSync(mutationLog, 'utf8')).toContain('docker start club-arena-engine');
+    expect(readFileSync(mutationLog, 'utf8')).not.toContain('engine-up');
 
+    rmSync(switched, { force: true });
+    writeFileSync(containerState, 'running\n');
+    writeFileSync(mutationLog, '');
     writeFileSync(upScript, '#!/usr/bin/env bash\nexit 42\n');
     chmodSync(upScript, 0o755);
     const failedRecovery = spawnSync(
       'bash',
       [resolve(ROOT, 'server/scripts/engine-supervisor.sh')],
-      { encoding: 'utf8', env: supervisorEnv }
+      {
+        encoding: 'utf8',
+        env: {
+          ...supervisorEnv,
+          ENGINE_RECOVERY_DEADLINE_EPOCH: String(Math.floor(Date.now() / 1000) + 20),
+        },
+      }
     );
     expect(failedRecovery.status).toBe(1);
     expect(failedRecovery.stdout).toContain('exact sealed desired release could not be restored');
@@ -1391,7 +1439,8 @@ describe('every host mutation path obeys the durable release authority', () => {
       'GIT_NO_REPLACE_OBJECTS=1 git -C "$REPO_DIR" archive "$CONTROL_SHA"'
     );
     expect(installer).not.toContain('ENGINE_CONTROL_SOURCE_DIR');
-    expect(installer).toContain('ExecStart=$CONTROL_DIR/engine-supervisor.sh');
+    expect(installer).not.toContain('ExecStart=$CONTROL_DIR/engine-supervisor.sh');
+    expect(installer).toContain('ExecStart=$UNIT_WRAPPER_V1 start %i');
     expect(workflow).toContain('STAGE="/var/lib/club-arena/control-staging/$RUN_KEY"');
     expect(workflow).toContain('git -C "$REPO_DIR" archive "$CONTROL_SHA" server/scripts');
     expect(workflow).toContain('"$STAGE/server/scripts/install-engine-intake.sh"');
@@ -1565,20 +1614,20 @@ describe('every host mutation path obeys the durable release authority', () => {
   });
 
   it('makes the supervisor restore the sealed image ID, never mutable current', () => {
-    expect(supervisor).toContain('DESIRED_IMAGE_ID=$("$RELEASE_SEAL" get desired-image-id');
+    expect(supervisor).toContain(
+      'DESIRED_IMAGE_ID="$(bounded_recovery_command 10 "$RELEASE_SEAL" get desired-image-id)"'
+    );
     expect(supervisor).toContain('IMAGE="$DESIRED_IMAGE_ID"');
-    expect(supervisor).toContain('if [ "$RELEASE_CLASS" = "drift" ]');
-    expect(supervisor).toContain('docker tag "$DESIRED_IMAGE_ID" "$IMAGE_REPO:current"');
     expect(supervisor).not.toContain('IMAGE="${IMAGE:-club-arena-engine:current}"');
-    expect(supervisor).toContain('RELEASE_LABEL" != "$EXPECTED_RELEASE_SHA');
-    expect(supervisor).toContain(
-      '[ "$RELEASE_CLASS" = "pending" ] && [ "$RESTART_POLICY" != "no" ]'
-    );
-    expect(supervisor).toContain('restoring sealed desired release');
-    expect(supervisor).toContain(
-      '[ "$RELEASE_CLASS" = "desired" ] && [ "$RESTART_POLICY" != "always" ]'
-    );
+    expect(supervisor).not.toContain('docker tag');
+    expect(supervisor).toContain('ENGINE_SUPERVISOR_FORCE_DESIRED');
+    expect(supervisor).toContain('ENGINE_SUPERVISOR_REQUIRE_EXACT_HEALTH');
+    expect(supervisor).toContain('ENGINE_SUPERVISOR_LOCK_HELD');
+    expect(supervisor).toContain('[ "$RUNNING_IMAGE_ID" != "$DESIRED_IMAGE_ID" ]');
+    expect(supervisor).toContain('[ "$RUNNING_RELEASE" != "$DESIRED_SHA" ]');
+    expect(supervisor).toContain('restoring exact sealed desired release');
     expect(supervisor).toContain('docker update --restart always "$CONTAINER"');
+    expect(supervisor).toContain('prove_exact_desired_recovery');
   });
 
   it('commits the seal only after HTTP, proxy, and strict database proof', () => {

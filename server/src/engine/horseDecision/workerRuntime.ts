@@ -685,8 +685,9 @@ export class HorseDecisionWorkerRuntime {
       (tournament.seatsPerTable as number) < 2 ||
       (tournament.seatsPerTable as number) > 10 ||
       !Number.isSafeInteger(tournament.playersAtTable) ||
-      tournament.playersAtTable !==
-        Math.max(2, gs.players.filter((seat) => !seat.is_sitting_out).length) ||
+      // Tournament sit-outs are still dealt and post every forced contribution;
+      // they count in orbit-cost M even though covering pressure excludes them.
+      tournament.playersAtTable !== Math.max(2, gs.players.length) ||
       !Number.isSafeInteger(tournament.currentLevel) ||
       (tournament.currentLevel as number) < 0 ||
       !positive(tournament.currentSmallBlind) ||
@@ -736,7 +737,7 @@ export class HorseDecisionWorkerRuntime {
         tournament.medianStackChips <= 0 ||
         (tournament.currentLevel as number) < 0 ||
         !Number.isSafeInteger(gs.dealerSeat) ||
-        !gs.players.some((seat) => !seat.is_sitting_out && seat.seat === gs.dealerSeat) ||
+        !gs.players.some((seat) => seat.seat === gs.dealerSeat) ||
         tournament.gameVariant !== gs.gameVariant ||
         !['mtt', 'spin', 'hu_sng'].includes(gs.format ?? '') ||
         tournament.levelDurationMin === null ||

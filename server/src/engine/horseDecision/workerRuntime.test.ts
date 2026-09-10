@@ -619,8 +619,62 @@ describe('HorseDecisionWorkerRuntime', () => {
     expect(h.messages.at(-1)).toMatchObject({ type: 'FAST_RESULT', requestId: 59 });
   });
 
-  it('accepts a per-player ante that begins at the next blind level', async () => {
+  it('counts a tournament sit-out in orbit M while excluding it from covering pressure', async () => {
     const request = phase6TournamentRequest(60);
+    const sitOut = {
+      seat: 4,
+      user_id: 'horse-4',
+      username: 'Horse Four',
+      stack: 120,
+      bet: 0,
+      totalInvested: 0,
+      cards: [],
+      is_folded: false,
+      is_all_in: false,
+      is_sitting_out: true,
+    };
+    const players = [...request.gameState.players, sitOut];
+    const tournament = request.gameState.tournament!;
+    const m = buildTournamentMState({
+      stackChips: request.player.stack,
+      smallBlind: tournament.currentSmallBlind!,
+      bigBlind: tournament.currentBigBlind!,
+      ante: tournament.currentAnte!,
+      anteType: tournament.anteType!,
+      playersAtTable: 3,
+      nextSmallBlind: tournament.nextSmallBlind,
+      nextBigBlind: tournament.nextBigBlind,
+      nextAnte: tournament.nextAnte,
+      minutesToNextLevel: tournament.nextBlindInMin,
+      opponentStacks: request.gameState.players
+        .filter((seat) => seat.user_id !== request.player.user_id)
+        .map((seat) => ({ userId: seat.user_id, stackChips: seat.stack })),
+    });
+    const dealtSitOut = rekey({
+      ...request,
+      gameState: {
+        ...request.gameState,
+        dealerSeat: sitOut.seat,
+        players,
+        tournament: {
+          ...tournament,
+          seatsPerTable: 3,
+          playersAtTable: 3,
+          stacks: [120, 96, 88],
+          m,
+        },
+      },
+    });
+    const h = harness();
+    h.runtime.receive(dealtSitOut);
+    await h.runtime.drain();
+
+    expect(m.coveringOpponents.map((opponent) => opponent.userId)).toEqual(['horse-3']);
+    expect(h.messages.at(-1)).toMatchObject({ type: 'FAST_RESULT', requestId: 60 });
+  });
+
+  it('accepts a per-player ante that begins at the next blind level', async () => {
+    const request = phase6TournamentRequest(61);
     const tournament = request.gameState.tournament!;
     const m = buildTournamentMState({
       stackChips: request.player.stack,
@@ -656,7 +710,7 @@ describe('HorseDecisionWorkerRuntime', () => {
     h.runtime.receive(anteStartsNextLevel);
     await h.runtime.drain();
 
-    expect(h.messages.at(-1)).toMatchObject({ type: 'FAST_RESULT', requestId: 60 });
+    expect(h.messages.at(-1)).toMatchObject({ type: 'FAST_RESULT', requestId: 61 });
   });
 
   it('gates on owned-service hydration and returns fast RNG/latency/governor receipts', async () => {

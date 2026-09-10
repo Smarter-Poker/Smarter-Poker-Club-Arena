@@ -2289,8 +2289,13 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     const tctx = snapshot.context;
     const fallbackFormat =
       (this.tableInfo?.max_players ?? 9) <= 2 ? ('hu_sng' as const) : ('mtt' as const);
-    const activePlayers = players.filter((candidate) => !candidate.is_sitting_out);
-    const playersAtTable = Math.max(2, activePlayers.length);
+    // HandController.state.players is the exact dealt roster. Tournament
+    // sit-outs stay in that roster, post blinds/antes, receive cards and are
+    // auto-folded when action reaches them. They therefore still belong in an
+    // orbit-cost M calculation even though they are not actionable opponents.
+    const dealtPlayers = players;
+    const actionablePlayers = players.filter((candidate) => !candidate.is_sitting_out);
+    const playersAtTable = Math.max(2, dealtPlayers.length);
     const currentSmallBlind = Math.max(0, Number(this.tableInfo?.small_blind) || 0);
     const currentBigBlind = Math.max(0, Number(this.tableInfo?.big_blind) || 0);
     const currentAnte = Math.max(0, Number(this.tableInfo?.ante) || 0);
@@ -2298,10 +2303,10 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     if (currentSmallBlind <= 0 || currentBigBlind <= 0) {
       localIssues.push('live_blinds_invalid');
     }
-    if (activePlayers.length < 2) localIssues.push('live_seat_state_incomplete');
+    if (dealtPlayers.length < 2) localIssues.push('live_seat_state_incomplete');
     if (
       !Number.isSafeInteger(dealerSeat) ||
-      !activePlayers.some((candidate) => candidate.seat === dealerSeat)
+      !dealtPlayers.some((candidate) => candidate.seat === dealerSeat)
     ) {
       localIssues.push('dealer_seat_missing');
     }
@@ -2350,7 +2355,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       nextBigBlind: contextStatus === 'complete' ? tctx?.nextBigBlind : null,
       nextAnte: contextStatus === 'complete' ? tctx?.nextAnte : null,
       minutesToNextLevel: contextStatus === 'complete' ? tctx?.nextBlindInMin : null,
-      opponentStacks: activePlayers
+      opponentStacks: actionablePlayers
         .filter((candidate) => candidate.user_id !== player.user_id)
         .map((candidate) => ({
           userId: candidate.user_id,

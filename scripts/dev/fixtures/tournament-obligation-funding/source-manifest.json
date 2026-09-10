@@ -1,0 +1,54 @@
+{
+  "catalog_date_utc": "2026-09-10",
+  "functions": [
+    {
+      "body_md5": "310d509610d786cfc722bbadd8c68a85",
+      "signature": "fn_ca_escrow_can_pay(uuid,text,numeric)"
+    },
+    {
+      "body_md5": "facba80dff6edbe1b70a010f32bc5aad",
+      "signature": "fn_credit_and_log(uuid,numeric,text,text,text,uuid,text,uuid,uuid,integer,text)"
+    },
+    {
+      "body_md5": "563d773ceb906695c150e9ced48db772",
+      "signature": "fn_credit_player_wallet_once(uuid,numeric,text)"
+    },
+    {
+      "body_md5": "3caf138ce0ba16e379e8c739cf21ca70",
+      "signature": "fn_raise_server_financial_alert(text,text,text,jsonb,text)"
+    },
+    {
+      "body_md5": "fbe05a034c5de1f61e2dc5506a296bd7",
+      "signature": "fn_tournament_payout_shape(text)"
+    },
+    {
+      "body_md5": "aa6bdc037c8d59e6648ef0c3ad9ad768",
+      "signature": "fn_tournament_payouts_are_append_only()"
+    },
+    {
+      "body_md5": "1c9f4932f5eda803a69a37ec2e3c2b9c",
+      "signature": "zz_a_payout_row_carries_its_key()"
+    },
+    {
+      "body_md5": "915f3ebd5c4a2efb97ad3a354dfeb365",
+      "signature": "fn_settle_tournament_obligation(uuid,text,integer,uuid,numeric,text,text,uuid)"
+    },
+    {
+      "body_md5": "68f74f87580ea2c2a1cacbe30f9b4289",
+      "signature": "fn_settle_tournament_obligation_before_atomic_batch_gate(uuid,text,integer,uuid,numeric,text,text,uuid)"
+    }
+  ],
+  "production_database_used": false,
+  "tables": [
+    "ca_manual_adjustments",
+    "ca_payout_freeze",
+    "financial_alerts"
+  ],
+  "unique_indices": [
+    "ux_tournament_obligations_place",
+    "ux_tournament_obligations_user",
+    "uq_tournament_payouts_idempotency_key"
+  ],
+  "candidate_body_md5": "d30af6aca3dcbd9a2ca9ff2aa9849488",
+  "candidate_migration": "supabase/migrations/20260910040332_a_refused_finishing_place_creates_no_debt.sql"
+}

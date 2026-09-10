@@ -1,0 +1,95 @@
+{
+  "scope": "Phase 3 T09 cumulative finishing obligations; T11 debt-preservation component",
+  "verified_at_utc": "2026-09-10T04:28:15Z",
+  "status": "verified_local_correction_pending_production_application",
+  "migration": "supabase/migrations/20260910040332_a_refused_finishing_place_creates_no_debt.sql",
+  "installed_body_md5": "68f74f87580ea2c2a1cacbe30f9b4289",
+  "candidate_body_md5": "d30af6aca3dcbd9a2ca9ff2aa9849488",
+  "baseline": {
+    "passed_groups": 7,
+    "failed_case": "a refused second place creates no additional finishing obligation",
+    "observed": {
+      "obligations": 2,
+      "owed": 150,
+      "paid": 100
+    },
+    "expected": {
+      "obligations": 1,
+      "owed": 100,
+      "paid": 100
+    },
+    "log": "/tmp/codex-phase3-obligation-funding-baseline.log"
+  },
+  "fixed": {
+    "passed_groups": 10,
+    "passed": [
+      "early award and final adjustment move only cumulative deltas and exhaust only prize escrow",
+      "overlapping identical obligations credit once under the real database lock",
+      "overlapping early and final totals produce only the unpaid increment",
+      "another user cannot take an already paid place or raise its debt",
+      "late payout evidence failure rolls back the real wallet and escrow writers",
+      "a short prize bank pays what it holds and preserves debt and the fee bank",
+      "paid history cannot be rewritten or deleted through normal table operations",
+      "a refused second place creates no debt and leaves the place available to its recipient",
+      "a zero second-place request reserves no obligation and the correct recipient owns the later payment",
+      "an existing legacy payment is still seeded and replayed without another credit"
+    ],
+    "exit_code": 0,
+    "runtime_seconds": 8.74,
+    "private_cluster_cleanup": "completed",
+    "log": "/tmp/codex-phase3-obligation-funding-revised.log",
+    "results": "/tmp/ca-registration-funding-pg17-df1gfage/results.json",
+    "refusal_state": {
+      "obligations": 1,
+      "owed": 100,
+      "paid": 100
+    },
+    "invocation": "Shared registration-funding PG17 runner with an in-memory --obligations-only dispatch to tournament_obligation_funding_cases.verify; entry/cancellation lane owns tracked selector integration."
+  },
+  "fixture": {
+    "production_database_used": false,
+    "postgres_version": 17,
+    "base": [
+      "scripts/dev/fixtures/satellite-refund/fixture.sql",
+      "scripts/dev/fixtures/registration-funding/installed.sql"
+    ],
+    "added": "scripts/dev/fixtures/tournament-obligation-funding/installed.sql",
+    "money_writers": "Captured installed registration, cumulative obligation, wallet credit, ledger, escrow and payout evidence functions; current added function body MD5s asserted before each group.",
+    "synthetic_scope": "Fresh synthetic users, tournament and club per group. No production connection accepted by the runner."
+  },
+  "live_read_only_recheck": [
+    {
+      "captured_at": "2026-09-10 04:28:15.844375+00",
+      "signature": "fn_settle_tournament_obligation_before_atomic_batch_gate(uuid,text,integer,uuid,numeric,text,text,uuid)",
+      "body_md5": "68f74f87580ea2c2a1cacbe30f9b4289",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres}"
+    },
+    {
+      "captured_at": "2026-09-10 04:28:15.844554+00",
+      "signature": "fn_settle_tournament_obligation(uuid,text,integer,uuid,numeric,text,text,uuid)",
+      "body_md5": "915f3ebd5c4a2efb97ad3a354dfeb365",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}"
+    }
+  ],
+  "production": {
+    "migration_applied": false,
+    "money_writes": false,
+    "history_repairs": false
+  },
+  "controls": {
+    "T09": "Current cumulative writer delta, replay, concurrency, ownership, zero reservation and rollback components verified locally; forward correction not applied to production.",
+    "T11": "Short prize bank preserves unpaid debt and fee bank, and normal payout history mutations are refused. Integrated terminal drain of prize, bounty and fee banks remains unverified by this fixture."
+  },
+  "limits": [
+    "Does not reproduce the full production trigger graph, HTTP/RLS entrypoints, authoritative final ranking, or integrated terminal completion.",
+    "Legacy replay case intentionally supplies a synthetic existing historical-shaped receipt through the real low-level credit writer; no production historical rows are edited.",
+    "Shared runner selector is composed from the entry/cancellation lane; this lane does not edit the shared runner."
+  ],
+  "required_next": [
+    "Combine tracked --obligations-only selector with this module.",
+    "Publish through normal guarded integration and CI.",
+    "Apply the reviewed forward migration through the authorized production deployment path and verify installed body/ACL before claiming production completion."
+  ]
+}

@@ -28,13 +28,15 @@
       "id": "T04",
       "requirement": "Give each re-entry a distinct identity; enforce eliminated status, limits and deadline. Never mistake retries for another entry.",
       "priority": "P0",
-      "status": "pending_full_requirement_verification"
+      "status": "partial_atomic_purchase_and_generation_verified",
+      "evidence": "tournament_purchase_funding_rehearsal"
     },
     {
       "id": "T05",
       "requirement": "Process rebuy/add-on eligibility and funding atomically, with tournament chips separate from spendable cash.",
       "priority": "P0",
-      "status": "pending_full_requirement_verification"
+      "status": "partial_atomic_purchase_and_generation_verified",
+      "evidence": "tournament_purchase_funding_rehearsal"
     },
     {
       "id": "T06",
@@ -90,7 +92,7 @@
       "id": "K02",
       "requirement": "Snapshot level/blinds at hand creation; advance only the next eligible hand when a level boundary occurs mid-hand.",
       "priority": "P1",
-      "status": "partial_actual_hand_boundary_verified",
+      "status": "behavior_verified_pending_engine_adoption",
       "evidence": "blind_snapshot_rehearsal"
     },
     {
@@ -852,7 +854,15 @@
     "dispatch_staged_hetzner_immediately": true,
     "passive_wait_for_engine_window": false,
     "engine_force_restart": false,
-    "continue_audit_during_deployment": true
+    "continue_audit_during_deployment": true,
+    "latest_staged_successor_dispatch": {
+      "requested_at": "2026-09-10T02:06:23.376326+00:00",
+      "status": 204,
+      "sha": "1695880b4a3fef292bba096c6604759cf167bc17",
+      "force": false,
+      "workflow": "auto-deploy-hetzner.yml",
+      "reason": "Continue the staged normal deployment toward the next maintenance window; no active or pending successor exists."
+    }
   },
   "satellite_cash_correction": {
     "status": "production_database_verified_source_followup_merged",
@@ -1254,12 +1264,24 @@
   "blind_snapshot_rehearsal": {
     "control": "K02",
     "test": "server/src/engine/TournamentBlindSnapshot.test.ts",
-    "tests_passed": 3,
-    "production_method": "ServerTableEngineDealing.readNextHandInputs, refreshBlinds and dealHand with the real HandController",
+    "tests_passed": 9,
+    "production_method": "ServerTableEngineDealing.prepareNextHand, awaitNextHandRest, refreshBlinds and dealHand with the real HandController",
     "source_base": "043b9e0c6674b5dcb84f2209adc780dcce89bab0",
-    "observed": "An active 10/20/2 hand keeps its original legal raise and finishes after a 20/40/4 table update. A separate next hand posts 20/40/4. An unresolved or failed blind read cannot supply a ready input set.",
-    "limits": "Synthetic database reads and roster; stops the engine at the unrelated time-bank read, then executes the actual controller. Does not exercise the entire dealing loop or a level tick during its prefetched between-hand rest. No production money writes or new blind-policy behavior.",
-    "full_control_closed": false
+    "observed": "An active 10/20/2 hand keeps its original stakes and legal raise after a 20/40/4 level update. The next hand now reads and posts 20/40/4 even when that update occurs during the prepared between-hand rest. Delayed/failed reads cannot pass the deal boundary; the new rest case performs one blind read.",
+    "limits": "Synthetic database reads and roster; stops the engine at the unrelated time-bank read, then executes the actual controller. Production adoption of the new rest-boundary correction remains pending.",
+    "full_control_closed": false,
+    "status": "behavior_verified_pending_publication_and_engine_adoption",
+    "baseline_rest_failure": {
+      "current_bet": 20,
+      "pot": 36,
+      "expected_current_bet": 40,
+      "expected_pot": 72
+    },
+    "companion_tests": {
+      "NextHandInputs.test.ts": 3,
+      "server_types": "passed"
+    },
+    "correction_commit": "10f03f68fcd80533140a24c2a57559e44686bb20"
   },
   "registration_funding_and_receipt_correction": {
     "control": "T01",
@@ -1326,6 +1348,49 @@
     ],
     "scope": "The real dealable count, blind predictors, eviction method, deal configuration and HandController are exercised. External reads are synthetic and the fixture stops before time-bank transport and settlement. This closes forced-bet eligibility only; persistence across table moves and settlement remain separate controls.",
     "deployed_code_comparison": "No difference in ServerTableEngineBase, ServerTableEngineDealing, DisconnectEngine or HandController between the observed engine build and tested source.",
-    "full_control_closed": true
+    "full_control_closed": true,
+    "publication": {
+      "pull_request": 4081,
+      "merge_commit": "3bb214433b981fe9df52d0991333634343c0f22c",
+      "merged_at": "2026-09-10T02:08:05Z",
+      "ci_run": 34428007551,
+      "ci_conclusion": "success"
+    }
+  },
+  "tournament_purchase_funding_rehearsal": {
+    "controls": ["T04", "T05"],
+    "status": "isolated_atomic_purchase_evidence_verified",
+    "runner": "scripts/dev/probe-tournament-registration-funding-pg17.py --purchases-only",
+    "fixture_manifest": "scripts/dev/fixtures/tournament-purchase-funding/source-manifest.json",
+    "scenario_groups_passed": 13,
+    "installed_function_hashes_checked": 33,
+    "contract_triggers": 23,
+    "psql_evidence": "13 groups passed",
+    "ci_pg_client_local_evidence": "13 groups passed with pinned pg 8.16.3",
+    "full_controls_closed": false,
+    "live_catalog_recheck": {
+      "status": "recovered_and_reconciled",
+      "observed_at": "2026-09-10T02:50:01Z",
+      "unchanged_function_bodies": 31,
+      "recaptured_function_bodies": 2,
+      "updated_functions": ["fn_stamp_seat_club()", "trg_lock_and_validate_tournament_live_seat()"],
+      "reconciled_purchase_groups_passed": 13,
+      "public_rpc_body_md5": "63e4762f2f293da5f2c66ae03fd92947",
+      "money_core_body_md5": "ebff39bd84c1a1ac9a75e7b09ceaa74b",
+      "no_production_mutation": true
+    },
+    "limits": [
+      "Accepted-hand/settlement records are synthetic; real hand commit is not invoked.",
+      "Auth/session, engine identity and maintenance state are synthetic.",
+      "Full HTTP/RLS, funded bounty re-entry, union funding, table expansion and engine consumption of a grant are not certified.",
+      "The full production trigger and foreign-key graph is not cloned; selected funding and seat contract triggers are retained."
+    ],
+    "publication": {
+      "pull_request": 4090,
+      "merge_commit": "78555488589b727122e1f073c3ed32a8c6d55c87",
+      "merged_at": "2026-09-10T02:44:19Z",
+      "ci_run": 34430313387,
+      "ci_conclusion": "success"
+    }
   }
 }

@@ -21,6 +21,8 @@ import { SettlementService } from '../services/SettlementService';
 import { SettlementCronService, type CanaryResult } from '../services/SettlementCronService';
 import PageSkeleton from '../components/common/PageSkeleton';
 import TransactionLedgerView from '../components/common/TransactionLedgerView';
+import FinancialAdminScopeState from '../components/common/FinancialAdminScopeState';
+import { useFinancialAdminScope } from '../hooks/useFinancialAdminScope';
 
 import { useIsMounted } from '../hooks/useIsMounted';
 import { reportError } from '../utils/errorReporter';
@@ -166,9 +168,22 @@ export default function SettlementDashboardPage() {
   useAuthUser(); // Ensures user is authenticated (admin page)
   const toast = useToast();
   const isMounted = useIsMounted();
+  /* WHOSE SETTLEMENTS (2026-09-10). This page read the platform-wide open
+     period, every period in history and the whole chip ledger with no club
+     filter, so an operator of two clubs (or a union overseer) read them all
+     summed into one page with nothing saying which club a row belonged to.
+     The scope names the club - or the whole platform, for platform staff -
+     and nothing below reads money until it is ready. */
+  const scope = useFinancialAdminScope();
+  const scopeStatus = scope.status;
+  const scopeClubId = scope.clubId;
 
   const [currentPeriod, setCurrentPeriod] = useState<PeriodInfo | null>(null);
   const [agentPayouts, setAgentPayouts] = useState<AgentPayout[]>([]);
+  /* A FAILED SETTLEMENT READ IS NOT "NOBODY IS OWED ANYTHING". The RPC's
+     error was discarded and the empty array it left behind rendered as the
+     all-clear on the page operators use to pay agents. */
+  const [agentPayoutsError, setAgentPayoutsError] = useState<string | null>(null);
   const [periodHistory, setPeriodHistory] = useState<PeriodHistoryItem[]>([]);
   const [canaryResult, setCanaryResult] = useState<CanaryResult | null>(null);
   const [loading, setLoading] = useState(true);
@@ -190,15 +205,19 @@ export default function SettlementDashboardPage() {
   const commissionReloadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const loadData = useCallback(async () => {
+    if (scopeStatus !== 'ready') return;
     if (loadingRef.current) return;
     loadingRef.current = true;
     setLoading(true);
     setLoadError(null);
     let loadedPeriodId: string | null = null;
     try {
-      // Load current period
+      // Load current period - THIS CLUB'S open period when a club is in
+      // scope; the platform-wide one only for platform staff on no club.
       try {
-        const period = await SettlementService.getCurrentPeriod();
+        const period = scopeClubId
+          ? await SettlementService.getCurrentPeriodForClub(scopeClubId)
+          : await SettlementService.getCurrentPeriod();
         if (isMounted.current && period) {
           loadedPeriodId = period.id;
           setCurrentPeriod({
@@ -220,12 +239,18 @@ export default function SettlementDashboardPage() {
       // `generate_period_settlements` read-model RPC (agents + agent_commissions).
       try {
         if (loadedPeriodId) {
-          const { data: summary } = await supabase.rpc('generate_period_settlements', {
-            p_period_id: loadedPeriodId,
-          });
+          const { data: summary, error: settlementsError } = await supabase.rpc(
+            'generate_period_settlements',
+            { p_period_id: loadedPeriodId }
+          );
+          if (settlementsError) throw settlementsError;
           const settlements = summary?.agentSettlements;
+          if (!Array.isArray(settlements)) {
+            throw new Error('generate_period_settlements returned no agentSettlements list');
+          }
 
-          if (isMounted.current && Array.isArray(settlements)) {
+          if (isMounted.current) {
+            setAgentPayoutsError(null);
             setAgentPayouts(
               settlements.map((s: any) => ({
                 id: s.id,
@@ -238,15 +263,24 @@ export default function SettlementDashboardPage() {
               }))
             );
           }
+        } else if (isMounted.current) {
+          setAgentPayoutsError(null);
+          setAgentPayouts([]);
         }
       } catch (e) {
-        reportError(e, 'SettlementDashboardPage.map');
-        /* caller may not be authorized for this period */
+        reportError(e, 'SettlementDashboardPage.agent_settlements');
+        if (isMounted.current) {
+          setAgentPayouts([]);
+          setAgentPayoutsError(
+            safeErrorMessage(e, 'The Agent Settlements Could Not Be Read. Nothing Has Been Paid.')
+          );
+        }
       }
 
-      // Load period history
+      // Load period history - this club's, never every club RLS lets the
+      // viewer see (a union overseer's grant covers the whole union).
       try {
-        const history = await SettlementService.getPeriodHistory(8);
+        const history = await SettlementService.getPeriodHistory(8, scopeClubId ?? undefined);
         if (isMounted.current) {
           setPeriodHistory(
             (history || []).map((p: any) => ({
@@ -290,7 +324,7 @@ export default function SettlementDashboardPage() {
       loadingRef.current = false;
       if (isMounted.current) setLoading(false);
     }
-  }, []);
+  }, [scopeStatus, scopeClubId]);
 
   const { isRefreshing } = useVisibilityRefresh(() => loadData());
 
@@ -574,6 +608,15 @@ export default function SettlementDashboardPage() {
   ).length;
 
   // ─── Render ───────────────────────────────────────────────────────────────────
+
+  if (scope.status !== 'ready') {
+    return (
+      <div style={{ padding: '16px', maxWidth: '900px', margin: '0 auto' }}>
+        <h1 style={{ fontSize: '1.4rem', fontWeight: 700 }}>⚖ Settlement Center</h1>
+        <FinancialAdminScopeState scope={scope} />
+      </div>
+    );
+  }
 
   if (loading && !currentPeriod && !loadError) {
     return (
@@ -1040,7 +1083,38 @@ export default function SettlementDashboardPage() {
       >
         Agent Payouts ({agentPayouts.length})
       </h2>
-      {agentPayouts.length === 0 ? (
+      {agentPayoutsError ? (
+        <div
+          role="alert"
+          style={{
+            textAlign: 'center',
+            padding: '24px 20px',
+            background: 'rgba(239,68,68,0.08)',
+            borderRadius: '12px',
+            border: '1px solid rgba(239,68,68,0.25)',
+            marginBottom: '24px',
+          }}
+        >
+          <p style={{ color: '#f87171', fontSize: '0.85rem', margin: '0 0 12px' }}>
+            {agentPayoutsError}
+          </p>
+          <button
+            type="button"
+            onClick={() => loadData()}
+            style={{
+              padding: '8px 16px',
+              background: 'rgba(239,68,68,0.15)',
+              border: '1px solid rgba(239,68,68,0.3)',
+              borderRadius: '8px',
+              color: '#f87171',
+              cursor: 'pointer',
+              fontWeight: 600,
+            }}
+          >
+            Retry
+          </button>
+        </div>
+      ) : agentPayouts.length === 0 ? (
         <div
           style={{
             textAlign: 'center',
@@ -1319,7 +1393,16 @@ export default function SettlementDashboardPage() {
           <h3 style={{ margin: '0 0 12px', fontSize: '14px', fontWeight: 700, color: '#e0e0e0' }}>
             Settlement Audit Trail
           </h3>
-          <TransactionLedgerView limit={25} />
+          {/* The club's ledger when a club is in scope (ca_club_chip_ledger,
+              gated on ca_can_view_club_finances). Platform staff on no club
+              see their own movements: chip_ledger's RLS is "my movements",
+              and an unfiltered read of it under this heading called those
+              the platform's. TransactionLedgerView refuses an unscoped read. */}
+          {scopeClubId ? (
+            <TransactionLedgerView clubId={scopeClubId} clubScoped limit={25} />
+          ) : (
+            <TransactionLedgerView userId={scope.userId ?? undefined} limit={25} />
+          )}
         </div>
       </div>
     </div>

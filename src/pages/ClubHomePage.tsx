@@ -629,7 +629,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
   return (
     <PageErrorBoundary pageName="ClubHomePage">
       {clubIdOverride ? (
-        <ArenaAccessBoundary clubKey={clubIdOverride}>
+        <ArenaAccessBoundary clubKey={clubIdOverride} cashLobby>
           <ClubHomePageContent clubIdOverride={clubIdOverride} />
         </ArenaAccessBoundary>
       ) : (

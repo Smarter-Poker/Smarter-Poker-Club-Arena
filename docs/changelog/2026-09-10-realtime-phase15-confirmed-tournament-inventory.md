@@ -47,7 +47,8 @@ checkout and Stage-B DDL remain with the separate release coordinator.
 Phase 14 exact publication evidence is preserved in
 docs/audits/2026-09-10-realtime-phase14-release.md and its adjacent JSON.
 
-Phase 15 publication is not established by local tests. Actual public and origin
-build stamps, referenced assets and released source must be checked after the
-normal auto-PR, CI, autopilot and publisher. Natural reconnect and physical
-iPad/PWA acceptance remain open and are not inferred from server or unit tests.
+Phase 15 publication was verified after normal auto-PR, CI, autopilot and
+publisher completion. Exact public/origin stamps, referenced asset hashes and
+matching released source are recorded in
+docs/audits/2026-09-10-realtime-phase15-release.md. Natural reconnect, production
+UI and physical iPad/PWA acceptance remain open; the receipt records those limits.

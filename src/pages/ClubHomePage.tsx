@@ -287,6 +287,9 @@ interface ClubData {
 
 interface TableData {
   id: string;
+  club_id?: string | null;
+  union_id?: string | null;
+  is_private?: boolean | null;
   name: string;
   game_variant: string;
   stakes: string;
@@ -910,6 +913,8 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
    * reset effect below.
    */
   const listsPaintedRef = useRef(false);
+  // A newer joinable row contradicts an in-flight query's empty snapshot.
+  const tournamentRevisionRef = useRef(0);
   const loadingRef = useRef(false);
   const reloadPendingRef = useRef(false);
   const [wsConnected, setWsConnected] = useState(false);
@@ -1249,12 +1254,14 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           if (!belongsInTournamentList(updated)) {
             setTournaments((prev) => prev.filter((t) => t.id !== updated.id));
           } else {
+            tournamentRevisionRef.current += 1;
             setTournaments((prev) =>
               prev.map((t) => (t.id === updated.id ? { ...t, ...updated } : t))
             );
           }
         } else if (payload.eventType === 'INSERT' && payload.new) {
           if (!belongsInTournamentList(payload.new)) return;
+          tournamentRevisionRef.current += 1;
           setTournaments((prev) => {
             if (prev.some((t) => t.id === payload.new.id)) return prev;
             return [payload.new as any, ...prev];
@@ -1359,57 +1366,69 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
          healthy; this is the floor under it, and it is wired into every club
          by construction because it is the lobby's own behaviour, not a
          per-club setting. */
+      let occupancyInFlight = false;
       const pollOccupancy = async () => {
-        if (!isCurrent()) return;
+        if (!isCurrent() || occupancyInFlight) return;
         if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
-        const q = supabase
-          .from('tables')
-          .select('id, current_players, status, max_players, club_id, union_id, is_private');
-        applyClubScope(q, rtScope);
-        const { data, error } = await q
-          .eq('is_deleted', false)
-          .not('status', 'in', '("closed","deleted")')
-          .is('tournament_id', null)
-          .order('current_players', { ascending: false })
-          .order('created_at', { ascending: false })
-          .limit(QUERY_LIMITS.LIST);
-        if (!isCurrent()) return;
-        if (error) {
-          reportError(error, 'ClubHomePage.occupancy_poll_failed');
-          return;
-        }
-        const rows = (data ?? []) as Array<{
-          id: string;
-          current_players: number | null;
-          status: string | null;
-          max_players: number | null;
-        }>;
-        const fresh = new Map(rows.map((r) => [String(r.id), r]));
-        let needsReload = false;
-        setTables((prev) => {
-          const known = new Set(prev.map((t) => String(t.id)));
-          for (const r of rows) {
-            if (!known.has(String(r.id)) && Number(r.current_players ?? 0) > 0) needsReload = true;
+        occupancyInFlight = true;
+        try {
+          const q = supabase
+            .from('tables')
+            .select('id, current_players, status, max_players, club_id, union_id, is_private');
+          applyClubScope(q, rtScope);
+          const { data, error } = await q
+            .eq('is_deleted', false)
+            .not('status', 'in', '("closed","deleted")')
+            .is('tournament_id', null)
+            .order('current_players', { ascending: false })
+            .order('created_at', { ascending: false })
+            .limit(QUERY_LIMITS.LIST);
+          if (!isCurrent()) return;
+          if (error) {
+            reportError(error, 'ClubHomePage.occupancy_poll_failed');
+            return;
           }
-          let changed = false;
-          const next = prev.map((t) => {
-            const r = fresh.get(String(t.id));
-            if (!r) return t;
-            const cp = Number(r.current_players ?? 0);
-            if (
-              Number((t as any).current_players ?? 0) === cp &&
-              (t as any).status === r.status &&
-              Number((t as any).max_players ?? 0) === Number(r.max_players ?? 0)
-            ) {
-              return t;
-            }
-            changed = true;
-            return { ...t, current_players: cp, status: r.status, max_players: r.max_players };
+          const rows = (data ?? []) as Array<{
+            id: string;
+            current_players: number | null;
+            status: string | null;
+            max_players: number | null;
+          }>;
+          const fresh = new Map(rows.map((r) => [String(r.id), r]));
+          // Decide recovery outside the state updater: React may defer or replay it.
+          const visibleTables = tablesRef.current;
+          const known = new Set(visibleTables.map((t) => String(t.id)));
+          const needsReload =
+            rows.some((r) => !known.has(String(r.id)) && Number(r.current_players ?? 0) > 0) ||
+            (rows.length < QUERY_LIMITS.LIST &&
+              visibleTables.some((t) => inClubScope(t, rtScope) && !fresh.has(String(t.id))));
+          // An omitted row is only a reason to refresh, never proof of deletion.
+          // A capped or narrower-scope snapshot cannot prove a game disappeared.
+          setTables((prev) => {
+            let changed = false;
+            const next = prev.map((t) => {
+              const r = fresh.get(String(t.id));
+              if (!r) return t;
+              const cp = Number(r.current_players ?? 0);
+              if (
+                Number((t as any).current_players ?? 0) === cp &&
+                (t as any).status === r.status &&
+                Number((t as any).max_players ?? 0) === Number(r.max_players ?? 0)
+              ) {
+                return t;
+              }
+              changed = true;
+              return { ...t, current_players: cp, status: r.status, max_players: r.max_players };
+            });
+            return changed ? (next as typeof prev) : prev;
           });
-          return changed ? (next as typeof prev) : prev;
-        });
-        if (needsReload) void loadClubData(() => isMounted);
-        refreshScopedPlaying();
+          if (needsReload) void loadClubData(() => isMounted);
+          refreshScopedPlaying();
+        } catch (error) {
+          if (isCurrent()) reportError(error, 'ClubHomePage.occupancy_poll_failed');
+        } finally {
+          occupancyInFlight = false;
+        }
       };
       occupancyTimer = setInterval(() => {
         void pollOccupancy();
@@ -2373,10 +2392,12 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
        * often than showing it an empty room.
        */
       const unionCacheKey = `ca_union_of_${resolvedId}`;
+      let unionCacheReadable = true;
       const readCachedUnion = (): string | null => {
         try {
           return sessionStorage.getItem(unionCacheKey) || null;
         } catch {
+          unionCacheReadable = false;
           return null;
         }
       };
@@ -2392,6 +2413,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       // Check if this club is inside a union
       let unionId: string | null = null;
       let unionClubIds: string[] = [resolvedId];
+      let tournamentScopeConfirmed = false;
       try {
         const { data: ucRow, error: ucErr } = await unionRowPromise;
         if (ucErr) {
@@ -2401,6 +2423,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
             (clubData as { union_id?: string | null } | null)?.union_id || readCachedUnion();
           if (fallback) {
             unionId = fallback;
+            tournamentScopeConfirmed = fallback === clubData.union_id;
             if (getIsMounted && !getIsMounted()) return;
             setIsInUnion(true);
             setUnionIdForCreate(fallback);
@@ -2433,11 +2456,17 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
             (clubData as { union_id?: string | null } | null)?.union_id || readCachedUnion();
           if (fromClubRow) {
             unionId = fromClubRow;
+            tournamentScopeConfirmed = fromClubRow === clubData.union_id;
             if (getIsMounted && !getIsMounted()) return;
             setIsInUnion(true);
             setUnionIdForCreate(fromClubRow);
             // Same reasoning as the error branch above: no inline read here.
           } else {
+            tournamentScopeConfirmed =
+              ucRow === null &&
+              clubData.union_id === null &&
+              clubData.is_union !== true &&
+              unionCacheReadable;
             cacheUnion(null); // genuinely standalone, on positive evidence
             setUnionIdForCreate(null);
           }
@@ -2446,6 +2475,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           if (getIsMounted && !getIsMounted()) return;
           setIsInUnion(true);
           unionId = ucRow.union_id;
+          tournamentScopeConfirmed = Boolean(unionId);
           setUnionIdForCreate(ucRow.union_id);
           // Remember it: the next load survives a timeout without emptying.
           cacheUnion(ucRow.union_id);
@@ -2602,7 +2632,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       const tableQuery = supabase
         .from('tables')
         .select(
-          'id, name, game_variant, stakes, current_players, max_players, status, small_blind, big_blind, min_buy_in, max_buy_in, settings, created_at, run_it_twice, run_it_twice_enabled, allow_run_it_twice, insurance_enabled, straddle_enabled, straddle_type, auto_utg_straddle, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_variant, bomb_pot_ante_multiplier, bomb_pot_ante_fixed, ante_enabled, ante, seven_deuce_enabled, seven_deuce_amount, time_bank_enabled, all_in_or_fold, club_id, is_featured, is_vip_only, label_as_new, hide_club_name, cap_enabled, cap_bb, no_rathole, pineapple_holdem, is_anonymous, restrict_observers, nit_game, career_percent_min, maintain_percent_min, maintain_hands, cluster_id, role, main_index, lifecycle'
+          'id, name, game_variant, stakes, current_players, max_players, status, small_blind, big_blind, min_buy_in, max_buy_in, settings, created_at, run_it_twice, run_it_twice_enabled, allow_run_it_twice, insurance_enabled, straddle_enabled, straddle_type, auto_utg_straddle, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_variant, bomb_pot_ante_multiplier, bomb_pot_ante_fixed, ante_enabled, ante, seven_deuce_enabled, seven_deuce_amount, time_bank_enabled, all_in_or_fold, club_id, union_id, is_private, is_featured, is_vip_only, label_as_new, hide_club_name, cap_enabled, cap_bb, no_rathole, pineapple_holdem, is_anonymous, restrict_observers, nit_game, career_percent_min, maintain_percent_min, maintain_hands, cluster_id, role, main_index, lifecycle'
         );
       // ONE rule, applied. Union clubs see the UNION's tables plus their OWN
       // private games; another club's private game is never visible.
@@ -2691,6 +2721,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         siblingClubIds: unionClubIds,
       });
 
+      const tournamentRevisionAtRead = tournamentRevisionRef.current;
       const [tableResult, clubTournamentResult, bbjResult] = await Promise.all([
         tableQuery,
         clubTournamentQuery,
@@ -2766,48 +2797,27 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       if (clubTournamentResult.error)
         reportError(clubTournamentResult.error, 'ClubHomePage.Club_tournaments_failed');
 
-      if (!clubTournamentResult.error) {
-        const allTournaments: TournamentData[] = clubTournamentResult.data
-          ? [...clubTournamentResult.data]
-          : [];
+      if (!clubTournamentResult.error && Array.isArray(clubTournamentResult.data)) {
+        const allTournaments: TournamentData[] = [...clubTournamentResult.data];
 
-        /**
-         * AN EMPTY ANSWER NEVER ERASES A FULL ONE.
-         *
-         * Two writers fill this list: the get_club_home fast path, which is
-         * union-scoped in SQL and cannot get the scope wrong, and this chain,
-         * whose scope depends on `unionId` resolving from a separate read.
-         * When that read comes back empty the chain narrows to the club's own
-         * PRIVATE tournaments -- of which a union club has none -- and then
-         * overwrites a good list with zero.
-         *
-         * Measured live 2026-08-24: get_club_home returned 161 tournaments and
-         * the lobby showed none, with "44 Games Are Open In This Club"
-         * underneath, 44 being the table count on its own.
-         *
-         * So the chain may replace this list with anything it actually found,
-         * and may not replace it with nothing. A genuinely empty club paints
-         * empty from the fast path, which had the same answer; the only case
-         * this changes is where the two disagree and one is a degraded read.
-         */
-        /* The chain has answered with real rows. From here the fast path has
-           nothing to add and could only narrow them (see listsPaintedRef). */
+        // The warm fast path cannot remove old rows. A confirmed empty read
+        // may do so, but a failed or cache-only scope cannot prove absence.
         listsPaintedRef.current = true;
         if (allTournaments.length > 0) {
           setTournaments(allTournaments);
+        } else if (!tournamentScopeConfirmed) {
+          reportError(
+            new Error(
+              `[ClubHomePage] cannot confirm empty tournaments with unresolved scope (unionId=${unionId ?? 'null'})`
+            ),
+            'ClubHomePage.emptyTournamentOverwrite'
+          );
+        } else if (tournamentRevisionAtRead !== tournamentRevisionRef.current) {
+          // A realtime change can be newer than this query's empty snapshot.
+          // Keep it and let the existing coalesced owner read again.
+          reloadPendingRef.current = true;
         } else {
-          setTournaments((prev) => {
-            if (prev.length > 0) {
-              reportError(
-                new Error(
-                  `[ClubHomePage] chain found 0 tournaments while ${prev.length} were painted - keeping them (unionId=${unionId ?? 'null'})`
-                ),
-                'ClubHomePage.emptyTournamentOverwrite'
-              );
-              return prev;
-            }
-            return allTournaments;
-          });
+          setTournaments(allTournaments);
         }
       }
       setCountsCapped(tableCapped || (clubTournamentResult.data?.length ?? 0) >= QUERY_LIMITS.LIST);

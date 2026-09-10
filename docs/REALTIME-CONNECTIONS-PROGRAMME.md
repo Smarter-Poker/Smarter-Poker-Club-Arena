@@ -37,6 +37,18 @@ verification when it lands.
 | 11    | Tournament lobby snapshot recovery               | Re-read on channel subscription; coalesce invalidations; replay live patches over snapshots; isolate retired tournament/account reads; preserve confirmed data on failure                 | published; device acceptance open                   |
 | 12    | Notification feed recovery and account isolation | Coalesced fresh reads, owned cache and mutations, truthful failure states, safe server feed queries, and restored notification publication                                                | published; natural-event and device acceptance open |
 
+Phase 15: Confirmed tournament inventory. Seven stale-card and realtime-race
+failures reproduced and repaired. All 26 mounted cases and 39 existing scope
+and anti-flicker contracts pass; TypeScript and production compilation pass.
+Publication and natural-event/device acceptance are not yet established.
+Scope: `docs/changelog/2026-09-10-realtime-phase15-confirmed-tournament-inventory.md`.
+
+Phase 14: Lobby inventory and waitlist recovery. PR4095 is published and the
+actually referenced public/origin page bytes are verified. Production UI,
+natural reconnect and physical-device acceptance remain open.
+Exact evidence: `docs/audits/2026-09-10-realtime-phase14-release.md`.
+Scope: `docs/changelog/2026-09-10-realtime-phase14-lobby-inventory.md`.
+
 Phase 13: Club lobby recovery ownership. Eight mounted regressions reproduced
 and repaired; 71 focused tests pass. PR4085 is published; post-release browser,
 natural reconnect and physical-device acceptance remain open.

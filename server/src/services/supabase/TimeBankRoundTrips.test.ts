@@ -109,8 +109,8 @@ describe('time bank settlement requests', () => {
         error: null,
         data: [
           {
-            id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-            joined_at: '2026-09-08T15:20:00.123456+00:00',
+            id: '10000000-0000-4000-8000-000000000001',
+            joined_at: '2026-09-09T10:00:00.123456+00:00',
             user_id: 'user',
             stack: 100,
             seat_number: 1,
@@ -123,9 +123,10 @@ describe('time bank settlement requests', () => {
     };
     mock.from.mockReturnValue(read);
     const [seat] = await loadSeatedPlayers('table');
-    expect(seat.seat_id).toBe('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
-    expect(seat.seat_joined_at).toBe('2026-09-08T15:20:00.123456+00:00');
     expect(seat.persisted_time_bank).toEqual({ remainingSeconds: null, usesRemaining: 0 });
     expect(seat.time_bank_remaining).toBe(0);
+    expect(seat.seat_id).toBe('10000000-0000-4000-8000-000000000001');
+    expect(seat.seat_joined_at).toBe('2026-09-09T10:00:00.123456+00:00');
+    expect(read.select.mock.calls[0][0]).toContain('id, joined_at, user_id');
   });
 });

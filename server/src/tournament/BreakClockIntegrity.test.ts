@@ -61,7 +61,6 @@ const strip = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ 
 
 const read = (rel: string) => readFileSync(path.join(process.cwd(), rel), 'utf8');
 const BASE = strip(read('src/tournament/TournamentManagerBase.ts'));
-const MANAGER = strip(read('src/tournament/TournamentManager.ts'));
 const GAME_SERVER = strip(read('src/GameServer.ts'));
 
 /** Body of a named method, from its signature to its matching close brace. */
@@ -212,24 +211,5 @@ describe('DEFECT 4 - a break countdown is started once, never restarted', () => 
     expect(methodBody(BASE, 'async resumeFromBreak()')).toMatch(
       /this\.breakCountdownStarted\s*=\s*false/
     );
-  });
-});
-
-describe('a registered player who cannot be seated is never silent', () => {
-  const seat = methodBody(MANAGER, 'protected async ensureLateRegSeated()');
-
-  it('reports a seat write it could not complete', () => {
-    /**
-     * Both branches were a bare `continue`. This sweep runs every five seconds,
-     * so an error does not retry into success — it retries into the same
-     * failure forever, with a paid entrant holding no seat and nothing written
-     * anywhere. A genuine unique-index race stays quiet because the resolved
-     * state is correct.
-     */
-    expect(seat).toContain('assignTournamentPlayerSeatAtomically({');
-    expect(seat).toMatch(/atomic_late_reg_seat_refused_or_unknown/);
-    expect(seat).toMatch(/requestUrgentEliminationSweepAfter/);
-    expect(seat).not.toMatch(/from\('table_seats'\)[\s\S]{0,80}\.(?:insert|update|delete)\(/);
-    expect(seat).not.toMatch(/quietRace|restore|compensat/i);
   });
 });

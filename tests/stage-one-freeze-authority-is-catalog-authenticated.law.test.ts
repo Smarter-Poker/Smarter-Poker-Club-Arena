@@ -8,52 +8,42 @@ const cutovers = [
   {
     file: '20260909165629_satellite_settlement_has_one_atomic_authority.sql',
     gate: 'require_live_satellite_cutover_freeze',
-    predicateHash: 'cff283a255830f34ad7488bbfbf70bc6',
   },
   {
     file: '20260909205412_spin_reserve_settlement_commits_its_journal_or_nothing.sql',
     gate: 'require_live_spin_cutover_freeze',
-    predicateHash: 'a29498531e4b7d3889532e80fafc8d57',
   },
   {
     file: '20260909014444_tournament_cancellation_commits_one_stored_receipt.sql',
     gate: 'require_live_cancellation_cutover_freeze',
-    predicateHash: 'a29498531e4b7d3889532e80fafc8d57',
   },
   {
     file: '20260909014457_four_full_pool_events_retire_only_their_stale_obligation_meta.sql',
     gate: 'require_live_obligation_retirement_freeze',
-    predicateHash: 'a29498531e4b7d3889532e80fafc8d57',
   },
   {
     file: '20260909014510_every_tournament_payout_names_its_source.sql',
     gate: 'require_live_payout_source_cutover_freeze',
-    predicateHash: 'a29498531e4b7d3889532e80fafc8d57',
   },
   {
     file: '20260909014534_non_satellite_terminal_settlement_commits_one_stored_receipt.sql',
     gate: 'require_live_terminal_cutover_freeze',
-    predicateHash: 'a29498531e4b7d3889532e80fafc8d57',
   },
   {
     file: '20260909014545_tournament_seat_exits_stay_inside_tournament_authority.sql',
     gate: 'require_live_seat_exit_cutover_freeze',
-    predicateHash: 'a29498531e4b7d3889532e80fafc8d57',
   },
   {
     file: '20260909041438_retire_legacy_tournament_hold_refund_door.sql',
     gate: 'require_live_legacy_hold_retirement_freeze',
-    predicateHash: 'a29498531e4b7d3889532e80fafc8d57',
   },
   {
     file: '20260909043000_tournament_terminal_roots_are_db_first_hardened.sql',
     gate: 'require_live_terminal_acl_cutover_freeze',
-    predicateHash: 'a29498531e4b7d3889532e80fafc8d57',
   },
   {
     file: '20260909165602_the_four_table_limit_is_never_satellite_cash.sql',
     gate: 'require_live_cap_correction_freeze',
-    predicateHash: 'cff283a255830f34ad7488bbfbf70bc6',
   },
 ].map((cutover) => ({
   ...cutover,
@@ -91,7 +81,7 @@ describe('stage-one freeze authority is catalog-authenticated', () => {
     expect(body).toContain(
       "to_regprocedure('public.fn_serialize_engine_maintenance_break_write()')"
     );
-    expect(body).toContain(`md5(p.prosrc) = '${cutover.predicateHash}'`);
+    expect(body).toContain("md5(p.prosrc) = 'a29498531e4b7d3889532e80fafc8d57'");
     expect(body).toContain("md5(p.prosrc) = '084ed24f99e9d08765bd86ff8b920284'");
     expect(body.match(/p\.proowner = v_relation_owner/g)).toHaveLength(2);
     expect(body).not.toContain("pg_get_userbyid(p.proowner) = '");
@@ -115,10 +105,7 @@ describe('stage-one freeze authority is catalog-authenticated', () => {
 
   it('uses one identical hard-coded authentication law at every cutover', () => {
     const bodies = cutovers.map((cutover) =>
-      taggedBody(cutover.sql, 'authenticate_entry_freeze_authority').replace(
-        cutover.predicateHash,
-        '<certified-entry-freeze-body>'
-      )
+      taggedBody(cutover.sql, 'authenticate_entry_freeze_authority')
     );
     expect(new Set(bodies).size).toBe(1);
   });

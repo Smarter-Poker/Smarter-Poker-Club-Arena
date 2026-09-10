@@ -292,13 +292,12 @@ export interface TableInfo {
 
 export interface SeatedPlayer {
   /**
-   * Database row identity for the seat dealt into this hand. Rows are reused,
-   * so this is only immutable when paired with the exact seat_joined_at below.
-   * user_id or seat_number alone must never let an old hand mutate a rejoin.
+   * Database row identity and exact join timestamp for the current occupancy.
+   * The authoritative roster supplies both; the dealt-hand boundary validates
+   * and snapshots them before this mutable roster can be used for settlement.
    */
-  seat_id: string;
-  /** Exact `joined_at` paired with seat_id; rows are reused in place. */
-  seat_joined_at: string;
+  seat_id?: string;
+  seat_joined_at?: string;
   /** Database-generated seating identity, required at every cashout boundary. */
   occupancy_id?: string;
   /** Server-only, authoritative membership used by disconnect protection. */

@@ -58,6 +58,7 @@ import { checkTournamentChipConservation } from './tournamentChipConservation.js
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { INSTANCE_ID } from '../services/tableLease.js';
 import type { InsuranceSettlement } from './InsuranceEngine.js';
+import { requireHandSeatGeneration } from './handSeatGeneration.js';
 
 /**
  * A chip is two decimal places, everywhere it is stored (#3358).
@@ -1523,6 +1524,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       miniBbjHit: this.currentHandMiniBBJHit,
       miniBbjTierId: this.currentHandMiniBBJTierId,
       dealtStacks: new Map(this.currentHandDealtStacks),
+      seatGenerations: new Map(this.currentHandSeatGenerations),
       // Capture bank values before settlement yields, just like the hand's
       // money and cards. A late continuation must not read the next hand's bank.
       timeBanks: new Map(
@@ -1973,8 +1975,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
                   throw new Error('atomic hand commit refused (missing_time_bank_snapshot)');
                 }
                 return {
-                  seat_id: player.seat_id,
-                  seat_joined_at: player.seat_joined_at,
+                  ...requireHandSeatGeneration(snap.seatGenerations, player.user_id),
                   user_id: player.user_id,
                   uses_remaining: timeBank.time_bank_uses_remaining,
                   seconds_remaining: timeBank.time_bank_remaining,
@@ -2134,8 +2135,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
                  two fields are the source of the non-cent rows in
                  club_member_table_state / club_member_daily_stats. */
               stacks: playersForRecord.map((p) => ({
-                seat_id: p.seat_id,
-                seat_joined_at: p.seat_joined_at,
+                ...requireHandSeatGeneration(snap.seatGenerations, p.user_id),
                 user_id: p.user_id,
                 stack: cents(p.stack),
                 stack_before: cents(snap.dealtStacks.get(p.user_id) ?? p.stack),

@@ -25,14 +25,10 @@ describe('an accepted hand cannot outrun its durable post-commit obligations', (
     expect(postHand).toContain('const acceptedPostCommitFacts = durablePostCommitObligations');
     expect(postHand).toContain('const postCommitObligations = durablePostCommitObligations');
     expect(postHand).toMatch(
-      /time_banks:\s*playersForRecord\.map[\s\S]*?seat_id:\s*player\.seat_id/
+      /time_banks:\s*playersForRecord\.map[\s\S]*?requireHandSeatGeneration\(snap\.seatGenerations, player\.user_id\)/
     );
     expect(postHand).toMatch(
-      /time_banks:\s*playersForRecord\.map[\s\S]*?seat_joined_at:\s*player\.seat_joined_at/
-    );
-    expect(postHand).toMatch(/stacks:\s*playersForRecord\.map[\s\S]*?seat_id:\s*p\.seat_id/);
-    expect(postHand).toMatch(
-      /stacks:\s*playersForRecord\.map[\s\S]*?seat_joined_at:\s*p\.seat_joined_at/
+      /stacks:\s*playersForRecord\.map[\s\S]*?requireHandSeatGeneration\(snap\.seatGenerations, p\.user_id\)/
     );
     expect(postHand).toContain('leaseGeneration: leaseAuthority.generation');
     expect(postHand).toContain('postCommitObligations,');
@@ -58,13 +54,13 @@ describe('an accepted hand cannot outrun its durable post-commit obligations', (
       postHand.indexOf('stacks: playersForRecord.map'),
       postHand.indexOf('rake:', postHand.indexOf('stacks: playersForRecord.map'))
     );
-    expect(timeBanks).toContain('seat_id: player.seat_id');
-    expect(timeBanks).toContain('seat_joined_at: player.seat_joined_at');
+    expect(timeBanks).toContain(
+      '...requireHandSeatGeneration(snap.seatGenerations, player.user_id)'
+    );
     expect(timeBanks).toContain('const timeBank = snap.timeBanks.get(player.user_id)');
     expect(timeBanks).toContain('uses_remaining: timeBank.time_bank_uses_remaining');
     expect(timeBanks).toContain('seconds_remaining: timeBank.time_bank_remaining');
-    expect(stacks).toContain('seat_id: p.seat_id');
-    expect(stacks).toContain('seat_joined_at: p.seat_joined_at');
+    expect(stacks).toContain('...requireHandSeatGeneration(snap.seatGenerations, p.user_id)');
     expect(timeBanks).not.toMatch(/seat_id:\s*player\.user_id|seat_id:\s*player\.seat_number/);
     expect(stacks).not.toMatch(/seat_id:\s*p\.user_id|seat_id:\s*p\.seat_number/);
   });

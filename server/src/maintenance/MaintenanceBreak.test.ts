@@ -1943,6 +1943,27 @@ describe('surviving the restart', () => {
 });
 
 describe('the schedule', () => {
+  it.each([
+    ['America/Chicago', '2026-11-01T07:54:00.000Z', '2026-11-01T08:53:00.000Z'],
+    ['America/Chicago', '2026-11-01T07:52:00.000Z', '2026-11-01T07:53:00.000Z'],
+    ['Europe/Berlin', '2026-10-25T01:54:00.000Z', '2026-10-25T02:53:00.000Z'],
+    ['Asia/Kathmandu', '2026-09-10T00:52:00.000Z', '2026-09-10T00:53:00.000Z'],
+    ['UTC', '2026-09-10T00:53:00.000Z', '2026-09-10T01:53:00.000Z'],
+    ['UTC', '2026-12-31T23:54:00.000Z', '2027-01-01T00:53:00.000Z'],
+  ])('targets the next UTC :53 in %s at %s', (zone, now, expected) => {
+    vi.stubEnv('TZ', zone);
+    try {
+      vi.setSystemTime(new Date(now));
+      const { mb } = build(0);
+      // @ts-expect-error - verify the actual private scheduler.
+      const ms = mb.msUntilNextAnnouncement();
+      expect(ms).toBe(Date.parse(expected) - Date.parse(now));
+      expect(ms).toBeGreaterThan(0);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it('announces at :53 so the countdown starts at :55 with the tournament break', () => {
     // The two must coincide: an MTT may not be stopped twice in one hour, and
     // at :55 its blind clock is already suspended.

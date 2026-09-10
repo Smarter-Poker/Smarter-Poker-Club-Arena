@@ -1742,9 +1742,12 @@ GRANT EXECUTE ON FUNCTION public.atomic_cancel_tournament(uuid, uuid)
 -- The managed-game close command used to bypass the atomic cancellation
 -- authority for an empty tournament. Its direct CANCELLED write cannot satisfy
 -- the exact deferred receipt invariant above, and it also takes the tournament
--- row before the terminal settlement lock. Preserve the current cash-table
--- cluster -> table lock order and stale-context refusal while routing only the
--- tournament branch through the one atomic cancellation authority.
+-- row before the terminal settlement lock. Preserve the current native
+-- cash-occupancy parent-before-table lock order, active-seat snapshot and
+-- stale-context refusal in the same declaration that routes only the tournament
+-- branch through the one atomic cancellation authority. The cutover therefore
+-- cannot temporarily restore an older cash close while waiting for a later
+-- composition migration.
 CREATE OR REPLACE FUNCTION public.fn_close_managed_game(
   p_kind text,
   p_game_id uuid
@@ -1852,7 +1855,9 @@ BEGIN
     IF NOT public.fn_can_create_games(v_club, v_uid) THEN
       RETURN jsonb_build_object('ok', false, 'reason', 'not_authorized');
     END IF;
-    IF upper(COALESCE(v_status, '')) IN ('COMPLETED', 'CANCELLED', 'CANCELED', 'COMPLETING') THEN
+    IF upper(COALESCE(v_status, '')) IN (
+      'COMPLETED', 'CANCELLED', 'CANCELED', 'COMPLETING'
+    ) THEN
       RETURN jsonb_build_object('ok', false, 'reason', 'already_closed');
     END IF;
 

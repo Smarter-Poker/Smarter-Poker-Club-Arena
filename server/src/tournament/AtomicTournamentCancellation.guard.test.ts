@@ -200,7 +200,7 @@ describe('tournament cancellation has one replayable database owner', () => {
     expect(MANAGED_TOURNAMENT).not.toMatch(/UPDATE public\.tournaments/i);
   });
 
-  it('preserves the latest cash-table close branch exactly', () => {
+  it('installs the current native cash-occupancy close branch atomically with cancellation', () => {
     const currentStart = SQL.indexOf('CREATE OR REPLACE FUNCTION public.fn_close_managed_game');
     expect(cashTableBranch(SQL, currentStart)).toBe(LATEST_CASH_CLOSE);
   });

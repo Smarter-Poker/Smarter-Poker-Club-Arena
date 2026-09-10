@@ -355,7 +355,8 @@ BEGIN
            settled_at = COALESCE(o.settled_at, now()),
            updated_at = now()
      WHERE o.id = v_expected.obligation_id
-       AND o.amount_owed = v_expected.amount_owed
+       AND o.amount_owed IN (
+             v_expected.amount_owed, v_expected.amount_paid)
        AND o.amount_paid = v_expected.amount_paid;
 
     SELECT count(*) INTO v_rows

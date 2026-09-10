@@ -43,4 +43,3 @@ BEGIN
    RAISE EXCEPTION 'Accepted-hand source cutover postcondition failed';
  END IF;
 END $patch$;
-

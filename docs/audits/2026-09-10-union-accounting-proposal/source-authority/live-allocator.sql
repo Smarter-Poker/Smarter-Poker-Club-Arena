@@ -50,4 +50,3 @@ AS $function$
     FROM equal_ranked
    WHERE COALESCE(p_method, 'WEIGHTED_CONTRIBUTED') = 'DEALT_EQUAL';
 $function$;
-

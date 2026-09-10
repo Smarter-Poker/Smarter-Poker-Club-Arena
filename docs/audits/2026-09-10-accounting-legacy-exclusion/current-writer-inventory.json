@@ -1,0 +1,17 @@
+{
+  "project_id": "kuklfnapbkmacvwxktbh",
+  "scope": "Read-only public function-body inventory for literal INSERT/UPDATE/DELETE references to agent_commission_settlements. Not proof about ad-hoc operator SQL or arbitrary dynamic relation names.",
+  "writers": [
+    {
+      "observed_at": "2026-09-10 19:05:23.064232+00",
+      "signature": "fn_agent_claim_commission(uuid,uuid,integer)",
+      "body_md5": "ecd40da476bd8dd829d381fb2ee5a03e"
+    },
+    {
+      "observed_at": "2026-09-10 19:05:23.064232+00",
+      "signature": "fn_settle_round2_club_to_agents(uuid,timestamp with time zone,timestamp with time zone)",
+      "body_md5": "6b6e58eb5eaba25f7ff3fd69e742cb01"
+    }
+  ],
+  "review": "Both captured writers insert full still-payable window sums and row counts after real money movements. Direct claim replays return the durable prior chip transaction before a new insertion. Neither writer stamps contributing agent_commissions rows before the final receipt."
+}

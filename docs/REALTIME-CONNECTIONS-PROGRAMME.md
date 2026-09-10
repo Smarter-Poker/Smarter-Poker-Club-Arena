@@ -47,6 +47,8 @@ Exact evidence: `docs/audits/2026-09-10-realtime-phase16-release.md`.
 Subsequent production acceptance, the Cashier canary readiness correction, and
 loaded-fleet qualifications: `docs/audits/2026-09-10-realtime-acceptance-follow-through.md`.
 Scope: `docs/changelog/2026-09-10-realtime-phase16-cashier-directory.md`.
+A subsequent live run exposed Cashier menu clipping at 320px. The scoped portal
+repair and pending viewport acceptance are recorded in the follow-through audit.
 
 Phase 15: Confirmed tournament inventory. Seven stale-card and realtime-race
 failures reproduced and repaired. All 26 mounted cases and 39 existing scope
@@ -58,7 +60,7 @@ Subsequent production run 34440738779 passed two Cashier and six ClubLobby cases
 with two ClubLobby skips; the overall run still had nine failures. Three account
 preflight paths omitted the outer Terms gate before profile readiness. Their
 correction is recorded in `docs/changelog/2026-09-10-production-account-terms-preflight.md`;
-a subsequent normal production run must verify it. Full acceptance remains open.
+run 34449578074 verified the repaired preflights and footer. Full acceptance remains open.
 Scope: `docs/changelog/2026-09-10-realtime-phase15-confirmed-tournament-inventory.md`.
 
 Phase 14: Lobby inventory and waitlist recovery. PR4095 is published and the

@@ -218,11 +218,11 @@ describe('the reserved Stage-B forward authority boundaries stay split', () => {
     );
     for (const functionHash of [
       '85534593874dc5d908193ccbfc309719',
-      '25cf8792d0d7b4ebf1d383072ca2834c',
+      '0f491a45693fcf3182719647c5ed7aee',
       '0811b7a7795234ed8bc84c606d9a5a62',
       '68813ee03e355e2eec053e15bf40f98d',
       '466c39065b59cf7922a5859df9f26bd3',
-      '37bc550ccb878c042773d0789c8ef355',
+      'f00ad0e9a08496d96f6375cbf6f30678',
     ]) {
       expect(expansion).toContain(functionHash);
     }

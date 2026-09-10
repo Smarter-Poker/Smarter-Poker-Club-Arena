@@ -376,7 +376,7 @@ BEGIN
          '85534593874dc5d908193ccbfc309719','plpgsql','v','trigger',
          0,ARRAY['search_path=public']::text[],'{postgres=X/postgres}'),
         ('public.fn_ca_open_tournament_seat_exit_authority(uuid,text,uuid)',
-         '25cf8792d0d7b4ebf1d383072ca2834c','plpgsql','v','uuid',
+         '0f491a45693fcf3182719647c5ed7aee','plpgsql','v','uuid',
          1,ARRAY['search_path=public, pg_temp']::text[],'{postgres=X/postgres}'),
         ('public.fn_ca_close_tournament_seat_exit_authority(uuid,boolean)',
          '0811b7a7795234ed8bc84c606d9a5a62','plpgsql','v','integer',
@@ -389,7 +389,7 @@ BEGIN
          0,ARRAY['search_path=public, pg_temp','statement_timeout=30s']::text[],
          '{postgres=X/postgres,service_role=X/postgres}'),
         ('public.fn_resolve_committed_tournament_seat_move(uuid,uuid,uuid,uuid,uuid,integer,text)',
-         '37bc550ccb878c042773d0789c8ef355','plpgsql','v','jsonb',
+         'f00ad0e9a08496d96f6375cbf6f30678','plpgsql','v','jsonb',
          0,ARRAY['search_path=public, pg_temp','statement_timeout=30s']::text[],
          '{postgres=X/postgres,service_role=X/postgres}')
       ) required(identity,source_md5,language_name,volatility,return_type,

@@ -34,7 +34,7 @@
  * it against this file.
  */
 
-import type { GameVariant } from '../types.js';
+import type { GameVariant, HorseVariantRules } from '../types.js';
 
 /**
  * Hole cards dealt, per variant.
@@ -100,6 +100,23 @@ export function isShortDeckVariant(variant?: string | null): boolean {
 /** Cards in the deck this variant is dealt from. */
 export function deckSizeFor(variant?: string | null): number {
   return isShortDeckVariant(variant) ? SHORT_DECK_SIZE : FULL_DECK_SIZE;
+}
+
+/**
+ * Public rules compiled into every live horse snapshot. Keeping this beside
+ * the settlement/deal helpers lets the producer and worker validate the exact
+ * same variant contract instead of maintaining another spelling-based copy.
+ */
+export function horseVariantRulesFor(variant?: string | null): HorseVariantRules {
+  const normalized = norm(variant);
+  const omaha = isOmahaVariant(normalized);
+  return {
+    holeCardsDealt: holeCardCount(normalized),
+    holeCardsUse: normalized === 'pineapple' ? 'discard_to_two' : omaha ? 'exactly_two' : 'any',
+    boardCardsUse: omaha ? 'exactly_three' : 'any',
+    deckSize: deckSizeFor(normalized),
+    splitLow8OrBetter: isHiLoVariant(normalized),
+  };
 }
 
 /**

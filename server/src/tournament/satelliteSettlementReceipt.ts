@@ -1,3 +1,4 @@
+import { uuidShape } from '../lib/uuidShape.js';
 export type SatelliteTicketDeliveryKind = 'seat' | 'cash' | 'ticket';
 
 export interface SatelliteSettlementAward {
@@ -169,10 +170,7 @@ function canonicalTimestamptz(value: unknown): string | null {
 }
 
 function uuid(value: unknown): string | null {
-  return typeof value === 'string' &&
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
-    ? value
-    : null;
+  return uuidShape(value);
 }
 
 function uniqueUuidArray(value: unknown): string[] | null {

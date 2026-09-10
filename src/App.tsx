@@ -47,7 +47,7 @@ import MilestoneToast from './components/common/MilestoneToast';
 import { GlobalBalanceSync } from './core/useGlobalBalanceSync';
 import ClubBottomNav from './components/club/ClubBottomNav';
 import { shouldShowClubFooterFor } from './components/club/clubFooterVisibility';
-import { useInTabLobbyActive } from './components/club/inTabLobbySurface';
+import { useInTabLobbyActive, useInTabLobbyClubId } from './components/club/inTabLobbySurface';
 
 // Auth Guards
 import { AuthGuard, GuestGuard } from './components/auth/AuthGuard';
@@ -263,7 +263,7 @@ const HouseAdsPage = lazyWithRetry(() => import('./pages/admin/HouseAdsPage'));
 
 // Loading fallback
 function LoadingSpinner() {
-  return <LoadingState message="Preparing Club Arena" />;
+  return <LoadingState message="Preparing Poker Arena" />;
 }
 
 /**
@@ -284,8 +284,8 @@ import SlugEnforcer from './components/common/SlugEnforcer';
 import RouterBridge from './components/common/RouterBridge';
 import { IS_NATIVE_BUILD } from './lib/appBase';
 
-function ClubFooterMount() {
-  return <ClubBottomNav />;
+function ClubFooterMount({ clubId }: { clubId?: string }) {
+  return <ClubBottomNav clubId={clubId} />;
 }
 
 /** The footer probe must stay outside auth, TOS, realtime, and data providers.
@@ -305,6 +305,7 @@ function ClubFooterProbe() {
 function FullApp() {
   const location = useLocation();
   const inTabLobbyActive = useInTabLobbyActive();
+  const inTabLobbyClubId = useInTabLobbyClubId();
   /* The listener the service worker has always been posting SHELL_UPDATED to
      and never had. Without it a cache-first shell — and the exact hashed
      chunks it names — is served for the life of the session, so a player can
@@ -2168,7 +2169,11 @@ function FullApp() {
           </Suspense>
           {/* Route OR in-tab lobby: the "+" lobby lives on /table/<id>, and the
               footer is owed to the lobby, not to the URL (inTabLobbySurface). */}
-          {shouldShowClubFooterFor(location.pathname, inTabLobbyActive) && <ClubFooterMount />}
+          {shouldShowClubFooterFor(location.pathname, inTabLobbyActive, inTabLobbyClubId) && (
+            <ClubFooterMount
+              clubId={inTabLobbyActive ? (inTabLobbyClubId ?? undefined) : undefined}
+            />
+          )}
           {/* Persistent multi-table layer — mounted BESIDE <Routes>, it never
               unmounts on navigation: engine sockets for seated tables survive
               every route. Off /table/* it collapses to display:none and

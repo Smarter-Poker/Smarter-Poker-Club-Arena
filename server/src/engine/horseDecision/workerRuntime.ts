@@ -444,12 +444,33 @@ export class HorseDecisionWorkerRuntime {
     if (!Array.isArray(request.player.cards)) {
       throw new Error('horse state requires hero private cards');
     }
-    const expectedHoleCards =
-      gs.gameVariant === 'pineapple' && (gs.stage === 'turn' || gs.stage === 'river')
-        ? 2
-        : expectedRules.holeCardsDealt;
+    if (gs.gameVariant === 'pineapple' && gs.stage === 'pineapple_discard') {
+      throw new Error('horse fast decisions cannot run during the pineapple discard round');
+    }
+    // Crazy Pineapple deals three cards preflop, then returns to the ordinary
+    // FLOP betting stage after every live seat has discarded to two. The
+    // previous validator only recognized turn/river as post-discard streets,
+    // so the first legal flop decision killed the process-wide worker. Bind
+    // the two-card state to the controller's authoritative discard record;
+    // accepting either card count generically would hide a real wiring fault.
+    const pineapplePostDiscard =
+      gs.gameVariant === 'pineapple' &&
+      (gs.stage === 'flop' || gs.stage === 'turn' || gs.stage === 'river');
+    const expectedHoleCards = pineapplePostDiscard ? 2 : expectedRules.holeCardsDealt;
     if (request.player.cards.length !== expectedHoleCards) {
       throw new Error('horse state hero card count does not match variant/street rules');
+    }
+    if (
+      pineapplePostDiscard &&
+      (!Array.isArray(gs.actionHistory) ||
+        !gs.actionHistory.some(
+          (action) =>
+            action.userId === request.player.user_id &&
+            action.action === 'discard' &&
+            action.stage === 'pineapple_discard'
+        ))
+    ) {
+      throw new Error('horse state pineapple post-discard cards lack authoritative discard proof');
     }
     const validRanks = new Set(['2', '3', '4', '5', '6', '7', '8', '9', 'T', 'J', 'Q', 'K', 'A']);
     const validSuits = new Set(['clubs', 'diamonds', 'hearts', 'spades']);

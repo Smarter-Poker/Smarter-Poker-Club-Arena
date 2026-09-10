@@ -23,13 +23,25 @@ export function resolveSentryUpload(
   const version = env.VITE_APP_VERSION;
   if (!version || !/^[0-9a-f]{40}$/.test(version))
     return disabled('full-release-source-sha-required');
-  const git = (args: string[]) =>
-    execFileSync('git', args, {
+  try {
+    // Git hooks export repository-local state that overrides cwd. Follow Git's
+    // documented foreign-worktree boundary so identity belongs to this build.
+    const gitEnv = { ...process.env };
+    const localNames = execFileSync('git', ['rev-parse', '--local-env-vars'], {
       cwd,
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
-    }).trim();
-  try {
+    })
+      .trim()
+      .split(/\r?\n/);
+    for (const name of localNames) delete gitEnv[name];
+    const git = (args: string[]) =>
+      execFileSync('git', args, {
+        cwd,
+        env: gitEnv,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      }).trim();
     if (git(['rev-parse', '--is-shallow-repository']) !== 'false') {
       return disabled('complete-source-history-required');
     }

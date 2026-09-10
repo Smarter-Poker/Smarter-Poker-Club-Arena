@@ -1,9 +1,8 @@
 {
-  "observed_at": "2026-09-10T14:50:12.712033+00:00",
+  "observed_at": "2026-09-10T14:58:36.915216+00:00",
   "scope": "Integrated build upload identity and effective Rollup file concurrency",
-  "tested_source_head": "6a8ab65ca1e6cf508fb92be6d921a800306c277e",
   "integrated_tests": {
-    "passed": 57,
+    "passed": 58,
     "files": [
       "tests/unit/sentryUploadIdentity.test.ts",
       "tests/source-maps-go-to-sentry-not-to-players.law.test.ts",
@@ -18,14 +17,14 @@
   "upstream_merge_changed_test_inputs": [],
   "source_sha256": {
     "vite.config.ts": "175fb034abb94174ca8a61e0b37bcca241dc41b51ba1cdc6fcaaa10197639d1b",
-    "scripts/sentry-upload-policy.ts": "d4536d354dba2f68b770c59307a3b956614992f4c918abf7a0f238c96cc5b80b",
+    "scripts/sentry-upload-policy.ts": "b377603cd8090bed8404301cef33037073a2dea651f1fb7972fe385fc0c88be5",
     ".github/workflows/ci.yml": "e10a53a12bdfdf3d80cd426c8f442a64e6500423daa0b6c163803a4b4e372f37",
     ".github/workflows/publish-club-arena.yml": "e60029a73d0722a1edf1af39ab2c518abe10a296952db27ea6edc9fdfa2a308e",
     "package.json": "da31bed9fb6983ef9e84af45e0bfeeac0c6901170e664ae892971bbb552ba0eb",
     "package-lock.json": "5d6df6e2de108741eea6994ca7ad3aafa72c7852615f695a6972496e76fc9383",
     "tsconfig.json": "e214d6a03df4648779f52cde55ce0ee234a046396251f16b3c6fc2131d3ea03c",
     "tsconfig.node.json": "c3dd0fb522feba3596713f51b95bd53d781d845d24aedbfa2ac093d8b39c5120",
-    "tests/unit/sentryUploadIdentity.test.ts": "bf291318521fc6988b4851eab57ba90368d4007b73d55e58e436b5a4bf868afe",
+    "tests/unit/sentryUploadIdentity.test.ts": "4e4d9a42d870d1186cc55b7cc21c273660da516715acbf8199fbeb3e182b02c3",
     "tests/source-maps-go-to-sentry-not-to-players.law.test.ts": "2b7ebf8d08e9d00a5d7f783773cc694395edc8d9a982016f9e8eacc4d4f3ad70",
     "tests/unit/stampBuildProvenance.test.ts": "9aa4b03a1f553da9f6137472d3fbab8c4baaca96d788efb6364dd6e8f9607254",
     "tests/unit/buildProvenanceWorkflow.test.ts": "384515f525f3ca112d1ae7dfe58f909b6de7801b2f9575d47fbafd8df031e585",
@@ -39,5 +38,16 @@
     "Sentry publisher403 remains unresolved; credentials and permissions unchanged",
     "No captured-rakeback UI or satellite Stage-B activation",
     "Original Phase3 control register remains4 of58 fully verified"
-  ]
+  ],
+  "tested_worktree_base_head": "98bd8503429ab9d8e316a233976975216a50dab0",
+  "test_identity": "Exact working-tree code hashes below; tested before normal commit.",
+  "hook_environment_regression": {
+    "normal_push_before_fix": "blocked6 identity cases; no remote publication",
+    "targeted_reproduction_exit": 1,
+    "cause": "Git hook repository-local environment overrides the requested working directory",
+    "fix": "Remove only git rev-parse --local-env-vars keys from copied child environment",
+    "after_fix_integrated_tests": 58,
+    "independent_review": "phase3_acceptance approved policy and real-Git/plugin regression case",
+    "reference": "https://git-scm.com/docs/githooks"
+  }
 }

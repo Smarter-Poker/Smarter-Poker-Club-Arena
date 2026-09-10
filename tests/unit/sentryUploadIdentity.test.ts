@@ -202,6 +202,26 @@ describe('Source map upload identity', () => {
     });
   });
 
+  it('checks the requested tree instead of the repository exported by a Git hook', async () => {
+    const hookGitDir = git(['rev-parse', '--absolute-git-dir'], repository);
+    vi.stubEnv('GIT_DIR', hookGitDir);
+    vi.stubEnv('GIT_WORK_TREE', repository);
+    vi.stubEnv('GIT_INDEX_FILE', path.join(hookGitDir, 'index'));
+    expect(git(['rev-parse', 'HEAD'], repository)).not.toBe(head);
+    expect(resolveSentryUpload(environment(), fixture)).toEqual({
+      enabled: true,
+      release: 'club-arena@' + head,
+      reason: 'verified-release',
+    });
+    await loadConfig();
+    expect(mocks.sentry).toHaveBeenCalledTimes(1);
+    writeFileSync(path.join(fixture, 'source.js'), 'dirty source');
+    expect(resolveSentryUpload(environment(), fixture)).toEqual({
+      enabled: false,
+      reason: 'source-tree-is-dirty',
+    });
+  });
+
   it('fails closed when Git cannot verify the source', () => {
     expect(resolveSentryUpload(environment(), path.join(fixture, 'missing'))).toEqual({
       enabled: false,

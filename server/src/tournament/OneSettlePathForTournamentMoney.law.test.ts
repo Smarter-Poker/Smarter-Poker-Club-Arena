@@ -105,17 +105,31 @@ describe('one terminal authority owns each tournament finish', () => {
     expect(terminalRpc).toMatch(/verifyTournamentCompletionReceipt\s*\(/);
   });
 
-  it('the final-table deal uses the same terminal transaction', () => {
+  it('the final-table deal carries exact consent through the terminal transaction and resolver', () => {
     const source = stripComments(
       readFileSync(join(__dirname, 'TournamentManagerEliminations.ts'), 'utf8')
     );
-    const deal = source.slice(
-      source.indexOf('protected async checkFinalTableDeal'),
-      source.indexOf('private async settleFinalTableDeal')
-    );
+    const start = source.indexOf('private async completeFinalTableDealAtBoundary');
+    const end = source.indexOf('private async settleFinalTableDeal', start);
+    expect(start).toBeGreaterThanOrEqual(0);
+    expect(end).toBeGreaterThan(start);
+    const deal = source.slice(start, end);
+    expect(deal.match(/requestTournamentTerminalReceipt\s*\(/g)).toHaveLength(1);
     expect(deal).toMatch(
-      /requestTournamentTerminalReceipt\(\s*this\.tournamentId,\s*'final_table_deal',\s*null\s*\)/
+      /requestTournamentTerminalReceipt\(\s*this\.tournamentId,\s*'final_table_deal',\s*null,\s*\{\s*dealProposal:\s*\{\s*proposalId:\s*consensus\.proposalId,\s*revision:\s*consensus\.revision\s*\}\s*\}\s*\)/
     );
+    expect(terminalRpc).toMatch(
+      /const proposalRequest = dealProposal\s*\?\s*\{\s*\.\.\.request,\s*p_proposal_id:\s*dealProposal\.proposalId,\s*p_revision:\s*dealProposal\.revision,?\s*\}\s*:\s*null/
+    );
+    expect(terminalRpc).toMatch(
+      /proposalRequest\s*\?\s*await supabase\.rpc\('fn_complete_tournament_terminal_proposal',\s*proposalRequest\)/
+    );
+    expect(terminalRpc).toMatch(
+      /proposalRequest\s*\?\s*await supabase\.rpc\('fn_resolve_tournament_terminal_proposal_outcome',\s*proposalRequest\)/
+    );
+    expect(terminalRpc).toContain('receipt && proposalIdentityIsExact(data)');
+    expect(terminalRpc).toContain('proposalIdentityIsExact(outcome)');
+    expect(terminalRpc).toContain('receipt && proposalIdentityIsExact(outcome.receipt)');
   });
 
   it('the scanner catches literal and indirect regressions', () => {

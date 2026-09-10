@@ -1,3 +1,7 @@
+## 2026-09-10: Final Deal CSS Dependency And Terminal Contracts
+
+Declare the existing overview stylesheet used by the standalone deal review. Update terminal source contracts to require parked roster validation and exact proposal identity through completion and recovery. The affected client suite passed 81 tests and the server suite passed 75 tests. No schema change. See docs/changelog/2026-09-10-final-deal-ci-contracts.md.
+
 # MIGRATION CHANGELOG
 
 ## 2026-09-10: Prepared deal consent follows the current hand barrier

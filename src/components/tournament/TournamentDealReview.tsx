@@ -8,6 +8,7 @@ import {
   type TournamentDealReviewState,
 } from '../../services/TournamentDealService';
 import { reportError } from '../../utils/errorReporter';
+import './details/DetailOverviewTab.css';
 import './TournamentDealReview.css';
 
 interface Props {

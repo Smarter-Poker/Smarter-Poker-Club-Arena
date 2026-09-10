@@ -605,11 +605,19 @@ export class TournamentManager extends TournamentManagerEliminations {
       }
     }
 
-    // A one-player table cannot deal, so it has no table engine. It still has
-    // to remain in the balancer's input or its last player can never be moved.
+    /* A TABLE WITH ONE PLAYER NEVER GETS AN ENGINE (2026-09-10).
+       This read `this.tableEngines`, which holds only tables that are DEALING.
+       A table cannot deal to one player, so a table down to its last player has
+       no engine, so the balancer never saw it, so nobody moved that player to
+       join anybody. Thirty-five running events were frozen exactly that way -
+       every live table holding one funded player and no table holding two, the
+       worst of them 36 players on 36 tables. Ask the database which tables
+       still hold players; loadBalancerTables already reads everything else from
+       there and only wants tableEngines for a button seat, which defaults. */
     const liveTableIds = await this.liveTournamentTableIdsWithPlayers();
     if (!this.eliminationMutationAllowed()) return;
     if (liveTableIds === null) {
+      // UNKNOWN is not "balanced". Come back rather than conclude anything.
       this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
       return;
     }
@@ -725,8 +733,9 @@ export class TournamentManager extends TournamentManagerEliminations {
     }
 
     // ── STEP 2: Standard gap-1 rebalancing across remaining tables ──
-    // Re-fetch after a possible break. Database seats remain authoritative;
-    // an engine-less one-player source is still outstanding balance work.
+    // Re-fetch after potential break (tables may have changed)
+    // Same rule as the break step above: the tables that hold players, not the
+    // tables that happen to be dealing.
     const freshTableIds = await this.liveTournamentTableIdsWithPlayers();
     if (!this.eliminationMutationAllowed()) return;
     if (freshTableIds === null) {

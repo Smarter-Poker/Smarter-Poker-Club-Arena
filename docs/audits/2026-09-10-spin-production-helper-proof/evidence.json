@@ -72,7 +72,7 @@
         "sha256": "cee059d76cdfcdbcf2834ff7bfd817699c4b429f3502fa41d62362ed8330db86"
       }
     ],
-    "limit": "Pure rule methods only; lifecycle changes in PR4105 are absent from this deployed engine."
+    "limit": "Historical pure-rule compatibility check against6aee; PR4105/4163 lifecycle adoption was separately verified below."
   },
   "publication": {
     "observed_at": "2026-09-10T14:34:10.048900+00:00",
@@ -130,14 +130,24 @@
     "next_owner_workflow_run": 34488625832,
     "next_target": "0a76896196c1bea84de06d14ff998b83ab921117",
     "next_target_includes_pr4105_and_pr4163": true,
-    "next_target_adoption": "pending actual cutover and release seal"
+    "next_target_adoption": "Verified in adoption_closeout; historical prior6aee observation retained.",
+    "adoption_closeout": {
+      "run": 34488625832,
+      "job": 102909252918,
+      "target": "0a76896196c1bea84de06d14ff998b83ab921117",
+      "status": "success; cutover, database version, durable release seal and restart persistence verified",
+      "leader_observed_at": "2026-09-10T14:59:32.186648Z",
+      "version": "0a768961",
+      "instance": "1-b9608436",
+      "heartbeat_at": "2026-09-10T14:59:28.739636Z",
+      "includes_pr4105_and_pr4163": true
+    }
   },
   "phase": 3,
   "original_controls": 58,
   "fully_verified_controls": ["T12", "K02", "K11", "S09"],
   "open_controls": 54,
   "remaining_gates": [
-    "PR4105 engine lifecycle adoption",
     "coordinated Heads-Up clock authority",
     "canonical clock production composition",
     "source/bank/Union/agent/player funding composition",

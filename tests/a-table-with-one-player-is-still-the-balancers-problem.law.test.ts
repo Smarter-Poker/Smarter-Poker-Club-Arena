@@ -1,35 +1,59 @@
 /**
- * A table reduced to one player cannot deal and therefore has no table engine.
- * The balancer must still see that table or the remaining player can never be
- * consolidated with another table. Database seats, not dealing engines, own
- * the table roster used by both balance passes and the final-table count.
+ * A TABLE WITH ONE PLAYER IS STILL THE BALANCER'S PROBLEM (2026-09-10).
  *
- * Registry: docs/laws.d/a-table-with-one-player-is-still-the-balancers-problem.md
+ * `checkTableBalance` took its table list from `this.tableEngines`, which holds
+ * only tables that are DEALING. A table cannot deal to one player, so a table
+ * down to its last player has no engine; with no engine the balancer never saw
+ * it; and so nobody ever moved that player to join anybody. The table stayed at
+ * one player for ever and the event could not deal another hand.
+ *
+ * Both gates read the same wrong thing:
+ *
+ *     if (this.tableEngines.size <= 1) return;          // the break step
+ *     if (this.tableEngines.size > 1) { ... }           // the rebalance step
+ *
+ * MEASURED ON PRODUCTION 2026-09-10: thirty-five RUNNING events were in that
+ * state - two or more funded players, and no single table holding two of them.
+ * The worst was a $100 Freeroll with 36 funded players on 36 tables, one each,
+ * frozen since 10:04. Not slow: structurally unable to deal a hand, every one
+ * of them holding prize money, some for more than fourteen hours.
+ *
+ * THE RULE: the balancer works on the tables that HOLD PLAYERS, read from the
+ * database, not on the tables that happen to be dealing.
+ * `loadBalancerTables` already sources every field it needs from the database
+ * and consults `tableEngines` only for a button seat, which defaults to 0 - an
+ * engineless table was always representable, it was simply never in the list.
+ *
+ * An unreadable answer is UNKNOWN, never "balanced": both gates re-arm the
+ * balance redrive and return rather than concluding anything.
+ *
+ * docs/changelog/2026-09-10-a-table-with-one-player-is-still-the-balancers-problem.md
  */
-import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'fs';
-import { join } from 'path';
+import { describe, it, expect } from 'vitest';
+import fs from 'fs';
+import path from 'path';
 import { sliceMethod } from './helpers/sourceWindow';
 
-const MANAGER = readFileSync(
-  join(process.cwd(), 'server/src/tournament/TournamentManager.ts'),
+const MANAGER = fs.readFileSync(
+  path.join(process.cwd(), 'server/src/tournament/TournamentManager.ts'),
   'utf8'
 );
-const BASE = readFileSync(
-  join(process.cwd(), 'server/src/tournament/TournamentManagerBase.ts'),
+const BASE = fs.readFileSync(
+  path.join(process.cwd(), 'server/src/tournament/TournamentManagerBase.ts'),
   'utf8'
 );
 
 describe("a table with one player is still the balancer's problem", () => {
-  it('never derives either ordinary balance pass from the engine registry', () => {
+  it('the balancer no longer decides anything from the engine count', () => {
     const balance = sliceMethod(MANAGER, 'protected async checkTableBalance');
     expect(balance).not.toContain('this.tableEngines.size <= 1');
     expect(balance).not.toContain('this.tableEngines.size > 1');
+    // and it never sources its table list from the engines either
     expect(balance).not.toContain("[...this.tableEngines.keys()], 'balanceInitial'");
     expect(balance).not.toContain("[...this.tableEngines.keys()],\n        'balanceFresh'");
   });
 
-  it('feeds both balance passes from live database seats', () => {
+  it('both steps take the tables that hold players, from the database', () => {
     const balance = sliceMethod(MANAGER, 'protected async checkTableBalance');
     expect(balance).toContain(
       'const liveTableIds = await this.liveTournamentTableIdsWithPlayers();'
@@ -41,31 +65,27 @@ describe("a table with one player is still the balancer's problem", () => {
     expect(balance).toContain("this.loadBalancerTables(freshTableIds, 'balanceFresh')");
   });
 
-  it('redrives both unreadable table-list results instead of calling them balanced', () => {
+  it('an unreadable table list is UNKNOWN, never balanced', () => {
     const balance = sliceMethod(MANAGER, 'protected async checkTableBalance');
-    for (const variable of ['liveTableIds', 'freshTableIds']) {
-      expect(balance).toMatch(
-        new RegExp(
-          `if \\(\\s*${variable} === null\\s*\\) \\{[\\s\\S]*?` +
-            `requestUrgentEliminationSweepAfter\\(TournamentManagerBase\\.BALANCE_REDRIVE_MS\\);` +
-            `[\\s\\S]*?return;[\\s\\S]*?\\}`
-        )
-      );
-    }
+    // both gates must re-arm and return rather than fall through
+    const nulls = balance.match(/TableIds === null/g) ?? [];
+    expect(nulls.length, 'both steps must handle an unreadable list').toBe(2);
+    expect(balance).toContain('UNKNOWN is not "balanced"');
   });
 
-  it('returns live table ids with unleft seats and preserves unknown as null', () => {
+  it('the reader asks for live tables that still hold a seated player', () => {
     const reader = sliceMethod(BASE, 'protected async liveTournamentTableIdsWithPlayers');
     expect(reader).toContain("in('status', ['running', 'waiting'])");
     expect(reader).toContain("is('left_at', null)");
-    expect(reader).toContain('if (tablesErr || !liveTables) return null;');
-    expect(reader).toContain('if (seatsErr || !seats) return null;');
+    // it returns ids, and an unreadable read is null rather than an empty list
+    expect(reader).toContain('return null;');
     expect(reader).toContain('return ids.filter((id) => holding.has(id));');
   });
 
-  it('keeps the final-table count on the same database authority', () => {
+  it('the final-table gate still asks the same question, through the same reader', () => {
     const counter = sliceMethod(BASE, 'protected async countLiveTablesWithPlayers');
     expect(counter).toContain('await this.liveTournamentTableIdsWithPlayers()');
+    // null still means UNKNOWN, which every caller treats as "not yet"
     expect(counter).toContain('ids === null ? null : ids.length');
   });
 });

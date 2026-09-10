@@ -282,6 +282,10 @@ export const horseDecisionWorkerQueueDepth: Gauge = alwaysOnRegistry.gauge(
   'poker_horse_decision_worker_queue_depth',
   'Accepted live horse-decision operations either queued or actively computing in the process-wide FIFO.'
 );
+export const horseDecisionWorkerExpiredJobs: Gauge = alwaysOnRegistry.gauge(
+  'poker_horse_decision_worker_expired_jobs',
+  'Accepted horse-decision operations whose queue-plus-compute caller deadline elapsed since this worker started. Decision expirations take the legal fail-safe action without misclassifying a healthy worker as wedged.'
+);
 export const horseDecisionWorkerActiveJobAgeMs: Gauge = alwaysOnRegistry.gauge(
   'poker_horse_decision_worker_active_job_age_ms',
   'Age of the currently executing horse-decision worker operation in milliseconds; 0 when idle.'

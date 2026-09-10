@@ -80,6 +80,7 @@ import {
   horseDecisionWorkerLastComputeMs,
   horseDecisionWorkerOldestQueuedAgeMs,
   horseDecisionWorkerQueueDepth,
+  horseDecisionWorkerExpiredJobs,
   horseDecisionWorkerReady,
   equityWorkerPoolReady,
   equityWorkerPoolConfiguredWorkers,
@@ -3372,6 +3373,7 @@ export class GameServer {
         // healthy scale.
         horseDecisionWorkerReady.set(worker.phase === 'ready' ? 1 : 0);
         horseDecisionWorkerQueueDepth.set(worker.queueDepth);
+        horseDecisionWorkerExpiredJobs.set(worker.expiredJobs);
         horseDecisionWorkerActiveJobAgeMs.set(worker.activeJobAgeMs ?? 0);
         horseDecisionWorkerOldestQueuedAgeMs.set(worker.oldestQueuedAgeMs ?? 0);
         horseDecisionWorkerLastCompletionAgeMs.set(

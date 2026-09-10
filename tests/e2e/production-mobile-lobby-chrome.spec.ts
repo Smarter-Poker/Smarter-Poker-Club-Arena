@@ -69,11 +69,15 @@ test.describe('the mobile lobby chrome on production', () => {
     await expect.poll(() => small.textContent(), { timeout: 20_000 }).toMatch(/^\d+ Balances?$/);
     const printed = await small.textContent();
 
-    /* ...and it is still there once every balance has had time to load. The
-       2026-09-10 defect was a count published and then taken back; a single
-       read at the right instant would have passed. */
+    /* ...and there is still a count once every balance has had time to load.
+       The 2026-09-10 defect was a count published and then taken back; a
+       single read at the right instant would have passed. The NUMBER may
+       legitimately move in that window (the live role arriving adds a row to
+       a cached one); the bay going empty may not. */
     await page.waitForTimeout(4_000);
-    expect(await small.textContent(), 'the count was taken back after it printed').toBe(printed);
+    expect(await small.textContent(), 'the count was taken back after it printed').toMatch(
+      /^\d+ Balances?$/
+    );
 
     const m = await page.evaluate((titleCentrePct) => {
       const btn = document.querySelector('.lobby-wallets-trigger')!;

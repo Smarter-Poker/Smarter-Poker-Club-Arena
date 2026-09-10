@@ -64,6 +64,8 @@ export interface StoredPot {
   eligible?: readonly string[] | null;
   /** Tolerated alias — the engine's in-memory Pot names it `eligiblePlayers`. */
   eligiblePlayers?: readonly string[] | null;
+  /** Exact awards stored with the accepted hand, distinct from merged totals. */
+  awards?: readonly StoredWinner[] | null;
 }
 
 /** One winner as persisted on `hand_history.winners`. */
@@ -140,7 +142,7 @@ export function lastPotForPlayer(
   let best = -1;
   pots.forEach((pot, position) => {
     if (!eligibleOf(pot).includes(target)) return;
-    const declared = Number(pot?.index);
+    const declared = pot?.index == null ? NaN : Number(pot.index);
     const idx = Number.isFinite(declared) && declared >= 0 ? Math.floor(declared) : position;
     if (idx > best) best = idx;
   });
@@ -234,6 +236,43 @@ export function attributeKnockout(
   // a corrupted row, or a player who was already all in for dead money before
   // the snapshot). Old rule, unchanged.
   if (lastPot < 0) return attributeByLargestWinner(winners, target);
+
+  const exactPots = pots.filter((pot, position) => {
+    const declared = pot?.index == null ? NaN : Number(pot.index);
+    return (Number.isInteger(declared) && declared >= 0 ? declared : position) === lastPot;
+  });
+  if (exactPots.some((pot) => Object.prototype.hasOwnProperty.call(pot, 'awards'))) {
+    // New records carry the actual per-pot awards. Never substitute a merged
+    // first-pot total when this exact evidence is present but incomplete.
+    if (exactPots.length !== 1) return NONE;
+    const pot = exactPots[0];
+    const awards = pot.awards;
+    const eligible = eligibleOf(pot);
+    if (
+      !Array.isArray(awards) ||
+      awards.length === 0 ||
+      awards.some((award) => {
+        const rawIndex = award?.potIndex ?? award?.pot_index;
+        const userId = idOf(award);
+        return (
+          !/^[0-9]+$/.test(String(rawIndex ?? '')) ||
+          Number(rawIndex) !== lastPot ||
+          !userId ||
+          userId === target ||
+          !eligible.includes(userId)
+        );
+      })
+    ) {
+      return NONE;
+    }
+    const ids = winnersOfPot(awards, lastPot, target);
+    return {
+      knockerUserId: ids[0],
+      claimants: ids.map((userId) => ({ userId, weight: 1 })),
+      basis: 'pot',
+      potIndex: lastPot,
+    };
+  }
 
   for (let idx = lastPot; idx >= 0; idx--) {
     const ids = winnersOfPot(winners, idx, target);

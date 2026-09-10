@@ -120,9 +120,9 @@ describe('a public moment does not move', () => {
     expect(freeze, 'a freeze after the re-anchor would not freeze anything').toBeLessThan(reanchor);
   });
 
-  it('the later pass does not re-announce a table the early pass already reached', () => {
+  it('the later pass skips only a successful early reveal whose hold did not extend', () => {
     expect(CODE).toContain(
-      'if (this.spinRevealEmitted && this.seatFirstTableIds.includes(tableId)) continue;'
+      'if (this.spinRevealEmittedTableIds.has(tableId) && effectiveHold === holdUntil)'
     );
   });
 });

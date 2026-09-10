@@ -66,6 +66,42 @@ describe('atomic tournament seat move transport', () => {
     });
   });
 
+  it.each(['PGRST202', 'PGRST203'])(
+    'treats the pre-execution %s function routing failure as refused',
+    async (code) => {
+      const fetchReceipt = vi.fn();
+      vi.stubGlobal('fetch', fetchReceipt);
+      rpc.mockResolvedValue({ data: null, error: { code, message: 'function routing failed' } });
+      await expect(moveTournamentPlayerAtomically(input)).rejects.toBeInstanceOf(
+        TournamentSeatMoveRefusedError
+      );
+      expect(rpc).toHaveBeenCalledTimes(2);
+      expect(fetchReceipt).not.toHaveBeenCalled();
+    }
+  );
+
+  it.each(['lost response', 'retained identity'])(
+    'keeps %s ambiguous even when function routing now refuses execution',
+    async (mode) => {
+      vi.stubEnv('SUPABASE_SERVICE_ROLE_KEY', 'test-service-role-key');
+      const fetchReceipt = vi.fn().mockResolvedValue(new Response('null', { status: 200 }));
+      vi.stubGlobal('fetch', fetchReceipt);
+      if (mode === 'lost response') {
+        rpc.mockResolvedValueOnce({ data: null, error: { message: 'response lost' } });
+      }
+      rpc.mockResolvedValue({
+        data: null,
+        error: { code: 'PGRST202', message: 'function unavailable after attempted move' },
+      });
+      await expect(
+        moveTournamentPlayerAtomically(input, {
+          outcomeWasAlreadyUnknown: mode === 'retained identity',
+        })
+      ).rejects.toBeInstanceOf(TournamentSeatMoveOutcomeUnknownError);
+      expect(fetchReceipt).toHaveBeenCalledTimes(1);
+    }
+  );
+
   it('does not accept a malformed or mismatched receipt', async () => {
     rpc.mockResolvedValue({
       data: { ...receipt, destination_seat_number: 8 },

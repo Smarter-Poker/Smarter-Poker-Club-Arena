@@ -1,0 +1,13 @@
+# Funded Entry And Unregistration Rehearsal
+
+Run `python3 scripts/dev/probe-tournament-registration-funding-pg17.py --unregistrations-only`. The default runner also includes these groups, so the existing required isolated accounting CI invokes them. The runner creates and stops its own PostgreSQL 17 cluster on a private socket and accepts no database URL. The pinned CI Node pg client is supported through PGNODE.
+
+Unlike the older synthetic funded-refund fixture, each case enters through the real public request-bound registration RPC before invoking the real public request-bound refund RPC. The #4096 source transformations for the current origin-wallet debit and tournament-club resolver are retained. Current refund core/receipt and settlement-lock definitions were captured on September 10, 2026; every case checks their recorded body hashes plus the public wrappers and exact payer. No production player rows or credentials are captured.
+
+Fourteen groups prove original wallet restoration, zero escrow/fee/roster residual, replay without a new write, preserved provenance after another older membership appears, unchanged original refund after a displayed price change, full rollback after final receipt failure, overlapping same-key and distinct-key refunds, refusal after a competing start-state commit, scheduled cutoff, full rollback when the cutoff arrives mid-refund, post-start replay of a pre-start result, free registration, and a later funded registration protected from an old request. Five configured gross prices (1, 5, 10, 25 and 40) preserve exact prize/fee cents. Bounty, PKO and mystery entries preserve their separate prize, bounty and fee components through the common refund.
+
+The old-request/new-registration case supplies the database evidence behind the companion client fix: the old request receives P0404 with the exact prior-lifecycle refusal and makes no financial change. Only that refusal may retire a stale browser intent. The current invocation rejects and cannot automatically become a new refund.
+
+## Limits
+
+Auth identity/session and maintenance state are synthetic. Empty hand-history/launch tables represent an event that has not started. The competing start case commits the actual status field, not the complete production launch writer. Satellite transfer, cancellation, seat-first launch, full HTTP/RLS, the complete production trigger/foreign-key graph, and a real accepted hand racing refund remain separate controls. Unchanged supporting bodies come from the documented registration/refund fixtures; the hash check does not certify the entire live dependency graph. No cash balance adjustment, backpay, scheduled repair or production transaction is performed.

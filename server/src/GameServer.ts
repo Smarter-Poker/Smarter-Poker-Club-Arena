@@ -1617,6 +1617,22 @@ export class GameServer {
         if (!signal.aborted) this.requestPendingTournamentBountyRecovery();
       }
     },
+    // WHY A BREAK DID NOT RUN (2026-09-10): the 00:00 and 07:00 breaks were
+    // cancelled by a :53 save that timed out, and the reason lived only in a
+    // container log the next deploy deleted. One row per fault, read by
+    // fn_ca_record_break_scorecard so the page names the cause. Best-effort:
+    // MaintenanceBreak has already acted before this is called.
+    recordFault: async (fault) => {
+      const { error } = await supabase.from('engine_maintenance_break_faults').insert({
+        announced_at: new Date(fault.announcedAtMs).toISOString(),
+        stage: fault.stage,
+        outcome: fault.outcome,
+        error: fault.error,
+        engine_version:
+          process.env.GIT_COMMIT_SHA?.substring(0, 8) || process.env.ENGINE_VERSION || 'local',
+      });
+      if (error) throw new Error(error.message);
+    },
     // PHASE 4 (2026-09-02): the thaw runs in INSTALLMENTS. fn_thaw_platform
     // checkpoints each completed step in engine_maintenance_thaws.shifted and
     // returns complete:false when it has used its own ~4s budget, so no single

@@ -136,8 +136,12 @@ Immediately after the key-share apply, require:
 - unchanged function owner, ACL, `SECURITY DEFINER`, and per-function
   configuration.
 
-Restart the same exact pre-cutover image under the still-held host lock, prove
-its local and public SHA, restore the supervisor timer, and release the lock.
+Restart the same exact pre-cutover image under the still-held host lock through
+the canonical `ENGINE_UP_LOCK_HELD=1` engine-up path. Prove the local
+`127.0.0.1:8080/health` response and public health both serve that exact SHA,
+then start and prove `sp-autoheal`, start and prove the supervisor timer, and
+only then release descriptor 9. Every pre-commit abort uses this same ordered
+recovery sequence; a healthy engine alone is not authority-recovery proof.
 Across at least three heartbeat proof windows, require hands and next-hand
 timestamps to advance and require zero active-manager `busy` expiry,
 `tournament_lease_proof_expired`, or child `tournament_lease_lost` teardown.

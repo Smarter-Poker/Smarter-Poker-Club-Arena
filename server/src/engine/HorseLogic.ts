@@ -176,7 +176,7 @@ import { personaFromValue, followsSolver, type HorsePersonaV2 } from './HorsePer
 // the hold'em solver range did not answer. See HorseEvEngine.ts.
 import { evaluateSpot, riverCallVerdict, type EvOpponentModel } from './HorseEvEngine.js';
 import {
-  evaluateTournamentUtility,
+  evaluateTournamentUtilityDetailed,
   type TournamentUtilityOpponentEvidence,
   type TournamentUtilityShowdownSample,
 } from './HorseTournamentUtility.js';
@@ -2465,7 +2465,7 @@ export class HorseLogic {
         evidence7
       ) {
         try {
-          const result = evaluateTournamentUtility({
+          const evaluation = evaluateTournamentUtilityDetailed({
             street: gs.stage,
             hero: player,
             players: gs.players,
@@ -2540,6 +2540,7 @@ export class HorseLogic {
               addOnAffordable: tournament.addOnAffordable ?? null,
             },
           });
+          const result = evaluation.result;
           if (result) {
             const selected = this.legalize(result.decision, player, gs, vi);
             const selectedAmount =
@@ -2553,7 +2554,10 @@ export class HorseLogic {
               // A utility receipt may never be relabeled as a different legal
               // action. Keep the already-legal baseline if this invariant is
               // ever violated and make the skipped arbiter observable.
-              if (tele) noteFire('phase7_utility_unavailable');
+              if (tele) {
+                noteFire('phase7_utility_unavailable');
+                noteFire('phase7_unavailable_legalizer_mismatch');
+              }
             } else {
               decision = { ...selected, tournamentUtility: result.ledger };
               if (tele) {
@@ -2568,13 +2572,28 @@ export class HorseLogic {
             }
           } else if (tele) {
             noteFire('phase7_utility_unavailable');
+            noteFire(`phase7_unavailable_${evaluation.unavailableReason ?? 'unknown'}`);
           }
         } catch (error) {
           reportError(error, 'HorseLogic.phase7_tournament_utility');
-          if (tele) noteFire('phase7_utility_unavailable');
+          if (tele) {
+            noteFire('phase7_utility_unavailable');
+            noteFire('phase7_unavailable_exception');
+          }
         }
       } else if (tele && gs.legalActions?.some((action) => action !== 'discard')) {
         noteFire('phase7_utility_unavailable');
+        const multiBoardUnavailable =
+          (Array.isArray(gs.communityCards2) && gs.communityCards2.length > 0) ||
+          (Array.isArray(gs.communityCards3) && gs.communityCards3.length > 0) ||
+          (gs.boardCount ?? 1) > 1;
+        noteFire(
+          multiBoardUnavailable
+            ? 'phase7_unavailable_multi_board'
+            : evidence7
+              ? 'phase7_unavailable_state_contract'
+              : 'phase7_unavailable_equity_evidence'
+        );
       }
     }
     decision.thinkTime = this.computeThinkTime(

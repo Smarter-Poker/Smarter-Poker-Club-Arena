@@ -122,7 +122,11 @@ or supervisor tick from recreating the engine underneath the cutover. Then:
 
 ```sh
 exec 9>/var/lock/club-arena-engine-up.lock
-flock -n 9
+if ! flock -n 9; then
+  echo 'engine-up lock is already owned; aborting before any authority is stopped' >&2
+  exec 9>&-
+  exit 1
+fi
 systemctl stop club-arena-supervisor.timer
 systemctl stop club-arena-supervisor.service || true
 docker stop -t 15 sp-autoheal

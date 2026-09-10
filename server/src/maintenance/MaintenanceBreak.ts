@@ -195,6 +195,17 @@ export interface MaintenanceThawReceipt {
   creditedThroughAtMs: number;
 }
 
+/** Durable evidence explaining why an announced maintenance window degraded. */
+export interface MaintenanceBreakFault {
+  /** The :53 announcement instant that identifies the hourly break. */
+  announcedAtMs: number;
+  /** The durable transition that failed. */
+  stage: 'announcement' | 'countdown' | 'adoption' | 'boot';
+  /** Whether no break ran, or it ran without authorizing an engine restart. */
+  outcome: 'cancelled' | 'held_without_restart';
+  error: string;
+}
+
 /** /health: `maintenance.resumeWaves`. Null when no rollout has run since the last announcement. */
 export interface ResumeWavesProgress {
   /** Waves in this rollout. */
@@ -255,6 +266,8 @@ export interface MaintenanceBreakDeps {
    * are reported and never delay the resume.
    */
   recordOutcome?: (outcome: MaintenanceBreakOutcome, signal: AbortSignal) => Promise<void>;
+  /** Best-effort durable cause record; it never changes or delays the safety decision. */
+  recordFault?: (fault: MaintenanceBreakFault) => Promise<void>;
   /**
    * THE THAW (Dan 2026-09-01: "picks back up exactly as it was").
    *
@@ -320,14 +333,22 @@ export class MaintenanceBreak {
     );
   }
 
+  /**
+   * Errors for which replaying this exact maintenance-state CAS is safe.
+   * Deliberate database refusals are decisions and are never retried.
+   */
+  static isRetryablePersistenceError(error: unknown): boolean {
+    const message = String((error as Error)?.message ?? error ?? '');
+    if (/MAINTENANCE_[A-Z_]+/.test(message)) return false;
+    if (MaintenanceBreak.isLockOrStatementTimeout(error)) return true;
+    return /supabase_timeout|fetch failed|AbortError|ECONNRESET|ECONNREFUSED|ETIMEDOUT|EAI_AGAIN|EPIPE|socket hang up|other side closed|PGRST00[0-3]|deadlock detected|40P01|Bad Gateway|Service Unavailable|Gateway Time-?out/i.test(
+      message
+    );
+  }
+
   private static isDefinitiveLastHandRejection(error: unknown): boolean {
     const message = String((error as Error)?.message ?? error ?? '');
-    return (
-      MaintenanceBreak.isLockOrStatementTimeout(error) ||
-      /MAINTENANCE_(OWNERSHIP_LOST|LAST_HAND_BOUNDARY_EXPIRED|COUNTDOWN_BOUNDARY_EXPIRED)/.test(
-        message
-      )
-    );
+    return MaintenanceBreak.isLockOrStatementTimeout(error) || /MAINTENANCE_[A-Z_]+/.test(message);
   }
 
   /**
@@ -740,6 +761,7 @@ export class MaintenanceBreak {
         '[MaintenanceBreak] clock-derived persistence remained ambiguous; honoring the fixed break with restart disabled',
         error
       );
+      this.reportFault('boot', 'held_without_restart', error, derived.announcedAt);
       if (!this.lifecycleIsCurrent(generation)) return;
       this.armEndTimer();
       return;
@@ -937,6 +959,7 @@ export class MaintenanceBreak {
           '[MaintenanceBreak] could not durably upgrade the adopted last-hand row; honoring its fixed end with restart disabled',
           error
         );
+        this.reportFault('adoption', 'held_without_restart', error, saved.announcedAt);
         this.rememberPotentiallyDurable(saved);
         this.rememberPotentiallyDurable(adopted);
         this.durablePhaseConfirmed = false;
@@ -945,6 +968,9 @@ export class MaintenanceBreak {
           await this.end();
           return;
         }
+        // The claimed last-hand row is already the durable database freeze.
+        // Keep the player clock honest even though this hour cannot restart.
+        this.broadcast('counting_down');
         this.armEndTimer();
         return;
       }
@@ -1121,13 +1147,11 @@ export class MaintenanceBreak {
   adopt(tableId: string, engine: PausableTableEngine): void {
     if (!this.acceptingLifecycleWork || !this.isActive()) return;
     engine.pauseForMaintenance(this.remainingParkBudgetMs());
-    // During a :53 persistence retry the safety gate is real, but the
-    // player-visible promise is not yet durable. The successful save's fleet
-    // broadcast will include this table; emitting sooner would recreate the
-    // exact promise-without-recovery-state race the durable boundary prevents.
-    if (this.durablePhaseConfirmed) {
+    // During a silent :53/clock ambiguity there is no player promise to copy.
+    // Once a durable last-hand row allowed a frame, however, every later table
+    // must see the same countdown even while its restart certificate retries.
+    if (this.playerAnnouncementVisible) {
       this.deps.emit(tableId, this.eventPayload(tableId, this.phase as MaintenanceBreakPhase));
-      this.playerAnnouncementVisible = true;
     }
   }
 
@@ -1279,11 +1303,18 @@ export class MaintenanceBreak {
       const persistence = await this.persistLastHandUntilBoundary(declared, generation);
       if (persistence === 'cancelled') return;
       if (persistence === 'uncertain') {
+        this.reportFault(
+          'announcement',
+          'held_without_restart',
+          new Error('last-hand persistence reached the fixed boundary without durable proof'),
+          declared.announcedAt
+        );
         this.honorPotentiallyDurableBreak(declared, generation);
         return;
       }
     } catch (error) {
       if (MaintenanceBreak.isDefinitiveLastHandRejection(error)) {
+        this.reportFault('announcement', 'cancelled', error, declared.announcedAt);
         this.cancelUnpublishedLastHand();
         throw error;
       }
@@ -1294,6 +1325,7 @@ export class MaintenanceBreak {
         '[MaintenanceBreak] last-hand persistence remained ambiguous; honoring the fixed break without a player frame',
         error
       );
+      this.reportFault('announcement', 'held_without_restart', error, declared.announcedAt);
       this.honorPotentiallyDurableBreak(declared, generation);
       return;
     }
@@ -1393,22 +1425,34 @@ export class MaintenanceBreak {
     );
 
     const countingDown = this.persistedState();
+    // end() may race a slow/lost persistence response. Register both exact
+    // shapes before the request starts so its CAS clear cannot omit a write
+    // that commits while the response is still in flight.
+    this.rememberPotentiallyDurable(announced);
+    this.rememberPotentiallyDurable(countingDown);
+
+    // The durable last-hand row already freezes database admission at :55.
+    // Publish the promised player clock on time; persistence below controls
+    // only whether this hour has an exact restart certificate.
+    this.broadcast('counting_down');
+    this.armEndTimer();
+
     try {
-      await this.persist(countingDown);
+      const persisted = await this.persistCountdownUntilRestartCutoff(countingDown, generation);
+      if (!persisted || !this.countdownStateIsCurrent(countingDown, generation)) return;
       this.durablePhaseConfirmed = true;
     } catch (error) {
+      if (!this.countdownStateIsCurrent(countingDown, generation)) return;
       // `announced` is already a durable promise and a failed transport cannot
       // prove that `countingDown` did not also commit. Never resume underneath
       // either possible row. Keep the fixed :55-:00 hold, keep the deploy gate
       // closed, and compare-delete both exact shapes at :00.
-      this.rememberPotentiallyDurable(announced);
-      this.rememberPotentiallyDurable(countingDown);
       this.durablePhaseConfirmed = false;
       console.error(
         '[MaintenanceBreak] countdown persistence was ambiguous; honoring the fixed break with restart disabled',
         error
       );
-      this.armEndTimer();
+      this.reportFault('countdown', 'held_without_restart', error, countingDown.announcedAt);
       return;
     }
     if (!this.lifecycleIsCurrent(generation)) return;
@@ -1419,9 +1463,6 @@ export class MaintenanceBreak {
       await this.end();
       return;
     }
-
-    this.broadcast('counting_down');
-    this.armEndTimer();
   }
 
   private armEndTimer(): void {
@@ -2121,18 +2162,20 @@ export class MaintenanceBreak {
 
       const lockOrStatementTimeout = MaintenanceBreak.isLockOrStatementTimeout(lastError);
       const message = String((lastError as Error)?.message ?? lastError ?? '');
-      if (
-        /MAINTENANCE_(OWNERSHIP_LOST|LAST_HAND_BOUNDARY_EXPIRED|COUNTDOWN_BOUNDARY_EXPIRED)/.test(
-          message
-        )
-      ) {
+      if (/MAINTENANCE_[A-Z_]+/.test(message)) {
         throw lastError;
       }
 
+      // Unknown/deliberate refusals are not replayed. They remain ambiguous
+      // unless the database named a terminal MAINTENANCE_* decision, so the
+      // local gate holds silently to the fixed boundary instead of failing open.
+      if (!MaintenanceBreak.isRetryablePersistenceError(lastError)) break;
+
       if (!this.lastHandDeclarationIsCurrent(state, generation)) return 'cancelled';
-      const retryDeadline = lockOrStatementTimeout
-        ? Math.min(boundaryAt, state.announcedAt + MaintenanceBreak.ANNOUNCE_PERSIST_BUDGET_MS)
-        : boundaryAt;
+      const retryDeadline = Math.min(
+        boundaryAt,
+        state.announcedAt + MaintenanceBreak.ANNOUNCE_PERSIST_BUDGET_MS
+      );
       const remainingMs = retryDeadline - this.now();
       if (remainingMs <= 0) {
         if (lockOrStatementTimeout) throw lastError;
@@ -2271,6 +2314,54 @@ export class MaintenanceBreak {
     );
   }
 
+  private countdownStateIsCurrent(state: PersistedMaintenanceBreak, generation: number): boolean {
+    return (
+      this.lifecycleIsCurrent(generation) &&
+      this.phase === 'counting_down' &&
+      this.announcedAt === state.announcedAt &&
+      this.breakStartedAt === state.breakStartedAt &&
+      this.breakEndsAt === state.breakEndsAt &&
+      this.ownershipToken === state.ownershipToken
+    );
+  }
+
+  /**
+   * Retry only the idempotent countdown CAS while a restart can still fit.
+   * The last-hand row already owns the freeze, so exhaustion degrades this
+   * hour to a no-restart break; it never cancels or extends the break.
+   */
+  private async persistCountdownUntilRestartCutoff(
+    state: PersistedMaintenanceBreak,
+    generation: number
+  ): Promise<boolean> {
+    const deadline = (state.breakEndsAt ?? 0) - MaintenanceBreak.MIN_REMAINING_FOR_RESTART_MS;
+    for (let attempt = 1; this.countdownStateIsCurrent(state, generation); attempt += 1) {
+      try {
+        await this.persist(state);
+        if (attempt > 1) {
+          console.warn(
+            `[MaintenanceBreak] countdown became durable on attempt ${attempt}; the announced boundaries are unchanged`
+          );
+        }
+        return this.countdownStateIsCurrent(state, generation);
+      } catch (error) {
+        if (!this.countdownStateIsCurrent(state, generation)) return false;
+        const remainingMs = deadline - this.now();
+        if (!MaintenanceBreak.isRetryablePersistenceError(error) || remainingMs <= 0) {
+          throw error;
+        }
+        const delayMs = Math.min(MaintenanceBreak.ANNOUNCE_PERSIST_RETRY_MS, remainingMs);
+        console.warn(
+          `[MaintenanceBreak] countdown save failed (attempt ${attempt}); keeping the restart gate closed and retrying in ${delayMs}ms: ${
+            (error as Error)?.message ?? error
+          }`
+        );
+        if (!(await this.waitForLifecycleDelay(generation, delayMs))) return false;
+      }
+    }
+    return false;
+  }
+
   /** A cancellable sleep so stop() never waits out a retry backoff. */
   private waitForLastHandPersistRetry(ms: number): Promise<'elapsed' | 'cancelled'> {
     return new Promise<'elapsed' | 'cancelled'>((resolve) => {
@@ -2362,6 +2453,24 @@ export class MaintenanceBreak {
       }
     }
     return false;
+  }
+
+  /** Persist the cause without ever delaying or changing the chosen safety path. */
+  private reportFault(
+    stage: MaintenanceBreakFault['stage'],
+    outcome: MaintenanceBreakFault['outcome'],
+    error: unknown,
+    announcedAtMs: number
+  ): void {
+    const record = this.deps.recordFault;
+    if (!record || !announcedAtMs) return;
+    const fault: MaintenanceBreakFault = {
+      announcedAtMs,
+      stage,
+      outcome,
+      error: String((error as Error)?.message ?? error ?? 'unknown').slice(0, 500),
+    };
+    this.launchLifecycleJob(record(fault), 'could not record why the maintenance break degraded');
   }
 
   private async persist(state = this.persistedState()): Promise<void> {

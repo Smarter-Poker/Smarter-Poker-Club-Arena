@@ -4967,12 +4967,26 @@ export abstract class TournamentManagerBase {
       const breakStartedAt = tournament.break_started_at
         ? new Date(tournament.break_started_at).getTime()
         : 0;
+      /* AN ADOPTED BREAK ENDS WITH THE MAINTENANCE BREAK (2026-09-10).
+         A NULL break_ends_at means the previous engine died before it wrote
+         the countdown, and the end was rebuilt as the worst case: :55 + the
+         last-hand grace + the break. That grace is for a fleet still finishing
+         hands. While the maintenance break holds the platform, every table
+         has been finishing since :53 and was held with no cards in the air by
+         :55, so the countdown started when the break was declared. Every
+         deploy hour on 2026-09-10 brought the tournaments back two minutes
+         late for exactly this reason: at 13:57 the replacement re-paused 48
+         tournaments "for the remaining 290s" (to 14:02) while every cash
+         table resumed at 14:00:04. The grace is kept for when nothing else is
+         holding the fleet. */
       const breakEndsAt = tournament.break_ends_at
         ? new Date(tournament.break_ends_at).getTime()
         : breakStartedAt > 0
-          ? breakStartedAt +
-            TournamentManagerBase.LAST_HAND_GRACE_MS +
-            TournamentManagerBase.BREAK_DURATION_MS
+          ? isMaintenanceFrozen()
+            ? breakStartedAt + TournamentManagerBase.BREAK_DURATION_MS
+            : breakStartedAt +
+              TournamentManagerBase.LAST_HAND_GRACE_MS +
+              TournamentManagerBase.BREAK_DURATION_MS
           : 0;
       let restoredLevelClockSuspended = false;
       // TOURNEY-AUDIT 2026-07-24: resume the level clock MID-LEVEL using the

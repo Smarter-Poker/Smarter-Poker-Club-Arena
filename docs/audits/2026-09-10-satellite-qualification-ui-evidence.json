@@ -1,0 +1,110 @@
+{
+  "recordedAt": "2026-09-10T07:03:31.093237+00:00",
+  "scope": "Phase 3 B11 equal satellite qualification UI",
+  "status": "Locally implemented and verified; deployment and actual browser/network acceptance remain open",
+  "branch": "agent/codex-satellite-qualification-ui-sep10/fix/qualified-outcomes",
+  "baseCommit": "75ae6e49e8749dc110f28da2bbdcac4ee1d9b5f8",
+  "sourceSha256": {
+    "src/components/tournament/TournamentRankingHost.tsx": "fc08a352eb497b7ca0c4048ca8103515e4554b8c0eb1afc3aab4b0456f7b2b02",
+    "src/components/tournament/TournamentQualificationCard.tsx": "ba9396a0e86c16dddc50c3bc663c5987c230511cf233fb6749b18d89c0490d80",
+    "src/components/tournament/TournamentQualificationCard.css": "d29475d660aeb76bec4fdaff6f133079e2d14f544bb3c1120c27de1892f0ce50",
+    "src/pages/TablePage.tsx": "dffcf2b638d4b7bdaea168c022fad252b7cf4d6e0d95469951610ce1edbb5d39",
+    "src/services/RealtimeChannelService.ts": "45a35ef7f446cd5347db014daa55c26da9f6f7d5890f7f8c2831278cfa5c9c46",
+    "src/services/TournamentService.ts": "95229371a1b9feb98b0e6e59b61623a7b7dc67f97f3319fd9e41a08a7cbf0807",
+    "src/services/pendingSessionSummary.ts": "b75ec2e9bdd7884d2601916967de887b7f829cb6f4da6374fc752713a2a6668e",
+    "src/services/satelliteQualification.ts": "94553c69797f672943b349904b4f282985bbc4c69de6499e4a824ed9dd45cca5",
+    "tests/config/tournamentWinnerExit.test.ts": "41e89546ebc8f8550a82706b74e43d4e85d4809adcf3ec728f8509055eebdbc7",
+    "tests/unit/satelliteQualificationOutcome.test.tsx": "ed23f6ad1b302922851ba9824c2cfd092e2b7a817e59515dd9dbb48ecde35ea8"
+  },
+  "contract": {
+    "migrationDependency": "20260910054035",
+    "completionKind": "equal_qualifiers",
+    "receiptVersion": 3,
+    "event": "tournament_qualified",
+    "rpc": "fn_get_my_satellite_qualification",
+    "rpcArguments": ["p_tournament_id"],
+    "actorAuthority": "auth.uid() in database; returned user and tournament independently checked in client",
+    "qualificationDeliveries": ["seat", "ticket", "cash"],
+    "rank": null,
+    "cashPrize": "amount only for cash delivery; zero for seat and ticket"
+  },
+  "verification": [
+    {
+      "name": "focused",
+      "command": [
+        "npx",
+        "vitest",
+        "run",
+        "tests/unit/satelliteQualificationOutcome.test.tsx",
+        "tests/unit/tournamentRankingHost.test.tsx",
+        "tests/components/TournamentRankingCardMysteryBounty.test.tsx",
+        "tests/unit/tournamentEntryTicketRegistration.test.tsx",
+        "tests/config/tournamentWinnerExit.test.ts",
+        "tests/unit/tournamentTicketUnregisterSurfaces.test.ts",
+        "tests/unit/tournamentEntryTicketService.test.ts",
+        "tests/unit/TournamentUnregistrationIntent.test.ts",
+        "tests/unit/playAgainSeatsThePlayer.test.ts",
+        "tests/unit/discardedErrorReadRatchet.test.ts",
+        "tests/unit/sessionSummaryPendingSettlement.test.tsx"
+      ],
+      "exitCode": 0,
+      "log": "/tmp/satellite-ui-resume-focused.log",
+      "checkedAt": "2026-09-10T07:01:17.908804+00:00"
+    },
+    {
+      "name": "types",
+      "command": ["npx", "tsc", "--noEmit"],
+      "exitCode": 0,
+      "log": "/tmp/satellite-ui-resume-types.log",
+      "checkedAt": "2026-09-10T07:01:25.161888+00:00"
+    },
+    {
+      "name": "build",
+      "command": ["npm", "run", "build"],
+      "exitCode": 0,
+      "log": "/tmp/satellite-ui-resume-build.log",
+      "checkedAt": "2026-09-10T07:01:43.915559+00:00"
+    }
+  ],
+  "focusedTests": {
+    "files": 11,
+    "passed": 151,
+    "failed": 0,
+    "dedicatedOutcomeTests": 36
+  },
+  "negativeControl": {
+    "log": "/tmp/satellite-ui-ownership-baseline.log",
+    "originalSummaryMergeAndQueue": {
+      "failed": 3,
+      "passed": 32
+    },
+    "failureClaims": [
+      "Late partial publisher erased committed qualification",
+      "Qualifying result retained a prior invented first place",
+      "Same-name different-tournament result overwritten while queued"
+    ]
+  },
+  "runtimeHarness": "Vitest executes actual TablePage declarations and registered broadcast callback extracted from its TypeScript AST, with mocked external transports; React Testing Library renders the real app-root TournamentRankingHost and qualification card in a DOM harness. This is not an actual authenticated browser or network run.",
+  "checkedBehaviors": [
+    "Seat, ticket, and cash live outcomes",
+    "Own durable RPC recovers a missed live event",
+    "Foreign actor/tournament and malformed monetary facts rejected",
+    "Duplicate broadcasts and late durable result close once",
+    "Teardown cancels stale callback and delayed enrichment ownership",
+    "Embedded table closes only its own tab without navigating other tables",
+    "Unavailable or stalled authority reads retain existing bounded retry",
+    "No auto-dismissal; explicit target route navigation",
+    "Single-winner live and durable exit preserves rank and seven-second celebration",
+    "Queue preserves qualification and distinct tournament identity"
+  ],
+  "remaining": [
+    "Integrate core migration, manager receipt, and recovery lane",
+    "Apply and verify reviewed database migration through root release owner",
+    "Merge, publish, and verify source and engine deployment stamps",
+    "Verify authenticated actual browser/network live and reconnect qualification flow",
+    "Threshold-crossing satellite tie policy remains outside this exact-K UI subset"
+  ],
+  "productionMutationsByThisLane": false,
+  "pushedByThisLane": false,
+  "hookBypass": false
+}

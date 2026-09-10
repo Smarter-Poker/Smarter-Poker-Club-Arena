@@ -319,6 +319,11 @@ import {
   tournamentUnregisterSuccessText,
   tournamentUnregisterWasAlreadyStarted,
 } from '../services/TournamentService';
+import {
+  parseSatelliteQualificationEvent,
+  qualificationCashPrize,
+  type SatelliteQualification,
+} from '../services/satelliteQualification';
 // [MIGRATION] All engine imports removed — server-authoritative (Steps 1-7 complete)
 import { handHistoryService } from '../services/HandHistoryService';
 // Dan 2026-08-15: the real rake schedule (byte-identical mirror of the
@@ -541,6 +546,10 @@ async function fetchTournamentResult(
     const entry = entryRes.data;
     const tourney = tourneyRes.data;
     const entryCount = countRes.count;
+    const unrankedWinner = entry?.status === 'winner' && entry.position == null;
+    const qualification = unrankedWinner
+      ? await tournamentService.getMySatelliteQualification(tournamentId, userId)
+      : null;
 
     /* MYSTERY BOUNTY (sections 43, 44). The chest half of what this player won,
        from the RPCs - `tournament_bounty_awards` has RLS on with no select
@@ -564,7 +573,12 @@ async function fetchTournamentResult(
       name: tourney?.name || undefined,
       finishPlace: entry?.position ?? null,
       entrants: entryCount ?? tourney?.current_players ?? null,
-      prize: Number(entry?.prize) || 0,
+      qualification: qualification ?? undefined,
+      prize: qualification
+        ? qualificationCashPrize(qualification)
+        : unrankedWinner
+          ? 0
+          : Number(entry?.prize) || 0,
       bountyWinnings: Number(entry?.bounty_winnings) || 0,
       knockouts: Number(entry?.bounties_collected) || 0,
       mysteryBounties: mystery?.bounties,
@@ -12614,7 +12628,13 @@ export default function TablePage({
              still navigates here. */
           let exitStarted = false;
 
-          const goToLobbyWithResult = (position: number, prize: number, delayMs: number) => {
+          const goToLobbyWithResult = (
+            position: number | null,
+            prize: number,
+            delayMs: number,
+            qualification?: SatelliteQualification
+          ) => {
+            if (!isMounted) return;
             if (exitStarted) return;
             exitStarted = true;
 
@@ -12634,9 +12654,12 @@ export default function TablePage({
                    a no-op. The bounded fallback preserves the broadcast's
                    authoritative position/prize and always reaches the card,
                    close signals and navigation below. */
-                const full = tid
-                  ? await awaitTournamentResultEnrichment(fetchTournamentResult(tid, userId))
-                  : undefined;
+                const full =
+                  tid && !qualification
+                    ? await awaitTournamentResultEnrichment(fetchTournamentResult(tid, userId))
+                    : undefined;
+                if (!isMounted) return;
+                const qualifiedResult = qualification ?? full?.qualification;
                 publishSessionSummary({
                   duration: Math.floor((Date.now() - sessionStartRef.current) / 1000),
                   handsPlayed: handsPlayedRef.current,
@@ -12671,17 +12694,20 @@ export default function TablePage({
                     /* The broadcast is authoritative for these two: it is what
                        the engine just decided, whereas the row may not have
                        been written yet when we read it. */
-                    finishPlace: position || full?.finishPlace || null,
+                    finishPlace: qualifiedResult ? null : position || full?.finishPlace || null,
                     /* Round 12: lets the ranking card's Play Again seat the
                        player into the open same-stake sibling game. */
                     tournamentId: tid || undefined,
                     winningCards:
-                      position === 1
+                      !qualifiedResult && position === 1
                         ? (tableStateRef.current.players[
                             tableStateRef.current.heroSeat - 1
                           ]?.holeCards?.filter((c) => c !== null) as Card[])
                         : undefined,
-                    prize: prize || full?.prize || 0,
+                    qualification: qualifiedResult,
+                    prize: qualifiedResult
+                      ? qualificationCashPrize(qualifiedResult)
+                      : prize || full?.prize || 0,
                   },
                 });
 
@@ -12790,6 +12816,16 @@ export default function TablePage({
               void verifyDurableCompletion();
             }, delayMs);
           }
+          function exitFromSatelliteQualification(qualification: SatelliteQualification): void {
+            if (!isMounted || exitStarted) return;
+            durableCompletionHandled = true;
+            if (durableCompletionRetryTimer) {
+              clearTimeout(durableCompletionRetryTimer);
+              durableCompletionRetryTimer = null;
+            }
+            goToLobbyWithResult(null, qualificationCashPrize(qualification), 0, qualification);
+          }
+
           async function exitFromDurableCompletion(): Promise<void> {
             if (
               durableCompletionLookupInFlight ||
@@ -12809,18 +12845,37 @@ export default function TablePage({
             let lastError: unknown = null;
             try {
               for (let attempt = 1; attempt <= 3; attempt++) {
-                const { data, error: resultError } = await supabase
-                  .from('tournament_players')
-                  .select('status, position, prize')
-                  .eq('tournament_id', durableTournamentId)
-                  .eq('user_id', userId)
-                  .maybeSingle();
+                const { data, error: resultError } = (await awaitTournamentResultEnrichment(
+                  supabase
+                    .from('tournament_players')
+                    .select('status, position, prize')
+                    .eq('tournament_id', durableTournamentId)
+                    .eq('user_id', userId)
+                    .maybeSingle()
+                )) ?? { data: null, error: new Error('Tournament result read is unavailable') };
+                if (!isMounted) return;
                 if (!resultError && data) {
-                  result = data;
-                  lastError = null;
-                  break;
+                  if (data.status === 'winner' && data.position == null) {
+                    // A stalled read must release the in-flight guard so the
+                    // existing durable retry can recover. A missing receipt
+                    // never grants a rank or treats entry value as cash.
+                    const qualification = await awaitTournamentResultEnrichment(
+                      tournamentService.getMySatelliteQualification(durableTournamentId, userId)
+                    );
+                    if (!isMounted) return;
+                    if (qualification) {
+                      exitFromSatelliteQualification(qualification);
+                      return;
+                    }
+                    lastError = new Error('Satellite qualification is unavailable');
+                  } else {
+                    result = data;
+                    lastError = null;
+                    break;
+                  }
                 }
-                lastError = resultError ?? new Error('Tournament result row is unavailable');
+                lastError =
+                  lastError ?? resultError ?? new Error('Tournament result row is unavailable');
                 if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, 200 * attempt));
               }
             } finally {
@@ -12864,11 +12919,13 @@ export default function TablePage({
 
           async function verifyDurableCompletion(): Promise<void> {
             if (!isMounted || durableCompletionHandled) return;
-            const { data: terminal, error: terminalError } = await supabase
-              .from('tournaments')
-              .select('status')
-              .eq('id', durableTournamentId)
-              .maybeSingle();
+            const { data: terminal, error: terminalError } = (await awaitTournamentResultEnrichment(
+              supabase
+                .from('tournaments')
+                .select('status')
+                .eq('id', durableTournamentId)
+                .maybeSingle()
+            )) ?? { data: null, error: new Error('Tournament completion read is unavailable') };
             if (!isMounted) return;
             if (terminalError || !terminal) {
               if (!durableCompletionFailureReported) {
@@ -12914,6 +12971,7 @@ export default function TablePage({
               }
             )
             .on('broadcast', { event: 'tournament_event' }, (payload: any) => {
+              if (!isMounted) return;
               const data = payload.payload;
               /* Relay the breaks onto MasterBus. TournamentClock (rendered on
                  this page during an MTT) subscribes to BREAK_START /
@@ -13356,6 +13414,13 @@ export default function TablePage({
                     ),
                   }));
                 }
+              } else if (data?.type === 'tournament_qualified') {
+                const qualification = parseSatelliteQualificationEvent(
+                  data,
+                  durableTournamentId,
+                  userId
+                );
+                if (qualification) exitFromSatelliteQualification(qualification);
               } else if (data?.type === 'final_table_deal') {
                 // The deal broadcast describes the whole chop, but this
                 // viewer's authoritative position and prize are the committed

@@ -235,8 +235,12 @@ describe("The champion's exit", () => {
     );
     expect(fn.indexOf('publishSessionSummary(')).toBeLessThan(fn.indexOf("emit('TABLE_LEFT'"));
     expect(fn).toMatch(/\.\.\.\(full \?\? \{/);
-    expect(fn).toMatch(/finishPlace:\s*position \|\| full\?\.finishPlace \|\| null/);
-    expect(fn).toMatch(/prize:\s*prize \|\| full\?\.prize \|\| 0/);
+    expect(fn).toMatch(
+      /finishPlace:\s*qualifiedResult \? null : position \|\| full\?\.finishPlace \|\| null/
+    );
+    expect(fn).toMatch(
+      /prize:[\s\S]*?qualifiedResult[\s\S]*?qualificationCashPrize\(qualifiedResult\)[\s\S]*?: prize \|\| full\?\.prize \|\| 0/
+    );
   });
 
   it('the realtime event union still knows this event exists', () => {

@@ -51,6 +51,7 @@ import { readLocalSession } from '../../lib/authUtils';
 import { tableService } from '../../services/TableService';
 import { reportError } from '../../utils/errorReporter';
 import TournamentRankingCard from './TournamentRankingCard';
+import TournamentQualificationCard from './TournamentQualificationCard';
 
 export function TournamentRankingHost() {
   const [payload, setPayload] = useState<SessionSummaryPayload | null>(() => peekSessionSummary());
@@ -151,7 +152,7 @@ export function TournamentRankingHost() {
   const placeFilledRef = useRef<string | null>(null);
   useEffect(() => {
     const t = payload?.tournament;
-    if (!tournamentId || !t) return;
+    if (!tournamentId || !t || t.qualification) return;
     if (t.finishPlace != null) return; // already known — never second-guess it
     if (placeFilledRef.current === tournamentId) return; // one fill per card
     placeFilledRef.current = tournamentId;
@@ -295,6 +296,20 @@ export function TournamentRankingHost() {
   }, [tournamentId, payload?.tournament?.isSpin, close, navigate]);
 
   if (!payload?.tournament) return null;
+  if (payload.tournament.qualification) {
+    const qualification = payload.tournament.qualification;
+    return (
+      <TournamentQualificationCard
+        qualification={qualification}
+        name={payload.tournament.name || payload.tableName}
+        onDismiss={close}
+        onViewTarget={() => {
+          close();
+          navigate(`/tournaments/${encodeURIComponent(qualification.targetId)}`);
+        }}
+      />
+    );
+  }
 
   return (
     <TournamentRankingCard

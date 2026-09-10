@@ -49,8 +49,11 @@
  * different modal entirely rather than filling chip tiles with zeroes.
  */
 import type { Card } from '../components/table/CardImage';
+import { qualificationCashPrize, type SatelliteQualification } from './satelliteQualification';
 
 export interface TournamentResult {
+  /** Equal qualification carries a delivery value; it never supplies a place. */
+  qualification?: SatelliteQualification;
   /** Tournament name for the header, e.g. "Early Bird Freeroll". */
   name?: string;
   /** Finishing position. null while still in play or if the row is unreadable. */
@@ -187,28 +190,55 @@ function emit(): void {
  * as the card auto-closing. Held publishes wait here and surface when the X
  * clears the card in front of them.
  */
-let heldQueue: SessionSummaryPayload[] = [];
+const heldQueue: SessionSummaryPayload[] = [];
+
+/** Committed qualification never becomes a rank or a cash award on a later read. */
+function mergeTournamentResult(
+  previous: TournamentResult,
+  incoming: TournamentResult
+): TournamentResult {
+  const qualification = previous.qualification ?? incoming.qualification;
+  return {
+    ...incoming,
+    qualification,
+    finishPlace: qualification ? null : (incoming.finishPlace ?? previous.finishPlace),
+    prize: qualification ? qualificationCashPrize(qualification) : incoming.prize || previous.prize,
+  };
+}
+
+function sameSummarySession(left: SessionSummaryPayload, right: SessionSummaryPayload): boolean {
+  const leftId = left.tournament?.tournamentId;
+  const rightId = right.tournament?.tournamentId;
+  if (leftId || rightId) return !!leftId && leftId === rightId;
+  return !!left.tournament === !!right.tournament && left.tableName === right.tableName;
+}
 
 /** Publish a finished session. Called by TablePage immediately before it navigates. */
 export function publishSessionSummary(payload: SessionSummaryPayload): void {
   if (pending?.tournament) {
-    if (payload.tournament?.tournamentId === pending.tournament.tournamentId) {
-      /* Same event re-publishing (the bust path fires once early, once with
-         the settled row): MERGE, never downgrade - a place or prize already
-         on screen must not be replaced with a null. */
+    if (payload.tournament && sameSummarySession(pending, payload)) {
       pending = {
         ...payload,
-        tournament: {
-          ...payload.tournament!,
-          finishPlace: payload.tournament!.finishPlace ?? pending.tournament.finishPlace,
-          prize: payload.tournament!.prize || pending.tournament.prize,
-        },
+        tournament: mergeTournamentResult(pending.tournament, payload.tournament),
       };
       emit();
       return;
     }
-    /* A different session finished while the ranking card is up: hold it. */
-    heldQueue = [...heldQueue.filter((q) => q.tableName !== payload.tableName), payload];
+    /* Different tournaments can share a display name. Their identities own
+       separate queue positions, while a repeated result enriches its own. */
+    const heldIndex = heldQueue.findIndex((queued) => sameSummarySession(queued, payload));
+    if (heldIndex >= 0) {
+      const previous = heldQueue[heldIndex];
+      heldQueue[heldIndex] = {
+        ...payload,
+        tournament:
+          previous.tournament && payload.tournament
+            ? mergeTournamentResult(previous.tournament, payload.tournament)
+            : payload.tournament,
+      };
+    } else {
+      heldQueue.push(payload);
+    }
     return;
   }
   pending = payload;

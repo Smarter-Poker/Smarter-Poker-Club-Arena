@@ -81,6 +81,7 @@ export interface TournamentEvent {
        eliminatePlayer is never called with place 1 anyway — the bust sweep
        reserves it for the winner. See TournamentManagerEliminations. */
     | 'tournament_winner'
+    | 'tournament_qualified'
     | 'final_table_deal'
     | 'level_up'
     | 'final_table'

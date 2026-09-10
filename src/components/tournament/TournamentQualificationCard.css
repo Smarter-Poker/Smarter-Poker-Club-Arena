@@ -1,0 +1,27 @@
+.tqc__name {
+  color: #fff;
+  margin: 12px 0 0;
+  overflow-wrap: anywhere;
+}
+.tqc__delivery {
+  padding: 18px 24px;
+  color: #fff;
+  text-align: center;
+}
+.tqc__delivery h3 {
+  margin: 0 0 16px;
+  color: #00d4ff;
+}
+.tqc__delivery dl {
+  margin: 0;
+  display: grid;
+  gap: 6px;
+}
+.tqc__delivery dt {
+  color: #cfe0ff;
+}
+.tqc__delivery dd {
+  margin: 0 0 12px;
+  font-size: 1.5rem;
+  font-weight: 700;
+}

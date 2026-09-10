@@ -33,6 +33,10 @@ import { uuid } from '../utils/uuid';
 import { DEFAULT_RAKE_RATE, splitBuyIn } from '../utils/buyIn';
 import { withTournamentPurchaseIntent } from './TournamentPurchaseIntent';
 import { withTournamentUnregistrationIntent } from './TournamentUnregistrationIntent';
+import {
+  parseSatelliteQualificationReceipt,
+  type SatelliteQualification,
+} from './satelliteQualification';
 
 /** A transport success alone does not confirm a tournament chip purchase. */
 function confirmedTournamentPurchaseStack(
@@ -607,6 +611,21 @@ export const BOUNTY_PRESETS: Record<string, BountyConfig> = {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 class TournamentService {
+  /** Reads only auth.uid()'s committed cohort award. Errors remain retryable. */
+  async getMySatelliteQualification(
+    tournamentId: string,
+    userId: string
+  ): Promise<SatelliteQualification | null> {
+    const { data, error } = await supabase.rpc('fn_get_my_satellite_qualification', {
+      p_tournament_id: tournamentId,
+    });
+    if (error) throw error;
+    if (data === null) return null;
+    const qualification = parseSatelliteQualificationReceipt(data, tournamentId, userId);
+    if (!qualification) throw new Error('Satellite qualification receipt is invalid');
+    return qualification;
+  }
+
   // ─────────────────────────────────────────────────────────────────────────────
   // Tournament CRUD
   // ─────────────────────────────────────────────────────────────────────────────

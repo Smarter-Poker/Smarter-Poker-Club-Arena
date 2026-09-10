@@ -368,6 +368,7 @@ export default function UnionGamesPage() {
   return (
     <div className={styles.page}>
       <CasinoSurfaceHeader
+        crest="club"
         eyebrow="Union Network / Games"
         title={`${unionName || 'Union'} Games`}
         description="Enter Active Union Tables, Register For Network Tournaments, And Inspect The Shared Bad-Beat Pool Through The Existing Game Services."

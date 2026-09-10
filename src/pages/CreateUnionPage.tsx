@@ -190,6 +190,7 @@ export default function CreateUnionPage() {
     <div className={styles.page}>
       <div className={styles.container}>
         <CasinoSurfaceHeader
+          crest="club"
           eyebrow="Union Network / Creation"
           title="Forge A Union"
           description="Configure A Governed Club Network, Revenue Rules, And Shared Features Through The Existing Server-Authorized Creation Workflow."

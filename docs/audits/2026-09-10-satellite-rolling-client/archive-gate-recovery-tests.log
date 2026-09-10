@@ -1,0 +1,54 @@
+
+ RUN  v2.1.9 /Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-satellite-swarm-sep10/server
+
+stdout | src/tournament/SatelliteRecoveryReadCertainty.test.ts > satellite recovery requires readable result authority > hands one proven survivor to the single immutable receipt authority
+[GameServer] Recovered satellite 00000000 through immutable receipt: 1 full award(s), 0 noncash tournament ticket(s), 0 bubble remainder
+
+ ✓ src/tournament/SatelliteRecoveryReadCertainty.test.ts > satellite recovery requires readable result authority > does not settle when the roster is unreadable: {"data":null,"error":null}
+ ✓ src/tournament/SatelliteRecoveryReadCertainty.test.ts > satellite recovery requires readable result authority > does not settle when the roster is unreadable: {"data":null,"error":{"message":"survivor read timeout"}}
+ ✓ src/tournament/SatelliteRecoveryReadCertainty.test.ts > satellite recovery requires readable result authority > does not assume legacy settlement when the qualification boundary cannot be read
+ ✓ src/tournament/SatelliteRecoveryReadCertainty.test.ts > satellite recovery requires readable result authority > preserves an undecided field without any lifecycle or money call
+ ✓ src/tournament/SatelliteRecoveryReadCertainty.test.ts > satellite recovery requires readable result authority > requires durable hand evidence before requesting the receipt
+ ✓ src/tournament/SatelliteRecoveryReadCertainty.test.ts > satellite recovery requires readable result authority > hands one proven survivor to the single immutable receipt authority
+ ✓ src/tournament/SatelliteRecoveryReadCertainty.test.ts > satellite recovery requires readable result authority > raises a critical alert when the serialized settlement outcome stays unknown
+ ✓ src/tournament/SatelliteRecoveryReadCertainty.test.ts > satellite recovery is structurally read-only > contains no direct write or fragment settlement fallback
+ ✓ src/tournament/satelliteQualification.test.ts > equal satellite qualification proof > accepts two differently sized live stacks without a winner or a finishing rank
+ ✓ src/tournament/satelliteQualification.test.ts > equal satellite qualification proof > refuses invented winner
+ ✓ src/tournament/satelliteQualification.test.ts > equal satellite qualification proof > refuses invented winner amount
+ ✓ src/tournament/satelliteQualification.test.ts > equal satellite qualification proof > refuses legacy version
+ ✓ src/tournament/satelliteQualification.test.ts > equal satellite qualification proof > refuses wrong kind
+ ✓ src/tournament/satelliteQualification.test.ts > equal satellite qualification proof > refuses duplicate qualifier
+ ✓ src/tournament/satelliteQualification.test.ts > equal satellite qualification proof > refuses wrong participant
+ ✓ src/tournament/satelliteQualification.test.ts > equal satellite qualification proof > refuses wrong award ordinal
+ ✓ src/tournament/satelliteQualification.test.ts > equal satellite qualification proof > refuses duplicate registration
+ ✓ src/tournament/satelliteQualification.test.ts > equal satellite qualification proof > refuses zero stack
+ ✓ src/tournament/satelliteQualification.test.ts > equal satellite qualification proof > refuses invalid stack
+ ✓ src/tournament/satelliteQualification.test.ts > equal satellite qualification proof > refuses future qualification
+ ✓ src/tournament/satelliteQualification.test.ts > equal satellite qualification proof > refuses different award
+ ✓ src/tournament/satelliteQualification.test.ts > equal satellite qualification proof > refuses wrong pool
+ ✓ src/tournament/satelliteQualification.test.ts > equal satellite qualification proof > refuses fractional cent
+ ✓ src/tournament/satelliteQualification.test.ts > equal satellite qualification proof > refuses missing closeout
+ ✓ src/tournament/satelliteQualification.test.ts > equal satellite qualification proof > refuses a different requested cohort [ Array(1) ]
+ ✓ src/tournament/satelliteQualification.test.ts > equal satellite qualification proof > refuses a different requested cohort [ …(2) ]
+ ✓ src/tournament/satelliteQualification.test.ts > equal satellite qualification proof > refuses a different requested cohort [ …(2) ]
+ ✓ src/tournament/satelliteQualification.test.ts > exact cohort transport > replays one sorted cohort after an ambiguous response
+ ✓ src/tournament/satelliteQualification.test.ts > exact cohort transport > accepts only the exact serialized committed receipt after direct response loss
+ ✓ src/tournament/satelliteQualification.test.ts > exact cohort transport > keeps a mismatched resolver identity unknown
+ ✓ src/tournament/satelliteQualification.test.ts > exact cohort transport > distinguishes a serialized uncommitted result from network failure
+ ✓ src/tournament/satelliteQualification.test.ts > exact cohort transport > prepares the exact identity and rejects a generic successful response
+ ✓ src/tournament/satelliteQualification.test.ts > actual manager settled qualification boundary > parks first, durably prepares, then settles the same cohort once
+ ✓ src/tournament/satelliteQualification.test.ts > actual manager settled qualification boundary > leaves unsupported threshold or remainder contracts to their own authority {"depth":3,"pool":600}
+ ✓ src/tournament/satelliteQualification.test.ts > actual manager settled qualification boundary > leaves unsupported threshold or remainder contracts to their own authority {"depth":2,"pool":401}
+ ✓ src/tournament/satelliteQualification.test.ts > actual manager settled qualification boundary > releases preadmission parking when a dealt hand has not settled
+ ✓ src/tournament/satelliteQualification.test.ts > actual manager settled qualification boundary > rechecks ownership after the roster read, before durable admission
+ ✓ src/tournament/satelliteQualification.test.ts > actual manager settled qualification boundary > rejects a field that changed while all source tables were parked
+ ✓ src/tournament/satelliteQualification.test.ts > actual manager settled qualification boundary > retains an ambiguous prepared cohort and alerts management before retrying
+ ✓ src/tournament/satelliteQualification.test.ts > actual manager settled qualification boundary > does not admit a cohort after authority changes during parking
+ ✓ src/tournament/satelliteQualification.test.ts > actual manager settled qualification boundary > stops the old manager after a preparation response crosses its shutdown
+ ✓ src/tournament/satelliteQualification.test.ts > actual manager settled qualification boundary > retains the causal retry if management alert delivery fails
+
+ Test Files  2 passed (2)
+      Tests  42 passed (42)
+   Start at  10:37:00
+   Duration  1.26s (transform 801ms, setup 17ms, collect 1.05s, tests 14ms, environment 0ms, prepare 94ms)
+

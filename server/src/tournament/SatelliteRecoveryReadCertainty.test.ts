@@ -9,6 +9,7 @@ const WINNER = '00000000-0000-4000-8000-000000000102';
 const state = vi.hoisted(() => ({
   field: { data: [] as unknown, error: null as { message: string } | null },
   hand: { data: { id: 'hand-1' } as unknown, error: null as { message: string } | null },
+  boundary: { data: null as unknown, error: null as { message: string } | null },
   mutations: [] as string[],
 }));
 
@@ -35,6 +36,7 @@ vi.mock('../services/supabase.js', () => ({
           };
         }
         if (table === 'tournament_players') return state.field;
+        if (table === 'tournament_satellite_qualification_boundaries') return state.boundary;
         if (table === 'hand_history') return state.hand;
         throw new Error(`unexpected recovery read: ${table}`);
       };
@@ -89,6 +91,7 @@ describe('satellite recovery requires readable result authority', () => {
   beforeEach(() => {
     state.field = { data: playingWinner(), error: null };
     state.hand = { data: { id: 'hand-1' }, error: null };
+    state.boundary = { data: null, error: null };
     state.mutations = [];
     vi.clearAllMocks();
   });
@@ -105,6 +108,14 @@ describe('satellite recovery requires readable result authority', () => {
       expect.anything(),
       'GameServer.recoverStuckCompleting_satellite_field_unreadable'
     );
+  });
+
+  it('does not assume legacy settlement when the qualification boundary cannot be read', async () => {
+    state.boundary = { data: null, error: { message: 'boundary read timeout' } };
+    await recoverStuckCompletingTournaments('audit');
+    expect(requestSatelliteSettlementReceipt).not.toHaveBeenCalled();
+    expect(reportError).toHaveBeenCalled();
+    expect(state.mutations).toEqual([]);
   });
 
   it('preserves an undecided field without any lifecycle or money call', async () => {

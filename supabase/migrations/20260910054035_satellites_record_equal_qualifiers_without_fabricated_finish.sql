@@ -2831,4 +2831,8 @@ REVOKE ALL ON FUNCTION public.fn_get_my_satellite_qualification(uuid)
   FROM PUBLIC,anon,service_role;
 GRANT EXECUTE ON FUNCTION public.fn_get_my_satellite_qualification(uuid) TO authenticated;
 
+-- Keep the installed service-only ranking authority explicit on replacement.
+REVOKE ALL ON FUNCTION public.fn_rank_survivors(uuid) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_rank_survivors(uuid) TO service_role;
+
 COMMIT;

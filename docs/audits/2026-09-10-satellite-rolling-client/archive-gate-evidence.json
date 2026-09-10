@@ -1,0 +1,36 @@
+{
+  "captured_at": "2026-09-10T15:43:55.115813+00:00",
+  "scope": "Normal archive pre-push findings, held proposal only",
+  "server_tests": {
+    "files": 2,
+    "passed": 42,
+    "new_boundary_read_error_case": 1
+  },
+  "migration_delta": "Explicitly revoke PUBLIC/anon/authenticated and grant service_role on fn_rank_survivors(uuid); rest byte-identical",
+  "live_rank_acl": "{postgres=X/postgres,service_role=X/postgres}",
+  "native_rank_acl": [
+    {
+      "acl": "{\"\\\"smarter.poker\\\"=X/\\\"smarter.poker\\\"\"}",
+      "body_md5": "9b7f2ed169fa69309c64c39bbe639a77"
+    },
+    {
+      "acl": "{\"\\\"smarter.poker\\\"=X/\\\"smarter.poker\\\"\",\"service_role=X/\\\"smarter.poker\\\"\"}",
+      "body_md5": "9b7f2ed169fa69309c64c39bbe639a77"
+    }
+  ],
+  "native_role_checks": [
+    "actual service_role invocation succeeds for nonexistent tournament",
+    "actual authenticated invocation refused",
+    "actual anon invocation refused"
+  ],
+  "production_writes": false,
+  "files": {
+    "supabase/migrations/20260910054035_satellites_record_equal_qualifiers_without_fabricated_finish.sql": "4615c011b70bbc0aaabd49c051264247f095950ee76a7440659c9ee15cb45e6b",
+    "server/src/tournament/SatelliteRecoveryReadCertainty.test.ts": "d34a794bf227647912c51bd34e17348edb437e8b7cc466e0398865f3588497bb"
+  },
+  "limits": [
+    "Native original no-owner fixture granted rank only to its local owner; explicit service grant aligns the current live service-only contract",
+    "Full earlier native settlement proof is unchanged at function-body level; this delta separately verifies role permissions",
+    "Stage-B/RPC and rolling-client activation holds remain in force"
+  ]
+}

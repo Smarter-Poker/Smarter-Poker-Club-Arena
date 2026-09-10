@@ -79,6 +79,22 @@ describe('Diamond custody server contract', () => {
     expect(await releaseDiamondEntry('custody', 'request')).toMatchObject({ success: true });
     expect(rpc.mock.calls[0]).toEqual(rpc.mock.calls[1]);
   });
+  it('accepts a busted zero release without inventing a wallet journal', async () => {
+    const zero = { ...receipt, amount: 0, custody_balance: 0, journal_id: null, debt_settled: 0 };
+    rpc.mockResolvedValue({ data: zero, error: null });
+    expect(await releaseDiamondEntry('custody', 'request')).toEqual(zero);
+    expect(alert).not.toHaveBeenCalled();
+  });
+  it.each([
+    { amount: 0, journal_id: 'fabricated' },
+    { amount: 100, journal_id: null },
+    { amount: 0, journal_id: null, debt_settled: 1 },
+  ])('rejects an incoherent release journal or debt: %j', async (fields) => {
+    rpc.mockResolvedValue({ data: { ...receipt, custody_balance: 0, ...fields }, error: null });
+    await expect(releaseDiamondEntry('custody', 'request')).rejects.toThrow(
+      'Invalid Diamond Custody Receipt'
+    );
+  });
   it('rejects release receipts belonging to another custody', async () => {
     rpc.mockResolvedValue({ data: { ...receipt, custody_id: 'other' }, error: null });
     await expect(releaseDiamondEntry('custody', 'request')).rejects.toThrow(

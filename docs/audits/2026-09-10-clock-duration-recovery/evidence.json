@@ -1,0 +1,140 @@
+{
+  "observed_at": "2026-09-10T18:20:04.987714+00:00",
+  "baseline_commit": "904171acc4f143da4c8c6619ba73cfbc12293753",
+  "scope": "Bounded duration composition and overdue recovery correction, not atomic clock activation",
+  "baseline": {
+    "client": "3 failing overdue assertions,87 passed",
+    "server": "4 failing overdue assertions,14 passed",
+    "duration": "27 failing actual-method cases,34 passed"
+  },
+  "corrected": {
+    "server": {
+      "files": 8,
+      "passed": 148
+    },
+    "client": {
+      "files": 3,
+      "passed": 118
+    },
+    "server_tsc_exit": 0,
+    "client_tsc_exit": 0,
+    "distinct_server_assertions": 151
+  },
+  "source_hashes": [
+    {
+      "file": "server/src/tournament/TournamentManagerBase.ts",
+      "sha256": "da8aaea735898908958896760cae147a6f55061bca5137f058dd433997ab4128"
+    },
+    {
+      "file": "server/src/tournament/blindEscalation.ts",
+      "sha256": "ad592b4da634b2f4a6d191eebf475789140187c27452e29326944a39a7179bc0"
+    },
+    {
+      "file": "src/services/TournamentService.ts",
+      "sha256": "8040cd30c2faa2c5507e4725ed6d923343abf5d7b2b9c08365ff650d7403bcc7"
+    },
+    {
+      "file": "scripts/dev/booked-spin-authority-runtime.mjs",
+      "sha256": "671d2044bbae96a5c4b1a7b82dd5617d9bcf6f39e376ddd7fb6a049768237544"
+    },
+    {
+      "file": "server/src/tournament/LevelDurationComposition.test.ts",
+      "sha256": "838f7d56df7c9da1b68317877439a4988fbdb2424551ca966d67e7df4693021a"
+    },
+    {
+      "file": "server/src/tournament/ResumeBlindClockBehavior.test.ts",
+      "sha256": "e88ccb3781450ceb019ef1403b650dd00f7b404b214a10e0007fcbca00b9dae7"
+    },
+    {
+      "file": "server/src/tournament/blindEscalation.test.ts",
+      "sha256": "5cc9e2f0e4c4134a6c18d5f11ca7e7ee68d5917eb75cb1367c6d40ddf21674f6"
+    },
+    {
+      "file": "tests/unit/TournamentService.test.ts",
+      "sha256": "c2a32ccd4dd617aae2ed3ce3517c62b3923aa2825347164a884f953a366cc8f8"
+    }
+  ],
+  "logs": {
+    "client-baseline": {
+      "file": "client-baseline.log",
+      "sha256": "154635535955a0ddaf521ea75d9e02a3b55b91ce48808f34260a03da289b48a1"
+    },
+    "server-baseline": {
+      "file": "server-baseline.log",
+      "sha256": "1f5aa932c6bd2a5e4830ebfbaeb2e287357a6a1847b986ad52d103c4eefa9ac2"
+    },
+    "duration-baseline": {
+      "file": "duration-baseline.log",
+      "sha256": "0f0226ee81ab65291725c89708d70ab93aac3ff008367e91828a18e5773ca958"
+    },
+    "server-fixed": {
+      "file": "server-fixed.log",
+      "sha256": "b0ccf34b39af38bb0504e30433348a3f4a5680be49242390fb761e3d40072a4e"
+    },
+    "client-fixed": {
+      "file": "client-fixed.log",
+      "sha256": "5085793258623ccb496807aa618c4695ce7d4ca75b3fca7462397afe6ac66d2a"
+    },
+    "publication-baseline": {
+      "file": "publication-baseline.log",
+      "sha256": "60c5049c39e27790d69f748f1d6ee219e67bf3ef4faea298789c11286303000a"
+    },
+    "publication-fixed": {
+      "file": "publication-fixed.log",
+      "sha256": "9a8c7d00f748052d92271644eb79b88c3ae928e51deca702481ab75921919ac2"
+    }
+  },
+  "publication": "Candidate, root integrates and verifies normal CI/publication",
+  "clock_k01": "OPEN",
+  "dormant_archive": "831f408db7eb593abe5a0d108177c382adfb19e2",
+  "no_production_database_change": true,
+  "production_spin_readback": {
+    "catalog": {
+      "observed_at": "2026-09-10 18:24:20.800877+00",
+      "signature": "fn_resolve_tournament_blinds(text,integer,text,text,numeric)",
+      "body_md5": "4f83c09a69eecc766a1f3984feeb9823",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres}",
+      "proconfig": ["search_path=public, pg_temp"],
+      "prosecdef": true
+    },
+    "host_constants": {
+      "observed_at": "2026-09-10 18:25:20.5208+00",
+      "server_version": "17.6",
+      "cases": 77,
+      "matches": 77,
+      "mismatches": []
+    },
+    "installed_helper": {
+      "observed_at": "2026-09-10 18:25:11.225162+00",
+      "cases": 93,
+      "matches": 93,
+      "mismatches": []
+    }
+  },
+  "current_manager_spin": {
+    "source_commit": "2cb36675de8a9265b9770188e541b22735ce5f9f",
+    "rows_compared": 93,
+    "matches": 93,
+    "expected_zero_round_refusals": 1,
+    "mismatches": [],
+    "file": "current-manager-spin-matrix.json",
+    "sha256": "c4dda44a9009200420896a9bdef5d8ac977dd0defdbf237b40eb9a19b7bb5cad"
+  },
+  "publication_followup": {
+    "before": "3 failed publication assertions,61 passed",
+    "after": {
+      "files": 2,
+      "assertions_passed": 74,
+      "new_assertions": 3,
+      "server_tsc_exit": 0
+    },
+    "no_production_writes": true
+  },
+  "excluded_reader_finding": {
+    "file": "server/src/services/TournamentBrainContext.ts",
+    "finding": "resolveBlindLevel and deriveBlindState each apply acceleration on generic overflow",
+    "status": "Excluded horse context source, unmodified and not certified by this clock patch"
+  },
+  "source_commit": "2cb36675de8a9265b9770188e541b22735ce5f9f"
+}

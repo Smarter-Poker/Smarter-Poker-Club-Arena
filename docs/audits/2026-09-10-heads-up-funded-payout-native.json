@@ -1,0 +1,598 @@
+{
+  "passed": [
+    "one real registration binds one debit, journal, entitlement, escrow and operation receipt",
+    "late operation receipt failure rolls back every funding and entry write",
+    "overlapping retry requests fund one entry",
+    "overlapping duplicate requests fund one entry",
+    "two real contenders for the last place commit one funded entry",
+    "registration waiting behind pool closure rechecks eligibility without charging",
+    "entry receipt balance belongs to the club wallet actually charged",
+    "rebuy atomically binds exact wallet funding, ledger, escrow, seat, generation and receipt",
+    "reentry atomically binds exact wallet funding, ledger, escrow, seat, generation and receipt",
+    "addon atomically binds exact wallet funding, ledger, escrow, seat, generation and receipt",
+    "rebuy rolls back the debit, grant, generation, pool, journal and wake on final receipt failure",
+    "reentry rolls back the debit, grant, generation, pool, journal and wake on final receipt failure",
+    "addon rolls back the debit, grant, generation, pool, journal and wake on final receipt failure",
+    "rebuy concurrent retries commit one funded grant",
+    "rebuy concurrent competing tokens commit one funded grant",
+    "reentry concurrent retries commit one funded grant",
+    "reentry concurrent competing tokens commit one funded grant",
+    "addon concurrent retries commit one funded grant",
+    "seatless reentry commits its funded replacement chair in the same transaction",
+    "successive reentries have distinct bust/seat generations and old-token replay cannot bypass the entry limit",
+    "reentry rejects live/paid entries, closed level/time windows, missing or contradictory bust proofs and insufficient funds without writes",
+    "an expired add-on window cannot charge or grant chips",
+    "rebuy requires an open decision prompt, the offered format and an unused purchase limit",
+    "real entry and public refund close original wallet escrow fees and roster once",
+    "refund preserves charged club wallet after another older membership appears",
+    "refund returns immutable original charge when displayed entry price changes",
+    "late unregistration receipt failure rolls back every funded relation",
+    "overlapping same_request unregistrations pay one original entry",
+    "overlapping different_request unregistrations pay one original entry",
+    "unregistration waiting behind committed start preserves funded entry",
+    "scheduled start cutoff refuses voluntary refund without financial writes",
+    "lost prestart refund response remains an exact read after start",
+    "free entry unregisters with zero spendable credit and a durable receipt",
+    "old refund identity cannot unregister a later paid registration",
+    "cutoff reached during refund reverses the whole uncommitted transaction",
+    "configured 1 5 10 25 and 40 entries fund disclosed components and refund exact cents",
+    "bounty PKO and mystery entry components return through the common funded refund",
+    "Heads-Up first seat binds the paid entry and exact starting stack",
+    "same-seat and changed-seat retries reuse one funded entry without moving it",
+    "overlapping same-seat retry buys one entry and one stack",
+    "overlapping changed-seat retry buys one entry and one stack",
+    "nlh 300: last seat race funds two entries and lease-bound launch replays unchanged",
+    "nlh 300: actual funded launch prices exactly its prize custody and preserves every source row",
+    "nlh 300: late actual payout receipt failure rolls every funded source relation back",
+    "nlh 300: overlapping actual cumulative payments exhaust funded prize once and retain fee custody",
+    "nlh 300: exact replay and wrong-recipient or history refusals preserve all payment evidence",
+    "nlh 1000: last seat race funds two entries and lease-bound launch replays unchanged",
+    "nlh 1000: actual funded launch prices exactly its prize custody and preserves every source row",
+    "nlh 1000: late actual payout receipt failure rolls every funded source relation back",
+    "nlh 1000: overlapping actual cumulative payments exhaust funded prize once and retain fee custody",
+    "nlh 1000: exact replay and wrong-recipient or history refusals preserve all payment evidence",
+    "plo4 300: last seat race funds two entries and lease-bound launch replays unchanged",
+    "plo4 300: actual funded launch prices exactly its prize custody and preserves every source row",
+    "plo4 300: late actual payout receipt failure rolls every funded source relation back",
+    "plo4 300: overlapping actual cumulative payments exhaust funded prize once and retain fee custody",
+    "plo4 300: exact replay and wrong-recipient or history refusals preserve all payment evidence",
+    "plo4 1000: last seat race funds two entries and lease-bound launch replays unchanged",
+    "plo4 1000: actual funded launch prices exactly its prize custody and preserves every source row",
+    "plo4 1000: late actual payout receipt failure rolls every funded source relation back",
+    "plo4 1000: overlapping actual cumulative payments exhaust funded prize once and retain fee custody",
+    "plo4 1000: exact replay and wrong-recipient or history refusals preserve all payment evidence",
+    "failure after the funded seat write rolls back wallet ledger entitlement escrow roster and seat",
+    "last refund receipt failure rolls back all financial and seat relations",
+    "refund replays exactly; physical seat revival buys a new registration and rejects an old refund",
+    "refund waiting behind actual launch completion cannot unwind the started entry",
+    "launch waiting behind the actual refund rechecks the surviving one-player field",
+    "launch waits for the funded last seat before proving and starting the field",
+    "last-seat readiness does not itself start play or erase the prestart refund right",
+    "last launch receipt failure rolls status and every proof relation back together"
+  ],
+  "production_database_used": false,
+  "funded_payout": {
+    "scope": "Real funded HU admission and launch through installed amount and cumulative prize writers",
+    "funded_ladder": {
+      "scope": "Real paid Heads-Up admission and launch to installed amount derivation",
+      "input_sha256": {
+        "supabase/migrations/20260910173147_the_settlement_lane_is_per_tournament_for_rolling_authorities.sql": "bc620a6b093ab9769615427168763bc35aaed44e60ee190202470dfcef0f744b",
+        "supabase/migrations/20260910171924_satellite_seats_count_once_and_keep_the_funded_prize.sql": "9a00bc662f729d5a6db25c4f10a5ceeb45509b230e35f48252620fe9dcef3fc3",
+        "scripts/dev/fixtures/tournament-payout-amounts/installed.sql": "c153f83039a1a3346fb2d35dc59595f2d18c04797058bb9cfbbc98e06c0837a4"
+      },
+      "installed_body_md5": {
+        "fn_ca_escrow_on_rake_record": "3e628d6a57a93eeb61d494ee33f989a3",
+        "fn_ca_lock_settlement_lane_for_tournament": "3acb4c1d763181905cf5b64287f8f28f",
+        "fn_ca_tournament_place_amounts": "8f6cde5f5b799949506259f3064568b9",
+        "fn_lock_daily_mission_user": "66c5a8c8da7471773a58dd7c346c9df0",
+        "fn_tournament_live_seat_acquisition_requires_authority": "5a60bdd761aaaaad4b3bf982a3c50f6e",
+        "fn_tournament_payouts_are_append_only": "6cfe150a2a360d878c9c389499e7b196"
+      },
+      "variants": [
+        {
+          "variant": "nlh",
+          "starting_stack": 300,
+          "state": {
+            "wallets": 1600.0,
+            "wallet_debits": 400.0,
+            "wallet_credits": 0,
+            "journal_debits": 400.0,
+            "gross": 400.0,
+            "prize": 380.0,
+            "fee": 20.0,
+            "bounty": 0.0,
+            "display_prize": 380.0,
+            "display_fee": 20.0,
+            "seat_score": 600.0,
+            "roster_score": 600,
+            "entries": 2,
+            "draws": 0,
+            "payouts": 0,
+            "obligations": 0,
+            "status": "RUNNING",
+            "launch_completed": true
+          },
+          "ladder": [
+            {
+              "place": 1,
+              "amount": 380.0
+            }
+          ],
+          "source_unchanged": true,
+          "source_before_sha256": "72afa712b608138d3c55b194c46209bbfc474775d9c2a4355c131de8667351a2",
+          "source_after_sha256": "72afa712b608138d3c55b194c46209bbfc474775d9c2a4355c131de8667351a2",
+          "public_table_count": 65
+        },
+        {
+          "variant": "nlh",
+          "starting_stack": 1000,
+          "state": {
+            "wallets": 1600.0,
+            "wallet_debits": 400.0,
+            "wallet_credits": 0,
+            "journal_debits": 400.0,
+            "gross": 400.0,
+            "prize": 380.0,
+            "fee": 20.0,
+            "bounty": 0.0,
+            "display_prize": 380.0,
+            "display_fee": 20.0,
+            "seat_score": 2000.0,
+            "roster_score": 2000,
+            "entries": 2,
+            "draws": 0,
+            "payouts": 0,
+            "obligations": 0,
+            "status": "RUNNING",
+            "launch_completed": true
+          },
+          "ladder": [
+            {
+              "place": 1,
+              "amount": 380.0
+            }
+          ],
+          "source_unchanged": true,
+          "source_before_sha256": "7081a6c441181d1e7e18dd66b5ec9a76150958c1793cc770e46c09d3e0f2523b",
+          "source_after_sha256": "7081a6c441181d1e7e18dd66b5ec9a76150958c1793cc770e46c09d3e0f2523b",
+          "public_table_count": 65
+        },
+        {
+          "variant": "plo4",
+          "starting_stack": 300,
+          "state": {
+            "wallets": 1600.0,
+            "wallet_debits": 400.0,
+            "wallet_credits": 0,
+            "journal_debits": 400.0,
+            "gross": 400.0,
+            "prize": 380.0,
+            "fee": 20.0,
+            "bounty": 0.0,
+            "display_prize": 380.0,
+            "display_fee": 20.0,
+            "seat_score": 600.0,
+            "roster_score": 600,
+            "entries": 2,
+            "draws": 0,
+            "payouts": 0,
+            "obligations": 0,
+            "status": "RUNNING",
+            "launch_completed": true
+          },
+          "ladder": [
+            {
+              "place": 1,
+              "amount": 380.0
+            }
+          ],
+          "source_unchanged": true,
+          "source_before_sha256": "951425f62abf51d72b1549bf684f267562ee7c70c1069ef5e1e5469ebd943239",
+          "source_after_sha256": "951425f62abf51d72b1549bf684f267562ee7c70c1069ef5e1e5469ebd943239",
+          "public_table_count": 65
+        },
+        {
+          "variant": "plo4",
+          "starting_stack": 1000,
+          "state": {
+            "wallets": 1600.0,
+            "wallet_debits": 400.0,
+            "wallet_credits": 0,
+            "journal_debits": 400.0,
+            "gross": 400.0,
+            "prize": 380.0,
+            "fee": 20.0,
+            "bounty": 0.0,
+            "display_prize": 380.0,
+            "display_fee": 20.0,
+            "seat_score": 2000.0,
+            "roster_score": 2000,
+            "entries": 2,
+            "draws": 0,
+            "payouts": 0,
+            "obligations": 0,
+            "status": "RUNNING",
+            "launch_completed": true
+          },
+          "ladder": [
+            {
+              "place": 1,
+              "amount": 380.0
+            }
+          ],
+          "source_unchanged": true,
+          "source_before_sha256": "fb0a58a145882a1ecbb9eb6afedfb6feba24cfb4db901eca8e82131035d6563c",
+          "source_after_sha256": "fb0a58a145882a1ecbb9eb6afedfb6feba24cfb4db901eca8e82131035d6563c",
+          "public_table_count": 65
+        }
+      ],
+      "production_mutations": false,
+      "stage_b_installed": false,
+      "terminal_payment_exercised": false,
+      "limits": [
+        "Synthetic local auth and supporting operational tables.",
+        "This is amount derivation from actual funded entries, not a paid terminal receipt.",
+        "The original 16 Heads-Up groups also run; the historical full suite had 53 groups total.",
+        "Broader current production dependency, HTTP/RLS, real-dealer and terminal closure remain separate."
+      ]
+    },
+    "source_manifest": {
+      "catalog_date_utc": "2026-09-10",
+      "functions": [
+        {
+          "body_md5": "310d509610d786cfc722bbadd8c68a85",
+          "signature": "fn_ca_escrow_can_pay(uuid,text,numeric)"
+        },
+        {
+          "body_md5": "facba80dff6edbe1b70a010f32bc5aad",
+          "signature": "fn_credit_and_log(uuid,numeric,text,text,text,uuid,text,uuid,uuid,integer,text)"
+        },
+        {
+          "body_md5": "563d773ceb906695c150e9ced48db772",
+          "signature": "fn_credit_player_wallet_once(uuid,numeric,text)"
+        },
+        {
+          "body_md5": "3caf138ce0ba16e379e8c739cf21ca70",
+          "signature": "fn_raise_server_financial_alert(text,text,text,jsonb,text)"
+        },
+        {
+          "body_md5": "fbe05a034c5de1f61e2dc5506a296bd7",
+          "signature": "fn_tournament_payout_shape(text)"
+        },
+        {
+          "body_md5": "aa6bdc037c8d59e6648ef0c3ad9ad768",
+          "signature": "fn_tournament_payouts_are_append_only()"
+        },
+        {
+          "body_md5": "1c9f4932f5eda803a69a37ec2e3c2b9c",
+          "signature": "zz_a_payout_row_carries_its_key()"
+        },
+        {
+          "body_md5": "915f3ebd5c4a2efb97ad3a354dfeb365",
+          "signature": "fn_settle_tournament_obligation(uuid,text,integer,uuid,numeric,text,text,uuid)"
+        },
+        {
+          "body_md5": "68f74f87580ea2c2a1cacbe30f9b4289",
+          "signature": "fn_settle_tournament_obligation_before_atomic_batch_gate(uuid,text,integer,uuid,numeric,text,text,uuid)"
+        }
+      ],
+      "production_database_used": false,
+      "tables": ["ca_manual_adjustments", "ca_payout_freeze", "financial_alerts"],
+      "unique_indices": [
+        "ux_tournament_obligations_place",
+        "ux_tournament_obligations_user",
+        "uq_tournament_payouts_idempotency_key"
+      ],
+      "archive_commit": "24217c5024a4c031aec51dbddba531cd3c1b7842",
+      "archive_path": "scripts/dev/fixtures/tournament-obligation-funding/installed.sql",
+      "archive_sql_sha256": "5e99607bf4ea56fe17aef9254585e68e24d8d96890720579448487c4b76f03e4",
+      "approved_migration": "supabase/migrations/20260910171857_a_refused_finishing_place_creates_no_debt.sql",
+      "approved_migration_sha256": "69d77f9968d49008f7069fe63b618b802937338e439f631806f02dba0da1220d",
+      "approved_body_md5": "ebabbaf0456d80335aaa2e04471d0ab6"
+    },
+    "exercised_runtime_catalog": [
+      {
+        "signature": "fn_ca_escrow_can_pay(uuid,text,numeric)",
+        "body_md5": "310d509610d786cfc722bbadd8c68a85",
+        "definition_md5": "dca930bf8b92f3791d8ebfcaa143c66c",
+        "owner": "registration_test",
+        "acl": null,
+        "security_definer": true,
+        "config": ["search_path=public"]
+      },
+      {
+        "signature": "fn_credit_and_log(uuid,numeric,text,text,text,uuid,text,uuid,uuid,integer,text)",
+        "body_md5": "facba80dff6edbe1b70a010f32bc5aad",
+        "definition_md5": "215820042e2ef7969132f25d14148061",
+        "owner": "registration_test",
+        "acl": null,
+        "security_definer": true,
+        "config": ["search_path=public", "statement_timeout=30s"]
+      },
+      {
+        "signature": "fn_credit_player_wallet_once(uuid,numeric,text)",
+        "body_md5": "563d773ceb906695c150e9ced48db772",
+        "definition_md5": "150e637deab4cc7b4170470d912c0b23",
+        "owner": "registration_test",
+        "acl": null,
+        "security_definer": false,
+        "config": ["search_path=public, extensions"]
+      },
+      {
+        "signature": "fn_raise_server_financial_alert(text,text,text,jsonb,text)",
+        "body_md5": "3caf138ce0ba16e379e8c739cf21ca70",
+        "definition_md5": "984742e7cf77e249fa915256fb4f80b5",
+        "owner": "registration_test",
+        "acl": null,
+        "security_definer": true,
+        "config": ["search_path=public"]
+      },
+      {
+        "signature": "fn_settle_tournament_obligation(uuid,text,integer,uuid,numeric,text,text,uuid)",
+        "body_md5": "915f3ebd5c4a2efb97ad3a354dfeb365",
+        "definition_md5": "5a881321824161ae69c1c623982d4a29",
+        "owner": "registration_test",
+        "acl": null,
+        "security_definer": true,
+        "config": ["search_path=public, pg_temp"]
+      },
+      {
+        "signature": "fn_settle_tournament_obligation_before_atomic_batch_gate(uuid,text,integer,uuid,numeric,text,text,uuid)",
+        "body_md5": "ebabbaf0456d80335aaa2e04471d0ab6",
+        "definition_md5": "5a3aa8bd1a48d18b793e39c09b645b41",
+        "owner": "registration_test",
+        "acl": null,
+        "security_definer": true,
+        "config": ["search_path=public"]
+      },
+      {
+        "signature": "fn_tournament_payout_shape(text)",
+        "body_md5": "fbe05a034c5de1f61e2dc5506a296bd7",
+        "definition_md5": "1b3840ee7f129860e6d296b2088ef4ff",
+        "owner": "registration_test",
+        "acl": null,
+        "security_definer": false,
+        "config": ["search_path=public"]
+      },
+      {
+        "signature": "fn_tournament_payouts_are_append_only()",
+        "body_md5": "6cfe150a2a360d878c9c389499e7b196",
+        "definition_md5": "f3fca4d1245a05dcc03d98a93d0a641a",
+        "owner": "registration_test",
+        "acl": null,
+        "security_definer": false,
+        "config": ["search_path=public"]
+      },
+      {
+        "signature": "zz_a_payout_row_carries_its_key()",
+        "body_md5": "1c9f4932f5eda803a69a37ec2e3c2b9c",
+        "definition_md5": "818ffaa60a8263a176af34191cda2d5a",
+        "owner": "registration_test",
+        "acl": null,
+        "security_definer": false,
+        "config": null
+      }
+    ],
+    "variants": [
+      {
+        "variant": "nlh",
+        "starting_stack": 300,
+        "winner": "c1000000-0000-4000-8000-000000000001",
+        "state": {
+          "wallets": 1980.0,
+          "winner_balance": 680.0,
+          "prize": 0.0,
+          "fee": 20.0,
+          "bounty": 0.0,
+          "gross": 400.0,
+          "payouts": 1,
+          "paid": 380.0,
+          "owed": 380.0,
+          "obligation_paid": 380.0,
+          "obligations": 1,
+          "credits": 1,
+          "credit_receipts": 1,
+          "journal_payments": 380.0,
+          "status": "RUNNING",
+          "terminal_receipts": 0,
+          "seated": 2
+        },
+        "exact_receipt_chain": true,
+        "late_failure_rollback_exact": true,
+        "concurrent_replay_paid": 0,
+        "refusal_unchanged": true,
+        "late_failure_snapshot": {
+          "before_sha256": "72afa712b608138d3c55b194c46209bbfc474775d9c2a4355c131de8667351a2",
+          "after_sha256": "72afa712b608138d3c55b194c46209bbfc474775d9c2a4355c131de8667351a2",
+          "public_table_count": 65
+        },
+        "replay_before_sha256": "101fd0849c8a687b535cf66652fdc6cafcb0cacb49316f5520924765d2881f0e",
+        "replay_after_sha256": "101fd0849c8a687b535cf66652fdc6cafcb0cacb49316f5520924765d2881f0e"
+      },
+      {
+        "variant": "nlh",
+        "starting_stack": 1000,
+        "winner": "c1000000-0000-4000-8000-000000000001",
+        "state": {
+          "wallets": 1980.0,
+          "winner_balance": 680.0,
+          "prize": 0.0,
+          "fee": 20.0,
+          "bounty": 0.0,
+          "gross": 400.0,
+          "payouts": 1,
+          "paid": 380.0,
+          "owed": 380.0,
+          "obligation_paid": 380.0,
+          "obligations": 1,
+          "credits": 1,
+          "credit_receipts": 1,
+          "journal_payments": 380.0,
+          "status": "RUNNING",
+          "terminal_receipts": 0,
+          "seated": 2
+        },
+        "exact_receipt_chain": true,
+        "late_failure_rollback_exact": true,
+        "concurrent_replay_paid": 0,
+        "refusal_unchanged": true,
+        "late_failure_snapshot": {
+          "before_sha256": "7081a6c441181d1e7e18dd66b5ec9a76150958c1793cc770e46c09d3e0f2523b",
+          "after_sha256": "7081a6c441181d1e7e18dd66b5ec9a76150958c1793cc770e46c09d3e0f2523b",
+          "public_table_count": 65
+        },
+        "replay_before_sha256": "1d436f8b2b75496326e22288ae9354339aab5ff11e3c269c8222fc6b35a21e6b",
+        "replay_after_sha256": "1d436f8b2b75496326e22288ae9354339aab5ff11e3c269c8222fc6b35a21e6b"
+      },
+      {
+        "variant": "plo4",
+        "starting_stack": 300,
+        "winner": "c1000000-0000-4000-8000-000000000002",
+        "state": {
+          "wallets": 1980.0,
+          "winner_balance": 680.0,
+          "prize": 0.0,
+          "fee": 20.0,
+          "bounty": 0.0,
+          "gross": 400.0,
+          "payouts": 1,
+          "paid": 380.0,
+          "owed": 380.0,
+          "obligation_paid": 380.0,
+          "obligations": 1,
+          "credits": 1,
+          "credit_receipts": 1,
+          "journal_payments": 380.0,
+          "status": "RUNNING",
+          "terminal_receipts": 0,
+          "seated": 2
+        },
+        "exact_receipt_chain": true,
+        "late_failure_rollback_exact": true,
+        "concurrent_replay_paid": 0,
+        "refusal_unchanged": true,
+        "late_failure_snapshot": {
+          "before_sha256": "951425f62abf51d72b1549bf684f267562ee7c70c1069ef5e1e5469ebd943239",
+          "after_sha256": "951425f62abf51d72b1549bf684f267562ee7c70c1069ef5e1e5469ebd943239",
+          "public_table_count": 65
+        },
+        "replay_before_sha256": "5c92142b040c73ba98044ce1f4b36f6feb6177597fd9c26b5f5441280c07a2b4",
+        "replay_after_sha256": "5c92142b040c73ba98044ce1f4b36f6feb6177597fd9c26b5f5441280c07a2b4"
+      },
+      {
+        "variant": "plo4",
+        "starting_stack": 1000,
+        "winner": "c1000000-0000-4000-8000-000000000002",
+        "state": {
+          "wallets": 1980.0,
+          "winner_balance": 680.0,
+          "prize": 0.0,
+          "fee": 20.0,
+          "bounty": 0.0,
+          "gross": 400.0,
+          "payouts": 1,
+          "paid": 380.0,
+          "owed": 380.0,
+          "obligation_paid": 380.0,
+          "obligations": 1,
+          "credits": 1,
+          "credit_receipts": 1,
+          "journal_payments": 380.0,
+          "status": "RUNNING",
+          "terminal_receipts": 0,
+          "seated": 2
+        },
+        "exact_receipt_chain": true,
+        "late_failure_rollback_exact": true,
+        "concurrent_replay_paid": 0,
+        "refusal_unchanged": true,
+        "late_failure_snapshot": {
+          "before_sha256": "fb0a58a145882a1ecbb9eb6afedfb6feba24cfb4db901eca8e82131035d6563c",
+          "after_sha256": "fb0a58a145882a1ecbb9eb6afedfb6feba24cfb4db901eca8e82131035d6563c",
+          "public_table_count": 65
+        },
+        "replay_before_sha256": "3cd0a7e43e175552a0243a32741f6a9b97e6f5dfa879309fd79c8ae136d0c3cb",
+        "replay_after_sha256": "3cd0a7e43e175552a0243a32741f6a9b97e6f5dfa879309fd79c8ae136d0c3cb"
+      }
+    ],
+    "production_mutations": false,
+    "stage_b_installed": false,
+    "prize_payment_exercised": true,
+    "terminal_payment_exercised": false,
+    "limits": [
+      "Winner identity is synthetic input; no authoritative elimination or hand witness is claimed.",
+      "All financial credits, receipts and escrow changes use actual captured approved writers.",
+      "The native dependency roles are fixture roles, not proof of production ACL or HTTP/RLS parity.",
+      "Fee custody stays 20; seats remain live and status RUNNING with zero terminal receipts.",
+      "Current terminal readiness, fee attribution and seat-exit closure remain outside this proof.",
+      "The base full suite had 53 total groups, including 16 HU groups."
+    ]
+  },
+  "verified_at": "2026-09-10T18:40:47.357647+00:00",
+  "source_base_commit": "e6286a0d06e28290b58ac1da7dbe314423e0ade5",
+  "command": [
+    "python3",
+    "scripts/dev/probe-tournament-registration-funding-pg17.py",
+    "--with-heads-up-payout"
+  ],
+  "native_exit": 0,
+  "duration_seconds": 49.787,
+  "group_count": 69,
+  "group_breakdown": {
+    "other_entry_purchase_refund": 37,
+    "heads_up_existing": 16,
+    "heads_up_funded_ladder": 4,
+    "heads_up_funded_payout": 12
+  },
+  "native_log_sha256": "c07c9c0c7267ec3fcb28e5e778a5606be8ac749ed17b514742867242639f5b6b",
+  "private_cluster_removed": true,
+  "local_transport": "psql 17 via private Unix socket; CI uses its existing pinned Node pg transport",
+  "input_file_sha256": {
+    "scripts/ci/probes/chip-journal-atomicity/postgres-runtime/registration-query.mjs": "aa52fe8ae1d75a944769626420a7b2556bec8dcdd832d0e1cbcf1633527d606c",
+    "scripts/ci/probes/chip-journal-atomicity/run-isolated.sh": "99c832f743f4d618f24a0df9112ff7d1fb1e9683f8ac63ee3422662a48169623",
+    "scripts/dev/fixtures/heads-up-funding/README.md": "a965af508bc4e3abb37d67c1ab4bb5e2eadc67d0b9bb2de1c48f1ab0f1f3e905",
+    "scripts/dev/fixtures/heads-up-funding/captured-functions.json": "2d8bbf1410ddf87670bb3e1fee7ea3d76c43878d5f171b8f0d92b3f83ee66a98",
+    "scripts/dev/fixtures/heads-up-funding/columns.json": "64cc7b1c5aca6ae5b8c35dc35f5f00a52ca4ee3288cd7100bce2868e3d9609bb",
+    "scripts/dev/fixtures/heads-up-funding/dependencies.json": "d69dd24fec72c79d51995befa1d0a830c57379f04bd69a3069edada35cd4a094",
+    "scripts/dev/fixtures/heads-up-funding/financial-columns.json": "63c4b1b2dd939fc92f283b69f072ac693981832594463173f8b7a4ec7032b34e",
+    "scripts/dev/fixtures/heads-up-funding/refund-constraints.json": "18deb63bb7ffe5e9ab644bfae39437f6a4fa2cd1e08dcc85bc90ba8467cb150c",
+    "scripts/dev/fixtures/heads-up-funding/support-schema.json": "289e9f6e2e7b23f6571cbc0bf9a0529ef87fe01e898b5a2c9877206506d16c94",
+    "scripts/dev/fixtures/heads-up-funding/trigger-inventory.json": "c420e93c36db0ef884fdee68aed0de1c4bae181e2e72a549ce06376e437daece",
+    "scripts/dev/fixtures/heads-up-funding/triggers.sql": "b9cc91b7af6f489af2b7bbea7dbfa97aaa51194f73dc15ebd6b5c793389d2d01",
+    "scripts/dev/fixtures/heads-up-payout/README.md": "596ea0bd0c87caad2229b6d482d9756a035a2587b59eb58a6ec79795f775005b",
+    "scripts/dev/fixtures/heads-up-payout/installed.sql": "5e99607bf4ea56fe17aef9254585e68e24d8d96890720579448487c4b76f03e4",
+    "scripts/dev/fixtures/heads-up-payout/source-manifest.json": "9d9041d7f78fd110b22aff7389ffd7cbdc9a758a69609dae03b79c5e361b521e",
+    "scripts/dev/fixtures/registration-funding/README.md": "c706e0cf93c6ef0c1bd25ac25778183498ff5bf5a26d6e634e40cf426f1687a3",
+    "scripts/dev/fixtures/registration-funding/installed.sql": "5e78455fcb7b3a4eba04dff7b5ccfa74c3a813d1ed13c81d78ec990b85826b9a",
+    "scripts/dev/fixtures/registration-funding/source-manifest.json": "abf6e7981794ea97db0e0f7a6306aaf1889c8651449b02ddb1161f019f4d56e5",
+    "scripts/dev/fixtures/satellite-refund/README.md": "dd9bcfd29dd191fd4552b08ef1dba23b2d40cac0b4700944bb1625785fc2021c",
+    "scripts/dev/fixtures/satellite-refund/concurrency.py": "6d6774d61b3ee5b64d99fe5423f9a8ff179390c2a8d609c9fffd97270985732f",
+    "scripts/dev/fixtures/satellite-refund/fixture.sql": "e2226b4ec69a16113a088db5ea71d72c6342adbf308e9a535d211c4a18455972",
+    "scripts/dev/fixtures/satellite-refund/legacy-check.sql": "d14b53516e70625350fe7d0ef91e5b498faf79ab5bc152e38924c10d3dbe0d75",
+    "scripts/dev/fixtures/satellite-refund/probe.sql": "14e25e9d89eecac67284f2a3b084dfe0aaa024cd2ebd78a08e1fb588f60ad898",
+    "scripts/dev/fixtures/satellite-refund/ticket_probe.sql": "122625aa8b5d5f28df4fbc786b4f5b4c59557591a646806a1b8edb501dc5de55",
+    "scripts/dev/fixtures/satellite-refund/wallet_probe.sql": "089720e1eae51d4b4ef0bc7d43783c016f40fbd6c8268d534f0894a79bb2f0fd",
+    "scripts/dev/fixtures/tournament-payout-amounts/installed.sql": "c153f83039a1a3346fb2d35dc59595f2d18c04797058bb9cfbbc98e06c0837a4",
+    "scripts/dev/fixtures/tournament-purchase-funding/README.md": "a9e59a2bf0e8b7a523efc707bc3d943dc6df791f18b3a25d4b92038d638e73bb",
+    "scripts/dev/fixtures/tournament-purchase-funding/installed.sql": "6a30411fac013b1a24a3f51f5770cec526936db1ba908a5b3aa915f6b6113c8b",
+    "scripts/dev/fixtures/tournament-purchase-funding/source-manifest.json": "8243fcd91baf1a7f318293cdab939dcbd6a64def58c6e68a84c88307ed942afd",
+    "scripts/dev/fixtures/tournament-purchase-funding/triggers.sql": "041773772429439f724847d15b341d3cbe9d216ff1a643b2a136e5106e78aa5a",
+    "scripts/dev/fixtures/unregistration-funding/README.md": "76a7f01734474699053045eae44e99bedc4831eb03e80963923b2ddedea6c9a7",
+    "scripts/dev/fixtures/unregistration-funding/installed.sql": "d78293bc1d910da8b0ee352a0848bca80cca172c93beac997fc0de775df06b51",
+    "scripts/dev/fixtures/unregistration-funding/source-manifest.json": "149961e57fdaf7a458f9c5b1502828b488963e97cfc0c4821984aceefd35b9c6",
+    "scripts/dev/probe-tournament-registration-funding-pg17.py": "bd66602405ee261518d992a7b6325823f876dc08366ec843353eb2b437f01cd5",
+    "scripts/dev/tournament_heads_up_funding_cases.py": "8866d0ddf8755f3a83e30947180926a3ef23d8f4cd162b98d31a7b0848b2c4d9",
+    "scripts/dev/tournament_heads_up_ladder_cases.py": "0aa7c26a3f894cd496440843c319556f1f992c819c598526967e8bc90aeba265",
+    "scripts/dev/tournament_heads_up_payout_cases.py": "d6d2a0f4422e6a3ae2d726ab4ee244420930d84ca94b975b350b0ea9f05765e6",
+    "scripts/dev/tournament_purchase_funding_cases.py": "a0217650c8a45c4f15746cf73f59ab53796a015ad336d520dac801bf046585b5",
+    "scripts/dev/tournament_unregistration_funding_cases.py": "054aeaf542811d1e482a599176a52cb56eeefd666b6c302c1afbfde7e5d07975",
+    "supabase/migrations/20260909165629_satellite_settlement_has_one_atomic_authority.sql": "ce14eccd72c0589fd4feae70fe1395a11347d1c0812de15090a7b48337d08882",
+    "supabase/migrations/20260909222303_satellite_unregister_returns_its_funded_cash.sql": "aa58b97563d4541c9a44a1d60ce3fc2883fe03d227c9df825e9d4f8929dbc907",
+    "supabase/migrations/20260910012633_tournament_entry_receipts_use_the_charged_club_wallet.sql": "08bc3f0012fb887d2cc2157430685a110254ae248d8b97889b640ee9db497e4f",
+    "supabase/migrations/20260910020626_the_host_club_is_in_its_own_union.sql": "4e078b55a44bbc3e516d4a0da73ce39453b4dc6950225d98e02d2a8d6c0412e9",
+    "supabase/migrations/20260910023919_the_entry_is_charged_to_the_wallet_the_entry_is_stamped_with.sql": "0da3ff95884121df67a9410c8535338c2afd32679288f1868f921d689df2c2e5",
+    "supabase/migrations/20260910171857_a_refused_finishing_place_creates_no_debt.sql": "69d77f9968d49008f7069fe63b618b802937338e439f631806f02dba0da1220d",
+    "supabase/migrations/20260910171924_satellite_seats_count_once_and_keep_the_funded_prize.sql": "9a00bc662f729d5a6db25c4f10a5ceeb45509b230e35f48252620fe9dcef3fc3",
+    "supabase/migrations/20260910173147_the_settlement_lane_is_per_tournament_for_rolling_authorities.sql": "bc620a6b093ab9769615427168763bc35aaed44e60ee190202470dfcef0f744b"
+  }
+}

@@ -130,6 +130,36 @@ function harness(
 afterEach(() => vi.useRealTimers());
 
 describe('the persisted blind clock survives an engine restart during a break', () => {
+  it.each([2400000, 2400001, 86400000])(
+    'does not grant a fresh level after an anchor is %i milliseconds old',
+    async (elapsedMs) => {
+      vi.useFakeTimers();
+      const now = Date.parse('2026-09-10T12:00:00.000Z');
+      vi.setSystemTime(now);
+      const tournament = fixture({
+        on_break: false,
+        level_started_at: new Date(now - elapsedMs).toISOString(),
+      });
+      const { state } = harness(tournament);
+      await state.restore(tournament);
+      expect(state.blindTimer.delay).toBe(1000);
+      expect(state.currentLevel).toBe(0);
+      await state.blindTimer.callback();
+      expect(state.advanceBlindLevel).toHaveBeenCalledTimes(1);
+    }
+  );
+
+  it('keeps an already overdue level due while restoring a recorded break', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-09T12:57:00.000Z'));
+    const tournament = fixture({ level_started_at: '2026-09-09T11:50:00.000Z' });
+    const { state, writes } = harness(tournament);
+    await state.restore(tournament);
+    expect(state.savedBlindTimerRemaining).toBe(1000);
+    expect(state.blindTimer).toBeNull();
+    expect(writes).toEqual([]);
+  });
+
   it('preserves five minutes of play and its durable anchor without arming a level timer', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-09-09T12:57:00.000Z'));

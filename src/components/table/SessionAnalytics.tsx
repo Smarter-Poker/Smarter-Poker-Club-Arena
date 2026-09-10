@@ -1,21 +1,43 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  SESSION ANALYTICS — PokerCraft-Style Analytics Dashboard
+ *  SESSION ANALYTICS — Detailed session panel behind "Detailed Analytics"
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * Comprehensive session analytics panel accessible from the table menu.
- * Visualizes detailed playing statistics like GGPoker's PokerCraft:
+ * Every number on this panel is read from SessionStatsService, which is fed
+ * once per completed hand by TablePage (recordHand) and on every top-up
+ * (recordRebuy). Nothing here is derived from anything but that record.
  *
- * - P&L chart with session trajectory
- * - Position breakdown (UTG → BTN win rates)
- * - Action frequency pie (fold/call/raise/all-in)
- * - Tournament vs Cash stats comparison
- * - Biggest pots won/lost
- * - Showdown win percentage
- * - Time-based patterns (by hour, by day)
+ * WHAT WAS HERE, AND WHY IT IS GONE (2026-09-10, audit CL-1, CRITICAL)
+ *
+ * Until today this panel had four tabs, and three of them were invented:
+ *
+ *   - Positions: hands per position was handsPlayed/7 plus random(3), hands
+ *     won was hands x (0.2 + random x 0.3), the displayed win rate came from
+ *     that, and the per-position net was round((random - 0.45) x P&L / 7),
+ *     which did not sum to the session P&L and could show a winning position
+ *     as losing.
+ *   - Actions: fold / call / raise / all-in percentages were pure
+ *     Math.random() with an empty dependency array.
+ *   - Pots: five pots of round(500 + random x 3000), won or lost by coin flip,
+ *     with hand ids minted from Date.now().
+ *
+ * A player opened "Detailed Analytics" and was shown a record of their own
+ * session that nobody had recorded. That is the single worst finding in the
+ * 2026-09-08 audit and it is the reason
+ * `tests/a-player-is-never-shown-an-invented-number.law.test.ts` exists: a
+ * component under src/components or src/pages may not call Math.random()
+ * unless it is on that law's allowlist with a stated non-data reason, and may
+ * not carry a sample-data generator at all.
+ *
+ * SessionStatsService does not track the hero's position or per-street
+ * actions, so there is no honest per-position or per-action breakdown to
+ * show. The panel therefore shows what IS recorded - the P&L, the trajectory
+ * and the six session counters - and nothing else. When the service records
+ * position and action per hand, those views can return, fed from the record.
+ * Do not bring them back fed from anything else.
  */
 
-import React, { useState, useMemo } from 'react';
+import { useMemo } from 'react';
 import type { SessionStats } from '../../services/SessionStatsService';
 import './SessionAnalytics.css';
 
@@ -30,31 +52,12 @@ export interface SessionAnalyticsProps {
   currency?: string;
 }
 
-type AnalyticsTab = 'overview' | 'positions' | 'actions' | 'pots';
-
-interface PositionStat {
-  position: string;
-  handsPlayed: number;
-  handsWon: number;
-  winRate: number;
-  netChips: number;
-}
-
-interface PotRecord {
-  handId: string;
-  amount: number;
-  result: 'won' | 'lost';
-  hand?: string;
-}
-
 // ═══════════════════════════════════════════════════════════════════════════════
 // COMPONENT
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export function SessionAnalytics({ isOpen, onClose, stats, currency = '' }: SessionAnalyticsProps) {
-  const [activeTab, setActiveTab] = useState<AnalyticsTab>('overview');
-
-  // ── Sparkline rendering ──
+  // ── Sparkline rendering (from the recorded trajectory) ──
   const sparklinePoints = useMemo(() => {
     if (!stats.trajectory || stats.trajectory.length < 2) return '';
     const values = stats.trajectory.map((t) => t[1]);
@@ -72,50 +75,6 @@ export function SessionAnalytics({ isOpen, onClose, stats, currency = '' }: Sess
       .join(' ');
   }, [stats.trajectory]);
 
-  // ── Simulated position stats ──
-  const positionStats: PositionStat[] = useMemo(() => {
-    const positions = ['BB', 'SB', 'BTN', 'CO', 'HJ', 'MP', 'UTG'];
-    return positions.map((pos) => {
-      const hands = Math.max(
-        1,
-        Math.floor(stats.handsPlayed / positions.length) + Math.floor(Math.random() * 3)
-      );
-      const won = Math.floor(hands * (0.2 + Math.random() * 0.3));
-      return {
-        position: pos,
-        handsPlayed: hands,
-        handsWon: won,
-        winRate: Math.round((won / hands) * 100),
-        netChips: Math.round((Math.random() - 0.45) * stats.profitLoss * (1 / positions.length)),
-      };
-    });
-  }, [stats.handsPlayed, stats.profitLoss]);
-
-  // ── Action frequencies ──
-  const actionFreqs = useMemo(
-    () => ({
-      fold: Math.round(55 + Math.random() * 15),
-      call: Math.round(15 + Math.random() * 10),
-      raise: Math.round(18 + Math.random() * 8),
-      allIn: Math.round(2 + Math.random() * 5),
-    }),
-    []
-  );
-
-  // ── Biggest pots ──
-  const bigPots: PotRecord[] = useMemo(() => {
-    const pots: PotRecord[] = [];
-    for (let i = 0; i < 5; i++) {
-      const amount = Math.round(500 + Math.random() * 3000);
-      pots.push({
-        handId: `H${Date.now() - i * 60000}`,
-        amount,
-        result: Math.random() > 0.4 ? 'won' : 'lost',
-      });
-    }
-    return pots.sort((a, b) => b.amount - a.amount);
-  }, []);
-
   const plClass = stats.profitLoss >= 0 ? 'sa-positive' : 'sa-negative';
 
   if (!isOpen) return null;
@@ -126,158 +85,74 @@ export function SessionAnalytics({ isOpen, onClose, stats, currency = '' }: Sess
         {/* Header */}
         <div className="sa-header">
           <h2 className="sa-header__title">Session Analytics</h2>
-          <button className="sa-header__close" onClick={onClose}>
+          <button className="sa-header__close" onClick={onClose} aria-label="Close">
             ✕
           </button>
         </div>
 
-        {/* Tabs */}
-        <div className="sa-tabs">
-          {(['overview', 'positions', 'actions', 'pots'] as AnalyticsTab[]).map((tab) => (
-            <button
-              key={tab}
-              className={`sa-tab ${activeTab === tab ? 'sa-tab--active' : ''}`}
-              onClick={() => setActiveTab(tab)}
-            >
-              {tab.charAt(0).toUpperCase() + tab.slice(1)}
-            </button>
-          ))}
+        <div className="sa-content">
+          {/* Hero P&L */}
+          <div className="sa-hero">
+            <span className="sa-hero__label">Session P&L</span>
+            <span className={`sa-hero__value ${plClass}`}>
+              {stats.profitLoss >= 0 ? '+' : ''}
+              {currency}
+              {stats.profitLoss.toLocaleString()}
+            </span>
+            <span className="sa-hero__bb">
+              ({stats.bigBlindsWon >= 0 ? '+' : ''}
+              {stats.bigBlindsWon.toFixed(1)} BB)
+            </span>
+          </div>
+
+          {/* P&L Chart */}
+          {sparklinePoints && (
+            <div className="sa-chart">
+              <svg viewBox="0 0 300 100" preserveAspectRatio="none">
+                <polyline
+                  points={sparklinePoints}
+                  fill="none"
+                  stroke={stats.profitLoss >= 0 ? '#3fb950' : '#ef4444'}
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </div>
+          )}
+
+          {/* Session counters, every one recorded by SessionStatsService */}
+          <div className="sa-grid">
+            <div className="sa-grid__item">
+              <span className="sa-grid__value">{stats.handsPlayed}</span>
+              <span className="sa-grid__label">Hands</span>
+            </div>
+            <div className="sa-grid__item">
+              <span className="sa-grid__value">{stats.handsWon}</span>
+              <span className="sa-grid__label">Won</span>
+            </div>
+            <div className="sa-grid__item">
+              <span className="sa-grid__value">{stats.handsPerHour}</span>
+              <span className="sa-grid__label">H/Hour</span>
+            </div>
+            <div className="sa-grid__item">
+              <span className="sa-grid__value">{stats.vpipPercent}%</span>
+              <span className="sa-grid__label">VPIP</span>
+            </div>
+            <div className="sa-grid__item">
+              <span className="sa-grid__value">{stats.pfrPercent}%</span>
+              <span className="sa-grid__label">PFR</span>
+            </div>
+            <div className="sa-grid__item">
+              <span className={`sa-grid__value ${plClass}`}>
+                {stats.handsPlayed > 0
+                  ? ((stats.bigBlindsWon / stats.handsPlayed) * 100).toFixed(1)
+                  : '0.0'}
+              </span>
+              <span className="sa-grid__label">BB/100</span>
+            </div>
+          </div>
         </div>
-
-        {/* ═══ OVERVIEW TAB ═══ */}
-        {activeTab === 'overview' && (
-          <div className="sa-content">
-            {/* Hero P&L */}
-            <div className="sa-hero">
-              <span className="sa-hero__label">Session P&L</span>
-              <span className={`sa-hero__value ${plClass}`}>
-                {stats.profitLoss >= 0 ? '+' : ''}
-                {currency}
-                {stats.profitLoss.toLocaleString()}
-              </span>
-              <span className="sa-hero__bb">
-                ({stats.bigBlindsWon >= 0 ? '+' : ''}
-                {stats.bigBlindsWon.toFixed(1)} BB)
-              </span>
-            </div>
-
-            {/* P&L Chart */}
-            {sparklinePoints && (
-              <div className="sa-chart">
-                <svg viewBox="0 0 300 100" preserveAspectRatio="none">
-                  <polyline
-                    points={sparklinePoints}
-                    fill="none"
-                    stroke={stats.profitLoss >= 0 ? '#3fb950' : '#ef4444'}
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-              </div>
-            )}
-
-            {/* Quick Stat Grid */}
-            <div className="sa-grid">
-              <div className="sa-grid__item">
-                <span className="sa-grid__value">{stats.handsPlayed}</span>
-                <span className="sa-grid__label">Hands</span>
-              </div>
-              <div className="sa-grid__item">
-                <span className="sa-grid__value">{stats.handsWon}</span>
-                <span className="sa-grid__label">Won</span>
-              </div>
-              <div className="sa-grid__item">
-                <span className="sa-grid__value">{stats.handsPerHour}</span>
-                <span className="sa-grid__label">H/Hour</span>
-              </div>
-              <div className="sa-grid__item">
-                <span className="sa-grid__value">{stats.vpipPercent}%</span>
-                <span className="sa-grid__label">VPIP</span>
-              </div>
-              <div className="sa-grid__item">
-                <span className="sa-grid__value">{stats.pfrPercent}%</span>
-                <span className="sa-grid__label">PFR</span>
-              </div>
-              <div className="sa-grid__item">
-                <span className={`sa-grid__value ${plClass}`}>
-                  {stats.handsPlayed > 0
-                    ? ((stats.bigBlindsWon / stats.handsPlayed) * 100).toFixed(1)
-                    : '0.0'}
-                </span>
-                <span className="sa-grid__label">BB/100</span>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ═══ POSITIONS TAB ═══ */}
-        {activeTab === 'positions' && (
-          <div className="sa-content">
-            <div className="sa-positions">
-              {positionStats.map((pos) => (
-                <div key={pos.position} className="sa-pos-row">
-                  <span className="sa-pos-row__name">{pos.position}</span>
-                  <div className="sa-pos-row__bar-wrap">
-                    <div
-                      className="sa-pos-row__bar"
-                      style={{ width: `${Math.min(pos.winRate, 100)}%` }}
-                    />
-                  </div>
-                  <span className="sa-pos-row__rate">{pos.winRate}%</span>
-                  <span
-                    className={`sa-pos-row__net ${pos.netChips >= 0 ? 'sa-positive' : 'sa-negative'}`}
-                  >
-                    {pos.netChips >= 0 ? '+' : ''}
-                    {pos.netChips}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* ═══ ACTIONS TAB ═══ */}
-        {activeTab === 'actions' && (
-          <div className="sa-content">
-            <div className="sa-actions">
-              {Object.entries(actionFreqs).map(([action, pct]) => (
-                <div key={action} className="sa-action-row">
-                  <span className="sa-action-row__label">{action.toUpperCase()}</span>
-                  <div className="sa-action-row__bar-wrap">
-                    <div
-                      className={`sa-action-row__bar sa-action-row__bar--${action}`}
-                      style={{ width: `${pct}%` }}
-                    />
-                  </div>
-                  <span className="sa-action-row__pct">{pct}%</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* ═══ POTS TAB ═══ */}
-        {activeTab === 'pots' && (
-          <div className="sa-content">
-            <div className="sa-pots">
-              {bigPots.map((pot, i) => (
-                <div key={i} className="sa-pot-row">
-                  <span
-                    className={`sa-pot-row__result ${pot.result === 'won' ? 'sa-positive' : 'sa-negative'}`}
-                  >
-                    {pot.result === 'won' ? 'W' : 'L'}
-                  </span>
-                  <span className="sa-pot-row__amount">
-                    {currency}
-                    {pot.amount.toLocaleString()}
-                  </span>
-                  <span className="sa-pot-row__id">#{pot.handId.slice(-6)}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );

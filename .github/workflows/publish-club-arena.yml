@@ -455,7 +455,7 @@ jobs:
       # required `TypeScript Check` job has already checked that same tree.
       #
       # SENTRY_AUTH_TOKEN lives HERE now, and only here (moved 2026-09-04).
-      # The sentry-vite-plugin activates on
+      # Originally the sentry-vite-plugin activated on
       # `NODE_ENV === 'production' && SENTRY_AUTH_TOKEN`, which was true in
       # ci.yml's build - the bundle that is thrown away - and false in this
       # one, the bundle that ships. So maps were uploaded for an artifact no
@@ -477,6 +477,8 @@ jobs:
           VITE_SENTRY_DSN: 'https://842977a65e398b038728a05e8d892089@o4510810580779008.ingest.us.sentry.io/4510816835600384'
           VITE_APP_VERSION: ${{ needs.publish-needed.outputs.target_sha }}
           VITE_ONESIGNAL_APP_ID: '2fde0e83-cd01-4f93-a9a0-9be6cfe36e8c'
+          # Only this verified web release may upload source maps.
+          CA_SENTRY_UPLOAD: '1'
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
           # Verified 2026-04-23 via the Sentry API: the live org is
           # `smarter-software-inc`, the CA project is `javascript-react`.

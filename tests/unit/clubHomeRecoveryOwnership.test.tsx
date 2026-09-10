@@ -13,9 +13,15 @@ const h = vi.hoisted(() => ({
   hitStops: [] as ReturnType<typeof vi.fn>[],
   bus: new Map<string, (event?: any) => void>(),
   clubReads: [] as any[],
+  occupancyReads: [] as any[],
+  deferOccupancy: false,
 }));
 vi.mock('../../src/lib/supabase', () => ({
-  supabase: { from: h.from, rpc: h.rpc },
+  supabase: {
+    from: h.from,
+    rpc: h.rpc,
+    auth: { getSession: vi.fn(async () => ({ data: { session: null }, error: null })) },
+  },
   getAuthUser: vi.fn(async () => ({ data: { user: null }, error: null })),
 }));
 vi.mock('../../src/core/MasterBus', () => ({
@@ -68,7 +74,7 @@ vi.mock('../../src/utils/clubIdResolver', async (original) => ({
   resolveClubIdFilter: (id: string) => ({ column: 'id', value: id }),
 }));
 vi.mock('../../src/stores/useUserStore', () => ({
-  useUserStore: Object.assign((selector: any) => selector({ user: null }), {
+  useUserStore: Object.assign((selector: any = (state: any) => state) => selector({ user: null }), {
     getState: () => ({ user: null, setCurrentClub: h.setCurrentClub }),
   }),
 }));
@@ -116,17 +122,26 @@ beforeEach(() => {
   h.poolStops.length = 0;
   h.hitStops.length = 0;
   h.clubReads.length = 0;
+  h.occupancyReads.length = 0;
+  h.deferOccupancy = false;
   h.resolveClub.mockImplementation(async (id) => id);
   h.rpc.mockResolvedValue({ data: 0, error: null });
   h.from.mockImplementation((table: string) => {
-    const result = table === 'clubs' ? deferred() : null;
+    let result = table === 'clubs' ? deferred() : null;
     if (result) h.clubReads.push(result);
     const q: any = {};
     for (const method of ['select', 'eq', 'is', 'not', 'or', 'order', 'limit', 'in'])
       q[method] = () => q;
+    q.select = (columns: string) => {
+      if (h.deferOccupancy && table === 'tables' && columns.startsWith('id, current_players')) {
+        result = deferred();
+        h.occupancyReads.push(result);
+      }
+      return q;
+    };
     q.maybeSingle = () => result?.promise ?? Promise.resolve({ data: null, error: null });
     q.then = (resolve: any, reject: any) =>
-      Promise.resolve({ data: [], error: null }).then(resolve, reject);
+      (result?.promise ?? Promise.resolve({ data: [], error: null })).then(resolve, reject);
     return q;
   });
 });
@@ -239,5 +254,115 @@ describe('the mounted club lobby owns its recovery', () => {
     await act(async () => pending.resolve('club-a'));
     expect(h.setCurrentClub).not.toHaveBeenCalled();
     expect(h.channels).toHaveLength(0);
+  });
+});
+
+async function mountCachedTable(patch: Record<string, unknown> = {}) {
+  const table = {
+    id: 'known-table',
+    name: 'Known Table',
+    club_id: 'club-a',
+    game_variant: 'nlh',
+    status: 'waiting',
+    current_players: 1,
+    max_players: 9,
+    small_blind: 1,
+    big_blind: 2,
+    ...patch,
+  };
+  localStorage.setItem(
+    'club_home_cache_v3_club-a',
+    JSON.stringify({
+      at: Date.now(),
+      data: {
+        club: { id: 'club-a', club_id: 1, name: 'Test Club', member_count: 1 },
+        tables: [table],
+      },
+    })
+  );
+  h.deferOccupancy = true;
+  const view = mount();
+  await flush();
+  await act(async () => h.clubReads[0].resolve({ data: null, error: null }));
+  return { view, table };
+}
+
+const tickOccupancy = () =>
+  act(async () => {
+    await vi.advanceTimersByTimeAsync(20_000);
+  });
+
+describe('the mounted lobby recovers occupancy snapshots', () => {
+  it('keeps one request in flight while an occupancy read is slow', async () => {
+    await mountCachedTable();
+    await tickOccupancy();
+    expect(h.occupancyReads).toHaveLength(1);
+    await tickOccupancy();
+    expect(h.occupancyReads).toHaveLength(1);
+  });
+
+  it('requests missing inventory even when React already has a table update queued', async () => {
+    const { table } = await mountCachedTable();
+    await tickOccupancy();
+    const onTableChange = h.channels[0].on.mock.calls.find(
+      ([_event, config]: any[]) => config.table === 'tables'
+    )[2];
+    await act(async () => {
+      onTableChange({ eventType: 'UPDATE', new: { ...table, current_players: 2 } });
+      h.occupancyReads[0].resolve({
+        data: [
+          { ...table, current_players: 2 },
+          { ...table, id: 'new-table', current_players: 3 },
+        ],
+        error: null,
+      });
+    });
+    expect(h.clubReads).toHaveLength(2);
+  });
+
+  it('requests authority for an omitted known table without deleting its visible card', async () => {
+    await mountCachedTable();
+    expect(screen.queryAllByText('Known Table').length).toBeGreaterThan(0);
+    await tickOccupancy();
+    await act(async () => h.occupancyReads[0].resolve({ data: [], error: null }));
+    expect(screen.queryAllByText('Known Table').length).toBeGreaterThan(0);
+    expect(h.clubReads).toHaveLength(2);
+  });
+
+  it('releases a failed occupancy read so the next visible tick can recover', async () => {
+    const { table } = await mountCachedTable();
+    await tickOccupancy();
+    await act(async () =>
+      h.occupancyReads[0].resolve({
+        data: null,
+        error: { code: '57014', message: 'statement timeout' },
+      })
+    );
+    expect(screen.queryAllByText('Known Table').length).toBeGreaterThan(0);
+    await tickOccupancy();
+    expect(h.occupancyReads).toHaveLength(2);
+    await act(async () => h.occupancyReads[1].resolve({ data: [table], error: null }));
+    expect(h.clubReads).toHaveLength(1);
+  });
+
+  it('does not mistake a narrower setup scope for removal of cached union inventory', async () => {
+    await mountCachedTable({ club_id: 'club-b', union_id: 'union-a' });
+    await tickOccupancy();
+    await act(async () => h.occupancyReads[0].resolve({ data: [], error: null }));
+    expect(h.clubReads).toHaveLength(1);
+    expect(screen.queryAllByText('Known Table').length).toBeGreaterThan(0);
+  });
+
+  it('does not treat absence from a capped snapshot as removal proof', async () => {
+    const { table } = await mountCachedTable();
+    await tickOccupancy();
+    const data = Array.from({ length: 200 }, (_, i) => ({
+      ...table,
+      id: `empty-${i}`,
+      current_players: 0,
+    }));
+    await act(async () => h.occupancyReads[0].resolve({ data, error: null }));
+    expect(h.clubReads).toHaveLength(1);
+    expect(screen.queryAllByText('Known Table').length).toBeGreaterThan(0);
   });
 });

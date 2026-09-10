@@ -701,6 +701,7 @@ DECLARE
     'rpc/fn_mystery_bounty_reserve',
     'rpc/fn_mystery_bounty_reveal',
     'rpc/fn_mystery_bounty_seed',
+    'rpc/fn_move_tournament_player',
     'rpc/fn_move_tournament_player_atomic',
     'rpc/fn_open_tournament_rebuy_decisions',
     'rpc/fn_settle_final_table_deal_atomic',
@@ -1263,6 +1264,7 @@ BEGIN
      OR position('auth.role()' IN v_hook_source) = 0
      OR position('verified JWT role disagrees with request claims' IN v_hook_source) = 0
      OR position($needle$'rpc/fn_project_hand_side_effects'$needle$ IN v_hook_source) = 0
+     OR position($needle$'rpc/fn_move_tournament_player'$needle$ IN v_hook_source) = 0
      OR position($needle$'rpc/fn_move_tournament_player_atomic'$needle$ IN v_hook_source) = 0
      OR position($needle$left(v_path, 8) = 'rest/v1/'$needle$ IN v_hook_source) = 0
      OR position($needle$'protocol-2'$needle$ IN v_scope_source) = 0

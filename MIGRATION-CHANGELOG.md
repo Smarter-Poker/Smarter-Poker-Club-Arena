@@ -2,6 +2,10 @@
 
 ## Every Change, Documented. No Exceptions.
 
+## 2026-09-10: Final Deal Proposal Records Ordered Rollout Gates
+
+Documentation-only proposal records SQL expansion, compatible engine/client verification, then owner-controlled activation for versioned final-deal consent. It specifies a configurable server-owned 120-second review deadline and requires current M5, lease, native rollback/replay and production identity evidence. No SQL, engine, client or production state changed; Phase 3 remains open. Re-read: yes. See docs/audits/2026-09-10-final-deal-rollout-gates.md.
+
 ## 2026-09-10: Current Tournament Seat Moves Require Manager Authority
 
 The prepared strict cutover named only an obsolete seat-move RPC. Its current RPC could enter as an unmarked service actor after a callback lost manager context. The current name now uses the existing exact fresh lease gate, with the old route still denied. Real PostgreSQL reproduced the gap and passes 32 request admission scenarios after correction, preserving receipt recovery and player purchases. No production cutover or financial mutation is part of this source correction. See docs/changelog/2026-09-10-seat-moves-require-current-manager-authority.md.

@@ -1780,9 +1780,87 @@ export abstract class TournamentManagerBase {
     }
   }
 
+  /**
+   * How often resumeFromBreak looks at the maintenance freeze again while it
+   * waits for the thaw, and the longest it waits before resuming anyway.
+   *
+   * The ceiling is for a freeze that never lifts, not for a slow thaw.
+   * Measured over the 177 breaks in engine_maintenance_break_log from
+   * 2026-09-02 to 2026-09-10, the thaw finished p50 3.2s, p99 13.0s and at
+   * worst 26.6s after the break's end; 90s is well clear of all of them.
+   */
+  static readonly MAINTENANCE_THAW_POLL_MS = 250;
+  static readonly MAINTENANCE_THAW_WAIT_CEILING_MS = 90_000;
+
+  /**
+   * Wait until the platform freeze has lifted, which MaintenanceBreak.end()
+   * does only once the thaw has finished. Returns early when this lifecycle
+   * ends (stop() drains this very job, so a shutdown or a lost lease must not
+   * sit here until the ceiling) or when another caller has already taken this
+   * tournament off its break. Past the ceiling it reports, naming the event,
+   * and returns so the caller resumes.
+   */
+  protected async waitForMaintenanceThaw(lifecycle: TournamentLifecycleToken): Promise<void> {
+    const startedAt = Date.now();
+    while (isMaintenanceFrozen() && this.onBreak && this.lifecycleIsCurrent(lifecycle)) {
+      const waitedMs = Date.now() - startedAt;
+      if (waitedMs >= TournamentManagerBase.MAINTENANCE_THAW_WAIT_CEILING_MS) {
+        reportError(
+          new Error(
+            `[Tournament:${this.tournamentId}] its break ended but the maintenance freeze was ` +
+              `still on ${Math.round(waitedMs / 1000)}s later; resuming without the thaw, so ` +
+              'its level_started_at may be credited for the break twice'
+          ),
+          'TournamentManagerBase.resumeFromBreak_thaw_wait_ceiling',
+          { tournamentId: this.tournamentId }
+        );
+        return;
+      }
+      await new Promise<void>((resolve) => {
+        const poll = setTimeout(resolve, TournamentManagerBase.MAINTENANCE_THAW_POLL_MS);
+        poll.unref?.();
+      });
+    }
+  }
+
   /** Resume from synchronized break: restart blind timer with remaining time */
   async resumeFromBreak(): Promise<void> {
     if (!this.onBreak) return;
+    /**
+     * A RUNNING TOURNAMENT COMES OFF ITS BREAK AFTER THE THAW (2026-09-10).
+     *
+     * fn_thaw_platform gives every in-flight deadline back the frozen
+     * minutes, and its FIRST call snapshots whom to credit: every RUNNING
+     * tournament with on_break = false has its level_started_at moved
+     * forward. A tournament on this break is left out on purpose, because its
+     * level clock was suspended here at :55 and has nothing to be given back.
+     * Taking it off the break before that snapshot (on_break = false below,
+     * then a freshly persisted level_started_at from startBlindTimer) would
+     * credit a clock that never ran through the freeze: the database anchor
+     * lands a whole break ahead, and the next engine to adopt the event
+     * hands its level that much extra time.
+     *
+     * While the tournament countdown ended as long after the hour as its
+     * pause loop had taken (18.8s at 16:55 on 2026-09-10; that hour's thaw
+     * was done at 17:00:04.7), the resume landed after the snapshot by luck,
+     * not by design. The countdown ends ON the hour now, with the maintenance
+     * break (GameServer.triggerSynchronizedBreak), and so does a countdown a
+     * replacement engine adopts, so a running tournament waits here until the
+     * freeze lifts. MaintenanceBreak.end() lifts it only after the thaw, in
+     * the same tick it starts waking tables, so the wait costs at most one
+     * poll. Its tables are released by whichever of the two comes second:
+     * this resume, or their maintenance resume wave.
+     *
+     * A lifecycle that ends during the wait leaves the break exactly as it is,
+     * flags and all, for whoever owns the event next. A stopped tournament
+     * does not wait at all: it only has flags to clear, exactly as before.
+     */
+    if (this.running && isMaintenanceFrozen()) {
+      const lifecycle = this.captureLifecycleToken();
+      if (lifecycle) await this.waitForMaintenanceThaw(lifecycle);
+      // Everything the wait may have changed is read again.
+      if (!this.onBreak || !lifecycle || !this.lifecycleIsCurrent(lifecycle)) return;
+    }
     this.onBreak = false;
     this.breakCountdownStarted = false;
 
@@ -1941,6 +2019,36 @@ export abstract class TournamentManagerBase {
    * declaring one that is not there chops a tournament.
    */
   protected async countLiveTablesWithPlayers(): Promise<number | null> {
+    const ids = await this.liveTournamentTableIdsWithPlayers();
+    return ids === null ? null : ids.length;
+  }
+
+  /**
+   * The live tables of this tournament that still hold at least one seated
+   * player, read from the DATABASE, or `null` when it could not be read.
+   *
+   * ─────────────────────────────────────────────────────────────────────────
+   *  A TABLE WITH ONE PLAYER NEVER GETS AN ENGINE (2026-09-10)
+   * ─────────────────────────────────────────────────────────────────────────
+   *
+   * `checkTableBalance` used to take its table list from `this.tableEngines`,
+   * which holds only tables that are DEALING. A table cannot deal to one
+   * player, so a table down to its last player has no engine, so the balancer
+   * never saw it, so nobody ever moved that player to join anybody — and the
+   * table stayed at one player for ever.
+   *
+   * Measured on production 2026-09-10: THIRTY-FIVE running events were in that
+   * state, every live table holding exactly one funded player and no table
+   * holding two. The worst was a $100 Freeroll with 36 players on 36 tables,
+   * frozen since 10:04. They are not slow; they are structurally unable to
+   * deal a hand, and every one of them holds prize money.
+   *
+   * So the balancer reads its tables from here instead. `loadBalancerTables`
+   * already sources everything it needs from the database and only consults
+   * `tableEngines` for a button seat, which defaults to 0 — an engineless
+   * table has always been representable, it was simply never in the list.
+   */
+  protected async liveTournamentTableIdsWithPlayers(): Promise<string[] | null> {
     const { data: liveTables, error: tablesErr } = await supabase
       .from('tables')
       .select('id')
@@ -1948,7 +2056,7 @@ export abstract class TournamentManagerBase {
       .in('status', ['running', 'waiting']);
     if (tablesErr || !liveTables) return null;
     const ids = liveTables.map((t: { id: string }) => t.id).filter(Boolean);
-    if (ids.length === 0) return 0;
+    if (ids.length === 0) return [];
     // The seat query runs even for a single table, deliberately. "One table
     // exists" and "one table holds players" are different statements, and this
     // function is asked the second one — an empty adopted table must not read
@@ -1959,7 +2067,8 @@ export abstract class TournamentManagerBase {
       .in('table_id', ids)
       .is('left_at', null);
     if (seatsErr || !seats) return null;
-    return new Set(seats.map((s: { table_id: string }) => s.table_id)).size;
+    const holding = new Set(seats.map((s: { table_id: string }) => s.table_id));
+    return ids.filter((id) => holding.has(id));
   }
 
   /** Late registration state is owned by fn_close_tournament_entry_window. */

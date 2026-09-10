@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "date": "2026-09-10",
+  "status": "verified_isolated_client_candidate",
+  "scope": "Club Arena MultiTable authoritative seat rebuilding",
+  "source_base": "ebac73d888fab406eb93eab7326f9347a45f6559",
+  "behavior": [
+    "Successful empty seat truth reconciles seated tabs and completes readiness without a table metadata query.",
+    "Spectator, pending buy-in, lobby and hub tabs survive; current live seats can use slots released by stale seats.",
+    "Failed, rejected, null or malformed seat reads and failed metadata reads do not prune tabs.",
+    "Opaque auth scope, rendered identity, request and membership revisions suppress stale completions, including auth events before user-store renders and A-to-B-to-A sessions.",
+    "New seat admissions, including already seated tabs, invalidate old reads before React batching and schedule a fresh snapshot.",
+    "New live card contents or turn activation during a pending snapshot trigger a fresh read; equal card strings and pot/deadline updates do not starve cleanup.",
+    "A voluntary-leave fence prevents reopening a pending-cashout seat until absence or genuine new admission is observed.",
+    "Deferred focus callbacks require current request identity; closure notices reflect committed state and run once under StrictMode."
+  ],
+  "validation": {
+    "original_regression": {
+      "exit": 1,
+      "selected_test": "closes the final stale seated tab after successful zero-seat truth",
+      "actual_failure": "Original page retains rendered Felt A after an authoritative empty seat response.",
+      "method": "Exact HEAD page copied to a temporary alternate import; same real-page test runs against it. Both temporary files removed in finally.",
+      "other_cases": "21 unselected by targeted baseline filter; no candidate tests skipped."
+    },
+    "rendered_cases": 22,
+    "adjacent_cases": 39,
+    "source_window_cases": 2,
+    "total_passed": 63,
+    "focused_exit": 0,
+    "app_typecheck_exit": 0,
+    "eslint_exit": 0,
+    "eslint_existing_warnings": 2,
+    "full_build_exit": 0,
+    "full_build_seconds": 17.77,
+    "vite_build_seconds": 8.68,
+    "external_uploads": "CA_SENTRY_UPLOAD and SENTRY_AUTH_TOKEN explicitly empty.",
+    "artifact": "Local DIRTY build, behind origin/main by 8 at verification; not a release artifact.",
+    "limits": "Actual MultiTablePage, React DOM, routing and bus subscription hook execute with controlled transport and child felt responses. No live database or engine mutation is performed."
+  },
+  "independent_review": {
+    "reviewer": "satellite_completion",
+    "verdict": "Final handler/read-race blockers resolved; bounded candidate accepted after current-source verification.",
+    "integrator": "Root owns fresh-main integration, normal CI, publication and adoption checks."
+  },
+  "release_limits": [
+    "No satellite RPC or accounting backend dependency.",
+    "A future publication does not prove already-open legacy tabs adopted the fix.",
+    "No Phase 3 programme control is newly closed by this isolated client proof."
+  ],
+  "source_sha256": {
+    "src/pages/MultiTablePage.tsx": "e81586c825e040d6753ee4232679b3c409e159895b68452c7c561188d32e62bb",
+    "tests/unit/multiTableSeatRebuild.test.tsx": "894d73cc209e6b729b1adbefd4228d554eab7205f69fd16605a38df672dbe76d",
+    "tests/unit/movedTableTabIsClosed.test.ts": "4ef7d5d5d8eea54c0ff5ec99b042603adadabdd8d5cda9c3b9b13fafc7a33cf9",
+    "tests/unit/discardedErrorReadRatchet.test.ts": "51a61d4a7f07078243f27de544d62efc289f7a3849a4e1846d33c34f7b67b838"
+  },
+  "log_sha256": {
+    "/tmp/codex-multitable-baseline.log": "f7d2cab6c4ef517092340ab06702b06d08bd1edc35b9cb0962cc2ccc284ff9bb",
+    "/tmp/codex-multitable-focused.log": "fd7799c14976a4daf6866c672ba4dd1986084bc5e18b2ec5ca671221b0e684b6",
+    "/tmp/codex-multitable-typecheck.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "/tmp/codex-multitable-eslint.log": "b8ea6dcd7873255b74825f9acaa34c4766651997412be79ce76d9b3e656d07ab",
+    "/tmp/codex-multitable-build.log": "0c8813e981a792efb14cc27e3292b5e675f02ca90281349ff0cdee7364b234df"
+  }
+}

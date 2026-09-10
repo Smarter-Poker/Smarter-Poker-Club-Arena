@@ -2016,6 +2016,35 @@ export class MaintenanceBreak {
   }
 
   /**
+   * When the platform comes off this break, as epoch ms; 0 when none is on.
+   *
+   * THE TOURNAMENT BREAK ENDS HERE TOO (2026-09-10). GameServer's synchronized
+   * tournament break stops the same tournaments at the same :55, but it used
+   * to count its own five minutes from whenever its pause loop had finished.
+   * At 16:55 on 2026-09-10 that loop paused 47 tournaments one after another
+   * until 16:55:18.8, so their countdown ran to about 17:00:19 and their
+   * tables came back after the cash tables. It reads this instead now.
+   *
+   *   counting_down  the fixed end of the countdown players are watching
+   *   last_hand      derived from the announcement exactly as the frame's
+   *                  resume_expected_at is: the two-minute lead plus the break
+   *   idle           0, there is no platform break to end with
+   *
+   * Read-only. Unlike remainingMs() it answers during the last hand as well,
+   * because the tournament break fires at the same :55 instant as the
+   * countdown and may land on either side of it.
+   */
+  endsAt(): number {
+    if (this.phase === 'counting_down') return this.breakEndsAt;
+    if (this.phase === 'last_hand') {
+      return (
+        this.announcedAt + MaintenanceBreak.LAST_HAND_LEAD_MS + MaintenanceBreak.BREAK_DURATION_MS
+      );
+    }
+    return 0;
+  }
+
+  /**
    * The deploy workflow's gate, and the single most important boolean here.
    *
    * True only when the countdown is running, every table has actually reached

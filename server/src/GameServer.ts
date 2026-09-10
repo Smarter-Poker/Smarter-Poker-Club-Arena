@@ -78,6 +78,8 @@ import {
   horseDecisionWorkerLastComputeMs,
   horseDecisionWorkerOldestQueuedAgeMs,
   horseDecisionWorkerQueueDepth,
+  horseDecisionWorkerExpiredJobs,
+  horseDecisionWorkerRecoverableRequestErrors,
   horseDecisionWorkerReady,
   equityWorkerPoolReady,
   equityWorkerPoolConfiguredWorkers,
@@ -1716,6 +1718,12 @@ export class GameServer {
    */
   private breakEndsAt = 0;
   private breakCountdownStarted = false;
+  /**
+   * True when the maintenance break fixed this break's end at the trigger
+   * (2026-09-10), so `breakEndsAt` is the real end even before the countdown
+   * starts. See triggerSynchronizedBreak and remainingBreakMs.
+   */
+  private breakEndsWithMaintenance = false;
   private synchronizedBreakGeneration = 0;
   private static readonly BREAK_DURATION_MS = 5 * 60 * 1000; // 5 minutes
   /**
@@ -3338,6 +3346,8 @@ export class GameServer {
         // healthy scale.
         horseDecisionWorkerReady.set(worker.phase === 'ready' ? 1 : 0);
         horseDecisionWorkerQueueDepth.set(worker.queueDepth);
+        horseDecisionWorkerExpiredJobs.set(worker.expiredJobs);
+        horseDecisionWorkerRecoverableRequestErrors.set(worker.recoverableRequestErrors);
         horseDecisionWorkerActiveJobAgeMs.set(worker.activeJobAgeMs ?? 0);
         horseDecisionWorkerOldestQueuedAgeMs.set(worker.oldestQueuedAgeMs ?? 0);
         horseDecisionWorkerLastCompletionAgeMs.set(
@@ -3894,26 +3904,66 @@ export class GameServer {
     );
 
     /**
+     * THE TOURNAMENT BREAK ENDS WHEN THE PLATFORM'S BREAK ENDS (2026-09-10).
+     *
+     * CLAUDE.md 13, Dan: "EVERYTHING JUST FREEZES, THEN PICKS BACK UP EXACTLY
+     * AS IT WAS", every table together. The maintenance break has held every
+     * table since :53 and hands the platform back at :00, but this break
+     * counted its own five minutes from whenever the pause loop below had
+     * finished. At 16:55 on 2026-09-10 that loop paused 47 tournaments one
+     * after another (break_started_at 16:55:00.012 to 16:55:18.8), so their
+     * countdown ran to about 17:00:19, and they were then resumed one after
+     * another as well. The thaw was done at 17:00:04.7 and cash tables dealt
+     * from 6.5s after the hour; not one of the 46 tables of those events
+     * dealt before 30.7s (p50 31.7s).
+     *
+     * So while a maintenance break is on, its end IS this break's end, read
+     * once, here, at the trigger. Nothing that runs after this can move it:
+     * not the pauses, not the drain, not the countdown writes. Without one (it
+     * failed to announce, or there is none) this is exactly the old two-phase
+     * rule: five minutes from the moment every table has parked.
+     *
+     * Ending at :00 is safe for the level clocks only because resumeFromBreak
+     * waits for the maintenance thaw before it takes a running tournament off
+     * its break. See the comment there.
+     */
+    const maintenanceEndsAt = this.maintenanceBreak.endsAt();
+
+    /**
      * The break window opens NOW, at :55, not when the countdown starts. A
      * tournament that begins during the last-hand wait must be held too, so
-     * claim the window immediately using the worst case (grace + break) and
-     * tighten it below once the real countdown begins.
+     * claim the window immediately - with the platform's end when a
+     * maintenance break has fixed it, otherwise the worst case (grace + break)
+     * - and tighten it below once the real countdown begins.
      */
     this.synchronizedBreakGeneration++;
     this.breakCountdownStarted = false;
+    this.breakEndsWithMaintenance = maintenanceEndsAt > 0;
     this.breakEndsAt =
-      Date.now() + TournamentManager.LAST_HAND_GRACE_MS + GameServer.BREAK_DURATION_MS;
+      maintenanceEndsAt > 0
+        ? Math.max(maintenanceEndsAt, Date.now())
+        : Date.now() + TournamentManager.LAST_HAND_GRACE_MS + GameServer.BREAK_DURATION_MS;
 
-    for (const tm of breakEngines) {
-      try {
-        await tm.pauseForBreak(GameServer.BREAK_DURATION_MS);
-      } catch (err: any) {
-        reportError(err, 'GameServer.Failed_to_pause_tournament');
-      }
-      if (!this.directAdmissionIsCurrent(generation)) {
-        this.breakEndsAt = 0;
-        return;
-      }
+    /**
+     * EVERY TOURNAMENT IS TOLD AT ONCE (2026-09-10). One after another, the
+     * 47 pauses at 16:55 took 18.8s: the last event stamped its break that
+     * much after the first and, with no maintenance break holding its tables,
+     * would have gone on dealing that much longer. Each manager fences its own continuations on
+     * its own lifecycle, so this server's generation is checked once, after
+     * every pause has settled, and a fenced server still goes no further.
+     */
+    await Promise.all(
+      breakEngines.map(async (tm) => {
+        try {
+          await tm.pauseForBreak(GameServer.BREAK_DURATION_MS);
+        } catch (err: any) {
+          reportError(err, 'GameServer.Failed_to_pause_tournament');
+        }
+      })
+    );
+    if (!this.directAdmissionIsCurrent(generation)) {
+      this.breakEndsAt = 0;
+      return;
     }
 
     const waitStartedAt = Date.now();
@@ -3924,33 +3974,47 @@ export class GameServer {
       return;
     }
 
-    if (allParked) {
-      console.log(
-        `[GameServer] Last hand complete on every table after ${Math.round(lastHandMs / 1000)}s - starting the ${GameServer.BREAK_DURATION_MS / 60000} minute break`
-      );
-    } else {
+    if (!allParked) {
       // Shutdown/fencing can end the drain wait. It cannot prove a hand ended.
       return;
     }
 
     // The countdown players see begins NOW, not at :55. Tighten the window
     // claimed above to the real end time, so a tournament starting during the
-    // break is held for exactly as long as everyone else.
-    this.breakEndsAt = Date.now() + GameServer.BREAK_DURATION_MS;
+    // break is held for exactly as long as everyone else. A maintenance break
+    // fixed that end at the trigger; the drain can have run past it (then the
+    // break is simply over), but it can never have moved it.
+    const countdownStartsAt = Date.now();
+    const countdownEndsAt =
+      maintenanceEndsAt > 0
+        ? Math.max(maintenanceEndsAt, countdownStartsAt)
+        : countdownStartsAt + GameServer.BREAK_DURATION_MS;
+    // What is actually left, for the minutes the break frame carries: exactly
+    // BREAK_DURATION_MS without a maintenance break, as before.
+    const countdownMs = countdownEndsAt - countdownStartsAt;
+    this.breakEndsAt = countdownEndsAt;
     this.breakCountdownStarted = true;
-    const countdownEndsAt = this.breakEndsAt;
+    console.log(
+      `[GameServer] Last hand complete on every table after ${Math.round(lastHandMs / 1000)}s - ` +
+        `the break runs ${Math.round(countdownMs / 1000)}s, to ${new Date(countdownEndsAt).toISOString()}` +
+        (maintenanceEndsAt > 0 ? ', the end of the maintenance break' : '')
+    );
     const countdownParticipants = new Set([...breakEngines, ...this.tournamentEngines.values()]);
 
-    for (const tm of countdownParticipants) {
-      try {
-        await tm.beginBreakCountdown(GameServer.BREAK_DURATION_MS, countdownEndsAt);
-      } catch (err: any) {
-        reportError(err, 'GameServer.Failed_to_begin_break_countdown');
-      }
-      if (!this.directAdmissionIsCurrent(generation)) {
-        this.breakEndsAt = 0;
-        return;
-      }
+    // Stamped on every event at once, for the reason the pauses above are: the
+    // deadline is shared, and so is the moment players are shown it.
+    await Promise.all(
+      [...countdownParticipants].map(async (tm) => {
+        try {
+          await tm.beginBreakCountdown(countdownMs, countdownEndsAt);
+        } catch (err: any) {
+          reportError(err, 'GameServer.Failed_to_begin_break_countdown');
+        }
+      })
+    );
+    if (!this.directAdmissionIsCurrent(generation)) {
+      this.breakEndsAt = 0;
+      return;
     }
 
     // Never leave two resume timers pending. If a previous break's last-hand
@@ -3985,30 +4049,45 @@ export class GameServer {
     // break and must not be held.
     this.breakEndsAt = 0;
     this.breakCountdownStarted = false;
+    this.breakEndsWithMaintenance = false;
     console.log(`[GameServer] ═══ BREAK ENDED ═══ Resuming ${breakEngines.length} tournament(s)`);
     // Resume everything on break, not just the :55 snapshot - a tournament
     // that started during the break was held by holdIfBreakIsRunning and is
     // not in breakEngines. resumeFromBreak no-ops on anything not on break.
     const toResume = new Set<TournamentManager>(breakEngines);
     for (const tm of this.tournamentEngines.values()) toResume.add(tm);
-    for (const tm of toResume) {
-      if (!this.directAdmissionIsCurrent(generation)) return;
-      try {
-        await tm.resumeFromBreak();
-      } catch (err: any) {
-        reportError(err, 'GameServer.Failed_to_resume_tournament');
-      }
-    }
+    /**
+     * ALL AT ONCE (2026-09-10). This walked the managers one after another,
+     * so the last of 47 events came back seconds after the first, and since
+     * resumeFromBreak now waits out the maintenance thaw, one event waiting
+     * would have held every event queued behind it. Every manager resumes on
+     * its own; a failure is reported for that manager alone and holds nobody
+     * else. The generation was checked above, in the same tick that launches
+     * every resume; from here each manager answers to its own lifecycle fence.
+     */
+    await Promise.all(
+      [...toResume].map(async (tm) => {
+        try {
+          await tm.resumeFromBreak();
+        } catch (err: any) {
+          reportError(err, 'GameServer.Failed_to_resume_tournament');
+        }
+      })
+    );
   }
 
   /**
    * How much of the platform-wide break is left, or 0 when none is running.
    * See the `breakEndsAt` field for why a tournament starting mid-break needs
    * to know this.
+   *
+   * Before the countdown the end is only known when a maintenance break fixed
+   * it at the trigger (2026-09-10); otherwise the worst case is claimed, as
+   * it always was.
    */
   remainingBreakMs(): number {
     if (this.breakEndsAt <= 0) return 0;
-    if (!this.breakCountdownStarted) {
+    if (!this.breakCountdownStarted && !this.breakEndsWithMaintenance) {
       return TournamentManager.LAST_HAND_GRACE_MS + GameServer.BREAK_DURATION_MS;
     }
     return Math.max(0, this.breakEndsAt - Date.now());

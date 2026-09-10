@@ -475,6 +475,34 @@ TABLE ... REFERENCES public.tournaments(id)` followed by ~10 s of function
    NO foreign key - an orphan row in a scan log is harmless, a lock on
    `tournaments` is not.
    `docs/changelog/2026-09-08-deep-sweep-two-and-the-probe-that-took-the-database-down.md`.
+8. **THE DATABASE REFUSES MIGRATIONS INSIDE THE HOURLY BREAK WINDOW
+   (2026-09-10).** The window is minute-of-hour :50-:03 UTC. A migration at
+   23:52:36 UTC on 2026-09-09 landed on the :53 announcement and cancelled
+   the 00:00 break (section 13). Event triggers `ca_break_window_refuses_ddl`
+   and `ca_break_window_refuses_drops` now abort any non-temporary DDL from a
+   session that logs in as `postgres` or a member of it (the management API
+   and MCP, psql, the pooler, the CLI, the dashboard) while
+   `fn_ca_break_window_refuses_migrations(now())` says so. The whole
+   transaction rolls back, so nothing reloads and no history row is written.
+   pg_cron, Supabase's own roles, PostgREST and temporary objects are never
+   refused. If you are refused, check `date -u` and apply it ONCE after :03,
+   never in a retry loop (rule 2). An emergency fix that cannot wait puts
+   `SET LOCAL ca.break_window_migration_override = '<why this cannot wait>';`
+   right after its `BEGIN;` - a reason, not a switch, honoured for that one
+   transaction and recorded in `public.ca_break_window_migration_overrides`.
+   Never disable the triggers to get a migration in, and never move the
+   window without moving `tests/the-break-clocks-agree.law.test.ts` in the
+   same commit. A trigger on `supabase_migrations.schema_migrations` looks
+   like the obvious place and is wrong here: a migration with its own
+   BEGIN/COMMIT has already committed when the management API writes its
+   history row (measured by xmin). The Supabase MCP's `list_migrations` is
+   refused inside the window too, and should be avoided outside it: before
+   `list_migrations` and `apply_migration` it runs five no-op `ALTER TABLE
+supabase_migrations.schema_migrations ADD COLUMN IF NOT EXISTS`, and each
+   call reloads PostgREST (~140 a day measured). To see what is applied, run
+   `SELECT version, name FROM supabase_migrations.schema_migrations` through
+   `execute_sql` - it reads the same history with no DDL.
+   `docs/changelog/2026-09-10-the-database-refuses-migrations-inside-the-break-window.md`.
 
 ---
 

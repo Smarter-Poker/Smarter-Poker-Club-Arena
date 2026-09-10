@@ -75,8 +75,8 @@
       "id": "T12",
       "requirement": "Expose paid, partially paid and owed states in results and player statements. Tournament completed must not imply all paid.",
       "priority": "P1",
-      "status": "confirmed_results_projection_gap",
-      "evidence": "result_payment_disclosure_review"
+      "status": "payment_projection_verified_pending_frontend_publication",
+      "evidence": "tournament_payment_status_correction"
     },
     {
       "id": "K01",
@@ -929,16 +929,17 @@
     },
     "source_followup": {
       "pr": 4039,
-      "head": "fa2b5acc3aa64b07fc3e5ef1c2ab2d0ac6c13f26",
-      "passing_ci": 34412792078,
-      "blocked_check": "Silent Revert Guard",
-      "blocked_files": [
-        "supabase/migrations/20260909183657_seat_first_unregistration_uses_actual_start_truth.sql",
-        "tests/seat-first-unregistration-actual-start.guard.test.ts"
-      ],
-      "reason": "Intentional restoration of the now-applied historical migration requires revert-approved. Automatic approval review twice rejected the label because the user has not explicitly authorized this exact governance override. Publication and database authorization remain valid. No label or alternate bypass was applied.",
+      "head": "ae407d799c3d8c3388257bcb0b8f61d4175fbbfe",
+      "passing_ci": 34416969935,
+      "reason": "The user explicitly authorized the exact restoration label; revert-approved was applied, the guard and required CI passed, and the PR merged normally.",
       "ci_attempt": 2,
-      "ci_retry_reason": "PostgreSQL lost a shared-memory segment during the first run. The single failed job was retried through the normal API; attempt 2 passed without weakening source or assertions."
+      "ci_retry_reason": "PostgreSQL lost a shared-memory segment during the first run. The single failed job was retried through the normal API; attempt 2 passed without weakening source or assertions.",
+      "status": "merged",
+      "merge_commit": "8d6ab77102acd3547eafe08ccff155ba0ecd2c89",
+      "merged_at": "2026-09-09T23:45:46Z",
+      "ci_run": 34416969935,
+      "ci_conclusion": "success",
+      "revert_approved_authorization": "Explicitly authorized by the user for PR #4039 in this chat; label applied and Silent Revert Guard passed."
     }
   },
   "table_move_dependency_review": {
@@ -1053,5 +1054,32 @@
       "service_select": true
     },
     "next_step": "Implement an authorized player-results payment projection from the canonical obligations, then wire actual paid/partial/owed amounts into results and statements. A direct browser query to the protected ledger is not an available path."
+  },
+  "tournament_payment_status_correction": {
+    "status": "database_deployed_frontend_pending_publication",
+    "control": "T12",
+    "behavior": "Caller-owned paid, partially paid, owed and zero-due records in results and player statements; absent records remain unconfirmed. Satellite seat values are identified as transferred.",
+    "migration": "20260909235308_players_can_read_their_tournament_payment_status.sql",
+    "migration_sha256": "3d91ea7cb661ed7d5d75e6ab5367eed0abe5338966e99e3bce04d08517109944",
+    "database_verified_at": "2026-09-09T23:53:48.201116Z",
+    "body_md5": "6aafec6408d9653967eaa6b367fee764",
+    "permissions": {
+      "authenticated_execute": true,
+      "anon_execute": false,
+      "service_execute": false,
+      "authenticated_table_select": false
+    },
+    "affected_client_tests": 26,
+    "isolated_postgres_scenario_groups": 5,
+    "probe": "scripts/dev/probe-tournament-payments-pg17.py",
+    "browser_fixture": {
+      "width": 375,
+      "runtime_errors": 0,
+      "horizontal_overflow": false,
+      "refresh_verified": true,
+      "synthetic_responses": true
+    },
+    "limits": "No production player session, payout mutation, historical correction or settlement certification. Other Phase 3 controls remain separate.",
+    "full_control_closed": false
   }
 }

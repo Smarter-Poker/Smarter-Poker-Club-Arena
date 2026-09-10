@@ -1,0 +1,5 @@
+{
+  "_owner": "agent/codex-poker-audit-sep09/fix/phase-three-payment-status",
+  "_comment": "Caller-owned read RPC applied as 20260909235308 and independently verified in the production catalog on 2026-09-09. Authenticated execute only; no browser ledger table grant.",
+  "functions": ["fn_ca_my_tournament_payments"]
+}

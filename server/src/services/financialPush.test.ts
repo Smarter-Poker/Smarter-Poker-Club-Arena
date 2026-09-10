@@ -50,6 +50,28 @@ describe('pushFinancialUpdateNow', () => {
     });
   });
 
+  it('pushes Diamond custody releases from the Diamond wallet without a chip ledger event', async () => {
+    rows.profiles = { diamonds: 1300 };
+    rows.club_members = { chip_balance: 99 };
+    expect(
+      await pushFinancialUpdateNow('u1', {
+        tableId: 'diamond-table',
+        asset: 'diamonds',
+        ledgerEntry: { direction: 'in', amount: 300, kind: 'cashout' },
+      })
+    ).toBe(true);
+    expect(sendToUser).toHaveBeenCalledWith('u1', {
+      type: 'FINANCIAL_UPDATE',
+      userId: 'u1',
+      walletType: 'DIAMOND',
+      available: 1300,
+      total: 1300,
+    });
+    rows.profiles = { diamonds: 1.5 };
+    expect(await pushFinancialUpdateNow('u1', { asset: 'diamonds' })).toBe(false);
+    expect(sendToUser).toHaveBeenCalledTimes(1);
+  });
+
   it('pushes nothing it cannot read - no club, no member row, no number', async () => {
     expect(await pushFinancialUpdateNow('u1', { tableId: 't1' })).toBe(false);
     rows.tables = { club_id: 'club-1' };

@@ -56,6 +56,7 @@ const invalid = [
   { ...receipt, stack: 'garbage' },
   { ...receipt, stack: -1 },
   { ...receipt, stack: 12.501 },
+  { ...receipt, asset: 'diamonds', stack: 12.5 },
   { ...receipt, stack: Infinity },
   { ...receipt, seat_number: 3 },
   { ...receipt, idempotency_key: '' },
@@ -86,16 +87,16 @@ describe('cashout departure proof', () => {
     await expect(markSeatAsLeft('table', 'player', 2, occupancyId)).rejects.toThrow();
     expect(mock.rpc).toHaveBeenCalledTimes(1);
   });
-  it.each([receipt, { ...receipt, stack: 0, credited: false }])(
-    'accepts confirmed departures %#',
-    async (data) => {
-      arrange(data);
-      expect(await processLeavePending('table', 'club')).toEqual([
-        { userId: 'player', occupancyId },
-      ]);
-      await expect(markSeatAsLeft('table', 'player', 2, occupancyId)).resolves.toBeUndefined();
-    }
-  );
+  it.each([
+    receipt,
+    { ...receipt, stack: 0, credited: false },
+    { ...receipt, asset: 'diamonds', stack: 300 },
+    { ...receipt, asset: 'diamonds', stack: 0, credited: false },
+  ])('accepts confirmed departures %#', async (data) => {
+    arrange(data);
+    expect(await processLeavePending('table', 'club')).toEqual([{ userId: 'player', occupancyId }]);
+    await expect(markSeatAsLeft('table', 'player', 2, occupancyId)).resolves.toBeUndefined();
+  });
   it('returns the confirmed amount and preserves voluntary mode', async () => {
     arrange(receipt);
     expect(await atomicCashout('player', 'table', 2, { occupancyId, leaveMode: 'voluntary' })).toBe(

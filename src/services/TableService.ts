@@ -293,7 +293,13 @@ class TableService {
     tableId: string,
     seatNumber: number,
     userId: string
-  ): Promise<{ success: boolean; chipsReturned: number; deferred?: boolean; error?: string }> {
+  ): Promise<{
+    success: boolean;
+    chipsReturned: number;
+    deferred?: boolean;
+    occupancyId?: string;
+    error?: string;
+  }> {
     // Resolve and persist the original occupancy before contacting the engine.
     // A stale UI seat number must never retarget an interrupted cashout.
     void seatNumber;

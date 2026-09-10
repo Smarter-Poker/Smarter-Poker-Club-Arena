@@ -5,7 +5,7 @@
  *  Shows past settlement cycles with trend comparison.
  */
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
@@ -16,6 +16,9 @@ import PageSkeleton from '../components/common/PageSkeleton';
 
 import { useIsMounted } from '../hooks/useIsMounted';
 import { reportError } from '../utils/errorReporter';
+import { safeErrorMessage } from '../utils/safeErrorMessage';
+import FinancialAdminScopeState from '../components/common/FinancialAdminScopeState';
+import { clubScoped, useFinancialAdminScope } from '../hooks/useFinancialAdminScope';
 
 interface SettlementCycle {
   id: string;
@@ -35,15 +38,101 @@ export default function SettlementHistoryPage() {
 
   const [cycles, setCycles] = useState<SettlementCycle[]>([]);
   const [loading, setLoading] = useState(true);
+  /* A FAILED READ IS NOT "THE PERIOD HAD NO SETTLEMENTS" (2026-09-10). The
+     settlement_invoices read discarded its error, so a refused or failed
+     query rendered zeroed tiles and an empty chart as though nothing had
+     been settled. */
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [visibleRows, setVisibleRows] = useState<Set<number>>(new Set());
   const isMounted = useIsMounted();
   const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  /* WHOSE HISTORY (2026-09-10). settlement_invoices was filtered only by
+     invoice_type, so a union overseer - whose RLS grant covers every club in
+     the union - read every club's rake-hold invoices as this club's history,
+     summed into the tiles and the chart. The scope names the club. */
+  const scope = useFinancialAdminScope();
+  const scopeStatus = scope.status;
+  const scopeClubId = scope.clubId;
+  const scopePlatformWide = scope.platformWide;
+
+  const loadingRef = useRef(false);
+
+  const loadHistory = useCallback(async () => {
+    if (scopeStatus !== 'ready') return;
+    if (loadingRef.current) return;
+    loadingRef.current = true;
+    setLoading(true);
+    setLoadError(null);
+    try {
+      // SWEEP #3 (2026-07-23): repointed off the phantom club_settlements table
+      // onto settlement_invoices. gross_amount = rake collected in the period;
+      // net_amount = the union's hold (union tax); breakdown.club_retained =
+      // what the club kept.
+      // FIX 2026-08-19: this query had NO invoice_type filter, and the mapper
+      // assumes every row is a union rake-hold invoice (reading
+      // breakdown.union_hold_amount / breakdown.club_retained). A
+      // 'union_club_pnl' row — the new weekly player win/loss settlement — has
+      // neither key and gross_amount == net_amount, so it rendered as
+      // "Rake: X / Fee: -X / Net: 0", i.e. "the union took 100% of your rake",
+      // and it corrupted every summary tile and the chart scale. Scope to the
+      // rake-hold invoices this screen is actually about.
+      const { data, error } = await clubScoped(
+        supabase
+          .from('settlement_invoices')
+          .select(
+            'id, period_id, invoice_type, gross_amount, net_amount, breakdown, status, created_at'
+          )
+          .eq('invoice_type', 'union_to_club'),
+        { status: scopeStatus, clubId: scopeClubId, platformWide: scopePlatformWide }
+      )
+        .order('created_at', { ascending: false })
+        .limit(50);
+      if (error) throw error;
+
+      if (data) {
+        if (!isMounted.current) return;
+        const mapped: SettlementCycle[] = data.map((s: any) => ({
+          id: s.id,
+          periodId: s.period_id || 'N/A',
+          totalRake: s.gross_amount || 0,
+          unionTax: s.breakdown?.union_hold_amount ?? s.net_amount ?? 0,
+          netSettlement:
+            s.breakdown?.club_retained ?? Math.max((s.gross_amount || 0) - (s.net_amount || 0), 0),
+          status: s.status === 'paid' ? 'completed' : s.status || 'completed',
+          createdAt: s.created_at,
+          agentPayouts: 0,
+        }));
+        setCycles(mapped);
+        // Clear previous stagger timers before starting new ones
+        staggerTimersRef.current.forEach(clearTimeout);
+        staggerTimersRef.current = mapped.map((_, i) =>
+          setTimeout(() => {
+            if (isMounted.current) setVisibleRows((prev) => new Set(prev).add(i));
+          }, i * 50)
+        );
+      }
+    } catch (err) {
+      if (!isMounted.current) return;
+      reportError(err, 'SettlementHistoryPage.Load_failed');
+      setCycles([]);
+      setLoadError(
+        safeErrorMessage(
+          err,
+          'The Settlement History Could Not Be Loaded. Nothing Has Been Changed.'
+        )
+      );
+      toast.error('Failed to load settlement history');
+    } finally {
+      loadingRef.current = false;
+      if (isMounted.current) setLoading(false);
+    }
+  }, [scopeStatus, scopeClubId, scopePlatformWide, toast]);
 
   useVisibilityRefresh(() => loadHistory());
 
   useEffect(() => {
     loadHistory();
-  }, []);
+  }, [loadHistory]);
 
   // Cleanup stagger timers on unmount
   useEffect(() => {
@@ -94,71 +183,19 @@ export default function SettlementHistoryPage() {
       unsub2();
       masterBus.removeRegisteredChannel(channelKey);
     };
-  }, []);
-
-  const loadingRef = useRef(false);
-
-  const loadHistory = async () => {
-    if (loadingRef.current) return;
-    loadingRef.current = true;
-    setLoading(true);
-    try {
-      // SWEEP #3 (2026-07-23): repointed off the phantom club_settlements table
-      // onto settlement_invoices. gross_amount = rake collected in the period;
-      // net_amount = the union's hold (union tax); breakdown.club_retained =
-      // what the club kept.
-      // FIX 2026-08-19: this query had NO invoice_type filter, and the mapper
-      // assumes every row is a union rake-hold invoice (reading
-      // breakdown.union_hold_amount / breakdown.club_retained). A
-      // 'union_club_pnl' row — the new weekly player win/loss settlement — has
-      // neither key and gross_amount == net_amount, so it rendered as
-      // "Rake: X / Fee: -X / Net: 0", i.e. "the union took 100% of your rake",
-      // and it corrupted every summary tile and the chart scale. Scope to the
-      // rake-hold invoices this screen is actually about.
-      const { data } = await supabase
-        .from('settlement_invoices')
-        .select(
-          'id, period_id, invoice_type, gross_amount, net_amount, breakdown, status, created_at'
-        )
-        .eq('invoice_type', 'union_to_club')
-        .order('created_at', { ascending: false })
-        .limit(50);
-
-      if (data) {
-        if (!isMounted.current) return;
-        const mapped: SettlementCycle[] = data.map((s: any) => ({
-          id: s.id,
-          periodId: s.period_id || 'N/A',
-          totalRake: s.gross_amount || 0,
-          unionTax: s.breakdown?.union_hold_amount ?? s.net_amount ?? 0,
-          netSettlement:
-            s.breakdown?.club_retained ?? Math.max((s.gross_amount || 0) - (s.net_amount || 0), 0),
-          status: s.status === 'paid' ? 'completed' : s.status || 'completed',
-          createdAt: s.created_at,
-          agentPayouts: 0,
-        }));
-        setCycles(mapped);
-        // Clear previous stagger timers before starting new ones
-        staggerTimersRef.current.forEach(clearTimeout);
-        staggerTimersRef.current = mapped.map((_, i) =>
-          setTimeout(() => {
-            if (isMounted.current) setVisibleRows((prev) => new Set(prev).add(i));
-          }, i * 50)
-        );
-      }
-    } catch (err) {
-      if (!isMounted.current) return;
-      reportError(err, 'SettlementHistoryPage.Load_failed');
-      toast.error('Failed to load settlement history');
-    } finally {
-      loadingRef.current = false;
-      if (isMounted.current) setLoading(false);
-    }
-  };
+  }, [loadHistory]);
 
   const totalRakeAllTime = cycles.reduce((s, c) => s + c.totalRake, 0);
   const totalSettled = cycles.reduce((s, c) => s + c.netSettlement, 0);
   const maxRake = Math.max(...cycles.map((c) => c.totalRake), 1);
+
+  if (scope.status !== 'ready') {
+    return (
+      <div style={{ padding: '16px', width: '100%', maxWidth: '800px', margin: '0 auto' }}>
+        <FinancialAdminScopeState scope={scope} />
+      </div>
+    );
+  }
 
   return (
     <div
@@ -230,7 +267,7 @@ export default function SettlementHistoryPage() {
               fontFamily: 'monospace',
             }}
           >
-            {totalRakeAllTime.toLocaleString()}
+            {loadError ? '--' : totalRakeAllTime.toLocaleString()}
           </div>
         </div>
         <div
@@ -259,7 +296,7 @@ export default function SettlementHistoryPage() {
               fontFamily: 'monospace',
             }}
           >
-            {totalSettled.toLocaleString()}
+            {loadError ? '--' : totalSettled.toLocaleString()}
           </div>
         </div>
         <div
@@ -288,7 +325,7 @@ export default function SettlementHistoryPage() {
               fontFamily: 'monospace',
             }}
           >
-            {cycles.length}
+            {loadError ? '--' : cycles.length}
           </div>
         </div>
       </div>
@@ -366,8 +403,28 @@ export default function SettlementHistoryPage() {
       >
         Settlement Cycles
       </div>
-      {loading && cycles.length === 0 ? (
+      {loading && cycles.length === 0 && !loadError ? (
         <PageSkeleton variant="default" />
+      ) : loadError ? (
+        <div role="alert" style={{ textAlign: 'center', padding: '32px', color: '#f87171' }}>
+          <div>{loadError}</div>
+          <button
+            type="button"
+            onClick={() => loadHistory()}
+            style={{
+              marginTop: '12px',
+              padding: '8px 16px',
+              background: 'rgba(239,68,68,0.15)',
+              border: '1px solid rgba(239,68,68,0.3)',
+              borderRadius: '8px',
+              color: '#f87171',
+              cursor: 'pointer',
+              fontWeight: 600,
+            }}
+          >
+            Retry
+          </button>
+        </div>
       ) : cycles.length === 0 ? (
         <div style={{ textAlign: 'center', padding: '40px', color: 'rgba(255,255,255,0.3)' }}>
           No Settlement Cycles Yet

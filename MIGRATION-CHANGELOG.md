@@ -17288,3 +17288,18 @@ Hand-for-hand retains synchronized/add-on break pauses, preserves their budgets 
 **Verified:** Exact `AUDIT_TEST_PASS` rollback exception, native exit 3, complete catalog and fixture state restored. Existing 8 baseline events preserved. No production writes, no money-function stubs, no disabled guards during money calls. Full terminal and current concurrent acceptance remain open.
 
 **TypeScript:** Not applicable, SQL rehearsal, Python runner and evidence only.
+
+
+## Change: Preserve The Current Spin Terminal Acceptance Blocker
+
+**Files:** `scripts/ci/rehearse-spin-current-terminal.py`, `scripts/ci/probes/spin-current-terminal-native.sql`, `docs/audits/2026-09-10-spin-current-terminal-native-evidence.json`.
+
+**What Existed:** The current zero-default native Spin draw and lease-bound launch passed. Whole terminal completion still used older local wrappers and unverified lower cash routing.
+
+**What Changed:** Added a reproducible source-pinned, rollback-only composer for the exact current non-satellite terminal, resolver, rake, place wrapper, raw payer and shared obligation function. It keeps the current native core, attribution and treasury leaves and all seven enabled tournament guards. The extension models the accepted final hand, uses the real finish claim, and contains late-terminal-fault, exact payout, escrow, closure and replay assertions.
+
+**Verified:** The actual native call refused at seat release with `TOURNAMENT_SEAT_EXIT_REQUIRES_TOURNAMENT_AUTHORITY`. This is recorded as a failed acceptance gate. All function definition/owner/ACL metadata, all triggers and all rows in 33 compared fixture tables were exactly restored after rollback. No terminal-success claim, guard bypass, production write, satellite receipt restoration or previously denied guard-source inspection.
+
+**Why:** Keep an executable record of the real remaining incompatibility instead of accepting a payout-only pass as terminal acceptance. Live seat-guard parity remains unverified.
+
+**TypeScript:** Not applicable, native SQL/Python rehearsal and evidence only.

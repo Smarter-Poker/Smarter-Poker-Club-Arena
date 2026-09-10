@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import ts from 'typescript';
@@ -13,7 +13,11 @@ const source = readFileSync(
   path.join(process.cwd(), 'src/tournament/TournamentManagerBase.ts'),
   'utf8'
 );
-const signatures = ['protected levelDurationMs(', 'protected resolveBlindLevel('];
+const signatures = [
+  'protected levelDurationMs(',
+  'protected resolveBlindLevel(',
+  'protected async advanceBlindLevel(',
+];
 if (source.includes('protected rawLevelDurationMs('))
   signatures.push('protected rawLevelDurationMs(');
 const methods = signatures.map((signature) =>
@@ -23,7 +27,12 @@ const runtime = ts.transpileModule('return { ' + methods.join(',\n') + ' };', {
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },
 }).outputText;
 
-function manager(accelerated: boolean, closed: boolean, spin = false) {
+function manager(
+  accelerated: boolean,
+  closed: boolean,
+  spin = false,
+  dependencies: Record<string, unknown> = {}
+) {
   return {
     ...new Function(
       'acceleratedLevelMs',
@@ -32,6 +41,9 @@ function manager(accelerated: boolean, closed: boolean, spin = false) {
       'observedStepRatio',
       'continueBookedSpinBlinds',
       'spinBlindsForLevel',
+      'supabase',
+      'tableStateHub',
+      'reportError',
       runtime
     )(
       acceleratedLevelMs,
@@ -39,7 +51,10 @@ function manager(accelerated: boolean, closed: boolean, spin = false) {
       lastPlayableIndex,
       observedStepRatio,
       continueBookedSpinBlinds,
-      spinBlindsForLevel
+      spinBlindsForLevel,
+      dependencies.supabase,
+      dependencies.tableStateHub,
+      dependencies.reportError
     ),
     tournamentCache: { accelerated_mtt: accelerated, variant: spin ? 'spin' : 'mtt' },
     isLateRegClosed: () => closed,
@@ -85,4 +100,49 @@ describe('the actual manager resolves raw level duration before applying acceler
       expect(state.levelDurationMs(state.resolveBlindLevel(structure, index))).toBe(180000);
     }
   });
+});
+
+describe('level publication carries the duration the actual manager timer uses', () => {
+  it.each([
+    { minutes: 5, spin: false, expected: 3 },
+    { minutes: 10, spin: false, expected: 5 },
+    { minutes: 3, spin: true, expected: 3 },
+  ])(
+    'publishes $expected minutes for a $minutes-minute row, Spin $spin',
+    async ({ minutes, spin, expected }) => {
+      const clock = vi.spyOn(Date, 'now').mockReturnValue(0);
+      try {
+        const tableStateHub = { emitEvent: vi.fn() };
+        const supabase = {
+          from: () => ({ update: () => ({ eq: async () => ({ error: null }) }) }),
+        };
+        const state = manager(!spin, true, spin, { tableStateHub, supabase, reportError: vi.fn() });
+        Object.assign(state, {
+          tournamentId: 'published-clock',
+          lifecycleEpoch: { current: () => 1 },
+          lifecycleIsCurrent: () => true,
+          isOnBreak: () => false,
+          currentLevel: 0,
+          tableEngines: new Map([['table-clock', {}]]),
+          broadcast: vi.fn(async () => {}),
+          reconcileTournamentEntryWindow: vi.fn(async () => {}),
+          startBlindTimer: vi.fn(),
+        });
+        const structure = [
+          { level: 1, smallBlind: 5, bigBlind: 10, ante: 0, duration: minutes * 60 },
+        ];
+        await state.advanceBlindLevel(structure);
+        expect(tableStateHub.emitEvent).toHaveBeenCalledWith(
+          'table-clock',
+          expect.objectContaining({
+            type: 'level_up',
+            duration_minutes: expected,
+          })
+        );
+        expect(state.startBlindTimer).toHaveBeenCalledWith(structure, expected * 60000);
+      } finally {
+        clock.mockRestore();
+      }
+    }
+  );
 });

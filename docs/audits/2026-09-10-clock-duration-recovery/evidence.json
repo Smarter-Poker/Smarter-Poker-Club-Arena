@@ -22,7 +22,7 @@
   "source_hashes": [
     {
       "file": "server/src/tournament/TournamentManagerBase.ts",
-      "sha256": "dac06f5e554b55bdf06b74eb2353b4faca16d80210584218714cffc500d73dae"
+      "sha256": "da8aaea735898908958896760cae147a6f55061bca5137f058dd433997ab4128"
     },
     {
       "file": "server/src/tournament/blindEscalation.ts",
@@ -38,7 +38,7 @@
     },
     {
       "file": "server/src/tournament/LevelDurationComposition.test.ts",
-      "sha256": "a90345a97474c4e033947ddaab08878f4cdaca0d93dd5f55fd64c570adcc2135"
+      "sha256": "838f7d56df7c9da1b68317877439a4988fbdb2424551ca966d67e7df4693021a"
     },
     {
       "file": "server/src/tournament/ResumeBlindClockBehavior.test.ts",
@@ -73,10 +73,61 @@
     "client-fixed": {
       "file": "client-fixed.log",
       "sha256": "5085793258623ccb496807aa618c4695ce7d4ca75b3fca7462397afe6ac66d2a"
+    },
+    "publication-baseline": {
+      "file": "publication-baseline.log",
+      "sha256": "60c5049c39e27790d69f748f1d6ee219e67bf3ef4faea298789c11286303000a"
+    },
+    "publication-fixed": {
+      "file": "publication-fixed.log",
+      "sha256": "9a8c7d00f748052d92271644eb79b88c3ae928e51deca702481ab75921919ac2"
     }
   },
   "publication": "Candidate, root integrates and verifies normal CI/publication",
   "clock_k01": "OPEN",
   "dormant_archive": "831f408db7eb593abe5a0d108177c382adfb19e2",
-  "no_production_database_change": true
+  "no_production_database_change": true,
+  "production_spin_readback": {
+    "catalog": {
+      "observed_at": "2026-09-10 18:24:20.800877+00",
+      "signature": "fn_resolve_tournament_blinds(text,integer,text,text,numeric)",
+      "body_md5": "4f83c09a69eecc766a1f3984feeb9823",
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres}",
+      "proconfig": ["search_path=public, pg_temp"],
+      "prosecdef": true
+    },
+    "host_constants": {
+      "observed_at": "2026-09-10 18:25:20.5208+00",
+      "server_version": "17.6",
+      "cases": 77,
+      "matches": 77,
+      "mismatches": []
+    },
+    "installed_helper": {
+      "observed_at": "2026-09-10 18:25:11.225162+00",
+      "cases": 93,
+      "matches": 93,
+      "mismatches": []
+    }
+  },
+  "current_manager_spin": {
+    "source_commit": "e6d0700009ac6b39979bb71ca258cc0907e4fd4c",
+    "rows_compared": 93,
+    "matches": 93,
+    "expected_zero_round_refusals": 1,
+    "mismatches": [],
+    "file": "current-manager-spin-matrix.json",
+    "sha256": "66ce1f03ea15c045a598fde21a846f59a4a56a43f4c1fddb31e983d2786bb48e"
+  },
+  "publication_followup": {
+    "before": "3 failed publication assertions,61 passed",
+    "after": "See publication-fixed.log; actual advance method publishes the same effective duration the timer schedules",
+    "no_production_writes": true
+  },
+  "excluded_reader_finding": {
+    "file": "server/src/services/TournamentBrainContext.ts",
+    "finding": "resolveBlindLevel and deriveBlindState each apply acceleration on generic overflow",
+    "status": "Excluded horse context source, unmodified and not certified by this clock patch"
+  }
 }

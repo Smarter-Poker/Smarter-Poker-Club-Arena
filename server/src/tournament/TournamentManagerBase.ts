@@ -6092,7 +6092,7 @@ export abstract class TournamentManagerBase {
               small_blind: level.smallBlind,
               big_blind: level.bigBlind,
               ante: level.ante || 0,
-              duration_minutes: level.durationMinutes,
+              duration_minutes: this.levelDurationMs(level) / 60000,
               timestamp: Date.now(),
             });
           } catch {

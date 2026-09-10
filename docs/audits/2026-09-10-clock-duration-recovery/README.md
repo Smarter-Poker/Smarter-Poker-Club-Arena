@@ -26,3 +26,11 @@ K01 remains open. The archived prospective components at `831f408db7eb593abe5a0d
 | Rolling Publication         | Verify the complete current manager/client/database composition, actual production lock graph, normal coowner engine adoption and live table/level/anchor agreement.                                                    |
 
 Current main includes the coowner's tournament maintenance-thaw restoration. The separate per-tournament lane work changes the production G/T lock contract and must be recaptured before any new clock SQL integration. Earlier G/B/T fixtures are not current production proof. No host, container, engine release, cutover seal, production SQL, horse strategy or balance was changed in this patch.
+
+## Duration Publication Review
+
+The actual level-up publisher now sends the same effective duration used by the manager timer. The focused actual-advance regressions first reproduced three failures: generic five- and ten-minute overflow published raw durations, and the three-minute Spin row published an absent minutes value. The fix changes only the duration field, leaving the pending atomic publication ownership requirement open.
+
+Current source commit e6d0700009ac6b39979bb71ca258cc0907e4fd4c produced 93 matching Spin authority rows and one expected zero-round refusal. Fresh read-only production checks at 18:24/18:25 UTC confirmed the unchanged private helper body 4f83c09a69eecc766a1f3984feeb9823 and its original owner/ACL/path, all 77 host-constant rows and all 93 installed-helper rows. All inputs were synthetic constants, with no application row writes.
+
+The player service still computes its display duration from the stored raw structure and lacks the accepted immutable effective-epoch facts. This patch changes only its overdue handling; it cannot certify complete accelerated countdown parity. The excluded horse context reader TournamentBrainContext.deriveBlindState also independently double-applies acceleration on generic overflow. That source was not changed or certified under this lane.

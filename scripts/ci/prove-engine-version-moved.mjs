@@ -47,6 +47,7 @@ const PRE = (process.env.PRE_CUTOVER_VERSION || '').trim();
 const PRE_SOURCE = (process.env.PRE_CUTOVER_SOURCE || 'unknown').trim();
 const TIMEOUT_S = Number(process.env.TIMEOUT_S || 240);
 const POLL_S = Number(process.env.POLL_S || 10);
+const STRICT_PROOF = process.env.STRICT_PROOF === '1';
 const RUN_URL = process.env.RUN_URL || '';
 
 const say = (m) => console.log(m);
@@ -213,10 +214,17 @@ async function prove() {
       // The leader row must be FRESH: a stale row with the right version is
       // an old heartbeat, not proof. 60 s is six renew intervals.
       const fresh = r.heartbeatAgeS === null || r.heartbeatAgeS <= 60;
-      if (r.version === TARGET && fresh) {
+      // Strict release sealing requires the fresh database row written by the
+      // elected leader. HTTP remains useful diagnostic evidence, but a proxy or
+      // stale twin must never advance durable release authority.
+      const authoritative = !STRICT_PROOF || r.source === 'engine_leader';
+      if (r.version === TARGET && fresh && authoritative) {
         say(`PROVED: ${r.source} reports ${TARGET}${PRE ? `, moved from ${PRE}` : ''}.`);
         summary(`### Deploy proved\n\n\`${r.source}\` reports \`${TARGET}\`${PRE ? ` (was \`${PRE}\`)` : ''} after ${attempt} attempt(s).`);
         process.exit(0);
+      }
+      if (r.version === TARGET && fresh && !authoritative) {
+        say(`attempt ${attempt}: HTTP matches, but strict sealing still requires engine_leader`);
       }
     } else {
       say(`attempt ${attempt}: no witness readable`);
@@ -226,9 +234,12 @@ async function prove() {
   }
 
   if (!last) {
-    say(`::warning title=DEPLOY PROOF INCONCLUSIVE::Neither engine_leader nor ${ENGINE_URL}/health could be read for ${TIMEOUT_S}s. Not treating silence as a failed deploy; the verify step already saw ${TARGET} in the container.`);
-    summary(`### Deploy proof inconclusive\n\nNo witness answered for ${TIMEOUT_S}s. Not treated as a failure.`);
-    process.exit(0);
+    const verdict = STRICT_PROOF
+      ? 'The durable release seal was NOT advanced.'
+      : 'Not treating silence as a failed deploy; the verify step already saw the target in the container.';
+    say(`::warning title=DEPLOY PROOF INCONCLUSIVE::Neither engine_leader nor ${ENGINE_URL}/health could be read for ${TIMEOUT_S}s. ${verdict}`);
+    summary(`### Deploy proof inconclusive\n\nNo witness answered for ${TIMEOUT_S}s. ${verdict}`);
+    process.exit(STRICT_PROOF ? 1 : 0);
   }
 
   const unchanged = PRE && last.version === PRE;

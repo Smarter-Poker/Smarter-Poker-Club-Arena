@@ -144,6 +144,7 @@ import { tableStateHub } from './transport/TableStateHub.js';
 // the database terminal authority to settle completed play; operator-managed
 // cancellation enters through the authenticated database command authority.
 import { recoverStuckCompletingTournaments } from './tournament/tournamentRecovery.js';
+import { spinLaunchParks } from './tournament/spinLaunchParking.js';
 import { managerHasOverstayed, selectCompletingDue } from './tournament/completingDwell.js';
 import { fieldIsStillLive } from './tournament/recoveryFieldGuard.js';
 import { resolvePayoutStructure } from './tournament/payoutStructure.js';
@@ -1232,6 +1233,14 @@ export class GameServer {
     }
     if (this.tournamentEngines.has(tournamentId)) {
       this.clearTournamentManagerAdmissionRetry(tournamentId);
+      return Promise.resolve();
+    }
+    /* The one front door every start passes through, so the park holds for
+       the main discovery loop and the fully-paid stall watchdog as well as
+       the fast lane. Only 'start' is gated: a RUNNING game being resumed was
+       never parked by the draw path, and the registry only ever holds ids the
+       draw path put there. */
+    if (mode === 'start' && spinLaunchParks.isParked(tournamentId)) {
       return Promise.resolve();
     }
     const existing = this.tournamentManagerAdmissionOperations.get(tournamentId);
@@ -6529,6 +6538,18 @@ export class GameServer {
             }
 
             if (seats <= 0 || paid < seats) continue;
+
+            /**
+             * A PARKED LAUNCH IS LEFT ALONE (2026-09-10). The "stop the dead
+             * manager, start a fresh one" below is what turned one refused
+             * draw into ~87 database calls a second across the board: the
+             * manager stood down for a reason the database had just said was
+             * deterministic, and this pass restarted it a second later. The
+             * draw path (spinLaunchParking.ts) now parks the id with a
+             * doubling window; until that window ends, nothing here touches
+             * it, not even the stale-manager stop.
+             */
+            if (spinLaunchParks.isParked(id)) continue;
 
             const held = this.tournamentEngines.get(id);
             if (held && !held.isRunning()) {

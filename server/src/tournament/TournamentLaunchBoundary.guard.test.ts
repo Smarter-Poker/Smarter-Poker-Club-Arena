@@ -177,7 +177,7 @@ describe('a tournament launch crosses maintenance exactly once', () => {
   });
 
   it('uses the incomplete receipt retry path instead of delayed repair work', () => {
-    const refusedDraw = sliceEnclosingBlock(start, 'if (!fundedSpin)');
+    const refusedDraw = sliceEnclosingBlock(start, 'if (!proven.ok)');
     expect(refusedDraw).toContain('this.running = false;');
     expect(refusedDraw).toContain('return;');
     expect(start).toMatch(/if \(!spinPresentationWritten\) \{\s*this\.running = false;\s*return;/);

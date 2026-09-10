@@ -349,7 +349,7 @@ def cmd_authorize(args: argparse.Namespace) -> None:
             audit("desired_start_authorized", state, target=desired)
             # Return the immutable pair. The caller must docker-run imageId,
             # never the mutable tag/reference it asked us to authorize.
-            print(f'{desired["sha"]} {desired["imageId"]}')
+            print(f'desired {desired["sha"]} {desired["imageId"]}')
             return
 
         pending = state.get("pending")
@@ -374,7 +374,7 @@ def cmd_authorize(args: argparse.Namespace) -> None:
             runUrl=pending["runUrl"],
             actor=pending["actor"],
         )
-        print(f'{pending["sha"]} {pending["imageId"]}')
+        print(f'pending {pending["sha"]} {pending["imageId"]}')
 
 
 def cmd_classify(args: argparse.Namespace) -> None:
@@ -429,6 +429,21 @@ def cmd_commit(args: argparse.Namespace) -> None:
     with SealLock():
         state = load_state()
         pending = state.get("pending")
+        # A lost SSH response or an audit-append failure can make the caller
+        # uncertain after the fsynced state replacement succeeded. The same
+        # audited run may safely retry/attest that exact durable receipt; it may
+        # not move or rewrite any other release.
+        updated_by = state.get("updatedBy")
+        if (
+            pending is None
+            and state["desired"]["sha"] == target_sha
+            and state["desired"]["imageId"] == image_id
+            and isinstance(updated_by, dict)
+            and str(updated_by.get("runId")) == meta["runId"]
+        ):
+            audit("commit_attested", state, desired=state["desired"], **meta)
+            print(target_sha)
+            return
         if not pending_is_active(pending) or pending.get("used") is not True:
             die("no consumed live cutover authorization exists for commit")
         if pending.get("sha") != target_sha or pending.get("imageId") != image_id:
@@ -462,6 +477,29 @@ def cmd_commit(args: argparse.Namespace) -> None:
             **meta,
         )
         print(target_sha)
+
+
+def cmd_attest_commit(args: argparse.Namespace) -> None:
+    target_sha = valid_sha(args.sha)
+    image_id = str(args.image_id)
+    if not IMAGE_ID_RE.fullmatch(image_id):
+        die("commit attestation image ID is invalid")
+    run_id = str(args.run_id)
+    if not RUN_ID_RE.fullmatch(run_id):
+        die("commit attestation run id is invalid")
+    with SealLock():
+        state = load_state()
+        desired = state["desired"]
+        updated_by = state.get("updatedBy")
+        if (
+            state.get("pending") is not None
+            or desired["sha"] != target_sha
+            or desired["imageId"] != image_id
+            or not isinstance(updated_by, dict)
+            or str(updated_by.get("runId")) != run_id
+        ):
+            die("durable release state does not attest this run's exact commit")
+        print(f'{state["generation"]} {target_sha} {image_id} {run_id}')
 
 
 def cmd_abort(args: argparse.Namespace) -> None:
@@ -529,6 +567,12 @@ def parser() -> argparse.ArgumentParser:
     commit.add_argument("--container", default="club-arena-engine")
     add_audit_arguments(commit)
     commit.set_defaults(handler=cmd_commit)
+
+    attest = commands.add_parser("attest-commit")
+    attest.add_argument("--sha", required=True)
+    attest.add_argument("--image-id", required=True)
+    attest.add_argument("--run-id", required=True)
+    attest.set_defaults(handler=cmd_attest_commit)
 
     abort = commands.add_parser("abort")
     abort.add_argument("--run-id", required=True)

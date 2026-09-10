@@ -214,10 +214,17 @@ async function prove() {
       // The leader row must be FRESH: a stale row with the right version is
       // an old heartbeat, not proof. 60 s is six renew intervals.
       const fresh = r.heartbeatAgeS === null || r.heartbeatAgeS <= 60;
-      if (r.version === TARGET && fresh) {
+      // Strict release sealing requires the fresh database row written by the
+      // elected leader. HTTP remains useful diagnostic evidence, but a proxy or
+      // stale twin must never advance durable release authority.
+      const authoritative = !STRICT_PROOF || r.source === 'engine_leader';
+      if (r.version === TARGET && fresh && authoritative) {
         say(`PROVED: ${r.source} reports ${TARGET}${PRE ? `, moved from ${PRE}` : ''}.`);
         summary(`### Deploy proved\n\n\`${r.source}\` reports \`${TARGET}\`${PRE ? ` (was \`${PRE}\`)` : ''} after ${attempt} attempt(s).`);
         process.exit(0);
+      }
+      if (r.version === TARGET && fresh && !authoritative) {
+        say(`attempt ${attempt}: HTTP matches, but strict sealing still requires engine_leader`);
       }
     } else {
       say(`attempt ${attempt}: no witness readable`);

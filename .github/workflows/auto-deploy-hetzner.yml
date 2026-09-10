@@ -614,8 +614,14 @@ jobs:
             CONTROL_SHA='${{ github.sha }}'
             case \"\$CONTROL_SHA\" in (*[!0-9a-f]*|'') echo 'invalid control SHA'; exit 1;; esac
             [ \"\${#CONTROL_SHA}\" -eq 40 ]
-            [ \"\$CONTROL_SHA\" = \"\$(git rev-parse origin/main)\" ] \
-              || { echo 'workflow control SHA is no longer current origin/main'; exit 1; }
+            # The runner already proved CONTROL_SHA was current main before
+            # staging this run. Main may legitimately advance while its tests
+            # and immutable image build execute; require containment here,
+            # not moving-tip equality, so unrelated merges cannot starve an
+            # already-audited release forever.
+            git cat-file -e \"\$CONTROL_SHA^{commit}\"
+            git merge-base --is-ancestor \"\$CONTROL_SHA\" origin/main \
+              || { echo 'workflow control SHA is no longer contained in origin/main'; exit 1; }
             CONTROL_STAGE='/var/lib/club-arena/control-staging/${{ github.run_id }}'
             install -d -m 0700 \"\$CONTROL_STAGE\"
             git archive \"\$CONTROL_SHA\" -- \
@@ -911,6 +917,7 @@ jobs:
           # If the check rejects, attempted remains false and no recovery path
           # is allowed to replace the untouched serving container.
           MUTATION_MARKER=__SP_CUTOVER_MUTATION_AUTHORIZED__
+          IDENTITY_MARKER=__SP_CUTOVER_IDENTITY__
           set +e
           CUTOVER_LOG=$(~/hssh "
             set -euo pipefail
@@ -919,11 +926,20 @@ jobs:
             BODY=\$(curl -sf --max-time 10 http://127.0.0.1:8080/health)
             printf '%s' \"\$BODY\" | python3 -c 'import json,sys; d=json.load(sys.stdin); m=d.get(\"maintenance\"); ok=d.get(\"running\") is True and isinstance(m,dict) and m.get(\"active\") is True and m.get(\"phase\")==\"counting_down\" and m.get(\"durableConfirmed\") is True and m.get(\"readyForRestart\") is True and m.get(\"unparkedTables\")==0 and int(m.get(\"remainingMs\") or 0)>=180000; sys.exit(0 if ok else 75)'
             echo '$MUTATION_MARKER'
+            # The stock autoheal sidecar is intentionally not release-aware.
+            # Fence it before a pending candidate exists; otherwise it can
+            # explicitly restart unhealthy unsealed bytes despite restart=no.
+            docker container inspect sp-autoheal >/dev/null
+            docker stop -t 15 sp-autoheal >/dev/null
+            [ \"\$(docker container inspect -f '{{.State.Status}}' sp-autoheal)\" = exited ]
             ENGINE_UP_LOCK_HELD=1 \
               ENGINE_RELEASE_TOKEN='${{ steps.seal.outputs.token }}' \
               IMAGE='$IMAGE_REPO:$SHA' CONTAINER='$CONTAINER' \
               ENV_FILE='$REPO_DIR/server/.env' \
-              /usr/local/lib/club-arena/engine-control/engine-up.sh")
+              /usr/local/lib/club-arena/engine-control/engine-up.sh
+            CID=\$(docker container inspect -f '{{.Id}}' '$CONTAINER')
+            STARTED_AT=\$(docker container inspect -f '{{.State.StartedAt}}' '$CONTAINER')
+            echo '$IDENTITY_MARKER' \"\$CID\" \"\$STARTED_AT\"")
           CUTOVER_STATUS=$?
           set -e
           printf '%s\n' "$CUTOVER_LOG"
@@ -931,6 +947,15 @@ jobs:
             echo "attempted=true" >> "$GITHUB_OUTPUT"
           fi
           [ "$CUTOVER_STATUS" -eq 0 ] || exit "$CUTOVER_STATUS"
+          IDENTITY_LINE=$(printf '%s\n' "$CUTOVER_LOG" | grep "^$IDENTITY_MARKER " | tail -1 || true)
+          CANDIDATE_CID=; CANDIDATE_STARTED_AT=; EXTRA=
+          read -r _ CANDIDATE_CID CANDIDATE_STARTED_AT EXTRA <<< "$IDENTITY_LINE" || true
+          [[ "$CANDIDATE_CID" =~ ^[0-9a-f]{64}$ ]] \
+            || { echo "::error::cutover did not return one exact candidate container ID"; exit 1; }
+          [ -n "$CANDIDATE_STARTED_AT" ] && [ -z "${EXTRA:-}" ] \
+            || { echo "::error::cutover returned an invalid candidate start generation"; exit 1; }
+          echo "candidate_cid=$CANDIDATE_CID" >> "$GITHUB_OUTPUT"
+          echo "candidate_started_at=$CANDIDATE_STARTED_AT" >> "$GITHUB_OUTPUT"
           echo "success=true" >> "$GITHUB_OUTPUT"
           # The outgoing engine's log was saved by engine-up.sh before the old
           # container was removed (2026-09-07). Name the file in the run log so
@@ -973,7 +998,7 @@ jobs:
             VER=$(echo "$BODY" | python3 -c "import json,sys;print(json.load(sys.stdin).get('version',''))" 2>/dev/null || echo "")
             LIVE=$(echo "$BODY" | python3 -c "import json,sys;print(json.load(sys.stdin).get('liveness',''))" 2>/dev/null || echo "")
             echo "attempt $i: running=$RUNNING version=$VER (want $SHORT) liveness=$LIVE"
-            if [ "$RUNNING" = "True" ] && [ "$VER" = "$SHORT" ]; then
+            if [ "$RUNNING" = "True" ] && [ "$VER" = "$SHORT" ] && [ "$LIVE" = "ok" ]; then
               UPTIME=$(echo "$BODY" | python3 -c "import json,sys;print(json.load(sys.stdin).get('uptime',-1))")
               echo "uptime=$UPTIME" >> $GITHUB_OUTPUT
               echo "verified=true" >> $GITHUB_OUTPUT
@@ -1047,73 +1072,166 @@ jobs:
         if: steps.dedupe.outputs.skip != 'true' && steps.drain.outputs.skip != 'true'
         run: |
           ~/hssh "
-            set -e
+            set -euo pipefail
+            # Serialize the durable authority transition with the supervisor.
+            # Until this commit the candidate has restart=no, so a reboot can
+            # recover only the old desired release.  Once the seal is durable,
+            # promote that same verified container to restart=always in place.
+            exec 9>/var/lock/club-arena-engine-up.lock
+            flock -w 30 9
+            ACTUAL_CID=\$(docker container inspect -f '{{.Id}}' '$CONTAINER')
+            ACTUAL_STARTED_AT=\$(docker container inspect -f '{{.State.StartedAt}}' '$CONTAINER')
+            ACTUAL_IMAGE_ID=\$(docker container inspect -f '{{.Image}}' '$CONTAINER')
+            ACTUAL_RELEASE=\$(docker container inspect -f '{{index .Config.Labels \"sp.release.sha\"}}' '$CONTAINER')
+            TARGET_IMAGE_ID=\$(docker image inspect -f '{{.Id}}' '$IMAGE_REPO:$SHA')
+            [ \"\$ACTUAL_CID\" = '${{ steps.cutover.outputs.candidate_cid }}' ]
+            [ \"\$ACTUAL_STARTED_AT\" = '${{ steps.cutover.outputs.candidate_started_at }}' ]
+            [ \"\$ACTUAL_IMAGE_ID\" = \"\$TARGET_IMAGE_ID\" ]
+            [ \"\$ACTUAL_RELEASE\" = '$SHA' ]
+            BODY=\$(curl -sf --max-time 10 http://127.0.0.1:${PORT:-8080}/health)
+            printf '%s' \"\$BODY\" | python3 -c 'import json,sys; d=json.load(sys.stdin); sys.exit(0 if d.get(\"running\") is True and d.get(\"version\")==\"${SHA:0:8}\" and d.get(\"liveness\")==\"ok\" else 75)'
+            set +e
             /usr/local/lib/club-arena/engine-control/engine-release-seal.py commit \
               --sha '$SHA' --image '$IMAGE_REPO:$SHA' --container '$CONTAINER' \
               --run-id '${{ github.run_id }}' \
               --run-url '${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}' \
               --actor '${{ github.actor }}' \
-              --reason 'HTTP, public proxy, and engine_leader compatibility proofs passed'"
-          echo "Durable release authority committed to $SHA after every compatibility proof."
+              --reason 'HTTP, public proxy, and engine_leader compatibility proofs passed'
+            COMMIT_RC=\$?
+            set -e
+            [ \"\$COMMIT_RC\" -eq 0 ] || echo 'Seal commit response was uncertain; requiring the fsynced exact receipt.'
+            RECEIPT=\$(/usr/local/lib/club-arena/engine-control/engine-release-seal.py attest-commit \
+              --sha '$SHA' --image-id \"\$TARGET_IMAGE_ID\" --run-id '${{ github.run_id }}')
+            read -r GENERATION RECEIPT_SHA RECEIPT_IMAGE RECEIPT_RUN EXTRA <<< \"\$RECEIPT\"
+            [[ \"\$GENERATION\" =~ ^[1-9][0-9]*$ ]]
+            [ \"\$RECEIPT_SHA\" = '$SHA' ]
+            [ \"\$RECEIPT_IMAGE\" = \"\$TARGET_IMAGE_ID\" ]
+            [ \"\$RECEIPT_RUN\" = '${{ github.run_id }}' ]
+            [ -z \"\${EXTRA:-}\" ]
+            docker update --restart always '$CONTAINER' >/dev/null
+            docker start sp-autoheal >/dev/null
+            POLICY=\$(docker container inspect -f '{{.HostConfig.RestartPolicy.Name}}' '$CONTAINER')
+            FINAL_CID=\$(docker container inspect -f '{{.Id}}' '$CONTAINER')
+            AUTOHEAL_STATUS=\$(docker container inspect -f '{{.State.Status}}' sp-autoheal)
+            [ \"\$POLICY\" = always ]
+            [ \"\$FINAL_CID\" = \"\$ACTUAL_CID\" ]
+            [ \"\$AUTOHEAL_STATUS\" = running ]"
+          echo "Durable release authority committed to $SHA and restart persistence promoted after every compatibility proof."
 
       - name: ROLLBACK — restore the last known-good image
+        id: rollback
         # Broadened from `steps.health.outcome == 'failure'`, which missed the
         # worse case: `Cut over` itself failing. engine-up.sh has already
         # removed the old container by the time `docker run` executes, so a
         # failure there leaves NO container at all — and the old condition
         # skipped the rollback precisely then.
         if: failure() && steps.cutover.outputs.attempted == 'true' && steps.seal_commit.outcome != 'success'
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SUPABASE_URL: https://kuklfnapbkmacvwxktbh.supabase.co
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
           echo "::warning::Deploy failed — restoring the durable sealed desired image"
-          ~/hssh "
-            set -e
+          RECOVERY_LOG=$(~/hssh "
+            set -euo pipefail
             CONTROL=/usr/local/lib/club-arena/engine-control
+            exec 9>/var/lock/club-arena-engine-up.lock
+            flock -w 30 9
+            TARGET_WAS_COMMITTED=false
+            TARGET_IS_DESIRED=false
+            TARGET_IMAGE_ID=\$(docker image inspect -f '{{.Id}}' '$IMAGE_REPO:$SHA')
+            SEALED_SHA=\$(\$CONTROL/engine-release-seal.py get desired-sha)
+            SEALED_IMAGE_ID=\$(\$CONTROL/engine-release-seal.py get desired-image-id)
+            if [ \"\$SEALED_SHA\" = '$SHA' ] && [ \"\$SEALED_IMAGE_ID\" = \"\$TARGET_IMAGE_ID\" ]; then
+              TARGET_IS_DESIRED=true
+            fi
+            if \$CONTROL/engine-release-seal.py attest-commit \
+              --sha '$SHA' --image-id \"\$TARGET_IMAGE_ID\" --run-id '${{ github.run_id }}' >/dev/null 2>&1; then
+              TARGET_WAS_COMMITTED=true
+            fi
             # Revoke the failed candidate first. The sealed supervisor then
             # observes either the still-untouched desired container (a no-op),
             # an absent container, or out-of-seal candidate drift. It alone
             # decides whether recreation is necessary and can only use the
             # durable desired image ID.
             \$CONTROL/engine-release-seal.py abort --run-id '${{ github.run_id }}'
-            ENGINE_CONTROL_DIR=\$CONTROL CONTAINER='$CONTAINER' \
-              \$CONTROL/engine-supervisor.sh"
+            ENGINE_SUPERVISOR_LOCK_HELD=1 ENGINE_CONTROL_DIR=\$CONTROL CONTAINER='$CONTAINER' \
+              \$CONTROL/engine-supervisor.sh
+            DESIRED_SHA=\$(\$CONTROL/engine-release-seal.py get desired-sha)
+            DESIRED_IMAGE_ID=\$(\$CONTROL/engine-release-seal.py get desired-image-id)
+            DESIRED_LEGACY=\$(\$CONTROL/engine-release-seal.py get desired-legacy-unlabelled)
+            STATE=\$(docker container inspect -f '{{.State.Status}}' '$CONTAINER')
+            ACTUAL_IMAGE_ID=\$(docker container inspect -f '{{.Image}}' '$CONTAINER')
+            ACTUAL_RELEASE=\$(docker container inspect -f '{{index .Config.Labels \"sp.release.sha\"}}' '$CONTAINER')
+            POLICY=\$(docker container inspect -f '{{.HostConfig.RestartPolicy.Name}}' '$CONTAINER')
+            AUTOHEAL_STATUS=\$(docker container inspect -f '{{.State.Status}}' sp-autoheal)
+            [ \"\$STATE\" = running ]
+            [ \"\$ACTUAL_IMAGE_ID\" = \"\$DESIRED_IMAGE_ID\" ]
+            [ \"\$POLICY\" = always ]
+            [ \"\$AUTOHEAL_STATUS\" = running ]
+            [ \"\$ACTUAL_RELEASE\" = \"\$DESIRED_SHA\" ] \
+              || { [ \"\$DESIRED_LEGACY\" = true ] && [ -z \"\$ACTUAL_RELEASE\" ]; }
+            DESIRED_SHORT=\${DESIRED_SHA:0:8}
+            BODY=\$(curl -sf --max-time 10 http://127.0.0.1:${PORT:-8080}/health)
+            printf '%s' \"\$BODY\" | DESIRED_SHORT=\"\$DESIRED_SHORT\" python3 -c 'import json,os,sys; d=json.load(sys.stdin); sys.exit(0 if d.get(\"running\") is True and d.get(\"version\")==os.environ[\"DESIRED_SHORT\"] and d.get(\"liveness\")==\"ok\" else 75)'
+            echo __SP_RECOVERED_DESIRED__ \"\$TARGET_WAS_COMMITTED\" \"\$TARGET_IS_DESIRED\" \"\$DESIRED_SHA\" \"\$DESIRED_IMAGE_ID\"")
+          printf '%s\n' "$RECOVERY_LOG"
+          RECOVERY_LINE=$(printf '%s\n' "$RECOVERY_LOG" | grep '^__SP_RECOVERED_DESIRED__ ' | tail -1 || true)
+          TARGET_COMMITTED=; TARGET_IS_DESIRED=; RECOVERED_SHA=; RECOVERED_IMAGE_ID=; EXTRA=
+          read -r _ TARGET_COMMITTED TARGET_IS_DESIRED RECOVERED_SHA RECOVERED_IMAGE_ID EXTRA <<< "$RECOVERY_LINE" || true
+          [[ "$RECOVERED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$RECOVERED_IMAGE_ID" =~ ^sha256:[0-9a-f]{64}$ ]]
+          [ -z "${EXTRA:-}" ]
+          case "$TARGET_COMMITTED:$TARGET_IS_DESIRED" in true:true|false:true|false:false) ;; *) exit 1 ;; esac
+          echo "target_committed=$TARGET_COMMITTED" >> "$GITHUB_OUTPUT"
+          echo "recovered_sha=$RECOVERED_SHA" >> "$GITHUB_OUTPUT"
           # Rewind the host checkout too, or the next supervisor run installs
-          # systemd units built from the bad commit.
-          if [ "${{ steps.pre.outputs.before_sha }}" != "unknown" ]; then
+          # systemd units built from the bad commit. Never rewind when the
+          # fsynced receipt proves this run already committed the target.
+          if [ "$TARGET_IS_DESIRED" != "true" ] && [ "${{ steps.pre.outputs.before_sha }}" != "unknown" ]; then
             ~/hssh "cd $REPO_DIR && git reset --hard '${{ steps.pre.outputs.before_sha }}' && chmod +x $REPO_DIR/server/scripts/*.sh" || true
-          else
+          elif [ "$TARGET_IS_DESIRED" != "true" ]; then
             echo "::warning::pre-deploy SHA unknown — host checkout left on the failed commit"
           fi
+          RECOVERED_SHORT="${RECOVERED_SHA:0:8}"
           for i in $(seq 1 24); do
-            sleep 5
-            if curl -sf --max-time 10 "$ENGINE_URL/health" | grep -q '"running":true'; then
-              echo "Rollback verified healthy on attempt $i"; exit 0
+            BODY=$(curl -sf --max-time 10 "$ENGINE_URL/health?nocache=$(date +%s%N)" 2>/dev/null || echo '')
+            if printf '%s' "$BODY" | RECOVERED_SHORT="$RECOVERED_SHORT" python3 -c 'import json,os,sys; d=json.load(sys.stdin); sys.exit(0 if d.get("running") is True and d.get("version")==os.environ["RECOVERED_SHORT"] and d.get("liveness")=="ok" else 1)' 2>/dev/null; then
+              echo "Public proxy serves exact recovered build $RECOVERED_SHORT"; break
             fi
+            [ "$i" = 24 ] && { echo "::error::public proxy never served exact recovered build $RECOVERED_SHORT"; exit 1; }
+            sleep 5
           done
-          echo "::error::ROLLBACK ALSO FAILED — engine is down. Page a human."
-          exit 1
+          npm ls pg >/dev/null 2>&1 || npm i pg@8 --no-save --no-audit --no-fund >/dev/null 2>&1 || true
+          MODE=prove TARGET_SHA="$RECOVERED_SHA" TIMEOUT_S=120 STRICT_PROOF=1 \
+            RUN_URL='${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}' \
+            node "$ENGINE_RELEASE_PROOF_SCRIPT"
+          echo "Recovery verified from container through proxy and fresh engine_leader."
 
-      - name: GUARANTEE the engine is running, with the right run-spec
-        # 2026-08-24: also gated on dedupe — on a skipped run no SSH key was
-        # installed, so ~/hssh does not exist and this step could only fail.
-        # A skipped run touched nothing, so there is nothing to guarantee.
-        if: always() && steps.dedupe.outputs.skip != 'true' && steps.cutover.outcome != 'skipped'
+      - name: Revoke unused authority and GUARANTEE the sealed engine
+        # Revocation and reconciliation are one locked operation. If a runner is
+        # cancelled during proof, the candidate must not keep serving merely
+        # because its token has not reached its TTL yet.
+        if: always() && steps.seal.outcome == 'success' && steps.rollback.outcome != 'success'
         run: |
           # Closes the stop -> run window: if this job died, was cancelled, or
           # the runner vanished mid-cutover, the container may be absent or
-          # stopped, and --restart always does not cover a manual stop.
+          # stopped. A candidate deliberately has restart=no until the seal is
+          # committed; the supervisor restores the old desired release if the
+          # proof was abandoned, or promotes the newly sealed desired policy.
           #
           # It also asserts --label autoheal=true rather than just the container
           # state. A bare `docker start` on a container created by some other
           # path would otherwise bless an engine whose HEALTHCHECK is wired to
           # nothing, and report "container running" while doing it.
-          ~/hssh 'ENGINE_CONTROL_DIR=/usr/local/lib/club-arena/engine-control \
-            /usr/local/lib/club-arena/engine-control/engine-supervisor.sh' || true
-
-      - name: Expire this run's unused release authority
-        if: always() && steps.seal.outcome == 'success'
-        run: |
-          ~/hssh "/usr/local/lib/club-arena/engine-control/engine-release-seal.py \
-            abort --run-id '${{ github.run_id }}'" || true
+          ~/hssh "
+            set -euo pipefail
+            CONTROL=/usr/local/lib/club-arena/engine-control
+            exec 9>/var/lock/club-arena-engine-up.lock
+            flock -w 30 9
+            \$CONTROL/engine-release-seal.py abort --run-id '${{ github.run_id }}'
+            ENGINE_SUPERVISOR_LOCK_HELD=1 ENGINE_CONTROL_DIR=\$CONTROL CONTAINER='$CONTAINER' \
+              \$CONTROL/engine-supervisor.sh"
 
       - name: Retention — keep the last 5 builds, never the rollback target
         if: success() && steps.dedupe.outputs.skip != 'true' && steps.drain.outputs.skip != 'true'
@@ -1247,7 +1365,7 @@ jobs:
           # here used to tell the watchdog a different commit than the one the
           # host actually checked out, tagged, and verified.
           TARGET_SHA: ${{ steps.target.outputs.sha }}
-          SHIPPED: ${{ steps.dedupe.outputs.skip != 'true' && steps.drain.outputs.skip != 'true' && steps.cutover.outcome == 'success' && steps.cutover.outputs.success == 'true' && steps.health.outputs.verified == 'true' && steps.prove.outcome == 'success' && steps.seal_commit.outcome == 'success' }}
+          SHIPPED: ${{ steps.dedupe.outputs.skip != 'true' && steps.drain.outputs.skip != 'true' && steps.cutover.outcome == 'success' && steps.cutover.outputs.success == 'true' && steps.health.outputs.verified == 'true' && steps.prove.outcome == 'success' && (steps.seal_commit.outcome == 'success' || steps.rollback.outputs.target_committed == 'true') }}
           RUN_ID: ${{ github.run_id }}
           RUN_ACTOR: ${{ github.event_name }}
           # ONE REASON, WRITTEN ONCE, READ EVERYWHERE. The drain branch used to

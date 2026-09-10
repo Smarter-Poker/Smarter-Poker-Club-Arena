@@ -171,6 +171,9 @@ describe('prove-engine-version-moved.mjs', () => {
     expect(src).toContain('FROM public.engine_leader WHERE id = true');
     expect(src).toContain('/rest/v1/engine_leader?select=engine_version,heartbeat_at');
     expect(src, 'a stale leader row is not proof').toContain('heartbeatAgeS <= 60');
+    expect(src, 'strict release authority requires the database witness').toContain(
+      "!STRICT_PROOF || r.source === 'engine_leader'"
+    );
     expect(src, 'the fallback busts the cache').toContain('/health?nocache=');
     expect(src, 'raises the in-app notification publish-watchdog raises').toContain(
       '/rest/v1/rpc/fn_raise_notification'

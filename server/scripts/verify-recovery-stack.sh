@@ -43,8 +43,9 @@ STATE=$(docker container inspect -f '{{.State.Status}}' "$CONTAINER" 2>/dev/null
 [ "$STATE" = "running" ] && ok "container is running" || bad "container state is '$STATE'"
 
 POLICY=$(docker container inspect -f '{{.HostConfig.RestartPolicy.Name}}' "$CONTAINER" 2>/dev/null || echo none)
-[ "$POLICY" = "always" ] && ok "restart policy is 'always' (covers crash, daemon restart, reboot)" \
-  || bad "restart policy is '$POLICY' — a crash would not be recovered"
+# The correct value depends on release authority and is checked below after the
+# seal classifies this exact container. A proof candidate must be `no`; the
+# durable desired release must be `always`.
 
 HC=$(docker container inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$CONTAINER" 2>/dev/null || echo none)
 [ "$HC" != "none" ] && ok "HEALTHCHECK is defined (status: $HC)" \
@@ -85,7 +86,8 @@ LABEL=$(docker container inspect -f '{{index .Config.Labels "autoheal"}}' "$CONT
   || bad "engine is MISSING autoheal=true — HEALTHCHECK is wired to nothing"
 
 AH=$(docker container inspect -f '{{.State.Status}}' sp-autoheal 2>/dev/null || echo absent)
-[ "$AH" = "running" ] && ok "sp-autoheal sidecar is running" || bad "sp-autoheal is '$AH'"
+# A pending candidate is deliberately excluded from autoheal until the seal is
+# committed. The authority-aware verdict is emitted below after classification.
 
 head_ "Layer 3 — host supervisor (independent of GitHub and of autoheal)"
 if systemctl is-active --quiet club-arena-supervisor.timer; then
@@ -130,8 +132,18 @@ else
 fi
 if [ "$RELEASE_CLASS" = "desired" ]; then
   ok "running container image ID matches the durable release seal"
+  [ "$POLICY" = "always" ] \
+    && ok "desired release restart policy is 'always' (covers crash, daemon restart, reboot)" \
+    || bad "desired release restart policy is '$POLICY' instead of 'always'"
+  [ "$AH" = "running" ] && ok "sp-autoheal sidecar protects the desired release" \
+    || bad "sp-autoheal is '$AH' while the desired release is serving"
 elif [ "$RELEASE_CLASS" = "pending" ]; then
   ok "running container is the one-use audited candidate inside its proof window"
+  [ "$POLICY" = "no" ] \
+    && ok "pending candidate is non-persistent until its compatibility proof commits" \
+    || bad "pending candidate restart policy is '$POLICY' — unsealed bytes could survive a reboot"
+  [ "$AH" != "running" ] && ok "sp-autoheal is fenced from the pending candidate" \
+    || bad "sp-autoheal is running during candidate proof and can restart unsealed bytes"
 else
   bad "running container image $RUNNING_IMAGE_ID disagrees with sealed $DESIRED_IMAGE_ID"
 fi
@@ -169,10 +181,10 @@ else
   bad "liveness is NOT ok — one or more tables are stalled"
 fi
 VER=$(echo "$BODY" | grep -o '"version":"[^"]*"' | cut -d'"' -f4)
-if [ -n "$VER" ] && [ "$VER" != "local" ] && [ "$VER" != "unknown" ]; then
-  ok "engine reports its build ($VER) — a stale-image deploy would be detectable"
+if [ -n "$DESIRED_SHA" ] && [ "$VER" = "${DESIRED_SHA:0:8}" ]; then
+  ok "engine reports the exact sealed desired build ($VER)"
 else
-  bad "engine reports version='$VER' — it cannot tell you what code it is running"
+  bad "engine reports version='$VER' but the sealed desired build is '${DESIRED_SHA:0:8}'"
 fi
 
 head_ "Layer 6 — someone is watching, and alerts reach a human"

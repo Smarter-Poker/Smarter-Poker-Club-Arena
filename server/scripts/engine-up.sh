@@ -140,7 +140,18 @@ if [ -n "${ENGINE_RELEASE_TOKEN:-}" ]; then
 fi
 AUTHORIZATION="$("$RELEASE_SEAL" "${AUTH_ARGS[@]}")" \
   || { log "FATAL: release seal rejected image $IMAGE — refusing to touch the running engine"; exit 1; }
-read -r AUTHORIZED_SHA AUTHORIZED_IMAGE_ID EXTRA <<< "$AUTHORIZATION"
+read -r AUTHORIZED_CLASS AUTHORIZED_SHA AUTHORIZED_IMAGE_ID EXTRA <<< "$AUTHORIZATION"
+case "$AUTHORIZED_CLASS" in
+  desired) RESTART_POLICY=always ;;
+  pending)
+    # A prepared candidate is a compatibility trial, not a durable release.
+    # If the host or daemon restarts before every proof commits the seal, Docker
+    # must leave these bytes stopped so the supervisor restores the old desired
+    # release.  The workflow promotes the policy only after that commit.
+    RESTART_POLICY=no
+    ;;
+  *) log "FATAL: release authority returned an invalid release class"; exit 1 ;;
+esac
 [[ "$AUTHORIZED_SHA" =~ ^[0-9a-f]{40}$ ]] \
   || { log "FATAL: release authority returned an invalid SHA"; exit 1; }
 [[ "$AUTHORIZED_IMAGE_ID" =~ ^sha256:[0-9a-f]{64}$ ]] \
@@ -150,7 +161,7 @@ read -r AUTHORIZED_SHA AUTHORIZED_IMAGE_ID EXTRA <<< "$AUTHORIZATION"
 docker image inspect "$AUTHORIZED_IMAGE_ID" >/dev/null 2>&1 \
   || { log "FATAL: authorized image $AUTHORIZED_IMAGE_ID disappeared before cutover"; exit 1; }
 
-log "replacing $CONTAINER with sealed image $AUTHORIZED_IMAGE_ID ($AUTHORIZED_SHA; requested as $IMAGE)"
+log "replacing $CONTAINER with $AUTHORIZED_CLASS image $AUTHORIZED_IMAGE_ID ($AUTHORIZED_SHA; requested as $IMAGE)"
 # STOP, then remove. NOT `docker rm -f`, which is SIGKILL with no grace period.
 # The engine drains its table engines and flushes hand-state snapshots on
 # SIGTERM; killing it outright loses whatever was mid-flush. Docker's default
@@ -190,7 +201,7 @@ fi
 # place both of them read.
 docker run -d \
   --name "$CONTAINER" \
-  --restart always \
+  --restart "$RESTART_POLICY" \
   --health-interval="$HEALTH_INTERVAL" \
   --health-timeout="$HEALTH_TIMEOUT" \
   --health-start-period="$HEALTH_START_PERIOD" \
@@ -206,4 +217,4 @@ docker run -d \
   --env-file "$ENV_FILE" \
   "$AUTHORIZED_IMAGE_ID"
 
-log "started $(docker inspect -f '{{.Id}}' "$CONTAINER" | cut -c1-12) from $AUTHORIZED_IMAGE_ID"
+log "started $(docker inspect -f '{{.Id}}' "$CONTAINER" | cut -c1-12) from $AUTHORIZED_IMAGE_ID (restart=$RESTART_POLICY)"

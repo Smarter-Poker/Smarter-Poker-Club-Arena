@@ -247,10 +247,20 @@ describe('the engine deploy tells the truth when it skips', () => {
     );
     // 2. A run its break gate could not serve dispatches its successor -
     //    and ONLY those: a failed test, build or cutover never retries itself.
+    //    A deliberate lease deferral hands on too: its commit still has to ship.
     const verdict = sliceYamlEntry(HETZNER, "name: 'Verdict");
     expect(verdict).toMatch(
-      /"\$GATE_KIND" = "staged_deferred" \] \|\| \[ "\$GATE_KIND" = "no_certificate" \]; \}; then\s*\n\s*if gh workflow run auto-deploy-hetzner\.yml --repo "\$GITHUB_REPOSITORY" --ref main; then/
+      /hand_on\(\) \{\s*\n\s*if gh workflow run auto-deploy-hetzner\.yml --repo "\$GITHUB_REPOSITORY" --ref main; then/
     );
+    expect(verdict).toMatch(
+      /"\$GATE_KIND" = "staged_deferred" \] \|\| \[ "\$GATE_KIND" = "no_certificate" \]; \}; then\s*\n\s*hand_on/
+    );
+    expect(verdict).toMatch(
+      /"\$GATE_KIND" = "lease_held_elsewhere" \]; then[\s\S]{0,300}?hand_on \|\| exit 1\s*\n\s*exit 0/
+    );
+    // hand_on is called from exactly those two places, never on a failure.
+    const calls = verdict.split('\n').filter((l) => /^\s*hand_on\b(?!\(\))/.test(l));
+    expect(calls.length).toBe(2);
     expect(verdict).toMatch(/GH_TOKEN: \$\{\{ github\.token \}\}/);
     // A hand-on that could not be made is red, never silent.
     expect(stage).toMatch(/::error title=TRAIN STOPPED::/);

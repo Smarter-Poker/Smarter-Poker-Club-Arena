@@ -1498,6 +1498,19 @@ jobs:
           SHIPPED: ${{ steps.dedupe.outputs.skip != 'true' && steps.drain.outputs.skip != 'true' && steps.cutover.outcome == 'success' && steps.cutover.outputs.success == 'true' && steps.health.outputs.verified == 'true' && steps.prove.outcome == 'success' && (steps.seal_commit.outcome == 'success' || (steps.rollback.outcome == 'success' && steps.rollback.outputs.target_committed == 'true')) }}
         run: |
           SHORT="${SHA:0:8}"
+          # Hand the train on: dispatch the next run on current main. It queues
+          # behind this run and waits in its own gate for the next :55. Used
+          # only where this run's commit still has to ship and nothing else is
+          # coming for it (see THE TRAIN HANDS ITSELF ON, below).
+          hand_on() {
+            if gh workflow run auto-deploy-hetzner.yml --repo "$GITHUB_REPOSITORY" --ref main; then
+              echo "Handed on: dispatched the next run on current main; it waits for the next break."
+              echo "Handed on: the next run on current main waits for the next :55." >> "$GITHUB_STEP_SUMMARY"
+              return 0
+            fi
+            echo "::error title=TRAIN STOPPED::could not dispatch the next run; nothing else will start one. Dispatch auto-deploy-hetzner.yml on main."
+            return 1
+          }
           if [ "$JOB_STATUS" != "success" ]; then
             echo "An earlier step already failed or cancelled this run; its error is the verdict."
             exit 0
@@ -1514,9 +1527,13 @@ jobs:
           fi
           # The one deliberate deferral the gate may take: another owner holds
           # the production window. Every other decline should have shipped.
+          # Deliberate is not finished, though: the commit still has to ship
+          # once the window is free, so the deferral hands the train on too,
+          # and a hand-on that cannot be made turns the run red.
           if [ "$DRAIN_SKIP" = "true" ] && [ "$GATE_KIND" = "lease_held_elsewhere" ]; then
             echo "Deliberately deferred: $GATE_REASON"
             echo "### Verdict: deferred \`$SHORT\` - $GATE_REASON" >> "$GITHUB_STEP_SUMMARY"
+            hand_on || exit 1
             exit 0
           fi
           REASON="${GATE_REASON:-the cutover did not verify}"
@@ -1550,11 +1567,6 @@ jobs:
           # hour. The next push - the fix - starts the next run.
           if [ "$DRAIN_SKIP" = "true" ] \
              && { [ "$GATE_KIND" = "staged_deferred" ] || [ "$GATE_KIND" = "no_certificate" ]; }; then
-            if gh workflow run auto-deploy-hetzner.yml --repo "$GITHUB_REPOSITORY" --ref main; then
-              echo "Handed on: dispatched the next run on current main; it waits for the next break."
-              echo "Handed on: the next run on current main waits for the next :55." >> "$GITHUB_STEP_SUMMARY"
-            else
-              echo "::error title=TRAIN STOPPED::could not dispatch the next run; nothing else will start one. Dispatch auto-deploy-hetzner.yml on main."
-            fi
+            hand_on || true
           fi
           exit 1

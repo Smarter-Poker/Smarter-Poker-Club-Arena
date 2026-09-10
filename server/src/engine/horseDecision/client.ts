@@ -61,6 +61,11 @@ export interface LiveHorseDecisionWorkerStatus {
   lastExpiredAt: number | null;
   lastExpiredRequestType: HorseDecisionJobRequest['type'] | null;
   lastExpiredPhase: 'queued' | 'active' | null;
+  /** Requests rejected at worker validation while its FIFO and runtime stayed healthy. */
+  recoverableRequestErrors: number;
+  lastRecoverableRequestErrorAt: number | null;
+  lastRecoverableRequestErrorType: HorseDecisionJobRequest['type'] | null;
+  lastRecoverableRequestError: string | null;
   lastError: string | null;
   solverStores: HorseDecisionWorkerReady['solverStores'] | null;
   solverPolicyArtifact: HorseDecisionWorkerReady['solverPolicyArtifact'] | null;
@@ -129,6 +134,10 @@ const stoppedStatus = (): LiveHorseDecisionWorkerStatus => ({
   lastExpiredAt: null,
   lastExpiredRequestType: null,
   lastExpiredPhase: null,
+  recoverableRequestErrors: 0,
+  lastRecoverableRequestErrorAt: null,
+  lastRecoverableRequestErrorType: null,
+  lastRecoverableRequestError: null,
   lastError: null,
   solverStores: null,
   solverPolicyArtifact: null,
@@ -174,6 +183,10 @@ export class LiveHorseDecisionWorkerClient {
   private lastExpiredAt: number | null = null;
   private lastExpiredRequestType: HorseDecisionJobRequest['type'] | null = null;
   private lastExpiredPhase: 'queued' | 'active' | null = null;
+  private recoverableRequestErrors = 0;
+  private lastRecoverableRequestErrorAt: number | null = null;
+  private lastRecoverableRequestErrorType: HorseDecisionJobRequest['type'] | null = null;
+  private lastRecoverableRequestError: string | null = null;
   private nextRequestId = 1;
   private readonly queue: QueuedJob[] = [];
   private active: QueuedJob | null = null;
@@ -257,6 +270,10 @@ export class LiveHorseDecisionWorkerClient {
       lastExpiredAt: this.lastExpiredAt,
       lastExpiredRequestType: this.lastExpiredRequestType,
       lastExpiredPhase: this.lastExpiredPhase,
+      recoverableRequestErrors: this.recoverableRequestErrors,
+      lastRecoverableRequestErrorAt: this.lastRecoverableRequestErrorAt,
+      lastRecoverableRequestErrorType: this.lastRecoverableRequestErrorType,
+      lastRecoverableRequestError: this.lastRecoverableRequestError,
       lastError: this.lastError,
       solverStores: this.solverStores ? structuredClone(this.solverStores) : null,
       solverPolicyArtifact: this.solverPolicyArtifact
@@ -581,10 +598,30 @@ export class LiveHorseDecisionWorkerClient {
       return;
     }
     if (message.type === 'ERROR') {
-      // A job-level ERROR is still worker-runtime corruption: every production
-      // request is built by this typed client. Continuing would leave health
-      // green while live seats repeatedly degrade to safety actions.
-      this.fail(new Error(message.message));
+      // Only the runtime's explicit structured-clone validation rejection is
+      // safe to isolate to one caller. A plain typed ERROR can represent Horse
+      // execution, durable-effect, or worker-runtime corruption and remains
+      // process-fatal. This distinction prevents one malformed Pineapple
+      // snapshot from restarting the fleet without hiding real worker faults.
+      if (message.recoverable !== true) {
+        this.fail(new Error(message.message));
+        return;
+      }
+      const error = new Error(message.message);
+      this.active = null;
+      this.clearActiveDeadline();
+      this.clearJobDeadline(active);
+      this.detachAbort(active);
+      this.lastCompletedAt = Date.now();
+      this.recoverableRequestErrors += 1;
+      this.lastRecoverableRequestErrorAt = this.lastCompletedAt;
+      this.lastRecoverableRequestErrorType = active.request.type;
+      this.lastRecoverableRequestError = error.message;
+      if (!active.settled) {
+        active.settled = true;
+        active.reject(error);
+      }
+      this.maybeDispatch();
       return;
     }
     if (message.type !== 'CANCELLED' && message.type !== active.expected) {

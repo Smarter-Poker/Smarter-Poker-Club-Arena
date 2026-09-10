@@ -116,6 +116,7 @@ export interface SeatPlayer {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export interface TableInfo {
+  arena?: import('./domain/ArenaContext.js').ArenaIdentity;
   id: string;
   club_id: string;
   small_blind: number;
@@ -357,6 +358,8 @@ export interface SeatedPlayer {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export interface HandConfig {
+  /** Authoritative table funding asset. Legacy chip callers keep cent precision. */
+  asset?: 'chips' | 'diamonds';
   tableId: string;
   handNumber: number;
   /**

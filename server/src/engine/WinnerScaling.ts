@@ -7,8 +7,20 @@ export function scaleWinnerCentsForRake(
   preRakeAmounts: readonly number[],
   totalWinnings: number
 ): number[] {
-  const totalCents = Math.round(totalWinnings * 100);
-  const entitlementCents = preRakeAmounts.map((amount) => Math.round(amount * 100));
+  return scaleWinnerUnitsForRake(preRakeAmounts, totalWinnings, 100);
+}
+
+/**
+ * Scale winners in the asset's indivisible settlement unit. Cash settles in
+ * cents; tournament chips and diamonds settle as whole units.
+ */
+export function scaleWinnerUnitsForRake(
+  preRakeAmounts: readonly number[],
+  totalWinnings: number,
+  unitsPerAmount: 1 | 100
+): number[] {
+  const totalCents = Math.round(totalWinnings * unitsPerAmount);
+  const entitlementCents = preRakeAmounts.map((amount) => Math.round(amount * unitsPerAmount));
   const totalWinnerCents = entitlementCents.reduce((sum, cents) => sum + cents, 0) || 1;
   const adjusted = entitlementCents.map((cents) =>
     Math.round((cents * totalCents) / totalWinnerCents)

@@ -47,6 +47,7 @@ vi.mock('./horseDecision/index.js', async () => {
 });
 
 import { ServerTableEngine } from './ServerTableEngine.js';
+import { HorseDecisionAbortedError, HorseDecisionExpiredError } from './horseDecision/index.js';
 
 const TABLE = 'fafafafa-fafa-fafa-fafa-fafafafafafa';
 
@@ -127,6 +128,7 @@ function harness(intendedActionAccepted: boolean) {
       wagersCapped: false,
     }),
     computeLivePots: () => [{ amount: 10, eligiblePlayers: ['horse-1', 'human-2'] }],
+    getContestablePotForCall: () => 10,
     getRakeConfigSnapshot: () => ({
       percent: 10,
       cap: 5,
@@ -176,11 +178,12 @@ describe('authoritative horse action effect commit', () => {
       maxRaiseTo: 100,
       bettingStructure: 'no_limit',
       commitmentCapRemaining: null,
+      contestablePot: 10,
       pots: [{ amount: 10, eligiblePlayers: ['horse-1', 'human-2'] }],
       rakeConfig: { percent: 10, cap: 5, noFlopNoDrop: true },
       variantRules: { holeCardsDealt: 2, holeCardsUse: 'any', deckSize: 52 },
     });
-    expect(snapshot.decisionKey).toContain('"schemaVersion":1');
+    expect(snapshot.decisionKey).toMatch(/^phase5-v1:[0-9a-f]{64}$/);
     expect(snapshot.decisionKey).not.toContain('"rank":"J"');
   });
 
@@ -224,6 +227,31 @@ describe('authoritative horse action effect commit', () => {
 
     expect(performAction).toHaveBeenNthCalledWith(1, 1, 'bet', 20);
     expect(performAction).toHaveBeenNthCalledWith(2, 1, 'check');
+    expect(decisionWorker.commitDecisionEffects).not.toHaveBeenCalled();
+  });
+
+  it('takes the safe action immediately when a queued worker decision expires', async () => {
+    const { engine, player, enginePlayer, state, performAction } = harness(true);
+    decisionWorker.decideFast.mockRejectedValueOnce(
+      new HorseDecisionExpiredError('queued decision used its complete budget')
+    );
+
+    engine.scheduleHorseAction(player, 1, enginePlayer, state);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(performAction).toHaveBeenCalledTimes(1);
+    expect(performAction).toHaveBeenCalledWith(1, 'check', undefined);
+    expect(decisionWorker.commitDecisionEffects).not.toHaveBeenCalled();
+  });
+
+  it('does not act after a genuine authority abort', async () => {
+    const { engine, player, enginePlayer, state, performAction } = harness(true);
+    decisionWorker.decideFast.mockRejectedValueOnce(new HorseDecisionAbortedError());
+
+    engine.scheduleHorseAction(player, 1, enginePlayer, state);
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    expect(performAction).not.toHaveBeenCalled();
     expect(decisionWorker.commitDecisionEffects).not.toHaveBeenCalled();
   });
 });

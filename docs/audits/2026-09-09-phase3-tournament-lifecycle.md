@@ -1,6 +1,6 @@
 # Phase 3: Tournament Lifecycle Audit
 
-Status: in progress. This is Phase 3 of the Club Arena 12-phase programme, covering 58 original controls. It is not a completion certificate. The original 216-control register remains unchanged.
+Status: in progress. This is Phase 3 of the Club Arena 12-phase programme, covering 58 original controls. It is not a completion certificate. The original 216-control register remains unchanged. Sections below record observations at their stated times; the companion JSON holds the latest control status.
 
 ## First Confirmed Correction: Break Ownership
 
@@ -133,3 +133,17 @@ At 22:11:28 UTC, the live database had neither fn_move_tournament_player nor fn_
 The user explicitly authorized the production cash-refund migration after the previous approval block. It applied as 20260909222303. An independent catalog read at 22:23:53 UTC matched the reviewed unregister body ae14d16400db9481dd116bd251f7af83, receipt body 0fa946ec2bf3301db11465cd9b33fb9f and exact payer body 0024ca5acfc4e4e12b51a4609349e98d. All three helpers retain owner-only execution; actual-start eligibility remains in place. The source filename records the assigned physical version without changing the applied SQL. No historical payment or balance repair was executed.
 
 PR #4039 passed CI 34411543919. Its two intentional historical-file restorations require the repository's revert-approved label. Automatic approval review rejected applying that governance label despite the user's publication authorization. The guard remains intact and no alternate execution or content rewrite was used to evade it. This is a separate source merge blocker; the approved cash functions are already installed and independently verified.
+
+## Payment Display Accepted And Blind Boundary Rehearsed
+
+T12 is verified and deployed. PR #4058 merged as 4c5ea3e67f247dbafb659807cb939e0bb6860eb6 after CI 34420844586 passed. The caller-owned RPC and shared results/statement panel distinguish paid, partially paid and owed obligations, retain unconfirmed status when records are absent, and identify satellite seat values as transfers. The 26 affected client tests, five isolated PostgreSQL scenario groups and the 375-pixel browser fixture establish the stated projection behavior. Both public build-info endpoints independently served the merge at 00:31 UTC on September 10; fetched shipped chunks contain the RPC and partial/unconfirmed states. The database body still matched at 00:42 UTC. This closes the display control only; it does not certify payout execution or any other financial control.
+
+PR #4039 is resolved. The user-authorized revert-approved label was applied, CI 34416969935 passed, and the historical-file restoration merged as 8d6ab77102acd3547eafe08ccff155ba0ecd2c89. The previous label-block account is historical. No further approval is needed for that action.
+
+The UTC cadence correction merged through PR #4063 as 9eac7cab76d90bcaabefcdb932169d5f0ab60781 after CI 34421219592 passed. Four synchronized-break cases and three maintenance-announcement cases reproduced incorrect DST or fractional-offset scheduling before the correction. The real scheduler now passes nine cases and the maintenance suite passes 66. Normal deployment was dispatched immediately with force=false; later main requests superseded it in the shared queue. Engine adoption remains unverified at this checkpoint. This is partial K03/K04/K12 evidence.
+
+Three new K02 behavioral cases run the real input refresh, deal configuration and HandController. An in-progress 10/20/2 hand retains its legal raise and completes after the table changes to 20/40/4; the next hand posts the new values. A delayed blind read holds preparation and a failed read rejects it. External database responses are synthetic and the engine stops before unrelated time-bank and settlement work. The full dealing loop, including a level change during prefetched between-hand rest, remains outside this rehearsal, so K02 is not marked fully closed.
+
+The table-move writer, receipt resolver and receipt table remain absent in the 00:42 UTC catalog read. The staged cutover's freeze-body pin differs from the current installed freeze predicate, so the historical cutover cannot be applied unchanged. The exact twelve-argument hand-commit prerequisite now exists with both seat-generation markers; the earlier claim that it was missing is obsolete. The dependency register records these separately. No historical repair, alternate move writer or cutover-marker bypass was performed.
+
+Registration receipt tests were reviewed, not repeated. Their simulated funding core cannot establish real debit atomicity or last-seat races, and an older admission probe references the retired unbound registration API. T01 remains open. Phase 3 retains all 58 original requirements; Phase 4 has not started.

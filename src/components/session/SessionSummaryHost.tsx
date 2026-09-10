@@ -167,6 +167,26 @@ export function SessionSummaryHost() {
 
     const check = async () => {
       try {
+        if (payload?.arenaAsset === 'diamonds') {
+          if (!pc.occupancyId) return;
+          const { data, error } = await supabase.rpc('fn_poker_diamond_cashout_receipt', {
+            p_table_id: pc.tableId,
+            p_occupancy_id: pc.occupancyId,
+          });
+          if (
+            stopped ||
+            error ||
+            !data ||
+            data.asset !== 'diamonds' ||
+            data.table_id !== pc.tableId ||
+            data.occupancy_id !== pc.occupancyId ||
+            !Number.isSafeInteger(data.amount) ||
+            data.amount < 0
+          )
+            return;
+          settlePendingSummary(data.amount - totalBuyIn);
+          return;
+        }
         const { data } = await supabase
           .from('wallet_transactions')
           .select('amount, created_at')
@@ -314,7 +334,7 @@ export function SessionSummaryHost() {
     if (!payload) return;
     const money = `${payload.profitLoss >= 0 ? '+' : '-'}${formatChips(Math.abs(payload.profitLoss))}`;
     const text =
-      `${payload.tableName || 'Table Session'} - ${money} over ` +
+      `${payload.tableName || 'Table Session'} - ${money}${payload.arenaAsset === 'diamonds' ? ' Diamonds' : ''} over ` +
       `${payload.handsPlayed} hands on Smarter.Poker`;
 
     try {
@@ -409,6 +429,7 @@ export function SessionSummaryHost() {
             <span className="ssh-hero__value">
               {isProfit ? '+' : '-'}
               {formatChips(Math.abs(displayPL))}
+              {payload.arenaAsset === 'diamonds' ? ' Diamonds' : ''}
             </span>
             {/* Phase 3 (2026-08-22): a mid-hand leave defers the cashout to
                 settlement, so this figure is the live stack at the moment of

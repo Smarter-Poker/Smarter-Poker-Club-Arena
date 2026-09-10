@@ -12,9 +12,9 @@
  *
  * Also pins (as source text) the wiring that puts the rule on the felt: the
  * tables row column reaching the engine's table select, tournament table
- * creation stamping it, and the horse decision coercion — a horse's non-fold
- * intent must become the all-in, or every horse seat at an AoF table would
- * stall on rejected actions.
+ * creation stamping it, and the horse decision coercion — a stale non-fold
+ * intent becomes the all-in only while that shove remains in the canonical
+ * cap-safe menu, so rejected answers cannot stall or resurrect a barred shove.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -142,7 +142,7 @@ describe('AoF: engine wiring (source pins)', () => {
     ).toMatch(/COALESCE\(v_t\.big_blind_ante,false\),COALESCE\(v_t\.all_in_or_fold,false\)/);
   });
 
-  it('horse decisions are coerced: non-fold becomes the all-in at AoF tables', () => {
+  it('horse decisions use the canonical AoF menu before coercing a non-fold to all-in', () => {
     const turns = read('server/src/engine/ServerTableEngineTurns.ts');
     /* 2026-08-30: anchored on the bare string 'all_in_or_fold', whose FIRST
        occurrence used to be the coercion site itself. The V28 sitting-out
@@ -153,7 +153,8 @@ describe('AoF: engine wiring (source pins)', () => {
     const anchor = "all_in_or_fold && currentState.stage === 'preflop'";
     expect(turns.indexOf(anchor)).toBeGreaterThan(-1);
     const block = sliceEnclosingBlock(turns, anchor);
-    expect(block).toMatch(/action !== 'fold'/);
+    expect(block).toMatch(/action !== 'fold' && allowed\.has\('all_in'\)/);
     expect(block).toMatch(/action = 'all_in'/);
+    expect(block).toMatch(/allInOrFoldActions\[0\] \?\? 'fold'/);
   });
 });

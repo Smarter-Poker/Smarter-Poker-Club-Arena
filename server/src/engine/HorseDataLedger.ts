@@ -524,6 +524,11 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'V46'
   ),
   flag(
+    'phase7Utility',
+    'final action-specific tournament utility across payout, bounty and recovery components; defaults on and runs after every global strategy layer',
+    'Phase7'
+  ),
+  flag(
     'v43Tempo',
     'tempo reads: a river big bet priced by how fast it was made against what this player shows down at that tempo',
     'V43'
@@ -727,7 +732,7 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'this hand, every action with stage and amount (range reads, barrels, plans)'
   ),
   state('gameMode', 'cash / tournament'),
-  state('format', 'cash / mtt / spin / hu_sng'),
+  state('format', 'cash / mtt / sng / spin / hu_sng'),
   state('ante', 'ante per hand'),
   state('bigBlindAnte', 'BB-ante structure'),
   state('allInOrFold', 'all-in-or-fold table'),
@@ -749,8 +754,8 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   ),
   state(
     'tournament',
-    'Phase 6 schema-v1 context: tournament type, seats, stacks, payouts/tickets, bounty types and inventory, registration/re-entry/rebuy/add-on state, exact level clock, hand-for-hand, M and atlas coordinates',
-    'HorseDecisionWorkerRuntime.assertPhase6TournamentSnapshot; HorseLogic.icmRisk / decidePreflopV7 / endgameAdjust / satelliteRead'
+    'Phase 6 schema-v1 context: tournament type, seats, stacks, payouts/tickets, funded prize/bounty pools, buy-in/start-stack recovery terms, bounty inventory, registration/re-entry/rebuy/add-on state, exact level clock, hand-for-hand, M and atlas coordinates',
+    'HorseDecisionWorkerRuntime.assertPhase6TournamentSnapshot; HorseLogic.icmRisk / decidePreflopV7 / endgameAdjust / satelliteRead / evaluateTournamentUtility'
   ),
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -1509,6 +1514,13 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     0.99
   ),
   receipt(
+    'phase6_tournament_context_complete',
+    'HorseLogic (Phase6)',
+    'the schema-v1 tournament context passed the complete-context contract',
+    'Phase6',
+    'phase6_tournament_context'
+  ),
+  receipt(
     'phase6_m_engine',
     'HorseLogic (Phase6)',
     'real, effective, projected, velocity and covering-opponent M were present',
@@ -1553,6 +1565,91 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'Phase6',
     'phase6_route_atlas',
     0.99
+  ),
+  receipt(
+    'phase7_tournament_utility',
+    'HorseLogic -> HorseTournamentUtility',
+    'a complete-context tournament decision compared its legal action families by resulting stack-vector utility and attached the component ledger',
+    'Phase7',
+    'phase6_tournament_context_complete',
+    0.99
+  ),
+  receipt(
+    'phase7_objective_*',
+    'HorseTournamentUtility.objectiveOf',
+    'dedicated MTT, satellite, PKO, mystery, SNG and Spin objectives partition Phase 7 decisions',
+    'Phase7',
+    'phase7_tournament_utility',
+    0.99
+  ),
+  receipt(
+    'phase7_icm_*',
+    'IcmModel.createIcmEquityEstimator',
+    'exact final-table MH or direct bounded Plackett-Luce Monte Carlo method used by the selected utility ledger',
+    'Phase7',
+    'phase7_tournament_utility',
+    0.99
+  ),
+  receipt(
+    'phase7_utility_override',
+    'HorseTournamentUtility.evaluateTournamentUtility',
+    'action-specific utility overrode the legacy heuristic or solver proposal',
+    'Phase7'
+  ),
+  receipt(
+    'phase7_utility_skip_incomplete',
+    'HorseLogic',
+    'Phase 7 failed closed because the Phase 6 context was explicitly incomplete',
+    'Phase7'
+  ),
+  receipt(
+    'phase7_utility_unavailable',
+    'HorseLogic',
+    'a nominally complete betting decision could not produce a Phase 7 ledger; any live fire requires investigation',
+    'Phase7'
+  ),
+  receipt(
+    'phase7_utility_committed',
+    'ServerTableEngineTurns.scheduleHorseAction',
+    'the exact action selected by the Phase 7 ledger was accepted by the authoritative hand controller',
+    'Phase7',
+    'phase7_tournament_utility'
+  ),
+  receipt(
+    'phase7_utility_coerced',
+    'ServerTableEngineTurns.scheduleHorseAction',
+    'a final legality belt changed the Phase 7-selected action before acceptance; every fire requires investigation',
+    'Phase7'
+  ),
+  receipt(
+    'phase7_utility_fallback',
+    'ServerTableEngineTurns.scheduleHorseAction',
+    'the Phase 7-selected action was rejected and the controller accepted the check/fold fallback; every fire requires investigation',
+    'Phase7'
+  ),
+  receipt(
+    'phase7_utility_not_executed',
+    'ServerTableEngineTurns.scheduleHorseAction',
+    'a Phase 7 evaluation did not reach an accepted action under its authority fence',
+    'Phase7'
+  ),
+  receipt(
+    'phase7_side_pot',
+    'HorseTournamentUtility',
+    'at least one evaluated action produced multiple canonical pot layers',
+    'Phase7'
+  ),
+  receipt(
+    'phase7_players_behind',
+    'HorseLogic.phase7PlayersBehind',
+    'the utility receipt included live actionable players behind hero',
+    'Phase7'
+  ),
+  receipt(
+    'phase7_bounty_utility',
+    'HorseTournamentUtility',
+    'PKO or bounty ownership and denial entered action utility',
+    'Phase7'
   ),
   receipt(
     'v44_second_look',

@@ -924,6 +924,12 @@ export interface HorseGameStateV2 extends HorseGameState {
   commitmentCapRemaining?: number | null;
   /** Live side-pot layers with exact eligibility, before settlement. */
   pots?: Pot[];
+  /**
+   * Chips already in the middle hero can win after taking the effective call,
+   * excluding hero's not-yet-committed call. Required on every live request;
+   * optional only for legacy/offline fixtures.
+   */
+  contestablePot?: number;
   /** Exact active per-hand rake schedule, not a strategy approximation. */
   rakeConfig?: RakeConfig;
   variantRules?: HorseVariantRules;
@@ -2039,7 +2045,30 @@ export class HorseLogic {
     // V40: the review system's verdict on this horse, read every decision.
     params.ploStackoffLoad = ploStackoffLoad(mods);
 
-    const vi = variantInfo(gs.gameVariant);
+    const compiledVariant = variantInfo(gs.gameVariant);
+    // Phase 5 live requests carry explicit rules and the worker proves they
+    // match gameVariant before this method runs. Read those facts here rather
+    // than transporting a contract the brain then ignores. Offline fixtures
+    // without schema-v1 rules retain the historical variant resolver.
+    const vi: VariantInfo = gs.variantRules
+      ? {
+          ...compiledVariant,
+          holeCount: gs.variantRules.holeCardsDealt,
+          isOmaha:
+            gs.variantRules.holeCardsUse === 'exactly_two' &&
+            gs.variantRules.boardCardsUse === 'exactly_three',
+          isHiLo: gs.variantRules.splitLow8OrBetter,
+          isShortDeck: gs.variantRules.deckSize === 36,
+          isPotLimit:
+            gs.bettingStructure !== undefined
+              ? gs.bettingStructure === 'pot_limit'
+              : compiledVariant.isPotLimit,
+          isFixedLimit:
+            gs.bettingStructure !== undefined
+              ? gs.bettingStructure === 'fixed_limit'
+              : compiledVariant.isFixedLimit,
+        }
+      : compiledVariant;
     // V41: the rest of the verdict, by this hand's variant family.
     {
       const fam41: LeakFamily = vi.isOmaha ? 'omaha' : 'holdem';
@@ -2191,6 +2220,10 @@ export class HorseLogic {
   ): HorseDecision {
     const bb = gs.bigBlind > 0 ? gs.bigBlind : 2;
     const toCall = Math.max(0, gs.currentBet - player.bet);
+    const effectiveCall = Math.min(toCall, player.stack);
+    const contestablePot = Number.isFinite(gs.contestablePot)
+      ? Math.max(0, gs.contestablePot as number)
+      : Math.max(0, gs.pot - Math.max(0, toCall - effectiveCall));
 
     let strength: number;
     // PERCENTILE, not the raw Omaha score. decidePreflopV7's thresholds are
@@ -2501,8 +2534,7 @@ export class HorseLogic {
             bands38,
             false
           );
-          const uncallable38 = Math.max(0, toCall - effCall38);
-          const pot38 = Math.max(0.01, gs.pot - uncallable38);
+          const pot38 = Math.max(0.01, contestablePot);
           const riskAdd38 = icmRisk(
             gs,
             stackBB,
@@ -2591,6 +2623,7 @@ export class HorseLogic {
       oppsLeft,
       toCall,
       currentBet: gs.currentBet,
+      contestablePot,
       pot: gs.pot,
       bigBlind: bb,
       stack: player.stack,
@@ -2827,6 +2860,10 @@ export class HorseLogic {
     const toCall = Math.max(0, currentBet - player.bet);
     const stack = player.stack;
     const stackBB = stack / bb;
+    const effectiveCall = Math.min(toCall, stack);
+    const pricePot = Number.isFinite(gs.contestablePot)
+      ? Math.max(0, gs.contestablePot as number)
+      : Math.max(0, pot - Math.max(0, toCall - effectiveCall));
 
     // Hand strength 0..1 (percentile-style, variant-aware). Omaha goes
     // through its empirical CDF so it actually IS percentile-style — the
@@ -3039,7 +3076,7 @@ export class HorseLogic {
         return { action: 'call', amount: toCall, thinkTime: 0 };
       }
       // Getting a monster price closing the action
-      if (toCall > 0 && toCall <= pot * 0.15 && strength >= 0.45) {
+      if (toCall > 0 && toCall <= pricePot * 0.15 && strength >= 0.45) {
         return { action: 'call', amount: toCall, thinkTime: 0 };
       }
       if (toCall === 0) return { action: 'check', thinkTime: 0 };
@@ -3114,7 +3151,12 @@ export class HorseLogic {
     const rawToCall = Math.max(0, currentBet - player.bet);
     const toCall = Math.min(rawToCall, player.stack);
     const uncallableExcess = rawToCall - toCall;
-    const pot = Math.max(0.01, gs.pot - uncallableExcess);
+    const pot = Math.max(
+      0.01,
+      Number.isFinite(gs.contestablePot)
+        ? Math.max(0, gs.contestablePot as number)
+        : gs.pot - uncallableExcess
+    );
     const stack = player.stack;
     const facingBet = toCall > 0;
     const street: HandStage = gs.stage;
@@ -6291,7 +6333,10 @@ export class HorseLogic {
     // there no matter what the tempo multipliers do.
     const facingBet = toCall > 0;
     const stage = gs.stage;
-    const bigRiverCall = stage === 'river' && toCall > gs.pot * 0.5;
+    const pricePot = Number.isFinite(gs.contestablePot)
+      ? Math.max(0, gs.contestablePot as number)
+      : gs.pot;
+    const bigRiverCall = stage === 'river' && toCall > pricePot * 0.5;
 
     // Per-horse TEMPO, stable for the life of the horse: some people are just
     // fast and some are just deliberate, and that is most of what makes a

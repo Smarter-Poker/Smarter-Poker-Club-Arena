@@ -337,36 +337,28 @@ describe('LAW 4: the database applies the difference and honours the declaration
     );
     // CASH TABLES ONLY. Tournament chips are play chips: the guard landed in
     // 20260904130701 after the first ten minutes of delta mode debited 230
-    // tournament chips from a real wallet. The live definition is what the
-    // engine calls, so the pin reads the latest re-creation of the function.
-    const ordered = readdirSync(migrationsDir)
-      .filter((f) => /^\d{14}_.*\.sql$/.test(f))
-      .sort()
-      .reverse();
-    const latest = ordered.find((f) =>
-      /CREATE (OR REPLACE )?FUNCTION public\.fn_ca_settle_hand_stacks_absolute\(/.test(
-        readFileSync(resolve(migrationsDir, f), 'utf8')
-      )
+    // tournament chips from a real wallet. The cutover deliberately applies
+    // the older-numbered seat-exit wrapper after the recovered live preimage,
+    // so filename sorting cannot identify the deployed composition. Pin the
+    // wrapper and the exact restored implementation as the two explicit
+    // sources the cutover composes instead.
+    const files = readdirSync(migrationsDir);
+    const seatExit = files.find((f) =>
+      /^\d{14}_tournament_seat_exits_stay_inside_tournament_authority\.sql$/.test(f)
     );
-    const live = readFileSync(resolve(migrationsDir, latest as string), 'utf8');
+    const restoredExact = files.find((f) =>
+      /^\d{14}_restore_exact_hand_generation_after_terminal_writer\.sql$/.test(f)
+    );
+    expect(seatExit).toBeTruthy();
+    expect(restoredExact).toBeTruthy();
+    const live = readFileSync(resolve(migrationsDir, seatExit as string), 'utf8');
     // The seat-exit cutover makes the public function a capability-scoped
     // wrapper around the exact prior implementation. Prove both halves: the
     // wrapper cannot bypass its owner-only core, and that core still carries
     // the cash-only delta guard this law originally pinned.
     expect(live).toMatch(/RENAME TO fn_ca_settle_hand_stacks_absolute_pre_seat_exit_authority/);
     expect(live).toMatch(/fn_ca_settle_hand_stacks_absolute_pre_seat_exit_authority\(/);
-    const implementationFile = ordered
-      .slice(ordered.indexOf(latest as string) + 1)
-      .find((f) =>
-        /CREATE (OR REPLACE )?FUNCTION public\.fn_ca_settle_hand_stacks_absolute\(/.test(
-          readFileSync(resolve(migrationsDir, f), 'utf8')
-        )
-      );
-    expect(implementationFile).toBeTruthy();
-    const implementation = readFileSync(
-      resolve(migrationsDir, implementationFile as string),
-      'utf8'
-    );
+    const implementation = readFileSync(resolve(migrationsDir, restoredExact as string), 'utf8');
     expect(implementation).toMatch(
       /IF v_delta_mode AND NOT EXISTS \(SELECT 1 FROM public\.tables tb WHERE tb\.id = p_table_id AND tb\.tournament_id IS NOT NULL\) THEN/
     );

@@ -41,12 +41,16 @@ describe('the lobby always has its footer', () => {
   it('the app root reads both inputs', () => {
     const app = read('src/App.tsx');
     expect(app).toContain('useInTabLobbyActive()');
-    expect(app).toContain('shouldShowClubFooterFor(location.pathname, inTabLobbyActive)');
+    expect(app).toContain(
+      'shouldShowClubFooterFor(location.pathname, inTabLobbyActive, inTabLobbyClubId)'
+    );
   });
 
   it('the container publishes only the tab on screen, and clears on unmount', () => {
     const page = read('src/pages/MultiTablePage.tsx');
-    expect(page).toContain('publishInTabLobbyActive(!hidden && !!cur && isLobbyTab(cur))');
+    expect(page).toContain(
+      'publishInTabLobbyActive(!hidden && !!cur && isLobbyTab(cur), selectedClub)'
+    );
     expect(page).toContain('useEffect(() => () => publishInTabLobbyActive(false), [])');
   });
 

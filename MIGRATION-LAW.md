@@ -258,21 +258,17 @@ Every code ship MUST follow this exact deployment contract. No exceptions. No
 
 ### 11.2 PUSH → WATCH → VERIFY. IN THAT ORDER. NEVER SKIP.
 
-After ANY push to `Smarter-Poker-World-Hub/main` (or the Club Arena source
-repo if you're shipping a CA bundle via the WH repo copy path):
+After any Club Arena change:
 
-1. **PUSH** — via the GitHub Contents API pattern or `git-safe-push.sh`. Log
-   the commit SHA you pushed.
-2. **WATCH** — poll `hub-vanguard`'s latest deployment (via Vercel MCP
-   `get_deployment` or `list_deployments`) until `state === 'READY'`. Do NOT
-   claim success on `QUEUED`, `BUILDING`, or `CANCELED`. If CANCELED because a
-   later push superseded yours, confirm the LATER deploy carries your commit
-   SHA as an ancestor; if not, re-push on top of the latest HEAD.
-3. **VERIFY** — fetch the live URL (e.g., `https://smarter.poker/hub/club-arena/index.html`)
-   and confirm the served HTML references the new content-hashed bundle name
-   that matches your build output. For Club Arena: grep for the `index-*-v6.js`
-   filename in the served HTML and confirm it's the hash your Vite build
-   produced.
+1. **PUSH** — from an isolated worktree to a feature branch, through normal
+   hooks. Record the commit SHA; do not push directly to `main`.
+2. **WATCH** — follow the Club Arena required checks, autopilot merge, and the
+   owning Hetzner workflow to a terminal result. A World Hub or Vercel
+   deployment is not Club Arena release evidence.
+3. **VERIFY** — both the direct Hetzner origin and public rewrite must report
+   the exact merged `ca_sha`. For a `server/` change, also require the sealed
+   `auto-deploy-hetzner.yml` cutover and a cache-busted engine health response
+   naming that exact SHA.
 4. **COLD-LOAD TEST** (for any functional change, not just CSS) — open a
    fresh browser tab (no SPA state carryover), navigate to the affected page,
    and confirm the fixed behavior actually works end-to-end. For Chrome MCP:
@@ -281,36 +277,36 @@ repo if you're shipping a CA bundle via the WH repo copy path):
 
 Only after all four steps pass may you mark the work complete.
 
-### 11.3 DEPLOYMENT WATCH TIMEOUTS
+### 11.3 DEPLOYMENT TERMINAL STATES
 
-- Vercel QUEUED → BUILDING typically takes 0–120s. If still QUEUED after 5 min,
-  check for a newer push that superseded yours.
-  NOTE: The deploy hook (Tw4O1eDeVc) was RETIRED on 2026-04-16 because it was
-  causing duplicate deployments. DO NOT call it. The git integration handles
-  auto-deploy on every push to main.
-- BUILDING → READY typically takes 90–180s for a Next.js build on this repo.
-- If ERROR or CANCELED persists for more than 10 min after the push, INVESTIGATE
-  before trying again (could be a build failure, a rate limit, or the duplicate
-  project resurrecting).
+- Read the Club Arena workflow run, not a World Hub or Vercel dashboard.
+- A queued, in-progress, cancelled, failed, staged-only, or deferred run is not
+  a release.
+- If an engine SHA is already staged, immediately dispatch the owning workflow
+  toward the current certified break with `force=false`; never wait passively
+  for another tick or force a restart.
+- On any red or mismatched state, investigate and fix forward through the same
+  Club Arena path. Do not create a manual or cross-repository publisher.
 
-### 11.4 HOW TO KNOW WHICH PROJECT YOUR COMMIT WENT TO
+### 11.4 HOW TO KNOW WHICH RELEASE SHIPPED
 
-Use Vercel MCP `list_deployments` with `projectId: prj_op66GkZyZcygXQKm76iyycfVFAQx`
-(hub-vanguard) and `since: <your push timestamp>`. You MUST see a deployment
-whose `githubCommitSha` matches your push (or has your push as an ancestor).
-If it only shows up under `smarter-poker` (project id `prj_FNUaJmcj...`), the
-duplicate is back — stop and fix the duplicate before any further deploys.
+The Club Arena `main` SHA, the relevant terminal-success workflow run, and the
+live release stamp must agree. For the frontend, compare the direct origin and
+public rewrite independently. For the engine, use cache-busted `/health` and
+confirm the sealed deployment's exact SHA. The frontend stamp does not prove
+engine adoption, and a World Hub release proves neither.
 
 ### 11.5 LIVE-VERIFY LANGUAGE (the only sentence you may use)
 
 A commit is "deployed" only when you have personally observed:
 
-> "Production `<url>` served `<expected-bundle-hash>` at `<UTC timestamp>` and
-> the fixed behavior was confirmed via cold-load test at that timestamp."
+> "Club Arena production served exact merged SHA `<sha>` from its owning
+> Hetzner endpoint at `<UTC timestamp>`, and the fixed behavior passed its
+> cold-load or runtime test at that timestamp."
 
-Any other wording — "should be live," "deploy triggered," "Vercel will pick
-it up in a few minutes," "my push went through" — is NOT acceptable and does
-NOT satisfy this law.
+Any other wording — "should be live," "deploy triggered," "the World Hub will
+pick it up," or "my push went through" — is not acceptable and does not satisfy
+this law.
 
 ---
 

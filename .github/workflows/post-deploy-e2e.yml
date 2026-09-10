@@ -18,8 +18,8 @@ name: Post-Deploy E2E (production)
 #    right place for strict: a red run names the route and the offending
 #    element without blocking anyone's merge."
 #
-# This is that job. It runs AFTER the World Hub sync publishes, against the
-# real deployed bundle, signed in.
+# This is that job. It runs AFTER Club Arena publishes to its Hetzner origin,
+# against the real deployed bundle through the public rewrite, signed in.
 #
 # WHY IT DOES NOT GATE A MERGE, and why that is not a weakness: by the time it
 # runs, the code is already on main and already published. Blocking is not
@@ -63,7 +63,7 @@ on:
 # minutes instead of thirteen.
 #
 # GitHub evaluates concurrency BEFORE the job-level `if`. That means a failed
-# or cancelled Build for World Hub Sync still starts this workflow, takes the
+# or cancelled publisher still starts this workflow, takes the
 # concurrency lock, cancels a genuine manual/production run, and only THEN
 # skips its own job. Give those no-op invocations a unique group. Successful
 # deploys and manual runs continue sharing the production group. A running
@@ -82,7 +82,7 @@ concurrency:
 
 jobs:
   production-e2e:
-    # Only when the publish actually succeeded. A failed sync means production
+    # Only when the publish actually succeeded. A failed origin publish means production
     # is still serving the previous bundle, and testing that proves nothing
     # about this commit.
     if: >-

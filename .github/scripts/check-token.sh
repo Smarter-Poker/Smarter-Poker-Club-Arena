@@ -49,7 +49,7 @@ if OUT=$(gh api "repos/${GITHUB_REPOSITORY}" --jq .full_name 2>&1); then
                --title "Agent Autopilot token expires ${EXP}" \
                --body "\`GH_PAT\` expires in ${DAYS} day(s) (\`${EXP}\`).
 
-When it lapses every PR stops auto-merging and nothing publishes to the World Hub. Agents will keep reporting success.
+When it lapses every PR stops auto-merging and nothing publishes to Club Arena's Hetzner origin. Agents will keep reporting success.
 
 Rotate: \`gh secret set GH_PAT --repo $GITHUB_REPOSITORY --body <fresh PAT>\` (needs contents + pull-requests write)." >/dev/null 2>&1 || true
         fi
@@ -82,7 +82,7 @@ if [ -n "${GITHUB_TOKEN_FALLBACK:-}" ]; then
 $OUT
 \`\`\`
 
-**Impact:** no PR will auto-merge and no merge will publish to the World Hub until this is replaced. Agents will appear to work and nothing will ship.
+**Impact:** no PR will auto-merge and no merge will publish to Club Arena's Hetzner origin until this is replaced. Agents will appear to work and nothing will ship.
 
 **Fix:** Autopilot mints a GitHub App installation token every run, so there is no expiry to renew — a failure here means the App itself. In order: confirm the App is still installed on this repo, that \`vars.AUTOPILOT_APP_ID\` is set, and that \`secrets.AUTOPILOT_APP_PRIVATE_KEY\` holds the complete PEM including its BEGIN/END lines. Regenerating the key in the App settings invalidates the previous PEM the moment you do it." >/dev/null 2>&1 || true
   fi

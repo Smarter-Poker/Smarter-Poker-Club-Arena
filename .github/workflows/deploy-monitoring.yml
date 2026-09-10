@@ -53,27 +53,21 @@ jobs:
         with:
           node-version: 22
 
-      # Same key handling as auto-deploy-hetzner.yml, for the same reasons -
-      # both secret names are accepted because the two repos disagreed on it,
-      # and the host key is PINNED rather than scanned: ssh-keyscan opens five
+      # Same Club Arena-owned key as auto-deploy-hetzner.yml. The host key is
+      # PINNED rather than scanned: ssh-keyscan opens five
       # parallel probes, four of which disconnect pre-auth, and fail2ban counts
       # those as four failures and bans the runner for 24 hours.
       - name: Setup SSH key
         env:
-          SSH_KEY_CANONICAL: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
-          SSH_KEY_LEGACY: ${{ secrets.HETZNER_SSH_KEY }}
+          SSH_KEY: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
         run: |
           set -euo pipefail
           mkdir -p ~/.ssh
-          if [ -n "$SSH_KEY_CANONICAL" ]; then
-            printf '%s\n' "$SSH_KEY_CANONICAL" > ~/.ssh/id_deploy
-          elif [ -n "$SSH_KEY_LEGACY" ]; then
-            echo "::warning::Falling back to HETZNER_SSH_KEY."
-            printf '%s\n' "$SSH_KEY_LEGACY" > ~/.ssh/id_deploy
-          else
-            echo "::error::Neither HETZNER_SSH_PRIVATE_KEY nor HETZNER_SSH_KEY is set."
+          if [ -z "$SSH_KEY" ]; then
+            echo "::error::HETZNER_SSH_PRIVATE_KEY is empty or unset."
             exit 1
           fi
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_deploy
           chmod 600 ~/.ssh/id_deploy
           ssh-keygen -y -f ~/.ssh/id_deploy > /dev/null \
             || { echo "::error::The Hetzner deploy key is not a valid private key."; exit 1; }

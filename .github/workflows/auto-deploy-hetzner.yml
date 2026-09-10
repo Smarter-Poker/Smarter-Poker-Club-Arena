@@ -45,9 +45,9 @@ name: Auto-Deploy Hetzner Engine (on server/ changes)
 #     deployed to production in parallel with CI going red.
 #
 # Required repo secrets:
-#   HETZNER_SSH_PRIVATE_KEY — deploy private key (canonical; same name the
-#                       World Hub repo uses). HETZNER_SSH_KEY is accepted as a
-#                       fallback for the older name, with a warning.
+#   HETZNER_SSH_PRIVATE_KEY — Club Arena's deploy private key. This workflow
+#                       has no cross-repository credential fallback: the Club
+#                       Arena repository owns the engine release authority.
 #   HETZNER_HOST      — Hetzner VPS IP
 #   HETZNER_HOST_KEY  — the host's public key line, pinned. NOT optional: an
 #                       empty known_hosts fails every ssh with BatchMode=yes,
@@ -504,27 +504,15 @@ jobs:
       - name: Setup SSH key
         if: steps.dedupe.outputs.skip != 'true'
         env:
-          # The two repos disagreed on the name of this secret: World Hub's
-          # workflows read HETZNER_SSH_PRIVATE_KEY, this one read
-          # HETZNER_SSH_KEY, and the Club Arena repo happens to hold BOTH. That
-          # works right up until somebody rotates the key and updates one name,
-          # at which point the other repo's deploy fails with an SSH error that
-          # says nothing about a secret. Accept either, prefer the World Hub's
-          # name as canonical, and say which one was used.
-          SSH_KEY_CANONICAL: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
-          SSH_KEY_LEGACY: ${{ secrets.HETZNER_SSH_KEY }}
+          SSH_KEY: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
         run: |
+          set -euo pipefail
           mkdir -p ~/.ssh
-          if [ -n "$SSH_KEY_CANONICAL" ]; then
-            echo "Using HETZNER_SSH_PRIVATE_KEY (canonical)"
-            printf '%s\n' "$SSH_KEY_CANONICAL" > ~/.ssh/id_deploy
-          elif [ -n "$SSH_KEY_LEGACY" ]; then
-            echo "::warning::Falling back to HETZNER_SSH_KEY. Set HETZNER_SSH_PRIVATE_KEY to match the World Hub repo."
-            printf '%s\n' "$SSH_KEY_LEGACY" > ~/.ssh/id_deploy
-          else
-            echo "::error::Neither HETZNER_SSH_PRIVATE_KEY nor HETZNER_SSH_KEY is set — every ssh below would fail."
+          if [ -z "$SSH_KEY" ]; then
+            echo "::error::HETZNER_SSH_PRIVATE_KEY is empty or unset — every ssh below would fail."
             exit 1
           fi
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_deploy
           chmod 600 ~/.ssh/id_deploy
           # Fail here, loudly, rather than 20 lines later on a confusing
           # 'Permission denied (publickey)'.

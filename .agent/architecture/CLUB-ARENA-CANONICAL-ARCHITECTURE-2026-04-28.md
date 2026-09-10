@@ -11,14 +11,15 @@
 > before retiring its existing schedule. Read the full standard in
 > `docs/standards/EVENT-DRIVEN-EXECUTION.md`.
 
-> **AMENDED 2026-09-03 — Tier 2 no longer publishes through the World Hub.**
+> **AMENDED 2026-09-10 — Club Arena owns both Hetzner release paths.**
 > Club Arena's bundle is published by `publish-club-arena.yml` to its own
-> static origin (`ca-static.smarter.poker`, Caddy on `estate-ci-1`), and the
+> Hetzner static origin (`ca-static.smarter.poker`), and the
 > World Hub carries ONE rewrite to it. `public/hub/club-arena/` no longer
 > exists in the World Hub repo, and `sync-club-arena.sh`, `build-club-arena.sh`
-> and the `check-ca-*` gates are deleted. Everywhere below that says the build
-> is copied into the World Hub describes the path as it was until that date;
-> `.agent/architecture/deploy-paths.md` Tier 2 and `CLAUDE.md` 1.1 are current.
+> and the `check-ca-*` gates are deleted. Engine releases are staged,
+> validated, and sealed by `auto-deploy-hetzner.yml`. No World Hub workflow,
+> Vercel project, direct-main push, or manual SSH command publishes either
+> Club Arena runtime.
 
 **Read this first. Do not push code without confirming the layer + table you're targeting matches this doc.**
 
@@ -40,18 +41,18 @@ When future agents ask "where do I put this fix?" → that answer is in §"Where
    │  Tier 2 — VITE FRONTEND (SPA)    │    │  Tier 3 — OPERATIONS REST API   │
    │  smarter.poker/hub/club-arena/   │    │  smarter.poker/api/club-arena/* │
    │  Source: ~/Documents/club-arena/ │    │  Source: Smarter-Poker-World-   │
-   │  Build: dist/ → World Hub        │    │   Hub/pages/api/club-arena/*    │
+   │  Build: dist/ in CA Actions      │    │   Hub/pages/api/club-arena/*    │
    │  Repo: Smarter-Poker-Club-Arena  │    │  Repo: Smarter-Poker-World-Hub  │
-   │  Deploy: copy dist/* → World     │    │  Deploy: Vercel auto-deploy on  │
-   │   Hub/public/hub/club-arena/     │    │   push to main                  │
+   │  Deploy: atomic Hetzner publish  │    │  Deploy: World Hub's own gated  │
+   │   → ca-static.smarter.poker      │    │   release path                  │
    └────────────┬─────────────────────┘    └────────┬────────────────────────┘
                 │ WebSocket (gameplay)              │ HTTPS (cashier, club admin,
                 │                                   │   agent, settlement, anti-
                 │                                   │   cheat, marketplace, etc.)
                 ▼                                   ▼
    ┌────────────────────────────────────────────────────────────────────────┐
-   │                  Tier 1 — GAME ENGINE (Hetzner CPX11)                  │
-   │                  engine.smarter.poker  (178.156.160.206)               │
+   │                  Tier 1 — GAME ENGINE (Hetzner)                        │
+   │                  engine.smarter.poker                                 │
    │                  Source: ~/Documents/club-arena/server/                │
    │                  Stack: Node.js + native ws + Docker                   │
    │                  Source of truth: Bible V8 (16 Master Laws)            │
@@ -93,13 +94,14 @@ When future agents ask "where do I put this fix?" → that answer is in §"Where
 | ---------------------------------------------------------------- | ---------------------------------------------------------------------------------- | -------------------------- |
 | Game engine source                                               | `~/Documents/club-arena/server/src/`                                               | `Smarter-Poker-Club-Arena` |
 | Vite frontend source                                             | `~/Documents/club-arena/src/`                                                      | `Smarter-Poker-Club-Arena` |
-| Vite build target                                                | `~/Documents/club-arena/dist/` (gitignored; copied to World Hub)                   | —                          |
-| Static assets served at apex                                     | `~/Documents/Smarter-Poker-World-Hub/public/hub/club-arena/`                       | `Smarter-Poker-World-Hub`  |
+| Vite build target                                                | `dist/` built from the exact merged SHA inside `publish-club-arena.yml`            | `Smarter-Poker-Club-Arena` |
+| Static assets served at apex                                     | `ca-static.smarter.poker` via the World Hub's rewrite                              | `Smarter-Poker-Club-Arena` |
 | Ops REST API routes                                              | `~/Documents/Smarter-Poker-World-Hub/pages/api/club-arena/*.js`                    | `Smarter-Poker-World-Hub`  |
 | Ops API helpers (audit, idempotency, sanitize, velocity, notify) | `~/Documents/Smarter-Poker-World-Hub/src/lib/club-arena/*.js`                      | `Smarter-Poker-World-Hub`  |
 | Workers cron handlers                                            | `~/Documents/smarter-poker-workers/src/routes/*.ts`                                | `smarter-poker-workers`    |
 | Supabase migrations                                              | `~/Documents/club-arena/supabase/migrations/*.sql`                                 | `Smarter-Poker-Club-Arena` |
-| Hetzner deploy script                                            | `~/Documents/club-arena/server/deploy-hetzner.sh`                                  | `Smarter-Poker-Club-Arena` |
+| Hetzner engine deployment                                        | `.github/workflows/auto-deploy-hetzner.yml` (exact-SHA sealed cutover)             | `Smarter-Poker-Club-Arena` |
+| Hetzner frontend publishing                                      | `.github/workflows/publish-club-arena.yml` (atomic origin release)                 | `Smarter-Poker-Club-Arena` |
 | Workers deploy script                                            | `~/Documents/smarter-poker-workers/scripts/deploy-workers.sh`                      | `smarter-poker-workers`    |
 | Bible V8 spec                                                    | `~/Documents/club-arena/BIBLE-V8-REFERENCE.pdf` + `bible-v8/BIBLE-V8-REFERENCE.md` | `Smarter-Poker-Club-Arena` |
 | PokerBros spec                                                   | `~/Documents/Smarter-Poker-World-Hub/docs/POKERBROS_CLONE_SPEC.md` (1686 lines)    | `Smarter-Poker-World-Hub`  |
@@ -132,13 +134,16 @@ When future agents ask "where do I put this fix?" → that answer is in §"Where
 
 ## §3 — Hetzner servers (the three VMs we own)
 
-| VM          | IP                              | Purpose                                                                   | SSH key                                      | Deploy script                           |
-| ----------- | ------------------------------- | ------------------------------------------------------------------------- | -------------------------------------------- | --------------------------------------- |
-| Game engine | 178.156.160.206 (CPX11 ash-dc1) | Runs `club-arena-engine` Docker container; binds 8080                     | `~/Documents/club-arena/.ssh/hetzner_deploy` | `bash server/deploy-hetzner.sh`         |
-| Workers     | 178.104.180.220 (CPX21)         | Runs `smarter-poker-workers` Docker container; binds 8081 (loopback only) | `~/.ssh/workers_ed25519` (Mac Keychain)      | `bash scripts/deploy-workers.sh`        |
-| Open Claw   | 178.104.160.250 (CX23 nbg1)     | Cron scheduler; calls workers VM `/cron/*` paths                          | `~/.ssh/openclaw*` (Mac Keychain)            | manual edit of `/opt/openclaw/jobs.yml` |
+| VM/static origin | Address                     | Purpose                                                                   | Credential owner                        | Deployment path                         |
+| ---------------- | --------------------------- | ------------------------------------------------------------------------- | --------------------------------------- | --------------------------------------- |
+| Game engine      | `engine.smarter.poker`      | Runs the sealed `club-arena-engine` release                               | Club Arena repository Actions secrets   | `auto-deploy-hetzner.yml`               |
+| Frontend origin  | `ca-static.smarter.poker`   | Serves immutable Vite releases with an atomic `current` selector          | Club Arena repository Actions secrets   | `publish-club-arena.yml`                |
+| Workers          | 178.104.180.220 (CPX21)     | Runs `smarter-poker-workers` Docker container; binds 8081 (loopback only) | `~/.ssh/workers_ed25519` (Mac Keychain) | `bash scripts/deploy-workers.sh`        |
+| Open Claw        | 178.104.160.250 (CX23 nbg1) | Cron scheduler; calls workers VM `/cron/*` paths                          | `~/.ssh/openclaw*` (Mac Keychain)       | manual edit of `/opt/openclaw/jobs.yml` |
 
-If you can't SSH to a VM, that's the SSH key not being in the sandbox. AG (on Dan's Mac) has all three keys. Cowork has only the engine key.
+Club Arena publishing never depends on a workstation SSH key. Its workflows
+read canonical write-only repository secrets and fail closed when any are
+missing or invalid.
 
 ---
 
@@ -146,12 +151,12 @@ If you can't SSH to a VM, that's the SSH key not being in the sandbox. AG (on Da
 
 ### GitHub repos (canonical 4)
 
-| Repo                                     | Branch | Purpose                                                            |
-| ---------------------------------------- | ------ | ------------------------------------------------------------------ |
-| `Smarter-Poker/Smarter-Poker-Club-Arena` | main   | Vite frontend + Hetzner engine + Supabase migrations               |
-| `Smarter-Poker/Smarter-Poker-World-Hub`  | main   | Apex (smarter.poker) + ops REST API + static hosting of Vite build |
-| `Smarter-Poker/smarter-poker-workers`    | main   | Cron handlers + Hetzner workers VM image                           |
-| `Smarter-Poker/smarter-poker-commander`  | main   | Commander dashboard (separate product; not Club Arena)             |
+| Repo                                     | Branch | Purpose                                                        |
+| ---------------------------------------- | ------ | -------------------------------------------------------------- |
+| `Smarter-Poker/Smarter-Poker-Club-Arena` | main   | Vite frontend + Hetzner engine + Supabase migrations           |
+| `Smarter-Poker/Smarter-Poker-World-Hub`  | main   | Apex (smarter.poker) + ops REST API + rewrite to the CA origin |
+| `Smarter-Poker/smarter-poker-workers`    | main   | Cron handlers + Hetzner workers VM image                       |
+| `Smarter-Poker/smarter-poker-commander`  | main   | Commander dashboard (separate product; not Club Arena)         |
 
 **Archived (do not push to):** `Smarter-Poker/Club-Arena-Design`. Anything else with "club" or "arena" in the name is decommissioned.
 
@@ -174,9 +179,12 @@ The orphan `club-arena` Vercel project (was `prj_oaCq8RYhExLRUYizLG93li0uX468`) 
 
 ### Duplicate #1 — Vercel `club-arena` project is an orphan ✅ RESOLVED 2026-04-29
 
-The standalone `club-arena` Vercel project builds and deploys to `club-arena.vercel.app` on every push to main. But that URL has zero real traffic — the canonical Club Arena is served from `smarter.poker/hub/club-arena` (World Hub apex serves the Vite build statically from `public/hub/club-arena/`).
+Historically, the standalone `club-arena` Vercel project built on pushes to
+main. It was deleted and is not a fallback or verification target.
 
-**Canonical:** Vite source in `~/Documents/club-arena/` → `npm run build` → output copied to `Smarter-Poker-World-Hub/public/hub/club-arena/` → Vercel deploy of World Hub.
+**Canonical now:** push a Club Arena branch → required checks → autopilot merge
+→ `publish-club-arena.yml` builds the exact merge and atomically publishes it
+to `ca-static.smarter.poker` → World Hub rewrite serves it publicly.
 
 **Status:** ✅ DELETED 2026-04-29 by AG. `club-arena.vercel.app` returns 404 (project removed). Canonical `smarter.poker/hub/club-arena` still 200. Local `.vercel/` config directory removed from repo. Vercel project count went 7 → 6.
 
@@ -324,16 +332,17 @@ If a push gets blocked, READ THE ERROR — never `--no-verify`.
 
 ## §8 — Canonical addresses + secrets (where to find them)
 
-| Thing                                           | Where                                                                               |
-| ----------------------------------------------- | ----------------------------------------------------------------------------------- |
-| Supabase project ID                             | `kuklfnapbkmacvwxktbh` (in `.env` files, MCP project_id parameter)                  |
-| Hetzner engine deploy SSH                       | `~/Documents/club-arena/.ssh/hetzner_deploy`                                        |
-| Workers VM SSH                                  | `~/.ssh/workers_ed25519` (Mac Keychain only)                                        |
-| Open Claw SSH                                   | `~/.ssh/openclaw*` (Mac Keychain only)                                              |
-| GitHub PAT (read+write all 4 repos)             | embedded in `~/Documents/club-arena/.git/config` remote URL                         |
-| GHCR PAT (read packages for workers image pull) | Mac Keychain `smarter-poker/github-pat-ghcr-read`                                   |
-| Vercel token                                    | `<REDACTED:VERCEL_TOKEN — read from .env.local, never commit>` (rotate when needed) |
-| CRON_SECRET (workers Bearer)                    | `/opt/workers/.env` on workers VM                                                   |
+| Thing                                           | Where                                                                                       |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| Supabase project ID                             | `kuklfnapbkmacvwxktbh` (in `.env` files, MCP project_id parameter)                          |
+| Hetzner engine deploy SSH                       | Club Arena repository secrets `HETZNER_SSH_PRIVATE_KEY`, `HETZNER_HOST`, `HETZNER_HOST_KEY` |
+| Hetzner frontend publish SSH                    | Club Arena repository secrets `CA_ORIGIN_SSH_KEY`, `CA_ORIGIN_HOST`, `CA_ORIGIN_HOST_KEY`   |
+| Workers VM SSH                                  | `~/.ssh/workers_ed25519` (Mac Keychain only)                                                |
+| Open Claw SSH                                   | `~/.ssh/openclaw*` (Mac Keychain only)                                                      |
+| GitHub authentication                           | host credential helper / `gh` session; never embed tokens in remote URLs or docs            |
+| GHCR PAT (read packages for workers image pull) | Mac Keychain `smarter-poker/github-pat-ghcr-read`                                           |
+| Vercel token                                    | not a Club Arena deployment credential; owned by the separate World Hub repository          |
+| CRON_SECRET (workers Bearer)                    | `/opt/workers/.env` on workers VM                                                           |
 
 Never commit any of these to git. Never echo them to chat in plaintext.
 

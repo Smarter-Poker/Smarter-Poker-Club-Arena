@@ -25,12 +25,12 @@
 #
 # Everything else - the tip-of-main convergence, the four-way sharded gate,
 # the retry, the refusal to publish a bundle older than the one deployed - was
-# copied from build-for-world-hub.yml unchanged.
+# inherited from the retired publisher and now owned here.
 #
 # THAT FILE IS GONE NOW (2026-09-02, later the same day). For about ninety
 # minutes both files existed and BOTH fired on every push to main, on separate
 # concurrency groups, so nothing serialised them: two full builds of the same
-# commit, two pushes to the World Hub, and the old one still on billed hosted
+# commit, two competing publishes, and the old one still on billed hosted
 # runners. Verified identical before deleting - 320 non-comment lines each,
 # zero difference once name, path, group and runs-on were normalised.
 #
@@ -545,8 +545,9 @@ jobs:
         with:
           name: club-arena-dist-${{ needs.publish-needed.outputs.target_sha }}
           path: dist
-          # A courier, not a record: the World Hub sync commit is the
-          # permanent copy. One day is plenty for a retry.
+          # A courier, not a record: the immutable Hetzner release directory
+          # and its build stamp are the permanent copy. One day is enough for
+          # a retry.
           retention-days: 1
           if-no-files-found: error
           compression-level: 6

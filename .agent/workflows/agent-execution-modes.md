@@ -76,12 +76,12 @@ reasonable ask. Ten messages of "let me try another way" is not.
 ## Full protocol (on-your-computer mode only)
 
 ```bash
-cd ~/Documents/Smarter-Poker-World-Hub
+cd ~/Documents/club-arena
 
 # 1. Locks — git can create these but a crashed process leaves them behind
 rm -f .git/index.lock .git/HEAD.lock .git/next-index-*.lock
 
-# 2. Verify the build BEFORE committing. prebuild runs the guard tests.
+# 2. Verify the Club Arena build BEFORE committing.
 npm run build            # must reach a completed build
 
 # 3. Stage precisely. `git add -A` will sweep up other sessions' WIP —
@@ -93,12 +93,15 @@ git diff --cached --name-only | wc -l    # sanity-check the count
 #    PRE-EXISTING pattern you did not introduce (see below).
 git commit -m "..."
 
-# 5. Rebase then push
-git pull --rebase origin main
-git push origin main
+# 5. Merge current main without rewriting branch history, then push the branch
+git fetch origin main
+git merge --no-edit origin/main
+git push origin HEAD:refs/heads/fix/<slug>
 
-# 6. Verify it actually landed — never trust git output alone
-curl -s https://smarter.poker/api/health
+# 6. Follow Club Arena's own checks, merge, and Hetzner publishers to terminal
+# state. Then verify the exact merged SHA at both frontend endpoints.
+curl -fsS -H 'Cache-Control: no-cache' https://ca-static.smarter.poker/build-info.json
+curl -fsS -H 'Cache-Control: no-cache' https://smarter.poker/hub/club-arena/build-info.json
 ```
 
 ### The pre-commit hook

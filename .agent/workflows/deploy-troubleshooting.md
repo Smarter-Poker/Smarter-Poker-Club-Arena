@@ -52,11 +52,13 @@ change that never merged.
 
 ## What NOT to do
 
-- **Do not publish by hand** unless GitHub Actions itself is down. The manual
-  path is in `.agent/AGENT-OPERATIONS-GUIDE.md` section 9, and it exists for
-  that case only.
+- **Do not publish by hand.** If infrastructure is degraded, re-dispatch the
+  owning Club Arena workflow when its runner path is available; section 9 of
+  `.agent/AGENT-OPERATIONS-GUIDE.md` preserves that single authority.
 - **Do not run the Vercel CLI.** Club Arena's own Vercel project has
   `deploymentEnabled: false` and CLAUDE.md 1.3 forbids it.
 - **Do not re-vendor the bundle into the World Hub.** See the last row above.
-- **Do not sit in a loop watching CI** (CLAUDE.md 10.8.3). Checking once to say
-  why something is blocked is fine.
+- **Do not wait passively for the next engine schedule.** If an exact engine
+  SHA is already staged, dispatch `auto-deploy-hetzner.yml` toward the current
+  certified maintenance break with `force=false`, then verify the sealed
+  result and cache-busted live SHA.

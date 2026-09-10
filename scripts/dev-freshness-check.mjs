@@ -68,7 +68,7 @@ try {
 }
 
 if (ahead !== '0') {
-  say(`[dev] note: ${ahead} local commit(s) not on origin/main. Ship them with scripts/git-safe-push.sh.`);
+  say(`[dev] note: ${ahead} local commit(s) not on origin/main. Push the isolated feature branch through normal hooks.`);
 }
 
 if (behind === '0') {

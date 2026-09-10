@@ -328,9 +328,9 @@ ${DIAG:-A merge that does not publish is indistinguishable from a regression: ma
 
 **Where to look, in order**
 
-1. The publish run above. \`Client tests must pass before the bundle ships\` and the World Hub push are the two steps that fail most.
-2. \`gh run list --repo Smarter-Poker/Smarter-Poker-World-Hub --limit 5\` — the bundle can reach World Hub and still not deploy.
-3. \`curl -s $BUILD_INFO_URL\` — the authoritative answer to what is live.${RETRY_NOTE}
+1. The Club Arena publish run above. Read the build, test, origin-key, rsync, atomic-swap, and origin-verification steps.
+2. \`curl -s https://ca-static.smarter.poker/build-info.json\` — the direct Hetzner origin's release stamp.
+3. \`curl -s $BUILD_INFO_URL\` — the public rewrite's authoritative answer. Both stamps must agree.${RETRY_NOTE}
 
 _Raised automatically by \`.github/workflows/publish-watchdog.yml\`. It closes itself when production catches up._"
 

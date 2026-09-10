@@ -1727,7 +1727,7 @@ jobs:
           fi
 
   post-deploy-check:
-    # It waits for Vercel and curls smarter.poker. It never used the build it
+    # It checks the Hetzner origin and its public rewrite. It never used the build it
     # declared `needs: build` for - that was ordering, and it cost a full Vite
     # production build on every merge, on top of the one publish-club-arena.yml
     # already does to publish.
@@ -1743,19 +1743,23 @@ jobs:
     timeout-minutes: 5
 
     steps:
-      - name: Wait for Vercel Deploy + CDN Propagation
-        # Vercel builds + propagates in 60-180s for a WH push of this size.
-        # Poll for up to 3 minutes instead of a fixed sleep so we don't false-fail.
+      - name: Wait for the Hetzner origin and public rewrite
+        # The origin symlink swap is atomic; the public edge can take a short
+        # interval to revalidate. Both paths must answer before smoke testing.
         run: |
+          set -euo pipefail
           for i in $(seq 1 18); do
-            STATUS=$(curl -sI -o /dev/null -w "%{http_code}" https://smarter.poker/hub/club-arena 2>/dev/null || echo "000")
-            if [ "$STATUS" = "200" ]; then
-              echo "CDN ready after ${i}×10s ($((i * 10))s total, HTTP $STATUS)"
-              break
+            ORIGIN_STATUS=$(curl -sI -o /dev/null -w "%{http_code}" https://ca-static.smarter.poker/ 2>/dev/null || echo "000")
+            PUBLIC_STATUS=$(curl -sI -o /dev/null -w "%{http_code}" https://smarter.poker/hub/club-arena 2>/dev/null || echo "000")
+            if [ "$ORIGIN_STATUS" = "200" ] && [ "$PUBLIC_STATUS" = "200" ]; then
+              echo "Hetzner origin and public rewrite ready after ${i}×10s ($((i * 10))s total)"
+              exit 0
             fi
-            echo "  poll $i/18: HTTP $STATUS — waiting..."
+            echo "  poll $i/18: origin HTTP $ORIGIN_STATUS, public HTTP $PUBLIC_STATUS — waiting..."
             sleep 10
           done
+          echo "::error::Hetzner origin or public Club Arena rewrite did not become ready within 3 minutes."
+          exit 1
 
       - name: Smoke Test — smarter.poker
         run: |
@@ -1769,6 +1773,19 @@ jobs:
             echo "✅ HTTP $STATUS — smarter.poker/hub/club-arena is live" >> $GITHUB_STEP_SUMMARY
           else
             echo "❌ HTTP $STATUS — expected 200 after 3min poll" >> $GITHUB_STEP_SUMMARY
+            ERRORS=$((ERRORS + 1))
+          fi
+
+          # A 200 can still be a stale edge response. The direct Hetzner origin
+          # and the public rewrite must report the same immutable release SHA.
+          ORIGIN_SHA=$(curl -fsS -H 'Cache-Control: no-cache' "https://ca-static.smarter.poker/build-info.json?cb=$RANDOM" \
+            | sed -n 's/.*"ca_sha"[[:space:]]*:[[:space:]]*"\([a-f0-9]*\)".*/\1/p' || true)
+          PUBLIC_SHA=$(curl -fsS -H 'Cache-Control: no-cache' "https://smarter.poker/hub/club-arena/build-info.json?cb=$RANDOM" \
+            | sed -n 's/.*"ca_sha"[[:space:]]*:[[:space:]]*"\([a-f0-9]*\)".*/\1/p' || true)
+          if [ -n "$ORIGIN_SHA" ] && [ "$ORIGIN_SHA" = "$PUBLIC_SHA" ]; then
+            echo "✅ Hetzner origin and public rewrite serve ${ORIGIN_SHA:0:8}" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Release stamp mismatch: origin '${ORIGIN_SHA:-unreadable}', public '${PUBLIC_SHA:-unreadable}'" >> $GITHUB_STEP_SUMMARY
             ERRORS=$((ERRORS + 1))
           fi
 

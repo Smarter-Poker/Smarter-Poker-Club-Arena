@@ -33,25 +33,23 @@ Full mechanics in `.agent/SELF-PUBLISH-PROTOCOL.md`. Summary:
   (`git branch --set-upstream-to=origin/main main` if `git status -sb` shows a
   bare `## main`) -> `nohup bash scripts/git-safe-push.sh "msg" > /tmp/push-wh.log 2>&1 &`
   -> poll for DEPLOY_VERIFIED:true and SHA_MATCHED:true.
-- Club Arena: if origin moved and the tree holds another agent's uncommitted
-  files, merge in a THROWAWAY WORKTREE (never stash their files):
-  `git worktree add --detach /tmp/ca-merge origin/main; cd /tmp/ca-merge;
-git merge --no-edit main; ln -sfn ~/Documents/club-arena/node_modules node_modules;
-./node_modules/.bin/tsc --noEmit -p tsconfig.app.json; git push origin HEAD:main;`
-  then remove the worktree. Pushing CA main triggers: CI, Silent Revert Guard,
-  Publish Club Arena (publishes the bundle to ca-static.smarter.poker), Auto-Deploy Hetzner Engine
-  (server/ changes go LIVE on the game engine). Verify ALL of them:
+- Club Arena: work in an isolated branch/worktree, merge current `origin/main`
+  into that branch when main moves, run the required checks, and push the
+  branch with normal hooks. Never push directly to protected `main` and never
+  use a World Hub sync path. `agent-open-pr.yml` opens the pull request and
+  autopilot merges only after the required gates pass. A main merge triggers
+  Publish Club Arena (the bundle goes directly to the Hetzner static origin at
+  `ca-static.smarter.poker`) and separately stages server changes for the
+  sealed Hetzner engine cutover. Verify ALL of them:
   `gh run list --repo Smarter-Poker/Smarter-Poker-Club-Arena --limit 5`.
   A red run = not published. Fix forward the same session.
-- Vercel needs nothing manual (GitHub integration deploys on push). Verify
-  READY on the expected commit via the Vercel MCP, then content-check.
+- Vercel is not in either Club Arena release path. The World Hub only carries
+  the public rewrite to the already-published static origin.
 
 ## 3. CREDENTIALS — where things actually are (post-rotation, 2026-08-19)
 
-- `VERCEL_TOKEN`: valid tokens live in `Smarter-Poker-World-Hub/.env.local`
-  and `club-arena/.env` (sourced from the Vercel CLI session, verified against
-  the API). If one ever 401s again, the CLI session at `~/Library/Application
-Support/com.vercel.cli/auth.json` on the host is the source of truth.
+- `VERCEL_TOKEN` belongs to the separate World Hub deployment only. Club Arena
+  does not read or require a Vercel credential.
 - Supabase: NEW-format keys (`sb_secret_...`, `sb_publishable_...`) in
   `WH/.env.local` and `CA/.env`. Legacy JWT-format keys are REVOKED --
   placeholders marked `<REVOKED-2026-08-16-...>` are intentional, leave them.
@@ -61,9 +59,13 @@ Support/com.vercel.cli/auth.json` on the host is the source of truth.
   just use them from host_terminal. Do NOT copy tokens into new files, do NOT
   print token values into chat/logs, ever. `GH_PAT`/`AUTOFIX_GITHUB_TOKEN`/
   `NPM_TOKEN` placeholders marked `<ROTATED-2026-08-16>` are intentional.
-- Hetzner: SSH keys exist ONLY as GitHub Actions secrets (write-only). WH
-  workflows use `HETZNER_SSH_PRIVATE_KEY`; CA workflows use `HETZNER_SSH_KEY`.
-  Rotations must update BOTH names in BOTH repos' Settings -> Secrets.
+- Hetzner engine: the Club Arena repository owns
+  `HETZNER_SSH_PRIVATE_KEY`, `HETZNER_HOST`, and the pinned
+  `HETZNER_HOST_KEY`. There is no legacy key-name fallback and no World Hub
+  engine credential path.
+- Hetzner static origin: the Club Arena repository separately owns
+  `CA_ORIGIN_SSH_KEY`, `CA_ORIGIN_HOST`, and pinned `CA_ORIGIN_HOST_KEY`.
+  Their values live only in GitHub Actions secrets, never in `.env` or docs.
 - `.env.example` files contain intentional placeholders that 401. Never
   "fix" them with real values -- they are committed and public.
 
@@ -166,72 +168,24 @@ multitable-walk` (or `trainer-walkthrough`). Read e2e-live/README.md first —
   that looked exactly like an app bug; ClubHomePage now has a 15s watchdog
   that surfaces the Retry panel instead).
 
-## 9. WHEN GITHUB ACTIONS IS DOWN — publish it yourself
+## 9. WHEN GITHUB ACTIONS IS DEGRADED — keep one release authority
 
-2026-08-20: every workflow on every commit began failing in 2-5 seconds with
-`runner_name: ""` — jobs never got a runner (org billing / spending limit).
-Nothing had built or deployed for ~20 minutes and nobody noticed, because a
-red X next to a commit looks like a normal test failure.
+An infrastructure outage means a merged commit is not yet published; it does
+not authorize a workstation rsync, manual SSH cutover, World Hub sync, Vercel
+deploy, or second publisher. Diagnose runner-wide failures with `gh run view`
+and `gh run list`, then re-dispatch the owning Club Arena workflow as soon as
+the runner path is available.
 
-Tell the two apart before you debug your own code:
+For an engine SHA that is already staged, dispatch
+`auto-deploy-hetzner.yml` toward the current certified maintenance break with
+`force=false`; do not wait passively for another scheduled tick and never
+force a restart. For a frontend SHA, dispatch `publish-club-arena.yml`.
+Both paths retain their exact-SHA gates, pinned-host verification, atomic
+release mechanics, and audit trail.
 
-    gh run view <id> --json jobs   # runner_name empty + <5s duration = no runner
-    gh run list --limit 20         # EVERY workflow failing, including trivial
-                                   # ones like Silent Revert Guard => infra
-
-When it is infra, your commits are pushed but NOT published. Publish the Club
-Arena bundle yourself, straight to its origin (rewritten 2026-09-03 — there is
-no World Hub in this path any more):
-
-    cd ~/Documents/club-arena
-    git worktree add --detach /tmp/ca-pub origin/main
-    ln -s ~/Documents/club-arena/node_modules /tmp/ca-pub/node_modules
-    cd /tmp/ca-pub && npm run build
-
-    SHA=$(git -C /tmp/ca-pub rev-parse HEAD)
-    # build-info.json must name the sha you are publishing, or the watchdog
-    # will read production as behind main forever.
-    python3 - "$SHA" <<'JSON'
-    import json,sys,datetime
-    json.dump({"ca_sha":sys.argv[1],"built_at":datetime.datetime.utcnow().isoformat()+"Z","built_by":"manual"},
-              open('/tmp/ca-pub/dist/build-info.json','w'), indent=2)
-    JSON
-
-    ORIGIN=$(security find-generic-password -a smarter-poker -s estate-ci-ip -w)
-    rsync -az --delete -e "ssh -i ~/.ssh/hetzner_deploy" \
-      /tmp/ca-pub/dist/ "ci@$ORIGIN:/srv/club-arena/releases/$SHA/"
-    # additive, never --delete: a player mid-hand still asks for the previous
-    # hashed chunks (see deploy-paths.md, Tier 2).
-    rsync -az -e "ssh -i ~/.ssh/hetzner_deploy" /tmp/ca-pub/dist/assets/ "ci@$ORIGIN:/srv/club-arena/pool/assets/"
-    rsync -az -e "ssh -i ~/.ssh/hetzner_deploy" /tmp/ca-pub/dist/fonts/  "ci@$ORIGIN:/srv/club-arena/pool/fonts/"
-    ssh -i ~/.ssh/hetzner_deploy "ci@$ORIGIN" \
-      "cd /srv/club-arena && ln -sfn /srv/club-arena/releases/$SHA current.tmp && mv -Tf current.tmp current"
-
-    curl -s "https://smarter.poker/hub/club-arena/build-info.json?cb=$RANDOM" | grep "$SHA"
-
-The last line is the only proof that counts. A rollback is the same symlink
-swap against an older directory under `releases/`.
-
-CHECK WHAT YOU PUBLISH. The retired sync script refused a bundle that could
-not boot: it resolved the entry chunk out of index.html and confirmed the
-Supabase URL and anon key were baked into it. That check existed because the
-old one ("index.html exists") passed a config-less build to production on
-2026-08-20 and every visitor got a blank page (`Uncaught Error: supabaseUrl is
-required`). Doing this by hand, you are that check:
-
-    ENTRY=$(grep -oE '/assets/index-[^"]+\.js' /tmp/ca-pub/dist/index.html | head -1)
-    grep -q "supabase.co" "/tmp/ca-pub/dist${ENTRY}" && echo "config baked in: OK" || \
-      echo "REFUSE TO PUBLISH: no Supabase config in the entry chunk"
-
-Vercel deploys on git push and does NOT depend on GitHub Actions, so a WH push
-still ships. Verify content-level, never by SHA alone:
-
-    curl -s https://smarter.poker/hub/club-arena/build-info.json
-    # then grep the chunk the live index actually imports for your own string
-
-`vercel` failing with "token ... is not valid" on a machine that is logged in
-means a stale VERCEL_TOKEN in the process environment is shadowing auth.json.
-No .env edit fixes that. Use `bash scripts/vercel-safe.sh <cmd>`.
+After either recovery, verify the exact merged SHA from the direct Hetzner
+endpoint and its public route. A successful dispatch or workflow conclusion
+without matching live content is not a completed release.
 
 ## 10. ASSET AND SCHEMA-GRANT TRAPS (2026-08-20 sweep)
 

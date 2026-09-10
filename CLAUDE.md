@@ -75,14 +75,16 @@ Club Arena releases do not deploy through the World Hub repo. See section 1.1.
 
 ### 1.1 How your work reaches production (rewritten 2026-09-03 - the World Hub is no longer in the path)
 
-There is exactly ONE route from a commit to a player, and every step of it is
-automatic. Your job ends at step 2.
+There is exactly one route from a commit to a player, and every mutation step
+is owned by Club Arena automation. A branch push starts that route; only
+exact-SHA production proof completes it.
 
 1. **Work on a branch in your own worktree.** Any name is fine - `fix/<slug>`
    is the convention. Never commit on `main`; it is a protected mirror.
-2. **Push the branch** over SSH (`git push origin HEAD:refs/heads/<branch>`).
-   **That is the end of your job.** Do not open the pull request yourself, do
-   not merge, do not watch CI (10.8.3). Report the branch name and stop.
+2. **Push the branch** over SSH (`git push origin HEAD:refs/heads/<branch>`),
+   then follow its checks, merge, and owning Club Arena release workflows to a
+   terminal result. Fix red checks forward; do not report a branch push as a
+   release.
 3. `agent-open-pr.yml` opens the pull request within seconds of the push - on
    `create` AND on `push`, for any branch name.
 4. `agent-autopilot.yml` enables squash auto-merge. The required checks run on
@@ -104,9 +106,12 @@ automatic. Your job ends at step 2.
    stage-by-stage breakdown. Nothing is committed to the World Hub repo any
    more, and Vercel does not rebuild the World Hub for a Club Arena merge.
    Rollback is re-pointing the symlink; ten releases are kept.
-6. **Verify** by reading, never by assuming:
-   `curl -s https://smarter.poker/hub/club-arena/build-info.json` - `ca_sha`
-   must equal the squash commit on `main`. Nothing else counts as deployed.
+6. **Verify** by reading, never by assuming: both
+   `https://ca-static.smarter.poker/build-info.json` and
+   `https://smarter.poker/hub/club-arena/build-info.json` must report a
+   `ca_sha` equal to the squash commit on `main`. For `server/` changes,
+   the sealed `auto-deploy-hetzner.yml` run must complete and cache-busted
+   engine health must report that same SHA. Nothing else counts as deployed.
 
 **Why it used to go through the World Hub, and why it stopped (2026-09-03).**
 `smarter.poker/hub/club-arena` is a path on the World Hub's Vercel deployment,
@@ -248,11 +253,11 @@ in ci.yml and already run on pull_request.
 The token also needs `Administration: Read and write`; one that can push code
 cannot change protection rules. The script says which of the two is missing.
 
-### 1.2 Vercel Project
+### 1.2 World Hub Boundary (Not A Club Arena Publisher)
 
-- `hub-vanguard` (`prj_op66GkZyZcygXQKm76iyycfVFAQx`) -- THE REAL ONE. Aliased to `smarter.poker`.
-- `smarter-poker` (`prj_FNUaJmcjRnwCSh1JzblIUYuOXDGK`) -- DEAD DUPLICATE. Disconnected. Do not touch.
-- There are NO deploy hooks. The Vercel git integration auto-deploys on push to main.
+- World Hub carries the public rewrite and its separately owned operations API.
+- Club Arena frontend and engine releases never invoke a World Hub or Vercel
+  deployment, token, hook, or project.
 
 ### 1.2.5 HOW A PUSH LANDS NOW (changed 2026-08-21)
 
@@ -262,24 +267,16 @@ agent has to pick one:
 
 - **1.1 step 2 is what you do**: work on a branch in your own worktree and
   `git push origin HEAD:refs/heads/<branch>`. `agent-open-pr.yml` opens the
-  pull request, autopilot merges it. That is the whole job.
+  pull request and autopilot merges it after required checks. The release is
+  complete only after the owning Hetzner workflow and exact live SHA are
+  verified.
 - **This section is about landing on `main` directly**, which the ruleset no
   longer permits from any client.
 
-The command:
-
-    bash scripts/git-safe-push.sh "feat(ca): what changed"
-
-What it does depends on where you are, and this used to be written as if it had
-one behaviour. On a FEATURE BRANCH it simply pushes, hook included - identical
-to 1.1 step 2, and it does NOT open a pull request. Only when you are on `main`
-does it route through `scripts/ci/pr-push.mjs`, which opens the pull request and
-waits, because main is protected by a ruleset and a direct push is refused.
-
-It does not use `gh` for any of that, and it must not: **`gh` is not installed
-on this Mac** (11.0 has said so correctly all along, while AGENT-PLAYBOOK.md
-claimed the opposite until 2026-09-06). It reads `GITHUB_TOKEN` from
-`~/Documents/club-arena/.env` and talks to the REST API directly.
+The former shared-clone `git-safe-push.sh` / `pr-push.mjs` path is not a
+release authority and must not be used to bypass isolated-worktree rules,
+normal hooks, or branch protection. No deployment credential should be read
+from a World Hub file or embedded in a Git remote.
 
 VERIFIED AGAINST THE LIVE API 2026-08-28, because two other places in this repo
 say the opposite and they are the stale ones. Ruleset `main protection`
@@ -348,9 +345,10 @@ WHY, because the old path caused three separate incidents in one day:
 A pull request cannot do any of those. The branch push still runs the hook, so
 a failing test stops you at your own machine rather than stopping everyone.
 
-If it refuses to land, NOTHING was force-pushed and nothing was lost. Read the
-output: a hook failure is yours to fix, a `dirty` state means a real conflict
-with main, and a timeout leaves the PR open for you to merge by hand.
+If it refuses to land, nothing was force-pushed and nothing was lost. Read the
+output: a hook failure is yours to fix and a `dirty` state means a real
+conflict with main. Merge current `origin/main` into the feature branch,
+resolve it there, rerun the gates, and push the branch again.
 
 ### 1.3 Never Do
 
@@ -378,18 +376,20 @@ with main, and a timeout leaves the PR open for you to merge by hand.
 
 ### 1.4 Claiming Success
 
-You may ONLY say a change is deployed after `git-safe-push.sh` exits 0.
+You may only say a change is deployed after the required checks and merge are
+green, the owning Club Arena Hetzner workflow is terminal-success, and the
+exact merged SHA is independently visible on the corresponding live endpoint.
 Never say "should be live in a few minutes" or "deploy triggered."
 
 ---
 
 ## 2. INFRASTRUCTURE
 
-| Service  | Purpose                          | Location                                        |
-| -------- | -------------------------------- | ----------------------------------------------- |
-| Vercel   | Frontend hosting (smarter.poker) | World Hub repo -> auto-deploys via hub-vanguard |
-| Hetzner  | Poker engine server (Node.js)    | `server/` directory, deployed via SSH + PM2     |
-| Supabase | Database + Auth + Realtime       | `kuklfnapbkmacvwxktbh.supabase.co`              |
+| Service   | Purpose                                     | Location / authority                                                        |
+| --------- | ------------------------------------------- | --------------------------------------------------------------------------- |
+| Hetzner   | Club Arena frontend origin and poker engine | Club Arena workflows `publish-club-arena.yml` and `auto-deploy-hetzner.yml` |
+| World Hub | Public rewrite and separate operations API  | World Hub's own gated release; never a Club Arena publisher                 |
+| Supabase  | Database + Auth + Realtime                  | Club Arena's configured Supabase project                                    |
 
 ### Hetzner VPS (Poker Engine Server)
 
@@ -577,7 +577,7 @@ transaction requirement from the production DDL policy in section 2.
 
 8. NEVER PUSH A RED TEST (Dan 2026-08-21, binding). `npx vitest run tests/` in
    `publish-club-arena.yml` is what PUBLISHES the bundle. A failing test does
-   not fail a report - it stops the World Hub sync for every agent and every
+   not fail a report - it stops the Hetzner-origin publish for every agent and every
    deploy, until a human notices. On 2026-08-21 that happened four times in one
    day, and every one was a test pushed alongside the feature it was meant to
    guard:
@@ -1724,8 +1724,8 @@ Still allowed, because neither can strand:
 - a **fast-forward** (nothing to replay) — the normal way to sync;
 - any **feature branch** — rebase those freely.
 
-`scripts/git-safe-push.sh` exports `CA_GIT_GUARD_ALLOW=1` and is unaffected: it
-wraps its own rebase in an abort-and-force-push fallback.
+No helper is permitted to bypass this guard or wrap a rebase in a force-push
+fallback.
 
 ### If a clone is already stranded
 
@@ -1741,10 +1741,9 @@ is deleted** — the backup branch and the stash are both printed at the end.
 ### The rule
 
 1. The Mac's `main` is a **mirror of origin**, not a place work originates.
-   Ship through `scripts/git-safe-push.sh` or the GitHub MCP.
+   Ship from an isolated feature branch through its normal hooks.
 2. To sync it, **fetch + fast-forward** (or `git-unstick.sh`). Never rebase it.
-3. Deliberate override, when you actually know why:
-   `CA_GIT_GUARD_ALLOW=1 git pull --rebase origin main`.
+3. Do not create a bypass variable for a rebase or force-push.
 4. Never run git WRITE commands against the mounted worktree from a sandbox —
    that mount cannot `unlink`, so a `.git/index.lock` it creates is stranded and
    then blocks git on the Mac host too (verified 2026-08-21: write and chmod

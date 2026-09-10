@@ -7,8 +7,9 @@
  *   Never run `vercel deploy` or `vercel --prod` in the Club Arena directory
  *   Never push to or test on `club-arena.vercel.app`
  *
- * Club Arena publishes exactly one way: push to main, publish-club-arena.yml
- * builds the bundle and syncs it into the World Hub, Vercel deploys World Hub.
+ * Club Arena publishes exactly one way: a gated merge to main causes
+ * publish-club-arena.yml to build the bundle and rsync it directly to Club
+ * Arena's Hetzner static origin.
  * `vercel.json` here even carries `git.deploymentEnabled: false`.
  *
  * And yet, until 2026-08-22, two things in this repo did exactly what the rule
@@ -83,8 +84,8 @@ if (findings.length === 0) {
 console.error('\nSOMETHING IN THIS REPO CAN DEPLOY TO VERCEL, AND NOTHING HERE MAY:\n');
 for (const [file, why, line] of findings) console.error(`  ${file}\n    ${why}\n    ${line}`);
 console.error(
-  '\nClub Arena publishes ONE way: push to main -> publish-club-arena.yml ->' +
-    '\nWorld Hub -> Vercel. A direct Vercel deploy from here produces' +
+  '\nClub Arena publishes ONE way: push a branch -> gated merge ->' +
+    '\npublish-club-arena.yml -> Hetzner origin. A direct Vercel deploy here produces' +
     '\nclub-arena.vercel.app, which CLAUDE.md 1.3 says never to push to or test' +
     '\non, and leaves a red Production badge on a repo that is not supposed to' +
     '\ndeploy at all — which teaches everyone that red here means nothing.' +

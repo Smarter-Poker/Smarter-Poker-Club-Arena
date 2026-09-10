@@ -13,7 +13,7 @@ You do NOT need to write cron jobs, polling loops, or manual recovery steps to p
 ## 2. GitHub Protection
 
 - **Stuck PRs**: `.github/workflows/agent-autopilot.yml` runs every 20 minutes to find PRs that are stuck (red checks, merge conflicts) and opens an issue.
-- **Vercel Publishing**: `.github/workflows/publish-watchdog.yml` checks `https://smarter.poker/hub/club-arena/build-info.json` every 15 minutes. If a commit merges but fails to deploy, the watchdog automatically retries and/or opens a high-priority issue.
+- **Hetzner Origin Publishing**: `.github/workflows/publish-watchdog.yml` checks `https://smarter.poker/hub/club-arena/build-info.json` every 15 minutes. If a Club Arena commit merges but the Hetzner origin does not publish it, the watchdog automatically retries `publish-club-arena.yml` and/or opens a high-priority issue.
 
 ## Your Responsibility
 

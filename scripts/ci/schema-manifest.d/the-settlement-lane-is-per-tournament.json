@@ -1,0 +1,4 @@
+{
+  "_owner": "fix/settlement-lane-per-tournament. Migrations 20260910173147_the_settlement_lane_is_per_tournament_for_rolling_authorities and 20260910174349_the_bounty_sweep_takes_one_tournament_lane_per_call replace existing functions only; fn_ca_release_unseatable_registrant_at_launch already exists in production (created earlier on 2026-09-10) but is newer than the nightly snapshot.",
+  "functions": ["fn_ca_release_unseatable_registrant_at_launch"]
+}

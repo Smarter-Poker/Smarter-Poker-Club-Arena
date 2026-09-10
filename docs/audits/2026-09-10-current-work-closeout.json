@@ -1,0 +1,1053 @@
+{
+  "archives": [
+    {
+      "ref": "backup/resume-poker-sep10/tournament-guards",
+      "sha": "24217c5024a4c031aec51dbddba531cd3c1b7842",
+      "status": "Three reviewed production guards applied and independently verified; historical archive remains preserved",
+      "verification": "14 cancellation,11 obligation,7 elimination native groups; old obligation fails expected invariant; old elimination/current constraint baseline6 passes",
+      "remote_reference_verified": true
+    },
+    {
+      "ref": "backup/resume-poker-sep10/commission-capture",
+      "sha": "27fdaf5d83c4368251bc79f4bb932b423017c9ef",
+      "status": "Dormant; legacy exclusion/full outer cascade/common finality and coordinated browser release required",
+      "verification": "62 bank,15 accepted-owner,17 getter native groups",
+      "remote_reference_verified": true
+    },
+    {
+      "ref": "backup/resume-poker-sep10/source-round2",
+      "sha": "44e30d6a5a976add09fbeb36a542e2158d31892e",
+      "status": "Dormant; legacy Round1/Round2/claim exclusion, full cascade/finality and production lock graph required",
+      "verification": "28 PG17 groups and current source hashes",
+      "remote_reference_verified": true
+    },
+    {
+      "ref": "backup/resume-poker-sep10/clock-completion",
+      "sha": "831f408db7eb593abe5a0d108177c382adfb19e2",
+      "status": "Dormant; public lifecycle owners and full manager/client/rolling composition remain open",
+      "verification": "82 maintenance native cases plus4 source refusals; earlier component proofs preserved",
+      "remote_reference_verified": true
+    },
+    {
+      "ref": "backup/resume-poker-sep10/satellite-completion",
+      "sha": "65c34eebb8197ac4884bc29788f1d52ffdad7ecc",
+      "status": "Dormant; externally owned Stage-B functions and legacy-client adoption required",
+      "verification": "Exact-K core/UI/lease/rolling proofs archived",
+      "remote_reference_verified": true
+    },
+    {
+      "ref": "backup/resume-poker-sep10/satellite-funded-helper",
+      "sha": "473bd2d41b88ad352819c77031ddc4dad209917b",
+      "status": "Independent funded-seat correction applied and independently verified; does not activate exact-K Stage-B",
+      "verification": "24 native checks,5 observed lock waits,13 committed input hashes",
+      "remote_reference_verified": true
+    },
+    {
+      "ref": "backup/resume-poker-sep10/rakeback-browser",
+      "sha": "7a9c887a8277a759dc05312f0525472212a99a47",
+      "status": "Dormant; actual V2 backend, legacy exclusions and canonical capability/finality attestation required",
+      "verification": "123 contract/rendered/adjacent checks, TypeScript, ESLint, full build",
+      "remote_reference_verified": true
+    },
+    {
+      "ref": "backup/resume-poker-sep10/payer-completion",
+      "sha": "7adbfb02544b68ccc1754c51f11d2f61fa406180",
+      "verification": "11 Round1,15 player,25 additional API native groups; all input/response/historical hashes verified",
+      "status": "Dormant; legacy exclusions, actual outer Union dispatch, common closing witness and coordinated cutover required",
+      "remote_reference_verified": true
+    },
+    {
+      "ref": "backup/resume-poker-sep10/root-original-history",
+      "sha": "251e1c5b07fc0a4b1f3e4c6fb6589562589e4839",
+      "status": "Archive only; runtime and default CI preserve historical published parent780398afa772b69f491586c9092016d1aca8dff6",
+      "verification": "Normal named-origin push exited0; exact independent GitHub ref readback; original14commits and72file hashes retained; four superseded SQL files byte-preserved outside active migrations",
+      "original_head": "d6b451b363916f7c4396dada7dd7f554cbc1879e",
+      "published_parent": "780398afa772b69f491586c9092016d1aca8dff6",
+      "remote_reference_verified": true
+    }
+  ],
+  "database_release": {
+    "applied": true,
+    "candidates": [
+      {
+        "file": "supabase/migrations/20260910035015_started_tournaments_resume_or_settle_instead_of_cancelling.sql",
+        "sha256": "85e02d3f2350b4c1c7229ab2b58e789b3b8651869c0c3834a3318d7547b10bf6",
+        "source_commit": "24217c5024a4c031aec51dbddba531cd3c1b7842",
+        "review_url": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/blob/24217c5024a4c031aec51dbddba531cd3c1b7842/supabase/migrations/20260910035015_started_tournaments_resume_or_settle_instead_of_cancelling.sql",
+        "recorded_file": "supabase/migrations/20260910171843_started_tournaments_resume_or_settle_instead_of_cancelling.sql"
+      },
+      {
+        "file": "supabase/migrations/20260910040332_a_refused_finishing_place_creates_no_debt.sql",
+        "sha256": "69d77f9968d49008f7069fe63b618b802937338e439f631806f02dba0da1220d",
+        "source_commit": "24217c5024a4c031aec51dbddba531cd3c1b7842",
+        "review_url": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/blob/24217c5024a4c031aec51dbddba531cd3c1b7842/supabase/migrations/20260910040332_a_refused_finishing_place_creates_no_debt.sql",
+        "recorded_file": "supabase/migrations/20260910171857_a_refused_finishing_place_creates_no_debt.sql"
+      },
+      {
+        "file": "supabase/migrations/20260910051131_a_tournament_elimination_requires_a_finishing_rank.sql",
+        "sha256": "cba4981055d5dd9278d7a882e3b8f0d954cd8ffccb37b6426cf4964c32504b68",
+        "source_commit": "24217c5024a4c031aec51dbddba531cd3c1b7842",
+        "review_url": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/blob/24217c5024a4c031aec51dbddba531cd3c1b7842/supabase/migrations/20260910051131_a_tournament_elimination_requires_a_finishing_rank.sql",
+        "recorded_file": "supabase/migrations/20260910171911_a_tournament_elimination_requires_a_finishing_rank.sql"
+      },
+      {
+        "file": "supabase/migrations/20260910160106_satellite_seats_count_once_and_keep_the_funded_prize.sql",
+        "sha256": "9a00bc662f729d5a6db25c4f10a5ceeb45509b230e35f48252620fe9dcef3fc3",
+        "source_commit": "473bd2d41b88ad352819c77031ddc4dad209917b",
+        "review_url": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/blob/473bd2d41b88ad352819c77031ddc4dad209917b/supabase/migrations/20260910160106_satellite_seats_count_once_and_keep_the_funded_prize.sql",
+        "recorded_file": "supabase/migrations/20260910171924_satellite_seats_count_once_and_keep_the_funded_prize.sql"
+      }
+    ],
+    "project_id": "kuklfnapbkmacvwxktbh",
+    "project_name": "PokerIQ-Production",
+    "latest_installed_readback": [
+      {
+        "acl": "{postgres=X/postgres,service_role=X/postgres}",
+        "arguments": "p_tournament_id uuid, p_admin_id uuid",
+        "body_md5": "16ea7acbbf76613a0a1193dff18f1330",
+        "defaults": null,
+        "language": "plpgsql",
+        "observed_at": "2026-09-10T17:20:23.974419+00:00",
+        "owner": "postgres",
+        "proargmodes": null,
+        "proargnames": ["p_tournament_id", "p_admin_id"],
+        "proconfig": ["search_path=public, extensions, pg_temp", "statement_timeout=120s"],
+        "proisstrict": false,
+        "pronargdefaults": 0,
+        "proretset": false,
+        "prosecdef": true,
+        "provolatile": "v",
+        "result": "jsonb",
+        "signature": "atomic_cancel_tournament(uuid,uuid)"
+      },
+      {
+        "acl": "{postgres=X/postgres,service_role=X/postgres}",
+        "arguments": "p_satellite_id uuid, p_target_id uuid, p_user_id uuid, p_username text DEFAULT NULL::text, p_position integer DEFAULT NULL::integer",
+        "body_md5": "2c21c56c6a9d4a2f8ee79082bd4fef57",
+        "defaults": "NULL::text, NULL::integer",
+        "language": "plpgsql",
+        "observed_at": "2026-09-10T17:20:23.974461+00:00",
+        "owner": "postgres",
+        "proargmodes": null,
+        "proargnames": ["p_satellite_id", "p_target_id", "p_user_id", "p_username", "p_position"],
+        "proconfig": ["search_path=public"],
+        "proisstrict": false,
+        "pronargdefaults": 2,
+        "proretset": false,
+        "prosecdef": true,
+        "provolatile": "v",
+        "result": "jsonb",
+        "signature": "fn_award_satellite_seat(uuid,uuid,uuid,text,integer)"
+      },
+      {
+        "acl": "{postgres=X/postgres,service_role=X/postgres}",
+        "arguments": "",
+        "body_md5": "3e628d6a57a93eeb61d494ee33f989a3",
+        "defaults": null,
+        "language": "plpgsql",
+        "observed_at": "2026-09-10T17:20:23.974482+00:00",
+        "owner": "postgres",
+        "proargmodes": null,
+        "proargnames": null,
+        "proconfig": ["search_path=public"],
+        "proisstrict": false,
+        "pronargdefaults": 0,
+        "proretset": false,
+        "prosecdef": true,
+        "provolatile": "v",
+        "result": "trigger",
+        "signature": "fn_ca_escrow_on_rake_record()"
+      },
+      {
+        "acl": "{postgres=X/postgres,service_role=X/postgres}",
+        "arguments": "",
+        "body_md5": "343015440ea5c84ee4ca7ae583c73d30",
+        "defaults": null,
+        "language": "plpgsql",
+        "observed_at": "2026-09-10T17:20:23.974497+00:00",
+        "owner": "postgres",
+        "proargmodes": null,
+        "proargnames": null,
+        "proconfig": ["search_path=public, pg_temp"],
+        "proisstrict": false,
+        "pronargdefaults": 0,
+        "proretset": false,
+        "prosecdef": false,
+        "provolatile": "v",
+        "result": "void",
+        "signature": "fn_ca_lock_settlement_lane_global()"
+      },
+      {
+        "acl": "{postgres=X/postgres,service_role=X/postgres}",
+        "arguments": "p_tournament_id uuid",
+        "body_md5": "56663389f8348d2ab35a54460c0b7632",
+        "defaults": null,
+        "language": "sql",
+        "observed_at": "2026-09-10T17:20:23.974514+00:00",
+        "owner": "postgres",
+        "proargmodes": ["i", "t", "t", "t", "t", "t", "t", "t", "t", "t", "t", "t", "t"],
+        "proargnames": [
+          "p_tournament_id",
+          "prize_in",
+          "bounty_in",
+          "fee_in",
+          "overlay_in",
+          "satellite_in",
+          "prize_out",
+          "bounty_out",
+          "fee_out",
+          "refund_out",
+          "prize_balance",
+          "bounty_balance",
+          "fee_balance"
+        ],
+        "proconfig": ["search_path=public"],
+        "proisstrict": false,
+        "pronargdefaults": 0,
+        "proretset": true,
+        "prosecdef": true,
+        "provolatile": "s",
+        "result": "TABLE(prize_in numeric, bounty_in numeric, fee_in numeric, overlay_in numeric, satellite_in numeric, prize_out numeric, bounty_out numeric, fee_out numeric, refund_out numeric, prize_balance numeric, bounty_balance numeric, fee_balance numeric)",
+        "signature": "fn_ca_tournament_escrow(uuid)"
+      },
+      {
+        "acl": "{postgres=X/postgres,service_role=X/postgres}",
+        "arguments": "p_tournament_id uuid, p_user_id uuid, p_position integer, p_prize numeric, p_bubble_refund numeric DEFAULT 0",
+        "body_md5": "b4937067d9bf337e1466095b9e1d5424",
+        "defaults": "0",
+        "language": "plpgsql",
+        "observed_at": "2026-09-10T17:20:23.974539+00:00",
+        "owner": "postgres",
+        "proargmodes": null,
+        "proargnames": ["p_tournament_id", "p_user_id", "p_position", "p_prize", "p_bubble_refund"],
+        "proconfig": ["search_path=public, pg_temp"],
+        "proisstrict": false,
+        "pronargdefaults": 1,
+        "proretset": false,
+        "prosecdef": true,
+        "provolatile": "v",
+        "result": "jsonb",
+        "signature": "fn_eliminate_tournament_player_atomic(uuid,uuid,integer,numeric,numeric)"
+      },
+      {
+        "acl": "{postgres=X/postgres}",
+        "arguments": "p_tournament_id uuid, p_kind text, p_place integer, p_user_id uuid, p_amount numeric, p_source text, p_description text DEFAULT NULL::text, p_adjustment_id uuid DEFAULT NULL::uuid",
+        "body_md5": "ebabbaf0456d80335aaa2e04471d0ab6",
+        "defaults": "NULL::text, NULL::uuid",
+        "language": "plpgsql",
+        "observed_at": "2026-09-10T17:20:23.974557+00:00",
+        "owner": "postgres",
+        "proargmodes": null,
+        "proargnames": [
+          "p_tournament_id",
+          "p_kind",
+          "p_place",
+          "p_user_id",
+          "p_amount",
+          "p_source",
+          "p_description",
+          "p_adjustment_id"
+        ],
+        "proconfig": ["search_path=public"],
+        "proisstrict": false,
+        "pronargdefaults": 2,
+        "proretset": false,
+        "prosecdef": true,
+        "provolatile": "v",
+        "result": "jsonb",
+        "signature": "fn_settle_tournament_obligation_before_atomic_batch_gate(uuid,text,integer,uuid,numeric,text,text,uuid)"
+      },
+      {
+        "acl": "{postgres=X/postgres,service_role=X/postgres}",
+        "arguments": "p_tournament_id uuid, p_kind text, p_place integer, p_user_id uuid, p_amount numeric, p_source text, p_description text DEFAULT NULL::text, p_adjustment_id uuid DEFAULT NULL::uuid",
+        "body_md5": "915f3ebd5c4a2efb97ad3a354dfeb365",
+        "defaults": "NULL::text, NULL::uuid",
+        "language": "plpgsql",
+        "observed_at": "2026-09-10T17:20:23.974577+00:00",
+        "owner": "postgres",
+        "proargmodes": null,
+        "proargnames": [
+          "p_tournament_id",
+          "p_kind",
+          "p_place",
+          "p_user_id",
+          "p_amount",
+          "p_source",
+          "p_description",
+          "p_adjustment_id"
+        ],
+        "proconfig": ["search_path=public, pg_temp"],
+        "proisstrict": false,
+        "pronargdefaults": 2,
+        "proretset": false,
+        "prosecdef": true,
+        "provolatile": "v",
+        "result": "jsonb",
+        "signature": "fn_settle_tournament_obligation(uuid,text,integer,uuid,numeric,text,text,uuid)"
+      },
+      {
+        "acl": "{postgres=X/postgres,service_role=X/postgres}",
+        "arguments": "",
+        "body_md5": "ecb120c2c6a4ecee6c2e04d4c9b5ebc7",
+        "defaults": null,
+        "language": "plpgsql",
+        "observed_at": "2026-09-10T17:20:23.974596+00:00",
+        "owner": "postgres",
+        "proargmodes": null,
+        "proargnames": null,
+        "proconfig": ["search_path=public"],
+        "proisstrict": false,
+        "pronargdefaults": 0,
+        "proretset": false,
+        "prosecdef": true,
+        "provolatile": "v",
+        "result": "trigger",
+        "signature": "fn_sync_tournament_current_players()"
+      },
+      {
+        "acl": "{postgres=X/postgres,service_role=X/postgres}",
+        "arguments": "",
+        "body_md5": "1d00219cefe6de725da5d33fe0b38002",
+        "defaults": null,
+        "language": "plpgsql",
+        "observed_at": "2026-09-10T17:20:23.974613+00:00",
+        "owner": "postgres",
+        "proargmodes": null,
+        "proargnames": null,
+        "proconfig": ["search_path=public, pg_temp"],
+        "proisstrict": false,
+        "pronargdefaults": 0,
+        "proretset": false,
+        "prosecdef": true,
+        "provolatile": "v",
+        "result": "trigger",
+        "signature": "fn_tournament_elimination_has_a_place()"
+      }
+    ],
+    "reviewed_scope": [
+      "Refuse cancelling a started or committed-award tournament after receipt replay",
+      "Refuse second finishing-place debt creation or increase, preserving existing unpaid debt",
+      "Return an early refusal for missing finishing rank; existing deferred constraint stays enabled",
+      "Count funded satellite target seats once and keep exact prize/bounty/fee components; preserve ticket-redemption inflow"
+    ],
+    "historical_blocker": "Automatic approval review rejected persistent function/ACL migration; existing repository push authorization was not accepted as explicit authorization for this production database target.",
+    "authorization": {
+      "user_message": "YES APPROVED... FINISH THIS UP NOW",
+      "approved_request": "Apply the exact four migrations in c1447e69ed39f3be093972bf722960b29a02ad79/docs/audits/2026-09-10-current-work-closeout.md to PokerIQ-Production kuklfnapbkmacvwxktbh",
+      "prior_automatic_review_rejection_resolved_by_explicit_target_approval": true
+    },
+    "verified": true,
+    "deployment_evidence": "docs/audits/2026-09-10-approved-database-deployment.json",
+    "previous_installed_readback": [
+      {
+        "observed_at": "2026-09-10 16:39:03.389404+00",
+        "signature": "atomic_cancel_tournament(uuid,uuid)",
+        "body_md5": "8c2641c634de919487c7bbb7eb8c5c22",
+        "owner": "postgres",
+        "acl": "{postgres=X/postgres,service_role=X/postgres}",
+        "proconfig": ["search_path=public, extensions, pg_temp", "statement_timeout=120s"]
+      },
+      {
+        "observed_at": "2026-09-10 16:39:03.389411+00",
+        "signature": "fn_award_satellite_seat(uuid,uuid,uuid,text,integer)",
+        "body_md5": "cc53a9560c7b211c9c052a186dabc96c",
+        "owner": "postgres",
+        "acl": "{postgres=X/postgres,service_role=X/postgres}",
+        "proconfig": ["search_path=public"]
+      },
+      {
+        "observed_at": "2026-09-10 16:39:03.389412+00",
+        "signature": "fn_ca_escrow_on_rake_record()",
+        "body_md5": "233661d2164a417c2a76c8e0cbfbe9cc",
+        "owner": "postgres",
+        "acl": "{postgres=X/postgres,service_role=X/postgres}",
+        "proconfig": ["search_path=public"]
+      },
+      {
+        "observed_at": "2026-09-10 16:39:03.389413+00",
+        "signature": "fn_ca_tournament_escrow(uuid)",
+        "body_md5": "52c3b25be3904e86f1a8558ce542ec61",
+        "owner": "postgres",
+        "acl": "{postgres=X/postgres,service_role=X/postgres}",
+        "proconfig": ["search_path=public"]
+      },
+      {
+        "observed_at": "2026-09-10 16:39:03.389414+00",
+        "signature": "fn_eliminate_tournament_player_atomic(uuid,uuid,integer,numeric,numeric)",
+        "body_md5": "04a2e93dd8afe35fbc0cdd2829daf0f8",
+        "owner": "postgres",
+        "acl": "{postgres=X/postgres,service_role=X/postgres}",
+        "proconfig": ["search_path=public, pg_temp"]
+      },
+      {
+        "observed_at": "2026-09-10 16:39:03.389415+00",
+        "signature": "fn_settle_tournament_obligation_before_atomic_batch_gate(uuid,text,integer,uuid,numeric,text,text,uuid)",
+        "body_md5": "68f74f87580ea2c2a1cacbe30f9b4289",
+        "owner": "postgres",
+        "acl": "{postgres=X/postgres}",
+        "proconfig": ["search_path=public"]
+      }
+    ],
+    "ledger": [
+      {
+        "name": "started_tournaments_resume_or_settle_instead_of_cancelling",
+        "sql_bytes": 4722,
+        "sql_sha256": "85e02d3f2350b4c1c7229ab2b58e789b3b8651869c0c3834a3318d7547b10bf6",
+        "statement_count": 1,
+        "version": "20260910171843"
+      },
+      {
+        "name": "a_refused_finishing_place_creates_no_debt",
+        "sql_bytes": 24703,
+        "sql_sha256": "69d77f9968d49008f7069fe63b618b802937338e439f631806f02dba0da1220d",
+        "statement_count": 1,
+        "version": "20260910171857"
+      },
+      {
+        "name": "a_tournament_elimination_requires_a_finishing_rank",
+        "sql_bytes": 10914,
+        "sql_sha256": "cba4981055d5dd9278d7a882e3b8f0d954cd8ffccb37b6426cf4964c32504b68",
+        "statement_count": 1,
+        "version": "20260910171911"
+      },
+      {
+        "name": "satellite_seats_count_once_and_keep_the_funded_prize",
+        "sql_bytes": 31628,
+        "sql_sha256": "9a00bc662f729d5a6db25c4f10a5ceeb45509b230e35f48252620fe9dcef3fc3",
+        "statement_count": 1,
+        "version": "20260910171924"
+      }
+    ],
+    "verification_assertions": {
+      "all_six_changed_bodies_match": true,
+      "all_ten_function_metadata_unchanged": true,
+      "four_dependency_bodies_unchanged": true,
+      "four_ledger_sql_sha256_match": true,
+      "two_triggers_unchanged": true
+    }
+  },
+  "multi_table": {
+    "pr": 4188,
+    "head": "25154ea0ae59f937fbb54f828fcffb7c2a2cd112",
+    "merge": "d88d6167811f59ce4123c1a8d47008d65044e354",
+    "merged_at": "2026-09-10T16:37:19Z",
+    "ci_run": 34501761103,
+    "ci_attempt": 2,
+    "required_ci": "success",
+    "first_attempt": {
+      "failure": "browserContext.newPage timed out creating page before test body; no assertion reached",
+      "passed_css_checks": 150,
+      "table_studio_failed": 1,
+      "table_studio_passed": 12,
+      "typecheck_and_native53": "success"
+    },
+    "unchanged_retry": {
+      "css_checks": 150,
+      "table_studio": 13,
+      "mobile_decision": 3,
+      "passed": true
+    },
+    "publisher": 34503230506,
+    "web_build_and_all_client_shards_and_origin": "success",
+    "native_ota": "skipped",
+    "sentry_upload": "HTTP403;0 distributed source maps",
+    "public_readback": {
+      "observed_at": "2026-09-10T16:41:39.806558+00:00",
+      "urls": [
+        {
+          "url": "https://ca-static.smarter.poker/build-info.json",
+          "status": 200,
+          "body": {
+            "ca_sha": "d88d6167811f59ce4123c1a8d47008d65044e354",
+            "built_at": "2026-09-10T16:39:57Z",
+            "built_by": "publish-club-arena.yml",
+            "run_id": "34503230506"
+          }
+        },
+        {
+          "url": "https://smarter.poker/hub/club-arena/build-info.json",
+          "status": 200,
+          "body": {
+            "ca_sha": "d88d6167811f59ce4123c1a8d47008d65044e354",
+            "built_at": "2026-09-10T16:39:57Z",
+            "built_by": "publish-club-arena.yml",
+            "run_id": "34503230506"
+          }
+        }
+      ]
+    }
+  },
+  "pending_archive_readbacks": [],
+  "programme": {
+    "complete": false,
+    "fully_verified": ["T12", "K02", "K11", "S09"],
+    "open_controls": 54,
+    "original_controls": 58,
+    "phase": 3,
+    "total_phases": 12
+  },
+  "published_prior": [
+    {
+      "ci": 34480594248,
+      "engine_adopted": "0a76896196c1bea84de06d14ff998b83ab921117",
+      "merge": "d9dbf1388617ebfad71b00040aac22819c4103af",
+      "pr": 4105
+    },
+    {
+      "ci": 34484574334,
+      "merge": "bb7a6ba30639fdfc5ae81df52d4e9f0b7c6afa9a",
+      "pr": 4163,
+      "publisher": 34485513194
+    },
+    {
+      "ci": 34488005796,
+      "merge": "cb11503fd0d6bf45433ef0a364361652b8ce0170",
+      "pr": 4169,
+      "publisher": 34489048445,
+      "spin_migration_applied": "20260910141101"
+    },
+    {
+      "ci": 34493160539,
+      "merge": "7075d2ee43b027ba5882eca58feb566c7e6e71a8",
+      "pr": 4178,
+      "verified_successor_publisher": 34495448646,
+      "verified_successor_sha": "59a0344989a5e9ca23e1a4d50829689c0cc0f704"
+    }
+  ],
+  "remaining_external_limits": [
+    "Sentry release/source-map upload HTTP403",
+    "Native Capgo OTA skipped",
+    "Externally owned satellite Stage-B activation and legacy-client adoption"
+  ],
+  "repository": "Smarter-Poker/Smarter-Poker-Club-Arena",
+  "retained_local_fixture": {
+    "bytes": 84465331,
+    "database": "clock_maintenance_composition_sep10",
+    "reason": "Automatic approval review rejected cleanup because ownership/contents were not sufficiently verified; fixture intentionally retained without retries"
+  },
+  "scope": "Close existing RESUME POKER AUDIT work and preserve all owned source/proofs; no new audit phase",
+  "author_identity_review": {
+    "historical": "Two payer commit attempts correctly refused the unexpected Provenance Test identity; writing process remains unattributed",
+    "current": "Independent reviews found current and inspected historical provenance helpers isolated, no vulnerable source to backport, and both repo-local identities correct",
+    "action": "No source or configuration change; no further tests/pushes needed for this bounded review"
+  },
+  "root_branch_inventory": {
+    "observed_at": "2026-09-10T15:18:02.568514+00:00",
+    "repository": "Smarter-Poker/Smarter-Poker-Club-Arena",
+    "root_branches": [
+      {
+        "branch": "agent/codex-poker-audit-sep09/docs/phase-one-verified-closeout",
+        "sha": "537c254c5d033b6f3439b72bab6722bfd843d52c",
+        "tip_subject": "docs(audit): close verified poker room phase one gates",
+        "pull_requests": [
+          {
+            "number": 3907,
+            "state": "closed",
+            "merged_at": "2026-09-09T00:53:27Z",
+            "merge_commit_sha": "ce74e5bb04325d2aa28bffecbd24b2c8ec165927",
+            "html_url": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/3907"
+          }
+        ],
+        "contained_by_audit_source": false
+      },
+      {
+        "branch": "agent/codex-poker-audit-sep09/docs/phase-two-closeout",
+        "sha": "b52f7843ded18a2d8b9d82eb6200e2d866922583",
+        "tip_subject": "docs(audit): record authorized phase two publication",
+        "pull_requests": [
+          {
+            "number": 3941,
+            "state": "closed",
+            "merged_at": "2026-09-09T06:20:49Z",
+            "merge_commit_sha": "5c0e2de8acf1cdf01c17b7df4e991cb1abd45582",
+            "html_url": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/3941"
+          }
+        ],
+        "contained_by_audit_source": false
+      },
+      {
+        "branch": "agent/codex-poker-audit-sep09/docs/phase-two-verified-release",
+        "sha": "8e5511f727444cd9fd1ab67f378bbb61722732a8",
+        "tip_subject": "Merge remote-tracking branch 'origin/main' into agent/codex-poker-audit-sep09/docs/phase-two-verified-release",
+        "pull_requests": [
+          {
+            "number": 3952,
+            "state": "closed",
+            "merged_at": "2026-09-09T07:07:58Z",
+            "merge_commit_sha": "ab0af5766ef225e0e0b1b2633e1af7cc9a9d8bb7",
+            "html_url": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/3952"
+          }
+        ],
+        "contained_by_audit_source": false
+      },
+      {
+        "branch": "agent/codex-poker-audit-sep09/fix/booked-spin-continuation",
+        "sha": "60b3698a67d631aab44be565cf168d212d56a735",
+        "tip_subject": "test(tournaments): verify installed Spin helper and deployed rule parity",
+        "pull_requests": [
+          {
+            "number": 4169,
+            "state": "closed",
+            "merged_at": "2026-09-10T14:25:47Z",
+            "merge_commit_sha": "cb11503fd0d6bf45433ef0a364361652b8ce0170",
+            "html_url": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/4169"
+          }
+        ],
+        "contained_by_audit_source": false
+      },
+      {
+        "branch": "agent/codex-poker-audit-sep09/fix/pause-before-prepared-hand",
+        "sha": "d6b451b363916f7c4396dada7dd7f554cbc1879e",
+        "tip_subject": "test(tournaments): expose the focused elimination rank rehearsal",
+        "pull_requests": [],
+        "contained_by_audit_source": false
+      },
+      {
+        "branch": "agent/codex-poker-audit-sep09/fix/phase-three-atomic-spin-funding",
+        "sha": "1346c9fae4ca9c5b2b5ec63bc13a89be74475cc3",
+        "tip_subject": "test(tournament): verify each lease-fenced launch call",
+        "pull_requests": [
+          {
+            "number": 4000,
+            "state": "closed",
+            "merged_at": "2026-09-09T19:27:19Z",
+            "merge_commit_sha": "61796f8f4c0c5f10ffbc0ec253575ff8a970af49",
+            "html_url": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/4000"
+          }
+        ],
+        "contained_by_audit_source": false
+      },
+      {
+        "branch": "agent/codex-poker-audit-sep09/fix/phase-three-break-clock",
+        "sha": "52cb0b837c3b4e071ae1a13b38a064fdf7a471f9",
+        "tip_subject": "test(ci): select the reloaded database deadline wrapper",
+        "pull_requests": [
+          {
+            "number": 4016,
+            "state": "closed",
+            "merged_at": "2026-09-09T20:44:41Z",
+            "merge_commit_sha": "b30e1b8513bf51937276c8d57b44c03ff038cb51",
+            "html_url": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/4016"
+          }
+        ],
+        "contained_by_audit_source": false
+      },
+      {
+        "branch": "agent/codex-poker-audit-sep09/fix/phase-three-break-ownership",
+        "sha": "243490c7ba7666b0c77d32fcf28e7eccdb83bec9",
+        "tip_subject": "fix(tournament): index refund club references for retirement",
+        "pull_requests": [
+          {
+            "number": 3971,
+            "state": "closed",
+            "merged_at": "2026-09-09T17:29:28Z",
+            "merge_commit_sha": "5dd902e978006d736b90df5261e949a7e07657cd",
+            "html_url": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/3971"
+          }
+        ],
+        "contained_by_audit_source": false
+      },
+      {
+        "branch": "agent/codex-poker-audit-sep09/fix/phase-three-entry-fee-disclosure",
+        "sha": "a9a18739f525d75c1e369ae91005a840a3b66933",
+        "tip_subject": "fix(tournaments): disclose entry fees to the cent",
+        "pull_requests": [
+          {
+            "number": 4047,
+            "state": "closed",
+            "merged_at": "2026-09-09T23:10:38Z",
+            "merge_commit_sha": "4149cfcd53650a05ac0be247f2bdad6cf5c0997d",
+            "html_url": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/4047"
+          }
+        ],
+        "contained_by_audit_source": false
+      },
+      {
+        "branch": "agent/codex-poker-audit-sep09/fix/phase-three-entry-receipt-club",
+        "sha": "a1b6a2bee01cccc32cfdc0c60676e4e9ca4da521",
+        "tip_subject": "test(tournaments): use the CI PostgreSQL client",
+        "pull_requests": [
+          {
+            "number": 4075,
+            "state": "closed",
+            "merged_at": "2026-09-10T01:47:07Z",
+            "merge_commit_sha": "37cd6a1c17b6ef92ba1ffd7c86f36a667e6aabd2",
+            "html_url": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/4075"
+          }
+        ],
+        "contained_by_audit_source": false
+      },
+      {
+        "branch": "agent/codex-poker-audit-sep09/fix/phase-three-forward-cash-release",
+        "sha": "22875a81113832d31147a846fd47e27f21605b70",
+        "tip_subject": "docs(audit): record verified fee release and remaining phase three gaps",
+        "pull_requests": [
+          {
+            "number": 4039,
+            "state": "closed",
+            "merged_at": "2026-09-09T23:45:46Z",
+            "merge_commit_sha": "8d6ab77102acd3547eafe08ccff155ba0ecd2c89",
+            "html_url": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/4039"
+          }
+        ],
+        "contained_by_audit_source": false
+      },
+      {
+        "branch": "agent/codex-poker-audit-sep09/fix/phase-three-payment-status",
+        "sha": "4334e642fe1b8d6560867629a1dad95cd216850d",
+        "tip_subject": "fix(ci): record the installed tournament payment reader",
+        "pull_requests": [
+          {
+            "number": 4058,
+            "state": "closed",
+            "merged_at": "2026-09-10T00:26:07Z",
+            "merge_commit_sha": "4c5ea3e67f247dbafb659807cb939e0bb6860eb6",
+            "html_url": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/4058"
+          }
+        ],
+        "contained_by_audit_source": false
+      },
+      {
+        "branch": "agent/codex-poker-audit-sep09/fix/phase-three-satellite-cash",
+        "sha": "78987f3671fc9040fb41993a9cc56fa3f133ff72",
+        "tip_subject": "fix(tournament): accept verified satellite cash refund receipts",
+        "pull_requests": [
+          {
+            "number": 4029,
+            "state": "closed",
+            "merged_at": "2026-09-09T21:37:22Z",
+            "merge_commit_sha": "6a2724ea096f6f69da8b17e2a789885bc30f896f",
+            "html_url": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/4029"
+          }
+        ],
+        "contained_by_audit_source": false
+      },
+      {
+        "branch": "agent/codex-poker-audit-sep09/fix/phase-three-satellite-refund-db",
+        "sha": "639f9fa30faa3432f8228adc6b5170faee92c840",
+        "tip_subject": "fix(audit): preserve the installed start migration in cash release",
+        "pull_requests": [
+          {
+            "number": 4035,
+            "state": "closed",
+            "merged_at": "2026-09-09T22:12:59Z",
+            "merge_commit_sha": "fb7d568b8b94ca96e7b391157a538eaeae7deb9c",
+            "html_url": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/4035"
+          }
+        ],
+        "contained_by_audit_source": false
+      },
+      {
+        "branch": "agent/codex-poker-audit-sep09/fix/phase-three-spin-expiry-race",
+        "sha": "ecb00816eeaf9eb7c2186ef21c8d674f0330f600",
+        "tip_subject": "fix(tournament): recheck Spin expiry under the parent lock",
+        "pull_requests": [
+          {
+            "number": 4005,
+            "state": "closed",
+            "merged_at": null,
+            "merge_commit_sha": "5f70085fed1dc0ab313b01f0cf2c95aea5c73195",
+            "html_url": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/4005"
+          }
+        ],
+        "contained_by_audit_source": false
+      },
+      {
+        "branch": "agent/codex-poker-audit-sep09/fix/phase-three-spin-expiry-release",
+        "sha": "dc2848dd264bdc2ac1a9c31c2bc0fab78799d35e",
+        "tip_subject": "fix(tournament): recheck Spin expiry under the parent lock",
+        "pull_requests": [
+          {
+            "number": 4007,
+            "state": "closed",
+            "merged_at": "2026-09-09T20:02:06Z",
+            "merge_commit_sha": "926b6cbfba7c37fb473ddf1a19ea845760d00735",
+            "html_url": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/4007"
+          }
+        ],
+        "contained_by_audit_source": false
+      },
+      {
+        "branch": "agent/codex-poker-audit-sep09/fix/phase-three-utc-break-cadence",
+        "sha": "de982683085d6ab1fd3913461c1e2283aa1de7c8",
+        "tip_subject": "test(tournaments): pin the UTC break boundary",
+        "pull_requests": [
+          {
+            "number": 4063,
+            "state": "closed",
+            "merged_at": "2026-09-10T00:30:29Z",
+            "merge_commit_sha": "9eac7cab76d90bcaabefcdb932169d5f0ab60781",
+            "html_url": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/4063"
+          }
+        ],
+        "contained_by_audit_source": false
+      },
+      {
+        "branch": "agent/codex-poker-audit-sep09/fix/phase-two-consent-and-rules",
+        "sha": "4618a57d973fc9bb1eb6e127f3fdbeb56323e522",
+        "tip_subject": "docs(audit): record authorized phase two publication",
+        "pull_requests": [
+          {
+            "number": 3934,
+            "state": "closed",
+            "merged_at": "2026-09-09T05:51:22Z",
+            "merge_commit_sha": "993798a5052879b34e198001558344800ab064af",
+            "html_url": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/3934"
+          }
+        ],
+        "contained_by_audit_source": false
+      },
+      {
+        "branch": "agent/codex-poker-audit-sep09/fix/phase-two-rule-boundaries",
+        "sha": "ac332a5c62b9e6288b85123620e9f455651476ea",
+        "tip_subject": "docs(audit): record current-main pot-limit release build",
+        "pull_requests": [
+          {
+            "number": 3914,
+            "state": "closed",
+            "merged_at": "2026-09-09T01:33:00Z",
+            "merge_commit_sha": "7d6a8f6991ae6141e2394925076b387c14d3938c",
+            "html_url": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/3914"
+          }
+        ],
+        "contained_by_audit_source": false
+      },
+      {
+        "branch": "agent/codex-poker-audit-sep09/fix/resume-action-context",
+        "sha": "7f72e0ff590bbb6b0709d506abf2c844edc62489",
+        "tip_subject": "docs(audit): recover verified action-context publication",
+        "pull_requests": [],
+        "contained_by_audit_source": false
+      },
+      {
+        "branch": "agent/codex-poker-audit-sep09/fix/tournament-blinds-at-deal",
+        "sha": "b4422d64daa7753b05b6f4e900701c09b39f9624",
+        "tip_subject": "test(tournaments): reconcile installed purchase trigger composition",
+        "pull_requests": [
+          {
+            "number": 4092,
+            "state": "closed",
+            "merged_at": "2026-09-10T03:08:44Z",
+            "merge_commit_sha": "40886c94ab69fd37a47957b3ea3b23b5a0c0e375",
+            "html_url": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/4092"
+          }
+        ],
+        "contained_by_audit_source": false
+      },
+      {
+        "branch": "agent/codex-poker-audit-sep09/fix/tournament-pause-release",
+        "sha": "59f56fa4a98ebd31b0382761a9520e9a9bb6d5d4",
+        "tip_subject": "Merge remote-tracking branch 'origin/main' into agent/codex-poker-audit-sep09/fix/tournament-pause-release",
+        "pull_requests": [
+          {
+            "number": 4105,
+            "state": "closed",
+            "merged_at": "2026-09-10T13:19:43Z",
+            "merge_commit_sha": "d9dbf1388617ebfad71b00040aac22819c4103af",
+            "html_url": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/4105"
+          }
+        ],
+        "contained_by_audit_source": true
+      },
+      {
+        "branch": "agent/codex-poker-audit-sep09/fix/verified-build-uploads",
+        "sha": "412a094f96b763a9fb8de513ec5ecee8339c84b8",
+        "tip_subject": "Merge remote-tracking branch 'origin/main' into agent/codex-poker-audit-sep09/fix/verified-build-uploads",
+        "pull_requests": [
+          {
+            "number": 4178,
+            "state": "closed",
+            "merged_at": "2026-09-10T15:17:20Z",
+            "merge_commit_sha": "7075d2ee43b027ba5882eca58feb566c7e6e71a8",
+            "html_url": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/4178"
+          }
+        ],
+        "contained_by_audit_source": false
+      },
+      {
+        "branch": "agent/codex-poker-audit-sep09/test/phase-three-payment-and-blind-evidence",
+        "sha": "5dabc4f201b96dde36f5b6a6d4e538a689734bb4",
+        "tip_subject": "test(tournaments): record payment acceptance and blind boundary evidence",
+        "pull_requests": [
+          {
+            "number": 4068,
+            "state": "closed",
+            "merged_at": "2026-09-10T01:14:59Z",
+            "merge_commit_sha": "8935fd2e823a6604c9adb30d40f0e2fdb2532ff3",
+            "html_url": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/4068"
+          }
+        ],
+        "contained_by_audit_source": false
+      },
+      {
+        "branch": "agent/codex-poker-audit-sep09/test/phase3-native-funding",
+        "sha": "d534363295c3d2acf43d84d24c2ccbb0feae27b2",
+        "tip_subject": "Merge remote-tracking branch 'origin/main' into agent/codex-poker-audit-sep09/test/phase3-native-funding",
+        "pull_requests": [
+          {
+            "number": 4163,
+            "state": "closed",
+            "merged_at": "2026-09-10T13:53:42Z",
+            "merge_commit_sha": "bb7a6ba30639fdfc5ae81df52d4e9f0b7c6afa9a",
+            "html_url": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/4163"
+          }
+        ],
+        "contained_by_audit_source": false
+      },
+      {
+        "branch": "agent/codex-poker-audit-sep09/test/tournament-purchase-funding",
+        "sha": "aeab9c90e9a7b5f67030a05c32b9a7dacbd82f76",
+        "tip_subject": "test(tournaments): bind chip purchases to funded entry generations",
+        "pull_requests": [
+          {
+            "number": 4090,
+            "state": "closed",
+            "merged_at": "2026-09-10T02:44:19Z",
+            "merge_commit_sha": "78555488589b727122e1f073c3ed32a8c6d55c87",
+            "html_url": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/4090"
+          }
+        ],
+        "contained_by_audit_source": false
+      },
+      {
+        "branch": "agent/codex-poker-audit-sep09/test/tournament-sit-out-obligations",
+        "sha": "2dfe576693127d1a54d746ef8b7298f9efbce2b3",
+        "tip_subject": "test(tournaments): verify absent entrants still pay forced bets",
+        "pull_requests": [
+          {
+            "number": 4081,
+            "state": "closed",
+            "merged_at": "2026-09-10T02:08:05Z",
+            "merge_commit_sha": "3bb214433b981fe9df52d0991333634343c0f22c",
+            "html_url": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/4081"
+          }
+        ],
+        "contained_by_audit_source": false
+      }
+    ],
+    "exceptions": [
+      {
+        "branch": "agent/codex-poker-audit-sep09/fix/phase-three-spin-expiry-race",
+        "pr": 4005,
+        "disposition": "closed and superseded by mergedPR4007"
+      },
+      {
+        "branch": "agent/codex-poker-audit-sep09/fix/resume-action-context",
+        "pr": 3879,
+        "remote_branch": "agent/codex-audit-resume/fix/phase2-action-context",
+        "merge": "8634e19129b8662a53293a1cb7ee8197bde4af55",
+        "disposition": "local alias; source/proof published under actual remote branch"
+      },
+      {
+        "branch": "agent/codex-poker-audit-sep09/fix/pause-before-prepared-hand",
+        "sha": "d6b451b363916f7c4396dada7dd7f554cbc1879e",
+        "disposition": "All14 original commits retained by remotely verified original-history archive",
+        "archive_sha": "251e1c5b07fc0a4b1f3e4c6fb6589562589e4839",
+        "archive_ref": "backup/resume-poker-sep10/root-original-history"
+      },
+      {
+        "branch": "agent/codex-poker-audit-sep09/fix/current-work-closeout",
+        "sha": "8dd354348f361ecc41faeeae440581d34ca7848f",
+        "disposition": "reachable in tournament-guards archive; MultiTable separately merged/published inPR4188"
+      },
+      {
+        "branch": "agent/codex-poker-audit-sep09/fix/multi-table-closeout",
+        "sha": "25154ea0ae59f937fbb54f828fcffb7c2a2cd112",
+        "disposition": "merged and publishedPR4188"
+      }
+    ],
+    "contained_by_audit_source_semantics": "Historical ancestry against the PR4105 source only. A false value does not mean orphaned: the PR and backup mappings establish preservation."
+  },
+  "supersedes_release_status_in": ["docs/audits/2026-09-10-resume-swarm-release.json"],
+  "current_work_boundaries": [
+    "No World Hub repository edits",
+    "No horse or bot strategy changes",
+    "No engine restart or host/container/tag change",
+    "No independent satellite Stage-B activation",
+    "No historical backpay, manual balance edits or repair cron"
+  ],
+  "observed_at": "2026-09-10T17:22:31.723503+00:00",
+  "worktree_inventory": {
+    "observed_at": "2026-09-10T17:03:13.076322+00:00",
+    "worktrees": [
+      {
+        "lane": "root",
+        "path": "/Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-poker-audit-sep09",
+        "head": "d88d6167811f59ce4123c1a8d47008d65044e354",
+        "branch": "backup/resume-poker-sep10/current-work-closeout",
+        "status": "?? docs/audits/2026-09-10-current-work-closeout.json"
+      },
+      {
+        "lane": "commission",
+        "path": "/Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-union-accounting-sep10",
+        "head": "27fdaf5d83c4368251bc79f4bb932b423017c9ef",
+        "branch": "backup/resume-poker-sep10/commission-capture",
+        "status": ""
+      },
+      {
+        "lane": "round2",
+        "path": "/Users/smarter.poker/Documents/.agent-trees/club-arena/codex-source-round2-sep10",
+        "head": "44e30d6a5a976add09fbeb36a542e2158d31892e",
+        "branch": "agent/codex-source-round2-sep10/fix/captured-source-commission-funding",
+        "status": ""
+      },
+      {
+        "lane": "payer",
+        "path": "/Users/smarter.poker/Documents/.agent-trees/club-arena/codex-rakeback-payers-sep10",
+        "head": "7adbfb02544b68ccc1754c51f11d2f61fa406180",
+        "branch": "agent/codex-rakeback-payers-sep10/fix/rakeback-single-payer",
+        "status": ""
+      },
+      {
+        "lane": "clock",
+        "path": "/Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-phase3-clock-sep10",
+        "head": "831f408db7eb593abe5a0d108177c382adfb19e2",
+        "branch": "agent/codex-phase3-clock-sep10/audit/atomic-clock",
+        "status": ""
+      },
+      {
+        "lane": "satellite",
+        "path": "/Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-satellite-swarm-sep10",
+        "head": "65c34eebb8197ac4884bc29788f1d52ffdad7ecc",
+        "branch": "agent/codex-satellite-swarm-sep10/fix/equal-prize-terminal-contract",
+        "status": ""
+      },
+      {
+        "lane": "funded_satellite",
+        "path": "/Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-satellite-funded-closeout-sep10",
+        "head": "473bd2d41b88ad352819c77031ddc4dad209917b",
+        "branch": "agent/codex-satellite-funded-closeout-sep10/fix/current-satellite-funded-components",
+        "status": ""
+      },
+      {
+        "lane": "browser",
+        "path": "/Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-phase3-acceptance-sep10",
+        "head": "7a9c887a8277a759dc05312f0525472212a99a47",
+        "branch": "agent/codex-phase3-acceptance-sep10/fix/captured-rakeback-v2",
+        "status": ""
+      },
+      {
+        "lane": "original_history",
+        "path": "/Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-root-original-history-sep10",
+        "head": "251e1c5b07fc0a4b1f3e4c6fb6589562589e4839",
+        "branch": "backup/resume-poker-sep10/root-original-history",
+        "status": ""
+      }
+    ],
+    "original_observed_at": "2026-09-10T16:50:40.694727+00:00",
+    "root_report_note": "Root status is the precommit report draft; final clean-tree and remote verification are recorded after the normal commit and push in the linked PR."
+  },
+  "original_history_final_push": {
+    "log_sha256": "0e1c0030ff9ff2928ccae6015cddd7b6db4fe74016b4919944699839e8987aa4",
+    "log_text": "OK: all-in mode never disables pointer events on the hero action controls\nOK: 7 rule file(s) loaded, mounted at matching paths, non-empty; alerts route to a receiver that delivers\ncheck-no-skip-markers: OK - no commit suppresses its own publish.\n[check-required-columns] OK \u2014 87 literal insert/upsert payload(s) checked against the live schema; 11 skipped as unjudgeable (spread or computed key).\n[check-definer-authorization] no new migrations against 780398afa772b69f491586c9092016d1aca8dff6 \u2014 nothing to check.\n[check-unqualified-writes] no new migrations against 780398afa772b69f491586c9092016d1aca8dff6 \u2014 nothing to check.\n[check-no-new-band-aids] no new migrations against 780398afa772b69f491586c9092016d1aca8dff6 - nothing to check.\ncheck-title-case: OK - every static word on every page starts with a capital.\ncheck-painted-text-case: OK - every painted string is Title Cased.\ncheck-nav-title-case: OK - every navigation label is Title Cased at its source.\n\u2713 All 6 protected commit(s) still on main.\ncheck-ui-text: OK - no em dashes in UI text.\n\u001b[0;32m[doctrine] CLAUDE.md matches origin/main.\u001b[0m\nremote: \nremote: Create a pull request for 'backup/resume-poker-sep10/root-original-history' on GitHub by visiting:        \nremote:      https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/new/backup/resume-poker-sep10/root-original-history        \nremote: \nTo github.com:Smarter-Poker/Smarter-Poker-Club-Arena.git\n * [new branch]          HEAD -> backup/resume-poker-sep10/root-original-history\nbranch 'backup/resume-poker-sep10/root-original-history' set up to track 'origin/backup/resume-poker-sep10/root-original-history'.\ncheck-title-case: OK - every static word on every page starts with a capital.\ncheck-painted-text-case: OK - every painted string is Title Cased.\ncheck-nav-title-case: OK - every navigation label is Title Cased at its source.\n\u2713 All 6 protected commit(s) still on main.\ncheck-ui-text: OK - no em dashes in UI text.\n\u001b[0;32m[doctrine] CLAUDE.md matches origin/main.\u001b[0m\nbranch 'backup/resume-poker-sep10/root-original-history' set up to track 'origin/backup/resume-poker-sep10/root-original-history'.\nEverything up-to-date\n",
+    "independent_github_ref_matches": true
+  },
+  "closeout_report": {
+    "branch": "backup/resume-poker-sep10/current-work-closeout",
+    "publication": "Normal documentation commit/push and exact remote readback follow this snapshot; final result is linked fromPR4188",
+    "overall_complete": false,
+    "database_approval_required": false,
+    "database_deployment_verified": true,
+    "source_publication_branch": "agent/codex-poker-audit-sep09/fix/approved-database-release"
+  }
+}

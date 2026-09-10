@@ -99,6 +99,7 @@ function t8Snapshot(v20Multiway = true): FastHorseDecisionRequest {
     bigBlind: 5,
     dealerSeat: 6,
     gameMode: 'cash',
+    format: 'cash',
     actionHistory: [
       action(3, 'check', 0, 1),
       action(2, 'bet', 60, 2),

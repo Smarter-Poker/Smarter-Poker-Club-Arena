@@ -1,6 +1,26 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { Link, MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { LobbyTournamentRow } from '../../src/components/lobby/lobbyEntries';
+
+type QueryResult<T> = {
+  data: T | null;
+  error: { code: string; message: string } | null;
+};
+type Deferred<T> = { promise: Promise<T>; resolve: (value: T) => void };
+type TournamentFixture = LobbyTournamentRow & {
+  club_id: string;
+  union_id: string | null;
+};
+type ClubFixture = {
+  id: string;
+  club_id: number;
+  name: string;
+  member_count: number;
+  owner_id: string;
+  union_id: string | null;
+  is_union: boolean | null;
+};
 
 const h = vi.hoisted(() => ({
   from: vi.fn(),
@@ -15,6 +35,9 @@ const h = vi.hoisted(() => ({
   clubReads: [] as any[],
   occupancyReads: [] as any[],
   deferOccupancy: false,
+  authenticated: false,
+  unionLookup: { data: null, error: null } as QueryResult<{ union_id: string }>,
+  tournamentReads: [] as Deferred<QueryResult<TournamentFixture[]>>[],
 }));
 vi.mock('../../src/lib/supabase', () => ({
   supabase: {
@@ -22,7 +45,10 @@ vi.mock('../../src/lib/supabase', () => ({
     rpc: h.rpc,
     auth: { getSession: vi.fn(async () => ({ data: { session: null }, error: null })) },
   },
-  getAuthUser: vi.fn(async () => ({ data: { user: null }, error: null })),
+  getAuthUser: vi.fn(async () => ({
+    data: { user: h.authenticated ? { id: 'viewer' } : null },
+    error: null,
+  })),
 }));
 vi.mock('../../src/core/MasterBus', () => ({
   masterBus: {
@@ -63,6 +89,7 @@ vi.mock('../../src/lib/bbjHitFeed', () => ({
     return stop;
   },
 }));
+vi.mock('../../src/components/wallet/DynamicWallet', () => ({ default: () => null }));
 vi.mock('../../src/hooks/useMasterBusChannel', () => ({ useMasterBusChannel: vi.fn() }));
 vi.mock('../../src/hooks/useTournamentRegistration', () => ({
   useTournamentRegistration: () => ({ register: vi.fn(), isRegistering: false }),
@@ -88,9 +115,9 @@ vi.mock('../../src/components/lobby/lobbyViewPrefs', async (original) => ({
 }));
 import ClubHomePage from '../../src/pages/ClubHomePage';
 
-const deferred = () => {
-  let resolve!: (value: any) => void;
-  const promise = new Promise<any>((done) => {
+const deferred = <T = any,>(): Deferred<T> => {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => {
     resolve = done;
   });
   return { promise, resolve };
@@ -124,22 +151,37 @@ beforeEach(() => {
   h.clubReads.length = 0;
   h.occupancyReads.length = 0;
   h.deferOccupancy = false;
+  h.authenticated = false;
+  h.unionLookup = { data: null, error: null };
+  h.tournamentReads.length = 0;
   h.resolveClub.mockImplementation(async (id) => id);
   h.rpc.mockResolvedValue({ data: 0, error: null });
   h.from.mockImplementation((table: string) => {
     let result = table === 'clubs' ? deferred() : null;
     if (result) h.clubReads.push(result);
     const q: any = {};
-    for (const method of ['select', 'eq', 'is', 'not', 'or', 'order', 'limit', 'in'])
+    for (const method of ['select', 'eq', 'is', 'not', 'or', 'order', 'limit', 'in', 'lte'])
       q[method] = () => q;
     q.select = (columns: string) => {
       if (h.deferOccupancy && table === 'tables' && columns.startsWith('id, current_players')) {
         result = deferred();
         h.occupancyReads.push(result);
       }
+      if (h.authenticated && table === 'tournaments' && columns.startsWith('id, name, game_type')) {
+        const read = deferred<QueryResult<TournamentFixture[]>>();
+        result = read;
+        h.tournamentReads.push(read);
+      }
       return q;
     };
-    q.maybeSingle = () => result?.promise ?? Promise.resolve({ data: null, error: null });
+    q.maybeSingle = () => {
+      if (result) return result.promise;
+      if (h.authenticated && table === 'union_clubs') return Promise.resolve(h.unionLookup);
+      if (h.authenticated && table === 'club_members') {
+        return Promise.resolve({ data: { role: 'member', status: 'active' }, error: null });
+      }
+      return Promise.resolve({ data: null, error: null });
+    };
     q.then = (resolve: any, reject: any) =>
       (result?.promise ?? Promise.resolve({ data: [], error: null })).then(resolve, reject);
     return q;
@@ -364,5 +406,216 @@ describe('the mounted lobby recovers occupancy snapshots', () => {
     await act(async () => h.occupancyReads[0].resolve({ data, error: null }));
     expect(h.clubReads).toHaveLength(1);
     expect(screen.queryAllByText('Known Table').length).toBeGreaterThan(0);
+  });
+});
+
+const UNION_CACHE_KEY = 'ca_union_of_club-a';
+const QUERY_FAILURE = { code: '57014', message: 'statement timeout' };
+const tournamentFixture = (
+  id = 'known-tournament',
+  name = 'Known Tournament',
+  unionId: string | null = null
+): TournamentFixture => ({
+  id,
+  name,
+  club_id: 'club-a',
+  union_id: unionId,
+  game_type: 'mtt',
+  variant: 'nlh',
+  buy_in_amount: 10,
+  buy_in_fee: 1,
+  guaranteed_prize: 100,
+  start_time: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+  status: 'REGISTERING',
+  current_players: 3,
+  max_players: 500,
+  starting_chips: 10_000,
+});
+
+async function mountWarmTournaments({
+  unionId = null,
+  clubUnionId = null,
+  isUnion = false,
+}: {
+  unionId?: string | null;
+  clubUnionId?: string | null;
+  isUnion?: boolean | null;
+} = {}) {
+  h.authenticated = true;
+  h.unionLookup = { data: unionId ? { union_id: unionId } : null, error: null };
+  const club: ClubFixture = {
+    id: 'club-a',
+    club_id: 1,
+    name: 'Test Club',
+    member_count: 1,
+    owner_id: 'owner',
+    union_id: clubUnionId,
+    is_union: isUnion,
+  };
+  const row = tournamentFixture('known-tournament', 'Known Tournament', unionId);
+  const view = mount();
+  await flush();
+  await act(async () => h.clubReads[0].resolve({ data: club, error: null }));
+  expect(h.tournamentReads).toHaveLength(1);
+  await act(async () => h.tournamentReads[0].resolve({ data: [row], error: null }));
+  expect(screen.queryAllByText('Known Tournament').length).toBeGreaterThan(0);
+  return { view, club, row };
+}
+
+async function startTournamentReload(club: ClubFixture) {
+  const clubReadIndex = h.clubReads.length;
+  const tournamentReadIndex = h.tournamentReads.length;
+  act(() => h.bus.get('CLUB_JOINED')!());
+  await flush();
+  expect(h.clubReads).toHaveLength(clubReadIndex + 1);
+  await act(async () => h.clubReads[clubReadIndex].resolve({ data: club, error: null }));
+  expect(h.tournamentReads).toHaveLength(tournamentReadIndex + 1);
+  return h.tournamentReads[tournamentReadIndex];
+}
+
+async function finishTournamentReload(club: ClubFixture, result: QueryResult<TournamentFixture[]>) {
+  const read = await startTournamentReload(club);
+  await act(async () => read.resolve(result));
+}
+
+describe('the mounted lobby reconciles warm tournament inventory', () => {
+  it.each([
+    {
+      label: 'standalone club',
+      unionId: null,
+      clubUnionId: null,
+      isUnion: false,
+      lookupFails: false,
+    },
+    {
+      label: 'live union membership',
+      unionId: 'union-a',
+      clubUnionId: null,
+      isUnion: false,
+      lookupFails: false,
+    },
+    {
+      label: 'legacy standalone club with nullable is_union',
+      unionId: null,
+      clubUnionId: null,
+      isUnion: null,
+      lookupFails: false,
+    },
+    {
+      label: 'fresh club union fallback',
+      unionId: 'union-a',
+      clubUnionId: 'union-a',
+      isUnion: false,
+      lookupFails: true,
+    },
+  ])('clears stale cards after a confirmed empty read for $label', async (scope) => {
+    const { club } = await mountWarmTournaments(scope);
+    if (scope.lookupFails) {
+      h.unionLookup = { data: null, error: QUERY_FAILURE };
+      sessionStorage.removeItem(UNION_CACHE_KEY);
+    }
+    await finishTournamentReload(club, { data: [], error: null });
+    expect(screen.queryAllByText('Known Tournament')).toHaveLength(0);
+  });
+
+  it.each([
+    { label: 'failed tournament query', result: { data: [], error: QUERY_FAILURE } },
+    { label: 'null tournament query data', result: { data: null, error: null } },
+  ])('preserves warm cards after $label', async ({ result }) => {
+    const { club } = await mountWarmTournaments();
+    await finishTournamentReload(club, result);
+    expect(screen.queryAllByText('Known Tournament').length).toBeGreaterThan(0);
+  });
+
+  it('preserves cards while scope is unresolved, then clears them after scope recovers', async () => {
+    const { club } = await mountWarmTournaments({ unionId: 'union-a' });
+    sessionStorage.removeItem(UNION_CACHE_KEY);
+    h.unionLookup = { data: null, error: QUERY_FAILURE };
+    await finishTournamentReload(club, { data: [], error: null });
+    expect(screen.queryAllByText('Known Tournament').length).toBeGreaterThan(0);
+    h.unionLookup = { data: { union_id: 'union-a' }, error: null };
+    await finishTournamentReload(club, { data: [], error: null });
+    expect(screen.queryAllByText('Known Tournament')).toHaveLength(0);
+  });
+
+  it('preserves cards when the scope fallback comes only from cache', async () => {
+    const { club } = await mountWarmTournaments({ unionId: 'union-a' });
+    expect(sessionStorage.getItem(UNION_CACHE_KEY)).toBe('union-a');
+    h.unionLookup = { data: null, error: QUERY_FAILURE };
+    await finishTournamentReload(club, { data: [], error: null });
+    expect(screen.queryAllByText('Known Tournament').length).toBeGreaterThan(0);
+  });
+
+  it('does not classify a union house with no membership row as standalone', async () => {
+    const { club } = await mountWarmTournaments({ isUnion: true });
+    await finishTournamentReload(club, { data: [], error: null });
+    expect(screen.queryAllByText('Known Tournament').length).toBeGreaterThan(0);
+  });
+
+  it('preserves cards when the union cache cannot be read', async () => {
+    const { club } = await mountWarmTournaments();
+    const storage = sessionStorage;
+    const cacheRead = vi.fn((key: string) => {
+      if (key === UNION_CACHE_KEY) throw new Error('storage unavailable');
+      return storage.getItem(key);
+    });
+    vi.stubGlobal('sessionStorage', {
+      getItem: cacheRead,
+      setItem: storage.setItem.bind(storage),
+      removeItem: storage.removeItem.bind(storage),
+      clear: storage.clear.bind(storage),
+      key: storage.key.bind(storage),
+      get length() {
+        return storage.length;
+      },
+    });
+    try {
+      await finishTournamentReload(club, { data: [], error: null });
+      expect(cacheRead).toHaveBeenCalledWith(UNION_CACHE_KEY);
+      expect(screen.queryAllByText('Known Tournament').length).toBeGreaterThan(0);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('preserves a realtime insert against an older empty query and queues one authoritative read', async () => {
+    const { club } = await mountWarmTournaments();
+    const read = await startTournamentReload(club);
+    const onTournamentChange = h.channels[0].on.mock.calls.find(
+      ([_event, config]: any[]) => config.table === 'tournaments'
+    )[2];
+    const inserted = tournamentFixture('new-tournament', 'New Tournament');
+    await act(async () => {
+      onTournamentChange({ eventType: 'INSERT', new: inserted });
+      read.resolve({ data: [], error: null });
+    });
+    expect(screen.queryAllByText('Known Tournament').length).toBeGreaterThan(0);
+    expect(screen.queryAllByText('New Tournament').length).toBeGreaterThan(0);
+    expect(h.clubReads).toHaveLength(3);
+    expect(h.tournamentReads).toHaveLength(2);
+    await act(async () => h.clubReads[2].resolve({ data: club, error: null }));
+    expect(h.tournamentReads).toHaveLength(3);
+    await act(async () => h.tournamentReads[2].resolve({ data: [inserted], error: null }));
+    expect(screen.queryAllByText('Known Tournament')).toHaveLength(0);
+    expect(screen.queryAllByText('New Tournament').length).toBeGreaterThan(0);
+    expect(h.clubReads).toHaveLength(3);
+  });
+
+  it('clears stale cards without a queued read when only an unknown completed tournament updates', async () => {
+    const { club } = await mountWarmTournaments();
+    const read = await startTournamentReload(club);
+    const onTournamentChange = h.channels[0].on.mock.calls.find(
+      ([_event, config]: any[]) => config.table === 'tournaments'
+    )[2];
+    await act(async () => {
+      onTournamentChange({
+        eventType: 'UPDATE',
+        new: { ...tournamentFixture('completed-tournament'), status: 'COMPLETED' },
+      });
+      read.resolve({ data: [], error: null });
+    });
+    expect(screen.queryAllByText('Known Tournament')).toHaveLength(0);
+    expect(h.clubReads).toHaveLength(2);
+    expect(h.tournamentReads).toHaveLength(2);
   });
 });

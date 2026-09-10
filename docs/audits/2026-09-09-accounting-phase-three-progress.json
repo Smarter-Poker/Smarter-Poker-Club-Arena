@@ -269,5 +269,14 @@
     "status": "seven_pre_start_groups_passed",
     "source": "scripts/dev/probe-tournament-registration-funding-pg17.py",
     "limits": "Real pre-start standalone-club funding, rollback, concurrent retries, last place, closure wait and cross-club receipt. Synthetic auth and maintenance. No late entry, union, promotional, re-entry or launch acceptance."
+  },
+  "swarm_checkpoint": {
+    "date": "2026-09-10",
+    "status": "in_progress",
+    "phase_complete": false,
+    "phase_four_started": false,
+    "evidence": "docs/audits/2026-09-10-chip-drift-phase-three-swarm.json",
+    "scope": "Six independent lanes cover all twelve controls. Focused acceptance results do not certify missing production authorities, terminal composition or unresolved live stalls.",
+    "production_gate": "As of03:17:38UTC all seven guards remain disabled; new move, committed move receipt and bounty rebuy-generation authorities are absent. The coordinating task owns the engine release seal and Stage-B cutover."
   }
 }

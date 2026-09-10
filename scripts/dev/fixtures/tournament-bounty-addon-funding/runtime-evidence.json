@@ -1,0 +1,11 @@
+{
+  "observed_at": "2026-09-10T05:11:47.247781+00:00",
+  "results": {
+    "passed": [
+      "real funded PKO entry and add-on conserve prize, bounty and fee rails; replay preserves the bounty head"
+    ],
+    "production_database_used": false
+  },
+  "private_cluster_removed": true,
+  "evidence": "/tmp/ca-registration-funding-pg17-v8yfkjbv/results.json"
+}

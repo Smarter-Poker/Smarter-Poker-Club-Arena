@@ -827,8 +827,11 @@ describe('a tournament pays every place or none', () => {
     expect(REPRICE).not.toMatch(/\.(?:gt|gte|neq)\('prize'/);
     expect(REPRICE).toMatch(/resolvePayoutStructure\(/);
     expect(REPRICE).toMatch(
-      /computePlacePrize\(finalPrizePool, payouts, Number\(player\.position\)\)/
+      /const ladderPool = prizePoolAvailableToPlaces\(\s*finalPrizePool,\s*payouts,\s*finalField,\s*!isSatellite && this\.tournamentCache\?\.bubble_protection === true,\s*Number\(this\.tournamentCache\?\.buy_in_amount\)\s*\)/
     );
+    expect(REPRICE).toMatch(/if \(ladderPool === null\) \{[\s\S]*?return false;/);
+    expect(REPRICE).toMatch(/computePlacePrize\(ladderPool, payouts, Number\(player\.position\)\)/);
+    expect(REPRICE).not.toMatch(/computePlacePrize\(finalPrizePool,/);
     expect(REPRICE).toMatch(/correctPrize - \(player\.prize \|\| 0\)/);
     expect(REPRICE).toContain("'fn_ca_reprice_unpaid_tournament_place'");
     expect(REPRICE).toContain('p_expected_prize: expectedPrize');

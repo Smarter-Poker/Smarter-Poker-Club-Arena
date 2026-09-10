@@ -1609,6 +1609,14 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'Phase7'
   ),
   receipt(
+    'phase7_unavailable_*',
+    'HorseLogic -> HorseTournamentUtility',
+    'the bounded fail-closed reason partitions every Phase 7 utility-unavailable receipt for production diagnosis',
+    'Phase7',
+    'phase7_utility_unavailable',
+    0.99
+  ),
+  receipt(
     'phase7_utility_committed',
     'ServerTableEngineTurns.scheduleHorseAction',
     'the exact action selected by the Phase 7 ledger was accepted by the authoritative hand controller',

@@ -79,7 +79,7 @@ add('A Smaller Cohort Cannot Borrow A Rank',rejection(PREP.replace(COHORT,f"ARRA
 add('A Forged Session Marker Does Not Prepare A Cohort',f"SELECT set_config('app.atomic_satellite_qualification','{SOURCE}:{LEASE}',true);"+rejection(PAY,'55000','durable settled-hand admission')+assert_empty)
 add('Partial Target Capacity Refuses The Whole Cohort',f'SELECT {PREP};'+rejection(PAY,'55000','partial target capacity')+assert_empty,True,2)
 add('Immutable Boundary Cannot Be Reassigned',f'SELECT {PREP};'+"SELECT pg_temp.expect_error($call$UPDATE public.tournament_satellite_qualification_boundaries SET qualified_user_ids=ARRAY['"+A+"','"+B+"']::uuid[] WHERE tournament_id='"+SOURCE+"'$call$,'55000','immutable');"+assert_empty)
-add('Last Receipt Failure Rolls Back Every Award',f'SELECT {PREP};'+"CREATE FUNCTION pg_temp.reject_receipt() RETURNS trigger LANGUAGE plpgsql AS $$BEGIN RAISE EXCEPTION 'injected final receipt failure' USING ERRCODE='P0901'; END $$; CREATE TRIGGER native_reject_receipt AFTER INSERT ON public.tournament_satellite_settlements FOR EACH ROW EXECUTE FUNCTION pg_temp.reject_receipt();"+rejection(PAY,'P0901','injected final receipt failure')+assert_empty)
+add('Settlement Header Failure Refuses Payment Before Awards',f'SELECT {PREP};'+"CREATE FUNCTION pg_temp.reject_receipt() RETURNS trigger LANGUAGE plpgsql AS $$BEGIN RAISE EXCEPTION 'injected early header failure' USING ERRCODE='P0901'; END $$; CREATE TRIGGER native_reject_receipt AFTER INSERT ON public.tournament_satellite_settlements FOR EACH ROW EXECUTE FUNCTION pg_temp.reject_receipt();"+rejection(PAY,'P0901','injected early header failure')+assert_empty)
 add('Lost Response Replay Returns The Original Receipt',f'SELECT {PREP}; CREATE TEMP TABLE result AS SELECT {PAY} AS receipt; SELECT pg_temp.assert_true({PAY}=(SELECT receipt FROM result),\'Replay preserves exact committed receipt\'); SELECT pg_temp.assert_true(({RESOLVE}->\'receipt\')=(SELECT receipt FROM result),\'Serialized resolver adopts original receipt\');'+assert_paid)
 add('Prepared Outcome Is Proven Uncommitted',f'SELECT {PREP}; SELECT pg_temp.assert_true(({RESOLVE}->>\'definitively_not_committed\')::boolean,\'Prepared boundary has no paid outcome\');'+assert_empty)
 add('Own Authenticated Read Never Returns Another Participant',f"SELECT {PREP}; SELECT {PAY}; SELECT set_config('request.jwt.claims','{{\"role\":\"authenticated\",\"sub\":\"{A}\"}}',true); SET LOCAL ROLE authenticated; SELECT pg_temp.assert_true((public.fn_get_my_satellite_qualification('{SOURCE}')->>'user_id')='{A}','DTO is scoped to auth.uid'); SELECT set_config('request.jwt.claims','{{\"role\":\"authenticated\",\"sub\":\"e1000000-0000-4000-8000-000000000099\"}}',true); SELECT pg_temp.assert_true(public.fn_get_my_satellite_qualification('{SOURCE}') IS NULL,'Nonparticipant sees no qualification'); RESET ROLE;")
@@ -95,6 +95,49 @@ END; $bookings$;
 SELECT pg_temp.assert_true(public.fn_concurrent_game_load('{A}',NULL,NULL,'{TARGET}')=4,'Four real booked game identities feed the cap');
 """
 add('Capped Qualifier Gets Noncash Ticket With Conserved Escrow',f'SELECT {PREP};'+cap_bookings+f'SELECT {PAY};'+assert_paid+f"SELECT pg_temp.assert_true((SELECT count(*)=1 AND bool_and(holder_id='{A}' AND value=200 AND redemption_mode='tournament_entry_only') FROM public.tournament_tickets WHERE source_satellite_id='{SOURCE}'),'Exactly one funded entry ticket for the capped player'); SELECT pg_temp.assert_true((SELECT seat_count=2 AND entry_ticket_count=1 AND cash_ticket_count=0 FROM public.tournament_satellite_settlements WHERE tournament_id='{SOURCE}'),'Other two equal qualifiers receive target entries'); SELECT pg_temp.assert_true((SELECT COALESCE(sum(chip_balance),0) FROM public.club_members)=(SELECT wallets FROM before_money),'Entry ticket creates no spendable cash'); SELECT pg_temp.assert_true((SELECT prize_balance+fee_balance FROM public.tournament_escrow WHERE tournament_id='{TARGET}')+(SELECT sum(value) FROM public.tournament_tickets WHERE source_satellite_id='{SOURCE}')=600,'Target and ticket escrow conserve all 600 chips');",True)
+
+def inject_after_verified_receipt(asset_check):
+ return f"""
+ALTER FUNCTION public.fn_ca_satellite_settlement_receipt(uuid,uuid) RENAME TO native_original_satellite_receipt;
+CREATE FUNCTION public.fn_ca_satellite_settlement_receipt(p_tournament_id uuid,p_observed_winner_id uuid)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=public,pg_temp AS $fault$
+DECLARE verified jsonb; BEGIN
+ verified:=public.native_original_satellite_receipt(p_tournament_id,p_observed_winner_id);
+ PERFORM pg_temp.assert_true(verified->>'fully_settled'='true','Original final verifier accepts exact committed evidence');
+ PERFORM pg_temp.assert_true((SELECT count(*)=3 AND sum(amount)=600 FROM public.tournament_payouts WHERE tournament_id=p_tournament_id),'Late fault sees all three payouts and600 chips');
+ PERFORM pg_temp.assert_true((SELECT count(*)=3 FROM public.tournament_satellite_qualifiers WHERE tournament_id=p_tournament_id),'Late fault sees all qualifier rows');
+ PERFORM pg_temp.assert_true((SELECT prize_balance=0 FROM public.tournament_escrow WHERE tournament_id=p_tournament_id),'Late fault sees zero source liability');
+ PERFORM pg_temp.assert_true(NOT EXISTS(SELECT 1 FROM public.table_seats s JOIN public.tables t ON t.id=s.table_id WHERE t.tournament_id=p_tournament_id AND s.left_at IS NULL),'Late fault sees every released source seat');
+ {asset_check}
+ RAISE EXCEPTION 'injected failure after original final receipt verification' USING ERRCODE='P0902';
+END; $fault$;
+REVOKE ALL ON FUNCTION public.fn_ca_satellite_settlement_receipt(uuid,uuid) FROM PUBLIC,anon,authenticated,service_role;
+"""
+rollback_physical=f"SELECT pg_temp.assert_true((SELECT count(*)=3 FROM public.table_seats s JOIN public.tables t ON t.id=s.table_id WHERE t.tournament_id='{SOURCE}' AND s.left_at IS NULL),'Late rollback restores all three source chairs'); SELECT pg_temp.assert_true((SELECT status='COMPLETING' FROM public.tournaments WHERE id='{SOURCE}'),'Late rollback preserves only prepared status');"
+rollback_physical+=f"SELECT pg_temp.assert_true(NOT EXISTS(SELECT 1 FROM public.tournament_players WHERE tournament_id='{TARGET}'),'Late rollback removes every target registration'); SELECT pg_temp.assert_true(NOT EXISTS(SELECT 1 FROM public.tournament_tickets WHERE source_satellite_id='{SOURCE}'),'Late rollback removes every funded ticket'); SELECT pg_temp.assert_true(NOT EXISTS(SELECT 1 FROM public.tournament_satellite_awards WHERE tournament_id='{SOURCE}'),'Late rollback removes every destination award'); SELECT pg_temp.assert_true(COALESCE((SELECT prize_balance+fee_balance+bounty_balance FROM public.tournament_escrow WHERE tournament_id='{TARGET}'),0)=0,'Late rollback restores zero target liability');"
+late_rejection=rejection(PAY,'P0902','after original final receipt verification')+assert_empty+rollback_physical
+cash_visible="PERFORM pg_temp.assert_true((SELECT COALESCE(sum(chip_balance),0) FROM public.club_members)=(SELECT wallets+600 FROM pg_temp.before_money),'Late cash fault sees the actual600-chip wallet increase');"
+seat_visible=f"PERFORM pg_temp.assert_true((SELECT prize_balance+fee_balance FROM public.tournament_escrow WHERE tournament_id='{TARGET}')=600,'Late seat fault sees all600 chips in target liability');"
+ticket_visible=f"PERFORM pg_temp.assert_true((SELECT prize_balance+fee_balance FROM public.tournament_escrow WHERE tournament_id='{TARGET}')=400 AND (SELECT count(*)=1 AND sum(value)=200 FROM public.tournament_tickets WHERE source_satellite_id=p_tournament_id),'Late ticket fault sees400 target chips and200 ticket chips');"
+add('Failure After Verified Cash Receipt Reverses All Posted Transfers',f'SELECT {PREP};'+inject_after_verified_receipt(cash_visible)+late_rejection)
+add('Failure After Verified Seat Receipt Reverses Every Target Entry',f'SELECT {PREP};'+inject_after_verified_receipt(seat_visible)+late_rejection,True)
+add('Failure After Verified Ticket Receipt Reverses Both Delivery Assets',f'SELECT {PREP};'+cap_bookings+inject_after_verified_receipt(ticket_visible)+late_rejection,True)
+
+add('Actual Service Role Executes Prepared Engine Settlement',f"SET LOCAL ROLE service_role; SELECT {PREP}; SELECT {PAY}; RESET ROLE;"+assert_paid)
+private_calls=[
+ f"public.fn_ca_settle_satellite_terminal('{SOURCE}',NULL,{COHORT},false)",
+ f"public.fn_ca_satellite_settlement_receipt('{SOURCE}',NULL)",
+ f"public.fn_ca_settle_satellite_with_seat_authority('{SOURCE}',NULL,{COHORT})"
+]
+for denied_role in ['authenticated','anon']:
+ denied_calls=[PREP,PAY,RESOLVE]+private_calls
+ sql=f"SELECT set_config('request.jwt.claims','{{\"role\":\"service_role\",\"sub\":\"{A}\"}}',true); SET LOCAL ROLE {denied_role};"
+ for denied_call in denied_calls:
+  sql+=rejection(denied_call,'42501','permission denied for function')
+ if denied_role=='anon':
+  sql+=rejection(f"public.fn_get_my_satellite_qualification('{SOURCE}')",'42501','permission denied for function')
+ add('Actual '+denied_role.title()+' Role Cannot Call Service Or Private Entries',sql+'RESET ROLE;'+assert_empty)
+add('Actual Service Role Cannot Bypass Private Payer Or Verifier', 'SET LOCAL ROLE service_role;'+''.join(rejection(call,'42501','permission denied for function') for call in private_calls)+'RESET ROLE;'+assert_empty)
 
 results=[]
 for name,sql in cases:

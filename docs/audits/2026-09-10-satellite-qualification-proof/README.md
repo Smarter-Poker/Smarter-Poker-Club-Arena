@@ -6,11 +6,11 @@ The proposal is local and is not production-ready while the separately owned fin
 
 ## Native Verification
 
-`native-cases.py` runs the actual installed functions on the owned PostgreSQL17 fixture. Its committed prelaunch seed precedes each launch transaction, then each test forces every deferred constraint and rolls back. Cash assertions read the actual club member balance authority. The injected final receipt failure must roll back all awards, cash credits, cohort rows and source liability release.
+`native-cases.py` runs the actual installed functions on the owned PostgreSQL17 fixture. Its committed prelaunch seed precedes each launch transaction, then each test forces every deferred constraint and rolls back. Cash assertions read the actual club member balance authority. All 23 native cases pass. Three late-failure cases first call the unchanged original final receipt verifier and observe all three payouts plus the actual cash, target-entry, or ticket assets, then raise an error. They verify rollback restores club balances, source liability and physical seats while removing all destination entries, tickets, awards, receipts and qualifier rows. A separate early-header failure tests refusal before awards. Actual SET LOCAL ROLE service_role succeeds through engine entries; authenticated and anon cannot execute service or private entries, and service_role cannot bypass the private payer/verifier.
 
 `lease-lock-race.py` proves a real target-row lock wait can outlive the initial lease check. The negative control accepts that expired owner; the final-write check refuses it. Both leave RUNNING with no boundary or payout after rollback. The corrected body is restored in a finally block.
 
-`catalog` preserves the current definitions and exact trigger enable states used to repair the old full-schema fixture. Its explicit final-seat prerequisite is a local test dependency, never authorization to install Stage-B in production. The source escrow's initial 600-chip liability is a fixture setup; this suite does not claim to test its original purchase collection.
+`catalog` preserves the current definitions and exact trigger enable states used to repair the old full-schema fixture. Its explicit final-seat prerequisite is a local test dependency, never authorization to install Stage-B in production. Seven currently disabled live tournament guards remain disabled, including the financial-certificate guard. This is not full financial-certificate acceptance. The source escrow's initial 600-chip liability is a fixture setup; this suite does not claim to test its original purchase collection.
 
 ## Remaining Acceptance
 

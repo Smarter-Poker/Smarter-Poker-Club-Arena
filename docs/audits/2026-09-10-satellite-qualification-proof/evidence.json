@@ -1,6 +1,6 @@
 {
-  "captured_at": "2026-09-10T13:30:38.940632+00:00",
-  "worktree_head": "bc69229492f37f71dbb2496b92bd6537c97cabe6",
+  "captured_at": "2026-09-10T13:49:03.900091+00:00",
+  "worktree_head": "3a392a57346c7d5baba244aafd146f27d1b2e71e",
   "status": "local_proposal_not_deployed",
   "native_cases": [
     {
@@ -59,7 +59,7 @@
       "error": null
     },
     {
-      "case": "Last Receipt Failure Rolls Back Every Award",
+      "case": "Settlement Header Failure Refuses Payment Before Awards",
       "exit_code": 0,
       "error": null
     },
@@ -80,6 +80,41 @@
     },
     {
       "case": "Capped Qualifier Gets Noncash Ticket With Conserved Escrow",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "case": "Failure After Verified Cash Receipt Reverses All Posted Transfers",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "case": "Failure After Verified Seat Receipt Reverses Every Target Entry",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "case": "Failure After Verified Ticket Receipt Reverses Both Delivery Assets",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "case": "Actual Service Role Executes Prepared Engine Settlement",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "case": "Actual Authenticated Role Cannot Call Service Or Private Entries",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "case": "Actual Anon Role Cannot Call Service Or Private Entries",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "case": "Actual Service Role Cannot Bypass Private Payer Or Verifier",
       "exit_code": 0,
       "error": null
     }
@@ -140,26 +175,52 @@
     "Threshold crossing below K and nonzero remainder remain outside this exact-K contract."
   ],
   "files": {
-    "lease-lock-race.py": "eb8ba74d9b7e5d326560d8f96437c13b9447fd6f6db6e7bd0e8b94df3d1a0b8c",
-    "native-cases.log": "1e39098b7337e6731fb3303a2bed5ef875e124f4c5fa18392effbdf63ca486b2",
-    "lease-lock-race-results.json": "6899c4c797e3d09c76abbdf2edd3d77a18015c8f12c10b4297ca3bed7cf6cdcb",
-    "server-build.log": "7596c34c89803bc9373c4905acc118b580004f7a9d6bd035d0814132300415e9",
-    "native-seed.sql": "e91bf46532cf829ad68cae77fdd6f1f98fd0af14ecf69e5bbc266ef1b278a5f8",
-    "lease-race.log": "0ad80847809bbb8201bccd4abebe540002793f94ac4baafa25b6257eb689d191",
-    "server-tests.log": "86e6499c34e4236b324abe1aa291283e6c47741237b0e5da45683926bbf942b6",
-    "native-cases.py": "1cd22423b6dc95476f87bfc096a3483608d74854a7219e41d0f1df83479e63c8",
-    "native-case-results.json": "d794ce3b014cdc7c2f04498145df1c862113950cd459df6f3cbf9623f100cb81",
-    "catalog/current-native-trigger-functions.json": "233d9a9f1a992759414e3e176805afac39298ff39ce21501652b0fc2db33c5c2",
-    "catalog/current-native-metadata.json": "47353749833968f45939f1297676a000ecfabf7d3038ea8f0733b91c2260b192",
-    "catalog/poker-diamond-custody-exact-fixture.sql": "7031ecb5d3983031ad75036a895763edfdbad08342edf42502288c4a00d009c7",
-    "catalog/current-clear-seat-helpers.json": "c8fb3a6f3dba3d9f15c07834d9c06ec20cbad59a0fb626180b6bd57f55d41fec",
+    "README.md": "92ecc596a3d6d5843baf4ad4d152b5b7c78461342f5e4baf9265af134d6fcb4b",
+    "catalog/current-clear-seat-helpers.json": "9d03810ce3ba65071f39882bbd373b0d5fb79c0b265e62f9ac33bc6985023d12",
     "catalog/current-clear-seat-helpers.sql": "b080f99f9d1286c30b1b111c66bd8f0ef420aa9ae4a21dc3658914df54fc97e8",
+    "catalog/current-native-metadata.json": "107b9fc6248b3bcb51dece545d17f13256ef4765946a2efc0ea84d1b9374825e",
     "catalog/current-native-parity.sql": "949d00b7fb180552857b469cb08609e556c4533b333779f6315da3c5550f4a7a",
-    "catalog/local-explicit-prerequisites.sql": "0e656285e4655324414955ca8a1ccca9435dd04dc8cfed655e08244844f21f2a",
+    "catalog/current-native-trigger-functions.json": "08eed9d95e6003ec4483a6ef0e1df53638bc0d1a83d2f7ba6362c173f6e71c48",
     "catalog/current-native-trigger-states.sql": "e23f2e37fa37883e781d9574a8586c03b936270b3118f94a577d8ecf529f758a",
-    "catalog/spin-draw-metadata.json": "d709304899e5cb6cf3ac2921255d0cc8b61dd5e471e473771f73a4fe2e1096a5",
-    "catalog/poker-diamond-custody-metadata.json": "122c0f13247a3c454306aa67c6c349ad303dce4d46dc05867273197d81d3e32c",
+    "catalog/local-explicit-prerequisites.sql": "0e656285e4655324414955ca8a1ccca9435dd04dc8cfed655e08244844f21f2a",
     "catalog/native-catalog-query.sql": "5c1f7316a569486adc65c7d31b7695802c5f7a0fcce8df3e8d928693a6b29e32",
-    "catalog/spin-draw-exact-fixture.sql": "f36fde45a108d0428d46e1e875d63c95e561ebefb5bb9d4de95d5814f5aad154"
+    "catalog/poker-diamond-custody-exact-fixture.sql": "7031ecb5d3983031ad75036a895763edfdbad08342edf42502288c4a00d009c7",
+    "catalog/poker-diamond-custody-metadata.json": "098cfda7511554ab995034fef1e3c96ebe26fdbe2df60c4ee61516cdbf465a5d",
+    "catalog/spin-draw-exact-fixture.sql": "f36fde45a108d0428d46e1e875d63c95e561ebefb5bb9d4de95d5814f5aad154",
+    "catalog/spin-draw-metadata.json": "f006e4c8fa02288b8a5e3852ef73699b3fbcd7c6adccff5b8c8a31b64375190a",
+    "integrated-ui-build.log": "300cd7445387b979902ec00b60ac7423360591227744ca797601aab73b05a944",
+    "integrated-ui-tests.log": "38ca281fd0913686722a2b1bb46f1312b13d0b7103f9a07e50c4198969b78dee",
+    "integrated-ui-types.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "lease-lock-race-results.json": "33360e18962b0395880f16a67cbf8c35f622029db47bc3353a5c03409a173a18",
+    "lease-lock-race.py": "eb8ba74d9b7e5d326560d8f96437c13b9447fd6f6db6e7bd0e8b94df3d1a0b8c",
+    "lease-race.log": "0ad80847809bbb8201bccd4abebe540002793f94ac4baafa25b6257eb689d191",
+    "native-case-results.json": "0166afcf9a47629a83d9a53b05dac5a164e566c8bea2e4fe88b6d38700c76cac",
+    "native-cases.log": "17fa4072637efb761e3d91c640b6cafc0ee686e34be289d5637394f48f00c328",
+    "native-cases.py": "ebade6156190a46bdcfbbdba94a9ce7fa3adf23c3add84b8a4ca320d6ae5c3b6",
+    "native-seed.sql": "e91bf46532cf829ad68cae77fdd6f1f98fd0af14ecf69e5bbc266ef1b278a5f8",
+    "server-build.log": "7596c34c89803bc9373c4905acc118b580004f7a9d6bd035d0814132300415e9",
+    "server-tests.log": "86e6499c34e4236b324abe1aa291283e6c47741237b0e5da45683926bbf942b6"
+  },
+  "integrated_ui": {
+    "files": 11,
+    "passed": 147,
+    "dedicated_qualification_cases": 36,
+    "typecheck": "passed, empty diagnostic log and subsequent build ran",
+    "frontend_compilation": "passed",
+    "publication_provenance": "blocked: isolated branch 45 commits behind origin/main; root must integrate latest main and rebuild",
+    "build_warnings": [
+      "Existing test AdService mock lacks rpc; reported to stderr while all assertions pass."
+    ]
+  },
+  "rollback_fault_boundary": "Original final receipt verifier first returns fully_settled; fault observes every payout and cash/seat/ticket assets before raising P0902. Assertions then verify all source and destination changes rolled back.",
+  "sql_role_proof": "SET LOCAL ROLE service_role executes engine prepare+complete. authenticated/anon cannot invoke service/private entries; service_role cannot invoke private payer/verifier.",
+  "source_files": {
+    "server/src/tournament/TournamentManagerEliminations.ts": "500125696957debaf3183a5afb97aba28ed6511fef66cad18f643d199931b601",
+    "server/src/tournament/satelliteSettlementReceipt.ts": "fe8fc55df0db932c8d777906c829eb49dec29d6bd9076f4bea2ff80ae8ea7faf",
+    "server/src/tournament/satelliteSettlementRpc.ts": "c7c1fc45f6f703f80e6a3234cafc2cae41ed697a672dc707c596a87564ed41d6",
+    "server/src/tournament/tournamentRecovery.ts": "06bc2eb6db20686c68fc72e96df312f0815d37c3c81699239adf4b3878e1a1ee",
+    "supabase/migrations/20260910054035_satellites_record_equal_qualifiers_without_fabricated_finish.sql": "5043de388024def959bfb248f6db9ffc737ea79d1e6f0e43c1177f64f02d7b24",
+    "src/services/satelliteQualification.ts": "94553c69797f672943b349904b4f282985bbc4c69de6499e4a824ed9dd45cca5",
+    "src/pages/TablePage.tsx": "080f32131f9bb1bff26b35d83fd0e3910007654c77297edd0d176f57210de4bd"
   }
 }

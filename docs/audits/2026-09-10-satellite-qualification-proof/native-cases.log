@@ -9,8 +9,15 @@ PASS A Smaller Cohort Cannot Borrow A Rank
 PASS A Forged Session Marker Does Not Prepare A Cohort
 PASS Partial Target Capacity Refuses The Whole Cohort
 PASS Immutable Boundary Cannot Be Reassigned
-PASS Last Receipt Failure Rolls Back Every Award
+PASS Settlement Header Failure Refuses Payment Before Awards
 PASS Lost Response Replay Returns The Original Receipt
 PASS Prepared Outcome Is Proven Uncommitted
 PASS Own Authenticated Read Never Returns Another Participant
 PASS Capped Qualifier Gets Noncash Ticket With Conserved Escrow
+PASS Failure After Verified Cash Receipt Reverses All Posted Transfers
+PASS Failure After Verified Seat Receipt Reverses Every Target Entry
+PASS Failure After Verified Ticket Receipt Reverses Both Delivery Assets
+PASS Actual Service Role Executes Prepared Engine Settlement
+PASS Actual Authenticated Role Cannot Call Service Or Private Entries
+PASS Actual Anon Role Cannot Call Service Or Private Entries
+PASS Actual Service Role Cannot Bypass Private Payer Or Verifier

@@ -55,7 +55,7 @@
     "error": null
   },
   {
-    "case": "Last Receipt Failure Rolls Back Every Award",
+    "case": "Settlement Header Failure Refuses Payment Before Awards",
     "exit_code": 0,
     "error": null
   },
@@ -76,6 +76,41 @@
   },
   {
     "case": "Capped Qualifier Gets Noncash Ticket With Conserved Escrow",
+    "exit_code": 0,
+    "error": null
+  },
+  {
+    "case": "Failure After Verified Cash Receipt Reverses All Posted Transfers",
+    "exit_code": 0,
+    "error": null
+  },
+  {
+    "case": "Failure After Verified Seat Receipt Reverses Every Target Entry",
+    "exit_code": 0,
+    "error": null
+  },
+  {
+    "case": "Failure After Verified Ticket Receipt Reverses Both Delivery Assets",
+    "exit_code": 0,
+    "error": null
+  },
+  {
+    "case": "Actual Service Role Executes Prepared Engine Settlement",
+    "exit_code": 0,
+    "error": null
+  },
+  {
+    "case": "Actual Authenticated Role Cannot Call Service Or Private Entries",
+    "exit_code": 0,
+    "error": null
+  },
+  {
+    "case": "Actual Anon Role Cannot Call Service Or Private Entries",
+    "exit_code": 0,
+    "error": null
+  },
+  {
+    "case": "Actual Service Role Cannot Bypass Private Payer Or Verifier",
     "exit_code": 0,
     "error": null
   }

@@ -214,7 +214,7 @@ BEGIN
        SELECT 1 FROM pg_proc p
         WHERE p.oid =
           'public.fn_ca_lock_settlement_lane_for_tournament(uuid,uuid)'::regprocedure
-          AND md5(p.prosrc) = '2bc939035496d764ff9d6c14b52fa1e7'
+          AND md5(p.prosrc) = '3acb4c1d763181905cf5b64287f8f28f'
      )
      OR NOT EXISTS (
        SELECT 1 FROM pg_proc p

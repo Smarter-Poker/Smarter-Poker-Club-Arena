@@ -4048,7 +4048,7 @@ export abstract class TournamentManagerBase {
       // restoreDrawnFirstButtons.
       const { data: tables } = await supabase
         .from('tables')
-        .select('id, first_button_seat')
+        .select('id, first_button_seat, small_blind, big_blind, ante, stakes')
         .eq('tournament_id', this.tournamentId)
         .in('status', ['running', 'waiting']);
       this.assertLifecycleCurrent(lifecycle);
@@ -4109,6 +4109,38 @@ export abstract class TournamentManagerBase {
           }
         }
       } else {
+        // An interrupted or failed level fan-out can leave tables on different
+        // blinds. Restore every row from the durable tournament level before
+        // admitting any dealer; a failed correction must not start a split field.
+        const restoredLevel = this.resolveBlindLevel(
+          tournament.blind_structure || [],
+          tournament.current_level || 0
+        );
+        if (restoredLevel) {
+          const smallBlind = Math.min(restoredLevel.smallBlind || 0, 10_000_000);
+          const bigBlind = Math.min(restoredLevel.bigBlind || 0, 10_000_000);
+          const ante = Math.min(restoredLevel.ante || 0, 10_000_000);
+          const stakes = `${smallBlind}/${bigBlind}`;
+          for (const table of tables) {
+            if (
+              Number(table.small_blind) === smallBlind &&
+              Number(table.big_blind) === bigBlind &&
+              Number(table.ante) === ante &&
+              table.stakes === stakes
+            )
+              continue;
+            const { error } = await supabase
+              .from('tables')
+              .update({ small_blind: smallBlind, big_blind: bigBlind, ante, stakes })
+              .eq('id', table.id);
+            this.assertLifecycleCurrent(lifecycle);
+            if (error) {
+              throw new Error(
+                `Blind recovery failed for table ${table.id.slice(0, 8)}: ${error.message}`
+              );
+            }
+          }
+        }
         for (const table of tables) {
           const engine = this.createManagedTableEngine(table.id);
           engine.setHub(tableStateHub); // Phase 1.1 PR-2

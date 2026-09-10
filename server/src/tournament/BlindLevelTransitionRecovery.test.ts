@@ -121,3 +121,83 @@ describe('durable blind-level transition', () => {
     }
   );
 });
+
+describe('blind rows at manager recovery', () => {
+  it.each(['repaired', 'unavailable'])(
+    'reconciles persisted blinds before any dealer admission when the table write is %s',
+    async (mode) => {
+      const structure = [
+        { smallBlind: 25, bigBlind: 50, durationMinutes: 10 },
+        { smallBlind: 50, bigBlind: 100, durationMinutes: 10 },
+      ];
+      const row: Record<string, any> = {
+        current_level: 0,
+        level_started_at: '2026-09-10T12:00:00.000Z',
+        blind_structure: structure,
+        on_break: false,
+        prize_pool_finalized: true,
+      };
+      const tableIds = ['table-one', 'table-two'];
+      const tables = new Map(
+        tableIds.map((id) => [id, { small_blind: 25, big_blind: 50, ante: 0, stakes: '25/50' }])
+      );
+      const expected = { small_blind: 50, big_blind: 100, ante: 0, stakes: '50/100' };
+      const old = manager(row, tableIds);
+      let recovering = false;
+      const recoveryWrites: string[] = [];
+      vi.spyOn(supabase, 'from').mockImplementation(
+        (relation: string) =>
+          ({
+            update: (patch: Record<string, unknown>) => ({
+              eq: async (_column: string, id: string) => {
+                if (relation === 'tournaments') Object.assign(row, patch);
+                else if (relation === 'tables') {
+                  if (recovering) recoveryWrites.push(id);
+                  if (id === 'table-two' && (!recovering || mode === 'unavailable')) {
+                    return { error: { message: 'table blind write unavailable' } };
+                  }
+                  Object.assign(tables.get(id)!, patch);
+                } else throw new Error('unexpected write: ' + relation);
+                return { error: null };
+              },
+            }),
+            select: () => ({
+              eq: () => ({
+                maybeSingle: async () => ({ data: structuredClone(row), error: null }),
+                in: async () => ({
+                  data: tableIds.map((id) => ({ id, ...tables.get(id) })),
+                  error: null,
+                }),
+              }),
+            }),
+          }) as never
+      );
+      await old.advanceBlindLevel(structure);
+      expect(row.current_level).toBe(1);
+      expect(tables.get('table-one')).toEqual(expected);
+      expect(tables.get('table-two')?.big_blind).toBe(50);
+      old.running = false;
+      recovering = true;
+      const replacement = manager(row, []);
+      const admitted: unknown[][] = [];
+      replacement.startManagedTableEngine.mockImplementation(() => {
+        admitted.push(structuredClone([...tables.values()]));
+      });
+      await replacement.resumeLifecycle(1);
+      expect(recoveryWrites).toEqual(['table-two']);
+
+      if (mode === 'unavailable') {
+        expect(admitted).toEqual([]);
+        expect(replacement.running).toBe(false);
+        expect(replacement.tableEngines.size).toBe(0);
+      } else {
+        expect(replacement.running).toBe(true);
+        expect(admitted).toEqual([
+          [expected, expected],
+          [expected, expected],
+        ]);
+        expect(replacement.currentLevel).toBe(1);
+      }
+    }
+  );
+});

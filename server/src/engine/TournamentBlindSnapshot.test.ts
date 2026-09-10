@@ -35,7 +35,7 @@ afterEach(() => {
 const levelOne = { small_blind: 10, big_blind: 20, ante: 2 };
 const levelTwo = { small_blind: 20, big_blind: 40, ante: 4 };
 
-function fixture() {
+function fixture(count = 3) {
   const engine = new ServerTableEngine('tournament-level-snapshot') as any;
   engines.push(engine);
   engine.tableInfo = {
@@ -47,7 +47,7 @@ function fixture() {
     ...levelOne,
     ante_enabled: false,
   };
-  const seats = [1, 2, 3].map((seat) => ({
+  const seats = Array.from({ length: count }, (_, index) => index + 1).map((seat) => ({
     seat_number: seat,
     user_id: 'u' + seat,
     username: 'Player ' + seat,
@@ -122,26 +122,118 @@ describe('tournament levels belong to the hand that was created with them', () =
       })
     );
     let ready = false;
-    const inputs = engine.readNextHandInputs().then((rows: unknown) => {
+    await expect(engine.readNextHandInputs()).resolves.toEqual(seats);
+    const inputs = engine.awaitNextHandRest().then(() => {
       ready = true;
-      return rows;
     });
     await Promise.resolve();
     await Promise.resolve();
     expect(ready).toBe(false);
     expect(engine.handController).toBeNull();
     release({ ...engine.tableInfo, ...levelTwo });
-    await expect(inputs).resolves.toEqual(seats);
+    await expect(inputs).resolves.toBeUndefined();
     const hand = await deal();
     hand.start();
     expect(hand.getState()).toMatchObject({ currentBet: 40, pot: 72 });
   });
 
-  it('refuses the next-hand input set when the blind authority cannot be read', async () => {
+  it('uses the level reached during the rest after next-hand inputs were prepared', async () => {
+    const { engine, deal } = fixture();
+    engine.allocateGlobalHandNumber = async () => 100;
+    engine.armNextHandRest(60_000);
+    await engine.prepareNextHand();
+    let releaseRest!: () => void;
+    const sleep = vi.spyOn(engine, 'sleep').mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          releaseRest = resolve;
+        })
+    );
+    const rest = engine.awaitNextHandRest();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(sleep).toHaveBeenCalledOnce();
+    loadTable.mockResolvedValue({ ...engine.tableInfo, ...levelTwo });
+    releaseRest();
+    await rest;
+    expect(loadTable).toHaveBeenCalledOnce();
+    const hand = await deal();
+    hand.start();
+    expect(hand.getState()).toMatchObject({ currentBet: 40, pot: 72 });
+  });
+
+  it('refuses the next deal when the blind authority cannot be read', async () => {
     const { engine } = fixture();
     const unavailable = new Error('blind authority rejected the read');
     loadTable.mockRejectedValue(unavailable);
-    await expect(engine.readNextHandInputs()).rejects.toBe(unavailable);
+    await engine.readNextHandInputs();
+    await expect(engine.awaitNextHandRest()).rejects.toBe(unavailable);
+    expect(engine.handController).toBeNull();
+  });
+});
+
+describe('tournament sit-outs retain their forced-bet obligations', () => {
+  it.each([2, 3, 6])(
+    'keeps all %i absent entrants in blind rotation and charges their antes',
+    async (count) => {
+      const { engine, seats, deal } = fixture(count);
+      for (const seat of seats) {
+        engine.disconnectEngine.sitOut(
+          engine.tableId,
+          seat.user_id,
+          'voluntary',
+          Date.now() - 600_000
+        );
+      }
+      expect(engine.dealableCount()).toBe(count);
+      // The elapsed cash sit-out limit must not vacate a tournament occupancy.
+      await engine.evictExpiredSitOuts({ countOrbit: true });
+      expect(engine.seatedPlayers).toEqual(seats);
+      // An established hand boundary avoids drawing a new heads-up first button.
+      engine.lastButtonSeat = count;
+      {
+        const smallBlindSeat = engine.getSBSeatIndex();
+        const bigBlindSeat = engine.getBBSeatIndex();
+        const hand = await deal();
+        hand.start();
+        const state = hand.getState();
+        expect(state.players).toHaveLength(count);
+        expect(state.pot).toBe(30 + 2 * count);
+        for (const player of state.players) {
+          const blind = player.seat === smallBlindSeat ? 10 : player.seat === bigBlindSeat ? 20 : 0;
+          expect(player.stack, 'forced bet at seat ' + player.seat).toBe(1000 - 2 - blind);
+          expect(player.is_sitting_out).toBe(false);
+        }
+      }
+      expect(engine.seatedPlayers).toEqual(seats);
+    }
+  );
+
+  it('takes a short absent entrant all-in for the available ante instead of skipping the seat', async () => {
+    const { engine, seats, deal } = fixture();
+    seats[0].stack = 1;
+    engine.disconnectEngine.sitOut(engine.tableId, seats[0].user_id);
+    const hand = await deal();
+    hand.start();
+    expect(
+      hand.getState().players.find((player) => player.user_id === seats[0].user_id)
+    ).toMatchObject({
+      stack: 0,
+      is_all_in: true,
+      is_sitting_out: false,
+    });
+    expect(hand.getState().pot).toBe(35);
+  });
+
+  it('keeps the cash exclusion scoped to cash tables', async () => {
+    const { engine, seats } = fixture();
+    engine.tableInfo.game_type = 'cash';
+    engine.tableInfo.tournament_id = null;
+    for (const seat of seats.slice(0, 2)) {
+      engine.disconnectEngine.sitOut(engine.tableId, seat.user_id);
+    }
+    expect(engine.dealableCount()).toBe(1);
+    await expect(engine.dealHand(seats)).resolves.toBeUndefined();
     expect(engine.handController).toBeNull();
   });
 

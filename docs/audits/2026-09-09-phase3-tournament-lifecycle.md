@@ -147,3 +147,31 @@ Three new K02 behavioral cases run the real input refresh, deal configuration an
 The table-move writer, receipt resolver and receipt table remain absent in the 00:42 UTC catalog read. The staged cutover's freeze-body pin differs from the current installed freeze predicate, so the historical cutover cannot be applied unchanged. The exact twelve-argument hand-commit prerequisite now exists with both seat-generation markers; the earlier claim that it was missing is obsolete. The dependency register records these separately. No historical repair, alternate move writer or cutover-marker bypass was performed.
 
 Registration receipt tests were reviewed, not repeated. Their simulated funding core cannot establish real debit atomicity or last-seat races, and an older admission probe references the retired unbound registration API. T01 remains open. Phase 3 retains all 58 original requirements; Phase 4 has not started.
+
+## Pre-Start Funding And Charged-Club Receipt
+
+The new disposable PostgreSQL rehearsal passed seven groups using the real registration request, debit, journal, immutable entitlement, escrow and receipt functions. It observes actual overlapping database transactions for retries, duplicate entries, the last available place and pool closure; a late receipt failure rolls back every tested financial write. Its external auth and maintenance state remain synthetic, with complete limits and source hashes in scripts/dev/fixtures/registration-funding.
+
+A separate two-club case reproduced a receipt defect: the correct club wallet fell from 500 to 300, while the receipt logged the older membership wallet at 1,000. The scoped forward migration now reads the club chosen by the entry debit. Production applied version 20260910012633; the independent 01:27 UTC read matches body f9d423ecda16d49d698a1b3735baf7cb with unchanged service-only execution. No balance or historical receipt was rewritten. Source publication remains pending at this checkpoint. T01 has additional verified pre-start funding evidence; the full requirement and Phase 3 remain open.
+
+## Forced-Bet Eligibility And Release Checkpoint
+
+K11 is verified for its stated forced-bet policy. Five added behavioral cases use the existing real engine/HandController fixture: all-absent heads-up, three-player and six-player tournament rosters pay their blinds and antes; the expired cash sit-out timer does not evict them; a one-chip absent entrant posts an all-in ante; cash exclusions remain effective. All eight tests in the shared file and server types pass. The tested production methods match live engine build b4c427a6. Transport, settlement and moved-seat persistence remain separate controls.
+
+The UTC correction is now adopted. Public health reported b4c427a6 at 02:00:29 UTC with all 282 tables resumed and maintenance idle. The database leader heartbeat independently reported the same build at 02:01:20 UTC, less than one second old. Git ancestry confirms this build contains PR #4063. This closes its deployment step without claiming full K03/K04/K12 acceptance.
+
+The receipt correction source merged through PR #4075 at 01:47:07 UTC as 37cd6a1c17b6ef92ba1ffd7c86f36a667e6aabd2 after required CI 34426615230 passed. The previously verified database correction is already live. The later played-Spin composition has separate installed hashes recorded in the register; the original 36 checks are not presented as verification of the expanded recovery proof. Two of 58 controls are verified; Phase 3 remains in progress and Phase 4 has not started.
+
+## Rebuy, Re-Entry And Add-On Funding Rehearsed
+
+Thirteen additional PostgreSQL scenario groups passed through both local psql and CI's pinned pg client. They call the captured public purchase RPC, money core and seating helpers with 23 real contract triggers. Funding, escrow, grants, generation changes and receipts agree; final receipt failures leave the tracked rows unchanged; actual overlapping requests fund one grant; historical tokens retain their original answer across later busts; eligibility and cutoff refusals move nothing. A re-entry into a vacated chair commits the funded replacement seat in the purchase transaction.
+
+The fixture verifies 33 captured function-body hashes and records its limits in scripts/dev/fixtures/tournament-purchase-funding. Accepted-hand records, auth and maintenance inputs are synthetic. Full hand settlement, funded bounty re-entry, union funding and engine grant adoption are not certified, so T04 and T05 gain bounded evidence and remain partial. A final live catalog read was unavailable because the database first reported shutdown and then a connection timeout. No new production correction is claimed.
+
+The preceding sit-out evidence merged as PR #4081, commit 3bb214433b981fe9df52d0991333634343c0f22c, after CI 34428007551 passed. At 02:06:23 UTC the normal staged-deployment successor was dispatched with force=false and HTTP 204 for main 1695880b4a3fef292bba096c6604759cf167bc17. Phase 3 remains open; Phase 4 has not started.
+
+## Blind Level At The End Of The Rest
+
+A behavioral case reproduced a K02 defect: a level update during the prefetched rest left the next hand posting the old 20 big blind and 36 pot instead of 40 and 72. The existing budgeted blind read now runs after that rest and before the caller rechecks pause and lease authority. No database query was added. All nine shared hand cases, three input-preparation cases and server types pass. This correction awaits source publication and engine adoption; K02 is not yet closed.
+
+Purchase evidence merged as PR #4090, commit 78555488589b727122e1f073c3ed32a8c6d55c87, with required CI 34430313387 successful. The database recovered, and its 02:50 UTC catalog matched 31 of the 33 captured bodies. Two installed seat-trigger optimizations were recaptured in the fixture and manifest; all 13 purchase groups passed once against that updated composition with the pinned pg client. T04/T05 retain their stated limits. Phase 3 remains open and Phase 4 has not started.

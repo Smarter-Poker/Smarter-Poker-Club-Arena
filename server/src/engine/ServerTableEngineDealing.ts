@@ -1276,13 +1276,24 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
 
   protected async awaitNextHandRest(): Promise<void> {
     await this.settlePreparedHandNumber();
-    if (this.nextHandNotBeforeMs === null) return;
-    const remaining = this.nextHandNotBeforeMs - Date.now();
-    if (remaining > 0) {
-      this.setLoopPhase('next_hand_rest');
-      await this.sleep(remaining);
+    if (this.nextHandNotBeforeMs !== null) {
+      const remaining = this.nextHandNotBeforeMs - Date.now();
+      if (remaining > 0) {
+        this.setLoopPhase('next_hand_rest');
+        await this.sleep(remaining);
+      }
+      this.nextHandNotBeforeMs = null;
     }
-    this.nextHandNotBeforeMs = null;
+    // A level may advance while the prepared roster waits under the rest.
+    // Read the tournament stakes here, before the caller rechecks its lease
+    // and pause gates. This replaces the earlier prefetched blind read.
+    if (this.isTournamentTable()) {
+      await this.withStepBudget(
+        'refresh_blinds',
+        ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
+        this.refreshBlinds()
+      );
+    }
     if (this.lastCompletionAtMs !== null && !this.gapSawIdle) {
       const now = Date.now();
       this.accrueGapPhase(now);
@@ -1342,7 +1353,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
   /**
    * EVERYTHING THE NEXT HAND NEEDS FROM THE DATABASE, IN ONE ROUND (2026-09-07).
    *
-   * Three independent reads and one allocation used to run one after another
+   * The independent reads and hand allocation used to run one after another
    * at the top of the iteration: the roster (itself two round trips), the
    * leave-pending sweep, and - inside dealHand - the global hand number. At
    * the 250-700ms a PostgREST call costs from the engine box that was two to
@@ -1350,7 +1361,8 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
    * slept. They now start together, under the rest.
    *
    * Independence, stated so it can be checked:
-   * - readNextHandInputs reads seats, blinds and rake; nothing here writes them.
+   * - readNextHandInputs reads seats and rake; nothing here writes them.
+   *   Tournament blinds are read after the rest, at the next-deal boundary.
    * - processLeavePending marks leaving seats left and cashes them out. It is
    *   raced with the roster read ONLY when no add-on is pending (an add-on
    *   must credit a seat before that seat can leave, so the serial order
@@ -1460,20 +1472,14 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
   }
 
   protected async readNextHandInputs(): Promise<SeatedPlayer[]> {
-    // These reads have no dependency on each other. Blinds update tournament
-    // settings; rake refresh updates cash settings; neither uses the roster.
-    // Keep every existing query and budget, but pay the slowest read instead
-    // of adding their round trips to the gap between hands.
+    // Seats and cash rake can be prepared in parallel under the rest.
+    // Tournament blinds must wait until that rest ends: a level may advance
+    // after this prepared roster is ready but before its hand is created.
     const reads = [
       this.withStepBudget(
         'load_seats',
         ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
         loadSeatedPlayers(this.tableId)
-      ),
-      this.withStepBudget(
-        'refresh_blinds',
-        ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
-        this.refreshBlinds()
       ),
       this.withStepBudget(
         'refresh_rake',
@@ -1484,9 +1490,8 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     this.setLoopPhase('load_next_hand_inputs');
     // Do not fail fast and start another iteration while a sibling read is
     // still in its budget. The old roster is retained if any input fails.
-    const [seats, blinds, rake] = await Promise.allSettled(reads);
+    const [seats, rake] = await Promise.allSettled(reads);
     if (seats.status === 'rejected') throw seats.reason;
-    if (blinds.status === 'rejected') throw blinds.reason;
     if (rake.status === 'rejected') throw rake.reason;
     return seats.value;
   }

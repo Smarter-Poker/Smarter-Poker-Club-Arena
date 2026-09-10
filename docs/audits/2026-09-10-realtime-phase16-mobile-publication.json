@@ -1,0 +1,37 @@
+{
+  "checkedAt": "2026-09-10T14:18:32.104967+00:00",
+  "stamps": [
+    {
+      "ca_sha": "010183495722982bfa2f1c14a8bb6e6fa358d9b1",
+      "built_at": "2026-09-10T14:10:10Z",
+      "built_by": "publish-club-arena.yml",
+      "run_id": "34486453021"
+    },
+    {
+      "ca_sha": "010183495722982bfa2f1c14a8bb6e6fa358d9b1",
+      "built_at": "2026-09-10T14:10:10Z",
+      "built_by": "publish-club-arena.yml",
+      "run_id": "34486453021"
+    }
+  ],
+  "entryUrl": "https://smarter.poker/hub/club-arena/assets/index-BReAaUmw-v6.js",
+  "entrySha256": "5f4a53fae95e09a71f21310d6726a8571ddc4e31355b2352ef931ffe310297a4",
+  "styles": [
+    {
+      "url": "https://smarter.poker/hub/club-arena/assets/index-CsFjZapx-v6.css",
+      "originUrl": "https://ca-static.smarter.poker/assets/index-CsFjZapx-v6.css",
+      "sha256": "452d8b39440e31c10a29f12bce937a2f4a1dc18c13c5d7b026e31f90f20c6ce2",
+      "navigationRule": null,
+      "adTargetRule": ".ad-rotator__dot{display:grid;place-items:center;flex:0 0 44px;width:44px;height:44px;box-sizing:border-box;border-radius:4px;background:transparent}"
+    },
+    {
+      "url": "https://smarter.poker/hub/club-arena/assets/ArenaAccessBoundary-j-sAn-Lz-v6.css",
+      "originUrl": "https://ca-static.smarter.poker/assets/ArenaAccessBoundary-j-sAn-Lz-v6.css",
+      "sha256": "9b26c005d9b94cb49065caf7772799337ef964c638d9445461f711a7313e7626",
+      "navigationRule": "@media(pointer:coarse){._button_1apr7_3{min-height:44px}",
+      "adTargetRule": null
+    }
+  ],
+  "publicEqualsOrigin": true,
+  "qualification": "Actual referenced bytes; rendered touch-target acceptance requires the production browser suite."
+}

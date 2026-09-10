@@ -1,0 +1,73 @@
+{
+  "date": "2026-09-10",
+  "source_commit": "8b859c0254",
+  "programme": "109-item comprehensive Club Arena accounting audit",
+  "production_mutations": false,
+  "mystery_reservation": {
+    "passed": [
+      "funded inventory creates N minus one chests summing to reserved pool",
+      "entry-open seed refuses without inventory",
+      "unfunded inventory refuses",
+      "duplicate sequence cannot partially seed",
+      "seed replay cannot replace the committed draw order",
+      "reserve binds persisted recipients and conserves an odd-cent split",
+      "retry with a different client token returns the same award",
+      "wrong hand cannot reserve a chest",
+      "two eliminations consume different funded chests",
+      "late recipient failure rolls the reservation back completely",
+      "browser cannot impersonate the revealer or request engine auto-reveal",
+      "authorized reveal and replay return identical fixed awards",
+      "observed overlapping reserve requests commit one award and one replay"
+    ],
+    "production_database_used": false,
+    "wallet_payer_installed": false
+  },
+  "satellite_origin_refund": {
+    "passed": [
+      "installed code returns a ticket instead of the approved cash",
+      "historical ticket receipt survives and cannot fund a second refund",
+      "cash provenance, refusals, replay, fees and escrow",
+      "ordinary wallet-funded entry remains correct",
+      "redeemed-ticket funding returns cash once",
+      "late receipt failure rolls back wallet and all financial receipts",
+      "observed overlapping requests commit one refund and one replay",
+      "installed start migration and later replay preserve the cash correction"
+    ],
+    "production_database_used": false
+  },
+  "controls": [
+    {
+      "id": "CA-03-02",
+      "status": "partial_exact_generation_gate_not_installed",
+      "proven": "Current generation-bound reserve/pay catalog; existing arithmetic and attribution source tests reviewed. No independent wallet payout conservation certificate in this lane.",
+      "remaining": [
+        "Install coordinated M6 dependency and 20260909182236 bounty rebuy generation authority; fn_ca_settle_bounty_rebuy_generation_v1(uuid,uuid,uuid) is absent in live catalog.",
+        "Run bounty-rebuy-generation-atomicity.sql with real funding and terminal dependencies, including rollback, PKO carry and winner residual closure."
+      ]
+    },
+    {
+      "id": "CA-03-03",
+      "status": "partial_reservation_and_reveal_behavior_verified",
+      "proven": "Thirteen exact-function local PostgreSQL reserve/reveal scenarios. Sealed table RLS and service-only catalog verified read-only.",
+      "remaining": [
+        "Full real payer rollback and exact wallet/ledger/escrow reconciliation across mystery award completion and terminal residual closure.",
+        "Confirm activation cutoff and all-table hand boundary in coordinated engine release."
+      ]
+    },
+    {
+      "id": "CA-03-10",
+      "status": "partial_origin_refund_and_existing_ticket_liability_scope",
+      "proven": "Eight PostgreSQL scenario groups for approved origin-wallet refunds, ordinary funded entries, previously redeemed tickets, historical receipt preservation and concurrent retries.",
+      "remaining": [
+        "End-to-end source satellite to target escrow and existing ticket ownership/redemption acceptance under final coordinated seat authority.",
+        "Do not infer authorization for new ticket issuance from the CA-03-10 label. The separate B08 register and refund correction require approved cash treatment. Existing committed ticket liabilities must not be erased or paid twice."
+      ]
+    }
+  ],
+  "additional_checks": {
+    "python_compile": "passed",
+    "git_diff_check": "passed",
+    "typescript": "not completed: disk exhaustion while copying isolated dependencies",
+    "server_unit_tests": "not run: dependencies were incomplete before disk exhaustion"
+  }
+}

@@ -37,15 +37,20 @@ VALUES
    '10000000-0000-0000-0000-000000000002','player','active',0)
 ON CONFLICT (club_id,user_id) DO NOTHING;
 
+-- Terminal money probes begin after every promised purchase window closes.
+-- The hand-boundary probe explicitly overrides levels and rebuy eligibility.
 INSERT INTO public.tournaments(
   id,club_id,name,buy_in_amount,buy_in_fee,start_time,max_players,status,
   prize_pool,bounty_pool,bounty_pool_paid,total_rake,guaranteed_prize,
-  current_players,payout_structure,prize_pool_finalized)
+  current_players,payout_structure,prize_pool_finalized,
+  started_at,current_level,late_reg_levels,rebuy_levels,late_reg_mins,
+  is_rebuy,is_reentry,add_on_available,addon_period_started_at,addon_period_ends_at)
 VALUES(
   '30000000-0000-0000-0000-000000000001',
   '20000000-0000-0000-0000-000000000001','Atomic Probe Template',
   10,0,now(),9,'RUNNING',10,0,0,0,0,1,
-  '[{"place":1,"percentage":100}]'::jsonb,false)
+  '[{"place":1,"percentage":100}]'::jsonb,false,
+  now()-interval '2 hours',5,4,4,60,false,false,false,NULL,NULL)
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO public.tournament_players(

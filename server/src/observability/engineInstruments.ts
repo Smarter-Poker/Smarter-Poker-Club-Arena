@@ -286,6 +286,10 @@ export const horseDecisionWorkerExpiredJobs: Gauge = alwaysOnRegistry.gauge(
   'poker_horse_decision_worker_expired_jobs',
   'Accepted horse-decision operations whose queue-plus-compute caller deadline elapsed since this worker started. Decision expirations take the legal fail-safe action without misclassifying a healthy worker as wedged.'
 );
+export const horseDecisionWorkerRecoverableRequestErrors: Gauge = alwaysOnRegistry.gauge(
+  'poker_horse_decision_worker_recoverable_request_errors',
+  'Horse-decision requests rejected at worker validation since startup. Each caller takes its legal fail-safe action; transport, lifecycle-fence, durable-effect execution, and runtime-integrity failures remain terminal.'
+);
 export const horseDecisionWorkerActiveJobAgeMs: Gauge = alwaysOnRegistry.gauge(
   'poker_horse_decision_worker_active_job_age_ms',
   'Age of the currently executing horse-decision worker operation in milliseconds; 0 when idle.'

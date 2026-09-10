@@ -30,20 +30,17 @@ afterEach(() => {
 describe('next hand input reads', () => {
   it('starts independent configuration reads while the fresh roster is still loading', async () => {
     const seats = deferred<any[]>();
-    const blinds = deferred<void>();
     const rake = deferred<void>();
     loadSeatedPlayers.mockReturnValue(seats.promise);
     const e = fixture();
-    e.refreshBlinds.mockReturnValue(blinds.promise);
     e.refreshRakeConfig.mockReturnValue(rake.promise);
     const work = e.readNextHandInputs();
     try {
       expect(loadSeatedPlayers).toHaveBeenCalledOnce();
-      expect(e.refreshBlinds).toHaveBeenCalledOnce();
+      expect(e.refreshBlinds).not.toHaveBeenCalled();
       expect(e.refreshRakeConfig).toHaveBeenCalledOnce();
     } finally {
       seats.resolve([]);
-      blinds.resolve();
       rake.resolve();
       await work;
     }

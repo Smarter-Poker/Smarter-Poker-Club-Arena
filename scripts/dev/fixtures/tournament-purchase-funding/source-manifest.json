@@ -74,7 +74,7 @@
     },
     {
       "signature": "fn_stamp_seat_club()",
-      "body_md5": "61c153b6bfe25cf4cceda987f446cd62"
+      "body_md5": "aae09b5c2a9a82e0d72bbc7ab5020467"
     },
     {
       "signature": "fn_stamp_seat_horse_id()",
@@ -110,7 +110,7 @@
     },
     {
       "signature": "trg_lock_and_validate_tournament_live_seat()",
-      "body_md5": "21b0048133368b41b6d679e276fa373c"
+      "body_md5": "1daab0d4125165fa5b501506299965d3"
     },
     {
       "signature": "trg_refuse_live_seat_on_closed_tournament_table()",
@@ -177,7 +177,7 @@
       "tgname": "a0_tournament_live_seat_root_guard"
     },
     {
-      "body_md5": "21b0048133368b41b6d679e276fa373c",
+      "body_md5": "1daab0d4125165fa5b501506299965d3",
       "definition": "CREATE TRIGGER aa_tournament_live_seat_proof_lock BEFORE INSERT OR DELETE OR UPDATE ON table_seats FOR EACH ROW EXECUTE FUNCTION trg_lock_and_validate_tournament_live_seat()",
       "proname": "trg_lock_and_validate_tournament_live_seat",
       "table_name": "table_seats",
@@ -265,7 +265,7 @@
       "tgname": "trg_stamp_sit_out_at"
     },
     {
-      "body_md5": "61c153b6bfe25cf4cceda987f446cd62",
+      "body_md5": "aae09b5c2a9a82e0d72bbc7ab5020467",
       "definition": "CREATE TRIGGER trg_table_seats_stamp_club BEFORE INSERT OR UPDATE ON table_seats FOR EACH ROW EXECUTE FUNCTION fn_stamp_seat_club()",
       "proname": "fn_stamp_seat_club",
       "table_name": "table_seats",
@@ -357,5 +357,7 @@
     "inherited auth/session/maintenance functions",
     "empty bounty award/recipient/payment read relations",
     "accepted-hand and settlement rows"
-  ]
+  ],
+  "catalog_reconciled_at_utc": "2026-09-10T02:50:01Z",
+  "catalog_reconciliation": "31 function bodies unchanged; fn_stamp_seat_club and trg_lock_and_validate_tournament_live_seat recaptured after installed seat-trigger optimization."
 }

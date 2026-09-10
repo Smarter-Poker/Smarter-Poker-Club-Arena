@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { sliceMethod } from '../testHelpers/sourceWindow.js';
 import { ServerTableEngineBase } from './ServerTableEngineBase.js';
 
 function boundaryHarness(): any {
@@ -174,11 +175,7 @@ describe('the terminal tournament boundary owns the next deal', () => {
       join(__dirname, '../tournament/TournamentManagerEliminations.ts'),
       'utf8'
     );
-    const start = source.indexOf('private async completeFinalTableDealAtBoundary');
-    const end = source.indexOf('private async settleFinalTableDeal', start);
-    expect(start).toBeGreaterThanOrEqual(0);
-    expect(end).toBeGreaterThan(start);
-    const method = source.slice(start, end);
+    const method = sliceMethod(source, 'completeFinalTableDealAtBoundary(\n    tableId: string,');
     const parkedAt = method.indexOf('parkForTerminalCloseout');
     const rosterAt = method.indexOf(".select('user_id, chips')");
     const consensusAt = method.indexOf('await this.readFinalTableDealConsensus(alive)');

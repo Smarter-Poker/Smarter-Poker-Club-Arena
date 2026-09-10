@@ -8,7 +8,8 @@
       "id": "T01",
       "requirement": "Atomic registration binds one funded entry to one player/event. Race duplicate requests, last seat and registration closure.",
       "priority": "P0",
-      "status": "pending_full_requirement_verification"
+      "status": "partial_prestart_funding_and_receipts_verified",
+      "evidence": "registration_funding_and_receipt_correction"
     },
     {
       "id": "T02",
@@ -1185,21 +1186,37 @@
     "dispatch_run": 34421732550,
     "queue_state": "Original request was superseded by later main deployments that include this merge; no force restart or repeated dispatch was used.",
     "latest_engine_observation": {
-      "observed_at": "2026-09-10T00:58:02.665749Z",
+      "observed_at": "2026-09-10T01:25:07.507459+00:00",
       "url": "https://engine.smarter.poker/health",
-      "version": "23eb7dd5",
+      "version": "b53ad9b2",
       "running": true,
       "maintenance": {
-        "active": true,
-        "phase": "counting_down",
-        "durableConfirmed": true,
-        "breakEndsAt": 1789002000000,
+        "active": false,
+        "phase": "idle",
+        "durableConfirmed": false,
+        "breakEndsAt": null,
+        "remainingMs": 0,
         "unparkedTables": 0,
-        "readyForRestart": false
+        "readyForRestart": false,
+        "reason": "Scheduled Engine Maintenance",
+        "resumeWaves": null,
+        "dbClockSkewMs": -68
       }
     },
     "full_controls_closed": false,
-    "limits": "UTC cadence only. Registration extensions, all break states, missed-tick failover and active settlement remain separate acceptance boundaries."
+    "limits": "UTC cadence only. Registration extensions, all break states, missed-tick failover and active settlement remain separate acceptance boundaries.",
+    "deferred_staged_deployment": {
+      "run": 34423465001,
+      "target": "3ed5b7d59f407fb0d9cb8d9324c6fdb03b3ff359",
+      "shipped": false,
+      "reason": "Next break 2351 seconds away exceeded 2192-second remaining run budget; image was staged."
+    },
+    "active_successor": {
+      "run": 34424743148,
+      "target": "81e4c6daefa47f6b6883596f3b62d2d3498e195a",
+      "contains_utc_correction": true,
+      "adoption_verified": false
+    }
   },
   "registration_evidence_review": {
     "control": "T01",
@@ -1208,7 +1225,8 @@
     "receipt_probe_limit": "Executes the receipt wrapper with a simulated funding core. Its replay assertions do not prove real debit atomicity or last-seat races.",
     "admission_probe": "scripts/ci/probes/tournament-registration-admission-contract.sql",
     "admission_probe_limit": "References the retired unbound one-argument registration API. It was not run against production or counted as current admission proof.",
-    "full_control_closed": false
+    "full_control_closed": false,
+    "current_rehearsal": "registration_funding_and_receipt_correction"
   },
   "verified_control_count": 1,
   "blind_snapshot_rehearsal": {
@@ -1220,5 +1238,48 @@
     "observed": "An active 10/20/2 hand keeps its original legal raise and finishes after a 20/40/4 table update. A separate next hand posts 20/40/4. An unresolved or failed blind read cannot supply a ready input set.",
     "limits": "Synthetic database reads and roster; stops the engine at the unrelated time-bank read, then executes the actual controller. Does not exercise the entire dealing loop or a level tick during its prefetched between-hand rest. No production money writes or new blind-policy behavior.",
     "full_control_closed": false
+  },
+  "registration_funding_and_receipt_correction": {
+    "control": "T01",
+    "status": "database_verified_source_publication_pending",
+    "migration": "20260910012633_tournament_entry_receipts_use_the_charged_club_wallet.sql",
+    "migration_sha256": "08bc3f0012fb887d2cc2157430685a110254ae248d8b97889b640ee9db497e4f",
+    "baseline_body_md5": "14d25f13e1ceca68cf4da1e231cc342b",
+    "installed_body_md5": "f9d423ecda16d49d698a1b3735baf7cb",
+    "database_verified_at": "2026-09-10T01:27:55.978132Z",
+    "permissions": {
+      "anon_execute": false,
+      "authenticated_execute": false,
+      "service_execute": true
+    },
+    "baseline": {
+      "charged_wallet_after": 300,
+      "other_club_wallet": 1000,
+      "recorded_balance_after": 1000
+    },
+    "corrected_receipt_balance_after": 300,
+    "change": "Future tournament entry debit receipts read the charged tournament club wallet. No amount, wallet balance or historical receipt is rewritten.",
+    "isolated_postgres_groups": 7,
+    "runner": "scripts/dev/probe-tournament-registration-funding-pg17.py",
+    "fixture_manifest": "scripts/dev/fixtures/registration-funding/source-manifest.json",
+    "ci_entry": "scripts/ci/probes/chip-journal-atomicity/run-isolated.sh",
+    "cases": [
+      "one real registration binds one debit, journal, entitlement, escrow and operation receipt",
+      "late operation receipt failure rolls back every funding and entry write",
+      "overlapping retry requests fund one entry",
+      "overlapping duplicate requests fund one entry",
+      "two real contenders for the last place commit one funded entry",
+      "registration waiting behind pool closure rechecks eligibility without charging",
+      "entry receipt balance belongs to the club wallet actually charged"
+    ],
+    "limits": "Ordinary pre-start standalone-club entries with synthetic auth/session and maintenance state. Full HTTP/RLS, membership-management triggers, late-entry seating, union funding, promotions, re-entry and SNG launch remain separate.",
+    "full_control_closed": false
+  },
+  "evidence_checkpoint_publication": {
+    "pull_request": 4068,
+    "merge_commit": "8935fd2e823a6604c9adb30d40f0e2fdb2532ff3",
+    "ci_run": 34423832389,
+    "ci_conclusion": "success",
+    "merged_at": "2026-09-10T01:14:59Z"
   }
 }

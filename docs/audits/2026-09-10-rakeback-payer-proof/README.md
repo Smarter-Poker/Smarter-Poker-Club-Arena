@@ -45,3 +45,11 @@ Production Union weeks use America/Los_Angeles while player earning weeks use UT
 The accepted-owner source extension is adding original Union route/rates, but the authoritative bank receipt bridge and Round1/2 funding coverage are not yet composed. Current source_active is only a prototype capture marker and must become an explicit coordinated payer release witness before any browser activation.
 
 The generation/timestamp edge in this payer fixture is synthetic boundary testing, not an observed production clock defect. The actual accepted receipt uses clock_timestamp(); accepted-owner overlap proof belongs to the separately composed owner fixture. The marker and payload hash establish ownership independently of calendar inference.
+
+## Exact Outer Control-Flow Rehearsal
+
+Run `bash docs/audits/2026-09-10-rakeback-payer-proof/run-local.sh cascade`. Ten native groups execute the exact captured outer definition and its guarded patch with explicitly synthetic round effects and a synthetic conservation dependency. They verify assertion ordering, provisional/shortfall return behavior, all-public-row rollback for malformed or failed Round2/3 contracts, numeric-cast failures, assertion failure and repeated-patch refusal. This is not evidence of actual Union money conservation, complete production triggers, funding coverage or finality.
+
+Malformed/failed Round2 and Round3 contract branches now raise 23514 so earlier rounds and audit rows roll back. Existing numeric casts can raise 22P02 before those branches; the tests preserve that distinction. Valid typed shortfalls still retain progress only after conservation succeeds. Existing Round1 failure/incident behavior is unchanged. Broader finite/nonnegative shape validation and full warm-cache/standalone Round1 lock rehearsal remain separate gates.
+
+The eventual source_final field must bind the common producer, bank, Round1 and Round2 finality witness. The current permanently provisional player result cannot certify that chain by itself.

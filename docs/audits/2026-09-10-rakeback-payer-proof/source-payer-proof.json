@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-09-10T13:54:25.226Z",
+  "captured_at": "2026-09-10T14:11:45.635Z",
   "runtime": {
     "node": "v24.15.0",
     "postgres": "PostgreSQL 17.11 (Homebrew) on aarch64-apple-darwin25.6.0, compiled by Apple clang version 21.0.0 (clang-2100.1.1.101), 64-bit"
@@ -11,7 +11,7 @@
     "source-payer-proposal.sql": "7e7fef180dd8b53a07063de5b458f12f7034ca3db05242962d86cfe687a04cce",
     "source-payer-wrappers.sql": "a02a050c887e171099b19051db0584bdb208170bbde37d77c51f9ee36fada7bf",
     "union-auth-fixture.sql": "c50147d75c0aa3ab34fc81c88fa048d29ac86dd1f189abc14f6b7d7a4612d1e1",
-    "run-local.sh": "480d9a98e6461609f18112c09353d018c39186629878ec1ba5e492dbbd2ca5b0",
+    "run-local.sh": "974548f136187b912c8481491ba71f5fee92167ee90ef009b40eed32037ffb3d",
     "source-payer-probe.mjs": "4a55f5e694aab47b6ccbdc02fa617069f167bc8dc1bbe0cb8028495422f02934",
     "source-wrapper-probe.mjs": "ba10312096dedd3594864020601bfdf211f6c408c8b10dbce9161e2c4bb99da9",
     "source-wrapper-review-probe.mjs": "c99596b0d83c68a9abb83b42b4ab85aa8e2527280237e3bd6a36d171abb6fe01"
@@ -56,12 +56,12 @@
       "waitA": {
         "wait_event_type": "Lock",
         "wait_event": "transactionid",
-        "blockers": [91802]
+        "blockers": [40680]
       },
       "waitB": {
         "wait_event_type": "Lock",
         "wait_event": "advisory",
-        "blockers": [91803]
+        "blockers": [40681]
       }
     },
     {
@@ -101,12 +101,12 @@
       "waitA": {
         "wait_event_type": "Lock",
         "wait_event": "transactionid",
-        "blockers": [91812]
+        "blockers": [40691]
       },
       "waitB": {
         "wait_event_type": "Lock",
         "wait_event": "advisory",
-        "blockers": [91813]
+        "blockers": [40692]
       }
     },
     {
@@ -138,12 +138,12 @@
       "waitA": {
         "wait_event_type": "Lock",
         "wait_event": "transactionid",
-        "blockers": [91822]
+        "blockers": [40700]
       },
       "waitB": {
         "wait_event_type": "Lock",
         "wait_event": "advisory",
-        "blockers": [91823]
+        "blockers": [40701]
       }
     },
     {
@@ -159,12 +159,12 @@
       "waitA": {
         "wait_event_type": "Lock",
         "wait_event": "transactionid",
-        "blockers": [91841]
+        "blockers": [40705]
       },
       "waitB": {
         "wait_event_type": "Lock",
         "wait_event": "advisory",
-        "blockers": [91842]
+        "blockers": [40706]
       }
     },
     {
@@ -176,7 +176,7 @@
       "wait": {
         "wait_event_type": "Lock",
         "wait_event": "advisory",
-        "blockers": [91849]
+        "blockers": [40708]
       }
     },
     {
@@ -196,7 +196,7 @@
       "wait": {
         "wait_event_type": "Lock",
         "wait_event": "advisory",
-        "blockers": [91875]
+        "blockers": [40733]
       }
     },
     {

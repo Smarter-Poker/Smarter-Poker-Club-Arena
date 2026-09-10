@@ -1,0 +1,64 @@
+{
+  "captured_at": "2026-09-10T14:11:43.275Z",
+  "scope": "Exact captured outer control flow only, synthetic round effects and conservation dependency. Not actual money, full owner, bank funding, or Union settlement proof.",
+  "runtime": {
+    "node": "v24.15.0",
+    "postgres": "PostgreSQL 17.11 (Homebrew) on aarch64-apple-darwin25.6.0, compiled by Apple clang version 21.0.0 (clang-2100.1.1.101), 64-bit"
+  },
+  "inputs": {
+    "fixture.sql": "72b2a77c0d805989e7b3bb48593321258dfd79dc698d42d167397d57394ca42d",
+    "money-guards.sql": "e7ac35f1cc08f6b947c386532a39bcc460a94e0c75949b5071e4098cbf3b9958",
+    "source-facts-schema-fixture.sql": "57bbca1a0e9a4c52ab1976c09b72e9e08444c723d5fbdd1a4e08e8940a31cafd",
+    "source-payer-proposal.sql": "7e7fef180dd8b53a07063de5b458f12f7034ca3db05242962d86cfe687a04cce",
+    "source-payer-wrappers.sql": "a02a050c887e171099b19051db0584bdb208170bbde37d77c51f9ee36fada7bf",
+    "union-auth-fixture.sql": "c50147d75c0aa3ab34fc81c88fa048d29ac86dd1f189abc14f6b7d7a4612d1e1",
+    "union-cascade-installed.sql": "7f6c8361c86e0d370c5deb3c1559bbb5a79c3bded0199935e6e6b770006c36b3",
+    "union-cascade-source-boundary.sql": "88d414ddfa271f3a73a978b7c5432538e4a1ad4a6e42e5a6cf643c7b68fb9d57",
+    "union-cascade-control-fixture.sql": "98311ab33f27c43239fc9dd4fbcbca770b030818fb7caa55d038b0e09ab3ee00",
+    "union-cascade-control-probe.mjs": "d010e30086ade8ee70432b369d244d990af20aecb02490405ddabf5d35c07593",
+    "run-local.sh": "974548f136187b912c8481491ba71f5fee92167ee90ef009b40eed32037ffb3d"
+  },
+  "passed": 10,
+  "results": [
+    {
+      "name": "exact outer provisional path invokes conservation before withholding settlement",
+      "pass": true
+    },
+    {
+      "name": "valid shortfall preserves executed synthetic round effects only after conservation",
+      "pass": true
+    },
+    {
+      "name": "missing Round2 amount rolls earlier round and audit rows back",
+      "pass": true
+    },
+    {
+      "name": "explicit failed Round2 rolls earlier round and audit rows back",
+      "pass": true
+    },
+    {
+      "name": "missing Round3 payees rolls all prior round and audit rows back",
+      "pass": true
+    },
+    {
+      "name": "explicit failed Round3 rolls all prior round and audit rows back",
+      "pass": true
+    },
+    {
+      "name": "invalid Round2 numeric cast rolls effects back before contract branch",
+      "pass": true
+    },
+    {
+      "name": "invalid Round3 numeric cast rolls effects back before contract branch",
+      "pass": true
+    },
+    {
+      "name": "conservation failure on valid shortfall rolls effects and receipts back",
+      "pass": true
+    },
+    {
+      "name": "exact definition guard rejects repeated patch without modifying the outer function",
+      "pass": true
+    }
+  ]
+}

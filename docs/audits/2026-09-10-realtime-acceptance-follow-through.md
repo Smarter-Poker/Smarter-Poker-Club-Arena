@@ -1,5 +1,9 @@
 # Realtime Acceptance Follow-Through
 
+Subsequent Cashier publication and successful viewport acceptance are recorded in
+`2026-09-10-realtime-phase16-cashier-acceptance.md`. That receipt supersedes the
+pending Cashier statements below; the earlier runs remain historical evidence.
+
 ## Published Acceptance Repairs
 
 PR #4140 merged as `86aab0e645b1842e83fca808cf956c9733af66ba` at

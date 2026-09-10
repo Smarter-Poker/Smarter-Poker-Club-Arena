@@ -1,0 +1,40 @@
+{
+  "checkedAt": "2026-09-10T13:03:08.974137+00:00",
+  "release": "6105b6f5b7ba708728949e92809d6f5981f33d19",
+  "testedHead": "e9439a77ed3bb6be5f77fda06f240070cb2d2af8",
+  "stamps": [
+    {
+      "url": "https://smarter.poker/hub/club-arena/build-info.json",
+      "ca_sha": "6105b6f5b7ba708728949e92809d6f5981f33d19",
+      "built_at": "2026-09-10T12:58:31Z",
+      "built_by": "publish-club-arena.yml",
+      "run_id": "34479575370"
+    },
+    {
+      "url": "https://ca-static.smarter.poker/build-info.json",
+      "ca_sha": "6105b6f5b7ba708728949e92809d6f5981f33d19",
+      "built_at": "2026-09-10T12:58:31Z",
+      "built_by": "publish-club-arena.yml",
+      "run_id": "34479575370"
+    }
+  ],
+  "entry": {
+    "url": "https://smarter.poker/hub/club-arena/assets/index-D9sHaB94-v6.js",
+    "sha256": "9462926a29fbc41458077840286177338d9d96776e763d0384b815c5542e8e6e"
+  },
+  "homeJs": {
+    "url": "https://smarter.poker/hub/club-arena/assets/HomePage-C6Ju83HZ-v6.js",
+    "originUrl": "https://ca-static.smarter.poker/assets/HomePage-C6Ju83HZ-v6.js",
+    "sha256": "db1ad78dd030a50f48edf2ce7a995809414a22bc7b264b1ee04cd5c2ce77fa5d"
+  },
+  "homeCss": {
+    "url": "https://smarter.poker/hub/club-arena/assets/HomePage-CP2zBrMx-v6.css",
+    "originUrl": "https://ca-static.smarter.poker/assets/HomePage-CP2zBrMx-v6.css",
+    "sha256": "77d0223265b0f1e7fe545b0f142052dce8f2f0323ef706c371ac23151bd6afda"
+  },
+  "publicEqualsOrigin": true,
+  "anchorAndBodyPortalMarkers": true,
+  "fixedAnchorRule": "._cashierSwitchMenu_2bxav_2517{position:fixed;bottom:var(--quick-link-anchor-bottom);left:var(--quick-link-anchor-x);transform:translate(-50%);z-index:960;min-width:160px;max-width:230px;max-height:240px;overflow-y:auto;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;background:#0a101cf7;border:1px solid rgba(0,212,255,.35);border-radius:10px;box-shadow:0 12px 32px #000000b3;padding:6px;display:flex;flex-direction:column;gap:2px}",
+  "mobileSafeAreaRules": true,
+  "qualification": "Published bytes only; the existing production canary must verify rendered bounds."
+}

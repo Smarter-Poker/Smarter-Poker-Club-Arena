@@ -1,0 +1,4735 @@
+{
+  "observed_at": "2026-09-10T05:45:44.380477+00:00",
+  "project": "kuklfnapbkmacvwxktbh",
+  "functions": [
+    {
+      "acl": ["postgres=X/postgres"],
+      "name": "add_bbj_contribution",
+      "bytes": 172,
+      "body_md5": "6c49d44ab99aeacd1545a6e02acb3c1a",
+      "signature": "p_table_id uuid, p_club_id uuid, p_amount numeric, p_big_blind numeric, p_hand_number integer, p_stakes_tier text, p_main_portion numeric, p_backup_portion numeric, p_promo_portion numeric",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres"],
+      "name": "add_bbj_contribution",
+      "bytes": 117,
+      "body_md5": "19fd945d4a93e432caecc103f07d2edd",
+      "signature": "p_club_id uuid, p_table_id uuid, p_hand_number bigint, p_amount numeric, p_big_blind numeric, p_stakes_tier text, p_main_portion numeric, p_backup_portion numeric, p_promo_portion numeric",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres"],
+      "name": "add_bbj_contribution",
+      "bytes": 117,
+      "body_md5": "19fd945d4a93e432caecc103f07d2edd",
+      "signature": "p_club_id uuid, p_table_id uuid, p_hand_number bigint, p_amount numeric, p_big_blind numeric, p_stakes_tier text",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "add_to_promo_wallet",
+      "bytes": 433,
+      "body_md5": "41cf20b8947aaa51ee483f8ad9edfba6",
+      "signature": "p_user_id uuid, p_amount numeric",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "apply_rakeback_player_stats",
+      "bytes": 967,
+      "body_md5": "92c5fa0e39ba4ffcaa1befee86623b8c",
+      "signature": "p_rake_record_id uuid, p_user_id uuid, p_club_id uuid, p_hands integer, p_rake numeric",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "atomic_credit_wallet_and_log",
+      "bytes": 5108,
+      "body_md5": "be06a409371e63480439da6c5dfd3821",
+      "signature": "p_user_id uuid, p_amount numeric, p_category text, p_description text, p_table_id uuid, p_hand_id uuid, p_related_entity_id uuid, p_idempotency_key text",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "atomic_deduct_wallet_and_log",
+      "bytes": 5084,
+      "body_md5": "1835dbd974d8ba219cf37ab712a9ccbd",
+      "signature": "p_user_id uuid, p_amount numeric, p_category text, p_description text, p_table_id uuid, p_hand_id uuid, p_related_entity_id uuid",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "atomic_pay_player_rakeback",
+      "bytes": 233,
+      "body_md5": "f208633d1947dd8513dd0e85dbc20edc",
+      "signature": "p_user_id uuid, p_amount numeric",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "atomic_pay_player_rakeback",
+      "bytes": 595,
+      "body_md5": "095b6ffaa3b0d0fa0683d4674796b305",
+      "signature": "p_snapshot_id uuid, p_player_id uuid, p_amount numeric, p_period_id uuid, p_idempotency_key text",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "atomic_wallet_transfer",
+      "bytes": 1228,
+      "body_md5": "5ab3921e9faff5caaacc8ebf61ac62bd",
+      "signature": "p_from_user_id uuid, p_to_user_id uuid, p_amount numeric, p_category text, p_debit_description text, p_credit_description text, p_related_entity_id uuid",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres"],
+      "name": "award_bbj",
+      "bytes": 93,
+      "body_md5": "b0e380cc607efb47dc5816442f9be646",
+      "signature": "p_club_id uuid, p_table_id uuid, p_hand_number bigint, p_loser_user_id uuid, p_loser_display_name text, p_loser_hand text, p_loser_cards text, p_winner_user_id uuid, p_winner_display_name text, p_winner_hand text, p_winner_cards text, p_payout_total_pct numeric, p_payout_loser_pct numeric, p_payout_winner_pct numeric, p_payout_table_pct numeric, p_stakes_tier text, p_game_variant text, p_big_blind numeric",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres"],
+      "name": "bbj_atomic_payout",
+      "bytes": 95,
+      "body_md5": "5a468eecfeec2153369d6a4297c8863c",
+      "signature": "p_pool_id uuid, p_table_id uuid, p_hand_number bigint, p_payout_total_percent numeric, p_loser_user_id uuid, p_winner_user_id uuid, p_dealt_in_count integer, p_metadata jsonb",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "bbj_atomic_payout_v2",
+      "bytes": 9567,
+      "body_md5": "aa13837c50305cef9cac826d66b51c4a",
+      "signature": "p_pool_id uuid, p_table_id uuid, p_hand_number bigint, p_payout_total_percent numeric, p_loser_user_id uuid, p_winner_user_id uuid, p_dealt_in_ids uuid[], p_seated_ids uuid[], p_metadata jsonb",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "bbj_credit_one_recipient",
+      "bytes": 8877,
+      "body_md5": "350e0fec51a764de74f988c54e26f6c8",
+      "signature": "p_payout_id uuid, p_table_id uuid, p_user_id uuid, p_amount numeric, p_seated boolean",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "bbj_drift_since",
+      "bytes": 1239,
+      "body_md5": "26cfa646d71bef61b1f959ba8fa39070",
+      "signature": "p_since timestamp with time zone",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres"],
+      "name": "bbj_promo_payout",
+      "bytes": 99,
+      "body_md5": "1e67360d8d2f6acf52240668f8793174",
+      "signature": "p_pool_id uuid, p_amount numeric, p_recipient_user_ids uuid[], p_reason text, p_triggered_by uuid, p_event_type text",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "bbj_record_contribution",
+      "bytes": 6261,
+      "body_md5": "4f37b79ab2363940c2af96fbe0f10d89",
+      "signature": "p_pool_id uuid, p_hand_id uuid, p_table_id uuid, p_amount numeric, p_main_portion numeric, p_backup_portion numeric, p_promo_portion numeric, p_big_blind numeric, p_hand_number integer, p_club_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "bbj_record_table_contribution",
+      "bytes": 1276,
+      "body_md5": "6c09e48efcb327669a174bae8ff7b33b",
+      "signature": "p_table_id uuid, p_club_id uuid, p_hand_number integer, p_amount numeric, p_big_blind numeric, p_hand_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "ca_can_oversee_union",
+      "bytes": 298,
+      "body_md5": "e515d46b96bdc60c09d6af38228cfa7e",
+      "signature": "p_union_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "ca_club_union_invoices",
+      "bytes": 1746,
+      "body_md5": "52d41d7fc944bbf9e6db3712bf8b17c1",
+      "signature": "p_club_id uuid, p_limit integer",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "ca_promo_vault_buy",
+      "bytes": 1131,
+      "body_md5": "793b20740760d8c462815c36a56ef787",
+      "signature": "p_club_id uuid, p_item_key text, p_quantity integer",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "ca_promo_vault_catalog",
+      "bytes": 408,
+      "body_md5": "a646d488c0f2a0034993f03e7738511f",
+      "signature": "p_club_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "ca_promo_vault_grant",
+      "bytes": 4277,
+      "body_md5": "455fdc8c41f8900fa3f51a9e3bb8a8db",
+      "signature": "p_club_id uuid, p_item_key text, p_recipient_user_id uuid, p_quantity integer, p_note text, p_op_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "ca_promo_vault_grant",
+      "bytes": 152,
+      "body_md5": "9ec681ca2af7f7232ab00297ca3e66c1",
+      "signature": "p_club_id uuid, p_item_key text, p_recipient_user_id uuid, p_quantity integer, p_note text",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "ca_promo_vault_records",
+      "bytes": 916,
+      "body_md5": "f6b1a6a9ff307c78c30db273e1bbcf86",
+      "signature": "p_club_id uuid, p_limit integer",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "ca_union_insurance_pnl",
+      "bytes": 3350,
+      "body_md5": "030c3b8cdd6974e071281d4d85e24e2b",
+      "signature": "p_union_id uuid, p_days integer",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "ca_union_record_presettlement",
+      "bytes": 1106,
+      "body_md5": "4bb18d950f85e15fcf798478aefe2294",
+      "signature": "p_union_id uuid, p_club_id uuid, p_amount numeric, p_method text, p_reference text, p_note text",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "ca_union_set_statement_paid",
+      "bytes": 4218,
+      "body_md5": "434aecf692e9973b4f62fe609bcbfdf3",
+      "signature": "p_invoice_id uuid, p_paid boolean, p_amount numeric, p_note text",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "ca_union_statement_board",
+      "bytes": 7047,
+      "body_md5": "133384cac279445fcba1f2dae14176ce",
+      "signature": "p_union_id uuid, p_period_end date, p_history integer",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres", "authenticated=X/postgres"],
+      "name": "calculate_agent_settlement",
+      "bytes": 2136,
+      "body_md5": "91e1c34accb80f082a9bc7b592bac4d9",
+      "signature": "p_period_id uuid, p_agent_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres", "authenticated=X/postgres"],
+      "name": "calculate_agent_spread",
+      "bytes": 2538,
+      "body_md5": "b82796643567023d765c8e6bb341c54b",
+      "signature": "p_agent_id uuid, p_period_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "calculate_cascading_commission",
+      "bytes": 3924,
+      "body_md5": "7b9638f98b36f8f73e5ccb2b666830a0",
+      "signature": "p_hand_id uuid, p_club_id uuid, p_player_user_id uuid, p_rake_amount numeric, p_rake_record_id uuid, p_table_id uuid",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "create_user_wallets",
+      "bytes": 459,
+      "body_md5": "188e2b3091240e07b233a631fb536b14",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "credit_agent_commission",
+      "bytes": 520,
+      "body_md5": "12edcf22cf4fd5130ec2a7914c480080",
+      "signature": "p_agent_id uuid, p_amount numeric, p_description text",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "credit_agent_commission_from_rake",
+      "bytes": 3670,
+      "body_md5": "1583ac138b7687091e7c5a049f0639e9",
+      "signature": "p_agent_user_id uuid, p_club_id uuid, p_rake_credit numeric, p_source_type text, p_source_id uuid, p_notes text",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "credit_club_rake_to_treasury",
+      "bytes": 2366,
+      "body_md5": "472e935f96e8efd1f7cef768e3276f86",
+      "signature": "p_club_id uuid, p_amount numeric",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "credit_club_wallet_rake",
+      "bytes": 2411,
+      "body_md5": "9cc6986c32f217593f26d04f1e489ae6",
+      "signature": "p_club_id uuid, p_rake numeric, p_bbj numeric, p_hand_id uuid, p_hand_number integer",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "credit_player_rakeback",
+      "bytes": 1205,
+      "body_md5": "c8954025415debb1957b3f1fb1ddbc1c",
+      "signature": "p_user_id uuid, p_amount numeric, p_description text, p_idempotency_key text",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "credit_player_wallet",
+      "bytes": 99,
+      "body_md5": "ee3ab822567994cd27274937f1890d2a",
+      "signature": "p_user_id uuid, p_amount numeric, p_idempotency_key text",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "decrement_club_treasury",
+      "bytes": 409,
+      "body_md5": "c2be1f566ff7a8cb77a2a3087f7bb22e",
+      "signature": "p_club_id uuid, p_amount numeric",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "deduct_agent_balance",
+      "bytes": 178,
+      "body_md5": "5c202d483a0df708c2f97cdd6cd9b31f",
+      "signature": "p_agent_id uuid, p_amount numeric, p_reason text",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "deduct_player_wallet",
+      "bytes": 418,
+      "body_md5": "330aa17c41a8bdbb784cc845645316d1",
+      "signature": "p_user_id uuid, p_amount numeric",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "distribute_promo_chips",
+      "bytes": 335,
+      "body_md5": "aa1c68272801e60c95f91b962a90ab0f",
+      "signature": "p_agent_id uuid, p_player_id uuid, p_amount numeric",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_actor_can_manage_club_treasury",
+      "bytes": 674,
+      "body_md5": "ab9c0af1be57cd31f62001748b983384",
+      "signature": "p_club_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_admin_holds_no_player_wallet",
+      "bytes": 1254,
+      "body_md5": "af35d175cb233304c13904e1dbeb74a6",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_admin_update_agent",
+      "bytes": 8039,
+      "body_md5": "084072db7fc3598ce60ebabbc907e50e",
+      "signature": "p_agent_id uuid, p_status text, p_role text, p_credit_limit numeric, p_commission_rate numeric, p_player_rakeback_rate numeric, p_assigned_by uuid, p_credit_reason text, p_is_prepaid boolean",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres"],
+      "name": "fn_agent_approve_cashout",
+      "bytes": 1233,
+      "body_md5": "07db082ff1c1501dba55029cf1871141",
+      "signature": "p_cashout_id uuid, p_agent_user_id uuid, p_agent_note text",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_agent_attach_player",
+      "bytes": 3569,
+      "body_md5": "7803ae9bc094f4c5aad06ebc54135d9a",
+      "signature": "p_club_id uuid, p_agent_user_id uuid, p_player_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_agent_claim_commission",
+      "bytes": 13231,
+      "body_md5": "ecd40da476bd8dd829d381fb2ee5a03e",
+      "signature": "p_club_id uuid, p_op_id uuid, p_max_rows integer",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_agent_commission_paid_by_period",
+      "bytes": 231,
+      "body_md5": "93bdeabe356b1a18f42e9c4b3b77daa8",
+      "signature": "p_club_id uuid, p_user_id uuid, p_created_at timestamp with time zone",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_agent_commission_rollup_recompute",
+      "bytes": 1310,
+      "body_md5": "1eb584cfa02c95e986afc44a4c4c491b",
+      "signature": "p_pairs jsonb",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_agent_downline_commission",
+      "bytes": 891,
+      "body_md5": "1d871201a03882ec41476f8dab05d392",
+      "signature": "p_club_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_agent_downline_rake",
+      "bytes": 7888,
+      "body_md5": "b1c5d30e4ffd742a539665ffe87ff81d",
+      "signature": "p_agent_user_id uuid, p_club_id uuid, p_since timestamp with time zone, p_until timestamp with time zone, p_search text, p_limit integer",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_agent_downline_rake_summary",
+      "bytes": 1861,
+      "body_md5": "98baca865fd8c9f04ad0dcbdfc49dca7",
+      "signature": "p_agent_user_id uuid, p_club_id uuid, p_since timestamp with time zone, p_until timestamp with time zone",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_agent_may_read_commission",
+      "bytes": 744,
+      "body_md5": "ef1805adb6daa4832711b9323d672668",
+      "signature": "p_club_id uuid, p_user_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_agent_player_breakdown",
+      "bytes": 2304,
+      "body_md5": "f7f5e898d865c8b87e6ad1157e1991b9",
+      "signature": "p_agent_user_id uuid, p_period_start timestamp with time zone, p_period_end timestamp with time zone",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_agent_roster_report",
+      "bytes": 2886,
+      "body_md5": "de8d5f855dc6d60cd3f141ecc4367fb8",
+      "signature": "p_agent_user_id uuid, p_since timestamp with time zone, p_until timestamp with time zone",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_agent_unsettled_commission",
+      "bytes": 954,
+      "body_md5": "65099653461a48858b024c1a022409f2",
+      "signature": "p_club_id uuid, p_user_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_agent_wallet_claim_back",
+      "bytes": 392,
+      "body_md5": "cf7af5fd327c68c935a58e864537cc7a",
+      "signature": "p_club_id uuid, p_transaction_id uuid, p_amount numeric, p_reason text, p_op_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_agent_wallet_claim_back_phase2_core_20260831",
+      "bytes": 12441,
+      "body_md5": "c75e9cdb7e3b197fc83422f9f6e0d722",
+      "signature": "p_club_id uuid, p_transaction_id uuid, p_amount numeric, p_reason text, p_op_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_agent_wallet_reversible",
+      "bytes": 1026,
+      "body_md5": "7f957d365972d014a000b7100101ac14",
+      "signature": "p_club_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_agent_wallet_self_stake",
+      "bytes": 5132,
+      "body_md5": "ad0c2e1d7e23e3e18a1ad19a590e8196",
+      "signature": "p_club_id uuid, p_amount numeric, p_reason text, p_op_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_agent_wallet_send",
+      "bytes": 390,
+      "body_md5": "38d088732280d8b2cb605c87eda4af3f",
+      "signature": "p_club_id uuid, p_to_user_id uuid, p_amount numeric, p_destination text, p_reason text, p_op_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_agent_wallet_send_core_20260830",
+      "bytes": 11835,
+      "body_md5": "1ca40e16c6eccd331f6d65b4436edfc1",
+      "signature": "p_club_id uuid, p_to_user_id uuid, p_amount numeric, p_destination text, p_reason text, p_op_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_agent_wallet_send_phase2_core_20260831",
+      "bytes": 4454,
+      "body_md5": "2ee5fa22748b07166f2dba6e16706c61",
+      "signature": "p_club_id uuid, p_to_user_id uuid, p_amount numeric, p_destination text, p_reason text, p_op_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_agent_weekly_statement",
+      "bytes": 4138,
+      "body_md5": "783b8c643d1f083650efb4bb1c812c1a",
+      "signature": "p_agent_user_id uuid, p_period_start timestamp with time zone, p_period_end timestamp with time zone",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_agents_staff_earn_no_rakeback",
+      "bytes": 361,
+      "body_md5": "02c5777d18d107a531b681970dc37b61",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_apply_rakeback_player_stats_batch",
+      "bytes": 3219,
+      "body_md5": "fb371b86bd34d8417d87bbe706b275ea",
+      "signature": "p_items jsonb",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_apply_union_ladder",
+      "bytes": 2029,
+      "body_md5": "516b9cb69d37cc4777259c1cd7f2b726",
+      "signature": "p_union_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_assign_agent_to_super_agent",
+      "bytes": 1398,
+      "body_md5": "3c110478d9556a0e5b13011d851979f5",
+      "signature": "p_agent_user_id uuid, p_super_agent_user_id uuid, p_club_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_assign_player_to_agent",
+      "bytes": 1898,
+      "body_md5": "f0da4e59c5f94d7439ee2dc84b253654",
+      "signature": "p_player_user_id uuid, p_agent_user_id uuid, p_club_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_auto_promote_waitlist",
+      "bytes": 1323,
+      "body_md5": "6c1e9f595b2e0ca6efaffa4ad1e15467",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_batch_union_realtime_active_counts",
+      "bytes": 663,
+      "body_md5": "744099ba710c652af7c38a2cf96b45af",
+      "signature": "p_union_ids uuid[]",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_batch_union_realtime_member_counts",
+      "bytes": 342,
+      "body_md5": "472e8774a3d01436a89284f7948111f8",
+      "signature": "p_union_ids uuid[]",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_bbj_allocate",
+      "bytes": 646,
+      "body_md5": "15a5c78d6151924609297541c297cc94",
+      "signature": "p_amount numeric, p_main_balance numeric",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_bbj_allocate",
+      "bytes": 1626,
+      "body_md5": "80f22c42fc6ff7bbbbc25f32f23ad476",
+      "signature": "p_amount numeric, p_main_balance numeric, p_pool_id uuid",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_bbj_analytics",
+      "bytes": 2415,
+      "body_md5": "7c3b6941ec4720c82b653b149329885b",
+      "signature": "p_pool_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_bbj_arm_drill",
+      "bytes": 2815,
+      "body_md5": "e8c99d705d21aa937e0e340459a855f8",
+      "signature": "p_table_id uuid, p_note text",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_bbj_check_eligible",
+      "bytes": 237,
+      "body_md5": "39a03dda35265cb6de18441b39922ac2",
+      "signature": "p_hand_id uuid",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_bbj_claim_drill",
+      "bytes": 1079,
+      "body_md5": "1d9737dce2e0f45e1ea8df8bba8068b6",
+      "signature": "p_table_id uuid, p_hand_number bigint",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_bbj_conservation_check",
+      "bytes": 6391,
+      "body_md5": "f03c46d0f071d05f27adf4b82a342887",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_bbj_contributions_by_day",
+      "bytes": 504,
+      "body_md5": "ce8728f3c9fd5eaf6a797dae64efb638",
+      "signature": "p_union_id uuid, p_days integer",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_bbj_contributions_total",
+      "bytes": 433,
+      "body_md5": "05b378e3c7919de4a9c7815e83cd97d7",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_bbj_contributions_total_advance",
+      "bytes": 1119,
+      "body_md5": "1f258c894907023285055ade6e0b73ff",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_bbj_contributions_total_verify",
+      "bytes": 2021,
+      "body_md5": "d0fd9cadae3c0fb5e7fed496e9f20efc",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_bbj_credited_report",
+      "bytes": 1247,
+      "body_md5": "2939c15ee206215b4389001e305ee333",
+      "signature": "p_union_id uuid, p_days integer, p_limit integer",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_bbj_drill_arms",
+      "bytes": 221,
+      "body_md5": "6a45b282cfd401d1b786b905d12f8309",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_bbj_gap_decomposition",
+      "bytes": 2268,
+      "body_md5": "491adbb9dd3c3ea11ff9f7f44c75e854",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_bbj_hand_detail",
+      "bytes": 6255,
+      "body_md5": "704f03340db4ce9b196021a49229ee4c",
+      "signature": "p_payout_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_bbj_ledger_delete_guard",
+      "bytes": 828,
+      "body_md5": "6bc2058752433fc729fbd1d9331c1d0d",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_bbj_mini_payout",
+      "bytes": 10132,
+      "body_md5": "43375a87f0a3cf48441288ab929a0965",
+      "signature": "p_pool_id uuid, p_table_id uuid, p_hand_number bigint, p_tier_id text, p_loser_user_id uuid, p_winner_user_id uuid, p_dealt_in_ids uuid[], p_seated_ids uuid[], p_metadata jsonb",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_bbj_move_between_banks",
+      "bytes": 3124,
+      "body_md5": "62d45973bcb98f09f9abd868a7062f71",
+      "signature": "p_pool_id uuid, p_from_bank text, p_to_bank text, p_amount numeric, p_reason text, p_op_id text",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_bbj_my_contribution",
+      "bytes": 1247,
+      "body_md5": "e938ad6c1fb20099a59dbb31fcc95063",
+      "signature": "p_pool_id uuid, p_days integer",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_bbj_notify_thresholds",
+      "bytes": 3509,
+      "body_md5": "f17b05797e59464a9ddbba7b302f2239",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_bbj_open_pool_baseline",
+      "bytes": 2786,
+      "body_md5": "c69667459c01bfe0fe432c9b4976a6b3",
+      "signature": "p_pool_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_bbj_orphaned_payouts",
+      "bytes": 567,
+      "body_md5": "48ccbd474404d87763c62cc074c16f7e",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_bbj_parked_reserve",
+      "bytes": 392,
+      "body_md5": "e8c1e147a4549c45a3064b5c2d8cd036",
+      "signature": "p_pool_id uuid, p_bank text",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres"],
+      "name": "fn_bbj_payout",
+      "bytes": 358,
+      "body_md5": "146168b440f5a86f8937560063658e59",
+      "signature": "p_pool_id uuid, p_hand_id uuid, p_table_id uuid, p_winner_user_id uuid, p_loser_user_id uuid, p_table_player_ids uuid[]",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_bbj_pool_facts",
+      "bytes": 159,
+      "body_md5": "cda7a73c0008456bdddca26f2ce2207f",
+      "signature": "p_pool_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_bbj_pool_for_club",
+      "bytes": 581,
+      "body_md5": "d6c793b7024df9d031cb93c9879ead75",
+      "signature": "p_club_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_bbj_promo_bank_check",
+      "bytes": 2558,
+      "body_md5": "8bad75b5f631e9f715c306b4adfae5e4",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_bbj_promo_payout_atomic",
+      "bytes": 6188,
+      "body_md5": "7f3da5393d81eda9987bc884c923f85f",
+      "signature": "p_pool_id uuid, p_amount numeric, p_recipient_user_ids uuid[], p_reason text, p_event_type text",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_bbj_promo_rain",
+      "bytes": 923,
+      "body_md5": "53a133c832eaa76bf878eff1a5a39ee9",
+      "signature": "p_pool_id uuid, p_amount numeric, p_reason text",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_bbj_recent_hits",
+      "bytes": 3642,
+      "body_md5": "26b2371fd52f9640a33494e8099abcde",
+      "signature": "p_pool_id uuid, p_limit integer, p_before timestamp with time zone, p_before_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_bbj_reconcile",
+      "bytes": 5441,
+      "body_md5": "2f0828b93d4334b29b97a4b6d2d6bcc2",
+      "signature": "p_pool_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_bbj_reconcile_all",
+      "bytes": 5164,
+      "body_md5": "e825f385f66b9916a437d811d08797c1",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_bbj_relink_payouts",
+      "bytes": 288,
+      "body_md5": "960fb8452e427a97a8b85aa57ded812f",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_bbj_repair_unbanked",
+      "bytes": 4041,
+      "body_md5": "b7da079f40328a4707a2915bb9903ba6",
+      "signature": "p_since_hours integer, p_limit integer",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_bbj_reseed_main_from_backup",
+      "bytes": 1636,
+      "body_md5": "957affa6702989f969f6bc8fd922d622",
+      "signature": "p_pool_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_bbj_rollup_catchup",
+      "bytes": 737,
+      "body_md5": "cc5599f659e0b1b007faba5b363ebdd1",
+      "signature": "p_days integer",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_bbj_rollup_day",
+      "bytes": 2071,
+      "body_md5": "0e7dfe9fa2d25b5f91858944305e6a2c",
+      "signature": "p_club_id uuid, p_day date",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_bbj_selftest_payout_conservation",
+      "bytes": 2799,
+      "body_md5": "e76fcc7b21c87eca5b48b29fb5c5eded",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_bbj_table_share_farming",
+      "bytes": 4211,
+      "body_md5": "9832e6ae17d097285975d35906c660d0",
+      "signature": "p_days integer",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_bbj_unclaimed_shares",
+      "bytes": 490,
+      "body_md5": "304f58a162ec6c8002f68c511acefd20",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_ca_agent_payables",
+      "bytes": 3005,
+      "body_md5": "9e525ba4392858e58e52f01699282a2d",
+      "signature": "p_club_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_ca_attribute_union_rake",
+      "bytes": 4279,
+      "body_md5": "8722c3274573c02fd80c22ed9748285a",
+      "signature": "p_hours integer",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_ca_auto_reconcile_tick",
+      "bytes": 5872,
+      "body_md5": "3bc941bb2dfd35fa58cfb74b74dfdecb",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_ca_can_manage_agents",
+      "bytes": 370,
+      "body_md5": "8eb2a99371a9656c9aa9dda48f7469da",
+      "signature": "p_club_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_ca_escalate_reconcile_criticals",
+      "bytes": 3358,
+      "body_md5": "e659ac2d9044d3abea52cbe76732a3e0",
+      "signature": "p_lookback interval",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_ca_escrow_apply",
+      "bytes": 6439,
+      "body_md5": "e084726dde176e51a8b1b0d64b0c2f0b",
+      "signature": "p_tournament_id uuid, p_what text, p_gross_in numeric, p_fee_entries_in numeric, p_satellite_fee_in numeric, p_bounty_in numeric, p_overlay_in numeric, p_satellite_in numeric, p_prize_out numeric, p_bounty_out numeric, p_fee_out numeric, p_refund numeric, p_reserve_out numeric, p_reserve_in numeric",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres"],
+      "name": "fn_ca_escrow_apply_exact_refund",
+      "bytes": 3073,
+      "body_md5": "032a4b62d1bf0c3f912b74633bd7701c",
+      "signature": "p_tournament_id uuid, p_what text, p_refund_prize numeric, p_refund_bounty numeric, p_refund_fee numeric",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_ca_escrow_balance_drift",
+      "bytes": 3119,
+      "body_md5": "41f44d4e4028f5cf3817443fe04be246",
+      "signature": "p_hours integer",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_ca_escrow_can_pay",
+      "bytes": 776,
+      "body_md5": "310d509610d786cfc722bbadd8c68a85",
+      "signature": "p_tournament_id uuid, p_kind text, p_amount numeric",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["=X/postgres", "postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_ca_escrow_incident_closes_when_the_leg_lands",
+      "bytes": 4014,
+      "body_md5": "11ad1ce8e7fda59a9e26b9bfb2dab4c8",
+      "signature": "p_incident_id uuid",
+      "anon_execute": true,
+      "security_definer": false,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres"],
+      "name": "fn_ca_escrow_on_close",
+      "bytes": 1182,
+      "body_md5": "1cd6b257de4e076ead8d453e3f3b8d66",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_ca_escrow_on_overlay_leg",
+      "bytes": 440,
+      "body_md5": "d59358cb9ddfc8f84c48aa2469f68897",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_ca_escrow_on_rake_record",
+      "bytes": 653,
+      "body_md5": "233661d2164a417c2a76c8e0cbfbe9cc",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_ca_escrow_on_rake_settlement",
+      "bytes": 282,
+      "body_md5": "62a7f693920a379fb7acec3430cbd384",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_ca_escrow_on_reserve_leg",
+      "bytes": 360,
+      "body_md5": "81de14870f02c55604fc56eedfbb9ef9",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_ca_escrow_on_seat_payout",
+      "bytes": 155,
+      "body_md5": "a9150743200c8e366964a7867e8c23f9",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_ca_escrow_on_seat_transfer_leg",
+      "bytes": 909,
+      "body_md5": "227d11db5fe0b4ad403b2f45d098a166",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_ca_escrow_on_wallet_tx",
+      "bytes": 6325,
+      "body_md5": "e773958f21214ee1aa4dd622234477a6",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_ca_escrow_ttl_sweep",
+      "bytes": 858,
+      "body_md5": "0d618300d3a658aa30d05fd4a7b9f2f8",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_ca_escrow_vs_counter_check",
+      "bytes": 11626,
+      "body_md5": "a18afb39dfeee34ad6ac8371f81aca79",
+      "signature": "p_hours integer, p_warning_cap integer",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres"],
+      "name": "fn_ca_find_tournament_entry_ticket_for",
+      "bytes": 9908,
+      "body_md5": "40571e97e346d169f9153989e8da503f",
+      "signature": "p_tournament_id uuid, p_beneficiary_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_ca_mint",
+      "bytes": 10828,
+      "body_md5": "cd7406292911f8d90feba7c81c78447c",
+      "signature": "p_asset text, p_destination text, p_target_id uuid, p_amount numeric, p_reason text, p_op_id text, p_class text",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_ca_mint_issued_24h",
+      "bytes": 286,
+      "body_md5": "4562bb4a99a3dd40aef10ab4acc91e6b",
+      "signature": "p_asset text, p_except_leg uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_ca_mint_overview",
+      "bytes": 6538,
+      "body_md5": "637250317ff189733204b524d06ad660",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_ca_mint_policy_set",
+      "bytes": 1783,
+      "body_md5": "c4f71d3cd7fc41b8f7098af9e587482b",
+      "signature": "p_per_operation_cap_chips numeric, p_rolling_24h_cap_chips numeric, p_per_operation_cap_diamonds numeric, p_rolling_24h_cap_diamonds numeric, p_reason text",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_ca_mint_register_append_only",
+      "bytes": 2602,
+      "body_md5": "267db6d427d69b1354ec4c1198cfcca9",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_ca_mint_register_vs_supply",
+      "bytes": 1281,
+      "body_md5": "afd56a2e4020c9e109bd83bda206b015",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_ca_mint_supply",
+      "bytes": 137,
+      "body_md5": "f6a26b2be0b5552b55af98be48bb5bd2",
+      "signature": "p_asset text",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_ca_mint_velocity_watch",
+      "bytes": 1594,
+      "body_md5": "464d8c4e22aecfdb55ea9904afbc672c",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_ca_quick_reconcile",
+      "bytes": 9196,
+      "body_md5": "8d0481636ce78a0ee42a0d9d13212daf",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_ca_rake_by_agent",
+      "bytes": 8654,
+      "body_md5": "032f08ae9af4262eeeaed9160e500ccd",
+      "signature": "p_club_id uuid, p_start date, p_end date, p_limit integer, p_offset integer, p_search text, p_sort text",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_ca_reconcile_log_to_incident",
+      "bytes": 2664,
+      "body_md5": "1970c2ea9bff1f8d8c970d13c3ec0f49",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_ca_reconcile_owned_entity_types",
+      "bytes": 209,
+      "body_md5": "98521e479db82acd1d80e6c33138ee9b",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_ca_reconciler_delete_unscoped",
+      "bytes": 776,
+      "body_md5": "672218729b28cafff9fd1829524a792a",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres"],
+      "name": "fn_ca_register_for_tournament_with_ticket_for",
+      "bytes": 21788,
+      "body_md5": "c2aa701c3efe83bd5e04b18effba7ea0",
+      "signature": "p_tournament_id uuid, p_ticket_id uuid, p_beneficiary_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_ca_retry_promo_accruals",
+      "bytes": 876,
+      "body_md5": "f72b457c4c0a602f04ea4fcca25c1064",
+      "signature": "p_limit integer",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres"],
+      "name": "fn_ca_return_satellite_entitlement_as_ticket",
+      "bytes": 7472,
+      "body_md5": "ef39c5826273650f918b5f8a59eb04e0",
+      "signature": "p_entitlement_id uuid, p_source text, p_description text",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres"],
+      "name": "fn_ca_satellite_entry_ticket_is_guarded",
+      "bytes": 3204,
+      "body_md5": "721225f2dc9bf83dfbc361e204e14830",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_ca_tournament_escrow",
+      "bytes": 6776,
+      "body_md5": "99606ee5149e6734e99c9d4917a126ee",
+      "signature": "p_tournament_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_ca_union_wallet_ledger_shape",
+      "bytes": 338,
+      "body_md5": "b4efbaa4e14f25ea628a708012eda95c",
+      "signature": "p_tx_type text",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_calculate_rakeback",
+      "bytes": 199,
+      "body_md5": "4ab45cc250ac768290c66e169342de74",
+      "signature": "p_user_id uuid, p_period_start timestamp with time zone, p_period_end timestamp with time zone",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_can_agent_remove_chips",
+      "bytes": 496,
+      "body_md5": "4c7346c788a434e74ac4fcb018adda4a",
+      "signature": "p_agent_id uuid, p_player_id uuid, p_club_id uuid, p_amount numeric",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_can_create_union",
+      "bytes": 117,
+      "body_md5": "fbd0f816000b167e1686a59d82eb8cf0",
+      "signature": "p_user_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_can_i_create_a_union",
+      "bytes": 119,
+      "body_md5": "2c8fffee5cb7e16e70199e86433a4641",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_can_i_operate_the_union_network",
+      "bytes": 121,
+      "body_md5": "6bb902e09dd9289a7fde369e276f913c",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres", "authenticated=X/postgres"],
+      "name": "fn_cancel_tournament_ticket",
+      "bytes": 4181,
+      "body_md5": "122b82760b81989b511e9c61fbafacff",
+      "signature": "p_ticket_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres"],
+      "name": "fn_cancelled_tournament_wallet_is_immutable",
+      "bytes": 932,
+      "body_md5": "3be8b56169be207597cbf1e2c7f34d50",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_cashier_batch_transfer",
+      "bytes": 3531,
+      "body_md5": "f3de808b653f820cf085b705b5478fd2",
+      "signature": "p_club_id uuid, p_kind text, p_items jsonb, p_batch_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_cashier_claim_back",
+      "bytes": 5885,
+      "body_md5": "759f750037e02d8b5f13df7c6709a25c",
+      "signature": "p_club_id uuid, p_from_user_id uuid, p_amount numeric, p_reason text, p_idempotency_key text",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_cashier_send_chips",
+      "bytes": 4636,
+      "body_md5": "89c904ef2ceb96a48dea81e83872982e",
+      "signature": "p_club_id uuid, p_to_user_id uuid, p_amount numeric, p_reason text, p_idempotency_key text",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_claim_rakeback",
+      "bytes": 909,
+      "body_md5": "930e4b70fa3580c010abe99e23181598",
+      "signature": "p_club_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_close_club_wallets_on_union_join",
+      "bytes": 3797,
+      "body_md5": "1804ed093473d8d9026022fc0f6e9925",
+      "signature": "p_club_id uuid, p_union_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_club_arena_global_wallet_check",
+      "bytes": 755,
+      "body_md5": "5a76e0de18ddcb3247adde1c2995263a",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_club_cashier_can_transact",
+      "bytes": 374,
+      "body_md5": "a0cc4f8ffcd889e40a27053c60630f74",
+      "signature": "p_club_id uuid, p_actor uuid, p_target uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_club_cashier_members",
+      "bytes": 2458,
+      "body_md5": "5faeae7062f7c175f30026d5a96f6e47",
+      "signature": "p_club_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_club_cashier_members_page_v3",
+      "bytes": 504,
+      "body_md5": "36be7dbc09f617b488836a8e11406033",
+      "signature": "p_club_id uuid, p_after_role_rank integer, p_after_user_id uuid, p_limit integer",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_club_cashier_members_v2",
+      "bytes": 430,
+      "body_md5": "d483532bc18a24a649e117cc55fa8ff7",
+      "signature": "p_club_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_club_cashier_scope",
+      "bytes": 326,
+      "body_md5": "e0ba5f6bc7944af287409602a9c233a3",
+      "signature": "p_club_id uuid, p_user_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_club_commission_accrued",
+      "bytes": 712,
+      "body_md5": "2c3209e8b1a7b6c37b9081a40a3c88ed",
+      "signature": "p_club_id uuid, p_since timestamp with time zone, p_until timestamp with time zone",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_club_members_no_agent_cycle",
+      "bytes": 1100,
+      "body_md5": "808a425e8b92beab089f5e45e42ce727",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_club_members_staff_earn_no_rakeback",
+      "bytes": 332,
+      "body_md5": "9da1e464076776f49d00713e9d83e154",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_club_owner_has_a_player_wallet",
+      "bytes": 1412,
+      "body_md5": "dc98d9e710e684b9182cf50db6f737f5",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_club_promo_wallet_send",
+      "bytes": 5739,
+      "body_md5": "fe490fcc75f305338160eca2a7a88b25",
+      "signature": "p_club_id uuid, p_to_user_id uuid, p_amount numeric, p_destination text, p_reason text, p_op_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_club_rakeback_margin_violations",
+      "bytes": 1968,
+      "body_md5": "e68b4976ec6742b17c4cc9f04f4acf99",
+      "signature": "p_club_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_club_unclaimable_commission",
+      "bytes": 1489,
+      "body_md5": "6ee2c4e0881c7e90beb7b7f46b11f62c",
+      "signature": "p_club_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_club_union_context",
+      "bytes": 835,
+      "body_md5": "38f711525439b4900253757031cb537a",
+      "signature": "p_club_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_club_union_join_blockers",
+      "bytes": 3149,
+      "body_md5": "87350b4233f6babe0749e5b1a0327d2f",
+      "signature": "p_club_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_create_agent",
+      "bytes": 5838,
+      "body_md5": "fce4b7c5ee003bfc2b3b772acbf65e45",
+      "signature": "p_user_id uuid, p_club_id uuid, p_role text, p_parent_agent_id uuid, p_commission_rate numeric, p_player_rakeback_rate numeric, p_credit_limit numeric, p_is_prepaid boolean",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_credit_agent_commissions_batch",
+      "bytes": 892,
+      "body_md5": "19a0175361a2d68bc15b0d4b22c28b85",
+      "signature": "p_items jsonb",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_credit_player_wallet_once",
+      "bytes": 4415,
+      "body_md5": "563d773ceb906695c150e9ced48db772",
+      "signature": "p_user_id uuid, p_amount numeric, p_idempotency_key text",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_credit_treasury",
+      "bytes": 1078,
+      "body_md5": "22384cde912eac3a859971400dd971ee",
+      "signature": "p_club_id uuid, p_amount numeric, p_reason text, p_metadata jsonb, p_op_id text",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_credit_treasury_zd4core",
+      "bytes": 998,
+      "body_md5": "761889901158043af5653fc0eff80606",
+      "signature": "p_club_id uuid, p_amount numeric, p_reason text, p_metadata jsonb",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_debit_treasury",
+      "bytes": 1181,
+      "body_md5": "8f43bf345fba1310ca8c3c40d6f8439d",
+      "signature": "p_club_id uuid, p_amount numeric, p_reason text, p_metadata jsonb",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres"],
+      "name": "fn_deliver_satellite_ticket_exact",
+      "bytes": 9543,
+      "body_md5": "216b09a2aaf0c60559538ad7caecfbae",
+      "signature": "p_satellite_id uuid, p_target_id uuid, p_user_id uuid, p_username text, p_position integer, p_ticket_value numeric",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_diamond_game_mint_leg",
+      "bytes": 1017,
+      "body_md5": "e9d105cc7dd37bc012fabebf7862371e",
+      "signature": "p_host uuid, p_kind text, p_amount numeric, p_key text",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_effective_bbj_drop",
+      "bytes": 1136,
+      "body_md5": "a0d36562ababf6626d13f90f148de74e",
+      "signature": "p_bb numeric, p_players_dealt integer, p_saw_flop boolean, p_club_id uuid, p_table_id uuid, p_variant text, p_sb numeric, p_pot numeric, p_rake numeric",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_emit_club_union_access_event",
+      "bytes": 2360,
+      "body_md5": "c0e436d873b750eb19ff803aa22083ce",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_emit_union_owner_access_event",
+      "bytes": 471,
+      "body_md5": "39cdd2ee94ddced6a56a9dab8e38f7bc",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_enforce_agent_commission_bounds",
+      "bytes": 2207,
+      "body_md5": "47a56128bb5a41236178fece349ee13d",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_enforce_club_enters_union_empty",
+      "bytes": 994,
+      "body_md5": "85078766847a937bedfc4b2ab655b6cf",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_enforce_home_promotion_request_insert",
+      "bytes": 320,
+      "body_md5": "93bdb2781f2cd0c77731d31323c29d9d",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_enforce_table_union_ownership_update",
+      "bytes": 542,
+      "body_md5": "4d04e0374bfefc802315813aee7fc838",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_enforce_tournament_union_ownership_update",
+      "bytes": 542,
+      "body_md5": "4d04e0374bfefc802315813aee7fc838",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_ensure_agent_row",
+      "bytes": 2232,
+      "body_md5": "95ea37fdc89cd68957a8c9aaa37e8ff1",
+      "signature": "p_club_id uuid, p_user_id uuid, p_role text",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres", "authenticated=X/postgres"],
+      "name": "fn_ensure_club_wallet",
+      "bytes": 173,
+      "body_md5": "9a9fb5c1f8a4a88bbeed01710af6c4c2",
+      "signature": "p_user_id uuid, p_club_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_execute_union_rakeback",
+      "bytes": 861,
+      "body_md5": "d0ba321b9e1afcbb9b03c5237aa54375",
+      "signature": "p_union_id uuid, p_period_start timestamp with time zone, p_period_end timestamp with time zone",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_find_tournament_entry_ticket",
+      "bytes": 286,
+      "body_md5": "9a8c9aa0ac456b79bd98efedbdd1b53d",
+      "signature": "p_tournament_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_get_agent_commission_summary",
+      "bytes": 1502,
+      "body_md5": "567c03cebf01f31f5fd3a4663cbb5971",
+      "signature": "p_agent_id uuid, p_club_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_gto_v31_promote_dataset",
+      "bytes": 5136,
+      "body_md5": "6bdf8dee4701751bbcc82e4fe3d34023",
+      "signature": "p_dataset_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_guard_union_creation",
+      "bytes": 260,
+      "body_md5": "e685a278d85d584a623f3df9cba9015f",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_has_player_wallet",
+      "bytes": 346,
+      "body_md5": "266f8dcbdf8b3e48fbbec75ff828f2f7",
+      "signature": "p_club_id uuid, p_user_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_horse_audit_set_agent_analysis",
+      "bytes": 110,
+      "body_md5": "85ffd12a30810eb81e010cbc830d7295",
+      "signature": "p_day date, p_analysis jsonb",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_horse_fund_from_treasury",
+      "bytes": 3733,
+      "body_md5": "3ae90f749e529679f18aef61c1afccce",
+      "signature": "p_table_id uuid, p_user_id uuid, p_amount numeric, p_op_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres"],
+      "name": "fn_horse_fund_from_treasury_before_maintenance_gate",
+      "bytes": 5038,
+      "body_md5": "87eff86bbf9e4377380ecc975b4dac6d",
+      "signature": "p_table_id uuid, p_user_id uuid, p_amount numeric, p_op_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_horse_seat_from_treasury",
+      "bytes": 1683,
+      "body_md5": "a00f81939dbc78f77f033e555fa1af32",
+      "signature": "p_table_id uuid, p_user_id uuid, p_seat_number integer, p_amount numeric, p_op_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres"],
+      "name": "fn_horse_seat_from_treasury_before_maintenance_gate",
+      "bytes": 4698,
+      "body_md5": "6a0f248a6900e6f91bfb7248377e6940",
+      "signature": "p_table_id uuid, p_user_id uuid, p_seat_number integer, p_amount numeric, p_op_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_horse_tournament_entry_ticket_hints",
+      "bytes": 2840,
+      "body_md5": "92c16e6c301d570dd2b4fa1662de8f72",
+      "signature": "p_tournament_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_idempotent_credit_wallet",
+      "bytes": 1232,
+      "body_md5": "0195c87ffff2d0320f4371009c242bee",
+      "signature": "p_idempotency_key text, p_user_id uuid, p_amount numeric, p_category text, p_description text, p_table_id uuid, p_hand_id uuid, p_related_entity_id uuid",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_idempotent_deduct_wallet",
+      "bytes": 1161,
+      "body_md5": "9ff8b2c3105d32e53382fe0da55b63a8",
+      "signature": "p_idempotency_key text, p_user_id uuid, p_amount numeric, p_category text, p_description text, p_table_id uuid, p_hand_id uuid, p_related_entity_id uuid",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_idempotent_wallet_transfer",
+      "bytes": 1186,
+      "body_md5": "122c0a931f94f091a8748500e3502c92",
+      "signature": "p_idempotency_key text, p_from_user_id uuid, p_to_user_id uuid, p_amount numeric, p_category text, p_debit_description text, p_credit_description text, p_related_entity_id uuid",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_increment_agent_player_count",
+      "bytes": 365,
+      "body_md5": "dec0b209f8e03385b25c4a87748f4270",
+      "signature": "p_agent_user_id uuid, p_club_id uuid, p_increment integer",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_is_agent_ancestor",
+      "bytes": 462,
+      "body_md5": "6a96ca7eaadff5022b7ae0eb406d4b25",
+      "signature": "p_ancestor_user_id uuid, p_descendant_user_id uuid, p_club_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_is_agent_of_player",
+      "bytes": 731,
+      "body_md5": "6b60ea8bfe344fff28b657ea08fe008a",
+      "signature": "p_agent_user_id uuid, p_player_user_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_is_any_union_overseer",
+      "bytes": 569,
+      "body_md5": "50436749992bd2a9e611035fb0fba22a",
+      "signature": "p_user_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_is_union_operator",
+      "bytes": 263,
+      "body_md5": "656ef734d2c57b24818dc996cc0e7248",
+      "signature": "p_union_id uuid, p_user_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_is_union_overseer",
+      "bytes": 659,
+      "body_md5": "5a42c5e7097a527856f56fc7224f9457",
+      "signature": "p_union_id uuid, p_user_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_issue_tournament_ticket",
+      "bytes": 431,
+      "body_md5": "3913bb2ba2b5f71e9712505fd319e4b6",
+      "signature": "p_club_id uuid, p_holder_id uuid, p_value numeric, p_note text, p_idempotency_key text",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_issue_tournament_ticket_phase2_core_20260831",
+      "bytes": 5494,
+      "body_md5": "a4900a9455f60872433e0ea71f094beb",
+      "signature": "p_club_id uuid, p_holder_id uuid, p_value numeric, p_note text, p_idempotency_key text",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_leaderboard_funding_union_id",
+      "bytes": 1204,
+      "body_md5": "0fc2c93164c1a778bd2c0174f771b02c",
+      "signature": "p_club_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_member_leave_to_treasury",
+      "bytes": 1782,
+      "body_md5": "5253eb7b2e581db0cc8df6f40a8319a8",
+      "signature": "p_club_id uuid, p_user_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_mint_chips_from_diamonds",
+      "bytes": 8255,
+      "body_md5": "33fee99d88bb3c59472a9562e023f0d1",
+      "signature": "p_club_id uuid, p_diamonds numeric, p_op_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres"],
+      "name": "fn_mint_club_chips",
+      "bytes": 1168,
+      "body_md5": "182a1482840ab035b1034a5dae86a8a9",
+      "signature": "p_club_id uuid, p_amount numeric, p_reason text, p_op_id text",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres"],
+      "name": "fn_mint_club_chips_zd3core",
+      "bytes": 2856,
+      "body_md5": "1dbb83f0374a8da1b167f49c6c1b87e6",
+      "signature": "p_club_id uuid, p_amount numeric, p_reason text",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_mint_social_alias",
+      "bytes": 1474,
+      "body_md5": "668ad0aaf7762c546230ec3239964d69",
+      "signature": "p_seed text",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_my_agent_roles",
+      "bytes": 395,
+      "body_md5": "cb87aea0939c4110f3f759764fe0c2f3",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_my_wallet_ledger",
+      "bytes": 3212,
+      "body_md5": "35b33c68aac2c4c1f45c1a85f64b6961",
+      "signature": "p_club_id uuid, p_limit integer, p_offset integer",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_new_union_gets_the_ladder",
+      "bytes": 75,
+      "body_md5": "8f1be8e0f3e886760d4e471bec35eb5d",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_notify_agent_on_cashout",
+      "bytes": 1370,
+      "body_md5": "a6fb52f7974b303670203f222465709a",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_pay_credit_invoice_from_wallet",
+      "bytes": 1930,
+      "body_md5": "13d7d2090c492121818263b3c32ad7c8",
+      "signature": "p_invoice_id uuid, p_amount numeric",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_player_rakeback_rate",
+      "bytes": 1269,
+      "body_md5": "0f3c31ed1a9f42ef48d1dc0392b1bd3f",
+      "signature": "p_user_id uuid, p_club_id uuid, p_volume numeric",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_promo_disburse",
+      "bytes": 8266,
+      "body_md5": "e03bffa412e586665c15c58537951d4d",
+      "signature": "p_source_kind text, p_source_id uuid, p_target_kind text, p_target_id uuid, p_amount numeric, p_note text, p_club_id uuid, p_op_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_promo_vault_can_manage",
+      "bytes": 362,
+      "body_md5": "c6e025661aea1b5f15a419089b7146ff",
+      "signature": "p_club_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_promo_vault_delivery_for",
+      "bytes": 1324,
+      "body_md5": "5712af91cc6cfa7cfc4cd432759920b4",
+      "signature": "p_item_key text",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_promo_vault_visible",
+      "bytes": 384,
+      "body_md5": "2865152dae95c45b6ba24dd6c499f83c",
+      "signature": "p_club_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_promo_wallet_ledger",
+      "bytes": 7461,
+      "body_md5": "249607fa998f8890b5862c08c6254c6e",
+      "signature": "p_scope text, p_scope_id uuid, p_limit integer, p_offset integer, p_wallet text",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_promo_wallet_send",
+      "bytes": 7161,
+      "body_md5": "b101fc1f3280218d04d7addd155ed4ea",
+      "signature": "p_club_id uuid, p_to_user_id uuid, p_amount numeric, p_destination text, p_reason text, p_op_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_promotion_claim_takes_the_promotions_word",
+      "bytes": 1215,
+      "body_md5": "fe03b084e15eecf1bfd0e594035b6666",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_prune_cashier_operations",
+      "bytes": 324,
+      "body_md5": "de4c974714a399d1cfabde955eab7df5",
+      "signature": "p_keep_days integer",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_rake_bbj_audit",
+      "bytes": 2534,
+      "body_md5": "91bbde78c6e4384eaad2e0596a9fee2f",
+      "signature": "p_hours integer",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_rake_bbj_invariants",
+      "bytes": 8751,
+      "body_md5": "4d2fe99e9fee6c4b26e2cbc06a631856",
+      "signature": "p_hours integer",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_rakeback_periods_bulk_upsert",
+      "bytes": 2149,
+      "body_md5": "d0c71ea5b08d917e99c71ea967f5caab",
+      "signature": "p_items jsonb",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_rakeback_recompute_all_clubs",
+      "bytes": 2354,
+      "body_md5": "94bccb645adfde96a32b2405603cf514",
+      "signature": "p_period_start date, p_period_end date",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_rakeback_recompute_day",
+      "bytes": 3116,
+      "body_md5": "f7ff62effa4f6279f44a9f261ab567a7",
+      "signature": "p_club_id uuid, p_day date, p_force boolean",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_rakeback_recompute_periods",
+      "bytes": 2156,
+      "body_md5": "0ebc3947f8b6090ff7228aa5093a69e9",
+      "signature": "p_club_id uuid, p_period_start date, p_period_end date, p_user_ids uuid[]",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_rakeback_settlement_status",
+      "bytes": 2884,
+      "body_md5": "b326fa195778ac452c790d483a653f18",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_rebuild_agent_commission_rollup",
+      "bytes": 1148,
+      "body_md5": "ff8be6355eca2e4f94844346342fd8e7",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_rebuild_ca_club_commission_daily",
+      "bytes": 1093,
+      "body_md5": "636990f9f425c76885cf2d605ccc64a8",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_recompute_union_level_on_club_change",
+      "bytes": 441,
+      "body_md5": "3b2d25a50713c0f230bde061d78093fb",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_reconcile_club_member_daily_profit",
+      "bytes": 4075,
+      "body_md5": "79f3d6bdf16f1803b8a485cc3c8c8bf7",
+      "signature": "p_date date",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_reconcile_club_table_counts",
+      "bytes": 336,
+      "body_md5": "94b2f0f0fe380bc717654149beb6916f",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_reconcile_tournament_denormals",
+      "bytes": 3808,
+      "body_md5": "88897bba83dd2194f4d7b009b8b5b0c1",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_record_cashier_operation",
+      "bytes": 2648,
+      "body_md5": "65e61ae3e55b3731c4dfd63bd350d8f2",
+      "signature": "p_club_id uuid, p_event text, p_operation text, p_duration_ms integer, p_item_count integer, p_page_number integer, p_success_count integer, p_failure_count integer, p_reason_code text",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres", "authenticated=X/postgres"],
+      "name": "fn_redeem_tournament_ticket",
+      "bytes": 4345,
+      "body_md5": "dfcc025bd809ffe62120d06e3549d728",
+      "signature": "p_ticket_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_register_for_tournament_with_ticket",
+      "bytes": 334,
+      "body_md5": "c47bca2578ab5335d5350bdf1ea8c525",
+      "signature": "p_tournament_id uuid, p_ticket_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres"],
+      "name": "fn_register_for_tournament_with_ticket_before_terminal_gate",
+      "bytes": 312,
+      "body_md5": "bd9bdc21fe6dbdd039a9e4f784ac4f75",
+      "signature": "p_tournament_id uuid, p_ticket_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres"],
+      "name": "fn_resolve_bbj_pool",
+      "bytes": 2064,
+      "body_md5": "5b03e0fab4564d7a8edaa3fe1f60cfd0",
+      "signature": "p_table_id uuid, p_club_id uuid",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_resolve_player_club_for_agent",
+      "bytes": 1523,
+      "body_md5": "a05131eb6fff1c2438cb7d24eb2eac1b",
+      "signature": "p_user_id uuid, p_club_hint uuid, p_table_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_run_pending_rakeback_settlement",
+      "bytes": 2795,
+      "body_md5": "e8927543fd0a307566f6b31bf270bcd5",
+      "signature": "p_max_clubs integer",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_settle_club_rakeback_batch",
+      "bytes": 6788,
+      "body_md5": "8b6e4b7bf0bea186ef2828cf1b976c02",
+      "signature": "p_club_id uuid, p_max_periods integer, p_budget_seconds numeric, p_max_warm_days integer",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_settle_round2_club_to_agents",
+      "bytes": 7224,
+      "body_md5": "6b6e58eb5eaba25f7ff3fd69e742cb01",
+      "signature": "p_union_id uuid, p_period_start timestamp with time zone, p_period_end timestamp with time zone",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_settle_round3_agents_to_players",
+      "bytes": 4322,
+      "body_md5": "5234e460b1ea1f666fbc6bac7a9a1b17",
+      "signature": "p_union_id uuid, p_period_start timestamp with time zone, p_period_end timestamp with time zone",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_spin_absorb_club_pool_into_union",
+      "bytes": 1536,
+      "body_md5": "5704c8d4502a18feffb780b5e0c10458",
+      "signature": "p_club_id uuid, p_union_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_spin_escrow_is_enforced",
+      "bytes": 766,
+      "body_md5": "36839eba4fd68de02b7f45b56f95913e",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_spin_move_owner_wallet",
+      "bytes": 2074,
+      "body_md5": "85b0fad65c2afffd0196fcf2ed8af729",
+      "signature": "p_owner_id uuid, p_owner_kind text, p_wallet text, p_delta numeric",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_spin_pool_follows_union_membership",
+      "bytes": 196,
+      "body_md5": "378b9c56d98054bca96c88b45b6900ad",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_spin_reserve_seed_from_union",
+      "bytes": 3158,
+      "body_md5": "4f32c13a2bcba81b492d427773863583",
+      "signature": "p_union_id uuid, p_club_id uuid, p_amount numeric, p_highest_stake numeric, p_ceiling numeric, p_wallet text, p_idempotency_key text",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_spin_reserve_wallet_fund",
+      "bytes": 2334,
+      "body_md5": "6f3bb471ff7daad9d502b49ed79a9a3f",
+      "signature": "p_union_id uuid, p_amount numeric, p_from_wallet text, p_note text",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_spin_reserve_wallet_fund_op",
+      "bytes": 2143,
+      "body_md5": "b178027728fefc0aed4ba0d59f14e0e3",
+      "signature": "p_union_id uuid, p_amount numeric, p_from_wallet text, p_note text, p_op_id uuid, p_created_by uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_spin_shortfall_funds_the_escrow",
+      "bytes": 823,
+      "body_md5": "f04f69efcd91936277dceadd46f1afdd",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_stamp_table_union_ownership",
+      "bytes": 1096,
+      "body_md5": "d0cb5b3e6e9770888d745d5d2de2166e",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_stamp_tournament_union_ownership",
+      "bytes": 634,
+      "body_md5": "d0eb51bfbc822fbb74aaa0d9d769cd59",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_sweep_bbj_promo",
+      "bytes": 3488,
+      "body_md5": "7ef5584cdb49f03025598311a600f555",
+      "signature": "p_club_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_sweep_bbj_promo_all",
+      "bytes": 3836,
+      "body_md5": "750cd5d23b758611b14eaba739d016a0",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_sync_agent_player_counts",
+      "bytes": 1029,
+      "body_md5": "14349f98b4dbe6ff923b38f62f2355aa",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_sync_club_union_mirror",
+      "bytes": 392,
+      "body_md5": "622ce49ed2bc5bb8756712f71e3dd2b7",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_sync_union_membership_table_counts",
+      "bytes": 568,
+      "body_md5": "b536144fd9b25b70efb51a6294dba7f9",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres"],
+      "name": "fn_terminal_tournament_escrow_is_immutable",
+      "bytes": 2075,
+      "body_md5": "f750599449d5dbf52fe092ad4b59a2db",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres"],
+      "name": "fn_terminal_wallet_transaction_is_immutable",
+      "bytes": 2221,
+      "body_md5": "f054ed37c1af938c38d3ae4df159ac5d",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_tournament_payout_reconcile",
+      "bytes": 16074,
+      "body_md5": "80a70ae8f112088bc39d92c5965952c1",
+      "signature": "p_tournament_id uuid, p_apply boolean",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_training_promote_legacy_signed_decision_v1",
+      "bytes": 10892,
+      "body_md5": "e1ec41c7c63e9a0f31cfcfb6f544b67b",
+      "signature": "p_attempt_id uuid, p_user_id uuid, p_hand_ordinal integer, p_decision_ordinal integer, p_snapshot_key text, p_question_id text, p_policy_checksum text, p_receipt_id text, p_receipt_issued_at bigint, p_receipt_expires_at bigint",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": [
+        "=X/postgres",
+        "postgres=X/postgres",
+        "anon=X/postgres",
+        "authenticated=X/postgres",
+        "service_role=X/postgres"
+      ],
+      "name": "fn_union_active_player_counts",
+      "bytes": 76,
+      "body_md5": "e1dddc0d4ac9d3f2d79097b5f129c08e",
+      "signature": "p_union_ids uuid[]",
+      "anon_execute": true,
+      "security_definer": false,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_age_invoices",
+      "bytes": 4884,
+      "body_md5": "126715ba8329d09451890b0abdee25a9",
+      "signature": "p_union_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres", "authenticated=X/postgres"],
+      "name": "fn_union_agent_coverage",
+      "bytes": 3635,
+      "body_md5": "9b1abe76356905189f583e408ba9fd31",
+      "signature": "p_union_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_agent_risk_report",
+      "bytes": 2657,
+      "body_md5": "0548e012a9badf8a163e195c9b02c2a7",
+      "signature": "p_union_id uuid, p_since timestamp with time zone",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_apply_presettlements",
+      "bytes": 1440,
+      "body_md5": "e81863d4121f435f429c72d81125e4e2",
+      "signature": "p_union_id uuid, p_settlement_id uuid, p_club_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_bbj_backup_transfer",
+      "bytes": 4656,
+      "body_md5": "55dd554b380e1fc491a4cfdc495924d7",
+      "signature": "p_union_id uuid, p_amount numeric, p_destination text, p_op_id uuid, p_created_by uuid, p_notes text",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres"],
+      "name": "fn_union_bbj_pool_payout",
+      "bytes": 93,
+      "body_md5": "b0e380cc607efb47dc5816442f9be646",
+      "signature": "p_union_id uuid, p_pool_id uuid, p_club_id uuid, p_loser_id uuid, p_winner_id uuid, p_loser_share numeric, p_winner_share numeric, p_table_share numeric",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_can_manage_wallets",
+      "bytes": 632,
+      "body_md5": "9267a05a21f5d917f61dd80e01bdb673",
+      "signature": "p_union_id uuid, p_user_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_chip_integrity_check",
+      "bytes": 1515,
+      "body_md5": "6fd02d3126f8db2cc6122b25041bce69",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_clawback_from_club",
+      "bytes": 3927,
+      "body_md5": "b2e7e6b5548a11404272f6fa3ba98fe6",
+      "signature": "p_union_id uuid, p_club_id uuid, p_amount numeric, p_notes text, p_op_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_clawback_promo_from_club",
+      "bytes": 3773,
+      "body_md5": "404e86d414dd573341142baa327f8b94",
+      "signature": "p_union_id uuid, p_club_id uuid, p_amount numeric, p_notes text, p_op_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_close_club_tables_for_join",
+      "bytes": 2886,
+      "body_md5": "9151eb2a454a0790da00dc0e40a7032a",
+      "signature": "p_club_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_close_unsettleable_period",
+      "bytes": 1101,
+      "body_md5": "cad4e2bc425e169e9fb8e79c27800476",
+      "signature": "p_period_id uuid, p_reason text",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres", "authenticated=X/postgres"],
+      "name": "fn_union_club_exit_blockers",
+      "bytes": 1414,
+      "body_md5": "c46558b68fe9759342e0b03066b6f340",
+      "signature": "p_union_id uuid, p_club_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_club_exposure",
+      "bytes": 1585,
+      "body_md5": "18104f1f33595c684278e5b0d328199d",
+      "signature": "p_union_id uuid, p_week_start timestamp with time zone",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_club_invoice",
+      "bytes": 2426,
+      "body_md5": "d439111fdae4cd62384bc88244d3ca47",
+      "signature": "p_union_id uuid, p_start timestamp with time zone, p_end timestamp with time zone",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_club_performance",
+      "bytes": 2229,
+      "body_md5": "7125a36f5c12bf32838e7684d494951e",
+      "signature": "p_union_id uuid, p_weeks integer",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_club_player_pnl",
+      "bytes": 498,
+      "body_md5": "a1ee52e7bc7563d1b93d61c3cd48a392",
+      "signature": "p_club_id uuid, p_union_id uuid, p_start timestamp with time zone, p_end timestamp with time zone",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_club_rake_basis",
+      "bytes": 6487,
+      "body_md5": "dde1523d01a5f59d3c1ba481c706e24a",
+      "signature": "p_union_id uuid, p_start timestamp with time zone, p_end timestamp with time zone, p_live boolean",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_club_scope",
+      "bytes": 101,
+      "body_md5": "16898fdddf3f5119d8aef215374a2752",
+      "signature": "p_union_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_club_statement_of_account",
+      "bytes": 2897,
+      "body_md5": "3de66d1740ae883c2571dce933e02de6",
+      "signature": "p_union_id uuid, p_club_id uuid, p_since timestamp with time zone",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_commingling_report",
+      "bytes": 1864,
+      "body_md5": "5baf0845453d32670e9011d27a61ec5e",
+      "signature": "p_union_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_credit_risk_check",
+      "bytes": 2417,
+      "body_md5": "85fe4440efda5b2f601077677856d04d",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_credit_wallet",
+      "bytes": 1188,
+      "body_md5": "068b4ba3edcc0097f7fe32b3e73f1e11",
+      "signature": "p_union_id uuid, p_wallet text, p_amount numeric, p_tx_type text, p_club_id uuid, p_period_id uuid, p_notes text, p_created_by uuid, p_op_id text",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_credit_wallet_zd3core",
+      "bytes": 2724,
+      "body_md5": "a13de8dc33c48d92102be8e90777f746",
+      "signature": "p_union_id uuid, p_wallet text, p_amount numeric, p_tx_type text, p_club_id uuid, p_period_id uuid, p_notes text, p_created_by uuid",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_debit_wallet",
+      "bytes": 1181,
+      "body_md5": "af579b7181b047c5c0f39bdd5446726a",
+      "signature": "p_union_id uuid, p_wallet text, p_amount numeric, p_tx_type text, p_club_id uuid, p_period_id uuid, p_notes text, p_created_by uuid, p_op_id text",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_debit_wallet_zd3core",
+      "bytes": 2539,
+      "body_md5": "52ad11088ba111e7fcbea1534e3087d7",
+      "signature": "p_union_id uuid, p_wallet text, p_amount numeric, p_tx_type text, p_club_id uuid, p_period_id uuid, p_notes text, p_created_by uuid",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_deposit_from_wallet",
+      "bytes": 1960,
+      "body_md5": "4dfffed6c8681e5719ad8e17e7e31ed2",
+      "signature": "p_union_id uuid, p_amount numeric, p_notes text, p_op_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_dispute_invoice",
+      "bytes": 3601,
+      "body_md5": "6cdb571b6589ac7415264a14c1f99c35",
+      "signature": "p_invoice_id uuid, p_reason text",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_distribute_promo",
+      "bytes": 3646,
+      "body_md5": "dcb64b744a1813547b5ab29f7f6ef41f",
+      "signature": "p_union_id uuid, p_target_kind text, p_target_id uuid, p_amount numeric, p_agent_club_id uuid, p_note text",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres", "authenticated=X/postgres"],
+      "name": "fn_union_distribution_check",
+      "bytes": 1417,
+      "body_md5": "49723cb8f8c0c3429592ae6db4d75a7d",
+      "signature": "p_union_id uuid, p_since timestamp with time zone",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_eco_adjustment",
+      "bytes": 4381,
+      "body_md5": "cf14c977139f0b5062875bb62a455823",
+      "signature": "p_union_id uuid, p_start timestamp with time zone, p_end timestamp with time zone",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_eco_base_mode",
+      "bytes": 124,
+      "body_md5": "4696aba5b2bf8bf77f54591e04eacf69",
+      "signature": "p_union_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_eco_enabled",
+      "bytes": 108,
+      "body_md5": "cb5cece55c83526ff3a90326110e72cf",
+      "signature": "p_union_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_eco_include_horses",
+      "bytes": 114,
+      "body_md5": "c968ccb5d7dc8b568d2c2384043287ce",
+      "signature": "p_union_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_eco_rate",
+      "bytes": 104,
+      "body_md5": "febec62d0a73b9de87c043042bec576a",
+      "signature": "p_union_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_eco_record",
+      "bytes": 2068,
+      "body_md5": "310bdb90a6a3c68ffdc2f1493f106a24",
+      "signature": "p_union_id uuid, p_start timestamp with time zone, p_end timestamp with time zone, p_settlement_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_eco_record_current_week",
+      "bytes": 743,
+      "body_md5": "e330de4dc73e0e40db4bcc550402dd1c",
+      "signature": "p_union_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_enforce_stop_loss",
+      "bytes": 3641,
+      "body_md5": "c12ce662cb03bc3f0f0366285a5a6682",
+      "signature": "p_union_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_expel_club",
+      "bytes": 2317,
+      "body_md5": "196c40a90625d43a14e9219f6f112de8",
+      "signature": "p_union_id uuid, p_club_id uuid, p_reason text, p_force boolean",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_fund_bbj_pool",
+      "bytes": 3361,
+      "body_md5": "a7ebf2d78c3ed60033a5a8c8f3dbc46e",
+      "signature": "p_union_id uuid, p_amount numeric, p_main_pct numeric, p_backup_pct numeric, p_promo_pct numeric, p_notes text, p_created_by uuid, p_op_id uuid",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_fund_promo_from_bank",
+      "bytes": 2016,
+      "body_md5": "0b5f635a55b7bb0fbd0898fb24bc3aad",
+      "signature": "p_union_id uuid, p_amount numeric, p_note text",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_governance_check",
+      "bytes": 6088,
+      "body_md5": "b59473f1e8e9691b78a917570de56d9a",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_hierarchy_warnings",
+      "bytes": 1517,
+      "body_md5": "a71404d2f8f4e38eb33bdf6b9487fb81",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_house_club_stamp_check",
+      "bytes": 662,
+      "body_md5": "d96cefd71aeeaa491423e9c3a6c2a20d",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres", "authenticated=X/postgres"],
+      "name": "fn_union_integrity_sweep",
+      "bytes": 4703,
+      "body_md5": "7ec4a949f77cf81ea8009d9e324772df",
+      "signature": "p_union_id uuid, p_hours integer",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_integrity_sweep_all",
+      "bytes": 3678,
+      "body_md5": "9c30a4e71afe57fc694c797df7d0c6e0",
+      "signature": "p_hours integer",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_invoice_outstanding",
+      "bytes": 288,
+      "body_md5": "4a29dcf99fdd2b06214ca650c00b537a",
+      "signature": "p_invoice_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_issue_credit_note",
+      "bytes": 5245,
+      "body_md5": "ff68068a547a909e5abef250775f7b42",
+      "signature": "p_invoice_id uuid, p_amount numeric, p_reason text, p_notify boolean",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_issue_weekly_invoices",
+      "bytes": 12559,
+      "body_md5": "7843c3c364b9784acf8333064bd19b2f",
+      "signature": "p_union_id uuid, p_start timestamp with time zone, p_end timestamp with time zone, p_notify boolean",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_law_extra_breaches",
+      "bytes": 1570,
+      "body_md5": "577a170d58bad014b63db317032d1447",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_law_integrity_breaches",
+      "bytes": 182,
+      "body_md5": "85e9469f5c718bd2b319691dbcc39777",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres", "authenticated=X/postgres"],
+      "name": "fn_union_law_selftest",
+      "bytes": 8351,
+      "body_md5": "64d0c76629451ac7381503c6352c0a38",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_leaderboard_period",
+      "bytes": 2447,
+      "body_md5": "ef6634adcd053b1cbbcc7ceffa72ef00",
+      "signature": "p_union_id uuid, p_metric text, p_period text, p_limit integer",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_leaderboard_period_v2",
+      "bytes": 5121,
+      "body_md5": "4453038044dfc3321556b94ea7e46912",
+      "signature": "p_union_id uuid, p_metric text, p_period text, p_limit integer, p_offset integer",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_mark_period_settled",
+      "bytes": 887,
+      "body_md5": "348aeaed9cc46ff56e31cc5629025fbd",
+      "signature": "p_union_id uuid, p_from timestamp with time zone, p_to timestamp with time zone",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_money_path_check",
+      "bytes": 1985,
+      "body_md5": "231d1d6614932614455ce320b261f349",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_money_report",
+      "bytes": 4852,
+      "body_md5": "b23216a6bb3a0380cd8bf85754118611",
+      "signature": "p_union_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_move_rake_to_chips_atomic",
+      "bytes": 435,
+      "body_md5": "51416663af659b5369e4ce016681bffc",
+      "signature": "p_union_id uuid, p_amount numeric, p_notes text, p_created_by uuid, p_op_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_overload_check",
+      "bytes": 857,
+      "body_md5": "d94a82bd3a62b41a50be5e1732bb3069",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_oversees_club",
+      "bytes": 292,
+      "body_md5": "c1007332363a6db8aa6c62a520b99d70",
+      "signature": "p_club_id uuid, p_user_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_oversight_tables",
+      "bytes": 347,
+      "body_md5": "1a4d5067bbffdeb3c68436cca90eb3c2",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_player_directory",
+      "bytes": 1079,
+      "body_md5": "47c85646f9709a4bd3cfb11e6d96bdd7",
+      "signature": "p_union_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_pnl_all_clubs",
+      "bytes": 3871,
+      "body_md5": "7133e06769f2d8de0cf394549b20f8bb",
+      "signature": "p_union_id uuid, p_start timestamp with time zone, p_end timestamp with time zone, p_include_horses boolean",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_pnl_baseline",
+      "bytes": 198,
+      "body_md5": "7aff5dd6359df994306ae243036d7e65",
+      "signature": "p_union_id uuid, p_at timestamp with time zone",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_pnl_bootstrap",
+      "bytes": 1027,
+      "body_md5": "ec932c46de474ac39e201fa79ab29702",
+      "signature": "p_union_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_pnl_cash_by_club",
+      "bytes": 2589,
+      "body_md5": "62cb416dce5104dc00d248bc8685ec05",
+      "signature": "p_union_id uuid, p_start timestamp with time zone, p_end timestamp with time zone, p_include_horses boolean",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": [
+        "=X/postgres",
+        "postgres=X/postgres",
+        "anon=X/postgres",
+        "authenticated=X/postgres",
+        "service_role=X/postgres"
+      ],
+      "name": "fn_union_prev_week_start",
+      "bytes": 141,
+      "body_md5": "2d6778cc6ae9c71567add5bf2a3aad02",
+      "signature": "p_at timestamp with time zone",
+      "anon_execute": true,
+      "security_definer": false,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_promo_send",
+      "bytes": 5972,
+      "body_md5": "ef629c2c437aa8bd5b088c8eb810efe8",
+      "signature": "p_union_id uuid, p_amount numeric, p_destination text, p_club_id uuid, p_op_id uuid, p_created_by uuid, p_notes text",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_rake_basis_by_club",
+      "bytes": 2089,
+      "body_md5": "93118e49ee39cc74c70ab6025314189a",
+      "signature": "p_union_id uuid, p_start timestamp with time zone, p_end timestamp with time zone",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_rake_basis_refresh",
+      "bytes": 1724,
+      "body_md5": "4d54aabd89a2005489a130b7bf06962a",
+      "signature": "p_union_id uuid, p_start timestamp with time zone, p_end timestamp with time zone",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_rake_by_club",
+      "bytes": 497,
+      "body_md5": "4809ceefe893ce0cca74cb213083de4b",
+      "signature": "p_union_id uuid, p_days integer",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_rake_by_day",
+      "bytes": 394,
+      "body_md5": "77fff51668c8a724c15c42dfd299de5b",
+      "signature": "p_union_id uuid, p_days integer",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_rake_day_is_fresh",
+      "bytes": 1032,
+      "body_md5": "ae77d221a26071c57e3d1fc8b17e06f2",
+      "signature": "p_union_id uuid, p_day date",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_rake_ledger_checkpoint_verify",
+      "bytes": 2695,
+      "body_md5": "e24242b6ce42032c49ee7fd057c4aee4",
+      "signature": "p_union_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_rake_ledger_summary",
+      "bytes": 484,
+      "body_md5": "872022e4ea8452eb12b2d25e8f797e85",
+      "signature": "p_union_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_rake_ledger_totals",
+      "bytes": 2799,
+      "body_md5": "ffb59512fa36ad8c3d19dca0b6671ccc",
+      "signature": "p_union_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_rake_paid_by_club",
+      "bytes": 995,
+      "body_md5": "31b58ffb4229ba4c3b68d89d3afbc7e9",
+      "signature": "p_union_id uuid, p_start timestamp with time zone, p_end timestamp with time zone, p_include_horses boolean",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_rake_paid_live",
+      "bytes": 1606,
+      "body_md5": "4d0f8eac2c3a35d82321eb6a11f55717",
+      "signature": "p_union_id uuid, p_start timestamp with time zone, p_end timestamp with time zone, p_include_horses boolean",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_rake_paid_readonly",
+      "bytes": 2608,
+      "body_md5": "6f3ac32a89f79b4a35ecdcafb64f30e5",
+      "signature": "p_union_id uuid, p_start timestamp with time zone, p_end timestamp with time zone, p_include_horses boolean",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_rake_rollup_catchup",
+      "bytes": 1499,
+      "body_md5": "b0b769ccfc3cb5f0b2c190c730b7cd87",
+      "signature": "p_union_id uuid, p_max_days integer, p_lookback_days integer",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_rake_rollup_catchup_all",
+      "bytes": 417,
+      "body_md5": "3b649a6ef9bbadef53793919fdd6214b",
+      "signature": "p_max_days integer",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_rake_rollup_refresh_day",
+      "bytes": 3124,
+      "body_md5": "734278e32d1b80c89a1e5d15b4a03906",
+      "signature": "p_union_id uuid, p_day date",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_rake_stale_days",
+      "bytes": 793,
+      "body_md5": "8d0fb45c7b760651c7e9d50c88c898f6",
+      "signature": "p_union_id uuid, p_from date, p_to_exclusive date",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_rake_weekly_verify",
+      "bytes": 748,
+      "body_md5": "dd5b75cf62f4906c0e1ae0f7b5a9517a",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_reconciliation_report",
+      "bytes": 3030,
+      "body_md5": "750a73955d93728e988848b9276cf1d7",
+      "signature": "p_union_id uuid, p_start timestamp with time zone, p_end timestamp with time zone",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_record_presettlement",
+      "bytes": 1168,
+      "body_md5": "ed751ae6ca95b61d88f981adaf2a5074",
+      "signature": "p_union_id uuid, p_club_id uuid, p_amount numeric, p_method text, p_reference text, p_note text",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_report_caller_ok",
+      "bytes": 467,
+      "body_md5": "8eb8b07c17c87e5bcf1435606cc93b88",
+      "signature": "p_union_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_resolve_invoice_dispute",
+      "bytes": 2039,
+      "body_md5": "7afa1265f9d95272bbc0ad4dd55279a3",
+      "signature": "p_invoice_id uuid, p_resolution text, p_new_status text",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres"],
+      "name": "fn_union_send_chips_to_club",
+      "bytes": 1626,
+      "body_md5": "f7d4bcaa04a7a083fea2b764db3c4c04",
+      "signature": "p_union_id uuid, p_club_id uuid, p_amount numeric, p_notes text",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_send_club_message",
+      "bytes": 3563,
+      "body_md5": "39dcad4c7432dcfdb11bdabc3680fc15",
+      "signature": "p_union_id uuid, p_club_id uuid, p_content text, p_metadata jsonb, p_message_type text",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_send_to_club_atomic",
+      "bytes": 2614,
+      "body_md5": "7fc97f5311078259d2f57ee0ca938975",
+      "signature": "p_union_id uuid, p_club_id uuid, p_amount numeric, p_notes text, p_created_by uuid, p_op_id uuid",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_send_to_member",
+      "bytes": 1343,
+      "body_md5": "c039cf1b104d429c8f7f7bf7824ce188",
+      "signature": "p_union_id uuid, p_target_user_id uuid, p_kind text, p_amount numeric, p_source_wallet text, p_note text, p_op_id text",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_send_to_member_zd3core",
+      "bytes": 11541,
+      "body_md5": "2f99d9ce6c38a77d4e15563cefbd75cb",
+      "signature": "p_union_id uuid, p_target_user_id uuid, p_kind text, p_amount numeric, p_source_wallet text, p_note text",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_setting",
+      "bytes": 100,
+      "body_md5": "b8c67c69c3b9a340e222488eac6f96f2",
+      "signature": "p_union_id uuid, p_key text, p_default numeric",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_settle_player_pnl",
+      "bytes": 16212,
+      "body_md5": "7f996f8ad8b62ff7542099ea45399133",
+      "signature": "p_union_id uuid, p_start timestamp with time zone, p_end timestamp with time zone, p_dry_run boolean",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_settle_player_pnl_guarded",
+      "bytes": 2703,
+      "body_md5": "cea5e4d553620f23d85830d2f1006747",
+      "signature": "p_union_id uuid, p_start timestamp with time zone, p_end timestamp with time zone, p_tolerance numeric",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_settle_player_pnl_weekly",
+      "bytes": 705,
+      "body_md5": "8ea52390734d9013d1016f2db4963ce1",
+      "signature": "p_union_id uuid, p_min_hours numeric",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres", "authenticated=X/postgres"],
+      "name": "fn_union_settlement_cascade",
+      "bytes": 10276,
+      "body_md5": "94de0d3c6af7fb39459b286089f4cf7d",
+      "signature": "p_union_id uuid, p_period_start timestamp with time zone, p_period_end timestamp with time zone",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_settlement_cascade_all",
+      "bytes": 4466,
+      "body_md5": "afc636f5ccfc3ebb964869d529cfa78a",
+      "signature": "p_period_start timestamp with time zone, p_period_end timestamp with time zone",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_settlement_cascade_due",
+      "bytes": 2900,
+      "body_md5": "ee42cec34f1e226d29b9414d7bc86d5c",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_settlement_conservation_assert",
+      "bytes": 3710,
+      "body_md5": "96bb2899124d87b07a39491081fd1ed6",
+      "signature": "p_union_id uuid, p_from timestamp with time zone, p_to timestamp with time zone, p_r1 jsonb, p_r2 jsonb, p_r3 jsonb",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_settlement_preview",
+      "bytes": 5552,
+      "body_md5": "dc8328ed8286b5b48ba24db229c814d0",
+      "signature": "p_union_id uuid, p_period_start timestamp with time zone, p_period_end timestamp with time zone",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_shared_cost_allocation",
+      "bytes": 950,
+      "body_md5": "4c0d1f59a7efffbb32329cc5144d8a55",
+      "signature": "p_union_id uuid, p_total_cost numeric, p_start timestamp with time zone, p_end timestamp with time zone",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": [
+        "=X/postgres",
+        "postgres=X/postgres",
+        "anon=X/postgres",
+        "authenticated=X/postgres",
+        "service_role=X/postgres"
+      ],
+      "name": "fn_union_slugify",
+      "bytes": 123,
+      "body_md5": "c26d3673e125fd83bf38bc4bb4359acf",
+      "signature": "p_name text",
+      "anon_execute": true,
+      "security_definer": false,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_totals_follow_club_counts",
+      "bytes": 633,
+      "body_md5": "f4779226e480e950c9db9cecab805268",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_tournament_rake_by_club",
+      "bytes": 563,
+      "body_md5": "e162d5e8b87af041dc91bfc1327c28f7",
+      "signature": "p_union_id uuid, p_start timestamp with time zone, p_end timestamp with time zone, p_include_horses boolean",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_tournament_rake_by_user",
+      "bytes": 1275,
+      "body_md5": "ae0836ec2b49d260752f9b3cb1a20870",
+      "signature": "p_union_id uuid, p_start timestamp with time zone, p_end timestamp with time zone",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_treasury_selftest",
+      "bytes": 5795,
+      "body_md5": "6169a718f7b1ced4b28c09ce2dcdf4ae",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_week_start",
+      "bytes": 119,
+      "body_md5": "271c8a1269dc2e570ee20bd781493e9d",
+      "signature": "p_at timestamp with time zone",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_weekly_agent_statements",
+      "bytes": 583,
+      "body_md5": "2424fc6c399854371e4a4dc0edf3c17b",
+      "signature": "p_union_id uuid, p_period_start timestamp with time zone",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_weekly_rakeback_close",
+      "bytes": 18912,
+      "body_md5": "a1f3147f67ba42b09348d7f1fb2adbc9",
+      "signature": "p_union_id uuid, p_period_start timestamp with time zone, p_period_end timestamp with time zone",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_weekly_rakeback_close_all",
+      "bytes": 2437,
+      "body_md5": "790e1a755f02bafaa05cff1a0e0d0d00",
+      "signature": "p_union_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_union_weekly_statement",
+      "bytes": 2350,
+      "body_md5": "ba9c3fdc7745571a3bce43af6aae2454",
+      "signature": "p_union_id uuid, p_start timestamp with time zone, p_end timestamp with time zone",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_unions_set_slug",
+      "bytes": 710,
+      "body_md5": "46aabbee2ba097d1acafa48fe98ae6c6",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres"],
+      "name": "fn_wallet_claim_back",
+      "bytes": 8346,
+      "body_md5": "c0ae0577e87e3e41e7e0ca6ced6614dc",
+      "signature": "p_club_id uuid, p_from_user_id uuid, p_amount numeric, p_target_wallet text, p_source_wallet text, p_reason text, p_idempotency_key text",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "fn_wallet_type_transfer",
+      "bytes": 2430,
+      "body_md5": "7d2cc156b92f4ac4f9c0d6037e8730c6",
+      "signature": "p_user_id uuid, p_from_wallet text, p_to_wallet text, p_amount numeric, p_note text",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "fn_warn_promotion_has_no_payout_path",
+      "bytes": 1437,
+      "body_md5": "8599f51ffd8f5659e5c182a3a8b8246c",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "generate_agent_code",
+      "bytes": 143,
+      "body_md5": "b4acdf33f96cee8cf1cc4ea2b4e4cc57",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "generate_period_commissions",
+      "bytes": 953,
+      "body_md5": "7087dc5746d5da514e49bdc871356de8",
+      "signature": "p_period_id uuid",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": false
+    },
+    {
+      "acl": [
+        "=X/postgres",
+        "postgres=X/postgres",
+        "authenticated=X/postgres",
+        "service_role=X/postgres"
+      ],
+      "name": "get_agent_dashboard",
+      "bytes": 149,
+      "body_md5": "1871e58bcd6fee8c3ae552dab8b2b8f9",
+      "signature": "p_agent_user_id uuid, p_club_id uuid",
+      "anon_execute": true,
+      "security_definer": false,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "get_bbj_pool",
+      "bytes": 197,
+      "body_md5": "38fb4d45c2697213aab13099d024ac2a",
+      "signature": "p_union_id uuid",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": true
+    },
+    {
+      "acl": [
+        "=X/postgres",
+        "postgres=X/postgres",
+        "authenticated=X/postgres",
+        "service_role=X/postgres"
+      ],
+      "name": "get_club_agents",
+      "bytes": 520,
+      "body_md5": "b8fd9b3b0a69435c87cdf3ee7a731af6",
+      "signature": "p_club_id uuid",
+      "anon_execute": true,
+      "security_definer": false,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "get_daily_commission_summary",
+      "bytes": 749,
+      "body_md5": "2a5e6bfdbd879604c3aa5a6b27eeb9ca",
+      "signature": "p_club_id uuid, p_agent_id uuid, p_days integer",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "get_promo_status",
+      "bytes": 75,
+      "body_md5": "d47cf57b1fc92fa749575141d1b26b6f",
+      "signature": "p_club_id uuid, p_player_user_id uuid",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "get_union_bbj_status",
+      "bytes": 614,
+      "body_md5": "ed809de1d7cf84b3570ff196af57adf2",
+      "signature": "p_union_id uuid",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "get_union_rake_for_period",
+      "bytes": 628,
+      "body_md5": "7431869470092c9d60482db3d522f92b",
+      "signature": "p_union_id uuid, p_start timestamp with time zone, p_end timestamp with time zone",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "get_wallet_balance_totals",
+      "bytes": 269,
+      "body_md5": "56877b37edb92d2bb8cf1869fe80166e",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": true
+    },
+    {
+      "acl": [
+        "=X/supabase_admin",
+        "supabase_admin=X/supabase_admin",
+        "postgres=X/supabase_admin",
+        "anon=X/supabase_admin",
+        "authenticated=X/supabase_admin",
+        "service_role=X/supabase_admin"
+      ],
+      "name": "gtrgm_union",
+      "bytes": 11,
+      "body_md5": "ac59a0687df15075468862ca946ee148",
+      "signature": "internal, internal",
+      "anon_execute": true,
+      "security_definer": false,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "guard_agent_wallet_direct_update",
+      "bytes": 1475,
+      "body_md5": "dba4edcf075d454d6c3b2d2eeeb7cbfd",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "guard_wallet_balance_write",
+      "bytes": 2489,
+      "body_md5": "5fa8a504757adfba1ad3939722dd0064",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "handle_new_user_v2_create_wallet",
+      "bytes": 455,
+      "body_md5": "8965de467c9b1832823613e245dc7da1",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "increment_promotion_claim_count",
+      "bytes": 267,
+      "body_md5": "a7f068b80243182e5ca812e7d313348a",
+      "signature": "p_promotion_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres"],
+      "name": "increment_union_chip_balance",
+      "bytes": 644,
+      "body_md5": "7614ab45537f5b8fd3b76a2b656c6157",
+      "signature": "p_union_id uuid, p_amount numeric",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "increment_union_club_count",
+      "bytes": 109,
+      "body_md5": "37b9dfe64dad62d361ac40a58037b02a",
+      "signature": "p_union_id uuid",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "increment_union_rake",
+      "bytes": 135,
+      "body_md5": "e9d214f8185576bb3433ae7218899c90",
+      "signature": "p_union_id uuid, p_amount numeric",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "increment_union_wallet",
+      "bytes": 1758,
+      "body_md5": "ff44560c11de265a32c84e0b5237db63",
+      "signature": "p_union_id uuid, p_amount numeric, p_club_id uuid, p_notes text",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": [
+        "=X/postgres",
+        "postgres=X/postgres",
+        "anon=X/postgres",
+        "authenticated=X/postgres",
+        "service_role=X/postgres"
+      ],
+      "name": "is_club_agent",
+      "bytes": 167,
+      "body_md5": "ccff64db9aa639a3a5209701e1171e36",
+      "signature": "p_club_id uuid, p_user_id uuid",
+      "anon_execute": true,
+      "security_definer": false,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "lock_club_cashier_hierarchy_mutation",
+      "bytes": 849,
+      "body_md5": "8521f215a6493172f043134361e9b6a9",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "log_wallet_transaction",
+      "bytes": 1438,
+      "body_md5": "f9d423ecda16d49d698a1b3735baf7cb",
+      "signature": "p_user_id uuid, p_wallet_type text, p_amount numeric, p_type text, p_category text, p_description text, p_table_id uuid, p_hand_id uuid, p_related_entity_id uuid",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres"],
+      "name": "mint_club_chips",
+      "bytes": 2190,
+      "body_md5": "d8c664558b82efc3077a065cc04c639d",
+      "signature": "p_club_id uuid, p_amount numeric, p_minted_by uuid, p_diamonds_cost numeric, p_notes text",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres"],
+      "name": "mint_club_promo",
+      "bytes": 227,
+      "body_md5": "e4164e4b785a53f16ddbbe6d935c9fe4",
+      "signature": "p_club_id uuid, p_amount numeric, p_type text",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "promo_apply_playthrough",
+      "bytes": 3043,
+      "body_md5": "4f3944cdcdd294f15bb97a239ee3c409",
+      "signature": "p_club_id uuid, p_user_id uuid, p_wagered numeric",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "promote_home_game_waitlist",
+      "bytes": 3788,
+      "body_md5": "f60b5e7bdcec623d78be25d17d342f00",
+      "signature": "p_game_id uuid, p_caller_user_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres", "authenticated=X/postgres"],
+      "name": "promote_member",
+      "bytes": 360,
+      "body_md5": "94ac12f7e72c3dfaeb5a5b0c65048bf8",
+      "signature": "p_club_id uuid, p_target_user_id uuid, p_new_role text, p_promoted_by uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "recompute_union_levels",
+      "bytes": 183,
+      "body_md5": "ec045b0e840ed76bc166b891084ee337",
+      "signature": "p_union_id uuid, p_force boolean",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "reconcile_card_merch_refund_atomic",
+      "bytes": 3544,
+      "body_md5": "d98d9e209a15b83c4ef53a67e15b67cf",
+      "signature": "p_order_id uuid, p_charge_amount_cents integer, p_refunded_amount_cents integer, p_metadata_patch jsonb",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "reconcile_ledger_nightly",
+      "bytes": 12022,
+      "body_md5": "67ef071191b01b1460db52328927fe50",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "record_promo_wagering",
+      "bytes": 257,
+      "body_md5": "6b73eb5f1db50f1590a405eb0c6c108c",
+      "signature": "p_club_id uuid, p_player_user_id uuid, p_amount_wagered numeric",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "redeem_promo_to_chips",
+      "bytes": 925,
+      "body_md5": "4f5f0a032a6cb9aa99e698d51c8ccc88",
+      "signature": "p_club_id uuid, p_player_user_id uuid, p_amount numeric",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "request_home_group_promotion",
+      "bytes": 1711,
+      "body_md5": "3bc1e5fe18f34191d4c9690cd2de2cc8",
+      "signature": "p_group_id uuid, p_caller_user_id uuid, p_reason text",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres"],
+      "name": "send_wallet_diamond_transfer",
+      "bytes": 7102,
+      "body_md5": "d1ef9862095495b98d31e6a203c89347",
+      "signature": "p_recipient_id uuid, p_amount integer, p_message text, p_reference_id text",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres", "authenticated=X/postgres"],
+      "name": "settle_club_rakeback",
+      "bytes": 82,
+      "body_md5": "a8ebac6edb274b1d039c01369a94d7fc",
+      "signature": "p_club_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "sum_agent_volume",
+      "bytes": 226,
+      "body_md5": "8eaab9f469a7e29c7528db01da6c6897",
+      "signature": "p_club_id uuid, p_agent_id uuid, p_start timestamp with time zone",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "sync_agent_wallet_columns",
+      "bytes": 767,
+      "body_md5": "64bcf2cf603fb4c0cd1ed9c9cf3af8ba",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "touch_chip_escrow_holds",
+      "bytes": 48,
+      "body_md5": "e7a0919a4073eaabf72630cc53a76237",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "touch_club_wallets",
+      "bytes": 48,
+      "body_md5": "e7a0919a4073eaabf72630cc53a76237",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "touch_sub_agents",
+      "bytes": 48,
+      "body_md5": "e7a0919a4073eaabf72630cc53a76237",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "transfer_promo_agent_to_player",
+      "bytes": 2207,
+      "body_md5": "bda6f991e70b4db30b30db38c63c1f16",
+      "signature": "p_club_id uuid, p_agent_user_id uuid, p_player_user_id uuid, p_amount numeric, p_note text",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "transfer_promo_club_to_agent",
+      "bytes": 281,
+      "body_md5": "b2c7406d7b2bccaa6fe377214ba2937b",
+      "signature": "p_club_id uuid, p_agent_user_id uuid, p_amount numeric, p_note text",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "transfer_promo_union_to_agent",
+      "bytes": 134,
+      "body_md5": "c933e945552eda1c1f6d264c33bcf5de",
+      "signature": "p_union_id uuid, p_club_id uuid, p_agent_user_id uuid, p_amount numeric, p_note text, p_performed_by uuid",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "trg_agent_commission_rollup_change",
+      "bytes": 3215,
+      "body_md5": "d33358abf233bfed8dfab526714e0a2d",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "trg_agent_commission_rollup_insert",
+      "bytes": 1331,
+      "body_md5": "f7f79c3ec742a8826d6df00a3cb621c0",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "trg_ca_reporting_wallet_insert",
+      "bytes": 4076,
+      "body_md5": "05cff3cd3111a01271fa5b74d1dc18d3",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "trg_union_rake_weekly",
+      "bytes": 846,
+      "body_md5": "35dbcba12e3c197de1997339e45d0276",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "update_agent_player_count",
+      "bytes": 456,
+      "body_md5": "94422f92f25703c7adc8c5f3caf070df",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "update_promotion_totals",
+      "bytes": 340,
+      "body_md5": "f24ca8658e445c11da695e89c658fc97",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "update_union_venue_count",
+      "bytes": 375,
+      "body_md5": "08162cafb205b77f003f0d2e08fa97ba",
+      "signature": "",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "verify_and_log_union_rakeback",
+      "bytes": 441,
+      "body_md5": "d64664dbab642d7612a46bc972120ef9",
+      "signature": "p_union_id uuid, p_period_start timestamp with time zone, p_period_end timestamp with time zone, p_total_rakeback numeric",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "wallet_internal_transfer",
+      "bytes": 1093,
+      "body_md5": "430ed532986d64172a51a768d7191189",
+      "signature": "p_from_user_id uuid, p_to_user_id uuid, p_amount numeric, p_description text",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "name": "wallet_user_transfer",
+      "bytes": 389,
+      "body_md5": "e3f162ccb049d37388bf4ac880f54c38",
+      "signature": "p_from_user_id uuid, p_to_user_id uuid, p_amount numeric, p_from_wallet text, p_to_wallet text, p_reference_id uuid",
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": false
+    },
+    {
+      "acl": ["postgres=X/postgres", "authenticated=X/postgres", "service_role=X/postgres"],
+      "name": "withdraw_home_group_promotion",
+      "bytes": 884,
+      "body_md5": "1bc5201b9f0be57d0f0fc050db072ac2",
+      "signature": "p_group_id uuid, p_caller_user_id uuid",
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": true
+    }
+  ],
+  "tables": [
+    {
+      "rls": true,
+      "name": "agent_commission_settlements",
+      "anon_select": false,
+      "authenticated_write": false,
+      "authenticated_select": true
+    },
+    {
+      "rls": true,
+      "name": "agent_commissions",
+      "anon_select": false,
+      "authenticated_write": false,
+      "authenticated_select": true
+    },
+    {
+      "rls": true,
+      "name": "agents",
+      "anon_select": false,
+      "authenticated_write": false,
+      "authenticated_select": true
+    },
+    {
+      "rls": true,
+      "name": "bbj_pools",
+      "anon_select": true,
+      "authenticated_write": false,
+      "authenticated_select": true
+    },
+    {
+      "rls": true,
+      "name": "ca_mint_ledger",
+      "anon_select": false,
+      "authenticated_write": false,
+      "authenticated_select": true
+    },
+    {
+      "rls": true,
+      "name": "chip_escrow",
+      "anon_select": true,
+      "authenticated_write": true,
+      "authenticated_select": true
+    },
+    {
+      "rls": true,
+      "name": "chip_ledger",
+      "anon_select": true,
+      "authenticated_write": false,
+      "authenticated_select": true
+    },
+    {
+      "rls": true,
+      "name": "chip_transactions",
+      "anon_select": false,
+      "authenticated_write": false,
+      "authenticated_select": true
+    },
+    {
+      "rls": true,
+      "name": "club_members",
+      "anon_select": true,
+      "authenticated_write": true,
+      "authenticated_select": true
+    },
+    {
+      "rls": true,
+      "name": "club_wallets",
+      "anon_select": true,
+      "authenticated_write": true,
+      "authenticated_select": true
+    },
+    {
+      "rls": true,
+      "name": "clubs",
+      "anon_select": true,
+      "authenticated_write": true,
+      "authenticated_select": true
+    },
+    {
+      "rls": true,
+      "name": "rake_attributions",
+      "anon_select": true,
+      "authenticated_write": true,
+      "authenticated_select": true
+    },
+    {
+      "rls": true,
+      "name": "rake_records",
+      "anon_select": true,
+      "authenticated_write": true,
+      "authenticated_select": true
+    },
+    {
+      "rls": true,
+      "name": "rakeback_periods",
+      "anon_select": true,
+      "authenticated_write": true,
+      "authenticated_select": true
+    },
+    {
+      "rls": true,
+      "name": "union_clubs",
+      "anon_select": true,
+      "authenticated_write": true,
+      "authenticated_select": true
+    },
+    {
+      "rls": true,
+      "name": "union_wallets",
+      "anon_select": true,
+      "authenticated_write": true,
+      "authenticated_select": true
+    },
+    {
+      "rls": true,
+      "name": "unions",
+      "anon_select": true,
+      "authenticated_write": true,
+      "authenticated_select": true
+    },
+    {
+      "rls": true,
+      "name": "wallet_transactions",
+      "anon_select": true,
+      "authenticated_write": false,
+      "authenticated_select": true
+    }
+  ]
+}

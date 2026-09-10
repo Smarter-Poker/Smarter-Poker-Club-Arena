@@ -42,31 +42,36 @@
       "id": "T06",
       "requirement": "Unregister/refund according to entry provenance and policy. Race refund with tournament start and satellite transfer.",
       "priority": "P0",
-      "status": "pending_full_requirement_verification"
+      "status": "partial_funded_entry_refund_composition_verified",
+      "evidence": "docs/audits/2026-09-10-phase3-funded-entry-unregistration.json"
     },
     {
       "id": "T07",
       "requirement": "Freeze the final payout ladder at the disclosed cutoff; distribute residual units once and store the resulting amounts.",
       "priority": "P0",
-      "status": "pending_full_requirement_verification"
+      "status": "partial_reserved_unpaid_result_proof_installed",
+      "evidence": "docs/audits/2026-09-10-phase3-reserved-result-reprice-evidence.json"
     },
     {
       "id": "T08",
       "requirement": "Persist elimination rank from authoritative hands. Test same-hand ties, simultaneous tables and final-table transitions.",
       "priority": "P0",
-      "status": "pending_full_requirement_verification"
+      "status": "partial_durable_terminal_witness_corrected",
+      "evidence": "docs/changelog/2026-09-10-terminal-winner-follows-durable-elimination-order.md"
     },
     {
       "id": "T09",
       "requirement": "Create unique finishing obligations and pay cumulative deltas once. Test early payouts and final incremental awards.",
       "priority": "P0",
-      "status": "pending_full_requirement_verification"
+      "status": "partial_reserved_unpaid_result_proof_installed",
+      "evidence": "docs/audits/2026-09-10-phase3-reserved-result-reprice-evidence.json"
     },
     {
       "id": "T10",
       "requirement": "Fund extra bubble protection separately or include its disclosed reserve before binding the ladder. Never overcommit the pool.",
       "priority": "P0",
-      "status": "pending_full_requirement_verification"
+      "status": "partial_reserved_unpaid_result_proof_installed",
+      "evidence": "docs/audits/2026-09-10-phase3-reserved-result-reprice-evidence.json"
     },
     {
       "id": "T11",
@@ -132,15 +137,15 @@
       "id": "K08",
       "requirement": "Balance tables with the published seat-selection rule. Transfer scoring stacks once and preserve in-progress hands.",
       "priority": "P1",
-      "status": "blocked_live_database_move_authority_missing",
-      "evidence": "table_move_dependency_review"
+      "status": "partial_live_move_authority_installed_full_move_acceptance_open",
+      "evidence": "swarm_continuation_2026_09_10"
     },
     {
       "id": "K09",
       "requirement": "Break tables and form the final table without missing/duplicating players. Test moves alongside elimination and reconnect.",
       "priority": "P1",
-      "status": "blocked_live_database_move_authority_missing",
-      "evidence": "table_move_dependency_review"
+      "status": "partial_live_move_authority_installed_full_move_acceptance_open",
+      "evidence": "swarm_continuation_2026_09_10"
     },
     {
       "id": "K10",
@@ -178,7 +183,8 @@
       "id": "S03",
       "requirement": "Define seating, blinds, time banks and payouts for each SNG size, including heads-up and special payout formats.",
       "priority": "P1",
-      "status": "pending_full_requirement_verification"
+      "status": "partial_supported_heads_up_start_verified_overflow_open",
+      "evidence": "docs/audits/2026-09-10-phase3-seat-first-actual-deal.md"
     },
     {
       "id": "S04",
@@ -210,14 +216,15 @@
       "id": "S08",
       "requirement": "Reveal multiplier/prize before the first deal and action timer. All participants must receive the same stored result.",
       "priority": "P1",
-      "status": "pending_full_requirement_verification"
+      "status": "partial_actual_reveal_deal_timer_verified_pending_release",
+      "evidence": "docs/audits/2026-09-10-phase3-seat-first-actual-deal.md"
     },
     {
       "id": "S09",
       "requirement": "Apply multiplier-specific payout places, starting stack and levels. Test every probability tier, not only the common result.",
       "priority": "P0",
-      "status": "partial_behavioral_correction_deployed",
-      "evidence": "Atomic Spin Funding And Frozen Rule Receipt in the companion report"
+      "status": "verified",
+      "evidence": "spin_every_tier_acceptance"
     },
     {
       "id": "S10",
@@ -247,7 +254,8 @@
       "id": "B02",
       "requirement": "Award eliminations by relevant-pot eligibility, including side pots, tied winners and split-pot variants.",
       "priority": "P0",
-      "status": "pending_full_requirement_verification"
+      "status": "partial_exact_pot_reader_installed_writer_pending_release",
+      "evidence": "docs/audits/2026-09-10-phase3-bounty-pot-evidence.json"
     },
     {
       "id": "B03",
@@ -272,7 +280,8 @@
       "id": "B06",
       "requirement": "Update remaining mystery rewards and public winners once. Animation replay must not redraw, reorder or repay.",
       "priority": "P1",
-      "status": "pending_full_requirement_verification"
+      "status": "partial_event_ownership_corrected_pending_frontend_release",
+      "evidence": "docs/changelog/2026-09-10-mystery-bounty-event-ownership.md"
     },
     {
       "id": "B07",
@@ -369,8 +378,8 @@
       "id": "BX14",
       "requirement": "Table balancing races blind posting and disconnect: player occupies one seat, stack transfers once, and forced bets are not duplicated.",
       "priority": "P0",
-      "status": "blocked_live_database_move_authority_missing",
-      "evidence": "table_move_dependency_review"
+      "status": "partial_live_move_authority_installed_full_move_acceptance_open",
+      "evidence": "swarm_continuation_2026_09_10"
     }
   ],
   "first_correction": {
@@ -1015,10 +1024,15 @@
       "scope": "The staged historical cutover remains unapplied. Its freeze precondition requires reconciliation and complete rehearsal; no marker or predicate was changed to bypass it."
     },
     "latest_move_authority_recheck": {
-      "observed_at": "2026-09-10T00:42:11.899153Z",
-      "move_writer_present": false,
-      "move_resolver_present": false,
-      "move_receipt_table_present": false
+      "observed_at": "2026-09-10T05:36:51Z",
+      "writer_body_md5": "466c39065b59cf7922a5859df9f26bd3",
+      "resolver_body_md5": "37bc550ccb878c042773d0789c8ef355",
+      "receipt_rows": 82,
+      "receipt_tournaments": 18,
+      "latest_receipt_at": "2026-09-10T05:35:17.979Z",
+      "installed_by_other_work": "PR #4108, forward move door",
+      "full_historical_stage_b_cutover_applied": false,
+      "limit": "Missing-function blocker is superseded. Existing ambiguous moves and complete move/rank/reconnect acceptance remain open."
     }
   },
   "entry_fee_disclosure": {
@@ -1261,7 +1275,7 @@
     "full_control_closed": false,
     "current_rehearsal": "registration_funding_and_receipt_correction"
   },
-  "verified_control_count": 3,
+  "verified_control_count": 4,
   "blind_snapshot_rehearsal": {
     "control": "K02",
     "test": "server/src/engine/TournamentBlindSnapshot.test.ts",
@@ -1457,5 +1471,39 @@
     "behavior": "Recheck all next-hand pause owners after prepared rest and before controller start. Ordinary hand-for-hand re-arm still permits one shared hand. Operator resume cannot clear maintenance lock or transition another owner to running; other resumes preserve the operator state.",
     "limits": "Synthetic transport, roster and lease inputs; real dealing loop, controller preparation and pause methods. Does not certify durable synchronized deadlines, drain-timeout policy, database move cutover, or engine adoption.",
     "full_controls_closed": false
+  },
+  "spin_every_tier_acceptance": {
+    "control": "S09",
+    "status": "verified_against_deployed_sources",
+    "full_control_closed": true,
+    "evidence": "docs/audits/2026-09-10-phase3-spin-tier-acceptance.md",
+    "results": "docs/audits/2026-09-10-phase3-spin-tier-results.json",
+    "postgresql_scenarios_passed": 16,
+    "actual_engine_receipts_passed": 16,
+    "deployed_source_commit": "4d29dce4cd36ada84722b80af1c1d19efd3d0608",
+    "rule_supersession": "September 1 board-stack rule retains 300 Turbo or 1000 Deep Stack chips across all eight tiers; tier-specific payout places and three-minute levels were verified.",
+    "atomic_function_identity": {
+      "definition_md5": "1c911e3ada50ffe0493b9b375e3fa9ae",
+      "body_md5": "b303d83aadd381950dfe658578767a4c",
+      "note": "Different hashes name the full definition and its body, not different source versions."
+    },
+    "limits": "Controlled RNG selects each tier. This verifies frozen tier rules, funding projection and engine consumption, not statistical randomness, startup races or final financial settlement."
+  },
+  "swarm_continuation_2026_09_10": {
+    "status": "in_progress",
+    "evidence": "docs/audits/2026-09-10-resume-swarm-release.json",
+    "user_scope": [
+      "Union",
+      "Clubs",
+      "Super Agents",
+      "Agents",
+      "Sub Agents",
+      "Players",
+      "All Accounting"
+    ],
+    "delegation_rule": "Every new audit, enhancement or upgrade receives a fresh swarm assignment with independent verification. Completed lanes are reassigned within available concurrency.",
+    "full_controls_closed": [],
+    "phase_4_started": false,
+    "source_inventory_is_not_line_review": true
   }
 }

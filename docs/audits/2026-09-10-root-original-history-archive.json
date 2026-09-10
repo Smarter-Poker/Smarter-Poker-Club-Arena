@@ -1,0 +1,402 @@
+{
+  "purpose": "Backup-only preservation of original history; no deployment or database activation",
+  "original_head": "d6b451b363916f7c4396dada7dd7f554cbc1879e",
+  "published_main_parent": "780398afa772b69f491586c9092016d1aca8dff6",
+  "original_merge_base": "40886c94ab69fd37a47957b3ea3b23b5a0c0e375",
+  "archive_ref": "refs/heads/backup/resume-poker-sep10/root-original-history",
+  "guard_supersession": {
+    "commit": "24217c5024a4c031aec51dbddba531cd3c1b7842",
+    "ref": "refs/heads/backup/resume-poker-sep10/tournament-guards"
+  },
+  "satellite_supersession": {
+    "status": "Current-reader narrow recomposition in final native/commit verification; database apply awaits explicit approval",
+    "current_reader_md5": "52c3b25be3904e86f1a8558ce542ec61",
+    "candidate_migration": "20260910160106_satellite_seats_count_once_and_keep_the_funded_prize.sql",
+    "old_bundled_commits": [
+      "d5beef474dc2558307d1bb9af31a9fda0421a074",
+      "df72341a360bbf9126a0603c1eb12dadfeb0d00b"
+    ]
+  },
+  "runtime_verification": {
+    "paths": ["server/", "src/", "tests/"],
+    "byte_identical_to_published_main": true
+  },
+  "original_commits": [
+    "bc90491dec26b5185e093ae2b78b72ccb6471f4a",
+    "b91749f32050859ce9b236c281f6027cdd216d75",
+    "0b81d234bb647f6f564bd181f7ec22f608612f1e",
+    "b282e0f6d83bbb9db89d7141f50a3e1f66df9046",
+    "3a56faee1bf3ae9abb3d7b37b47ba3c1ea422c5f",
+    "70f936cf1b7b20e0ec37bc0c63db626875a45a7b",
+    "c05283d74ae96011f4d68c30739ea7e24b3cbcf8",
+    "1ae6b6206e7ead11aaca090e64a362cc08283a69",
+    "58b4dc9f3c8ff25aa51304c24e8c1e445b593e7d",
+    "61bac731dc16c62ecd2afd79b4fd41b7298a25bc",
+    "d5beef474dc2558307d1bb9af31a9fda0421a074",
+    "df72341a360bbf9126a0603c1eb12dadfeb0d00b",
+    "6989123de5eff8f5940f05c775981d4ae730fc14",
+    "d6b451b363916f7c4396dada7dd7f554cbc1879e"
+  ],
+  "original_changed_files": [
+    {
+      "path": "docs/audits/2026-09-09-phase3-progress.json",
+      "git_blob": "e4072db370b2592219da8b16031bef483bbf692f",
+      "sha256": "b7a719defdcbd50312e6121326c35593cf4cf92f31435502989f976c7af53ae3"
+    },
+    {
+      "path": "docs/audits/2026-09-09-phase3-tournament-lifecycle.md",
+      "git_blob": "dde9d67b25cd09a7461dd9066dcd55ad49e93497",
+      "sha256": "a77f20310d4a63e1a4f7c4db7f59ef2d647d95ddd6281c3445a1b105d68f0f56"
+    },
+    {
+      "path": "docs/audits/2026-09-10-phase3-bounty-satellite-evidence.md",
+      "git_blob": "7649a25e0056c205e5691b43967bfc7d8a98ed51",
+      "sha256": "bc46747753b25a4a35976b6fbb6c8f5bf6c821db6d44431f99a6fc2cb71e0d34"
+    },
+    {
+      "path": "docs/audits/2026-09-10-phase3-clock-deadline-evidence.json",
+      "git_blob": "998a81fe038b7ed303b8aa96b0fc0d20ce4c5a12",
+      "sha256": "0858db44d9cbe6565d6460a7e50f182bd3ba459c46e89f865857e4d24a8b2d9f"
+    },
+    {
+      "path": "docs/audits/2026-09-10-phase3-cumulative-obligations-evidence.json",
+      "git_blob": "bde061b4325ee5c3c7390dc90941f74e36109787",
+      "sha256": "18c95a079fe7fd1ce9f278313fd1bdb8309bb5a6e8e53da44d6505b176aebcd7"
+    },
+    {
+      "path": "docs/audits/2026-09-10-phase3-elimination-rank-evidence.json",
+      "git_blob": "853420b745d86176f3c9004f88d965fc035c7acf",
+      "sha256": "8478cebb607e4df5457bb55b74c0370a7fc13f44583a064b67e3f36f809a61de"
+    },
+    {
+      "path": "docs/audits/2026-09-10-phase3-entry-cancellation.md",
+      "git_blob": "5d2e9a15cfce69ec6e6d1b8affbc310bbe4fa2a7",
+      "sha256": "935087f4ffaf24e81e881e029c1b24dea6f6c578334c838b1365a7840830203d"
+    },
+    {
+      "path": "docs/audits/2026-09-10-phase3-payout-accounting-evidence.json",
+      "git_blob": "be77b77a14f936f3261a62112808b3bb03659a63",
+      "sha256": "de581d15132b61a4e1aeca955779a031183340ead9ecc90da8f4b793987989bc"
+    },
+    {
+      "path": "docs/audits/2026-09-10-phase3-satellite-award-funding-evidence.md",
+      "git_blob": "57906b0dcbd150d9c6e8557a0aa46b7b92f02d73",
+      "sha256": "3b761ca8d96ada35d98f60dfc9c8e77cc7c308b26c089d179e471da27062efd9"
+    },
+    {
+      "path": "docs/audits/2026-09-10-phase3-satellite-award-source-reconciliation.md",
+      "git_blob": "f82dbae8eb71d629f7a0b5a508656e9144976190",
+      "sha256": "2c03caa74b083220410d2aba99292ef18748406a700c0d2b89c4351f2eafe031"
+    },
+    {
+      "path": "docs/audits/2026-09-10-phase3-sng-spin-recovery-evidence.md",
+      "git_blob": "72753abdb8851da4dd19e10a49469e3ea7a420fa",
+      "sha256": "df8955c4f3090036e5012adc5d7b08ce64d444d600112b0f4b7f37a22cb2f666"
+    },
+    {
+      "path": "docs/audits/2026-09-10-phase3-table-movement-and-barrier-review.md",
+      "git_blob": "95e5d7005aa3d304b7c345e89a1b35488b134fca",
+      "sha256": "67d99001b2c3a477b1d76f12c3e9cca25f1bd71643e6e4804e5cd86cd996c044"
+    },
+    {
+      "path": "docs/changelog/2026-09-10-a-tournament-break-waits-for-its-hands.md",
+      "git_blob": "b807073ec3140eba1f2d8c8f44f23aad6a3523d5",
+      "sha256": "abb084483cca29544f9a15b58b6ddbd013b59010491247088b594e2e04567375"
+    },
+    {
+      "path": "docs/changelog/2026-09-10-elimination-requires-a-finishing-rank.md",
+      "git_blob": "3f55800e0309aa292741bdb5c52240123b8e96b5",
+      "sha256": "801ce8c6c8be7a3463189c06aa192a98476d4b08a3ea73d85bc97489b929d26d"
+    },
+    {
+      "path": "docs/changelog/2026-09-10-installed-tournament-cash-ladder-rehearsal.md",
+      "git_blob": "de9ef608c9578fb9bed6bb46822307fe6e57a95a",
+      "sha256": "2c03eeced689011a85cf8b6d94f048ea394884925e8e3f8dfd61215ed5ebea5f"
+    },
+    {
+      "path": "docs/changelog/2026-09-10-pauses-hold-the-next-hand-and-their-own-state.md",
+      "git_blob": "69d5029df1dc69c686ec6d80773884f86b2c4a99",
+      "sha256": "45116ea6e19dd09f1cc6ae5a4413e65bd10ce2480fe327a11693589e65786c05"
+    },
+    {
+      "path": "docs/changelog/2026-09-10-refused-finishing-place-creates-no-debt.md",
+      "git_blob": "90437fde25eb6012da87e227e3312a521dbc6a68",
+      "sha256": "ac8d57435721d24af74abcf89d1ebe00478f8b3686b56fbaa2e7fd75d43da575"
+    },
+    {
+      "path": "docs/changelog/2026-09-10-satellite-awards-preserve-funded-components.md",
+      "git_blob": "88474ea10acdcefd9f0774d4becbaee72373d29e",
+      "sha256": "db17c89a51141ebf5e55b079634fa6b286ec44f5b6d6b3a9b5610a2860fa98d3"
+    },
+    {
+      "path": "docs/changelog/2026-09-10-spin-recovery-rehearsal-executes-the-installed-proof.md",
+      "git_blob": "0b2b2015fd065685301780fe165c486de0db7b43",
+      "sha256": "7d154296d875d44d142e49fcc6070a21df295518301932318a6b329fabdcaad8"
+    },
+    {
+      "path": "docs/changelog/2026-09-10-started-tournaments-keep-their-funded-contract.md",
+      "git_blob": "7b733c6afef7eefc6d718d030059a2b66bc31602",
+      "sha256": "beca3c6c65bf19f221cb301f93ebc34e5ff5ceb14a71f5f47e2cd92a3a1a520a"
+    },
+    {
+      "path": "docs/changelog/2026-09-10-tournament-format-controls-match-their-runtime.md",
+      "git_blob": "a02ce91db3321500879cafab1d626701e78f9eea",
+      "sha256": "dc765f2142eb1c6aadec72ad2537032cb01190747e29fcb29051c47eb81c7591"
+    },
+    {
+      "path": "scripts/dev/fixtures/satellite-award-funding/README.md",
+      "git_blob": "22cac6622fddbf7a1814337db4a873b7237e35bc",
+      "sha256": "e1642223cea066447ff852cafc6e7608b33ea7dbe7fee099b62a2b31e39bd473"
+    },
+    {
+      "path": "scripts/dev/fixtures/satellite-award-funding/installed.sql",
+      "git_blob": "8e30e72a5c1d1304cf1a6a721b230c4e77d4b738",
+      "sha256": "ba3a1fd990b13689acafc94ead4b998ea9c7f0eab73bbcc730111593abea8777"
+    },
+    {
+      "path": "scripts/dev/fixtures/satellite-award-funding/source-manifest.json",
+      "git_blob": "de710585a311b61aecd15f9bfa6f75359254164d",
+      "sha256": "1a35d3fae23b261a1dd1a31c875b5d8a6d7542eb0fd78a316ed0f76b25cb0d2b"
+    },
+    {
+      "path": "scripts/dev/fixtures/spin-funding/installed-played-proof.sql",
+      "git_blob": "596ad170555041e06b30edca5657f924d2c14c34",
+      "sha256": "519c0aea5420cb8538031e5eafa4b2bd3328b80366bece4406153f308bfe395d"
+    },
+    {
+      "path": "scripts/dev/fixtures/spin-funding/played-proof-bootstrap.sql",
+      "git_blob": "3d8269b0ebe31934a7342996c6f31ede18323684",
+      "sha256": "797b7e510e6e91580f73efa7a2b0b1befe22ea2e82c9d559aa779851ba7f2270"
+    },
+    {
+      "path": "scripts/dev/fixtures/tournament-cancellation-policy/README.md",
+      "git_blob": "15c9336824891b64fea6372d4939cbc2bfc7349d",
+      "sha256": "11082838b4a71c1c16575240a19f106385df0b5b95353dbbd0fa5c5809d7588f"
+    },
+    {
+      "path": "scripts/dev/fixtures/tournament-cancellation-policy/installed.sql",
+      "git_blob": "53c0c7349c51d000c934bca65355bab32ceb7991",
+      "sha256": "7dee1b414e33ebb979677b97b157827cf0014dce34a00c02e77c8cd24e29f1cf"
+    },
+    {
+      "path": "scripts/dev/fixtures/tournament-cancellation-policy/runtime-evidence.json",
+      "git_blob": "f885bcb3a6d30d60e935e54eff165ed756fad65a",
+      "sha256": "5cde12f4a22f204bb790939f3afe3e44775af461fdd345515c7f3f594968caf2"
+    },
+    {
+      "path": "scripts/dev/fixtures/tournament-cancellation-policy/source-manifest.json",
+      "git_blob": "ab1713097f285615390d32ba50345045a2efc7f2",
+      "sha256": "ad7589e75c5769172c34b484a324d60693fb5be596679e706a9a3faa01e24b1c"
+    },
+    {
+      "path": "scripts/dev/fixtures/tournament-elimination-rank/README.md",
+      "git_blob": "8de6c2d18e4ef8687c8b039e820d4c99f32bab4d",
+      "sha256": "6f5006d46dc931fea6ae227ff86fbf1d7663a0ca05e49952172f23f137277687"
+    },
+    {
+      "path": "scripts/dev/fixtures/tournament-elimination-rank/installed.sql",
+      "git_blob": "2719244fdce5008ca5b588bcc68622493361973d",
+      "sha256": "9fdec48dc51e2a2cd81c7ae9900503d6ab84738ba405cad85d2cc6b3ac1b1303"
+    },
+    {
+      "path": "scripts/dev/fixtures/tournament-elimination-rank/source-manifest.json",
+      "git_blob": "c762dc848877627bc79752cf4357954d1060a081",
+      "sha256": "5b0f8c226465083fd73f9e56bcceb755ab476b36e87a0e31a58738f658cd1f0f"
+    },
+    {
+      "path": "scripts/dev/fixtures/tournament-guarantee-funding/README.md",
+      "git_blob": "99e52f63c6b1670722e97499abd0140d6009482a",
+      "sha256": "bb1cc42f930cdc00b6cec8ff8c573987f52f22e4f82dd4f46863b455772d970f"
+    },
+    {
+      "path": "scripts/dev/fixtures/tournament-guarantee-funding/installed.sql",
+      "git_blob": "09834d351459d31d232a9cf843cbad9abc40c585",
+      "sha256": "3c87217ced72300ad66b56cba109be7c4f3dbf6f3990d3f8f7e037ff133835d9"
+    },
+    {
+      "path": "scripts/dev/fixtures/tournament-guarantee-funding/source-manifest.json",
+      "git_blob": "f06ac10761a52361c6508f928d3a8143926b6e36",
+      "sha256": "d6a70adcf75b20022af56cf01f87ac88cc12ee7b66cae597ad631612952d56ef"
+    },
+    {
+      "path": "scripts/dev/fixtures/tournament-guarantee-funding/triggers.sql",
+      "git_blob": "6d41feef77fcfdaf6ca62c55c7b7713fd900c0c5",
+      "sha256": "37fd6a77f01867ce997ee0ea4abad520106a30b545c6c78782eff40da9a93368"
+    },
+    {
+      "path": "scripts/dev/fixtures/tournament-obligation-funding/README.md",
+      "git_blob": "80f167cd829088d23f136809690d0113cd8be6d1",
+      "sha256": "ce627aa363e3d63d490c777f9e65a5105719196d57145c13113c73c60d261e82"
+    },
+    {
+      "path": "scripts/dev/fixtures/tournament-obligation-funding/installed.sql",
+      "git_blob": "637c6fc92d23ecaa3fa0940a1d60f1cd0aec8b68",
+      "sha256": "5e99607bf4ea56fe17aef9254585e68e24d8d96890720579448487c4b76f03e4"
+    },
+    {
+      "path": "scripts/dev/fixtures/tournament-obligation-funding/source-manifest.json",
+      "git_blob": "1cedb29fcc5e3ea2862ac016457ffc3916c1501c",
+      "sha256": "e439021f08bf2b290e3330da8d51fe6d83de129e52e24940e31a1afbdcce3c0c"
+    },
+    {
+      "path": "scripts/dev/fixtures/tournament-payout-amounts/README.md",
+      "git_blob": "cfd0625cc6718397ff152fb166fd0265213423b8",
+      "sha256": "3174732dfdbb15526d9723d8099a62bf5ebd23c33c79497b23f74743e9478357"
+    },
+    {
+      "path": "scripts/dev/fixtures/tournament-payout-amounts/fixture.sql",
+      "git_blob": "968a994665bb6e24fa49c0831f701b97a20d71f5",
+      "sha256": "5e09a32c443c69f83ec4f56f7ed93b40d26ddb28e930049ced111a22a33e9b52"
+    },
+    {
+      "path": "scripts/dev/fixtures/tournament-payout-amounts/installed.sql",
+      "git_blob": "c595a0a0107db12db3d8ce2f12542fc0f8e5b627",
+      "sha256": "c153f83039a1a3346fb2d35dc59595f2d18c04797058bb9cfbbc98e06c0837a4"
+    },
+    {
+      "path": "scripts/dev/fixtures/tournament-payout-amounts/source-manifest.json",
+      "git_blob": "880ab93d7f4a3ab81ede51a5ba99d2dffedaded9",
+      "sha256": "b4bf22d91c0d2a606c650cdd263c40f964ab348187459ac1e91fb9c1168ca227"
+    },
+    {
+      "path": "scripts/dev/played_spin_proof_cases.py",
+      "git_blob": "56a2603fdf9a93633dc156b000685d6625baf21b",
+      "sha256": "ed4cfce518078e8176e18e389cc7f13860bc16aa53c8fdc4f789877d240350eb"
+    },
+    {
+      "path": "scripts/dev/probe-spin-funding-pg17.py",
+      "git_blob": "cfcf8826e59e355d43a2d3f038d4319a24490fdc",
+      "sha256": "5d39fa5f89fe8d5a190b5596dff01405d39f88a6df7b325ba4aef5cf507c59e4"
+    },
+    {
+      "path": "scripts/dev/probe-tournament-payout-amounts-pg17.py",
+      "git_blob": "4419d103014a758b2b3790ed0c99720fa71268be",
+      "sha256": "2e01e234c5669f8bb4d38b6a0b003bf7e23cf7fd632c0d900c611afaf40cd530"
+    },
+    {
+      "path": "scripts/dev/probe-tournament-registration-funding-pg17.py",
+      "git_blob": "8fdae838568625b1ff2ce9cd24041a8cc8312e64",
+      "sha256": "5e8392bc72b9f4976490a78fd0c409da85668660b985a69a3458f517f0cfb94e"
+    },
+    {
+      "path": "scripts/dev/satellite_award_funding_cases.py",
+      "git_blob": "6c043f328344f947776b34ea0b1d6935141c2cdc",
+      "sha256": "e72d30cc8744827132657b74cfa27729e03b67a72acefbbd8c462fbea5703207"
+    },
+    {
+      "path": "scripts/dev/tournament_cancellation_policy_cases.py",
+      "git_blob": "c057fe930820d24fd1f9b0dc0772eb0332883c32",
+      "sha256": "045ef3e99ee0095707ed17c708c163a16b9fbd1c609803897312cd1c817aece4"
+    },
+    {
+      "path": "scripts/dev/tournament_elimination_rank_cases.py",
+      "git_blob": "d64b0885e350c8c6a321618581e2adc94f26238a",
+      "sha256": "bdac658c5a2646e98e7ced040254b295803680b5cc10c7253ef9d4b4067828c8"
+    },
+    {
+      "path": "scripts/dev/tournament_guarantee_funding_cases.py",
+      "git_blob": "31b9896b7bef11a1189dd4c6c82fe6dd459df680",
+      "sha256": "63cf8b5c09b37837a8a99733612d99810569f7df76e315ad7819e039bfe64ce2"
+    },
+    {
+      "path": "scripts/dev/tournament_obligation_funding_cases.py",
+      "git_blob": "c4ba6b8855f03ab041eea40d225d108ef5d9a8b8",
+      "sha256": "51cbd64b73df63ae4adbacddce090bbd7fcf4af24494905a67fb73b61d4ef5c6"
+    },
+    {
+      "path": "server/src/GameServer.ts",
+      "git_blob": "2259c1d1e35f06fbfb555871f0fd4d93a1a31274",
+      "sha256": "c927430f77fb2740d01d80042a28196d71dff153e8a3fb500064c4b9d4c6de77"
+    },
+    {
+      "path": "server/src/SynchronizedBreakDeadline.test.ts",
+      "git_blob": "2cde6b653ba993266751b11fdbf6435d399e82ef",
+      "sha256": "efd91edbd1897f35b583e6182020aa4a4fa51850069fbefca2bf5dcea516bdeb"
+    },
+    {
+      "path": "server/src/engine/FinalTableDealPause.test.ts",
+      "git_blob": "b50d18c8da3b676754c745828c6c6dbb1d7e92ee",
+      "sha256": "71af24e308f867727d0db3abaa98c1899ae3808d3d06f56202c69d2dfa20b64f"
+    },
+    {
+      "path": "server/src/engine/PauseDuringPreparedRest.test.ts",
+      "git_blob": "ff04864e0bf1224731b0fad30754a6c7ee36f903",
+      "sha256": "0eea96b944446d026adade56d7f6e8433c84b8cb49db352e61644a0f555f78fd"
+    },
+    {
+      "path": "server/src/engine/ServerTableEngineBase.ts",
+      "git_blob": "b748da24ded1da3ceb3d4fc6cdaa31376f916303",
+      "sha256": "c93ca03be239c071525d6e0fc319ddd071d7bc3b6ea9378628d2923e1a9c8fec"
+    },
+    {
+      "path": "server/src/engine/ServerTableEngineDealing.ts",
+      "git_blob": "2005c12e8d1a74fffd2a3f3632601c4bb431d614",
+      "sha256": "1a5e2ce8ca4a46ff83e1735df2152654521656bfd1eefc396e19969b7979ed7c"
+    },
+    {
+      "path": "server/src/engine/ServerTableEngineSeating.ts",
+      "git_blob": "25472a8ddb32ae26af05358774319c2e3ef341f4",
+      "sha256": "dad3d9de4b2d8de4309324fae8d744745cd57b3cf7cfb4d2d28020d42d6f101c"
+    },
+    {
+      "path": "server/src/engine/TerminalCloseoutBoundary.test.ts",
+      "git_blob": "bd57b49d7c8727566f902a66193bcf84b6b076f1",
+      "sha256": "a8c104b73e0f657b0f710429f94fde8ef0f592ef6b0499783c154294c539596b"
+    },
+    {
+      "path": "server/src/engine/TournamentBlindSnapshot.test.ts",
+      "git_blob": "9028d0c5b89b4556b1f680915dc5578fc81a10d0",
+      "sha256": "59331d74be2e0cff9fae0134801ba6669f0ecea75b36ebbb197bfae5f03875e6"
+    },
+    {
+      "path": "server/src/tournament/MysteryActivationCutoff.test.ts",
+      "git_blob": "df9b35443a3957d92acaaf6d2e5848673b61da98",
+      "sha256": "0f3a4bbd0ea1735c737a0c43b9617a2cc69c993449efc84abe25451c1c655087"
+    },
+    {
+      "path": "server/src/tournament/TournamentManagerBase.ts",
+      "git_blob": "e016ece57f6a1c56a74e67976233d2523855e5e7",
+      "sha256": "3260efaddd9fa8bb3210b5d7bc04f78a14ab8b53a0cdb551f85a20aac8fe408e"
+    },
+    {
+      "path": "src/components/club/CreateTournamentModal.tsx",
+      "git_blob": "857a9e6b21f0ce0464ff1a7147aa1695473fedcf",
+      "sha256": "00382555add6f3e90625efe54800e28a436db36d837b22b5efac693f54382290"
+    },
+    {
+      "path": "src/components/tournament/details/DetailOverviewTab.tsx",
+      "git_blob": "87ece2fc55cbdc89fe34222689a2f3cbf6e7debe",
+      "sha256": "c9ec6ba044cb55ca18b2af176061c9066ddb028ba15a760dab0deb69b2e50252"
+    },
+    {
+      "path": "supabase/migrations/20260910035015_started_tournaments_resume_or_settle_instead_of_cancelling.sql",
+      "git_blob": "81397c429a713874def1618142eb9d2c809b88cc",
+      "sha256": "915fd9fd9f638e34df0d6b4c0f3fca184d8f16c87f53d8ab81d6873d61e6cb62"
+    },
+    {
+      "path": "supabase/migrations/20260910040332_a_refused_finishing_place_creates_no_debt.sql",
+      "git_blob": "134bde5f37255d3c4d4788ee77bfca340f9973ec",
+      "sha256": "29dcbf8ae6679147df472f252074b5f6b3e344afdc6be1d432e2c0f0ff61d093"
+    },
+    {
+      "path": "supabase/migrations/20260910043237_satellite_seats_count_once_and_keep_the_funded_prize.sql",
+      "git_blob": "115006e15d7ed1ba1ca21ec33061fb00a88c8d12",
+      "sha256": "b5749da2d44874dec75baadf2fd8e4cef46127c39dbb52a519b854bf75f48774"
+    },
+    {
+      "path": "supabase/migrations/20260910051131_a_tournament_elimination_requires_a_finishing_rank.sql",
+      "git_blob": "2a760240dde6b803d229366c237c6082c1eb2728",
+      "sha256": "acbec02dd6192abe844cf3372be71d2f199e4e9353c40dc2d76a2cad52f8b5fb"
+    },
+    {
+      "path": "tests/the-next-hand-deals-two-seconds-after-completion.law.test.ts",
+      "git_blob": "750d5363fa2ac9af63e930e157cc2dd6c2c8bf2b",
+      "sha256": "1fa30099203b8cbe7b8082c24e2e4a0b5b3a914c228907419279043800c512e9"
+    },
+    {
+      "path": "tests/unit/rabbitHuntHasTimeToClick.test.ts",
+      "git_blob": "990c1455f9eb399c5fe4ba0a22c66844dda9a892",
+      "sha256": "ac25347165468ee40bc362d4da695c66e78cf8339e8bafe4c211d1f37be50491"
+    }
+  ]
+}

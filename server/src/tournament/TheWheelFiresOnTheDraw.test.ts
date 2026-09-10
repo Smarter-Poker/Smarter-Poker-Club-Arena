@@ -52,7 +52,7 @@ describe('the reveal is emitted from the immutable funded draw receipt', () => {
     );
     expect(emit, 'the early emit is missing').toBeGreaterThan(-1);
     expect(settle, 'the atomic settlement call moved - re-check this pin').toBeGreaterThan(-1);
-    const settledGate = CODE.indexOf('if (!fundedSpin)', settle);
+    const settledGate = CODE.indexOf('if (!proven.ok)', settle);
     expect(settledGate, 'the parsed settlement receipt gate is missing').toBeGreaterThan(settle);
     expect(settle, 'uncommitted money may never be revealed').toBeLessThan(emit);
     expect(emit, 'the wheel must name a proven settlement receipt').toBeGreaterThan(settledGate);
@@ -120,9 +120,9 @@ describe('a public moment does not move', () => {
     expect(freeze, 'a freeze after the re-anchor would not freeze anything').toBeLessThan(reanchor);
   });
 
-  it('the later pass does not re-announce a table the early pass already reached', () => {
+  it('the later pass skips only a successful early reveal whose hold did not extend', () => {
     expect(CODE).toContain(
-      'if (this.spinRevealEmitted && this.seatFirstTableIds.includes(tableId)) continue;'
+      'if (this.spinRevealEmittedTableIds.has(tableId) && effectiveHold === holdUntil)'
     );
   });
 });

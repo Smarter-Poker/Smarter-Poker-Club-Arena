@@ -4,8 +4,8 @@
 Creates its own local PostgreSQL 17 cluster; accepts no database URL.
 Use --cross-club --baseline to reproduce the old receipt failure.
 Use --purchases-only for the rebuy/re-entry/add-on groups.
-Use --guarantees-only or --cancellation-policy-only for those focused groups.
-Use --eliminations-only --elimination-null-rank-only for the corrected rank guard.
+Use --unregistrations-only for funded entry/refund lifecycle groups.
+Use --heads-up-only for paid Heads-Up seat/start/refund groups.
 Fixture limits are in fixtures/registration-funding/README.md and
 fixtures/tournament-purchase-funding/README.md.
 """
@@ -87,6 +87,26 @@ with (root/'results.log').open('w') as log:
         for n in range(1,5):
             q("INSERT INTO profiles(id,username,display_name) VALUES ('%s','Fixture %s','Fixture %s'); INSERT INTO club_members(club_id,user_id,chip_balance,status,role) VALUES ('%s','%s',500,'active','player');" % (uid(n),n,n,club,uid(n)))
         q("INSERT INTO tournaments(id,club_id,name,buy_in_amount,buy_in_fee,start_time,max_players,status,current_players,prize_pool,bounty_pool,total_rake,variant) VALUES ('%s','%s','Isolated Entry Funding',180,20,now()+interval '1 day',%s,'REGISTERING',0,0,0,0,'mtt');" % (event,club,cap))
+        if '--baseline' not in sys.argv:
+            import re
+            # Reproduce the exact resolver body transformation, without the migration's live-event probe.
+            resolver_source = (Path(__file__).resolve().parents[2] / 'supabase/migrations/20260910020626_the_host_club_is_in_its_own_union.sql').read_text()
+            resolver_parts = []
+            for variable in ['v_a', 'v_b']:
+                expressions = re.findall(r'\b' + variable + r'\s*:=\s*(.*?);\s*\n', resolver_source, re.S)
+                assert len(expressions) == 1, 'resolver source expression must be unambiguous'
+                resolver_parts.append(json.loads(q('SELECT to_json(' + expressions[0] + ')::text;')))
+            resolver_definition = json.loads(q("SELECT to_json(pg_get_functiondef('fn_tournament_club_for_user(uuid,uuid,uuid)'::regprocedure))::text;"))
+            assert resolver_definition.count(resolver_parts[0]) == 1, 'resolver source baseline must match exactly'
+            q(resolver_definition.replace(resolver_parts[0], resolver_parts[1]) + ';')
+            origin_source = (Path(__file__).resolve().parents[2] / 'supabase/migrations/20260910023919_the_entry_is_charged_to_the_wallet_the_entry_is_stamped_with.sql').read_text()
+            money_functions = [m.group(0) for m in re.finditer(r'CREATE\s+OR\s+REPLACE\s+FUNCTION\s+public\.atomic_deduct_wallet_and_log\b.*?\bAS\s+(\$[a-zA-Z_0-9]*\$).*?\1\s*;', origin_source, re.I | re.S)]
+            source_postconditions = [m.group(0) for m in re.finditer(r'DO\s+(\$[a-zA-Z_0-9]*\$)(.*?)\1\s*;', origin_source, re.I | re.S) if 'pg_get_functiondef' in m.group(2) and 'fn_tournament_club_for_user' in m.group(2) and not re.search(r'UPDATE\s+public\.', m.group(2), re.I)]
+            assert len(money_functions) == len(source_postconditions) == 1, 'current origin-wallet source function updates must be unambiguous'
+            # Historical-row repairs are outside this synthetic fixture.
+            q('BEGIN;\n' + money_functions[0] + '\n' + source_postconditions[0] + '\nCOMMIT;')
+            assert q("SELECT md5(prosrc) FROM pg_proc WHERE oid='atomic_deduct_wallet_and_log(uuid,numeric,text,text,uuid,uuid,uuid)'::regprocedure") == '1835dbd974d8ba219cf37ab712a9ccbd'
+            assert q("SELECT md5(prosrc) FROM pg_proc WHERE oid='fn_tournament_club_for_user(uuid,uuid,uuid)'::regprocedure") == 'f80eff4c311820670f1b71d15c29452d'
 
     def state():
         return json.loads(q("""SELECT jsonb_build_object(
@@ -167,20 +187,11 @@ with (root/'results.log').open('w') as log:
         run([str(pg/'pg_ctl'),'-D',str(cluster),'-o',f'-k {sock} -p {port} -c listen_addresses=','-w','start'])
         started=True
 
-        if '--cancellation-policy-only' in sys.argv:
-            from tournament_cancellation_policy_cases import verify
+        if '--heads-up-only' in sys.argv:
+            from tournament_heads_up_funding_cases import verify
             verify(q,fresh,overlap,call,check)
-        elif '--eliminations-only' in sys.argv:
-            from tournament_elimination_rank_cases import verify
-            verify(q,fresh,overlap,call,check)
-        elif '--obligations-only' in sys.argv:
-            from tournament_obligation_funding_cases import verify
-            verify(q,fresh,overlap,call,check)
-        elif '--satellite-awards-only' in sys.argv:
-            from satellite_award_funding_cases import verify
-            verify(q,fresh,overlap,call,check)
-        elif '--guarantees-only' in sys.argv:
-            from tournament_guarantee_funding_cases import verify
+        elif '--unregistrations-only' in sys.argv:
+            from tournament_unregistration_funding_cases import verify
             verify(q,fresh,overlap,call,check)
         elif '--purchases-only' in sys.argv:
             from tournament_purchase_funding_cases import verify
@@ -227,14 +238,14 @@ with (root/'results.log').open('w') as log:
             cross_club()
             from tournament_purchase_funding_cases import verify
             verify(q,fresh,overlap,call,check)
-            from tournament_guarantee_funding_cases import verify
+            from tournament_unregistration_funding_cases import verify
             verify(q,fresh,overlap,call,check)
-            from tournament_cancellation_policy_cases import verify
+            from tournament_heads_up_funding_cases import verify
             verify(q,fresh,overlap,call,check)
 
     finally:
         if started:
-            subprocess.run([str(pg/'pg_ctl'),'-D',str(cluster),'-m','fast','-w','stop'],stdout=log,stderr=log,check=True,timeout=15)
+            subprocess.run([str(pg/'pg_ctl'),'-D',str(cluster),'-m','fast','-t','60','-w','stop'],stdout=log,stderr=log,check=True,timeout=75)
         shutil.rmtree(cluster,ignore_errors=True)
 
 (root/'results.json').write_text(json.dumps({'passed':passed,'production_database_used':False},indent=2)+'\n')

@@ -71,6 +71,9 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
      */
     opId?: string
   ): Promise<{ success: boolean; error?: string; queued?: boolean; applied?: number }> {
+    if (this.tableInfo?.arena?.asset === 'diamonds') {
+      return { success: false, error: 'Diamond Add-Ons Are Not Available Yet' };
+    }
     if (isMaintenanceFrozen()) {
       return { success: false, error: 'Scheduled maintenance is in progress' };
     }
@@ -233,6 +236,7 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
    * next engine start) picks it up. Nothing is dropped on the floor.
    */
   protected async processPendingAddOns(players: SeatedPlayer[]): Promise<void> {
+    if (this.tableInfo?.arena?.asset === 'diamonds') return;
     if (!this.pendingAddOnSweepNeeded && this.pendingAddOns.size === 0) return;
 
     const authority = this.getEngineLeaseAuthority();

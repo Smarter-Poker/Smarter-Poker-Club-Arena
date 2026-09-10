@@ -197,3 +197,7 @@ This does not establish publication or adoption of the newer pause-ownership
 or synchronized-break corrections. Phase 3 remains in progress; Phase 4 has
 not started. The attempted additional normal dispatch has no verified
 receipt, and must not be repeated solely because Desktop Commander timed out.
+
+## Every-Tier Spin Rule Acceptance
+
+S09 is verified against the deployed producer and receipt-consumer sources. The 16 PostgreSQL scenarios cover every multiplier at both approved board stacks, and all 16 resulting receipts pass the actual engine consumer. The documented September 1 board-stack rule supersedes the original multiplier-dependent stack bands. See `2026-09-10-phase3-spin-tier-acceptance.md` and its result artifact for exact scope and source identity. Four of the original 58 controls are now verified; Phase 3 remains open and Phase 4 has not started.

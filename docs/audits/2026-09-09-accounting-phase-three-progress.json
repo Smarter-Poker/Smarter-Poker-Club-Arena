@@ -257,7 +257,7 @@
     "evidence": "docs/changelog/2026-09-09-unbound-tournament-registration-is-retired.md",
     "full_phase_acceptance": false
   },
-  "resume_checkpoint": "docs/audits/2026-09-10-chip-drift-resume-evidence.json",
+  "resume_checkpoint": "docs/audits/2026-09-10-chip-drift-continuation-status.md",
   "exact_hand_generation": {
     "status": "database_and_engine_adoption_verified",
     "engine_sha": "b4c427a6e8474d796d29b682a9e153e03d78755d",
@@ -269,5 +269,28 @@
     "status": "seven_pre_start_groups_passed",
     "source": "scripts/dev/probe-tournament-registration-funding-pg17.py",
     "limits": "Real pre-start standalone-club funding, rollback, concurrent retries, last place, closure wait and cross-club receipt. Synthetic auth and maintenance. No late entry, union, promotional, re-entry or launch acceptance."
+  },
+  "swarm_checkpoint": {
+    "date": "2026-09-10",
+    "status": "in_progress",
+    "phase_complete": false,
+    "phase_four_started": false,
+    "evidence": "docs/audits/2026-09-10-chip-drift-phase-three-swarm.json",
+    "scope": "Six independent lanes cover all twelve controls. Focused acceptance results do not certify missing production authorities, terminal composition or unresolved live stalls.",
+    "production_gate": "As of03:17:38UTC all seven guards remain disabled; new move, committed move receipt and bounty rebuy-generation authorities are absent. The coordinating task owns the engine release seal and Stage-B cutover."
+  },
+  "latest_continuation": {
+    "phase_complete": false,
+    "production_expansion_and_rake_verified": true,
+    "full_stage_b_applied": false,
+    "proposal_activated": false,
+    "final_deal_v2_implementation_blocked_by_automatic_review": true,
+    "phase_four_first_batch": {
+      "pr": 4146,
+      "merge": "146128eb5c89edb1880473905524556b956b613f",
+      "frontend_publisher": 34451807707,
+      "status": "merged_and_frontend_publication_verified"
+    },
+    "historical_notes": "Older observations are retained as historical evidence. Use resume_checkpoint for current prerequisites, native acceptance, release state and remaining gaps."
   }
 }

@@ -1,0 +1,70 @@
+{
+  "date_utc": "2026-09-10",
+  "programme": "Club Arena Twelve-Phase Audit",
+  "phase": 3,
+  "status": "partial_evidence",
+  "reviewed_source": "b3f5251b0c64bc828bb08127d07d9a66d10033c0 plus coordinator uncommitted CI history patch",
+  "verified_main_ancestor": "git merge-base --is-ancestor f1992eeb825918d6614d72a10c66988d0cdd292c b3f5251b0 exited 0",
+  "virtual_ci_merge": "GitHub commit9f33666216cecd55a320d7569169e8b2a17038c6 names merge of b3f5251b0 into f1992eeb8. Raw parent object was not locally available and was not claimed read.",
+  "provenance_review": {
+    "verdict": "approved_for_normal_required_gates",
+    "files": [
+      ".github/workflows/ci.yml",
+      "scripts/stamp-build-provenance.mjs",
+      "tests/unit/stampBuildProvenance.test.ts"
+    ],
+    "behavior": "Both actual build checkouts use full history. Incomplete Git ancestry produces null distances and strict refusal; genuinely stale full history still refuses. The existing non-git/no-origin local diagnostic contract is retained. No checkout-ref substitution or stale-source bypass.",
+    "independent_reproduction": "Two real disposable Git repositories, inherited Git config scrubbed: shallow PR merge has main as a raw parent but reports false behind=1 with shallow main and false behind=4 with full main. Unshallow makes both behind=0 without changing source.",
+    "coordinator_test_status": "Test execution is owned by coordinator; this reviewer inspected the fixtures and independently reproduced the underlying Git behavior, not the coordinator full suite."
+  },
+  "production_witness_at": "2026-09-10T12:55:02Z",
+  "functions": [
+    {
+      "signature": "fn_complete_tournament_entry_reprice(uuid)",
+      "body_md5": "784df9021f906ca9e42e43942b692e2f",
+      "matches_previous": true
+    },
+    {
+      "signature": "fn_exact_tournament_knockout_claimants(uuid,uuid,uuid)",
+      "body_md5": "60a8abcd36fe5ee0849824b095f700a0",
+      "previous_body_md5": "6ead779d2261848571713f0220953082",
+      "matches_previous": false,
+      "change": "Exactly two UUID syntax predicates now allow generic hexadecimal UUID groups instead of restricting version/variant bits. Reversing only those two strings reproduces the exact previous source MD5. Every pot/award/eligibility/claimant statement remains byte-identical.",
+      "later_migration": {
+        "version": "20260910124023",
+        "name": "a_player_id_is_a_uuid_not_a_uuid_version"
+      },
+      "verdict": "Compatible later owner change; preserve it and retain previous migration bytes."
+    },
+    {
+      "signature": "fn_move_tournament_player(uuid,uuid,uuid,uuid,integer,uuid,text)",
+      "body_md5": "466c39065b59cf7922a5859df9f26bd3",
+      "matches_previous": true
+    },
+    {
+      "signature": "fn_resolve_committed_tournament_seat_move(uuid,uuid,uuid,uuid,uuid,integer,text)",
+      "body_md5": "37bc550ccb878c042773d0789c8ef355",
+      "matches_previous": true
+    }
+  ],
+  "shared_function_access": {
+    "security_definer": true,
+    "search_path": "public, pg_temp",
+    "acl": "{postgres=X/postgres,service_role=X/postgres}",
+    "anonymous_execute": false,
+    "authenticated_execute": false,
+    "service_execute": true,
+    "read_only_catalog_query": true
+  },
+  "clock_design_review": {
+    "status": "implementation_not_accepted",
+    "finding": "Current maintenance targets lack a clock epoch, so pause/maintenance overlap credit cannot infer epoch from current level or anchor.",
+    "required": "Bind activation-aware maintenance snapshot and both checkpoint/suffix credits to an exact clock epoch. Include already-open pause adoption, future release-target rebasing, two maintenance windows, overlapping addon/synchronized pauses, partial-credit retry and late old invocation.",
+    "prototype_limit": "Clock lane reports16 isolated gate cases and7 observed lock barriers; actual G/B/T money authorities, lease/pause/ACL and all table/parent writers remain required."
+  },
+  "whole_phase_complete": false,
+  "phase_4_started": false,
+  "production_mutations": 0,
+  "engine_or_host_actions": 0,
+  "hooks_bypassed": false
+}

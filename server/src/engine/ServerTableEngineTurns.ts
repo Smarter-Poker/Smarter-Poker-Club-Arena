@@ -29,7 +29,13 @@ import type {
 } from '../types.js';
 
 import { HorseLogic, resolveHorseStyle, type HorseGameStateV2 } from './HorseLogic.js';
-import { getTournamentBrainContext } from '../services/TournamentBrainContext.js';
+import { getTournamentBrainContextSnapshot } from '../services/TournamentBrainContext.js';
+import {
+  buildTournamentMState,
+  TOURNAMENT_CONTEXT_INCOMPLETE,
+  type TournamentAnteType,
+  type TournamentMZone,
+} from './HorseTournamentPreflop.js';
 import { PreciseActionTimer } from './PreciseActionTimer.js';
 import { deadlineScheduler } from './DeadlineScheduler.js';
 import { ServerActionValidator } from './ServerActionValidator.js';
@@ -139,6 +145,28 @@ export function applyTableCommitmentCap(
 }
 
 /**
+ * Compose the host's preflop all-in-or-fold rule into the same immutable menu
+ * the worker and Phase 7 evaluate. This only removes actions; in particular it
+ * never resurrects an all-in already removed by the commitment cap.
+ */
+export function applyAllInOrFoldActionState(
+  source: CappedActionState,
+  enabled: boolean,
+  stage: HandStage
+): CappedActionState {
+  if (!enabled || stage !== 'preflop') return source;
+  const allowed = new Set<ActionType>(
+    source.toCall > 0.005 ? ['fold', 'all_in'] : ['check', 'all_in']
+  );
+  return {
+    ...source,
+    legalActions: source.legalActions.filter((action) => allowed.has(action)),
+    minRaiseTo: null,
+    maxRaiseTo: null,
+  };
+}
+
+/**
  * One telemetry key per gate, fired as LITERALS.
  *
  * A lookup table would be tidier and would break the ledger law
@@ -169,6 +197,9 @@ export function noteSecondLookDecline(reason: SecondLookDecline): void {
 }
 
 export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
+  /** Previous zone is table-owned state and is embedded in every worker snapshot. */
+  private readonly horseTournamentMZones = new Map<string, TournamentMZone>();
+
   /**
    * True only after an externally-computed runout payout may have touched the
    * HandController and before that controller has emitted HAND_COMPLETE.
@@ -2254,54 +2285,246 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
    * The horse submits its action within that timer window, just like a human would.
    */
   /**
-   * V12 (2026-08-22): tournament context + format for the horse brain.
-   * Synchronous — reads the TournamentBrainContext cache (background
-   * refresh, 20s TTL). Cash tables return format 'cash' and no tournament
-   * object; tournament tables before the first fetch return an empty
-   * tournament object (V11 flat-premium behavior).
+   * Phase 6: one explicit tournament snapshot. Supabase stays off the action
+   * clock: this is a synchronous cache read plus authoritative local table
+   * state. A miss is `warming` with TOURNAMENT_CONTEXT_INCOMPLETE, never `{}`.
    */
-  private horseTournamentContext(): {
-    format: 'cash' | 'mtt' | 'spin' | 'hu_sng';
-    tournament?: Record<string, unknown>;
+  private horseTournamentContext(
+    player: SeatPlayer,
+    players: SeatPlayer[],
+    dealerSeat: number | undefined,
+    activeVariant: string
+  ): {
+    format: 'cash' | 'mtt' | 'sng' | 'spin' | 'hu_sng';
+    tournament?: NonNullable<HorseGameStateV2['tournament']>;
   } {
     if (!this.isTournamentTable()) return { format: 'cash' as const };
-    const tid = this.tableInfo?.tournament_id;
-    const tctx = tid ? getTournamentBrainContext(tid) : null;
+    const tid = this.tableInfo?.tournament_id ? String(this.tableInfo.tournament_id) : '';
+    const snapshot = tid
+      ? getTournamentBrainContextSnapshot(tid)
+      : {
+          context: null,
+          status: 'incomplete' as const,
+          issues: [TOURNAMENT_CONTEXT_INCOMPLETE, 'tournament_id_missing'],
+          ageMs: null,
+        };
+    const tctx = snapshot.context;
     const fallbackFormat =
       (this.tableInfo?.max_players ?? 9) <= 2 ? ('hu_sng' as const) : ('mtt' as const);
-    if (!tctx) return { format: fallbackFormat, tournament: {} };
+    // HandController.state.players is the exact dealt roster. Tournament
+    // sit-outs stay in that roster, post blinds/antes, receive cards and are
+    // auto-folded when action reaches them. They therefore still belong in an
+    // orbit-cost M calculation even though they are not actionable opponents.
+    const dealtPlayers = players;
+    const actionablePlayers = players.filter((candidate) => !candidate.is_sitting_out);
+    const playersAtTable = Math.max(2, dealtPlayers.length);
+    const currentSmallBlind = Math.max(0, Number(this.tableInfo?.small_blind) || 0);
+    const currentBigBlind = Math.max(0, Number(this.tableInfo?.big_blind) || 0);
+    const currentAnte = Math.max(0, Number(this.tableInfo?.ante) || 0);
+    const localIssues = [...snapshot.issues];
+    if (currentSmallBlind <= 0 || currentBigBlind <= 0) {
+      localIssues.push('live_blinds_invalid');
+    }
+    if (dealtPlayers.length < 2) localIssues.push('live_seat_state_incomplete');
+    if (
+      !Number.isSafeInteger(dealerSeat) ||
+      !dealtPlayers.some((candidate) => candidate.seat === dealerSeat)
+    ) {
+      localIssues.push('dealer_seat_missing');
+    }
+    if (
+      tctx &&
+      tctx.currentBigBlind > 0 &&
+      Math.abs(tctx.currentBigBlind - currentBigBlind) > 0.005
+    ) {
+      localIssues.push('blind_level_cache_lag');
+    }
+    const contextStatus =
+      localIssues.length === 0
+        ? snapshot.status
+        : snapshot.status === 'warming' || snapshot.status === 'stale'
+          ? snapshot.status
+          : 'incomplete';
+    if (contextStatus !== 'complete' && !localIssues.includes(TOURNAMENT_CONTEXT_INCOMPLETE)) {
+      localIssues.unshift(TOURNAMENT_CONTEXT_INCOMPLETE);
+    }
+    const anteType: TournamentAnteType =
+      this.tableInfo?.big_blind_ante_enabled === true
+        ? 'big_blind'
+        : currentAnte > 0 || (contextStatus === 'complete' && (tctx?.nextAnte ?? 0) > 0)
+          ? 'per_player'
+          : 'none';
+    const localSeatsPerTable = Math.min(
+      10,
+      Math.max(2, Math.floor(Number(this.tableInfo?.max_players) || playersAtTable))
+    );
+
+    // M and cover pressure use chips still behind. Chips already committed to
+    // this pot cannot fund a future orbit or a new wager against hero.
+    const stackBehind = Math.max(0, Number(player.stack) || 0);
+    const previousZone = this.horseTournamentMZones.get(player.user_id) ?? null;
+    const m = buildTournamentMState({
+      stackChips: stackBehind,
+      smallBlind: currentSmallBlind,
+      bigBlind: currentBigBlind,
+      ante: currentAnte,
+      anteType,
+      playersAtTable,
+      // A stale/partial clock stays observable in contextIssues, but it must
+      // not create projected urgency on the action clock. Current M is still
+      // authoritative because its blinds and stacks come from this table.
+      nextSmallBlind: contextStatus === 'complete' ? tctx?.nextSmallBlind : null,
+      nextBigBlind: contextStatus === 'complete' ? tctx?.nextBigBlind : null,
+      nextAnte: contextStatus === 'complete' ? tctx?.nextAnte : null,
+      minutesToNextLevel: contextStatus === 'complete' ? tctx?.nextBlindInMin : null,
+      opponentStacks: actionablePlayers
+        .filter((candidate) => candidate.user_id !== player.user_id)
+        .map((candidate) => ({
+          userId: candidate.user_id,
+          stackChips: Math.max(0, Number(candidate.stack) || 0),
+        })),
+      previousZone,
+    });
+    this.horseTournamentMZones.set(player.user_id, m.zone);
+    const horseRecoveryCap =
+      tctx?.horseRebuyCapByUser &&
+      Object.prototype.hasOwnProperty.call(tctx.horseRebuyCapByUser, player.user_id)
+        ? tctx.horseRebuyCapByUser[player.user_id]
+        : null;
+
     return {
-      format: tctx.format,
+      // Tournament metadata may name a Spin/MTT/HU structure only after the
+      // complete-context contract holds. Otherwise use the local seat-shape
+      // fallback so a stale remote label cannot widen ranges.
+      format: contextStatus === 'complete' ? (tctx?.format ?? fallbackFormat) : fallbackFormat,
       tournament: {
-        nearBubble: tctx.nearBubble,
-        inMoney: tctx.inMoney,
-        playersLeft: tctx.playersLeft,
-        spotsPaid: tctx.spotsPaid,
-        avgStackChips: tctx.avgStackChips,
-        bountyFactor: tctx.bountyFactor,
+        schemaVersion: 1,
+        contextStatus,
+        contextIssues: [...new Set(localIssues)],
+        sourceAgeMs: snapshot.ageMs,
+        tournamentId: tid || null,
+        tournamentType: tctx?.tournamentType ?? '',
+        tournamentStatus: tctx?.tournamentStatus ?? '',
+        // The current hand can carry an authoritative bomb-pot/rotation
+        // override. Tournament metadata describes the event's base game; the
+        // decision contract must describe the cards actually dealt now.
+        gameVariant: activeVariant,
+        entrants: tctx?.entrants ?? 0,
+        nearBubble: tctx?.nearBubble ?? false,
+        inMoney: tctx?.inMoney ?? false,
+        playersLeft: tctx?.playersLeft ?? 0,
+        spotsPaid: tctx?.spotsPaid ?? 0,
+        avgStackChips: tctx?.avgStackChips ?? 0,
+        medianStackChips: tctx?.medianStackChips ?? 0,
+        // An invalid cached capacity is one reason a snapshot is incomplete;
+        // do not repeat that invalid coordinate into the worker boundary.
+        seatsPerTable:
+          contextStatus === 'complete'
+            ? (tctx?.seatsPerTable ?? localSeatsPerTable)
+            : localSeatsPerTable,
+        playersAtTable,
+        currentLevel: tctx?.currentLevel ?? 0,
+        currentSmallBlind,
+        currentBigBlind,
+        currentAnte,
+        anteType,
+        nextSmallBlind: contextStatus === 'complete' ? (tctx?.nextSmallBlind ?? null) : null,
+        nextBigBlind: contextStatus === 'complete' ? (tctx?.nextBigBlind ?? null) : null,
+        nextAnte: contextStatus === 'complete' ? (tctx?.nextAnte ?? null) : null,
+        levelDurationMin: tctx?.levelDurationMin ?? null,
+        levelElapsedMin: tctx?.levelElapsedMin ?? null,
+        registrationOpen: tctx?.registrationOpen ?? false,
+        lateRegistrationOpen: tctx?.lateRegistrationOpen ?? false,
+        registrationRequiresAuthorization: tctx?.registrationRequiresAuthorization ?? false,
+        isPko: tctx?.isPko ?? false,
+        isBounty: tctx?.isBounty ?? false,
+        isMysteryBounty: tctx?.isMysteryBounty ?? false,
+        mysteryBountyStage: tctx?.mysteryBountyStage ?? 'none',
+        reentryAllowed: tctx?.reentryAllowed ?? false,
+        reentryOpen: tctx?.reentryOpen ?? false,
+        maxReentries:
+          tctx?.reentryAllowed === true && tctx.rebuyAllowed !== true && horseRecoveryCap !== null
+            ? horseRecoveryCap
+            : (tctx?.maxReentries ?? null),
+        rebuyAllowed: tctx?.rebuyAllowed ?? false,
+        rebuyOpen: tctx?.rebuyOpen ?? false,
+        maxRebuys:
+          tctx?.rebuyAllowed === true && horseRecoveryCap !== null
+            ? horseRecoveryCap
+            : (tctx?.maxRebuys ?? null),
+        addOnAvailable: tctx?.addOnAvailable ?? false,
+        addOnPeriodOpen: tctx?.addOnPeriodOpen ?? false,
+        addOnCost: tctx?.addOnCost ?? null,
+        addOnChips: tctx?.addOnChips ?? null,
+        addOnLevels: tctx?.addOnLevels ?? null,
+        onBreak: tctx?.onBreak ?? false,
+        handForHand: this.handForHandPaused,
+        handForHandExpected: tctx?.handForHandExpected ?? false,
+        m,
+        bountyFactor: tctx?.bountyFactor ?? 0,
         // V16 ICM: the payout curve + live stack distribution feed the real
         // Malmuth-Harville pressure model in HorseLogic.icmRisk.
-        stacks: tctx.stacks,
-        payoutPct: tctx.payoutPct,
+        stacks: tctx?.stacks ?? [],
+        // Keep only this table's identities on the worker message. Phase 7
+        // uses them to remove the cached local stack values exactly before it
+        // substitutes the authoritative in-hand values; remote identities are
+        // unnecessary for ICM and never cross the action boundary.
+        stackByUser: Object.fromEntries(
+          players.flatMap((candidate) => {
+            const observed = tctx?.stackByUser?.[candidate.user_id];
+            return Number.isFinite(observed) && (observed as number) > 0
+              ? [[candidate.user_id, observed as number]]
+              : [];
+          })
+        ),
+        payoutPct: tctx?.payoutPct ?? [],
         // V26 PRIZE LANDSCAPE: what a bust is actually worth right now -
         // how many chests are left, their mean, and whether the big one is
         // still in the box.
-        mysteryChestsLeft: tctx.mysteryChestsLeft,
-        mysteryMeanCents: tctx.mysteryMeanCents,
-        mysteryTopCents: tctx.mysteryTopCents,
-        mysteryTopLive: tctx.mysteryTopLive,
-        meanBountyCents: tctx.meanBountyCents,
+        mysteryChestsLeft: tctx?.mysteryChestsLeft ?? 0,
+        mysteryMeanCents: tctx?.mysteryMeanCents ?? 0,
+        mysteryTopCents: tctx?.mysteryTopCents ?? 0,
+        mysteryTopLive: tctx?.mysteryTopLive ?? false,
+        meanBountyCents: tctx?.meanBountyCents ?? 0,
+        prizePoolCents: tctx?.prizePoolCents ?? 0,
+        bountyPoolCents: tctx?.bountyPoolCents ?? 0,
+        buyInCents: tctx?.buyInCents ?? null,
+        startingStackChips: tctx?.startingStackChips ?? null,
+        rebuyCostCents: tctx?.rebuyCostCents ?? null,
+        rebuyChips: tctx?.rebuyChips ?? null,
+        rebuyPrizeContributionCents: tctx?.rebuyPrizeContributionCents ?? null,
+        rebuyBountyContributionCents: tctx?.rebuyBountyContributionCents ?? null,
+        reloadsUsed:
+          tctx?.reloadsByUser &&
+          Object.prototype.hasOwnProperty.call(tctx.reloadsByUser, player.user_id)
+            ? tctx.reloadsByUser[player.user_id]
+            : null,
+        addOnTaken:
+          tctx?.addOnTakenByUser &&
+          Object.prototype.hasOwnProperty.call(tctx.addOnTakenByUser, player.user_id)
+            ? tctx.addOnTakenByUser[player.user_id]
+            : null,
+        rebuyAffordable:
+          tctx?.rebuyAffordableByUser &&
+          Object.prototype.hasOwnProperty.call(tctx.rebuyAffordableByUser, player.user_id)
+            ? tctx.rebuyAffordableByUser[player.user_id]
+            : null,
+        addOnAffordable:
+          tctx?.addOnAffordableByUser &&
+          Object.prototype.hasOwnProperty.call(tctx.addOnAffordableByUser, player.user_id)
+            ? tctx.addOnAffordableByUser[player.user_id]
+            : null,
         // V23 ENDGAME: final-table flag + the blind clock (jam BEFORE the
         // blinds halve the M, not after).
-        finalTable: tctx.finalTable,
-        nextBlindInMin: tctx.nextBlindInMin,
-        nextBlindMult: tctx.nextBlindMult,
+        finalTable: tctx?.finalTable ?? false,
+        nextBlindInMin: contextStatus === 'complete' ? (tctx?.nextBlindInMin ?? null) : null,
+        nextBlindMult: contextStatus === 'complete' ? (tctx?.nextBlindMult ?? 1) : 1,
         // V37 SATELLITES: identical tickets to the top N. The brain plays
         // survival, not a ladder — see HorseLogic.satelliteRead.
-        satellite: tctx.satellite,
-        satelliteSeats: tctx.satelliteSeats,
+        satellite: tctx?.satellite ?? false,
+        satelliteSeats: tctx?.satelliteSeats ?? 0,
         // V37 BOUNTIES: whose head is worth what, this hand.
-        bountyByUser: tctx.bountyByUser,
+        bountyByUser: tctx?.bountyByUser ?? {},
       },
     };
   }
@@ -2333,6 +2556,15 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     const fence = [this.tableId, handNumber, seat, leaseGeneration ?? 'unverified', turnToken].join(
       ':'
     );
+    let pendingUtilityLedger: HorseDecision['tournamentUtility'];
+
+    const markPendingUtilityNotExecuted = (): void => {
+      if (!pendingUtilityLedger || pendingUtilityLedger.executionStatus !== 'pending') return;
+      pendingUtilityLedger.executedAction = null;
+      pendingUtilityLedger.executedAmount = null;
+      pendingUtilityLedger.executionStatus = 'not_executed';
+      noteFire('phase7_utility_not_executed');
+    };
 
     const fenceIsCurrent = (): boolean => {
       if (
@@ -2345,14 +2577,16 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         !this.lifecycleCanMutate() ||
         handControllerRef.getState().currentPlayerSeat !== seat
       ) {
+        markPendingUtilityNotExecuted();
         return false;
       }
       const currentLease = this.getEngineLeaseAuthority();
-      return (
+      const current =
         leaseGeneration !== null &&
         currentLease?.verified === true &&
-        currentLease.generation === leaseGeneration
-      );
+        currentLease.generation === leaseGeneration;
+      if (!current) markPendingUtilityNotExecuted();
+      return current;
     };
 
     if (!fenceIsCurrent()) {
@@ -2375,12 +2609,16 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       this.cancelHorseDecisionWork();
       return;
     }
-    const boundedActions = applyTableCommitmentCap(
-      controllerActions,
-      authoritativePlayer,
-      this.tableInfo?.cap_enabled === true,
-      Number(this.tableInfo?.cap_bb) || 0,
-      Number(this.tableInfo?.big_blind) || 0
+    const boundedActions = applyAllInOrFoldActionState(
+      applyTableCommitmentCap(
+        controllerActions,
+        authoritativePlayer,
+        this.tableInfo?.cap_enabled === true,
+        Number(this.tableInfo?.cap_bb) || 0,
+        Number(this.tableInfo?.big_blind) || 0
+      ),
+      this.tableInfo?.all_in_or_fold === true,
+      state.stage
     );
     const toCall = boundedActions.toCall;
     const contestablePot = handControllerRef.getContestablePotForCall(player.user_id);
@@ -2504,11 +2742,14 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       // read as an OPEN RAISE and the fleet folded to dead money. Tell the
       // brain straddles are possible here.
       straddleActive: this.tableInfo?.straddle_enabled === true,
-      // V12: REAL tournament state for the ICM layer — players left, spots
-      // paid, average stack, PKO bounty share — plus the table format
-      // (mtt/spin/hu_sng). Cached with a 20s TTL; null before the first
-      // fetch lands, which degrades to the V11 flat premium.
-      ...this.horseTournamentContext(),
+      // Phase 6: complete cached tournament metadata plus exact local blinds,
+      // seats, stacks, hand-for-hand state and the hero's M snapshot.
+      ...this.horseTournamentContext(
+        decisionPlayer,
+        publicPlayers,
+        state.dealerSeat ?? this.currentHandDealerSeat,
+        activeVariant
+      ),
     };
 
     // The shared builder binds every decision-affecting input and is repeated
@@ -2580,6 +2821,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
           return;
         }
         let decision = fastResult.decision;
+        pendingUtilityLedger = decision.tournamentUtility;
 
         // Humanlike think time comes from the decision engine itself (style- and
         // situation-aware, 0.7-8s). Clamp inside the table's action timer window.
@@ -2744,10 +2986,16 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
                 if (verdict) {
                   noteFire('v44_second_look_flipped');
                   decision = {
-                    ...decision,
+                    // The deep replay owns the Phase 7 utility receipt too.
+                    // Keeping the fast object while changing only its action
+                    // made the ledger claim a different selected action from
+                    // the one the table was about to execute.
+                    ...deepResult.decision,
                     action: verdict.action as ActionType,
                     amount: verdict.amount,
+                    thinkTime: decision.thinkTime,
                   };
+                  pendingUtilityLedger = decision.tournamentUtility;
                 }
               })
               .catch((error) => {
@@ -2771,8 +3019,13 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         }
         this.horseActionTimer = setTimeout(() => {
           this.horseActionTimer = null;
+          const utilityLedger = decision.tournamentUtility;
+          pendingUtilityLedger = utilityLedger;
           if (!fenceIsCurrent()) return;
-          if (!handControllerRef) return;
+          if (!handControllerRef) {
+            markPendingUtilityNotExecuted();
+            return;
+          }
           // The action is now authoritative. Cancel a queued/running deep read
           // before it can race the mutation below; this also retires the local
           // turn token so no later continuation can become current again.
@@ -2780,25 +3033,41 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
 
           // Verify it's still this player's turn (timer might have expired)
           const currentState = handControllerRef.getState();
-          if (currentState.currentPlayerSeat !== seat) return;
+          if (currentState.currentPlayerSeat !== seat) {
+            markPendingUtilityNotExecuted();
+            return;
+          }
 
           let action = decision.action as string;
           let amount = decision.amount;
 
+          if (action === 'allin') action = 'all_in';
+
           // ── ALL-IN-OR-FOLD (2026-08-22 parity) ────────────────────────────────
-          // At an AoF table the preflop menu is fold or shove, and HandController
-          // rejects everything else. The Phase 5 snapshot and brain both know
-          // about AoF; this commit-side coercion remains as a final legality belt.
-          // (A fold with nothing owed still normalizes to the legal check below.)
+          // Phase 7 already received the AoF-filtered authoritative menu. This
+          // belt may only degrade an impossible stale answer; it must never
+          // synthesize an unpriced shove or resurrect one removed by the cap.
           if (this.tableInfo?.all_in_or_fold && currentState.stage === 'preflop') {
-            if (action !== 'fold') {
-              action = 'all_in';
+            const allInOrFoldActions = gameState.legalActions ?? [];
+            const allowed = new Set(allInOrFoldActions);
+            if (!allowed.has(action as ActionType)) {
+              if (action !== 'fold' && allowed.has('all_in')) {
+                // Preserve the host rule for a stale non-fold intent, but only
+                // while the authoritative capped menu still contains a shove.
+                action = 'all_in';
+              } else {
+                action =
+                  toCall > 0 && allowed.has('fold')
+                    ? 'fold'
+                    : allowed.has('check')
+                      ? 'check'
+                      : (allInOrFoldActions[0] ?? 'fold');
+              }
               amount = undefined;
             }
           }
 
           // Normalize actions
-          if (action === 'allin') action = 'all_in';
           if (action === 'check' && toCall > 0) action = 'call';
           if (action === 'call' && toCall === 0) action = 'check';
           if (action === 'call') amount = toCall;
@@ -2877,6 +3146,13 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
             }
           }
 
+          const normalizedAmount =
+            typeof amount === 'number' && Number.isFinite(amount) ? amount : null;
+          const matchesUtilitySelection =
+            !utilityLedger ||
+            (utilityLedger.selectedAction === action &&
+              utilityLedger.selectedAmount === normalizedAmount);
+
           // 2026-08-15 FREEZE FIX. HandController.performAction RETURNS FALSE on an
           // illegal action - it does not throw (HandController.ts:416/430/437). So
           // this catch never fired, and a horse whose decision the engine rejected
@@ -2889,6 +3165,8 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
           // action, because the broadcast happens inside performAction.
           let applied = false;
           let intendedApplied = false;
+          let executedAction: ActionType | null = null;
+          let executedAmount: number | null = null;
           const horseClockWasArmed = this.lastActionAcceptedAtMs;
           this.lastActionAcceptedAtMs = Date.now();
           const worker = getLiveHorseDecisionWorker();
@@ -2896,6 +3174,10 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
             try {
               applied = handControllerRef.performAction(seat, action as any, amount);
               intendedApplied = applied;
+              if (applied) {
+                executedAction = action as ActionType;
+                executedAmount = normalizedAmount;
+              }
             } catch (err) {
               reportError(err, 'ServerTableEngine.' + this.tableId + '.horse_action_threw');
             }
@@ -2936,11 +3218,39 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
                 // above produced no broadcast, so the clock must start again for
                 // whichever of these two lands.
                 this.lastActionAcceptedAtMs = Date.now();
-                applied =
-                  handControllerRef.performAction(seat, 'check' as any) ||
-                  handControllerRef.performAction(seat, 'fold' as any);
+                applied = handControllerRef.performAction(seat, 'check' as any);
+                if (applied) {
+                  executedAction = 'check';
+                  executedAmount = null;
+                } else {
+                  applied = handControllerRef.performAction(seat, 'fold' as any);
+                  if (applied) {
+                    executedAction = 'fold';
+                    executedAmount = null;
+                  }
+                }
               } catch {
                 /* Hand already resolved. */
+              }
+            }
+            if (utilityLedger) {
+              utilityLedger.executedAction = executedAction;
+              utilityLedger.executedAmount = executedAmount;
+              utilityLedger.executionStatus = !applied
+                ? 'not_executed'
+                : !intendedApplied
+                  ? 'fallback'
+                  : matchesUtilitySelection
+                    ? 'intended'
+                    : 'coerced';
+              if (utilityLedger.executionStatus === 'intended') {
+                noteFire('phase7_utility_committed');
+              } else if (utilityLedger.executionStatus === 'coerced') {
+                noteFire('phase7_utility_coerced');
+              } else if (utilityLedger.executionStatus === 'fallback') {
+                noteFire('phase7_utility_fallback');
+              } else {
+                noteFire('phase7_utility_not_executed');
               }
             }
           });

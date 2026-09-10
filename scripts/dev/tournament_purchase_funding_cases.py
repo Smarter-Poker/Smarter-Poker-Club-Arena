@@ -1,6 +1,7 @@
 """Real tournament purchase functions over the shared isolated funding fixture."""
 from pathlib import Path
 import json
+import sys
 
 HERE=Path(__file__).resolve().parent
 EVENT='c3000000-0000-4000-8000-000000000001'
@@ -11,8 +12,9 @@ SEAT='d3000000-0000-4000-8000-000000000001'
 
 def verify(q,fresh,overlap,register,check):
     source=HERE/'fixtures/tournament-purchase-funding'
-    def setup(kind,name,live=True):
+    def setup(kind,name,live=True,before_register=None):
         fresh('purchase_'+name)
+        if before_register is not None: q(before_register)
         assert json.loads(q(register(1,1))).get('ok') is True
         q((source/'installed.sql').read_text())
         manifest=json.loads((source/'source-manifest.json').read_text())
@@ -118,6 +120,11 @@ def verify(q,fresh,overlap,register,check):
         assert {k:s[k] for k in expected}==expected,(s,expected)
         return s
 
+    if '--bounty-addon-only' in sys.argv:
+        from tournament_bounty_addon_cases import verify as verify_bounty_addon
+        verify_bounty_addon(q,setup,call,state,check)
+        return
+
     for kind in ['rebuy','reentry','addon']:
         setup(kind,kind)
         before=state()
@@ -129,7 +136,7 @@ def verify(q,fresh,overlap,register,check):
         assert replay==result and state()==after,(replay,result)
         check(kind+' atomically binds exact wallet funding, ledger, escrow, seat, generation and receipt')
 
-    for kind in ['reentry','addon']:
+    for kind in ['rebuy','reentry','addon']:
         setup(kind,'rollback_'+kind)
         before=state()
         q("""CREATE FUNCTION probe_receipt_failure() RETURNS trigger LANGUAGE plpgsql AS $$
@@ -141,11 +148,11 @@ def verify(q,fresh,overlap,register,check):
         assert state()==before,'partial purchase survived final receipt failure'
         check(kind+' rolls back the debit, grant, generation, pool, journal and wake on final receipt failure')
 
-    for kind,second_token in [('reentry','prompt-1'),('reentry','prompt-2'),('addon','ignored-new-token')]:
+    for kind,second_token in [('rebuy','prompt-1'),('rebuy','prompt-2'),('reentry','prompt-1'),('reentry','prompt-2'),('addon','ignored-new-token')]:
         setup(kind,'race_'+kind+'_'+second_token.replace('-','_'))
         first,second=overlap(call(kind),call(kind,second_token))
         assert first.get('success') is True,first
-        if kind=='reentry' and second_token=='prompt-2':
+        if kind in ['rebuy','reentry'] and second_token=='prompt-2':
             assert 'Only the exact unpaid zero-stack entry' in second.get('error',''),second
         else:
             assert second==first,(first,second)

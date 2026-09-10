@@ -7,6 +7,7 @@ import {
   type Page,
 } from '@playwright/test';
 
+import { ensureAcceptedTerms } from './support/ensureAcceptedTerms';
 import { ensurePlayableProfile } from './support/ensurePlayableProfile';
 import {
   cleanupTemporaryCustomizationAccount,
@@ -158,6 +159,7 @@ async function signInTemporaryAccount(
   if (page.url().includes('/auth')) {
     throw new Error(`Temporary customization account ${account.id} did not remain signed in.`);
   }
+  await ensureAcceptedTerms(page);
   await ensurePlayableProfile(page);
   await expect(page.getByRole('button', { name: 'Open Menu' }).first()).toBeVisible({
     timeout: 30_000,

@@ -1,7 +1,7 @@
 /**
  * V12 REAL ICM — tournament context derivation + the icmRisk v2 model +
- * spin-format preflop widening. Pure units only (the cache's fetch half is
- * fail-safe by construction and degrades to the V11 flat premium).
+ * spin-format preflop widening. Pure units only; Phase 6 wraps cache misses
+ * and stale reads in an explicit TOURNAMENT_CONTEXT_INCOMPLETE status.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -17,7 +17,8 @@ const icmRisk = (
 
 const row = (over: Record<string, unknown> = {}) => ({
   tournament_type: 'MTT',
-  variant: 'nlh',
+  game_type: 'NLH',
+  variant: 'freezeout',
   max_players: 100,
   table_size: 9,
   // V13: shaped like production. All 14,280 live rows are arrays carrying an
@@ -87,14 +88,16 @@ describe('TournamentBrainContext V12 - derivation', () => {
     expect(deriveContext(row() as never, 8, 60, 8000).avgStackChips).toBe(1000);
   });
 
-  it('spins default to winner-take-all when the structure is empty', () => {
+  it('does not invent winner-take-all when a Spin payout is unresolved', () => {
     const c = deriveContext(
       row({ tournament_type: 'SPIN', payout_structure: [] }) as never,
       3,
       3,
       3000
     );
-    expect(c.spotsPaid).toBe(1);
+    expect(c.spotsPaid).toBe(0);
+    expect(c.contextStatus).toBe('incomplete');
+    expect(c.contextIssues).toContain('payout_or_ticket_structure_missing');
   });
 
   it('computes the PKO bounty factor', () => {
@@ -153,6 +156,24 @@ describe('HorseLogic V12 - icmRisk v2', () => {
   it('legacy V7 flags keep their exact behavior', () => {
     expect(icmRisk(gs({ nearBubble: true }), 30)).toBeCloseTo(0.08, 5);
     expect(icmRisk(gs({ inMoney: true }), 70)).toBeCloseTo(0.01, 5);
+  });
+
+  it('does not let an explicitly incomplete Phase 6 payout snapshot steer ICM', () => {
+    const baseline = icmRisk(gs(undefined), 30);
+    const incomplete = icmRisk(
+      gs({
+        schemaVersion: 1,
+        contextStatus: 'incomplete',
+        playersLeft: 11,
+        spotsPaid: 10,
+        avgStackChips: 2000,
+        stacks: [3000, 2000, 1000],
+        payoutPct: [50, 30, 20],
+      }),
+      30
+    );
+    expect(incomplete).toBe(baseline);
+    expect(incomplete).toBeLessThan(icmRisk(gs({ playersLeft: 11, spotsPaid: 10 }), 30));
   });
 });
 

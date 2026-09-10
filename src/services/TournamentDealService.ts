@@ -197,7 +197,8 @@ export type TournamentDealReviewPhase =
   | 'reviewing'
   | 'completed'
   | 'cancelled'
-  | 'expired';
+  | 'expired'
+  | 'legacy';
 export interface TournamentDealReviewState {
   actorId: string;
   tournamentId: string;
@@ -207,6 +208,8 @@ export interface TournamentDealReviewState {
   proposalId: string | null;
   revision: string | null;
   proposal: TournamentDealProposal | null;
+  /** Present only after an explicit inactive-authority response. */
+  legacyVoterIds?: string[];
 }
 function deadline(value: unknown): string {
   if (
@@ -272,6 +275,28 @@ export function getTournamentDealReview(
         })
         .abortSignal(attemptSignal);
       if (error) throw error;
+      if (isProposalAuthorityInactive(data)) {
+        const { data: votes, error: voteError } = await supabase
+          .from('tournament_deal_votes')
+          .select('user_id')
+          .eq('tournament_id', tournamentId)
+          .abortSignal(attemptSignal);
+        if (voteError) throw voteError;
+        if (!Array.isArray(votes)) throw invalid();
+        const voterIds = votes.map((vote) => uuid(object(vote).user_id));
+        if (new Set(voterIds).size !== voterIds.length) throw invalid();
+        return {
+          actorId,
+          tournamentId,
+          state: 'legacy',
+          reviewId: null,
+          expiresAt: null,
+          proposalId: null,
+          revision: null,
+          proposal: null,
+          legacyVoterIds: voterIds,
+        };
+      }
       const review = parseTournamentDealReview(data, tournamentId, actorId);
       if (review.state === 'reviewing')
         review.proposal = await readDealProposal(tournamentId, actorId, review, attemptSignal);
@@ -330,6 +355,51 @@ export function cancelTournamentDealReview(
         !['cancelled', 'expired', 'completed'].includes(result.state)
       )
         throw invalid();
+    },
+    { signal }
+  );
+}
+
+/** Only the authority's explicit inactive response permits the pre-cutover contract. */
+function isProposalAuthorityInactive(raw: unknown): boolean {
+  return Boolean(
+    raw &&
+    typeof raw === 'object' &&
+    !Array.isArray(raw) &&
+    (raw as Record<string, unknown>).ok === false &&
+    (raw as Record<string, unknown>).reason === 'proposal_authority_not_active'
+  );
+}
+
+/** Keep existing votes reachable before activation; never downgrade an exact proposal vote. */
+export function castLegacyTournamentDealVote(
+  review: TournamentDealReviewState,
+  signal?: AbortSignal
+): Promise<void> {
+  return runWithRequestDeadline(
+    async (attemptSignal) => {
+      if (review.state !== 'legacy') throw invalid();
+      await requireReviewActor(review.actorId, attemptSignal);
+      const capability = await supabase
+        .rpc('fn_get_tournament_deal_review', {
+          p_tournament_id: review.tournamentId,
+        })
+        .abortSignal(attemptSignal);
+      if (capability.error) throw capability.error;
+      if (!isProposalAuthorityInactive(capability.data))
+        throw new Error('Deal Review Changed. Refresh Before Voting.');
+      // The one-argument legacy RPC derives its actor from auth.uid(); it does not
+      // accept the new contract's expected-actor argument. Check auth again after
+      // the capability read, but do not claim that this removes the token race.
+      await requireReviewActor(review.actorId, attemptSignal);
+      const { data, error } = await supabase
+        .rpc('fn_cast_tournament_deal_vote', {
+          p_tournament_id: review.tournamentId,
+        })
+        .abortSignal(attemptSignal);
+      if (error) throw error;
+      const result = successful(data);
+      if (result.voted !== true || typeof result.already !== 'boolean') throw invalid();
     },
     { signal }
   );

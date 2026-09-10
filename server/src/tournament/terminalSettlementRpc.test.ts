@@ -438,3 +438,90 @@ describe('terminal replay disagreement is not retried forever', () => {
     });
   });
 });
+
+describe('Legacy terminal admission requires explicit inactive authority', () => {
+  const inactive = { data: { ok: false, reason: 'proposal_authority_not_active' }, error: null };
+  const options = {
+    legacyDealAuthority: 'proposal_authority_not_active' as const,
+    attempts: 2,
+    wait: noWait,
+  };
+  beforeEach(() => {
+    vi.resetAllMocks();
+    mocks.verify.mockReturnValue(RECEIPT);
+  });
+  it('rechecks the live authority before sending the existing terminal contract', async () => {
+    mocks.rpc
+      .mockResolvedValueOnce(inactive)
+      .mockResolvedValueOnce({ data: { stored: true }, error: null });
+    await expect(
+      requestTournamentTerminalReceipt(TOURNAMENT_ID, 'final_table_deal', null, options)
+    ).resolves.toBe(RECEIPT);
+    expect(mocks.rpc.mock.calls.map(([name]) => name)).toEqual([
+      'fn_get_tournament_deal_consensus',
+      'fn_complete_tournament_terminal',
+    ]);
+  });
+  it.each([
+    { data: { ok: true, ready: false }, error: null },
+    { data: inactive.data, error: { message: 'timeout' } },
+    { data: { ok: false, reason: 'review_stale' }, error: null },
+    { data: null, error: null },
+  ])('never sends legacy money on active, invalid or uncertain capability', async (result) => {
+    mocks.rpc.mockResolvedValue(result);
+    await expect(
+      requestTournamentTerminalReceipt(TOURNAMENT_ID, 'final_table_deal', null, options)
+    ).rejects.toBeInstanceOf(TerminalSettlementRefusedError);
+    expect(mocks.rpc).toHaveBeenCalledTimes(1);
+  });
+  it('serializes the resolver after activation rejects an already-attempted legacy settlement', async () => {
+    mocks.rpc
+      .mockResolvedValueOnce(inactive)
+      .mockResolvedValueOnce({
+        data: null,
+        error: { code: '23514', message: 'exact proposal required' },
+      })
+      .mockResolvedValueOnce({ data: { ok: true, ready: false }, error: null })
+      .mockResolvedValueOnce(resolvedOutcome('final_table_deal', false, 'RUNNING'));
+    await expect(
+      requestTournamentTerminalReceipt(TOURNAMENT_ID, 'final_table_deal', null, options)
+    ).rejects.toBeInstanceOf(TerminalSettlementRefusedError);
+    expect(
+      mocks.rpc.mock.calls.filter(([name]) => name === 'fn_complete_tournament_terminal')
+    ).toHaveLength(1);
+    expect(mocks.rpc).toHaveBeenLastCalledWith('fn_resolve_tournament_terminal_outcome', {
+      p_tournament_id: TOURNAMENT_ID,
+      p_observed_winner_id: null,
+      p_settlement_mode: 'final_table_deal',
+    });
+  });
+  it('adopts a committed legacy receipt after a lost response and subsequent activation', async () => {
+    mocks.rpc
+      .mockResolvedValueOnce(inactive)
+      .mockResolvedValueOnce({ data: null, error: { message: 'response lost' } })
+      .mockResolvedValueOnce({ data: { ok: true, ready: false }, error: null })
+      .mockResolvedValueOnce(resolvedOutcome('final_table_deal', true, 'COMPLETED'));
+    await expect(
+      requestTournamentTerminalReceipt(TOURNAMENT_ID, 'final_table_deal', null, options)
+    ).resolves.toBe(RECEIPT);
+  });
+  it('never treats an unavailable post-activation resolver as a failed transaction', async () => {
+    mocks.rpc
+      .mockResolvedValueOnce(inactive)
+      .mockResolvedValueOnce({ data: null, error: { message: 'response lost' } })
+      .mockResolvedValueOnce({ data: { ok: true, ready: false }, error: null })
+      .mockResolvedValueOnce({ data: null, error: { message: 'resolver unavailable' } });
+    await expect(
+      requestTournamentTerminalReceipt(TOURNAMENT_ID, 'final_table_deal', null, options)
+    ).rejects.toBeInstanceOf(TerminalSettlementOutcomeUnknownError);
+  });
+  it('never accepts legacy opt-in together with an exact proposal', async () => {
+    await expect(
+      requestTournamentTerminalReceipt(TOURNAMENT_ID, 'final_table_deal', null, {
+        ...options,
+        dealProposal: PROPOSAL,
+      })
+    ).rejects.toBeInstanceOf(TerminalSettlementRefusedError);
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+});

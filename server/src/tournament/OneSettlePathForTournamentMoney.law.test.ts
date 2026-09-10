@@ -10,6 +10,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join, relative } from 'node:path';
+import { sliceMethod } from '../testHelpers/sourceWindow.js';
 
 const SERVER_SRC = join(__dirname, '..');
 const BANNED_RPCS = [
@@ -109,11 +110,7 @@ describe('one terminal authority owns each tournament finish', () => {
     const source = stripComments(
       readFileSync(join(__dirname, 'TournamentManagerEliminations.ts'), 'utf8')
     );
-    const start = source.indexOf('private async completeFinalTableDealAtBoundary');
-    const end = source.indexOf('private async settleFinalTableDeal', start);
-    expect(start).toBeGreaterThanOrEqual(0);
-    expect(end).toBeGreaterThan(start);
-    const deal = source.slice(start, end);
+    const deal = sliceMethod(source, 'completeFinalTableDealAtBoundary(\n    tableId: string,');
     expect(deal.match(/requestTournamentTerminalReceipt\s*\(/g)).toHaveLength(1);
     expect(deal).toMatch(
       /requestTournamentTerminalReceipt\(\s*this\.tournamentId,\s*'final_table_deal',\s*null,\s*\{\s*dealProposal:\s*\{\s*proposalId:\s*consensus\.proposalId,\s*revision:\s*consensus\.revision\s*\}\s*\}\s*\)/

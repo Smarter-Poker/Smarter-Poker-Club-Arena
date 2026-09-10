@@ -3557,6 +3557,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
   /** Long enough for a full live hand plus the guarantee and settlement calls. */
   private static readonly FINAL_TABLE_DEAL_PAUSE_MS = 15 * 60_000;
   private lastDealPollAt = 0;
+  private proposalAuthorityObserved = false;
   private lastDealVoteCount = -1;
   private finalTableDealReview: {
     reviewId: string;
@@ -3849,7 +3850,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
   private async readFinalTableDealConsensus(
     alive: ReadonlyArray<{ user_id: string }>,
     beginReviewId?: string
-  ): Promise<FinalTableDealConsensus | null> {
+  ): Promise<FinalTableDealConsensus | 'proposal_authority_not_active' | null> {
     let result;
     try {
       result = beginReviewId
@@ -3865,6 +3866,15 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     }
     if (!result || typeof result !== 'object') return null;
     const { data, error } = result;
+    if (
+      !error &&
+      data &&
+      typeof data === 'object' &&
+      !Array.isArray(data) &&
+      data.ok === false &&
+      data.reason === 'proposal_authority_not_active'
+    )
+      return 'proposal_authority_not_active';
     if (
       error ||
       !data ||
@@ -4051,6 +4061,12 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       }
 
       let consensus = await this.readFinalTableDealConsensus(alive);
+      if (consensus === 'proposal_authority_not_active') {
+        if (this.finalTableDealReview || this.proposalAuthorityObserved)
+          return this.closeFinalTableDealReview('stale');
+        return this.checkLegacyFinalTableDeal();
+      }
+      if (consensus) this.proposalAuthorityObserved = true;
       if (!consensus) {
         if (!this.finalTableDealReview) return true;
         this.requestUrgentEliminationSweepAfter(TournamentManagerBase.FINAL_TABLE_DEAL_POLL_MS);
@@ -4115,7 +4131,11 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           parkedAlive,
           this.finalTableDealReview.reviewId
         );
-        if (!consensus || consensus.reviewId !== this.finalTableDealReview.reviewId) {
+        if (
+          !consensus ||
+          consensus === 'proposal_authority_not_active' ||
+          consensus.reviewId !== this.finalTableDealReview.reviewId
+        ) {
           return this.closeFinalTableDealReview('stale');
         }
         if (
@@ -4268,6 +4288,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
 
     const consensus = await this.readFinalTableDealConsensus(alive);
     if (
+      consensus === 'proposal_authority_not_active' ||
       !consensus?.ready ||
       consensus.reviewState !== 'reviewing' ||
       consensus.reviewId !== expectedConsensus.reviewId ||
@@ -4293,6 +4314,212 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       'final_table_deal',
       null,
       { dealProposal: { proposalId: consensus.proposalId, revision: consensus.revision } }
+    );
+    const aliveUsers = new Set(alive.map((player: { user_id: string }) => player.user_id));
+    const payoutShapeIsExact =
+      receipt.dealShares.length === alive.length &&
+      receipt.dealShares.every(
+        (share) => aliveUsers.has(share.userId) && Number.isFinite(share.amount) && share.amount > 0
+      );
+    if (!payoutShapeIsExact) {
+      throw new TerminalSettlementCommittedError(
+        receipt,
+        'Committed final-table receipt did not match the physically parked live roster'
+      );
+    }
+
+    this.committedFinalTableDealReceipt = receipt;
+    this.committedFinalTableDealCleanupPending = true;
+    return this.settleFinalTableDeal(receipt);
+  }
+
+  /** Pre-cutover behavior, reachable only after authoritative inactivity. */
+  private async checkLegacyFinalTableDeal(): Promise<boolean> {
+    if (this.committedFinalTableDealCleanupPending && this.committedFinalTableDealReceipt) {
+      return this.settleFinalTableDeal(this.committedFinalTableDealReceipt);
+    }
+    if (this.finalTableDealHandled || this.tournamentFinished) return true;
+
+    const t = this.tournamentCache as {
+      status?: string;
+      final_table_deal_enabled?: boolean;
+      table_size?: number;
+      variant?: string;
+      tournament_type?: string;
+      satellite_target_id?: string | null;
+      satellite_target?: string | null;
+    } | null;
+    if (!t || t.final_table_deal_enabled !== true || t.status !== 'RUNNING') return true;
+
+    // A satellite has a separate whole-format receipt and can never enter the
+    // cash prize-chop authority, regardless of which legacy marker identifies it.
+    const isSatelliteDeal =
+      String(t.variant ?? '').toLowerCase() === 'satellite' ||
+      String(t.tournament_type ?? '').toUpperCase() === 'SATELLITE' ||
+      Boolean(t.satellite_target_id || t.satellite_target);
+    if (isSatelliteDeal) return true;
+
+    const tableSize = Math.max(2, Number(t.table_size) || 9);
+
+    try {
+      const { data: alive, error: aliveError } = await supabase
+        .from('tournament_players')
+        .select('user_id')
+        .eq('tournament_id', this.tournamentId)
+        .eq('status', 'playing');
+      if (aliveError || !alive || alive.length < 2 || alive.length > tableSize) return true;
+
+      const { data: votes, error: votesError } = await supabase
+        .from('tournament_deal_votes')
+        .select('user_id')
+        .eq('tournament_id', this.tournamentId);
+      if (votesError || !votes) return true;
+
+      const voters = new Set(votes.map((vote: { user_id: string }) => vote.user_id));
+      if (voters.size !== this.lastDealVoteCount) {
+        this.lastDealVoteCount = voters.size;
+        await this.broadcast('final_table_deal_votes', {
+          votes: voters.size,
+          required: alive.length,
+        });
+      }
+      if (!alive.every((player: { user_id: string }) => voters.has(player.user_id))) return true;
+      if (isMaintenanceFrozen() || this.isOnBreak() || this.handForHandActive) return false;
+
+      const held = await this.authoritativeFinalTableDealEngine();
+      if (!held) return false;
+
+      this.finalTableDealHandled = true;
+      this.tournamentFinished = true;
+      const { tableId, engine } = held;
+      try {
+        return await this.completeLegacyFinalTableDealAtBoundary(tableId, engine, tableSize);
+      } catch (err) {
+        const committedReceipt =
+          err instanceof TerminalSettlementCommittedError
+            ? err.receipt
+            : this.committedFinalTableDealReceipt;
+        const outcomeUnknown = err instanceof TerminalSettlementOutcomeUnknownError;
+        const provenRefusal = err instanceof TerminalSettlementRefusedError;
+        if (committedReceipt) {
+          this.committedFinalTableDealReceipt = committedReceipt;
+          this.committedFinalTableDealCleanupPending = true;
+          reportError(err, 'Tournament.final_table_deal_committed_tail_failed');
+          return this.settleFinalTableDeal(committedReceipt);
+        }
+        if (!provenRefusal) {
+          const alertCode = outcomeUnknown
+            ? 'Tournament.final_table_deal_outcome_unknown'
+            : 'Tournament.final_table_deal_unclassified_failure';
+          reportError(err, alertCode);
+          try {
+            await raiseFinancialAlert(
+              'critical',
+              alertCode,
+              outcomeUnknown
+                ? 'Final-table deal may have committed, but its immutable terminal receipt could not be resolved. The tournament manager and every dealer were fenced.'
+                : 'Final-table deal failed without a proven pre-commit refusal. The tournament manager and every dealer were fenced until the terminal result is resolved.',
+              {
+                tournament_id: this.tournamentId,
+                outcome_unknown: outcomeUnknown,
+                error: err instanceof Error ? err.message : String(err),
+              }
+            );
+          } catch (alertError) {
+            reportError(alertError, 'Tournament.final_table_deal_alert_failed', {
+              tournamentId: this.tournamentId,
+              alertCode,
+            });
+          }
+          this.fenceUnknownTerminalOutcome('Tournament.final_table_deal_manager_stop_failed');
+          return false;
+        }
+
+        // Only the serialized resolver or an explicit pre-RPC boundary check
+        // may prove that no terminal transaction committed and lift the gate.
+        engine.releaseTerminalCloseoutPause();
+        this.finalTableDealHandled = false;
+        this.tournamentFinished = false;
+        reportError(err, 'Tournament.final_table_deal_refused');
+        return false;
+      }
+    } catch (err) {
+      reportError(err, 'Tournament.final_table_deal_poll_failed');
+      return false;
+    }
+  }
+
+  /**
+   * Re-prove the unanimous deal only after the engine has installed its hard
+   * between-hands gate. The terminal RPC is the first and only durable writer.
+   */
+  private async completeLegacyFinalTableDealAtBoundary(
+    tableId: string,
+    engine: ServerTableEngine,
+    tableSize: number
+  ): Promise<boolean> {
+    const parked = await engine.parkForTerminalCloseout(
+      TournamentManagerEliminations.FINAL_TABLE_DEAL_PAUSE_MS
+    );
+    if (!parked) {
+      throw new TerminalSettlementRefusedError(
+        `Final-table deal could not prove a durable, fully settled hand boundary for ${tableId}`
+      );
+    }
+    if (
+      isMaintenanceFrozen() ||
+      this.isOnBreak() ||
+      this.handForHandActive ||
+      this.tableEngines.get(tableId) !== engine ||
+      this.gameServer.getTableEngine(tableId) !== engine ||
+      !engine.isRunning()
+    ) {
+      throw new TerminalSettlementRefusedError('Final-table deal engine authority changed');
+    }
+
+    const { data: alive, error: aliveError } = await supabase
+      .from('tournament_players')
+      .select('user_id, chips')
+      .eq('tournament_id', this.tournamentId)
+      .eq('status', 'playing');
+    if (
+      aliveError ||
+      !alive ||
+      alive.length < 2 ||
+      alive.length > tableSize ||
+      alive.some(
+        (player: { user_id?: string | null; chips?: number | string | null }) =>
+          !player.user_id || !Number.isFinite(Number(player.chips)) || Number(player.chips) <= 0
+      )
+    ) {
+      throw new TerminalSettlementRefusedError('Final-table deal live stack snapshot is invalid');
+    }
+
+    const { data: votes, error: votesError } = await supabase
+      .from('tournament_deal_votes')
+      .select('user_id')
+      .eq('tournament_id', this.tournamentId);
+    const voters = new Set((votes ?? []).map((vote: { user_id: string }) => vote.user_id));
+    if (
+      votesError ||
+      !votes ||
+      voters.size !== alive.length ||
+      !alive.every((player: { user_id: string }) => voters.has(player.user_id)) ||
+      isMaintenanceFrozen() ||
+      this.isOnBreak() ||
+      this.handForHandActive ||
+      this.tableEngines.get(tableId) !== engine ||
+      this.gameServer.getTableEngine(tableId) !== engine ||
+      !engine.isRunning()
+    ) {
+      throw new TerminalSettlementRefusedError('Final-table deal unanimity or authority changed');
+    }
+
+    const receipt = await requestTournamentTerminalReceipt(
+      this.tournamentId,
+      'final_table_deal',
+      null,
+      { legacyDealAuthority: 'proposal_authority_not_active' }
     );
     const aliveUsers = new Set(alive.map((player: { user_id: string }) => player.user_id));
     const payoutShapeIsExact =

@@ -1,11 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-const mocks = vi.hoisted(() => ({ rpc: vi.fn(), auth: vi.fn() }));
+const mocks = vi.hoisted(() => ({ rpc: vi.fn(), auth: vi.fn(), votes: vi.fn(), from: vi.fn() }));
 vi.mock('../../src/lib/supabase', () => ({
-  supabase: { rpc: (...args: unknown[]) => ({ abortSignal: () => mocks.rpc(...args) }) },
+  supabase: {
+    rpc: (...args: unknown[]) => ({ abortSignal: () => mocks.rpc(...args) }),
+    from: (...args: unknown[]) => {
+      mocks.from(...args);
+      return { select: () => ({ eq: () => ({ abortSignal: () => mocks.votes() }) }) };
+    },
+  },
   getAuthUser: mocks.auth,
 }));
 import {
   castTournamentDealVote,
+  castLegacyTournamentDealVote,
   formatDealCents,
   getTournamentDealProposal,
   parseTournamentDealProposal,
@@ -57,6 +64,8 @@ function payload() {
 }
 beforeEach(() => {
   mocks.rpc.mockReset();
+  mocks.from.mockReset();
+  mocks.votes.mockReset().mockResolvedValue({ data: [{ user_id: actor }], error: null });
   mocks.auth.mockReset().mockResolvedValue({ data: { user: { id: actor } }, error: null });
 });
 
@@ -336,4 +345,69 @@ describe('Review mutation actor identity across token acquisition', () => {
       expect(mocks.rpc.mock.calls[0][1].p_expected_actor_id).toBe(actor);
     }
   );
+});
+
+describe('Inactive authority preserves the existing vote contract', () => {
+  const inactive = { data: { ok: false, reason: 'proposal_authority_not_active' }, error: null };
+  const legacy = (): TournamentDealReviewState => ({
+    actorId: actor,
+    tournamentId: event,
+    state: 'legacy',
+    reviewId: null,
+    expiresAt: null,
+    proposalId: null,
+    revision: null,
+    proposal: null,
+    legacyVoterIds: [],
+  });
+  it('reads existing votes only after an explicit inactive response', async () => {
+    mocks.rpc.mockResolvedValue(inactive);
+    const state = await getTournamentDealReview(event, actor);
+    expect(state.state).toBe('legacy');
+    expect(state.legacyVoterIds).toEqual([actor]);
+    expect(mocks.from).toHaveBeenCalledExactlyOnceWith('tournament_deal_votes');
+  });
+  it.each([
+    { data: null, error: { message: 'timeout' } },
+    { data: inactive.data, error: { message: 'transport failure' } },
+    { data: { ok: false, reason: 'review_stale' }, error: null },
+    { data: { ok: true, reason: 'proposal_authority_not_active' }, error: null },
+    { data: null, error: null },
+  ])('never reads legacy votes on errors, stale or malformed responses', async (response) => {
+    mocks.rpc.mockResolvedValue(response);
+    await expect(getTournamentDealReview(event, actor)).rejects.toThrow();
+    expect(mocks.from).not.toHaveBeenCalled();
+  });
+  it('rechecks inactivity and actor before the one-argument legacy vote', async () => {
+    mocks.rpc.mockResolvedValueOnce(inactive).mockResolvedValueOnce({
+      data: { ok: true, voted: true, already: false },
+      error: null,
+    });
+    await castLegacyTournamentDealVote(legacy());
+    expect(mocks.rpc.mock.calls.map(([name]) => name)).toEqual([
+      'fn_get_tournament_deal_review',
+      'fn_cast_tournament_deal_vote',
+    ]);
+    expect(mocks.rpc).toHaveBeenLastCalledWith('fn_cast_tournament_deal_vote', {
+      p_tournament_id: event,
+    });
+    expect(mocks.auth).toHaveBeenCalledTimes(2);
+  });
+  it('does not vote if activation wins before the capability recheck', async () => {
+    mocks.rpc.mockResolvedValue({ data: reviewPayload('none'), error: null });
+    await expect(castLegacyTournamentDealVote(legacy())).rejects.toThrow('Deal Review Changed');
+    expect(mocks.rpc).toHaveBeenCalledTimes(1);
+  });
+  it('does not vote if the account changes while checking capability', async () => {
+    mocks.rpc.mockResolvedValue(inactive);
+    mocks.auth
+      .mockResolvedValueOnce({ data: { user: { id: actor } }, error: null })
+      .mockResolvedValueOnce({ data: { user: { id: other } }, error: null });
+    await expect(castLegacyTournamentDealVote(legacy())).rejects.toThrow('Your Account Changed');
+    expect(mocks.rpc).toHaveBeenCalledTimes(1);
+  });
+  it('does not downgrade an exact review into legacy voting', async () => {
+    await expect(castLegacyTournamentDealVote(review())).rejects.toThrow();
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
 });

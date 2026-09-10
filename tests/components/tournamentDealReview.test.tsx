@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   get: vi.fn(),
   vote: vi.fn(),
+  legacyVote: vi.fn(),
   request: vi.fn(),
   cancel: vi.fn(),
   report: vi.fn(),
@@ -13,6 +14,7 @@ vi.mock('../../src/services/TournamentDealService', async (original) => ({
   requestTournamentDealReview: mocks.request,
   cancelTournamentDealReview: mocks.cancel,
   castTournamentDealVote: mocks.vote,
+  castLegacyTournamentDealVote: mocks.legacyVote,
 }));
 vi.mock('../../src/utils/errorReporter', () => ({ reportError: mocks.report }));
 import TournamentDealReview from '../../src/components/tournament/TournamentDealReview';
@@ -73,6 +75,7 @@ beforeEach(() => {
   mocks.request.mockReset().mockResolvedValue(undefined);
   mocks.cancel.mockReset().mockResolvedValue(undefined);
   mocks.vote.mockReset().mockResolvedValue(undefined);
+  mocks.legacyVote.mockReset().mockResolvedValue(undefined);
   mocks.report.mockClear();
 });
 afterEach(() => {
@@ -327,5 +330,57 @@ describe('Authoritative review transitions', () => {
     ).toBeTruthy();
     expect(screen.queryByText('The Review Cancellation Was Recorded.')).toBeNull();
     expect(mocks.vote).not.toHaveBeenCalled();
+  });
+});
+
+describe('Deal rollout compatibility on the screen', () => {
+  const legacy = (voterIds: string[] = []): TournamentDealReviewState => ({
+    ...reviewState('none'),
+    state: 'legacy',
+    legacyVoterIds: voterIds,
+  });
+  it('shows and submits the existing vote only for authoritative inactive state', async () => {
+    mocks.get.mockResolvedValue(legacy([other]));
+    mount();
+    const button = await screen.findByRole('button', { name: 'Vote For Deal' });
+    expect(screen.getByText('1/2 Votes')).toBeTruthy();
+    mocks.get.mockResolvedValue(legacy([actor, other]));
+    fireEvent.click(button);
+    await screen.findByText('Your Vote Is In.');
+    expect(mocks.legacyVote).toHaveBeenCalledExactlyOnceWith(
+      legacy([other]),
+      expect.any(AbortSignal)
+    );
+    expect(mocks.vote).not.toHaveBeenCalled();
+    expect(mocks.request).not.toHaveBeenCalled();
+  });
+  it('switches to exact review when activation wins before a legacy vote', async () => {
+    mocks.get.mockResolvedValue(legacy());
+    mocks.legacyVote.mockRejectedValue(new Error('Deal Review Changed. Refresh Before Voting.'));
+    mount();
+    const button = await screen.findByRole('button', { name: 'Vote For Deal' });
+    mocks.get.mockResolvedValue(reviewState());
+    fireEvent.click(button);
+    await screen.findByRole('button', { name: 'Agree To This Split' });
+    expect(screen.queryByRole('button', { name: 'Vote For Deal' })).toBeNull();
+    expect(screen.queryByText('Your Deal Vote Was Recorded.')).toBeNull();
+    expect(mocks.vote).not.toHaveBeenCalled();
+  });
+  it('never restores legacy voting after this context observed active review authority', async () => {
+    mount();
+    const button = await screen.findByRole('button', { name: 'Agree To This Split' });
+    mocks.vote.mockRejectedValue(new Error('Unavailable'));
+    mocks.get.mockResolvedValue(legacy());
+    fireEvent.click(button);
+    await screen.findByRole('alert');
+    expect(screen.queryByRole('button', { name: 'Vote For Deal' })).toBeNull();
+    expect(mocks.legacyVote).not.toHaveBeenCalled();
+  });
+  it('never offers legacy votes for an unknown read outcome', async () => {
+    mocks.get.mockRejectedValue(new Error('Request deadline exceeded'));
+    mount();
+    await screen.findByRole('alert');
+    expect(screen.queryByRole('button', { name: 'Vote For Deal' })).toBeNull();
+    expect(mocks.legacyVote).not.toHaveBeenCalled();
   });
 });

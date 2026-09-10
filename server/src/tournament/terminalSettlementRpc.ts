@@ -59,6 +59,8 @@ interface TerminalSettlementRetryOptions {
   receiptReadAttempts?: number;
   wait?: (delayMs: number) => Promise<void>;
   dealProposal?: { proposalId: string; revision: string };
+  /** Enables a fresh authoritative inactivity check, never an unconditional downgrade. */
+  legacyDealAuthority?: 'proposal_authority_not_active';
 }
 
 const defaultWait = (delayMs: number): Promise<void> =>
@@ -215,7 +217,10 @@ export async function requestTournamentTerminalReceipt(
   options: TerminalSettlementRetryOptions = {}
 ): Promise<VerifiedTournamentCompletionReceipt> {
   const dealProposal = options.dealProposal ? { ...options.dealProposal } : undefined;
-  if (settlementMode === 'final_table_deal') {
+  const legacyDeal = options.legacyDealAuthority === 'proposal_authority_not_active';
+  if (legacyDeal && (settlementMode !== 'final_table_deal' || dealProposal))
+    throw new TerminalSettlementRefusedError('Legacy authority cannot replace proposal consent');
+  if (settlementMode === 'final_table_deal' && !legacyDeal) {
     if (
       !dealProposal ||
       typeof dealProposal.proposalId !== 'string' ||
@@ -264,6 +269,34 @@ export async function requestTournamentTerminalReceipt(
   let lastFailure = 'terminal settlement returned no receipt';
 
   for (let attempt = 1; attempt <= attempts; attempt++) {
+    if (legacyDeal) {
+      let inactive = false;
+      try {
+        const capability = await supabase.rpc('fn_get_tournament_deal_consensus', {
+          p_tournament_id: tournamentId,
+        });
+        const data = capability?.data;
+        inactive =
+          !capability?.error &&
+          data &&
+          typeof data === 'object' &&
+          !Array.isArray(data) &&
+          data.ok === false &&
+          data.reason === 'proposal_authority_not_active';
+      } catch {
+        /* No authoritative response means no legacy money call. */
+      }
+      if (!inactive) {
+        if (attempt === 1)
+          throw new TerminalSettlementRefusedError(
+            'Legacy deal authority is not confirmed inactive'
+          );
+        // A prior attempt may already have committed. Resolve its immutable
+        // outcome before releasing a dealer; activation is not a proven miss.
+        lastFailure = 'Legacy deal authority changed after an attempted settlement';
+        break;
+      }
+    }
     try {
       const { data, error } = proposalRequest
         ? await supabase.rpc('fn_complete_tournament_terminal_proposal', proposalRequest)

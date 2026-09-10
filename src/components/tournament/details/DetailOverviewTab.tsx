@@ -755,7 +755,7 @@ export default function DetailOverviewTab({
             key={`${tournament.id}:${currentUserId}`}
             tournamentId={tournament.id}
             actorId={currentUserId}
-            players={entries || []}
+            players={aliveList}
           />
         ) : (
           <div className="tl-panel dov-deal">

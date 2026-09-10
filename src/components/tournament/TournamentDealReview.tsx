@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   cancelTournamentDealReview,
   castTournamentDealVote,
+  castLegacyTournamentDealVote,
   formatDealCents,
   getTournamentDealReview,
   requestTournamentDealReview,
@@ -16,8 +17,9 @@ interface Props {
   actorId: string;
   players: Array<{ user_id: string; username?: string | null }>;
 }
-type Action = 'request' | 'vote' | 'cancel';
+type Action = 'request' | 'vote' | 'cancel' | 'legacyVote';
 const statusText = {
+  legacy: 'A Deal Happens When Every Remaining Player Votes.',
   none: 'Request A Deal Review To Pause Play At A Safe Hand Boundary.',
   requested: 'Waiting For Play To Pause At A Safe Hand Boundary.',
   reviewing: 'Play Is Paused While Remaining Players Review This Split.',
@@ -37,6 +39,7 @@ export default function TournamentDealReview({ tournamentId, actorId, players }:
   const context = useRef(0);
   const busyRef = useRef(false);
   const contextAbort = useRef<AbortController | null>(null);
+  const proposalAuthoritySeen = useRef(false);
 
   const refresh = useCallback(async () => {
     if (busyRef.current) return;
@@ -49,6 +52,9 @@ export default function TournamentDealReview({ tournamentId, actorId, players }:
         contextAbort.current?.signal
       );
       if (!alive.current || mine !== request.current) return;
+      if (next.state === 'legacy' && proposalAuthoritySeen.current)
+        throw new Error('Deal Review Changed. Please Retry.');
+      if (next.state !== 'legacy') proposalAuthoritySeen.current = true;
       setReview(next);
       setError(null);
     } catch (failure) {
@@ -73,6 +79,7 @@ export default function TournamentDealReview({ tournamentId, actorId, players }:
     setError(null);
     setReview(null);
     setNotice(null);
+    proposalAuthoritySeen.current = false;
     void refresh();
     const timer = setInterval(() => void refresh(), 15_000);
     return () => {
@@ -90,6 +97,11 @@ export default function TournamentDealReview({ tournamentId, actorId, players }:
   const perform = async (action: Action) => {
     if (!current || loading || busyRef.current) return;
     if (action === 'vote' && (!proposal || proposal.voterIds.includes(actorId))) return;
+    if (
+      action === 'legacyVote' &&
+      (current.state !== 'legacy' || current.legacyVoterIds?.includes(actorId))
+    )
+      return;
     if (action === 'request' && ['requested', 'reviewing'].includes(current.state)) return;
     if (action === 'cancel' && !['requested', 'reviewing'].includes(current.state)) return;
     const actionContext = context.current;
@@ -98,7 +110,9 @@ export default function TournamentDealReview({ tournamentId, actorId, players }:
     ++request.current;
     setNotice(null);
     try {
-      if (action === 'request')
+      if (action === 'legacyVote')
+        await castLegacyTournamentDealVote(current, contextAbort.current?.signal);
+      else if (action === 'request')
         await requestTournamentDealReview(tournamentId, actorId, contextAbort.current?.signal);
       else if (action === 'cancel')
         await cancelTournamentDealReview(current, contextAbort.current?.signal);
@@ -107,11 +121,13 @@ export default function TournamentDealReview({ tournamentId, actorId, players }:
       setNotice({
         proposalId: action === 'vote' ? proposal!.proposalId : null,
         text:
-          action === 'vote'
-            ? 'Your Vote Was Recorded For The Reviewed Split.'
-            : action === 'request'
-              ? 'Your Review Request Was Recorded.'
-              : 'The Review Status Was Confirmed.',
+          action === 'legacyVote'
+            ? 'Your Deal Vote Was Recorded.'
+            : action === 'vote'
+              ? 'Your Vote Was Recorded For The Reviewed Split.'
+              : action === 'request'
+                ? 'Your Review Request Was Recorded.'
+                : 'The Review Status Was Confirmed.',
       });
     } catch (failure) {
       if (!alive.current || actionContext !== context.current) return;
@@ -138,6 +154,11 @@ export default function TournamentDealReview({ tournamentId, actorId, players }:
     <section className="tl-panel dov-deal deal-review" aria-label="Review Final Table Deal">
       <div className="dov-deal__head">
         <h3 className="dov-deal__label">Final Table Deal</h3>
+        {current?.state === 'legacy' && (
+          <span>
+            {current.legacyVoterIds?.length ?? 0}/{players.length} Votes
+          </span>
+        )}
         {proposal && (
           <span>
             {proposal.voterIds.length}/{proposal.shares.length} Votes For This Split
@@ -156,6 +177,19 @@ export default function TournamentDealReview({ tournamentId, actorId, players }:
       {current && (
         <>
           <p role="status">{statusText[current.state]}</p>
+          {current.state === 'legacy' &&
+            (current.legacyVoterIds?.includes(actorId) ? (
+              <p>Your Vote Is In.</p>
+            ) : (
+              <button
+                type="button"
+                className="dov-deal__btn"
+                disabled={loading || busy !== null}
+                onClick={() => void perform('legacyVote')}
+              >
+                {busy === 'legacyVote' ? 'Voting...' : 'Vote For Deal'}
+              </button>
+            ))}
           {['requested', 'reviewing'].includes(current.state) && current.expiresAt && (
             <p>
               {current.state === 'reviewing' ? 'Review Ends At: ' : 'Request Expires At: '}

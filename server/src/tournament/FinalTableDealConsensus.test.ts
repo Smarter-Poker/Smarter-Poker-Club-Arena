@@ -13,6 +13,8 @@ const methods = [
   'readFinalTableDealConsensus(',
   'closeFinalTableDealReview(',
   'checkFinalTableDeal(): Promise<boolean>',
+  'checkLegacyFinalTableDeal(): Promise<boolean>',
+  'completeLegacyFinalTableDealAtBoundary(\n    tableId: string,',
   'completeFinalTableDealAtBoundary(\n    tableId: string,',
 ]
   .map((marker) => 'async ' + sliceMethod(source, marker))
@@ -592,5 +594,74 @@ describe('final-table consent stays bound through the physical hand boundary', (
     await expect(controller.checkFinalTableDeal()).resolves.toBe(false);
     expect(engine.releaseTerminalCloseoutPause).not.toHaveBeenCalled();
     expect(terminal).not.toHaveBeenCalled();
+  });
+});
+
+describe('Explicit inactive authority preserves legacy dealer boundaries', () => {
+  const inactive = { data: { ok: false, reason: 'proposal_authority_not_active' }, error: null };
+  it('uses existing unanimity and the physical boundary only while inactive', async () => {
+    const { controller, rpc, from, terminal, engine } = setup();
+    rpc.mockResolvedValue(inactive);
+    await expect(controller.checkFinalTableDeal()).resolves.toBe(true);
+    expect(from).toHaveBeenCalledWith('tournament_deal_votes');
+    expect(engine.parkForTerminalCloseout).toHaveBeenCalledOnce();
+    expect(terminal).toHaveBeenCalledTimes(1);
+    expect(terminal).toHaveBeenCalledWith(id(10), 'final_table_deal', null, {
+      legacyDealAuthority: 'proposal_authority_not_active',
+    });
+  });
+  it.each([
+    { data: inactive.data, error: { message: 'timeout' } },
+    { data: { ok: false, reason: 'review_stale' }, error: null },
+    { data: { ok: true, reason: 'proposal_authority_not_active' }, error: null },
+    { data: null, error: null },
+  ])('does not read legacy votes for an error or invalid capability', async (response) => {
+    const { controller, rpc, from, terminal, engine } = setup();
+    rpc.mockResolvedValue(response);
+    await expect(controller.checkFinalTableDeal()).resolves.toBe(true);
+    expect(from).not.toHaveBeenCalledWith('tournament_deal_votes');
+    expect(terminal).not.toHaveBeenCalled();
+    expect(engine.parkForTerminalCloseout).not.toHaveBeenCalled();
+  });
+  it('does not downgrade a manager that has observed active authority', async () => {
+    const { controller, rpc, from, terminal } = setup();
+    rpc.mockResolvedValueOnce({
+      data: {
+        ...ready(),
+        review_id: null,
+        review_state: 'none',
+        review_expires_at: null,
+        proposal_id: null,
+        revision: null,
+        voter_ids: [],
+        required: 0,
+        ready: false,
+      },
+      error: null,
+    });
+    await expect(controller.checkFinalTableDeal()).resolves.toBe(true);
+    controller.lastDealPollAt = 0;
+    rpc.mockResolvedValue(inactive);
+    await expect(controller.checkFinalTableDeal()).resolves.toBe(true);
+    expect(from).not.toHaveBeenCalledWith('tournament_deal_votes');
+    expect(terminal).not.toHaveBeenCalled();
+  });
+  it('releases only a proven uncommitted legacy refusal if activation wins the terminal race', async () => {
+    const { controller, rpc, terminal, engine } = setup();
+    rpc.mockResolvedValue(inactive);
+    terminal.mockRejectedValue(new Refused('Exact proposal required after activation'));
+    await expect(controller.checkFinalTableDeal()).resolves.toBe(false);
+    expect(controller.settleFinalTableDeal).not.toHaveBeenCalled();
+    expect(controller.tournamentFinished).toBe(false);
+    expect(engine.releaseTerminalCloseoutPause).toHaveBeenCalledOnce();
+  });
+  it('keeps an ambiguous legacy outcome fenced rather than reporting a deal', async () => {
+    const { controller, rpc, terminal, engine } = setup();
+    rpc.mockResolvedValue(inactive);
+    terminal.mockRejectedValue(new Unknown('Receipt unavailable after activation'));
+    await expect(controller.checkFinalTableDeal()).resolves.toBe(false);
+    expect(controller.settleFinalTableDeal).not.toHaveBeenCalled();
+    expect(controller.fenceUnknownTerminalOutcome).toHaveBeenCalledOnce();
+    expect(engine.releaseTerminalCloseoutPause).not.toHaveBeenCalled();
   });
 });

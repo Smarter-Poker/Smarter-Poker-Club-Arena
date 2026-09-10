@@ -1,0 +1,32 @@
+[
+  {
+    "case": "Negative Control",
+    "pass": true,
+    "observed_lock": {
+      "worker_pid": 77246,
+      "blocking_pids": [77236],
+      "wait_event": "transactionid",
+      "wait_type": "Lock"
+    },
+    "exit_code": 0,
+    "expired_owner_accepted": true,
+    "expired_owner_refused": false,
+    "rollback_state": "RUNNING:0:0",
+    "error": null
+  },
+  {
+    "case": "Corrected Write Boundary",
+    "pass": true,
+    "observed_lock": {
+      "worker_pid": 77858,
+      "blocking_pids": [77855],
+      "wait_event": "transactionid",
+      "wait_type": "Lock"
+    },
+    "exit_code": 3,
+    "expired_owner_accepted": false,
+    "expired_owner_refused": true,
+    "rollback_state": "RUNNING:0:0",
+    "error": "ERROR:  satellite qualification lease expired while acquiring its settled cohort\nCONTEXT:  PL/pgSQL function fn_ca_settle_satellite_terminal(uuid,uuid,uuid[],boolean) line 496 at RAISE\nPL/pgSQL function fn_prepare_satellite_qualification(uuid,uuid[],uuid) line 23 at assignment\n"
+  }
+]

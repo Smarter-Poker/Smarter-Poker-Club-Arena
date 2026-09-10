@@ -18,6 +18,7 @@ import { fieldIsStillLive } from './recoveryFieldGuard.js';
 import { noHandWasEverDealt } from './recoveryRankEvidence.js';
 import {
   requestSatelliteSettlementReceipt,
+  requestSatelliteQualificationReceipt,
   SatelliteSettlementRefusedError,
 } from './satelliteSettlementRpc.js';
 import {
@@ -192,6 +193,33 @@ export async function recoverStuckCompletingTournaments(
         const rows = field.rows;
 
         if (isSatellite) {
+          const { data: boundary, error: boundaryError } = await supabase
+            .from('tournament_satellite_qualification_boundaries')
+            .select('qualified_user_ids')
+            .eq('tournament_id', tournament.id)
+            .maybeSingle();
+          if (boundaryError) {
+            reportError(
+              boundaryError,
+              'GameServer.recoverStuckCompleting_satellite_boundary_unreadable'
+            );
+            continue;
+          }
+          if (boundary) {
+            try {
+              await requestSatelliteQualificationReceipt(
+                tournament.id,
+                boundary.qualified_user_ids
+              );
+            } catch (error) {
+              reportError(
+                error,
+                'GameServer.recoverStuckCompleting_satellite_qualification_pending'
+              );
+            }
+            continue;
+          }
+
           const live = rows.filter(
             (row) => row.status === 'playing' || row.status === 'registered'
           );

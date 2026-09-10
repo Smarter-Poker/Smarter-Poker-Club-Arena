@@ -1,0 +1,38 @@
+{
+  "acl": "{postgres=arwdDxtm/postgres,service_role=r/postgres}",
+  "rls": true,
+  "name": "spin_draw_receipts",
+  "columns": [
+    { "name": "tournament_id", "type": "uuid", "default": null, "notnull": true },
+    { "name": "launch_id", "type": "uuid", "default": null, "notnull": true },
+    { "name": "lease_generation", "type": "uuid", "default": null, "notnull": true },
+    { "name": "rule_manifest", "type": "jsonb", "default": null, "notnull": true },
+    { "name": "rule_sha256", "type": "text", "default": null, "notnull": true },
+    { "name": "entrants", "type": "jsonb", "default": null, "notnull": true },
+    { "name": "receipt", "type": "jsonb", "default": null, "notnull": true },
+    {
+      "name": "created_at",
+      "type": "timestamp with time zone",
+      "default": "transaction_timestamp()",
+      "notnull": true
+    }
+  ],
+  "triggers": [
+    {
+      "name": "spin_draw_receipt_is_immutable",
+      "definition": "CREATE TRIGGER spin_draw_receipt_is_immutable BEFORE DELETE OR UPDATE ON public.spin_draw_receipts FOR EACH ROW EXECUTE FUNCTION trg_spin_draw_receipt_is_immutable()",
+      "function_definition": "CREATE OR REPLACE FUNCTION public.trg_spin_draw_receipt_is_immutable()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nBEGIN\n  RAISE EXCEPTION 'A booked Spin draw receipt is immutable' USING ERRCODE = '23514';\nEND;\n$function$\n"
+    }
+  ],
+  "constraints": [
+    {
+      "name": "spin_draw_receipts_entrants_check",
+      "definition": "CHECK ((jsonb_array_length(entrants) = 3))"
+    },
+    { "name": "spin_draw_receipts_pkey", "definition": "PRIMARY KEY (tournament_id)" },
+    {
+      "name": "spin_draw_receipts_rule_sha256_check",
+      "definition": "CHECK ((rule_sha256 ~ '^[0-9a-f]{64}$'::text))"
+    }
+  ]
+}

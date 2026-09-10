@@ -36,6 +36,8 @@ export interface SatelliteSourceCloseout {
 
 export interface SatelliteSettlementReceipt {
   receipt_version?: unknown;
+  completion_kind?: unknown;
+  qualifiers?: unknown;
   ok?: unknown;
   fully_settled?: unknown;
   status?: unknown;
@@ -108,6 +110,31 @@ export interface VerifiedSatelliteSettlementReceipt {
   };
   settledAt: string;
 }
+
+/**
+ * Equal qualifiers share an outcome, not a finishing rank. Award positions
+ * in the common money receipt remain immutable payment-line ordinals only.
+ */
+export interface VerifiedSatelliteQualificationReceipt extends Omit<
+  VerifiedSatelliteSettlementReceipt,
+  'receiptVersion' | 'winnerId' | 'winnerAmount'
+> {
+  receiptVersion: 3;
+  completionKind: 'equal_qualifiers';
+  winnerId: null;
+  winnerAmount: null;
+  qualifiers: Array<{
+    userId: string;
+    registrationId: string;
+    awardOrdinal: number;
+    qualifiedChips: number;
+    qualifiedAt: string;
+  }>;
+}
+
+export type VerifiedSatelliteTerminalReceipt =
+  | VerifiedSatelliteSettlementReceipt
+  | VerifiedSatelliteQualificationReceipt;
 
 /**
  * PostgREST normally decodes jsonb, while older clients can return the same
@@ -193,6 +220,34 @@ export function verifySatelliteSettlementReceipt(
   expectedTournamentId: string,
   expectedWinnerId: string
 ): VerifiedSatelliteSettlementReceipt | null {
+  const receipt = verifySatelliteTerminalReceipt(raw, expectedTournamentId, expectedWinnerId);
+  return receipt?.receiptVersion === 2 ? receipt : null;
+}
+
+export function verifySatelliteQualificationReceipt(
+  raw: unknown,
+  expectedTournamentId: string,
+  expectedQualifierIds: readonly string[]
+): VerifiedSatelliteQualificationReceipt | null {
+  const receipt = verifySatelliteTerminalReceipt(raw, expectedTournamentId, expectedQualifierIds);
+  return receipt?.receiptVersion === 3 ? receipt : null;
+}
+
+function verifySatelliteTerminalReceipt(
+  raw: unknown,
+  expectedTournamentId: string,
+  expectedOutcome: string | readonly string[]
+): VerifiedSatelliteTerminalReceipt | null {
+  const qualification = Array.isArray(expectedOutcome);
+  const expectedWinnerId = qualification ? null : (expectedOutcome as string);
+  const expectedQualifierIds = qualification ? (expectedOutcome as readonly string[]) : [];
+  if (
+    qualification &&
+    (expectedQualifierIds.length < 2 ||
+      expectedQualifierIds.some((id) => !uuid(id)) ||
+      new Set(expectedQualifierIds).size !== expectedQualifierIds.length)
+  )
+    return null;
   const receipt = parseSatelliteSettlementReceipt(raw);
   const tournamentId = uuid(receipt.tournament_id);
   const targetId = uuid(receipt.target_id);
@@ -222,7 +277,12 @@ export function verifySatelliteSettlementReceipt(
   const closedAt = canonicalTimestamptz(rawCloseout?.closed_at);
 
   if (
-    receipt.receipt_version !== 2 ||
+    (qualification
+      ? receipt.receipt_version !== 3 ||
+        receipt.completion_kind !== 'equal_qualifiers' ||
+        receipt.winner_id !== null ||
+        receipt.winner_amount !== null
+      : receipt.receipt_version !== 2) ||
     receipt.ok !== true ||
     receipt.fully_settled !== true ||
     receipt.status !== 'COMPLETED' ||
@@ -239,7 +299,7 @@ export function verifySatelliteSettlementReceipt(
     poolCents === null ||
     ticketCents === null ||
     ticketCents <= 0 ||
-    winnerCents === null ||
+    (!qualification && winnerCents === null) ||
     sourceTableCount === null ||
     sourceSeatCount === null ||
     releasedSeatCount === null ||
@@ -328,7 +388,7 @@ export function verifySatelliteSettlementReceipt(
     observedSeats !== seatCount ||
     observedCash !== cashTicketCount ||
     observedTickets !== entryTicketCount ||
-    (ticketAwardCount > 0 && awards[0]?.userId !== winnerId)
+    (!qualification && ticketAwardCount > 0 && awards[0]?.userId !== winnerId)
   ) {
     return null;
   }
@@ -388,13 +448,52 @@ export function verifySatelliteSettlementReceipt(
   }
 
   const expectedWinnerCents = ticketAwardCount > 0 ? ticketCents : remainderCents;
-  if (winnerCents !== expectedWinnerCents) return null;
+  if (!qualification && winnerCents !== expectedWinnerCents) return null;
 
-  return {
-    receiptVersion: 2,
+  const qualifiers: VerifiedSatelliteQualificationReceipt['qualifiers'] = [];
+  if (qualification) {
+    if (
+      remainder !== null ||
+      remainderCents !== 0 ||
+      ticketAwardCount < 2 ||
+      ticketAwardCount !== expectedQualifierIds.length ||
+      releasedSeatCount !== ticketAwardCount ||
+      !Array.isArray(receipt.qualifiers) ||
+      receipt.qualifiers.length !== ticketAwardCount
+    )
+      return null;
+    const sourceRegistrations = new Set<string>();
+    for (const value of receipt.qualifiers) {
+      if (!value || typeof value !== 'object') return null;
+      const q = value as Record<string, unknown>;
+      const userId = uuid(q.user_id);
+      const registrationId = uuid(q.registration_id);
+      const awardOrdinal = positiveInteger(q.award_ordinal);
+      const qualifiedChips = finiteNumericTransport(q.qualified_chips);
+      const qualifiedAt = canonicalTimestamptz(q.qualified_at);
+      if (
+        !userId ||
+        !registrationId ||
+        !awardOrdinal ||
+        qualifiedChips === null ||
+        qualifiedChips <= 0 ||
+        !qualifiedAt ||
+        Date.parse(qualifiedAt) > Date.parse(settledAt) ||
+        !expectedQualifierIds.includes(userId) ||
+        awards[awardOrdinal - 1]?.userId !== userId ||
+        sourceRegistrations.has(registrationId) ||
+        qualifiers.some((prior) => prior.userId === userId)
+      )
+        return null;
+      sourceRegistrations.add(registrationId);
+      qualifiers.push({ userId, registrationId, awardOrdinal, qualifiedChips, qualifiedAt });
+    }
+    qualifiers.sort((a, b) => a.awardOrdinal - b.awardOrdinal);
+  }
+
+  const common = {
     tournamentId,
     targetId,
-    winnerId,
     fieldSize,
     pool: poolCents / 100,
     ticketCost: ticketCents / 100,
@@ -405,7 +504,6 @@ export function verifySatelliteSettlementReceipt(
     awards,
     seats,
     remainder,
-    winnerAmount: winnerCents / 100,
     sourceCloseout: {
       sourceTableCount,
       sourceTableIds,
@@ -417,4 +515,16 @@ export function verifySatelliteSettlementReceipt(
     },
     settledAt,
   };
+  if (qualification) {
+    return {
+      ...common,
+      receiptVersion: 3,
+      completionKind: 'equal_qualifiers',
+      winnerId: null,
+      winnerAmount: null,
+      qualifiers,
+    };
+  }
+  if (!winnerId || winnerCents === null) return null;
+  return { ...common, receiptVersion: 2, winnerId, winnerAmount: winnerCents / 100 };
 }

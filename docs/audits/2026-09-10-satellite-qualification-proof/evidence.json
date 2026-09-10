@@ -1,0 +1,165 @@
+{
+  "captured_at": "2026-09-10T13:30:38.940632+00:00",
+  "worktree_head": "bc69229492f37f71dbb2496b92bd6537c97cabe6",
+  "status": "local_proposal_not_deployed",
+  "native_cases": [
+    {
+      "case": "Cash Cohort Conserves 600 Chips",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "case": "Open Target Registers The Entire Cohort",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "case": "Missing Preparation Refuses Every Payment",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "case": "Wrong Lease Is Refused",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "case": "Expired Lease Is Refused",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "case": "Duplicate Qualifiers Are Refused",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "case": "Different Qualifiers Are Refused",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "case": "A Smaller Cohort Cannot Borrow A Rank",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "case": "A Forged Session Marker Does Not Prepare A Cohort",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "case": "Partial Target Capacity Refuses The Whole Cohort",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "case": "Immutable Boundary Cannot Be Reassigned",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "case": "Last Receipt Failure Rolls Back Every Award",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "case": "Lost Response Replay Returns The Original Receipt",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "case": "Prepared Outcome Is Proven Uncommitted",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "case": "Own Authenticated Read Never Returns Another Participant",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "case": "Capped Qualifier Gets Noncash Ticket With Conserved Escrow",
+      "exit_code": 0,
+      "error": null
+    }
+  ],
+  "lease_race": [
+    {
+      "case": "Negative Control",
+      "pass": true,
+      "observed_lock": {
+        "worker_pid": 77246,
+        "blocking_pids": [77236],
+        "wait_event": "transactionid",
+        "wait_type": "Lock"
+      },
+      "exit_code": 0,
+      "expired_owner_accepted": true,
+      "expired_owner_refused": false,
+      "rollback_state": "RUNNING:0:0",
+      "error": null
+    },
+    {
+      "case": "Corrected Write Boundary",
+      "pass": true,
+      "observed_lock": {
+        "worker_pid": 77858,
+        "blocking_pids": [77855],
+        "wait_event": "transactionid",
+        "wait_type": "Lock"
+      },
+      "exit_code": 3,
+      "expired_owner_accepted": false,
+      "expired_owner_refused": true,
+      "rollback_state": "RUNNING:0:0",
+      "error": "ERROR:  satellite qualification lease expired while acquiring its settled cohort\nCONTEXT:  PL/pgSQL function fn_ca_settle_satellite_terminal(uuid,uuid,uuid[],boolean) line 496 at RAISE\nPL/pgSQL function fn_prepare_satellite_qualification(uuid,uuid[],uuid) line 23 at assignment\n"
+    }
+  ],
+  "server_tests": {
+    "files": 4,
+    "passed": 107,
+    "qualification_cases": 34
+  },
+  "server_build_exit_code": 0,
+  "production_changed": false,
+  "source_gate": {
+    "money_core_md5": "83bf8b297d07bbae671707f24afec271",
+    "receipt_md5": "381b3e0691a2b9303693653f5110d568",
+    "rank_md5": "db9fa6b2c0fbd4e5e4f4ba804722a75c",
+    "required_final_wrapper_md5": "6babe5451efa9bc2bfa12cb0fede27e2",
+    "observed_live_wrapper_md5": "486d0e6729de8d518d7faf0c253b65d3",
+    "missing_live_private_core": "fn_settle_satellite_tournament_seat_exit_core_v2(uuid,uuid)"
+  },
+  "fixture_limits": [
+    "Source600 liability is seeded through real escrow helper; initial purchase collection is not tested here.",
+    "Prior full schema snapshot is refreshed for 15 directly audited relations, 210 exact trigger definitions/states, 164 trigger bodies, plus actual Spin draw and Diamond custody dependency tables. This is not a whole production schema snapshot equivalence claim.",
+    "Five source-manager/seat-exit triggers belong to explicit isolated Stage-B prerequisite; they are absent from current live schema.",
+    "Current live legacy completion claim and six other historical tournament guards are disabled; the fixture mirrors this and the proposal does not reactivate or rewrite them.",
+    "Running-target exact-K physical assignment and process-level cold-recovery integration remain to be verified before full B11 acceptance.",
+    "Threshold crossing below K and nonzero remainder remain outside this exact-K contract."
+  ],
+  "files": {
+    "lease-lock-race.py": "eb8ba74d9b7e5d326560d8f96437c13b9447fd6f6db6e7bd0e8b94df3d1a0b8c",
+    "native-cases.log": "1e39098b7337e6731fb3303a2bed5ef875e124f4c5fa18392effbdf63ca486b2",
+    "lease-lock-race-results.json": "6899c4c797e3d09c76abbdf2edd3d77a18015c8f12c10b4297ca3bed7cf6cdcb",
+    "server-build.log": "7596c34c89803bc9373c4905acc118b580004f7a9d6bd035d0814132300415e9",
+    "native-seed.sql": "e91bf46532cf829ad68cae77fdd6f1f98fd0af14ecf69e5bbc266ef1b278a5f8",
+    "lease-race.log": "0ad80847809bbb8201bccd4abebe540002793f94ac4baafa25b6257eb689d191",
+    "server-tests.log": "86e6499c34e4236b324abe1aa291283e6c47741237b0e5da45683926bbf942b6",
+    "native-cases.py": "1cd22423b6dc95476f87bfc096a3483608d74854a7219e41d0f1df83479e63c8",
+    "native-case-results.json": "d794ce3b014cdc7c2f04498145df1c862113950cd459df6f3cbf9623f100cb81",
+    "catalog/current-native-trigger-functions.json": "233d9a9f1a992759414e3e176805afac39298ff39ce21501652b0fc2db33c5c2",
+    "catalog/current-native-metadata.json": "47353749833968f45939f1297676a000ecfabf7d3038ea8f0733b91c2260b192",
+    "catalog/poker-diamond-custody-exact-fixture.sql": "7031ecb5d3983031ad75036a895763edfdbad08342edf42502288c4a00d009c7",
+    "catalog/current-clear-seat-helpers.json": "c8fb3a6f3dba3d9f15c07834d9c06ec20cbad59a0fb626180b6bd57f55d41fec",
+    "catalog/current-clear-seat-helpers.sql": "b080f99f9d1286c30b1b111c66bd8f0ef420aa9ae4a21dc3658914df54fc97e8",
+    "catalog/current-native-parity.sql": "949d00b7fb180552857b469cb08609e556c4533b333779f6315da3c5550f4a7a",
+    "catalog/local-explicit-prerequisites.sql": "0e656285e4655324414955ca8a1ccca9435dd04dc8cfed655e08244844f21f2a",
+    "catalog/current-native-trigger-states.sql": "e23f2e37fa37883e781d9574a8586c03b936270b3118f94a577d8ecf529f758a",
+    "catalog/spin-draw-metadata.json": "d709304899e5cb6cf3ac2921255d0cc8b61dd5e471e473771f73a4fe2e1096a5",
+    "catalog/poker-diamond-custody-metadata.json": "122c0f13247a3c454306aa67c6c349ad303dce4d46dc05867273197d81d3e32c",
+    "catalog/native-catalog-query.sql": "5c1f7316a569486adc65c7d31b7695802c5f7a0fcce8df3e8d928693a6b29e32",
+    "catalog/spin-draw-exact-fixture.sql": "f36fde45a108d0428d46e1e875d63c95e561ebefb5bb9d4de95d5814f5aad154"
+  }
+}

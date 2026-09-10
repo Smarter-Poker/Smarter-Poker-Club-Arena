@@ -1,0 +1,20 @@
+[
+  {
+    "acl": "{postgres=X/postgres,service_role=X/postgres}",
+    "body_md5": "77722514f6a71eb83df6cea2b7016123",
+    "signature": "fn_clear_seats_on_game_end()",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_clear_seats_on_game_end()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'extensions'\nAS $function$\nDECLARE\n  v_table uuid;\nBEGIN\n  IF NEW.status IN ('COMPLETED', 'CANCELLED')\n     AND COALESCE(OLD.status, '') IS DISTINCT FROM NEW.status THEN\n    FOR v_table IN\n      SELECT id FROM public.tables WHERE tournament_id = NEW.id\n    LOOP\n      -- Never reopen a table whose game is over: the recycler builds the next\n      -- spin its own fresh table. What must not survive is the seat rows.\n      PERFORM public.fn_clear_table_seats(v_table, false);\n    END LOOP;\n  END IF;\n  RETURN NEW;\nEND;\n$function$\n"
+  },
+  {
+    "acl": "{postgres=X/postgres,service_role=X/postgres}",
+    "body_md5": "17f3e6148ec2a468e145c605d2a5dcfb",
+    "signature": "fn_clear_table_seats(uuid,boolean)",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_clear_table_seats(p_table_id uuid, p_reopen boolean DEFAULT false)\n RETURNS integer\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  v_cleared integer := 0;\n  v_tournament uuid;\nBEGIN\n  SELECT tournament_id INTO v_tournament FROM public.tables WHERE id=p_table_id;\n  IF NOT FOUND THEN RAISE EXCEPTION 'Table not found' USING ERRCODE='22023'; END IF;\n  IF v_tournament IS NULL THEN\n    RAISE EXCEPTION 'CASH_SEAT_CLEAR_REQUIRES_ENGINE_DEPARTURES' USING ERRCODE='55000';\n  END IF;\n  -- Only tournament cleanup reaches this point. Cash departures are engine-owned.\n  PERFORM public.fn_cashout_seats_for_closing_table(p_table_id, 'seats cleared');\n\n  UPDATE public.table_seats\n     SET left_at = now(), is_sitting_out = false\n   WHERE table_id = p_table_id AND left_at IS NULL;\n  GET DIAGNOSTICS v_cleared = ROW_COUNT;\n\n  UPDATE public.tables\n     SET current_players = 0,\n         status = CASE WHEN p_reopen AND status <> 'closed' THEN 'waiting' ELSE status END\n   WHERE id = p_table_id;\n\n  RETURN v_cleared;\nEND;\n$function$\n"
+  },
+  {
+    "acl": "{postgres=X/postgres,service_role=X/postgres}",
+    "body_md5": "07d8ec53bcbcd7a04ca155ae8e7374bf",
+    "signature": "fn_release_seats_on_tournament_finish()",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_release_seats_on_tournament_finish()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nBEGIN\n  -- Only on the TRANSITION into a finished state. Firing on every update of an\n  -- already-finished row would rewrite left_at timestamps that are correct.\n  IF NEW.status IN ('COMPLETED','CANCELLED')\n     AND (OLD.status IS DISTINCT FROM NEW.status) THEN\n\n    UPDATE table_seats ts\n       SET left_at = COALESCE(NEW.ended_at, now())\n      FROM tables t\n     WHERE ts.table_id = t.id\n       AND t.tournament_id = NEW.id\n       AND ts.left_at IS NULL;\n\n  END IF;\n  RETURN NEW;\nEND;\n$function$\n"
+  }
+]

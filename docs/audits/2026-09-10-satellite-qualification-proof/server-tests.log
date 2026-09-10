@@ -1,0 +1,25 @@
+
+ RUN  v2.1.9 /Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-satellite-swarm-sep10/server
+
+ ✓ src/tournament/satelliteSettlementRpc.test.ts (5 tests) 3ms
+ ✓ src/tournament/satelliteSettlementReceipt.test.ts (60 tests) 6ms
+stdout | src/tournament/TerminalWinnerSequence.test.ts > terminal candidate follows the durable elimination authority > uses the final sequence when satellite callback timestamps reverse
+[Tournament:00000000] No survivor - final durable elimination submitted to terminal authority
+
+stdout | src/tournament/TerminalWinnerSequence.test.ts > terminal candidate follows the durable elimination authority > uses the final sequence when mtt callback timestamps reverse
+[Tournament:00000000] No survivor - final durable elimination submitted to terminal authority
+
+stdout | src/tournament/TerminalWinnerSequence.test.ts > terminal candidate follows the durable elimination authority > uses the final sequence when both eliminations share a timestamp
+[Tournament:00000000] No survivor - final durable elimination submitted to terminal authority
+
+stdout | src/tournament/TerminalWinnerSequence.test.ts > terminal candidate follows the durable elimination authority > does not let an unsequenced legacy row precede the durable witness
+[Tournament:00000000] No survivor - final durable elimination submitted to terminal authority
+
+ ✓ src/tournament/TerminalWinnerSequence.test.ts (8 tests) 8ms
+ ✓ src/tournament/satelliteQualification.test.ts (34 tests) 10ms
+
+ Test Files  4 passed (4)
+      Tests  107 passed (107)
+   Start at  08:24:30
+   Duration  2.50s (transform 1.28s, setup 134ms, collect 4.00s, tests 27ms, environment 0ms, prepare 322ms)
+

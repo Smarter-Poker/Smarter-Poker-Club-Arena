@@ -1,0 +1,109 @@
+{
+  "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres,authenticated=r/postgres}",
+  "columns": [
+    { "default": "gen_random_uuid()", "name": "id", "notnull": true, "type": "uuid" },
+    { "default": null, "name": "user_id", "notnull": true, "type": "uuid" },
+    { "default": null, "name": "arena_id", "notnull": true, "type": "uuid" },
+    { "default": null, "name": "purpose", "notnull": true, "type": "text" },
+    { "default": null, "name": "target_id", "notnull": true, "type": "uuid" },
+    { "default": null, "name": "entry_key", "notnull": true, "type": "text" },
+    { "default": "0", "name": "balance", "notnull": true, "type": "bigint" },
+    { "default": "'reserved'::text", "name": "state", "notnull": true, "type": "text" },
+    {
+      "default": "now()",
+      "name": "created_at",
+      "notnull": true,
+      "type": "timestamp with time zone"
+    },
+    {
+      "default": null,
+      "name": "released_at",
+      "notnull": false,
+      "type": "timestamp with time zone"
+    },
+    { "default": null, "name": "seat_id", "notnull": false, "type": "uuid" },
+    {
+      "default": null,
+      "name": "seat_joined_at",
+      "notnull": false,
+      "type": "timestamp with time zone"
+    },
+    { "default": null, "name": "occupancy_id", "notnull": false, "type": "uuid" }
+  ],
+  "constraints": [
+    {
+      "definition": "FOREIGN KEY (arena_id) REFERENCES clubs(id) ON DELETE RESTRICT",
+      "name": "poker_diamond_custody_arena_id_fkey"
+    },
+    {
+      "definition": "CHECK (((balance >= 0) AND (balance <= 2147483647)))",
+      "name": "poker_diamond_custody_balance_check"
+    },
+    {
+      "definition": "CHECK (((state = 'released'::text) = (released_at IS NOT NULL)))",
+      "name": "poker_diamond_custody_check"
+    },
+    {
+      "definition": "CHECK (((state <> 'released'::text) OR (balance = 0)))",
+      "name": "poker_diamond_custody_check1"
+    },
+    {
+      "definition": "CHECK (((length(entry_key) >= 1) AND (length(entry_key) <= 160)))",
+      "name": "poker_diamond_custody_entry_key_check"
+    },
+    { "definition": "PRIMARY KEY (id)", "name": "poker_diamond_custody_pkey" },
+    {
+      "definition": "CHECK ((purpose = ANY (ARRAY['cash_seat'::text, 'tournament_entry'::text])))",
+      "name": "poker_diamond_custody_purpose_check"
+    },
+    {
+      "definition": "CHECK ((state = ANY (ARRAY['reserved'::text, 'active'::text, 'released'::text])))",
+      "name": "poker_diamond_custody_state_check"
+    },
+    {
+      "definition": "FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE RESTRICT",
+      "name": "poker_diamond_custody_user_id_fkey"
+    },
+    {
+      "definition": "UNIQUE (user_id, purpose, target_id, entry_key)",
+      "name": "poker_diamond_custody_user_id_purpose_target_id_entry_key_key"
+    },
+    {
+      "definition": "CHECK ((((seat_id IS NULL) AND (seat_joined_at IS NULL) AND (occupancy_id IS NULL)) OR ((purpose = 'cash_seat'::text) AND (seat_id IS NOT NULL) AND (seat_joined_at IS NOT NULL) AND (occupancy_id IS NOT NULL))))",
+      "name": "poker_diamond_seat_identity_complete"
+    }
+  ],
+  "indexes": [
+    {
+      "definition": "CREATE INDEX poker_diamond_custody_seat ON public.poker_diamond_custody USING btree (seat_id) WHERE (seat_id IS NOT NULL)",
+      "name": "poker_diamond_custody_seat"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX poker_diamond_custody_pkey ON public.poker_diamond_custody USING btree (id)",
+      "name": "poker_diamond_custody_pkey"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX poker_diamond_custody_user_id_purpose_target_id_entry_key_key ON public.poker_diamond_custody USING btree (user_id, purpose, target_id, entry_key)",
+      "name": "poker_diamond_custody_user_id_purpose_target_id_entry_key_key"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX poker_diamond_one_open_entry ON public.poker_diamond_custody USING btree (user_id, purpose, target_id) WHERE (state <> 'released'::text)",
+      "name": "poker_diamond_one_open_entry"
+    },
+    {
+      "definition": "CREATE INDEX poker_diamond_custody_arena ON public.poker_diamond_custody USING btree (arena_id)",
+      "name": "poker_diamond_custody_arena"
+    },
+    {
+      "definition": "CREATE INDEX poker_diamond_custody_user_state ON public.poker_diamond_custody USING btree (user_id, state)",
+      "name": "poker_diamond_custody_user_state"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX poker_diamond_custody_occupancy ON public.poker_diamond_custody USING btree (occupancy_id) WHERE (occupancy_id IS NOT NULL)",
+      "name": "poker_diamond_custody_occupancy"
+    }
+  ],
+  "name": "poker_diamond_custody",
+  "rls": true,
+  "triggers": null
+}

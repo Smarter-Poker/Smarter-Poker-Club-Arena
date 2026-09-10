@@ -1,0 +1,16 @@
+PASS Cash Cohort Conserves 600 Chips
+PASS Open Target Registers The Entire Cohort
+PASS Missing Preparation Refuses Every Payment
+PASS Wrong Lease Is Refused
+PASS Expired Lease Is Refused
+PASS Duplicate Qualifiers Are Refused
+PASS Different Qualifiers Are Refused
+PASS A Smaller Cohort Cannot Borrow A Rank
+PASS A Forged Session Marker Does Not Prepare A Cohort
+PASS Partial Target Capacity Refuses The Whole Cohort
+PASS Immutable Boundary Cannot Be Reassigned
+PASS Last Receipt Failure Rolls Back Every Award
+PASS Lost Response Replay Returns The Original Receipt
+PASS Prepared Outcome Is Proven Uncommitted
+PASS Own Authenticated Read Never Returns Another Participant
+PASS Capped Qualifier Gets Noncash Ticket With Conserved Escrow

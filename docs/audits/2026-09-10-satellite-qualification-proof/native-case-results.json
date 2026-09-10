@@ -1,0 +1,82 @@
+[
+  {
+    "case": "Cash Cohort Conserves 600 Chips",
+    "exit_code": 0,
+    "error": null
+  },
+  {
+    "case": "Open Target Registers The Entire Cohort",
+    "exit_code": 0,
+    "error": null
+  },
+  {
+    "case": "Missing Preparation Refuses Every Payment",
+    "exit_code": 0,
+    "error": null
+  },
+  {
+    "case": "Wrong Lease Is Refused",
+    "exit_code": 0,
+    "error": null
+  },
+  {
+    "case": "Expired Lease Is Refused",
+    "exit_code": 0,
+    "error": null
+  },
+  {
+    "case": "Duplicate Qualifiers Are Refused",
+    "exit_code": 0,
+    "error": null
+  },
+  {
+    "case": "Different Qualifiers Are Refused",
+    "exit_code": 0,
+    "error": null
+  },
+  {
+    "case": "A Smaller Cohort Cannot Borrow A Rank",
+    "exit_code": 0,
+    "error": null
+  },
+  {
+    "case": "A Forged Session Marker Does Not Prepare A Cohort",
+    "exit_code": 0,
+    "error": null
+  },
+  {
+    "case": "Partial Target Capacity Refuses The Whole Cohort",
+    "exit_code": 0,
+    "error": null
+  },
+  {
+    "case": "Immutable Boundary Cannot Be Reassigned",
+    "exit_code": 0,
+    "error": null
+  },
+  {
+    "case": "Last Receipt Failure Rolls Back Every Award",
+    "exit_code": 0,
+    "error": null
+  },
+  {
+    "case": "Lost Response Replay Returns The Original Receipt",
+    "exit_code": 0,
+    "error": null
+  },
+  {
+    "case": "Prepared Outcome Is Proven Uncommitted",
+    "exit_code": 0,
+    "error": null
+  },
+  {
+    "case": "Own Authenticated Read Never Returns Another Participant",
+    "exit_code": 0,
+    "error": null
+  },
+  {
+    "case": "Capped Qualifier Gets Noncash Ticket With Conserved Escrow",
+    "exit_code": 0,
+    "error": null
+  }
+]

@@ -41,13 +41,18 @@ import {
   TerminalSettlementOutcomeUnknownError,
   TerminalSettlementRefusedError,
 } from './terminalSettlementRpc.js';
-import type { VerifiedSatelliteSettlementReceipt } from './satelliteSettlementReceipt.js';
+import type {
+  VerifiedSatelliteSettlementReceipt,
+  VerifiedSatelliteTerminalReceipt,
+} from './satelliteSettlementReceipt.js';
 import { TournamentSweepWorkCursor } from './TournamentSweepWorkCursor.js';
 import {
   reconcileTournamentManagerWakeAcknowledgement,
   type TournamentManagerWakeReceipt,
 } from './TournamentManagerWakeProtocol.js';
 import {
+  prepareSatelliteQualification,
+  requestSatelliteQualificationReceipt,
   SatelliteSettlementOutcomeUnknownError,
   SatelliteSettlementRefusedError,
 } from './satelliteSettlementRpc.js';
@@ -365,6 +370,10 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       // true, so falling through to checkFinalTableDeal would otherwise return
       // forever without retrying the retained normal or satellite receipt.
       if (await this.resumeCommittedTerminalCleanup()) return;
+      if (this.pendingSatelliteQualification) {
+        await this.completePendingSatelliteQualification();
+        return;
+      }
       if (sweepStopped()) return;
 
       // A close commits its durable receipt and a `late_registration` wake in
@@ -983,6 +992,8 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           );
           this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
         } else if (remainingCount > 1) {
+          if (await this.checkEqualSatelliteQualification(remainingCount)) return;
+          if (sweepStopped()) return;
           // MYSTERY BOUNTY ACTIVATION (2026-08-25). This is the only place in
           // the engine that knows, between hands and from a count it has just
           // verified, how many players can still be knocked out — which is
@@ -3439,7 +3450,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
   private committedFinalTableDealCleanupPending = false;
   private committedFinalTableDealReceipt: VerifiedTournamentCompletionReceipt | null = null;
   private committedFinishReceipt: VerifiedTournamentCompletionReceipt | null = null;
-  private committedSatelliteReceipt: VerifiedSatelliteSettlementReceipt | null = null;
+  private committedSatelliteReceipt: VerifiedSatelliteTerminalReceipt | null = null;
   /** A terminal result is important, but it may never hold seats/tables open. */
   private static readonly COMMITTED_BROADCAST_ATTEMPTS = 3;
   /** Long enough for a full live hand plus the guarantee and settlement calls. */
@@ -3654,17 +3665,233 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     return cleaned;
   }
 
+  private pendingSatelliteQualification: {
+    userIds: string[];
+    prepared: boolean;
+  } | null = null;
+
+  /**
+   * Exact K is an equal outcome only at a settled hand boundary. The frozen
+   * entitlement plan is the cheap eligibility check; the SQL admission repeats
+   * it under the terminal locks against the exact positive roster and chairs.
+   */
+  private async checkEqualSatelliteQualification(remainingCount: number): Promise<boolean> {
+    const tournament = this.tournamentCache;
+    const isSatellite =
+      String(tournament?.variant ?? '').toLowerCase() === 'satellite' ||
+      String(tournament?.tournament_type ?? '').toUpperCase() === 'SATELLITE' ||
+      Boolean(tournament?.satellite_target_id || tournament?.satellite_target);
+    if (!isSatellite || !this.prizePoolFinalized || remainingCount < 2) return false;
+    if (isMaintenanceFrozen()) {
+      this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
+      return true;
+    }
+
+    const { data: raw, error } = await supabase.rpc(
+      'fn_get_tournament_satellite_entitlement_depth',
+      { p_tournament_id: this.tournamentId }
+    );
+    const plan = Array.isArray(raw) ? raw[0] : raw;
+    const depth = Number(plan?.award_depth);
+    const ticket = Number(plan?.ticket_value);
+    const pool = Number(plan?.source_pool);
+    const ticketCents = Math.round(ticket * 100);
+    const poolCents = Math.round(pool * 100);
+    if (
+      error ||
+      plan?.ok !== true ||
+      plan?.ready !== true ||
+      plan?.is_satellite !== true ||
+      !Number.isSafeInteger(depth) ||
+      !Number.isSafeInteger(ticketCents) ||
+      ticketCents <= 0 ||
+      !Number.isSafeInteger(poolCents) ||
+      poolCents <= 0 ||
+      Math.abs(ticket * 100 - ticketCents) >= 1e-7 ||
+      Math.abs(pool * 100 - poolCents) >= 1e-7
+    ) {
+      reportError(
+        error ?? new Error('Frozen satellite qualification plan is unavailable'),
+        'Tournament.satellite_qualification_plan_unavailable'
+      );
+      this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
+      return true;
+    }
+    // A leftover cash place or a hand crossing below K is not this contract.
+    if (depth !== remainingCount || poolCents !== depth * ticketCents) return false;
+
+    const { data: tables, error: tableError } = await supabase
+      .from('tables')
+      .select('id')
+      .eq('tournament_id', this.tournamentId)
+      .in('status', ['running', 'waiting']);
+    const held: Array<{ tableId: string; engine: ServerTableEngine }> = [];
+    const releaseBeforeAdmission = (): void => {
+      for (const { engine } of held) engine.releaseTerminalCloseoutPause();
+    };
+    try {
+      if (
+        tableError ||
+        !tables ||
+        tables.length === 0 ||
+        tables.length !== this.tableEngines.size
+      ) {
+        throw new Error('Satellite source engine set is incomplete');
+      }
+      for (const table of tables) {
+        const engine = this.tableEngines.get(table.id);
+        if (!engine || engine !== this.gameServer.getTableEngine(table.id) || !engine.isRunning()) {
+          throw new Error('Satellite source engine authority changed');
+        }
+        held.push({ tableId: table.id, engine });
+      }
+      // Install every no-new-hand owner together before waiting on any table.
+      const parked = await Promise.all(
+        held.map(({ engine }) =>
+          engine.parkForTerminalCloseout(TournamentManagerEliminations.FINAL_TABLE_DEAL_PAUSE_MS)
+        )
+      );
+      if (
+        parked.some((ready) => !ready) ||
+        !this.running ||
+        isMaintenanceFrozen() ||
+        held.some(
+          ({ tableId, engine }) =>
+            this.tableEngines.get(tableId) !== engine ||
+            this.gameServer.getTableEngine(tableId) !== engine ||
+            !engine.isRunning()
+        )
+      ) {
+        throw new Error('Satellite settled source boundary is unavailable');
+      }
+      const { data: alive, error: aliveError } = await supabase
+        .from('tournament_players')
+        .select('user_id, chips')
+        .eq('tournament_id', this.tournamentId)
+        .eq('status', 'playing');
+      if (
+        aliveError ||
+        !alive ||
+        alive.length !== depth ||
+        new Set(alive.map((player) => player.user_id)).size !== depth ||
+        alive.some(
+          (player) =>
+            typeof player.user_id !== 'string' ||
+            !Number.isFinite(Number(player.chips)) ||
+            Number(player.chips) <= 0
+        )
+      ) {
+        throw new Error('Satellite field changed while the settled boundary was acquired');
+      }
+      // The roster read yields after parking. Revalidate authority at the
+      // exact point where this manager adopts the durable completion request.
+      if (
+        !this.running ||
+        isMaintenanceFrozen() ||
+        held.some(
+          ({ tableId, engine }) =>
+            this.tableEngines.get(tableId) !== engine ||
+            this.gameServer.getTableEngine(tableId) !== engine ||
+            !engine.isRunning()
+        )
+      ) {
+        throw new Error('Satellite source authority changed during its roster read');
+      }
+      this.pendingSatelliteQualification = {
+        userIds: alive.map((player) => player.user_id).sort(),
+        prepared: false,
+      };
+    } catch (error) {
+      releaseBeforeAdmission();
+      reportError(error, 'Tournament.satellite_qualification_boundary_unavailable');
+      this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
+      return true;
+    }
+    // From here the exact K cohort has qualified. Keep only its source engines
+    // at their terminal boundary on refusal; the same causal owner retries.
+    await this.completePendingSatelliteQualification();
+    return true;
+  }
+
+  private async completePendingSatelliteQualification(): Promise<void> {
+    const pending = this.pendingSatelliteQualification;
+    if (!pending || !this.running) return;
+    if (isMaintenanceFrozen()) {
+      this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
+      return;
+    }
+    try {
+      if (!pending.prepared) {
+        if (!this.tournamentLeaseGeneration)
+          throw new Error('Satellite qualification has no engine lease');
+        await prepareSatelliteQualification(
+          this.tournamentId,
+          pending.userIds,
+          this.tournamentLeaseGeneration
+        );
+        pending.prepared = true;
+      }
+      if (!this.running) return;
+      if (isMaintenanceFrozen()) {
+        this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
+        return;
+      }
+      const receipt = await requestSatelliteQualificationReceipt(
+        this.tournamentId,
+        pending.userIds
+      );
+      this.pendingSatelliteQualification = null;
+      this.committedSatelliteReceipt = receipt;
+      await this.cleanupCommittedSatellite(receipt);
+    } catch (error) {
+      reportError(error, 'Tournament.satellite_qualification_pending', {
+        tournamentId: this.tournamentId,
+        prepared: pending.prepared,
+      });
+      try {
+        await raiseFinancialAlert(
+          'critical',
+          'Tournament.satellite_qualification_pending',
+          'Qualified Satellite Awards Await Their Atomic Settlement',
+          {
+            tournamentId: this.tournamentId,
+            qualifiedUserIds: pending.userIds,
+            prepared: pending.prepared,
+          }
+        );
+      } catch (alertError) {
+        reportError(alertError, 'Tournament.satellite_qualification_alert_unavailable');
+      }
+      // The existing manager owns this exact terminal retry; durable
+      // COMPLETING admission owns restart through the existing recovery path.
+      this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
+    }
+  }
+
   /** Announce and close the one format-owned satellite settlement receipt. */
   private async cleanupCommittedSatellite(
-    receipt: VerifiedSatelliteSettlementReceipt
+    receipt: VerifiedSatelliteTerminalReceipt
   ): Promise<boolean> {
     this.tournamentFinished = true;
     this.committedSatelliteReceipt = receipt;
-    await this.broadcastCommittedOutcome('tournament_winner', {
-      userId: receipt.winnerId,
-      position: 1,
-      prize: receipt.winnerAmount,
-    });
+    if (receipt.receiptVersion === 3) {
+      for (const award of receipt.awards) {
+        await this.broadcastCommittedOutcome('tournament_qualified', {
+          tournamentId: this.tournamentId,
+          userId: award.userId,
+          prize: award.amount,
+          targetId: receipt.targetId,
+          deliveryKind: award.deliveryKind,
+          completionKind: 'equal_qualifiers',
+        });
+      }
+    } else {
+      await this.broadcastCommittedOutcome('tournament_winner', {
+        userId: receipt.winnerId,
+        position: 1,
+        prize: receipt.winnerAmount,
+      });
+    }
 
     const cleaned = await this.cleanupCommittedTablesAndManager(
       receipt.sourceCloseout.sourceTableIds

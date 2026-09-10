@@ -81,7 +81,7 @@ describe('stage-one freeze authority is catalog-authenticated', () => {
     expect(body).toContain(
       "to_regprocedure('public.fn_serialize_engine_maintenance_break_write()')"
     );
-    expect(body).toContain("md5(p.prosrc) = 'cff283a255830f34ad7488bbfbf70bc6'");
+    expect(body).toContain("md5(p.prosrc) = 'a29498531e4b7d3889532e80fafc8d57'");
     expect(body).toContain("md5(p.prosrc) = '084ed24f99e9d08765bd86ff8b920284'");
     expect(body.match(/p\.proowner = v_relation_owner/g)).toHaveLength(2);
     expect(body).not.toContain("pg_get_userbyid(p.proowner) = '");

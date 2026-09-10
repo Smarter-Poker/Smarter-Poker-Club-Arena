@@ -1,6 +1,5 @@
 import { supabase } from '../services/supabase.js';
-
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+import { UUID_SHAPE as UUID } from '../lib/uuidShape.js';
 
 export interface VerifiedTournamentSeatAssignmentReceipt {
   tournamentId: string;
@@ -78,11 +77,10 @@ function verify(
   expected: {
     tournamentId: string;
     userId: string;
-    tableId: string;
-    seatNumber: number;
   }
 ): VerifiedTournamentSeatAssignmentReceipt | null {
   const receipt = asRecord(raw);
+  const tableId = exactUuid(receipt.table_id);
   const seatNumber = exactSeat(receipt.seat_number);
   const stack = exactPositiveStack(receipt.stack);
   const currentPlayers = exactCount(receipt.current_players);
@@ -94,9 +92,9 @@ function verify(
     receipt.ok !== true ||
     exactUuid(receipt.tournament_id) !== expected.tournamentId ||
     exactUuid(receipt.user_id) !== expected.userId ||
-    exactUuid(receipt.table_id) !== expected.tableId ||
+    tableId === null ||
     exactUuid(receipt.seat_id) === null ||
-    seatNumber !== expected.seatNumber ||
+    seatNumber === null ||
     stack === null ||
     currentPlayers === null ||
     assignedAt === null ||
@@ -107,7 +105,7 @@ function verify(
   return {
     tournamentId: expected.tournamentId,
     userId: expected.userId,
-    tableId: expected.tableId,
+    tableId,
     seatId: receipt.seat_id as string,
     seatNumber,
     stack,
@@ -119,7 +117,9 @@ function verify(
 
 /**
  * One service call assigns the seat, roster coordinates and exact table count.
- * The database derives the stack from the locked tournament-player row. There
+ * The requested table and seat are placement hints; the locked database state
+ * chooses the legal chair, and its returned coordinates are authoritative. The
+ * database also derives the stack from the locked tournament-player row. There
  * is intentionally no client-side fallback or compensating write: an unknown
  * transport outcome is reread by the manager's normal durable lifecycle pass,
  * and the RPC returns the same exact receipt when that assignment committed.
@@ -169,7 +169,7 @@ export async function assignTournamentPlayerSeatAtomically(input: {
   const receipt = verify(raw, input);
   if (!receipt) {
     throw new TournamentSeatAssignmentOutcomeUnknownError(
-      'Tournament seat assignment returned an invalid exact receipt'
+      'Tournament seat assignment returned an invalid authoritative receipt'
     );
   }
   return receipt;

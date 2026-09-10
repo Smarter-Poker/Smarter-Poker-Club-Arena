@@ -3980,10 +3980,11 @@ export default function MultiTablePage() {
   // app root when the tab on screen is a lobby, so the footer shows there and
   // ONLY there - never over a live felt, never for a lobby tab parked behind
   // one, and never after this container unmounts. See inTabLobbySurface.ts.
-  useEffect(() => {
+  useLayoutEffect(() => {
     const cur = tables[activeIndex];
-    publishInTabLobbyActive(!hidden && !!cur && isLobbyTab(cur));
-  }, [hidden, tables, activeIndex]);
+    const selectedClub = cur?.lobbyClubId === undefined ? homeClubId : cur.lobbyClubId;
+    publishInTabLobbyActive(!hidden && !!cur && isLobbyTab(cur), selectedClub);
+  }, [hidden, tables, activeIndex, homeClubId]);
   useEffect(() => () => publishInTabLobbyActive(false), []);
 
   // Remember the last REAL table the player had on screen, so the dock can

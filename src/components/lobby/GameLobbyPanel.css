@@ -55,8 +55,11 @@
 }
 .glp__close {
   flex: none;
-  width: 30px;
-  height: 30px;
+  /* 44px, not 30px (audit CL-33, 2026-09-10): this is the only way off the
+     sheet on a phone, and the 640px block below widens the panel without
+     touching the button. The minimum tap target is 44px at every width. */
+  width: 44px;
+  height: 44px;
   border-radius: 7px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: rgba(255, 255, 255, 0.05);

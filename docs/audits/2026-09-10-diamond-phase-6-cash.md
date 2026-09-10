@@ -34,7 +34,8 @@ PR 4070 merged as 81e4c6daefa47f6b6883596f3b62d2d3498e195a. CI 34424324769 passe
 ## Remaining Production Acceptance
 
 - [x] Exact production approval received for source migrations 20260910022036, 20260910023541 and 20260910030442. Applied once as production versions 20260910050142, 20260910050156 and 20260910050209. All 18 resulting function bodies match the approved source; trigger, access and closed-admission checks passed. See the integration evidence for the exact mapping.
-- [ ] Pass required CI and normal auto-merge/publication.
+- [x] Required CI 34440835759 passed on 2ea518146b; PR 4088 auto-merged as 85da6479df at 05:40:25 UTC. 18,616 client tests, 8,626 server tests (145 skipped), TypeScript/schema, build, accounting and 150 CSS + 13 Studio + 3 mobile cases passed.
+- [ ] Complete normal frontend and engine publication. Frontend publisher 34442016349 was queued; exact merged engine commit was dispatched once as 34442107723 toward the normal maintenance gate.
 - [ ] Verify actual served frontend/engine source and permitted authenticated routes.
 
 Phase 6 remains open. Public funded gameplay stays closed pending the existing accounting and release criteria.

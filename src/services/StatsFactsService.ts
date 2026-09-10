@@ -165,6 +165,28 @@ const EMPTY_RAKE_STATS: PlayerRakeStats = {
   days: null,
 };
 
+export function normaliseRakeStats(
+  raw: Partial<WithReadStatus<PlayerRakeStats>> | null | undefined
+): WithReadStatus<PlayerRakeStats> {
+  const src = (raw ?? {}) as Partial<WithReadStatus<PlayerRakeStats>>;
+  const num = (v: unknown): number => (Number.isFinite(Number(v)) && v !== null ? Number(v) : 0);
+  const out: WithReadStatus<PlayerRakeStats> = {
+    ...EMPTY_RAKE_STATS,
+    hands: num(src.hands),
+    raked_hands: num(src.raked_hands),
+    rake_paid: num(src.rake_paid),
+    rake_per_100: num(src.rake_per_100),
+    rake_in_bb: num(src.rake_in_bb),
+    bb_per_100: num(src.bb_per_100),
+    avg_rake_per_raked_hand: num(src.avg_rake_per_raked_hand),
+    first_hand_at: typeof src.first_hand_at === 'string' ? src.first_hand_at : null,
+    last_hand_at: typeof src.last_hand_at === 'string' ? src.last_hand_at : null,
+    days: src.days === null || src.days === undefined ? null : num(src.days),
+  };
+  if (src.error) out.error = src.error;
+  return out;
+}
+
 export interface DistributionRow {
   cohort: string;
   metric: string;
@@ -336,11 +358,18 @@ export const StatsFactsService = {
    * `days: null` means lifetime.
    */
   async getRakeStats(days: number | null = null): Promise<WithReadStatus<PlayerRakeStats>> {
-    return callRpc<PlayerRakeStats>(
+    const raw = await callRpc<PlayerRakeStats>(
       'ca_player_rake_stats',
       { p_user: null, p_days: days },
       EMPTY_RAKE_STATS
     );
+    /* THE SHAPE IS PROMISED HERE, NOT ASSUMED IN THE TAB (2026-09-10). The
+       Rake tab calls toFixed / toLocaleString on six of these fields, and a
+       payload missing one - an older RPC, a null the SQL let through - was a
+       TypeError that unmounted the whole stats tab. Every numeric field is
+       coerced against the empty shape, so a missing value renders as 0 in
+       its own row rather than taking the page down. */
+    return normaliseRakeStats(raw);
   },
 
   /**

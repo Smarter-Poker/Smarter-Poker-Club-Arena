@@ -134,6 +134,23 @@ export default function TransactionLedgerView({
         return;
       }
 
+      /* AN UNSCOPED LEDGER READ IS REFUSED (2026-09-10). All three filters
+         below are conditional, and the settlement dashboard mounted this
+         with none of them - a select('*') on chip_ledger whose only narrowing
+         was RLS ("my own movements"), rendered under a heading that called
+         it the settlement audit trail. A caller must say WHOSE ledger it
+         wants; a panel that cannot say renders this, not somebody's rows. */
+      if (!unionId && !clubId && !userId) {
+        reportError(
+          new Error('TransactionLedgerView mounted with no union, club or user'),
+          'TransactionLedgerView.unscoped'
+        );
+        setEntries([]);
+        setError('The Ledger Needs A Club, A Union Or A Player To Show');
+        setLoading(false);
+        return;
+      }
+
       let query = supabase
         .from('chip_ledger')
         .select('*')

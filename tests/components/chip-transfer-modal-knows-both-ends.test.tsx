@@ -20,6 +20,7 @@
  */
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { webcrypto } from 'node:crypto';
 
 const ids = vi.hoisted(() => ({
   CLUB: '2a1132b9-5ba2-42e6-9f01-30a7fcffebe3',
@@ -104,12 +105,30 @@ function chainFor(table: string) {
 }
 
 beforeEach(() => {
+  localStorage.clear();
+  sessionStorage.clear();
+  vi.stubGlobal('crypto', webcrypto);
+  const locks = new Map<string, Promise<unknown>>();
+  Object.defineProperty(navigator, 'locks', {
+    configurable: true,
+    value: {
+      request: (key: string, _options: unknown, fn: () => unknown) => {
+        const next = (locks.get(key) || Promise.resolve()).then(fn);
+        locks.set(
+          key,
+          next.catch(() => undefined)
+        );
+        return next;
+      },
+    },
+  });
+  toastState.success.mockClear();
   rpcMock.mockReset();
   fromMock.mockReset();
   fromMock.mockImplementation((table: string) => chainFor(table));
-  rpcMock.mockImplementation((name: string) => {
+  rpcMock.mockImplementation((name: string, args: Record<string, unknown>) => {
     if (name === 'fn_club_bank_send' || name === 'fn_agent_wallet_send') {
-      return Promise.resolve({ data: { success: true }, error: null });
+      return Promise.resolve({ data: confirmedReceipt(args), error: null });
     }
     return Promise.resolve({ data: [], error: null });
   });
@@ -127,6 +146,18 @@ beforeEach(() => {
   db.pinnedDelayMs = 0;
   db.clubOwner = SENDER;
 });
+
+function confirmedReceipt(args: Record<string, unknown>) {
+  return {
+    success: true,
+    transaction_id: AGENT,
+    amount: args.p_amount,
+    destination: args.p_destination,
+    bank_after: 900000,
+    agent_wallet_after: 250,
+    recipient_balance_after: args.p_amount,
+  };
+}
 
 const confirmButton = () => screen.getByRole('button', { name: /Confirm Transfer|Processing/ });
 
@@ -303,5 +334,112 @@ describe('the dialog', () => {
     expect(document.body.style.overflow).toBe('');
     expect(opener).toHaveFocus();
     opener.remove();
+  });
+});
+
+describe.each(['agent', 'owner'])('durable %s send', (senderRole) => {
+  const sends = () => rpcMock.mock.calls.filter((call) => String(call[0]).endsWith('_send'));
+  async function fill() {
+    await waitFor(() => expect(screen.getByText('Agent Wallet')).toBeTruthy());
+    fireEvent.change(screen.getByLabelText('Amount'), { target: { value: '25' } });
+    await waitFor(() => expect(confirmButton()).not.toBeDisabled());
+  }
+  it('reuses the same request after a deferred lost response and unmount', async () => {
+    db.senderRole = { data: { role: senderRole }, error: null };
+    let rejectSend!: (error: Error) => void;
+    rpcMock.mockImplementation((name: string, args: Record<string, unknown>) => {
+      if (!name.endsWith('_send')) return Promise.resolve({ data: [], error: null });
+      if (sends().length === 1)
+        return new Promise((_resolve, reject) => {
+          rejectSend = reject;
+        });
+      return Promise.resolve({ data: { ...confirmedReceipt(args), replayed: true }, error: null });
+    });
+    const first = render(
+      <ChipTransferModal isOpen onClose={() => {}} clubId={CLUB} recipientId={AGENT} />
+    );
+    await fill();
+    fireEvent.click(confirmButton());
+    await waitFor(() => expect(sends()).toHaveLength(1));
+    const operationId = sends()[0][1].p_op_id;
+    first.unmount();
+    await act(async () => {
+      rejectSend(new Error('Response Lost'));
+    });
+    expect(toastState.success).not.toHaveBeenCalled();
+    render(<ChipTransferModal isOpen onClose={() => {}} clubId={CLUB} recipientId={AGENT} />);
+    await fill();
+    fireEvent.click(confirmButton());
+    await waitFor(() => expect(sends()).toHaveLength(2));
+    expect(sends()[1][1].p_op_id).toBe(operationId);
+    await waitFor(() => expect(toastState.success).toHaveBeenCalledOnce());
+    expect(screen.getByText(/That Transfer Had Already Gone Through/)).toBeTruthy();
+  });
+  it('confirms the mounted caller when a remount joins the original pending send', async () => {
+    db.senderRole = { data: { role: senderRole }, error: null };
+    let resolveSend!: (value: unknown) => void;
+    rpcMock.mockImplementation((name: string) => {
+      if (!name.endsWith('_send')) return Promise.resolve({ data: [], error: null });
+      return new Promise((resolve) => {
+        resolveSend = resolve;
+      });
+    });
+    const first = render(
+      <ChipTransferModal isOpen onClose={() => {}} clubId={CLUB} recipientId={AGENT} />
+    );
+    await fill();
+    fireEvent.click(confirmButton());
+    await waitFor(() => expect(sends()).toHaveLength(1));
+    const originalArguments = sends()[0][1];
+    first.unmount();
+    const confirmed = vi.fn();
+    render(
+      <ChipTransferModal
+        isOpen
+        onClose={() => {}}
+        clubId={CLUB}
+        recipientId={AGENT}
+        onTransferComplete={confirmed}
+      />
+    );
+    await fill();
+    await act(async () => {
+      fireEvent.click(confirmButton());
+    });
+    expect(confirmButton()).toBeDisabled();
+    expect(sends()).toHaveLength(1);
+    expect(toastState.success).not.toHaveBeenCalled();
+    await act(async () => {
+      resolveSend({ data: confirmedReceipt(originalArguments), error: null });
+    });
+    await waitFor(() => expect(confirmed).toHaveBeenCalledOnce());
+    expect(sends()).toHaveLength(1);
+    expect(toastState.success).toHaveBeenCalledOnce();
+    expect(screen.getByText('Transfer Confirmed. 25 Chips Are With Rook')).toBeTruthy();
+    expect(screen.getByLabelText('Amount')).toHaveValue(null);
+  });
+  it('retains identity after a malformed success and coalesces repeated clicks', async () => {
+    db.senderRole = { data: { role: senderRole }, error: null };
+    rpcMock.mockImplementation((name: string) =>
+      Promise.resolve({
+        data: name.endsWith('_send') ? { success: true } : [],
+        error: null,
+      })
+    );
+    render(<ChipTransferModal isOpen onClose={() => {}} clubId={CLUB} recipientId={AGENT} />);
+    await fill();
+    act(() => {
+      fireEvent.click(confirmButton());
+      fireEvent.click(confirmButton());
+    });
+    await waitFor(() =>
+      expect(screen.getByText('The Cashier Did Not Confirm That Transfer')).toBeTruthy()
+    );
+    expect(sends()).toHaveLength(1);
+    const operationId = sends()[0][1].p_op_id;
+    fireEvent.click(confirmButton());
+    await waitFor(() => expect(sends()).toHaveLength(2));
+    expect(sends()[1][1].p_op_id).toBe(operationId);
+    expect(toastState.success).not.toHaveBeenCalled();
   });
 });

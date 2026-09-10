@@ -29,7 +29,7 @@ describe('the workflow records before and proves after', () => {
     const block = WF.slice(at, WF.indexOf('- name:', at + 10));
     expect(block).toContain('continue-on-error: true');
     expect(block).toContain('MODE: record');
-    expect(block).toContain('node scripts/ci/prove-engine-version-moved.mjs');
+    expect(block).toContain('node "$ENGINE_RELEASE_PROOF_SCRIPT"');
   });
 
   it('proves after the promote and before the rollback, so a failed proof rolls back', () => {
@@ -40,6 +40,7 @@ describe('the workflow records before and proves after', () => {
     const block = WF.slice(prove, WF.indexOf('- name:', prove + 10));
     expect(block).toContain('id: prove');
     expect(block).toContain('MODE: prove');
+    expect(block).toContain("STRICT_PROOF: '1'");
     expect(block).toMatch(/TIMEOUT_S: '240'/);
     expect(block, 'the same gate as the cutover itself').toContain(
       "if: steps.dedupe.outputs.skip != 'true' && steps.drain.outputs.skip != 'true'"
@@ -49,8 +50,14 @@ describe('the workflow records before and proves after', () => {
     );
   });
 
-  it('the database is told a deploy shipped only when the proof did not fail', () => {
-    expect(WF).toMatch(/SHIPPED: .*steps\.prove\.outcome != 'failure'/);
+  it('the database is told a deploy shipped only after exact cutover and proof success', () => {
+    expect(WF).toMatch(/SHIPPED: .*steps\.cutover\.outcome == 'success'/);
+    expect(WF).toMatch(/SHIPPED: .*steps\.cutover\.outputs\.success == 'true'/);
+    expect(WF).toMatch(/SHIPPED: .*steps\.prove\.outcome == 'success'/);
+    expect(WF).not.toMatch(/SHIPPED: .*steps\.prove\.outcome != 'failure'/);
+    expect(WF).toMatch(
+      /SHIPPED: .*steps\.rollback\.outcome == 'success'.*steps\.rollback\.outputs\.target_committed == 'true'/
+    );
     expect(WF).toContain("steps.prove.outcome == 'failure' &&");
   });
 
@@ -150,11 +157,26 @@ describe('prove-engine-version-moved.mjs', () => {
     expect(r.stdout).toContain('::warning title=DEPLOY PROOF INCONCLUSIVE::');
   });
 
+  it('prove: strict release sealing fails closed when every witness is silent', async () => {
+    const r = await run({
+      MODE: 'prove',
+      STRICT_PROOF: '1',
+      ENGINE_URL: 'http://127.0.0.1:1',
+      TARGET_SHA: '0123456789abcdef',
+      PRE_CUTOVER_VERSION: 'deadbeef',
+    });
+    expect(r.status).toBe(1);
+    expect(r.stdout).toContain('The durable release seal was NOT advanced.');
+  });
+
   it('prefers the engine_leader witness and says which one spoke', () => {
     const src = read('scripts/ci/prove-engine-version-moved.mjs');
     expect(src).toContain('FROM public.engine_leader WHERE id = true');
     expect(src).toContain('/rest/v1/engine_leader?select=engine_version,heartbeat_at');
     expect(src, 'a stale leader row is not proof').toContain('heartbeatAgeS <= 60');
+    expect(src, 'strict release authority requires the database witness').toContain(
+      "!STRICT_PROOF || r.source === 'engine_leader'"
+    );
     expect(src, 'the fallback busts the cache').toContain('/health?nocache=');
     expect(src, 'raises the in-app notification publish-watchdog raises').toContain(
       '/rest/v1/rpc/fn_raise_notification'

@@ -35,8 +35,9 @@ PR 4070 merged as 81e4c6daefa47f6b6883596f3b62d2d3498e195a. CI 34424324769 passe
 
 - [x] Exact production approval received for source migrations 20260910022036, 20260910023541 and 20260910030442. Applied once as production versions 20260910050142, 20260910050156 and 20260910050209. All 18 resulting function bodies match the approved source; trigger, access and closed-admission checks passed. See the integration evidence for the exact mapping.
 - [x] Required CI 34440835759 passed on 2ea518146b; PR 4088 auto-merged as 85da6479df at 05:40:25 UTC. 18,616 client tests, 8,626 server tests (145 skipped), TypeScript/schema, build, accounting and 150 CSS + 13 Studio + 3 mobile cases passed.
-- [ ] Complete normal frontend and engine publication. Frontend publisher 34442016349 was queued; exact merged engine commit was dispatched once as 34442107723 toward the normal maintenance gate.
-- [ ] Verify actual served frontend/engine source and permitted authenticated routes.
+- [x] Frontend publication and release-document adoption verified September 10 at 06:55 UTC. Both build-info endpoints serve 5b7469a5cedcb7ca80f83a637189508b8f88a2b7, built 06:47:57 UTC by publisher 34446674865. GitHub ancestry includes implementation 85da6479 and documentation merge 871e491a.
+- [ ] Verify actual engine adoption. Original run 34442107723 failed before staging because its deployment-control revision was stale. Replacement run 34445622542 has staged target 06887cc30efabd12b6611c6ca9649ee7cbb2535c, whose ancestry includes Phase 6, but finished without deploying at 06:57:46 UTC because no valid maintenance certificate appeared. Cutover, verification and release sealing were skipped, not passed. At 06:56 UTC the healthy engine still served pre-integration 56962e04.
+- [ ] Verify permitted authenticated production routes. The managed browser still times out before returning page state, separately from the restored Mac command connection. No live route pass or application regression is inferred from this connection failure.
 
 Phase 6 remains open. Public funded gameplay stays closed pending the existing accounting and release criteria.
 

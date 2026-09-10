@@ -22,16 +22,24 @@ Local focused run: 47 tests passed across `DiamondCashHand.test.ts`, `aTournamen
 
 PR 4070 merged as 81e4c6daefa47f6b6883596f3b62d2d3498e195a. CI 34424324769 passed client/server, TypeScript, structural and SQL accounting gates; production build, browser, live-production and postdeploy jobs were skipped for this server increment. The normal local push passed 1,014 server assertions with 145 skipped. At September 10, 01:58:41 UTC production engine health identified b4c427a6e8474d796d29b682a9e153e03d78755d, with status/liveness/settlementStatus ok and zero blocked settlements. Git ancestry proves this running engine includes 81e4c6da. The normal maintenance cutover therefore adopted the engine increment; no forced restart was used. The frontend also includes the merge. This is adoption of the engine increment, not funded-game acceptance. No pending or skipped check is counted as passed.
 
-## Remaining Phase 6 Acceptance
+## Local Implementation And Certification
 
-- [ ] Atomic Diamond seat acquisition: bind existing custody to exact seat occupancy without chip funding or chip ledger writes.
-- [ ] Accepted-hand settlement: retain the shared lease/generation/history protocol and update Diamond custody atomically, preserving purchase-lot provenance and exact replay.
-- [ ] Occupancy-bound cash-out: release the actual settled balance, including a busted zero balance, with strict rollback and durable retry receipts.
-- [ ] Wire the shared client buy-in/leave/history/result/wallet-refresh flow to the Diamond financial boundary.
-- [ ] Controlled multi-user certification against isolated PostgreSQL: full play/cash-out conservation, all-in, side pot, tie, disconnect, restart, pending leave and response-loss retry; assert no chip or hierarchy writes.
-- [ ] Merge, publish and verify the actual served frontend/engine source plus permitted authenticated routes.
+- [x] Atomic Diamond seat acquisition: bind existing custody to exact seat occupancy without chip funding or chip ledger writes.
+- [x] Accepted-hand settlement: retain the shared lease/generation/history protocol and update Diamond custody atomically, preserving purchase-lot provenance and exact replay.
+- [x] Occupancy-bound cash-out: release the actual settled balance, including a busted zero balance, with strict rollback and durable retry receipts.
+- [x] Wire the shared client buy-in/leave/history/result/wallet-refresh flow to the Diamond financial boundary.
+- [x] Controlled multi-user certification against isolated PostgreSQL: full play/cash-out conservation, all-in, side pot, tie, disconnect, restart, pending leave and response-loss retry; assert no chip or hierarchy writes.
+      These checked items describe source and isolated certification, not a production release. The connected controlled-play case and the separate side-pot, tie, disconnect, restart, pending-leave and retry cases are detailed in [the integration evidence](../changelog/2026-09-10-diamond-phase-6-shared-cash-integration.md).
 
-## Inspected Current Boundaries
+## Remaining Production Acceptance
+
+- [ ] Obtain exact production financial migration approval and apply the three pending Phase 6 migrations once. Automatic approval review rejected the earlier application; no alternate write path was used.
+- [ ] Pass required CI and normal auto-merge/publication.
+- [ ] Verify actual served frontend/engine source and permitted authenticated routes.
+
+Phase 6 remains open. Public funded gameplay stays closed pending the existing accounting and release criteria.
+
+## Starting Boundaries Before This Integration
 
 The production `fn_poker_guard_chip_seat` still refuses Diamond seats. `loadTable` still calls `assertChipFundingArena`. These remain closed until their dedicated custody integration is complete.
 
@@ -55,4 +63,10 @@ The shared `atomic_table_buyin` dispatch now has a Diamond branch that calls pri
 
 The platform settings gain `cash_games_enabled`, false by default, with no public setter. This is an admission switch, not permission to waive the programme release criteria. No production player or setting was changed by isolated certification. This first cash increment refuses tournament, clustered-table and optional chip-side-game configurations.
 
-The isolated admission runner passed 65 assertions including its 38 prerequisite custody checks. It uses the current public purchase/session/maintenance/receipt functions, the shared occupancy stamping guard and the real custody writers. It proves simultaneous authenticated retries debit once, wrong users and revoked sessions are refused, maintenance still closes admission, a failed seat insert rolls back the already reserved wallet/lots/custody/receipt, partial-pot settlement cashes out exactly, and replay returns the original occupancy receipt. It does not yet certify the full 12-argument accepted-hand envelope, engine restart/disconnect, frontend flow or public funded play.
+The initial isolated admission runner passed 65 assertions including its 38 prerequisite custody checks. It uses the current public purchase/session/maintenance/receipt functions, the shared occupancy stamping guard and the real custody writers. It proves simultaneous authenticated retries debit once, wrong users and revoked sessions are refused, maintenance still closes admission, a failed seat insert rolls back the already reserved wallet/lots/custody/receipt, partial-pot settlement cashes out exactly, and replay returns the original occupancy receipt. That initial run did not certify the full accepted-hand envelope or frontend. The subsequent integrated evidence below supersedes those local gaps; public funded play remains closed.
+
+## Current Local Evidence
+
+The completed local source includes all three financial migrations, shared engine/client integration, exact departure receipts and cross-device lobby events. Clean source `71f57c9585` passed the complete client production build and server TypeScript. Latest focused repairs passed 72 client cases, 3 rendered lobby cases and 48 engine SELECT contract cases. Admission certification passed 74 SQL assertions. Accepted-hand certification passed 50 assertions after preserving production's current table-aware settlement locks; these totals overlap prior bootstrap checks.
+
+The connected controlled-play runner funded two authenticated players with 100 Diamonds each, ran the actual shared HandController, committed the real `[200, 0]` result through the twelve-argument SQL protocol, projected both histories, and cashed out to wallets `[1100, 900]`. All 2000 fixture Diamonds remained accounted for, with no active custody/seats, duplicate payment or chip minting. This ran only in the dedicated local test database. Exact commands and limitations are in the integration and settlement-lane changelogs. Normal publication and production verification remain separate unchecked gates above.

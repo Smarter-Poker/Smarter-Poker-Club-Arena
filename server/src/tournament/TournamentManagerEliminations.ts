@@ -32,7 +32,7 @@ import {
   eliminationSweepMs,
   eliminationSweepsInflight,
 } from '../observability/engineInstruments.js';
-import { computePlacePrize } from './payoutMath.js';
+import { computePlacePrize, prizePoolAvailableToPlaces } from './payoutMath.js';
 import { resolvePayoutStructure, parsePayoutStructure } from './payoutStructure.js';
 import type { ServerTableEngine } from '../engine/ServerTableEngine.js';
 import type { VerifiedTournamentCompletionReceipt } from './completionSettlementReceipt.js';
@@ -1794,7 +1794,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         // spin_multiplier + tournament_type: a Spin's payout split is a pure
         // function of its multiplier, so the spec can rebuild the structure
         // when the stored column is unreadable. See payoutStructure.ts.
-        'payout_structure, prize_pool, is_bounty, is_pko, is_mystery_bounty, bounty_amount, mystery_bounty_min, mystery_bounty_max, variant, tournament_type, satellite_target_id, spin_multiplier'
+        'payout_structure, prize_pool, bubble_protection, buy_in_amount, is_bounty, is_pko, is_mystery_bounty, bounty_amount, mystery_bounty_min, mystery_bounty_max, variant, tournament_type, satellite_target_id, spin_multiplier'
       )
       .eq('id', this.tournamentId)
       .maybeSingle(); // FIX 168: Bible safety rule — use maybeSingle over single
@@ -1889,7 +1889,24 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       const safeField = field !== undefined && field >= position ? field : undefined;
       const payouts = resolvePayoutStructure(tournament as any, safeField);
       if (payouts) {
-        prize = computePlacePrize(Number(tournament.prize_pool || 0), payouts, position);
+        // Once entry is closed, result facts and the elimination broadcast
+        // must price the same pool-funded Bubble Promise as terminal SQL.
+        // Before that cutoff the field and ladder remain provisional.
+        const ladderPool = prizePoolAvailableToPlaces(
+          Number(tournament.prize_pool || 0),
+          payouts,
+          safeField ?? deepestCanonicalPaidPlace(payouts),
+          tournament.bubble_protection === true,
+          Number(tournament.buy_in_amount)
+        );
+        if (ladderPool === null) {
+          reportError(
+            new Error('Cannot price an unfunded or malformed Bubble Promise'),
+            'Tournament.elimination_ladder_pool_invalid'
+          );
+          return false;
+        }
+        prize = computePlacePrize(ladderPool, payouts, position);
       }
     }
 
@@ -3300,12 +3317,31 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       return false;
     }
 
+    const isSatellite =
+      String(this.tournamentCache?.variant ?? '').toLowerCase() === 'satellite' ||
+      String(this.tournamentCache?.tournament_type ?? '').toUpperCase() === 'SATELLITE' ||
+      Boolean(this.tournamentCache?.satellite_target_id);
+    const ladderPool = prizePoolAvailableToPlaces(
+      finalPrizePool,
+      payouts,
+      finalField,
+      !isSatellite && this.tournamentCache?.bubble_protection === true,
+      Number(this.tournamentCache?.buy_in_amount)
+    );
+    if (ladderPool === null) {
+      reportError(
+        new Error('Cannot reprice an unfunded or malformed Bubble Promise'),
+        'Tournament.prize_recalc_ladder_pool_invalid'
+      );
+      return false;
+    }
+
     let complete = true;
     let mutations = 0;
     for (const player of eliminated) {
       const payoutEntry = payouts.find((p: any) => Number(p.place) === Number(player.position));
       const correctPrize = payoutEntry
-        ? computePlacePrize(finalPrizePool, payouts, Number(player.position))
+        ? computePlacePrize(ladderPool, payouts, Number(player.position))
         : 0;
 
       /**

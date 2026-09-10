@@ -1,0 +1,64 @@
+{
+  "captured_at": "2026-09-10T15:21:44.467224+00:00",
+  "scope": "Held qualification UI terminal-result auth scope; no deployed caller or authenticated browser claim",
+  "tests": {
+    "files": 2,
+    "passed": 67,
+    "new_actual_auth_callback_races": 5
+  },
+  "typecheck": {
+    "command": "npx tsc --noEmit -p tsconfig.app.json",
+    "exit": 0,
+    "diagnostic_bytes": 0
+  },
+  "live_catalog_read_only": [
+    {
+      "verified_at": "2026-09-10 15:20:16.17524+00",
+      "signature": "public.fn_settle_satellite_tournament(uuid,uuid)",
+      "exists": true,
+      "body_md5": "486d0e6729de8d518d7faf0c253b65d3"
+    },
+    {
+      "verified_at": "2026-09-10 15:20:16.175277+00",
+      "signature": "public.fn_settle_satellite_tournament_seat_exit_core_v2(uuid,uuid)",
+      "exists": false,
+      "body_md5": null
+    },
+    {
+      "verified_at": "2026-09-10 15:20:16.175298+00",
+      "signature": "public.fn_prepare_satellite_qualification(uuid,uuid[],uuid)",
+      "exists": false,
+      "body_md5": null
+    },
+    {
+      "verified_at": "2026-09-10 15:20:16.175317+00",
+      "signature": "public.fn_complete_satellite_qualification(uuid,uuid[])",
+      "exists": false,
+      "body_md5": null
+    },
+    {
+      "verified_at": "2026-09-10 15:20:16.175343+00",
+      "signature": "public.fn_resolve_satellite_qualification_outcome(uuid,uuid[])",
+      "exists": false,
+      "body_md5": null
+    },
+    {
+      "verified_at": "2026-09-10 15:20:16.175382+00",
+      "signature": "public.fn_get_my_satellite_qualification(uuid)",
+      "exists": false,
+      "body_md5": null
+    }
+  ],
+  "files": {
+    "src/pages/TablePage.tsx": "dbbf574f0924ec67e4b5fbef9935df4c2d4f93426cbc1e60ed8194ab552f7e8f",
+    "tests/unit/satelliteQualificationOutcome.test.tsx": "27cf57e7b65a4cfbd1a6e0bbc5eb564912366727459bec6614291f19d01d0573",
+    "tests/config/tournamentWinnerExit.test.ts": "41e89546ebc8f8550a82706b74e43d4e85d4809adcf3ec728f8509055eebdbc7"
+  },
+  "holds": [
+    "External Stage-B final-seat private core absent live",
+    "New prepare, complete, resolver and own-qualification RPCs absent live",
+    "Publishing a new client does not establish adoption by already-open legacy contexts",
+    "Current-main integration, running-target physical assignment, process recovery and authenticated browser acceptance remain open",
+    "Seven observed disabled tournament guards prevent full financial-certificate closure"
+  ]
+}

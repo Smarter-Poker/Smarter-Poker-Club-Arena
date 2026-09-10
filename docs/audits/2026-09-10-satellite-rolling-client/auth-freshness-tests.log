@@ -1,0 +1,76 @@
+
+ RUN  v4.1.11 /Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-satellite-swarm-sep10
+
+ ✓ tests/config/tournamentWinnerExit.test.ts > The champion's exit > a committed finish broadcasts the durable winner - it used to end in silence 2ms
+ ✓ tests/config/tournamentWinnerExit.test.ts > The champion's exit > sends it BEFORE the channel is torn down 1ms
+ ✓ tests/config/tournamentWinnerExit.test.ts > The champion's exit > carries the winner identity and the prize 1ms
+ ✓ tests/config/tournamentWinnerExit.test.ts > The champion's exit > does NOT announce the champion as eliminated 0ms
+ ✓ tests/config/tournamentWinnerExit.test.ts > The champion's exit > TablePage handles tournament_winner and routes it to the lobby exit 3ms
+ ✓ tests/config/tournamentWinnerExit.test.ts > The champion's exit > recovers the result from durable COMPLETED rows when every broadcast attempt fails 1ms
+ ✓ tests/config/tournamentWinnerExit.test.ts > The champion's exit > keeps the durable completion poll armed after a successful non-terminal read 3ms
+ ✓ tests/config/tournamentWinnerExit.test.ts > The champion's exit > bootstraps the durable completion backstop after the realtime channel is wired 0ms
+ ✓ tests/config/tournamentWinnerExit.test.ts > The champion's exit > re-arms the durable backstop when realtime errors or times out 2ms
+ ✓ tests/config/tournamentWinnerExit.test.ts > The champion's exit > a committed final-table deal drives every viewer through the durable result reader 2ms
+ ✓ tests/config/tournamentWinnerExit.test.ts > The champion's exit > there is exactly ONE lobby-exit implementation 1ms
+ ✓ tests/config/tournamentWinnerExit.test.ts > The champion's exit > a repeated broadcast cannot schedule two exits 3ms
+ ✓ tests/config/tournamentWinnerExit.test.ts > The champion's exit > bounds optional result enrichment before publishing and closing the table 0ms
+ ✓ tests/config/tournamentWinnerExit.test.ts > The champion's exit > the realtime event union still knows this event exists 0ms
+ ✓ tests/config/tournamentWinnerExit.test.ts > The champion's exit > eliminatePlayer is still never called with place 1 — that is why this is needed 1ms
+ ✓ tests/config/tournamentWinnerExit.test.ts > The tournament result lookup cannot strand an exit > continues after the deadline when the lookup never resolves 2ms
+ ✓ tests/config/tournamentWinnerExit.test.ts > The tournament result lookup cannot strand an exit > uses enrichment that arrives inside the budget 1ms
+ ✓ tests/config/tournamentWinnerExit.test.ts > The tournament result lookup cannot strand an exit > also falls through when an unexpected lookup rejection escapes 0ms
+ ✓ tests/config/tournamentWinnerExit.test.ts > The exit actually leaves the table > sends the four signals every manual leave sends 0ms
+ ✓ tests/config/tournamentWinnerExit.test.ts > The exit actually leaves the table > publishes the card BEFORE it starts tearing the table down 0ms
+ ✓ tests/config/tournamentWinnerExit.test.ts > The exit actually leaves the table > does NOT navigate when it is embedded in MultiTablePage 0ms
+ ✓ tests/config/tournamentWinnerExit.test.ts > The exit actually leaves the table > guards on embeddedTableId, not on isMultiTable 0ms
+ ✓ tests/config/tournamentWinnerExit.test.ts > The exit actually leaves the table > cancels a pending exit when the subscription is torn down 0ms
+ ✓ tests/config/tournamentWinnerExit.test.ts > One card, one carrier > no lobby page reads a result out of router state 0ms
+ ✓ tests/config/tournamentWinnerExit.test.ts > One card, one carrier > the client cannot announce an elimination or a winner 0ms
+ ✓ tests/config/tournamentWinnerExit.test.ts > One card, one carrier > the card is branded a Spin only when it IS one 0ms
+ ✓ tests/unit/satelliteQualificationOutcome.test.tsx > Equal satellite qualification live and reload delivery > renders the real live seat delivery through the app-root host without a place 71ms
+ ✓ tests/unit/satelliteQualificationOutcome.test.tsx > Equal satellite qualification live and reload delivery > renders the real live ticket delivery through the app-root host without a place 40ms
+ ✓ tests/unit/satelliteQualificationOutcome.test.tsx > Equal satellite qualification live and reload delivery > renders the real live cash delivery through the app-root host without a place 31ms
+ ✓ tests/unit/satelliteQualificationOutcome.test.tsx > Equal satellite qualification live and reload delivery > recovers from the committed actor-scoped RPC when the broadcast was lost 32ms
+ ✓ tests/unit/satelliteQualificationOutcome.test.tsx > Equal satellite qualification live and reload delivery > replayed broadcasts and a late durable read produce one close and one card 39ms
+ ✓ tests/unit/satelliteQualificationOutcome.test.tsx > Equal satellite qualification live and reload delivery > ignores invalid or foreign live payload {"userId":"other"} 28ms
+ ✓ tests/unit/satelliteQualificationOutcome.test.tsx > Equal satellite qualification live and reload delivery > ignores invalid or foreign live payload {"tournamentId":"previous"} 27ms
+ ✓ tests/unit/satelliteQualificationOutcome.test.tsx > Equal satellite qualification live and reload delivery > ignores invalid or foreign live payload {"completionKind":"single_winner"} 28ms
+ ✓ tests/unit/satelliteQualificationOutcome.test.tsx > Equal satellite qualification live and reload delivery > ignores invalid or foreign live payload {"deliveryKind":"unknown"} 32ms
+ ✓ tests/unit/satelliteQualificationOutcome.test.tsx > Equal satellite qualification live and reload delivery > ignores invalid or foreign live payload {"deliveryKind":{"toString":"cash"}} 28ms
+ ✓ tests/unit/satelliteQualificationOutcome.test.tsx > Equal satellite qualification live and reload delivery > ignores invalid or foreign live payload {"prize":-1} 28ms
+ ✓ tests/unit/satelliteQualificationOutcome.test.tsx > Equal satellite qualification live and reload delivery > ignores invalid or foreign live payload {"prize":0} 27ms
+ ✓ tests/unit/satelliteQualificationOutcome.test.tsx > Equal satellite qualification live and reload delivery > ignores invalid or foreign live payload {"prize":1.234} 29ms
+ ✓ tests/unit/satelliteQualificationOutcome.test.tsx > Equal satellite qualification live and reload delivery > ignores invalid or foreign live payload {"prize":"125.50"} 28ms
+ ✓ tests/unit/satelliteQualificationOutcome.test.tsx > Equal satellite qualification live and reload delivery > ignores invalid or foreign live payload {"targetId":""} 28ms
+ ✓ tests/unit/satelliteQualificationOutcome.test.tsx > Equal satellite qualification live and reload delivery > does not close another table from a stale callback or delayed receipt after teardown 29ms
+ ✓ tests/unit/satelliteQualificationOutcome.test.tsx > Equal satellite qualification live and reload delivery > discards a qualification read across same-account auth replacement and recovers freshly 32ms
+ ✓ tests/unit/satelliteQualificationOutcome.test.tsx > Equal satellite qualification live and reload delivery > does not publish or close for an account that changed while the receipt was pending 29ms
+ ✓ tests/unit/satelliteQualificationOutcome.test.tsx > Equal satellite qualification live and reload delivery > invalidates a queued qualification exit on auth event hero 30ms
+ ✓ tests/unit/satelliteQualificationOutcome.test.tsx > Equal satellite qualification live and reload delivery > invalidates a queued qualification exit on auth event other 28ms
+ ✓ tests/unit/satelliteQualificationOutcome.test.tsx > Equal satellite qualification live and reload delivery > invalidates a queued qualification exit on auth event null 31ms
+ ✓ tests/unit/satelliteQualificationOutcome.test.tsx > Equal satellite qualification live and reload delivery > cancels an exit already awaiting optional enrichment when the table is torn down 30ms
+ ✓ tests/unit/satelliteQualificationOutcome.test.tsx > Equal satellite qualification live and reload delivery > closes only its own tab in multi-table mode 29ms
+ ✓ tests/unit/satelliteQualificationOutcome.test.tsx > Equal satellite qualification live and reload delivery > retries an unreadable qualification without reporting a fabricated cash prize 31ms
+ ✓ tests/unit/satelliteQualificationOutcome.test.tsx > Equal satellite qualification live and reload delivery > bounds a stalled authoritative RPC and recovers on the existing durable retry 43ms
+ ✓ tests/unit/satelliteQualificationOutcome.test.tsx > Equal satellite qualification live and reload delivery > recovers when the prerequisite tournaments read stalls 35ms
+ ✓ tests/unit/satelliteQualificationOutcome.test.tsx > Equal satellite qualification live and reload delivery > recovers when the prerequisite tournament_players read stalls 32ms
+ ✓ tests/unit/satelliteQualificationOutcome.test.tsx > Equal satellite qualification live and reload delivery > manual result enrichment also treats a qualified seat value as non-cash 32ms
+ ✓ tests/unit/satelliteQualificationOutcome.test.tsx > Equal satellite qualification live and reload delivery > preserves the ordinary single-winner broadcast, seven-second celebration and ranking card 38ms
+ ✓ tests/unit/satelliteQualificationOutcome.test.tsx > Equal satellite qualification live and reload delivery > preserves durable single-winner completion without depending on the new RPC 32ms
+ ✓ tests/unit/satelliteQualificationOutcome.test.tsx > Equal satellite qualification live and reload delivery > keeps the result until dismissal and opens the actual target route on request 35ms
+ ✓ tests/unit/satelliteQualificationOutcome.test.tsx > Own qualification RPC validation > returns null for a genuinely absent own qualification 0ms
+ ✓ tests/unit/satelliteQualificationOutcome.test.tsx > Own qualification RPC validation > rejects malformed or mismatched authority data {"user_id":"other"} 0ms
+ ✓ tests/unit/satelliteQualificationOutcome.test.tsx > Own qualification RPC validation > rejects malformed or mismatched authority data {"tournament_id":"other"} 0ms
+ ✓ tests/unit/satelliteQualificationOutcome.test.tsx > Own qualification RPC validation > rejects malformed or mismatched authority data {"amount":null} 0ms
+ ✓ tests/unit/satelliteQualificationOutcome.test.tsx > Own qualification RPC validation > rejects malformed or mismatched authority data {"amount":1.234} 0ms
+ ✓ tests/unit/satelliteQualificationOutcome.test.tsx > Own qualification RPC validation > rejects malformed or mismatched authority data {"delivery_kind":"unknown"} 0ms
+ ✓ tests/unit/satelliteQualificationOutcome.test.tsx > Qualification result ownership across late publishers > retains qualification facts when a late same-event publisher has only rank and prize 31ms
+ ✓ tests/unit/satelliteQualificationOutcome.test.tsx > Qualification result ownership across late publishers > upgrades a preliminary result to qualification without carrying a fabricated rank or cash 31ms
+ ✓ tests/unit/satelliteQualificationOutcome.test.tsx > Qualification result ownership across late publishers > retains a queued qualification when that same event publishes an incomplete retry 29ms
+ ✓ tests/unit/satelliteQualificationOutcome.test.tsx > Qualification result ownership across late publishers > queues different same-name tournaments without swallowing either result 31ms
+
+ Test Files  2 passed (2)
+      Tests  67 passed (67)
+   Start at  10:19:22
+   Duration  1.94s (transform 339ms, setup 147ms, import 577ms, tests 1.16s, environment 253ms)
+

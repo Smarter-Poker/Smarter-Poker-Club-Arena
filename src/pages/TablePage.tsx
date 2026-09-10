@@ -1532,6 +1532,12 @@ export default function TablePage({
 
   // Get current user
   const [userId, setUserId] = useState<string>('guest');
+  // Auth changes invalidate only pending terminal presentation. Tables and
+  // hands remain mounted; a fresh durable read recovers the result.
+  const terminalAuthScopeRef = useRef<{ userId: string | null } | null>(null);
+  useMasterBusSubscription('AUTH_STATE_CHANGED', (event) => {
+    terminalAuthScopeRef.current = { userId: event.isAuthenticated ? event.userId : null };
+  });
 
   // ── Bounty animations (2026-08-20, Dan) ───────────────────────────────────
   // Both are driven by engine broadcasts that already reach EVERY client at
@@ -12634,9 +12640,15 @@ export default function TablePage({
             delayMs: number,
             qualification?: SatelliteQualification
           ) => {
-            if (!isMounted) return;
+            const terminalScope = terminalAuthScopeRef.current;
+            if (!isCurrentTerminalResult(terminalScope)) return;
             if (exitStarted) return;
             exitStarted = true;
+            const abandonStaleExit = () => {
+              exitStarted = false;
+              durableCompletionHandled = false;
+              scheduleDurableCompletionRetry();
+            };
 
             const tid = table.tournament_id || tableStateRef.current.tournamentId;
 
@@ -12645,6 +12657,10 @@ export default function TablePage({
                winner beat is force-navigated out of wherever they went next —
                which, in multi-table, is somebody else's live table. */
             tournamentExitTimerRef.current = setTimeout(() => {
+              if (!isCurrentTerminalResult(terminalScope)) {
+                abandonStaleExit();
+                return;
+              }
               void (async () => {
                 /* Result detail is optional enrichment, not permission to
                    leave a table the settlement has already closed. A browser
@@ -12658,7 +12674,10 @@ export default function TablePage({
                   tid && !qualification
                     ? await awaitTournamentResultEnrichment(fetchTournamentResult(tid, userId))
                     : undefined;
-                if (!isMounted) return;
+                if (!isCurrentTerminalResult(terminalScope)) {
+                  abandonStaleExit();
+                  return;
+                }
                 const qualifiedResult = qualification ?? full?.qualification;
                 publishSessionSummary({
                   duration: Math.floor((Date.now() - sessionStartRef.current) / 1000),
@@ -12816,8 +12835,15 @@ export default function TablePage({
               void verifyDurableCompletion();
             }, delayMs);
           }
+          function isCurrentTerminalResult(scope: { userId: string | null } | null): boolean {
+            return (
+              isMounted &&
+              terminalAuthScopeRef.current === scope &&
+              (scope === null || scope.userId === userId)
+            );
+          }
           function exitFromSatelliteQualification(qualification: SatelliteQualification): void {
-            if (!isMounted || exitStarted) return;
+            if (!isCurrentTerminalResult(terminalAuthScopeRef.current) || exitStarted) return;
             durableCompletionHandled = true;
             if (durableCompletionRetryTimer) {
               clearTimeout(durableCompletionRetryTimer);
@@ -12827,10 +12853,11 @@ export default function TablePage({
           }
 
           async function exitFromDurableCompletion(): Promise<void> {
+            const terminalScope = terminalAuthScopeRef.current;
             if (
               durableCompletionLookupInFlight ||
               durableCompletionHandled ||
-              !isMounted ||
+              !isCurrentTerminalResult(terminalScope) ||
               !userId ||
               userId === 'guest'
             ) {
@@ -12853,7 +12880,10 @@ export default function TablePage({
                     .eq('user_id', userId)
                     .maybeSingle()
                 )) ?? { data: null, error: new Error('Tournament result read is unavailable') };
-                if (!isMounted) return;
+                if (!isCurrentTerminalResult(terminalScope)) {
+                  scheduleDurableCompletionRetry();
+                  return;
+                }
                 if (!resultError && data) {
                   if (data.status === 'winner' && data.position == null) {
                     // A stalled read must release the in-flight guard so the
@@ -12862,7 +12892,10 @@ export default function TablePage({
                     const qualification = await awaitTournamentResultEnrichment(
                       tournamentService.getMySatelliteQualification(durableTournamentId, userId)
                     );
-                    if (!isMounted) return;
+                    if (!isCurrentTerminalResult(terminalScope)) {
+                      scheduleDurableCompletionRetry();
+                      return;
+                    }
                     if (qualification) {
                       exitFromSatelliteQualification(qualification);
                       return;
@@ -12881,7 +12914,10 @@ export default function TablePage({
             } finally {
               durableCompletionLookupInFlight = false;
             }
-            if (!isMounted) return;
+            if (!isCurrentTerminalResult(terminalScope)) {
+              scheduleDurableCompletionRetry();
+              return;
+            }
             if (lastError || !result) {
               if (!durableCompletionFailureReported) {
                 durableCompletionFailureReported = true;
@@ -12918,7 +12954,8 @@ export default function TablePage({
           }
 
           async function verifyDurableCompletion(): Promise<void> {
-            if (!isMounted || durableCompletionHandled) return;
+            const terminalScope = terminalAuthScopeRef.current;
+            if (!isCurrentTerminalResult(terminalScope) || durableCompletionHandled) return;
             const { data: terminal, error: terminalError } = (await awaitTournamentResultEnrichment(
               supabase
                 .from('tournaments')
@@ -12926,7 +12963,10 @@ export default function TablePage({
                 .eq('id', durableTournamentId)
                 .maybeSingle()
             )) ?? { data: null, error: new Error('Tournament completion read is unavailable') };
-            if (!isMounted) return;
+            if (!isCurrentTerminalResult(terminalScope)) {
+              scheduleDurableCompletionRetry();
+              return;
+            }
             if (terminalError || !terminal) {
               if (!durableCompletionFailureReported) {
                 durableCompletionFailureReported = true;

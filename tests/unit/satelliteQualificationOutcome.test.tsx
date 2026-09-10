@@ -86,6 +86,14 @@ const callback =
       n.getText(source).includes('parseSatelliteQualificationEvent')
   );
 if (!exitNode || !callback) throw new Error('Missing actual terminal exit or broadcast callback');
+const authCallback = nodes.find(
+  (n) =>
+    ts.isArrowFunction(n) &&
+    ts.isCallExpression(n.parent) &&
+    n.parent.expression.getText(source) === 'useMasterBusSubscription' &&
+    n.parent.arguments[0]?.getText(source) === "'AUTH_STATE_CHANGED'"
+);
+if (!authCallback) throw new Error('Missing actual terminal auth subscription');
 
 function buildHarness({ embedded = false } = {}) {
   const ref = (current: unknown) => ({ current });
@@ -103,6 +111,7 @@ function buildHarness({ embedded = false } = {}) {
     publishSessionSummary,
     supabase: transport,
     userId: 'hero',
+    terminalAuthScopeRef: ref(null),
     tableId: 'table',
     durableTournamentId: 'satellite',
     durableTournamentName: 'Satellite',
@@ -141,12 +150,15 @@ function buildHarness({ embedded = false } = {}) {
     ${functionSource('fetchTournamentResult')}
     const ${exitNode.getText(source)};
     ${functionSource('scheduleDurableCompletionRetry')}
+    ${functionSource('isCurrentTerminalResult')}
     ${functionSource('exitFromSatelliteQualification')}
     ${functionSource('exitFromDurableCompletion')}
     ${functionSource('verifyDurableCompletion')}
     const receive = ${callback.getText(source)};
+    const receiveAuth = ${authCallback.getText(source)};
     return { receive, reload: exitFromDurableCompletion, verify: verifyDurableCompletion, enrich: fetchTournamentResult,
       leave: goToLobbyWithResult,
+      authChanged(userId) { receiveAuth({ userId, isAuthenticated: userId !== null }); },
       dispose() { isMounted = false; clearTimeout(tournamentExitTimerRef.current); clearTimeout(durableCompletionRetryTimer); }
     };`;
   const js = ts.transpile(body, { target: ts.ScriptTarget.ES2022 });
@@ -318,6 +330,73 @@ describe('Equal satellite qualification live and reload delivery', () => {
     expect(peekSessionSummary()).toBeNull();
     expect(h.emit).not.toHaveBeenCalled();
   });
+
+  it('discards a qualification read across same-account auth replacement and recovers freshly', async () => {
+    const h = table();
+    let resolveRead!: (value: unknown) => void;
+    transport.rpc.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveRead = resolve;
+        })
+    );
+    const lookup = h.reload();
+    await vi.advanceTimersByTimeAsync(0);
+    h.authChanged('hero');
+    resolveRead({ data: receipt('seat'), error: null });
+    await lookup;
+    await settle();
+    expect(h.emit).not.toHaveBeenCalled();
+    expect(peekSessionSummary()).toBeNull();
+    transport.rpc.mockResolvedValue({ data: receipt('cash'), error: null });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1001);
+    });
+    expect(peekSessionSummary()?.tournament?.qualification?.deliveryKind).toBe('cash');
+    expect(h.navigate).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not publish or close for an account that changed while the receipt was pending', async () => {
+    const h = table();
+    let resolveRead!: (value: unknown) => void;
+    transport.rpc.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveRead = resolve;
+        })
+    );
+    const lookup = h.reload();
+    await vi.advanceTimersByTimeAsync(0);
+    h.authChanged('other');
+    resolveRead({ data: receipt(), error: null });
+    await lookup;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30001);
+    });
+    expect(h.emit).not.toHaveBeenCalled();
+    expect(h.navigate).not.toHaveBeenCalled();
+    expect(peekSessionSummary()).toBeNull();
+  });
+
+  it.each(['hero', 'other', null])(
+    'invalidates a queued qualification exit on auth event %s',
+    async (nextUser) => {
+      const h = table({ embedded: true });
+      h.receive({ payload: event() });
+      h.authChanged(nextUser);
+      await settle();
+      expect(h.emit).not.toHaveBeenCalled();
+      expect(h.navigate).not.toHaveBeenCalled();
+      expect(peekSessionSummary()).toBeNull();
+      if (nextUser === 'hero') {
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(1001);
+        });
+        expect(h.emit).toHaveBeenCalledWith('TABLE_LEFT', { tableId: 'table', seat: 1 });
+        expect(h.navigate).not.toHaveBeenCalled();
+      }
+    }
+  );
 
   it('cancels an exit already awaiting optional enrichment when the table is torn down', async () => {
     const h = table();

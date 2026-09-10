@@ -150,6 +150,55 @@ try {
   ).outputText;
   const client = new Function(clientCode)();
   const rows = [];
+  const refusedRows = [];
+  function capture(format, tag, structure, index, entryClosed, producer) {
+    manager.tournamentCache = {
+      variant: format,
+      tournament_type: format.toUpperCase(),
+      starting_chips: 1000,
+      accelerated_mtt: true,
+    };
+    manager.tournamentEntryWindowClosed = entryClosed;
+    manager.prizePoolFinalized = false;
+    manager.entrantCountForChipCap = 50;
+    manager.rebuysGrantedForChipCap = 0;
+    manager.addonsGrantedForChipCap = 0;
+    manager.blindCapReported = true;
+    const actual = manager.resolveBlindLevel(structure, index);
+    const oldManagerMs = manager.levelDurationMs(actual);
+    const oldClientMs =
+      client.getCurrentLevelState({
+        ...manager.tournamentCache,
+        blind_structure: structure,
+        status: 'RUNNING',
+        started_at: new Date().toISOString(),
+        current_level: index,
+        level_started_at: null,
+      }).timeRemainingSeconds * 1000;
+    const item = {
+      format,
+      tag,
+      index,
+      entryClosed,
+      structure,
+      oldManagerMs,
+      oldClientMs,
+      producer,
+    };
+    try {
+      item.proposed = candidate.clockDurationForLevel(
+        structure,
+        index,
+        format !== 'mtt',
+        true,
+        entryClosed
+      );
+      rows.push(item);
+    } catch (error) {
+      item.expectedError = error.message;
+      refusedRows.push(item);
+    }
+  }
   for (const format of ['mtt', 'spin', 'sng']) {
     for (const [tag, length] of [
       ['one-minute', { durationMinutes: 1 }],
@@ -157,92 +206,113 @@ try {
       ['ten-minutes', { durationMinutes: 10 }],
       ['snake-five', { duration_minutes: 5 }],
       ['seconds-three', { duration: 180 }],
-      ['fractional', { durationMinutes: 6.1 }],
-      ['default', {}],
-      ['minute-precedence', { durationMinutes: 2, duration: 180 }],
-      ['null-minute', { durationMinutes: null, duration_minutes: 5 }],
-      ['string-minute', { durationMinutes: '5' }],
+      ['fractional-six', { durationMinutes: 6.1 }],
+      ['fractional-seventeen', { durationMinutes: 17.9 }],
+      ['agreeing-fractional-terms', { durationMinutes: 17.9, duration: 1074 }],
+      ['agreeing-aliases', { durationMinutes: 5, duration_minutes: 5, duration: 300 }],
     ]) {
       const structure = [
         { level: 1, smallBlind: 10, bigBlind: 20, ...length },
         { level: 2, smallBlind: 15, bigBlind: 30, ...length },
       ];
-      for (const index of [0, 1, 2, 10]) {
-        for (const entryClosed of [false, true]) {
-          manager.tournamentCache = {
-            variant: format,
-            tournament_type: format.toUpperCase(),
-            starting_chips: 1000,
-            accelerated_mtt: true,
-          };
-          manager.tournamentEntryWindowClosed = entryClosed;
-          manager.prizePoolFinalized = false;
-          manager.entrantCountForChipCap = 50;
-          manager.rebuysGrantedForChipCap = 0;
-          manager.addonsGrantedForChipCap = 0;
-          manager.blindCapReported = true;
-          const actual = manager.resolveBlindLevel(structure, index);
-          const oldManagerMs = manager.levelDurationMs(actual);
-          const t = {
-            ...manager.tournamentCache,
-            blind_structure: structure,
-            status: 'RUNNING',
-            started_at: new Date().toISOString(),
-            current_level: index,
-            level_started_at: null,
-          };
-          const oldClientMs = client.getCurrentLevelState(t).timeRemainingSeconds * 1000;
-          const proposed = candidate.clockDurationForLevel(
-            structure,
-            index,
-            format !== 'mtt',
-            true,
-            entryClosed
-          );
-          rows.push({
-            format,
-            tag,
-            index,
-            entryClosed,
-            structure,
-            oldManagerMs,
-            oldClientMs,
-            proposed,
-          });
-        }
-      }
+      for (const index of [0, 1, 2, 10])
+        for (const closed of [false, true]) capture(format, tag, structure, index, closed);
     }
   }
+  for (const [tag, length] of [
+    ['missing', {}],
+    ['contradictory-units', { durationMinutes: 2, duration: 180 }],
+    ['null-minute', { durationMinutes: null, duration_minutes: 5 }],
+    ['string-minute', { durationMinutes: '5' }],
+    ['boolean-minute', { durationMinutes: true }],
+    ['negative-camel-positive-snake', { durationMinutes: -1, duration_minutes: 5 }],
+    ['zero-camel-positive-snake', { durationMinutes: 0, duration_minutes: 5 }],
+    ['object-term', { durationMinutes: {}, duration: 180 }],
+    ['array-term', { durationMinutes: [5] }],
+    ['contradictory-aliases', { durationMinutes: 5, duration_minutes: 6 }],
+    ['overflow-term', { durationMinutes: 1e308 }],
+    ['below-half-microsecond', { duration: 0.0000004999999999999999 }],
+  ])
+    capture('mtt', tag, [{ level: 1, smallBlind: 10, bigBlind: 20, ...length }], 0, false);
+  for (const [tag, seconds] of [
+    ['half-microsecond', 0.0000005],
+    ['above-half-microsecond', 0.0000005000000000000001],
+    ['one-second-half-microsecond', 1.0000005],
+    ['one-second-below-half-microsecond', 1.0000004999999998],
+  ])
+    capture('mtt', tag, [{ level: 1, smallBlind: 10, bigBlind: 20, duration: seconds }], 0, false);
+  const presetPath = 'src/config/blindStructures.ts';
+  const presetSource = execFileSync('git', ['-C', repo, 'show', managerRef + ':' + presetPath], {
+    encoding: 'utf8',
+  });
+  hashes.push({
+    source: presetPath,
+    sha256: createHash('sha256').update(presetSource).digest('hex'),
+  });
+  const presetCode = ts.transpileModule(presetSource.replace(/^import .*SPIN_BLINDS.*\n/m, ''), {
+    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
+  }).outputText;
+  const presets = {};
+  new Function('exports', 'SPIN_BLINDS', presetCode)(presets, spin.SPIN_BLINDS);
+  const producers = [];
+  function booked(format, label, structure, source) {
+    producers.push({ format, label, source, levels: structure.length });
+    let last = structure.length - 1;
+    while (last > 0 && structure[last].isBreak === true) last--;
+    for (const index of [...new Set([0, last, structure.length, structure.length + 8])])
+      for (const closed of [false, true])
+        capture(format, 'actual-producer:' + label, structure, index, closed, source);
+  }
+  for (const [name, structure] of Object.entries(presets.BLIND_STRUCTURES))
+    booked(name === 'sng' ? 'sng' : 'mtt', name, structure, presetPath);
+  for (const [name, structure] of Object.entries(hu))
+    if (Array.isArray(structure) && structure.some((x) => x && Object.hasOwn(x, 'durationMinutes')))
+      booked('sng', name, structure, 'server/src/config/headsUpSpec.ts');
+  for (const stack of [300, 1000])
+    for (const tier of receipt.spinRuleManifest(1, stack).tiers)
+      booked(
+        'spin',
+        'stack' + stack + 'x' + tier.multiplier,
+        tier.blind_structure,
+        'server/src/tournament/SpinDrawReceipt.ts'
+      );
   const breakStructure = [
     { level: 1, smallBlind: 10, bigBlind: 20, durationMinutes: 10 },
     { isBreak: true, durationMinutes: 5 },
     { isBreak: true, durationMinutes: 5 },
   ];
-  rows.push({
-    format: 'mtt',
-    tag: 'trailing-breaks',
-    index: 3,
-    entryClosed: true,
-    structure: breakStructure,
-    proposed: candidate.clockDurationForLevel(breakStructure, 3, false, true, true),
-  });
+  capture('mtt', 'trailing-breaks', breakStructure, 3, true);
+  if (refusedRows.length !== 12)
+    throw new Error('Unexpected duration admission: ' + JSON.stringify(refusedRows));
+  const floorWitness = rows.find(
+    (x) => x.format === 'mtt' && x.tag === 'one-minute' && x.index === 2 && !x.entryClosed
+  );
+  if (floorWitness.oldManagerMs !== 120000 || floorWitness.proposed.durationMs !== 60000)
+    throw new Error('Unbooked overflow floor witness changed');
   const now = Date.now();
-  const due = new Date(now - 50 * 60000).toISOString();
+  const overdue = new Date(now - 50 * 60000).toISOString();
   const overdueClient = client.getCurrentLevelState({
     status: 'RUNNING',
-    started_at: due,
+    started_at: overdue,
     current_level: 0,
-    level_started_at: due,
+    level_started_at: overdue,
     blind_structure: [{ level: 1, smallBlind: 10, bigBlind: 20, durationMinutes: 10 }],
   }).timeRemainingSeconds;
   if (overdueClient !== 600) throw new Error('Old client overdue reset witness changed');
-  const output = {
-    manager_source_ref: managerRef,
-    sources: hashes,
-    rows,
-    old_client_overdue_reset_seconds: overdueClient,
-  };
-  process.stdout.write(JSON.stringify(output, null, 2) + '\n');
+  process.stdout.write(
+    JSON.stringify(
+      {
+        manager_source_ref: managerRef,
+        sources: hashes,
+        producers,
+        rows,
+        refused_rows: refusedRows,
+        old_client_overdue_reset_seconds: overdueClient,
+      },
+      null,
+      2
+    ) + '\n'
+  );
 } finally {
   rmSync(root, { recursive: true, force: true });
 }

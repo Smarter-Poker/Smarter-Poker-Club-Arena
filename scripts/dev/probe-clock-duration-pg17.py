@@ -31,34 +31,40 @@ with logpath.open('w') as log:
   for row,sql in zip(captured['rows'],actual):
    assert row['proposed']==sql,(row,sql)
    row['sql']=sql
-  q("SELECT smarter_private.fn_ca_clock_duration('[{\"durationMinutes\":5,\"duration_minutes\":6}]',0,false,false,false);",'Conflicting advertised')
-  q("SELECT smarter_private.fn_ca_clock_duration('[{\"durationMinutes\":1e308}]',0,false,false,false);",'not finite')
+  for item in captured['refused_rows']:
+   raw=json.dumps(item['structure']).replace("'","''")
+   q("SELECT smarter_private.fn_ca_clock_duration('"+raw+"',0,false,true,false);",item['expectedError'])
   q("SELECT smarter_private.fn_ca_clock_duration('[]',0,false,false,false);",'persisted structure')
-  q("SELECT smarter_private.fn_ca_clock_due_transition('[{}]',0,clock_timestamp(),60000);",'CLOCK_LEVEL_NOT_DUE')
-  q("SELECT smarter_private.fn_ca_clock_due_transition('[{}]',0,NULL,60000);",'CLOCK_CANONICAL_TIME_REQUIRED')
+  q("SELECT smarter_private.fn_ca_clock_due_transition('[{}]',0,clock_timestamp(),60000000);",'CLOCK_LEVEL_NOT_DUE')
+  q("SELECT smarter_private.fn_ca_clock_due_transition('[{}]',0,NULL,60000000);",'CLOCK_CANONICAL_TIME_REQUIRED')
   q("SELECT smarter_private.fn_ca_clock_due_transition('[{}]',0,clock_timestamp(),0);",'CLOCK_CANONICAL_TIME_REQUIRED')
-  q("SELECT smarter_private.fn_ca_clock_due_transition('[{}]',0,clock_timestamp(),1e-320);",'CLOCK_DURATION_BELOW_DATABASE_PRECISION')
+  q("SELECT smarter_private.fn_ca_clock_instant('infinity');",'CLOCK_FINITE_INSTANT_REQUIRED')
+  q("SELECT smarter_private.fn_ca_clock_instant('-infinity');",'CLOCK_FINITE_INSTANT_REQUIRED')
   checks=q("""
   DO $proof$
   DECLARE a timestamptz:=clock_timestamp()-interval '10 minutes';r jsonb;s jsonb;BEGIN
-   r:=smarter_private.fn_ca_clock_due_transition('[{},{}]',0,a,60000);
+   r:=smarter_private.fn_ca_clock_due_transition('[{},{}]',0,a,60000000);
    IF (r->>'next_level')::integer<>1 OR (r->>'next_anchor')::timestamptz<>a+interval '1 minute' THEN RAISE EXCEPTION '0 to1 deadline regression';END IF;
    IF (r->>'next_anchor')::timestamptz>=clock_timestamp()-interval '8 minutes' THEN RAISE EXCEPTION 'late advance reset';END IF;
-   s:=smarter_private.fn_ca_clock_due_transition('[{},{},{},{}]',1,(r->>'next_anchor')::timestamptz,60000);
+   s:=smarter_private.fn_ca_clock_due_transition('[{},{},{},{}]',1,(r->>'next_anchor')::timestamptz,60000000);
    IF (s->>'next_anchor')::timestamptz<>a+interval '2 minutes' THEN RAISE EXCEPTION 'overdue debt erased';END IF;
-   r:=smarter_private.fn_ca_clock_due_transition('[{},{"isBreak":true},{"isBreak":true},{}]',0,a,60000);
+   r:=smarter_private.fn_ca_clock_due_transition('[{},{"isBreak":true},{"isBreak":true},{}]',0,a,60000000);
    IF (r->>'next_level')::integer<>3 OR (r->>'next_anchor')::timestamptz<>a+interval '1 minute' THEN RAISE EXCEPTION 'break row consumed time';END IF;
-   r:=smarter_private.fn_ca_clock_due_transition('[{},{"isBreak":true},{"isBreak":true}]',0,a,60000);
+   r:=smarter_private.fn_ca_clock_due_transition('[{},{"isBreak":true},{"isBreak":true}]',0,a,60000000);
    IF (r->>'next_level')::integer<>3 THEN RAISE EXCEPTION 'trailing break overflow boundary';END IF;
    IF smarter_private.fn_ca_clock_instant('2026-09-10 12:34:56.123456+00')<>smarter_private.fn_ca_clock_instant('2026-09-10 08:34:56.123456-04') THEN RAISE EXCEPTION 'timestamp replay mismatch';END IF;
    IF smarter_private.fn_ca_clock_epoch_seconds(a,a-interval '1 minute',a-interval '1 second')<>0 THEN RAISE EXCEPTION 'prelevel interval credited';END IF;
    IF smarter_private.fn_ca_clock_epoch_seconds(a,a-interval '1 minute',a+interval '1 minute')<>60 THEN RAISE EXCEPTION 'partial interval unclipped';END IF;
    IF smarter_private.fn_ca_clock_epoch_seconds(a,a+interval '1 minute',a+interval '2 minutes')<>60 THEN RAISE EXCEPTION 'level interval lost';END IF;
+   IF smarter_private.fn_ca_clock_instant(NULL) IS NOT NULL THEN RAISE EXCEPTION 'null replay instant changed';END IF;
+   IF extract(epoch FROM smarter_private.fn_ca_clock_interval(1))*1000000<>1 THEN RAISE EXCEPTION 'one microsecond rerounded';END IF;
+   IF extract(epoch FROM smarter_private.fn_ca_clock_interval(1000001))*1000000<>1000001 THEN RAISE EXCEPTION 'fractional second rerounded';END IF;
+   IF extract(epoch FROM smarter_private.fn_ca_clock_interval(9007199254740991))*1000000<>9007199254740991 THEN RAISE EXCEPTION 'large exact duration lost precision';END IF;
   END $proof$;
   SELECT true;
   """)
   assert checks=='t',checks
-  captured['summary']={'native_duration_rows':len(actual),'proposed_mismatches':0,'old_manager_duration_mismatches':sum('oldManagerMs'in r and r['oldManagerMs']!=r['proposed']['durationMs'] for r in captured['rows']),'old_client_duration_mismatches':sum('oldClientMs'in r and r['oldClientMs']!=r['proposed']['durationMs'] for r in captured['rows']),'refusal_cases':7,'deadline_and_epoch_cases':9,'production_writes':False}
+  captured['summary']={'native_duration_rows':len(actual),'proposed_mismatches':0,'old_manager_duration_mismatches':sum('oldManagerMs'in r and r['oldManagerMs']!=r['proposed']['durationMs'] for r in captured['rows']),'old_client_duration_mismatches':sum('oldClientMs'in r and r['oldClientMs']!=r['proposed']['durationMs'] for r in captured['rows']),'admitted_producer_configurations':len(captured['producers']),'actual_producer_rows':sum('producer' in r and r['producer'] is not None for r in captured['rows']),'duration_admission_refusals':len(captured['refused_rows']),'other_refusal_cases':6,'deadline_and_epoch_cases':13,'production_writes':False}
   captured['sql_sha256']=hashlib.sha256(path.read_bytes()).hexdigest()
   Path('/tmp/codex-clock-duration-results.json').write_text(json.dumps(captured,indent=2)+'\n')
   print(json.dumps(captured['summary'],indent=2),flush=True)

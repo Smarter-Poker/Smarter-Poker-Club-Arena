@@ -11,7 +11,7 @@ type BreakScheduler = {
 beforeAll(async () => {
   process.env.SUPABASE_SERVICE_ROLE_KEY ||= 'test-placeholder-key';
   ({ GameServer } = await import('./GameServer.js'));
-});
+}, 60_000); // importing GameServer alone can pass 10s on a loaded CI runner
 beforeEach(() => {
   vi.useFakeTimers();
   vi.spyOn(console, 'log').mockImplementation(() => {});

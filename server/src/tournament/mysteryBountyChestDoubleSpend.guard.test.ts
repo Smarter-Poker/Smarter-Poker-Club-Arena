@@ -105,10 +105,22 @@ describe('fn_mystery_bounty_pay', () => {
     expect(def).toContain('chest_settled_to_champion');
   });
 
-  it('is a self-contained root with the global terminal lock and exact obligation payer', () => {
+  it("is a self-contained root under its tournament's settlement lane and the exact obligation payer", () => {
     const root = newestDefining('fn_mystery_bounty_pay');
     expect(root).not.toContain('fn_mystery_bounty_pay_unguarded_20260907');
-    expect(root).toContain("hashtextextended('ca:tournament-terminal-settlement:v1',0)");
+    // 2026-09-10 (20260910173147): the award's tournament lane - G shared,
+    // T(id) exclusive - not the whole platform's. The tournament is read, the
+    // lane taken, and the tournament read again under the lane, so a not-found
+    // answer still comes only after any in-flight writer committed.
+    expect(root).not.toContain('fn_ca_lock_settlement_lane_global');
+    const lane = root.indexOf('public.fn_ca_lock_settlement_lane_for_tournament(v_tournament_id)');
+    expect(lane).toBeGreaterThan(0);
+    const reads = [...root.matchAll(/SELECT a\.tournament_id INTO v_tournament_id/g)].map(
+      (m) => m.index ?? -1
+    );
+    expect(reads.length).toBe(2);
+    expect(reads[0]).toBeLessThan(lane);
+    expect(reads[1]).toBeGreaterThan(lane);
     expect(root).toContain('public.fn_settle_tournament_obligation(');
     expect(root).toContain('completed_award_marker_incomplete');
     expect(root).toContain('public.fn_bounty_obligation_has_complete_marker');

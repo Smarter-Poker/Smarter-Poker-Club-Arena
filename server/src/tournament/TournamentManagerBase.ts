@@ -1780,9 +1780,87 @@ export abstract class TournamentManagerBase {
     }
   }
 
+  /**
+   * How often resumeFromBreak looks at the maintenance freeze again while it
+   * waits for the thaw, and the longest it waits before resuming anyway.
+   *
+   * The ceiling is for a freeze that never lifts, not for a slow thaw.
+   * Measured over the 177 breaks in engine_maintenance_break_log from
+   * 2026-09-02 to 2026-09-10, the thaw finished p50 3.2s, p99 13.0s and at
+   * worst 26.6s after the break's end; 90s is well clear of all of them.
+   */
+  static readonly MAINTENANCE_THAW_POLL_MS = 250;
+  static readonly MAINTENANCE_THAW_WAIT_CEILING_MS = 90_000;
+
+  /**
+   * Wait until the platform freeze has lifted, which MaintenanceBreak.end()
+   * does only once the thaw has finished. Returns early when this lifecycle
+   * ends (stop() drains this very job, so a shutdown or a lost lease must not
+   * sit here until the ceiling) or when another caller has already taken this
+   * tournament off its break. Past the ceiling it reports, naming the event,
+   * and returns so the caller resumes.
+   */
+  protected async waitForMaintenanceThaw(lifecycle: TournamentLifecycleToken): Promise<void> {
+    const startedAt = Date.now();
+    while (isMaintenanceFrozen() && this.onBreak && this.lifecycleIsCurrent(lifecycle)) {
+      const waitedMs = Date.now() - startedAt;
+      if (waitedMs >= TournamentManagerBase.MAINTENANCE_THAW_WAIT_CEILING_MS) {
+        reportError(
+          new Error(
+            `[Tournament:${this.tournamentId}] its break ended but the maintenance freeze was ` +
+              `still on ${Math.round(waitedMs / 1000)}s later; resuming without the thaw, so ` +
+              'its level_started_at may be credited for the break twice'
+          ),
+          'TournamentManagerBase.resumeFromBreak_thaw_wait_ceiling',
+          { tournamentId: this.tournamentId }
+        );
+        return;
+      }
+      await new Promise<void>((resolve) => {
+        const poll = setTimeout(resolve, TournamentManagerBase.MAINTENANCE_THAW_POLL_MS);
+        poll.unref?.();
+      });
+    }
+  }
+
   /** Resume from synchronized break: restart blind timer with remaining time */
   async resumeFromBreak(): Promise<void> {
     if (!this.onBreak) return;
+    /**
+     * A RUNNING TOURNAMENT COMES OFF ITS BREAK AFTER THE THAW (2026-09-10).
+     *
+     * fn_thaw_platform gives every in-flight deadline back the frozen
+     * minutes, and its FIRST call snapshots whom to credit: every RUNNING
+     * tournament with on_break = false has its level_started_at moved
+     * forward. A tournament on this break is left out on purpose, because its
+     * level clock was suspended here at :55 and has nothing to be given back.
+     * Taking it off the break before that snapshot (on_break = false below,
+     * then a freshly persisted level_started_at from startBlindTimer) would
+     * credit a clock that never ran through the freeze: the database anchor
+     * lands a whole break ahead, and the next engine to adopt the event
+     * hands its level that much extra time.
+     *
+     * While the tournament countdown ended as long after the hour as its
+     * pause loop had taken (18.8s at 16:55 on 2026-09-10; that hour's thaw
+     * was done at 17:00:04.7), the resume landed after the snapshot by luck,
+     * not by design. The countdown ends ON the hour now, with the maintenance
+     * break (GameServer.triggerSynchronizedBreak), and so does a countdown a
+     * replacement engine adopts, so a running tournament waits here until the
+     * freeze lifts. MaintenanceBreak.end() lifts it only after the thaw, in
+     * the same tick it starts waking tables, so the wait costs at most one
+     * poll. Its tables are released by whichever of the two comes second:
+     * this resume, or their maintenance resume wave.
+     *
+     * A lifecycle that ends during the wait leaves the break exactly as it is,
+     * flags and all, for whoever owns the event next. A stopped tournament
+     * does not wait at all: it only has flags to clear, exactly as before.
+     */
+    if (this.running && isMaintenanceFrozen()) {
+      const lifecycle = this.captureLifecycleToken();
+      if (lifecycle) await this.waitForMaintenanceThaw(lifecycle);
+      // Everything the wait may have changed is read again.
+      if (!this.onBreak || !lifecycle || !this.lifecycleIsCurrent(lifecycle)) return;
+    }
     this.onBreak = false;
     this.breakCountdownStarted = false;
 

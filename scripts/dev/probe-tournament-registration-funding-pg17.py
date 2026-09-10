@@ -5,6 +5,7 @@ Creates its own local PostgreSQL 17 cluster; accepts no database URL.
 Use --cross-club --baseline to reproduce the old receipt failure.
 Use --purchases-only for the rebuy/re-entry/add-on groups.
 Use --unregistrations-only for funded entry/refund lifecycle groups.
+Use --heads-up-only for paid Heads-Up seat/start/refund groups.
 Fixture limits are in fixtures/registration-funding/README.md and
 fixtures/tournament-purchase-funding/README.md.
 """
@@ -186,7 +187,10 @@ with (root/'results.log').open('w') as log:
         run([str(pg/'pg_ctl'),'-D',str(cluster),'-o',f'-k {sock} -p {port} -c listen_addresses=','-w','start'])
         started=True
 
-        if '--unregistrations-only' in sys.argv:
+        if '--heads-up-only' in sys.argv:
+            from tournament_heads_up_funding_cases import verify
+            verify(q,fresh,overlap,call,check)
+        elif '--unregistrations-only' in sys.argv:
             from tournament_unregistration_funding_cases import verify
             verify(q,fresh,overlap,call,check)
         elif '--purchases-only' in sys.argv:
@@ -235,6 +239,8 @@ with (root/'results.log').open('w') as log:
             from tournament_purchase_funding_cases import verify
             verify(q,fresh,overlap,call,check)
             from tournament_unregistration_funding_cases import verify
+            verify(q,fresh,overlap,call,check)
+            from tournament_heads_up_funding_cases import verify
             verify(q,fresh,overlap,call,check)
 
     finally:

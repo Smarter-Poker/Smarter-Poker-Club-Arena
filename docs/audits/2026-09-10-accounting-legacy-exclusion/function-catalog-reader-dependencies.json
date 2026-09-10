@@ -1,0 +1,23 @@
+[
+  {
+    "signature": "fn_has_club_role(uuid,uuid,text)",
+    "body_md5": "3bfd497688a53cd5130bd0068f258aec",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_has_club_role(p_user_id uuid, p_club_id uuid, p_min_role text)\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\n  SELECT public.fn_role_rank(public.fn_club_role(p_user_id, p_club_id))\n         >= public.fn_role_rank(p_min_role);\n$function$\n",
+    "owner": "postgres",
+    "grants": "{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}"
+  },
+  {
+    "signature": "fn_is_agent_ancestor(uuid,uuid,uuid)",
+    "body_md5": "6a96ca7eaadff5022b7ae0eb406d4b25",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_is_agent_ancestor(p_ancestor_user_id uuid, p_descendant_user_id uuid, p_club_id uuid DEFAULT NULL::uuid)\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\n  WITH RECURSIVE up AS (\n    SELECT a.id, a.user_id, a.parent_agent_id\n      FROM agents a\n     WHERE a.user_id = p_descendant_user_id\n       AND (p_club_id IS NULL OR a.club_id = p_club_id)\n    UNION ALL\n    SELECT p.id, p.user_id, p.parent_agent_id\n      FROM agents p JOIN up ON up.parent_agent_id = p.id\n  )\n  SELECT EXISTS (SELECT 1 FROM up WHERE up.user_id = p_ancestor_user_id\n                                    AND up.user_id <> p_descendant_user_id);\n$function$\n",
+    "owner": "postgres",
+    "grants": "{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}"
+  },
+  {
+    "signature": "fn_is_service_context()",
+    "body_md5": "7fc1d980765a3f5a1392cca8d5696cdf",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_is_service_context()\n RETURNS boolean\n LANGUAGE plpgsql\n STABLE\n SET search_path TO 'public'\nAS $function$\nDECLARE\n    v_raw_claims text;\n    v_jwt_role   text;\nBEGIN\n    v_raw_claims := current_setting('request.jwt.claims', true);\n\n    IF v_raw_claims IS NOT NULL\n       AND btrim(v_raw_claims) <> ''\n       AND btrim(v_raw_claims) <> 'null'\n    THEN\n        BEGIN\n            v_jwt_role := v_raw_claims::jsonb ->> 'role';\n        EXCEPTION WHEN others THEN\n            -- Unparseable claims: fail CLOSED. A malformed JWT must never be\n            -- mistaken for \"no JWT\".\n            RETURN false;\n        END;\n\n        RETURN v_jwt_role = 'service_role';\n    END IF;\n\n    -- No JWT context.\n    IF current_user IN ('anon', 'authenticated') THEN\n        RETURN false;\n    END IF;\n\n    RETURN true;\nEND;\n$function$\n",
+    "owner": "postgres",
+    "grants": "{=X/postgres,postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}"
+  }
+]

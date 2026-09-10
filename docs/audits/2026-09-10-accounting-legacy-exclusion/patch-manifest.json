@@ -1,0 +1,20 @@
+[
+  {
+    "signature": "fn_agent_claim_commission(uuid,uuid,integer)",
+    "replacements": 4,
+    "before_body_md5": "ecd40da476bd8dd829d381fb2ee5a03e",
+    "after_body_md5": "d62ce99c21dcef6d49354e8fb7c9ad05"
+  },
+  {
+    "signature": "fn_agent_unsettled_commission(uuid,uuid)",
+    "replacements": 1,
+    "before_body_md5": "65099653461a48858b024c1a022409f2",
+    "after_body_md5": "f6474e1cfd2ae7208b5ed60a98292b2e"
+  },
+  {
+    "signature": "fn_settle_round2_club_to_agents(uuid,timestamp with time zone,timestamp with time zone)",
+    "replacements": 1,
+    "before_body_md5": "6b6e58eb5eaba25f7ff3fd69e742cb01",
+    "after_body_md5": "ec5e8c4be77a0cf11338eba591ac2238"
+  }
+]

@@ -1,0 +1,25 @@
+{
+  "functions": [
+    {
+      "body_md5": "1eb584cfa02c95e986afc44a4c4c491b",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_agent_commission_rollup_recompute(p_pairs jsonb)\n RETURNS void\n LANGUAGE plpgsql\n SET search_path TO 'public'\nAS $function$\nBEGIN\n  WITH pairs AS (\n    SELECT DISTINCT (p->>'club_id')::uuid AS club_id, (p->>'user_id')::uuid AS user_id\n      FROM jsonb_array_elements(p_pairs) p\n     WHERE p->>'club_id' IS NOT NULL AND p->>'user_id' IS NOT NULL\n  ),\n  fresh AS (\n    SELECT pr.club_id, pr.user_id,\n           coalesce(sum(ac.amount), 0)  AS owed,\n           count(ac.id)                 AS rows_behind,\n           min(ac.created_at)           AS oldest\n      FROM pairs pr\n      LEFT JOIN public.agent_commissions ac\n        ON ac.club_id = pr.club_id AND ac.user_id = pr.user_id\n       AND ac.settled_at IS NULL\n       AND NOT EXISTS (SELECT 1 FROM public.agent_commission_settlements s\n                        WHERE s.club_id = ac.club_id AND s.user_id = ac.user_id\n                          AND ac.created_at >= s.period_start AND ac.created_at < s.period_end)\n     GROUP BY pr.club_id, pr.user_id\n  )\n  INSERT INTO public.agent_commission_unsettled_rollup AS r\n         (club_id, user_id, owed, rows_behind, oldest_unsettled, updated_at)\n  SELECT f.club_id, f.user_id, f.owed, f.rows_behind, f.oldest, now() FROM fresh f\n  ON CONFLICT (club_id, user_id) DO UPDATE\n     SET owed = EXCLUDED.owed,\n         rows_behind = EXCLUDED.rows_behind,\n         oldest_unsettled = EXCLUDED.oldest_unsettled,\n         updated_at = now();\nEND;\n$function$\n",
+      "grants": "{postgres=X/postgres,service_role=X/postgres}",
+      "owner": "postgres",
+      "signature": "fn_agent_commission_rollup_recompute(jsonb)"
+    },
+    {
+      "body_md5": "f7f79c3ec742a8826d6df00a3cb621c0",
+      "definition": "CREATE OR REPLACE FUNCTION public.trg_agent_commission_rollup_insert()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nBEGIN\n  INSERT INTO public.agent_commission_unsettled_rollup AS r\n         (club_id, user_id, owed, rows_behind, oldest_unsettled, updated_at)\n  SELECT n.club_id, n.user_id,\n         sum(n.amount), count(*), min(n.created_at), now()\n    FROM new_rows n\n   WHERE n.settled_at IS NULL AND n.club_id IS NOT NULL AND n.user_id IS NOT NULL\n     AND NOT public.fn_agent_commission_paid_by_period(n.club_id, n.user_id, n.created_at)\n   GROUP BY n.club_id, n.user_id\n  ON CONFLICT (club_id, user_id) DO UPDATE\n     SET owed             = r.owed + EXCLUDED.owed,\n         rows_behind      = r.rows_behind + EXCLUDED.rows_behind,\n         oldest_unsettled = least(r.oldest_unsettled, EXCLUDED.oldest_unsettled),\n         updated_at       = now();\n\n  -- Phase 6: the per-day total the Financials page reads.\n  INSERT INTO public.ca_club_commission_daily AS c\n         (club_id, stat_date, amount, rows_counted, updated_at)\n  SELECT n.club_id, (n.created_at AT TIME ZONE 'UTC')::date, sum(n.amount), count(*), now()\n    FROM new_rows n\n   WHERE n.club_id IS NOT NULL\n   GROUP BY n.club_id, (n.created_at AT TIME ZONE 'UTC')::date\n  ON CONFLICT (club_id, stat_date) DO UPDATE\n     SET amount       = c.amount + EXCLUDED.amount,\n         rows_counted = c.rows_counted + EXCLUDED.rows_counted,\n         updated_at   = now();\n  RETURN NULL;\nEND;\n$function$\n",
+      "grants": "{postgres=X/postgres,service_role=X/postgres}",
+      "owner": "postgres",
+      "signature": "trg_agent_commission_rollup_insert()"
+    }
+  ],
+  "view": {
+    "definition": " SELECT id,\n    club_id,\n    user_id,\n    amount,\n    commission_rate,\n    source_type,\n    source_id,\n    notes,\n    created_at,\n    settled_at\n   FROM agent_commissions ac\n  WHERE settled_at IS NULL AND NOT (EXISTS ( SELECT 1\n           FROM agent_commission_settlements s\n          WHERE s.club_id = ac.club_id AND s.user_id = ac.user_id AND ac.created_at >= s.period_start AND ac.created_at < s.period_end));",
+    "definition_md5": "97f8b377b578f7f4ca583280ba0715b5",
+    "reloptions": ["security_invoker=true"],
+    "owner": "postgres",
+    "acl": "{postgres=arwdDxtm/postgres,authenticated=rxtm/postgres,service_role=arwdDxtm/postgres}"
+  }
+}

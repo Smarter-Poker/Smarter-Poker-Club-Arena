@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -euo pipefail
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROUND1_FIXTURE="${ROUND1_FIXTURE:?Set ROUND1_FIXTURE to the reviewed payer round1-owner directory}"
+proof_input="$(mktemp -d /tmp/ca-legacy-exclusion-input.XXXXXX)"
+cp -R "$ROUND1_FIXTURE" "$proof_input/runner"
+cp "$ROUND1_FIXTURE/../source-payer-proposal.sql" "$proof_input/source-payer-proposal.sql"
+cp "$HERE/function-catalog-reader-dependencies.json" "$proof_input/runner/vendor/source-authority/owner-composition/"
+cp "$HERE/trigger-catalog-legacy.json" "$proof_input/runner/vendor/source-authority/owner-composition/"
+cp "$HERE/table-catalog-legacy.json" "$proof_input/runner/vendor/source-authority/owner-composition/"
+cp "$HERE/function-catalog-commission-batch.json" "$proof_input/runner/vendor/source-authority/owner-composition/"
+cp "$HERE/function-catalog-legacy.json" "$proof_input/runner/vendor/source-authority/owner-composition/"
+export LEGACY_EXCLUSION_HERE="$HERE"
+export ROUND1_PROBE="$HERE/native-probe.py"
+export PYTHONPATH="$proof_input/runner${PYTHONPATH:+:$PYTHONPATH}"
+bash "$proof_input/runner/run-local.sh"

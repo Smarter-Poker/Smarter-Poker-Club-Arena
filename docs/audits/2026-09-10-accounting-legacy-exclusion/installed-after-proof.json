@@ -1,0 +1,75 @@
+{
+  "functions": [
+    {
+      "acl": "{postgres=X/postgres,service_role=X/postgres,authenticated=X/postgres}",
+      "owner": "postgres",
+      "config": ["search_path=public"],
+      "result": "jsonb",
+      "strict": false,
+      "body_md5": "d62ce99c21dcef6d49354e8fb7c9ad05",
+      "arguments": "p_club_id uuid, p_op_id uuid DEFAULT NULL::uuid, p_max_rows integer DEFAULT 1000",
+      "signature": "fn_agent_claim_commission(uuid,uuid,integer)",
+      "volatility": "v",
+      "security_definer": true
+    },
+    {
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "owner": "postgres",
+      "config": ["search_path=public"],
+      "result": "void",
+      "strict": false,
+      "body_md5": "99d1b919c7a9fdace050de4817199153",
+      "arguments": "p_pairs jsonb",
+      "signature": "fn_agent_commission_rollup_recompute(jsonb)",
+      "volatility": "v",
+      "security_definer": false
+    },
+    {
+      "acl": "{postgres=X/postgres,service_role=X/postgres,authenticated=X/postgres}",
+      "owner": "postgres",
+      "config": ["search_path=public"],
+      "result": "numeric",
+      "strict": false,
+      "body_md5": "f6474e1cfd2ae7208b5ed60a98292b2e",
+      "arguments": "p_club_id uuid, p_user_id uuid",
+      "signature": "fn_agent_unsettled_commission(uuid,uuid)",
+      "volatility": "s",
+      "security_definer": true
+    },
+    {
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "owner": "postgres",
+      "config": ["search_path=public"],
+      "result": "jsonb",
+      "strict": false,
+      "body_md5": "ec5e8c4be77a0cf11338eba591ac2238",
+      "arguments": "p_union_id uuid, p_period_start timestamp with time zone, p_period_end timestamp with time zone",
+      "signature": "fn_settle_round2_club_to_agents(uuid,timestamp with time zone,timestamp with time zone)",
+      "volatility": "v",
+      "security_definer": true
+    },
+    {
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "owner": "postgres",
+      "config": ["search_path=public"],
+      "result": "trigger",
+      "strict": false,
+      "body_md5": "305001cf505196585569329c441e324b",
+      "arguments": "",
+      "signature": "trg_agent_commission_rollup_insert()",
+      "volatility": "v",
+      "security_definer": true
+    }
+  ],
+  "view": {
+    "acl": "{postgres=arwdDxtm/postgres,authenticated=rxtm/postgres,service_role=arwdDxtm/postgres}",
+    "owner": "postgres",
+    "options": ["security_invoker=true"],
+    "definition": " SELECT id,\n    club_id,\n    user_id,\n    amount,\n    commission_rate,\n    source_type,\n    source_id,\n    notes,\n    created_at,\n    settled_at\n   FROM agent_commissions ac\n  WHERE settled_at IS NULL AND commission_capture_version IS NULL AND NOT (EXISTS ( SELECT 1\n           FROM agent_commission_settlements s\n          WHERE s.club_id = ac.club_id AND s.user_id = ac.user_id AND ac.created_at >= s.period_start AND ac.created_at < s.period_end));",
+    "definition_md5": "a73663d0dbe91275ee12feba2902cc75"
+  },
+  "checks": [
+    "All five replaced native function bodies equal exact candidate bytes and retain original ownership, grants and signature metadata",
+    "Unpaid view retains exact owner, privileges and security-invoker option"
+  ]
+}

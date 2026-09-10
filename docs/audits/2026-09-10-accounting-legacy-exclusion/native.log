@@ -1,0 +1,50 @@
+{
+  "tables": 124,
+  "functions": 240,
+  "triggers": 177,
+  "missing_foreign_tables": []
+}
+
+ actual_owner_success 
+----------------------
+ t
+(1 row)
+
+ test_assert 
+-------------
+ 
+(1 row)
+
+Loaded unchanged accepted/bank owners and prospective Round1 with actual money graph
+CREATE INDEX
+PASS: Actual accepted and bank owners emitted captured positive commission projections
+PASS: Historical unknown source and tournament source stay legacy; captured cash is excluded
+PASS: Actual unchanged legacy Round2 owner rolls back its money when final receipt includes projections
+PASS: Actual unchanged direct claim rolls back debit and credit before final projection receipt
+PASS: Compiled old fn_settle_round2_club_to_agents resumes after owner replacement and rolls back all money at receipt guard
+PASS: Compiled old fn_agent_claim_commission resumes after owner replacement and rolls back all money at receipt guard
+PASS: Unpaid rollup excludes captured projection accruals
+PASS: Unsettled reader shows only historical payable cash
+PASS: Updated actual direct owner pays historical ten once, excluding captured projections
+PASS: More flag ignores excluded projections
+PASS: Unpaid view excludes all source-owned projections
+PASS: Exact direct lost-response replay makes no second money movement
+PASS: Legacy reader has no phantom projection debt after historical payment
+PASS: Updated actual Round2 pays historical five and excludes captured projections
+PASS: Updated Round2 replay has no remaining captured projection payment
+PASS: Private source predicate is unavailable to browser and service direct callers
+PASS: Actual cash projection rows are locally indexed as captured
+PASS: Historical commission authority remains NULL
+PASS: Caller cannot forge captured authority on a historical source
+PASS: Captured source flag cannot be cleared
+PASS: Captured source identity cannot be replaced
+PASS: Captured cash cannot be retagged as a tournament
+PASS: All five replaced native function bodies equal exact candidate bytes and retain original ownership, grants and signature metadata
+PASS: Unpaid view retains exact owner, privileges and security-invoker option
+PASS: mixed cutoff plan reads only the required legacy basis and excludes captured projections
+PASS: mixed receipt plan reads only the required legacy basis and excludes captured projections
+PASS: captured_only cutoff plan reads only the required legacy basis and excludes captured projections
+PASS: captured_only receipt plan reads only the required legacy basis and excludes captured projections
+PASS: historical_only cutoff plan reads only the required legacy basis and excludes captured projections
+PASS: historical_only receipt plan reads only the required legacy basis and excludes captured projections
+{"passed": 30}

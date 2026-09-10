@@ -1,0 +1,21 @@
+{
+  "checks": [
+    "Compiled old fn_settle_round2_club_to_agents resumes after owner replacement and rolls back all money at receipt guard",
+    "Compiled old fn_agent_claim_commission resumes after owner replacement and rolls back all money at receipt guard"
+  ],
+  "observations": [
+    {
+      "owner": "fn_settle_round2_club_to_agents",
+      "old_body_md5": "6b6e58eb5eaba25f7ff3fd69e742cb01",
+      "observed_wait": true,
+      "barrier": "native auth shim before first financial query"
+    },
+    {
+      "owner": "fn_agent_claim_commission",
+      "old_body_md5": "ecd40da476bd8dd829d381fb2ee5a03e",
+      "observed_wait": true,
+      "barrier": "native auth shim before first financial query"
+    }
+  ],
+  "scope": "Native auth barriers only; actual old money owners compiled and executed. No production mutations."
+}

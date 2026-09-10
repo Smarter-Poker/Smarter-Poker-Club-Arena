@@ -1,0 +1,329 @@
+[
+  {
+    "columns": [
+      {
+        "default": "gen_random_uuid()",
+        "generated": "",
+        "identity": "",
+        "name": "id",
+        "not_null": true,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "club_id",
+        "not_null": true,
+        "type": "uuid"
+      },
+      {
+        "default": "'weekly_settlement'::text",
+        "generated": "",
+        "identity": "",
+        "name": "lock_type",
+        "not_null": true,
+        "type": "text"
+      },
+      {
+        "default": "now()",
+        "generated": "",
+        "identity": "",
+        "name": "locked_at",
+        "not_null": true,
+        "type": "timestamp with time zone"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "unlock_at",
+        "not_null": true,
+        "type": "timestamp with time zone"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "unlocked_at",
+        "not_null": false,
+        "type": "timestamp with time zone"
+      },
+      {
+        "default": "true",
+        "generated": "",
+        "identity": "",
+        "name": "is_active",
+        "not_null": true,
+        "type": "boolean"
+      },
+      {
+        "default": "'Weekly auto-settlement in progress'::text",
+        "generated": "",
+        "identity": "",
+        "name": "lock_reason",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "settlement_period_id",
+        "not_null": false,
+        "type": "uuid"
+      },
+      {
+        "default": "'{}'::jsonb",
+        "generated": "",
+        "identity": "",
+        "name": "metadata",
+        "not_null": false,
+        "type": "jsonb"
+      },
+      {
+        "default": "now()",
+        "generated": "",
+        "identity": "",
+        "name": "created_at",
+        "not_null": false,
+        "type": "timestamp with time zone"
+      }
+    ],
+    "constraints": [
+      {
+        "definition": "FOREIGN KEY (club_id) REFERENCES clubs(id) ON DELETE CASCADE",
+        "name": "settlement_locks_club_id_fkey",
+        "type": "f"
+      },
+      { "definition": "PRIMARY KEY (id)", "name": "settlement_locks_pkey", "type": "p" },
+      {
+        "definition": "FOREIGN KEY (settlement_period_id) REFERENCES settlement_periods(id)",
+        "name": "settlement_locks_settlement_period_id_fkey",
+        "type": "f"
+      }
+    ],
+    "force_rls": false,
+    "grants": "{postgres=arwdDxtm/postgres,anon=arwdxtm/postgres,authenticated=arwdxtm/postgres,service_role=arwdDxtm/postgres}",
+    "indexes": [
+      {
+        "definition": "CREATE UNIQUE INDEX settlement_locks_pkey ON public.settlement_locks USING btree (id)",
+        "name": "settlement_locks_pkey"
+      },
+      {
+        "definition": "CREATE UNIQUE INDEX idx_one_active_lock_per_club ON public.settlement_locks USING btree (club_id) WHERE (is_active = true)",
+        "name": "idx_one_active_lock_per_club"
+      },
+      {
+        "definition": "CREATE INDEX idx_settlement_locks_club_id_fk ON public.settlement_locks USING btree (club_id)",
+        "name": "idx_settlement_locks_club_id_fk"
+      }
+    ],
+    "name": "settlement_locks",
+    "schema": "public"
+  },
+  {
+    "name": "settlement_periods",
+    "grants": "{postgres=arwdDxtm/postgres,anon=arwdxtm/postgres,authenticated=arwdxtm/postgres,service_role=arwdDxtm/postgres}",
+    "schema": "public",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "default": "gen_random_uuid()",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "club_id",
+        "type": "uuid",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "union_id",
+        "type": "uuid",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "period_number",
+        "type": "integer",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "year",
+        "type": "integer",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "start_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "end_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "status",
+        "type": "text",
+        "default": "'open'::text",
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "total_rake_collected",
+        "type": "numeric(15,2)",
+        "default": "0",
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "total_bbj_contributions",
+        "type": "numeric(15,2)",
+        "default": "0",
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "total_player_winnings",
+        "type": "numeric(15,2)",
+        "default": "0",
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "total_player_losses",
+        "type": "numeric(15,2)",
+        "default": "0",
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "total_hands_dealt",
+        "type": "integer",
+        "default": "0",
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "settled_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "settled_by",
+        "type": "uuid",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "updated_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "total_commissions_paid",
+        "type": "numeric(12,2)",
+        "default": "0",
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "notes",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "seated_stack_snapshot",
+        "type": "numeric",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      }
+    ],
+    "indexes": [
+      {
+        "name": "settlement_periods_pkey",
+        "definition": "CREATE UNIQUE INDEX settlement_periods_pkey ON public.settlement_periods USING btree (id)"
+      },
+      {
+        "name": "idx_settlement_periods_club",
+        "definition": "CREATE INDEX idx_settlement_periods_club ON public.settlement_periods USING btree (club_id)"
+      },
+      {
+        "name": "settlement_periods_one_open_per_club_uidx",
+        "definition": "CREATE UNIQUE INDEX settlement_periods_one_open_per_club_uidx ON public.settlement_periods USING btree (COALESCE(club_id, '00000000-0000-0000-0000-000000000000'::uuid)) WHERE (status = 'open'::text)"
+      },
+      {
+        "name": "settlement_periods_club_union_window_uidx",
+        "definition": "CREATE UNIQUE INDEX settlement_periods_club_union_window_uidx ON public.settlement_periods USING btree (club_id, union_id, start_at, end_at)"
+      }
+    ],
+    "force_rls": false,
+    "constraints": [
+      {
+        "name": "settlement_periods_club_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (club_id) REFERENCES clubs(id) ON DELETE CASCADE"
+      },
+      { "name": "settlement_periods_pkey", "type": "p", "definition": "PRIMARY KEY (id)" },
+      {
+        "name": "settlement_periods_status_check",
+        "type": "c",
+        "definition": "CHECK (status = ANY (ARRAY['open'::text, 'processing'::text, 'settled'::text, 'disputed'::text, 'closed'::text]))"
+      },
+      {
+        "name": "settlement_periods_union_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (union_id) REFERENCES unions(id) ON DELETE CASCADE"
+      }
+    ]
+  }
+]

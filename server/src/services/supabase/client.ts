@@ -17,6 +17,7 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { reportError } from '../errorReporter.js';
 import { dataActorHeaders } from './dataActorContext.js';
 import { bindRealtimeCallbacksToRegistration } from './realtimeCallbackContext.js';
+import { observeFenceInResponse } from './tournamentManagerFence.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // CONFIGURATION
@@ -145,6 +146,10 @@ function createBoundedServiceClient(timeoutMs: number): SupabaseClient {
         let attempt = 0;
         for (;;) {
           const resp = await attemptOnce();
+          // A fenced manager generation stands down at the boundary that saw
+          // the fence (tournamentManagerFence.ts). The response itself is
+          // still returned so the caller's own error handling runs once.
+          if (resp.status === 403) await observeFenceInResponse(resp);
           if (resp.status !== 503 || attempt >= DELAYS_MS.length) return resp;
           let code: unknown;
           try {

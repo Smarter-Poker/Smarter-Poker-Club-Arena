@@ -888,7 +888,7 @@ export class MaintenanceBreak {
 
     const declared = this.persistedState();
     try {
-      await this.persist(declared);
+      await this.persistAnnouncement(declared, generation);
     } catch (error) {
       await this.cancelBreakAfterPersistenceFailure(false, declared);
       throw error;
@@ -1503,6 +1503,84 @@ export class MaintenanceBreak {
       left.reason === right.reason &&
       left.ownershipToken === right.ownershipToken
     );
+  }
+
+  /**
+   * How long the announcement keeps trying to make its durable promise, and
+   * how long it rests between tries.
+   *
+   * THE SAVE WAITS BEHIND EVERY ENTRY IN FLIGHT (2026-09-10). The row write
+   * takes the maintenance boundary exclusively; every buy-in, rebuy, Spin
+   * draw and seat-first fill holds it shared for the life of its transaction,
+   * and those money doors run under a 30 s statement budget while the save
+   * runs under a 5 s lock budget. So on a busy hour one slow buy-in (27 s
+   * observed) makes the save fail with "canceling statement due to lock
+   * timeout" - and one such failure used to cancel the WHOLE break: no
+   * last-hand row, no :55 countdown, no readyForRestart certificate, and the
+   * deploy that was waiting on it shipped nothing. That is how 06:53 UTC on
+   * 2026-09-10 left production a merge behind for an hour with nobody told.
+   *
+   * The database itself accepts a last-hand row until announcedAt + 2 min
+   * (fn_save_engine_maintenance_break: MAINTENANCE_LAST_HAND_BOUNDARY_EXPIRED),
+   * and the countdown is armed from that same absolute announcedAt, so a
+   * retry inside the lead changes nothing a player sees: the :55 boundary
+   * stays where it was announced. The budget stops well short of the two
+   * minutes so a late success never races the countdown's own save.
+   *
+   * Only a lock or statement timeout is retried. An ownership loss, an
+   * expired boundary, or an unreachable database is a decision, not a queue,
+   * and still cancels straight away.
+   */
+  static readonly ANNOUNCE_PERSIST_BUDGET_MS = 90 * 1000;
+  static readonly ANNOUNCE_PERSIST_RETRY_MS = 5 * 1000;
+
+  static isLockOrStatementTimeout(error: unknown): boolean {
+    const text = String((error as Error)?.message ?? error ?? '');
+    if (
+      /MAINTENANCE_(OWNERSHIP_LOST|LAST_HAND_BOUNDARY_EXPIRED|COUNTDOWN_BOUNDARY_EXPIRED)/.test(
+        text
+      )
+    ) {
+      return false;
+    }
+    return /lock timeout|statement timeout|lock_not_available|55P03|canceling statement/i.test(
+      text
+    );
+  }
+
+  private async persistAnnouncement(
+    state: PersistedMaintenanceBreak,
+    generation: number
+  ): Promise<void> {
+    const deadline = state.announcedAt + MaintenanceBreak.ANNOUNCE_PERSIST_BUDGET_MS;
+    for (let attempt = 1; ; attempt++) {
+      try {
+        await this.persist(state);
+        if (attempt > 1) {
+          console.warn(
+            `[MaintenanceBreak] the announcement became durable on attempt ${attempt}; the :55 boundary is unchanged`
+          );
+        }
+        return;
+      } catch (error) {
+        const rest = MaintenanceBreak.ANNOUNCE_PERSIST_RETRY_MS;
+        if (
+          !MaintenanceBreak.isLockOrStatementTimeout(error) ||
+          !this.lifecycleIsCurrent(generation) ||
+          this.now() + rest > deadline
+        ) {
+          throw error;
+        }
+        console.warn(
+          `[MaintenanceBreak] the announcement save waited behind an entry and timed out (attempt ${attempt}); retrying in ${
+            rest / 1000
+          }s, ${Math.max(0, Math.round((deadline - this.now()) / 1000))}s of budget left: ${
+            (error as Error)?.message ?? error
+          }`
+        );
+        await new Promise<void>((resolve) => this.setTimer(resolve, rest));
+      }
+    }
   }
 
   private async persist(state = this.persistedState()): Promise<void> {

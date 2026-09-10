@@ -43,8 +43,13 @@ export default function AgentPortalPage() {
   const toast = useToast();
   const currentClubId = useUserStore((state) => state.currentClubId);
   const [walletError, setWalletError] = useState<string | null>(null);
-  const walletScope = useRef('');
-  walletScope.current = JSON.stringify([user?.id, currentClubId]);
+  const renderScope = JSON.stringify([user?.id, currentClubId]);
+  const walletScope = useRef(renderScope);
+  walletScope.current = renderScope;
+  const walletRequest = useRef(0);
+  const commissionRequest = useRef(0);
+  const walletIdentity = useRef<{ scope: string; clubId: string } | null>(null);
+  const [loadedWalletScope, setLoadedWalletScope] = useState<string | null>(null);
 
   const [wallet, setWallet] = useState<AgentWallet>({
     agentBal: 0,
@@ -63,10 +68,15 @@ export default function AgentPortalPage() {
   const [agentClubId, setAgentClubId] = useState<string | null>(null);
   const [agentPkId, setAgentPkId] = useState<string | null>(null); // agents.id PK (different from auth.uid)
   const isMounted = useIsMounted();
+  const walletReady = loadedWalletScope === renderScope && !!agentClubId;
 
   useVisibilityRefresh(() => loadData());
 
   useEffect(() => {
+    setTransferModalOpen(false);
+    setTransferAmount('');
+    setCommissionData([]);
+    setAgentPkId(null);
     loadData();
     // Stagger animations — clean up timers on unmount
     const timers = [0, 1, 2, 3, 4].map((i) =>
@@ -126,13 +136,13 @@ export default function AgentPortalPage() {
     return () => {
       masterBus.removeRegisteredChannel(`agent-portal-${user.id}-${agentPkId}`);
     };
-  }, [user?.id, agentPkId]);
+  }, [user?.id, currentClubId, agentPkId]);
 
   const loadingRef = useRef<string | null>(null);
 
   const loadData = async () => {
-    if (!user?.id) return;
-    const scope = walletScope.current;
+    const scope = renderScope;
+    if (!user?.id || !isMounted.current || scope !== walletScope.current) return;
     if (loadingRef.current === scope) return;
     loadingRef.current = scope;
     setLoading(true);
@@ -147,9 +157,13 @@ export default function AgentPortalPage() {
   };
 
   const loadWallet = async (): Promise<string | null> => {
-    if (!user?.id) return null;
-    const scope = walletScope.current;
+    const scope = renderScope;
+    if (!user?.id || !isMounted.current || scope !== walletScope.current) return null;
+    const request = ++walletRequest.current;
+    const isCurrent = () =>
+      isMounted.current && scope === walletScope.current && request === walletRequest.current;
     setAgentClubId(null);
+    setLoadedWalletScope(null);
     try {
       const resolvedClub = currentClubId ? await resolveClubUUID(currentClubId) : null;
       if (currentClubId && !resolvedClub)
@@ -180,8 +194,10 @@ export default function AgentPortalPage() {
         console.warn('[AgentPortal] Debt calculation skipped:', err);
       }
 
-      if (!isMounted.current || scope !== walletScope.current) return null;
+      if (!isCurrent()) return null;
       setWalletError(null);
+      walletIdentity.current = { scope, clubId: data.club_id };
+      setLoadedWalletScope(scope);
       setAgentPkId(data.id); // Triggers RT subscription re-creation with correct filter
       if (data.club_id) setAgentClubId(data.club_id);
       setWallet({
@@ -193,9 +209,10 @@ export default function AgentPortalPage() {
       });
       return data.id;
     } catch (err) {
-      if (isMounted.current && scope === walletScope.current) {
+      if (isCurrent()) {
         setWalletError((err as Error).message);
         setAgentClubId(null);
+        walletIdentity.current = null;
       }
       reportError(err, 'AgentPortalPage.loadWallet_error');
       return null;
@@ -206,23 +223,36 @@ export default function AgentPortalPage() {
     // SWEEP #3 (2026-07-23): repointed off the phantom commission_ledger table.
     // agent_commissions is keyed by auth user_id (not agents.id PK), so no PK
     // resolution is needed here; `amount` is the per-hand commission earned.
-    if (!user?.id) return;
+    const scope = renderScope;
+    const identity = walletIdentity.current;
+    if (
+      !user?.id ||
+      !isMounted.current ||
+      scope !== walletScope.current ||
+      identity?.scope !== scope
+    )
+      return;
+    const request = ++commissionRequest.current;
+    const isCurrent = () =>
+      isMounted.current && scope === walletScope.current && request === commissionRequest.current;
     const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     try {
       const { data, error } = await supabase
         .from('agent_commissions')
         .select('amount, created_at')
         .eq('user_id', user.id)
+        .eq('club_id', identity.clubId)
         .gte('created_at', new Date(Date.now() - 7 * 86400000).toISOString())
         .order('created_at', { ascending: true })
         .limit(5000);
-      if (error) reportError(error, 'AgentPortalPage.Commission_history_load_failed');
+      if (!isCurrent()) return;
+      if (error) throw error;
 
       if (data && data.length > 0) {
         const grouped: Record<string, number> = {};
         data.forEach((d: any) => {
           const day = new Date(d.created_at).toLocaleDateString('en-US', { weekday: 'short' });
-          grouped[day] = (grouped[day] || 0) + (d.amount || 0);
+          grouped[day] = (grouped[day] || 0) + (Number(d.amount) || 0);
         });
         if (isMounted.current)
           setCommissionData(days.map((d) => ({ name: d, commissions: grouped[d] || 0 })));
@@ -235,12 +265,15 @@ export default function AgentPortalPage() {
   };
 
   const handleTransfer = async () => {
+    const scope = renderScope;
+    const isCurrent = () => isMounted.current && scope === walletScope.current;
     const amount = parseFloat(transferAmount);
     if (
       !Number.isFinite(amount) ||
       amount <= 0 ||
       !user?.id ||
-      !agentClubId ||
+      !walletReady ||
+      !isCurrent() ||
       transferInFlight.current
     ) {
       if (isMounted.current) toast.error('Enter a valid amount');
@@ -252,6 +285,7 @@ export default function AgentPortalPage() {
     setIsTransferring(true);
     try {
       const success = await WalletService.agentSelfTransfer(agentClubId!, amount);
+      if (!isCurrent()) return;
       if (success) {
         if (isMounted.current)
           toast.success(`Transferred ${amount.toLocaleString()} chips to Play Wallet`);
@@ -263,10 +297,11 @@ export default function AgentPortalPage() {
         if (isMounted.current) toast.error('Transfer failed');
       }
     } catch (err) {
-      if (isMounted.current) toast.error('Transfer failed: ' + (err as Error).message);
+      if (isCurrent()) toast.error('Transfer failed: ' + (err as Error).message);
+    } finally {
+      transferInFlight.current = false;
+      if (isMounted.current) setIsTransferring(false);
     }
-    transferInFlight.current = false;
-    setIsTransferring(false);
   };
 
   const maxCommission = Math.max(...commissionData.map((d) => d.commissions), 1);
@@ -379,7 +414,7 @@ export default function AgentPortalPage() {
           </div>
           <button
             onClick={() => setTransferModalOpen(true)}
-            disabled={!agentClubId || isTransferring}
+            disabled={!walletReady || isTransferring}
             style={{
               marginTop: '6px',
               width: '100%',
@@ -505,8 +540,8 @@ export default function AgentPortalPage() {
               </div>
             </div>
             <button
-              onClick={() => agentClubId && navigate(`/clubs/${agentClubId}/settlement`)}
-              disabled={!agentClubId}
+              onClick={() => walletReady && navigate(`/clubs/${agentClubId}/settlement`)}
+              disabled={!walletReady}
               style={{
                 padding: '6px 14px',
                 minHeight: '44px',
@@ -517,8 +552,8 @@ export default function AgentPortalPage() {
                 color: '#ef4444',
                 fontWeight: 700,
                 fontSize: '0.75rem',
-                cursor: agentClubId ? 'pointer' : 'not-allowed',
-                opacity: agentClubId ? 1 : 0.5,
+                cursor: walletReady ? 'pointer' : 'not-allowed',
+                opacity: walletReady ? 1 : 0.5,
               }}
             >
               SETTLE NOW
@@ -652,7 +687,7 @@ export default function AgentPortalPage() {
               </button>
               <button
                 onClick={handleTransfer}
-                disabled={isTransferring || !transferAmount || !agentClubId}
+                disabled={isTransferring || !transferAmount || !walletReady}
                 style={{
                   flex: 1,
                   padding: '10px',

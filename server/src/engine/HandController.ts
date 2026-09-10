@@ -213,6 +213,8 @@ export class HandController {
         config.isTournament ||
         config.gameVariant !== 'nlh' ||
         config.bombPot ||
+        config.ritEnabled ||
+        config.insuranceEnabled ||
         config.rakeConfig.percent !== 0 ||
         config.rakeConfig.cap !== 0 ||
         config.bbjConfig?.enabled

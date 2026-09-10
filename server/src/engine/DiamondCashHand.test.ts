@@ -139,6 +139,13 @@ describe('Diamond cash uses the shared NLH controller with indivisible units', (
     ).toThrow('Whole Units');
     expect(hc.getState()).toEqual(before);
   });
+  it.each<Partial<HandConfig>>([
+    { ritEnabled: true },
+    { insuranceEnabled: true },
+    { gameVariant: 'plo4' },
+  ])('keeps later financial game features outside the initial certificate: %j', (feature) => {
+    expect(() => new HandController(config(feature), players(), 1)).toThrow('Plain NLH');
+  });
   it('preserves cent-denominated chip betting', () => {
     const hc = new HandController(
       config({ asset: 'chips', smallBlind: 0.5, bigBlind: 1 }),

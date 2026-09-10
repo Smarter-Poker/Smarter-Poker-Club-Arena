@@ -136,6 +136,29 @@ provision_node_modules() {
     return 0
   fi
 
+  # THE TREE'S OWN LOCKFILE IS THE JUDGE (2026-09-10). Usable is not current.
+  # The Club Arena main clone sat 25 commits behind origin/main with 400 dirty
+  # entries, and its install matched its OWN old lockfile perfectly - typescript,
+  # tsc, 319 packages, every test above green - while the tree being claimed was
+  # cut from origin/main and needed 430. Every tree cloned that day came up with
+  # `tsc` failing on a package that was not there, and every agent ran `npm ci`
+  # by hand after reading the same confusing error. The donor search could not
+  # help: it compared candidates against the MAIN CLONE's lockfile, which was
+  # the stale one. So the reference is the lockfile this tree will actually run
+  # with, for the source and for every donor alike.
+  if [ -f "$dst/package-lock.json" ] \
+     && ! node_modules_matches_lockfile "$src/node_modules" "$dst/package-lock.json"; then
+    local fresh
+    fresh="$(find_node_modules_donor "$rel")"
+    if [ -n "$fresh" ]; then
+      echo "# $label: the main clone's install is behind this tree's lockfile; cloning from $fresh instead" >&2
+      src="${fresh%/node_modules}"
+      src="${src%${rel:+/$rel}}"
+    else
+      echo "# $label: no install on this machine matches this tree's lockfile; npm ci runs here after the clone" >&2
+    fi
+  fi
+
   # ATOMIC, because `[ -e ]` above is a presence test and not a completeness
   # test. Copying straight to the destination means any interruption - a killed
   # session, a full disk, a TCC prompt - leaves a partial tree that every later
@@ -157,6 +180,51 @@ provision_node_modules() {
   else
     rm -rf "$tmp" 2>/dev/null || true
     echo "# $label: could not be provisioned - run 'npm ci' in ${rel:-the tree root}" >&2
+    return 0
+  fi
+
+  # A clone that does not satisfy this tree's lockfile is finished by npm, in
+  # THIS tree, which the 2026-08-23 note above established is safe: the tree
+  # owns its node_modules outright. About a minute, and it is the minute every
+  # agent was already spending by hand, after a failed hook, without knowing why.
+  if [ -f "$dst/package-lock.json" ] \
+     && ! node_modules_matches_lockfile "$dst/node_modules" "$dst/package-lock.json"; then
+    if command -v npm >/dev/null 2>&1; then
+      echo "# $label: installing this tree's lockfile exactly (npm ci, about a minute)..." >&2
+      (cd "$dst" && npm ci --no-audit --no-fund 2>&1 | tail -3 | sed "s/^/#   /" >&2) || true
+      if node_modules_matches_lockfile "$dst/node_modules" "$dst/package-lock.json"; then
+        echo "# $label: now matches this tree's lockfile" >&2
+      else
+        echo "# $label: STILL does not match this tree's lockfile - run 'npm ci' in ${rel:-the tree root} and read its output" >&2
+      fi
+    else
+      echo "# $label: does not match this tree's lockfile and npm is not on PATH - run 'npm ci' in ${rel:-the tree root}" >&2
+    fi
+  fi
+}
+
+# Does an install satisfy a lockfile? npm records what it installed in
+# node_modules/.package-lock.json; every top-level, non-optional package the
+# lockfile names must be there at the lockfile's version. Optional packages are
+# skipped on purpose: npm populates exactly one platform binary per family and
+# leaves the other twenty-three directories empty by design. Without node the
+# only honest answer is the two lockfiles being the same bytes.
+node_modules_matches_lockfile() {
+  local nm="$1" lock="$2"
+  [ -f "$lock" ] || return 0
+  [ -f "$nm/.package-lock.json" ] || return 1
+  if command -v node >/dev/null 2>&1; then
+    node -e '
+      const fs = require("fs");
+      const have = JSON.parse(fs.readFileSync(process.argv[1], "utf8")).packages || {};
+      const want = JSON.parse(fs.readFileSync(process.argv[2], "utf8")).packages || {};
+      for (const [k, v] of Object.entries(want)) {
+        if (!k.startsWith("node_modules/") || k.indexOf("node_modules/", 13) !== -1 || v.optional) continue;
+        if (!have[k] || have[k].version !== v.version) process.exit(1);
+      }
+    ' "$nm/.package-lock.json" "$lock"
+  else
+    cmp -s "$(dirname "$nm")/package-lock.json" "$lock"
   fi
 }
 
@@ -178,16 +246,21 @@ node_modules_usable() {
 }
 
 # The freshest sibling tree with a usable node_modules AND a package-lock.json
-# byte-identical to the main clone's. Prints the node_modules path, or nothing.
+# byte-identical to THIS TREE's (2026-09-10: it used to be the main clone's,
+# which is the stale one whenever the main clone is behind), whose install
+# satisfies that lockfile. Prints the node_modules path, or nothing.
 find_node_modules_donor() {
   local rel="$1" cand nm best="" best_t=0 t
+  local lock="$DIR${rel:+/$rel}/package-lock.json"
+  [ -f "$lock" ] || lock="$ROOT${rel:+/$rel}/package-lock.json"
   [ -d "$TREES" ] || return 0
   for cand in "$TREES"/*/; do
     cand="${cand%/}"
     [ "$cand" = "$DIR" ] && continue
     nm="$cand${rel:+/$rel}/node_modules"
     node_modules_usable "$nm" "$rel" || continue
-    cmp -s "$cand${rel:+/$rel}/package-lock.json" "$ROOT${rel:+/$rel}/package-lock.json" || continue
+    cmp -s "$cand${rel:+/$rel}/package-lock.json" "$lock" || continue
+    node_modules_matches_lockfile "$nm" "$lock" || continue
     t=$(stat -f %m "$nm" 2>/dev/null || stat -c %Y "$nm" 2>/dev/null || echo 0)
     if [ "$t" -gt "$best_t" ]; then best="$nm"; best_t="$t"; fi
   done

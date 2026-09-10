@@ -1,0 +1,97 @@
+{
+  "schema_version": 1,
+  "date": "2026-09-10",
+  "scope": "Remaining Club Arena web observability and native publication defects",
+  "source_baseline": "904171acc4f143da4c8c6619ba73cfbc12293753",
+  "verified_release_inspected": "140e887127fed4c76039727738ad7bf279b2dfd1",
+  "publisher_run": 34509553376,
+  "publisher_run_url": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/34509553376",
+  "changes": [
+    "The origin HTTP verification emits its confirmed SHA only after an exact response match. The origin job exposes that evidence to its dependent native job.",
+    "Native OTA requires a nonempty verified origin SHA equal to the selected publication target, in addition to every existing build, test, account and origin-result gate.",
+    "The non-secret environment example now points to the same Sentry organization and project already selected by the publisher: smarter-software-inc/javascript-react."
+  ],
+  "confirmed_dormant_defect": {
+    "scenario": "The origin job succeeds after standing down for an already newer origin. Its publish and verification steps are skipped, but its successful job result previously permitted native publication of the unverified older target when OTA is enabled.",
+    "baseline_actual_job_predicate_eligible": true,
+    "candidate_actual_job_predicate_eligible": false,
+    "production_occurrence_observed": false,
+    "ota_enabled_by_change": false,
+    "evidence": "2026-09-10-publication-gate-proof/baseline.json"
+  },
+  "verification": {
+    "focused_test_groups": 11,
+    "adjacent_test_groups": 33,
+    "total_passing": 44,
+    "files_passing": 4,
+    "exit": 0,
+    "raw_log": "2026-09-10-publication-gate-proof/tests.log",
+    "actual_shell": "Committed origin HTTP verification shell executed with fixture curl and sleep executables; production JSON extraction, matching, output emission and exit remain unchanged. A matching SHA emits evidence and exits 0; a mismatched SHA exhausts all probes, emits no evidence and exits 1.",
+    "actual_predicate": "Evaluate the parsed job predicate against successful standdown, empty target/output, matched/mismatched SHA, proven skipped client tests, missing OTA switch, deduplication and failed/unproved prerequisites.",
+    "no_external_upload_performed": true
+  },
+  "sentry": {
+    "status": "Unresolved External Authorization Failure",
+    "build_job": 102982271754,
+    "observed_release_error_at_utc": "2026-09-10T17:50:19.9305239Z",
+    "observed_upload_error_at_utc": "2026-09-10T17:50:23.0906742Z",
+    "http_status": 403,
+    "response": "You do not have permission to perform this action.",
+    "release": "club-arena@140e887127fed4c76039727738ad7bf279b2dfd1",
+    "organization": "smarter-software-inc",
+    "project": "javascript-react",
+    "secret_location": "Club Arena GitHub Actions SENTRY_AUTH_TOKEN",
+    "source_maps_remaining_after_strip": 0,
+    "source_maps_strip_observed_at_utc": "2026-09-10T17:50:25.8937222Z",
+    "confirmed": "The production publisher attempted both correctly identified operations. Neither a successful release nor source-map upload is certified by a green web build.",
+    "unverified": "Exact token principal, organization binding, token scopes and effective project membership were not readable through the available connected tools. The logs alone do not distinguish which authorization component is wrong.",
+    "next_action": "An account owner must inspect the existing CI token's Sentry organization/project access and required release/source-map privileges, and supply any credential correction through GitHub Actions. After correction, the normal publisher must show successful release creation and upload for its exact SHA, followed by release/artifact readback.",
+    "official_reference": "https://docs.sentry.io/api/permissions/",
+    "official_requirement": "Sentry documents org:ci for CI release/source-map workflows. For personal release tokens, project:releases and org:read apply, with effective access to all release projects."
+  },
+  "native_ota": {
+    "status": "Disabled Account Prerequisite",
+    "job": 102984595794,
+    "conclusion": "skipped",
+    "evaluated_prerequisites": "publish-needed, build-and-store, all four client shards and publish-to-origin succeeded. Therefore CAPGO_OTA_ENABLED == 'true' is the unmet job predicate.",
+    "exact_variable_value_unavailable": true,
+    "source_configuration": {
+      "app_id": "poker.smarter.clubarena",
+      "native_version": "1.0",
+      "build_target": "dist-native",
+      "automatic_update": true,
+      "ready_acknowledgment": "CapacitorUpdater.notifyAppReady in src/lib/nativeShell.ts",
+      "channel": "CAPGO_CHANNEL repository variable or production",
+      "upload_secret": "CAPGO_TOKEN repository secret"
+    },
+    "account_state_limit": "The September 8 runbook records waiting for an account. Current account existence and secret metadata were not independently accessible, so this audit does not assert that no account exists today.",
+    "next_action": "The owner must verify the Capgo app, intended production channel and upload credential before enabling the repository switch. Complete native delivery acceptance requires a compatible installed binary to download, activate and acknowledge the exact uploaded bundle.",
+    "native_installed_device_delivery_verified": false,
+    "references": [
+      "docs/APP-STORE-RUNBOOK.md",
+      "https://capgo.app/docs/cli/commands/",
+      "https://capgo.app/docs/cli/reference/channel/"
+    ]
+  },
+  "access_limits": {
+    "connected_tools": "GitHub code, runs, jobs and decoded logs were readable. GitHub fetch rejects variables and secret-metadata endpoints. No connected Sentry or Capgo capability was exposed.",
+    "automatic_review_rejection": "A proposed read-only metadata probe that would read documented local GitHub and Sentry tokens was rejected because the broad audit did not specifically authorize credential extraction and safer connected methods were preferred.",
+    "rejected_command_executed": false,
+    "retried_or_bypassed": false,
+    "credentials_or_permissions_changed": false,
+    "repository_rule": "CLAUDE.md 10.84 reserves credential writes, rotations and corrections to Daniel."
+  },
+  "release_status": "Implementation and local proof prepared for root integration. This record does not certify subsequent CI, merge or production publication.",
+  "limits": [
+    "The OTA gate correction does not resolve the Sentry 403, enable Capgo or create an account or native binary.",
+    "No account credential, GitHub repository variable, organization permission or production host was changed.",
+    "The existing nonblocking Sentry failure policy and unconditional map removal remain in force.",
+    "No World Hub repository, engine host, game behavior or accounting function was changed."
+  ],
+  "verified_at_utc": "2026-09-10T18:16:40.074350+00:00",
+  "source_input_sha256": {
+    ".env.example": "5e18d21f819ba26dc54647fa6915935205e7c47959bbf3ae4eb8577dc4de71dd",
+    ".github/workflows/publish-club-arena.yml": "489bbdde6e328c1f2167548f6644136084b391c31ecefbb882d36a963b025349",
+    "tests/unit/nativePublishOriginGate.test.ts": "265e93c83dd1c699130be5aa3d8c8e27439659cf6604a17fb608187c67e67f26"
+  }
+}

@@ -294,6 +294,67 @@ describe('the engine deploy tells the truth when it skips', () => {
   });
 });
 
+describe('a green engine deploy means production serves the commit (2026-09-10)', () => {
+  /**
+   * The skip was visible, and it was still green. On 2026-09-10 five runs in
+   * one afternoon ended "IMAGE STAGED, CUTOVER DEFERRED" or "BREAK NEVER
+   * OPENED", every one GREEN, while production crash-looped on 7732b971 with
+   * the fix merged. Only ca_engine_deploy_attempts said shipped=false, and
+   * nobody reads a ledger when the Actions tab is green. The colour now carries
+   * the outcome, decided once, at the very end, from the ledger's own
+   * expression.
+   */
+  const code = HETZNER.split('\n')
+    .filter((line) => !/^\s*#/.test(line))
+    .join('\n');
+  const verdictAt = code.indexOf("- name: 'Verdict");
+  const verdict = code.slice(verdictAt);
+  const shippedOf = (hay: string) => {
+    const m = hay.match(/^\s*SHIPPED: (\$\{\{.*\}\})\s*$/m);
+    expect(m, 'a SHIPPED expression was not found').toBeTruthy();
+    return m![1];
+  };
+
+  it('the verdict is the last step of the job and always runs', () => {
+    expect(verdictAt, 'the Verdict step is missing').toBeGreaterThan(-1);
+    expect(verdict.slice(1), 'no step may run after the verdict').not.toMatch(/\n\s*- name:/);
+    expect(verdict).toMatch(/if: always\(\)/);
+  });
+
+  it('it decides from the SAME shipped expression the ledger records', () => {
+    const ledger = code.slice(
+      code.indexOf('- name: Record deploy truth in the database'),
+      code.indexOf('- name: Cleanup SSH key')
+    );
+    expect(shippedOf(verdict)).toBe(shippedOf(ledger));
+  });
+
+  it('a run the break gate declined is red; already-live and coalesced are green', () => {
+    const script = verdict.slice(verdict.indexOf('run: |'));
+    // Shipped -> exit 0 before anything else is considered.
+    expect(script).toMatch(/if \[ "\$SHIPPED" = "true" \]; then[\s\S]{0,200}?exit 0/);
+    // Deliberate stand-downs (already serving, coalesced inside the break).
+    expect(script).toMatch(/if \[ "\$DEDUPE_SKIP" = "true" \]; then[\s\S]{0,300}?exit 0/);
+    // Everything else that reaches the end of a green job shipped nothing and
+    // should have: that is a failure, and it says so in an error annotation.
+    const tail = script.slice(script.lastIndexOf('fi'));
+    expect(tail).toMatch(/::error title=DID NOT SHIP::/);
+    expect(tail.trim().endsWith('exit 1')).toBe(true);
+    // An earlier failure is already red; the verdict never double-reports it
+    // and never turns a red run green.
+    expect(script).toMatch(/if \[ "\$JOB_STATUS" != "success" \]; then[\s\S]{0,200}?exit 0/);
+    expect(verdict).toMatch(/JOB_STATUS: \$\{\{ job\.status \}\}/);
+  });
+
+  it('nothing keyed on failure() can react to the verdict', () => {
+    // The rollback is `if: failure() && ...`. A red verdict placed before it
+    // would read as a failed deploy and could restore an image nobody replaced.
+    const rollbackAt = code.indexOf('- name: ROLLBACK');
+    expect(rollbackAt).toBeGreaterThan(-1);
+    expect(rollbackAt).toBeLessThan(verdictAt);
+  });
+});
+
 describe('the publish path cannot be left waiting on a push that never comes', () => {
   it('has a catch-up schedule of its own', () => {
     // `push` was the ONLY trigger. GitHub cancels the run that was PENDING in

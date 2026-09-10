@@ -6,6 +6,9 @@ Use --cross-club --baseline to reproduce the old receipt failure.
 Use --purchases-only for the rebuy/re-entry/add-on groups.
 Use --unregistrations-only for funded entry/refund lifecycle groups.
 Use --heads-up-only for paid Heads-Up seat/start/refund groups.
+Use --heads-up-ladder-only to compose paid launch with installed amount derivation.
+Use --heads-up-payout-only to add real cumulative prize payment and receipt rollback.
+Use --with-heads-up-payout to replace the default HU segment with that composition.
 Fixture limits are in fixtures/registration-funding/README.md and
 fixtures/tournament-purchase-funding/README.md.
 """
@@ -180,6 +183,12 @@ with (root/'results.log').open('w') as log:
         check('entry receipt balance belongs to the club wallet actually charged')
 
 
+    def funded_heads_up():
+        from tournament_heads_up_funding_cases import verify
+        from tournament_heads_up_payout_cases import prepare, verify_launched
+        verify(q,fresh,overlap,call,check,prepare=prepare,
+               after_launch=lambda q,snapshot,variant,chips,check: verify_launched(q,snapshot,variant,chips,check,overlap))
+
     try:
         version=subprocess.check_output([str(pg/'postgres'),'--version'],text=True)
         assert ' 17.' in version,version
@@ -187,7 +196,13 @@ with (root/'results.log').open('w') as log:
         run([str(pg/'pg_ctl'),'-D',str(cluster),'-o',f'-k {sock} -p {port} -c listen_addresses=','-w','start'])
         started=True
 
-        if '--heads-up-only' in sys.argv:
+        if '--heads-up-payout-only' in sys.argv:
+            funded_heads_up()
+        elif '--heads-up-ladder-only' in sys.argv:
+            from tournament_heads_up_funding_cases import verify
+            from tournament_heads_up_ladder_cases import prepare, verify_launched
+            verify(q,fresh,overlap,call,check,prepare=prepare,after_launch=verify_launched)
+        elif '--heads-up-only' in sys.argv:
             from tournament_heads_up_funding_cases import verify
             verify(q,fresh,overlap,call,check)
         elif '--unregistrations-only' in sys.argv:
@@ -240,13 +255,23 @@ with (root/'results.log').open('w') as log:
             verify(q,fresh,overlap,call,check)
             from tournament_unregistration_funding_cases import verify
             verify(q,fresh,overlap,call,check)
-            from tournament_heads_up_funding_cases import verify
-            verify(q,fresh,overlap,call,check)
+            if '--with-heads-up-payout' in sys.argv:
+                funded_heads_up()
+            else:
+                from tournament_heads_up_funding_cases import verify
+                verify(q,fresh,overlap,call,check)
 
     finally:
         if started:
             subprocess.run([str(pg/'pg_ctl'),'-D',str(cluster),'-m','fast','-t','60','-w','stop'],stdout=log,stderr=log,check=True,timeout=75)
         shutil.rmtree(cluster,ignore_errors=True)
 
-(root/'results.json').write_text(json.dumps({'passed':passed,'production_database_used':False},indent=2)+'\n')
+result = {'passed':passed,'production_database_used':False}
+if '--heads-up-payout-only' in sys.argv or '--with-heads-up-payout' in sys.argv:
+    from tournament_heads_up_payout_cases import evidence
+    result['funded_payout'] = evidence()
+elif '--heads-up-ladder-only' in sys.argv:
+    from tournament_heads_up_ladder_cases import evidence
+    result['funded_ladder'] = evidence()
+(root/'results.json').write_text(json.dumps(result,indent=2)+'\n')
 print(str(len(passed))+' groups passed; evidence: '+str(root/'results.json'))

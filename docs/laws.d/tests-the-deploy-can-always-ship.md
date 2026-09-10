@@ -1,7 +1,12 @@
 # tests/the-deploy-can-always-ship.law.test.ts
 
-A green deploy run must either ship the commit or say truthfully why it did
-not. Pins the three ways it stopped doing that on 2026-09-05, when 52 of 98
+A deploy run is green only when production serves its commit or not shipping
+was deliberate (already live, coalesced, superseded, the window held by
+another owner); a run that should have shipped and did not is red, and EVERY
+start minute - not only the cron tick - must be able to wait for the next :55
+(2026-09-10: runs dispatched by the engine watchdog at other minutes staged
+their image, went green and shipped nothing while production crash-looped).
+Pins the three ways it stopped doing that on 2026-09-05, when 52 of 98
 attempts in 72 hours shipped nothing and every one reported success: the job
 timeout and the break gate's wait budget must be the same number and must
 leave every scheduled tick able to reach the next :55 (a budget that shrank

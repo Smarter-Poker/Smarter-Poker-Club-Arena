@@ -277,7 +277,24 @@ export class HorseDecisionWorkerRuntime {
   private async execute(request: HorseDecisionJobRequest): Promise<void> {
     try {
       await this.readyPromise;
-      this.assertEnvelope(request);
+      try {
+        this.assertEnvelope(request);
+      } catch (error) {
+        // A malformed snapshot belongs to one table/turn. Marking this
+        // rejection explicitly lets the client take that caller's legal
+        // fail-safe action without restarting the process-wide worker. Errors
+        // after this boundary still mean runtime/execution corruption and are
+        // deliberately emitted without `recoverable` below.
+        this.send({
+          type: 'ERROR',
+          requestId: request.requestId,
+          generation: request.generation,
+          fence: request.fence,
+          message: asMessage(error),
+          recoverable: true,
+        });
+        return;
+      }
       if (this.cancelled.delete(request.requestId)) {
         this.send({
           type: 'CANCELLED',

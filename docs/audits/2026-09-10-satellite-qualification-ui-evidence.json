@@ -11,7 +11,7 @@
     "src/pages/TablePage.tsx": "dffcf2b638d4b7bdaea168c022fad252b7cf4d6e0d95469951610ce1edbb5d39",
     "src/services/RealtimeChannelService.ts": "45a35ef7f446cd5347db014daa55c26da9f6f7d5890f7f8c2831278cfa5c9c46",
     "src/services/TournamentService.ts": "95229371a1b9feb98b0e6e59b61623a7b7dc67f97f3319fd9e41a08a7cbf0807",
-    "src/services/pendingSessionSummary.ts": "b75ec2e9bdd7884d2601916967de887b7f829cb6f4da6374fc752713a2a6668e",
+    "src/services/pendingSessionSummary.ts": "2730d31b2b430500b5805a51e6af91c39eeff7bc964b3b3fe5308812b5c371bc",
     "src/services/satelliteQualification.ts": "94553c69797f672943b349904b4f282985bbc4c69de6499e4a824ed9dd45cca5",
     "tests/config/tournamentWinnerExit.test.ts": "41e89546ebc8f8550a82706b74e43d4e85d4809adcf3ec728f8509055eebdbc7",
     "tests/unit/satelliteQualificationOutcome.test.tsx": "ed23f6ad1b302922851ba9824c2cfd092e2b7a817e59515dd9dbb48ecde35ea8"
@@ -106,5 +106,6 @@
   ],
   "productionMutationsByThisLane": false,
   "pushedByThisLane": false,
-  "hookBypass": false
+  "hookBypass": false,
+  "postCommitHookReview": "Normal pre-commit eslint changed only heldQueue declaration from let to const; the array is mutated, never reassigned. Post-hook source hashes were verified."
 }

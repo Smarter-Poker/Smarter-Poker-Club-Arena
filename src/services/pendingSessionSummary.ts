@@ -114,6 +114,7 @@ export interface TournamentResult {
 }
 
 export interface SessionSummaryPayload {
+  arenaAsset?: 'chips' | 'diamonds';
   /** Elapsed session time in SECONDS (not a timestamp). */
   duration: number;
   handsPlayed: number;
@@ -161,6 +162,8 @@ export interface SessionSummaryPayload {
      *  an earlier session at the same table can never be mistaken for this
      *  settlement. */
     sinceMs: number;
+    /** Exact seat generation required for a Diamond cash-out receipt. */
+    occupancyId?: string;
   };
 }
 

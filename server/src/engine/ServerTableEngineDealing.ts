@@ -3112,6 +3112,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
    * cost of a wrong `false` is taking a rebuy away from someone who could pay.
    */
   protected async anyBustedPlayerCanAffordARebuy(busted: SeatedPlayer[]): Promise<boolean> {
+    if (this.tableInfo?.arena?.asset === 'diamonds') return false;
     if (busted.length === 0) return false;
 
     const minBuyIn = cashMinBuyIn(this.tableInfo);
@@ -3279,6 +3280,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
   }
 
   protected async recoverBustedSeatedHorses(): Promise<void> {
+    if (this.tableInfo?.arena?.asset === 'diamonds') return;
     if (isMaintenanceFrozen()) return;
     const bustHorses = this.seatedPlayers.filter((p) => p.is_horse && p.stack <= 0);
     if (bustHorses.length === 0) return;

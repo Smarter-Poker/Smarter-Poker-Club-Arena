@@ -1753,7 +1753,8 @@ export abstract class ServerTableEngineBase {
 
     this.chipContinuity = new ChipContinuityTracker({
       tableId,
-      isCash: () => !!this.tableInfo && !this.isTournamentTable(),
+      isCash: () =>
+        !!this.tableInfo && this.tableInfo.arena?.asset !== 'diamonds' && !this.isTournamentTable(),
       isFrozen: () => isMaintenanceFrozen(),
       canMutate: () => this.lifecycleCanMutate(),
       evaluate: evaluateCashSessions,

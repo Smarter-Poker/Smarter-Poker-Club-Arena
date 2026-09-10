@@ -1467,6 +1467,17 @@ describe('the reserved Stage-B forward authority boundaries stay split', () => {
     expect(moveResolver).not.toContain('fn_ca_lock_settlement_lane_for_tournament');
 
     const finalPostimage = dollarBlock(contraction, 'verify_current_postimage_contraction');
+    const moveAuthorityProof = dollarBlock(contraction, 'prove_one_tournament_move_authority');
+    expect(moveAuthorityProof).toContain("'PERFORM pg_advisory_xact_lock_shared('");
+    expect(moveAuthorityProof).toContain(
+      "'hashtextextended(''ca:tournament-terminal-settlement:v1'',0)'"
+    );
+    expect(moveAuthorityProof).toContain(
+      "'hashtextextended(''ca:tournament-terminal-settlement:v1:''||p_tournament_id::text,0)'"
+    );
+    expect(moveAuthorityProof).not.toContain(
+      "'fn_ca_lock_settlement_lane_for_tournament(p_tournament_id)'\n          IN v_resolver_source)=0"
+    );
     expect(finalPostimage).toContain('3acb4c1d763181905cf5b64287f8f28f');
     expect(finalPostimage).not.toContain('2bc939035496d764ff9d6c14b52fa1e7');
     expect(finalPostimage).toMatch(

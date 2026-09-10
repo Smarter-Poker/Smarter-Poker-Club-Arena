@@ -11253,10 +11253,17 @@ BEGIN
   END IF;
 
   IF position('app.smarter_data_actor' IN v_resolver_source)=0
+     OR (
+          length(v_resolver_source)-length(replace(
+            v_resolver_source,'PERFORM pg_advisory_xact_lock_shared(',''))
+        )/length('PERFORM pg_advisory_xact_lock_shared(')<>2
      OR position(
-          'fn_ca_lock_settlement_lane_for_tournament(p_tournament_id)'
+          'hashtextextended(''ca:tournament-terminal-settlement:v1'',0)'
           IN v_resolver_source)=0
-     OR position('ca:tournament-terminal-settlement:v1'
+     OR position(
+          'hashtextextended(''ca:tournament-terminal-settlement:v1:''||p_tournament_id::text,0)'
+          IN v_resolver_source)=0
+     OR position('fn_ca_lock_settlement_lane_for_tournament'
                  IN v_resolver_source)>0
      OR position('fn_ca_tournament_seat_move_receipt(p_request_id)'
                  IN v_resolver_source)=0

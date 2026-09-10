@@ -33,9 +33,10 @@
     {
       "owner": "entry_refund",
       "controls": ["CA-03-01", "CA-03-11"],
-      "status": "rebuy_tests_integrated_current_dependency_parity_followup_in_progress",
+      "status": "ordinary_purchase_current_dependency_parity_verified_and_integrated",
       "commit": "f3a0d1e4e",
-      "evidence": "docs/changelog/2026-09-10-rebuy-rollback-and-concurrent-replay-acceptance.md"
+      "evidence": "docs/changelog/2026-09-10-rebuy-rollback-and-concurrent-replay-acceptance.md",
+      "commits": ["f3a0d1e4e", "2f83c51b85986c6ea32ac97eeb4913676d908240"]
     },
     {
       "owner": "bounties_tickets",
@@ -110,7 +111,7 @@
     "version": "1695880b"
   },
   "publication": {
-    "status": "preparing",
+    "status": "ready_for_normal_push_and_required_ci",
     "push_completed": false,
     "normal_hooks": "passed on integrated conflict resolutions; no hooks bypassed"
   },
@@ -137,8 +138,9 @@
       "scope": "Common origin-wallet cash refund and historical ticket provenance, rollback and concurrent retry; not terminal award composition."
     },
     "rebuy": {
-      "assertions_passed": 23,
-      "cleanup": "The final run exceeded the old disposable shutdown timeout after assertions passed; shutdown subsequently completed. Current dependency-parity followup remains separate."
+      "pg_groups": 23,
+      "cleanup": "passed, clean shutdown",
+      "source_dependencies": "Exact20626 resolver and23919 deduction fingerprints asserted in every fresh scenario; historical repairs and named live-event probes excluded."
     },
     "terminal_fixture": {
       "native_pg_cases": 6,
@@ -148,7 +150,7 @@
     "integrated_required_ci": "pending"
   },
   "remaining_acceptance": {
-    "CA-03-01": "Complete current dependency parity and knockout rebuy generations under missing M6/bounty helper authority.",
+    "CA-03-01": "Actual late-seat lifecycle and knockout rebuy generations under missing M6/bounty helper authority; current ordinary purchase dependency parity is verified.",
     "CA-03-02": "Actual bounty/PKO wallet, progressive carry and final winner conservation after coordinated dependency installation.",
     "CA-03-03": "Complete mystery wallet payment and terminal residual closure beyond reserve/reveal identity.",
     "CA-03-04": "Full immutable payout-plan and all-recipient terminal composition against current money authorities.",
@@ -166,5 +168,6 @@
     "connector": "Repeated HTTP504 responses occurred after some commands had actually completed. Saved unique logs are checked before any retry.",
     "worktree_metadata": "Other activity changed shared core.bare and test identity. Affected agents repaired only their own worktree configuration and retained normal guards.",
     "root_disposable_cluster": "Still intact. Automatic review rejected stop/copy/delete; no cleanup workaround attempted."
-  }
+  },
+  "integration_base": "4d29dce4c: PR4083 release-seal update merged from main before publication."
 }

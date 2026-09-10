@@ -32,13 +32,13 @@ probe write, as designed.
 only or carry `UPDATE OF` lists that exclude stack). Ten executions in one
 session:
 
-| run | exec ms | trigger ms | aa_proof_lock | zz_freeze_guard | terminal_immutable | retired_club | cancelled_immutable | no_live_seat_finished | RI x3 |
-|---|---|---|---|---|---|---|---|---|---|
-| 1 cold | 19.39 | 18.66 | 6.99 | 3.92 | 2.22 | 2.14 | 1.29 | 0.76 | - |
-| 2 | 6.03 | 5.85 | 1.19 | 0.94 | 0.58 | 0.30 | 0.27 | 0.33 | 1.96 |
-| 3-5 | 4.18-4.30 | 4.06-4.17 | 1.09-1.16 | 0.89-0.91 | 0.55-0.60 | 0.30-0.33 | 0.26 | 0.36-0.40 | 0.26-0.29 |
-| 6 (plans flip) | 5.93 | 5.78 | 1.90 | 0.50 | 1.67 | 0.31 | 0.44 | 0.38 | 0.27 |
-| 7-10 steady | 1.78-2.18 | 1.67-2.06 | 0.93-1.01 | 0.38-0.39 | 0.08-0.11 | 0.06-0.07 | 0.06-0.07 | <0.05 | 0-0.29 |
+| run            | exec ms   | trigger ms | aa_proof_lock | zz_freeze_guard | terminal_immutable | retired_club | cancelled_immutable | no_live_seat_finished | RI x3     |
+| -------------- | --------- | ---------- | ------------- | --------------- | ------------------ | ------------ | ------------------- | --------------------- | --------- |
+| 1 cold         | 19.39     | 18.66      | 6.99          | 3.92            | 2.22               | 2.14         | 1.29                | 0.76                  | -         |
+| 2              | 6.03      | 5.85       | 1.19          | 0.94            | 0.58               | 0.30         | 0.27                | 0.33                  | 1.96      |
+| 3-5            | 4.18-4.30 | 4.06-4.17  | 1.09-1.16     | 0.89-0.91       | 0.55-0.60          | 0.30-0.33    | 0.26                | 0.36-0.40             | 0.26-0.29 |
+| 6 (plans flip) | 5.93      | 5.78       | 1.90          | 0.50            | 1.67               | 0.31         | 0.44                | 0.38                  | 0.27      |
+| 7-10 steady    | 1.78-2.18 | 1.67-2.06  | 0.93-1.01     | 0.38-0.39       | 0.08-0.11          | 0.06-0.07    | 0.06-0.07           | <0.05                 | 0-0.29    |
 
 Remaining triggers (stamp_sit_out_at, stamp_seat_occupancy, clear_sitout,
 seat_parent_keys_match, stamp_club, stamp_active_seat_game_scope 0.11,
@@ -102,6 +102,7 @@ Nothing else changes; `v_ids` is still built and still passed to
 `fn_lock_tournament_launch_proof_parents`.
 
 Equivalence, every TG_OP:
+
 - INSERT: v_ids = {new}; v_old is never assigned (NULL). `t.id = NULL` is NULL,
   `NULL OR (t.id = new)` is true exactly when t.id = new, otherwise NULL, which
   WHERE discards. Same rows as `= ANY({new})`.

@@ -17,14 +17,28 @@
  * full. The RPC stays the authority for everybody else and is called with the
  * SAME arguments as before. Horses are players (CLAUDE.md 10.5): no horse that
  * needs a seat loses one here - only calls whose answer was already known.
+ *
+ * AND A SKIP IS VERIFIED BEFORE IT IS TAKEN (follow-up to #4112). The rows
+ * behind the ledger age by one locked call per candidate, so a skip is only
+ * taken after a lock-free re-read of the same rows still supports it. A stale
+ * row - a horse that left, a seat that opened after the RPC said table_full -
+ * falls through to the RPC on THIS pass, exactly as before the pre-check
+ * existed. The per-pass tally is also folded into /metrics
+ * (poker_seat_first_precheck_total) so the saving is visible without log access.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const rpcMock = vi.fn();
-/** Per-table results for the chainable query builder, keyed by table name. */
-let tableResults: Record<string, { data: unknown; error: { message: string } | null }> = {};
+type TableAnswer = { data: unknown; error: { message: string } | null };
+/**
+ * Per-table results for the chainable query builder, keyed by table name. A
+ * function is called once per query with the number of queries that table has
+ * already answered, so a re-read can see the world move.
+ */
+let tableResults: Record<string, TableAnswer | ((n: number) => TableAnswer)> = {};
+const tableReads: Record<string, number> = {};
 
 vi.mock('./supabase/client.js', () => {
   const builder = (table: string) => {
@@ -32,10 +46,17 @@ vi.mock('./supabase/client.js', () => {
     for (const m of ['select', 'eq', 'is', 'in', 'limit', 'order', 'neq', 'not', 'update']) {
       b[m] = () => b;
     }
-    const answer = () =>
-      Promise.resolve(
-        tableResults[table] ?? { data: null, error: { message: `no mock for ${table}` } }
+    const answer = () => {
+      const n = tableReads[table] ?? 0;
+      tableReads[table] = n + 1;
+      const r = tableResults[table];
+      return Promise.resolve(
+        (typeof r === 'function' ? r(n) : r) ?? {
+          data: null,
+          error: { message: `no mock for ${table}` },
+        }
       );
+    };
     b.maybeSingle = answer;
     b.then = (ok: (v: unknown) => unknown, bad: (e: unknown) => unknown) => answer().then(ok, bad);
     return b;
@@ -50,12 +71,21 @@ vi.mock('./errorReporter.js', () => ({ reportError: vi.fn() }));
 
 import {
   TournamentRecurringService,
+  seatFirstLedgerRefresh,
   seatFirstNoteSeated,
   seatFirstNoteTableFull,
   seatFirstPrecheckLogLine,
   seatFirstSeatLedger,
   seatFirstSeatPrecheck,
 } from './TournamentRecurringService.js';
+import {
+  SEAT_FIRST_PRECHECK_OUTCOMES,
+  emptySeatFirstPrecheckTally,
+  recordSeatFirstPrecheck,
+  resetSeatFirstPrecheckTotalsForTests,
+  seatFirstPrecheckPrometheusLines,
+  seatFirstPrecheckTotals,
+} from './seatFirstPrecheckMetrics.js';
 
 const SRC = readFileSync(join(__dirname, 'TournamentRecurringService.ts'), 'utf8');
 
@@ -70,7 +100,10 @@ function seatingLoopBody(): string {
   const body = topUpBody();
   const start = body.indexOf('for (const horse of candidates)');
   expect(start, 'the seating loop must still exist').toBeGreaterThan(-1);
-  const end = body.indexOf('} else {', start);
+  // The loop ends where the pass's log line begins. seatFirstFillOrder.test.ts
+  // slices the same loop up to the first `} else {`, so the loop body must
+  // not grow one: the verifying re-read is written without an else.
+  const end = body.indexOf('seatFirstPrecheckLogLine(tournamentId, tally)', start);
   return body.slice(start, end > -1 ? end : body.length);
 }
 
@@ -173,12 +206,112 @@ describe('seatFirstSeatPrecheck - exactly the two answers the RPC gives without 
   });
 });
 
+describe('seatFirstLedgerRefresh - fresh rows replace the ledger before a skip is taken', () => {
+  it('a horse the fresh rows no longer show seated goes back to the RPC', () => {
+    const l = seatFirstSeatLedger([{ user_id: 'h1', seat_number: 1 }], 3, 3);
+    expect(seatFirstSeatPrecheck(l, 'h1')).toBe('already_seated');
+    seatFirstLedgerRefresh(l, []);
+    expect(seatFirstSeatPrecheck(l, 'h1')).toBe('call');
+  });
+
+  it('a seat the fresh rows show open reopens a table the RPC had called full', () => {
+    const l = seatFirstSeatLedger(
+      [
+        { user_id: 'a', seat_number: 1 },
+        { user_id: 'b', seat_number: 2 },
+      ],
+      3,
+      3
+    );
+    seatFirstNoteTableFull(l);
+    expect(seatFirstSeatPrecheck(l, 'h')).toBe('table_full');
+    seatFirstLedgerRefresh(l, [
+      { user_id: 'a', seat_number: 1 },
+      { user_id: 'b', seat_number: 2 },
+    ]);
+    expect(l.rpcSaidFull).toBe(false);
+    expect(seatFirstSeatPrecheck(l, 'h')).toBe('call');
+  });
+
+  it('fresh rows that still fill 1..capacity keep the skip', () => {
+    const l = seatFirstSeatLedger([], 2, 2);
+    seatFirstNoteTableFull(l);
+    seatFirstLedgerRefresh(l, [
+      { user_id: 'a', seat_number: 1 },
+      { user_id: 'b', seat_number: 2 },
+    ]);
+    expect(seatFirstSeatPrecheck(l, 'h')).toBe('table_full');
+  });
+
+  it("with the capacity unknown the RPC's table_full stands - the rows cannot say otherwise", () => {
+    const l = seatFirstSeatLedger([], undefined, 3);
+    expect(l.capacity).toBeNull();
+    seatFirstNoteTableFull(l);
+    seatFirstLedgerRefresh(l, []);
+    expect(l.rpcSaidFull).toBe(true);
+    expect(seatFirstSeatPrecheck(l, 'h')).toBe('table_full');
+  });
+
+  it('keeps the capacity it was built with', () => {
+    const l = seatFirstSeatLedger([], 6, 3);
+    seatFirstLedgerRefresh(l, [{ user_id: 'a', seat_number: 1 }]);
+    expect(l.capacity).toBe(6);
+    expect([...l.seatedUsers]).toEqual(['a']);
+  });
+});
+
+describe('poker_seat_first_precheck_total - the same numbers on /metrics', () => {
+  beforeEach(() => resetSeatFirstPrecheckTotalsForTests());
+
+  it('exposes every outcome from the first scrape, at zero', () => {
+    const lines = seatFirstPrecheckPrometheusLines();
+    expect(lines[0]).toMatch(/^# HELP poker_seat_first_precheck_total /);
+    expect(lines[1]).toBe('# TYPE poker_seat_first_precheck_total counter');
+    for (const k of SEAT_FIRST_PRECHECK_OUTCOMES) {
+      expect(lines).toContain(`poker_seat_first_precheck_total{outcome="${k}"} 0`);
+    }
+    expect(SEAT_FIRST_PRECHECK_OUTCOMES).toEqual(
+      expect.arrayContaining(['rpc_called', 'skipped_already_seated', 'skipped_table_full'])
+    );
+  });
+
+  it('accumulates one pass after another and never goes down', () => {
+    const t = emptySeatFirstPrecheckTally();
+    t.rpcCalled = 2;
+    t.skippedAlreadySeated = 3;
+    t.skippedTableFull = 1;
+    t.verifyReads = 4;
+    t.seated = 2;
+    recordSeatFirstPrecheck(t);
+    recordSeatFirstPrecheck(t);
+    const totals = seatFirstPrecheckTotals();
+    expect(totals.rpc_called).toBe(4);
+    expect(totals.skipped_already_seated).toBe(6);
+    expect(totals.skipped_table_full).toBe(2);
+    expect(totals.verify_reads).toBe(8);
+    expect(totals.seated).toBe(4);
+    expect(totals.rpc_table_full).toBe(0);
+    expect(seatFirstPrecheckPrometheusLines()).toContain(
+      'poker_seat_first_precheck_total{outcome="skipped_already_seated"} 6'
+    );
+  });
+
+  it('is rendered by GameServer.getPrometheusMetrics, the always-on exposition', () => {
+    const gameServer = readFileSync(join(__dirname, '..', 'GameServer.ts'), 'utf8');
+    expect(gameServer).toContain('...seatFirstPrecheckPrometheusLines()');
+    expect(gameServer).toMatch(
+      /import \{ seatFirstPrecheckPrometheusLines \} from '\.\/services\/seatFirstPrecheckMetrics\.js';/
+    );
+  });
+});
+
 describe('seatFirstPrecheckLogLine - the grep-able evidence', () => {
   it('carries every counter under a stable prefix', () => {
     const line = seatFirstPrecheckLogLine('0123456789abcdef', {
       rpcCalled: 2,
       skippedAlreadySeated: 3,
       skippedTableFull: 1,
+      verifyReads: 4,
       seated: 1,
       rpcAlreadySeated: 0,
       rpcTableFull: 1,
@@ -189,7 +322,10 @@ describe('seatFirstPrecheckLogLine - the grep-able evidence', () => {
     expect(line).toContain('rpc_called=2');
     expect(line).toContain('skipped_already_seated=3');
     expect(line).toContain('skipped_table_full=1');
+    expect(line).toContain('verify_reads=4');
     expect(line).toContain('rpc_table_full=1');
+    // Ids only: the line carries no name, no wallet, no email.
+    expect(line).not.toMatch(/@|name=|wallet/);
   });
 });
 
@@ -228,6 +364,8 @@ describe('topUpWithHorses - the pre-check in front of the RPC', () => {
       .map((c) => c[1] as { p_tournament_id: string; p_user_id: string });
 
   beforeEach(() => {
+    for (const k of Object.keys(tableReads)) delete tableReads[k];
+    resetSeatFirstPrecheckTotalsForTests();
     rpcMock.mockReset();
     rpcMock.mockImplementation(async (name: string, args: { p_user_id?: string }) => {
       if (name === 'fn_tournament_primary_table') return { data: TABLE, error: null };
@@ -261,7 +399,83 @@ describe('topUpWithHorses - the pre-check in front of the RPC', () => {
       .find((l) => l.includes('seat-first-precheck'));
     expect(line).toContain('rpc_called=1');
     expect(line).toContain('skipped_already_seated=2');
+    expect(line).toContain('verify_reads=2');
     expect(line).toContain('seated=1');
+    // One initial read for the shortfall, one verifying re-read per skip.
+    expect(tableReads.table_seats).toBe(3);
+    const totals = seatFirstPrecheckTotals();
+    expect(totals.rpc_called).toBe(1);
+    expect(totals.skipped_already_seated).toBe(2);
+    expect(totals.seated).toBe(1);
+  });
+
+  it('a horse that left its seat between the read and its turn is NOT skipped - it goes to the RPC this pass', async () => {
+    // The rows at the shortfall read show seated-a in seat 1; by the time the
+    // loop reaches seated-a it has stood up. Before the pre-check existed the
+    // RPC seated it here; the pre-check must not turn that into a five-second
+    // wait. Horses are players (CLAUDE.md 10.5).
+    seatRows([
+      { user_id: 'seated-a', seat_number: 1 },
+      { user_id: 'seated-b', seat_number: 2 },
+    ]);
+    tableResults.table_seats = (n) =>
+      n === 0
+        ? {
+            data: [
+              { user_id: 'seated-a', seat_number: 1 },
+              { user_id: 'seated-b', seat_number: 2 },
+            ],
+            error: null,
+          }
+        : { data: [{ user_id: 'seated-b', seat_number: 2 }], error: null };
+    candidates([], ['seated-a', 'free-1', 'free-2']);
+    const added = await svc.topUpWithHorses(T, 3);
+    expect(seatCalls().map((c) => c.p_user_id)).toEqual(['seated-a']);
+    expect(added).toBe(1);
+    const line = logSpy.mock.calls
+      .map((c) => String(c[0]))
+      .find((l) => l.includes('seat-first-precheck'));
+    expect(line).toContain('skipped_already_seated=0');
+    expect(line).toContain('verify_reads=1');
+  });
+
+  it('a skip is only ever taken on rows fresher than the answer: the loop re-reads before it skips', async () => {
+    seatRows([
+      { user_id: 'seated-a', seat_number: 1 },
+      { user_id: 'seated-b', seat_number: 2 },
+    ]);
+    candidates([], ['seated-a', 'free-1']);
+    await svc.topUpWithHorses(T, 3);
+    // Shortfall read, then the verifying read for seated-a; free-1 needs none.
+    expect(tableReads.table_seats).toBe(2);
+    expect(seatCalls().map((c) => c.p_user_id)).toEqual(['free-1']);
+  });
+
+  it('when the verifying re-read fails, nothing is skipped - the RPC decides', async () => {
+    seatRows([
+      { user_id: 'seated-a', seat_number: 1 },
+      { user_id: 'seated-b', seat_number: 2 },
+    ]);
+    tableResults.table_seats = (n) =>
+      n === 0
+        ? {
+            data: [
+              { user_id: 'seated-a', seat_number: 1 },
+              { user_id: 'seated-b', seat_number: 2 },
+            ],
+            error: null,
+          }
+        : { data: null, error: { message: 'connection reset' } };
+    rpcMock.mockImplementation(async (name: string, args: { p_user_id?: string }) => {
+      if (name === 'fn_tournament_primary_table') return { data: TABLE, error: null };
+      if (args?.p_user_id === 'seated-a')
+        return { data: { ok: true, already_seated: true }, error: null };
+      return { data: { ok: true, seat_number: 3 }, error: null };
+    });
+    candidates([], ['seated-a', 'free-1']);
+    const added = await svc.topUpWithHorses(T, 3);
+    expect(seatCalls().map((c) => c.p_user_id)).toEqual(['seated-a', 'free-1']);
+    expect(added).toBe(1);
   });
 
   it('an unseated horse goes through the same RPC with the same arguments as before', async () => {
@@ -320,10 +534,29 @@ describe('topUpWithHorses - the pre-check in front of the RPC', () => {
   });
 
   it('once the RPC answers table_full, the spare candidates do not queue for the same answer', async () => {
+    // Another seeder took seat 3 on the same tick: the shortfall read saw two
+    // seats, the RPC says full, and the verifying re-read agrees.
     seatRows([
       { user_id: 'a', seat_number: 1 },
       { user_id: 'b', seat_number: 2 },
     ]);
+    tableResults.table_seats = (n) =>
+      n === 0
+        ? {
+            data: [
+              { user_id: 'a', seat_number: 1 },
+              { user_id: 'b', seat_number: 2 },
+            ],
+            error: null,
+          }
+        : {
+            data: [
+              { user_id: 'a', seat_number: 1 },
+              { user_id: 'b', seat_number: 2 },
+              { user_id: 'c', seat_number: 3 },
+            ],
+            error: null,
+          };
     rpcMock.mockImplementation(async (name: string) => {
       if (name === 'fn_tournament_primary_table') return { data: TABLE, error: null };
       return { data: { ok: false, reason: 'table_full' }, error: null };
@@ -332,6 +565,46 @@ describe('topUpWithHorses - the pre-check in front of the RPC', () => {
     const added = await svc.topUpWithHorses(T, 3);
     expect(seatCalls()).toEqual([{ p_tournament_id: T, p_user_id: 'free-1' }]);
     expect(added).toBe(0);
+    const line = logSpy.mock.calls
+      .map((c) => String(c[0]))
+      .find((l) => l.includes('seat-first-precheck'));
+    expect(line).toContain('skipped_table_full=2');
+    expect(line).toContain('rpc_table_full=1');
+  });
+
+  it('a seat that opens after the RPC said table_full is filled on THIS pass, not the next', async () => {
+    // free-1 hears table_full; then b stands up. The verifying re-read for
+    // free-2 sees seat 2 open, so free-2 goes to the RPC and takes it.
+    seatRows([
+      { user_id: 'a', seat_number: 1 },
+      { user_id: 'b', seat_number: 2 },
+    ]);
+    tableResults.table_seats = (n) =>
+      n === 0
+        ? {
+            data: [
+              { user_id: 'a', seat_number: 1 },
+              { user_id: 'b', seat_number: 2 },
+            ],
+            error: null,
+          }
+        : {
+            data: [
+              { user_id: 'a', seat_number: 1 },
+              { user_id: 'c', seat_number: 3 },
+            ],
+            error: null,
+          };
+    rpcMock.mockImplementation(async (name: string, args: { p_user_id?: string }) => {
+      if (name === 'fn_tournament_primary_table') return { data: TABLE, error: null };
+      if (args?.p_user_id === 'free-1')
+        return { data: { ok: false, reason: 'table_full' }, error: null };
+      return { data: { ok: true, seat_number: 2 }, error: null };
+    });
+    candidates([], ['free-1', 'free-2', 'free-3']);
+    const added = await svc.topUpWithHorses(T, 3);
+    expect(seatCalls().map((c) => c.p_user_id)).toEqual(['free-1', 'free-2']);
+    expect(added).toBe(1);
   });
 
   it('a stale ledger is corrected by the RPC: already_seated seats nobody and the next candidate is tried', async () => {
@@ -365,6 +638,30 @@ describe('topUpWithHorses - the wiring, pinned in the source', () => {
     expect(read).toMatch(/\.is\('left_at', null\)/);
   });
 
+  it('re-reads the seat rows, lock-free, between the pre-check and the skip', () => {
+    const loop = seatingLoopBody();
+    const pre = loop.indexOf('seatFirstSeatPrecheck(ledger, horse)');
+    const skip = loop.indexOf("precheck === 'already_seated'");
+    const rpc = loop.indexOf("'fn_seat_horse_in_seat_first_game'");
+    expect(pre).toBeGreaterThan(-1);
+    expect(skip).toBeGreaterThan(pre);
+    expect(rpc).toBeGreaterThan(skip);
+    const verify = loop.slice(pre, skip);
+    expect(verify).toMatch(/\.from\('table_seats'\)/);
+    expect(verify).toMatch(/\.select\('user_id, seat_number'\)/);
+    expect(verify).toMatch(/\.is\('left_at', null\)/);
+    expect(verify).toContain('seatFirstLedgerRefresh(ledger,');
+    // A failed re-read verifies nothing and therefore skips nothing: the
+    // verdict is reset to 'call' before the read and only a successful read
+    // may put a skip back.
+    const reset = verify.indexOf("precheck = 'call';");
+    const read = verify.indexOf(".from('table_seats')");
+    expect(reset).toBeGreaterThan(-1);
+    expect(reset).toBeLessThan(read);
+    expect(verify).toMatch(/if \(!freshErr\) \{\s*seatFirstLedgerRefresh\(ledger,/);
+    expect(verify).not.toMatch(/\.rpc\(/);
+  });
+
   it('asks the pre-check before the RPC and skips with a continue, never a break', () => {
     const loop = seatingLoopBody();
     const pre = loop.indexOf('seatFirstSeatPrecheck(ledger, horse)');
@@ -387,8 +684,9 @@ describe('topUpWithHorses - the wiring, pinned in the source', () => {
     expect(seatingLoopBody()).not.toMatch(/is_horse/);
   });
 
-  it('logs skipped versus called once per pass that had candidates', () => {
+  it('logs skipped versus called once per pass that had candidates, and folds the same tally into /metrics', () => {
     const body = topUpBody();
     expect(body).toContain('seatFirstPrecheckLogLine(tournamentId, tally)');
+    expect(body).toContain('recordSeatFirstPrecheck(tally)');
   });
 });

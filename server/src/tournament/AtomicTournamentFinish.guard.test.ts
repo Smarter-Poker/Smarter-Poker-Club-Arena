@@ -75,9 +75,12 @@ describe('running-state bookkeeping cannot pay a place', () => {
 
   it('late-reg recalculation updates only the displayed prize', () => {
     const recalc = code(sliceMethod(SOURCE, 'protected async recalculateEliminatedPrizes'));
-    expect(recalc).toMatch(/update\(\{ prize:\s*correctPrize \}\)/);
+    expect(recalc).toContain("'fn_ca_reprice_unpaid_tournament_place'");
+    expect(recalc).toContain('p_expected_prize: expectedPrize');
+    expect(recalc).not.toMatch(/\.from\('tournament_players'\)[\s\S]*?\.update\(/);
     expect(recalc).not.toMatch(/settleTournamentObligation/);
-    expect(recalc).not.toMatch(/\.rpc\(/);
+    expect(recalc.match(/supabase\.rpc\(/g)).toHaveLength(1);
+    expect(recalc).not.toMatch(/credit|wallet|pay_player/);
   });
 
   it('final-deal closeout consumes payout evidence without paying it again', () => {

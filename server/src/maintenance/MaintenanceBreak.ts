@@ -584,9 +584,11 @@ export class MaintenanceBreak {
   private scheduledBreakWindowAt(at: number): { announcedAt: number; endsAt: number } | null {
     const announceMinute =
       MaintenanceBreak.BREAK_START_MINUTE - MaintenanceBreak.LAST_HAND_LEAD_MS / 60000;
+    // UTC setters, the same as `msUntilNextAnnouncement` (#4063): in a
+    // fractional-hour zone a LOCAL :53 is not the deployment window's :53, and
+    // the two derivations of the same timeline must never disagree.
     const announced = new Date(at);
-    announced.setSeconds(0, 0);
-    announced.setMinutes(announceMinute);
+    announced.setUTCMinutes(announceMinute, 0, 0);
     const announcedAt = announced.getTime();
     const endsAt =
       announcedAt + MaintenanceBreak.LAST_HAND_LEAD_MS + MaintenanceBreak.BREAK_DURATION_MS;

@@ -255,6 +255,18 @@ export abstract class TournamentManagerBase {
   static readonly FINAL_TABLE_DEAL_POLL_MS = 10_000;
   /** Preserve fast recovery while a known zero-stack player is unresolved. */
   static readonly UNRESOLVED_BUST_RETRY_MS = 5_000;
+  /**
+   * How many times in a row the knockout door may refuse the SAME player
+   * before the bust pass records the rest of the field without them.
+   *
+   * Two refusals is a transient: a CAS miss or an evidence defer clears in
+   * seconds and retrying in hand order costs nothing. A third is a standing
+   * refusal, and waiting on it froze seven events for up to eighteen hours on
+   * 2026-09-10, each holding escrow no player could be given. Three at the
+   * five-second unresolved-bust cadence is about fifteen seconds of patience
+   * before the event is allowed to carry on without that one bust.
+   */
+  static readonly BUST_REFUSAL_SKIP_AFTER = 3;
   /** Re-check only a tournament whose balancer proved work remains. */
   static readonly BALANCE_REDRIVE_MS = 5_000;
   /**

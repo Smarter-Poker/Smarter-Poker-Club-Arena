@@ -34,8 +34,10 @@ import {
   type TournamentAnteType,
   type TournamentContextStatus,
 } from '../engine/HorseTournamentPreflop.js';
+import { selectInChunks } from './supabase/chunkedIn.js';
+import { horseRebuyAllowance } from './FreeBuy.js';
 
-export type TournamentFormat = 'mtt' | 'spin' | 'hu_sng';
+export type TournamentFormat = 'mtt' | 'sng' | 'spin' | 'hu_sng';
 
 export interface TournamentBrainContext {
   schemaVersion: 1;
@@ -75,6 +77,7 @@ export interface TournamentBrainContext {
   isPko: boolean;
   isBounty: boolean;
   isMysteryBounty: boolean;
+  mysteryBountyStage: 'none' | 'pending' | 'active' | 'complete';
   reentryAllowed: boolean;
   reentryOpen: boolean;
   maxReentries: number | null;
@@ -91,10 +94,30 @@ export interface TournamentBrainContext {
   handForHandExpected: boolean;
   /** PKO: share of the prize pool sitting in bounties (0 = not a bounty) */
   bountyFactor: number;
-  /** V16 ICM: live stacks in chips, descending, capped at 200 entries. */
+  /** Funded regular and bounty pools, normalized to cents for Phase 7 utility. */
+  prizePoolCents: number;
+  bountyPoolCents: number;
+  /** Entry/recovery terms. These are observations only; the brain moves no money. */
+  buyInCents: number | null;
+  startingStackChips: number | null;
+  rebuyCostCents: number | null;
+  rebuyChips: number | null;
+  /** Exact amount one recovery purchase adds to each funded pool. */
+  rebuyPrizeContributionCents: number | null;
+  rebuyBountyContributionCents: number | null;
+  /** Personal recovery usage; global windows/caps alone are not eligibility. */
+  reloadsByUser: Record<string, number>;
+  /** Free Buy events apply the deterministic per-horse 0-5 recovery cap. */
+  horseRebuyCapByUser: Record<string, number>;
+  addOnTakenByUser: Record<string, boolean>;
+  /** Affordability is computed off the action clock from the exact funding wallet. */
+  rebuyAffordableByUser: Record<string, boolean>;
+  addOnAffordableByUser: Record<string, boolean>;
+  /** Phase 7 ICM: every observed live stack in chips, descending. */
   stacks: number[];
-  /** V16 ICM: payout percentages by place (1st first). Ordinary MTT tails are
-   *  mass-preserved in nine buckets; satellites retain up to 200 equal seats. */
+  /** Identity retained in-cache so a table can replace stale local stacks exactly. */
+  stackByUser: Record<string, number>;
+  /** Phase 7 ICM: every actual payout percentage by place (1st first). */
   payoutPct: number[];
   // ═══ V26 THE PRIZE LANDSCAPE (Dan 2026-08-28) ═══════════════════════════
   // "Horses should be able to see and have access to the prizes, and which
@@ -119,7 +142,7 @@ export interface TournamentBrainContext {
   mysteryTopLive: boolean;
   /** PKO/mystery: mean live bounty per remaining player, in cents (0 = none) */
   meanBountyCents: number;
-  /** V23: at the final table (MTT, nine or fewer left, in or at the money) */
+  /** V23: at the final table (MTT, ten or fewer left, in or at the money) */
   finalTable: boolean;
   /** V23 BLIND CLOCK: minutes until the next level (null = unknown/last level) */
   nextBlindInMin: number | null;
@@ -152,6 +175,7 @@ export interface TournamentRowLite {
   satellite_target_id?: string | null;
   satellite_target?: string | null;
   tournament_type: string | null;
+  free_buy?: boolean | null;
   status?: string | null;
   game_type?: string | null;
   variant: string | null;
@@ -161,9 +185,16 @@ export interface TournamentRowLite {
   payout_structure: unknown;
   prize_pool: number | null;
   bounty_pool: number | null;
+  buy_in_amount?: number | null;
+  buy_in_fee?: number | null;
+  bounty_amount?: number | null;
+  starting_chips?: number | null;
+  rebuy_cost?: number | null;
+  rebuy_chips?: number | null;
   is_pko: boolean | null;
   is_bounty: boolean | null;
   is_mystery_bounty?: boolean | null;
+  mystery_bounty_stage?: string | null;
   /** V23 blind clock inputs (all optional — absent means clock unknown). */
   blind_structure?: unknown;
   current_level?: number | null;
@@ -520,7 +551,7 @@ export function deriveContext(
   playersLeft: number,
   entrants: number,
   chipSum: number,
-  /** V16 ICM: live stack list (any order; stored sorted desc, capped). */
+  /** V16 ICM: complete live stack list (any order; stored sorted descending). */
   liveStacks: number[] = [],
   /** V26: the mystery-bounty chest inventory, if this event has one. */
   chests: ChestRow[] = [],
@@ -535,7 +566,15 @@ export function deriveContext(
     mysteryInventory: 'known',
     satelliteEntitlements: 'known',
     entitlementRows: [],
-  }
+  },
+  playerOptions: {
+    stackByUser?: Record<string, number>;
+    reloadsByUser?: Record<string, number>;
+    horseRebuyCapByUser?: Record<string, number>;
+    addOnTakenByUser?: Record<string, boolean>;
+    rebuyAffordableByUser?: Record<string, boolean>;
+    addOnAffordableByUser?: Record<string, boolean>;
+  } = {}
 ): TournamentBrainContext {
   const type = (row.tournament_type || '').toUpperCase();
   // `variant` is the tournament format (freezeout, satellite, bounty, ...).
@@ -550,7 +589,18 @@ export function deriveContext(
       ? 'spin'
       : seatsAtOneTable(row) <= 2
         ? 'hu_sng'
-        : 'mtt';
+        : type === 'SNG'
+          ? 'sng'
+          : 'mtt';
+  const rawMysteryStage = String(row.mystery_bounty_stage ?? '').toLowerCase();
+  const mysteryBountyStage: TournamentBrainContext['mysteryBountyStage'] =
+    row.is_mystery_bounty !== true
+      ? 'none'
+      : rawMysteryStage === 'pending' ||
+          rawMysteryStage === 'active' ||
+          rawMysteryStage === 'complete'
+        ? rawMysteryStage
+        : 'none';
 
   // V13: use the CANONICAL parser instead of a local JSON.parse. The old code
   // only understood the array shape [{place, percentage}] and silently scored
@@ -650,50 +700,20 @@ export function deriveContext(
       ? bountyPool / (prizePool + bountyPool)
       : 0;
 
-  // V16 ICM inputs: the payout CURVE and the live stack DISTRIBUTION are
-  // what a real Malmuth-Harville pressure model needs; counts alone were why
-  // the old premium had to be a flat guess.
-  // V29 AUDIT FIX (H3, 2026-08-29): the curve used to be sliced to the top 9
-  // places and the REST OF THE PAID MASS DISCARDED — a 1,200-runner event
-  // paying 150 was modelled as a 9-paid tournament, so the survival premium
-  // in deep fields was derived from a fiction (and telemetry reported the
-  // path as 'real', so it looked healthy). The model still takes at most 9
-  // buckets, but the 9th now CARRIES the sum of every remaining paid place:
-  // total paid mass is preserved, and the tail the model prices reflects the
-  // actual money below the top table.
+  // Phase 7 ICM inputs preserve every place and every observed player. The
+  // former nine-place tail lump and 200-stack quantile sample preserved mass
+  // but destroyed cardinality: a 1,000-left satellite paying 200 seats could
+  // look like 200 players for 200 seats and therefore report certain survival.
+  // The bounded ICM implementation now controls work with sampling trials,
+  // never by changing the tournament being priced.
   const sortedPlaces = (places ?? [])
     .slice()
     .sort((a, b) => a.place - b.place)
     .map((p) => p.percentage)
     .filter((p) => p > 0);
-  // V37: a satellite keeps its whole flat curve (up to 200 seats) — the
-  // flat-payout survival model in IcmModel needs the real seat count, and the
-  // 9-bucket collapse would turn "40 equal seats" into "8 seats and a lump".
-  const payoutPct =
-    isSatellite && satelliteAwardDepth > 0
-      ? sortedPlaces.slice(0, 200)
-      : sortedPlaces.length <= 9
-        ? sortedPlaces
-        : [...sortedPlaces.slice(0, 8), sortedPlaces.slice(8).reduce((a, b) => a + b, 0)];
-  // Same defect on the stack side: it took the TOP 200 stacks, discarding the
-  // bottom of the field entirely — in any event past 200 players the model saw
-  // only big stacks, hero's chip share was computed against an inflated
-  // average, and a below-median hero was substituted over a real big stack.
-  // The 200-stack cap stays (the model needs bounded work), but the sample is
-  // now a QUANTILE sample of the whole sorted field: every 200th-ile stack
-  // from chip leader to shortest. The distribution's shape, mean and hero's
-  // relative standing all survive; only resolution is lost.
+  const payoutPct = sortedPlaces;
   const allLive = liveStacks.filter((s) => isFinite(s) && s > 0).sort((a, b) => b - a);
-  let stacks: number[];
-  if (allLive.length <= 200) {
-    stacks = allLive;
-  } else {
-    stacks = [];
-    for (let i = 0; i < 200; i++) {
-      const idx = Math.min(allLive.length - 1, Math.round((i * (allLive.length - 1)) / 199));
-      stacks.push(allLive[idx]);
-    }
-  }
+  const stacks = allLive;
 
   const seatsPerTable = seatsAtOneTable(row);
   const allLiveAscending = [...allLive].sort((a, b) => a - b);
@@ -844,15 +864,23 @@ export function deriveContext(
   ) {
     contextIssues.push('bounty_type_state_missing');
   }
+  if (row.is_mystery_bounty === true && mysteryBountyStage === 'none') {
+    contextIssues.push('mystery_bounty_stage_missing');
+  }
+  const purchaseQuote = tournamentPurchaseQuote(row);
   if (
     row.add_on_available === true &&
-    (row.addon_cost == null ||
-      !Number.isFinite(Number(row.addon_cost)) ||
-      Number(row.addon_cost) < 0 ||
-      row.addon_chips == null ||
-      !(Number(row.addon_chips) > 0))
+    (purchaseQuote.addOnCostCents === null || purchaseQuote.addOnChips === null)
   ) {
     contextIssues.push('addon_terms_missing');
+  }
+  const recoveryCost = (purchaseQuote.recoveryCostCents ?? 0) / 100;
+  const recoveryChips = purchaseQuote.recoveryChips ?? 0;
+  if (
+    (row.is_reentry === true || row.is_rebuy === true) &&
+    (!(recoveryCost > 0) || !(recoveryChips > 0))
+  ) {
+    contextIssues.push('reentry_or_rebuy_terms_missing');
   }
   if (
     (row.is_reentry === true && !nonNegativeIntegerOrNull(row.max_reentries)) ||
@@ -903,6 +931,7 @@ export function deriveContext(
     isPko: row.is_pko === true,
     isBounty: row.is_bounty === true,
     isMysteryBounty: row.is_mystery_bounty === true,
+    mysteryBountyStage,
     reentryAllowed: row.is_reentry === true,
     reentryOpen,
     maxReentries:
@@ -921,18 +950,8 @@ export function deriveContext(
         : null,
     addOnAvailable: row.add_on_available === true,
     addOnPeriodOpen,
-    addOnCost:
-      row.addon_cost != null &&
-      Number.isFinite(Number(row.addon_cost)) &&
-      Number(row.addon_cost) >= 0
-        ? Number(row.addon_cost)
-        : null,
-    addOnChips:
-      row.addon_chips != null &&
-      Number.isFinite(Number(row.addon_chips)) &&
-      Number(row.addon_chips) >= 0
-        ? Number(row.addon_chips)
-        : null,
+    addOnCost: purchaseQuote.addOnCostCents === null ? null : purchaseQuote.addOnCostCents / 100,
+    addOnChips: purchaseQuote.addOnChips,
     addOnLevels:
       row.addon_levels != null &&
       Number.isFinite(Number(row.addon_levels)) &&
@@ -946,7 +965,29 @@ export function deriveContext(
       playersLeft > seatsPerTable &&
       (!isSatellite || satellitePlanValid),
     bountyFactor: Math.max(0, Math.min(1, bountyFactor)),
+    prizePoolCents: Math.round(Math.max(0, prizePool) * 100),
+    bountyPoolCents: Math.round(Math.max(0, bountyPool) * 100),
+    buyInCents:
+      row.buy_in_amount != null && Number.isFinite(Number(row.buy_in_amount))
+        ? Math.round(
+            Math.max(0, Number(row.buy_in_amount) + Math.max(0, Number(row.buy_in_fee) || 0)) * 100
+          )
+        : null,
+    startingStackChips:
+      row.starting_chips != null && Number.isFinite(Number(row.starting_chips))
+        ? Math.max(0, Number(row.starting_chips))
+        : null,
+    rebuyCostCents: purchaseQuote.recoveryCostCents,
+    rebuyChips: purchaseQuote.recoveryChips,
+    rebuyPrizeContributionCents: purchaseQuote.recoveryPrizeContributionCents,
+    rebuyBountyContributionCents: purchaseQuote.recoveryBountyContributionCents,
+    reloadsByUser: { ...(playerOptions.reloadsByUser ?? {}) },
+    horseRebuyCapByUser: { ...(playerOptions.horseRebuyCapByUser ?? {}) },
+    addOnTakenByUser: { ...(playerOptions.addOnTakenByUser ?? {}) },
+    rebuyAffordableByUser: { ...(playerOptions.rebuyAffordableByUser ?? {}) },
+    addOnAffordableByUser: { ...(playerOptions.addOnAffordableByUser ?? {}) },
     stacks,
+    stackByUser: { ...(playerOptions.stackByUser ?? {}) },
     payoutPct,
     ...deriveBountyLandscape(chests),
     meanBountyCents:
@@ -1130,30 +1171,219 @@ async function withRefreshTimeout<T>(operation: PromiseLike<T>): Promise<T> {
   });
 }
 
+interface TournamentPlayerContextRow {
+  user_id?: string | null;
+  club_id?: string | null;
+  chips: number | null;
+  status: string | null;
+  current_bounty: number | null;
+  rebuys?: number | null;
+  add_on?: boolean | null;
+}
+
+interface TournamentFundingRow {
+  user_id?: string | null;
+  club_id?: string | null;
+  chip_balance?: number | string | null;
+}
+
+interface TournamentPurchaseQuote {
+  recoveryCostCents: number | null;
+  recoveryChips: number | null;
+  recoveryPrizeContributionCents: number | null;
+  recoveryBountyContributionCents: number | null;
+  addOnCostCents: number | null;
+  addOnChips: number | null;
+}
+
+/** Mirror the canonical RPC's whole-unit price, fee and bounty split. */
+function tournamentPurchaseQuote(row: TournamentRowLite): TournamentPurchaseQuote {
+  const finite = (value: unknown): number | null => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+  };
+  const buyIn = finite(row.buy_in_amount) ?? 0;
+  const buyInFee = finite(row.buy_in_fee) ?? 0;
+  const startingChips = finite(row.starting_chips);
+  const configuredRecovery = finite(row.rebuy_cost);
+  const recoveryUnits = Math.round(
+    configuredRecovery !== null && configuredRecovery > 0 ? configuredRecovery : buyIn
+  );
+  const recoveryCostCents = recoveryUnits > 0 ? recoveryUnits * 100 : null;
+  let recoveryPrizeContributionCents: number | null = null;
+  let recoveryBountyContributionCents: number | null = null;
+  if (recoveryCostCents !== null) {
+    const feeRatio = buyIn + buyInFee > 0 && buyInFee > 0 ? buyInFee / (buyIn + buyInFee) : 0.1;
+    const feeCents = Math.min(
+      Math.trunc(recoveryUnits * feeRatio * 100 + 0.000001),
+      Math.trunc(recoveryUnits * 0.1 * 100 + 0.000001)
+    );
+    const netCents = Math.max(0, recoveryCostCents - feeCents);
+    const bountyHeadCents =
+      row.is_bounty === true || row.is_pko === true || row.is_mystery_bounty === true
+        ? Math.min(netCents, Math.round((finite(row.bounty_amount) ?? 0) * 100))
+        : 0;
+    recoveryBountyContributionCents = bountyHeadCents;
+    recoveryPrizeContributionCents = netCents - bountyHeadCents;
+  }
+
+  const configuredAddOn = finite(row.addon_cost);
+  const addOnUnits = Math.round(
+    configuredAddOn !== null && configuredAddOn > 0 ? configuredAddOn : buyIn
+  );
+  const configuredRecoveryChips = finite(row.rebuy_chips);
+  const configuredAddOnChips = finite(row.addon_chips);
+  const recoveryChips = Math.round(
+    configuredRecoveryChips !== null && configuredRecoveryChips > 0
+      ? configuredRecoveryChips
+      : (startingChips ?? 0)
+  );
+  const addOnChips = Math.round(
+    configuredAddOnChips !== null && configuredAddOnChips > 0
+      ? configuredAddOnChips
+      : (startingChips ?? 0)
+  );
+  return {
+    recoveryCostCents,
+    recoveryChips: recoveryChips > 0 ? recoveryChips : null,
+    recoveryPrizeContributionCents,
+    recoveryBountyContributionCents,
+    addOnCostCents: addOnUnits > 0 ? addOnUnits * 100 : null,
+    addOnChips: addOnChips > 0 ? addOnChips : null,
+  };
+}
+
+async function readTournamentFunding(
+  players: TournamentPlayerContextRow[],
+  row: TournamentRowLite
+): Promise<{
+  complete: boolean;
+  rebuyAffordableByUser: Record<string, boolean>;
+  addOnAffordableByUser: Record<string, boolean>;
+}> {
+  const clubByUser = new Map<string, string>();
+  for (const player of players) {
+    const status = String(player.status ?? '').toLowerCase();
+    if (status === 'eliminated' || status === 'busted' || status === 'unregistered') continue;
+    if (typeof player.user_id !== 'string' || !player.user_id) continue;
+    if (typeof player.club_id !== 'string' || !player.club_id) continue;
+    clubByUser.set(player.user_id, player.club_id);
+  }
+  const quote = tournamentPurchaseQuote(row);
+  const rebuyAffordableByUser: Record<string, boolean> = {};
+  const addOnAffordableByUser: Record<string, boolean> = {};
+  for (const userId of clubByUser.keys()) {
+    rebuyAffordableByUser[userId] = false;
+    addOnAffordableByUser[userId] = false;
+  }
+  const funding = await selectInChunks<TournamentFundingRow>(
+    [...clubByUser.keys()],
+    (batch) => {
+      const clubs = [
+        ...new Set(batch.map((userId) => clubByUser.get(userId)).filter(Boolean)),
+      ] as string[];
+      return supabase
+        .from('club_members')
+        .select('user_id, club_id, chip_balance')
+        .in('user_id', batch)
+        .in('club_id', clubs);
+    },
+    'TournamentBrainContext.recoveryFunding'
+  );
+  if (!funding.complete) {
+    return { complete: false, rebuyAffordableByUser: {}, addOnAffordableByUser: {} };
+  }
+  for (const member of funding.rows) {
+    const userId = typeof member.user_id === 'string' ? member.user_id : '';
+    const clubId = typeof member.club_id === 'string' ? member.club_id : '';
+    if (!userId || clubByUser.get(userId) !== clubId) continue;
+    const balance = Number(member.chip_balance);
+    if (!Number.isFinite(balance) || balance < 0) {
+      return { complete: false, rebuyAffordableByUser: {}, addOnAffordableByUser: {} };
+    }
+    const balanceCents = Math.round(balance * 100);
+    rebuyAffordableByUser[userId] =
+      quote.recoveryCostCents !== null && balanceCents >= quote.recoveryCostCents;
+    addOnAffordableByUser[userId] =
+      quote.addOnCostCents !== null && balanceCents >= quote.addOnCostCents;
+  }
+  return { complete: true, rebuyAffordableByUser, addOnAffordableByUser };
+}
+
+/**
+ * Read the complete roster rather than relabeling PostgREST's first page as
+ * the field. Scheduled events permit 10,000 entrants; ordinary fields still
+ * cost one request, while larger fields fetch stable id-ordered pages.
+ */
+async function readTournamentPlayerContext(tournamentId: string): Promise<{
+  data: TournamentPlayerContextRow[] | null;
+  error: { message: string } | null;
+}> {
+  const PAGE = 1_000;
+  const columns = 'user_id, club_id, chips, status, current_bounty, rebuys, add_on';
+  const first = await supabase
+    .from('tournament_players')
+    .select(columns, { count: 'exact' })
+    .eq('tournament_id', tournamentId)
+    .order('id', { ascending: true })
+    .range(0, PAGE - 1);
+  if (first.error) return { data: null, error: first.error };
+  if (first.count == null || first.count < 0 || first.count > 10_000) {
+    return {
+      data: null,
+      error: { message: `invalid tournament roster count: ${String(first.count)}` },
+    };
+  }
+  const rows = [...((first.data ?? []) as TournamentPlayerContextRow[])];
+  const pageCount = Math.ceil(first.count / PAGE);
+  if (pageCount > 1) {
+    const rest = await Promise.all(
+      Array.from({ length: pageCount - 1 }, (_, offset) => {
+        const page = offset + 1;
+        return supabase
+          .from('tournament_players')
+          .select(columns)
+          .eq('tournament_id', tournamentId)
+          .order('id', { ascending: true })
+          .range(page * PAGE, (page + 1) * PAGE - 1);
+      })
+    );
+    const failed = rest.find((result) => result.error);
+    if (failed?.error) return { data: null, error: failed.error };
+    for (const page of rest) rows.push(...((page.data ?? []) as TournamentPlayerContextRow[]));
+  }
+  if (rows.length !== first.count) {
+    return {
+      data: null,
+      error: {
+        message: `tournament roster truncated: expected ${first.count}, read ${rows.length}`,
+      },
+    };
+  }
+  return { data: rows, error: null };
+}
+
 async function refresh(tournamentId: string, e: CacheEntry, generation: number): Promise<void> {
   const publishFailure = (issue: string): void => {
     if (e.generation === generation) e.lastFailureIssue = issue;
   };
 
   try {
-    // The timeout covers every read needed to build one coherent snapshot.
-    // Supabase's query builders do not expose a portable AbortSignal here, so
-    // generation fencing prevents a timed-out request from publishing late.
+    // Core tournament truth and per-player wallet truth have separate failure
+    // domains. A wallet timeout must invalidate affordability immediately,
+    // but it must not discard a fresh field/payout/blind snapshot and thereby
+    // disable every unrelated tournament layer. Generation fencing prevents
+    // either timed-out request from publishing over a newer refresh.
     const [tRes, pRes, cRes, entitlementRes] = await withRefreshTimeout(
       Promise.all([
         supabase
           .from('tournaments')
           .select(
-            'tournament_type, status, game_type, variant, max_players, table_size, payout_structure, spin_multiplier, prize_pool, prize_pool_finalized, bounty_pool, is_pko, is_bounty, is_mystery_bounty, blind_structure, current_level, level_started_at, started_at, late_reg_mins, late_reg_levels, is_reentry, max_reentries, is_rebuy, rebuy_levels, max_rebuys, add_on_available, addon_cost, addon_chips, addon_levels, addon_period_triggered, addon_period_started_at, addon_period_ends_at, on_break, break_started_at, break_ends_at, accelerated_mtt, big_blind_ante, authorized_to_register, satellite_seats, satellite_target_id, satellite_target'
+            'tournament_type, status, game_type, variant, free_buy, max_players, table_size, payout_structure, spin_multiplier, prize_pool, prize_pool_finalized, bounty_pool, buy_in_amount, buy_in_fee, starting_chips, rebuy_cost, rebuy_chips, bounty_amount, is_pko, is_bounty, is_mystery_bounty, mystery_bounty_stage, blind_structure, current_level, level_started_at, started_at, late_reg_mins, late_reg_levels, is_reentry, max_reentries, is_rebuy, rebuy_levels, max_rebuys, add_on_available, addon_cost, addon_chips, addon_levels, addon_period_triggered, addon_period_started_at, addon_period_ends_at, on_break, break_started_at, break_ends_at, accelerated_mtt, big_blind_ante, authorized_to_register, satellite_seats, satellite_target_id, satellite_target'
           )
           .eq('id', tournamentId)
           .maybeSingle(),
-        supabase
-          .from('tournament_players')
-          .select('user_id, chips, status, current_bounty')
-          .eq('tournament_id', tournamentId)
-          .order('id', { ascending: true })
-          .limit(5000),
+        readTournamentPlayerContext(tournamentId),
         supabase
           .from('tournament_bounty_chests')
           .select('status, amount_cents')
@@ -1179,6 +1409,36 @@ async function refresh(tournamentId: string, e: CacheEntry, generation: number):
       return;
     }
 
+    const rows = (pRes.data ?? []) as TournamentPlayerContextRow[];
+    const tournament = tRes.data as TournamentRowLite;
+    const needsFunding =
+      tournament.is_rebuy === true ||
+      tournament.is_reentry === true ||
+      tournament.add_on_available === true;
+    let fundingRes: Awaited<ReturnType<typeof readTournamentFunding>> = {
+      complete: true,
+      rebuyAffordableByUser: {},
+      addOnAffordableByUser: {},
+    };
+    if (needsFunding) {
+      try {
+        fundingRes = await withRefreshTimeout(readTournamentFunding(rows, tournament));
+      } catch (error) {
+        reportError(error, 'TournamentBrainContext.recovery_funding_unavailable');
+        fundingRes = {
+          complete: false,
+          rebuyAffordableByUser: {},
+          addOnAffordableByUser: {},
+        };
+      }
+      if (!fundingRes.complete) {
+        reportError(
+          new Error('tournament recovery funding read was incomplete'),
+          'TournamentBrainContext.recovery_funding_unavailable'
+        );
+      }
+    }
+
     const fidelity: TournamentContextFidelity = {
       mysteryInventory: cRes?.error ? 'read_failed' : 'known',
       satelliteEntitlements: entitlementRes?.error ? 'read_failed' : 'known',
@@ -1200,19 +1460,32 @@ async function refresh(tournamentId: string, e: CacheEntry, generation: number):
       );
     }
 
-    const rows = (pRes.data ?? []) as Array<{
-      user_id?: string | null;
-      chips: number | null;
-      status: string | null;
-      current_bounty: number | null;
-    }>;
     const liveBounties: number[] = [];
     const bountyByUser: Record<string, number> = {};
+    const stackByUser: Record<string, number> = {};
+    const reloadsByUser: Record<string, number> = {};
+    const horseRebuyCapByUser: Record<string, number> = {};
+    const addOnTakenByUser: Record<string, boolean> = {};
     const entrants = rows.length;
     let playersLeft = 0;
     let chipSum = 0;
     const liveStacks: number[] = [];
     for (const row of rows) {
+      if (typeof row.user_id === 'string' && row.user_id) {
+        reloadsByUser[row.user_id] = Math.max(0, Math.floor(Number(row.rebuys) || 0));
+        if (tournament.free_buy === true) {
+          const policyCap = horseRebuyAllowance(row.user_id, tournamentId);
+          const configuredCap = tournament.is_rebuy
+            ? tournament.max_rebuys
+            : tournament.max_reentries;
+          const databaseCap =
+            configuredCap == null
+              ? policyCap
+              : Math.min(policyCap, Math.max(0, Math.floor(Number(configuredCap) || 0)));
+          horseRebuyCapByUser[row.user_id] = databaseCap;
+        }
+        addOnTakenByUser[row.user_id] = row.add_on === true;
+      }
       const playerStatus = (row.status || '').toLowerCase();
       if (
         playerStatus === 'eliminated' ||
@@ -1224,7 +1497,12 @@ async function refresh(tournamentId: string, e: CacheEntry, generation: number):
       playersLeft += 1;
       const chips = Number(row.chips) || 0;
       chipSum += chips;
-      if (chips > 0) liveStacks.push(chips);
+      if (chips > 0) {
+        liveStacks.push(chips);
+        if (typeof row.user_id === 'string' && row.user_id) {
+          stackByUser[row.user_id] = chips;
+        }
+      }
 
       // tournament_players.current_bounty is stored in whole currency units;
       // the Horse Brain contract is cents throughout.
@@ -1248,7 +1526,15 @@ async function refresh(tournamentId: string, e: CacheEntry, generation: number):
       0,
       bountyByUser,
       Date.now(),
-      fidelity
+      fidelity,
+      {
+        stackByUser,
+        reloadsByUser,
+        horseRebuyCapByUser,
+        addOnTakenByUser,
+        rebuyAffordableByUser: fundingRes.rebuyAffordableByUser,
+        addOnAffordableByUser: fundingRes.addOnAffordableByUser,
+      }
     );
     if (e.generation !== generation) return;
     e.ctx = nextContext;

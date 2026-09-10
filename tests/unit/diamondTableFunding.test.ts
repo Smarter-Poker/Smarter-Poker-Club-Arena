@@ -24,10 +24,7 @@ vi.mock('../../src/services/WalletService', () => ({
 vi.mock('../../src/services/DiamondCustodyService', () => ({
   getDiamondCustodyBalance: mock.diamond,
 }));
-import {
-  readTableFundingBalance,
-  readDiamondDepartureOccupancy,
-} from '../../src/services/TableFundingService';
+import { readTableFundingBalance } from '../../src/services/TableFundingService';
 beforeEach(() => {
   vi.clearAllMocks();
   mock.error = null;
@@ -64,11 +61,5 @@ describe('Authoritative table funding door', () => {
     mock.error = new Error('offline');
     expect(await readTableFundingBalance('user', { tableId: 'table' })).toEqual({ balance: null });
     expect(mock.chip).not.toHaveBeenCalled();
-  });
-  it('captures exact departure occupancy, leaving failures unconfirmed', async () => {
-    mock.row = { occupancy_id: 'generation' };
-    expect(await readDiamondDepartureOccupancy('table', 'user')).toBe('generation');
-    mock.error = new Error('offline');
-    expect(await readDiamondDepartureOccupancy('table', 'user')).toBeUndefined();
   });
 });

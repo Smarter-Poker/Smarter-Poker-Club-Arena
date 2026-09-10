@@ -26,22 +26,3 @@ export async function readTableFundingBalance(
     return { balance: null };
   }
 }
-
-/** Capture the generation before the shared leave request can close it. */
-export async function readDiamondDepartureOccupancy(
-  tableId: string,
-  userId: string
-): Promise<string | undefined> {
-  try {
-    const { data, error } = await supabase
-      .from('table_seats')
-      .select('occupancy_id')
-      .eq('table_id', tableId)
-      .eq('user_id', userId)
-      .is('left_at', null)
-      .maybeSingle();
-    return !error && typeof data?.occupancy_id === 'string' ? data.occupancy_id : undefined;
-  } catch {
-    return undefined;
-  }
-}

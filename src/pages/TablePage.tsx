@@ -217,10 +217,7 @@ import TimebankCounter from '../components/table/TimebankCounter';
 import TimeBankStoreModal from '../components/table/TimeBankStoreModal';
 import { sessionStatsService } from '../services/SessionStatsService';
 import { parseTableArenaIdentity } from '../../server/src/domain/ArenaContext';
-import {
-  readTableFundingBalance,
-  readDiamondDepartureOccupancy,
-} from '../services/TableFundingService';
+import { readTableFundingBalance } from '../services/TableFundingService';
 import { soundService, haptic } from '../services/SoundService';
 import {
   ChipAnimationManager,
@@ -9437,10 +9434,6 @@ export default function TablePage({
     showLobbyNow();
 
     try {
-      const departureOccupancy =
-        tableState.arenaAsset === 'diamonds'
-          ? await readDiamondDepartureOccupancy(tableId, userId)
-          : undefined;
       const result = await tableService.leaveTable(tableId, tableState.heroSeat, userId);
       if (result.success) {
         // FIX 132: Clear heroSeatRef so player can re-seat at another table
@@ -9525,7 +9518,7 @@ export default function TablePage({
           // about to navigate away and unmount, so the host must be able to
           // find the row on its own.
           pendingCashout: result.deferred
-            ? { tableId, userId, sinceMs: Date.now(), occupancyId: departureOccupancy }
+            ? { tableId, userId, sinceMs: Date.now(), occupancyId: result.occupancyId }
             : undefined,
         });
 
@@ -9684,10 +9677,6 @@ export default function TablePage({
       // lobby believing they had cashed out while their seat stayed active and
       // kept posting blinds with their chips in it. The sibling handler at the
       // normal leave path already checks this; the tab X did not.
-      const departureOccupancy =
-        tableState.arenaAsset === 'diamonds'
-          ? await readDiamondDepartureOccupancy(tableId, userId)
-          : undefined;
       const forced = await tableService.leaveTable(tableId, tableState.heroSeat, userId);
       if (!forced?.success && forced?.error) {
         // Engine explicitly refused a REAL seated leave — chips are live, stay.
@@ -9760,7 +9749,7 @@ export default function TablePage({
           sessionEnd: Date.now(),
           plPending: forceDeferred,
           pendingCashout: forceDeferred
-            ? { tableId, userId, sinceMs: Date.now(), occupancyId: departureOccupancy }
+            ? { tableId, userId, sinceMs: Date.now(), occupancyId: forced.occupancyId }
             : undefined,
         });
       }
@@ -13855,19 +13844,22 @@ export default function TablePage({
              regardless of what the slider showed.
              The error is reported, never discarded: a failed read looking like
              "no floor" is the one outcome this rule exists to prevent. */
-          const { data: effectiveBuyIn, error: floorErr } =
-            arenaIdentity.asset === 'chips'
-              ? await supabase.rpc('fn_cash_effective_buyin', { p_table_id: table.id })
-              : { data: null, error: null };
-
-          if (!isMounted) return;
-          if (floorErr) reportError(floorErr, 'TablePage.effective_buyin_read');
-          const floorMin = Number((effectiveBuyIn as { min?: unknown } | null)?.min ?? 0);
-          if (
-            (effectiveBuyIn as { floor_applied?: unknown } | null)?.floor_applied === true &&
-            floorMin > 0
-          ) {
-            setCashoutMinBuyIn(floorMin);
+          if (arenaIdentity.asset === 'chips') {
+            const { data: effectiveBuyIn, error: floorErr } = await supabase.rpc(
+              'fn_cash_effective_buyin',
+              { p_table_id: table.id }
+            );
+            if (!isMounted) return;
+            if (floorErr) reportError(floorErr, 'TablePage.effective_buyin_read');
+            const floorMin = Number((effectiveBuyIn as { min?: unknown } | null)?.min ?? 0);
+            if (
+              (effectiveBuyIn as { floor_applied?: unknown } | null)?.floor_applied === true &&
+              floorMin > 0
+            ) {
+              setCashoutMinBuyIn(floorMin);
+            }
+          } else {
+            setCashoutMinBuyIn(0);
           }
         }
 

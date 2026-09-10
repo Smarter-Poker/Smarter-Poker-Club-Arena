@@ -2,6 +2,10 @@
 
 ## Every Change, Documented. No Exceptions.
 
+## 2026-09-10: Diamond Shared Cash Lifecycle Integration
+
+The shared table buy-in, accepted-hand settlement and occupancy cash-out now have a distinct whole-Diamond custody branch; existing chip contracts remain separate. Three forward migrations and exact isolated database acceptance are recorded in docs/changelog/2026-09-10-diamond-phase-6-shared-cash-integration.md. Client departure summaries retain the already verified original occupancy instead of performing a second network read before leave. Re-read: yes. The client regression repair passed 72 focused cases and the engine SELECT contract passed 48. Production financial migration application remains blocked by automatic approval review, and complete Phase 6 publication and live acceptance are not claimed. Final integrated TypeScript/build and normal push checks remain required.
+
 ## 2026-09-10: Current Tournament Seat Moves Require Manager Authority
 
 The prepared strict cutover named only an obsolete seat-move RPC. Its current RPC could enter as an unmarked service actor after a callback lost manager context. The current name now uses the existing exact fresh lease gate, with the old route still denied. Real PostgreSQL reproduced the gap and passes 32 request admission scenarios after correction, preserving receipt recovery and player purchases. No production cutover or financial mutation is part of this source correction. See docs/changelog/2026-09-10-seat-moves-require-current-manager-authority.md.

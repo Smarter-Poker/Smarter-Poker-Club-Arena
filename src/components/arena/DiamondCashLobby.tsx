@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
+import { useMasterBusChannel } from '../../hooks/useMasterBusChannel';
 import { useAppNavigate } from '../../context/InTabLobbyContext';
 import ArenaGameCard from '../lobby/game-cards/ArenaGameCard';
 
@@ -17,6 +18,8 @@ interface CashTable {
 /** Uses the existing table route, card and engine. Entry alone never purchases a seat. */
 export default function DiamondCashLobby({ arenaId }: { arenaId: string }) {
   const navigate = useAppNavigate();
+  const instanceId = useId();
+  const requestRefresh = useRef<() => void>(() => {});
   const [state, setState] = useState<{ tables: CashTable[]; failed: boolean; loaded: boolean }>({
     tables: [],
     failed: false,
@@ -26,6 +29,7 @@ export default function DiamondCashLobby({ arenaId }: { arenaId: string }) {
   useEffect(() => {
     let alive = true;
     let request = 0;
+    let refreshTimer: ReturnType<typeof setTimeout> | undefined;
     const refresh = async () => {
       const generation = ++request;
       try {
@@ -54,9 +58,16 @@ export default function DiamondCashLobby({ arenaId }: { arenaId: string }) {
       }
     };
     void refresh();
+    // Coalesce bus and database events from the same table update.
     const focus = () => {
-      void refresh();
+      if (!alive || document.visibilityState === 'hidden' || refreshTimer !== undefined) return;
+      refreshTimer = setTimeout(() => {
+        refreshTimer = undefined;
+        void refresh();
+      }, 100);
     };
+    requestRefresh.current = focus;
+    document.addEventListener('visibilitychange', focus);
     window.addEventListener('focus', focus);
     const unsubscribers = [
       masterBus.subscribeDebounced('TABLE_SEATED', focus, 300),
@@ -68,10 +79,26 @@ export default function DiamondCashLobby({ arenaId }: { arenaId: string }) {
     return () => {
       alive = false;
       ++request;
+      requestRefresh.current = () => {};
+      if (refreshTimer !== undefined) clearTimeout(refreshTimer);
+      document.removeEventListener('visibilitychange', focus);
       unsubscribers.forEach((unsubscribe) => unsubscribe());
       window.removeEventListener('focus', focus);
     };
   }, [arenaId, retry]);
+  // Local bus events do not reach other devices. Subscribe to authoritative
+  // table changes and reconcile after every successful connection recovery.
+  useMasterBusChannel({
+    channelName: `diamond-cash-lobby-${arenaId}-${instanceId}`,
+    table: 'tables',
+    filter: `club_id=eq.${arenaId}`,
+    event: '*',
+    onPayload: () => requestRefresh.current(),
+    onSubscriptionStatus: (status) => {
+      if (status === 'SUBSCRIBED') requestRefresh.current();
+    },
+    onSubscriptionError: () => requestRefresh.current(),
+  });
   if (state.failed)
     return (
       <p role="alert">

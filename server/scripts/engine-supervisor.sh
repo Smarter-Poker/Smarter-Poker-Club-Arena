@@ -23,9 +23,12 @@
 set -uo pipefail
 
 CONTAINER="${CONTAINER:-club-arena-engine}"
-IMAGE="${IMAGE:-club-arena-engine:current}"
 PORT="${PORT:-8080}"
-UP_SCRIPT="${UP_SCRIPT:-/opt/club-arena/server/scripts/engine-up.sh}"
+IMAGE_REPO="${IMAGE_REPO:-club-arena-engine}"
+CONTROL_DIR="${ENGINE_CONTROL_DIR:-/usr/local/lib/club-arena/engine-control}"
+UP_SCRIPT="${UP_SCRIPT:-$CONTROL_DIR/engine-up.sh}"
+RELEASE_SEAL="${ENGINE_RELEASE_SEAL:-$CONTROL_DIR/engine-release-seal.py}"
+IMAGE=""
 STATE_DIR="${STATE_DIR:-/var/lib/club-arena}"
 STATE_FILE="$STATE_DIR/supervisor-fails"
 COUNTER_FILE="$STATE_DIR/recoveries"
@@ -34,6 +37,7 @@ LAST_CID_FILE="$STATE_DIR/last-container-id"
 CHURN_FILE="$STATE_DIR/boot-churn"
 RESTARTING_FILE="$STATE_DIR/restarting-samples"
 LOCK_FILE="${LOCK_FILE:-/var/lock/club-arena-engine-up.lock}"
+AUTOHEAL_CONTAINER="${AUTOHEAL_CONTAINER:-sp-autoheal}"
 
 # /health must fail this many consecutive runs (60s apart) before we restart.
 # The engine's own HEALTHCHECK + autoheal react faster; this is the backstop for
@@ -88,6 +92,29 @@ act() {
   bump "$COUNTER_FILE" >/dev/null
 }
 
+autoheal_status() {
+  docker container inspect -f '{{.State.Status}}' "$AUTOHEAL_CONTAINER" 2>/dev/null || echo absent
+}
+
+ensure_autoheal_running() {
+  local status
+  status=$(autoheal_status)
+  [ "$status" = "running" ] && return 0
+  act "$AUTOHEAL_CONTAINER is '$status' while desired release is authoritative — starting it"
+  docker start "$AUTOHEAL_CONTAINER" >/dev/null 2>&1 || return 1
+  [ "$(autoheal_status)" = "running" ]
+}
+
+ensure_autoheal_stopped() {
+  local status
+  status=$(autoheal_status)
+  case "$status" in exited|created|absent) return 0 ;; esac
+  act "$AUTOHEAL_CONTAINER is '$status' during candidate proof — stopping it so it cannot restart unsealed bytes"
+  docker stop -t 15 "$AUTOHEAL_CONTAINER" >/dev/null 2>&1 || return 1
+  status=$(autoheal_status)
+  [ "$status" = "exited" ] || [ "$status" = "absent" ]
+}
+
 # Written on EVERY run, including clean no-ops, so the heartbeat stays fresh.
 # Temp file + mv: node-exporter reads this concurrently and a half-written file
 # is a parse error that drops all of these series at once.
@@ -130,7 +157,10 @@ recreate() {
   # supervisor recovery into a guaranteed no-op.
   export ENGINE_UP_LOCK_HELD=1
   if [ -x "$UP_SCRIPT" ]; then
-    CONTAINER="$CONTAINER" IMAGE="$IMAGE" PORT="$PORT" "$UP_SCRIPT" || log "engine-up.sh failed"
+    if ! CONTAINER="$CONTAINER" IMAGE="$IMAGE" PORT="$PORT" "$UP_SCRIPT"; then
+      log "FATAL: engine-up.sh failed"
+      return 1
+    fi
   elif [ -f "$UP_SCRIPT" ]; then
     # `git reset --hard` used to strip the exec bit (the scripts were 100644 in
     # the index until 2026-08-15). Recover rather than give up: being unable to
@@ -138,12 +168,30 @@ recreate() {
     log "WARN: $UP_SCRIPT is not executable — restoring the exec bit"
     chmod +x "$UP_SCRIPT" 2>/dev/null
     if [ -x "$UP_SCRIPT" ]; then
-      CONTAINER="$CONTAINER" IMAGE="$IMAGE" PORT="$PORT" "$UP_SCRIPT" || log "engine-up.sh failed"
+      if ! CONTAINER="$CONTAINER" IMAGE="$IMAGE" PORT="$PORT" "$UP_SCRIPT"; then
+        log "FATAL: engine-up.sh failed"
+        return 1
+      fi
     else
       log "FATAL: cannot make $UP_SCRIPT executable — cannot recreate"
+      return 1
     fi
   else
     log "FATAL: $UP_SCRIPT missing — cannot recreate"
+    return 1
+  fi
+  if ! ensure_autoheal_running; then
+    log "FATAL: recreated the desired engine but could not start $AUTOHEAL_CONTAINER"
+    return 1
+  fi
+  return 0
+}
+
+recreate_or_die() {
+  if ! recreate; then
+    log "FATAL: exact sealed desired release could not be restored"
+    emit_metrics 0 0
+    exit 1
   fi
 }
 
@@ -159,16 +207,96 @@ fi
 # absent", starts its own engine-up.sh, and ends up stopping and recreating the
 # container the deploy had just created — which fails the deploy's health
 # verification and rolls back a perfectly good build.
-exec 9>"$LOCK_FILE" 2>/dev/null
-if ! flock -n 9 2>/dev/null; then
-  log "engine-up.sh is running elsewhere (deploy in progress) — skipping this tick"
+if [ "${ENGINE_SUPERVISOR_LOCK_HELD:-0}" != "1" ]; then
+  exec 9>"$LOCK_FILE" 2>/dev/null
+  if ! flock -n 9 2>/dev/null; then
+    log "engine-up.sh is running elsewhere (deploy in progress) — skipping this tick"
+    exit 0
+  fi
+fi
+
+# The root-owned release seal is the authority. Docker tags and /opt/club-arena
+# are mutable caches: the exact incident this guard closes retagged :current,
+# restarted from it, and reset the checkout to an older commit. Missing or
+# corrupt authority fails closed before the supervisor mutates a container.
+if [ ! -x "$RELEASE_SEAL" ]; then
+  log "FATAL: release seal controller missing: $RELEASE_SEAL — refusing an unsealed recovery"
+  emit_metrics 0 0
+  exit 1
+fi
+DESIRED_SHA=$("$RELEASE_SEAL" get desired-sha 2>/dev/null) \
+  || { log "FATAL: durable release SHA is unreadable — refusing an unsealed recovery"; emit_metrics 0 0; exit 1; }
+DESIRED_IMAGE_ID=$("$RELEASE_SEAL" get desired-image-id 2>/dev/null) \
+  || { log "FATAL: durable release image ID is unreadable — refusing an unsealed recovery"; emit_metrics 0 0; exit 1; }
+DESIRED_LEGACY_UNLABELLED=$("$RELEASE_SEAL" get desired-legacy-unlabelled 2>/dev/null) \
+  || { log "FATAL: durable legacy-bootstrap state is unreadable — refusing an unsealed recovery"; emit_metrics 0 0; exit 1; }
+case "$DESIRED_LEGACY_UNLABELLED" in
+  true|false) ;;
+  *) log "FATAL: durable legacy-bootstrap state is invalid — refusing an unsealed recovery"; emit_metrics 0 0; exit 1 ;;
+esac
+if ! docker image inspect "$DESIRED_IMAGE_ID" >/dev/null 2>&1; then
+  log "FATAL: sealed desired image $DESIRED_IMAGE_ID ($DESIRED_SHA) is absent — refusing to guess from :current"
+  emit_metrics 0 0
+  exit 1
+fi
+IMAGE="$DESIRED_IMAGE_ID"
+
+RELEASE_DESCRIPTION=$("$RELEASE_SEAL" classify-running --container "$CONTAINER" --with-sha 2>/dev/null) \
+  || { log "FATAL: cannot classify the running release — refusing to mutate it"; emit_metrics 0 0; exit 1; }
+read -r RELEASE_CLASS EXPECTED_RELEASE_SHA EXTRA <<< "$RELEASE_DESCRIPTION"
+[ -z "${EXTRA:-}" ] \
+  || { log "FATAL: release classification is ambiguous — refusing to mutate it"; emit_metrics 0 0; exit 1; }
+RUNNING_IMAGE_ID=$(docker container inspect -f '{{.Image}}' "$CONTAINER" 2>/dev/null || echo "")
+CURRENT_IMAGE_ID=$(docker image inspect -f '{{.Id}}' "$IMAGE_REPO:current" 2>/dev/null || echo "")
+
+# A prepared candidate may run only during its short, consumed authorization
+# window while the workflow proves it. It is never a recovery source. Anything
+# else which disagrees with the durable seal is an out-of-band drift and is
+# immediately replaced from the exact sealed image ID.
+if [ "$RELEASE_CLASS" = "drift" ]; then
+  act "container image $RUNNING_IMAGE_ID disagrees with sealed desired $DESIRED_IMAGE_ID ($DESIRED_SHA) — restoring sealed release"
+  recreate_or_die
+  docker tag "$DESIRED_IMAGE_ID" "$IMAGE_REPO:current" >/dev/null 2>&1 \
+    || log "WARN: could not repair $IMAGE_REPO:current to the sealed image"
+  writenum "$STATE_FILE" 0; writenum "$CHURN_FILE" 0; writenum "$RESTARTING_FILE" 0
+  emit_metrics 0 1
   exit 0
+fi
+
+# The stock autoheal sidecar does not know the release seal. Exclude a pending
+# candidate by stopping the sidecar before cutover and keep it stopped for the
+# short proof transaction. Once a release is desired, self-healing is mandatory.
+if [ "$RELEASE_CLASS" = "pending" ]; then
+  if ! ensure_autoheal_stopped; then
+    act "could not fence autoheal from pending candidate — restoring sealed desired release"
+    recreate_or_die
+    docker tag "$DESIRED_IMAGE_ID" "$IMAGE_REPO:current" >/dev/null 2>&1 \
+      || log "WARN: could not repair $IMAGE_REPO:current to the sealed image"
+    emit_metrics 0 1
+    exit 0
+  fi
+elif [ "$RELEASE_CLASS" = "desired" ]; then
+  if ! ensure_autoheal_running; then
+    log "FATAL: desired release is not protected by $AUTOHEAL_CONTAINER"
+    emit_metrics 0 1
+    exit 1
+  fi
+fi
+
+if [ "$CURRENT_IMAGE_ID" != "$DESIRED_IMAGE_ID" ]; then
+  if [ "$RELEASE_CLASS" = "pending" ] && [ "$CURRENT_IMAGE_ID" = "$RUNNING_IMAGE_ID" ]; then
+    log "audited candidate is inside its proof window — leaving :current unchanged until the seal commits"
+  else
+    act "$IMAGE_REPO:current disagrees with sealed desired image — repairing the cache without changing release authority"
+    docker tag "$DESIRED_IMAGE_ID" "$IMAGE_REPO:current" >/dev/null 2>&1 \
+      || { log "FATAL: could not repair mutable :current tag"; emit_metrics 0 1; exit 1; }
+  fi
 fi
 
 # ── 1. Does the container exist at all? ──────────────────────────────────────
 if ! docker container inspect "$CONTAINER" >/dev/null 2>&1; then
   act "container '$CONTAINER' does not exist — recreating from $IMAGE"
-  recreate
+  recreate_or_die
   writenum "$STATE_FILE" 0; writenum "$CHURN_FILE" 0; writenum "$RESTARTING_FILE" 0
   emit_metrics 0 0
   exit 0
@@ -182,12 +310,64 @@ STATUS=$(docker container inspect -f '{{.State.Status}}' "$CONTAINER" 2>/dev/nul
 # sp-autoheal sidecar is what acts on it, and it selects by this label. An
 # engine without it looks perfectly healthy while its self-healing is off.
 LABEL=$(docker container inspect -f '{{index .Config.Labels "autoheal"}}' "$CONTAINER" 2>/dev/null || echo "")
-if [ "$LABEL" != "true" ]; then
-  act "container is missing autoheal=true (label='$LABEL') — its healthcheck is wired to nothing; recreating from $IMAGE"
-  recreate
+RELEASE_LABEL=$(docker container inspect -f '{{index .Config.Labels "sp.release.sha"}}' "$CONTAINER" 2>/dev/null || echo "")
+LEGACY_BOOTSTRAP_RUNSPEC=false
+if [ "$RELEASE_CLASS" = "desired" ] \
+  && [ "$DESIRED_LEGACY_UNLABELLED" = "true" ] \
+  && [ -z "$RELEASE_LABEL" ]; then
+  # First seal installation happens before the next maintenance break. The b4
+  # container already running at that moment predates sp.release.sha. Its exact
+  # image ID and baked full SHA were sealed during bootstrap, and autoheal is
+  # still mandatory, so accepting this one missing label is strictly narrower
+  # than recreating it outside the announced break. The first certified
+  # cutover commits a labelled image and permanently clears this marker.
+  LEGACY_BOOTSTRAP_RUNSPEC=true
+fi
+if [ "$LABEL" != "true" ] \
+  || { [ "$RELEASE_LABEL" != "$EXPECTED_RELEASE_SHA" ] \
+    && [ "$LEGACY_BOOTSTRAP_RUNSPEC" != "true" ]; }; then
+  act "container run-spec identity is invalid (autoheal='$LABEL', release='$RELEASE_LABEL', expected='$EXPECTED_RELEASE_SHA') — recreating from $IMAGE"
+  recreate_or_die
   writenum "$STATE_FILE" 0; writenum "$CHURN_FILE" 0; writenum "$RESTARTING_FILE" 0
   emit_metrics 0 1
   exit 0
+fi
+if [ "$LEGACY_BOOTSTRAP_RUNSPEC" = "true" ]; then
+  log "sealed legacy desired container has no release label — preserving its exact image until the first certified cutover"
+fi
+
+# A prepared candidate is allowed to run only as a non-persistent compatibility
+# trial.  It must not return after a host or daemon restart until the workflow
+# has proved it and committed it as desired.  Conversely, the durable desired
+# release must survive those restarts.  Repairing Docker's policy in place is
+# enough; it does not interrupt the running engine or create a second instance.
+RESTART_POLICY=$(docker container inspect -f '{{.HostConfig.RestartPolicy.Name}}' "$CONTAINER" 2>/dev/null || echo "")
+if [ "$RELEASE_CLASS" = "pending" ] && [ "$RESTART_POLICY" != "no" ]; then
+  # Do not merely downgrade this policy in place. If Docker already restarted
+  # the unsealed candidate, it has crossed the authority boundary. Restore the
+  # previous desired image immediately and make the workflow prove a fresh,
+  # uninterrupted candidate generation.
+  act "pending candidate has restart policy '$RESTART_POLICY' instead of 'no' — restoring sealed desired release"
+  recreate_or_die
+  docker tag "$DESIRED_IMAGE_ID" "$IMAGE_REPO:current" >/dev/null 2>&1 \
+    || log "WARN: could not repair $IMAGE_REPO:current to the sealed image"
+  writenum "$STATE_FILE" 0; writenum "$CHURN_FILE" 0; writenum "$RESTARTING_FILE" 0
+  emit_metrics 0 1
+  exit 0
+fi
+if [ "$RELEASE_CLASS" = "desired" ] && [ "$RESTART_POLICY" != "always" ]; then
+  act "desired release restart policy is '$RESTART_POLICY' instead of 'always' — arming it in place"
+  if ! docker update --restart always "$CONTAINER" >/dev/null 2>&1; then
+    log "FATAL: could not enforce desired restart policy 'always'"
+    emit_metrics 0 1
+    exit 1
+  fi
+  RESTART_POLICY=$(docker container inspect -f '{{.HostConfig.RestartPolicy.Name}}' "$CONTAINER" 2>/dev/null || echo "")
+  if [ "$RESTART_POLICY" != "always" ]; then
+    log "FATAL: restart policy remained '$RESTART_POLICY' after repair"
+    emit_metrics 0 1
+    exit 1
+  fi
 fi
 
 case "$STATUS" in
@@ -200,7 +380,7 @@ case "$STATUS" in
     if [ "$N" -ge "$RESTARTING_THRESHOLD" ]; then
       act "container has been crash-looping for ${N} consecutive checks — capturing logs and recreating from $IMAGE"
       docker logs --tail 120 "$CONTAINER" 2>&1 | tail -120 | sed 's/^/[crashloop-log] /' || true
-      recreate
+      recreate_or_die
       writenum "$RESTARTING_FILE" 0
     fi
     writenum "$STATE_FILE" 0
@@ -214,7 +394,7 @@ case "$STATUS" in
   #      mid-snapshot-flush. Unpause is instant and lossless.
   paused)
     act "container is paused — unpausing"
-    docker unpause "$CONTAINER" >/dev/null 2>&1 || { act "unpause failed — recreating"; recreate; }
+    docker unpause "$CONTAINER" >/dev/null 2>&1 || { act "unpause failed — recreating"; recreate_or_die; }
     writenum "$STATE_FILE" 0; writenum "$RESTARTING_FILE" 0
     emit_metrics 0 1
     exit 0
@@ -226,7 +406,7 @@ case "$STATUS" in
   dead|removing)
     act "container state='$STATUS' — force-removing the container object, then recreating"
     docker rm -f "$CONTAINER" >/dev/null 2>&1 || log "docker rm -f failed on a '$STATUS' container — may need a dockerd restart"
-    recreate
+    recreate_or_die
     writenum "$STATE_FILE" 0; writenum "$RESTARTING_FILE" 0
     emit_metrics 0 0
     exit 0
@@ -238,7 +418,7 @@ case "$STATUS" in
     act "container state='$STATUS' (restart policy does not cover manual stops) — starting"
     if ! docker start "$CONTAINER" >/dev/null 2>&1; then
       act "docker start failed — recreating from $IMAGE"
-      recreate
+      recreate_or_die
     fi
     writenum "$STATE_FILE" 0; writenum "$RESTARTING_FILE" 0
     emit_metrics 0 1
@@ -338,9 +518,12 @@ fi
 if [ "$FAILS" -ge "$FAIL_THRESHOLD" ]; then
   act "engine unresponsive or liveness=dead for ${FAILS} consecutive checks - restarting container"
   docker logs --tail 60 "$CONTAINER" 2>&1 | tail -60 | sed 's/^/[pre-restart-log] /' || true
-  if ! docker restart -t 45 "$CONTAINER" >/dev/null 2>&1; then
+  if [ "$RELEASE_CLASS" = "pending" ]; then
+    act "unproved candidate failed health — restoring sealed desired image instead of restarting the candidate"
+    recreate_or_die
+  elif ! docker restart -t 45 "$CONTAINER" >/dev/null 2>&1; then
     act "docker restart failed — recreating from $IMAGE"
-    recreate
+    recreate_or_die
   fi
   writenum "$STATE_FILE" 0
 fi

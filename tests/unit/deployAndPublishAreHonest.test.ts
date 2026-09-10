@@ -133,15 +133,12 @@ describe('the engine deploy tells the truth when it skips', () => {
       /7am\/7pm|America\/Chicago restart window/
     );
 
-    // The escape hatch is asserted against the STEP, not the if/elif chain.
-    // It reads `force=true` in the run summary, which is where an operator
-    // actually meets it - and it used to be pinned here only because the
-    // deleted window branch happened to mention it inside the chain. Pinning
-    // it where it lives means deleting a branch cannot quietly remove the one
-    // line that tells a human how to land the deploy now.
+    // A skipped run must not advertise an unsafe escape hatch. Dispatching
+    // still stages immediately, but only a fresh maintenance certificate may
+    // authorize the stop/start transition.
     const step = sliceYamlEntry(HETZNER, "name: 'DID NOT DEPLOY");
-    expect(step, 'the operator is told how to land it now').toMatch(/force=true/);
-    expect(step, 'and what forcing costs').toMatch(/voids/);
+    expect(step).not.toMatch(/force=true|voids in-flight hands/);
+    expect(step).toMatch(/readyForRestart certificate/);
   });
 
   /**
@@ -242,16 +239,13 @@ describe('the engine deploy tells the truth when it skips', () => {
     expect(runnable).not.toMatch(/::warning title=OUTSIDE THE RESTART WINDOW::/);
   });
 
-  it('force still means "do not wait for the break", and nothing else', () => {
-    // publish-watchdog.yml dispatches this workflow when the engine is behind
-    // main. It must keep alarming without being able to bounce production
-    // outside an announced break, so a plain dispatch still waits.
+  it('has no force path around the maintenance certificate', () => {
     const gate = HETZNER.slice(
       HETZNER.indexOf('Wait for the maintenance break'),
       HETZNER.indexOf('Cut over to the new image')
     );
-    expect(gate).toMatch(/github\.event\.inputs\.force/);
-    expect(gate).toMatch(/skipping the break gate/);
+    expect(HETZNER).not.toMatch(/github\.event\.inputs\.force|force=true/);
+    expect(gate).not.toMatch(/skipping the break gate/);
   });
 
   it('waits for the announced break instead of racing the hands', () => {
@@ -284,17 +278,13 @@ describe('the engine deploy tells the truth when it skips', () => {
     expect(gate).toMatch(/skip=true/);
   });
 
-  it('can still ship the commit that introduces the break', () => {
-    // Bootstrap: the engine running in production when this lands predates
-    // the feature and can never open the flag, so waiting for it would mean
-    // the change could never deploy. Exactly one legacy restart is permitted,
-    // on the old SIGTERM drain, and the branch is unreachable afterwards.
+  it('does not treat a legacy health payload as restart authority', () => {
     const gate = HETZNER.slice(
       HETZNER.indexOf('Wait for the maintenance break'),
       HETZNER.indexOf('Cut over to the new image')
     );
-    expect(gate).toMatch(/LEGACY/);
-    expect(gate).toMatch(/drainHands/);
+    expect(gate).not.toMatch(/LEGACY ENGINE|LEGACY=yes/);
+    expect(gate).toMatch(/Missing\/legacy\/straggler states are/);
   });
 
   it('still bypasses the spacing gate for a manual dispatch', () => {

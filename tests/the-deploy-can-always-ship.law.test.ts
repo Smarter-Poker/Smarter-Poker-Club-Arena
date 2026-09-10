@@ -66,6 +66,7 @@ import { join } from 'node:path';
 const ROOT = process.cwd();
 const WORKFLOW = join(ROOT, '.github/workflows/auto-deploy-hetzner.yml');
 const yml = readFileSync(WORKFLOW, 'utf8');
+const imageBuilder = readFileSync(join(ROOT, 'server/scripts/build-engine-image.sh'), 'utf8');
 
 /** The step that decides whether to coalesce. */
 function dedupeStep(): string {
@@ -318,16 +319,22 @@ describe('the watchdog can say WHY production is behind', () => {
 
 describe('an image is built once per commit', () => {
   it('a staged image is adopted instead of rebuilt', () => {
-    // The tag is the commit, so the bytes are identical; rebuilding is 8-18
-    // minutes spent reproducing a file already on the host, and those are the
-    // minutes the break gate then does not have. This is what makes a retry
-    // cheap enough to succeed.
+    // The revision, exact server-tree ID and clean-build contract together
+    // prove the bytes are identical. Rebuilding is 8-18 minutes spent
+    // reproducing a proven image, and those are the minutes the break gate
+    // then does not have. This is what makes a retry cheap enough to succeed.
     const start = yml.indexOf('- name: Build immutable image');
     expect(start, 'the build step has been renamed - re-point this law').toBeGreaterThan(-1);
     const step = yml.slice(start, yml.indexOf('- name: Install/refresh host supervisor', start));
-    expect(step).toMatch(/docker image inspect \$IMAGE_REPO:\$SHA/);
-    expect(step).toMatch(/reused=true/);
+    expect(step).toMatch(/build-engine-image\.sh/);
+    expect(imageBuilder).toMatch(/docker image inspect "\$IMAGE_REF"/);
+    expect(imageBuilder).toMatch(/EXISTING_REVISION/);
+    expect(imageBuilder).toMatch(/EXISTING_TREE/);
+    expect(imageBuilder).toMatch(/EXISTING_CONTRACT/);
+    expect(imageBuilder).toMatch(/ENGINE_IMAGE_REUSED=true/);
     // The adoption must come BEFORE the build, or it is decoration.
-    expect(step.indexOf('reused=true')).toBeLessThan(step.indexOf('docker build'));
+    expect(imageBuilder.indexOf('ENGINE_IMAGE_REUSED=true')).toBeLessThan(
+      imageBuilder.indexOf('docker build')
+    );
   });
 });

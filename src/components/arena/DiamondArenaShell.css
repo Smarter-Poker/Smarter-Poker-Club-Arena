@@ -1,16 +1,21 @@
+/*
+ * The Diamond Arena shell. Nothing is drawn here: the panels inside it are
+ * painted consoles (#ClubArenaConsole), so this file only sets the ground they
+ * sit on and the gutter the phone needs.
+ *
+ * AMENDED 2026-09-10. It used to paint a gold-on-cream gradient with a brown
+ * rule across the top, which is the one palette Dan has ruled out ("ALWAYS USE
+ * SMARTER.POKER COLOR SCHEMA COLORS, NO BROWNS OR PINKS"), and it fought every
+ * console laid on it. Black ground, the platform's own inks, nothing else.
+ */
 .diamond-arena-shell {
-  --accent-color: #e6c66a;
-  color: #fff7dc;
-  background: radial-gradient(ellipse at top, #263140, #0c1018 65%);
-  border-top: 1px solid #b59a52;
-}
-.diamond-arena-shell h2 {
-  color: #efd889;
+  background: #000;
+  color: #e4e7ec;
+  padding: 16px 16px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
 }
 .diamond-arena-shell nav {
-  margin-bottom: 20px;
-}
-.diamond-arena-shell .btn-secondary {
-  border-color: #b59a52;
-  color: #fff7dc;
+  margin-bottom: 4px;
 }

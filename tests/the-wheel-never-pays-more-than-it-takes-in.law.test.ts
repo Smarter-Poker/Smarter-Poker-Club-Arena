@@ -59,9 +59,20 @@ const autoskip = latest('the_wheel_clears_its_autoskip');
 const guard = latest('the_profile_guard_admits_the_wheel');
 /** The 2026-09-10 rewrite: the host is the house. */
 const host = latest('the_games_belong_to_the_host');
+/**
+ * AMENDED 2026-09-10, the same day. Dan: "the back up is the union or club main
+ * bank, if the promo pool runs dry. wire that in." and "free spin should be once
+ * for a new user 100 diamonds ... they simply receive no diamonds ... All paid
+ * for by the promo wallet."
+ *
+ * The wheel is ONE body now with two doors: fn_wheel_spin passes false and
+ * fn_wheel_free_spin passes true, so a welcome spin is provably the same wheel,
+ * the same odds and the same gates as a paid one. The law is read off the core.
+ */
+const bank = latest('the_bank_backs_the_promo_wallet');
 
 /** The spin body as it stands after the fix-forward migrations. */
-const SPIN = body(host.sql, 'fn_wheel_spin');
+const SPIN = body(bank.sql, 'fn_wheel_spin_core');
 
 describe('the rate is a row, never a literal', () => {
   it('ca_bridge_rate reads 100 diamonds per chip and is read through fn_ca_bridge_rate()', () => {
@@ -140,22 +151,30 @@ describe('the prize table returns exactly 80 percent or it cannot be activated',
 });
 
 describe('a prize is drawable only when it can be paid now', () => {
-  it('gates a chip tier on what was taken in AND the promo wallet that pays it', () => {
+  it('gates a chip tier on what was taken in AND the cover that pays it', () => {
     expect(SPIN).toContain(
-      'IF pool.chips_paid + seg.amount * v_mult > v_intake_chips + cfg.exposure_allowance_chips THEN'
+      'ELSIF pool.chips_paid + seg.amount * v_mult > v_intake_chips + cfg.exposure_allowance_chips THEN'
     );
+    // v_bank is COVER: the promo wallet plus the host bank behind it.
     expect(SPIN).toContain('IF v_bank < seg.amount * v_mult THEN');
-    // v_intake_chips IS what the wheel has taken in, this spin included.
+    // v_intake_chips IS what the wheel has taken in, this spin included, and a
+    // welcome spin adds nothing to it.
     expect(SPIN).toContain(
-      'v_intake_chips := round((pool.intake_diamonds + v_price)::numeric / v_rate, 2);'
+      'v_intake_chips := round((pool.intake_diamonds + v_dia_now)::numeric / v_rate, 2);'
     );
-    expect(SPIN).toContain('v_bank := public.fn_diamond_game_promo_lock(v_host, v_kind);');
+    expect(SPIN).toContain(
+      'SELECT c.o_promo, c.o_bank, c.o_cover INTO v_promo, v_bank_only, v_bank'
+    );
+    // A welcome spin is bounded by its own budget instead.
+    expect(SPIN).toContain(
+      'IF COALESCE(pool.welcome_chips_paid, 0) + seg.amount * v_mult > cfg.welcome_budget_chips THEN'
+    );
   });
 
   it('gates a diamond tier on the diamond float', () => {
     expect(SPIN).toContain('IF pool.diamond_float + v_dia_now < seg.amount * v_mult THEN');
     // AND the host's owner must hold it: the owner pays every diamond prize now.
-    expect(SPIN).toContain('IF v_owner_dia + v_price < seg.amount * v_mult THEN');
+    expect(SPIN).toContain('IF v_owner_dia + v_dia_now < seg.amount * v_mult THEN');
   });
 
   it('draws only from the eligible tiers and reports the locked ones', () => {
@@ -195,27 +214,95 @@ describe("every leg is the platform's own door", () => {
     );
   });
 
-  it('a chip prize is one journal row, PROMO WALLET to player, category wheel_prize', () => {
-    // The leg is declared from the PROMO side and the member side stands down,
-    // so the row names the column the chips left (union_wallets.promo_wallet or
-    // clubs.promo_balance) instead of naming the member wallet twice. The two
-    // host shapes journal under different account names for the same promo
-    // column, which is why the label, not the account, is what says promo.
-    expect(SPIN).toContain("PERFORM public.fn_ca_declare_ledger('wheel_prize', 'player_wallet',");
-    expect(SPIN).toContain("ARRAY['club_members']");
-    // The wallet it actually spends, on both host shapes.
-    expect(SPIN).toContain(
-      'UPDATE public.union_wallets SET promo_wallet = promo_wallet - v_prize_chips'
-    );
-    expect(SPIN).toContain('UPDATE public.clubs SET promo_balance = promo_balance - v_prize_chips');
-    expect(SPIN).not.toContain('chip_treasury = chip_treasury - v_prize_chips');
-    expect(SPIN).not.toContain('chip_balance = chip_balance - v_prize_chips');
-    // And it refuses to carry on if the wallet moved without a journal row.
-    expect(SPIN).toContain(
-      "IF NOT EXISTS (SELECT 1 FROM public.chip_ledger WHERE idempotency_key = 'wheel-prize:'"
-    );
+  it('a chip prize leaves through the one payer: promo wallet first, bank behind', () => {
+    // The wheel no longer moves a wallet itself. Every chip it pays goes through
+    // fn_diamond_game_pay_chips, which draws the promo wallet down to nothing
+    // and takes the remainder from the host's own bank, writing one journal row
+    // per wallet it touched, from the paying side.
+    expect(SPIN).toContain('SELECT * INTO v_pay FROM public.fn_diamond_game_pay_chips(');
+    expect(SPIN).toContain("'wheel_prize', v_host, v_kind, p_club_id, v_user, v_prize_chips,");
+    expect(SPIN).not.toContain('UPDATE public.union_wallets SET promo_wallet');
+    expect(SPIN).not.toContain('UPDATE public.clubs SET promo_balance');
+    expect(SPIN).not.toContain('chip_treasury = chip_treasury -');
+    expect(SPIN).not.toContain('chip_balance = chip_balance -');
     expect(word.sql).toContain("'wheel_prize'::text");
     expect(word.sql).toMatch(/NOT VALID;/);
+  });
+
+  it('THE PAYER: the promo wallet is drained first and the bank covers the rest', () => {
+    const PAY = body(bank.sql, 'fn_diamond_game_pay_chips');
+    expect(PAY).toContain('from_promo := LEAST(p_amount, v_lock.o_promo);');
+    expect(PAY).toContain('from_bank  := p_amount - from_promo;');
+    // Never more than the host actually holds, and the gate is meant to have
+    // caught it long before this raise.
+    expect(PAY).toContain('IF from_bank > v_lock.o_bank THEN');
+    expect(PAY).toContain('after the gate passed');
+    // One key per wallet, so a split reads as two rows that add to the prize.
+    expect(PAY).toContain(
+      "PERFORM public.fn_ca_declare_ledger(p_category, 'player_wallet', p_user, NULL, p_key, ARRAY['club_members']);"
+    );
+    expect(PAY).toContain("p_key || ':bank'");
+    // Both halves refuse to carry on if the wallet moved unjournaled.
+    expect(PAY).toContain('the promo wallet moved but no leg was journaled');
+    expect(PAY).toContain('the host bank moved but no leg was journaled');
+    // And the autoskip is cleared, or the next write in the transaction is silent.
+    expect(PAY).toContain("PERFORM set_config('app.ledger_autoskip_club_members', '', true);");
+  });
+
+  it('COVER is promo plus bank, and every gate is measured against it', () => {
+    const COVER = body(bank.sql, 'fn_diamond_game_cover');
+    expect(COVER).toContain('public.fn_diamond_game_promo(p_host, p_kind)');
+    expect(COVER).toContain('public.fn_diamond_game_bank(p_host, p_kind)');
+    // A wallet that has gone negative covers nothing rather than eating the
+    // other wallet's headroom.
+    const LOCK = body(bank.sql, 'fn_diamond_game_cover_lock');
+    expect(LOCK).toContain('o_promo := GREATEST(COALESCE(o_promo, 0), 0);');
+    expect(LOCK).toContain('o_bank  := GREATEST(COALESCE(o_bank, 0), 0);');
+    expect(LOCK).toContain('FOR UPDATE');
+  });
+
+  it('THE WELCOME SPIN is the same wheel, takes nothing in, and is bounded by its own budget', () => {
+    // Once, ever: the unique index is the promise, not a check that can race.
+    expect(bank.sql).toContain(
+      'CREATE UNIQUE INDEX IF NOT EXISTS wheel_spins_one_welcome_per_member'
+    );
+    expect(bank.sql).toContain('ON public.wheel_spins (host_id, user_id) WHERE is_welcome;');
+    // The owner simply receives no diamonds: nothing moves on a welcome spin.
+    expect(SPIN).toContain('v_dia_now      := CASE WHEN p_welcome THEN 0 ELSE v_price END;');
+    expect(SPIN).toContain('IF NOT p_welcome THEN');
+    // Its payout never enters the paid game's books, and never exceeds the
+    // budget the host declared for it.
+    expect(SPIN).toContain(
+      'chips_paid = chips_paid + CASE WHEN p_welcome THEN 0 ELSE v_prize_chips END,'
+    );
+    expect(SPIN).toContain(
+      'welcome_chips_paid = welcome_chips_paid + CASE WHEN p_welcome THEN v_value_chips ELSE 0 END,'
+    );
+    expect(SPIN).toContain('IF pool.welcome_chips_paid > cfg.welcome_budget_chips THEN');
+    expect(SPIN).toContain('the gate was bypassed');
+    // A host that has not funded one does not offer one.
+    expect(SPIN).toContain('The Welcome Spin Is Not Funded Here Yet');
+    expect(SPIN).toContain('You Have Already Taken Your Welcome Spin Here');
+    expect(SPIN).toContain('The Host Does Not Take Its Own Welcome Spin');
+  });
+
+  it('the browser cannot ask for a free spin: only the two doors set the flag', () => {
+    expect(bank.sql).toContain(
+      'SELECT public.fn_wheel_spin_core(p_club_id, p_commit_id, p_client_seed, false);'
+    );
+    expect(bank.sql).toContain(
+      'SELECT public.fn_wheel_spin_core(p_club_id, p_commit_id, p_client_seed, true);'
+    );
+    expect(bank.sql).toContain(
+      'REVOKE ALL ON FUNCTION public.fn_wheel_spin_core(uuid, uuid, text, boolean) FROM PUBLIC, anon, authenticated;'
+    );
+    expect(bank.sql).not.toMatch(
+      /GRANT EXECUTE ON FUNCTION public\.fn_wheel_spin_core\([^)]*\) TO authenticated/
+    );
+    // And the migration refuses to commit if that ever stops being true.
+    expect(bank.sql).toContain(
+      "IF has_function_privilege('authenticated', 'public.fn_wheel_spin_core(uuid, uuid, text, boolean)', 'EXECUTE') THEN"
+    );
   });
 
   it('a diamond prize is paid BY THE OWNER, under a wheel reference', () => {
@@ -232,8 +319,11 @@ describe("every leg is the platform's own door", () => {
   });
 
   it('the autoskip is cleared after the prize leg so the next write is journaled', () => {
-    expect(SPIN).toContain("PERFORM set_config('app.ledger_autoskip_union_wallets', '', true);");
-    expect(SPIN).toContain("PERFORM set_config('app.ledger_autoskip_clubs', '', true);");
+    // It moved with the payment: the payer clears all three now, because it is
+    // the only thing that moves a wallet.
+    const PAY = body(bank.sql, 'fn_diamond_game_pay_chips');
+    expect(PAY).toContain("PERFORM set_config('app.ledger_autoskip_union_wallets', '', true);");
+    expect(PAY).toContain("PERFORM set_config('app.ledger_autoskip_clubs', '', true);");
   });
 
   it('the profile guard admits fn_wheel_spin by name, beside the daily bonus claim', () => {
@@ -247,6 +337,13 @@ describe("every leg is the platform's own door", () => {
     expect(host.sql).toContain("OR v_stack ~ 'function (public[.])?fn_plinko_drop[(]'");
     expect(host.sql).toContain("OR v_stack ~ 'function (public[.])?fn_crash_start[(]'");
     expect(host.sql).toContain('the profile guard does not name every door');
+  });
+
+  it('and the core joins it, because a SQL wrapper does not appear in the stack the guard reads', () => {
+    expect(bank.sql).toContain("OR v_stack ~ 'function (public[.])?fn_wheel_spin_core[(]'");
+    expect(bank.sql).toContain(
+      'the profile guard does not name fn_wheel_spin_core, so a diamond prize will be refused'
+    );
   });
 });
 

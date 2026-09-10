@@ -220,7 +220,13 @@ export interface GameMetrics {
     reserved_chips: number;
     constrained_rounds: number;
   } | null;
-  /** The host's PROMO wallet: the bank every payout comes out of (2026-09-10). */
+  /**
+   * COVER and its two halves: the promo wallet a payout comes out of first, and
+   * the host's own chip bank standing behind it (Dan 2026-09-10, "the back up is
+   * the union or club main bank, if the promo pool runs dry").
+   */
+  cover_chips: number;
+  promo_chips: number;
   bank_chips: number;
   /** What the game has taken in, in chips at the bridge rate. */
   intake_chips: number;
@@ -653,6 +659,8 @@ const DiamondGamesService = {
             constrained_rounds: num(pool.constrained_rounds),
           }
         : null,
+      cover_chips: num(raw.cover_chips),
+      promo_chips: num(raw.promo_chips),
       bank_chips: num(raw.bank_chips),
       intake_chips: num(raw.intake_chips),
       owner_id: raw.owner_id ? String(raw.owner_id) : null,
@@ -759,6 +767,31 @@ const DiamondGamesService = {
         raw.member_chips === null || raw.member_chips === undefined ? null : num(raw.member_chips),
       free_spin_ready: Boolean(raw.free_spin_ready),
       frozen: Boolean(raw.frozen),
+    };
+  },
+
+  /**
+   * MOVE CHIPS FROM THE HOST'S BANK INTO ITS PROMO WALLET (Dan 2026-09-10).
+   * The bank backs the promo wallet automatically, but an operator who wants
+   * the float where it belongs should be able to put it there from the console
+   * they are already looking at. Union owners and club owners alike; the server
+   * decides who may.
+   */
+  async fundPromo(
+    clubId: string,
+    amountChips: number
+  ): Promise<{ ok: boolean; error?: string; promo_chips?: number; bank_chips?: number }> {
+    const { data, error } = await supabase.rpc('fn_diamond_game_fund_promo', {
+      p_club_id: clubId,
+      p_amount: amountChips,
+    });
+    if (error) throw error;
+    const raw = rec(data);
+    return {
+      ok: Boolean(raw.ok),
+      error: raw.error ? String(raw.error) : undefined,
+      promo_chips: raw.promo_chips === undefined ? undefined : Number(raw.promo_chips),
+      bank_chips: raw.bank_chips === undefined ? undefined : Number(raw.bank_chips),
     };
   },
 

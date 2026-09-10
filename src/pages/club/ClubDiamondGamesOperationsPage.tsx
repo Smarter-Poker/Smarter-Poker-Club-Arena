@@ -171,6 +171,8 @@ export default function ClubDiamondGamesOperationsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [fundChips, setFundChips] = useState('');
+  const [funding, setFunding] = useState(false);
 
   const load = useCallback(
     async (which: DiamondGame) => {
@@ -222,6 +224,33 @@ export default function ClubDiamondGamesOperationsPage() {
         if (isMountedRef.current) toast.error('That Change Did Not Go Through');
       } finally {
         if (isMountedRef.current) setSaving(false);
+      }
+    },
+    [clubUuid, game, isMountedRef, toast, load]
+  );
+
+  /** Bank into promo wallet. The server decides who may; this only asks. */
+  const moveIntoPromo = useCallback(
+    async (amount: number) => {
+      if (!clubUuid) return;
+      if (!Number.isFinite(amount) || amount <= 0)
+        return toast.error('Enter How Many Chips To Move');
+      setFunding(true);
+      try {
+        const res = await DiamondGamesService.fundPromo(clubUuid, amount);
+        if (!isMountedRef.current) return;
+        if (!res.ok) {
+          toast.error(res.error ?? 'Those Chips Could Not Be Moved');
+        } else {
+          toast.success('The Promo Wallet Is Funded');
+          setFundChips('');
+          await load(game);
+        }
+      } catch (err) {
+        reportError(err, 'ClubDiamondGamesOperationsPage.fundPromo');
+        if (isMountedRef.current) toast.error('Those Chips Could Not Be Moved');
+      } finally {
+        if (isMountedRef.current) setFunding(false);
       }
     },
     [clubUuid, game, isMountedRef, toast, load]
@@ -287,6 +316,7 @@ export default function ClubDiamondGamesOperationsPage() {
   const enabled = Boolean(cfg?.enabled);
   const word = GAME_WORD[game];
   const hostWord = metrics?.host_kind === 'union' ? 'Union' : 'Club';
+  const promoDry = (metrics?.promo_chips ?? 0) <= 0;
   const set = (key: keyof Draft) => (v: string) => setDraft((d) => ({ ...d, [key]: v }));
 
   return (
@@ -325,10 +355,26 @@ export default function ClubDiamondGamesOperationsPage() {
       >
         <div className={styles.rows}>
           <Row
+            label="Cover"
+            value={chips(metrics?.cover_chips)}
+            ink={(metrics?.cover_chips ?? 0) <= 0 ? 'red' : 'silver'}
+            meta={`${chips(metrics?.promo_chips)} Promo Plus ${chips(metrics?.bank_chips)} Bank`}
+          />
+          <Row
             label={`${hostWord} Promo Wallet`}
+            value={chips(metrics?.promo_chips)}
+            ink={promoDry ? 'gold' : 'silver'}
+            meta={
+              promoDry
+                ? `Empty, So The ${hostWord} Bank Is Paying`
+                : 'Every Payout Is Paid From Here First'
+            }
+          />
+          <Row
+            label={`${hostWord} Bank`}
             value={chips(metrics?.bank_chips)}
-            ink={(metrics?.bank_chips ?? 0) <= 0 ? 'red' : 'silver'}
-            meta="Every Payout Is Paid From Here"
+            ink={(metrics?.bank_chips ?? 0) <= 0 ? 'red' : 'blue'}
+            meta="Behind The Promo Wallet, And Only When It Runs Dry"
           />
           <Row
             label="Owner Diamonds"
@@ -367,9 +413,47 @@ export default function ClubDiamondGamesOperationsPage() {
         </div>
         <p className="sc-copy">
           Paid Plus Reserved Never Exceeds What Was Taken In Plus The Allowance, And Every Chip
-          Leaves The Promo Wallet; The Per-Round Cap Makes That Arithmetic, And The Metrics
-          Re-Derive It. Capped Rounds Are Ones The Pool Could Not Promise The Full Ceiling On.
+          Leaves The Promo Wallet Before The Bank; The Per-Round Cap Makes That Arithmetic, And The
+          Metrics Re-Derive It. Capped Rounds Are Ones The Pool Could Not Promise The Full Ceiling
+          On.
         </p>
+      </SpadeConsole>
+
+      {/* THE FLOAT, AND WHERE TO PUT IT (Dan 2026-09-10). The bank backs the
+          promo wallet on its own, so the games never stop; this is how an
+          operator moves the float to where it is meant to sit. */}
+      <SpadeConsole
+        eyebrow="Cover"
+        title="The Promo Wallet"
+        pill={promoDry ? 'On The Bank' : 'Funded'}
+        pillInk={promoDry ? 'gold' : 'green'}
+        plates={{
+          secondary: {
+            label: 'Move 100',
+            onClick: () => void moveIntoPromo(100),
+            disabled: funding,
+          },
+          primary: {
+            label: funding ? 'Moving' : 'Move The Amount',
+            ink: 'white',
+            onClick: () => void moveIntoPromo(Number(fundChips)),
+            disabled: funding,
+          },
+        }}
+      >
+        <p className="sc-copy">
+          Every Payout Leaves The Promo Wallet First. When It Runs Dry The {hostWord} Bank Pays The
+          Rest, So The Games Never Stop; The Journal Names Which Wallet Paid Which Part. Keep The
+          Float Here And The Bank Stays A Backstop Rather Than A Habit.
+        </p>
+        <div className={styles.fields}>
+          <Field
+            label="Move Into The Promo Wallet (Chips)"
+            value={fundChips}
+            onChange={setFundChips}
+            hint="Taken From The Bank, Which Is The Same Money In A Different Pocket."
+          />
+        </div>
       </SpadeConsole>
 
       <SpadeConsole eyebrow="Against The 80% Spec" title="Realised Return" foot="foot">

@@ -23,7 +23,7 @@
  * typed on. Title Case, no em dashes, no emoji, no :hover.
  *
  * THE FREE SPIN (2026-09-09). One spin a day on the house, per player per
- * host, from its own five-prize table that pays diamonds only: a free spin
+ * host, on the same wheel and the same odds as a paid spin: a welcome spin
  * takes nothing in, and the games never pay out more than they take in. When
  * fn_wheel_free_state says it is available the page opens in free mode - the
  * pill, the Spin bay and the primary plate say so in gold, the wheel and the
@@ -80,7 +80,7 @@ function prizeLabel(seg: { kind: string; amount: number; label: string }): strin
 function outcomeHeadline(result: WheelSpinResult): string {
   const o = result.outcome;
   if (o.kind === 'nothing') return 'No Prize This Spin';
-  return result.free ? `Free Spin: You Won ${prizeLabel(o)}` : `You Won ${prizeLabel(o)}`;
+  return result.free ? `Welcome Spin: You Won ${prizeLabel(o)}` : `You Won ${prizeLabel(o)}`;
 }
 
 function historyTime(iso: string): string {
@@ -110,7 +110,7 @@ export default function DiamondWheelPage() {
   const [clubUuid, setClubUuid] = useState<string | null>(null);
   const [state, setState] = useState<WheelState | null>(null);
   const [free, setFree] = useState<WheelFreeState | null>(null);
-  /** Today's free spin is on offer: the plates, the odds and the next spin are free. */
+  /** The welcome spin is on offer: the plates, the odds and the next spin are free. */
   const [freeMode, setFreeMode] = useState(false);
   /* The face on the rim. It lags the offer by one spin on purpose: after the
      free spin lands, the prize it landed on stays under the pointer until
@@ -367,7 +367,7 @@ export default function DiamondWheelPage() {
   const spinLabel = spinning
     ? 'Spinning'
     : freeMode
-      ? 'Free Spin'
+      ? 'Welcome Spin'
       : waitSeconds > 0
         ? `Ready In ${waitSeconds}s`
         : `Spin ${price.toLocaleString()}`;
@@ -375,31 +375,36 @@ export default function DiamondWheelPage() {
     ? 'Break'
     : state.available
       ? freeMode
-        ? 'Free Spin'
+        ? 'Welcome'
         : 'Open'
       : state.reason === 'not_configured'
         ? 'Closed'
         : 'Paused';
   const pillInk = state.frozen ? 'gold' : state.available ? (freeMode ? 'gold' : 'green') : 'red';
   const wheelSize = Math.max(200, Math.min(340, stageWidth - 8));
-  /* After the free spin, the idle line says when the next one comes. */
+  /* The welcome spin is once and for all, so the idle line says so rather than
+     promising another one tomorrow (Dan 2026-09-10). */
   const freeNote =
     !freeMode && free?.enabled && state.available
       ? free.reason === 'used'
-        ? ' Your Free Spin Returns Tomorrow.'
+        ? ' You Have Had Your Welcome Spin.'
         : free.reason === 'pot_empty'
-          ? ' Today’s Free Spins Are Gone; They Return Tomorrow.'
-          : free.reason === 'owner'
-            ? ' The Club Pays The Free Spin, So Its Owner Does Not Take One.'
-            : ''
+          ? ' The Welcome Spins Here Are Gone For Now.'
+          : free.reason === 'unfunded'
+            ? ''
+            : free.reason === 'owner'
+              ? ' The Club Pays The Welcome Spin, So Its Owner Does Not Take One.'
+              : ''
       : '';
   const readoutSubCopy = lastResult
     ? lastResult.outcome.kind === 'nothing'
       ? 'Better Luck On The Next Spin'
-      : lastResult.free
-        ? 'Paid Into Your Diamonds, On The House'
-        : lastResult.outcome.kind === 'diamonds'
-          ? 'Paid Into Your Diamonds'
+      : lastResult.outcome.kind === 'diamonds'
+        ? lastResult.free
+          ? 'Paid Into Your Diamonds, On The Club'
+          : 'Paid Into Your Diamonds'
+        : lastResult.free
+          ? 'Paid Into Your Club Chips, On The Club'
           : 'Paid Into Your Club Chips'
     : '';
 
@@ -470,7 +475,7 @@ export default function DiamondWheelPage() {
               {blocker
                 ? blocker
                 : freeMode
-                  ? 'Today’s Free Spin Is Yours. Five Prizes, All In Diamonds, And Every One Pays.'
+                  ? `Your Welcome Spin, On The Club. A ${price.toLocaleString()} Diamond Spin On The Same Wheel, For Nothing, Once.`
                   : `Every Spin Is ${price.toLocaleString()} Diamonds. Eleven Prizes, ${cfg ? (cfg.hit_rate * 100).toFixed(0) : '76'}% Of Spins Pay, 80% Returned Over Time.${freeNote}`}
             </p>
           )}
@@ -480,7 +485,7 @@ export default function DiamondWheelPage() {
       <div ref={oddsRef}>
         <SpadeConsole
           eyebrow={freeMode ? 'On The House' : 'The Prizes'}
-          title={freeMode ? 'Free Spin Odds' : 'Odds'}
+          title={freeMode ? 'Welcome Spin Odds' : 'Odds'}
           foot="foot"
         >
           <div className={styles.rows}>
@@ -516,9 +521,10 @@ export default function DiamondWheelPage() {
           </div>
           {freeMode ? (
             <p className="sc-copy">
-              Today’s Free Spin Pays In Diamonds, On The Club, And Every Prize Pays. It Uses The
-              Same Sealed Seed As A Paid Spin, So You Can Check It The Same Way. When It Lands, The
-              Paid Wheel Returns With Its Eleven Prizes In Chips And Diamonds.
+              Your Welcome Spin Is The Same Wheel, The Same Prizes And The Same Odds As A Paid Spin.
+              The Club Takes No Diamonds For It And Pays Whatever It Lands On Out Of Its Promo
+              Wallet. It Uses The Same Sealed Seed, So You Can Check It The Same Way. One Per
+              Member, Once.
             </p>
           ) : (
             <p className="sc-copy">
@@ -576,7 +582,7 @@ export default function DiamondWheelPage() {
           <>
             <div className={styles.seedField}>
               <span className="sc-label sc-ink--blue">
-                {lastResult.free ? 'Server Seed (Free Spin)' : 'Server Seed'}
+                {lastResult.free ? 'Server Seed (Welcome Spin)' : 'Server Seed'}
               </span>
               <code className={styles.mono}>{lastResult.fairness.server_seed}</code>
             </div>
@@ -641,7 +647,9 @@ export default function DiamondWheelPage() {
                 <span className={`${styles.rowLabel} sc-ink--silver`}>
                   {prizeLabel(h.outcome)}
                   <span className={`${styles.rowMeta} sc-ink--muted`}>
-                    {h.free ? `Free Spin, ${historyTime(h.created_at)}` : historyTime(h.created_at)}
+                    {h.free
+                      ? `Welcome Spin, ${historyTime(h.created_at)}`
+                      : historyTime(h.created_at)}
                   </span>
                 </span>
                 <span

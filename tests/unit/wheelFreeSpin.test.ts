@@ -74,11 +74,13 @@ describe('the service reads the free spin as the server shapes it', () => {
         enabled: true,
         available: false,
         reason: 'used',
-        used_today: true,
-        pot_diamonds: '2000',
-        pot_paid_today: '35',
-        spins_today: '4',
-        day: '2026-09-09',
+        used: true,
+        once_only: true,
+        spin_price_diamonds: '100',
+        budget_chips: '50',
+        budget_paid_chips: '12.5',
+        budget_left_chips: '37.5',
+        welcome_spins: '4',
         segments: [
           {
             ord: 1,
@@ -96,16 +98,21 @@ describe('the service reads the free spin as the server shapes it', () => {
     });
     const s = await DiamondWheelService.freeState('club-1');
     expect(rpc).toHaveBeenCalledWith('fn_wheel_free_state', { p_club_id: 'club-1' });
+    // THE WELCOME SPIN (Dan 2026-09-10): once per member per host, ever, at the
+    // real spin price, against a budget in chips rather than a daily pot in
+    // diamonds. The state says so rather than leaving the page to assume it.
     expect(s).toMatchObject({
       ok: true,
       enabled: true,
       available: false,
       reason: 'used',
-      used_today: true,
-      pot_diamonds: 2000,
-      pot_paid_today: 35,
-      spins_today: 4,
-      day: '2026-09-09',
+      used: true,
+      once_only: true,
+      spin_price_diamonds: 100,
+      budget_chips: 50,
+      budget_paid_chips: 12.5,
+      budget_left_chips: 37.5,
+      welcome_spins: 4,
     });
     expect(s.segments[0]).toMatchObject({
       ord: 1,

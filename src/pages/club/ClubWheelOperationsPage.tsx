@@ -47,6 +47,7 @@ import DiamondWheelService, {
   type WheelFreeState,
   type WheelMetrics,
 } from '../../services/DiamondWheelService';
+import DiamondGamesService from '../../services/DiamondGamesService';
 import { compactChips } from '../../utils/format';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
 import { reportError } from '../../utils/errorReporter';
@@ -65,7 +66,7 @@ interface Draft {
   min_seconds_between_spins: string;
   purchased_only: boolean;
   allow_fixture_accounts: boolean;
-  free_spin_daily_budget_diamonds: string;
+  welcome_budget_chips: string;
 }
 
 function draftFrom(m: WheelMetrics | null): Draft {
@@ -78,7 +79,7 @@ function draftFrom(m: WheelMetrics | null): Draft {
     min_seconds_between_spins: String(c?.min_seconds_between_spins ?? 3),
     purchased_only: c?.purchased_only ?? true,
     allow_fixture_accounts: c?.allow_fixture_accounts ?? false,
-    free_spin_daily_budget_diamonds: String(c?.free_spin_daily_budget_diamonds ?? 2000),
+    welcome_budget_chips: String(c?.welcome_budget_chips ?? 0),
   };
 }
 
@@ -169,6 +170,8 @@ export default function ClubWheelOperationsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [fundChips, setFundChips] = useState('');
+  const [funding, setFunding] = useState(false);
 
   const load = useCallback(async () => {
     if (!routeClubId) return;
@@ -251,11 +254,37 @@ export default function ClubWheelOperationsPage() {
     [clubUuid, isMountedRef, toast, load]
   );
 
+  /** Bank into promo wallet. The server decides who may; this only asks. */
+  const moveIntoPromo = useCallback(
+    async (amount: number) => {
+      if (!clubUuid) return;
+      if (!Number.isFinite(amount) || amount <= 0)
+        return toast.error('Enter How Many Chips To Move');
+      setFunding(true);
+      try {
+        const res = await DiamondGamesService.fundPromo(clubUuid, amount);
+        if (!res.ok) {
+          toast.error(res.error ?? 'Those Chips Could Not Be Moved');
+        } else {
+          toast.success('The Promo Wallet Is Funded');
+          setFundChips('');
+          await load();
+        }
+      } catch (e) {
+        reportError(e, 'ClubWheelOperationsPage.fundPromo', { clubId: clubUuid });
+        toast.error('Those Chips Could Not Be Moved');
+      } finally {
+        if (isMountedRef.current) setFunding(false);
+      }
+    },
+    [clubUuid, isMountedRef, toast, load]
+  );
+
   const saveFreePot = () => {
-    const pot = Number(draft.free_spin_daily_budget_diamonds);
-    if (!Number.isInteger(pot) || pot < 0)
-      return toast.error('The Daily Pot Must Be A Whole Number Of Diamonds, Zero Or More');
-    void applyFree({ free_spin_daily_budget_diamonds: pot }, 'The Daily Pot Is Saved');
+    const budget = Number(draft.welcome_budget_chips);
+    if (!Number.isFinite(budget) || budget < 0)
+      return toast.error('The Welcome Budget Must Be Zero Or More Chips');
+    void applyFree({ welcome_budget_chips: budget }, 'The Welcome Budget Is Saved');
   };
 
   const saveNumbers = () => {
@@ -300,6 +329,7 @@ export default function ClubWheelOperationsPage() {
   const cfg = metrics?.config;
   const pool = metrics?.pool;
   const enabled = Boolean(cfg?.enabled);
+  const promoDry = (metrics?.promo_chips ?? 0) <= 0;
   const freeOn = Boolean(cfg?.free_spin_enabled);
   const hostWord = metrics?.host_kind === 'union' ? 'Union' : 'Club';
   const set = (key: keyof Draft) => (v: string) => setDraft((d) => ({ ...d, [key]: v }));
@@ -325,10 +355,26 @@ export default function ClubWheelOperationsPage() {
       >
         <div className={styles.rows}>
           <Row
+            label="Cover"
+            value={chips(metrics?.cover_chips)}
+            ink={(metrics?.cover_chips ?? 0) <= 0 ? 'red' : 'silver'}
+            meta={`${chips(metrics?.promo_chips)} Promo Plus ${chips(metrics?.bank_chips)} Bank`}
+          />
+          <Row
             label={`${hostWord} Promo Wallet`}
+            value={chips(metrics?.promo_chips)}
+            ink={(metrics?.promo_chips ?? 0) <= 0 ? 'gold' : 'silver'}
+            meta={
+              (metrics?.promo_chips ?? 0) <= 0
+                ? `Empty, So The ${hostWord} Bank Is Paying The Prizes`
+                : 'Every Chip Prize Is Paid From Here First'
+            }
+          />
+          <Row
+            label={`${hostWord} Bank`}
             value={chips(metrics?.bank_chips)}
-            ink={(metrics?.bank_chips ?? 0) <= 0 ? 'red' : 'silver'}
-            meta="Every Chip Prize Is Paid From Here"
+            ink={(metrics?.bank_chips ?? 0) <= 0 ? 'red' : 'blue'}
+            meta="Behind The Promo Wallet, And Only When It Runs Dry"
           />
           <Row
             label="Owner Diamonds"
@@ -367,9 +413,68 @@ export default function ClubWheelOperationsPage() {
         </div>
         <p className="sc-copy">
           Paid Never Exceeds What Was Taken In Plus The Allowance, And Every Chip Leaves The Promo
-          Wallet; The Per-Spin Gate Makes That Arithmetic, And The Metrics Re-Derive It. A Locked
-          Tier Is One The Promo Wallet Could Not Cover On That Spin.
+          Wallet Before The Bank; The Per-Spin Gate Makes That Arithmetic, And The Metrics Re-Derive
+          It. A Locked Tier Is One The Cover Could Not Pay On That Spin.
         </p>
+      </SpadeConsole>
+
+      {/* THE FLOAT, AND WHERE TO PUT IT (Dan 2026-09-10). The bank backs the
+          promo wallet on its own, so the games never stop; this is how an
+          operator moves the float to where it is meant to sit, without leaving
+          the console they are already reading. */}
+      <SpadeConsole
+        eyebrow="Cover"
+        title="The Promo Wallet"
+        pill={promoDry ? 'On The Bank' : 'Funded'}
+        pillInk={promoDry ? 'gold' : 'green'}
+        plates={{
+          secondary: {
+            label: 'Move 100',
+            onClick: () => void moveIntoPromo(100),
+            disabled: funding,
+          },
+          primary: {
+            label: funding ? 'Moving' : 'Move The Amount',
+            ink: 'white',
+            onClick: () => void moveIntoPromo(Number(fundChips)),
+            disabled: funding,
+          },
+        }}
+      >
+        <p className="sc-copy">
+          Every Chip Prize Leaves The Promo Wallet First. When It Runs Dry The {hostWord} Bank Pays
+          The Rest, So The Games Never Stop; The Journal Names Which Wallet Paid Which Part. Keep
+          The Float Here And The Bank Stays A Backstop Rather Than A Habit.
+        </p>
+        <div className={`${styles.rows} ${styles.rowsCompact}`}>
+          <Row
+            label="Cover"
+            value={chips(metrics?.cover_chips)}
+            ink={(metrics?.cover_chips ?? 0) <= 0 ? 'red' : 'silver'}
+            meta="What A Prize May Draw On"
+          />
+          <Row
+            label="Promo Wallet"
+            value={chips(metrics?.promo_chips)}
+            ink={promoDry ? 'gold' : 'green'}
+            meta={promoDry ? 'Empty: The Bank Is Carrying The Games' : 'Paid First'}
+          />
+          <Row
+            label={`${hostWord} Bank`}
+            value={chips(metrics?.bank_chips)}
+            ink={(metrics?.bank_chips ?? 0) <= 0 ? 'red' : 'blue'}
+            meta="The Backstop"
+          />
+        </div>
+        <div className={styles.fields}>
+          <Field
+            label="Move Into The Promo Wallet (Chips)"
+            mode="decimal"
+            value={fundChips}
+            onChange={setFundChips}
+            hint="Taken From The Bank, Which Is The Same Money In A Different Pocket."
+          />
+        </div>
       </SpadeConsole>
 
       <SpadeConsole eyebrow="Against The 80% Spec" title="Realised Return" foot="foot">
@@ -509,8 +614,8 @@ export default function ClubWheelOperationsPage() {
       </SpadeConsole>
 
       <SpadeConsole
-        eyebrow="On The House"
-        title="Free Spin"
+        eyebrow="On The Club"
+        title="The Welcome Spin"
         pill={freeOn ? 'On' : 'Off'}
         pillInk={freeOn ? 'green' : 'red'}
         plates={{
@@ -521,11 +626,11 @@ export default function ClubWheelOperationsPage() {
             onClick: () =>
               void applyFree(
                 { free_spin_enabled: !freeOn },
-                freeOn ? 'The Free Spin Is Off' : 'The Free Spin Is On'
+                freeOn ? 'The Welcome Spin Is Off' : 'The Welcome Spin Is On'
               ),
           },
           primary: {
-            label: saving ? 'Saving' : 'Save The Pot',
+            label: saving ? 'Saving' : 'Save The Budget',
             ink: 'white',
             onClick: saveFreePot,
             disabled: saving,
@@ -533,30 +638,37 @@ export default function ClubWheelOperationsPage() {
         }}
       >
         <p className="sc-copy">
-          Every Member May Spin Once A Day For Diamonds Only, From A Five-Prize Table Worth 9.75
-          Diamonds A Spin On Average. The Pot Is The Most The Free Spins May Pay In A Day; When It
-          Is Spent, The Offer Closes Until Tomorrow.
-          {enabled ? '' : ' The Wheel Is Closed, So The Free Spin Is Closed With It.'}
+          Every New Member May Take One Spin On The Real Wheel, Once, Free. You Take No Diamonds In
+          For It, And Whatever It Pays Comes Out Of The Promo Wallet. The Budget Is The Most The
+          Welcome Spins May Ever Cost You; When It Is Spent, The Offer Closes Until You Raise It.
+          {enabled ? '' : ' The Wheel Is Closed, So The Welcome Spin Is Closed With It.'}
         </p>
         <div className={`${styles.rows} ${styles.rowsCompact}`}>
-          <Row label="Free Spins Today" value={(free?.spins_today ?? 0).toLocaleString()} />
           <Row
-            label="Given Today"
-            value={`${(free?.pot_paid_today ?? 0).toLocaleString()} Of ${(free?.pot_diamonds ?? 0).toLocaleString()}`}
-            ink="blue"
+            label="Welcome Spins Given"
+            value={compactChips(free?.welcome_spins ?? 0)}
+            meta={`Each One Is A ${compactChips(free?.spin_price_diamonds ?? 0)} Diamond Spin You Did Not Charge For`}
+          />
+          <Row
+            label="Budget Spent"
+            value={`${compactChips(free?.budget_paid_chips ?? 0)} Of ${compactChips(free?.budget_chips ?? 0)}`}
+            ink={free?.reason === 'pot_empty' || free?.reason === 'unfunded' ? 'red' : 'blue'}
             meta={
-              free?.reason === 'pot_empty'
-                ? 'The Pot Is Spent For Today'
-                : 'Diamonds From The Daily Pot'
+              free?.reason === 'unfunded'
+                ? 'Set A Budget And The Welcome Spin Opens'
+                : free?.reason === 'pot_empty'
+                  ? 'The Budget Is Spent, So The Offer Is Closed'
+                  : 'Chips From The Promo Wallet'
             }
           />
         </div>
         <div className={styles.fields}>
           <Field
-            label="Daily Pot (Diamonds)"
-            value={draft.free_spin_daily_budget_diamonds}
-            onChange={set('free_spin_daily_budget_diamonds')}
-            hint="Zero Closes The Free Spin For The Day Without Turning It Off."
+            label="Welcome Budget (Chips)"
+            mode="decimal"
+            value={draft.welcome_budget_chips}
+            onChange={set('welcome_budget_chips')}
+            hint="Zero Closes The Welcome Spin Without Turning It Off."
           />
         </div>
       </SpadeConsole>

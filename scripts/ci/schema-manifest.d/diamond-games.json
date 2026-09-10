@@ -45,11 +45,23 @@
     "fn_diamond_game_promo",
     "fn_diamond_game_promo_lock",
     "fn_diamond_game_pay_diamonds",
-    "fn_diamond_games_entry"
+    "fn_diamond_games_entry",
+    "fn_diamond_game_bank",
+    "fn_diamond_game_cover",
+    "fn_diamond_game_cover_lock",
+    "fn_diamond_game_pay_chips",
+    "fn_diamond_game_fund_promo",
+    "fn_wheel_spin_core"
   ],
   "columns": {
-    "wheel_configs": ["diamond_seed", "free_spin_enabled", "free_spin_daily_budget_diamonds"],
-    "wheel_pools": ["diamond_seed"]
+    "wheel_configs": [
+      "diamond_seed",
+      "free_spin_daily_budget_diamonds",
+      "free_spin_enabled",
+      "welcome_budget_chips"
+    ],
+    "wheel_pools": ["diamond_seed", "welcome_chips_paid", "welcome_spins"],
+    "wheel_spins": ["is_welcome"]
   },
   "removedFunctions": ["fn_diamond_game_mint_leg"]
 }

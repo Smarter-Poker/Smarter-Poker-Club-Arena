@@ -67,8 +67,20 @@ export interface WheelPoolView {
   diamond_float: number;
   diamonds_paid: number;
   realized_rtp: number | null;
-  /** The host's promo wallet, and what the wheel has taken in, both in chips. */
+  /**
+   * COVER: the promo wallet every chip prize comes out of first, the host's own
+   * chip bank standing behind it, and the two together (Dan 2026-09-10: "the
+   * back up is the union or club main bank, if the promo pool runs dry"). A
+   * tier is locked when `cover_chips` cannot pay it, not when the promo wallet
+   * alone cannot.
+   */
   promo_wallet_chips: number;
+  bank_chips: number;
+  cover_chips: number;
+  /** The welcome spins: what they have cost and what the host set aside. */
+  welcome_chips_paid: number;
+  welcome_budget_chips: number;
+  welcome_spins: number;
   intake_chips: number;
 }
 
@@ -105,29 +117,46 @@ export interface WheelCommit {
   expires_at: string;
 }
 
-export type WheelFreeReason = 'closed' | 'used' | 'pot_empty' | 'not_member' | 'owner';
+/**
+ * Why the welcome spin is not on offer. 'used' means this member has already
+ * had theirs, which is once and for all now, not once a day; 'unfunded' means
+ * the host has not set a welcome budget; 'pot_empty' means it is spent.
+ */
+export type WheelFreeReason = 'closed' | 'unfunded' | 'used' | 'pot_empty' | 'not_member' | 'owner';
 
+/**
+ * THE WELCOME SPIN (Dan 2026-09-10): "free spin should be once for a new user
+ * 100 diamonds ... they simply receive no diamonds but are allowing a free 100
+ * diamond spin for new members." One spin per member per host, ever, on the
+ * real wheel at the real price, with the payout coming out of the promo wallet
+ * against a budget the host declares.
+ */
 export interface WheelFreeState {
   ok: boolean;
   error?: string;
-  /** The host runs a free spin at all (the wheel and the switch both on). */
+  /** The host offers a welcome spin at all (the wheel and the switch both on). */
   enabled: boolean;
-  /** This player may take today's free spin right now. */
+  /** This member may take theirs right now. */
   available: boolean;
   reason: WheelFreeReason | null;
-  used_today: boolean;
-  /** The host's daily pot in diamonds, and what it has paid out today. */
-  pot_diamonds: number;
-  pot_paid_today: number;
-  spins_today: number;
+  /** This member has already had theirs. Once, ever, not once a day. */
+  used: boolean;
+  /** Always true: it is stated so the page never has to assume it. */
+  once_only: boolean;
+  /** What the spin would have cost, which is what the host is giving up. */
+  spin_price_diamonds: number;
+  /** The host's welcome budget in chips, what it has spent, and what is left. */
+  budget_chips: number;
+  budget_paid_chips: number;
+  budget_left_chips: number;
+  /** How many welcome spins this host has given away. */
+  welcome_spins: number;
   segments: WheelSegment[];
-  /** The day the count is kept by (America/Chicago), as YYYY-MM-DD. */
-  day: string;
 }
 
 export interface WheelFreeSpinPatch {
   free_spin_enabled?: boolean;
-  free_spin_daily_budget_diamonds?: number;
+  welcome_budget_chips?: number;
 }
 
 export interface WheelFairness {
@@ -196,7 +225,7 @@ export interface WheelMetrics {
     max_spins_per_player_per_day: number;
     min_seconds_between_spins: number;
     free_spin_enabled: boolean;
-    free_spin_daily_budget_diamonds: number;
+    welcome_budget_chips: number;
     updated_at: string;
   };
   pool?: {
@@ -208,9 +237,21 @@ export interface WheelMetrics {
     diamond_float: number;
     diamonds_paid: number;
     constrained_spins: number;
+    welcome_chips_paid: number;
+    welcome_spins: number;
   } | null;
-  /** The host's PROMO wallet: the bank every chip prize comes out of (2026-09-10). */
+  /**
+   * COVER and its two halves. The promo wallet pays first, the host's own chip
+   * bank backs it, and `cover_chips` is what a prize may actually draw on.
+   */
+  cover_chips?: number;
+  promo_chips?: number;
   bank_chips?: number;
+  /** The welcome spins, and the budget the host set aside for them. */
+  welcome_budget_chips?: number;
+  welcome_chips_paid?: number;
+  welcome_budget_left_chips?: number;
+  welcome_spins?: number;
   /** What the wheel has taken in, in chips at the bridge rate. */
   intake_chips?: number;
   /** The host's owner, and the diamond wallet the intake lands in. */
@@ -318,6 +359,11 @@ function normaliseState(raw: Record<string, unknown>): WheelState {
           diamonds_paid: num(pool.diamonds_paid),
           realized_rtp: numOrNull(pool.realized_rtp),
           promo_wallet_chips: num(pool.promo_wallet_chips),
+          bank_chips: num(pool.bank_chips),
+          cover_chips: num(pool.cover_chips),
+          welcome_chips_paid: num(pool.welcome_chips_paid),
+          welcome_budget_chips: num(pool.welcome_budget_chips),
+          welcome_spins: num(pool.welcome_spins),
           intake_chips: num(pool.intake_chips),
         }
       : undefined,
@@ -408,20 +454,23 @@ function normaliseFreeState(raw: Record<string, unknown>): WheelFreeState {
     available: Boolean(raw.available),
     reason:
       reason === 'closed' ||
+      reason === 'unfunded' ||
       reason === 'used' ||
       reason === 'pot_empty' ||
       reason === 'not_member' ||
       reason === 'owner'
         ? reason
         : null,
-    used_today: Boolean(raw.used_today),
-    pot_diamonds: num(raw.pot_diamonds),
-    pot_paid_today: num(raw.pot_paid_today),
-    spins_today: num(raw.spins_today),
+    used: Boolean(raw.used),
+    once_only: raw.once_only === undefined ? true : Boolean(raw.once_only),
+    spin_price_diamonds: num(raw.spin_price_diamonds),
+    budget_chips: num(raw.budget_chips),
+    budget_paid_chips: num(raw.budget_paid_chips),
+    budget_left_chips: num(raw.budget_left_chips),
+    welcome_spins: num(raw.welcome_spins),
     segments: Array.isArray(raw.segments)
       ? (raw.segments as Record<string, unknown>[]).map(normaliseSegment)
       : [],
-    day: String(raw.day ?? ''),
   };
 }
 
@@ -553,7 +602,7 @@ const DiamondWheelService = {
             max_spins_per_player_per_day: num(cfg.max_spins_per_player_per_day),
             min_seconds_between_spins: num(cfg.min_seconds_between_spins),
             free_spin_enabled: Boolean(cfg.free_spin_enabled),
-            free_spin_daily_budget_diamonds: num(cfg.free_spin_daily_budget_diamonds),
+            welcome_budget_chips: num(cfg.welcome_budget_chips),
             updated_at: String(cfg.updated_at ?? ''),
           }
         : undefined,
@@ -567,9 +616,17 @@ const DiamondWheelService = {
             diamond_float: num(pool.diamond_float),
             diamonds_paid: num(pool.diamonds_paid),
             constrained_spins: num(pool.constrained_spins),
+            welcome_chips_paid: num(pool.welcome_chips_paid),
+            welcome_spins: num(pool.welcome_spins),
           }
         : null,
+      cover_chips: num(raw.cover_chips),
+      promo_chips: num(raw.promo_chips),
       bank_chips: num(raw.bank_chips),
+      welcome_budget_chips: num(raw.welcome_budget_chips),
+      welcome_chips_paid: num(raw.welcome_chips_paid),
+      welcome_budget_left_chips: num(raw.welcome_budget_left_chips),
+      welcome_spins: num(raw.welcome_spins),
       intake_chips: num(raw.intake_chips),
       owner_id: raw.owner_id ? String(raw.owner_id) : null,
       owner_diamonds: num(raw.owner_diamonds),

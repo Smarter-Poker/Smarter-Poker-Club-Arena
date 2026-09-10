@@ -35,6 +35,10 @@ function chipsLabel(v: number): string {
 export function entrySublabel(entry: DiamondGamesEntry | null): string {
   if (!entry) return 'Turn Diamonds Into Chips';
   if (entry.diamonds <= 0) return 'Win Diamonds, Then Turn Them Into Chips';
+  // Short of the cheapest way in: say what the way in costs, because "you do
+  // not have enough" without a number is a dead end rather than a next step.
+  if (entry.entry_diamonds !== null && entry.diamonds < entry.entry_diamonds)
+    return `${compactChips(entry.diamonds)} Diamonds. ${compactChips(entry.entry_diamonds)} Gets You In`;
   return `${compactChips(entry.diamonds)} Diamonds, Up To ${chipsLabel(entry.chips_from_diamonds)} Chips`;
 }
 

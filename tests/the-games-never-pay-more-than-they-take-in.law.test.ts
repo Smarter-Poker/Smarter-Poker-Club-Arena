@@ -78,14 +78,23 @@ const opens = latest('the_wheel_opens_with_a_seeded_diamond_float');
  * migration, which is the one that is live.
  */
 const host = latest('the_games_belong_to_the_host');
+/**
+ * AMENDED AGAIN 2026-09-10. Dan: "the back up is the union or club main bank, if
+ * the promo pool runs dry. wire that in." The promo wallet is still where every
+ * payout comes from first; behind it now stands the host's own chip bank, and
+ * COVER (the two together) is what every cap and gate is measured against.
+ * Nothing is minted: the bank is a wallet the host already owns.
+ */
+const bank = latest('the_bank_backs_the_promo_wallet');
 
 const CAP = body(host.sql, 'fn_diamond_game_cap_cents');
-const ADMIT = body(host.sql, 'fn_diamond_game_admit');
+const ADMIT = body(bank.sql, 'fn_diamond_game_admit');
 const DROP = body(host.sql, 'fn_plinko_drop');
 const START = body(host.sql, 'fn_crash_start');
 const DECIDE = body(host.sql, 'fn_crash_decide');
 const TAKE = body(host.sql, 'fn_diamond_game_take_bet');
-const PRIZE = body(host.sql, 'fn_diamond_game_prize_leg');
+const PRIZE = body(bank.sql, 'fn_diamond_game_prize_leg');
+const PAY = body(bank.sql, 'fn_diamond_game_pay_chips');
 const AUDIT = body(games.sql, 'fn_plinko_table_audit');
 
 const C16 = [
@@ -130,14 +139,13 @@ describe('the house share is arithmetic, not an odds table being honest', () => 
     expect(START).toContain("'crash_bet'");
   });
 
-  it('the bank a payout comes out of IS the promo wallet, on both host shapes', () => {
-    expect(ADMIT).toContain('o_bank := public.fn_diamond_game_promo_lock(o_host, o_kind);');
-    const lock = body(host.sql, 'fn_diamond_game_promo_lock');
-    expect(lock).toContain(
-      'SELECT COALESCE(w.promo_wallet, 0) INTO v_promo FROM public.union_wallets w'
-    );
-    expect(lock).toContain('SELECT COALESCE(c.promo_balance, 0) INTO v_promo FROM public.clubs c');
+  it('the money a payout comes out of is COVER: the promo wallet, then the bank', () => {
+    expect(ADMIT).toContain('FROM public.fn_diamond_game_cover_lock(o_host, o_kind) c;');
+    const lock = body(bank.sql, 'fn_diamond_game_cover_lock');
+    expect(lock).toContain('SELECT COALESCE(w.promo_wallet, 0), COALESCE(w.chip_balance, 0)');
+    expect(lock).toContain('SELECT COALESCE(c.promo_balance, 0), COALESCE(c.chip_treasury, 0)');
     expect(lock).toContain('FOR UPDATE');
+    expect(lock).toContain('o_cover := o_promo + o_bank;');
   });
 });
 
@@ -297,29 +305,60 @@ describe('crash returns exactly 80 percent at every cash-out target', () => {
 });
 
 describe("every payout is the platform's own door, and nobody is filtered", () => {
-  it('a payout is one journal row, PROMO WALLET to player, under its own category', () => {
-    expect(PRIZE).toContain("DECLARE v_category text := p_game || '_prize';");
-    // The PROMO side writes the leg, so the counterparty it declares is the
-    // player it is paying, and the member side is the one told to stand down.
+  it('a payout leaves through the one payer: promo wallet first, bank behind', () => {
+    // The prize leg keeps its signature so plinko and crash call it unchanged;
+    // what moved is where the chips come from.
+    expect(PRIZE).toContain('SELECT * INTO v_pay FROM public.fn_diamond_game_pay_chips(');
     expect(PRIZE).toContain(
-      "PERFORM public.fn_ca_declare_ledger(v_category, 'player_wallet', p_user, NULL, p_key, ARRAY['club_members']);"
+      "p_game || '_prize', p_host, p_kind, p_club, p_user, p_amount, p_key, p_note, p_meta);"
     );
-    // The wallet it actually spends, on both host shapes, and never the bank.
-    expect(PRIZE).toContain(
-      'UPDATE public.union_wallets SET promo_wallet = COALESCE(promo_wallet, 0) - p_amount'
-    );
-    expect(PRIZE).toContain(
-      'UPDATE public.clubs SET promo_balance = COALESCE(promo_balance, 0) - p_amount'
-    );
+    expect(PRIZE).toContain('bank_after   := v_pay.cover_after;');
+    // It moves no wallet of its own any more.
+    expect(PRIZE).not.toContain('UPDATE public.union_wallets');
+    expect(PRIZE).not.toContain('UPDATE public.clubs');
     expect(PRIZE).not.toContain('chip_treasury');
-    expect(PRIZE).not.toContain('chip_balance = chip_balance -');
-    expect(PRIZE).toContain('the host promo wallet refused');
-    // The movement is journaled exactly once: the promo side writes the leg and
-    // the member side stands down, so there is no anonymous twin.
-    expect(PRIZE).toContain('the promo wallet moved but no prize leg was journaled');
-    expect(PRIZE).toContain("PERFORM set_config('app.ledger_autoskip_club_members', '', true);");
+
+    // And the payer draws the promo wallet down first, then the bank, one
+    // journal row per wallet, each from the side that actually paid.
+    expect(PAY).toContain('from_promo := LEAST(p_amount, v_lock.o_promo);');
+    expect(PAY).toContain('from_bank  := p_amount - from_promo;');
+    expect(PAY).toContain(
+      'UPDATE public.union_wallets SET promo_wallet = COALESCE(promo_wallet, 0) - from_promo'
+    );
+    expect(PAY).toContain(
+      'UPDATE public.clubs SET promo_balance = COALESCE(promo_balance, 0) - from_promo'
+    );
+    expect(PAY).toContain(
+      'UPDATE public.union_wallets SET chip_balance = COALESCE(chip_balance, 0) - from_bank'
+    );
+    expect(PAY).toContain(
+      'UPDATE public.clubs SET chip_treasury = COALESCE(chip_treasury, 0) - from_bank'
+    );
+    expect(PAY).toContain("p_key || ':bank'");
+    expect(PAY).toContain('the promo wallet moved but no leg was journaled');
+    expect(PAY).toContain('the host bank moved but no leg was journaled');
+    expect(PAY).toContain("PERFORM set_config('app.ledger_autoskip_club_members', '', true);");
     expect(words.sql).toContain("'plinko_prize'::text, 'crash_prize'::text");
     expect(words.sql).toMatch(/NOT VALID;/);
+  });
+
+  it('the round is measured against COVER, and the two halves are reported', () => {
+    // The signature lives above the body, so it is read off the migration.
+    expect(bank.sql).toContain('OUT o_bank numeric, OUT o_promo numeric, OUT o_bank_only numeric');
+    expect(ADMIT).toContain('SELECT c.o_promo, c.o_bank, c.o_cover');
+    expect(ADMIT).toContain('INTO o_promo, o_bank_only, o_bank');
+    expect(ADMIT).toContain('FROM public.fn_diamond_game_cover_lock(o_host, o_kind) c;');
+    // The promo wallet alone is never what a bet is judged against any more.
+    expect(ADMIT).not.toContain('fn_diamond_game_promo_lock');
+  });
+
+  it('nothing in these games moves a host wallet except the payer', () => {
+    expect(bank.sql).toContain(
+      'a diamond game still moves a host wallet itself instead of calling fn_diamond_game_pay_chips'
+    );
+    expect(bank.sql).toContain(
+      "'fn_wheel_spin_core', 'fn_plinko_drop', 'fn_crash_start', 'fn_crash_decide'"
+    );
   });
 
   it('never mentions is_horse: horses are players (CLAUDE.md 10.5)', () => {

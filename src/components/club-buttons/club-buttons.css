@@ -71,13 +71,15 @@
   filter: drop-shadow(0 1px 1px rgb(0 0 0 / 70%));
 }
 
-/* THE DIAMONDS-TO-CHIPS DOOR (Dan 2026-09-10). One shell, two places: the club
-   lobby, where it is the club's own door and stands on its own; and inside a
-   buy-in, rebuy or add-on modal, where it follows the balance row and needs
-   only the gap. Nothing is drawn here - the shell is painted - so this is
-   placement and nothing else. */
+/* THE DIAMONDS-TO-CHIPS DOOR (Dan 2026-09-10). One shell, three places: the
+   club lobby, where it is the club's own door and stands on its own; the
+   cashier, where a player arrives having run out; and inside a buy-in, rebuy or
+   add-on modal, where it follows the balance row and needs only the gap.
+   Nothing is drawn here - the shell is painted - so this is placement and
+   nothing else. */
 .diamonds-to-chips,
-.lobby-diamond-games {
+.lobby-diamond-games,
+.wallet-diamond-games {
   display: block;
   width: 100%;
 }
@@ -88,6 +90,11 @@
 
 .lobby-diamond-games {
   margin: 0.75rem 0;
+}
+
+.wallet-diamond-games {
+  margin: 0.75rem auto;
+  max-width: 520px;
 }
 
 .cb-action {

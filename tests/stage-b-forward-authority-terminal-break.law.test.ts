@@ -252,7 +252,7 @@ describe('the reserved Stage-B forward authority boundaries stay split', () => {
     ).toBe(2);
   });
 
-  it('requires the byte-authenticated 164655 live schema and a zero-player-data donor', () => {
+  it('requires the byte-authenticated 174349 live schema and a zero-player-data donor', () => {
     const currentLiveSources = [
       ['20260910034411', 'seat_proof_lock_generic_plan_lobby_policy_hashed_and_tick_in'],
       ['20260910034412', 'spin_draw_gate_reads_zero_as_undrawn_and_stamps_the_row'],
@@ -302,9 +302,17 @@ describe('the reserved Stage-B forward authority boundaries stay split', () => {
       ['20260910160841', 'the_break_window_refusal_names_its_rule_and_explains_list_migrations'],
       ['20260910161619', 'training_solver_bounded_canary_authority'],
       ['20260910164655', 'stage_b_break_window_bootstrap_compatibility'],
+      ['20260910170356', 'a_handoff_that_names_its_successor_is_not_an_incident'],
+      ['20260910170952', 'an_incident_closes_when_the_check_says_zero_not_when_the_clock_says_so'],
+      ['20260910171843', 'started_tournaments_resume_or_settle_instead_of_cancelling'],
+      ['20260910171857', 'a_refused_finishing_place_creates_no_debt'],
+      ['20260910171911', 'a_tournament_elimination_requires_a_finishing_rank'],
+      ['20260910171924', 'satellite_seats_count_once_and_keep_the_funded_prize'],
+      ['20260910173147', 'the_settlement_lane_is_per_tournament_for_rolling_authorities'],
+      ['20260910174349', 'the_bounty_sweep_takes_one_tournament_lane_per_call'],
     ] as const;
 
-    expect(currentLiveSources).toHaveLength(48);
+    expect(currentLiveSources).toHaveLength(56);
     for (const [version, name] of currentLiveSources) {
       expect(harness).toContain(version);
       expect(harness).toContain(name);
@@ -430,6 +438,54 @@ describe('the reserved Stage-B forward authority boundaries stay split', () => {
         27550,
         '4d613b7193b1d1d42950040a336f985c7843db6b095cd02c4d751d27d30c5ec6',
       ],
+      [
+        '20260910170356',
+        'a_handoff_that_names_its_successor_is_not_an_incident',
+        7686,
+        'bb1c283dc7951c74496e55121d3042d3282a885f96b0e16cbe980a3fc40217f0',
+      ],
+      [
+        '20260910170952',
+        'an_incident_closes_when_the_check_says_zero_not_when_the_clock_says_so',
+        6485,
+        'da17405bdf3ac7ca0c6d5516d0db829ad227f95495c3712864a8a2aad32c8f74',
+      ],
+      [
+        '20260910171843',
+        'started_tournaments_resume_or_settle_instead_of_cancelling',
+        4722,
+        '85e02d3f2350b4c1c7229ab2b58e789b3b8651869c0c3834a3318d7547b10bf6',
+      ],
+      [
+        '20260910171857',
+        'a_refused_finishing_place_creates_no_debt',
+        24703,
+        '69d77f9968d49008f7069fe63b618b802937338e439f631806f02dba0da1220d',
+      ],
+      [
+        '20260910171911',
+        'a_tournament_elimination_requires_a_finishing_rank',
+        10914,
+        'cba4981055d5dd9278d7a882e3b8f0d954cd8ffccb37b6426cf4964c32504b68',
+      ],
+      [
+        '20260910171924',
+        'satellite_seats_count_once_and_keep_the_funded_prize',
+        31628,
+        '9a00bc662f729d5a6db25c4f10a5ceeb45509b230e35f48252620fe9dcef3fc3',
+      ],
+      [
+        '20260910173147',
+        'the_settlement_lane_is_per_tournament_for_rolling_authorities',
+        49073,
+        'a3030346736b62b13ab33b2e524052c54ffe95ed008859d655cf0641455133b0',
+      ],
+      [
+        '20260910174349',
+        'the_bounty_sweep_takes_one_tournament_lane_per_call',
+        14494,
+        '0e209beadad2f8b52e8c72c0bd3559b6fe64fab9917bfb8ac6516a6297f66a17',
+      ],
     ] as const) {
       expect(harness).toContain(`('${version}','${name}',1,${bytes},`);
       expect(harness).toContain(sha256);
@@ -477,22 +533,70 @@ describe('the reserved Stage-B forward authority boundaries stay split', () => {
         27550,
         '4d613b7193b1d1d42950040a336f985c7843db6b095cd02c4d751d27d30c5ec6',
       ],
+      [
+        '20260910170356',
+        'a_handoff_that_names_its_successor_is_not_an_incident',
+        7686,
+        'bb1c283dc7951c74496e55121d3042d3282a885f96b0e16cbe980a3fc40217f0',
+      ],
+      [
+        '20260910170952',
+        'an_incident_closes_when_the_check_says_zero_not_when_the_clock_says_so',
+        6485,
+        'da17405bdf3ac7ca0c6d5516d0db829ad227f95495c3712864a8a2aad32c8f74',
+      ],
+      [
+        '20260910171843',
+        'started_tournaments_resume_or_settle_instead_of_cancelling',
+        4722,
+        '85e02d3f2350b4c1c7229ab2b58e789b3b8651869c0c3834a3318d7547b10bf6',
+      ],
+      [
+        '20260910171857',
+        'a_refused_finishing_place_creates_no_debt',
+        24703,
+        '69d77f9968d49008f7069fe63b618b802937338e439f631806f02dba0da1220d',
+      ],
+      [
+        '20260910171911',
+        'a_tournament_elimination_requires_a_finishing_rank',
+        10914,
+        'cba4981055d5dd9278d7a882e3b8f0d954cd8ffccb37b6426cf4964c32504b68',
+      ],
+      [
+        '20260910171924',
+        'satellite_seats_count_once_and_keep_the_funded_prize',
+        31628,
+        '9a00bc662f729d5a6db25c4f10a5ceeb45509b230e35f48252620fe9dcef3fc3',
+      ],
+      [
+        '20260910173147',
+        'the_settlement_lane_is_per_tournament_for_rolling_authorities',
+        49073,
+        'a3030346736b62b13ab33b2e524052c54ffe95ed008859d655cf0641455133b0',
+      ],
+      [
+        '20260910174349',
+        'the_bounty_sweep_takes_one_tournament_lane_per_call',
+        14494,
+        '0e209beadad2f8b52e8c72c0bd3559b6fe64fab9917bfb8ac6516a6297f66a17',
+      ],
     ] as const) {
       const source = migration(`${version}_${name}.sql`);
       expect(Buffer.byteLength(source), `${version} bytes`).toBe(bytes);
       expect(createHash('sha256').update(source).digest('hex'), `${version} SHA-256`).toBe(sha256);
     }
-    expect(harness).toContain("current_live_ledger_head='20260910164655'");
+    expect(harness).toContain("current_live_ledger_head='20260910174349'");
     expect(harness).toContain(
-      `if [[ "$anchor_receipts" != '48' || "$ledger_head" != "$current_live_ledger_head" ]]`
+      `if [[ "$anchor_receipts" != '56' || "$ledger_head" != "$current_live_ledger_head" ]]`
     );
     expect(harness).toContain(`if [[ "$exact_body_receipts" != '3' ]]`);
     expect(harness).toContain(`if [[ "$descriptor_receipts" != '2' ]]`);
     expect(harness).toContain(
-      `if [[ "$audited_tail_receipts" != '32' || "$audited_tail_statements" != '35' ]]`
+      `if [[ "$audited_tail_receipts" != '40' || "$audited_tail_statements" != '43' ]]`
     );
     expect(harness).toContain(`if [[ "$player_id_functions_exact" != '2' ]]`);
-    expect(harness).toContain(`if [[ "$tail_functions_exact" != '9' ]]`);
+    expect(harness).toContain(`if [[ "$tail_functions_exact" != '14' ]]`);
     expect(harness).toContain("'public.fn_settle_tournament_rake(uuid,text)'");
     expect(harness).toContain('657781a399203068a1a4888354757878');
     expect(harness).toContain('be08a61e1a867519048c4692b41ab1fd');
@@ -706,11 +810,11 @@ describe('the reserved Stage-B forward authority boundaries stay split', () => {
     expect(harness).toContain('STAGE_B_125453_PHASE3_POSTIMAGE_OK');
   });
 
-  it('authenticates the complete 164655 live tail at both contraction boundaries', () => {
-    const guard = dollarBlock(contraction, 'assert_current_live_tail_164655');
-    const call = 'SELECT pg_temp.assert_stage_b_current_live_tail_164655_postimage();';
+  it('authenticates the complete 174349 live tail at both contraction boundaries', () => {
+    const guard = dollarBlock(contraction, 'assert_current_live_tail_174349');
+    const call = 'SELECT pg_temp.assert_stage_b_current_live_tail_174349_postimage();';
     const definition = contraction.indexOf(
-      'CREATE OR REPLACE FUNCTION pg_temp.assert_stage_b_current_live_tail_164655_postimage()'
+      'CREATE OR REPLACE FUNCTION pg_temp.assert_stage_b_current_live_tail_174349_postimage()'
     );
     const firstCall = contraction.indexOf(call);
     const finalCall = contraction.lastIndexOf(call);
@@ -721,13 +825,13 @@ describe('the reserved Stage-B forward authority boundaries stay split', () => {
     expect(
       occurrences(
         contraction,
-        /CREATE OR REPLACE FUNCTION pg_temp\.assert_stage_b_current_live_tail_164655_postimage\(\)/g
+        /CREATE OR REPLACE FUNCTION pg_temp\.assert_stage_b_current_live_tail_174349_postimage\(\)/g
       )
     ).toBe(1);
     expect(
       occurrences(
         contraction,
-        /^SELECT pg_temp\.assert_stage_b_current_live_tail_164655_postimage\(\);$/gm
+        /^SELECT pg_temp\.assert_stage_b_current_live_tail_174349_postimage\(\);$/gm
       )
     ).toBe(2);
     expect(definition).toBeGreaterThanOrEqual(0);
@@ -861,12 +965,60 @@ describe('the reserved Stage-B forward authority boundaries stay split', () => {
         27550,
         '4d613b7193b1d1d42950040a336f985c7843db6b095cd02c4d751d27d30c5ec6',
       ],
+      [
+        '20260910170356',
+        'a_handoff_that_names_its_successor_is_not_an_incident',
+        7686,
+        'bb1c283dc7951c74496e55121d3042d3282a885f96b0e16cbe980a3fc40217f0',
+      ],
+      [
+        '20260910170952',
+        'an_incident_closes_when_the_check_says_zero_not_when_the_clock_says_so',
+        6485,
+        'da17405bdf3ac7ca0c6d5516d0db829ad227f95495c3712864a8a2aad32c8f74',
+      ],
+      [
+        '20260910171843',
+        'started_tournaments_resume_or_settle_instead_of_cancelling',
+        4722,
+        '85e02d3f2350b4c1c7229ab2b58e789b3b8651869c0c3834a3318d7547b10bf6',
+      ],
+      [
+        '20260910171857',
+        'a_refused_finishing_place_creates_no_debt',
+        24703,
+        '69d77f9968d49008f7069fe63b618b802937338e439f631806f02dba0da1220d',
+      ],
+      [
+        '20260910171911',
+        'a_tournament_elimination_requires_a_finishing_rank',
+        10914,
+        'cba4981055d5dd9278d7a882e3b8f0d954cd8ffccb37b6426cf4964c32504b68',
+      ],
+      [
+        '20260910171924',
+        'satellite_seats_count_once_and_keep_the_funded_prize',
+        31628,
+        '9a00bc662f729d5a6db25c4f10a5ceeb45509b230e35f48252620fe9dcef3fc3',
+      ],
+      [
+        '20260910173147',
+        'the_settlement_lane_is_per_tournament_for_rolling_authorities',
+        49073,
+        'a3030346736b62b13ab33b2e524052c54ffe95ed008859d655cf0641455133b0',
+      ],
+      [
+        '20260910174349',
+        'the_bounty_sweep_takes_one_tournament_lane_per_call',
+        14494,
+        '0e209beadad2f8b52e8c72c0bd3559b6fe64fab9917bfb8ac6516a6297f66a17',
+      ],
     ] as const) {
       expect(guard).toContain(`('${version}','${name}',${bytes},`);
       expect(guard).toContain(sha256);
     }
-    expect(guard).toContain("IS DISTINCT FROM '20260910164655' THEN");
-    expect(guard).toContain('all twenty byte-exact 130319-164655 live-tail migrations');
+    expect(guard).toContain("IS DISTINCT FROM '20260910174349' THEN");
+    expect(guard).toContain('all twenty-eight byte-exact 130319-174349 live-tail migrations');
     expect(guard).toContain('cardinality(m.statements) IS DISTINCT FROM 1');
     expect(guard).toContain('octet_length(m.statements[1]) IS DISTINCT FROM');
     expect(guard).toContain("convert_to(m.statements[1],'UTF8'),'sha256'");
@@ -942,16 +1094,160 @@ describe('the reserved Stage-B forward authority boundaries stay split', () => {
         '8cbd9ea1c1dbc24c24be02fb9d447b20',
         'ac9d5cdc943e88aa0c0bb6cd2410fbdc',
       ],
+      [
+        'public.fn_ca_financial_alert_to_incident()',
+        '5f01207b21a3e2353f6c47291162f22a',
+        '2479f66166ce003c48896d1aab55487b',
+      ],
+      [
+        'public.fn_ca_close_incidents_the_check_no_longer_finds()',
+        '0c1a9e2e63771d7dfbf2c305b057b0f2',
+        '8e2005a0cfa79cf14e396ceb799df926',
+      ],
+      [
+        'public.fn_ca_escrow_on_rake_record()',
+        '0dc096bb5615758ed945365a45997c8c',
+        '3e628d6a57a93eeb61d494ee33f989a3',
+      ],
+      [
+        'public.fn_ca_tournament_escrow(uuid)',
+        '68d99bdb6dc9a46906336b9ed6987e97',
+        '56663389f8348d2ab35a54460c0b7632',
+      ],
+      [
+        'public.fn_ca_lock_settlement_lane_for_tournament(uuid,uuid)',
+        '9877846ffabee004690e6b24a3ddcee2',
+        '3acb4c1d763181905cf5b64287f8f28f',
+      ],
+      [
+        'public.fn_ca_open_tournament_seat_exit_authority(uuid,text,uuid)',
+        '1b03285a00dc01df0f177e25ebe57147',
+        '0f491a45693fcf3182719647c5ed7aee',
+      ],
+      [
+        'public.fn_ca_release_unseatable_registrant_at_launch(uuid,uuid,uuid,text)',
+        'cf10ddacc96d73a7e8adb6785ca1d331',
+        '4170a9f0298fb2e1e97ab7be5e2ec048',
+      ],
+      [
+        'public.fn_lock_daily_mission_user(uuid)',
+        '0e9d2905374930bda4529a8febc6eff6',
+        '66c5a8c8da7471773a58dd7c346c9df0',
+      ],
+      [
+        'public.fn_mystery_bounty_pay(uuid)',
+        'd666baf91b06f9305191fcbc0b9c7aee',
+        '8f16f673aeaafac711da36b0df9466a2',
+      ],
+      [
+        'public.fn_resolve_committed_tournament_seat_move(uuid,uuid,uuid,uuid,uuid,integer,text)',
+        '43c53a2b376cb28161584db487bfd17c',
+        'f00ad0e9a08496d96f6375cbf6f30678',
+      ],
+      [
+        'public.fn_satellite_target_player_provenance_is_immutable()',
+        '68f98d4ec2cb186aae11787f1666cffc',
+        '266a6b06f5cc44bc953ca4c31933d7db',
+      ],
+      [
+        'public.fn_tournament_live_seat_acquisition_requires_authority()',
+        '82f74aa99f0bbdeace392401c25e0ba1',
+        '5a60bdd761aaaaad4b3bf982a3c50f6e',
+      ],
+      [
+        'public.fn_tournament_payouts_are_append_only()',
+        'f3fca4d1245a05dcc03d98a93d0a641a',
+        '6cfe150a2a360d878c9c389499e7b196',
+      ],
+      [
+        'public.fn_sweep_pending_tournament_bounties(uuid,integer)',
+        '30ca1181317d0f76d7a549ceab37b493',
+        '9a16c59eb58695facd75a2d7406b7c28',
+      ],
     ] as const) {
       expect(guard).toContain(identity);
       expect(guard).toContain(definitionMd5);
       expect(guard).toContain(sourceMd5);
     }
-    expect(guard).toContain('IF v_count<>14 OR v_bad<>0 THEN');
+    const compactGuard = guard.replace(/\s+/g, '');
+    for (const exactCatalogRow of [
+      `('public.fn_ca_escrow_on_rake_record()',
+        '0dc096bb5615758ed945365a45997c8c','3e628d6a57a93eeb61d494ee33f989a3',
+        'plpgsql',true,'v','u',false,false,'f',false,'trigger',0,0,
+        ARRAY['search_path=public']::text[],
+        '{postgres=X/postgres,service_role=X/postgres}')`,
+      `('public.fn_ca_tournament_escrow(uuid)',
+        '68d99bdb6dc9a46906336b9ed6987e97','56663389f8348d2ab35a54460c0b7632',
+        'sql',true,'s','u',false,false,'f',true,'record',1,0,
+        ARRAY['search_path=public']::text[],
+        '{postgres=X/postgres,service_role=X/postgres}')`,
+      `('public.fn_ca_lock_settlement_lane_for_tournament(uuid,uuid)',
+        '9877846ffabee004690e6b24a3ddcee2','3acb4c1d763181905cf5b64287f8f28f',
+        'plpgsql',false,'v','u',false,false,'f',false,'void',2,1,
+        ARRAY['search_path=public, pg_temp']::text[],
+        '{postgres=X/postgres,service_role=X/postgres}')`,
+      `('public.fn_ca_open_tournament_seat_exit_authority(uuid,text,uuid)',
+        '1b03285a00dc01df0f177e25ebe57147','0f491a45693fcf3182719647c5ed7aee',
+        'plpgsql',true,'v','u',false,false,'f',false,'uuid',3,1,
+        ARRAY['search_path=public, pg_temp']::text[],'{postgres=X/postgres}')`,
+      `('public.fn_ca_release_unseatable_registrant_at_launch(uuid,uuid,uuid,text)',
+        'cf10ddacc96d73a7e8adb6785ca1d331','4170a9f0298fb2e1e97ab7be5e2ec048',
+        'plpgsql',true,'v','u',false,false,'f',false,'jsonb',4,1,
+        ARRAY['search_path=public, pg_temp','statement_timeout=30s']::text[],
+        '{postgres=X/postgres,service_role=X/postgres}')`,
+      `('public.fn_lock_daily_mission_user(uuid)',
+        '0e9d2905374930bda4529a8febc6eff6','66c5a8c8da7471773a58dd7c346c9df0',
+        'plpgsql',true,'v','u',false,false,'f',false,'void',1,0,
+        ARRAY['search_path=pg_catalog, public, pg_temp']::text[],
+        '{postgres=X/postgres,service_role=X/postgres}')`,
+      `('public.fn_mystery_bounty_pay(uuid)',
+        'd666baf91b06f9305191fcbc0b9c7aee','8f16f673aeaafac711da36b0df9466a2',
+        'plpgsql',true,'v','u',false,false,'f',false,'jsonb',1,0,
+        ARRAY['search_path=public, pg_temp']::text[],
+        '{postgres=X/postgres,service_role=X/postgres}')`,
+      `('public.fn_resolve_committed_tournament_seat_move(uuid,uuid,uuid,uuid,uuid,integer,text)',
+        '43c53a2b376cb28161584db487bfd17c','f00ad0e9a08496d96f6375cbf6f30678',
+        'plpgsql',true,'v','u',false,false,'f',false,'jsonb',7,0,
+        ARRAY['search_path=public, pg_temp','statement_timeout=30s']::text[],
+        '{postgres=X/postgres,service_role=X/postgres}')`,
+      `('public.fn_satellite_target_player_provenance_is_immutable()',
+        '68f98d4ec2cb186aae11787f1666cffc','266a6b06f5cc44bc953ca4c31933d7db',
+        'plpgsql',true,'v','u',false,false,'f',false,'trigger',0,0,
+        ARRAY['search_path=public']::text[],'{postgres=X/postgres}')`,
+      `('public.fn_tournament_live_seat_acquisition_requires_authority()',
+        '82f74aa99f0bbdeace392401c25e0ba1','5a60bdd761aaaaad4b3bf982a3c50f6e',
+        'plpgsql',true,'v','u',false,false,'f',false,'trigger',0,0,
+        ARRAY['search_path=public, pg_temp']::text[],'{postgres=X/postgres}')`,
+      `('public.fn_tournament_payouts_are_append_only()',
+        'f3fca4d1245a05dcc03d98a93d0a641a','6cfe150a2a360d878c9c389499e7b196',
+        'plpgsql',false,'v','u',false,false,'f',false,'trigger',0,0,
+        ARRAY['search_path=public']::text[],
+        '{postgres=X/postgres,service_role=X/postgres}')`,
+      `('public.fn_sweep_pending_tournament_bounties(uuid,integer)',
+        '30ca1181317d0f76d7a549ceab37b493','9a16c59eb58695facd75a2d7406b7c28',
+        'plpgsql',true,'v','u',false,false,'f',false,'jsonb',2,2,
+        ARRAY['search_path=public, pg_temp']::text[],
+        '{postgres=X/postgres,service_role=X/postgres}')`,
+    ] as const) {
+      expect(compactGuard).toContain(exactCatalogRow.replace(/\s+/g, ''));
+    }
+    expect(guard).toContain('IF v_count<>28 OR v_bad<>0 THEN');
     expect(guard).toContain(
       'md5(pg_get_functiondef(p.oid)) IS DISTINCT FROM\n                   expected.definition_md5'
     );
     expect(guard).toContain('md5(p.prosrc) IS DISTINCT FROM expected.source_md5');
+    expect(guard).toContain("p.proowner IS DISTINCT FROM 'postgres'::regrole");
+    expect(guard).toContain('l.lanname IS DISTINCT FROM expected.language_name');
+    expect(guard).toContain('p.prosecdef IS DISTINCT FROM expected.security_definer');
+    expect(guard).toContain('p.provolatile IS DISTINCT FROM expected.volatility::"char"');
+    expect(guard).toContain('p.proparallel IS DISTINCT FROM expected.parallel_safety::"char"');
+    expect(guard).toContain('p.proisstrict IS DISTINCT FROM expected.is_strict');
+    expect(guard).toContain('p.proleakproof IS DISTINCT FROM expected.is_leakproof');
+    expect(guard).toContain('p.prokind IS DISTINCT FROM expected.kind::"char"');
+    expect(guard).toContain('p.proretset IS DISTINCT FROM expected.returns_set');
+    expect(guard).toContain('p.prorettype IS DISTINCT FROM to_regtype(expected.return_type)');
+    expect(guard).toContain('p.pronargs IS DISTINCT FROM expected.nargs');
+    expect(guard).toContain('p.pronargdefaults IS DISTINCT FROM expected.argdefaults');
     expect(guard).toContain('p.proconfig IS DISTINCT FROM expected.configuration');
     expect(guard).toContain('p.proacl::text IS DISTINCT FROM expected.acl_text');
     expect(guard).toContain("ARRAY['search_path=public, pg_temp','statement_timeout=30s']::text[]");
@@ -1022,21 +1318,167 @@ describe('the reserved Stage-B forward authority boundaries stay split', () => {
       '06a711ff9e0e0d5f33cb5bb891d6257c',
       'c1c67e4ef2138481fd9176346e53b332',
       'b434a15ef432e8562fa6c6df4f0f3cec',
+      'c7350e02f70dcd0a95b3325bcbdab924',
+      'bf08da3e12849cf1cf33226441d9e116',
+      'd33542ca1293e3c444ae151d9659e28a',
+      '9ec06cfc7cbf46abb8159a5ce13fb59e',
+      '12f229da39eeba946d4230155f854b0d',
     ]) {
       expect(guard).toContain(triggerHash);
     }
+    for (const exactTriggerRow of [
+      `('public.fn_ca_escrow_on_rake_record()',
+        'public.rake_records','zz_ca_escrow_rake_record',
+        'bf08da3e12849cf1cf33226441d9e116',5,'',true)`,
+      `('public.fn_tournament_live_seat_acquisition_requires_authority()',
+        'public.table_seats','a0_tournament_live_seat_root_guard',
+        'd33542ca1293e3c444ae151d9659e28a',23,'2 4 3 13',false)`,
+      `('public.fn_satellite_target_player_provenance_is_immutable()',
+        'public.tournament_players','satellite_target_player_provenance_is_immutable',
+        '9ec06cfc7cbf46abb8159a5ce13fb59e',31,'1 2 3 21 25',false)`,
+      `('public.fn_tournament_payouts_are_append_only()',
+        'public.tournament_payouts','trg_tournament_payouts_append_only',
+        '12f229da39eeba946d4230155f854b0d',27,'',false)`,
+    ] as const) {
+      expect(compactGuard).toContain(exactTriggerRow.replace(/\s+/g, ''));
+    }
     expect(guard).toContain('md5(pg_get_triggerdef(tg.oid,true))');
-    expect(guard).toContain('IF v_count<>11 OR v_bad<>0 OR (');
+    expect(guard).toContain('IF v_count<>16 OR v_bad<>0 OR (');
     expect(guard).toContain('tg.tgfoid=ANY(ARRAY[');
     expect(guard).toContain('tg.tgenabled IS DISTINCT FROM');
     expect(guard).toContain('tg.tgisinternal IS DISTINCT FROM false');
+    expect(guard).toContain('tg.tgdeferrable IS DISTINCT FROM false');
+    expect(guard).toContain('tg.tginitdeferred IS DISTINCT FROM false');
     expect(guard).toContain('tg.tgtype IS DISTINCT FROM expected.trigger_type');
-    expect(guard).toContain("tg.tgattr::text IS DISTINCT FROM ''");
-    expect(guard).toContain('tg.tgqual IS NOT NULL');
+    expect(guard).toContain('tg.tgattr::text IS DISTINCT FROM expected.attribute_numbers');
+    expect(guard).toContain(
+      '(tg.tgqual IS NOT NULL) IS DISTINCT FROM\n                   expected.has_qualifier'
+    );
     expect(guard).toContain('tg.tgnargs IS DISTINCT FROM 0');
-    expect(guard).toContain(')<>11 THEN');
+    expect(guard).toContain(')<>16 THEN');
     expect(guard).not.toContain('ca_drift_incidents');
     expect(guard).not.toContain('resolved_at');
+
+    const mutablePreimage = dollarBlock(
+      contraction,
+      'require_stage_b_171924_mutable_function_preimage'
+    );
+    const mutableCarry = dollarBlock(contraction, 'verify_stage_b_171924_mutable_sources_carried');
+    expect(contraction.indexOf('$require_stage_b_171924_mutable_function_preimage$')).toBeLessThan(
+      durableMutation
+    );
+    expect(contraction.indexOf('$verify_stage_b_171924_mutable_sources_carried$')).toBeGreaterThan(
+      durableMutation
+    );
+    expect(contraction.indexOf('$verify_stage_b_171924_mutable_sources_carried$')).toBeLessThan(
+      finalCall
+    );
+    for (const exactMutableRow of [
+      `('public.atomic_cancel_tournament(uuid,uuid)',
+        'bdfeeafe38b7691305f02c741faa1d12','16ea7acbbf76613a0a1193dff18f1330',
+        33038,'c2e469b5894407c7a806b30177bf0062654effcfddc378544e038426b6691dc6',
+        32778,'30288544fd40e61f902fd6f363368e05e220cbef06ab10edba9ea1e387709f2c',
+        2,0,ARRAY['search_path=public, extensions, pg_temp',
+                  'statement_timeout=120s']::text[],
+        '{postgres=X/postgres,service_role=X/postgres}')`,
+      `('public.fn_settle_tournament_obligation_before_atomic_batch_gate(uuid,text,integer,uuid,numeric,text,text,uuid)',
+        '5a3aa8bd1a48d18b793e39c09b645b41','ebabbaf0456d80335aaa2e04471d0ab6',
+        21743,'531dbe7ba420ccfcff790ee90b0452e74f1a0232dbdd7535c9376d6696ee58cf',
+        21367,'7f51ae874957250d6e2c5df40573170e6deaafe8f1d39b5417a41587c419a1ad',
+        8,2,ARRAY['search_path=public']::text[],'{postgres=X/postgres}')`,
+      `('public.fn_eliminate_tournament_player_atomic(uuid,uuid,integer,numeric,numeric)',
+        'eefbf339094c8bc7420ef226132ae453','b4937067d9bf337e1466095b9e1d5424',
+        8145,'51c2f60bf067ca670e00631089e0268ecf6cb6f7c64a0401b710c200b617293d',
+        7848,'b4daec2a24918030b2bef95fab45d1518bfc57cfae8dfbe9a9d948dda369c321',
+        5,1,ARRAY['search_path=public, pg_temp']::text[],
+        '{postgres=X/postgres,service_role=X/postgres}')`,
+      `('public.fn_award_satellite_seat(uuid,uuid,uuid,text,integer)',
+        '208fe48a2697811d14e55a64271083a6','2c21c56c6a9d4a2f8ee79082bd4fef57',
+        13012,'3346c472a44a350bb0a8a88fc4b9e834be8b33bdf01ea57c7bc37576ae9b0bab',
+        12717,'b10fdda12351a80c3775a28d5667a4eee9ac91b281ee3925793c44b4122d54dc',
+        5,2,ARRAY['search_path=public']::text[],
+        '{postgres=X/postgres,service_role=X/postgres}')`,
+    ] as const) {
+      expect(mutablePreimage.replace(/\s+/g, '')).toContain(exactMutableRow.replace(/\s+/g, ''));
+    }
+    expect(mutablePreimage).toContain('IF v_count<>4 OR v_bad<>0 THEN');
+    expect(mutablePreimage).toContain('octet_length(pg_get_functiondef(p.oid))');
+    expect(mutablePreimage).toContain("convert_to(pg_get_functiondef(p.oid),'UTF8'),'sha256'");
+    expect(mutablePreimage).toContain('octet_length(p.prosrc)<>expected.source_bytes');
+    expect(mutablePreimage).toContain("convert_to(p.prosrc,'UTF8'),'sha256'");
+    for (const [identity, sourceMd5, sourceBytes] of [
+      [
+        'public.atomic_cancel_tournament_pre_seat_guard(uuid,uuid)',
+        '16ea7acbbf76613a0a1193dff18f1330',
+        32778,
+      ],
+      [
+        'public.fn_eliminate_tournament_player_atomic_pre_seat_guard(uuid,uuid,integer,numeric,numeric)',
+        'b4937067d9bf337e1466095b9e1d5424',
+        7848,
+      ],
+      [
+        'public.fn_settle_tournament_obligation_before_atomic_batch_gate(uuid,text,integer,uuid,numeric,text,text,uuid)',
+        'ebabbaf0456d80335aaa2e04471d0ab6',
+        21367,
+      ],
+      [
+        'public.fn_award_satellite_seat(uuid,uuid,uuid,text,integer)',
+        '2c21c56c6a9d4a2f8ee79082bd4fef57',
+        12717,
+      ],
+    ] as const) {
+      expect(mutableCarry).toContain(identity);
+      expect(mutableCarry).toContain(`md5(p.prosrc)='${sourceMd5}'`);
+      expect(mutableCarry).toContain(`octet_length(p.prosrc)=${sourceBytes}`);
+    }
+
+    const rollingLaneMigration = migration(
+      '20260910173147_the_settlement_lane_is_per_tournament_for_rolling_authorities.sql'
+    );
+    const rollingLane = functionBody(
+      rollingLaneMigration,
+      'fn_ca_lock_settlement_lane_for_tournament'
+    );
+    const seatExit = functionBody(contraction, 'fn_ca_open_tournament_seat_exit_authority');
+    const moveResolver = functionBody(contraction, 'fn_resolve_committed_tournament_seat_move');
+    expect(rollingLane).toContain('PERFORM pg_advisory_xact_lock_shared(');
+    expect(rollingLane).toContain("hashtextextended('ca:tournament-terminal-settlement:v1', 0)");
+    expect(rollingLane).toContain(
+      "hashtextextended('ca:tournament-terminal-settlement:v1:' || v_tournament_id::text, 0)"
+    );
+    expect(
+      occurrences(seatExit, /fn_ca_lock_settlement_lane_for_tournament\(p_tournament_id\)/g)
+    ).toBe(1);
+    expect(seatExit).not.toContain('fn_ca_lock_settlement_lane_global');
+    expect(occurrences(moveResolver, /PERFORM pg_advisory_xact_lock_shared\(/g)).toBe(2);
+    expect(moveResolver).toContain("hashtextextended('ca:tournament-terminal-settlement:v1',0)");
+    expect(moveResolver).toContain(
+      "hashtextextended('ca:tournament-terminal-settlement:v1:'||p_tournament_id::text,0)"
+    );
+    expect(moveResolver).not.toContain('fn_ca_lock_settlement_lane_for_tournament');
+
+    const finalPostimage = dollarBlock(contraction, 'verify_current_postimage_contraction');
+    expect(finalPostimage).toContain('3acb4c1d763181905cf5b64287f8f28f');
+    expect(finalPostimage).not.toContain('2bc939035496d764ff9d6c14b52fa1e7');
+    expect(finalPostimage).toMatch(
+      /AND p\.prosrc NOT LIKE\s+'%p_operation IN \(''cancel'',''satellite_finish'',''terminal_finish''\)%'/
+    );
+    expect(finalPostimage).not.toContain('mixed tournament seat-exit lane dispatch drifted');
+    expect(finalPostimage).toContain(
+      'public.fn_resolve_committed_tournament_seat_move(uuid,uuid,uuid,uuid,uuid,integer,text)'
+    );
+    expect(finalPostimage).toContain('pg_advisory_xact_lock_shared');
+
+    const bountySweep = functionBody(
+      migration('20260910174349_the_bounty_sweep_takes_one_tournament_lane_per_call.sql'),
+      'fn_sweep_pending_tournament_bounties'
+    );
+    expect(occurrences(bountySweep, /fn_ca_lock_settlement_lane_for_tournament\(v_scope\)/g)).toBe(
+      1
+    );
+    expect(bountySweep).toContain('AND bo.tournament_id = v_scope');
+    expect(bountySweep).not.toContain('fn_ca_lock_settlement_lane_for_tournament(p_tournament_id)');
   });
 
   it('makes each finalized behavioral rehearsal contract part of the default run', () => {

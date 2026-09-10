@@ -7,7 +7,7 @@ archive_dir="$repo_dir/supabase/retired-unapplied"
 manifest="$archive_dir/MANIFEST.sha256"
 resolver="$repo_dir/scripts/ops/lib/resolve-staged-or-promoted-migration.sh"
 diamond_fixture="$repo_dir/scripts/dev/fixtures/stage-b-diamond-accepted-hand-current-schema.sql"
-current_live_ledger_head='20260910164655'
+current_live_ledger_head='20260910174349'
 seat_move_hotfix_statement_sha256='b3f1bb62152627444b33c82b806c00ba3587aeebbe3d13800faf69fae7809ea2'
 manager_request_authority_statement_sha256='2cbcab5f263e8ca02b16f6c47ebbd7f6d47eb783d81c5939133c1e39b5d306f4'
 busy_manager_statement_sha256='2e95299dd7693a09ee310a4086b2dcdf16f0f942582007bdede0c4c81024e07d'
@@ -654,7 +654,15 @@ WITH expected_anchors(version,name) AS (
     ('20260910160413','a_finished_event_holds_no_pending_bust'),
     ('20260910160841','the_break_window_refusal_names_its_rule_and_explains_list_migrations'),
     ('20260910161619','training_solver_bounded_canary_authority'),
-    ('20260910164655','stage_b_break_window_bootstrap_compatibility')
+    ('20260910164655','stage_b_break_window_bootstrap_compatibility'),
+    ('20260910170356','a_handoff_that_names_its_successor_is_not_an_incident'),
+    ('20260910170952','an_incident_closes_when_the_check_says_zero_not_when_the_clock_says_so'),
+    ('20260910171843','started_tournaments_resume_or_settle_instead_of_cancelling'),
+    ('20260910171857','a_refused_finishing_place_creates_no_debt'),
+    ('20260910171911','a_tournament_elimination_requires_a_finishing_rank'),
+    ('20260910171924','satellite_seats_count_once_and_keep_the_funded_prize'),
+    ('20260910173147','the_settlement_lane_is_per_tournament_for_rolling_authorities'),
+    ('20260910174349','the_bounty_sweep_takes_one_tournament_lane_per_call')
 ), exact_body_rows(version,name,statement_sha256) AS (
   VALUES
     ('20260910051447','the_seat_move_door_the_engine_calls_exists',
@@ -702,7 +710,15 @@ WITH expected_anchors(version,name) AS (
     ('20260910160413','a_finished_event_holds_no_pending_bust',1),
     ('20260910160841','the_break_window_refusal_names_its_rule_and_explains_list_migrations',1),
     ('20260910161619','training_solver_bounded_canary_authority',1),
-    ('20260910164655','stage_b_break_window_bootstrap_compatibility',1)
+    ('20260910164655','stage_b_break_window_bootstrap_compatibility',1),
+    ('20260910170356','a_handoff_that_names_its_successor_is_not_an_incident',1),
+    ('20260910170952','an_incident_closes_when_the_check_says_zero_not_when_the_clock_says_so',1),
+    ('20260910171843','started_tournaments_resume_or_settle_instead_of_cancelling',1),
+    ('20260910171857','a_refused_finishing_place_creates_no_debt',1),
+    ('20260910171911','a_tournament_elimination_requires_a_finishing_rank',1),
+    ('20260910171924','satellite_seats_count_once_and_keep_the_funded_prize',1),
+    ('20260910173147','the_settlement_lane_is_per_tournament_for_rolling_authorities',1),
+    ('20260910174349','the_bounty_sweep_takes_one_tournament_lane_per_call',1)
 ), audited_tail_statements(version,name,ordinal,statement_bytes,statement_sha256) AS (
   VALUES
     ('20260910072322','the_knockout_door_owns_every_bust_a_hand_took',1,13334,
@@ -774,7 +790,23 @@ WITH expected_anchors(version,name) AS (
     ('20260910161619','training_solver_bounded_canary_authority',1,54632,
      'f94a331102a359f2ffa8625f07aa2c0c6ba67191833c56aaeede7a0baab74653'),
     ('20260910164655','stage_b_break_window_bootstrap_compatibility',1,27550,
-     '4d613b7193b1d1d42950040a336f985c7843db6b095cd02c4d751d27d30c5ec6')
+     '4d613b7193b1d1d42950040a336f985c7843db6b095cd02c4d751d27d30c5ec6'),
+    ('20260910170356','a_handoff_that_names_its_successor_is_not_an_incident',1,7686,
+     'bb1c283dc7951c74496e55121d3042d3282a885f96b0e16cbe980a3fc40217f0'),
+    ('20260910170952','an_incident_closes_when_the_check_says_zero_not_when_the_clock_says_so',1,6485,
+     'da17405bdf3ac7ca0c6d5516d0db829ad227f95495c3712864a8a2aad32c8f74'),
+    ('20260910171843','started_tournaments_resume_or_settle_instead_of_cancelling',1,4722,
+     '85e02d3f2350b4c1c7229ab2b58e789b3b8651869c0c3834a3318d7547b10bf6'),
+    ('20260910171857','a_refused_finishing_place_creates_no_debt',1,24703,
+     '69d77f9968d49008f7069fe63b618b802937338e439f631806f02dba0da1220d'),
+    ('20260910171911','a_tournament_elimination_requires_a_finishing_rank',1,10914,
+     'cba4981055d5dd9278d7a882e3b8f0d954cd8ffccb37b6426cf4964c32504b68'),
+    ('20260910171924','satellite_seats_count_once_and_keep_the_funded_prize',1,31628,
+     '9a00bc662f729d5a6db25c4f10a5ceeb45509b230e35f48252620fe9dcef3fc3'),
+    ('20260910173147','the_settlement_lane_is_per_tournament_for_rolling_authorities',1,49073,
+     'a3030346736b62b13ab33b2e524052c54ffe95ed008859d655cf0641455133b0'),
+    ('20260910174349','the_bounty_sweep_takes_one_tournament_lane_per_call',1,14494,
+     '0e209beadad2f8b52e8c72c0bd3559b6fe64fab9917bfb8ac6516a6297f66a17')
 ), journal_trigger_bindings(table_name,trigger_name,trigger_type,triggerdef_md5) AS (
   VALUES
     ('agent_commissions','trg_ca_append_only',27,
@@ -1208,6 +1240,103 @@ SELECT current_database(),
            AND p.proconfig=ARRAY['search_path=public']::text[]
            AND p.proacl::text=
              '{postgres=X/postgres,service_role=X/postgres}'
+         ) OR (
+           p.oid=to_regprocedure(
+             'public.fn_ca_financial_alert_to_incident()')
+           AND md5(pg_get_functiondef(p.oid))=
+               '5f01207b21a3e2353f6c47291162f22a'
+           AND md5(p.prosrc)='2479f66166ce003c48896d1aab55487b'
+           AND octet_length(pg_get_functiondef(p.oid))=5978
+           AND encode(sha256(convert_to(
+                 pg_get_functiondef(p.oid),'UTF8')),'hex')=
+               'b21508438cf6698498847195161112e8cab7169d69fcf0b793c53bba4c0f53e3'
+           AND p.proowner='postgres'::regrole AND l.lanname='plpgsql'
+           AND p.prosecdef AND p.provolatile='v' AND p.proparallel='u'
+           AND NOT p.proleakproof AND p.prokind='f'
+           AND NOT p.proisstrict AND NOT p.proretset
+           AND p.prorettype='trigger'::regtype
+           AND p.pronargs=0 AND p.pronargdefaults=0
+           AND p.proconfig=ARRAY['search_path=public']::text[]
+           AND p.proacl::text=
+             '{postgres=X/postgres,service_role=X/postgres}'
+         ) OR (
+           p.oid=to_regprocedure(
+             'public.fn_ca_close_incidents_the_check_no_longer_finds()')
+           AND md5(pg_get_functiondef(p.oid))=
+               '0c1a9e2e63771d7dfbf2c305b057b0f2'
+           AND md5(p.prosrc)='8e2005a0cfa79cf14e396ceb799df926'
+           AND octet_length(pg_get_functiondef(p.oid))=2200
+           AND encode(sha256(convert_to(
+                 pg_get_functiondef(p.oid),'UTF8')),'hex')=
+               'fb0d8ee65773e8d8d69a7d848acd5e1137a8e394390de06bf5e737cf57a41a8a'
+           AND p.proowner='postgres'::regrole AND l.lanname='plpgsql'
+           AND p.prosecdef AND p.provolatile='v' AND p.proparallel='u'
+           AND NOT p.proleakproof AND p.prokind='f'
+           AND NOT p.proisstrict AND NOT p.proretset
+           AND p.prorettype='jsonb'::regtype
+           AND p.pronargs=0 AND p.pronargdefaults=0
+           AND p.proconfig=ARRAY[
+             'search_path=public, pg_temp','statement_timeout=120s']::text[]
+           AND p.proacl::text=
+             '{postgres=X/postgres,service_role=X/postgres}'
+         ) OR (
+           p.oid=to_regprocedure('public.fn_ca_escrow_on_rake_record()')
+           AND md5(pg_get_functiondef(p.oid))=
+               '0dc096bb5615758ed945365a45997c8c'
+           AND md5(p.prosrc)='3e628d6a57a93eeb61d494ee33f989a3'
+           AND octet_length(pg_get_functiondef(p.oid))=1008
+           AND encode(sha256(convert_to(
+                 pg_get_functiondef(p.oid),'UTF8')),'hex')=
+               'c4fb06976d4a4853b9a02c2c90a450dd5e3e90750f8d40e0375403d17176a044'
+           AND p.proowner='postgres'::regrole AND l.lanname='plpgsql'
+           AND p.prosecdef AND p.provolatile='v' AND p.proparallel='u'
+           AND NOT p.proleakproof AND p.prokind='f'
+           AND NOT p.proisstrict AND NOT p.proretset
+           AND p.prorettype='trigger'::regtype
+           AND p.pronargs=0 AND p.pronargdefaults=0
+           AND p.proconfig=ARRAY['search_path=public']::text[]
+           AND p.proacl::text=
+             '{postgres=X/postgres,service_role=X/postgres}'
+         ) OR (
+           p.oid=to_regprocedure('public.fn_ca_tournament_escrow(uuid)')
+           AND md5(pg_get_functiondef(p.oid))=
+               '68d99bdb6dc9a46906336b9ed6987e97'
+           AND md5(p.prosrc)='56663389f8348d2ab35a54460c0b7632'
+           AND octet_length(pg_get_functiondef(p.oid))=7688
+           AND encode(sha256(convert_to(
+                 pg_get_functiondef(p.oid),'UTF8')),'hex')=
+               '42ae2e8560d4b640c73c44c6b1e680e9844f6899c4b8250994e22dcfd0f1bde3'
+           AND p.proowner='postgres'::regrole AND l.lanname='sql'
+           AND p.prosecdef AND p.provolatile='s' AND p.proparallel='u'
+           AND NOT p.proleakproof AND p.prokind='f'
+           AND NOT p.proisstrict AND p.proretset
+           AND p.prorettype='record'::regtype
+           AND p.pronargs=1 AND p.pronargdefaults=0
+           AND p.proconfig=ARRAY['search_path=public']::text[]
+           AND p.proacl::text=
+             '{postgres=X/postgres,service_role=X/postgres}'
+         ) OR (
+           p.oid=to_regprocedure(
+             'public.fn_sweep_pending_tournament_bounties(uuid,integer)')
+           AND md5(pg_get_functiondef(p.oid))=
+               '30ca1181317d0f76d7a549ceab37b493'
+           AND md5(p.prosrc)='9a16c59eb58695facd75a2d7406b7c28'
+           AND octet_length(pg_get_functiondef(p.oid))=10343
+           AND octet_length(p.prosrc)=10088
+           AND encode(sha256(convert_to(
+                 pg_get_functiondef(p.oid),'UTF8')),'hex')=
+               '873a79f230a1f6a73ad2ab9c24368cba36ba8b9ad8c127c6fe3a898ac9307b54'
+           AND encode(sha256(convert_to(p.prosrc,'UTF8')),'hex')=
+               '6fce349c2fe8d7b4f9788de23fe8b860ae36c5e44067c801d519821999b4e9bb'
+           AND p.proowner='postgres'::regrole AND l.lanname='plpgsql'
+           AND p.prosecdef AND p.provolatile='v' AND p.proparallel='u'
+           AND NOT p.proleakproof AND p.prokind='f'
+           AND NOT p.proisstrict AND NOT p.proretset
+           AND p.prorettype='jsonb'::regtype
+           AND p.pronargs=2 AND p.pronargdefaults=2
+           AND p.proconfig=ARRAY['search_path=public, pg_temp']::text[]
+           AND p.proacl::text=
+             '{postgres=X/postgres,service_role=X/postgres}'
          )),
        CASE
          WHEN (SELECT count(*)
@@ -1298,8 +1427,8 @@ if [[ "$major_version" != '17' || "$locality" != 'local' ]]; then
   echo "Rehearsal requires local PostgreSQL 17; observed ${server_address:-unknown}." >&2
   exit 65
 fi
-if [[ "$anchor_receipts" != '48' || "$ledger_head" != "$current_live_ledger_head" ]]; then
-  echo "The donor is not the exact current live schema through ${current_live_ledger_head}: ${anchor_receipts:-0}/48 anchors, head ${ledger_head:-<missing>}." >&2
+if [[ "$anchor_receipts" != '56' || "$ledger_head" != "$current_live_ledger_head" ]]; then
+  echo "The donor is not the exact current live schema through ${current_live_ledger_head}: ${anchor_receipts:-0}/56 anchors, head ${ledger_head:-<missing>}." >&2
   exit 65
 fi
 if [[ "$exact_body_receipts" != '3' ]]; then
@@ -1310,8 +1439,8 @@ if [[ "$descriptor_receipts" != '2' ]]; then
   echo 'The donor does not contain the observed descriptor-only 055857 and 060034 ledger metadata.' >&2
   exit 65
 fi
-if [[ "$audited_tail_receipts" != '32' || "$audited_tail_statements" != '35' ]]; then
-  echo 'The donor does not contain the byte-authenticated 072322-164655 live ledger tail.' >&2
+if [[ "$audited_tail_receipts" != '40' || "$audited_tail_statements" != '43' ]]; then
+  echo 'The donor does not contain the byte-authenticated 072322-174349 live ledger tail.' >&2
   exit 65
 fi
 echo 'STAGE_B_CURRENT_LIVE_SCHEMA_MANIFEST_OK'
@@ -1348,8 +1477,8 @@ if [[ "$player_id_functions_exact" != '2' ]]; then
   echo 'The donor does not preserve the exact 124023 player-id function postimage.' >&2
   exit 65
 fi
-if [[ "$tail_functions_exact" != '9' ]]; then
-  echo 'The donor does not preserve the exact 130319-143719 tail function catalog postimage.' >&2
+if [[ "$tail_functions_exact" != '14' ]]; then
+  echo 'The donor does not preserve the exact 130319-174349 tail function catalog postimage.' >&2
   exit 65
 fi
 if [[ "$journal_trigger_bindings_exact" != '10' \
@@ -1398,6 +1527,24 @@ WITH target_functions(identity) AS (
     ('public.fn_ca_hand_commit_refusals(integer)'),
     ('public.fn_resolve_tournament_blinds(text,integer,text,text,numeric)'),
     ('public.fn_ca_declare_guard_redefinition(text,text)'),
+    ('public.fn_ca_financial_alert_to_incident()'),
+    ('public.fn_ca_close_incidents_the_check_no_longer_finds()'),
+    ('public.atomic_cancel_tournament(uuid,uuid)'),
+    ('public.fn_settle_tournament_obligation_before_atomic_batch_gate(uuid,text,integer,uuid,numeric,text,text,uuid)'),
+    ('public.fn_eliminate_tournament_player_atomic(uuid,uuid,integer,numeric,numeric)'),
+    ('public.fn_award_satellite_seat(uuid,uuid,uuid,text,integer)'),
+    ('public.fn_ca_escrow_on_rake_record()'),
+    ('public.fn_ca_tournament_escrow(uuid)'),
+    ('public.fn_ca_lock_settlement_lane_for_tournament(uuid,uuid)'),
+    ('public.fn_ca_open_tournament_seat_exit_authority(uuid,text,uuid)'),
+    ('public.fn_ca_release_unseatable_registrant_at_launch(uuid,uuid,uuid,text)'),
+    ('public.fn_lock_daily_mission_user(uuid)'),
+    ('public.fn_mystery_bounty_pay(uuid)'),
+    ('public.fn_resolve_committed_tournament_seat_move(uuid,uuid,uuid,uuid,uuid,integer,text)'),
+    ('public.fn_satellite_target_player_provenance_is_immutable()'),
+    ('public.fn_tournament_live_seat_acquisition_requires_authority()'),
+    ('public.fn_tournament_payouts_are_append_only()'),
+    ('public.fn_sweep_pending_tournament_bounties(uuid,integer)'),
     ('public.fn_save_engine_maintenance_break(text,timestamptz,timestamptz,timestamptz,text,text,uuid)'),
     ('public.fn_clear_engine_maintenance_break(text,timestamptz,timestamptz,timestamptz,text,uuid)'),
     ('public.fn_claim_engine_maintenance_break(uuid,uuid,text)'),
@@ -1469,7 +1616,12 @@ WITH target_functions(identity) AS (
     JOIN pg_namespace n ON n.oid=c.relnamespace
    WHERE trg.tgfoid IN (
      to_regprocedure('public.fn_ca_journal_append_only()'),
-     to_regprocedure('public.fn_attach_bounty_ledger_obligation()'))
+     to_regprocedure('public.fn_attach_bounty_ledger_obligation()'),
+     to_regprocedure('public.fn_ca_financial_alert_to_incident()'),
+     to_regprocedure('public.fn_ca_escrow_on_rake_record()'),
+     to_regprocedure('public.fn_tournament_live_seat_acquisition_requires_authority()'),
+     to_regprocedure('public.fn_satellite_target_player_provenance_is_immutable()'),
+     to_regprocedure('public.fn_tournament_payouts_are_append_only()'))
      AND NOT trg.tgisinternal
 ), cron_controls AS (
   SELECT COALESCE(jsonb_agg(jsonb_build_object(

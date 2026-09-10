@@ -225,14 +225,14 @@ describe('Stage-B contraction preserves the 035435 per-tournament settlement lan
     expect(violations).toEqual([]);
   });
 
-  it('keeps terminal wrappers on the mixed opener and their private cores on G plus B', () => {
+  it('keeps terminal wrappers on the tournament opener and their private cores on G plus B', () => {
     const opener = survivingFunctionDefinition('fn_ca_open_tournament_seat_exit_authority');
     expect(opener).not.toBe('');
-    expect(countNeedle(opener, 'public.fn_ca_lock_settlement_lane_global()')).toBe(1);
+    expect(countNeedle(opener, 'public.fn_ca_lock_settlement_lane_global()')).toBe(0);
     expect(
       countNeedle(opener, 'public.fn_ca_lock_settlement_lane_for_tournament(p_tournament_id)')
     ).toBe(1);
-    expect(compact(opener)).toContain(
+    expect(compact(opener)).not.toContain(
       "p_operation IN ('cancel','satellite_finish','terminal_finish')"
     );
 

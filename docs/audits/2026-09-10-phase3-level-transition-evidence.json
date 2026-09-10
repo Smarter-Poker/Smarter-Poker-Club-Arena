@@ -1,0 +1,61 @@
+{
+  "phase": 3,
+  "scope": ["K01"],
+  "requirement": "Use one durable tournament clock and level definition across all tables. Restart must restore elapsed active-play time.",
+  "source_commit": "5249b0b077085ce2f9a49637ea9c6f003b5f5d72",
+  "status": "focused_correction_behavior_verified_pending_publication",
+  "full_control_closed": false,
+  "defect": "advanceBlindLevel persisted current_level without level_started_at. A manager replaced after that write restored the new level against the old level's elapsed clock.",
+  "correction": [
+    "Write current_level and level_started_at in the same tournament-row update.",
+    "Arm the continuing manager from that same anchor after persistence and broadcast latency."
+  ],
+  "baseline": [
+    {
+      "case": "manager stopped after level publication",
+      "expected_remaining_ms": 598000,
+      "actual_remaining_ms": 1000,
+      "failed": 1,
+      "log": "/tmp/codex-clock-level-baseline.log"
+    },
+    {
+      "case": "manager continued after two-second broadcast latency",
+      "expected_remaining_ms": 598000,
+      "actual_remaining_ms": 600000,
+      "failed": 1,
+      "skipped": 1,
+      "log": "/tmp/codex-clock-level-latency-baseline.log"
+    }
+  ],
+  "verification": {
+    "actual_methods": [
+      "TournamentManagerBase.advanceBlindLevel",
+      "TournamentManagerBase.resumeLifecycle",
+      "TournamentManagerBase.startBlindTimer",
+      "TournamentManagerBase.resolveBlindLevel",
+      "TournamentManagerBase.levelDurationMs"
+    ],
+    "runtime_cases_passed": 2,
+    "runtime_log": "/tmp/codex-clock-level-fixed.log",
+    "server_types_exit_code": 0,
+    "server_types_log": "/tmp/codex-clock-level-types.log",
+    "existing_source_pin": "LevelClockAcrossBreaks DEFECT 5 updated to accept the atomic row payload while still requiring persistence before entry reconciliation; source law only.",
+    "boundary": "Both table rows advance to 50/100 and current_level becomes 1. At two seconds after publication, the continuing and replacement managers both retain 598000 ms. The replacement adopts both table IDs and the same persisted level definition.",
+    "source_pin_result": {
+      "passed": 1,
+      "skipped": 5,
+      "log": "/tmp/codex-clock-level-pin.log"
+    },
+    "diff_check": "passed"
+  },
+  "limits": [
+    "Mocked persistence and table-engine admission; no production database writes or active-hand settlement were executed.",
+    "This verifies the interrupted level-publication boundary, not atomic updates across all table rows.",
+    "In-flight break overlap, other restart boundaries and live engine adoption remain unclosed K01 acceptance."
+  ],
+  "not_repeated": [
+    "Previously verified UTC cadence and persisted break-remainder runtime cases.",
+    "The earlier synchronized-break deadline and endpoint suites."
+  ],
+  "deployment": "Server source change requires normal CI, merge and engine adoption; root owns publication."
+}

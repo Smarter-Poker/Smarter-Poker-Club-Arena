@@ -86,6 +86,24 @@ describe('one refused bust does not freeze an event', () => {
     expect(UUID).toContain('player-id door(s) still carry the version-checked pattern');
   });
 
+  it('a re-registration replaces a scheduler entry bound to a dead lifecycle', () => {
+    // Both `run` and `isActive` close over the lifecycle taken at registration.
+    // resume() begins a new epoch without always passing the stop fence, so
+    // returning early on "a registration exists" left the manager wired to an
+    // epoch that is no longer current: skipped in pump(), or dispatched into a
+    // run that returns at its first line, for ever, with nothing logged.
+    const register = sliceEnclosingBlock(BASE, 'protected registerEliminationScheduler(');
+    expect(register).toContain(
+      'if (this.eliminationSchedulerUnregister) this.unregisterEliminationScheduler();'
+    );
+    expect(register).not.toMatch(/if \(this\.eliminationSchedulerUnregister\) return;/);
+    // and the lifecycle is still taken before anything is installed
+    const lifecycleAt = register.indexOf('const lifecycle = this.lifecycleEpoch.current();');
+    const unregisterAt = register.indexOf('this.unregisterEliminationScheduler();');
+    expect(lifecycleAt).toBeGreaterThan(-1);
+    expect(unregisterAt).toBeGreaterThan(lifecycleAt);
+  });
+
   it('the chain correction only touches a bust the player provably came back from', () => {
     expect(CHAIN).toContain('c2.stack_before > 0');
     expect(CHAIN).toContain('that is not proof of a comeback and this correction refuses to guess');

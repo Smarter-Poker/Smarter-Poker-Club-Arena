@@ -528,3 +528,118 @@ describe('RakebackSettlerService - AUDIT M6 resume cursor', () => {
     }
   });
 });
+
+describe('rakeback attribution failures retain the source page', () => {
+  const creditedRow = () => ({
+    ...row(1, 200),
+    hand_id: uid(77),
+    player_contributions: { [uid(42)]: 10 },
+  });
+  const run = (settler = new RakebackSettlerService()) =>
+    (settler as unknown as { _runSettlementInner(): Promise<string> })._runSettlementInner();
+  const success = (name: string, args: { p_items?: unknown[] }) => ({
+    data:
+      name === 'fn_rakeback_recompute_periods'
+        ? { written: 1 }
+        : { ok: args.p_items?.length ?? 0, failed: 0, first_error: null },
+    error: null,
+  });
+
+  beforeEach(() => {
+    recorded.length = 0;
+    mockFrom.mockClear();
+    mockRpc.mockReset();
+    mockReportError.mockReset();
+    install({
+      settlerState: { high_water_mark: ts(100), high_water_mark_id: uid(0) },
+      dataset: [creditedRow()],
+    });
+    mockRpc.mockImplementation(async (name, args) => success(name, args));
+  });
+
+  for (const rpc of ['fn_credit_agent_commissions_batch', 'fn_apply_rakeback_player_stats_batch']) {
+    it.each([
+      ['transport failure', { data: null, error: { message: 'lost response' } }],
+      [
+        'partial failure',
+        { data: { ok: 0, failed: 1, first_error: 'credit failed' }, error: null },
+      ],
+      ['absent receipt', { data: null, error: null }],
+      ['missing counters', { data: {}, error: null }],
+      ['negative counter', { data: { ok: 1, failed: -1 }, error: null }],
+      ['string counter', { data: { ok: '1', failed: 0 }, error: null }],
+      ['fractional counter', { data: { ok: 0.5, failed: 0 }, error: null }],
+      ['excess count', { data: { ok: 2, failed: 0 }, error: null }],
+      [
+        'multiple receipts',
+        {
+          data: [
+            { ok: 1, failed: 0 },
+            { ok: 1, failed: 0 },
+          ],
+          error: null,
+        },
+      ],
+      ['error body', { data: { ok: 1, failed: 0, error: 'rejected' }, error: null }],
+    ])('%s from ' + rpc + ' does not advance', async (_label, response) => {
+      mockRpc.mockImplementation(async (name, args) =>
+        name === rpc ? response : success(name, args)
+      );
+      expect(await run()).toBe('halted');
+      expect(settlerUpserts()).toHaveLength(0);
+      expect(
+        mockReportError.mock.calls.some(
+          (call) => call[1] === 'RakebackSettler.attribution_failures_hold_cursor'
+        )
+      ).toBe(true);
+    });
+
+    it('retries the same source after a lost ' + rpc + ' response', async () => {
+      let attempts = 0;
+      mockRpc.mockImplementation(async (name, args) => {
+        if (name === rpc && attempts++ === 0)
+          return { data: null, error: { message: 'lost response after commit' } };
+        return success(name, args);
+      });
+      const settler = new RakebackSettlerService();
+      expect(await run(settler)).toBe('halted');
+      expect(settlerUpserts()).toHaveLength(0);
+      expect(await run(settler)).toBe('idle');
+      const calls = mockRpc.mock.calls.filter((call) => call[0] === rpc);
+      expect(calls).toHaveLength(2);
+      expect(calls[0][1]).toEqual(calls[1][1]);
+      expect(settlerUpserts()).toHaveLength(1);
+      expect(upsertPayload(settlerUpserts()[0]).high_water_mark_id).toBe(uid(1));
+    });
+  }
+
+  it('requires commission acknowledgements to cover every submitted item', async () => {
+    mockRpc.mockImplementation(async (name, args) =>
+      name === 'fn_credit_agent_commissions_batch'
+        ? { data: { ok: 0, failed: 0 }, error: null }
+        : success(name, args)
+    );
+    expect(await run()).toBe('halted');
+    expect(settlerUpserts()).toHaveLength(0);
+  });
+
+  it('accepts stats replay receipts that inserted zero rows', async () => {
+    mockRpc.mockImplementation(async (name, args) =>
+      name === 'fn_apply_rakeback_player_stats_batch'
+        ? { data: { ok: 0, failed: 0, first_error: null }, error: null }
+        : success(name, args)
+    );
+    expect(await run()).toBe('idle');
+    expect(settlerUpserts()).toHaveLength(1);
+  });
+
+  it('advances only after both attribution stages and period recompute succeed', async () => {
+    expect(await run()).toBe('idle');
+    expect(mockRpc.mock.calls.map((call) => call[0])).toEqual([
+      'fn_credit_agent_commissions_batch',
+      'fn_apply_rakeback_player_stats_batch',
+      'fn_rakeback_recompute_periods',
+    ]);
+    expect(settlerUpserts()).toHaveLength(1);
+  });
+});

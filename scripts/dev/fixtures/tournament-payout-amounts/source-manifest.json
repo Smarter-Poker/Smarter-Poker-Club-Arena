@@ -1,0 +1,8 @@
+{
+  "body_md5": "8f6cde5f5b799949506259f3064568b9",
+  "proname": "fn_ca_tournament_place_amounts",
+  "signature": "fn_ca_tournament_place_amounts(uuid)",
+  "observed_at_utc": "2026-09-10T03:34:31.563532Z",
+  "project": "kuklfnapbkmacvwxktbh",
+  "scope": "Amount derivation only, with synthetic tournament and roster inputs."
+}

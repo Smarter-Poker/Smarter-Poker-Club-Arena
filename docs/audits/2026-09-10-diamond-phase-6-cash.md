@@ -20,7 +20,7 @@ Phase 6 must connect the existing shared NLH engine to Diamond-only seat funding
 
 Local focused run: 47 tests passed across `DiamondCashHand.test.ts`, `aTournamentChipDoesNotDivide.law.test.ts` and `PotLimitShortBlinds.test.ts`. These cover a complete Diamond hand, rejected fractional raises, an odd tied pot, side pots, all-in runout replay, invalid funded amounts, atomic delta rejection, and unchanged chip betting. This is engine-only evidence; it is not database or production gameplay acceptance.
 
-Normal hook, CI and publication evidence must be added after those operations complete. No pending or skipped check is counted as passed.
+PR 4070 merged as 81e4c6daefa47f6b6883596f3b62d2d3498e195a. CI 34424324769 passed client/server, TypeScript, structural and SQL accounting gates; production build, browser, live-production and postdeploy jobs were skipped for this server increment. The normal local push passed 1,014 server assertions with 145 skipped. Frontend ancestry includes the merge, but engine adoption of this increment is not yet claimed. Normal descendant deployment 34427125233 was active during the prior-phase recheck. No pending or skipped check is counted as passed.
 
 ## Remaining Phase 6 Acceptance
 

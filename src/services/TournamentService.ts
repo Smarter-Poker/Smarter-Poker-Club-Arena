@@ -1824,7 +1824,8 @@ class TournamentService {
       let remaining = durationSec;
       if (serverT.level_started_at) {
         const elapsedSec = (Date.now() - new Date(serverT.level_started_at).getTime()) / 1000;
-        if (elapsedSec >= 0 && elapsedSec < durationSec * 4) {
+        // An old canonical anchor is overdue, not permission to reset the display.
+        if (Number.isFinite(elapsedSec) && elapsedSec >= 0) {
           remaining = Math.max(0, Math.floor(durationSec - elapsedSec));
         }
       }

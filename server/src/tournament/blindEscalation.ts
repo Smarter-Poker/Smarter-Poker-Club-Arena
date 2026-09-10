@@ -232,8 +232,8 @@ export function capLevelToChipsInPlay(
  *
  * `durationMinutes` is supplied by the caller rather than derived here, because
  * level length is format-normalized (`durationMinutes` / `duration_minutes` /
- * `duration` in seconds) and an accelerated MTT halves it once late
- * registration closes — engine state this module deliberately has no access to.
+ * `duration` in seconds). Preserve the supplied duration, including levels
+ * shorter than two minutes. The owner applies acceleration once.
  */
 export function escalatedBlindLevel(
   lastPlayable: BlindLevelLike | undefined,
@@ -272,7 +272,7 @@ export function escalatedBlindLevel(
     smallBlind: playable.smallBlind,
     bigBlind: playable.bigBlind,
     ante: playable.ante,
-    durationMinutes: Math.max(durationMinutes, 2),
+    durationMinutes: Number.isFinite(durationMinutes) && durationMinutes > 0 ? durationMinutes : 2,
     autoEscalated: true,
   };
 }

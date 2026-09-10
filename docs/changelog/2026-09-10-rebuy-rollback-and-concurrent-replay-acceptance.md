@@ -16,6 +16,14 @@ The independent satellite refund rehearsal completed all 8 groups with exit 0: a
 
 Read-only production catalog checks matched process_tournament_rebuy (63e4762f2f293da5f2c66ae03fd92947), its money core (ebff39bd84c1a1ac9a75e7b09ceaa74b), and the registration operation wrapper (c80d08529c03284adc51c6cb03764a55). The fixture's older logger capture is deliberately replaced by source migration 20260910012633; that resulting source function body and the live logger both hash to f9d423ecda16d49d698a1b3735baf7cb.
 
+## Current Dependency Parity
+
+After integrating main 40886c94, the isolated runner now reproduces the exact source resolver transformation from 20260910020626 and the exact deduction function plus consistency postconditions from 20260910023919. Historical row repairs and the source migration's named live-event probe are outside this synthetic fixture. This verifies effective function bodies, not production migration-gate acceptance.
+
+Every fresh scenario requires the current deduction hash 1835dbd974d8ba219cf37ab712a9ccbd and resolver hash f80eff4c311820670f1b71d15c29452d. The refreshed run completed all 23 groups and clean shutdown successfully, with evidence in /tmp/ca-registration-funding-pg17-pvtf7lb9/results.json. This supersedes the earlier cleanup-timeout limitation for the final current-source rehearsal.
+
+Disposable cleanup now gives PostgreSQL a bounded 60-second checkpoint budget and its caller 75 seconds, based on the observed 47.7-second shutdown checkpoint under concurrent disk load. No production timeout or financial authority changed.
+
 ## Remaining Acceptance
 
 CA-03-01 remains open for the complete current dependency graph, actual late-seat lifecycle, and knockout rebuy generation authority. In particular, the live fn_ca_settle_bounty_rebuy_generation_v1 helper is absent; ordinary purchase funding evidence cannot certify a missing bounty settlement dependency. Coordinate its M6 seat-exit prerequisite and release with the root owner.

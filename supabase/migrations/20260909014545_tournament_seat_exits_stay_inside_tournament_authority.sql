@@ -219,6 +219,10 @@ CREATE TABLE public.tournament_seat_exit_authority_cutover (
   paid_candidate_ids uuid[] NOT NULL,
   positive_orphan_count integer NOT NULL CHECK (positive_orphan_count>=0),
   positive_orphan_seat_ids uuid[] NOT NULL,
+  pending_zero_candidate_count integer NOT NULL
+    CHECK (pending_zero_candidate_count>=0),
+  pending_zero_candidate_ids uuid[] NOT NULL,
+  pending_zero_seat_ids uuid[] NOT NULL,
   CHECK (repaired_seat_count=cardinality(repaired_seat_ids)),
   CHECK (repaired_table_count=cardinality(repaired_table_ids)),
   CHECK (repaired_roster_count=cardinality(repaired_roster_ids)),
@@ -230,6 +234,9 @@ CREATE TABLE public.tournament_seat_exit_authority_cutover (
          cardinality(repaired_player_count_tournament_ids)),
   CHECK (paid_candidate_count=cardinality(paid_candidate_ids)),
   CHECK (positive_orphan_count=cardinality(positive_orphan_seat_ids)),
+  CHECK (pending_zero_candidate_count=
+         cardinality(pending_zero_candidate_ids)),
+  CHECK (pending_zero_candidate_count=cardinality(pending_zero_seat_ids)),
   CHECK (array_position(repaired_seat_ids,NULL) IS NULL),
   CHECK (array_position(repaired_table_ids,NULL) IS NULL),
   CHECK (array_position(repaired_roster_ids,NULL) IS NULL),
@@ -238,13 +245,73 @@ CREATE TABLE public.tournament_seat_exit_authority_cutover (
   CHECK (array_position(closed_duplicate_table_ids,NULL) IS NULL),
   CHECK (array_position(repaired_player_count_tournament_ids,NULL) IS NULL),
   CHECK (array_position(paid_candidate_ids,NULL) IS NULL),
-  CHECK (array_position(positive_orphan_seat_ids,NULL) IS NULL)
+  CHECK (array_position(positive_orphan_seat_ids,NULL) IS NULL),
+  CHECK (array_position(pending_zero_candidate_ids,NULL) IS NULL),
+  CHECK (array_position(pending_zero_seat_ids,NULL) IS NULL)
 );
 
 ALTER TABLE public.tournament_seat_exit_authority_cutover
   ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON TABLE public.tournament_seat_exit_authority_cutover
   FROM PUBLIC,anon,authenticated,service_role;
+
+-- Exact pending zero generations survived the retired split hand writer with
+-- later unpaid chair generations still live. They are neither paid rebuys nor
+-- sources from which chips may be reconstructed. Preserve each accepted-hand
+-- identity, later chair generation and table count around the one-time vacancy
+-- so the correction remains auditable after the engine resolves the seatless
+-- candidate.
+CREATE TABLE public.tournament_pending_zero_seat_cutover_receipts (
+  candidate_id uuid PRIMARY KEY
+    REFERENCES public.tournament_knockout_candidates(id) ON DELETE RESTRICT,
+  migration_version text NOT NULL CHECK (migration_version='20260909014545'),
+  tournament_id uuid NOT NULL
+    REFERENCES public.tournaments(id) ON DELETE RESTRICT,
+  user_id uuid NOT NULL,
+  roster_id uuid NOT NULL
+    REFERENCES public.tournament_players(id) ON DELETE RESTRICT,
+  zero_table_id uuid NOT NULL REFERENCES public.tables(id) ON DELETE RESTRICT,
+  zero_seat_id uuid NOT NULL
+    REFERENCES public.table_seats(id) ON DELETE RESTRICT,
+  zero_seat_joined_at timestamptz NOT NULL,
+  zero_hand_number bigint NOT NULL CHECK (zero_hand_number>0),
+  zero_hac_hand_id uuid NOT NULL,
+  zero_settlement_hand_id uuid NOT NULL,
+  zero_committed_at timestamptz NOT NULL,
+  roster_chips_before integer NOT NULL CHECK (roster_chips_before=0),
+  vacated_table_id uuid NOT NULL
+    REFERENCES public.tables(id) ON DELETE RESTRICT,
+  vacated_seat_id uuid NOT NULL
+    REFERENCES public.table_seats(id) ON DELETE RESTRICT,
+  vacated_seat_number integer NOT NULL
+    CHECK (vacated_seat_number BETWEEN 1 AND 10),
+  vacated_joined_at timestamptz NOT NULL,
+  seat_stack_before numeric NOT NULL,
+  post_zero_entitlement_count integer NOT NULL
+    CHECK (post_zero_entitlement_count=0),
+  post_zero_chip_ledger_count integer NOT NULL
+    CHECK (post_zero_chip_ledger_count=0),
+  post_zero_wallet_transaction_count integer NOT NULL
+    CHECK (post_zero_wallet_transaction_count=0),
+  post_zero_wallet_idempotency_count integer NOT NULL
+    CHECK (post_zero_wallet_idempotency_count=0),
+  later_accepted_hand_count integer NOT NULL
+    CHECK (later_accepted_hand_count=0),
+  table_current_players_before integer,
+  table_live_seats_before integer NOT NULL CHECK (table_live_seats_before>0),
+  table_current_players_after integer NOT NULL
+    CHECK (table_current_players_after>=0),
+  table_live_seats_after integer NOT NULL CHECK (table_live_seats_after>=0),
+  vacated_at timestamptz NOT NULL,
+  CHECK (seat_stack_before::text NOT IN ('NaN','Infinity','-Infinity')),
+  CHECK (seat_stack_before>=0 AND seat_stack_before=trunc(seat_stack_before)),
+  CHECK (zero_committed_at<=vacated_joined_at),
+  CHECK (vacated_joined_at<vacated_at),
+  CHECK (table_live_seats_after=table_live_seats_before-1),
+  CHECK (table_current_players_after=table_live_seats_after),
+  UNIQUE (tournament_id,user_id),
+  UNIQUE (vacated_seat_id)
+);
 
 -- Every historical inference below names the immutable rows that authorized
 -- it. Parallel arrays preserve one-to-one payment order; the hand pair binds
@@ -531,7 +598,10 @@ ALTER TABLE public.tournament_paid_candidate_cutover_receipts
   ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tournament_positive_orphan_cutover_receipts
   ENABLE ROW LEVEL SECURITY;
-REVOKE ALL ON TABLE public.tournament_paid_candidate_cutover_receipts,
+ALTER TABLE public.tournament_pending_zero_seat_cutover_receipts
+  ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.tournament_pending_zero_seat_cutover_receipts,
+                    public.tournament_paid_candidate_cutover_receipts,
                     public.tournament_positive_orphan_cutover_receipts
   FROM PUBLIC,anon,authenticated,service_role;
 
@@ -800,6 +870,99 @@ SELECT p.candidate_id,p.tournament_id,p.user_id,
         AND occupied.seat_number=s.seat_number
         AND occupied.left_at IS NULL);
 
+-- Freeze the only zero-roster/live-chair shape that may be changed. The
+-- candidate must be the latest exact accepted zero and remain unresolved. The
+-- retired reconciler could then reseat that player into a later chair
+-- generation without a payment. Bind the current chair through the roster's
+-- exact coordinates, require that it began no earlier than the dual-journal
+-- zero commit, and keep the immutable candidate generation separate in the
+-- receipt. Any newer candidate, later accepted hand or post-zero funding proof
+-- makes this shape ineligible and forces the preflight below to fail closed.
+CREATE TEMP TABLE ca_cutover_pending_zero_seats ON COMMIT DROP AS
+SELECT w.candidate_id,w.tournament_id,w.user_id,
+       tp.id AS roster_id,tp.chips::integer AS roster_chips_before,
+       w.zero_table_id,w.zero_seat_id,w.zero_seat_joined_at,
+       w.zero_hand_number,w.zero_hac_hand_id,w.zero_settlement_hand_id,
+       w.zero_committed_at,tb.id AS vacated_table_id,
+       s.id AS vacated_seat_id,s.seat_number AS vacated_seat_number,
+       s.joined_at AS vacated_joined_at,
+       s.stack AS seat_stack_before,
+       funding.post_zero_entitlement_count,
+       funding.post_zero_chip_ledger_count,
+       funding.post_zero_wallet_transaction_count,
+       funding.post_zero_wallet_idempotency_count,
+       later.later_accepted_hand_count
+  FROM ca_cutover_candidate_windows w
+  JOIN public.tournament_knockout_candidates c ON c.id=w.candidate_id
+  JOIN public.tournament_players tp
+    ON tp.tournament_id=w.tournament_id AND tp.user_id=w.user_id
+  JOIN public.tables tb
+    ON tb.id=tp.table_id AND tb.tournament_id=w.tournament_id
+  JOIN public.table_seats s
+    ON s.table_id=tp.table_id AND s.seat_number=tp.seat_number
+   AND s.user_id=w.user_id AND s.left_at IS NULL
+  JOIN LATERAL (
+    SELECT count(*)::integer AS player_live_seat_count
+      FROM public.table_seats live
+      JOIN public.tables live_table ON live_table.id=live.table_id
+     WHERE live_table.tournament_id=w.tournament_id
+       AND live.user_id=w.user_id AND live.left_at IS NULL
+  ) live ON live.player_live_seat_count=1
+  JOIN LATERAL (
+    SELECT
+      (SELECT count(*)::integer
+         FROM public.tournament_refund_entitlements e
+        WHERE e.tournament_id=w.tournament_id AND e.user_id=w.user_id
+          AND e.created_at>=w.zero_committed_at)
+        AS post_zero_entitlement_count,
+      (SELECT count(*)::integer FROM public.chip_ledger l
+        WHERE l.tournament_id=w.tournament_id AND l.from_entity_id=w.user_id
+          AND lower(COALESCE(l.category,'')) IN ('rebuy','reentry','addon')
+          AND l.created_at>=w.zero_committed_at)
+        AS post_zero_chip_ledger_count,
+      (SELECT count(*)::integer FROM public.wallet_transactions tx
+        WHERE tx.related_entity_id=w.tournament_id AND tx.user_id=w.user_id
+          AND tx.type='debit'
+          AND lower(COALESCE(tx.category,'')) IN ('rebuy','reentry','addon')
+          AND tx.created_at>=w.zero_committed_at)
+        AS post_zero_wallet_transaction_count,
+      (SELECT count(*)::integer FROM public.wallet_credit_idempotency i
+        WHERE i.user_id=w.user_id AND i.created_at>=w.zero_committed_at
+          AND i.key~('^tourney:'||w.tournament_id::text||
+                     ':(rebuy|reentry|addon):'||w.user_id::text||
+                     '(:.*)?$'))
+        AS post_zero_wallet_idempotency_count
+  ) funding ON funding.post_zero_entitlement_count=0
+           AND funding.post_zero_chip_ledger_count=0
+           AND funding.post_zero_wallet_transaction_count=0
+           AND funding.post_zero_wallet_idempotency_count=0
+  JOIN LATERAL (
+    SELECT count(*)::integer AS later_accepted_hand_count
+     FROM public.hand_atomic_commits accepted
+      JOIN public.tables accepted_table ON accepted_table.id=accepted.table_id
+     WHERE accepted_table.tournament_id=w.tournament_id
+       AND accepted.committed_at>w.zero_committed_at
+       AND accepted.stack_result->'written' ? w.user_id::text
+  ) later ON later.later_accepted_hand_count=0
+ WHERE w.next_candidate_id IS NULL
+   AND w.candidate_state_before='pending'
+   AND w.candidate_resolved_at_before IS NULL
+   AND w.zero_committed_at IS NOT NULL
+   AND c.tournament_id=w.tournament_id
+   AND c.eliminated_user_id=w.user_id
+   AND c.table_id=w.zero_table_id AND c.seat_id=w.zero_seat_id
+   AND c.seat_joined_at=w.zero_seat_joined_at
+   AND c.hand_id=w.zero_hac_hand_id AND c.hand_number=w.zero_hand_number
+   AND c.stack_after=0 AND c.state='pending' AND c.resolved_at IS NULL
+   AND tp.status='playing' AND tp.chips=0
+   AND s.joined_at IS NOT NULL AND s.joined_at>=w.zero_committed_at
+   AND s.left_at IS NULL AND s.status='active'
+   AND s.stack IS NOT NULL AND s.stack>=0 AND s.stack=trunc(s.stack)
+   AND NOT public.fn_ca_has_committed_tournament_receipt(w.tournament_id)
+   AND NOT EXISTS (
+     SELECT 1 FROM ca_cutover_candidate_rebuy_payments payment
+      WHERE payment.candidate_id=w.candidate_id);
+
 -- The old process-start sweep wrote seat and table rows in separate requests.
 -- Close its exact historical backlog once while every writer is drained, then
 -- record the complete affected identity set before installing the permanent
@@ -818,6 +981,8 @@ DECLARE
   v_player_count_tournament_ids uuid[]:=ARRAY[]::uuid[];
   v_paid_candidate_ids uuid[]:=ARRAY[]::uuid[];
   v_positive_orphan_seat_ids uuid[]:=ARRAY[]::uuid[];
+  v_pending_zero_candidate_ids uuid[]:=ARRAY[]::uuid[];
+  v_pending_zero_seat_ids uuid[]:=ARRAY[]::uuid[];
   v_item record;
   v_live record;
   v_destination public.table_seats%ROWTYPE;
@@ -837,6 +1002,11 @@ DECLARE
   v_seat_row_reused boolean;
   v_expected_horse_id uuid;
   v_expected_club_id uuid;
+  v_vacated_at timestamptz;
+  v_table_current_players_before integer;
+  v_table_current_players_after integer;
+  v_table_live_seats_before integer;
+  v_table_live_seats_after integer;
   v_rows integer;
 BEGIN
   IF EXISTS (
@@ -1651,6 +1821,194 @@ BEGIN
     INTO v_positive_orphan_seat_ids
     FROM public.tournament_positive_orphan_cutover_receipts r;
 
+  -- A playing zero roster is already committed by the accepted hand. Its later
+  -- unpaid chair is not another chip authority. Vacate only the frozen exact
+  -- latest pending generation above; any other zero/live shape is ambiguous
+  -- and must abort before the generic positive mirror can run.
+  IF EXISTS (
+    SELECT 1
+      FROM public.tournament_players tp
+      JOIN public.tournaments t ON t.id=tp.tournament_id
+     WHERE upper(COALESCE(t.status::text,''))='RUNNING'
+       AND tp.status='playing' AND tp.chips=0
+       AND EXISTS (
+         SELECT 1 FROM public.table_seats live
+         JOIN public.tables live_table ON live_table.id=live.table_id
+          WHERE live_table.tournament_id=tp.tournament_id
+            AND live.user_id=tp.user_id AND live.left_at IS NULL)
+       AND (SELECT count(*) FROM ca_cutover_pending_zero_seats exact_zero
+             WHERE exact_zero.roster_id=tp.id)<>1
+  ) THEN
+    RAISE EXCEPTION
+      'a zero-chip playing roster has a live seat without one exact unpaid pending-zero candidate'
+      USING ERRCODE='P0404';
+  END IF;
+
+  FOR v_item IN
+    SELECT exact_zero.*
+      FROM ca_cutover_pending_zero_seats exact_zero
+     ORDER BY exact_zero.zero_committed_at,exact_zero.candidate_id
+  LOOP
+    SELECT tb.current_players
+      INTO v_table_current_players_before
+      FROM public.tables tb
+     WHERE tb.id=v_item.vacated_table_id
+       AND tb.tournament_id=v_item.tournament_id
+     FOR UPDATE;
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'pending-zero table changed before exact vacancy'
+        USING ERRCODE='40001';
+    END IF;
+
+    SELECT count(*)::integer INTO v_table_live_seats_before
+      FROM public.table_seats live
+     WHERE live.table_id=v_item.vacated_table_id AND live.left_at IS NULL;
+    IF v_table_live_seats_before<=0 OR (
+      SELECT count(*) FROM public.table_seats live
+      JOIN public.tables live_table ON live_table.id=live.table_id
+       WHERE live_table.tournament_id=v_item.tournament_id
+         AND live.user_id=v_item.user_id AND live.left_at IS NULL)<>1 THEN
+      RAISE EXCEPTION 'pending-zero live-seat count changed before exact vacancy'
+        USING ERRCODE='40001';
+    END IF;
+
+    v_vacated_at:=GREATEST(
+      clock_timestamp(),v_item.vacated_joined_at+interval '1 microsecond');
+    UPDATE public.table_seats s
+       SET stack=0,left_at=v_vacated_at,status='left',leave_pending=false,
+           is_sitting_out=false,is_away=false,sit_out_at=NULL,
+           scheduled_leave_hands=NULL
+     WHERE s.id=v_item.vacated_seat_id
+       AND s.table_id=v_item.vacated_table_id
+       AND s.seat_number=v_item.vacated_seat_number
+       AND s.user_id=v_item.user_id
+       AND s.joined_at=v_item.vacated_joined_at
+       AND s.stack IS NOT DISTINCT FROM v_item.seat_stack_before
+       AND s.left_at IS NULL
+       AND s.status='active'
+       AND EXISTS (
+         SELECT 1 FROM public.tournament_players tp
+         JOIN public.tournament_knockout_candidates c
+           ON c.id=v_item.candidate_id AND c.tournament_id=tp.tournament_id
+          AND c.eliminated_user_id=tp.user_id
+          AND c.state='pending' AND c.resolved_at IS NULL AND c.stack_after=0
+          WHERE tp.id=v_item.roster_id AND tp.status='playing' AND tp.chips=0
+            AND tp.table_id=s.table_id AND tp.seat_number=s.seat_number);
+    GET DIAGNOSTICS v_rows=ROW_COUNT;
+    IF v_rows<>1 THEN
+      RAISE EXCEPTION 'pending-zero chair changed before exact vacancy'
+        USING ERRCODE='40001';
+    END IF;
+
+    SELECT count(*)::integer INTO v_table_live_seats_after
+      FROM public.table_seats live
+     WHERE live.table_id=v_item.vacated_table_id AND live.left_at IS NULL;
+    IF v_table_live_seats_after<>v_table_live_seats_before-1 THEN
+      RAISE EXCEPTION 'pending-zero vacancy changed the live-seat count unexpectedly'
+        USING ERRCODE='P0404';
+    END IF;
+
+    UPDATE public.tables tb
+       SET current_players=v_table_live_seats_after,updated_at=now()
+     WHERE tb.id=v_item.vacated_table_id
+       AND tb.tournament_id=v_item.tournament_id
+    RETURNING tb.current_players INTO v_table_current_players_after;
+    GET DIAGNOSTICS v_rows=ROW_COUNT;
+    IF v_rows<>1 THEN
+      RAISE EXCEPTION 'pending-zero table count changed during exact vacancy'
+        USING ERRCODE='40001';
+    END IF;
+
+    IF v_table_current_players_after IS DISTINCT FROM
+         v_table_live_seats_after
+       OR EXISTS (
+         SELECT 1 FROM public.table_seats live
+         JOIN public.tables live_table ON live_table.id=live.table_id
+          WHERE live_table.tournament_id=v_item.tournament_id
+            AND live.user_id=v_item.user_id AND live.left_at IS NULL)
+       OR NOT EXISTS (
+         SELECT 1
+           FROM public.table_seats vacated
+           JOIN public.tournament_players tp
+             ON tp.id=v_item.roster_id
+            AND tp.tournament_id=v_item.tournament_id
+            AND tp.user_id=v_item.user_id
+            AND tp.status='playing' AND tp.chips=0
+           JOIN public.tournament_knockout_candidates c
+             ON c.id=v_item.candidate_id AND c.state='pending'
+            AND c.resolved_at IS NULL AND c.stack_after=0
+            AND c.tournament_id=v_item.tournament_id
+            AND c.eliminated_user_id=v_item.user_id
+          WHERE vacated.id=v_item.vacated_seat_id
+            AND vacated.table_id=v_item.vacated_table_id
+            AND vacated.seat_number=v_item.vacated_seat_number
+            AND vacated.user_id=v_item.user_id
+            AND vacated.joined_at=v_item.vacated_joined_at
+            AND vacated.stack=0 AND vacated.left_at=v_vacated_at
+            AND vacated.status='left' AND vacated.leave_pending IS FALSE
+            AND vacated.is_sitting_out IS FALSE
+            AND vacated.is_away IS FALSE
+            AND vacated.sit_out_at IS NULL
+            AND vacated.scheduled_leave_hands IS NULL) THEN
+      RAISE EXCEPTION 'pending-zero vacancy did not preserve exact zero state'
+        USING ERRCODE='P0404';
+    END IF;
+
+    INSERT INTO public.tournament_pending_zero_seat_cutover_receipts(
+      candidate_id,migration_version,tournament_id,user_id,roster_id,
+      zero_table_id,zero_seat_id,zero_seat_joined_at,zero_hand_number,
+      zero_hac_hand_id,zero_settlement_hand_id,zero_committed_at,
+      roster_chips_before,
+      vacated_table_id,vacated_seat_id,vacated_seat_number,vacated_joined_at,
+      seat_stack_before,post_zero_entitlement_count,
+      post_zero_chip_ledger_count,post_zero_wallet_transaction_count,
+      post_zero_wallet_idempotency_count,later_accepted_hand_count,
+      table_current_players_before,
+      table_live_seats_before,table_current_players_after,
+      table_live_seats_after,vacated_at)
+    VALUES(
+      v_item.candidate_id,'20260909014545',v_item.tournament_id,
+      v_item.user_id,v_item.roster_id,v_item.zero_table_id,
+      v_item.zero_seat_id,v_item.zero_seat_joined_at,v_item.zero_hand_number,
+      v_item.zero_hac_hand_id,v_item.zero_settlement_hand_id,
+      v_item.zero_committed_at,v_item.roster_chips_before,
+      v_item.vacated_table_id,
+      v_item.vacated_seat_id,v_item.vacated_seat_number,
+      v_item.vacated_joined_at,v_item.seat_stack_before,
+      v_item.post_zero_entitlement_count,v_item.post_zero_chip_ledger_count,
+      v_item.post_zero_wallet_transaction_count,
+      v_item.post_zero_wallet_idempotency_count,
+      v_item.later_accepted_hand_count,
+      v_table_current_players_before,v_table_live_seats_before,
+      v_table_current_players_after,v_table_live_seats_after,
+      v_vacated_at);
+  END LOOP;
+
+  SELECT COALESCE(array_agg(r.candidate_id ORDER BY r.candidate_id),
+                          ARRAY[]::uuid[]),
+         COALESCE(array_agg(r.vacated_seat_id ORDER BY r.candidate_id),
+                          ARRAY[]::uuid[])
+    INTO v_pending_zero_candidate_ids,v_pending_zero_seat_ids
+    FROM public.tournament_pending_zero_seat_cutover_receipts r;
+
+  IF (SELECT count(*)
+        FROM public.tournament_pending_zero_seat_cutover_receipts)
+       <>(SELECT count(*) FROM ca_cutover_pending_zero_seats)
+     OR EXISTS (
+       SELECT 1
+         FROM public.tournament_players tp
+         JOIN public.tournaments t ON t.id=tp.tournament_id
+        WHERE upper(COALESCE(t.status::text,''))='RUNNING'
+          AND tp.status='playing' AND tp.chips=0
+          AND EXISTS (
+            SELECT 1 FROM public.table_seats live
+            JOIN public.tables live_table ON live_table.id=live.table_id
+             WHERE live_table.tournament_id=tp.tournament_id
+               AND live.user_id=tp.user_id AND live.left_at IS NULL)) THEN
+    RAISE EXCEPTION 'pending-zero live-seat cutover did not converge exactly'
+      USING ERRCODE='P0404';
+  END IF;
+
   -- Retire the minute reconciler only after closing its exact historical
   -- backlog under this write barrier. Every future writer is re-emitted below
   -- with its denormalised fields in the same transaction.
@@ -1705,6 +2063,7 @@ BEGIN
         ON s.table_id=tb.id AND s.user_id=tp.user_id AND s.left_at IS NULL
      WHERE tp.status='playing'
        AND upper(COALESCE(t.status::text,''))='RUNNING'
+       AND tp.chips>0 AND s.stack>0
   ), repaired AS (
     UPDATE public.tournament_players tp
        SET chips=live.chips
@@ -2200,7 +2559,9 @@ BEGIN
     closed_duplicate_table_count,closed_duplicate_table_ids,
     repaired_player_count_count,repaired_player_count_tournament_ids,
     paid_candidate_count,paid_candidate_ids,
-    positive_orphan_count,positive_orphan_seat_ids)
+    positive_orphan_count,positive_orphan_seat_ids,
+    pending_zero_candidate_count,pending_zero_candidate_ids,
+    pending_zero_seat_ids)
   VALUES(
     'tournament_seat_exit_authority:v1','20260909014545',
     transaction_timestamp(),cardinality(v_seat_ids),v_seat_ids,
@@ -2212,7 +2573,9 @@ BEGIN
     cardinality(v_player_count_tournament_ids),
     v_player_count_tournament_ids,
     cardinality(v_paid_candidate_ids),v_paid_candidate_ids,
-    cardinality(v_positive_orphan_seat_ids),v_positive_orphan_seat_ids);
+    cardinality(v_positive_orphan_seat_ids),v_positive_orphan_seat_ids,
+    cardinality(v_pending_zero_candidate_ids),
+    v_pending_zero_candidate_ids,v_pending_zero_seat_ids);
 END;
 $terminal_orphan_cutover$;
 
@@ -2242,6 +2605,12 @@ CREATE TRIGGER tournament_paid_candidate_cutover_receipts_append_only
 CREATE TRIGGER tournament_positive_orphan_cutover_receipts_append_only
   BEFORE UPDATE OR DELETE
   ON public.tournament_positive_orphan_cutover_receipts
+  FOR EACH ROW EXECUTE FUNCTION
+    public.fn_tournament_seat_exit_cutover_receipts_append_only();
+
+CREATE TRIGGER tournament_pending_zero_seat_cutover_receipts_append_only
+  BEFORE UPDATE OR DELETE
+  ON public.tournament_pending_zero_seat_cutover_receipts
   FOR EACH ROW EXECUTE FUNCTION
     public.fn_tournament_seat_exit_cutover_receipts_append_only();
 
@@ -4840,6 +5209,10 @@ BEGIN
              cardinality(c.closed_duplicate_table_ids)
          AND c.repaired_player_count_count=
              cardinality(c.repaired_player_count_tournament_ids)
+         AND c.pending_zero_candidate_count=
+             cardinality(c.pending_zero_candidate_ids)
+         AND c.pending_zero_candidate_count=
+             cardinality(c.pending_zero_seat_ids)
          AND array_position(c.repaired_seat_ids,NULL) IS NULL
          AND array_position(c.repaired_table_ids,NULL) IS NULL
          AND array_position(c.repaired_roster_ids,NULL) IS NULL
@@ -4847,7 +5220,17 @@ BEGIN
          AND array_position(c.repaired_stakes_table_ids,NULL) IS NULL
          AND array_position(c.closed_duplicate_table_ids,NULL) IS NULL
          AND array_position(
-               c.repaired_player_count_tournament_ids,NULL) IS NULL)<>1 THEN
+               c.repaired_player_count_tournament_ids,NULL) IS NULL
+         AND array_position(c.pending_zero_candidate_ids,NULL) IS NULL
+         AND array_position(c.pending_zero_seat_ids,NULL) IS NULL
+         AND c.pending_zero_candidate_ids IS NOT DISTINCT FROM (
+           SELECT COALESCE(array_agg(r.candidate_id ORDER BY r.candidate_id),
+                           ARRAY[]::uuid[])
+             FROM public.tournament_pending_zero_seat_cutover_receipts r)
+         AND c.pending_zero_seat_ids IS NOT DISTINCT FROM (
+           SELECT COALESCE(array_agg(r.vacated_seat_id ORDER BY r.candidate_id),
+                           ARRAY[]::uuid[])
+             FROM public.tournament_pending_zero_seat_cutover_receipts r))<>1 THEN
     RAISE EXCEPTION 'tournament seat-exit cutover marker is missing or invalid';
   END IF;
   IF EXISTS (
@@ -4881,6 +5264,29 @@ BEGIN
      OR has_table_privilege(
        'service_role','public.tournament_seat_exit_authority_cutover','DELETE') THEN
     RAISE EXCEPTION 'seat-exit cutover marker is reachable by service role';
+  END IF;
+  IF has_table_privilege(
+       'service_role',
+       'public.tournament_pending_zero_seat_cutover_receipts','SELECT')
+     OR has_table_privilege(
+       'service_role',
+       'public.tournament_pending_zero_seat_cutover_receipts','INSERT')
+     OR has_table_privilege(
+       'service_role',
+       'public.tournament_pending_zero_seat_cutover_receipts','UPDATE')
+     OR has_table_privilege(
+       'service_role',
+       'public.tournament_pending_zero_seat_cutover_receipts','DELETE')
+     OR (SELECT count(*) FROM pg_trigger tg
+          WHERE tg.tgrelid=
+                  'public.tournament_pending_zero_seat_cutover_receipts'::regclass
+            AND tg.tgname=
+                  'tournament_pending_zero_seat_cutover_receipts_append_only'
+            AND tg.tgfoid=
+                  'public.fn_tournament_seat_exit_cutover_receipts_append_only()'::regprocedure
+            AND NOT tg.tgisinternal AND tg.tgenabled='O'
+            AND tg.tgtype=27)<>1 THEN
+    RAISE EXCEPTION 'pending-zero cutover receipt is not owner-only append-only';
   END IF;
   IF (SELECT count(*) FROM pg_trigger
        WHERE tgrelid='public.table_seats'::regclass

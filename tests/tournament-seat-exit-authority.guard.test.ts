@@ -307,8 +307,80 @@ describe('tournament seat exits have one hard authority', () => {
     );
   });
 
-  it('keeps both detailed cutover receipts owner-only and append-only', () => {
+  it('vacates only exact unpaid pending-zero legacy reseats before chip mirroring', () => {
+    const classificationStart = sql.indexOf('CREATE TEMP TABLE ca_cutover_pending_zero_seats');
+    const mirrorStart = sql.indexOf('WITH exact_live AS (');
+    const classification = sql.slice(
+      classificationStart,
+      sql.indexOf('-- The old process-start sweep', classificationStart)
+    );
+    const zeroRepair = terminalOrphanCutover.slice(
+      terminalOrphanCutover.indexOf('-- A playing zero roster is already committed'),
+      terminalOrphanCutover.indexOf('-- Retire the minute reconciler')
+    );
+    const exactLive = terminalOrphanCutover.slice(
+      terminalOrphanCutover.indexOf('WITH exact_live AS ('),
+      terminalOrphanCutover.indexOf('WITH live_seat AS (')
+    );
+
+    expect(classificationStart).toBeGreaterThan(-1);
+    expect(classificationStart).toBeLessThan(mirrorStart);
+    for (const predicate of [
+      'w.next_candidate_id IS NULL',
+      "w.candidate_state_before='pending'",
+      'w.candidate_resolved_at_before IS NULL',
+      'w.zero_committed_at IS NOT NULL',
+      "c.stack_after=0 AND c.state='pending' AND c.resolved_at IS NULL",
+      "tp.status='playing' AND tp.chips=0",
+      's.joined_at IS NOT NULL AND s.joined_at>=w.zero_committed_at',
+      'live.player_live_seat_count=1',
+      'funding.post_zero_entitlement_count=0',
+      'funding.post_zero_chip_ledger_count=0',
+      'funding.post_zero_wallet_transaction_count=0',
+      'funding.post_zero_wallet_idempotency_count=0',
+      'later.later_accepted_hand_count=0',
+    ]) {
+      expect(classification).toContain(predicate);
+    }
+    expect(classification).toContain('tb.id=tp.table_id AND tb.tournament_id=w.tournament_id');
+    expect(classification).toContain('s.table_id=tp.table_id AND s.seat_number=tp.seat_number');
+    expect(classification).not.toContain('s.id=w.zero_seat_id');
+    expect(classification).toContain('w.zero_seat_id,w.zero_seat_joined_at');
+    expect(classification).toContain('s.id AS vacated_seat_id');
+    expect(classification).toContain('public.tournament_refund_entitlements');
+    expect(classification).toContain('public.chip_ledger');
+    expect(classification).toContain('public.wallet_transactions');
+    expect(classification).toContain('public.wallet_credit_idempotency');
+    expect(classification).toContain("('rebuy','reentry','addon')");
+    expect(classification).toContain("':(rebuy|reentry|addon):'||w.user_id::text");
+    expect(classification).toContain('payment.candidate_id=w.candidate_id');
+    expect(classification).toContain('accepted.committed_at>w.zero_committed_at');
+    expect(classification).toContain("accepted.stack_result->'written' ? w.user_id::text");
+    expect(classification).not.toContain('accepted.hand_number>w.zero_hand_number');
+
+    expect(zeroRepair).toContain('without one exact unpaid pending-zero candidate');
+    expect(zeroRepair).toContain('WHERE s.id=v_item.vacated_seat_id');
+    expect(zeroRepair).toContain('AND s.joined_at=v_item.vacated_joined_at');
+    expect(zeroRepair).toContain(
+      "SET stack=0,left_at=v_vacated_at,status='left',leave_pending=false"
+    );
+    expect(zeroRepair).toContain('v_table_live_seats_after<>v_table_live_seats_before-1');
+    expect(zeroRepair).toContain('SET current_players=v_table_live_seats_after');
+    expect(zeroRepair).toContain(
+      'INSERT INTO public.tournament_pending_zero_seat_cutover_receipts'
+    );
+    expect(zeroRepair).toContain('v_pending_zero_candidate_ids');
+    expect(sql).toContain('pending_zero_candidate_count,pending_zero_candidate_ids');
+    expect(sql).toContain('pending_zero_seat_ids');
+    expect(zeroRepair).not.toMatch(
+      /UPDATE public\.tournament_(?:players|knockout_candidates)[\s\S]*?SET/
+    );
+    expect(exactLive).toContain('AND tp.chips>0 AND s.stack>0');
+  });
+
+  it('keeps every detailed cutover receipt owner-only and append-only', () => {
     for (const table of [
+      'tournament_pending_zero_seat_cutover_receipts',
       'tournament_paid_candidate_cutover_receipts',
       'tournament_positive_orphan_cutover_receipts',
     ]) {
@@ -316,15 +388,22 @@ describe('tournament seat exits have one hard authority', () => {
       expect(sql).toContain(`CREATE TRIGGER ${table}_append_only`);
       expect(sql).toContain(`ON public.${table}`);
     }
-    expect(sql).toContain('REVOKE ALL ON TABLE public.tournament_paid_candidate_cutover_receipts,');
+    expect(sql).toContain(
+      'REVOKE ALL ON TABLE public.tournament_pending_zero_seat_cutover_receipts,'
+    );
     expect(cutoverReceiptsAppendOnly).toContain(
       'tournament seat-exit cutover receipts are append-only'
     );
     expect(seatExitProbe).toContain('FAIL paid candidate cutover evidence changed');
     expect(seatExitProbe).toContain('FAIL positive-orphan cutover evidence changed');
+    expect(seatExitProbe).toContain('FAIL pending-zero cutover evidence changed');
+    expect(seatExitProbe).toContain('FAIL a zero-chip playing roster still has a live seat');
     expect(seatExitProbe).toContain('FAIL cutover detail receipts are not append-only');
     expect(seatExitProbe).toContain(
       "'service_role','public.tournament_paid_candidate_cutover_receipts','SELECT'"
+    );
+    expect(seatExitProbe).toContain(
+      "'public.tournament_pending_zero_seat_cutover_receipts'::regclass"
     );
   });
 

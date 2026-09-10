@@ -15,6 +15,8 @@ DECLARE
 BEGIN
   IF to_regclass('public.tournament_seat_exit_authority_cutover') IS NULL
      OR to_regclass(
+       'public.tournament_pending_zero_seat_cutover_receipts') IS NULL
+     OR to_regclass(
        'public.tournament_paid_candidate_cutover_receipts') IS NULL
      OR to_regclass(
        'public.tournament_positive_orphan_cutover_receipts') IS NULL
@@ -59,6 +61,9 @@ BEGIN
          cardinality(c.repaired_player_count_tournament_ids)
      AND c.paid_candidate_count=cardinality(c.paid_candidate_ids)
      AND c.positive_orphan_count=cardinality(c.positive_orphan_seat_ids)
+     AND c.pending_zero_candidate_count=
+         cardinality(c.pending_zero_candidate_ids)
+     AND c.pending_zero_candidate_count=cardinality(c.pending_zero_seat_ids)
      AND array_position(c.repaired_seat_ids,NULL) IS NULL
      AND array_position(c.repaired_table_ids,NULL) IS NULL
      AND array_position(c.repaired_roster_ids,NULL) IS NULL
@@ -68,10 +73,15 @@ BEGIN
      AND array_position(c.repaired_player_count_tournament_ids,NULL) IS NULL
      AND array_position(c.paid_candidate_ids,NULL) IS NULL
      AND array_position(c.positive_orphan_seat_ids,NULL) IS NULL
+     AND array_position(c.pending_zero_candidate_ids,NULL) IS NULL
+     AND array_position(c.pending_zero_seat_ids,NULL) IS NULL
      AND c.paid_candidate_count=(
        SELECT count(*) FROM public.tournament_paid_candidate_cutover_receipts)
      AND c.positive_orphan_count=(
        SELECT count(*) FROM public.tournament_positive_orphan_cutover_receipts)
+     AND c.pending_zero_candidate_count=(
+       SELECT count(*)
+         FROM public.tournament_pending_zero_seat_cutover_receipts)
      AND c.paid_candidate_ids IS NOT DISTINCT FROM ARRAY(
        SELECT r.candidate_id
          FROM public.tournament_paid_candidate_cutover_receipts r
@@ -79,7 +89,15 @@ BEGIN
      AND c.positive_orphan_seat_ids IS NOT DISTINCT FROM ARRAY(
        SELECT r.source_seat_id
          FROM public.tournament_positive_orphan_cutover_receipts r
-        ORDER BY r.source_seat_id);
+        ORDER BY r.source_seat_id)
+     AND c.pending_zero_candidate_ids IS NOT DISTINCT FROM ARRAY(
+       SELECT r.candidate_id
+         FROM public.tournament_pending_zero_seat_cutover_receipts r
+        ORDER BY r.candidate_id)
+     AND c.pending_zero_seat_ids IS NOT DISTINCT FROM ARRAY(
+       SELECT r.vacated_seat_id
+         FROM public.tournament_pending_zero_seat_cutover_receipts r
+        ORDER BY r.candidate_id);
   IF v_count<>1 THEN
     RAISE EXCEPTION 'FAIL exact tournament seat-exit cutover receipt is missing';
   END IF;
@@ -390,6 +408,83 @@ BEGIN
     RAISE EXCEPTION 'FAIL positive-orphan cutover evidence changed';
   END IF;
 
+  -- Pending-zero receipts bind the accepted zero generation separately from
+  -- the later unpaid chair that M6 vacated. Physical chair rows are reusable;
+  -- when that row still carries the receipted generation it must remain the
+  -- exact closed zero state, while a legitimate later generation must begin
+  -- strictly after the recorded vacancy.
+  IF EXISTS (
+    SELECT 1
+      FROM public.tournament_pending_zero_seat_cutover_receipts r
+      LEFT JOIN public.tournament_knockout_candidates c
+        ON c.id=r.candidate_id
+      LEFT JOIN public.hand_atomic_commits h
+        ON h.table_id=r.zero_table_id AND h.hand_number=r.zero_hand_number
+       AND h.hand_id=r.zero_hac_hand_id
+      LEFT JOIN public.settlement_idempotency_keys k
+        ON k.table_id=r.zero_table_id
+       AND k.hand_id=r.zero_settlement_hand_id
+      LEFT JOIN public.tournament_players tp ON tp.id=r.roster_id
+      LEFT JOIN public.table_seats vacated ON vacated.id=r.vacated_seat_id
+     WHERE c.id IS NULL OR h.table_id IS NULL OR k.table_id IS NULL
+        OR tp.id IS NULL OR vacated.id IS NULL
+        OR c.tournament_id IS DISTINCT FROM r.tournament_id
+        OR c.eliminated_user_id IS DISTINCT FROM r.user_id
+        OR c.table_id IS DISTINCT FROM r.zero_table_id
+        OR c.seat_id IS DISTINCT FROM r.zero_seat_id
+        OR c.seat_joined_at IS DISTINCT FROM r.zero_seat_joined_at
+        OR c.hand_id IS DISTINCT FROM r.zero_hac_hand_id
+        OR c.hand_number IS DISTINCT FROM r.zero_hand_number
+        OR c.stack_after IS DISTINCT FROM 0
+        OR h.stack_result->>'success' IS DISTINCT FROM 'true'
+        OR COALESCE(h.stack_result->'written'->>r.user_id::text,'')
+             !~'^-?[0-9]+([.][0-9]+)?$'
+        OR (h.stack_result->'written'->>r.user_id::text)::numeric
+             IS DISTINCT FROM 0
+        OR k.status IS DISTINCT FROM 'succeeded'
+        OR k.completed_at IS NULL
+        OR k.result IS DISTINCT FROM h.stack_result
+        OR r.zero_committed_at IS DISTINCT FROM
+             GREATEST(c.created_at,h.committed_at,k.completed_at)
+        OR tp.tournament_id IS DISTINCT FROM r.tournament_id
+        OR tp.user_id IS DISTINCT FROM r.user_id
+        OR r.roster_chips_before IS DISTINCT FROM 0
+        OR vacated.table_id IS DISTINCT FROM r.vacated_table_id
+        OR vacated.seat_number IS DISTINCT FROM r.vacated_seat_number
+        OR (
+          vacated.joined_at IS NOT DISTINCT FROM r.vacated_joined_at
+          AND (vacated.user_id IS DISTINCT FROM r.user_id
+            OR vacated.stack IS DISTINCT FROM 0
+            OR vacated.left_at IS DISTINCT FROM r.vacated_at
+            OR vacated.status IS DISTINCT FROM 'left'
+            OR vacated.leave_pending IS DISTINCT FROM false
+            OR vacated.is_sitting_out IS DISTINCT FROM false
+            OR vacated.is_away IS DISTINCT FROM false
+            OR vacated.sit_out_at IS NOT NULL
+            OR vacated.scheduled_leave_hands IS NOT NULL))
+        OR (
+          vacated.joined_at IS DISTINCT FROM r.vacated_joined_at
+          AND (vacated.joined_at IS NULL OR vacated.joined_at<=r.vacated_at))
+  ) THEN
+    RAISE EXCEPTION 'FAIL pending-zero cutover evidence changed';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+      FROM public.tournament_players tp
+      JOIN public.tournaments t ON t.id=tp.tournament_id
+     WHERE upper(COALESCE(t.status::text,''))='RUNNING'
+       AND lower(COALESCE(tp.status::text,''))='playing'
+       AND COALESCE(tp.chips,0)<=0
+       AND EXISTS (
+         SELECT 1 FROM public.table_seats live
+         JOIN public.tables tb ON tb.id=live.table_id
+          WHERE tb.tournament_id=tp.tournament_id
+            AND live.user_id=tp.user_id AND live.left_at IS NULL)
+  ) THEN
+    RAISE EXCEPTION 'FAIL a zero-chip playing roster still has a live seat';
+  END IF;
+
   SELECT count(*) INTO v_count
     FROM pg_trigger g
    WHERE g.tgrelid='public.table_seats'::regclass
@@ -416,6 +511,9 @@ BEGIN
 
   SELECT count(*) INTO v_count
     FROM (VALUES
+      ('public.tournament_pending_zero_seat_cutover_receipts'::regclass,
+       'tournament_pending_zero_seat_cutover_receipts_append_only',
+       'public.fn_tournament_seat_exit_cutover_receipts_append_only()'::regprocedure),
       ('public.tournament_paid_candidate_cutover_receipts'::regclass,
        'tournament_paid_candidate_cutover_receipts_append_only',
        'public.fn_tournament_seat_exit_cutover_receipts_append_only()'::regprocedure),
@@ -426,7 +524,7 @@ BEGIN
     JOIN pg_trigger g ON g.tgrelid=expected.relation_id
      AND g.tgname=expected.trigger_name AND g.tgfoid=expected.function_id
    WHERE NOT g.tgisinternal AND g.tgenabled='O' AND g.tgtype=27;
-  IF v_count<>2 THEN
+  IF v_count<>3 THEN
     RAISE EXCEPTION 'FAIL cutover detail receipts are not append-only';
   END IF;
 
@@ -438,6 +536,18 @@ BEGIN
        'service_role','public.tournament_seat_exit_authority_cutover','UPDATE')
      OR has_table_privilege(
        'service_role','public.tournament_seat_exit_authority_cutover','DELETE')
+     OR has_table_privilege(
+       'service_role',
+       'public.tournament_pending_zero_seat_cutover_receipts','SELECT')
+     OR has_table_privilege(
+       'service_role',
+       'public.tournament_pending_zero_seat_cutover_receipts','INSERT')
+     OR has_table_privilege(
+       'service_role',
+       'public.tournament_pending_zero_seat_cutover_receipts','UPDATE')
+     OR has_table_privilege(
+       'service_role',
+       'public.tournament_pending_zero_seat_cutover_receipts','DELETE')
      OR has_table_privilege(
        'service_role','public.tournament_paid_candidate_cutover_receipts','SELECT')
      OR has_table_privilege(

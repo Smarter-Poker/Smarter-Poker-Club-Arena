@@ -98,3 +98,25 @@ that chronology before the event pays anybody.
 The old comment justified the abort with "hand order must never be skipped:
 doing so would advance a PKO watermark past unpaid money". True of a transient
 refusal. Of a permanent one it is the opposite: waiting pays nobody at all.
+
+## And the one that made no sound at all
+
+Six more events had no refusal in the log, no grace grant, no error - nothing
+but a blind clock. `236d8826` had auto-escalated to **level 989 of a 24-level
+structure**; `09ac876f` to 243. Ten and ten busted players, three alive each,
+one per table, no hand possible.
+
+`registerEliminationScheduler` returned early when a registration already
+existed. Both the sweep runner and the scheduler's `isActive` predicate close
+over the lifecycle token taken AT REGISTRATION, and `resume()` begins a new
+epoch without always passing through the stop fence that clears that handle. So
+a manager could end up wired to an epoch that was no longer current: the
+scheduler either skips it in `pump()` (isActive false) or dispatches a run that
+returns at its first line. Silent, permanent, and invisible to every metric -
+`registered` counts the entry, `stalled_slots` counts nothing, and the level
+timer belongs to the new epoch and keeps ticking, which is exactly why these
+events looked alive.
+
+A re-registration now replaces the old entry instead of being ignored. The
+scheduler's own `register()` already removes any previous entry for the same
+tournament; dropping our stale handle first keeps the two in step.

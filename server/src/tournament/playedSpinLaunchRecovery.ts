@@ -44,7 +44,9 @@ export function parsePlayedSpinLaunchRecoveryProof(
     Number(value.paid_users) !== 3 ||
     Number(value.entitlement_users) !== 3 ||
     Number(value.live_seats) !== 2 ||
-    Number(value.hand_count) < 1
+    typeof value.hand_count !== 'number' ||
+    !Number.isSafeInteger(value.hand_count) ||
+    value.hand_count < 1
   ) {
     throw new Error('played Spin launch proof does not describe one exact paid three-seat game');
   }

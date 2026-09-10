@@ -346,6 +346,65 @@ describe('a green engine deploy means production serves the commit (2026-09-10)'
     expect(verdict).toMatch(/JOB_STATUS: \$\{\{ job\.status \}\}/);
   });
 
+  it('a deliberate deferral names itself; a decline that should have shipped never does', () => {
+    const script = verdict.slice(verdict.indexOf('run: |'));
+    expect(script).toMatch(
+      /if \[ "\$DRAIN_SKIP" = "true" \] && \[ "\$GATE_KIND" = "lease_held_elsewhere" \]; then[\s\S]{0,300}?exit 0/
+    );
+    expect(script, 'budget and certificate declines are failures to ship').not.toMatch(
+      /"(staged_deferred|no_certificate)"/
+    );
+    const gate = sliceYamlBlock(
+      HETZNER,
+      '      - name: Wait for the maintenance break to park every table'
+    );
+    expect((gate.match(/echo "gate_kind=[a-z_]+" >> \$GITHUB_OUTPUT/g) ?? []).length).toBe(
+      (gate.match(/echo "skip=true" >> \$GITHUB_OUTPUT/g) ?? []).length
+    );
+  });
+
+  it('every dedupe skip says which one it was, and already-live never claims the commit is missing', () => {
+    const d = sliceYamlBlock(
+      HETZNER,
+      '      - name: Skip if production already serves this commit'
+    );
+    expect(
+      (d.match(/echo "reason=(already_live|coalesced|superseded)" >> \$GITHUB_OUTPUT/g) ?? [])
+        .length
+    ).toBe((d.match(/echo "skip=true" >> \$GITHUB_OUTPUT/g) ?? []).length);
+    expect(sliceYamlEntry(HETZNER, "name: 'DID NOT DEPLOY")).toMatch(
+      /"already_live" \]; then\s*\n\s*echo "::notice title=ALREADY LIVE::/
+    );
+  });
+
+  it('a superseded run stands down green instead of failing red', () => {
+    // 8 of 8 red deploy runs on 2026-09-10 were runs whose workflow commit was
+    // no longer main's tip - none a ship failure - and one opened a false
+    // "train is failing" alarm (#4109).
+    const stage = sliceYamlEntry(HETZNER, 'name: Stage the current release proof control');
+    expect(stage).toMatch(
+      /git merge-base --is-ancestor "\$CONTROL_SHA" "\$REMOTE_MAIN"[\s\S]{0,200}?echo "superseded=true" >> "\$GITHUB_OUTPUT"[\s\S]{0,300}?exit 0/
+    );
+    // A commit that is NOT an ancestor of main is still refused, red.
+    expect(stage).toMatch(
+      /not dispatched from current main; refusing rollbackable control-plane code"\s*\n\s*exit 1/
+    );
+    const d = sliceYamlBlock(
+      HETZNER,
+      '      - name: Skip if production already serves this commit'
+    );
+    expect(d).toMatch(
+      /steps\.control\.outputs\.superseded \}\}" = "true" \]; then[\s\S]{0,120}?echo "skip=true"/
+    );
+  });
+
+  it('the verdict reads production before it paints a run red', () => {
+    const script = verdict.slice(verdict.indexOf('run: |'));
+    const read = script.indexOf('/health?nocache=');
+    expect(read).toBeGreaterThan(-1);
+    expect(read).toBeLessThan(script.lastIndexOf('::error title=DID NOT SHIP::'));
+  });
+
   it('nothing keyed on failure() can react to the verdict', () => {
     // The rollback is `if: failure() && ...`. A red verdict placed before it
     // would read as a failed deploy and could restore an image nobody replaced.

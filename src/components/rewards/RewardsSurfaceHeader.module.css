@@ -1,347 +1,112 @@
 /**
- * REWARDS SURFACE HEADER / #SMARTERCASINOREALISM
+ * REWARDS SURFACE HEADER / #SMARTERCASINOREALISM / #ClubArenaConsole
  *
  * This one sheet renders on NINETEEN pages - wallet, VIP, rakeback,
  * promotions, bonuses, achievements, hand history, marketplace, transactions,
- * session history, six union pages and two tournament pages. Measured against
- * the live DOM on 2026-09-05 it is the only module stylesheet besides the
- * (Dan-approved, untouchable) global header that renders across a whole family
- * of surfaces, which makes it the highest-leverage place in the app to put
- * material.
+ * session history, six union pages and two tournament pages - which makes it
+ * the highest-leverage place in the app to put material.
  *
- * WHAT CHANGED AND WHAT DID NOT. Every layout decision here was already
- * settled and mobile-tested: the grid, the 760px and 440px breakpoints, the
- * full-bleed edge on a phone, the conduit, the scanlines. None of it is
- * touched. What changed is where the colour comes from and what the surface is
- * made of:
+ * Dan, 2026-09-09, on the CSS-drawn version and on a border-image version:
+ * "NONE OF THOSE FOLLOW the #ClubArenaConsole Painted-Chassis Standard."
+ * So this sheet no longer draws a chassis at all. The header IS the spade
+ * console (components/console/SpadeConsole.css paints it from Dan's approved
+ * master); this file only places the console on the page and lays the
+ * description and the metrics on its glass. Nothing here is a frame, a fill,
+ * a gradient or a pill: paint what never changes, print what does.
  *
- *   - The palette now reads --realism-* from club-engine.css instead of
- *     hardcoded hexes. The drift this closes was real: this header lit its
- *     live metrics #3aa8ff while the wallet - the approved reference for
- *     #SMARTERCASINOREALISM - runs #00d4ff, so two pages in the SAME family,
- *     one tab apart, glowed a different colour.
- *   - The frame gained the machined treatment the wallet established: a lit
- *     top edge and a cavity beneath it, so the panel sits IN the page rather
- *     than on it.
+ * Colour still resolves through the --realism-* vocabulary in club-engine.css
+ * with the previous literal as fallback, so the header survives being
+ * rendered without the global sheet; the engraved rule above the metrics is
+ * the wallet's machined edge (a lit top edge over a cavity), cut into the
+ * glass rather than drawn on it.
  *
- * Every var() carries the previous literal as its fallback, so the header is
- * unchanged if it is ever rendered without the global sheet.
- *
- * NO :hover anywhere (tests/no-hover-effects.law.test.ts). Reduced motion
- * drops the glow and keeps every edge, so the object still reads as an object.
+ * NO :hover anywhere (tests/no-hover-effects.law.test.ts).
  */
 
 .header {
+  --rsh-copy: var(--realism-chrome, #d7dee7);
+  --rsh-chrome-hot: var(--realism-chrome-hot, #f4f8fb);
+  --rsh-cyan: var(--realism-cyan, #45adff);
+  --rsh-green: var(--realism-green, #c8ffd2);
+  --rsh-gold: var(--realism-gold, #ffd700);
+  --rsh-muted: var(--realism-muted, #9aa5b3);
+  --rsh-obsidian: var(--realism-obsidian, #000000);
+  --rsh-panel: var(--realism-panel, #050709);
+  --rsh-bevel: var(--realism-bevel, inset 0 1px 0 rgba(255, 255, 255, 0.08));
+  --rsh-cavity: var(--realism-cavity, inset 0 -1px 0 rgba(0, 0, 0, 0.6));
   position: relative;
-  isolation: isolate;
-  min-height: clamp(252px, 31vw, 390px);
-  overflow: hidden;
-  display: grid;
-  grid-template-columns: minmax(0, 1.08fr) minmax(290px, 0.92fr);
-  left: 50%;
-  width: min(1180px, calc(100vw - 32px));
-  margin-bottom: clamp(20px, 3vw, 34px);
-  transform: translateX(-50%);
-  border: 1px solid var(--realism-gunmetal, #26333d);
-  border-radius: 5px;
-  background: linear-gradient(
-    180deg,
-    var(--realism-carbon, #020407) 0%,
-    var(--realism-obsidian, #020407) 62%,
-    #020407 100%
-  );
-  box-shadow:
-    var(--realism-bevel, inset 0 1px 0 rgba(221, 243, 255, 0.12)),
-    var(--realism-cavity, inset 0 -1px 0 rgba(0, 0, 0, 0.6)),
-    0 24px 64px rgba(0, 0, 0, 0.38);
+  width: min(100%, 640px);
+  margin: 0 auto clamp(16px, 3vw, 28px);
+  padding: 0 8px;
+  background: transparent;
 }
 
-.header::before,
-.header::after {
-  content: '';
-  position: absolute;
-  z-index: 3;
-  pointer-events: none;
-}
-
-/* The lit spine down the left edge. Cyan is the family's live-data colour, so
-   the same energy runs the spine here, the metric pips below and the readouts
-   on the wallet. */
-.header::before {
-  inset: 0;
-  border-left: 2px solid var(--realism-cyan, #3aa8ff);
-  background:
-    linear-gradient(90deg, rgba(0, 212, 255, 0.09), transparent 18%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.028), transparent 24%);
-}
-
-/* The chrome-to-energy run along the top right: the machined edge catching the
-   light before it reaches the live corner. */
-.header::after {
-  top: 0;
-  right: 0;
-  width: min(34%, 280px);
-  height: 4px;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    var(--realism-chrome, #b9cad7) 36%,
-    var(--realism-cyan, #3aa8ff)
-  );
-}
-
-.copy {
-  position: relative;
-  z-index: 5;
-  align-self: end;
-  min-width: 0;
-  padding: clamp(28px, 5vw, 58px);
-  background: linear-gradient(90deg, #020407 0%, #020407 70%, rgba(2, 4, 7, 0.4) 100%);
-}
-
-.eyebrow {
-  margin: 0 0 10px;
-  color: var(--realism-cyan, #6ebcff);
-  font:
-    700 0.72rem/1.1 'Roboto Condensed',
-    Inter,
-    sans-serif;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-}
-
-/* Etched into the panel: the dark line under the type is the cut, the faint
-   light above it is the edge of the cut catching the room. */
-.title {
-  max-width: 760px;
-  margin: 0;
-  color: var(--realism-chrome-hot, #f4f8fb);
-  font:
-    700 clamp(2rem, 5vw, 4.25rem) / 0.92 Rajdhani,
-    Inter,
-    sans-serif;
-  letter-spacing: -0.035em;
-  text-transform: uppercase;
-  text-wrap: balance;
-  text-shadow:
-    0 1px 0 rgba(0, 0, 0, 0.8),
-    0 0 42px rgba(0, 212, 255, 0.14);
+.console {
+  filter: drop-shadow(0 12px 22px rgba(0, 0, 0, 0.75));
 }
 
 .description {
-  max-width: 650px;
-  margin: 14px 0 0;
-  color: var(--realism-chrome, #aab8c3);
-  font:
-    400 clamp(0.92rem, 1.4vw, 1.06rem) / 1.55 Inter,
-    sans-serif;
+  color: var(--rsh-copy);
+  text-align: center;
+  text-wrap: balance;
 }
 
-.commandRow {
-  display: flex;
-  align-items: end;
-  justify-content: space-between;
-  gap: 20px;
-  margin-top: clamp(20px, 3vw, 34px);
-}
-
+/* The metrics sit under an engraved rule: the cut is the black line, the lit
+   edge above it is the room catching the cut. Three to a row, label over
+   figure, tabular so a ticking number never reflows. */
 .metrics {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px 22px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(26%, 1fr));
+  gap: 2cqw 3cqw;
   margin: 0;
+  padding-top: 3cqw;
+  border-top: 1px solid var(--rsh-obsidian);
+  box-shadow: var(--rsh-bevel);
+  text-align: center;
 }
 
-/* A metric is a milled BAY, not a number with a rule beside it: a recessed
-   floor, a lit inner edge, and a status pip at the top of the slot. */
 .metric {
-  position: relative;
-  min-width: 74px;
-  padding-left: 11px;
-  border-left: 1px solid var(--realism-gunmetal-lit, #455560);
+  display: grid;
+  gap: 0.9cqw;
+  min-width: 0;
 }
 
-.metric::before {
-  content: '';
-  position: absolute;
-  top: 1px;
-  left: -2px;
-  width: 3px;
-  height: 12px;
-  background: var(--realism-muted, #768996);
+.metricLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.metric.live::before {
-  background: var(--realism-green, #35d48a);
-  box-shadow: 0 0 12px rgba(53, 212, 138, 0.58);
-}
-
-.metric.attention::before {
-  background: var(--realism-cyan, #3aa8ff);
-  box-shadow: 0 0 12px rgba(0, 212, 255, 0.72);
-}
-
-.metric dt {
-  color: var(--realism-muted, #7f909d);
-  font:
-    700 0.61rem/1 'Roboto Condensed',
-    Inter,
-    sans-serif;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-
-/* Tabular figures: a readout that reflows its own digits as a number ticks is
-   the tell that it is text pretending to be an instrument. */
-.metric dd {
-  margin: 5px 0 0;
-  color: var(--realism-chrome-hot, #eaf3f9);
-  font:
-    700 1.15rem/1 Rajdhani,
-    Inter,
-    sans-serif;
+.metricValue {
+  margin: 0;
+  overflow: hidden;
+  font-size: 5.6cqw;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-variant-numeric: tabular-nums;
-  text-shadow: 0 0 16px rgba(0, 212, 255, 0.22);
 }
 
+/* A page's free-form controls, under the same engraved rule. */
 .actions {
   display: flex;
   flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 8px;
+  justify-content: center;
+  gap: 2cqw;
+  padding-top: 3cqw;
+  border-top: 1px solid var(--rsh-obsidian);
+  box-shadow: var(--rsh-bevel), var(--rsh-cavity);
+  color: var(--rsh-chrome-hot);
 }
 
-.visual {
-  position: relative;
-  min-width: 0;
-  background-position: center;
-  background-size: cover;
-}
-
-.visual::before,
-.visual::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-}
-
-.visual::before {
-  z-index: 1;
-  background: linear-gradient(90deg, #020407 0%, rgba(2, 4, 7, 0.18) 54%, rgba(2, 4, 7, 0.05));
-}
-
-.visual::after {
-  z-index: 2;
-  background:
-    radial-gradient(circle at 70% 48%, transparent 0 28%, rgba(2, 4, 7, 0.28) 64%),
-    repeating-linear-gradient(0deg, transparent 0 3px, rgba(127, 193, 243, 0.026) 3px 4px);
-}
-
-.conduit {
-  position: absolute;
-  z-index: 3;
-  top: 14%;
-  bottom: 14%;
-  left: 43%;
-  width: 1px;
-  background: linear-gradient(
-    180deg,
-    transparent,
-    var(--realism-cyan, #3aa8ff) 27%,
-    var(--realism-chrome-hot, #ddf3ff) 52%,
-    transparent 78%
-  );
-  box-shadow: 0 0 20px rgba(0, 212, 255, 0.55);
-}
-
-.conduit::after {
-  content: '';
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 82px;
-  height: 82px;
-  border: 1px solid rgba(185, 202, 215, 0.38);
-  border-radius: 50%;
-  transform: translate(-50%, -50%);
-  box-shadow:
-    inset 0 0 18px rgba(58, 168, 255, 0.13),
-    0 0 24px rgba(58, 168, 255, 0.12);
-}
-
-.status {
-  position: absolute;
-  z-index: 4;
-  right: 18px;
-  bottom: 16px;
-  color: rgba(221, 243, 255, 0.66);
-  font:
-    600 0.58rem/1.2 ui-monospace,
-    SFMono-Regular,
-    Menlo,
-    monospace;
-  letter-spacing: 0.12em;
-}
-
-@media (max-width: 760px) {
-  .header {
-    min-height: 350px;
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: 1fr;
-  }
-
-  .copy,
-  .visual {
-    grid-area: 1 / 1;
-  }
-
-  .copy {
-    align-self: end;
-    padding: 116px 20px 24px;
-    background: linear-gradient(180deg, transparent 0%, rgba(2, 4, 7, 0.76) 31%, #020407 68%);
-  }
-
-  .visual {
-    background-position: 64% center;
-    opacity: 0.76;
-  }
-
-  .commandRow {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .actions {
-    justify-content: flex-start;
-  }
-
-  .status {
-    top: 18px;
-    right: 14px;
-    bottom: auto;
-  }
+.actions :focus-visible {
+  outline: 2px solid var(--rsh-cyan);
+  outline-offset: 2px;
 }
 
 @media (max-width: 440px) {
   .header {
-    width: 100vw;
-    border-right: 0;
-    border-left: 0;
-    border-radius: 0;
-  }
-
-  .title {
-    font-size: clamp(2rem, 12vw, 3rem);
-  }
-
-  .metrics {
-    gap: 10px 15px;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .conduit,
-  .metric::before {
-    box-shadow: none;
+    width: 100%;
+    padding: 0;
   }
 }

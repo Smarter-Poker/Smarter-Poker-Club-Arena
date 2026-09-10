@@ -2,17 +2,18 @@
 /*
  * A live hand must not make its own lease heartbeat look lost.
  *
- * The final/current-postimage Stage-B authority leaves exactly four lease
- * fences: exact hand settlement, unbound add-on resolution, empty-table
- * close, and the private manager request hook.  Those transactions keep an
- * exact lease row locked until commit.  FOR SHARE protects the generation,
- * but it conflicts with the heartbeat's FOR NO KEY UPDATE row lock.  Busy
- * tournament tables can therefore deny every heartbeat for a full proof
- * window and make a healthy manager fence and destroy its child engines.
+ * The final/current-postimage Stage-B authority leaves four lease-fenced
+ * functions: exact hand settlement (cash table or tournament lease), unbound
+ * add-on resolution, empty-table close, and the private manager request hook.
+ * Production migrations 20260910063559 and 20260910064701 already made the
+ * hook, tournament-hand, and empty-close fences FOR KEY SHARE, and made
+ * claim_tournament_lease_v2 take FOR UPDATE before its upsert. Stage-B #5
+ * authenticates and preserves those repairs. Only the cash-hand and add-on
+ * table-lease fences still arrive here as FOR SHARE.
  *
- * This forward-only, stopped-engine cutover carries the proven key-share
- * repair from the retired historical chain onto that final postimage. The two
- * redundant ownership constraints are deliberate.  PostgreSQL treats every
+ * This forward-only, stopped-engine cutover completes that already-repaired
+ * postimage without replaying a stale all-FOR-SHARE replacement. The two
+ * redundant ownership constraints are deliberate. PostgreSQL treats every
  * column belonging to a non-partial unique key as a key column.  Once
  * instance_id and lease_generation are key columns, FOR KEY SHARE has the
  * exact contract required here:
@@ -22,9 +23,10 @@
  *   - DELETE/release requires FOR UPDATE and waits.
  *
  * NOWAIT makes an unexpected live writer a refusal, never a partially
- * weakened authority boundary. A complete prior postimage is verified as an
- * exact no-op; a pristine preimage is applied once; every mixed or drifted
- * state aborts atomically before an unknown fence can be weakened.
+ * weakened authority boundary. PG17-derived definition/body hashes and full
+ * function metadata authenticate both the composed preimage and the complete
+ * postimage. A complete postimage is an exact no-op; every mixed, stale, or
+ * drifted state aborts atomically before an unknown fence can be weakened.
  */
 BEGIN;
 
@@ -68,6 +70,10 @@ DO $classify_lease_keyshare_preimage$
 DECLARE
   v_table_key_count integer;
   v_tournament_key_count integer;
+  v_preimage_ok boolean;
+  v_postimage_ok boolean;
+  v_bad integer;
+  v_postgres oid:='postgres'::regrole;
 BEGIN
   SELECT count(*)::integer INTO v_table_key_count
     FROM pg_constraint con
@@ -78,15 +84,130 @@ BEGIN
    WHERE con.conrelid = 'public.engine_tournament_leases'::regclass
      AND con.conname = 'engine_tournament_leases_owner_generation_key';
 
-  IF v_table_key_count = 0 AND v_tournament_key_count = 0 THEN
+  /* Definition and prosrc hashes were derived on isolated PostgreSQL 17 by
+     replaying the byte-exact 063559 and 064701 live migrations, installing
+     #5's preserved KEY SHARE hook, and applying only the two remaining table
+     lease substitutions below. */
+  SELECT count(*)=6
+         AND bool_and(md5(pg_get_functiondef(p.oid))=expected.definition_md5)
+         AND bool_and(md5(p.prosrc)=expected.source_md5)
+    INTO v_preimage_ok
+    FROM (
+      VALUES
+        ('public.fn_ca_commit_hand_settlement_exact_before_obligations(uuid,bigint,jsonb,numeric,numeric,text,numeric,jsonb,jsonb,text,uuid)',
+         'e3a2120fc6db33ad84fc4967126fe9b8','457ad8f1e1528ad205f7bd43488f3e14'),
+        ('public.fn_ca_resolve_unbound_pending_addons(uuid,numeric,text,uuid)',
+         '276314a02cecc35607cde1afdc2fdf21','8ab94f005d1dcc695c7094eec3fd279d'),
+        ('public.fn_close_empty_tournament_table(uuid,uuid,uuid)',
+         '0af954ab1264dc12ebce7741b7845343','4abef1a7ccd6d56c2523fe6cb02396b6'),
+        ('smarter_private.fn_smarter_data_api_pre_request()',
+         '7e3a52e636fdf400589523ab966fb8dc','c89d6df3e33f9ebdfe18a4980cd02c8e'),
+        ('public.claim_tournament_lease_v2(uuid,text,text,uuid,integer)',
+         '73abfc4523de42cb4b8bca5443602cbd','d1b5100c2b9f92bec5fd1680b0b4f230'),
+        ('public.heartbeat_tournament_leases_v4(text,jsonb,integer)',
+         '4a41b0124e75e46ed8121e6a56014758','5e6c99545e07c21efcb50e5cb3441c14')
+    ) expected(identity,definition_md5,source_md5)
+    JOIN pg_proc p ON p.oid=to_regprocedure(expected.identity);
+
+  SELECT count(*)=6
+         AND bool_and(md5(pg_get_functiondef(p.oid))=expected.definition_md5)
+         AND bool_and(md5(p.prosrc)=expected.source_md5)
+    INTO v_postimage_ok
+    FROM (
+      VALUES
+        ('public.fn_ca_commit_hand_settlement_exact_before_obligations(uuid,bigint,jsonb,numeric,numeric,text,numeric,jsonb,jsonb,text,uuid)',
+         'c555fb7b83c889312995bc0038c1b275','21eee4aac1840bd768592caff4b2c492'),
+        ('public.fn_ca_resolve_unbound_pending_addons(uuid,numeric,text,uuid)',
+         '3b69f7d3d104ff1c612df0581ca05493','dceb3cbdf762f5ec0720d9ff91a09c2d'),
+        ('public.fn_close_empty_tournament_table(uuid,uuid,uuid)',
+         '0af954ab1264dc12ebce7741b7845343','4abef1a7ccd6d56c2523fe6cb02396b6'),
+        ('smarter_private.fn_smarter_data_api_pre_request()',
+         '7e3a52e636fdf400589523ab966fb8dc','c89d6df3e33f9ebdfe18a4980cd02c8e'),
+        ('public.claim_tournament_lease_v2(uuid,text,text,uuid,integer)',
+         '73abfc4523de42cb4b8bca5443602cbd','d1b5100c2b9f92bec5fd1680b0b4f230'),
+        ('public.heartbeat_tournament_leases_v4(text,jsonb,integer)',
+         '4a41b0124e75e46ed8121e6a56014758','5e6c99545e07c21efcb50e5cb3441c14')
+    ) expected(identity,definition_md5,source_md5)
+    JOIN pg_proc p ON p.oid=to_regprocedure(expected.identity);
+
+  IF v_table_key_count = 0 AND v_tournament_key_count = 0
+     AND v_preimage_ok THEN
     INSERT INTO pg_temp.lease_keyshare_cutover_mode(mode) VALUES ('apply');
-  ELSIF v_table_key_count = 1 AND v_tournament_key_count = 1 THEN
+  ELSIF v_table_key_count = 1 AND v_tournament_key_count = 1
+        AND v_postimage_ok THEN
     INSERT INTO pg_temp.lease_keyshare_cutover_mode(mode) VALUES ('verify');
   ELSE
     RAISE EXCEPTION
-      'LEASE_KEYSHARE_MIXED_PREIMAGE: table key %, tournament key %',
+      'LEASE_KEYSHARE_UNKNOWN_PREIMAGE: table key %, tournament key %, source preimage %, source postimage %',
       v_table_key_count,
-      v_tournament_key_count;
+      v_tournament_key_count,
+      v_preimage_ok,
+      v_postimage_ok;
+  END IF;
+
+  SELECT count(*)::integer INTO v_bad
+    FROM (
+      VALUES
+        ('public.fn_ca_commit_hand_settlement_exact_before_obligations(uuid,bigint,jsonb,numeric,numeric,text,numeric,jsonb,jsonb,text,uuid)',
+         'jsonb'::regtype,false,11,0,
+         ARRAY['search_path=public, pg_temp']::text[],
+         ARRAY['postgres']::name[]),
+        ('public.fn_ca_resolve_unbound_pending_addons(uuid,numeric,text,uuid)',
+         'jsonb'::regtype,false,4,0,
+         ARRAY['search_path=public, extensions, pg_temp']::text[],
+         ARRAY['postgres','service_role']::name[]),
+        ('public.fn_close_empty_tournament_table(uuid,uuid,uuid)',
+         'jsonb'::regtype,false,3,0,
+         ARRAY['search_path=public, pg_temp']::text[],
+         ARRAY['postgres','service_role']::name[]),
+        ('smarter_private.fn_smarter_data_api_pre_request()',
+         'void'::regtype,false,0,0,
+         ARRAY['search_path=pg_catalog, pg_temp']::text[],
+         ARRAY['anon','authenticated','postgres','service_role']::name[]),
+        ('public.claim_tournament_lease_v2(uuid,text,text,uuid,integer)',
+         'record'::regtype,true,5,3,
+         ARRAY['search_path=public, pg_temp']::text[],
+         ARRAY['postgres','service_role']::name[]),
+        ('public.heartbeat_tournament_leases_v4(text,jsonb,integer)',
+         'record'::regtype,true,3,1,
+         ARRAY['search_path=public, pg_temp']::text[],
+         ARRAY['postgres','service_role']::name[])
+    ) expected(
+      identity,return_type,returns_set,argument_count,default_count,
+      configuration,execute_grantees)
+    LEFT JOIN pg_proc p ON p.oid=to_regprocedure(expected.identity)
+    LEFT JOIN pg_language l ON l.oid=p.prolang
+   WHERE p.oid IS NULL
+      OR p.proowner IS DISTINCT FROM v_postgres
+      OR NOT p.prosecdef OR p.proretset IS DISTINCT FROM expected.returns_set
+      OR p.proisstrict OR p.proleakproof
+      OR p.provolatile<>'v' OR p.proparallel<>'u' OR p.prokind<>'f'
+      OR p.prorettype IS DISTINCT FROM expected.return_type
+      OR p.pronargs IS DISTINCT FROM expected.argument_count
+      OR p.pronargdefaults IS DISTINCT FROM expected.default_count
+      OR p.proconfig IS DISTINCT FROM expected.configuration
+      OR l.lanname IS DISTINCT FROM 'plpgsql'
+      OR (
+        SELECT array_agg(
+                 (CASE WHEN acl.grantee=0 THEN 'PUBLIC'
+                       ELSE pg_get_userbyid(acl.grantee) END)::name
+                 ORDER BY CASE WHEN acl.grantee=0 THEN 'PUBLIC'
+                               ELSE pg_get_userbyid(acl.grantee) END)
+          FROM aclexplode(COALESCE(p.proacl,acldefault('f',p.proowner))) acl
+         WHERE acl.privilege_type='EXECUTE'
+           AND acl.grantor=p.proowner
+           AND NOT acl.is_grantable
+      ) IS DISTINCT FROM expected.execute_grantees
+      OR EXISTS (
+        SELECT 1
+          FROM aclexplode(COALESCE(p.proacl,acldefault('f',p.proowner))) acl
+         WHERE acl.privilege_type<>'EXECUTE'
+            OR acl.grantor<>p.proowner
+            OR acl.is_grantable
+      );
+  IF v_bad<>0 THEN
+    RAISE EXCEPTION
+      'LEASE_KEYSHARE_FUNCTION_METADATA_DRIFT: % current authorities',v_bad;
   END IF;
 END;
 $classify_lease_keyshare_preimage$;
@@ -201,13 +322,24 @@ SELECT p.oid AS function_oid,
        p.proowner,
        p.proacl,
        p.prosecdef,
-       p.proconfig
+       p.proconfig,
+       p.provolatile,
+       p.proparallel,
+       p.proisstrict,
+       p.proleakproof,
+       p.prokind,
+       p.proretset,
+       p.prorettype,
+       p.pronargs,
+       p.pronargdefaults
   FROM pg_proc p
  WHERE p.oid = ANY(ARRAY[
    'public.fn_ca_commit_hand_settlement_exact_before_obligations(uuid,bigint,jsonb,numeric,numeric,text,numeric,jsonb,jsonb,text,uuid)'::regprocedure::oid,
    'public.fn_ca_resolve_unbound_pending_addons(uuid,numeric,text,uuid)'::regprocedure::oid,
    'public.fn_close_empty_tournament_table(uuid,uuid,uuid)'::regprocedure::oid,
-   'smarter_private.fn_smarter_data_api_pre_request()'::regprocedure::oid
+   'smarter_private.fn_smarter_data_api_pre_request()'::regprocedure::oid,
+   'public.claim_tournament_lease_v2(uuid,text,text,uuid,integer)'::regprocedure::oid,
+   'public.heartbeat_tournament_leases_v4(text,jsonb,integer)'::regprocedure::oid
  ]);
 
 DO $patch_effective_lease_fences$
@@ -222,8 +354,9 @@ BEGIN
     RETURN;
   END IF;
 
-  /* Current hand settlement: change only the two lease rows.  Its separate
-     tournament-parent FOR SHARE remains untouched. */
+  /* 064701 already changed the tournament-lease row. Change only the remaining
+     cash table-lease row; its separate tournament-parent FOR SHARE remains
+     untouched. */
   v_oid := to_regprocedure(
     'public.fn_ca_commit_hand_settlement_exact_before_obligations(uuid,bigint,jsonb,numeric,numeric,text,numeric,jsonb,jsonb,text,uuid)'
   );
@@ -237,14 +370,6 @@ BEGIN
   v_count := (length(v_source) - length(replace(v_source, v_before, ''))) / length(v_before);
   IF v_count <> 1 THEN
     RAISE EXCEPTION 'LEASE_FENCE_SOURCE_DRIFT: exact hand table fence matched % times', v_count;
-  END IF;
-  v_source := replace(v_source, v_before, v_after);
-
-  v_before := E'FROM public.engine_tournament_leases l\n     WHERE l.tournament_id = v_tournament_id\n     FOR SHARE;';
-  v_after := E'FROM public.engine_tournament_leases l\n     WHERE l.tournament_id = v_tournament_id\n     FOR KEY SHARE;';
-  v_count := (length(v_source) - length(replace(v_source, v_before, ''))) / length(v_before);
-  IF v_count <> 1 THEN
-    RAISE EXCEPTION 'LEASE_FENCE_SOURCE_DRIFT: exact hand tournament fence matched % times', v_count;
   END IF;
   EXECUTE replace(v_source, v_before, v_after);
 
@@ -263,37 +388,6 @@ BEGIN
     RAISE EXCEPTION 'LEASE_FENCE_SOURCE_DRIFT: pending add-on fence matched % times', v_count;
   END IF;
   EXECUTE replace(v_source, v_before, v_after);
-
-  /* Empty-table close holds the current tournament-manager generation. */
-  v_oid := to_regprocedure(
-    'public.fn_close_empty_tournament_table(uuid,uuid,uuid)'
-  );
-  IF v_oid IS NULL THEN
-    RAISE EXCEPTION 'LEASE_FENCE_FUNCTION_MISSING: empty tournament table close';
-  END IF;
-  v_source := pg_get_functiondef(v_oid);
-  v_before := E'FROM public.engine_tournament_leases l\n   WHERE l.tournament_id = p_tournament_id\n     AND l.protocol_version = 2\n     AND l.lease_generation = p_lease_generation\n     AND l.heartbeat_at >= clock_timestamp() - interval ''30 seconds''\n   FOR SHARE;';
-  v_after := E'FROM public.engine_tournament_leases l\n   WHERE l.tournament_id = p_tournament_id\n     AND l.protocol_version = 2\n     AND l.lease_generation = p_lease_generation\n     AND l.heartbeat_at >= clock_timestamp() - interval ''30 seconds''\n   FOR KEY SHARE;';
-  v_count := (length(v_source) - length(replace(v_source, v_before, ''))) / length(v_before);
-  IF v_count <> 1 THEN
-    RAISE EXCEPTION 'LEASE_FENCE_SOURCE_DRIFT: empty-table close fence matched % times', v_count;
-  END IF;
-  EXECUTE replace(v_source, v_before, v_after);
-
-  /* Every mutating manager request takes one transaction-wide parent lease
-     fence in the private PostgREST pre-request hook. */
-  v_oid := to_regprocedure('smarter_private.fn_smarter_data_api_pre_request()');
-  IF v_oid IS NULL THEN
-    RAISE EXCEPTION 'LEASE_FENCE_FUNCTION_MISSING: manager request hook';
-  END IF;
-  v_source := pg_get_functiondef(v_oid);
-  v_before := E'FROM public.engine_tournament_leases l\n     WHERE l.tournament_id = v_tournament_id\n       AND l.protocol_version = 2\n       AND l.lease_generation = v_lease_generation\n       AND l.heartbeat_at >=\n           clock_timestamp() - make_interval(secs => v_stale_seconds)\n     FOR SHARE;';
-  v_after := E'FROM public.engine_tournament_leases l\n     WHERE l.tournament_id = v_tournament_id\n       AND l.protocol_version = 2\n       AND l.lease_generation = v_lease_generation\n       AND l.heartbeat_at >=\n           clock_timestamp() - make_interval(secs => v_stale_seconds)\n     FOR KEY SHARE;';
-  v_count := (length(v_source) - length(replace(v_source, v_before, ''))) / length(v_before);
-  IF v_count <> 1 THEN
-    RAISE EXCEPTION 'LEASE_FENCE_SOURCE_DRIFT: manager request fence matched % times', v_count;
-  END IF;
-  EXECUTE replace(v_source, v_before, v_after);
 END;
 $patch_effective_lease_fences$;
 
@@ -301,13 +395,15 @@ DO $verify_effective_lease_fences$
 DECLARE
   v_source text;
   v_residual regprocedure;
+  v_bad integer;
 BEGIN
   SELECT pg_get_functiondef(
            'public.fn_ca_commit_hand_settlement_exact_before_obligations(uuid,bigint,jsonb,numeric,numeric,text,numeric,jsonb,jsonb,text,uuid)'::regprocedure
          )
     INTO v_source;
   IF position(E'FROM public.engine_table_leases l\n     WHERE l.table_id = p_table_id\n     FOR KEY SHARE;' IN v_source) = 0
-     OR position(E'FROM public.engine_tournament_leases l\n     WHERE l.tournament_id = v_tournament_id\n     FOR KEY SHARE;' IN v_source) = 0
+     OR v_source !~
+          'FROM[[:space:]]+public\.engine_tournament_leases[[:space:]]+l[[:space:]]+WHERE[[:space:]]+l\.tournament_id[[:space:]]*=[[:space:]]*v_tournament_id[^;]+FOR[[:space:]]+KEY[[:space:]]+SHARE[[:space:]]*;'
      OR position(E'FROM public.tournaments t\n     WHERE t.id = v_tournament_id\n     FOR SHARE;' IN v_source) = 0 THEN
     RAISE EXCEPTION 'LEASE_FENCE_POSTCONDITION_FAILED: exact hand settlement';
   END IF;
@@ -324,7 +420,8 @@ BEGIN
            'public.fn_close_empty_tournament_table(uuid,uuid,uuid)'::regprocedure
          )
     INTO v_source;
-  IF position(E'FROM public.engine_tournament_leases l\n   WHERE l.tournament_id = p_tournament_id\n     AND l.protocol_version = 2\n     AND l.lease_generation = p_lease_generation\n     AND l.heartbeat_at >= clock_timestamp() - interval ''30 seconds''\n   FOR KEY SHARE;' IN v_source) = 0 THEN
+  IF v_source !~
+       'FROM[[:space:]]+public\.engine_tournament_leases[[:space:]]+l[[:space:]]+WHERE[[:space:]]+l\.tournament_id[[:space:]]*=[[:space:]]*p_tournament_id[^;]+FOR[[:space:]]+KEY[[:space:]]+SHARE[[:space:]]*;' THEN
     RAISE EXCEPTION 'LEASE_FENCE_POSTCONDITION_FAILED: empty-table close';
   END IF;
 
@@ -332,8 +429,30 @@ BEGIN
            'smarter_private.fn_smarter_data_api_pre_request()'::regprocedure
          )
     INTO v_source;
-  IF position(E'FROM public.engine_tournament_leases l\n     WHERE l.tournament_id = v_tournament_id\n       AND l.protocol_version = 2\n       AND l.lease_generation = v_lease_generation\n       AND l.heartbeat_at >=\n           clock_timestamp() - make_interval(secs => v_stale_seconds)\n     FOR KEY SHARE;' IN v_source) = 0 THEN
+  IF v_source !~
+       'FROM[[:space:]]+public\.engine_tournament_leases[[:space:]]+l[[:space:]]+WHERE[[:space:]]+l\.tournament_id[[:space:]]*=[[:space:]]*v_tournament_id[^;]+FOR[[:space:]]+KEY[[:space:]]+SHARE[[:space:]]*;' THEN
     RAISE EXCEPTION 'LEASE_FENCE_POSTCONDITION_FAILED: manager request hook';
+  END IF;
+
+  SELECT pg_get_functiondef(
+           'public.claim_tournament_lease_v2(uuid,text,text,uuid,integer)'::regprocedure
+         )
+    INTO v_source;
+  IF position(E'PERFORM 1 FROM public.engine_tournament_leases l\n'
+              '   WHERE l.tournament_id = p_tournament_id\n'
+              '   FOR UPDATE;\n\n'
+              '  INSERT INTO public.engine_tournament_leases' IN v_source) = 0 THEN
+    RAISE EXCEPTION
+      'LEASE_FENCE_POSTCONDITION_FAILED: claim takeover is not FOR UPDATE before upsert';
+  END IF;
+
+  SELECT p.prosrc INTO STRICT v_source
+    FROM pg_proc p
+   WHERE p.oid=
+     'public.heartbeat_tournament_leases_v4(text,jsonb,integer)'::regprocedure;
+  IF position('FOR NO KEY UPDATE OF l SKIP LOCKED' IN v_source)=0 THEN
+    RAISE EXCEPTION
+      'LEASE_FENCE_POSTCONDITION_FAILED: tournament heartbeat lock shape drifted';
   END IF;
 
   SELECT p.oid::regprocedure
@@ -351,7 +470,33 @@ BEGIN
       v_residual;
   END IF;
 
-  IF (SELECT count(*) FROM pg_temp.lease_fence_metadata_before) <> 4 THEN
+  SELECT count(*)::integer INTO v_bad
+    FROM (
+      VALUES
+        ('public.fn_ca_commit_hand_settlement_exact_before_obligations(uuid,bigint,jsonb,numeric,numeric,text,numeric,jsonb,jsonb,text,uuid)',
+         'c555fb7b83c889312995bc0038c1b275','21eee4aac1840bd768592caff4b2c492'),
+        ('public.fn_ca_resolve_unbound_pending_addons(uuid,numeric,text,uuid)',
+         '3b69f7d3d104ff1c612df0581ca05493','dceb3cbdf762f5ec0720d9ff91a09c2d'),
+        ('public.fn_close_empty_tournament_table(uuid,uuid,uuid)',
+         '0af954ab1264dc12ebce7741b7845343','4abef1a7ccd6d56c2523fe6cb02396b6'),
+        ('smarter_private.fn_smarter_data_api_pre_request()',
+         '7e3a52e636fdf400589523ab966fb8dc','c89d6df3e33f9ebdfe18a4980cd02c8e'),
+        ('public.claim_tournament_lease_v2(uuid,text,text,uuid,integer)',
+         '73abfc4523de42cb4b8bca5443602cbd','d1b5100c2b9f92bec5fd1680b0b4f230'),
+        ('public.heartbeat_tournament_leases_v4(text,jsonb,integer)',
+         '4a41b0124e75e46ed8121e6a56014758','5e6c99545e07c21efcb50e5cb3441c14')
+    ) expected(identity,definition_md5,source_md5)
+    LEFT JOIN pg_proc p ON p.oid=to_regprocedure(expected.identity)
+   WHERE p.oid IS NULL
+      OR md5(pg_get_functiondef(p.oid)) IS DISTINCT FROM expected.definition_md5
+      OR md5(p.prosrc) IS DISTINCT FROM expected.source_md5;
+  IF v_bad<>0 THEN
+    RAISE EXCEPTION
+      'LEASE_FENCE_POSTCONDITION_FAILED: % authenticated function sources drifted',
+      v_bad;
+  END IF;
+
+  IF (SELECT count(*) FROM pg_temp.lease_fence_metadata_before) <> 6 THEN
     RAISE EXCEPTION 'LEASE_FENCE_METADATA_SNAPSHOT_INCOMPLETE';
   END IF;
   IF EXISTS (
@@ -363,6 +508,15 @@ BEGIN
         OR current_fn.proacl IS DISTINCT FROM snap.proacl
         OR current_fn.prosecdef IS DISTINCT FROM snap.prosecdef
         OR current_fn.proconfig IS DISTINCT FROM snap.proconfig
+        OR current_fn.provolatile IS DISTINCT FROM snap.provolatile
+        OR current_fn.proparallel IS DISTINCT FROM snap.proparallel
+        OR current_fn.proisstrict IS DISTINCT FROM snap.proisstrict
+        OR current_fn.proleakproof IS DISTINCT FROM snap.proleakproof
+        OR current_fn.prokind IS DISTINCT FROM snap.prokind
+        OR current_fn.proretset IS DISTINCT FROM snap.proretset
+        OR current_fn.prorettype IS DISTINCT FROM snap.prorettype
+        OR current_fn.pronargs IS DISTINCT FROM snap.pronargs
+        OR current_fn.pronargdefaults IS DISTINCT FROM snap.pronargdefaults
   ) THEN
     RAISE EXCEPTION
       'LEASE_FENCE_METADATA_CHANGED: owner, ACL, security mode, or function configuration drifted';

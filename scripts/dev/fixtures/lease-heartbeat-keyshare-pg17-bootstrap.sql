@@ -1,8 +1,17 @@
+CREATE SCHEMA auth;
 CREATE SCHEMA smarter_private;
 
 CREATE ROLE anon NOLOGIN;
 CREATE ROLE authenticated NOLOGIN;
 CREATE ROLE service_role NOLOGIN;
+
+CREATE OR REPLACE FUNCTION auth.role()
+RETURNS text
+LANGUAGE sql
+STABLE
+AS $function$
+  SELECT 'service_role'::text;
+$function$;
 
 CREATE OR REPLACE FUNCTION public.fn_engine_lease_stale_seconds()
 RETURNS integer
@@ -15,6 +24,8 @@ $function$;
 CREATE TABLE public.engine_table_leases (
   table_id uuid PRIMARY KEY,
   instance_id text NOT NULL,
+  engine_version text,
+  acquired_at timestamptz NOT NULL DEFAULT clock_timestamp(),
   lease_generation uuid NOT NULL,
   protocol_version integer NOT NULL DEFAULT 2,
   heartbeat_at timestamptz NOT NULL DEFAULT clock_timestamp()
@@ -23,19 +34,71 @@ CREATE TABLE public.engine_table_leases (
 CREATE TABLE public.engine_tournament_leases (
   tournament_id uuid PRIMARY KEY,
   instance_id text NOT NULL,
+  engine_version text,
+  acquired_at timestamptz NOT NULL DEFAULT clock_timestamp(),
   lease_generation uuid NOT NULL,
   protocol_version integer NOT NULL DEFAULT 2,
   heartbeat_at timestamptz NOT NULL DEFAULT clock_timestamp()
 );
 
 CREATE TABLE public.tournaments (
-  id uuid PRIMARY KEY
+  id uuid PRIMARY KEY,
+  status text NOT NULL DEFAULT 'RUNNING'
 );
 
 CREATE TABLE public.tables (
   id uuid PRIMARY KEY,
-  tournament_id uuid REFERENCES public.tournaments(id)
+  tournament_id uuid REFERENCES public.tournaments(id),
+  status text NOT NULL DEFAULT 'active',
+  current_players integer NOT NULL DEFAULT 0,
+  is_deleted boolean NOT NULL DEFAULT false,
+  updated_at timestamptz NOT NULL DEFAULT clock_timestamp()
 );
+
+CREATE TABLE public.table_seats (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  table_id uuid NOT NULL REFERENCES public.tables(id),
+  left_at timestamptz
+);
+
+CREATE TABLE public.table_pending_addons (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  table_id uuid NOT NULL REFERENCES public.tables(id),
+  user_id uuid NOT NULL,
+  kind text,
+  resolved_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT clock_timestamp()
+);
+
+CREATE TABLE public.hand_atomic_commits (
+  table_id uuid NOT NULL REFERENCES public.tables(id),
+  hand_number bigint NOT NULL,
+  post_commit_payload jsonb,
+  PRIMARY KEY (table_id, hand_number)
+);
+
+CREATE TABLE public.tournament_mutator_scheduler_retirement_receipts (
+  migration_version text PRIMARY KEY
+);
+
+INSERT INTO public.tournament_mutator_scheduler_retirement_receipts(
+  migration_version
+) VALUES ('20260910042112_stage_b_current_postimage_contraction');
+
+CREATE OR REPLACE FUNCTION public.fn_ca_commit_hand_settlement_before_lease_generation(
+  uuid,bigint,jsonb,numeric,numeric,text,numeric,jsonb,jsonb
+) RETURNS jsonb
+LANGUAGE sql
+AS $function$
+  SELECT jsonb_build_object('success', true);
+$function$;
+
+CREATE OR REPLACE FUNCTION public.resolve_pending_addon(uuid,numeric)
+RETURNS TABLE(applied numeric,refunded numeric)
+LANGUAGE sql
+AS $function$
+  SELECT 0::numeric,0::numeric;
+$function$;
 
 INSERT INTO public.tournaments(id)
 VALUES ('22222222-2222-4222-8222-222222222222');
@@ -65,111 +128,7 @@ INSERT INTO public.engine_tournament_leases(
   '44444444-4444-4444-8444-444444444444'
 );
 
-/* The bodies below are deliberately small, but their lease reads and exact
-   production signatures are byte-for-byte cutover fixtures.  The migration
-   must patch all four and must leave the ordinary tournament-parent lock in
-   the settlement function unchanged. */
-CREATE OR REPLACE FUNCTION public.fn_ca_commit_hand_settlement_exact_before_obligations(
-  p_table_id uuid,
-  p_hand_number bigint,
-  p_stacks jsonb,
-  p_rake numeric,
-  p_bbj numeric,
-  p_ref text,
-  p_inflow numeric,
-  p_hand_row jsonb,
-  p_units jsonb,
-  p_instance_id text,
-  p_lease_generation uuid
-) RETURNS jsonb
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public, pg_temp
-AS $function$
-DECLARE
-  v_tournament_id uuid;
-BEGIN
-  SELECT t.tournament_id INTO v_tournament_id
-    FROM public.tables t
-   WHERE t.id = p_table_id;
-
-  IF v_tournament_id IS NULL THEN
-    PERFORM 1
-      FROM public.engine_table_leases l
-     WHERE l.table_id = p_table_id
-     FOR SHARE;
-  ELSE
-    PERFORM 1
-      FROM public.engine_tournament_leases l
-     WHERE l.tournament_id = v_tournament_id
-     FOR SHARE;
-    PERFORM 1
-      FROM public.tournaments t
-     WHERE t.id = v_tournament_id
-     FOR SHARE;
-  END IF;
-  RETURN jsonb_build_object('ok', FOUND);
-END;
-$function$;
-
-CREATE OR REPLACE FUNCTION public.fn_ca_resolve_unbound_pending_addons(
-  p_table_id uuid,
-  p_max_buy_in numeric,
-  p_instance_id text,
-  p_lease_generation uuid
-) RETURNS jsonb
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public, pg_temp
-AS $function$
-BEGIN
-  PERFORM 1
-    FROM public.engine_table_leases l
-   WHERE l.table_id = p_table_id
-   FOR SHARE;
-  RETURN jsonb_build_object('ok', FOUND);
-END;
-$function$;
-
-CREATE OR REPLACE FUNCTION public.fn_close_empty_tournament_table(
-  p_tournament_id uuid,
-  p_table_id uuid,
-  p_lease_generation uuid
-) RETURNS jsonb
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public, pg_temp
-AS $function$
-BEGIN
-  PERFORM 1
-    FROM public.engine_tournament_leases l
-   WHERE l.tournament_id = p_tournament_id
-     AND l.protocol_version = 2
-     AND l.lease_generation = p_lease_generation
-     AND l.heartbeat_at >= clock_timestamp() - interval '30 seconds'
-   FOR SHARE;
-  RETURN jsonb_build_object('ok', FOUND);
-END;
-$function$;
-
-CREATE OR REPLACE FUNCTION smarter_private.fn_smarter_data_api_pre_request()
-RETURNS void
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public, pg_temp
-AS $function$
-DECLARE
-  v_tournament_id uuid := '22222222-2222-4222-8222-222222222222';
-  v_lease_generation uuid := '44444444-4444-4444-8444-444444444444';
-  v_stale_seconds integer := 30;
-BEGIN
-  PERFORM 1
-      FROM public.engine_tournament_leases l
-     WHERE l.tournament_id = v_tournament_id
-       AND l.protocol_version = 2
-       AND l.lease_generation = v_lease_generation
-       AND l.heartbeat_at >=
-           clock_timestamp() - make_interval(secs => v_stale_seconds)
-     FOR SHARE;
-END;
-$function$;
+/* The executable runner derives the six byte-authenticated #5 preimages from
+   their canonical migrations. This bootstrap supplies only their runtime
+   relations and inert callees; no simplified authority body may masquerade
+   as a production preimage. */

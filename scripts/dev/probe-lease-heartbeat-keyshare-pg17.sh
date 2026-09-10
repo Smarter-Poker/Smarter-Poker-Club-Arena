@@ -26,6 +26,29 @@ migration="$({
 heartbeat_migration="$({
   migration_by_suffix lease_heartbeats_skip_busy_generations.sql
 })"
+busy_manager_migration="$repo_dir/supabase/migrations/20260910063559_a_busy_manager_keeps_its_lease.sql"
+hand_heartbeat_migration="$repo_dir/supabase/migrations/20260910064701_a_hand_commit_does_not_hold_the_lease_against_its_own_heartb.sql"
+claim_source="$repo_dir/supabase/migrations/20260908042900_tournament_leases_have_fencing_generations.sql"
+hand_source="$repo_dir/supabase/migrations/20260908043100_table_leases_and_hand_commits_have_generations.sql"
+close_source="$repo_dir/supabase/migrations/20260908043300_tournament_table_break_close_is_atomic.sql"
+hook_source="$repo_dir/supabase/migrations/20260908125958_tournament_manager_requests_carry_lease_authority.sql"
+addon_source="$repo_dir/supabase/migrations/20260908130009_post_commit_obligations_are_atomic_and_resumable.sql"
+current_postimage_source="$repo_dir/supabase/migrations/20260910055955_stage_b_current_postimage_contraction.sql"
+
+for required_source in \
+  "$busy_manager_migration" \
+  "$hand_heartbeat_migration" \
+  "$claim_source" \
+  "$hand_source" \
+  "$close_source" \
+  "$hook_source" \
+  "$addon_source" \
+  "$current_postimage_source"; do
+  if [[ ! -f "$required_source" ]]; then
+    echo "Required authenticated preimage source is missing: $required_source" >&2
+    exit 1
+  fi
+done
 
 pg17_bin="${PG17_BINDIR:-}"
 if [[ -z "$pg17_bin" ]] && command -v brew >/dev/null 2>&1; then
@@ -41,6 +64,12 @@ probe_root="$(mktemp -d "/tmp/ca-lease-keyshare-pg17.XXXXXX")"
 cluster_dir="${probe_root}/cluster"
 socket_dir="${probe_root}/socket"
 postgres_log="${probe_root}/postgres.log"
+claim_sql="${probe_root}/claim.sql"
+hand_sql="${probe_root}/hand.sql"
+close_sql="${probe_root}/close.sql"
+hook_sql="${probe_root}/hook.sql"
+addon_sql="${probe_root}/addon.sql"
+stage_b_hook_sql="${probe_root}/stage-b-hook.sql"
 mkdir -p "$socket_dir"
 port="$((41432 + ($$ % 10000)))"
 
@@ -53,6 +82,71 @@ cleanup() {
   fi
 }
 trap cleanup EXIT
+
+extract_function() {
+  local source_file="$1"
+  local signature="$2"
+  local destination="$3"
+  awk -v signature="$signature" '
+    index($0, signature) == 1 { capture = 1 }
+    capture { print }
+    capture && /^\$function\$;$/ { found = 1; exit }
+    END { if (!found) exit 1 }
+  ' "$source_file" >"$destination" || {
+    echo "Could not extract authenticated function: $signature" >&2
+    exit 1
+  }
+}
+
+extract_function_with_marker() {
+  local source_file="$1"
+  local signature="$2"
+  local marker="$3"
+  local destination="$4"
+  awk -v signature="$signature" -v marker="$marker" '
+    index($0, signature) == 1 { capture = 1; candidate = "" }
+    capture { candidate = candidate $0 ORS }
+    capture && /^\$function\$;$/ {
+      if (index(candidate, marker) > 0) {
+        printf "%s", candidate
+        found = 1
+        exit
+      }
+      capture = 0
+      candidate = ""
+    }
+    END { if (!found) exit 1 }
+  ' "$source_file" >"$destination" || {
+    echo "Could not extract authenticated function containing: $marker" >&2
+    exit 1
+  }
+}
+
+extract_function \
+  "$claim_source" \
+  'CREATE OR REPLACE FUNCTION public.claim_tournament_lease_v2(' \
+  "$claim_sql"
+extract_function_with_marker \
+  "$hand_source" \
+  'CREATE OR REPLACE FUNCTION public.fn_ca_commit_hand_settlement(' \
+  'p_lease_generation uuid' \
+  "$hand_sql"
+extract_function \
+  "$close_source" \
+  'CREATE OR REPLACE FUNCTION public.fn_close_empty_tournament_table(' \
+  "$close_sql"
+extract_function \
+  "$hook_source" \
+  'CREATE OR REPLACE FUNCTION smarter_private.fn_smarter_data_api_pre_request()' \
+  "$hook_sql"
+extract_function \
+  "$addon_source" \
+  'CREATE OR REPLACE FUNCTION public.fn_ca_resolve_unbound_pending_addons(' \
+  "$addon_sql"
+extract_function \
+  "$current_postimage_source" \
+  'CREATE OR REPLACE FUNCTION smarter_private.fn_smarter_data_api_pre_request()' \
+  "$stage_b_hook_sql"
 
 "${pg17_bin}/initdb" -D "$cluster_dir" --auth=trust --no-locale \
   --username=postgres >/dev/null
@@ -71,7 +165,21 @@ psql_cmd=(
 "${psql_cmd[@]}" \
   -f "$repo_dir/scripts/dev/fixtures/lease-heartbeat-keyshare-pg17-bootstrap.sql" \
   >/dev/null
+"${psql_cmd[@]}" -f "$claim_sql" >/dev/null
+"${psql_cmd[@]}" -f "$hand_sql" >/dev/null
+"${psql_cmd[@]}" -c \
+  'ALTER FUNCTION public.fn_ca_commit_hand_settlement(uuid,bigint,jsonb,numeric,numeric,text,numeric,jsonb,jsonb,text,uuid) RENAME TO fn_ca_commit_hand_settlement_exact_before_obligations;' \
+  >/dev/null
+"${psql_cmd[@]}" -f "$close_sql" >/dev/null
+"${psql_cmd[@]}" -f "$hook_sql" >/dev/null
+"${psql_cmd[@]}" -f "$addon_sql" >/dev/null
 "${psql_cmd[@]}" -f "$heartbeat_migration" >/dev/null
+"${psql_cmd[@]}" -c \
+  'REVOKE ALL ON FUNCTION public.claim_tournament_lease_v2(uuid,text,text,uuid,integer) FROM PUBLIC,anon,authenticated,service_role; GRANT EXECUTE ON FUNCTION public.claim_tournament_lease_v2(uuid,text,text,uuid,integer) TO service_role; REVOKE ALL ON FUNCTION public.fn_ca_commit_hand_settlement_exact_before_obligations(uuid,bigint,jsonb,numeric,numeric,text,numeric,jsonb,jsonb,text,uuid) FROM PUBLIC,anon,authenticated,service_role; REVOKE ALL ON FUNCTION public.fn_close_empty_tournament_table(uuid,uuid,uuid) FROM PUBLIC,anon,authenticated,service_role; GRANT EXECUTE ON FUNCTION public.fn_close_empty_tournament_table(uuid,uuid,uuid) TO service_role; REVOKE ALL ON FUNCTION public.fn_ca_resolve_unbound_pending_addons(uuid,numeric,text,uuid) FROM PUBLIC,anon,authenticated,service_role; GRANT EXECUTE ON FUNCTION public.fn_ca_resolve_unbound_pending_addons(uuid,numeric,text,uuid) TO service_role; REVOKE ALL ON FUNCTION smarter_private.fn_smarter_data_api_pre_request() FROM PUBLIC,anon,authenticated,service_role; GRANT EXECUTE ON FUNCTION smarter_private.fn_smarter_data_api_pre_request() TO anon,authenticated,service_role;' \
+  >/dev/null
+"${psql_cmd[@]}" -f "$busy_manager_migration" >/dev/null
+"${psql_cmd[@]}" -f "$hand_heartbeat_migration" >/dev/null
+"${psql_cmd[@]}" -f "$stage_b_hook_sql" >/dev/null
 
 # A Stage-A legacy door must make the migration refuse before either
 # ownership constraint or any weaker lock is installed.
@@ -242,13 +350,13 @@ run_case \
 
 run_case \
   'empty-table-close' \
-  "SELECT public.fn_close_empty_tournament_table('${tournament_id}'::uuid, '${tournament_table_id}'::uuid, '${tournament_generation}'::uuid);" \
+  "SELECT set_config('app.smarter_data_actor','tournament-manager',true), set_config('app.smarter_tournament_id','${tournament_id}',true), set_config('app.smarter_tournament_lease_generation','${tournament_generation}',true); SELECT public.fn_close_empty_tournament_table('${tournament_id}'::uuid, '${tournament_table_id}'::uuid, '${tournament_generation}'::uuid);" \
   'engine_tournament_leases' 'tournament_id' "$tournament_id" "$tournament_generation" \
   'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
 
 run_case \
   'manager-request-hook' \
-  'SELECT smarter_private.fn_smarter_data_api_pre_request();' \
+  "SELECT set_config('request.headers','{\"x-smarter-data-actor\":\"tournament-manager\",\"x-smarter-data-protocol\":\"2\",\"x-smarter-tournament-id\":\"${tournament_id}\",\"x-smarter-tournament-lease-generation\":\"${tournament_generation}\"}',true), set_config('request.jwt.claims','{\"role\":\"service_role\"}',true), set_config('request.method','POST',true), set_config('request.path','rpc/fn_close_empty_tournament_table',true); SELECT smarter_private.fn_smarter_data_api_pre_request();" \
   'engine_tournament_leases' 'tournament_id' "$tournament_id" "$tournament_generation" \
   'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
 

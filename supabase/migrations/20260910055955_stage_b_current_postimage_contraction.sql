@@ -4,7 +4,10 @@
 -- postimages and never applied. Replaying them now would expose unsafe
 -- intermediate authority, overwrite later live fixes, and split one scheduler
 -- retirement across transactions. This forward-only boundary composes their
--- final contract over the measured 20260910035435 catalog state.
+-- final contract over the measured catalog state through the byte-authenticated
+-- 20260910063559 and 20260910064701 lease-heartbeat repairs. In particular,
+-- this contraction may never reinstall a lease-row FOR SHARE fence that makes
+-- a busy tournament manager starve its own heartbeat.
 --
 -- The engine must be stopped and the same durable maintenance freeze and host
 -- deployment mutex remain held across all six Stage-B boundaries. This single
@@ -1043,24 +1046,145 @@ GRANT EXECUTE ON FUNCTION public.fn_claim_tournament_bounty_elimination(
   TO service_role;
 
 -- A table-stack cashout can never be a tournament seat-exit API. Preserve the
--- latest cash implementation behind a wrapper and refuse tournament parents
--- before any credit, idempotency row, session close or seat mutation.
-DO $rename_cashout_core$
+-- latest Diamond-aware, occupancy-bound cash implementation behind an
+-- owner-only wrapper and refuse tournament parents before any credit,
+-- idempotency row, session close or seat mutation. The sole service door is
+-- fn_cashout_seat_occupancy; Stage-B must not reopen the retired unbound RPC.
+DO $install_cashout_tournament_guard_once$
+DECLARE
+  v_atomic oid:=to_regprocedure(
+    'public.atomic_seat_cashout_locked(uuid,uuid,integer,text)');
+  v_core oid:=to_regprocedure(
+    'public.atomic_seat_cashout_locked_pre_tournament_guard(uuid,uuid,integer,text)');
+  v_occupancy oid:=to_regprocedure(
+    'public.fn_cashout_seat_occupancy(uuid,uuid,integer,uuid,text)');
+  v_postgres oid:='postgres'::regrole;
+  v_apply boolean;
+  v_verify boolean;
 BEGIN
-  IF to_regprocedure(
-       'public.atomic_seat_cashout_locked_pre_tournament_guard(uuid,uuid,integer,text)')
-       IS NULL THEN
-    ALTER FUNCTION public.atomic_seat_cashout_locked(uuid,uuid,integer,text)
+  /* PG17-derived definition hashes bind names, defaults, argument names,
+     language, security mode and configuration. prosrc, owner and the exact
+     direct ACL are pinned separately. There are exactly two accepted catalog
+     states: the measured Diamond preimage, or this migration's full guarded
+     postimage. Every mixed state refuses before the first DDL statement. */
+  SELECT v_core IS NULL
+         AND count(*)=2
+         AND bool_and(
+           md5(pg_get_functiondef(p.oid))=expected.definition_md5
+           AND md5(p.prosrc)=expected.source_md5
+           AND p.proowner=v_postgres
+           AND p.prosecdef AND NOT p.proretset
+           AND NOT p.proisstrict AND NOT p.proleakproof
+           AND p.provolatile='v' AND p.proparallel='u' AND p.prokind='f'
+           AND p.prorettype='jsonb'::regtype
+           AND p.pronargs=expected.argument_count
+           AND p.pronargdefaults=expected.default_count
+           AND p.proargnames=expected.argument_names
+           AND p.proconfig=ARRAY[
+             'search_path=public, pg_temp','statement_timeout=30s']::text[]
+           AND l.lanname='plpgsql'
+           AND (
+             SELECT array_agg(
+                      (CASE WHEN a.grantee=0 THEN 'PUBLIC'
+                            ELSE pg_get_userbyid(a.grantee) END)::name
+                      ORDER BY CASE WHEN a.grantee=0 THEN 'PUBLIC'
+                                    ELSE pg_get_userbyid(a.grantee) END)
+               FROM aclexplode(
+                 COALESCE(p.proacl,acldefault('f',p.proowner))) a
+              WHERE a.privilege_type='EXECUTE'
+                AND a.grantor=p.proowner AND NOT a.is_grantable
+           ) IS NOT DISTINCT FROM expected.execute_grantees
+           AND NOT EXISTS (
+             SELECT 1
+               FROM aclexplode(
+                 COALESCE(p.proacl,acldefault('f',p.proowner))) a
+              WHERE a.privilege_type<>'EXECUTE'
+                 OR a.grantor<>p.proowner OR a.is_grantable
+           )
+         )
+    INTO v_apply
+    FROM (
+      VALUES
+        (v_atomic,'e1b0b9702e75378ecac634c3a879502e'::text,
+         'f0e1b852a56808d39a48e3a27603333d'::text,4,2,
+         ARRAY['p_user_id','p_table_id','p_seat_number','p_leave_mode']::text[],
+         ARRAY['postgres']::name[]),
+        (v_occupancy,'2e60c4b66468b51061018a9058e9a395'::text,
+         '1f7683406ca4d3d0ddce0e92ee8ef5e6'::text,5,1,
+         ARRAY['p_user_id','p_table_id','p_seat_number','p_occupancy_id',
+               'p_leave_mode']::text[],
+         ARRAY['postgres','service_role']::name[])
+    ) expected(function_oid,definition_md5,source_md5,argument_count,
+               default_count,argument_names,execute_grantees)
+    JOIN pg_proc p ON p.oid=expected.function_oid
+    JOIN pg_language l ON l.oid=p.prolang;
+
+  SELECT count(*)=3
+         AND bool_and(
+           md5(pg_get_functiondef(p.oid))=expected.definition_md5
+           AND md5(p.prosrc)=expected.source_md5
+           AND p.proowner=v_postgres
+           AND p.prosecdef AND NOT p.proretset
+           AND NOT p.proisstrict AND NOT p.proleakproof
+           AND p.provolatile='v' AND p.proparallel='u' AND p.prokind='f'
+           AND p.prorettype='jsonb'::regtype
+           AND p.pronargs=expected.argument_count
+           AND p.pronargdefaults=expected.default_count
+           AND p.proargnames=expected.argument_names
+           AND p.proconfig=ARRAY[
+             'search_path=public, pg_temp','statement_timeout=30s']::text[]
+           AND l.lanname='plpgsql'
+           AND (
+             SELECT array_agg(
+                      (CASE WHEN a.grantee=0 THEN 'PUBLIC'
+                            ELSE pg_get_userbyid(a.grantee) END)::name
+                      ORDER BY CASE WHEN a.grantee=0 THEN 'PUBLIC'
+                                    ELSE pg_get_userbyid(a.grantee) END)
+               FROM aclexplode(
+                 COALESCE(p.proacl,acldefault('f',p.proowner))) a
+              WHERE a.privilege_type='EXECUTE'
+                AND a.grantor=p.proowner AND NOT a.is_grantable
+           ) IS NOT DISTINCT FROM expected.execute_grantees
+           AND NOT EXISTS (
+             SELECT 1
+               FROM aclexplode(
+                 COALESCE(p.proacl,acldefault('f',p.proowner))) a
+              WHERE a.privilege_type<>'EXECUTE'
+                 OR a.grantor<>p.proowner OR a.is_grantable
+           )
+         )
+    INTO v_verify
+    FROM (
+      VALUES
+        (v_core,'46ccf386d5d737b8ecee34c421331681'::text,
+         'f0e1b852a56808d39a48e3a27603333d'::text,4,2,
+         ARRAY['p_user_id','p_table_id','p_seat_number','p_leave_mode']::text[],
+         ARRAY['postgres']::name[]),
+        (v_atomic,'ff53d11cf9d102ea48666c1714d699e6'::text,
+         '08924758c5e10e72c38dba11d7d4c758'::text,4,2,
+         ARRAY['p_user_id','p_table_id','p_seat_number','p_leave_mode']::text[],
+         ARRAY['postgres']::name[]),
+        (v_occupancy,'2e60c4b66468b51061018a9058e9a395'::text,
+         '1f7683406ca4d3d0ddce0e92ee8ef5e6'::text,5,1,
+         ARRAY['p_user_id','p_table_id','p_seat_number','p_occupancy_id',
+               'p_leave_mode']::text[],
+         ARRAY['postgres','service_role']::name[])
+    ) expected(function_oid,definition_md5,source_md5,argument_count,
+               default_count,argument_names,execute_grantees)
+    JOIN pg_proc p ON p.oid=expected.function_oid
+    JOIN pg_language l ON l.oid=p.prolang;
+
+  IF v_apply THEN
+    ALTER FUNCTION public.atomic_seat_cashout_locked(
+      uuid,uuid,integer,text)
       RENAME TO atomic_seat_cashout_locked_pre_tournament_guard;
-  END IF;
-END;
-$rename_cashout_core$;
 
-REVOKE ALL ON FUNCTION
-  public.atomic_seat_cashout_locked_pre_tournament_guard(
-    uuid,uuid,integer,text)
-  FROM PUBLIC,anon,authenticated,service_role;
+    REVOKE ALL ON FUNCTION
+      public.atomic_seat_cashout_locked_pre_tournament_guard(
+        uuid,uuid,integer,text)
+      FROM PUBLIC,anon,authenticated,service_role;
 
+    EXECUTE $cashout_wrapper_ddl$
 CREATE OR REPLACE FUNCTION public.atomic_seat_cashout_locked(
   p_user_id uuid,p_table_id uuid,p_seat_number integer DEFAULT NULL,
   p_leave_mode text DEFAULT NULL
@@ -1087,11 +1211,19 @@ BEGIN
     p_user_id,p_table_id,p_seat_number,p_leave_mode);
 END;
 $cashout_not_tournament$;
+$cashout_wrapper_ddl$;
 
-REVOKE ALL ON FUNCTION public.atomic_seat_cashout_locked(
-  uuid,uuid,integer,text) FROM PUBLIC,anon;
-GRANT EXECUTE ON FUNCTION public.atomic_seat_cashout_locked(
-  uuid,uuid,integer,text) TO authenticated,service_role;
+    REVOKE ALL ON FUNCTION public.atomic_seat_cashout_locked(
+      uuid,uuid,integer,text)
+      FROM PUBLIC,anon,authenticated,service_role;
+  ELSIF v_verify THEN
+    NULL;
+  ELSE
+    RAISE EXCEPTION
+      'STAGE_B_CASHOUT_UNKNOWN_PREIMAGE: exact Diamond preimage or exact guarded postimage required';
+  END IF;
+END;
+$install_cashout_tournament_guard_once$;
 
 CREATE OR REPLACE FUNCTION public.fn_admin_kick_player(
   p_table_id uuid,p_user_id uuid,p_reason text DEFAULT NULL
@@ -6915,34 +7047,174 @@ $require_seat_first_retirement$;
    PostgREST hook.  Reapplying this exact migration is harmless. */
 DO $require_stage_a_request_authority$
 DECLARE
+  v_hook oid:=to_regprocedure(
+    'smarter_private.fn_smarter_data_api_pre_request()');
+  v_claim oid:=to_regprocedure(
+    'public.claim_tournament_lease_v2(uuid,text,text,uuid,integer)');
+  v_heartbeat oid:=to_regprocedure(
+    'public.heartbeat_tournament_leases_v4(text,jsonb,integer)');
+  v_exact_hand oid:=to_regprocedure(
+    'public.fn_ca_commit_hand_settlement_exact_before_obligations(uuid,bigint,jsonb,numeric,numeric,text,numeric,jsonb,jsonb,text,uuid)');
+  v_addon oid:=to_regprocedure(
+    'public.fn_ca_resolve_unbound_pending_addons(uuid,numeric,text,uuid)');
+  v_close oid:=to_regprocedure(
+    'public.fn_close_empty_tournament_table(uuid,uuid,uuid)');
+  v_postgres oid:='postgres'::regrole;
+  v_bad integer;
   v_source text;
+  v_claim_source text;
+  v_heartbeat_source text;
   v_settlement_core text;
   v_settlement_door text;
   v_settlement_wrapper text;
 BEGIN
-  IF to_regprocedure(
-       'smarter_private.fn_smarter_data_api_pre_request()'
-     ) IS NULL THEN
+  IF to_regclass('supabase_migrations.schema_migrations') IS NULL
+     OR NOT EXISTS (
+       SELECT 1
+         FROM supabase_migrations.schema_migrations m
+        WHERE m.version='20260910063559'
+          AND m.name='a_busy_manager_keeps_its_lease'
+          AND cardinality(m.statements)=1
+          AND octet_length(m.statements[1])=6980
+          AND encode(extensions.digest(m.statements[1],'sha256'),'hex')=
+            '2e95299dd7693a09ee310a4086b2dcdf16f0f942582007bdede0c4c81024e07d'
+     )
+     OR NOT EXISTS (
+       SELECT 1
+         FROM supabase_migrations.schema_migrations m
+        WHERE m.version='20260910064701'
+          AND m.name=
+            'a_hand_commit_does_not_hold_the_lease_against_its_own_heartb'
+          AND cardinality(m.statements)=1
+          AND octet_length(m.statements[1])=4328
+          AND encode(extensions.digest(m.statements[1],'sha256'),'hex')=
+            '5816d16550ef470f9359cae427aec0c5346df92f5c6d35b07385def4ab9b4c04'
+     ) THEN
     RAISE EXCEPTION
-      'Stage-B manager request fencing requires the Stage-A request hook first';
+      'Stage-B manager fencing requires the exact 063559 and 064701 live lease postimages';
   END IF;
 
-  SELECT p.prosrc
-    INTO STRICT v_source
+  IF v_hook IS NULL OR v_claim IS NULL OR v_heartbeat IS NULL
+     OR v_exact_hand IS NULL OR v_addon IS NULL OR v_close IS NULL THEN
+    RAISE EXCEPTION
+      'Stage-B manager request fencing requires every current lease authority function';
+  END IF;
+
+  /* These PG17 hashes were derived by replaying the two byte-exact live
+     migrations above over their measured preimages. Bind source, catalog
+     behavior, and the direct EXECUTE grantees before any Stage-B replacement. */
+  SELECT count(*)::integer INTO v_bad
+    FROM (
+      VALUES
+        (v_hook,
+         'c57716917b5ec20ccdf19c90e7a86427'::text,
+         'ab227471f29f2944ebd64909622b6af7'::text,
+         'void'::regtype,false,0,0,
+         ARRAY['search_path=pg_catalog, pg_temp']::text[],
+         ARRAY['anon','authenticated','postgres','service_role']::name[]),
+        (v_claim,
+         '73abfc4523de42cb4b8bca5443602cbd'::text,
+         'd1b5100c2b9f92bec5fd1680b0b4f230'::text,
+         'record'::regtype,true,5,3,
+         ARRAY['search_path=public, pg_temp']::text[],
+         ARRAY['postgres','service_role']::name[]),
+        (v_heartbeat,
+         '4a41b0124e75e46ed8121e6a56014758'::text,
+         '5e6c99545e07c21efcb50e5cb3441c14'::text,
+         'record'::regtype,true,3,1,
+         ARRAY['search_path=public, pg_temp']::text[],
+         ARRAY['postgres','service_role']::name[]),
+        (v_exact_hand,
+         'e3a2120fc6db33ad84fc4967126fe9b8'::text,
+         '457ad8f1e1528ad205f7bd43488f3e14'::text,
+         'jsonb'::regtype,false,11,0,
+         ARRAY['search_path=public, pg_temp']::text[],
+         ARRAY['postgres']::name[]),
+        (v_addon,
+         '276314a02cecc35607cde1afdc2fdf21'::text,
+         '8ab94f005d1dcc695c7094eec3fd279d'::text,
+         'jsonb'::regtype,false,4,0,
+         ARRAY['search_path=public, extensions, pg_temp']::text[],
+         ARRAY['postgres','service_role']::name[]),
+        (v_close,
+         '0af954ab1264dc12ebce7741b7845343'::text,
+         '4abef1a7ccd6d56c2523fe6cb02396b6'::text,
+         'jsonb'::regtype,false,3,0,
+         ARRAY['search_path=public, pg_temp']::text[],
+         ARRAY['postgres','service_role']::name[])
+    ) expected(
+      function_oid,definition_md5,source_md5,return_type,returns_set,
+      argument_count,default_count,configuration,execute_grantees)
+    LEFT JOIN pg_proc p ON p.oid=expected.function_oid
+    LEFT JOIN pg_language l ON l.oid=p.prolang
+   WHERE p.oid IS NULL
+      OR md5(pg_get_functiondef(p.oid)) IS DISTINCT FROM expected.definition_md5
+      OR md5(p.prosrc) IS DISTINCT FROM expected.source_md5
+      OR p.proowner IS DISTINCT FROM v_postgres
+      OR NOT p.prosecdef OR p.proretset IS DISTINCT FROM expected.returns_set
+      OR p.proisstrict OR p.proleakproof
+      OR p.provolatile<>'v' OR p.proparallel<>'u' OR p.prokind<>'f'
+      OR p.prorettype IS DISTINCT FROM expected.return_type
+      OR p.pronargs IS DISTINCT FROM expected.argument_count
+      OR p.pronargdefaults IS DISTINCT FROM expected.default_count
+      OR p.proconfig IS DISTINCT FROM expected.configuration
+      OR l.lanname IS DISTINCT FROM 'plpgsql'
+      OR (
+        SELECT array_agg(
+                 (CASE WHEN acl.grantee=0 THEN 'PUBLIC'
+                       ELSE pg_get_userbyid(acl.grantee) END)::name
+                 ORDER BY CASE WHEN acl.grantee=0 THEN 'PUBLIC'
+                               ELSE pg_get_userbyid(acl.grantee) END)
+          FROM aclexplode(COALESCE(p.proacl,acldefault('f',p.proowner))) acl
+         WHERE acl.privilege_type='EXECUTE'
+           AND acl.grantor=p.proowner
+           AND NOT acl.is_grantable
+      ) IS DISTINCT FROM expected.execute_grantees
+      OR EXISTS (
+        SELECT 1
+          FROM aclexplode(COALESCE(p.proacl,acldefault('f',p.proowner))) acl
+         WHERE acl.privilege_type<>'EXECUTE'
+            OR acl.grantor<>p.proowner
+            OR acl.is_grantable
+      );
+  IF v_bad<>0 THEN
+    RAISE EXCEPTION
+      'Stage-B lease authority preflight found % drifted 063559/064701 functions',
+      v_bad;
+  END IF;
+
+  SELECT p.prosrc INTO STRICT v_source
     FROM pg_proc p
-   WHERE p.oid =
-         'smarter_private.fn_smarter_data_api_pre_request()'::regprocedure
-     AND p.prosecdef;
+   WHERE p.oid=v_hook;
+  SELECT p.prosrc INTO STRICT v_claim_source
+    FROM pg_proc p WHERE p.oid=v_claim;
+  SELECT p.prosrc INTO STRICT v_heartbeat_source
+    FROM pg_proc p WHERE p.oid=v_heartbeat;
 
   IF position('app.smarter_data_actor' IN v_source) = 0
      OR position('x-smarter-data-actor' IN v_source) = 0
      OR position('l.lease_generation = v_lease_generation' IN v_source) = 0
-     OR position('FOR SHARE' IN v_source) = 0
+     OR position(E'FROM public.engine_tournament_leases l\n'
+                 '     WHERE l.tournament_id = v_tournament_id\n'
+                 '       AND l.protocol_version = 2\n'
+                 '       AND l.lease_generation = v_lease_generation\n'
+                 '       AND l.heartbeat_at >=\n'
+                 '           clock_timestamp() - make_interval(secs => v_stale_seconds)\n'
+                 '     FOR KEY SHARE;' IN v_source) = 0
+     OR v_source ~
+          'engine_tournament_leases[[:space:]]+l[[:space:]][^;]*FOR[[:space:]]+SHARE[[:space:]]*;'
      OR position('request.jwt.claims' IN v_source) = 0
      OR position('auth.role()' IN v_source) = 0
-     OR position('verified JWT role disagrees with request claims' IN v_source) = 0 THEN
+     OR position('verified JWT role disagrees with request claims' IN v_source) = 0
+     OR position(E'PERFORM 1 FROM public.engine_tournament_leases l\n'
+                 '   WHERE l.tournament_id = p_tournament_id\n'
+                 '   FOR UPDATE;\n\n'
+                 '  INSERT INTO public.engine_tournament_leases' IN
+                 v_claim_source) = 0
+     OR position('FOR NO KEY UPDATE OF l SKIP LOCKED' IN
+                 v_heartbeat_source) = 0 THEN
     RAISE EXCEPTION
-      'Refusing Stage-B activation over an unknown or incomplete request hook';
+      'Refusing Stage-B activation over an incomplete busy-manager lease repair';
   END IF;
 
   IF to_regprocedure(
@@ -7010,8 +7282,8 @@ BEGIN
      'public.fn_ca_settle_hand_stacks_absolute(uuid,bigint,jsonb,numeric,numeric,text,numeric)'::regprocedure
      AND p.prosecdef;
 
-  IF md5(v_settlement_core) <> 'ba1cdf1b56e5bb0c1c199b65390ee1f2'
-     OR md5(v_settlement_door) <> 'a7744092d35a022996a61d9de10e982d'
+  IF md5(v_settlement_core) <> '2c5f04ae307d38f187b8b72a3f557738'
+     OR md5(v_settlement_door) <> 'a1738adaf943656868e68a7bf7ce8d1e'
      OR md5(v_settlement_wrapper) <> '9d6a12c82aa260c22e1c013e95faca0e'
      OR position('v_exact_seat_generation' IN v_settlement_core) = 0
      OR position('v_exact_seat_generation' IN v_settlement_door) = 0
@@ -7840,7 +8112,10 @@ BEGIN
        AND l.lease_generation = v_lease_generation
        AND l.heartbeat_at >=
            clock_timestamp() - make_interval(secs => v_stale_seconds)
-     FOR SHARE;
+     /* Preserve 20260910063559: a manager request must exclude a takeover
+        without excluding its own FOR NO KEY UPDATE heartbeat. The takeover
+        remains explicit in claim_tournament_lease_v2 as FOR UPDATE. */
+     FOR KEY SHARE;
   END IF;
 
   IF NOT FOUND THEN
@@ -7857,8 +8132,8 @@ BEGIN
     true
   );
   /* This marker is written last and only after the exact lease row is held
-     FOR SHARE. Row triggers can consume this transaction proof without doing
-     the same indexed lease read again for every affected row. */
+     FOR KEY SHARE. Row triggers can consume this transaction proof without
+     doing the same indexed lease read again for every affected row. */
   PERFORM set_config('app.smarter_manager_request_fenced', 'protocol-2', true);
 END;
 $function$;
@@ -7875,9 +8150,9 @@ DROP FUNCTION IF EXISTS public.fn_smarter_data_api_pre_request();
 
 /* A marked manager is not merely "some manager".  Every direct row it touches
    must resolve to the same tournament named by the transaction-local request
-   proof. The pre-request hook already holds the exact lease FOR SHARE for the
-   complete PostgREST transaction. Re-reading that same row once per affected
-   row would add hot-path work without strengthening the lock. */
+   proof. The pre-request hook already holds the exact lease FOR KEY SHARE for
+   the complete PostgREST transaction. Re-reading that same row once per
+   affected row would add hot-path work without strengthening the lock. */
 CREATE OR REPLACE FUNCTION public.fn_assert_tournament_manager_write_scope(
   p_tournament_id uuid
 ) RETURNS void
@@ -8221,7 +8496,16 @@ BEGIN
      OR position('ENGINE_DATA_AUTHORITY_REQUIRED' IN v_hook_source) = 0
      OR position($needle$'shared-estate-service'$needle$ IN v_hook_source) = 0
      OR position($needle$'browser'$needle$ IN v_hook_source) = 0
-     OR position('FOR SHARE' IN v_hook_source) = 0
+     OR position(E'FROM public.engine_tournament_leases l\n'
+                 '     WHERE l.tournament_id = v_tournament_id\n'
+                 '       AND l.protocol_version = 2\n'
+                 '       AND l.lease_generation = v_lease_generation\n'
+                 '       AND l.heartbeat_at >=\n'
+                 '           clock_timestamp() - make_interval(secs => v_stale_seconds)\n'
+                 '     /* Preserve 20260910063559:' IN v_hook_source) = 0
+     OR position('FOR KEY SHARE' IN v_hook_source) = 0
+     OR v_hook_source ~
+          'engine_tournament_leases[[:space:]]+l[[:space:]][^;]*FOR[[:space:]]+SHARE[[:space:]]*;'
      OR position('l.lease_generation = v_lease_generation' IN v_hook_source) = 0
      OR position('app.smarter_manager_request_fenced' IN v_hook_source) = 0
      OR position('auth.role()' IN v_hook_source) = 0
@@ -8643,10 +8927,12 @@ NOTIFY pgrst, 'reload schema';
 -- older source snapshot and replaced both functions, losing the exact-seat
 -- selectors while adding atomic terminal receipts and zero-stack tournament
 -- close. Production then restored the rolling exact-seat expansion over those
--- receipt-aware bodies. This current-postimage contraction recognizes only
--- that measured, repaired rolling source. The obsolete generation-blind
--- receipt ancestry does not converge to the same strict inner implementation
--- and is rejected rather than retained as a speculative compatibility path.
+-- receipt-aware bodies. Production migration 20260910054712 subsequently
+-- folded each hand's time-bank state into the same exact stack-row write. This
+-- current-postimage contraction recognizes only those measured 54712 catalog
+-- bodies. The obsolete generation-blind and pre-one-write ancestries do not
+-- converge to the same strict implementation and are rejected rather than
+-- retained as speculative compatibility paths.
 -- The seat-exit authority prerequisite renamed the measured implementation to
 -- fn_ca_settle_hand_stacks_absolute_pre_seat_exit_authority and installed an
 -- owner-only capability wrapper at the public name. This contraction edits
@@ -8682,7 +8968,9 @@ LOCK TABLE realtime.subscription IN ACCESS EXCLUSIVE MODE NOWAIT;
 DO $strict_contract$
 DECLARE
   v_inner text;
+  v_inner_source text;
   v_outer text;
+  v_outer_source text;
   v_anchors text[];
   v_replacements text[];
   v_expected_hits integer[];
@@ -8715,12 +9003,16 @@ BEGIN
       'strict exact-seat contraction requires Stage-B legacy hand doors retired';
   END IF;
 
-  SELECT pg_get_functiondef(
-    'public.fn_ca_settle_hand_stacks_absolute_pre_seat_exit_authority(uuid,bigint,jsonb,numeric,numeric,text,numeric)'::regprocedure
-  ) INTO v_inner;
-  SELECT pg_get_functiondef(
-    'public.fn_ca_commit_hand_settlement(uuid,bigint,jsonb,numeric,numeric,text,numeric,jsonb,jsonb,text,uuid,jsonb)'::regprocedure
-  ) INTO v_outer;
+  SELECT pg_get_functiondef(p.oid),p.prosrc
+    INTO v_inner,v_inner_source
+    FROM pg_proc p
+   WHERE p.oid=
+    'public.fn_ca_settle_hand_stacks_absolute_pre_seat_exit_authority(uuid,bigint,jsonb,numeric,numeric,text,numeric)'::regprocedure;
+  SELECT pg_get_functiondef(p.oid),p.prosrc
+    INTO v_outer,v_outer_source
+    FROM pg_proc p
+   WHERE p.oid=
+    'public.fn_ca_commit_hand_settlement(uuid,bigint,jsonb,numeric,numeric,text,numeric,jsonb,jsonb,text,uuid,jsonb)'::regprocedure;
 
   v_inner_strict :=
     position('Exact seat generation is required for every hand settlement participant' in v_inner) > 0
@@ -8735,8 +9027,10 @@ BEGIN
   END IF;
 
   IF v_inner_strict THEN
-    IF md5(v_inner) <> 'edfd095bae13ece6bedc989c3acd0467'
-       OR md5(v_outer) <> 'c22ec3b288898efa319a384850d41ba7' THEN
+    IF md5(v_inner) <> '9d1376a2b2e13e4dc1d25025b2d2e403'
+       OR md5(v_inner_source) <> '3c2d594f08f52a66436f9a766947a1f1'
+       OR md5(v_outer) <> '242f8a9d3ad57dac46cd8aa5b395b430'
+       OR md5(v_outer_source) <> '9a3e7fccb42d396b4004b45672634e4f' THEN
       RAISE EXCEPTION 'strict exact-seat settlement source changed after cutover';
     END IF;
     RAISE NOTICE 'strict exact seat-generation settlement is already installed';
@@ -8774,12 +9068,15 @@ BEGIN
       RAISE EXCEPTION 'receipt-aware settlement ACL changed before strict contraction';
     END IF;
 
-    /* The production repair after the terminal-receipt writer restored the
-       rolling exact-seat expansion over the receipt-aware bodies. Contract
-       that byte-exact source directly; do not replay or discard either
-       terminal-receipt or zero-stack behavior. */
-    IF md5(v_inner) = 'ba1cdf1b56e5bb0c1c199b65390ee1f2'
-       AND md5(v_outer) = 'a7744092d35a022996a61d9de10e982d' THEN
+    /* Production migration 20260910054712 composed the one-seat-write
+       time-bank envelope over the rolling exact-seat, receipt-aware bodies.
+       Contract that byte-exact catalog source directly; do not replay or
+       discard Diamond dispatch, hand history/receipts, custody, terminal
+       receipts, zero-stack behavior, or the time-bank envelope. */
+    IF md5(v_inner) = '2c5f04ae307d38f187b8b72a3f557738'
+       AND md5(v_inner_source) = 'e67e89b3aec325f8038e0507a1511eec'
+       AND md5(v_outer) = 'a1738adaf943656868e68a7bf7ce8d1e'
+       AND md5(v_outer_source) = '0ef3c57a6a31acc383ce4b95a0f9519f' THEN
       v_anchors := ARRAY[
       $old$  v_exact_seat_generation boolean;
 $old$,
@@ -8871,16 +9168,49 @@ $old$,
               'seat_joined_at', e->>'seat_joined_at'
             ) ELSE '{}'::jsonb END
 $old$,
+      $old$         AND (v_tb_env->>'exact')::boolean IS NOT DISTINCT FROM v_exact_seat_generation
+$old$,
+      $old$                   AND (NOT v_exact_seat_generation OR (
+                     (i.value->>'seat_id') ~*
+                       '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+                     AND pg_input_is_valid(i.value->>'seat_joined_at',
+                                           'timestamp with time zone'))) AS ok
+$old$,
+      $old$      IF v_tb IS NOT NULL AND v_exact_seat_generation
+         AND ((v_tb->>'seat_id')::uuid IS DISTINCT FROM (e->>'seat_id')::uuid
+              OR (v_tb->>'seat_joined_at')::timestamptz
+                   IS DISTINCT FROM (e->>'seat_joined_at')::timestamptz) THEN
+$old$,
       $old$      IF v_exact_seat_generation THEN
-        UPDATE public.table_seats ts SET stack = v_target
-         WHERE ts.id = (e->>'seat_id')::uuid
-           AND ts.joined_at = (e->>'seat_joined_at')::timestamptz
-           AND ts.table_id = p_table_id
-           AND ts.user_id = v_uid
-           AND ts.left_at IS NULL;
+        IF v_tb IS NOT NULL THEN
+          UPDATE public.table_seats ts
+             SET stack = v_target,
+                 time_bank_uses_remaining = (v_tb->>'uses_remaining')::integer,
+                 time_bank_remaining = (v_tb->>'seconds_remaining')::integer
+           WHERE ts.id = (e->>'seat_id')::uuid
+             AND ts.joined_at = (e->>'seat_joined_at')::timestamptz
+             AND ts.table_id = p_table_id
+             AND ts.user_id = v_uid
+             AND ts.left_at IS NULL;
+        ELSE
+          UPDATE public.table_seats ts SET stack = v_target
+           WHERE ts.id = (e->>'seat_id')::uuid
+             AND ts.joined_at = (e->>'seat_joined_at')::timestamptz
+             AND ts.table_id = p_table_id
+             AND ts.user_id = v_uid
+             AND ts.left_at IS NULL;
+        END IF;
       ELSE
-        UPDATE public.table_seats ts SET stack = v_target
-         WHERE ts.table_id = p_table_id AND ts.user_id = v_uid AND ts.left_at IS NULL;
+        IF v_tb IS NOT NULL THEN
+          UPDATE public.table_seats ts
+             SET stack = v_target,
+                 time_bank_uses_remaining = (v_tb->>'uses_remaining')::integer,
+                 time_bank_remaining = (v_tb->>'seconds_remaining')::integer
+           WHERE ts.table_id = p_table_id AND ts.user_id = v_uid AND ts.left_at IS NULL;
+        ELSE
+          UPDATE public.table_seats ts SET stack = v_target
+           WHERE ts.table_id = p_table_id AND ts.user_id = v_uid AND ts.left_at IS NULL;
+        END IF;
       END IF;
 $old$,
       $old$             AND (
@@ -8951,12 +9281,36 @@ $new$,
               'seat_joined_at', e->>'seat_joined_at'
             )
 $new$,
-      $new$      UPDATE public.table_seats ts SET stack = v_target
-       WHERE ts.id = (e->>'seat_id')::uuid
-         AND ts.joined_at = (e->>'seat_joined_at')::timestamptz
-         AND ts.table_id = p_table_id
-         AND ts.user_id = v_uid
-         AND ts.left_at IS NULL;
+      $new$         AND (v_tb_env->>'exact')::boolean IS TRUE
+$new$,
+      $new$                   AND (i.value->>'seat_id') ~*
+                     '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+                   AND pg_input_is_valid(i.value->>'seat_joined_at',
+                                         'timestamp with time zone') AS ok
+$new$,
+      $new$      IF v_tb IS NOT NULL
+         AND ((v_tb->>'seat_id')::uuid IS DISTINCT FROM (e->>'seat_id')::uuid
+              OR (v_tb->>'seat_joined_at')::timestamptz
+                   IS DISTINCT FROM (e->>'seat_joined_at')::timestamptz) THEN
+$new$,
+      $new$      IF v_tb IS NOT NULL THEN
+        UPDATE public.table_seats ts
+           SET stack = v_target,
+               time_bank_uses_remaining = (v_tb->>'uses_remaining')::integer,
+               time_bank_remaining = (v_tb->>'seconds_remaining')::integer
+         WHERE ts.id = (e->>'seat_id')::uuid
+           AND ts.joined_at = (e->>'seat_joined_at')::timestamptz
+           AND ts.table_id = p_table_id
+           AND ts.user_id = v_uid
+           AND ts.left_at IS NULL;
+      ELSE
+        UPDATE public.table_seats ts SET stack = v_target
+         WHERE ts.id = (e->>'seat_id')::uuid
+           AND ts.joined_at = (e->>'seat_joined_at')::timestamptz
+           AND ts.table_id = p_table_id
+           AND ts.user_id = v_uid
+           AND ts.left_at IS NULL;
+      END IF;
 $new$,
       $new$             AND ts.id = (e->>'seat_id')::uuid
              AND ts.joined_at = (e->>'seat_joined_at')::timestamptz
@@ -8972,7 +9326,7 @@ $new$
         END IF;
         v_inner := replace(v_inner, v_anchors[v_i], v_replacements[v_i]);
       END LOOP;
-      IF md5(v_inner) <> 'edfd095bae13ece6bedc989c3acd0467'
+      IF md5(v_inner) <> '9d1376a2b2e13e4dc1d25025b2d2e403'
          OR position('v_exact_seat_generation' in v_inner) > 0
          OR position('Exact seat generation is required for every hand settlement participant'
                      in v_inner) = 0
@@ -8980,6 +9334,14 @@ $new$
         RAISE EXCEPTION 'restored exact inner contraction produced an unknown source';
       END IF;
       EXECUTE v_inner;
+      SELECT p.prosrc INTO STRICT v_inner_source
+        FROM pg_proc p
+       WHERE p.oid=
+        'public.fn_ca_settle_hand_stacks_absolute_pre_seat_exit_authority(uuid,bigint,jsonb,numeric,numeric,text,numeric)'::regprocedure;
+      IF md5(v_inner_source) <> '3c2d594f08f52a66436f9a766947a1f1' THEN
+        RAISE EXCEPTION
+          'strict exact inner contraction produced an unknown catalog body';
+      END IF;
 
       v_anchors := ARRAY[
       $old$  v_exact_seat_generation boolean := false;
@@ -9057,6 +9419,40 @@ $old$,
     END IF;
   END IF;
 $old$,
+      $old$      'exact', v_exact_seat_generation,
+$old$,
+      $old$      SELECT count(*)::integer INTO v_row_count
+        FROM public.table_seats s
+       WHERE s.table_id = p_table_id
+         AND s.user_id = (v_item->>'user_id')::uuid
+         AND s.time_bank_uses_remaining = (v_item->>'uses_remaining')::integer
+         AND s.time_bank_remaining = (v_item->>'seconds_remaining')::integer
+         AND (
+           (v_exact_seat_generation
+             AND s.id = (v_item->>'seat_id')::uuid
+             AND s.joined_at = (v_item->>'seat_joined_at')::timestamptz)
+           OR (NOT v_exact_seat_generation AND (
+           s.left_at IS NULL
+           OR (
+             v_tournament_id IS NOT NULL
+             AND s.stack = 0
+             AND lower(COALESCE(s.status, '')) = 'left'
+             AND s.left_at =
+                   (v_result->>'tournament_zero_stack_vacated_at')::timestamptz
+             AND EXISTS (
+               SELECT 1
+                 FROM jsonb_array_elements(
+                        v_result->'tournament_zero_stack_seat_generations'
+                      ) generation(value)
+                WHERE (generation.value->>'seat_id')::uuid = s.id
+                  AND (generation.value->>'user_id')::uuid = s.user_id
+                  AND (generation.value->>'seat_number')::integer = s.seat_number
+                  AND (generation.value->>'joined_at')::timestamptz = s.joined_at
+             )
+           )
+         ))
+         );
+$old$,
       $old$      UPDATE public.table_seats s
          SET time_bank_uses_remaining = (v_item->>'uses_remaining')::integer,
              time_bank_remaining = (v_item->>'seconds_remaining')::integer
@@ -9127,6 +9523,7 @@ $old$,
       ) THEN
         v_row_count := 1;
       END IF;
+      END IF;
       v_updated := v_updated + v_row_count;$old$
       ];
       v_replacements := ARRAY[
@@ -9192,6 +9589,17 @@ $old$,
       'atomic hand commit refused (time_bank_seat_generation_mismatch)';
   END IF;
 $new$,
+      $new$      'exact', true,
+$new$,
+      $new$      SELECT count(*)::integer INTO v_row_count
+        FROM public.table_seats s
+       WHERE s.table_id = p_table_id
+         AND s.user_id = (v_item->>'user_id')::uuid
+         AND s.time_bank_uses_remaining = (v_item->>'uses_remaining')::integer
+         AND s.time_bank_remaining = (v_item->>'seconds_remaining')::integer
+         AND s.id = (v_item->>'seat_id')::uuid
+         AND s.joined_at = (v_item->>'seat_joined_at')::timestamptz;
+$new$,
       $new$      UPDATE public.table_seats s
          SET time_bank_uses_remaining = (v_item->>'uses_remaining')::integer,
              time_bank_remaining = (v_item->>'seconds_remaining')::integer
@@ -9244,9 +9652,10 @@ $new$,
       ) THEN
         v_row_count := 1;
       END IF;
+      END IF;
       v_updated := v_updated + v_row_count;$new$
       ];
-      v_expected_hits := ARRAY[1, 1, 1, 1];
+      v_expected_hits := ARRAY[1, 1, 1, 1, 1, 1];
       FOR v_i IN 1..array_length(v_anchors, 1) LOOP
         v_hits := (length(v_outer) - length(replace(v_outer, v_anchors[v_i], '')))
                   / length(v_anchors[v_i]);
@@ -9257,7 +9666,7 @@ $new$,
         END IF;
         v_outer := replace(v_outer, v_anchors[v_i], v_replacements[v_i]);
       END LOOP;
-      IF md5(v_outer) <> 'c22ec3b288898efa319a384850d41ba7'
+      IF md5(v_outer) <> '242f8a9d3ad57dac46cd8aa5b395b430'
          OR position('v_exact_seat_generation' in v_outer) > 0
          OR position('exact_stack_seat_generation_required' in v_outer) = 0
          OR position('exact_time_bank_seat_generation_required' in v_outer) = 0
@@ -9267,9 +9676,17 @@ $new$,
         RAISE EXCEPTION 'restored exact outer contraction produced an unknown source';
       END IF;
       EXECUTE v_outer;
+      SELECT p.prosrc INTO STRICT v_outer_source
+        FROM pg_proc p
+       WHERE p.oid=
+        'public.fn_ca_commit_hand_settlement(uuid,bigint,jsonb,numeric,numeric,text,numeric,jsonb,jsonb,text,uuid,jsonb)'::regprocedure;
+      IF md5(v_outer_source) <> '9a3e7fccb42d396b4004b45672634e4f' THEN
+        RAISE EXCEPTION
+          'strict exact outer contraction produced an unknown catalog body';
+      END IF;
     ELSE
       RAISE EXCEPTION
-        'strict exact-seat contraction requires the measured 20260910035435 production postimage';
+        'strict exact-seat contraction requires the measured 20260910054712 production postimage';
     END IF;
   END IF;
 END;
@@ -9283,15 +9700,21 @@ REVOKE ALL ON FUNCTION public.fn_ca_settle_hand_stacks_absolute_pre_seat_exit_au
 DO $postconditions$
 DECLARE
   v_inner text;
+  v_inner_source text;
   v_outer text;
+  v_outer_source text;
   v_wrapper text;
 BEGIN
-  SELECT pg_get_functiondef(
-    'public.fn_ca_settle_hand_stacks_absolute_pre_seat_exit_authority(uuid,bigint,jsonb,numeric,numeric,text,numeric)'::regprocedure
-  ) INTO STRICT v_inner;
-  SELECT pg_get_functiondef(
-    'public.fn_ca_commit_hand_settlement(uuid,bigint,jsonb,numeric,numeric,text,numeric,jsonb,jsonb,text,uuid,jsonb)'::regprocedure
-  ) INTO STRICT v_outer;
+  SELECT pg_get_functiondef(p.oid),p.prosrc
+    INTO STRICT v_inner,v_inner_source
+    FROM pg_proc p
+   WHERE p.oid=
+    'public.fn_ca_settle_hand_stacks_absolute_pre_seat_exit_authority(uuid,bigint,jsonb,numeric,numeric,text,numeric)'::regprocedure;
+  SELECT pg_get_functiondef(p.oid),p.prosrc
+    INTO STRICT v_outer,v_outer_source
+    FROM pg_proc p
+   WHERE p.oid=
+    'public.fn_ca_commit_hand_settlement(uuid,bigint,jsonb,numeric,numeric,text,numeric,jsonb,jsonb,text,uuid,jsonb)'::regprocedure;
   SELECT p.prosrc
     INTO STRICT v_wrapper
     FROM pg_proc p
@@ -9301,11 +9724,19 @@ BEGIN
 
   IF position('Exact seat generation is required for every hand settlement participant'
               in v_inner) = 0
-     OR md5(v_inner) <> 'edfd095bae13ece6bedc989c3acd0467'
+     OR md5(v_inner) <> '9d1376a2b2e13e4dc1d25025b2d2e403'
+     OR md5(v_inner_source) <> '3c2d594f08f52a66436f9a766947a1f1'
      OR position('v_exact_seat_generation' in v_inner) > 0
      OR position('ts.id = v_exact_seat_id' in v_inner) = 0
      OR position('ts.joined_at = v_exact_seat_joined_at' in v_inner) = 0
      OR position('v_dep_club := v_exact_seat_club' in v_inner) = 0
+     OR position('public.fn_poker_diamond_settle_cash_hand(' in v_inner) = 0
+     OR position('app.ca_hand_time_banks' in v_inner) = 0
+     OR position('(v_tb_env->>''exact'')::boolean IS TRUE' in v_inner) = 0
+     OR position('time_bank_uses_remaining = (v_tb->>''uses_remaining'')::integer'
+                 in v_inner) = 0
+     OR position('time_bank_remaining = (v_tb->>''seconds_remaining'')::integer'
+                 in v_inner) = 0
      OR position('tournament_zero_stack_seat_generations' in v_inner) = 0
      OR position('ts.table_id = p_table_id AND ts.user_id = v_uid AND ts.left_at IS NULL'
                  in v_inner) > 0 THEN
@@ -9314,9 +9745,15 @@ BEGIN
       md5(v_inner),md5(v_outer);
   END IF;
   IF position('exact_stack_seat_generation_required' in v_outer) = 0
-     OR md5(v_outer) <> 'c22ec3b288898efa319a384850d41ba7'
+     OR md5(v_outer) <> '242f8a9d3ad57dac46cd8aa5b395b430'
+     OR md5(v_outer_source) <> '9a3e7fccb42d396b4004b45672634e4f'
      OR position('exact_time_bank_seat_generation_required' in v_outer) = 0
      OR position('A SEAT THAT HAS LEFT CANNOT HOLD A TIME BANK' in v_outer) = 0
+     OR position('''exact'', true' in v_outer) = 0
+     OR position('v_diamond boolean := false' in v_outer) = 0
+     OR position('diamond_chip_obligation_or_fractional_fact' in v_outer) = 0
+     OR position('(v_result->>''history_id'')::uuid' in v_outer) = 0
+     OR position('public.hand_atomic_commits' in v_outer) = 0
      OR position('post_commit_request_hash' in v_outer) = 0
      OR position('post_commit_payload_hash' in v_outer) = 0
      OR (
@@ -9328,7 +9765,10 @@ BEGIN
      OR position('pg_advisory_xact_lock_shared' in v_outer)>0
      OR position('v_exact_seat_generation' in v_outer) > 0
      OR position('s.id = (v_item->>''seat_id'')::uuid' in v_outer) = 0
-     OR position('s.joined_at = (v_item->>''seat_joined_at'')::timestamptz' in v_outer) = 0 THEN
+     OR position('s.joined_at = (v_item->>''seat_joined_at'')::timestamptz' in v_outer) = 0
+     OR position('app.ca_hand_time_banks' in v_outer) = 0
+     OR position('SELECT count(*)::integer INTO v_row_count' in v_outer) = 0
+     OR position('IF v_row_count = 0 THEN' in v_outer) = 0 THEN
     RAISE EXCEPTION 'strict exact-seat time-bank postconditions failed (source md5 %)',
       md5(v_outer);
   END IF;
@@ -9718,7 +10158,22 @@ BEGIN
         ('public.fn_ca_lock_settlement_lane_for_tournament(uuid,uuid)'::regprocedure,
          '2bc939035496d764ff9d6c14b52fa1e7'::text),
         ('public.fn_ca_share_settlement_lane_for_table(uuid)'::regprocedure,
-         '006d78a441e65d000d1d78929649bb44'::text)
+         '006d78a441e65d000d1d78929649bb44'::text),
+        /* 20260910063559: takeover remains explicit and heartbeat source stays
+           byte-identical while the request hook is composed below. */
+        ('public.claim_tournament_lease_v2(uuid,text,text,uuid,integer)'::regprocedure,
+         'd1b5100c2b9f92bec5fd1680b0b4f230'::text),
+        ('public.heartbeat_tournament_leases_v4(text,jsonb,integer)'::regprocedure,
+         '5e6c99545e07c21efcb50e5cb3441c14'::text),
+        /* 20260910064701: the tournament hand/close fences are already
+           heartbeat-compatible. The cash hand and add-on table fences remain
+           the two authenticated inputs for #6. */
+        ('public.fn_ca_commit_hand_settlement_exact_before_obligations(uuid,bigint,jsonb,numeric,numeric,text,numeric,jsonb,jsonb,text,uuid)'::regprocedure,
+         '457ad8f1e1528ad205f7bd43488f3e14'::text),
+        ('public.fn_ca_resolve_unbound_pending_addons(uuid,numeric,text,uuid)'::regprocedure,
+         '8ab94f005d1dcc695c7094eec3fd279d'::text),
+        ('public.fn_close_empty_tournament_table(uuid,uuid,uuid)'::regprocedure,
+         '4abef1a7ccd6d56c2523fe6cb02396b6'::text)
     ) expected(function_oid,source_md5)
     JOIN pg_proc p ON p.oid=expected.function_oid
    WHERE md5(p.prosrc) IS DISTINCT FROM expected.source_md5;
@@ -9917,6 +10372,99 @@ BEGIN
   END IF;
 END;
 $prove_move_receipt_preimage_preserved$;
+
+-- The already-deployed occupancy adoption retired every unbound application
+-- cashout. Prove this broad historical composition preserved both the exact
+-- Diamond-aware primitive body and the one service-callable occupancy door.
+DO $verify_cashout_occupancy_authority_preserved$
+DECLARE
+  v_core oid:=to_regprocedure(
+    'public.atomic_seat_cashout_locked_pre_tournament_guard(uuid,uuid,integer,text)');
+  v_wrapper oid:=to_regprocedure(
+    'public.atomic_seat_cashout_locked(uuid,uuid,integer,text)');
+  v_occupancy oid:=to_regprocedure(
+    'public.fn_cashout_seat_occupancy(uuid,uuid,integer,uuid,text)');
+  v_postgres oid:='postgres'::regrole;
+  v_service_role oid:='service_role'::regrole;
+BEGIN
+  IF v_core IS NULL OR v_wrapper IS NULL OR v_occupancy IS NULL THEN
+    RAISE EXCEPTION
+      'Stage-B cashout composition lost the primitive or occupancy service door';
+  END IF;
+
+  IF NOT EXISTS (
+       SELECT 1 FROM pg_proc p
+        WHERE p.oid=v_core
+          AND md5(p.prosrc)='f0e1b852a56808d39a48e3a27603333d'
+          AND p.proowner=v_postgres AND p.prosecdef AND NOT p.proretset
+          AND p.provolatile='v' AND p.proparallel='u' AND p.prokind='f'
+          AND p.prorettype='jsonb'::regtype
+          AND p.pronargs=4 AND p.pronargdefaults=2
+          AND p.proconfig=ARRAY[
+            'search_path=public, pg_temp','statement_timeout=30s']::text[]
+          AND position('public.fn_poker_diamond_cashout(' IN p.prosrc)>0
+          AND position('cashout:occupancy:' IN p.prosrc)>0)
+     OR NOT EXISTS (
+       SELECT 1 FROM pg_proc p
+        WHERE p.oid=v_wrapper
+          AND md5(p.prosrc)='08924758c5e10e72c38dba11d7d4c758'
+          AND p.proowner=v_postgres AND p.prosecdef AND NOT p.proretset
+          AND p.provolatile='v' AND p.proparallel='u' AND p.prokind='f'
+          AND p.prorettype='jsonb'::regtype
+          AND p.pronargs=4 AND p.pronargdefaults=2
+          AND p.proconfig=ARRAY[
+            'search_path=public, pg_temp','statement_timeout=30s']::text[]
+          AND position('TOURNAMENT_SEAT_EXIT_REQUIRES_TOURNAMENT_AUTHORITY'
+                       IN p.prosrc)>0
+          AND position('atomic_seat_cashout_locked_pre_tournament_guard'
+                       IN p.prosrc)>0)
+     OR NOT EXISTS (
+       SELECT 1 FROM pg_proc p
+        WHERE p.oid=v_occupancy
+          AND md5(p.prosrc)='1f7683406ca4d3d0ddce0e92ee8ef5e6'
+          AND p.proowner=v_postgres AND p.prosecdef AND NOT p.proretset
+          AND p.provolatile='v' AND p.proparallel='u' AND p.prokind='f'
+          AND p.prorettype='jsonb'::regtype
+          AND p.pronargs=5 AND p.pronargdefaults=1
+          AND p.proconfig=ARRAY[
+            'search_path=public, pg_temp','statement_timeout=30s']::text[]
+          AND position('CASHOUT_OCCUPANCY_REQUIRED' IN p.prosrc)>0
+          AND position('public.atomic_seat_cashout_locked(' IN p.prosrc)>0) THEN
+    RAISE EXCEPTION
+      'Stage-B cashout composition changed an exact cashout body or catalog contract';
+  END IF;
+
+  IF EXISTS (
+       SELECT 1 FROM pg_proc p
+       CROSS JOIN LATERAL aclexplode(
+         COALESCE(p.proacl,acldefault('f',p.proowner))) a
+        WHERE p.oid IN (v_core,v_wrapper)
+        GROUP BY p.oid,p.proowner
+       HAVING count(*) FILTER (WHERE a.privilege_type='EXECUTE')<>1
+          OR count(*) FILTER (
+               WHERE a.privilege_type='EXECUTE'
+                 AND a.grantor=p.proowner AND a.grantee=p.proowner
+                 AND NOT a.is_grantable)<>1)
+     OR EXISTS (
+       SELECT 1 FROM pg_proc p
+       CROSS JOIN LATERAL aclexplode(
+         COALESCE(p.proacl,acldefault('f',p.proowner))) a
+        WHERE p.oid=v_occupancy
+        GROUP BY p.oid,p.proowner
+       HAVING count(*) FILTER (WHERE a.privilege_type='EXECUTE')<>2
+          OR count(*) FILTER (
+               WHERE a.privilege_type='EXECUTE'
+                 AND a.grantor=p.proowner AND a.grantee=p.proowner
+                 AND NOT a.is_grantable)<>1
+          OR count(*) FILTER (
+               WHERE a.privilege_type='EXECUTE'
+                 AND a.grantor=p.proowner AND a.grantee=v_service_role
+                 AND NOT a.is_grantable)<>1) THEN
+    RAISE EXCEPTION
+      'Stage-B cashout composition reopened an unbound cashout or lost the occupancy service door';
+  END IF;
+END;
+$verify_cashout_occupancy_authority_preserved$;
 
 COMMENT ON FUNCTION public.fn_ca_eliminate_absent_tournament_players(
   integer,integer,boolean) IS

@@ -31,6 +31,7 @@
 import { useSyncExternalStore } from 'react';
 
 let active = false;
+let selectedClubId: string | null | undefined;
 const listeners = new Set<() => void>();
 
 function subscribe(listener: () => void): () => void {
@@ -42,9 +43,11 @@ const getSnapshot = () => active;
 const getServerSnapshot = () => false;
 
 /** MultiTablePage calls this whenever its active tab changes or it unmounts. */
-export function publishInTabLobbyActive(next: boolean): void {
-  if (active === next) return;
+export function publishInTabLobbyActive(next: boolean, clubId?: string | null): void {
+  const nextClubId = next ? clubId : undefined;
+  if (active === next && selectedClubId === nextClubId) return;
   active = next;
+  selectedClubId = nextClubId;
   listeners.forEach((listener) => listener());
 }
 
@@ -53,7 +56,17 @@ export function useInTabLobbyActive(): boolean {
   return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
 }
 
+/** The visible lobby's own arena; null is the shared selector. */
+export function useInTabLobbyClubId(): string | null | undefined {
+  return useSyncExternalStore(
+    subscribe,
+    () => selectedClubId,
+    () => undefined
+  );
+}
+
 /** Test seam: reset between cases. */
 export function resetInTabLobbyActiveForTests(): void {
   active = false;
+  selectedClubId = undefined;
 }

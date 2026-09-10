@@ -83,22 +83,26 @@ describe('the My Wallets count line', () => {
   /**
    * "ALL FONTS AND BUTTONS MUST BE CENTERED INSIDE THEIR FRAMES" (Dan). The
    * painted MY WALLETS title's optical centre is 54.65% of the plate, measured
-   * off the my-wallets-v1 master. The zone must be symmetric about it, and it
-   * must actually centre TEXT: `place-items` centres grid items, and the count
-   * is a bare text node, which is an anonymous item that fills the cell and is
-   * then laid out by `text-align`.
+   * off the my-wallets-v1 master, and the zone must be symmetric about it.
+   *
+   * Width is the other half, and it is the half that actually failed: a grid
+   * item that fits its cell is centred by `place-items`, but one that overflows
+   * an `overflow: hidden` cell is snapped to the start edge and clipped. That is
+   * the whole "LOADING BALANC" photograph. No `text-align` rescues it, so none
+   * is asserted; the zone's width is what keeps every real count clear of the
+   * overflow fallback.
    */
-  it('is centred on the painted title, by text-align and not by place-items alone', () => {
+  it('is centred on the painted title, and wide enough that no count can overflow', () => {
     const body = lastRuleFor(CSS, '.club-home--unified-mobile .lobby-wallets-trigger__copy small');
-    expect(body).toContain('text-align: center');
 
     const left = Number(body.match(/left:\s*([\d.]+)%/)?.[1]);
     const width = Number(body.match(/width:\s*([\d.]+)%/)?.[1]);
     expect(Number.isFinite(left) && Number.isFinite(width)).toBe(true);
     expect(left + width / 2).toBeCloseTo(54.65, 1);
 
-    // 26.5% of the plate is 96.7px on a 393px phone, and the string it had to
-    // hold was 109.7px. Anything that narrow clips again.
+    // 26.5% of the plate is 96.7px on a 393px phone, and the placeholder it was
+    // once asked to hold was 109.7px. Anything that narrow is one long string
+    // away from clipping again.
     expect(width).toBeGreaterThanOrEqual(40);
     // ...and the bay it sits in ends at the chevron divider, near 78%.
     expect(left + width).toBeLessThanOrEqual(78);

@@ -830,7 +830,9 @@ describe('a tournament pays every place or none', () => {
       /computePlacePrize\(finalPrizePool, payouts, Number\(player\.position\)\)/
     );
     expect(REPRICE).toMatch(/correctPrize - \(player\.prize \|\| 0\)/);
-    expect(REPRICE).toMatch(/\.update\(\{ prize: correctPrize \}\)/);
+    expect(REPRICE).toContain("'fn_ca_reprice_unpaid_tournament_place'");
+    expect(REPRICE).toContain('p_expected_prize: expectedPrize');
+    expect(REPRICE).not.toMatch(/\.from\('tournament_players'\)[\s\S]*?\.update\(/);
 
     const addOnFunding = FINALIZE_AFTER_ADD_ON.indexOf("'fn_close_tournament_addon_period'");
     const addOnReprice = FINALIZE_AFTER_ADD_ON.indexOf(

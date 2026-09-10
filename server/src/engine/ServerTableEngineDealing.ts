@@ -11,6 +11,7 @@
 import { noteFire } from './BrainTelemetry.js';
 import { resolvePersona, wantsStraddle } from './HorsePersona.js';
 import { HandController } from './HandController.js';
+import { captureHandSeatGenerations } from './handSeatGeneration.js';
 import { ShadowRecorder } from './eventlog/ShadowRecorder.js';
 import * as EngineMetrics from '../observability/engineInstruments.js';
 import { startHandSpan } from '../observability/Tracing.js';
@@ -2483,6 +2484,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       // say plo4 on a PLO4 bomb hand even at an NLH table.
       this.currentHandVariant = config.gameVariant;
 
+      this.currentHandSeatGenerations = captureHandSeatGenerations(players);
       this.handController = new HandController(config, hcPlayers, dealerSeat);
       // chip-std Lane F (2026-09-02): the stacks this hand was dealt from. The
       // tournament persist gate in postHandTasks holds the settled stacks of

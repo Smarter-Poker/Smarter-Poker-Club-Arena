@@ -19,8 +19,8 @@
  *      path capable of inventing lifecycle truth.
  *
  * `registered` survivors remain payable whenever at least one player is
- * 'playing' — a genuine late registrant waiting on ensureLateRegSeated is owed
- * their place, and that case is unchanged.
+ * 'playing' — a genuine late registrant concurrently completing atomic
+ * admission is owed their place, and that case is unchanged.
  */
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'fs';

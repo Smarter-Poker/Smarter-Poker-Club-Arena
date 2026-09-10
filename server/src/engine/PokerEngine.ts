@@ -642,6 +642,46 @@ export function calculatePots(players: SeatPlayer[]): Pot[] {
   return merged;
 }
 
+/**
+ * Chips already in the middle that `userId` can win after taking its largest
+ * legal call. A player's own not-yet-committed call is removed from the
+ * result, so callers can use `call / (contestablePot + call)` directly.
+ *
+ * Computing from a hypothetical contribution is essential: current pot
+ * layers do not yet list a caller as eligible for the higher layers it will
+ * match, while summing the table pot lets a short stack price side pots it can
+ * never win. The canonical pot partition remains the sole eligibility oracle.
+ */
+export function calculateContestablePot(
+  players: SeatPlayer[],
+  userId: string,
+  toCall: number
+): number {
+  const player = players.find((candidate) => candidate.user_id === userId);
+  if (!player) return 0;
+
+  const cents = (value: number): number => Math.round(value * 100) / 100;
+  const effectiveCall = cents(
+    Math.min(Math.max(0, Number(toCall) || 0), Math.max(0, player.stack))
+  );
+  const hypothetical = players.map((candidate) => {
+    if (candidate.user_id !== userId) return { ...candidate, cards: [...candidate.cards] };
+    const stack = cents(Math.max(0, candidate.stack - effectiveCall));
+    return {
+      ...candidate,
+      cards: [...candidate.cards],
+      stack,
+      bet: cents(candidate.bet + effectiveCall),
+      totalInvested: cents(candidate.totalInvested + effectiveCall),
+      is_all_in: stack <= 0.005,
+    };
+  });
+  const eligibleAfterCall = calculatePots(hypothetical)
+    .filter((pot) => pot.eligiblePlayers.includes(userId))
+    .reduce((sum, pot) => sum + pot.amount, 0);
+  return cents(Math.max(0, eligibleAfterCall - effectiveCall));
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // BETTING LOGIC
 // ═══════════════════════════════════════════════════════════════════════════════

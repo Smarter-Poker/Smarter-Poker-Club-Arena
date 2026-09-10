@@ -130,4 +130,28 @@ describe('stage-one tournament cutovers require the live maintenance entry freez
       holdRetirement.indexOf('LOCK TABLE public.chip_escrow_holds')
     );
   });
+
+  it('converges a historical obligation from either its original debt or its already-paid shape', () => {
+    const sql = sqlFor(cutovers[0].file);
+    const acceptedShape = sql.slice(
+      sql.indexOf('IF v_obligation.tournament_id IS DISTINCT FROM'),
+      sql.indexOf('INSERT INTO public.tournament_obligation_retirements')
+    );
+    const convergenceUpdate = sql.slice(
+      sql.indexOf('UPDATE public.tournament_obligations o'),
+      sql.indexOf(
+        'SELECT count(*) INTO v_rows',
+        sql.indexOf('UPDATE public.tournament_obligations o')
+      )
+    );
+
+    expect(acceptedShape).toMatch(
+      /v_obligation\.amount_owed NOT IN \(\s*v_expected\.amount_owed, v_expected\.amount_paid\)/
+    );
+    expect(convergenceUpdate).toMatch(
+      /o\.amount_owed IN \(\s*v_expected\.amount_owed, v_expected\.amount_paid\)/
+    );
+    expect(convergenceUpdate).toContain('SET amount_owed = v_expected.amount_paid');
+    expect(convergenceUpdate).toContain('AND o.amount_paid = v_expected.amount_paid');
+  });
 });

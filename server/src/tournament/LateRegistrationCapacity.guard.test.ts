@@ -165,8 +165,11 @@ describe('late-registration capacity authority', () => {
     expect(expansion).not.toContain(".from('tables')");
     expect(expansion).not.toContain(".from('tournament_players')");
     expect(expansion).not.toContain("'fn_tournament_late_registration_open'");
+    expect(expansion).not.toContain('assignTournamentPlayerSeatAtomically');
+    expect(expansion).not.toContain('ensureLateRegSeated');
     expect(expansion).toContain('this.createManagedTableEngine(tableId)');
     expect(expansion).toContain('TournamentManagerBase.SWEEP_MUTATION_BATCH_SIZE');
+    expect(expansion).toContain('this.requestUrgentEliminationSweepAfter(0)');
   });
 
   it('keeps every database-created table pending until a manager admits it', () => {

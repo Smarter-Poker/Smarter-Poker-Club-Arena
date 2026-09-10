@@ -644,11 +644,9 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           if (rebought.size > 0) {
             busted = busted.filter((b) => !rebought.has(b.user_id));
             if (busted.length === 0) {
-              // Rebuy is a committed chip purchase, not a maintenance hint.
-              // Seat it in this same admitted unit (bounded by the helper)
-              // instead of returning before the normal seating stage and
-              // depending on the five-second recovery wake.
-              await this.ensureLateRegSeated();
+              // The rebuy transaction owns its exact playable chair and stack.
+              // This process consumes only the success receipt; it never scans
+              // for a seatless roster or performs a later compensating write.
               return; // everyone bought back in; nobody is eliminated this pass
             }
           }
@@ -669,9 +667,9 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
            * is identical for everyone — a horse simply replies immediately,
            * which is its input device, not a different deal. A rebuy that
            * lands mid-grace raises chips above zero, drops the player out of
-           * the next bust snapshot, and ensureLateRegSeated re-seats them at
-           * the table that most needs a player — same table and seat when
-           * that is where the need is.
+           * the next bust snapshot. The rebuy transaction itself restores the
+           * exact playable chair — same table and seat whenever still legal —
+           * rather than depending on a periodic manager repair.
            *
            * The deadline is database-owned. A manager restart, pod handoff or
            * delayed event loop therefore cannot grant another window or make
@@ -783,8 +781,8 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           // reserved for the winner. No clamp required.
           // PAYOUT-INTEGRITY 2026-08-27: distinct WITHIN a sweep was not
           // enough. `playingCount` is a live count and is NOT monotonic —
-          // ensureLateRegSeated promotes `registered` entrants to `playing`
-          // after eliminations have begun — so a later sweep could compute a
+          // atomic late registration can promote a `registered` entrant to
+          // `playing` after eliminations have begun — so a later sweep could compute a
           // basePosition at or above a place an earlier sweep already paid,
           // and the wallet key (`...:prize:{user}:{place}`) dedupes a repeated
           // USER, not a repeated PLACE. Confirmed live: 206 duplicated places
@@ -811,8 +809,8 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
            *
            * (a) THE SEED WAS A LIVE `playing` COUNT. `playingCount` reads
            *     `status='playing'`, and an entrant who has not yet been
-           *     promoted out of `registered` by ensureLateRegSeated is not in
-           *     it. On 4f42d847 the first bust was seeded at 38 while 39
+           *     atomically promoted out of `registered` is not in it. On
+           *     4f42d847 the first bust was seeded at 38 while 39
            *     players were in the event, so the WHOLE ladder was short by
            *     one from that moment on. Nothing detected it, because a
            *     ladder that is uniformly one place high is gapless and
@@ -1068,30 +1066,19 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         if (completedStage(3)) return;
       }
 
-      seatingStage: {
-        if (this.eliminationSweepCursor.nextStage > 3) break seatingStage;
-        // TOURNEY-AUDIT 2026-07-24 (sweep 6): server-authoritative seating —
-        // late registrants / re-entries are seated within one cycle; if every
-        // table is full they're marked 'playing' so checkDynamicTableExpansion
-        // spawns a table and the balancer redraws. No player ever waits.
-        await this.ensureLateRegSeated();
-        if (sweepStopped()) return;
-        if (completedStage(4)) return;
-      }
-
       finalDealStage: {
-        if (this.eliminationSweepCursor.nextStage > 4) break finalDealStage;
+        if (this.eliminationSweepCursor.nextStage > 3) break finalDealStage;
         // FINAL TABLE DEAL (2026-08-22 parity): while the field is down to one
         // table and the feature is on, watch tournament_deal_votes; unanimity
         // executes fn_settle_final_table_deal_atomic. Cheap by construction - it stands down
         // immediately unless the flag is set, and throttles its own polling.
         if (!(await this.checkFinalTableDeal())) return;
         if (sweepStopped()) return;
-        if (completedStage(5)) return;
+        if (completedStage(4)) return;
       }
 
       addOnStage: {
-        if (this.eliminationSweepCursor.nextStage > 5) break addOnStage;
+        if (this.eliminationSweepCursor.nextStage > 4) break addOnStage;
         // ADD-ONS MUST ALWAYS LAND 2026-08-20. Dan: an add-on must always
         // award its chips to the stack when purchased.
         //
@@ -1122,11 +1109,11 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           }
           this.scheduleAddOnRetry();
         }
-        if (completedStage(6)) return;
+        if (completedStage(5)) return;
       }
 
       balanceStage: {
-        if (this.eliminationSweepCursor.nextStage > 6) break balanceStage;
+        if (this.eliminationSweepCursor.nextStage > 5) break balanceStage;
         // A tournament break freezes seat movement as well as dealing. A
         // balance operation closes one live seat and opens another, so it may
         // only run after the same maintenance predicate used by the table
@@ -1154,19 +1141,19 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
             this.requestUrgentEliminationSweepAfter(dueIn);
           }
         }
-        if (completedStage(7)) return;
+        if (completedStage(6)) return;
       }
 
       expansionStage: {
-        if (this.eliminationSweepCursor.nextStage > 7) break expansionStage;
+        if (this.eliminationSweepCursor.nextStage > 6) break expansionStage;
         // FIX 155: Check if new tables need to be created during rebuy/late-reg period
         if (!isMaintenanceFrozen() && !(await this.checkDynamicTableExpansion())) return;
         if (sweepStopped()) return;
-        if (completedStage(8)) return;
+        if (completedStage(7)) return;
       }
 
       handForHandStage: {
-        if (this.eliminationSweepCursor.nextStage > 8) break handForHandStage;
+        if (this.eliminationSweepCursor.nextStage > 7) break handForHandStage;
         // ── HAND-FOR-HAND BUBBLE MODE ──
         // Multi-table tournaments only (not Spin/SNG single-table)
         if (this.tableEngines.size > 1 && this.tournamentCache) {
@@ -1359,7 +1346,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
             }
           }
         }
-        if (completedStage(9)) return;
+        if (completedStage(8)) return;
       }
       this.eliminationSweepCursor.reset();
       completedWholeSweep = true;
@@ -3342,21 +3329,39 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           `[Tournament:${this.tournamentId.slice(0, 8)}] Prize recalc: ${player.user_id.slice(0, 8)} pos ${player.position} - old: ${player.prize}, new: ${correctPrize}, diff: ${difference >= 0 ? '+' : ''}${difference}`
         );
 
-        /* Repricing changes the durable entitlement only. Both increases and
-           decreases are safe before the batch is prepared because no place
-           money has moved. A transitional event with older payout evidence is
-           still protected: prepare seeds that evidence and refuses any amount
-           already paid above the frozen plan; nothing is clawed back. */
-        const { error: recordErr } = await supabase
-          .from('tournament_players')
-          .update({ prize: correctPrize })
-          .eq('tournament_id', this.tournamentId)
-          .eq('user_id', player.user_id);
-        if (recordErr) {
+        /* Repricing changes the durable entitlement only. Raw service-role
+           UPDATE on tournament_players is deliberately revoked: the database
+           RPC locks the event and exact roster row, proves that no terminal
+           batch or paid-place evidence exists, compares the old amount, and
+           commits the new amount as one bounded operation. */
+        const expectedPrize = Number(player.prize || 0);
+        const { data: recordRaw, error: recordErr } = await supabase.rpc(
+          'fn_ca_reprice_unpaid_tournament_place',
+          {
+            p_tournament_id: this.tournamentId,
+            p_user_id: player.user_id,
+            p_expected_prize: expectedPrize,
+            p_new_prize: correctPrize,
+          }
+        );
+        const record = recordRaw as {
+          ok?: boolean;
+          tournament_id?: string;
+          user_id?: string;
+          prize?: number | string;
+        } | null;
+        const recordInvalid =
+          !record ||
+          record.ok !== true ||
+          record.tournament_id !== this.tournamentId ||
+          record.user_id !== player.user_id ||
+          !Number.isFinite(Number(record.prize)) ||
+          Math.abs(Number(record.prize) - correctPrize) >= 0.005;
+        if (recordErr || recordInvalid) {
           complete = false;
           reportError(
             new Error(
-              `[Tournament:${this.tournamentId.slice(0, 8)}] prize recalc could not record prize=${correctPrize} for ${player.user_id.slice(0, 8)}: ${recordErr.message}; atomic completion will refuse an incomplete prize set`
+              `[Tournament:${this.tournamentId.slice(0, 8)}] prize recalc could not certify prize=${correctPrize} for ${player.user_id.slice(0, 8)}: ${recordErr?.message ?? 'invalid database receipt'}; atomic completion will refuse an incomplete prize set`
             ),
             'Tournament.prize_recalc_record_failed'
           );
@@ -4101,6 +4106,5 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     tournament: any,
     winnerId: string
   ): Promise<VerifiedSatelliteSettlementReceipt>;
-  protected abstract ensureLateRegSeated(): Promise<void>;
   protected abstract checkDynamicTableExpansion(): Promise<boolean>;
 }

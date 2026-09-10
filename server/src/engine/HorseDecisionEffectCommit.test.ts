@@ -187,6 +187,59 @@ describe('authoritative horse action effect commit', () => {
     expect(snapshot.decisionKey).not.toContain('"rank":"J"');
   });
 
+  it('publishes the legal two-card Pineapple flop after the hero discard', () => {
+    const { engine, player, enginePlayer, state } = harness(true);
+    engine.tableInfo = { ...engine.tableInfo, game_variant: 'pineapple' };
+    engine.handController.getGameVariant = () => 'pineapple';
+    enginePlayer.cards = [
+      { rank: 'A', suit: 'hearts' },
+      { rank: 'K', suit: 'hearts' },
+    ];
+    (state as any).actionHistory = [
+      {
+        seat: 1,
+        userId: 'horse-1',
+        action: 'discard',
+        amount: 0,
+        timestamp: 100,
+        stage: 'pineapple_discard',
+      },
+    ];
+
+    engine.scheduleHorseAction(player, 1, enginePlayer, state);
+
+    const snapshot = decisionWorker.decideFast.mock.calls[0]?.[0] as any;
+    expect(snapshot.player.cards).toHaveLength(2);
+    expect(snapshot.gameState).toMatchObject({
+      gameVariant: 'pineapple',
+      stage: 'flop',
+      actionHistory: [
+        {
+          seat: 1,
+          userId: 'horse-1',
+          action: 'discard',
+          stage: 'pineapple_discard',
+        },
+      ],
+      variantRules: {
+        holeCardsDealt: 3,
+        holeCardsUse: 'discard_to_two',
+        boardCardsUse: 'any',
+      },
+    });
+  });
+
+  it('never schedules an ordinary fast decision during the Pineapple discard round', async () => {
+    const { engine, player, state } = harness(true);
+    engine.tableInfo = { ...engine.tableInfo, game_variant: 'pineapple' };
+    (state as any).stage = 'pineapple_discard';
+    (state as any).currentPlayerSeat = 1;
+
+    await engine.handleTurnChange({ type: 'TURN_CHANGE', seat: 1, availableActions: [] }, [player]);
+
+    expect(decisionWorker.decideFast).not.toHaveBeenCalled();
+  });
+
   it('removes a false all-in and clamps the wager ceiling at a table commitment cap', () => {
     const { engine, player, enginePlayer, state } = harness(true);
     engine.tableInfo = {

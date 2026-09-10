@@ -10,6 +10,12 @@ Dan explicitly authorized starting Phase 3 while Phase 2 push/publication is mon
 
 Dan authorized Phase 4 development while Phase 3 publication is verified in the background. Phase 3 runtime adoption and its recorded repair/regression checks are verified as of September 9 at 21:05 UTC. Pending publication is not a passed gate. This continuation preserves the prior-phase audit and does not authorize public funded Diamond games ahead of their gameplay and accounting gates.
 
+## Execution Update, September 10, 2026
+
+Dan accepted ownership of the remaining World Hub lobby image and explicitly authorized Phase 6 after the other Phase 5 implementation and publication checks passed. The image is excluded from this continuation. Phase 6 uses the shared engine and dedicated Diamond custody; public funded play remains subject to the existing accounting and release gates.
+
+The initial Phase 6 engine change enforces whole-Diamond hand amounts and fixes a reproduced duplicate runout payout. It is not a completed funded-game certificate. The remaining atomic seat/custody, accepted-hand accounting, cash-out and controlled runtime acceptance work is tracked in [the Phase 6 audit](audits/2026-09-10-diamond-phase-6-cash.md).
+
 ## Approved Product Contract
 
 This replaces the earlier recommendation for two separate World Hub destinations. The World Hub has one player-facing Poker Arena entrance. Reuse the existing Club Arena application as the shared shell, lobby and game implementation. Diamond Arena is a diamond-only skin and operating policy inside it, not a second poker application.
@@ -219,6 +225,8 @@ Release and acceptance verified September 9, 2026: Club Arena 70fd31cf, World Hu
 Exit: correct shell/selection/access behavior without old iframe or simulated game content.
 
 Release verified September 10, 2026: Club Arena implementation bc72ffc6 plus footer repair d600427d are published through both shared frontend endpoints; World Hub entry and evidence are live at b1250716. Exact CI, authenticated navigation/table preservation, retired-route checks and the managed-browser WebGL limitation are recorded in docs/changelog/2026-09-09-poker-arena-shell-phase-5.md. No engine or database deployment was needed.
+
+Phases 3 Through 5 Recheck: the September 10 audit repaired and published the transfer session/retry defects through PR 4078, verified production contracts and live routes, and retained the user-owned World Hub image exclusion. Exact evidence is in [the prior-phase recheck](audits/2026-09-10-diamond-phases-3-through-5-recheck.md).
 
 ### Phase 6 Of 12: First Fully Playable Diamond Cash Game
 

@@ -5,17 +5,19 @@ repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 canonical="${repo_dir}/supabase/migrations/20260908042800_maintenance_announcement_and_entry_purchases_are_serialized.sql"
 cutover="${repo_dir}/supabase/migrations/20260909165629_satellite_settlement_has_one_atomic_authority.sql"
 bootstrap="${repo_dir}/scripts/dev/fixtures/stage-one-freeze-authority-pg17-bootstrap.sql"
+authority="${repo_dir}/scripts/dev/fixtures/stage-one-maintenance-authority-functions.sql"
+behavior="${repo_dir}/scripts/dev/fixtures/stage-one-maintenance-authority-behavior.sql"
 
 pg17_bin="${PG17_BINDIR:-}"
 if [[ -z "$pg17_bin" ]] && command -v brew >/dev/null 2>&1; then
   pg17_bin="$(brew --prefix postgresql@17 2>/dev/null)/bin"
 fi
-if [[ ! -x "${pg17_bin}/initdb" ]] || ! "${pg17_bin}/postgres" --version | rg -q ' 17\.'; then
+if [[ ! -x "${pg17_bin}/initdb" ]] || ! "${pg17_bin}/postgres" --version | grep -Eq ' 17\.'; then
   echo 'PostgreSQL 17 tools are required. Set PG17_BINDIR to their bin directory.' >&2
   exit 2
 fi
 
-for required in "$canonical" "$cutover" "$bootstrap"; do
+for required in "$canonical" "$cutover" "$bootstrap" "$authority" "$behavior"; do
   if [[ ! -f "$required" ]]; then
     echo "Required probe input is missing: $required" >&2
     exit 1
@@ -58,15 +60,13 @@ extract_function() {
     capture { print }
     capture && /^\$function\$;$/ { exit }
   ' "$canonical" >"$destination"
-  if ! rg -q '^\$function\$;$' "$destination"; then
+  if ! grep -Eq '^\$function\$;$' "$destination"; then
     echo "Could not extract canonical function: $signature" >&2
     exit 1
   fi
 }
 
-extract_function \
-  'CREATE OR REPLACE FUNCTION public.fn_entry_purchases_frozen()' \
-  "$predicate_sql"
+cp "$authority" "$predicate_sql"
 extract_function \
   'CREATE OR REPLACE FUNCTION public.fn_serialize_engine_maintenance_break_write()' \
   "$writer_sql"
@@ -76,7 +76,7 @@ awk '
   capture { print }
   capture && /^\$authenticate_entry_freeze_authority\$;$/ { exit }
 ' "$cutover" >"$authentication_sql"
-if ! rg -q '^\$authenticate_entry_freeze_authority\$;$' "$authentication_sql"; then
+if ! grep -Eq '^\$authenticate_entry_freeze_authority\$;$' "$authentication_sql"; then
   echo 'Could not extract stage-one freeze authentication block.' >&2
   exit 1
 fi
@@ -108,7 +108,7 @@ expect_refusal() {
   output="$("${psql_cmd[@]}" -f "$authentication_sql" 2>&1)"
   result=$?
   set -e
-  if [[ $result -eq 0 ]] || ! rg -q "$expected" <<<"$output"; then
+  if [[ $result -eq 0 ]] || ! grep -Eq "$expected" <<<"$output"; then
     echo "$label did not fail closed as expected" >&2
     printf '%s\n' "$output" >&2
     exit 1
@@ -118,6 +118,16 @@ expect_refusal() {
 
 run_authentication
 echo 'portable canonical authority: PASS'
+"${psql_cmd[@]}" -f "$behavior"
+
+legacy_predicate_sql="${probe_root}/legacy-predicate.sql"
+extract_function \
+  'CREATE OR REPLACE FUNCTION public.fn_entry_purchases_frozen()' \
+  "$legacy_predicate_sql"
+"${psql_cmd[@]}" -f "$legacy_predicate_sql" >/dev/null
+expect_refusal 'obsolete pre-release predicate' 'maintenance entry-freeze predicate is not canonical'
+"${psql_cmd[@]}" -f "$predicate_sql" >/dev/null
+run_authentication
 
 "${psql_cmd[@]}" -c \
   "CREATE OR REPLACE FUNCTION public.fn_entry_purchases_frozen() RETURNS boolean LANGUAGE sql VOLATILE SET search_path=public,pg_temp AS 'SELECT true'" \

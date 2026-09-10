@@ -296,6 +296,7 @@ export interface TableModalsLayerProps {
   // Cashier
   showCashier: boolean;
   /** null = unknown (a failed read), never 0. See BuyInModal. */
+  arenaAsset?: 'chips' | 'diamonds';
   accountBalance: number | null;
   onRetryAccountBalance?: () => void;
   cashoutMinBuyIn: number;
@@ -614,6 +615,7 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
     onCloseDiamondWallet,
     // Cashier
     showCashier,
+    arenaAsset,
     accountBalance,
     onRetryAccountBalance,
     cashoutMinBuyIn,
@@ -1089,7 +1091,7 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
 
       {/* Cashier Modal */}
       <CashierModal
-        isOpen={showCashier}
+        isOpen={showCashier && arenaAsset === 'chips'}
         onClose={onCloseCashier}
         // Passed straight through. Wrapping these in `async (a) => { await f(a) }`
         // is what threw the success flag away originally.
@@ -1100,7 +1102,7 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
         maxStack={maxBuyIn}
       />
       <BuyInModal
-        isOpen={bustRebuyOpen}
+        isOpen={bustRebuyOpen && arenaAsset === 'chips'}
         onClose={onCancelBustRebuy}
         onConfirm={async (amount: number) => {
           await onConfirmBustRebuy(amount);
@@ -1122,6 +1124,7 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
       {/* Buy-In Modal */}
       <BuyInModal
         isOpen={showBuyInModal}
+        currency={arenaAsset === 'diamonds' ? 'diamonds' : ''}
         onClose={onCloseBuyInModal}
         onConfirm={onConfirmBuyIn}
         recovery={
@@ -1137,7 +1140,9 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
         accountBalance={accountBalance}
         onRetryBalance={onRetryAccountBalance}
         bigBlind={safeBB(blinds)}
-        cashoutRestriction={cashoutMinBuyIn > 0 ? cashoutMinBuyIn : undefined}
+        cashoutRestriction={
+          arenaAsset === 'chips' && cashoutMinBuyIn > 0 ? cashoutMinBuyIn : undefined
+        }
         countdown={buyInSecondsLeft ?? undefined}
         onTopUp={onTopUpAccount}
       />
@@ -1178,24 +1183,30 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
           is a drop-in. */}
       {tableId && userId !== 'guest' && (
         <RealTimeResultPanel
+          arenaAsset={arenaAsset}
           isOpen={showSessionStats}
           onClose={onCloseSessionStats}
           tableId={tableId}
           userId={userId}
           initialStack={heroStack}
           bigBlind={safeBB(blinds)}
-          onOpenDetailed={() => setShowDetailedAnalytics(true)}
+          onOpenDetailed={
+            arenaAsset === 'diamonds' ? undefined : () => setShowDetailedAnalytics(true)
+          }
         />
       )}
 
       {/* Detailed Analytics — the four-tab panel behind the button above. */}
-      {tableId && showDetailedAnalytics && sessionStatsService.getStats(tableId) && (
-        <SessionAnalytics
-          isOpen={showDetailedAnalytics}
-          onClose={() => setShowDetailedAnalytics(false)}
-          stats={sessionStatsService.getStats(tableId)!}
-        />
-      )}
+      {arenaAsset !== 'diamonds' &&
+        tableId &&
+        showDetailedAnalytics &&
+        sessionStatsService.getStats(tableId) && (
+          <SessionAnalytics
+            isOpen={showDetailedAnalytics}
+            onClose={() => setShowDetailedAnalytics(false)}
+            stats={sessionStatsService.getStats(tableId)!}
+          />
+        )}
 
       {/* Settings Panel */}
       <SettingsPanel
@@ -1331,6 +1342,7 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
       {!isTournament && tableId && userId !== 'guest' && (
         <TableErrorBoundary componentName="SessionHUD">
           <SessionHUD
+            arenaAsset={arenaAsset}
             isOpen={showSessionHUD}
             onClose={onCloseSessionHUD}
             tableId={tableId}

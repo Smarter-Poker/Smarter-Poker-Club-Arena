@@ -153,5 +153,89 @@
     "native_evidence": "docs/audits/2026-09-10-reprice-access-pg17.json",
     "push_completed": false,
     "followup_actual_behavior_tests_passed": 24
+  },
+  "local_release_acceptance": {
+    "head": "8919f49e6c21d0401f1b9df8fa17443f3ecc3e27",
+    "remote_head_used_for_diff": "75eb72e546b71958bf05f719f4c64d3143a03d59",
+    "exit_code": 0,
+    "finished_at": "2026-09-10T07:28:22.924058+00:00",
+    "mode": "local hook validation only",
+    "push_executed": false,
+    "changed_client_tests": 107,
+    "affected_client_tests": 593,
+    "source_assertions": 1432,
+    "changed_server_tests": 209,
+    "affected_server_tests": 3045,
+    "affected_server_existing_skips": 145,
+    "counts_overlap": true,
+    "server_build_exit": 0
+  },
+  "publication_block": {
+    "status": "explicit_user_authorization_required_by_automatic_review",
+    "destination": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena.git",
+    "branch": "agent/codex-poker-audit-sep09/fix/tournament-pause-release",
+    "pr": 4105,
+    "rejected_action": "normal git push with hooks",
+    "reason": "Reviewer requires explicit user approval for repository upload; canonical remote, existing branch/PR and recovered historical approvals did not satisfy review.",
+    "retried_only_after_destination_checks": true,
+    "attempts_after_final_rejection": 0,
+    "push_completed": false,
+    "remote_head_verified": "75eb72e546b71958bf05f719f4c64d3143a03d59"
+  },
+  "resumed_lane_checkpoints": {
+    "satellite_ui": {
+      "commits": [
+        "a3aaccedb83687fcda823137eb0f4065faa1d2e4",
+        "a44fe03ebf31526c44fd7f30f0138469cfbe1baa"
+      ],
+      "tests": 151,
+      "build_exit": 0,
+      "integrated": false,
+      "open": "core DB contract and real authenticated browser/network"
+    },
+    "short_format_blinds": {
+      "commits": [
+        "7923185ffa4d768e49c2bce9ab2d4c2b438793a2",
+        "2346cb9dc7fcd2080105140d87c68ddf41649124"
+      ],
+      "matrix_cases": 91,
+      "unchanged_mtt_cases": 60,
+      "malformed_refusals": 13,
+      "preflight_refusals": 3,
+      "tests": 14,
+      "build_exit": 0,
+      "new_body_md5": "2eb470a52fe0d2bf3b1b5f38a05f3bc6",
+      "migration_applied": false,
+      "integrated": false
+    },
+    "atomic_clock_design": {
+      "commits": ["fc214f355", "383b6e8b5"],
+      "status": "independent review running; no atomic implementation or production acceptance"
+    },
+    "rakeback_door_retirement": {
+      "commit": "77e1a896f8cb1d4483231944d09f3319b6ea8475",
+      "pg_assertions": 14,
+      "independent_review": "commission source lane plus root",
+      "migration_applied": false,
+      "integrated": false
+    },
+    "commission_source": {
+      "commits": [
+        "6e90a7272afd8a5e8bdb99bf08c76572742970a7",
+        "0d34358f73e89fffb4fd447f0d177db2cc777fbd"
+      ],
+      "pg_checks": 40,
+      "status": "proposal only; full actual accepted-owner dependency and trigger verification ongoing",
+      "integrated": false
+    },
+    "rakeback_source_payment": {
+      "status": "11 prototype groups; full wrapper/UI/auth/trigger composition incomplete; no production changes"
+    },
+    "heads_up_native": {
+      "status": "94 captured critical triggers; full HU matrix/races/receipt rollback run ongoing; not yet certified"
+    },
+    "satellite_core": {
+      "status": "31 behavior tests; native full schema found completing guard wiring gap; final Stage-B wrapper dependency remains open; no production changes"
+    }
   }
 }

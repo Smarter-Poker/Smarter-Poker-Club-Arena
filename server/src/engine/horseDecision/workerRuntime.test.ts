@@ -13,6 +13,7 @@ import {
   HorseDecisionWorkerRuntime,
   type HorseDecisionWorkerDependencies,
 } from './workerRuntime.js';
+import { buildTournamentMState, TOURNAMENT_CONTEXT_INCOMPLETE } from '../HorseTournamentPreflop.js';
 
 const snapshot: LiveHorseDecisionSnapshot = {
   generation: 4,
@@ -83,6 +84,8 @@ const snapshot: LiveHorseDecisionSnapshot = {
     minRaise: 4,
     stage: 'preflop',
     gameVariant: 'plo4',
+    gameMode: 'cash',
+    format: 'cash',
     bigBlind: 2,
     actionHistory: [],
     pots: [
@@ -247,6 +250,108 @@ const rekey = (request: FastHorseDecisionRequest): FastHorseDecisionRequest => (
   decisionKey: buildHorseDecisionKey(request),
 });
 
+function phase6TournamentRequest(requestId = 50): FastHorseDecisionRequest {
+  const player = { ...snapshot.player, cards: snapshot.player.cards.slice(0, 2) };
+  const m = buildTournamentMState({
+    stackChips: player.stack,
+    smallBlind: 1,
+    bigBlind: 2,
+    ante: 0.2,
+    anteType: 'big_blind',
+    playersAtTable: 2,
+    nextSmallBlind: 2,
+    nextBigBlind: 4,
+    nextAnte: 0.4,
+    minutesToNextLevel: 5,
+    opponentStacks: [{ userId: 'horse-3', stackChips: 96 }],
+  });
+  return rekey({
+    ...fastRequest(requestId),
+    player,
+    gameState: {
+      ...snapshot.gameState,
+      gameVariant: 'nlh',
+      gameMode: 'tournament',
+      format: 'mtt',
+      dealerSeat: 2,
+      ante: 0.2,
+      bigBlindAnte: true,
+      bettingStructure: 'no_limit',
+      variantRules: {
+        holeCardsDealt: 2,
+        holeCardsUse: 'any',
+        boardCardsUse: 'any',
+        deckSize: 52,
+        splitLow8OrBetter: false,
+      },
+      tournament: {
+        schemaVersion: 1,
+        contextStatus: 'complete',
+        contextIssues: [],
+        sourceAgeMs: 100,
+        tournamentId: 'phase6-tournament',
+        tournamentType: 'MTT',
+        tournamentStatus: 'RUNNING',
+        gameVariant: 'nlh',
+        entrants: 20,
+        nearBubble: false,
+        inMoney: false,
+        playersLeft: 10,
+        spotsPaid: 3,
+        avgStackChips: 95,
+        medianStackChips: 95,
+        seatsPerTable: 2,
+        playersAtTable: 2,
+        currentLevel: 4,
+        currentSmallBlind: 1,
+        currentBigBlind: 2,
+        currentAnte: 0.2,
+        anteType: 'big_blind',
+        nextSmallBlind: 2,
+        nextBigBlind: 4,
+        nextAnte: 0.4,
+        levelDurationMin: 10,
+        levelElapsedMin: 5,
+        registrationOpen: true,
+        lateRegistrationOpen: true,
+        registrationRequiresAuthorization: false,
+        isPko: false,
+        isBounty: false,
+        isMysteryBounty: false,
+        reentryAllowed: false,
+        reentryOpen: false,
+        maxReentries: 0,
+        rebuyAllowed: false,
+        rebuyOpen: false,
+        maxRebuys: 0,
+        addOnAvailable: false,
+        addOnPeriodOpen: false,
+        addOnCost: null,
+        addOnChips: null,
+        addOnLevels: null,
+        onBreak: false,
+        handForHand: false,
+        handForHandExpected: false,
+        m,
+        bountyFactor: 0,
+        stacks: [100, 90],
+        payoutPct: [50, 30, 20],
+        mysteryChestsLeft: 0,
+        mysteryMeanCents: 0,
+        mysteryTopCents: 0,
+        mysteryTopLive: false,
+        meanBountyCents: 0,
+        finalTable: false,
+        nextBlindInMin: 5,
+        nextBlindMult: 2,
+        satellite: false,
+        satelliteSeats: 0,
+        bountyByUser: {},
+      },
+    },
+  });
+}
+
 const pineappleCards = [
   { rank: 'A' as const, suit: 'spades' as const },
   { rank: 'K' as const, suit: 'spades' as const },
@@ -301,6 +406,313 @@ function pineappleRequest(
 }
 
 describe('HorseDecisionWorkerRuntime', () => {
+  it('accepts a complete Phase 6 tournament context and canonical M snapshot', async () => {
+    const h = harness();
+    h.runtime.receive(phase6TournamentRequest());
+    await h.runtime.drain();
+
+    expect(h.messages.at(-1)).toMatchObject({ type: 'FAST_RESULT', requestId: 50 });
+  });
+
+  it('accepts an explicitly labeled warming context instead of mistaking it for cash', async () => {
+    const request = phase6TournamentRequest(51);
+    const tournament = request.gameState.tournament!;
+    const warming = rekey({
+      ...request,
+      gameState: {
+        ...request.gameState,
+        tournament: {
+          ...tournament,
+          contextStatus: 'warming',
+          contextIssues: [TOURNAMENT_CONTEXT_INCOMPLETE, 'tournament_context_warming'],
+          sourceAgeMs: null,
+          tournamentId: null,
+          tournamentType: '',
+          tournamentStatus: '',
+          gameVariant: '',
+          entrants: 0,
+          playersLeft: 0,
+          spotsPaid: 0,
+          avgStackChips: 0,
+          medianStackChips: 0,
+          currentLevel: 0,
+          levelDurationMin: null,
+          levelElapsedMin: null,
+          stacks: [],
+          payoutPct: [],
+        },
+      },
+    });
+    const h = harness();
+    h.runtime.receive(warming);
+    await h.runtime.drain();
+
+    expect(h.messages.at(-1)).toMatchObject({ type: 'FAST_RESULT', requestId: 51 });
+  });
+
+  it('rejects an implicit tournament context and a non-canonical M snapshot', async () => {
+    const missing = phase6TournamentRequest(52);
+    const h1 = harness();
+    h1.runtime.receive(
+      rekey({ ...missing, gameState: { ...missing.gameState, tournament: undefined } })
+    );
+    await h1.runtime.drain();
+    expect(h1.messages.at(-1)).toMatchObject({
+      type: 'ERROR',
+      message: 'Phase 6 tournament context schema version 1 is required',
+    });
+
+    const malformed = phase6TournamentRequest(53);
+    const tournament = malformed.gameState.tournament!;
+    const h2 = harness();
+    h2.runtime.receive(
+      rekey({
+        ...malformed,
+        gameState: {
+          ...malformed.gameState,
+          tournament: { ...tournament, m: { ...tournament.m!, realM: tournament.m!.realM + 1 } },
+        },
+      })
+    );
+    await h2.runtime.drain();
+    expect(h2.messages.at(-1)).toMatchObject({
+      type: 'ERROR',
+      message: 'Phase 6 tournament M state does not match the canonical snapshot',
+    });
+  });
+
+  it('requires an explicit cash/tournament mode and forbids tournament state on cash requests', async () => {
+    const missingMode = rekey({
+      ...fastRequest(54),
+      gameState: { ...snapshot.gameState, gameMode: undefined } as never,
+    });
+    const h1 = harness();
+    h1.runtime.receive(missingMode);
+    await h1.runtime.drain();
+    expect(h1.messages.at(-1)).toMatchObject({
+      type: 'ERROR',
+      message: 'horse state gameMode must be explicit',
+    });
+
+    const tournament = phase6TournamentRequest(55).gameState.tournament;
+    const cashWithTournament = rekey({
+      ...fastRequest(55),
+      gameState: { ...snapshot.gameState, tournament },
+    });
+    const h2 = harness();
+    h2.runtime.receive(cashWithTournament);
+    await h2.runtime.drain();
+    expect(h2.messages.at(-1)).toMatchObject({
+      type: 'ERROR',
+      message: 'cash horse state cannot carry tournament context',
+    });
+  });
+
+  it.each([
+    ['nextBlindInMin', '5'],
+    ['nextBlindMult', 0],
+  ] as const)('rejects malformed tournament clock field %s', async (field, value) => {
+    const request = phase6TournamentRequest(56);
+    const tournament = request.gameState.tournament!;
+    const malformed = rekey({
+      ...request,
+      gameState: {
+        ...request.gameState,
+        tournament: { ...tournament, [field]: value } as never,
+      },
+    });
+    const h = harness();
+    h.runtime.receive(malformed);
+    await h.runtime.drain();
+    expect(h.messages.at(-1)).toMatchObject({
+      type: 'ERROR',
+      message: 'Phase 6 tournament context numeric state is invalid',
+    });
+  });
+
+  it('rejects a non-numeric bounty and does not coerce a malformed M value', async () => {
+    const request = phase6TournamentRequest(57);
+    const tournament = request.gameState.tournament!;
+    const badBounty = rekey({
+      ...request,
+      gameState: {
+        ...request.gameState,
+        tournament: { ...tournament, bountyByUser: { villain: '100' } } as never,
+      },
+    });
+    const h1 = harness();
+    h1.runtime.receive(badBounty);
+    await h1.runtime.drain();
+    expect(h1.messages.at(-1)).toMatchObject({
+      type: 'ERROR',
+      message: 'Phase 6 tournament payout or bounty state is invalid',
+    });
+
+    const badM = rekey({
+      ...request,
+      requestId: 58,
+      gameState: {
+        ...request.gameState,
+        tournament: {
+          ...tournament,
+          m: { ...tournament.m!, realM: String(tournament.m!.realM) } as never,
+        },
+      },
+    });
+    const h2 = harness();
+    h2.runtime.receive(badM);
+    await h2.runtime.drain();
+    expect(h2.messages.at(-1)).toMatchObject({
+      type: 'ERROR',
+      message: 'Phase 6 tournament M state does not match the canonical snapshot',
+    });
+  });
+
+  it('accepts canonical covering opponents independent of array order', async () => {
+    const request = phase6TournamentRequest(59);
+    const third = {
+      seat: 4,
+      user_id: 'horse-4',
+      username: 'Horse Four',
+      stack: 120,
+      bet: 0,
+      totalInvested: 0,
+      cards: [],
+      is_folded: false,
+      is_all_in: false,
+      is_sitting_out: false,
+    };
+    const players = [...request.gameState.players, third];
+    const tournament = request.gameState.tournament!;
+    const m = buildTournamentMState({
+      stackChips: request.player.stack,
+      smallBlind: tournament.currentSmallBlind!,
+      bigBlind: tournament.currentBigBlind!,
+      ante: tournament.currentAnte!,
+      anteType: tournament.anteType!,
+      playersAtTable: 3,
+      nextSmallBlind: tournament.nextSmallBlind,
+      nextBigBlind: tournament.nextBigBlind,
+      nextAnte: tournament.nextAnte,
+      minutesToNextLevel: tournament.nextBlindInMin,
+      opponentStacks: players
+        .filter((seat) => seat.user_id !== request.player.user_id)
+        .map((seat) => ({ userId: seat.user_id, stackChips: seat.stack })),
+    });
+    const reordered = rekey({
+      ...request,
+      gameState: {
+        ...request.gameState,
+        players,
+        tournament: {
+          ...tournament,
+          seatsPerTable: 3,
+          playersAtTable: 3,
+          stacks: [120, 96, 88],
+          m: { ...m, coveringOpponents: [...m.coveringOpponents].reverse() },
+        },
+      },
+    });
+    const h = harness();
+    h.runtime.receive(reordered);
+    await h.runtime.drain();
+    expect(h.messages.at(-1)).toMatchObject({ type: 'FAST_RESULT', requestId: 59 });
+  });
+
+  it('counts a tournament sit-out in orbit M while excluding it from covering pressure', async () => {
+    const request = phase6TournamentRequest(60);
+    const sitOut = {
+      seat: 4,
+      user_id: 'horse-4',
+      username: 'Horse Four',
+      stack: 120,
+      bet: 0,
+      totalInvested: 0,
+      cards: [],
+      is_folded: false,
+      is_all_in: false,
+      is_sitting_out: true,
+    };
+    const players = [...request.gameState.players, sitOut];
+    const tournament = request.gameState.tournament!;
+    const m = buildTournamentMState({
+      stackChips: request.player.stack,
+      smallBlind: tournament.currentSmallBlind!,
+      bigBlind: tournament.currentBigBlind!,
+      ante: tournament.currentAnte!,
+      anteType: tournament.anteType!,
+      playersAtTable: 3,
+      nextSmallBlind: tournament.nextSmallBlind,
+      nextBigBlind: tournament.nextBigBlind,
+      nextAnte: tournament.nextAnte,
+      minutesToNextLevel: tournament.nextBlindInMin,
+      opponentStacks: request.gameState.players
+        .filter((seat) => seat.user_id !== request.player.user_id)
+        .map((seat) => ({ userId: seat.user_id, stackChips: seat.stack })),
+    });
+    const dealtSitOut = rekey({
+      ...request,
+      gameState: {
+        ...request.gameState,
+        dealerSeat: sitOut.seat,
+        players,
+        tournament: {
+          ...tournament,
+          seatsPerTable: 3,
+          playersAtTable: 3,
+          stacks: [120, 96, 88],
+          m,
+        },
+      },
+    });
+    const h = harness();
+    h.runtime.receive(dealtSitOut);
+    await h.runtime.drain();
+
+    expect(m.coveringOpponents.map((opponent) => opponent.userId)).toEqual(['horse-3']);
+    expect(h.messages.at(-1)).toMatchObject({ type: 'FAST_RESULT', requestId: 60 });
+  });
+
+  it('accepts a per-player ante that begins at the next blind level', async () => {
+    const request = phase6TournamentRequest(61);
+    const tournament = request.gameState.tournament!;
+    const m = buildTournamentMState({
+      stackChips: request.player.stack,
+      smallBlind: tournament.currentSmallBlind!,
+      bigBlind: tournament.currentBigBlind!,
+      ante: 0,
+      anteType: 'per_player',
+      playersAtTable: 2,
+      nextSmallBlind: tournament.nextSmallBlind,
+      nextBigBlind: tournament.nextBigBlind,
+      nextAnte: 0.4,
+      minutesToNextLevel: tournament.nextBlindInMin,
+      opponentStacks: request.gameState.players
+        .filter((seat) => seat.user_id !== request.player.user_id)
+        .map((seat) => ({ userId: seat.user_id, stackChips: seat.stack })),
+    });
+    const anteStartsNextLevel = rekey({
+      ...request,
+      gameState: {
+        ...request.gameState,
+        ante: 0,
+        bigBlindAnte: false,
+        tournament: {
+          ...tournament,
+          currentAnte: 0,
+          anteType: 'per_player',
+          nextAnte: 0.4,
+          m,
+        },
+      },
+    });
+    const h = harness();
+    h.runtime.receive(anteStartsNextLevel);
+    await h.runtime.drain();
+
+    expect(h.messages.at(-1)).toMatchObject({ type: 'FAST_RESULT', requestId: 61 });
+  });
+
   it('gates on owned-service hydration and returns fast RNG/latency/governor receipts', async () => {
     const h = harness();
     h.runtime.receive(fastRequest());

@@ -126,7 +126,7 @@ DECLARE p ca_source_funding_pools%ROWTYPE;r record;v_exact numeric;v_paid numeri
  v_seq bigint;v_digest text;v_cutoff date;v_before numeric;v_after numeric;v_player_before numeric;v_player_after numeric;
  v_skip text;v_id uuid;v_debit uuid;v_credit uuid;v_ledger uuid;v_left numeric;v_take numeric;v_count integer;
 BEGIN
- IF p_player IS NULL OR p_payer IS NULL OR p_player=p_payer OR p_closed_through IS NULL
+ IF p_player IS NULL OR p_payer IS NULL OR p_player=p_payer OR p_closed_through IS NULL OR NOT isfinite(p_closed_through)
   OR extract(isodow FROM p_closed_through)<>1 OR p_closed_through>date_trunc('week',clock_timestamp() AT TIME ZONE 'UTC')::date
  THEN RAISE EXCEPTION 'invalid_closed_player_scope' USING ERRCODE='22023';END IF;
  SELECT * INTO STRICT p FROM ca_source_funding_pools WHERE id=p_pool AND contract_version=1;

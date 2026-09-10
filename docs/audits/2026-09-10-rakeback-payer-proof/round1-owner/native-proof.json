@@ -19,9 +19,15 @@
     "01-release-writer.sql": "c273641757388a1e6019b052e72f66aac6c6ca4db2deaa83ed6140a59f5378ce",
     "fixture-clock.sql": "0988e0559975003078ee5680bacbd03c000ce2752bf2a1473611c512b2175c8e",
     "fixture_helpers.py": "4a69327fbc4c3dcf2d5180d9d1bb780d0ad6a8f9c3157e9900b28fe81a6d3d51",
-    "native-probe.py": "6f7a85b1d068ae9b1719678e0e6f73fa1c14f3fdee6d7046832b4a39747e087e",
+    "native-probe.py": "47ae40c0548d5a8a3e7fc11e98a21bcb7e15bc469076ebadaa108db0afffc65b",
     "activate-fixture.py": "937f10723aaec5fefdf1e46be78b6319d0fde99893ab9f94292febf11d2f1982",
     "run-local.sh": "fdb2a1c55f74b802e87a3ebd2b51423407ce28aeb4ba0c301a0770da4f07d6b9",
-    "vendor-input-hashes.json": "ae7079cc3dafa2ea39dc48e352beeab66ae5a7dfaee8c78b2a2705a6dd0ce17b"
+    "vendor-input-hashes.json": "d59d2bd3bf93074470785f3f8983065bbf0418415036ebb3110e1b35d829f8bc",
+    "fixture-seed.sql": "38756283c830ac30622355e890d5a0d328e39c2da9acdca56f67e809b23cf53d",
+    "function-catalog-round1.json": "0eba9e8f69bc590be3e9f3edcf14413c4c47e9fdd8d13a8cc28214a57cdffa8f",
+    "table-catalog-round1.json": "66c097646c02d88d9ec2559cdb7ed5801081bd65e4cc8edd526e964e236c86ec",
+    "function-catalog-capacity-extra.json": "0b18244aa81b96709748d9e03207e54c4e28205b405f7a652cbb246a712a28e2",
+    "table-catalog-capacity-extra.json": "92cc9ad82592da9f27a6013e42597eedefe8a6a3a9f36e3b0c96bfda592ef22c",
+    "trigger-catalog-capacity-extra.json": "1ed68ea5ece51d26fdccbb5e03a585f5a9a56cded458a1ebd9f646940b067a8d"
   }
 }

@@ -1,0 +1,36 @@
+{
+  "status": "native_player_capacity_candidate_checkpoint",
+  "checks": [
+    "Actual current-time sources cannot create closed player funding admission",
+    "100 sequential one-cent sources at15percent pay .15 from actual funded agent allocation",
+    "New player source progresses using existing pooled agent cash when Round2 adds zero cash",
+    "Cross-week exact player slices sum to whole-cent actual receipts",
+    "Repeated player owner call has no extra cash or public-row mutation",
+    "Final player receipt failure rolls back actual Round1 Round2 and player money plus every public row",
+    "Suppressed payer debit refuses and restores every public row",
+    "Failed player payment retries its remaining immutable entitlement once",
+    "Actual player debit wallet receipt cannot change under maintenance",
+    "Actual player credit wallet receipt cannot change under maintenance",
+    "Captured payer remains liable after beneficiary departure and agent deactivation",
+    "Positive payer wallet and another Union cash cannot replace source-matched funding",
+    "First isolated Union source retains fractional player liability",
+    "Compatible late source completes pending player fraction without another Union pool",
+    "All actual player cash and source capacity assertions pass"
+  ],
+  "runtime": "PostgreSQL 17.11 (Homebrew) on aarch64-apple-darwin25.6.0, compiled by Apple clang version 21.0.0 (clang-2100.1.1.101), 64-bit",
+  "temporal_scope": "Current actual source proves open refusal; closed periods are fixture-only synthetic timestamp stamps, with unchanged actual accepted/bank and financial functions.",
+  "remaining": [
+    "Real version2 getter and UUID claim wrapper",
+    "Legacy funding/claim exclusion and actual outer cascade cutover",
+    "Common final producer/funding close witness",
+    "Composed browser release"
+  ],
+  "inputs": {
+    "round1-owner/player-native-probe.py": "a7044e0be985bc5001ae5897b8b23f780bf9cd10c8922314c082e29b67aa6fd2",
+    "player-capacity-proposal.sql": "25c4e565990ec519e5449df59d8e178058ba18626aaa98942d7c1a44e9ea6483",
+    "round1-owner/01-release-writer.sql": "c273641757388a1e6019b052e72f66aac6c6ca4db2deaa83ed6140a59f5378ce",
+    "round1-owner/fixture_helpers.py": "4a69327fbc4c3dcf2d5180d9d1bb780d0ad6a8f9c3157e9900b28fe81a6d3d51",
+    "round1-owner/fixture-clock.sql": "0988e0559975003078ee5680bacbd03c000ce2752bf2a1473611c512b2175c8e",
+    "round1-owner/vendor/capacity-owner/04-agent-payment.sql": "ff11ff483820d93fca2c04e825f548dbc435e59996d52d1134d0a4651743dd04"
+  }
+}

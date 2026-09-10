@@ -1,5 +1,7 @@
 # Rakeback Payer Proof Checkpoint
 
+The current cumulative funding and V2 API candidate is documented in [round1-owner/README.md](round1-owner/README.md) and [closeout-inventory.md](closeout-inventory.md). The original per-week model below remains historical proof and is not the current proposed cash contract. No proposal here is activated.
+
 The three unbound payment RPC retirements have fourteen standalone ACL assertions. The source payer and direct wrapper proposal now has thirty-one native PostgreSQL groups. Neither proposal is a deployed replacement.
 
 ## Reproduce

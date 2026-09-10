@@ -1,0 +1,70 @@
+{
+  "mode": "before",
+  "captured_at": "2026-09-10T06:59:25.638Z",
+  "outcomes": [
+    {
+      "evidence": "individual_claim",
+      "treasury": "5.00",
+      "agent": "25.00",
+      "player": "15.00",
+      "receipts": 1,
+      "linked_receipts": 0,
+      "legs": 0,
+      "wallet_rows": 1
+    },
+    {
+      "name": "individual claim payer and actual wallet pointer",
+      "pass": true
+    },
+    {
+      "evidence": "weekly_dupe",
+      "state": {
+        "treasury": "20.00",
+        "agent": "70.00",
+        "player": "30.00",
+        "receipts": 0,
+        "linked_receipts": 0,
+        "legs": 1,
+        "wallet_rows": 2
+      },
+      "waitA": {
+        "wait_event_type": "Lock",
+        "wait_event": "transactionid",
+        "blockers": [30317]
+      },
+      "waitB": {
+        "wait_event_type": "Lock",
+        "wait_event": "tuple",
+        "blockers": [30318]
+      }
+    },
+    {
+      "name": "observed simultaneous weekly selections",
+      "pass": true
+    },
+    {
+      "evidence": "weekly_claim",
+      "state": {
+        "treasury": "5.00",
+        "agent": "85.00",
+        "player": "30.00",
+        "receipts": 1,
+        "linked_receipts": 0,
+        "legs": 1,
+        "wallet_rows": 2
+      },
+      "waitA": {
+        "wait_event_type": "Lock",
+        "wait_event": "transactionid",
+        "blockers": [30321]
+      },
+      "waitB": {
+        "completed_while_weekly_waited": true
+      }
+    },
+    {
+      "name": "observed weekly wait versus independent claim",
+      "pass": true
+    }
+  ]
+}

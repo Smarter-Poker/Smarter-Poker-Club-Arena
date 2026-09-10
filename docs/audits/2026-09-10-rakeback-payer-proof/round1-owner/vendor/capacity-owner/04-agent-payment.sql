@@ -1,13 +1,13 @@
 -- Canonical prospective Round2 candidate; source discovery and money capacity are independent.
 CREATE FUNCTION public.fn_pay_captured_agent_funding(p_pool uuid,p_recipient uuid,p_earning_closed_through date)
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path TO public,pg_temp AS $f$
-DECLARE p public.ca_source_funding_pools%ROWTYPE;r record;v_exact numeric;v_paid numeric;v_due numeric;
+DECLARE p public.ca_source_funding_pools%ROWTYPE;v_item record;v_exact numeric;v_paid numeric;v_due numeric;
  v_available numeric;v_pay numeric;v_high bigint;v_cutoff date;v_digest text;v_id uuid;v_tx uuid;v_debit_tx uuid;v_leg uuid;
  v_bank numeric;v_wallet numeric;v_bank_after numeric;v_wallet_after numeric;v_debit jsonb;
  v_old_club text;v_old_member text;v_remaining numeric;v_slice numeric;v_admitted integer:=0;
 BEGIN
  IF p_pool IS NULL OR p_recipient IS NULL OR p_earning_closed_through IS NULL
-  OR extract(isodow FROM p_earning_closed_through)<>1
+  OR NOT isfinite(p_earning_closed_through) OR extract(isodow FROM p_earning_closed_through)<>1
   OR p_earning_closed_through>date_trunc('week',clock_timestamp() AT TIME ZONE 'UTC')::date THEN
   RAISE EXCEPTION 'Invalid closed earning boundary' USING ERRCODE='22023'; END IF;
  SELECT * INTO STRICT p FROM ca_source_funding_pools WHERE id=p_pool AND contract_version=1;
@@ -19,8 +19,8 @@ BEGIN
  IF fn_platform_frozen() THEN RETURN jsonb_build_object('success',false,'pool_id',p_pool,'new_payout',0,'deferred','platform_frozen','source_final',false);END IF;
  -- A later applied accrual may arrive after club funding. Revisit only original
  -- admitted pool sources, never arbitrary current Union membership or wallet value.
- FOR r IN SELECT DISTINCT hand_id FROM ca_source_club_funding_admissions WHERE pool_id=p_pool ORDER BY hand_id LOOP
-  PERFORM fn_ca_admit_source_funding(r.hand_id,p.club_id);
+ FOR v_item IN SELECT DISTINCT hand_id FROM ca_source_club_funding_admissions WHERE pool_id=p_pool ORDER BY hand_id LOOP
+  PERFORM fn_ca_admit_source_funding(v_item.hand_id,p.club_id);
  END LOOP;
  INSERT INTO ca_source_recipient_funding_admissions(hand_id,contributor_id,agent_id,pool_id,recipient_id,earning_closed_through)
  SELECT a.hand_id,a.contributor_id,a.agent_id,a.pool_id,a.recipient_id,p_earning_closed_through
@@ -35,7 +35,7 @@ BEGIN
  WHERE a.pool_id=p_pool AND a.recipient_id=p_recipient;
  SELECT coalesce(sum(amount),0) INTO v_paid FROM ca_source_agent_cash_payments WHERE pool_id=p_pool AND recipient_id=p_recipient;
  SELECT (SELECT coalesce(sum(amount),0) FROM ca_source_club_cash_releases WHERE pool_id=p_pool)
-  -(SELECT coalesce(sum(c.amount),0) FROM ca_source_club_cash_consumptions c JOIN ca_source_club_cash_releases r ON r.id=c.release_id WHERE r.pool_id=p_pool)
+  -(SELECT coalesce(sum(c.amount),0) FROM ca_source_club_cash_consumptions c JOIN ca_source_club_cash_releases rel ON rel.id=c.release_id WHERE rel.pool_id=p_pool)
  INTO v_available;
  v_due:=floor(v_exact*100)/100-v_paid;
  IF v_due<0 OR v_available<0 THEN RAISE EXCEPTION 'Captured commission entitlement or cash capacity already exceeded' USING ERRCODE='23514';END IF;
@@ -79,25 +79,25 @@ BEGIN
    amount,cumulative_exact,cumulative_paid,admission_seq_high_water,source_digest,treasury_transaction_id,wallet_transaction_id,ledger_id)
   VALUES(v_id,p.club_id,p_recipient,p_pool,v_cutoff,v_pay,v_exact,v_paid+v_pay,v_high,v_digest,v_debit_tx,v_tx,v_leg);
   v_remaining:=v_pay;
-  FOR r IN SELECT a.hand_id,a.contributor_id,a.agent_id,x.exact_entitlement
+  FOR v_item IN SELECT a.hand_id,a.contributor_id,a.agent_id,x.exact_entitlement
     -coalesce((SELECT sum(z.amount) FROM ca_source_agent_payment_slices z WHERE z.hand_id=a.hand_id AND z.contributor_id=a.contributor_id AND z.agent_id=a.agent_id),0) AS remaining
    FROM ca_source_recipient_funding_admissions a JOIN ca_source_recipient_accruals x USING(hand_id,contributor_id,agent_id)
    WHERE a.pool_id=p_pool AND a.recipient_id=p_recipient AND a.admission_seq<=v_high
    ORDER BY x.earning_week,a.hand_id,a.contributor_id,a.agent_id LOOP
-   v_slice:=least(v_remaining,r.remaining);
+   v_slice:=least(v_remaining,v_item.remaining);
    IF v_slice>0 THEN
     INSERT INTO ca_source_agent_payment_slices(payment_id,hand_id,contributor_id,agent_id,amount)
-     VALUES(v_id,r.hand_id,r.contributor_id,r.agent_id,v_slice);
+     VALUES(v_id,v_item.hand_id,v_item.contributor_id,v_item.agent_id,v_slice);
     v_remaining:=v_remaining-v_slice;
    END IF;
    EXIT WHEN v_remaining=0;
   END LOOP;
   IF v_remaining<>0 THEN RAISE EXCEPTION 'Recipient source attribution did not cover actual cash' USING ERRCODE='23514';END IF;
   v_remaining:=v_pay;
-  FOR r IN SELECT x.id,x.amount-coalesce((SELECT sum(c.amount) FROM ca_source_club_cash_consumptions c WHERE c.release_id=x.id),0) AS remaining
+  FOR v_item IN SELECT x.id,x.amount-coalesce((SELECT sum(c.amount) FROM ca_source_club_cash_consumptions c WHERE c.release_id=x.id),0) AS remaining
    FROM ca_source_club_cash_releases x WHERE x.pool_id=p_pool ORDER BY x.release_seq LOOP
-   v_slice:=least(v_remaining,r.remaining);
-   IF v_slice>0 THEN INSERT INTO ca_source_club_cash_consumptions(payment_id,release_id,amount) VALUES(v_id,r.id,v_slice);
+   v_slice:=least(v_remaining,v_item.remaining);
+   IF v_slice>0 THEN INSERT INTO ca_source_club_cash_consumptions(payment_id,release_id,amount) VALUES(v_id,v_item.id,v_slice);
     v_remaining:=v_remaining-v_slice;END IF;
    EXIT WHEN v_remaining=0;
   END LOOP;
@@ -125,13 +125,13 @@ CREATE TRIGGER ca_source_agent_request_no_truncate BEFORE TRUNCATE ON public.ca_
  FOR EACH STATEMENT EXECUTE FUNCTION public.fn_ca_source_capacity_immutable();
 CREATE FUNCTION public.fn_claim_captured_agent_funding(p_club uuid,p_expected_user uuid,p_request uuid,p_closed_through date)
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path TO public,pg_temp AS $f$
-DECLARE v_actor uuid:=auth.uid();v_old public.ca_source_agent_funding_requests%ROWTYPE;r record;
+DECLARE v_actor uuid:=auth.uid();v_old public.ca_source_agent_funding_requests%ROWTYPE;v_item record;
  v_result jsonb;v_results jsonb:='[]';v_total numeric:=0;v_success boolean:=true;v_amount numeric;
 BEGIN
  IF v_actor IS NULL OR p_club IS NULL OR p_expected_user IS NULL OR p_request IS NULL THEN
   RAISE EXCEPTION 'authentication_and_request_required' USING ERRCODE='42501';END IF;
  IF v_actor<>p_expected_user THEN RAISE EXCEPTION 'captured_claim_account_changed' USING ERRCODE='42501';END IF;
- IF p_closed_through IS NULL OR extract(isodow FROM p_closed_through)<>1
+ IF p_closed_through IS NULL OR NOT isfinite(p_closed_through) OR extract(isodow FROM p_closed_through)<>1
   OR p_closed_through>date_trunc('week',clock_timestamp() AT TIME ZONE 'UTC')::date THEN
   RAISE EXCEPTION 'Invalid closed earning boundary' USING ERRCODE='22023';END IF;
  PERFORM fn_lock_rakeback_payer_clubs(ARRAY[p_club]);
@@ -142,8 +142,8 @@ BEGIN
    RAISE EXCEPTION 'captured_request_scope_conflict' USING ERRCODE='23514';END IF;
   RETURN v_old.result;
  END IF;
- FOR r IN SELECT id FROM ca_source_funding_pools WHERE club_id=p_club AND contract_version=1 ORDER BY id LOOP
-  v_result:=fn_pay_captured_agent_funding(r.id,v_actor,p_closed_through);
+ FOR v_item IN SELECT id FROM ca_source_funding_pools WHERE club_id=p_club AND contract_version=1 ORDER BY id LOOP
+  v_result:=fn_pay_captured_agent_funding(v_item.id,v_actor,p_closed_through);
   IF jsonb_typeof(v_result->'success') IS DISTINCT FROM 'boolean'
    OR jsonb_typeof(v_result->'new_payout') IS DISTINCT FROM 'number' THEN
    RAISE EXCEPTION 'Captured pool payer returned malformed contract' USING ERRCODE='23514';END IF;

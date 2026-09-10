@@ -19,6 +19,9 @@ import { AgentService } from '../services/AgentService';
 
 import { useIsMounted } from '../hooks/useIsMounted';
 import { reportError } from '../utils/errorReporter';
+import { safeErrorMessage } from '../utils/safeErrorMessage';
+import FinancialAdminScopeState from '../components/common/FinancialAdminScopeState';
+import { clubScoped, useFinancialAdminScope } from '../hooks/useFinancialAdminScope';
 import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
 
 interface AgentCredit {
@@ -37,7 +40,9 @@ export default function CreditAdminPanel() {
 
   const [agents, setAgents] = useState<AgentCredit[]>([]);
   const [loading, setLoading] = useState(true);
-  const [authorized, setAuthorized] = useState<boolean | null>(null);
+  /* A FAILED READ IS NOT "NO AGENT HAS OUTSTANDING CREDIT" (2026-09-10). The
+     agents read discarded its error and rendered an empty console. */
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [editingAgent, setEditingAgent] = useState<string | null>(null);
   const [newLimit, setNewLimit] = useState('');
   const [saving, setSaving] = useState(false);
@@ -46,47 +51,45 @@ export default function CreditAdminPanel() {
   const isMounted = useIsMounted();
   const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
-  // Permission check: only club owners/admins can access credit admin
-  useEffect(() => {
-    if (!user?.id) return;
-    (async () => {
-      try {
-        const { data } = await supabase
-          .from('club_members')
-          .select('role')
-          .eq('user_id', user.id)
-          .in('role', ['owner', 'co_owner', 'admin'])
-          .limit(1)
-          .maybeSingle();
-        if (isMounted.current) setAuthorized(!!data);
-      } catch (e) {
-        reportError(e, 'CreditAdminPanel.async');
-        if (isMounted.current) setAuthorized(false);
-      }
-    })();
-  }, [user?.id]);
+  /* WHICH CLUB'S CREDIT (2026-09-10). The only gate here was "is the viewer
+     staff of ANY club", and the agents read carried no club filter - so one
+     club's credit operator saw every club's agent wallets and credit limits
+     that RLS let them read (a union overseer's grant is the whole union).
+     The scope names the club, checks the finance role IN THAT CLUB, and
+     every read below is filtered to it. */
+  const scope = useFinancialAdminScope();
+  const scopeStatus = scope.status;
+  const scopeClubId = scope.clubId;
+  const scopePlatformWide = scope.platformWide;
 
   useVisibilityRefresh(() => {
-    if (authorized) loadAgents();
+    if (scopeStatus === 'ready') loadAgents();
   });
 
   const loadingRef = useRef(false);
 
   const loadAgents = useCallback(async () => {
+    if (scopeStatus !== 'ready') return;
     if (loadingRef.current) return;
     loadingRef.current = true;
     setLoading(true);
+    setLoadError(null);
+    const scopeKey = { status: scopeStatus, clubId: scopeClubId, platformWide: scopePlatformWide };
     try {
-      const { data } = await retryFetch(
+      const { data, error } = await retryFetch(
         () =>
-          supabase
-            .from('agents')
-            .select('id, user_id, agent_wallet_balance, credit_limit, status')
+          clubScoped(
+            supabase
+              .from('agents')
+              .select('id, user_id, agent_wallet_balance, credit_limit, status'),
+            scopeKey
+          )
             .order('credit_limit', { ascending: false })
             .limit(100)
             .then((r) => r),
         { maxRetries: 2, isMountedRef: isMounted }
       );
+      if (error) throw error;
 
       if (data) {
         if (!isMounted.current) return;
@@ -128,31 +131,44 @@ export default function CreditAdminPanel() {
       }
     } catch (err) {
       reportError(err, 'CreditAdminPanel.Load_failed');
-      if (isMounted.current) toast.error('Failed to load agents');
+      if (isMounted.current) {
+        setAgents([]);
+        setLoadError(
+          safeErrorMessage(
+            err,
+            'The Agent Credit Lines Could Not Be Loaded. Nothing Has Been Changed.'
+          )
+        );
+        toast.error('Failed to load agents');
+      }
     } finally {
       loadingRef.current = false;
       if (isMounted.current) setLoading(false);
     }
 
-    // Load audit log
+    // Load audit log - this club's credit-limit changes.
     try {
-      const { data: auditData } = await retryFetch(
+      const { data: auditData, error: auditError } = await retryFetch(
         () =>
-          supabase
-            .from('commission_rate_audit')
-            .select('agent_id, old_rate, new_rate, created_at')
-            .eq('rate_type', 'credit_limit')
+          clubScoped(
+            supabase
+              .from('commission_rate_audit')
+              .select('agent_id, old_rate, new_rate, created_at')
+              .eq('rate_type', 'credit_limit'),
+            scopeKey
+          )
             .order('created_at', { ascending: false })
             .limit(20)
             .then((r) => r),
         { maxRetries: 2, isMountedRef: isMounted }
       );
+      if (auditError) throw auditError;
       if (isMounted.current) setAuditLog(auditData || []);
     } catch (e) {
-      reportError(e, 'CreditAdminPanel.then');
-      /* table may not exist */
+      reportError(e, 'CreditAdminPanel.audit_log');
+      if (isMounted.current) setAuditLog([]);
     }
-  }, [toast]);
+  }, [toast, scopeStatus, scopeClubId, scopePlatformWide]);
 
   useEffect(() => {
     loadAgents();
@@ -232,30 +248,12 @@ export default function CreditAdminPanel() {
   const totalCreditExposure = agents.reduce((s, a) => s + a.creditLimit, 0);
   const totalDebt = agents.reduce((s, a) => s + a.debtOwed, 0);
 
-  // Block unauthorized access
-  if (authorized === false) {
+  // Nothing financial renders until the scope has named a club (or the
+  // platform) and confirmed the viewer's finance role in it.
+  if (scope.status !== 'ready') {
     return (
-      <div style={{ padding: '40px', textAlign: 'center', color: 'rgba(255,255,255,0.4)' }}>
-        <div style={{ fontSize: '2rem', marginBottom: '12px' }}>◈</div>
-        <div style={{ fontSize: '0.9rem', fontWeight: 600 }}>Access Denied</div>
-        <div style={{ fontSize: '0.75rem', marginTop: '4px' }}>
-          Only Club Owners And Admins Can Access The Credit Admin Panel.
-        </div>
-        <button
-          onClick={() => navigate(-1)}
-          style={{
-            marginTop: '16px',
-            padding: '8px 16px',
-            background: 'rgba(59,130,246,0.15)',
-            border: '1px solid rgba(59,130,246,0.3)',
-            borderRadius: '8px',
-            color: '#3b82f6',
-            cursor: 'pointer',
-            fontWeight: 600,
-          }}
-        >
-          ← Go Back
-        </button>
+      <div style={{ padding: '16px', width: '100%', maxWidth: '800px', margin: '0 auto' }}>
+        <FinancialAdminScopeState scope={scope} />
       </div>
     );
   }
@@ -366,7 +364,7 @@ export default function CreditAdminPanel() {
               fontFamily: 'monospace',
             }}
           >
-            {totalCreditExposure.toLocaleString()}
+            {loadError ? '--' : totalCreditExposure.toLocaleString()}
           </div>
         </div>
         <div
@@ -395,7 +393,7 @@ export default function CreditAdminPanel() {
               fontFamily: 'monospace',
             }}
           >
-            {totalDebt.toLocaleString()}
+            {loadError ? '--' : totalDebt.toLocaleString()}
           </div>
         </div>
         <div
@@ -442,8 +440,28 @@ export default function CreditAdminPanel() {
       >
         Agents
       </div>
-      {loading && agents.length === 0 ? (
+      {loading && agents.length === 0 && !loadError ? (
         <PageSkeleton variant="list" />
+      ) : loadError ? (
+        <div role="alert" style={{ textAlign: 'center', padding: '32px', color: '#f87171' }}>
+          <div>{loadError}</div>
+          <button
+            type="button"
+            onClick={() => loadAgents()}
+            style={{
+              marginTop: '12px',
+              padding: '8px 16px',
+              background: 'rgba(239,68,68,0.15)',
+              border: '1px solid rgba(239,68,68,0.3)',
+              borderRadius: '8px',
+              color: '#f87171',
+              cursor: 'pointer',
+              fontWeight: 600,
+            }}
+          >
+            Retry
+          </button>
+        </div>
       ) : agents.length === 0 ? (
         <div style={{ textAlign: 'center', padding: '40px', color: 'rgba(255,255,255,0.3)' }}>
           No Agents Found

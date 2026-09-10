@@ -76,6 +76,7 @@ describe('TableService wired to the occupancy receipt contract', () => {
   it('uses the committed amount and original database identity despite stale UI seat', async () => {
     expect(await tableService.leaveTable(table, 8, user)).toEqual({
       success: true,
+      occupancyId: occupancy,
       chipsReturned: 125,
     });
     expect(mocks.leave).toHaveBeenCalledWith(table, 2, occupancy);
@@ -86,6 +87,7 @@ describe('TableService wired to the occupancy receipt contract', () => {
     mocks.activity.mockRejectedValue(new Error('activity unavailable'));
     expect(await tableService.leaveTable(table, 2, user)).toEqual({
       success: true,
+      occupancyId: occupancy,
       chipsReturned: 125,
     });
     expect(mocks.rpc).not.toHaveBeenCalled();
@@ -94,6 +96,7 @@ describe('TableService wired to the occupancy receipt contract', () => {
     mocks.leave.mockResolvedValue({ ...response(), immediate: false, cashout: null });
     expect(await tableService.leaveTable(table, 2, user)).toEqual({
       success: true,
+      occupancyId: occupancy,
       chipsReturned: 0,
       deferred: true,
     });
@@ -116,6 +119,7 @@ describe('TableService wired to the occupancy receipt contract', () => {
     mocks.leave.mockResolvedValue({ ...response(), tournament: true, cashout: null });
     expect(await tableService.leaveTable(table, 2, user)).toEqual({
       success: true,
+      occupancyId: occupancy,
       chipsReturned: 0,
     });
     expect(mocks.rpc).not.toHaveBeenCalled();

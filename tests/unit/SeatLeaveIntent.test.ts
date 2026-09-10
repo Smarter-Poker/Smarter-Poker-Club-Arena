@@ -53,7 +53,11 @@ describe('original seat departure identity', () => {
       });
       return response();
     });
-    expect(await leaveSeatWithIntent(table, user)).toEqual({ success: true, chipsReturned: 125 });
+    expect(await leaveSeatWithIntent(table, user)).toEqual({
+      success: true,
+      chipsReturned: 125,
+      occupancyId: occupancy,
+    });
   });
   it('retries a lost response against the original occupancy despite a new seat', async () => {
     mocks.leave.mockResolvedValueOnce({ success: false, error: 'response lost' });
@@ -62,7 +66,11 @@ describe('original seat departure identity', () => {
       data: { seat_number: 4, occupancy_id: replacement },
       error: null,
     });
-    expect((await leaveSeatWithIntent(table, user)).chipsReturned).toBe(125);
+    expect(await leaveSeatWithIntent(table, user)).toEqual({
+      success: true,
+      chipsReturned: 125,
+      occupancyId: occupancy,
+    });
     expect(mocks.read).toHaveBeenCalledTimes(1);
     expect(mocks.leave).toHaveBeenLastCalledWith(table, 2, occupancy);
   });
@@ -106,6 +114,15 @@ describe('original seat departure identity', () => {
       success: true,
       chipsReturned: 0,
       deferred: true,
+      occupancyId: occupancy,
+    });
+  });
+  it('returns the confirmed original identity for a zero cashout', async () => {
+    mocks.leave.mockResolvedValue({ ...response(), cashout: { ...receipt(), stack: 0 } });
+    expect(await leaveSeatWithIntent(table, user)).toEqual({
+      success: true,
+      chipsReturned: 0,
+      occupancyId: occupancy,
     });
   });
   it('does not fabricate success for a missing seat without an original request', async () => {

@@ -40,3 +40,11 @@ The shared accepted-hand chain is `fn_ca_commit_hand_settlement` to `fn_ca_commi
 `fn_cashout_seat_occupancy` verifies engine authority and exact occupancy, replays retained receipts, then delegates to `atomic_seat_cashout_locked`. The Diamond implementation must retain those authority and replay semantics. The Phase 3 reserve/release adapter currently handles reserved custody only; active gameplay balances and a zero-balance exit are not yet implemented.
 
 Production trigger inventory was inspected read-only. No production migration, balance, seat, table configuration or engine restart was changed by this increment.
+
+## Custody Integration Contract
+
+The continuation keeps `atomic_table_buyin` and `fn_ca_cash_buyin_receipt` as the client purchase/recovery door. Accepted hands retain the existing lease, exact seat generation, history, projection and post-commit receipt chain. Cash-out retains `fn_cashout_seat_occupancy` and its durable occupancy receipt. No alternate client wallet writer is introduced.
+
+Custody must retain seat ID, join instant and occupancy ID. A hand may update only those matching live seats, with whole nonnegative balances and zero sum across participants. Purchase lots are held at admission; actual losses consume held units and release their reservation, while wins move existing custody value without minting. Cash-out returns the resulting custody balance. A zero exit records a zero release with no wallet journal, rather than manufacturing a credit. Any failed write rolls the transaction back.
+
+The chip-specific promo, pending-add-on, late-seat wallet and hierarchy projection paths must not process Diamond hands. Existing money-path, lease, maintenance, seat limits, freeze and auth checks remain mandatory. Public admission stays closed until the complete integration and existing accounting release gate pass.

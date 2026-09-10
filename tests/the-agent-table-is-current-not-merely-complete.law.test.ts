@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync } from 'node:fs';
+import { migrationsMentioning as corpusMentioning } from './helpers/migrationCorpus';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
@@ -63,28 +63,20 @@ import { describe, expect, it } from 'vitest';
  * same window, where the previous implementation returned an empty array.
  */
 
-const MIGRATIONS = resolve(__dirname, '../supabase/migrations');
+/* READ THE DIRECTORY ONCE (2026-09-10). Both helpers below used to walk all
+   of supabase/migrations - now 2,849 files - for every needle they were asked
+   about, and this law crossed vitest's 5s default on a busy machine while
+   passing on an idle one. tests/helpers/migrationCorpus reads it once. */
 
 /** Every migration that mentions a name, oldest first. */
 function migrationsMentioning(needle: string): string[] {
-  return readdirSync(MIGRATIONS)
-    .filter((f) => f.endsWith('.sql'))
-    .sort()
-    .map((f) => readFileSync(resolve(MIGRATIONS, f), 'utf8'))
-    .filter((sql) => sql.includes(needle));
+  return corpusMentioning(needle).map((migration) => migration.sql);
 }
 
 /** The newest definition wins at deploy time, so it is the one under test. */
 function latestDefining(fnName: string): string {
-  const files = readdirSync(MIGRATIONS)
-    .filter((f) => f.endsWith('.sql'))
-    .sort();
-  let found = '';
-  for (const f of files) {
-    const sql = readFileSync(resolve(MIGRATIONS, f), 'utf8');
-    if (sql.includes(`FUNCTION public.${fnName}(`)) found = sql;
-  }
-  return found;
+  const hits = corpusMentioning(`FUNCTION public.${fnName}(`);
+  return hits.length > 0 ? hits[hits.length - 1].sql : '';
 }
 
 /** The body of the newest definition, comments stripped. */

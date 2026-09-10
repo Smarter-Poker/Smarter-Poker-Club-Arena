@@ -136,7 +136,7 @@ def verify(q,fresh,overlap,register,check):
         assert replay==result and state()==after,(replay,result)
         check(kind+' atomically binds exact wallet funding, ledger, escrow, seat, generation and receipt')
 
-    for kind in ['reentry','addon']:
+    for kind in ['rebuy','reentry','addon']:
         setup(kind,'rollback_'+kind)
         before=state()
         q("""CREATE FUNCTION probe_receipt_failure() RETURNS trigger LANGUAGE plpgsql AS $$
@@ -148,11 +148,11 @@ def verify(q,fresh,overlap,register,check):
         assert state()==before,'partial purchase survived final receipt failure'
         check(kind+' rolls back the debit, grant, generation, pool, journal and wake on final receipt failure')
 
-    for kind,second_token in [('reentry','prompt-1'),('reentry','prompt-2'),('addon','ignored-new-token')]:
+    for kind,second_token in [('rebuy','prompt-1'),('rebuy','prompt-2'),('reentry','prompt-1'),('reentry','prompt-2'),('addon','ignored-new-token')]:
         setup(kind,'race_'+kind+'_'+second_token.replace('-','_'))
         first,second=overlap(call(kind),call(kind,second_token))
         assert first.get('success') is True,first
-        if kind=='reentry' and second_token=='prompt-2':
+        if kind in ['rebuy','reentry'] and second_token=='prompt-2':
             assert 'Only the exact unpaid zero-stack entry' in second.get('error',''),second
         else:
             assert second==first,(first,second)

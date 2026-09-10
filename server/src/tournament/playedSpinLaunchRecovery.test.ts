@@ -55,6 +55,35 @@ describe('the manager admits only the exact played-and-vacated Spin proof', () =
     ).toThrow();
   });
 
+  it.each([
+    undefined,
+    'not-a-count',
+    NaN,
+    Infinity,
+    -Infinity,
+    1.5,
+    true,
+    [1],
+    {},
+    '1',
+    Number.MAX_SAFE_INTEGER + 1,
+  ])('refuses malformed persisted-hand evidence %j', (handCount) => {
+    expect(() =>
+      parsePlayedSpinLaunchRecoveryProof(
+        { ...proof(), hand_count: handCount },
+        tournamentId,
+        active
+      )
+    ).toThrow(/exact paid three-seat game/);
+  });
+
+  it('accepts a positive safe integer persisted-hand count after multiple hands', () => {
+    expect(
+      parsePlayedSpinLaunchRecoveryProof({ ...proof(), hand_count: 12 }, tournamentId, active)
+        .fundingFieldSize
+    ).toBe(3);
+  });
+
   it('refuses a proof whose live identities changed after the manager read them', () => {
     expect(() =>
       parsePlayedSpinLaunchRecoveryProof(proof(), tournamentId, [id('1'), id('2')])

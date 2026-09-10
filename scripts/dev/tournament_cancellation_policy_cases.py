@@ -13,16 +13,19 @@ FIXTURE=Path(__file__).parent/'fixtures/tournament-cancellation-policy'
 def verify(q,fresh,overlap,entry,check):
     manifest=json.loads((FIXTURE/'source-manifest.json').read_text())
     baseline='--baseline' in sys.argv
+    lock_only='--cancellation-lock-composition-only' in sys.argv
     migrations=list((ROOT/'supabase/migrations').glob('*_started_tournaments_resume_or_settle_instead_of_cancelling.sql'))
     assert len(migrations)==1
 
     def setup(name):
         fresh('cancel_policy_'+name)
         q((FIXTURE/'installed.sql').read_text())
+        helper=manifest['lock_helper']
+        assert q("SELECT md5(prosrc) FROM pg_proc WHERE oid='%s'::regprocedure;"%helper['signature'])==helper['body_md5']
         expected=manifest['baseline_body_md5']
         if not baseline:
             q(migrations[0].read_text())
-            if name=='started': q(migrations[0].read_text())
+            if name=='started' or lock_only: q(migrations[0].read_text())
             expected=manifest['corrected_body_md5']
         assert q("SELECT md5(prosrc) FROM pg_proc WHERE oid='atomic_cancel_tournament(uuid,uuid)'::regprocedure;")==expected
 
@@ -55,7 +58,7 @@ def verify(q,fresh,overlap,entry,check):
     if '--cancellation-policy-from' in sys.argv:
         name=sys.argv[sys.argv.index('--cancellation-policy-from')+1]
         refused=refused[[case[0] for case in refused].index(name):]
-    for name,state in refused:
+    for name,state in ([] if lock_only else refused):
         setup(name)
         q(state)
         before=fingerprint()
@@ -64,7 +67,7 @@ def verify(q,fresh,overlap,entry,check):
         assert fingerprint()==before,name
         check('cancellation refuses '+name+' evidence before its first financial write')
 
-    for name in ['unstarted','default_zero','past_schedule']:
+    for name in ([] if lock_only else ['unstarted','default_zero','past_schedule']):
         setup(name)
         if name in ['default_zero','past_schedule']:
             q("UPDATE tournaments SET variant='spin',buy_in_fee=0 WHERE id='%s';"%EVENT)
@@ -77,14 +80,15 @@ def verify(q,fresh,overlap,entry,check):
         assert fingerprint()==before
         check('cancellation '+name+' remains routed to the existing financial authority')
 
-    setup('replay')
-    receipt=dict(ok=True,receipt_version=2,tournament_id=EVENT,status='CANCELLED')
-    q("UPDATE tournaments SET status='CANCELLED',started_at=now() WHERE id='%s'; INSERT INTO tournament_cancellation_receipts(tournament_id,receipt) VALUES ('%s','%s'::jsonb);"%(EVENT,EVENT,json.dumps(receipt)))
-    before=fingerprint()
-    result=json.loads(q(call()))
-    assert result.get('response')==receipt,result
-    assert fingerprint()==before
-    check('stored cancellation replay reaches its existing receipt reader before the new refusal')
+    if not lock_only:
+        setup('replay')
+        receipt=dict(ok=True,receipt_version=2,tournament_id=EVENT,status='CANCELLED')
+        q("UPDATE tournaments SET status='CANCELLED',started_at=now() WHERE id='%s'; INSERT INTO tournament_cancellation_receipts(tournament_id,receipt) VALUES ('%s','%s'::jsonb);"%(EVENT,EVENT,json.dumps(receipt)))
+        before=fingerprint()
+        result=json.loads(q(call()))
+        assert result.get('response')==receipt,result
+        assert fingerprint()==before
+        check('stored cancellation replay reaches its existing receipt reader before the new refusal')
 
     setup('draw_overlap')
     first="INSERT INTO spin_draw_receipts(tournament_id) VALUES ('%s'); UPDATE tournaments SET spin_multiplier=100 WHERE id='%s'; SELECT '{}'::jsonb;"%(EVENT,EVENT)

@@ -31,14 +31,14 @@ The isolated baseline invoked the complete installed cancellation body with `sta
 
 The candidate migration preserves existing terminal locks and stored-receipt replay, then refuses new cancellation with SQLSTATE `55000` when actual start, running/break status, positive Spin multiplier, completed launch, durable draw/reserve, persisted hand or paid non-refund obligation evidence exists. Scheduled `start_time` is deliberately not actual-start evidence. A positive multiplier is required because root confirmed the live default is `0` at 2026-09-10 04:16:55.977 UTC.
 
-| Review item                | Current value                                                                                       |
-| -------------------------- | --------------------------------------------------------------------------------------------------- |
-| Migration                  | `supabase/migrations/20260910035015_started_tournaments_resume_or_settle_instead_of_cancelling.sql` |
-| Original body MD5          | `6aae8b91e135ac1eac7e6a768b574c13`                                                                  |
-| Revised candidate body MD5 | `16f0bf17983ec0ced4a8f8127d6af979`                                                                  |
-| Revised migration SHA256   | `ad538b696cc604d66a4c9adc8e0c2fc720c27d58ab1888858211df413138a2dc`                                  |
-| Runtime verdict            | Fourteen revised groups passed across two nonduplicated segments                                    |
-| Production application     | Not applied                                                                                         |
+| Review item                         | Current value                                                                                                             |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| Migration                           | `supabase/migrations/20260910035015_started_tournaments_resume_or_settle_instead_of_cancelling.sql`                       |
+| Current installed body MD5          | `8c2641c634de919487c7bbb7eb8c5c22`                                                                                        |
+| Current composed candidate body MD5 | `16ea7acbbf76613a0a1193dff18f1330`                                                                                        |
+| Current migration SHA256            | `915fd9fd9f638e34df0d6b4c0f3fca184d8f16c87f53d8ab81d6873d61e6cb62`                                                        |
+| Runtime verdict                     | Fourteen unchanged policy groups retained; current lock composition, migration application/replay and lock overlap passed |
+| Production application              | Not applied                                                                                                               |
 
 The earlier body `477a691d319638cb908f9ea62a10e12b` is superseded and unapplied: `IS NOT NULL` would refuse untouched default-zero Spin rows. Three refusal cases passed on that earlier candidate before a synthetic Spin setup violated its zero-fee constraint. Correcting that fixture and the multiplier guard does not transfer those results to the revised candidate. After the default-zero correction, eight revised refusal cases passed. The ninth case stopped during synthetic fixture setup because the valid obligation kind is `place`, not `prize`. Correcting that seeded value allowed the remaining six groups to pass with normal cluster cleanup. The candidate function and migration hashes were unchanged between those two segments. `scripts/dev/fixtures/tournament-cancellation-policy/runtime-evidence.json` preserves the first runner failure and the successful continuation separately.
 
@@ -58,3 +58,9 @@ The fourteen verified groups are nine refusals, three eligible routing cases, st
 | BX13       | Actual bust, cutoff and finalization three-way overlap remains open.                                                                                                                                                                                       |
 
 Mac command/file operations resumed after the earlier HTTP 504 failures. The revised recovery payload was synchronized into the same isolated worktree; no new dependencies or worktree were created. Fourteen policy results were recorded at 2026-09-10 04:30:54 UTC. No nine-group guarantee rerun or original cancellation baseline rerun was performed.
+
+## Current authority composition
+
+Preflight at 2026-09-10 04:35:57 UTC found exactly one source change: the inline terminal advisory lock became `PERFORM public.fn_ca_lock_settlement_lane_global();`. The installed helper (body MD5 `343015440ea5c84ee4ca7ae583c73d30`) takes the terminal lock and then the hand-settlement barrier. All cancellation financial statements, receipt routing and status checks remained byte-identical. The candidate preserves that current helper and adds only the previously verified refusal guard.
+
+The installed helper was captured in the isolated fixture and its body hash verified. One focused composition group passed migration application and replay, resulting body verification, and the actual cancellation waiting behind committed draw evidence. The prior fourteen predicate results were reused because their guard and financial paths are unchanged. Evidence: `/tmp/ca-registration-funding-pg17-_885frnp/results.json`; the runner completed normally. The earlier `16f0` candidate was never applied and is superseded by this composed authority. Production application and publication remain pending.

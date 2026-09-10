@@ -9,6 +9,21 @@ CREATE FUNCTION public.probe_cancel_financial_boundary() RETURNS trigger LANGUAG
 CREATE TRIGGER probe_cancel_financial_boundary BEFORE INSERT OR UPDATE ON tournament_escrow FOR EACH ROW EXECUTE FUNCTION public.probe_cancel_financial_boundary();
 CREATE FUNCTION public.probe_cancel_result(p_id uuid) RETURNS jsonb LANGUAGE plpgsql AS $$ DECLARE r jsonb; BEGIN r:=public.atomic_cancel_tournament(p_id,NULL); RETURN jsonb_build_object('response',r); EXCEPTION WHEN OTHERS THEN RETURN jsonb_build_object('sqlstate',SQLSTATE,'message',SQLERRM); END $$;
 
+CREATE OR REPLACE FUNCTION public.fn_ca_lock_settlement_lane_global()
+ RETURNS void
+ LANGUAGE plpgsql
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+BEGIN
+  -- G then B. Terminal / rare authorities: serialised against every other
+  -- authority AND against every hand settlement, as on 2026-09-09.
+  PERFORM pg_advisory_xact_lock(
+    hashtextextended('ca:tournament-terminal-settlement:v1', 0));
+  PERFORM pg_advisory_xact_lock(
+    hashtextextended('ca:hand-settlement-barrier:v1', 0));
+END;
+$function$;
+
 CREATE OR REPLACE FUNCTION public.atomic_cancel_tournament(p_tournament_id uuid, p_admin_id uuid)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -75,8 +90,7 @@ DECLARE
 BEGIN
   -- Every terminal authority takes this lock before any row lock. Cancellation,
   -- satellite finish and cash finish can touch the same wallets and event rows.
-  PERFORM pg_advisory_xact_lock(
-    hashtextextended('ca:tournament-terminal-settlement:v1',0));
+  PERFORM public.fn_ca_lock_settlement_lane_global();
   IF p_tournament_id IS NULL THEN
     RAISE EXCEPTION 'Tournament id is required' USING ERRCODE = '22004';
   END IF;

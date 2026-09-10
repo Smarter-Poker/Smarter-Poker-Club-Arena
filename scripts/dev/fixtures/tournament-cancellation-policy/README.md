@@ -19,3 +19,9 @@ The revised candidate has fourteen intended groups: nine evidence refusals; gene
 The draw overlap commits synthetic draw markers while the real cancellation function waits for the parent lock; it does not execute the Spin draw RPC. The stored-response receipt reader is synthetic and proves replay routing only, not canonical receipt validation. Start, hand, and paid-award evidence is seeded directly. Authentication is service-like fixture behavior. These cases do not prove HTTP/RLS, full cancellation settlement, the actual hand commit, actual award payers or historical refund correctness.
 
 Current review hashes are in `source-manifest.json`. Full candidate and supersession details are in the recovery bundle's `candidate-review.json`. The revised runtime result is verified. Production application remains subject to root integration and review.
+
+## Current lock composition
+
+Preflight found that production had replaced only the inline terminal advisory lock with `fn_ca_lock_settlement_lane_global()`. That installed helper takes the existing terminal lock followed by the hand-settlement barrier. The candidate is now pinned to current body `8c2641c634de919487c7bbb7eb8c5c22` and preserves the helper. The resulting body is `16ea7acbbf76613a0a1193dff18f1330`.
+
+The fixture captures the real helper and checks its body hash. The unchanged fourteen policy results remain valid for their predicates. A focused composition run passed migration application, idempotent replay, helper-body verification and the actual cancellation/draw lock overlap. Reproduce that focused gate with `--cancellation-policy-only --cancellation-lock-composition-only`. Evidence is appended under `current_lock_composition` in `runtime-evidence.json`; no production migration was applied.

@@ -1,9 +1,14 @@
 {
-  "observed_at": "2026-09-10 03:15:50.363089+00",
+  "observed_at": "2026-09-10 04:35:57.770031+00",
   "signature": "atomic_cancel_tournament(uuid,uuid)",
-  "baseline_body_md5": "6aae8b91e135ac1eac7e6a768b574c13",
-  "corrected_body_md5": "16f0bf17983ec0ced4a8f8127d6af979",
+  "baseline_body_md5": "8c2641c634de919487c7bbb7eb8c5c22",
+  "corrected_body_md5": "16ea7acbbf76613a0a1193dff18f1330",
   "boundary_trap": "BEFORE INSERT OR UPDATE on actual tournament_escrow; actual cancellation and escrow function are retained.",
   "receipt_reader": "Synthetic stored-response reader isolates replay routing, not receipt validation.",
-  "candidate_status": "fourteen revised groups verified; production application pending"
+  "candidate_status": "current lock composition verified; fourteen unchanged predicate results retained; production application pending",
+  "lock_helper": {
+    "signature": "fn_ca_lock_settlement_lane_global()",
+    "body_md5": "343015440ea5c84ee4ca7ae583c73d30"
+  },
+  "composition_note": "Only prior inline terminal lock changed to installed global lock helper; preserve helper and every existing financial statement."
 }

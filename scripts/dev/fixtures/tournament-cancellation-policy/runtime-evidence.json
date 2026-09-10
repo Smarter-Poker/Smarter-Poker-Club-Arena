@@ -33,5 +33,25 @@
     "private_cluster_removed": true
   },
   "production_database_used": false,
-  "production_applied": false
+  "production_applied": false,
+  "current_lock_composition": {
+    "observed_source_at": "2026-09-10 04:35:57.770031+00",
+    "before_body_md5": "8c2641c634de919487c7bbb7eb8c5c22",
+    "candidate_body_md5": "16ea7acbbf76613a0a1193dff18f1330",
+    "migration_sha256": "915fd9fd9f638e34df0d6b4c0f3fca184d8f16c87f53d8ab81d6873d61e6cb62",
+    "source_diff": "The sole current-source change replaces the inline terminal advisory lock with fn_ca_lock_settlement_lane_global().",
+    "lock_helper_body_md5": "343015440ea5c84ee4ca7ae583c73d30",
+    "verified": [
+      "Source pin accepts exact current authority",
+      "Migration replay is idempotent",
+      "Installed helper body hash matches",
+      "Actual cancellation waits behind committed draw and refuses without releasing it"
+    ],
+    "log": "/tmp/codex-entry-cancel-current-lock-composition.log",
+    "results": "/tmp/ca-registration-funding-pg17-_885frnp/results.json",
+    "groups": 1,
+    "runner_exit_success": true,
+    "production_database_used": false,
+    "production_applied": false
+  }
 }

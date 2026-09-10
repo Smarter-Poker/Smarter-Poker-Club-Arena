@@ -153,3 +153,77 @@ y=374..403.
 `scripts/repair-table-skins.mjs` is idempotent — it runs the line pass to a fixed
 point, because repairing raises the median and can pull a marginal row under the
 cut — so the committed bytes are the ones the committed script reproduces.
+
+## 5. The screenshot baselines this deliberately invalidated
+
+Fourteen of the thirty baselines in
+`tests/e2e/__screenshots__/customization-studios.spec.ts/` are regenerated here.
+Section 5 rule 8 is the reason they are in THIS commit rather than a follow-up:
+a test whose behaviour you deliberately replace is updated beside the change,
+because "someone else will fix the test" means "nobody ships until they do."
+
+**The five looks whose pictures moved are exactly the five skins that were
+re-centred**, and that mapping is the evidence this is the intended change and
+not a rendering accident:
+
+| look        | skin         | look         | skin           |
+| ----------- | ------------ | ------------ | -------------- |
+| Carbon Club | `carbon_red` | Crimson Club | `crimson`      |
+| Neon Ice    | `ice_cavern` | Arctic Suite | `arctic_white` |
+| Ocean Suite | `ocean_blue` |              |                |
+
+The other five looks — House Classic, Golden Dusk, Jade Casino, Amethyst Night,
+Carbon Ion — are byte-identical and untouched. Every pixel that moved is inside
+the table region: measured against the old baselines the changed area is bounded
+by 131,49..252,221 on the mobile clips and 28,125..274,496 on the tablet ones.
+No chrome, no seat puck, no label, no button moved.
+
+### Why all three variants of each look, and not the five CI named
+
+**Playwright only rewrites the baseline of an assertion that failed on the
+machine you ran it on**, and this Mac and the Linux runners fail DIFFERENT
+variants of the same five looks:
+
+- CI failed `carbon-club-tablet-light-standard`; this Mac passed it.
+- This Mac failed `arctic-suite-tablet-light-standard`; CI passed it.
+- CI failed `arctic-suite-mobile-dark-standard`; this Mac passed it.
+
+So `--update-snapshots` here rewrites four files and leaves
+`carbon-club-tablet-light-standard` and `arctic-suite-mobile-dark-standard`
+holding stale pictures — green on this desk, red on the runner, which is the
+same shape of failure as the one being fixed. Ran exactly that and confirmed it:
+13 passed locally, 4 of 30 files rewritten.
+
+The instrument that works is deleting the fifteen and re-running, because a
+MISSING baseline is written unconditionally. Playwright records a missing
+snapshot as a non-fatal error and carries on, so all three captures in a test
+are written in one pass rather than one per run.
+
+### The one that was left alone
+
+`carbon-club-mobile-dark-final.png` came back within **2/255 on the worst
+channel** of the baseline it would have replaced — no visible change at all — so
+the reviewed file was restored and is not in this diff. A binary blob in a
+review should mean something changed.
+
+### Why one baseline is allowed to serve both this Mac and Linux CI
+
+`playwright.customization.config.ts` says so, and the reasoning is worth keeping
+in view: _"The preview is image-backed and font-stable across our Chromium
+runners. Keep one reviewed baseline instead of blessing a separate picture for
+every host OS."_ Blessing per-OS baselines would have hidden this entire change
+behind a second set of pictures nobody looks at.
+
+Verified: a clean re-run passes 13/13, and each regenerated picture was compared
+against the one it replaces by eye. Arctic Suite is the clearest — its painted
+rail was drawn short of the seats it is meant to meet, and now reaches them.
+
+### A process note, because the failure here was mine and not the tests'
+
+This pull request was reported as "queued with all required checks verified
+locally". It had been failing `CSS Beat E2E (multi-table + animations)` — a
+required check — for **31 hours** at that moment. Local verification is not
+verification: the `check-runs` API returned 0 for the head commit, I read that
+as "nothing has run yet", and never asked `actions/runs?branch=...`, which had
+89 runs and a red `CI - Build & Type Safety` throughout. Ask the API that
+answers, and read the answer, before saying a check passed.

@@ -6,6 +6,10 @@
 
 The prepared strict cutover named only an obsolete seat-move RPC. Its current RPC could enter as an unmarked service actor after a callback lost manager context. The current name now uses the existing exact fresh lease gate, with the old route still denied. Real PostgreSQL reproduced the gap and passes 32 request admission scenarios after correction, preserving receipt recovery and player purchases. No production cutover or financial mutation is part of this source correction. See docs/changelog/2026-09-10-seat-moves-require-current-manager-authority.md.
 
+## 2026-09-10: Maintenance Rehearsal Uses The Release-Aware Authority
+
+The isolated Stage 1 probe loaded an obsolete predicate while migration preflight correctly demanded the current body. The fixture now uses the exact live release-aware functions without changing the migration checks. Real PostgreSQL passes eight admission/release behaviors and seven refusal cases, including the old predicate. The tournament and hand-generation suite passes 1,398 tests. Re-read: yes. No production DDL or financial mutation. Complete Phase 3 acceptance remains open. See docs/changelog/2026-09-10-accounting-cutover-rehearsal-maintenance-authority.md.
+
 ## 2026-09-09: Hand Settlement Retains Its Dealt Seat Generation
 
 A later terminal writer replaced the earlier exact-seat checks. The forward restoration preserves current terminal behavior and binds stack/time-bank writes to the dealt row and join timestamp. Database expansion applied as 20260909234808 with exact definitions and ACLs verified. Real PostgreSQL regression, rollback, replay and full hand-boundary checks pass. Engine identity capture is built; publication and complete accounting Phase 3 acceptance remain pending. Re-read: yes. See docs/audits/2026-09-09-hand-generation-overwrite-checkpoint.md.

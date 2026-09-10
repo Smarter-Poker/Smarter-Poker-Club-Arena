@@ -1,0 +1,4459 @@
+[
+  {
+    "columns": [
+      {
+        "default": null,
+        "generated": "",
+        "identity": "a",
+        "name": "sequence",
+        "not_null": true,
+        "type": "bigint"
+      },
+      {
+        "default": "gen_random_uuid()",
+        "generated": "",
+        "identity": "",
+        "name": "event_id",
+        "not_null": true,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "event_type",
+        "not_null": true,
+        "type": "text"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "scope_kind",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "scope_id",
+        "not_null": false,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "club_id",
+        "not_null": false,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "union_id",
+        "not_null": false,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "recipient_id",
+        "not_null": false,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "entity_type",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "entity_id",
+        "not_null": false,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "command_id",
+        "not_null": false,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "actor_id",
+        "not_null": false,
+        "type": "uuid"
+      },
+      {
+        "default": "'{}'::jsonb",
+        "generated": "",
+        "identity": "",
+        "name": "payload",
+        "not_null": true,
+        "type": "jsonb"
+      },
+      {
+        "default": "now()",
+        "generated": "",
+        "identity": "",
+        "name": "created_at",
+        "not_null": true,
+        "type": "timestamp with time zone"
+      }
+    ],
+    "constraints": [
+      {
+        "definition": "CHECK (((scope_id IS NOT NULL) OR (recipient_id IS NOT NULL)))",
+        "name": "game_management_events_check",
+        "type": "c"
+      },
+      {
+        "definition": "FOREIGN KEY (club_id) REFERENCES clubs(id) ON DELETE CASCADE",
+        "name": "game_management_events_club_id_fkey",
+        "type": "f"
+      },
+      {
+        "definition": "UNIQUE (event_id)",
+        "name": "game_management_events_event_id_key",
+        "type": "u"
+      },
+      {
+        "definition": "CHECK ((event_type = ANY (ARRAY['game_changed'::text, 'game_command_succeeded'::text, 'game_command_rejected'::text, 'ticker_settings_changed'::text, 'club_identity_changed'::text, 'announcement_changed'::text, 'management_access_changed'::text])))",
+        "name": "game_management_events_event_type_check",
+        "type": "c"
+      },
+      {
+        "definition": "PRIMARY KEY (sequence)",
+        "name": "game_management_events_pkey",
+        "type": "p"
+      },
+      {
+        "definition": "FOREIGN KEY (recipient_id) REFERENCES auth.users(id) ON DELETE CASCADE",
+        "name": "game_management_events_recipient_id_fkey",
+        "type": "f"
+      },
+      {
+        "definition": "CHECK ((scope_kind = ANY (ARRAY['club'::text, 'union'::text])))",
+        "name": "game_management_events_scope_kind_check",
+        "type": "c"
+      },
+      {
+        "definition": "FOREIGN KEY (union_id) REFERENCES unions(id) ON DELETE CASCADE",
+        "name": "game_management_events_union_id_fkey",
+        "type": "f"
+      }
+    ],
+    "force_rls": false,
+    "grants": [
+      "postgres=arwdDxtm/postgres",
+      "service_role=arwdDxtm/postgres",
+      "authenticated=r/postgres"
+    ],
+    "indexes": [
+      {
+        "definition": "CREATE INDEX idx_game_management_events_scope_created_cover ON public.game_management_events USING btree (scope_kind, scope_id, created_at DESC) INCLUDE (sequence, event_type) WHERE ((scope_kind IS NOT NULL) AND (scope_id IS NOT NULL))",
+        "name": "idx_game_management_events_scope_created_cover",
+        "unique": false,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_game_management_events_club_id ON public.game_management_events USING btree (club_id)",
+        "name": "idx_game_management_events_club_id",
+        "unique": false,
+        "valid": true
+      },
+      {
+        "definition": "CREATE UNIQUE INDEX game_management_events_pkey ON public.game_management_events USING btree (sequence)",
+        "name": "game_management_events_pkey",
+        "unique": true,
+        "valid": true
+      },
+      {
+        "definition": "CREATE UNIQUE INDEX game_management_events_event_id_key ON public.game_management_events USING btree (event_id)",
+        "name": "game_management_events_event_id_key",
+        "unique": true,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_game_management_events_scope ON public.game_management_events USING btree (scope_id, sequence DESC)",
+        "name": "idx_game_management_events_scope",
+        "unique": false,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_game_management_events_recipient ON public.game_management_events USING btree (recipient_id, sequence DESC) WHERE (recipient_id IS NOT NULL)",
+        "name": "idx_game_management_events_recipient",
+        "unique": false,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_game_management_events_created ON public.game_management_events USING btree (created_at DESC)",
+        "name": "idx_game_management_events_created",
+        "unique": false,
+        "valid": true
+      }
+    ],
+    "name": "game_management_events",
+    "rls": true,
+    "schema": "public"
+  },
+  {
+    "columns": [
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "table_id",
+        "not_null": true,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "hand_number",
+        "not_null": true,
+        "type": "bigint"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "hand_id",
+        "not_null": true,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "payload_hash",
+        "not_null": true,
+        "type": "text"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "stack_result",
+        "not_null": true,
+        "type": "jsonb"
+      },
+      {
+        "default": "clock_timestamp()",
+        "generated": "",
+        "identity": "",
+        "name": "committed_at",
+        "not_null": true,
+        "type": "timestamp with time zone"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "post_commit_payload",
+        "not_null": false,
+        "type": "jsonb"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "post_commit_request_hash",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "post_commit_payload_hash",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "post_commit_completed_at",
+        "not_null": false,
+        "type": "timestamp with time zone"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "post_commit_result",
+        "not_null": false,
+        "type": "jsonb"
+      }
+    ],
+    "constraints": [
+      { "definition": "UNIQUE (hand_id)", "name": "hand_atomic_commits_hand_id_key", "type": "u" },
+      {
+        "definition": "CHECK ((hand_number >= 1000000))",
+        "name": "hand_atomic_commits_hand_number_check",
+        "type": "c"
+      },
+      {
+        "definition": "UNIQUE (hand_number)",
+        "name": "hand_atomic_commits_hand_number_key",
+        "type": "u"
+      },
+      {
+        "definition": "CHECK ((payload_hash ~ '^[0-9a-f]{64}$'::text))",
+        "name": "hand_atomic_commits_payload_hash_check",
+        "type": "c"
+      },
+      {
+        "definition": "PRIMARY KEY (table_id, hand_number)",
+        "name": "hand_atomic_commits_pkey",
+        "type": "p"
+      }
+    ],
+    "force_rls": false,
+    "grants": ["postgres=arwdDxtm/postgres", "service_role=r/postgres"],
+    "indexes": [
+      {
+        "definition": "CREATE UNIQUE INDEX hand_atomic_commits_pkey ON public.hand_atomic_commits USING btree (table_id, hand_number)",
+        "name": "hand_atomic_commits_pkey",
+        "unique": true,
+        "valid": true
+      },
+      {
+        "definition": "CREATE UNIQUE INDEX hand_atomic_commits_hand_number_key ON public.hand_atomic_commits USING btree (hand_number)",
+        "name": "hand_atomic_commits_hand_number_key",
+        "unique": true,
+        "valid": true
+      },
+      {
+        "definition": "CREATE UNIQUE INDEX hand_atomic_commits_hand_id_key ON public.hand_atomic_commits USING btree (hand_id)",
+        "name": "hand_atomic_commits_hand_id_key",
+        "unique": true,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_hand_atomic_commits_post_commit_pending ON public.hand_atomic_commits USING btree (table_id, hand_number) WHERE ((post_commit_payload IS NOT NULL) AND (post_commit_completed_at IS NULL))",
+        "name": "idx_hand_atomic_commits_post_commit_pending",
+        "unique": false,
+        "valid": true
+      }
+    ],
+    "name": "hand_atomic_commits",
+    "rls": true,
+    "schema": "public"
+  },
+  {
+    "columns": [
+      {
+        "default": "gen_random_uuid()",
+        "generated": "",
+        "identity": "",
+        "name": "id",
+        "not_null": true,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "winner_name",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "pot_size",
+        "not_null": false,
+        "type": "numeric(12,2)"
+      },
+      {
+        "default": "now()",
+        "generated": "",
+        "identity": "",
+        "name": "created_at",
+        "not_null": false,
+        "type": "timestamp with time zone"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "table_id",
+        "not_null": false,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "tournament_id",
+        "not_null": false,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "hand_number",
+        "not_null": false,
+        "type": "integer"
+      },
+      {
+        "default": "'nlh'::text",
+        "generated": "",
+        "identity": "",
+        "name": "game_variant",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "small_blind",
+        "not_null": false,
+        "type": "numeric(12,2)"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "big_blind",
+        "not_null": false,
+        "type": "numeric(12,2)"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "rake_amount",
+        "not_null": false,
+        "type": "numeric(12,2)"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "community_cards",
+        "not_null": false,
+        "type": "text[]"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "winners",
+        "not_null": false,
+        "type": "jsonb"
+      },
+      {
+        "default": "'[]'::jsonb",
+        "generated": "",
+        "identity": "",
+        "name": "players",
+        "not_null": false,
+        "type": "jsonb"
+      },
+      {
+        "default": "'[]'::jsonb",
+        "generated": "",
+        "identity": "",
+        "name": "actions",
+        "not_null": false,
+        "type": "jsonb"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "summary",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "bbj_amount",
+        "not_null": true,
+        "type": "numeric(12,2)"
+      },
+      {
+        "default": "'manual'::text",
+        "generated": "",
+        "identity": "",
+        "name": "source",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "hand_name",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "seed",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": "'v1'::text",
+        "generated": "",
+        "identity": "",
+        "name": "version",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": "now()",
+        "generated": "",
+        "identity": "",
+        "name": "started_at",
+        "not_null": false,
+        "type": "timestamp with time zone"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "ended_at",
+        "not_null": false,
+        "type": "timestamp with time zone"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "hole_cards",
+        "not_null": false,
+        "type": "jsonb"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "board",
+        "not_null": false,
+        "type": "jsonb"
+      },
+      {
+        "default": "false",
+        "generated": "",
+        "identity": "",
+        "name": "reported",
+        "not_null": true,
+        "type": "boolean"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "reported_at",
+        "not_null": false,
+        "type": "timestamp with time zone"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "button_seat",
+        "not_null": false,
+        "type": "smallint"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "has_human",
+        "not_null": false,
+        "type": "boolean"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "community_cards2",
+        "not_null": false,
+        "type": "text[]"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "pots",
+        "not_null": false,
+        "type": "jsonb"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "showdown",
+        "not_null": false,
+        "type": "jsonb"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "rit_boards",
+        "not_null": false,
+        "type": "jsonb"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "community_cards3",
+        "not_null": false,
+        "type": "text[]"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "bomb_pot",
+        "not_null": false,
+        "type": "jsonb"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "daily_mission_events",
+        "not_null": false,
+        "type": "jsonb"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "winners_by_board",
+        "not_null": false,
+        "type": "jsonb"
+      }
+    ],
+    "constraints": [
+      { "definition": "PRIMARY KEY (id)", "name": "hand_history_pkey", "type": "p" },
+      {
+        "definition": "TRIGGER DEFERRABLE INITIALLY DEFERRED",
+        "name": "zz_ca_bomb_hand_keeps_its_award_units",
+        "type": "t"
+      }
+    ],
+    "force_rls": false,
+    "grants": [
+      "postgres=arwdDxtm/postgres",
+      "anon=arwdxtm/postgres",
+      "authenticated=arwdxtm/postgres",
+      "service_role=arwdDxtm/postgres"
+    ],
+    "indexes": [
+      {
+        "definition": "CREATE UNIQUE INDEX hand_history_pkey ON public.hand_history USING btree (id)",
+        "name": "hand_history_pkey",
+        "unique": true,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_hand_history_created ON public.hand_history USING btree (created_at DESC)",
+        "name": "idx_hand_history_created",
+        "unique": false,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_hand_history_tournament_created ON public.hand_history USING btree (tournament_id, created_at DESC) WHERE (tournament_id IS NOT NULL)",
+        "name": "idx_hand_history_tournament_created",
+        "unique": false,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_hand_history_table_handnum ON public.hand_history USING btree (table_id, hand_number DESC)",
+        "name": "idx_hand_history_table_handnum",
+        "unique": false,
+        "valid": true
+      },
+      {
+        "definition": "CREATE UNIQUE INDEX uq_hand_history_global_hand_number ON public.hand_history USING btree (hand_number) WHERE (hand_number >= 1000000)",
+        "name": "uq_hand_history_global_hand_number",
+        "unique": true,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_hand_history_hand_number_lookup ON public.hand_history USING btree (hand_number)",
+        "name": "idx_hand_history_hand_number_lookup",
+        "unique": false,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_hand_history_players_gin ON public.hand_history USING gin (players jsonb_path_ops) WITH (fastupdate='on', gin_pending_list_limit='32768')",
+        "name": "idx_hand_history_players_gin",
+        "unique": false,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_hand_history_cash_rake_unbanked ON public.hand_history USING btree (created_at) WHERE ((tournament_id IS NULL) AND (rake_amount > (0)::numeric))",
+        "name": "idx_hand_history_cash_rake_unbanked",
+        "unique": false,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_hand_history_human_created ON public.hand_history USING btree (created_at) WHERE has_human",
+        "name": "idx_hand_history_human_created",
+        "unique": false,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_hand_history_table_created_id ON public.hand_history USING btree (table_id, created_at, id)",
+        "name": "idx_hand_history_table_created_id",
+        "unique": false,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_hand_history_bomb_pot_created ON public.hand_history USING btree (created_at) WHERE (bomb_pot IS NOT NULL)",
+        "name": "idx_hand_history_bomb_pot_created",
+        "unique": false,
+        "valid": true
+      }
+    ],
+    "name": "hand_history",
+    "rls": true,
+    "schema": "public"
+  },
+  {
+    "columns": [
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "hand_id",
+        "not_null": true,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "table_id",
+        "not_null": true,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "hand_number",
+        "not_null": true,
+        "type": "bigint"
+      },
+      {
+        "default": "clock_timestamp()",
+        "generated": "",
+        "identity": "",
+        "name": "created_at",
+        "not_null": true,
+        "type": "timestamp with time zone"
+      }
+    ],
+    "constraints": [
+      {
+        "definition": "CHECK ((hand_number >= 1000000))",
+        "name": "hand_projection_outbox_hand_number_check",
+        "type": "c"
+      },
+      {
+        "definition": "UNIQUE (hand_number)",
+        "name": "hand_projection_outbox_hand_number_key",
+        "type": "u"
+      },
+      { "definition": "PRIMARY KEY (hand_id)", "name": "hand_projection_outbox_pkey", "type": "p" }
+    ],
+    "force_rls": false,
+    "grants": ["postgres=arwdDxtm/postgres", "service_role=r/postgres"],
+    "indexes": [
+      {
+        "definition": "CREATE UNIQUE INDEX hand_projection_outbox_pkey ON public.hand_projection_outbox USING btree (hand_id)",
+        "name": "hand_projection_outbox_pkey",
+        "unique": true,
+        "valid": true
+      },
+      {
+        "definition": "CREATE UNIQUE INDEX hand_projection_outbox_hand_number_key ON public.hand_projection_outbox USING btree (hand_number)",
+        "name": "hand_projection_outbox_hand_number_key",
+        "unique": true,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_hand_projection_outbox_table_hand ON public.hand_projection_outbox USING btree (table_id, hand_number)",
+        "name": "idx_hand_projection_outbox_table_hand",
+        "unique": false,
+        "valid": true
+      }
+    ],
+    "name": "hand_projection_outbox",
+    "rls": true,
+    "schema": "public"
+  },
+  {
+    "columns": [
+      {
+        "default": "gen_random_uuid()",
+        "generated": "",
+        "identity": "",
+        "name": "id",
+        "not_null": true,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "user_id",
+        "not_null": true,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "type",
+        "not_null": true,
+        "type": "text"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "title",
+        "not_null": true,
+        "type": "text"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "message",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": "'{}'::jsonb",
+        "generated": "",
+        "identity": "",
+        "name": "data",
+        "not_null": false,
+        "type": "jsonb"
+      },
+      {
+        "default": "false",
+        "generated": "",
+        "identity": "",
+        "name": "read",
+        "not_null": false,
+        "type": "boolean"
+      },
+      {
+        "default": "now()",
+        "generated": "",
+        "identity": "",
+        "name": "created_at",
+        "not_null": false,
+        "type": "timestamp with time zone"
+      },
+      {
+        "default": "now()",
+        "generated": "",
+        "identity": "",
+        "name": "updated_at",
+        "not_null": false,
+        "type": "timestamp with time zone"
+      },
+      {
+        "default": "false",
+        "generated": "",
+        "identity": "",
+        "name": "is_read",
+        "not_null": false,
+        "type": "boolean"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "action_url",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": "'{}'::jsonb",
+        "generated": "",
+        "identity": "",
+        "name": "metadata",
+        "not_null": false,
+        "type": "jsonb"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "actor_id",
+        "not_null": false,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "link",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "read_at",
+        "not_null": false,
+        "type": "timestamp with time zone"
+      }
+    ],
+    "constraints": [
+      {
+        "definition": "FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE",
+        "name": "fk_notifications_user_id_profiles",
+        "type": "f"
+      },
+      {
+        "definition": "FOREIGN KEY (actor_id) REFERENCES profiles(id)",
+        "name": "notifications_actor_id_fkey",
+        "type": "f"
+      },
+      { "definition": "PRIMARY KEY (id)", "name": "notifications_pkey", "type": "p" }
+    ],
+    "force_rls": false,
+    "grants": [
+      "postgres=arwdDxtm/postgres",
+      "anon=arwdxtm/postgres",
+      "authenticated=arwdxtm/postgres",
+      "service_role=arwdDxtm/postgres"
+    ],
+    "indexes": [
+      {
+        "definition": "CREATE UNIQUE INDEX notifications_pkey ON public.notifications USING btree (id)",
+        "name": "notifications_pkey",
+        "unique": true,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_notifications_user_id ON public.notifications USING btree (user_id)",
+        "name": "idx_notifications_user_id",
+        "unique": false,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_notifications_user_type_read ON public.notifications USING btree (user_id, type, read, created_at DESC)",
+        "name": "idx_notifications_user_type_read",
+        "unique": false,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_notifications_user_unread ON public.notifications USING btree (user_id, read, created_at DESC) WHERE (read = false)",
+        "name": "idx_notifications_user_unread",
+        "unique": false,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_notifications_user_all ON public.notifications USING btree (user_id, created_at DESC)",
+        "name": "idx_notifications_user_all",
+        "unique": false,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_notifications_user_id_id ON public.notifications USING btree (user_id, id)",
+        "name": "idx_notifications_user_id_id",
+        "unique": false,
+        "valid": true
+      },
+      {
+        "definition": "CREATE UNIQUE INDEX idx_notif_dedup_group_friend ON public.notifications USING btree (user_id, type, ((data ->> 'group_id'::text)), ((data ->> 'friend_id'::text))) WHERE (type = 'home_group_friend_joined'::text)",
+        "name": "idx_notif_dedup_group_friend",
+        "unique": true,
+        "valid": true
+      },
+      {
+        "definition": "CREATE UNIQUE INDEX idx_notif_dedup_friend_request ON public.notifications USING btree (user_id, type, ((data ->> 'sender_id'::text))) WHERE (type = 'friend_request'::text)",
+        "name": "idx_notif_dedup_friend_request",
+        "unique": true,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_notifications_actor_id ON public.notifications USING btree (actor_id)",
+        "name": "idx_notifications_actor_id",
+        "unique": false,
+        "valid": true
+      },
+      {
+        "definition": "CREATE UNIQUE INDEX notifications_pa_leak_audit_job_unique ON public.notifications USING btree (((data ->> 'paAuditJobId'::text))) WHERE ((type = 'personal_assistant_audit_complete'::text) AND (data ? 'paAuditJobId'::text))",
+        "name": "notifications_pa_leak_audit_job_unique",
+        "unique": true,
+        "valid": true
+      },
+      {
+        "definition": "CREATE UNIQUE INDEX notifications_daily_mission_cycle_unique ON public.notifications USING btree (user_id, ((data ->> 'cycle_date'::text))) WHERE ((type = 'daily_challenge'::text) AND ((data ->> 'source'::text) = 'club_arena_daily_missions'::text))",
+        "name": "notifications_daily_mission_cycle_unique",
+        "unique": true,
+        "valid": true
+      }
+    ],
+    "name": "notifications",
+    "rls": true,
+    "schema": "public"
+  },
+  {
+    "columns": [
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "user_id",
+        "not_null": true,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "position",
+        "not_null": true,
+        "type": "text"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "hands_played",
+        "not_null": true,
+        "type": "integer"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "vpip_count",
+        "not_null": true,
+        "type": "integer"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "pfr_count",
+        "not_null": true,
+        "type": "integer"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "three_bet_count",
+        "not_null": true,
+        "type": "integer"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "fold_to_three_bet_count",
+        "not_null": true,
+        "type": "integer"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "hands_won",
+        "not_null": true,
+        "type": "integer"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "total_profit",
+        "not_null": true,
+        "type": "numeric"
+      },
+      {
+        "default": "now()",
+        "generated": "",
+        "identity": "",
+        "name": "updated_at",
+        "not_null": true,
+        "type": "timestamp with time zone"
+      }
+    ],
+    "constraints": [
+      {
+        "definition": "PRIMARY KEY (user_id, \"position\")",
+        "name": "player_position_stats_pkey",
+        "type": "p"
+      }
+    ],
+    "force_rls": false,
+    "grants": [
+      "postgres=arwdDxtm/postgres",
+      "anon=arwdxtm/postgres",
+      "authenticated=arwdxtm/postgres",
+      "service_role=arwdDxtm/postgres"
+    ],
+    "indexes": [
+      {
+        "definition": "CREATE UNIQUE INDEX player_position_stats_pkey ON public.player_position_stats USING btree (user_id, \"position\")",
+        "name": "player_position_stats_pkey",
+        "unique": true,
+        "valid": true
+      }
+    ],
+    "name": "player_position_stats",
+    "rls": true,
+    "schema": "public"
+  },
+  {
+    "columns": [
+      {
+        "default": "gen_random_uuid()",
+        "generated": "",
+        "identity": "",
+        "name": "id",
+        "not_null": true,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "user_id",
+        "not_null": true,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "club_id",
+        "not_null": false,
+        "type": "uuid"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "hands_played",
+        "not_null": false,
+        "type": "integer"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "total_winnings",
+        "not_null": true,
+        "type": "numeric(15,2)"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "total_losses",
+        "not_null": false,
+        "type": "numeric(15,2)"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "total_rake",
+        "not_null": true,
+        "type": "numeric(15,2)"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "vpip",
+        "not_null": false,
+        "type": "numeric(5,2)"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "pfr",
+        "not_null": false,
+        "type": "numeric(5,2)"
+      },
+      {
+        "default": "now()",
+        "generated": "",
+        "identity": "",
+        "name": "updated_at",
+        "not_null": false,
+        "type": "timestamp with time zone"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "tournaments_played",
+        "not_null": false,
+        "type": "integer"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "tournaments_won",
+        "not_null": false,
+        "type": "integer"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "hands_dealt",
+        "not_null": true,
+        "type": "bigint"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "sum_big_blind",
+        "not_null": true,
+        "type": "numeric"
+      }
+    ],
+    "constraints": [
+      {
+        "definition": "FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE",
+        "name": "fk_player_stats_user_id_profiles",
+        "type": "f"
+      },
+      { "definition": "PRIMARY KEY (id)", "name": "player_stats_pkey", "type": "p" },
+      {
+        "definition": "UNIQUE (user_id, club_id)",
+        "name": "player_stats_user_id_club_id_key",
+        "type": "u"
+      }
+    ],
+    "force_rls": false,
+    "grants": [
+      "postgres=arwdDxtm/postgres",
+      "anon=arwdxtm/postgres",
+      "authenticated=arwdxtm/postgres",
+      "service_role=arwdDxtm/postgres"
+    ],
+    "indexes": [
+      {
+        "definition": "CREATE UNIQUE INDEX player_stats_pkey ON public.player_stats USING btree (id)",
+        "name": "player_stats_pkey",
+        "unique": true,
+        "valid": true
+      },
+      {
+        "definition": "CREATE UNIQUE INDEX player_stats_user_id_club_id_key ON public.player_stats USING btree (user_id, club_id)",
+        "name": "player_stats_user_id_club_id_key",
+        "unique": true,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_player_stats_user ON public.player_stats USING btree (user_id)",
+        "name": "idx_player_stats_user",
+        "unique": false,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_player_stats_club ON public.player_stats USING btree (club_id)",
+        "name": "idx_player_stats_club",
+        "unique": false,
+        "valid": true
+      }
+    ],
+    "name": "player_stats",
+    "rls": true,
+    "schema": "public"
+  },
+  {
+    "columns": [
+      {
+        "default": "gen_random_uuid()",
+        "generated": "",
+        "identity": "",
+        "name": "id",
+        "not_null": true,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "user_id",
+        "not_null": true,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "arena_id",
+        "not_null": true,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "purpose",
+        "not_null": true,
+        "type": "text"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "target_id",
+        "not_null": true,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "entry_key",
+        "not_null": true,
+        "type": "text"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "balance",
+        "not_null": true,
+        "type": "bigint"
+      },
+      {
+        "default": "'reserved'::text",
+        "generated": "",
+        "identity": "",
+        "name": "state",
+        "not_null": true,
+        "type": "text"
+      },
+      {
+        "default": "now()",
+        "generated": "",
+        "identity": "",
+        "name": "created_at",
+        "not_null": true,
+        "type": "timestamp with time zone"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "released_at",
+        "not_null": false,
+        "type": "timestamp with time zone"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "seat_id",
+        "not_null": false,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "seat_joined_at",
+        "not_null": false,
+        "type": "timestamp with time zone"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "occupancy_id",
+        "not_null": false,
+        "type": "uuid"
+      }
+    ],
+    "constraints": [
+      {
+        "definition": "FOREIGN KEY (arena_id) REFERENCES clubs(id) ON DELETE RESTRICT",
+        "name": "poker_diamond_custody_arena_id_fkey",
+        "type": "f"
+      },
+      {
+        "definition": "CHECK (((balance >= 0) AND (balance <= 2147483647)))",
+        "name": "poker_diamond_custody_balance_check",
+        "type": "c"
+      },
+      {
+        "definition": "CHECK (((state = 'released'::text) = (released_at IS NOT NULL)))",
+        "name": "poker_diamond_custody_check",
+        "type": "c"
+      },
+      {
+        "definition": "CHECK (((state <> 'released'::text) OR (balance = 0)))",
+        "name": "poker_diamond_custody_check1",
+        "type": "c"
+      },
+      {
+        "definition": "CHECK (((length(entry_key) >= 1) AND (length(entry_key) <= 160)))",
+        "name": "poker_diamond_custody_entry_key_check",
+        "type": "c"
+      },
+      { "definition": "PRIMARY KEY (id)", "name": "poker_diamond_custody_pkey", "type": "p" },
+      {
+        "definition": "CHECK ((purpose = ANY (ARRAY['cash_seat'::text, 'tournament_entry'::text])))",
+        "name": "poker_diamond_custody_purpose_check",
+        "type": "c"
+      },
+      {
+        "definition": "CHECK ((state = ANY (ARRAY['reserved'::text, 'active'::text, 'released'::text])))",
+        "name": "poker_diamond_custody_state_check",
+        "type": "c"
+      },
+      {
+        "definition": "FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE RESTRICT",
+        "name": "poker_diamond_custody_user_id_fkey",
+        "type": "f"
+      },
+      {
+        "definition": "UNIQUE (user_id, purpose, target_id, entry_key)",
+        "name": "poker_diamond_custody_user_id_purpose_target_id_entry_key_key",
+        "type": "u"
+      },
+      {
+        "definition": "CHECK ((((seat_id IS NULL) AND (seat_joined_at IS NULL) AND (occupancy_id IS NULL)) OR ((purpose = 'cash_seat'::text) AND (seat_id IS NOT NULL) AND (seat_joined_at IS NOT NULL) AND (occupancy_id IS NOT NULL))))",
+        "name": "poker_diamond_seat_identity_complete",
+        "type": "c"
+      }
+    ],
+    "force_rls": false,
+    "grants": [
+      "postgres=arwdDxtm/postgres",
+      "service_role=arwdDxtm/postgres",
+      "authenticated=r/postgres"
+    ],
+    "indexes": [
+      {
+        "definition": "CREATE INDEX poker_diamond_custody_seat ON public.poker_diamond_custody USING btree (seat_id) WHERE (seat_id IS NOT NULL)",
+        "name": "poker_diamond_custody_seat",
+        "unique": false,
+        "valid": true
+      },
+      {
+        "definition": "CREATE UNIQUE INDEX poker_diamond_custody_pkey ON public.poker_diamond_custody USING btree (id)",
+        "name": "poker_diamond_custody_pkey",
+        "unique": true,
+        "valid": true
+      },
+      {
+        "definition": "CREATE UNIQUE INDEX poker_diamond_custody_user_id_purpose_target_id_entry_key_key ON public.poker_diamond_custody USING btree (user_id, purpose, target_id, entry_key)",
+        "name": "poker_diamond_custody_user_id_purpose_target_id_entry_key_key",
+        "unique": true,
+        "valid": true
+      },
+      {
+        "definition": "CREATE UNIQUE INDEX poker_diamond_one_open_entry ON public.poker_diamond_custody USING btree (user_id, purpose, target_id) WHERE (state <> 'released'::text)",
+        "name": "poker_diamond_one_open_entry",
+        "unique": true,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX poker_diamond_custody_arena ON public.poker_diamond_custody USING btree (arena_id)",
+        "name": "poker_diamond_custody_arena",
+        "unique": false,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX poker_diamond_custody_user_state ON public.poker_diamond_custody USING btree (user_id, state)",
+        "name": "poker_diamond_custody_user_state",
+        "unique": false,
+        "valid": true
+      },
+      {
+        "definition": "CREATE UNIQUE INDEX poker_diamond_custody_occupancy ON public.poker_diamond_custody USING btree (occupancy_id) WHERE (occupancy_id IS NOT NULL)",
+        "name": "poker_diamond_custody_occupancy",
+        "unique": true,
+        "valid": true
+      }
+    ],
+    "name": "poker_diamond_custody",
+    "rls": true,
+    "schema": "public"
+  },
+  {
+    "columns": [
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "table_id",
+        "not_null": true,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "hand_number",
+        "not_null": true,
+        "type": "bigint"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "request",
+        "not_null": true,
+        "type": "jsonb"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "receipt",
+        "not_null": true,
+        "type": "jsonb"
+      },
+      {
+        "default": "now()",
+        "generated": "",
+        "identity": "",
+        "name": "created_at",
+        "not_null": true,
+        "type": "timestamp with time zone"
+      }
+    ],
+    "constraints": [
+      {
+        "definition": "CHECK ((hand_number >= 1000000))",
+        "name": "poker_diamond_hand_receipts_hand_number_check",
+        "type": "c"
+      },
+      {
+        "definition": "PRIMARY KEY (table_id, hand_number)",
+        "name": "poker_diamond_hand_receipts_pkey",
+        "type": "p"
+      },
+      {
+        "definition": "FOREIGN KEY (table_id) REFERENCES tables(id) ON DELETE RESTRICT",
+        "name": "poker_diamond_hand_receipts_table_id_fkey",
+        "type": "f"
+      }
+    ],
+    "force_rls": false,
+    "grants": ["postgres=arwdDxtm/postgres", "service_role=r/postgres"],
+    "indexes": [
+      {
+        "definition": "CREATE UNIQUE INDEX poker_diamond_hand_receipts_pkey ON public.poker_diamond_hand_receipts USING btree (table_id, hand_number)",
+        "name": "poker_diamond_hand_receipts_pkey",
+        "unique": true,
+        "valid": true
+      }
+    ],
+    "name": "poker_diamond_hand_receipts",
+    "rls": true,
+    "schema": "public"
+  },
+  {
+    "columns": [
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "custody_id",
+        "not_null": true,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "lot_id",
+        "not_null": true,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "amount",
+        "not_null": true,
+        "type": "bigint"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "released_at",
+        "not_null": false,
+        "type": "timestamp with time zone"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "consumed",
+        "not_null": true,
+        "type": "bigint"
+      }
+    ],
+    "constraints": [
+      {
+        "definition": "CHECK ((amount > 0))",
+        "name": "poker_diamond_lot_reservations_amount_check",
+        "type": "c"
+      },
+      {
+        "definition": "CHECK (((consumed >= 0) AND (consumed <= amount)))",
+        "name": "poker_diamond_lot_reservations_check",
+        "type": "c"
+      },
+      {
+        "definition": "FOREIGN KEY (custody_id) REFERENCES poker_diamond_custody(id) ON DELETE RESTRICT",
+        "name": "poker_diamond_lot_reservations_custody_id_fkey",
+        "type": "f"
+      },
+      {
+        "definition": "FOREIGN KEY (lot_id) REFERENCES diamond_purchase_lots(id) ON DELETE RESTRICT",
+        "name": "poker_diamond_lot_reservations_lot_id_fkey",
+        "type": "f"
+      },
+      {
+        "definition": "PRIMARY KEY (custody_id, lot_id)",
+        "name": "poker_diamond_lot_reservations_pkey",
+        "type": "p"
+      }
+    ],
+    "force_rls": false,
+    "grants": ["postgres=arwdDxtm/postgres", "service_role=arwdDxtm/postgres"],
+    "indexes": [
+      {
+        "definition": "CREATE UNIQUE INDEX poker_diamond_lot_reservations_pkey ON public.poker_diamond_lot_reservations USING btree (custody_id, lot_id)",
+        "name": "poker_diamond_lot_reservations_pkey",
+        "unique": true,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX poker_diamond_lot_reservations_lot ON public.poker_diamond_lot_reservations USING btree (lot_id)",
+        "name": "poker_diamond_lot_reservations_lot",
+        "unique": false,
+        "valid": true
+      }
+    ],
+    "name": "poker_diamond_lot_reservations",
+    "rls": true,
+    "schema": "public"
+  },
+  {
+    "columns": [
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "id",
+        "not_null": true,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "full_name",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "display_name",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "first_name",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "last_name",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "username",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "email",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "phone",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "bio",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "city",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "state",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "alias",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "avatar_url",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": "'user'::text",
+        "generated": "",
+        "identity": "",
+        "name": "role",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": "'active'::text",
+        "generated": "",
+        "identity": "",
+        "name": "status",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": "false",
+        "generated": "",
+        "identity": "",
+        "name": "is_vip",
+        "not_null": false,
+        "type": "boolean"
+      },
+      {
+        "default": "false",
+        "generated": "",
+        "identity": "",
+        "name": "is_horse",
+        "not_null": false,
+        "type": "boolean"
+      },
+      {
+        "default": "false",
+        "generated": "",
+        "identity": "",
+        "name": "is_admin",
+        "not_null": false,
+        "type": "boolean"
+      },
+      {
+        "default": "false",
+        "generated": "",
+        "identity": "",
+        "name": "is_online",
+        "not_null": false,
+        "type": "boolean"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "player_number",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "diamonds",
+        "not_null": true,
+        "type": "integer"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "diamond_balance",
+        "not_null": false,
+        "type": "integer"
+      },
+      {
+        "default": "1.00",
+        "generated": "",
+        "identity": "",
+        "name": "diamond_multiplier",
+        "not_null": false,
+        "type": "numeric(3,2)"
+      },
+      {
+        "default": "1",
+        "generated": "",
+        "identity": "",
+        "name": "level",
+        "not_null": false,
+        "type": "integer"
+      },
+      {
+        "default": "'Newcomer'::text",
+        "generated": "",
+        "identity": "",
+        "name": "tier",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": "'Newcomer'::text",
+        "generated": "",
+        "identity": "",
+        "name": "skill_tier",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "login_streak",
+        "not_null": false,
+        "type": "integer"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "streak_days",
+        "not_null": false,
+        "type": "integer"
+      },
+      {
+        "default": "'{}'::jsonb",
+        "generated": "",
+        "identity": "",
+        "name": "settings",
+        "not_null": false,
+        "type": "jsonb"
+      },
+      {
+        "default": "'{}'::jsonb",
+        "generated": "",
+        "identity": "",
+        "name": "preferences",
+        "not_null": false,
+        "type": "jsonb"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "social_page_id",
+        "not_null": false,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "favorite_venue",
+        "not_null": false,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "home_poker_club",
+        "not_null": false,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "referred_by",
+        "not_null": false,
+        "type": "uuid"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "friends_count",
+        "not_null": false,
+        "type": "integer"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "hendon_total_cashes",
+        "not_null": false,
+        "type": "integer"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "hendon_total_earnings",
+        "not_null": false,
+        "type": "numeric"
+      },
+      {
+        "default": "false",
+        "generated": "",
+        "identity": "",
+        "name": "email_verified",
+        "not_null": false,
+        "type": "boolean"
+      },
+      {
+        "default": "false",
+        "generated": "",
+        "identity": "",
+        "name": "phone_verified",
+        "not_null": false,
+        "type": "boolean"
+      },
+      {
+        "default": "false",
+        "generated": "",
+        "identity": "",
+        "name": "onboarding_complete",
+        "not_null": false,
+        "type": "boolean"
+      },
+      {
+        "default": "now()",
+        "generated": "",
+        "identity": "",
+        "name": "last_login",
+        "not_null": false,
+        "type": "timestamp with time zone"
+      },
+      {
+        "default": "CURRENT_DATE",
+        "generated": "",
+        "identity": "",
+        "name": "last_login_date",
+        "not_null": false,
+        "type": "date"
+      },
+      {
+        "default": "now()",
+        "generated": "",
+        "identity": "",
+        "name": "last_seen",
+        "not_null": false,
+        "type": "timestamp with time zone"
+      },
+      {
+        "default": "now()",
+        "generated": "",
+        "identity": "",
+        "name": "created_at",
+        "not_null": false,
+        "type": "timestamp with time zone"
+      },
+      {
+        "default": "now()",
+        "generated": "",
+        "identity": "",
+        "name": "updated_at",
+        "not_null": false,
+        "type": "timestamp with time zone"
+      },
+      {
+        "default": "'grid'::text",
+        "generated": "",
+        "identity": "",
+        "name": "training_view_mode",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "last_trivia_date",
+        "not_null": false,
+        "type": "date"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "trivia_streak",
+        "not_null": false,
+        "type": "integer"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "trivia_high_score",
+        "not_null": false,
+        "type": "integer"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "total_hands_played",
+        "not_null": false,
+        "type": "integer"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "notification_token",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "referral_code",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": "'available'::character varying",
+        "generated": "",
+        "identity": "",
+        "name": "horse_status",
+        "not_null": false,
+        "type": "character varying"
+      },
+      {
+        "default": "'{}'::jsonb",
+        "generated": "",
+        "identity": "",
+        "name": "horse_profile",
+        "not_null": false,
+        "type": "jsonb"
+      },
+      {
+        "default": "true",
+        "generated": "",
+        "identity": "",
+        "name": "sounds_enabled",
+        "not_null": false,
+        "type": "boolean"
+      },
+      {
+        "default": "true",
+        "generated": "",
+        "identity": "",
+        "name": "vibrations_enabled",
+        "not_null": false,
+        "type": "boolean"
+      },
+      {
+        "default": "false",
+        "generated": "",
+        "identity": "",
+        "name": "show_stack_bb",
+        "not_null": false,
+        "type": "boolean"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "birth_year",
+        "not_null": false,
+        "type": "integer"
+      },
+      {
+        "default": "'holdem'::text",
+        "generated": "",
+        "identity": "",
+        "name": "favorite_hand_type",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": "'white'::text",
+        "generated": "",
+        "identity": "",
+        "name": "card_back_preference",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "country",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "website",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "twitter",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "instagram",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "hendon_url",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "favorite_game",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "favorite_hand",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "home_casino",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "cover_photo_url",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "favorite_hand_plo",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": "'{}'::jsonb",
+        "generated": "",
+        "identity": "",
+        "name": "app_settings",
+        "not_null": false,
+        "type": "jsonb"
+      },
+      {
+        "default": "'full_name'::text",
+        "generated": "",
+        "identity": "",
+        "name": "display_name_preference",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": "'50% 50%'::text",
+        "generated": "",
+        "identity": "",
+        "name": "cover_photo_position",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "tiktok",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "telegram",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "birthday",
+        "not_null": false,
+        "type": "date"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "hendon_biggest_cash",
+        "not_null": false,
+        "type": "numeric"
+      },
+      {
+        "default": "false",
+        "generated": "",
+        "identity": "",
+        "name": "use_real_name",
+        "not_null": false,
+        "type": "boolean"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "streak_count",
+        "not_null": false,
+        "type": "integer"
+      },
+      {
+        "default": "'Full_Access'::text",
+        "generated": "",
+        "identity": "",
+        "name": "access_tier",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "vip_tier",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "vip_expires_at",
+        "not_null": false,
+        "type": "timestamp with time zone"
+      },
+      {
+        "default": "now()",
+        "generated": "",
+        "identity": "",
+        "name": "last_active",
+        "not_null": false,
+        "type": "timestamp with time zone"
+      },
+      {
+        "default": "'{\"geofenceAlerts\": true, \"locationEnabled\": true, \"showNewcomerFriendly\": true}'::jsonb",
+        "generated": "",
+        "identity": "",
+        "name": "poker_near_me_preferences",
+        "not_null": false,
+        "type": "jsonb"
+      },
+      {
+        "default": "true",
+        "generated": "",
+        "identity": "",
+        "name": "can_review",
+        "not_null": false,
+        "type": "boolean"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "deleted_reviews_count",
+        "not_null": false,
+        "type": "integer"
+      },
+      {
+        "default": "'NONE'::text",
+        "generated": "",
+        "identity": "",
+        "name": "kyc_status",
+        "not_null": true,
+        "type": "text"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "kyc_provider",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "kyc_inquiry_id",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "kyc_completed_at",
+        "not_null": false,
+        "type": "timestamp with time zone"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "kyc_rejection_reason",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": "false",
+        "generated": "",
+        "identity": "",
+        "name": "age_verified",
+        "not_null": true,
+        "type": "boolean"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "age_verified_at",
+        "not_null": false,
+        "type": "timestamp with time zone"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "jurisdiction_country",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": "false",
+        "generated": "",
+        "identity": "",
+        "name": "mfa_required",
+        "not_null": true,
+        "type": "boolean"
+      },
+      {
+        "default": "'{}'::jsonb",
+        "generated": "",
+        "identity": "",
+        "name": "hub_preferences",
+        "not_null": true,
+        "type": "jsonb"
+      },
+      {
+        "default": "'{}'::jsonb",
+        "generated": "",
+        "identity": "",
+        "name": "friend_preferences",
+        "not_null": true,
+        "type": "jsonb"
+      },
+      {
+        "default": "'{}'::jsonb",
+        "generated": "",
+        "identity": "",
+        "name": "store_preferences",
+        "not_null": true,
+        "type": "jsonb"
+      },
+      {
+        "default": "'{}'::jsonb",
+        "generated": "",
+        "identity": "",
+        "name": "messenger_preferences",
+        "not_null": true,
+        "type": "jsonb"
+      },
+      {
+        "default": "'{}'::jsonb",
+        "generated": "",
+        "identity": "",
+        "name": "reels_preferences",
+        "not_null": true,
+        "type": "jsonb"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "over_18_attested_at",
+        "not_null": false,
+        "type": "timestamp with time zone"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "jurisdiction_region",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "jurisdiction_acknowledged_at",
+        "not_null": false,
+        "type": "timestamp with time zone"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "home_games_onboarded_at",
+        "not_null": false,
+        "type": "timestamp with time zone"
+      },
+      {
+        "default": "false",
+        "generated": "",
+        "identity": "",
+        "name": "social_profile_completed",
+        "not_null": true,
+        "type": "boolean"
+      },
+      {
+        "default": "false",
+        "generated": "",
+        "identity": "",
+        "name": "is_farming_flagged",
+        "not_null": false,
+        "type": "boolean"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "stripe_customer_id",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "club_arena_tos_accepted_at",
+        "not_null": false,
+        "type": "timestamp with time zone"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "bankroll_preferences",
+        "not_null": false,
+        "type": "jsonb"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "diamond_arena_preferences",
+        "not_null": false,
+        "type": "jsonb"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "memory_games_preferences",
+        "not_null": false,
+        "type": "jsonb"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "news_preferences",
+        "not_null": false,
+        "type": "jsonb"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "video_library_preferences",
+        "not_null": false,
+        "type": "jsonb"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "memory_elo",
+        "not_null": false,
+        "type": "integer"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "arena_avatar_url",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "equipped_frame",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "equipped_aura",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": "false",
+        "generated": "",
+        "identity": "",
+        "name": "use_avatar_as_profile_pic",
+        "not_null": false,
+        "type": "boolean"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "status_text",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": "'{}'::text[]",
+        "generated": "",
+        "identity": "",
+        "name": "player_tags",
+        "not_null": false,
+        "type": "text[]"
+      }
+    ],
+    "constraints": [
+      {
+        "definition": "CHECK ((diamonds >= 0))",
+        "name": "profiles_diamonds_nonnegative",
+        "type": "c"
+      },
+      {
+        "definition": "FOREIGN KEY (id) REFERENCES auth.users(id) ON DELETE CASCADE",
+        "name": "profiles_id_fkey",
+        "type": "f"
+      },
+      {
+        "definition": "CHECK (((kyc_provider IS NULL) OR (kyc_provider = ANY (ARRAY['persona'::text, 'veriff'::text, 'jumio'::text, 'onfido'::text, 'stub'::text]))))",
+        "name": "profiles_kyc_provider_check",
+        "type": "c"
+      },
+      {
+        "definition": "CHECK ((kyc_status = ANY (ARRAY['NONE'::text, 'PENDING'::text, 'APPROVED'::text, 'REJECTED'::text, 'EXPIRED'::text])))",
+        "name": "profiles_kyc_status_check",
+        "type": "c"
+      },
+      { "definition": "PRIMARY KEY (id)", "name": "profiles_pkey", "type": "p" }
+    ],
+    "force_rls": false,
+    "grants": [
+      "postgres=arwdDxtm/postgres",
+      "authenticated=adxtm/postgres",
+      "service_role=arwdDxtm/postgres"
+    ],
+    "indexes": [
+      {
+        "definition": "CREATE UNIQUE INDEX idx_profiles_username_lower ON public.profiles USING btree (lower(username)) WHERE (username IS NOT NULL)",
+        "name": "idx_profiles_username_lower",
+        "unique": true,
+        "valid": true
+      },
+      {
+        "definition": "CREATE UNIQUE INDEX profiles_pkey ON public.profiles USING btree (id)",
+        "name": "profiles_pkey",
+        "unique": true,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_profiles_referral_code ON public.profiles USING btree (referral_code) WHERE (referral_code IS NOT NULL)",
+        "name": "idx_profiles_referral_code",
+        "unique": false,
+        "valid": true
+      },
+      {
+        "definition": "CREATE UNIQUE INDEX profiles_username_lower_key ON public.profiles USING btree (lower(username)) WHERE ((username IS NOT NULL) AND (username <> ''::text))",
+        "name": "profiles_username_lower_key",
+        "unique": true,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_profiles_farming_flagged ON public.profiles USING btree (is_farming_flagged)",
+        "name": "idx_profiles_farming_flagged",
+        "unique": false,
+        "valid": true
+      },
+      {
+        "definition": "CREATE UNIQUE INDEX uniq_profiles_verified_phone ON public.profiles USING btree (phone) WHERE ((phone_verified = true) AND (phone IS NOT NULL) AND (phone <> ''::text))",
+        "name": "uniq_profiles_verified_phone",
+        "unique": true,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_profiles_kyc_status ON public.profiles USING btree (kyc_status) WHERE (kyc_status = ANY (ARRAY['PENDING'::text, 'APPROVED'::text, 'REJECTED'::text]))",
+        "name": "idx_profiles_kyc_status",
+        "unique": false,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_profiles_alias_trgm ON public.profiles USING gin (lower(alias) gin_trgm_ops)",
+        "name": "idx_profiles_alias_trgm",
+        "unique": false,
+        "valid": true
+      },
+      {
+        "definition": "CREATE UNIQUE INDEX uq_profiles_player_number ON public.profiles USING btree (player_number) WHERE (player_number IS NOT NULL)",
+        "name": "uq_profiles_player_number",
+        "unique": true,
+        "valid": true
+      },
+      {
+        "definition": "CREATE UNIQUE INDEX one_god_account_only ON public.profiles USING btree (role) WHERE (role = 'god'::text)",
+        "name": "one_god_account_only",
+        "unique": true,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_profiles_username_trgm ON public.profiles USING gin (lower(username) gin_trgm_ops)",
+        "name": "idx_profiles_username_trgm",
+        "unique": false,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_profiles_display_name_trgm ON public.profiles USING gin (lower(display_name) gin_trgm_ops)",
+        "name": "idx_profiles_display_name_trgm",
+        "unique": false,
+        "valid": true
+      }
+    ],
+    "name": "profiles",
+    "rls": true,
+    "schema": "public"
+  },
+  {
+    "columns": [
+      {
+        "default": "gen_random_uuid()",
+        "generated": "",
+        "identity": "",
+        "name": "id",
+        "not_null": true,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "hand_id",
+        "not_null": true,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "player_id",
+        "not_null": true,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "rake_amount",
+        "not_null": true,
+        "type": "numeric"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "agent_id",
+        "not_null": false,
+        "type": "uuid"
+      },
+      {
+        "default": "now()",
+        "generated": "",
+        "identity": "",
+        "name": "created_at",
+        "not_null": true,
+        "type": "timestamp with time zone"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "rake_record_id",
+        "not_null": false,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "table_id",
+        "not_null": false,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "club_id",
+        "not_null": false,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "gross_contribution",
+        "not_null": false,
+        "type": "numeric"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "returned_uncalled",
+        "not_null": true,
+        "type": "numeric"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "eligible_contribution",
+        "not_null": false,
+        "type": "numeric"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "contribution_weight",
+        "not_null": false,
+        "type": "numeric"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "weighted_rake_credit",
+        "not_null": false,
+        "type": "numeric"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "bbj_attributed_contribution",
+        "not_null": true,
+        "type": "numeric"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "rake_method",
+        "not_null": false,
+        "type": "text"
+      }
+    ],
+    "constraints": [
+      {
+        "definition": "CHECK (((rake_amount IS NULL) OR (rake_amount = round(rake_amount, 2))))",
+        "name": "chk_rake_amount_is_two_decimal_places",
+        "type": "c"
+      },
+      {
+        "definition": "CHECK (((created_at < '2026-09-07 22:00:00+00'::timestamp with time zone) OR ((rake_amount = round(rake_amount, 2)) AND (weighted_rake_credit = round(weighted_rake_credit, 2))))) NOT VALID",
+        "name": "ck_whole_cents",
+        "type": "c"
+      },
+      {
+        "definition": "FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE SET NULL",
+        "name": "rake_attributions_agent_id_fkey",
+        "type": "f"
+      },
+      { "definition": "PRIMARY KEY (id)", "name": "rake_attributions_pkey", "type": "p" },
+      {
+        "definition": "FOREIGN KEY (player_id) REFERENCES profiles(id) ON DELETE CASCADE",
+        "name": "rake_attributions_player_id_fkey",
+        "type": "f"
+      },
+      {
+        "definition": "CHECK ((rake_amount >= (0)::numeric))",
+        "name": "rake_attributions_rake_amount_check",
+        "type": "c"
+      }
+    ],
+    "force_rls": false,
+    "grants": [
+      "postgres=arwdDxtm/postgres",
+      "anon=arwdxtm/postgres",
+      "authenticated=arwdxtm/postgres",
+      "service_role=arwdDxtm/postgres"
+    ],
+    "indexes": [
+      {
+        "definition": "CREATE UNIQUE INDEX uq_rake_attributions_hand_player ON public.rake_attributions USING btree (hand_id, player_id)",
+        "name": "uq_rake_attributions_hand_player",
+        "unique": true,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_rake_attributions_player_id ON public.rake_attributions USING btree (player_id, created_at DESC)",
+        "name": "idx_rake_attributions_player_id",
+        "unique": false,
+        "valid": true
+      },
+      {
+        "definition": "CREATE UNIQUE INDEX rake_attributions_pkey ON public.rake_attributions USING btree (id)",
+        "name": "rake_attributions_pkey",
+        "unique": true,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_rake_attributions_hand_id ON public.rake_attributions USING btree (hand_id)",
+        "name": "idx_rake_attributions_hand_id",
+        "unique": false,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_rake_attributions_club_created ON public.rake_attributions USING btree (club_id, created_at) INCLUDE (player_id, rake_amount)",
+        "name": "idx_rake_attributions_club_created",
+        "unique": false,
+        "valid": true
+      }
+    ],
+    "name": "rake_attributions",
+    "rls": true,
+    "schema": "public"
+  },
+  {
+    "columns": [
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "leg_key",
+        "not_null": true,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "leg",
+        "not_null": true,
+        "type": "text"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "club_id",
+        "not_null": false,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "union_id",
+        "not_null": false,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "amount",
+        "not_null": false,
+        "type": "numeric"
+      },
+      {
+        "default": "now()",
+        "generated": "",
+        "identity": "",
+        "name": "created_at",
+        "not_null": true,
+        "type": "timestamp with time zone"
+      }
+    ],
+    "constraints": [
+      {
+        "definition": "CHECK (((amount IS NULL) OR (amount = round(amount, 2))))",
+        "name": "chk_amount_is_two_decimal_places",
+        "type": "c"
+      },
+      {
+        "definition": "PRIMARY KEY (leg_key, leg)",
+        "name": "rake_distribution_legs_pkey",
+        "type": "p"
+      }
+    ],
+    "force_rls": false,
+    "grants": [
+      "postgres=arwdDxtm/postgres",
+      "anon=arwdxtm/postgres",
+      "authenticated=arwdxtm/postgres",
+      "service_role=arwdDxtm/postgres"
+    ],
+    "indexes": [
+      {
+        "definition": "CREATE UNIQUE INDEX rake_distribution_legs_pkey ON public.rake_distribution_legs USING btree (leg_key, leg)",
+        "name": "rake_distribution_legs_pkey",
+        "unique": true,
+        "valid": true
+      }
+    ],
+    "name": "rake_distribution_legs",
+    "rls": true,
+    "schema": "public"
+  },
+  {
+    "columns": [
+      {
+        "default": "gen_random_uuid()",
+        "generated": "",
+        "identity": "",
+        "name": "id",
+        "not_null": true,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "hand_id",
+        "not_null": false,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "table_id",
+        "not_null": false,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "club_id",
+        "not_null": false,
+        "type": "uuid"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "rake_amount",
+        "not_null": true,
+        "type": "numeric(18,4)"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "bbj_contribution",
+        "not_null": false,
+        "type": "numeric(18,4)"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "pot_size",
+        "not_null": false,
+        "type": "numeric(18,4)"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "num_players",
+        "not_null": false,
+        "type": "integer"
+      },
+      {
+        "default": "now()",
+        "generated": "",
+        "identity": "",
+        "name": "created_at",
+        "not_null": false,
+        "type": "timestamp with time zone"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "player_contributions",
+        "not_null": false,
+        "type": "jsonb"
+      },
+      {
+        "default": "nextval('hand_id_seq'::regclass)",
+        "generated": "",
+        "identity": "",
+        "name": "global_hand_id",
+        "not_null": false,
+        "type": "bigint"
+      },
+      {
+        "default": "false",
+        "generated": "",
+        "identity": "",
+        "name": "is_tournament",
+        "not_null": true,
+        "type": "boolean"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "tournament_id",
+        "not_null": false,
+        "type": "uuid"
+      },
+      {
+        "default": "'cash_game'::text",
+        "generated": "",
+        "identity": "",
+        "name": "source",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "metadata",
+        "not_null": false,
+        "type": "jsonb"
+      },
+      {
+        "default": "'DEALT_EQUAL'::text",
+        "generated": "",
+        "identity": "",
+        "name": "rake_method",
+        "not_null": true,
+        "type": "text"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "returned_uncalled",
+        "not_null": false,
+        "type": "jsonb"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "terminal_closed_at",
+        "not_null": false,
+        "type": "timestamp with time zone"
+      }
+    ],
+    "constraints": [
+      {
+        "definition": "CHECK (((rake_amount IS NULL) OR (rake_amount = round(rake_amount, 2))))",
+        "name": "chk_rake_amount_is_two_decimal_places",
+        "type": "c"
+      },
+      {
+        "definition": "CHECK (((created_at < '2026-09-07 22:00:00+00'::timestamp with time zone) OR ((rake_amount = round(rake_amount, 2)) AND (bbj_contribution = round(bbj_contribution, 2))))) NOT VALID",
+        "name": "ck_whole_cents",
+        "type": "c"
+      },
+      {
+        "definition": "FOREIGN KEY (club_id) REFERENCES clubs(id) ON DELETE SET NULL",
+        "name": "rake_records_club_id_fkey",
+        "type": "f"
+      },
+      { "definition": "PRIMARY KEY (id)", "name": "rake_records_pkey", "type": "p" },
+      {
+        "definition": "CHECK ((rake_method = ANY (ARRAY['DEALT_EQUAL'::text, 'WEIGHTED_CONTRIBUTED'::text])))",
+        "name": "rake_records_rake_method_check",
+        "type": "c"
+      },
+      {
+        "definition": "FOREIGN KEY (table_id) REFERENCES tables(id) ON DELETE SET NULL",
+        "name": "rake_records_table_id_fkey",
+        "type": "f"
+      },
+      {
+        "definition": "FOREIGN KEY (tournament_id) REFERENCES tournaments(id) ON DELETE SET NULL",
+        "name": "rake_records_tournament_id_fkey",
+        "type": "f"
+      }
+    ],
+    "force_rls": false,
+    "grants": [
+      "postgres=arwdDxtm/postgres",
+      "anon=arwdxtm/postgres",
+      "authenticated=arwdxtm/postgres",
+      "service_role=arwdDxtm/postgres"
+    ],
+    "indexes": [
+      {
+        "definition": "CREATE UNIQUE INDEX rake_records_pkey ON public.rake_records USING btree (id)",
+        "name": "rake_records_pkey",
+        "unique": true,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_rake_records_date ON public.rake_records USING btree (created_at)",
+        "name": "idx_rake_records_date",
+        "unique": false,
+        "valid": true
+      },
+      {
+        "definition": "CREATE UNIQUE INDEX uq_rake_records_hand_id ON public.rake_records USING btree (hand_id) WHERE (hand_id IS NOT NULL)",
+        "name": "uq_rake_records_hand_id",
+        "unique": true,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_rake_records_tournament ON public.rake_records USING btree (tournament_id) WHERE (tournament_id IS NOT NULL)",
+        "name": "idx_rake_records_tournament",
+        "unique": false,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_rake_records_table_id ON public.rake_records USING btree (table_id)",
+        "name": "idx_rake_records_table_id",
+        "unique": false,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_rake_records_created_at_id ON public.rake_records USING btree (created_at, id)",
+        "name": "idx_rake_records_created_at_id",
+        "unique": false,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_rake_records_club_created ON public.rake_records USING btree (club_id, created_at) WHERE (rake_amount > (0)::numeric)",
+        "name": "idx_rake_records_club_created",
+        "unique": false,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_rake_records_contribs_gin ON public.rake_records USING gin (player_contributions)",
+        "name": "idx_rake_records_contribs_gin",
+        "unique": false,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_rake_records_relink ON public.rake_records USING btree (table_id, ((metadata ->> 'hand_number'::text))) WHERE (hand_id IS NULL)",
+        "name": "idx_rake_records_relink",
+        "unique": false,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_rake_records_club_data_tournament_window ON public.rake_records USING btree (created_at, tournament_id) INCLUDE (rake_amount, metadata) WHERE (is_tournament AND (rake_amount <> (0)::numeric) AND (tournament_id IS NOT NULL))",
+        "name": "idx_rake_records_club_data_tournament_window",
+        "unique": false,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_rake_records_club_id_fk ON public.rake_records USING btree (club_id)",
+        "name": "idx_rake_records_club_id_fk",
+        "unique": false,
+        "valid": true
+      }
+    ],
+    "name": "rake_records",
+    "rls": true,
+    "schema": "public"
+  },
+  {
+    "columns": [
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "table_id",
+        "not_null": true,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "hand_id",
+        "not_null": true,
+        "type": "uuid"
+      },
+      {
+        "default": "'in_flight'::text",
+        "generated": "",
+        "identity": "",
+        "name": "status",
+        "not_null": true,
+        "type": "text"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "result",
+        "not_null": false,
+        "type": "jsonb"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "error",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": "1",
+        "generated": "",
+        "identity": "",
+        "name": "attempt_count",
+        "not_null": true,
+        "type": "integer"
+      },
+      {
+        "default": "now()",
+        "generated": "",
+        "identity": "",
+        "name": "first_attempt_at",
+        "not_null": true,
+        "type": "timestamp with time zone"
+      },
+      {
+        "default": "now()",
+        "generated": "",
+        "identity": "",
+        "name": "last_attempt_at",
+        "not_null": true,
+        "type": "timestamp with time zone"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "completed_at",
+        "not_null": false,
+        "type": "timestamp with time zone"
+      }
+    ],
+    "constraints": [
+      {
+        "definition": "PRIMARY KEY (table_id, hand_id)",
+        "name": "settlement_idempotency_keys_pkey",
+        "type": "p"
+      },
+      {
+        "definition": "CHECK ((status = ANY (ARRAY['in_flight'::text, 'succeeded'::text, 'failed'::text])))",
+        "name": "settlement_idempotency_keys_status_check",
+        "type": "c"
+      }
+    ],
+    "force_rls": false,
+    "grants": [
+      "postgres=arwdDxtm/postgres",
+      "anon=arwdxtm/postgres",
+      "authenticated=arwdxtm/postgres",
+      "service_role=arwdDxtm/postgres"
+    ],
+    "indexes": [
+      {
+        "definition": "CREATE UNIQUE INDEX settlement_idempotency_keys_pkey ON public.settlement_idempotency_keys USING btree (table_id, hand_id)",
+        "name": "settlement_idempotency_keys_pkey",
+        "unique": true,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_settlement_idem_status_age ON public.settlement_idempotency_keys USING btree (status, last_attempt_at DESC) WHERE (status = 'in_flight'::text)",
+        "name": "idx_settlement_idem_status_age",
+        "unique": false,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_settlement_idem_table_completed_succeeded ON public.settlement_idempotency_keys USING btree (table_id, completed_at DESC) WHERE (status = 'succeeded'::text)",
+        "name": "idx_settlement_idem_table_completed_succeeded",
+        "unique": false,
+        "valid": true
+      }
+    ],
+    "name": "settlement_idempotency_keys",
+    "rls": true,
+    "schema": "public"
+  },
+  {
+    "columns": [
+      {
+        "default": "gen_random_uuid()",
+        "generated": "",
+        "identity": "",
+        "name": "id",
+        "not_null": true,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "club_id",
+        "not_null": true,
+        "type": "uuid"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "balance",
+        "not_null": true,
+        "type": "numeric(12,2)"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "total_deposited",
+        "not_null": true,
+        "type": "numeric(12,2)"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "total_drawn",
+        "not_null": true,
+        "type": "numeric(12,2)"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "spin_count",
+        "not_null": true,
+        "type": "integer"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "bonus_count",
+        "not_null": true,
+        "type": "integer"
+      },
+      {
+        "default": "now()",
+        "generated": "",
+        "identity": "",
+        "name": "created_at",
+        "not_null": true,
+        "type": "timestamp with time zone"
+      },
+      {
+        "default": "now()",
+        "generated": "",
+        "identity": "",
+        "name": "updated_at",
+        "not_null": true,
+        "type": "timestamp with time zone"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "seeded_amount",
+        "not_null": true,
+        "type": "numeric"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "ceiling_amount",
+        "not_null": true,
+        "type": "numeric"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "highest_stake",
+        "not_null": true,
+        "type": "numeric"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "surplus_returned",
+        "not_null": true,
+        "type": "numeric"
+      },
+      {
+        "default": "true",
+        "generated": "",
+        "identity": "",
+        "name": "is_active",
+        "not_null": true,
+        "type": "boolean"
+      },
+      {
+        "default": "'club'::text",
+        "generated": "",
+        "identity": "",
+        "name": "owner_kind",
+        "not_null": true,
+        "type": "text"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "offered_max_stake",
+        "not_null": true,
+        "type": "numeric"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "activated_at",
+        "not_null": false,
+        "type": "timestamp with time zone"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "activated_by",
+        "not_null": false,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "deactivated_at",
+        "not_null": false,
+        "type": "timestamp with time zone"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "seed_source_wallet",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "seed_returned_at",
+        "not_null": false,
+        "type": "timestamp with time zone"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "seed_returned_amount",
+        "not_null": true,
+        "type": "numeric"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "required_seed_at_activation",
+        "not_null": true,
+        "type": "numeric"
+      }
+    ],
+    "constraints": [
+      {
+        "definition": "CHECK ((balance >= ('-500'::integer)::numeric))",
+        "name": "spin_bonus_pools_balance_check",
+        "type": "c"
+      },
+      {
+        "definition": "CHECK ((balance >= (0)::numeric))",
+        "name": "spin_bonus_pools_balance_non_negative",
+        "type": "c"
+      },
+      { "definition": "UNIQUE (club_id)", "name": "spin_bonus_pools_club_id_key", "type": "u" },
+      {
+        "definition": "CHECK ((owner_kind = ANY (ARRAY['union'::text, 'club'::text])))",
+        "name": "spin_bonus_pools_owner_kind_check",
+        "type": "c"
+      },
+      { "definition": "PRIMARY KEY (id)", "name": "spin_bonus_pools_pkey", "type": "p" }
+    ],
+    "force_rls": false,
+    "grants": [
+      "postgres=arwdDxtm/postgres",
+      "anon=arwdxtm/postgres",
+      "authenticated=arwdxtm/postgres",
+      "service_role=arwdDxtm/postgres"
+    ],
+    "indexes": [
+      {
+        "definition": "CREATE UNIQUE INDEX spin_bonus_pools_pkey ON public.spin_bonus_pools USING btree (id)",
+        "name": "spin_bonus_pools_pkey",
+        "unique": true,
+        "valid": true
+      },
+      {
+        "definition": "CREATE UNIQUE INDEX spin_bonus_pools_club_id_key ON public.spin_bonus_pools USING btree (club_id)",
+        "name": "spin_bonus_pools_club_id_key",
+        "unique": true,
+        "valid": true
+      }
+    ],
+    "name": "spin_bonus_pools",
+    "rls": true,
+    "schema": "public"
+  },
+  {
+    "columns": [
+      {
+        "default": "gen_random_uuid()",
+        "generated": "",
+        "identity": "",
+        "name": "id",
+        "not_null": true,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "club_id",
+        "not_null": true,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "tournament_id",
+        "not_null": false,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "kind",
+        "not_null": true,
+        "type": "text"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "amount",
+        "not_null": true,
+        "type": "numeric"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "balance_after",
+        "not_null": true,
+        "type": "numeric"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "multiplier",
+        "not_null": false,
+        "type": "numeric"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "buy_in",
+        "not_null": false,
+        "type": "numeric"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "seats",
+        "not_null": false,
+        "type": "integer"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "house_rake",
+        "not_null": false,
+        "type": "numeric"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "note",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": "now()",
+        "generated": "",
+        "identity": "",
+        "name": "created_at",
+        "not_null": true,
+        "type": "timestamp with time zone"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "terminal_closed_at",
+        "not_null": false,
+        "type": "timestamp with time zone"
+      }
+    ],
+    "constraints": [
+      {
+        "definition": "CHECK (((amount IS NULL) OR (amount = round(amount, 2))))",
+        "name": "chk_amount_is_two_decimal_places",
+        "type": "c"
+      },
+      {
+        "definition": "CHECK ((kind = ANY (ARRAY['seed'::text, 'contribution'::text, 'jackpot_draw'::text, 'surplus_return'::text, 'adjustment'::text, 'merge'::text, 'wallet_return'::text, 'seed_return'::text, 'activation'::text, 'deactivation'::text, 'draw_reversal'::text, 'contribution_reversal'::text])))",
+        "name": "spin_reserve_ledger_kind_check",
+        "type": "c"
+      },
+      { "definition": "PRIMARY KEY (id)", "name": "spin_reserve_ledger_pkey", "type": "p" }
+    ],
+    "force_rls": false,
+    "grants": [
+      "postgres=arwdDxtm/postgres",
+      "anon=arwdxtm/postgres",
+      "authenticated=arwdxtm/postgres",
+      "service_role=arwdDxtm/postgres"
+    ],
+    "indexes": [
+      {
+        "definition": "CREATE UNIQUE INDEX spin_reserve_ledger_pkey ON public.spin_reserve_ledger USING btree (id)",
+        "name": "spin_reserve_ledger_pkey",
+        "unique": true,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX spin_reserve_ledger_club_time ON public.spin_reserve_ledger USING btree (club_id, created_at DESC)",
+        "name": "spin_reserve_ledger_club_time",
+        "unique": false,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX spin_reserve_ledger_tournament ON public.spin_reserve_ledger USING btree (tournament_id) WHERE (tournament_id IS NOT NULL)",
+        "name": "spin_reserve_ledger_tournament",
+        "unique": false,
+        "valid": true
+      },
+      {
+        "definition": "CREATE UNIQUE INDEX uq_spin_ledger_one_booking_per_game ON public.spin_reserve_ledger USING btree (tournament_id, kind) WHERE ((tournament_id IS NOT NULL) AND (kind = ANY (ARRAY['contribution'::text, 'jackpot_draw'::text])))",
+        "name": "uq_spin_ledger_one_booking_per_game",
+        "unique": true,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_spin_reserve_ledger_draws ON public.spin_reserve_ledger USING btree (tournament_id) INCLUDE (amount, created_at) WHERE ((kind = 'jackpot_draw'::text) AND (tournament_id IS NOT NULL))",
+        "name": "idx_spin_reserve_ledger_draws",
+        "unique": false,
+        "valid": true
+      },
+      {
+        "definition": "CREATE UNIQUE INDEX uq_spin_one_draw_reversal_per_game ON public.spin_reserve_ledger USING btree (tournament_id) WHERE (kind = 'draw_reversal'::text)",
+        "name": "uq_spin_one_draw_reversal_per_game",
+        "unique": true,
+        "valid": true
+      },
+      {
+        "definition": "CREATE UNIQUE INDEX uq_spin_one_contribution_reversal_per_game ON public.spin_reserve_ledger USING btree (tournament_id) WHERE (kind = 'contribution_reversal'::text)",
+        "name": "uq_spin_one_contribution_reversal_per_game",
+        "unique": true,
+        "valid": true
+      }
+    ],
+    "name": "spin_reserve_ledger",
+    "rls": true,
+    "schema": "public"
+  },
+  {
+    "columns": [
+      {
+        "default": "gen_random_uuid()",
+        "generated": "",
+        "identity": "",
+        "name": "id",
+        "not_null": true,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "table_id",
+        "not_null": true,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "user_id",
+        "not_null": true,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "amount",
+        "not_null": true,
+        "type": "numeric"
+      },
+      {
+        "default": "now()",
+        "generated": "",
+        "identity": "",
+        "name": "created_at",
+        "not_null": true,
+        "type": "timestamp with time zone"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "resolved_at",
+        "not_null": false,
+        "type": "timestamp with time zone"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "applied_to_stack",
+        "not_null": false,
+        "type": "numeric"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "refunded",
+        "not_null": false,
+        "type": "numeric"
+      },
+      {
+        "default": "'addon'::text",
+        "generated": "",
+        "identity": "",
+        "name": "kind",
+        "not_null": true,
+        "type": "text"
+      }
+    ],
+    "constraints": [
+      {
+        "definition": "CHECK ((amount > (0)::numeric))",
+        "name": "table_pending_addons_amount_check",
+        "type": "c"
+      },
+      {
+        "definition": "CHECK (((amount IS NULL) OR (((amount)::text <> ALL (ARRAY['NaN'::text, 'Infinity'::text, '-Infinity'::text])) AND (amount = round(amount, 2))))) NOT VALID",
+        "name": "table_pending_addons_amount_is_cents",
+        "type": "c"
+      },
+      {
+        "definition": "CHECK (((applied_to_stack IS NULL) OR (((applied_to_stack)::text <> ALL (ARRAY['NaN'::text, 'Infinity'::text, '-Infinity'::text])) AND (applied_to_stack = round(applied_to_stack, 2))))) NOT VALID",
+        "name": "table_pending_addons_applied_is_cents",
+        "type": "c"
+      },
+      {
+        "definition": "CHECK ((kind = ANY (ARRAY['addon'::text, 'rebuy'::text])))",
+        "name": "table_pending_addons_kind_check",
+        "type": "c"
+      },
+      { "definition": "PRIMARY KEY (id)", "name": "table_pending_addons_pkey", "type": "p" },
+      {
+        "definition": "CHECK (((refunded IS NULL) OR (((refunded)::text <> ALL (ARRAY['NaN'::text, 'Infinity'::text, '-Infinity'::text])) AND (refunded = round(refunded, 2))))) NOT VALID",
+        "name": "table_pending_addons_refunded_is_cents",
+        "type": "c"
+      }
+    ],
+    "force_rls": false,
+    "grants": [
+      "postgres=arwdDxtm/postgres",
+      "anon=arwdxtm/postgres",
+      "authenticated=arwdxtm/postgres",
+      "service_role=arwdDxtm/postgres"
+    ],
+    "indexes": [
+      {
+        "definition": "CREATE UNIQUE INDEX table_pending_addons_pkey ON public.table_pending_addons USING btree (id)",
+        "name": "table_pending_addons_pkey",
+        "unique": true,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_table_pending_addons_unresolved_all ON public.table_pending_addons USING btree (created_at) WHERE (resolved_at IS NULL)",
+        "name": "idx_table_pending_addons_unresolved_all",
+        "unique": false,
+        "valid": true
+      }
+    ],
+    "name": "table_pending_addons",
+    "rls": true,
+    "schema": "public"
+  },
+  {
+    "columns": [
+      {
+        "default": "uuid_generate_v4()",
+        "generated": "",
+        "identity": "",
+        "name": "id",
+        "not_null": true,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "table_id",
+        "not_null": true,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "seat_number",
+        "not_null": true,
+        "type": "integer"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "user_id",
+        "not_null": false,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "player_id",
+        "not_null": false,
+        "type": "integer"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "member_id",
+        "not_null": false,
+        "type": "uuid"
+      },
+      {
+        "default": "0",
+        "generated": "",
+        "identity": "",
+        "name": "stack",
+        "not_null": false,
+        "type": "numeric(15,2)"
+      },
+      {
+        "default": "false",
+        "generated": "",
+        "identity": "",
+        "name": "is_sitting_out",
+        "not_null": false,
+        "type": "boolean"
+      },
+      {
+        "default": "false",
+        "generated": "",
+        "identity": "",
+        "name": "is_away",
+        "not_null": false,
+        "type": "boolean"
+      },
+      {
+        "default": "now()",
+        "generated": "",
+        "identity": "",
+        "name": "joined_at",
+        "not_null": false,
+        "type": "timestamp with time zone"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "horse_id",
+        "not_null": false,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "scheduled_leave_hands",
+        "not_null": false,
+        "type": "integer"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "left_at",
+        "not_null": false,
+        "type": "timestamp with time zone"
+      },
+      {
+        "default": "'active'::text",
+        "generated": "",
+        "identity": "",
+        "name": "status",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": "false",
+        "generated": "",
+        "identity": "",
+        "name": "leave_pending",
+        "not_null": false,
+        "type": "boolean"
+      },
+      {
+        "default": "false",
+        "generated": "",
+        "identity": "",
+        "name": "auto_rebuy",
+        "not_null": false,
+        "type": "boolean"
+      },
+      {
+        "default": "30",
+        "generated": "",
+        "identity": "",
+        "name": "time_bank_remaining",
+        "not_null": false,
+        "type": "integer"
+      },
+      {
+        "default": "4",
+        "generated": "",
+        "identity": "",
+        "name": "time_bank_uses_remaining",
+        "not_null": false,
+        "type": "integer"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "club_id",
+        "not_null": false,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "sit_out_at",
+        "not_null": false,
+        "type": "timestamp with time zone"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "entry_hold",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": "false",
+        "generated": "",
+        "identity": "",
+        "name": "entry_post_agreed",
+        "not_null": true,
+        "type": "boolean"
+      },
+      {
+        "default": "gen_random_uuid()",
+        "generated": "",
+        "identity": "",
+        "name": "occupancy_id",
+        "not_null": true,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "active_game_scope",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "active_parent_key",
+        "not_null": false,
+        "type": "text"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "terminal_closed_at",
+        "not_null": false,
+        "type": "timestamp with time zone"
+      }
+    ],
+    "constraints": [
+      {
+        "definition": "CHECK ((((left_at IS NULL) AND (active_game_scope IS NOT NULL) AND (user_id IS NOT NULL) AND (table_id IS NOT NULL)) OR ((left_at IS NOT NULL) AND (active_game_scope IS NULL))))",
+        "name": "active_seat_requires_game_scope",
+        "type": "c"
+      },
+      {
+        "definition": "CHECK ((((left_at IS NULL) AND (active_parent_key IS NOT NULL) AND (active_parent_key <> 'closed'::text)) OR ((left_at IS NOT NULL) AND (active_parent_key IS NULL))))",
+        "name": "active_seat_requires_open_parent",
+        "type": "c"
+      },
+      {
+        "definition": "FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE",
+        "name": "fk_table_seats_user_id_profiles",
+        "type": "f"
+      },
+      {
+        "definition": "UNIQUE (user_id, active_game_scope) DEFERRABLE INITIALLY DEFERRED",
+        "name": "one_committed_seat_per_game_player",
+        "type": "u"
+      },
+      {
+        "definition": "FOREIGN KEY (club_id) REFERENCES clubs(id)",
+        "name": "table_seats_club_id_fkey",
+        "type": "f"
+      },
+      {
+        "definition": "CHECK (((entry_hold IS NULL) OR (entry_hold = ANY (ARRAY['waiting'::text, 'posting'::text, 'moved'::text]))))",
+        "name": "table_seats_entry_hold_check",
+        "type": "c"
+      },
+      { "definition": "PRIMARY KEY (id)", "name": "table_seats_pkey", "type": "p" },
+      {
+        "definition": "CHECK (((seat_number >= 1) AND (seat_number <= 10)))",
+        "name": "table_seats_seat_number_check",
+        "type": "c"
+      },
+      {
+        "definition": "CHECK ((stack >= (0)::numeric))",
+        "name": "table_seats_stack_nonneg",
+        "type": "c"
+      },
+      {
+        "definition": "FOREIGN KEY (table_id) REFERENCES tables(id) ON DELETE CASCADE",
+        "name": "table_seats_table_id_fkey",
+        "type": "f"
+      },
+      {
+        "definition": "UNIQUE (table_id, seat_number)",
+        "name": "table_seats_table_id_seat_number_key",
+        "type": "u"
+      },
+      {
+        "definition": "TRIGGER DEFERRABLE INITIALLY DEFERRED",
+        "name": "tournament_live_seat_has_active_roster",
+        "type": "t"
+      },
+      {
+        "definition": "TRIGGER DEFERRABLE INITIALLY DEFERRED",
+        "name": "tournament_live_seat_update_has_active_roster",
+        "type": "t"
+      },
+      {
+        "definition": "TRIGGER DEFERRABLE INITIALLY DEFERRED",
+        "name": "zz_close_session_when_seat_vacated",
+        "type": "t"
+      },
+      {
+        "definition": "TRIGGER DEFERRABLE INITIALLY DEFERRED",
+        "name": "zzz_diamond_seat_keeps_custody",
+        "type": "t"
+      }
+    ],
+    "force_rls": false,
+    "grants": [
+      "postgres=arwdDxtm/postgres",
+      "anon=arwdxtm/postgres",
+      "authenticated=arwdxtm/postgres",
+      "service_role=arwdDxtm/postgres"
+    ],
+    "indexes": [
+      {
+        "definition": "CREATE UNIQUE INDEX table_seats_pkey ON public.table_seats USING btree (id)",
+        "name": "table_seats_pkey",
+        "unique": true,
+        "valid": true
+      },
+      {
+        "definition": "CREATE UNIQUE INDEX table_seats_table_id_seat_number_key ON public.table_seats USING btree (table_id, seat_number)",
+        "name": "table_seats_table_id_seat_number_key",
+        "unique": true,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_table_seats_table ON public.table_seats USING btree (table_id)",
+        "name": "idx_table_seats_table",
+        "unique": false,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_table_seats_club_active ON public.table_seats USING btree (club_id, table_id) WHERE (left_at IS NULL)",
+        "name": "idx_table_seats_club_active",
+        "unique": false,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_table_seats_unstamped_active ON public.table_seats USING btree (table_id) WHERE ((left_at IS NULL) AND (club_id IS NULL))",
+        "name": "idx_table_seats_unstamped_active",
+        "unique": false,
+        "valid": true
+      },
+      {
+        "definition": "CREATE UNIQUE INDEX table_seats_occupancy_id_unique ON public.table_seats USING btree (occupancy_id)",
+        "name": "table_seats_occupancy_id_unique",
+        "unique": true,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_table_seats_user ON public.table_seats USING btree (user_id)",
+        "name": "idx_table_seats_user",
+        "unique": false,
+        "valid": true
+      },
+      {
+        "definition": "CREATE UNIQUE INDEX idx_unique_active_user_per_table ON public.table_seats USING btree (table_id, user_id) WHERE (left_at IS NULL)",
+        "name": "idx_unique_active_user_per_table",
+        "unique": true,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_table_seats_horse_id ON public.table_seats USING btree (horse_id) WHERE (horse_id IS NOT NULL)",
+        "name": "idx_table_seats_horse_id",
+        "unique": false,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_table_seats_status ON public.table_seats USING btree (status) WHERE (left_at IS NULL)",
+        "name": "idx_table_seats_status",
+        "unique": false,
+        "valid": true
+      },
+      {
+        "definition": "CREATE UNIQUE INDEX one_committed_seat_per_game_player ON public.table_seats USING btree (user_id, active_game_scope)",
+        "name": "one_committed_seat_per_game_player",
+        "unique": true,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_table_seats_user_live ON public.table_seats USING btree (user_id) WHERE (left_at IS NULL)",
+        "name": "idx_table_seats_user_live",
+        "unique": false,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_table_seats_club_id_fk ON public.table_seats USING btree (club_id)",
+        "name": "idx_table_seats_club_id_fk",
+        "unique": false,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_table_seats_live_user ON public.table_seats USING btree (user_id, table_id) WHERE (left_at IS NULL)",
+        "name": "idx_table_seats_live_user",
+        "unique": false,
+        "valid": true
+      }
+    ],
+    "name": "table_seats",
+    "rls": true,
+    "schema": "public"
+  },
+  {
+    "columns": [
+      {
+        "default": "gen_random_uuid()",
+        "generated": "",
+        "identity": "",
+        "name": "id",
+        "not_null": true,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "table_id",
+        "not_null": true,
+        "type": "uuid"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "user_id",
+        "not_null": true,
+        "type": "uuid"
+      },
+      {
+        "default": "1",
+        "generated": "",
+        "identity": "",
+        "name": "position",
+        "not_null": true,
+        "type": "integer"
+      },
+      {
+        "default": "'waiting'::text",
+        "generated": "",
+        "identity": "",
+        "name": "status",
+        "not_null": true,
+        "type": "text"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "notified_at",
+        "not_null": false,
+        "type": "timestamp with time zone"
+      },
+      {
+        "default": "now()",
+        "generated": "",
+        "identity": "",
+        "name": "created_at",
+        "not_null": false,
+        "type": "timestamp with time zone"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "hold_expires_at",
+        "not_null": false,
+        "type": "timestamp with time zone"
+      }
+    ],
+    "constraints": [
+      {
+        "definition": "FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE",
+        "name": "fk_table_waitlist_user_id_profiles",
+        "type": "f"
+      },
+      { "definition": "PRIMARY KEY (id)", "name": "table_waitlist_pkey", "type": "p" },
+      {
+        "definition": "CHECK ((status = ANY (ARRAY['waiting'::text, 'notified'::text, 'seated'::text, 'left'::text, 'cleared'::text, 'expired'::text])))",
+        "name": "table_waitlist_status_check",
+        "type": "c"
+      },
+      {
+        "definition": "FOREIGN KEY (table_id) REFERENCES tables(id) ON DELETE CASCADE",
+        "name": "table_waitlist_table_id_fkey",
+        "type": "f"
+      },
+      {
+        "definition": "FOREIGN KEY (user_id) REFERENCES auth.users(id)",
+        "name": "table_waitlist_user_id_fkey",
+        "type": "f"
+      }
+    ],
+    "force_rls": false,
+    "grants": [
+      "postgres=arwdDxtm/postgres",
+      "anon=arwdxtm/postgres",
+      "authenticated=arwdxtm/postgres",
+      "service_role=arwdDxtm/postgres"
+    ],
+    "indexes": [
+      {
+        "definition": "CREATE UNIQUE INDEX table_waitlist_pkey ON public.table_waitlist USING btree (id)",
+        "name": "table_waitlist_pkey",
+        "unique": true,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_waitlist_table_status ON public.table_waitlist USING btree (table_id, status)",
+        "name": "idx_waitlist_table_status",
+        "unique": false,
+        "valid": true
+      },
+      {
+        "definition": "CREATE INDEX idx_table_waitlist_user_id ON public.table_waitlist USING btree (user_id)",
+        "name": "idx_table_waitlist_user_id",
+        "unique": false,
+        "valid": true
+      },
+      {
+        "definition": "CREATE UNIQUE INDEX table_waitlist_one_active_per_player_uidx ON public.table_waitlist USING btree (table_id, user_id) WHERE (status = ANY (ARRAY['waiting'::text, 'notified'::text]))",
+        "name": "table_waitlist_one_active_per_player_uidx",
+        "unique": true,
+        "valid": true
+      }
+    ],
+    "name": "table_waitlist",
+    "rls": true,
+    "schema": "public"
+  }
+]

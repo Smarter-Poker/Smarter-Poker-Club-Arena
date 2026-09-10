@@ -1,0 +1,793 @@
+[
+  {
+    "table_name": "agent_commissions",
+    "tgname": "poker_arena_no_hierarchy",
+    "definition": "CREATE TRIGGER poker_arena_no_hierarchy BEFORE INSERT OR UPDATE ON agent_commissions FOR EACH ROW EXECUTE FUNCTION fn_poker_reject_diamond_hierarchy()",
+    "signature": "fn_poker_reject_diamond_hierarchy()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "agent_commissions",
+    "tgname": "trg_agent_commission_rollup_del",
+    "definition": "CREATE TRIGGER trg_agent_commission_rollup_del AFTER DELETE ON agent_commissions REFERENCING OLD TABLE AS old_rows FOR EACH STATEMENT EXECUTE FUNCTION trg_agent_commission_rollup_change()",
+    "signature": "trg_agent_commission_rollup_change()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "agent_commissions",
+    "tgname": "trg_agent_commission_rollup_ins",
+    "definition": "CREATE TRIGGER trg_agent_commission_rollup_ins AFTER INSERT ON agent_commissions REFERENCING NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION trg_agent_commission_rollup_insert()",
+    "signature": "trg_agent_commission_rollup_insert()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "agent_commissions",
+    "tgname": "trg_agent_commission_rollup_upd",
+    "definition": "CREATE TRIGGER trg_agent_commission_rollup_upd AFTER UPDATE ON agent_commissions REFERENCING OLD TABLE AS old_rows NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION trg_agent_commission_rollup_change()",
+    "signature": "trg_agent_commission_rollup_change()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "agent_commissions",
+    "tgname": "trg_ca_append_only",
+    "definition": "CREATE TRIGGER trg_ca_append_only BEFORE DELETE OR UPDATE ON agent_commissions FOR EACH ROW EXECUTE FUNCTION fn_ca_journal_append_only()",
+    "signature": "fn_ca_journal_append_only()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "agents",
+    "tgname": "guard_agent_wallet_direct_update",
+    "definition": "CREATE TRIGGER guard_agent_wallet_direct_update BEFORE INSERT OR UPDATE ON agents FOR EACH ROW EXECUTE FUNCTION guard_agent_wallet_direct_update()",
+    "signature": "guard_agent_wallet_direct_update()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "agents",
+    "tgname": "poker_arena_no_hierarchy",
+    "definition": "CREATE TRIGGER poker_arena_no_hierarchy BEFORE INSERT OR UPDATE ON agents FOR EACH ROW EXECUTE FUNCTION fn_poker_reject_diamond_hierarchy()",
+    "signature": "fn_poker_reject_diamond_hierarchy()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "agents",
+    "tgname": "trg_agents_commission_bounds",
+    "definition": "CREATE TRIGGER trg_agents_commission_bounds BEFORE INSERT OR UPDATE OF commission_rate ON agents FOR EACH ROW EXECUTE FUNCTION fn_enforce_agent_commission_bounds()",
+    "signature": "fn_enforce_agent_commission_bounds()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "agents",
+    "tgname": "trg_agents_human_user_club_only",
+    "definition": "CREATE TRIGGER trg_agents_human_user_club_only BEFORE INSERT OR UPDATE OF club_id, user_id ON agents FOR EACH ROW EXECUTE FUNCTION fn_ca_reject_automated_user_club_row()",
+    "signature": "fn_ca_reject_automated_user_club_row()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "agents",
+    "tgname": "trg_agents_staff_earn_no_rakeback",
+    "definition": "CREATE TRIGGER trg_agents_staff_earn_no_rakeback BEFORE INSERT OR UPDATE OF role, commission_rate, player_rakeback_rate ON agents FOR EACH ROW WHEN (COALESCE(new.commission_rate, 0::numeric) <> 0::numeric OR COALESCE(new.player_rakeback_rate, 0::numeric) <> 0::numeric) EXECUTE FUNCTION fn_agents_staff_earn_no_rakeback()",
+    "signature": "fn_agents_staff_earn_no_rakeback()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "agents",
+    "tgname": "trg_ca_autoledger",
+    "definition": "CREATE TRIGGER trg_ca_autoledger AFTER UPDATE OF agent_wallet_balance, promo_wallet_balance ON agents FOR EACH ROW EXECUTE FUNCTION fn_ca_autoledger('agent_wallet_balance=agent_wallet', 'promo_wallet_balance=promo_wallet')",
+    "signature": "fn_ca_autoledger()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "agents",
+    "tgname": "trg_ca_autoledger_delete",
+    "definition": "CREATE TRIGGER trg_ca_autoledger_delete BEFORE DELETE ON agents FOR EACH ROW EXECUTE FUNCTION fn_ca_autoledger_delete('agent_wallet_balance=agent_wallet', 'promo_wallet_balance=promo_wallet')",
+    "signature": "fn_ca_autoledger_delete()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "agents",
+    "tgname": "trg_ca_autoledger_insert",
+    "definition": "CREATE TRIGGER trg_ca_autoledger_insert AFTER INSERT ON agents FOR EACH ROW WHEN (COALESCE(new.agent_wallet_balance, 0::numeric) <> 0::numeric OR COALESCE(new.promo_wallet_balance, 0::numeric) <> 0::numeric) EXECUTE FUNCTION fn_ca_autoledger('agent_wallet_balance=agent_wallet', 'promo_wallet_balance=promo_wallet')",
+    "signature": "fn_ca_autoledger()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "agents",
+    "tgname": "trg_deep_stack_agents_are_protected",
+    "definition": "CREATE TRIGGER trg_deep_stack_agents_are_protected BEFORE DELETE ON agents FOR EACH ROW WHEN (old.club_id = '2a1132b9-5ba2-42e6-9f01-30a7fcffebe3'::uuid) EXECUTE FUNCTION fn_deep_stack_society_cannot_be_deleted_by_accident()",
+    "signature": "fn_deep_stack_society_cannot_be_deleted_by_accident()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "agents",
+    "tgname": "trg_guard_retired_club_mutation",
+    "definition": "CREATE TRIGGER trg_guard_retired_club_mutation BEFORE INSERT OR DELETE OR UPDATE ON agents FOR EACH ROW EXECUTE FUNCTION fn_guard_retired_club_mutation()",
+    "signature": "fn_guard_retired_club_mutation()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "agents",
+    "tgname": "trg_sync_agent_wallets",
+    "definition": "CREATE TRIGGER trg_sync_agent_wallets BEFORE UPDATE ON agents FOR EACH ROW EXECUTE FUNCTION sync_agent_wallet_columns()",
+    "signature": "sync_agent_wallet_columns()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "club_members",
+    "tgname": "club_members_updated_at",
+    "definition": "CREATE TRIGGER club_members_updated_at BEFORE UPDATE ON club_members FOR EACH ROW EXECUTE FUNCTION update_updated_at_column()",
+    "signature": "update_updated_at_column()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "club_members",
+    "tgname": "lock_cashier_hierarchy_insert_delete",
+    "definition": "CREATE TRIGGER lock_cashier_hierarchy_insert_delete BEFORE INSERT OR DELETE ON club_members FOR EACH ROW EXECUTE FUNCTION lock_club_cashier_hierarchy_mutation()",
+    "signature": "lock_club_cashier_hierarchy_mutation()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "club_members",
+    "tgname": "lock_cashier_hierarchy_update",
+    "definition": "CREATE TRIGGER lock_cashier_hierarchy_update BEFORE UPDATE OF club_id, agent_id, role, status ON club_members FOR EACH ROW EXECUTE FUNCTION lock_club_cashier_hierarchy_mutation()",
+    "signature": "lock_club_cashier_hierarchy_mutation()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "club_members",
+    "tgname": "poker_arena_membership_guard",
+    "definition": "CREATE TRIGGER poker_arena_membership_guard BEFORE INSERT OR UPDATE ON club_members FOR EACH ROW EXECUTE FUNCTION fn_poker_guard_arena_structure()",
+    "signature": "fn_poker_guard_arena_structure()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "club_members",
+    "tgname": "trg_admin_holds_no_player_wallet",
+    "definition": "CREATE TRIGGER trg_admin_holds_no_player_wallet BEFORE INSERT OR UPDATE OF role, chip_balance ON club_members FOR EACH ROW EXECUTE FUNCTION fn_admin_holds_no_player_wallet()",
+    "signature": "fn_admin_holds_no_player_wallet()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "club_members",
+    "tgname": "trg_approval_gate_ins",
+    "definition": "CREATE TRIGGER trg_approval_gate_ins BEFORE INSERT ON club_members FOR EACH ROW EXECUTE FUNCTION fn_membership_approval_gate()",
+    "signature": "fn_membership_approval_gate()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "club_members",
+    "tgname": "trg_approval_gate_upd",
+    "definition": "CREATE TRIGGER trg_approval_gate_upd BEFORE UPDATE OF status ON club_members FOR EACH ROW EXECUTE FUNCTION fn_membership_approval_gate()",
+    "signature": "fn_membership_approval_gate()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "club_members",
+    "tgname": "trg_audit_club_join",
+    "definition": "CREATE TRIGGER trg_audit_club_join AFTER INSERT OR UPDATE OF status ON club_members FOR EACH ROW EXECUTE FUNCTION fn_audit_club_entry_mutation()",
+    "signature": "fn_audit_club_entry_mutation()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "club_members",
+    "tgname": "trg_audit_club_member_delete",
+    "definition": "CREATE TRIGGER trg_audit_club_member_delete AFTER DELETE ON club_members FOR EACH ROW EXECUTE FUNCTION fn_audit_club_member_change()",
+    "signature": "fn_audit_club_member_change()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "club_members",
+    "tgname": "trg_audit_club_member_update",
+    "definition": "CREATE TRIGGER trg_audit_club_member_update AFTER UPDATE OF role, status ON club_members FOR EACH ROW EXECUTE FUNCTION fn_audit_club_member_change()",
+    "signature": "fn_audit_club_member_change()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "club_members",
+    "tgname": "trg_block_browser_balance_inserts",
+    "definition": "CREATE TRIGGER trg_block_browser_balance_inserts BEFORE INSERT ON club_members FOR EACH ROW EXECUTE FUNCTION fn_block_browser_balance_inserts()",
+    "signature": "fn_block_browser_balance_inserts()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "club_members",
+    "tgname": "trg_block_browser_balance_writes",
+    "definition": "CREATE TRIGGER trg_block_browser_balance_writes BEFORE UPDATE ON club_members FOR EACH ROW EXECUTE FUNCTION fn_block_browser_balance_writes()",
+    "signature": "fn_block_browser_balance_writes()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "club_members",
+    "tgname": "trg_ca_autoledger",
+    "definition": "CREATE TRIGGER trg_ca_autoledger AFTER UPDATE OF promo_balance ON club_members FOR EACH ROW EXECUTE FUNCTION fn_ca_autoledger('promo_balance=promo_wallet')",
+    "signature": "fn_ca_autoledger()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "club_members",
+    "tgname": "trg_ca_autoledger_delete",
+    "definition": "CREATE TRIGGER trg_ca_autoledger_delete BEFORE DELETE ON club_members FOR EACH ROW EXECUTE FUNCTION fn_ca_autoledger_delete('chip_balance=player_wallet', 'promo_balance=promo_wallet')",
+    "signature": "fn_ca_autoledger_delete()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "club_members",
+    "tgname": "trg_ca_autoledger_insert",
+    "definition": "CREATE TRIGGER trg_ca_autoledger_insert AFTER INSERT ON club_members FOR EACH ROW WHEN (COALESCE(new.chip_balance, 0::numeric) <> 0::numeric OR COALESCE(new.promo_balance, 0::numeric) <> 0::numeric) EXECUTE FUNCTION fn_ca_autoledger('chip_balance=player_wallet', 'promo_balance=promo_wallet')",
+    "signature": "fn_ca_autoledger()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "club_members",
+    "tgname": "trg_club_member_notes_guard",
+    "definition": "CREATE TRIGGER trg_club_member_notes_guard BEFORE UPDATE OF nickname, notes ON club_members FOR EACH ROW EXECUTE FUNCTION fn_club_member_notes_guard()",
+    "signature": "fn_club_member_notes_guard()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "club_members",
+    "tgname": "trg_club_members_audit_chip_movement",
+    "definition": "CREATE TRIGGER trg_club_members_audit_chip_movement AFTER UPDATE OF chip_balance ON club_members FOR EACH ROW WHEN (old.chip_balance IS DISTINCT FROM new.chip_balance) EXECUTE FUNCTION fn_club_members_ledger_writer()",
+    "signature": "fn_club_members_ledger_writer()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "club_members",
+    "tgname": "trg_club_members_bot_follows_horse",
+    "definition": "CREATE TRIGGER trg_club_members_bot_follows_horse BEFORE INSERT OR UPDATE OF user_id, is_bot ON club_members FOR EACH ROW EXECUTE FUNCTION fn_club_members_bot_follows_horse()",
+    "signature": "fn_club_members_bot_follows_horse()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "club_members",
+    "tgname": "trg_club_members_emit_management_access",
+    "definition": "CREATE TRIGGER trg_club_members_emit_management_access AFTER INSERT OR DELETE OR UPDATE ON club_members FOR EACH ROW EXECUTE FUNCTION fn_emit_management_access_event()",
+    "signature": "fn_emit_management_access_event()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "club_members",
+    "tgname": "trg_club_members_guard_lifecycle_write",
+    "definition": "CREATE TRIGGER trg_club_members_guard_lifecycle_write BEFORE UPDATE ON club_members FOR EACH ROW EXECUTE FUNCTION fn_guard_membership_lifecycle_write()",
+    "signature": "fn_guard_membership_lifecycle_write()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "club_members",
+    "tgname": "trg_club_members_human_user_club_only",
+    "definition": "CREATE TRIGGER trg_club_members_human_user_club_only BEFORE INSERT OR UPDATE OF club_id, user_id, is_bot ON club_members FOR EACH ROW EXECUTE FUNCTION fn_ca_reject_automated_user_club_row()",
+    "signature": "fn_ca_reject_automated_user_club_row()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "club_members",
+    "tgname": "trg_club_members_level_sync",
+    "definition": "CREATE TRIGGER trg_club_members_level_sync AFTER INSERT OR DELETE OR UPDATE OF role, status ON club_members FOR EACH ROW EXECUTE FUNCTION trg_auto_recompute_club_level()",
+    "signature": "trg_auto_recompute_club_level()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "club_members",
+    "tgname": "trg_club_members_no_agent_cycle_ins",
+    "definition": "CREATE TRIGGER trg_club_members_no_agent_cycle_ins BEFORE INSERT ON club_members FOR EACH ROW WHEN (new.agent_id IS NOT NULL) EXECUTE FUNCTION fn_club_members_no_agent_cycle()",
+    "signature": "fn_club_members_no_agent_cycle()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "club_members",
+    "tgname": "trg_club_members_no_agent_cycle_upd",
+    "definition": "CREATE TRIGGER trg_club_members_no_agent_cycle_upd BEFORE UPDATE OF agent_id ON club_members FOR EACH ROW WHEN (new.agent_id IS NOT NULL AND new.agent_id IS DISTINCT FROM old.agent_id) EXECUTE FUNCTION fn_club_members_no_agent_cycle()",
+    "signature": "fn_club_members_no_agent_cycle()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "club_members",
+    "tgname": "trg_club_members_require_explicit_join",
+    "definition": "CREATE TRIGGER trg_club_members_require_explicit_join BEFORE INSERT ON club_members FOR EACH ROW EXECUTE FUNCTION fn_require_explicit_club_membership_source()",
+    "signature": "fn_require_explicit_club_membership_source()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "club_members",
+    "tgname": "trg_club_members_role_guard",
+    "definition": "CREATE TRIGGER trg_club_members_role_guard BEFORE UPDATE ON club_members FOR EACH ROW EXECUTE FUNCTION fn_club_members_role_guard()",
+    "signature": "fn_club_members_role_guard()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "club_members",
+    "tgname": "trg_club_members_staff_earn_no_rakeback",
+    "definition": "CREATE TRIGGER trg_club_members_staff_earn_no_rakeback BEFORE INSERT OR UPDATE ON club_members FOR EACH ROW WHEN ((new.role = ANY (ARRAY['co_owner'::text, 'admin'::text])) AND (COALESCE(new.player_rakeback_pct, 0::numeric) <> 0::numeric OR COALESCE(new.rakeback_rate, 0::numeric) <> 0::numeric OR COALESCE(new.commission_rate, 0::numeric) <> 0::numeric)) EXECUTE FUNCTION fn_club_members_staff_earn_no_rakeback()",
+    "signature": "fn_club_members_staff_earn_no_rakeback()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "club_members",
+    "tgname": "trg_deep_stack_members_are_protected",
+    "definition": "CREATE TRIGGER trg_deep_stack_members_are_protected BEFORE DELETE ON club_members FOR EACH ROW WHEN (old.club_id = '2a1132b9-5ba2-42e6-9f01-30a7fcffebe3'::uuid) EXECUTE FUNCTION fn_deep_stack_society_cannot_be_deleted_by_accident()",
+    "signature": "fn_deep_stack_society_cannot_be_deleted_by_accident()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "club_members",
+    "tgname": "trg_four_club_limit_ins",
+    "definition": "CREATE TRIGGER trg_four_club_limit_ins BEFORE INSERT ON club_members FOR EACH ROW EXECUTE FUNCTION fn_enforce_four_club_limit()",
+    "signature": "fn_enforce_four_club_limit()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "club_members",
+    "tgname": "trg_four_club_limit_upd",
+    "definition": "CREATE TRIGGER trg_four_club_limit_upd BEFORE UPDATE OF status ON club_members FOR EACH ROW EXECUTE FUNCTION fn_enforce_four_club_limit()",
+    "signature": "fn_enforce_four_club_limit()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "club_members",
+    "tgname": "trg_guard_retired_club_mutation",
+    "definition": "CREATE TRIGGER trg_guard_retired_club_mutation BEFORE INSERT OR DELETE OR UPDATE ON club_members FOR EACH ROW EXECUTE FUNCTION fn_guard_retired_club_mutation()",
+    "signature": "fn_guard_retired_club_mutation()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "club_members",
+    "tgname": "trg_membership_starts_with_zero_chips",
+    "definition": "CREATE TRIGGER trg_membership_starts_with_zero_chips BEFORE INSERT ON club_members FOR EACH ROW EXECUTE FUNCTION fn_membership_starts_with_zero_chips()",
+    "signature": "fn_membership_starts_with_zero_chips()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "club_members",
+    "tgname": "trg_recompute_club_level_on_member_change",
+    "definition": "CREATE TRIGGER trg_recompute_club_level_on_member_change AFTER INSERT OR DELETE OR UPDATE OF role, status ON club_members FOR EACH ROW EXECUTE FUNCTION fn_recompute_club_level_on_member_change()",
+    "signature": "fn_recompute_club_level_on_member_change()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "club_members",
+    "tgname": "trg_sync_agent_player_counts",
+    "definition": "CREATE TRIGGER trg_sync_agent_player_counts AFTER INSERT OR DELETE OR UPDATE OF agent_id, club_id, is_active ON club_members FOR EACH ROW EXECUTE FUNCTION fn_sync_agent_player_counts()",
+    "signature": "fn_sync_agent_player_counts()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "club_members",
+    "tgname": "trg_sync_club_member_count",
+    "definition": "CREATE TRIGGER trg_sync_club_member_count AFTER INSERT OR DELETE OR UPDATE OF status, club_id, role ON club_members FOR EACH ROW EXECUTE FUNCTION fn_sync_club_member_count()",
+    "signature": "fn_sync_club_member_count()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "club_members",
+    "tgname": "trg_sync_mfa_required_on_club_role",
+    "definition": "CREATE TRIGGER trg_sync_mfa_required_on_club_role AFTER INSERT OR UPDATE OF role, user_id ON club_members FOR EACH ROW EXECUTE FUNCTION fn_sync_mfa_required_on_club_role()",
+    "signature": "fn_sync_mfa_required_on_club_role()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "club_members",
+    "tgname": "zz_freeze_guard",
+    "definition": "CREATE TRIGGER zz_freeze_guard BEFORE INSERT OR DELETE OR UPDATE ON club_members FOR EACH ROW EXECUTE FUNCTION fn_refuse_while_frozen('chip_balance')",
+    "signature": "fn_refuse_while_frozen()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "hand_history",
+    "tgname": "hand_history_club_member_stats",
+    "definition": "CREATE TRIGGER hand_history_club_member_stats AFTER INSERT ON hand_history FOR EACH ROW EXECUTE FUNCTION trg_hand_history_club_member_stats()",
+    "signature": "trg_hand_history_club_member_stats()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "hand_history",
+    "tgname": "hand_history_fold_stats",
+    "definition": "CREATE TRIGGER hand_history_fold_stats AFTER INSERT ON hand_history FOR EACH ROW EXECUTE FUNCTION fn_fold_hand_winnings()",
+    "signature": "fn_fold_hand_winnings()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "hand_history",
+    "tgname": "hand_history_position_stats",
+    "definition": "CREATE TRIGGER hand_history_position_stats AFTER INSERT ON hand_history FOR EACH ROW EXECUTE FUNCTION trg_hand_history_position_stats()",
+    "signature": "trg_hand_history_position_stats()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "hand_history",
+    "tgname": "trg_ca_capture_hand_facts",
+    "definition": "CREATE TRIGGER trg_ca_capture_hand_facts BEFORE DELETE ON hand_history FOR EACH ROW EXECUTE FUNCTION fn_ca_capture_hand_facts()",
+    "signature": "fn_ca_capture_hand_facts()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "hand_history",
+    "tgname": "trg_ca_stats_live_from_hand",
+    "definition": "CREATE TRIGGER trg_ca_stats_live_from_hand AFTER INSERT ON hand_history FOR EACH ROW EXECUTE FUNCTION trg_ca_stats_live_from_hand()",
+    "signature": "trg_ca_stats_live_from_hand()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "hand_history",
+    "tgname": "trg_enqueue_hand_daily_missions",
+    "definition": "CREATE TRIGGER trg_enqueue_hand_daily_missions AFTER INSERT ON hand_history FOR EACH ROW EXECUTE FUNCTION fn_enqueue_hand_daily_missions()",
+    "signature": "fn_enqueue_hand_daily_missions()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "hand_history",
+    "tgname": "trg_log_jackpot_hand_deleted",
+    "definition": "CREATE TRIGGER trg_log_jackpot_hand_deleted BEFORE DELETE ON hand_history FOR EACH ROW EXECUTE FUNCTION fn_log_jackpot_hand_deleted()",
+    "signature": "fn_log_jackpot_hand_deleted()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "hand_history",
+    "tgname": "zz_ca_bomb_hand_keeps_its_award_units",
+    "definition": "CREATE CONSTRAINT TRIGGER zz_ca_bomb_hand_keeps_its_award_units AFTER INSERT ON hand_history DEFERRABLE INITIALLY DEFERRED FOR EACH ROW WHEN (new.bomb_pot IS NOT NULL) EXECUTE FUNCTION fn_ca_bomb_hand_keeps_its_award_units()",
+    "signature": "fn_ca_bomb_hand_keeps_its_award_units()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "rake_records",
+    "tgname": "ca_reporting_rake_change_del",
+    "definition": "CREATE TRIGGER ca_reporting_rake_change_del AFTER DELETE ON rake_records REFERENCING OLD TABLE AS old_rows FOR EACH STATEMENT EXECUTE FUNCTION trg_ca_reporting_repair_changed_days()",
+    "signature": "trg_ca_reporting_repair_changed_days()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "rake_records",
+    "tgname": "ca_reporting_rake_change_upd",
+    "definition": "CREATE TRIGGER ca_reporting_rake_change_upd AFTER UPDATE ON rake_records REFERENCING OLD TABLE AS old_rows NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION trg_ca_reporting_repair_changed_days()",
+    "signature": "trg_ca_reporting_repair_changed_days()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "rake_records",
+    "tgname": "ca_reporting_rake_insert",
+    "definition": "CREATE TRIGGER ca_reporting_rake_insert AFTER INSERT ON rake_records FOR EACH ROW EXECUTE FUNCTION trg_ca_reporting_rake_insert()",
+    "signature": "trg_ca_reporting_rake_insert()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "rake_records",
+    "tgname": "cancelled_tournament_evidence_is_immutable",
+    "definition": "CREATE TRIGGER cancelled_tournament_evidence_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON rake_records FOR EACH ROW EXECUTE FUNCTION fn_cancelled_tournament_evidence_is_immutable()",
+    "signature": "fn_cancelled_tournament_evidence_is_immutable()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "rake_records",
+    "tgname": "satellite_target_rake_is_immutable",
+    "definition": "CREATE TRIGGER satellite_target_rake_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON rake_records FOR EACH ROW EXECUTE FUNCTION fn_satellite_target_rake_is_immutable()",
+    "signature": "fn_satellite_target_rake_is_immutable()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "rake_records",
+    "tgname": "terminal_tournament_evidence_is_immutable",
+    "definition": "CREATE TRIGGER terminal_tournament_evidence_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON rake_records FOR EACH ROW EXECUTE FUNCTION fn_terminal_tournament_evidence_is_immutable()",
+    "signature": "fn_terminal_tournament_evidence_is_immutable()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "rake_records",
+    "tgname": "tournament_unregistration_rake_evidence_is_immutable",
+    "definition": "CREATE TRIGGER tournament_unregistration_rake_evidence_is_immutable BEFORE DELETE OR UPDATE ON rake_records FOR EACH ROW EXECUTE FUNCTION fn_ca_unregistration_rake_evidence_is_immutable()",
+    "signature": "fn_ca_unregistration_rake_evidence_is_immutable()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "rake_records",
+    "tgname": "trg_award_vip_points_from_rake",
+    "definition": "CREATE TRIGGER trg_award_vip_points_from_rake AFTER INSERT ON rake_records FOR EACH ROW EXECUTE FUNCTION fn_award_vip_points_from_rake()",
+    "signature": "fn_award_vip_points_from_rake()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "rake_records",
+    "tgname": "trg_ca_club_rake_daily_del",
+    "definition": "CREATE TRIGGER trg_ca_club_rake_daily_del AFTER DELETE ON rake_records REFERENCING OLD TABLE AS old_rows FOR EACH STATEMENT EXECUTE FUNCTION trg_ca_club_rake_daily_change()",
+    "signature": "trg_ca_club_rake_daily_change()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "rake_records",
+    "tgname": "trg_ca_club_rake_daily_ins",
+    "definition": "CREATE TRIGGER trg_ca_club_rake_daily_ins AFTER INSERT ON rake_records REFERENCING NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION trg_ca_club_rake_daily_insert()",
+    "signature": "trg_ca_club_rake_daily_insert()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "rake_records",
+    "tgname": "trg_ca_club_rake_daily_upd",
+    "definition": "CREATE TRIGGER trg_ca_club_rake_daily_upd AFTER UPDATE ON rake_records REFERENCING OLD TABLE AS old_rows NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION trg_ca_club_rake_daily_change()",
+    "signature": "trg_ca_club_rake_daily_change()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "rake_records",
+    "tgname": "trg_guard_rake_belongs_to_club",
+    "definition": "CREATE TRIGGER trg_guard_rake_belongs_to_club BEFORE INSERT OR UPDATE ON rake_records FOR EACH ROW EXECUTE FUNCTION fn_guard_rake_belongs_to_club()",
+    "signature": "fn_guard_rake_belongs_to_club()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "rake_records",
+    "tgname": "trg_tournament_fee_names_its_player",
+    "definition": "CREATE TRIGGER trg_tournament_fee_names_its_player BEFORE INSERT ON rake_records FOR EACH ROW WHEN (new.is_tournament IS TRUE AND new.player_contributions IS NULL AND new.rake_amount > 0::numeric) EXECUTE FUNCTION fn_tournament_fee_names_its_player()",
+    "signature": "fn_tournament_fee_names_its_player()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "rake_records",
+    "tgname": "zz_ca_escrow_rake_record",
+    "definition": "CREATE TRIGGER zz_ca_escrow_rake_record AFTER INSERT ON rake_records FOR EACH ROW WHEN (new.is_tournament IS TRUE AND new.tournament_id IS NOT NULL) EXECUTE FUNCTION fn_ca_escrow_on_rake_record()",
+    "signature": "fn_ca_escrow_on_rake_record()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "table_seats",
+    "tgname": "a0_tournament_live_seat_root_guard",
+    "definition": "CREATE TRIGGER a0_tournament_live_seat_root_guard BEFORE INSERT OR UPDATE OF table_id, user_id, seat_number, left_at ON table_seats FOR EACH ROW EXECUTE FUNCTION fn_tournament_live_seat_acquisition_requires_authority()",
+    "signature": "fn_tournament_live_seat_acquisition_requires_authority()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "table_seats",
+    "tgname": "aa_tournament_live_seat_proof_lock",
+    "definition": "CREATE TRIGGER aa_tournament_live_seat_proof_lock BEFORE INSERT OR DELETE OR UPDATE ON table_seats FOR EACH ROW EXECUTE FUNCTION trg_lock_and_validate_tournament_live_seat()",
+    "signature": "trg_lock_and_validate_tournament_live_seat()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "table_seats",
+    "tgname": "ab_refuse_live_seat_on_closed_tournament_table",
+    "definition": "CREATE TRIGGER ab_refuse_live_seat_on_closed_tournament_table BEFORE INSERT OR UPDATE OF table_id, user_id, left_at ON table_seats FOR EACH ROW EXECUTE FUNCTION trg_refuse_live_seat_on_closed_tournament_table()",
+    "signature": "trg_refuse_live_seat_on_closed_tournament_table()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "table_seats",
+    "tgname": "cancelled_tournament_seat_is_immutable",
+    "definition": "CREATE TRIGGER cancelled_tournament_seat_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON table_seats FOR EACH ROW EXECUTE FUNCTION fn_cancelled_tournament_seat_is_immutable()",
+    "signature": "fn_cancelled_tournament_seat_is_immutable()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "table_seats",
+    "tgname": "poker_arena_chip_seat_guard",
+    "definition": "CREATE TRIGGER poker_arena_chip_seat_guard BEFORE INSERT OR UPDATE OF table_id ON table_seats FOR EACH ROW EXECUTE FUNCTION fn_poker_guard_chip_seat()",
+    "signature": "fn_poker_guard_chip_seat()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "table_seats",
+    "tgname": "poker_bind_diamond_seat",
+    "definition": "CREATE TRIGGER poker_bind_diamond_seat AFTER INSERT ON table_seats FOR EACH ROW EXECUTE FUNCTION fn_poker_bind_diamond_seat()",
+    "signature": "fn_poker_bind_diamond_seat()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "table_seats",
+    "tgname": "terminal_tournament_seat_is_immutable",
+    "definition": "CREATE TRIGGER terminal_tournament_seat_is_immutable BEFORE INSERT OR DELETE OR UPDATE ON table_seats FOR EACH ROW EXECUTE FUNCTION fn_terminal_tournament_seat_is_immutable()",
+    "signature": "fn_terminal_tournament_seat_is_immutable()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "table_seats",
+    "tgname": "tournament_live_seat_has_active_roster",
+    "definition": "CREATE CONSTRAINT TRIGGER tournament_live_seat_has_active_roster AFTER INSERT ON table_seats DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION trg_assert_live_tournament_seat_has_roster()",
+    "signature": "trg_assert_live_tournament_seat_has_roster()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "table_seats",
+    "tgname": "tournament_live_seat_update_has_active_roster",
+    "definition": "CREATE CONSTRAINT TRIGGER tournament_live_seat_update_has_active_roster AFTER UPDATE OF table_id, user_id, left_at ON table_seats DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION trg_assert_live_tournament_seat_has_roster()",
+    "signature": "trg_assert_live_tournament_seat_has_roster()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "table_seats",
+    "tgname": "trg_ca_arena_seat_is_same_asset",
+    "definition": "CREATE TRIGGER trg_ca_arena_seat_is_same_asset AFTER INSERT ON table_seats FOR EACH ROW EXECUTE FUNCTION fn_ca_arena_seat_is_same_asset()",
+    "signature": "fn_ca_arena_seat_is_same_asset()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "table_seats",
+    "tgname": "trg_ca_guard_seat_creation",
+    "definition": "CREATE TRIGGER trg_ca_guard_seat_creation BEFORE INSERT OR UPDATE OF left_at ON table_seats FOR EACH ROW EXECUTE FUNCTION fn_ca_guard_seat_creation()",
+    "signature": "fn_ca_guard_seat_creation()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "table_seats",
+    "tgname": "trg_cash_game_roster_track",
+    "definition": "CREATE TRIGGER trg_cash_game_roster_track AFTER INSERT OR UPDATE OF left_at, user_id ON table_seats FOR EACH ROW EXECUTE FUNCTION fn_cash_game_roster_track()",
+    "signature": "fn_cash_game_roster_track()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "table_seats",
+    "tgname": "trg_clear_sitout_on_turnover",
+    "definition": "CREATE TRIGGER trg_clear_sitout_on_turnover BEFORE UPDATE ON table_seats FOR EACH ROW EXECUTE FUNCTION fn_clear_sitout_on_turnover()",
+    "signature": "fn_clear_sitout_on_turnover()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "table_seats",
+    "tgname": "trg_enforce_four_table_limit",
+    "definition": "CREATE TRIGGER trg_enforce_four_table_limit BEFORE INSERT OR UPDATE OF left_at ON table_seats FOR EACH ROW EXECUTE FUNCTION fn_enforce_four_table_limit()",
+    "signature": "fn_enforce_four_table_limit()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "table_seats",
+    "tgname": "trg_guard_retired_club_mutation",
+    "definition": "CREATE TRIGGER trg_guard_retired_club_mutation BEFORE INSERT OR DELETE OR UPDATE ON table_seats FOR EACH ROW EXECUTE FUNCTION fn_guard_retired_club_mutation()",
+    "signature": "fn_guard_retired_club_mutation()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "table_seats",
+    "tgname": "trg_log_seat_stack_exit",
+    "definition": "CREATE TRIGGER trg_log_seat_stack_exit BEFORE DELETE OR UPDATE OF left_at ON table_seats FOR EACH ROW EXECUTE FUNCTION fn_log_seat_stack_exit()",
+    "signature": "fn_log_seat_stack_exit()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "table_seats",
+    "tgname": "trg_new_seat_clear_sitout",
+    "definition": "CREATE TRIGGER trg_new_seat_clear_sitout BEFORE INSERT ON table_seats FOR EACH ROW EXECUTE FUNCTION fn_new_seat_clear_sitout()",
+    "signature": "fn_new_seat_clear_sitout()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "table_seats",
+    "tgname": "trg_no_live_seat_on_finished_game",
+    "definition": "CREATE TRIGGER trg_no_live_seat_on_finished_game BEFORE INSERT OR UPDATE ON table_seats FOR EACH ROW EXECUTE FUNCTION fn_no_live_seat_on_finished_game()",
+    "signature": "fn_no_live_seat_on_finished_game()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "table_seats",
+    "tgname": "trg_notify_blinding_off",
+    "definition": "CREATE TRIGGER trg_notify_blinding_off AFTER UPDATE OF is_sitting_out, is_away ON table_seats FOR EACH ROW EXECUTE FUNCTION fn_notify_blinding_off()",
+    "signature": "fn_notify_blinding_off()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "table_seats",
+    "tgname": "trg_one_live_seat_per_tournament",
+    "definition": "CREATE TRIGGER trg_one_live_seat_per_tournament BEFORE INSERT OR UPDATE OF user_id, left_at, table_id ON table_seats FOR EACH ROW WHEN (new.left_at IS NULL) EXECUTE FUNCTION fn_guard_one_live_tournament_seat()",
+    "signature": "fn_guard_one_live_tournament_seat()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "table_seats",
+    "tgname": "trg_refuse_seat_on_closed_cluster_table",
+    "definition": "CREATE TRIGGER trg_refuse_seat_on_closed_cluster_table BEFORE INSERT ON table_seats FOR EACH ROW EXECUTE FUNCTION fn_refuse_seat_on_closed_cluster_table()",
+    "signature": "fn_refuse_seat_on_closed_cluster_table()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "table_seats",
+    "tgname": "trg_refuse_seat_revive_on_closed_cluster_table",
+    "definition": "CREATE TRIGGER trg_refuse_seat_revive_on_closed_cluster_table BEFORE UPDATE OF user_id, left_at, table_id ON table_seats FOR EACH ROW WHEN (new.left_at IS NULL AND (old.left_at IS NOT NULL OR old.user_id IS DISTINCT FROM new.user_id OR old.table_id IS DISTINCT FROM new.table_id)) EXECUTE FUNCTION fn_refuse_seat_on_closed_cluster_table()",
+    "signature": "fn_refuse_seat_on_closed_cluster_table()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "table_seats",
+    "tgname": "trg_seat_change_syncs_seat_first_count",
+    "definition": "CREATE TRIGGER trg_seat_change_syncs_seat_first_count AFTER INSERT OR DELETE OR UPDATE OF left_at ON table_seats FOR EACH ROW WHEN (pg_trigger_depth() < 2) EXECUTE FUNCTION fn_seat_change_syncs_seat_first_count()",
+    "signature": "fn_seat_change_syncs_seat_first_count()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "table_seats",
+    "tgname": "trg_seat_insert_cancel_waitlist",
+    "definition": "CREATE TRIGGER trg_seat_insert_cancel_waitlist AFTER INSERT ON table_seats FOR EACH ROW EXECUTE FUNCTION fn_seat_insert_cancel_waitlist()",
+    "signature": "fn_seat_insert_cancel_waitlist()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "table_seats",
+    "tgname": "trg_stamp_seat_horse_id",
+    "definition": "CREATE TRIGGER trg_stamp_seat_horse_id BEFORE INSERT OR UPDATE OF user_id ON table_seats FOR EACH ROW EXECUTE FUNCTION fn_stamp_seat_horse_id()",
+    "signature": "fn_stamp_seat_horse_id()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "table_seats",
+    "tgname": "trg_stamp_sit_out_at",
+    "definition": "CREATE TRIGGER trg_stamp_sit_out_at BEFORE INSERT OR UPDATE ON table_seats FOR EACH ROW EXECUTE FUNCTION fn_stamp_sit_out_at()",
+    "signature": "fn_stamp_sit_out_at()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "table_seats",
+    "tgname": "trg_table_seats_human_user_club_only",
+    "definition": "CREATE TRIGGER trg_table_seats_human_user_club_only BEFORE INSERT OR UPDATE OF table_id, user_id, left_at ON table_seats FOR EACH ROW EXECUTE FUNCTION fn_ca_reject_automated_user_club_row()",
+    "signature": "fn_ca_reject_automated_user_club_row()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "table_seats",
+    "tgname": "trg_table_seats_stamp_club",
+    "definition": "CREATE TRIGGER trg_table_seats_stamp_club BEFORE INSERT OR UPDATE ON table_seats FOR EACH ROW EXECUTE FUNCTION fn_stamp_seat_club()",
+    "signature": "fn_stamp_seat_club()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "table_seats",
+    "tgname": "zz_close_session_when_seat_vacated",
+    "definition": "CREATE CONSTRAINT TRIGGER zz_close_session_when_seat_vacated AFTER UPDATE OF left_at ON table_seats DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION trg_fn_close_session_when_seat_vacated()",
+    "signature": "trg_fn_close_session_when_seat_vacated()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "table_seats",
+    "tgname": "zz_freeze_entry_guard",
+    "definition": "CREATE TRIGGER zz_freeze_entry_guard BEFORE INSERT OR UPDATE OF left_at, user_id ON table_seats FOR EACH ROW EXECUTE FUNCTION fn_refuse_new_entries_while_frozen()",
+    "signature": "fn_refuse_new_entries_while_frozen()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "table_seats",
+    "tgname": "zz_freeze_guard",
+    "definition": "CREATE TRIGGER zz_freeze_guard BEFORE INSERT OR DELETE OR UPDATE ON table_seats FOR EACH ROW EXECUTE FUNCTION fn_refuse_while_frozen('stack', 'left_at', 'sit_out_at')",
+    "signature": "fn_refuse_while_frozen()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "table_seats",
+    "tgname": "zz_restriction_seat_guard",
+    "definition": "CREATE TRIGGER zz_restriction_seat_guard BEFORE INSERT ON table_seats FOR EACH ROW EXECUTE FUNCTION fn_ca_refuse_restricted_entry('cash')",
+    "signature": "fn_ca_refuse_restricted_entry()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "table_seats",
+    "tgname": "zz_restriction_seat_revive_guard",
+    "definition": "CREATE TRIGGER zz_restriction_seat_revive_guard BEFORE UPDATE OF user_id, left_at ON table_seats FOR EACH ROW WHEN (new.left_at IS NULL AND (old.left_at IS NOT NULL OR old.user_id IS DISTINCT FROM new.user_id)) EXECUTE FUNCTION fn_ca_refuse_restricted_entry('cash')",
+    "signature": "fn_ca_refuse_restricted_entry()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "table_seats",
+    "tgname": "zzz_diamond_seat_keeps_custody",
+    "definition": "CREATE CONSTRAINT TRIGGER zzz_diamond_seat_keeps_custody AFTER INSERT OR DELETE OR UPDATE ON table_seats DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION fn_poker_diamond_seat_keeps_custody()",
+    "signature": "fn_poker_diamond_seat_keeps_custody()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "table_seats",
+    "tgname": "zzz_stamp_seat_occupancy",
+    "definition": "CREATE TRIGGER zzz_stamp_seat_occupancy BEFORE INSERT OR UPDATE ON table_seats FOR EACH ROW EXECUTE FUNCTION fn_stamp_seat_occupancy()",
+    "signature": "fn_stamp_seat_occupancy()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "table_seats",
+    "tgname": "zzzz_stamp_active_seat_game_scope",
+    "definition": "CREATE TRIGGER zzzz_stamp_active_seat_game_scope BEFORE INSERT OR UPDATE ON table_seats FOR EACH ROW EXECUTE FUNCTION fn_stamp_active_seat_game_scope()",
+    "signature": "fn_stamp_active_seat_game_scope()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "table_seats",
+    "tgname": "zzzzz_require_live_seat_parent",
+    "definition": "CREATE TRIGGER zzzzz_require_live_seat_parent BEFORE INSERT OR UPDATE ON table_seats FOR EACH ROW EXECUTE FUNCTION fn_require_live_seat_parent()",
+    "signature": "fn_require_live_seat_parent()",
+    "tgenabled": "O"
+  },
+  {
+    "table_name": "table_seats",
+    "tgname": "zzzzz_seat_parent_keys_match",
+    "definition": "CREATE TRIGGER zzzzz_seat_parent_keys_match BEFORE INSERT OR UPDATE ON table_seats FOR EACH ROW EXECUTE FUNCTION trg_seat_parent_keys_match()",
+    "signature": "trg_seat_parent_keys_match()",
+    "tgenabled": "O"
+  }
+]

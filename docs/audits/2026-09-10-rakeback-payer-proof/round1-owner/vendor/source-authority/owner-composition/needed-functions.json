@@ -1,0 +1,1025 @@
+[
+  {
+    "body_md5": "cc2f5a721c525f78c7f9b246010ad131",
+    "refs": [],
+    "signature": "ca_hand_player_facts_one(uuid,uuid)"
+  },
+  {
+    "body_md5": "27011c3f7bc73ef10d271b06db9da1ce",
+    "refs": [
+      "ca_club_player_daily",
+      "club_members",
+      "tables",
+      "union_clubs",
+      "wallet_transactions"
+    ],
+    "signature": "ca_refresh_reporting_cash_rollup(date,date)"
+  },
+  {
+    "body_md5": "40937321494caccce9d2b73da6f04aa4",
+    "refs": [
+      "ca_club_player_daily",
+      "ca_club_tournament_daily",
+      "ca_club_tournament_player_daily",
+      "club_members",
+      "rake_records",
+      "tables",
+      "tournament_players",
+      "union_clubs",
+      "wallet_transactions"
+    ],
+    "signature": "ca_refresh_reporting_rollups_base(date,date)"
+  },
+  {
+    "body_md5": "e3bafab14f2e5f772cbca3247f65bd02",
+    "refs": ["ca_refresh_reporting_cash_rollup", "ca_refresh_reporting_rollups_base"],
+    "signature": "ca_refresh_reporting_rollups(date,date)"
+  },
+  {
+    "body_md5": "8f043cb249935e1f255cfafbac7eedb4",
+    "refs": ["club_members", "union_clubs"],
+    "signature": "ca_reporting_tournament_clubs_for_user(uuid)"
+  },
+  {
+    "body_md5": "66f0ca0e4ebf27a74dd4b7c211c4fd0f",
+    "refs": ["engine_maintenance_thaws"],
+    "signature": "fn_active_maintenance_release_boundary()"
+  },
+  {
+    "body_md5": "af35d175cb233304c13904e1dbeb74a6",
+    "refs": ["clubs"],
+    "signature": "fn_admin_holds_no_player_wallet()"
+  },
+  {
+    "body_md5": "93bdeabe356b1a18f42e9c4b3b77daa8",
+    "refs": ["agent_commission_settlements"],
+    "signature": "fn_agent_commission_paid_by_period(uuid,uuid,timestamp with time zone)"
+  },
+  {
+    "body_md5": "1eb584cfa02c95e986afc44a4c4c491b",
+    "refs": [
+      "agent_commission_settlements",
+      "agent_commission_unsettled_rollup",
+      "agent_commissions"
+    ],
+    "signature": "fn_agent_commission_rollup_recompute(jsonb)"
+  },
+  {
+    "body_md5": "02c5777d18d107a531b681970dc37b61",
+    "refs": ["club_members"],
+    "signature": "fn_agents_staff_earn_no_rakeback()"
+  },
+  {
+    "body_md5": "a63ce6760dc4178f000f2214a7cf7cd6",
+    "refs": [],
+    "signature": "fn_allocate_rake_credits(numeric,jsonb,text)"
+  },
+  {
+    "body_md5": "c329d0e296f508ed4b9034deb9f826ab",
+    "refs": [
+      "club_members",
+      "clubs",
+      "fn_club_level_for_members",
+      "fn_club_level_min_members",
+      "fn_get_club_realtime_member_count"
+    ],
+    "signature": "fn_apply_club_ladder(uuid)"
+  },
+  {
+    "body_md5": "516b9cb69d37cc4777259c1cd7f2b726",
+    "refs": [
+      "clubs",
+      "fn_batch_union_realtime_member_counts",
+      "fn_club_level_for_members",
+      "fn_club_level_min_members",
+      "union_clubs",
+      "unions"
+    ],
+    "signature": "fn_apply_union_ladder(uuid)"
+  },
+  {
+    "body_md5": "91b8b422de5a78db235002bcfedf7fb7",
+    "refs": ["club_members", "clubs"],
+    "signature": "fn_audit_actor_role(uuid,uuid)"
+  },
+  {
+    "body_md5": "56d086b92b40598eb2c7c8925ae5ee4e",
+    "refs": ["audit_trail"],
+    "signature": "fn_audit_club_entry_mutation()"
+  },
+  {
+    "body_md5": "18e3e3bf0e239b39b9c805fe34349c50",
+    "refs": ["audit_trail", "fn_audit_actor_role"],
+    "signature": "fn_audit_club_member_change()"
+  },
+  {
+    "body_md5": "8a87b0a1958c3a33be184f533dbea77d",
+    "refs": ["fn_caller_is_engine", "vip_points", "vip_points_carry", "vip_points_ledger"],
+    "signature": "fn_award_vip_credit(uuid,numeric,text,uuid,text)"
+  },
+  {
+    "body_md5": "368ccefb10f82ba80cb332956702b936",
+    "refs": ["fn_allocate_rake_credits", "fn_award_vip_credit"],
+    "signature": "fn_award_vip_points_from_rake()"
+  },
+  {
+    "body_md5": "472e8774a3d01436a89284f7948111f8",
+    "refs": ["club_members", "union_clubs"],
+    "signature": "fn_batch_union_realtime_member_counts(uuid[])"
+  },
+  {
+    "body_md5": "026cb9b02831cc1877a81f08b2c488ad",
+    "refs": [],
+    "signature": "fn_block_browser_balance_inserts()"
+  },
+  {
+    "body_md5": "38ab35fd89aca4874777025a0537efed",
+    "refs": [],
+    "signature": "fn_block_browser_balance_writes()"
+  },
+  {
+    "body_md5": "1fb364e5ad75fc97db613964927ddac9",
+    "refs": [
+      "ca_arena_settings",
+      "clubs",
+      "fn_ca_diamond_incident",
+      "fn_ca_diamond_rule_mode",
+      "tables"
+    ],
+    "signature": "fn_ca_arena_seat_is_same_asset()"
+  },
+  {
+    "body_md5": "068d3b8072fa0b3ea4d025630f6d43d1",
+    "refs": ["chip_ledger"],
+    "signature": "fn_ca_autoledger_delete()"
+  },
+  {
+    "body_md5": "936fc64feb1ee48cd7d4ea0ac8d2c121",
+    "refs": ["chip_ledger"],
+    "signature": "fn_ca_autoledger()"
+  },
+  {
+    "body_md5": "b6841ab07196eaa7747d1ed841661f19",
+    "refs": ["bomb_pot_award_units"],
+    "signature": "fn_ca_bomb_hand_keeps_its_award_units()"
+  },
+  {
+    "body_md5": "6ad8b58d450af35d2da84f9578819834",
+    "refs": ["ca_hand_financial_facts", "ca_ledger_write_failures"],
+    "signature": "fn_ca_capture_hand_facts()"
+  },
+  {
+    "body_md5": "437697ec86da96cede54e94d68bc2511",
+    "refs": ["ca_club_rake_daily", "fn_ca_club_rake_daily_compute"],
+    "signature": "fn_ca_club_rake_daily_apply(uuid[])"
+  },
+  {
+    "body_md5": "0ed157ecefbeea1939e208c3350497fd",
+    "refs": [],
+    "signature": "fn_ca_club_rake_daily_compute(timestamp with time zone,timestamp with time zone,uuid[])"
+  },
+  {
+    "body_md5": "32183e0ba58e7c893dfba1a00ea481cb",
+    "refs": ["ca_club_rake_daily", "fn_ca_club_rake_daily_compute"],
+    "signature": "fn_ca_club_rake_daily_rebuild_range(date,date,boolean)"
+  },
+  {
+    "body_md5": "1c9a29b3e27345cdaf1704663acd4b25",
+    "refs": [
+      "fn_ca_insert_hand_with_awards",
+      "fn_ca_settle_hand_stacks_absolute",
+      "fn_ca_share_settlement_lane_for_table",
+      "fn_ca_tournament_rebuy_window",
+      "hand_atomic_commits",
+      "hand_history",
+      "hand_projection_outbox",
+      "table_seats",
+      "tables",
+      "tournament_knockout_candidates",
+      "tournament_players",
+      "tournaments"
+    ],
+    "signature": "fn_ca_commit_hand_settlement_before_lease_generation(uuid,bigint,jsonb,numeric,numeric,text,numeric,jsonb,jsonb)"
+  },
+  {
+    "body_md5": "457ad8f1e1528ad205f7bd43488f3e14",
+    "refs": [
+      "engine_table_leases",
+      "engine_tournament_leases",
+      "fn_ca_commit_hand_settlement_before_lease_generation",
+      "fn_engine_lease_stale_seconds",
+      "tables",
+      "tournaments"
+    ],
+    "signature": "fn_ca_commit_hand_settlement_exact_before_obligations(uuid,bigint,jsonb,numeric,numeric,text,numeric,jsonb,jsonb,text,uuid)"
+  },
+  {
+    "body_md5": "0ef3c57a6a31acc383ce4b95a0f9519f",
+    "refs": [
+      "clubs",
+      "fn_ca_commit_hand_settlement_exact_before_obligations",
+      "fn_ca_share_settlement_lane_for_table",
+      "hand_atomic_commits",
+      "table_pending_addons",
+      "table_seats",
+      "tables"
+    ],
+    "signature": "fn_ca_commit_hand_settlement(uuid,bigint,jsonb,numeric,numeric,text,numeric,jsonb,jsonb,text,uuid,jsonb)"
+  },
+  {
+    "body_md5": "32b44879f88b14b57fc6037605d28b1f",
+    "refs": ["chip_ledger"],
+    "signature": "fn_ca_declare_ledger(text,text,uuid,uuid,text,text[])"
+  },
+  {
+    "body_md5": "90dc6ee32e156ace7917bccd2b498823",
+    "refs": ["ca_diamond_incidents", "fn_ca_is_fixture_account"],
+    "signature": "fn_ca_diamond_incident(text,text,uuid,numeric,text,jsonb)"
+  },
+  {
+    "body_md5": "94dc59faa0abbc3332b7b638b4c273b2",
+    "refs": ["ca_diamond_rule_modes"],
+    "signature": "fn_ca_diamond_rule_mode(text)"
+  },
+  {
+    "body_md5": "e084726dde176e51a8b1b0d64b0c2f0b",
+    "refs": [
+      "fn_ca_tournament_escrow",
+      "fn_tournament_entry_split",
+      "rake_records",
+      "spin_reserve_ledger",
+      "tournament_escrow",
+      "tournaments"
+    ],
+    "signature": "fn_ca_escrow_apply(uuid,text,numeric,numeric,numeric,numeric,numeric,numeric,numeric,numeric,numeric,numeric,numeric,numeric)"
+  },
+  {
+    "body_md5": "233661d2164a417c2a76c8e0cbfbe9cc",
+    "refs": ["fn_ca_escrow_apply"],
+    "signature": "fn_ca_escrow_on_rake_record()"
+  },
+  {
+    "body_md5": "6bf9f692898e24724df8d9c82bedcbc1",
+    "refs": [],
+    "signature": "fn_ca_finding_key(text,text,text,uuid,uuid)"
+  },
+  {
+    "body_md5": "534207f17003588a6ada8b6ea894442d",
+    "refs": ["fn_caller_is_engine", "tables", "tournaments"],
+    "signature": "fn_ca_guard_seat_creation()"
+  },
+  {
+    "body_md5": "7043d39510db7db89173bc98d47a5ce1",
+    "refs": [
+      "tournament_cancellation_receipts",
+      "tournament_satellite_settlements",
+      "tournament_terminal_settlements",
+      "tournaments"
+    ],
+    "signature": "fn_ca_has_committed_tournament_receipt(uuid)"
+  },
+  {
+    "body_md5": "e9f2cebe69872f747dd84a933746f02e",
+    "refs": ["clubs"],
+    "signature": "fn_ca_house_board_allows_automation(uuid)"
+  },
+  {
+    "body_md5": "02f32035383ba2a0d8e89b421f97bf04",
+    "refs": [
+      "ca_drift_incidents",
+      "ca_incident_events",
+      "ca_incident_notify_ledger",
+      "clubs",
+      "fn_ca_finding_key",
+      "fn_ca_incident_recipient_ids",
+      "fn_raise_notification",
+      "unions"
+    ],
+    "signature": "fn_ca_incident_notify(uuid,text,text,boolean)"
+  },
+  {
+    "body_md5": "1c2ea9c78ca402a49de131740cd0ed91",
+    "refs": ["ca_incident_recipients"],
+    "signature": "fn_ca_incident_recipient_ids(ca_drift_incidents,boolean)"
+  },
+  {
+    "body_md5": "b6eb532e40ba9820643616e70cdeb265",
+    "refs": ["bomb_pot_award_units", "hand_history"],
+    "signature": "fn_ca_insert_hand_with_awards(jsonb,jsonb)"
+  },
+  {
+    "body_md5": "e018c8e2e5d72f7264988e0e6cd64a60",
+    "refs": ["ca_cert_accounts", "profiles"],
+    "signature": "fn_ca_is_fixture_account(uuid)"
+  },
+  {
+    "body_md5": "2646dc4a6080f470d6646c3bb970298d",
+    "refs": ["clubs", "tables", "tournaments", "union_clubs"],
+    "signature": "fn_ca_is_midway_scope(uuid,uuid,uuid,uuid,jsonb)"
+  },
+  {
+    "body_md5": "398286e00164ff8224a29c6223349118",
+    "refs": [
+      "ca_diamond_journal_archive",
+      "ca_ledger_maintenance_kinds",
+      "ca_ledger_mutation_log",
+      "fn_ca_diamond_incident",
+      "fn_ca_raise_drift_incident"
+    ],
+    "signature": "fn_ca_journal_append_only()"
+  },
+  {
+    "body_md5": "d19505141af920386651fbd6e23f11a9",
+    "refs": ["ca_player_restrictions"],
+    "signature": "fn_ca_player_restricted(uuid,text)"
+  },
+  {
+    "body_md5": "8eb4a12c20590bf608883db58b6b4efa",
+    "refs": ["ca_player_restrictions"],
+    "signature": "fn_ca_player_restriction_for(uuid,text)"
+  },
+  {
+    "body_md5": "afb801e7a261c303f3a83387bed8f24b",
+    "refs": [
+      "ca_detector_registry",
+      "ca_drift_incidents",
+      "ca_incident_events",
+      "ca_incident_file_failures",
+      "fn_ca_incident_notify",
+      "fn_ca_is_midway_scope",
+      "fn_ca_stable_dedupe_key",
+      "fn_raise_server_financial_alert"
+    ],
+    "signature": "fn_ca_raise_drift_incident(text,text,text,text,numeric,numeric,numeric,text,text,uuid,uuid,uuid,uuid,uuid,uuid,text,uuid[],uuid[],text,boolean,jsonb)"
+  },
+  {
+    "body_md5": "a0330da6f7ec990e183b89432de7ae93",
+    "refs": [
+      "ca_operator_policy",
+      "ca_player_restrictions",
+      "ca_restriction_observations",
+      "fn_ca_player_restricted",
+      "fn_ca_player_restriction_for",
+      "tables"
+    ],
+    "signature": "fn_ca_refuse_restricted_entry()"
+  },
+  {
+    "body_md5": "cf49d581f597ce8235f3a30073bd54f6",
+    "refs": ["fn_ca_house_board_allows_automation", "profiles", "tables", "tournaments"],
+    "signature": "fn_ca_reject_automated_user_club_row()"
+  },
+  {
+    "body_md5": "e67e89b3aec325f8038e0507a1511eec",
+    "refs": [
+      "ca_seat_stack_rebases",
+      "ca_settlements",
+      "chip_transactions",
+      "club_members",
+      "clubs",
+      "fn_ca_declare_ledger",
+      "fn_ca_raise_drift_incident",
+      "fn_poker_diamond_settle_cash_hand",
+      "settlement_idempotency_keys",
+      "table_seats",
+      "tables",
+      "tournament_players",
+      "tournaments",
+      "wallet_credit_idempotency"
+    ],
+    "signature": "fn_ca_settle_hand_stacks_absolute(uuid,bigint,jsonb,numeric,numeric,text,numeric)"
+  },
+  {
+    "body_md5": "006d78a441e65d000d1d78929649bb44",
+    "refs": ["tables"],
+    "signature": "fn_ca_share_settlement_lane_for_table(uuid)"
+  },
+  {
+    "body_md5": "c95f4c17c68876cda3abe8504ec12bd8",
+    "refs": [],
+    "signature": "fn_ca_stable_dedupe_key(text)"
+  },
+  {
+    "body_md5": "3c9ce32b45c11b7372654c6efa89f667",
+    "refs": ["tournaments"],
+    "signature": "fn_ca_terminal_marker_transition_is_exact(jsonb,jsonb,uuid)"
+  },
+  {
+    "body_md5": "52c3b25be3904e86f1a8558ce542ec61",
+    "refs": [
+      "chip_ledger",
+      "rake_records",
+      "tournament_guarantee_overlays",
+      "tournament_payouts",
+      "tournament_rake_settlements",
+      "tournament_refund_tranches",
+      "tournament_satellite_awards",
+      "tournaments",
+      "wallet_transactions"
+    ],
+    "signature": "fn_ca_tournament_escrow(uuid)"
+  },
+  {
+    "body_md5": "b9b7ba44728a4f9a72a0c8f77934dbc3",
+    "refs": ["tournaments"],
+    "signature": "fn_ca_tournament_rebuy_window(uuid)"
+  },
+  {
+    "body_md5": "9a1109d19453657645e668d6e0310113",
+    "refs": ["tournament_unregistration_receipts"],
+    "signature": "fn_ca_unregistration_rake_evidence_is_immutable()"
+  },
+  {
+    "body_md5": "36e18a86ba143ac90e90648b0bc020ea",
+    "refs": [],
+    "signature": "fn_caller_is_engine()"
+  },
+  {
+    "body_md5": "9dc93e1a464e6694f588345f19640869",
+    "refs": ["tournament_cancellation_receipts", "tournaments"],
+    "signature": "fn_cancelled_tournament_evidence_is_immutable()"
+  },
+  {
+    "body_md5": "823939b280e838b99c806aeb499bd3e3",
+    "refs": ["tables", "tournament_cancellation_receipts", "tournaments"],
+    "signature": "fn_cancelled_tournament_seat_is_immutable()"
+  },
+  {
+    "body_md5": "a441e273d59ee341da01956c6123280d",
+    "refs": [
+      "cash_game_roster",
+      "cash_seat_change_requests",
+      "cash_seat_moves",
+      "table_seats",
+      "tables"
+    ],
+    "signature": "fn_cash_game_roster_track()"
+  },
+  {
+    "body_md5": "6ded94049da680cfcd5eb679c27d3da2",
+    "refs": [],
+    "signature": "fn_clear_sitout_on_turnover()"
+  },
+  {
+    "body_md5": "d9866b4ed88ce5c4fa0bc34556e4dc0c",
+    "refs": ["club_level_thresholds"],
+    "signature": "fn_club_level_for_members(integer)"
+  },
+  {
+    "body_md5": "81448da7d562db399a1b3997b21db237",
+    "refs": ["club_level_thresholds"],
+    "signature": "fn_club_level_min_members(integer)"
+  },
+  {
+    "body_md5": "cdbfed53f710715795b2a5c9516776ee",
+    "refs": [],
+    "signature": "fn_club_member_notes_guard()"
+  },
+  {
+    "body_md5": "232e5a999e935d3bc6ec0032f28927c3",
+    "refs": ["profiles"],
+    "signature": "fn_club_members_bot_follows_horse()"
+  },
+  {
+    "body_md5": "6d6cfda08515d6bdd4f3ed4fabe7b36d",
+    "refs": ["chip_ledger"],
+    "signature": "fn_club_members_ledger_writer()"
+  },
+  {
+    "body_md5": "808a425e8b92beab089f5e45e42ce727",
+    "refs": ["club_members"],
+    "signature": "fn_club_members_no_agent_cycle()"
+  },
+  {
+    "body_md5": "d836571a0e897e868696a65c40b4a2ec",
+    "refs": [],
+    "signature": "fn_club_members_role_guard()"
+  },
+  {
+    "body_md5": "9da1e464076776f49d00713e9d83e154",
+    "refs": [],
+    "signature": "fn_club_members_staff_earn_no_rakeback()"
+  },
+  {
+    "body_md5": "4ecd7a690da622a1d18eaec13206e5a5",
+    "refs": ["table_seats", "tables", "tournament_players", "tournaments"],
+    "signature": "fn_concurrent_game_load(uuid,uuid,uuid,uuid)"
+  },
+  {
+    "body_md5": "066dd18bd32f040beae30c770ea64688",
+    "refs": ["deep_stack_delete_attempts"],
+    "signature": "fn_deep_stack_society_cannot_be_deleted_by_accident()"
+  },
+  {
+    "body_md5": "3b5499cd90d9c1701791375261ec3bd7",
+    "refs": ["fn_game_management_scope", "game_management_events"],
+    "signature": "fn_emit_game_management_event(text,uuid,uuid,uuid,text,uuid,uuid,jsonb)"
+  },
+  {
+    "body_md5": "17e0b806e47734770ea84973330e2abe",
+    "refs": ["club_members", "clubs", "fn_emit_game_management_event", "union_admins", "unions"],
+    "signature": "fn_emit_management_access_event()"
+  },
+  {
+    "body_md5": "47a56128bb5a41236178fece349ee13d",
+    "refs": ["club_members", "fn_union_setting"],
+    "signature": "fn_enforce_agent_commission_bounds()"
+  },
+  {
+    "body_md5": "c833127edb902506927c9ef612e749ba",
+    "refs": [],
+    "signature": "fn_enforce_four_club_limit()"
+  },
+  {
+    "body_md5": "9de8cacda0717418221e0bcd3e24b85f",
+    "refs": ["fn_concurrent_game_load", "tables", "tournament_players"],
+    "signature": "fn_enforce_four_table_limit()"
+  },
+  {
+    "body_md5": "32335e76e9c5680e0c9cfbcf9631375b",
+    "refs": [],
+    "signature": "fn_engine_lease_stale_seconds()"
+  },
+  {
+    "body_md5": "fe45d79040dd46e5a53662f7dd57bd29",
+    "refs": ["daily_challenge_event_outbox"],
+    "signature": "fn_enqueue_hand_daily_missions()"
+  },
+  {
+    "body_md5": "a29498531e4b7d3889532e80fafc8d57",
+    "refs": ["engine_maintenance_break", "fn_active_maintenance_release_boundary"],
+    "signature": "fn_entry_purchases_frozen()"
+  },
+  {
+    "body_md5": "743b74f6f7740500a46cf95d51f9ebbf",
+    "refs": ["player_stats", "profiles", "tables"],
+    "signature": "fn_fold_hand_winnings()"
+  },
+  {
+    "body_md5": "455e80fbd8c07c99bf0e9f8fb146e889",
+    "refs": [],
+    "signature": "fn_freeze_bypass_active()"
+  },
+  {
+    "body_md5": "e444e25f3e8cfea21c002c161edabf34",
+    "refs": ["clubs", "union_clubs"],
+    "signature": "fn_game_management_scope(uuid)"
+  },
+  {
+    "body_md5": "0c57cb5a5d960036151891bcf170c2ee",
+    "refs": ["club_members"],
+    "signature": "fn_get_club_realtime_member_count(uuid)"
+  },
+  {
+    "body_md5": "3af5bb1377ef28a2e1f84c600b4268d6",
+    "refs": [],
+    "signature": "fn_guard_membership_lifecycle_write()"
+  },
+  {
+    "body_md5": "8750784ecac2800db5c6b0867730abdf",
+    "refs": ["table_seats", "tables"],
+    "signature": "fn_guard_one_live_tournament_seat()"
+  },
+  {
+    "body_md5": "20f3cc5c7929540d5b65242f94043c44",
+    "refs": ["clubs", "tables", "tournaments", "union_clubs", "unions"],
+    "signature": "fn_guard_rake_belongs_to_club()"
+  },
+  {
+    "body_md5": "f056528dab49bf3260faed436a1dee71",
+    "refs": ["agents", "cashout_requests", "clubs", "tables", "tournaments"],
+    "signature": "fn_guard_retired_club_mutation()"
+  },
+  {
+    "body_md5": "a8d8672e0201c8036e326989ea82d05c",
+    "refs": ["profiles"],
+    "signature": "fn_is_platform_admin()"
+  },
+  {
+    "body_md5": "a0a32c47d6ec20b05796b6b5a1f451af",
+    "refs": ["tournament_launch_receipts", "tournaments"],
+    "signature": "fn_lock_tournament_launch_proof_parents(uuid[])"
+  },
+  {
+    "body_md5": "1b1caddbd983038bb6ff5522e8ada65a",
+    "refs": ["bbj_hand_evidence_log", "bbj_payouts"],
+    "signature": "fn_log_jackpot_hand_deleted()"
+  },
+  {
+    "body_md5": "3c3a426b379feef857de3072973dc657",
+    "refs": ["ca_seat_stack_exits", "clubs", "tables"],
+    "signature": "fn_log_seat_stack_exit()"
+  },
+  {
+    "body_md5": "14ad046c2432d02ce858a468cb3a353c",
+    "refs": [],
+    "signature": "fn_membership_approval_gate()"
+  },
+  {
+    "body_md5": "7db9358306d340e7c994f1bed6dc2ddd",
+    "refs": [],
+    "signature": "fn_membership_starts_with_zero_chips()"
+  },
+  {
+    "body_md5": "84c78b67385e6807a6b8ee72a16fcddd",
+    "refs": [],
+    "signature": "fn_new_seat_clear_sitout()"
+  },
+  {
+    "body_md5": "7a77aaba2548aba8479b5ae1a14f9f75",
+    "refs": ["tables", "tournaments"],
+    "signature": "fn_no_live_seat_on_finished_game()"
+  },
+  {
+    "body_md5": "ec7d6bb558ed6a6de64aad351a6930e3",
+    "refs": ["fn_raise_notification", "tables", "tournaments"],
+    "signature": "fn_notify_blinding_off()"
+  },
+  {
+    "body_md5": "112b1265824ee082b8adc67ea367d826",
+    "refs": ["engine_maintenance_break", "fn_active_maintenance_release_boundary"],
+    "signature": "fn_platform_frozen()"
+  },
+  {
+    "body_md5": "2d052a4815d033295d98772989224800",
+    "refs": ["club_members"],
+    "signature": "fn_player_home_club(uuid,uuid)"
+  },
+  {
+    "body_md5": "9bd74f7d29e82955303f9c2c77334b68",
+    "refs": ["clubs", "poker_diamond_custody", "tables"],
+    "signature": "fn_poker_bind_diamond_seat()"
+  },
+  {
+    "body_md5": "b4878c966c506b435e3b40ee4a049d9b",
+    "refs": ["clubs", "poker_diamond_custody", "table_seats", "tables"],
+    "signature": "fn_poker_diamond_seat_keeps_custody()"
+  },
+  {
+    "body_md5": "c1a148d932af73ce8d77743069b6d248",
+    "refs": [
+      "clubs",
+      "diamond_purchase_lots",
+      "poker_diamond_custody",
+      "poker_diamond_hand_receipts",
+      "poker_diamond_lot_reservations",
+      "profiles",
+      "table_seats",
+      "tables"
+    ],
+    "signature": "fn_poker_diamond_settle_cash_hand(uuid,bigint,jsonb,numeric,numeric,text,numeric)"
+  },
+  {
+    "body_md5": "02119ab7ee36b0d38029570ff7dc1f19",
+    "refs": ["clubs", "fn_is_platform_admin"],
+    "signature": "fn_poker_guard_arena_structure()"
+  },
+  {
+    "body_md5": "eb611027ff49792b4b4191e28e23c23b",
+    "refs": ["ca_arena_settings", "clubs", "poker_diamond_custody", "tables"],
+    "signature": "fn_poker_guard_chip_seat()"
+  },
+  {
+    "body_md5": "b9f2cff86b7418d8de4f8557aeebf98a",
+    "refs": ["clubs"],
+    "signature": "fn_poker_reject_diamond_hierarchy()"
+  },
+  {
+    "body_md5": "974030df27108f51e100bc8de027f53a",
+    "refs": ["player_position_stats"],
+    "signature": "fn_process_hand_position_stats(jsonb,jsonb,jsonb)"
+  },
+  {
+    "body_md5": "c1bf410947aa9277a0a2d133c6683c7c",
+    "refs": ["fn_process_hand_position_stats", "hand_history"],
+    "signature": "fn_process_hand_position_stats(uuid)"
+  },
+  {
+    "body_md5": "2eff7c0c55f24f1d44774ad702912513",
+    "refs": ["notifications"],
+    "signature": "fn_raise_notification(uuid,text,text,text,text,jsonb)"
+  },
+  {
+    "body_md5": "13c75f3339f7f21f7dd1345447befab6",
+    "refs": ["financial_alerts"],
+    "signature": "fn_raise_server_financial_alert(text,text,text,jsonb,text,text)"
+  },
+  {
+    "body_md5": "9c1c432db2c8380a4460e6cc70b9a8dc",
+    "refs": [],
+    "signature": "fn_recompute_club_level_on_member_change()"
+  },
+  {
+    "body_md5": "d21668d1254e1bdb49661f6365fd9cfc",
+    "refs": [
+      "fn_entry_purchases_frozen",
+      "fn_freeze_bypass_active",
+      "tables",
+      "tournament_launch_receipts",
+      "tournaments"
+    ],
+    "signature": "fn_refuse_new_entries_while_frozen()"
+  },
+  {
+    "body_md5": "a59262bfde6629f86f884434f94c7cb0",
+    "refs": ["table_seats", "tables"],
+    "signature": "fn_refuse_seat_on_closed_cluster_table()"
+  },
+  {
+    "body_md5": "ead41fa15e6cb9aaa37e65d3eef8a682",
+    "refs": ["fn_freeze_bypass_active", "fn_platform_frozen"],
+    "signature": "fn_refuse_while_frozen()"
+  },
+  {
+    "body_md5": "6a71248fcfe2288300d268be68272244",
+    "refs": [],
+    "signature": "fn_require_explicit_club_membership_source()"
+  },
+  {
+    "body_md5": "22412833cfa9e0617492c5261f9a4069",
+    "refs": ["tables"],
+    "signature": "fn_require_live_seat_parent()"
+  },
+  {
+    "body_md5": "640f0819d80f769ce4f224413fd359b5",
+    "refs": [
+      "fn_ca_has_committed_tournament_receipt",
+      "fn_ca_terminal_marker_transition_is_exact",
+      "tournaments"
+    ],
+    "signature": "fn_satellite_target_rake_is_immutable()"
+  },
+  {
+    "body_md5": "d105db62a249ba49b267d8d28bb55b2f",
+    "refs": ["fn_sync_seat_first_player_count", "tables", "tournaments"],
+    "signature": "fn_seat_change_syncs_seat_first_count()"
+  },
+  {
+    "body_md5": "0a26aceb553b004737977cad2e540c01",
+    "refs": [],
+    "signature": "fn_seat_club_for_user_membership_unchecked(uuid,uuid,uuid)"
+  },
+  {
+    "body_md5": "685ccf0299798df1ebfeefba331e901d",
+    "refs": [
+      "club_members",
+      "fn_player_home_club",
+      "fn_seat_club_for_user_membership_unchecked",
+      "tables"
+    ],
+    "signature": "fn_seat_club_for_user(uuid,uuid,uuid)"
+  },
+  {
+    "body_md5": "513c2d29659f76ee4fe2cbcb479e8e20",
+    "refs": ["table_waitlist"],
+    "signature": "fn_seat_insert_cancel_waitlist()"
+  },
+  {
+    "body_md5": "604113bd4172433183cdd1d59af04e0f",
+    "refs": [
+      "chip_ledger",
+      "fn_ca_declare_ledger",
+      "fn_spin_rake_rate",
+      "fn_spin_reserve_pool",
+      "fn_tournament_primary_table",
+      "rake_records",
+      "spin_bonus_pools",
+      "spin_reserve_ledger",
+      "table_seats",
+      "tournament_escrow",
+      "tournament_players",
+      "tournaments",
+      "wallet_transactions"
+    ],
+    "signature": "fn_spin_book_entry(uuid)"
+  },
+  {
+    "body_md5": "5299efe634f19bac7418f22c7cce4194",
+    "refs": [],
+    "signature": "fn_spin_rake_rate(numeric)"
+  },
+  {
+    "body_md5": "604ae81e765f0ec3ede159cc7e383b8e",
+    "refs": ["clubs"],
+    "signature": "fn_spin_reserve_owner(uuid)"
+  },
+  {
+    "body_md5": "8fecd95a2d2a49657b01878096287019",
+    "refs": ["fn_spin_reserve_owner", "spin_bonus_pools", "unions"],
+    "signature": "fn_spin_reserve_pool(uuid)"
+  },
+  {
+    "body_md5": "43179b85d6717e3b512dc34cfad9d89c",
+    "refs": ["tables"],
+    "signature": "fn_stamp_active_seat_game_scope()"
+  },
+  {
+    "body_md5": "aae09b5c2a9a82e0d72bbc7ab5020467",
+    "refs": ["fn_seat_club_for_user"],
+    "signature": "fn_stamp_seat_club()"
+  },
+  {
+    "body_md5": "890d7343f1f79736cce8b572aa583355",
+    "refs": ["profiles"],
+    "signature": "fn_stamp_seat_horse_id()"
+  },
+  {
+    "body_md5": "aa11dad7e910735d01c28c8638698a3f",
+    "refs": [],
+    "signature": "fn_stamp_seat_occupancy()"
+  },
+  {
+    "body_md5": "0fe6f1a355f1caf1ac7ae7d164019e74",
+    "refs": ["fn_freeze_bypass_active"],
+    "signature": "fn_stamp_sit_out_at()"
+  },
+  {
+    "body_md5": "14349f98b4dbe6ff923b38f62f2355aa",
+    "refs": [],
+    "signature": "fn_sync_agent_player_counts()"
+  },
+  {
+    "body_md5": "d4caf01d8b7532e2a4105a4e62ba5cb2",
+    "refs": ["fn_apply_club_ladder", "fn_apply_union_ladder", "union_clubs"],
+    "signature": "fn_sync_club_member_count()"
+  },
+  {
+    "body_md5": "c25251b2e4f7929d38f4c3c80d34b31c",
+    "refs": ["profiles"],
+    "signature": "fn_sync_mfa_required_on_club_role()"
+  },
+  {
+    "body_md5": "609983772f8468d96b7b3d8dcfeafaea",
+    "refs": [
+      "fn_spin_book_entry",
+      "fn_tournament_primary_table",
+      "table_seats",
+      "tables",
+      "tournaments"
+    ],
+    "signature": "fn_sync_seat_first_player_count(uuid)"
+  },
+  {
+    "body_md5": "e6fbb738a0528aa0f32e33d004bf2045",
+    "refs": [
+      "fn_ca_terminal_marker_transition_is_exact",
+      "tournament_cancellation_receipts",
+      "tournament_satellite_settlements",
+      "tournament_terminal_settlements",
+      "tournaments"
+    ],
+    "signature": "fn_terminal_tournament_evidence_is_immutable()"
+  },
+  {
+    "body_md5": "415ce333108620c25b9f25ec19f304ce",
+    "refs": [
+      "fn_ca_terminal_marker_transition_is_exact",
+      "tables",
+      "tournament_cancellation_receipts",
+      "tournament_satellite_settlements",
+      "tournament_terminal_settlements",
+      "tournaments"
+    ],
+    "signature": "fn_terminal_tournament_seat_is_immutable()"
+  },
+  {
+    "body_md5": "46074e04b60ecb97557b63ef25c5739d",
+    "refs": [],
+    "signature": "fn_tournament_entry_split(numeric,numeric,numeric,boolean)"
+  },
+  {
+    "body_md5": "1340c820635fa41ed6633aa2f9250f64",
+    "refs": ["tournament_players"],
+    "signature": "fn_tournament_fee_names_its_player()"
+  },
+  {
+    "body_md5": "7a50958787ad79ffbb8b9f175f1d90a7",
+    "refs": ["tables", "tournaments"],
+    "signature": "fn_tournament_live_seat_acquisition_requires_authority()"
+  },
+  {
+    "body_md5": "9844a7c70aeca43795cdbf856cf50311",
+    "refs": ["table_seats", "tables"],
+    "signature": "fn_tournament_primary_table(uuid)"
+  },
+  {
+    "body_md5": "b8c67c69c3b9a340e222488eac6f96f2",
+    "refs": [],
+    "signature": "fn_union_setting(uuid,text,numeric)"
+  },
+  {
+    "body_md5": "dba4edcf075d454d6c3b2d2eeeb7cbfd",
+    "refs": [],
+    "signature": "guard_agent_wallet_direct_update()"
+  },
+  {
+    "body_md5": "8521f215a6493172f043134361e9b6a9",
+    "refs": [],
+    "signature": "lock_club_cashier_hierarchy_mutation()"
+  },
+  {
+    "body_md5": "64bcf2cf603fb4c0cd1ed9c9cf3af8ba",
+    "refs": [],
+    "signature": "sync_agent_wallet_columns()"
+  },
+  {
+    "body_md5": "d33358abf233bfed8dfab526714e0a2d",
+    "refs": ["ca_club_commission_daily", "fn_agent_commission_rollup_recompute"],
+    "signature": "trg_agent_commission_rollup_change()"
+  },
+  {
+    "body_md5": "f7f79c3ec742a8826d6df00a3cb621c0",
+    "refs": [
+      "agent_commission_unsettled_rollup",
+      "ca_club_commission_daily",
+      "fn_agent_commission_paid_by_period"
+    ],
+    "signature": "trg_agent_commission_rollup_insert()"
+  },
+  {
+    "body_md5": "b756632b7e50ef84a232a19afb0264dd",
+    "refs": ["table_seats", "tables", "tournament_players", "tournaments"],
+    "signature": "trg_assert_live_tournament_seat_has_roster()"
+  },
+  {
+    "body_md5": "9c1c432db2c8380a4460e6cc70b9a8dc",
+    "refs": [],
+    "signature": "trg_auto_recompute_club_level()"
+  },
+  {
+    "body_md5": "1c1c1c2cfda84913e60512266f4ea2af",
+    "refs": ["fn_ca_club_rake_daily_rebuild_range"],
+    "signature": "trg_ca_club_rake_daily_change()"
+  },
+  {
+    "body_md5": "164eb239c26e8ac0c37498c1870ffcc8",
+    "refs": ["fn_ca_club_rake_daily_apply"],
+    "signature": "trg_ca_club_rake_daily_insert()"
+  },
+  {
+    "body_md5": "8a7f9c06565d8c99c66dcaadf69995c1",
+    "refs": [
+      "ca_club_tournament_daily",
+      "ca_reporting_tournament_clubs_for_user",
+      "tournament_players"
+    ],
+    "signature": "trg_ca_reporting_rake_insert()"
+  },
+  {
+    "body_md5": "1648dffde2ac428d4b680f97989b9e50",
+    "refs": ["ca_refresh_reporting_rollups"],
+    "signature": "trg_ca_reporting_repair_changed_days()"
+  },
+  {
+    "body_md5": "855decf0628a0011218cea8c4b2f19da",
+    "refs": ["ca_hand_player_facts_one", "ca_hand_player_idx", "ca_hand_player_stat"],
+    "signature": "trg_ca_stats_live_from_hand()"
+  },
+  {
+    "body_md5": "96b22844ffeae318484a7f624485f705",
+    "refs": ["cash_player_session", "clubs", "tables"],
+    "signature": "trg_fn_close_session_when_seat_vacated()"
+  },
+  {
+    "body_md5": "dcf951bb3ba1e0a42f7069ad473e9f59",
+    "refs": [
+      "club_hand_daily_shard",
+      "club_member_daily_stats",
+      "club_member_table_state",
+      "hand_history",
+      "tables"
+    ],
+    "signature": "trg_hand_history_club_member_stats()"
+  },
+  {
+    "body_md5": "37b0f91d8e4f465be3e1d0963c2e047c",
+    "refs": ["fn_process_hand_position_stats"],
+    "signature": "trg_hand_history_position_stats()"
+  },
+  {
+    "body_md5": "27e86e2b51bb6cfb17c13569c8870f10",
+    "refs": [
+      "fn_lock_tournament_launch_proof_parents",
+      "tables",
+      "tournament_launch_receipts",
+      "tournament_players",
+      "tournaments"
+    ],
+    "signature": "trg_lock_and_validate_tournament_live_seat()"
+  },
+  {
+    "body_md5": "37bcf8042464443094bd0709e1062747",
+    "refs": ["tables"],
+    "signature": "trg_refuse_live_seat_on_closed_tournament_table()"
+  },
+  {
+    "body_md5": "10bd21d1a3e607818ea0a4ad7c0723fd",
+    "refs": ["tables"],
+    "signature": "trg_seat_parent_keys_match()"
+  },
+  {
+    "body_md5": "da5ac28a58c8b4bb30209bf0d3d7082c",
+    "refs": [],
+    "signature": "update_updated_at_column()"
+  }
+]

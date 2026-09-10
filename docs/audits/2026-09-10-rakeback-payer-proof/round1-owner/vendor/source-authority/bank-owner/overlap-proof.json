@@ -1,0 +1,57 @@
+{
+  "checks": [
+    "Activation fails atomically while actual old bank has inserted spendable leg",
+    "Drained old transaction rollback leaves every public row unchanged",
+    "Old new-record and existing-record recovery owners cannot commit unacknowledged credit",
+    "Retry through replacement owner credits once with complete receipt",
+    "Legacy rake-record recovery cannot be promoted to prospective funding",
+    "Real legacy derived-key bank cannot credit again under accepted UUID",
+    "Wrong non-NULL hand alias refuses before financial writes",
+    "NULL hand resolves actual accepted history and replays without new money",
+    "Concurrent exact requests produce one actual credit and one replay"
+  ],
+  "observed_waits": {
+    "old_after_leg": [
+      {
+        "pid": 25439,
+        "event": "advisory",
+        "blockers": [25433]
+      }
+    ],
+    "ddl_drain": [
+      {
+        "pid": 25445,
+        "event": "relation",
+        "blockers": [25439]
+      }
+    ],
+    "old_new_record": [
+      {
+        "pid": 25484,
+        "event": "relation",
+        "blockers": [25480]
+      }
+    ],
+    "old_existing_record": [
+      {
+        "pid": 25485,
+        "event": "relation",
+        "blockers": [25480]
+      }
+    ],
+    "duplicate_one": [
+      {
+        "pid": 25541,
+        "event": "advisory",
+        "blockers": [25537]
+      }
+    ],
+    "duplicate_two": [
+      {
+        "pid": 25547,
+        "event": "advisory",
+        "blockers": [25541]
+      }
+    ]
+  }
+}

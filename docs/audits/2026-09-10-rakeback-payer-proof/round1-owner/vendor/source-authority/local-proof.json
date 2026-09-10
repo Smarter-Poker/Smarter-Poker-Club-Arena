@@ -1,0 +1,23 @@
+{
+  "status": "locally_verified_proposal_not_applied",
+  "helper_checks": 49,
+  "actual_owner_checks": 15,
+  "source_log": "/tmp/ca-source-funding-fields.log",
+  "owner_log": "/tmp/ca-owner-source-proof.log",
+  "owner_committed_at_default": "clock_timestamp()",
+  "remaining": [
+    "actual bank owner and post-credit source receipts",
+    "Union-to-club consumed funding capacity",
+    "cross-week fractional carry",
+    "full outer Union cascade",
+    "other game variants and reporting"
+  ],
+  "sql_sha256": {
+    "05-immutable-receipts.sql": "439639dc2289fa75103ed2f4220b652e986300bb4f2ca0e82e0df1856ef56fdd",
+    "03-accepted-owner-patch.sql": "5d69ce06a5d21742cf96cf1167f8ffd9ed7a83e18ed3b5d3d275ee09fb5ba363",
+    "03-receipt-source-boundary.sql": "b18fe8fb81016f94d064bdd542590d63c40e4f1c47c591a68a6dca3b93d84a83",
+    "01-source-schema.sql": "d26a4fb28daff10d320995ba24b9802de027b675058e7b76e434e66df1f4ba9f",
+    "04-cash-admission.sql": "b5eaf4c8ee41a8326298d39d47c2701c124f842029280b8a204c774210650037",
+    "02-capture.sql": "170cbf60d12a663d62238b5b5e1e061304cbc521a37f6f71bef2eac864d9bd30"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "checks": [
+    "Actual old legacy union_to_club call cannot create a second spendable route",
+    "Legacy union_to_club history remains outside prospective funding"
+  ],
+  "observed_waits": [
+    {
+      "pid": 25607,
+      "event": "relation",
+      "blockers": [25603]
+    }
+  ]
+}

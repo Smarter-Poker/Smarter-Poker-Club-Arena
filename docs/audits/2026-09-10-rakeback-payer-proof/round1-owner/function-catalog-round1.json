@@ -1,0 +1,44 @@
+[
+  {
+    "signature": "fn_ca_declare_ledger(text,text,uuid,uuid,text,text[])",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_declare_ledger(p_category text, p_counterparty text, p_counterparty_entity uuid DEFAULT NULL::uuid, p_settlement_id uuid DEFAULT NULL::uuid, p_idempotency_key text DEFAULT NULL::text, p_autoskip_tables text[] DEFAULT NULL::text[])\n RETURNS void\n LANGUAGE plpgsql\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  v_t text;\nBEGIN\n  -- validate against the LIVE vocabulary so this can never lag a CHECK change\n  IF p_category IS NULL OR NOT EXISTS (\n    SELECT 1 FROM pg_constraint\n     WHERE conrelid = 'public.chip_ledger'::regclass\n       AND conname = 'chip_ledger_category_check'\n       AND pg_get_constraintdef(oid) LIKE '%''' || p_category || '''%') THEN\n    RAISE EXCEPTION 'fn_ca_declare_ledger: category % is not in the ledger vocabulary - add it to chip_ledger_category_check FIRST, then declare it', p_category;\n  END IF;\n  IF p_counterparty IS NULL OR NOT EXISTS (\n    SELECT 1 FROM pg_constraint\n     WHERE conrelid = 'public.chip_ledger'::regclass\n       AND conname = 'chip_ledger_from_type_check'\n       AND pg_get_constraintdef(oid) LIKE '%''' || p_counterparty || '''%') THEN\n    RAISE EXCEPTION 'fn_ca_declare_ledger: counterparty % is not in the ledger vocabulary - add it to the from/to type CHECKs FIRST, then declare it', p_counterparty;\n  END IF;\n\n  PERFORM set_config('app.ledger_category', p_category, true);\n  PERFORM set_config('app.ledger_counterparty', p_counterparty, true);\n  PERFORM set_config('app.ledger_counterparty_entity',\n                     COALESCE(p_counterparty_entity::text, ''), true);\n  IF p_settlement_id IS NOT NULL THEN\n    PERFORM set_config('app.ledger_settlement', p_settlement_id::text, true);\n  END IF;\n  IF p_idempotency_key IS NOT NULL THEN\n    PERFORM set_config('app.ledger_idempotency_key', p_idempotency_key, true);\n  END IF;\n  IF p_autoskip_tables IS NOT NULL THEN\n    FOREACH v_t IN ARRAY p_autoskip_tables LOOP\n      IF v_t !~ '^[a-z_]+$' THEN\n        RAISE EXCEPTION 'fn_ca_declare_ledger: bad autoskip table name %', v_t;\n      END IF;\n      PERFORM set_config('app.ledger_autoskip_' || v_t, '1', true);\n    END LOOP;\n  END IF;\nEND $function$\n",
+    "body_md5": "32b44879f88b14b57fc6037605d28b1f",
+    "owner": "postgres",
+    "grants": "{postgres=X/postgres,service_role=X/postgres}"
+  },
+  {
+    "signature": "fn_credit_treasury(uuid,numeric,text,jsonb,text)",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_credit_treasury(p_club_id uuid, p_amount numeric, p_reason text DEFAULT NULL::text, p_metadata jsonb DEFAULT '{}'::jsonb, p_op_id text DEFAULT NULL::text)\n RETURNS jsonb\n LANGUAGE plpgsql\n SET search_path TO 'public', 'extensions'\nAS $function$\nDECLARE\n  v_prior jsonb;\n  v_res jsonb;\nBEGIN\n  IF p_op_id IS NULL THEN\n    RETURN public.fn_credit_treasury_zd4core(p_club_id, p_amount, p_reason, p_metadata);\n  END IF;\n\n  SELECT result INTO v_prior\n    FROM public.ca_op_claims\n   WHERE op_id = p_op_id AND fn_name = 'fn_credit_treasury';\n  IF FOUND AND v_prior IS NOT NULL THEN\n    RETURN v_prior || jsonb_build_object('replayed', true, 'op_id', p_op_id);\n  ELSIF FOUND THEN\n    DELETE FROM public.ca_op_claims\n     WHERE op_id = p_op_id AND fn_name = 'fn_credit_treasury';\n  END IF;\n\n  INSERT INTO public.ca_op_claims (op_id, fn_name, claimed_by)\n  VALUES (p_op_id, 'fn_credit_treasury', auth.uid());\n\n  v_res := public.fn_credit_treasury_zd4core(p_club_id, p_amount, p_reason, p_metadata);\n\n  IF COALESCE(v_res->>'success', '') = 'true' THEN\n    UPDATE public.ca_op_claims\n       SET result = v_res, finalized_at = now()\n     WHERE op_id = p_op_id AND fn_name = 'fn_credit_treasury';\n  ELSE\n    DELETE FROM public.ca_op_claims\n     WHERE op_id = p_op_id AND fn_name = 'fn_credit_treasury';\n  END IF;\n\n  RETURN v_res;\nEND;\n$function$\n",
+    "body_md5": "22384cde912eac3a859971400dd971ee",
+    "owner": "postgres",
+    "grants": "{postgres=X/postgres,service_role=X/postgres}"
+  },
+  {
+    "signature": "fn_credit_treasury_zd4core(uuid,numeric,text,jsonb)",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_credit_treasury_zd4core(p_club_id uuid, p_amount numeric, p_reason text, p_metadata jsonb)\n RETURNS jsonb\n LANGUAGE plpgsql\n SET search_path TO 'public', 'extensions'\nAS $function$\nDECLARE\n  v_before numeric;\n  v_after numeric;\nBEGIN\n  IF p_club_id IS NULL OR p_amount IS NULL OR p_amount <= 0 THEN\n    RETURN jsonb_build_object('success', false, 'error', 'invalid parameters');\n  END IF;\n\n  SELECT COALESCE(chip_treasury, 0) INTO v_before\n  FROM clubs WHERE id = p_club_id FOR UPDATE;\n\n  IF v_before IS NULL THEN\n    RETURN jsonb_build_object('success', false, 'error', 'club not found');\n  END IF;\n\n  UPDATE clubs\n  SET chip_treasury = COALESCE(chip_treasury, 0) + p_amount,\n      updated_at = NOW()\n  WHERE id = p_club_id;\n  v_after := v_before + p_amount;\n\n  INSERT INTO chip_transactions (\n    id, club_id, amount, transaction_type, notes, metadata, balance_after, created_at\n  ) VALUES (\n    gen_random_uuid(), p_club_id, p_amount,\n    'treasury_credit', COALESCE(p_reason, 'Treasury credit'), p_metadata, v_after, NOW()\n  );\n\n  RETURN jsonb_build_object(\n    'success', true,\n    'amount', p_amount,\n    'balance_before', v_before,\n    'balance_after', v_after\n  );\nEND;\n$function$\n",
+    "body_md5": "761889901158043af5653fc0eff80606",
+    "owner": "postgres",
+    "grants": "{postgres=X/postgres,service_role=X/postgres}"
+  },
+  {
+    "signature": "fn_union_prev_week_start(timestamp with time zone)",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_union_prev_week_start(p_at timestamp with time zone DEFAULT now())\n RETURNS timestamp with time zone\n LANGUAGE sql\n IMMUTABLE\n SET search_path TO 'public', 'extensions'\nAS $function$\n  SELECT (date_trunc('week', (p_at AT TIME ZONE 'America/Los_Angeles')) - interval '7 days')\n           AT TIME ZONE 'America/Los_Angeles';\n$function$\n",
+    "body_md5": "2d6778cc6ae9c71567add5bf2a3aad02",
+    "owner": "postgres",
+    "grants": "{postgres=X/postgres,service_role=X/postgres}"
+  },
+  {
+    "signature": "fn_union_week_start(timestamp with time zone)",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_union_week_start(p_at timestamp with time zone DEFAULT now())\n RETURNS timestamp with time zone\n LANGUAGE sql\n IMMUTABLE\n SET search_path TO 'public', 'extensions'\nAS $function$\n  SELECT date_trunc('week', (p_at AT TIME ZONE 'America/Los_Angeles'))\n           AT TIME ZONE 'America/Los_Angeles';\n$function$\n",
+    "body_md5": "271c8a1269dc2e570ee20bd781493e9d",
+    "owner": "postgres",
+    "grants": "{postgres=X/postgres,service_role=X/postgres}"
+  },
+  {
+    "signature": "fn_is_union_overseer(uuid,uuid)",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_is_union_overseer(p_union_id uuid, p_user_id uuid)\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\n  SELECT p_union_id IS NOT NULL AND p_user_id IS NOT NULL AND (\n       EXISTS (SELECT 1 FROM public.unions u WHERE u.id = p_union_id AND u.owner_id = p_user_id)\n    OR EXISTS (SELECT 1 FROM public.union_admins a WHERE a.union_id = p_union_id AND a.user_id = p_user_id)\n    OR EXISTS (SELECT 1 FROM public.clubs c\n                WHERE c.id = p_union_id AND COALESCE(c.is_union, false) AND c.owner_id = p_user_id)\n    OR EXISTS (SELECT 1 FROM public.club_members m\n                WHERE m.club_id = p_union_id AND m.user_id = p_user_id\n                  AND m.role IN ('owner','co_owner','admin')\n                  AND m.status IN ('active','approved'))\n  );\n$function$\n",
+    "body_md5": "5a42c5e7097a527856f56fc7224f9457",
+    "owner": "postgres",
+    "grants": "{postgres=X/postgres,service_role=X/postgres}"
+  }
+]

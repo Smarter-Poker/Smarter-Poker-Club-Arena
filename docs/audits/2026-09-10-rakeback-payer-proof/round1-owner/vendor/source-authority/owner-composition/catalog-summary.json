@@ -1,0 +1,6 @@
+{
+  "tables": 120,
+  "functions": 223,
+  "triggers": 174,
+  "missing_foreign_tables": []
+}

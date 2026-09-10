@@ -1,0 +1,69 @@
+[
+  {
+    "columns": [
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "op_id",
+        "not_null": true,
+        "type": "text"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "fn_name",
+        "not_null": true,
+        "type": "text"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "result",
+        "not_null": false,
+        "type": "jsonb"
+      },
+      {
+        "default": "now()",
+        "generated": "",
+        "identity": "",
+        "name": "claimed_at",
+        "not_null": true,
+        "type": "timestamp with time zone"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "finalized_at",
+        "not_null": false,
+        "type": "timestamp with time zone"
+      },
+      {
+        "default": null,
+        "generated": "",
+        "identity": "",
+        "name": "claimed_by",
+        "not_null": false,
+        "type": "uuid"
+      }
+    ],
+    "constraints": [
+      {
+        "definition": "PRIMARY KEY (op_id, fn_name)",
+        "name": "ca_op_claims_pkey",
+        "type": "p"
+      }
+    ],
+    "indexes": [
+      {
+        "definition": "CREATE UNIQUE INDEX ca_op_claims_pkey ON public.ca_op_claims USING btree (op_id, fn_name)",
+        "name": "ca_op_claims_pkey"
+      }
+    ],
+    "name": "ca_op_claims",
+    "schema": "public"
+  }
+]

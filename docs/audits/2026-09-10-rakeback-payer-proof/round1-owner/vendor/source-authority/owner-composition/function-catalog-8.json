@@ -1,0 +1,9 @@
+[
+  {
+    "body_md5": "da5ac28a58c8b4bb30209bf0d3d7082c",
+    "definition": "CREATE OR REPLACE FUNCTION public.update_updated_at_column()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'public', 'extensions'\nAS $function$\nBEGIN\n  NEW.updated_at = NOW();\n  RETURN NEW;\nEND;\n$function$\n",
+    "grants": "{postgres=X/postgres,service_role=X/postgres}",
+    "owner": "postgres",
+    "signature": "update_updated_at_column()"
+  }
+]

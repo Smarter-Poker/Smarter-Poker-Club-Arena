@@ -1,0 +1,75 @@
+{
+  "captured_at": "2026-09-10T14:32:02.217Z",
+  "scope": "Native NUMERIC counterexample and allocation arithmetic only. No actual bank, Round1 money writer or capacity-owner constraints executed.",
+  "runtime": {
+    "node": "v24.15.0",
+    "postgres": "PostgreSQL 17.11 (Homebrew) on aarch64-apple-darwin25.6.0, compiled by Apple clang version 21.0.0 (clang-2100.1.1.101), 64-bit"
+  },
+  "inputs": {
+    "run-counterexample.sh": "5d28e849942257174c4da39990522ab5c7dfebd6a88b54e78605740a4b0f0ae2",
+    "carry-counterexample.mjs": "73e43ae00f6cddd33939884976beef74f26db9e3d30a6740cc60be4e2609fc3c",
+    "carry-counterexample.sql": "fbb13689b845c85b951dd888cd176950d255d5f5bda2bee98e60b43badfee95b"
+  },
+  "passed": 3,
+  "original": {
+    "independent_window_cash": "0.00000000000000000000",
+    "original_bank_windows": 2,
+    "earning_weeks": 1,
+    "source_identity": [
+      {
+        "source": "a",
+        "bank_at": "2026-08-31T01:59:59-05:00",
+        "bank_week": "2026-08-24T02:00:00-05:00",
+        "club_exact": 0.009,
+        "agent_exact": 0.007,
+        "earning_week": "2026-08-31",
+        "player_exact": 0.006
+      },
+      {
+        "source": "b",
+        "bank_at": "2026-08-31T02:00:00-05:00",
+        "bank_week": "2026-08-31T02:00:00-05:00",
+        "club_exact": 0.009,
+        "agent_exact": 0.007,
+        "earning_week": "2026-08-31",
+        "player_exact": 0.006
+      }
+    ],
+    "cumulative_pool": {
+      "route": "union_rake_wallet",
+      "club_id": "club-a",
+      "released": 0.01,
+      "union_id": "union-a",
+      "agent_cash": 0.01,
+      "club_exact": 0.018,
+      "generation": 1,
+      "agent_exact": 0.014,
+      "player_cash": 0.01,
+      "player_exact": 0.012
+    }
+  },
+  "separation": [
+    {
+      "released": "0.00000000000000000000"
+    },
+    {
+      "released": "0.00000000000000000000"
+    },
+    {
+      "released": "0.00000000000000000000"
+    },
+    {
+      "released": "0.00000000000000000000"
+    },
+    {
+      "released": "0.00000000000000000000"
+    }
+  ],
+  "slices": {
+    "agent_cash": true,
+    "player_cash": true,
+    "agent_own_rights": true,
+    "player_own_rights": true,
+    "released_capacity": true
+  }
+}

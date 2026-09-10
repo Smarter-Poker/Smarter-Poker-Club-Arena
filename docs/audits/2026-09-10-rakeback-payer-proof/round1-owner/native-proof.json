@@ -1,0 +1,27 @@
+{
+  "status": "partial_native_round1_checkpoint",
+  "checks": [
+    "Unchanged current accepted/bank emission cannot enter a closed bank window",
+    "First closed .009 exact club right is admitted with zero cash",
+    "Two Pacific windows release one cumulative cent through actual Union and treasury owners",
+    "Release slices retain both original bank windows and each source exact cap",
+    "Same UUID replays the original receipt with no public row change",
+    "Older requested cutoff preserves admitted highwater and cannot repay carry",
+    "Final request receipt failure rolls back all public money/admission/slice/support rows",
+    "Failed request retries actual remaining cash once",
+    "Linked Union debit cannot change under maintenance",
+    "Linked release ledger cannot be truncated under maintenance",
+    "Closed standalone bank capacity references the actual bank receipt without a second treasury credit"
+  ],
+  "temporal_scope": "Current actual owner emission proves open refusal; closed cases use fixture-only timestamp triggers with unchanged actual owners. Full Union legacy exclusion, Round2/player composition, authorization/races and common finality remain pending.",
+  "runtime": "PostgreSQL 17.11 (Homebrew) on aarch64-apple-darwin25.6.0, compiled by Apple clang version 21.0.0 (clang-2100.1.1.101), 64-bit",
+  "inputs": {
+    "01-release-writer.sql": "c273641757388a1e6019b052e72f66aac6c6ca4db2deaa83ed6140a59f5378ce",
+    "fixture-clock.sql": "0988e0559975003078ee5680bacbd03c000ce2752bf2a1473611c512b2175c8e",
+    "fixture_helpers.py": "4a69327fbc4c3dcf2d5180d9d1bb780d0ad6a8f9c3157e9900b28fe81a6d3d51",
+    "native-probe.py": "6f7a85b1d068ae9b1719678e0e6f73fa1c14f3fdee6d7046832b4a39747e087e",
+    "activate-fixture.py": "937f10723aaec5fefdf1e46be78b6319d0fde99893ab9f94292febf11d2f1982",
+    "run-local.sh": "fdb2a1c55f74b802e87a3ebd2b51423407ce28aeb4ba0c301a0770da4f07d6b9",
+    "vendor-input-hashes.json": "ae7079cc3dafa2ea39dc48e352beeab66ae5a7dfaee8c78b2a2705a6dd0ce17b"
+  }
+}

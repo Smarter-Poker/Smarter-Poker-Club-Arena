@@ -1,0 +1,9 @@
+[
+  {
+    "body_md5": "764e982b48283abe0f9b7537f38364e2",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_club_rake_daily_user_apply(p_ids uuid[])\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nBEGIN\n  IF p_ids IS NULL OR array_length(p_ids, 1) IS NULL THEN\n    RETURN;\n  END IF;\n\n  INSERT INTO public.ca_club_rake_daily_user (club_id, day, user_id, rake_cents, hands, updated_at)\n  SELECT ra.club_id,\n         (ra.created_at AT TIME ZONE 'UTC')::date,\n         ra.player_id,\n         SUM(round(ra.rake_amount * 100))::bigint,\n         count(*)::bigint,\n         now()\n    FROM public.rake_attributions ra\n   WHERE ra.id = ANY (p_ids)\n     AND ra.club_id IS NOT NULL\n     AND ra.player_id IS NOT NULL\n     AND ra.rake_amount > 0\n   GROUP BY 1, 2, 3\n  ON CONFLICT (club_id, day, user_id) DO UPDATE\n     SET rake_cents = public.ca_club_rake_daily_user.rake_cents + EXCLUDED.rake_cents,\n         hands      = public.ca_club_rake_daily_user.hands + EXCLUDED.hands,\n         updated_at = now();\nEND;\n$function$\n",
+    "grants": "{postgres=X/postgres,service_role=X/postgres}",
+    "owner": "postgres",
+    "signature": "fn_ca_club_rake_daily_user_apply(uuid[])"
+  }
+]

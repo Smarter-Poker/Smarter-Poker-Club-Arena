@@ -1028,13 +1028,16 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
               if (sweepStopped()) return;
               this.rearmIfTheFinishWasRefused();
             } else if ((remainingCount || 0) === 0) {
-              // All players busted simultaneously — pick the last eliminated as winner
+              // The terminal authority uses the durable elimination sequence,
+              // not a wall-clock timestamp. Equal timestamps or out-of-order
+              // callbacks must not nominate a different winner on every retry.
               const { data: lastEliminated, error: lastEliminatedErr } = await supabase
                 .from('tournament_players')
                 .select('user_id')
                 .eq('tournament_id', this.tournamentId)
                 .eq('status', 'eliminated')
-                .order('eliminated_at', { ascending: false })
+                .not('elimination_sequence', 'is', null)
+                .order('elimination_sequence', { ascending: false })
                 .limit(1)
                 .maybeSingle();
 
@@ -1049,11 +1052,22 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
 
               if (lastEliminated) {
                 console.log(
-                  `[Tournament:${this.tournamentId.slice(0, 8)}] All busted simultaneously - last eliminated wins`
+                  `[Tournament:${this.tournamentId.slice(0, 8)}] No survivor - final durable elimination submitted to terminal authority`
                 );
                 await this.finishTournament(lastEliminated.user_id);
                 if (sweepStopped()) return;
                 this.rearmIfTheFinishWasRefused();
+              } else {
+                reportError(
+                  new Error(
+                    `[Tournament:${this.tournamentId.slice(0, 8)}] No survivor or durable final elimination witness`
+                  ),
+                  'Tournament.finish_elimination_witness_unavailable'
+                );
+                this.requestUrgentEliminationSweepAfter(
+                  TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS
+                );
+                return;
               }
             }
           } catch (finishErr) {

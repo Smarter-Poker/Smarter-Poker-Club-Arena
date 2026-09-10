@@ -1,0 +1,108 @@
+{
+  "programme": "Club Arena Audit",
+  "date_utc": "2026-09-10",
+  "phase": 3,
+  "of": 12,
+  "status": "in_progress",
+  "integration_head_before_record": "5352b98ab75281c1a495ef60a2e71b3f876749e9",
+  "verified_original_controls": 4,
+  "original_phase3_controls": 58,
+  "whole_codebase_verified": false,
+  "swarm": {
+    "implementation": [
+      "entry_refunds",
+      "payouts",
+      "bounties",
+      "satellites",
+      "sng_spins",
+      "union_accounting"
+    ],
+    "independent_reviews": {
+      "bounty_per_pot": "payouts + root",
+      "reserved_unpaid_results": "bounties + root",
+      "commission_cascade": "entry_refunds + root; blockers remain",
+      "spin_first_deal_clock": "bounties; final commit pending"
+    },
+    "new_assignments": [
+      "satellite qualification SQL/engine with payout UI lane",
+      "canonical commission source with player rebate payer lane",
+      "release provenance strict CI enforcement"
+    ]
+  },
+  "database_changes": [
+    {
+      "reserved_file": "supabase/migrations/20260910053723_tournament_bounty_per_pot_evidence.sql",
+      "file_sha256": "2fdcbc3c1ccda299b53fea97a6fe9ace267919d3e3f1d9c60ae796726812c47b",
+      "applied_name": "tournament_bounty_per_pot_evidence",
+      "applied_version": "20260910055857",
+      "verified_at": "2026-09-10T05:59:13.335267Z",
+      "function": "fn_exact_tournament_knockout_claimants(uuid,uuid,uuid)",
+      "previous_body_md5": "193de04c64c285ba0bf0cb20bb38c28d",
+      "installed_body_md5": "6ead779d2261848571713f0220953082",
+      "service_only_execute": true,
+      "definer": true,
+      "search_path": "public, pg_temp",
+      "isolated_pg17_groups": 17,
+      "independent_source_path_tests": 61,
+      "historical_money_repair": false,
+      "engine_adoption": "pending",
+      "reviewed_file_sha256": "fa4cda7542e85b6cbd54aaa153c168ba80db541a238cd29c996591b25bade142",
+      "applied_sql_md5": "621b631fd6344e31884f2a42aed1fa26",
+      "exact_mirror_note": "Removed the file-final newline omitted by file transport. Database migration statement MD5 now equals repository bytes; function source and SQL statements are unchanged."
+    },
+    {
+      "reserved_file": "supabase/migrations/20260910053005_cash_entry_close_proves_the_reserved_unpaid_ladder.sql",
+      "file_sha256": "826248f9d290154781197628d41dd9b3b09bdf0daa2f7f65c47d166c275c7ab0",
+      "applied_name": "cash_entry_close_proves_the_reserved_unpaid_ladder",
+      "applied_version": "20260910060034",
+      "verified_at": "2026-09-10T06:00:52.521524Z",
+      "function": "fn_complete_tournament_entry_reprice(uuid)",
+      "previous_body_md5": "51c598a2fdb9a805485dec239eb70169",
+      "installed_body_md5": "784df9021f906ca9e42e43942b692e2f",
+      "service_only_execute": true,
+      "definer": true,
+      "search_path": "public, pg_temp",
+      "isolated_pg17_groups": 20,
+      "independent_actual_manager_tests": 10,
+      "money_writes": "none; only existing entry-close receipt completion timestamp",
+      "engine_adoption": "pending",
+      "reviewed_file_sha256": "81ddd9084960cb4747947a7f223406fbc4db93dd356ebe4e0ede8d8e121eea7d",
+      "applied_sql_md5": "767a3d3ad1e10e612fdec1af10e6ea25",
+      "exact_mirror_note": "Removed the file-final newline omitted by file transport. Database migration statement MD5 now equals repository bytes; function source and SQL statements are unchanged."
+    }
+  ],
+  "integrated_checks": {
+    "source_head": "be83fa5fe",
+    "client_behavior_tests": 48,
+    "client_test_files": 3,
+    "server_behavior_tests": 147,
+    "server_test_files": 9,
+    "root_build_exit": 0,
+    "server_build_exit": 0,
+    "build_freshness": "Local build completed but warned that newer main commits landed during build. Local output was not published; normal current-main CI publication remains required.",
+    "bounty_after_integration": "pending focused settlement regression"
+  },
+  "production_observations": {
+    "observed_at": "2026-09-10T05:32:49Z",
+    "engine_version": "c4163531",
+    "liveness": "ok",
+    "stalled_mtt_tables": 20,
+    "deferred_work": "Normal engine release and existing ambiguous move/terminal outcomes require direct evidence. Liveness is not complete health.",
+    "frontend_observed_sha": "56962e048d024cb3215a255529c7b1491873db72"
+  },
+  "open_gates": [
+    "Full 58-control Phase3 acceptance",
+    "Exact-K satellite qualification including durable pending boundary and explicit cohort UI",
+    "Heads-Up last-seat launch/refund PostgreSQL composition",
+    "Canonical commission source and all player rebate payer/conservation paths",
+    "Atomic tournament clock/table fanout and stale-anchor race",
+    "Current-source PR, frontend and engine adoption",
+    "All remaining phases and source-by-source review"
+  ],
+  "excluded_actions": [
+    "Historical backpay or manual balances",
+    "Forced engine restart or independent Stage-B cutover",
+    "World Hub edits",
+    "Horse strategy edits"
+  ]
+}

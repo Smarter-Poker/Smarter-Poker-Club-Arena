@@ -2,7 +2,12 @@
  * V16 ICM — Malmuth-Harville ground truth.
  */
 import { describe, it, expect } from 'vitest';
-import { icmEquity, bubbleFactor, premiumFromBubbleFactor } from './IcmModel.js';
+import {
+  bubbleFactor,
+  createIcmEquityEstimator,
+  icmEquity,
+  premiumFromBubbleFactor,
+} from './IcmModel.js';
 
 describe('icmEquity', () => {
   it('two players: closed form p*(P1-P2)+P2', () => {
@@ -31,7 +36,7 @@ describe('icmEquity', () => {
     expect(eq).toBeLessThan(50); // but less than chip-proportional
   });
 
-  it('handles big fields via bucketing without blowing up', () => {
+  it('handles big fields directly without changing player cardinality', () => {
     const stacks = Array.from({ length: 60 }, (_, i) => 1000 + i * 100);
     const pays = [40, 25, 15, 10, 6, 4];
     const t0 = Date.now();
@@ -39,6 +44,31 @@ describe('icmEquity', () => {
     expect(Date.now() - t0).toBeLessThan(200);
     expect(eq).toBeGreaterThan(100 / 60); // clearly above average share
     expect(eq).toBeLessThan(40);
+  });
+
+  it('reuses one deterministic action workspace and rejects remote-stack drift', () => {
+    const stacks = Array.from({ length: 1_000 }, (_, index) => 500 + index * 3);
+    const payouts = Array.from({ length: 200 }, () => 0.5);
+    const workspace = createIcmEquityEstimator(stacks, payouts, 998, [998, 999]);
+    const candidate = [...stacks];
+    candidate[998] -= 250;
+    candidate[999] += 250;
+
+    const first = workspace.estimate(candidate);
+    const second = workspace.estimate(candidate);
+    expect(first).toEqual(second);
+    expect(first.modeledPlayers).toBe(1_000);
+    expect(workspace.randomClockDraws).toBeLessThanOrEqual(240_000);
+
+    const drifted = [...candidate];
+    drifted[0] += 1;
+    expect(() => workspace.estimate(drifted)).toThrow('ICM remote stack changed');
+
+    const withBustedRemote = [...stacks, 0];
+    const zeroWorkspace = createIcmEquityEstimator(withBustedRemote, payouts, 998, [998, 999]);
+    const resurrectedRemote = [...withBustedRemote];
+    resurrectedRemote[1_000] = 1;
+    expect(() => zeroWorkspace.estimate(resurrectedRemote)).toThrow('ICM remote stack changed');
   });
 });
 

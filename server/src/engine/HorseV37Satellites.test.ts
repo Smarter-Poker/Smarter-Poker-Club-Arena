@@ -246,6 +246,14 @@ describe('V37 satelliteRead: locked, urgent, or in the field', () => {
     expect(r.locked).toBe(false);
     expect(r.urgent).toBe(true);
   });
+  it('uses the worst tied rank so equal boundary stacks cannot all be locked', () => {
+    const { gs, hero } = gsFor([8000, 8000, 8000, 8000], 8000, 4, 3);
+    const r = satelliteRead(gs as never, hero, 40);
+    expect(r.active).toBe(true);
+    expect(r.rank).toBe(4);
+    expect(r.locked).toBe(false);
+    expect(r.urgent).toBe(true);
+  });
   it('far from the bubble nobody is locked', () => {
     const { gs, hero } = gsFor([40000, 8000, 6000, 3000, 2500], 40000, 40, 4);
     expect(satelliteRead(gs as never, hero, 200).locked).toBe(false);

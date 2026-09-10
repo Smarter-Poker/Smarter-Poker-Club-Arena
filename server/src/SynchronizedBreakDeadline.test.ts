@@ -44,6 +44,7 @@ function server(managers: ReturnType<typeof manager>[]) {
     lifecycleGeneration: 1,
     running: true,
     breakCountdownStarted: true,
+    synchronizedBreakGeneration: 0,
     directAdmissionIsCurrent: () => true,
     tournamentEngines: new Map(managers.map((entry) => [entry.tournamentId, entry])),
     breakEndsAt: 0,
@@ -223,5 +224,38 @@ describe('Synchronized Break Drain', () => {
     await vi.advanceTimersByTimeAsync(120_000);
     await waiting;
     expect(released).toBe(true);
+  });
+});
+
+// Append to server/src/SynchronizedBreakDeadline.test.ts in the clock lane.
+// This is one additional regression case, with ended-owner and replaced-owner branches.
+describe('Synchronized Break Pause Completion', () => {
+  it('reconciles a late pause only for the break owner that requested it', async () => {
+    for (const replaced of [false, true]) {
+      vi.setSystemTime(new Date('2026-09-10T12:59:58.000Z'));
+      const entrant = manager(replaced ? 'new-owner' : 'ended-owner');
+      const owner = server([entrant]);
+      owner.synchronizedBreakGeneration = 1;
+      owner.breakEndsAt = Date.parse('2026-09-10T13:00:00.000Z');
+      let finishPause!: () => void;
+      entrant.pauseForBreak.mockImplementation(
+        () =>
+          new Promise<void>((resolve) => {
+            finishPause = resolve;
+          })
+      );
+      persistence();
+      const pending = owner.holdIfBreakIsRunning(entrant);
+      vi.setSystemTime(new Date('2026-09-10T13:00:01.000Z'));
+      owner.breakEndsAt = 0;
+      if (replaced) {
+        owner.synchronizedBreakGeneration = 2;
+        owner.breakEndsAt = Date.parse('2026-09-10T14:00:00.000Z');
+      }
+      finishPause();
+      await pending;
+      expect(entrant.resumeFromBreak).toHaveBeenCalledTimes(replaced ? 0 : 1);
+      expect(entrant.broadcast).not.toHaveBeenCalled();
+    }
   });
 });

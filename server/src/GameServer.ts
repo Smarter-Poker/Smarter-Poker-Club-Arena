@@ -1674,6 +1674,7 @@ export class GameServer {
    */
   private breakEndsAt = 0;
   private breakCountdownStarted = false;
+  private synchronizedBreakGeneration = 0;
   private static readonly BREAK_DURATION_MS = 5 * 60 * 1000; // 5 minutes
   /**
    * Dan 2026-08-19: breaks start at the :55 mark of every hour and last five
@@ -3790,6 +3791,7 @@ export class GameServer {
      * claim the window immediately using the worst case (grace + break) and
      * tighten it below once the real countdown begins.
      */
+    this.synchronizedBreakGeneration++;
     this.breakCountdownStarted = false;
     this.breakEndsAt =
       Date.now() + TournamentManager.LAST_HAND_GRACE_MS + GameServer.BREAK_DURATION_MS;
@@ -3916,7 +3918,7 @@ export class GameServer {
   private async holdIfBreakIsRunning(tm: TournamentManager): Promise<void> {
     const remaining = this.remainingBreakMs();
     if (remaining <= 1000) return;
-    const countdownEndsAt = this.breakCountdownStarted ? this.breakEndsAt : null;
+    const breakGeneration = this.synchronizedBreakGeneration;
     // Same single gate as triggerSynchronizedBreak — a Spin or Heads-Up that
     // fills at :57 must sit on the break screen with everyone else, not open
     // its first level alone.
@@ -3926,8 +3928,16 @@ export class GameServer {
         `[GameServer] Tournament started during the break - holding it for the remaining ${Math.round(remaining / 1000)}s`
       );
       await tm.pauseForBreak(remaining);
-      if (countdownEndsAt !== null) {
-        await tm.beginBreakCountdown(remaining, countdownEndsAt);
+      // This pause may finish after its owner released the field. Reconcile
+      // only that owner; an older completion cannot lift a newer break.
+      if (this.synchronizedBreakGeneration !== breakGeneration) return;
+      const remainingAfterPause = this.remainingBreakMs();
+      if (remainingAfterPause <= 0) {
+        await tm.resumeFromBreak();
+        return;
+      }
+      if (this.breakCountdownStarted) {
+        await tm.beginBreakCountdown(remainingAfterPause, this.breakEndsAt);
       }
     } catch (err: any) {
       reportError(err, 'GameServer.hold_new_tournament_for_break');

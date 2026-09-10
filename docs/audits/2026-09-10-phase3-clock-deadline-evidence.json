@@ -28,7 +28,18 @@
       "server_types": "passed",
       "server_types_exit_code": 0,
       "server_types_log": "/tmp/codex-clock-types.log",
-      "diff_check": "passed"
+      "diff_check": "passed",
+      "endpoint_followup": {
+        "initial_correction_commit": "19ab4876f785b9a4d19b991216835323a4feaabe",
+        "baseline_failed": 1,
+        "fixed_passed": 1,
+        "unchanged_cases_skipped": 8,
+        "baseline_log": "/tmp/codex-clock-endpoint-baseline.log",
+        "fixed_log": "/tmp/codex-clock-endpoint-fixed.log",
+        "server_types": "passed",
+        "server_types_log": "/tmp/codex-clock-endpoint-types.log",
+        "behavior": "A pause finishing after its same break owner ended is released; an older completion cannot release a newer break generation. Current countdown state and deadline are read after the pause completes."
+      }
     },
     "behavior": [
       "GameServer waits for all participating table boundaries until its server generation stops owning the drain.",
@@ -156,9 +167,9 @@
     }
   ],
   "tested_files_sha256": {
-    "server/src/GameServer.ts": "23cf13f478d94e3d708586ca00967b5585a5384aeb77e6b7086965663a5027e3",
+    "server/src/GameServer.ts": "c927430f77fb2740d01d80042a28196d71dff153e8a3fb500064c4b9d4c6de77",
     "server/src/tournament/TournamentManagerBase.ts": "3260efaddd9fa8bb3210b5d7bc04f78a14ab8b53a0cdb551f85a20aac8fe408e",
     "server/src/engine/ServerTableEngineBase.ts": "fb06fe97b509bcef00ffe8972ecbf58eb3568f2e3b0f9a859257f0e1b650fcbd",
-    "server/src/SynchronizedBreakDeadline.test.ts": "bb9e760227a934af8372e39f6c251be645cf9e78e8754e1af4155e3eb3f9dc05"
+    "server/src/SynchronizedBreakDeadline.test.ts": "efd91edbd1897f35b583e6182020aa4a4fa51850069fbefca2bf5dcea516bdeb"
   }
 }

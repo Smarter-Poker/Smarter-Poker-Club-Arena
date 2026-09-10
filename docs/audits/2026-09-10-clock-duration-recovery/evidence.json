@@ -17,7 +17,8 @@
       "passed": 118
     },
     "server_tsc_exit": 0,
-    "client_tsc_exit": 0
+    "client_tsc_exit": 0,
+    "distinct_server_assertions": 151
   },
   "source_hashes": [
     {
@@ -112,22 +113,28 @@
     }
   },
   "current_manager_spin": {
-    "source_commit": "e6d0700009ac6b39979bb71ca258cc0907e4fd4c",
+    "source_commit": "2cb36675de8a9265b9770188e541b22735ce5f9f",
     "rows_compared": 93,
     "matches": 93,
     "expected_zero_round_refusals": 1,
     "mismatches": [],
     "file": "current-manager-spin-matrix.json",
-    "sha256": "66ce1f03ea15c045a598fde21a846f59a4a56a43f4c1fddb31e983d2786bb48e"
+    "sha256": "c4dda44a9009200420896a9bdef5d8ac977dd0defdbf237b40eb9a19b7bb5cad"
   },
   "publication_followup": {
     "before": "3 failed publication assertions,61 passed",
-    "after": "See publication-fixed.log; actual advance method publishes the same effective duration the timer schedules",
+    "after": {
+      "files": 2,
+      "assertions_passed": 74,
+      "new_assertions": 3,
+      "server_tsc_exit": 0
+    },
     "no_production_writes": true
   },
   "excluded_reader_finding": {
     "file": "server/src/services/TournamentBrainContext.ts",
     "finding": "resolveBlindLevel and deriveBlindState each apply acceleration on generic overflow",
     "status": "Excluded horse context source, unmodified and not certified by this clock patch"
-  }
+  },
+  "source_commit": "2cb36675de8a9265b9770188e541b22735ce5f9f"
 }

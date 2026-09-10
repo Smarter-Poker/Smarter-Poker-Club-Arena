@@ -50,6 +50,11 @@ function completeTournamentRow(nowMs: number) {
     ]),
     prize_pool: 10_000,
     bounty_pool: 0,
+    buy_in_amount: 90,
+    buy_in_fee: 10,
+    starting_chips: 5000,
+    rebuy_cost: 100,
+    rebuy_chips: 5000,
     is_pko: false,
     is_bounty: false,
     is_mystery_bounty: false,
@@ -129,7 +134,76 @@ describe('Phase 6 tournament context', () => {
     expect(context.addOnPeriodOpen).toBe(true);
     expect(context.addOnCost).toBe(100);
     expect(context.addOnChips).toBe(5000);
+    expect(context.prizePoolCents).toBe(1_000_000);
+    expect(context.bountyPoolCents).toBe(0);
+    expect(context.buyInCents).toBe(10_000);
+    expect(context.startingStackChips).toBe(5000);
+    expect(context.rebuyCostCents).toBe(10_000);
+    expect(context.rebuyChips).toBe(5000);
+    expect(context.rebuyPrizeContributionCents).toBe(9000);
+    expect(context.rebuyBountyContributionCents).toBe(0);
+    expect(context.reloadsByUser).toEqual({});
+    expect(context.addOnTakenByUser).toEqual({});
+    expect(context.rebuyAffordableByUser).toEqual({});
+    expect(context.addOnAffordableByUser).toEqual({});
     expect(context.handForHandExpected).toBe(false);
+  });
+
+  it('carries personal reload and add-on usage without inferring eligibility from the global window', () => {
+    const nowMs = Date.parse('2026-09-09T18:00:00.000Z');
+    const context = deriveContext(
+      completeTournamentRow(nowMs),
+      4,
+      20,
+      10_000,
+      [1000, 2000, 3000, 4000],
+      [],
+      [],
+      0,
+      {},
+      nowMs,
+      undefined,
+      {
+        reloadsByUser: { hero: 1, villain: 0 },
+        addOnTakenByUser: { hero: true, villain: false },
+        rebuyAffordableByUser: { hero: false, villain: true },
+        addOnAffordableByUser: { hero: true, villain: false },
+      }
+    );
+
+    expect(context.reloadsByUser).toEqual({ hero: 1, villain: 0 });
+    expect(context.addOnTakenByUser).toEqual({ hero: true, villain: false });
+    expect(context.rebuyAffordableByUser).toEqual({ hero: false, villain: true });
+    expect(context.addOnAffordableByUser).toEqual({ hero: true, villain: false });
+  });
+
+  it('preserves every observed field stack and every payout place for Phase 7 ICM', () => {
+    const nowMs = Date.parse('2026-09-09T18:00:00.000Z');
+    const row = completeTournamentRow(nowMs);
+    row.payout_structure = JSON.stringify(
+      Array.from({ length: 25 }, (_, index) => ({
+        place: index + 1,
+        percentage: index < 24 ? 3.9 : 6.4,
+      }))
+    );
+    const liveStacks = Array.from({ length: 250 }, (_, index) => 10_000 - index * 17);
+    const context = deriveContext(
+      row,
+      250,
+      250,
+      liveStacks.reduce((sum, stack) => sum + stack, 0),
+      liveStacks,
+      [],
+      [],
+      0,
+      {},
+      nowMs
+    );
+
+    expect(context.stacks).toHaveLength(250);
+    expect(context.stacks).toEqual([...liveStacks].sort((left, right) => right - left));
+    expect(context.payoutPct).toHaveLength(25);
+    expect(context.payoutPct.reduce((sum, payout) => sum + payout, 0)).toBeCloseTo(100, 10);
   });
 
   it('keeps registration timing separate from the club-approval requirement', () => {
@@ -408,6 +482,7 @@ describe('Phase 6 tournament context', () => {
       satellite_target_id: 'target-tournament',
       prize_pool_finalized: false,
       is_mystery_bounty: true,
+      mystery_bounty_stage: 'active',
     };
     const context = deriveContext(
       row,

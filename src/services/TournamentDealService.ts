@@ -1,4 +1,5 @@
 import { getAuthUser, supabase } from '../lib/supabase';
+import { runWithRequestDeadline } from '../utils/requestDeadline';
 
 export interface TournamentDealProposal {
   reviewId: string;
@@ -135,37 +136,59 @@ export function formatDealCents(value: string): string {
   return fraction === 0n ? whole : `${whole}.${fraction < 10n ? '0' : ''}${fraction}`;
 }
 
-export async function getTournamentDealProposal(
+async function readDealProposal(
   tournamentId: string,
   actorId: string,
-  review: TournamentDealReviewState
+  review: TournamentDealReviewState,
+  signal: AbortSignal
 ): Promise<TournamentDealProposal> {
-  const { data, error } = await supabase.rpc('fn_get_tournament_deal_proposal', {
-    p_tournament_id: tournamentId,
-  });
+  signal.throwIfAborted();
+  const { data, error } = await supabase
+    .rpc('fn_get_tournament_deal_proposal', {
+      p_tournament_id: tournamentId,
+    })
+    .abortSignal(signal);
   if (error) throw error;
   return parseTournamentDealProposal(data, tournamentId, actorId, review);
 }
-
-export async function castTournamentDealVote(proposal: TournamentDealProposal): Promise<void> {
-  const { data: auth, error: authError } = await getAuthUser();
-  if (authError || auth.user?.id !== proposal.actorId)
-    throw new Error('Your Account Changed. Reopen The Deal Before Voting.');
-  const { data, error } = await supabase.rpc('fn_cast_tournament_deal_vote', {
-    p_tournament_id: proposal.tournamentId,
-    p_proposal_id: proposal.proposalId,
-    p_expected_actor_id: proposal.actorId,
-  });
-  if (error) throw error;
-  const result = successful(data);
-  if (
-    result.actor_id !== proposal.actorId ||
-    result.proposal_id !== proposal.proposalId ||
-    result.revision !== proposal.revision ||
-    result.voted !== true ||
-    typeof result.already !== 'boolean'
-  )
-    throw invalid();
+export function getTournamentDealProposal(
+  tournamentId: string,
+  actorId: string,
+  review: TournamentDealReviewState,
+  signal?: AbortSignal
+): Promise<TournamentDealProposal> {
+  return runWithRequestDeadline(
+    (attemptSignal) => readDealProposal(tournamentId, actorId, review, attemptSignal),
+    { signal }
+  );
+}
+export function castTournamentDealVote(
+  proposal: TournamentDealProposal,
+  signal?: AbortSignal
+): Promise<void> {
+  return runWithRequestDeadline(
+    async (attemptSignal) => {
+      await requireReviewActor(proposal.actorId, attemptSignal);
+      const { data, error } = await supabase
+        .rpc('fn_cast_tournament_deal_vote', {
+          p_tournament_id: proposal.tournamentId,
+          p_proposal_id: proposal.proposalId,
+          p_expected_actor_id: proposal.actorId,
+        })
+        .abortSignal(attemptSignal);
+      if (error) throw error;
+      const result = successful(data);
+      if (
+        result.actor_id !== proposal.actorId ||
+        result.proposal_id !== proposal.proposalId ||
+        result.revision !== proposal.revision ||
+        result.voted !== true ||
+        typeof result.already !== 'boolean'
+      )
+        throw invalid();
+    },
+    { signal }
+  );
 }
 
 export type TournamentDealReviewPhase =
@@ -236,50 +259,78 @@ export function parseTournamentDealReview(
     proposal: null,
   };
 }
-export async function getTournamentDealReview(
+export function getTournamentDealReview(
   tournamentId: string,
-  actorId: string
+  actorId: string,
+  signal?: AbortSignal
 ): Promise<TournamentDealReviewState> {
-  const { data, error } = await supabase.rpc('fn_get_tournament_deal_review', {
-    p_tournament_id: tournamentId,
-  });
-  if (error) throw error;
-  const review = parseTournamentDealReview(data, tournamentId, actorId);
-  if (review.state === 'reviewing')
-    review.proposal = await getTournamentDealProposal(tournamentId, actorId, review);
-  return review;
+  return runWithRequestDeadline(
+    async (attemptSignal) => {
+      const { data, error } = await supabase
+        .rpc('fn_get_tournament_deal_review', {
+          p_tournament_id: tournamentId,
+        })
+        .abortSignal(attemptSignal);
+      if (error) throw error;
+      const review = parseTournamentDealReview(data, tournamentId, actorId);
+      if (review.state === 'reviewing')
+        review.proposal = await readDealProposal(tournamentId, actorId, review, attemptSignal);
+      return review;
+    },
+    { signal }
+  );
 }
-async function requireReviewActor(actorId: string): Promise<void> {
+async function requireReviewActor(actorId: string, signal: AbortSignal): Promise<void> {
   const { data: auth, error } = await getAuthUser();
+  // A deadline may finish while auth holds its own lock. Never start a mutation later.
+  signal.throwIfAborted();
   if (error || auth.user?.id !== actorId)
     throw new Error('Your Account Changed. Reopen The Deal Before Continuing.');
 }
-export async function requestTournamentDealReview(
+export function requestTournamentDealReview(
   tournamentId: string,
-  actorId: string
+  actorId: string,
+  signal?: AbortSignal
 ): Promise<void> {
-  await requireReviewActor(actorId);
-  const { data, error } = await supabase.rpc('fn_request_tournament_deal_review', {
-    p_tournament_id: tournamentId,
-    p_expected_actor_id: actorId,
-  });
-  if (error) throw error;
-  const review = parseTournamentDealReview(data, tournamentId, actorId);
-  if (!['requested', 'reviewing'].includes(review.state)) throw invalid();
+  return runWithRequestDeadline(
+    async (attemptSignal) => {
+      await requireReviewActor(actorId, attemptSignal);
+      const { data, error } = await supabase
+        .rpc('fn_request_tournament_deal_review', {
+          p_tournament_id: tournamentId,
+          p_expected_actor_id: actorId,
+        })
+        .abortSignal(attemptSignal);
+      if (error) throw error;
+      const review = parseTournamentDealReview(data, tournamentId, actorId);
+      if (!['requested', 'reviewing'].includes(review.state)) throw invalid();
+    },
+    { signal }
+  );
 }
-export async function cancelTournamentDealReview(review: TournamentDealReviewState): Promise<void> {
-  if (!review.reviewId || !['requested', 'reviewing'].includes(review.state)) throw invalid();
-  await requireReviewActor(review.actorId);
-  const { data, error } = await supabase.rpc('fn_cancel_tournament_deal_review', {
-    p_tournament_id: review.tournamentId,
-    p_review_id: review.reviewId,
-    p_expected_actor_id: review.actorId,
-  });
-  if (error) throw error;
-  const result = parseTournamentDealReview(data, review.tournamentId, review.actorId);
-  if (
-    result.reviewId !== review.reviewId ||
-    !['cancelled', 'expired', 'completed'].includes(result.state)
-  )
-    throw invalid();
+export function cancelTournamentDealReview(
+  review: TournamentDealReviewState,
+  signal?: AbortSignal
+): Promise<void> {
+  return runWithRequestDeadline(
+    async (attemptSignal) => {
+      if (!review.reviewId || !['requested', 'reviewing'].includes(review.state)) throw invalid();
+      await requireReviewActor(review.actorId, attemptSignal);
+      const { data, error } = await supabase
+        .rpc('fn_cancel_tournament_deal_review', {
+          p_tournament_id: review.tournamentId,
+          p_review_id: review.reviewId,
+          p_expected_actor_id: review.actorId,
+        })
+        .abortSignal(attemptSignal);
+      if (error) throw error;
+      const result = parseTournamentDealReview(data, review.tournamentId, review.actorId);
+      if (
+        result.reviewId !== review.reviewId ||
+        !['cancelled', 'expired', 'completed'].includes(result.state)
+      )
+        throw invalid();
+    },
+    { signal }
+  );
 }

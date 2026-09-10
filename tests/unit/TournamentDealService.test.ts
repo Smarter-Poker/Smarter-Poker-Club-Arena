@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({ rpc: vi.fn(), auth: vi.fn() }));
 vi.mock('../../src/lib/supabase', () => ({
-  supabase: { rpc: mocks.rpc },
+  supabase: { rpc: (...args: unknown[]) => ({ abortSignal: () => mocks.rpc(...args) }) },
   getAuthUser: mocks.auth,
 }));
 import {

@@ -51,3 +51,7 @@ This supersedes the earlier direct proposal-poll description. Matching server li
 ## Mutation Actor Fence
 
 All three authenticated review mutations now include mandatory `p_expected_actor_id`, bound to the displayed actor. This closes the client-to-request token acquisition race together with the matching SQL pre-write guard. Three synthetic token-switch regressions failed before correction; the latest focused client batch passes 109 tests in three files and full client strict TypeScript passes. This is a test count, not programme completion. Native SQL authority evidence, coordinated deployment, and browser acceptance remain separate gates. See `docs/changelog/2026-09-10-deal-review-mutations-bind-the-actor.md`.
+
+## Complete Request Deadline
+
+Deal service operations now reuse the shared twelve-second request budget extracted from roster reads. The deadline covers auth, RPC, and response parsing, with no automatic mutation retry. Account/event cleanup aborts active requests, and auth completing after timeout cannot start a later mutation. Actual PostgREST client plus rendered UI tests prove recovery from never-resolving auth, fetch, and response bodies. The latest focused batch passes 143 tests across five files, including 29 unchanged roster resilience tests; full client TypeScript passes. See `docs/changelog/2026-09-10-deal-review-operations-have-a-deadline.md`. Native and publication/browser acceptance remain open.

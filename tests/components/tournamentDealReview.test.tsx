@@ -107,7 +107,7 @@ describe('Reviewed final-table deal consent', () => {
       button.click();
     });
     expect(mocks.vote).toHaveBeenCalledTimes(1);
-    expect(mocks.vote).toHaveBeenCalledWith(proposal());
+    expect(mocks.vote).toHaveBeenCalledWith(proposal(), expect.any(AbortSignal));
     mocks.get.mockResolvedValue(reviewState('reviewing', proposal('original', [actor])));
     await act(async () => finish());
     await screen.findByText('Your Vote Is Recorded For This Split.');
@@ -143,7 +143,7 @@ describe('Reviewed final-table deal consent', () => {
     await act(async () =>
       fireEvent.click(screen.getByRole('button', { name: 'Agree To This Split' }))
     );
-    expect(mocks.vote).toHaveBeenLastCalledWith(proposal('replacement'));
+    expect(mocks.vote).toHaveBeenLastCalledWith(proposal('replacement'), expect.any(AbortSignal));
   });
   it('resolves an ambiguous response by reading consent without resubmitting the vote', async () => {
     mocks.vote.mockRejectedValue(new Error('Response Lost'));
@@ -188,14 +188,14 @@ describe('Reviewed final-table deal consent', () => {
         outcome === 'resolve' ? resolve() : reject(new Error('Old Vote Failed'))
       );
       expect(mocks.get).toHaveBeenCalledTimes(2);
-      expect(mocks.get).toHaveBeenLastCalledWith(other, other);
+      expect(mocks.get).toHaveBeenLastCalledWith(other, other, expect.any(AbortSignal));
       expect(screen.queryByText('Your Vote Was Recorded For The Reviewed Split.')).toBeNull();
       expect(screen.queryByText('Old Vote Failed')).toBeNull();
       mocks.vote.mockResolvedValue(undefined);
       await act(async () =>
         fireEvent.click(screen.getByRole('button', { name: 'Agree To This Split' }))
       );
-      expect(mocks.vote).toHaveBeenLastCalledWith(next);
+      expect(mocks.vote).toHaveBeenLastCalledWith(next, expect.any(AbortSignal));
     }
   );
   it('ignores a getter that completes after unmount', async () => {
@@ -237,7 +237,7 @@ describe('Explicit deal review pause lifecycle', () => {
       button.click();
       button.click();
     });
-    expect(mocks.request).toHaveBeenCalledExactlyOnceWith(event, actor);
+    expect(mocks.request).toHaveBeenCalledExactlyOnceWith(event, actor, expect.any(AbortSignal));
     mocks.get.mockResolvedValue(reviewState('requested'));
     await act(async () => finish());
     await screen.findByText('Waiting For Play To Pause At A Safe Hand Boundary.');
@@ -288,7 +288,7 @@ describe('Explicit deal review pause lifecycle', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Cancel Deal Review' }))
     );
     await screen.findByText('Deal Review Was Cancelled. Play Resumes When The Table Confirms.');
-    expect(mocks.cancel).toHaveBeenCalledExactlyOnceWith(reviewState());
+    expect(mocks.cancel).toHaveBeenCalledExactlyOnceWith(reviewState(), expect.any(AbortSignal));
     expect(mocks.request).not.toHaveBeenCalled();
     expect(mocks.vote).not.toHaveBeenCalled();
   });

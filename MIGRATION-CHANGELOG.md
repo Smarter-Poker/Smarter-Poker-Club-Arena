@@ -2,6 +2,10 @@
 
 ## Every Change, Documented. No Exceptions.
 
+## 2026-09-10: Deal Review Operations Have A Complete Request Deadline
+
+Deal operations reuse the extracted shared roster deadline across auth, RPC, and response parsing. Abort reaches the request and is checked after auth before any late mutation; unknown responses use readback with no mutation retry. All 143 focused tests pass, including actual PostgREST stalled-operation UI tests and the existing 29 roster resilience tests; full TypeScript passes. Re-read: yes. No production publication or activation. See docs/changelog/2026-09-10-deal-review-operations-have-a-deadline.md.
+
 ## 2026-09-10: Native Spin Contention Cannot Overbook Its Reserve
 
 Observed same-event races preserve the immutable funded receipt through changed rules and exact retries. A separate two-event native race starts with 3.28 available against four chips of minimum prizes: one funds two, the other refuses after waiting, leaving 1.28 and no losing draw receipt. Exact retries preserve the complete financial snapshot. Scarcity comes from actual entry bookings and a prior native draw, with no balance rewrite or stub. Owned local fixtures remain available; production is untouched. Re-read: yes. See docs/changelog/2026-09-10-native-spin-concurrency-keeps-funded-receipts.md.

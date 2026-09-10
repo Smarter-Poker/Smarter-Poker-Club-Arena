@@ -35,13 +35,18 @@ export default function TournamentDealReview({ tournamentId, actorId, players }:
   const request = useRef(0);
   const context = useRef(0);
   const busyRef = useRef(false);
+  const contextAbort = useRef<AbortController | null>(null);
 
   const refresh = useCallback(async () => {
     if (busyRef.current) return;
     const mine = ++request.current;
     setLoading(true);
     try {
-      const next = await getTournamentDealReview(tournamentId, actorId);
+      const next = await getTournamentDealReview(
+        tournamentId,
+        actorId,
+        contextAbort.current?.signal
+      );
       if (!alive.current || mine !== request.current) return;
       setReview(next);
       setError(null);
@@ -59,6 +64,8 @@ export default function TournamentDealReview({ tournamentId, actorId, players }:
 
   useEffect(() => {
     alive.current = true;
+    const controller = new AbortController();
+    contextAbort.current = controller;
     ++context.current;
     busyRef.current = false;
     setBusy(null);
@@ -69,6 +76,7 @@ export default function TournamentDealReview({ tournamentId, actorId, players }:
     const timer = setInterval(() => void refresh(), 15_000);
     return () => {
       alive.current = false;
+      controller.abort();
       ++context.current;
       ++request.current;
       clearInterval(timer);
@@ -89,9 +97,11 @@ export default function TournamentDealReview({ tournamentId, actorId, players }:
     ++request.current;
     setNotice(null);
     try {
-      if (action === 'request') await requestTournamentDealReview(tournamentId, actorId);
-      else if (action === 'cancel') await cancelTournamentDealReview(current);
-      else await castTournamentDealVote(proposal!);
+      if (action === 'request')
+        await requestTournamentDealReview(tournamentId, actorId, contextAbort.current?.signal);
+      else if (action === 'cancel')
+        await cancelTournamentDealReview(current, contextAbort.current?.signal);
+      else await castTournamentDealVote(proposal!, contextAbort.current?.signal);
       if (!alive.current || actionContext !== context.current) return;
       setNotice({
         proposalId: action === 'vote' ? proposal!.proposalId : null,

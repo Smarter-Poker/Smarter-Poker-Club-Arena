@@ -2,6 +2,10 @@
 
 ## Every Change, Documented. No Exceptions.
 
+## 2026-09-10: Terminal Receipt Law Retains Exact Proposal Checks
+
+The pre-push law still required a receipt-only return and rejected the stronger exact-proposal return guard. Its source assertions now require both receipt validation and matching proposal identity on direct and recovered receipts. No runtime or financial policy changed; the complete law test and existing terminal RPC behavior tests are the verification gate. Re-read: yes. Prepared consent remains draft and Phase3 remains open.
+
 ## 2026-09-10: Phase Three Records Verified Publication And Prepared Consent
 
 PR4096 is merged and both frontend build stamps match its merge commit. The automatic engine release failed its current-main control check, so engine adoption is explicitly open. Integrated draft consent SQL, engine and client pass 143 client tests, 175 engine tests and both TypeScript checks. Native cash rollback/replay, bounded review and Spin reserve contention evidence are recorded without claiming unmatched terminal authority or production acceptance. A fresh read confirms seat functions now exist, seven guards remain disabled and bounty-rebuy generation remains absent. Re-read: yes. Phase3 stays open; Phase4 has not started. See docs/audits/2026-09-10-chip-drift-phase-three-swarm.json.

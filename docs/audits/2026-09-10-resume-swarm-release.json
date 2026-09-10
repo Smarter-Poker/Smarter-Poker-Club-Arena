@@ -72,6 +72,19 @@
       "reviewed_file_sha256": "81ddd9084960cb4747947a7f223406fbc4db93dd356ebe4e0ede8d8e121eea7d",
       "applied_sql_md5": "767a3d3ad1e10e612fdec1af10e6ea25",
       "exact_mirror_note": "Removed the file-final newline omitted by file transport. Database migration statement MD5 now equals repository bytes; function source and SQL statements are unchanged."
+    },
+    {
+      "reserved_file": "supabase/migrations/20260910070406_cash_entry_reprice_service_only_access.sql",
+      "file_sha256": "fafc3afeed13a155474f1a5b85876f2fe537ed29af01403949d95004e01e1f60",
+      "applied_name": "cash_entry_reprice_service_only_access",
+      "applied_version": "20260910071131",
+      "applied_sql_md5": "1720d40e5286b9cebb1a72afd2d57c49",
+      "verified_at": "2026-09-10T07:12:25.215318Z",
+      "installed_body_md5": "784df9021f906ca9e42e43942b692e2f",
+      "service_only_execute": true,
+      "money_writes": "none",
+      "body_changed": false,
+      "review": "Independent satellite UI lane plus root; mandatory native PG17 access and body-drift cases passed."
     }
   ],
   "integrated_checks": {
@@ -125,5 +138,20 @@
     "source": "Original user message, Header Redesign Done, 2026-08-30, recovered conversation context",
     "assigned_player_rebate": "Paid from their agent allocation, subject to available upline allocation and minimum10 percentage-point margin.",
     "scope": "Resolves assigned-player cost bearer; does not authorize rewriting existing assigned rates or historical balances. Unassigned-player and source-time assignment semantics require explicit evidence."
+  },
+  "interrupted_push": {
+    "source_head": "26ed0ac109d83bc469e3426f01927c210aa4ba20",
+    "result": "blocked",
+    "causes": [
+      "Static definer check cannot see mandatory service-only ACL preflight on body replacement",
+      "Two stale source-pinning assertions expected old full pool and preStartLead-only scheduling"
+    ],
+    "affected_server_passed": 3020,
+    "affected_server_skipped": 145,
+    "followup_assertions_passed": 91,
+    "native_pg17_groups": 24,
+    "native_evidence": "docs/audits/2026-09-10-reprice-access-pg17.json",
+    "push_completed": false,
+    "followup_actual_behavior_tests_passed": 24
   }
 }

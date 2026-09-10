@@ -160,6 +160,23 @@ with (root / 'results.log').open('w') as log:
         q(change.read_text())
         check('service-only ACL survives replacement exactly', q("SELECT has_function_privilege('service_role','fn_complete_tournament_entry_reprice(uuid)','EXECUTE') AND NOT has_function_privilege('anon','fn_complete_tournament_entry_reprice(uuid)','EXECUTE') AND NOT has_function_privilege('authenticated','fn_complete_tournament_entry_reprice(uuid)','EXECUTE');") == 't')
 
+        access = (repo / 'supabase/migrations/20260910070406_cash_entry_reprice_service_only_access.sql').read_text()
+        before_access = state()
+        q('GRANT EXECUTE ON FUNCTION fn_complete_tournament_entry_reprice(uuid) TO PUBLIC, anon, authenticated;')
+        q(access)
+        q(access)
+        check('forward ACL declaration is idempotent and changes no data', state() == before_access)
+        for role in ['anon', 'authenticated']:
+            q("SET ROLE " + role + "; SELECT public.fn_complete_tournament_entry_reprice('" + event + "');",
+              error='permission denied for function fn_complete_tournament_entry_reprice')
+        check('browser calls are denied by PostgreSQL after forward ACL declaration', True)
+        check('forward ACL declaration retains service execution',
+              q("SET ROLE service_role; SELECT public.fn_complete_tournament_entry_reprice('" + event + "')->>'ok';") == 'true')
+        q(definition(change, 'fn_complete_tournament_entry_reprice').replace("'receipt_missing'", "'changed_receipt_missing'"))
+        q(access, error='body or security contract changed')
+        check('ACL declaration refuses a changed body without replacing it',
+              'changed_receipt_missing' in q("SELECT prosrc FROM pg_proc WHERE oid='public.fn_complete_tournament_entry_reprice(uuid)'::regprocedure;"))
+        q(definition(change, 'fn_complete_tournament_entry_reprice'))
         after_hash = q("SELECT md5(prosrc) FROM pg_proc WHERE oid='public.fn_complete_tournament_entry_reprice(uuid)'::regprocedure;")
     finally:
         if started:

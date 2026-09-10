@@ -2,6 +2,10 @@
 
 ## Every Change, Documented. No Exceptions.
 
+## 2026-09-10: Reprice Access And Release Verification
+
+The reprice writer remains service-only through an explicit forward ACL declaration, applied as 20260910071131 and independently read back without any body or money change. Its previously applied migration stays byte-identical. Native PostgreSQL acceptance passes 24 groups; 91 source/gate assertions and 24 existing reserved-pool/actual-first-deal behavioral tests pass. Two obsolete source pins now enforce the corrected pool and deadline. Re-read: yes. See docs/changelog/2026-09-10-reprice-access-and-release-checks.md. Normal push and deployment verification remain open.
+
 ## 2026-09-10: Resume Audit Swarm Database Reader Corrections
 
 The accepted hand history now retains exact per-pot awards for bounty claimants. Its database reader was independently reviewed and installed as 20260910055857; the integrated engine writer still awaits normal publication. The cash entry-close verifier now proves unpaid cached results against the canonical Bubble-reserved ladder, with no wallet or payout writes; installed as 20260910060034. Both installed bodies, fixed search paths and service-only execution were read back and matched the reviewed source. Exact transaction rehearsals passed 17 and 20 PostgreSQL groups respectively. The reserved repository files exactly mirror the applied SQL; the MCP assigned the recorded application versions. Re-read: yes. Detailed source hashes, peer tests and limits: docs/audits/2026-09-10-resume-swarm-release.json. The programme remains Phase 3 of 12 with four of the original 58 controls fully verified.

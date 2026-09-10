@@ -2,14 +2,14 @@
 
 One previously open T01/T05 subset is verified: a real funded PKO entry followed by the actual public add-on purchase preserves the bounty liability and player head. This does not declare either control or Phase 3 complete.
 
-| Boundary | Entry | After add-on |
-| --- | --- | --- |
-| Cumulative wallet charge | 200 | 215 |
-| Prize pool and prize escrow | 175 | 190 |
-| Bounty pool and bounty escrow | 5 | 5 |
-| Fee total and fee escrow | 20 | 20 |
-| Player bounty head | 5 | 5 |
-| Seat and roster chips | 500, seeded playing state | 600 |
+| Boundary                      | Entry                     | After add-on |
+| ----------------------------- | ------------------------- | ------------ |
+| Cumulative wallet charge      | 200                       | 215          |
+| Prize pool and prize escrow   | 175                       | 190          |
+| Bounty pool and bounty escrow | 5                         | 5            |
+| Fee total and fee escrow      | 20                        | 20           |
+| Player bounty head            | 5                         | 5            |
+| Seat and roster chips         | 500, seeded playing state | 600          |
 
 The add-on's immutable refund entitlement is exactly 15 prize, zero bounty and zero fee. Repeating the request with another client token returns the stored response and leaves all tracked rows unchanged. No bounty obligation, payout or completion marker is synthesized.
 

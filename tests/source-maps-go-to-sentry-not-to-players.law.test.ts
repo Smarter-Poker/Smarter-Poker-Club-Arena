@@ -28,6 +28,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import ts from 'typescript';
 
 const ROOT = join(__dirname, '..');
 const read = (p: string) => readFileSync(join(ROOT, p), 'utf8');
@@ -53,14 +54,67 @@ describe('source maps go to Sentry, not to players', () => {
     expect(publisher).toMatch(/source maps survived the strip/);
   });
 
-  it('the uploaded release name is the one the runtime reports', () => {
-    const vite = read('vite.config.ts');
-    const init = read('src/core/SentryInit.ts');
-    expect(vite).toContain('club-arena@${process.env.VITE_APP_VERSION');
-    expect(init).toContain('club-arena@${import.meta.env.VITE_APP_VERSION');
-    expect(vite, 'npm_package_version cannot be the primary release name').not.toMatch(
-      /name: `club-arena@\$\{process\.env\.npm_package_version/
+  it('the verified policy release reaches the upload plugin and matches the runtime', () => {
+    // The identity suite executes this policy and the actual Vite plugin factory
+    // against real Git checkouts. These AST checks tie that exercised path to
+    // the runtime expression without treating a comment as working wiring.
+    const parse = (file: string) =>
+      ts.createSourceFile(file, read(file), ts.ScriptTarget.Latest, true);
+    const nodes = (root: ts.Node): ts.Node[] => {
+      const result: ts.Node[] = [];
+      const visit = (node: ts.Node) => {
+        result.push(node);
+        ts.forEachChild(node, visit);
+      };
+      visit(root);
+      return result;
+    };
+    const property = (object: ts.ObjectLiteralExpression, name: string) => {
+      const result = object.properties.find(
+        (node) => ts.isPropertyAssignment(node) && node.name.getText() === name
+      );
+      expect(result).toBeDefined();
+      return (result as ts.PropertyAssignment).initializer;
+    };
+    const vite = nodes(parse('vite.config.ts'));
+    const policy = nodes(parse('scripts/sentry-upload-policy.ts'));
+    const runtime = nodes(parse('src/core/SentryInit.ts'));
+    const resolution = vite.find(
+      (node) => ts.isVariableDeclaration(node) && node.name.getText() === 'sentryUpload'
+    ) as ts.VariableDeclaration;
+    expect(resolution.initializer?.getText()).toBe('resolveSentryUpload(process.env)');
+    const plugin = vite.find(
+      (node) => ts.isCallExpression(node) && node.expression.getText() === 'sentryVitePlugin'
+    ) as ts.CallExpression;
+    const release = property(plugin.arguments[0] as ts.ObjectLiteralExpression, 'release');
+    expect(property(release as ts.ObjectLiteralExpression, 'name').getText()).toBe(
+      'sentryUpload.release'
     );
+    const version = policy.find(
+      (node) => ts.isVariableDeclaration(node) && node.name.getText() === 'version'
+    ) as ts.VariableDeclaration;
+    expect(version.initializer?.getText()).toBe('env.VITE_APP_VERSION');
+    const enabledReturn = policy.find(
+      (node) =>
+        ts.isReturnStatement(node) &&
+        node.expression !== undefined &&
+        ts.isObjectLiteralExpression(node.expression)
+    ) as ts.ReturnStatement;
+    expect(
+      property(enabledReturn.expression as ts.ObjectLiteralExpression, 'release').getText()
+    ).toBe("'club-arena@' + version");
+    const init = runtime.find(
+      (node) => ts.isCallExpression(node) && node.expression.getText() === 'Sentry.init'
+    ) as ts.CallExpression;
+    const runtimeRelease = property(init.arguments[0] as ts.ObjectLiteralExpression, 'release');
+    expect(ts.isTemplateExpression(runtimeRelease)).toBe(true);
+    const template = runtimeRelease as ts.TemplateExpression;
+    expect(template.head.text).toBe('club-arena@');
+    expect(template.templateSpans).toHaveLength(1);
+    expect(template.templateSpans[0].expression.getText()).toBe(
+      "import.meta.env.VITE_APP_VERSION || 'unknown'"
+    );
+    expect(template.templateSpans[0].literal.text).toBe('');
   });
 
   it('the additive pool is swept of maps too, or the old ones serve for 30 days', () => {

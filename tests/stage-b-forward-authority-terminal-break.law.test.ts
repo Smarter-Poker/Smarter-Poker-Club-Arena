@@ -244,7 +244,7 @@ describe('the reserved Stage-B forward authority boundaries stay split', () => {
     ).toBe(2);
   });
 
-  it('requires the byte-authenticated 145833 live schema and a zero-player-data donor', () => {
+  it('requires the byte-authenticated 151228 live schema and a zero-player-data donor', () => {
     const currentLiveSources = [
       ['20260910034411', 'seat_proof_lock_generic_plan_lobby_policy_hashed_and_tick_in'],
       ['20260910034412', 'spin_draw_gate_reads_zero_as_undrawn_and_stamps_the_row'],
@@ -286,9 +286,10 @@ describe('the reserved Stage-B forward authority boundaries stay split', () => {
       ['20260910143032', 'a_declared_guard_change_is_recorded_not_raised'],
       ['20260910143719', 'the_guard_declaration_is_not_reachable_from_a_browser'],
       ['20260910145833', 'a_place_is_not_a_bounty'],
+      ['20260910151228', 'the_door_was_fixed_after_the_manager_stopped_asking'],
     ] as const;
 
-    expect(currentLiveSources).toHaveLength(40);
+    expect(currentLiveSources).toHaveLength(41);
     for (const [version, name] of currentLiveSources) {
       expect(harness).toContain(version);
       expect(harness).toContain(name);
@@ -366,18 +367,24 @@ describe('the reserved Stage-B forward authority boundaries stay split', () => {
         14907,
         '6a52ae50c80423153705406a0bf855fd8a04baacba0ef155273455c20078c9a4',
       ],
+      [
+        '20260910151228',
+        'the_door_was_fixed_after_the_manager_stopped_asking',
+        4857,
+        '5246718dd1252f257a1fb88c3c8d06ce3812391bc4acb3b47be8db6e4217c1ee',
+      ],
     ] as const) {
       expect(harness).toContain(`('${version}','${name}',1,${bytes},`);
       expect(harness).toContain(sha256);
     }
-    expect(harness).toContain("current_live_ledger_head='20260910145833'");
+    expect(harness).toContain("current_live_ledger_head='20260910151228'");
     expect(harness).toContain(
-      `if [[ "$anchor_receipts" != '40' || "$ledger_head" != "$current_live_ledger_head" ]]`
+      `if [[ "$anchor_receipts" != '41' || "$ledger_head" != "$current_live_ledger_head" ]]`
     );
     expect(harness).toContain(`if [[ "$exact_body_receipts" != '3' ]]`);
     expect(harness).toContain(`if [[ "$descriptor_receipts" != '2' ]]`);
     expect(harness).toContain(
-      `if [[ "$audited_tail_receipts" != '24' || "$audited_tail_statements" != '27' ]]`
+      `if [[ "$audited_tail_receipts" != '25' || "$audited_tail_statements" != '28' ]]`
     );
     expect(harness).toContain(`if [[ "$player_id_functions_exact" != '2' ]]`);
     expect(harness).toContain(`if [[ "$tail_functions_exact" != '9' ]]`);
@@ -594,11 +601,11 @@ describe('the reserved Stage-B forward authority boundaries stay split', () => {
     expect(harness).toContain('STAGE_B_125453_PHASE3_POSTIMAGE_OK');
   });
 
-  it('authenticates the complete 145833 live tail at both contraction boundaries', () => {
-    const guard = dollarBlock(contraction, 'assert_current_live_tail_145833');
-    const call = 'SELECT pg_temp.assert_stage_b_current_live_tail_145833_postimage();';
+  it('authenticates the complete 151228 live tail at both contraction boundaries', () => {
+    const guard = dollarBlock(contraction, 'assert_current_live_tail_151228');
+    const call = 'SELECT pg_temp.assert_stage_b_current_live_tail_151228_postimage();';
     const definition = contraction.indexOf(
-      'CREATE OR REPLACE FUNCTION pg_temp.assert_stage_b_current_live_tail_145833_postimage()'
+      'CREATE OR REPLACE FUNCTION pg_temp.assert_stage_b_current_live_tail_151228_postimage()'
     );
     const firstCall = contraction.indexOf(call);
     const finalCall = contraction.lastIndexOf(call);
@@ -609,13 +616,13 @@ describe('the reserved Stage-B forward authority boundaries stay split', () => {
     expect(
       occurrences(
         contraction,
-        /CREATE OR REPLACE FUNCTION pg_temp\.assert_stage_b_current_live_tail_145833_postimage\(\)/g
+        /CREATE OR REPLACE FUNCTION pg_temp\.assert_stage_b_current_live_tail_151228_postimage\(\)/g
       )
     ).toBe(1);
     expect(
       occurrences(
         contraction,
-        /^SELECT pg_temp\.assert_stage_b_current_live_tail_145833_postimage\(\);$/gm
+        /^SELECT pg_temp\.assert_stage_b_current_live_tail_151228_postimage\(\);$/gm
       )
     ).toBe(2);
     expect(definition).toBeGreaterThanOrEqual(0);
@@ -701,12 +708,18 @@ describe('the reserved Stage-B forward authority boundaries stay split', () => {
         14907,
         '6a52ae50c80423153705406a0bf855fd8a04baacba0ef155273455c20078c9a4',
       ],
+      [
+        '20260910151228',
+        'the_door_was_fixed_after_the_manager_stopped_asking',
+        4857,
+        '5246718dd1252f257a1fb88c3c8d06ce3812391bc4acb3b47be8db6e4217c1ee',
+      ],
     ] as const) {
       expect(guard).toContain(`('${version}','${name}',${bytes},`);
       expect(guard).toContain(sha256);
     }
-    expect(guard).toContain("IS DISTINCT FROM '20260910145833' THEN");
-    expect(guard).toContain('all twelve byte-exact 130319-145833 live-tail migrations');
+    expect(guard).toContain("IS DISTINCT FROM '20260910151228' THEN");
+    expect(guard).toContain('all thirteen byte-exact 130319-151228 live-tail migrations');
     expect(guard).toContain('cardinality(m.statements) IS DISTINCT FROM 1');
     expect(guard).toContain('octet_length(m.statements[1]) IS DISTINCT FROM');
     expect(guard).toContain("convert_to(m.statements[1],'UTF8'),'sha256'");

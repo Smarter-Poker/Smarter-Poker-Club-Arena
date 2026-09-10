@@ -597,16 +597,16 @@ $assert_phase_three_125453$;
 
 SELECT pg_temp.assert_stage_b_phase_three_125453_postimage();
 
--- Production advanced through twelve more byte-authenticated migrations after
+-- Production advanced through thirteen more byte-authenticated migrations after
 -- the Phase-Three expansion. Prove their complete durable postimage before
 -- touching any Stage-B authority and again at the transaction boundary. The
 -- incident rows closed by three of these migrations are operational history;
 -- their identities and timestamps deliberately are not frozen here.
-CREATE OR REPLACE FUNCTION pg_temp.assert_stage_b_current_live_tail_145833_postimage()
+CREATE OR REPLACE FUNCTION pg_temp.assert_stage_b_current_live_tail_151228_postimage()
 RETURNS void
 LANGUAGE plpgsql
 SET search_path TO 'pg_catalog','public','extensions','pg_temp'
-AS $assert_current_live_tail_145833$
+AS $assert_current_live_tail_151228$
 DECLARE
   v_count integer;
   v_bad integer;
@@ -636,7 +636,9 @@ BEGIN
       ('20260910143719','the_guard_declaration_is_not_reachable_from_a_browser',2650,
        '07a00604216e201f811309ab3a07dac65a3f732ef1694e7beeaee40bfd219617'),
       ('20260910145833','a_place_is_not_a_bounty',14907,
-       '6a52ae50c80423153705406a0bf855fd8a04baacba0ef155273455c20078c9a4')
+       '6a52ae50c80423153705406a0bf855fd8a04baacba0ef155273455c20078c9a4'),
+      ('20260910151228','the_door_was_fixed_after_the_manager_stopped_asking',4857,
+       '5246718dd1252f257a1fb88c3c8d06ce3812391bc4acb3b47be8db6e4217c1ee')
   )
   SELECT count(*)::integer,
          count(*) FILTER (
@@ -654,13 +656,13 @@ BEGIN
     FROM expected
     LEFT JOIN supabase_migrations.schema_migrations m
       ON m.version=expected.version AND m.name=expected.name;
-  IF v_count<>12 OR v_bad<>0 OR (
+  IF v_count<>13 OR v_bad<>0 OR (
        SELECT max(m.version)
          FROM supabase_migrations.schema_migrations m
         WHERE m.version ~ '^[0-9]{14}$'
-     ) IS DISTINCT FROM '20260910145833' THEN
+     ) IS DISTINCT FROM '20260910151228' THEN
     RAISE EXCEPTION
-      'Stage-B requires all twelve byte-exact 130319-145833 live-tail migrations and the exact 145833 ledger head; % rows drifted',
+      'Stage-B requires all thirteen byte-exact 130319-151228 live-tail migrations and the exact 151228 ledger head; % rows drifted',
       v_bad USING ERRCODE='55000';
   END IF;
 
@@ -758,7 +760,7 @@ BEGIN
     LEFT JOIN pg_language l ON l.oid=p.prolang;
   IF v_count<>10 OR v_bad<>0 THEN
     RAISE EXCEPTION
-      'Stage-B found % missing or drifted 145833 live-tail function catalogs',
+      'Stage-B found % missing or drifted 151228 live-tail function catalogs',
       v_bad USING ERRCODE='55000';
   END IF;
 
@@ -1123,13 +1125,13 @@ BEGIN
           ])
      )<>11 THEN
     RAISE EXCEPTION
-      'Stage-B found % missing, extra or drifted 145833 live-tail trigger bindings',
+      'Stage-B found % missing, extra or drifted 151228 live-tail trigger bindings',
       v_bad USING ERRCODE='55000';
   END IF;
 END;
-$assert_current_live_tail_145833$;
+$assert_current_live_tail_151228$;
 
-SELECT pg_temp.assert_stage_b_current_live_tail_145833_postimage();
+SELECT pg_temp.assert_stage_b_current_live_tail_151228_postimage();
 
 
 -- ===========================================================================
@@ -11250,6 +11252,6 @@ COMMENT ON FUNCTION public.fn_ca_eliminate_absent_tournament_players(
   'Owner-only felt-aware forensic implementation retained for exact production postimage parity. No API grant, scheduler, detector, or runtime caller exists.';
 
 SELECT pg_temp.assert_stage_b_phase_three_125453_postimage();
-SELECT pg_temp.assert_stage_b_current_live_tail_145833_postimage();
+SELECT pg_temp.assert_stage_b_current_live_tail_151228_postimage();
 
 COMMIT;

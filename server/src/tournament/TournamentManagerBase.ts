@@ -436,6 +436,8 @@ export abstract class TournamentManagerBase {
    * one thing the whole anchor exists to keep in step.
    */
   protected spinRevealEmitted = false;
+  /** Tables whose early reveal completed without an emitter exception. */
+  protected spinRevealEmittedTableIds = new Set<string>();
   // Tournament metadata cache
   protected tournamentCache: any = null;
   // FIX 151: ChipRaceEngine for denomination removal on level-up
@@ -1643,6 +1645,7 @@ export abstract class TournamentManagerBase {
         // the break ends. (Hand-for-hand deliberately does NOT pass this.)
         engine.pauseAfterHand(breakDurationMs + TournamentManagerBase.LAST_HAND_GRACE_MS, {
           beforeNextHand: true,
+          untilResumed: true,
         });
       } catch (err) {
         reportError(err, 'TournamentManagerBase.pauseForBreak_pause_engine');
@@ -1665,8 +1668,8 @@ export abstract class TournamentManagerBase {
       try {
         return e.isWaitingForHandForHand();
       } catch {
-        // An engine we cannot interrogate must not block the break.
-        return true;
+        // A failed inspection is not proof that the active hand has settled.
+        return false;
       }
     });
   }
@@ -1676,7 +1679,10 @@ export abstract class TournamentManagerBase {
    * tournament. Writes the real end time so the countdown players see reflects
    * when the break ACTUALLY started, not when the last hand was announced.
    */
-  async beginBreakCountdown(breakDurationMs: number): Promise<void> {
+  async beginBreakCountdown(
+    breakDurationMs: number,
+    deadlineMs = Date.now() + breakDurationMs
+  ): Promise<void> {
     const lifecycle = this.captureLifecycleToken();
     if (!lifecycle || !this.lifecycleIsCurrent(lifecycle) || !this.onBreak) return;
     /**
@@ -1694,7 +1700,7 @@ export abstract class TournamentManagerBase {
      */
     if (this.breakCountdownStarted) return;
     this.breakCountdownStarted = true;
-    const endsAt = new Date(Date.now() + breakDurationMs).toISOString();
+    const endsAt = new Date(deadlineMs).toISOString();
     try {
       await supabase
         .from('tournaments')
@@ -3510,10 +3516,12 @@ export abstract class TournamentManagerBase {
                      replay packet once `replay_until` passes, so on exactly the
                      bad day the extension exists for, a player reconnecting
                      between the planned hold and the real one got NO reveal at
-                     all while the cards were still legally undealt. Same floor,
-                     computed the same way. */
+                     all while the cards were still legally undealt. The later
+                     admission pass refreshes this packet if its actual hold
+                     extends beyond the deadline available here. */
                   replay_until: Math.max(holdUntil, Date.now() + spinPostRevealMs()),
                 });
+                this.spinRevealEmittedTableIds.add(tableId);
               } catch (err) {
                 /* The reveal is theatre; it must never stop a game starting. */
                 reportError(
@@ -3794,6 +3802,7 @@ export abstract class TournamentManagerBase {
        * start-up happened to take about 22 seconds, which is luck, not a
        * contract.
        */
+      let spinFirstDealHoldUntil = 0;
       const revealVariant = String(tournament.variant ?? '').toLowerCase();
       const revealIsSpin =
         revealVariant === 'spin' ||
@@ -3841,6 +3850,7 @@ export abstract class TournamentManagerBase {
          * is the floor below which a card would land on a moving wheel.
          */
         const effectiveHold = Math.max(holdUntil, Date.now() + spinPostRevealMs());
+        spinFirstDealHoldUntil = Math.max(launchStartMs, effectiveHold);
         for (const [tableId, engine] of this.tableEngines) {
           try {
             /* THE HOLD IS APPLIED EITHER WAY (round 18). The early emit above
@@ -3849,11 +3859,15 @@ export abstract class TournamentManagerBase {
                must happen for every table whether or not the wheel was
                already announced to it. */
             engine.holdDealingUntil(effectiveHold);
-            /* Already announced to this table by the early pass — the wheel
-               is turning on those exact numbers. Re-emitting is harmless (the
-               client guards a second open) but pointless, and skipping keeps
-               one reveal to one table. */
-            if (this.spinRevealEmitted && this.seatFirstTableIds.includes(tableId)) continue;
+            /* Skip only a successful early delivery with the same hold. A slow
+               table build extends dealing here, so the hub must also receive
+               that exact deadline before its original replay expires. The
+               reveal instant and funded result stay fixed; the client already
+               guards a second wheel. An early emitter failure never counts as
+               delivery, and the normal admission path delivers it here. */
+            if (this.spinRevealEmittedTableIds.has(tableId) && effectiveHold === holdUntil) {
+              continue;
+            }
             tableStateHub.emitEvent(tableId, {
               type: 'spin_reveal',
               table_id: tableId,
@@ -4047,11 +4061,19 @@ export abstract class TournamentManagerBase {
        * (see the start() stand-down paths) must not arm a clock on a tournament
        * that is no longer being managed by this process.
        */
-      if (this.preStartLeadMs > 0) {
+      // A fresh Spin's first level belongs to the same hold as its first
+      // hand. Setup can extend that hold, and completion can consume it: use
+      // the admitted absolute deadline after those awaits, never a fresh full
+      // reveal delay. Other formats keep their advertised pre-seat lead.
+      const blindStartDelayMs =
+        spinFirstDealHoldUntil > 0
+          ? Math.max(0, spinFirstDealHoldUntil - Date.now())
+          : this.preStartLeadMs;
+      if (blindStartDelayMs > 0) {
         const structure = tournament.blind_structure || [];
         this.setLifecycleTimeout(() => {
           this.startBlindTimer(structure);
-        }, this.preStartLeadMs);
+        }, blindStartDelayMs);
       } else {
         this.startBlindTimer(tournament.blind_structure || []);
       }
@@ -4149,7 +4171,7 @@ export abstract class TournamentManagerBase {
       // restoreDrawnFirstButtons.
       const { data: tables } = await supabase
         .from('tables')
-        .select('id, first_button_seat')
+        .select('id, first_button_seat, small_blind, big_blind, ante, stakes')
         .eq('tournament_id', this.tournamentId)
         .in('status', ['running', 'waiting']);
       this.assertLifecycleCurrent(lifecycle);
@@ -4210,6 +4232,38 @@ export abstract class TournamentManagerBase {
           }
         }
       } else {
+        // An interrupted or failed level fan-out can leave tables on different
+        // blinds. Restore every row from the durable tournament level before
+        // admitting any dealer; a failed correction must not start a split field.
+        const restoredLevel = this.resolveBlindLevel(
+          tournament.blind_structure || [],
+          tournament.current_level || 0
+        );
+        if (restoredLevel) {
+          const smallBlind = Math.min(restoredLevel.smallBlind || 0, 10_000_000);
+          const bigBlind = Math.min(restoredLevel.bigBlind || 0, 10_000_000);
+          const ante = Math.min(restoredLevel.ante || 0, 10_000_000);
+          const stakes = `${smallBlind}/${bigBlind}`;
+          for (const table of tables) {
+            if (
+              Number(table.small_blind) === smallBlind &&
+              Number(table.big_blind) === bigBlind &&
+              Number(table.ante) === ante &&
+              table.stakes === stakes
+            )
+              continue;
+            const { error } = await supabase
+              .from('tables')
+              .update({ small_blind: smallBlind, big_blind: bigBlind, ante, stakes })
+              .eq('id', table.id);
+            this.assertLifecycleCurrent(lifecycle);
+            if (error) {
+              throw new Error(
+                `Blind recovery failed for table ${table.id.slice(0, 8)}: ${error.message}`
+              );
+            }
+          }
+        }
         for (const table of tables) {
           const engine = this.createManagedTableEngine(table.id);
           engine.setHub(tableStateHub); // Phase 1.1 PR-2
@@ -4402,6 +4456,7 @@ export abstract class TournamentManagerBase {
             try {
               engine.pauseAfterHand(remainingMs + TournamentManagerBase.LAST_HAND_GRACE_MS, {
                 beforeNextHand: true,
+                untilResumed: true,
               });
             } catch (err) {
               reportError(err, 'TournamentManagerBase.resume_rebreak_pause');
@@ -5877,9 +5932,16 @@ export abstract class TournamentManagerBase {
           }
         }
 
+        // Publish the new level and its clock anchor together. A replacement
+        // manager must never time this level from the previous level's start.
+        const levelStartedAt = Date.now();
+        this.blindTimerStartedAt = levelStartedAt;
         const { error: levelErr } = await supabase
           .from('tournaments')
-          .update({ current_level: this.currentLevel })
+          .update({
+            current_level: this.currentLevel,
+            level_started_at: new Date(levelStartedAt).toISOString(),
+          })
           .eq('id', this.tournamentId);
         if (!this.lifecycleIsCurrent(lifecycle)) return;
         if (levelErr)
@@ -5976,7 +6038,12 @@ export abstract class TournamentManagerBase {
         if (this.isOnBreak()) {
           this.savedBlindTimerRemaining = this.levelDurationMs(level);
         } else {
-          this.startBlindTimer(blindStructure);
+          // Persistence and broadcasts may take time. Keep the durable anchor
+          // so an uninterrupted manager and its replacement share one clock.
+          this.startBlindTimer(
+            blindStructure,
+            this.levelDurationMs(level) - (Date.now() - levelStartedAt)
+          );
         }
       }
     }

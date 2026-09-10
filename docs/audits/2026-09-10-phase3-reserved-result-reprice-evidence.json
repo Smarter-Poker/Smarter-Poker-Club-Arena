@@ -1,0 +1,79 @@
+{
+  "phase": 3,
+  "source_base": "09c01fba4",
+  "status": "local_correction_verified_release_pending",
+  "controls": ["T07", "T09", "T10"],
+  "phase_complete": false,
+  "production_database_mutated": false,
+  "migration": "20260910053005_cash_entry_close_proves_the_reserved_unpaid_ladder.sql",
+  "installed_acl_observed_at": "2026-09-10T05:38:07.42078Z",
+  "installed_acl": {
+    "security_definer": true,
+    "search_path": "public, pg_temp",
+    "anon_execute": false,
+    "authenticated_execute": false,
+    "service_role_execute": true
+  },
+  "postgres_rehearsal": {
+    "passed": [
+      "installed baseline falsely requires already-paid cash places",
+      "final unpaid cash facts complete without any wallet payment",
+      "cash proof writes only its own completion receipt",
+      "receipt replay is idempotent",
+      "bubble amounts agree with the canonical reserved ladder",
+      "old full-pool bubble amount cannot complete",
+      "fractional-cent result cannot complete",
+      "missing finishing position cannot disappear from proof",
+      "pool drift cannot complete",
+      "ladder drift cannot complete",
+      "missing closure receipt is reported",
+      "invalid canonical ladder leaves receipt pending",
+      "satellite acceptance contract is preserved",
+      "migration is repeatable without changing the result",
+      "unsafe public definer ACL cannot be silently accepted",
+      "a missing definer search path is refused",
+      "a concurrently changed implementation is not overwritten",
+      "missing target never creates a new public definer",
+      "missing canonical amount authority refuses before replacement",
+      "service-only ACL survives replacement exactly"
+    ],
+    "baseline_body_md5": "51c598a2fdb9a805485dec239eb70169",
+    "corrected_body_md5": "784df9021f906ca9e42e43942b692e2f",
+    "amount_authority_body_md5": "8f6cde5f5b799949506259f3064568b9",
+    "production_database_used": false,
+    "scope": "Actual entry-close acceptance and amount functions with synthetic input tables; no wallet or terminal settlement certification.",
+    "result_path": "/tmp/ca-entry-reprice-pg17-6n80ld7u/results.json"
+  },
+  "engine_method_baseline": {
+    "passed": 3,
+    "failed": 5,
+    "log": "/tmp/payout-bubble-baseline.log"
+  },
+  "remaining": [
+    "Production migration apply and engine adoption must be proved before release closure.",
+    "No wallet, terminal concurrency, early payment, final standings, cancellation or guarantee funding certification is claimed.",
+    "Finalized-pool and finalization-window triggers were still disabled in the live catalog read.",
+    "Before field finalization the existing provisional result pricing remains unchanged."
+  ],
+  "installed_reprice_observed": "Read during this audit, before the timestamped 05:38:07Z ACL query.",
+  "verification": {
+    "focused_server_tests": {
+      "passed": 172,
+      "files": 11,
+      "log": "/tmp/payout-regression-tests.log"
+    },
+    "server_typecheck": {
+      "exit_code": 0,
+      "log": "/tmp/payout-review-tsc.log"
+    },
+    "root_typecheck": {
+      "exit_code": 0,
+      "log": "/tmp/payout-root-tsc.log"
+    },
+    "server_build": {
+      "exit_code": 0,
+      "log": "/tmp/payout-server-build.log"
+    }
+  },
+  "migration_sha256": "81ddd9084960cb4747947a7f223406fbc4db93dd356ebe4e0ede8d8e121eea7d"
+}

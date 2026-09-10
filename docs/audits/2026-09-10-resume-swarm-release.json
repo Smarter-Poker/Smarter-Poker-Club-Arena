@@ -1,0 +1,241 @@
+{
+  "programme": "Club Arena Audit",
+  "date_utc": "2026-09-10",
+  "phase": 3,
+  "of": 12,
+  "status": "in_progress",
+  "integration_head_before_record": "5352b98ab75281c1a495ef60a2e71b3f876749e9",
+  "verified_original_controls": 4,
+  "original_phase3_controls": 58,
+  "whole_codebase_verified": false,
+  "swarm": {
+    "implementation": [
+      "entry_refunds",
+      "payouts",
+      "bounties",
+      "satellites",
+      "sng_spins",
+      "union_accounting"
+    ],
+    "independent_reviews": {
+      "bounty_per_pot": "payouts + root",
+      "reserved_unpaid_results": "bounties + root",
+      "commission_cascade": "entry_refunds + root; blockers remain",
+      "spin_first_deal_clock": "bounties + root; committed7e9933fb55d12c1c6a0389afa1af51989542b082 integrated asac019e328",
+      "strict_build_provenance": "root review +9 actual subprocess cases, commit85d5f089d integrated asd73220569"
+    },
+    "new_assignments": [
+      "satellite qualification SQL/engine with payout UI lane",
+      "canonical commission source with player rebate payer lane",
+      "release provenance strict CI enforcement",
+      "HU funded last-seat/start/refund native PostgreSQL composition",
+      "Shared atomic blind transition and approved overflow comparison"
+    ]
+  },
+  "database_changes": [
+    {
+      "reserved_file": "supabase/migrations/20260910053723_tournament_bounty_per_pot_evidence.sql",
+      "file_sha256": "2fdcbc3c1ccda299b53fea97a6fe9ace267919d3e3f1d9c60ae796726812c47b",
+      "applied_name": "tournament_bounty_per_pot_evidence",
+      "applied_version": "20260910055857",
+      "verified_at": "2026-09-10T05:59:13.335267Z",
+      "function": "fn_exact_tournament_knockout_claimants(uuid,uuid,uuid)",
+      "previous_body_md5": "193de04c64c285ba0bf0cb20bb38c28d",
+      "installed_body_md5": "6ead779d2261848571713f0220953082",
+      "service_only_execute": true,
+      "definer": true,
+      "search_path": "public, pg_temp",
+      "isolated_pg17_groups": 17,
+      "independent_source_path_tests": 61,
+      "historical_money_repair": false,
+      "engine_adoption": "pending",
+      "reviewed_file_sha256": "fa4cda7542e85b6cbd54aaa153c168ba80db541a238cd29c996591b25bade142",
+      "applied_sql_md5": "621b631fd6344e31884f2a42aed1fa26",
+      "exact_mirror_note": "Removed the file-final newline omitted by file transport. Database migration statement MD5 now equals repository bytes; function source and SQL statements are unchanged."
+    },
+    {
+      "reserved_file": "supabase/migrations/20260910053005_cash_entry_close_proves_the_reserved_unpaid_ladder.sql",
+      "file_sha256": "826248f9d290154781197628d41dd9b3b09bdf0daa2f7f65c47d166c275c7ab0",
+      "applied_name": "cash_entry_close_proves_the_reserved_unpaid_ladder",
+      "applied_version": "20260910060034",
+      "verified_at": "2026-09-10T06:00:52.521524Z",
+      "function": "fn_complete_tournament_entry_reprice(uuid)",
+      "previous_body_md5": "51c598a2fdb9a805485dec239eb70169",
+      "installed_body_md5": "784df9021f906ca9e42e43942b692e2f",
+      "service_only_execute": true,
+      "definer": true,
+      "search_path": "public, pg_temp",
+      "isolated_pg17_groups": 20,
+      "independent_actual_manager_tests": 10,
+      "money_writes": "none; only existing entry-close receipt completion timestamp",
+      "engine_adoption": "pending",
+      "reviewed_file_sha256": "81ddd9084960cb4747947a7f223406fbc4db93dd356ebe4e0ede8d8e121eea7d",
+      "applied_sql_md5": "767a3d3ad1e10e612fdec1af10e6ea25",
+      "exact_mirror_note": "Removed the file-final newline omitted by file transport. Database migration statement MD5 now equals repository bytes; function source and SQL statements are unchanged."
+    },
+    {
+      "reserved_file": "supabase/migrations/20260910070406_cash_entry_reprice_service_only_access.sql",
+      "file_sha256": "fafc3afeed13a155474f1a5b85876f2fe537ed29af01403949d95004e01e1f60",
+      "applied_name": "cash_entry_reprice_service_only_access",
+      "applied_version": "20260910071131",
+      "applied_sql_md5": "1720d40e5286b9cebb1a72afd2d57c49",
+      "verified_at": "2026-09-10T07:12:25.215318Z",
+      "installed_body_md5": "784df9021f906ca9e42e43942b692e2f",
+      "service_only_execute": true,
+      "money_writes": "none",
+      "body_changed": false,
+      "review": "Independent satellite UI lane plus root; mandatory native PG17 access and body-drift cases passed."
+    }
+  ],
+  "integrated_checks": {
+    "source_head": "be83fa5fe",
+    "client_behavior_tests": 48,
+    "client_test_files": 3,
+    "server_behavior_tests": 147,
+    "server_test_files": 9,
+    "root_build_exit": 0,
+    "server_build_exit": 0,
+    "build_freshness": "Local build completed but warned that newer main commits landed during build. Local output was not published; normal current-main CI publication remains required.",
+    "bounty_after_integration": "pending focused settlement regression"
+  },
+  "production_observations": {
+    "observed_at": "2026-09-10T05:32:49Z",
+    "engine_version": "c4163531",
+    "liveness": "ok",
+    "stalled_mtt_tables": 20,
+    "deferred_work": "Normal engine release and existing ambiguous move/terminal outcomes require direct evidence. Liveness is not complete health.",
+    "frontend_observed_sha": "56962e048d024cb3215a255529c7b1491873db72"
+  },
+  "open_gates": [
+    "Full 58-control Phase3 acceptance",
+    "Exact-K satellite qualification including durable pending boundary and explicit cohort UI",
+    "Heads-Up last-seat launch/refund PostgreSQL composition",
+    "Canonical commission source and all player rebate payer/conservation paths",
+    "Atomic tournament clock/table fanout and stale-anchor race",
+    "Current-source PR, frontend and engine adoption",
+    "All remaining phases and source-by-source review"
+  ],
+  "excluded_actions": [
+    "Historical backpay or manual balances",
+    "Forced engine restart or independent Stage-B cutover",
+    "World Hub edits",
+    "Horse strategy edits"
+  ],
+  "final_integrated_checks": {
+    "source_head": "d73220569c299adfc2013bead3f567a8e5a962fb",
+    "client_behavior_tests": 57,
+    "client_test_files": 4,
+    "server_behavior_tests": 137,
+    "server_test_files": 10,
+    "root_build_exit": 0,
+    "server_build_exit": 0,
+    "client_receipt": "/tmp/resume-poker-final-client-results.json",
+    "server_receipt": "/tmp/resume-poker-final-server-results.json",
+    "coverage": "Merged bounty persistence with current Diamond accepted-hand path; actual Spin first-deal hold; cash result reserve; terminal witness; rake cursor; blind-row recovery; client obsolete intents, mystery event identity and real Git provenance subprocesses.",
+    "whole_phase_acceptance": false
+  },
+  "new_rule_recovery": {
+    "source": "Original user message, Header Redesign Done, 2026-08-30, recovered conversation context",
+    "assigned_player_rebate": "Paid from their agent allocation, subject to available upline allocation and minimum10 percentage-point margin.",
+    "scope": "Resolves assigned-player cost bearer; does not authorize rewriting existing assigned rates or historical balances. Unassigned-player and source-time assignment semantics require explicit evidence."
+  },
+  "interrupted_push": {
+    "source_head": "26ed0ac109d83bc469e3426f01927c210aa4ba20",
+    "result": "blocked",
+    "causes": [
+      "Static definer check cannot see mandatory service-only ACL preflight on body replacement",
+      "Two stale source-pinning assertions expected old full pool and preStartLead-only scheduling"
+    ],
+    "affected_server_passed": 3020,
+    "affected_server_skipped": 145,
+    "followup_assertions_passed": 91,
+    "native_pg17_groups": 24,
+    "native_evidence": "docs/audits/2026-09-10-reprice-access-pg17.json",
+    "push_completed": false,
+    "followup_actual_behavior_tests_passed": 24
+  },
+  "local_release_acceptance": {
+    "head": "8919f49e6c21d0401f1b9df8fa17443f3ecc3e27",
+    "remote_head_used_for_diff": "75eb72e546b71958bf05f719f4c64d3143a03d59",
+    "exit_code": 0,
+    "finished_at": "2026-09-10T07:28:22.924058+00:00",
+    "mode": "local hook validation only",
+    "push_executed": false,
+    "changed_client_tests": 107,
+    "affected_client_tests": 593,
+    "source_assertions": 1432,
+    "changed_server_tests": 209,
+    "affected_server_tests": 3045,
+    "affected_server_existing_skips": 145,
+    "counts_overlap": true,
+    "server_build_exit": 0
+  },
+  "publication_block": {
+    "status": "explicit_user_authorization_required_by_automatic_review",
+    "destination": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena.git",
+    "branch": "agent/codex-poker-audit-sep09/fix/tournament-pause-release",
+    "pr": 4105,
+    "rejected_action": "normal git push with hooks",
+    "reason": "Reviewer requires explicit user approval for repository upload; canonical remote, existing branch/PR and recovered historical approvals did not satisfy review.",
+    "retried_only_after_destination_checks": true,
+    "attempts_after_final_rejection": 0,
+    "push_completed": false,
+    "remote_head_verified": "75eb72e546b71958bf05f719f4c64d3143a03d59"
+  },
+  "resumed_lane_checkpoints": {
+    "satellite_ui": {
+      "commits": [
+        "a3aaccedb83687fcda823137eb0f4065faa1d2e4",
+        "a44fe03ebf31526c44fd7f30f0138469cfbe1baa"
+      ],
+      "tests": 151,
+      "build_exit": 0,
+      "integrated": false,
+      "open": "core DB contract and real authenticated browser/network"
+    },
+    "short_format_blinds": {
+      "commits": [
+        "7923185ffa4d768e49c2bce9ab2d4c2b438793a2",
+        "2346cb9dc7fcd2080105140d87c68ddf41649124"
+      ],
+      "matrix_cases": 91,
+      "unchanged_mtt_cases": 60,
+      "malformed_refusals": 13,
+      "preflight_refusals": 3,
+      "tests": 14,
+      "build_exit": 0,
+      "new_body_md5": "2eb470a52fe0d2bf3b1b5f38a05f3bc6",
+      "migration_applied": false,
+      "integrated": false
+    },
+    "atomic_clock_design": {
+      "commits": ["fc214f355", "383b6e8b5"],
+      "status": "independent review running; no atomic implementation or production acceptance"
+    },
+    "rakeback_door_retirement": {
+      "commit": "77e1a896f8cb1d4483231944d09f3319b6ea8475",
+      "pg_assertions": 14,
+      "independent_review": "commission source lane plus root",
+      "migration_applied": false,
+      "integrated": false
+    },
+    "commission_source": {
+      "commits": [
+        "6e90a7272afd8a5e8bdb99bf08c76572742970a7",
+        "0d34358f73e89fffb4fd447f0d177db2cc777fbd"
+      ],
+      "pg_checks": 40,
+      "status": "proposal only; full actual accepted-owner dependency and trigger verification ongoing",
+      "integrated": false
+    },
+    "rakeback_source_payment": {
+      "status": "11 prototype groups; full wrapper/UI/auth/trigger composition incomplete; no production changes"
+    },
+    "heads_up_native": {
+      "status": "94 captured critical triggers; full HU matrix/races/receipt rollback run ongoing; not yet certified"
+    },
+    "satellite_core": {
+      "status": "31 behavior tests; native full schema found completing guard wiring gap; final Stage-B wrapper dependency remains open; no production changes"
+    }
+  }
+}

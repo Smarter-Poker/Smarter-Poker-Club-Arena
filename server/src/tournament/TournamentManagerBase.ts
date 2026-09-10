@@ -5754,9 +5754,16 @@ export abstract class TournamentManagerBase {
           }
         }
 
+        // Publish the new level and its clock anchor together. A replacement
+        // manager must never time this level from the previous level's start.
+        const levelStartedAt = Date.now();
+        this.blindTimerStartedAt = levelStartedAt;
         const { error: levelErr } = await supabase
           .from('tournaments')
-          .update({ current_level: this.currentLevel })
+          .update({
+            current_level: this.currentLevel,
+            level_started_at: new Date(levelStartedAt).toISOString(),
+          })
           .eq('id', this.tournamentId);
         if (!this.lifecycleIsCurrent(lifecycle)) return;
         if (levelErr)
@@ -5853,7 +5860,12 @@ export abstract class TournamentManagerBase {
         if (this.isOnBreak()) {
           this.savedBlindTimerRemaining = this.levelDurationMs(level);
         } else {
-          this.startBlindTimer(blindStructure);
+          // Persistence and broadcasts may take time. Keep the durable anchor
+          // so an uninterrupted manager and its replacement share one clock.
+          this.startBlindTimer(
+            blindStructure,
+            this.levelDurationMs(level) - (Date.now() - levelStartedAt)
+          );
         }
       }
     }

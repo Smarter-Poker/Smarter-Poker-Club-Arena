@@ -2243,6 +2243,18 @@ CREATE OR REPLACE FUNCTION public.fn_stamp_seat_club()
  SET search_path TO 'public'
 AS $function$
 BEGIN
+  -- A SEAT KEEPS THE CLUB IT WAS SEATED UNDER (2026-09-10). Nothing that the
+  -- stamp is derived from changed, and the seat already carries a club, so
+  -- there is nothing to derive. This was 6.0 ms of club_members lookups on
+  -- every stack write; see the migration header.
+  IF TG_OP = 'UPDATE'
+     AND NEW.user_id IS NOT DISTINCT FROM OLD.user_id
+     AND NEW.table_id IS NOT DISTINCT FROM OLD.table_id
+     AND NEW.club_id IS NOT DISTINCT FROM OLD.club_id
+     AND NEW.club_id IS NOT NULL THEN
+    RETURN NEW;
+  END IF;
+
   IF NEW.user_id IS NOT NULL AND NEW.table_id IS NOT NULL THEN
     NEW.club_id := COALESCE(
       public.fn_seat_club_for_user(NEW.user_id, NEW.table_id, NEW.club_id),
@@ -2573,10 +2585,22 @@ BEGIN
       FROM public.tables t
      WHERE t.id = OLD.table_id;
   END IF;
-  IF TG_OP <> 'DELETE' THEN
+  IF TG_OP = 'UPDATE' AND NEW.table_id IS NOT DISTINCT FROM OLD.table_id THEN
+    -- Same table on both sides: one lookup answers for both (2026-09-10).
+    v_new_tournament_id := v_old_tournament_id;
+  ELSIF TG_OP <> 'DELETE' THEN
     SELECT t.tournament_id INTO v_new_tournament_id
       FROM public.tables t
      WHERE t.id = NEW.table_id;
+  END IF;
+
+  -- A CASH SEAT HAS NO LAUNCH PROOF TO LOCK (2026-09-10). With both ids NULL
+  -- the body below cannot lock, refuse or require anything: v_ids would be
+  -- {NULL,NULL}, the proof-open test is false, the lock helper returns on an
+  -- empty set, and the roster check needs a tournament. Measured 6.4 ms per
+  -- seat write on a cash table for that no-op; see the migration header.
+  IF v_old_tournament_id IS NULL AND v_new_tournament_id IS NULL THEN
+    RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
   END IF;
 
   v_ids := CASE

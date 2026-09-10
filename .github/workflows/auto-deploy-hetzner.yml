@@ -186,7 +186,41 @@ jobs:
     #
     # tests/the-deploy-can-always-ship.law.test.ts pins the ARITHMETIC, not the
     # literals, so neither number can be moved alone again.
-    timeout-minutes: 55
+    #
+    # ── EVERY START MINUTE REACHES THE NEXT BREAK (2026-09-10) ──────────────
+    #
+    # 55 was derived for ONE caller, the :35 tick, and two of its inputs were
+    # wrong by the time it mattered:
+    #
+    #   * "a staged run reaches the gate in ~60s" - it does not. The server
+    #     suite runs before the gate on EVERY run and takes ~9 minutes, so a
+    #     staged run reaches the gate 11-12 minutes after it starts (measured:
+    #     runs 34505100894, 34511390657, 34512893031, 34516171966);
+    #   * "the :35 tick finishes the job" - it does not come. GitHub delivered
+    #     3 of ~19 hourly ticks on 2026-09-10, the DB dispatcher was retired by
+    #     20260910183316, and every other run was dispatched by
+    #     .github/scripts/engine-watchdog.sh or an agent at whatever minute it
+    #     happened to run.
+    #
+    # With 55, a run that started before :10 or after :44 could not afford to
+    # wait for the next :55. It staged its image, printed a notice, went GREEN
+    # and shipped nothing - and nothing came back to finish the job. Production
+    # sat on a crash-looping engine through the 16:55, 17:55 and 18:55 breaks
+    # while the fix (#4190) had been on main since 16:51.
+    #
+    # So the ceiling is derived from the worst START MINUTE, not from a tick:
+    #
+    #     checkout + setup + server suite (worst observed 11.7m)   12
+    #     cold image build (worst observed)                         18
+    #     longest possible wait (reach the gate just after :56)     60
+    #     cutover + verify + promote + proof (CUTOVER_RESERVE_S)     9
+    #                                                             = 99  -> 110
+    #
+    # A run may now hold the deploy-hetzner group for up to an hour. That is the
+    # design, not a cost: it is the run that ships at the next :55, and
+    # engine-watchdog.sh does not dispatch while it is in flight (its
+    # INFLIGHT_STALE_MIN is derived from this number and must stay above it).
+    timeout-minutes: 110
 
     env:
       HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
@@ -804,7 +838,7 @@ jobs:
           # from one place and derived together. See the block above
           # `timeout-minutes` for the arithmetic that produced both; changing
           # either alone is the defect this step keeps re-producing.
-          JOB_TIMEOUT_S=$(( 55 * 60 ))
+          JOB_TIMEOUT_S=$(( 110 * 60 ))
           CUTOVER_RESERVE_S=540     # cutover + verify + promote (~2-4 min) + a 4-min proof that can fail
           ELAPSED_S=$(( NOW_EPOCH - ${DEPLOY_STARTED_AT:-$NOW_EPOCH} ))
           BUDGET_CAP_S=$(( JOB_TIMEOUT_S - ELAPSED_S - CUTOVER_RESERVE_S ))
@@ -829,8 +863,15 @@ jobs:
           [ "$ATTEMPTS" -lt 8 ] && ATTEMPTS=8
           echo "break gate: ${SECS_TO_GATE}s to the next :55, polling ${ATTEMPTS}x${POLL_S}s"
 
+          # ATTEMPTS counts polls; the deadline counts seconds. A /health that
+          # answers slowly (10s curl timeouts) would otherwise stretch ATTEMPTS
+          # polls well past the budget granted above and let the job timeout,
+          # not this gate, decide the run - the cutover it was waiting for
+          # would then be killed mid-flight.
+          GATE_DEADLINE=$(( $(date -u +%s) + SECS_TO_GATE + 90 ))
           READY=no
           for i in $(seq 1 $ATTEMPTS); do
+            [ "$(date -u +%s)" -ge "$GATE_DEADLINE" ] && { echo "attempt $i/$ATTEMPTS: the gate deadline passed"; break; }
             BODY=$(curl -sf --max-time 10 "$ENGINE_URL/health" 2>/dev/null || echo "")
             # A restart certificate is complete only while the break is
             # actively counting down, every table is parked, and enough time
@@ -1318,13 +1359,21 @@ jobs:
             echo ""
             echo "Reason: **$REASON**"
             echo ""
-            echo "The run is green because skipping was the CORRECT action, not"
-            echo "because \`$SHA\` reached production. Do not treat this tick as"
-            echo "proof the engine is running your code."
-            echo ""
-            echo "It lands on the next hourly tick (:35, cutting over inside the"
-            echo ":55 break). A manual dispatch can stage it immediately, but"
-            echo "every cutover still requires a fresh readyForRestart certificate."
+            # 2026-09-10: this used to say "the run is green because skipping
+            # was the CORRECT action" and "it lands on the next hourly tick".
+            # Neither was true for the break-gate skips: the tick rarely came,
+            # and a run that should have shipped and did not is a failure, now
+            # coloured red by the Verdict step at the end of the job.
+            if [ "${{ steps.drain.outputs.skip }}" = "true" ]; then
+              echo "This run is RED (see the Verdict step): it should have shipped"
+              echo "\`$SHA\` and did not. The engine watchdog dispatches the next"
+              echo "run, which waits in its break gate for the next :55 it can"
+              echo "reach; every cutover still requires a fresh readyForRestart certificate."
+            else
+              echo "Nothing needed shipping: production already serves this commit,"
+              echo "or a restart inside this same break was deliberately coalesced."
+              echo "Every cutover still requires a fresh readyForRestart certificate."
+            fi
             echo ""
             echo "Verify what is ACTUALLY running before believing anything:"
             echo ""
@@ -1398,3 +1447,53 @@ jobs:
       - name: Cleanup SSH key
         if: always()
         run: rm -f ~/.ssh/id_deploy ~/hssh
+
+      # ── GREEN MEANS PRODUCTION SERVES THIS COMMIT (2026-09-10) ─────────────
+      #
+      # Until today a run that shipped nothing ended GREEN: "IMAGE STAGED,
+      # CUTOVER DEFERRED" was a notice, "BREAK NEVER OPENED" a warning, and the
+      # only place that said shipped=false was ca_engine_deploy_attempts. On
+      # 2026-09-10 five green runs shipped nothing in one afternoon while the
+      # engine crash-looped on a build whose fix was already merged, and the
+      # Actions tab - the thing people actually look at - said all was well.
+      #
+      # So the colour now carries the outcome:
+      #   GREEN  production serves this commit: this run cut it over, or it was
+      #          already live, or a second restart inside the same break was
+      #          deliberately coalesced (dedupe);
+      #   RED    this run should have shipped and did not: the break gate
+      #          declined (never opened, or out of budget) or the cutover did
+      #          not verify. Every earlier failure is already red on its own.
+      # It runs LAST, after cleanup, so nothing keyed on failure() - the
+      # rollback above all - can ever react to it, and it reads the SAME
+      # SHIPPED expression the ledger step records, so the run, the summary
+      # and the database cannot tell different stories.
+      - name: 'Verdict — green only if production serves this commit'
+        if: always()
+        env:
+          DEDUPE_SKIP: ${{ steps.dedupe.outputs.skip }}
+          DRAIN_SKIP: ${{ steps.drain.outputs.skip }}
+          GATE_REASON: ${{ steps.drain.outputs.gate_reason }}
+          JOB_STATUS: ${{ job.status }}
+          SHIPPED: ${{ steps.dedupe.outputs.skip != 'true' && steps.drain.outputs.skip != 'true' && steps.cutover.outcome == 'success' && steps.cutover.outputs.success == 'true' && steps.health.outputs.verified == 'true' && steps.prove.outcome == 'success' && (steps.seal_commit.outcome == 'success' || (steps.rollback.outcome == 'success' && steps.rollback.outputs.target_committed == 'true')) }}
+        run: |
+          SHORT="${SHA:0:8}"
+          if [ "$JOB_STATUS" != "success" ]; then
+            echo "An earlier step already failed or cancelled this run; its error is the verdict."
+            exit 0
+          fi
+          if [ "$SHIPPED" = "true" ]; then
+            echo "SHIPPED: production serves $SHORT."
+            echo "### Verdict: SHIPPED \`$SHORT\`" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if [ "$DEDUPE_SKIP" = "true" ]; then
+            echo "Nothing to ship: production already serves $SHORT, or a restart inside this break was coalesced."
+            echo "### Verdict: nothing to ship (already live, or coalesced inside this break)" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          REASON="${GATE_REASON:-the cutover did not verify}"
+          [ "$DRAIN_SKIP" = "true" ] || REASON="the cutover did not verify"
+          echo "### Verdict: DID NOT SHIP \`$SHORT\` - $REASON" >> "$GITHUB_STEP_SUMMARY"
+          echo "::error title=DID NOT SHIP::$REASON. $SHA is not on production, and this run should have put it there."
+          exit 1

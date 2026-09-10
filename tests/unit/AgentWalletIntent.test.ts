@@ -156,3 +156,47 @@ describe('durable agent wallet intent', () => {
     }
   });
 });
+
+describe('cashier destination identity', () => {
+  it('preserves the established player key and separates agent destination and bank source', async () => {
+    const prior = await reserveAgentWalletOperation(intent);
+    expect(await reserveAgentWalletOperation({ ...intent, destination: 'player_wallet' })).toEqual(
+      prior
+    );
+    const agent = await reserveAgentWalletOperation({ ...intent, destination: 'agent_wallet' });
+    const bank = await reserveAgentWalletOperation({
+      ...intent,
+      kind: 'club_bank_send',
+      destination: 'agent_wallet',
+    });
+    expect(new Set([prior.operationId, agent.operationId, bank.operationId]).size).toBe(3);
+  });
+
+  it.each(['agent_send', 'club_bank_send'] as const)(
+    'requires the actual source and destination for %s',
+    (kind) => {
+      const receipt = {
+        success: true,
+        transaction_id: targetId,
+        amount: 12.34,
+        agent_wallet_after: 50,
+        bank_after: 100,
+        recipient_balance_after: 12.34,
+        destination: 'agent_wallet',
+      };
+      expect(confirmedAgentWalletReceipt(receipt, 12.34, kind, 'agent_wallet')).toBe(true);
+      expect(confirmedAgentWalletReceipt(receipt, 12.34, kind, 'player_wallet')).toBe(false);
+      const source = kind === 'club_bank_send' ? 'bank_after' : 'agent_wallet_after';
+      for (const invalid of [undefined, NaN, Infinity, -1, '50']) {
+        expect(
+          confirmedAgentWalletReceipt(
+            { ...receipt, [source]: invalid },
+            12.34,
+            kind,
+            'agent_wallet'
+          )
+        ).toBe(false);
+      }
+    }
+  );
+});

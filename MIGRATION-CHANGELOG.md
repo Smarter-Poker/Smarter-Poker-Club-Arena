@@ -1,3 +1,7 @@
+## 2026-09-10: Phase Four Agent Transfer Integrity
+
+Bind portal wallet and commission responses to their current identity and read generation. Preserve durable operation IDs across dashboard and modal retries, and validate exact transfer receipts. Add deferred-response component regressions. No SQL migration. See docs/changelog/2026-09-10-phase-four-agent-transfer-integrity.md.
+
 # MIGRATION CHANGELOG
 
 ## Every Change, Documented. No Exceptions.

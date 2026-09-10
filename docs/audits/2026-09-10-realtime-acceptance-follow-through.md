@@ -31,17 +31,17 @@ see `2026-09-10-cashier-canary-directory-readiness.md` in `docs/changelog`.
 The failed run's artifact 10141178990 exists, but browser-state attachments were
 not inspectable. Its logs do not prove which directory state existed at click.
 
-## Loaded Fleet And Maintenance
+## Earlier Loaded Fleet And Maintenance
 
-Running engine `56962e048d024cb3215a255529c7b1491873db72` contains both callback
+The earlier engine `56962e048d024cb3215a255529c7b1491873db72` contains both callback
 merges `89cabee97a` and `046f9e4570`, proved by git ancestry. Actual deployment
 34440761046/job 102755135235 parked the fleet at 05:55:15.6346332 UTC, started the
 container at 05:56:11.56310586, verified public/container versions at 05:57:05,
 proved `engine_leader` moved from c4163531 at 05:57:07.4715366, committed durable
 release authority at 05:57:10.0981704, and recorded shipped attempt 350 at 05:57:14.8283839.
-The current container was healthy with restart count 0 during read-only inspection.
+That container was healthy with restart count 0 during read-only inspection.
 
-651,500 retained current-container log lines covered 05:56:12.815535543 through
+651,500 retained earlier-container log lines covered 05:56:12.815535543 through
 07:16:51.053333668 UTC. Docker logs exited 0. Case-insensitive searches found 0
 matches for the exact historical authority error, `onObligationChange`, uncaught
 exception, fatal drain, shutdown deadline, and manager authority error patterns.
@@ -59,14 +59,59 @@ The prior thaw completed at 06:00:02.566639028 UTC in one call with zero errors.
 The next 06:53 announcement failed on `canceling statement due to lock timeout`:
 clearing the break row failed at 06:53:11.049220024, followed by announcement
 failure at 06:53:11.050082791. The captured logs do not identify the RPC or lock
-holder. Current 8/8 waves and 492/492 resumed tables are rollback completion at
+holder. Those 8/8 waves and 492/492 resumed tables are rollback completion at
 06:53:16.303, not evidence of a successful 06:55 maintenance cycle.
+
+## Live Acceptance And Replacement Engine
+
+On September 10, run 34449578074/job 102783712375 tested exact LIVE/specs/harness
+`86aab0e645b1842e83fca808cf956c9733af66ba`. Both customization specs and the
+corrected footer passed; Daily Missions passed Terms/profile and failed later.
+Run 34451803919/job 102790759550 repeated those preflight successes. It executed
+292 cases, with 7 failures, 2 skips and 0 flaky results; reserved-account deletion
+and absence were verified at 08:21:33.347319 UTC.
+
+PR #4144 merged as `28a10843d51cabca469659d7d5f783726763edfc`; CI 34451036857
+passed, publisher 34451499334/job 102788775766 verified origin at 07:48:05.546133
+UTC, and fresh public/origin reads served that exact merge at 07:48:57.262955.
+The later run served LIVE `146128eb5c89edb1880473905524556b956b613f` while
+specs/harness stayed at `1c29d5d9ddb850387eda8cca2da55c20db28d760` after a drift
+warning. Canary, tile and HomePage CSS blobs were identical across both refs.
+Cashier readiness, right-click, Escape and mobile-hold opening passed. Its mobile
+left boundary failed at -112px on a 320px viewport; Trade/reconciliation passed.
+The scoped portal repair is documented in
+`docs/changelog/2026-09-10-cashier-menu-escapes-page-transforms.md`.
+The existing production boundary assertions remain unchanged.
+
+Engine deployment 34449341468/job 102781237201 adopted `86aab0e645b1842e83fca808cf956c9733af66ba`,
+which contains both callback fixes. All-parked certification was 07:55:00.877428
+UTC; startup was 07:55:58.991693916; public/container version verification was
+07:56:52-53; database version proof was 07:56:55.2213623; durable release seal
+committed at 07:56:56.7991648; attempt 354 recorded shipped=true at 07:57:02.3443527.
+Thaw completed in one call with zero errors at 08:00:02.461866566. All 415 tables
+resumed in 8/8 waves by 08:00:13.189, closing the prior failed-cycle qualification.
+
+At 08:12:05.319106 UTC, the new process had 386 active/93 dealable tables, zero
+humans, stalled tables and blocked settlements, and idle maintenance. Its 2,000
+retained gap samples in the configured 600,000ms window had p50 2,003ms, p90
+2,164ms and max 2,849ms, including the unchanged deliberate 2,000ms rest.
+Startup identity remained unchanged with zero restarts. A successful read-only
+scan of 70,260 new-container log lines, 07:55:59.851119522 to 08:12:06.473099916,
+found zero matches for the six authority/fatal patterns above. These bounded
+automated-fleet observations do not certify human/device latency or continuously
+zero stalls.
 
 ## Remaining Acceptance
 
-The next normal suite must test the repaired source. Engine release alignment,
-maintenance, and Stage-B remain with the release coordinator; shared shell
-geometry remains separately owned. No production mutations or fixture probes
-were performed for this verification. The supported controlled browser still
-timed out after 20 seconds; physical iPad/PWA and natural reconnect remain
-unverified. Neither the whole programme nor Phase 16 is certified 100% complete.
+The portal repair still requires normal publication and the unchanged live
+Cashier viewport certificate. The live-table suite's exact client/engine SHA
+gate is intentional, and coordinator PR #3908 changes the same prerequisite
+while preserving it. Cross-SHA failures mean continuity observation did not run.
+Engine release alignment and Stage-B remain with that coordinator. Daily
+Missions' later freeze-purchase assertion, shared mobile geometry, and the missing
+cash fixture remain distinct from repaired preflights and directory readiness.
+
+The supported controlled browser still timed out after 20 seconds. Physical
+iPad/PWA and natural reconnect remain unverified. The Supabase follow-through
+still requires detailed PostgreSQL logs and per-service egress access. Neither
+the whole programme nor Phase 16 is certified 100% complete.

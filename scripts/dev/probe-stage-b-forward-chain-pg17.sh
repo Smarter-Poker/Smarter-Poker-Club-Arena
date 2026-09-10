@@ -2587,6 +2587,53 @@ SQL
   echo "STAGE_B_SYNTHETIC_FREEZE_READY ${database}"
 }
 
+seed_unrelated_later_receipt() {
+  local database="$1"
+  "${psql_cmd[@]}" --dbname="$database" -q <<'SQL'
+INSERT INTO supabase_migrations.schema_migrations(version,statements,name)
+VALUES (
+  '29991231235959',
+  ARRAY['-- disposable Stage-B rehearsal receipt; no schema effect'],
+  'stage_b_rehearsal_unrelated_later_receipt'
+);
+DO $verify_unrelated_later_receipt$
+BEGIN
+  IF (SELECT count(*)
+        FROM supabase_migrations.schema_migrations
+       WHERE version='29991231235959'
+         AND name='stage_b_rehearsal_unrelated_later_receipt'
+         AND statements=ARRAY[
+           '-- disposable Stage-B rehearsal receipt; no schema effect'
+         ]::text[])<>1 THEN
+    RAISE EXCEPTION 'STAGE_B_UNRELATED_LATER_RECEIPT_NOT_EXACT';
+  END IF;
+END;
+$verify_unrelated_later_receipt$;
+SQL
+  echo "STAGE_B_UNRELATED_LATER_RECEIPT_READY ${database}"
+}
+
+assert_unrelated_later_receipt_survived() {
+  local database="$1"
+  local exact_receipts
+  exact_receipts="$({
+    "${psql_cmd[@]}" --dbname="$database" -Atq <<'SQL'
+SELECT count(*)
+  FROM supabase_migrations.schema_migrations
+ WHERE version='29991231235959'
+   AND name='stage_b_rehearsal_unrelated_later_receipt'
+   AND statements=ARRAY[
+     '-- disposable Stage-B rehearsal receipt; no schema effect'
+   ]::text[];
+SQL
+  })"
+  if [[ "$exact_receipts" != '1' ]]; then
+    echo 'Stage-B changed or removed the unrelated later ledger receipt.' >&2
+    return 1
+  fi
+  echo 'STAGE_B_UNRELATED_LATER_RECEIPT_ACCEPTED'
+}
+
 seed_hotfix_move_receipt() {
   local database="$1"
   "${psql_cmd[@]}" --dbname="$database" -q <<'SQL'
@@ -3217,7 +3264,9 @@ if [[ "$probe_mode" == 'mixed' ]]; then
   create_scenario_database 'keyshare_mixed'
   mixed_database="$created_scenario_database"
   seed_synthetic_freeze "$mixed_database"
+  seed_unrelated_later_receipt "$mixed_database"
   run_chain_prefix 5 false "$mixed_database"
+  assert_unrelated_later_receipt_survived "$mixed_database"
   assert_current_live_tail_postimage "$mixed_database"
   run_keyshare_unknown_preimage_rollback "$mixed_database"
   assert_current_live_tail_postimage "$mixed_database"
@@ -3229,7 +3278,9 @@ if [[ "$probe_mode" == 'replay' ]]; then
   create_scenario_database 'keyshare_replay'
   replay_database="$created_scenario_database"
   seed_synthetic_freeze "$replay_database"
+  seed_unrelated_later_receipt "$replay_database"
   run_chain_prefix 6 true "$replay_database"
+  assert_unrelated_later_receipt_survived "$replay_database"
   assert_current_live_tail_postimage "$replay_database"
   echo 'STAGE_B_LEASE_KEYSHARE_REPLAY_OK'
   assert_donor_unchanged
@@ -3256,9 +3307,11 @@ echo 'STAGE_B_DEFECT_REPRODUCTIONS_PG17_OK'
 create_scenario_database 'current_postimage'
 current_postimage_database="$created_scenario_database"
 seed_synthetic_freeze "$current_postimage_database"
+seed_unrelated_later_receipt "$current_postimage_database"
 seed_hotfix_move_receipt "$current_postimage_database"
 move_receipts_before="$(move_receipt_fingerprint "$current_postimage_database")"
 prepare_current_postimage_template "$current_postimage_database"
+assert_unrelated_later_receipt_survived "$current_postimage_database"
 move_receipts_after_stage_five="$(move_receipt_fingerprint "$current_postimage_database")"
 if [[ "$move_receipts_after_stage_five" != "$move_receipts_before" ]]; then
   echo 'Stage-B #1-#5 changed the immutable hotfix move-receipt ledger.' >&2

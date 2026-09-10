@@ -1083,7 +1083,12 @@ describe('the reserved Stage-B forward authority boundaries stay split', () => {
       expect(guard).toContain(`('${version}','${name}',${bytes},`);
       expect(guard).toContain(sha256);
     }
-    expect(guard).toContain("IS DISTINCT FROM '20260910183316' THEN");
+    expect(guard).toContain('IF v_count<>31 OR v_bad<>0 THEN');
+    expect(guard).not.toContain('SELECT max(m.version)');
+    expect(guard).not.toContain("IS DISTINCT FROM '20260910183316' THEN");
+    expect(guard).not.toContain('the exact 183316 ledger head');
+    expect(occurrences(guard, /supabase_migrations\.schema_migrations/g)).toBe(1);
+    expect(guard).toContain('FROM expected\n    LEFT JOIN supabase_migrations.schema_migrations m');
     expect(guard).toContain('all thirty-one byte-exact 130319-183316 live-tail migrations');
     expect(guard).toContain('cardinality(m.statements) IS DISTINCT FROM 1');
     expect(guard).toContain('octet_length(m.statements[1]) IS DISTINCT FROM');

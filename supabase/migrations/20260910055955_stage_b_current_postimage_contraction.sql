@@ -694,13 +694,9 @@ BEGIN
     FROM expected
     LEFT JOIN supabase_migrations.schema_migrations m
       ON m.version=expected.version AND m.name=expected.name;
-  IF v_count<>31 OR v_bad<>0 OR (
-       SELECT max(m.version)
-         FROM supabase_migrations.schema_migrations m
-        WHERE m.version ~ '^[0-9]{14}$'
-     ) IS DISTINCT FROM '20260910183316' THEN
+  IF v_count<>31 OR v_bad<>0 THEN
     RAISE EXCEPTION
-      'Stage-B requires all thirty-one byte-exact 130319-183316 live-tail migrations and the exact 183316 ledger head; % rows drifted',
+      'Stage-B requires all thirty-one byte-exact 130319-183316 live-tail migrations; % rows drifted',
       v_bad USING ERRCODE='55000';
   END IF;
 

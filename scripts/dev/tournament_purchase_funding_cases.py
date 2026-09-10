@@ -1,6 +1,7 @@
 """Real tournament purchase functions over the shared isolated funding fixture."""
 from pathlib import Path
 import json
+import sys
 
 HERE=Path(__file__).resolve().parent
 EVENT='c3000000-0000-4000-8000-000000000001'
@@ -11,8 +12,9 @@ SEAT='d3000000-0000-4000-8000-000000000001'
 
 def verify(q,fresh,overlap,register,check):
     source=HERE/'fixtures/tournament-purchase-funding'
-    def setup(kind,name,live=True):
+    def setup(kind,name,live=True,before_register=None):
         fresh('purchase_'+name)
+        if before_register is not None: q(before_register)
         assert json.loads(q(register(1,1))).get('ok') is True
         q((source/'installed.sql').read_text())
         manifest=json.loads((source/'source-manifest.json').read_text())
@@ -117,6 +119,11 @@ def verify(q,fresh,overlap,register,check):
             'addon':kind=='addon','candidate_states':None if kind=='addon' else ['rebought'],'wakes':1}
         assert {k:s[k] for k in expected}==expected,(s,expected)
         return s
+
+    if '--bounty-addon-only' in sys.argv:
+        from tournament_bounty_addon_cases import verify as verify_bounty_addon
+        verify_bounty_addon(q,setup,call,state,check)
+        return
 
     for kind in ['rebuy','reentry','addon']:
         setup(kind,kind)

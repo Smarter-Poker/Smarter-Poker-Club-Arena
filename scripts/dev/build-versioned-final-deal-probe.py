@@ -18,7 +18,31 @@ def once(source: str, old: str, new: str, label: str) -> str:
     return source.replace(old, new, 1)
 
 
-def compose(root: Path, probe: Path, fixed_tail: str) -> str:
+LANE_MIGRATION = "20260910035435_the_settlement_lane_is_per_tournament_not_platform_wide.sql"
+LANE_SOURCE_SHA256 = "d07cbe35f62ef4a18e29779c812526c27420da4a82c891c0bf2f136b9e6a31fe"
+LANE_HELPERS = {
+    "fn_ca_lock_settlement_lane_global": ("", "343015440ea5c84ee4ca7ae583c73d30"),
+    "fn_ca_share_settlement_lane_for_table": ("uuid", "006d78a441e65d000d1d78929649bb44"),
+}
+
+
+def lane_helpers(path: Path) -> list[tuple[str, str, str, str]]:
+    """Read exact committed source; never inspect or export a live definition."""
+    source = path.read_bytes()
+    if hashlib.sha256(source).hexdigest() != LANE_SOURCE_SHA256:
+        raise ValueError("settlement lane migration is not the reviewed tracked source")
+    helpers = []
+    for name, (signature, digest) in LANE_HELPERS.items():
+        definitions = re.findall(
+            r"(CREATE OR REPLACE FUNCTION public\." + name
+            + r"\(.*?AS (\$[^$]*\$)(.*?)\2;)", source.decode(), re.S)
+        if len(definitions) != 1 or hashlib.md5(definitions[0][2].encode()).hexdigest() != digest:
+            raise ValueError(f"{name}: exact lane helper body changed")
+        helpers.append((name, signature, digest, definitions[0][0]))
+    return helpers
+
+
+def compose(root: Path, probe: Path, fixed_tail: str, lane_path: Path) -> str:
     expansion_path = root / "scripts/deploy/phase-three-versioned-final-deal.sql"
     activation_path = root / "scripts/deploy/phase-three-activate-versioned-final-deal.sql"
     fixture_path = root / "scripts/ci/probes/atomic-terminal-rehearsal-fixture.sql"
@@ -44,6 +68,49 @@ def compose(root: Path, probe: Path, fixed_tail: str) -> str:
     if len(scope_defs) != 1:
         raise ValueError("exact manager scope definition changed")
     scope_fixture = scope_defs[0][0] + "\nREVOKE ALL ON FUNCTION public.fn_assert_tournament_manager_write_scope(uuid) FROM PUBLIC,anon,authenticated,service_role;\n"
+    lane_fixture = ""
+    for name, signature, digest, definition in lane_helpers(lane_path):
+        identity = f"public.{name}({signature})"
+        lane_fixture += (
+            f"DO $lane_before$ BEGIN IF to_regprocedure('{identity}') IS NOT NULL "
+            f"AND (SELECT md5(prosrc) FROM pg_proc WHERE oid=to_regprocedure('{identity}')) "
+            f"IS DISTINCT FROM '{digest}' THEN RAISE EXCEPTION 'existing lane helper differs: {name}'; "
+            "END IF; END; $lane_before$;\n"
+            + definition + "\n"
+            + f"REVOKE ALL ON FUNCTION {identity} FROM PUBLIC,anon,authenticated,service_role;\n"
+            + f"GRANT EXECUTE ON FUNCTION {identity} TO service_role;\n"
+            + f"DO $lane_after$ BEGIN IF NOT EXISTS(SELECT 1 FROM pg_proc WHERE oid='{identity}'::regprocedure "
+            f"AND md5(prosrc)='{digest}' AND NOT prosecdef "
+            "AND proconfig=ARRAY['search_path=public, pg_temp']::text[]) "
+            f"THEN RAISE EXCEPTION 'installed lane helper differs: {name}'; END IF; END; $lane_after$;\n"
+        )
+    # Only the reviewed final-deal cash body is advanced inside this rollback.
+    # The fixture preflight above still authenticates its exact local baseline.
+    cash_name = "fn_settle_tournament_final_table_deal"
+    cash_definitions = re.findall(
+        r"(CREATE OR REPLACE FUNCTION public\." + cash_name
+        + r"\(.*?AS (\$[^$]*\$)(.*?)\2;)", authority_source, re.S)
+    lane_source = lane_path.read_text()
+    lane_patterns = re.findall(r"v_excl CONSTANT text :=\s*'((?:''|[^'])*)';", lane_source)
+    lane_replacements = re.findall(r"'" + cash_name + r"',\s*'([^']+)'", lane_source)
+    if len(cash_definitions) != 1 or len(lane_patterns) != 1 or len(lane_replacements) != 1:
+        raise ValueError("exact cash lane transformation changed")
+    pattern = lane_patterns[0].replace("''", "'")
+    current_cash, hits = re.subn(pattern, lane_replacements[0], cash_definitions[0][0])
+    current_body, body_hits = re.subn(pattern, lane_replacements[0], cash_definitions[0][2])
+    current_digest = "141c723b5225bcec588b8957cf039184"
+    if hits != 1 or body_hits != 1 or hashlib.md5(current_body.encode()).hexdigest() != current_digest:
+        raise ValueError("current cash lane postimage does not match verified live hash")
+    cash_identity = "public.fn_settle_tournament_final_table_deal(uuid)"
+    cash_fixture = (
+        current_cash + "\n"
+        + f"REVOKE ALL ON FUNCTION {cash_identity} FROM PUBLIC,anon,authenticated,service_role;\n"
+        + f"GRANT EXECUTE ON FUNCTION {cash_identity} TO service_role;\n"
+        + f"DO $cash_current$ BEGIN IF NOT EXISTS(SELECT 1 FROM pg_proc WHERE oid='{cash_identity}'::regprocedure "
+        + f"AND md5(prosrc)='{current_digest}' AND prosecdef "
+        + "AND proconfig=ARRAY['search_path=public','statement_timeout=30s']::text[]) "
+        + "THEN RAISE EXCEPTION 'installed current cash authority differs'; END IF; END; $cash_current$;\n"
+    )
     expansion = expansion_path.read_text()
     expansion = once(expansion, "COMMIT;", "", "expansion transaction")
     preflight = """
@@ -57,7 +124,7 @@ BEGIN
 END;
 $disposable_only$;
 """
-    expansion = once(expansion, "BEGIN;", "BEGIN;\n" + preflight + authority_gate + scope_fixture, "expansion begin")
+    expansion = once(expansion, "BEGIN;", "BEGIN;\n" + preflight + authority_gate + lane_fixture + cash_fixture + scope_fixture, "expansion begin")
     fixture = fixture_path.read_text()
     fixture = once(fixture, "BEGIN;", "", "fixture begin")
     fixture = once(fixture, "COMMIT;", "", "fixture commit")
@@ -92,6 +159,7 @@ $disposable_only$;
         f"-- SOURCE_SHA256 {hashlib.sha256(path.read_bytes()).hexdigest()} {path.relative_to(root)}"
         for path in (expansion_path, activation_path, fixture_path, deal_path, authority_path, source_seed_path, scope_path)
     )
+    provenance += f"\n-- SOURCE_SHA256 {LANE_SOURCE_SHA256} {lane_path.name}"
     catalog_hashes = """
 SELECT oid::regprocedure::text AS native_authority,md5(prosrc) AS native_body_md5
 FROM pg_proc WHERE oid IN (
@@ -111,8 +179,10 @@ def main() -> None:
     parser.add_argument("--root", type=Path, required=True, help="owned repository worktree")
     parser.add_argument("--probe", type=Path, default=None)
     parser.add_argument("--fixed-tail",choices=["paid","unpaid","partial"],default="paid")
+    parser.add_argument("--lane-migration", type=Path, help="exact tracked lane migration, possibly in its owning checkout")
     args = parser.parse_args()
-    sys.stdout.write(compose(args.root.resolve(), (args.probe or args.root / "scripts/ci/probes/versioned-final-deal-native.sql").resolve(), args.fixed_tail))
+    lane_path = args.lane_migration or args.root / "supabase/migrations" / LANE_MIGRATION
+    sys.stdout.write(compose(args.root.resolve(), (args.probe or args.root / "scripts/ci/probes/versioned-final-deal-native.sql").resolve(), args.fixed_tail, lane_path.resolve()))
 
 
 if __name__ == "__main__":

@@ -1,5 +1,5 @@
 {
-  "recorded_at": "2026-09-10T05:27:28.563089+00:00",
+  "recorded_at": "2026-09-10T06:05:20.778070+00:00",
   "programme": "109-item accounting programme",
   "phase": 3,
   "control": "CA-03-06",
@@ -28,26 +28,45 @@
   ],
   "count_note": "The same 68 assertions run for paid, unpaid and partial fixed-tail starting states; these are not 204 distinct tests.",
   "two_session_lock_probe": {
-    "assertions": 3,
+    "assertions": 6,
     "passed": true,
-    "blocked_seconds": 0.705,
-    "checks": [
-      "actual terminal advisory key serializes consensus expiry observation",
-      "clock_timestamp deadline evaluated after wait",
-      "wallet, payout and escrow snapshots unchanged"
+    "cases": [
+      {
+        "mode": "terminal_global",
+        "assertions": 3,
+        "blocked_seconds": 0.708,
+        "helper_body_md5": "343015440ea5c84ee4ca7ae583c73d30",
+        "transaction": "ROLLBACK"
+      },
+      {
+        "mode": "hand_shared_barrier",
+        "assertions": 3,
+        "blocked_seconds": 0.704,
+        "helper_body_md5": "006d78a441e65d000d1d78929649bb44",
+        "transaction": "ROLLBACK"
+      }
     ],
-    "scope": "Real database sessions and prepared consensus; this does not execute or certify terminal completion."
+    "regression_failed_before_fix": true,
+    "pre_fix_failure": "G-only prepared consensus returned requested while the exact shared hand helper still held B shared.",
+    "checks": [
+      "current terminal G+B helper serializes consensus",
+      "shared hand barrier blocks consensus until release",
+      "clock_timestamp deadline evaluated after each wait",
+      "wallet, payout and escrow snapshots unchanged in both cases"
+    ],
+    "scope": "Real database sessions with the current prepared consensus; holder helpers use pg_temp identities with byte-exact tracked bodies and verified metadata. No terminal completion or actual hand production is simulated."
   },
   "native_authority_body_md5": {
     "fn_ca_tournament_place_amounts(uuid)": "8f6cde5f5b799949506259f3064568b9",
-    "fn_settle_tournament_final_table_deal(uuid)": "d26fa5a8d5b09bbf8ad2fd28c2e5b1f1"
+    "fn_settle_tournament_final_table_deal(uuid)": "141c723b5225bcec588b8957cf039184"
   },
   "fixture_authorities": [
-    "Exact native cash authority and calculator bodies are fingerprint checked against tracked20260909042455 before fixture writes.",
+    "Exact local calculator and cash baseline fingerprints are checked before writes. The cash body is transformed using the exact tracked lane regex/replacement, requires exactly one lock occurrence, and must match verified live MD5 141c723b5225bcec588b8957cf039184 before installation and native tests inside the rollback fixture.",
     "The exact tracked pure manager scope validator is loaded within the rollback-only fixture; full HTTP manager-lease admission remains a separate integration gate.",
     "The canonical final_table_deal source row is extracted from tracked20260905203123; no payer or journal stub is installed.",
     "Synthetic committed-hand witness rows exercise the review consumer; hand production is covered separately.",
-    "All three scope-change attempts are refused by existing native lifecycle/asset guards without disabling them."
+    "All three scope-change attempts are refused by existing native lifecycle/asset guards without disabling them.",
+    "Only two fingerprint-matched lane helpers and the exact transformed current cash authority are installed transactionally. Existing native payout/financial guards remain enabled and unchanged; no M5 or satellite body is installed."
   ],
   "acceptance": [
     "side-effect-free review and proposal reads",
@@ -68,7 +87,7 @@
     "role grants and absence of actor-unbound prepared overloads verified"
   ],
   "open_gates": [
-    "Native whole-terminal completion and lost-response recovery are not certified: current local replay has no M5 terminal functions and three live bodies do not match available tracked candidates.",
+    "Native whole-terminal completion and lost-response recovery remain unverified: current local replay lacks the non-satellite terminal receipt table, guards and five matched terminal/receipt/rake authorities. Source hash parity is now reproduced, but is not full composition or release acceptance.",
     "Production expansion, compatible engine and client adoption, and final guard activation must remain serialized by the release coordinator.",
     "This record does not close all Phase3 controls or authorize Phase4 acceptance."
   ],
@@ -76,35 +95,63 @@
     "fn_complete_tournament_terminal(uuid,uuid,text)": {
       "live": "f4275f9fa8cb2711f19ffdf7b16a04e6",
       "tracked_m5": "589388ad7204fef460a1deebf32ecb69",
-      "tracked_seat_wrapper": "098ae780395481eaf3b4f273a97b6aa5"
+      "tracked_seat_wrapper": "098ae780395481eaf3b4f273a97b6aa5",
+      "tracked_after_lane_transform": "f4275f9fa8cb2711f19ffdf7b16a04e6"
     },
     "fn_resolve_tournament_terminal_outcome(uuid,uuid,text)": {
       "live": "022c1883533939caf8ebed0cb5699e8c",
-      "tracked": "4c151073f56b53e4b0363bdd916b78d4"
+      "tracked": "4c151073f56b53e4b0363bdd916b78d4",
+      "tracked_after_lane_transform": "022c1883533939caf8ebed0cb5699e8c"
     },
     "fn_settle_tournament_rake(uuid,text)": {
       "live": "05a512317bb7bdcecfaec19ef8ee4e63",
-      "tracked_latest": "cc8ae636957b2582c7486353d57f7766"
+      "tracked_latest": "cc8ae636957b2582c7486353d57f7766",
+      "tracked_m5": "b945872c72d3414909d4b4b41cfb7849",
+      "tracked_after_lane_transform": "05a512317bb7bdcecfaec19ef8ee4e63",
+      "note": "The live body matches main c064df4a M5, not the later attribution-retry body or edited M5 in the external Stage-B checkout. No rake body was installed by this fixture."
     },
     "matched_internal_helpers": {
       "fn_ca_tournament_terminal_receipt(uuid,uuid)": "56ac90a5ed092d1e34fe65b6bbb6606a",
       "fn_ca_mystery_bounty_completion_evidence(uuid,uuid)": "ca0d61b50c73d0216e13b9b13f6de8ca"
     },
     "latest_main_inspected": "c064df4a50b5a09a0bdd3f18a52953139f195b58",
-    "no_mismatching_terminal_body_installed": true
+    "no_mismatching_terminal_body_installed": true,
+    "fn_settle_tournament_final_table_deal(uuid)": {
+      "tracked_before_lane_transform": "d26fa5a8d5b09bbf8ad2fd28c2e5b1f1",
+      "tracked_after_lane_transform": "141c723b5225bcec588b8957cf039184",
+      "live": "141c723b5225bcec588b8957cf039184",
+      "postimage_installed_only_in_rollback_fixture": true
+    },
+    "lane_transform": {
+      "migration": "20260910035435_the_settlement_lane_is_per_tournament_not_platform_wide.sql",
+      "source_commit": "d7f6f0fd02b0a8fb353e792ef675bb8bd813cd14",
+      "source_sha256": "d07cbe35f62ef4a18e29779c812526c27420da4a82c891c0bf2f136b9e6a31fe",
+      "base_m5_source_commit": "c064df4a50b5a09a0bdd3f18a52953139f195b58",
+      "operation": "exactly one canonical G advisory-lock statement replaced by PERFORM public.fn_ca_lock_settlement_lane_global();",
+      "no_live_function_source_export": true
+    },
+    "matched_lane_helpers": {
+      "fn_ca_lock_settlement_lane_global()": "343015440ea5c84ee4ca7ae583c73d30",
+      "fn_ca_share_settlement_lane_for_table(uuid)": "006d78a441e65d000d1d78929649bb44",
+      "fn_ca_lock_settlement_lane_for_tournament(uuid,uuid)": "2bc939035496d764ff9d6c14b52fa1e7"
+    },
+    "source_discrepancies_resolved": true
   },
   "source_sha256": {
-    "scripts/deploy/phase-three-versioned-final-deal.sql": "f1487253ce6ab9ed140286981174c14cf8a4c4c3753e6964b5cb81434e0ea6fb",
-    "scripts/deploy/phase-three-activate-versioned-final-deal.sql": "f434a3ab28f55cc0e2023a10b9e599f4f4b0130f86cea96b3d7a05e4237be419",
+    "scripts/deploy/phase-three-versioned-final-deal.sql": "6a122c52afea42df937c9f41e6845c49362d783beb1fdcd375a6b8aa402ab636",
+    "scripts/deploy/phase-three-activate-versioned-final-deal.sql": "65aa9e7ec5231aaee2017460032d2e26f9d8bdc95f90473382ac2b4b673352ec",
     "scripts/deploy/phase-three-strict-tournament-cutover.sql": "09154d18e6ee6bdbcf8a36bc4b13b98ade60ed07c445b29b5338df546fc3e4af",
-    "scripts/dev/build-versioned-final-deal-probe.py": "25e9a9d5c3617ca33a0f9643ac5dc64903613f811167cba59fdbacb8bd17b067",
-    "scripts/dev/probe-versioned-final-deal-lock-wait.py": "a767600633304fbf16ef7997fff6fcf42022fa570256d04526db8da521d612e3",
+    "scripts/dev/build-versioned-final-deal-probe.py": "d61d3a992d7821cf5244515c4075ff48482a106a65dcd5bf7be3e9fabfaa2ee6",
+    "scripts/dev/probe-versioned-final-deal-lock-wait.py": "90beeb063d0777361576a545ac2a923b599b922c304e491dad6a7c31da2f74ed",
     "scripts/ci/probes/versioned-final-deal-native.sql": "a7f3bda59622d6a5e4b523b3d60e86beaf59abb25e2b9ae3df07413e9ce34c9b"
   },
   "database_postcondition": {
     "auth_users": 0,
+    "cash_body_restored": true,
     "review_table_absent": true,
     "proposal_table_absent": true,
+    "global_lane_helper_absent": true,
+    "shared_lane_helper_absent": true,
     "temporary_scope_validator_absent": true
   }
 }

@@ -1,4 +1,6 @@
 -- Prepared Phase 3 exact final-table-deal consent expansion. NOT APPLIED.
+-- Requires the current settlement lane helper from 20260910035435 first.
+-- Every locking entry takes authority G then hand barrier B before any row.
 -- Apply this expansion before compatible clients/engine. Activation is separate.
 -- The preview reads finalized funding and existing payout rules. It never pays,
 -- finalizes, changes standings, or reuses unbound votes as consent.
@@ -91,7 +93,7 @@ DECLARE
   v_assigned bigint; v_shares jsonb; v_ladder jsonb; v_roster jsonb;
   v_seats jsonb; v_hands jsonb; v_paid jsonb; v_snapshot jsonb; v_review_id uuid;
 BEGIN
-  PERFORM pg_advisory_xact_lock(hashtextextended('ca:tournament-terminal-settlement:v1',0));
+  PERFORM public.fn_ca_lock_settlement_lane_global();
   SELECT * INTO t FROM public.tournaments WHERE id=p_tournament_id FOR UPDATE;
   IF NOT FOUND OR t.status::text<>'RUNNING' OR t.final_table_deal_enabled IS NOT TRUE
      OR lower(COALESCE(t.variant::text,''))='satellite'
@@ -286,7 +288,7 @@ BEGIN
     RETURN jsonb_build_object('ok',false,'reason','proposal_authority_not_active');
   END IF;
   -- Expiry is observed only after any admitted terminal transaction resolves.
-  PERFORM pg_advisory_xact_lock(hashtextextended('ca:tournament-terminal-settlement:v1',0));
+  PERFORM public.fn_ca_lock_settlement_lane_global();
   PERFORM 1 FROM public.tournaments WHERE id=p_tournament_id FOR UPDATE;
   SELECT * INTO r FROM public.tournament_deal_reviews WHERE tournament_id=p_tournament_id
     ORDER BY requested_at DESC,id DESC LIMIT 1;
@@ -371,7 +373,7 @@ DECLARE p public.tournament_deal_proposals%ROWTYPE;
   v_old_revision text:=current_setting('app.tournament_deal_proposal_revision',true);
 BEGIN
   PERFORM public.fn_assert_tournament_manager_write_scope(p_tournament_id);
-  PERFORM pg_advisory_xact_lock(hashtextextended('ca:tournament-terminal-settlement:v1',0));
+  PERFORM public.fn_ca_lock_settlement_lane_global();
   PERFORM 1 FROM public.tournaments WHERE id=p_tournament_id FOR UPDATE;
   IF p_settlement_mode IS DISTINCT FROM 'final_table_deal' OR p_observed_winner_id IS NOT NULL
      OR p_proposal_id IS NULL OR p_revision IS NULL THEN
@@ -440,7 +442,7 @@ RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path TO public,pg_tem
 DECLARE p public.tournament_deal_proposals%ROWTYPE;
   e public.tournament_deal_proposal_executions%ROWTYPE; v_result jsonb; v_identity jsonb;
 BEGIN
-  PERFORM pg_advisory_xact_lock(hashtextextended('ca:tournament-terminal-settlement:v1',0));
+  PERFORM public.fn_ca_lock_settlement_lane_global();
   PERFORM 1 FROM public.tournaments WHERE id=p_tournament_id FOR UPDATE;
   IF p_settlement_mode IS DISTINCT FROM 'final_table_deal' OR p_observed_winner_id IS NOT NULL
      OR p_proposal_id IS NULL OR p_revision IS NULL THEN
@@ -524,7 +526,7 @@ BEGIN
     AND user_id=v_actor AND status::text='playing' AND eliminated_at IS NULL) THEN
     RETURN jsonb_build_object('ok',false,'reason','voter_not_alive');
   END IF;
-  PERFORM pg_advisory_xact_lock(hashtextextended('ca:tournament-terminal-settlement:v1',0));
+  PERFORM public.fn_ca_lock_settlement_lane_global();
   PERFORM 1 FROM public.tournaments WHERE id=p_tournament_id FOR UPDATE;
   IF NOT EXISTS(SELECT 1 FROM public.tournament_players WHERE tournament_id=p_tournament_id
     AND user_id=v_actor AND status::text='playing' AND eliminated_at IS NULL) THEN
@@ -570,7 +572,7 @@ BEGIN
     AND user_id=v_actor) THEN
     RETURN jsonb_build_object('ok',false,'reason','voter_not_alive');
   END IF;
-  PERFORM pg_advisory_xact_lock(hashtextextended('ca:tournament-terminal-settlement:v1',0));
+  PERFORM public.fn_ca_lock_settlement_lane_global();
   PERFORM 1 FROM public.tournaments WHERE id=p_tournament_id FOR UPDATE;
   SELECT * INTO r FROM public.tournament_deal_reviews WHERE id=p_review_id AND tournament_id=p_tournament_id FOR UPDATE;
   IF NOT FOUND THEN RETURN jsonb_build_object('ok',false,'reason','review_not_found'); END IF;
@@ -600,7 +602,7 @@ DECLARE r public.tournament_deal_reviews%ROWTYPE; v_state jsonb; v_seconds integ
 BEGIN
   PERFORM public.fn_assert_tournament_manager_write_scope(p_tournament_id);
   v_generation:=NULLIF(current_setting('app.smarter_tournament_lease_generation',true),'')::uuid;
-  PERFORM pg_advisory_xact_lock(hashtextextended('ca:tournament-terminal-settlement:v1',0));
+  PERFORM public.fn_ca_lock_settlement_lane_global();
   PERFORM 1 FROM public.tournaments WHERE id=p_tournament_id FOR UPDATE;
   SELECT * INTO r FROM public.tournament_deal_reviews WHERE id=p_review_id AND tournament_id=p_tournament_id FOR UPDATE;
   IF NOT FOUND THEN RETURN jsonb_build_object('ok',false,'reason','review_not_found'); END IF;
@@ -649,7 +651,7 @@ BEGIN
   IF p_reason IS NULL OR p_reason NOT IN ('stale','expired','cancelled') THEN
     RAISE EXCEPTION 'review close reason is invalid' USING ERRCODE='22023';
   END IF;
-  PERFORM pg_advisory_xact_lock(hashtextextended('ca:tournament-terminal-settlement:v1',0));
+  PERFORM public.fn_ca_lock_settlement_lane_global();
   PERFORM 1 FROM public.tournaments WHERE id=p_tournament_id FOR UPDATE;
   SELECT * INTO r FROM public.tournament_deal_reviews WHERE id=p_review_id AND tournament_id=p_tournament_id FOR UPDATE;
   IF NOT FOUND THEN RETURN jsonb_build_object('ok',false,'reason','review_not_found'); END IF;

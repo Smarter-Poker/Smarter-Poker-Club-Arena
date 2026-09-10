@@ -1,5 +1,9 @@
 # MIGRATION CHANGELOG
 
+## 2026-09-10: Prepared deal consent follows the current hand barrier
+
+All eight prepared deal locking entries and the separate activation now acquire the current G then B settlement helper before tournament rows. Exact tracked source reproduces current terminal/resolver/rake hashes. The rollback fixture additionally advances only its cash payer to verified current body 141c723b5225bcec588b8957cf039184; 68 assertions pass for each fixed-tail variant. Six helper-holder assertions pass, and the old G-only statement fails the new shared-hand regression. Whole-terminal composition and production activation remain separate gates.
+
 ## Every Change, Documented. No Exceptions.
 
 ## 2026-09-10: Terminal Receipt Law Retains Exact Proposal Checks

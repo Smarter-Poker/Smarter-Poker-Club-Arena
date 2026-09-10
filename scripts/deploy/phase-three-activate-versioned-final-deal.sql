@@ -3,7 +3,8 @@
 BEGIN;
 SET LOCAL lock_timeout='1s';
 SET LOCAL statement_timeout='30s';
-SELECT pg_advisory_xact_lock(hashtextextended('ca:tournament-terminal-settlement:v1',0));
+-- Current terminal lane takes authority G then hand barrier B before rows.
+SELECT public.fn_ca_lock_settlement_lane_global();
 LOCK TABLE public.tournaments IN ACCESS EXCLUSIVE MODE NOWAIT;
 LOCK TABLE public.tournament_obligations IN ACCESS EXCLUSIVE MODE NOWAIT;
 DO $dependencies$

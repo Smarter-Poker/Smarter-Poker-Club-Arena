@@ -4,10 +4,14 @@
  * The accepted-hand RPC commits money, history, tournament chip state and one
  * durable outbox row.  Dashboard/stat/mission projections are intentionally
  * outside that locking path.  This worker is woken by the committing engine,
- * by Realtime, and once at process start. There is no periodic poll. A failed
- * or dependency-deferred claim owns one bounded exponential retry chain until
- * it commits; that chain is caused by the unresolved durable row and is fenced
- * and joined by the worker lifecycle.
+ * by LISTEN hand_projection_outbox (./handOutboxListener.ts), by Realtime
+ * until the 2026-09-10 cutover completes, once at process start, and by a 5 s
+ * safety poll that fires only while no drain is running and no causal retry is
+ * armed. A failed or dependency-deferred claim owns one bounded exponential
+ * retry chain until it commits; that chain is caused by the unresolved durable
+ * row and is fenced and joined by the worker lifecycle. Every wake is counted
+ * by source in poker_hand_projection_wakes_total so the Realtime -> LISTEN
+ * cutover can be measured before the table leaves the publication.
  */
 
 import { AsyncResource } from 'node:async_hooks';
@@ -108,8 +112,49 @@ const DRAIN_PAGE = 100;
 const DRAIN_MAX = 1_000;
 const RETRY_BASE_MS = 250;
 const RETRY_MAX_MS = 15_000;
+/* Safety net for a lost wake (dropped LISTEN socket, Realtime channel in
+ * CHANNEL_ERROR, worker restarted between commit and wake). One `limit 100`
+ * read every 5 s when the outbox is empty is ~3 ms of database time; it is
+ * skipped entirely while a drain is already running or a causal retry is
+ * armed, so it never resets the retry backoff and never queues a redundant
+ * continuation pass. It is a net under the event paths, not a replacement. */
+export const HAND_PROJECTION_POLL_MS = Number(process.env.HAND_PROJECTION_POLL_MS ?? 5_000);
+
+export type HandProjectionWakeSource =
+  | 'local' // handHistory.ts after the settlement RPC commits
+  | 'realtime' // postgres_changes callback (removed at cutover step 2)
+  | 'listen' // NOTIFY hand_projection_outbox via handOutboxListener.ts
+  | 'listen_resync' // one drain after every LISTEN (re)connect
+  | 'poll' // the 5 s safety timer
+  | 'startup'; // startHandProjectionWorker
+
+const wakeCounts: Record<HandProjectionWakeSource, number> = {
+  local: 0,
+  realtime: 0,
+  listen: 0,
+  listen_resync: 0,
+  poll: 0,
+  startup: 0,
+};
+
+/** Read-only view for /metrics and specs. */
+export function handProjectionWakeCounts(): Readonly<Record<HandProjectionWakeSource, number>> {
+  return { ...wakeCounts };
+}
+
+export function handProjectionWakesToPrometheus(): string[] {
+  const out = [
+    '# HELP poker_hand_projection_wakes_total Wake signals delivered to the hand projection worker, by source.',
+    '# TYPE poker_hand_projection_wakes_total counter',
+  ];
+  for (const [source, n] of Object.entries(wakeCounts)) {
+    out.push(`poker_hand_projection_wakes_total{source="${source}"} ${n}`);
+  }
+  return out;
+}
 
 let channel: ReturnType<typeof supabase.channel> | null = null;
+let pollTimer: ReturnType<typeof setInterval> | null = null;
 let drainPromise: Promise<HandProjectionDrainSummary> | null = null;
 let wakeAfterDrain = false;
 let stopping = false;
@@ -244,8 +289,15 @@ function beginDrain(): Promise<HandProjectionDrainSummary> {
   return active;
 }
 
-/** Coalesce every transaction/Realtime work signal onto the active worker. */
-export function wakeHandProjection(): Promise<HandProjectionDrainSummary> {
+/**
+ * Coalesce every transaction/LISTEN/Realtime/poll work signal onto the active
+ * worker. The source is counted even when the worker is inactive so a wake
+ * arriving before start or after stop is still visible on /metrics.
+ */
+export function wakeHandProjection(
+  source: HandProjectionWakeSource = 'local'
+): Promise<HandProjectionDrainSummary> {
+  wakeCounts[source]++;
   if (!workerActive || stopping || !runOwnedDrain) return Promise.resolve(emptySummary());
   // A fresh causal signal supersedes a pending backoff and is permission to
   // try immediately. It also resets the backoff because the dependency state
@@ -281,12 +333,12 @@ export function startHandProjectionWorker(): void {
       'postgres_changes',
       { event: 'INSERT', schema: 'public', table: 'hand_projection_outbox' },
       () => {
-        void wakeHandProjection();
+        void wakeHandProjection('realtime');
       }
     )
     .subscribe((status: string) => {
       if (status === 'SUBSCRIBED') {
-        void wakeHandProjection();
+        void wakeHandProjection('realtime');
       } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
         reportError(
           new Error(`Hand projection outbox channel entered ${status}`),
@@ -296,9 +348,22 @@ export function startHandProjectionWorker(): void {
     });
   channel = ch;
 
+  if (pollTimer) clearInterval(pollTimer);
+  pollTimer = setInterval(() => {
+    // A running drain already owns the outbox and an armed causal retry will
+    // drain within RETRY_MAX_MS; a poll on top of either would only queue a
+    // redundant pass or reset a deliberate backoff.
+    if (drainPromise || retryTimer || !workerActive || stopping) return;
+    void wakeHandProjection('poll').catch((err) =>
+      reportError(err, 'HandProjection.poll_wake_failed')
+    );
+  }, HAND_PROJECTION_POLL_MS);
+  pollTimer.unref?.();
+
   // Also drain immediately.  This covers a process that starts while Realtime
-  // is unavailable; normal local commits still wake this worker directly.
-  void wakeHandProjection();
+  // and LISTEN are unavailable; normal local commits still wake this worker
+  // directly.
+  void wakeHandProjection('startup');
 }
 
 export async function stopHandProjectionWorker(): Promise<void> {
@@ -308,6 +373,8 @@ export async function stopHandProjectionWorker(): Promise<void> {
   lifecycleEpoch++;
   wakeAfterDrain = false;
   cancelCausalRetry(true);
+  if (pollTimer) clearInterval(pollTimer);
+  pollTimer = null;
   const ch = channel;
   channel = null;
   if (ch) {

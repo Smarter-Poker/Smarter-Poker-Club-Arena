@@ -1,7 +1,8 @@
 /**
  * Accepted-hand projection is deliberately outside the money transaction,
  * but it is not best effort: the transaction creates a durable outbox claim
- * and every process-wide wake drains those claims in hand-number order.
+ * and every process-wide wake (local commit, LISTEN, Realtime, the 5 s safety
+ * poll) drains those claims in hand-number order.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -323,16 +324,146 @@ describe('the accepted-hand projection worker', () => {
     }
   });
 
-  it('contains no periodic polling loop as a substitute for transaction correctness', () => {
+  it('the 5 s safety poll is the only interval and it yields to a running drain and an armed retry', () => {
     const source = readFileSync(
       fileURLToPath(new URL('./handProjection.ts', import.meta.url)),
       'utf8'
     );
     const executable = blankNonCode(source);
-    expect(executable).not.toMatch(/\bsetInterval\s*\(/);
+    // One interval: the safety poll. The causal retry stays the one setTimeout.
+    expect(executable.match(/\bsetInterval\s*\(/g)).toHaveLength(1);
     expect(executable.match(/\bsetTimeout\s*\(/g)).toHaveLength(1);
+    expect(source).toContain(
+      'if (drainPromise || retryTimer || !workerActive || stopping) return;'
+    );
     expect(source).toContain('causalRetryOwed = summary.failed > 0 || summary.deferred > 0');
     expect(source).toContain('cancelCausalRetry(true)');
+  });
+
+  it('counts every wake by source on the metrics registry', async () => {
+    // Each drain's completion callback releases the worker one macrotask after
+    // the summary resolves; yield so the next wake starts its own drain rather
+    // than joining the previous one.
+    const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+    const before = worker.handProjectionWakeCounts();
+    await worker.wakeHandProjection('listen');
+    await settle();
+    await worker.wakeHandProjection('listen_resync');
+    await settle();
+    await worker.wakeHandProjection();
+    await settle();
+    const after = worker.handProjectionWakeCounts();
+
+    expect(after.listen).toBe(before.listen + 1);
+    expect(after.listen_resync).toBe(before.listen_resync + 1);
+    expect(after.local).toBe(before.local + 1);
+    expect(after.startup).toBeGreaterThanOrEqual(1);
+    // A LISTEN wake drains the same outbox the local wake does.
+    expect(queryCalls.map((call) => call.table)).toEqual([
+      'hand_projection_outbox',
+      'hand_projection_outbox',
+      'hand_projection_outbox',
+    ]);
+
+    const lines = worker.handProjectionWakesToPrometheus();
+    expect(lines[0]).toContain('# HELP poker_hand_projection_wakes_total');
+    expect(lines).toContain(`poker_hand_projection_wakes_total{source="listen"} ${after.listen}`);
+    expect(lines).toContain(`poker_hand_projection_wakes_total{source="poll"} ${after.poll}`);
+    expect(lines).toContain(
+      `poker_hand_projection_wakes_total{source="realtime"} ${after.realtime}`
+    );
+  });
+
+  it('polls every 5 s only while no drain is running', async () => {
+    await worker.stopHandProjectionWorker();
+    vi.useFakeTimers();
+    try {
+      worker.startHandProjectionWorker();
+      await vi.advanceTimersByTimeAsync(0);
+      queryCalls.length = 0;
+      const before = worker.handProjectionWakeCounts().poll;
+
+      // Idle: one poll wake per interval, each one bounded read of an empty outbox.
+      await vi.advanceTimersByTimeAsync(worker.HAND_PROJECTION_POLL_MS - 1);
+      expect(worker.handProjectionWakeCounts().poll).toBe(before);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(worker.handProjectionWakeCounts().poll).toBe(before + 1);
+      await vi.advanceTimersByTimeAsync(worker.HAND_PROJECTION_POLL_MS);
+      expect(worker.handProjectionWakeCounts().poll).toBe(before + 2);
+      expect(queryCalls).toHaveLength(2);
+      expect(rpcCalls).toHaveLength(0);
+
+      // Busy: a drain that has not returned owns the outbox; the poll stays out.
+      let release!: (reply: OutboxReply) => void;
+      outboxReplies.push(
+        new Promise<OutboxReply>((resolve) => {
+          release = resolve;
+        })
+      );
+      const drain = worker.wakeHandProjection();
+      await vi.advanceTimersByTimeAsync(worker.HAND_PROJECTION_POLL_MS * 4);
+      expect(worker.handProjectionWakeCounts().poll).toBe(before + 2);
+      release({ data: [], error: null });
+      await drain;
+      await vi.advanceTimersByTimeAsync(0);
+
+      // Idle again: the poll resumes.
+      await vi.advanceTimersByTimeAsync(worker.HAND_PROJECTION_POLL_MS);
+      expect(worker.handProjectionWakeCounts().poll).toBe(before + 3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('the poll never resets an armed causal retry backoff', async () => {
+    await worker.stopHandProjectionWorker();
+    vi.useFakeTimers();
+    try {
+      worker.startHandProjectionWorker();
+      await vi.advanceTimersByTimeAsync(0);
+      queryCalls.length = 0;
+      const before = worker.handProjectionWakeCounts().poll;
+
+      // Six consecutive transport failures on one durable row arm retries at
+      // 250, 500, 1000, 2000, 4000 and 8000 ms. Across those 15.75 s the poll
+      // interval elapses three times and must not fire once, or the backoff
+      // would collapse to 5 s forever.
+      for (let i = 0; i < 6; i++) {
+        outboxReplies.push({ data: [{ hand_id: 'h-601', hand_number: 601 }], error: null });
+        projectionReplies.push({ data: null, error: { message: 'connection reset' } });
+      }
+      await expect(worker.wakeHandProjection()).resolves.toMatchObject({ failed: 1 });
+      await vi.advanceTimersByTimeAsync(15_750);
+      expect(rpcCalls).toHaveLength(6);
+      expect(worker.handProjectionWakeCounts().poll).toBe(before);
+
+      // Once the row commits and no retry is armed, the poll resumes.
+      outboxReplies.push({ data: [{ hand_id: 'h-601', hand_number: 601 }], error: null });
+      projectionReplies.push({ data: { ok: true, hand_id: 'h-601' }, error: null });
+      await vi.advanceTimersByTimeAsync(15_000);
+      expect(rpcCalls).toHaveLength(7);
+      await vi.advanceTimersByTimeAsync(worker.HAND_PROJECTION_POLL_MS * 2);
+      expect(worker.handProjectionWakeCounts().poll).toBeGreaterThanOrEqual(before + 1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('stop() clears the poll so a stopped worker never reads the outbox again', async () => {
+    await worker.stopHandProjectionWorker();
+    vi.useFakeTimers();
+    try {
+      worker.startHandProjectionWorker();
+      await vi.advanceTimersByTimeAsync(0);
+      await worker.stopHandProjectionWorker();
+      queryCalls.length = 0;
+      const before = worker.handProjectionWakeCounts().poll;
+      await vi.advanceTimersByTimeAsync(worker.HAND_PROJECTION_POLL_MS * 5);
+      expect(queryCalls).toHaveLength(0);
+      expect(worker.handProjectionWakeCounts().poll).toBe(before);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

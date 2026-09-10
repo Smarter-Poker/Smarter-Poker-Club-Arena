@@ -136,7 +136,15 @@ describe('the database owns exactly-once obligation completion', () => {
   it('matches downstream insurance uniqueness and has no polling substitute', () => {
     expect(migration).toContain("SELECT count(DISTINCT x->>'player_id')");
     expect(migration).not.toMatch(/cron\.schedule|pg_cron|setInterval/i);
-    expect(projection).not.toMatch(/setInterval/);
+    // 2026-09-10: the worker gained ONE interval, a 5 s wake-up net under the
+    // LISTEN/Realtime signal paths. It is not a substitute for the causal
+    // retry: it stands down while a drain runs or a retry is armed, so a
+    // failed durable row is still owned by its bounded retry chain.
+    expect(projection.match(/setInterval\s*\(/g)).toHaveLength(1);
+    expect(projection).toContain(
+      'if (drainPromise || retryTimer || !workerActive || stopping) return;'
+    );
+    expect(projection).toContain('causalRetryOwed = summary.failed > 0 || summary.deferred > 0');
     expect(migration).toContain('BEFORE DELETE ON public.hand_projection_outbox');
   });
 

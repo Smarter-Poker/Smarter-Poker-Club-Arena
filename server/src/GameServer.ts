@@ -50,6 +50,8 @@ import { ScheduledTournamentService } from './services/ScheduledTournamentServic
 import { TournamentMetrics } from './services/TournamentMetrics.js';
 import { SpinMetrics } from './services/SpinMetrics.js';
 import { ReplicationMetrics } from './services/ReplicationMetrics.js';
+import { HandOutboxListener } from './services/supabase/handOutboxListener.js';
+import { handProjectionWakesToPrometheus } from './services/supabase/handProjection.js';
 import {
   wsAuthRefusalPrometheusLines,
   wsProtocolRefusalPrometheusLines,
@@ -1472,6 +1474,13 @@ export class GameServer {
   private tournamentMetrics = new TournamentMetrics();
   private spinMetrics = new SpinMetrics();
   private replicationMetrics = new ReplicationMetrics();
+  /**
+   * LISTEN hand_projection_outbox (2026-09-10). Wakes the projection worker
+   * from the insert trigger's NOTIFY instead of Realtime WAL decoding. Disabled
+   * (warns once) when ENGINE_PG_LISTEN_URL is unset; the worker's poll and the
+   * local commit wakes still run. See services/supabase/handOutboxListener.ts.
+   */
+  private handOutboxListener = new HandOutboxListener();
   private lifecycle = new HorseLifecycleManager();
 
   /**
@@ -2059,6 +2068,9 @@ export class GameServer {
       // one database transaction. The projection worker drains that durable
       // outbox; there is no process-local hand-history recovery owner.
       startHandProjectionWorker();
+      // Step 8c: LISTEN hand_projection_outbox. Started after the worker so
+      // its first (re)connect resync wake lands on a live worker.
+      this.handOutboxListener.start();
 
       if (!this.publishDealerPrerequisitesReady(generation)) return;
       this.leaderBootComplete = true;
@@ -2508,6 +2520,7 @@ export class GameServer {
       reportError(error, 'GameServer.horse_decision_worker_shutdown_failed');
       ownershipFailures.push(error);
     }
+    await this.handOutboxListener.stop();
     await stopHandProjectionWorker();
 
     /**
@@ -3144,6 +3157,13 @@ export class GameServer {
       // How far behind the realtime replication slot is, in bytes, per slot.
       // See services/ReplicationMetrics.ts.
       ...this.replicationMetrics.toPrometheus(),
+      // ── HAND PROJECTION WAKES (2026-09-10) ───────────────────────────
+      // Which signal wakes the outbox drain. During the Realtime -> LISTEN
+      // cutover, {source="listen"} must be >= {source="realtime"} and
+      // listener_connected must read 1 before the table leaves the
+      // publication. See services/supabase/handOutboxListener.ts.
+      ...handProjectionWakesToPrometheus(),
+      ...this.handOutboxListener.toPrometheus(),
       // ── IS ANYBODY ACTUALLY PLAYING? (2026-09-04) ────────────────────
       //
       // THE BLIND SPOT THESE FILL. On 2026-09-03 a cron revoked Dan's session

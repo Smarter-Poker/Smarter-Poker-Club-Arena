@@ -1828,8 +1828,10 @@ Rules that follow from it, all enforced:
    (`unless max_over_time(poker_maintenance_break_active[6m]) == 1`), or they
    page hourly about a stop we scheduled.
 7. **The constants are law**: `tests/the-break-clocks-agree.law.test.ts` pins
-   the :55 minute, cron ticks, freeze ceiling and windows across all five
-   surfaces. If you deliberately change one, change them together with the
+   the :55 minute, the deploy's break-gate minute, freeze ceiling and windows
+   across all five surfaces. (The deploy has no cron since 2026-09-10: every
+   engine push starts its own run, which waits in its break gate; see the
+   `on:` block of `auto-deploy-hetzner.yml`.) If you deliberately change one, change them together with the
    law, in one commit.
 
 Full history and rationale: `docs/changelog/2026-09-01-scheduled-maintenance-break.md`

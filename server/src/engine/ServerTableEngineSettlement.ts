@@ -1210,6 +1210,14 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         // losing hand and miss on exactly one condition? Teaching the rules
         // in the moment beats a rules page nobody opens. Display only: this
         // branch moves no money and cannot gate a payout.
+        /* THE MAIN BAR IS INSIDE THE MINI BAR, so a hand that nearly won the
+           MAIN jackpot nearly won the mini too, for the same reason. Without
+           this flag settlement wrote TWO bbj_near_misses rows and emitted TWO
+           bbj_near_miss hub events for one hand - the player was toasted
+           twice, once "would have qualified" and once "would have taken the
+           Mini", and every per-hand near-miss count double-counted
+           not_enough_players, pot_too_small and winner_not_quads. */
+        let mainNearMissReported = false;
         try {
           const nearMiss = detectBBJNearMiss(
             this.currentHandShowdownResults,
@@ -1221,6 +1229,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
             bbjBoard
           );
           if (nearMiss.nearMiss) {
+            mainNearMissReported = true;
             console.log(
               `[ServerTableEngine:${this.tableId}] BBJ near miss (${nearMiss.reason}): ` +
                 `${nearMiss.userId} held ${nearMiss.handName}`
@@ -1274,15 +1283,24 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
            query can always tell them apart. Display and record only: like the
            main's, this branch moves no money and cannot gate a payout. */
         try {
-          const miniNearMiss = detectMiniBBJNearMiss(
-            this.currentHandShowdownResults,
-            this.currentHandWinnerIds,
-            variant,
-            this.currentHandPotSize,
-            this.tableInfo.big_blind,
-            dealtInPlayerIds.length,
-            { doubleBoard: this.currentHandCommunityCards2.length > 0 }
-          );
+          /* Only when the main said nothing. A loser who cleared the MAIN bar
+             has necessarily cleared the MINI bar (hold'em AAAJJ+ with an ace
+             in hand is a subset of aces-full-or-better; Omaha KKKK is a subset
+             of any quads), and `miniMinPlayersDealt` ships equal to the main's,
+             so the two detectors agree on every shared gate. The mini's record
+             is the one that adds something exactly when the main is silent -
+             the beats the main rule turns away, which is what the mini is for. */
+          const miniNearMiss = mainNearMissReported
+            ? { nearMiss: false as const }
+            : detectMiniBBJNearMiss(
+                this.currentHandShowdownResults,
+                this.currentHandWinnerIds,
+                variant,
+                this.currentHandPotSize,
+                this.tableInfo.big_blind,
+                dealtInPlayerIds.length,
+                { doubleBoard: this.currentHandCommunityCards2.length > 0 }
+              );
           if (miniNearMiss.nearMiss) {
             console.log(
               `[ServerTableEngine:${this.tableId}] MINI BBJ near miss (${miniNearMiss.reason}): ` +

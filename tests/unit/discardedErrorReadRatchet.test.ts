@@ -85,7 +85,10 @@ const BASELINE = new Map<string, number>([
   ['src/services/CreditRequestService.ts', 4],
   ['src/services/ChipFlowService.ts', 4],
   ['src/pages/HomePage.tsx', 1],
-  ['src/pages/BadBeatJackpotPage.tsx', 4],
+  /* 4 -> 2 on 2026-09-11: removing the promo-rain control took two discarded
+     reads with it (the owner probe and the rain handler's catch). The ratchet
+     asked for this in the same commit, which is the point of it. */
+  ['src/pages/BadBeatJackpotPage.tsx', 2],
   ['src/components/social/PlayerActivityFeed.tsx', 4],
   ['src/components/agent/ChipTransferModal.tsx', 2],
   ['src/components/agent/AgentScoreCard.tsx', 4],

@@ -245,6 +245,12 @@ export default function BBJMiniPanel({ clubId, canEdit }: Props) {
               {mini.daysToFloor === null
                 ? 'This Reserve Is Not Draining At The Current Rate.'
                 : `At The Current Rate This Reserve Reaches Its Floor In About ${mini.daysToFloor.toFixed(1)} Days, After Which The Mini Pauses Until It Refills.`}
+              {/* THE WINDOW THE RATE IS AN AVERAGE OF. The database publishes
+                  `window_days` precisely so a rate can be interpreted - seven
+                  days, or the mini's age, whichever is shorter - and the first
+                  cut of this panel left it unread, which is how the rate went
+                  back to being a number with no stated basis. */}
+              {mini.windowDays !== null && ` Measured Over ${mini.windowDays.toFixed(1)} Days.`}
             </small>
           </>
         )}

@@ -25,7 +25,6 @@ export interface BBJAdminAnalyticsProps {
 interface Analytics {
   main_balance: number;
   backup_balance: number;
-  promo_balance: number;
   contributions_24h: number;
   contributions_7d: number;
   contributions_30d: number;

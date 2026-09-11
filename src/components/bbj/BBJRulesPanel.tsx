@@ -42,6 +42,9 @@ const VARIANT_ROWS: Array<{ key: string; games: string }> = [
   { key: 'plo4', games: 'PLO4 / FLO4' },
   { key: 'plo8', games: 'PLO8 (Hi-Lo)' },
   { key: 'plo5', games: 'PLO5 / FLO5' },
+  /* Live variants that this table omitted entirely until 2026-09-11: a
+     Pineapple or FLO8 player found no row describing their own game. */
+  { key: 'pineapple', games: 'Pineapple' },
   { key: 'plo6', games: 'PLO6' },
   { key: 'short_deck', games: 'Short Deck' },
 ];

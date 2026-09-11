@@ -458,6 +458,11 @@ const BBJ_SHORT_LABELS: Record<string, string> = {
   plo8: 'Quad Kings or better must lose (high hand only)',
   plo_hilo: 'Quad Kings or better must lose (high hand only)',
   plo5: '8-high Straight Flush or better must lose',
+  flo8: 'Quad Kings or better must lose (high hand only)',
+  /* Without this, Pineapple fell through to `q.description` and printed
+     SHOUTY "Four Of A Kind (Kings) Or Better Must LOSE" where every other row
+     prints a sentence. */
+  pineapple: 'Quad Kings or better must lose',
 };
 
 /**
@@ -490,13 +495,29 @@ export function getBBJQualifyingInfo(gameType: string | null | undefined): BBJWi
       variantLabel: q.label,
     };
   }
-  const isOmaha = key.startsWith('plo');
+  /* WHICH SENTENCE GOES UNDER THE BAR IS A PROPERTY OF THE GAME, NOT OF HOW
+     ITS KEY IS SPELLED (2026-09-11).
+
+     This was `key.startsWith('plo')`. `pineapple` and `flo8` both fail that
+     test, so both were handed the HOLD'EM sentence - "Both hole cards must
+     play (with an Ace for the full house)" - and Pineapple now carries a Quad
+     Kings bar, for which there is no full house and no Ace rule at all. FLO8
+     is four-card Omaha and was told the same thing.
+
+     The exactly-two-cards rule is Omaha's, and Omaha is what `four_of_a_kind`
+     or `straight_flush` on a FOUR-plus-card game means; the Ace-in-the-hole
+     clause belongs to the full-house bar and nothing else. Both are read from
+     the rank now. */
+  const isFullHouseBar = q.handRank === 'full_house';
+  const isOmahaFamily = key.startsWith('plo') || key.startsWith('flo');
   return {
     eligible: true,
     shortLabel: BBJ_SHORT_LABELS[key] || q.description,
-    subLabel: isOmaha
+    subLabel: isOmahaFamily
       ? 'Exactly two hole cards must play (both players).'
-      : 'Both hole cards must play (with an Ace for the full house).',
+      : isFullHouseBar
+        ? 'Both hole cards must play (with an Ace for the full house).'
+        : 'Both hole cards must play.',
     variantLabel: q.label,
   };
 }
@@ -511,7 +532,21 @@ export const BBJ_RULES = {
    * with 3+ dealt regardless of pot size; this threshold gates winning only.
    */
   minPotBB: 10,
-  minPlayersDealt: 4,
+  /* THREE, NOT FOUR (2026-09-11).
+     This read 4 while the engine has enforced 3 since FIX 145
+     (`RAKE_SPEC.rules.bbjMinPlayersDealt = 3`, server/src/config/rakeSpec.ts).
+     So every rules surface told players a three-handed pot could not win the
+     jackpot, and the engine paid it. A player dealt into a 3-handed hand was
+     reading that they were ineligible when they were not - the same shape as
+     the Pineapple bar this phase fixed, in the same constant family, and found
+     by the audit that followed it.
+     `tests/one-qualifying-rule-for-one-jackpot.law.test.ts` pins the two
+     halves together now, so this cannot drift again. */
+  minPlayersDealt: 3,
+  /* The MINI's own floor, mirroring server BBJ_RULES.miniMinPlayersDealt.
+     Ships equal to the main's; a surface must state the mini's own number
+     rather than borrowing the main's the moment they differ. */
+  miniMinPlayersDealt: 3,
   excludeDoubleBoard: true,
   onlyFirstRunout: true,
   splitIfMultipleQualify: true,

@@ -138,3 +138,97 @@ describe('the client states the rule the engine enforces, for every variant', ()
     expect(src).toMatch(/if \(BBJ_QUALIFYING_HANDS\[raw\]\) return raw;/);
   });
 });
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   WHAT THE POST-PHASE AUDIT FOUND (2026-09-11)
+
+   Unifying the two constants fixed the BAR and left four surfaces stating the
+   rule around it. Every pin below is a wrong sentence that reached a player.
+   ═══════════════════════════════════════════════════════════════════════════ */
+describe('the rule AROUND the bar is right too, on every live variant', () => {
+  it('the client states the same players-dealt floor the engine enforces', () => {
+    /* The client said 4 and the engine has paid at 3 since FIX 145, so every
+       rules surface told a three-handed table it could not win a jackpot it
+       was in fact eligible for. Dan, 2026-09-11: "BBJ ONLY NEEDS 3 PLAYERS FOR
+       THE RECORD." */
+    const client = read('src/config/RakeConfig.ts');
+    const spec = read('server/src/config/rakeSpec.ts');
+    const clientN = client.match(/^\s*minPlayersDealt: (\d+),/m)?.[1];
+    const serverN = spec.match(/^\s*bbjMinPlayersDealt: (\d+),/m)?.[1];
+    expect(serverN, 'the engine floor').toBe('3');
+    expect(clientN, 'the client must state the engine floor').toBe(serverN);
+  });
+
+  it('the sub-label is chosen by the RANK, never by how the key is spelled', () => {
+    /* `key.startsWith('plo')` handed pineapple and flo8 the hold'em sentence -
+       "with an Ace for the full house" - under a Quad Kings bar. */
+    const src = read('src/config/RakeConfig.ts');
+    expect(src).not.toMatch(/const isOmaha = key\.startsWith\('plo'\);/);
+    expect(src).toMatch(/const isFullHouseBar = q\.handRank === 'full_house';/);
+    expect(src).toMatch(/key\.startsWith\('plo'\) \|\| key\.startsWith\('flo'\)/);
+  });
+
+  it('every eligible variant has a short label, so none falls through to SHOUTY prose', () => {
+    const src = read('src/config/RakeConfig.ts');
+    const labels = src.slice(
+      src.indexOf('BBJ_SHORT_LABELS'),
+      src.indexOf('};', src.indexOf('BBJ_SHORT_LABELS'))
+    );
+    const hands = qualifyingHands(CLIENT);
+    for (const [key, entry] of Object.entries(hands)) {
+      if (entry.eligible === false) continue;
+      expect(labels, `${key} needs a short label`).toContain(`${key}:`);
+    }
+  });
+
+  it('every eligible variant reaches a block in the qualifying-hands strip', () => {
+    /* Giving the client its real `pineapple` key made the bar correct and left
+       this strip with nothing to highlight: blockKeyFor returned 'pineapple'
+       and no block had that key. */
+    const strip = read('src/components/bbj/BBJQualifyingHands.tsx');
+    const blockBody = strip.slice(
+      strip.indexOf('const BLOCKS'),
+      strip.indexOf('\n];', strip.indexOf('const BLOCKS'))
+    );
+    const blockKeys = new Set([...blockBody.matchAll(/key: '([a-z0-9_]+)'/g)].map((m) => m[1]));
+    const aliasBody = strip.slice(
+      strip.indexOf('function blockKeyFor'),
+      strip.indexOf('\n}', strip.indexOf('function blockKeyFor'))
+    );
+    const aliases = new Map(
+      [...aliasBody.matchAll(/raw === '([a-z0-9_]+)'\) return '([a-z0-9_]+)'/g)].map((m) => [
+        m[1],
+        m[2],
+      ])
+    );
+    for (const [key, entry] of Object.entries(qualifyingHands(CLIENT))) {
+      if (entry.eligible === false) continue;
+      const resolved = aliases.get(key) ?? key;
+      expect(
+        blockKeys.has(resolved),
+        `${key} resolves to '${resolved}', which is not a block - that variant highlights nothing`
+      ).toBe(true);
+    }
+  });
+
+  it('the rules table lists the live variants, including pineapple', () => {
+    const rows = read('src/components/bbj/BBJRulesPanel.tsx');
+    for (const key of ['nlh', 'plo4', 'plo8', 'plo5', 'pineapple']) {
+      expect(rows, `VARIANT_ROWS must list ${key}`).toContain(`key: '${key}'`);
+    }
+  });
+});
+
+describe('one hand produces one near miss, not two', () => {
+  it('the mini near miss is only recorded when the main said nothing', () => {
+    /* The MAIN bar is inside the MINI bar, so every main near miss was also a
+       mini near miss: two bbj_near_misses rows, two hub events and two toasts
+       for one hand, and triple-counted reasons in any analytics. */
+    const settle = read('server/src/engine/ServerTableEngineSettlement.ts');
+    expect(settle).toMatch(/let mainNearMissReported = false;/);
+    expect(settle).toMatch(/mainNearMissReported = true;/);
+    expect(settle).toMatch(
+      /const miniNearMiss = mainNearMissReported\s*\n?\s*\? \{ nearMiss: false as const \}/
+    );
+  });
+});

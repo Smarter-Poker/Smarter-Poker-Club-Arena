@@ -18,7 +18,6 @@ import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { reportError } from '../utils/errorReporter';
-import { confirmDialog } from '../components/common/confirmDialog';
 import BBJAdminAnalytics from '../components/bbj/BBJAdminAnalytics';
 import { BBJRecentHits } from '../components/bbj/BBJRecentHits';
 import { BBJHandDetail } from '../components/bbj/BBJHandDetail';
@@ -32,7 +31,6 @@ interface JackpotInfo {
   pool_amount?: number; // Legacy — not in schema, kept for backward compat
   main_balance: number;
   backup_balance: number;
-  promo_balance: number;
   total_contributed: number;
   last_hit_at?: string;
   last_hit_amount?: number;
@@ -62,7 +60,6 @@ export default function BadBeatJackpotPage() {
   // 2026-08-18: real hand count + own-contribution facts, from the ledger.
   const [poolFacts, setPoolFacts] = useState<{ hands: number; chips: number } | null>(null);
   const [myHands, setMyHands] = useState(0);
-  const [canManagePromo, setCanManagePromo] = useState(false);
   /* WHERE THE PROMO SLICE ACTUALLY IS (phase 5). Never `bbj_pools.promo_balance`
      - that is a staging slot the sweep empties continuously. */
   const [promoFacts, setPromoFacts] = useState<{
@@ -73,41 +70,23 @@ export default function BadBeatJackpotPage() {
     observedRatePct: number;
   } | null>(null);
 
-  // Only the pool's club/union owner sees the promo-rain control (the RPC also
-  // enforces this server-side).
-  useEffect(() => {
-    let alive = true;
-    (async () => {
-      if (!clubId || !user?.id) {
-        setCanManagePromo(false);
-        return;
-      }
-      try {
-        const resolvedId = await resolveClubUUID(clubId);
-        const { data: clubRow } = await supabase
-          .from('clubs')
-          .select('owner_id, union_id')
-          .eq('id', resolvedId)
-          .maybeSingle();
-        if (!alive) return;
-        let owner = clubRow?.owner_id === user.id;
-        if (!owner && clubRow?.union_id) {
-          const { data: unionRow } = await supabase
-            .from('unions')
-            .select('owner_id')
-            .eq('id', clubRow.union_id)
-            .maybeSingle();
-          owner = unionRow?.owner_id === user.id;
-        }
-        if (alive) setCanManagePromo(owner);
-      } catch (e) {
-        reportError(e, 'BadBeatJackpotPage.ownerCheck');
-      }
-    })();
-    return () => {
-      alive = false;
-    };
-  }, [clubId, user?.id]);
+  /* ONE GATE, AND IT IS THE DATABASE'S (2026-09-11).
+     This page ran its own owner probe - `clubs.owner_id === me`, or the
+     union's owner - and rendered the promo panel on that, while the panel's
+     CONTENT came from `fn_bbj_promo_facts`, which gates on
+     `fn_is_club_admin_uid`: owner, co_owner, admin or manager WITH AN ACTIVE
+     MEMBERSHIP. Two different predicates, disagreeing both ways:
+
+       - a union owner with no `club_members` row, or an owner whose membership
+         had lapsed, passed the client check and failed the RPC's - so the
+         panel rendered and sat on "Reading The Promo Wallet" for ever;
+       - a club admin or manager who is not the owner failed the client check
+         and passed the RPC's - the figures had no reader at all.
+
+     The RPC already answers the question, in `is_operator`, and it is the
+     authority on it. The probe is gone: there is no second opinion to keep in
+     step, one fewer round trip before the page can paint, and the panel now
+     renders exactly when there is something true to put in it. */
 
   /* THE PROMO RAIN IS NOT BUILT, AND THIS PAGE USED TO PRETEND IT WAS.
      Dan, 2026-09-03, in `fn_bbj_promo_rain` itself: "the splash pot has never
@@ -271,6 +250,10 @@ export default function BadBeatJackpotPage() {
     setPlayerContribution(0);
     setJackpot(null);
     setPoolFacts(null);
+    /* One club's purse under another club's name is exactly the failure the
+       comment above names as the worst this page has. The effect cleared six
+       things and not this one. */
+    setPromoFacts(null);
     setMyHands(0);
     setLoadFailed(false);
     prevAmountRef.current = 0;
@@ -301,7 +284,7 @@ export default function BadBeatJackpotPage() {
         let jackpotQuery = supabase
           .from('bbj_pools')
           .select(
-            'id, club_id, main_balance, backup_balance, promo_balance, total_contributed, last_hit_at, last_hit_amount'
+            'id, club_id, main_balance, backup_balance, total_contributed, last_hit_at, last_hit_amount'
           );
         jackpotQuery = clubUnionRow?.union_id
           ? jackpotQuery.eq('union_id', clubUnionRow.union_id)
@@ -590,7 +573,7 @@ export default function BadBeatJackpotPage() {
       {/* WHERE THE PROMO SLICE ACTUALLY GOES (phase 5, 2026-09-11).
           This was a promo-rain control calling a function Dan ruled unbuilt.
           It is replaced by the truth, for the people who can act on it. */}
-      {canManagePromo && (
+      {promoFacts && (
         <div
           style={{
             margin: '4px 0 16px',
@@ -611,19 +594,12 @@ export default function BadBeatJackpotPage() {
             The Promo Slice
           </div>
           <div style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
-            {promoFacts ? (
-              <>
-                Every Raked Hand Sends {promoFacts.observedRatePct.toFixed(1)}% To Promo -{' '}
-                {Math.round(promoFacts.contributedAllTime).toLocaleString()} Chips So Far. It Does
-                Not Sit In This Pool: It Is Swept To{' '}
-                {promoFacts.purseKind === 'union' ? 'The Union' : 'The Club'} Promo Wallet, Which
-                Holds{' '}
-                <strong>{Math.round(promoFacts.purseAvailable).toLocaleString()} Chips</strong>{' '}
-                Right Now.
-              </>
-            ) : (
-              'Reading The Promo Wallet'
-            )}
+            Every Raked Hand Sends {promoFacts.observedRatePct.toFixed(1)}% To Promo -{' '}
+            {Math.round(promoFacts.contributedAllTime).toLocaleString()} Chips So Far. It Does Not
+            Sit In This Pool: It Is Swept To{' '}
+            {promoFacts.purseKind === 'union' ? 'The Union' : 'The Club'} Promo Wallet, Which Holds{' '}
+            <strong>{Math.round(promoFacts.purseAvailable).toLocaleString()} Chips</strong> Right
+            Now.
           </div>
           <div
             style={{

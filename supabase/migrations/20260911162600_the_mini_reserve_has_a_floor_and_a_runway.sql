@@ -166,12 +166,23 @@ BEGIN
   END IF;
 
   -- NOTHING may have been retuned by this migration
+  /* WAS: an assertion that every pool's floor is exactly 5000.
+     It was right about the intent - this migration installs the MECHANISM and
+     must retune nothing - and wrong as a permanent assertion, because the same
+     file ships `fn_bbj_set_club_mini_floor`, whose entire purpose is to change
+     that value. Any replay after one club had used the control (a database
+     reset, an environment rebuilt from migrations over restored data) would
+     abort on a number a club was entitled to set.
+
+     What this migration must not do is change a floor ITSELF, and it contains
+     no UPDATE of `mini_reserve_floor` to do so - which is the honest thing to
+     assert. */
   SELECT count(*) INTO v_pools FROM public.bbj_pools;
   SELECT count(*) INTO v_changed FROM public.bbj_pools
-   WHERE COALESCE(mini_reserve_floor, 0) <> 5000;
+   WHERE mini_reserve_floor IS NULL;
   IF v_changed <> 0 THEN
     RAISE EXCEPTION
-      'this migration must not change any pool floor, but % of % differ from 5000',
+      'every pool must carry a floor before the control ships, but % of % are NULL',
       v_changed, v_pools;
   END IF;
 END $$;

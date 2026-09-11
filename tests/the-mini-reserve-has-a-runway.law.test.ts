@@ -121,8 +121,19 @@ describe('the reserve floor is a control with a derived lower bound', () => {
     expect(sql).toMatch(/floor_below_one_payout/);
   });
 
-  it('the migration refuses to retune any pool while installing the mechanism', () => {
-    expect(sql).toMatch(/this migration must not change any pool floor/);
+  it('the migration installs the mechanism and retunes nothing itself', () => {
+    /* MOVED 2026-09-11 (rule 8). This pinned an assertion that every pool's
+       floor is exactly 5000 - right about the intent, wrong as a permanent
+       check, because the same file ships the control whose job is to change
+       that value, so any replay after a club used it aborted. The migration
+       must contain no write of its own to `mini_reserve_floor`, and that is
+       what is asserted now. */
+    /* Outside the function bodies: the UPDATE inside
+       `fn_bbj_set_club_mini_floor` IS the control being installed, and is not
+       a write this migration performs when it runs. */
+    const applyTime = sql.replace(/\$function\$[\s\S]*?\$function\$/g, '');
+    expect(applyTime).not.toMatch(/UPDATE\s+public\.bbj_pools/);
+    expect(sql).toMatch(/every pool must carry a floor before the control ships/);
   });
 
   it('every reason the RPC can give has words for the operator', () => {

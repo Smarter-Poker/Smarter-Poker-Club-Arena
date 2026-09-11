@@ -1,0 +1,76 @@
+{
+  "started_at": "2026-09-11T09:52:44.098012+00:00",
+  "finished_at": "2026-09-11T09:52:54.019191+00:00",
+  "commit": "ef93a89b698ea138d2ab9bbc2d89150a78b4e179",
+  "source_file_count": 3632,
+  "source_inputs_stable": true,
+  "source_manifest_sha256": "200f5eb0c574b767aee1dd7f47d52c0bbce7431eac4d1383bf36813b93e45787",
+  "results": [
+    {
+      "name": "client_focused",
+      "command": [
+        "./node_modules/.bin/vitest",
+        "run",
+        "tests/unit/tournamentCreateEnabledOptionsWiring.test.ts",
+        "tests/unit/freeBuy.test.ts",
+        "tests/law/FreerollsAreFreeBuy.law.test.ts",
+        "--reporter=json",
+        "--outputFile=/tmp/codex-phase-three-final-source-e2_9pv0g/client_focused.json"
+      ],
+      "cwd": "/Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-chip-entry-swarm",
+      "exit_code": 0,
+      "log": "/tmp/codex-phase-three-final-source-e2_9pv0g/client_focused.log",
+      "log_sha256": "c46973570caca9c30e0e1b4feee67eed45b96489de11b05b5b62d25be19bb1a6",
+      "tests": {
+        "success": true,
+        "numTotalTests": 40,
+        "numPassedTests": 40,
+        "numFailedTests": 0,
+        "numTotalTestSuites": 13,
+        "numPassedTestSuites": 13
+      }
+    },
+    {
+      "name": "server_focused",
+      "command": [
+        "/opt/homebrew/bin/npm",
+        "test",
+        "--",
+        "src/maintenance/maintenanceThawV3.test.ts",
+        "src/tournament/PhaseThreeClockRestartAcceptance.test.ts",
+        "--reporter=json",
+        "--outputFile=/tmp/codex-phase-three-final-source-e2_9pv0g/server_focused.json"
+      ],
+      "cwd": "/Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-chip-entry-swarm/server",
+      "exit_code": 0,
+      "log": "/tmp/codex-phase-three-final-source-e2_9pv0g/server_focused.log",
+      "log_sha256": "71827832a74e668c584c57a7ac532197b0211b31c97ab0ff823d1e6eb8dead2f",
+      "tests": {
+        "success": true,
+        "numTotalTests": 18,
+        "numPassedTests": 18,
+        "numFailedTests": 0,
+        "numTotalTestSuites": 4,
+        "numPassedTestSuites": 4
+      }
+    },
+    {
+      "name": "client_typecheck",
+      "command": ["./node_modules/.bin/tsc", "--noEmit", "--pretty", "false"],
+      "cwd": "/Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-chip-entry-swarm",
+      "exit_code": 0,
+      "log": "/tmp/codex-phase-three-final-source-e2_9pv0g/client_typecheck.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "server_typecheck",
+      "command": ["./node_modules/.bin/tsc", "--noEmit", "--pretty", "false"],
+      "cwd": "/Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-chip-entry-swarm/server",
+      "exit_code": 0,
+      "log": "/tmp/codex-phase-three-final-source-e2_9pv0g/server_typecheck.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "all_passed": true,
+  "phase_three_complete": false
+}

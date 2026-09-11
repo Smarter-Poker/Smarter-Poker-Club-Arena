@@ -1,0 +1,17 @@
+{
+  "status": "ready_for_final_native_policy_rehearsal",
+  "parity": {
+    "server_row_helper_updated": true,
+    "law_expectation_strengthened": true
+  },
+  "governed_before_md5": "855086582b43d915ed6bc4c124a34696",
+  "governed_after_md5": "ef2671b3cb67a8c710a7fbe3f0431ef6",
+  "canonical_predicate_md5": "e83794453846edb7d457e77603e5b141",
+  "candidate_sha256": "e16b3a057460833cd74c7a2da612df8b2c5269e156a7cc7b8116679d7fb6b24a",
+  "probe_sha256": "17d7e757b2cb04112fa1615c1e515c88da8f5d37d35b1d1b582a941362089e30",
+  "option_assertions": 14,
+  "base_creation_checks_reused": 15,
+  "changed_existing_price_expressions": false,
+  "historical_rows_rewritten": false,
+  "native_execution": false
+}

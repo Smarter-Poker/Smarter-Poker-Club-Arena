@@ -568,9 +568,9 @@ describe('tournament seat exits have one hard authority', () => {
   });
 
   it('executes both old-pod elimination shapes and proves replay', () => {
-    expect(Buffer.byteLength(eliminationProbe)).toBe(27351);
+    expect(Buffer.byteLength(eliminationProbe)).toBe(28071);
     expect(createHash('sha256').update(eliminationProbe).digest('hex')).toBe(
-      'e7c6c79b91cf68c9de16cfe4ec9c9f627268f45c1c9e1bb07f1470189de97163'
+      '94ef8f10cdcb6ea084bcdfb4f8d5ff63db9c0271485e02f7a38ffc3d3ce5fd8f'
     );
     expect(eliminationProbe).toContain('fn_eliminate_tournament_player_atomic(');
     expect(eliminationProbe).toContain('fn_claim_tournament_bounty_elimination(');
@@ -579,6 +579,8 @@ describe('tournament seat exits have one hard authority', () => {
     expect(eliminationProbe).toContain('v_plain_replay');
     expect(eliminationProbe).toContain('v_bounty_replay');
     expect(eliminationProbe).toContain('SET CONSTRAINTS ALL IMMEDIATE');
+    expect(eliminationProbe).toContain("RAISE NOTICE\n    'AUDIT_TEST_PASS");
+    expect(eliminationProbe.trimEnd()).toMatch(/\$exercise\$;\n\nROLLBACK;$/);
     expect(eliminationProbe).toContain('AUDIT_TEST_PASS');
   });
 

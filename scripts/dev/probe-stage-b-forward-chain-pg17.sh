@@ -44,7 +44,7 @@ cancellation_probe_sha256='485d48aad7147ab9b54d8c0f3118a6d928948468aade3da236145
 cash_unregistration_probe_sha256='a21100a43e73cbf0398e980475bd2a6d602d8245cad821204206de13576383c1'
 satellite_ticket_return_probe_sha256='ed7f2d925a2971a89bb4e88efd5250ccfc2b3b813bd8adb6dca9c3f182e1b1ad'
 actual_start_unregistration_probe_sha256='f9025d6c48ae00e88bca43a41f854b5766d25f596150379d445a532722ab4507'
-elimination_seat_exit_probe_sha256='e7c6c79b91cf68c9de16cfe4ec9c9f627268f45c1c9e1bb07f1470189de97163'
+elimination_seat_exit_probe_sha256='94ef8f10cdcb6ea084bcdfb4f8d5ff63db9c0271485e02f7a38ffc3d3ce5fd8f'
 
 usage() {
   cat >&2 <<'USAGE'
@@ -204,7 +204,7 @@ for probe_spec in \
   "$cash_unregistration_probe|14986|$cash_unregistration_probe_sha256" \
   "$satellite_ticket_return_probe|35058|$satellite_ticket_return_probe_sha256" \
   "$actual_start_unregistration_probe|21504|$actual_start_unregistration_probe_sha256" \
-  "$elimination_seat_exit_probe|27351|$elimination_seat_exit_probe_sha256"
+  "$elimination_seat_exit_probe|28071|$elimination_seat_exit_probe_sha256"
 do
   IFS='|' read -r probe_file probe_bytes probe_sha256 <<<"$probe_spec"
   [[ -r "$probe_file" ]] || {

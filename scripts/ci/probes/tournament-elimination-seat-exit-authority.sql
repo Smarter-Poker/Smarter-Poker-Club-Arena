@@ -4,7 +4,7 @@
 -- hand-history UUID deliberately differs from the internal settlement request
 -- UUID, proving that no layer conflates those identities. One exact live zero
 -- seat remains only to exercise the cutover seat-exit capability. The final
--- PASS exception rolls every fixture row back.
+-- explicit ROLLBACK removes every fixture row after the acceptance notice.
 BEGIN;
 
 DO $fixture_guard$
@@ -268,16 +268,18 @@ $rebuy_window_branches$;
 
 INSERT INTO public.tables(
   id,name,club_id,tournament_id,status,current_players,small_blind,big_blind,
-  stakes,max_players,game_type)
+  stakes,max_players,game_type,seat_game_scope,seat_admission_key)
 VALUES
   ('97200000-0000-4000-8000-000000000001','Plain Elimination Table',
    '97010000-0000-4000-8000-000000000001',
    '97100000-0000-4000-8000-000000000001','running',2,5,10,'5/10',9,
-   'tournament'),
+   'tournament','table:97200000-0000-4000-8000-000000000001',
+   'tournament:97100000-0000-4000-8000-000000000001'),
   ('97200000-0000-4000-8000-000000000002','Bounty Elimination Table',
    '97010000-0000-4000-8000-000000000001',
    '97100000-0000-4000-8000-000000000002','running',2,5,10,'5/10',9,
-   'tournament');
+   'tournament','table:97200000-0000-4000-8000-000000000002',
+   'tournament:97100000-0000-4000-8000-000000000002');
 
 INSERT INTO public.tournament_players(
   id,tournament_id,user_id,club_id,status,chips,table_id,seat_number,
@@ -307,28 +309,37 @@ VALUES
 
 INSERT INTO public.table_seats(
   id,table_id,seat_number,user_id,stack,status,joined_at,left_at,
-  leave_pending,is_sitting_out,is_away,club_id)
+  leave_pending,is_sitting_out,is_away,club_id,active_game_scope,
+  active_parent_key)
 VALUES
   ('97300000-0000-4000-8000-000000000001',
    '97200000-0000-4000-8000-000000000001',1,
    '97000000-0000-4000-8000-000000000001',0,'active',
    now()-interval '2 minutes',NULL,false,false,false,
-   '97010000-0000-4000-8000-000000000001'),
+   '97010000-0000-4000-8000-000000000001',
+   'table:97200000-0000-4000-8000-000000000001',
+   'tournament:97100000-0000-4000-8000-000000000001'),
   ('97300000-0000-4000-8000-000000000002',
    '97200000-0000-4000-8000-000000000001',2,
    '97000000-0000-4000-8000-000000000002',100,'active',
    now()-interval '2 minutes',NULL,false,false,false,
-   '97010000-0000-4000-8000-000000000001'),
+   '97010000-0000-4000-8000-000000000001',
+   'table:97200000-0000-4000-8000-000000000001',
+   'tournament:97100000-0000-4000-8000-000000000001'),
   ('97300000-0000-4000-8000-000000000003',
    '97200000-0000-4000-8000-000000000002',1,
    '97000000-0000-4000-8000-000000000003',0,'active',
    now()-interval '2 minutes',NULL,false,false,false,
-   '97010000-0000-4000-8000-000000000001'),
+   '97010000-0000-4000-8000-000000000001',
+   'table:97200000-0000-4000-8000-000000000002',
+   'tournament:97100000-0000-4000-8000-000000000002'),
   ('97300000-0000-4000-8000-000000000004',
    '97200000-0000-4000-8000-000000000002',2,
    '97000000-0000-4000-8000-000000000004',100,'active',
    now()-interval '2 minutes',NULL,false,false,false,
-   '97010000-0000-4000-8000-000000000001');
+   '97010000-0000-4000-8000-000000000001',
+   'table:97200000-0000-4000-8000-000000000002',
+   'tournament:97100000-0000-4000-8000-000000000002');
 
 INSERT INTO public.settlement_idempotency_keys(
   table_id,hand_id,status,result,completed_at)
@@ -576,7 +587,9 @@ BEGIN
   END IF;
 
   SET CONSTRAINTS ALL IMMEDIATE;
-  RAISE EXCEPTION
+  RAISE NOTICE
     'AUDIT_TEST_PASS: level- and minute-bounded rebuy clocks opened exact capped prompts; non-bounty and bounty eliminations each proved a distinct hand-history id -> atomic commit -> internal settlement request id chain, consumed one scoped seat-exit capability, committed candidate/roster/seat/table/outbox state atomically, replayed without mutation, and left no authorization row; fixture rolled back';
 END;
 $exercise$;
+
+ROLLBACK;

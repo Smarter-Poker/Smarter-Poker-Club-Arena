@@ -540,12 +540,12 @@ describe('the reserved Stage-B forward authority remains one bounded chain', () 
   });
 
   it('executes the exact-hand elimination and scoped seat-exit proof after all six boundaries', () => {
-    expect(Buffer.byteLength(eliminationSeatExitProbe)).toBe(27351);
+    expect(Buffer.byteLength(eliminationSeatExitProbe)).toBe(28071);
     expect(createHash('sha256').update(eliminationSeatExitProbe).digest('hex')).toBe(
-      'e7c6c79b91cf68c9de16cfe4ec9c9f627268f45c1c9e1bb07f1470189de97163'
+      '94ef8f10cdcb6ea084bcdfb4f8d5ff63db9c0271485e02f7a38ffc3d3ce5fd8f'
     );
     expect(harness).toContain('tournament-elimination-seat-exit-authority.sql');
-    expect(harness).toContain('e7c6c79b91cf68c9de16cfe4ec9c9f627268f45c1c9e1bb07f1470189de97163');
+    expect(harness).toContain('94ef8f10cdcb6ea084bcdfb4f8d5ff63db9c0271485e02f7a38ffc3d3ce5fd8f');
     expect(harness).toContain('run_elimination_seat_exit_authority_proof "$clean_database"');
     expect(harness).toContain('run_elimination_seat_exit_authority_proof "$replay_database"');
     expect(harness).toContain('STAGE_B_ELIMINATION_SEAT_EXIT_AUTHORITY_OK');

@@ -178,9 +178,9 @@ satellite-seat and redeemed-ticket return/replay (35,058 bytes,
 `ed7f2d925a2971a89bb4e88efd5250ccfc2b3b813bd8adb6dca9c3f182e1b1ad`),
 and durable-start/launch-receipt/persisted-hand refusal (21,504 bytes,
 `f9025d6c48ae00e88bca43a41f854b5766d25f596150379d445a532722ab4507`).
-The same post-six databases also execute the 27,351-byte exact-hand
+The same post-six databases also execute the 28,071-byte exact-hand
 elimination/scoped-seat-exit proof, SHA-256
-`e7c6c79b91cf68c9de16cfe4ec9c9f627268f45c1c9e1bb07f1470189de97163`.
+`94ef8f10cdcb6ea084bcdfb4f8d5ff63db9c0271485e02f7a38ffc3d3ce5fd8f`.
 
 ## Preflight
 

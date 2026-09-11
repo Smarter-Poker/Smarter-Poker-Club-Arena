@@ -24,7 +24,7 @@ SOURCES = {
     "supabase/migrations/20260909182236_bounty_rebuy_settles_the_old_head_before_the_new_generation.sql":
         "4a3ade2ce44352cc6ce1dac719bb9798896cd2bb671be8dfc3e51d34f2cdec9f",
     "scripts/ci/probes/bounty-rebuy-generation-atomicity.sql":
-        "69d5392b3afbf01b0be37ad94637bec19047ef79232aafd0e0cceb6f34d4b02c",
+        "ef8e7fe7c0705ad265dab8f416485302b379437ab94f055f08c98e5cff3a6a5e",
 }
 HELPERS = (
     ("fn_ca_lock_tournament_seat_acquisition", "uuid,uuid,uuid"),
@@ -90,7 +90,7 @@ def definition(source, name):
     return source[start:body_end + len(tag.group(1)) + 1]
 
 
-LANE = "supabase/migrations/20260910035245_the_settlement_lane_is_per_tournament_not_platform_wide.sql"
+LANE = "supabase/migrations/20260910035435_the_settlement_lane_is_per_tournament_not_platform_wide.sql"
 EXTRA_SOURCES = {
     M5: M5_SHA256,
     LANE: "d07cbe35f62ef4a18e29779c812526c27420da4a82c891c0bf2f136b9e6a31fe",

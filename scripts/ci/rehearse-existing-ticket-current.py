@@ -25,7 +25,7 @@ SOURCES = {
     "m4": ("supabase/migrations/20260909165629_satellite_settlement_has_one_atomic_authority.sql", "ce14eccd72c0589fd4feae70fe1395a11347d1c0812de15090a7b48337d08882"),
     "funded": ("supabase/migrations/20260910171924_satellite_seats_count_once_and_keep_the_funded_prize.sql", "9a00bc662f729d5a6db25c4f10a5ceeb45509b230e35f48252620fe9dcef3fc3"),
     "resolver": ("supabase/migrations/20260910020626_the_host_club_is_in_its_own_union.sql", "4e078b55a44bbc3e516d4a0da73ce39453b4dc6950225d98e02d2a8d6c0412e9"),
-    "lane": ("supabase/migrations/20260910035245_the_settlement_lane_is_per_tournament_not_platform_wide.sql", "d07cbe35f62ef4a18e29779c812526c27420da4a82c891c0bf2f136b9e6a31fe"),
+    "lane": ("supabase/migrations/20260910035435_the_settlement_lane_is_per_tournament_not_platform_wide.sql", "d07cbe35f62ef4a18e29779c812526c27420da4a82c891c0bf2f136b9e6a31fe"),
     "m6": ("supabase/migrations/20260909014433_spin_reserve_settlement_commits_its_journal_or_nothing.sql", "3a2af49bcaf13fdca72a4b89e2d6b38ee9c125f4d8b09aa8626c36e593aebc1f"),
     "rolling": ("supabase/migrations/20260910173147_the_settlement_lane_is_per_tournament_for_rolling_authorities.sql", "bc620a6b093ab9769615427168763bc35aaed44e60ee190202470dfcef0f744b"),
     "cap": ("supabase/migrations/20260906233722_a_cap_counts_entries_not_the_seats_filled_right_now.sql", "0e66deca80157a34105d1f1cae569b52f07cbe2e74c07caf46fa11a53ba3ecac"),

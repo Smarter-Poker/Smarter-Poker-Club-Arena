@@ -93,7 +93,7 @@ def block(path, marker):
 def compose(root, variant, probe_path=None):
     base = module(root / "scripts/dev/build-versioned-final-deal-probe.py", "deal_base")
     probe = probe_path or root / "scripts/ci/probes/final-deal-current-terminal-native.sql"
-    lane = root / "supabase/migrations/20260910035245_the_settlement_lane_is_per_tournament_not_platform_wide.sql"
+    lane = root / "supabase/migrations/20260910035435_the_settlement_lane_is_per_tournament_not_platform_wide.sql"
     sql = base.compose(root, probe, variant, lane)
     # The retained opening row predates the entry-club stamping trigger.
     # Match a real funded entrant's origin in this synthetic fixture before
@@ -168,7 +168,7 @@ def runtime_sql(root):
     stage_b = module(root / STAGE_B_RESOLVER, "final_deal_stage_b_source").resolve(root)
     m4 = root / "supabase/migrations/20260909042455_tournament_cash_settlement_has_one_atomic_authority.sql"
     stage = root / "scripts/deploy/phase-three-strict-tournament-cutover.sql"
-    lane = root / "supabase/migrations/20260910035245_the_settlement_lane_is_per_tournament_not_platform_wide.sql"
+    lane = root / "supabase/migrations/20260910035435_the_settlement_lane_is_per_tournament_not_platform_wide.sql"
     runtime = ""
     for name, signature, expected in [
         ("fn_ca_lock_settlement_lane_global", "", "343015440ea5c84ee4ca7ae583c73d30"),

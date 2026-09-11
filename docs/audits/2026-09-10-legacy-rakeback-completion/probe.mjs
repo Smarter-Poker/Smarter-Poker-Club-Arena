@@ -407,6 +407,52 @@ try {
       assert.deepEqual(await snapshot(), before);
       assert.equal((await query('SELECT status FROM rakeback_periods'))[0].status, 'pending');
     });
+    await test('captured old zero-payout close cannot mark an open earning period paid', async () => {
+      await reset({ treasury: 0 });
+      await query(
+        "UPDATE rakeback_periods SET period_start=(statement_timestamp() AT TIME ZONE 'UTC')::date,period_end=(statement_timestamp() AT TIME ZONE 'UTC')::date+6,rake_generated=0,rakeback_amount=0,rakeback_earned=0"
+      );
+      await query('TRUNCATE rakeback_daily_state,rakeback_daily_user');
+      await query(
+        "INSERT INTO rakeback_daily_state(club_id,day,rows_seen) SELECT $1,(statement_timestamp() AT TIME ZONE 'UTC')::date+n,0 FROM generate_series(0,6)n",
+        [uid(900)]
+      );
+      const before = await snapshot();
+      const rowsBefore = await query('SELECT row_to_json(p) value FROM rakeback_periods p');
+      await assert.rejects(
+        query(closeSql.replace('fn_close_settlement_period', 'test_captured_old_close')),
+        (e) =>
+          e.code === '40001' &&
+          e.message === 'Legacy period payment requires a closed earning period'
+      );
+      assert.deepEqual(await snapshot(), before);
+      assert.deepEqual(
+        await query('SELECT row_to_json(p) value FROM rakeback_periods p'),
+        rowsBefore
+      );
+      assert.equal((await snapshot()).wallet_rows, 0);
+      assert.equal((await snapshot()).receipts, 0);
+    });
+    await test('maturity transition guard preserves already-paid historical rows even with unusual dates', async () => {
+      await reset();
+      await query(
+        "INSERT INTO rakeback_periods(id,user_id,club_id,period_start,period_end,rake_generated,rakeback_rate,rakeback_amount,rakeback_earned,status) VALUES($1,$2,$3,(statement_timestamp() AT TIME ZONE 'UTC')::date,(statement_timestamp() AT TIME ZONE 'UTC')::date+6,0,.15,0,0,'paid')",
+        [uid(503), uid(201), uid(900)]
+      );
+      const before = await query(
+        'SELECT row_to_json(p) value FROM rakeback_periods p WHERE id=$1',
+        [uid(503)]
+      );
+      await query('UPDATE rakeback_periods SET status=status WHERE id=$1', [uid(503)]);
+      const result = (
+        await query('SELECT public.fn_close_settlement_period($1) result', [uid(503)])
+      )[0].result;
+      assert.equal(result.skipped, 'paid');
+      assert.deepEqual(
+        await query('SELECT row_to_json(p) value FROM rakeback_periods p WHERE id=$1', [uid(503)]),
+        before
+      );
+    });
     await test('captured original Round3 body is refused at receipt fence with full rollback', async () => {
       const catalogue = JSON.parse(
         readFileSync(new URL('installed-catalog.json', import.meta.url), 'utf8')

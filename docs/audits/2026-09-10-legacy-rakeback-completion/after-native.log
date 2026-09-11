@@ -17,5 +17,7 @@ PASS weekly cutoff never includes the next open earning week under another sessi
 PASS pure legacy cold basis preserves UTC amounts under UTC and Honolulu sessions
 PASS open period direct and authenticated claims preserve pending accrual without money
 PASS captured old direct close cannot finalize an open earning period
+PASS captured old zero-payout close cannot mark an open earning period paid
+PASS maturity transition guard preserves already-paid historical rows even with unusual dates
 PASS captured original Round3 body is refused at receipt fence with full rollback
-{"mode":"after","passed":20}
+{"mode":"after","passed":22}

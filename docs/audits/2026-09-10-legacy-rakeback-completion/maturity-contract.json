@@ -37,10 +37,19 @@
   "new_native_groups": [
     "UTC and Honolulu cold-scan parity",
     "Open direct/authenticated claim preserves pending row and money",
-    "Captured old direct-close body is refused by final maturity receipt fence"
+    "Captured old direct-close body is refused by final maturity receipt fence",
+    "Captured old zero-payout close is refused by pending-to-paid status guard",
+    "Existing paid historical row stays unchanged even with unusual dates"
   ],
   "limitations": [
     "The maturity cutoff proves the earning period ended, not producer/bank completeness or weekly financial finality.",
     "SQL archive is not production activation or live browser/API acceptance."
-  ]
+  ],
+  "status_transition_guard": {
+    "function": "public.fn_ca_legacy_period_maturity()",
+    "trigger": "ca_legacy_period_maturity",
+    "table": "public.rakeback_periods",
+    "when": "BEFORE UPDATE OF status, newly paid rows only",
+    "reason": "Zero payouts create no wallet receipt, so wallet-only maturity enforcement is insufficient."
+  }
 }

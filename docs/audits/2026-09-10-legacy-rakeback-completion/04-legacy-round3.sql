@@ -103,4 +103,17 @@ BEGIN
 END $f$;
 REVOKE ALL ON FUNCTION public.fn_ca_legacy_round3_wallet_receipt() FROM PUBLIC,anon,authenticated,service_role;
 CREATE TRIGGER ca_legacy_round3_wallet_receipt BEFORE INSERT ON public.wallet_transactions FOR EACH ROW EXECUTE FUNCTION public.fn_ca_legacy_round3_wallet_receipt();
+-- Zero-current-payout branches write no wallet row. Fence the state transition too.
+CREATE FUNCTION public.fn_ca_legacy_period_maturity() RETURNS trigger
+LANGUAGE plpgsql SET search_path TO public,pg_temp AS $f$
+BEGIN
+ IF NEW.status='paid' AND OLD.status IS DISTINCT FROM 'paid'
+  AND (NEW.period_end+1)::timestamp AT TIME ZONE 'UTC' > statement_timestamp() THEN
+  RAISE EXCEPTION 'Legacy period payment requires a closed earning period' USING ERRCODE='40001';
+ END IF;
+ RETURN NEW;
+END $f$;
+REVOKE ALL ON FUNCTION public.fn_ca_legacy_period_maturity() FROM PUBLIC,anon,authenticated,service_role;
+CREATE TRIGGER ca_legacy_period_maturity BEFORE UPDATE OF status ON public.rakeback_periods
+ FOR EACH ROW EXECUTE FUNCTION public.fn_ca_legacy_period_maturity();
 COMMIT;

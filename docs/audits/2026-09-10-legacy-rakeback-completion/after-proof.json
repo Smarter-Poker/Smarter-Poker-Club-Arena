@@ -1,6 +1,6 @@
 {
   "mode": "after",
-  "captured_at": "2026-09-11T05:06:18.568Z",
+  "captured_at": "2026-09-11T05:11:07.754Z",
   "outcomes": [
     {
       "evidence": "individual_claim",
@@ -30,12 +30,12 @@
       "waitA": {
         "wait_event_type": "Lock",
         "wait_event": "transactionid",
-        "blockers": [56221]
+        "blockers": [96864]
       },
       "waitB": {
         "wait_event_type": "Lock",
         "wait_event": "advisory",
-        "blockers": [56225]
+        "blockers": [96865]
       },
       "callResults": [
         {
@@ -86,12 +86,12 @@
       "waitA": {
         "wait_event_type": "Lock",
         "wait_event": "transactionid",
-        "blockers": [56234]
+        "blockers": [96867]
       },
       "waitB": {
         "wait_event_type": "Lock",
         "wait_event": "advisory",
-        "blockers": [56235]
+        "blockers": [96868]
       },
       "callResults": [
         {
@@ -187,6 +187,14 @@
     },
     {
       "name": "captured old direct close cannot finalize an open earning period",
+      "pass": true
+    },
+    {
+      "name": "captured old zero-payout close cannot mark an open earning period paid",
+      "pass": true
+    },
+    {
+      "name": "maturity transition guard preserves already-paid historical rows even with unusual dates",
       "pass": true
     },
     {

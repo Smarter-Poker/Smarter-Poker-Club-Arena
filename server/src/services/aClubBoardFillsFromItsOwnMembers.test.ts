@@ -90,7 +90,7 @@ describe('the membership rule still holds - it moved into the pool', () => {
     // This is what makes it safe to let a club board fill: the pool cannot
     // contain anyone who did not join that club.
     expect(RECURRING).toMatch(
-      /const clubIds = tournamentId \? await this\.clubMemberIdsForTournament\(tournamentId\) : null;/
+      /const clubIds = tournamentId\s*\?\s*await this\.clubMemberIdsForTournament\(tournamentId, pass\)\s*:\s*null;/
     );
     expect(RECURRING).toMatch(
       /const inClub = clubIds \? fleetIds\.filter\(\(id\) => clubIds\.has\(id\)\) : fleetIds;/
@@ -100,7 +100,7 @@ describe('the membership rule still holds - it moved into the pool', () => {
   it('the seat-first fill passes the tournament id, so that narrowing runs', () => {
     // pickFreeHorses(count, allLanes, tournamentId) - drop the third argument
     // and the pool silently becomes every horse on the platform.
-    expect(topUpSource()).toMatch(/this\.pickFreeHorses\(poolWanted, false, tournamentId\)/);
+    expect(topUpSource()).toMatch(/this\.pickFreeHorses\(poolWanted, false, tournamentId, pass\)/);
   });
 
   it('a standalone club draws on its own members, a union event on the union', () => {

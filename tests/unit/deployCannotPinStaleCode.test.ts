@@ -135,80 +135,18 @@ describe('there is no bypass around current restart authority', () => {
 });
 
 /**
- * ONE BUILD THAT CAN NEVER CERTIFY ITS OWN REPLACEMENT (Dan 2026-09-11).
+ * THE ONE-BUILD EXCEPTION IS SPENT (2026-09-11).
  *
- * 404948b3 froze tournament tables mid-hand (#4225 fixes it), and a table
- * frozen mid-hand never parks, so that build could never open
- * readyForRestart: 514, 526 and 523 tables stayed unparked through three
- * countdowns and the fix could not ship. The header of this file names the
- * shape: a condition the fleet can never satisfy is not a gate, it is a
- * deadlock. Dan chose a one-time exception bound to that one build over
- * waiting for the process to die on its own.
- *
- * These pins keep it exactly that narrow: one build, one expiry, never an
- * input, every other clause of the certificate still required, and the build
- * re-proved on the host under the engine lock before anything is touched.
+ * Dan approved replacing build 404948b3 without a readyForRestart certificate
+ * because its frozen tables could never park (#4235). It was used once, at the
+ * 06:55 break, and removed. An exception that outlives its build is a force
+ * input with a longer name, so it may not come back quietly: the next frozen
+ * build must earn its certificate (a frozen hand is reaped and re-parked inside
+ * the break), or be put in front of Dan again.
  */
-describe('the one frozen-build exception is one build, one night, re-proved on the host', () => {
-  const gate = WF.slice(
-    WF.indexOf('Wait for the maintenance break'),
-    WF.indexOf('Prepare one-use sealed cutover authority')
-  );
-  const cutover = WF.slice(
-    WF.indexOf('name: Cut over to the new image'),
-    WF.indexOf('name: Verify — liveness')
-  );
-
-  it('names exactly one build, as a job constant that expires, never as an input', () => {
-    const builds = [...WF.matchAll(/^\s+FROZEN_BUILD_OVERRIDE: '([^']*)'\s*$/gm)].map((m) => m[1]);
-    expect(builds).toHaveLength(1);
-    expect(builds[0]).toMatch(/^[0-9a-f]{8}$/);
-    const until = WF.match(/^\s+FROZEN_BUILD_OVERRIDE_UNTIL: '([^']+)'\s*$/m)?.[1] ?? '';
-    // One night, not a standing door: it must die within a day of the
-    // incident it was granted for.
-    expect(Date.parse(until)).toBeGreaterThan(0);
-    expect(Date.parse(until)).toBeLessThanOrEqual(Date.parse('2026-09-12T00:00:00Z'));
-    const inputs = WF.slice(WF.indexOf('  workflow_dispatch:'), WF.indexOf('\nconcurrency:'));
-    expect(inputs).not.toMatch(/frozen/i);
-  });
-
-  it('the runner uses it only for that build, inside a durable counting-down break with time left', () => {
-    expect(gate).toMatch(/date -u -d "\$FROZEN_BUILD_OVERRIDE_UNTIL" \+%s/);
-    expect(gate).toContain('[ "$(date -u +%s)" -lt "$UNTIL_EPOCH" ]');
-    const predicate = gate.slice(
-      gate.indexOf('FROZEN_STATE=$('),
-      gate.indexOf('read -r FROZEN_VERDICT')
-    );
-    expect(predicate).toContain('str(d.get("version") or "")==f');
-    expect(predicate).toContain('d.get("running") is True');
-    expect(predicate).toContain('m.get("active") is True');
-    expect(predicate).toContain('m.get("phase")=="counting_down"');
-    expect(predicate).toContain('m.get("durableConfirmed") is True');
-    expect(predicate).toContain('"CUT" if 200000<=rem<=235000');
-    // It only ever answers when the full certificate did not: a READY break
-    // still takes the ordinary path.
-    expect(gate).toContain(
-      'if [ "$STATE" != "READY" ] && [ "$STATE" != "ERR" ] && [ -n "$FROZEN" ]; then'
-    );
-    expect(gate).toContain('echo "frozen_override=true" >> $GITHUB_OUTPUT');
-  });
-
-  it('the host re-proves the exact build under the engine lock before any mutation', () => {
-    const chosen = cutover.indexOf(
-      'if [ "${{ steps.drain.outputs.frozen_override }}" = "true" ]; then'
-    );
-    const lock = cutover.indexOf('exec 9>/var/lock/club-arena-engine-up.lock');
-    const check = cutover.indexOf('str(d.get(\\"version\\") or \\"\\")==\\"$FROZEN\\"');
-    const marker = cutover.indexOf("echo '$MUTATION_MARKER'");
-    expect(chosen).toBeGreaterThan(0);
-    expect(lock).toBeGreaterThan(chosen);
-    expect(check).toBeGreaterThan(lock);
-    expect(marker).toBeGreaterThan(check);
-    // Every other clause of the certificate is shared by both answers.
-    expect(cutover).toContain(
-      'base=d.get(\\"running\\") is True and isinstance(m,dict) and m.get(\\"active\\") is True and m.get(\\"phase\\")==\\"counting_down\\" and m.get(\\"durableConfirmed\\") is True and int(m.get(\\"remainingMs\\") or 0)>=180000;'
-    );
-    expect(cutover).toContain('frozen=base and len(\\"$FROZEN\\")==8');
-    expect(cutover).toContain('sys.exit(0 if (ok or frozen) else 75)');
+describe('the one frozen-build exception is spent', () => {
+  it('names no build and has no expiry left', () => {
+    expect(WF).not.toMatch(/FROZEN_BUILD_OVERRIDE/);
+    expect(WF).not.toMatch(/frozen_override/);
   });
 });

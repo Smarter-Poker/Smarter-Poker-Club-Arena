@@ -310,11 +310,21 @@ describe('the engine deploy tells the truth when it skips', () => {
     for (const at of retryAt) {
       expect(at).toBeGreaterThan(guardAt);
     }
-    // All three hand-on sites, and no others: lease deferral and gate decline
-    // (both reset the chain with 0), and the bounded before-cutover retry.
+    // All four hand-on sites, and no others: lease deferral, gate decline and
+    // a newer engine commit on main after this one shipped (all reset the
+    // chain with 0), and the bounded before-cutover retry.
     const calls = verdict.split('\n').filter((l) => /^\s*hand_on\b(?!\(\))/.test(l));
-    expect(calls.length).toBe(3);
-    expect(calls.filter((l) => /hand_on 0 /.test(l)).length).toBe(2);
+    expect(calls.length).toBe(4);
+    expect(calls.filter((l) => /hand_on 0 /.test(l)).length).toBe(3);
+    // A newer engine commit is never left without a run (review, 2026-09-11):
+    // the control step checks the engine paths instead of assuming.
+    expect(stage).toMatch(
+      /if ! git diff --quiet "\$CONTROL_SHA" "\$REMOTE_MAIN" -- server \\\s*\n\s*':\(exclude\)server\/\*\*\/\*\.test\.ts' ':\(exclude\)server\/sim'; then\s*\n\s*echo "main_ahead=true" >> "\$GITHUB_OUTPUT"/
+    );
+    expect(verdict).toMatch(/MAIN_AHEAD: \$\{\{ steps\.control\.outputs\.main_ahead \}\}/);
+    expect(verdict).toMatch(
+      /if \[ "\$MAIN_AHEAD" = "true" \] && \[ "\$DEDUPE_REASON" != "superseded" \]; then\s*\n\s*hand_on 0 \|\| true/
+    );
     expect(verdict).toMatch(/GH_TOKEN: \$\{\{ github\.token \}\}/);
     // A hand-on that could not be made is red, never silent.
     expect(stage).toMatch(/::error title=TRAIN STOPPED::/);
@@ -323,6 +333,43 @@ describe('the engine deploy tells the truth when it skips', () => {
     const job = sliceYamlBlock(HETZNER, '    permissions:');
     expect(job).toMatch(/actions: write/);
     expect(job).toMatch(/contents: read/);
+  });
+
+  it('a rollback the queue dropped is dispatched again, and goes first (2026-09-11)', () => {
+    // The group keeps one pending run and GitHub cancels it when a newer run
+    // is queued, so a rollback waiting behind a deploy was replaced by the
+    // next engine push and ran no step. Rollbacks are named for what they are,
+    // and a forward run that finds the newest one cancelled before it started
+    // - at the moment a newer run was queued - dispatches it again and stands
+    // down.
+    const runName = HETZNER.slice(HETZNER.indexOf('\nrun-name:'), HETZNER.indexOf('\non:'));
+    expect(runName).toMatch(
+      /github\.event_name == 'workflow_dispatch' && github\.event\.inputs\.rollback == 'true'[\s\S]*format\('ROLLBACK \{0\} \{1\}', github\.event\.inputs\.ref_sha, github\.event\.inputs\.rollback_reason\)[\s\S]*\|\| ''/
+    );
+    const control = sliceYamlEntry(HETZNER, 'name: Stage the current release proof control');
+    const block = control.slice(control.indexOf('A ROLLBACK IS NEVER LOST IN THE QUEUE'));
+    expect(block).toContain(
+      `if [ "\${{ github.event.inputs.rollback || 'false' }}" != "true" ]; then`
+    );
+    expect(block).toContain('select(.displayTitle | startswith("ROLLBACK "))');
+    expect(block).toContain('$r.status != "completed" or $r.conclusion != "cancelled"');
+    expect(block).toMatch(/> 10800 then empty/);
+    // A person's cancel is not a queue replacement: a newer run must have been
+    // queued at the moment the rollback was cancelled.
+    expect(block).toMatch(/\(\(\$r\.updatedAt \| fromdateiso8601\) - 20\)/);
+    // It never started a step.
+    expect(block).toMatch(/actions\/runs\/\$LOST_ID\/jobs/);
+    expect(block).toContain('if [ "$STARTED" = "0" ]; then');
+    // Same rollback, same reason; this run stands down; a failed re-dispatch
+    // stops the run instead of deploying forward over the rollback.
+    expect(block).toContain(
+      '-f ref_sha="$LOST_SHA" -f rollback=true -f rollback_reason="$LOST_REASON"'
+    );
+    expect(block).toMatch(/echo "superseded=true" >> "\$GITHUB_OUTPUT"[\s\S]{0,400}?exit 0/);
+    expect(block).toMatch(/::error title=ROLLBACK LOST::[\s\S]{0,400}?exit 1/);
+    expect(control.indexOf('A ROLLBACK IS NEVER LOST IN THE QUEUE')).toBeLessThan(
+      control.indexOf('CONTROL_DIR="$GITHUB_WORKSPACE/.engine-release-control"')
+    );
   });
 
   it('a hang fails its step in minutes; nothing from the cutover on can be killed half-way (2026-09-11)', () => {
@@ -473,10 +520,12 @@ describe('a green engine deploy means production serves the commit (2026-09-10)'
 
   it('a run the break gate declined is red; already-live and superseded are green', () => {
     const script = verdict.slice(verdict.indexOf('run: |'));
-    // Shipped -> exit 0 before anything else is considered.
-    expect(script).toMatch(/if \[ "\$SHIPPED" = "true" \]; then[\s\S]{0,200}?exit 0/);
-    // Deliberate stand-downs (already serving, superseded and handed on).
-    expect(script).toMatch(/if \[ "\$DEDUPE_SKIP" = "true" \]; then[\s\S]{0,300}?exit 0/);
+    // Shipped, and the deliberate stand-downs (already serving, superseded and
+    // handed on) -> exit 0 before anything else is considered. (2026-09-11:
+    // one branch, so both can give a newer engine commit its run - MAIN_AHEAD.)
+    expect(script).toMatch(
+      /if \[ "\$SHIPPED" = "true" \] \|\| \[ "\$DEDUPE_SKIP" = "true" \]; then[\s\S]{0,1200}?exit 0/
+    );
     // Everything else that reaches the end of a green job shipped nothing and
     // should have: that is a failure, and it says so in an error annotation.
     const tail = script.slice(script.lastIndexOf('::error title=DID NOT SHIP::'));
@@ -540,7 +589,7 @@ describe('a green engine deploy means production serves the commit (2026-09-10)'
     // "train is failing" alarm (#4109).
     const stage = sliceYamlEntry(HETZNER, 'name: Stage the current release proof control');
     expect(stage).toMatch(
-      /git merge-base --is-ancestor "\$CONTROL_SHA" "\$REMOTE_MAIN"[\s\S]{0,1200}?echo "superseded=true" >> "\$GITHUB_OUTPUT"[\s\S]{0,800}?exit 0/
+      /git merge-base --is-ancestor "\$CONTROL_SHA" "\$REMOTE_MAIN"[\s\S]{0,2400}?echo "superseded=true" >> "\$GITHUB_OUTPUT"[\s\S]{0,800}?exit 0/
     );
     // 2026-09-10: main moving is not the control plane moving. With a push
     // trigger the pending run is the newest ENGINE push and main keeps moving

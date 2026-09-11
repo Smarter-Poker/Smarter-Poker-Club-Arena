@@ -16,11 +16,14 @@ class NativeDiagnosticsTests(unittest.TestCase):
     def test_listener_diagnostics_reject_unreviewed_reasons_and_counts(self):
         row = {'status': 'failed', 'stage': 'realtime-loopback-and-gateway', 'error': 'Error',
                'listener_reason': 'listener-set', 'listener_loopback4': 0,
-               'listener_other4': 1, 'listener_ipv6': 0}
+               'listener_other4': 1, 'listener_ipv6': 0,
+               'listener_rows4': 20, 'listener_rows6': 0, 'listener_port4000': 3}
         self.assertEqual(m.native_failures(json.dumps(row)), [{
             'stage': row['stage'], 'category': 'Error', 'listener_reason': 'listener-set',
-            'listener_loopback4': 0, 'listener_other4': 1, 'listener_ipv6': 0}])
-        for field in ['listener_loopback4', 'listener_other4', 'listener_ipv6']:
+            'listener_loopback4': 0, 'listener_other4': 1, 'listener_ipv6': 0,
+            'listener_rows4': 20, 'listener_rows6': 0, 'listener_port4000': 3}])
+        for field in ['listener_loopback4', 'listener_other4', 'listener_ipv6',
+                      'listener_rows4', 'listener_rows6', 'listener_port4000']:
             for invalid in [-1, 65536, '1', True, None, [], 1.5]:
                 self.assertEqual(m.native_failures(json.dumps({**row, field: invalid})), [])
         for invalid in ['PRIVATE ADDRESS', 'header\n', True, None, []]:

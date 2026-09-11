@@ -66,7 +66,8 @@ def native_failures(output):
         if has_native_line and (type(native_line) is not int or not 1 <= native_line <= 9999):
             continue
         listener = {key: row.pop(key) for key in ('listener_reason', 'listener_loopback4',
-                    'listener_other4', 'listener_ipv6') if key in row}
+                    'listener_other4', 'listener_ipv6', 'listener_rows4', 'listener_rows6',
+                    'listener_port4000') if key in row}
         if listener and (not isinstance(listener.get('listener_reason'), str)
                 or listener['listener_reason'] not in {'header', 'row-shape', 'address-shape', 'listener-set'}
                 or any(type(value) is not int or not 0 <= value <= 65535

@@ -32,7 +32,14 @@ export function nativeFailureDiagnostic(stage, error) {
     new Set(['header', 'row-shape', 'address-shape', 'listener-set']).has(error?.listener_reason)
   ) {
     record.listener_reason = error.listener_reason;
-    for (const field of ['listener_loopback4', 'listener_other4', 'listener_ipv6']) {
+    for (const field of [
+      'listener_loopback4',
+      'listener_other4',
+      'listener_ipv6',
+      'listener_rows4',
+      'listener_rows6',
+      'listener_port4000',
+    ]) {
       if (Number.isInteger(error[field]) && error[field] >= 0 && error[field] <= 65535) {
         record[field] = error[field];
       }

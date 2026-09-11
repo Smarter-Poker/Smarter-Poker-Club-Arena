@@ -124,6 +124,7 @@ export async function adaptRealtimeConfiguration() {
 // A healthy loopback request alone cannot exclude an additional wildcard bind.
 export function assertRealtimeHttpListener(tcp, tcp6) {
   const listeners = [];
+  const inspected = { listener_rows4: 0, listener_rows6: 0, listener_port4000: 0 };
   const refuse = (reason) => {
     const counts = {
       listener_loopback4: listeners.filter(
@@ -137,6 +138,7 @@ export function assertRealtimeHttpListener(tcp, tcp6) {
     throw Object.assign(new Error('FIXTURE_REALTIME_LISTENER_REFUSED'), {
       listener_reason: reason,
       ...counts,
+      ...inspected,
     });
   };
   for (const [family, source] of [
@@ -155,6 +157,8 @@ export function assertRealtimeHttpListener(tcp, tcp6) {
         )
       )
         refuse('address-shape');
+      inspected[family === 'ipv4' ? 'listener_rows4' : 'listener_rows6']++;
+      if (local.endsWith(':0FA0')) inspected.listener_port4000++;
       if (local.endsWith(':0FA0') && fields[3] === '0A') listeners.push([family, local]);
     }
   }

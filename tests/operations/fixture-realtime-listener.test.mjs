@@ -72,6 +72,9 @@ test('listener refusal identifies the failed boundary without retaining socket a
           listener_loopback4: loopback4,
           listener_other4: other4,
           listener_ipv6: ipv6,
+          listener_rows4: reason === 'listener-set' ? 2 : 0,
+          listener_rows6: reason === 'listener-set' ? 1 : 0,
+          listener_port4000: reason === 'listener-set' ? 3 : 0,
         });
         assert.ok(!JSON.stringify(error).includes('PRIVATE'));
         assert.ok(!JSON.stringify(error).includes('0200007F'));

@@ -113,9 +113,26 @@ for r in "${REPOS[@]}"; do
   fi
 
   FORBIDDEN_RULESETS=""
+  D=""
   while IFS= read -r RULESET_ID; do
     [ -n "$RULESET_ID" ] || continue
-    RULESET_DETAIL=$(gh_ro "repos/Smarter-Poker/$r/rulesets/$RULESET_ID")
+    RULESET_DETAIL=""
+    if ! RULESET_DETAIL=$(gh_ro "repos/Smarter-Poker/$r/rulesets/$RULESET_ID"); then
+      add "**$r** — branch ruleset \`$RULESET_ID\` is listed but unreadable, so its required contexts are unverified."
+      continue
+    fi
+    if [ -z "$RULESET_DETAIL" ] || ! printf '%s' "$RULESET_DETAIL" | jq -e --arg ruleset_id "$RULESET_ID" \
+      'type == "object"
+       and ((.id | tostring) == $ruleset_id)
+       and (.target == "branch")
+       and ((.enforcement | type) == "string")
+       and ((.bypass_actors | type) == "array")
+       and ((.rules | type) == "array")' \
+      >/dev/null 2>&1; then
+      add "**$r** — branch ruleset \`$RULESET_ID\` returned an empty or malformed detail, so its required contexts are unverified."
+      continue
+    fi
+    [ "$RULESET_ID" = "$ID" ] && D="$RULESET_DETAIL"
     if printf '%s' "$RULESET_DETAIL" | jq -e --arg context "$FORBIDDEN_REQUIRED_CONTEXT" \
       '[.rules[]? | select(.type=="required_status_checks") | .parameters.required_status_checks[]?.context] | index($context) != null' \
       >/dev/null 2>&1; then
@@ -126,8 +143,9 @@ for r in "${REPOS[@]}"; do
     add "**$r** — unauthorized required context \`$FORBIDDEN_REQUIRED_CONTEXT\` exists in ruleset(s):\`$FORBIDDEN_RULESETS\`. Remove it; synthetic release freezes are forbidden."
   fi
 
-  D=$(gh_ro "repos/Smarter-Poker/$r/rulesets/$ID")
-  [ -n "$D" ] || { add "**$r** — ruleset \`$ID\` is listed but unreadable."; continue; }
+  # The primary ruleset was validated in the all-ruleset pass above. Reusing
+  # that exact document avoids a second API read disagreeing with the verdict.
+  [ -n "$D" ] || continue
 
   ENF=$(printf '%s' "$D" | jq -r '.enforcement')
   TYPES=$(printf '%s' "$D" | jq -r '[.rules[].type] | sort | join(",")')

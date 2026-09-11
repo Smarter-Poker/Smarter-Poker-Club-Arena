@@ -211,6 +211,10 @@ intentional and is not described as denied.
    `/usr/local/bin/auth serve`, then create users and MFA through its real API.
    Both paths require the exact 70-version migration ledger from v2.196.0,
    including `00`; partial, replaced or fabricated extra versions fail.
+   TOTP enrollment returns an SVG QR image from the pinned Auth API. Read that
+   response through a 1 MiB streaming byte limit; all other Auth responses keep
+   a 128 KiB limit. Oversized streams are cancelled before their full body is
+   buffered. No QR secret, response body, token or factor identifier is logged.
 3. Start `/usr/local/bin/postgrest` with synthetic local DB/JWT configuration.
 4. Run `/app/bin/migrate`, then `/app/bin/realtime eval
 'Realtime.Release.seeds(Realtime.Repo)'`, then `/app/bin/server`. These are

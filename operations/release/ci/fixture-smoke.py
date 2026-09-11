@@ -33,6 +33,10 @@ NATIVE_STAGES = frozenset((
     'gotrue-server-ready', 'gotrue-real-user-signin', 'gotrue-real-mfa-enrollment',
     'gotrue-real-mfa-persistence',
     'postgrest-14-5-authentication-and-rls', 'realtime-genuine-migrations-and-change',
+    'postgrest-server-start', 'postgrest-server-ready', 'postgrest-anonymous-rls', 'postgrest-invalid-token',
+    'realtime-migrate-command', 'realtime-seed-command', 'realtime-tenant-row',
+    'realtime-server-start', 'realtime-server-ready', 'realtime-cookie-rpc', 'realtime-cookie-proof',
+    'realtime-websocket-open', 'realtime-postgres-subscription', 'realtime-causal-change',
     'native-observation-bridge-start', 'observer-and-browser-handoff',
     'realtime-loopback-and-gateway', 'candidate-peer-isolation'))
 NATIVE_ERROR_NAMES = frozenset(('Error', 'AssertionError', 'TypeError', 'RangeError',

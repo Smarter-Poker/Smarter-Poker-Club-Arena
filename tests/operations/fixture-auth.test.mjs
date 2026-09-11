@@ -63,6 +63,97 @@ test('accepts the pinned native GoTrue version output and refuses changed binari
   }
 });
 
+test('a large MFA QR response reaches challenge and verification while other Auth responses stay bounded', async () => {
+  const id = '90000000-0000-4000-8000-000000000001';
+  const seen = [];
+  const server = http.createServer((request, response) => {
+    seen.push(request.url);
+    request.resume();
+    let status = 200;
+    let data;
+    if (request.url === '/factors')
+      data = {
+        id,
+        totp: {
+          secret: 'GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ',
+          qr_code: '<svg>' + ' '.repeat(200 * 1024) + '</svg>',
+        },
+      };
+    else if (request.url.endsWith('/challenge')) data = { id };
+    else if (request.url.endsWith('/verify')) {
+      status = 403;
+      data = { message: 'PRIVATE' };
+    } else data = { padding: ' '.repeat(200 * 1024) };
+    response.writeHead(status, { 'content-type': 'application/json' });
+    response.end(JSON.stringify(data));
+  });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  try {
+    const api = fixtureAuth({
+      endpoint: `http://127.0.0.1:${server.address().port}`,
+      ...fixtureSecrets(),
+    });
+    await assert.rejects(api.enrollMfa({ id, session: { access_token: 'PRIVATE' } }), (error) => {
+      assert.equal(error.auth_stage, 'mfa-verify');
+      assert.equal(error.auth_http_status, 403);
+      return true;
+    });
+    assert.deepEqual(seen, ['/factors', `/factors/${id}/challenge`, `/factors/${id}/verify`]);
+    await assert.rejects(api.createUsers(), /local auth response too large/);
+  } finally {
+    server.closeAllConnections();
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test('an oversized chunked enrollment is cancelled before the server finishes sending', async () => {
+  let chunks = 0;
+  let stopped;
+  const closed = new Promise((resolve) => {
+    stopped = resolve;
+  });
+  const server = http.createServer((request, response) => {
+    request.resume();
+    response.writeHead(200, { 'content-type': 'application/json' });
+    const timer = setInterval(() => {
+      chunks++;
+      response.write(' '.repeat(32 * 1024));
+      if (chunks === 100) {
+        clearInterval(timer);
+        response.end();
+      }
+    }, 2);
+    response.on('close', () => {
+      clearInterval(timer);
+      stopped();
+    });
+  });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  try {
+    const api = fixtureAuth({
+      endpoint: `http://127.0.0.1:${server.address().port}`,
+      ...fixtureSecrets(),
+    });
+    await assert.rejects(
+      api.enrollMfa({
+        id: '90000000-0000-4000-8000-000000000001',
+        session: { access_token: 'PRIVATE' },
+      }),
+      (error) => error.auth_stage === 'mfa-enroll'
+    );
+    await closed;
+    assert.ok(
+      chunks >= 33 && chunks < 100,
+      'the bounded reader must cancel an unfinished response'
+    );
+  } finally {
+    server.closeAllConnections();
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
 test('a version command keeps its stdout protocol separate from shutdown diagnostics', async () => {
   // Pinned version_cmd.go prints stdout; main.go separately logs cancellation.
   const result = await promisify(execFile)(process.execPath, [

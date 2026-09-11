@@ -471,6 +471,7 @@ async function services() {
       users[1].id,
       'hidden-other-user',
     ]);
+    stage = 'postgrest-server-start';
     await start('postgrest', '/usr/local/bin/postgrest', [], {
       PGRST_DB_URI: `postgres://authenticator:${password}@127.0.0.1:5432/${database}`,
       PGRST_DB_SCHEMAS: 'public',
@@ -480,10 +481,13 @@ async function services() {
       PGRST_SERVER_PORT: '3000',
       PGRST_LOG_LEVEL: 'error',
     });
+    stage = 'postgrest-server-ready';
     await eventually(() => healthy('http://127.0.0.1:3000/'));
+    stage = 'postgrest-anonymous-rls';
     const anonymous = await fetch('http://127.0.0.1:3000/fixture_smoke');
     assert.equal(anonymous.status, 200);
     assert.deepEqual(await anonymous.json(), []);
+    stage = 'postgrest-invalid-token';
     assert.equal(
       (
         await fetch('http://127.0.0.1:3000/fixture_smoke', {
@@ -518,12 +522,15 @@ async function services() {
       DNS_NODES: "''",
       RLIMIT_NOFILE: '10000',
     };
+    stage = 'realtime-migrate-command';
     await command('/app/bin/migrate', [], realtimeEnv);
+    stage = 'realtime-seed-command';
     await command(
       '/app/bin/realtime',
       ['eval', 'Realtime.Release.seeds(Realtime.Repo)'],
       realtimeEnv
     );
+    stage = 'realtime-tenant-row';
     assert.equal(
       (
         await db.query(
@@ -532,7 +539,9 @@ async function services() {
       ).rows[0].n,
       1
     );
+    stage = 'realtime-server-start';
     await start('realtime', '/app/bin/server', [], realtimeEnv);
+    stage = 'realtime-server-ready';
     await eventually(() =>
       healthy('http://127.0.0.1:4000/api/tenants/realtime-dev/health', {
         authorization: `Bearer ${secrets.anonKey}`,
@@ -540,6 +549,7 @@ async function services() {
     );
     // The real named node must authenticate this RPC with the private file,
     // and report only a hash proving it did not use the image's baked cookie.
+    stage = 'realtime-cookie-rpc';
     const cookieProof = await command(
       '/app/bin/realtime',
       [
@@ -552,6 +562,7 @@ async function services() {
       ],
       realtimeEnv
     );
+    stage = 'realtime-cookie-proof';
     assert.deepEqual(JSON.parse(cookieProof.stdout), {
       node: 'realtime@127.0.0.1',
       named: true,
@@ -607,6 +618,7 @@ async function services() {
       assert.equal(response.status, 403);
       await response.body?.cancel();
     }
+    stage = 'realtime-websocket-open';
     const socket = new WebSocket(
       `ws://fixture:8000/realtime/v1/websocket?apikey=${encodeURIComponent(secrets.anonKey)}&vsn=1.0.0`
     );
@@ -627,6 +639,7 @@ async function services() {
         assert.equal(socketError, false);
         return socket.readyState === WebSocket.OPEN;
       }, 15000);
+      stage = 'realtime-postgres-subscription';
       socket.send(
         JSON.stringify({
           topic: 'realtime:native-smoke',
@@ -655,6 +668,7 @@ async function services() {
       assert.ok(
         messages.some((m) => m.event === 'phx_reply' && m.ref === '1' && m.payload?.status === 'ok')
       );
+      stage = 'realtime-causal-change';
       const inserted = await db.query(
         'INSERT INTO public.fixture_smoke(owner_id,payload) VALUES($1,$2) RETURNING id',
         [user.id, 'native-realtime-change']

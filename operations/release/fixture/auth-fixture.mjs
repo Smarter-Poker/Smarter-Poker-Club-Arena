@@ -112,9 +112,26 @@ export function fixtureAuth({ endpoint = 'http://127.0.0.1:9999', serviceKey, jw
       failure.auth_http_status = response.status;
       throw failure;
     }
-    const text = await response.text();
-    assert.ok(text.length <= 128 * 1024, 'local auth response too large');
-    return JSON.parse(text);
+    // Genuine TOTP enrollment includes an SVG QR image. Bound that one route
+    // separately and enforce byte limits while reading, before buffering it all.
+    const limit = route === '/factors' ? 1024 * 1024 : 128 * 1024;
+    const reader = response.body?.getReader();
+    assert.ok(reader, 'local auth response body absent');
+    const chunks = [];
+    let bytes = 0;
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        bytes += value.byteLength;
+        assert.ok(bytes <= limit, 'local auth response too large');
+        chunks.push(value);
+      }
+      return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks)));
+    } finally {
+      await reader.cancel().catch(() => {});
+      reader.releaseLock();
+    }
   }
   function validateSession(session, expectedId, minimumAal = 'aal1') {
     const claims = verifyFixtureToken(session.access_token, jwtSecret);

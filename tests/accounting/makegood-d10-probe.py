@@ -65,10 +65,22 @@ new_rebuy=f"""INSERT INTO public.chip_ledger SELECT (jsonb_populate_record(NULL:
  jsonb_build_object('id',gen_random_uuid(),'chain_seq',NULL,'row_hash',NULL,'prev_hash',NULL,'idempotency_key',NULL,
  'from_type','player_wallet','from_entity_id','{target}','to_type','prize_liability','to_entity_id','{tid}',
  'amount',1,'category','rebuy','created_at',now()))).* FROM public.chip_ledger l WHERE id='{paid['ledger_id']}'"""
+later_second_bust=later_positive.replace(new_hand,'f3000000-0000-0000-0000-000000000002').replace('999999990','999999991')
+later_second_bust=later_second_bust.replace("'stack_before',0,'stack',1","'stack_before',1,'stack',0").replace("'stack_before',10,'stack',9","'stack_before',9,'stack',10").replace(f"'{target}',1,'{winner}',9",f"'{target}',0,'{winner}',10")
+earlier_winner_zero=later_positive.replace(new_hand,'f3000000-0000-0000-0000-000000000003').replace("k.completed_at+interval '1 second'","k.completed_at-interval '1 second'")
+earlier_winner_zero=earlier_winner_zero.replace("'stack_before',0,'stack',1","'stack_before',0,'stack',10").replace("'stack_before',10,'stack',9","'stack_before',10,'stack',0").replace(f"'{target}',1,'{winner}',9",f"'{target}',10,'{winner}',0")
+equal_start_stacks="""UPDATE public.settlement_idempotency_keys k SET result=jsonb_set(result,'{request,stacks}',
+ (SELECT jsonb_agg(CASE WHEN s->>'user_id' IN ('165df98e-f59d-46aa-bc74-a974c0ded83f','f39893fa-6830-49b6-9f80-b32191328ac0') THEN jsonb_set(s,'{stack_before}','42134')
+  WHEN s->>'user_id'='00000000-0000-0000-0000-000000000025' THEN jsonb_set(s,'{stack_before}','104825') ELSE s END)
+ FROM jsonb_array_elements(k.result#>'{request,stacks}') s)) WHERE k.result->>'hand_number'='8213440'"""
 for name,edit,reason in [
  ('later_positive_accepted_stack',later_positive,'accepted bust is followed by positive play or has ambiguous hand ordering'),
+ ('later_final_bust_cannot_hide_unproven_reentry',later_positive+';'+later_second_bust,'accepted bust is followed by positive play or has ambiguous hand ordering'),
+ ('winner_revival_requires_generation_lineage',earlier_winner_zero,'accepted bust is followed by positive play or has ambiguous hand ordering'),
+ ('equal_starting_stacks_cannot_choose_by_uuid',equal_start_stacks,'same-hand equal starting stacks require an authoritative tie allocation'),
  ('post_zero_entry',f"UPDATE public.tournament_players SET registered_at=now() WHERE id='{entry}'",'accepted final stack is followed by an entry or chip purchase'),
  ('post_zero_rebuy',new_rebuy,'accepted final stack is followed by an entry or chip purchase'),
+ ('winner_post_finish_rebuy',new_rebuy.replace(f"'from_entity_id','{target}'",f"'from_entity_id','{winner}'"),'accepted final stack is followed by an entry or chip purchase'),
  ('false_conservation_marker',f"UPDATE public.settlement_idempotency_keys SET result=jsonb_set(result,'{{request,stacks,0,stack_before}}',to_jsonb((result#>>'{{request,stacks,0,stack_before}}')::numeric+1)) WHERE status='succeeded'",'accepted true-order source is malformed, foreign or ambiguous'),
  ('missing_final_survivor_hand',"DELETE FROM public.settlement_idempotency_keys WHERE status='succeeded' AND completed_at=(SELECT max(completed_at) FROM public.settlement_idempotency_keys WHERE status='succeeded')",'accepted true-order roster is incomplete'),
 ]:

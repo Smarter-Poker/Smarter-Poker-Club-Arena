@@ -326,7 +326,7 @@ END $$;
 CREATE FUNCTION ca_makegood.true_place(p_entry uuid) RETURNS jsonb
 LANGUAGE plpgsql SET search_path=pg_catalog SET timezone='UTC' AS $$
 DECLARE player public.tournament_players%ROWTYPE; busted jsonb; total_players integer; winner uuid;
- witness jsonb; price numeric; ranked integer; qualified jsonb; winner_fact jsonb;
+ witness jsonb; price numeric; ranked integer; qualified jsonb; winner_fact jsonb; zero_history jsonb;
 BEGIN
  SELECT * INTO player FROM public.tournament_players WHERE id=p_entry;
  IF NOT FOUND THEN RAISE EXCEPTION 'tournament entry missing' USING ERRCODE='P0404'; END IF;
@@ -354,6 +354,12 @@ BEGIN
     OR EXISTS (SELECT 1 FROM jsonb_array_elements(qualified) q
        GROUP BY q->>'table_id',q->>'hand_number' HAVING count(*)<>1) THEN
    RAISE EXCEPTION 'accepted true-order source is malformed, foreign or ambiguous' USING ERRCODE='P0404'; END IF;
+ -- This recipe has no independently proved reentry-generation adapter. Keep
+ -- every positive-to-zero receipt visible: choosing only the latest bust must
+ -- not hide an earlier zero followed by a new positive stack or purchase.
+ SELECT coalesce(jsonb_agg(jsonb_build_object('user_id',f->'user_id','completed_at',q->'completed_at')),'[]')
+ INTO zero_history FROM jsonb_array_elements(qualified) q,jsonb_array_elements(q->'facts') f
+ WHERE (f->>'stack_before')::numeric>0 AND (f->>'stack')::numeric=0;
  WITH accepted AS (
    SELECT (f->>'user_id')::uuid user_id,q,
      (q->>'completed_at')::timestamptz completed_at,(f->>'stack_before')::numeric stack_before,
@@ -361,7 +367,7 @@ BEGIN
    FROM jsonb_array_elements(qualified) q, jsonb_array_elements(q->'facts') f
    WHERE f->>'user_id'<>winner::text AND (f->>'stack_before')::numeric>0 AND (f->>'stack')::numeric=0
  ), ordered AS (
-   SELECT *,1+row_number() OVER(ORDER BY completed_at DESC,stack_before DESC,user_id DESC) AS true_place
+   SELECT *,1+row_number() OVER(ORDER BY completed_at DESC,stack_before DESC) AS true_place
    FROM accepted WHERE rn=1
  ) SELECT jsonb_agg(jsonb_build_object('user_id',user_id,'table_id',q->'table_id','settlement_id',q->'hand_id',
      'hand_number',q->'hand_number','completed_at',completed_at,'stack_before',stack_before,'true_place',true_place,
@@ -369,7 +375,10 @@ BEGIN
      ORDER BY true_place) INTO busted FROM ordered;
  IF coalesce(jsonb_array_length(busted),0)<>total_players-1 THEN
    RAISE EXCEPTION 'accepted true-order roster is incomplete' USING ERRCODE='P0404'; END IF;
- IF EXISTS (SELECT 1 FROM jsonb_array_elements(busted) b, jsonb_array_elements(qualified) q,
+ IF EXISTS (SELECT 1 FROM jsonb_array_elements(busted) b
+     GROUP BY b->>'table_id',b->>'settlement_id',b->>'stack_before' HAVING count(*)>1) THEN
+   RAISE EXCEPTION 'same-hand equal starting stacks require an authoritative tie allocation' USING ERRCODE='P0404'; END IF;
+ IF EXISTS (SELECT 1 FROM jsonb_array_elements(zero_history) b, jsonb_array_elements(qualified) q,
       jsonb_array_elements(q->'facts') f WHERE f->>'user_id'=b->>'user_id' AND (f->>'stack')::numeric>0
       AND (q->>'completed_at')::timestamptz >= (b->>'completed_at')::timestamptz)
     OR EXISTS (SELECT 1 FROM jsonb_array_elements(busted) a,jsonb_array_elements(busted) b
@@ -382,7 +391,7 @@ BEGIN
     OR (winner_fact->>'completed_at')::timestamptz < (SELECT max((b->>'completed_at')::timestamptz) FROM jsonb_array_elements(busted) b) THEN
    RAISE EXCEPTION 'canonical winner lacks a latest positive accepted stack' USING ERRCODE='P0404'; END IF;
  IF EXISTS (
-   SELECT 1 FROM jsonb_array_elements(busted||jsonb_build_array(jsonb_build_object(
+   SELECT 1 FROM jsonb_array_elements(zero_history||jsonb_build_array(jsonb_build_object(
        'user_id',winner,'completed_at',winner_fact->'completed_at'))) b
    WHERE EXISTS (SELECT 1 FROM public.tournament_players tp WHERE tp.tournament_id=player.tournament_id
        AND tp.user_id::text=b->>'user_id' AND (tp.registered_at IS NULL OR NOT isfinite(tp.registered_at)

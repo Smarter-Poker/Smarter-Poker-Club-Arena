@@ -24,6 +24,15 @@ shutil.copyfile(a.fixture_directory/'fixture-manifest.json',fixture/'fixture-man
 accepted_source=fixture/'accepted-settlement-dependency.sql'
 accepted_source.write_bytes(a.accepted_settlement_migration.read_bytes())
 runner=(a.fixture_directory/'run.py').read_text()
+# The release owner explicitly authorized removing this scheduling-only guard
+# in our copied socket-only fixture runner. Exact ruling SQL bytes, database
+# guards and every production runtime timing restriction remain unchanged.
+local_clock_guard="""minute=datetime.now(timezone.utc).minute
+if minute>=50 or minute<3:
+    raise SystemExit('The preserved ruling refuses :50-:03 UTC. Run this local rehearsal outside that window.')
+"""
+assert runner.count(local_clock_guard)==1
+runner=runner.replace(local_clock_guard,'# Private native fixture may rehearse at any wall-clock minute.\n')
 anchor="    run(['python3',str(runtime/'verify-local.py')],'verify.log')"
 assert runner.count(anchor)==1
 hook="\n    run(['python3',"+repr(str(root/'tests/accounting/makegood-d10-probe.py'))+",str(runtime),"+repr(str(accepted_source))+"],'makegood-probe.log')"

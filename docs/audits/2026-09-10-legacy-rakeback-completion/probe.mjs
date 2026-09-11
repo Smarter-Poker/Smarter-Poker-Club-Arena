@@ -453,6 +453,118 @@ try {
         before
       );
     });
+    for (const scope of ['claim', 'weekly']) {
+      await test(
+        scope + ' pins admitted clubs across a late earlier-sorting club insertion',
+        async () => {
+          await reset();
+          const blocker = await client('late_' + scope + '_blocker', null),
+            caller = await client(
+              'late_' + scope + '_caller',
+              scope === 'claim' ? 'authenticated' : 'service_role'
+            );
+          await caller.query("SELECT set_config('request.jwt.claim.sub',$1,false)", [uid(201)]);
+          await blocker.query('BEGIN');
+          await blocker.query(
+            "SELECT pg_advisory_xact_lock(hashtext('club-arena:rakeback-payer'),hashtext($1::text))",
+            [uid(900)]
+          );
+          const sql =
+            scope === 'claim' ? 'SELECT public.fn_claim_rakeback(NULL) result' : weeklySql;
+          const first = caller.query(sql).then(
+            (value) => ({ value: value.rows }),
+            (error) => ({ error: { code: error.code, message: error.message } })
+          );
+          try {
+            const wait = await observeWait(db, 'late_' + scope + '_caller');
+            assert.equal(wait.wait_event, 'advisory');
+            await query(
+              "INSERT INTO clubs(id,name,owner_id,chip_treasury) VALUES($1,'Late historical club',$2,20)",
+              [uid(800), uid(990)]
+            );
+            await query(
+              "INSERT INTO club_members(club_id,user_id,role,chip_balance,agent_id,player_rakeback_pct) VALUES($1,$2,'player',0,$3,.15),($1,$3,'agent',25,NULL,0)",
+              [uid(800), uid(201), uid(101)]
+            );
+            await query(
+              "INSERT INTO agents(id,user_id,club_id,role,commission_rate,player_rakeback_rate) VALUES($1,$2,$3,'agent',.25,.15)",
+              [uid(2), uid(101), uid(800)]
+            );
+            await query(
+              "INSERT INTO rakeback_periods(id,user_id,club_id,period_start,period_end,rake_generated,rakeback_rate,rakeback_amount,rakeback_earned) VALUES($1,$2,$3,'2026-08-31','2026-09-06',100,.15,15,15)",
+              [uid(601), uid(201), uid(800)]
+            );
+            await query(
+              "INSERT INTO rakeback_daily_state(club_id,day,rows_seen) SELECT $1,d::date,1 FROM generate_series('2026-08-31'::date,'2026-09-06'::date,'1 day')d",
+              [uid(800)]
+            );
+            await query(
+              "INSERT INTO rakeback_daily_user(club_id,day,user_id,cents) VALUES($1,'2026-08-31',$2,10000)",
+              [uid(800), uid(201)]
+            );
+            if (scope === 'weekly')
+              await query('INSERT INTO union_clubs(union_id,club_id) VALUES($1,$2)', [
+                uid(999),
+                uid(800),
+              ]);
+            await blocker.query('COMMIT');
+            const a = await first;
+            assert.equal(a.error, undefined);
+            const key = scope === 'claim' ? 'total_payout' : 'amount';
+            assert.equal(a.value[0].result[key], 15);
+            assert.equal(
+              (await query('SELECT status FROM rakeback_periods WHERE id=$1', [uid(601)]))[0]
+                .status,
+              'pending'
+            );
+            assert.equal(
+              (
+                await query(
+                  'SELECT chip_balance::text amount FROM club_members WHERE club_id=$1 AND user_id=$2',
+                  [uid(800), uid(201)]
+                )
+              )[0].amount,
+              '0.00'
+            );
+            const second = (await caller.query(sql)).rows[0].result;
+            assert.equal(second[key], 15);
+            assert.equal(
+              (await query('SELECT status FROM rakeback_periods WHERE id=$1', [uid(601)]))[0]
+                .status,
+              'paid'
+            );
+            assert.equal(
+              (
+                await query(
+                  'SELECT chip_balance::text amount FROM club_members WHERE club_id=$1 AND user_id=$2',
+                  [uid(800), uid(201)]
+                )
+              )[0].amount,
+              '15.00'
+            );
+            const funding = (
+              await query(
+                'SELECT chip_treasury::text treasury,(SELECT chip_balance::text FROM club_members WHERE club_id=$1 AND user_id=$2) agent FROM clubs WHERE id=$1',
+                [uid(800), uid(101)]
+              )
+            )[0];
+            assert.equal(funding.treasury, scope === 'claim' ? '5.00' : '20.00');
+            assert.equal(funding.agent, scope === 'claim' ? '25.00' : '10.00');
+            outcomes.push({
+              evidence: 'late_club_' + scope + '_admission',
+              wait,
+              first_total: a.value[0].result[key],
+              second_total: second[key],
+              late_club_paid_only_on_second_call: true,
+              funding,
+            });
+          } finally {
+            await blocker.query('ROLLBACK');
+            await Promise.all([blocker.end(), caller.end()]);
+          }
+        }
+      );
+    }
     await test('captured original Round3 body is refused at receipt fence with full rollback', async () => {
       const catalogue = JSON.parse(
         readFileSync(new URL('installed-catalog.json', import.meta.url), 'utf8')

@@ -13,20 +13,23 @@ DECLARE
   v_period  record;
   v_res     jsonb;
   v_count   int := 0;
+  v_admitted_clubs uuid[];
   v_total   numeric := 0;
 BEGIN
   IF v_user IS NULL THEN
     RETURN jsonb_build_object('success', false, 'error', 'authentication required');
   END IF;
 
-  PERFORM public.fn_lock_rakeback_payer_clubs(ARRAY(SELECT DISTINCT club_id FROM public.rakeback_periods
+  v_admitted_clubs := ARRAY(SELECT DISTINCT club_id FROM public.rakeback_periods
    WHERE user_id=v_user AND status='pending'
     AND (period_end+1)::timestamp AT TIME ZONE 'UTC' <= statement_timestamp()
-    AND (p_club_id IS NULL OR club_id=p_club_id) ORDER BY club_id));
+    AND (p_club_id IS NULL OR club_id=p_club_id) ORDER BY club_id);
+  PERFORM public.fn_lock_rakeback_payer_clubs(v_admitted_clubs);
 
   FOR v_period IN
     SELECT id FROM public.rakeback_periods
      WHERE user_id = v_user
+       AND club_id = ANY(v_admitted_clubs)
        AND status = 'pending'
        AND (period_end+1)::timestamp AT TIME ZONE 'UTC' <= statement_timestamp()
        AND (p_club_id IS NULL OR club_id = p_club_id)

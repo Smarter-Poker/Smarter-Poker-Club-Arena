@@ -8,6 +8,7 @@ CREATE OR REPLACE FUNCTION public.fn_settle_round3_agents_to_players(p_union_id 
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path TO public AS $f$
 DECLARE r record;v_agent uuid;v_payout uuid;v_wallet uuid;v_agent_before numeric;v_agent_after numeric;
  v_player_before numeric;v_player_after numeric;v_owed numeric;v_rake numeric;v_rate numeric;
+ v_admitted_clubs uuid[];
  v_paid numeric:=0;v_payees integer:=0;v_short integer:=0;v_detail jsonb:='[]';v_skip text;
 BEGIN
  IF EXISTS(SELECT 1 FROM settlement_locks WHERE lock_type='GLOBAL_SETTLEMENT_FREEZE' AND is_active=true)
@@ -15,11 +16,12 @@ BEGIN
  IF p_union_id IS NULL OR p_period_start IS NULL OR p_period_end IS NULL OR p_period_end<=p_period_start
   OR NOT isfinite(p_period_start) OR NOT isfinite(p_period_end)
  THEN RETURN jsonb_build_object('round',3,'name','agents_to_players','success',false,'error','bad_params','amount',0,'payees',0,'shortfalls',0,'detail','[]'::jsonb); END IF;
- PERFORM public.fn_lock_rakeback_payer_clubs(ARRAY(SELECT club_id FROM public.union_clubs WHERE union_id=p_union_id ORDER BY club_id));
+ v_admitted_clubs := ARRAY(SELECT club_id FROM public.union_clubs WHERE union_id=p_union_id ORDER BY club_id);
+ PERFORM public.fn_lock_rakeback_payer_clubs(v_admitted_clubs);
  -- Lock each exact period before calculating or choosing its legacy payer.
  FOR r IN SELECT rp.* FROM rakeback_periods rp
  JOIN union_clubs uc ON uc.club_id=rp.club_id AND uc.union_id=p_union_id
- WHERE rp.status='pending'
+ WHERE rp.status='pending' AND rp.club_id=ANY(v_admitted_clubs)
  AND rp.period_start >= (p_period_start AT TIME ZONE 'UTC')::date
  AND (rp.period_end + 1)::timestamp AT TIME ZONE 'UTC' <= p_period_end
  ORDER BY rp.club_id,rp.period_start,rp.id FOR UPDATE OF rp

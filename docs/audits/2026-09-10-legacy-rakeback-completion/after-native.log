@@ -19,5 +19,7 @@ PASS open period direct and authenticated claims preserve pending accrual withou
 PASS captured old direct close cannot finalize an open earning period
 PASS captured old zero-payout close cannot mark an open earning period paid
 PASS maturity transition guard preserves already-paid historical rows even with unusual dates
+PASS claim pins admitted clubs across a late earlier-sorting club insertion
+PASS weekly pins admitted clubs across a late earlier-sorting club insertion
 PASS captured original Round3 body is refused at receipt fence with full rollback
-{"mode":"after","passed":22}
+{"mode":"after","passed":24}

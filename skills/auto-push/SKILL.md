@@ -30,15 +30,24 @@ Push after ANY of the following:
 Run these commands sequentially from the project root:
 
 ```bash
-# 1. Stage all changes
-git add -A
+# 1. Review the worktree, then stage only paths you intentionally changed
+git status --short
+git add <path> [<path> ...]
 
 # 2. Commit with a descriptive message
 git commit -m "Description of what changed"
 
-# 3. Push to current branch
-git push
+# 3. Bring current main forward without rewriting published history
+git fetch origin main
+git merge --no-edit origin/main
+
+# 4. Push the feature branch with every repository hook enabled
+git push -u origin HEAD
 ```
+
+Never push directly to `main`, rebase shared work, stage another agent's files,
+or skip a hook. The Club Arena pull request and owning Hetzner workflows are
+the only release route.
 
 ### Commit Message Guidelines
 
@@ -56,9 +65,10 @@ git push
 
 After pushing, confirm the push succeeded by checking the output. If it fails:
 
-1. Check if there are merge conflicts → resolve them
-2. Check if the branch is behind → `git pull --rebase` then push again
-3. Check for auth issues → notify the user
+1. Check whether the remote branch already belongs to a merged/closed pull request;
+   if so, create a new feature branch from current `origin/main`.
+2. If `main` advanced, merge `origin/main`, resolve conflicts, and rerun the gates.
+3. Fix authentication or source/test failures and retry the normal push.
 
 ## CRITICAL REMINDER
 

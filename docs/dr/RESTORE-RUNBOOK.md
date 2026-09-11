@@ -6,44 +6,41 @@ gone, now what" page. Read it before you need it.
 
 ## What the platform is made of, and where each part lives
 
-| Component                          | Lives in                                              | Reproducible from                                                      | Single copy?                      |
-| ---------------------------------- | ----------------------------------------------------- | ---------------------------------------------------------------------- | --------------------------------- |
-| Web app + Club Arena bundle        | Vercel (`hub-vanguard`)                               | GitHub `Smarter-Poker-World-Hub` + `club-arena`                        | No — GitHub                       |
-| Poker engine code                  | Hetzner `/opt/club-arena`                             | GitHub `club-arena` (`server/`)                                        | No — GitHub, auto-deploys on push |
-| **Engine secrets (`server/.env`)** | **Hetzner disk only**                                 | **nothing**                                                            | **YES — see below**               |
-| Database (chips, users, all state) | Supabase `kuklfnapbkmacvwxktbh` (108 GB, Postgres 17) | Supabase PITR / backups                                                | Supabase-managed                  |
-| Open Claw cron dispatcher          | Hetzner `/opt/openclaw`                               | GitHub `Smarter-Poker-World-Hub` `scripts/openclaw-cron-dispatcher.py` | No — GitHub                       |
-| CI/CD credentials                  | GitHub App + repo secrets                             | —                                                                      | GitHub-managed                    |
+| Component                          | Lives in                                              | Reproducible from                                                      | Single copy?                    |
+| ---------------------------------- | ----------------------------------------------------- | ---------------------------------------------------------------------- | ------------------------------- |
+| Club Arena frontend                | Hetzner `/srv/club-arena`                             | GitHub `Smarter-Poker-Club-Arena`                                      | No - GitHub                     |
+| Poker engine code                  | Hetzner `/opt/club-arena`                             | GitHub `Smarter-Poker-Club-Arena` (`server/`)                          | No - GitHub, exact-SHA workflow |
+| **Engine secrets (`server/.env`)** | **Hetzner disk only**                                 | **nothing**                                                            | **YES — see below**             |
+| Database (chips, users, all state) | Supabase `kuklfnapbkmacvwxktbh` (108 GB, Postgres 17) | Supabase PITR / backups                                                | Supabase-managed                |
+| Open Claw cron dispatcher          | Hetzner `/opt/openclaw`                               | GitHub `Smarter-Poker-World-Hub` `scripts/openclaw-cron-dispatcher.py` | No — GitHub                     |
+| CI/CD credentials                  | GitHub App + repo secrets                             | —                                                                      | GitHub-managed                  |
 
-The one part reproducible from **nothing** was the engine's `server/.env`.
-Phase 4 fixed that: `scripts/dr/backup-engine-secrets.sh` keeps an AES-256
-encrypted copy under `~/Documents/club-arena/.dr-backups/` (gitignored;
-passphrase in the macOS login keychain). Run it after any secret rotation.
+The one host-only component is the engine's runtime `server/.env`. Routine
+publishing never reads a workstation copy. For an explicitly authorized
+offline DR backup, `scripts/dr/backup-engine-secrets.sh` requires a pinned host
+key and an explicitly supplied DR SSH identity; it has no host/key fallback,
+never reads a local `.env`, and never runs on a schedule.
 
 ## SCENARIO A — the engine box is gone (Hetzner disk dead)
 
 Impact: live poker stops (no dealing). The database and web app are untouched;
 players see tables that do not advance. Target: back in ~30 min.
 
-1. Provision a fresh Hetzner box (or use the Phase-1 CI box script as a
-   template). Ubuntu 22+, Node via nvm, PM2 or the existing systemd unit.
-2. `git clone git@github.com:smarter-poker/Smarter-Poker-Club-Arena.git /opt/club-arena`
-   (the box deploys from GitHub; `git remote` on the old box confirmed this).
-3. Restore the secrets:
-   ```bash
-   PASS=$(security find-generic-password -a smarter-poker -s dr-engine-env-pass -w)
-   openssl enc -d -aes-256-cbc -pbkdf2 \
-     -in ~/Documents/club-arena/.dr-backups/engine.env.enc -pass pass:"$PASS" \
-     > /tmp/engine.env   # then scp to the new box as /opt/club-arena/server/.env
-   ```
-   The 15 keys include SUPABASE_SERVICE_ROLE_KEY, INTERNAL_API_KEY,
-   TURN_STATIC_AUTH_SECRET, ALERT_WEBHOOK_SECRET.
-4. `cd /opt/club-arena/server && npm ci && npm run build && pm2 start` (or
-   `systemctl start` the engine unit). Point DNS `engine.smarter.poker` at the
-   new IP if it changed.
-5. Verify: `curl https://engine.smarter.poker/health` returns the running sha,
-   and per-minute `hand_history` counts resume (see CLAUDE.md 11 verification).
-6. Re-point `auto-deploy-hetzner.yml`'s HETZNER_HOST secret if the IP changed.
+1. Open an incident and provision a replacement Hetzner host using the reviewed
+   infrastructure definition. Do not use a workstation as a publisher.
+2. Restore or rotate runtime credentials through their owning providers. An
+   authorized offline backup may be decrypted only inside the incident's
+   secure transfer procedure; never print it or stage it in the repository.
+3. Update the Club Arena repository's `HETZNER_HOST`, pinned
+   `HETZNER_HOST_KEY`, and `HETZNER_SSH_PRIVATE_KEY` secrets after the new host
+   identity is verified. If the static origin moved, update the separate
+   `CA_ORIGIN_HOST`, `CA_ORIGIN_HOST_KEY`, and `CA_ORIGIN_SSH_KEY` set.
+4. Send the intended full merged SHA through the Club Arena-owned
+   `deploy-club-arena-engine` repository event. Publish the frontend through
+   `publish-club-arena.yml`; do not clone/build/restart or sync from World Hub
+   by hand.
+5. Verify cache-busted engine health, both frontend `build-info.json`
+   endpoints, and resumed hand progression against the exact merged SHA.
 
 ## SCENARIO B — database corruption or bad write (need a point in time)
 
@@ -67,9 +64,10 @@ Only if forward correction is impossible:
 
 ## SCENARIO C — the Mac is gone
 
-The Mac holds canonical clones, agent worktrees, the DR secret backup, and
-keychain credentials. It is a single point of failure for _development_, not
-for the _running platform_ (which is Vercel + Supabase + Hetzner).
+The Mac holds clones, worktrees, and an optional sealed DR backup. It is a
+single point of failure for development, not for the running Club Arena
+platform, whose frontend and engine run on Hetzner and whose durable state is
+in Supabase.
 
 - Running platform: unaffected. Players and money are fine.
 - To resume agent work: any machine with the GitHub App credentials and
@@ -85,7 +83,9 @@ for the _running platform_ (which is Vercel + Supabase + Hetzner).
 
 - [ ] Supabase PITR enabled (dashboard; agent cannot check or toggle it —
       **Dan/human action**).
-- [ ] `scripts/dr/backup-engine-secrets.sh` run after every secret rotation.
+- [ ] Hetzner provider backups/snapshots enabled and restore-tested (human
+      action). If the offline backup is retained, refresh it only as an
+      explicitly authorized DR operation with the pinned-host inputs.
 - [ ] A restore drill into a scratch Supabase branch once a quarter — an
       untested backup is a hope, not a backup.
 - [ ] Hetzner engine box: enable Hetzner's own snapshot/backup in their console

@@ -30,6 +30,12 @@ INSERT INTO public.clubs(id,club_id,name,union_id) VALUES
   ('c2000000-0000-4000-8000-000000000002',990002,
    'Fee Recipient Club Probe','c6000000-0000-4000-8000-000000000001');
 
+INSERT INTO public.union_clubs(union_id,club_id,joined_at) VALUES
+  ('c6000000-0000-4000-8000-000000000001',
+   'c2000000-0000-4000-8000-000000000001',now()-interval '1 day'),
+  ('c6000000-0000-4000-8000-000000000001',
+   'c2000000-0000-4000-8000-000000000002',now());
+
 INSERT INTO public.club_members(
   club_id,user_id,role,status,chip_balance,joined_at
 ) VALUES
@@ -46,14 +52,15 @@ INSERT INTO public.club_members(
 
 INSERT INTO public.tournaments(
   id,name,buy_in_amount,buy_in_fee,starting_chips,start_time,status,
-  current_players,max_players,current_level,club_id,prize_pool,total_rake,
+  current_players,max_players,current_level,club_id,union_id,prize_pool,total_rake,
   bounty_pool,entry_contract_locked,is_rebuy,is_reentry,rebuy_cost,
   rebuy_chips,rebuy_levels,late_reg_levels,late_reg_mins,max_rebuys
 ) VALUES(
   'c3000000-0000-4000-8000-000000000001',
   'Cross Club Unregister Probe',90,10,1000,
   clock_timestamp()+interval '1 day','REGISTERING',0,100,1,
-  'c2000000-0000-4000-8000-000000000002',0,0,0,false,
+  'c2000000-0000-4000-8000-000000000002',
+  'c6000000-0000-4000-8000-000000000001',0,0,0,false,
   true,false,50,500,5,5,60,5
 );
 
@@ -82,8 +89,9 @@ DO $register$
 DECLARE
   v_result jsonb;
 BEGIN
-  v_result:=public.fn_register_for_tournament(
-    'c3000000-0000-4000-8000-000000000001');
+  v_result:=public.fn_register_for_tournament_request(
+    'c3000000-0000-4000-8000-000000000001',
+    'c5000000-0000-4000-8000-000000000010');
   IF COALESCE((v_result->>'ok')::boolean,false) IS NOT TRUE
      OR (v_result->>'cost')::numeric IS DISTINCT FROM 100
      OR (v_result->>'rake')::numeric IS DISTINCT FROM 10 THEN
@@ -120,16 +128,16 @@ BEGIN
         WHERE tp.tournament_id=
                 'c3000000-0000-4000-8000-000000000001'
           AND tp.user_id='c1000000-0000-4000-8000-000000000001'
-          AND tp.club_id='c2000000-0000-4000-8000-000000000002'
+          AND tp.club_id='c2000000-0000-4000-8000-000000000001'
           AND tp.status='playing' AND tp.chips=500 AND tp.rebuys=1)
      OR (SELECT chip_balance FROM public.club_members
           WHERE club_id='c2000000-0000-4000-8000-000000000001'
             AND user_id='c1000000-0000-4000-8000-000000000001')
-          IS DISTINCT FROM 900
+          IS DISTINCT FROM 850
      OR (SELECT chip_balance FROM public.club_members
           WHERE club_id='c2000000-0000-4000-8000-000000000002'
             AND user_id='c1000000-0000-4000-8000-000000000001')
-          IS DISTINCT FROM 150
+          IS DISTINCT FROM 200
      OR (SELECT count(*) FROM public.tournament_refund_entitlements e
           WHERE e.tournament_id='c3000000-0000-4000-8000-000000000001'
             AND e.user_id='c1000000-0000-4000-8000-000000000001'
@@ -198,11 +206,12 @@ BEGIN
      OR (SELECT count(*)
            FROM unnest(v_receipt.source_wallet_club_ids) funding(club_id)
           WHERE funding.club_id=
-                'c2000000-0000-4000-8000-000000000001')<>1
-     OR (SELECT count(*)
-           FROM unnest(v_receipt.source_wallet_club_ids) funding(club_id)
-          WHERE funding.club_id=
-                'c2000000-0000-4000-8000-000000000002')<>1
+                'c2000000-0000-4000-8000-000000000001')<>2
+     OR EXISTS (
+       SELECT 1
+         FROM unnest(v_receipt.source_wallet_club_ids) funding(club_id)
+        WHERE funding.club_id<>
+              'c2000000-0000-4000-8000-000000000001')
      OR EXISTS (
        SELECT 1 FROM public.rake_records source
         WHERE source.id=ANY(v_receipt.fee_source_rake_record_ids)
@@ -255,7 +264,7 @@ BEGIN
   END IF;
 
   RAISE NOTICE
-    'AUDIT_TEST_PASS: buy-in debited home Club A, rebuy debited roster Club B, both fee rows credited tournament Club B, unregistration returned each charge to its own funding club, reversed both exact rake sources only in B, and persisted immutable source/reversal IDs; fixture rolls back';
+    'AUDIT_TEST_PASS: buy-in and rebuy debited entry Club A, both fee rows credited tournament Club B, unregistration returned each charge to its own funding club (exactly Club A), reversed both exact rake sources only in B, and persisted immutable source/reversal IDs; fixture rolls back';
 END;
 $assert$;
 

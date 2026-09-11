@@ -3,14 +3,14 @@
  *  THE BREAK CLOCKS AGREE (law, to-do #2563 item 12)
  * ═══════════════════════════════════════════════════════════════════════════
  *
- * The :55 maintenance break is coordinated by constants that live in FIVE
+ * The :55 maintenance break is coordinated by constants that live in SIX
  * places that cannot import each other: the engine (TypeScript), the deploy
- * workflow (its break gate), the engine watchdog (bash), two SQL migrations, and the
- * browser hook. Nothing but this file makes them agree. Since 2026-09-10 the
- * database has a clock of its own too: the window in which it refuses
- * migrations, which has to enclose the announcement and the thaw.
+ * workflow, two SQL migrations, the browser hook, and the database DDL guard.
+ * Nothing but this file makes them agree. Since 2026-09-10 the database has a
+ * clock of its own too: the window in which it refuses migrations, which has
+ * to enclose the announcement and the thaw.
  *
- * Each pin below is a real failure, not a hypothetical - the watchdog HAS
+ * Each pin below is a real failure, not a hypothetical - the former watchdog
  * already desynchronised from the deploy once (2026-09-01: it still carried
  * the five Chicago windows after the deploy went hourly, stayed silent for
  * fourteen and a half hours of stranded code, and reported success the whole
@@ -24,8 +24,9 @@ import { resolve } from 'path';
 const read = (p: string) => readFileSync(resolve(__dirname, '..', p), 'utf8');
 
 const ENGINE = read('server/src/maintenance/MaintenanceBreak.ts');
-const WATCHDOG = read('.github/scripts/engine-watchdog.sh');
 const DEPLOY = read('.github/workflows/auto-deploy-hetzner.yml');
+const RELEASE_TRANSACTION = read('server/scripts/engine-release-transaction.sh');
+const RELEASE_OBSERVER = read('server/scripts/observe-engine-release.sh');
 const FREEZE_SQL = read(
   'supabase/migrations/20260902090000_the_platform_freezes_at_the_tables_not_the_functions.sql'
 );
@@ -136,31 +137,30 @@ describe('the break minute is the same minute everywhere', () => {
     expect(engineMinute).toBe(55);
   });
 
-  it('the watchdog waits for the same minute', () => {
-    // 2026-09-01: these two disagreed (watchdog still on five Chicago hours)
-    // and the engine served a 14.5-hour-old image behind green runs.
-    const wd = Number(WATCHDOG.match(/RESTART_MINUTE="\$\{RESTART_MINUTE:-(\d+)\}"/)![1]);
-    expect(wd).toBe(engineMinute);
-  });
-
-  it('the deploy gate waits for the minute after the engine parks, and no cron decides it', () => {
-    // 2026-09-10: the deploy has no cron. Every engine push starts a run at
-    // whatever minute it lands, and the run's break gate - not a tick - picks
-    // the break: it waits until one minute past the engine's park, when
-    // readyForRestart can first be true. A gate aimed at any other minute
-    // would either stop tables mid-hand or wait out a whole extra hour.
-    expect(DEPLOY).not.toMatch(/^\s*- cron:/m);
-    const gate = DEPLOY.slice(
-      DEPLOY.indexOf('- name: Wait for the maintenance break to park every table')
+  it('the event-owned deploy spans a cold build, a full-hour wait, and proof', () => {
+    const timeoutMin = Math.max(
+      ...[...DEPLOY.matchAll(/timeout-minutes: (\d+)/g)].map((match) => Number(match[1]))
     );
-    const lt = Number(gate.match(/if \[ "\$MIN_NOW" -lt (\d+) \]; then/)![1]);
-    const thisHour = Number(
-      gate.match(/SECS_TO_GATE=\$\(\( \((\d+) - MIN_NOW\) \* 60 - SEC_NOW \)\)/)![1]
+    const transactionS = Number(
+      RELEASE_TRANSACTION.match(
+        /MAX_RUNTIME_SECONDS="\$\{ENGINE_RELEASE_MAX_RUNTIME_SECONDS:-(\d+)\}"/
+      )![1]
     );
-    const nextHour = Number(
-      gate.match(/SECS_TO_GATE=\$\(\( \(60 - MIN_NOW \+ (\d+)\) \* 60 - SEC_NOW \)\)/)![1]
+    const observeS = Number(
+      RELEASE_OBSERVER.match(/OBSERVE_SECONDS="\$\{ENGINE_RELEASE_OBSERVE_SECONDS:-(\d+)\}"/)![1]
     );
-    for (const m of [lt, thisHour, nextHour]) expect(m).toBe(engineMinute + 1);
+    const handoffS = Number(
+      RELEASE_OBSERVER.match(
+        /INVOCATION_WAIT_SECONDS="\$\{ENGINE_RELEASE_INVOCATION_WAIT_SECONDS:-(\d+)\}"/
+      )![1]
+    );
+    expect(transactionS).toBeGreaterThanOrEqual(18 * 60 + 60 * 60);
+    expect(observeS).toBeGreaterThanOrEqual(transactionS);
+    expect(timeoutMin * 60).toBeGreaterThanOrEqual(handoffS + observeS + 20 * 60);
+    expect(RELEASE_TRANSACTION).toContain('persist_result sealed');
+    expect(DEPLOY.slice(DEPLOY.indexOf('\non:'), DEPLOY.indexOf('\nconcurrency:'))).not.toMatch(
+      /^\s{2}schedule:/m
+    );
   });
 });
 

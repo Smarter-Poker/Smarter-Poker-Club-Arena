@@ -24,7 +24,7 @@ rule_files:
   # 2026-08-15: alerts on the supervisor itself. Layered recovery makes outages
   # shorter and also quieter — these rules stop self-healing from becoming
   # self-concealing.
-  - /etc/prometheus/supervisor-rules.yml
+  - /etc/prometheus/recovery-rules.yml
   # 2026-08-31 — tournament health. Until the gauges behind these existed,
   # /metrics carried 895 poker_* series and none mentioned a tournament, so a
   # tournament could fail for hours with every dashboard green.

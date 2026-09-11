@@ -20,7 +20,7 @@
  * scripts/ci/schema-manifest.d/<your-slug>.json:
  *
  *   { "tables":           ["ca_engine_deploy_attempts"],
- *     "functions":        ["fn_ca_engine_deploy_truth_watch"],
+ *     "functions":        ["fn_ca_record_engine_deploy_attempt"],
  *     "removedFunctions": ["legacy_repair_writer"],
  *     "columns":   { "tables": ["no_rathole"] } }
  *
@@ -89,8 +89,14 @@ export function readFragments(repo = process.cwd()) {
       }
     }
     if (data.columns !== undefined) {
-      if (data.columns === null || typeof data.columns !== 'object' || Array.isArray(data.columns)) {
-        throw new Error(`manifest fragment ${name}: "columns" must be an object of table -> [columns]`);
+      if (
+        data.columns === null ||
+        typeof data.columns !== 'object' ||
+        Array.isArray(data.columns)
+      ) {
+        throw new Error(
+          `manifest fragment ${name}: "columns" must be an object of table -> [columns]`
+        );
       }
       for (const [table, cols] of Object.entries(data.columns)) {
         if (!Array.isArray(cols)) {
@@ -154,12 +160,20 @@ export function loadSchemaManifest(repo = process.cwd()) {
   };
 }
 
-/** The column manifest: the nightly base snapshot union every fragment's columns. */
+/**
+ * The effective column manifest: the nightly base union fragment additions,
+ * minus every relation retired by a fragment tombstone.
+ */
 export function loadColumnsManifest(repo = process.cwd()) {
   const basePath = join(repo, BASE_COLUMNS);
-  const columns = existsSync(basePath) ? { ...(parse(basePath, 'columns manifest').columns || {}) } : {};
+  const columns = existsSync(basePath)
+    ? { ...(parse(basePath, 'columns manifest').columns || {}) }
+    : {};
   let declared = 0;
-  for (const { data } of readFragments(repo)) {
+  const fragments = readFragments(repo);
+  const removedTables = new Set();
+  for (const { data } of fragments) {
+    for (const table of data.removedTables || []) removedTables.add(table);
     for (const [table, cols] of Object.entries(data.columns || {})) {
       const merged = new Set(columns[table] || []);
       for (const c of cols) {
@@ -169,5 +183,6 @@ export function loadColumnsManifest(repo = process.cwd()) {
       columns[table] = [...merged].sort();
     }
   }
-  return { columns, declaredByFragments: declared };
+  for (const table of removedTables) delete columns[table];
+  return { columns, declaredByFragments: declared, removedByFragments: removedTables.size };
 }

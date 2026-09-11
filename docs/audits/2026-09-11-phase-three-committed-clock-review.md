@@ -1,0 +1,11 @@
+# Committed clock recovery acceptance
+
+Verified at 2026-09-11 13:30:14 UTC on the owned branch based on main 4294ac78c. The new runner exercises the existing current v3 authority in a disposable physical clone through separate PostgreSQL connections and committed transactions. It never connects to production or the original coordinator database.
+
+Three service-role calls completed one 1,200-second freeze despite a one-second caller duration. The database certified exactly 1,213.292684 seconds. Eight independently observed transaction IDs prove that the calls, admission reads and replay crossed transaction boundaries. Forty-two controlled active-level targets and one actually purchased SNG seat received exactly one credit. All other seat fields, including stack and time bank, remained unchanged. A wrong owner was refused before any targets existed. Independent observers saw admission closed through installments and after owner-row deletion until the durable release endpoint. A lost-response replay recovered the same receipt without rewriting levels, seat fields or target credits. Admission opened only after the certified endpoint.
+
+The paid seat came through actual seat-first creation and authenticated purchase from an existing synthetic funded club. No financial guards, application RLS policies or triggers were disabled. An initial run failed because the schema guard enables RLS on persistent fixture tables. The correction grants only service_role and authenticated access to the test-only receipt collector using its own policy. The failed transaction rolled back; the corrected run then passed with seven source fingerprints unchanged.
+
+The clone intentionally retains its committed test state and is stopped. The original fixture is preserved. This is not an outer-rollback proof and does not claim PostgREST transport, all fourteen nonempty clock families, actual played-hand boundaries or full Phase 3 completion. Those remain separate acceptance gates. This evidence supersedes only the prior missing separately committed installment/admission witness, supplementing the already merged paid-seat proof.
+
+Evidence: `2026-09-11-phase-three-committed-clock-native.json`. Runner: `scripts/ci/rehearse-phase-three-committed-clock.py`. No production source or schema is changed by this commit.

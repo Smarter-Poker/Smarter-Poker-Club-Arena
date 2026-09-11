@@ -1,6 +1,6 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# PUBLISH CLUB ARENA — the publisher, on a workflow entry GitHub will schedule,
-# and on runners we own.
+# PUBLISH CLUB ARENA — the Club Arena-owned Hetzner publisher, isolated on
+# fresh hosted runners so prior pull-request code cannot reach release secrets.
 #
 # WHY THIS FILE EXISTS (2026-09-02). build-for-world-hub.yml stopped being
 # scheduled by GitHub at 16:33 UTC. Six runs sat at `queued` with ZERO jobs
@@ -16,52 +16,30 @@
 #
 # Production sat on one bundle for 80 minutes because of it.
 #
-# TWO CHANGES FROM THE FILE IT COPIES, AND ONLY TWO:
-#   1. This path, so GitHub schedules it.
-#   2. runs-on reads vars.CI_RUNNER, so publishing runs on the Hetzner box we
-#      own. That is the real lesson here: the one workflow that MUST run for
-#      anything to reach players was the one with no path off GitHub's hosted
-#      pool. Unset CI_RUNNER and it falls back to ubuntu-latest unchanged.
-#
-# Everything else - the tip-of-main convergence, the four-way sharded gate,
-# the retry, the refusal to publish a bundle older than the one deployed - was
-# copied from build-for-world-hub.yml unchanged.
+# The exact-main target, the four-way sharded gate, and the refusal to publish
+# a bundle older than the one deployed are owned here.
 #
 # THAT FILE IS GONE NOW (2026-09-02, later the same day). For about ninety
 # minutes both files existed and BOTH fired on every push to main, on separate
 # concurrency groups, so nothing serialised them: two full builds of the same
-# commit, two pushes to the World Hub, and the old one still on billed hosted
+# commit, two competing publishes, and the old one still on billed hosted
 # runners. Verified identical before deleting - 320 non-comment lines each,
 # zero difference once name, path, group and runs-on were normalised.
 #
-# THIS IS NOW THE ONLY PUBLISHER. There is no second path to production. If you
-# ever add a second publisher again, give it the SAME concurrency group as this
-# one or they will not serialise.
-#
-# NO CRON, NO WATCHDOG RE-DISPATCH (2026-09-11). Dan: "i do not want any watch
-# dogs, i want hard coded fixes ... i want any and all pushes to be published".
-# Every push starts a run and every run publishes the TIP of main, so a push
-# whose run was replaced is carried by the run that replaced it. What the
-# */30 catch-up and publish-watchdog.sh's re-dispatch still covered was a run
-# that FAILED or was CANCELLED with nothing queued behind it. That is now the
-# `hand-on` job at the bottom of this file: the failed run dispatches its own
-# retry (bounded), and publish-watchdog.sh only reports.
+# THIS IS NOW THE ONLY PUBLISHER. There is no second path to production. It is
+# event-driven and fail-closed: a failed release is fixed at source and
+# re-proposed, never hidden by a timer, retry watcher, or alternate publisher.
 # ─────────────────────────────────────────────────────────────────────────────
 name: Publish Club Arena
 
 on:
   push:
     branches: [main]
-  # A dispatch by hand publishes unconditionally. `handed_on` marks the retry a
-  # run dispatches for itself (the Converge step and the hand-on job): that one
-  # first asks production, and costs one curl when production already serves
-  # the tip.
-  workflow_dispatch:
-    inputs:
-      handed_on:
-        description: 'Dispatched by a publish run handing itself on (dedupes against production)'
-        type: boolean
-        default: false
+  # Recovery uses repository_dispatch so GitHub always executes the
+  # reviewed workflow definition from the default branch. workflow_dispatch
+  # can execute branch-authored YAML with production origin credentials.
+  repository_dispatch:
+    types: [publish-club-arena]
 
 # 2026-08-21: was cancel-in-progress: true, which deadlocked publishing.
 # This build takes about 4 minutes. With several agents pushing to main every
@@ -75,35 +53,15 @@ on:
 # plus the newest queued commit, and each wave of pushes converges on
 # publishing the latest main instead of publishing nothing at all.
 #
-# THE GROUP KEY CARRIES A GENERATION, AND THIS IS WHY (2026-09-02).
-#
-# MEASURED. From 16:07 to 17:05 UTC four commits merged to main and NOT ONE
-# push-triggered publish run was created. `Main Rewind Guard`, which triggers on
-# the same pushes, fired for every one of them, so pushes were being delivered
-# and this workflow alone stopped receiving them. At the same time three
-# `workflow_dispatch` runs (3036, 3037, 3038) sat `queued` with ZERO jobs, and
-# the API refused to cancel any of them: "Cannot cancel a workflow run that has
-# not been queued yet." Two more had been in that state since the previous
-# evening, one of them for 21 hours.
-#
-# Three runs pending in one group is already impossible under the rule below -
-# a new run cancels the older PENDING one, so the group holds at most one
-# in-flight plus one waiting. Three of them, none running, none cancellable,
-# means the GROUP ITSELF was wedged rather than busy. Nothing was executing to
-# release it and nothing could be cancelled to clear it.
-#
-# There is no API to reset a concurrency group. What there is, is the key: a run
-# only queues behind runs sharing its group name, so changing the name gives
-# every future run a clean group. That is what the generation is for. If this
-# ever happens again, bump it - and say in the commit which runs were stuck, so
-# the next person can tell a wedge from a busy queue.
-#
-# The old group is left to whatever GitHub eventually does with those runs. They
-# are harmless if they ever wake: every run publishes the TIP of main (see "NO
-# COMMIT LEFT BEHIND" in publish-needed), so a late one either publishes the
-# current tip or the sync step refuses it as older than what is deployed.
+# The key is intentionally static because there is one production resource:
+# push and repository_dispatch must serialize even if GitHub gives the two
+# event types different refs.
+# One-time adoption rule: every run created from the former ref-scoped key must
+# be terminal before this definition first reaches main. That older definition
+# did not take the host lock. After adoption, every event shares this static key
+# and the host lock plus compare-and-swap provide the second serialization layer.
 concurrency:
-  group: publish-club-arena-${{ github.ref }}
+  group: publish-club-arena-production
   cancel-in-progress: false
 
 jobs:
@@ -114,16 +72,14 @@ jobs:
   # build-and-store would have let the whole test suite run anyway on a cycle
   # that had nothing to publish, which is most of the cost it is meant to save.
   #
-  # Only a HANDED-ON retry is deduped (it was the */30 schedule until
-  # 2026-09-11). A push is by definition new work, and a human dispatching this
-  # by hand is usually forcing a republish of something that looks stuck -
-  # deduping either would be the publish bug this exists to prevent.
+  # A push is new work, and a recovery event carries one explicit
+  # protected-main SHA to publish.
   publish-needed:
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
     outputs:
-      skip: ${{ steps.dedupe.outputs.skip }}
       target_sha: ${{ steps.target.outputs.sha }}
       tests_proven: ${{ steps.proven.outputs.tests_proven }}
     steps:
@@ -138,9 +94,8 @@ jobs:
       # they are superseded — and the survivor published only ITS OWN sha. So
       # the backlog was only ever drained if that one specific run succeeded.
       # If it failed, was cancelled at the wrong moment, hit a runner outage or
-      # an expired token, the commits behind it were never re-attempted by
-      # anything except a catch-up cron, and its retry was capped at one. That
-      # is the "my last 3 pushes have not published" report.
+      # an expired token, that individual run could not be treated as release
+      # proof. The source push remains durable and a source fix is re-proposed.
       #
       # Resolving the tip here makes every run a CONVERGENCE step instead of a
       # per-commit delivery. Any single successful run now drains the entire
@@ -148,98 +103,82 @@ jobs:
       # whatever main is at the moment it starts. Cancellation becomes
       # structurally harmless rather than merely usually-harmless.
       #
-      # If main moves again while this run builds, this run publishes a
-      # slightly older tip and the next run (push, */30 catch-up, or watchdog
-      # dispatch) converges the remainder. The sync job's compare-API guard
-      # further refuses to publish a bundle OLDER than what is deployed, so a
-      # slow run can never overwrite a newer one.
+      # If main moves again while this run builds, its own push event queues the
+      # next exact release. The compare-API guard refuses to let a slow run
+      # overwrite a newer deployed bundle.
       #
-      # FAILS OPEN: if the API cannot be read we fall back to github.sha, which
-      # is the old behaviour. Never publish nothing because a lookup failed.
+      # FAILS CLOSED: pushes publish the current Club Arena main.
+      # Repository events publish their explicit full ref_sha only after proving
+      # it IS current main. An ancestor is durable history, but it is not current
+      # release authority and must never be used to roll the origin backward.
+      # They never inherit a selectable workflow ref.
       # ═══════════════════════════════════════════════════════════════════════
       - name: Resolve the tip of main
         id: target
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED_SHA: ${{ github.event.client_payload.ref_sha || '' }}
         run: |
-          TIP=$(gh api "repos/${{ github.repository }}/commits/main" --jq .sha 2>/dev/null || echo "")
-          if [ -z "$TIP" ]; then
-            TIP="${{ github.sha }}"
-            echo "::warning::Could not resolve the tip of main - falling back to the trigger sha ${TIP:0:7}."
-          fi
-          echo "sha=$TIP" >> "$GITHUB_OUTPUT"
-          echo "Publishing target: ${TIP:0:7} (trigger was ${GITHUB_SHA:0:7})"
-          if [ "$TIP" != "$GITHUB_SHA" ]; then
-            echo "::notice::main has moved past the trigger commit - this run carries the newer tip, so nothing queued behind it is stranded."
+          set -euo pipefail
+          TIP=$(timeout 30s gh api "repos/${{ github.repository }}/commits/main" --jq .sha 2>/dev/null || echo "")
+          [[ "$TIP" =~ ^[0-9a-f]{40}$ ]] \
+            || { echo '::error::Could not resolve one full current-main SHA; refusing to publish.'; exit 1; }
+
+          TARGET="$TIP"
+          if [ "$GITHUB_EVENT_NAME" = "repository_dispatch" ]; then
+            [[ "$REQUESTED_SHA" =~ ^[0-9a-f]{40}$ ]] \
+              || { echo '::error::publish-club-arena requires one lowercase full client_payload.ref_sha.'; exit 1; }
+            [ "$REQUESTED_SHA" = "$TIP" ] \
+              || { echo "::error::Requested SHA is not current Club Arena main ($TIP)."; exit 1; }
+            TARGET="$REQUESTED_SHA"
           fi
 
-      - name: Compare production against the tip of main
-        id: dedupe
-        if: github.event_name == 'workflow_dispatch' && inputs.handed_on
-        run: |
-          LIVE=$(curl -fsS --max-time 20 \
-            https://smarter.poker/hub/club-arena/build-info.json 2>/dev/null \
-            | python3 -c 'import json,sys; print(json.load(sys.stdin).get("ca_sha",""))' \
-            2>/dev/null || echo "")
-          HEAD_SHA="${{ steps.target.outputs.sha }}"
-          if [ -z "$LIVE" ]; then
-            # Unreadable is NOT up to date. FAIL OPEN and publish: a stale CDN
-            # or a broken build-info is exactly when this needs to run, and
-            # reading "cannot tell" as "current" would make the safety net
-            # silently useless.
-            echo "::notice::build-info.json unreadable - publishing rather than assuming."
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-          elif [ "$LIVE" = "$HEAD_SHA" ]; then
-            echo "::notice::Production already serves ${HEAD_SHA:0:7} - nothing to publish."
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "Production serves ${LIVE:0:7}, main is ${HEAD_SHA:0:7} - publishing."
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-          fi
+          echo "sha=$TARGET" >> "$GITHUB_OUTPUT"
+          echo "Publishing target: ${TARGET:0:7}; current main: ${TIP:0:7}; trigger: ${GITHUB_SHA:0:7}"
 
-  # ═════════════════════════════════════════════════════════════════════════
-  # CLIENT TESTS GATE THE BUNDLE, BUT NO LONGER DELAY IT — split out 2026-08-26.
-  #
-  # This suite used to run as step 5 of build-and-store, IN FRONT of the build.
-  # Measured on run 32993261791, the critical path was:
-  #
-  #     Client tests          5m19s
-  #     Build Club Arena      1m59s
-  #     Checkout World Hub    3m36s
-  #     everything else       ~1m
-  #     ------------------------------
-  #     publish              ~12m
-  #
-  # Pushes land on main every two to three minutes. A twelve minute pipeline
-  # under a two to three minute arrival rate can only ever publish a sha that
-  # is already twelve minutes stale, and every push in between is cancelled
-  # while PENDING by `cancel-in-progress: false` — which is that setting
-  # working correctly, not failing. Production was fourteen commits behind
-  # while every one of those cancels looked like a broken deploy.
-  #
-  # The tests are 13s on a developer machine and 5m19s here because a GitHub
-  # runner has two cores and the suite is ~285s of aggregate work across 429
-  # files. Nothing is misconfigured; it is simply serialised.
-  #
-  # So it runs BESIDE the build instead of in front of it. The gate is exactly
-  # as strong: publish-to-origin needs BOTH jobs, so a red test still stops the
-  # bundle from shipping. It just stops adding its five minutes to the build's
-  # two.
-  # ═════════════════════════════════════════════════════════════════════════
-  # SHARDED 2026-09-02 to unblock publishing. This suite is the authoritative
-  # gate on the bundle (a red test still stops the sync via `needs` below), and
-  # it ran ~11 minutes on one 2-core runner. publish-to-origin waits for it, so
-  # every publish took ~18 minutes end to end - slower than the merge rate, so
-  # production perpetually lagged and intermediate publish runs were cancelled
-  # ("last 3 pushes haven't published"). Nothing was ever lost: main is durable
-  # and the publisher converges to the latest. But the LAG is the bug.
-  #
-  # Four shards run in parallel, so wall clock drops to ~3 minutes and the whole
-  # publish pipeline to ~7. The gate is exactly as strong: publish-to-origin
-  # `needs: [build-and-store, client-tests]`, and `needs` on a matrix waits for
-  # EVERY shard, so one red shard still stops the bundle. fail-fast cancels the
-  # siblings the moment one fails, which is what a gate wants. The self-hosted
-  # runner (CI_RUNNER) will make even this near-instant; until then, shard.
+      # ═════════════════════════════════════════════════════════════════════════
+      # CLIENT TESTS GATE THE BUNDLE, BUT NO LONGER DELAY IT — split out 2026-08-26.
+      #
+      # This suite used to run as step 5 of build-and-store, IN FRONT of the build.
+      # Measured on run 32993261791, the critical path was:
+      #
+      #     Client tests          5m19s
+      #     Build Club Arena      1m59s
+      #     Checkout World Hub    3m36s
+      #     everything else       ~1m
+      #     ------------------------------
+      #     publish              ~12m
+      #
+      # Pushes land on main every two to three minutes. A twelve minute pipeline
+      # under a two to three minute arrival rate can only ever publish a sha that
+      # is already twelve minutes stale, and every push in between is cancelled
+      # while PENDING by `cancel-in-progress: false` — which is that setting
+      # working correctly, not failing. Production was fourteen commits behind
+      # while every one of those cancels looked like a broken deploy.
+      #
+      # The tests are 13s on a developer machine and 5m19s here because a GitHub
+      # runner has two cores and the suite is ~285s of aggregate work across 429
+      # files. Nothing is misconfigured; it is simply serialised.
+      #
+      # So it runs BESIDE the build instead of in front of it. The gate is exactly
+      # as strong: publish-to-origin needs BOTH jobs, so a red test still stops the
+      # bundle from shipping. It just stops adding its five minutes to the build's
+      # two.
+      # ═════════════════════════════════════════════════════════════════════════
+      # SHARDED 2026-09-02 to unblock publishing. This suite is the authoritative
+      # gate on the bundle (a red test still stops the sync via `needs` below), and
+      # it ran ~11 minutes on one 2-core runner. publish-to-origin waits for it, so
+      # every publish took ~18 minutes end to end - slower than the merge rate, so
+      # production perpetually lagged and intermediate publish runs were cancelled
+      # ("last 3 pushes haven't published"). Nothing was ever lost: main is durable
+      # and the publisher converges to the latest. But the LAG is the bug.
+      #
+      # Four shards run in parallel, so wall clock drops to ~3 minutes and the whole
+      # publish pipeline to ~7. The gate is exactly as strong: publish-to-origin
+      # `needs: [build-and-store, client-tests]`, and `needs` on a matrix waits for
+      # EVERY shard, so one red shard still stops the bundle. fail-fast cancels the
+      # siblings the moment one fails, which is what a gate wants. Fresh hosted
+      # images keep the test and release trust domains isolated.
       # ── HAS THIS EXACT TREE ALREADY PASSED THE CLIENT SUITE? ──────────────
       #
       # The publisher re-runs the whole client suite in four shards on every
@@ -258,11 +197,6 @@ jobs:
       # and tests_proven stays false and the shards run.
       - name: Has this exact tree already passed the client suite?
         id: proven
-        # SKIPPED WHEN THERE IS NOTHING TO PUBLISH (2026-09-08). This step made
-        # four gh api calls unconditionally, including on every catch-up cycle
-        # that the dedupe step above had already decided to skip, answering a
-        # question nobody was going to ask.
-        if: steps.dedupe.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -270,22 +204,22 @@ jobs:
           SHA="${{ steps.target.outputs.sha }}"
           echo "tests_proven=false" >> "$GITHUB_OUTPUT"
 
-          TREE=$(gh api "repos/${{ github.repository }}/commits/$SHA" --jq .commit.tree.sha 2>/dev/null || echo "")
+          TREE=$(timeout 30s gh api "repos/${{ github.repository }}/commits/$SHA" --jq .commit.tree.sha 2>/dev/null || echo "")
           [ -z "$TREE" ] && { echo "::notice::could not read the target tree - running the shards."; exit 0; }
 
-          PR=$(gh api "repos/${{ github.repository }}/commits/$SHA/pulls" --jq '.[0].number' 2>/dev/null || echo "")
+          PR=$(timeout 30s gh api "repos/${{ github.repository }}/commits/$SHA/pulls" --jq '.[0].number' 2>/dev/null || echo "")
           [ -z "$PR" ] || [ "$PR" = "null" ] && { echo "::notice::no source pull request for ${SHA:0:7} - running the shards."; exit 0; }
 
-          HEAD=$(gh api "repos/${{ github.repository }}/pulls/$PR" --jq .head.sha 2>/dev/null || echo "")
+          HEAD=$(timeout 30s gh api "repos/${{ github.repository }}/pulls/$PR" --jq .head.sha 2>/dev/null || echo "")
           [ -z "$HEAD" ] && { echo "::notice::could not read PR #$PR head - running the shards."; exit 0; }
 
-          HEAD_TREE=$(gh api "repos/${{ github.repository }}/commits/$HEAD" --jq .commit.tree.sha 2>/dev/null || echo "")
+          HEAD_TREE=$(timeout 30s gh api "repos/${{ github.repository }}/commits/$HEAD" --jq .commit.tree.sha 2>/dev/null || echo "")
           if [ "$TREE" != "$HEAD_TREE" ]; then
             echo "::notice::tree ${TREE:0:7} differs from PR #$PR head tree ${HEAD_TREE:0:7} - main moved, running the shards."
             exit 0
           fi
 
-          OK=$(gh api "repos/${{ github.repository }}/commits/$HEAD/check-runs?per_page=100" \
+          OK=$(timeout 30s gh api "repos/${{ github.repository }}/commits/$HEAD/check-runs?per_page=100" \
                  --jq '[.check_runs[] | select(.name=="Client Unit Tests (vitest)" and .conclusion=="success")] | length' 2>/dev/null || echo 0)
           if [ "${OK:-0}" -ge 1 ]; then
             echo "tests_proven=true" >> "$GITHUB_OUTPUT"
@@ -299,8 +233,9 @@ jobs:
     # Runs unless this exact TREE already passed the same suite on the pull
     # request head. See "Has this exact tree already passed" above - it compares
     # tree hashes, not merge lineage, and fails closed.
-    if: needs.publish-needed.outputs.skip != 'true' && needs.publish-needed.outputs.tests_proven != 'true'
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    if: needs.publish-needed.outputs.tests_proven != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: read
     strategy:
@@ -340,8 +275,8 @@ jobs:
 
   build-and-store:
     needs: publish-needed
-    if: needs.publish-needed.outputs.skip != 'true'
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       # read is enough now: this job uploads an artifact instead of pushing a
       # branch, so it no longer writes to the repository at all.
@@ -507,6 +442,26 @@ jobs:
           JSON
           cat dist/build-info.json
 
+      # The artifact courier authenticates the upload/download envelope, while
+      # this manifest authenticates every byte after rsync and makes an existing
+      # releases/<sha> directory immutable: a retry may reuse it only when the
+      # complete manifest and every recorded file still agree.
+      - name: Seal the immutable release bytes
+        run: |
+          set -euo pipefail
+          if find dist -type l -print -quit | grep -q .; then
+            echo '::error::dist contains a symlink; refusing a release that can escape its root.'
+            exit 1
+          fi
+          (
+            cd dist
+            find . -type f ! -path './.release-manifest.sha256' -print0 \
+              | LC_ALL=C sort -z \
+              | xargs -0 sha256sum > .release-manifest.sha256
+            test -s .release-manifest.sha256
+            sha256sum --strict -c .release-manifest.sha256
+          )
+
       # THE COURIER IS AN ARTIFACT, NOT A BRANCH (2026-08-23).
       #
       # This step used to force-push dist/ to an orphan branch
@@ -535,8 +490,14 @@ jobs:
         with:
           name: club-arena-dist-${{ needs.publish-needed.outputs.target_sha }}
           path: dist
-          # A courier, not a record: the World Hub sync commit is the
-          # permanent copy. One day is plenty for a retry.
+          # upload-artifact excludes dotfiles unless this is explicit. The
+          # release seal is intentionally named .release-manifest.sha256, so
+          # omitting hidden files would make every origin publish fail before
+          # transfer and would separate the bytes from their integrity proof.
+          include-hidden-files: true
+          # A courier, not a record: the immutable Hetzner release directory
+          # and its build stamp are the permanent copy. One day is enough for
+          # a retry.
           retention-days: 1
           if-no-files-found: error
           compression-level: 6
@@ -558,7 +519,6 @@ jobs:
           echo "dist uploaded as artifact \`club-arena-dist-${{ needs.publish-needed.outputs.target_sha }}\`" >> $GITHUB_STEP_SUMMARY
           echo "Proceeding to publish to the origin..." >> $GITHUB_STEP_SUMMARY
 
-
   # ═══════════════════════════════════════════════════════════════════════════
   #  THE APP (store readiness, phase 6): the same merge reaches installed
   #  phones over the air.
@@ -574,8 +534,7 @@ jobs:
   # This is NOT a second publisher - it is a job in the one publisher, gated
   # on the same build and the same test shards, and it ships only after the
   # origin was verified serving the same commit (`needs: publish-to-origin`;
-  # it sits above that job in this file only because the no-commit-left-behind
-  # law reads everything after the Converge step as part of that step).
+  # it sits above that job only to keep the build jobs grouped together).
   # `tests/no-commit-left-behind` counts workflows with a publish-to-origin
   # job, and there is still one.
   #
@@ -597,12 +556,9 @@ jobs:
     # is skipped and the web publish is untouched. On, the job must have the
     # CAPGO_TOKEN secret too, and fails loudly if it does not - an enabled
     # switch with no token is a misconfiguration, not a quiet no-op.
-    # A successful origin job can also mean it stood down for a newer bundle.
-    # Only the exact target confirmed by its HTTP verification may reach OTA.
     if: >-
       always() &&
       vars.CAPGO_OTA_ENABLED == 'true' &&
-      needs.publish-needed.outputs.skip != 'true' &&
       needs.build-and-store.result == 'success' &&
       needs.publish-to-origin.result == 'success' &&
       needs.publish-to-origin.outputs.verified_sha != '' &&
@@ -610,7 +566,8 @@ jobs:
       (needs.client-tests.result == 'success' ||
        (needs.client-tests.result == 'skipped' &&
         needs.publish-needed.outputs.tests_proven == 'true'))
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read
     env:
@@ -685,23 +642,11 @@ jobs:
           echo "- OTA: bundle \`${VERSION}\` (\`${SHA:0:7}\`) uploaded to channel \`${CHANNEL}\`" >> $GITHUB_STEP_SUMMARY
 
   publish-to-origin:
-    outputs:
-      verified_sha: ${{ steps.verified.outputs.sha }}
-    # ── THE PUBLISH (rewritten 2026-09-03) ────────────────────────────────────
-    # Club Arena no longer travels through the World Hub repository. Until today
-    # this job committed dist/ into World Hub's public/hub/club-arena/ and Vercel
-    # rebuilt the entire World Hub (4-5 minutes, ~20 times a day) to serve it,
-    # leaving a `chore(club-arena): sync build` commit in that repo each time.
-    #
-    # Now: dist/ is rsync'd to the static origin (Caddy on estate-ci-1,
-    # ca-static.smarter.poker) as /srv/club-arena/releases/<ca_sha>/ and the
-    # `current` symlink is swapped atomically. World Hub carries ONE rewrite,
-    # /hub/club-arena/* -> the origin, so the player is still on smarter.poker
-    # and the shared session still works. A publish is seconds, not minutes;
-    # a rollback is re-pointing the symlink; ten releases are kept.
-    #
-    # The gate is unchanged: this job needs BOTH the build and every test
-    # shard, so a red test still ships nothing.
+    # The Club Arena repository owns this one Hetzner publisher. The release is
+    # transferred into a run-unique incoming directory, verified byte-for-byte,
+    # and activated under one host lock only if `current` still names the SHA
+    # observed by the ancestry check. The final symlink rename is the last
+    # mutation, so a crash cannot expose a partial release.
     needs: [publish-needed, build-and-store, client-tests]
     # MUST be always() with explicit results.
     #
@@ -716,23 +661,34 @@ jobs:
     # unnecessary. A client-tests FAILURE still stops the publish.
     if: >-
       always() &&
-      needs.publish-needed.outputs.skip != 'true' &&
       needs.build-and-store.result == 'success' &&
       (needs.client-tests.result == 'success' ||
        (needs.client-tests.result == 'skipped' &&
         needs.publish-needed.outputs.tests_proven == 'true'))
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
     permissions:
       contents: read
-      actions: write
+      actions: read
+    outputs:
+      verdict: ${{ steps.verdict.outputs.verdict }}
+      verified_sha: ${{ steps.verified.outputs.sha }}
     env:
       ORIGIN_HOST: ${{ secrets.CA_ORIGIN_HOST }}
       ORIGIN_USER: ci
       ORIGIN_ROOT: /srv/club-arena
       ORIGIN_URL: https://ca-static.smarter.poker
+      PUBLIC_URL: https://smarter.poker/hub/club-arena
       KEEP_RELEASES: '10'
 
     steps:
+      - name: Checkout the exact protected-main publish control
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.publish-needed.outputs.target_sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
       - name: Download the dist built by the previous job
         uses: actions/download-artifact@v4
         with:
@@ -745,9 +701,16 @@ jobs:
           HOST_KEY: ${{ secrets.CA_ORIGIN_HOST_KEY }}
         run: |
           set -euo pipefail
+          [[ "$ORIGIN_HOST" =~ ^[A-Za-z0-9.-]+$ ]] \
+            || { echo '::error::CA_ORIGIN_HOST is absent or malformed.'; exit 1; }
+          [ -n "$KEY" ] && [ -n "$HOST_KEY" ] \
+            || { echo '::error::Club Arena origin credentials are incomplete.'; exit 1; }
+          umask 077
           mkdir -p ~/.ssh && chmod 700 ~/.ssh
           printf '%s\n' "$KEY" > ~/.ssh/ca_origin && chmod 600 ~/.ssh/ca_origin
-          printf '%s\n' "$HOST_KEY" > ~/.ssh/ca_origin_known_hosts && chmod 644 ~/.ssh/ca_origin_known_hosts
+          printf '%s\n' "$HOST_KEY" > ~/.ssh/ca_origin_known_hosts && chmod 600 ~/.ssh/ca_origin_known_hosts
+          timeout 5s ssh-keygen -y -f ~/.ssh/ca_origin >/dev/null
+          ssh-keygen -l -f ~/.ssh/ca_origin_known_hosts >/dev/null
 
       - name: Stand down if the origin already serves a newer bundle
         id: verdict
@@ -755,201 +718,715 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          SSH="ssh -i $HOME/.ssh/ca_origin -o UserKnownHostsFile=$HOME/.ssh/ca_origin_known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes -o ConnectTimeout=25 $ORIGIN_USER@$ORIGIN_HOST"
-          OURS_SHA=$(sed -n 's/.*"ca_sha"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' dist/build-info.json)
-          THEIRS_JSON=$($SSH "cat $ORIGIN_ROOT/current/build-info.json 2>/dev/null" || true)
-          THEIRS_SHA=$(printf '%s' "$THEIRS_JSON" | sed -n 's/.*"ca_sha"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
-          # The same rule the World Hub sync had: the bundle already served may
-          # be NEWER than ours when two publishes raced, and newer wins.
-          VERDICT=publish
-          if [ -n "$THEIRS_SHA" ] && [ "$THEIRS_SHA" != "$OURS_SHA" ]; then
-            STATUS=$(gh api "repos/${{ github.repository }}/compare/${THEIRS_SHA}...${OURS_SHA}" --jq .status 2>/dev/null || echo "")
-            echo "origin serves ${THEIRS_SHA:0:7}; ours ${OURS_SHA:0:7} is: ${STATUS:-unknown}"
-            case "$STATUS" in behind) VERDICT=standdown ;; esac
+          SSH_OPTIONS=(
+            -i "$HOME/.ssh/ca_origin"
+            -o "UserKnownHostsFile=$HOME/.ssh/ca_origin_known_hosts"
+            -o GlobalKnownHostsFile=/dev/null
+            -o StrictHostKeyChecking=yes
+            -o IdentitiesOnly=yes
+            -o BatchMode=yes
+            -o ConnectTimeout=25
+            -o ServerAliveInterval=10
+            -o ServerAliveCountMax=2
+          )
+          EXPECTED_SHA="${{ needs.publish-needed.outputs.target_sha }}"
+          node - "$EXPECTED_SHA" "${{ github.repository }}" "${{ github.run_id }}" <<'NODE'
+          const fs = require('node:fs');
+          const [expectedSha, repository, runId] = process.argv.slice(2);
+          let provenance;
+          try {
+            provenance = JSON.parse(fs.readFileSync('dist/ca-provenance.json', 'utf8'));
+          } catch (error) {
+            console.error(`::error::Build provenance is absent or malformed: ${error.message}`);
+            process.exit(1);
+          }
+          const expectedRun = `https://github.com/${repository}/actions/runs/${runId}`;
+          const valid =
+            provenance &&
+            !Array.isArray(provenance) &&
+            provenance.schema === 1 &&
+            provenance.commit === expectedSha &&
+            provenance.builtBy === 'github-actions' &&
+            provenance.dirty === false &&
+            provenance.historyComplete === true &&
+            provenance.behindMain === 0 &&
+            provenance.aheadMain === 0 &&
+            provenance.ciRun === expectedRun;
+          if (!valid) {
+            console.error('::error::Build provenance does not prove this exact clean protected-main CI build.');
+            process.exit(1);
+          }
+          NODE
+          OURS_SHA=$(node scripts/ci/production-e2e-provenance.mjs build-info < dist/build-info.json)
+          [[ "$OURS_SHA" =~ ^[0-9a-f]{40}$ ]] \
+            || { echo '::error::Built artifact has no valid full ca_sha.'; exit 1; }
+          [ "$OURS_SHA" = "$EXPECTED_SHA" ] \
+            || { echo '::error::Artifact provenance does not equal the protected-main publish target.'; exit 1; }
+          test -f dist/index.html && test -s dist/.release-manifest.sha256
+          if find dist -type l -print -quit | grep -q .; then
+            echo '::error::Downloaded release contains a symlink.'
+            exit 1
           fi
-          echo "verdict=$VERDICT" >> "$GITHUB_OUTPUT"
-          echo "ours=$OURS_SHA" >> "$GITHUB_OUTPUT"
+          (cd dist && sha256sum --strict -c .release-manifest.sha256 >/dev/null)
+
+          THEIRS_JSON=$(timeout 35s ssh "${SSH_OPTIONS[@]}" "$ORIGIN_USER@$ORIGIN_HOST" \
+            "cat $ORIGIN_ROOT/current/build-info.json 2>/dev/null" || true)
+          if ! THEIRS_SHA=$(printf '%s' "$THEIRS_JSON" \
+            | node scripts/ci/production-e2e-provenance.mjs build-info); then
+            echo '::error::Origin provenance is not one valid build-info JSON object.'
+            exit 1
+          fi
+          [[ "$THEIRS_SHA" =~ ^[0-9a-f]{40}$ ]] \
+            || { echo '::error::Origin provenance is unreadable; refusing an unorderable publish.'; exit 1; }
+          # The bundle already served may be newer than ours when two publishes
+          # raced, and newer wins. Unknown or diverged ancestry fails closed.
+          VERDICT=publish
+          if [ "$THEIRS_SHA" != "$OURS_SHA" ]; then
+            STATUS=$(timeout 30s gh api "repos/${{ github.repository }}/compare/${THEIRS_SHA}...${OURS_SHA}" --jq .status 2>/dev/null || echo "")
+            echo "origin serves ${THEIRS_SHA:0:7}; ours ${OURS_SHA:0:7} is: ${STATUS:-unknown}"
+            case "$STATUS" in
+              ahead) VERDICT=publish ;;
+              behind) VERDICT=standdown ;;
+              *) echo "::error::Cannot prove the candidate is a forward Club Arena release (status=${STATUS:-unknown})."; exit 1 ;;
+            esac
+          fi
+          {
+            echo "verdict=$VERDICT"
+            echo "ours=$OURS_SHA"
+            echo "theirs=$THEIRS_SHA"
+          } >> "$GITHUB_OUTPUT"
           [ "$VERDICT" = "standdown" ] && echo "::notice::origin already serves a newer bundle (${THEIRS_SHA:0:7}); standing down." || true
 
-      - name: Publish - rsync the release, swap the symlink, prune
+      - name: Publish through the host-owned immutable transaction
         if: steps.verdict.outputs.verdict == 'publish'
         run: |
           set -euo pipefail
           SHA="${{ steps.verdict.outputs.ours }}"
-          # ONE HANDSHAKE, NOT FIVE (2026-09-08). This step opens a separate
-          # SSH connection for every rsync and every remote command - the
-          # verify probe, three rsyncs, two command sessions - each paying a
-          # full TCP + key exchange at -o ConnectTimeout=25 to a box in
-          # another datacentre. ControlMaster makes the first one carry the
-          # rest and closes 60s after the last.
-          #
-          # It degrades safely: if the socket cannot be created, ssh warns and
-          # opens a normal connection, which is exactly today's behaviour. The
-          # path is kept short deliberately - a Unix socket path is capped near
-          # 104 characters and $HOME on a runner is already long.
+          EXPECTED_SHA="${{ steps.verdict.outputs.theirs }}"
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] && [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$GITHUB_RUN_ID" =~ ^[0-9]+$ ]] && [[ "$GITHUB_RUN_ATTEMPT" =~ ^[0-9]+$ ]]
+          STAGE_NAME="${SHA}.${GITHUB_RUN_ID}.${GITHUB_RUN_ATTEMPT}"
+
           mkdir -p /tmp/cacm
-          SSHOPTS="-i $HOME/.ssh/ca_origin -o UserKnownHostsFile=$HOME/.ssh/ca_origin_known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes -o ConnectTimeout=25 -o ControlMaster=auto -o ControlPath=/tmp/cacm/%C -o ControlPersist=60"
-          SSH="ssh $SSHOPTS $ORIGIN_USER@$ORIGIN_HOST"
-          test -f dist/index.html && test -f dist/build-info.json
-          # The release directory is written in full BEFORE anything points at
-          # it, so a player never sees a half-copied bundle. rsync is idempotent:
-          # a re-run of the same sha converges on the same tree.
-          # --link-dest AGAINST THE LIVE RELEASE (2026-09-08). releases/$SHA/
-          # never exists before this line, so rsync had nothing to compare
-          # against and transferred 100% of an 84MB bundle every publish -
-          # and --delete was a no-op into an empty directory. Pointing it at
-          # current/ lets rsync HARDLINK every chunk whose hash did not change
-          # (most of them, most publishes) and send only what is new.
-          #
-          # Hardlinks are safe with the prune below: deleting an old release
-          # only drops a link, and the bytes survive as long as any release
-          # still references them. Releases are immutable, so nothing is ever
-          # edited in place through a shared inode. If current/ is missing on
-          # a first publish, rsync ignores the option and copies everything -
-          # today's behaviour.
-          rsync -az --delete --link-dest="$ORIGIN_ROOT/current/" -e "ssh $SSHOPTS" dist/ "$ORIGIN_USER@$ORIGIN_HOST:$ORIGIN_ROOT/releases/$SHA/"
-          # RUNTIME ASSET RETENTION. A player whose tab still holds the previous
-          # index.html asks for the previous hashed assets mid-hand. The World
-          # Hub sync kept one earlier generation for this; the origin keeps an
-          # ADDITIVE pool of every hashed asset and font, served for /assets/*
-          # and /fonts/*, pruned by age (30 days) and never by "not in this
-          # bundle". No --delete here, ever.
-          rsync -az -e "ssh $SSHOPTS" dist/assets/ "$ORIGIN_USER@$ORIGIN_HOST:$ORIGIN_ROOT/pool/assets/"
-          rsync -az -e "ssh $SSHOPTS" dist/fonts/  "$ORIGIN_USER@$ORIGIN_HOST:$ORIGIN_ROOT/pool/fonts/"
-          $SSH "set -e; cd $ORIGIN_ROOT && ln -sfn $ORIGIN_ROOT/releases/$SHA current.tmp && mv -Tf current.tmp current && ls -1dt releases/*/ | tail -n +$((KEEP_RELEASES+1)) | xargs -r rm -rf && find pool -type f -mtime +30 -delete && readlink current"
-          # THE POOL STILL HOLDS OLD SOURCE MAPS (added 2026-09-04).
-          #
-          # The build step above strips every .map from dist/ now, so no new
-          # one can reach the origin. But the pool is ADDITIVE by design and
-          # age-pruned at 30 days, so every map published before that fix keeps
-          # being served for up to a month - 267 files, 27MB, of readable
-          # source, per deploy, going back weeks.
-          #
-          # Deleting them from the pool is safe in a way that deleting anything
-          # else from it is NOT, and the distinction is the whole reason this is
-          # a separate line rather than a --delete on the rsync above: a player
-          # mid-hand asks for a hashed CHUNK, never for its map. A .map is
-          # fetched only by devtools, and only when a human opens them. Nothing
-          # a running app loads can 404 because of this.
-          #
-          # Idempotent and self-limiting: once the pool is clean it matches
-          # nothing and costs one find per publish.
-          $SSH "set -e; cd $ORIGIN_ROOT && N=\$(find pool -type f -name '*.map' | wc -l) && find pool -type f -name '*.map' -delete && echo \"source maps removed from the additive pool: \$N\""
+          SSH_OPTIONS=(
+            -i "$HOME/.ssh/ca_origin"
+            -o "UserKnownHostsFile=$HOME/.ssh/ca_origin_known_hosts"
+            -o GlobalKnownHostsFile=/dev/null
+            -o StrictHostKeyChecking=yes
+            -o IdentitiesOnly=yes
+            -o BatchMode=yes
+            -o ConnectTimeout=25
+            -o ServerAliveInterval=10
+            -o ServerAliveCountMax=2
+            -o ControlMaster=auto
+            -o ControlPath=/tmp/cacm/%C
+            -o ControlPersist=60
+          )
+          RSYNC_RSH="ssh -i $HOME/.ssh/ca_origin -o UserKnownHostsFile=$HOME/.ssh/ca_origin_known_hosts -o GlobalKnownHostsFile=/dev/null -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=25 -o ServerAliveInterval=10 -o ServerAliveCountMax=2 -o ControlMaster=auto -o ControlPath=/tmp/cacm/%C -o ControlPersist=60"
+
+          # A run owns one fresh incoming directory. A pre-existing directory
+          # for the same run/attempt is evidence of an incomplete invocation,
+          # not something whose unknown bytes may be reused.
+          timeout 45s ssh "${SSH_OPTIONS[@]}" "$ORIGIN_USER@$ORIGIN_HOST" bash -s -- \
+            "$ORIGIN_ROOT" "$STAGE_NAME" <<'REMOTE_STAGE'
+          set -euo pipefail
+          ROOT="$1"
+          STAGE_NAME="$2"
+          [ "$ROOT" = /srv/club-arena ]
+          [[ "$STAGE_NAME" =~ ^[0-9a-f]{40}\.[0-9]+\.[0-9]+$ ]]
+          install -d -m 0755 "$ROOT/incoming" "$ROOT/releases" "$ROOT/pool/assets" "$ROOT/pool/fonts"
+          for DIRECTORY in "$ROOT" "$ROOT/incoming" "$ROOT/releases" "$ROOT/pool" "$ROOT/pool/assets" "$ROOT/pool/fonts"; do
+            [ -d "$DIRECTORY" ] && [ ! -L "$DIRECTORY" ]
+          done
+          [ ! -e "$ROOT/incoming/$STAGE_NAME" ] && [ ! -L "$ROOT/incoming/$STAGE_NAME" ]
+          install -d -m 0755 "$ROOT/incoming/$STAGE_NAME"
+          REMOTE_STAGE
+
+          # --fsync makes each receiver-side file durable before the host can
+          # activate the release. The host populates the additive runtime pool
+          # from these verified bytes while it holds the same activation lock.
+          timeout 240s rsync -az --delete --fsync --link-dest="$ORIGIN_ROOT/current/" \
+            -e "$RSYNC_RSH" dist/ \
+            "$ORIGIN_USER@$ORIGIN_HOST:$ORIGIN_ROOT/incoming/$STAGE_NAME/"
+
+          timeout 180s ssh "${SSH_OPTIONS[@]}" "$ORIGIN_USER@$ORIGIN_HOST" bash -s -- \
+            "$ORIGIN_ROOT" "$SHA" "$EXPECTED_SHA" "$STAGE_NAME" "$KEEP_RELEASES" \
+            "${{ github.repository }}" <<'REMOTE_ACTIVATE'
+          set -euo pipefail
+          ROOT="$1"
+          SHA="$2"
+          EXPECTED_SHA="$3"
+          STAGE_NAME="$4"
+          KEEP_RELEASES="$5"
+          REPOSITORY="$6"
+          [ "$ROOT" = /srv/club-arena ]
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$STAGE_NAME" =~ ^${SHA}\.[0-9]+\.[0-9]+$ ]]
+          [[ "$KEEP_RELEASES" =~ ^[1-9][0-9]*$ ]]
+          [[ "$REPOSITORY" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]
+          command -v flock >/dev/null
+          command -v python3 >/dev/null
+          command -v rsync >/dev/null
+          command -v sha256sum >/dev/null
+          command -v sync >/dev/null
+
+          STAGE="$ROOT/incoming/$STAGE_NAME"
+          FINAL="$ROOT/releases/$SHA"
+          NEXT="$ROOT/.current.$STAGE_NAME"
+          CHECK="$ROOT/incoming/.manifest-check.$STAGE_NAME"
+          LEGACY_MANIFEST="$ROOT/incoming/.legacy-release-manifest.$STAGE_NAME"
+          FONT_NEXT="$ROOT/pool/fonts/.fonts.css.$STAGE_NAME"
+          for DIRECTORY in "$ROOT" "$ROOT/incoming" "$ROOT/releases" "$ROOT/pool" "$ROOT/pool/assets" "$ROOT/pool/fonts"; do
+            [ -d "$DIRECTORY" ] && [ ! -L "$DIRECTORY" ]
+          done
+          [ ! -L "$ROOT/.publish.lock" ]
+          for TEMPORARY in "$NEXT" "$CHECK" "$LEGACY_MANIFEST" "$FONT_NEXT"; do
+            [ ! -e "$TEMPORARY" ] && [ ! -L "$TEMPORARY" ]
+          done
+          trap 'rm -f -- "$NEXT" "$CHECK" "$LEGACY_MANIFEST" "$FONT_NEXT"' EXIT
+          exec 9>"$ROOT/.publish.lock"
+          flock -w 45 9
+
+          read_exact_build_info_sha() {
+            local build_info_path="$1"
+            python3 - "$build_info_path" <<'PYTHON_BUILD_INFO'
+          import json
+          import re
+          import sys
+
+          try:
+              with open(sys.argv[1], encoding='utf-8') as handle:
+                  build_info = json.load(handle)
+          except (OSError, UnicodeError, json.JSONDecodeError) as error:
+              raise SystemExit(f'build-info is absent or malformed: {error}')
+          if type(build_info) is not dict:
+              raise SystemExit('build-info must be one JSON object')
+          sha = build_info.get('ca_sha')
+          if type(sha) is not str or re.fullmatch(r'[0-9a-f]{40}', sha) is None:
+              raise SystemExit('build-info has no full lowercase ca_sha')
+          print(sha)
+          PYTHON_BUILD_INFO
+          }
+
+          verify_release_identity() {
+            local release_dir="$1"
+            local expected_sha="$2"
+            local repository="$3"
+            python3 - \
+              "$release_dir/ca-provenance.json" \
+              "$release_dir/build-info.json" \
+              "$expected_sha" \
+              "$repository" <<'PYTHON_RELEASE_IDENTITY'
+          import json
+          import re
+          import sys
+
+          provenance_path, build_info_path, expected_sha, repository = sys.argv[1:]
+          try:
+              with open(provenance_path, encoding='utf-8') as handle:
+                  provenance = json.load(handle)
+              with open(build_info_path, encoding='utf-8') as handle:
+                  build_info = json.load(handle)
+          except (OSError, UnicodeError, json.JSONDecodeError) as error:
+              raise SystemExit(f'release identity is absent or malformed: {error}')
+
+          def require(condition, message):
+              if not condition:
+                  raise SystemExit(message)
+
+          require(type(provenance) is dict, 'release provenance is not one JSON object')
+          require(type(build_info) is dict, 'release build-info is not one JSON object')
+          require(type(provenance.get('schema')) is int and provenance['schema'] == 1,
+                  'release provenance schema is invalid')
+          require(provenance.get('commit') == expected_sha,
+                  'release provenance does not match its source SHA')
+          require(provenance.get('builtBy') == 'github-actions',
+                  'release was not built by GitHub Actions')
+          require(provenance.get('dirty') is False,
+                  'release provenance is dirty')
+          require(provenance.get('historyComplete') is True,
+                  'release provenance has incomplete history')
+          require(type(provenance.get('behindMain')) is int and provenance['behindMain'] == 0,
+                  'release provenance was behind protected main')
+          require(type(provenance.get('aheadMain')) is int and provenance['aheadMain'] == 0,
+                  'release provenance was ahead of protected main')
+          require(build_info.get('ca_sha') == expected_sha,
+                  'release build-info does not match its source SHA')
+          require(build_info.get('built_by') == 'publish-club-arena.yml',
+                  'release build-info names the wrong publisher')
+          require(type(build_info.get('built_at')) is str and
+                  re.fullmatch(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z', build_info['built_at']) is not None,
+                  'release build-info has no UTC build time')
+          require(type(build_info.get('run_id')) is str and
+                  re.fullmatch(r'[0-9]+', build_info['run_id']) is not None,
+                  'release build-info names no exact publisher run')
+          expected_run = f"https://github.com/{repository}/actions/runs/{build_info['run_id']}"
+          require(provenance.get('ciRun') == expected_run,
+                  'release provenance and build-info name different publisher runs')
+          PYTHON_RELEASE_IDENTITY
+          }
+
+          verify_complete_manifest() {
+            local release_dir="$1"
+            local check_path="$2"
+            (
+              cd "$release_dir"
+              find . -type f ! -path './.release-manifest.sha256' -print0 \
+                | LC_ALL=C sort -z \
+                | xargs -0 sha256sum > "$check_path"
+            )
+            cmp -s "$check_path" "$release_dir/.release-manifest.sha256"
+            rm -f -- "$check_path"
+          }
+
+          seal_current_release_for_rollback() {
+            local current_pointer="$1"
+            local release_dir="$2"
+            local expected_sha="$3"
+            local repository="$4"
+            local staged_manifest="$5"
+            local check_path="$6"
+            local manifest="$release_dir/.release-manifest.sha256"
+
+            [ -L "$current_pointer" ] && [ "$(readlink "$current_pointer")" = "$release_dir" ]
+            [ -d "$release_dir" ] && [ ! -L "$release_dir" ]
+            if find "$release_dir" -type l -print -quit | grep -q .; then
+              echo 'current rollback release contains a symlink' >&2
+              return 1
+            fi
+            if find "$release_dir" ! -type d ! -type f -print -quit | grep -q .; then
+              echo 'current rollback release contains a special file' >&2
+              return 1
+            fi
+            verify_release_identity "$release_dir" "$expected_sha" "$repository"
+
+            if [ -e "$manifest" ] || [ -L "$manifest" ]; then
+              [ -f "$manifest" ] && [ ! -L "$manifest" ] && [ -s "$manifest" ] \
+                || { echo 'current rollback release manifest is malformed' >&2; return 1; }
+            else
+              [ ! -e "$staged_manifest" ] && [ ! -L "$staged_manifest" ]
+              python3 - "$release_dir" "$staged_manifest" <<'PYTHON_SAME_FILESYSTEM'
+          import os
+          import sys
+
+          if os.stat(sys.argv[1]).st_dev != os.stat(os.path.dirname(sys.argv[2])).st_dev:
+              raise SystemExit('legacy manifest staging is not on the release filesystem')
+          PYTHON_SAME_FILESYSTEM
+              (
+                cd "$release_dir"
+                find . -type f ! -path './.release-manifest.sha256' -print0 \
+                  | LC_ALL=C sort -z \
+                  | xargs -0 sha256sum > "$staged_manifest"
+                test -s "$staged_manifest"
+                sha256sum --strict -c "$staged_manifest" >/dev/null
+                find . -type f ! -path './.release-manifest.sha256' -print0 \
+                  | LC_ALL=C sort -z \
+                  | xargs -0 sha256sum > "$check_path"
+              )
+              cmp -s "$staged_manifest" "$check_path"
+              rm -f -- "$check_path"
+              sync -f "$staged_manifest"
+              [ "$(readlink "$current_pointer")" = "$release_dir" ]
+              mv -Tf "$staged_manifest" "$manifest"
+              sync -f "$release_dir"
+            fi
+
+            (cd "$release_dir" && sha256sum --strict -c .release-manifest.sha256 >/dev/null)
+            verify_complete_manifest "$release_dir" "$check_path"
+          }
+
+          CURRENT_SHA=$(read_exact_build_info_sha "$ROOT/current/build-info.json")
+          [ -L "$ROOT/current" ]
+          [ "$(readlink "$ROOT/current")" = "$ROOT/releases/$CURRENT_SHA" ]
+          if [ "$CURRENT_SHA" != "$EXPECTED_SHA" ] && [ "$CURRENT_SHA" != "$SHA" ]; then
+            echo "current changed from ${EXPECTED_SHA:0:7} to ${CURRENT_SHA:0:7}; refusing stale activation" >&2
+            exit 75
+          fi
+          CURRENT_RELEASE="$ROOT/releases/$CURRENT_SHA"
+          seal_current_release_for_rollback \
+            "$ROOT/current" \
+            "$CURRENT_RELEASE" \
+            "$CURRENT_SHA" \
+            "$REPOSITORY" \
+            "$LEGACY_MANIFEST" \
+            "$CHECK"
+
+          test -d "$STAGE"
+          test -s "$STAGE/.release-manifest.sha256"
+          if find "$STAGE" -type l -print -quit | grep -q .; then
+            echo 'incoming release contains a symlink' >&2
+            exit 1
+          fi
+          if find "$STAGE" ! -type d ! -type f -print -quit | grep -q .; then
+            echo 'incoming release contains a special file' >&2
+            exit 1
+          fi
+          (cd "$STAGE" && sha256sum --strict -c .release-manifest.sha256 >/dev/null)
+          STAGED_SHA=$(read_exact_build_info_sha "$STAGE/build-info.json")
+          [ "$STAGED_SHA" = "$SHA" ]
+
+          verify_complete_manifest "$STAGE" "$CHECK"
+
+          if [ -e "$FINAL" ] || [ -L "$FINAL" ]; then
+            [ -d "$FINAL" ] && [ ! -L "$FINAL" ]
+            test -s "$FINAL/.release-manifest.sha256"
+            if find "$FINAL" -type l -print -quit | grep -q .; then
+              echo 'sealed release contains a symlink' >&2
+              exit 1
+            fi
+            if find "$FINAL" ! -type d ! -type f -print -quit | grep -q .; then
+              echo 'sealed release contains a special file' >&2
+              exit 1
+            fi
+            (cd "$FINAL" && sha256sum --strict -c .release-manifest.sha256 >/dev/null)
+            verify_complete_manifest "$FINAL" "$CHECK"
+            # One source commit deliberately produces different envelope bytes
+            # on a later build (build time, run id and service-worker deploy
+            # stamp). The first complete releases/<sha> is canonical. A retry
+            # must validate and reuse it, not demand that a nondeterministic
+            # rebuild have the same manifest or replace immutable bytes.
+            verify_release_identity "$FINAL" "$SHA" "$REPOSITORY"
+            echo "reusing the already sealed immutable release for ${SHA:0:7}"
+            rm -rf -- "$STAGE"
+          else
+            mv -- "$STAGE" "$FINAL"
+          fi
+
+          # Runtime URLs are append-only so tabs opened on an older release keep
+          # working mid-hand. Not every file under assets/ has a content hash in
+          # its name, so an existing path may only be reused for identical bytes.
+          # Reject a collision before copying anything, then use --ignore-existing
+          # so even a stable path can never be overwritten in place. The one
+          # unhashed font stylesheet is a stable symlink through `current`, so it
+          # changes in the same atomic rename as the release.
+          test -d "$FINAL/assets" && test -d "$FINAL/fonts"
+          test -f "$FINAL/fonts/fonts.css"
+
+          adopt_legacy_font_stylesheet_pointer() {
+            local pointer="$1"
+            local current_stylesheet="$2"
+            local staged_pointer="$3"
+
+            # The publisher that preceded this transaction copied fonts.css
+            # into the additive pool as a regular file. Adopt that one known
+            # legacy shape only when its bytes are exactly what `current`
+            # already serves. Every other pre-existing shape fails closed.
+            if [ -L "$pointer" ]; then
+              [ "$(readlink "$pointer")" = "$current_stylesheet" ] \
+                || { echo 'mutable font stylesheet pointer is malformed' >&2; return 1; }
+              return 0
+            fi
+            [ -e "$pointer" ] || return 0
+            [ -f "$pointer" ] && [ ! -L "$pointer" ] \
+              || { echo 'legacy mutable font stylesheet is not a regular file' >&2; return 1; }
+            [ -f "$current_stylesheet" ] && [ ! -L "$current_stylesheet" ] \
+              || { echo 'current release font stylesheet is not a regular file' >&2; return 1; }
+            cmp -s "$pointer" "$current_stylesheet" \
+              || { echo 'legacy mutable font stylesheet differs from current release' >&2; return 1; }
+            [ ! -e "$staged_pointer" ] && [ ! -L "$staged_pointer" ] \
+              || { echo 'font stylesheet staging path already exists' >&2; return 1; }
+            ln -s "$current_stylesheet" "$staged_pointer"
+            mv -Tf "$staged_pointer" "$pointer"
+            [ -L "$pointer" ] && [ "$(readlink "$pointer")" = "$current_stylesheet" ] \
+              || { echo 'legacy font stylesheet adoption did not create the canonical pointer' >&2; return 1; }
+          }
+
+          assert_additive_pool_has_no_collision() {
+            local source_root="$1"
+            local pool_root="$2"
+            local ignored_path="${3:-}"
+            local source_file relative_path pooled_file
+            while IFS= read -r -d '' source_file; do
+              relative_path="${source_file#"$source_root"/}"
+              [ -n "$relative_path" ]
+              [ "$relative_path" = "$ignored_path" ] && continue
+              pooled_file="$pool_root/$relative_path"
+              if [ -e "$pooled_file" ] || [ -L "$pooled_file" ]; then
+                [ -f "$pooled_file" ] && [ ! -L "$pooled_file" ] \
+                  || { echo "pooled runtime path is not a regular file: $relative_path" >&2; return 1; }
+                cmp -s "$source_file" "$pooled_file" \
+                  || { echo "pooled runtime URL would change bytes: $relative_path" >&2; return 1; }
+              fi
+            done < <(find "$source_root" -type f -print0)
+          }
+
+          prove_additive_pool_contains_release() {
+            local source_root="$1"
+            local pool_root="$2"
+            local ignored_path="${3:-}"
+            local source_file relative_path pooled_file
+            while IFS= read -r -d '' source_file; do
+              relative_path="${source_file#"$source_root"/}"
+              [ -n "$relative_path" ]
+              [ "$relative_path" = "$ignored_path" ] && continue
+              pooled_file="$pool_root/$relative_path"
+              [ -f "$pooled_file" ] && [ ! -L "$pooled_file" ] \
+                && cmp -s "$source_file" "$pooled_file" \
+                || { echo "pooled runtime URL is absent or changed: $relative_path" >&2; return 1; }
+            done < <(find "$source_root" -type f -print0)
+          }
+
+          if find "$ROOT/pool/assets" -type l -print -quit | grep -q . \
+            || find "$ROOT/pool/fonts" -type l ! -path "$ROOT/pool/fonts/fonts.css" -print -quit | grep -q .; then
+            echo 'additive runtime pool contains a symlink' >&2
+            exit 1
+          fi
+          adopt_legacy_font_stylesheet_pointer \
+            "$ROOT/pool/fonts/fonts.css" \
+            "$ROOT/current/fonts/fonts.css" \
+            "$FONT_NEXT"
+          assert_additive_pool_has_no_collision "$FINAL/assets" "$ROOT/pool/assets"
+          assert_additive_pool_has_no_collision "$FINAL/fonts" "$ROOT/pool/fonts" 'fonts.css'
+          rsync -a --ignore-existing --fsync "$FINAL/assets/" "$ROOT/pool/assets/"
+          rsync -a --ignore-existing --fsync --exclude='/fonts.css' "$FINAL/fonts/" "$ROOT/pool/fonts/"
+          prove_additive_pool_contains_release "$FINAL/assets" "$ROOT/pool/assets"
+          prove_additive_pool_contains_release "$FINAL/fonts" "$ROOT/pool/fonts" 'fonts.css'
+          ln -s "$ROOT/current/fonts/fonts.css" "$FONT_NEXT"
+          mv -Tf "$FONT_NEXT" "$ROOT/pool/fonts/fonts.css"
+
+          # Reject unknown release directory names rather than handing them to
+          # a pruning command. The current and candidate releases are never
+          # eligible for deletion, even if their mtimes are old.
+          mapfile -t RELEASE_NAMES < <(
+            find "$ROOT/releases" -mindepth 1 -maxdepth 1 -type d -printf '%f\n'
+          )
+          for RELEASE_NAME in "${RELEASE_NAMES[@]}"; do
+            [[ "$RELEASE_NAME" =~ ^[0-9a-f]{40}$ ]]
+          done
+          mapfile -t RELEASE_NAMES < <(
+            find "$ROOT/releases" -mindepth 1 -maxdepth 1 -type d -printf '%T@ %f\n' \
+              | sort -rn | awk '{print $2}'
+          )
+          for ((INDEX=KEEP_RELEASES; INDEX<${#RELEASE_NAMES[@]}; INDEX++)); do
+            RELEASE_NAME="${RELEASE_NAMES[$INDEX]}"
+            [ "$RELEASE_NAME" = "$CURRENT_SHA" ] && continue
+            [ "$RELEASE_NAME" = "$SHA" ] && continue
+            rm -rf -- "$ROOT/releases/$RELEASE_NAME"
+          done
+          find "$ROOT/pool" -type f -name '*.map' -delete
+
+          # Flush the release, pool, and directory metadata before the public
+          # pointer changes. Flush the atomic rename itself before success.
+          sync -f "$ROOT"
+          CURRENT_BEFORE_SWAP=$(read_exact_build_info_sha "$ROOT/current/build-info.json")
+          [ "$CURRENT_BEFORE_SWAP" = "$CURRENT_SHA" ] || [ "$CURRENT_BEFORE_SWAP" = "$SHA" ]
+          [ ! -e "$NEXT" ] && [ ! -L "$NEXT" ]
+          ln -s "$FINAL" "$NEXT"
+          mv -Tf "$NEXT" "$ROOT/current"
+          sync -f "$ROOT"
+          [ "$(readlink "$ROOT/current")" = "$FINAL" ]
+          REMOTE_ACTIVATE
+
+      - name: Remove this invocation's remote staging path
+        if: always() && steps.verdict.outputs.verdict == 'publish'
+        run: |
+          set -euo pipefail
+          SHA="${{ steps.verdict.outputs.ours }}"
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$GITHUB_RUN_ID" =~ ^[0-9]+$ ]] && [[ "$GITHUB_RUN_ATTEMPT" =~ ^[0-9]+$ ]]
+          STAGE_NAME="${SHA}.${GITHUB_RUN_ID}.${GITHUB_RUN_ATTEMPT}"
+          timeout 35s ssh \
+            -i "$HOME/.ssh/ca_origin" \
+            -o "UserKnownHostsFile=$HOME/.ssh/ca_origin_known_hosts" \
+            -o GlobalKnownHostsFile=/dev/null \
+            -o StrictHostKeyChecking=yes \
+            -o IdentitiesOnly=yes \
+            -o BatchMode=yes \
+            -o ConnectTimeout=25 \
+            "$ORIGIN_USER@$ORIGIN_HOST" bash -s -- "$ORIGIN_ROOT" "$STAGE_NAME" <<'REMOTE_CLEANUP'
+          set -euo pipefail
+          ROOT="$1"
+          STAGE_NAME="$2"
+          [ "$ROOT" = /srv/club-arena ]
+          [[ "$STAGE_NAME" =~ ^[0-9a-f]{40}\.[0-9]+\.[0-9]+$ ]]
+          [ -d "$ROOT/incoming" ] && [ ! -L "$ROOT/incoming" ]
+          [ -d "$ROOT/pool/fonts" ] && [ ! -L "$ROOT/pool/fonts" ]
+          rm -rf -- "$ROOT/incoming/$STAGE_NAME"
+          rm -f -- "$ROOT/.current.$STAGE_NAME"
+          rm -f -- "$ROOT/incoming/.manifest-check.$STAGE_NAME"
+          rm -f -- "$ROOT/incoming/.legacy-release-manifest.$STAGE_NAME"
+          rm -f -- "$ROOT/pool/fonts/.fonts.css.$STAGE_NAME"
+          sync -f "$ROOT"
+          REMOTE_CLEANUP
 
       - name: Verify the origin serves this bundle
-        id: verified
         if: steps.verdict.outputs.verdict == 'publish'
+        id: verified
         run: |
           set -euo pipefail
           SHA="${{ steps.verdict.outputs.ours }}"
-          for i in $(seq 1 12); do
-            LIVE=$(curl -fsS --max-time 15 -H 'Cache-Control: no-cache' "$ORIGIN_URL/build-info.json?cb=$RANDOM" 2>/dev/null | sed -n 's/.*"ca_sha"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' || true)
-            if [ "$LIVE" = "$SHA" ]; then
-              echo "origin serves ${SHA:0:7}"
+          LIVE_ORIGIN=''
+          LIVE_PUBLIC=''
+          for _ in $(seq 1 12); do
+            LIVE_ORIGIN=''
+            LIVE_PUBLIC=''
+            ORIGIN_BODY=''
+            PUBLIC_BODY=''
+            if ORIGIN_BODY=$(curl -fsS --max-time 15 -H 'Cache-Control: no-cache' \
+              "$ORIGIN_URL/build-info.json?cb=$RANDOM" 2>/dev/null); then
+              LIVE_ORIGIN=$(printf '%s' "$ORIGIN_BODY" \
+                | node scripts/ci/production-e2e-provenance.mjs unchanged "$SHA" 2>/dev/null || true)
+            fi
+            if PUBLIC_BODY=$(curl -fsS --max-time 15 -H 'Cache-Control: no-cache' \
+              "$PUBLIC_URL/build-info.json?cb=$RANDOM" 2>/dev/null); then
+              LIVE_PUBLIC=$(printf '%s' "$PUBLIC_BODY" \
+                | node scripts/ci/production-e2e-provenance.mjs unchanged "$SHA" 2>/dev/null || true)
+            fi
+            if [ "$LIVE_ORIGIN" = "$SHA" ] && [ "$LIVE_PUBLIC" = "$SHA" ]; then
+              echo "origin and player route serve ${SHA:0:7}"
               echo "sha=$SHA" >> "$GITHUB_OUTPUT"
-              echo "### Published" >> $GITHUB_STEP_SUMMARY
-              echo "\`${SHA:0:7}\` is live at the origin; World Hub's rewrite serves it at smarter.poker/hub/club-arena." >> $GITHUB_STEP_SUMMARY
+              echo "### Published" >> "$GITHUB_STEP_SUMMARY"
+              echo "\`${SHA:0:7}\` is live through the Club Arena origin and the player route." >> "$GITHUB_STEP_SUMMARY"
               exit 0
             fi
             sleep 5
           done
-          echo "::error::origin serves '$LIVE', wanted $SHA"
+          echo "::error::origin serves '$LIVE_ORIGIN' and player route serves '$LIVE_PUBLIC'; wanted $SHA"
           exit 1
 
-      - name: Converge - chain another publish if main moved while this one built
-        if: success()
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Restore the previously verified release after any publish failure
+        if: failure() && steps.verdict.outputs.verdict == 'publish'
         run: |
-          set -u
-          PUBLISHED="${{ needs.publish-needed.outputs.target_sha }}"
-          TIP=$(gh api "repos/${{ github.repository }}/commits/main" --jq .sha 2>/dev/null || echo "")
-
-          if [ -z "$TIP" ]; then
-            # No cron is coming to check later (2026-09-11). A handed-on run
-            # asks production first, so when in doubt, chain one.
-            echo "::warning::Could not read the tip of main to check for convergence - chaining a handed-on publish, which dedupes against production."
-            gh workflow run "publish-club-arena.yml" --repo "${{ github.repository }}" --ref main -f handed_on=true \
-              || echo "::error title=PUBLISH TRAIN STOPPED::could not chain the next publish; nothing else will start one until the next push."
+          set -euo pipefail
+          SHA="${{ steps.verdict.outputs.ours }}"
+          EXPECTED_SHA="${{ steps.verdict.outputs.theirs }}"
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] && [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$GITHUB_RUN_ID" =~ ^[0-9]+$ ]] && [[ "$GITHUB_RUN_ATTEMPT" =~ ^[0-9]+$ ]]
+          if [ "$SHA" = "$EXPECTED_SHA" ]; then
+            echo '::notice::The failed publish targeted the already-current release; no distinct pointer exists to restore.'
             exit 0
           fi
+          STAGE_NAME="${SHA}.${GITHUB_RUN_ID}.${GITHUB_RUN_ATTEMPT}"
+          SSH_OPTIONS=(
+            -i "$HOME/.ssh/ca_origin"
+            -o "UserKnownHostsFile=$HOME/.ssh/ca_origin_known_hosts"
+            -o GlobalKnownHostsFile=/dev/null
+            -o StrictHostKeyChecking=yes
+            -o IdentitiesOnly=yes
+            -o BatchMode=yes
+            -o ConnectTimeout=25
+            -o ServerAliveInterval=10
+            -o ServerAliveCountMax=2
+          )
 
-          if [ "$TIP" = "$PUBLISHED" ]; then
-            echo "CONVERGED: production is being served ${PUBLISHED:0:7}, which is the tip of main."
-            echo "- Converged on \`${PUBLISHED:0:7}\` (tip of main)" >> $GITHUB_STEP_SUMMARY
+          ROLLBACK_RESULT=$(timeout 90s ssh "${SSH_OPTIONS[@]}" "$ORIGIN_USER@$ORIGIN_HOST" bash -s -- \
+            "$ORIGIN_ROOT" "$SHA" "$EXPECTED_SHA" "$STAGE_NAME" <<'REMOTE_ROLLBACK'
+          set -euo pipefail
+          ROOT="$1"
+          SHA="$2"
+          EXPECTED_SHA="$3"
+          STAGE_NAME="$4"
+          [ "$ROOT" = /srv/club-arena ]
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$STAGE_NAME" =~ ^${SHA}\.[0-9]+\.[0-9]+$ ]]
+          command -v flock >/dev/null
+          command -v python3 >/dev/null
+          command -v sha256sum >/dev/null
+          command -v sync >/dev/null
+
+          CANDIDATE="$ROOT/releases/$SHA"
+          PREVIOUS="$ROOT/releases/$EXPECTED_SHA"
+          NEXT="$ROOT/.rollback.$STAGE_NAME"
+          CHECK="$ROOT/incoming/.rollback-manifest-check.$STAGE_NAME"
+          for DIRECTORY in "$ROOT" "$ROOT/incoming" "$ROOT/releases"; do
+            [ -d "$DIRECTORY" ] && [ ! -L "$DIRECTORY" ]
+          done
+          [ ! -L "$ROOT/.publish.lock" ]
+          for TEMPORARY in "$NEXT" "$CHECK"; do
+            [ ! -e "$TEMPORARY" ] && [ ! -L "$TEMPORARY" ]
+          done
+          trap 'rm -f -- "$NEXT" "$CHECK"' EXIT
+          exec 9>"$ROOT/.publish.lock"
+          flock -w 45 9
+
+          [ -L "$ROOT/current" ]
+          CURRENT_LINK="$(readlink "$ROOT/current")"
+          if [ "$CURRENT_LINK" = "$PREVIOUS" ]; then
+            printf '%s\n' already-restored
             exit 0
           fi
-
-          AHEAD=$(gh api "repos/${{ github.repository }}/compare/${PUBLISHED}...${TIP}" \
-                    --jq .ahead_by 2>/dev/null || echo "?")
-          echo "::notice::main is ${AHEAD} commit(s) past ${PUBLISHED:0:7} - chaining the next publish now rather than waiting for the catch-up."
-          echo "- main moved ${AHEAD} commit(s) to \`${TIP:0:7}\` during this build; chained the next publish" >> $GITHUB_STEP_SUMMARY
-
-          if gh workflow run "publish-club-arena.yml" --repo "${{ github.repository }}" --ref main -f handed_on=true; then
-            echo "chained publish dispatched for ${TIP:0:7}"
-          else
-            echo "::error title=PUBLISH TRAIN STOPPED::chain dispatch failed; ${TIP:0:7} waits for the next push."
+          if [ "$CURRENT_LINK" != "$CANDIDATE" ]; then
+            echo "current is $CURRENT_LINK, not the failed candidate; refusing to overwrite it" >&2
+            exit 75
           fi
 
-  # ═════════════════════════════════════════════════════════════════════════
-  # A PUBLISH THAT COULD NOT FINISH HANDS ITSELF ON (2026-09-11)
-  #
-  # This is what the */30 catch-up cron and publish-watchdog.sh's re-dispatch
-  # were for: a run that FAILED - a flaky shard, a 5xx from the origin, a runner
-  # that dropped - or was CANCELLED, with no newer push queued behind it to
-  # converge the tip. Nothing else was coming for those commits.
-  #
-  # Now the run itself dispatches a handed-on retry, which resolves the tip of
-  # main again and costs one curl if production already serves it. Bounded:
-  # after RETRY_LIMIT failed runs in a row (cancellations and skips are not
-  # evidence of a fault) it stops and says so, because a publish that fails
-  # the same way repeatedly is broken, not unlucky - the fix's own push starts
-  # the next run. On a GitHub-hosted runner on purpose: it must still run when
-  # the self-hosted CI runner is the thing that failed.
-  # ═════════════════════════════════════════════════════════════════════════
-  hand-on:
-    name: Hand the publish on if this run could not finish
-    needs: [publish-needed, build-and-store, client-tests, publish-to-origin]
-    if: >-
-      always() &&
-      (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled'))
-    runs-on: ubuntu-latest
-    permissions:
-      actions: write
-      contents: read
-    steps:
-      - name: Retry, up to the limit, or stop and say so
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RETRY_LIMIT: '3'
+          [ -d "$PREVIOUS" ] && [ ! -L "$PREVIOUS" ]
+          test -s "$PREVIOUS/.release-manifest.sha256"
+          if find "$PREVIOUS" -type l -print -quit | grep -q .; then
+            echo 'previous release contains a symlink' >&2
+            exit 1
+          fi
+          if find "$PREVIOUS" ! -type d ! -type f -print -quit | grep -q .; then
+            echo 'previous release contains a special file' >&2
+            exit 1
+          fi
+          (cd "$PREVIOUS" && sha256sum --strict -c .release-manifest.sha256 >/dev/null)
+          (
+            cd "$PREVIOUS"
+            find . -type f ! -path './.release-manifest.sha256' -print0 \
+              | LC_ALL=C sort -z \
+              | xargs -0 sha256sum > "$CHECK"
+          )
+          cmp -s "$CHECK" "$PREVIOUS/.release-manifest.sha256"
+          rm -f -- "$CHECK"
+          python3 - "$PREVIOUS/build-info.json" "$EXPECTED_SHA" <<'PYTHON_ROLLBACK_BUILD_INFO'
+          import json
+          import sys
+
+          try:
+              with open(sys.argv[1], encoding='utf-8') as handle:
+                  build_info = json.load(handle)
+          except (OSError, UnicodeError, json.JSONDecodeError) as error:
+              raise SystemExit(f'previous build-info is absent or malformed: {error}')
+          if type(build_info) is not dict or build_info.get('ca_sha') != sys.argv[2]:
+              raise SystemExit('previous build-info does not prove the exact rollback SHA')
+          PYTHON_ROLLBACK_BUILD_INFO
+
+          sync -f "$ROOT"
+          [ "$(readlink "$ROOT/current")" = "$CANDIDATE" ]
+          ln -s "$PREVIOUS" "$NEXT"
+          mv -Tf "$NEXT" "$ROOT/current"
+          sync -f "$ROOT"
+          [ "$(readlink "$ROOT/current")" = "$PREVIOUS" ]
+          printf '%s\n' restored
+          REMOTE_ROLLBACK
+          )
+          case "$ROLLBACK_RESULT" in
+            restored|already-restored) ;;
+            *) echo "::error::Unexpected rollback result: $ROLLBACK_RESULT"; exit 1 ;;
+          esac
+
+          LIVE_ORIGIN=''
+          LIVE_PUBLIC=''
+          for _ in $(seq 1 12); do
+            LIVE_ORIGIN=''
+            LIVE_PUBLIC=''
+            ORIGIN_BODY=''
+            PUBLIC_BODY=''
+            if ORIGIN_BODY=$(curl -fsS --max-time 15 -H 'Cache-Control: no-cache' \
+              "$ORIGIN_URL/build-info.json?rollback=$RANDOM" 2>/dev/null); then
+              LIVE_ORIGIN=$(printf '%s' "$ORIGIN_BODY" \
+                | node scripts/ci/production-e2e-provenance.mjs unchanged "$EXPECTED_SHA" 2>/dev/null || true)
+            fi
+            if PUBLIC_BODY=$(curl -fsS --max-time 15 -H 'Cache-Control: no-cache' \
+              "$PUBLIC_URL/build-info.json?rollback=$RANDOM" 2>/dev/null); then
+              LIVE_PUBLIC=$(printf '%s' "$PUBLIC_BODY" \
+                | node scripts/ci/production-e2e-provenance.mjs unchanged "$EXPECTED_SHA" 2>/dev/null || true)
+            fi
+            if [ "$LIVE_ORIGIN" = "$EXPECTED_SHA" ] && [ "$LIVE_PUBLIC" = "$EXPECTED_SHA" ]; then
+              echo "::notice::Restored and verified ${EXPECTED_SHA:0:7} after candidate ${SHA:0:7} failed publication proof."
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::Rollback pointer changed, but origin serves '$LIVE_ORIGIN' and player route serves '$LIVE_PUBLIC'; wanted $EXPECTED_SHA"
+          exit 1
+
+      - name: Remove origin credentials and control sockets
+        if: always()
         run: |
-          set -uo pipefail
-          # Failed runs in a row, newest first, excluding this one (still
-          # running) and anything cancelled or skipped - those say nothing
-          # about whether the build is broken.
-          if ! CONCLUSIONS=$(gh run list --repo "${{ github.repository }}" \
-                 --workflow publish-club-arena.yml --limit 30 \
-                 --json databaseId,status,conclusion \
-                 --jq '.[] | select(.databaseId != ${{ github.run_id }})
-                           | select(.status == "completed")
-                           | select(.conclusion != "cancelled" and .conclusion != "skipped")
-                           | .conclusion'); then
-            # Fail closed: a streak nobody can count is how a broken build
-            # would retry itself forever.
-            echo "::error title=PUBLISH TRAIN STOPPED::could not count earlier failed publishes, so this run will not retry itself. Dispatch publish-club-arena.yml once the failure above is understood."
-            exit 0
-          fi
-          STREAK=$(printf '%s\n' "$CONCLUSIONS" | awk '
-            $0 == "failure" || $0 == "timed_out" || $0 == "startup_failure" { n++; next }
-            NF { exit }
-            END { print n + 0 }')
-          if [ "$STREAK" -ge "$RETRY_LIMIT" ]; then
-            echo "::error title=PUBLISH GAVE UP::$STREAK publish runs in a row failed before this one. It is broken, not unlucky: the next push starts the next run."
-            exit 0
-          fi
-          if gh workflow run publish-club-arena.yml --repo "${{ github.repository }}" --ref main -f handed_on=true; then
-            echo "Handed on: a retry of the tip of main is queued ($STREAK earlier failure(s) in a row, limit $RETRY_LIMIT)."
-            echo "Handed on: a retry of the tip of main is queued." >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "::error title=PUBLISH TRAIN STOPPED::could not dispatch the retry; nothing else will start one until the next push."
-          fi
+          set -euo pipefail
+          rm -f -- "$HOME/.ssh/ca_origin" "$HOME/.ssh/ca_origin_known_hosts"
+          rm -rf -- /tmp/cacm

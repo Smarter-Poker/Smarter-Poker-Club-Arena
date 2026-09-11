@@ -55,8 +55,9 @@ git worktree add -b fix/<slug> ~/Documents/.agent-trees/club-arena/<name> origin
 git push origin HEAD:refs/heads/fix/<slug>
 ```
 
-**That is the end of your job.** Do not open the pull request, do not merge, do
-not watch CI (CLAUDE.md 10.8.3).
+The push starts delivery; it does not prove delivery. Follow the pull request
+and the owning Club Arena workflows to a terminal result, fix any red check,
+and do not call the work complete until the exact merged SHA is live.
 
 ## Verify - by reading, never by assuming
 
@@ -64,8 +65,10 @@ not watch CI (CLAUDE.md 10.8.3).
 curl -s https://smarter.poker/hub/club-arena/build-info.json
 ```
 
-`ca_sha` must equal the squash commit on `main`. "The push succeeded", "the
-merge landed" and "Vercel is building" are not deployment.
+`ca_sha` at both the direct origin and public rewrite must equal the squash
+commit on `main`. "The push succeeded" and "the merge landed" are not
+deployment. For `server/` changes, independently verify the sealed
+`auto-deploy-hetzner.yml` run and the cache-busted engine health SHA too.
 
 ## The one thing about the origin worth knowing
 

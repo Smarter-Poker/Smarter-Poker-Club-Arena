@@ -1,3 +1,4 @@
+import { bindToProcessRoot } from './services/supabase/dataActorContext.js';
 /**
  * GameServer — server-side game orchestration.
  *
@@ -174,7 +175,7 @@ import { raiseEngineAlert, resolveEngineAlert } from './services/engineAlerts.js
 import { MaintenanceBreak } from './maintenance/MaintenanceBreak.js';
 import { createSupabaseMaintenanceBreakStore } from './maintenance/maintenanceBreakStore.js';
 import { StatsHealthMonitor } from './observability/StatsHealthMonitor.js';
-import { runThawInstallments } from './maintenance/thawInstallments.js';
+import { runMaintenanceThawV3 } from './maintenance/maintenanceThawV3.js';
 import { ENGINE_START_BUDGET_MAX, nextEngineStartBudget } from './engineStartBudget.js';
 import {
   RunningResumeCooldowns,
@@ -182,6 +183,7 @@ import {
   selectRunningResumes,
 } from './tournamentResumeBudget.js';
 import { isWakeableCashTable } from './services/onDemandTableWake.js';
+import { ENGINE_RELEASE_IDENTITY } from './releaseIdentity.js';
 // 2026-08-16: single-owner table leases + per-process identity. See
 // services/tableLease.ts for the dual-container incident that motivated them.
 import {
@@ -1676,9 +1678,7 @@ export class GameServer {
     engines: () => this.tableEngines.entries(),
     isRunning: () => this.running,
     emit: (tableId, payload) => tableStateHub.emitEvent(tableId, payload),
-    store: createSupabaseMaintenanceBreakStore(
-      process.env.GIT_COMMIT_SHA?.substring(0, 8) || process.env.ENGINE_VERSION || 'local'
-    ),
+    store: createSupabaseMaintenanceBreakStore(ENGINE_RELEASE_IDENTITY.version),
     // Whoever paused a table is responsible for resuming it. A tournament
     // add-on break runs up to ten minutes, so one starting near :55 outlives
     // the five-minute maintenance break - resuming its tables here would deal
@@ -1716,8 +1716,7 @@ export class GameServer {
             o.readyForRestartAtMs === null ? null : new Date(o.readyForRestartAtMs).toISOString(),
           tables_resumed: o.tablesResumed,
           thaw_ok: o.thawOk,
-          engine_version:
-            process.env.GIT_COMMIT_SHA?.substring(0, 8) || process.env.ENGINE_VERSION || 'local',
+          engine_version: ENGINE_RELEASE_IDENTITY.version,
         });
         if (error) throw new Error(error.message);
       } finally {
@@ -1749,27 +1748,21 @@ export class GameServer {
     // returns complete:false when it has used its own ~4s budget, so no single
     // call can hit PostgREST's 8s cap the way the one-statement thaw did
     // (19.9s before the #2703 indexes; a timeout still at 20:00 after them).
-    // runThawInstallments calls again until complete, and retries a call that
-    // died - a timed-out call committed nothing, so the retry is exactly
-    // right. Idempotent per freeze and per step on the database side.
-    thaw: async (freezeStartedAtMs, frozenSeconds) => {
-      const args = {
-        p_freeze_started: new Date(freezeStartedAtMs).toISOString(),
-        p_frozen_seconds: frozenSeconds,
-        p_thawed_by:
-          process.env.GIT_COMMIT_SHA?.substring(0, 8) || process.env.ENGINE_VERSION || 'local',
-      };
-      const summary = await runThawInstallments(
-        async () => {
+    // The v3 client retries the exact owner and freeze identity. A lost response
+    // can recover its committed receipt. Completion schedules a future release;
+    // MaintenanceBreak keeps the pause until that certified boundary.
+    thaw: bindToProcessRoot(async (request, signal) => {
+      const release = await runMaintenanceThawV3(
+        {
+          ...request,
+          thawedBy: ENGINE_RELEASE_IDENTITY.version,
+        },
+        async (args) => {
           const { data, error } = await supabase.rpc('fn_thaw_platform', args);
           if (error) throw new Error(error.message);
-          return (data ?? {}) as Record<string, unknown>;
+          return data;
         },
-        { log: (line) => console.log(line) }
-      );
-      console.log(
-        `[MaintenanceBreak] thaw: complete in ${summary.calls} call(s), ${summary.errors} error(s):`,
-        JSON.stringify(summary.last?.shifted ?? null)
+        { signal, log: (line) => console.log(line) }
       );
 
       /* fn_thaw_platform has just moved every open add-on deadline. Managers
@@ -1787,7 +1780,8 @@ export class GameServer {
           }
         })
       );
-    },
+      return release;
+    }),
   });
 
   /**
@@ -3158,7 +3152,8 @@ export class GameServer {
         equityWorkerPoolPreservesDealerLiveness(equityWorkers)
           ? 'ok'
           : 'degraded',
-      version: process.env.GIT_COMMIT_SHA?.substring(0, 8) || process.env.ENGINE_VERSION || 'local',
+      version: ENGINE_RELEASE_IDENTITY.version,
+      releaseSha: ENGINE_RELEASE_IDENTITY.releaseSha,
       // ── PROCESS IDENTITY (2026-08-16) ───────────────────────────────
       // On 2026-08-16 two engine containers served this hostname at once and
       // every field below `version` was ambiguous between them: /health said 15
@@ -3339,9 +3334,7 @@ export class GameServer {
       // distinct: two live `instance_id` values on this job IS the alert.
       '# HELP poker_engine_info Always 1. Labels identify the process answering this scrape.',
       '# TYPE poker_engine_info gauge',
-      `poker_engine_info{instance_id="${INSTANCE_ID}",pid="${process.pid}",version="${
-        process.env.GIT_COMMIT_SHA?.substring(0, 8) || process.env.ENGINE_VERSION || 'local'
-      }"} 1`,
+      `poker_engine_info{instance_id="${INSTANCE_ID}",pid="${process.pid}",version="${ENGINE_RELEASE_IDENTITY.version}"} 1`,
       '# HELP poker_lease_conflicts Tables this instance was refused because another engine holds them',
       '# TYPE poker_lease_conflicts gauge',
       `poker_lease_conflicts ${leaseDiagnostics().conflictCount}`,

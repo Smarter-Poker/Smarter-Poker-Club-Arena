@@ -22,6 +22,7 @@
  * an entry-point check so importing it here does not reach for production.
  */
 import { describe, it, expect, beforeAll } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { resolve } from 'path';
 import { pathToFileURL } from 'url';
 
@@ -30,6 +31,7 @@ let recordedBy: (
   index: { versions: Set<string>; names: Set<string> },
   migration: { version: string; name: string }
 ) => boolean;
+let siblingMigrationFiles: (repos?: string[], token?: string) => Promise<string[]>;
 
 beforeAll(async () => {
   const href = pathToFileURL(
@@ -38,6 +40,27 @@ beforeAll(async () => {
   const mod = await import(/* @vite-ignore */ href);
   indexFrom = mod.indexFrom;
   recordedBy = mod.recordedBy;
+  siblingMigrationFiles = mod.siblingMigrationFiles;
+});
+
+describe('the shared migration ledger is never graded from one repository', () => {
+  it('refuses to call the sibling index complete without an estate read token', async () => {
+    await expect(
+      siblingMigrationFiles(['Smarter-Poker/Smarter-Poker-World-Hub'], '')
+    ).rejects.toThrow(/UNKNOWN: no estate read token/);
+  });
+
+  it('the scheduled workflow mints a short-lived read-only sibling token', () => {
+    const workflow = readFileSync(
+      resolve(__dirname, '..', '.github/workflows/applied-migrations-recorded.yml'),
+      'utf8'
+    );
+    expect(workflow).toContain('actions/create-github-app-token@v3');
+    expect(workflow).toContain('repositories: Smarter-Poker-World-Hub');
+    expect(workflow).toContain('permission-contents: read');
+    expect(workflow).toContain('GH_TOKEN: ${{ steps.estate-token.outputs.token }}');
+    expect(workflow).not.toContain('indexing this repo only');
+  });
 });
 
 describe('a file records a migration however the stamp is written', () => {

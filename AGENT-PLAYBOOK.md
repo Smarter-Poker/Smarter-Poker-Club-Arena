@@ -26,11 +26,9 @@ git log --oneline origin/main..HEAD # must be empty
 git branch -r --contains HEAD # must name your branch
 gh pr list --head <your-branch> # must show a PR, or explain why not
 
-# `gh` is NOT installed on the Mac. There, ask the API directly:
+# Use the configured GitHub client or credential store. Never source, print, or
 
-# curl -s -H "Authorization: Bearer $GITHUB_TOKEN" \
-
-# "https://api.github.com/repos/Smarter-Poker/<repo>/pulls?head=Smarter-Poker:<branch>&state=all"
+# copy a token from a workstation `.env` into a command or document.
 
 # MERGED IS NOT LANDED. The tick is not the evidence; the files are:
 
@@ -42,7 +40,7 @@ PART B — DID YOU FOLLOW THE RULES?
 pwd # must be under .agent-trees/
 git log -1 --format='%an <%ae>' # must be Smarter-Poker # <254329056+...@users.noreply.github.com>
 git log --oneline origin/main..HEAD | wc -l
-State plainly whether you used --no-verify at any point. If you did, say where and why.
+Confirm that no hook-bypass option was used. Any bypass invalidates the release.
 
 PART C — IS THE CODE ACTUALLY DONE? (THE INTERROGATION)
 You must re-read your own diff before answering: `git diff origin/main...HEAD`
@@ -101,8 +99,9 @@ finished and simply never proposed. Every rule below is one of those, fixed.
 # 1. Claim your own working tree. NEVER work in the shared clone.
 eval "$(bash scripts/agent-workspace.sh <your-agent-name> fix/<short-slug>)"
 
-# 2. Do the work. Commit normally.
-git add -A && git commit -m "fix(scope): what changed"
+# 2. Stage only the exact paths you changed, then commit.
+git add path/to/file path/to/other-file
+git commit -m "fix(scope): what changed"
 
 # 3. Push. THE PULL REQUEST OPENS ITSELF.
 git push origin HEAD:refs/heads/<your-branch>
@@ -175,30 +174,27 @@ not break them, and to know what they are telling you when they speak.
 
 ### Your work cannot be destroyed
 
-| File                                                               | What it does                                                                                                                                                                                                                                                                                                                                                                                                             |
-| ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `scripts/agent-workspace.sh`                                       | Gives you your own git worktree, branched from fresh `origin/main`. Refuses to move you off uncommitted work                                                                                                                                                                                                                                                                                                             |
-| `.husky/pre-commit` & `pre-push` → `scripts/guard-shared-clone.sh` | **Refuses a commit or push made in the shared clone.** Prints the exact command to get a proper tree. Never stashes, never checks anything out                                                                                                                                                                                                                                                                           |
-| `.husky/reference-transaction`                                     | Fires _before_ any ref update lands and refuses one that would orphan local commits — **and writes them to `refs/wip/orphan-guard/<stamp>` first**, so even an override leaves the work recoverable                                                                                                                                                                                                                      |
-| `scripts/agent-trees-snapshot.sh`                                  | Snapshots every working tree's uncommitted state as a git ref. Safe mid-edit: `git stash create` builds objects without touching the index, the tree, or the stash stack                                                                                                                                                                                                                                                 |
-| `scripts/install-wip-snapshot-agent.sh`                            | Runs that snapshot every 10 minutes as a launchd agent — **once the Mac has granted Full Disk Access**. `~/Documents` is TCC-protected and a launchd agent cannot read inside it without that; on 2026-08-22 this had captured nothing in 73 runs. `--status` now says which state it is in, and the installer refuses to claim success. Until it is granted, run the snapshot by hand at the start and end of a session |
-| `scripts/agent-trees-audit.sh`                                     | Lists every tree holding work that exists in exactly one place                                                                                                                                                                                                                                                                                                                                                           |
+| File                                                               | What it does                                                                                                                                                           |
+| ------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `scripts/agent-workspace.sh`                                       | Gives you your own git worktree, branched from fresh `origin/main`. Refuses to move you off uncommitted work                                                           |
+| `.husky/pre-commit` & `pre-push` → `scripts/guard-shared-clone.sh` | **Refuses a commit or push made in the shared clone.** Prints the exact command to get a proper tree. Never stashes, never checks anything out                         |
+| `.husky/reference-transaction`                                     | Fires _before_ a ref update lands and refuses one that would make local commits unreachable. It is read-only: it creates no rescue refs and performs no reconciliation |
+| `scripts/agent-trees-audit.sh`                                     | Lists every tree holding work that exists in exactly one place                                                                                                         |
 
 ```bash
 bash scripts/agent-trees-audit.sh              # what is at risk right now
-bash scripts/agent-trees-snapshot.sh --list    # what has been captured
-git checkout -b rescue refs/wip/<...>          # recover any of it
 ```
 
 ### Your work cannot silently fail to ship
 
-| File                                     | What it does                                                                                                                                                                          |
-| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `.github/workflows/agent-autopilot.yml`  | Enables squash auto-merge on every PR; sweeps every 10 minutes                                                                                                                        |
-| `.github/scripts/queue-pr.sh`            | Squash only, never `--admin`                                                                                                                                                          |
-| `.github/scripts/report-stuck-prs.sh`    | Names every PR that cannot merge **and every branch pushed but never proposed**, in one self-closing issue per repo. Opens a PR automatically for an `agent/*` branch under a day old |
-| `.github/workflows/publish-watchdog.yml` | Asks **production** what it is serving and compares it to `main`. Self-heals up to three times per sha (Club Arena), diagnoses via the Vercel API (World Hub)                         |
-| `.github/workflows/estate-integrity.yml` | Checks hourly that all seven repos still have their rulesets, no unexpected bypass actors, byte-identical guards, and a live Autopilot                                                |
+| File                                               | What it does                                                                                                                                |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `.github/workflows/agent-branch-proposal.yml`      | Emits an unprivileged branch signal; it receives no App, PAT, production, or publish credential                                             |
+| `.github/workflows/agent-open-pr.yml`              | Consumes the signal through `workflow_run`, so PR authority always executes reviewed default-branch code                                    |
+| `.github/workflows/agent-autopilot.yml`            | Reacts to native PR events and enables protected squash auto-merge; it has no timer, refresher, or fallback token                           |
+| `.github/scripts/queue-pr.sh`                      | Squash only, never `--admin`; refuses direct merge unless the base has required checks                                                      |
+| `.github/workflows/production-integrity-audit.yml` | Club Arena-only, read-only evidence comparing direct Hetzner/public provenance and engine health against `main`; it cannot publish or retry |
+| `.github/workflows/estate-integrity.yml`           | Checks that all seven repos retain rulesets, no bypass actors, byte-identical shared guards, correct file modes, and a live Autopilot       |
 
 ### Your work cannot regress silently
 
@@ -216,15 +212,14 @@ git checkout -b rescue refs/wip/<...>          # recover any of it
 public. If you are looking for a value, you are looking in the wrong place —
 look for the _name_ and read it from where it lives.
 
-| What                                                 | Where it lives                                                                                   | How to use it                                                                                                                                                                          |
-| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| GitHub App **Smarter-Poker-Autopilot**, id `4680372` | `vars.AUTOPILOT_APP_ID` + `secrets.AUTOPILOT_APP_PRIVATE_KEY` in **all 7 repos**                 | Workflows mint a fresh installation token per run via `actions/create-github-app-token@v1`. **It cannot expire.** This is the merge and publish credential                             |
-| `GH_PAT`                                             | Repo secret, all 7                                                                               | Legacy fallback only. **Expires 2026-11-19.** Nothing should depend on it                                                                                                              |
-| `GITHUB_TOKEN`                                       | Automatic                                                                                        | Issue writes only (`GH_TOKEN_ISSUES`). **Never for merges** — a merge made with it does not trigger downstream workflows, so the commit lands and never publishes                      |
-| Supabase service role                                | `secrets.SUPABASE_SERVICE_ROLE_KEY` (CI) · `.env.local` (local, gitignored) · Supabase dashboard | Project `kuklfnapbkmacvwxktbh` for smarter.poker. PepNationLab is `ydsaqnnuwyvtyxgvrnys` — **never cross them**                                                                        |
-| Vercel                                               | `secrets.VERCEL_TOKEN`, `VERCEL_PROJECT_ID`, `VERCEL_ORG_ID`                                     | Project `hub-vanguard` is the only real one for smarter.poker                                                                                                                          |
-| Club Arena origin                                    | `secrets.CA_ORIGIN_SSH_KEY`, `CA_ORIGIN_HOST`, `CA_ORIGIN_HOST_KEY` (Club Arena repo)            | The publisher rsyncs `dist/` to `ca-static.smarter.poker` as the unprivileged `ci` user. Replaced `WORLD_HUB_SYNC_TOKEN` on 2026-09-03: nothing is committed to the World Hub any more |
-| Hetzner                                              | `secrets.HETZNER_SSH_PRIVATE_KEY`, `HETZNER_HOST`                                                | Engine deploys automatically on push to `server/**`                                                                                                                                    |
+| What                                                 | Where it lives                                                                          | How to use it                                                                                                                                                     |
+| ---------------------------------------------------- | --------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GitHub App **Smarter-Poker-Autopilot**, id `4680372` | `vars.AUTOPILOT_APP_ID` + `secrets.AUTOPILOT_APP_PRIVATE_KEY` in **all 7 repos**        | Workflows mint a fresh installation token per run. This is the only shared PR/merge credential; there is no long-lived PAT fallback                               |
+| `GITHUB_TOKEN`                                       | Automatic                                                                               | Issue writes only (`GH_TOKEN_ISSUES`). **Never for merges** — a merge made with it does not trigger downstream workflows, so the commit lands and never publishes |
+| Supabase service role                                | Trusted repository environments and the configured database credential store            | Project `kuklfnapbkmacvwxktbh` for smarter.poker. PepNationLab is `ydsaqnnuwyvtyxgvrnys` — **never cross them**                                                   |
+| World Hub hosting                                    | World Hub repository only                                                               | Its Vercel credentials must never be copied into or consumed by a Club Arena release                                                                              |
+| Club Arena origin                                    | `secrets.CA_ORIGIN_SSH_KEY`, `CA_ORIGIN_HOST`, `CA_ORIGIN_HOST_KEY` (Club Arena repo)   | The publisher rsyncs `dist/` to `ca-static.smarter.poker` as the unprivileged `ci` user. The retired cross-repository sync credential is not a fallback           |
+| Club Arena engine                                    | `secrets.HETZNER_SSH_PRIVATE_KEY`, `HETZNER_HOST`, `HETZNER_HOST_KEY` (Club Arena repo) | Trusted default-branch workflow accepts an exact-SHA repository event and deploys only to Hetzner                                                                 |
 
 **If a credential is missing or dead**, the workflow that needs it says so by
 name and opens an issue. `check-token.sh` verifies the token before anything
@@ -246,12 +241,12 @@ Each one caused a real, dated incident.
 | `gh pr merge --merge` / `--rebase`                                   | Disabled here. The API call fails **silently** while the agent reports success                                                                                                                                                                                                                                                                                   |
 | A polling script (`wait_and_merge.sh`, `while true; do gh run list`) | Fragile and unobservable. Autopilot already does this, server-side                                                                                                                                                                                                                                                                                               |
 | `git push` / `--force` to `main`                                     | Blocked by the ruleset. A force-push once rewound `main` and dropped four commits already live in production                                                                                                                                                                                                                                                     |
-| `git pull --rebase origin main` on the Mac clone                     | Strands the clone mid-rebase. Use `bash scripts/git-unstick.sh`                                                                                                                                                                                                                                                                                                  |
+| `git pull --rebase origin main` on the Mac clone                     | Strands the clone mid-rebase. Preserve explicit local work, then continue in a fresh isolated worktree from `origin/main`                                                                                                                                                                                                                                        |
 | `--no-verify`                                                        | Skips every hook, and each one is there because something was lost                                                                                                                                                                                                                                                                                               |
 | Resolve a conflict with `--ours` / `--theirs` on a whole file        | This is how a leaderboard RPC call vanished while its function signature survived. **Resolve hunk by hunk**                                                                                                                                                                                                                                                      |
 | Commit a red test                                                    | `npx vitest run tests/` is what PUBLISHES the bundle. A red test stops the deploy for everyone. Write the spec first as `it.skip()` with a note                                                                                                                                                                                                                  |
 | Write a migration and not apply it                                   | The code believes in a feature the database has never heard of. It fails 42703 into a catch block and nothing goes red. Apply with the Supabase MCP `apply_migration`                                                                                                                                                                                            |
-| Commit under any identity but `Smarter-Poker`                        | Vercel refuses to build a commit whose author it cannot resolve to a GitHub user. The deployment goes to **BLOCKED** - no build, no logs, nothing in CI can see it, only a red dashboard row. Five sat that way on 2026-08-23, all authored `Agent <agent@smarter.poker>`                                                                                        |
+| Commit under any identity but `Smarter-Poker`                        | The repository identity guard refuses the commit before an untraceable author can enter the protected release chain                                                                                                                                                                                                                                              |
 | Commit a hook file non-executable                                    | git **skips** a hook that is not mode 755 and mentions it only as a hint buried in commit output. `.husky/pre-commit` was 644 in two repos, so both guards it holds were decorative for months                                                                                                                                                                   |
 | ~~`npm install` inside a worktree~~ — **now safe**                   | Worktrees used to share the main clone's `node_modules` through a symlink, and `npm ci` writes through it: one install deleted the shared tree and broke `tsc`/`vitest` for all 79 trees at once, three times in one afternoon. `scripts/agent-workspace.sh` now gives each tree its own copy-on-write clone, so npm in your own tree affects only your own tree |
 | Ask a human to push, merge, deploy, or approve                       | The entire point of this document                                                                                                                                                                                                                                                                                                                                |
@@ -268,11 +263,9 @@ git config user.name  "Smarter-Poker"
 git config user.email "254329056+Smarter-Poker@users.noreply.github.com"
 ```
 
-That is the only identity this estate can deploy under. Vercel refuses to build
-a commit whose GitHub author it cannot resolve, and refuses it **silently**: the
-deployment goes to BLOCKED with no build and no logs, so no check anywhere goes
-red. `scripts/guard-commit-identity.sh` now refuses such a commit at commit
-time, which is the last moment the answer is still "that commit was never made".
+That is the only identity this estate accepts. The repository guard refuses an
+unresolvable author at commit time, before it can enter any protected release
+chain.
 
 **If a guard prints a refusal and your commit lands anyway, or no guard speaks
 at all, the hook layer is broken rather than satisfied.** Run:
@@ -307,16 +300,16 @@ like a guard that has nothing to complain about.
 **Read the failing check and fix the code.** Never reach for a flag that makes
 the check stop applying.
 
-| Symptom                                          | What it means                                                                                                                               |
-| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| PR stuck at `BLOCKED`                            | A required check has not passed. Read it                                                                                                    |
-| PR stuck at `DIRTY`                              | A real conflict. Resolve hunk by hunk. Autopilot deliberately will not touch it                                                             |
-| PR pending with **no check ever reporting**      | The quiet killer: a required context no job produces, or a branch cut before the workflow existed. Push an empty commit, or fix the ruleset |
-| "Publish watchdog" issue                         | `main` moved and production did not. It re-dispatched once already; a second failure is not transient                                       |
-| "Estate integrity" issue                         | A guard or a ruleset drifted in one repo. **Fix by making the repos agree, not by relaxing the check**                                      |
-| `CHECK 17` failure                               | A migration in your branch declares something the live schema does not have. Apply it                                                       |
-| Commit refused: "this is the shared clone"       | You skipped step 1. The message prints the exact command                                                                                    |
-| Ref update refused: "would orphan local commits" | Your commits are saved at the ref it names. Push them, do not discard them                                                                  |
+| Symptom                                          | What it means                                                                                                                                   |
+| ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| PR stuck at `BLOCKED`                            | A required check has not passed. Read it                                                                                                        |
+| PR stuck at `DIRTY`                              | A real conflict. Resolve hunk by hunk. Autopilot deliberately will not touch it                                                                 |
+| PR pending with **no check ever reporting**      | The quiet killer: a required context no job produces, or a branch cut before the workflow existed. Push an empty commit, or fix the ruleset     |
+| "Production integrity" issue                     | `main` and live provenance differ. The audit made no repair; inspect the owning publisher and fix or exact-SHA re-dispatch through its one lane |
+| "Estate integrity" issue                         | A guard or a ruleset drifted in one repo. **Fix by making the repos agree, not by relaxing the check**                                          |
+| `CHECK 17` failure                               | A migration in your branch declares something the live schema does not have. Apply it                                                           |
+| Commit refused: "this is the shared clone"       | You skipped step 1. The message prints the exact command                                                                                        |
+| Ref update refused: "would orphan local commits" | Your commits are saved at the ref it names. Push them, do not discard them                                                                      |
 
 ---
 
@@ -364,10 +357,10 @@ They were one of these four:
 
 ### 1. Waiting for something that finishes without you
 
-The single largest waste. Do not `sleep`-and-poll a deploy, a check, a merge,
-or a watchdog. **Every one of them is already watched server-side** — Autopilot
-merges, `publish-watchdog` compares production to `main`, `report-stuck-prs`
-opens the PR you forgot. Section 5 forbids `wait_and_merge.sh` by name; this is
+The single largest waste. Do not `sleep`-and-poll a deploy, a check, or a merge.
+Native repository events open the pull request and Autopilot arms protected
+merge; the owning publisher and read-only production audit leave durable run
+evidence. Section 5 forbids `wait_and_merge.sh` by name; this is
 the same rule for the same reason, and "I'll just check every 30 seconds"
 is that script written by hand.
 
@@ -425,8 +418,8 @@ That is not a style preference:
 - **It is auditable.** A `gh` call leaves a run log and an API trail. A click
   leaves nothing, so when something goes wrong the reconstruction stops at
   "somebody did something in the UI".
-- **The guards cannot see a click.** `report-stuck-prs.sh`,
-  `publish-watchdog.sh` and `estate-integrity.sh` all reason about repository
+- **The guards cannot see a click.** The event-driven proposal/merge workflows,
+  production provenance audits, and `estate-integrity.sh` all reason about repository
   state through the API. An action taken outside it is invisible to every
   protection in section 3.
 - **It is reproducible.** A command can be pasted into a commit message, put in
@@ -442,25 +435,9 @@ operation that a command can do.
 Some agent sandboxes have no route to `api.github.com` — `git` gets through and
 `gh` does not. Two answers, in order:
 
-**1. Use the host shell.** Cowork sessions have `mcp__counselors__host_terminal`,
-which runs real bash on the Mac, where `git@github.com` over SSH works and
-`api.github.com` is reachable.
-
-**BUT `gh` IS NOT INSTALLED ON THAT MAC.** This paragraph used to say it was
-("where `gh` is already authenticated. Everything in this playbook works
-there"), and that sentence was false for every Cowork session ever run.
-Corrected 2026-09-06 after an agent traced it: `command -v gh` returns nothing,
-and Club Arena `CLAUDE.md` 11.0 has said so correctly the whole time. The two
-documents disagreed and the wrong one was the one every agent is told to read
-first.
-
-On the Mac, use `curl` against the REST API. The token is `GITHUB_TOKEN` in
-`~/Documents/club-arena/.env`:
-
-```bash
-curl -s -H "Authorization: Bearer $GITHUB_TOKEN" \
-  "https://api.github.com/repos/Smarter-Poker/<repo>/pulls?state=open"
-```
+**1. Use an enabled shell whose GitHub client is already authenticated through
+its credential store.** Check availability at call time. Never copy a token
+from a local `.env`, embed it in a remote URL, or document its value.
 
 You rarely need even that: pushing is the whole job, and `agent-open-pr.yml`
 opens the pull request for you.
@@ -471,15 +448,11 @@ opens the pull request for you.
 git push -u origin HEAD     # and stop
 ```
 
-`report-stuck-prs.sh` sweeps every ten minutes and **opens the pull request for
-you** on any `agent/*` branch less than a day old. That is not a theory: as of
-2026-08-22 it had opened **14 pull requests** for agents that stopped at the
-push, and ten of them had already merged.
-
-So: branch under `agent/<your-name>/…` (which `agent-workspace.sh` does for
-you), push, and the system finishes the job. An older branch, or one outside
-that namespace, gets _reported_ rather than opened — deliberately, because
-auto-merging a months-old branch is a regression wearing a rescue costume.
+`agent-branch-proposal.yml` emits a credential-free signal on every eligible
+branch push. Trusted default-branch `agent-open-pr.yml` consumes it and opens
+the missing pull request immediately. So: use the isolated branch created by
+`agent-workspace.sh`, push normally, and inspect the durable workflow/PR state.
+No periodic orphan sweep or speculative branch mutation exists.
 
 **Never write a `.command` file, a handoff, or a "run this on your Mac" note.**
 That converts a solved problem into a human's task, and this is the one rule
@@ -487,8 +460,8 @@ the whole system exists to enforce. If you are about to write one, the answer
 is one of the two above.
 
 **And verify before you advise.** An agent told Dan his clone was divergent and
-pointed him at `git-unstick.sh`; the clone was `0 behind, 0 ahead`. Running an
-unstick on a healthy clone creates a backup branch and a reset for nothing.
+recommended a recovery reset; the clone was `0 behind, 0 ahead`. Running a
+mutating recovery on a healthy clone creates risk for nothing.
 Check first:
 
 ```bash
@@ -498,7 +471,6 @@ git rev-list --left-right --count origin/main...HEAD   # behind <tab> ahead
 ### Reading CI status: one command, and two APIs that will lie to you
 
 ```bash
-export GITHUB_TOKEN=$(grep -m1 '^GITHUB_TOKEN=' ~/Documents/club-arena/.env | cut -d= -f2-)
 node scripts/ci/pr-status.mjs            # the PR for your current branch
 node scripts/ci/pr-status.mjs 3163       # by number      --all for every open PR
 ```
@@ -512,7 +484,7 @@ them answer confidently and wrongly:
 
 | route                             | what it does                                                                                                                                                                                                          |
 | --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `gh` anything                     | **`gh` is not installed on this Mac.** `command not found`                                                                                                                                                            |
+| An unavailable GitHub client      | Must report unavailable; never silently fall through to a weaker or differently scoped credential                                                                                                                     |
 | `GET /commits/:sha/check-runs`    | **403** — the estate PAT has no `checks:read`. Read `.check_runs` off that body and you get `undefined`, which looks like "no checks failed"                                                                          |
 | `GET /commits/:sha/status`        | **200 `{"state":"pending","total_count":0}` — for green, red, and never-built commits alike.** Legacy commit statuses; every check here is an Actions check-run, so it has nothing to report and calls that `pending` |
 | `GET /actions/runs?head_sha=:sha` | the truth, readable with the same token. What `pr-status.mjs` uses                                                                                                                                                    |
@@ -537,7 +509,7 @@ Autopilot merges it when the checks go green. Checking once to see _why_
 something is BLOCKED is fine; sitting in a loop waiting is the thing the
 forbidden `wait_and_merge.sh` scripts did.
 
-### `gh` is the sanctioned path. The GitHub MCP is not.
+### The configured GitHub CLI/API credential is the sanctioned path
 
 If a GitHub MCP tool answers **`Bad credentials`**, you are not blocked — you
 are using the wrong tool. It carries its own static token, separate from the
@@ -546,12 +518,12 @@ That happened on 2026-08-22: the MCP's token was dead while `gh` worked
 perfectly, and an agent reported itself blocked on a repository it could read.
 
 Every guard, script and workflow in this estate is written against `gh` and the
-REST API for exactly this reason. Use them **where `gh` exists** - it does in
-CI, and it does NOT on the Mac (see 8b), so on the Mac take the second column:
+REST API for exactly this reason. Use the configured client available in the
+current environment; never recover by sourcing a repository-adjacent `.env`:
 
 ```bash
 gh pr create --fill                    # or: the push alone; agent-open-pr.yml opens it
-gh api repos/OWNER/REPO/contents/PATH  # or: curl -H "Authorization: Bearer $GITHUB_TOKEN" ...
+gh api repos/OWNER/REPO/contents/PATH
 ```
 
 If you find the MCP dead, say so once and carry on with `gh`. Do not treat it
@@ -574,23 +546,19 @@ Worth knowing, because it has caused a false alarm:
   its own origin at `ca-static.smarter.poker`. It has not published through the
   World Hub repo since 2026-09-02.
 
-If you want to know the true state of anything, ask the API. On the Mac take
-the second column — `gh` is not installed there (8b), and a bare `gh` here is
-what sends an agent hunting for a fallback that lies:
+If you want to know the true state of anything, ask the API through the
+configured client. A missing client is an explicit UNKNOWN, never permission
+to scrape a credential from a local file:
 
 ```bash
 # what actually ran, and why it is red
-gh run list --branch <branch> --limit 5     # or: node scripts/ci/pr-status.mjs --branch <branch>
+gh run list --branch <branch> --limit 5
 
 # has this branch ever been proposed
-gh pr list --state all --head <branch>      # or:
-curl -s -H "Authorization: Bearer $GITHUB_TOKEN" \
-  "https://api.github.com/repos/Smarter-Poker/<repo>/pulls?state=all&head=Smarter-Poker:<branch>"
+gh pr list --state all --head <branch>
 
 # how far ahead/behind is it
-gh api repos/Smarter-Poker/<repo>/compare/main...<branch> --jq '.ahead_by,.status'   # or:
-curl -s -H "Authorization: Bearer $GITHUB_TOKEN" \
-  "https://api.github.com/repos/Smarter-Poker/<repo>/compare/main...<branch>"
+gh api repos/Smarter-Poker/<repo>/compare/main...<branch> --jq '.ahead_by,.status'
 ```
 
 ---
@@ -599,7 +567,7 @@ curl -s -H "Authorization: Bearer $GITHUB_TOKEN" \
 
 ```bash
 bash scripts/agent-trees-audit.sh        # is any work at risk right now
-bash scripts/git-unstick.sh              # this clone is stranded mid-rebase
+git status --short --branch              # classify state before any mutation
 gh pr list --state open                  # what is waiting
 gh issue list --state open               # what the guards are saying
 ```

@@ -28,6 +28,7 @@ import { supabase, getAuthUser } from '../lib/supabase';
 import { sizedStorageUrl } from '../utils/avatarGenerator';
 import { masterBus } from '../core/MasterBus';
 import { watchBbjPool } from '../lib/bbjPoolFeed';
+import { watchBbjMini, type BbjMiniSnapshot } from '../lib/bbjMiniFeed';
 import { watchBbjHits } from '../lib/bbjHitFeed';
 import { useMasterBusChannel } from '../hooks/useMasterBusChannel';
 import { useCoalescedRefresh } from '../hooks/useCoalescedRefresh';
@@ -725,6 +726,21 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
   // Tapping the lobby jackpot opens the SAME view as tapping it at a table:
   // last 5 hits, qualifying hands per game, payout % per stakes (Dan 2026-08-18).
   const [bbjPoolId, setBbjPoolId] = useState<string | null>(null);
+  /* THE MINI ON THE LOBBY TILE (Dan 2026-09-09: "seen and discoverable like
+     the BBJ currently is"). The range the mini pays across this club's
+     stakes, from the one feed per club (lib/bbjMiniFeed). */
+  const [lobbyMini, setLobbyMini] = useState<BbjMiniSnapshot | null>(null);
+  /* "Mini 250 - 1,500": the range across the tiers that can pay right now.
+     Nothing when the mini is off or every tier is paused at the reserve floor
+     - a line that promised a paused mini would be a lie about money. */
+  const lobbyMiniLine = useMemo(() => {
+    if (!lobbyMini || !lobbyMini.enabled) return null;
+    const payable = lobbyMini.tiers.filter((t) => t.enabled && t.payable).map((t) => t.amount);
+    if (payable.length === 0) return null;
+    const lo = Math.trunc(Math.min(...payable)).toLocaleString('en-US');
+    const hi = Math.trunc(Math.max(...payable)).toLocaleString('en-US');
+    return lo === hi ? `Mini ${lo}` : `Mini ${lo} - ${hi}`;
+  }, [lobbyMini]);
   const [showBBJInfo, setShowBBJInfo] = useState(false);
   // Dan 2026-08-23: the Club Bank row opens the Club Bank Cashier - send outs
   // to agent wallets, the full chip ledger, and (standalone clubs only) the
@@ -1066,6 +1082,10 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
     /* The jackpot feeds are ref-counted per club and per pool, so a table open
        in another tab-panel shares these rather than opening a second of each. */
     let stopBbjPool: (() => void) | null = null;
+    let stopBbjMini: (() => void) | null = null;
+    /* Same rule as every other mini subscriber: never carry the previous
+       club's payable range onto this club's tile. */
+    setLobbyMini(null);
     let stopBbjHits: (() => void) | null = null;
     let watchedBbjPoolId: string | null = null;
 
@@ -1075,8 +1095,10 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       playingRefreshTimer = null;
       occupancyTimer = null;
       stopBbjPool?.();
+      stopBbjMini?.();
       stopBbjHits?.();
       stopBbjPool = null;
+      stopBbjMini = null;
       stopBbjHits = null;
       watchedBbjPoolId = null;
     };
@@ -1347,6 +1369,10 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           if (stopBbjHits) stopBbjHits();
           stopBbjHits = watchBbjHits(snap.poolId);
         }
+      });
+      stopBbjMini = watchBbjMini(resolvedId, (snap) => {
+        if (!isCurrent()) return;
+        setLobbyMini(snap);
       });
 
       /**
@@ -4682,6 +4708,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                   })
                 : '-'}
             </strong>
+            {lobbyMiniLine && <span className="lobby-bbj__mini">{lobbyMiniLine}</span>}
           </button>
 
           {/* ── Wallet ──

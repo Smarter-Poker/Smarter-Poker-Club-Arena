@@ -6,8 +6,8 @@
 # Why this file exists
 # ────────────────────
 # The run-spec used to live only inside .github/workflows/auto-deploy-hetzner.yml.
-# That meant anything which restarted the engine outside of CI (an operator, the
-# host supervisor, a recovery after a half-finished deploy) had to re-derive the
+# That meant anything which restarted the engine outside of CI (an operator or
+# the causal recovery after a half-finished release) had to re-derive the
 # flags from memory. Every one of those flags is load-bearing:
 #
 #   --label autoheal=true   Docker's HEALTHCHECK only sets .State.Health.Status.
@@ -16,25 +16,21 @@
 #                           performs the restart. Without it the healthcheck is
 #                           a status light wired to nothing.
 #   --restart always        Covers process crash + daemon restart + host reboot.
-#                           It does NOT cover `docker stop`/`docker kill`, which
-#                           Docker records as a manual stop — that hole is
-#                           covered by engine-supervisor.sh, not by this flag.
+#                           It does NOT cover an intentional manual stop; no
+#                           periodic mutator is allowed to reverse one.
 #   --log-opt max-size      Unbounded json-file logs fill the disk, and a full
 #                           disk wedges the engine in exactly the way this whole
 #                           workstream exists to prevent.
 #
-# Callers: auto-deploy-hetzner.yml (deploy) and engine-supervisor.sh (recovery).
-# Both must go through here so the two can never drift apart.
+# Callers: the frozen engine release transaction and its synchronous one-shot
+# recovery. Both must go through here so their run-spec cannot drift apart.
 #
 set -euo pipefail
 
 # ── Mutual exclusion ─────────────────────────────────────────────────────────
-# engine-supervisor.sh takes this same lock (non-blocking; it skips its tick if
-# held). Without it, a supervisor tick landing in the window between the
-# `docker rm` and `docker run` below sees "container absent", launches its own
-# copy of this script, and ends up stopping and recreating the container the
-# deploy had just created — which fails the deploy's health verification and
-# rolls back a build that was fine. The mirror case is two simultaneous
+# The release transaction owns this lock across every stop/run mutation. Its
+# one-shot recovery receives ENGINE_UP_LOCK_HELD=1 and reuses that ownership;
+# unrelated callers serialize here. The mirror case is two simultaneous
 # `docker run`s, where the loser dies on "container name already in use".
 LOCK_FILE="${LOCK_FILE:-/var/lock/club-arena-engine-up.lock}"
 if [ "${ENGINE_UP_LOCK_HELD:-0}" != "1" ]; then
@@ -57,8 +53,8 @@ RELEASE_SEAL="${ENGINE_RELEASE_SEAL:-$CONTROL_DIR/engine-release-seal.py}"
 # health handler has taken longer than the old five-second deadline even while
 # tables were still making progress. Three false negatives then disconnected
 # every table. Give the lightweight semantic probe enough time to be scheduled,
-# and give a restarted engine the same five-minute cold-boot grace as the host
-# supervisor. After that grace, three failures at 20-second intervals still
+# and give a restarted engine a five-minute cold-boot grace. After that grace,
+# three failures at 20-second intervals still
 # recover a genuinely wedged engine in about one minute.
 HEALTH_INTERVAL="${HEALTH_INTERVAL:-20s}"
 HEALTH_TIMEOUT="${HEALTH_TIMEOUT:-15s}"
@@ -83,7 +79,9 @@ save_outgoing_log() {
   out="$LOG_DIR/engine-${stamp}-started${started:-unknown}-${id:-unknown}-${img:-unknown}.log.gz"
   # -t: every line carries the daemon's timestamp, so the file is usable
   # without the process's own clock.
-  if docker logs -t "$c" 2>&1 | gzip -6 > "$out"; then
+  if timeout --signal=TERM --kill-after=5s 20s \
+    bash -c 'set -o pipefail; docker logs -t "$1" 2>&1 | gzip -6 > "$2"' \
+    _ "$c" "$out"; then
     log "saved the outgoing log to $out ($(du -h "$out" | cut -f1))"
   else
     rm -f "$out"; return 1
@@ -135,10 +133,22 @@ if [ ! -x "$RELEASE_SEAL" ]; then
   exit 1
 fi
 AUTH_ARGS=(authorize --image "$IMAGE")
-if [ -n "${ENGINE_RELEASE_TOKEN:-}" ]; then
-  AUTH_ARGS+=(--token "$ENGINE_RELEASE_TOKEN")
+TOKEN_VALUE=''
+[ -z "${ENGINE_RELEASE_TOKEN:-}" ] \
+  || { log 'FATAL: release tokens in environment variables are forbidden'; exit 1; }
+if [ -n "${ENGINE_RELEASE_TOKEN_FD:-}" ]; then
+  [[ "$ENGINE_RELEASE_TOKEN_FD" =~ ^[3-9]$ ]] \
+    || { log 'FATAL: release token descriptor is invalid'; exit 1; }
+  IFS= read -r TOKEN_VALUE <&"$ENGINE_RELEASE_TOKEN_FD" \
+    || { log 'FATAL: release token descriptor is unreadable'; exit 1; }
+  AUTH_ARGS+=(--token-stdin)
 fi
-AUTHORIZATION="$("$RELEASE_SEAL" "${AUTH_ARGS[@]}")" \
+if [ -n "$TOKEN_VALUE" ]; then
+  AUTHORIZATION="$(printf '%s' "$TOKEN_VALUE" | "$RELEASE_SEAL" "${AUTH_ARGS[@]}")"
+  TOKEN_VALUE=''
+else
+  AUTHORIZATION="$("$RELEASE_SEAL" "${AUTH_ARGS[@]}")"
+fi \
   || { log "FATAL: release seal rejected image $IMAGE — refusing to touch the running engine"; exit 1; }
 read -r AUTHORIZED_CLASS AUTHORIZED_SHA AUTHORIZED_IMAGE_ID EXTRA <<< "$AUTHORIZATION"
 case "$AUTHORIZED_CLASS" in

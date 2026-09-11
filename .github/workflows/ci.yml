@@ -10,7 +10,7 @@ on:
   # push event still ran was Post-Deploy Verification, a 2-4 minute CDN poll
   # per merge - 2,653 push runs in August (~8,000 billed minutes) duplicating
   # what post-deploy-e2e.yml (workflow_run on the publisher) and
-  # publish-watchdog.yml already verify against production. Post-Deploy
+  # production-integrity-audit.yml already verifies against production. Post-Deploy
   # Verification now runs on the schedules below instead. The daily
   # "is main actually green" schedule remains the whole-branch safety net.
   schedule:
@@ -93,9 +93,9 @@ jobs:
   # ───────────────────────────────────────────────────────────────────────────
   changes:
     name: What changed
-    # 2026-09-02 (cost audit phase 3): vars.CI_RUNNER routes to a self-hosted
-    # runner when set; unset it is ubuntu-latest exactly as before.
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    # Pull-request metadata is untrusted input. Never run it on the persistent
+    # estate hosts used by privileged workflows.
+    runs-on: ubuntu-latest
     timeout-minutes: 3
     if: github.event_name == 'pull_request'
     # The gh call below is a 403 without this. GITHUB_TOKEN defaults to read on
@@ -217,9 +217,7 @@ jobs:
   # it to be behind a gate that can hide it.
   source_windows:
     name: Source Windows Are Structural
-    # 2026-09-02 (cost audit phase 3): vars.CI_RUNNER routes to a self-hosted
-    # runner when set; unset it is ubuntu-latest exactly as before.
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 6
     steps:
       - name: Checkout
@@ -265,9 +263,7 @@ jobs:
   stub_gate:
     if: github.event_name == 'pull_request'
     name: Stub Gate
-    # 2026-09-02 (cost audit phase 3): vars.CI_RUNNER routes to a self-hosted
-    # runner when set; unset it is ubuntu-latest exactly as before.
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -294,9 +290,7 @@ jobs:
     # when it takes twenty seconds.
     if: github.event_name == 'pull_request'
     name: TypeScript Check
-    # 2026-09-01 (cost audit): vars.CI_RUNNER routes to a self-hosted runner
-    # when set; unset it is ubuntu-latest exactly as before.
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 15
 
     steps:
@@ -599,14 +593,9 @@ jobs:
           } >> $GITHUB_STEP_SUMMARY
 
       - name: Supabase Invariants — Phantom References (tables + RPCs)
-        # Credentials let the check ask the LIVE schema before failing, so a
-        # manifest that has simply gone stale (schema is applied straight to
-        # prod via the Supabase MCP; the snapshot refreshes daily) no longer
-        # reds somebody else's unrelated commit. A reference that is missing
-        # from BOTH the snapshot and the live schema still fails the build.
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        # Pull-request code receives no production credential. This gate uses
+        # the reviewed schema manifest; the trusted live-schema workflow checks
+        # production independently from default-branch code.
         run: |
           set -o pipefail
           echo "## Supabase Phantom-Reference Check" >> $GITHUB_STEP_SUMMARY
@@ -667,9 +656,8 @@ jobs:
       # check would report success while validating nothing — it fails loudly
       # rather than allow that.
       - name: Supabase Invariants — Embed Relationships
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        # Exact live probes run only from the trusted production workflow. This
+        # branch gate still inventories embeds without receiving a secret.
         run: |
           set -o pipefail
           echo "## Supabase Embed-Relationship Check" >> $GITHUB_STEP_SUMMARY
@@ -773,40 +761,6 @@ jobs:
 
       # BLOCKING: Supabase identifies migrations by the filename version. A
       # duplicate version makes two different files compete for one ledger row.
-
-      # BLOCKING: a club must stay deletable. public.clubs has seventy foreign
-      # keys pointing at it; a DELETE checks every one, and a check with no
-      # usable index is a sequential scan of the child table. On 2026-09-03 at
-      # 23:33 UTC seven of the seventy had none, the club-create certification
-      # could not remove its two fixtures inside a PostgREST request, and 200,000
-      # chips were stranded in Club Arena behind clubs that Dan had said must not
-      # exist. Two of the seven LOOKED indexed: their only candidate index led on
-      # club_id but was PARTIAL, and a partial index cannot answer a foreign key
-      # check because the check must find the rows the predicate hides.
-      #
-      # This asks production, not a manifest, because the catalogue is the only
-      # thing that knows. A new table with a club_id and no index turns THIS
-      # branch red rather than a certification run weeks from now.
-      - name: Supabase Invariants — A Club Stays Deletable
-        # The gate asks production's catalogue, so it needs the same two
-        # secrets every other Supabase gate in this job carries. Without them
-        # it exited 2 on every run of this branch (2026-09-04), red for a
-        # reason that had nothing to do with clubs.
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: |
-          set -o pipefail
-          echo "## Club Foreign-Key Index Check" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          if node scripts/ci/check-club-fk-indexes.mjs 2>&1 | tee /tmp/clubfk.log; then
-            echo "OK — every foreign key into clubs has an index that can answer it." >> $GITHUB_STEP_SUMMARY
-          else
-            echo "A foreign key into clubs would force a sequential scan, so deleting a club" >> $GITHUB_STEP_SUMMARY
-            echo "can time out and strand a certification fixture and its chips. Add the index" >> $GITHUB_STEP_SUMMARY
-            echo "in a migration — the log prints the exact statement." >> $GITHUB_STEP_SUMMARY
-            exit 1
-          fi
 
       # BLOCKING: a SECURITY DEFINER function that writes, and that a browser
       # role can execute, must consult auth.uid()/auth.role()/auth.jwt(). On
@@ -912,9 +866,7 @@ jobs:
           fi
 
       - name: Supabase Invariants — Phantom Columns
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        # Pull-request code checks the reviewed column manifest only.
         run: |
           set -o pipefail
           echo "## Supabase Phantom-Column Check" >> $GITHUB_STEP_SUMMARY
@@ -991,12 +943,9 @@ jobs:
        (github.event_name == 'pull_request' &&
         (needs.changes.result != 'success' || needs.changes.outputs.src == 'true' || needs.changes.outputs.tests == 'true')))
     name: Client Unit Tests shard ${{ matrix.shard }}
-    # 2026-09-01 (cost audit): `vars.CI_RUNNER` routes this job to a
-    # self-hosted runner the moment Dan sets the repository variable (e.g. to
-    # `estate-linux`). Unset, it is exactly `ubuntu-latest` as before. A warm
-    # self-hosted runner turns this 12-minute job into ~2 minutes because
-    # node_modules survives between runs.
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    # Every pull-request shard gets a fresh hosted image. A dependency or test
+    # from a branch cannot persist into any later credential-bearing job.
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     # SHARDED 2026-09-06. Measured over 18 pull-request runs this was the
     # critical path by a distance - p50 264s, max 779s, against 236s for the
@@ -1098,7 +1047,8 @@ jobs:
       always() &&
       (github.event_name == 'schedule' ||
        (github.event_name == 'pull_request' &&
-        (needs.changes.result != 'success' || needs.changes.outputs.server == 'true')))
+        (needs.changes.result != 'success' ||
+         needs.changes.outputs.server == 'true')))
     name: Accounting transactions (PostgreSQL 17)
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -1190,11 +1140,10 @@ jobs:
       always() &&
       (github.event_name == 'schedule' ||
        (github.event_name == 'pull_request' &&
-        (needs.changes.result != 'success' || needs.changes.outputs.server == 'true')))
+        (needs.changes.result != 'success' ||
+         needs.changes.outputs.server == 'true')))
     name: Server Engine (typecheck + tests)
-    # 2026-09-01 (cost audit): vars.CI_RUNNER routes to a self-hosted runner
-    # when set; unset it is ubuntu-latest exactly as before.
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 15
 
     defaults:
@@ -1275,9 +1224,7 @@ jobs:
   # surfaces in the run header without anyone thinking to open the logs.
   verdict:
     name: What this run verified
-    # 2026-09-02 (cost audit phase 3): vars.CI_RUNNER routes to a self-hosted
-    # runner when set; unset it is ubuntu-latest exactly as before.
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 2
     if: always()
     needs: [changes, stub_gate, typecheck, unit, server]
@@ -1311,7 +1258,7 @@ jobs:
             echo "::warning title=NO TESTS RAN::This run executed neither test suite. It is green because nothing was checked, not because everything passed. On a push to main that is expected - every job here is gated on pull_request - and it is exactly why the daily scheduled run against main exists."
             {
               echo "**No test suite ran in this run.** It is green because nothing"
-              echo "was checked. The daily scheduled run (\\`35 6 * * *\\`) is what"
+              echo 'was checked. The daily scheduled run (`35 6 * * *`) is what'
               echo "answers whether main is actually passing."
             } >> "$GITHUB_STEP_SUMMARY"
           elif [ -n "$SKIPPED" ]; then
@@ -1353,9 +1300,7 @@ jobs:
       always() && github.event_name == 'pull_request' &&
       (needs.changes.result != 'success' || needs.changes.outputs.src == 'true')
     name: Production Build
-    # 2026-09-01 (cost audit): vars.CI_RUNNER routes to a self-hosted runner
-    # when set; unset it is ubuntu-latest exactly as before.
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 15
 
     steps:
@@ -1511,36 +1456,9 @@ jobs:
       # file-count step that was labelled Lighthouse but never opened a page.
       #
       # BRANCHED ON THE RUNNER 2026-09-07, and this was the last unguarded
-      # `--with-deps` in the estate. `--with-deps` shells out to apt-get, which
-      # takes a machine-wide lock at /var/lib/apt/lists/lock. The EU boxes run
-      # 12 to 18 runners each, so two Production Build jobs landing on one box
-      # at the same moment is ordinary, not rare - and the second one dies:
-      #
-      #   E: Could not get lock /var/lib/apt/lists/lock. It is held by
-      #      process 1672233 (apt-get)
-      #   Failed to install browsers
-      #   Error: Installation process exited with code: 100
-      #
-      # That is #3487's Production Build, read from its job log. Nothing was
-      # wrong with the build; a sibling job was holding apt. The estate boxes
-      # already carry the browser system libraries - provision-ci-box.sh
-      # section 6 installs them once and then VERIFIES every unpacked browser
-      # resolves its shared libraries - so calling apt again bought nothing and
-      # cost a red required check.
-      #
-      # Two other steps in this file and one in post-deploy-e2e.yml have keyed
-      # on runner.environment for exactly this reason since 2026-09-04. This
-      # one was simply missed. Keyed on runner.environment and NOT on
-      # vars.CI_RUNNER: that variable is repo-wide, so it reads true even for a
-      # job still pinned to ubuntu-latest, where the libraries are NOT present.
       - name: Install Performance Browser
         if: success()
-        run: |
-          if [ "${{ runner.environment }}" = "self-hosted" ]; then
-            npx playwright install chromium
-          else
-            npx playwright install --with-deps chromium
-          fi
+        run: npx playwright install --with-deps chromium
 
       - name: Route Performance Budget
         if: success()
@@ -1577,14 +1495,10 @@ jobs:
     # does not need a 25-minute browser run twelve times a day.
     #
     # The two-hourly cron is deliberately left in place for `unit` and `server`:
-    # that is the "is main actually green" net (see the note on the schedule
-    # block), it is free on self-hosted runners, and shrinking it to daily would
-    # widen broken-main detection from 2 hours to 24.
+    # that is the "is main actually green" net (see the schedule note).
     if: github.event_name == 'schedule' && github.event.schedule == '35 6 * * *'
     name: Live Production E2E
-    # 2026-09-02 (cost audit phase 3): vars.CI_RUNNER routes to a self-hosted
-    # runner when set; unset it is ubuntu-latest exactly as before.
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 25
 
     steps:
@@ -1602,18 +1516,8 @@ jobs:
       - name: Install Dependencies
         run: npm ci
 
-      # --with-deps needs root to apt-get the browser's system libraries. The
-      # self-hosted box has them baked in by provision-ci-box.sh and the ci user
-      # is not root, so ask for them only on a GitHub-hosted runner. Keyed on
-      # runner.environment, NOT on vars.CI_RUNNER: that variable is set
-      # repo-wide, so it is true even for a job still pinned to ubuntu-latest.
       - name: Install Playwright Browsers
-        run: |
-          if [ "${{ runner.environment }}" = "self-hosted" ]; then
-            npx playwright install chromium
-          else
-            npx playwright install --with-deps chromium
-          fi
+        run: npx playwright install --with-deps chromium
 
       - name: Wait for Production Deploy
         run: |
@@ -1655,36 +1559,9 @@ jobs:
           # Point tests at production — set PLAYWRIGHT_BASE_URL in the test config
           BASE_URL: https://smarter.poker/hub/club-arena
           CI: true
-          # Optional test account. 47 of the route specs skip themselves the
-          # moment they land on /auth, so a signed-out run has never asserted a
-          # third of the suite. tests/e2e/global-setup.ts logs in when these are
-          # present and writes a storageState; when the secrets do not exist
-          # GitHub substitutes empty strings, global-setup writes an EMPTY state,
-          # and the run is byte-for-byte the signed-out one. That is deliberate:
-          # this step must not go red on a repo that has never set them.
-          SP_EMAIL: ${{ secrets.SP_EMAIL }}
-          SP_PASS: ${{ secrets.SP_PASS }}
-          # CUSTOMIZATION COMMERCE CERTIFICATION (2026-09-02).
-          #
-          # tests/e2e/support/temporaryCustomizationAccount.ts THROWS when these
-          # three are absent, and they were never passed here - so four
-          # customization specs failed on every scheduled run for a reason that
-          # had nothing to do with the product. This job has failed 14 times in
-          # a row and "is main green?" is the only question it exists to answer,
-          # so a self-inflicted red is expensive: it hides the five real
-          # failures underneath it.
-          #
-          # SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY already exist as repo
-          # secrets and just were not wired in. VITE_SUPABASE_ANON_KEY does NOT
-          # exist yet; it is the PUBLISHABLE key that already ships inside the
-          # browser bundle, so it is a repo variable rather than a secret, and
-          # it is read here with a secret fallback so either home works. Until
-          # one of them is set GitHub substitutes an empty string and this step
-          # behaves exactly as it does today - the change cannot make anything
-          # worse than the current red.
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY || secrets.VITE_SUPABASE_ANON_KEY }}
+          # This branch-executable workflow is intentionally signed out and
+          # holds no production credentials. Authenticated production coverage
+          # lives in post-deploy-e2e.yml, whose code comes from default branch.
         continue-on-error: false
 
       # ── MOBILE FIT + AVATAR WATCHDOG (2026-08-24) ─────────────────────────
@@ -1701,8 +1578,6 @@ jobs:
         if: always()
         run: node scripts/e2e-mobile-overflow-audit.mjs
         env:
-          SP_EMAIL: ${{ secrets.SP_EMAIL }}
-          SP_PASS: ${{ secrets.SP_PASS }}
           FAIL_ON_FINDINGS: '1'
           ROUTES: '["/","/auth","/clubs/a0000000-0000-0000-0000-000000000001","/clubs/a0000000-0000-0000-0000-000000000001/members","/clubs/a0000000-0000-0000-0000-000000000001/cashier","/clubs/a0000000-0000-0000-0000-000000000001/tournaments","/clubs/a0000000-0000-0000-0000-000000000001/settings","/clubs/a0000000-0000-0000-0000-000000000001/promotions","/profile","/friends","/cashier","/transactions","/vip","/marketplace","/settlement-dashboard","/analytics","/dev/bus","/leaderboard"]'
 
@@ -1710,8 +1585,6 @@ jobs:
         if: always()
         run: node scripts/e2e-avatar-audit.mjs
         env:
-          SP_EMAIL: ${{ secrets.SP_EMAIL }}
-          SP_PASS: ${{ secrets.SP_PASS }}
           FAIL_ON_FINDINGS: '1'
 
       - name: Upload Playwright Report
@@ -1729,16 +1602,7 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Tests ran against: [smarter.poker/hub/club-arena](https://smarter.poker/hub/club-arena)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          if [ -z "${{ secrets.SP_EMAIL }}" ] || [ -z "${{ secrets.SP_PASS }}" ]; then
-            echo "> **Signed out — about half the suite skipped itself.**" >> $GITHUB_STEP_SUMMARY
-            echo "> Most routes redirect to \`/auth\`, where there is nothing to assert." >> $GITHUB_STEP_SUMMARY
-            echo "> Those specs used to pass here by asserting the login page had a" >> $GITHUB_STEP_SUMMARY
-            echo "> \`<body>\`; they now skip and say so. Set the repo secrets" >> $GITHUB_STEP_SUMMARY
-            echo "> \`SP_EMAIL\` and \`SP_PASS\` to a **dedicated test player** and every" >> $GITHUB_STEP_SUMMARY
-            echo "> one of them runs — nothing else needs changing." >> $GITHUB_STEP_SUMMARY
-          else
-            echo "Signed in via \`SP_EMAIL\` — the auth-gated route specs ran." >> $GITHUB_STEP_SUMMARY
-          fi
+          echo "This duplicate drift sweep is intentionally signed out; the authenticated post-deploy workflow owns credentialed coverage." >> $GITHUB_STEP_SUMMARY
 
       # ─────────────────────────────────────────────────────────────────────────────
       # STEP 4: Post-deploy smoke test on smarter.poker
@@ -1747,7 +1611,7 @@ jobs:
       - name: Open an issue if production E2E failed
         if: failure()
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           SHA: ${{ github.sha }}
           RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
@@ -1763,35 +1627,37 @@ jobs:
           fi
 
   post-deploy-check:
-    # It waits for Vercel and curls smarter.poker. It never used the build it
+    # It checks the Hetzner origin and its public rewrite. It never used the build it
     # declared `needs: build` for - that was ordering, and it cost a full Vite
     # production build on every merge, on top of the one publish-club-arena.yml
     # already does to publish.
     # 2026-09-01: was `push` to main - a CDN poll per merge, ~85 times a day,
-    # third in line behind post-deploy-e2e.yml and publish-watchdog.yml which
+    # third in line behind post-deploy-e2e.yml and production-integrity-audit.yml which
     # both ask production the same question. The schedule keeps the smoke
     # logic alive at 13 runs a day instead of 85.
     if: github.event_name == 'schedule'
     name: Post-Deploy Verification
-    # 2026-09-02 (cost audit phase 3): vars.CI_RUNNER routes to a self-hosted
-    # runner when set; unset it is ubuntu-latest exactly as before.
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 5
 
     steps:
-      - name: Wait for Vercel Deploy + CDN Propagation
-        # Vercel builds + propagates in 60-180s for a WH push of this size.
-        # Poll for up to 3 minutes instead of a fixed sleep so we don't false-fail.
+      - name: Wait for the Hetzner origin and public rewrite
+        # The origin symlink swap is atomic; the public edge can take a short
+        # interval to revalidate. Both paths must answer before smoke testing.
         run: |
+          set -euo pipefail
           for i in $(seq 1 18); do
-            STATUS=$(curl -sI -o /dev/null -w "%{http_code}" https://smarter.poker/hub/club-arena 2>/dev/null || echo "000")
-            if [ "$STATUS" = "200" ]; then
-              echo "CDN ready after ${i}×10s ($((i * 10))s total, HTTP $STATUS)"
-              break
+            ORIGIN_STATUS=$(curl -sI -o /dev/null -w "%{http_code}" https://ca-static.smarter.poker/ 2>/dev/null || echo "000")
+            PUBLIC_STATUS=$(curl -sI -o /dev/null -w "%{http_code}" https://smarter.poker/hub/club-arena 2>/dev/null || echo "000")
+            if [ "$ORIGIN_STATUS" = "200" ] && [ "$PUBLIC_STATUS" = "200" ]; then
+              echo "Hetzner origin and public rewrite ready after ${i}×10s ($((i * 10))s total)"
+              exit 0
             fi
-            echo "  poll $i/18: HTTP $STATUS — waiting..."
+            echo "  poll $i/18: origin HTTP $ORIGIN_STATUS, public HTTP $PUBLIC_STATUS — waiting..."
             sleep 10
           done
+          echo "::error::Hetzner origin or public Club Arena rewrite did not become ready within 3 minutes."
+          exit 1
 
       - name: Smoke Test — smarter.poker
         run: |
@@ -1805,6 +1671,19 @@ jobs:
             echo "✅ HTTP $STATUS — smarter.poker/hub/club-arena is live" >> $GITHUB_STEP_SUMMARY
           else
             echo "❌ HTTP $STATUS — expected 200 after 3min poll" >> $GITHUB_STEP_SUMMARY
+            ERRORS=$((ERRORS + 1))
+          fi
+
+          # A 200 can still be a stale edge response. The direct Hetzner origin
+          # and the public rewrite must report the same immutable release SHA.
+          ORIGIN_SHA=$(curl -fsS -H 'Cache-Control: no-cache' "https://ca-static.smarter.poker/build-info.json?cb=$RANDOM" \
+            | sed -n 's/.*"ca_sha"[[:space:]]*:[[:space:]]*"\([a-f0-9]*\)".*/\1/p' || true)
+          PUBLIC_SHA=$(curl -fsS -H 'Cache-Control: no-cache' "https://smarter.poker/hub/club-arena/build-info.json?cb=$RANDOM" \
+            | sed -n 's/.*"ca_sha"[[:space:]]*:[[:space:]]*"\([a-f0-9]*\)".*/\1/p' || true)
+          if [ -n "$ORIGIN_SHA" ] && [ "$ORIGIN_SHA" = "$PUBLIC_SHA" ]; then
+            echo "✅ Hetzner origin and public rewrite serve ${ORIGIN_SHA:0:8}" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Release stamp mismatch: origin '${ORIGIN_SHA:-unreadable}', public '${PUBLIC_SHA:-unreadable}'" >> $GITHUB_STEP_SUMMARY
             ERRORS=$((ERRORS + 1))
           fi
 
@@ -1863,14 +1742,7 @@ jobs:
       always() && github.event_name == 'pull_request' &&
       (needs.changes.result != 'success' || needs.changes.outputs.src == 'true')
     name: CSS Beat E2E (multi-table + animations)
-    # The longest job in the pipeline was the only one still pinned to a
-    # GitHub-hosted 2-core runner while the estate's 16-core boxes sat idle:
-    # 11.13m on 2026-09-04, against 5.35m for Production Build and 1.38m for
-    # the unit suite, all of which ran on the estate. It was also the last job
-    # billing GitHub minutes. Chromium and WebKit are already cached on the
-    # boxes and the install step below already branches on runner.environment,
-    # so this was prepared for and simply never routed.
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 20
 
     steps:
@@ -1932,22 +1804,8 @@ jobs:
         if: steps.nm-cache.outputs.cache-hit != 'true'
         run: npm ci --ignore-scripts
 
-      # Corrected 2026-09-04. This comment used to say the job "is still pinned
-      # to ubuntu-latest (it failed on the 4-core box)" - thirty-seven lines
-      # below the `runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}` that PR
-      # #2937 put there. The code moved and the comment did not, which is how a
-      # reader ends up "fixing" a routing decision that was made deliberately.
-      # The branch below is still right and still necessary: it must resolve
-      # from the runner this job is ACTUALLY on, because the estate boxes
-      # already carry the browser system libraries and `--with-deps` would try
-      # to apt-install them again.
       - name: Install Chromium and WebKit
-        run: |
-          if [ "${{ runner.environment }}" = "self-hosted" ]; then
-            npx playwright install chromium webkit
-          else
-            npx playwright install chromium webkit --with-deps
-          fi
+        run: npx playwright install chromium webkit --with-deps
 
       # Same content-addressed media cache as Production Build, same key, so
       # whichever of the two runs first warms it for the other.

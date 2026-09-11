@@ -54,6 +54,7 @@
 import { supabase } from './supabase';
 import { masterBus } from '../core/MasterBus';
 import { reportError } from '../utils/errorReporter';
+import { refreshBbjMini } from './bbjMiniFeed';
 
 /** The shape of the row Realtime hands us. Every field is optional on the wire. */
 interface BbjWinnerRow {
@@ -119,7 +120,12 @@ async function announce(row: BbjWinnerRow, poolId: string): Promise<void> {
      everybody else.
 
      A row with no `kind` is a main jackpot - every row written before today. */
-  if ((row.kind || 'main') !== 'main') return;
+  if ((row.kind || 'main') !== 'main') {
+    /* A mini just left the reserve: every surface showing "what the mini pays
+       here" re-reads now rather than in up to a minute (lib/bbjMiniFeed). */
+    refreshBbjMini();
+    return;
+  }
 
   /* THE HIT IS REAL BEFORE ANY OF THIS RUNS. The row only exists because the
      payout transaction committed, so nothing below may decide not to announce

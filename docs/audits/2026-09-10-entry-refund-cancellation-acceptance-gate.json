@@ -2,14 +2,16 @@
   "programme": "109-item comprehensive Club Arena accounting audit",
   "control": "CA-03-11",
   "phase": 3,
-  "status": "open_native_acceptance_blocked_by_mixed_dependency_graph",
+  "status": "native_semantics_accepted_current_dependency_parity_pending",
   "source_probe": "scripts/ci/probes/tournament-cancellation-entrant-refunds.sql",
   "source_guard": "tests/tournament-cancellation-entrant-refunds.guard.test.ts",
   "source_guard_scope": "Text contract only; passing this guard is not native cancellation acceptance.",
   "prepared_policy_changes": [
     "Use authenticated request-bound registration instead of the retired one-argument registration alias.",
     "Assert registration charges and stamps its host-club wallet while preserving the other club wallet.",
-    "Require both cash and satellite funded entrants to receive exactly one origin-wallet cash refund, with no newly issued ticket.",
+    "Require the wallet-funded entrant to receive one 100-chip refund in its exact source wallet.",
+    "Require the satellite-funded entrant to receive one 100-chip tournament-entry-only ticket and zero wallet chips.",
+    "Require the tournament-ticket-funded entrant to receive exactly one replacement 100-chip tournament-entry-only ticket and zero wallet chips.",
     "Retain exact stored receipt replay, fee attribution, escrow closure and immutable evidence assertions.",
     "Restore only the exact tracked atomic_cancel_tournament platform-source seed omitted from the schema-only database."
   ],
@@ -30,7 +32,7 @@
     {
       "run": "with_exact_tracked_static_source_seed",
       "exit_code": 3,
-      "result": "current-policy refund assertions refused the mixed-schema outcome",
+      "result": "accepted exact source-instrument outcome; the old cash-for-satellite expectation was the defect",
       "observed": {
         "ok": true,
         "fully_settled": true,
@@ -41,14 +43,17 @@
         "fees_reversed": 20
       },
       "expected": {
-        "total_refunded": 200,
-        "refund_line_count": 2,
-        "total_ticket_returned": 0,
-        "ticket_return_count": 0,
+        "total_refunded": 100,
+        "refund_line_count": 1,
+        "total_ticket_returned": 100,
+        "ticket_return_count": 1,
+        "satellite_wallet_chips_credited": 0,
         "fees_reversed": 20
       },
+      "semantic_acceptance": true,
       "rollback_verified": true,
-      "sql_sha256": "81063452e65fee71a724e3465ea950d3bba7c17913e18fb7e41ecf68bd8c3b3b",
+      "current_corrected_sql_bytes": 29164,
+      "current_corrected_sql_sha256": "485d48aad7147ab9b54d8c0f3118a6d928948468aade3da2361452f9ccedfce5",
       "log": "/tmp/codex-chip-entry-cancellation-seeded-native.log"
     }
   ],
@@ -78,11 +83,11 @@
     "full_current_catalog_parity": false
   },
   "limits": [
-    "The native mixed-schema output is not attributed to the current live cancellation dependency graph.",
+    "The native mixed-schema run accepted here proves the source-instrument split, not complete current-live catalog parity.",
     "The eight verified satellite origin-wallet groups exercise unregister/refund and actual-start migration replay, not atomic cancellation.",
-    "Prepared current-policy assertions did not pass full native acceptance; CA-03-11 and Phase 3 remain open.",
+    "The 100-chip cash refund plus 100-chip entry-ticket outcome is accepted; CA-03-11 remains open only for a current dependency-graph replay and the remaining concurrency/interruption cases.",
     "No deeper rejected cancellation source inspection, denied restoration, production financial write, engine action or Stage B production mutation was attempted."
   ],
   "cleanup": "Transaction-scoped registration wrapper and current origin-wallet function rehearsals were rolled back. Empty users, tournaments and ca_settle_sources were independently verified; original resolver hash and missing request wrapper were restored. Database returned to coordinator.",
-  "required_next_step": "Verify a complete authorized current dependency graph, then execute this probe and the remaining concurrency/interruption cases. Do not claim acceptance from source guard tests."
+  "required_next_step": "Verify a complete authorized current dependency graph, then replay this already-corrected source-instrument probe and the remaining concurrency/interruption cases. Do not treat source guard tests alone as live catalog parity."
 }

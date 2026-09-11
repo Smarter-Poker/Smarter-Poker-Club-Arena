@@ -179,6 +179,8 @@ import { reconcileHeroSeatFromEngine, MAX_SUPPORTED_SEATS } from '../lib/heroSea
 import { gameCode } from '../utils/gameCode';
 import { masterBus } from '../core/MasterBus';
 import { watchBbjPool } from '../lib/bbjPoolFeed';
+import { watchBbjMini, miniPlateAmount, type BbjMiniSnapshot } from '../lib/bbjMiniFeed';
+import { isBbjPlateShown } from '../components/table/bbjPlateVisibility';
 import { watchBbjHits } from '../lib/bbjHitFeed';
 import {
   useMasterBusSubscription,
@@ -6252,6 +6254,9 @@ export default function TablePage({
 
   // Resolved pool id — the last-5-jackpots modal reads its history from this.
   const [bbjPoolId, setBbjPoolId] = useState<string | null>(null);
+  /* THE MINI (Dan 2026-09-11). One feed per club (lib/bbjMiniFeed), the flat
+     amount per stakes tier and whether each can pay right now. */
+  const [bbjMini, setBbjMini] = useState<BbjMiniSnapshot | null>(null);
   // (tableSessionDate removed 2026-08-26 — item 5 dropped the date from the
   // felt masthead, and nothing else read it.)
 
@@ -7594,8 +7599,15 @@ export default function TablePage({
      the two de-duplicate on the hit's own identity. */
   useEffect(() => {
     if (!tableId) return;
+    /* A different club's mini must never render under this one's heading.
+       `watchBbjMini` replays immediately only for a club it has already
+       cached, so the previous club's figures would otherwise stay on screen
+       until the new RPC answered. Clear first; show nothing, not the wrong
+       number. */
+    setBbjMini(null);
     let cancelled = false;
     let stopPool: (() => void) | null = null;
+    let stopMini: (() => void) | null = null;
     let stopHits: (() => void) | null = null;
     let watchedPoolId: string | null = null;
 
@@ -7619,12 +7631,17 @@ export default function TablePage({
           stopHits = watchBbjHits(snap.poolId);
         }
       });
+      stopMini = watchBbjMini(actualClubId, (snap) => {
+        if (cancelled || !isMounted.current) return;
+        setBbjMini(snap);
+      });
     };
 
     start().catch((e) => reportError(e, 'TablePage.bbj_feed_start_failed', { tableId }));
     return () => {
       cancelled = true;
       if (stopPool) stopPool();
+      if (stopMini) stopMini();
       if (stopHits) stopHits();
     };
   }, [tableId]);
@@ -11199,7 +11216,12 @@ export default function TablePage({
         ) {
           return;
         }
-        toast.info('Bad Beat Jackpot Hit. Your Share Is Being Paid And Will Land Shortly.', 6000);
+        toast.info(
+          handState.kind === 'mini'
+            ? 'Mini Bad Beat Jackpot Hit. Your Share Is Being Paid And Will Land Shortly.'
+            : 'Bad Beat Jackpot Hit. Your Share Is Being Paid And Will Land Shortly.',
+          6000
+        );
         return;
       }
 
@@ -11219,10 +11241,11 @@ export default function TablePage({
           return;
         }
         const late = Number(handState.totalPayout);
+        const paidLabel = handState.kind === 'mini' ? 'Mini Bad Beat Jackpot' : 'Bad Beat Jackpot';
         toast.success(
           Number.isFinite(late) && late > 0
-            ? `Bad Beat Jackpot Paid. $${money(late)} Has Been Shared Out.`
-            : 'Bad Beat Jackpot Paid. Your Share Has Landed.',
+            ? `${paidLabel} Paid. ${money(late)} Has Been Shared Out.`
+            : `${paidLabel} Paid. Your Share Has Landed.`,
           6000
         );
         return;
@@ -22025,6 +22048,21 @@ export default function TablePage({
          scaler, so the --sp-hero-clear bottom reserve is dead space for them.
          CSS collapses it via [data-hero='false'] (see TablePage.css). */
       data-hero={tableState.players.some((p) => p?.isHero) ? 'true' : 'false'}
+      /* THE MINI ROW UNDER THE JACKPOT PLATE (Dan 2026-09-11). "1" exactly
+         when TableModalsLayer draws .bbj-mini-plate - the plate is on this
+         table and the mini can pay at these stakes - so BadBeatJackpot.css can
+         grow the felt's top reserve (--sp-bbj-h) by the row's height. Same
+         condition, one helper, no second copy. */
+      data-bbj-mini={
+        isBbjPlateShown({
+          gameType: tableState.gameType,
+          isTournament: tableState.isTournament,
+          tournamentId: tableState.tournamentId,
+          maxPlayers: Number(tableState.maxPlayers) || 0,
+        }) && miniPlateAmount(bbjMini, safeBB(tableState.blinds)) !== null
+          ? '1'
+          : '0'
+      }
       /* ── HOW MANY CHAIRS THIS TABLE HAS (Dan 2026-09-05) ──────────────────
          "THE 6 HANDED TABLE SHOULDN'T BE AS TALL AS THE 9 HANDED TABLE, IT
          SHOULD BE SHORTER SO THE AVATARS AT THE TOP DON'T HAVE TO BE SHRUNK
@@ -25813,6 +25851,7 @@ export default function TablePage({
         showBBJ={showBBJ}
         bbjAmount={bbjAmount}
         bbjPoolId={bbjPoolId}
+        bbjMini={bbjMini}
         bbjHeroName={tableState.players.find((p) => p && p.id === userId)?.name || null}
         showBBJCelebration={showBBJCelebration}
         bbjCelebrationData={bbjCelebrationData}

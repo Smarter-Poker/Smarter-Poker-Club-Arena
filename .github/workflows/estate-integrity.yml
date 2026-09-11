@@ -23,7 +23,8 @@ on:
     # guard drift are measured in days, not minutes; six checks a day still
     # bounds any drift to a working half-day while cutting 18 runs a day.
     - cron: '17 */4 * * *'
-  workflow_dispatch:
+  repository_dispatch:
+    types: [run-estate-integrity]
 
 permissions:
   contents: read
@@ -46,8 +47,7 @@ jobs:
       # which the App has and a repo-scoped GITHUB_TOKEN never will.
       - name: Mint a GitHub App token for the whole account
         id: app-token
-        if: vars.AUTOPILOT_APP_ID != ''
-        uses: actions/create-github-app-token@v1
+        uses: actions/create-github-app-token@v3
         with:
           app-id: ${{ vars.AUTOPILOT_APP_ID }}
           private-key: ${{ secrets.AUTOPILOT_APP_PRIVATE_KEY }}
@@ -55,11 +55,11 @@ jobs:
 
       - name: Compare every repo against what it is supposed to be
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token || secrets.GH_PAT }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
           # The alarm writes with GITHUB_TOKEN, whose issues: write is declared
           # above and therefore guaranteed. An App's installation scopes can be
-          # narrowed without anyone here noticing, and a watchdog that cannot
-          # raise its alarm is not a watchdog.
-          GH_TOKEN_ISSUES: ${{ secrets.GITHUB_TOKEN }}
+          # narrowed without anyone here noticing, and an audit that cannot
+          # raise its alarm is not evidence.
+          GH_TOKEN_ISSUES: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: bash .github/scripts/estate-integrity.sh

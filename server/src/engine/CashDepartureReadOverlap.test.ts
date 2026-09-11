@@ -31,7 +31,21 @@ describe('cash boundary overlaps candidate reads without moving ahead of departu
     const h = setup();
     const completed = vi.fn();
     const boundary = h.engine.readCashHandDepartures().then(completed);
-    expect(h.leaveCall).toHaveBeenCalledWith(h.engine.tableId, 'club', expect.any(Function));
+    /* PIN MOVED 2026-09-11 (CLAUDE.md 5.8, drift incident bf4ef6e0): the sweep
+       now also takes a DEPARTURE REPORTER, so a cash-out that has already
+       committed is owed a teardown even when this boundary goes on to throw.
+       Same two calls starting together, one argument wider - the pin follows
+       the mechanism and gets stricter, rather than being relaxed to `any`. */
+    expect(h.leaveCall).toHaveBeenCalledWith(
+      h.engine.tableId,
+      'club',
+      expect.any(Function),
+      expect.any(Function)
+    );
+    h.leaveCall.mock.calls[0][3]?.('departed', 'occupancy-departed');
+    expect(h.engine.departedSeatsAwaitingTeardown).toEqual([
+      { userId: 'departed', occupancyId: 'occupancy-departed' },
+    ]);
     expect(h.moveRead).toHaveBeenCalledWith(h.engine.tableId);
     h.pending.resolve([]);
     await Promise.resolve();

@@ -4,7 +4,7 @@ import fs from 'fs';
 const SUPABASE_URL = 'https://kuklfnapbkmacvwxktbh.supabase.co';
 const ANON = process.env.SB_ANON || 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx';
 const PASS = process.env.TEST_PASS || process.env.SP_PASS;
-// 2026-09-04: no default account. Read SP_EMAIL from .env.local or refuse.
+// Dedicated fixture identity must be injected explicitly; never discover a workstation env file.
 const EMAIL = process.env.SP_EMAIL || process.env.TEST_USER_EMAIL;
 if (!EMAIL) throw new Error('SP_EMAIL (or TEST_USER_EMAIL) is not set - refusing to guess an account');
 const BASE = 'https://smarter.poker/hub/club-arena';

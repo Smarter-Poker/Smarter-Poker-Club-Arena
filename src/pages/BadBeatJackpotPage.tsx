@@ -7,9 +7,13 @@ import { useParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { watchBbjPool } from '../lib/bbjPoolFeed';
+import { watchBbjMini, type BbjMiniSnapshot } from '../lib/bbjMiniFeed';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
 import './BadBeatJackpotPage.css';
+/* The Bad Beat Jackpot | Mini pill pair (.bbj-modal__tiers) is styled with the
+   popup; the page uses the same pair for its winners list. */
+import '../components/bbj/BBJInfoModal.css';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import PageSkeleton from '../components/common/PageSkeleton';
@@ -44,6 +48,14 @@ export default function BadBeatJackpotPage() {
   const [jackpot, setJackpot] = useState<JackpotInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [openHandPayoutId, setOpenHandPayoutId] = useState<string | null>(null);
+  /* THE MINI ON THE JACKPOT PAGE (Dan 2026-09-09). One feed per club
+     (lib/bbjMiniFeed): the flat amounts, the reserve and its floor, thirty
+     days of mini hits. The "Backup Pool" card below is what funds it, and until
+     today the page never said so. */
+  const [pageMini, setPageMini] = useState<BbjMiniSnapshot | null>(null);
+  /* Which winners the history lists. Dan 2026-09-11: main and mini winners
+     are separate lists, the mini one tap away rather than mixed in. */
+  const [historyKind, setHistoryKind] = useState<'main' | 'mini'>('main');
   const [justUpdated, setJustUpdated] = useState(false);
   /** True when the last read threw. Distinct from "this club has no pool". */
   const [loadFailed, setLoadFailed] = useState(false);
@@ -153,6 +165,11 @@ export default function BadBeatJackpotPage() {
     {
       let isMounted = true;
       let stopPool: (() => void) | null = null;
+      let stopMini: (() => void) | null = null;
+      /* Clear before resubscribing - see the note in BBJMiniPanel: a cached
+         replay only happens for a club already watched, so the previous
+         club's mini would otherwise sit under this one's heading. */
+      setPageMini(null);
       loadJackpotData(() => isMounted);
 
       const channelKey = 'jackpot-live';
@@ -196,6 +213,10 @@ export default function BadBeatJackpotPage() {
           prevAmountRef.current = snap.mainBalance;
           setJackpot((prev) => (prev ? { ...prev, main_balance: snap.mainBalance } : prev));
         });
+        stopMini = watchBbjMini(resolvedId, (snap) => {
+          if (!isMounted) return;
+          setPageMini(snap);
+        });
 
         const channel = masterBus.getOrCreateChannel(channelKey);
         channel
@@ -229,6 +250,7 @@ export default function BadBeatJackpotPage() {
       return () => {
         isMounted = false;
         if (stopPool) stopPool();
+        if (stopMini) stopMini();
         masterBus.removeRegisteredChannel(channelKey);
         if (flashTimerRef.current) {
           clearTimeout(flashTimerRef.current);
@@ -509,6 +531,37 @@ export default function BadBeatJackpotPage() {
           <span className="info-value" style={{ color: '#007aff' }}>
             {(jackpot?.backup_balance || 0).toLocaleString()} Chips
           </span>
+          <span style={{ fontSize: '10px', color: 'rgba(255,255,255,0.45)', marginTop: '2px' }}>
+            Funds The Mini Jackpot
+            {pageMini ? ` - ${pageMini.reserveFloor.toLocaleString()} Floor` : ''}
+          </span>
+        </div>
+        <div
+          className="info-card"
+          style={{
+            border: '1px solid rgba(255, 176, 32, 0.35)',
+            background: 'rgba(255, 176, 32, 0.08)',
+          }}
+        >
+          <span className="info-label">Mini Jackpot</span>
+          <span className="info-value" style={{ color: '#ffb020' }}>
+            {(() => {
+              if (!pageMini) return 'Reading';
+              if (!pageMini.enabled) return 'Off';
+              const payable = pageMini.tiers
+                .filter((t) => t.enabled && t.payable)
+                .map((t) => t.amount);
+              if (payable.length === 0) return 'Paused';
+              const lo = Math.trunc(Math.min(...payable)).toLocaleString();
+              const hi = Math.trunc(Math.max(...payable)).toLocaleString();
+              return lo === hi ? `${lo} Chips` : `${lo} - ${hi} Chips`;
+            })()}
+          </span>
+          <span style={{ fontSize: '10px', color: 'rgba(255,255,255,0.45)', marginTop: '2px' }}>
+            {pageMini && pageMini.enabled
+              ? `Flat By Stakes - ${pageMini.hits30d.toLocaleString()} Paid In 30 Days`
+              : 'Flat By Stakes'}
+          </span>
         </div>
         <div
           className="info-card"
@@ -647,7 +700,7 @@ export default function BadBeatJackpotPage() {
       </div>
 
       {/* What qualifies / what it pays — per variant and per stakes tier */}
-      <BBJRulesPanel poolAmount={jackpot?.main_balance || 0} />
+      <BBJRulesPanel poolAmount={jackpot?.main_balance || 0} mini={pageMini} />
 
       {/* Payout Structure */}
       <div className="payout-structure">
@@ -693,14 +746,36 @@ export default function BadBeatJackpotPage() {
             />
           </div>
         ) : (
-          <BBJRecentHits
-            poolId={jackpot?.id || null}
-            limit={10}
-            poolAmount={jackpot?.main_balance || 0}
-            currentUserId={user?.id}
-            currentUserName={user ? playerDisplayName(user) : null}
-            onOpenHand={setOpenHandPayoutId}
-          />
+          <>
+            <div className="bbj-modal__tiers" role="group" aria-label="Which Winners">
+              <button
+                type="button"
+                className={`bbj-modal__tier${historyKind === 'main' ? ' is-active' : ''}`}
+                aria-pressed={historyKind === 'main'}
+                onClick={() => setHistoryKind('main')}
+              >
+                Bad Beat Jackpot
+              </button>
+              <button
+                type="button"
+                className={`bbj-modal__tier${historyKind === 'mini' ? ' is-active' : ''}`}
+                aria-pressed={historyKind === 'mini'}
+                onClick={() => setHistoryKind('mini')}
+              >
+                Mini
+              </button>
+            </div>
+            <BBJRecentHits
+              key={historyKind}
+              poolId={jackpot?.id || null}
+              limit={10}
+              poolAmount={jackpot?.main_balance || 0}
+              currentUserId={user?.id}
+              currentUserName={user ? playerDisplayName(user) : null}
+              onOpenHand={setOpenHandPayoutId}
+              kind={historyKind}
+            />
+          </>
         )}
       </div>
 

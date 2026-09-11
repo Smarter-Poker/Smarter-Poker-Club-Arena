@@ -20,9 +20,9 @@
 #     security/purge-hardcoded-service-role .. 12
 #
 # The kill list also included backup/wip-2026-08-20-final,
-# backup/wip-2026-08-20-cowork and backup/orphaned-cleanup-2026-08-21 — the exact
-# safety-net branches `scripts/git-unstick.sh` creates, per CLAUDE.md section 12.
-# Deleting those removes the documented recovery path for the failure mode this
+# backup/wip-2026-08-20-cowork and backup/orphaned-cleanup-2026-08-21. Those
+# explicit preservation refs still carry somebody's classified work; deleting
+# them would remove the documented recovery evidence for the failure mode this
 # repo hits most often.
 #
 # And ancestry alone cannot be trusted here either. CLAUDE.md section 12 records

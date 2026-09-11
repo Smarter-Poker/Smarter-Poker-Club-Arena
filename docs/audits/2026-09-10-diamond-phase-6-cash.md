@@ -1,6 +1,6 @@
 # Diamond Phase 6: Shared NLH Cash Game
 
-Status: In Progress. No Public Funded Gameplay Release.
+Status: Complete. Public Funded Diamond Games Remain Closed.
 
 ## Scope And Starting Point
 
@@ -37,9 +37,9 @@ PR 4070 merged as 81e4c6daefa47f6b6883596f3b62d2d3498e195a. CI 34424324769 passe
 - [x] Required CI 34440835759 passed on 2ea518146b; PR 4088 auto-merged as 85da6479df at 05:40:25 UTC. 18,616 client tests, 8,626 server tests (145 skipped), TypeScript/schema, build, accounting and 150 CSS + 13 Studio + 3 mobile cases passed.
 - [x] Frontend publication and release-document adoption verified September 10 at 06:55 UTC. Both build-info endpoints serve 5b7469a5cedcb7ca80f83a637189508b8f88a2b7, built 06:47:57 UTC by publisher 34446674865. GitHub ancestry includes implementation 85da6479 and documentation merge 871e491a.
 - [x] Actual engine adoption verified. Normal deployment 34449341468 cut over to 86aab0e645b1842e83fca808cf956c9733af66ba at September 10, 07:55:59 UTC, then passed runtime verification, promotion, database version movement and durable release sealing. Deploy attempt 354 recorded shipped=true. At 12:31:09 UTC engine and both frontend endpoints serve descendant f1992eeb825918d6614d72a10c66988d0cdd292c; engine status/liveness/settlementStatus are ok with zero blocked settlements. GitHub ancestry proves inclusion of implementation 85da6479 (ahead 33, behind zero) and release docs 1434f002 (ahead 10, behind zero). Earlier skipped deployments and the historical maintenance compatibility issue do not negate this completed adoption.
-- [ ] Verify permitted authenticated production routes. The managed browser still times out before returning page state, separately from the restored Mac command connection. No live route pass or application regression is inferred from this connection failure.
+- [x] Permitted authenticated production routes verified September 11, 2026 between 13:57:58 and 14:23:32 UTC, and the one defect they found was repaired, published and rechecked at 15:06:28 UTC. Exact route evidence, the defect and its repair are recorded in the live acceptance section below. The earlier managed-browser timeouts were a tooling failure and remain historical evidence; no application regression was ever inferred from them.
 
-Phase 6 remains open. Public funded gameplay stays closed pending the existing accounting and release criteria.
+Phase 6 is closed on this evidence. Public funded gameplay stays closed pending the existing accounting and release criteria: `cash_games_enabled` remains false, and no player, seat, balance, table or admission setting was changed during acceptance.
 
 ## Starting Boundaries Before This Integration
 
@@ -72,3 +72,37 @@ The initial isolated admission runner passed 65 assertions including its 38 prer
 The completed local source includes all three financial migrations, shared engine/client integration, exact departure receipts and cross-device lobby events. Clean source `71f57c9585` passed the complete client production build and server TypeScript. Latest focused repairs passed 72 client cases, 3 rendered lobby cases and 48 engine SELECT contract cases. Admission certification passed 74 SQL assertions. Accepted-hand certification passed 50 assertions after preserving production's current table-aware settlement locks; these totals overlap prior bootstrap checks.
 
 The connected controlled-play runner funded two authenticated players with 100 Diamonds each, ran the actual shared HandController, committed the real `[200, 0]` result through the twelve-argument SQL protocol, projected both histories, and cashed out to wallets `[1100, 900]`. All 2000 fixture Diamonds remained accounted for, with no active custody/seats, duplicate payment or chip minting. This ran only in the dedicated local test database. Exact commands and limitations are in the integration and settlement-lane changelogs. Normal publication and production verification remain separate unchecked gates above.
+
+## Authenticated Live Acceptance, September 11, 2026
+
+Attribution: Claude drove these checks itself, in the Claude desktop app's built-in browser pane on Dan's Mac, after Dan signed in there with his own Smarter.Poker account, which is a joined Shark Club member. The agent handled no credential, read no browser session secret, and touched no tab in Dan's own Chrome. The pane rendered 354 to 680 pixels wide, so the mobile layout was the one exercised. Every route was read from the live DOM after load, and screenshots were reviewed in session. Dan authorized dismissing the platform's own entry notice before the wallet check.
+
+Served build during the route checks: `/hub/club-arena/build-info.json` returned `ca_sha` 7fca22664fac59d4a291de9bab167a5be279efdf at 13:57:58 UTC (built 13:50:31 UTC by publish-club-arena.yml run 34606055862), and bd5247763020e5c8e50797871222e91e7ebca7c9 by 14:23:32 UTC (built 13:58:35 UTC, run 34607181704, conclusion success). Both are descendants of implementation 85da6479 and release documentation 87f7c6dd with those commits as exact merge bases. Engine health at 14:06:36 UTC identified 14794f7d with status, liveness and settlementStatus ok and zero blocked settlements, and included implementation 85da6479 (ahead 143, behind zero).
+
+### Route Results
+
+- Route A, 13:57:58 to 13:58:21 UTC. `/hub/club-arena/` rendered the Poker Arena home. The Diamond Arena card appeared automatically beside Shark Club and the other joined clubs, labeled "Diamond Arena - Click To Enter Lobby". Clicking it opened the canonical Diamond route showing "You Are Already A Member." and "Diamond Games Are Not Open For Play Yet." No join application was required or offered. PASS.
+- Route B, 13:59:10 UTC, reload at 14:01:08 UTC. The UUID route `/clubs/002c2d27-9584-4e52-835a-bb2be148fc81` canonicalized to `/clubs/diamond-arena`; both keys resolve through `isDiamondArenaClubKey` in `src/lib/constants.ts`, so the UUID and the slug are one route. The page identified Diamond Arena, carried both required lines verbatim, and finished loading Available Diamonds 494,590 and Diamonds In Play 0 as numbers. The DOM contained no NaN, no "Loading Diamond Balance", no "Diamond Balance Unavailable", no Join control, no chip-management footer, no Diamond Club Operations rail and no public funded-play action. One reload (navigation type confirmed `reload` at 14:01:22 UTC) returned the same screen and the same balances. PASS.
+- Route C, 13:59:34 UTC. `/clubs/.../finance` canonicalized to `/clubs/diamond-arena/finance` and rendered only the safe Diamond shell: membership line, closed-games line, both balances and the wallet button. No chip cashier, no club finance management, no unauthorized operations. PASS.
+- Route D, 13:59:56 UTC. `/clubs/.../agents` canonicalized to `/clubs/diamond-arena/agents` with the same safe shell. No agent hierarchy, no commissions, no agent management, no union text, no chip operations. PASS.
+- Route E, 14:00:16 UTC. The stale invitation `/invite/diamond-arena` redirected to `/clubs/diamond-arena` and rendered the member shell with balances. No Join button was pressed, no invitation acceptance existed to press, and no membership mutation was needed. PASS.
+- Route F, 14:00:47 UTC. `/clubs/shark-club` rendered the joined chip club's normal game lobby: Shark Club header and identity, My Wallets, Bad Beat Jackpot, live club schedule and a 302+ game list with View Game and Join Game controls. No application error boundary, no indefinite loading, no newly generated seat-query ambiguity error, and no Diamond policy text replacing the chip club's lobby. The platform's ordinary hourly maintenance-break notice was present and is not a Diamond fact. PASS.
+- Diamond Wallet, 14:22:51 to 14:23:10 UTC. "Open Diamond Wallet" opened the wallet: heading Diamond Wallet, Available Diamonds 494,590, Diamonds In Play 0, the Buy Diamonds and Send Diamonds controls, and the Diamond transaction history. It was closed again without submitting any action. No transfer, purchase or top-up was started. PASS.
+
+Console: 80 messages accumulated across the routes and zero were error level. All were pre-existing warnings unrelated to Diamond code: a preloaded club-card frame image reported unused, an unrecognized `ambient-light-sensor` Permissions-Policy feature, and the auth guard rehydrating a valid stored session.
+
+Observation, not a defect: a fresh browser profile shows the shared Club Arena entry notice, "Welcome To Poker Arena", once. It is the platform notice every profile sees before entering, not a Diamond join requirement, and the Diamond shell rendered correctly beneath it.
+
+### Defect Found And Repaired
+
+The acceptance found one real layout defect. The Diamond shell reuses `.club-home` for the black stage and the bottom-nav clearance, and inherited that class's chip-lobby geometry with it: the desktop two-column grid, and the mobile full-bleed offset `width: 100vw; margin-left: calc(50% - 50vw)` that the unified mobile lobby resets for itself and the Diamond shell did not. Measured at 13:57 UTC on a 680 pixel viewport, the shell computed `margin-left: -4px` with no side padding, so the heading, the membership lines, the balances and the wallet button all began at x = -4 and were clipped at the left edge. On a desktop viewport the placeholder's four lines were auto-placed across the two-column grid rather than stacked.
+
+The repair is a scoped double-class rule in `src/components/arena/DiamondArenaShell.css` that lays the shell out as one padded column at every width and holds `margin-left` at zero where `.club-home` goes full bleed, plus `tests/unit/diamondArenaShellLayout.test.ts`, which reads the stylesheet so the override cannot be tidied away. No behavior, route, wallet, admission or money path was touched.
+
+PR [4313](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/4313) from `agent/codex-diamond-phase-6/fix/diamond-shell-layout`, source d44bc402df, squash merged as 29b6ae08b20ca34b575d27492370d4cf5ad1bd67 at 14:54:00 UTC. The pre-push hook ran the new pin (2 passed) with no bypass; required CI passed before autopilot merged. Publisher run 34612890316 built 15:00:16 UTC and both build-info endpoints served 29b6ae08.
+
+Recheck at 15:06:28 UTC on served 29b6ae08, after clearing the browser's own caches so the new chunk was fetched: the shell now computes `display: flex`, `margin-left: 0px` and `padding-left: 12px`, the heading starts at x = 12, and the section spans 0 to 672 inside a 680 pixel viewport with nothing off canvas. The membership lines, both balances and the wallet button all render unclipped. Ancestry of the served build: implementation 85da6479 ahead 153 behind zero, release documentation 87f7c6dd ahead 119 behind zero, each the exact merge base. Engine health at 15:06:51 UTC still identified 14794f7d with status, liveness and settlementStatus ok and zero blocked settlements.
+
+### What Was Not Done
+
+No player transfer, purchase, deposit, buy-in, cash-out or seat action. No balance, admission setting or public funded test table. No production migration reapplied. No engine restart, host image tag, container or release seal touched. No completed implementation suite rerun to repeat prior evidence. The isolated controlled-play certification remains the funded-flow evidence for this phase.

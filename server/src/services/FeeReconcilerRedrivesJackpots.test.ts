@@ -8,7 +8,7 @@
  * hit), resolve the row when the ledger shows the payout landed, and never
  * mistake a queued jackpot for a fee contribution.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const processBBJPayout = vi.fn();
 const logBBJCollection = vi.fn();
@@ -29,6 +29,7 @@ vi.mock('./financialAlerts.js', () => ({
 }));
 
 import { reconcilePendingFees } from './FeeReconciler.js';
+import { setMaintenanceFrozen } from '../maintenance/freezeState.js';
 
 const PARAMS = {
   tableId: 'table-1',
@@ -298,4 +299,32 @@ it('retains the captured row hand number for a legacy payload without handNumber
   processBBJPayout.mockResolvedValue({ status: 'already_paid' });
   await reconcilePendingFees();
   expect(processBBJPayout.mock.calls[0][0].handNumber).toBe(QUEUED_ROW.hand_number);
+});
+
+/**
+ * THE SWEEP CHECKS THE FREEZE (section 13 rule 5, 2026-09-11).
+ *
+ * Re-driving a queued jackpot credits a seat, which is a chip movement, and
+ * during the maintenance break the platform is stopped. `GameServer` already
+ * returns early from the whole reconcile cycle while frozen, and
+ * `processBBJPayout` refuses the credit itself - this is the check at the
+ * money move, so a second caller of `reconcilePendingFees` cannot miss it.
+ *
+ * The row is left UNTOUCHED rather than attempted and failed: bumping its
+ * attempt counter and writing a failure message would read in the log as a
+ * payout that failed, when what happened is a break we scheduled.
+ */
+describe('a queued jackpot is not re-driven through a maintenance break', () => {
+  afterEach(() => setMaintenanceFrozen(false));
+
+  it('skips the row without touching it, and counts the deferral', async () => {
+    setMaintenanceFrozen(true);
+    const summary = await reconcilePendingFees();
+    /* Scanned but deliberately not looked at: deferred is its own outcome and
+       must not be folded into resolved or stillFailing (CLAUDE.md 10.86). */
+    expect(summary.deferredFrozen).toBeGreaterThan(0);
+    expect(summary.resolved).toBe(0);
+    expect(summary.stillFailing).toBe(0);
+    expect(processBBJPayout).not.toHaveBeenCalled();
+  });
 });

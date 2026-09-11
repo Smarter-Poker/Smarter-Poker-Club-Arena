@@ -33,6 +33,13 @@ import { describe, expect, it } from 'vitest';
  *    superseded it - but it burned the single retry, after which the watchdog
  *    only filed an issue and waited for a human.
  *
+ * 3. (2026-09-11) THE NETS WERE A CRON AND A WATCHDOG. Dan: "i do not want
+ *    any watch dogs, i want hard coded fixes". The 30-minute catch-up and the
+ *    watchdog's re-dispatch existed for one case - a run that failed or was
+ *    cancelled with nothing queued behind it. The publisher now hands itself
+ *    on for exactly that case (its `hand-on` job), bounded so a broken build
+ *    stops and reaches a person, and the watchdog only reports.
+ *
  * THE ENGINE IS NOT INVOLVED. Dan's hypothesis was that the hourly engine
  * restarts blocked publishing. They cannot: the two workflows use different
  * concurrency groups and share no queue, no runner and no token. This law pins
@@ -105,8 +112,22 @@ describe('No commit left behind: the publisher converges on main', () => {
     expect(yml).toMatch(/--shard=\$\{\{ matrix\.shard \}\}\/4/);
   });
 
-  it('keeps a catch-up schedule, because push alone is not a guarantee', () => {
-    expect(repo(PUBLISHER)).toMatch(/- cron: '\*\/\d+ \* \* \* \*'/);
+  it('needs no catch-up schedule: a run that cannot finish hands itself on', () => {
+    const yml = repo(PUBLISHER);
+    expect(yml).not.toMatch(/^\s*- cron:/m);
+    const job = yml.slice(yml.indexOf('\n  hand-on:'));
+    expect(job).toMatch(
+      /needs: \[publish-needed, build-and-store, client-tests, publish-to-origin\]/
+    );
+    expect(job).toMatch(
+      /always\(\) &&\s*\n\s*\(contains\(needs\.\*\.result, 'failure'\) \|\| contains\(needs\.\*\.result, 'cancelled'\)\)/
+    );
+    // Not the self-hosted runner: it must run when that runner is what failed.
+    expect(job).toMatch(/runs-on: ubuntu-latest/);
+    expect(job).toMatch(/actions: write/);
+    expect(job).toMatch(
+      /gh workflow run publish-club-arena\.yml --repo "\$\{\{ github\.repository \}\}" --ref main -f handed_on=true/
+    );
   });
 
   it('does not cancel a running publish', () => {
@@ -185,46 +206,63 @@ describe('No commit left behind: the publish closes its own loop', () => {
   it('a failed chain never fails a publish that already succeeded', () => {
     // The bundle is live at this point. Marking the run red because the
     // follow-up dispatch could not be sent would turn a success into a false
-    // alarm, and the cron plus the watchdog are still behind it.
+    // alarm. With no cron behind it (2026-09-11) the failure is an error
+    // annotation - loud - but the run stays green.
     const yml = repo(PUBLISHER);
-    const step = yml.slice(yml.indexOf('- name: Converge - chain another publish'));
-    expect(step).toMatch(/::warning::Chain dispatch failed/);
+    const step = yml.slice(
+      yml.indexOf('- name: Converge - chain another publish'),
+      yml.indexOf('\n  hand-on:')
+    );
+    expect(step).toMatch(/::error title=PUBLISH TRAIN STOPPED::chain dispatch failed/);
     expect(step).not.toMatch(/exit 1/);
+    // And the chain is a handed-on run, which asks production first.
+    expect(step).toMatch(/--ref main -f handed_on=true/);
   });
 });
 
-describe('No commit left behind: the watchdog keeps healing', () => {
+describe('No commit left behind: the publisher heals itself, and the watchdog only reports', () => {
+  const HAND_ON = () => {
+    const yml = repo(PUBLISHER);
+    return yml.slice(yml.indexOf('\n  hand-on:'));
+  };
+
   it('retries more than once', () => {
-    const sh = repo(WATCHDOG);
-    expect(sh).toMatch(/MAX_RETRIES="\$\{MAX_RETRIES:-([3-9]|\d{2,})\}"/);
-    expect(sh).toMatch(/\$\{ALREADY_RETRIED:-0\}" -lt "\$MAX_RETRIES"/);
+    expect(Number(HAND_ON().match(/RETRY_LIMIT: '(\d+)'/)![1])).toBeGreaterThanOrEqual(3);
   });
 
   it('does not spend a retry on a cancelled attempt', () => {
     // A cancellation means a newer push superseded the run. It is the
-    // publisher working, not evidence of a fault, and counting it was how a
-    // healthy repo talked itself out of healing.
-    const sh = repo(WATCHDOG);
-    expect(sh).toContain('select(.conclusion != \\"cancelled\\")');
-    expect(sh).toContain('select(.conclusion != \\"skipped\\")');
+    // publisher working, not evidence of a fault.
+    const job = HAND_ON();
+    expect(job).toContain('select(.conclusion != "cancelled" and .conclusion != "skipped")');
   });
 
   it('still stops eventually, so a genuinely broken build reaches a human', () => {
-    const sh = repo(WATCHDOG);
-    expect(sh).toMatch(/-ge "\$MAX_RETRIES"/);
-    expect(sh).toMatch(/not transient/);
+    const job = HAND_ON();
+    expect(job).toMatch(
+      /if \[ "\$STREAK" -ge "\$RETRY_LIMIT" \]; then\s*\n\s*echo "::error title=PUBLISH GAVE UP::/
+    );
+    // A streak nobody can count stops too, rather than retrying forever.
+    expect(job).toMatch(/could not count earlier failed publishes/);
   });
 
-  it('escalates in-app when healing is spent, because it must not auto-ship a broken bundle', () => {
+  it('the watchdog never re-dispatches the publisher', () => {
+    const code = repo(WATCHDOG)
+      .split('\n')
+      .filter((l) => !/^\s*#/.test(l))
+      .join('\n');
+    expect(code).not.toMatch(/gh workflow run/);
+  });
+
+  it('escalates in-app when the publisher has given up, because it must not auto-ship a broken bundle', () => {
     // The honest limit of automation: a bundle that does not build must not be
     // published anyway. So the guarantee is "never silently forgotten", and
     // that requires the alarm to reach a person, not just a repository.
     const sh = repo(WATCHDOG);
     expect(sh).toMatch(/escalate_in_app\(\)/);
     expect(sh).toMatch(/fn_raise_notification/);
-    // Called exactly where healing runs out.
-    const exhausted = sh.slice(sh.indexOf('-ge "$MAX_RETRIES"'));
-    expect(exhausted).toMatch(/escalate_in_app "/);
+    const gaveUp = sh.slice(sh.indexOf('if [ "$GAVE_UP" = "true" ]; then'));
+    expect(gaveUp).toMatch(/^if \[ "\$GAVE_UP" = "true" \]; then[\s\S]{0,600}?escalate_in_app "/);
   });
 
   it('a missing credential degrades the escalation, never fails the watchdog', () => {

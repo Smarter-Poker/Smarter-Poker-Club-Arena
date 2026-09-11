@@ -1,0 +1,56 @@
+name: Isolated release candidate qualification
+run-name: release:${{ inputs.operation_id }}:${{ fromJSON(inputs.request).phase }}
+on:
+  workflow_dispatch:
+    inputs:
+      operation_id:
+        required: true
+        type: string
+      request:
+        required: true
+        type: string
+permissions:
+  contents: read
+# This workflow has no production environment, publication secrets, SSH,
+# service-role database access, merge permission, or deployment permission.
+# It must be installed on the registered protected control branch before use.
+concurrency:
+  group: isolated-release-${{ inputs.operation_id }}
+  cancel-in-progress: false
+jobs:
+  qualify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          path: controls
+          persist-credentials: false
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ fromJSON(inputs.request).source_sha }}
+          path: source
+          fetch-depth: 2
+          persist-credentials: false
+      - name: Execute trusted qualification boundary
+        env:
+          RELEASE_REQUEST: ${{ inputs.request }}
+          RELEASE_OPERATION_ID: ${{ inputs.operation_id }}
+        run: python3 controls/operations/release/native/qualify-candidate.py source controls evidence
+      - name: Preserve exact engine image
+        if: ${{ fromJSON(inputs.request).phase == 'BUILD' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: release-engine-${{ inputs.operation_id }}
+          path: evidence/engine-image.tar
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 7
+      - name: Preserve terminal qualification receipt
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: release-receipt-${{ inputs.operation_id }}
+          path: evidence/receipt.json
+          if-no-files-found: error
+          retention-days: 7

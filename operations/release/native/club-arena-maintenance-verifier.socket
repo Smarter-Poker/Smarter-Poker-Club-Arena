@@ -1,0 +1,13 @@
+[Unit]
+Description=Bounded Club Arena maintenance proof requests
+
+[Socket]
+ListenStream=/run/club-arena-maintenance-verifier.sock
+SocketMode=0660
+SocketUser=@EXISTING_VERIFIER_USER@
+SocketGroup=@EXISTING_SERVICE_GROUP@
+Accept=yes
+MaxConnections=2
+
+[Install]
+WantedBy=sockets.target

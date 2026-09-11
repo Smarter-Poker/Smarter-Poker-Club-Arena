@@ -71,9 +71,41 @@ jobs:
           npm run build
           npm test
 
+  engine-doors:
+    name: Prove The Exact Engine Has Every Production Door
+    needs: preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout the requested immutable commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.preflight.outputs.target_sha }}
+
+      - name: Use the production Node major
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # A schema manifest can describe a function before production actually
+      # has it. Ask pg_proc from the exact requested checkout in a credential
+      # boundary that owns neither test execution nor root SSH authority.
+      - name: Every database function this build calls exists in production
+        id: doors
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          ROLLBACK_REQUESTED: 'false'
+        run: |
+          set -euo pipefail
+          npm ls pg >/dev/null 2>&1 || npm i pg@8 --no-save --no-audit --no-fund >/dev/null 2>&1 || true
+          node scripts/ci/check-engine-doors-exist.mjs
+
   deploy:
     name: Publish Through Hetzner Club Arena
-    needs: preflight
+    needs: [preflight, engine-doors]
     runs-on: ubuntu-latest
     timeout-minutes: 210
     permissions:

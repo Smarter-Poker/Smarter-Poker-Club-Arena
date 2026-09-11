@@ -35,6 +35,7 @@ describe('engine deployment reports what actually happened', () => {
 
   it('keeps npm verification on a separate runner from root SSH release authority', () => {
     const preflight = uncommented(job(deploy, 'preflight'));
+    const doors = uncommented(job(deploy, 'engine-doors'));
     const release = uncommented(job(deploy, 'deploy'));
     const receipt = uncommented(job(deploy, 'record-receipt'));
 
@@ -49,8 +50,14 @@ describe('engine deployment reports what actually happened', () => {
     expect(preflight).not.toMatch(/\$\{\{[^}\n]*\bsecrets\b[^}\n]*\}\}/);
     expect(preflight).not.toContain('SSH_USER: root');
 
+    expect(doors).toMatch(/^ {2}engine-doors:/);
+    expect(doors).toMatch(/^ {4}needs: preflight$/m);
+    expect(doors).toContain('DATABASE_URL: ${{ secrets.DATABASE_URL }}');
+    expect(doors).toContain('node scripts/ci/check-engine-doors-exist.mjs');
+    expect(doors).not.toMatch(/secrets\.HETZNER_|\bSSH_(?:USER|KEY|DIR)\b|\bHSSH\b/);
+
     expect(release).toMatch(/^ {2}deploy:/);
-    expect(release).toMatch(/^ {4}needs: preflight$/m);
+    expect(release).toMatch(/^ {4}needs: \[preflight, engine-doors\]$/m);
     expect(release).toMatch(/^ {4}runs-on: ubuntu-latest$/m);
     expect(release).toMatch(/^ {6}SHA: \$\{\{ needs\.preflight\.outputs\.target_sha \}\}$/m);
     expect(release).toMatch(/^ {6}SSH_USER: root$/m);

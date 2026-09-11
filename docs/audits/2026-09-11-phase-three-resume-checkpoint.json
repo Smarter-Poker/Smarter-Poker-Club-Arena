@@ -1,5 +1,5 @@
 {
-  "recorded_at": "2026-09-11T05:07:33.428916+00:00",
+  "recorded_at": "2026-09-11T07:55:57.817715+00:00",
   "phase_complete": false,
   "entry_migration": {
     "reserved_version": "20260910172228",
@@ -15,7 +15,6 @@
   "whole_stage_b_assertions": 45,
   "whole_stage_b_rollback_exact": true,
   "remaining": [
-    "bounty terminal and generation deployment",
     "full satellite source terminal with Stage B compatibility",
     "funded cancellation after full source receipt",
     "production Stage B and exact-consent activation",
@@ -44,6 +43,28 @@
       "assertions_each": 41,
       "fresh_and_repeat": true,
       "exact_rollback": true
+    },
+    "bounty_current_terminal": {
+      "generation_cases": 5,
+      "terminal_assertions": 49,
+      "true_completed": true,
+      "exact_rollback": true,
+      "evidence": "docs/audits/2026-09-11-bounty-current-terminal-native.json"
+    },
+    "current_r3_satellite_terminal": {
+      "groups": 25,
+      "exact_rollback": true,
+      "current_public_wrapper": "486d0e6729de8d518d7faf0c253b65d3",
+      "evidence": "docs/audits/2026-09-11-satellite-full-terminal-candidate.json",
+      "full_manager_scope": "remaining"
+    },
+    "funded_satellite_target_cancellation": {
+      "groups": 5,
+      "exact_rollback": true,
+      "before": "cash100+newticket100",
+      "after": "cash200+no_new_ticket",
+      "evidence": "docs/audits/2026-09-11-satellite-cancel-cash-candidate.json",
+      "existing_redeemed_ticket_cancellation": "remaining"
     }
   },
   "terminal_migration": {
@@ -66,5 +87,116 @@
     "native_terminal_assertions": 49,
     "exact_rollback": true,
     "postflight": "verified rebuy607e and owner-only helperf793"
+  },
+  "browser_latest": {
+    "verified": false,
+    "connection": "working",
+    "sign_in": "verified successful",
+    "page": "https://smarter.poker/hub/club-arena/clubs/shark-club",
+    "interactive_acceptance": "blocked by site terms agreement, requires action-time user confirmation"
+  },
+  "engine_latest": {
+    "run_id": 34564131192,
+    "target_sha": "a04495f6621e55af59fd7f10e90848415bd6bab4",
+    "status": "normal maintenance gate, latest observed step18",
+    "adoption_verified": false
+  },
+  "latest_commit": "7060ba53f",
+  "cancellation_migration": {
+    "reserved_version": "20260911055040",
+    "source_sha256": "84f2d79130e27bd687c848a45bb65bf5b63ac2ebf0d4e9bf360dc1ec19cd284a",
+    "applied": false,
+    "deployment_gate": "production DDL window closed during latest verification"
+  },
+  "origin_cash_cancellation": {
+    "status": "applied_and_exact_live_postimages_verified",
+    "reserved_version": "20260911055040",
+    "applied_version": "20260911061723",
+    "sql_sha256": "84f2d79130e27bd687c848a45bb65bf5b63ac2ebf0d4e9bf360dc1ec19cd284a",
+    "writer_md5": "623100aa87ed6d0ef1a3598fb9ccb8b3",
+    "reader_md5": "0b6abcc8e4bb561856699e5d24a86fc9",
+    "payer_unchanged": true,
+    "native_evidence": [
+      "docs/audits/2026-09-11-satellite-cancel-cash-candidate.json",
+      "docs/audits/2026-09-11-existing-ticket-cancellation-candidate.json",
+      "docs/audits/2026-09-11-returned-ticket-cancellation-chain.json"
+    ]
+  },
+  "whole_stage_b_current_satellite_native": {
+    "status": "passed",
+    "assertions": 138,
+    "exact_rollback": true,
+    "source_inputs_stable": true,
+    "evidence": "docs/audits/2026-09-11-whole-phase-three-cutover-native.json",
+    "production_applied": false,
+    "production_break_bootstrap_covered": false,
+    "pending": "Actual old engine timer-authority fault prevents hand parking and gated engine deployment; exact onepass activation bundle proof pending."
+  },
+  "satellite_deliveries_native": {
+    "seat_groups": 25,
+    "cash_groups": 24,
+    "ticket_groups": 24,
+    "all_passed": true,
+    "exact_rollback": true,
+    "adapter_production_applied": false
+  },
+  "engine_current_blocker": {
+    "live_sha": "404948b35478e18b81bd8633ebc88d69512b0aa8",
+    "failed_run": 34564131192,
+    "successor_run": 34567969674,
+    "unparked_controllers": 620,
+    "confirmed_error": "Tournament data authority cannot be rebound inside another manager context",
+    "supported_safe_recovery_route_found": false,
+    "local_recovery_rehearsal_in_progress": true,
+    "live_recovery_executed": false
+  },
+  "creation_client_payload_discovery": {
+    "formats": ["MTT", "SNG", "SPIN"],
+    "real_authenticated_create_and_readback_succeeded": true,
+    "exact_rollback": true,
+    "asserted_permission_acceptance_pending": true,
+    "evidence": "docs/audits/2026-09-11-tournament-create-permission-discovery.json"
+  },
+  "creation_native_acceptance": {
+    "status": "passed",
+    "assertions": 15,
+    "evidence": "docs/audits/2026-09-11-tournament-create-permission-native.json",
+    "browser_complete": false,
+    "complete_option_matrix": false
+  },
+  "edit_native_acceptance": {
+    "status": "passed",
+    "assertions": 27,
+    "exact_rollback": true,
+    "source_inputs_stable": true,
+    "evidence": "docs/audits/2026-09-11-tournament-edit-permission-native.json",
+    "command_live_md5": "a5aa98c192ec5be6f73a21fd71b855ff",
+    "private_update_live_md5": "d85ca8d75218cdc0911c2fbdb1e73ff9",
+    "browser_complete": false
+  },
+  "exact_terminal_activation_bundle": {
+    "status": "native_passed_not_applied",
+    "assertions": 138,
+    "exact_rollback": true,
+    "evidence": "docs/audits/2026-09-11-exact-terminal-activation-native.json",
+    "sha256": "9e0771e13df999bcf4fc3809865afa53d6b70f2eb947be531c4894dca9e148b0",
+    "production_break_bootstrap_covered": false
+  },
+  "engine_current_adoption": {
+    "status": "source_and_fresh_leader_verified_health_degraded",
+    "version": "c58dfafd",
+    "leader_checked_at": "2026-09-11T07:45:46Z",
+    "timer_fix_ancestor": true,
+    "deal_compatibility_ancestor": true,
+    "public_http_status": 503,
+    "equity_worker_pool": "failed",
+    "native_recovery_bridge_executed": false,
+    "pre_cutover_hand_outcomes_verified": false
+  },
+  "browser_acceptance": {
+    "status": "pending_action_time_terms_confirmation",
+    "url": "https://smarter.poker/hub/club-arena/clubs/shark-club",
+    "signed_in": true,
+    "terms_agreed": false
   }
 }

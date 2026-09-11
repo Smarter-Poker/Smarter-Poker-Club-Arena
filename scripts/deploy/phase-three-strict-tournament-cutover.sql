@@ -2,7 +2,7 @@
 -- Final-deal v2 creation, testing and staged deployment were explicitly approved.
 -- This whole cutover remains unverified and NOT APPLIED until its gates pass.
 -- The exact-hand prerequisite is resolved. The remaining cutover blocker is
--- the absent, unverified final-deal v2 batch authority. Preserve every source
+-- complete current satellite target authority and full manager rehearsal. Preserve every source
 -- and engine-adoption gate; reserve a fresh migration only after the complete
 -- approved rehearsal passes.
 -- Player rebuy/decline route compatibility is covered by the focused PG probe.
@@ -43,6 +43,26 @@ BEGIN
   END IF;
 END;
 $require_final_deal_v2_contract$;
+
+DO $require_current_satellite_manager_contract$
+BEGIN
+ IF EXISTS(SELECT 1 FROM (VALUES
+  ('public.fn_settle_satellite_tournament(uuid,uuid)','486d0e6729de8d518d7faf0c253b65d3'),
+  ('public.fn_settle_satellite_tournament_pre_money_path_gate(uuid,uuid)','c5ba0595fc5363ecc94243b003a3d326'),
+  ('public.fn_ca_satellite_settlement_receipt(uuid,uuid)','381b3e0691a2b9303693653f5110d568'),
+  ('public.fn_resolve_satellite_settlement_outcome(uuid,uuid)','c332627d5d8c7c9ac951392c95c53551'),
+  ('public.fn_tournament_finish_readiness(uuid,uuid)','0388659818612493c16b02048dae5b3f'),
+  ('public.trg_guard_atomic_satellite_completion()','f218a7d769971c064cb11043fa6b45ce'),
+  ('public.fn_ca_satellite_terminal_scope(uuid)','0bd1220dbfb2e23b27e9e102959829e2'),
+  ('public.fn_ca_open_satellite_terminal_scope(uuid)','519bfbe4b59c3d833ae7d59570b89203'),
+  ('public.fn_ca_close_satellite_terminal_scope(uuid,jsonb)','1470b469991c59834c66bfb3d4a2f432'),
+  ('public.fn_ca_verify_current_satellite_terminal(uuid,uuid,boolean)','0977ca13c91ea1aef766cf6d81f0c816'),
+  ('public.fn_sync_tournament_current_players()','ecb120c2c6a4ecee6c2e04d4c9b5ebc7'),
+  ('public.fn_ca_satellite_manager_target_immutable()','fba02ebdf76a196cd8997199b56f6da9'),
+  ('public.fn_ca_publish_satellite_manager_target(uuid,uuid,jsonb)','92a5126174e4098aa57f4c42fbb9939f'),
+  ('public.fn_ca_satellite_manager_target_write(text,text,jsonb,jsonb)','d1b68a808b9ee22eaee833a25bec5ca6')) e(identity,body_md5) WHERE NOT EXISTS(SELECT 1 FROM pg_proc p WHERE p.oid=to_regprocedure(e.identity) AND md5(p.prosrc)=e.body_md5 AND p.proowner='postgres'::regrole AND p.prosecdef)) THEN RAISE EXCEPTION 'Stage B requires the complete current satellite manager target contract'; END IF;
+END $require_current_satellite_manager_contract$;
+
 
 /* A busy relation aborts the whole cutover instead of making a live table
    wait behind DDL. Re-run only in the audited quiet window after inspecting
@@ -102,7 +122,7 @@ BEGIN
   -- Preserve the deployed busy-manager fix. A generic FOR SHARE substring
   -- also occurs in comments, so exact source identities guard this upgrade.
   IF md5(v_source) NOT IN ('ab227471f29f2944ebd64909622b6af7',
-                          'd21a055b448febe83c1637371b150100')
+                          'c43a9c75d3d4c1e4945c908d16e3b5d6')
      OR NOT EXISTS (
        SELECT 1 FROM pg_proc p
         WHERE p.oid=to_regprocedure('public.claim_tournament_lease_v2(uuid,text,text,uuid,integer)')
@@ -988,7 +1008,7 @@ BEGIN
   jsonb_build_object('owner',proowner,'acl',proacl,'config',proconfig,'definer',prosecdef,
     'language',prolang,'args',proargtypes::text,'defaults',pronargdefaults,'return',prorettype)
  INTO v_source,v_definition,v_before FROM pg_proc WHERE oid=v_oid;
- IF md5(v_source) NOT IN ('ac4a33b4428ca68fb385b7de764a8590','993e6e1de9edba2fe235d86ff6c243c9') THEN RAISE EXCEPTION 'terminal readiness source differs'; END IF;
+ IF md5(v_source) NOT IN ('ac4a33b4428ca68fb385b7de764a8590','993e6e1de9edba2fe235d86ff6c243c9','0388659818612493c16b02048dae5b3f') THEN RAISE EXCEPTION 'terminal readiness source differs'; END IF;
  IF md5(v_source)='ac4a33b4428ca68fb385b7de764a8590' THEN
   IF position($readiness_old_0$  v_bad_satellite_seats integer := 0;$readiness_old_0$ IN v_definition)=0 THEN RAISE EXCEPTION 'readiness fragment 0 absent'; END IF;
   v_definition:=replace(v_definition,$readiness_old_0$  v_bad_satellite_seats integer := 0;$readiness_old_0$,$readiness_new_0$  v_modern_place boolean := false;
@@ -1042,7 +1062,7 @@ $readiness_new_1$);
   jsonb_build_object('owner',proowner,'acl',proacl,'config',proconfig,'definer',prosecdef,
     'language',prolang,'args',proargtypes::text,'defaults',pronargdefaults,'return',prorettype)
  INTO v_source,v_after FROM pg_proc WHERE oid=v_oid;
- IF md5(v_source)<>'993e6e1de9edba2fe235d86ff6c243c9' OR v_before IS DISTINCT FROM v_after THEN RAISE EXCEPTION 'readiness source or metadata postcondition differs'; END IF;
+ IF md5(v_source) NOT IN ('993e6e1de9edba2fe235d86ff6c243c9','0388659818612493c16b02048dae5b3f') OR v_before IS DISTINCT FROM v_after THEN RAISE EXCEPTION 'readiness source or metadata postcondition differs'; END IF;
 END;
 $contract_terminal_batch_readiness$;
 -- END CANONICAL TERMINAL READINESS DISPATCH
@@ -1322,6 +1342,10 @@ DECLARE
   v_lease_generation uuid;
   v_stale_seconds constant integer := 30;
   v_manager_exclusive_paths constant text[] := ARRAY[
+    'rpc/fn_settle_satellite_tournament',
+    'rpc/fn_complete_tournament_terminal',
+    'rpc/fn_ca_reprice_unpaid_tournament_place',
+    'rpc/fn_assign_tournament_player_seat_atomic',
     'rpc/fn_ack_tournament_capacity_tables',
     'rpc/fn_begin_tournament_launch_atomic',
     'rpc/fn_bounty_obligation_has_complete_marker',
@@ -1355,6 +1379,11 @@ DECLARE
     'rpc/process_tournament_rebuy'
   ]::text[];
   v_engine_service_paths constant text[] := ARRAY[
+    'rpc/fn_resolve_tournament_terminal_proposal_outcome',
+    'rpc/fn_resolve_tournament_terminal_outcome',
+    'rpc/fn_resolve_satellite_settlement_outcome',
+    'rpc/fn_prove_played_spin_launch_recovery',
+    'rpc/fn_get_tournament_deal_consensus',
     'rpc/claim_table_lease_v2',
     'rpc/claim_tournament_lease_v2',
     'rpc/fn_ack_tournament_manager_wakes',
@@ -1703,6 +1732,14 @@ BEGIN
       USING ERRCODE = '55000';
   END IF;
 
+  -- The immutable M2 plan admits only its exact target registration and funded
+  -- aggregate update while the source manager's owner-only capability is open.
+  IF public.fn_ca_satellite_manager_target_write(TG_TABLE_NAME,TG_OP,
+       CASE WHEN TG_OP='INSERT' THEN NULL ELSE to_jsonb(OLD) END,
+       CASE WHEN TG_OP='DELETE' THEN NULL ELSE to_jsonb(NEW) END) THEN
+    RETURN NEW;
+  END IF;
+
   IF v_old_tournament_id IS NOT NULL THEN
     PERFORM public.fn_assert_tournament_manager_write_scope(v_old_tournament_id);
   END IF;
@@ -1904,7 +1941,7 @@ BEGIN
      OR position($needle$'shared-estate-service'$needle$ IN v_hook_source) = 0
      OR position($needle$'browser'$needle$ IN v_hook_source) = 0
      OR position(E'     FOR KEY SHARE;\n  END IF;' IN v_hook_source) = 0
-     OR md5((SELECT p.prosrc FROM pg_proc p WHERE p.oid='smarter_private.fn_smarter_data_api_pre_request()'::regprocedure)) <> 'd21a055b448febe83c1637371b150100'
+     OR md5((SELECT p.prosrc FROM pg_proc p WHERE p.oid='smarter_private.fn_smarter_data_api_pre_request()'::regprocedure)) <> 'c43a9c75d3d4c1e4945c908d16e3b5d6'
      OR position('l.lease_generation = v_lease_generation' IN v_hook_source) = 0
      OR position('app.smarter_manager_request_fenced' IN v_hook_source) = 0
      OR position('auth.role()' IN v_hook_source) = 0

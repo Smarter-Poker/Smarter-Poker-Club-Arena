@@ -4887,8 +4887,18 @@ export class GameServer {
           // spare) is a wedged table, and MUST still be reaped — otherwise this
           // guard would trade "breaks get dismantled" for "a stuck table never
           // recovers", which is the worse bug.
+          //
+          // ...and "parked" means the pause has TAKEN EFFECT (2026-09-11). The
+          // maintenance break (:53) and the tournament break (:55) raise their
+          // flags on tables still playing a hand; exempting that hand for ten
+          // minutes hid a FROZEN hand from this reaper for the whole break, it
+          // never parked, and readyForRestart stayed shut through three breaks
+          // on 404948b3. isParkedByDesign() counts a next-hand fence once the
+          // table is between hands, so a frozen hand is reaped on its usual
+          // clock and its replacement arrives parked (maintenanceBreak.adopt,
+          // prepareManagedTableEngineForPlay).
           const pausedTooLong = engine.msPaused() > GameServer.MAX_HEALTHY_PAUSE_MS;
-          const parkedOnPurpose = engine.isPausedByDesign() && !pausedTooLong;
+          const parkedOnPurpose = engine.isParkedByDesign() && !pausedTooLong;
           if (shouldBeDealing && !parkedOnPurpose && engine.msSinceProgress() > 180_000) {
             reportError(
               new Error(

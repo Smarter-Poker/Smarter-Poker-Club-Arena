@@ -4864,6 +4864,53 @@ export abstract class ServerTableEngineBase {
     );
   }
 
+  /**
+   * A by-design pause that has TAKEN EFFECT - the question the table watchdog
+   * and GameServer's zombie reaper ask before they stand down (2026-09-11).
+   *
+   * isPausedByDesign() goes true the moment an authority raises its flag, and
+   * for what it was written for that is right: a parked table is not a stall.
+   * But almost every authority is a "stop at the next hand boundary" fence,
+   * raised on tables still playing a hand: the maintenance break at :53
+   * (maintenancePaused, on EVERY table), the tournament's own synchronized
+   * break at :55 and hand-for-hand (pauseAfterHand -> handForHandPaused, on
+   * every table of the event), and a deal hold. None of them stops the turn
+   * clock. Until the hand lands the table is PLAYING, and a hand that froze is
+   * exactly as dead under one of those flags as without it.
+   *
+   * Both readers took the flag for the fact. The watchdog stood down for every
+   * table still mid-hand when a flag went up, so a hand that lost its clock in
+   * the last-hand window could not be rescued; the reaper exempted it for
+   * MAX_HEALTHY_PAUSE_MS - ten minutes, longer than the whole break - so it
+   * could not be reaped either. It never parked, and one table that never
+   * parks keeps readyForRestart shut. On 2026-09-11 build 404948b3 froze
+   * tournament tables mid-hand (#4225) and held 514, 526 and 523 of them
+   * unparked through three countdowns: no certificate, no restart, and no way
+   * for the fix to ship without an owner-approved exception.
+   *
+   * So: between hands every authority means what it says. Mid-hand, only a
+   * fence a REBUILD WOULD LOSE still holds the table - the final-table deal,
+   * the terminal closeout and an FSM 'paused' lock live on this engine alone.
+   * The others survive a rebuild: MaintenanceBreak.adopt() parks every engine
+   * created during the break, and TournamentManagerBase.
+   * prepareManagedTableEngineForPlay() re-applies the tournament break, the
+   * add-on break and hand-for-hand to a replacement before admitting it. So a
+   * frozen hand under them is worked by the watchdog and reaped on its usual
+   * clock, and its replacement arrives parked - the certificate is earned,
+   * not waived.
+   *
+   * (First draft counted every non-maintenance authority at once, mid-hand
+   * too. Review caught it: the :55 tournament break raises handForHandPaused
+   * on every MTT table, so from :55 - the only minutes readyForRestart can
+   * open - the draft shielded a frozen MTT hand again.)
+   */
+  isParkedByDesign(): boolean {
+    if (this.isBetweenHands()) return this.isPausedByDesign();
+    return (
+      this.finalTableDealPaused || this.terminalCloseoutPaused || this.tableFSM.state === 'paused'
+    );
+  }
+
   /** Ms spent in the current by-design pause; 0 when not paused. */
   msPaused(): number {
     return this.pausedSinceMs === 0 ? 0 : Date.now() - this.pausedSinceMs;

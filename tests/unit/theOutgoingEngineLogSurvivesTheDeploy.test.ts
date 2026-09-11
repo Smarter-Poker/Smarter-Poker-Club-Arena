@@ -6,8 +6,8 @@ import { sliceMethod } from '../helpers/sourceWindow';
 /**
  * THE OUTGOING ENGINE'S LOG SURVIVES THE DEPLOY (2026-09-07).
  *
- * The engine container is replaced every hour, and `docker rm` deletes its
- * json-file log with it. On 2026-09-07 the engine was unreachable for a minute
+ * An exact release cutover replaces the engine container, and `docker rm`
+ * deletes its json-file log with it. On 2026-09-07 the engine was unreachable for a minute
  * at 16:52 and came back inside an off-schedule break; by the time anyone
  * looked, the container that did it had been replaced twice and its log was
  * gone. engine-up.sh now dumps the outgoing container's full log, compressed,
@@ -15,7 +15,6 @@ import { sliceMethod } from '../helpers/sourceWindow';
  */
 const ROOT = resolve(__dirname, '../..');
 const sh = readFileSync(resolve(ROOT, 'server/scripts/engine-up.sh'), 'utf8');
-const wf = readFileSync(resolve(ROOT, '.github/workflows/auto-deploy-hetzner.yml'), 'utf8');
 
 describe('engine-up.sh saves the outgoing log before it removes the container', () => {
   it('calls save_outgoing_log after docker stop and before docker rm', () => {
@@ -29,7 +28,7 @@ describe('engine-up.sh saves the outgoing log before it removes the container', 
 
   it('the dump is timestamped, compressed, and can never stop the deploy', () => {
     const fn = sliceMethod(sh, 'save_outgoing_log() {');
-    expect(fn).toMatch(/docker logs -t "\$c" 2>&1 \| gzip/);
+    expect(fn).toMatch(/docker logs -t "\$1" 2>&1 \| gzip -6 > "\$2"/);
     expect(fn).toMatch(/mkdir -p "\$LOG_DIR"/);
     // The call site tolerates failure.
     expect(sh).toMatch(/save_outgoing_log "\$CONTAINER" \|\| log "WARN/);
@@ -42,7 +41,7 @@ describe('engine-up.sh saves the outgoing log before it removes the container', 
     expect(fn).toMatch(/wc -l\)" -gt 1 \] \|\| break/);
   });
 
-  it('the deploy names the saved file in its own log', () => {
-    expect(wf).toMatch(/ls -1t \/var\/log\/club-arena-engine\/engine-\*\.log\.gz/);
+  it('the durable release log names the exact saved file', () => {
+    expect(sh).toContain('log "saved the outgoing log to $out');
   });
 });

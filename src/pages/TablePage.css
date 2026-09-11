@@ -646,7 +646,15 @@
   --sp-page-inset-top: env(safe-area-inset-top, 0px);
 
   /* Top chrome to clear. Desktop keeps its historical 76px band. */
-  --sp-table-top: calc(76px + var(--sp-page-inset-top));
+  /* 76px is the measured desktop half-seat clearance and stays the floor. The
+     max() is what makes it CHECKABLE: --sp-bbj-h is the BBJ nameplate plus the
+     mini row (BadBeatJackpot.css publishes both at every width since
+     2026-09-11), so if a later pass grows either one past this headroom the
+     reserve follows on its own instead of letting a top seat share pixels with
+     the plate. Today it resolves to 76px stamped or not - 48 + 16 + 12 = 76 -
+     so this changes no desktop layout; it only stops the next change being
+     silent. */
+  --sp-table-top: calc(max(76px, var(--sp-bbj-h, 48px) + 12px) + var(--sp-page-inset-top));
 
   /* Bottom chrome to clear: the fixed action bar, plus the hero strip that
      hangs below the scaler.

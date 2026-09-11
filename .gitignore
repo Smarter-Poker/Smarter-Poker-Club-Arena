@@ -74,7 +74,7 @@ dist.dead.*/
 playwright-report/
 # Playwright failure artifacts: screenshots, videos, trace zips. 4.2 MB after a
 # single failing run, and only playwright-report/ was ignored - so any blanket
-# `git add -A` (git-safe-push.sh does this) would have committed them.
+# Broad staging could commit these shared-worktree artifacts accidentally.
 test-results/
 
 # Scratch/quarantine dir. device_bash on the mounted volume cannot unlink,
@@ -145,8 +145,8 @@ public/cards/4color/*.webp
 _agent_tmp/
 
 # More of the same, found untracked in the working tree on 2026-08-23 while
-# preparing a push. scripts/git-safe-push.sh runs `git add -A`, so anything
-# sitting here unignored is one push away from being source. These are all
+# preparing a push. Stage only explicit task-owned paths so anything sitting
+# here cannot become source accidentally. These are all
 # one-off probes and staging dirs, not code:
 #   _to_delete/      quarantine for files the sandbox mount cannot unlink
 #   .cowork-trees/   per-agent worktrees

@@ -6,14 +6,14 @@
  * `check-main-is-green.mjs` exited **0** on every unreadable answer - no token,
  * an API error, an empty run list - reasoning that "a watchdog that cannot ask
  * is not a failure". Sound about paging, wrong about everything else, because
- * exit 0 is not silence here. `publish-watchdog.yml` reads it:
+ * exit 0 is not silence here. `production-integrity-audit.yml` carries the
+ * exact code into the native Actions conclusion:
  *
- *     - name: Close it when main is green again
- *       if: always() && steps.main-green.outputs.code == '0'
+ *     CODE: ${{ steps.main-green.outputs.code }}
+ *     exit "$CODE"
  *
- * So one HTTP 502 from `/actions/runs` would CLOSE a standing issue about a
- * workflow that was still red, with the comment "Every workflow's latest run on
- * main is green again."
+ * So one HTTP 502 from `/actions/runs` must fail the audit distinctly rather
+ * than turn an unreadable answer into a green job.
  *
  * 10.86 rule 1: "I could not tell" is a distinct outcome and must have its own
  * name. These cases pin that it is 3 - never 0, never 1 - and that the
@@ -26,9 +26,25 @@ import { resolve } from 'path';
 
 const REPO_ROOT = resolve(__dirname, '..');
 const CHECKER = resolve(REPO_ROOT, 'scripts/ci/check-main-is-green.mjs');
-const WORKFLOW = resolve(REPO_ROOT, '.github/workflows/publish-watchdog.yml');
+const WORKFLOW = resolve(REPO_ROOT, '.github/workflows/production-integrity-audit.yml');
 
 describe('check-main-is-green has three outcomes', () => {
+  it('never silently audits World Hub when Club Arena identity is missing', () => {
+    const env = { ...process.env, GITHUB_TOKEN: 'unused-because-identity-fails-first' };
+    delete env.GITHUB_REPOSITORY;
+    delete env.GH_TOKEN;
+
+    const run = spawnSync(process.execPath, [CHECKER], {
+      env,
+      encoding: 'utf8',
+      timeout: 30_000,
+    });
+
+    expect(run.status).toBe(3);
+    expect(`${run.stdout}${run.stderr}`).toMatch(/no GITHUB_REPOSITORY/);
+    expect(readFileSync(CHECKER, 'utf8')).not.toContain('Smarter-Poker-World-Hub');
+  });
+
   it('exits 3 - not 0 - when it has no token to ask with', () => {
     const env = { ...process.env };
     delete env.GITHUB_TOKEN;
@@ -68,17 +84,21 @@ describe('check-main-is-green has three outcomes', () => {
   });
 });
 
-describe('the workflow cannot close an alarm on an answer it did not get', () => {
+describe('the workflow cannot pass an alarm on an answer it did not get', () => {
   const yml = readFileSync(WORKFLOW, 'utf8');
+  const carry = yml.slice(
+    yml.indexOf('- name: Carry the main-health verdict'),
+    yml.indexOf('\n  # ', yml.indexOf('- name: Carry the main-health verdict'))
+  );
 
-  it('closes the issue only on an exact 0', () => {
-    expect(yml).toContain("steps.main-green.outputs.code == '0'");
-    // Never a truthiness test or a "not 1" test, either of which lets 3 through.
-    expect(yml).not.toMatch(/main-green\.outputs\.code\s*!=\s*'1'/);
+  it('publishes the detector code to the verdict step', () => {
+    expect(carry).toContain('CODE: ${{ steps.main-green.outputs.code }}');
+    expect(carry).toContain('[[ "$CODE" =~ ^[0-9]+$ ]]');
   });
 
-  it('raises the alarm only on an exact 1', () => {
-    expect(yml).toContain("steps.main-green.outputs.code == '1'");
+  it('returns the detector code instead of coercing unknown into green', () => {
+    expect(carry).toContain('exit "$CODE"');
+    expect(carry).not.toMatch(/exit\s+0/);
   });
 
   it('says out loud when it could not tell', () => {

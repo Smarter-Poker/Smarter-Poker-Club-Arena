@@ -7,13 +7,14 @@
 # Layout, written by publish-club-arena.yml (rsync + atomic symlink swap):
 #   /srv/club-arena/releases/<ca_sha>/     one directory per published bundle
 #   /srv/club-arena/current -> releases/<ca_sha>   the one being served
-#   /srv/club-arena/pool/{assets,fonts}/    ADDITIVE: every hashed asset ever
-#       published in the last 30 days. A player whose tab still holds an
-#       older index.html asks for older hashed files mid-hand; the World Hub
-#       sync used to keep one previous generation for exactly this reason
-#       (runtimeAssetRetention). Here the pool keeps them all, and the
-#       publisher prunes by age, never by "not in the current bundle".
-# Rollback: point `current` at an older release. Ten are kept.
+#   /srv/club-arena/pool/{assets,fonts}/    APPEND-ONLY: every runtime URL ever
+#       published, with byte collisions rejected before activation. A player
+#       whose tab still holds an older index.html asks for older files mid-hand;
+#       the World Hub sync used to keep one previous generation for exactly
+#       this reason (runtimeAssetRetention). The pool never overwrites or
+#       age-reuses a URL whose immutable response may still be cached.
+# Recovery: publish a reviewed forward revert. Ten sealed releases are retained
+# so the owning transaction can restore its exact predecessor on failed proof.
 ca-static.smarter.poker {
 	encode zstd gzip
 	header X-Robots-Tag "noindex, nofollow"
@@ -57,7 +58,8 @@ ca-static.smarter.poker {
 		# pool is additive, so a stale shell is a working shell.
 		@shell not path /cards/* /images/* /club-logos/* /videos/* /game-card-icons/*
 		header @shell Cache-Control "public, max-age=0, s-maxage=60, stale-while-revalidate=60, stale-if-error=86400"
-		# build-info.json is the deploy's own proof and both watchdogs read it.
+		# build-info.json is the deploy's own proof; release certification and
+		# the read-only production audit both read it.
 		# It must never be answered from a cache, or "production is serving X"
 		# becomes "an edge node remembers X".
 		header /build-info.json Cache-Control "no-store, no-cache, must-revalidate"

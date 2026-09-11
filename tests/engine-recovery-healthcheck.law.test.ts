@@ -11,9 +11,9 @@
  * full grace because Docker ends start-period after an early success.
  *
  * These tests pin the agreement between the image, the canonical docker-run
- * script, the independent host supervisor and the recovery verifier. They also
- * pin the log redaction which keeps WebSocket bearer material out of Caddy's
- * upstream-error records.
+ * script, the causal exact-release recovery and the recovery verifier. They
+ * also pin the log redaction which keeps WebSocket bearer material out of
+ * Caddy's upstream-error records.
  */
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -56,24 +56,19 @@ describe('health verdicts tolerate load but still recover a sustained wedge', ()
     /HEALTH_TIMEOUT_SEC="\$\{HEALTH_TIMEOUT_SEC:-(\d+)\}"/,
     'supervisor health timeout'
   );
-  const supervisorGrace = seconds(
-    supervisor,
-    /BOOT_GRACE_SEC="\$\{BOOT_GRACE_SEC:-(\d+)\}"/,
-    'supervisor boot grace'
-  );
-
   it('allows at least 15 seconds for a probe to reach a saturated event loop', () => {
     expect(imageTimeout).toBeGreaterThanOrEqual(15);
     expect(runTimeout).toBe(imageTimeout);
     expect(supervisorTimeout).toBeGreaterThanOrEqual(imageTimeout);
     expect(engineUp).toMatch(/--health-timeout="\$HEALTH_TIMEOUT"/);
-    expect(supervisor).toMatch(/curl -sS --max-time "\$HEALTH_TIMEOUT_SEC"/);
+    expect(supervisor).toContain('curl -sS --max-time "$curl_timeout"');
+    expect(supervisor).toContain("--write-out $'\\n%{http_code}'");
+    expect(supervisor).toContain('case "$http_code" in\n    200|503)');
   });
 
   it('gives every restarted engine at least five minutes to cold boot', () => {
     expect(imageStartPeriod).toBeGreaterThanOrEqual(300);
     expect(runStartPeriod).toBe(imageStartPeriod);
-    expect(supervisorGrace).toBeGreaterThanOrEqual(imageStartPeriod);
     expect(engineUp).toMatch(/--health-start-period="\$HEALTH_START_PERIOD"/);
     // Docker ends start-period after an early successful check. The command
     // must independently suppress failures for PID 1's full first 300 seconds.
@@ -121,14 +116,16 @@ describe('health verdicts tolerate load but still recover a sustained wedge', ()
     expect(autoheal).not.toMatch(/AUTOHEAL_START_PERIOD:.*after a restart/);
   });
 
-  it('keeps a deliberate standby alive but restarts a semantic dead verdict', () => {
-    expect(supervisor).toMatch(/curl -sS --max-time "\$HEALTH_TIMEOUT_SEC"/);
-    expect(supervisor).not.toMatch(/curl -sf --max-time "\$HEALTH_TIMEOUT_SEC"/);
-    expect(supervisor).toContain(`grep -q '"running":true'`);
-    expect(supervisor).toContain(`grep -q '"liveness":"ok"'`);
-    expect(supervisor).toContain(`grep -q '"liveness":"standby"'`);
-    expect(supervisor).not.toContain(`! echo "$BODY" | grep -q '"liveness":"dead"'`);
-    expect(supervisor).toContain('health reported liveness=dead');
+  it('requires exact serving identity after a causally-authorized recovery', () => {
+    expect(supervisor).toContain('ENGINE_SUPERVISOR_FORCE_DESIRED');
+    expect(supervisor).toContain('ENGINE_SUPERVISOR_REQUIRE_EXACT_HEALTH');
+    expect(supervisor).toContain('ENGINE_SUPERVISOR_LOCK_HELD');
+    expect(supervisor).toContain('d.get("running") is True');
+    expect(supervisor).toContain('d.get("releaseSha")==os.environ["EXPECTED_SHA"]');
+    expect(supervisor).toContain('d.get("liveness")=="ok"');
+    expect(supervisor).toContain('public_instance" = "$local_instance');
+    expect(supervisor).not.toContain('BOOT_GRACE_SEC');
+    expect(supervisor).not.toContain('FAIL_THRESHOLD');
   });
 });
 

@@ -25,17 +25,8 @@ on:
     # Every six hours. The push job was broken for 4,017 minutes; six hours is
     # a 36x improvement on "nobody ever" without being noise.
     - cron: '40 1,7,13,19 * * *'
-  workflow_dispatch:
-    inputs:
-      window:
-        description: "Lookback window, e.g. '24 hours' or '2 days' (default: 24 hours)"
-        type: string
-        required: false
-      warn_fails:
-        description: 'Also fail the run on flaky (warn) jobs'
-        type: boolean
-        required: false
-        default: false
+  repository_dispatch:
+    types: [audit-cron-health]
 
 permissions:
   contents: read
@@ -65,15 +56,11 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
           set -o pipefail
-          ARGS=""
-          if [ -n "${{ inputs.window }}" ]; then ARGS="$ARGS --window '${{ inputs.window }}'"; fi
-          if [ "${{ inputs.warn_fails }}" = "true" ]; then ARGS="$ARGS --warn-fails"; fi
-
           # Exit 1 = a job never succeeded. Exit 2 = the script itself could not
           # run (no credentials, RPC missing). Both must be visible; neither may
           # be swallowed by the pipe.
           set +e
-          eval node scripts/ci/check-cron-health.mjs $ARGS 2>&1 | tee /tmp/cron-health.log
+          node scripts/ci/check-cron-health.mjs 2>&1 | tee /tmp/cron-health.log
           echo "status=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
           set -e
 

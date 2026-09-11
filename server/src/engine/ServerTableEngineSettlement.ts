@@ -53,9 +53,11 @@ import { raiseFinancialAlert } from '../services/financialAlerts.js';
 import { queueUnbankedFee } from '../services/FeeReconciler.js';
 import { selectRevealedShowdownResults } from './revealedShowdown.js';
 import { ServerTableEngineDealing } from './ServerTableEngineDealing.js';
+import { ServerTableEngineBase } from './ServerTableEngineBase.js';
 import { atRebuyStopLoss, horseRebuyAmount } from '../services/HorseRebuyPolicy.js';
 import { buildDailyMissionHandEvents } from './dailyMissionEvents.js';
 import { checkTournamentChipConservation } from './tournamentChipConservation.js';
+import { checkTournamentWholeChips, describeFractionalSeats } from './tournamentWholeChips.js';
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { INSTANCE_ID } from '../services/tableLease.js';
 import { requireHandSeatGeneration } from './handSeatGeneration.js';
@@ -1539,6 +1541,34 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       leave_pending: 'seats',
       table_unlock: 'seats',
     };
+    /* ═══ A BOUNDARY IS NOT LOST TO ONE SLOW ROUND TRIP (2026-09-11) ══════
+       How many EXTRA attempts a step gets when it fails TRANSIENTLY. Absent
+       means none, which is every step's behaviour today and stays the default
+       - a retry is opt-in, per step, and only where re-running the step is
+       idempotent BY CONSTRUCTION rather than by inspection. Replaying an
+       executed money write is the hazard CLAUDE.md's production DDL policy
+       rule 6 names, and the shared Supabase client refuses to retry a timeout
+       for exactly that reason.
+
+       `leave_pending` qualifies: its first act is to re-read which seats still
+       carry `leave_pending = true`, and each cash-out is one transaction
+       behind `atomic_seat_cashout_locked`. A seat that already left is no
+       longer in the answer, so a second attempt cannot pay it twice - it
+       cashes out whoever is still waiting and nobody else.
+
+       Drift incident bf4ef6e0 is why: `[postHandTasks.step_failed.
+       leave_pending] Error: supabase_timeout`, six times, on the flat 15s
+       client deadline (services/supabase/client.ts). One stall discarded the
+       whole boundary - every departure AND the announced seat moves beside
+       them - for want of a second try 250ms later. */
+    const STEP_RETRY: Record<string, number> = {
+      leave_pending: 2,
+    };
+    /* Two short waits, inside one hand boundary. The felt already holds for
+       2.1-3.5s between hands, so 250ms + 1s costs nothing a player can see,
+       and a stall longer than that is not a blip. */
+    const STEP_RETRY_BACKOFF_MS = [250, 1_000];
+
     const lanesCanOverlap =
       !snap.bbjHit?.hit && !snap.miniBbjHit && snap.insuranceSettlements.length === 0;
     const lanes: Record<'record' | 'seats', Promise<void>> = {
@@ -1562,8 +1592,30 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         if (!this.lifecycleCanMutate()) return;
         const started = performance.now();
         let outcome = 'returned';
+        const budget = STEP_RETRY[stepName] ?? 0;
+        let attempts = 0;
         try {
-          await fn();
+          for (;;) {
+            attempts++;
+            try {
+              await fn();
+              if (attempts > 1) outcome = 'retried';
+              break;
+            } catch (err) {
+              /* Only a database that BLINKED is worth another try, and only
+                 while this generation still owns the table. Every refusal the
+                 database gives on purpose is a decision, not a queue, and it
+                 falls straight through to the report below exactly as before. */
+              if (
+                attempts > budget ||
+                !ServerTableEngineBase.isTransientDbError(err) ||
+                !this.lifecycleCanMutate()
+              ) {
+                throw err;
+              }
+              await this.sleep(STEP_RETRY_BACKOFF_MS[attempts - 1] ?? 1_000);
+            }
+          }
         } catch (err) {
           outcome = 'threw';
           reportError(err, `postHandTasks.step_failed.${stepName}`, {
@@ -1574,11 +1626,15 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
             await raiseFinancialAlert(
               'critical',
               `postHandTasks.${stepName}_failed`,
-              `Post-hand step ${stepName} threw for hand #${snap.handNumber}; later steps continued`,
+              `Post-hand step ${stepName} threw for hand #${snap.handNumber}` +
+                (attempts > 1 ? ` after ${attempts} attempts` : '') +
+                '; later steps continued',
               {
                 table_id: this.tableId,
                 hand_number: snap.handNumber,
                 error: describeError(err),
+                attempts,
+                retry_budget: budget,
               }
             );
           }
@@ -1650,6 +1706,47 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           settled_total: verdict.settledTotal,
           delta: verdict.delta,
           missing: verdict.missing,
+        });
+      }
+    }
+
+    /* ═══ A TOURNAMENT SEAT STACK IS A WHOLE CHIP (2026-09-11) ══════════════
+       `tournament_players.chips` is an INTEGER column and `table_seats.stack`
+       is numeric(15,2). The authoritative commit writes both from one target
+       and then asserts they agree, so a fractional target is refused whole -
+       `tournament % hand % did not durably sync every final seat stack` - and
+       this generation is killed with the hand behind it. 56 hands across 15
+       tables died that way between 00:00 and 01:37 UTC today (drift incident
+       07ebac1d), and 500 more on 2026-09-08/09 under the older sentence
+       `accepted tournament hand produced fractional stack ...`.
+
+       The inlet was the auto-escalated blind level and it is closed at source
+       (tournament/blindEscalation.ts). This says the invariant OUT LOUD at the
+       boundary where the payload is built, so the next inlet arrives named -
+       seat, field and value - instead of as a generic database sentence after
+       the hand is already gone. It does not repair: a tournament hand is held
+       to exact conservation, so rounding a seat here would only exchange this
+       refusal for a conservation refusal. See tournamentWholeChips.ts. */
+    if (this.isTournamentTable()) {
+      const whole = checkTournamentWholeChips(
+        players.map((p) => ({
+          user_id: p.user_id,
+          stack: cents(p.stack),
+          stack_before: cents(snap.dealtStacks.get(p.user_id) ?? p.stack),
+        }))
+      );
+      if (!whole.ok) {
+        const detail =
+          `tournament hand #${snap.handNumber} at table ${this.tableId} carries ` +
+          `${whole.offenders.length} fractional chip value(s) the roster column cannot store: ` +
+          `${describeFractionalSeats(whole.offenders)} - the database will refuse this hand whole`;
+        reportError(new Error(`[ServerTableEngine] ${detail}`), 'Tournament.fractional_seat_stack');
+        await raiseFinancialAlert('critical', 'Tournament.fractional_seat_stack', detail, {
+          table_id: this.tableId,
+          tournament_id: this.tableInfo?.tournament_id ?? null,
+          hand_number: snap.handNumber,
+          offenders: whole.offenders,
+          fraction_total: whole.fractionTotal,
         });
       }
     }
@@ -3232,24 +3329,19 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     // 6. Process leave-pending players (cash games only)
     await runStep('leave_pending', true, async () => {
       if (!this.isTournamentTable()) {
-        // Round 57: processLeavePending now returns the user_ids it cashed out;
+        // Round 57: processLeavePending reports the user_ids it cashed out;
         // we use that to unregister DisconnectEngine tracking so player states
         // don't leak. Without this every leaver leaves a ghost FSM entry that
         // persists in hand_state_snapshots.disconnect_states forever.
         // Round 64: extended to also call timeBankEngine.removePlayer so the
-        // playerBanks Map sheds its entry too — same architectural fix.
+        // playerBanks Map sheds its entry too - same architectural fix.
+        // 2026-09-11: that teardown now lives in tearDownDepartedSeats(), so
+        // it can also run for a departure an EARLIER attempt or boundary made
+        // and then lost when its sweep threw after the money had moved.
+        this.tearDownDepartedSeats();
         const { cashedOutIds, pendingMoves } = await this.readCashHandDepartures();
         if (!this.lifecycleCanMutate()) return;
-        for (const { userId, occupancyId } of cashedOutIds) {
-          const current = this.seatedPlayers.find((sp) => sp.user_id === userId);
-          if (current && current.occupancy_id !== occupancyId) continue;
-          this.disconnectEngine.unregisterPlayer(this.tableId, userId);
-          this.timeBankEngine.removePlayer(this.tableId, userId);
-          this.straddleEngine.removePlayer(this.tableId, userId);
-          this.preActionEngine.removePlayer(this.tableId, userId);
-          this.leaveHeldByClock.delete(userId);
-          this.chipContinuity.forget(userId);
-        }
+        this.tearDownDepartedSeats(cashedOutIds);
         // MUST-MOVE (Slice 2): planned moves land here, at the hand boundary,
         // after the leavers. A move is not a leave: no cash-out, no clock.
         // ANNOUNCED ONLY (2026-09-05): the deal told the player "Moving After
@@ -3301,6 +3393,72 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
   }
 
   /**
+   * Seats that LEFT and whose engine-side teardown has not run yet.
+   *
+   * A departure is two facts: the database one (the seat is cashed out and
+   * gone, committed in its own transaction) and the engine one (its disconnect
+   * FSM, time bank, straddle, pre-action, stay clock and continuity entry go
+   * with it). The second was reachable only through the sweep's RETURN value,
+   * and this boundary drops that value in two live cases: the sibling
+   * seat-move read rejecting after the sweep resolved (readCashHandDepartures
+   * owns both rejections and rethrows - TheMoveIsNeverMidHand pins that), and
+   * lifecycle authority lost between the read and the teardown. Either way the
+   * next sweep cannot repeat the news, because those seats are no longer
+   * `leave_pending = true`, so the teardown was lost for good and left behind
+   * the ghost state in `hand_state_snapshots.disconnect_states` that Round 57
+   * and Round 64 exist to prevent.
+   *
+   * Recorded as it happens (processLeavePending's `onDeparted`), drained at
+   * the top of the next leave_pending attempt - which, with the step's retry
+   * budget, is usually the next attempt of the same boundary. Carries no
+   * money: the cash-out has committed before an entry can appear here.
+   */
+  protected departedSeatsAwaitingTeardown: Array<{ userId: string; occupancyId: string }> = [];
+
+  /**
+   * Note a seat whose cash-out has committed. Tolerates an engine built with
+   * `Object.create(ServerTableEngine.prototype)` - the harness several tests
+   * use - where no class field initialiser has ever run.
+   */
+  protected rememberDepartedSeat(userId: string, occupancyId: string): void {
+    if (!Array.isArray(this.departedSeatsAwaitingTeardown)) {
+      this.departedSeatsAwaitingTeardown = [];
+    }
+    this.departedSeatsAwaitingTeardown.push({ userId, occupancyId });
+  }
+
+  /**
+   * Release every engine-side registration a departed seat still holds, for
+   * the queue plus anything the caller has just been handed. Draining is what
+   * makes it safe to call twice: an entry is taken once and the underlying
+   * `unregisterPlayer` / `removePlayer` calls are themselves idempotent.
+   */
+  protected tearDownDepartedSeats(
+    also: ReadonlyArray<{ userId: string; occupancyId: string }> = []
+  ): void {
+    const owed = Array.isArray(this.departedSeatsAwaitingTeardown)
+      ? this.departedSeatsAwaitingTeardown
+      : [];
+    this.departedSeatsAwaitingTeardown = [];
+    const seen = new Set<string>();
+    for (const { userId, occupancyId } of [...owed, ...also]) {
+      const key = userId + ':' + occupancyId;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      // A seat re-taken by the SAME player since is a different occupancy and
+      // keeps its registrations - this is the check the original loop made.
+      const current = this.seatedPlayers.find((sp) => sp.user_id === userId);
+      if (current && current.occupancy_id !== occupancyId) continue;
+      this.disconnectEngine.unregisterPlayer(this.tableId, userId);
+      this.timeBankEngine.removePlayer(this.tableId, userId);
+      this.straddleEngine.removePlayer(this.tableId, userId);
+      this.preActionEngine.removePlayer(this.tableId, userId);
+      this.leaveHeldByClock.delete(userId);
+      this.chipContinuity.forget(userId);
+    }
+  }
+
+  /**
    * Read move candidates while the leave sweep runs. Candidates carry no cash
    * amount and execute only AFTER every leave has completed. Their executor
    * still rechecks the live source seat, destination and expiry under its existing
@@ -3320,7 +3478,10 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           if (this.lifecycleCanMutate()) {
             this.onLeaveRefusedAtSettlement(lockedUserId, stayRemainingMs, occupancyId);
           }
-        }
+        },
+        // Owed the moment the cash-out commits, so a later seat's timeout or a
+        // rejected sibling read cannot take the teardown with it.
+        (departedUserId, occupancyId) => this.rememberDepartedSeat(departedUserId, occupancyId)
       ),
       this.tableInfo?.cluster_id
         ? pendingSeatMoves(this.tableId)

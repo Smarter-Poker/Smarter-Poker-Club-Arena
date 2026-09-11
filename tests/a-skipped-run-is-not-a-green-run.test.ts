@@ -36,8 +36,12 @@ import { resolve } from 'path';
 import {
   BAD_CONCLUSIONS,
   classifyWorkflow,
+  collectActiveWorkflowRuns,
+  issueCarriesWorkflowAlarm,
+  MAIN_HEALTH_READER_LABEL,
   redWorkflows,
   verdictRuns,
+  workflowAlarmMarker,
 } from '../scripts/ci/lib/workflowVerdicts.mjs';
 
 const REPO_ROOT = resolve(__dirname, '..');
@@ -139,6 +143,110 @@ describe('grouping keeps workflows apart', () => {
   });
 });
 
+describe('the inventory is per active workflow, not one noisy global window', () => {
+  it('fetches the latest main verdict for a low-frequency active workflow', async () => {
+    const calls: string[] = [];
+    const api = async (path: string) => {
+      calls.push(path);
+      if (path.includes('/actions/workflows?')) {
+        return {
+          total_count: 2,
+          workflows: [
+            { id: 41, name: 'Low Frequency Audit', state: 'active' },
+            { id: 42, name: 'Retired Audit', state: 'disabled_manually' },
+          ],
+        };
+      }
+      if (path.includes('/actions/workflows/41/runs?')) {
+        return { workflow_runs: [run('failure', 72, 'API supplied stale name')] };
+      }
+      throw new Error(`unexpected API path: ${path}`);
+    };
+
+    const inventory = await collectActiveWorkflowRuns(
+      api,
+      'Smarter-Poker/Smarter-Poker-Club-Arena',
+      'main'
+    );
+
+    expect(inventory.workflows.map((workflow) => workflow.name)).toEqual(['Low Frequency Audit']);
+    expect(inventory.runs).toHaveLength(1);
+    expect(inventory.runs[0].name).toBe('Low Frequency Audit');
+    expect(redWorkflows(inventory.runs, NOW).map((verdict) => verdict.name)).toEqual([
+      'Low Frequency Audit',
+    ]);
+    expect(calls.some((path) => path.includes('/actions/runs?'))).toBe(false);
+  });
+
+  it('refuses an all-green answer when any active workflow has no readable verdict', async () => {
+    const api = async (path: string) => {
+      if (path.includes('/actions/workflows?')) {
+        return { total_count: 1, workflows: [{ id: 9, name: 'Unreadable', state: 'active' }] };
+      }
+      return { workflow_runs: [run('skipped', 1)] };
+    };
+
+    await expect(
+      collectActiveWorkflowRuns(api, 'Smarter-Poker/Smarter-Poker-Club-Arena', 'main')
+    ).rejects.toThrow(/no completed verdict/i);
+  });
+
+  it('treats a PR-only active workflow with zero main runs as not applicable', async () => {
+    const api = async (path: string) => {
+      if (path.includes('/actions/workflows?')) {
+        return {
+          total_count: 2,
+          workflows: [
+            { id: 10, name: 'Pull Request Review', state: 'active' },
+            { id: 11, name: 'Main Build', state: 'active' },
+          ],
+        };
+      }
+      if (path.includes('/actions/workflows/10/runs?')) return { workflow_runs: [] };
+      if (path.includes('/actions/workflows/11/runs?')) {
+        return { workflow_runs: [run('success', 1)] };
+      }
+      throw new Error(`unexpected API path: ${path}`);
+    };
+
+    const inventory = await collectActiveWorkflowRuns(api, 'owner/repo', 'main');
+
+    expect(inventory.notApplicable.map((workflow) => workflow.name)).toEqual([
+      'Pull Request Review',
+    ]);
+    expect(inventory.runs.map((item) => item.name)).toEqual(['Main Build']);
+  });
+});
+
+describe('a durable reader contract, not prose, makes a red workflow loud', () => {
+  const workflow = 'Production Integrity Audit';
+  const since = '2026-09-09T03:00:00.000Z';
+  const marker = workflowAlarmMarker(workflow);
+  const owned = {
+    title: 'Any human title',
+    body: `Incident evidence\n\n${marker}`,
+    labels: [{ name: MAIN_HEALTH_READER_LABEL }],
+    updated_at: '2026-09-09T04:00:00.000Z',
+  };
+
+  it('accepts only the exact marker plus exact label', () => {
+    expect(issueCarriesWorkflowAlarm(owned, workflow, since)).toBe(true);
+    expect(issueCarriesWorkflowAlarm({ ...owned, labels: [] }, workflow, since)).toBe(false);
+    expect(issueCarriesWorkflowAlarm({ ...owned, body: workflow }, workflow, since)).toBe(false);
+  });
+
+  it('does not let another workflow marker or a stale issue suppress the alarm', () => {
+    expect(issueCarriesWorkflowAlarm(owned, 'Another Workflow', since)).toBe(false);
+    expect(
+      issueCarriesWorkflowAlarm(
+        { ...owned, updated_at: '2026-09-09T02:59:59.000Z' },
+        workflow,
+        since
+      )
+    ).toBe(false);
+  });
+});
+
 describe('the detector no longer teaches the next reader that neutral is green', () => {
   const src = readFileSync(CHECKER, 'utf8');
 
@@ -149,5 +257,12 @@ describe('the detector no longer teaches the next reader that neutral is green',
   it('classifies through the shared module rather than its own inline equality test', () => {
     expect(src).toContain("from './lib/workflowVerdicts.mjs'");
     expect(src).not.toContain("latest.conclusion !== 'failure'");
+  });
+
+  it('does not use the repository-wide run window or fuzzy issue text as authority', () => {
+    expect(src).not.toContain('/actions/runs?branch=');
+    expect(src).toContain('collectActiveWorkflowRuns');
+    expect(src).toContain('issueCarriesWorkflowAlarm');
+    expect(src).not.toContain('hay.includes(needle)');
   });
 });

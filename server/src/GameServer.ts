@@ -184,6 +184,7 @@ import {
 } from './tournamentResumeBudget.js';
 import { isWakeableCashTable } from './services/onDemandTableWake.js';
 import { fetchAllRows } from './services/supabase/pagination.js';
+import { ENGINE_RELEASE_IDENTITY } from './releaseIdentity.js';
 // 2026-08-16: single-owner table leases + per-process identity. See
 // services/tableLease.ts for the dual-container incident that motivated them.
 import {
@@ -1689,9 +1690,7 @@ export class GameServer {
     engines: () => this.tableEngines.entries(),
     isRunning: () => this.running,
     emit: (tableId, payload) => tableStateHub.emitEvent(tableId, payload),
-    store: createSupabaseMaintenanceBreakStore(
-      process.env.GIT_COMMIT_SHA?.substring(0, 8) || process.env.ENGINE_VERSION || 'local'
-    ),
+    store: createSupabaseMaintenanceBreakStore(ENGINE_RELEASE_IDENTITY.version),
     // Whoever paused a table is responsible for resuming it. A tournament
     // add-on break runs up to ten minutes, so one starting near :55 outlives
     // the five-minute maintenance break - resuming its tables here would deal
@@ -1729,8 +1728,7 @@ export class GameServer {
             o.readyForRestartAtMs === null ? null : new Date(o.readyForRestartAtMs).toISOString(),
           tables_resumed: o.tablesResumed,
           thaw_ok: o.thawOk,
-          engine_version:
-            process.env.GIT_COMMIT_SHA?.substring(0, 8) || process.env.ENGINE_VERSION || 'local',
+          engine_version: ENGINE_RELEASE_IDENTITY.version,
         });
         if (error) throw new Error(error.message);
       } finally {
@@ -1769,8 +1767,7 @@ export class GameServer {
       const release = await runMaintenanceThawV3(
         {
           ...request,
-          thawedBy:
-            process.env.GIT_COMMIT_SHA?.substring(0, 8) || process.env.ENGINE_VERSION || 'local',
+          thawedBy: ENGINE_RELEASE_IDENTITY.version,
         },
         async (args) => {
           const { data, error } = await supabase.rpc('fn_thaw_platform', args);
@@ -3167,7 +3164,8 @@ export class GameServer {
         equityWorkerPoolPreservesDealerLiveness(equityWorkers)
           ? 'ok'
           : 'degraded',
-      version: process.env.GIT_COMMIT_SHA?.substring(0, 8) || process.env.ENGINE_VERSION || 'local',
+      version: ENGINE_RELEASE_IDENTITY.version,
+      releaseSha: ENGINE_RELEASE_IDENTITY.releaseSha,
       // ── PROCESS IDENTITY (2026-08-16) ───────────────────────────────
       // On 2026-08-16 two engine containers served this hostname at once and
       // every field below `version` was ambiguous between them: /health said 15
@@ -3382,9 +3380,7 @@ export class GameServer {
       // distinct: two live `instance_id` values on this job IS the alert.
       '# HELP poker_engine_info Always 1. Labels identify the process answering this scrape.',
       '# TYPE poker_engine_info gauge',
-      `poker_engine_info{instance_id="${INSTANCE_ID}",pid="${process.pid}",version="${
-        process.env.GIT_COMMIT_SHA?.substring(0, 8) || process.env.ENGINE_VERSION || 'local'
-      }"} 1`,
+      `poker_engine_info{instance_id="${INSTANCE_ID}",pid="${process.pid}",version="${ENGINE_RELEASE_IDENTITY.version}"} 1`,
       '# HELP poker_lease_conflicts Tables this instance was refused because another engine holds them',
       '# TYPE poker_lease_conflicts gauge',
       `poker_lease_conflicts ${leaseDiagnostics().conflictCount}`,

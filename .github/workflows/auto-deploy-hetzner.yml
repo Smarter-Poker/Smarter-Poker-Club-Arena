@@ -1,254 +1,119 @@
 name: Auto-Deploy Hetzner Engine (on server/ changes)
-# A rollback is named for what it is, so the train can find one the queue
-# dropped (the control step, below). Every other run keeps GitHub's own title:
-# a run-name that is empty falls back to it.
-run-name: >-
-  ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.rollback == 'true'
-  && format('ROLLBACK {0} {1}', github.event.inputs.ref_sha, github.event.inputs.rollback_reason)
-  || '' }}
+run-name: Engine Release ${{ github.event.client_payload.ref_sha }}
 
-# The ONLY path that may start the production engine container.
-#
-# ─────────────────────────────────────────────────────────────────────────────
-# DESIGN NOTES — every one was learned from a production failure. Read before
-# changing anything below.
-#
-#  1. IMMUTABLE IMAGES + ROLLBACK. The original pipeline built over the bare
-#     `club-arena-engine` tag then ran `docker image prune -f`, deleting the
-#     only copy of the last working image. A bad deploy could not be rolled
-#     back at all. Builds now go to `club-arena-engine:<sha>` and the root-owned
-#     release seal retains the exact last-known-good image ID. `:previous` and
-#     `:current` remain repairable operator caches, never recovery authority.
-#
-#  2. --label autoheal=true IS LOAD-BEARING. Docker's HEALTHCHECK only sets
-#     .State.Health.Status; plain Docker NEVER restarts an unhealthy container.
-#     The sp-autoheal sidecar watches for the label. Drop it and the
-#     healthcheck is a status light wired to nothing.
-#
-#  3. --restart always DOES NOT FIRE after `docker stop`/`docker kill` — Docker
-#     records those as manual stops. Closed by the if:always() guarantee step
-#     and by club-arena-supervisor.timer, which needs neither GitHub nor
-#     autoheal.
-#
-#  4. THE RUN-SPEC LIVES IN server/scripts/engine-up.sh. The deploy and the
-#     host supervisor must start the container identically; two copies of the
-#     flag list would eventually diverge, and (2) is what you lose when they do.
-#
-#  5. BUILD WHAT YOU TAG. The host used to `git reset --hard origin/main` while
-#     the image was tagged with ${{ github.sha }}. With two commits landing
-#     close together, run A checked out B's tree, built B's code, and tagged and
-#     baked it as A — then "verified" that /health reported A. The version gate
-#     was self-fulfilling. The host is now reset to the EXACT commit being
-#     deployed.
-#
-#  6. THE RELEASE SEAL MOVES LAST. `:current` is updated only after the direct
-#     container and public proxy report the target, but it is still just a
-#     cache. The durable desired image ID changes only after the strict database
-#     witness also proves the target. Until that commit, rollback, guarantee,
-#     supervisor, and host recovery all resolve the old sealed desired image.
-#
-#  7. TESTS RUN HERE, NOT ONLY IN ci.yml. ci.yml is a separate workflow on the
-#     same push, so it raced this one: a server change with failing tests
-#     deployed to production in parallel with CI going red.
-#
-# Required repo secrets:
-#   HETZNER_SSH_PRIVATE_KEY — deploy private key (canonical; same name the
-#                       World Hub repo uses). HETZNER_SSH_KEY is accepted as a
-#                       fallback for the older name, with a warning.
-#   HETZNER_HOST      — Hetzner VPS IP
-#   HETZNER_HOST_KEY  — the host's public key line, pinned. NOT optional: an
-#                       empty known_hosts fails every ssh with BatchMode=yes,
-#                       including the if:always() safety net.
-# ─────────────────────────────────────────────────────────────────────────────
-
+# Club Arena owns this release lane. World Hub, database jobs, timers, and
+# operator laptops cannot publish or restart the game engine. Protected main
+# emits one immutable component SHA; this workflow proves and stages it, while
+# one root-owned Hetzner systemd transaction waits for the announced table
+# break, cuts over, proves local/public/database identity, and seals or recovers.
 on:
-  # ═══════════════════════════════════════════════════════════════════════════
-  #  EVERY ENGINE MERGE STARTS ITS OWN RUN. THE RUN RESTARTS NOTHING UNTIL THE
-  #  :55 BREAK. (Dan, 2026-09-10: "i do not want any watch dogs, i want hard
-  #  coded fixes that solve this problem and prevent it from breaking or
-  #  regressing, i want any and all pushes to be published in the order that
-  #  they come in!")
-  # ═══════════════════════════════════════════════════════════════════════════
-  #
-  # WHAT THIS REPLACES. A `35 * * * *` cron, and two dispatchers that existed
-  # only because the cron did not come. GitHub delivered 3 of ~19 hourly ticks
-  # on 2026-09-10, so nearly every deploy that day was started by
-  # .github/scripts/engine-watchdog.sh, by schedule-liveness, or by hand - at
-  # whatever minute each happened to run, and each one a band-aid on a
-  # trigger that did not work. A push is delivered every time, so the merge
-  # itself starts the run and nothing has to notice that one is missing.
-  #
-  # THIS IS NOT "RESTART ON MERGE". The 2026-08-31 rule this block used to
-  # quote ("THE ENGINE RESTARTS AT 7AM AND 7PM. NOT WHEN CODE MERGES") was
-  # about merges RESTARTING production - 263 of them in one week. That cannot
-  # happen from here: every run waits in its break gate for a fresh
-  # `maintenance.readyForRestart` inside the announced :55 break (CLAUDE.md
-  # §13), and a run may hold the group for up to its whole ceiling to do it.
-  # A merge starts a run that WAITS.
-  #
-  # IN ORDER, BY INCLUSION. The engine restarts at most once per break and main
-  # takes dozens of merges an hour, so "every push published in the order it
-  # came in" is: every break ships a commit that CONTAINS every earlier push,
-  # in merge order, and never an older commit after a newer one (the release
-  # seal is forward-only). The `deploy-hetzner` concurrency group below is the
-  # queue - one run in flight, and one pending run that GitHub replaces with
-  # each newer push, so the pending run is always the newest push. A push whose
-  # own run was replaced is not lost: the run that replaced it contains it.
-  #
-  # THE CHAIN HANDS ITSELF ON. Three hand-offs, all inside this file:
-  #   1. a push to main that touches the engine starts a run (below);
-  #   2. a run that starts after main moved its CONTROL PLANE dispatches current
-  #      main before it stands down (the "control" step), because the commits
-  #      that moved main need not touch the paths below and so may have started
-  #      no run of their own;
-  #   3. a run whose break gate could not serve it (no certificate, or it built
-  #      too late for its break) dispatches its successor from its Verdict step;
-  #      the successor waits for the next break.
-  # A run whose CUTOVER ran and failed - it rolled production back - does not
-  # hand on: retrying it would restart production into the same broken build
-  # every hour. A run that ended BEFORE its cutover (tests, build, a refused
-  # certificate check, a cancel) retries within the chain's bound - see the
-  # Verdict - and the next push, the fix, starts a fresh chain.
-  push:
-    branches: [main]
-    # The engine's runtime paths - the same set engine-watchdog.sh measures
-    # "behind" against. A test or a sim change never enters the image.
-    #
-    # And the deploy's own control plane (2026-09-11). A fix to this file or
-    # to scripts/ci used to start nothing, so a commit whose cutover failed on
-    # a control-plane defect waited for an unrelated engine push. A run that
-    # carries no engine change ends at the dedupe ("the same engine tree is
-    # live") in about a minute and restarts nothing.
-    paths:
-      - 'server/**'
-      - '!server/**/*.test.ts'
-      - '!server/sim/**'
-      - '.github/workflows/auto-deploy-hetzner.yml'
-      - 'scripts/ci/**'
+  repository_dispatch:
+    types: [deploy-club-arena-engine]
 
-  # A dispatch - by hand, or by a run handing the train on - is subject to the
-  # same break gate and maintenance certificate as a push.
-  # There is deliberately no force input: neither a human nor automation may
-  # bypass readyForRestart and stop a live table engine.
-  workflow_dispatch:
-    inputs:
-      ref_sha:
-        description: 'Commit SHA to deploy (default: the ref this was dispatched on)'
-        required: false
-        type: string
-      rollback:
-        description: 'Authorize an audited rollback to ref_sha (normal deploys may only move forward)'
-        type: boolean
-        default: false
-      rollback_reason:
-        description: 'Required incident reason when rollback is true'
-        required: false
-        type: string
-      retries:
-        description: 'Set by the train itself - how many runs in a row ended before their cutover. Leave empty.'
-        required: false
-        type: string
+permissions: {}
 
+# Exact redeliveries serialize before checkout/npm work; distinct protected-
+# main SHAs still reach the durable Hetzner intake immediately and let host
+# locks plus freshness decide which release owns the next certified break.
 concurrency:
-  group: deploy-hetzner
+  group: club-arena-engine-request-${{ github.event.client_payload.ref_sha }}
   cancel-in-progress: false
 
 jobs:
-  deploy:
-    name: Deploy to Hetzner
+  preflight:
+    name: Test The Exact Engine Release Request
     runs-on: ubuntu-latest
-    # 2026-09-05: 25 was written when the build took ~5 minutes and the wait
-    # was a fixed 14. The build now takes 8-18, so 25 could not hold both and
-    # the wait was silently the part that got squeezed - it expired 23 seconds
-    # before the gate opened on run 33942233521 and shipped nothing. 40 holds
-    # the worst observed build plus a full wait to the next :55 plus cutover.
-    # ── THE CEILING AND THE RESERVE ARE ONE DECISION (merged 2026-09-05) ──
-    #
-    # Two fixes landed on this number the same day for different reasons, and
-    # BOTH are right. Taking either alone breaks the other.
-    #
-    #   main:  CUTOVER_RESERVE_S 300 -> 540, because the proof step after the
-    #          promote may poll for four minutes before it fails, and the wait
-    #          must never be able to spend the minutes the proof needs.
-    #   here:  timeout 40 -> 55, because the gate's budget is
-    #          timeout - build - reserve, and at 40 it went NEGATIVE against a
-    #          build that had grown to 8-18 minutes: runs 33985138036 and
-    #          33986167969 both built everything and threw it away.
-    #
-    # Raising the reserve without raising the ceiling takes 240s MORE out of
-    # the same budget - it makes the starvation this branch exists to fix
-    # strictly worse. So the ceiling is derived, not chosen:
-    #
-    #   the :35 tick must be able to ship on a COLD build
-    #     time from :35 to the :56 gate          1260s
-    #     worst build actually observed          1080s  (18 min)
-    #     cutover + verify + promote + proof      540s
-    #                                          = 2880s = 48 min  -> 55 covers it
-    #
-    #   and a run that only STAGES an image must be able to wait out any hour
-    #     staged run reaches the gate in          ~60s
-    #     55*60 - 60 - 540                      = 2700s = 45 min of wait
-    #
-    # So a cold build from :35 ships in its own run, and a push landing at any
-    # other minute stages its image and is cut over by the next :35 tick
-    # without rebuilding. One hour, worst case, and no build is ever wasted.
-    #
-    # tests/the-deploy-can-always-ship.law.test.ts pins the ARITHMETIC, not the
-    # literals, so neither number can be moved alone again.
-    #
-    # ── EVERY START MINUTE REACHES THE NEXT BREAK (2026-09-10) ──────────────
-    #
-    # 55 was derived for ONE caller, the :35 tick, and two of its inputs were
-    # wrong by the time it mattered:
-    #
-    #   * "a staged run reaches the gate in ~60s" - it does not. The server
-    #     suite runs before the gate on EVERY run and takes ~9 minutes, so a
-    #     staged run reaches the gate 11-12 minutes after it starts (measured:
-    #     runs 34505100894, 34511390657, 34512893031, 34516171966);
-    #   * "the :35 tick finishes the job" - it does not come. GitHub delivered
-    #     3 of ~19 hourly ticks on 2026-09-10, the DB dispatcher was retired by
-    #     20260910183316, and every other run was dispatched by
-    #     .github/scripts/engine-watchdog.sh or an agent at whatever minute it
-    #     happened to run.
-    #
-    # With 55, a run that started before :10 or after :44 could not afford to
-    # wait for the next :55. It staged its image, printed a notice, went GREEN
-    # and shipped nothing - and nothing came back to finish the job. Production
-    # sat on a crash-looping engine through the 16:55, 17:55 and 18:55 breaks
-    # while the fix (#4190) had been on main since 16:51.
-    #
-    # So the ceiling is derived from the worst START MINUTE, not from a tick:
-    #
-    #     checkout + setup + server suite (worst observed 11.7m)   12
-    #     cold image build (worst observed)                         18
-    #     longest possible wait (reach the gate just after :56)     60
-    #     cutover + verify + promote + proof (CUTOVER_RESERVE_S)     9
-    #     a failed proof's ROLLBACK (proxy polls + strict proof)      8
-    #     the always() tail (summary, ledger, cleanup, verdict)       2
-    #                                                             = 109 -> 130
-    #
-    # (110 was merged first, in #4208, and left the rollback two minutes: a
-    # cutover that failed its proof at the worst start minute could have been
-    # killed by the job timeout halfway through restoring the last good image.)
-    #
-    # A run may now hold the deploy-hetzner group for up to an hour. That is the
-    # design, not a cost: it is the run that ships at the next :55, and the
-    # newest push waits pending behind it. engine-watchdog.sh (which only
-    # reports now) treats it as in flight for INFLIGHT_STALE_MIN, derived from
-    # this number: at least twice it, since a run's age includes any time it
-    # spent pending behind another.
-    timeout-minutes: 130
-
-    # The job's token, named in full because it now does one thing it never
-    # did before: hand the train on (`gh workflow run`, actions: write) when a
-    # run stands down superseded or its break gate could not serve it.
-    # contents: read checks out the commit; issues: write is the financial
-    # health-gate's best-effort report.
+    timeout-minutes: 25
     permissions:
       contents: read
-      actions: write
-      issues: write
+    outputs:
+      target_sha: ${{ steps.target.outputs.sha }}
+    steps:
+      - name: Checkout the requested immutable commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.client_payload.ref_sha }}
+          fetch-depth: 0
 
+      - name: Prove the request is current protected-main engine code
+        id: target
+        env:
+          REQUESTED_SHA: ${{ github.event.client_payload.ref_sha || '' }}
+        run: |
+          set -euo pipefail
+          [[ "$REQUESTED_SHA" =~ ^[0-9a-f]{40}$ ]] \
+            || { echo '::error::client_payload.ref_sha must be one full lowercase commit SHA'; exit 1; }
+          RESOLVED_SHA="$(git rev-parse --verify 'HEAD^{commit}')"
+          [ "$RESOLVED_SHA" = "$REQUESTED_SHA" ] \
+            || { echo "::error::checkout resolved $RESOLVED_SHA, not $REQUESTED_SHA"; exit 1; }
+          git fetch --no-tags origin '+refs/heads/main:refs/remotes/origin/main'
+          MAIN_SHA="$(git rev-parse --verify 'origin/main^{commit}')"
+          git merge-base --is-ancestor "$RESOLVED_SHA" "$MAIN_SHA" \
+            || { echo "::error::target is not contained in protected main $MAIN_SHA"; exit 1; }
+          LATEST_REQUIRED="$(git log "$MAIN_SHA" -1 --format=%H -- \
+            'server/**' ':(exclude)server/**/*.test.ts' ':(exclude)server/sim/**')"
+          [ "$RESOLVED_SHA" = "$LATEST_REQUIRED" ] \
+            || { echo "::error::stale engine request; protected main requires $LATEST_REQUIRED"; exit 1; }
+          echo "sha=$RESOLVED_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Use the production Node major
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+
+      - name: Compile and test the exact server tree
+        working-directory: server
+        run: |
+          set -euo pipefail
+          npm ci --no-audit --no-fund
+          npm run build
+          npm test
+
+  engine-doors:
+    name: Prove The Exact Engine Has Every Production Door
+    needs: preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout the requested immutable commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.preflight.outputs.target_sha }}
+
+      - name: Use the production Node major
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # A schema manifest can describe a function before production actually
+      # has it. Ask pg_proc from the exact requested checkout in a credential
+      # boundary that owns neither test execution nor root SSH authority.
+      - name: Every database function this build calls exists in production
+        id: doors
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          ROLLBACK_REQUESTED: 'false'
+        run: |
+          set -euo pipefail
+          npm ls pg >/dev/null 2>&1 || npm i pg@8 --no-save --no-audit --no-fund >/dev/null 2>&1 || true
+          node scripts/ci/check-engine-doors-exist.mjs
+
+  deploy:
+    name: Publish Through Hetzner Club Arena
+    needs: [preflight, engine-doors]
+    runs-on: ubuntu-latest
+    timeout-minutes: 210
+    permissions:
+      contents: read
+    outputs:
+      release_result: ${{ steps.release.outputs.result || 'not completed' }}
+      verified: ${{ steps.verify.outputs.verified || 'false' }}
+      shipped: ${{ (steps.release.outputs.result == 'sealed' || steps.release.outputs.result == 'already-released') && steps.verify.outputs.verified == 'true' }}
     env:
       HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
       SSH_USER: root
@@ -256,1547 +121,483 @@ jobs:
       IMAGE_REPO: club-arena-engine
       REPO_DIR: /opt/club-arena
       ENGINE_URL: https://engine.smarter.poker
-      SHA: ${{ github.event.inputs.ref_sha || github.sha }}
+      SHA: ${{ needs.preflight.outputs.target_sha }}
+      CONTROL_SHA: ${{ github.sha }}
+      RUN_KEY: ${{ github.run_id }}-${{ github.run_attempt }}
+      RUN_ACTOR: ${{ github.actor }}
 
     steps:
-      - name: Checkout the exact commit being deployed
+      - name: Establish one absolute deploy-job deadline
+        run: |
+          set -euo pipefail
+          # The Actions job is capped at 210 minutes. Our own clock stops ten
+          # minutes earlier so `always()` cleanup still has runner time even
+          # when a release consumes every second of its declared budget.
+          DEPLOY_JOB_BUDGET_SECONDS=12000
+          POST_RELEASE_RESERVE_SECONDS=600
+          PROOF_RESERVE_AFTER_SECONDS=330
+          RECEIPT_RESERVE_AFTER_SECONDS=120
+          LOCAL_CLEANUP_RESERVE_SECONDS=30
+          NOW_EPOCH="$(date +%s)"
+          RELEASE_JOB_DEADLINE_EPOCH=$((NOW_EPOCH + DEPLOY_JOB_BUDGET_SECONDS))
+          RELEASE_DISPATCH_DEADLINE_EPOCH=$((RELEASE_JOB_DEADLINE_EPOCH - POST_RELEASE_RESERVE_SECONDS))
+          RELEASE_PROOF_DEADLINE_EPOCH=$((RELEASE_JOB_DEADLINE_EPOCH - PROOF_RESERVE_AFTER_SECONDS))
+          RELEASE_RECEIPT_DEADLINE_EPOCH=$((RELEASE_JOB_DEADLINE_EPOCH - RECEIPT_RESERVE_AFTER_SECONDS))
+          RELEASE_REMOTE_CLEANUP_DEADLINE_EPOCH=$((RELEASE_JOB_DEADLINE_EPOCH - LOCAL_CLEANUP_RESERVE_SECONDS))
+          [ "$POST_RELEASE_RESERVE_SECONDS" -ge 600 ]
+          [ "$RELEASE_DISPATCH_DEADLINE_EPOCH" -lt "$RELEASE_PROOF_DEADLINE_EPOCH" ]
+          [ "$RELEASE_PROOF_DEADLINE_EPOCH" -lt "$RELEASE_RECEIPT_DEADLINE_EPOCH" ]
+          [ "$RELEASE_RECEIPT_DEADLINE_EPOCH" -lt "$RELEASE_REMOTE_CLEANUP_DEADLINE_EPOCH" ]
+          {
+            echo "RELEASE_JOB_DEADLINE_EPOCH=$RELEASE_JOB_DEADLINE_EPOCH"
+            echo "RELEASE_DISPATCH_DEADLINE_EPOCH=$RELEASE_DISPATCH_DEADLINE_EPOCH"
+            echo "RELEASE_PROOF_DEADLINE_EPOCH=$RELEASE_PROOF_DEADLINE_EPOCH"
+            echo "RELEASE_RECEIPT_DEADLINE_EPOCH=$RELEASE_RECEIPT_DEADLINE_EPOCH"
+            echo "RELEASE_REMOTE_CLEANUP_DEADLINE_EPOCH=$RELEASE_REMOTE_CLEANUP_DEADLINE_EPOCH"
+            echo "POST_RELEASE_RESERVE_SECONDS=$POST_RELEASE_RESERVE_SECONDS"
+          } >> "$GITHUB_ENV"
+
+      - name: Checkout the exact workflow control and authenticated main history
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.inputs.ref_sha || github.sha }}
+          ref: ${{ github.sha }}
+          fetch-depth: 0
 
-      - name: Resolve the deployment target to one immutable commit
-        id: target
-        shell: bash
+      - name: Recheck freshness after the FIFO wait
         run: |
           set -euo pipefail
-          RESOLVED_SHA="$(git rev-parse --verify 'HEAD^{commit}')"
-          RESOLVED_SHA="${RESOLVED_SHA,,}"
-          [[ "$RESOLVED_SHA" =~ ^[0-9a-f]{40}$ ]] \
-            || { echo "::error::deployment target did not resolve to one full commit"; exit 1; }
-          echo "SHA=$RESOLVED_SHA" >> "$GITHUB_ENV"
-          echo "sha=$RESOLVED_SHA" >> "$GITHUB_OUTPUT"
-          echo "Resolved immutable deployment target: $RESOLVED_SHA"
+          [ "$(date +%s)" -lt "$RELEASE_DISPATCH_DEADLINE_EPOCH" ] \
+            || { echo '::error::checkout exhausted the absolute deploy budget'; exit 70; }
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$CONTROL_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$RUN_KEY" =~ ^[1-9][0-9]*-[1-9][0-9]*$ ]]
+          [ "$(git rev-parse --verify 'HEAD^{commit}')" = "$CONTROL_SHA" ]
+          git cat-file -e "$SHA^{commit}"
+          timeout --signal=TERM --kill-after=5s 120s \
+            git fetch --no-tags origin '+refs/heads/main:refs/remotes/origin/main'
+          MAIN_SHA="$(git rev-parse --verify 'origin/main^{commit}')"
+          git merge-base --is-ancestor "$SHA" "$MAIN_SHA" \
+            || { echo '::error::release target left protected-main history'; exit 1; }
+          git merge-base --is-ancestor "$CONTROL_SHA" "$MAIN_SHA" \
+            || { echo '::error::workflow control commit left protected-main history'; exit 1; }
+          LATEST_REQUIRED="$(git log "$MAIN_SHA" -1 --format=%H -- \
+            'server/**' ':(exclude)server/**/*.test.ts' ':(exclude)server/sim/**')"
+          [ "$LATEST_REQUIRED" = "$SHA" ] \
+            || { echo "::error::queued target is stale; protected main requires $LATEST_REQUIRED"; exit 1; }
 
-      # ── A SUPERSEDED RUN STANDS DOWN; IT DOES NOT FAIL (2026-09-10) ──────
-      #
-      # Only current main's control plane may touch production, so a run whose
-      # workflow commit is no longer main's tip must not proceed. It used to
-      # FAIL here, which painted every superseded run red: 8 of 8 red deploy
-      # runs on 2026-09-10 were this, not one of them a ship failure, and one
-      # opened a false "deploy train is failing" alarm (#4109). Since #4208 a
-      # run may hold the deploy group for up to an hour, so a run that waited
-      # behind it almost always starts after main has moved.
-      #
-      # Three answers now, each with its own name:
-      #   current main         -> proceed;
-      #   an ANCESTOR of main  -> superseded: touch nothing, record why, end
-      #                           green, and hand the train on (below);
-      #   anything else        -> refuse, red, exactly as before.
-      #
-      # ── MAIN MOVING IS NOT THE CONTROL PLANE MOVING (2026-09-10) ─────────
-      #
-      # With a push trigger (see `on:`) the pending run is the newest ENGINE
-      # push, and main keeps moving under it with merges that never touch the
-      # engine. Standing down on every such move would make the train restart
-      # itself for every client merge, and under a busy afternoon it might
-      # never leave the station. What "only current main's control plane may
-      # touch production" protects against is a stale DEPLOY - this workflow,
-      # the scripts it runs, the host scripts it installs - not a stale lobby.
-      # So an ancestor whose control plane is byte-identical to main's is not
-      # superseded: it ships its own commit, which is where main's engine is.
-      #
-      # When the control plane DID move, the run stands down and dispatches
-      # current main before it goes: the commits that moved it may not match
-      # the push paths, so nothing else is going to start that run. Handing
-      # on is safe to repeat - a dispatch only ever replaces the pending run
-      # with a newer one - and a dispatch that fails is red, not silent.
-      - name: Stage the current release proof control
-        id: control
-        shell: bash
+      - name: Establish pinned ephemeral SSH transport
+        id: ssh
         env:
-          GH_TOKEN: ${{ github.token }}
-          CONTROL_PLANE: >-
-            .github/workflows/auto-deploy-hetzner.yml
-            scripts/ci
-            server/scripts
+          SSH_KEY: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          HOST_KEY: ${{ secrets.HETZNER_HOST_KEY }}
         run: |
           set -euo pipefail
-          CONTROL_SHA='${{ github.sha }}'
-          [[ "$CONTROL_SHA" =~ ^[0-9a-f]{40}$ ]] \
-            || { echo "::error::workflow control SHA is not one full commit"; exit 1; }
-          git fetch --no-tags --depth=200 origin main
-          REMOTE_MAIN="$(git rev-parse FETCH_HEAD)"
-          if [ "$CONTROL_SHA" = "$REMOTE_MAIN" ]; then
-            echo "superseded=false" >> "$GITHUB_OUTPUT"
-          elif git cat-file -e "${CONTROL_SHA}^{commit}" 2>/dev/null \
-               && git merge-base --is-ancestor "$CONTROL_SHA" "$REMOTE_MAIN" 2>/dev/null; then
-            # shellcheck disable=SC2086 # CONTROL_PLANE is a list of paths
-            if git diff --quiet "$CONTROL_SHA" "$REMOTE_MAIN" -- $CONTROL_PLANE; then
-              echo "superseded=false" >> "$GITHUB_OUTPUT"
-              echo "::notice title=MAIN MOVED, CONTROL PLANE DID NOT::main is at ${REMOTE_MAIN:0:8}, past this run's ${CONTROL_SHA:0:8}, but no deploy control file changed between them. This run ships ${CONTROL_SHA:0:8}."
-              # "Any newer engine push has its own run queued behind this one"
-              # was an assumption, not a check (review, 2026-09-11): the group
-              # keeps one pending run and a later-created run replaces it, older
-              # SHA or not. When main is ahead in the ENGINE paths, the Verdict
-              # hands on after this run ships, so a newer engine commit is never
-              # left without a run. A dispatch only ever replaces the pending
-              # run with an equal-or-newer main, so an extra one is harmless.
-              if ! git diff --quiet "$CONTROL_SHA" "$REMOTE_MAIN" -- server \
-                     ':(exclude)server/**/*.test.ts' ':(exclude)server/sim'; then
-                echo "main_ahead=true" >> "$GITHUB_OUTPUT"
-              fi
-            else
-              echo "superseded=true" >> "$GITHUB_OUTPUT"
-              if gh workflow run auto-deploy-hetzner.yml --repo "$GITHUB_REPOSITORY" --ref main; then
-                echo "::notice title=SUPERSEDED::main moved the deploy control plane to ${REMOTE_MAIN:0:8} after this run was queued on ${CONTROL_SHA:0:8}. This run touches nothing; it dispatched a run on current main, which ships ${CONTROL_SHA:0:8} with everything after it."
-                exit 0
-              fi
-              echo "::error title=TRAIN STOPPED::superseded on ${CONTROL_SHA:0:8} and could not dispatch a run on current main; nothing else will start one. Dispatch auto-deploy-hetzner.yml on main."
-              exit 1
-            fi
-          else
-            echo "::error::this deployment workflow was not dispatched from current main; refusing rollbackable control-plane code"
-            exit 1
-          fi
-          # A ROLLBACK IS NEVER LOST IN THE QUEUE (review, 2026-09-11). The
-          # deploy-hetzner group keeps ONE pending run and GitHub cancels it
-          # whenever a newer run is queued, so a rollback dispatched while a
-          # deploy held the group was replaced by the next engine push: it ran
-          # no step, and nothing said so. A rollback is named
-          # "ROLLBACK <sha> <reason>" (run-name, above). A forward run that finds
-          # the newest such run cancelled before it started - within three hours,
-          # and at the moment a newer run was queued, which is what a queue
-          # replacement looks like and a person's cancel does not - dispatches
-          # it again and stands down, so the rollback goes first.
-          if [ "${{ github.event.inputs.rollback || 'false' }}" != "true" ]; then
-            LOST=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow auto-deploy-hetzner.yml \
-                     --limit 50 --json databaseId,displayTitle,status,conclusion,createdAt,updatedAt \
-                     --jq '. as $all
-                           | ([.[] | select(.displayTitle | startswith("ROLLBACK "))] | sort_by(.createdAt) | last) as $r
-                           | if $r == null then empty
-                             elif $r.status != "completed" or $r.conclusion != "cancelled" then empty
-                             elif (now - ($r.createdAt | fromdateiso8601)) > 10800 then empty
-                             elif ([$all[] | select(.databaseId != $r.databaseId)
-                                    | select((.createdAt | fromdateiso8601) >= (($r.updatedAt | fromdateiso8601) - 20)
-                                             and (.createdAt | fromdateiso8601) <= (($r.updatedAt | fromdateiso8601) + 5))]
-                                   | length) == 0 then empty
-                             else "\($r.databaseId) \($r.displayTitle)" end' 2>/dev/null || echo "")
-            if [ -n "$LOST" ]; then
-              LOST_ID="${LOST%% *}"
-              LOST_TITLE="${LOST#* }"
-              STARTED=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$LOST_ID/jobs" \
-                          --jq '[.jobs[] | select((.steps // []) | length > 0)] | length' 2>/dev/null || echo "unknown")
-              if [ "$STARTED" = "0" ]; then
-                read -r _ LOST_SHA LOST_REASON <<< "$LOST_TITLE"
-                if [[ "$LOST_SHA" =~ ^[0-9a-f]{7,40}$ ]] && [ -n "$LOST_REASON" ] \
-                   && gh workflow run auto-deploy-hetzner.yml --repo "$GITHUB_REPOSITORY" --ref main \
-                        -f ref_sha="$LOST_SHA" -f rollback=true -f rollback_reason="$LOST_REASON"; then
-                  echo "superseded=true" >> "$GITHUB_OUTPUT"
-                  echo "::warning title=ROLLBACK RESTORED::run $LOST_ID - a rollback to ${LOST_SHA:0:8} - was replaced in the queue before it started. It has been dispatched again and this run stands down so the rollback goes first; forward deploys resume with the next push."
-                  exit 0
-                fi
-                echo "::error title=ROLLBACK LOST::run $LOST_ID - a rollback to ${LOST_SHA:-?} - was replaced in the queue before it started, and could not be dispatched again. This run stops rather than deploy forward over it. Dispatch the rollback again by hand."
-                exit 1
-              fi
-            fi
-          fi
-          CONTROL_DIR="$GITHUB_WORKSPACE/.engine-release-control"
-          install -d -m 0700 "$CONTROL_DIR"
-          git show "$CONTROL_SHA:scripts/ci/prove-engine-version-moved.mjs" \
-            > "$CONTROL_DIR/prove-engine-version-moved.mjs"
-          git show "$CONTROL_SHA:scripts/ci/supabase-auth-headers.mjs" \
-            > "$CONTROL_DIR/supabase-auth-headers.mjs"
-          chmod 0700 "$CONTROL_DIR"/*.mjs
-          echo "ENGINE_RELEASE_PROOF_SCRIPT=$CONTROL_DIR/prove-engine-version-moved.mjs" >> "$GITHUB_ENV"
+          [[ "$HETZNER_HOST" =~ ^[A-Za-z0-9.-]+$ ]] \
+            || { echo '::error::HETZNER_HOST is absent or invalid'; exit 1; }
+          [ -n "$SSH_KEY" ] || { echo '::error::HETZNER_SSH_PRIVATE_KEY is absent'; exit 1; }
+          [ -n "$HOST_KEY" ] || { echo '::error::HETZNER_HOST_KEY is absent'; exit 1; }
+          SSH_DIR="$RUNNER_TEMP/club-arena-ssh-$RUN_KEY"
+          install -d -m 0700 "$SSH_DIR"
+          printf '%s\n' "$SSH_KEY" > "$SSH_DIR/key"
+          chmod 0600 "$SSH_DIR/key"
+          ssh-keygen -y -f "$SSH_DIR/key" >/dev/null
+          printf '%s\n' "$HOST_KEY" > "$SSH_DIR/known_hosts"
+          chmod 0600 "$SSH_DIR/known_hosts"
+          ssh-keygen -l -f "$SSH_DIR/known_hosts" >/dev/null
+          HSSH="$RUNNER_TEMP/hssh-$RUN_KEY"
+          printf '#!/usr/bin/env bash\nexec ssh -i %q -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=%q -o GlobalKnownHostsFile=/dev/null -o ConnectTimeout=20 -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -o TCPKeepAlive=yes %q "$@"\n' \
+            "$SSH_DIR/key" "$SSH_DIR/known_hosts" "$SSH_USER@$HETZNER_HOST" > "$HSSH"
+          chmod 0700 "$HSSH"
+          echo "HSSH=$HSSH" >> "$GITHUB_ENV"
+          echo "SSH_DIR=$SSH_DIR" >> "$GITHUB_ENV"
+          TRANSPORT_SETUP_REMAINING=$((RELEASE_DISPATCH_DEADLINE_EPOCH - $(date +%s)))
+          [ "$TRANSPORT_SETUP_REMAINING" -gt 5 ] \
+            || { echo '::error::SSH setup exhausted the absolute deploy budget'; exit 70; }
+          TRANSPORT_SETUP_TIMEOUT=$((TRANSPORT_SETUP_REMAINING - 5))
+          [ "$TRANSPORT_SETUP_TIMEOUT" -le 60 ] || TRANSPORT_SETUP_TIMEOUT=60
+          # This command is intentionally expanded by the remote shell.
+          # shellcheck disable=SC2016
+          timeout --signal=TERM --kill-after=5s "${TRANSPORT_SETUP_TIMEOUT}s" \
+            "$HSSH" 'test "$(id -u)" = 0 && printf "%s\n" club-arena-engine-host'
 
-      # Stamped BEFORE the build so the break gate can subtract the build's
-      # real cost from its wait budget (2026-09-05). Without it the gate
-      # assumes zero elapsed and can hand itself more time than the job has.
-      - name: Stamp the job start for the break-gate budget
-        run: echo "DEPLOY_STARTED_AT=$(date -u +%s)" >> $GITHUB_ENV
-
-      # A DEPLOY THAT PROVES ITSELF, PART ONE (2026-09-05). On 2026-09-04/05 a
-      # run reported success and shipped nothing: the container came back on
-      # the OLD image and /health.version never changed. Every check below
-      # compares what the engine SAYS over HTTP against the target; none of
-      # them remembered what was running BEFORE, so "did not move" was
-      # indistinguishable from "moved". Recorded here, at the start, from the
-      # engine's own witness (engine_leader.engine_version, written by the
-      # running leader) with /health as the fallback. Best-effort: a failure
-      # here must never stop a deploy.
-      - name: Record the version production runs before the cutover
-        if: always() && steps.control.outputs.superseded != 'true'
-        continue-on-error: true
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          SUPABASE_URL: https://kuklfnapbkmacvwxktbh.supabase.co
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          MODE: record
-        run: |
-          npm ls pg >/dev/null 2>&1 || npm i pg@8 --no-save --no-audit --no-fund >/dev/null 2>&1 || true
-          node "$ENGINE_RELEASE_PROOF_SCRIPT" || echo "::warning::pre-cutover version not recorded"
-
-      # (2026-09-10) "Record that this deploy run started" is gone. It fed the
-      # DB dispatcher at :41, which was retired live by 20260910183316 along
-      # with fn_ca_record_engine_deploy_start, so it failed with a warning on
-      # every run. The deploy's receipt is ca_engine_deploy_attempts, written
-      # by the ledger step near the end of this job.
-
-      # 2026-08-24: DEDUPE. A restart is not free — it disconnects every
-      # player and voids in-flight hands — so an engine already serving this
-      # exact commit must not be bounced again. This is what makes the hourly
-      # catch-up schedule nearly free, and it also absorbs redundant push
-      # triggers (263 server-touching commits landed in the week before this
-      # was written; every one was a full restart).
-      # THE CHICAGO WINDOW GATE IS GONE (Dan, 2026-09-01, "every hour on the
-      # :55 instead of every 5 hours"). Every hour is a window, so there is no
-      # hour to admit or refuse and no timezone to convert. What decides
-      # whether this run restarts anything is now, in order: the dedupe below
-      # (is there even new code), and the break gate further down (has the
-      # engine parked every table and said it is safe).
-      #
-      # Nothing bypasses readyForRestart: not a push, not a dispatch.
-      - name: Skip if production already serves this commit
-        id: dedupe
-        env:
-          ROLLBACK_REQUESTED: ${{ github.event.inputs.rollback || 'false' }}
-        run: |
-          if [ "${{ steps.control.outputs.superseded }}" = "true" ]; then
-            echo "skip=true" >> $GITHUB_OUTPUT
-            echo "reason=superseded" >> $GITHUB_OUTPUT
-            echo "Superseded by a newer main - nothing to do here."
-            exit 0
-          fi
-          SHORT="${SHA:0:8}"
-          # No `-f`: a degraded engine answers 503 WITH its body, and the
-          # version in that body is real (see "A 503 IS AN ANSWER" below).
-          BODY=$(curl -s --max-time 10 "$ENGINE_URL/health" 2>/dev/null || echo "")
-          VER=$(echo "$BODY" | python3 -c "import json,sys;print(json.load(sys.stdin).get('version',''))" 2>/dev/null || echo "")
-          if [ -n "$VER" ] && [ "$VER" = "$SHORT" ]; then
-            echo "skip=true" >> $GITHUB_OUTPUT
-            echo "reason=already_live" >> $GITHUB_OUTPUT
-            echo "Production already serves $SHORT — nothing to deploy."
-            exit 0
-          fi
-          # LIVE BY INCLUSION (2026-09-10). A commit that production's build
-          # already CONTAINS is live. With a push trigger, a push event that
-          # GitHub delivers late can queue a run for an older commit behind a
-          # run that already shipped a newer one; deploying it would be a step
-          # backwards, which the forward-only release seal would refuse - red,
-          # for a commit that is in fact on production.
-          #
-          # A ROLLBACK IS EXEMPT (review, 2026-09-11). A rollback target is by
-          # definition contained in the build it rolls back from, so this
-          # branch called every audited rollback "already live", skipped the
-          # seal - the only place MODE=rollback exists - and went green in a
-          # minute with production still on the bad build.
-          if [ "$ROLLBACK_REQUESTED" != "true" ] && [ -n "$VER" ] \
-             && git cat-file -e "${VER}^{commit}" 2>/dev/null \
-             && git merge-base --is-ancestor "$SHA" "$VER" 2>/dev/null; then
-            echo "skip=true" >> $GITHUB_OUTPUT
-            echo "reason=already_live" >> $GITHUB_OUTPUT
-            echo "Production serves $VER, which already contains $SHORT — nothing to deploy."
-            exit 0
-          fi
-          # THE SAME ENGINE IS LIVE (2026-09-11). The control plane now starts a
-          # run of its own (see `on.push.paths`), and such a run usually carries
-          # nothing for the engine. The image is built from `$SHA:server` alone
-          # (server/scripts/build-engine-image.sh labels it with that exact tree),
-          # so when production's build has the same server tree, the image would
-          # be byte-for-byte the one already running: nothing to deploy, and no
-          # reason to restart anything. Never for a rollback.
-          SHA_TREE=$(git rev-parse --verify -q "${SHA}:server" 2>/dev/null || echo "")
-          if [ "$ROLLBACK_REQUESTED" != "true" ] && [ -n "$VER" ] && [ -n "$SHA_TREE" ] \
-             && git cat-file -e "${VER}^{commit}" 2>/dev/null \
-             && [ "$(git rev-parse --verify -q "${VER}:server" 2>/dev/null)" = "$SHA_TREE" ]; then
-            echo "skip=true" >> $GITHUB_OUTPUT
-            echo "reason=already_live" >> $GITHUB_OUTPUT
-            echo "Production serves $VER, whose engine tree is identical to $SHORT's — nothing to deploy."
-            exit 0
-          fi
-          # ── NO RESTART SPACING ANY MORE: THE BREAK IS THE SPACING (2026-09-10) ──
-          #
-          # A 20-minute "restart coalescing" gate lived here from 2026-08-24,
-          # when a merge train restarted the engine five times in one hour.
-          # Every restart now happens inside the :55 break gate, one run at a
-          # time, so two restarts can never be closer than one break apart and
-          # the spacing gate could only ever do one thing: tell a run to stand
-          # down and trust a later tick to ship its commit. With the cron gone
-          # (see `on:`) nothing comes later - the next run is the next push - so
-          # a coalesced run would strand exactly the commit it was asked to
-          # ship. Spacing was a courtesy; the break is the law, and it is enough.
-          #
-          # What stays is the READ: when the engine is younger than the last
-          # deploy we performed, something other than this pipeline restarted
-          # production.
-          npm ls pg >/dev/null 2>&1 || npm i pg@8 --no-save --no-audit --no-fund >/dev/null 2>&1 || true
-          SINCE_SHIPPED=$(node scripts/ci/last-shipped-engine-deploy.mjs 2>/dev/null | tail -1 || echo ERR)
-          case "$SINCE_SHIPPED" in ''|*[!0-9]*) SINCE_SHIPPED_N=-1 ;; *) SINCE_SHIPPED_N=$SINCE_SHIPPED ;; esac
-          UPTIME=$(echo "$BODY" | python3 -c 'import json,sys; d=json.load(sys.stdin); v=d.get("uptime"); print("ERR" if v is None else int(float(v)))' 2>/dev/null || echo ERR)
-          #
-          # ── AN OFF-BREAK RESTART IS AN INCIDENT, NOT A DETAIL ─────────────
-          #
-          # If the engine is younger than the last deploy we performed, then
-          # something other than this pipeline restarted production - outside
-          # the announced break, with no warning to any player, voiding every
-          # in-flight hand on every table it owned (§10.5: horses' hands too).
-          # Until today nothing anywhere said so; it was visible only as a
-          # deploy that mysteriously coalesced. Now it is an annotation on the
-          # run and a row the watchdog can read.
-          if [ "$UPTIME" != "ERR" ] && [ "$SINCE_SHIPPED_N" -gt 0 ] \
-             && [ "$UPTIME" -lt "$SINCE_SHIPPED_N" ]; then
-            echo "unplanned_restart=true" >> $GITHUB_OUTPUT
-            echo "::warning title=UNPLANNED RESTART::Production has been up ${UPTIME}s but our last deploy was ${SINCE_SHIPPED_N}s ago, so something restarted the engine that was NOT a deploy and NOT the announced :55 break. Check sp-autoheal (docker logs sp-autoheal) and poker_engine_liveness - a restart nobody announced voids every in-flight hand."
-          fi
-          echo "skip=false" >> $GITHUB_OUTPUT
-          echo "Production serves '${VER:-unreadable}' (uptime ${UPTIME}s, our last deploy ${SINCE_SHIPPED}s ago), deploying $SHORT."
-
-      # See design note 7. Cheap (~1 min) and it is the only thing standing
-      # between a failing engine test and production.
-      - name: Setup Node 22
-        if: steps.dedupe.outputs.skip != 'true'
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: server/package-lock.json
-
-      - name: Server tests must pass before anything is deployed
-        if: steps.dedupe.outputs.skip != 'true'
-        # A hang must end as a counted step FAILURE, not as the 130-minute job
-        # timeout, which GitHub reports as a cancel (review, 2026-09-11). Only
-        # steps that touch nothing live get one; the cutover and everything
-        # after it must never be killed half-way.
-        timeout-minutes: 30
-        working-directory: server
-        run: |
-          npm ci
-          npx tsc --noEmit
-          npm test
-
-      - name: Financial health-gate (zero-drift phase 5, ADVISORY)
-        # ADVISORY SINCE 2026-09-02, BY DAN'S RULING (verbatim): "IT SHOULD BE
-        # TREATED LIKE A CHIP DRIFT, AUDITED, FIXED, THEN OPTIMIZED, THEN
-        # FIXING THE ISSUE AT THE ROOT CAUSE SO IT NEVER HAPPENS AGAIN!"
-        #
-        # The original design ("do not deploy onto a bleeding ledger") wired
-        # drift detection as a hard stop on the whole train. On 2026-09-02 a
-        # 1,259,900-diamond unjournaled movement (issues #2610/#2613, DB
-        # incident 0db37a45) blocked EVERY engine deploy for four-plus hours,
-        # including the fixes and diagnostics that drift response itself
-        # needs, while the delivery guarantee says no merged work is ever
-        # stranded. A deploy does not move money; refusing it does not
-        # contain a movement that already happened. So drift response is now:
-        # the DB-side machinery files a critical ca_drift_incidents row the
-        # moment a snapshot sees it (fn_ca_raise_drift_incident, which worked
-        # that night), this step reports the same findings on the run and in
-        # a best-effort repo issue, and humans root-cause it while code keeps
-        # shipping. Every invariant still runs read-only against production
-        # on every deploy; nothing is measured less, it just stops taking the
-        # train hostage. The [skip-financial-gate] tag now only silences the
-        # report for one deploy.
-        if: steps.dedupe.outputs.skip != 'true'
-        env:
-          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-          # GitHub runners have no IPv6 route, and db.<ref>.supabase.co is
-          # IPv6-only, so the direct host ENETUNREACHes from Actions. The
-          # DATABASE_URL secret points at the IPv4 Supavisor pooler
-          # (aws-0-us-west-2.pooler.supabase.com) and the script prefers it.
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          if git log -1 --pretty=%B | grep -q '\[skip-financial-gate\]'; then
-            echo '::warning::financial health-gate report skipped by commit message tag'
-            exit 0
-          fi
-          npm ls pg >/dev/null 2>&1 || npm i pg@8 --no-save --no-audit --no-fund >/dev/null 2>&1 || true
-          set +e
-          OUT=$(node scripts/ci/check-chip-conservation.mjs 2>&1)
-          RC=$?
-          set -e
-          printf '%s\n' "$OUT"
-          if [ "$RC" -eq 0 ]; then exit 0; fi
-
-          FINDINGS=$(printf '%s\n' "$OUT" | grep -E '^  FAIL ' || echo 'see the step log')
-          echo "::warning title=FINANCIAL DRIFT DETECTED - DEPLOY CONTINUES::${FINDINGS}. Per Dan's 2026-09-02 ruling, drift is audited like chip drift, never a deploy blocker. The ca_drift_incidents row is the authoritative record."
-          {
-            echo "### Financial health-gate: DRIFT DETECTED (advisory; the deploy continued)"
-            echo ""
-            echo '```'
-            printf '%s\n' "$FINDINGS"
-            echo '```'
-            echo ""
-            echo "Dan, 2026-09-02: treated like chip drift - audited, fixed, optimized, root-caused - never a blocked train."
-          } >> "$GITHUB_STEP_SUMMARY"
-
-          # Best-effort paper trail on the repo. The warning annotation and
-          # the DB incident row are the guaranteed channels if this token
-          # cannot write issues; a refusal here must not fail the deploy.
-          TITLE='Financial drift detected by the deploy gate (advisory): audit and root-cause, deploys continue'
-          BODY=$(printf 'Run: %s/%s/actions/runs/%s\n\n```\n%s\n```\n\nPer Dan'"'"'s 2026-09-02 ruling the deploy CONTINUED. Root-cause via the open ca_drift_incidents row; close this issue when that incident resolves.' \
-            "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" "$FINDINGS")
-          EXISTING=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --limit 50 --json number,title \
-            --jq "[.[] | select(.title == \"$TITLE\")] | .[0].number // empty" 2>/dev/null || true)
-          if [ -n "${EXISTING:-}" ]; then
-            gh issue comment "$EXISTING" --repo "$GITHUB_REPOSITORY" --body "$BODY" >/dev/null 2>&1 \
-              && echo "updated advisory issue #$EXISTING" \
-              || echo "::warning::could not update the advisory issue - the run annotation and ca_drift_incidents row still carry the finding"
-          else
-            gh issue create --repo "$GITHUB_REPOSITORY" --title "$TITLE" --body "$BODY" >/dev/null 2>&1 \
-              && echo "filed the advisory issue" \
-              || echo "::warning::could not file the advisory issue - the run annotation and ca_drift_incidents row still carry the finding"
-          fi
-          exit 0
-
-      - name: Setup SSH key
-        if: steps.dedupe.outputs.skip != 'true'
-        env:
-          # The two repos disagreed on the name of this secret: World Hub's
-          # workflows read HETZNER_SSH_PRIVATE_KEY, this one read
-          # HETZNER_SSH_KEY, and the Club Arena repo happens to hold BOTH. That
-          # works right up until somebody rotates the key and updates one name,
-          # at which point the other repo's deploy fails with an SSH error that
-          # says nothing about a secret. Accept either, prefer the World Hub's
-          # name as canonical, and say which one was used.
-          SSH_KEY_CANONICAL: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
-          SSH_KEY_LEGACY: ${{ secrets.HETZNER_SSH_KEY }}
-        run: |
-          mkdir -p ~/.ssh
-          if [ -n "$SSH_KEY_CANONICAL" ]; then
-            echo "Using HETZNER_SSH_PRIVATE_KEY (canonical)"
-            printf '%s\n' "$SSH_KEY_CANONICAL" > ~/.ssh/id_deploy
-          elif [ -n "$SSH_KEY_LEGACY" ]; then
-            echo "::warning::Falling back to HETZNER_SSH_KEY. Set HETZNER_SSH_PRIVATE_KEY to match the World Hub repo."
-            printf '%s\n' "$SSH_KEY_LEGACY" > ~/.ssh/id_deploy
-          else
-            echo "::error::Neither HETZNER_SSH_PRIVATE_KEY nor HETZNER_SSH_KEY is set — every ssh below would fail."
-            exit 1
-          fi
-          chmod 600 ~/.ssh/id_deploy
-          # Fail here, loudly, rather than 20 lines later on a confusing
-          # 'Permission denied (publickey)'.
-          ssh-keygen -y -f ~/.ssh/id_deploy > /dev/null \
-            || { echo "::error::The Hetzner deploy key is not a valid private key."; exit 1; }
-          # DO NOT use ssh-keyscan. It opens five parallel probes offering
-          # different host key types; four disconnect pre-auth, which fail2ban's
-          # aggressive sshd filter counts as four failures and bans the runner
-          # inside the same second (maxretry=4, bantime=24h). That made every
-          # deploy a coin flip from the moment fail2ban was installed until
-          # 2026-08-15. Pinning is also strictly better security — ssh-keyscan
-          # trusts whatever the network hands back, on every run.
-          echo "${{ secrets.HETZNER_HOST_KEY }}" > ~/.ssh/known_hosts
-          chmod 644 ~/.ssh/known_hosts
-          test -s ~/.ssh/known_hosts \
-            || { echo "::error::HETZNER_HOST_KEY secret is empty or unset — every ssh below would fail, including the safety net"; exit 1; }
-          # One reusable alias. BatchMode so a prompt can never hang the job
-          # while it holds the deploy-hetzner concurrency lock. ServerAlive*
-          # (2026-09-11): a connection that died mid-command used to hang
-          # until the 130-minute job timeout, which GitHub reports as a CANCEL;
-          # now it fails its step in about a minute, and a failure is counted.
-          printf '#!/bin/bash\nexec ssh -i ~/.ssh/id_deploy -o BatchMode=yes -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=4 "%s@%s" "$@"\n' \
-            "$SSH_USER" "$HETZNER_HOST" > ~/hssh
-          chmod +x ~/hssh
-
-      - name: Capture pre-deploy host state
-        id: pre
-        if: steps.dedupe.outputs.skip != 'true'
-        timeout-minutes: 10
-        run: |
-          # No 2>&1 here: it folded ssh/git stderr into the value, which then
-          # went into $GITHUB_OUTPUT (multi-line values break the file-command
-          # parser) and was later interpolated into a shell command.
-          BEFORE_SHA=$(~/hssh "cd $REPO_DIR && git rev-parse HEAD" 2>/dev/null || echo unknown)
-          case "$BEFORE_SHA" in
-            *[!0-9a-f]* | "") BEFORE_SHA=unknown ;;
-          esac
-          # Keep :previous as a diagnostic/operator breadcrumb before touching
-          # the caches. Rollback authority is the exact desired image ID in the
-          # durable seal, never either mutable tag.
-          ~/hssh '
-            set -e
-            if docker image inspect club-arena-engine:current >/dev/null 2>&1; then
-              docker tag club-arena-engine:current club-arena-engine:previous
-              echo "rollback target pinned: $(docker image inspect -f "{{.Id}}" club-arena-engine:previous | cut -c8-19)"
-            elif docker image inspect club-arena-engine >/dev/null 2>&1; then
-              docker tag club-arena-engine club-arena-engine:previous
-              docker tag club-arena-engine club-arena-engine:current
-              echo "bootstrapped :previous/:current from the legacy bare tag"
-            else
-              echo "no existing image — first deploy, no rollback target"
-            fi'
-          echo "before_sha=$BEFORE_SHA" >> $GITHUB_OUTPUT
-          echo "Pre-deploy commit on host: $BEFORE_SHA"
-
-      - name: Pre-flight checks
-        if: steps.dedupe.outputs.skip != 'true'
-        timeout-minutes: 10
-        run: |
-          # An empty .env yields a container that boots and then fails every
-          # query — worse than not deploying, because it looks alive.
-          ~/hssh "test -s $REPO_DIR/server/.env" \
-            || { echo "::error::$REPO_DIR/server/.env is missing or empty — refusing to deploy"; exit 1; }
-          ~/hssh "grep -q '^SENTRY_DSN=..' $REPO_DIR/server/.env 2>/dev/null \
-            && echo '   OK SENTRY_DSN present' || echo '   WARN SENTRY_DSN missing — non-blocking'"
-          AVAIL=$(~/hssh "df --output=avail -BG / | tail -1 | tr -dc '0-9'")
-          case "${AVAIL:-}" in ''|*[!0-9]*) echo "::error::could not read free disk on the host"; exit 1 ;; esac
-          echo "   root disk free: ${AVAIL}G"
-          [ "$AVAIL" -ge 5 ] || { echo "::error::only ${AVAIL}G free on / — refusing to build"; exit 1; }
-
-      # ── THE BREAK GATE MOVED (Phase 3, to-do #2563 item 10) ──────────────
-      # It used to sit HERE, before the pull and the docker build - so the
-      # runner idled until :55, THEN spent 3-5 minutes building while the
-      # platform stood frozen, spending the break's budget on work that needs
-      # no stillness. The pull, build, supervisor refresh and one-engine
-      # check now all run first; the gate sits immediately before the
-      # cutover, which is the only step that actually needs the platform
-      # parked. Same gate, same fail-closed semantics - just less of the
-      # break spent compiling.
-
-      - name: Pull the exact commit onto the host
-        if: steps.dedupe.outputs.skip != 'true'
-        timeout-minutes: 15
-        run: |
-          # Preserve the control plane from the audited workflow commit before
-          # checking out an application rollback target. An intentional rollback
-          # may run old game bytes; it must never reinstall the old unsealed
-          # supervisor which made that rollback invisible.
-          ~/hssh "
-            set -e
-            cd '$REPO_DIR'
-            git fetch origin
-            CONTROL_SHA='${{ github.sha }}'
-            case \"\$CONTROL_SHA\" in (*[!0-9a-f]*|'') echo 'invalid control SHA'; exit 1;; esac
-            [ \"\${#CONTROL_SHA}\" -eq 40 ]
-            # The runner already proved CONTROL_SHA was current main - or an
-            # ancestor whose deploy control plane is byte-identical to main's -
-            # before staging this run. Main may legitimately advance while its tests
-            # and immutable image build execute; require containment here,
-            # not moving-tip equality, so unrelated merges cannot starve an
-            # already-audited release forever.
-            git cat-file -e \"\$CONTROL_SHA^{commit}\"
-            git merge-base --is-ancestor \"\$CONTROL_SHA\" origin/main \
-              || { echo 'workflow control SHA is no longer contained in origin/main'; exit 1; }
-            CONTROL_STAGE='/var/lib/club-arena/control-staging/${{ github.run_id }}'
-            install -d -m 0700 \"\$CONTROL_STAGE\"
-            git archive \"\$CONTROL_SHA\" -- \
-              server/scripts/install-engine-supervisor.sh \
-              server/scripts/engine-supervisor.sh \
-              server/scripts/engine-up.sh \
-              server/scripts/engine-release-seal.py \
-              server/scripts/build-engine-image.sh \
-              server/scripts/verify-recovery-stack.sh \
-              | tar -x -C \"\$CONTROL_STAGE\"
-            # Design note 5: reset to the resolved target, never moving main.
-            git reset --hard '$SHA'
-            git rev-parse HEAD"
-          # `git reset --hard` restores index file modes. These were 100644 in
-          # the index until 2026-08-15, so every deploy silently stripped the
-          # exec bit off the recovery scripts and disarmed the supervisor for
-          # the length of the build — permanently, if the build then failed.
-          # They are 100755 now; this is belt and braces.
-          ~/hssh "chmod +x $REPO_DIR/server/scripts/*.sh"
-
-      # ── THE IMAGE FOR A SHA IS BUILT ONCE, THEN IT IS STAGED ─────────────
-      #
-      # A tag is immutable here by design (note 1): `club-arena-engine:<sha>`
-      # is the SAME BYTES every time, because the Dockerfile is fed nothing but
-      # that commit's tree and GIT_COMMIT_SHA. So rebuilding one that already
-      # exists on the host is 5-18 minutes spent reproducing a file that is
-      # already sitting there.
-      #
-      # It is not a micro-optimisation, it is the fix for the defect this
-      # workflow shipped for three days (2026-09-05). The break gate downstream
-      # refuses to wait when the next :55 is further away than the job's
-      # remaining budget, and the build is what eats that budget. A run that
-      # built for 8 minutes reached the gate with 27 minutes of budget and a
-      # break 55 minutes away, so it quit - having produced the image. The next
-      # run rebuilt the same image, for the same 8 minutes, and quit for the
-      # same reason. Measured: runs 33985138036 and 33986167969, back to back,
-      # both carrying aa6b6387, both green, both shipped nothing.
-      #
-      # With the build skipped, a retry reaches the gate in about a minute and
-      # its whole budget is available for the wait. That is what turns an
-      # off-cycle dispatch from "arithmetically incapable of landing" into
-      # "stages the image, and the :35 tick finishes the job".
-      #
-      # SAFE BECAUSE THE TAG IS THE COMMIT. There is no cache-key subtlety to
-      # get wrong: if `club-arena-engine:<sha>` exists, it was built from <sha>
-      # by this same step, and the cutover verifies the running build reports
-      # that sha anyway before :current moves (notes 5 and 6). A --force-rebuild
-      # dispatch input is deliberately NOT offered: `docker rmi` on the host is
-      # the escape hatch, and it costs one command instead of a permanent
-      # option nobody remembers the meaning of.
-      - name: Build immutable image (or adopt the one already staged)
-        id: image
-        if: steps.dedupe.outputs.skip != 'true'
-        timeout-minutes: 45
+      - name: Stage exact control bytes without mutating the host checkout
         run: |
           set -euo pipefail
-          RESULT_FILE="$(mktemp)"
-          cleanup_result_file() { rm -f -- "$RESULT_FILE"; }
-          trap cleanup_result_file EXIT
-          ~/hssh "/var/lib/club-arena/control-staging/${{ github.run_id }}/server/scripts/build-engine-image.sh \
-            '$REPO_DIR' '$SHA' '$IMAGE_REPO:$SHA'" | tee "$RESULT_FILE"
-          REUSED=$(sed -n 's/^ENGINE_IMAGE_REUSED=//p' "$RESULT_FILE" | tail -1)
-          case "$REUSED" in
-            true|false) ;;
-            *) echo "::error::clean image builder returned no valid reuse verdict"; exit 1 ;;
-          esac
-          echo "reused=$REUSED" >> "$GITHUB_OUTPUT"
-          if [ "$REUSED" = true ]; then
-            echo "::notice title=IMAGE ALREADY STAGED::$IMAGE_REPO:$SHA has the exact revision, server-tree and clean-build contract."
-          else
-            echo "::notice title=CLEAN IMAGE BUILT::$IMAGE_REPO:$SHA was built only from its committed server tree."
-          fi
-
-      - name: Install/refresh host supervisor
-        if: steps.dedupe.outputs.skip != 'true'
-        run: |
-          # Re-run every deploy so the systemd units can never drift from the
-          # repo, and a rebuilt host self-heals on its first deploy.
-          # ADMIN_ALLOW_IPS keeps fail2ban from locking operators out of their own
-          # box. Not a secret — it is an allowlist, and it is only useful to
-          # someone who already holds the deploy key.
-          ~/hssh "REPO_DIR=$REPO_DIR \
-            ENGINE_CONTROL_SOURCE_DIR='/var/lib/club-arena/control-staging/${{ github.run_id }}/server/scripts' \
-            ADMIN_ALLOW_IPS='${{ vars.ADMIN_ALLOW_IPS }}' \
-            ENGINE_RELEASE_RUN_ID='${{ github.run_id }}' \
-            ENGINE_RELEASE_RUN_URL='${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}' \
-            ENGINE_RELEASE_ACTOR='${{ github.actor }}' \
-            ENGINE_RELEASE_REASON='install durable engine release authority' \
-            /var/lib/club-arena/control-staging/${{ github.run_id }}/server/scripts/install-engine-supervisor.sh"
-
-      - name: Exactly one engine may answer for this host
-        if: steps.dedupe.outputs.skip != 'true'
-        run: |
-          # club-arena-engine-2 was created 2026-08-23T13:29Z on port 8081 with
-          # this same run-spec and nothing in this pipeline knew about it. It
-          # never received a deploy, it took the fleet whenever the managed
-          # container blinked, and for a while BOTH containers reported
-          # leadership.role=leader with the tables split between them — 14 on
-          # one, 10 on the other — which is the 404/close-4404 state the
-          # Caddyfile explicitly says must never happen.
-          #
-          # A second engine is not automatically wrong; an UNMANAGED one is.
-          # If the standby pair is ever restored, teach this workflow to deploy
-          # both and update this guard. Until then, finding a stranger wearing
-          # the engine label is a stop.
-          FOUND=$(~/hssh "docker ps --filter label=sp.role=engine --format '{{.Names}}'" | tr -d '\r' | grep -v "^$CONTAINER$" || true)
-          if [ -n "$FOUND" ]; then
-            echo "::error::Unmanaged engine container(s) running alongside $CONTAINER: $FOUND"
-            ~/hssh "docker ps --filter label=sp.role=engine --format '{{.Names}} {{.Image}} {{.Ports}}'" || true
-            exit 1
-          fi
-          echo "OK — $CONTAINER is the only container labelled sp.role=engine"
-
-      # ═══════════════════════════════════════════════════════════════════════
-      #  RESTART INSIDE THE ANNOUNCED BREAK (Dan, 2026-09-01)
-      # ═══════════════════════════════════════════════════════════════════════
-      #
-      # Dan: "A SCHEDULED PAUSE (LIKE A TOURNAMENT BREAK) WHERE 2 MIN BEFORE
-      # THE RESTART ALL TABLES FINISH THE HAND THEY ARE ON ... ENGINE RESTARTS
-      # AS SCHEDULED AND THE HANDS PICK RIGHT BACK UP."
-      #
-      # This step used to be a race and the two long comment blocks below record
-      # how it was lost. The gate polled for a moment when NO table was mid-hand,
-      # which on a fleet dealing ~290 hands a minute across ~120 tables never
-      # arrives, so every poll failed and the only path that ever actually
-      # deployed was a 45-minute staleness cap that restarted straight through
-      # live play anyway.
-      #
-      # The engine now DECLARES a stop instead of us hunting for one. At :53 it
-      # tells every table to finish its hand and start no new one; at :55 every
-      # table is parked and it opens `maintenance.readyForRestart` on /health.
-      # We wait for that flag. It is not a snapshot that can go stale between
-      # the read and the SIGTERM - the platform is held still, on purpose, for
-      # the whole five minutes, and the players were told at :53.
-      # ── THE ENGINE SHIPS ONLY WITH ITS DOORS (2026-09-11) ─────────────
-      # Twice in two days a build went live calling a database function
-      # production did not have: fn_move_tournament_player (2026-09-10, every
-      # seat move failed and the fleet wound down hourly) and
-      # fn_ca_reprice_unpaid_tournament_place (2026-09-11, any event whose
-      # prizes needed recertifying could never finish). Both hid behind a
-      # schema-manifest fragment that declared the function before its
-      # migration was applied, so the phantom-reference gate believed it.
-      # This asks production's pg_proc, which cannot be declared into
-      # existence, BEFORE the run waits for a break: a build whose migration
-      # is not applied yet fails here, red and named, and the train's hand-on
-      # retries once the database has caught up. An unreadable database is a
-      # warning (never the reason an urgent fix cannot ship), and a rollback
-      # is reported, not blocked. scripts/ci/check-engine-doors-exist.mjs.
-      - name: Every database function this build calls exists in production
-        id: doors
-        if: steps.dedupe.outputs.skip != 'true'
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          ROLLBACK_REQUESTED: ${{ github.event.inputs.rollback || 'false' }}
-        run: |
-          npm ls pg >/dev/null 2>&1 || npm i pg@8 --no-save --no-audit --no-fund >/dev/null 2>&1 || true
-          node scripts/ci/check-engine-doors-exist.mjs
-
-      - name: Wait for the maintenance break to park every table
-        id: drain
-        if: steps.dedupe.outputs.skip != 'true'
-        run: |
-          echo "skip=false" >> $GITHUB_OUTPUT
-
-          # ── THE BUDGET REACHES THE BREAK, OR THE RUN SAYS SO AT ONCE ────
-          #
-          # This was a FIXED 14 minutes, written when the workflow ran on three
-          # ticks (:40/:45/:50) and the wait began seconds after dispatch. Both
-          # of those changed: the ticks were cut to one (:45) and the build
-          # ahead of this step now takes 8-18 minutes. So the budget stopped
-          # covering the thing it exists to cover.
-          #
-          # MEASURED 2026-09-05. Run 33942233521 carried the whole of Realtime
-          # Phase 1. Its build finished at 03:40:37, it polled its 56 attempts,
-          # and it gave up at 03:54:37 - TWENTY-THREE SECONDS before
-          # readyForRestart went true at 03:55:00. It reported success, shipped
-          # nothing, and production stayed four merges behind. The run before
-          # it (33939973701) missed the same way. Dan 2026-09-01: "no work ever
-          # gets lost, orphaned or not published ... EVER" - a gate that can
-          # expire one breath before it opens is exactly that failure.
-          #
-          # The budget is now derived from the clock instead of guessed: poll
-          # until the next :56 (one minute past the moment the flag opens), so
-          # a run whose build lands anywhere in the viable window ALWAYS
-          # reaches the gate. Two guards keep it honest:
-          #   - a hard ceiling of BUDGET_CAP_S, so this can never eat the job
-          #     timeout and strand the cutover it is waiting for;
-          #   - when the next break is further away than the cap, the run says
-          #     so IMMEDIATELY and exits instead of sleeping 14 minutes to
-          #     reach the same conclusion. A run that cannot win should cost
-          #     one HTTP request, not a quarter hour of runner time.
-          NOW_EPOCH=$(date -u +%s)
-          # Seconds until the next :56 (UTC minute 56 of this hour, or the next).
-          MIN_NOW=$(date -u +%-M); SEC_NOW=$(date -u +%-S)
-          if [ "$MIN_NOW" -lt 56 ]; then
-            SECS_TO_GATE=$(( (56 - MIN_NOW) * 60 - SEC_NOW ))
-          else
-            SECS_TO_GATE=$(( (60 - MIN_NOW + 56) * 60 - SEC_NOW ))
-          fi
-          # The ceiling is what this JOB has left, not a guess. DEPLOY_STARTED_AT
-          # is stamped by the first step, so the build's real cost is subtracted
-          # here instead of assumed - which is what made a fixed cap wrong twice
-          # (14 min when builds were 5, then 15 min when the gate was 923s away).
-          # THE TIMEOUT AND THESE NUMBERS ARE ONE DECISION, so they are read
-          # from one place and derived together. See the block above
-          # `timeout-minutes` for the arithmetic that produced both; changing
-          # either alone is the defect this step keeps re-producing.
-          JOB_TIMEOUT_S=$(( 130 * 60 ))
-          CUTOVER_RESERVE_S=540     # cutover + verify + promote (~2-4 min) + a 4-min proof that can fail
-          ELAPSED_S=$(( NOW_EPOCH - ${DEPLOY_STARTED_AT:-$NOW_EPOCH} ))
-          BUDGET_CAP_S=$(( JOB_TIMEOUT_S - ELAPSED_S - CUTOVER_RESERVE_S ))
-          [ "$BUDGET_CAP_S" -lt 0 ] && BUDGET_CAP_S=0
-          echo "break gate budget: job elapsed ${ELAPSED_S}s, ${BUDGET_CAP_S}s left for the wait"
-          POLL_S=15
-          if [ "$SECS_TO_GATE" -gt "$BUDGET_CAP_S" ]; then
-            # NOT "shipped nothing". The image for this commit is now staged on
-            # the host, so the next tick skips the build entirely and reaches
-            # this gate in about a minute with its whole budget intact. That is
-            # the difference between a run that wasted itself and a run that did
-            # the expensive half of the work - and it is why this is a notice
-            # rather than a warning, and why the reason recorded below says so
-            # instead of blaming the break for never opening.
-            echo "::warning title=IMAGE STAGED, CUTOVER DEFERRED::The next maintenance break is ${SECS_TO_GATE}s away, beyond this run's ${BUDGET_CAP_S}s budget. $IMAGE_REPO:$SHA is built and on the host; the next window cuts over without rebuilding."
-            echo "skip=true" >> $GITHUB_OUTPUT
-            echo "gate_kind=staged_deferred" >> $GITHUB_OUTPUT
-            echo "gate_reason=image staged for ${SHA:0:8}; the next break is ${SECS_TO_GATE}s away, beyond this run's budget, so a later run must cut it over" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-          # +90s of margin past the flag so a slow park does not lose the run.
-          ATTEMPTS=$(( (SECS_TO_GATE + 90) / POLL_S ))
-          [ "$ATTEMPTS" -lt 8 ] && ATTEMPTS=8
-          echo "break gate: ${SECS_TO_GATE}s to the next :55, polling ${ATTEMPTS}x${POLL_S}s"
-
-          # ATTEMPTS counts polls; the deadline counts seconds. A /health that
-          # answers slowly (10s curl timeouts) would otherwise stretch ATTEMPTS
-          # polls well past the budget granted above and let the job timeout,
-          # not this gate, decide the run - the cutover it was waiting for
-          # would then be killed mid-flight.
-          GATE_DEADLINE=$(( $(date -u +%s) + SECS_TO_GATE + 90 ))
-          READY=no
-          for i in $(seq 1 $ATTEMPTS); do
-            [ "$(date -u +%s)" -ge "$GATE_DEADLINE" ] && { echo "attempt $i/$ATTEMPTS: the gate deadline passed"; break; }
-            # A degraded engine can still park every table. Read only 200/503
-            # bodies after a complete transfer; the certificate below is authority.
-            BODY=$(CERT_RESPONSE=$(curl -sS --max-time 10 -w '\n%{http_code}' "$ENGINE_URL/health") && printf '%s' "$CERT_RESPONSE" | python3 -c 'import sys; body, _, status = sys.stdin.read().rpartition("\n"); print(body if status in ("200", "503") else "")') || BODY=""
-            # A restart certificate is complete only while the break is
-            # actively counting down, every table is parked, and enough time
-            # remains for a graceful stop. Missing/legacy/straggler states are
-            # not alternate authority paths.
-            STATE=$(echo "$BODY" | python3 -c 'import json,sys; d=json.load(sys.stdin); m=d.get("maintenance"); ok=isinstance(m,dict) and m.get("active") is True and m.get("phase")=="counting_down" and m.get("durableConfirmed") is True and m.get("readyForRestart") is True and m.get("unparkedTables")==0 and int(m.get("remainingMs") or 0)>=180000; print("READY" if ok else "active=%s phase=%s durable=%s remaining=%ss unparked=%s ready=%s" % ((m or {}).get("active"), (m or {}).get("phase"), (m or {}).get("durableConfirmed"), int(((m or {}).get("remainingMs") or 0)/1000), (m or {}).get("unparkedTables"), (m or {}).get("readyForRestart")))' 2>/dev/null || echo ERR)
-            case "$STATE" in
-              READY)  READY=yes; echo "attempt $i/$ATTEMPTS: break is running and every table is parked — restarting now"; break ;;
-              ERR)    echo "attempt $i/$ATTEMPTS: /health unreadable — retrying" ;;
-              *)      echo "attempt $i/$ATTEMPTS: waiting for a complete restart certificate — $STATE" ;;
-            esac
-            sleep 15
+          STAGING_REMAINING=$((RELEASE_DISPATCH_DEADLINE_EPOCH - $(date +%s)))
+          [ "$STAGING_REMAINING" -gt 5 ] \
+            || { echo '::error::control staging exhausted the absolute deploy budget'; exit 70; }
+          STAGING_TIMEOUT=$((STAGING_REMAINING - 5))
+          [ "$STAGING_TIMEOUT" -le 300 ] || STAGING_TIMEOUT=300
+          timeout --signal=TERM --kill-after=5s "${STAGING_TIMEOUT}s" \
+            "$HSSH" "TARGET_SHA='$SHA' CONTROL_SHA='$CONTROL_SHA' RUN_KEY='$RUN_KEY' REPO_DIR='$REPO_DIR' bash -se" <<'REMOTE'
+          set -euo pipefail
+          [[ "$TARGET_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$CONTROL_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$RUN_KEY" =~ ^[1-9][0-9]*-[1-9][0-9]*$ ]]
+          [ "$(id -u)" = 0 ]
+          export GIT_NO_REPLACE_OBJECTS=1
+          for binary in cmp docker flock git python3 curl systemctl systemd-analyze tar timeout; do
+            command -v "$binary" >/dev/null || { echo "missing host prerequisite: $binary" >&2; exit 1; }
           done
+          [ -s "$REPO_DIR/server/.env" ]
+          git -C "$REPO_DIR" remote get-url origin \
+            | grep -Fi 'smarter-poker/smarter-poker-club-arena' >/dev/null
+          exec 8>/var/lock/club-arena-source.lock
+          flock -w 90 8
+          GIT_HTTP_LOW_SPEED_LIMIT=1024 GIT_HTTP_LOW_SPEED_TIME=30 \
+            timeout --signal=TERM --kill-after=5s 90s \
+            git -C "$REPO_DIR" fetch --no-tags origin '+refs/heads/main:refs/remotes/origin/main'
+          MAIN_SHA="$(git -C "$REPO_DIR" rev-parse --verify 'origin/main^{commit}')"
+          for commit in "$TARGET_SHA" "$CONTROL_SHA"; do
+            git -C "$REPO_DIR" cat-file -e "$commit^{commit}"
+            git -C "$REPO_DIR" merge-base --is-ancestor "$commit" "$MAIN_SHA"
+          done
+          LATEST_REQUIRED="$(git -C "$REPO_DIR" log "$MAIN_SHA" -1 --format=%H -- \
+            'server/**' ':(exclude)server/**/*.test.ts' ':(exclude)server/sim/**')"
+          [ "$LATEST_REQUIRED" = "$TARGET_SHA" ]
+          STAGE="/var/lib/club-arena/control-staging/$RUN_KEY"
+          [[ "$STAGE" =~ ^/var/lib/club-arena/control-staging/[1-9][0-9]*-[1-9][0-9]*$ ]]
+          rm -rf -- "$STAGE"
+          install -d -m 0700 \
+            /var/lib/club-arena \
+            /var/lib/club-arena/control-staging \
+            "$STAGE"
+          GIT_NO_REPLACE_OBJECTS=1 git -C "$REPO_DIR" archive "$CONTROL_SHA" server/scripts \
+            | tar --no-same-owner -xf - -C "$STAGE"
+          chmod 0755 "$STAGE/server/scripts/"*.sh
+          for script in "$STAGE"/server/scripts/*.sh; do bash -n "$script"; done
+          python3 -m py_compile \
+            "$STAGE/server/scripts/engine-release-seal.py" \
+            "$STAGE/server/scripts/engine-release-database-proof.py"
+          python3 - "$STAGE" <<'PY'
+          import os, pathlib, sys
+          root = pathlib.Path(sys.argv[1])
+          for path in sorted(root.rglob('*')):
+              if path.is_file():
+                  fd = os.open(path, os.O_RDONLY)
+                  try: os.fsync(fd)
+                  finally: os.close(fd)
+          for path in sorted((p for p in root.rglob('*') if p.is_dir()), reverse=True):
+              fd = os.open(path, os.O_RDONLY | getattr(os, 'O_DIRECTORY', 0))
+              try: os.fsync(fd)
+              finally: os.close(fd)
+          fd = os.open(root, os.O_RDONLY | getattr(os, 'O_DIRECTORY', 0))
+          try: os.fsync(fd)
+          finally: os.close(fd)
+          fd = os.open(root.parent, os.O_RDONLY | getattr(os, 'O_DIRECTORY', 0))
+          try: os.fsync(fd)
+          finally: os.close(fd)
+          for parent in (root.parent.parent, root.parent.parent.parent):
+              fd = os.open(parent, os.O_RDONLY | getattr(os, 'O_DIRECTORY', 0))
+              try: os.fsync(fd)
+              finally: os.close(fd)
+          PY
+          REMOTE
 
-          if [ "$READY" = "yes" ]; then exit 0; fi
-
-          # FAILS CLOSED, and it can afford to. A missed window costs at most
-          # one hour of slightly older code; restarting outside the break puts
-          # the ~2 minute rehydration outage back in front of players who were
-          # never told, which is exactly what this whole change removes. If the
-          # break genuinely stops firing that is an engine bug and it should be
-          # loud, not routed around.
-          echo "skip=true" >> $GITHUB_OUTPUT
-          echo "gate_kind=no_certificate" >> $GITHUB_OUTPUT
-          echo "gate_reason=the engine never presented a complete current readyForRestart certificate" >> $GITHUB_OUTPUT
-          echo "::warning title=BREAK NEVER OPENED::The engine never presented an active, durable counting_down break with readyForRestart=true, zero unparked tables, and at least 180 seconds remaining. Nothing was deployed. The next window retries automatically; fix the engine's park path rather than bypassing this authority."
-          exit 0
-
-      # Prepare only after the long wait has produced a valid restart
-      # certificate. The token is intentionally short-lived and one-use, so
-      # issuing it before a possible 45-minute gate wait would make the
-      # authority expire before the cutover it was meant to authorize.
-      - name: Prepare one-use sealed cutover authority
-        id: seal
-        if: steps.dedupe.outputs.skip != 'true' && steps.drain.outputs.skip != 'true'
-        env:
-          ROLLBACK_REQUESTED: ${{ github.event.inputs.rollback || 'false' }}
-          ROLLBACK_REASON: ${{ github.event.inputs.rollback_reason || '' }}
+      - name: Dispatch the staged SHA through the durable Hetzner intake
+        id: release
         run: |
           set -euo pipefail
-          MODE=deploy
-          REASON="normal deployment of fetched origin/main"
-          if [ "$ROLLBACK_REQUESTED" = "true" ]; then
-            [ "${{ github.event_name }}" = "workflow_dispatch" ] \
-              || { echo "::error::rollback authority exists only on an audited workflow_dispatch"; exit 1; }
-            [ -n "${{ github.event.inputs.ref_sha }}" ] \
-              || { echo "::error::rollback=true requires an exact ref_sha"; exit 1; }
-            MODE=rollback
-            REASON="$ROLLBACK_REASON"
-          elif [ -n "$ROLLBACK_REASON" ]; then
-            echo "::error::rollback_reason is invalid unless rollback=true"
-            exit 1
-          fi
-          REASON_B64=$(printf '%s' "$REASON" | base64 | tr -d '\n')
-          TOKEN=$(~/hssh "
-            set -e
-            REASON=\$(printf '%s' '$REASON_B64' | base64 -d)
-            /usr/local/lib/club-arena/engine-control/engine-release-seal.py prepare \
-              --sha '$SHA' --image '$IMAGE_REPO:$SHA' --mode '$MODE' --repo '$REPO_DIR' \
-              --run-id '${{ github.run_id }}' \
-              --run-url '${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}' \
-              --actor '${{ github.actor }}' --reason \"\$REASON\"")
-          [[ "$TOKEN" =~ ^[0-9a-f]{64}$ ]] \
-            || { echo "::error::release seal did not issue a valid one-use token"; exit 1; }
-          echo "::add-mask::$TOKEN"
-          echo "token=$TOKEN" >> "$GITHUB_OUTPUT"
-          echo "mode=$MODE" >> "$GITHUB_OUTPUT"
-          echo "Prepared sealed $MODE authority for $SHA immediately before cutover."
-
-      - name: Cut over to the new image
-        id: cutover
-        if: steps.dedupe.outputs.skip != 'true' && steps.drain.outputs.skip != 'true'
-        run: |
-          # Runs the SHA tag directly. :current is NOT moved yet — see design
-          # note 6. If this step fails, every recovery path still recreates the
-          # last verified build rather than this one.
-          # The runner's gate observation is not restart authority by itself:
-          # it can go stale while a supervisor tick or the network is in
-          # flight. Acquire the same host lock used by every engine mutation,
-          # re-read localhost under that lock, validate the full certificate,
-          # and keep the descriptor held through engine-up.sh.
-          # Capture a marker emitted only AFTER the locked certificate check.
-          # If the check rejects, attempted remains false and no recovery path
-          # is allowed to replace the untouched serving container.
-          MUTATION_MARKER=__SP_CUTOVER_MUTATION_AUTHORIZED__
-          IDENTITY_MARKER=__SP_CUTOVER_IDENTITY__
-          set +e
-          CUTOVER_LOG=$(~/hssh "
-            set -euo pipefail
-            exec 9>/var/lock/club-arena-engine-up.lock
-            flock -w 30 9
-            # A degraded engine can still park every table. Read only 200/503
-            # bodies after a complete transfer; the certificate below is authority.
-            BODY=\$(CERT_RESPONSE=\$(curl -sS --max-time 10 -w '\\n%{http_code}' http://127.0.0.1:8080/health) && printf '%s' \"\$CERT_RESPONSE\" | python3 -c 'import sys; body, _, status = sys.stdin.read().rpartition(\"\\n\"); print(body if status in (\"200\", \"503\") else \"\")')
-            printf '%s' \"\$BODY\" | python3 -c 'import json,sys; d=json.load(sys.stdin); m=d.get(\"maintenance\"); ok=d.get(\"running\") is True and isinstance(m,dict) and m.get(\"active\") is True and m.get(\"phase\")==\"counting_down\" and m.get(\"durableConfirmed\") is True and m.get(\"readyForRestart\") is True and m.get(\"unparkedTables\")==0 and int(m.get(\"remainingMs\") or 0)>=180000; sys.exit(0 if ok else 75)'
-            echo '$MUTATION_MARKER'
-            # The stock autoheal sidecar is intentionally not release-aware.
-            # Fence it before a pending candidate exists; otherwise it can
-            # explicitly restart unhealthy unsealed bytes despite restart=no.
-            docker container inspect sp-autoheal >/dev/null
-            docker stop -t 15 sp-autoheal >/dev/null
-            [ \"\$(docker container inspect -f '{{.State.Status}}' sp-autoheal)\" = exited ]
-            ENGINE_UP_LOCK_HELD=1 \
-              ENGINE_RELEASE_TOKEN='${{ steps.seal.outputs.token }}' \
-              IMAGE='$IMAGE_REPO:$SHA' CONTAINER='$CONTAINER' \
-              ENV_FILE='$REPO_DIR/server/.env' \
-              /usr/local/lib/club-arena/engine-control/engine-up.sh
-            CID=\$(docker container inspect -f '{{.Id}}' '$CONTAINER')
-            STARTED_AT=\$(docker container inspect -f '{{.State.StartedAt}}' '$CONTAINER')
-            echo '$IDENTITY_MARKER' \"\$CID\" \"\$STARTED_AT\"")
-          CUTOVER_STATUS=$?
-          set -e
-          printf '%s\n' "$CUTOVER_LOG"
-          if printf '%s\n' "$CUTOVER_LOG" | grep -qx "$MUTATION_MARKER"; then
-            echo "attempted=true" >> "$GITHUB_OUTPUT"
-          fi
-          [ "$CUTOVER_STATUS" -eq 0 ] || exit "$CUTOVER_STATUS"
-          IDENTITY_LINE=$(printf '%s\n' "$CUTOVER_LOG" | grep "^$IDENTITY_MARKER " | tail -1 || true)
-          CANDIDATE_CID=; CANDIDATE_STARTED_AT=; EXTRA=
-          read -r _ CANDIDATE_CID CANDIDATE_STARTED_AT EXTRA <<< "$IDENTITY_LINE" || true
-          [[ "$CANDIDATE_CID" =~ ^[0-9a-f]{64}$ ]] \
-            || { echo "::error::cutover did not return one exact candidate container ID"; exit 1; }
-          [ -n "$CANDIDATE_STARTED_AT" ] && [ -z "${EXTRA:-}" ] \
-            || { echo "::error::cutover returned an invalid candidate start generation"; exit 1; }
-          echo "candidate_cid=$CANDIDATE_CID" >> "$GITHUB_OUTPUT"
-          echo "candidate_started_at=$CANDIDATE_STARTED_AT" >> "$GITHUB_OUTPUT"
-          echo "success=true" >> "$GITHUB_OUTPUT"
-          # The outgoing engine's log was saved by engine-up.sh before the old
-          # container was removed (2026-09-07). Name the file in the run log so
-          # the next investigation knows where to look without ssh-ing blind.
-          echo "outgoing engine logs on the host (newest first):"
-          ~/hssh "ls -1t /var/log/club-arena-engine/engine-*.log.gz 2>/dev/null | head -3" || true
-
-      - name: Verify — liveness AND that the running build is the one we shipped
-        id: health
-        if: steps.dedupe.outputs.skip != 'true' && steps.drain.outputs.skip != 'true'
-        run: |
-          SHORT="${SHA:0:8}"
-          # ── ASK THE CONTAINER, NOT THE HOSTNAME ─────────────────────────────
-          # This polled $ENGINE_URL until 2026-08-23. That is a Caddy vhost, and
-          # Caddy was configured that morning as an active/standby PAIR:
-          #
-          #     reverse_proxy localhost:8080 localhost:8081 { lb_policy first }
-          #
-          # So while THIS deploy restarted 8080, Caddy failed over to 8081 — a
-          # second engine container that no part of this pipeline has ever
-          # updated. Verification therefore read the OTHER instance's version,
-          # never matched $SHORT, and rolled back a build that was fine. Four
-          # consecutive deploys died that way (18:36-21:05 UTC) and production
-          # ran 13:23 code for eight hours while every one of those runs
-          # reported a tidy rollback.
-          #
-          # It was also a RACE, which is why it looked intermittent: when 8080
-          # came back inside Caddy's 5s health interval the failover never
-          # happened and the same pipeline passed.
-          #
-          # A load balancer's job is to hide which instance answers. That makes
-          # it the wrong thing to ask "is the build I just shipped running?".
-          # Ask the container. The public URL is checked immediately after, for
-          # what it CAN answer: that the proxy is serving at all.
-          for i in $(seq 1 24); do
-            sleep 5
-            # `-f` is deliberate HERE and only here: a new build is not
-            # verified until it answers a routing-ready 200 (dealer gate,
-            # horse worker and equity pool all ready). Certificate and
-            # identity reads elsewhere read the body whatever the code.
-            BODY=$(~/hssh "curl -sf --max-time 10 http://127.0.0.1:${PORT:-8080}/health" 2>/dev/null || echo "")
-            [ -z "$BODY" ] && { echo "attempt $i: container not answering 200 yet (still booting, or answering 503: not routing-ready)"; continue; }
-            RUNNING=$(echo "$BODY" | python3 -c "import json,sys;print(json.load(sys.stdin).get('running'))" 2>/dev/null || echo "")
-            VER=$(echo "$BODY" | python3 -c "import json,sys;print(json.load(sys.stdin).get('version',''))" 2>/dev/null || echo "")
-            LIVE=$(echo "$BODY" | python3 -c "import json,sys;print(json.load(sys.stdin).get('liveness',''))" 2>/dev/null || echo "")
-            echo "attempt $i: running=$RUNNING version=$VER (want $SHORT) liveness=$LIVE"
-            if [ "$RUNNING" = "True" ] && [ "$VER" = "$SHORT" ] && [ "$LIVE" = "ok" ]; then
-              UPTIME=$(echo "$BODY" | python3 -c "import json,sys;print(json.load(sys.stdin).get('uptime',-1))")
-              echo "uptime=$UPTIME" >> $GITHUB_OUTPUT
-              echo "verified=true" >> $GITHUB_OUTPUT
-              echo "Container $CONTAINER healthy AND serving $SHORT"
-              break
-            fi
-            if [ "$i" = "24" ]; then
-              echo "::error::Verification failed after 24 attempts — $CONTAINER is not serving $SHORT"
-              ~/hssh "docker logs --tail 120 $CONTAINER" || true
-              exit 1
-            fi
-          done
-
-          # ── AND THE PUBLIC HOSTNAME MUST BE SERVING THAT SAME BUILD ─────────
-          # Liveness alone is not enough: an unmanaged twin answering this
-          # hostname is exactly how eight hours of stale code went unnoticed.
-          # If the proxy is serving a DIFFERENT version than the one we just
-          # verified in the container, something else is behind that name.
-          for i in $(seq 1 12); do
-            PUB=$(curl -s --max-time 10 "$ENGINE_URL/health" | python3 -c "import json,sys;print(json.load(sys.stdin).get('version',''))" 2>/dev/null || echo "")
-            echo "public attempt $i: $ENGINE_URL serves version=$PUB (want $SHORT)"
-            [ "$PUB" = "$SHORT" ] && { echo "Public hostname serving $SHORT"; exit 0; }
-            sleep 5
-          done
-          echo "::error::$CONTAINER serves $SHORT but $ENGINE_URL does not — another instance is answering that hostname."
-          ~/hssh "docker ps --filter label=sp.role=engine --format '{{.Names}} {{.Image}} {{.Ports}}'" || true
-          exit 1
-
-      - name: Promote :current to the verified build
-        if: steps.dedupe.outputs.skip != 'true' && steps.drain.outputs.skip != 'true'
-        run: |
-          # Only now: ordinary tag consumers may see the candidate after both
-          # direct-container and public-proxy verification. Recovery still uses
-          # the old sealed desired image until the strict database proof below
-          # succeeds and the release seal commits the immutable target ID.
-          ~/hssh "docker tag $IMAGE_REPO:$SHA $IMAGE_REPO:current"
-          echo ":current -> $SHA"
-
-      # A DEPLOY THAT PROVES ITSELF, PART TWO (2026-09-05). The verify step
-      # above asked the container and the proxy for a version. This asks the
-      # DATABASE: engine_leader.engine_version is written by the running
-      # leader itself every 10 s (claim_engine_leadership, INSTANCE_VERSION =
-      # GIT_COMMIT_SHA[0:8]), and cannot be served by a cache, a load balancer
-      # or an unmanaged twin. It polls for up to four minutes and FAILS THE
-      # JOB when the version still equals what PART ONE recorded - the
-      # 2026-09-05 shape exactly - or names a third build. Failing here
-      # triggers the ROLLBACK below, the same treatment the verify step gives
-      # a version mismatch. STRICT_PROOF=1 also fails closed when every witness
-      # is silent; an unreadable database and /health cannot advance the durable
-      # release seal or leave the candidate as recovery authority.
-      # scripts/ci/prove-engine-version-moved.mjs also raises the in-app
-      # notification publish-watchdog.sh raises, to the same recipients.
-      - name: 'PROVE the version moved: the engine wrote the new build, not just answered with it'
-        id: prove
-        if: steps.dedupe.outputs.skip != 'true' && steps.drain.outputs.skip != 'true'
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          SUPABASE_URL: https://kuklfnapbkmacvwxktbh.supabase.co
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          MODE: prove
-          TARGET_SHA: ${{ steps.target.outputs.sha }}
-          TIMEOUT_S: '240'
-          STRICT_PROOF: '1'
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: |
-          npm ls pg >/dev/null 2>&1 || npm i pg@8 --no-save --no-audit --no-fund >/dev/null 2>&1 || true
-          node "$ENGINE_RELEASE_PROOF_SCRIPT"
-
-      - name: Commit the verified SHA/image-ID release seal
-        id: seal_commit
-        if: steps.dedupe.outputs.skip != 'true' && steps.drain.outputs.skip != 'true'
-        run: |
-          ~/hssh "
-            set -euo pipefail
-            # Serialize the durable authority transition with the supervisor.
-            # Until this commit the candidate has restart=no, so a reboot can
-            # recover only the old desired release.  Once the seal is durable,
-            # promote that same verified container to restart=always in place.
-            exec 9>/var/lock/club-arena-engine-up.lock
-            flock -w 30 9
-            ACTUAL_CID=\$(docker container inspect -f '{{.Id}}' '$CONTAINER')
-            ACTUAL_STARTED_AT=\$(docker container inspect -f '{{.State.StartedAt}}' '$CONTAINER')
-            ACTUAL_IMAGE_ID=\$(docker container inspect -f '{{.Image}}' '$CONTAINER')
-            ACTUAL_RELEASE=\$(docker container inspect -f '{{index .Config.Labels \"sp.release.sha\"}}' '$CONTAINER')
-            TARGET_IMAGE_ID=\$(docker image inspect -f '{{.Id}}' '$IMAGE_REPO:$SHA')
-            [ \"\$ACTUAL_CID\" = '${{ steps.cutover.outputs.candidate_cid }}' ]
-            [ \"\$ACTUAL_STARTED_AT\" = '${{ steps.cutover.outputs.candidate_started_at }}' ]
-            [ \"\$ACTUAL_IMAGE_ID\" = \"\$TARGET_IMAGE_ID\" ]
-            [ \"\$ACTUAL_RELEASE\" = '$SHA' ]
-            # Identity and liveness, read from the body: the verify step
-            # already required a routing-ready 200. A later 503 flicker
-            # (a worker pool restarting under the thaw surge) must not
-            # refuse the seal and roll a verified build back.
-            BODY=\$(curl -s --max-time 10 http://127.0.0.1:${PORT:-8080}/health)
-            printf '%s' \"\$BODY\" | python3 -c 'import json,sys; d=json.load(sys.stdin); sys.exit(0 if d.get(\"running\") is True and d.get(\"version\")==\"${SHA:0:8}\" and d.get(\"liveness\")==\"ok\" else 75)'
-            set +e
-            /usr/local/lib/club-arena/engine-control/engine-release-seal.py commit \
-              --sha '$SHA' --image '$IMAGE_REPO:$SHA' --container '$CONTAINER' \
-              --run-id '${{ github.run_id }}' \
-              --run-url '${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}' \
-              --actor '${{ github.actor }}' \
-              --reason 'HTTP, public proxy, and engine_leader compatibility proofs passed'
-            COMMIT_RC=\$?
-            set -e
-            [ \"\$COMMIT_RC\" -eq 0 ] || echo 'Seal commit response was uncertain; requiring the fsynced exact receipt.'
-            RECEIPT=\$(/usr/local/lib/club-arena/engine-control/engine-release-seal.py attest-commit \
-              --sha '$SHA' --image-id \"\$TARGET_IMAGE_ID\" --run-id '${{ github.run_id }}')
-            read -r GENERATION RECEIPT_SHA RECEIPT_IMAGE RECEIPT_RUN EXTRA <<< \"\$RECEIPT\"
-            [[ \"\$GENERATION\" =~ ^[1-9][0-9]*$ ]]
-            [ \"\$RECEIPT_SHA\" = '$SHA' ]
-            [ \"\$RECEIPT_IMAGE\" = \"\$TARGET_IMAGE_ID\" ]
-            [ \"\$RECEIPT_RUN\" = '${{ github.run_id }}' ]
-            [ -z \"\${EXTRA:-}\" ]
-            docker update --restart always '$CONTAINER' >/dev/null
-            docker start sp-autoheal >/dev/null
-            POLICY=\$(docker container inspect -f '{{.HostConfig.RestartPolicy.Name}}' '$CONTAINER')
-            FINAL_CID=\$(docker container inspect -f '{{.Id}}' '$CONTAINER')
-            AUTOHEAL_STATUS=\$(docker container inspect -f '{{.State.Status}}' sp-autoheal)
-            [ \"\$POLICY\" = always ]
-            [ \"\$FINAL_CID\" = \"\$ACTUAL_CID\" ]
-            [ \"\$AUTOHEAL_STATUS\" = running ]"
-          echo "Durable release authority committed to $SHA and restart persistence promoted after every compatibility proof."
-
-      - name: ROLLBACK — restore the last known-good image
-        id: rollback
-        # Broadened from `steps.health.outcome == 'failure'`, which missed the
-        # worse case: `Cut over` itself failing. engine-up.sh has already
-        # removed the old container by the time `docker run` executes, so a
-        # failure there leaves NO container at all — and the old condition
-        # skipped the rollback precisely then.
-        if: failure() && steps.cutover.outputs.attempted == 'true' && steps.seal_commit.outcome != 'success'
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          SUPABASE_URL: https://kuklfnapbkmacvwxktbh.supabase.co
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: |
-          echo "::warning::Deploy failed — restoring the durable sealed desired image"
-          RECOVERY_LOG=$(~/hssh "
-            set -euo pipefail
-            CONTROL=/usr/local/lib/club-arena/engine-control
-            exec 9>/var/lock/club-arena-engine-up.lock
-            flock -w 30 9
-            TARGET_WAS_COMMITTED=false
-            TARGET_IS_DESIRED=false
-            TARGET_IMAGE_ID=\$(docker image inspect -f '{{.Id}}' '$IMAGE_REPO:$SHA')
-            SEALED_SHA=\$(\$CONTROL/engine-release-seal.py get desired-sha)
-            SEALED_IMAGE_ID=\$(\$CONTROL/engine-release-seal.py get desired-image-id)
-            if [ \"\$SEALED_SHA\" = '$SHA' ] && [ \"\$SEALED_IMAGE_ID\" = \"\$TARGET_IMAGE_ID\" ]; then
-              TARGET_IS_DESIRED=true
-            fi
-            if \$CONTROL/engine-release-seal.py attest-commit \
-              --sha '$SHA' --image-id \"\$TARGET_IMAGE_ID\" --run-id '${{ github.run_id }}' >/dev/null 2>&1; then
-              TARGET_WAS_COMMITTED=true
-            fi
-            # Revoke the failed candidate first. The sealed supervisor then
-            # observes either the still-untouched desired container (a no-op),
-            # an absent container, or out-of-seal candidate drift. It alone
-            # decides whether recreation is necessary and can only use the
-            # durable desired image ID.
-            \$CONTROL/engine-release-seal.py abort --run-id '${{ github.run_id }}'
-            ENGINE_SUPERVISOR_LOCK_HELD=1 ENGINE_CONTROL_DIR=\$CONTROL CONTAINER='$CONTAINER' \
-              \$CONTROL/engine-supervisor.sh
-            DESIRED_SHA=\$(\$CONTROL/engine-release-seal.py get desired-sha)
-            DESIRED_IMAGE_ID=\$(\$CONTROL/engine-release-seal.py get desired-image-id)
-            DESIRED_LEGACY=\$(\$CONTROL/engine-release-seal.py get desired-legacy-unlabelled)
-            STATE=\$(docker container inspect -f '{{.State.Status}}' '$CONTAINER')
-            ACTUAL_IMAGE_ID=\$(docker container inspect -f '{{.Image}}' '$CONTAINER')
-            ACTUAL_RELEASE=\$(docker container inspect -f '{{index .Config.Labels \"sp.release.sha\"}}' '$CONTAINER')
-            POLICY=\$(docker container inspect -f '{{.HostConfig.RestartPolicy.Name}}' '$CONTAINER')
-            AUTOHEAL_STATUS=\$(docker container inspect -f '{{.State.Status}}' sp-autoheal)
-            [ \"\$STATE\" = running ]
-            [ \"\$ACTUAL_IMAGE_ID\" = \"\$DESIRED_IMAGE_ID\" ]
-            [ \"\$POLICY\" = always ]
-            [ \"\$AUTOHEAL_STATUS\" = running ]
-            [ \"\$ACTUAL_RELEASE\" = \"\$DESIRED_SHA\" ] \
-              || { [ \"\$DESIRED_LEGACY\" = true ] && [ -z \"\$ACTUAL_RELEASE\" ]; }
-            DESIRED_SHORT=\${DESIRED_SHA:0:8}
-            BODY=\$(curl -sf --max-time 10 http://127.0.0.1:${PORT:-8080}/health)
-            printf '%s' \"\$BODY\" | DESIRED_SHORT=\"\$DESIRED_SHORT\" python3 -c 'import json,os,sys; d=json.load(sys.stdin); sys.exit(0 if d.get(\"running\") is True and d.get(\"version\")==os.environ[\"DESIRED_SHORT\"] and d.get(\"liveness\")==\"ok\" else 75)'
-            echo __SP_RECOVERED_DESIRED__ \"\$TARGET_WAS_COMMITTED\" \"\$TARGET_IS_DESIRED\" \"\$DESIRED_SHA\" \"\$DESIRED_IMAGE_ID\"")
-          printf '%s\n' "$RECOVERY_LOG"
-          RECOVERY_LINE=$(printf '%s\n' "$RECOVERY_LOG" | grep '^__SP_RECOVERED_DESIRED__ ' | tail -1 || true)
-          TARGET_COMMITTED=; TARGET_IS_DESIRED=; RECOVERED_SHA=; RECOVERED_IMAGE_ID=; EXTRA=
-          read -r _ TARGET_COMMITTED TARGET_IS_DESIRED RECOVERED_SHA RECOVERED_IMAGE_ID EXTRA <<< "$RECOVERY_LINE" || true
-          [[ "$RECOVERED_SHA" =~ ^[0-9a-f]{40}$ ]]
-          [[ "$RECOVERED_IMAGE_ID" =~ ^sha256:[0-9a-f]{64}$ ]]
-          [ -z "${EXTRA:-}" ]
-          case "$TARGET_COMMITTED:$TARGET_IS_DESIRED" in true:true|false:true|false:false) ;; *) exit 1 ;; esac
-          echo "target_committed=$TARGET_COMMITTED" >> "$GITHUB_OUTPUT"
-          echo "recovered_sha=$RECOVERED_SHA" >> "$GITHUB_OUTPUT"
-          # Rewind the host checkout too, or the next supervisor run installs
-          # systemd units built from the bad commit. Never rewind when the
-          # fsynced receipt proves this run already committed the target.
-          if [ "$TARGET_IS_DESIRED" != "true" ] && [ "${{ steps.pre.outputs.before_sha }}" != "unknown" ]; then
-            ~/hssh "cd $REPO_DIR && git reset --hard '${{ steps.pre.outputs.before_sha }}' && chmod +x $REPO_DIR/server/scripts/*.sh" || true
-          elif [ "$TARGET_IS_DESIRED" != "true" ]; then
-            echo "::warning::pre-deploy SHA unknown — host checkout left on the failed commit"
-          fi
-          RECOVERED_SHORT="${RECOVERED_SHA:0:8}"
-          for i in $(seq 1 24); do
-            BODY=$(curl -sf --max-time 10 "$ENGINE_URL/health?nocache=$(date +%s%N)" 2>/dev/null || echo '')
-            if printf '%s' "$BODY" | RECOVERED_SHORT="$RECOVERED_SHORT" python3 -c 'import json,os,sys; d=json.load(sys.stdin); sys.exit(0 if d.get("running") is True and d.get("version")==os.environ["RECOVERED_SHORT"] and d.get("liveness")=="ok" else 1)' 2>/dev/null; then
-              echo "Public proxy serves exact recovered build $RECOVERED_SHORT"; break
-            fi
-            [ "$i" = 24 ] && { echo "::error::public proxy never served exact recovered build $RECOVERED_SHORT"; exit 1; }
-            sleep 5
-          done
-          npm ls pg >/dev/null 2>&1 || npm i pg@8 --no-save --no-audit --no-fund >/dev/null 2>&1 || true
-          MODE=prove TARGET_SHA="$RECOVERED_SHA" TIMEOUT_S=120 STRICT_PROOF=1 \
-            RUN_URL='${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}' \
-            node "$ENGINE_RELEASE_PROOF_SCRIPT"
-          echo "Recovery verified from container through proxy and fresh engine_leader."
-
-      - name: Revoke unused authority and GUARANTEE the sealed engine
-        # Revocation and reconciliation are one locked operation. If a runner is
-        # cancelled during proof, the candidate must not keep serving merely
-        # because its token has not reached its TTL yet.
-        if: always() && steps.seal.outcome == 'success' && steps.rollback.outcome != 'success'
-        run: |
-          # Closes the stop -> run window: if this job died, was cancelled, or
-          # the runner vanished mid-cutover, the container may be absent or
-          # stopped. A candidate deliberately has restart=no until the seal is
-          # committed; the supervisor restores the old desired release if the
-          # proof was abandoned, or promotes the newly sealed desired policy.
-          #
-          # It also asserts --label autoheal=true rather than just the container
-          # state. A bare `docker start` on a container created by some other
-          # path would otherwise bless an engine whose HEALTHCHECK is wired to
-          # nothing, and report "container running" while doing it.
-          ~/hssh "
-            set -euo pipefail
-            CONTROL=/usr/local/lib/club-arena/engine-control
-            exec 9>/var/lock/club-arena-engine-up.lock
-            flock -w 30 9
-            # Revocation can be durably committed even when its append-only
-            # audit response fails. Recovery must run before propagating that
-            # audit failure; never leave a cancelled candidate serving until a
-            # later timer happens to notice it.
-            ABORT_RC=0
-            set +e
-            \$CONTROL/engine-release-seal.py abort --run-id '${{ github.run_id }}'
-            ABORT_RC=\$?
-            set -e
-            ENGINE_SUPERVISOR_LOCK_HELD=1 ENGINE_CONTROL_DIR=\$CONTROL CONTAINER='$CONTAINER' \
-              \$CONTROL/engine-supervisor.sh
-            [ "\$ABORT_RC" -eq 0 ] \
-              || { echo 'release authority was reconciled, but its abort audit failed'; exit "\$ABORT_RC"; }"
-
-      - name: Retention — keep the last 5 builds, never the rollback target
-        if: success() && steps.dedupe.outputs.skip != 'true' && steps.drain.outputs.skip != 'true'
-        run: |
-          # Only 40-hex SHA tags are candidates. The old filter treated every
-          # non-reserved tag as expendable, which would have deleted the
-          # hand-made operator anchors (u3, rollback-pre-u3) after five deploys
-          # — the same loss the immutable-tag scheme exists to prevent, just
-          # slower. `docker images` is newest-first (verified empirically).
-          ~/hssh '
-            ALL=$(docker images club-arena-engine --format "{{.Tag}}" | grep -E "^[0-9a-f]{40}$")
-            KEEP=$(echo "$ALL" | head -5)
-            for t in $ALL; do
-              echo "$KEEP" | grep -qx "$t" || { echo "removing club-arena-engine:$t"; docker rmi "club-arena-engine:$t" >/dev/null 2>&1; }
-            done
-            docker image prune -f --filter "dangling=true" >/dev/null 2>&1
-            echo "images retained:"; docker images club-arena-engine --format "  {{.Tag}}  {{.CreatedSince}}"' || true
-
-      # ── THE STEP THAT EXISTS TO BE SEEN ────────────────────────────────
-      # (Since 2026-09-10 a drained run is RED - see the Verdict step - and a
-      # superseded or already-live one is green by design.)
-      # A skipped or drained run used to finish GREEN having shipped nothing, and
-      # `gh run list` showed only "completed/success". On 2026-08-26 that cost
-      # a real investigation: a merged engine fix was believed live for
-      # thirteen minutes because the deploy said success, and the only way to
-      # learn otherwise was to read the log of a run that had not failed.
-      #
-      # A step that runs ONLY on the skip paths fixes that for good, because
-      # the FIRST thing anyone checks after `gh run list` is the job's steps:
-      #   gh api repos/OWNER/REPO/actions/runs/<id>/jobs --jq '.jobs[].steps[]'
-      # and this name is unmissable there. Cheap, needs no new permissions,
-      # and cannot itself fail the deploy.
-      - name: 'DID NOT DEPLOY — this run shipped nothing'
-        if: steps.dedupe.outputs.skip == 'true' || steps.drain.outputs.skip == 'true'
-        run: |
-          # 2026-08-31: THE REASON MUST NAME THE GATE THAT ACTUALLY HELD.
-          # The restart-window gate shipped without being added here, so a run
-          # blocked by the window reported "coalescing - the engine restarted
-          # too recently", which was simply untrue: the engine had been up for
-          # 45 minutes, well past the spacing threshold. Anyone reading that
-          # warning goes and investigates the spacing gate, and the spacing
-          # gate is fine. A wrong reason costs more than no reason, because it
-          # is confidently wrong and it is the first thing anybody reads.
-          #
-          # ── AND IT WAS WRONG AGAIN, IN BOTH DIRECTIONS (2026-09-05) ───────
-          #
-          # 1. `steps.window` DOES NOT EXIST. The restart-window gate was
-          #    deleted when Dan moved the restart to the hourly :55 break
-          #    (§13), and this branch outlived it. A missing step's output is
-          #    the empty string, never 'false', so the branch was unreachable -
-          #    dead code that read as a live gate and, worse, told the next
-          #    agent that a 7am/7pm Chicago window still governs deploys. §13
-          #    exists because that exact stale sentence sent an agent to
-          #    "fix" the current behaviour back. Deleted.
-          #
-          # 2. The drain gate now has THREE outcomes and this printed one
-          #    sentence for all of them - and the sentence it printed,
-          #    "hands are still in flight", is not any of them. Measured on
-          #    run 33986167969: the step warning said hands were in flight,
-          #    the summary and the database both said the break never opened,
-          #    and the truth was that the run had refused to WAIT for a break
-          #    that had not started yet. Three answers, one run, and the loudest
-          #    one was the only one that was false.
-          #
-          # So the gate now hands up the reason it actually took
-          # (`steps.drain.outputs.gate_reason`) and this step prints THAT. The
-          # hard-coded strings survive only as the fallback for a gate that
-          # skipped without saying why, which is itself worth seeing.
-          REASON="already serving this commit"
-          if [ "${{ steps.drain.outputs.skip }}" = "true" ]; then
-            REASON="${{ steps.drain.outputs.gate_reason }}"
-            [ -z "$REASON" ] && REASON="the break gate held; see the step log for which half"
-          elif [ "${{ steps.dedupe.outputs.reason }}" = "superseded" ]; then
-            REASON="superseded: main moved past this run before it started; the run on current main ships it"
-          fi
-          {
-            echo "## THIS RUN DEPLOYED NOTHING"
-            echo ""
-            echo "Reason: **$REASON**"
-            echo ""
-            # 2026-09-10: this used to say "the run is green because skipping
-            # was the CORRECT action" and "it lands on the next hourly tick".
-            # Neither was true for the break-gate skips: the tick rarely came,
-            # and a run that should have shipped and did not is a failure, now
-            # coloured red by the Verdict step at the end of the job.
-            if [ "${{ steps.drain.outputs.skip }}" = "true" ]; then
-              echo "This run is RED (see the Verdict step): it should have shipped"
-              echo "\`$SHA\` and did not. Its Verdict step dispatches the next run,"
-              echo "which waits in its break gate for the next :55 it can reach;"
-              echo "every cutover still requires a fresh readyForRestart certificate."
-            else
-              echo "Nothing needed shipping from this run: $REASON."
-              echo "Every cutover still requires a fresh readyForRestart certificate."
-            fi
-            echo ""
-            echo "Verify what is ACTUALLY running before believing anything:"
-            echo ""
-            echo '```'
-            echo "gh api repos/\${{ github.repository }}/actions/runs/<id>/jobs \\"
-            echo "  --jq '.jobs[].steps[] | \"\\(.name): \\(.conclusion)\"'"
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-          if [ "${{ steps.dedupe.outputs.reason }}" = "already_live" ]; then
-            echo "::notice title=ALREADY LIVE::production already serves $SHA; nothing to deploy."
-          else
-            echo "::warning title=DID NOT DEPLOY::$REASON — $SHA is NOT on production."
-          fi
-
-      - name: Post-deploy summary
-        if: always()
-        run: |
-          AFTER_SHA=$(~/hssh "cd $REPO_DIR && git rev-parse HEAD" 2>/dev/null || echo unknown)
-          {
-            echo "## Auto-deploy summary"
-            echo "- Trigger: ${{ github.event_name }}"
-            echo "- Deduped (already serving this commit, or we restarted it too recently): ${{ steps.dedupe.outputs.skip || 'n/a' }}"
-            echo "- Deferred by the break gate: ${{ steps.drain.outputs.skip || 'n/a' }}${{ steps.drain.outputs.gate_reason && format(' — {0}', steps.drain.outputs.gate_reason) || '' }}"
-            echo "- Image: ${{ steps.image.outputs.reused == 'true' && 'reused the staged build' || steps.image.outputs.reused == 'false' && 'built by this run' || 'not reached' }}"
-            echo "- Unplanned (non-deploy, non-break) restart seen: ${{ steps.dedupe.outputs.unplanned_restart || 'no' }}"
-            echo "- Deploying: \`$SHA\`"
-            echo "- Host before: \`${{ steps.pre.outputs.before_sha }}\`"
-            echo "- Host after:  \`$AFTER_SHA\`"
-            echo "- Verified serving that commit: \`${{ steps.health.outputs.verified || 'NO — see rollback step' }}\`"
-            echo "- Proved the version moved (engine_leader): \`${{ steps.prove.outcome || 'n/a' }}\` (was \`${PRE_CUTOVER_VERSION:-unknown}\` via ${PRE_CUTOVER_SOURCE:-unknown})"
-            echo "- Engine uptime: ${{ steps.health.outputs.uptime || 'n/a' }}s"
-            echo "- URL: $ENGINE_URL"
-          } >> $GITHUB_STEP_SUMMARY
-
-      # DEPLOY TRUTH (Phase 4). The database is told what this run actually
-      # did, ship or skip, because the question "is the engine running main"
-      # cannot be answered from inside the system that deploys it. On the night
-      # of 2026-08-31 GitHub Actions stopped starting jobs for this repo and
-      # every Actions-side watchdog went quiet with it. A pipeline that reports
-      # in turns silence itself into an alarm: fn_ca_engine_deploy_truth_watch
-      # runs from pg_cron every minute and raises when these rows stop
-      # arriving, when the running engine_version falls behind what was
-      # offered, when two builds hold leases at once, or when the engine stops
-      # heartbeating. It never fails the deploy.
-      - name: Record deploy truth in the database
-        if: always()
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          # A manual recovery can name an exact ref_sha. Recording github.sha
-          # here used to tell the watchdog a different commit than the one the
-          # host actually checked out, tagged, and verified.
-          TARGET_SHA: ${{ steps.target.outputs.sha }}
-          SHIPPED: ${{ steps.dedupe.outputs.skip != 'true' && steps.drain.outputs.skip != 'true' && steps.cutover.outcome == 'success' && steps.cutover.outputs.success == 'true' && steps.health.outputs.verified == 'true' && steps.prove.outcome == 'success' && (steps.seal_commit.outcome == 'success' || (steps.rollback.outcome == 'success' && steps.rollback.outputs.target_committed == 'true')) }}
-          RUN_ID: ${{ github.run_id }}
-          RUN_ACTOR: ${{ github.event_name }}
-          # ONE REASON, WRITTEN ONCE, READ EVERYWHERE. The drain branch used to
-          # hard-code 'the maintenance break never opened for a restart' for
-          # every way the gate could decline, so the ledger disagreed with the
-          # run's own warning (run 33986167969) and 23 rows in
-          # ca_engine_deploy_attempts blamed a break that had never been
-          # reached. It now records the gate's own words - the same string the
-          # DID NOT DEPLOY step prints - so the run, the summary and the
-          # database can no longer tell three different stories.
-          REASON: >-
-            ${{ steps.dedupe.outputs.reason == 'superseded' && 'superseded: main moved past this run before it started; the run on current main ships it'
-             || steps.dedupe.outputs.reason == 'already_live' && 'already serving this commit'
-             || (steps.drain.outputs.skip == 'true' && steps.drain.outputs.gate_reason)
-             || steps.drain.outputs.skip == 'true' && 'the break gate declined without recording a reason'
-             || steps.prove.outcome == 'failure' && 'cutover verified over HTTP but engine_leader never reported the new version: the version did not move'
-             || steps.health.outputs.verified == 'true' && 'deployed and verified serving this commit'
-             || job.status == 'cancelled' && 'cancelled before a verified cutover'
-             || 'run ended without a verified cutover' }}
-        run: |
-          npm ls pg >/dev/null 2>&1 || npm i pg@8 --no-save --no-audit --no-fund >/dev/null 2>&1 || true
-          node scripts/ci/record-engine-deploy-attempt.mjs
-
-      - name: Cleanup SSH key
-        if: always()
-        run: rm -f ~/.ssh/id_deploy ~/hssh
-
-      # ── GREEN MEANS PRODUCTION SERVES THIS COMMIT (2026-09-10) ─────────────
-      #
-      # Until today a run that shipped nothing ended GREEN: "IMAGE STAGED,
-      # CUTOVER DEFERRED" was a notice, "BREAK NEVER OPENED" a warning, and the
-      # only place that said shipped=false was ca_engine_deploy_attempts. On
-      # 2026-09-10 five green runs shipped nothing in one afternoon while the
-      # engine crash-looped on a build whose fix was already merged, and the
-      # Actions tab - the thing people actually look at - said all was well.
-      #
-      # So the colour now carries the outcome:
-      #   GREEN  production serves this commit: this run cut it over, or it was
-      #          already live, or the run stood down superseded and handed the
-      #          train to current main (dedupe);
-      #   RED    this run should have shipped and did not: the break gate
-      #          declined (never opened, or out of budget) or the cutover did
-      #          not verify. Every earlier failure is already red on its own.
-      # It runs LAST, after cleanup, so nothing keyed on failure() - the
-      # rollback above all - can ever react to it, and it reads the SAME
-      # SHIPPED expression the ledger step records, so the run, the summary
-      # and the database cannot tell different stories.
-      - name: 'Verdict — green only if production serves this commit'
-        if: always()
-        env:
-          DEDUPE_SKIP: ${{ steps.dedupe.outputs.skip }}
-          DEDUPE_REASON: ${{ steps.dedupe.outputs.reason }}
-          DRAIN_SKIP: ${{ steps.drain.outputs.skip }}
-          GATE_KIND: ${{ steps.drain.outputs.gate_kind }}
-          GATE_REASON: ${{ steps.drain.outputs.gate_reason }}
-          GH_TOKEN: ${{ github.token }}
-          JOB_STATUS: ${{ job.status }}
-          # Empty or 'skipped' means production was never touched by this run.
-          CUTOVER_OUTCOME: ${{ steps.cutover.outcome }}
-          # Written only once the cutover got past its locked certificate check.
-          CUTOVER_ATTEMPTED: ${{ steps.cutover.outputs.attempted }}
-          # Runs in a row that may end before their cutover (failed or
-          # cancelled) before the train stops. The count rides the chain.
-          DEPLOY_RETRY_LIMIT: '2'
-          PRIOR_RETRIES: ${{ github.event.inputs.retries || '0' }}
-          ROLLBACK_REQUESTED: ${{ github.event.inputs.rollback || 'false' }}
-          ROLLBACK_REASON: ${{ github.event.inputs.rollback_reason || '' }}
-          # main moved past this run in the engine paths (control step).
-          MAIN_AHEAD: ${{ steps.control.outputs.main_ahead }}
-          SHIPPED: ${{ steps.dedupe.outputs.skip != 'true' && steps.drain.outputs.skip != 'true' && steps.cutover.outcome == 'success' && steps.cutover.outputs.success == 'true' && steps.health.outputs.verified == 'true' && steps.prove.outcome == 'success' && (steps.seal_commit.outcome == 'success' || (steps.rollback.outcome == 'success' && steps.rollback.outputs.target_committed == 'true')) }}
-        run: |
-          SHORT="${SHA:0:8}"
-          # Hand the train on: dispatch the next run on current main. It queues
-          # behind this run and waits in its own gate for the next :55. Used
-          # only where this run's commit still has to ship and nothing else is
-          # coming for it (see THE TRAIN HANDS ITSELF ON, below).
-          #
-          # $1 is the chain's count of runs in a row that ended before their
-          # cutover, THIS one included. A run that got past its build passes 0.
-          # A ROLLBACK hands on as the same rollback (review, 2026-09-11): its
-          # successor used to be a plain forward run of main, which silently
-          # dropped the owner's decision.
-          hand_on() {
-            if [ "$ROLLBACK_REQUESTED" = "true" ]; then
-              if gh workflow run auto-deploy-hetzner.yml --repo "$GITHUB_REPOSITORY" --ref main \
-                   -f ref_sha="$SHA" -f rollback=true -f rollback_reason="$ROLLBACK_REASON" \
-                   -f retries="${1:-0}"; then
-                echo "Handed on: re-dispatched the rollback to $SHORT; it waits for the next break."
-                echo "Handed on: the rollback to \`$SHORT\` waits for the next :55." >> "$GITHUB_STEP_SUMMARY"
-                return 0
-              fi
-            elif gh workflow run auto-deploy-hetzner.yml --repo "$GITHUB_REPOSITORY" --ref main \
-                   -f retries="${1:-0}"; then
-              echo "Handed on: dispatched the next run on current main; it waits for the next break."
-              echo "Handed on: the next run on current main waits for the next :55." >> "$GITHUB_STEP_SUMMARY"
-              return 0
-            fi
-            echo "::error title=TRAIN STOPPED::could not dispatch the next run; nothing else will start one. Dispatch auto-deploy-hetzner.yml on main."
-            return 1
+          # Every observer and retry shares the absolute deadline established
+          # before checkout. The final ten minutes can never be borrowed by
+          # dispatch; they belong to proof, the strict receipt, and cleanup.
+          [ $((RELEASE_JOB_DEADLINE_EPOCH - RELEASE_DISPATCH_DEADLINE_EPOCH)) -ge "$POST_RELEASE_RESERVE_SECONDS" ]
+          DISPATCH_FINALIZE_RESERVE_SECONDS=15
+          ACTOR_B64="$(printf '%s' "$RUN_ACTOR" | base64 -w 0)"
+          [[ "$ACTOR_B64" =~ ^[A-Za-z0-9+/]*={0,2}$ ]]
+          uncertain_status() {
+            local status="$1"
+            [ "$status" -eq 255 ] || [ "$status" -eq 124 ] \
+              || [ "$status" -eq 76 ] || [ "$status" -eq 75 ] \
+              || [ "$status" -ge 128 ]
           }
-          if [ "$JOB_STATUS" != "success" ]; then
-            echo "An earlier step already failed or cancelled this run; its error is the verdict."
-            # ── A RUN THAT NEVER TOUCHED PRODUCTION HEALS ITSELF (2026-09-11) ──
-            #
-            # Dan: "i do not want any watch dogs, i want hard coded fixes ... i
-            # want any and all pushes to be published". Until now a run that
-            # failed - a flaky test, a network blip in the build, a runner that
-            # died - or that somebody cancelled simply stopped, and its commit
-            # waited for the next engine push, or for engine-watchdog.sh to
-            # notice. Neither is a guarantee.
-            #
-            # So a run that ended BEFORE its cutover step ran hands the train on:
-            #   - cancelled or failed: while fewer than DEPLOY_RETRY_LIMIT runs IN
-            #     A ROW have ended before their cutover. A cancel is not a stop:
-            #     to STOP deploys, disable this workflow - a disabled workflow
-            #     refuses the dispatch below, and that refusal is the stop.
-            # A run whose cutover RAN never hands on, whatever its outcome: a
-            # failed cutover rolled production back, and retrying it would
-            # restart production into the same broken build every hour.
-            #
-            # "Before its cutover" includes a cutover step that REFUSED before
-            # touching anything (review, 2026-09-11): the locked certificate
-            # re-check, the host lock, the localhost read or the ssh connect can
-            # each fail first, and only a step that got past the locked check
-            # writes attempted=true. Those runs used to stop the train dead.
-            #
-            # THE BOUND BELONGS TO THE TRAIN, NOT TO ONE COMMIT (review,
-            # 2026-09-11). It counted failed runs on this SHA, but the hand-on
-            # dispatches main, so any merge reset it and a failure spanning
-            # commits looped all day; and a cancel - which is also how GitHub
-            # reports a job timeout - was never counted at all. The count now
-            # rides the chain: each run that ends before its cutover passes
-            # PRIOR_RETRIES+1 to the next, a run that got past its build passes
-            # 0, and a push starts a fresh chain.
-            if [ -z "$CUTOVER_OUTCOME" ] || [ "$CUTOVER_OUTCOME" = "skipped" ] \
-               || { [ "$CUTOVER_OUTCOME" = "failure" ] && [ "$CUTOVER_ATTEMPTED" != "true" ]; }; then
-              case "$PRIOR_RETRIES" in
-                ''|*[!0-9]*)
-                  # Fail closed: a retry count nobody can read is how a broken
-                  # train would loop forever.
-                  echo "::error title=TRAIN STOPPED::the chain's retry count ('$PRIOR_RETRIES') is not a number, so this run will not retry itself. Dispatch auto-deploy-hetzner.yml on main once the failure above is understood." ;;
-                *)
-                  if [ "$PRIOR_RETRIES" -lt "$DEPLOY_RETRY_LIMIT" ]; then
-                    echo "Ended ($JOB_STATUS) before any cutover; $PRIOR_RETRIES earlier run(s) in a row did too, $DEPLOY_RETRY_LIMIT allowed. The train goes on."
-                    hand_on $((PRIOR_RETRIES + 1)) || true
-                  else
-                    echo "::error title=GAVE UP ON $SHORT::$((PRIOR_RETRIES + 1)) runs in a row have ended before their cutover (failed or cancelled). That is a broken train, not bad luck: the next engine push starts the next run."
-                  fi ;;
-              esac
-            fi
-            exit 0
+          run_remote_intake() {
+            local remaining transport_timeout
+            remaining=$((RELEASE_DISPATCH_DEADLINE_EPOCH - $(date +%s) - DISPATCH_FINALIZE_RESERVE_SECONDS))
+            [ "$remaining" -gt 5 ] \
+              || { echo 'release intake exhausted its shared wall-clock budget' >&2; return 70; }
+            transport_timeout=$((remaining - 5))
+            [ "$transport_timeout" -le 360 ] || transport_timeout=360
+            timeout --signal=TERM --kill-after=5s "${transport_timeout}s" \
+              "$HSSH" "TARGET_SHA='$SHA' CONTROL_SHA='$CONTROL_SHA' RUN_KEY='$RUN_KEY' ACTOR_B64='$ACTOR_B64' NOT_AFTER_EPOCH='$RELEASE_DISPATCH_DEADLINE_EPOCH' GIT_NO_REPLACE_OBJECTS=1 bash -se" <<'REMOTE'
+          set -euo pipefail
+          export GIT_NO_REPLACE_OBJECTS=1
+          STAGE="/var/lib/club-arena/control-staging/$RUN_KEY"
+          ACTOR="$(printf '%s' "$ACTOR_B64" | base64 -d)"
+          [[ "$NOT_AFTER_EPOCH" =~ ^[1-9][0-9]*$ ]]
+          "$STAGE/server/scripts/install-engine-intake.sh" \
+            --target-sha "$TARGET_SHA" --control-sha "$CONTROL_SHA" \
+            --run-id "$RUN_KEY" --actor "$ACTOR" \
+            --not-after-epoch "$NOT_AFTER_EPOCH"
+          REMOTE
+          }
+          observe_remote_release() {
+            local remaining invocation_wait transport_timeout
+            remaining=$((RELEASE_DISPATCH_DEADLINE_EPOCH - $(date +%s) - DISPATCH_FINALIZE_RESERVE_SECONDS))
+            [ "$remaining" -gt 5 ] \
+              || { echo 'release observation exhausted its shared wall-clock budget' >&2; return 70; }
+            transport_timeout=$((remaining - 5))
+            invocation_wait=900
+            [ "$invocation_wait" -le "$transport_timeout" ] || invocation_wait="$transport_timeout"
+            timeout --signal=TERM --kill-after=5s "${transport_timeout}s" \
+              "$HSSH" "ENGINE_RELEASE_OBSERVE_SECONDS='$transport_timeout' ENGINE_RELEASE_INVOCATION_WAIT_SECONDS='$invocation_wait' exec '/var/lib/club-arena/control-staging/$RUN_KEY/server/scripts/observe-engine-release.sh' --sha '$SHA' --run-id '$RUN_KEY'"
+          }
+          set +e
+          run_remote_intake | tee "$RUNNER_TEMP/engine-release-$RUN_KEY.log"
+          SSH_RC=${PIPESTATUS[0]}
+          if [ "$SSH_RC" -eq 0 ]; then
+            observe_remote_release | tee -a "$RUNNER_TEMP/engine-release-$RUN_KEY.log"
+            SSH_RC=${PIPESTATUS[0]}
           fi
-          if [ "$SHIPPED" = "true" ] || [ "$DEDUPE_SKIP" = "true" ]; then
-            if [ "$SHIPPED" = "true" ]; then
-              echo "SHIPPED: production serves $SHORT."
-              echo "### Verdict: SHIPPED \`$SHORT\`" >> "$GITHUB_STEP_SUMMARY"
+          set -e
+          if uncertain_status "$SSH_RC"; then
+            echo '::warning::Release intake transport/acknowledgement was uncertain; reattaching to durable host state.'
+            for attempt in $(seq 1 40); do
+              if [ "$attempt" -ne 1 ]; then
+                RETRY_REMAINING=$((RELEASE_DISPATCH_DEADLINE_EPOCH - $(date +%s) - DISPATCH_FINALIZE_RESERVE_SECONDS))
+                if [ "$RETRY_REMAINING" -le 0 ]; then
+                  SSH_RC=70
+                  break
+                fi
+                RETRY_DELAY=15
+                [ "$RETRY_DELAY" -le "$RETRY_REMAINING" ] || RETRY_DELAY="$RETRY_REMAINING"
+                sleep "$RETRY_DELAY"
+              fi
+              set +e
+              run_remote_intake | tee -a "$RUNNER_TEMP/engine-release-$RUN_KEY.log"
+              SSH_RC=${PIPESTATUS[0]}
+              if [ "$SSH_RC" -eq 0 ]; then
+                observe_remote_release | tee -a "$RUNNER_TEMP/engine-release-$RUN_KEY.log"
+                SSH_RC=${PIPESTATUS[0]}
+              fi
+              set -e
+              [ "$SSH_RC" -eq 0 ] && break
+              if uncertain_status "$SSH_RC"; then
+                continue
+              fi
+              echo "::error::Hetzner release transaction failed while reattaching ($SSH_RC)"
+              exit "$SSH_RC"
+            done
+          fi
+          [ "$SSH_RC" -eq 0 ] \
+            || { echo "::error::could not reattach to the durable Hetzner release transaction ($SSH_RC)"; exit "$SSH_RC"; }
+          RESULT="$(sed -n 's/^ENGINE_RELEASE_RESULT=//p' "$RUNNER_TEMP/engine-release-$RUN_KEY.log" | tail -1)"
+          UNIT_RESULT="$(sed -n 's/^ENGINE_RELEASE_UNIT_RESULT=//p' "$RUNNER_TEMP/engine-release-$RUN_KEY.log" | tail -1)"
+          RESULT_SHA="$(sed -n 's/^ENGINE_RELEASE_SHA=//p' "$RUNNER_TEMP/engine-release-$RUN_KEY.log" | tail -1)"
+          [ "$UNIT_RESULT" = success ] && [ "$RESULT_SHA" = "$SHA" ]
+          case "$RESULT" in sealed|already-released) ;; *) echo '::error::invalid durable release receipt'; exit 1 ;; esac
+          echo "result=$RESULT" >> "$GITHUB_OUTPUT"
+          echo 'completed=true' >> "$GITHUB_OUTPUT"
+
+      - name: Independently prove the sealed local, public, and leader identity
+        id: verify
+        run: |
+          set -euo pipefail
+          PROOF_REMAINING=$((RELEASE_PROOF_DEADLINE_EPOCH - $(date +%s)))
+          [ "$PROOF_REMAINING" -gt 35 ] \
+            || { echo '::error::independent proof has no time left in its absolute budget'; exit 70; }
+          # Preserve 30 seconds for the public proof and five seconds for a
+          # forced SSH teardown. Every remote Docker inspection is therefore
+          # covered by this outer wall-clock bound as well.
+          REMOTE_PROOF_TIMEOUT=$((PROOF_REMAINING - 35))
+          [ "$REMOTE_PROOF_TIMEOUT" -le 180 ] || REMOTE_PROOF_TIMEOUT=180
+          REMOTE_PROOF="$(timeout --signal=TERM --kill-after=5s "${REMOTE_PROOF_TIMEOUT}s" \
+            "$HSSH" "EXPECTED_SHA='$SHA' bash -se" <<'REMOTE'
+          set -euo pipefail
+          CONTROL=/usr/local/lib/club-arena/engine-control
+          DESIRED_SHA="$($CONTROL/engine-release-seal.py get desired-sha)"
+          DESIRED_IMAGE="$($CONTROL/engine-release-seal.py get desired-image-id)"
+          ACTUAL_SHA="$(docker container inspect -f '{{index .Config.Labels "sp.release.sha"}}' club-arena-engine)"
+          ACTUAL_IMAGE="$(docker container inspect -f '{{.Image}}' club-arena-engine)"
+          ACTUAL_STATE="$(docker container inspect -f '{{.State.Status}}' club-arena-engine)"
+          [ "$DESIRED_SHA" = "$EXPECTED_SHA" ] && [ "$ACTUAL_SHA" = "$EXPECTED_SHA" ]
+          [ "$DESIRED_IMAGE" = "$ACTUAL_IMAGE" ] && [ "$ACTUAL_STATE" = running ]
+          LOCAL_INSTANCE="$(curl -fsS --max-time 15 -H 'Cache-Control: no-cache, no-store' \
+            http://127.0.0.1:8080/health | EXPECTED_SHA="$EXPECTED_SHA" python3 -c '
+          import json,os,re,sys
+          d=json.load(sys.stdin); i=d.get("instanceId")
+          ok=d.get("running") is True and d.get("releaseSha")==os.environ["EXPECTED_SHA"] and d.get("liveness")=="ok" and isinstance(i,str) and re.fullmatch(r"[1-9][0-9]*-[0-9a-f]{8}",i)
+          if not ok: raise SystemExit(1)
+          print(i)
+          ' )"
+          timeout --signal=TERM --kill-after=1s 62s \
+            "$CONTROL/engine-release-database-proof.py" --env-file /opt/club-arena/server/.env \
+            --sha "$EXPECTED_SHA" --instance-id "$LOCAL_INSTANCE" --timeout-seconds 60 \
+            --poll-seconds 5 --max-heartbeat-age-seconds 15
+          echo "__ENGINE_LOCAL_PROOF__ $DESIRED_SHA $DESIRED_IMAGE $ACTUAL_IMAGE $LOCAL_INSTANCE"
+          REMOTE
+          )"
+          printf '%s\n' "$REMOTE_PROOF"
+          PROOF_LINE="$(printf '%s\n' "$REMOTE_PROOF" | grep '^__ENGINE_LOCAL_PROOF__ ' | tail -1)"
+          read -r _ DESIRED_SHA DESIRED_IMAGE ACTUAL_IMAGE LOCAL_INSTANCE EXTRA <<< "$PROOF_LINE"
+          [ "$DESIRED_SHA" = "$SHA" ] && [ "$DESIRED_IMAGE" = "$ACTUAL_IMAGE" ] && [ -z "${EXTRA:-}" ]
+          [[ "$DESIRED_IMAGE" =~ ^sha256:[0-9a-f]{64}$ ]]
+          [[ "$LOCAL_INSTANCE" =~ ^[1-9][0-9]*-[0-9a-f]{8}$ ]]
+          PUBLIC_BODY="$RUNNER_TEMP/engine-public-health-$RUN_KEY.json"
+          trap 'rm -f -- "$PUBLIC_BODY"' EXIT
+          PUBLIC_REMAINING=$((RELEASE_PROOF_DEADLINE_EPOCH - $(date +%s)))
+          [ "$PUBLIC_REMAINING" -gt 3 ] \
+            || { echo '::error::public proof has no time left in its absolute budget'; exit 70; }
+          PUBLIC_TIMEOUT=$((PUBLIC_REMAINING - 2))
+          [ "$PUBLIC_TIMEOUT" -le 20 ] || PUBLIC_TIMEOUT=20
+          timeout --signal=TERM --kill-after=2s "${PUBLIC_TIMEOUT}s" \
+            curl -fsS --max-time 15 -H 'Cache-Control: no-cache, no-store' \
+              "$ENGINE_URL/health?nocache=$(date +%s%N)" -o "$PUBLIC_BODY"
+          PARSE_REMAINING=$((RELEASE_PROOF_DEADLINE_EPOCH - $(date +%s)))
+          [ "$PARSE_REMAINING" -gt 1 ] \
+            || { echo '::error::public proof parsing exhausted its absolute budget'; exit 70; }
+          PUBLIC_PARSE_TIMEOUT=$((PARSE_REMAINING - 1))
+          PUBLIC_INSTANCE="$(timeout --signal=TERM --kill-after=1s "${PUBLIC_PARSE_TIMEOUT}s" \
+            env EXPECTED_SHA="$SHA" python3 -c '
+          import json,os,re,sys
+          d=json.load(sys.stdin); i=d.get("instanceId")
+          ok=d.get("running") is True and d.get("releaseSha")==os.environ["EXPECTED_SHA"] and d.get("liveness")=="ok" and isinstance(i,str) and re.fullmatch(r"[1-9][0-9]*-[0-9a-f]{8}",i)
+          if not ok: raise SystemExit(1)
+          print(i)
+          ' < "$PUBLIC_BODY")"
+          [ "$PUBLIC_INSTANCE" = "$LOCAL_INSTANCE" ]
+          echo 'verified=true' >> "$GITHUB_OUTPUT"
+
+      - name: Remove exact staging and ephemeral SSH material
+        if: always()
+        env:
+          RELEASE_COMPLETED: ${{ steps.release.outputs.completed || 'false' }}
+        run: |
+          set -euo pipefail
+          cleanup_local_credentials() {
+            rm -rf -- "${SSH_DIR:-$RUNNER_TEMP/club-arena-ssh-$RUN_KEY}" || true
+            rm -f -- "${HSSH:-$RUNNER_TEMP/hssh-$RUN_KEY}" \
+              "$RUNNER_TEMP/engine-release-$RUN_KEY.log" \
+              "$RUNNER_TEMP/engine-public-health-$RUN_KEY.json" || true
+          }
+          # Local credentials are removed even when the remote cleanup cannot
+          # start or is killed at its absolute deadline.
+          trap cleanup_local_credentials EXIT
+          REMOTE_CLEANUP_RC=0
+          if [ "$RELEASE_COMPLETED" = true ] && [ -n "${HSSH:-}" ] && [ -x "$HSSH" ] && [[ "$RUN_KEY" =~ ^[1-9][0-9]*-[1-9][0-9]*$ ]]; then
+            CLEANUP_REMAINING=$((RELEASE_REMOTE_CLEANUP_DEADLINE_EPOCH - $(date +%s)))
+            if [ "$CLEANUP_REMAINING" -le 5 ]; then
+              echo '::error::remote staging cleanup has no time left in its absolute budget'
+              REMOTE_CLEANUP_RC=70
             else
-              echo "Nothing to ship for $SHORT: ${DEDUPE_REASON:-already live}."
-              echo "### Verdict: nothing to ship (${DEDUPE_REASON:-already live})" >> "$GITHUB_STEP_SUMMARY"
+              REMOTE_CLEANUP_TIMEOUT=$((CLEANUP_REMAINING - 5))
+              [ "$REMOTE_CLEANUP_TIMEOUT" -le 60 ] || REMOTE_CLEANUP_TIMEOUT=60
+              set +e
+              timeout --signal=TERM --kill-after=5s "${REMOTE_CLEANUP_TIMEOUT}s" \
+                "$HSSH" "RUN_KEY='$RUN_KEY' bash -se" <<'REMOTE'
+          set -euo pipefail
+          [[ "$RUN_KEY" =~ ^[1-9][0-9]*-[1-9][0-9]*$ ]]
+          ! systemctl is-enabled "club-arena-engine-intake-v1@$RUN_KEY.service" >/dev/null 2>&1
+          ! systemctl is-enabled "club-arena-engine-release-v1@$RUN_KEY.service" >/dev/null 2>&1
+          rm -rf -- "/var/lib/club-arena/control-staging/$RUN_KEY"
+          REMOTE
+              REMOTE_CLEANUP_RC=$?
+              set -e
             fi
-            # A newer engine commit is on main and nothing proved it has a run
-            # of its own (control step). Give it one; the run is green either
-            # way, because this commit is live.
-            if [ "$MAIN_AHEAD" = "true" ] && [ "$DEDUPE_REASON" != "superseded" ]; then
-              hand_on 0 || true
-            fi
-            exit 0
           fi
-          # The one deliberate deferral the gate may take: another owner holds
-          # the production window. Every other decline should have shipped.
-          # Deliberate is not finished, though: the commit still has to ship
-          # once the window is free, so the deferral hands the train on too,
-          # and a hand-on that cannot be made turns the run red.
-          if [ "$DRAIN_SKIP" = "true" ] && [ "$GATE_KIND" = "lease_held_elsewhere" ]; then
-            echo "Deliberately deferred: $GATE_REASON"
-            echo "### Verdict: deferred \`$SHORT\` - $GATE_REASON" >> "$GITHUB_STEP_SUMMARY"
-            hand_on 0 || exit 1
-            exit 0
+          if [ "$REMOTE_CLEANUP_RC" -ne 0 ]; then
+            echo "::error::remote staging cleanup failed inside its absolute budget ($REMOTE_CLEANUP_RC)"
+            exit "$REMOTE_CLEANUP_RC"
           fi
-          REASON="${GATE_REASON:-the cutover did not verify}"
-          [ "$DRAIN_SKIP" = "true" ] || REASON="the cutover did not verify"
-          # Ask production once before calling it a failure: the dedupe may
-          # have read an unreadable /health while the engine already served
-          # this commit. Unreadable stays red, and says it could not tell.
-          SERVED=$(curl -s --max-time 10 "$ENGINE_URL/health?nocache=$(date +%s%N)" 2>/dev/null \
-            | python3 -c 'import json,sys; print(json.load(sys.stdin).get("version") or "")' 2>/dev/null || echo "")
-          if [ -n "$SERVED" ] && [ "$SERVED" = "$SHORT" ]; then
-            echo "::warning title=SERVING WITHOUT A CUTOVER::$REASON, yet production serves $SHORT."
-            echo "### Verdict: production serves \`$SHORT\` although this run did not cut over ($REASON)" >> "$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
-          [ -n "$SERVED" ] || REASON="$REASON; could not tell what production serves (/health unreadable)"
-          echo "### Verdict: DID NOT SHIP \`$SHORT\` - $REASON" >> "$GITHUB_STEP_SUMMARY"
-          echo "::error title=DID NOT SHIP::$REASON. $SHA is not on production, and this run should have put it there."
-          # ── THE TRAIN HANDS ITSELF ON (2026-09-10) ───────────────────────
-          #
-          # A break gate that could not serve this run - no certificate, or the
-          # build landed too late for its break - is not the end of the commit.
-          # Nothing else is coming for it: the cron and the watchdog dispatch
-          # are gone. So the run that failed to ship dispatches its successor
-          # on current main, which queues behind this run and waits in its own
-          # gate for the next :55. At most one such run per break, because each
-          # one waits a whole break before it can decline again.
-          #
-          # ONLY a gate decline hands on. A run whose tests, build or cutover
-          # failed has already ended red above; handing THAT on would retry a
-          # broken commit every hour and restart production into it every
-          # hour. The next push - the fix - starts the next run.
-          if [ "$DRAIN_SKIP" = "true" ] \
-             && { [ "$GATE_KIND" = "staged_deferred" ] || [ "$GATE_KIND" = "no_certificate" ]; }; then
-            hand_on 0 || true
-          fi
-          exit 1
+
+  record-receipt:
+    name: Record The Append-Only Engine Release Receipt
+    needs: [preflight, deploy]
+    if: always() && needs.preflight.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout the exact workflow control
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Establish the receipt-job deadline
+        if: always()
+        run: |
+          set -euo pipefail
+          echo "RELEASE_RECEIPT_DEADLINE_EPOCH=$(($(date +%s) + 180))" >> "$GITHUB_ENV"
+
+      - name: Record append-only deployment receipt
+        if: always()
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          TARGET_SHA: ${{ needs.preflight.outputs.target_sha }}
+          SHIPPED: ${{ needs.deploy.outputs.shipped }}
+          RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+          RUN_ACTOR: ${{ github.actor }}
+          STRICT_RECEIPT: '1'
+          REASON: ${{ needs.deploy.outputs.release_result == 'already-released' && 'production already proved this exact release' || needs.deploy.outputs.verified == 'true' && 'Hetzner transaction sealed and independently verified' || 'release ended without complete production proof' }}
+        run: |
+          set -euo pipefail
+          RECEIPT_REMAINING=$((RELEASE_RECEIPT_DEADLINE_EPOCH - $(date +%s)))
+          [ "$RECEIPT_REMAINING" -ge 90 ] \
+            || { echo '::error::strict deployment receipt cannot run inside its absolute budget'; exit 70; }
+          # Dependency setup may use at most two minutes and must leave at
+          # least one minute for the strict append-only database write.
+          INSTALL_TIMEOUT=$((RECEIPT_REMAINING - 65))
+          [ "$INSTALL_TIMEOUT" -le 120 ] || INSTALL_TIMEOUT=120
+          timeout --signal=TERM --kill-after=5s "${INSTALL_TIMEOUT}s" \
+            npm install pg@8 --no-save --ignore-scripts --no-audit --no-fund >/dev/null 2>&1
+          RECEIPT_REMAINING=$((RELEASE_RECEIPT_DEADLINE_EPOCH - $(date +%s)))
+          [ "$RECEIPT_REMAINING" -gt 5 ] \
+            || { echo '::error::strict deployment receipt exhausted its absolute budget'; exit 70; }
+          RECEIPT_TIMEOUT=$((RECEIPT_REMAINING - 5))
+          timeout --signal=TERM --kill-after=5s "${RECEIPT_TIMEOUT}s" \
+            node scripts/ci/record-engine-deploy-attempt.mjs
+
+      - name: Publish release summary
+        if: always()
+        env:
+          TARGET_SHA: ${{ needs.preflight.outputs.target_sha }}
+          RELEASE_RESULT: ${{ needs.deploy.outputs.release_result }}
+          VERIFIED: ${{ needs.deploy.outputs.verified }}
+          RUN_KEY: ${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          {
+            echo '## Hetzner Club Arena Engine Release'
+            echo "- Target: \`$TARGET_SHA\`"
+            echo "- Run identity: \`$RUN_KEY\`"
+            echo "- Durable transaction: \`$RELEASE_RESULT\`"
+            echo "- Independent exact-SHA proof: \`$VERIFIED\`"
+            echo '- Image build: owned and bounded by the durable Hetzner transaction'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  certify-production:
+    name: Dispatch Exact Cross-Artifact Production Certification
+    needs: [preflight, deploy, record-receipt]
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - name: Dispatch and prove the exact post-deploy E2E receiver
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ENGINE_SHA: ${{ needs.preflight.outputs.target_sha }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          [[ "$ENGINE_SHA" =~ ^[0-9a-f]{40}$ ]] \
+            || { echo '::error::The sealed engine release did not expose one full lowercase SHA.'; exit 1; }
+          SENT_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          gh api --method POST "repos/$REPO/dispatches" \
+            -f event_type=run-post-deploy-e2e \
+            -F "client_payload[engine_sha]=$ENGINE_SHA"
+          echo "Production E2E dispatch accepted for exact engine component $ENGINE_SHA."
+
+          RECEIVER_ID=''
+          for _ in $(seq 1 12); do
+            RECEIVER_ID="$(gh api \
+              "repos/$REPO/actions/workflows/post-deploy-e2e.yml/runs?event=repository_dispatch&per_page=30" \
+              --jq "[.workflow_runs[] | select(.display_title == \"Post-Deploy E2E $ENGINE_SHA\" and .created_at >= \"$SENT_AT\")][0].id // empty")"
+            [ -n "$RECEIVER_ID" ] && break
+            sleep 5
+          done
+          [[ "$RECEIVER_ID" =~ ^[0-9]+$ ]] \
+            || { echo '::error::GitHub accepted the exact certification event but no correlated post-deploy E2E run appeared.'; exit 1; }
+          echo "Post-deploy E2E receiver $RECEIVER_ID accepted exact engine component $ENGINE_SHA."

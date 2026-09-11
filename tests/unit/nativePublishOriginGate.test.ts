@@ -15,7 +15,6 @@ const other = '2'.repeat(40);
 function eligible(verifiedSha: string, overrides: Record<string, unknown> = {}) {
   const values: Record<string, unknown> = {
     'vars.CAPGO_OTA_ENABLED': 'true',
-    'needs.publish-needed.outputs.skip': 'false',
     'needs.publish-needed.outputs.target_sha': target,
     'needs.build-and-store.result': 'success',
     'needs.publish-to-origin.result': 'success',
@@ -60,11 +59,12 @@ function runOriginVerification(liveSha: string) {
     const output = join(dir, 'output');
     writeFileSync(output, '');
     const result = spawnSync('bash', ['-c', command], {
-      cwd: dir,
+      cwd: root,
       env: {
-        PATH: dir + ':/usr/bin:/bin',
+        PATH: dir + ':' + (process.env.PATH ?? '/usr/bin:/bin'),
         FIXTURE_LIVE_SHA: liveSha,
         ORIGIN_URL: 'https://origin.invalid',
+        PUBLIC_URL: 'https://public.invalid',
         GITHUB_OUTPUT: output,
         GITHUB_STEP_SUMMARY: join(dir, 'summary'),
       },
@@ -105,7 +105,6 @@ describe('native publishing requires the exact origin verification', () => {
 
   it.each([
     ['disabled account', { 'vars.CAPGO_OTA_ENABLED': '' }],
-    ['deduplicated schedule', { 'needs.publish-needed.outputs.skip': 'true' }],
     ['failed build', { 'needs.build-and-store.result': 'failure' }],
     ['failed origin', { 'needs.publish-to-origin.result': 'failure' }],
     ['failed tests', { 'needs.client-tests.result': 'failure' }],

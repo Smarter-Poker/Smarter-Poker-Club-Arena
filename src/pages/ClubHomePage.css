@@ -300,6 +300,21 @@
   white-space: nowrap;
 }
 
+/* THE MINI LINE (Dan 2026-09-09: the mini "seen and discoverable like the
+   BBJ currently is"). One quiet line under the pool: the range the mini pays
+   across this club's stakes. Same tap, same popup, where the Mini row tells
+   the rest. */
+.lobby-bbj__mini {
+  color: #9fc9ea;
+  font-size: 0.58rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  line-height: 1.1;
+  text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 .lobby-club__share:focus-visible {
   outline: 2px solid rgba(0, 200, 255, 0.6);
   outline-offset: 2px;

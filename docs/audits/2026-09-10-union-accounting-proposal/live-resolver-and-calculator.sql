@@ -158,4 +158,3 @@ BEGIN
 
   RETURN p_club_hint;
 END $function$
-

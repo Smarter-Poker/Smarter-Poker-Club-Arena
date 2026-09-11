@@ -19,10 +19,6 @@
  *
  * Usage:
  *   node scripts/ci/check-no-skip-markers.mjs [range]     # default origin/main..HEAD
- *
- * Deliberate override, when you actually know why (a commit that genuinely
- * must not publish, e.g. one touching nothing but this repository's own CI):
- *   CA_ALLOW_SKIP_MARKER=1 git push
  */
 import { execFileSync } from 'node:child_process';
 
@@ -39,11 +35,6 @@ const MARKERS = [
   /\*\*\*NO_CI\*\*\*/i,
 ];
 
-if (process.env.CA_ALLOW_SKIP_MARKER === '1') {
-  console.log('check-no-skip-markers: SKIPPED by CA_ALLOW_SKIP_MARKER=1 (deliberate override).');
-  process.exit(0);
-}
-
 let log = '';
 try {
   // %H then the full message, NUL-delimited so a body containing blank lines
@@ -53,12 +44,8 @@ try {
     stdio: ['ignore', 'pipe', 'ignore'],
   });
 } catch {
-  // No such range (a fresh clone, a detached CI checkout, origin/main absent).
-  // FAIL OPEN: this guard exists to catch a mistake, and refusing to push
-  // because it could not read the log would be a worse failure than the one
-  // it prevents.
-  console.log(`check-no-skip-markers: could not read \`${RANGE}\` - skipping.`);
-  process.exit(0);
+  console.error(`check-no-skip-markers FAILED: could not read required range \`${RANGE}\`.`);
+  process.exit(1);
 }
 
 const offenders = [];
@@ -93,8 +80,7 @@ console.error('one. Nothing goes red. This happened for real on 454fa1da4.');
 console.error('');
 console.error('Fix: reword the commit.');
 console.error('  git commit --amend            (the tip)');
-console.error('  git rebase -i origin/main     (anything older)');
-console.error('');
-console.error('If a commit genuinely must not publish: CA_ALLOW_SKIP_MARKER=1 git push');
+console.error('  For an older commit, create a fresh branch from origin/main and carry');
+console.error('  the intended changes forward with publishable commit messages.');
 console.error('');
 process.exit(1);

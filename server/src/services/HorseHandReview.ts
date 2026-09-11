@@ -34,6 +34,7 @@ import {
   omahaNutStatus,
   nlhNutStatus,
   scoreOmahaHiPartial,
+  omahaDrawQuality,
 } from '../engine/HorseEval.js';
 import { RANK_VALUES, RANKS, SUITS } from '../engine/PokerEngine.js';
 import type { Card } from '../types.js';
@@ -261,6 +262,72 @@ export function omahaBoatIsNut(hole: Card[], board: Card[]): boolean {
 }
 
 /**
+ * ═══ THE STREET THE STACK WENT IN ON (2026-09-11) ═══
+ *
+ * The PLO stack-off detectors judge a MADE hand, and a made hand is a function
+ * of the board - so it matters which board. They read the five-card river
+ * board for every hand, which labels the decision by how the hand ENDED
+ * rather than by what hero held when the money went in. Measured over the
+ * seven days to 2026-09-10 by hero's last chip-committing action: 64 of 353
+ * plo_toppair_no_redraw_stackoff tags were PREFLOP all-ins - AA/KK 4-bet and
+ * 5-bet wars (reviews 411733 AA76, 430475 AAJJ, 388442 AAKK33) that showed
+ * down an unimproved pair - and review 376230 was tagged
+ * plo_naked_trips_stackoff for a FLOP stack-off holding aces and the nut
+ * flush draw on Q-3-3 that merely ran out 5-5. HorseLogic reads these tags
+ * as ploStackoffLoad, so V40 was lowering the Omaha ceiling of horses for
+ * playing aces correctly preflop.
+ *
+ * The commit street is the stage of hero's LAST action that put chips in:
+ * bet, raise, call, or any all_in (a call-off is a commitment too). One
+ * exception: a CALL of less than 15% of everything hero invested is a
+ * remainder, not a decision - review 411733 called off 104.55 of a 5-bet
+ * preflop and then 22.28 more when the villain shoved his last chips on the
+ * flop, and that flop call is not where the stack went in. A preflop commit
+ * is preflop_stackoff's hand and not a postflop made-hand decision, so the
+ * PLO block stands down; a flop or turn commit is judged on the board hero
+ * could see. Rows with no readable actions (older rows, fixtures) keep the
+ * river board, so nothing already pinned changes.
+ */
+export type CommitStreet = 'preflop' | 'flop' | 'turn' | 'river';
+
+const REMAINDER_SHARE = 0.15;
+
+export function commitStreet(
+  heroActions: Array<{ action: string; stage: string; amount?: number; isFullRaise?: boolean }>,
+  /** hero's total investment in chips; lets a trailing remainder call be skipped */
+  invested?: number
+): CommitStreet | null {
+  for (let i = heroActions.length - 1; i >= 0; i--) {
+    const a = heroActions[i];
+    if (
+      !(a.action === 'bet' || a.action === 'raise' || a.action === 'call' || a.action === 'all_in')
+    ) {
+      continue;
+    }
+    if (
+      invested !== undefined &&
+      invested > 0 &&
+      isCallAction(a) &&
+      typeof a.amount === 'number' &&
+      a.amount < invested * REMAINDER_SHARE
+    ) {
+      continue;
+    }
+    const s = a.stage;
+    if (s === 'preflop' || s === 'flop' || s === 'turn' || s === 'river') return s;
+    return null;
+  }
+  return null;
+}
+
+/** The board as hero saw it on `street`; the whole board when unknown. */
+export function boardAsOf(board: Card[], street: CommitStreet | null): Card[] {
+  if (street === 'flop') return board.slice(0, 3);
+  if (street === 'turn') return board.slice(0, 4);
+  return board;
+}
+
+/**
  * What the FINAL board makes available to somebody else. Omaha plays exactly
  * two hole cards and three board cards, which is what each test below counts:
  *
@@ -458,9 +525,13 @@ export function detectLeaks(row: {
   }
 
   // Preflop stack-off: 40bb+ went in with all the aggression preflop
-  // (no postflop action from the horse at all).
+  // (no postflop action from the horse at all - or, since 2026-09-11, no
+  // postflop action beyond a remainder call; see commitStreet).
   const postflopActed = row.heroActions.some((a) => a.stage !== 'preflop');
-  if (!postflopActed && investedBB >= 2 * FLAG_BB) {
+  if (
+    (!postflopActed || commitStreet(row.heroActions, row.invested) === 'preflop') &&
+    investedBB >= 2 * FLAG_BB
+  ) {
     flag('preflop_stackoff');
   }
 
@@ -603,9 +674,16 @@ export function detectLeaks(row: {
     investedBB >= PLO_STACKOFF_BB
   ) {
     try {
-      const st = omahaNutStatus(row.holeCards, row.board);
-      if (st.category === CAT_TRIPS) {
-        const threats = omahaBoardThreats(row.board);
+      // Judge the hand hero HELD when the stack went in, on the board hero
+      // could see - see commitStreet above. A preflop commit is not this
+      // block's decision.
+      const commit = commitStreet(row.heroActions, row.invested);
+      const boardAt = boardAsOf(row.board, commit);
+      const st = commit === 'preflop' ? null : omahaNutStatus(row.holeCards, boardAt);
+      if (st === null) {
+        /* preflop_stackoff owns a preflop all-in */
+      } else if (st.category === CAT_TRIPS) {
+        const threats = omahaBoardThreats(boardAt);
         if (threats.fullHouseLive || threats.flushLive || threats.straightLive) {
           // ── TRIPS AND SETS ARE NOT THE SAME LEAK (2026-09-05) ──
           // Three of a kind is one category number, but the two shapes are
@@ -621,7 +699,7 @@ export function detectLeaks(row: {
           // category-4 hand on a paired board is trips (a pocket pair on a
           // paired board would be a boat or quads, never trips); on an
           // unpaired board it can only be a set.
-          flag(boardHasPair(row.board) ? 'plo_naked_trips_stackoff' : 'plo_set_stackoff');
+          flag(boardHasPair(boardAt) ? 'plo_naked_trips_stackoff' : 'plo_set_stackoff');
         }
       } else if (st.category === CAT_FULL_HOUSE) {
         // ── THE PLO UNDER-FULL (2026-09-05) ──
@@ -637,15 +715,22 @@ export function detectLeaks(row: {
         // was written for. The test is exhaustive and cheap at this rate:
         // is there ANY two-card holding, from the cards hero cannot see,
         // that makes a bigger full house or quads on this exact board.
-        if (!omahaBoatIsNut(row.holeCards, row.board)) {
+        if (!omahaBoatIsNut(row.holeCards, boardAt)) {
           flag('plo_underfull_stackoff');
         }
       } else if (st.category <= CAT_ONE_PAIR) {
-        // At most one pair with a full stack in. By the river every redraw has
+        // At most one pair with a full stack in. On the river every redraw has
         // resolved, so a hand that still shows one pair is one that had no
         // wrap, no flush and no nut redraw arrive - the second shape the audit
-        // panel proposed (plo_toppair_no_redraw_stackoff).
-        flag('plo_toppair_no_redraw_stackoff');
+        // panel proposed (plo_toppair_no_redraw_stackoff). On a flop or turn
+        // commit the redraw is still live, so a flush draw or eight or more
+        // straight outs is a different decision and is not this tag.
+        let redrawLive = false;
+        if (boardAt.length < 5) {
+          const draw = omahaDrawQuality(row.holeCards, boardAt, vi.isHiLo);
+          redrawLive = draw.nutFlushDraw || draw.dominatedFlushDraw || draw.straightOuts >= 8;
+        }
+        if (!redrawLive) flag('plo_toppair_no_redraw_stackoff');
       }
     } catch {
       /* detector is best-effort */

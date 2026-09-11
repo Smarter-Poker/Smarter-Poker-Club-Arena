@@ -3334,7 +3334,6 @@ scripts/ci/probes/tournament-settlement-inputs.sql,0dd4292fcd1e4e1a6892874f91c97
 scripts/ci/probes/tournament-settlement-status.sql,6b1e376a702896df51e86cd9bd9c212455bdb0b7,runtime-or-tooling-source,41,True,Requires Individual Verification,3;5;9;12
 scripts/ci/probes/union-recipient-shortfalls.sql,e14d7956e99e0f24c61c512ecfea448ce08914e0,runtime-or-tooling-source,104,True,Requires Individual Verification,10;12
 scripts/ci/production-e2e-account.mjs,66381f41f99bd3fb6e6b52f1ff06fb21f322e055,runtime-or-tooling-source,385,True,Requires Individual Verification,12
-scripts/ci/prove-engine-version-moved.mjs,ad58ef44f527d7c6dccc0a60dc605f00734e6565,runtime-or-tooling-source,250,True,Requires Individual Verification,12
 scripts/ci/provision-ci-box.sh,c0f7df843988ff447d078a759a10c26e1ce86fbb,runtime-or-tooling-source,314,True,Requires Individual Verification,12
 scripts/ci/prune-schema-fragments.mjs,d7ffe1818be4399c6046ef86c20b1c139f2db264,runtime-or-tooling-source,120,True,Requires Individual Verification,12
 scripts/ci/record-engine-deploy-attempt.mjs,8bb5b915b52daba8c247a1b2b6df013116bc20f7,runtime-or-tooling-source,58,True,Requires Individual Verification,12

@@ -286,11 +286,9 @@ groups:
   # substitute, because it cannot see whether smarter.poker is reachable from
   # the outside.
   #
-  # That coverage is NOT missing, it just lives elsewhere: the World Hub's
-  # publish-watchdog.yml runs every 15 minutes, compares main's HEAD against
-  # the sha /api/health reports, and raises a self-closing issue when they
-  # diverge. It deliberately does not share a failure domain with the deploy
-  # pipeline it watches.
+  # External frontend provenance is checked by Club Arena's read-only
+  # production-integrity audit against ca-static.smarter.poker and the public
+  # rewrite. That audit cannot retry or publish.
   #
   # An empty group is worse than no group - it reads as coverage. To bring it
   # back properly: add blackbox-exporter to infra/monitoring/docker-compose.yml,
@@ -305,10 +303,8 @@ groups:
   # blackbox. The engine cannot substitute - it cannot see whether
   # smarter.poker is reachable from the outside.
   #
-  # That coverage is NOT missing, it lives elsewhere and deliberately outside
-  # this failure domain: the World Hub's publish-watchdog.yml runs every 15
-  # minutes, compares main's HEAD against the sha /api/health reports, and
-  # raises a self-closing issue when they diverge.
+  # External frontend provenance is checked by Club Arena's read-only
+  # production-integrity audit against the Hetzner origin and public rewrite.
   #
   # To bring it back properly: add blackbox-exporter to docker-compose.yml, add
   # a vercel_health blackbox job to prometheus.yml, then restore this group in

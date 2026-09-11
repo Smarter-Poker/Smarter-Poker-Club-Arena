@@ -25,7 +25,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const root = join(__dirname, '..');
@@ -89,8 +89,8 @@ describe('LAW: a horse avatar does not live at a path that says horse', () => {
      `social-media/horse-avatars-v2/` or `social-media/avatars/horse_avatar_*`
      and no human did - the flag spelled out in the <img src> of every seat
      and post. The copies live where human uploads live (`avatars/<uuid>/`),
-     the migration repoints and asserts, and the script that copied them is
-     kept so the next generator run can be checked against it. */
+     and the migration repoints and asserts. The credential-reading one-off
+     copier is retired after that durable migration landed. */
   const AVATARS = '20260908022510_a_horse_avatar_does_not_live_at_a_path_that_says_horse.sql';
 
   it('the repointing migration derives the neutral key and proves the copy exists first', () => {
@@ -106,14 +106,10 @@ describe('LAW: a horse avatar does not live at a path that says horse', () => {
     expect(sql).toContain("settings = settings - '_snapshot' - 'snapshot'");
   });
 
-  it('the copy script exists and writes to the human convention', () => {
-    const script = readFileSync(
-      join(root, 'scripts/ops/copy-horse-avatars-to-neutral-paths.mjs'),
-      'utf8'
+  it('retires the one-off local-credential copier after the durable migration', () => {
+    expect(existsSync(join(root, 'scripts/ops/copy-horse-avatars-to-neutral-paths.mjs'))).toBe(
+      false
     );
-    expect(script).toContain("destinationBucket: 'avatars'");
-    expect(script).toContain('`${row.id}/avatar.${ext}`');
-    expect(script).not.toMatch(/horse-avatars-v2\/\$\{/);
   });
 });
 
@@ -153,17 +149,9 @@ describe('LAW: a public author row does not say horse, and realtime does not bro
     expect(sql).toMatch(/the club_members column list collapsed to % columns/);
   });
 
-  it('the object sweep refuses to delete anything still referenced', () => {
-    const script = readFileSync(
-      join(root, 'scripts/ops/delete-listable-horse-avatar-objects.mjs'),
-      'utf8'
+  it('retires the one-off local-credential deletion sweep', () => {
+    expect(existsSync(join(root, 'scripts/ops/delete-listable-horse-avatar-objects.mjs'))).toBe(
+      false
     );
-    expect(script).toContain("['profiles', 'avatar_url=imatch.horse-avatars%7Chorse_avatar']");
-    expect(script).toContain(
-      "['content_authors', 'avatar_url=imatch.horse-avatars%7Chorse_avatar']"
-    );
-    expect(script).toContain('REFUSING');
-    // Only the listable prefix; horse-avatars-v2 is not covered by the policy.
-    expect(script).toContain("prefix: 'avatars/'");
   });
 });

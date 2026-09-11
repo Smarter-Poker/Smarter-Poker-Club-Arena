@@ -14,7 +14,7 @@
  * regression would come back.
  */
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { isJoinableTableRow } from './TournamentRecurringService.js';
 import {
@@ -29,14 +29,16 @@ const RECURRING = readFileSync(
   'utf8'
 );
 const GAME_SERVER = readFileSync(join(process.cwd(), 'src/GameServer.ts'), 'utf8');
-const SEAT_EXIT_MIGRATION = readFileSync(
-  join(
-    process.cwd(),
-    '..',
-    'supabase/migrations/20260909014545_tournament_seat_exits_stay_inside_tournament_authority.sql'
-  ),
-  'utf8'
-);
+const MIGRATIONS = join(process.cwd(), '..', 'supabase/migrations');
+function stageBMigration(suffix: string): string {
+  const matches = readdirSync(MIGRATIONS).filter(
+    (file) => file.endsWith(`_${suffix}.sql`) || file.endsWith(`_${suffix}.sql.pending`)
+  );
+  if (matches.length !== 1) throw new Error(`Stage-B ${suffix} migration is ambiguous`);
+  return readFileSync(join(MIGRATIONS, matches[0]), 'utf8');
+}
+const SEAT_EXIT_SCHEMA = stageBMigration('stage_b_forward_authority_expansion');
+const SEAT_EXIT_REPAIR = stageBMigration('stage_b_exact_precondition_repairs');
 
 describe('a closed table is not a joinable table', () => {
   it('a waiting table is joinable', () => {
@@ -211,12 +213,12 @@ describe('terminal table closeout belongs to its source transaction', () => {
   });
 
   it('moves the exact historical backlog once under the migration write barrier', () => {
-    expect(SEAT_EXIT_MIGRATION).toContain('DO $terminal_orphan_cutover$');
-    expect(SEAT_EXIT_MIGRATION).toContain('repaired_seat_ids uuid[] NOT NULL');
-    expect(SEAT_EXIT_MIGRATION).toContain('repaired_table_ids uuid[] NOT NULL');
-    expect(SEAT_EXIT_MIGRATION).toContain(
+    expect(SEAT_EXIT_SCHEMA).toContain('repaired_seat_ids uuid[] NOT NULL');
+    expect(SEAT_EXIT_SCHEMA).toContain('repaired_table_ids uuid[] NOT NULL');
+    expect(SEAT_EXIT_REPAIR).toContain('DO $terminal_orphan_cutover$');
+    expect(SEAT_EXIT_REPAIR).toContain(
       'a committed terminal receipt disagrees with durable table or seat state'
     );
-    expect(SEAT_EXIT_MIGRATION).toContain('terminal table and seat backlog did not close exactly');
+    expect(SEAT_EXIT_REPAIR).toContain('terminal table and seat backlog did not close exactly');
   });
 });

@@ -151,7 +151,45 @@ function boundedEnvInt(name: string, fallback: number, min: number, max: number)
  * why it is bounded below at 250 ms and why pollIsDue never lets an armed
  * retry hold it off for longer than RETRY_MAX_MS plus two intervals. */
 export const HAND_PROJECTION_POLL_MS = boundedEnvInt('HAND_PROJECTION_POLL_MS', 5_000, 250, 60_000);
-export const HAND_PROJECTION_DRAIN_CONCURRENCY_DEFAULT = 4;
+/*
+ * Chains in flight at once.
+ *
+ * Measured on production 2026-09-11, with the engine 45 minutes into a clean
+ * start and nothing else wrong:
+ *
+ *   hands dealt                            825 / min
+ *   rows projected by this drain           295 / min
+ *   outbox depth                           42,078 and climbing ~530 / min
+ *   oldest unprojected row                 77 minutes
+ *
+ * A drain running at 36% of the rate hands arrive does not have a backlog; it
+ * has an unbounded queue. Restarts had been hiding it: each one clears the
+ * in-flight work and the depth looks like a spike rather than a slope.
+ *
+ * The lever is lanes, not the database, and the numbers say which:
+ *
+ *   fn_project_hand_side_effects  mean 28.3 ms over 1,024,621 calls
+ *                                 (pg_stat_statements)
+ *   one chain, end to end         ~810 ms
+ *   lock waits on hand-projection 0
+ *   backend sessions active       9 of 99
+ *
+ * So about 97% of every chain is a round trip between Hetzner and PostgREST,
+ * and the four lanes spend nearly all of their time waiting rather than doing.
+ * That is the same shape as the horse decision lane earlier the same day: work
+ * that is network-bound, serialised behind a conservatively small default, and
+ * costing nothing on the event loop while it waits.
+ *
+ * Sixteen is the ceiling HAND_PROJECTION_DRAIN_CONCURRENCY_MAX already
+ * sanctioned, and at ~810 ms a chain it projects roughly 1,180 rows a minute,
+ * which is above the 825 that arrive. It reverses the slope and works the
+ * backlog down at about 355 a minute rather than merely slowing the growth.
+ *
+ * HandProjectionOutboxBacklog's own runbook names this lever and asks for
+ * pg_stat_activity to be read for lock waits on hand-projection:<table> first.
+ * That check is the zero above; it was done before this changed.
+ */
+export const HAND_PROJECTION_DRAIN_CONCURRENCY_DEFAULT = 16;
 export const HAND_PROJECTION_DRAIN_CONCURRENCY_MAX = 16;
 
 /**

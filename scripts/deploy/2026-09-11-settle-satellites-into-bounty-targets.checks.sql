@@ -29,6 +29,11 @@ SELECT count(*) FILTER (WHERE status = 'RUNNING' AND n = 2 AND live = 1 AND elim
   FROM sats;
 
 -- ─── PREFLIGHT 2: every decided satellite, exact shape (all rows must say true).
+--   winner_game_load counts the winner's own satellite seat. The ruling releases
+--   that seat before it buys the PKO seat, and trg_enforce_booking_game_cap
+--   refuses a registration at a load of 4, so with c_deliver_seats = true every
+--   row must show winner_game_load <= 4 (a 5 would abort the whole ruling;
+--   re-run later or set c_deliver_seats = false for that apply).
 SELECT s.id, COALESCE(s.satellite_target_id, s.satellite_target) AS target,
        w.username AS winner, w.user_id AS winner_id, b.username AS bubble, b.user_id AS bubble_id,
        s.prize_pool = 95.00 AND s.total_rake = 5.00 AND s.prize_pool_finalized AS pool_ok,

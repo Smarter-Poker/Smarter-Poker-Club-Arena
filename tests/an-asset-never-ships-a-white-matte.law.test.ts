@@ -179,17 +179,24 @@ describe('the port agrees with the Python the artists run', () => {
   // side by side over all 148 assets on 2026-09-11 with no disagreement. The
   // numbers below are the ones both produced; a change to either that moves
   // them shows up here and in the baseline at once.
-  it.each([
+  const PINNED: ReadonlyArray<readonly [string, number]> = [
     ['public/assets/club-buttons/club-nav-shell.png', 0.0],
     ['public/assets/club-buttons/club/club-identity-icon-club-v1.png', 7.8],
     ['public/assets/club-buttons/console/spade-console-v1/mid.png', 4.2],
-  ])('%s reads %s%%', async (rel, expected) => {
-    const sharp = (await import('sharp')).default;
-    const { data, info } = await sharp(join(ROOT, rel))
-      .ensureAlpha()
-      .raw()
-      .toBuffer({ resolveWithObject: true });
-    const pct = Math.round(matteFraction(data, info.width, info.height) * 1000) / 10;
-    expect(pct).toBe(expected);
-  });
+  ];
+
+  // Written out rather than `it.each`: its printf titles render this set as
+  // "reads 0% undefined", and a CI line nobody can read is a CI line nobody
+  // reads.
+  for (const [rel, expected] of PINNED) {
+    it(`${rel} reads ${expected} percent`, async () => {
+      const sharp = (await import('sharp')).default;
+      const { data, info } = await sharp(join(ROOT, rel))
+        .ensureAlpha()
+        .raw()
+        .toBuffer({ resolveWithObject: true });
+      const pct = Math.round(matteFraction(data, info.width, info.height) * 1000) / 10;
+      expect(pct).toBe(expected);
+    });
+  }
 });

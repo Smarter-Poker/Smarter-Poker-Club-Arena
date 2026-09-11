@@ -10,6 +10,12 @@ for source identities, production evidence and the remaining engine/device/log
 acceptance. The historical receipts below remain intact; this is not a claim
 that the full programme is certified complete.
 
+The September 11 closeout audit repairs hidden-tab refresh delivery and ticker
+account/read ownership. Its scope and regression evidence are recorded in
+`docs/changelog/2026-09-11-realtime-refresh-recovery-closeout.md`. Publication is
+verified through the associated PR release receipt. The engine, natural-event,
+physical-device and detailed-log gates remain open.
+
 ## Built-In Execution Standard (September 9, 2026)
 
 Significant Club Arena work must have a built-in server owner and durable

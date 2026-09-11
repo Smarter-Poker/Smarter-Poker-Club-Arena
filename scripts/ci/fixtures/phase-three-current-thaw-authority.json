@@ -1,0 +1,100 @@
+{
+  "source_commit": "a37145be930ab332fbd50c0ee17546af51cefbca",
+  "source_file_sha256": "a6bb1c38c270fdc14143d38028db530c29c54fc82ed74e7257a4e690805123d1",
+  "source_functions": [
+    {
+      "identity": "public.fn_thaw_platform_checkpointed(timestamptz,numeric,text)",
+      "body_md5": "8390ea3b5e92685cc29c806c494a680a",
+      "source_commit": "a37145be930ab332fbd50c0ee17546af51cefbca",
+      "source_path": "supabase/migrations/20260908032311_reconnect_allowance_survives_maintenance.sql",
+      "source_line": 46,
+      "definition_sha256": "9a128891962bda79266e2d9518fc86f6a16e5c1d8c950824a0d30d09dda8739e"
+    },
+    {
+      "identity": "public.fn_thaw_reconnect_states(jsonb,numeric,numeric)",
+      "body_md5": "0b5ef6cd1c6ba4e9331714f7c9053bd2",
+      "source_commit": "a37145be930ab332fbd50c0ee17546af51cefbca",
+      "source_path": "supabase/migrations/20260909180615_maintenance_ownership_fits_process_lifetime.sql",
+      "source_line": 636,
+      "definition_sha256": "119f013112e0380cb0fc63cb582656522744a6e2152812794d93f3d0bb5856e2"
+    },
+    {
+      "identity": "public.fn_snapshot_maintenance_thaw_targets(timestamptz,numeric)",
+      "body_md5": "43455b0ff86f51f524b6190fc6bf7dd2",
+      "source_commit": "a37145be930ab332fbd50c0ee17546af51cefbca",
+      "source_path": "supabase/migrations/20260909180615_maintenance_ownership_fits_process_lifetime.sql",
+      "source_line": 486,
+      "definition_sha256": "8083c063cfa661a968e5076675a4ee2242a488aaf7d85e85b9f3cf92922619b2"
+    },
+    {
+      "identity": "public.fn_credit_maintenance_thaw_targets(timestamptz,numeric)",
+      "body_md5": "c12308b00489adce1376ba1c1e4ea9d5",
+      "source_commit": "a37145be930ab332fbd50c0ee17546af51cefbca",
+      "source_path": "supabase/migrations/20260909180615_maintenance_ownership_fits_process_lifetime.sql",
+      "source_line": 718,
+      "definition_sha256": "66e61db0b90f7e9c095bd25b4f0428d9bdc67aa8d6942dd751893f243dcdab73"
+    },
+    {
+      "identity": "public.fn_thaw_platform(timestamptz,timestamptz,numeric,uuid,text)",
+      "body_md5": "071941c4f82d9f676622dc671fb0db40",
+      "source_commit": "a37145be930ab332fbd50c0ee17546af51cefbca",
+      "source_path": "supabase/migrations/20260909180615_maintenance_ownership_fits_process_lifetime.sql",
+      "source_line": 1027,
+      "definition_sha256": "c3437e26a2960ab55f7fe49f66f3835c54c9bd95d9a151bb80d3e6f76e9f9ece"
+    },
+    {
+      "identity": "public.fn_thaw_platform(timestamptz,numeric,text)",
+      "body_md5": "f058bfbb8fb26b8412868fc9a2cbf900",
+      "source_commit": "a37145be930ab332fbd50c0ee17546af51cefbca",
+      "source_path": "supabase/migrations/20260909180615_maintenance_ownership_fits_process_lifetime.sql",
+      "source_line": 1436,
+      "definition_sha256": "64cc88fcf214657f4fdabe21044af0e7964bf8f4b07fdf8efebd98be92a3c72b"
+    },
+    {
+      "identity": "public.fn_active_maintenance_release_boundary()",
+      "body_md5": "66f0ca0e4ebf27a74dd4b7c211c4fd0f",
+      "source_commit": "0b785237dbcc59fec3918d0d7c941bfe232d3aea",
+      "source_path": "docs/audits/2026-09-10-k01-production-clock/native-maintenance-supplement.sql",
+      "source_line": 1259,
+      "definition_sha256": "9aaf5b63bbb149a139730c5a70595dd5105180e6b5f2f4138359ea1f9cf78228"
+    },
+    {
+      "identity": "public.fn_platform_frozen()",
+      "body_md5": "112b1265824ee082b8adc67ea367d826",
+      "source_commit": "a37145be930ab332fbd50c0ee17546af51cefbca",
+      "source_path": "supabase/migrations/20260909180615_maintenance_ownership_fits_process_lifetime.sql",
+      "source_line": 268,
+      "definition_sha256": "fe7eda0991773a94c1abf060791c84523e2a09ea950d213bf10d03f2ff88d915"
+    },
+    {
+      "identity": "public.fn_entry_purchases_frozen()",
+      "body_md5": "a29498531e4b7d3889532e80fafc8d57",
+      "source_commit": "a37145be930ab332fbd50c0ee17546af51cefbca",
+      "source_path": "supabase/migrations/20260909180615_maintenance_ownership_fits_process_lifetime.sql",
+      "source_line": 310,
+      "definition_sha256": "73a4181ddb5d74036c807d287ea66e69ed868c2ca46bf72848585034a387cdb0"
+    }
+  ],
+  "composed_sql_sha256": "df0c10421daa00415c3b31d4a99b2e9e14040a20e69744281ca5020628f5de4f",
+  "live_pins_confirmed_by_coordinator": [
+    "public.fn_thaw_platform_checkpointed(timestamptz,numeric,text)",
+    "public.fn_thaw_reconnect_states(jsonb,numeric,numeric)",
+    "public.fn_snapshot_maintenance_thaw_targets(timestamptz,numeric)",
+    "public.fn_credit_maintenance_thaw_targets(timestamptz,numeric)",
+    "public.fn_thaw_platform(timestamptz,timestamptz,numeric,uuid,text)",
+    "public.fn_thaw_platform(timestamptz,numeric,text)",
+    "public.fn_active_maintenance_release_boundary()",
+    "public.fn_platform_frozen()",
+    "public.fn_entry_purchases_frozen()"
+  ],
+  "extra_release_predicate_pins_pending_coordinator": false,
+  "native_executed": false,
+  "release_reader_review": {
+    "historical_body_matches_live_by_coordinator_boolean": true,
+    "newest_body_matches_live": false,
+    "difference_bytes": 2,
+    "difference_whitespace_only": true,
+    "whitespace_normalized_equal": true,
+    "historical_body_difference_lines": [22, 31]
+  }
+}

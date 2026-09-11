@@ -274,6 +274,8 @@ export function isFreeBuyEvent(subject: FreeBuySubject): boolean {
 }
 
 export interface FreeBuyColumns {
+  free_buy: boolean;
+  addon_from_start: boolean;
   buy_in_fee: 0;
   is_rebuy: true;
   is_reentry: true;
@@ -316,6 +318,8 @@ export function freeBuyColumns(
   const levelsOr = (v: unknown, dflt: number) => wholeChips(v) || dflt;
   const maxRebuys = wholeChips(subject.maxRebuys);
   return {
+    free_buy: true,
+    addon_from_start: true,
     buy_in_fee: 0,
     is_rebuy: true,
     is_reentry: true,

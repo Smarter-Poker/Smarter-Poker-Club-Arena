@@ -3382,9 +3382,10 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
    */
   protected async readCashHandDepartures(): Promise<{
     cashedOutIds: Array<{ userId: string; occupancyId: string }>;
-    pendingMoves: PendingSeatMove[];
+    /** `null` is a read that FAILED - never an empty list (CLAUDE.md 10.86). */
+    pendingMoves: PendingSeatMove[] | null;
   }> {
-    if (!this.lifecycleCanMutate()) return { cashedOutIds: [], pendingMoves: [] };
+    if (!this.lifecycleCanMutate()) return { cashedOutIds: [], pendingMoves: null };
     const [leaves, moves] = await Promise.allSettled([
       processLeavePending(
         this.tableId,
@@ -3395,7 +3396,9 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           }
         }
       ),
-      this.tableInfo?.cluster_id ? pendingSeatMoves(this.tableId) : Promise.resolve([]),
+      this.tableInfo?.cluster_id
+        ? pendingSeatMoves(this.tableId)
+        : Promise.resolve<PendingSeatMove[] | null>([]),
     ]);
     // Own both rejections immediately and let neither attempt outlive the
     // boundary on a retry. No move may run after a failed leave sweep.

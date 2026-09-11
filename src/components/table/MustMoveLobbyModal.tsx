@@ -24,6 +24,15 @@
  *     and REQUEST on the tables you may change to;
  *   - the must-move list: the order players joined the game, everyone not
  *     yet on Main 1. Position 1 takes the next Main 1 seat.
+ *
+ * AUDIT 2026-09-09 (lane H): a failed read prints house copy, never the
+ * database's code (mustMoveLobbyCopy.ts), and a game that is gone drops its
+ * figures rather than showing a lobby for a ghost; the seat-change note
+ * yields to ANY pending move, whatever its reason, because the sentence
+ * above it already says where the player is going; JOIN GAME no longer
+ * borrows .tlm-close (metallic-popups.css painted it as steel close
+ * hardware); and the panel is on the #SmarterCasinoRealism chassis
+ * (MustMoveLobbyModal.css says what that is and what it is not yet).
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -46,6 +55,7 @@ import {
 import { formatChips } from '../../lib/utils';
 import { CASH_TEMPLATES } from '../../config/cashGames';
 import { useToast } from '../common/Toast';
+import { isGameGone, lobbyReadErrorText } from './mustMoveLobbyCopy';
 import './TournamentLobbyModal.css';
 import './MustMoveLobbyModal.css';
 
@@ -103,7 +113,12 @@ export function MustMoveLobbyModal({
       setError(null);
     } catch (err) {
       if (!mountedRef.current) return;
-      setError(String((err as { message?: string })?.message ?? 'The Lobby Could Not Be Read.'));
+      setError(lobbyReadErrorText(err));
+      /* A game that no longer exists has no tables, no list and no seat to
+         show; figures from its last read would be a lobby for a ghost. Any
+         other failure keeps the last read on screen under the notice - the
+         poll is still running and the next tick may answer. */
+      if (isGameGone(err)) setLobby(null);
     }
   }, [gameId]);
 
@@ -239,10 +254,16 @@ export function MustMoveLobbyModal({
           {/* JOIN GAME sits beside Close for anybody looking at this game
               without a chair in it - viewing a table, or opening the lobby
               from the game list. A seated player never sees it. */}
+          {/* NOT `tlm-close` (audit 2026-09-09, lane H). It borrowed that class
+              for the geometry, and metallic-popups.css paints every
+              `[class*='-close']` inside a dialog as steel close hardware with
+              !important - so the one action in the header wore the dismissal's
+              dress and its blue never rendered. .mml-join carries its own
+              geometry now and the illuminated pill face. */}
           {lobby && !me?.seated && (
             <button
               type="button"
-              className="tlm-close mml-join"
+              className="mml-join"
               onClick={() => void join()}
               disabled={busy}
               aria-label="Join Game"
@@ -350,7 +371,7 @@ export function MustMoveLobbyModal({
                               : 'No Other Table To Change To Yet.'}
                           </span>
                         </div>
-                      ) : me.pending_move?.reason === 'seat_change' ? null : (
+                      ) : me.pending_move ? null : (
                         <div className="mml-me-note">
                           {me.seat_change.used_at
                             ? 'Seat Change Used For This Game.'

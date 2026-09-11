@@ -5,13 +5,15 @@
 #  publish-watchdog.sh asks that question of the CLIENT bundle. Nothing asked it
 #  of the ENGINE, and the engine is where the money is.
 #
-#  WHY THIS EXISTS (2026-08-27). auto-deploy-hetzner.yml is careful in exactly
-#  the ways that make it quiet:
+#  WHY THIS EXISTS (2026-08-27). auto-deploy-hetzner.yml was careful in exactly
+#  the ways that made it quiet:
 #
-#    * it COALESCES a restart inside MIN_RESTART_SPACING_SEC (1200s) and exits 0;
-#    * the drain gate DEFERS while hands are in flight and exits 0;
+#    * it COALESCED a restart inside MIN_RESTART_SPACING_SEC (1200s) and exited 0
+#      (deleted 2026-09-10: the :55 break is the spacing);
+#    * the drain gate DEFERRED while hands were in flight and exited 0 (a
+#      decline is RED since 2026-09-10, and hands the train on);
 #
-#  both of which are correct, and both of which report SUCCESS. A `*/20` catch-up
+#  both of which were correct, and both of which reported SUCCESS. A `*/20` catch-up
 #  schedule is supposed to land the deferred commit, but GitHub's scheduled runs
 #  are best-effort and can be delayed for a long time under load. On 2026-08-27 a
 #  merged engine fix sat unshipped for about two hours with a green tick on every
@@ -26,14 +28,17 @@
 #    3. if the engine is at or ahead of that commit, closes any open alarm;
 #    4. inside the grace window, says so and stops - a deploy in progress or one
 #       waiting on the drain gate is NORMAL and must not raise an alarm;
-#    5. past it, DISPATCHES the deploy itself (RULE 5: never ask a human to run
-#       a command) - unless a deploy run is already in flight, in which case
-#       that run IS the fix and a second dispatch would only cancel it - and
-#       raises one self-closing issue.
+#    5. past it, raises one self-closing issue that says whether a deploy run is
+#       in flight - and NEVER dispatches one (2026-09-10, Dan: "i do not want
+#       any watch dogs"). The deploy train is started by every engine push and
+#       hands itself on inside auto-deploy-hetzner.yml; a watchdog that starts
+#       deploys is a band-aid on a trigger that does not work, and on
+#       2026-09-09 this one's dispatches cancelled the very run that was waiting
+#       for the break.
 #
 #  IT NEVER FAILS THE JOB ON AN UNREADABLE ENGINE. /health being unreachable is
 #  an availability problem with its own alerting; guessing "behind" from silence
-#  would dispatch restarts into an outage.
+#  would raise a false alarm in the middle of an outage.
 # ─────────────────────────────────────────────────────────────────────────────
 set -uo pipefail
 
@@ -81,8 +86,8 @@ chicago_stamp() {
     || TZ=America/Chicago date -r "$1" '+%Y-%m-%d %H:%M %Z'
 }
 # Every hour is a restart window now, so there is no longer an hour that is
-# not one. Kept as a function because the dispatch decision below reads better
-# for it, and because a future rationing change has one place to go.
+# not one. Kept as a function because the report below reads better for it,
+# and because a future rationing change has one place to go.
 is_restart_hour() { return 0; }
 
 # The next :55 at or after $1 - the moment the announced break opens and the
@@ -144,8 +149,9 @@ TRAIN_TITLE="Engine watchdog: the hourly deploy train is failing"
 train_check() {
   local RUNS latest prev url rid step n
   RUNS=$(gh run list --repo "$REPO" --workflow "$DEPLOY_WORKFLOW" --limit 12 \
-    --json conclusion,status,url,databaseId \
-    --jq '[.[] | select(.status=="completed" and .conclusion!="cancelled")] | .[0:2]' 2>/dev/null || echo "")
+    --json conclusion,status,url,databaseId,workflowName \
+    --jq '[.[] | select(.status=="completed" and .conclusion!="cancelled")
+               | .conclusion |= (if . == "timed_out" or . == "startup_failure" then "failure" else . end)] | .[0:2]' 2>/dev/null || echo "")
   latest=$(printf '%s' "$RUNS" | jq -r '.[0].conclusion // "none"' 2>/dev/null || echo none)
   prev=$(printf '%s' "$RUNS" | jq -r '.[1].conclusion // "none"' 2>/dev/null || echo none)
   url=$(printf '%s' "$RUNS" | jq -r '.[0].url // ""' 2>/dev/null || echo "")
@@ -154,6 +160,15 @@ train_check() {
     step=$(gh run view "$rid" --repo "$REPO" --json jobs \
       --jq '[.jobs[].steps[] | select(.conclusion=="failure")][0].name // "unknown step"' 2>/dev/null || echo "unknown step")
     say "::warning title=DEPLOY TRAIN FAILING::the last two completed deploy runs failed. Latest failing step: $step"
+    # Since 2026-09-10 the LAST step, "Verdict", fails a run that should have
+    # shipped and did not. That is not a gate refusing on a broken main: the
+    # reason is the run's own DID NOT SHIP annotation and its ledger row.
+    local advice="Start at the failing step above - it is the gate that is refusing, and the gate is usually right (fix main, never the gate)."
+    case "$step" in
+      Verdict*) advice="The Verdict step failed: the run should have shipped and did not. Its DID NOT SHIP annotation, and the reason column of ca_engine_deploy_attempts for that run_id, name the gate that held (budget, or no readyForRestart certificate). Fix that gate's cause; do not bypass the certificate." ;;
+    esac
+    local wname
+    wname=$(printf '%s' "$RUNS" | jq -r '.[0].workflowName // ""' 2>/dev/null || echo "")
     n=$(find_issue "$TRAIN_TITLE")
     if [ -n "${n:-}" ]; then
       gh_write "comment on #$n" issue comment "$n" --repo "$REPO" \
@@ -163,10 +178,11 @@ train_check() {
 
 | | |
 | --- | --- |
+| workflow | ${wname:-$DEPLOY_WORKFLOW} (\`$DEPLOY_WORKFLOW\`) |
 | latest failing step | **$step** |
 | latest run | $url |
 
-A failing train strands every merge whether or not the engine is currently behind. On 2026-09-02 main went red on a migrations-only merge while nothing server-touching was queued: the staleness alarm had nothing to say, and every window for the next three hours was already lost. Start at the failing step above - it is the gate that is refusing, and the gate is usually right (fix main, never the gate).
+A failing train strands every merge whether or not the engine is currently behind. On 2026-09-02 main went red on a migrations-only merge while nothing server-touching was queued: the staleness alarm had nothing to say, and every window for the next three hours was already lost. $advice
 
 This issue closes itself on the first completed deploy run that succeeds." || true
     fi
@@ -217,7 +233,7 @@ train_check
 if [ -z "${SERVED:-}" ]; then
   # Availability is a different alarm with a different owner. Guessing "behind"
   # from silence would dispatch restarts into an outage.
-  say "::warning title=ENGINE HEALTH UNREADABLE::$ENGINE_URL/health did not answer, so this run cannot say whether the engine is current. Not dispatching anything."
+  say "::warning title=ENGINE HEALTH UNREADABLE::$ENGINE_URL/health did not answer, so this run cannot say whether the engine is current. Not raising a staleness alarm on silence."
   summary "### Engine watchdog: /health unreadable"
   summary ""
   summary "No comparison was possible. This is deliberately NOT treated as \"behind\"."
@@ -302,71 +318,41 @@ if [ "$NOW_EPOCH" -lt "$DEADLINE" ]; then
   exit 0
 fi
 
-# ── 5. Behind for too long. Fix it, then say so. ────────────────────────────
+# ── 5. Behind for too long. Say so - and never try to fix it from here. ─────
 say "::warning title=ENGINE BEHIND::$REQ_SHORT has been on main for ${AGE_MIN}m and the engine still serves $SERVED."
 
-# Dispatch only when a restart window is actually open. Outside one, the deploy
-# exits in 20 seconds having shipped nothing, and an alarm that claims "a retry
-# has been dispatched" when the retry provably cannot do anything is worse than
-# an alarm that says nothing.
-DISPATCHED="no"
+# ── THIS WATCHDOG NO LONGER DISPATCHES DEPLOYS (2026-09-10) ─────────────────
+#
+# Dan, 2026-09-10: "i do not want any watch dogs, i want hard coded fixes that
+# solve this problem and prevent it from breaking or regressing, i want any
+# and all pushes to be published in the order that they come in!"
+#
+# This block used to `gh workflow run` the deploy whenever the engine was
+# behind and no run was in flight, and on 2026-09-10 it was the thing that
+# started nearly every deploy: GitHub delivered 3 of ~19 of the deploy's
+# hourly cron ticks. That made a watchdog the primary trigger - a band-aid
+# that had grown its own history of incidents (2026-09-09: every sweep's
+# dispatch cancelled the run waiting in the break gate, three hours behind).
+#
+# The trigger is structural now, inside auto-deploy-hetzner.yml: every engine
+# push starts a run, a superseded run hands the train to current main, and a
+# run its break gate could not serve dispatches its successor. So what is left
+# for this script is to SAY that the chain has stopped - which it has, if we
+# get here: a run failed (tests, build, a cutover that rolled back) and no fix
+# has been pushed since, or a hand-on dispatch was refused. Both need a
+# person; neither is repaired by one more dispatch of the same commit.
+#
+# It still reports whether a run is in flight, because "behind, and a run is
+# waiting for the next break" and "behind, and nothing is coming" are
+# different pages. A run's age is measured from createdAt, which INCLUDES the
+# time it spent pending behind another one, so a run can be legitimately in
+# flight for two full ceilings (timeout-minutes 130): 2 x 130 + 10.
+# tests/the-deploy-can-always-ship.law.test.ts derives this from the ceiling.
 NOW_TS=$(date -u +%s)
 NEXT_WINDOW_EPOCH=$(window_at_or_after "$NOW_TS")
 NEXT_WINDOW_LOCAL=$(chicago_stamp "$NEXT_WINDOW_EPOCH")
-# ── A DISPATCH IS WORTH MAKING EVEN WHEN THE BREAK IS FAR AWAY (2026-09-05) ──
-#
-# This used to refuse to dispatch unless the next :55 was within 13 minutes,
-# on the reasoning that a run which cannot reach the break "provably ships
-# nothing" and an alarm claiming a retry when the retry cannot work is worse
-# than silence. The reasoning was right and the conclusion had become wrong,
-# because both halves of it moved:
-#
-#   * the deploy no longer rebuilds an image it already has, so a run that
-#     cannot reach the break STAGES `club-arena-engine:<sha>` on the host and
-#     the next :35 tick cuts over in about a minute instead of eighteen. The
-#     "wasted" run does the expensive half of the work;
-#   * the 13-minute rule was itself feeding the failure. It concentrated every
-#     dispatch into :42-:47, where the run then spent 8-18 minutes building and
-#     arrived at the gate AFTER the break it was aimed at. Measured 2026-09-05:
-#     runs 33985138036 and 33986167969 did exactly that, back to back, both
-#     green, both shipped nothing.
-#
-# So dispatch whenever the engine is behind, and say honestly which of the two
-# things this dispatch is going to do. The cost of being wrong is now one
-# minute of runner time, not fifteen.
-#
-# The threshold below is the deploy's own budget, not a guess: timeout minus a
-# cold build minus the cutover reserve. Keep it in step with
-# auto-deploy-hetzner.yml - tests/the-deploy-can-always-ship.law.test.ts pins
-# that the deploy's arithmetic works, and this number is how this script
-# describes it.
 MINS_TO_WINDOW=$(( (NEXT_WINDOW_EPOCH - NOW_TS) / 60 ))
-CUTOVER_REACH_MIN=${CUTOVER_REACH_MIN:-30}
-# ── ONE DEPLOY AT A TIME (2026-09-09) ───────────────────────────────────────
-#
-# This dispatched unconditionally, and this job runs on EVERY completion of
-# the publisher plus two crons - eight or more times an hour on a busy
-# afternoon. auto-deploy-hetzner.yml's concurrency group keeps one run active
-# and ONE pending, and each new dispatch cancels the pending one (that is
-# `cancel-in-progress: false` working as documented). So while the engine was
-# behind, every sweep dispatched a fresh run, and every fresh run cancelled
-# the run that was sitting in the break gate waiting for :55. The watchdog was
-# the thing keeping the engine from catching up.
-#
-# MEASURED 2026-09-09. The engine served 5dd902e9 (deployed in the 17:55
-# break). Nine engine commits merged from 17:39 on; the 18:55 and 19:55 breaks
-# both passed without a cutover; every deploy run in that stretch was either
-# cancelled by the next dispatch or shipped nothing. The engine was three
-# hours behind main and this script had "dispatched" the fix about twenty
-# times.
-#
-# So: if a deploy run is already queued, pending on the concurrency group, or
-# in progress, this sweep does NOT dispatch. The one in flight is the fix. The
-# only run this ignores is one older than the deploy's own ceiling
-# (timeout-minutes 55, plus a margin): GitHub will have timed it out, or it is
-# one of the pre-queued zombies publish-watchdog.sh describes, and a dispatch
-# is then the right answer again.
-INFLIGHT_STALE_MIN=${INFLIGHT_STALE_MIN:-65}
+INFLIGHT_STALE_MIN=${INFLIGHT_STALE_MIN:-270}
 INFLIGHT=$(gh run list --repo "$REPO" --workflow "$DEPLOY_WORKFLOW" --limit 20 \
   --json databaseId,status,createdAt,headSha,event,url \
   --jq "[.[] | select(.status != \"completed\")
@@ -375,19 +361,11 @@ INFLIGHT=$(gh run list --repo "$REPO" --workflow "$DEPLOY_WORKFLOW" --limit 20 \
         | \"\\(.databaseId) \\(.status) \\(.headSha[0:8]) \\(.event) \\(((now - (.createdAt | fromdateiso8601)) / 60) | floor)m \\(.url)\"" \
   2>/dev/null || echo "")
 if [ -n "${INFLIGHT:-}" ]; then
-  DISPATCHED="no - a deploy run is already in flight ($INFLIGHT). A second dispatch would cancel the one waiting for the break, not hurry it."
-  say "  not dispatching: a deploy run is already in flight ($INFLIGHT)"
-  say "  the break at $NEXT_WINDOW_LOCAL is ${MINS_TO_WINDOW}m away; that run is the fix"
-elif gh workflow run "$DEPLOY_WORKFLOW" --repo "$REPO" --ref main >/dev/null 2>&1; then
-  if [ "$MINS_TO_WINDOW" -le "$CUTOVER_REACH_MIN" ]; then
-    DISPATCHED="yes - the break at $NEXT_WINDOW_LOCAL is ${MINS_TO_WINDOW}m away, inside the run's wait budget, so this dispatch should cut over"
-    say "  dispatched $DEPLOY_WORKFLOW on main (${MINS_TO_WINDOW}m to the break - should cut over)"
-  else
-    DISPATCHED="yes - the break at $NEXT_WINDOW_LOCAL is ${MINS_TO_WINDOW}m away, beyond the run's wait budget, so this dispatch stages the image and the :35 tick cuts over"
-    say "  dispatched $DEPLOY_WORKFLOW on main (${MINS_TO_WINDOW}m to the break - stages the image for the next tick)"
-  fi
+  DISPATCHED="no - this watchdog only reports. A deploy run is in flight ($INFLIGHT) and waits in its break gate for the next :${RESTART_MINUTE} (${NEXT_WINDOW_LOCAL}, ${MINS_TO_WINDOW}m away)."
+  say "  a deploy run is in flight ($INFLIGHT); the break at $NEXT_WINDOW_LOCAL is ${MINS_TO_WINDOW}m away"
 else
-  say "::error::could not dispatch $DEPLOY_WORKFLOW -- the engine is behind and this run could not even try to fix it."
+  DISPATCHED="no - this watchdog only reports, and NO deploy run is in flight: the train has stopped. Read the last deploy run's Verdict; push the fix, or dispatch $DEPLOY_WORKFLOW on main by hand once the cause is understood."
+  say "::error title=DEPLOY TRAIN STOPPED::the engine is behind and no deploy run is in flight. Nothing will start one until a fix is pushed or someone dispatches $DEPLOY_WORKFLOW on main."
 fi
 
 # ── THE PIPELINE'S OWN ACCOUNT OF WHY (2026-09-05) ──────────────────────────
@@ -412,24 +390,25 @@ The engine is not running main.
 | --- | --- |
 | main needs | \`$REQ_SHORT\` ($REQ_TIME, **${AGE_MIN}m** ago) |
 | engine serves | \`$SERVED\` |
-| deploy dispatched by this run | $DISPATCHED |
+| deploy in flight | $DISPATCHED |
 | next restart window | $NEXT_WINDOW_LOCAL |
 
 \`$REQ_SHORT\` is the newest commit touching the engine runtime, excluding tests
 and sim, which never enter the image.
 
-**The engine restarts on a schedule, not on a merge.** Since #2527 it restarts
-every hour inside the announced break at :${RESTART_MINUTE}, so being behind
-for part of an hour is normal and this watchdog stays silent for it. Seeing
-this issue at all means a break has already opened since the commit and passed
-without the engine catching up.
+**A merge starts a deploy; the deploy restarts only in the break.** Every
+engine push starts a run of \`auto-deploy-hetzner.yml\`, and that run waits in
+its break gate until the engine parks every table at :${RESTART_MINUTE}. So being
+behind for part of an hour is normal and this watchdog stays silent for it.
+Seeing this issue at all means a break has already opened since the commit and
+passed without the engine catching up.
 
-**Why a green deploy is not an answer.** \`auto-deploy-hetzner.yml\` coalesces a
-restart inside MIN_RESTART_SPACING_SEC of the last deploy WE shipped and exits 0,
-and the break gate defers until the engine parks every table at :${RESTART_MINUTE}
-and exits 0. Both are correct and both report success, so the deploy run being
-green tells you nothing about what production runs. A run of 11-20s shipped
-nothing; a real deploy takes about five minutes.
+**This watchdog reports; it does not dispatch** (Dan, 2026-09-10: no watchdogs).
+The train hands itself on inside the workflow - a superseded run dispatches
+current main, and a run its break gate could not serve dispatches its
+successor - so an engine that stays behind means a run FAILED (tests, build,
+or a cutover that rolled back) and nothing has been pushed since, or a hand-on
+dispatch was refused. The Verdict step of that run names which.
 
 $LEDGER
 
@@ -458,7 +437,7 @@ if [ -n "${EXISTING:-}" ]; then
     say "  #$EXISTING already says so (last comment ${LAST_COMMENT_AGE_MIN}m ago, < ${COMMENT_EVERY_MIN}m) - not commenting again"
   else
     gh_write "comment on #$EXISTING" issue comment "$EXISTING" --repo "$REPO" \
-      --body "Still behind. main needs \`$REQ_SHORT\` (${AGE_MIN}m old); the engine serves \`$SERVED\`. Deploy dispatched by this run: $DISPATCHED." || true
+      --body "Still behind. main needs \`$REQ_SHORT\` (${AGE_MIN}m old); the engine serves \`$SERVED\`. Deploy in flight: $DISPATCHED." || true
   fi
 else
   gh_write "open an issue" issue create --repo "$REPO" --title "$ISSUE_TITLE" --body "$BODY" || true
@@ -466,9 +445,9 @@ fi
 
 summary "### Engine watchdog: BEHIND"
 summary ""
-summary "main needs \`$REQ_SHORT\` (${AGE_MIN}m old); the engine serves \`$SERVED\`. Deploy dispatched: $DISPATCHED."
+summary "main needs \`$REQ_SHORT\` (${AGE_MIN}m old); the engine serves \`$SERVED\`. Deploy in flight: $DISPATCHED."
 
-# The alarm is raised and the deploy is dispatched. Failing the job as well
+# The alarm is raised. Failing the job as well
 # would turn every deferred restart into a red workflow that nobody can act on
 # faster than the watchdog already has.
 exit 0

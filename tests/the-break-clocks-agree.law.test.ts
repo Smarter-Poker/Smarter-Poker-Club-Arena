@@ -5,7 +5,7 @@
  *
  * The :55 maintenance break is coordinated by constants that live in FIVE
  * places that cannot import each other: the engine (TypeScript), the deploy
- * workflow (cron), the engine watchdog (bash), two SQL migrations, and the
+ * workflow (its break gate), the engine watchdog (bash), two SQL migrations, and the
  * browser hook. Nothing but this file makes them agree. Since 2026-09-10 the
  * database has a clock of its own too: the window in which it refuses
  * migrations, which has to enclose the announcement and the thaw.
@@ -143,18 +143,24 @@ describe('the break minute is the same minute everywhere', () => {
     expect(wd).toBe(engineMinute);
   });
 
-  it('every deploy cron tick lands before the break with time to build', () => {
-    const minutes = DEPLOY.match(/cron: '([\d,]+) \* \* \* \*'/)![1]
-      .split(',')
-      .map(Number);
-    for (const m of minutes) {
-      // Late enough that the runner is fresh, early enough to check out,
-      // test and build before the engine parks the platform at :55. A tick
-      // AT or AFTER :55 would wait ~59 minutes for the next break.
-      expect(m, `cron tick :${m}`).toBeGreaterThanOrEqual(35);
-      expect(m, `cron tick :${m}`).toBeLessThanOrEqual(50);
-      expect(m).toBeLessThan(engineMinute);
-    }
+  it('the deploy gate waits for the minute after the engine parks, and no cron decides it', () => {
+    // 2026-09-10: the deploy has no cron. Every engine push starts a run at
+    // whatever minute it lands, and the run's break gate - not a tick - picks
+    // the break: it waits until one minute past the engine's park, when
+    // readyForRestart can first be true. A gate aimed at any other minute
+    // would either stop tables mid-hand or wait out a whole extra hour.
+    expect(DEPLOY).not.toMatch(/^\s*- cron:/m);
+    const gate = DEPLOY.slice(
+      DEPLOY.indexOf('- name: Wait for the maintenance break to park every table')
+    );
+    const lt = Number(gate.match(/if \[ "\$MIN_NOW" -lt (\d+) \]; then/)![1]);
+    const thisHour = Number(
+      gate.match(/SECS_TO_GATE=\$\(\( \((\d+) - MIN_NOW\) \* 60 - SEC_NOW \)\)/)![1]
+    );
+    const nextHour = Number(
+      gate.match(/SECS_TO_GATE=\$\(\( \(60 - MIN_NOW \+ (\d+)\) \* 60 - SEC_NOW \)\)/)![1]
+    );
+    for (const m of [lt, thisHour, nextHour]) expect(m).toBe(engineMinute + 1);
   });
 });
 

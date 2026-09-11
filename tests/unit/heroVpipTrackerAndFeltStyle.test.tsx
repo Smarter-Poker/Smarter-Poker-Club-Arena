@@ -24,6 +24,12 @@ import HeroVpipTracker, {
   VPIP_REFRESH_DELAY_MS,
 } from '../../src/components/table/HeroVpipTracker';
 import { mapEngineSnapshot } from '../../src/utils/mapEngineSnapshot';
+import {
+  MASTHEAD_GAME_FIT_MARGIN_PX,
+  MASTHEAD_GAME_MIN_RATIO,
+  MastheadGameLine,
+  mastheadGameFit,
+} from '../../src/components/table/MastheadGameLine';
 
 const ROOT = resolve(__dirname, '../..');
 const read = (p: string) => readFileSync(resolve(ROOT, p), 'utf8');
@@ -375,5 +381,106 @@ describe('the regular ante reaches the felt', () => {
     expect(css).toMatch(/--vpip-badge-size: 40px;/);
     expect(css).not.toMatch(/\.hero-vpip__(figure|eyebrow|detail)/);
     expect(css).not.toMatch(/:hover/);
+  });
+});
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  THE GAME LINE FITS ITS BOX (audit 2026-09-09, lane H)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Rendered headless against the real stylesheet on 2026-09-09: the masthead
+ * box is 154px at 375px and 178px at 393px, the game row 14.4px / 15.7px, and
+ * "MADNESS NLH 1/2 + BB ANTE" ellipsized to "MADNESS NLH 1/..." on both - the
+ * stakes and the ante gone on exactly the Action and Madness tables where the
+ * ante is the point. The row's 10.5cqw was measured for "NLH 0.10/0.25"
+ * alone, before the style went in front of it and the ante behind it (7B).
+ * Fitted: 9.12px on one line at 375px, 10.66px at 393px, every character.
+ */
+describe('the game line fits its box (2026-09-09)', () => {
+  it('the cash masthead prints line 2 through MastheadGameLine, with the same words', () => {
+    const page = read('src/pages/TablePage.tsx');
+    const brand = page.slice(
+      page.indexOf('// Cash tables keep the two-line masthead.'),
+      page.indexOf('{/* Dan 2026-08-19 item 15: the pot moved OUT of .table-surface.')
+    );
+    expect(brand).toMatch(
+      /<span className="table-brand__line table-brand__line--level">\s*<MastheadGameLine className="table-brand__game">/
+    );
+    /* The tournament row above keeps its plain span: its hand number sits in
+       a no-shrink sibling and the row has no room to grow (2026-09-05). */
+    const tourney = page.slice(0, page.indexOf('// Cash tables keep the two-line masthead.'));
+    expect(tourney).not.toContain('<MastheadGameLine');
+  });
+
+  it('scales down to fit, never up, never below the floor, and wraps only past the floor', () => {
+    expect(mastheadGameFit(120, 154)).toEqual({ ratio: 1, wrap: false });
+    expect(mastheadGameFit(0, 154)).toEqual({ ratio: 1, wrap: false });
+    expect(mastheadGameFit(231, 154)).toEqual({ ratio: 0.667, wrap: false });
+    /* 30 characters of micro-stakes Action on a 375px phone: past the floor. */
+    expect(mastheadGameFit(300, 154)).toEqual({ ratio: MASTHEAD_GAME_MIN_RATIO, wrap: true });
+    /* The correcting pass: measured at 0.667 the line was still 6px over. */
+    expect(mastheadGameFit(160, 154, MASTHEAD_GAME_MIN_RATIO, 0.667)).toEqual({
+      ratio: 0.642,
+      wrap: false,
+    });
+    expect(MASTHEAD_GAME_MIN_RATIO).toBe(0.55);
+    expect(MASTHEAD_GAME_FIT_MARGIN_PX).toBeGreaterThan(0);
+  });
+
+  it('writes --fit on the span when it overflows, and data-wrap past the floor', () => {
+    /* jsdom lays nothing out, so the two widths are supplied. */
+    const sw = vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get');
+    const cw = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get');
+    try {
+      sw.mockReturnValue(231);
+      cw.mockReturnValue(156);
+      const { container, unmount } = render(
+        <span className="table-brand__line table-brand__line--level">
+          <MastheadGameLine className="table-brand__game">
+            MADNESS NLH 1/2 + BB Ante
+          </MastheadGameLine>
+        </span>
+      );
+      const span = container.querySelector('.table-brand__game') as HTMLElement;
+      expect(span.textContent).toBe('MADNESS NLH 1/2 + BB Ante');
+      /* (156 - 2) / 231 = 0.667, then the second pass at the same widths
+         corrects to 0.667 * 154 / 231 = 0.445 -> floored, wrapped. jsdom
+         cannot shrink the measurement, so the second pass sees the same
+         overflow; what is pinned is that both mechanisms fire. */
+      expect(span.style.getPropertyValue('--fit')).toBe(String(MASTHEAD_GAME_MIN_RATIO));
+      expect(span.getAttribute('data-wrap')).toBe('true');
+      unmount();
+
+      sw.mockReturnValue(120);
+      cw.mockReturnValue(156);
+      const fits = render(
+        <span className="table-brand__line table-brand__line--level">
+          <MastheadGameLine className="table-brand__game">NLH 1/2</MastheadGameLine>
+        </span>
+      );
+      const short = fits.container.querySelector('.table-brand__game') as HTMLElement;
+      expect(short.style.getPropertyValue('--fit')).toBe('1');
+      expect(short.getAttribute('data-wrap')).toBeNull();
+    } finally {
+      sw.mockRestore();
+      cw.mockRestore();
+    }
+  });
+
+  it('the stylesheet folds --fit into the span at its own tracking, and wraps centred past the floor', () => {
+    const css = read('src/pages/TablePage.css');
+    expect(css).toMatch(/\.table-brand__game \{[^}]*font-size: calc\(100% \* var\(--fit, 1\)\);/);
+    /* Inherited letter-spacing arrives as computed px and does not scale with
+       the span; the em is handed down as a custom property instead. */
+    expect(css).toMatch(/\.table-brand__game \{[^}]*letter-spacing: var\(--sp-game-ls, 0\.1em\);/);
+    expect(css).toMatch(
+      /\.table-page:not\(\.table-page--tournament\) \.table-brand__line--level \{[^}]*--sp-game-ls: 0\.05em;/
+    );
+    const wrap = css.slice(css.indexOf(".table-brand__game[data-wrap='true'] {"));
+    const block = wrap.slice(0, wrap.indexOf('}'));
+    expect(block).toMatch(/white-space: normal;/);
+    expect(block).toMatch(/text-overflow: clip;/);
+    expect(block).toMatch(/text-align: center;/);
   });
 });

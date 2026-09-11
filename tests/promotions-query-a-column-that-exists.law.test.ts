@@ -26,6 +26,9 @@
 import { describe, it, expect } from 'vitest';
 import fs from 'fs';
 import path from 'path';
+// Read the migration directory once per file, not once per question - it is
+// the one thing in this repo that only ever grows. See the helper's header.
+import { migrationCorpus, migrationsMentioning } from './helpers/migrationCorpus';
 
 const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8');
 /** Strip comments so a guard cannot pass on prose describing the old code. */
@@ -57,13 +60,7 @@ describe('PromotionService filters on real columns', () => {
 });
 
 describe('the money-path migrations that guard the bounty chests', () => {
-  const MIGRATIONS = path.join(process.cwd(), 'supabase', 'migrations');
-  const all = () =>
-    fs
-      .readdirSync(MIGRATIONS)
-      .filter((f) => f.endsWith('.sql'))
-      .sort()
-      .map((f) => ({ name: f, body: fs.readFileSync(path.join(MIGRATIONS, f), 'utf8') }));
+  const all = () => migrationCorpus().map((m) => ({ name: m.name, body: m.sql }));
 
   it('an award cannot commit without recipients', () => {
     /**
@@ -159,15 +156,8 @@ describe('a promotion cannot advertise a prize nobody can win, silently', () => 
    *
    * WHEN THE PAYOUT IS BUILT: delete the trigger and this test together.
    */
-  const MIGRATIONS = path.join(process.cwd(), 'supabase', 'migrations');
-
   it('warns when an unpayable promotion type goes active with a prize pool', () => {
-    const owning = fs
-      .readdirSync(MIGRATIONS)
-      .filter((f) => f.endsWith('.sql'))
-      .sort()
-      .map((f) => fs.readFileSync(path.join(MIGRATIONS, f), 'utf8'))
-      .filter((b) => b.includes('trg_promotion_prize_has_no_payout_path'));
+    const owning = migrationsMentioning('trg_promotion_prize_has_no_payout_path').map((m) => m.sql);
 
     expect(owning.length, 'the no-payout-path guard migration is missing').toBeGreaterThan(0);
     const latest = owning[owning.length - 1];

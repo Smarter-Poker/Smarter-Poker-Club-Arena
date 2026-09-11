@@ -34,6 +34,12 @@
  * at the next hand boundary, so there is no hands-out count to show. It lives
  * in this corner column, above the seats and far from the action buttons at
  * the foot of a 375px screen.
+ *
+ * THE MATERIAL (audit 2026-09-09, lane H). The notice is a bevelled gunmetal
+ * plate lit blue and the buttons are illuminated pills, from the
+ * #SmarterCasinoRealism vocabulary in club-engine.css - CashClusterHUD.css
+ * says what that is and why the painted #ClubArenaConsole chassis is not
+ * used here yet. The markup, the test ids and every sentence are unchanged.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -46,6 +52,7 @@ import {
   type CashGameLobby,
 } from '../../services/cashGameLobby';
 import { useToast } from '../common/Toast';
+import { isGameGone } from './mustMoveLobbyCopy';
 import './CashClusterHUD.css';
 
 export const CASH_CLUSTER_HUD_POLL_MS = 10_000;
@@ -87,8 +94,14 @@ export function CashClusterHUD({
     try {
       const data = await fetchCashGameLobby(gameId);
       if (mountedRef.current) setLobby(data);
-    } catch {
-      /* the bar keeps its last figures; the lobby itself reports errors */
+    } catch (err) {
+      /* A passing failure keeps the last read - the poll is still running and
+         the lobby itself reports errors. A game that is GONE is different
+         (audit 2026-09-09, lane H): this corner used to keep its last figures
+         through GAME_NOT_FOUND too, so a stale tab on a table whose game had
+         closed kept a lit SEAT CHANGE button that opened a lobby for a ghost.
+         Nothing read for a game that no longer exists is worth keeping. */
+      if (mountedRef.current && isGameGone(err)) setLobby(null);
     }
   }, [gameId]);
 
@@ -114,8 +127,8 @@ export function CashClusterHUD({
    * over every table in the game means one empty seat two tables away lit the
    * button on all of them.
    *
-   * The cluster reading is still the right one for the ACTION — takeChair()
-   * seats you wherever the door sends you, which is the point of a cluster —
+   * The cluster reading is still the right one for the ACTION - takeChair()
+   * seats you wherever the door sends you, which is the point of a cluster -
    * so it is kept, under a name that says what it is. What changes is the
    * COPY: an offer that will move a player to another table now says so.
    */

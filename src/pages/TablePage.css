@@ -1397,6 +1397,11 @@
   font-size: clamp(0.6rem, 10.5cqw, 0.98rem);
   font-weight: 800;
   letter-spacing: 0.05em;
+  /* The same tracking, handed to the game span as an em it resolves at ITS
+     size. Inherited letter-spacing arrives as a computed px, so when the span
+     scales down (--fit below) the 25 gaps stayed 0.72px each and the line was
+     still 12px too wide at the ratio that should have fit it exactly. */
+  --sp-game-ls: 0.05em;
   color: rgba(232, 238, 250, 0.72);
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
 }
@@ -1417,6 +1422,27 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  /* THE LINE FITS ITS BOX (audit 2026-09-09). The row's clamp above was
+     measured for "NLH 0.10/0.25" alone; "MADNESS NLH 1/2 + BB Ante" is twice
+     that and ellipsized to "MADNESS NLH 1/..." on a 375px phone - the stakes
+     gone on the tables where the ante matters. MastheadGameLine measures the
+     rendered width against the row and writes `--fit` (1 = designed size,
+     never above, never below MASTHEAD_GAME_MIN_RATIO); the percentage keeps
+     the clamp as the base, so a wide desktop box is untouched. */
+  font-size: calc(100% * var(--fit, 1));
+  letter-spacing: var(--sp-game-ls, 0.1em);
+}
+
+/* Even the floor could not hold it: wrap at the floor size rather than cut
+   the stakes. The same call 7A made for names - "MIDWAY U..." is not a
+   shorter name and "1/..." is not a shorter stake. */
+.table-brand__game[data-wrap='true'] {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  text-wrap: balance;
+  text-align: center;
+  line-height: 1.15;
 }
 
 .table-brand__hand {

@@ -17,6 +17,14 @@
  *
  * publish-watchdog already asks this question of the CLIENT bundle. These pin
  * that it now asks it of the ENGINE too, and that the answer has consequences.
+ *
+ * 2026-09-10: the consequence is an alarm, and only an alarm. The watchdog used
+ * to dispatch the deploy itself, and by that afternoon it was starting nearly
+ * every deploy because GitHub delivered 3 of ~19 of the deploy's cron ticks.
+ * Dan: "i do not want any watch dogs, i want hard coded fixes". The cron is
+ * gone, every engine push starts its own run, and the run hands the train on
+ * itself - so an engine that stays behind now means a run FAILED and nothing
+ * has been pushed since, which needs a person, not another dispatch.
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
@@ -128,10 +136,13 @@ describe('it fails in the safe direction', () => {
   });
 });
 
-describe('it fixes what it finds, and only then complains', () => {
-  it('dispatches the deploy itself rather than telling a human to', () => {
-    expect(SH).toContain('gh workflow run "$DEPLOY_WORKFLOW"');
+describe('it reports what it finds, and never dispatches', () => {
+  it('never dispatches the deploy: the train starts on a push and hands itself on', () => {
+    expect(SH_CODE).not.toMatch(/gh workflow run/);
     expect(SH).toContain('DEPLOY_WORKFLOW:-auto-deploy-hetzner.yml');
+    // What it does instead: say whether a run is coming, and say it loudly
+    // when none is.
+    expect(SH_CODE).toMatch(/::error title=DEPLOY TRAIN STOPPED::/);
   });
 
   it('raises exactly one self-closing issue', () => {
@@ -143,24 +154,19 @@ describe('it fixes what it finds, and only then complains', () => {
     expect(SH_CODE).not.toContain('--search');
   });
 
-  it('does not dispatch while a deploy run is already in flight', () => {
+  it('tells "a run is waiting for the break" apart from "nothing is coming"', () => {
     /**
-     * 2026-09-09. This job runs on every completion of the publisher plus two
-     * crons, and the dispatch was unconditional. auto-deploy-hetzner.yml keeps
-     * one run active and ONE pending in its concurrency group, and each new
-     * dispatch cancels the pending one. So every sweep while the engine was
-     * behind cancelled the run that was sitting in the break gate waiting for
-     * :55 - the watchdog was the thing keeping the engine from catching up.
-     * Measured: nine engine commits, two breaks passed, engine three hours
-     * behind, about twenty dispatches.
+     * 2026-09-09: the dispatch this block used to guard cancelled the run that
+     * was sitting in the break gate (the concurrency group keeps ONE pending
+     * run, and each new dispatch replaces it). The dispatch is gone; what is
+     * left of the check is the distinction it drew, which is the difference
+     * between an ordinary wait and a stopped train.
      */
     // It asks the deploy workflow for runs that are not completed...
     expect(SH_CODE).toContain('gh run list --repo "$REPO" --workflow "$DEPLOY_WORKFLOW"');
     expect(SH_CODE).toContain('select(.status != \\"completed\\")');
-    // ...ignores only a run older than the deploy's own ceiling (55m + margin),
-    // which GitHub has timed out or which is a pre-queued zombie...
-    // Since 2026-09-10 a run legitimately waits up to an hour in its break
-    // gate, so the line is derived from the deploy's own timeout-minutes.
+    // ...ignoring only a run older than the deploy's own ceiling can explain
+    // (a run legitimately waits up to an hour in its break gate)...
     const stale = Number(SH.match(/INFLIGHT_STALE_MIN=\$\{INFLIGHT_STALE_MIN:-(\d+)\}/)![1]);
     const deployTimeout = Number(
       read('.github/workflows/auto-deploy-hetzner.yml').match(
@@ -168,13 +174,9 @@ describe('it fixes what it finds, and only then complains', () => {
       )![1]
     );
     expect(stale).toBeGreaterThan(deployTimeout);
-    // ...and the dispatch is the ELSE branch of finding one. The in-flight run
-    // is the fix; a second dispatch would cancel it, not hurry it.
+    // ...and only when it finds NONE does it say the train has stopped.
     expect(SH_CODE).toMatch(
-      /if \[ -n "\$\{INFLIGHT:-\}" \]; then[\s\S]{0,600}?elif gh workflow run "\$DEPLOY_WORKFLOW"/
-    );
-    expect(SH_CODE.indexOf('INFLIGHT=$(gh run list')).toBeLessThan(
-      SH_CODE.indexOf('gh workflow run "$DEPLOY_WORKFLOW"')
+      /if \[ -n "\$\{INFLIGHT:-\}" \]; then[\s\S]{0,600}?else[\s\S]{0,600}?DEPLOY TRAIN STOPPED/
     );
   });
 
@@ -212,8 +214,10 @@ describe('and it is actually scheduled to run', () => {
     expect(WF).toMatch(/^ {2}watch:$/m);
   });
 
-  it('has the permissions it needs to dispatch and to speak', () => {
+  it('has the permissions it needs to speak', () => {
     expect(WF).toContain('issues: write');
+    // actions: write stays on the workflow for the publisher's own one retry;
+    // this job no longer uses it (see "never dispatches" above).
     expect(WF).toContain('actions: write');
   });
 });
@@ -259,19 +263,19 @@ describe('the watchdog agrees with the deploy schedule', () => {
   it('measures its deadline from the same minute the deploy restarts on', () => {
     const shMinute = /RESTART_MINUTE="?\$\{RESTART_MINUTE:-(\d+)\}/.exec(SH_CODE);
     expect(shMinute, 'the watchdog must declare the restart minute').not.toBeNull();
-
-    // The deploy's cron ticks BEFORE the break so the runner can build; the
-    // break itself is the minute the watchdog must measure from.
-    const cron = /- cron: '([^']+)'/.exec(DEPLOY_YML);
-    expect(cron, 'the deploy workflow must have a schedule').not.toBeNull();
-    const ticks = cron![1].split(' ')[0].split(',').map(Number);
     const breakMinute = Number(shMinute![1]);
 
-    // Every tick has to land in the same hour as, and before, the break -
-    // otherwise the runner is building for a break that has already passed.
-    for (const t of ticks) {
-      expect(t, `tick :${t} must precede the :${breakMinute} break`).toBeLessThan(breakMinute);
-    }
+    // The deploy has no cron since 2026-09-10: a push starts the run at any
+    // minute and its break gate waits until one minute past the park. That
+    // gate minute is what the watchdog's break minute has to agree with.
+    expect(DEPLOY_YML).not.toMatch(/^\s*- cron:/m);
+    const gate = DEPLOY_YML.slice(
+      DEPLOY_YML.indexOf('- name: Wait for the maintenance break to park every table')
+    );
+    const gateMinute = Number(/if \[ "\$MIN_NOW" -lt (\d+) \]; then/.exec(gate)![1]);
+    expect(gateMinute, 'the deploy gate opens one minute after the break starts').toBe(
+      breakMinute + 1
+    );
     expect(breakMinute).toBeGreaterThan(0);
     expect(breakMinute).toBeLessThan(60);
   });

@@ -90,16 +90,20 @@ did not look (CLAUDE.md 10.86).
 ## Pinned
 
 `tests/the-journal-is-never-refused-by-the-freeze.law.test.ts`, **LAW 3** — the
-live path checks the freeze, the gate sits _before_ the attempt loop so no RPC
-is made, the claim is still written, `raiseFinancialAlert` is absent from that
-branch, and the reconciler leaves a frozen row untouched and counts it.
+live path checks the freeze; the write-ahead claim comes first, then the gate,
+then the attempt loop (both orderings, see review finding 5); the claim carries
+the deferral's own reason; the not-recorded alarm exists and is reachable only
+through `if (!deferralRecorded)`; and the reconciler defers **every** kind of
+row as the first statement in its loop.
 
 Behaviour, not just source:
 
-- `server/src/services/supabase/BBJPayoutIsPaidOrQueued.test.ts` — six new
-  pins: no RPC while frozen, no critical alert, the claim still written, the
-  reason says why, the mini defers on the same gate, and a **control** proving
-  that with the platform running nothing about the payout changed.
+- `server/src/services/supabase/BBJPayoutIsPaidOrQueued.test.ts` — seven new
+  pins: no RPC while frozen, no critical alert on an ordinary break, the claim
+  written with the deferral's reason, a deferral whose durable write did **not**
+  land is loud, the reason says why, the mini defers on the same gate, and a
+  **control** proving that with the platform running nothing about the payout
+  changed.
 - `server/src/services/FeeReconcilerRedrivesJackpots.test.ts` — a frozen cycle
   skips the row, counts `deferredFrozen`, and calls `processBBJPayout` zero
   times.

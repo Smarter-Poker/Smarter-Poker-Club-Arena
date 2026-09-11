@@ -1,5 +1,5 @@
 {
-  "recorded_at": "2026-09-11T07:54:19.965784+00:00",
+  "recorded_at": "2026-09-11T08:24:34.899871+00:00",
   "status": "passed",
   "exit_code": 0,
   "exact_rollback": true,
@@ -58,7 +58,7 @@
     "scripts/ci/rehearse-tournament-edit-permissions.py": "423d0344f7d15c54eaa34723e8b59efd71a0bc8a1608751c5cd9cae539c76c31",
     "scripts/ci/probes/tournament-edit-current-native.sql": "584fb9c562957f6a7d6cfc4995c5ec8963c5302ffa03288c4eabb8db4fa0e668",
     "scripts/ci/fixtures/phase-three-creation-client-configs.json": "5f44eba165c5d473aa2f6e56e94b2290c535a6422599d15503101c80b764c3f9",
-    "scripts/ci/rehearse-whole-phase-three-cutover.py": "a063950285fa5f4de4eadaafb8c4b248788c96210e75cc3b9ffa429048f5b57b",
+    "scripts/ci/rehearse-whole-phase-three-cutover.py": "9aba08c670f152e9d1e01a8aa67ddf15a187fccf6d75db43da888eaab54cb908",
     "src/lib/tournamentFromTableConfig.ts": "ddab8e64901a6a13a45469aabd0af7c86e16cbe4b3dcd971ac06106d1759314c",
     "src/services/TournamentService.ts": "8040cd30c2faa2c5507e4725ed6d923343abf5d7b2b9c08365ff650d7403bcc7",
     "tests/unit/TournamentFromTableConfig.test.ts": "0f99b2aa6fc5677b68404f38ba2999f6da91df420376f3b640f245453ed19ed5"
@@ -163,7 +163,7 @@
       "count": 0
     },
     "pg_catalog.pg_class": {
-      "md5": "f27a04c4dd49127ed3260a01defc9539",
+      "md5": "9c288a4ebb906f1e1feee0c8d815303e",
       "count": 6619
     },
     "pg_catalog.pg_index": {
@@ -4851,6 +4851,10 @@
       "count": 0
     },
     "public.venue_location_integrity_state": {
+      "md5": "d41d8cd98f00b204e9800998ecf8427e",
+      "count": 0
+    },
+    "supabase_migrations.schema_migrations": {
       "md5": "d41d8cd98f00b204e9800998ecf8427e",
       "count": 0
     },
@@ -4957,7 +4961,7 @@
       "count": 0
     },
     "pg_catalog.pg_class": {
-      "md5": "f27a04c4dd49127ed3260a01defc9539",
+      "md5": "9c288a4ebb906f1e1feee0c8d815303e",
       "count": 6619
     },
     "pg_catalog.pg_index": {
@@ -9648,6 +9652,10 @@
       "md5": "d41d8cd98f00b204e9800998ecf8427e",
       "count": 0
     },
+    "supabase_migrations.schema_migrations": {
+      "md5": "d41d8cd98f00b204e9800998ecf8427e",
+      "count": 0
+    },
     "public.vip_subscription_checkout_claims": {
       "md5": "d41d8cd98f00b204e9800998ecf8427e",
       "count": 0
@@ -9661,7 +9669,7 @@
       "count": 0
     }
   },
-  "output_directory": "/tmp/codex-edit-permission-4ekc7jmi",
+  "output_directory": "/tmp/codex-edit-permission-swtaytm_",
   "coverage_limits": [
     "Complete displayed-option matrix and live browser are not certified by this native create/edit probe."
   ],

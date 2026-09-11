@@ -242,6 +242,13 @@ joins all database connection closes within the fixed database deadline. The
 native wire regression exercises the pinned pg driver and an actual child in
 both paths; it is failure-handling evidence, not an application database pass.
 
+Full-runtime shutdown attempts readiness removal, actor, gateway, bridge and
+supervisor closure independently. An earlier synchronous or asynchronous close
+failure cannot skip later owned cleanup. A 25-second aggregate deadline exceeds
+the supervisor's child and database deadlines; any failure or unobserved close
+refuses completion. The outer driver still removes the exact owned containers
+and verifies absence. Native-child regressions exercise failed and hung closes.
+
 ## Credential-free Linux CI path
 
 After the normal draft PR includes the complete reviewed runtime files, use a

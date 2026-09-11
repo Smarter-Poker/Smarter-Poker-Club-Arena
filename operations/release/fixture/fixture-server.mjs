@@ -357,6 +357,38 @@ export class ServiceSupervisor {
   }
 }
 
+// Attempt every owned close even if another resource throws or never settles.
+// The outer driver still owns final container removal and absence verification.
+export async function closeFixtureResources(
+  { retireReady, actors, gateway, bridge, supervisor },
+  deadlineMs = 25000
+) {
+  const closing = Promise.allSettled(
+    [
+      retireReady,
+      () => actors?.close(),
+      () => gateway?.close(),
+      () => bridge?.close(),
+      () => supervisor.close(),
+    ].map((close) => Promise.resolve().then(close))
+  );
+  let timer;
+  try {
+    const results = await Promise.race([
+      closing,
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error('FIXTURE_CLEANUP_DEADLINE')), deadlineMs);
+      }),
+    ]);
+    assert.ok(
+      results.every((result) => result.status === 'fulfilled'),
+      'FIXTURE_CLEANUP_FAILED'
+    );
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function health(url, headers = {}) {
   try {
     return (await fetch(url, { headers, signal: AbortSignal.timeout(1000), redirect: 'error' })).ok;
@@ -764,13 +796,18 @@ async function start(args) {
     process.stderr.write(`FIXTURE_FAILED:${stage}\n`);
     process.exitCode = 1;
   } finally {
-    await rm(privateRoot + '/ready.json', { force: true });
-    await actors?.close();
-    await gateway?.close();
-    await bridge?.close();
-    await supervisor.close();
-    process.removeListener('SIGTERM', stop);
-    process.removeListener('SIGINT', stop);
+    try {
+      await closeFixtureResources({
+        retireReady: () => rm(privateRoot + '/ready.json', { force: true }),
+        actors,
+        gateway,
+        bridge,
+        supervisor,
+      });
+    } finally {
+      process.removeListener('SIGTERM', stop);
+      process.removeListener('SIGINT', stop);
+    }
   }
 }
 

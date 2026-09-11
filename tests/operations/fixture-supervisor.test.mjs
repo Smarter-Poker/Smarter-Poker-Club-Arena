@@ -1,10 +1,80 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { EventEmitter } from 'node:events';
-import { ServiceSupervisor } from '../../operations/release/fixture/fixture-server.mjs';
+import {
+  ServiceSupervisor,
+  closeFixtureResources,
+} from '../../operations/release/fixture/fixture-server.mjs';
+
+test('a failed resource close still retires readiness and observes the real child exit', async () =>
+  owned(async (supervisor, root) => {
+    const child = await supervisor.start('cleanup-service', process.execPath, [
+      '-e',
+      'setInterval(()=>{},1000)',
+    ]);
+    const readyFile = path.join(root, 'ready.json');
+    await writeFile(readyFile, JSON.stringify({ pid: child.pid }));
+    let bridgeClosed = false;
+    await assert.rejects(
+      closeFixtureResources({
+        retireReady: () => rm(readyFile),
+        actors: {
+          close() {
+            throw new Error('PRIVATE ACTOR FAILURE');
+          },
+        },
+        gateway: {
+          async close() {
+            throw new Error('PRIVATE GATEWAY FAILURE');
+          },
+        },
+        bridge: {
+          async close() {
+            bridgeClosed = true;
+          },
+        },
+        supervisor,
+      }),
+      /FIXTURE_CLEANUP_FAILED/
+    );
+    await assert.rejects(readFile(readyFile), { code: 'ENOENT' });
+    assert.equal(bridgeClosed, true);
+    assert.ok(child.exitCode !== null || child.signalCode !== null);
+    assert.equal(supervisor.stopped, true);
+  }));
+
+test('a hung resource close cannot delay real child cleanup and never reports success', async () =>
+  owned(async (supervisor) => {
+    const child = await supervisor.start('cleanup-service', process.execPath, [
+      '-e',
+      'setInterval(()=>{},1000)',
+    ]);
+    let gatewayClosed = false;
+    await assert.rejects(
+      closeFixtureResources(
+        {
+          retireReady() {
+            throw new Error('PRIVATE READINESS FAILURE');
+          },
+          actors: { close: () => new Promise(() => {}) },
+          gateway: {
+            async close() {
+              gatewayClosed = true;
+            },
+          },
+          supervisor,
+        },
+        500
+      ),
+      /FIXTURE_CLEANUP_DEADLINE/
+    );
+    assert.equal(gatewayClosed, true);
+    assert.ok(child.exitCode !== null || child.signalCode !== null);
+    assert.equal(supervisor.stopped, true);
+  }));
 
 async function owned(callback) {
   const root = await mkdtemp(path.join(os.tmpdir(), 'fixture-supervisor-'));

@@ -23,6 +23,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync, rmSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { gitFixtureEnvironment } from '../helpers/gitFixtureEnvironment';
 
 const SCRIPT = resolve(__dirname, '../../scripts/ci/detect-silent-revert.mjs');
 let repo: string;
@@ -37,19 +38,8 @@ let repo: string;
  * therefore runs with those variables stripped, and `cwd` alone decides which
  * repository is touched.
  */
-const cleanEnv = (extra: Record<string, string> = {}): NodeJS.ProcessEnv => {
-  const env: NodeJS.ProcessEnv = { ...process.env, ...extra };
-  for (const k of Object.keys(env)) {
-    if (
-      /^GIT_(DIR|WORK_TREE|INDEX_FILE|PREFIX|COMMON_DIR|OBJECT_DIRECTORY|ALTERNATE_OBJECT_DIRECTORIES|NAMESPACE|CEILING_DIRECTORIES)$/.test(
-        k
-      )
-    ) {
-      delete env[k];
-    }
-  }
-  return env;
-};
+const cleanEnv = (extra: Record<string, string> = {}): NodeJS.ProcessEnv =>
+  gitFixtureEnvironment({ ...process.env, ...extra });
 
 // Identity is passed per command with -c and NEVER written with `git config`:
 // the first version of this test wrote user.name=test into whatever

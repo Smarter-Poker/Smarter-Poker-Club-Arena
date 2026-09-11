@@ -1,0 +1,10 @@
+{
+  "entrypoint": "00-apply-legacy-repair.sql",
+  "atomic": true,
+  "transform": "Strip only top-level transaction BEGIN; and COMMIT; lines from 01 and 02, concatenate in that order inside one transaction.",
+  "source_hashes": {
+    "01-legacy-maturity-only.sql": "2de42d7c883ecad8ad1c50170e8581c39f6773e848284c266532ada46b17615f",
+    "02-legacy-single-payer.sql": "cbbe60ad29e2151449ae41bcaf92b838334d62540b170f41517d726b5cc901f4",
+    "00-apply-legacy-repair.sql": "a55e792f12040799a20fcf6d54969059efecaea3869c3aa148191fe1b083c4c7"
+  }
+}

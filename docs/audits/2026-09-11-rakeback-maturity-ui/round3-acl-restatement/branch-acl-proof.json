@@ -1,0 +1,44 @@
+{
+  "observed_at_utc": "2026-09-11T08:19:02.046Z",
+  "inputs": [
+    {
+      "path": "supabase/migrations/20260911072837_legacy_rakeback_closed_period_single_payer.sql",
+      "sha256": "a55e792f12040799a20fcf6d54969059efecaea3869c3aa148191fe1b083c4c7"
+    },
+    {
+      "path": "supabase/migrations/20260911081721_legacy_round3_preserve_server_only_acl.sql",
+      "sha256": "da06b3acca81a28a54e1354932aab87d515bc3202b4922e9cccc8e1971e867d5"
+    },
+    {
+      "path": "scripts/ci/check-definer-authorization.mjs",
+      "sha256": "b99052b96ddcab882a293cd5e0d2ad1ce298f222b6d6b99f433720d894e4fa9b"
+    },
+    {
+      "path": "docs/audits/2026-09-11-rakeback-maturity-ui/round3-acl-restatement/prove-branch-acl.mjs",
+      "sha256": "dac37515414b923c8fb026ebf61c6a4bc6f55767b862244e179620a779bca245"
+    }
+  ],
+  "cases": [
+    {
+      "name": "actual_a55_requires_explicit_round3_grant_record",
+      "passed": true,
+      "verdict": ["fn_settle_round3_agents_to_players"]
+    },
+    {
+      "name": "actual_a55_plus_actual_companion_passes",
+      "passed": true,
+      "verdict": []
+    },
+    {
+      "name": "missing_public_revoke_refused",
+      "passed": true,
+      "verdict": ["fn_settle_round3_agents_to_players"]
+    },
+    {
+      "name": "later_authenticated_grant_refused",
+      "passed": true,
+      "verdict": ["fn_settle_round3_agents_to_players"]
+    }
+  ],
+  "limits": "Static exported checker proof only. The checker matches grants by function name; this does not prove arbitrary overload resolution or runtime authority. Root owns production pre/post identity readbacks."
+}

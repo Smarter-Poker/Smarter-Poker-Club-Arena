@@ -78,16 +78,22 @@ export function reportError(error: unknown, context: string, extra?: Record<stri
    * Copy rather than mutate. The reported error carries the context in its
    * message either way; the caller's error object is left alone, which it
    * should have been from the start.
+   *
+   * IT WAS NOT LEFT ALONE UNTIL 2026-09-09. The paragraph above was written
+   * beside `try { err.message = prefixed } catch { copy }`, which mutates
+   * every error that CAN be mutated and copies only the DOMException that
+   * cannot. So a caller that reported and then showed `err.message` - the
+   * cash create flow does exactly that, on purpose, so a host reads the
+   * server's own sentence - toasted "[CashGameCreateFlow.create_failed]
+   * Failed to fetch" with the context in square brackets. Found by
+   * tests/cash-games-are-created-from-a-template.law.test.tsx (must-move
+   * audit, lane I). Now the copy is unconditional: Sentry gets the prefixed
+   * copy with the original name and stack, the caller's object never changes.
    */
-  let reported = err;
   const prefixed = `[${context}] ${err.message}`;
-  try {
-    err.message = prefixed;
-  } catch {
-    reported = new Error(prefixed);
-    reported.name = err.name;
-    reported.stack = err.stack;
-  }
+  const reported = new Error(prefixed);
+  reported.name = err.name;
+  reported.stack = err.stack;
 
   captureException(reported, {
     errorContext: { source: context, ...extra },

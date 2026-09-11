@@ -7,7 +7,7 @@ import { useParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { watchBbjPool } from '../lib/bbjPoolFeed';
-import { watchBbjMini, type BbjMiniSnapshot } from '../lib/bbjMiniFeed';
+import { watchBbjMini, type BbjMiniSnapshot, type BbjMiniReadOutcome } from '../lib/bbjMiniFeed';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
 import './BadBeatJackpotPage.css';
@@ -53,6 +53,9 @@ export default function BadBeatJackpotPage() {
      days of mini hits. The "Backup Pool" card below is what funds it, and until
      today the page never said so. */
   const [pageMini, setPageMini] = useState<BbjMiniSnapshot | null>(null);
+  const [miniFirstRead, setMiniFirstRead] = useState<BbjMiniReadOutcome | null>(null);
+  const [ownerCheckedKey, setOwnerCheckedKey] = useState<string | null>(null);
+  const ownerKey = `${clubId}:${user?.id ?? ''}`;
   /* Which winners the history lists. Dan 2026-09-11: main and mini winners
      are separate lists, the mini one tap away rather than mixed in. */
   const [historyKind, setHistoryKind] = useState<'main' | 'mini'>('main');
@@ -71,9 +74,12 @@ export default function BadBeatJackpotPage() {
   // enforces this server-side).
   useEffect(() => {
     let alive = true;
+    setCanManagePromo(false);
+    setOwnerCheckedKey(null);
     (async () => {
       if (!clubId || !user?.id) {
         setCanManagePromo(false);
+        setOwnerCheckedKey(ownerKey);
         return;
       }
       try {
@@ -96,12 +102,15 @@ export default function BadBeatJackpotPage() {
         if (alive) setCanManagePromo(owner);
       } catch (e) {
         reportError(e, 'BadBeatJackpotPage.ownerCheck');
+        if (alive) setCanManagePromo(false);
+      } finally {
+        if (alive) setOwnerCheckedKey(ownerKey);
       }
     })();
     return () => {
       alive = false;
     };
-  }, [clubId, user?.id]);
+  }, [clubId, user?.id, ownerKey]);
 
   const runPromoRain = async () => {
     if (!jackpot?.id || distributingPromo) return;
@@ -170,6 +179,7 @@ export default function BadBeatJackpotPage() {
          replay only happens for a club already watched, so the previous
          club's mini would otherwise sit under this one's heading. */
       setPageMini(null);
+      setMiniFirstRead(null);
       loadJackpotData(() => isMounted);
 
       const channelKey = 'jackpot-live';
@@ -213,10 +223,17 @@ export default function BadBeatJackpotPage() {
           prevAmountRef.current = snap.mainBalance;
           setJackpot((prev) => (prev ? { ...prev, main_balance: snap.mainBalance } : prev));
         });
-        stopMini = watchBbjMini(resolvedId, (snap) => {
-          if (!isMounted) return;
-          setPageMini(snap);
-        });
+        stopMini = watchBbjMini(
+          resolvedId,
+          (snap) => {
+            if (!isMounted) return;
+            setPageMini(snap);
+            setMiniFirstRead('ready');
+          },
+          (outcome) => {
+            if (isMounted) setMiniFirstRead(outcome);
+          }
+        );
 
         const channel = masterBus.getOrCreateChannel(channelKey);
         channel
@@ -245,7 +262,10 @@ export default function BadBeatJackpotPage() {
           });
       };
 
-      setupRealtime().catch((e) => console.warn('[BadBeatJackpotPage] Realtime setup failed:', e));
+      setupRealtime().catch((e) => {
+        if (isMounted) setMiniFirstRead('error');
+        console.warn('[BadBeatJackpotPage] Realtime setup failed:', e);
+      });
 
       return () => {
         isMounted = false;
@@ -274,6 +294,7 @@ export default function BadBeatJackpotPage() {
    * the worst failure this page has.
    */
   useEffect(() => {
+    setLoading(Boolean(clubId));
     setJustUpdated(false);
     setPlayerContribution(0);
     setJackpot(null);
@@ -292,7 +313,8 @@ export default function BadBeatJackpotPage() {
       }
       if (loadingRef.current) return;
       loadingRef.current = true;
-      if (!getIsMounted || getIsMounted()) setLoading(true);
+      // Initial scope/retry owns the skeleton. Routine live refreshes keep
+      // children mounted so their first reads can finish and geometry stays put.
       try {
         const resolvedId = await resolveClubUUID(clubId);
 
@@ -406,7 +428,7 @@ export default function BadBeatJackpotPage() {
 
   if (loading) {
     return (
-      <div className="bbj-page">
+      <div className="bbj-page" data-initial-layout="pending">
         <div className="loading-state">
           <PageSkeleton variant="stats" />
         </div>
@@ -426,7 +448,7 @@ export default function BadBeatJackpotPage() {
    */
   if (loadFailed || !jackpot) {
     return (
-      <div className="bbj-page">
+      <div className="bbj-page" data-initial-layout="settled">
         <div className="bbj-page__empty">
           <h2 className="bbj-page__empty-title">
             {loadFailed ? 'Could Not Load The Jackpot' : 'No Jackpot Pool For This Club Yet'}
@@ -437,7 +459,14 @@ export default function BadBeatJackpotPage() {
               : 'A Pool Starts Building As Soon As Hands Are Dealt With The Jackpot Drop Enabled.'}
           </p>
           {loadFailed && (
-            <button type="button" className="bbj-page__retry" onClick={() => loadJackpotData()}>
+            <button
+              type="button"
+              className="bbj-page__retry"
+              onClick={() => {
+                setLoading(true);
+                void loadJackpotData();
+              }}
+            >
               Try Again
             </button>
           )}
@@ -447,7 +476,12 @@ export default function BadBeatJackpotPage() {
   }
 
   return (
-    <div className="bbj-page">
+    <div
+      className="bbj-page"
+      data-initial-layout={
+        ownerCheckedKey === ownerKey && miniFirstRead !== null ? 'settled' : 'pending'
+      }
+    >
       {/* Current Jackpot — Main Balance */}
       <div className="bbj-clubbuttons-hero-wrap">
         <ArenaJackpotDisplay
@@ -546,7 +580,7 @@ export default function BadBeatJackpotPage() {
           <span className="info-label">Mini Jackpot</span>
           <span className="info-value" style={{ color: '#ffb020' }}>
             {(() => {
-              if (!pageMini) return 'Reading';
+              if (!pageMini) return miniFirstRead === null ? 'Reading' : 'Unavailable';
               if (!pageMini.enabled) return 'Off';
               const payable = pageMini.tiers
                 .filter((t) => t.enabled && t.payable)
@@ -582,7 +616,7 @@ export default function BadBeatJackpotPage() {
       <BBJAdminAnalytics poolId={jackpot?.id || null} />
 
       {/* Owner-only: distribute the promo pool to active players */}
-      {canManagePromo && (jackpot?.promo_balance || 0) > 0 && (
+      {ownerCheckedKey === ownerKey && canManagePromo && (jackpot?.promo_balance || 0) > 0 && (
         <div
           style={{
             margin: '4px 0 16px',

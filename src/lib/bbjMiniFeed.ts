@@ -65,6 +65,7 @@ export interface BbjMiniSnapshot {
 }
 
 export type BbjMiniListener = (snapshot: BbjMiniSnapshot) => void;
+export type BbjMiniReadOutcome = 'ready' | 'empty' | 'error';
 
 /** Sixty seconds: configuration plus a reserve that moves on hits, not on hands. */
 export const BBJ_MINI_POLL_MS = 60_000;
@@ -74,6 +75,8 @@ interface ClubFeed {
   timer: ReturnType<typeof setInterval> | null;
   last: BbjMiniSnapshot | null;
   reading: boolean;
+  firstRead: BbjMiniReadOutcome | null;
+  firstReadListeners: Set<(outcome: BbjMiniReadOutcome) => void>;
 }
 
 const feeds = new Map<string, ClubFeed>();
@@ -146,6 +149,7 @@ function sameSnapshot(a: BbjMiniSnapshot | null, b: BbjMiniSnapshot): boolean {
 async function readOnce(clubId: string, feed: ClubFeed): Promise<void> {
   if (feed.reading) return;
   feed.reading = true;
+  let outcome: BbjMiniReadOutcome = 'error';
   try {
     const { data, error } = await supabase.rpc('fn_bbj_mini_for_club', { p_club_id: clubId });
     if (error) {
@@ -153,7 +157,10 @@ async function readOnce(clubId: string, feed: ClubFeed): Promise<void> {
       return;
     }
     const row = (Array.isArray(data) ? data[0] : data) as Record<string, unknown> | null;
-    if (!row) return;
+    if (!row) {
+      outcome = 'empty';
+      return;
+    }
     const next: BbjMiniSnapshot = {
       poolId: (row.pool_id as string) ?? null,
       enabled: row.enabled === true,
@@ -171,6 +178,7 @@ async function readOnce(clubId: string, feed: ClubFeed): Promise<void> {
       paid30d: num(row.paid_30d),
       lastHitAt: row.last_hit_at ? String(row.last_hit_at) : null,
     };
+    outcome = 'ready';
     if (sameSnapshot(feed.last, next)) return;
     feed.last = next;
     for (const listener of feed.listeners) {
@@ -184,6 +192,15 @@ async function readOnce(clubId: string, feed: ClubFeed): Promise<void> {
     reportError(e, 'bbjMiniFeed.read_threw', { clubId });
   } finally {
     feed.reading = false;
+    feed.firstRead = outcome;
+    for (const listener of feed.firstReadListeners) {
+      try {
+        listener(outcome);
+      } catch (e) {
+        reportError(e, 'bbjMiniFeed.first_read_listener_threw', { clubId });
+      }
+    }
+    feed.firstReadListeners.clear();
   }
 }
 
@@ -208,18 +225,34 @@ function hookVisibility(): void {
  * Watch a club's mini jackpot. Returns the unsubscribe. The listener is called
  * immediately with the last known snapshot when one exists.
  */
-export function watchBbjMini(clubId: string, listener: BbjMiniListener): () => void {
+export function watchBbjMini(
+  clubId: string,
+  listener: BbjMiniListener,
+  onFirstRead?: (outcome: BbjMiniReadOutcome) => void
+): () => void {
   if (!clubId) return () => undefined;
   hookVisibility();
 
   let feed = feeds.get(clubId);
   if (!feed) {
-    feed = { listeners: new Set(), timer: null, last: null, reading: false };
+    feed = {
+      listeners: new Set(),
+      timer: null,
+      last: null,
+      reading: false,
+      firstRead: null,
+      firstReadListeners: new Set(),
+    };
     feeds.set(clubId, feed);
   }
   const owned = feed;
   owned.listeners.add(listener);
   if (owned.last) listener(owned.last);
+  if (onFirstRead) {
+    if (owned.last) onFirstRead('ready');
+    else if (owned.firstRead) onFirstRead(owned.firstRead);
+    else owned.firstReadListeners.add(onFirstRead);
+  }
 
   if (owned.timer === null) {
     void readOnce(clubId, owned);
@@ -228,6 +261,7 @@ export function watchBbjMini(clubId: string, listener: BbjMiniListener): () => v
 
   return () => {
     owned.listeners.delete(listener);
+    if (onFirstRead) owned.firstReadListeners.delete(onFirstRead);
     if (owned.listeners.size > 0) return;
     if (owned.timer !== null) clearInterval(owned.timer);
     feeds.delete(clubId);

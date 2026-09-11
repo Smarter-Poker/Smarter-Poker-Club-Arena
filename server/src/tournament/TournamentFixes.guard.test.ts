@@ -442,7 +442,12 @@ describe('no seating path may write a second live seat in the same tournament', 
   it('the claim is scoped to the TOURNAMENT, not to one table', () => {
     const src = code(SEAT_CLAIM);
     // Reached through the join, because table_seats carries no tournament_id.
-    expect(src).toContain('tables!inner(tournament_id)');
+    // The parent is NAMED (2026-09-11): on 2026-09-09 two migrations gave
+    // table_seats a second and third foreign key to tables, PostgREST refused
+    // every unqualified embed with PGRST201, and the horse rotator went dark
+    // for three and a half hours on exactly this shape. Naming the key makes
+    // the read immune to the next constraint anybody adds.
+    expect(src).toContain('tables!table_seats_table_id_fkey!inner(tournament_id)');
     expect(src).toMatch(/eq\('tables\.tournament_id'/);
     expect(src).toMatch(/is\('left_at',\s*null\)/);
   });

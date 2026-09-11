@@ -184,6 +184,21 @@ describe('one process ledger serves health and Prometheus', () => {
 });
 
 describe('accepted rule execution is the timing boundary', () => {
+  it('arms the broadcast clock before the real synchronous action executes', () => {
+    const { engine, hand } = engineWithRealHand();
+    const acceptedAt = Date.now();
+    engine.lastActionAcceptedAtMs = acceptedAt - 5000;
+    const original = hand.performAction.bind(hand);
+    const observedClocks: number[] = [];
+    vi.spyOn(hand, 'performAction').mockImplementation((...args) => {
+      observedClocks.push(engine.lastActionAcceptedAtMs);
+      return original(...args);
+    });
+    expect(engine.handlePlayerAction('u4', 'call').success).toBe(true);
+    expect(observedClocks).toEqual([acceptedAt]);
+    expect(hand.getState().actionHistory.filter((a) => a.action === 'call')).toHaveLength(1);
+  });
+
   it('keeps false and thrown operations uncounted and preserves a true action if telemetry throws', () => {
     const t = meter();
     expect(EngineTelemetry.measureAcceptedAction(t, 't', 'u', 'call', () => false)).toBe(false);

@@ -1,0 +1,17 @@
+{
+  "original_path": "tests/unit/phaseThreeCreateConfigCapture.test.ts",
+  "template_path": "scripts/dev/fixtures/phase-three-create-options/phaseThreeCreateConfigCapture.test.ts.template",
+  "sha256": "61f022e9ced004b5e67a2aaf22d394b6bc8285a69afe12654c5114c7c7cadba4",
+  "byte_count": 923,
+  "content_preserved_exactly": true,
+  "current_builder_source_sha256": {
+    "src/lib/tournamentFromTableConfig.ts": "ddab8e64901a6a13a45469aabd0af7c86e16cbe4b3dcd971ac06106d1759314c",
+    "src/services/TournamentService.ts": "8040cd30c2faa2c5507e4725ed6d923343abf5d7b2b9c08365ff650d7403bcc7"
+  },
+  "explicit_generator_verification": {
+    "captured_cases": 91,
+    "original_client_tests_passed": 31,
+    "temporary_test_removed_after_run": true,
+    "native_execution": false
+  }
+}

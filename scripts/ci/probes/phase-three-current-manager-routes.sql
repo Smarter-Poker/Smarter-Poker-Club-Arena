@@ -56,4 +56,3 @@ BEGIN
  PERFORM set_config('request.method','PATCH',true);
  PERFORM smarter_private.fn_smarter_data_api_pre_request();
 END $current_engine_routes$;
-

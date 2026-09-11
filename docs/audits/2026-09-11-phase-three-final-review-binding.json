@@ -1,0 +1,27 @@
+{
+  "at": "2026-09-11T09:58:30.679649+00:00",
+  "verified_source_commit": "ef93a89b698ea138d2ab9bbc2d89150a78b4e179",
+  "production_applied": false,
+  "phase_three_complete": false,
+  "spin_merged_composed_sql_identical_to_26_group_proof": true,
+  "spin_sql_sha256": "76df8ac0b381783fab11b7545ada67f01e1583e3fef19cf8736b19534f379c7d",
+  "exact_activation_138_passed_and_all_composing_sources_still_match": true,
+  "options_owned_manifest_all_34_entries_match": true,
+  "final_merged_source_verification": "docs/audits/2026-09-11-phase-three-final-merged-source-verification.json",
+  "final_merged_source_verification_sha256": "2d7b29115e54486a0fae40409aa570fa977946eacd863f97059d41dbcc297d53",
+  "review_artifact_sha256": {
+    "docs/audits/2026-09-11-current-terminal-activation-boundary.md": "0001f005759628606a33eab9789e51bc7526c61fff004bfa56be1ec24bbe26d4",
+    "docs/audits/2026-09-11-exact-terminal-activation-native.json": "3547185533bdf2f423a6bc6e8398ed22a284965461f7f796f0e41efc13ad323d",
+    "docs/audits/2026-09-11-phase-three-activation-approval-status.json": "ae724ddfcf58e102974c3187cf72c25ff5c3cbef92a24989f1fec69dfca6f393",
+    "docs/audits/2026-09-11-phase-three-main-reconciliation.json": "c6aab59748d0726dcfa2537148872b0fe05017b18b74540b5baed52997cad2dc",
+    "docs/audits/2026-09-11-phase-three-resume-checkpoint.json": "0166760c30d0f38cfdd9895bdc05473881642341d0904e2f3a4c08c602d6d269",
+    "docs/audits/2026-09-11-phase-three-specific-approval-gates.json": "9965cd104bea2f4a601eb7baa4616c090f4e559a9ccf37455ed583936d3d8e1c",
+    "docs/audits/2026-09-11-tournament-create-options-owned-manifest.json": "5c9adc8f2e7308753fc90b673d43ffa768d2a015d1382238392eceeb05996c32",
+    "docs/audits/2026-09-11-phase-three-final-merged-source-verification.json": "2d7b29115e54486a0fae40409aa570fa977946eacd863f97059d41dbcc297d53",
+    "docs/audits/2026-09-11-maintenance-v3-runtime-UNAPPLIED.patch": "7fad49954a5968fdc53b36d2bfa230fe74d236897b4d251900e3f20212666953",
+    "docs/audits/2026-09-11-maintenance-v3-runtime-UNAPPLIED.json": "e8a2e972c3d528d1d923f1415d884ab509c862f07d270d65c6febed7d75bc2f6",
+    "docs/audits/2026-09-11-maintenance-v3-adoption-review.md": "ac6d6c0743b5836b7f504de4a3a21d4c6fcd1b6f276c4fb50e86c638d494a591",
+    "docs/audits/2026-09-11-root-bootstrap-native-before-reconciliation.json.txt": "67d119830b250153ab25d3c95ba5b16591d7688cd9685a3f4f5bb000677313b1"
+  },
+  "preserved_historical_bootstrap_sha256": "67d119830b250153ab25d3c95ba5b16591d7688cd9685a3f4f5bb000677313b1"
+}

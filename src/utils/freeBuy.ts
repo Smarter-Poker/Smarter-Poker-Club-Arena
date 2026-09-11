@@ -70,6 +70,8 @@ function whole(n: unknown): number {
  * the object buildRpcConfig sends to fn_create_tournament.
  */
 export interface FreeBuyConfig {
+  freeBuy: true;
+  addOnFromStart: true;
   isRebuy: true;
   isReentry: true;
   addOnAvailable: true;
@@ -107,6 +109,8 @@ export function freeBuyConfig(input: FreeBuyInput): Partial<FreeBuyConfig> {
   const stack = whole(input.startingStack) || 10000;
   const maxRebuys = whole(input.maxRebuys);
   const out: FreeBuyConfig = {
+    freeBuy: true,
+    addOnFromStart: true,
     isRebuy: true,
     isReentry: true,
     addOnAvailable: true,
@@ -129,6 +133,8 @@ export function freeBuyColumns(input: FreeBuyInput): Record<string, unknown> {
   const cfg = freeBuyConfig(input);
   if (cfg.isRebuy !== true) return {};
   return {
+    free_buy: true,
+    addon_from_start: true,
     buy_in_fee: 0,
     is_rebuy: true,
     is_reentry: true,

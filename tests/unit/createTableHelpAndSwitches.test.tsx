@@ -82,10 +82,7 @@ describe('Create-Table Switch And Bomb-Schedule Markup', () => {
     'utf8'
   );
   // Where the bomb cadence copy lives now (see the pin below).
-  const vocab = fs.readFileSync(
-    path.join(process.cwd(), 'src', 'config', 'cashGames.ts'),
-    'utf8'
-  );
+  const vocab = fs.readFileSync(path.join(process.cwd(), 'src', 'config', 'cashGames.ts'), 'utf8');
 
   it('Uses An Isolated Conventional Switch With A Visible On Or Off Status', () => {
     expect(controls).toContain('className="table-config-switch"');
@@ -121,10 +118,7 @@ describe('Create-Table Switch And Bomb-Schedule Markup', () => {
     expect(vocab).not.toContain('Every N Hands');
     expect(vocab).not.toMatch(/Every N\b/);
 
-    const cadence = (
-      template: CashTemplate,
-      bombs: CashRulesetSnapshot['bombs']
-    ): string =>
+    const cadence = (template: CashTemplate, bombs: CashRulesetSnapshot['bombs']): string =>
       templatePromiseLines({
         template,
         regular_ante: 'none',

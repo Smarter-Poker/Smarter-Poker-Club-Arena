@@ -54,12 +54,16 @@ const MIG = read(
 describe('a leave cancels the move', () => {
   it('the roster trigger cancels the pending move of a player who left', () => {
     expect(MIG).toMatch(/SET state = 'cancelled', note = 'player_left_game'/);
-    expect(MIG).toMatch(/m\.player_id = NEW\.user_id AND m\.game_id = v_game AND m\.state = 'pending'/);
+    expect(MIG).toMatch(
+      /m\.player_id = NEW\.user_id AND m\.game_id = v_game AND m\.state = 'pending'/
+    );
   });
 
   it('the clause that kept a departed player on the roster is gone', () => {
     // The whole defect was this test standing between the leave and the close.
-    const body = MIG.slice(MIG.indexOf('CREATE OR REPLACE FUNCTION public.fn_cash_game_roster_track'));
+    const body = MIG.slice(
+      MIG.indexOf('CREATE OR REPLACE FUNCTION public.fn_cash_game_roster_track')
+    );
     const guard = body.slice(0, body.indexOf('$migration$;'));
     expect(guard).not.toMatch(
       /AND NOT EXISTS \(SELECT 1 FROM public\.cash_seat_moves m\s*\n\s*WHERE m\.player_id = NEW\.user_id AND m\.game_id = v_game AND m\.state = 'pending'\) THEN/
@@ -67,7 +71,9 @@ describe('a leave cancels the move', () => {
   });
 
   it('a swap partner is released when the other side leaves', () => {
-    expect(MIG).toMatch(/note = 'swap_partner_gone'\s*\n\s*WHERE p\.swap_move_id = v_move AND p\.state = 'pending'/);
+    expect(MIG).toMatch(
+      /note = 'swap_partner_gone'\s*\n\s*WHERE p\.swap_move_id = v_move AND p\.state = 'pending'/
+    );
   });
 
   it('the declared executor is still let through, so a move is not a leave', () => {
@@ -75,7 +81,9 @@ describe('a leave cancels the move', () => {
   });
 
   it('a second live chair in the game is still not a leave', () => {
-    expect(MIG).toMatch(/ts\.id <> NEW\.id[\s\S]{0,200}t\.cluster_id = v_game AND t\.lifecycle <> 'closed'/);
+    expect(MIG).toMatch(
+      /ts\.id <> NEW\.id[\s\S]{0,200}t\.cluster_id = v_game AND t\.lifecycle <> 'closed'/
+    );
   });
 
   it('the post-apply assertion refuses a body that still waits on a pending move', () => {
@@ -140,8 +148,12 @@ describe('a re-listed seat change follows the player', () => {
 
 describe('the grants say what RLS enforces', () => {
   it('a browser role may not write a seat move or a waitlist row', () => {
-    expect(MIG).toMatch(/REVOKE INSERT, UPDATE, DELETE[\s\S]{0,80}public\.cash_seat_moves FROM authenticated, anon/);
-    expect(MIG).toMatch(/REVOKE INSERT, UPDATE, DELETE[\s\S]{0,80}public\.cash_game_waitlist FROM authenticated, anon/);
+    expect(MIG).toMatch(
+      /REVOKE INSERT, UPDATE, DELETE[\s\S]{0,80}public\.cash_seat_moves FROM authenticated, anon/
+    );
+    expect(MIG).toMatch(
+      /REVOKE INSERT, UPDATE, DELETE[\s\S]{0,80}public\.cash_game_waitlist FROM authenticated, anon/
+    );
   });
 
   it('but keeps the read-own SELECT it has a policy for', () => {
@@ -178,7 +190,9 @@ describe('the migration is safe to apply beside the other lanes', () => {
   it('asserts every change afterwards', () => {
     expect(MIG).toMatch(/\$assert\$/);
     expect(MIG).toMatch(/the roster trigger does not cancel the move of a player who left/);
-    expect(MIG).toMatch(/the planner does not return the button to a player renumbered onto Main 1/);
+    expect(MIG).toMatch(
+      /the planner does not return the button to a player renumbered onto Main 1/
+    );
     expect(MIG).toMatch(/the tick still re-lists only from the requested table/);
     expect(MIG).toMatch(/a browser role can still write a seat move or a waitlist row/);
   });

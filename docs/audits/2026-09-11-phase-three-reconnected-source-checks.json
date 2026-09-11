@@ -1,0 +1,11 @@
+{
+  "recorded_at": "2026-09-11T07:59:13.299461+00:00",
+  "typescript": {
+    "exit_code": 0,
+    "output": ""
+  },
+  "creation_config": {
+    "exit_code": 0,
+    "output": "\n\u001b[1m\u001b[30m\u001b[46m RUN \u001b[49m\u001b[39m\u001b[22m \u001b[36mv4.1.11 \u001b[39m\u001b[90m/Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-chip-entry-swarm\u001b[39m\n\n \u001b[32m\u2713\u001b[39m tests/unit/TournamentFromTableConfig.test.ts \u001b[2m(\u001b[22m\u001b[2m31 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 9\u001b[2mms\u001b[22m\u001b[39m\n\n\u001b[2m Test Files \u001b[22m \u001b[1m\u001b[32m1 passed\u001b[39m\u001b[22m\u001b[90m (1)\u001b[39m\n\u001b[2m      Tests \u001b[22m \u001b[1m\u001b[32m31 passed\u001b[39m\u001b[22m\u001b[90m (31)\u001b[39m\n\u001b[2m   Start at \u001b[22m 02:59:27\n\u001b[2m   Duration \u001b[22m 443ms\u001b[2m (transform 134ms, setup 70ms, import 141ms, tests 9ms, environment 117ms)\u001b[22m\n\n"
+  }
+}

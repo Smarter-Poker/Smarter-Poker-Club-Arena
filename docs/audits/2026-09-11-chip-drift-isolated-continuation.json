@@ -1,0 +1,29 @@
+{
+  "recorded_at": "2026-09-11T08:16:24.556617+00:00",
+  "source_worktree": "/Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-chip-entry-swarm",
+  "isolated_worktree": "/Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-chip-drift-final",
+  "inherited_head": "076d54a0bc349ea07df0aceb4f75cfc1da6b159b",
+  "branch": "agent/codex-chip-drift-final/fix/phase-three-activation-review",
+  "source_inputs_stable": true,
+  "copied_sha256": {
+    "scripts/ci/rehearse-whole-phase-three-cutover.py": "9aba08c670f152e9d1e01a8aa67ddf15a187fccf6d75db43da888eaab54cb908",
+    "scripts/ci/probes/phase-three-current-manager-routes.sql": "cb489fec5c13a5904d4dd0dc826f35d91144e19902c7712cec8ec1ac93980f8e",
+    "scripts/ci/probes/satellite-manager-target-negative-native.sql": "c2449d23b78997315d44bb4aa12b593a1f6873d0e4cb0d42084f90c404457aab",
+    "scripts/ci/satellite-stage-b-manager-probe.py": "0d3ac40c3b7814e74d7a249c969e686b1a310574883b7b6565c3ece933eddb20",
+    "scripts/ci/fixtures/production-20260910154446.sql": "772758b80f3a5f44296b84aabdb1def68278f541a1d49b8b58c49f33c5d9f082",
+    "scripts/ci/fixtures/production-20260910160841.sql": "7e018da306ab9d56e82fa603f84535174a2975793aa7a74c4a4e931fc83ef34d",
+    "scripts/deploy/phase-three-strict-tournament-cutover.sql": "2862c27eae420c623a3ccc9ccc086245d208fc48dad3c0e97f2a5b0da1c6dabc",
+    "scripts/deploy/phase-three-satellite-manager-target-scope.sql": "bc6e6ea0af0f2475a6f4cd3f3bfbe4732aa69bb583152f5468adf57530cdc775",
+    "scripts/deploy/phase-three-activate-current-terminal-authorities.sql": "9e0771e13df999bcf4fc3809865afa53d6b70f2eb947be531c4894dca9e148b0",
+    "supabase/migrations/20260910164655_stage_b_break_window_bootstrap_compatibility.sql": "4d613b7193b1d1d42950040a336f985c7843db6b095cd02c4d751d27d30c5ec6",
+    "docs/audits/2026-09-11-whole-phase-three-cutover-native.json": "471ae9366e3e11457cf3a511fd24a49d94c75220d00da2044437ce3abd8721a2",
+    "docs/audits/2026-09-11-exact-terminal-activation-native.json": "f3c21193905a9a06e03005ea724715c06d981fe9163c0bfa19bab94584e19cb1",
+    "docs/audits/2026-09-11-exact-terminal-bootstrap-native.json": "67d119830b250153ab25d3c95ba5b16591d7688cd9685a3f4f5bb000677313b1",
+    "docs/audits/2026-09-11-phase-three-reconnected-adoption.json": "82c5f5d1c58eebc1174e1ee66150abe0b639c17e16a7fd15288255ac2d72a718",
+    "docs/audits/2026-09-11-phase-three-reconnected-source-checks.json": "4a9e23ac23bd6102e12e49c9f4bdc441f2cbf4909a8d28c6c280ff5f68fb940e",
+    "docs/audits/2026-09-11-current-terminal-activation-boundary.md": "1f43e954a0780d0e835f709715a4fbbf1f754332b7bf28c60441aa79d1e75a9a",
+    "docs/audits/2026-09-11-phase-three-activation-approval-status.json": "1bba22f32a50d5941838de69e0cec0c2b56d6675275e047852ead1a25cbd0d39",
+    "docs/audits/2026-09-11-phase-three-control-evidence-review.md": "274ab9c4858ef5a01f63606eaf3892e4bebe68e5f49525c2b1f131c28ba98bea"
+  },
+  "excluded": "Active original work, incident hand payloads and unapplied migration reservations remain in their original worktree."
+}

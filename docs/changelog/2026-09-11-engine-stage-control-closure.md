@@ -32,7 +32,7 @@ instead of silently treating that invocation as an import.
 
 Validation:
 
-- Six focused test files: 114 tests passed, including temporary Git histories,
+- Nine focused test files: 169 tests passed, including temporary Git histories,
   control-only and mixed pushes, multi-commit runtime changes, runtime reverts,
   removed controls, missing previous commits, and invalid target commits.
 - Separate temporary SOURCE and CONTROL Git repositories: either wrong SHA is
@@ -43,6 +43,8 @@ Validation:
   count/key/value injection. All fixture Git calls and classifier reads isolate
   their explicit repository from inherited `GIT_*` context.
 - Existing engine release seal and absolute deadline tests passed.
+- Post-deploy provenance asserts the exact exported runtime paths and Stage's
+  classifier call; its receiver and live WebKit provenance checks are preserved.
 - TypeScript `tsc --noEmit` passed.
 - Actionlint 1.7.12 passed both changed workflows.
 - The actual `07f20782b4c88c0d12a23318d82ba0537aeb4495` control-only regression

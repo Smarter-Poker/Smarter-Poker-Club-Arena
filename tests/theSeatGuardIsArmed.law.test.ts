@@ -1,6 +1,7 @@
-import { readFileSync, readdirSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { MIGRATIONS_DIR, migrationCorpus, type MigrationFile } from './helpers/migrationCorpus';
 
 /**
  * THE SEAT GUARD IS ARMED (binding, 2026-09-06)
@@ -72,7 +73,6 @@ import { describe, expect, it } from 'vitest';
  * silence is the guard working.
  */
 
-const MIGRATIONS = resolve(__dirname, '../supabase/migrations');
 const FUNCTION = 'fn_ca_guard_seat_creation';
 const TRIGGER = 'trg_ca_guard_seat_creation';
 const DECLARES = `CREATE OR REPLACE FUNCTION public.${FUNCTION}()`;
@@ -96,38 +96,76 @@ function stripComments(sql: string): string {
     .join('\n');
 }
 
-function migrationFiles(): string[] {
-  return readdirSync(MIGRATIONS)
-    .filter((f) => f.endsWith('.sql') || f.endsWith('.sql.pending'))
-    .sort();
-}
+/**
+ * READ THE TREE ONCE, NOT ONCE PER QUESTION.
+ *
+ * Five of the six `it` blocks below call `liveBody()`, and `liveBody` used to
+ * walk every file in `supabase/migrations` - 2,897 of them on 2026-09-11, and
+ * the one directory in this repo that only ever grows - stripping the comments
+ * out of all of it, every single time. On a 28-core box running the suite
+ * uncapped, `only a seat ARRIVING is guarded` crossed vitest's 5s default and
+ * this file went red; CI, which caps workers at cores/4, stayed green on the
+ * identical commit. A guard whose verdict depends on how busy the machine is
+ * is a coin flip, and it teaches everyone to re-run CI instead of reading it.
+ *
+ * Two changes, no change of meaning:
+ *   - the corpus comes from `migrationCorpus()`, which reads the directory
+ *     once per test file (see `tests/helpers/migrationCorpus.ts`);
+ *   - `stripComments` now runs on the FILES THAT COULD MATCH rather than on
+ *     all of them. `stripComments` deletes whole `--` lines and rejoins on
+ *     '\n', so it never merges two lines into one; a needle with no newline
+ *     in it therefore cannot appear after stripping unless it was already
+ *     there before. Pre-filtering on the raw text is a superset, and the
+ *     stripped check still decides - a header that QUOTES the old dry-run
+ *     body is still not a declaration.
+ *
+ * The shared corpus intentionally represents applied `.sql` migrations. This
+ * law must also see the six staged Stage-B `.sql.pending` declarations before
+ * production assigns their final versions, so it reads only those pending
+ * files once and merges them into this test-local, version-ordered view.
+ */
+const pendingMigrationCorpus: MigrationFile[] = readdirSync(MIGRATIONS_DIR)
+  .filter((name) => name.endsWith('.sql.pending'))
+  .sort()
+  .map((name) => ({
+    name,
+    sql: readFileSync(resolve(MIGRATIONS_DIR, name), 'utf8'),
+  }));
 
-/** The LAST migration that declares `what`, which is the one production has. */
+const seatGuardMigrationCorpus: MigrationFile[] = [
+  ...migrationCorpus(),
+  ...pendingMigrationCorpus,
+].sort((left, right) => left.name.localeCompare(right.name));
+
+/** The last declaration in applied history plus the staged Stage-B cutover. */
 function latestDeclaring(what: string): { file: string; sql: string } {
   let found = { file: '', sql: '' };
-  for (const f of migrationFiles()) {
-    const sql = stripComments(readFileSync(resolve(MIGRATIONS, f), 'utf8'));
-    if (sql.includes(what)) found = { file: f, sql };
+  for (const migration of seatGuardMigrationCorpus) {
+    if (!migration.sql.includes(what)) continue;
+    const sql = stripComments(migration.sql);
+    if (sql.includes(what)) found = { file: migration.name, sql };
   }
   return found;
 }
 
-/** The dollar-quoted body of the live declaration of the guard. */
+/** The dollar-quoted body of the live declaration of the guard, read once. */
+let liveBodyCache: { file: string; body: string } | null = null;
 function liveBody(): { file: string; body: string } {
+  if (liveBodyCache) return liveBodyCache;
   const { file, sql } = latestDeclaring(DECLARES);
   expect(file, `no migration declares ${FUNCTION}`).not.toBe('');
   const start = sql.lastIndexOf(DECLARES);
   const declaration = sql.slice(start);
   const quoted = /\bAS\s+(\$[A-Za-z0-9_]*\$)([\s\S]*?)\1\s*;/i.exec(declaration);
   expect(quoted, 'the function body must stay dollar-quoted').not.toBeNull();
-  return { file, body: quoted?.[2] ?? '' };
+  return (liveBodyCache = { file, body: quoted?.[2] ?? '' });
 }
 
 /** The migration this law was written for. */
 function armedMigration(): { file: string; sql: string } {
-  const file = migrationFiles().find((f) => f.endsWith('_the_seat_guard_is_armed.sql'));
-  expect(file, 'the migration that armed the guard must stay in the tree').toBeDefined();
-  return { file: file as string, sql: readFileSync(resolve(MIGRATIONS, file as string), 'utf8') };
+  const hit = migrationCorpus().find((m) => m.name.endsWith('_the_seat_guard_is_armed.sql'));
+  expect(hit, 'the migration that armed the guard must stay in the tree').toBeDefined();
+  return { file: hit?.name ?? '', sql: hit?.sql ?? '' };
 }
 
 /** The statement beginning at `from`, up to and including its terminating `;`. */

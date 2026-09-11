@@ -1676,6 +1676,69 @@ groups:
           runbook: docs/changelog/2026-09-11-the-horse-audit.md
 
   # ═══════════════════════════════════════════════════════════════════════
+  # ═══════════════════════════════════════════════════════════════════════
+  #  THE PAGER IS WATCHED BY SOMETHING THAT IS NOT THE PAGER (2026-09-11)
+  # ═══════════════════════════════════════════════════════════════════════
+  #
+  # `page: sms` routes to the `pager-sms` webhook, which is the World Hub's
+  # /api/internal/alertmanager-page. That route is careful: when Twilio refuses,
+  # or when TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN / TWILIO_PHONE_NUMBER are
+  # absent from its environment, it answers 502 rather than swallowing the
+  # failure, and Alertmanager counts it and retries.
+  #
+  # Nothing read that count. Measured 2026-09-11: zero rules anywhere in this
+  # repo named `alertmanager_notifications_failed_total`, so a dead pager was
+  # invisible by construction - the one thing that would have announced it is
+  # the pager. That is CLAUDE.md 10.83 exactly: a check nobody can see.
+  #
+  # DELIBERATELY NOT `page: sms`. An alarm about the pager must not be routed
+  # through the pager. These go to email-critical, which is a different
+  # integration with a different provider, so the two cannot fail together for
+  # one reason.
+  #
+  # Baseline on engine-01 when this was written: 14 webhook notifications
+  # delivered, `reason="serverError"` 0, `reason="clientError"` 1 (a single 4xx
+  # from before the bearer was in place). So the threshold is "any failure in
+  # fifteen minutes", which is quiet today and cannot be quiet if the pager
+  # stops working.
+  - name: pager-health
+    interval: 30s
+    rules:
+      - alert: PagerDeliveryFailing
+        expr: |
+          sum(increase(alertmanager_notifications_failed_total{integration="webhook"}[15m])) > 0
+        for: 5m
+        labels:
+          severity: critical
+          component: monitoring
+        annotations:
+          summary: 'The SMS pager has failed {{ $value | printf "%.0f" }} delivery attempt(s) in fifteen minutes'
+          description: |
+            Alertmanager could not deliver to the pager webhook. A `serverError`
+            is the World Hub route answering 502, which it does when Twilio
+            refuses or when its three TWILIO_* values are missing from the
+            hub-vanguard environment; a `clientError` is a 4xx, usually the
+            bearer secret. Until this clears, every `page: sms` alert on this
+            platform is reaching nobody by text. This alert is routed to email
+            on purpose - it is about the pager, so it must not travel through
+            it.
+          runbook: 'https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/blob/main/docs/changelog/2026-09-11-the-pager-is-watched.md'
+
+      - alert: CriticalEmailDeliveryFailing
+        expr: |
+          sum(increase(alertmanager_notifications_failed_total{integration="email"}[15m])) > 0
+        for: 5m
+        labels:
+          severity: warning
+          component: monitoring
+        annotations:
+          summary: 'Alertmanager has failed {{ $value | printf "%.0f" }} email delivery attempt(s) in fifteen minutes'
+          description: |
+            The email leg is the fallback the pager alarm above is routed to, so
+            it is worth knowing separately when it breaks. If BOTH legs are
+            failing, the only remaining signal is MonitoringCanary going absent
+            from the dashboard.
+
   - name: monitoring-canary
     interval: 30s
     rules:

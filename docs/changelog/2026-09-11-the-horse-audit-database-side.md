@@ -98,8 +98,46 @@ The guard is right and the proposal was wrong. The sanctioned path is
 and the outer completion requires a live engine lease with a heartbeat under
 thirty seconds old. So this settlement is not a migration at all: it is an
 engine lane that adopts a REGISTERING row which has already dealt hands and
-completes its launch through that RPC. The DB half of the recovery already
+completes its launch through that RPC. The DB half of the recovery partly
 exists (`fn_prove_played_spin_launch_recovery`, and the recovery branch inside
-`fn_complete_tournament_launch_before_lease_generation`); the engine half is
-what is missing. 36 events, 2,164.60 chips of finalized pools unpaid, still
-owed. See the note at the top of that file.
+`fn_complete_tournament_launch_before_lease_generation`), but it does not
+reach far enough, and that was measured rather than guessed.
+
+All 40 were put through the sanctioned pair
+(`fn_begin_tournament_launch_*` then `fn_complete_tournament_launch_*`) inside
+one transaction that was rolled back, at 17:03 UTC. The result:
+
+| outcome                            | events                                                                     |
+| ---------------------------------- | -------------------------------------------------------------------------- |
+| `ok: true`, REGISTERING to RUNNING | 9 (all spins, all still two-handed or three-handed with nobody eliminated) |
+| `launch_roster_unproven`           | 31                                                                         |
+
+Every refusal is the same shape: `active_players` 1 or 2 against
+`required_players` 2 or 3. The completion RPC proves the roster as it would be
+at a launch that has not dealt yet, and these dealt for two hours in 2026-09-08
+before their engine died, so the field has since shrunk to its winner. The
+`launch_stacks_uncredited` proof already has a played-game escape through
+`fn_prove_played_spin_launch_recovery`; the roster proof does not, and the
+recovery function itself is written for spins, while 18 of the 31 are heads-up
+SNGs and one is an MTT.
+
+So this settlement is two pieces of work, in this order, and neither of them
+is a repair job:
+
+1. **The roster proof admits a played field**, through the same kind of
+   evidence the stacks proof already accepts, and that evidence covers
+   heads-up and multi-table games as well as spins. This is a change to a
+   money-critical RPC and it gets its own pass.
+2. **An engine lane adopts a REGISTERING row that has already dealt hands**,
+   claims the lease and completes its launch through that RPC. Today no lane
+   looks at a REGISTERING row at all, which is why these have sat since
+   2026-09-08.
+
+Settling the 9 that already prove, while 31 cannot, would leave the record
+half-written; they are held together. 40 events, 2,164.60 chips of finalized
+pools, still owed.
+
+The four SATELLITE heads-ups in that set carry a further decision after the
+launch completes: their finish awards a seat into a target that may itself
+have started since 09-08, which is the satellite settlement authority's
+decision and not a status flip.

@@ -1442,6 +1442,7 @@ describe('every host mutation path obeys the durable release authority', () => {
     expect(installer).not.toContain('ENGINE_CONTROL_SOURCE_DIR');
     expect(installer).not.toContain('ExecStart=$CONTROL_DIR/engine-supervisor.sh');
     expect(installer).toContain('ExecStart=$UNIT_WRAPPER_V1 start %i');
+    expect(installer).toContain('ExecStart=/bin/bash $CONTROL_DIR/verify-recovery-stack.sh');
     expect(workflow).toContain('STAGE="/var/lib/club-arena/control-staging/$RUN_KEY"');
     expect(workflow).toContain('git -C "$REPO_DIR" archive "$CONTROL_SHA" server/scripts');
     expect(workflow).toContain('"$STAGE/server/scripts/install-engine-intake.sh"');

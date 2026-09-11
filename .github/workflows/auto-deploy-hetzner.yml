@@ -230,45 +230,74 @@ jobs:
           [ "$STAGING_TIMEOUT" -le 300 ] || STAGING_TIMEOUT=300
           timeout --signal=TERM --kill-after=5s "${STAGING_TIMEOUT}s" \
             "$HSSH" "TARGET_SHA='$SHA' CONTROL_SHA='$CONTROL_SHA' RUN_KEY='$RUN_KEY' REPO_DIR='$REPO_DIR' bash -se" <<'REMOTE'
-          set -euo pipefail
-          [[ "$TARGET_SHA" =~ ^[0-9a-f]{40}$ ]]
-          [[ "$CONTROL_SHA" =~ ^[0-9a-f]{40}$ ]]
-          [[ "$RUN_KEY" =~ ^[1-9][0-9]*-[1-9][0-9]*$ ]]
-          [ "$(id -u)" = 0 ]
+          set -Eeuo pipefail
+          STAGE_PHASE=identity
+          stage_fail() {
+            local code="$1" detail="$2"
+            printf '[engine-control-stage] phase=%s code=%s detail=%s\n' "$STAGE_PHASE" "$code" "$detail" >&2
+            exit 1
+          }
+          # Never log BASH_COMMAND, environment contents, transport keys or URLs.
+          # The phase/line/error status covers unexpected failures without tracing.
+          trap 'stage_rc=$?; printf "[engine-control-stage] phase=%s code=STAGE_COMMAND_FAILED line=%s exit=%s\n" "$STAGE_PHASE" "$LINENO" "$stage_rc" >&2; exit "$stage_rc"' ERR
+          [[ "$TARGET_SHA" =~ ^[0-9a-f]{40}$ ]] || stage_fail STAGE_TARGET_INVALID invalid-sha
+          [[ "$CONTROL_SHA" =~ ^[0-9a-f]{40}$ ]] || stage_fail STAGE_CONTROL_INVALID invalid-sha
+          [[ "$RUN_KEY" =~ ^[1-9][0-9]*-[1-9][0-9]*$ ]] || stage_fail STAGE_RUN_KEY_INVALID invalid-run-attempt
+          [ "$(id -u)" = 0 ] || stage_fail STAGE_PRIVILEGE_INVALID root-required
           export GIT_NO_REPLACE_OBJECTS=1
+          STAGE_PHASE=prerequisites
           for binary in cmp docker flock git python3 curl systemctl systemd-analyze tar timeout; do
-            command -v "$binary" >/dev/null || { echo "missing host prerequisite: $binary" >&2; exit 1; }
+            command -v "$binary" >/dev/null || stage_fail STAGE_BINARY_MISSING "$binary"
           done
-          [ -s "$REPO_DIR/server/.env" ]
-          git -C "$REPO_DIR" remote get-url origin \
-            | grep -Fi 'smarter-poker/smarter-poker-club-arena' >/dev/null
+          [ -s "$REPO_DIR/server/.env" ] || stage_fail STAGE_ENV_MISSING_OR_EMPTY required-env-present=false
+          [ -r "$REPO_DIR/server/.env" ] || stage_fail STAGE_ENV_UNREADABLE required-env-readable=false
+          git -C "$REPO_DIR" remote get-url origin 2>/dev/null \
+            | grep -Fi 'smarter-poker/smarter-poker-club-arena' >/dev/null \
+            || stage_fail STAGE_REPOSITORY_MISMATCH expected=Smarter-Poker/Smarter-Poker-Club-Arena
+          STAGE_PHASE=source-lock
           exec 8>/var/lock/club-arena-source.lock
-          flock -w 90 8
+          flock -w 90 8 || stage_fail STAGE_SOURCE_LOCK_TIMEOUT source-lock-unavailable
+          STAGE_PHASE=source-fetch
           GIT_HTTP_LOW_SPEED_LIMIT=1024 GIT_HTTP_LOW_SPEED_TIME=30 \
             timeout --signal=TERM --kill-after=5s 90s \
-            git -C "$REPO_DIR" fetch --no-tags origin '+refs/heads/main:refs/remotes/origin/main'
-          MAIN_SHA="$(git -C "$REPO_DIR" rev-parse --verify 'origin/main^{commit}')"
+            git -C "$REPO_DIR" fetch --no-tags origin '+refs/heads/main:refs/remotes/origin/main' 2>/dev/null \
+            || stage_fail STAGE_FETCH_FAILED protected-main-fetch-failed
+          STAGE_PHASE=source-provenance
+          MAIN_SHA="$(git -C "$REPO_DIR" rev-parse --verify 'origin/main^{commit}')" \
+            || stage_fail STAGE_MAIN_UNRESOLVED protected-main-unavailable
           for commit in "$TARGET_SHA" "$CONTROL_SHA"; do
-            git -C "$REPO_DIR" cat-file -e "$commit^{commit}"
-            git -C "$REPO_DIR" merge-base --is-ancestor "$commit" "$MAIN_SHA"
+            git -C "$REPO_DIR" cat-file -e "$commit^{commit}" \
+              || stage_fail STAGE_COMMIT_MISSING "commit=$commit"
+            git -C "$REPO_DIR" merge-base --is-ancestor "$commit" "$MAIN_SHA" \
+              || stage_fail STAGE_ANCESTRY_INVALID "commit=$commit;main=$MAIN_SHA"
           done
           LATEST_REQUIRED="$(git -C "$REPO_DIR" log "$MAIN_SHA" -1 --format=%H -- \
             'server/**' ':(exclude)server/**/*.test.ts' ':(exclude)server/sim/**')"
-          [ "$LATEST_REQUIRED" = "$TARGET_SHA" ]
+          [ "$LATEST_REQUIRED" = "$TARGET_SHA" ] \
+            || stage_fail STAGE_TARGET_STALE "expected=$LATEST_REQUIRED;observed=$TARGET_SHA"
+          STAGE_PHASE=stage-directory
           STAGE="/var/lib/club-arena/control-staging/$RUN_KEY"
-          [[ "$STAGE" =~ ^/var/lib/club-arena/control-staging/[1-9][0-9]*-[1-9][0-9]*$ ]]
+          [[ "$STAGE" =~ ^/var/lib/club-arena/control-staging/[1-9][0-9]*-[1-9][0-9]*$ ]] \
+            || stage_fail STAGE_PATH_INVALID invalid-stage-prefix-or-run-attempt
           rm -rf -- "$STAGE"
           install -d -m 0700 \
             /var/lib/club-arena \
             /var/lib/club-arena/control-staging \
             "$STAGE"
+          STAGE_PHASE=archive
           GIT_NO_REPLACE_OBJECTS=1 git -C "$REPO_DIR" archive "$CONTROL_SHA" server/scripts \
-            | tar --no-same-owner -xf - -C "$STAGE"
+            | tar --no-same-owner -xf - -C "$STAGE" \
+            || stage_fail STAGE_ARCHIVE_FAILED exact-control-archive-failed
+          STAGE_PHASE=syntax
           chmod 0755 "$STAGE/server/scripts/"*.sh
-          for script in "$STAGE"/server/scripts/*.sh; do bash -n "$script"; done
+          for script in "$STAGE"/server/scripts/*.sh; do
+            bash -n "$script" || stage_fail STAGE_SHELL_SYNTAX_FAILED "script=${script##*/}"
+          done
           python3 -m py_compile \
             "$STAGE/server/scripts/engine-release-seal.py" \
-            "$STAGE/server/scripts/engine-release-database-proof.py"
+            "$STAGE/server/scripts/engine-release-database-proof.py" \
+            || stage_fail STAGE_PYTHON_SYNTAX_FAILED control-python-invalid
+          STAGE_PHASE=durability
           python3 - "$STAGE" <<'PY'
           import os, pathlib, sys
           root = pathlib.Path(sys.argv[1])
@@ -292,6 +321,7 @@ jobs:
               try: os.fsync(fd)
               finally: os.close(fd)
           PY
+          printf '[engine-control-stage] phase=durability code=STAGE_DURABLE run=%s target=%s control=%s\n' "$RUN_KEY" "$TARGET_SHA" "$CONTROL_SHA"
           REMOTE
 
       - name: Dispatch the staged SHA through the durable Hetzner intake

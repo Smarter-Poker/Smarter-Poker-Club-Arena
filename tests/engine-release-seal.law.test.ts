@@ -1468,7 +1468,7 @@ describe('every host mutation path obeys the durable release authority', () => {
       workflow.indexOf('name: Dispatch the staged SHA through the durable Hetzner intake')
     );
     const guard = hostStage.match(
-      /^\s*(\[\[ "\$STAGE" =~ \^\/var\/lib\/club-arena\/control-staging\/[^\n]+ \]\])$/m
+      /^\s*(\[\[ "\$STAGE" =~ \^\/var\/lib\/club-arena\/control-staging\/[^\n]+ \]\])(?:\s*\\)?$/m
     )?.[1];
 
     expect(guard).toBe(

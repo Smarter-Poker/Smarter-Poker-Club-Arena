@@ -1310,6 +1310,98 @@ export function horseAtCapacity(load: number): boolean {
 }
 
 /**
+ * How long a HorseTopUpPass may hold an answer (2026-09-11). The pass forgets
+ * everything when one of ITS top-ups seats or registers somebody, but the rest
+ * of the platform - the fleet's cash seating, the seat-first fast lane, the
+ * scheduler, humans buying seats - moves horses without telling it. The old
+ * walk re-read at the start of every top-up, so its answers were a few
+ * seconds old at the first seat. Ten seconds keeps them close to that: a walk
+ * that runs 40 s after a thaw re-reads four times instead of ~150, and a walk
+ * that slows down for any reason cannot make its answers any older.
+ */
+export const HORSE_TOP_UP_PASS_MAX_AGE_MS = 10_000;
+
+/**
+ * ONE FLEET READ PER DISCOVERY PASS (2026-09-11).
+ *
+ * GameServer.discoverTournaments tops up every short REGISTERING tournament,
+ * and every topUpWithHorses call re-read the same pass-invariant answers
+ * before it could say "nobody": the four-game load map (three 1,000-row joined
+ * seat pages plus a registration page), the whole horse fleet (two pages), the
+ * cash-room reserve (two reads) and its club's entire membership (two to four
+ * reads) - eleven of the ~16 sequential round trips of a seat-first top-up.
+ * Measured on production 2026-09-11 04:36-04:44Z: ~146 such calls in one pass
+ * at a median 2.6 s each, nearly all ending "0 of N claimable", so a pass took
+ * 8-10 minutes and every start, ramp and top-up waited behind it.
+ *
+ * A pass holds those answers once. It changes WHEN they are read, never what
+ * is decided from them:
+ *   - an unknown answer (null load map, incomplete page, unreadable reserve or
+ *     membership) is never held, so the next caller asks again, as before;
+ *   - when one of the pass's top-ups has seated or registered anybody, the pass
+ *     forgets it all, so the next claim is decided on fresh reads, as the old
+ *     walk did;
+ *   - nothing is held longer than HORSE_TOP_UP_PASS_MAX_AGE_MS, so what the
+ *     rest of the platform changes reaches the walk within seconds however
+ *     long the walk runs;
+ *   - the database still decides every claim (the four-table trigger under its
+ *     per-player lock, the seat RPC's tournament lane, roster capacity),
+ *     exactly as it always did across the read-then-claim gap every caller
+ *     already has.
+ * A caller that passes no HorseTopUpPass (the fast lane, the boards, the
+ * scheduler, the overlay guard) reads everything per call, unchanged.
+ */
+export class HorseTopUpPass {
+  private readonly held = new Map<string, { readAt: number; answer: Promise<unknown> }>();
+  private readonly maxAgeMs: number;
+  private readonly now: () => number;
+
+  constructor(
+    maxAgeMs: number = HORSE_TOP_UP_PASS_MAX_AGE_MS,
+    now: () => number = () => Date.now()
+  ) {
+    this.maxAgeMs = maxAgeMs;
+    this.now = now;
+  }
+
+  /**
+   * The answer for `key`, read at most once per pass and per maxAgeMs; `keep`
+   * says whether it may be held at all.
+   */
+  once<T>(key: string, read: () => Promise<T>, keep: (value: T) => boolean): Promise<T> {
+    const held = this.held.get(key);
+    if (held && this.now() - held.readAt < this.maxAgeMs) return held.answer as Promise<T>;
+    const pending: Promise<T> = read().then(
+      (value) => {
+        if (!keep(value) && this.held.get(key)?.answer === pending) this.held.delete(key);
+        return value;
+      },
+      (error: unknown) => {
+        if (this.held.get(key)?.answer === pending) this.held.delete(key);
+        throw error;
+      }
+    );
+    this.held.set(key, { readAt: this.now(), answer: pending });
+    return pending;
+  }
+
+  /** Somebody was seated or registered: nothing held may decide the next claim. */
+  forget(): void {
+    this.held.clear();
+  }
+}
+
+/** Through the pass when the caller holds one, straight to the database when not. */
+function viaTopUpPass<T>(
+  pass: HorseTopUpPass | undefined,
+  key: string,
+  read: () => Promise<T>,
+  keep: (value: T) => boolean
+): Promise<T> {
+  return pass ? pass.once(key, read, keep) : read();
+}
+
+/**
  * One entry in a load list: a bare user id, or a user id carried with the
  * tournament the seat/registration belongs to. The richer shape is what makes
  * the seat-first dedupe below possible; the bare one is kept because most
@@ -4328,7 +4420,19 @@ export class TournamentRecurringService {
    * they did before the reserve existed. A reserve that turns a database blip
    * into a frozen lobby would be worse than no reserve.
    */
-  private async cashRoomReserve(): Promise<number> {
+  private async cashRoomReserve(pass?: HorseTopUpPass): Promise<number> {
+    // A pass holds a reserve it READ, never the fail-open 0 of one it could not.
+    const reserve = await viaTopUpPass(
+      pass,
+      'cash-room-reserve',
+      () => this.readCashRoomReserve(),
+      (value) => value !== null
+    );
+    return reserve ?? 0;
+  }
+
+  /** The reserve, or null when it could not be read. cashRoomReserve fails that OPEN, as 0. */
+  private async readCashRoomReserve(): Promise<number | null> {
     try {
       const { data: cashTables, error: tErr } = await supabase
         .from('tables')
@@ -4337,7 +4441,8 @@ export class TournamentRecurringService {
         .eq('is_deleted', false)
         .in('status', ['waiting', 'running'])
         .limit(2000);
-      if (tErr || !cashTables || cashTables.length === 0) return 0;
+      if (tErr || !cashTables) return null;
+      if (cashTables.length === 0) return 0;
 
       const ids = cashTables.map((t) => (t as { id: string }).id);
       /* CHUNKED, AND A FAILED READ IS REPORTED (2026-09-03). `ids` is up to
@@ -4369,13 +4474,13 @@ export class TournamentRecurringService {
           ),
           'TournamentRecurring.cash_floor_reserve_read_failed'
         );
-        return 0;
+        return null;
       }
 
       const wanted = ids.length * CASH_FLOOR_PER_TABLE;
       return Math.max(0, wanted - seated);
     } catch {
-      return 0;
+      return null;
     }
   }
 
@@ -4629,7 +4734,10 @@ export class TournamentRecurringService {
    * partial read is not an empty club, and refusing to register on a failed
    * read starves every event on the platform.
    */
-  private async clubMemberIdsForTournament(tournamentId: string): Promise<Set<string> | null> {
+  private async clubMemberIdsForTournament(
+    tournamentId: string,
+    pass?: HorseTopUpPass
+  ): Promise<Set<string> | null> {
     const hostClub = await supabase
       .from('tournaments')
       .select('club_id, union_id')
@@ -4638,7 +4746,21 @@ export class TournamentRecurringService {
     const hostClubId = (hostClub.data as { club_id?: string } | null)?.club_id;
     const unionId = (hostClub.data as { union_id?: string } | null)?.union_id;
     if (!hostClubId) return null;
+    // Membership depends on the club and the union alone: a pass reads each
+    // scope once, not once per tournament in it. An unknown (null) is not held.
+    return viaTopUpPass(
+      pass,
+      `club-members:${hostClubId}:${unionId ?? ''}`,
+      () => this.clubMemberIdsForScope(hostClubId, unionId),
+      (members) => members !== null
+    );
+  }
 
+  /** Who may enter an event this club hosts, or null when that is unknowable right now. */
+  private async clubMemberIdsForScope(
+    hostClubId: string,
+    unionId: string | undefined
+  ): Promise<Set<string> | null> {
     /* The clubs whose members may enter. For a standalone club that is the one
        host club and nothing else. For a union event it is every club in the
        union, plus the union's own club row (which holds members of its own and
@@ -4685,13 +4807,20 @@ export class TournamentRecurringService {
   private async pickFreeHorses(
     count: number,
     allLanes = false,
-    tournamentId?: string
+    tournamentId?: string,
+    pass?: HorseTopUpPass
   ): Promise<string[]> {
     if (count <= 0) return [];
     try {
       // Dan 2026-08-23: a horse is unavailable at FOUR concurrent games, not
       // at one. See horseLoadMap for what that replaced and what it keeps.
-      const load = await this.horseLoadMap();
+      // One read per discovery pass when the caller holds one (HorseTopUpPass).
+      const load = await viaTopUpPass(
+        pass,
+        'horse-load',
+        () => this.horseLoadMap(),
+        (map) => map !== null
+      );
       // Unknown load, not zero load. horseLoadMap has already reported why.
       // Picking against an empty map means picking horses that are at four
       // tables, which the trigger refuses one by one.
@@ -4734,18 +4863,24 @@ export class TournamentRecurringService {
       // the fleet idled beyond the page. The fleet is ~600 rows of ids; just
       // read all of it keyset-paged (fetchAllRows, the same pattern
       // HorseFleetManager.seedAllTables uses) and filter/shuffle in memory.
-      const fleetPage = await fetchAllRows<{ id: string }>(
-        (cursor, want) => {
-          let q = supabase
-            .from('profiles')
-            .select('id')
-            .eq('is_horse', true)
-            .order('id', { ascending: true })
-            .limit(want);
-          if (cursor) q = q.gt('id', cursor);
-          return q;
-        },
-        { label: 'TournamentRecurring.pickFreeHorses', maxRows: 50_000 }
+      const fleetPage = await viaTopUpPass(
+        pass,
+        'horse-fleet',
+        () =>
+          fetchAllRows<{ id: string }>(
+            (cursor, want) => {
+              let q = supabase
+                .from('profiles')
+                .select('id')
+                .eq('is_horse', true)
+                .order('id', { ascending: true })
+                .limit(want);
+              if (cursor) q = q.gt('id', cursor);
+              return q;
+            },
+            { label: 'TournamentRecurring.pickFreeHorses', maxRows: 50_000 }
+          ),
+        (page) => page.complete
       );
       if (!fleetPage.complete) {
         // The fleet read failing used to read as "the fleet is empty", which
@@ -4770,7 +4905,9 @@ export class TournamentRecurringService {
        * path shut.
        */
       const fleetIds = fleetPage.rows.map((h) => h.id);
-      const clubIds = tournamentId ? await this.clubMemberIdsForTournament(tournamentId) : null;
+      const clubIds = tournamentId
+        ? await this.clubMemberIdsForTournament(tournamentId, pass)
+        : null;
       const inClub = clubIds ? fleetIds.filter((id) => clubIds.has(id)) : fleetIds;
 
       const candidates = selectHorseCandidates(inClub, busy, allLanes, new Date().getUTCHours());
@@ -4815,7 +4952,7 @@ export class TournamentRecurringService {
         const j = nodeCrypto.randomInt(i + 1);
         [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
       }
-      const reserved = await this.cashRoomReserve();
+      const reserved = await this.cashRoomReserve(pass);
       const claimable = Math.max(0, candidates.length - reserved);
       if (claimable < count) {
         console.log(
@@ -5138,12 +5275,16 @@ export class TournamentRecurringService {
    *   consider themselves a cash specialist. With this set, cash-lane horses
    *   are eligible too, and the pool is filtered by whether the horse is
    *   INSIDE ITS ACTIVITY WINDOW instead - "if they are playing".
+   * @param opts.pass  GameServer's discovery pass (HorseTopUpPass): the fleet,
+   *   its load, the cash-room reserve and club membership are read once per
+   *   pass instead of once per call. Every other caller omits it.
    */
   async topUpWithHorses(
     tournamentId: string,
     targetPlayers: number,
-    opts: { allLanes?: boolean } = {}
+    opts: { allLanes?: boolean; pass?: HorseTopUpPass } = {}
   ): Promise<number> {
+    const pass = opts.pass;
     // This entry point is also used by GameServer discovery and by the
     // scheduled/overlay services. Register its whole continuation so stop()
     // cannot release leadership while a paid registration is still in flight.
@@ -5345,7 +5486,7 @@ export class TournamentRecurringService {
           const wantCandidates = seatFirstCandidateCount(shortfall);
           const poolWanted = Math.max(0, wantCandidates - own.length);
           const pool =
-            poolWanted > 0 ? await this.pickFreeHorses(poolWanted, false, tournamentId) : [];
+            poolWanted > 0 ? await this.pickFreeHorses(poolWanted, false, tournamentId, pass) : [];
           const candidates = seatFirstFillOrder(wantCandidates, own, pool);
 
           /* THE LEDGER (see seatFirstSeatPrecheck). The table's capacity is the
@@ -5501,8 +5642,11 @@ export class TournamentRecurringService {
             );
           }
         } else {
-          added = await this.registerHorses(tournamentId, shortfall, opts.allLanes === true);
+          added = await this.registerHorses(tournamentId, shortfall, opts.allLanes === true, pass);
         }
+
+        // Somebody was seated or registered: what this pass read is stale now.
+        if (added > 0) pass?.forget();
 
         /**
          * Dan 2026-08-23: "spins can never ever start until 3 players have sat
@@ -5558,6 +5702,8 @@ export class TournamentRecurringService {
 
         return added;
       } catch {
+        // A throw can land after a seat was taken: trust nothing the pass holds.
+        pass?.forget();
         return 0;
       }
     } finally {
@@ -5568,7 +5714,8 @@ export class TournamentRecurringService {
   private async registerHorses(
     tournamentId: string,
     count: number,
-    allLanes = false
+    allLanes = false,
+    pass?: HorseTopUpPass
   ): Promise<number> {
     try {
       // TOURNEY-AUDIT 2026-07-24: exclude horses already registered/playing in
@@ -5580,7 +5727,12 @@ export class TournamentRecurringService {
       // rule excluded any horse holding a single seat or registration, which
       // made 554 of 584 horses invisible to every tournament while they dealt
       // cash. See horseLoadMap.
-      const load = await this.horseLoadMap();
+      const load = await viaTopUpPass(
+        pass,
+        'horse-load',
+        () => this.horseLoadMap(),
+        (map) => map !== null
+      );
       // Unknown load, not zero load — see horseLoadMap. Registering against an
       // empty map double-books horses that are already at four tables.
       if (!load) return 0;
@@ -5669,24 +5821,30 @@ export class TournamentRecurringService {
        * the HorseFleetManager.seedAllTables pattern) and filter in memory.
        * The hourly rotation below still spreads who is first in line.
        */
-      const poolPage = await fetchAllRows<{
-        id: string;
-        display_name: string | null;
-        username: string | null;
-        use_real_name: boolean | null;
-      }>(
-        (cursor, want) => {
-          let q = supabase
-            .from('profiles')
-            .select('id, display_name, username, use_real_name')
-            .eq('is_horse', true)
-            .eq('horse_status', 'available')
-            .order('id', { ascending: true })
-            .limit(want);
-          if (cursor) q = q.gt('id', cursor);
-          return q;
-        },
-        { label: 'TournamentRecurring.registerHorses', maxRows: 50_000 }
+      const poolPage = await viaTopUpPass(
+        pass,
+        'horse-pool-available',
+        () =>
+          fetchAllRows<{
+            id: string;
+            display_name: string | null;
+            username: string | null;
+            use_real_name: boolean | null;
+          }>(
+            (cursor, want) => {
+              let q = supabase
+                .from('profiles')
+                .select('id, display_name, username, use_real_name')
+                .eq('is_horse', true)
+                .eq('horse_status', 'available')
+                .order('id', { ascending: true })
+                .limit(want);
+              if (cursor) q = q.gt('id', cursor);
+              return q;
+            },
+            { label: 'TournamentRecurring.registerHorses', maxRows: 50_000 }
+          ),
+        (page) => page.complete
       );
       // Fail closed: an incomplete fleet read is not an empty fleet, and
       // registering from half a pool is how the same page gets drained.
@@ -5758,7 +5916,7 @@ export class TournamentRecurringService {
        * platform. Verified before shipping that no board is starved by this -
        * Shark holds 584 horse members, JAQK 580, Midway 323, Deep Stack 416.
        */
-      const clubMemberIds = await this.clubMemberIdsForTournament(tournamentId);
+      const clubMemberIds = await this.clubMemberIdsForTournament(tournamentId, pass);
 
       const eligible = poolAll.filter((h) => {
         if (busyIds.has(h.id)) {

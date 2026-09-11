@@ -55,6 +55,15 @@ export interface LiveHorseDecisionWorkerStatus {
   phase: LiveHorseDecisionWorkerPhase;
   startedAt: number | null;
   readyAt: number | null;
+  /**
+   * How many jobs this lane will keep posted to the worker at once.
+   *
+   * Reported because the lane's throughput is `maxInFlight / round trip` and
+   * that arithmetic was invisible while the queue drowned: an operator could
+   * see 520 queued and 49 expiring a second with no way to tell what the lane
+   * was configured to sustain.
+   */
+  maxInFlight: number;
   queueDepth: number;
   /** Of `queueDepth`, the jobs already posted and waiting on the worker's own port. */
   inFlightJobs: number;
@@ -131,6 +140,7 @@ const stoppedStatus = (): LiveHorseDecisionWorkerStatus => ({
   phase: 'stopped',
   startedAt: null,
   readyAt: null,
+  maxInFlight: 0,
   queueDepth: 0,
   inFlightJobs: 0,
   activeRequestId: null,
@@ -215,7 +225,50 @@ export class LiveHorseDecisionWorkerClient {
    * per job, and stays small enough that an abort or expiry usually reaches the
    * worker before the job it cancels has started.
    */
-  private static readonly DEFAULT_MAX_IN_FLIGHT = 4;
+  /**
+   * ── WHY 4 BECAME 32 (2026-09-11, evening) ─────────────────────────────────
+   *
+   * The pipeline exists because every job pays a round trip through the MAIN
+   * event loop (see the note above this class). Its throughput is therefore
+   * `maxInFlight / mainLoopRoundTrip`, and 4 was derived when that round trip
+   * was small and ~185 tables were dealing.
+   *
+   * Measured on engine-01 at 20:2x UTC, 470 tables dealing and 2,646 horses
+   * seated after the day's fixes put them back on the floor:
+   *
+   *     poker_event_loop_delay_p50_ms                     309
+   *     poker_main_event_loop_governor_scale              0.2   (already shedding)
+   *     poker_horse_decision_worker_event_loop_delay_p50    22   (the worker is NOT busy)
+   *     poker_horse_decision_worker_last_compute_ms       0.07 .. 337
+   *     poker_horse_decision_worker_queue_depth           ~520
+   *     poker_horse_decision_worker_oldest_queued_age_ms  ~8,200 (pinned at the deadline)
+   *     poker_horse_decision_worker_expired_jobs          +49 per second
+   *     poker_horse_decision_fallbacks_total              13,973
+   *
+   * Four in flight against a 309 ms round trip is about 13 jobs a second. The
+   * queue sat 520 deep with its head at the 8-second caller deadline, so ~49
+   * decisions a second EXPIRED, and an expired decision is a seat taking the
+   * legal check or fold without thinking. Fourteen thousand hands were played
+   * that way. The worker meanwhile ran a 22 ms loop: it was never the
+   * constraint, the serialisation was.
+   *
+   * 32 gives about 100 jobs a second at the same round trip, which is roughly
+   * twice the measured shortfall, and it is still bounded: the worker holds at
+   * most 32 posted jobs, most of them costing well under a millisecond.
+   *
+   * NOTHING ELSE MOVES. FIFO ownership, CANCEL on abort or expiry, the
+   * integrity clock starting at the HEAD of the posted FIFO, and the dispatch
+   * barrier are all independent of the depth - they are pinned in
+   * client.test.ts and none of those pins changes here. The one real cost of a
+   * deeper pipeline is that a cancel more often arrives after the job it
+   * cancels has started, which wastes a sub-millisecond computation.
+   *
+   * THIS IS NOT A CAPACITY FIX. The main loop is genuinely saturated at 309 ms
+   * with its own governor at 0.2, and that is engine-01's three cores against a
+   * floor that doubled today. This stops the decision lane being serialised
+   * behind that saturation; it does not create headroom that is not there.
+   */
+  private static readonly DEFAULT_MAX_IN_FLIGHT = 32;
   private static readonly STATUS_INTERVAL_MS = 1_000;
   private readonly worker: WorkerLike;
   private readonly onFatal?: (error: Error) => void;
@@ -324,6 +377,7 @@ export class LiveHorseDecisionWorkerClient {
       phase: this.phase,
       startedAt: this.startedAt,
       readyAt: this.readyAt,
+      maxInFlight: this.maxInFlight,
       queueDepth: this.queue.length + this.inFlight.length,
       inFlightJobs: this.inFlight.length,
       activeRequestId: active?.request.requestId ?? null,

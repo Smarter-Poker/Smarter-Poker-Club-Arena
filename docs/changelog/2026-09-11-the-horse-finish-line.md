@@ -96,3 +96,85 @@ occurrences today and both only ever wrong in the safe direction:
   second copy of that rule in the engine, which is a larger change than this.
 - the departure cap is spent in table-id order, so a busy cycle can starve high
   ids. It binds only when more than four certain departures coincide.
+
+## 4. Fourteen thousand hands played without a decision
+
+Found by one of the alarms shipped this morning. `HorseDecisionFallbacks` went
+critical and paged: horses were taking the legal check or fold because their
+decision never arrived.
+
+Read off engine-01 at 20:2x UTC, 470 tables dealing and 2,646 horses seated
+after the day's fixes put them back on the floor:
+
+| gauge                                                 | reading                        |
+| ----------------------------------------------------- | ------------------------------ |
+| `poker_event_loop_delay_p50_ms` (main)                | 309                            |
+| `poker_main_event_loop_governor_scale`                | 0.2, already shedding          |
+| `poker_horse_decision_worker_event_loop_delay_p50_ms` | 22                             |
+| `poker_horse_decision_worker_last_compute_ms`         | 0.07 to 337                    |
+| `poker_horse_decision_worker_queue_depth`             | ~520                           |
+| `poker_horse_decision_worker_oldest_queued_age_ms`    | ~8,200, pinned at the deadline |
+| `poker_horse_decision_worker_expired_jobs`            | +49 per second                 |
+| `poker_horse_decision_fallbacks_total`                | 13,973                         |
+
+The worker was not busy. Its own loop ran at 22 ms while the queue drowned,
+because every job pays a round trip through the MAIN loop, which was at 309 ms.
+A lane that keeps four jobs posted finishes about `4 / 0.309` = 13 a second
+against that round trip, so the queue sat 520 deep with its head at the
+8-second caller deadline and ~49 decisions a second EXPIRED. An expired
+decision is a seat taking the legal check or fold without thinking.
+
+`DEFAULT_MAX_IN_FLIGHT` is 32. The depth is the lane's throughput, and 4 was
+derived when the round trip was small and ~185 tables were dealing. Nothing
+else moves: FIFO ownership, CANCEL on abort or expiry, the integrity clock
+starting at the head of the posted FIFO and the dispatch barrier are all
+independent of the depth, and their pins are untouched. `status()` now reports
+`maxInFlight`, because an operator watching 520 queued had no way to see what
+the lane was configured to sustain.
+
+**This is not a capacity fix and must not be read as one.** engine-01 is three
+cores, its main loop is genuinely saturated at 309 ms with its own governor at
+0.2, and the floor roughly doubled today (horses seated 1,470 to 2,646, tables
+with horses 705 to 1,187) because the rebuy door, the registration door and the
+re-tag all put horses back on it. This stops the decision lane being serialised
+behind that saturation. It does not create headroom that is not there, and
+`EngineCoreOutOfHeadroom` is pending on that box as this is written.
+
+## 5. The floor configuration, and the one thing that is Dan's
+
+- **The tagger was re-run** (`horses:tag --club=all --force`), which the audit
+  had left as "TO LAND IT". Its host-aware draw is what the fix was for.
+  Stranded bodies - horses whose every tag names a game their own host does not
+  deal, so they can sit nowhere - went **58 to 0 on Midway and 2 to 0 on Deep
+  Stack**. Midway's average reachable games per body went 5.15 to 5.96 and its
+  bodies with fewer than four went 254 to 196. `tagged_at` is now stamped; it
+  had read 2026-09-04 on all 1,580 rows while the values were from a later run.
+
+- **Dan's 2026-09-03 standing order is now fully executed.** One cash game
+  above 2/5 had survived it: NLH 25/50 on Deep Stack, dormant, one open table,
+  zero seats sold. It was also the only reason `fn_available_stake_bands()`
+  answered 'high' to every Midway horse. Disabled, with the reason recorded in
+  `cash_cluster_events`. There are now no cash games above 2/5 anywhere, and
+  every band answer reads `{micro, low, mid}`.
+
+- **Deep Stack action and madness templates: created, and held back.** The
+  audit's finding 3 was that Deep Stack runs one template per (variant, rung)
+  while Midway runs three, so 66% of Deep Stack bodies can never reach four
+  games and "4 tables at once" is unreachable there by any seating code. The
+  sixteen rows exist (`fn_cash_game_ensure`, nlh/plo4/plo5/plo6 at 1/2 and
+  2/5), and the probe measured exactly what they buy: bodies with fewer than
+  four reachable games **192 to 115**, average reachable games **2.94 to 4.31**,
+  which crosses the line Dan's rule asks for. They are `enabled = false` right
+  now, one UPDATE from live, with the reason in `cash_cluster_events`, because
+  each one opens a table and engine-01 has no room for sixteen more.
+
+  So the remaining half of "4 tables at once" is not a configuration question
+  any more. It is a box: three cores, a main loop at 309 ms, a governor already
+  at 0.2. The rows are staged for the hour that box gets bigger.
+
+- **Occupancy needs no ruling.** The audit escalated `CASH_FULL_FRACTION = 0.75`
+  against the curve's 40% peak as two written rules in conflict. Measured this
+  evening the floor is at **74.7% of seats on Midway and 69.7% on Deep Stack**,
+  so the two agree in practice and no constant needs changing. The half that is
+  genuinely unmet is tables per body (2.2 to 2.4 against 4), and that is the
+  box, above.

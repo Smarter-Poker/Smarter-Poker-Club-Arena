@@ -1,0 +1,32 @@
+
+[1m[30m[46m RUN [49m[39m[22m [36mv4.1.11 [39m[90m/Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-chip-entry-swarm[39m
+
+ [31m❯[39m tests/unit/tournamentCreateEnabledOptionsWiring.test.ts [2m([22m[2m1 test[22m[2m | [22m[31m1 failed[39m[2m)[22m[32m 5[2mms[22m[39m
+[31m     [31m×[31m preserves free entry and paid purchases while transmitting both enabled settings[39m[32m 3[2mms[22m[39m
+
+[31m⎯⎯⎯⎯⎯⎯⎯[39m[1m[41m Failed Tests 1 [49m[22m[31m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[41m[1m FAIL [22m[49m tests/unit/tournamentCreateEnabledOptionsWiring.test.ts[2m > [22mPhase Three enabled Free Buy creation options[2m > [22mpreserves free entry and paid purchases while transmitting both enabled settings
+[31m[1mAssertionError[22m: expected undefined to be true // Object.is equality[39m
+
+[32m- Expected:[39m
+true
+
+[31m+ Received:[39m
+undefined
+
+[36m [2m❯[22m tests/unit/tournamentCreateEnabledOptionsWiring.test.ts:[2m27:28[22m[39m
+    [90m 25|[39m     [34mexpect[39m(mapped[33m.[39maddOnAvailable)[33m.[39m[34mtoBe[39m([35mtrue[39m)[33m;[39m
+    [90m 26|[39m     [34mexpect[39m(mapped[33m.[39maddOnCost)[33m.[39m[34mtoBe[39m([34m1[39m)[33m;[39m
+    [90m 27|[39m     [34mexpect[39m(mapped[33m.[39mfreeBuy)[33m.[39m[34mtoBe[39m([35mtrue[39m)[33m;[39m
+    [90m   |[39m                            [31m^[39m
+    [90m 28|[39m     [34mexpect[39m(mapped[33m.[39maddOnFromStart)[33m.[39m[34mtoBe[39m([35mtrue[39m)[33m;[39m
+    [90m 29|[39m     [35mconst[39m rpc [33m=[39m [33mTournamentService[39m[33m.[39m[34mbuildRpcConfig[39m(mapped)[33m;[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯[22m[39m
+
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[31m1 failed[39m[22m[90m (1)[39m
+[2m   Start at [22m 03:37:49
+[2m   Duration [22m 1.27s[2m (transform 238ms, setup 297ms, import 233ms, tests 5ms, environment 566ms)[22m

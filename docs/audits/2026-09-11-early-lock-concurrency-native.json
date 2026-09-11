@@ -1,0 +1,23 @@
+{
+  "original_late_lease_race": {
+    "sqlstate_55p03": true,
+    "seconds": 0.0007,
+    "exit_code": 3
+  },
+  "arriving_request_cannot_hold_lease_across_cutover": true,
+  "busy_request_still_refuses_nowait": {
+    "sqlstate_55p03": true,
+    "seconds": 0.0008,
+    "exit_code": 3
+  },
+  "recorded_at": "2026-09-11T09:06:40.227343+00:00",
+  "passed": true,
+  "exact_rollback": true,
+  "activation_sha256": "579c982a97e9ee356bec57f6b714ce7fa86a517d93e9e7697bd1807b3b07f462",
+  "native_socket": "/tmp/codex-chip-drift-owned-native-qeol56o5/socket",
+  "production_mutations": false,
+  "limits": [
+    "Native PostgreSQL lock scheduling with the exact activation prefix and protocol-2 relation-lock order; it is not a live traffic witness.",
+    "The separate whole-bundle proof covers financial authorities and exact catalog/business rollback."
+  ]
+}

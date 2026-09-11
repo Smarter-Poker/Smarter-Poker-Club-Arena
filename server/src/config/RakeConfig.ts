@@ -111,8 +111,17 @@ export function getPlayerCountCaps(fullCap: number): { players: number; cap: num
 // Past the pivot the jackpot is already large, so new rake is steered into the
 // promo wallet rather than growing main further; the Back Up share is held flat
 // at 25% because its job is to reseed main after a full hit, not to grow.
-// This constant is the STANDARD split; the pivot split is applied at banking
-// time in logBBJCollection against the LIVE main balance.
+// This constant is the STANDARD split.
+//
+// WHERE THE PIVOT IS ACTUALLY APPLIED (corrected 2026-09-11). This said "at
+// banking time in logBBJCollection against the LIVE main balance", which sent
+// every reader to a function that does no arithmetic: `logBBJCollection` calls
+// the `bbj_record_table_contribution` RPC and the split is decided in SQL, by
+// `fn_bbj_allocate` reading `ca_bbj_policy`. THE DATABASE IS THE ALLOCATOR.
+// These constants are a mirror of that policy row and nothing reads them at
+// banking time; `LAW 6` in tests/the-jackpot-is-one-allocator-with-an-opening-
+// balance.law.test.ts is what keeps the mirror honest, and any surface that
+// needs the live rule reads `fn_bbj_allocation_policy()`.
 export const BBJ_POOL_ALLOCATION = {
   mainBBJ: 0.5, // 50% of BBJ rake goes to Main BBJ pool (standard)
   backUpBBJ: 0.25, // 25% goes to Back Up BBJ pool (standard)
@@ -304,7 +313,31 @@ export const BBJ_RULES = {
   miniMinPlayersDealt: RAKE_SPEC.rules.bbjMinPlayersDealt,
   excludeDoubleBoard: true,
   onlyFirstRunout: true,
-  splitIfMultipleQualify: true,
+  /**
+   * FALSE, AND IT ALWAYS WAS (2026-09-11).
+   *
+   * This flag read `true` and the rules page printed, to every player, "If
+   * More Than One Player Loses With A Qualifying Hand, The Prize Is Divided
+   * Between Them." The engine has never done that. `detectBBJHit` below
+   * evaluates every loser and pays the STRONGEST qualifying hand - its own
+   * comment called the split "a documented aspiration" while the surface
+   * above it stated the aspiration as the rule.
+   *
+   * A flag nothing enforces is the same defect `excludeDoubleBoard` and
+   * `onlyFirstRunout` were pinned for beside it; this was the third one in
+   * the object and it was the only one a player could read.
+   *
+   * It is set to what the engine does rather than the engine being changed
+   * to match it, and that is a decision, not a shortcut. Dividing a bad-beat
+   * share needs the atomic payout RPC to accept two bad-beat holders - a
+   * money path with no observed case to build against - and "the strongest
+   * losing hand takes it" is not a worse deal, it is the rule that favours
+   * the worse beat, which is the entire point of a bad beat jackpot. The
+   * copy now states it.
+   *
+   * Pinned by tests/one-qualifying-rule-for-one-jackpot.law.test.ts.
+   */
+  splitIfMultipleQualify: false,
   requireBothHoleCards: true,
 } as const;
 
@@ -724,11 +757,16 @@ export function detectBBJHit(
 
   // 3. Check each loser against the qualifying minimum.
   // BBJ AUDIT FIX 2026-08-18: evaluate ALL losers and take the STRONGEST
-  // qualifying hand (was: first in seat order). BBJ_RULES.splitIfMultipleQualify
-  // remains a documented aspiration - a split payout needs the atomic payout
-  // RPC to accept two bad-beat holders and the odds of two independent
-  // qualifying losers in one hand are astronomical; the strongest-hand rule
-  // is deterministic and favors the worse beat.
+  // qualifying hand (was: first in seat order). A split payout would need the
+  // atomic payout RPC to accept two bad-beat holders, the odds of two
+  // independent qualifying losers in one hand are astronomical, and the
+  // strongest-hand rule is deterministic and favors the worse beat.
+  //
+  // UNTIL 2026-09-11 this comment called the split "a documented aspiration"
+  // while BBJ_RULES.splitIfMultipleQualify read `true` and the rules page
+  // printed the aspiration to players as the rule. The flag is `false` now
+  // and the surface states what this loop does. An aspiration belongs in a
+  // comment; it must never sit in a flag a player-facing surface reads.
   let best: (typeof losers)[number] | null = null;
   for (const loser of losers) {
     const qualifies = doesHandQualify(

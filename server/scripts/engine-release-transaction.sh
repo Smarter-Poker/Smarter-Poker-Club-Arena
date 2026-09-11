@@ -300,8 +300,19 @@ health_instance() {
 }
 
 maintenance_certificate() {
-  local body
-  body="$(curl -fsS --max-time 10 http://127.0.0.1:8080/health 2>/dev/null)" || return 1
+  local response http_code body
+  # A degraded optional subsystem can correctly make /health return 503 while
+  # the engine is still running and has durably parked every table for this
+  # certified break. Preserve that JSON so the certificate predicates below,
+  # rather than curl's HTTP-success policy, remain the restart authority.
+  response="$(curl -sS --max-time 10 --write-out $'\n%{http_code}' \
+    http://127.0.0.1:8080/health 2>/dev/null)" || return 1
+  http_code="${response##*$'\n'}"
+  body="${response%$'\n'*}"
+  case "$http_code" in
+    200|503) ;;
+    *) return 1 ;;
+  esac
   printf '%s' "$body" | MIN_BREAK_MS="$MIN_BREAK_REMAINING_MS" python3 -c '
 import json, sys
 d=json.load(sys.stdin); m=d.get("maintenance")

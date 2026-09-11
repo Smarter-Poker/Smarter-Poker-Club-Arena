@@ -256,7 +256,7 @@ jobs:
             'server/**' ':(exclude)server/**/*.test.ts' ':(exclude)server/sim/**')"
           [ "$LATEST_REQUIRED" = "$TARGET_SHA" ]
           STAGE="/var/lib/club-arena/control-staging/$RUN_KEY"
-          case "$STAGE" in /var/lib/club-arena/control-staging/[1-9][0-9]*-[1-9][0-9]*) ;; *) exit 1 ;; esac
+          [[ "$STAGE" =~ ^/var/lib/club-arena/control-staging/[1-9][0-9]*-[1-9][0-9]*$ ]]
           rm -rf -- "$STAGE"
           install -d -m 0700 \
             /var/lib/club-arena \

@@ -1461,6 +1461,38 @@ describe('every host mutation path obeys the durable release authority', () => {
     expect(hostStage).not.toContain("grep -F 'Smarter-Poker/Smarter-Poker-Club-Arena'");
   });
 
+  it('accepts single-digit run attempts while rejecting malformed or traversing stage paths', () => {
+    const hostStage = workflow.slice(
+      workflow.indexOf('name: Stage exact control bytes'),
+      workflow.indexOf('name: Dispatch the staged SHA through the durable Hetzner intake')
+    );
+    const guard = hostStage.match(
+      /^\s*(\[\[ "\$STAGE" =~ \^\/var\/lib\/club-arena\/control-staging\/[^\n]+ \]\])$/m
+    )?.[1];
+
+    expect(guard).toBe(
+      '[[ "$STAGE" =~ ^/var/lib/club-arena/control-staging/[1-9][0-9]*-[1-9][0-9]*$ ]]'
+    );
+
+    const accepts = (stage: string) =>
+      spawnSync('bash', ['-c', guard ?? 'exit 99'], {
+        encoding: 'utf8',
+        env: { ...process.env, STAGE: stage },
+      }).status === 0;
+
+    expect(accepts('/var/lib/club-arena/control-staging/34613015733-1')).toBe(true);
+    for (const invalid of [
+      '/var/lib/club-arena/control-staging/34613015733-',
+      '/var/lib/club-arena/control-staging/34613015733-01',
+      '/var/lib/club-arena/control-staging/0-1',
+      '/var/lib/club-arena/control-staging/34613015733-1-extra',
+      '/var/lib/club-arena/control-staging/34613015733-1/../../escape',
+      '/tmp/control-staging/34613015733-1',
+    ]) {
+      expect(accepts(invalid), invalid).toBe(false);
+    }
+  });
+
   it('admits only generations compatible with the frozen release v1 wire contract', () => {
     expect(protocolV1).toBe(
       [

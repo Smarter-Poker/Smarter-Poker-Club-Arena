@@ -117,13 +117,25 @@ recreate_or_die() {
 }
 
 health_identity() {
-  local url="$1" body instance remaining curl_timeout
+  local url="$1" response http_code body instance remaining curl_timeout
   remaining="$(recovery_remaining)" || return 1
   curl_timeout=$((remaining - 1))
   [ "$curl_timeout" -le "$HEALTH_TIMEOUT_SEC" ] || curl_timeout="$HEALTH_TIMEOUT_SEC"
   [ "$curl_timeout" -gt 0 ] || return 1
-  body="$(curl -fsS --max-time "$curl_timeout" \
-    -H 'Cache-Control: no-cache, no-store' "$url" 2>/dev/null)" || return 1
+  # Recovery proves the already-sealed process, not a new candidate. A defect
+  # in an optional subsystem can make that exact live source answer 503; the
+  # release that fixes it must still be able to replace it, and a failed trial
+  # must still be able to restore it. Accept only complete 200/503 responses.
+  # New candidates and every publication proof remain strict routing-ready 200.
+  response="$(curl -sS --max-time "$curl_timeout" \
+    -H 'Cache-Control: no-cache, no-store' --write-out $'\n%{http_code}' \
+    "$url" 2>/dev/null)" || return 1
+  http_code="${response##*$'\n'}"
+  body="${response%$'\n'*}"
+  case "$http_code" in
+    200|503) ;;
+    *) return 1 ;;
+  esac
   instance="$(printf '%s' "$body" | EXPECTED_SHA="$DESIRED_SHA" python3 -c '
 import json, os, re, sys
 d=json.load(sys.stdin)
@@ -163,14 +175,14 @@ prove_exact_desired_recovery() {
         public_instance="$(health_identity "$PUBLIC_URL/health?nocache=$(date +%s%N)")" \
           || public_instance=''
         if [ "$public_instance" = "$local_instance" ]; then
-          log "exact desired release $DESIRED_SHA is healthy locally and publicly as $local_instance"
+          log "exact desired release $DESIRED_SHA is live and exact locally and publicly as $local_instance"
           return 0
         fi
       fi
     fi
     bounded_recovery_command 5 sleep 5 || break
   done
-  log "FATAL: exact desired release $DESIRED_SHA did not become locally and publicly healthy before the recovery deadline"
+  log "FATAL: exact desired release $DESIRED_SHA did not become live and exact locally and publicly before the recovery deadline"
   return 1
 }
 

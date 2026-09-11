@@ -61,7 +61,9 @@ describe('health verdicts tolerate load but still recover a sustained wedge', ()
     expect(runTimeout).toBe(imageTimeout);
     expect(supervisorTimeout).toBeGreaterThanOrEqual(imageTimeout);
     expect(engineUp).toMatch(/--health-timeout="\$HEALTH_TIMEOUT"/);
-    expect(supervisor).toContain('curl -fsS --max-time "$curl_timeout"');
+    expect(supervisor).toContain('curl -sS --max-time "$curl_timeout"');
+    expect(supervisor).toContain("--write-out $'\\n%{http_code}'");
+    expect(supervisor).toContain('case "$http_code" in\n    200|503)');
   });
 
   it('gives every restarted engine at least five minutes to cold boot', () => {

@@ -366,6 +366,14 @@ describe('shipped functionality is still here', () => {
       sh.includes('required_status_checks'),
       'no longer checks that required checks exist'
     ).toBe(true);
+    expect(
+      sh.includes("FORBIDDEN_REQUIRED_CONTEXT='Stage B Release Freeze'"),
+      'no longer rejects the unauthorized synthetic release-freeze context'
+    ).toBe(true);
+    expect(
+      sh.includes('index($context) != null'),
+      'the forbidden-context declaration is no longer wired to every branch ruleset'
+    ).toBe(true);
     expect(sh.includes('SHARED_FILES'), 'no longer compares the shared guards').toBe(true);
   });
 

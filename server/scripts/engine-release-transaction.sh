@@ -25,7 +25,7 @@ CERTIFICATE_RESERVE_SECONDS=720
 # Five-to-eight-minute boots have occurred while the database was degraded, so
 # a fixed five-minute break cannot promise recovery from every external outage.
 # It can support an ordinary release only when the currently sealed engine is
-# demonstrably a healthy local/public process AND the fresh database leader
+# demonstrably the exact live local/public process AND the fresh database leader
 # immediately before mutation. Recent healthy releases complete the whole
 # candidate proof in about two minutes. Give candidate proof 150 seconds,
 # reserve 135 seconds for exact desired recovery, and require that this
@@ -275,17 +275,9 @@ source_target_is_current() {
   [[ "$EXPECTED_SERVER_TREE" =~ ^[0-9a-f]{40}$ ]] || die 'target server tree is unreadable'
 }
 
-health_instance_for_sha() {
-  local url="$1" expected_sha="$2" body curl_timeout=15 proof_remaining
-  if [ "${BREAK_END_EPOCH:-0}" -gt 0 ]; then
-    proof_remaining="$(break_proof_seconds)" || return 1
-    [ "$proof_remaining" -gt 1 ] || return 1
-    curl_timeout=$((proof_remaining - 1))
-    [ "$curl_timeout" -le 5 ] || curl_timeout=5
-  fi
-  body="$(curl -fsS --max-time "$curl_timeout" -H 'Cache-Control: no-cache, no-store' \
-    "$url" 2>/dev/null)" || return 1
-  printf '%s' "$body" | EXPECTED_SHA="$expected_sha" python3 -c '
+parse_health_instance_for_sha() {
+  local expected_sha="$1"
+  EXPECTED_SHA="$expected_sha" python3 -c '
 import json, os, re, sys
 d=json.load(sys.stdin)
 instance=d.get("instanceId")
@@ -293,6 +285,45 @@ ok=(d.get("running") is True and d.get("releaseSha")==os.environ["EXPECTED_SHA"]
 if not ok: raise SystemExit(1)
 print(instance)
 ' 2>/dev/null
+}
+
+health_instance_for_sha() {
+  local url="$1" expected_sha="$2" response http_code body curl_timeout=15 proof_remaining
+  if [ "${BREAK_END_EPOCH:-0}" -gt 0 ]; then
+    proof_remaining="$(break_proof_seconds)" || return 1
+    [ "$proof_remaining" -gt 1 ] || return 1
+    curl_timeout=$((proof_remaining - 1))
+    [ "$curl_timeout" -le 5 ] || curl_timeout=5
+  fi
+  response="$(curl -sS --max-time "$curl_timeout" -H 'Cache-Control: no-cache, no-store' \
+    --write-out $'\n%{http_code}' "$url" 2>/dev/null)" || return 1
+  http_code="${response##*$'\n'}"
+  body="${response%$'\n'*}"
+  [ "$http_code" = 200 ] || return 1
+  printf '%s' "$body" | parse_health_instance_for_sha "$expected_sha"
+}
+
+source_instance_for_sha() {
+  local url="$1" expected_sha="$2" response http_code body curl_timeout=15 proof_remaining
+  if [ "${BREAK_END_EPOCH:-0}" -gt 0 ]; then
+    proof_remaining="$(break_proof_seconds)" || return 1
+    [ "$proof_remaining" -gt 1 ] || return 1
+    curl_timeout=$((proof_remaining - 1))
+    [ "$curl_timeout" -le 5 ] || curl_timeout=5
+  fi
+  # The serving rollback source may be non-routing-ready because an optional
+  # subsystem is the defect this release replaces. Accept only a complete 200
+  # or 503 response, then prove exact process identity and liveness from the
+  # common JSON body. Candidate, pre-commit, and final checks use the strict helper.
+  response="$(curl -sS --max-time "$curl_timeout" -H 'Cache-Control: no-cache, no-store' \
+    --write-out $'\n%{http_code}' "$url" 2>/dev/null)" || return 1
+  http_code="${response##*$'\n'}"
+  body="${response%$'\n'*}"
+  case "$http_code" in
+    200|503) ;;
+    *) return 1 ;;
+  esac
+  printf '%s' "$body" | parse_health_instance_for_sha "$expected_sha"
 }
 
 health_instance() {
@@ -490,12 +521,12 @@ prove_rollback_readiness() {
       || { [ "$rollback_legacy" = true ] && [ -z "$actual_release" ]; }; } \
     && [ "$autoheal_label" = true ] && [ "$role_label" = engine ] \
     && [ "$restart_policy" = always ] && [ "$autoheal_state" = running ] \
-    || die 'rollback readiness found the sealed desired run specification unhealthy'
+    || die 'rollback readiness found the sealed desired run specification inexact or not live'
 
-  local_instance="$(health_instance_for_sha 'http://127.0.0.1:8080/health' "$rollback_sha")" \
-    || die 'rollback readiness found no exact desired local health'
-  public_instance="$(health_instance_for_sha "$PUBLIC_URL/health?nocache=$(date +%s%N)" "$rollback_sha")" \
-    || die 'rollback readiness found no exact desired public health'
+  local_instance="$(source_instance_for_sha 'http://127.0.0.1:8080/health' "$rollback_sha")" \
+    || die 'rollback readiness found no exact desired local identity and liveness'
+  public_instance="$(source_instance_for_sha "$PUBLIC_URL/health?nocache=$(date +%s%N)" "$rollback_sha")" \
+    || die 'rollback readiness found no exact desired public identity and liveness'
   [ "$local_instance" = "$public_instance" ] \
     || die 'rollback readiness found different local and public desired processes'
   bounded_break_command 18 "$DATABASE_PROOF" --env-file "$ENV_FILE" \
@@ -505,14 +536,14 @@ prove_rollback_readiness() {
 
   final_cid="$(bounded_break_command 8 docker container inspect -f '{{.Id}}' "$CONTAINER")"
   final_started_at="$(bounded_break_command 8 docker container inspect -f '{{.State.StartedAt}}' "$CONTAINER")"
-  final_local="$(health_instance_for_sha 'http://127.0.0.1:8080/health' "$rollback_sha")" \
-    || die 'rollback readiness lost exact desired local health'
-  final_public="$(health_instance_for_sha "$PUBLIC_URL/health?nocache=$(date +%s%N)" "$rollback_sha")" \
-    || die 'rollback readiness lost exact desired public health'
+  final_local="$(source_instance_for_sha 'http://127.0.0.1:8080/health' "$rollback_sha")" \
+    || die 'rollback readiness lost exact desired local identity and liveness'
+  final_public="$(source_instance_for_sha "$PUBLIC_URL/health?nocache=$(date +%s%N)" "$rollback_sha")" \
+    || die 'rollback readiness lost exact desired public identity and liveness'
   [ "$final_cid" = "$rollback_cid" ] && [ "$final_started_at" = "$rollback_started_at" ] \
     && [ "$final_local" = "$local_instance" ] && [ "$final_public" = "$local_instance" ] \
     || die 'rollback readiness changed generation during its proof'
-  echo "[engine-release-transaction] exact desired rollback source $rollback_sha is locally, publicly, and database healthy as $local_instance"
+  echo "[engine-release-transaction] exact desired rollback source $rollback_sha is live locally and publicly with a fresh database leader as $local_instance"
 }
 
 emit_already_released() {
@@ -797,8 +828,9 @@ while :; do
   persist_break_deadline
   assert_break_proof_time
 
-  # The five-minute lane is conditional on an immediately measurable healthy
-  # rollback source. It is not pre-started. This proof is deliberately before
+  # The five-minute lane is conditional on an immediately measurable live,
+  # exact rollback source with a fresh elected database leader.
+  # It is not pre-started. This proof is deliberately before
   # prepare, token consumption, autoheal fencing, or serving-process replacement.
   prove_rollback_readiness
   validate_candidate_image

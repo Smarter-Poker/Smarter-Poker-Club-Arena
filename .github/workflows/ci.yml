@@ -1099,6 +1099,10 @@ jobs:
         run: |
           npm ci --omit=optional --prefix scripts/ci/probes/chip-journal-atomicity/postgres-runtime
           bash scripts/dev/probe-tournament-reminders.sh
+      - name: A bust is ranked by when it happened (knockout door, standings, place prepare)
+        env:
+          PGBIN: /usr/lib/postgresql/17/bin
+        run: bash scripts/dev/probe-a-bust-is-ranked-by-when-it-happened-pg17.sh
 
       - name: Certified V31 PostgreSQL 17 behavior gate
         if: >-

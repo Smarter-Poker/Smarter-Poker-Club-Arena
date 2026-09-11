@@ -17,27 +17,37 @@
  *         and its `remainder -= weight; if (remainder <= 0)` loop could award a
  *         ZERO-weight tier when the remainder landed exactly on a boundary.
  *
- * These tests are statistical where they have to be, but every threshold below
- * is loose enough that a correct implementation will not flake: the tightest is
- * a chi-square bound that a uniform generator clears with probability > 0.999.
+ * CI never judges a cryptographic sample by luck. The distribution laws below
+ * drive the uint32 source through exact residue and Fisher-Yates cases, so a
+ * correct implementation is deterministic and a biased implementation fails
+ * deterministically.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { secureRandomInt, secureRandom, secureShuffle } from './CryptoRandom.js';
-import { Deck } from './PokerEngine.js';
+import { Deck, RANKS, SUITS } from './PokerEngine.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // HELPERS
 // ═══════════════════════════════════════════════════════════════════════════════
 
-/**
- * Chi-square statistic for observed counts against a uniform expectation.
- * Returned rather than asserted so each caller can pick its own bound.
- */
-function chiSquareUniform(counts: number[]): number {
-  const total = counts.reduce((a, b) => a + b, 0);
-  const expected = total / counts.length;
-  return counts.reduce((acc, c) => acc + (c - expected) ** 2 / expected, 0);
+function withUint32Draws<T>(draws: number[], run: () => T): T {
+  const remaining = [...draws];
+  const randomValues = vi.spyOn(globalThis.crypto, 'getRandomValues').mockImplementation(((
+    array: Uint32Array
+  ) => {
+    const next = remaining.shift();
+    if (next === undefined) throw new Error('test exhausted its deterministic uint32 draws');
+    array[0] = next >>> 0;
+    return array;
+  }) as unknown as typeof globalThis.crypto.getRandomValues);
+  try {
+    const result = run();
+    expect(remaining, 'every deterministic uint32 draw was consumed').toHaveLength(0);
+    return result;
+  } finally {
+    randomValues.mockRestore();
+  }
 }
 
 const cardKey = (c: { rank: string; suit: string }) => `${c.rank}${c.suit}`;
@@ -66,18 +76,18 @@ describe('secureRandomInt', () => {
     }
   });
 
-  it('is uniform over a range that does not divide 2^32', () => {
-    // 7 buckets, 70_000 draws => expected 10_000 each.
-    // chi-square with 6 df: the 99.9th percentile is 22.46.
-    const counts = new Array(7).fill(0);
-    for (let i = 0; i < 70_000; i++) counts[secureRandomInt(7)]++;
-    expect(chiSquareUniform(counts)).toBeLessThan(22.46);
+  it('maps every accepted residue exactly once for a non-divisor of 2^32', () => {
+    withUint32Draws([0, 1, 2, 3, 4, 5, 6], () => {
+      expect(Array.from({ length: 7 }, () => secureRandomInt(7))).toEqual([0, 1, 2, 3, 4, 5, 6]);
+    });
   });
 
-  it('covers every value of a small range', () => {
-    const seen = new Set<number>();
-    for (let i = 0; i < 1_000; i++) seen.add(secureRandomInt(6));
-    expect(seen.size).toBe(6);
+  it('rejects the incomplete high residue block instead of applying modulo bias', () => {
+    const max = 7;
+    const firstRejected = Math.floor(0xffffffff / max) * max;
+    withUint32Draws([firstRejected, 0xffffffff, 6], () => {
+      expect(secureRandomInt(max)).toBe(6);
+    });
   });
 });
 
@@ -86,24 +96,22 @@ describe('secureRandomInt', () => {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 describe('secureRandom', () => {
-  it('returns a float in [0, 1) and never repeats trivially', () => {
-    const seen = new Set<number>();
-    for (let i = 0; i < 5_000; i++) {
-      const v = secureRandom();
-      expect(v).toBeGreaterThanOrEqual(0);
-      expect(v).toBeLessThan(1);
-      seen.add(v);
-    }
-    // 5_000 draws from a 2^32 space: a collision is possible but the generator
-    // being stuck is what this catches.
-    expect(seen.size).toBeGreaterThan(4_990);
+  it('consumes a fresh uint32 for every bounded float', () => {
+    withUint32Draws([0, 1, 0xffffffff], () => {
+      const values = [secureRandom(), secureRandom(), secureRandom()];
+      expect(values).toEqual([0, 1 / 0x100000000, 0xffffffff / 0x100000000]);
+      expect(values.every((value) => value >= 0 && value < 1)).toBe(true);
+    });
   });
 
-  it('has a mean near 0.5', () => {
-    let sum = 0;
-    const n = 50_000;
-    for (let i = 0; i < n; i++) sum += secureRandom();
-    expect(Math.abs(sum / n - 0.5)).toBeLessThan(0.01);
+  it('scales the full uint32 range into exact [0, 1) boundaries', () => {
+    withUint32Draws([0, 0x80000000, 0xffffffff], () => {
+      expect([secureRandom(), secureRandom(), secureRandom()]).toEqual([
+        0,
+        0.5,
+        0xffffffff / 0x100000000,
+      ]);
+    });
   });
 });
 
@@ -132,17 +140,23 @@ describe('secureShuffle', () => {
     expect(one).toEqual([7]);
   });
 
-  it('sends element 0 to a uniform destination index', () => {
-    // The old modulo implementation skewed low indices. 10 slots, 20_000
-    // shuffles => expected 2_000 each; chi-square with 9 df, 99.9th pct = 27.88.
-    const N = 10;
-    const counts = new Array(N).fill(0);
-    for (let trial = 0; trial < 20_000; trial++) {
-      const arr = Array.from({ length: N }, (_, i) => i);
-      secureShuffle(arr);
-      counts[arr.indexOf(0)]++;
+  it('maps every Fisher-Yates choice sequence to each three-element permutation once', () => {
+    const permutations = new Set<string>();
+    for (let choiceAtTwo = 0; choiceAtTwo <= 2; choiceAtTwo++) {
+      for (let choiceAtOne = 0; choiceAtOne <= 1; choiceAtOne++) {
+        const arr = [0, 1, 2];
+        withUint32Draws([choiceAtTwo, choiceAtOne], () => secureShuffle(arr));
+        permutations.add(arr.join(','));
+      }
     }
-    expect(chiSquareUniform(counts)).toBeLessThan(27.88);
+    expect([...permutations].sort()).toEqual([
+      '0,1,2',
+      '0,2,1',
+      '1,0,2',
+      '1,2,0',
+      '2,0,1',
+      '2,1,0',
+    ]);
   });
 });
 
@@ -162,27 +176,27 @@ describe('Deck.shuffle', () => {
   });
 
   it('does not leave the deck in new-deck order', () => {
-    const ordered = new Deck();
-    // A fresh Deck() already shuffles in reset(); build the reference order by
-    // hand instead of trusting an unshuffled instance.
-    const first = ordered.deal(52).map(cardKey).join(',');
-    const second = new Deck().deal(52).map(cardKey).join(',');
-    expect(first).not.toBe(second);
+    const newDeckOrder = SUITS.flatMap((suit) => RANKS.map((rank) => ({ rank, suit })))
+      .map(cardKey)
+      .join(',');
+    const shuffled = withUint32Draws(new Array(51).fill(0), () =>
+      new Deck().deal(52).map(cardKey).join(',')
+    );
+    expect(shuffled).not.toBe(newDeckOrder);
   });
 
-  it('deals the ace of spades to a uniform position', () => {
-    // The single strongest signal that a shuffle is biased: track one card's
-    // landing slot across many deals, bucketed into 13 groups of 4 positions.
-    const BUCKETS = 13;
-    const counts = new Array(BUCKETS).fill(0);
-    const TRIALS = 26_000; // expected 2_000 per bucket
-    for (let t = 0; t < TRIALS; t++) {
-      const cards = new Deck().deal(52);
+  it('can deal the ace of spades to every position through exact Fisher-Yates choices', () => {
+    const positions: number[] = [];
+    for (let target = 0; target < 52; target++) {
+      const draws = Array.from({ length: 51 }, (_, offset) => {
+        const index = 51 - offset;
+        return index === 51 ? target : index;
+      });
+      const cards = withUint32Draws(draws, () => new Deck().deal(52));
       const idx = cards.findIndex((c) => c.rank === 'A' && c.suit === 'spades');
-      counts[Math.floor(idx / 4)]++;
+      positions.push(idx);
     }
-    // chi-square with 12 df: 99.9th percentile is 32.91.
-    expect(chiSquareUniform(counts)).toBeLessThan(32.91);
+    expect(positions).toEqual(Array.from({ length: 52 }, (_, index) => index));
   });
 });
 

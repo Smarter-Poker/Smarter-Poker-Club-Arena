@@ -477,7 +477,7 @@ esac
     writeFileSync(
       join(bin, 'curl'),
       `#!/usr/bin/env bash
-printf '%s\\n' '{"running":true,"releaseSha":"${A_SHA}","liveness":"ok","instanceId":"12345-deadbeef"}'
+printf '%s\\n%s' '{"running":true,"releaseSha":"${A_SHA}","liveness":"ok","instanceId":"12345-deadbeef"}' '200'
 `
     );
     chmodSync(join(bin, 'curl'), 0o755);
@@ -514,7 +514,7 @@ exec "$@"
       },
     });
     expect(supervisor.status, supervisor.stderr).toBe(0);
-    expect(supervisor.stdout).toContain('is healthy locally and publicly as 12345-deadbeef');
+    expect(supervisor.stdout).toContain('is live and exact locally and publicly as 12345-deadbeef');
     expect(readFileSync(mutationLog, 'utf8')).toBe('');
   });
 
@@ -618,7 +618,7 @@ exec "$@"
     writeFileSync(
       join(bin, 'curl'),
       `#!/usr/bin/env bash
-printf '%s\\n' '{"running":true,"releaseSha":"${A_SHA}","liveness":"ok","instanceId":"12345-deadbeef"}'
+printf '%s\\n%s' '{"running":true,"releaseSha":"${A_SHA}","liveness":"ok","instanceId":"12345-deadbeef"}' '200'
 `
     );
     chmodSync(join(bin, 'curl'), 0o755);
@@ -665,7 +665,7 @@ printf '%s\\n' '{"running":true,"releaseSha":"${A_SHA}","liveness":"ok","instanc
     );
     expect(stoppedDesiredRecovery.status, stoppedDesiredRecovery.stderr).toBe(0);
     expect(stoppedDesiredRecovery.stdout).toContain(
-      'is healthy locally and publicly as 12345-deadbeef'
+      'is live and exact locally and publicly as 12345-deadbeef'
     );
     expect(readFileSync(mutationLog, 'utf8')).toContain('docker start club-arena-engine');
     expect(readFileSync(mutationLog, 'utf8')).not.toContain('engine-up');
@@ -1755,8 +1755,8 @@ describe('every host mutation path obeys the durable release authority', () => {
 
   it('executes the exact full-SHA/process health predicate and rejects empty identities', () => {
     const helper = transaction.slice(
-      transaction.indexOf('health_instance_for_sha()'),
-      transaction.indexOf('health_instance()')
+      transaction.indexOf('parse_health_instance_for_sha()'),
+      transaction.indexOf('\nhealth_instance_for_sha()')
     );
     const python = helper.match(/python3 -c '\n([\s\S]*?)\n' 2>\/dev\/null/)?.[1];
     expect(python).toContain('d.get("releaseSha")==os.environ["EXPECTED_SHA"]');
@@ -1842,6 +1842,9 @@ describe('every host mutation path obeys the durable release authority', () => {
     );
   });
 
+  // Builds a repository sandbox and runs the real image builder, so it is
+  // subprocess-bound like the provenance case above; it timed out at 5046ms in
+  // a loaded full-suite run with every assertion holding. Budget, not behaviour.
   it('excludes mutable host files and credentials from the executable image build path', () => {
     const sandbox = mkdtempSync(join(tmpdir(), 'engine-clean-build-'));
     try {
@@ -2018,10 +2021,7 @@ sys.exit(int(os.environ.get('FAKE_GIT_ARCHIVE_FAILURE', '0')))
     } finally {
       rmSync(sandbox, { recursive: true, force: true });
     }
-  }, // Builds a repository sandbox and runs the real image builder, so it is
-  // subprocess-bound like the provenance case above; it timed out at 5046ms in
-  // a loaded full-suite run with every assertion holding. Budget, not behaviour.
-  15_000);
+  }, 15_000);
 
   it('revalidates restart authority under the shared lock and starts in that same shell', () => {
     const releaseLoop = transaction.indexOf(
@@ -2608,7 +2608,7 @@ esac
       writeFileSync(
         join(bin, 'curl'),
         `#!/usr/bin/env bash
-printf '%s\n' '{"running":true,"releaseSha":"${B_SHA}","liveness":"ok","instanceId":"${instanceId}"}'
+printf '%s\n%s' '{"running":true,"releaseSha":"${B_SHA}","liveness":"ok","instanceId":"${instanceId}"}' '200'
 `
       );
       writeFileSync(

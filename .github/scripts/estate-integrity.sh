@@ -41,6 +41,12 @@ REPOS=(
   PepNationLab
 )
 
+# An agent temporarily added this synthetic check to Club Arena without user
+# authorization on 2026-09-11. It is not a CI job and can deadlock every PR.
+# Keep the exact context globally forbidden; this audit is read-only and raises
+# the existing integrity alarm if any repository ruleset ever contains it.
+FORBIDDEN_REQUIRED_CONTEXT='Stage B Release Freeze'
+
 # Files that must be byte-identical in every repo that has them. Each is a
 # guard the whole estate depends on behaving the same way everywhere.
 SHARED_FILES=(
@@ -105,6 +111,21 @@ for r in "${REPOS[@]}"; do
     add "**$r** — has NO branch ruleset at all. \`main\` is unprotected: it can be force-pushed, deleted, or pushed to directly."
     continue
   fi
+
+  FORBIDDEN_RULESETS=""
+  while IFS= read -r RULESET_ID; do
+    [ -n "$RULESET_ID" ] || continue
+    RULESET_DETAIL=$(gh_ro "repos/Smarter-Poker/$r/rulesets/$RULESET_ID")
+    if printf '%s' "$RULESET_DETAIL" | jq -e --arg context "$FORBIDDEN_REQUIRED_CONTEXT" \
+      '[.rules[]? | select(.type=="required_status_checks") | .parameters.required_status_checks[]?.context] | index($context) != null' \
+      >/dev/null 2>&1; then
+      FORBIDDEN_RULESETS="$FORBIDDEN_RULESETS $RULESET_ID"
+    fi
+  done < <(printf '%s' "$RS" | jq -r '.[] | select(.target=="branch") | .id')
+  if [ -n "$FORBIDDEN_RULESETS" ]; then
+    add "**$r** — unauthorized required context \`$FORBIDDEN_REQUIRED_CONTEXT\` exists in ruleset(s):\`$FORBIDDEN_RULESETS\`. Remove it; synthetic release freezes are forbidden."
+  fi
+
   D=$(gh_ro "repos/Smarter-Poker/$r/rulesets/$ID")
   [ -n "$D" ] || { add "**$r** — ruleset \`$ID\` is listed but unreadable."; continue; }
 

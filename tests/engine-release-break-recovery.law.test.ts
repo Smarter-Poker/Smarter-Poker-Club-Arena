@@ -58,7 +58,7 @@ describe('engine release recovery stays inside one honest break boundary', () =>
       transaction.indexOf('emit_already_released()')
     );
     expect(readinessBody).toContain('get desired-image-id');
-    expect(readinessBody).toContain('health_instance_for_sha');
+    expect(readinessBody).toContain('source_instance_for_sha');
     expect(readinessBody).toContain('exact desired database leader');
     expect(readinessBody).toContain('--max-heartbeat-age-seconds 15');
   });
@@ -149,7 +149,7 @@ exit 4
         join(bin, 'curl'),
         `#!/usr/bin/env bash
 printf '%s\n' "$*" >> '${curlLog}'
-printf '%s\n' '{"running":true,"releaseSha":"${desiredSha}","liveness":"ok","instanceId":"12345-deadbeef"}'
+printf '%s\n%s' '{"running":true,"releaseSha":"${desiredSha}","liveness":"ok","instanceId":"12345-deadbeef"}' '503'
 `
       );
       chmodSync(join(bin, 'curl'), 0o755);
@@ -179,7 +179,7 @@ printf '%s\n' '{"running":true,"releaseSha":"${desiredSha}","liveness":"ok","ins
       });
       expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
       expect(result.stdout).toContain('force-desired recovery is evicting every unsealed runtime');
-      expect(result.stdout).toContain('is healthy locally and publicly as 12345-deadbeef');
+      expect(result.stdout).toContain('is live and exact locally and publicly as 12345-deadbeef');
       expect(readFileSync(curlLog, 'utf8')).toContain('http://127.0.0.1:8080/health');
       expect(readFileSync(curlLog, 'utf8')).toContain(
         'https://engine.example.invalid/health?nocache='

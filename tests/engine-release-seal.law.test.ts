@@ -888,6 +888,7 @@ describe('every host mutation path obeys the durable release authority', () => {
   const supervisor = read('server/scripts/engine-supervisor.sh');
   const installer = read('server/scripts/install-engine-supervisor.sh');
   const recoveryVerifier = read('server/scripts/verify-recovery-stack.sh');
+  const restartCertificate = read('server/scripts/verify-restart-certificate.sh');
   const dockerfile = read('server/Dockerfile');
 
   it('authorizes immutable identity before engine-up stops the serving container', () => {
@@ -1316,23 +1317,25 @@ sys.exit(int(os.environ.get('FAKE_GIT_ARCHIVE_FAILURE', '0')))
     );
     const lock = cutover.indexOf('exec 9>/var/lock/club-arena-engine-up.lock');
     const localHealth = cutover.indexOf('http://127.0.0.1:8080/health');
-    const certificate = cutover.indexOf('m.get(\\"readyForRestart\\") is True');
+    const certificate = cutover.indexOf('verify-restart-certificate.sh');
     const mutationMarker = cutover.indexOf("echo '$MUTATION_MARKER'");
     const autohealFence = cutover.indexOf('docker stop -t 15 sp-autoheal');
     const start = cutover.indexOf('ENGINE_UP_LOCK_HELD=1');
     const attempted = cutover.indexOf('echo "attempted=true"');
     expect(lock).toBeGreaterThan(0);
-    expect(localHealth).toBeGreaterThan(lock);
-    expect(certificate).toBeGreaterThan(localHealth);
-    expect(mutationMarker).toBeGreaterThan(certificate);
+    expect(certificate).toBeGreaterThan(lock);
+    expect(localHealth).toBeGreaterThan(certificate);
+    expect(mutationMarker).toBeGreaterThan(localHealth);
     expect(autohealFence).toBeGreaterThan(mutationMarker);
     expect(start).toBeGreaterThan(autohealFence);
     expect(attempted).toBeGreaterThan(start);
-    expect(cutover).toContain('m.get(\\"active\\") is True');
-    expect(cutover).toContain('m.get(\\"phase\\")==\\"counting_down\\"');
-    expect(cutover).toContain('m.get(\\"durableConfirmed\\") is True');
-    expect(cutover).toContain('m.get(\\"unparkedTables\\")==0');
-    expect(cutover).toContain('int(m.get(\\"remainingMs\\") or 0)>=180000');
+    expect(restartCertificate).toContain('payload.get("running") is True');
+    expect(restartCertificate).toContain('maintenance.get("active") is True');
+    expect(restartCertificate).toContain('maintenance.get("phase") == "counting_down"');
+    expect(restartCertificate).toContain('maintenance.get("durableConfirmed") is True');
+    expect(restartCertificate).toContain('maintenance.get("readyForRestart") is True');
+    expect(restartCertificate).toContain('maintenance.get("unparkedTables") == 0');
+    expect(restartCertificate).toContain('remaining_ms >= 180_000');
   });
 
   it('guarantee and rollback can only recover the durable desired image', () => {
@@ -1370,7 +1373,7 @@ sys.exit(int(os.environ.get('FAKE_GIT_ARCHIVE_FAILURE', '0')))
       workflow.indexOf('name: Cut over to the new image'),
       workflow.indexOf('name: Verify — liveness')
     );
-    const certificate = cutover.indexOf('m.get(\\"readyForRestart\\") is True');
+    const certificate = cutover.indexOf('verify-restart-certificate.sh');
     const remoteMarker = cutover.indexOf("echo '$MUTATION_MARKER'");
     const localAttempted = cutover.indexOf('echo "attempted=true"');
     expect(certificate).toBeGreaterThan(0);

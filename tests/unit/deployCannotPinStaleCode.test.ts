@@ -31,6 +31,7 @@ import { resolve } from 'node:path';
 
 const read = (p: string) => readFileSync(resolve(process.cwd(), p), 'utf8');
 const WF = read('.github/workflows/auto-deploy-hetzner.yml');
+const RESTART_CERTIFICATE = read('server/scripts/verify-restart-certificate.sh');
 
 describe('the drain gate cannot pin production on stale code', () => {
   it('the deploy has a path that actually lands, and it is not a staleness cap', () => {
@@ -118,12 +119,14 @@ describe('there is no bypass around current restart authority', () => {
   );
 
   it('requires the full maintenance certificate and fails closed', () => {
-    expect(gate).toContain('m.get("active") is True');
-    expect(gate).toContain('m.get("durableConfirmed") is True');
-    expect(gate).toContain('m.get("readyForRestart") is True');
-    expect(gate).toContain('m.get("phase")=="counting_down"');
-    expect(gate).toContain('m.get("unparkedTables")==0');
-    expect(gate).toContain('int(m.get("remainingMs") or 0)>=180000');
+    expect(gate).toContain('ENGINE_RESTART_CERTIFICATE_SCRIPT');
+    expect(RESTART_CERTIFICATE).toContain('payload.get("running") is True');
+    expect(RESTART_CERTIFICATE).toContain('maintenance.get("active") is True');
+    expect(RESTART_CERTIFICATE).toContain('maintenance.get("durableConfirmed") is True');
+    expect(RESTART_CERTIFICATE).toContain('maintenance.get("readyForRestart") is True');
+    expect(RESTART_CERTIFICATE).toContain('maintenance.get("phase") == "counting_down"');
+    expect(RESTART_CERTIFICATE).toContain('maintenance.get("unparkedTables") == 0');
+    expect(RESTART_CERTIFICATE).toContain('remaining_ms >= 180_000');
     expect(gate).toContain('echo "skip=true" >> $GITHUB_OUTPUT');
   });
 

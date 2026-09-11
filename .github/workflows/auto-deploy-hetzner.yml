@@ -406,8 +406,11 @@ jobs:
             > "$CONTROL_DIR/prove-engine-version-moved.mjs"
           git show "$CONTROL_SHA:scripts/ci/supabase-auth-headers.mjs" \
             > "$CONTROL_DIR/supabase-auth-headers.mjs"
-          chmod 0700 "$CONTROL_DIR"/*.mjs
+          git show "$CONTROL_SHA:server/scripts/verify-restart-certificate.sh" \
+            > "$CONTROL_DIR/verify-restart-certificate.sh"
+          chmod 0700 "$CONTROL_DIR"/*.mjs "$CONTROL_DIR"/*.sh
           echo "ENGINE_RELEASE_PROOF_SCRIPT=$CONTROL_DIR/prove-engine-version-moved.mjs" >> "$GITHUB_ENV"
+          echo "ENGINE_RESTART_CERTIFICATE_SCRIPT=$CONTROL_DIR/verify-restart-certificate.sh" >> "$GITHUB_ENV"
 
       # Stamped BEFORE the build so the break gate can subtract the build's
       # real cost from its wait budget (2026-09-05). Without it the gate
@@ -782,6 +785,7 @@ jobs:
               server/scripts/engine-up.sh \
               server/scripts/engine-release-seal.py \
               server/scripts/build-engine-image.sh \
+              server/scripts/verify-restart-certificate.sh \
               server/scripts/verify-recovery-stack.sh \
               | tar -x -C \"\$CONTROL_STAGE\"
             # Design note 5: reset to the resolved target, never moving main.
@@ -992,17 +996,17 @@ jobs:
           READY=no
           for i in $(seq 1 $ATTEMPTS); do
             [ "$(date -u +%s)" -ge "$GATE_DEADLINE" ] && { echo "attempt $i/$ATTEMPTS: the gate deadline passed"; break; }
-            BODY=$(curl -sf --max-time 10 "$ENGINE_URL/health" 2>/dev/null || echo "")
-            # A restart certificate is complete only while the break is
-            # actively counting down, every table is parked, and enough time
-            # remains for a graceful stop. Missing/legacy/straggler states are
-            # not alternate authority paths.
-            STATE=$(echo "$BODY" | python3 -c 'import json,sys; d=json.load(sys.stdin); m=d.get("maintenance"); ok=isinstance(m,dict) and m.get("active") is True and m.get("phase")=="counting_down" and m.get("durableConfirmed") is True and m.get("readyForRestart") is True and m.get("unparkedTables")==0 and int(m.get("remainingMs") or 0)>=180000; print("READY" if ok else "active=%s phase=%s durable=%s remaining=%ss unparked=%s ready=%s" % ((m or {}).get("active"), (m or {}).get("phase"), (m or {}).get("durableConfirmed"), int(((m or {}).get("remainingMs") or 0)/1000), (m or {}).get("unparkedTables"), (m or {}).get("readyForRestart")))' 2>/dev/null || echo ERR)
-            case "$STATE" in
-              READY)  READY=yes; echo "attempt $i/$ATTEMPTS: break is running and every table is parked — restarting now"; break ;;
-              ERR)    echo "attempt $i/$ATTEMPTS: /health unreadable — retrying" ;;
-              *)      echo "attempt $i/$ATTEMPTS: waiting for a complete restart certificate — $STATE" ;;
-            esac
+            # HTTP 503 is a legitimate degraded /health response. The helper
+            # keeps its JSON body, accepts only 200/503, and applies every
+            # restart-certificate predicate. Network failures, other statuses,
+            # malformed JSON and incomplete certificates all fail closed.
+            # Missing/legacy/straggler states are never alternate authority.
+            if STATE=$("$ENGINE_RESTART_CERTIFICATE_SCRIPT" "$ENGINE_URL/health" 2>&1); then
+              READY=yes
+              echo "attempt $i/$ATTEMPTS: break is running and every table is parked — restarting now"
+              break
+            fi
+            echo "attempt $i/$ATTEMPTS: waiting for a complete restart certificate — $STATE"
             sleep 15
           done
 
@@ -1083,8 +1087,8 @@ jobs:
             set -euo pipefail
             exec 9>/var/lock/club-arena-engine-up.lock
             flock -w 30 9
-            BODY=\$(curl -sf --max-time 10 http://127.0.0.1:8080/health)
-            printf '%s' \"\$BODY\" | python3 -c 'import json,sys; d=json.load(sys.stdin); m=d.get(\"maintenance\"); ok=d.get(\"running\") is True and isinstance(m,dict) and m.get(\"active\") is True and m.get(\"phase\")==\"counting_down\" and m.get(\"durableConfirmed\") is True and m.get(\"readyForRestart\") is True and m.get(\"unparkedTables\")==0 and int(m.get(\"remainingMs\") or 0)>=180000; sys.exit(0 if ok else 75)'
+            /var/lib/club-arena/control-staging/${{ github.run_id }}/server/scripts/verify-restart-certificate.sh \
+              http://127.0.0.1:8080/health
             echo '$MUTATION_MARKER'
             # The stock autoheal sidecar is intentionally not release-aware.
             # Fence it before a pending candidate exists; otherwise it can

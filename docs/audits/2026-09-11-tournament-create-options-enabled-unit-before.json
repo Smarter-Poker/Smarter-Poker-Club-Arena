@@ -1,0 +1,12 @@
+{
+  "exit_code": 1,
+  "failure_messages": [
+    "AssertionError: expected undefined to be true // Object.is equality",
+    "AssertionError: expected undefined to be true // Object.is equality",
+    "AssertionError: expected false to be true // Object.is equality",
+    "AssertionError: expected false to be true // Object.is equality"
+  ],
+  "fixture_kind": "entirely_authored_synthetic_input",
+  "configuration_export": false,
+  "native_execution": false
+}

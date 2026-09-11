@@ -1,0 +1,3926 @@
+{
+  "generated_at": "2026-09-11T08:02:11.879966+00:00",
+  "kind": "static_and_captured_option_metadata",
+  "native_execution": false,
+  "capture_source_path": "/tmp/codex-phase-three-create-client-configs.json",
+  "capture_sha256": "971171b571033e78b3f598e709194667a43a574d743f23758def7012505424d4",
+  "captured_case_count": 91,
+  "unique_rpc_count": 58,
+  "duplicate_count": 33,
+  "source_sha256": {
+    "src/lib/tournamentFromTableConfig.ts": "ddab8e64901a6a13a45469aabd0af7c86e16cbe4b3dcd971ac06106d1759314c",
+    "src/services/TournamentService.ts": "8040cd30c2faa2c5507e4725ed6d923343abf5d7b2b9c08365ff650d7403bcc7",
+    "src/pages/TableConfigPage.tsx": "6119a345c0f87a43dde1ba5e239e5bfbb7a14e8466ad10a8b5c93c5eb5df3ecd",
+    "src/components/club/CreateTournamentModal.tsx": "00382555add6f3e90625efe54800e28a436db36d837b22b5efac693f54382290",
+    "supabase/migrations/20260901130000_game_and_ticker_management.sql": "9f9dcd91f9c4f3f03fe5741af3d6059ce2c5ca9a7306fdaf9b37f442729df38c",
+    "supabase/migrations/20260902014858_payout_percent_reaches_the_row_from_the_create_form.sql": "12585e00f99f96ed551738aa4f3c0df504cd163f2dccf372192c26fdf5e5118e",
+    "supabase/migrations/20260903172703_an_event_may_restart_every_week.sql": "793e7a8ad0b1c224314ce866079c22b77b48e6cb7e4c60caf72804e4db8e4df4"
+  },
+  "builder_and_display_metadata": {
+    "builders": [
+      {
+        "file": "src/lib/tournamentFromTableConfig.ts",
+        "function": "buildTournamentConfig",
+        "definitions_found": 1,
+        "assignments": [
+          {
+            "output_key": "slow",
+            "input_paths": []
+          },
+          {
+            "output_key": "standard",
+            "input_paths": []
+          },
+          {
+            "output_key": "turbo",
+            "input_paths": []
+          },
+          {
+            "output_key": "hyper_turbo",
+            "input_paths": []
+          },
+          {
+            "output_key": "durationMinutes",
+            "input_paths": []
+          },
+          {
+            "output_key": "place",
+            "input_paths": []
+          },
+          {
+            "output_key": "percentage",
+            "input_paths": ["Math.round"]
+          },
+          {
+            "output_key": "variant",
+            "input_paths": []
+          },
+          {
+            "output_key": "name",
+            "input_paths": ["config.name", "config.name.trim"]
+          },
+          {
+            "output_key": "type",
+            "input_paths": ["config.koBounty"]
+          },
+          {
+            "output_key": "buyIn",
+            "input_paths": ["split.total"]
+          },
+          {
+            "output_key": "rake",
+            "input_paths": ["split.fee"]
+          },
+          {
+            "output_key": "startingStack",
+            "input_paths": ["config.startingChips"]
+          },
+          {
+            "output_key": "lateRegistrationLevels",
+            "input_paths": ["config.gameMode", "config.lateRegistrationLevel"]
+          },
+          {
+            "output_key": "startTime",
+            "input_paths": [
+              "Date.now",
+              "Number.isFinite",
+              "config.gameMode",
+              "config.startTime",
+              "when.getTime"
+            ]
+          },
+          {
+            "output_key": "isRebuy",
+            "input_paths": ["config.numberOfRebuysReentries"]
+          },
+          {
+            "output_key": "isReentry",
+            "input_paths": ["config.numberOfRebuysReentries"]
+          },
+          {
+            "output_key": "rebuyChips",
+            "input_paths": ["config.startingChips"]
+          },
+          {
+            "output_key": "addOnAvailable",
+            "input_paths": ["config.addOnMultiplier"]
+          },
+          {
+            "output_key": "addOnChips",
+            "input_paths": [
+              "Math.max",
+              "Math.round",
+              "config.addOnMultiplier",
+              "config.startingChips"
+            ]
+          },
+          {
+            "output_key": "addOnLevels",
+            "input_paths": []
+          },
+          {
+            "output_key": "buyIn",
+            "input_paths": ["split.total"]
+          },
+          {
+            "output_key": "type",
+            "input_paths": []
+          },
+          {
+            "output_key": "startingStack",
+            "input_paths": ["config.startingChips"]
+          },
+          {
+            "output_key": "addOnChips",
+            "input_paths": [
+              "Math.max",
+              "Math.round",
+              "config.addOnMultiplier",
+              "config.startingChips"
+            ]
+          },
+          {
+            "output_key": "maxRebuys",
+            "input_paths": ["config.numberOfRebuysReentries"]
+          },
+          {
+            "output_key": "guaranteedPrize",
+            "input_paths": [
+              "Math.max",
+              "Math.round",
+              "config.gtdPrizeAmount",
+              "config.gtdPrizePool"
+            ]
+          },
+          {
+            "output_key": "gameVariant",
+            "input_paths": []
+          },
+          {
+            "output_key": "spinType",
+            "input_paths": []
+          },
+          {
+            "output_key": "bountyConfig",
+            "input_paths": [
+              "Math.floor",
+              "Math.min",
+              "config.koBounty",
+              "split.prize",
+              "split.total"
+            ]
+          },
+          {
+            "output_key": "baseBounty",
+            "input_paths": ["Math.floor", "Math.min", "split.prize", "split.total"]
+          },
+          {
+            "output_key": "satelliteTarget",
+            "input_paths": [
+              "Math.max",
+              "Math.round",
+              "config.satelliteSeats",
+              "config.satelliteTargetId"
+            ]
+          },
+          {
+            "output_key": "tournamentId",
+            "input_paths": ["config.satelliteTargetId"]
+          },
+          {
+            "output_key": "seatsAwarded",
+            "input_paths": ["Math.max", "Math.round", "config.satelliteSeats"]
+          },
+          {
+            "output_key": "isPrivate",
+            "input_paths": ["config.isPrivate"]
+          },
+          {
+            "output_key": "isVipOnly",
+            "input_paths": ["config.isVipOnly"]
+          },
+          {
+            "output_key": "shortDescription",
+            "input_paths": ["config.shortDescription", "config.shortDescription.trim"]
+          },
+          {
+            "output_key": "banChat",
+            "input_paths": ["config.banChat"]
+          },
+          {
+            "output_key": "allInOrFold",
+            "input_paths": ["config.allInOrFold"]
+          },
+          {
+            "output_key": "labelAsNew",
+            "input_paths": ["config.labelAsNew"]
+          },
+          {
+            "output_key": "hideClubName",
+            "input_paths": ["config.hideClubName"]
+          },
+          {
+            "output_key": "isFeatured",
+            "input_paths": ["config.featuredTournament"]
+          },
+          {
+            "output_key": "actionTimeSeconds",
+            "input_paths": ["config.actionTimeSeconds"]
+          },
+          {
+            "output_key": "tableSize",
+            "input_paths": ["Math.min", "config.tableSize"]
+          },
+          {
+            "output_key": "bigBlindAnte",
+            "input_paths": ["config.bigBlindAnte"]
+          },
+          {
+            "output_key": "authorizedToRegister",
+            "input_paths": ["config.authorizedToRegister"]
+          },
+          {
+            "output_key": "synchronizedBreaks",
+            "input_paths": ["config.synchronizedBreaks"]
+          },
+          {
+            "output_key": "acceleratedMtt",
+            "input_paths": ["config.acceleratedMtt"]
+          },
+          {
+            "output_key": "maxRebuys",
+            "input_paths": ["config.numberOfRebuysReentries"]
+          },
+          {
+            "output_key": "maxReentries",
+            "input_paths": ["config.numberOfRebuysReentries"]
+          },
+          {
+            "output_key": "addonBreakMinutes",
+            "input_paths": ["config.addOnBreakLengthMinutes", "config.addOnMultiplier"]
+          },
+          {
+            "output_key": "earlyBirdEnabled",
+            "input_paths": ["config.earlyBirdRegistration"]
+          },
+          {
+            "output_key": "earlyBirdChips",
+            "input_paths": [
+              "Math.max",
+              "Math.round",
+              "config.earlyBirdChips",
+              "config.earlyBirdRegistration"
+            ]
+          },
+          {
+            "output_key": "bubbleProtection",
+            "input_paths": ["config.bubbleProtection"]
+          },
+          {
+            "output_key": "finalTableDealEnabled",
+            "input_paths": ["config.finalTableDeal"]
+          },
+          {
+            "output_key": "restartEveryMinutes",
+            "input_paths": ["config.restartEveryMinutes", "config.restartTournamentEvery"]
+          },
+          {
+            "output_key": "isMultiDay",
+            "input_paths": []
+          },
+          {
+            "output_key": "totalDays",
+            "input_paths": []
+          }
+        ]
+      },
+      {
+        "file": "src/services/TournamentService.ts",
+        "function": "buildRpcConfig",
+        "definitions_found": 1,
+        "assignments": [
+          {
+            "output_key": "name",
+            "input_paths": ["config.name"]
+          },
+          {
+            "output_key": "type",
+            "input_paths": ["config.type"]
+          },
+          {
+            "output_key": "gameVariant",
+            "input_paths": ["config.gameVariant"]
+          },
+          {
+            "output_key": "buyIn",
+            "input_paths": ["config.buyIn"]
+          },
+          {
+            "output_key": "startingStack",
+            "input_paths": ["config.startingStack"]
+          },
+          {
+            "output_key": "maxPlayers",
+            "input_paths": ["config.maxPlayers"]
+          },
+          {
+            "output_key": "minPlayers",
+            "input_paths": ["config.minPlayers"]
+          },
+          {
+            "output_key": "blindStructure",
+            "input_paths": ["config.blindStructure"]
+          },
+          {
+            "output_key": "payoutStructure",
+            "input_paths": ["config.payoutStructure"]
+          },
+          {
+            "output_key": "guaranteedPrize",
+            "input_paths": ["config.guaranteedPrize"]
+          },
+          {
+            "output_key": "lateRegistrationLevels",
+            "input_paths": ["config.lateRegistrationLevels"]
+          },
+          {
+            "output_key": "startTime",
+            "input_paths": ["config.startTime", "config.startTime.toISOString"]
+          },
+          {
+            "output_key": "isRebuy",
+            "input_paths": ["config.isRebuy"]
+          },
+          {
+            "output_key": "isReentry",
+            "input_paths": ["config.isReentry"]
+          },
+          {
+            "output_key": "rebuyCost",
+            "input_paths": ["config.rebuyCost"]
+          },
+          {
+            "output_key": "rebuyChips",
+            "input_paths": ["config.rebuyChips"]
+          },
+          {
+            "output_key": "addOnAvailable",
+            "input_paths": ["config.addOnAvailable"]
+          },
+          {
+            "output_key": "addOnCost",
+            "input_paths": ["config.addOnCost"]
+          },
+          {
+            "output_key": "addOnChips",
+            "input_paths": ["config.addOnChips"]
+          },
+          {
+            "output_key": "addOnLevels",
+            "input_paths": ["config.addOnLevels"]
+          },
+          {
+            "output_key": "freeBuy",
+            "input_paths": ["config.freeBuy"]
+          },
+          {
+            "output_key": "addOnFromStart",
+            "input_paths": ["config.addOnFromStart"]
+          },
+          {
+            "output_key": "buyIn",
+            "input_paths": ["config.buyIn"]
+          },
+          {
+            "output_key": "type",
+            "input_paths": ["config.type"]
+          },
+          {
+            "output_key": "startingStack",
+            "input_paths": ["config.startingStack"]
+          },
+          {
+            "output_key": "rebuyChips",
+            "input_paths": ["config.rebuyChips"]
+          },
+          {
+            "output_key": "addOnChips",
+            "input_paths": ["config.addOnChips"]
+          },
+          {
+            "output_key": "rebuyLevels",
+            "input_paths": ["config.rebuyLevels"]
+          },
+          {
+            "output_key": "addOnLevels",
+            "input_paths": ["config.addOnLevels"]
+          },
+          {
+            "output_key": "maxRebuys",
+            "input_paths": ["config.maxRebuys"]
+          },
+          {
+            "output_key": "bountyAmount",
+            "input_paths": ["config.bountyConfig", "config.bountyConfig.baseBounty"]
+          },
+          {
+            "output_key": "spinType",
+            "input_paths": ["config.spinType", "config.type"]
+          },
+          {
+            "output_key": "satelliteTargetId",
+            "input_paths": ["config.satelliteTarget", "config.satelliteTarget.tournamentId"]
+          },
+          {
+            "output_key": "isXmtt",
+            "input_paths": ["config.isXmtt"]
+          },
+          {
+            "output_key": "isPrivate",
+            "input_paths": ["config.isPrivate"]
+          },
+          {
+            "output_path": "p.shortDescription",
+            "input_paths": []
+          },
+          {
+            "output_path": "p.isVipOnly",
+            "input_paths": ["config.isVipOnly"]
+          },
+          {
+            "output_path": "p.banChat",
+            "input_paths": ["config.banChat"]
+          },
+          {
+            "output_path": "p.allInOrFold",
+            "input_paths": ["config.allInOrFold"]
+          },
+          {
+            "output_path": "p.labelAsNew",
+            "input_paths": ["config.labelAsNew"]
+          },
+          {
+            "output_path": "p.hideClubName",
+            "input_paths": ["config.hideClubName"]
+          },
+          {
+            "output_path": "p.actionTimeSeconds",
+            "input_paths": ["config.actionTimeSeconds"]
+          },
+          {
+            "output_path": "p.tableSize",
+            "input_paths": ["config.tableSize"]
+          },
+          {
+            "output_path": "p.acceleratedMtt",
+            "input_paths": ["config.acceleratedMtt"]
+          },
+          {
+            "output_path": "p.addonBreakMinutes",
+            "input_paths": ["config.addonBreakMinutes"]
+          },
+          {
+            "output_path": "p.bigBlindAnte",
+            "input_paths": ["config.bigBlindAnte"]
+          },
+          {
+            "output_path": "p.authorizedToRegister",
+            "input_paths": ["config.authorizedToRegister"]
+          },
+          {
+            "output_path": "p.earlyBirdEnabled",
+            "input_paths": ["config.earlyBirdEnabled"]
+          },
+          {
+            "output_path": "p.earlyBirdChips",
+            "input_paths": ["Math.max", "Math.round", "config.earlyBirdChips"]
+          },
+          {
+            "output_path": "p.bubbleProtection",
+            "input_paths": ["config.bubbleProtection"]
+          },
+          {
+            "output_path": "p.finalTableDealEnabled",
+            "input_paths": ["config.finalTableDealEnabled"]
+          },
+          {
+            "output_path": "p.restartEveryMinutes",
+            "input_paths": ["config.restartEveryMinutes"]
+          },
+          {
+            "output_path": "p.synchronizedBreaks",
+            "input_paths": ["config.synchronizedBreaks"]
+          },
+          {
+            "output_key": "buyIn",
+            "input_paths": ["config.buyIn"]
+          },
+          {
+            "output_key": "type",
+            "input_paths": ["config.type"]
+          },
+          {
+            "output_path": "p.maxRebuys",
+            "input_paths": ["config.maxRebuys"]
+          },
+          {
+            "output_path": "p.maxReentries",
+            "input_paths": ["config.maxReentries"]
+          },
+          {
+            "output_path": "p.isMultiDay",
+            "input_paths": ["config.isMultiDay"]
+          },
+          {
+            "output_path": "p.totalDays",
+            "input_paths": ["config.totalDays"]
+          },
+          {
+            "output_path": "p.mysteryBountyMin",
+            "input_paths": ["config.mysteryBountyMin"]
+          },
+          {
+            "output_path": "p.mysteryBountyMax",
+            "input_paths": ["config.mysteryBountyMax"]
+          },
+          {
+            "output_path": "p.isFeatured",
+            "input_paths": ["config.isFeatured"]
+          },
+          {
+            "output_path": "p.satelliteSeats",
+            "input_paths": ["config.satelliteTarget", "config.satelliteTarget.seatsAwarded"]
+          }
+        ]
+      }
+    ],
+    "display_bindings": [
+      {
+        "file": "src/pages/TableConfigPage.tsx",
+        "attribute": "value",
+        "input_paths": ["t.id"]
+      },
+      {
+        "file": "src/pages/TableConfigPage.tsx",
+        "attribute": "value",
+        "input_paths": ["config.name"]
+      },
+      {
+        "file": "src/pages/TableConfigPage.tsx",
+        "attribute": "value",
+        "input_paths": ["config.sngPlayerCount"]
+      },
+      {
+        "file": "src/pages/TableConfigPage.tsx",
+        "attribute": "value",
+        "input_paths": ["opt.value"]
+      },
+      {
+        "file": "src/pages/TableConfigPage.tsx",
+        "attribute": "value",
+        "input_paths": ["config.isPrivate"]
+      },
+      {
+        "file": "src/pages/TableConfigPage.tsx",
+        "attribute": "value",
+        "input_paths": ["config.isVipOnly"]
+      },
+      {
+        "file": "src/pages/TableConfigPage.tsx",
+        "attribute": "value",
+        "input_paths": ["config.shortDescription"]
+      },
+      {
+        "file": "src/pages/TableConfigPage.tsx",
+        "attribute": "value",
+        "input_paths": ["config.banChat"]
+      },
+      {
+        "file": "src/pages/TableConfigPage.tsx",
+        "attribute": "value",
+        "input_paths": ["config.allInOrFold"]
+      },
+      {
+        "file": "src/pages/TableConfigPage.tsx",
+        "attribute": "value",
+        "input_paths": ["config.labelAsNew"]
+      },
+      {
+        "file": "src/pages/TableConfigPage.tsx",
+        "attribute": "value",
+        "input_paths": ["config.featuredTournament"]
+      },
+      {
+        "file": "src/pages/TableConfigPage.tsx",
+        "attribute": "value",
+        "input_paths": ["config.hideClubName"]
+      },
+      {
+        "file": "src/pages/TableConfigPage.tsx",
+        "attribute": "value",
+        "input_paths": ["config.tableSize"]
+      },
+      {
+        "file": "src/pages/TableConfigPage.tsx",
+        "attribute": "value",
+        "input_paths": ["config.actionTimeSeconds"]
+      },
+      {
+        "file": "src/pages/TableConfigPage.tsx",
+        "attribute": "value",
+        "input_paths": ["config.customBuyIn"]
+      },
+      {
+        "file": "src/pages/TableConfigPage.tsx",
+        "attribute": "value",
+        "input_paths": ["config.buyIn"]
+      },
+      {
+        "file": "src/pages/TableConfigPage.tsx",
+        "attribute": "value",
+        "input_paths": ["config.buyIn"]
+      },
+      {
+        "file": "src/pages/TableConfigPage.tsx",
+        "attribute": "checked",
+        "input_paths": ["config.blindStructure"]
+      },
+      {
+        "file": "src/pages/TableConfigPage.tsx",
+        "attribute": "checked",
+        "input_paths": ["config.blindStructure"]
+      },
+      {
+        "file": "src/pages/TableConfigPage.tsx",
+        "attribute": "checked",
+        "input_paths": ["config.blindStructure"]
+      },
+      {
+        "file": "src/pages/TableConfigPage.tsx",
+        "attribute": "checked",
+        "input_paths": ["config.blindStructure"]
+      },
+      {
+        "file": "src/pages/TableConfigPage.tsx",
+        "attribute": "value",
+        "input_paths": ["config.payoutStructure"]
+      },
+      {
+        "file": "src/pages/TableConfigPage.tsx",
+        "attribute": "value",
+        "input_paths": ["config.startingChips"]
+      },
+      {
+        "file": "src/pages/TableConfigPage.tsx",
+        "attribute": "value",
+        "input_paths": ["config.blindsUpMinutes"]
+      },
+      {
+        "file": "src/pages/TableConfigPage.tsx",
+        "attribute": "value",
+        "input_paths": ["config.bigBlindAnte"]
+      },
+      {
+        "file": "src/pages/TableConfigPage.tsx",
+        "attribute": "value",
+        "input_paths": ["config.authorizedToRegister"]
+      },
+      {
+        "file": "src/pages/TableConfigPage.tsx",
+        "attribute": "value",
+        "input_paths": ["config.synchronizedBreaks"]
+      },
+      {
+        "file": "src/pages/TableConfigPage.tsx",
+        "attribute": "value",
+        "input_paths": ["config.acceleratedMtt"]
+      },
+      {
+        "file": "src/pages/TableConfigPage.tsx",
+        "attribute": "value",
+        "input_paths": ["config.addOnBreakLengthMinutes"]
+      },
+      {
+        "file": "src/pages/TableConfigPage.tsx",
+        "attribute": "value",
+        "input_paths": ["config.numberOfRebuysReentries"]
+      },
+      {
+        "file": "src/pages/TableConfigPage.tsx",
+        "attribute": "value",
+        "input_paths": ["config.customRebuyReentryCost"]
+      },
+      {
+        "file": "src/pages/TableConfigPage.tsx",
+        "attribute": "value",
+        "input_paths": ["config.rebuyReentryCost"]
+      },
+      {
+        "file": "src/pages/TableConfigPage.tsx",
+        "attribute": "value",
+        "input_paths": ["config.addOnMultiplier"]
+      },
+      {
+        "file": "src/pages/TableConfigPage.tsx",
+        "attribute": "value",
+        "input_paths": ["config.customAddOn"]
+      },
+      {
+        "file": "src/pages/TableConfigPage.tsx",
+        "attribute": "value",
+        "input_paths": ["config.customAddOnCost"]
+      },
+      {
+        "file": "src/pages/TableConfigPage.tsx",
+        "attribute": "value",
+        "input_paths": ["config.addOnBreakLengthMinutes"]
+      },
+      {
+        "file": "src/pages/TableConfigPage.tsx",
+        "attribute": "value",
+        "input_paths": ["config.koBounty"]
+      },
+      {
+        "file": "src/pages/TableConfigPage.tsx",
+        "attribute": "value",
+        "input_paths": ["config.gtdPrizePool"]
+      },
+      {
+        "file": "src/pages/TableConfigPage.tsx",
+        "attribute": "value",
+        "input_paths": ["config.gtdPrizeAmount"]
+      },
+      {
+        "file": "src/pages/TableConfigPage.tsx",
+        "attribute": "value",
+        "input_paths": ["config.finalTableDeal"]
+      },
+      {
+        "file": "src/pages/TableConfigPage.tsx",
+        "attribute": "value",
+        "input_paths": ["config.bubbleProtection"]
+      },
+      {
+        "file": "src/pages/TableConfigPage.tsx",
+        "attribute": "value",
+        "input_paths": ["config.lateRegistrationLevel"]
+      },
+      {
+        "file": "src/pages/TableConfigPage.tsx",
+        "attribute": "value",
+        "input_paths": ["config.earlyBirdRegistration"]
+      },
+      {
+        "file": "src/pages/TableConfigPage.tsx",
+        "attribute": "value",
+        "input_paths": ["config.earlyBirdChips"]
+      },
+      {
+        "file": "src/pages/TableConfigPage.tsx",
+        "attribute": "value",
+        "input_paths": ["config.nextStepSatellite"]
+      },
+      {
+        "file": "src/pages/TableConfigPage.tsx",
+        "attribute": "value",
+        "input_paths": ["config.satelliteTargetId"]
+      },
+      {
+        "file": "src/pages/TableConfigPage.tsx",
+        "attribute": "value",
+        "input_paths": ["t.id"]
+      },
+      {
+        "file": "src/pages/TableConfigPage.tsx",
+        "attribute": "value",
+        "input_paths": ["config.satelliteSeats"]
+      },
+      {
+        "file": "src/pages/TableConfigPage.tsx",
+        "attribute": "value",
+        "input_paths": ["config.minPlayers"]
+      },
+      {
+        "file": "src/pages/TableConfigPage.tsx",
+        "attribute": "value",
+        "input_paths": ["config.maxPlayersRange"]
+      },
+      {
+        "file": "src/pages/TableConfigPage.tsx",
+        "attribute": "value",
+        "input_paths": ["config.startTime"]
+      },
+      {
+        "file": "src/pages/TableConfigPage.tsx",
+        "attribute": "value",
+        "input_paths": ["config.saveStartTime"]
+      },
+      {
+        "file": "src/pages/TableConfigPage.tsx",
+        "attribute": "value",
+        "input_paths": ["config.restartTournamentEvery"]
+      },
+      {
+        "file": "src/pages/TableConfigPage.tsx",
+        "attribute": "value",
+        "input_paths": ["config.restartEveryMinutes"]
+      },
+      {
+        "file": "src/pages/TableConfigPage.tsx",
+        "attribute": "value",
+        "input_paths": ["config.tournamentSchedule"]
+      },
+      {
+        "file": "src/pages/TableConfigPage.tsx",
+        "attribute": "value",
+        "input_paths": [
+          "config.scheduleDays",
+          "config.scheduleIntervalMinutes",
+          "config.scheduleMode",
+          "config.scheduleTimes"
+        ]
+      },
+      {
+        "file": "src/components/club/CreateTournamentModal.tsx",
+        "attribute": "value",
+        "input_paths": ["v.value"]
+      },
+      {
+        "file": "src/components/club/CreateTournamentModal.tsx",
+        "attribute": "value",
+        "input_paths": ["split.fee"]
+      },
+      {
+        "file": "src/components/club/CreateTournamentModal.tsx",
+        "attribute": "value",
+        "input_paths": ["t.id"]
+      },
+      {
+        "file": "src/components/club/CreateTournamentModal.tsx",
+        "attribute": "value",
+        "input_paths": ["option.value"]
+      },
+      {
+        "file": "src/components/club/CreateTournamentModal.tsx",
+        "attribute": "value",
+        "input_paths": ["option.value"]
+      }
+    ]
+  },
+  "creator_metadata": {
+    "definitions_found": 1,
+    "selected_source": "supabase/migrations/20260903172703_an_event_may_restart_every_week.sql",
+    "original_function_name": "public.fn_create_tournament_governed_legacy",
+    "later_patch_sources_require_confirmation": true,
+    "column_candidates": [
+      {
+        "column": "club_id",
+        "rpc_config_keys": [],
+        "derivation": "derived_or_fixed",
+        "casts": []
+      },
+      {
+        "column": "name",
+        "rpc_config_keys": ["name"],
+        "derivation": "config_lookup",
+        "casts": []
+      },
+      {
+        "column": "game_type",
+        "rpc_config_keys": ["gameVariant"],
+        "derivation": "config_lookup",
+        "casts": []
+      },
+      {
+        "column": "variant",
+        "rpc_config_keys": [],
+        "derivation": "derived_or_fixed",
+        "casts": []
+      },
+      {
+        "column": "tournament_type",
+        "rpc_config_keys": [],
+        "derivation": "derived_or_fixed",
+        "casts": []
+      },
+      {
+        "column": "buy_in_amount",
+        "rpc_config_keys": [],
+        "derivation": "derived_or_fixed",
+        "casts": []
+      },
+      {
+        "column": "buy_in_fee",
+        "rpc_config_keys": [],
+        "derivation": "derived_or_fixed",
+        "casts": []
+      },
+      {
+        "column": "starting_chips",
+        "rpc_config_keys": ["startingStack"],
+        "derivation": "config_lookup",
+        "casts": ["int"]
+      },
+      {
+        "column": "max_players",
+        "rpc_config_keys": [],
+        "derivation": "derived_or_fixed",
+        "casts": []
+      },
+      {
+        "column": "min_players",
+        "rpc_config_keys": [],
+        "derivation": "derived_or_fixed",
+        "casts": []
+      },
+      {
+        "column": "current_players",
+        "rpc_config_keys": [],
+        "derivation": "derived_or_fixed",
+        "casts": []
+      },
+      {
+        "column": "status",
+        "rpc_config_keys": [],
+        "derivation": "derived_or_fixed",
+        "casts": []
+      },
+      {
+        "column": "blind_structure",
+        "rpc_config_keys": [],
+        "derivation": "derived_or_fixed",
+        "casts": ["text"]
+      },
+      {
+        "column": "payout_structure",
+        "rpc_config_keys": [],
+        "derivation": "derived_or_fixed",
+        "casts": ["text"]
+      },
+      {
+        "column": "guaranteed_prize",
+        "rpc_config_keys": ["guaranteedPrize"],
+        "derivation": "config_lookup",
+        "casts": ["numeric"]
+      },
+      {
+        "column": "late_reg_levels",
+        "rpc_config_keys": ["lateRegistrationLevels"],
+        "derivation": "config_lookup",
+        "casts": ["int"]
+      },
+      {
+        "column": "late_reg_mins",
+        "rpc_config_keys": ["lateRegistrationMinutes"],
+        "derivation": "config_lookup",
+        "casts": ["int"]
+      },
+      {
+        "column": "rebuy_levels",
+        "rpc_config_keys": ["lateRegistrationLevels"],
+        "derivation": "config_lookup",
+        "casts": ["int"]
+      },
+      {
+        "column": "start_time",
+        "rpc_config_keys": [],
+        "derivation": "derived_or_fixed",
+        "casts": []
+      },
+      {
+        "column": "is_rebuy",
+        "rpc_config_keys": ["isRebuy"],
+        "derivation": "config_lookup",
+        "casts": ["boolean"]
+      },
+      {
+        "column": "is_reentry",
+        "rpc_config_keys": ["isReentry"],
+        "derivation": "config_lookup",
+        "casts": ["boolean"]
+      },
+      {
+        "column": "rebuy_cost",
+        "rpc_config_keys": ["rebuyCost"],
+        "derivation": "config_lookup",
+        "casts": ["numeric"]
+      },
+      {
+        "column": "rebuy_chips",
+        "rpc_config_keys": ["rebuyChips"],
+        "derivation": "config_lookup",
+        "casts": ["int"]
+      },
+      {
+        "column": "add_on_available",
+        "rpc_config_keys": ["addOnAvailable"],
+        "derivation": "config_lookup",
+        "casts": ["boolean"]
+      },
+      {
+        "column": "addon_cost",
+        "rpc_config_keys": ["addOnCost"],
+        "derivation": "config_lookup",
+        "casts": ["numeric"]
+      },
+      {
+        "column": "addon_chips",
+        "rpc_config_keys": ["addOnChips"],
+        "derivation": "config_lookup",
+        "casts": ["int"]
+      },
+      {
+        "column": "addon_levels",
+        "rpc_config_keys": ["addOnLevels"],
+        "derivation": "config_lookup",
+        "casts": ["int"]
+      },
+      {
+        "column": "is_bounty",
+        "rpc_config_keys": [],
+        "derivation": "derived_or_fixed",
+        "casts": []
+      },
+      {
+        "column": "bounty_amount",
+        "rpc_config_keys": [],
+        "derivation": "derived_or_fixed",
+        "casts": []
+      },
+      {
+        "column": "is_pko",
+        "rpc_config_keys": [],
+        "derivation": "derived_or_fixed",
+        "casts": []
+      },
+      {
+        "column": "is_mystery_bounty",
+        "rpc_config_keys": [],
+        "derivation": "derived_or_fixed",
+        "casts": []
+      },
+      {
+        "column": "spin_type",
+        "rpc_config_keys": ["spinType"],
+        "derivation": "config_lookup",
+        "casts": []
+      },
+      {
+        "column": "satellite_target_id",
+        "rpc_config_keys": [],
+        "derivation": "derived_or_fixed",
+        "casts": []
+      },
+      {
+        "column": "is_xmtt",
+        "rpc_config_keys": ["isXmtt"],
+        "derivation": "config_lookup",
+        "casts": ["boolean"]
+      },
+      {
+        "column": "union_id",
+        "rpc_config_keys": [],
+        "derivation": "derived_or_fixed",
+        "casts": []
+      },
+      {
+        "column": "is_private",
+        "rpc_config_keys": [],
+        "derivation": "derived_or_fixed",
+        "casts": []
+      },
+      {
+        "column": "short_description",
+        "rpc_config_keys": ["shortDescription"],
+        "derivation": "config_lookup",
+        "casts": []
+      },
+      {
+        "column": "is_vip_only",
+        "rpc_config_keys": ["isVipOnly"],
+        "derivation": "config_lookup",
+        "casts": ["boolean"]
+      },
+      {
+        "column": "ban_chat",
+        "rpc_config_keys": ["banChat"],
+        "derivation": "config_lookup",
+        "casts": ["boolean"]
+      },
+      {
+        "column": "all_in_or_fold",
+        "rpc_config_keys": ["allInOrFold"],
+        "derivation": "config_lookup",
+        "casts": ["boolean"]
+      },
+      {
+        "column": "label_as_new",
+        "rpc_config_keys": ["labelAsNew"],
+        "derivation": "config_lookup",
+        "casts": ["boolean"]
+      },
+      {
+        "column": "hide_club_name",
+        "rpc_config_keys": ["hideClubName"],
+        "derivation": "config_lookup",
+        "casts": ["boolean"]
+      },
+      {
+        "column": "action_time_seconds",
+        "rpc_config_keys": [],
+        "derivation": "derived_or_fixed",
+        "casts": []
+      },
+      {
+        "column": "table_size",
+        "rpc_config_keys": [],
+        "derivation": "derived_or_fixed",
+        "casts": []
+      },
+      {
+        "column": "accelerated_mtt",
+        "rpc_config_keys": ["acceleratedMtt"],
+        "derivation": "config_lookup",
+        "casts": ["boolean"]
+      },
+      {
+        "column": "addon_break_minutes",
+        "rpc_config_keys": [],
+        "derivation": "derived_or_fixed",
+        "casts": []
+      },
+      {
+        "column": "big_blind_ante",
+        "rpc_config_keys": ["bigBlindAnte"],
+        "derivation": "config_lookup",
+        "casts": ["boolean"]
+      },
+      {
+        "column": "authorized_to_register",
+        "rpc_config_keys": ["authorizedToRegister"],
+        "derivation": "config_lookup",
+        "casts": ["boolean"]
+      },
+      {
+        "column": "early_bird_enabled",
+        "rpc_config_keys": ["earlyBirdEnabled"],
+        "derivation": "config_lookup",
+        "casts": ["boolean"]
+      },
+      {
+        "column": "early_bird_chips",
+        "rpc_config_keys": [],
+        "derivation": "derived_or_fixed",
+        "casts": []
+      },
+      {
+        "column": "bubble_protection",
+        "rpc_config_keys": ["bubbleProtection"],
+        "derivation": "config_lookup",
+        "casts": ["boolean"]
+      },
+      {
+        "column": "final_table_deal_enabled",
+        "rpc_config_keys": ["finalTableDealEnabled"],
+        "derivation": "config_lookup",
+        "casts": ["boolean"]
+      },
+      {
+        "column": "restart_every_minutes",
+        "rpc_config_keys": [],
+        "derivation": "derived_or_fixed",
+        "casts": []
+      },
+      {
+        "column": "synchronized_breaks",
+        "rpc_config_keys": [],
+        "derivation": "derived_or_fixed",
+        "casts": []
+      },
+      {
+        "column": "max_rebuys",
+        "rpc_config_keys": [],
+        "derivation": "derived_or_fixed",
+        "casts": []
+      },
+      {
+        "column": "max_reentries",
+        "rpc_config_keys": [],
+        "derivation": "derived_or_fixed",
+        "casts": []
+      },
+      {
+        "column": "is_multi_day",
+        "rpc_config_keys": [],
+        "derivation": "derived_or_fixed",
+        "casts": []
+      },
+      {
+        "column": "total_days",
+        "rpc_config_keys": [],
+        "derivation": "derived_or_fixed",
+        "casts": []
+      },
+      {
+        "column": "mystery_bounty_min",
+        "rpc_config_keys": [],
+        "derivation": "derived_or_fixed",
+        "casts": []
+      },
+      {
+        "column": "mystery_bounty_max",
+        "rpc_config_keys": [],
+        "derivation": "derived_or_fixed",
+        "casts": []
+      },
+      {
+        "column": "is_pinned",
+        "rpc_config_keys": ["isFeatured"],
+        "derivation": "config_lookup",
+        "casts": ["boolean"]
+      },
+      {
+        "column": "satellite_seats",
+        "rpc_config_keys": [],
+        "derivation": "derived_or_fixed",
+        "casts": []
+      }
+    ],
+    "unparsed_insert_count": 0,
+    "all_config_keys_read": [
+      "acceleratedMtt",
+      "actionTimeSeconds",
+      "addOnAvailable",
+      "addOnChips",
+      "addOnCost",
+      "addOnLevels",
+      "addonBreakMinutes",
+      "allInOrFold",
+      "authorizedToRegister",
+      "banChat",
+      "bigBlindAnte",
+      "blindStructure",
+      "bountyAmount",
+      "bubbleProtection",
+      "buyIn",
+      "earlyBirdChips",
+      "earlyBirdEnabled",
+      "finalTableDealEnabled",
+      "gameVariant",
+      "guaranteedPrize",
+      "hideClubName",
+      "isFeatured",
+      "isMultiDay",
+      "isPrivate",
+      "isRebuy",
+      "isReentry",
+      "isVipOnly",
+      "isXmtt",
+      "labelAsNew",
+      "lateRegistrationLevels",
+      "lateRegistrationMinutes",
+      "maxPlayers",
+      "maxRebuys",
+      "maxReentries",
+      "minPlayers",
+      "mysteryBountyMax",
+      "mysteryBountyMin",
+      "name",
+      "payoutStructure",
+      "rebuyChips",
+      "rebuyCost",
+      "restartEveryMinutes",
+      "satelliteSeats",
+      "satelliteTargetId",
+      "shortDescription",
+      "spinType",
+      "startTime",
+      "startingStack",
+      "synchronizedBreaks",
+      "tableSize",
+      "totalDays",
+      "type"
+    ],
+    "delegated_function_names": ["fn_can_create_games"]
+  },
+  "captured_path_coverage": {
+    "input": [
+      {
+        "path": "acceleratedMtt",
+        "present_count": 1,
+        "distinct_value_count": 1,
+        "captured_case_indexes": [64]
+      },
+      {
+        "path": "actionTimeSeconds",
+        "present_count": 2,
+        "distinct_value_count": 2,
+        "captured_case_indexes": [58, 59]
+      },
+      {
+        "path": "addOnBreakLengthMinutes",
+        "present_count": 1,
+        "distinct_value_count": 1,
+        "captured_case_indexes": [66]
+      },
+      {
+        "path": "addOnMultiplier",
+        "present_count": 91,
+        "distinct_value_count": 3,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "allInOrFold",
+        "present_count": 1,
+        "distinct_value_count": 1,
+        "captured_case_indexes": [57]
+      },
+      {
+        "path": "authorizedToRegister",
+        "present_count": 1,
+        "distinct_value_count": 1,
+        "captured_case_indexes": [57]
+      },
+      {
+        "path": "banChat",
+        "present_count": 1,
+        "distinct_value_count": 1,
+        "captured_case_indexes": [57]
+      },
+      {
+        "path": "bigBlindAnte",
+        "present_count": 1,
+        "distinct_value_count": 1,
+        "captured_case_indexes": [57]
+      },
+      {
+        "path": "blindStructure",
+        "present_count": 91,
+        "distinct_value_count": 3,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "blindsUpMinutes",
+        "present_count": 91,
+        "distinct_value_count": 3,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "bubbleProtection",
+        "present_count": 1,
+        "distinct_value_count": 1,
+        "captured_case_indexes": [64]
+      },
+      {
+        "path": "buyIn",
+        "present_count": 91,
+        "distinct_value_count": 9,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "customAddOn",
+        "present_count": 1,
+        "distinct_value_count": 1,
+        "captured_case_indexes": [66]
+      },
+      {
+        "path": "customAddOnCost",
+        "present_count": 1,
+        "distinct_value_count": 1,
+        "captured_case_indexes": [66]
+      },
+      {
+        "path": "customRebuyReentryCost",
+        "present_count": 1,
+        "distinct_value_count": 1,
+        "captured_case_indexes": [66]
+      },
+      {
+        "path": "earlyBirdChips",
+        "present_count": 2,
+        "distinct_value_count": 2,
+        "captured_case_indexes": [64, 68]
+      },
+      {
+        "path": "earlyBirdRegistration",
+        "present_count": 2,
+        "distinct_value_count": 1,
+        "captured_case_indexes": [64, 68]
+      },
+      {
+        "path": "featuredTournament",
+        "present_count": 1,
+        "distinct_value_count": 1,
+        "captured_case_indexes": [57]
+      },
+      {
+        "path": "finalTableDeal",
+        "present_count": 1,
+        "distinct_value_count": 1,
+        "captured_case_indexes": [64]
+      },
+      {
+        "path": "gameMode",
+        "present_count": 91,
+        "distinct_value_count": 2,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "gtdPrizeAmount",
+        "present_count": 1,
+        "distinct_value_count": 1,
+        "captured_case_indexes": [68]
+      },
+      {
+        "path": "gtdPrizePool",
+        "present_count": 1,
+        "distinct_value_count": 1,
+        "captured_case_indexes": [68]
+      },
+      {
+        "path": "hideClubName",
+        "present_count": 1,
+        "distinct_value_count": 1,
+        "captured_case_indexes": [57]
+      },
+      {
+        "path": "isSpins",
+        "present_count": 91,
+        "distinct_value_count": 2,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "isVipOnly",
+        "present_count": 1,
+        "distinct_value_count": 1,
+        "captured_case_indexes": [57]
+      },
+      {
+        "path": "koBounty",
+        "present_count": 91,
+        "distinct_value_count": 2,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "labelAsNew",
+        "present_count": 1,
+        "distinct_value_count": 1,
+        "captured_case_indexes": [57]
+      },
+      {
+        "path": "lateRegistrationLevel",
+        "present_count": 91,
+        "distinct_value_count": 1,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "maxPlayersRange",
+        "present_count": 91,
+        "distinct_value_count": 8,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "minPlayers",
+        "present_count": 91,
+        "distinct_value_count": 2,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "multiDayMtt",
+        "present_count": 2,
+        "distinct_value_count": 1,
+        "captured_case_indexes": [64, 68]
+      },
+      {
+        "path": "name",
+        "present_count": 91,
+        "distinct_value_count": 1,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "nextStepSatellite",
+        "present_count": 2,
+        "distinct_value_count": 1,
+        "captured_case_indexes": [69, 70]
+      },
+      {
+        "path": "numberOfRebuysReentries",
+        "present_count": 91,
+        "distinct_value_count": 2,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "payoutStructure",
+        "present_count": 91,
+        "distinct_value_count": 4,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "rebuyReentryCost",
+        "present_count": 1,
+        "distinct_value_count": 1,
+        "captured_case_indexes": [66]
+      },
+      {
+        "path": "restartEveryMinutes",
+        "present_count": 2,
+        "distinct_value_count": 2,
+        "captured_case_indexes": [64, 68]
+      },
+      {
+        "path": "restartTournamentEvery",
+        "present_count": 2,
+        "distinct_value_count": 1,
+        "captured_case_indexes": [64, 68]
+      },
+      {
+        "path": "satelliteSeats",
+        "present_count": 1,
+        "distinct_value_count": 1,
+        "captured_case_indexes": [69]
+      },
+      {
+        "path": "satelliteTargetId",
+        "present_count": 1,
+        "distinct_value_count": 1,
+        "captured_case_indexes": [69]
+      },
+      {
+        "path": "shortDescription",
+        "present_count": 1,
+        "distinct_value_count": 1,
+        "captured_case_indexes": [57]
+      },
+      {
+        "path": "sngPlayerCount",
+        "present_count": 91,
+        "distinct_value_count": 4,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "startTime",
+        "present_count": 91,
+        "distinct_value_count": 4,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "startingChips",
+        "present_count": 91,
+        "distinct_value_count": 1,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "synchronizedBreaks",
+        "present_count": 1,
+        "distinct_value_count": 1,
+        "captured_case_indexes": [57]
+      },
+      {
+        "path": "tableSize",
+        "present_count": 6,
+        "distinct_value_count": 2,
+        "captured_case_indexes": [58, 59, 60, 61, 62, 63]
+      },
+      {
+        "path": "totalDays",
+        "present_count": 2,
+        "distinct_value_count": 2,
+        "captured_case_indexes": [64, 68]
+      }
+    ],
+    "mapped": [
+      {
+        "path": "acceleratedMtt",
+        "present_count": 91,
+        "distinct_value_count": 1,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "actionTimeSeconds",
+        "present_count": 91,
+        "distinct_value_count": 3,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "addOnAvailable",
+        "present_count": 91,
+        "distinct_value_count": 2,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "addOnChips",
+        "present_count": 91,
+        "distinct_value_count": 2,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "addOnCost",
+        "present_count": 91,
+        "distinct_value_count": 10,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "addOnLevels",
+        "present_count": 91,
+        "distinct_value_count": 1,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "addonBreakMinutes",
+        "present_count": 2,
+        "distinct_value_count": 2,
+        "captured_case_indexes": [66, 67]
+      },
+      {
+        "path": "allInOrFold",
+        "present_count": 91,
+        "distinct_value_count": 2,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "authorizedToRegister",
+        "present_count": 91,
+        "distinct_value_count": 2,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "banChat",
+        "present_count": 91,
+        "distinct_value_count": 2,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "bigBlindAnte",
+        "present_count": 91,
+        "distinct_value_count": 2,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "blindStructure",
+        "present_count": 91,
+        "distinct_value_count": 6,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "bountyConfig.baseBounty",
+        "present_count": 1,
+        "distinct_value_count": 1,
+        "captured_case_indexes": [32]
+      },
+      {
+        "path": "bubbleProtection",
+        "present_count": 91,
+        "distinct_value_count": 1,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "buyIn",
+        "present_count": 91,
+        "distinct_value_count": 9,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "earlyBirdChips",
+        "present_count": 1,
+        "distinct_value_count": 1,
+        "captured_case_indexes": [68]
+      },
+      {
+        "path": "earlyBirdEnabled",
+        "present_count": 91,
+        "distinct_value_count": 2,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "finalTableDealEnabled",
+        "present_count": 91,
+        "distinct_value_count": 1,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "gameVariant",
+        "present_count": 91,
+        "distinct_value_count": 8,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "guaranteedPrize",
+        "present_count": 91,
+        "distinct_value_count": 2,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "hideClubName",
+        "present_count": 91,
+        "distinct_value_count": 2,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "isFeatured",
+        "present_count": 91,
+        "distinct_value_count": 2,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "isMultiDay",
+        "present_count": 91,
+        "distinct_value_count": 1,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "isPrivate",
+        "present_count": 91,
+        "distinct_value_count": 1,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "isRebuy",
+        "present_count": 91,
+        "distinct_value_count": 2,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "isReentry",
+        "present_count": 91,
+        "distinct_value_count": 2,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "isVipOnly",
+        "present_count": 91,
+        "distinct_value_count": 2,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "labelAsNew",
+        "present_count": 91,
+        "distinct_value_count": 2,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "lateRegistrationLevels",
+        "present_count": 91,
+        "distinct_value_count": 2,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "maxPlayers",
+        "present_count": 91,
+        "distinct_value_count": 9,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "maxRebuys",
+        "present_count": 2,
+        "distinct_value_count": 1,
+        "captured_case_indexes": [66, 67]
+      },
+      {
+        "path": "maxReentries",
+        "present_count": 2,
+        "distinct_value_count": 1,
+        "captured_case_indexes": [66, 67]
+      },
+      {
+        "path": "minPlayers",
+        "present_count": 91,
+        "distinct_value_count": 6,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "name",
+        "present_count": 91,
+        "distinct_value_count": 1,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "payoutStructure",
+        "present_count": 91,
+        "distinct_value_count": 12,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "rake",
+        "present_count": 91,
+        "distinct_value_count": 10,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "rebuyChips",
+        "present_count": 91,
+        "distinct_value_count": 1,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "rebuyCost",
+        "present_count": 91,
+        "distinct_value_count": 9,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "restartEveryMinutes",
+        "present_count": 1,
+        "distinct_value_count": 1,
+        "captured_case_indexes": [68]
+      },
+      {
+        "path": "satelliteTarget.seatsAwarded",
+        "present_count": 1,
+        "distinct_value_count": 1,
+        "captured_case_indexes": [69]
+      },
+      {
+        "path": "satelliteTarget.tournamentId",
+        "present_count": 1,
+        "distinct_value_count": 1,
+        "captured_case_indexes": [69]
+      },
+      {
+        "path": "shortDescription",
+        "present_count": 1,
+        "distinct_value_count": 1,
+        "captured_case_indexes": [57]
+      },
+      {
+        "path": "spinType",
+        "present_count": 9,
+        "distinct_value_count": 1,
+        "captured_case_indexes": [18, 79, 80, 81, 82, 83, 84, 85, 86]
+      },
+      {
+        "path": "startTime",
+        "present_count": 1,
+        "distinct_value_count": 1,
+        "captured_case_indexes": [33]
+      },
+      {
+        "path": "startingStack",
+        "present_count": 91,
+        "distinct_value_count": 1,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "synchronizedBreaks",
+        "present_count": 91,
+        "distinct_value_count": 2,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "tableSize",
+        "present_count": 91,
+        "distinct_value_count": 5,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "type",
+        "present_count": 91,
+        "distinct_value_count": 5,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      }
+    ],
+    "rpc": [
+      {
+        "path": "acceleratedMtt",
+        "present_count": 91,
+        "distinct_value_count": 1,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "actionTimeSeconds",
+        "present_count": 91,
+        "distinct_value_count": 3,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "addOnAvailable",
+        "present_count": 91,
+        "distinct_value_count": 2,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "addOnChips",
+        "present_count": 91,
+        "distinct_value_count": 2,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "addOnCost",
+        "present_count": 91,
+        "distinct_value_count": 10,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "addOnFromStart",
+        "present_count": 91,
+        "distinct_value_count": 1,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "addOnLevels",
+        "present_count": 91,
+        "distinct_value_count": 1,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "addonBreakMinutes",
+        "present_count": 2,
+        "distinct_value_count": 2,
+        "captured_case_indexes": [66, 67]
+      },
+      {
+        "path": "allInOrFold",
+        "present_count": 91,
+        "distinct_value_count": 2,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "authorizedToRegister",
+        "present_count": 91,
+        "distinct_value_count": 2,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "banChat",
+        "present_count": 91,
+        "distinct_value_count": 2,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "bigBlindAnte",
+        "present_count": 91,
+        "distinct_value_count": 2,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "blindStructure",
+        "present_count": 91,
+        "distinct_value_count": 6,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "bountyAmount",
+        "present_count": 91,
+        "distinct_value_count": 2,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "bubbleProtection",
+        "present_count": 91,
+        "distinct_value_count": 1,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "buyIn",
+        "present_count": 91,
+        "distinct_value_count": 9,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "earlyBirdChips",
+        "present_count": 1,
+        "distinct_value_count": 1,
+        "captured_case_indexes": [68]
+      },
+      {
+        "path": "earlyBirdEnabled",
+        "present_count": 91,
+        "distinct_value_count": 2,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "finalTableDealEnabled",
+        "present_count": 91,
+        "distinct_value_count": 1,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "freeBuy",
+        "present_count": 91,
+        "distinct_value_count": 1,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "gameVariant",
+        "present_count": 91,
+        "distinct_value_count": 8,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "guaranteedPrize",
+        "present_count": 91,
+        "distinct_value_count": 2,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "hideClubName",
+        "present_count": 91,
+        "distinct_value_count": 2,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "isFeatured",
+        "present_count": 91,
+        "distinct_value_count": 2,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "isMultiDay",
+        "present_count": 91,
+        "distinct_value_count": 1,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "isPrivate",
+        "present_count": 91,
+        "distinct_value_count": 1,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "isRebuy",
+        "present_count": 91,
+        "distinct_value_count": 2,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "isReentry",
+        "present_count": 91,
+        "distinct_value_count": 2,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "isVipOnly",
+        "present_count": 91,
+        "distinct_value_count": 2,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "isXmtt",
+        "present_count": 91,
+        "distinct_value_count": 1,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "labelAsNew",
+        "present_count": 91,
+        "distinct_value_count": 2,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "lateRegistrationLevels",
+        "present_count": 91,
+        "distinct_value_count": 2,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "maxPlayers",
+        "present_count": 91,
+        "distinct_value_count": 9,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "maxRebuys",
+        "present_count": 2,
+        "distinct_value_count": 1,
+        "captured_case_indexes": [66, 67]
+      },
+      {
+        "path": "maxReentries",
+        "present_count": 2,
+        "distinct_value_count": 1,
+        "captured_case_indexes": [66, 67]
+      },
+      {
+        "path": "minPlayers",
+        "present_count": 91,
+        "distinct_value_count": 6,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "name",
+        "present_count": 91,
+        "distinct_value_count": 1,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "payoutStructure",
+        "present_count": 91,
+        "distinct_value_count": 12,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "rebuyChips",
+        "present_count": 91,
+        "distinct_value_count": 1,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "rebuyCost",
+        "present_count": 91,
+        "distinct_value_count": 9,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "restartEveryMinutes",
+        "present_count": 1,
+        "distinct_value_count": 1,
+        "captured_case_indexes": [68]
+      },
+      {
+        "path": "satelliteSeats",
+        "present_count": 1,
+        "distinct_value_count": 1,
+        "captured_case_indexes": [69]
+      },
+      {
+        "path": "satelliteTargetId",
+        "present_count": 91,
+        "distinct_value_count": 2,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "shortDescription",
+        "present_count": 1,
+        "distinct_value_count": 1,
+        "captured_case_indexes": [57]
+      },
+      {
+        "path": "spinType",
+        "present_count": 91,
+        "distinct_value_count": 2,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "startTime",
+        "present_count": 91,
+        "distinct_value_count": 2,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "startingStack",
+        "present_count": 91,
+        "distinct_value_count": 1,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "synchronizedBreaks",
+        "present_count": 91,
+        "distinct_value_count": 2,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "tableSize",
+        "present_count": 91,
+        "distinct_value_count": 5,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      },
+      {
+        "path": "type",
+        "present_count": 91,
+        "distinct_value_count": 5,
+        "captured_case_indexes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+          47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+          69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90
+        ]
+      }
+    ]
+  },
+  "rpc_to_database_matrix": [
+    {
+      "rpc_root_key": "acceleratedMtt",
+      "candidate_database_columns": ["accelerated_mtt"],
+      "read_elsewhere_in_creator": true,
+      "capture_path_coverage": [
+        {
+          "path": "acceleratedMtt",
+          "present_count": 91,
+          "distinct_value_count": 1,
+          "captured_case_indexes": [
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+            24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45,
+            46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67,
+            68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89,
+            90
+          ]
+        }
+      ],
+      "persisted_native_verified_by_this_report": false
+    },
+    {
+      "rpc_root_key": "actionTimeSeconds",
+      "candidate_database_columns": [],
+      "read_elsewhere_in_creator": true,
+      "capture_path_coverage": [
+        {
+          "path": "actionTimeSeconds",
+          "present_count": 91,
+          "distinct_value_count": 3,
+          "captured_case_indexes": [
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+            24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45,
+            46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67,
+            68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89,
+            90
+          ]
+        }
+      ],
+      "persisted_native_verified_by_this_report": false
+    },
+    {
+      "rpc_root_key": "addOnAvailable",
+      "candidate_database_columns": ["add_on_available"],
+      "read_elsewhere_in_creator": true,
+      "capture_path_coverage": [
+        {
+          "path": "addOnAvailable",
+          "present_count": 91,
+          "distinct_value_count": 2,
+          "captured_case_indexes": [
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+            24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45,
+            46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67,
+            68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89,
+            90
+          ]
+        }
+      ],
+      "persisted_native_verified_by_this_report": false
+    },
+    {
+      "rpc_root_key": "addOnChips",
+      "candidate_database_columns": ["addon_chips"],
+      "read_elsewhere_in_creator": true,
+      "capture_path_coverage": [
+        {
+          "path": "addOnChips",
+          "present_count": 91,
+          "distinct_value_count": 2,
+          "captured_case_indexes": [
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+            24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45,
+            46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67,
+            68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89,
+            90
+          ]
+        }
+      ],
+      "persisted_native_verified_by_this_report": false
+    },
+    {
+      "rpc_root_key": "addOnCost",
+      "candidate_database_columns": ["addon_cost"],
+      "read_elsewhere_in_creator": true,
+      "capture_path_coverage": [
+        {
+          "path": "addOnCost",
+          "present_count": 91,
+          "distinct_value_count": 10,
+          "captured_case_indexes": [
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+            24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45,
+            46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67,
+            68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89,
+            90
+          ]
+        }
+      ],
+      "persisted_native_verified_by_this_report": false
+    },
+    {
+      "rpc_root_key": "addOnFromStart",
+      "candidate_database_columns": [],
+      "read_elsewhere_in_creator": false,
+      "capture_path_coverage": [
+        {
+          "path": "addOnFromStart",
+          "present_count": 91,
+          "distinct_value_count": 1,
+          "captured_case_indexes": [
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+            24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45,
+            46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67,
+            68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89,
+            90
+          ]
+        }
+      ],
+      "persisted_native_verified_by_this_report": false
+    },
+    {
+      "rpc_root_key": "addOnLevels",
+      "candidate_database_columns": ["addon_levels"],
+      "read_elsewhere_in_creator": true,
+      "capture_path_coverage": [
+        {
+          "path": "addOnLevels",
+          "present_count": 91,
+          "distinct_value_count": 1,
+          "captured_case_indexes": [
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+            24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45,
+            46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67,
+            68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89,
+            90
+          ]
+        }
+      ],
+      "persisted_native_verified_by_this_report": false
+    },
+    {
+      "rpc_root_key": "addonBreakMinutes",
+      "candidate_database_columns": [],
+      "read_elsewhere_in_creator": true,
+      "capture_path_coverage": [
+        {
+          "path": "addonBreakMinutes",
+          "present_count": 2,
+          "distinct_value_count": 2,
+          "captured_case_indexes": [66, 67]
+        }
+      ],
+      "persisted_native_verified_by_this_report": false
+    },
+    {
+      "rpc_root_key": "allInOrFold",
+      "candidate_database_columns": ["all_in_or_fold"],
+      "read_elsewhere_in_creator": true,
+      "capture_path_coverage": [
+        {
+          "path": "allInOrFold",
+          "present_count": 91,
+          "distinct_value_count": 2,
+          "captured_case_indexes": [
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+            24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45,
+            46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67,
+            68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89,
+            90
+          ]
+        }
+      ],
+      "persisted_native_verified_by_this_report": false
+    },
+    {
+      "rpc_root_key": "authorizedToRegister",
+      "candidate_database_columns": ["authorized_to_register"],
+      "read_elsewhere_in_creator": true,
+      "capture_path_coverage": [
+        {
+          "path": "authorizedToRegister",
+          "present_count": 91,
+          "distinct_value_count": 2,
+          "captured_case_indexes": [
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+            24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45,
+            46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67,
+            68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89,
+            90
+          ]
+        }
+      ],
+      "persisted_native_verified_by_this_report": false
+    },
+    {
+      "rpc_root_key": "banChat",
+      "candidate_database_columns": ["ban_chat"],
+      "read_elsewhere_in_creator": true,
+      "capture_path_coverage": [
+        {
+          "path": "banChat",
+          "present_count": 91,
+          "distinct_value_count": 2,
+          "captured_case_indexes": [
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+            24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45,
+            46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67,
+            68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89,
+            90
+          ]
+        }
+      ],
+      "persisted_native_verified_by_this_report": false
+    },
+    {
+      "rpc_root_key": "bigBlindAnte",
+      "candidate_database_columns": ["big_blind_ante"],
+      "read_elsewhere_in_creator": true,
+      "capture_path_coverage": [
+        {
+          "path": "bigBlindAnte",
+          "present_count": 91,
+          "distinct_value_count": 2,
+          "captured_case_indexes": [
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+            24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45,
+            46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67,
+            68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89,
+            90
+          ]
+        }
+      ],
+      "persisted_native_verified_by_this_report": false
+    },
+    {
+      "rpc_root_key": "blindStructure",
+      "candidate_database_columns": [],
+      "read_elsewhere_in_creator": true,
+      "capture_path_coverage": [
+        {
+          "path": "blindStructure",
+          "present_count": 91,
+          "distinct_value_count": 6,
+          "captured_case_indexes": [
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+            24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45,
+            46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67,
+            68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89,
+            90
+          ]
+        }
+      ],
+      "persisted_native_verified_by_this_report": false
+    },
+    {
+      "rpc_root_key": "bountyAmount",
+      "candidate_database_columns": [],
+      "read_elsewhere_in_creator": true,
+      "capture_path_coverage": [
+        {
+          "path": "bountyAmount",
+          "present_count": 91,
+          "distinct_value_count": 2,
+          "captured_case_indexes": [
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+            24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45,
+            46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67,
+            68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89,
+            90
+          ]
+        }
+      ],
+      "persisted_native_verified_by_this_report": false
+    },
+    {
+      "rpc_root_key": "bubbleProtection",
+      "candidate_database_columns": ["bubble_protection"],
+      "read_elsewhere_in_creator": true,
+      "capture_path_coverage": [
+        {
+          "path": "bubbleProtection",
+          "present_count": 91,
+          "distinct_value_count": 1,
+          "captured_case_indexes": [
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+            24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45,
+            46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67,
+            68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89,
+            90
+          ]
+        }
+      ],
+      "persisted_native_verified_by_this_report": false
+    },
+    {
+      "rpc_root_key": "buyIn",
+      "candidate_database_columns": [],
+      "read_elsewhere_in_creator": true,
+      "capture_path_coverage": [
+        {
+          "path": "buyIn",
+          "present_count": 91,
+          "distinct_value_count": 9,
+          "captured_case_indexes": [
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+            24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45,
+            46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67,
+            68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89,
+            90
+          ]
+        }
+      ],
+      "persisted_native_verified_by_this_report": false
+    },
+    {
+      "rpc_root_key": "earlyBirdChips",
+      "candidate_database_columns": [],
+      "read_elsewhere_in_creator": true,
+      "capture_path_coverage": [
+        {
+          "path": "earlyBirdChips",
+          "present_count": 1,
+          "distinct_value_count": 1,
+          "captured_case_indexes": [68]
+        }
+      ],
+      "persisted_native_verified_by_this_report": false
+    },
+    {
+      "rpc_root_key": "earlyBirdEnabled",
+      "candidate_database_columns": ["early_bird_enabled"],
+      "read_elsewhere_in_creator": true,
+      "capture_path_coverage": [
+        {
+          "path": "earlyBirdEnabled",
+          "present_count": 91,
+          "distinct_value_count": 2,
+          "captured_case_indexes": [
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+            24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45,
+            46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67,
+            68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89,
+            90
+          ]
+        }
+      ],
+      "persisted_native_verified_by_this_report": false
+    },
+    {
+      "rpc_root_key": "finalTableDealEnabled",
+      "candidate_database_columns": ["final_table_deal_enabled"],
+      "read_elsewhere_in_creator": true,
+      "capture_path_coverage": [
+        {
+          "path": "finalTableDealEnabled",
+          "present_count": 91,
+          "distinct_value_count": 1,
+          "captured_case_indexes": [
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+            24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45,
+            46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67,
+            68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89,
+            90
+          ]
+        }
+      ],
+      "persisted_native_verified_by_this_report": false
+    },
+    {
+      "rpc_root_key": "freeBuy",
+      "candidate_database_columns": [],
+      "read_elsewhere_in_creator": false,
+      "capture_path_coverage": [
+        {
+          "path": "freeBuy",
+          "present_count": 91,
+          "distinct_value_count": 1,
+          "captured_case_indexes": [
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+            24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45,
+            46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67,
+            68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89,
+            90
+          ]
+        }
+      ],
+      "persisted_native_verified_by_this_report": false
+    },
+    {
+      "rpc_root_key": "gameVariant",
+      "candidate_database_columns": ["game_type"],
+      "read_elsewhere_in_creator": true,
+      "capture_path_coverage": [
+        {
+          "path": "gameVariant",
+          "present_count": 91,
+          "distinct_value_count": 8,
+          "captured_case_indexes": [
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+            24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45,
+            46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67,
+            68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89,
+            90
+          ]
+        }
+      ],
+      "persisted_native_verified_by_this_report": false
+    },
+    {
+      "rpc_root_key": "guaranteedPrize",
+      "candidate_database_columns": ["guaranteed_prize"],
+      "read_elsewhere_in_creator": true,
+      "capture_path_coverage": [
+        {
+          "path": "guaranteedPrize",
+          "present_count": 91,
+          "distinct_value_count": 2,
+          "captured_case_indexes": [
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+            24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45,
+            46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67,
+            68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89,
+            90
+          ]
+        }
+      ],
+      "persisted_native_verified_by_this_report": false
+    },
+    {
+      "rpc_root_key": "hideClubName",
+      "candidate_database_columns": ["hide_club_name"],
+      "read_elsewhere_in_creator": true,
+      "capture_path_coverage": [
+        {
+          "path": "hideClubName",
+          "present_count": 91,
+          "distinct_value_count": 2,
+          "captured_case_indexes": [
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+            24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45,
+            46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67,
+            68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89,
+            90
+          ]
+        }
+      ],
+      "persisted_native_verified_by_this_report": false
+    },
+    {
+      "rpc_root_key": "isFeatured",
+      "candidate_database_columns": ["is_pinned"],
+      "read_elsewhere_in_creator": true,
+      "capture_path_coverage": [
+        {
+          "path": "isFeatured",
+          "present_count": 91,
+          "distinct_value_count": 2,
+          "captured_case_indexes": [
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+            24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45,
+            46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67,
+            68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89,
+            90
+          ]
+        }
+      ],
+      "persisted_native_verified_by_this_report": false
+    },
+    {
+      "rpc_root_key": "isMultiDay",
+      "candidate_database_columns": [],
+      "read_elsewhere_in_creator": true,
+      "capture_path_coverage": [
+        {
+          "path": "isMultiDay",
+          "present_count": 91,
+          "distinct_value_count": 1,
+          "captured_case_indexes": [
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+            24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45,
+            46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67,
+            68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89,
+            90
+          ]
+        }
+      ],
+      "persisted_native_verified_by_this_report": false
+    },
+    {
+      "rpc_root_key": "isPrivate",
+      "candidate_database_columns": [],
+      "read_elsewhere_in_creator": true,
+      "capture_path_coverage": [
+        {
+          "path": "isPrivate",
+          "present_count": 91,
+          "distinct_value_count": 1,
+          "captured_case_indexes": [
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+            24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45,
+            46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67,
+            68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89,
+            90
+          ]
+        }
+      ],
+      "persisted_native_verified_by_this_report": false
+    },
+    {
+      "rpc_root_key": "isRebuy",
+      "candidate_database_columns": ["is_rebuy"],
+      "read_elsewhere_in_creator": true,
+      "capture_path_coverage": [
+        {
+          "path": "isRebuy",
+          "present_count": 91,
+          "distinct_value_count": 2,
+          "captured_case_indexes": [
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+            24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45,
+            46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67,
+            68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89,
+            90
+          ]
+        }
+      ],
+      "persisted_native_verified_by_this_report": false
+    },
+    {
+      "rpc_root_key": "isReentry",
+      "candidate_database_columns": ["is_reentry"],
+      "read_elsewhere_in_creator": true,
+      "capture_path_coverage": [
+        {
+          "path": "isReentry",
+          "present_count": 91,
+          "distinct_value_count": 2,
+          "captured_case_indexes": [
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+            24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45,
+            46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67,
+            68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89,
+            90
+          ]
+        }
+      ],
+      "persisted_native_verified_by_this_report": false
+    },
+    {
+      "rpc_root_key": "isVipOnly",
+      "candidate_database_columns": ["is_vip_only"],
+      "read_elsewhere_in_creator": true,
+      "capture_path_coverage": [
+        {
+          "path": "isVipOnly",
+          "present_count": 91,
+          "distinct_value_count": 2,
+          "captured_case_indexes": [
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+            24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45,
+            46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67,
+            68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89,
+            90
+          ]
+        }
+      ],
+      "persisted_native_verified_by_this_report": false
+    },
+    {
+      "rpc_root_key": "isXmtt",
+      "candidate_database_columns": ["is_xmtt"],
+      "read_elsewhere_in_creator": true,
+      "capture_path_coverage": [
+        {
+          "path": "isXmtt",
+          "present_count": 91,
+          "distinct_value_count": 1,
+          "captured_case_indexes": [
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+            24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45,
+            46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67,
+            68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89,
+            90
+          ]
+        }
+      ],
+      "persisted_native_verified_by_this_report": false
+    },
+    {
+      "rpc_root_key": "labelAsNew",
+      "candidate_database_columns": ["label_as_new"],
+      "read_elsewhere_in_creator": true,
+      "capture_path_coverage": [
+        {
+          "path": "labelAsNew",
+          "present_count": 91,
+          "distinct_value_count": 2,
+          "captured_case_indexes": [
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+            24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45,
+            46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67,
+            68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89,
+            90
+          ]
+        }
+      ],
+      "persisted_native_verified_by_this_report": false
+    },
+    {
+      "rpc_root_key": "lateRegistrationLevels",
+      "candidate_database_columns": ["late_reg_levels", "rebuy_levels"],
+      "read_elsewhere_in_creator": true,
+      "capture_path_coverage": [
+        {
+          "path": "lateRegistrationLevels",
+          "present_count": 91,
+          "distinct_value_count": 2,
+          "captured_case_indexes": [
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+            24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45,
+            46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67,
+            68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89,
+            90
+          ]
+        }
+      ],
+      "persisted_native_verified_by_this_report": false
+    },
+    {
+      "rpc_root_key": "maxPlayers",
+      "candidate_database_columns": [],
+      "read_elsewhere_in_creator": true,
+      "capture_path_coverage": [
+        {
+          "path": "maxPlayers",
+          "present_count": 91,
+          "distinct_value_count": 9,
+          "captured_case_indexes": [
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+            24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45,
+            46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67,
+            68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89,
+            90
+          ]
+        }
+      ],
+      "persisted_native_verified_by_this_report": false
+    },
+    {
+      "rpc_root_key": "maxRebuys",
+      "candidate_database_columns": [],
+      "read_elsewhere_in_creator": true,
+      "capture_path_coverage": [
+        {
+          "path": "maxRebuys",
+          "present_count": 2,
+          "distinct_value_count": 1,
+          "captured_case_indexes": [66, 67]
+        }
+      ],
+      "persisted_native_verified_by_this_report": false
+    },
+    {
+      "rpc_root_key": "maxReentries",
+      "candidate_database_columns": [],
+      "read_elsewhere_in_creator": true,
+      "capture_path_coverage": [
+        {
+          "path": "maxReentries",
+          "present_count": 2,
+          "distinct_value_count": 1,
+          "captured_case_indexes": [66, 67]
+        }
+      ],
+      "persisted_native_verified_by_this_report": false
+    },
+    {
+      "rpc_root_key": "minPlayers",
+      "candidate_database_columns": [],
+      "read_elsewhere_in_creator": true,
+      "capture_path_coverage": [
+        {
+          "path": "minPlayers",
+          "present_count": 91,
+          "distinct_value_count": 6,
+          "captured_case_indexes": [
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+            24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45,
+            46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67,
+            68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89,
+            90
+          ]
+        }
+      ],
+      "persisted_native_verified_by_this_report": false
+    },
+    {
+      "rpc_root_key": "name",
+      "candidate_database_columns": ["name"],
+      "read_elsewhere_in_creator": true,
+      "capture_path_coverage": [
+        {
+          "path": "name",
+          "present_count": 91,
+          "distinct_value_count": 1,
+          "captured_case_indexes": [
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+            24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45,
+            46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67,
+            68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89,
+            90
+          ]
+        }
+      ],
+      "persisted_native_verified_by_this_report": false
+    },
+    {
+      "rpc_root_key": "payoutStructure",
+      "candidate_database_columns": [],
+      "read_elsewhere_in_creator": true,
+      "capture_path_coverage": [
+        {
+          "path": "payoutStructure",
+          "present_count": 91,
+          "distinct_value_count": 12,
+          "captured_case_indexes": [
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+            24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45,
+            46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67,
+            68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89,
+            90
+          ]
+        }
+      ],
+      "persisted_native_verified_by_this_report": false
+    },
+    {
+      "rpc_root_key": "rebuyChips",
+      "candidate_database_columns": ["rebuy_chips"],
+      "read_elsewhere_in_creator": true,
+      "capture_path_coverage": [
+        {
+          "path": "rebuyChips",
+          "present_count": 91,
+          "distinct_value_count": 1,
+          "captured_case_indexes": [
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+            24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45,
+            46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67,
+            68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89,
+            90
+          ]
+        }
+      ],
+      "persisted_native_verified_by_this_report": false
+    },
+    {
+      "rpc_root_key": "rebuyCost",
+      "candidate_database_columns": ["rebuy_cost"],
+      "read_elsewhere_in_creator": true,
+      "capture_path_coverage": [
+        {
+          "path": "rebuyCost",
+          "present_count": 91,
+          "distinct_value_count": 9,
+          "captured_case_indexes": [
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+            24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45,
+            46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67,
+            68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89,
+            90
+          ]
+        }
+      ],
+      "persisted_native_verified_by_this_report": false
+    },
+    {
+      "rpc_root_key": "restartEveryMinutes",
+      "candidate_database_columns": [],
+      "read_elsewhere_in_creator": true,
+      "capture_path_coverage": [
+        {
+          "path": "restartEveryMinutes",
+          "present_count": 1,
+          "distinct_value_count": 1,
+          "captured_case_indexes": [68]
+        }
+      ],
+      "persisted_native_verified_by_this_report": false
+    },
+    {
+      "rpc_root_key": "satelliteSeats",
+      "candidate_database_columns": [],
+      "read_elsewhere_in_creator": true,
+      "capture_path_coverage": [
+        {
+          "path": "satelliteSeats",
+          "present_count": 1,
+          "distinct_value_count": 1,
+          "captured_case_indexes": [69]
+        }
+      ],
+      "persisted_native_verified_by_this_report": false
+    },
+    {
+      "rpc_root_key": "satelliteTargetId",
+      "candidate_database_columns": [],
+      "read_elsewhere_in_creator": true,
+      "capture_path_coverage": [
+        {
+          "path": "satelliteTargetId",
+          "present_count": 91,
+          "distinct_value_count": 2,
+          "captured_case_indexes": [
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+            24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45,
+            46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67,
+            68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89,
+            90
+          ]
+        }
+      ],
+      "persisted_native_verified_by_this_report": false
+    },
+    {
+      "rpc_root_key": "shortDescription",
+      "candidate_database_columns": ["short_description"],
+      "read_elsewhere_in_creator": true,
+      "capture_path_coverage": [
+        {
+          "path": "shortDescription",
+          "present_count": 1,
+          "distinct_value_count": 1,
+          "captured_case_indexes": [57]
+        }
+      ],
+      "persisted_native_verified_by_this_report": false
+    },
+    {
+      "rpc_root_key": "spinType",
+      "candidate_database_columns": ["spin_type"],
+      "read_elsewhere_in_creator": true,
+      "capture_path_coverage": [
+        {
+          "path": "spinType",
+          "present_count": 91,
+          "distinct_value_count": 2,
+          "captured_case_indexes": [
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+            24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45,
+            46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67,
+            68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89,
+            90
+          ]
+        }
+      ],
+      "persisted_native_verified_by_this_report": false
+    },
+    {
+      "rpc_root_key": "startTime",
+      "candidate_database_columns": [],
+      "read_elsewhere_in_creator": true,
+      "capture_path_coverage": [
+        {
+          "path": "startTime",
+          "present_count": 91,
+          "distinct_value_count": 2,
+          "captured_case_indexes": [
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+            24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45,
+            46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67,
+            68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89,
+            90
+          ]
+        }
+      ],
+      "persisted_native_verified_by_this_report": false
+    },
+    {
+      "rpc_root_key": "startingStack",
+      "candidate_database_columns": ["starting_chips"],
+      "read_elsewhere_in_creator": true,
+      "capture_path_coverage": [
+        {
+          "path": "startingStack",
+          "present_count": 91,
+          "distinct_value_count": 1,
+          "captured_case_indexes": [
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+            24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45,
+            46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67,
+            68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89,
+            90
+          ]
+        }
+      ],
+      "persisted_native_verified_by_this_report": false
+    },
+    {
+      "rpc_root_key": "synchronizedBreaks",
+      "candidate_database_columns": [],
+      "read_elsewhere_in_creator": true,
+      "capture_path_coverage": [
+        {
+          "path": "synchronizedBreaks",
+          "present_count": 91,
+          "distinct_value_count": 2,
+          "captured_case_indexes": [
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+            24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45,
+            46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67,
+            68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89,
+            90
+          ]
+        }
+      ],
+      "persisted_native_verified_by_this_report": false
+    },
+    {
+      "rpc_root_key": "tableSize",
+      "candidate_database_columns": [],
+      "read_elsewhere_in_creator": true,
+      "capture_path_coverage": [
+        {
+          "path": "tableSize",
+          "present_count": 91,
+          "distinct_value_count": 5,
+          "captured_case_indexes": [
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+            24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45,
+            46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67,
+            68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89,
+            90
+          ]
+        }
+      ],
+      "persisted_native_verified_by_this_report": false
+    },
+    {
+      "rpc_root_key": "type",
+      "candidate_database_columns": [],
+      "read_elsewhere_in_creator": true,
+      "capture_path_coverage": [
+        {
+          "path": "type",
+          "present_count": 91,
+          "distinct_value_count": 5,
+          "captured_case_indexes": [
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+            24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45,
+            46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67,
+            68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89,
+            90
+          ]
+        }
+      ],
+      "persisted_native_verified_by_this_report": false
+    }
+  ],
+  "representative_cases": [
+    {
+      "rpc_sha256": "549c92c8e7f4f1c67281dd0492582837193f49e07e21665e4febf332817b72bf",
+      "representative_capture_index": 0,
+      "duplicate_capture_indexes": [6, 11, 14, 16, 19, 28, 34, 36, 70, 78]
+    },
+    {
+      "rpc_sha256": "bd58664a6dbf92d9d91e1376c2c81075d68e49b6d3ed61d67609c429aa3df542",
+      "representative_capture_index": 1,
+      "duplicate_capture_indexes": []
+    },
+    {
+      "rpc_sha256": "c5683b053d3b1a0c2cbe1fea8bf4049913ad20cc4e0963307f382c6102aafb31",
+      "representative_capture_index": 2,
+      "duplicate_capture_indexes": []
+    },
+    {
+      "rpc_sha256": "3bedc4796266010e914bda059244640ed334767c1ba729c5c676cc00351997e7",
+      "representative_capture_index": 3,
+      "duplicate_capture_indexes": [8, 40, 44, 48, 52]
+    },
+    {
+      "rpc_sha256": "f1d95ffac379a0c01f1bd0d2b7abe61d86ffe19f47f8b405250973c25051767d",
+      "representative_capture_index": 4,
+      "duplicate_capture_indexes": [9]
+    },
+    {
+      "rpc_sha256": "492b7bcb805d60efe22383c4f17d2403efeacd55485cd33ccaf486135627e939",
+      "representative_capture_index": 5,
+      "duplicate_capture_indexes": [10]
+    },
+    {
+      "rpc_sha256": "2b2acc6a9724d8da04cb78083a1f0ba490c73cbeff7a585598c04ce2a88d8e2a",
+      "representative_capture_index": 7,
+      "duplicate_capture_indexes": [12, 42]
+    },
+    {
+      "rpc_sha256": "02b9e65d8380993ca8b923956249767aca0994100abc02d5c57e14513e049a69",
+      "representative_capture_index": 13,
+      "duplicate_capture_indexes": []
+    },
+    {
+      "rpc_sha256": "46a96b10fc8c0e2ef1826fa9bfc9eb04770f66dfcb7d61e0dde30d459d840a97",
+      "representative_capture_index": 15,
+      "duplicate_capture_indexes": []
+    },
+    {
+      "rpc_sha256": "d939e0dd8fdc88295e985f0626bf24f08bf14ca58b6f7aa514c3fbcd173a3ce8",
+      "representative_capture_index": 17,
+      "duplicate_capture_indexes": []
+    },
+    {
+      "rpc_sha256": "8d6ad84513b82a125fb099dac73575e5d8e07433438c9b501c03bf34a32ffde2",
+      "representative_capture_index": 18,
+      "duplicate_capture_indexes": [79, 80]
+    },
+    {
+      "rpc_sha256": "6648194cc05767e272f900307c5c2b10f9c15d5d04d64b2dcdbaa91304b93f61",
+      "representative_capture_index": 20,
+      "duplicate_capture_indexes": [27]
+    },
+    {
+      "rpc_sha256": "cd70cc25ea6d3e22bdd7acc9b84c8247909e995fa040fbe738537da1fa36a856",
+      "representative_capture_index": 21,
+      "duplicate_capture_indexes": [23]
+    },
+    {
+      "rpc_sha256": "72639a63f5659efd69a06768f6f3f8754560ed7f32104b554c4d64709c8c10b4",
+      "representative_capture_index": 22,
+      "duplicate_capture_indexes": [24]
+    },
+    {
+      "rpc_sha256": "2ca823d9e1b428367dabd47bdb9021fc92eae954c3138fe61743cee7eadc17f0",
+      "representative_capture_index": 25,
+      "duplicate_capture_indexes": []
+    },
+    {
+      "rpc_sha256": "4e7330470129696c7cd547f2a11e8d4737d8de2e297ad20687507e9fb65987c7",
+      "representative_capture_index": 26,
+      "duplicate_capture_indexes": []
+    },
+    {
+      "rpc_sha256": "7dc165086ad89a5ebcae893c0f4b5c54a8b3e988f7cd2f93ed269da3420fc00e",
+      "representative_capture_index": 29,
+      "duplicate_capture_indexes": []
+    },
+    {
+      "rpc_sha256": "01360eb600b80c6c55594e243edb8ce88cb0887213024ef830f153e29bb3dffe",
+      "representative_capture_index": 30,
+      "duplicate_capture_indexes": []
+    },
+    {
+      "rpc_sha256": "85857ae859cec91f2ad35368854fd912431a6620862a6df8eb733c8592d900f3",
+      "representative_capture_index": 31,
+      "duplicate_capture_indexes": []
+    },
+    {
+      "rpc_sha256": "7cf10058bdc62c55ba854dbd776abdf3e37527ff92d85afae8eecfc859cef01a",
+      "representative_capture_index": 32,
+      "duplicate_capture_indexes": []
+    },
+    {
+      "rpc_sha256": "cc94264927797cbcc20b7ebd61d0b6163794501155c112d7c80d3babca1a354b",
+      "representative_capture_index": 33,
+      "duplicate_capture_indexes": []
+    },
+    {
+      "rpc_sha256": "99bf3946728d142f90b7201329ed3315af6ff40a55a963c1d9c92e2aaaef8c6d",
+      "representative_capture_index": 35,
+      "duplicate_capture_indexes": [64]
+    },
+    {
+      "rpc_sha256": "55a85151cda68c4bf772410914981acf5630f40fcb8c1e41574fd3a4e2bf872a",
+      "representative_capture_index": 37,
+      "duplicate_capture_indexes": []
+    },
+    {
+      "rpc_sha256": "7976b4a252711edae59b6d590dbc3973ffb133004c980f44acab37ad7011e879",
+      "representative_capture_index": 38,
+      "duplicate_capture_indexes": []
+    },
+    {
+      "rpc_sha256": "3fa451ac1fff9990b67ff0ed2e13d887eae0b892e8f1e4a0b066fa93c7070449",
+      "representative_capture_index": 39,
+      "duplicate_capture_indexes": [43, 47, 51]
+    },
+    {
+      "rpc_sha256": "221295e117949887b6d111ce4ab2c30c3b8d316b4bee684130e747fe6addef74",
+      "representative_capture_index": 41,
+      "duplicate_capture_indexes": []
+    },
+    {
+      "rpc_sha256": "523f1998407cc678dd17301d191faf5f221793030b0d9ca223b8ff4dcac633e2",
+      "representative_capture_index": 45,
+      "duplicate_capture_indexes": []
+    },
+    {
+      "rpc_sha256": "93b761f3acd10c3b8121eca07de21b7fc8cb1e3b3dd8f104f487af3c7937e7b3",
+      "representative_capture_index": 46,
+      "duplicate_capture_indexes": []
+    },
+    {
+      "rpc_sha256": "c3032c4f423696d7a08c79aa95ba810dfc921676d90f5b763aae712e792f2801",
+      "representative_capture_index": 49,
+      "duplicate_capture_indexes": []
+    },
+    {
+      "rpc_sha256": "c7fd0b13f86b4406f95c2a87e733c1684b93412f5ce22db95398d702e717be49",
+      "representative_capture_index": 50,
+      "duplicate_capture_indexes": []
+    },
+    {
+      "rpc_sha256": "703f62a91f7f1324318b909aceba5e7e56d2472d48417a1ea9f565b1fcadfa83",
+      "representative_capture_index": 53,
+      "duplicate_capture_indexes": []
+    },
+    {
+      "rpc_sha256": "9f6a47782f518f6bf4cc9053ab81698df2a0a44caf6a51fb876026b76f97dd14",
+      "representative_capture_index": 54,
+      "duplicate_capture_indexes": []
+    },
+    {
+      "rpc_sha256": "74aa0196d355ea4414c3f60bbcdb99297f29ede47937aa7c5c1693aafc409bad",
+      "representative_capture_index": 55,
+      "duplicate_capture_indexes": []
+    },
+    {
+      "rpc_sha256": "0abfa561ce228938bd2c05fdcd87695f1b1ace1980a319065a27be60a7a759a2",
+      "representative_capture_index": 56,
+      "duplicate_capture_indexes": []
+    },
+    {
+      "rpc_sha256": "14c79ea1eb73eda3e1cf4a729f0c65f4b886050085fe6578dc730f5f6147b751",
+      "representative_capture_index": 57,
+      "duplicate_capture_indexes": []
+    },
+    {
+      "rpc_sha256": "5193008e900fd76b226426af37409eff1854715feb9b3ea5c0810e7d0c5c6715",
+      "representative_capture_index": 58,
+      "duplicate_capture_indexes": []
+    },
+    {
+      "rpc_sha256": "1405d5e8fbe58a8e9820adbe153b96cb87e9609b664ece897594f1c226dd5497",
+      "representative_capture_index": 59,
+      "duplicate_capture_indexes": []
+    },
+    {
+      "rpc_sha256": "40336c96738d3773d086c2d9cabefbb079685bab233a3ced7c90cc413dd75cc7",
+      "representative_capture_index": 60,
+      "duplicate_capture_indexes": [73]
+    },
+    {
+      "rpc_sha256": "f443729d5731503e1deac5a71c909857fd41bb872e7d0b3948f10e4fb7fa8f78",
+      "representative_capture_index": 61,
+      "duplicate_capture_indexes": [72]
+    },
+    {
+      "rpc_sha256": "d16bde0d7c4b0ee58d9305149328cc8191b921bb6ffe26de291191271a2aa28e",
+      "representative_capture_index": 62,
+      "duplicate_capture_indexes": []
+    },
+    {
+      "rpc_sha256": "554e9ab6b27df9d8650600da97dca2d1d7e32afb181935a26d726589130c225a",
+      "representative_capture_index": 63,
+      "duplicate_capture_indexes": []
+    },
+    {
+      "rpc_sha256": "706d5df1536112973d8125a63e8b86954ee598b5b01733c12f81a8e4b8287251",
+      "representative_capture_index": 65,
+      "duplicate_capture_indexes": []
+    },
+    {
+      "rpc_sha256": "0634df366291fc1881babd66f60a302a47afea5580204111af3e4540f6f454f7",
+      "representative_capture_index": 66,
+      "duplicate_capture_indexes": []
+    },
+    {
+      "rpc_sha256": "d40c020b0038c7228479267a88b9784cc123f22051051a3abdeca6873824affa",
+      "representative_capture_index": 67,
+      "duplicate_capture_indexes": []
+    },
+    {
+      "rpc_sha256": "ef46b13f7dbf77465d740dd2a251980559ee14507f4613c16a21609435f9c345",
+      "representative_capture_index": 68,
+      "duplicate_capture_indexes": []
+    },
+    {
+      "rpc_sha256": "12901266034e7231344f82e1b6ad9107bfd93da3f49f2260a615dc1eb3e6eac0",
+      "representative_capture_index": 69,
+      "duplicate_capture_indexes": []
+    },
+    {
+      "rpc_sha256": "9893336ddeaddc3183c00c309cb56970981ab42663a8b6818e2accca18587063",
+      "representative_capture_index": 71,
+      "duplicate_capture_indexes": []
+    },
+    {
+      "rpc_sha256": "f2676cfc238fff5aebdab06ced4e819a8c95c6d43632f7080d92878fd3c3a160",
+      "representative_capture_index": 74,
+      "duplicate_capture_indexes": []
+    },
+    {
+      "rpc_sha256": "a2f7906e53cefa28bdc2035e401794eb9e19281be5fc14f47c166c11ec93507d",
+      "representative_capture_index": 75,
+      "duplicate_capture_indexes": []
+    },
+    {
+      "rpc_sha256": "3bfc99029a4d3d201c79e9f8e84d2743e32173288c86aa5c5a8f998d957baffe",
+      "representative_capture_index": 76,
+      "duplicate_capture_indexes": []
+    },
+    {
+      "rpc_sha256": "ffd45342f65c9415b645fc8015c34f463a77a2966e0e9702e1f25808195bd53f",
+      "representative_capture_index": 77,
+      "duplicate_capture_indexes": []
+    },
+    {
+      "rpc_sha256": "6720c3d567ea92c38be78e4dc73988462fcf3354a482e1bfdf35884e69f527a9",
+      "representative_capture_index": 81,
+      "duplicate_capture_indexes": [82]
+    },
+    {
+      "rpc_sha256": "0a11dbe59684e50a6e9943c4dcf581a14dec75a25d739ea74602d6a69917b021",
+      "representative_capture_index": 83,
+      "duplicate_capture_indexes": [84]
+    },
+    {
+      "rpc_sha256": "eb403de9d0b12986b8baccc076a88ddf6f4279c59990b0afaeff8d7f13564ae3",
+      "representative_capture_index": 85,
+      "duplicate_capture_indexes": [86]
+    },
+    {
+      "rpc_sha256": "5e82397695bda720fddfae58584f3a3522b1a87d7f212692665c242908d88e6a",
+      "representative_capture_index": 87,
+      "duplicate_capture_indexes": []
+    },
+    {
+      "rpc_sha256": "c66fe29579f6cdadc3b6a4af0e28693b11544069cbf85fbb13c072959b7d2d6a",
+      "representative_capture_index": 88,
+      "duplicate_capture_indexes": []
+    },
+    {
+      "rpc_sha256": "c7d654629d52fadb44e68b9acf5f45660d8905786c94b358a32402f813cdd9d0",
+      "representative_capture_index": 89,
+      "duplicate_capture_indexes": []
+    },
+    {
+      "rpc_sha256": "5b270849c960366329ebecad112b8f192c881dfe8bbb94a1f3d40b4c50a65045",
+      "representative_capture_index": 90,
+      "duplicate_capture_indexes": []
+    }
+  ],
+  "limitations": [
+    "No database or browser execution. Static candidate mappings are not proof of persistence.",
+    "Zero or one observed value does not prove an option works for all allowed values.",
+    "A missing direct creator read is a review candidate, not a defect: delegated functions and normalization may handle it.",
+    "Captured unit-test calls do not record expected acceptance/refusal labels; do not assume all 58 distinct payloads are valid event creations.",
+    "Display bindings span full shared pages, including cash-only controls; variant visibility needs source-local classification.",
+    "Visible controls with compound expressions or spread properties require source-local review; this parser records static property dependencies only.",
+    "The selected tracked creator definition must be confirmed against the current deployed function before claiming current-server coverage."
+  ],
+  "evidence_fingerprint": "c664e99322e377de35b7db454bf75cd2375fab1cd77c4cc37f13e2e0bb9d29bd"
+}

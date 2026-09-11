@@ -28,7 +28,7 @@ import BadBeatJackpot from './BadBeatJackpot';
 import { getBBJQualifyingInfo, getBBJPayoutPercentForBB } from '../../config/RakeConfig';
 import { getBBJMiniQualifyingInfo } from '../../config/bbjMini';
 import { isBbjPlateShown } from './bbjPlateVisibility';
-import { miniTierForBB, type BbjMiniSnapshot } from '../../lib/bbjMiniFeed';
+import { miniPlateAmount, miniTierForBB, type BbjMiniSnapshot } from '../../lib/bbjMiniFeed';
 import BBJInfoModal from '../bbj/BBJInfoModal';
 import { BBJCelebration } from './BBJCelebration';
 import { ThrowableSelector } from './ThrowableSelector';
@@ -746,7 +746,9 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
      pay right now (reserve at its floor, disabled) shows nothing rather than a
      promise the engine would refuse. */
   const bbjMiniTier = bbjMini && bbjMini.enabled ? miniTierForBB(bbjMini, safeBB(blinds)) : null;
-  const bbjMiniAmount = bbjMiniTier && bbjMiniTier.payable ? bbjMiniTier.amount : null;
+  /* The SAME decision TablePage stamps `data-bbj-mini` from, so the felt's
+     reserved height and the row that fills it can never disagree. */
+  const bbjMiniAmount = miniPlateAmount(bbjMini, safeBB(blinds));
   const bbjMiniInfo = getBBJMiniQualifyingInfo(gameType);
   // Tapping the jackpot banner opens the last-5-jackpots view (Dan, 2026-08-18).
   const [showBBJDetails, setShowBBJDetails] = React.useState(false);

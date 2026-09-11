@@ -1083,6 +1083,9 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
        in another tab-panel shares these rather than opening a second of each. */
     let stopBbjPool: (() => void) | null = null;
     let stopBbjMini: (() => void) | null = null;
+    /* Same rule as every other mini subscriber: never carry the previous
+       club's payable range onto this club's tile. */
+    setLobbyMini(null);
     let stopBbjHits: (() => void) | null = null;
     let watchedBbjPoolId: string | null = null;
 

@@ -193,7 +193,7 @@ law already required exactly this.
 
 ## Pinned
 
-`tests/the-mini-is-seen-and-discoverable.law.test.ts` - 39 tests: the read path
+`tests/the-mini-is-seen-and-discoverable.law.test.ts` - 50 tests: the read path
 reproduces the payout's refusal term for term; the client's rule mirrors
 `detectMiniBBJHit` family for family and label for label; every surface above;
 the thinner frame and the split height contract; the switch's default, its
@@ -205,3 +205,84 @@ mine: the moved BBJ-exclusion pin (above), two fixed-size source windows in the
 new law (`noFixedSizeSourceWindows`), and title case on the new copy - where
 the `&apos;` entity defeats the checker's possessive handling, so the new copy
 uses a real apostrophe.
+
+---
+
+## The deep-dive pass, same day, before this landed
+
+The first push of this phase went up with all four gates green and was then
+audited line by line against every surface. Eleven defects came out of that
+pass and are fixed in the same pull request. Every one is a way of saying
+something untrue about money, and none was hypothetical - each was reachable
+from the code as pushed.
+
+| what was wrong                                                                               | why it matters                                                                                                                    |
+| -------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `BBJInfoModal` ranged over tiers filtered on `enabled` alone                                 | **The phase's governing rule, broken on one surface.** Opened from the lobby it printed "250 - 1,500" while every tier was paused |
+| The same popup called a club's own switch "Reserve At Its Floor"                             | The wrong reason, printed under a header already reading "Off"                                                                    |
+| "Off" was shown for a pool whose reserve is merely empty                                     | Reads as "this club turned it off". Three of the five live pools are in exactly that state                                        |
+| `data-bbj-mini` tested `payable`; the row additionally tested `amount > 0`                   | A payable tier with a zero amount reserved 14px of felt for a row never drawn                                                     |
+| The whole plate-height contract lived inside `@media (max-width: 768px)`                     | Above 768px the three properties did not exist, the stamp was inert, and the row hung at a hard-coded `top: 48px; height: 16px`   |
+| PLO5 was told the mini "counts any four of a kind, not only Quad Kings"                      | PLO5's main bar is an 8-high straight flush. The sentence described a rule that game does not have                                |
+| `refusalText` handled three of the RPC's five reasons                                        | A signed-out operator was told the save failed, not that they were signed out                                                     |
+| Four mini subscribers never cleared state on a club change                                   | Club A's backup balance, floor and hit count rendered under club B's heading until the RPC answered                               |
+| The union sentence said "Only The Union Can Turn It On Or Off"                               | No union-side control exists anywhere in `src/`. It pointed at a control that was never built                                     |
+| "50%" / "25%" were literals beside figures computed from `BBJ_MINI_SPLIT`                    | Retuning the split would have left the captions describing the old one                                                            |
+| `SeatSlot.css` justified the top-avatar cap with "the banner is a fixed 22px at every width" | No longer true once the mini row exists. The clearance arithmetic is right; the reason written beside it was not                  |
+
+Two mechanisms came out of it, both so the defect cannot return by drift rather
+than by intent:
+
+- **`miniPlateAmount(snapshot, bigBlind)`** in `lib/bbjMiniFeed` is now the ONE
+  answer to "does the row draw, and at what figure". `TablePage`'s stamp and
+  `TableModalsLayer`'s render both ask it, so the reserved height and the row
+  that fills it are the same decision by construction.
+- **`miniPauseReason` + `BBJ_MINI_PAUSE_TEXT`** in `config/bbjMini` unfold
+  `payable` - which is `pool.mini_enabled AND tier.enabled AND <floor test>`
+  collapsed into one boolean - back into the three separate causes, so no
+  surface has to guess which one it is looking at.
+
+Four existing pins in the law test were MOVED to those mechanisms in this same
+commit rather than weakened (CLAUDE.md rule 8), and the law grew from 39 tests
+to 50.
+
+### The CSS beat that could not tell, and failed loudly about it
+
+`CI - Build & Type Safety` went red on the first push, on
+`multi-table.spec.ts > reduced motion is honoured across the multi-table
+surface`. Nothing in this branch caused it. The spec loads the CSS the bundle
+is actually serving, and its loader did three unbounded `fetch` calls inside
+one `page.evaluate`, two of them with no error handling at all. A slow read ate
+the entire 30s budget and surfaced as `Test timeout of 30000ms exceeded`
+pointing at the `page.evaluate` line - a message that names the symptom and
+nothing about the cause.
+
+The other direction is worse and is why this was fixed rather than re-run: an
+unmatched entry script yields `js = ''`, every chunk 404s into the per-chunk
+`catch`, and the loader returns happily having installed **zero stylesheets**.
+The spec then asks "is this animation collapsed under reduced motion?" of a
+document with no CSS, finds no animation, and **passes**. The red and the
+silent green were the same defect - a reader that answers when it cannot tell
+(CLAUDE.md 10.86) - and five specs carried a byte-identical copy of it.
+
+`tests/e2e/lib/live-css.ts` is now the single loader, built from the shape
+`card-squeeze-mobile.spec.ts` already had right: reads over Playwright's own
+request API so they cannot consume the test budget, checks `res.ok()` on both
+loads that matter, retries three times, and enforces a 2,000-byte floor on what
+it installed. It has **three** outcomes, and `skipUnlessLiveCss` turns the third
+into a skipped test carrying the reason - never a pass against an empty
+document, never a bare timeout. The five copies are gone.
+
+### What production says, read 2026-09-11
+
+Five pools, and the column default did its job: **all five have the mini on**,
+including the two created since. Nineteen mini hits, 11,600 chips, two in the
+last twenty-four hours, the most recent at 05:47:46Z. No `mini_refused:` row in
+`bbj_near_misses` - nothing has been turned away yet.
+
+**Three of the five pools hold 0.00 backup against a 5,000 floor.** Their mini
+is switched on and structurally cannot pay. Every surface correctly says
+"Paused" for them - that is the `payable` gate doing exactly what it exists for
+
+- but a flat floor against an empty reserve is a mini that never fires, and
+  that is phase 3's problem, not a defect in this one.

@@ -47,6 +47,10 @@ function refusalText(reason: string): string {
       return 'Only A Club Owner, Co-Owner, Admin Or Manager Can Change This.';
     case 'club_not_found':
       return 'That Club No Longer Exists.';
+    case 'not_signed_in':
+      return 'You Are Signed Out. Sign In Again To Change This.';
+    case 'club_and_state_required':
+      return 'That Request Was Incomplete. Nothing Changed.';
     default:
       return 'The Mini Jackpot Setting Could Not Be Saved. Nothing Changed.';
   }
@@ -58,6 +62,12 @@ export default function BBJMiniPanel({ clubId, canEdit }: Props) {
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
+    /* Clear FIRST. `watchBbjMini` replays immediately only when that club is
+       already cached, so without this the panel kept rendering the previous
+       club's backup balance, reserve floor and 30-day hit count under the new
+       club's heading until the RPC answered - the wrong club's money, shown as
+       if it were this one's. "Loading" is the honest state. */
+    setMini(null);
     if (!clubId) return;
     return watchBbjMini(clubId, setMini);
   }, [clubId]);
@@ -69,7 +79,7 @@ export default function BBJMiniPanel({ clubId, canEdit }: Props) {
     try {
       const res = await setBbjMiniEnabled(clubId, next);
       if (!res.ok) {
-        toast.error(refusalText(res.reason).replace(/&apos;/g, "'"));
+        toast.error(refusalText(res.reason));
         return;
       }
       toast.success(res.enabled ? 'Mini Jackpot Is On' : 'Mini Jackpot Is Off');
@@ -114,8 +124,9 @@ export default function BBJMiniPanel({ clubId, canEdit }: Props) {
 
       {mini.isUnionPool && (
         <small className="form-hint" style={{ display: 'block', marginBottom: 10 }}>
-          This Club Belongs To A Union, So Its Mini Jackpot Pays From The Union’s Shared Reserve.
-          Only The Union Can Turn It On Or Off.
+          This Club Belongs To A Union, So Its Mini Jackpot Pays From The Union’s Shared Reserve,
+          Which Every Member Club Draws On. It Is On For The Whole Union And Is Not Switched Per
+          Club. Leaving The Union Gives This Club Its Own Pool And Its Own Switch.
         </small>
       )}
 

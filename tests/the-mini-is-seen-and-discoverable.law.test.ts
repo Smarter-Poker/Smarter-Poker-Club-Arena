@@ -177,8 +177,15 @@ describe('the feed refuses to guess, and never promises a refused mini', () => {
   });
 
   it('every surface that shows an amount gates on payable', () => {
+    /* MOVED 2026-09-11 (CLAUDE.md rule 8). This pinned an inline ternary that
+       tested `payable` only; the reservation TablePage stamps additionally
+       required a positive amount, so the two could disagree. Both now ask
+       `miniPlateAmount`, and the pin follows the mechanism. */
     expect(modalsLayer).toMatch(
-      /const bbjMiniAmount = bbjMiniTier && bbjMiniTier\.payable \? bbjMiniTier\.amount : null;/
+      /const bbjMiniAmount = miniPlateAmount\(bbjMini, safeBB\(blinds\)\);/
+    );
+    expect(read('src/lib/bbjMiniFeed.ts')).toMatch(
+      /if \(!tier \|\| !tier\.payable\) return null;\s*return tier\.amount > 0 \? tier\.amount : null;/
     );
     expect(lobby).toMatch(/\.filter\(\(t\) => t\.enabled && t\.payable\)/);
     expect(jackpotPage).toMatch(/\.filter\(\(t\) => t\.enabled && t\.payable\)/);
@@ -214,17 +221,26 @@ describe('the felt: a thinner frame, and the mini under it', () => {
   it('the felt reserves the row it draws, and only the row it draws', () => {
     // --sp-bbj-h is what TablePage.css reserves. It is the plate plus the mini
     // row, and the mini half is 0 until the page stamps data-bbj-mini="1".
-    expect(plateCss).toMatch(/--sp-bbj-plate-h: 22px;/);
+    /* MOVED 2026-09-11 (rule 8). These three properties were declared ONLY
+       inside @media (max-width: 768px), so the contract - and the stamp that
+       drives it - did not exist above 768px. They are declared at every width
+       now; the phone block restates only the values that differ. The pin is
+       stricter than before: it checks BOTH halves. */
+    expect(plateCss).toMatch(/--sp-bbj-plate-h: 48px;/); // base (>=769px)
     expect(plateCss).toMatch(/--sp-bbj-mini-h: 0px;/);
     expect(plateCss).toMatch(
       /--sp-bbj-h: calc\(var\(--sp-bbj-plate-h\) \+ var\(--sp-bbj-mini-h\)\);/
     );
-    expect(plateCss).toMatch(
-      /\.table-page\[data-bbj-mini='1'\] \{\s*--sp-bbj-mini-h: 14px;\s*--sp-bbj-h: calc\(var\(--sp-bbj-plate-h\) \+ var\(--sp-bbj-mini-h\)\);/
-    );
-    // TablePage.css still derives its reserve from the variable, not a literal.
-    expect(read('src/pages/TablePage.css')).toContain(
+    expect(plateCss).toMatch(/\.table-page\[data-bbj-mini='1'\] \{\s*--sp-bbj-mini-h: 16px;/);
+    expect(plateCss).toMatch(/--sp-bbj-plate-h: 22px;/); // phone
+    expect(plateCss).toMatch(/\.table-page\[data-bbj-mini='1'\] \{\s*--sp-bbj-mini-h: 14px;/);
+    // Both felt reserves derive from the variable; neither is a bare literal.
+    const tablePageCss = read('src/pages/TablePage.css');
+    expect(tablePageCss).toContain(
       '--sp-table-top: calc(var(--sp-bbj-h, 22px) + 14px + var(--sp-page-inset-top));'
+    );
+    expect(tablePageCss).toContain(
+      '--sp-table-top: calc(max(76px, var(--sp-bbj-h, 48px) + 12px) + var(--sp-page-inset-top));'
     );
   });
 
@@ -235,7 +251,9 @@ describe('the felt: a thinner frame, and the mini under it', () => {
       'isBbjPlateShown({ gameType, isTournament, tournamentId, maxPlayers })'
     );
     expect(tablePage).toContain('data-bbj-mini=');
-    expect(tablePage).toMatch(/isBbjPlateShown\(\{[\s\S]{0,240}?\}\) &&\s*bbjMini\?\.enabled/);
+    expect(tablePage).toMatch(
+      /isBbjPlateShown\(\{[\s\S]{0,240}?\}\) &&\s*miniPlateAmount\(bbjMini, safeBB\(tableState\.blinds\)\) !== null/
+    );
     // the old inline condition must not survive beside the helper
     expect(modalsLayer).not.toMatch(
       /bbjInfo\.eligible &&\s*!isTournament &&\s*!tournamentId &&\s*maxPlayers > 2/
@@ -465,8 +483,15 @@ describe('a club without a union owns its mini switch (Dan 2026-09-11)', () => {
     expect(panel).toMatch(/const showSwitch = mini\.canToggle && canEdit;/);
     // `canEdit` may only narrow, never widen
     expect(panel).not.toMatch(/showSwitch = canEdit \|\|/);
-    // a union club is told why rather than shown nothing
-    expect(panel).toContain('Only The Union Can Turn It On Or Off');
+    /* MOVED 2026-09-11 (rule 8). The old copy - "Only The Union Can Turn It On
+       Or Off" - pointed at a control that was never built: `can_toggle` is
+       false for every union club and no union-side switch exists anywhere in
+       src/. A union club is still told WHY it has no switch, but the sentence
+       now describes the shared reserve and the way out, and promises nothing
+       that does not exist. */
+    expect(panel).toContain('Pays From The Union\u2019s Shared Reserve');
+    expect(panel).toContain('Is Not Switched Per');
+    expect(panel).not.toContain('Only The Union Can Turn It On Or Off');
     // and the button reflects the database after the write, not the click
     expect(panel).toMatch(/const res = await setBbjMiniEnabled\(clubId, next\);/);
     expect(panel).toMatch(
@@ -506,5 +531,182 @@ describe('what the mini deliberately does NOT do', () => {
     expect(helper).toMatch(/if \(ctx\.isTournament \|\| ctx\.tournamentId\) return false;/);
     expect(helper).toMatch(/if \(!\(ctx\.maxPlayers > 2\)\) return false;/);
     expect(helper).toMatch(/gameType === 'spin' \|\| gameType === 'spins'/);
+  });
+});
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   THE DEEP-DIVE FINDINGS (2026-09-11)
+
+   Every pin below is a defect that was in the first push of this phase and is
+   fixed in this one. They are laws because each is a way of telling a player
+   something about money that is not true, and each was reachable from the
+   shipped code rather than hypothetical.
+   ═══════════════════════════════════════════════════════════════════════════ */
+describe('a shown mini is a payable mini - on every surface, without exception', () => {
+  const RANGE_SURFACES = [
+    'src/components/bbj/BBJInfoModal.tsx',
+    'src/pages/ClubHomePage.tsx',
+    'src/pages/BadBeatJackpotPage.tsx',
+    'src/components/bbj/BBJMiniPanel.tsx',
+  ];
+
+  it('every surface that ranges over the tiers filters on payable, not merely enabled', () => {
+    // BBJInfoModal filtered on `enabled` alone, so the lobby header - which has
+    // no stake and falls through to the range - printed "250 - 1,500" while
+    // every tier was paused at the reserve floor.
+    for (const f of RANGE_SURFACES) {
+      const src = read(f);
+      const filters = [...src.matchAll(/\.tiers\s*\n?\s*\.filter\(\((\w+)\) => ([^)]*)\)/g)];
+      expect(filters.length, `${f} must range over the tiers`).toBeGreaterThan(0);
+      for (const m of filters) {
+        expect(m[2], `${f}: a tier range must require payable`).toContain(`${m[1]}.payable`);
+      }
+    }
+  });
+
+  it('the reserved height and the drawn row are ONE decision', () => {
+    // The stamp tested tier.payable; the row additionally tested amount > 0, so
+    // a payable tier with a zero amount reserved felt for a row never drawn.
+    const feed = read('src/lib/bbjMiniFeed.ts');
+    expect(feed).toMatch(/export function miniPlateAmount\(/);
+    expect(feed).toMatch(/return tier\.amount > 0 \? tier\.amount : null;/);
+    expect(read('src/pages/TablePage.tsx')).toMatch(
+      /miniPlateAmount\(bbjMini, safeBB\(tableState\.blinds\)\) !== null/
+    );
+    expect(read('src/components/table/TableModalsLayer.tsx')).toMatch(
+      /const bbjMiniAmount = miniPlateAmount\(bbjMini, safeBB\(blinds\)\);/
+    );
+  });
+
+  it('a paused mini says WHY it is paused, and the club switch is not called an empty reserve', () => {
+    const cfg = read('src/config/bbjMini.ts');
+    expect(cfg).toMatch(/export function miniPauseReason\(/);
+    expect(cfg).toMatch(/return snapshot\.clubSwitch \? 'no_tier_enabled' : 'club_switch_off';/);
+    expect(cfg).toContain("club_switch_off: 'Turned Off For This Club'");
+    const modal = read('src/components/bbj/BBJInfoModal.tsx');
+    expect(modal).toContain('const miniPause = miniPauseReason(mini, miniTier);');
+    expect(modal).toContain('BBJ_MINI_PAUSE_TEXT[miniPause]');
+    // and no surface may hard-code the floor sentence any more
+    expect(modal).not.toMatch(/'Reserve At Its Floor - The Mini Pays Again When It Refills'/);
+  });
+
+  it('the printed split percentages are derived from the split, never typed beside it', () => {
+    const cfg = read('src/config/bbjMini.ts');
+    expect(cfg).toMatch(/export const BBJ_MINI_SPLIT_PERCENT/);
+    expect(cfg).toMatch(/loser: `\$\{Math\.round\(BBJ_MINI_SPLIT\.loser \* 100\)\}%`/);
+    const modal = read('src/components/bbj/BBJInfoModal.tsx');
+    for (const share of ['loser', 'winner', 'table']) {
+      expect(modal).toContain(`BBJ_MINI_SPLIT_PERCENT.${share}`);
+    }
+  });
+
+  it('the mini names the bar it lowers PER VARIANT, so PLO5 is not told about Quad Kings', () => {
+    // PLO5's main bar is an 8-high straight flush; the sublabel was a fixed
+    // "not only Quad Kings" for every Omaha variant.
+    const cfg = read('src/config/bbjMini.ts');
+    expect(cfg).toMatch(/q\.handRank === 'straight_flush'/);
+    expect(cfg).not.toMatch(
+      /subLabel: 'Any four of a kind counts for the mini, not only Quad Kings\.'/
+    );
+  });
+
+  it('no subscriber carries the previous club money onto the next club', () => {
+    const sites: Array<[string, string]> = [
+      ['src/components/bbj/BBJMiniPanel.tsx', 'setMini(null);'],
+      ['src/pages/TablePage.tsx', 'setBbjMini(null);'],
+      ['src/pages/BadBeatJackpotPage.tsx', 'setPageMini(null);'],
+      ['src/pages/ClubHomePage.tsx', 'setLobbyMini(null);'],
+    ];
+    for (const [f, clear] of sites) {
+      expect(read(f), `${f} must clear its mini before resubscribing`).toContain(clear);
+    }
+  });
+
+  it('the operator is told every reason the switch RPC can actually give', () => {
+    const panel = read('src/components/bbj/BBJMiniPanel.tsx');
+    const sql = read('supabase/migrations/20260911142515_the_mini_switch_names_who_is_asking.sql');
+    for (const m of sql.matchAll(/'reason',\s*'([a-z_]+)'/g)) {
+      expect(panel, `refusalText must name ${m[1]}`).toContain(`case '${m[1]}':`);
+    }
+  });
+
+  it('the plate height contract is published at EVERY width, not only on a phone', () => {
+    // It lived inside @media (max-width: 768px), so data-bbj-mini was inert on
+    // desktop and the row hung at a hard-coded top/height.
+    const css = read('src/components/table/BadBeatJackpot.css');
+    const firstMedia = css.indexOf('@media');
+    const base = css.slice(0, firstMedia);
+    expect(base).toMatch(/--sp-bbj-plate-h:/);
+    expect(base).toMatch(/--sp-bbj-mini-h:/);
+    expect(base).toMatch(/--sp-bbj-h: calc\(var\(--sp-bbj-plate-h\) \+ var\(--sp-bbj-mini-h\)\)/);
+    expect(base).toMatch(/\.table-page\[data-bbj-mini='1'\]/);
+    // the row reads the contract instead of restating pixels
+    expect(base).toMatch(/top: var\(--sp-bbj-plate-h\);/);
+    expect(base).toMatch(/height: var\(--sp-bbj-mini-h\);/);
+    // and the desktop felt reserve is now checkable rather than a comment
+    expect(read('src/pages/TablePage.css')).toMatch(
+      /--sp-table-top: calc\(max\(76px, var\(--sp-bbj-h, 48px\) \+ 12px\)/
+    );
+  });
+
+  it('the mini feed exports nothing the app cannot reach', () => {
+    const feed = read('src/lib/bbjMiniFeed.ts');
+    expect(feed).toMatch(/export const BBJ_MINI_POLL_MS = 60_000;/);
+    expect(feed).toMatch(/setInterval\(\(\) => tick\(clubId, owned\), BBJ_MINI_POLL_MS\)/);
+    // one poll per CLUB, never per surface
+    expect((feed.match(/setInterval\(/g) || []).length).toBe(1);
+  });
+});
+
+describe('a CSS beat that cannot read the bundle says so, and measures nothing', () => {
+  const SPECS = [
+    'tests/e2e/multi-table.spec.ts',
+    'tests/e2e/live-animations.spec.ts',
+    'tests/e2e/showdown-beats.spec.ts',
+    'tests/e2e/card-squeeze-visual-regression.spec.ts',
+    'tests/e2e/spin-wheel-on-a-phone.spec.ts',
+  ];
+
+  it('no spec keeps its own unguarded copy of the loader', () => {
+    // Five byte-identical copies fetched with no timeout and no error check.
+    // An unreadable bundle became a bare 30s timeout; a bundle that named no
+    // stylesheets became a PASS against an empty document.
+    for (const f of SPECS) {
+      const src = read(f);
+      expect(src, `${f} must not fetch the bundle itself`).not.toContain(
+        "await fetch(base + 'index.html')"
+      );
+      expect(src).toContain("from './lib/live-css'");
+      expect(src).toContain('skipUnlessLiveCss(load, ARENA);');
+    }
+  });
+
+  it('the shared loader has three outcomes and refuses to be quietly empty', () => {
+    const lib = read('tests/e2e/lib/live-css.ts');
+    expect(lib).toMatch(/page\.request\.get/);
+    expect(lib).toMatch(/if \(!htmlRes\.ok\(\)\)/);
+    expect(lib).toMatch(/if \(!jsRes\.ok\(\)\)/);
+    expect(lib).toMatch(/const MIN_BYTES = 2_000;/);
+    expect(lib).toMatch(/bytes < MIN_BYTES/);
+    expect(lib).toMatch(/export function skipUnlessLiveCss/);
+    expect(lib).toMatch(/UNKNOWN - could not read the CSS bundle/);
+  });
+});
+
+describe('the state most live pools are actually in', () => {
+  it('"Off" is reserved for the switch; an empty reserve is PAUSED', () => {
+    /* Measured on production 2026-09-11: three of the five pools hold 0.00
+       backup against a 5,000 floor, so mini_enabled=true with no payable tier
+       is the ORDINARY state, not an edge case. The popup header printed "Off"
+       for it - which reads as "this club turned the mini off" and is a false
+       statement about a club that did no such thing. */
+    const cfg = read('src/config/bbjMini.ts');
+    expect(cfg).toMatch(
+      /return snapshot\.tiers\.some\(\(t\) => t\.enabled && t\.payable\) \? null : 'reserve_at_floor';/
+    );
+    const modal = read('src/components/bbj/BBJInfoModal.tsx');
+    expect(modal).toMatch(/miniPause === 'reserve_at_floor'\s*\?\s*'Paused'\s*:\s*'Off'/);
+    // the jackpot page already said Paused; the two must agree
+    expect(read('src/pages/BadBeatJackpotPage.tsx')).toContain("return 'Paused';");
   });
 });

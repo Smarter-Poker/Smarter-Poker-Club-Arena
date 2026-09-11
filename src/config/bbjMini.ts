@@ -53,6 +53,66 @@ export const BBJ_MINI_QUALIFYING_LABELS: Record<BBJMiniRule, string> = {
 /** 50 / 25 / 25, the same split as the main jackpot (fn_bbj_mini_payout). */
 export const BBJ_MINI_SPLIT = { loser: 0.5, winner: 0.25, table: 0.25 } as const;
 
+/**
+ * The percentage a surface PRINTS beside each share, derived from the split
+ * above rather than typed next to it. Three surfaces used to carry "50%" and
+ * "25%" as literals beside a figure computed from `BBJ_MINI_SPLIT`, so retuning
+ * the split would have left the words describing the old one - a caption
+ * quietly disagreeing with the number under it.
+ */
+export const BBJ_MINI_SPLIT_PERCENT: Record<keyof typeof BBJ_MINI_SPLIT, string> = {
+  loser: `${Math.round(BBJ_MINI_SPLIT.loser * 100)}%`,
+  winner: `${Math.round(BBJ_MINI_SPLIT.winner * 100)}%`,
+  table: `${Math.round(BBJ_MINI_SPLIT.table * 100)}%`,
+};
+
+/**
+ * WHY A MINI IS NOT PAYING, said the same way everywhere.
+ *
+ * `payable` on a tier is the database's single answer to "would the payout RPC
+ * accept this right now", and it folds three separate causes together:
+ * `pool.mini_enabled AND tier.enabled AND backup - parked - amount >= floor`.
+ * A surface that reports only the last of those tells a club that switched the
+ * mini off that its reserve is empty, which is a false statement about money.
+ * These two functions unfold it once, from the snapshot every surface already
+ * holds, so no surface has to guess.
+ */
+export type BBJMiniPauseReason = 'club_switch_off' | 'no_tier_enabled' | 'reserve_at_floor';
+
+export const BBJ_MINI_PAUSE_TEXT: Record<BBJMiniPauseReason, string> = {
+  club_switch_off: 'Turned Off For This Club',
+  no_tier_enabled: 'Turned Off',
+  reserve_at_floor: 'Reserve At Its Floor - The Mini Pays Again When It Refills',
+};
+
+/**
+ * Null when the mini IS paying at this tier. `tier` may be omitted to ask only
+ * whether the mini is on at all (the lobby, which has no stake).
+ */
+export function miniPauseReason(
+  snapshot: {
+    enabled: boolean;
+    clubSwitch: boolean;
+    tiers: ReadonlyArray<{ enabled: boolean; payable: boolean }>;
+  } | null,
+  tier?: { enabled: boolean; payable: boolean } | null
+): BBJMiniPauseReason | null {
+  if (!snapshot) return null;
+  if (!snapshot.enabled) {
+    return snapshot.clubSwitch ? 'no_tier_enabled' : 'club_switch_off';
+  }
+  if (tier) {
+    if (!tier.enabled) return 'no_tier_enabled';
+    return tier.payable ? null : 'reserve_at_floor';
+  }
+  /* No stake in hand - the lobby. `enabled` only says the club switch is on
+     and SOME tier is enabled; it says nothing about the reserve. Measured on
+     production 2026-09-11: three of the five live pools hold 0.00 backup
+     against a 5,000 floor, so "enabled with nothing payable" is the ordinary
+     state and answering null here would have printed "Off" with no reason. */
+  return snapshot.tiers.some((t) => t.enabled && t.payable) ? null : 'reserve_at_floor';
+}
+
 const ACES_FULL_OF_DEUCES: DeckCard[] = [
   { rank: 'A', suit: 's' },
   { rank: 'A', suit: 'h' },
@@ -105,18 +165,27 @@ export function getBBJMiniQualifyingInfo(
     };
   }
   const hiLo = key === 'plo8' || key === 'flo8' || key === 'plo_hilo';
+  /* WHAT THE MINI LOWERS THE BAR FROM, per variant - never a fixed phrase.
+     This line used to read "not only Quad Kings" for every Omaha variant. It
+     is true of PLO4/PLO8/FLO8 (main bar KKKK2) and FALSE of PLO5, whose main
+     bar is an 8-high straight flush, so a PLO5 player was told the mini
+     relaxes a rule their game does not have. Read from the variant's own main
+     rank instead, so a retuned main bar cannot leave this sentence behind. */
+  const mainBar =
+    q.handRank === 'straight_flush'
+      ? 'a straight flush'
+      : q.handRank === 'four_of_a_kind'
+        ? 'Quad Kings'
+        : q.label;
   return {
     eligible: true,
     rule,
     shortLabel: hiLo
       ? 'Any Quads or better must lose to bigger Quads or better (high hand only)'
       : 'Any Quads or better must lose to bigger Quads or better',
-    subLabel: 'Any four of a kind counts for the mini, not only Quad Kings.',
+    subLabel: `Any four of a kind counts for the mini, not only ${mainBar}.`,
     variantLabel: q.label,
     minLosingHandCards: QUAD_DEUCES,
     qualifyingHandLabel: BBJ_MINI_QUALIFYING_LABELS[rule],
   };
 }
-
-/** The variants the qualifying-hands strip lists, in the main strip's order. */
-export const BBJ_MINI_VARIANT_KEYS = ['nlh', 'plo4', 'plo8', 'plo5'] as const;

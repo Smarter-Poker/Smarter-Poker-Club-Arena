@@ -179,7 +179,7 @@ import { reconcileHeroSeatFromEngine, MAX_SUPPORTED_SEATS } from '../lib/heroSea
 import { gameCode } from '../utils/gameCode';
 import { masterBus } from '../core/MasterBus';
 import { watchBbjPool } from '../lib/bbjPoolFeed';
-import { watchBbjMini, miniTierForBB, type BbjMiniSnapshot } from '../lib/bbjMiniFeed';
+import { watchBbjMini, miniPlateAmount, type BbjMiniSnapshot } from '../lib/bbjMiniFeed';
 import { isBbjPlateShown } from '../components/table/bbjPlateVisibility';
 import { watchBbjHits } from '../lib/bbjHitFeed';
 import {
@@ -7599,6 +7599,12 @@ export default function TablePage({
      the two de-duplicate on the hit's own identity. */
   useEffect(() => {
     if (!tableId) return;
+    /* A different club's mini must never render under this one's heading.
+       `watchBbjMini` replays immediately only for a club it has already
+       cached, so the previous club's figures would otherwise stay on screen
+       until the new RPC answered. Clear first; show nothing, not the wrong
+       number. */
+    setBbjMini(null);
     let cancelled = false;
     let stopPool: (() => void) | null = null;
     let stopMini: (() => void) | null = null;
@@ -22053,9 +22059,7 @@ export default function TablePage({
           isTournament: tableState.isTournament,
           tournamentId: tableState.tournamentId,
           maxPlayers: Number(tableState.maxPlayers) || 0,
-        }) &&
-        bbjMini?.enabled &&
-        miniTierForBB(bbjMini, safeBB(tableState.blinds))?.payable
+        }) && miniPlateAmount(bbjMini, safeBB(tableState.blinds)) !== null
           ? '1'
           : '0'
       }

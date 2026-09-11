@@ -166,6 +166,10 @@ export default function BadBeatJackpotPage() {
       let isMounted = true;
       let stopPool: (() => void) | null = null;
       let stopMini: (() => void) | null = null;
+      /* Clear before resubscribing - see the note in BBJMiniPanel: a cached
+         replay only happens for a club already watched, so the previous
+         club's mini would otherwise sit under this one's heading. */
+      setPageMini(null);
       loadJackpotData(() => isMounted);
 
       const channelKey = 'jackpot-live';

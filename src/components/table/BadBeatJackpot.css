@@ -213,16 +213,43 @@
    nameplate is the declared --sp-bbj-plate-h and the row is --sp-bbj-mini-h,
    both published from the <=768px block below; the felt reserve reads their
    sum, so the row can never be under a top seat. */
+/* ── PUBLISHED CONTRACT: the nameplate, the mini row, and their sum ────────
+   Declared HERE, at every width, and re-stated with phone values inside the
+   <=768px block below.
+
+   It lived only inside that phone block until 2026-09-11, which made the whole
+   contract phone-only: above 768px none of these three properties existed, so
+   `.table-page[data-bbj-mini='1']` was inert on desktop and the mini row hung
+   at a hard-coded `top: 48px; height: 16px` whose clearance against the felt's
+   76px desktop reserve was arithmetic in a comment (48 + 16 = 64 < 76) rather
+   than anything a stylesheet could check. That is precisely the shape of bug
+   this contract exists to prevent, so the desktop numbers are now values of
+   the same three properties and the row's geometry is read, never repeated.
+
+   --sp-bbj-plate-h  the nameplate alone: where the mini row hangs from.
+   --sp-bbj-mini-h   the mini row, 0 until TablePage stamps data-bbj-mini="1".
+   --sp-bbj-h        their sum. TablePage.css's top reserve reads this. */
+:root {
+  --sp-bbj-plate-h: 48px;
+  --sp-bbj-mini-h: 0px;
+  --sp-bbj-h: calc(var(--sp-bbj-plate-h) + var(--sp-bbj-mini-h));
+}
+
+.table-page[data-bbj-mini='1'] {
+  --sp-bbj-mini-h: 16px;
+  --sp-bbj-h: calc(var(--sp-bbj-plate-h) + var(--sp-bbj-mini-h));
+}
+
 .bbj-mini-plate {
   position: absolute;
-  top: 48px;
+  top: var(--sp-bbj-plate-h);
   left: 50%;
   transform: translateX(-50%);
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
-  height: 16px;
+  height: var(--sp-bbj-mini-h);
   padding: 0 10px;
   background:
     var(--sp-dialog-blue, linear-gradient(165deg, #1b3a68 0%, #12253f 52%, #0a1626 100%))
@@ -640,7 +667,9 @@
      nameplate alone (still 22px, still one row); --sp-bbj-h is what everything
      else reads and is now the plate PLUS the mini row, so the felt reserve in
      TablePage.css follows on its own and a top seat still cannot reach the
-     mini. The mini row is 14px: a 10px line in a 14px box, hung 0px below the
+     mini. The mini row is 14px on a phone (a 10px line in a 14px box) and 16px
+     above 768px; both are values of --sp-bbj-mini-h, declared with the rest of
+     the contract above `.bbj-mini-plate`, so neither is written twice. Hung 0px below the
      plate's bottom bezel.
 
      The row is only reserved when it is DRAWN. TablePage stamps
@@ -653,18 +682,13 @@
      felt keeps the reserve it had before today. */
   :root {
     --sp-bbj-plate-h: 22px;
-    --sp-bbj-mini-h: 0px;
-    --sp-bbj-h: calc(var(--sp-bbj-plate-h) + var(--sp-bbj-mini-h));
   }
 
   .table-page[data-bbj-mini='1'] {
     --sp-bbj-mini-h: 14px;
-    --sp-bbj-h: calc(var(--sp-bbj-plate-h) + var(--sp-bbj-mini-h));
   }
 
   .bbj-mini-plate {
-    top: var(--sp-bbj-plate-h);
-    height: var(--sp-bbj-mini-h);
     padding: 0 8px;
     gap: 5px;
     border-radius: 0 0 6px 6px;

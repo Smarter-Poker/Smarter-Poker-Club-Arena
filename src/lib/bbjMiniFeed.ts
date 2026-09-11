@@ -263,6 +263,26 @@ export function miniTierForBB(
 }
 
 /**
+ * THE ONE ANSWER TO "DOES THE MINI ROW DRAW, AND AT WHAT FIGURE".
+ *
+ * `TablePage` stamps `data-bbj-mini` so the felt reserves the row's height, and
+ * `TableModalsLayer` decides whether to render it. Those were two separate
+ * expressions: the stamp tested `tier.payable`, the render additionally tested
+ * `amount > 0`. A payable tier with a zero amount - which `num()` above will
+ * produce from any non-numeric amount a cached row carries - reserved 14px of
+ * felt for a row that was never drawn. Both now ask this, so the reservation
+ * and the row are the same decision by construction.
+ *
+ * Returns the amount to print, or null when no row should be drawn.
+ */
+export function miniPlateAmount(snapshot: BbjMiniSnapshot | null, bigBlind: number): number | null {
+  if (!snapshot || !snapshot.enabled) return null;
+  const tier = miniTierForBB(snapshot, bigBlind);
+  if (!tier || !tier.payable) return null;
+  return tier.amount > 0 ? tier.amount : null;
+}
+
+/**
  * Turn the mini on or off for a club that owns its own pool (Dan 2026-09-11).
  *
  * The database is the authority on who may do this and on whether this club

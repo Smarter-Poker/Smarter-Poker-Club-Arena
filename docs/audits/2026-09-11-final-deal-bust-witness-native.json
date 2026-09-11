@@ -1,0 +1,2077 @@
+{
+  "recorded_at": "2026-09-11T20:51:34.728690+00:00",
+  "baseline": "full_stage1|postgres|true|17|15|12|0",
+  "production_mutation": false,
+  "runtime_triggers": "origin",
+  "migration_sha256": "96fa19d9bf44bc5ebb141dc6a16cf65af21f20b6cc3a29adc8fbd2c85a679b76",
+  "before_sha256": "8e3acfd8ddca43fa5d4146ebbf236c8a7c08323ef2613b34ba564ab47e8d2278",
+  "scenarios": [
+    {
+      "case": "paid",
+      "passed": true,
+      "exit_code": 0,
+      "assertions": 43,
+      "sql_sha256": "40dcc6fe155226895bd01ffbde393592529cb315b43502a9d0b71028113bf842",
+      "expected_drift_refusal": false,
+      "exact_outer_rollback": true,
+      "batch": {
+        "plan": [
+          {
+            "kind": "final_table_deal",
+            "cents": 3168,
+            "place": 1,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "fb93f802-2713-0498-7ad7-894ea4701ec4"
+          },
+          {
+            "kind": "final_table_deal",
+            "cents": 2533,
+            "place": 2,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "505e45fe-4275-819d-29dd-b3eb8a6d7636"
+          },
+          {
+            "kind": "final_table_deal",
+            "cents": 1900,
+            "place": 3,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "f0881dae-259a-06eb-6ec6-bc7c54427d85"
+          },
+          {
+            "kind": "final_table_deal",
+            "cents": 1266,
+            "place": 4,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "7ab41b76-3f8f-c4e7-be3a-72b13e6f4c71"
+          },
+          {
+            "kind": "final_table_deal",
+            "cents": 633,
+            "place": 5,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "57d53dfe-a185-81c2-b670-61eae6f3c57a"
+          },
+          {
+            "kind": "place",
+            "cents": 500,
+            "place": 6,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "23fafd63-bdd2-0fc1-9cb7-d0d754c3c626"
+          }
+        ],
+        "source": "engine.fn_settle_tournament_final_table_deal",
+        "live_count": 5,
+        "rank_basis": "accepted_bust_witness_v1",
+        "settled_at": "2026-09-11T15:51:36.498869-05:00",
+        "amount_owed": 100.0,
+        "chip_leader": "fb93f802-2713-0498-7ad7-894ea4701ec4",
+        "deal_amount": 95.0,
+        "field_count": 6,
+        "prepared_at": "2026-09-11T15:51:36.498869-05:00",
+        "amount_moved": 95.0,
+        "place_amount": 5.0,
+        "bubble_source": null,
+        "deal_table_id": "87200000-0000-0000-0000-000000000001",
+        "tournament_id": "87000000-0000-0000-0000-000000000001",
+        "bubble_user_id": null,
+        "deal_line_count": 5,
+        "contract_version": 2,
+        "place_line_count": 1,
+        "plan_fingerprint": "f13235ab194f49997051c02f3d595e1a",
+        "bubble_amount_owed": 0.0,
+        "bust_tail_snapshot": [
+          {
+            "id": "01519550-4dfa-96c8-e532-5e5b9759674f",
+            "bust_at": 1789159836.498869,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "hand_id": null,
+            "user_id": "23fafd63-bdd2-0fc1-9cb7-d0d754c3c626",
+            "position": 6,
+            "table_id": null,
+            "hand_number": null,
+            "candidate_id": null,
+            "committed_at": null,
+            "stack_before": null,
+            "eliminated_at": 1789159836.498869,
+            "same_hand_rank": 0,
+            "first_candidate_at": null,
+            "elimination_sequence": 812
+          }
+        ],
+        "escrow_prize_after": 0.0,
+        "escrow_prize_before": 95.0,
+        "live_input_snapshot": [
+          {
+            "chips": 500,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "fb93f802-2713-0498-7ad7-894ea4701ec4",
+            "registered_at": 1789005238.476655
+          },
+          {
+            "chips": 400,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "505e45fe-4275-819d-29dd-b3eb8a6d7636",
+            "registered_at": 1789005238.476655
+          },
+          {
+            "chips": 300,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "f0881dae-259a-06eb-6ec6-bc7c54427d85",
+            "registered_at": 1789005238.476655
+          },
+          {
+            "chips": 200,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "7ab41b76-3f8f-c4e7-be3a-72b13e6f4c71",
+            "registered_at": 1789005238.476655
+          },
+          {
+            "chips": 100,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "57d53dfe-a185-81c2-b670-61eae6f3c57a",
+            "registered_at": 1789005238.476655
+          }
+        ],
+        "bubble_obligation_id": null,
+        "structure_place_count": 6,
+        "live_input_fingerprint": "508da461d2cbaf8b4072283a3c838fa9",
+        "bubble_contract_required": false,
+        "bubble_amount_paid_before": 0.0,
+        "prior_standings_fingerprint": "a2ba284cc922234fbbfaac71a7c02b0e"
+      },
+      "seat_authority_inserts": 5,
+      "seat_authority_deletes": 5
+    },
+    {
+      "case": "unpaid",
+      "passed": true,
+      "exit_code": 0,
+      "assertions": 43,
+      "sql_sha256": "63164305d5392c27ef8f7a5f9d332c466f03eb6f4f3ca266886559b0f5f62cfb",
+      "expected_drift_refusal": false,
+      "exact_outer_rollback": true,
+      "batch": {
+        "plan": [
+          {
+            "kind": "final_table_deal",
+            "cents": 3168,
+            "place": 1,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "fb93f802-2713-0498-7ad7-894ea4701ec4"
+          },
+          {
+            "kind": "final_table_deal",
+            "cents": 2533,
+            "place": 2,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "505e45fe-4275-819d-29dd-b3eb8a6d7636"
+          },
+          {
+            "kind": "final_table_deal",
+            "cents": 1900,
+            "place": 3,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "f0881dae-259a-06eb-6ec6-bc7c54427d85"
+          },
+          {
+            "kind": "final_table_deal",
+            "cents": 1266,
+            "place": 4,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "7ab41b76-3f8f-c4e7-be3a-72b13e6f4c71"
+          },
+          {
+            "kind": "final_table_deal",
+            "cents": 633,
+            "place": 5,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "57d53dfe-a185-81c2-b670-61eae6f3c57a"
+          },
+          {
+            "kind": "place",
+            "cents": 500,
+            "place": 6,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "23fafd63-bdd2-0fc1-9cb7-d0d754c3c626"
+          }
+        ],
+        "source": "engine.fn_settle_tournament_final_table_deal",
+        "live_count": 5,
+        "rank_basis": "accepted_bust_witness_v1",
+        "settled_at": "2026-09-11T15:51:41.605498-05:00",
+        "amount_owed": 100.0,
+        "chip_leader": "fb93f802-2713-0498-7ad7-894ea4701ec4",
+        "deal_amount": 95.0,
+        "field_count": 6,
+        "prepared_at": "2026-09-11T15:51:41.605498-05:00",
+        "amount_moved": 100.0,
+        "place_amount": 5.0,
+        "bubble_source": null,
+        "deal_table_id": "87200000-0000-0000-0000-000000000001",
+        "tournament_id": "87000000-0000-0000-0000-000000000001",
+        "bubble_user_id": null,
+        "deal_line_count": 5,
+        "contract_version": 2,
+        "place_line_count": 1,
+        "plan_fingerprint": "f13235ab194f49997051c02f3d595e1a",
+        "bubble_amount_owed": 0.0,
+        "bust_tail_snapshot": [
+          {
+            "id": "01519550-4dfa-96c8-e532-5e5b9759674f",
+            "bust_at": 1789159841.605498,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "hand_id": null,
+            "user_id": "23fafd63-bdd2-0fc1-9cb7-d0d754c3c626",
+            "position": 6,
+            "table_id": null,
+            "hand_number": null,
+            "candidate_id": null,
+            "committed_at": null,
+            "stack_before": null,
+            "eliminated_at": 1789159841.605498,
+            "same_hand_rank": 0,
+            "first_candidate_at": null,
+            "elimination_sequence": 821
+          }
+        ],
+        "escrow_prize_after": 0.0,
+        "escrow_prize_before": 100.0,
+        "live_input_snapshot": [
+          {
+            "chips": 500,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "fb93f802-2713-0498-7ad7-894ea4701ec4",
+            "registered_at": 1789005238.476655
+          },
+          {
+            "chips": 400,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "505e45fe-4275-819d-29dd-b3eb8a6d7636",
+            "registered_at": 1789005238.476655
+          },
+          {
+            "chips": 300,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "f0881dae-259a-06eb-6ec6-bc7c54427d85",
+            "registered_at": 1789005238.476655
+          },
+          {
+            "chips": 200,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "7ab41b76-3f8f-c4e7-be3a-72b13e6f4c71",
+            "registered_at": 1789005238.476655
+          },
+          {
+            "chips": 100,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "57d53dfe-a185-81c2-b670-61eae6f3c57a",
+            "registered_at": 1789005238.476655
+          }
+        ],
+        "bubble_obligation_id": null,
+        "structure_place_count": 6,
+        "live_input_fingerprint": "508da461d2cbaf8b4072283a3c838fa9",
+        "bubble_contract_required": false,
+        "bubble_amount_paid_before": 0.0,
+        "prior_standings_fingerprint": "b38a6c2205bb4cd024cc1ae17f31c556"
+      },
+      "seat_authority_inserts": 5,
+      "seat_authority_deletes": 5
+    },
+    {
+      "case": "partial",
+      "passed": true,
+      "exit_code": 0,
+      "assertions": 43,
+      "sql_sha256": "aee1cbe14da8cbe149a6f11dabd27e5db5d7b1948be0a18e8a8354147953ec04",
+      "expected_drift_refusal": false,
+      "exact_outer_rollback": true,
+      "batch": {
+        "plan": [
+          {
+            "kind": "final_table_deal",
+            "cents": 3168,
+            "place": 1,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "fb93f802-2713-0498-7ad7-894ea4701ec4"
+          },
+          {
+            "kind": "final_table_deal",
+            "cents": 2533,
+            "place": 2,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "505e45fe-4275-819d-29dd-b3eb8a6d7636"
+          },
+          {
+            "kind": "final_table_deal",
+            "cents": 1900,
+            "place": 3,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "f0881dae-259a-06eb-6ec6-bc7c54427d85"
+          },
+          {
+            "kind": "final_table_deal",
+            "cents": 1266,
+            "place": 4,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "7ab41b76-3f8f-c4e7-be3a-72b13e6f4c71"
+          },
+          {
+            "kind": "final_table_deal",
+            "cents": 633,
+            "place": 5,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "57d53dfe-a185-81c2-b670-61eae6f3c57a"
+          },
+          {
+            "kind": "place",
+            "cents": 500,
+            "place": 6,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "23fafd63-bdd2-0fc1-9cb7-d0d754c3c626"
+          }
+        ],
+        "source": "engine.fn_settle_tournament_final_table_deal",
+        "live_count": 5,
+        "rank_basis": "accepted_bust_witness_v1",
+        "settled_at": "2026-09-11T15:51:46.491952-05:00",
+        "amount_owed": 100.0,
+        "chip_leader": "fb93f802-2713-0498-7ad7-894ea4701ec4",
+        "deal_amount": 95.0,
+        "field_count": 6,
+        "prepared_at": "2026-09-11T15:51:46.491952-05:00",
+        "amount_moved": 98.0,
+        "place_amount": 5.0,
+        "bubble_source": null,
+        "deal_table_id": "87200000-0000-0000-0000-000000000001",
+        "tournament_id": "87000000-0000-0000-0000-000000000001",
+        "bubble_user_id": null,
+        "deal_line_count": 5,
+        "contract_version": 2,
+        "place_line_count": 1,
+        "plan_fingerprint": "f13235ab194f49997051c02f3d595e1a",
+        "bubble_amount_owed": 0.0,
+        "bust_tail_snapshot": [
+          {
+            "id": "01519550-4dfa-96c8-e532-5e5b9759674f",
+            "bust_at": 1789159846.491952,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "hand_id": null,
+            "user_id": "23fafd63-bdd2-0fc1-9cb7-d0d754c3c626",
+            "position": 6,
+            "table_id": null,
+            "hand_number": null,
+            "candidate_id": null,
+            "committed_at": null,
+            "stack_before": null,
+            "eliminated_at": 1789159846.491952,
+            "same_hand_rank": 0,
+            "first_candidate_at": null,
+            "elimination_sequence": 830
+          }
+        ],
+        "escrow_prize_after": 0.0,
+        "escrow_prize_before": 98.0,
+        "live_input_snapshot": [
+          {
+            "chips": 500,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "fb93f802-2713-0498-7ad7-894ea4701ec4",
+            "registered_at": 1789005238.476655
+          },
+          {
+            "chips": 400,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "505e45fe-4275-819d-29dd-b3eb8a6d7636",
+            "registered_at": 1789005238.476655
+          },
+          {
+            "chips": 300,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "f0881dae-259a-06eb-6ec6-bc7c54427d85",
+            "registered_at": 1789005238.476655
+          },
+          {
+            "chips": 200,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "7ab41b76-3f8f-c4e7-be3a-72b13e6f4c71",
+            "registered_at": 1789005238.476655
+          },
+          {
+            "chips": 100,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "57d53dfe-a185-81c2-b670-61eae6f3c57a",
+            "registered_at": 1789005238.476655
+          }
+        ],
+        "bubble_obligation_id": null,
+        "structure_place_count": 6,
+        "live_input_fingerprint": "508da461d2cbaf8b4072283a3c838fa9",
+        "bubble_contract_required": false,
+        "bubble_amount_paid_before": 0.0,
+        "prior_standings_fingerprint": "3eba9ccc54e29c6df88bf0bf6b5116fd"
+      },
+      "seat_authority_inserts": 5,
+      "seat_authority_deletes": 5
+    },
+    {
+      "case": "legacy_paid",
+      "passed": true,
+      "exit_code": 0,
+      "assertions": 45,
+      "sql_sha256": "42adf8019de8fa9647ceaefd65abdc378933e5b44c79f26c8df9301db059c948",
+      "expected_drift_refusal": false,
+      "exact_outer_rollback": true,
+      "batch": {
+        "plan": [
+          {
+            "kind": "final_table_deal",
+            "cents": 3168,
+            "place": 1,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "fb93f802-2713-0498-7ad7-894ea4701ec4"
+          },
+          {
+            "kind": "final_table_deal",
+            "cents": 2533,
+            "place": 2,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "505e45fe-4275-819d-29dd-b3eb8a6d7636"
+          },
+          {
+            "kind": "final_table_deal",
+            "cents": 1900,
+            "place": 3,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "f0881dae-259a-06eb-6ec6-bc7c54427d85"
+          },
+          {
+            "kind": "final_table_deal",
+            "cents": 1266,
+            "place": 4,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "7ab41b76-3f8f-c4e7-be3a-72b13e6f4c71"
+          },
+          {
+            "kind": "final_table_deal",
+            "cents": 633,
+            "place": 5,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "57d53dfe-a185-81c2-b670-61eae6f3c57a"
+          },
+          {
+            "kind": "place",
+            "cents": 500,
+            "place": 6,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "23fafd63-bdd2-0fc1-9cb7-d0d754c3c626"
+          }
+        ],
+        "source": "engine.fn_settle_tournament_final_table_deal",
+        "live_count": 5,
+        "rank_basis": "recording_sequence_v2",
+        "settled_at": "2026-09-11T15:51:49.633455-05:00",
+        "amount_owed": 100.0,
+        "chip_leader": "fb93f802-2713-0498-7ad7-894ea4701ec4",
+        "deal_amount": 95.0,
+        "field_count": 6,
+        "prepared_at": "2026-09-11T15:51:49.633455-05:00",
+        "amount_moved": 95.0,
+        "place_amount": 5.0,
+        "bubble_source": null,
+        "deal_table_id": "87200000-0000-0000-0000-000000000001",
+        "tournament_id": "87000000-0000-0000-0000-000000000001",
+        "bubble_user_id": null,
+        "deal_line_count": 5,
+        "contract_version": 2,
+        "place_line_count": 1,
+        "plan_fingerprint": "f13235ab194f49997051c02f3d595e1a",
+        "bubble_amount_owed": 0.0,
+        "bust_tail_snapshot": null,
+        "escrow_prize_after": 0.0,
+        "escrow_prize_before": 95.0,
+        "live_input_snapshot": [
+          {
+            "chips": 500,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "fb93f802-2713-0498-7ad7-894ea4701ec4",
+            "registered_at": 1789005238.476655
+          },
+          {
+            "chips": 400,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "505e45fe-4275-819d-29dd-b3eb8a6d7636",
+            "registered_at": 1789005238.476655
+          },
+          {
+            "chips": 300,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "f0881dae-259a-06eb-6ec6-bc7c54427d85",
+            "registered_at": 1789005238.476655
+          },
+          {
+            "chips": 200,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "7ab41b76-3f8f-c4e7-be3a-72b13e6f4c71",
+            "registered_at": 1789005238.476655
+          },
+          {
+            "chips": 100,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "57d53dfe-a185-81c2-b670-61eae6f3c57a",
+            "registered_at": 1789005238.476655
+          }
+        ],
+        "bubble_obligation_id": null,
+        "structure_place_count": 6,
+        "live_input_fingerprint": "508da461d2cbaf8b4072283a3c838fa9",
+        "bubble_contract_required": false,
+        "bubble_amount_paid_before": 0.0,
+        "prior_standings_fingerprint": "3743e9fd96b11dc78cc8da9aaef449c9"
+      },
+      "seat_authority_inserts": 5,
+      "seat_authority_deletes": 5
+    },
+    {
+      "case": "legacy_inverted",
+      "passed": true,
+      "exit_code": 0,
+      "assertions": 46,
+      "sql_sha256": "a1bffeb082803f218fcd6113f66c6f8df631f0cb8512b9fb36fda88422ee9940",
+      "expected_drift_refusal": false,
+      "exact_outer_rollback": true,
+      "batch": {
+        "plan": [
+          {
+            "kind": "final_table_deal",
+            "cents": 3168,
+            "place": 1,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "fb93f802-2713-0498-7ad7-894ea4701ec4"
+          },
+          {
+            "kind": "final_table_deal",
+            "cents": 2533,
+            "place": 2,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "505e45fe-4275-819d-29dd-b3eb8a6d7636"
+          },
+          {
+            "kind": "final_table_deal",
+            "cents": 1900,
+            "place": 3,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "f0881dae-259a-06eb-6ec6-bc7c54427d85"
+          },
+          {
+            "kind": "final_table_deal",
+            "cents": 1266,
+            "place": 4,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "7ab41b76-3f8f-c4e7-be3a-72b13e6f4c71"
+          },
+          {
+            "kind": "final_table_deal",
+            "cents": 633,
+            "place": 5,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "57d53dfe-a185-81c2-b670-61eae6f3c57a"
+          },
+          {
+            "kind": "place",
+            "cents": 500,
+            "place": 6,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "76fa0c47-4bd4-5743-f6f8-0b06a873eb7d"
+          }
+        ],
+        "source": "engine.fn_settle_tournament_final_table_deal",
+        "live_count": 5,
+        "rank_basis": "recording_sequence_v2",
+        "settled_at": "2026-09-11T15:51:52.849143-05:00",
+        "amount_owed": 100.0,
+        "chip_leader": "fb93f802-2713-0498-7ad7-894ea4701ec4",
+        "deal_amount": 95.0,
+        "field_count": 8,
+        "prepared_at": "2026-09-11T15:51:52.849143-05:00",
+        "amount_moved": 100.0,
+        "place_amount": 5.0,
+        "bubble_source": null,
+        "deal_table_id": "87200000-0000-0000-0000-000000000001",
+        "tournament_id": "87000000-0000-0000-0000-000000000001",
+        "bubble_user_id": null,
+        "deal_line_count": 5,
+        "contract_version": 2,
+        "place_line_count": 1,
+        "plan_fingerprint": "30600b7e66b7e336b62d985554ed4f6e",
+        "bubble_amount_owed": 0.0,
+        "bust_tail_snapshot": null,
+        "escrow_prize_after": 0.0,
+        "escrow_prize_before": 100.0,
+        "live_input_snapshot": [
+          {
+            "chips": 500,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "fb93f802-2713-0498-7ad7-894ea4701ec4",
+            "registered_at": 1789005238.476655
+          },
+          {
+            "chips": 400,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "505e45fe-4275-819d-29dd-b3eb8a6d7636",
+            "registered_at": 1789005238.476655
+          },
+          {
+            "chips": 300,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "f0881dae-259a-06eb-6ec6-bc7c54427d85",
+            "registered_at": 1789005238.476655
+          },
+          {
+            "chips": 200,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "7ab41b76-3f8f-c4e7-be3a-72b13e6f4c71",
+            "registered_at": 1789005238.476655
+          },
+          {
+            "chips": 100,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "57d53dfe-a185-81c2-b670-61eae6f3c57a",
+            "registered_at": 1789005238.476655
+          }
+        ],
+        "bubble_obligation_id": null,
+        "structure_place_count": 6,
+        "live_input_fingerprint": "508da461d2cbaf8b4072283a3c838fa9",
+        "bubble_contract_required": false,
+        "bubble_amount_paid_before": 0.0,
+        "prior_standings_fingerprint": "be210b30de795f038935b700ec97fd70"
+      },
+      "seat_authority_inserts": 5,
+      "seat_authority_deletes": 5
+    },
+    {
+      "case": "legacy_open_consent",
+      "passed": true,
+      "exit_code": 0,
+      "assertions": 13,
+      "sql_sha256": "b04c7812abc288e7a7dcf270c277f67dfea77ffb1790a57d2f8075936a854efb",
+      "expected_drift_refusal": false,
+      "exact_outer_rollback": true
+    },
+    {
+      "case": "commit_order",
+      "passed": true,
+      "exit_code": 0,
+      "assertions": 45,
+      "sql_sha256": "be03fdc452d36254a16a8e41bb860765db4223a7501af21658ea777b0ad18349",
+      "expected_drift_refusal": false,
+      "exact_outer_rollback": true,
+      "batch": {
+        "plan": [
+          {
+            "kind": "final_table_deal",
+            "cents": 3168,
+            "place": 1,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "fb93f802-2713-0498-7ad7-894ea4701ec4"
+          },
+          {
+            "kind": "final_table_deal",
+            "cents": 2533,
+            "place": 2,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "505e45fe-4275-819d-29dd-b3eb8a6d7636"
+          },
+          {
+            "kind": "final_table_deal",
+            "cents": 1900,
+            "place": 3,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "f0881dae-259a-06eb-6ec6-bc7c54427d85"
+          },
+          {
+            "kind": "final_table_deal",
+            "cents": 1266,
+            "place": 4,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "7ab41b76-3f8f-c4e7-be3a-72b13e6f4c71"
+          },
+          {
+            "kind": "final_table_deal",
+            "cents": 633,
+            "place": 5,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "57d53dfe-a185-81c2-b670-61eae6f3c57a"
+          },
+          {
+            "kind": "place",
+            "cents": 500,
+            "place": 6,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "24decaa4-c2e0-ff40-4dd6-0375029492eb"
+          }
+        ],
+        "source": "engine.fn_settle_tournament_final_table_deal",
+        "live_count": 5,
+        "rank_basis": "accepted_bust_witness_v1",
+        "settled_at": "2026-09-11T15:51:57.733795-05:00",
+        "amount_owed": 100.0,
+        "chip_leader": "fb93f802-2713-0498-7ad7-894ea4701ec4",
+        "deal_amount": 95.0,
+        "field_count": 8,
+        "prepared_at": "2026-09-11T15:51:57.733795-05:00",
+        "amount_moved": 100.0,
+        "place_amount": 5.0,
+        "bubble_source": null,
+        "deal_table_id": "87200000-0000-0000-0000-000000000001",
+        "tournament_id": "87000000-0000-0000-0000-000000000001",
+        "bubble_user_id": null,
+        "deal_line_count": 5,
+        "contract_version": 2,
+        "place_line_count": 1,
+        "plan_fingerprint": "c8c615a9597e874b4cd3ab1656affb83",
+        "bubble_amount_owed": 0.0,
+        "bust_tail_snapshot": [
+          {
+            "id": "143211a5-b8fd-5a1f-bbfd-75cf277b148a",
+            "bust_at": 1789036200.0,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "hand_id": "13751ee4-4f52-8b6e-10b2-082a3e39d803",
+            "user_id": "24decaa4-c2e0-ff40-4dd6-0375029492eb",
+            "position": 6,
+            "table_id": "87200000-0000-0000-0000-000000000001",
+            "hand_number": 9800007,
+            "candidate_id": "db20a0b4-d48b-fc1e-aaad-fc9ac3f104f9",
+            "committed_at": 1789036200.0,
+            "stack_before": 70.0,
+            "eliminated_at": 1789042800.0,
+            "same_hand_rank": 0,
+            "first_candidate_at": 1789036140.0,
+            "elimination_sequence": 861
+          },
+          {
+            "id": "01519550-4dfa-96c8-e532-5e5b9759674f",
+            "bust_at": 1789035600.0,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "hand_id": "b919575d-6489-03d7-4b9c-572410851ff1",
+            "user_id": "23fafd63-bdd2-0fc1-9cb7-d0d754c3c626",
+            "position": 7,
+            "table_id": "87200000-0000-0000-0000-000000000001",
+            "hand_number": 9800006,
+            "candidate_id": "c19510b1-d626-164f-b027-0d1e02c6752a",
+            "committed_at": 1789035600.0,
+            "stack_before": 60.0,
+            "eliminated_at": 1789159857.733795,
+            "same_hand_rank": 0,
+            "first_candidate_at": 1789035540.0,
+            "elimination_sequence": 860
+          },
+          {
+            "id": "9ec0a9d6-fe87-4ae0-c286-3ce358cebfa8",
+            "bust_at": 1789035000.0,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "hand_id": "99212503-34fb-2474-16dd-a55e41a2dce7",
+            "user_id": "76fa0c47-4bd4-5743-f6f8-0b06a873eb7d",
+            "position": 8,
+            "table_id": "87200000-0000-0000-0000-000000000001",
+            "hand_number": 9800008,
+            "candidate_id": "01ee6d2d-4f7e-b366-b298-752ed96eeebd",
+            "committed_at": 1789035000.0,
+            "stack_before": 80.0,
+            "eliminated_at": 1789043400.0,
+            "same_hand_rank": 0,
+            "first_candidate_at": 1789034940.0,
+            "elimination_sequence": 862
+          }
+        ],
+        "escrow_prize_after": 0.0,
+        "escrow_prize_before": 100.0,
+        "live_input_snapshot": [
+          {
+            "chips": 500,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "fb93f802-2713-0498-7ad7-894ea4701ec4",
+            "registered_at": 1789005238.476655
+          },
+          {
+            "chips": 400,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "505e45fe-4275-819d-29dd-b3eb8a6d7636",
+            "registered_at": 1789005238.476655
+          },
+          {
+            "chips": 300,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "f0881dae-259a-06eb-6ec6-bc7c54427d85",
+            "registered_at": 1789005238.476655
+          },
+          {
+            "chips": 200,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "7ab41b76-3f8f-c4e7-be3a-72b13e6f4c71",
+            "registered_at": 1789005238.476655
+          },
+          {
+            "chips": 100,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "57d53dfe-a185-81c2-b670-61eae6f3c57a",
+            "registered_at": 1789005238.476655
+          }
+        ],
+        "bubble_obligation_id": null,
+        "structure_place_count": 6,
+        "live_input_fingerprint": "508da461d2cbaf8b4072283a3c838fa9",
+        "bubble_contract_required": false,
+        "bubble_amount_paid_before": 0.0,
+        "prior_standings_fingerprint": "3e6793e5c940cfdbed6cf8f8cf6d3771"
+      },
+      "seat_authority_inserts": 5,
+      "seat_authority_deletes": 5
+    },
+    {
+      "case": "same_hand",
+      "passed": true,
+      "exit_code": 0,
+      "assertions": 45,
+      "sql_sha256": "c29f5ae36433cd5c097b8a6b785420d7f9d42df7a448ce03c7c194c72773a891",
+      "expected_drift_refusal": false,
+      "exact_outer_rollback": true,
+      "batch": {
+        "plan": [
+          {
+            "kind": "final_table_deal",
+            "cents": 3168,
+            "place": 1,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "fb93f802-2713-0498-7ad7-894ea4701ec4"
+          },
+          {
+            "kind": "final_table_deal",
+            "cents": 2533,
+            "place": 2,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "505e45fe-4275-819d-29dd-b3eb8a6d7636"
+          },
+          {
+            "kind": "final_table_deal",
+            "cents": 1900,
+            "place": 3,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "f0881dae-259a-06eb-6ec6-bc7c54427d85"
+          },
+          {
+            "kind": "final_table_deal",
+            "cents": 1266,
+            "place": 4,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "7ab41b76-3f8f-c4e7-be3a-72b13e6f4c71"
+          },
+          {
+            "kind": "final_table_deal",
+            "cents": 633,
+            "place": 5,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "57d53dfe-a185-81c2-b670-61eae6f3c57a"
+          },
+          {
+            "kind": "place",
+            "cents": 500,
+            "place": 6,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "24decaa4-c2e0-ff40-4dd6-0375029492eb"
+          }
+        ],
+        "source": "engine.fn_settle_tournament_final_table_deal",
+        "live_count": 5,
+        "rank_basis": "accepted_bust_witness_v1",
+        "settled_at": "2026-09-11T15:51:59.654377-05:00",
+        "amount_owed": 100.0,
+        "chip_leader": "fb93f802-2713-0498-7ad7-894ea4701ec4",
+        "deal_amount": 95.0,
+        "field_count": 8,
+        "prepared_at": "2026-09-11T15:51:59.654377-05:00",
+        "amount_moved": 100.0,
+        "place_amount": 5.0,
+        "bubble_source": null,
+        "deal_table_id": "87200000-0000-0000-0000-000000000001",
+        "tournament_id": "87000000-0000-0000-0000-000000000001",
+        "bubble_user_id": null,
+        "deal_line_count": 5,
+        "contract_version": 2,
+        "place_line_count": 1,
+        "plan_fingerprint": "c8c615a9597e874b4cd3ab1656affb83",
+        "bubble_amount_owed": 0.0,
+        "bust_tail_snapshot": [
+          {
+            "id": "143211a5-b8fd-5a1f-bbfd-75cf277b148a",
+            "bust_at": 1789036200.000001,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "hand_id": "13751ee4-4f52-8b6e-10b2-082a3e39d803",
+            "user_id": "24decaa4-c2e0-ff40-4dd6-0375029492eb",
+            "position": 6,
+            "table_id": "87200000-0000-0000-0000-000000000001",
+            "hand_number": 9800007,
+            "candidate_id": "db20a0b4-d48b-fc1e-aaad-fc9ac3f104f9",
+            "committed_at": 1789036200.0,
+            "stack_before": 70.0,
+            "eliminated_at": 1789042800.0,
+            "same_hand_rank": 1,
+            "first_candidate_at": 1789035540.0,
+            "elimination_sequence": 872
+          },
+          {
+            "id": "01519550-4dfa-96c8-e532-5e5b9759674f",
+            "bust_at": 1789036200.0,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "hand_id": "13751ee4-4f52-8b6e-10b2-082a3e39d803",
+            "user_id": "23fafd63-bdd2-0fc1-9cb7-d0d754c3c626",
+            "position": 7,
+            "table_id": "87200000-0000-0000-0000-000000000001",
+            "hand_number": 9800007,
+            "candidate_id": "c19510b1-d626-164f-b027-0d1e02c6752a",
+            "committed_at": 1789036200.0,
+            "stack_before": 60.0,
+            "eliminated_at": 1789159859.654377,
+            "same_hand_rank": 0,
+            "first_candidate_at": 1789035540.0,
+            "elimination_sequence": 871
+          },
+          {
+            "id": "9ec0a9d6-fe87-4ae0-c286-3ce358cebfa8",
+            "bust_at": 1789035000.0,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "hand_id": "99212503-34fb-2474-16dd-a55e41a2dce7",
+            "user_id": "76fa0c47-4bd4-5743-f6f8-0b06a873eb7d",
+            "position": 8,
+            "table_id": "87200000-0000-0000-0000-000000000001",
+            "hand_number": 9800008,
+            "candidate_id": "01ee6d2d-4f7e-b366-b298-752ed96eeebd",
+            "committed_at": 1789035000.0,
+            "stack_before": 80.0,
+            "eliminated_at": 1789043400.0,
+            "same_hand_rank": 0,
+            "first_candidate_at": 1789034940.0,
+            "elimination_sequence": 873
+          }
+        ],
+        "escrow_prize_after": 0.0,
+        "escrow_prize_before": 100.0,
+        "live_input_snapshot": [
+          {
+            "chips": 500,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "fb93f802-2713-0498-7ad7-894ea4701ec4",
+            "registered_at": 1789005238.476655
+          },
+          {
+            "chips": 400,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "505e45fe-4275-819d-29dd-b3eb8a6d7636",
+            "registered_at": 1789005238.476655
+          },
+          {
+            "chips": 300,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "f0881dae-259a-06eb-6ec6-bc7c54427d85",
+            "registered_at": 1789005238.476655
+          },
+          {
+            "chips": 200,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "7ab41b76-3f8f-c4e7-be3a-72b13e6f4c71",
+            "registered_at": 1789005238.476655
+          },
+          {
+            "chips": 100,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "57d53dfe-a185-81c2-b670-61eae6f3c57a",
+            "registered_at": 1789005238.476655
+          }
+        ],
+        "bubble_obligation_id": null,
+        "structure_place_count": 6,
+        "live_input_fingerprint": "508da461d2cbaf8b4072283a3c838fa9",
+        "bubble_contract_required": false,
+        "bubble_amount_paid_before": 0.0,
+        "prior_standings_fingerprint": "4ffab427116e1b69939ee0b8036db78d"
+      },
+      "seat_authority_inserts": 5,
+      "seat_authority_deletes": 5
+    },
+    {
+      "case": "same_hand_equal",
+      "passed": true,
+      "exit_code": 0,
+      "assertions": 45,
+      "sql_sha256": "99072771b08ab26292d7eb42f918d0ab81b47a436b2486ef200948a846863c07",
+      "expected_drift_refusal": false,
+      "exact_outer_rollback": true,
+      "batch": {
+        "plan": [
+          {
+            "kind": "final_table_deal",
+            "cents": 3168,
+            "place": 1,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "fb93f802-2713-0498-7ad7-894ea4701ec4"
+          },
+          {
+            "kind": "final_table_deal",
+            "cents": 2533,
+            "place": 2,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "505e45fe-4275-819d-29dd-b3eb8a6d7636"
+          },
+          {
+            "kind": "final_table_deal",
+            "cents": 1900,
+            "place": 3,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "f0881dae-259a-06eb-6ec6-bc7c54427d85"
+          },
+          {
+            "kind": "final_table_deal",
+            "cents": 1266,
+            "place": 4,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "7ab41b76-3f8f-c4e7-be3a-72b13e6f4c71"
+          },
+          {
+            "kind": "final_table_deal",
+            "cents": 633,
+            "place": 5,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "57d53dfe-a185-81c2-b670-61eae6f3c57a"
+          },
+          {
+            "kind": "place",
+            "cents": 500,
+            "place": 6,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "24decaa4-c2e0-ff40-4dd6-0375029492eb"
+          }
+        ],
+        "source": "engine.fn_settle_tournament_final_table_deal",
+        "live_count": 5,
+        "rank_basis": "accepted_bust_witness_v1",
+        "settled_at": "2026-09-11T15:52:01.165737-05:00",
+        "amount_owed": 100.0,
+        "chip_leader": "fb93f802-2713-0498-7ad7-894ea4701ec4",
+        "deal_amount": 95.0,
+        "field_count": 8,
+        "prepared_at": "2026-09-11T15:52:01.165737-05:00",
+        "amount_moved": 100.0,
+        "place_amount": 5.0,
+        "bubble_source": null,
+        "deal_table_id": "87200000-0000-0000-0000-000000000001",
+        "tournament_id": "87000000-0000-0000-0000-000000000001",
+        "bubble_user_id": null,
+        "deal_line_count": 5,
+        "contract_version": 2,
+        "place_line_count": 1,
+        "plan_fingerprint": "c8c615a9597e874b4cd3ab1656affb83",
+        "bubble_amount_owed": 0.0,
+        "bust_tail_snapshot": [
+          {
+            "id": "143211a5-b8fd-5a1f-bbfd-75cf277b148a",
+            "bust_at": 1789036200.000001,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "hand_id": "13751ee4-4f52-8b6e-10b2-082a3e39d803",
+            "user_id": "24decaa4-c2e0-ff40-4dd6-0375029492eb",
+            "position": 6,
+            "table_id": "87200000-0000-0000-0000-000000000001",
+            "hand_number": 9800007,
+            "candidate_id": "db20a0b4-d48b-fc1e-aaad-fc9ac3f104f9",
+            "committed_at": 1789036200.0,
+            "stack_before": 70.0,
+            "eliminated_at": 1789042800.0,
+            "same_hand_rank": 1,
+            "first_candidate_at": 1789035540.0,
+            "elimination_sequence": 883
+          },
+          {
+            "id": "01519550-4dfa-96c8-e532-5e5b9759674f",
+            "bust_at": 1789036200.0,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "hand_id": "13751ee4-4f52-8b6e-10b2-082a3e39d803",
+            "user_id": "23fafd63-bdd2-0fc1-9cb7-d0d754c3c626",
+            "position": 7,
+            "table_id": "87200000-0000-0000-0000-000000000001",
+            "hand_number": 9800007,
+            "candidate_id": "c19510b1-d626-164f-b027-0d1e02c6752a",
+            "committed_at": 1789036200.0,
+            "stack_before": 70.0,
+            "eliminated_at": 1789159861.165737,
+            "same_hand_rank": 0,
+            "first_candidate_at": 1789035540.0,
+            "elimination_sequence": 882
+          },
+          {
+            "id": "9ec0a9d6-fe87-4ae0-c286-3ce358cebfa8",
+            "bust_at": 1789035000.0,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "hand_id": "99212503-34fb-2474-16dd-a55e41a2dce7",
+            "user_id": "76fa0c47-4bd4-5743-f6f8-0b06a873eb7d",
+            "position": 8,
+            "table_id": "87200000-0000-0000-0000-000000000001",
+            "hand_number": 9800008,
+            "candidate_id": "01ee6d2d-4f7e-b366-b298-752ed96eeebd",
+            "committed_at": 1789035000.0,
+            "stack_before": 80.0,
+            "eliminated_at": 1789043400.0,
+            "same_hand_rank": 0,
+            "first_candidate_at": 1789034940.0,
+            "elimination_sequence": 884
+          }
+        ],
+        "escrow_prize_after": 0.0,
+        "escrow_prize_before": 100.0,
+        "live_input_snapshot": [
+          {
+            "chips": 500,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "fb93f802-2713-0498-7ad7-894ea4701ec4",
+            "registered_at": 1789005238.476655
+          },
+          {
+            "chips": 400,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "505e45fe-4275-819d-29dd-b3eb8a6d7636",
+            "registered_at": 1789005238.476655
+          },
+          {
+            "chips": 300,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "f0881dae-259a-06eb-6ec6-bc7c54427d85",
+            "registered_at": 1789005238.476655
+          },
+          {
+            "chips": 200,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "7ab41b76-3f8f-c4e7-be3a-72b13e6f4c71",
+            "registered_at": 1789005238.476655
+          },
+          {
+            "chips": 100,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "57d53dfe-a185-81c2-b670-61eae6f3c57a",
+            "registered_at": 1789005238.476655
+          }
+        ],
+        "bubble_obligation_id": null,
+        "structure_place_count": 6,
+        "live_input_fingerprint": "508da461d2cbaf8b4072283a3c838fa9",
+        "bubble_contract_required": false,
+        "bubble_amount_paid_before": 0.0,
+        "prior_standings_fingerprint": "59bcfdc4486e7adec9f70efd581a4544"
+      },
+      "seat_authority_inserts": 5,
+      "seat_authority_deletes": 5
+    },
+    {
+      "case": "pruned_commit",
+      "passed": true,
+      "exit_code": 0,
+      "assertions": 45,
+      "sql_sha256": "312dfc3b6b748ad97bec6ec0c12f8e9297bca2ee102eb1c0698a9e17e074a81d",
+      "expected_drift_refusal": false,
+      "exact_outer_rollback": true,
+      "batch": {
+        "plan": [
+          {
+            "kind": "final_table_deal",
+            "cents": 3168,
+            "place": 1,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "fb93f802-2713-0498-7ad7-894ea4701ec4"
+          },
+          {
+            "kind": "final_table_deal",
+            "cents": 2533,
+            "place": 2,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "505e45fe-4275-819d-29dd-b3eb8a6d7636"
+          },
+          {
+            "kind": "final_table_deal",
+            "cents": 1900,
+            "place": 3,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "f0881dae-259a-06eb-6ec6-bc7c54427d85"
+          },
+          {
+            "kind": "final_table_deal",
+            "cents": 1266,
+            "place": 4,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "7ab41b76-3f8f-c4e7-be3a-72b13e6f4c71"
+          },
+          {
+            "kind": "final_table_deal",
+            "cents": 633,
+            "place": 5,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "57d53dfe-a185-81c2-b670-61eae6f3c57a"
+          },
+          {
+            "kind": "place",
+            "cents": 500,
+            "place": 6,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "24decaa4-c2e0-ff40-4dd6-0375029492eb"
+          }
+        ],
+        "source": "engine.fn_settle_tournament_final_table_deal",
+        "live_count": 5,
+        "rank_basis": "accepted_bust_witness_v1",
+        "settled_at": "2026-09-11T15:52:02.709426-05:00",
+        "amount_owed": 100.0,
+        "chip_leader": "fb93f802-2713-0498-7ad7-894ea4701ec4",
+        "deal_amount": 95.0,
+        "field_count": 8,
+        "prepared_at": "2026-09-11T15:52:02.709426-05:00",
+        "amount_moved": 100.0,
+        "place_amount": 5.0,
+        "bubble_source": null,
+        "deal_table_id": "87200000-0000-0000-0000-000000000001",
+        "tournament_id": "87000000-0000-0000-0000-000000000001",
+        "bubble_user_id": null,
+        "deal_line_count": 5,
+        "contract_version": 2,
+        "place_line_count": 1,
+        "plan_fingerprint": "c8c615a9597e874b4cd3ab1656affb83",
+        "bubble_amount_owed": 0.0,
+        "bust_tail_snapshot": [
+          {
+            "id": "143211a5-b8fd-5a1f-bbfd-75cf277b148a",
+            "bust_at": 1789036140.0,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "hand_id": "13751ee4-4f52-8b6e-10b2-082a3e39d803",
+            "user_id": "24decaa4-c2e0-ff40-4dd6-0375029492eb",
+            "position": 6,
+            "table_id": "87200000-0000-0000-0000-000000000001",
+            "hand_number": 9800007,
+            "candidate_id": "db20a0b4-d48b-fc1e-aaad-fc9ac3f104f9",
+            "committed_at": null,
+            "stack_before": 70.0,
+            "eliminated_at": 1789042800.0,
+            "same_hand_rank": 0,
+            "first_candidate_at": 1789036140.0,
+            "elimination_sequence": 894
+          },
+          {
+            "id": "01519550-4dfa-96c8-e532-5e5b9759674f",
+            "bust_at": 1789035540.0,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "hand_id": "b919575d-6489-03d7-4b9c-572410851ff1",
+            "user_id": "23fafd63-bdd2-0fc1-9cb7-d0d754c3c626",
+            "position": 7,
+            "table_id": "87200000-0000-0000-0000-000000000001",
+            "hand_number": 9800006,
+            "candidate_id": "c19510b1-d626-164f-b027-0d1e02c6752a",
+            "committed_at": null,
+            "stack_before": 60.0,
+            "eliminated_at": 1789159862.709426,
+            "same_hand_rank": 0,
+            "first_candidate_at": 1789035540.0,
+            "elimination_sequence": 893
+          },
+          {
+            "id": "9ec0a9d6-fe87-4ae0-c286-3ce358cebfa8",
+            "bust_at": 1789034940.0,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "hand_id": "99212503-34fb-2474-16dd-a55e41a2dce7",
+            "user_id": "76fa0c47-4bd4-5743-f6f8-0b06a873eb7d",
+            "position": 8,
+            "table_id": "87200000-0000-0000-0000-000000000001",
+            "hand_number": 9800008,
+            "candidate_id": "01ee6d2d-4f7e-b366-b298-752ed96eeebd",
+            "committed_at": null,
+            "stack_before": 80.0,
+            "eliminated_at": 1789043400.0,
+            "same_hand_rank": 0,
+            "first_candidate_at": 1789034940.0,
+            "elimination_sequence": 895
+          }
+        ],
+        "escrow_prize_after": 0.0,
+        "escrow_prize_before": 100.0,
+        "live_input_snapshot": [
+          {
+            "chips": 500,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "fb93f802-2713-0498-7ad7-894ea4701ec4",
+            "registered_at": 1789005238.476655
+          },
+          {
+            "chips": 400,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "505e45fe-4275-819d-29dd-b3eb8a6d7636",
+            "registered_at": 1789005238.476655
+          },
+          {
+            "chips": 300,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "f0881dae-259a-06eb-6ec6-bc7c54427d85",
+            "registered_at": 1789005238.476655
+          },
+          {
+            "chips": 200,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "7ab41b76-3f8f-c4e7-be3a-72b13e6f4c71",
+            "registered_at": 1789005238.476655
+          },
+          {
+            "chips": 100,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "57d53dfe-a185-81c2-b670-61eae6f3c57a",
+            "registered_at": 1789005238.476655
+          }
+        ],
+        "bubble_obligation_id": null,
+        "structure_place_count": 6,
+        "live_input_fingerprint": "508da461d2cbaf8b4072283a3c838fa9",
+        "bubble_contract_required": false,
+        "bubble_amount_paid_before": 0.0,
+        "prior_standings_fingerprint": "02fc42b8d92947c0490937c3fab7b69e"
+      },
+      "seat_authority_inserts": 5,
+      "seat_authority_deletes": 5
+    },
+    {
+      "case": "no_candidate",
+      "passed": true,
+      "exit_code": 0,
+      "assertions": 45,
+      "sql_sha256": "30a0a833f808291361b6c6f9de294ed0618f9efa25c3950f10767c8a0dac7fa9",
+      "expected_drift_refusal": false,
+      "exact_outer_rollback": true,
+      "batch": {
+        "plan": [
+          {
+            "kind": "final_table_deal",
+            "cents": 3168,
+            "place": 1,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "fb93f802-2713-0498-7ad7-894ea4701ec4"
+          },
+          {
+            "kind": "final_table_deal",
+            "cents": 2533,
+            "place": 2,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "505e45fe-4275-819d-29dd-b3eb8a6d7636"
+          },
+          {
+            "kind": "final_table_deal",
+            "cents": 1900,
+            "place": 3,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "f0881dae-259a-06eb-6ec6-bc7c54427d85"
+          },
+          {
+            "kind": "final_table_deal",
+            "cents": 1266,
+            "place": 4,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "7ab41b76-3f8f-c4e7-be3a-72b13e6f4c71"
+          },
+          {
+            "kind": "final_table_deal",
+            "cents": 633,
+            "place": 5,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "57d53dfe-a185-81c2-b670-61eae6f3c57a"
+          },
+          {
+            "kind": "place",
+            "cents": 500,
+            "place": 6,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "24decaa4-c2e0-ff40-4dd6-0375029492eb"
+          }
+        ],
+        "source": "engine.fn_settle_tournament_final_table_deal",
+        "live_count": 5,
+        "rank_basis": "accepted_bust_witness_v1",
+        "settled_at": "2026-09-11T15:52:04.213994-05:00",
+        "amount_owed": 100.0,
+        "chip_leader": "fb93f802-2713-0498-7ad7-894ea4701ec4",
+        "deal_amount": 95.0,
+        "field_count": 8,
+        "prepared_at": "2026-09-11T15:52:04.213994-05:00",
+        "amount_moved": 100.0,
+        "place_amount": 5.0,
+        "bubble_source": null,
+        "deal_table_id": "87200000-0000-0000-0000-000000000001",
+        "tournament_id": "87000000-0000-0000-0000-000000000001",
+        "bubble_user_id": null,
+        "deal_line_count": 5,
+        "contract_version": 2,
+        "place_line_count": 1,
+        "plan_fingerprint": "c8c615a9597e874b4cd3ab1656affb83",
+        "bubble_amount_owed": 0.0,
+        "bust_tail_snapshot": [
+          {
+            "id": "143211a5-b8fd-5a1f-bbfd-75cf277b148a",
+            "bust_at": 1789036200.0,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "hand_id": null,
+            "user_id": "24decaa4-c2e0-ff40-4dd6-0375029492eb",
+            "position": 6,
+            "table_id": null,
+            "hand_number": null,
+            "candidate_id": null,
+            "committed_at": null,
+            "stack_before": null,
+            "eliminated_at": 1789036200.0,
+            "same_hand_rank": 0,
+            "first_candidate_at": null,
+            "elimination_sequence": 905
+          },
+          {
+            "id": "01519550-4dfa-96c8-e532-5e5b9759674f",
+            "bust_at": 1789035600.0,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "hand_id": null,
+            "user_id": "23fafd63-bdd2-0fc1-9cb7-d0d754c3c626",
+            "position": 7,
+            "table_id": null,
+            "hand_number": null,
+            "candidate_id": null,
+            "committed_at": null,
+            "stack_before": null,
+            "eliminated_at": 1789035600.0,
+            "same_hand_rank": 0,
+            "first_candidate_at": null,
+            "elimination_sequence": 904
+          },
+          {
+            "id": "9ec0a9d6-fe87-4ae0-c286-3ce358cebfa8",
+            "bust_at": 1789035000.0,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "hand_id": null,
+            "user_id": "76fa0c47-4bd4-5743-f6f8-0b06a873eb7d",
+            "position": 8,
+            "table_id": null,
+            "hand_number": null,
+            "candidate_id": null,
+            "committed_at": null,
+            "stack_before": null,
+            "eliminated_at": 1789035000.0,
+            "same_hand_rank": 0,
+            "first_candidate_at": null,
+            "elimination_sequence": 906
+          }
+        ],
+        "escrow_prize_after": 0.0,
+        "escrow_prize_before": 100.0,
+        "live_input_snapshot": [
+          {
+            "chips": 500,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "fb93f802-2713-0498-7ad7-894ea4701ec4",
+            "registered_at": 1789005238.476655
+          },
+          {
+            "chips": 400,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "505e45fe-4275-819d-29dd-b3eb8a6d7636",
+            "registered_at": 1789005238.476655
+          },
+          {
+            "chips": 300,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "f0881dae-259a-06eb-6ec6-bc7c54427d85",
+            "registered_at": 1789005238.476655
+          },
+          {
+            "chips": 200,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "7ab41b76-3f8f-c4e7-be3a-72b13e6f4c71",
+            "registered_at": 1789005238.476655
+          },
+          {
+            "chips": 100,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "57d53dfe-a185-81c2-b670-61eae6f3c57a",
+            "registered_at": 1789005238.476655
+          }
+        ],
+        "bubble_obligation_id": null,
+        "structure_place_count": 6,
+        "live_input_fingerprint": "508da461d2cbaf8b4072283a3c838fa9",
+        "bubble_contract_required": false,
+        "bubble_amount_paid_before": 0.0,
+        "prior_standings_fingerprint": "3b13ccbbb0abd3272dc17204c403f326"
+      },
+      "seat_authority_inserts": 5,
+      "seat_authority_deletes": 5
+    },
+    {
+      "case": "rebought_decoy",
+      "passed": true,
+      "exit_code": 0,
+      "assertions": 45,
+      "sql_sha256": "ddb91e0bf651d5a52716262a019e6f00b0a6a6d3e9bf0d2de32508eb07a746c3",
+      "expected_drift_refusal": false,
+      "exact_outer_rollback": true,
+      "batch": {
+        "plan": [
+          {
+            "kind": "final_table_deal",
+            "cents": 3168,
+            "place": 1,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "fb93f802-2713-0498-7ad7-894ea4701ec4"
+          },
+          {
+            "kind": "final_table_deal",
+            "cents": 2533,
+            "place": 2,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "505e45fe-4275-819d-29dd-b3eb8a6d7636"
+          },
+          {
+            "kind": "final_table_deal",
+            "cents": 1900,
+            "place": 3,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "f0881dae-259a-06eb-6ec6-bc7c54427d85"
+          },
+          {
+            "kind": "final_table_deal",
+            "cents": 1266,
+            "place": 4,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "7ab41b76-3f8f-c4e7-be3a-72b13e6f4c71"
+          },
+          {
+            "kind": "final_table_deal",
+            "cents": 633,
+            "place": 5,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "57d53dfe-a185-81c2-b670-61eae6f3c57a"
+          },
+          {
+            "kind": "place",
+            "cents": 500,
+            "place": 6,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "24decaa4-c2e0-ff40-4dd6-0375029492eb"
+          }
+        ],
+        "source": "engine.fn_settle_tournament_final_table_deal",
+        "live_count": 5,
+        "rank_basis": "accepted_bust_witness_v1",
+        "settled_at": "2026-09-11T15:52:05.76327-05:00",
+        "amount_owed": 100.0,
+        "chip_leader": "fb93f802-2713-0498-7ad7-894ea4701ec4",
+        "deal_amount": 95.0,
+        "field_count": 8,
+        "prepared_at": "2026-09-11T15:52:05.76327-05:00",
+        "amount_moved": 100.0,
+        "place_amount": 5.0,
+        "bubble_source": null,
+        "deal_table_id": "87200000-0000-0000-0000-000000000001",
+        "tournament_id": "87000000-0000-0000-0000-000000000001",
+        "bubble_user_id": null,
+        "deal_line_count": 5,
+        "contract_version": 2,
+        "place_line_count": 1,
+        "plan_fingerprint": "c8c615a9597e874b4cd3ab1656affb83",
+        "bubble_amount_owed": 0.0,
+        "bust_tail_snapshot": [
+          {
+            "id": "143211a5-b8fd-5a1f-bbfd-75cf277b148a",
+            "bust_at": 1789036200.0,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "hand_id": "13751ee4-4f52-8b6e-10b2-082a3e39d803",
+            "user_id": "24decaa4-c2e0-ff40-4dd6-0375029492eb",
+            "position": 6,
+            "table_id": "87200000-0000-0000-0000-000000000001",
+            "hand_number": 9800007,
+            "candidate_id": "db20a0b4-d48b-fc1e-aaad-fc9ac3f104f9",
+            "committed_at": 1789036200.0,
+            "stack_before": 70.0,
+            "eliminated_at": 1789042800.0,
+            "same_hand_rank": 0,
+            "first_candidate_at": 1789036140.0,
+            "elimination_sequence": 916
+          },
+          {
+            "id": "01519550-4dfa-96c8-e532-5e5b9759674f",
+            "bust_at": 1789035600.0,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "hand_id": "b919575d-6489-03d7-4b9c-572410851ff1",
+            "user_id": "23fafd63-bdd2-0fc1-9cb7-d0d754c3c626",
+            "position": 7,
+            "table_id": "87200000-0000-0000-0000-000000000001",
+            "hand_number": 9800006,
+            "candidate_id": "c19510b1-d626-164f-b027-0d1e02c6752a",
+            "committed_at": 1789035600.0,
+            "stack_before": 60.0,
+            "eliminated_at": 1789159865.76327,
+            "same_hand_rank": 0,
+            "first_candidate_at": 1789035540.0,
+            "elimination_sequence": 915
+          },
+          {
+            "id": "9ec0a9d6-fe87-4ae0-c286-3ce358cebfa8",
+            "bust_at": 1789035000.0,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "hand_id": "99212503-34fb-2474-16dd-a55e41a2dce7",
+            "user_id": "76fa0c47-4bd4-5743-f6f8-0b06a873eb7d",
+            "position": 8,
+            "table_id": "87200000-0000-0000-0000-000000000001",
+            "hand_number": 9800008,
+            "candidate_id": "01ee6d2d-4f7e-b366-b298-752ed96eeebd",
+            "committed_at": 1789035000.0,
+            "stack_before": 80.0,
+            "eliminated_at": 1789043400.0,
+            "same_hand_rank": 0,
+            "first_candidate_at": 1789034940.0,
+            "elimination_sequence": 917
+          }
+        ],
+        "escrow_prize_after": 0.0,
+        "escrow_prize_before": 100.0,
+        "live_input_snapshot": [
+          {
+            "chips": 500,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "fb93f802-2713-0498-7ad7-894ea4701ec4",
+            "registered_at": 1789005238.476655
+          },
+          {
+            "chips": 400,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "505e45fe-4275-819d-29dd-b3eb8a6d7636",
+            "registered_at": 1789005238.476655
+          },
+          {
+            "chips": 300,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "f0881dae-259a-06eb-6ec6-bc7c54427d85",
+            "registered_at": 1789005238.476655
+          },
+          {
+            "chips": 200,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "7ab41b76-3f8f-c4e7-be3a-72b13e6f4c71",
+            "registered_at": 1789005238.476655
+          },
+          {
+            "chips": 100,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "57d53dfe-a185-81c2-b670-61eae6f3c57a",
+            "registered_at": 1789005238.476655
+          }
+        ],
+        "bubble_obligation_id": null,
+        "structure_place_count": 6,
+        "live_input_fingerprint": "508da461d2cbaf8b4072283a3c838fa9",
+        "bubble_contract_required": false,
+        "bubble_amount_paid_before": 0.0,
+        "prior_standings_fingerprint": "16a922fd19861a715b639ac92339eb3b"
+      },
+      "seat_authority_inserts": 5,
+      "seat_authority_deletes": 5
+    },
+    {
+      "case": "prune_after_payment",
+      "passed": true,
+      "exit_code": 0,
+      "assertions": 47,
+      "sql_sha256": "ecb3a5cb5672104607b3e5a12c4af974c61911581f6fe891e6d9867799693838",
+      "expected_drift_refusal": false,
+      "exact_outer_rollback": true,
+      "batch": {
+        "plan": [
+          {
+            "kind": "final_table_deal",
+            "cents": 3168,
+            "place": 1,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "fb93f802-2713-0498-7ad7-894ea4701ec4"
+          },
+          {
+            "kind": "final_table_deal",
+            "cents": 2533,
+            "place": 2,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "505e45fe-4275-819d-29dd-b3eb8a6d7636"
+          },
+          {
+            "kind": "final_table_deal",
+            "cents": 1900,
+            "place": 3,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "f0881dae-259a-06eb-6ec6-bc7c54427d85"
+          },
+          {
+            "kind": "final_table_deal",
+            "cents": 1266,
+            "place": 4,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "7ab41b76-3f8f-c4e7-be3a-72b13e6f4c71"
+          },
+          {
+            "kind": "final_table_deal",
+            "cents": 633,
+            "place": 5,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "57d53dfe-a185-81c2-b670-61eae6f3c57a"
+          },
+          {
+            "kind": "place",
+            "cents": 500,
+            "place": 6,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "24decaa4-c2e0-ff40-4dd6-0375029492eb"
+          }
+        ],
+        "source": "engine.fn_settle_tournament_final_table_deal",
+        "live_count": 5,
+        "rank_basis": "accepted_bust_witness_v1",
+        "settled_at": "2026-09-11T15:52:07.253089-05:00",
+        "amount_owed": 100.0,
+        "chip_leader": "fb93f802-2713-0498-7ad7-894ea4701ec4",
+        "deal_amount": 95.0,
+        "field_count": 8,
+        "prepared_at": "2026-09-11T15:52:07.253089-05:00",
+        "amount_moved": 100.0,
+        "place_amount": 5.0,
+        "bubble_source": null,
+        "deal_table_id": "87200000-0000-0000-0000-000000000001",
+        "tournament_id": "87000000-0000-0000-0000-000000000001",
+        "bubble_user_id": null,
+        "deal_line_count": 5,
+        "contract_version": 2,
+        "place_line_count": 1,
+        "plan_fingerprint": "c8c615a9597e874b4cd3ab1656affb83",
+        "bubble_amount_owed": 0.0,
+        "bust_tail_snapshot": [
+          {
+            "id": "143211a5-b8fd-5a1f-bbfd-75cf277b148a",
+            "bust_at": 1789036200.0,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "hand_id": "13751ee4-4f52-8b6e-10b2-082a3e39d803",
+            "user_id": "24decaa4-c2e0-ff40-4dd6-0375029492eb",
+            "position": 6,
+            "table_id": "87200000-0000-0000-0000-000000000001",
+            "hand_number": 9800007,
+            "candidate_id": "db20a0b4-d48b-fc1e-aaad-fc9ac3f104f9",
+            "committed_at": 1789036200.0,
+            "stack_before": 70.0,
+            "eliminated_at": 1789042800.0,
+            "same_hand_rank": 0,
+            "first_candidate_at": 1789036140.0,
+            "elimination_sequence": 927
+          },
+          {
+            "id": "01519550-4dfa-96c8-e532-5e5b9759674f",
+            "bust_at": 1789035600.0,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "hand_id": "b919575d-6489-03d7-4b9c-572410851ff1",
+            "user_id": "23fafd63-bdd2-0fc1-9cb7-d0d754c3c626",
+            "position": 7,
+            "table_id": "87200000-0000-0000-0000-000000000001",
+            "hand_number": 9800006,
+            "candidate_id": "c19510b1-d626-164f-b027-0d1e02c6752a",
+            "committed_at": 1789035600.0,
+            "stack_before": 60.0,
+            "eliminated_at": 1789159867.253089,
+            "same_hand_rank": 0,
+            "first_candidate_at": 1789035540.0,
+            "elimination_sequence": 926
+          },
+          {
+            "id": "9ec0a9d6-fe87-4ae0-c286-3ce358cebfa8",
+            "bust_at": 1789035000.0,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "hand_id": "99212503-34fb-2474-16dd-a55e41a2dce7",
+            "user_id": "76fa0c47-4bd4-5743-f6f8-0b06a873eb7d",
+            "position": 8,
+            "table_id": "87200000-0000-0000-0000-000000000001",
+            "hand_number": 9800008,
+            "candidate_id": "01ee6d2d-4f7e-b366-b298-752ed96eeebd",
+            "committed_at": 1789035000.0,
+            "stack_before": 80.0,
+            "eliminated_at": 1789043400.0,
+            "same_hand_rank": 0,
+            "first_candidate_at": 1789034940.0,
+            "elimination_sequence": 928
+          }
+        ],
+        "escrow_prize_after": 0.0,
+        "escrow_prize_before": 100.0,
+        "live_input_snapshot": [
+          {
+            "chips": 500,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "fb93f802-2713-0498-7ad7-894ea4701ec4",
+            "registered_at": 1789005238.476655
+          },
+          {
+            "chips": 400,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "505e45fe-4275-819d-29dd-b3eb8a6d7636",
+            "registered_at": 1789005238.476655
+          },
+          {
+            "chips": 300,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "f0881dae-259a-06eb-6ec6-bc7c54427d85",
+            "registered_at": 1789005238.476655
+          },
+          {
+            "chips": 200,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "7ab41b76-3f8f-c4e7-be3a-72b13e6f4c71",
+            "registered_at": 1789005238.476655
+          },
+          {
+            "chips": 100,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "57d53dfe-a185-81c2-b670-61eae6f3c57a",
+            "registered_at": 1789005238.476655
+          }
+        ],
+        "bubble_obligation_id": null,
+        "structure_place_count": 6,
+        "live_input_fingerprint": "508da461d2cbaf8b4072283a3c838fa9",
+        "bubble_contract_required": false,
+        "bubble_amount_paid_before": 0.0,
+        "prior_standings_fingerprint": "ed0ee30a69e31db1e18858e3afb3b685"
+      },
+      "seat_authority_inserts": 5,
+      "seat_authority_deletes": 5
+    },
+    {
+      "case": "stale_witness",
+      "passed": true,
+      "exit_code": 0,
+      "assertions": 49,
+      "sql_sha256": "8454cb9b39d1b410eb5ae53d8f28c60f91710842101006d1dbc56934b77e4173",
+      "expected_drift_refusal": false,
+      "exact_outer_rollback": true,
+      "batch": {
+        "plan": [
+          {
+            "kind": "final_table_deal",
+            "cents": 3168,
+            "place": 1,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "fb93f802-2713-0498-7ad7-894ea4701ec4"
+          },
+          {
+            "kind": "final_table_deal",
+            "cents": 2533,
+            "place": 2,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "505e45fe-4275-819d-29dd-b3eb8a6d7636"
+          },
+          {
+            "kind": "final_table_deal",
+            "cents": 1900,
+            "place": 3,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "f0881dae-259a-06eb-6ec6-bc7c54427d85"
+          },
+          {
+            "kind": "final_table_deal",
+            "cents": 1266,
+            "place": 4,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "7ab41b76-3f8f-c4e7-be3a-72b13e6f4c71"
+          },
+          {
+            "kind": "final_table_deal",
+            "cents": 633,
+            "place": 5,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "57d53dfe-a185-81c2-b670-61eae6f3c57a"
+          },
+          {
+            "kind": "place",
+            "cents": 500,
+            "place": 6,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "24decaa4-c2e0-ff40-4dd6-0375029492eb"
+          }
+        ],
+        "source": "engine.fn_settle_tournament_final_table_deal",
+        "live_count": 5,
+        "rank_basis": "accepted_bust_witness_v1",
+        "settled_at": "2026-09-11T15:52:08.734561-05:00",
+        "amount_owed": 100.0,
+        "chip_leader": "fb93f802-2713-0498-7ad7-894ea4701ec4",
+        "deal_amount": 95.0,
+        "field_count": 8,
+        "prepared_at": "2026-09-11T15:52:08.734561-05:00",
+        "amount_moved": 100.0,
+        "place_amount": 5.0,
+        "bubble_source": null,
+        "deal_table_id": "87200000-0000-0000-0000-000000000001",
+        "tournament_id": "87000000-0000-0000-0000-000000000001",
+        "bubble_user_id": null,
+        "deal_line_count": 5,
+        "contract_version": 2,
+        "place_line_count": 1,
+        "plan_fingerprint": "c8c615a9597e874b4cd3ab1656affb83",
+        "bubble_amount_owed": 0.0,
+        "bust_tail_snapshot": [
+          {
+            "id": "143211a5-b8fd-5a1f-bbfd-75cf277b148a",
+            "bust_at": 1789036200.0,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "hand_id": "13751ee4-4f52-8b6e-10b2-082a3e39d803",
+            "user_id": "24decaa4-c2e0-ff40-4dd6-0375029492eb",
+            "position": 6,
+            "table_id": "87200000-0000-0000-0000-000000000001",
+            "hand_number": 9800007,
+            "candidate_id": "db20a0b4-d48b-fc1e-aaad-fc9ac3f104f9",
+            "committed_at": 1789036200.0,
+            "stack_before": 70.0,
+            "eliminated_at": 1789042800.0,
+            "same_hand_rank": 0,
+            "first_candidate_at": 1789036140.0,
+            "elimination_sequence": 938
+          },
+          {
+            "id": "01519550-4dfa-96c8-e532-5e5b9759674f",
+            "bust_at": 1789035600.0,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "hand_id": "b919575d-6489-03d7-4b9c-572410851ff1",
+            "user_id": "23fafd63-bdd2-0fc1-9cb7-d0d754c3c626",
+            "position": 7,
+            "table_id": "87200000-0000-0000-0000-000000000001",
+            "hand_number": 9800006,
+            "candidate_id": "c19510b1-d626-164f-b027-0d1e02c6752a",
+            "committed_at": 1789035600.0,
+            "stack_before": 60.0,
+            "eliminated_at": 1789159868.734561,
+            "same_hand_rank": 0,
+            "first_candidate_at": 1789035540.0,
+            "elimination_sequence": 937
+          },
+          {
+            "id": "9ec0a9d6-fe87-4ae0-c286-3ce358cebfa8",
+            "bust_at": 1789035000.0,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "hand_id": "99212503-34fb-2474-16dd-a55e41a2dce7",
+            "user_id": "76fa0c47-4bd4-5743-f6f8-0b06a873eb7d",
+            "position": 8,
+            "table_id": "87200000-0000-0000-0000-000000000001",
+            "hand_number": 9800008,
+            "candidate_id": "01ee6d2d-4f7e-b366-b298-752ed96eeebd",
+            "committed_at": 1789035000.0,
+            "stack_before": 80.0,
+            "eliminated_at": 1789043400.0,
+            "same_hand_rank": 0,
+            "first_candidate_at": 1789034940.0,
+            "elimination_sequence": 939
+          }
+        ],
+        "escrow_prize_after": 0.0,
+        "escrow_prize_before": 100.0,
+        "live_input_snapshot": [
+          {
+            "chips": 500,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "fb93f802-2713-0498-7ad7-894ea4701ec4",
+            "registered_at": 1789005238.476655
+          },
+          {
+            "chips": 400,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "505e45fe-4275-819d-29dd-b3eb8a6d7636",
+            "registered_at": 1789005238.476655
+          },
+          {
+            "chips": 300,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "f0881dae-259a-06eb-6ec6-bc7c54427d85",
+            "registered_at": 1789005238.476655
+          },
+          {
+            "chips": 200,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "7ab41b76-3f8f-c4e7-be3a-72b13e6f4c71",
+            "registered_at": 1789005238.476655
+          },
+          {
+            "chips": 100,
+            "club_id": "20000000-0000-0000-0000-000000000001",
+            "user_id": "57d53dfe-a185-81c2-b670-61eae6f3c57a",
+            "registered_at": 1789005238.476655
+          }
+        ],
+        "bubble_obligation_id": null,
+        "structure_place_count": 6,
+        "live_input_fingerprint": "508da461d2cbaf8b4072283a3c838fa9",
+        "bubble_contract_required": false,
+        "bubble_amount_paid_before": 0.0,
+        "prior_standings_fingerprint": "69f95edac4c77672e929d41744c4c539"
+      },
+      "seat_authority_inserts": 5,
+      "seat_authority_deletes": 5
+    },
+    {
+      "case": "paid_misrank",
+      "passed": true,
+      "exit_code": 0,
+      "assertions": 12,
+      "sql_sha256": "f88dc2e5777a32b8fa9b320018b3532e99496cf1d4be796a9791450d65840a85",
+      "expected_drift_refusal": false,
+      "exact_outer_rollback": true
+    },
+    {
+      "case": "drift_body",
+      "passed": true,
+      "exit_code": 3,
+      "assertions": 0,
+      "sql_sha256": "4daa1b303668583413041a85ba04ce14c00dbd7f29636007899830b0e897edd5",
+      "expected_drift_refusal": true,
+      "exact_outer_rollback": true
+    },
+    {
+      "case": "drift_acl",
+      "passed": true,
+      "exit_code": 3,
+      "assertions": 0,
+      "sql_sha256": "db0ebea176658a409fd9bc513bf67924a1cca381f345eeb885e7052edf6bd71d",
+      "expected_drift_refusal": true,
+      "exact_outer_rollback": true
+    },
+    {
+      "case": "drift_config",
+      "passed": true,
+      "exit_code": 3,
+      "assertions": 0,
+      "sql_sha256": "fba1ffaa77f79cd3b839acad30ab967c3536a55cc70cf0a90cb928c27269be74",
+      "expected_drift_refusal": true,
+      "exact_outer_rollback": true
+    },
+    {
+      "case": "drift_helper",
+      "passed": true,
+      "exit_code": 3,
+      "assertions": 0,
+      "sql_sha256": "de5a8b767cc794bc6fd3d8149667a3f8738074361e42cf150a1d28d7c06d4d1f",
+      "expected_drift_refusal": true,
+      "exact_outer_rollback": true
+    },
+    {
+      "case": "drift_rank_schema",
+      "passed": true,
+      "exit_code": 3,
+      "assertions": 0,
+      "sql_sha256": "ba5da68950a2ab903af6fa8eb57c4d0f90e4d210cc4d1c9886b5db94722deaf0",
+      "expected_drift_refusal": true,
+      "exact_outer_rollback": true
+    }
+  ]
+}

@@ -1,0 +1,265 @@
+{
+  "cases": [
+    {
+      "name": "addon_cannot_beat_late_registration",
+      "result": {
+        "reason": "Entry close could not fund/finalize its prize pool: atomic_guarantee_funding_aborted",
+        "refused": true,
+        "sqlstate": "55000"
+      }
+    },
+    {
+      "name": "addon_close",
+      "result": {
+        "ok": true,
+        "closed": true,
+        "ends_at": "2026-09-11T01:01:00+00:00",
+        "overlay": 0.0,
+        "bank_type": null,
+        "finalized": true,
+        "retryable": false,
+        "bank_after": null,
+        "close_mode": "addon",
+        "prize_pool": 0.0,
+        "bank_before": null,
+        "entry_closed": true,
+        "escrow_after": 0.0,
+        "escrow_before": 0.0,
+        "bank_entity_id": null,
+        "retry_after_ms": null,
+        "treasury_after": null,
+        "reprice_pending": true,
+        "payout_structure": [
+          {
+            "place": 1,
+            "percentage": 100.0
+          }
+        ],
+        "already_finalized": false,
+        "overlay_journaled": true
+      }
+    },
+    {
+      "name": "addon_replay",
+      "result": {
+        "ok": true,
+        "closed": true,
+        "ends_at": "2026-09-11T01:01:00+00:00",
+        "finalized": true,
+        "close_mode": "addon",
+        "prize_pool": 0.0,
+        "entry_closed": true,
+        "retry_after_ms": null,
+        "reprice_pending": true,
+        "payout_structure": [
+          {
+            "place": 1,
+            "percentage": 100.0
+          }
+        ],
+        "already_finalized": true
+      }
+    },
+    {
+      "name": "begin_launch",
+      "result": {
+        "ok": true,
+        "replay": false,
+        "claimed": true,
+        "completed": false,
+        "launch_id": "4dc26d21-1109-914b-d483-df67f4ee69b4",
+        "started_at": "2026-09-11T16:41:27.909179+00:00",
+        "lease_generation": "661abd05-7a8f-de5e-7e53-c1f451ddf7cd"
+      }
+    },
+    {
+      "name": "cancel_replay",
+      "result": {
+        "ok": true,
+        "status": "CANCELLED",
+        "refunds": [],
+        "success": true,
+        "actor_id": "2d1cd6c3-5700-4af9-a271-d4863fdab20d",
+        "settled_at": "2026-09-11T16:41:27.909179+00:00",
+        "fees_reversed": 0,
+        "fully_settled": true,
+        "tournament_id": "eddc0f29-1a55-3439-703b-083e54350613",
+        "refunded_count": 0,
+        "ticket_returns": [],
+        "total_refunded": 0,
+        "receipt_version": 2,
+        "refund_line_count": 0,
+        "source_seat_count": 3,
+        "closed_table_count": 1,
+        "released_seat_count": 3,
+        "source_player_count": 3,
+        "ticket_return_count": 0,
+        "total_ticket_returned": 0
+      }
+    },
+    {
+      "name": "cancel_zero",
+      "result": {
+        "ok": true,
+        "status": "CANCELLED",
+        "refunds": [],
+        "success": true,
+        "actor_id": "2d1cd6c3-5700-4af9-a271-d4863fdab20d",
+        "settled_at": "2026-09-11T16:41:27.909179+00:00",
+        "fees_reversed": 0,
+        "fully_settled": true,
+        "tournament_id": "eddc0f29-1a55-3439-703b-083e54350613",
+        "refunded_count": 0,
+        "ticket_returns": [],
+        "total_refunded": 0,
+        "receipt_version": 2,
+        "refund_line_count": 0,
+        "source_seat_count": 3,
+        "closed_table_count": 1,
+        "released_seat_count": 3,
+        "source_player_count": 3,
+        "ticket_return_count": 0,
+        "total_ticket_returned": 0
+      }
+    },
+    {
+      "name": "cancelled_event_reopen_refused",
+      "result": {
+        "reason": "receipted cancellation eddc0f29-1a55-3439-703b-083e54350613 is immutable",
+        "refused": true,
+        "sqlstate": "55000"
+      }
+    },
+    {
+      "name": "complete_launch",
+      "result": {
+        "ok": true,
+        "replay": false,
+        "status": "RUNNING",
+        "completed": true,
+        "started_at": "2026-09-11T16:41:27.909179+00:00",
+        "completed_at": "2026-09-11T16:41:27.909179+00:00",
+        "lease_generation": "661abd05-7a8f-de5e-7e53-c1f451ddf7cd"
+      }
+    },
+    {
+      "name": "direct_completion_refused",
+      "result": {
+        "reason": "Tournament cannot start because its published contract is incomplete",
+        "refused": true,
+        "sqlstate": "55000"
+      }
+    },
+    {
+      "name": "early_pool_finalization_refused",
+      "result": {
+        "reason": "tournament 3ab0406c-2e12-e04b-7761-532e656659e4 cannot finalize its prize pool before late registration level 2 closes",
+        "refused": true,
+        "sqlstate": "23514"
+      }
+    },
+    {
+      "name": "entry_close",
+      "result": {
+        "ok": true,
+        "reason": "addon_required",
+        "finalized": false,
+        "window_mode": "levels",
+        "entry_closed": true,
+        "retry_after_ms": null,
+        "finalization_deferred": true
+      }
+    },
+    {
+      "name": "entry_close_replay",
+      "result": {
+        "ok": true,
+        "reason": "addon_required",
+        "finalized": false,
+        "window_mode": "levels",
+        "entry_closed": true,
+        "retry_after_ms": null,
+        "finalization_deferred": true
+      }
+    },
+    {
+      "name": "entry_still_open",
+      "result": {
+        "ok": true,
+        "window_mode": "levels",
+        "entry_closed": false,
+        "retry_after_ms": null
+      }
+    },
+    {
+      "name": "finalized_pool_edit_refused",
+      "result": {
+        "reason": "finalized tournament 3ab0406c-2e12-e04b-7761-532e656659e4 prize pool cannot change from 0.00 to 1.00",
+        "refused": true,
+        "sqlstate": "23514"
+      }
+    },
+    {
+      "name": "forged_completing_claim_refused",
+      "result": {
+        "reason": "tournament 3ab0406c-2e12-e04b-7761-532e656659e4 cannot enter COMPLETING without an immutable finish claim",
+        "refused": true,
+        "sqlstate": "23514"
+      }
+    },
+    {
+      "name": "launch_addon_close",
+      "result": {
+        "ok": true,
+        "closed": true,
+        "ends_at": "2026-09-11T16:40:27.958243+00:00",
+        "overlay": 0.0,
+        "bank_type": null,
+        "finalized": true,
+        "retryable": false,
+        "bank_after": null,
+        "close_mode": "addon",
+        "prize_pool": 0.0,
+        "bank_before": null,
+        "entry_closed": true,
+        "escrow_after": 0.0,
+        "escrow_before": 0.0,
+        "bank_entity_id": null,
+        "retry_after_ms": null,
+        "treasury_after": null,
+        "reprice_pending": true,
+        "payout_structure": [
+          {
+            "place": 1,
+            "percentage": 100.0
+          }
+        ],
+        "already_finalized": false,
+        "overlay_journaled": true
+      }
+    },
+    {
+      "name": "launch_replay",
+      "result": {
+        "ok": true,
+        "replay": true,
+        "status": "RUNNING",
+        "completed": true,
+        "started_at": "2026-09-11T16:41:27.909179+00:00",
+        "completed_at": "2026-09-11T16:41:27.909179+00:00",
+        "lease_generation": "661abd05-7a8f-de5e-7e53-c1f451ddf7cd"
+      }
+    },
+    {
+      "name": "started_cancellation_refused",
+      "result": {
+        "reason": "Tournament has started or committed awards; resume or settle it instead of cancelling",
+        "refused": true,
+        "sqlstate": "55000"
+      }
+    }
+  ],
+  "migrationSha256": "030afa6eb8db12ea18bf2cfc6175c40d8601dd3becc3816e978d0f1dbee73a3f",
+  "allDeferredConstraintsChecked": true,
+  "syntheticLifecycleRolledBack": true
+}

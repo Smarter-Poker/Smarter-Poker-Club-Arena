@@ -1,0 +1,13 @@
+Traceback (most recent call last):
+  File "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/work/d12-guards/first-native-run.py", line 54, in <module>
+    terminal=run(psql+['-d','e2_bee519fa','-Atc',"SELECT public.fn_complete_tournament_terminal('bee519fa-ff07-438c-9542-d386fc821908','8327a08a-77e7-4f33-be45-e086a718c9e2','places')"],'terminal.log')
+  File "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/work/d12-guards/first-native-run.py", line 41, in run
+    raise RuntimeError(f'{filename}: '+(result.stderr or result.stdout)[-2500:])
+RuntimeError: terminal.log: ERROR:  tournament bee519fa-ff07-438c-9542-d386fc821908 cannot enter COMPLETING without an immutable finish claim
+CONTEXT:  PL/pgSQL function fn_guard_tournament_completing_claim() line 33 at RAISE
+SQL statement "UPDATE public.tournaments SET status = 'COMPLETING'
+       WHERE id = p_tournament_id AND status = 'RUNNING'"
+PL/pgSQL function fn_settle_tournament_places(uuid,uuid) line 795 at SQL statement
+PL/pgSQL function fn_complete_tournament_terminal_pre_seat_guard(uuid,uuid,text) line 352 at assignment
+PL/pgSQL function fn_complete_tournament_terminal(uuid,uuid,text) line 14 at assignment
+

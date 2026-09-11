@@ -1089,6 +1089,8 @@ jobs:
           sudo apt-get "${pg_ci_apt[@]}" update
           printf 'create_main_cluster = false\n' | sudo tee /etc/postgresql-common/createcluster.conf >/dev/null
           sudo apt-get "${pg_ci_apt[@]}" install -y --no-install-recommends postgresql-17
+      - name: Seven tournament guards through real lifecycle and terminal settlement
+        run: python3 scripts/ci/rehearse-d12-tournament-guards.py --pg-bin /usr/lib/postgresql/17/bin
       - name: Atomic departures, ownership, rollback and concurrency
         env:
           PGBIN: /usr/lib/postgresql/17/bin

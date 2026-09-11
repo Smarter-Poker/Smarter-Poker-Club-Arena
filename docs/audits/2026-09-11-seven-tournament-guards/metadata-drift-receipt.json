@@ -1,0 +1,12 @@
+[
+  {
+    "case": "client-grant",
+    "refused": true,
+    "transactionRolledBack": true
+  },
+  {
+    "case": "wrong-owner",
+    "refused": true,
+    "transactionRolledBack": true
+  }
+]

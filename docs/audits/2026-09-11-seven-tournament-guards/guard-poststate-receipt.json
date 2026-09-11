@@ -1,0 +1,96 @@
+{
+  "sevenActiveGuards": {
+    "aa_guard_tournament_completing_claim": {
+      "bodyMd5": "82078938fd926c94a0ab778acd77dd61",
+      "enabled": "O",
+      "function": "fn_guard_tournament_completing_claim"
+    },
+    "aaa_guard_atomic_satellite_completion": {
+      "bodyMd5": "517504ed4bae5ac000d6c47a6f5cb0d9",
+      "enabled": "O",
+      "function": "trg_guard_atomic_satellite_completion"
+    },
+    "zzzzzz_tournaments_financial_certificate": {
+      "bodyMd5": "d994347e1b76c936ce13361d73f94fd2",
+      "enabled": "O",
+      "function": "fn_guard_tournament_completed_certificate"
+    },
+    "zzzz_freeze_finalized_tournament_prize_pool": {
+      "bodyMd5": "08b2e89dc6ad0026e5bc04260265ac48",
+      "enabled": "O",
+      "function": "trg_freeze_finalized_tournament_prize_pool"
+    },
+    "zzzz_tournament_pool_finalization_window_guard": {
+      "bodyMd5": "60b8d3004e7db4e0e89a783d77cc0f71",
+      "enabled": "O",
+      "function": "trg_tournament_pool_finalization_window_guard"
+    },
+    "zzzz_tournaments_atomic_place_completion_guard": {
+      "bodyMd5": "1bde80d6520fbc3a93409fe88651109e",
+      "enabled": "O",
+      "function": "trg_tournament_atomic_place_completion_guard"
+    },
+    "zzzzz_tournaments_atomic_final_table_deal_completion_guard": {
+      "bodyMd5": "9f5f5fefa77ae93bfeffc9f414a63a0d",
+      "enabled": "O",
+      "function": "trg_atomic_final_table_deal_completion_guard"
+    }
+  },
+  "entryPointMetadata": {
+    "fn_settle_tournament_places(uuid,uuid)": {
+      "anon": false,
+      "owner": "postgres",
+      "config": ["search_path=public", "statement_timeout=30s"],
+      "bodyMd5": "473f67cf3949b938f5277c89fb64edef",
+      "definer": true,
+      "service": true,
+      "authenticated": false
+    },
+    "fn_complete_tournament_terminal(uuid,uuid,text)": {
+      "anon": false,
+      "owner": "postgres",
+      "config": ["search_path=public, pg_temp", "statement_timeout=45s"],
+      "bodyMd5": "541b6e9d029b8eec7f55aa4ad6965a63",
+      "definer": true,
+      "service": true,
+      "authenticated": false
+    },
+    "trg_tournament_atomic_place_completion_guard()": {
+      "anon": false,
+      "owner": "postgres",
+      "config": ["search_path=public"],
+      "bodyMd5": "1bde80d6520fbc3a93409fe88651109e",
+      "definer": true,
+      "service": true,
+      "authenticated": false
+    },
+    "trg_freeze_batched_tournament_place()": {
+      "anon": false,
+      "owner": "postgres",
+      "config": ["search_path=public"],
+      "bodyMd5": "5c00f4babf2e07dd86e9f47e14588b07",
+      "definer": true,
+      "service": true,
+      "authenticated": false
+    },
+    "fn_tournament_finish_readiness(uuid,uuid)": {
+      "anon": false,
+      "owner": "postgres",
+      "config": ["search_path=public, pg_temp"],
+      "bodyMd5": "993e6e1de9edba2fe235d86ff6c243c9",
+      "definer": true,
+      "service": false,
+      "authenticated": false
+    },
+    "fn_ca_verify_terminal_place_batch(uuid,boolean)": {
+      "anon": false,
+      "owner": "postgres",
+      "config": ["search_path=public, pg_temp"],
+      "bodyMd5": "8be8c827e64ac853a562e294cd25735b",
+      "definer": true,
+      "service": false,
+      "authenticated": false
+    }
+  },
+  "sessionReplicationRole": "origin"
+}

@@ -1,0 +1,55 @@
+{
+  "status": "passed",
+  "d12_sha256": "2301e9be974f3aed5c080d0452c6573ec3448a6dd2083ced830aa2b78cf61a93",
+  "migration_sha256": "a8b86e05049607db70df292fec86fdd9c6bc33bc45ecd973eb7491b5dd89c24a",
+  "refund": {
+    "ok": true,
+    "paid": 35.0,
+    "remaining": 0,
+    "refund_fee": 0.0,
+    "amount_owed": 35.0,
+    "amount_paid": 35.0,
+    "already_paid": 0.0,
+    "refund_prize": 35.0,
+    "fully_settled": true,
+    "obligation_id": "c3f37fbe-96b4-4e39-85ff-fb3d88f8f1c1",
+    "refund_bounty": 0.0,
+    "entitlement_id": "d2000000-0000-0000-0000-000000000001",
+    "idempotency_key": "tourney:bee519fa-ff07-438c-9542-d386fc821908:refund-entitlement:d2000000-0000-0000-0000-000000000001",
+    "credit_ledger_id": "ddf05bdc-3ed2-4836-ab9d-c84f5388e5e0",
+    "entitlement_kind": "wallet_charge",
+    "source_wallet_club_id": "2a1132b9-5ba2-42e6-9f01-30a7fcffebe3",
+    "wallet_transaction_id": "61c74551-3035-453b-bdad-27e1f1a89bbf"
+  },
+  "replay": "exact authority refused already-satisfied amount; complete financial state unchanged",
+  "guards": [
+    {
+      "name": "aa_guard_tournament_completing_claim",
+      "enabled": "O"
+    },
+    {
+      "name": "aaa_guard_atomic_satellite_completion",
+      "enabled": "O"
+    },
+    {
+      "name": "zzzz_freeze_finalized_tournament_prize_pool",
+      "enabled": "O"
+    },
+    {
+      "name": "zzzz_tournament_pool_finalization_window_guard",
+      "enabled": "O"
+    },
+    {
+      "name": "zzzz_tournaments_atomic_place_completion_guard",
+      "enabled": "O"
+    },
+    {
+      "name": "zzzzz_tournaments_atomic_final_table_deal_completion_guard",
+      "enabled": "O"
+    },
+    {
+      "name": "zzzzzz_tournaments_financial_certificate",
+      "enabled": "O"
+    }
+  ]
+}

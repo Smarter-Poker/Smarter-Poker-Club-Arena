@@ -1,0 +1,51 @@
+{
+  "recorded_at": "2026-09-11T08:01:24.942610+00:00",
+  "live_engine_full_sha": "c58dfafdc6902fb46b56441e9d20bd754a3eceb6",
+  "live_database_engine_prefix": "c58dfafd",
+  "engine_source_tree": "1debc21fdb56f322326bccf018cb4e13a0194d9b",
+  "deployed_engine_source_tree": "1debc21fdb56f322326bccf018cb4e13a0194d9b",
+  "source_tree_equal": true,
+  "frontend_sha": "53edbd4d102206d5fa36e54d4d58090d9dffedd0",
+  "required_client_blobs": {
+    "src/components/tournament/TournamentDealReview.tsx": {
+      "local": "9c672d61da7d0a6928c404f9d96fa9fa27b5f472",
+      "deployed": "9c672d61da7d0a6928c404f9d96fa9fa27b5f472"
+    },
+    "src/services/TournamentDealService.ts": {
+      "local": "c1dc7a6502246d8360042be4d432f7a8ee0eb82e",
+      "deployed": "c1dc7a6502246d8360042be4d432f7a8ee0eb82e"
+    },
+    "src/services/TournamentService.ts": {
+      "local": "a2d943d350dfa7da2d98aa9e6574e9c49efd8a7f",
+      "deployed": "a2d943d350dfa7da2d98aa9e6574e9c49efd8a7f"
+    },
+    "src/lib/tournamentFromTableConfig.ts": {
+      "local": "87f5ba363840af7ee66a6c98da6c225919da291a",
+      "deployed": "87f5ba363840af7ee66a6c98da6c225919da291a"
+    }
+  },
+  "rollout_run": 34567969674,
+  "rollout_job": 103163889357,
+  "rollout_conclusion": "success",
+  "rollout_completed_at": "2026-09-11T06:58:13Z",
+  "timer_repair_commit": "999b57756ea68b6c243a909771add9a74a212ea7",
+  "timer_repair_ancestor": true,
+  "live_observations": {
+    "database_at": "2026-09-11T07:52:16.192306Z",
+    "database_heartbeat_age_seconds": 2.175914,
+    "fresh_protocol_two_leases": 679,
+    "fresh_protocol_one_leases": 0,
+    "health_http_status": 503,
+    "health_liveness": "ok",
+    "blocked_settlements": 0,
+    "stalled_tables": 0,
+    "health_limit": "Overall health degraded by delayed statistics; no whole-platform green claim."
+  },
+  "production_ddl_applied_by_this_evidence": false,
+  "browser": {
+    "signed_in": true,
+    "live_connection_visible": true,
+    "terms_overlay_blocks_interactive_acceptance": true,
+    "terms_not_accepted_by_agent": true
+  }
+}

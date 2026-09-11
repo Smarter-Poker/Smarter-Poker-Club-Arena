@@ -2389,6 +2389,42 @@ export abstract class TournamentManagerBase {
     });
     if (!decision.activate) return;
 
+    /* A BUST BELONGS TO THE PHASE ITS HAND WAS PLAYED IN (2026-09-11,
+       20260911094503). A head earned before this moment but not yet
+       recorded is owed from the regular half, and fn_mystery_bounty_seed
+       keeps it out of the chests: seeded without it, the inventory would be
+       larger than the pool the seed accepts and it would refuse with
+       inventory_mismatch until the claim backlog cleared. Read the same
+       figure the seed reads, and build the inventory the seed will accept.
+       Unknown is not zero - an unreadable figure waits for the next pass. */
+    const { data: unrecordedRaw, error: unrecordedErr } = await supabase.rpc(
+      'fn_mystery_bounty_unrecorded_head_cents',
+      { p_tournament_id: this.tournamentId }
+    );
+    const unrecordedCents =
+      unrecordedRaw === null || unrecordedRaw === undefined ? Number.NaN : Number(unrecordedRaw);
+    if (unrecordedErr || !Number.isSafeInteger(unrecordedCents) || unrecordedCents < 0) {
+      reportError(
+        unrecordedErr ??
+          new Error(`unrecorded head figure is not whole cents: ${String(unrecordedRaw)}`),
+        'Tournament.mystery_bounty_unrecorded_heads_unreadable'
+      );
+      return;
+    }
+    if (unrecordedCents > 0) {
+      try {
+        poolCents = mysteryPoolCents(
+          poolCentsFromNumeric(fresh.bounty_pool),
+          fresh.mystery_bounty_pool_percent,
+          fresh.mystery_bounty_regular_pool_percent,
+          poolCentsFromNumeric(fresh.bounty_pool_paid ?? 0) + unrecordedCents
+        );
+      } catch (err) {
+        reportError(err, 'Tournament.mystery_bounty_pool_not_in_cents');
+        return;
+      }
+    }
+
     this.mysteryBountySeeding = true;
     try {
       const profile = resolveMysteryBountyProfile(fresh.mystery_bounty_profile);

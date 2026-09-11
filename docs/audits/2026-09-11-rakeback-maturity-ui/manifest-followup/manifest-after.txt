@@ -1,0 +1,2 @@
+[check-migrations-applied] 2 changed migration(s) vs origin/main; 0 unapplied object(s).
+OK — every object these migrations declare exists in the live schema.

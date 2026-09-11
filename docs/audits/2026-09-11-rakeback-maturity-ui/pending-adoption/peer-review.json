@@ -1,0 +1,16 @@
+{
+  "recorded_at_utc": "2026-09-11T07:18:49.000198+00:00",
+  "reviewer": "/root/satellite_closeout",
+  "verdict": "No bounded archive/source/status blocker",
+  "reviewed_sha256": {
+    "20260911070726_legacy_rakeback_closed_period_single_payer.sql": "a55e792f12040799a20fcf6d54969059efecaea3869c3aa148191fe1b083c4c7",
+    "README.md": "a97a7b4264b2cb0468337ded777d0b984795d74d4fac020930b5c726dcfe2545",
+    "pending-adoption.json": "365bfa66dab95829ccdf804ce0d10e2f707680df7ecc281f8c56d126ec5826b9",
+    "docs/changelog/2026-09-11-legacy-rakeback-atomic-adoption.md": "4f6f9ebdf57f21f5d40ffa36d02ec3e8b37e3808516bab1cb2cb76a7a88c292b"
+  },
+  "active_migration_path_present": false,
+  "untracked_active_migrations": 0,
+  "frozen_tracked_changes": 0,
+  "release_state": "Specific approval pending; not applied; PR4252 remains draft at36938; preservation only on the new rakeback-adoption-preparation backup ref.",
+  "reviewer_reran_tests": false
+}

@@ -14,34 +14,34 @@ carries DONE / PARTIAL / NOT STARTED.
 
 ### Functions (live body, `pg_get_functiondef`)
 
-| function | args | secdef | live md5 (prosrc) | newest repo migration defining it | live == repo? |
-| --- | --- | --- | --- | --- | --- |
-| `fn_cash_seat_change_request` | `(uuid, uuid, uuid)` | yes | - | `20260905064237_horses_use_the_seat_change_and_presence_follows_the_move` | yes |
-| `fn_cash_seat_change_plan` | `(uuid, timestamptz)` | yes | `424e5c6ade9b6c8adf3f97a211b9b838` | `20260907164541_a_seat_change_nobody_got_comes_back` | yes |
-| `fn_cash_seat_change_cancel` | `(uuid)` | yes | - | `20260905060000_the_must_move_lobby_...` | yes |
-| `fn_cash_seat_change_status` | `(uuid, uuid)` | yes, STABLE sql | - | `20260905060000_the_must_move_lobby_...` | yes |
-| `fn_cash_seat_move_execute` | `(uuid)` | yes, `statement_timeout=30s` | `d23c0c9ad3166df5ac8bde4ed8ab08ac` | `20260908042800_maintenance_announcement_and_entry_purchases_are_serialized` | **NO - see F0** |
-| `fn_cash_seat_move_execute_before_maintenance_gate` | `(uuid)` | yes | `6055ba8953646538bd866f2f9294366e` | same file | yes |
-| `fn_cash_seat_swap_execute` | `(uuid)` | yes | `09991eef2a1baa4597a211e035b1f8e9` | same file | **NO - see F0** |
-| `fn_cash_seat_swap_execute_before_maintenance_gate` | `(uuid)` | yes | `463bb7b45dfbce09e1c837143be3c6ab` | same file | yes |
-| `fn_cash_game_lobby` | `(uuid)` | yes, STABLE | - | `20260906163151_one_definition_of_a_games_players_and_tables` | yes |
-| `fn_cash_game_join` | `(uuid)` | yes | - | `20260905064000_booted_for_low_vpip_is_barred_for_two_hours` | yes |
-| `fn_cash_game_must_move_list` | `(uuid)` | yes, STABLE sql | - | `20260905074022_the_must_move_list_is_read_through_the_lobby_not_by_the_brow` | yes |
-| `fn_cash_session_open` | `(uuid, uuid, numeric)` | yes | - | `20260904160500_cash_games_slice_1` (+ cluster snapshot edit) | yes |
-| `fn_cash_session_close` | `(uuid, uuid, numeric, text)` | yes | - | `20260905064000_booted_for_low_vpip_is_barred_for_two_hours` | yes |
-| `atomic_table_buyin` | 7 args | yes, `statement_timeout=30s` | - | `20260909062006_chips_are_two_decimals_on_the_addon_path` | yes |
-| `atomic_table_buyin_before_maintenance_announcement_gate` | 7 args | yes | - | `20260908042800_...serialized` | yes |
-| `fn_cash_game_roster_track` | trigger | **no** (invoker) | `a441e273d59ee341da01956c6123280d` | `20260905060000_the_must_move_lobby_...` | yes |
-| `fn_bind_cash_seat_move_occupancy` | trigger | yes | - | **no migration on this branch - see F0** | n/a |
-| `fn_cash_seat_moves_pending` | `(uuid)` | yes | - | `20260905060000_...` | yes |
-| `fn_cash_seat_move_announce` | `(uuid[])` | yes | - | `20260905060000_...` | yes |
-| `fn_cash_seat_move_set_window` / `fn_cash_seat_move_window` | trigger / `(uuid)` | no | - | `20260907171945_a_move_waits_as_long_as_the_table_takes` | yes |
-| `fn_cash_game_open_seats` | `(uuid)` | yes, STABLE | - | `20260905060000_...` | yes |
-| `fn_cash_game_waitlist_position`, `fn_cash_game_leave_waitlist` | `(uuid)` | yes | - | `20260905053000_join_game_seats_you_at_the_right_table_or_holds_your_place` | yes |
-| `fn_refuse_seat_on_closed_cluster_table` | trigger | no | - | `20260905050000_the_move_survives_the_hand_and_a_game_seats_you_once` | yes |
-| `fn_cash_cluster_census` | `(uuid, timestamptz)` | yes, STABLE | - | `20260906163151_...` | yes |
-| `fn_cash_cluster_tick` | `(uuid, integer)` | yes | - | `20260907173251_a_disabled_game_still_tells_the_truth_about_itself` + later literal patches | read in full (35 KB); steps 1, 2, 2b, 3, 5 belong to this lane |
-| `fn_cash_rejoin_floor`, `fn_cash_game_barred_seconds`, `fn_caller_is_engine` | - | - | - | - | read as callees |
+| function                                                                     | args                          | secdef                       | live md5 (prosrc)                  | newest repo migration defining it                                                           | live == repo?                                                  |
+| ---------------------------------------------------------------------------- | ----------------------------- | ---------------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| `fn_cash_seat_change_request`                                                | `(uuid, uuid, uuid)`          | yes                          | -                                  | `20260905064237_horses_use_the_seat_change_and_presence_follows_the_move`                   | yes                                                            |
+| `fn_cash_seat_change_plan`                                                   | `(uuid, timestamptz)`         | yes                          | `424e5c6ade9b6c8adf3f97a211b9b838` | `20260907164541_a_seat_change_nobody_got_comes_back`                                        | yes                                                            |
+| `fn_cash_seat_change_cancel`                                                 | `(uuid)`                      | yes                          | -                                  | `20260905060000_the_must_move_lobby_...`                                                    | yes                                                            |
+| `fn_cash_seat_change_status`                                                 | `(uuid, uuid)`                | yes, STABLE sql              | -                                  | `20260905060000_the_must_move_lobby_...`                                                    | yes                                                            |
+| `fn_cash_seat_move_execute`                                                  | `(uuid)`                      | yes, `statement_timeout=30s` | `d23c0c9ad3166df5ac8bde4ed8ab08ac` | `20260908042800_maintenance_announcement_and_entry_purchases_are_serialized`                | **NO - see F0**                                                |
+| `fn_cash_seat_move_execute_before_maintenance_gate`                          | `(uuid)`                      | yes                          | `6055ba8953646538bd866f2f9294366e` | same file                                                                                   | yes                                                            |
+| `fn_cash_seat_swap_execute`                                                  | `(uuid)`                      | yes                          | `09991eef2a1baa4597a211e035b1f8e9` | same file                                                                                   | **NO - see F0**                                                |
+| `fn_cash_seat_swap_execute_before_maintenance_gate`                          | `(uuid)`                      | yes                          | `463bb7b45dfbce09e1c837143be3c6ab` | same file                                                                                   | yes                                                            |
+| `fn_cash_game_lobby`                                                         | `(uuid)`                      | yes, STABLE                  | -                                  | `20260906163151_one_definition_of_a_games_players_and_tables`                               | yes                                                            |
+| `fn_cash_game_join`                                                          | `(uuid)`                      | yes                          | -                                  | `20260905064000_booted_for_low_vpip_is_barred_for_two_hours`                                | yes                                                            |
+| `fn_cash_game_must_move_list`                                                | `(uuid)`                      | yes, STABLE sql              | -                                  | `20260905074022_the_must_move_list_is_read_through_the_lobby_not_by_the_brow`               | yes                                                            |
+| `fn_cash_session_open`                                                       | `(uuid, uuid, numeric)`       | yes                          | -                                  | `20260904160500_cash_games_slice_1` (+ cluster snapshot edit)                               | yes                                                            |
+| `fn_cash_session_close`                                                      | `(uuid, uuid, numeric, text)` | yes                          | -                                  | `20260905064000_booted_for_low_vpip_is_barred_for_two_hours`                                | yes                                                            |
+| `atomic_table_buyin`                                                         | 7 args                        | yes, `statement_timeout=30s` | -                                  | `20260909062006_chips_are_two_decimals_on_the_addon_path`                                   | yes                                                            |
+| `atomic_table_buyin_before_maintenance_announcement_gate`                    | 7 args                        | yes                          | -                                  | `20260908042800_...serialized`                                                              | yes                                                            |
+| `fn_cash_game_roster_track`                                                  | trigger                       | **no** (invoker)             | `a441e273d59ee341da01956c6123280d` | `20260905060000_the_must_move_lobby_...`                                                    | yes                                                            |
+| `fn_bind_cash_seat_move_occupancy`                                           | trigger                       | yes                          | -                                  | **no migration on this branch - see F0**                                                    | n/a                                                            |
+| `fn_cash_seat_moves_pending`                                                 | `(uuid)`                      | yes                          | -                                  | `20260905060000_...`                                                                        | yes                                                            |
+| `fn_cash_seat_move_announce`                                                 | `(uuid[])`                    | yes                          | -                                  | `20260905060000_...`                                                                        | yes                                                            |
+| `fn_cash_seat_move_set_window` / `fn_cash_seat_move_window`                  | trigger / `(uuid)`            | no                           | -                                  | `20260907171945_a_move_waits_as_long_as_the_table_takes`                                    | yes                                                            |
+| `fn_cash_game_open_seats`                                                    | `(uuid)`                      | yes, STABLE                  | -                                  | `20260905060000_...`                                                                        | yes                                                            |
+| `fn_cash_game_waitlist_position`, `fn_cash_game_leave_waitlist`              | `(uuid)`                      | yes                          | -                                  | `20260905053000_join_game_seats_you_at_the_right_table_or_holds_your_place`                 | yes                                                            |
+| `fn_refuse_seat_on_closed_cluster_table`                                     | trigger                       | no                           | -                                  | `20260905050000_the_move_survives_the_hand_and_a_game_seats_you_once`                       | yes                                                            |
+| `fn_cash_cluster_census`                                                     | `(uuid, timestamptz)`         | yes, STABLE                  | -                                  | `20260906163151_...`                                                                        | yes                                                            |
+| `fn_cash_cluster_tick`                                                       | `(uuid, integer)`             | yes                          | -                                  | `20260907173251_a_disabled_game_still_tells_the_truth_about_itself` + later literal patches | read in full (35 KB); steps 1, 2, 2b, 3, 5 belong to this lane |
+| `fn_cash_rejoin_floor`, `fn_cash_game_barred_seconds`, `fn_caller_is_engine` | -                             | -                            | -                                  | -                                                                                           | read as callees                                                |
 
 ### Tables, constraints, indexes, RLS, grants (live catalogue)
 
@@ -273,21 +273,21 @@ a column carried across a move). CLAUDE.md 10.5 holds in this lane.
 From `docs/changelog/2026-09-05-the-must-move-lobby.md`. "PASS" means the live
 SQL enforces it and the probe exercises it.
 
-| Dan's rule | where it lives | verdict |
-| --- | --- | --- |
-| Every player at a feeder game gets ONE seat change | `fn_cash_seat_change_request` raises `SEAT_CHANGE_USED` off `cash_game_roster.seat_change_used_at`; `idx_cash_seat_change_requests_open` UNIQUE (game, user) WHERE requested | PASS (probe S5) |
-| Never to Main 1 | `SEAT_CHANGE_NEVER_TO_MAIN` at the door; planner excludes `role='main' AND main_index=1` for the target AND for a swap partner | PASS (S5), plus **F3**: not re-checked for the REQUESTER after a renumber - fixed |
-| Never FROM Main 1 | `SEAT_CHANGE_NOT_FROM_MAIN` | PASS (S5), plus F3 |
-| No seats -> first on the list | planner finds no target -> the request stays `requested`; tick step 2b runs AFTER the mains are filled and BEFORE a feeder is opened; `fn_cash_seat_change_status.position` counts older requests on the same target | PASS (S6) |
-| Two requests that take each other's table are swapped | planner's second SELECT; two rows linked both ways by `swap_move_id`, each carrying the other's `to_seat_number` | PASS (S6, S7) |
-| A specific feeder table can be requested | `p_to_table_id`; validated open, in-game, not Main 1, not the same table | PASS (S5, S6) |
-| Seat change re-posts the BB | executor sets `entry_hold='waiting'`, `entry_post_agreed=true` for `reason='seat_change'` (both single and swap) | PASS (S4, S7) |
-| Auto-move posts nothing | `entry_hold='moved'` for `must_move` / `break` / `balance` | PASS (S3) |
-| Join order is the must-move order, and is posted | `cash_game_roster.joined_at` carried across every move (the executor copies `joined_at` from the source chair and the roster row is untouched); `fn_cash_game_must_move_list` orders by it; tick step 2 orders by it | PASS (S1, S2, S3) |
-| Leave and rejoin the same game -> bottom of the list | roster row closes on leave, a fresh row opens on the new chair | **FAILED for a player with a pending move - F1** - fixed (S11, S12) |
-| Rathole protection only for winners | `fn_cash_session_close`: `IF v_s.id IS NULL OR p_stack <= COALESCE(v_s.baseline, 0) THEN RETURN;` - no session or not above baseline, no floor. Baseline = buy-in, raised by `fn_cash_session_add_baseline` on every add-on | PASS (S9) |
-| A cancelled `left_table` request restores the allowance | `fn_cash_seat_change_plan` (2026-09-07) | PASS - **and every other cancel path audited below** |
-| An expired move carries no reason | tick sweep fixed 2026-09-07; **executors still bare - F2** - fixed |
+| Dan's rule                                              | where it lives                                                                                                                                                                                                              | verdict                                                                           |
+| ------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| Every player at a feeder game gets ONE seat change      | `fn_cash_seat_change_request` raises `SEAT_CHANGE_USED` off `cash_game_roster.seat_change_used_at`; `idx_cash_seat_change_requests_open` UNIQUE (game, user) WHERE requested                                                | PASS (probe S5)                                                                   |
+| Never to Main 1                                         | `SEAT_CHANGE_NEVER_TO_MAIN` at the door; planner excludes `role='main' AND main_index=1` for the target AND for a swap partner                                                                                              | PASS (S5), plus **F3**: not re-checked for the REQUESTER after a renumber - fixed |
+| Never FROM Main 1                                       | `SEAT_CHANGE_NOT_FROM_MAIN`                                                                                                                                                                                                 | PASS (S5), plus F3                                                                |
+| No seats -> first on the list                           | planner finds no target -> the request stays `requested`; tick step 2b runs AFTER the mains are filled and BEFORE a feeder is opened; `fn_cash_seat_change_status.position` counts older requests on the same target        | PASS (S6)                                                                         |
+| Two requests that take each other's table are swapped   | planner's second SELECT; two rows linked both ways by `swap_move_id`, each carrying the other's `to_seat_number`                                                                                                            | PASS (S6, S7)                                                                     |
+| A specific feeder table can be requested                | `p_to_table_id`; validated open, in-game, not Main 1, not the same table                                                                                                                                                    | PASS (S5, S6)                                                                     |
+| Seat change re-posts the BB                             | executor sets `entry_hold='waiting'`, `entry_post_agreed=true` for `reason='seat_change'` (both single and swap)                                                                                                            | PASS (S4, S7)                                                                     |
+| Auto-move posts nothing                                 | `entry_hold='moved'` for `must_move` / `break` / `balance`                                                                                                                                                                  | PASS (S3)                                                                         |
+| Join order is the must-move order, and is posted        | `cash_game_roster.joined_at` carried across every move (the executor copies `joined_at` from the source chair and the roster row is untouched); `fn_cash_game_must_move_list` orders by it; tick step 2 orders by it        | PASS (S1, S2, S3)                                                                 |
+| Leave and rejoin the same game -> bottom of the list    | roster row closes on leave, a fresh row opens on the new chair                                                                                                                                                              | **FAILED for a player with a pending move - F1** - fixed (S11, S12)               |
+| Rathole protection only for winners                     | `fn_cash_session_close`: `IF v_s.id IS NULL OR p_stack <= COALESCE(v_s.baseline, 0) THEN RETURN;` - no session or not above baseline, no floor. Baseline = buy-in, raised by `fn_cash_session_add_baseline` on every add-on | PASS (S9)                                                                         |
+| A cancelled `left_table` request restores the allowance | `fn_cash_seat_change_plan` (2026-09-07)                                                                                                                                                                                     | PASS - **and every other cancel path audited below**                              |
+| An expired move carries no reason                       | tick sweep fixed 2026-09-07; **executors still bare - F2** - fixed                                                                                                                                                          |
 
 ### Every cancel path, and whether the allowance is restored - no path double-spends
 
@@ -297,16 +297,16 @@ path may return it twice (returning it twice is harmless in itself -
 `seat_change_used_at = NULL` is idempotent - but returning it for a request that
 DID deliver would be a second free change).
 
-| path | who | request ends as | allowance | correct? |
-| --- | --- | --- | --- | --- |
-| player cancels a listed request | `fn_cash_seat_change_cancel` | `cancelled` / `cancelled_by_player` | RETURNED | yes |
-| player cancels after a move is planned | `fn_cash_seat_change_cancel` | no row matches (`status='moved'`), 0 rows | NOT returned | yes - the move is the engine's now (probe S8) |
-| the player is no longer in the chair they asked from | `fn_cash_seat_change_plan` | `cancelled` / `left_table` | RETURNED | yes (2026-09-07) |
-| the requester's table became Main 1 | `fn_cash_seat_change_plan` | `cancelled` / `now_on_main_one` | RETURNED | **F3, new** |
-| the player leaves the game | `fn_cash_game_roster_track` | `cancelled` / `left_game` | not returned - the roster row CLOSES, and the rejoin opens a fresh row with `seat_change_used_at` NULL | yes |
-| the tick finds a request with no open roster row | `fn_cash_cluster_tick` step 1 | `cancelled` / `left_game` | same as above | yes |
-| the planned move dies (cancelled / expired) and the player is still in the from-chair | `fn_cash_cluster_tick` step 1 | back to `requested` / `move_<state>` | stays SPENT | yes - the request is alive again, so the allowance is still in use. Returning it here would give a second change |
-| the move dies and the player is NOT in the from-chair | tick step 1's `EXISTS` fails, so the row stays `moved` | stays SPENT | **see F8 below** |
+| path                                                                                  | who                                                    | request ends as                           | allowance                                                                                              | correct?                                                                                                         |
+| ------------------------------------------------------------------------------------- | ------------------------------------------------------ | ----------------------------------------- | ------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
+| player cancels a listed request                                                       | `fn_cash_seat_change_cancel`                           | `cancelled` / `cancelled_by_player`       | RETURNED                                                                                               | yes                                                                                                              |
+| player cancels after a move is planned                                                | `fn_cash_seat_change_cancel`                           | no row matches (`status='moved'`), 0 rows | NOT returned                                                                                           | yes - the move is the engine's now (probe S8)                                                                    |
+| the player is no longer in the chair they asked from                                  | `fn_cash_seat_change_plan`                             | `cancelled` / `left_table`                | RETURNED                                                                                               | yes (2026-09-07)                                                                                                 |
+| the requester's table became Main 1                                                   | `fn_cash_seat_change_plan`                             | `cancelled` / `now_on_main_one`           | RETURNED                                                                                               | **F3, new**                                                                                                      |
+| the player leaves the game                                                            | `fn_cash_game_roster_track`                            | `cancelled` / `left_game`                 | not returned - the roster row CLOSES, and the rejoin opens a fresh row with `seat_change_used_at` NULL | yes                                                                                                              |
+| the tick finds a request with no open roster row                                      | `fn_cash_cluster_tick` step 1                          | `cancelled` / `left_game`                 | same as above                                                                                          | yes                                                                                                              |
+| the planned move dies (cancelled / expired) and the player is still in the from-chair | `fn_cash_cluster_tick` step 1                          | back to `requested` / `move_<state>`      | stays SPENT                                                                                            | yes - the request is alive again, so the allowance is still in use. Returning it here would give a second change |
+| the move dies and the player is NOT in the from-chair                                 | tick step 1's `EXISTS` fails, so the row stays `moved` | stays SPENT                               | **see F8 below**                                                                                       |
 
 ### F8 (P2) - a request whose move died while the player was elsewhere is stranded as `moved`
 
@@ -333,6 +333,7 @@ also patches; the two anchors were proven disjoint and order-independent
 ### What this lane ships
 
 **`supabase/migrations/20260909181259_a_leave_cancels_the_move_and_a_move_says_why_it_expired.sql`**
+
 - one file, one `BEGIN` / `COMMIT`, reasoning in the header (CLAUDE.md 10.9),
   post-apply `DO $assert$` block, NOT applied to production.
 - Part 1 (F1): `fn_cash_game_roster_track` - whole body, guarded on the live
@@ -395,7 +396,6 @@ allowance, the re-list following the player, the re-listed request NOT getting
 a second button, the REVOKEs, the one-transaction shape, the md5 guards, the
 fact that the tick is patched by anchor and not re-emitted, and - explicitly -
 that this migration does NOT touch the two executor paths lane A owns.
-
 
 ## 5. What could not be fixed here
 
@@ -461,24 +461,24 @@ S12 rejoin-bottom-fresh-button S13 swap-partner-released
 S14 relist-follows-the-player S15 main-one-returns-button S16 grants
 ```
 
-| section | what it proves |
-| --- | --- |
-| S11 | a player with a pending `must_move` who leaves: the move is `cancelled` / `player_left_game`, the roster row closes, and `fn_cash_game_open_seats` on the destination goes back UP by one - the chair the departed player was holding is released immediately |
-| S12 | the rejoin opens a NEW roster row (later `joined_at`), with `seat_change_used_at` NULL, last on `fn_cash_game_must_move_list` |
-| S13 | a swap where one side leaves: the leaver's move is `player_left_game`, the partner's is `swap_partner_gone`, and `fn_cash_seat_moves_pending` no longer offers the held side - the player is dealt back in |
-| S14 | a request whose move died while a must-move had taken the player elsewhere is re-listed by the tick as `requested` / `move_cancelled`, `from_table_id` rewritten to the chair they are actually in, and the allowance stays spent (no second button) |
-| S15 | a request listed from a feeder that is then renumbered Main 1 is cancelled `now_on_main_one`, the allowance is returned, and a `seat_change_returned` event is written |
-| S16 | `authenticated` can no longer INSERT/UPDATE a seat move or a waitlist row, and still holds its read-own SELECT |
+| section | what it proves                                                                                                                                                                                                                                                |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| S11     | a player with a pending `must_move` who leaves: the move is `cancelled` / `player_left_game`, the roster row closes, and `fn_cash_game_open_seats` on the destination goes back UP by one - the chair the departed player was holding is released immediately |
+| S12     | the rejoin opens a NEW roster row (later `joined_at`), with `seat_change_used_at` NULL, last on `fn_cash_game_must_move_list`                                                                                                                                 |
+| S13     | a swap where one side leaves: the leaver's move is `player_left_game`, the partner's is `swap_partner_gone`, and `fn_cash_seat_moves_pending` no longer offers the held side - the player is dealt back in                                                    |
+| S14     | a request whose move died while a must-move had taken the player elsewhere is re-listed by the tick as `requested` / `move_cancelled`, `from_table_id` rewritten to the chair they are actually in, and the allowance stays spent (no second button)          |
+| S15     | a request listed from a feeder that is then renumbered Main 1 is cancelled `now_on_main_one`, the allowance is returned, and a `seat_change_returned` event is written                                                                                        |
+| S16     | `authenticated` can no longer INSERT/UPDATE a seat move or a waitlist row, and still holds its read-own SELECT                                                                                                                                                |
 
 **Two live guards refused the probe and were right to, both recorded because
 they are evidence about production, not obstacles:**
 
 1. At 18:54 UTC the fixture insert was refused with
    `PLATFORM_FROZEN: scheduled maintenance has closed new entries. INSERT on
-   table_seats was refused without moving chips.` - the :53 last-hand phase of
+table_seats was refused without moving chips.` - the :53 last-hand phase of
    the hourly break (CLAUDE.md 13). The probe was re-run after :00.
 2. `fn_guard_managed_game_lifecycle`: `This table cannot be closed while
-   players are seated`. The S15 fixture was closing Main 1 to force the
+players are seated`. The S15 fixture was closing Main 1 to force the
    renumber; it now does what the ROLES step actually does - steps the old
    Main 1 down to feeder and promotes the feeder - and closes nothing.
 
@@ -495,12 +495,12 @@ pass for every game.
 
 After probe 2, on production:
 
-| check | result |
-| --- | --- |
-| `authenticated` still has INSERT on `cash_seat_moves` (the REVOKE rolled back) | true |
-| the live tick does NOT contain this lane's edit | true |
-| the live `fn_cash_game_roster_track` does NOT contain `player_left_game` | true |
-| no `PROBE Main 2` table exists | true |
+| check                                                                          | result |
+| ------------------------------------------------------------------------------ | ------ |
+| `authenticated` still has INSERT on `cash_seat_moves` (the REVOKE rolled back) | true   |
+| the live tick does NOT contain this lane's edit                                | true   |
+| the live `fn_cash_game_roster_track` does NOT contain `player_left_game`       | true   |
+| no `PROBE Main 2` table exists                                                 | true   |
 
 ### Tests
 
@@ -522,12 +522,12 @@ No TypeScript changed outside `tests/`, so no `tsc` run was needed.
 
 ### Files this lane changed
 
-| file | what |
-| --- | --- |
+| file                                                                                             | what                                                                |
+| ------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------- |
 | `supabase/migrations/20260909181259_a_leave_cancels_the_move_and_a_move_says_why_it_expired.sql` | was an empty skeleton; now the full migration for F1, F3, F8 and F5 |
-| `tests/a-leave-cancels-the-move.law.test.ts` | new, 19 assertions |
-| `docs/laws.d/a-leave-cancels-the-move.md` | new, the registry entry the law test requires |
-| `docs/audits/2026-09-09-must-move-audit/lane-B.md` | this report |
+| `tests/a-leave-cancels-the-move.law.test.ts`                                                     | new, 19 assertions                                                  |
+| `docs/laws.d/a-leave-cancels-the-move.md`                                                        | new, the registry entry the law test requires                       |
+| `docs/audits/2026-09-09-must-move-audit/lane-B.md`                                               | this report                                                         |
 
 No shared file was touched (brief rule 9). `scripts/dev/probe-must-move-lobby.sql`
 was READ as the base for the probe and deliberately left alone: lane A is
@@ -630,14 +630,14 @@ S18 second-caller-told-the-truth S19 asking-twice-is-one-hold
 S20 lapse-frees-the-chair S22 table-lock-held
 ```
 
-| section | what it proves |
-| --- | --- |
-| S17 | first caller handed the last chair; hold row `notified`/`position 0`/`+60 s`; `open_seats` 0 to everyone else, 1 to the holder; holder's buy-in admitted; row `seated` |
-| S18 | second caller `waitlisted` #1 (game waitlist row written); a buy-in by the second caller onto the held chair refused `SEAT_RESERVED`, no seat written |
-| S19 | second ask by the holder: same table, one live hold in the game, expiry refreshed; a stray second hold lapses on the next ask |
-| S20 | hold set to lapsed: `open_seats` counts the chair again, the next caller is handed it, the lapsed holder asking again is `waitlisted` (the truth), `fn_sweep_stale_waitlists()` retires the lapsed row and leaves the live one, the new holder's buy-in admitted |
-| S21 | **the same-instant race, two real sessions**: session 1 (new door, player A) `RACE_TID <table> ACT seat`, `advisory_locks_held 1`; session 2 asking for `table_seat:<table>` with `lock_timeout = 2s` (what the buy-in gate or a second door call does): `ERROR: canceling statement due to lock timeout` (55P03). Both rolled back. Note: the lock was held ~7 s on a real live table for this proof; a real buy-in there in that window waited, nothing failed |
-| S22 | after the door runs, the session holds exactly the advisory lock it took (the guard is real, not a comment) |
+| section | what it proves                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| S17     | first caller handed the last chair; hold row `notified`/`position 0`/`+60 s`; `open_seats` 0 to everyone else, 1 to the holder; holder's buy-in admitted; row `seated`                                                                                                                                                                                                                                                                                           |
+| S18     | second caller `waitlisted` #1 (game waitlist row written); a buy-in by the second caller onto the held chair refused `SEAT_RESERVED`, no seat written                                                                                                                                                                                                                                                                                                            |
+| S19     | second ask by the holder: same table, one live hold in the game, expiry refreshed; a stray second hold lapses on the next ask                                                                                                                                                                                                                                                                                                                                    |
+| S20     | hold set to lapsed: `open_seats` counts the chair again, the next caller is handed it, the lapsed holder asking again is `waitlisted` (the truth), `fn_sweep_stale_waitlists()` retires the lapsed row and leaves the live one, the new holder's buy-in admitted                                                                                                                                                                                                 |
+| S21     | **the same-instant race, two real sessions**: session 1 (new door, player A) `RACE_TID <table> ACT seat`, `advisory_locks_held 1`; session 2 asking for `table_seat:<table>` with `lock_timeout = 2s` (what the buy-in gate or a second door call does): `ERROR: canceling statement due to lock timeout` (55P03). Both rolled back. Note: the lock was held ~7 s on a real live table for this proof; a real buy-in there in that window waited, nothing failed |
+| S22     | after the door runs, the session holds exactly the advisory lock it took (the guard is real, not a comment)                                                                                                                                                                                                                                                                                                                                                      |
 
 Rollback verified afterwards: `table_waitlist` rows with `position = 0`: 0
 (there were 0 before, 10,149 rows total); `fn_cash_game_join` live body
@@ -716,13 +716,13 @@ handed over.
 
 ### 7.6 Files this pass changed
 
-| file | what |
-| --- | --- |
-| `supabase/migrations/20260910183043_the_join_door_holds_the_chair_it_hands_out.sql` | new, F6 |
-| `scripts/dev/probe-join-door-hold.sql` | new, S17-S22 as run (S21 as the two-session pair) |
-| `tests/the-join-door-holds-the-chair.law.test.ts` | new, 11 assertions on the migration text - **UNRUN** by instruction; run with `npx vitest run tests/the-join-door-holds-the-chair.law.test.ts tests/law-registry.law.test.ts` |
-| `docs/laws.d/the-join-door-holds-the-chair.md` | the registry entry the law test requires |
-| this file | section 7 |
+| file                                                                                | what                                                                                                                                                                          |
+| ----------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `supabase/migrations/20260910183043_the_join_door_holds_the_chair_it_hands_out.sql` | new, F6                                                                                                                                                                       |
+| `scripts/dev/probe-join-door-hold.sql`                                              | new, S17-S22 as run (S21 as the two-session pair)                                                                                                                             |
+| `tests/the-join-door-holds-the-chair.law.test.ts`                                   | new, 11 assertions on the migration text - **UNRUN** by instruction; run with `npx vitest run tests/the-join-door-holds-the-chair.law.test.ts tests/law-registry.law.test.ts` |
+| `docs/laws.d/the-join-door-holds-the-chair.md`                                      | the registry entry the law test requires                                                                                                                                      |
+| this file                                                                           | section 7                                                                                                                                                                     |
 
 `src/services/cashGameLobby.ts` (lane G) is **not** edited and needs no edit:
 the join response gains one additive key (`hold_expires_at`), no new action, no
@@ -746,11 +746,12 @@ no TS gate run (two new law tests are written and **UNRUN**, see 8.5).
 `supabase/migrations/20260910184427_the_door_honours_the_chair_the_game_promised.sql`
 patches the LIVE `atomic_table_buyin_before_maintenance_announcement_gate`
 (md5 `823cfb123c2d5041ecc824d188a31997`) by two anchored literal replacements
+
 - the DECLARE line and the hold block - never a re-emit of the hottest money
-path on the platform; the result is checked for eighteen landmarks of that
-path (idempotency key, session liveness, rejoin floor, ban, VIP, nit, the
-table lock, TABLE_SIZE, the cap, the club wallet, the debit, the session
-open, the ledger row, and no `is_horse`) before it is executed.
+  path on the platform; the result is checked for eighteen landmarks of that
+  path (idempotency key, session liveness, rejoin floor, ban, VIP, nit, the
+  table lock, TABLE_SIZE, the cap, the club wallet, the debit, the session
+  open, the ledger row, and no `is_horse`) before it is executed.
 
 **The clause**, beside the hold count:
 
@@ -769,15 +770,16 @@ END IF;
 
 **Every reason a pending move can exist for a destination** (the CHECK allows
 exactly four): `must_move` (tick step 2) - reservation; `break` (tick step 5)
+
 - reservation; `balance` (`fn_cash_cluster_balance`) - reservation;
-`seat_change` unlinked (the planner found an open chair) - reservation;
-`seat_change` linked by `swap_move_id` (two players exchange two OCCUPIED
-chairs) - **not** a reservation, as the 2026-09-05 lobby changelog says in as
-many words. The clause counts exactly what `fn_cash_game_open_seats` counts
-(`to_table_id`, `pending`, `swap_move_id IS NULL`; no reason filter, no
-`expires_at` filter, so the door and the census agree in the 5 s before the
-tick sweeps a lapsed move) plus `player_id <> p_user_id`, so nobody is refused
-by their own reservation.
+  `seat_change` unlinked (the planner found an open chair) - reservation;
+  `seat_change` linked by `swap_move_id` (two players exchange two OCCUPIED
+  chairs) - **not** a reservation, as the 2026-09-05 lobby changelog says in as
+  many words. The clause counts exactly what `fn_cash_game_open_seats` counts
+  (`to_table_id`, `pending`, `swap_move_id IS NULL`; no reason filter, no
+  `expires_at` filter, so the door and the census agree in the 5 s before the
+  tick sweeps a lapsed move) plus `player_id <> p_user_id`, so nobody is refused
+  by their own reservation.
 
 **The refusal code** is the existing `SEAT_RESERVED:` prefix with a message
 that names the other cause. `src/lib/cashBuyIn.ts:175` matches
@@ -803,14 +805,14 @@ S25 own-reservation-never-refuses S26 mover-lands
 S27 swap-is-not-a-reservation S28 no-is_horse
 ```
 
-| section | what it proves |
-| --- | --- |
-| S23 | chair count N (Main 2 filled to max-1 with real horses), one pending `must_move` into it: a stranger's buy-in for the last chair refused `SEAT_RESERVED: the open seat is held for a player the game is moving here`, no seat written, no wallet row |
-| S24 | seats + pending unlinked plans == max_players: the door and the census read the same chair |
-| S25 | the mover's own buy-in at the destination passes the clause (own move excluded) and is stopped by the seat trigger's `ALREADY_IN_GAME` - not `SEAT_RESERVED` - because they are seated on the feeder |
-| S26 | the mover's path is unaffected: `fn_cash_seat_move_execute` lands them on the promised chair, `open_seats` 0 |
-| S27 | a linked swap into the table (B on Main 2 <-> C on the feeder) is not a reservation: the stranger is admitted onto a free chair beside it |
-| S28 | no `is_horse` in the gate |
+| section | what it proves                                                                                                                                                                                                                                       |
+| ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| S23     | chair count N (Main 2 filled to max-1 with real horses), one pending `must_move` into it: a stranger's buy-in for the last chair refused `SEAT_RESERVED: the open seat is held for a player the game is moving here`, no seat written, no wallet row |
+| S24     | seats + pending unlinked plans == max_players: the door and the census read the same chair                                                                                                                                                           |
+| S25     | the mover's own buy-in at the destination passes the clause (own move excluded) and is stopped by the seat trigger's `ALREADY_IN_GAME` - not `SEAT_RESERVED` - because they are seated on the feeder                                                 |
+| S26     | the mover's path is unaffected: `fn_cash_seat_move_execute` lands them on the promised chair, `open_seats` 0                                                                                                                                         |
+| S27     | a linked swap into the table (B on Main 2 <-> C on the feeder) is not a reservation: the stranger is admitted onto a free chair beside it                                                                                                            |
+| S28     | no `is_horse` in the gate                                                                                                                                                                                                                            |
 
 An event trigger on this database (`[autorevoke]`) stripped PUBLIC/anon
 EXECUTE from the inner gate on CREATE, as the migration's assertion expects;
@@ -823,17 +825,17 @@ the inner gate was already `{postgres=X/postgres}` and stays so.
 **Every client caller of a direct `table_waitlist` write, read before
 restricting anything** (grep of `src/` and of the World Hub's `pages/`, `src/`):
 
-| caller | verb | status | what must change |
-| --- | --- | --- | --- |
-| `src/services/WaitlistService.ts:208` (`joinWaitlist`) | insert | LIVE (ClubHomePage:3335) | `supabase.rpc('fn_table_waitlist_join', { p_table_id: tableId })` and `mapRow(data.entry)` |
-| `src/services/WaitlistService.ts:267` (`leaveWaitlist`) | update status left | LIVE (TableModalsLayer:874) | `supabase.rpc('fn_table_waitlist_leave', { p_table_id: tableId })` -> `{ ok, cancelled }` |
-| `src/services/WaitlistService.ts:522` (`leave`) | update status left | LIVE (ClubHomePage:3344, WaitlistPage:156) | the same leave call |
-| `src/components/waitlist/WaitlistManager.tsx:155` | insert | DEAD (mounted nowhere) | the join door, if it is ever mounted |
-| `src/components/waitlist/WaitlistManager.tsx:189` | delete own | DEAD | the leave door |
-| `src/components/waitlist/WaitlistManager.tsx:206, :214` | delete OTHER players' rows | DEAD, and **already refused** by the old policy (RLS DELETE matched 0 rows, silently) | a host action needs a definer of its own; none is written here because nothing mounts it |
-| `WaitlistManager.tsx:96`, `GlobalWaitlistListener.tsx:192`, `TableService.ts:706`, `WaitlistService.ts:177/229/290/311/332/364/402/454/470` | select | unaffected | none |
-| `Smarter-Poker-World-Hub/pages/api/club-arena/waitlist.js:60-187` (8 sites), `pages/api/poker/engine/seat.js` | service role key | unaffected (bypasses RLS) | none; `seat.js`'s `SERVICE_ROLE_KEY \|\| ANON_KEY` fallback would now be refused if the service key were ever missing, which is the correct failure |
-| `server/src/services/HorseFleetManager.ts`, `HorseSessionRotator.ts` | service_role | unaffected | none |
+| caller                                                                                                                                      | verb                       | status                                                                                | what must change                                                                                                                                    |
+| ------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- | ------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/services/WaitlistService.ts:208` (`joinWaitlist`)                                                                                      | insert                     | LIVE (ClubHomePage:3335)                                                              | `supabase.rpc('fn_table_waitlist_join', { p_table_id: tableId })` and `mapRow(data.entry)`                                                          |
+| `src/services/WaitlistService.ts:267` (`leaveWaitlist`)                                                                                     | update status left         | LIVE (TableModalsLayer:874)                                                           | `supabase.rpc('fn_table_waitlist_leave', { p_table_id: tableId })` -> `{ ok, cancelled }`                                                           |
+| `src/services/WaitlistService.ts:522` (`leave`)                                                                                             | update status left         | LIVE (ClubHomePage:3344, WaitlistPage:156)                                            | the same leave call                                                                                                                                 |
+| `src/components/waitlist/WaitlistManager.tsx:155`                                                                                           | insert                     | DEAD (mounted nowhere)                                                                | the join door, if it is ever mounted                                                                                                                |
+| `src/components/waitlist/WaitlistManager.tsx:189`                                                                                           | delete own                 | DEAD                                                                                  | the leave door                                                                                                                                      |
+| `src/components/waitlist/WaitlistManager.tsx:206, :214`                                                                                     | delete OTHER players' rows | DEAD, and **already refused** by the old policy (RLS DELETE matched 0 rows, silently) | a host action needs a definer of its own; none is written here because nothing mounts it                                                            |
+| `WaitlistManager.tsx:96`, `GlobalWaitlistListener.tsx:192`, `TableService.ts:706`, `WaitlistService.ts:177/229/290/311/332/364/402/454/470` | select                     | unaffected                                                                            | none                                                                                                                                                |
+| `Smarter-Poker-World-Hub/pages/api/club-arena/waitlist.js:60-187` (8 sites), `pages/api/poker/engine/seat.js`                               | service role key           | unaffected (bypasses RLS)                                                             | none; `seat.js`'s `SERVICE_ROLE_KEY \|\| ANON_KEY` fallback would now be refused if the service key were ever missing, which is the correct failure |
+| `server/src/services/HorseFleetManager.ts`, `HorseSessionRotator.ts`                                                                        | service_role               | unaffected                                                                            | none                                                                                                                                                |
 
 **The policy shape:** `waitlist_user_own` (FOR ALL) is dropped;
 `waitlist_user_own_read` FOR SELECT TO authenticated USING `user_id =
@@ -859,16 +861,16 @@ S32 leave-door-works S33 game-doors-work
 S34 door-refuses-what-the-offer-refuses S35 service-writes S36 policy-shape
 ```
 
-| section | what it proves |
-| --- | --- |
-| S29 | a direct INSERT of a ten-year `notified` hold, a direct UPDATE and a direct DELETE are all refused `42501` |
-| S30 | the player still reads their own rows and the public queue |
-| S31 | `fn_table_waitlist_join` writes the line (`waiting`), a second call returns the same row with `already_on_waitlist`, one live row |
-| S32 | `fn_table_waitlist_leave` sets it `left` (cancelled 1), a second call cancels 0 |
-| S33 | `fn_cash_game_join` (which writes the section-7 hold as the definer) and `fn_cash_game_leave_waitlist` still work for that browser |
-| S34 | a tournament table is refused `WAITLIST_TOURNAMENT_TABLE`, a closed table `WAITLIST_TABLE_CLOSED` |
-| S35 | `service_role` still writes the table (the fleet's own prune and insert) |
-| S36 | three SELECT policies, zero write policies |
+| section | what it proves                                                                                                                     |
+| ------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| S29     | a direct INSERT of a ten-year `notified` hold, a direct UPDATE and a direct DELETE are all refused `42501`                         |
+| S30     | the player still reads their own rows and the public queue                                                                         |
+| S31     | `fn_table_waitlist_join` writes the line (`waiting`), a second call returns the same row with `already_on_waitlist`, one live row  |
+| S32     | `fn_table_waitlist_leave` sets it `left` (cancelled 1), a second call cancels 0                                                    |
+| S33     | `fn_cash_game_join` (which writes the section-7 hold as the definer) and `fn_cash_game_leave_waitlist` still work for that browser |
+| S34     | a tournament table is refused `WAITLIST_TOURNAMENT_TABLE`, a closed table `WAITLIST_TABLE_CLOSED`                                  |
+| S35     | `service_role` still writes the table (the fleet's own prune and insert)                                                           |
+| S36     | three SELECT policies, zero write policies                                                                                         |
 
 ### 8.3 The thirteen-migration sequence
 
@@ -886,15 +888,15 @@ not a failure of the sequence. Re-run after :03: see 8.4.
 
 ### 8.5 Files this pass changed
 
-| file | what |
-| --- | --- |
-| `supabase/migrations/20260910184427_the_door_honours_the_chair_the_game_promised.sql` | new, F10 |
-| `supabase/migrations/20260910184439_a_browser_never_writes_the_waitlist_itself.sql` | new, F11 |
-| `scripts/ci/schema-manifest.d/cowork-mustmove-lane-b.json` | new - declares `fn_table_waitlist_join`, `fn_table_waitlist_leave` |
-| `scripts/dev/probe-join-door-hold.sql` | section 2 appended: S23-S28, S29-S36 as run |
-| `tests/the-door-honours-the-chair-the-game-promised.law.test.ts` + `docs/laws.d/...md` | new, 9 assertions, **UNRUN** |
-| `tests/a-browser-never-writes-the-waitlist-itself.law.test.ts` + `docs/laws.d/...md` | new, 8 assertions, **UNRUN** |
-| this file | section 8 |
+| file                                                                                   | what                                                               |
+| -------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `supabase/migrations/20260910184427_the_door_honours_the_chair_the_game_promised.sql`  | new, F10                                                           |
+| `supabase/migrations/20260910184439_a_browser_never_writes_the_waitlist_itself.sql`    | new, F11                                                           |
+| `scripts/ci/schema-manifest.d/cowork-mustmove-lane-b.json`                             | new - declares `fn_table_waitlist_join`, `fn_table_waitlist_leave` |
+| `scripts/dev/probe-join-door-hold.sql`                                                 | section 2 appended: S23-S28, S29-S36 as run                        |
+| `tests/the-door-honours-the-chair-the-game-promised.law.test.ts` + `docs/laws.d/...md` | new, 9 assertions, **UNRUN**                                       |
+| `tests/a-browser-never-writes-the-waitlist-itself.law.test.ts` + `docs/laws.d/...md`   | new, 8 assertions, **UNRUN**                                       |
+| this file                                                                              | section 8                                                          |
 
 No client file edited. Lane G's three `WaitlistService.ts` call sites (208,
 267, 522) MUST move to the two doors in the same release as `184439`, or the

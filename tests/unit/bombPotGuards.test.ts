@@ -797,7 +797,9 @@ describe('ROUND 8 (2026-08-29) — the last of the open items', () => {
     expect(FLOW).not.toContain('label="Bomb Ante"');
     expect(blankNonCode(FLOW)).not.toMatch(/bombs\.ante_bb/);
     const CREATE_SQL = read('supabase/migrations/20260904230000_cash_games_slice_1_hardening.sql');
-    expect(CREATE_SQL).toMatch(/v_bomb_ante := public\.fn_cash_override_int\(v_bombs, 'ante_bb', NULL\)/);
+    expect(CREATE_SQL).toMatch(
+      /v_bomb_ante := public\.fn_cash_override_int\(v_bombs, 'ante_bb', NULL\)/
+    );
     expect(CREATE_SQL).toMatch(/v_bomb_ante < 1 OR v_bomb_ante > 20/);
 
     const SETTINGS = read('src/pages/club/TableBombSettingsPage.tsx');

@@ -2036,6 +2036,14 @@ export class GameServer {
         'GameServer.Tournament_discovery_fatal_err'
       );
       /**
+       * RUNNING re-adoption, on its own five-second lane (2026-09-11). The
+       * big loop's pass takes minutes; see discoverRunningResumes.
+       */
+      this.launchDiscoveryJob(
+        this.discoverRunningResumes(),
+        'GameServer.Tournament_resume_lane_fatal_err'
+      );
+      /**
        * The seat-first fast lane (Dan 2026-08-21: the wheel spins the MOMENT
        * the 3rd seat is paid). discoverTournaments still carries the same
        * start gate as a backstop; this loop just refuses to make a paid-up
@@ -4946,11 +4954,6 @@ export class GameServer {
   private async discoverTournaments(): Promise<void> {
     const generation = this.lifecycleGeneration;
     while (this.directAdmissionIsCurrent(generation)) {
-      // RUNNING re-adoption budget: exactly one verdict per pass, applied in
-      // the finally below on every path, as C20 does for the cash fleet.
-      const resumeDistressSinceLastPass = this.tournamentResumeDistress;
-      this.tournamentResumeDistress = 0;
-      let resumePassDistressed = resumeDistressSinceLastPass > 0;
       try {
         // Find REGISTERING tournaments ready to start
         const registeringReadAt = Date.now();
@@ -4970,7 +4973,6 @@ export class GameServer {
             new Error(`[GameServer] REGISTERING board read failed: ${registeringErr.message}`),
             'GameServer.registering_board_read_failed'
           );
-          resumePassDistressed = true;
           await this.sleep(TOURNAMENT_DISCOVERY_INTERVAL);
           continue;
         }
@@ -5307,102 +5309,15 @@ export class GameServer {
           }
         }
 
-        /**
-         * ═══════════════════════════════════════════════════════════════════
-         *  THE LONGEST-WAITING TOURNAMENT IS ADOPTED FIRST (2026-09-09)
-         * ═══════════════════════════════════════════════════════════════════
-         *
-         * This read had no ORDER BY, so the resume order was whatever
-         * PostgREST happened to return - in practice stable, which is worse
-         * than random: the same events land at the end of the list on every
-         * single pass. Adoption is not free (a manager plus an engine per
-         * table, against a database where a single bounty-evidence read can
-         * take eight seconds), so when the fleet cannot all be adopted at once
-         * the tail is not merely late, it is ALWAYS the same tail.
-         *
-         * Measured on production 2026-09-09: after the 05:55 maintenance
-         * restart, tournaments dealing in the last ten minutes fell from 86 to
-         * EIGHT of 126 RUNNING, while THIRTEEN events had been stalled for more
-         * than an hour - across several hourly restarts, so they had lost the
-         * race every time. The oldest, `$100 Freeroll 6:00 AM`, had not dealt a
-         * hand in 903 minutes with players still seated in it.
-         *
-         * `started_at` ascending makes the order a queue instead of a lottery.
-         * It is the cheapest possible fix for starvation and it cannot make
-         * anything slower: the same set is adopted in the same number of
-         * passes, and the event that has been waiting longest is simply no
-         * longer the one that waits again. NULLS LAST because a row with no
-         * start time is not evidence of a long wait.
+        /*
+         * RUNNING re-adoption is not in this pass any more (2026-09-11). It has
+         * its own lane, discoverRunningResumes() below: this pass walks every
+         * REGISTERING tournament and awaits a horse top-up for each, which
+         * after a thaw measured ~2.5s apiece against 353 of them - a pass of
+         * ~15 minutes. With the re-adoption budget applied once per pass, 25
+         * resumes per 15 minutes could never re-adopt 737 RUNNING tournaments
+         * between two hourly restarts.
          */
-        const { data: running, error: runningErr } = await supabase
-          .from('tournaments')
-          .select('id, name')
-          .eq('status', 'RUNNING')
-          .order('started_at', { ascending: true, nullsFirst: false });
-        if (runningErr) {
-          // Same rule as the REGISTERING read: unreadable is UNKNOWN. Reading
-          // it as "nothing is running" silently stops every re-adoption.
-          reportError(
-            new Error(`[GameServer] RUNNING board read failed: ${runningErr.message}`),
-            'GameServer.running_board_read_failed'
-          );
-          resumePassDistressed = true;
-        }
-
-        /**
-         * RUNNING RE-ADOPTION IS BUDGETED (2026-09-10). This loop used to
-         * resume every managerless RUNNING tournament in one pass. The burst
-         * starved the lease heartbeats, the fenced managers left
-         * tournamentEngines, and the next pass resumed the same ~740 again.
-         * The budget bounds how many resumes this loop has IN FLIGHT; the
-         * board order (oldest started_at first) still decides which, and the
-         * rest are read again next pass rather than dropped. An id already
-         * being admitted (by a retry or another path) spends nothing.
-         */
-        const resumes = selectRunningResumes(running || [], {
-          hasManager: (id) => this.tournamentEngines.has(id),
-          admissionInFlight: (id) => this.tournamentManagerAdmissionOperations.has(id),
-          resumesInFlight: resumesHoldingASlot(this.tournamentResumesInFlight.values(), Date.now()),
-          budget: this.tournamentResumeBudget,
-        });
-        for (const [index, tournament] of resumes.entries()) {
-          if (!this.directAdmissionIsCurrent(generation)) break;
-          if (index > 0) await this.sleep(TOURNAMENT_RESUME_STAGGER_MS);
-          // The stagger yields, so re-check: a retry may have admitted it.
-          if (this.tournamentEngines.has(tournament.id)) continue;
-
-          const tournamentId = String(tournament.id);
-          if (this.tournamentManagerAdmissionOperations.has(tournamentId)) continue;
-
-          const launchedAt = Date.now();
-          this.tournamentResumesInFlight.set(tournamentId, launchedAt);
-          this.launchDiscoveryJob(
-            this.ensureTournamentManagerAdmission(
-              tournamentId,
-              'resume',
-              `Resuming tournament: ${tournament.name}`,
-              generation
-            )
-              .then(() => {
-                // A claim that could not be settled returns normally after
-                // scheduling its retry. That is still a failed resume.
-                if (this.tournamentManagerAdmissionRetryTimers.has(tournamentId)) {
-                  this.tournamentResumeDistress++;
-                }
-              })
-              .catch((error) => {
-                this.tournamentResumeDistress++;
-                throw error;
-              })
-              .finally(() => {
-                if (this.tournamentResumesInFlight.get(tournamentId) === launchedAt) {
-                  this.tournamentResumesInFlight.delete(tournamentId);
-                }
-              }),
-            'GameServer.Tournament_resume_failed_for_t',
-            { tournamentId }
-          );
-        }
 
         // The ramp map only ever holds tournaments still in REGISTERING.
         // Without this it grows by every event the engine has ever seen and
@@ -5944,6 +5859,142 @@ export class GameServer {
         }
       } catch (err) {
         reportError(err, 'GameServer.Tournament_discovery_error');
+      }
+
+      await this.sleep(TOURNAMENT_DISCOVERY_INTERVAL);
+    }
+  }
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════
+   *  RUNNING RE-ADOPTION HAS ITS OWN LANE (2026-09-11)
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * The budget below (2026-09-10, tournamentResumeBudget.ts) stopped the
+   * re-adoption storm, and it was applied once per discoverTournaments pass
+   * on the assumption that a pass takes about five seconds. Measured on the
+   * first build that carried it: a pass takes MINUTES. It walks every
+   * REGISTERING tournament and awaits a horse top-up for each (~2.5s apiece
+   * after a thaw, 353 of them), so the RUNNING block ran twice in the first
+   * five minutes after the 23:55 restart and then not again for as long as
+   * the walk took. 50 of 737 RUNNING tournaments had a manager; the rest
+   * waited on registration housekeeping they have nothing to do with.
+   *
+   * Same precedent as discoverSeatFirstStarts: work that must not wait out
+   * the big loop gets a loop of its own. This one owns the whole RUNNING
+   * re-adoption - the ordered board read, the budgeted selection, the
+   * staggered launches and exactly one AIMD verdict per pass - on a
+   * five-second cadence, so the budget bounds resumes IN FLIGHT the way it
+   * was designed to, and a slow REGISTERING walk no longer throttles it to a
+   * trickle.
+   */
+  private async discoverRunningResumes(): Promise<void> {
+    const generation = this.lifecycleGeneration;
+    while (this.directAdmissionIsCurrent(generation)) {
+      // RUNNING re-adoption budget: exactly one verdict per pass, applied in
+      // the finally below on every path, as C20 does for the cash fleet.
+      const resumeDistressSinceLastPass = this.tournamentResumeDistress;
+      this.tournamentResumeDistress = 0;
+      let resumePassDistressed = resumeDistressSinceLastPass > 0;
+      try {
+        /**
+         * ═══════════════════════════════════════════════════════════════════
+         *  THE LONGEST-WAITING TOURNAMENT IS ADOPTED FIRST (2026-09-09)
+         * ═══════════════════════════════════════════════════════════════════
+         *
+         * This read had no ORDER BY, so the resume order was whatever
+         * PostgREST happened to return - in practice stable, which is worse
+         * than random: the same events land at the end of the list on every
+         * single pass. Adoption is not free (a manager plus an engine per
+         * table, against a database where a single bounty-evidence read can
+         * take eight seconds), so when the fleet cannot all be adopted at once
+         * the tail is not merely late, it is ALWAYS the same tail.
+         *
+         * Measured on production 2026-09-09: after the 05:55 maintenance
+         * restart, tournaments dealing in the last ten minutes fell from 86 to
+         * EIGHT of 126 RUNNING, while THIRTEEN events had been stalled for more
+         * than an hour - across several hourly restarts, so they had lost the
+         * race every time. The oldest, `$100 Freeroll 6:00 AM`, had not dealt a
+         * hand in 903 minutes with players still seated in it.
+         *
+         * `started_at` ascending makes the order a queue instead of a lottery.
+         * It is the cheapest possible fix for starvation and it cannot make
+         * anything slower: the same set is adopted in the same number of
+         * passes, and the event that has been waiting longest is simply no
+         * longer the one that waits again. NULLS LAST because a row with no
+         * start time is not evidence of a long wait.
+         */
+        const { data: running, error: runningErr } = await supabase
+          .from('tournaments')
+          .select('id, name')
+          .eq('status', 'RUNNING')
+          .order('started_at', { ascending: true, nullsFirst: false });
+        if (runningErr) {
+          // Same rule as the REGISTERING read: unreadable is UNKNOWN. Reading
+          // it as "nothing is running" silently stops every re-adoption.
+          reportError(
+            new Error(`[GameServer] RUNNING board read failed: ${runningErr.message}`),
+            'GameServer.running_board_read_failed'
+          );
+          resumePassDistressed = true;
+        }
+
+        /**
+         * RUNNING RE-ADOPTION IS BUDGETED (2026-09-10). This loop used to
+         * resume every managerless RUNNING tournament in one pass. The burst
+         * starved the lease heartbeats, the fenced managers left
+         * tournamentEngines, and the next pass resumed the same ~740 again.
+         * The budget bounds how many resumes this loop has IN FLIGHT; the
+         * board order (oldest started_at first) still decides which, and the
+         * rest are read again next pass rather than dropped. An id already
+         * being admitted (by a retry or another path) spends nothing.
+         */
+        const resumes = selectRunningResumes(running || [], {
+          hasManager: (id) => this.tournamentEngines.has(id),
+          admissionInFlight: (id) => this.tournamentManagerAdmissionOperations.has(id),
+          resumesInFlight: resumesHoldingASlot(this.tournamentResumesInFlight.values(), Date.now()),
+          budget: this.tournamentResumeBudget,
+        });
+        for (const [index, tournament] of resumes.entries()) {
+          if (!this.directAdmissionIsCurrent(generation)) break;
+          if (index > 0) await this.sleep(TOURNAMENT_RESUME_STAGGER_MS);
+          // The stagger yields, so re-check: a retry may have admitted it.
+          if (this.tournamentEngines.has(tournament.id)) continue;
+
+          const tournamentId = String(tournament.id);
+          if (this.tournamentManagerAdmissionOperations.has(tournamentId)) continue;
+
+          const launchedAt = Date.now();
+          this.tournamentResumesInFlight.set(tournamentId, launchedAt);
+          this.launchDiscoveryJob(
+            this.ensureTournamentManagerAdmission(
+              tournamentId,
+              'resume',
+              `Resuming tournament: ${tournament.name}`,
+              generation
+            )
+              .then(() => {
+                // A claim that could not be settled returns normally after
+                // scheduling its retry. That is still a failed resume.
+                if (this.tournamentManagerAdmissionRetryTimers.has(tournamentId)) {
+                  this.tournamentResumeDistress++;
+                }
+              })
+              .catch((error) => {
+                this.tournamentResumeDistress++;
+                throw error;
+              })
+              .finally(() => {
+                if (this.tournamentResumesInFlight.get(tournamentId) === launchedAt) {
+                  this.tournamentResumesInFlight.delete(tournamentId);
+                }
+              }),
+            'GameServer.Tournament_resume_failed_for_t',
+            { tournamentId }
+          );
+        }
+      } catch (err) {
+        reportError(err, 'GameServer.Tournament_resume_pass_error');
         resumePassDistressed = true;
       } finally {
         this.tournamentResumeBudget = nextEngineStartBudget(

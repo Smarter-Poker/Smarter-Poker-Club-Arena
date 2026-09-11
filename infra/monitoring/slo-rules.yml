@@ -69,11 +69,21 @@ groups:
         expr: |
           rate(poker_hands_dealt_total[5m])
 
-      # Tables that exist but have made no progress. poker_table_ms_since_progress
-      # is emitted per table; this is the worst one.
+      # Tables that exist but have made no progress: the worst one.
+      #
+      # READ FROM THE FLEET GAUGE, NOT FROM A THOUSAND SERIES (2026-09-11).
+      # `poker_table_ms_since_progress` was emitted for EVERY table, and this
+      # rule was its only consumer anywhere - 1,363 samples scraped every
+      # fifteen seconds so that one `max()` could pick one of them, with the
+      # whole exposition built on the engine's authoritative event loop. The
+      # engine publishes the maximum directly now. The per-table series still
+      # exists for a table that has actually stalled, which is the one an
+      # operator wants to name, so `max()` over it would ALSO be correct - but
+      # it would be absent on a healthy fleet, and an absent SLO is not a
+      # healthy one (CLAUDE.md 10.86). This gauge is always present.
       - record: sp:table_stall:max_ms
         expr: |
-          max(poker_table_ms_since_progress)
+          max(poker_fleet_table_stall_max_ms)
 
       # ── RESPONDING ──────────────────────────────────────────────────────
       # From a player's action arriving to every seat seeing it. This is the

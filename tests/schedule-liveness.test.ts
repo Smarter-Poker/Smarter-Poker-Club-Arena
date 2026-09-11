@@ -56,6 +56,19 @@ describe('audits and watchdogs report but never repair release state', () => {
 });
 
 describe('the production integrity audit lacks release authority', () => {
+  it('does not present the BBJ rebuild inventory as a live comparison', () => {
+    const bbjGuard = read('scripts/ci/check-bbj-functions-match-production.mjs');
+    expect(bbjGuard).toContain('It does not query production');
+
+    const start = integrityWorkflow.indexOf(
+      '- name: Every watched BBJ money function can be rebuilt from the repo'
+    );
+    const end = integrityWorkflow.indexOf('\n      - name:', start + 1);
+    const step = integrityWorkflow.slice(start, end);
+    expect(start).toBeGreaterThan(-1);
+    expect(step).not.toMatch(/DATABASE_URL|SUPABASE_SERVICE_ROLE_KEY|SUPABASE_URL/);
+  });
+
   it('runs on a fixed schedule or a default-branch repository event', () => {
     const triggers = integrityWorkflow.slice(
       integrityWorkflow.indexOf('\non:'),

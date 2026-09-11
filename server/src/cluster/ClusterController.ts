@@ -210,6 +210,15 @@ export class ClusterController {
   private stopOperation: Promise<void> | null = null;
   private inTick = false;
   private tickStartedAt = 0;
+  /**
+   * WHICH PASS OWNS THE LATCH (2026-09-09, must-move audit). When a stalled
+   * pass is released past CLUSTER_TICK_STALL_MS a fresh pass takes the latch;
+   * the stalled one, if it ever returns, used to clear it in its `finally` -
+   * the latch the FRESH pass was holding - so the pass after that overlapped a
+   * live one with no report and no count. Each pass takes a serial and only
+   * the holder releases.
+   */
+  private tickSerial = 0;
   private lastSummary: ClusterTickSummary | null = null;
   /** Debounce handles, one per game with a wake pending. */
   private wakeTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -469,6 +478,7 @@ export class ClusterController {
       }
       this.inTick = true;
       this.tickStartedAt = startedAt;
+      const mySerial = ++this.tickSerial;
       this.passCount++;
       try {
         const rpc = this.deps.rpc ?? supabase.rpc.bind(supabase);
@@ -603,7 +613,9 @@ export class ClusterController {
         this.lastSummary = summary;
         return summary;
       } finally {
-        this.inTick = false;
+        // Only the pass that holds the latch releases it; a released stalled
+        // pass returning late must not unlatch the one that replaced it.
+        if (this.tickSerial === mySerial) this.inTick = false;
       }
     } finally {
       releaseLifecycleScope();

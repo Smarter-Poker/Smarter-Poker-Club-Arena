@@ -328,11 +328,14 @@ describe('the Club Arena bundle publishes directly to its Hetzner origin', () =>
     expect(proof.match(/production-e2e-provenance\.mjs unchanged "\$SHA"/g)).toHaveLength(2);
     expect(proof).toContain('[ "$LIVE_ORIGIN" = "$SHA" ]');
     expect(proof).toContain('[ "$LIVE_PUBLIC" = "$SHA" ]');
-    expect(proof).toContain('echo \'verified=true\' >> "$GITHUB_OUTPUT"');
+    expect(proof).toContain('echo "sha=$SHA" >> "$GITHUB_OUTPUT"');
     expect(proof).toMatch(/origin serves '\$LIVE_ORIGIN'.*wanted \$SHA[\s\S]{0,80}exit 1/);
     expect(proof).not.toMatch(/sed -n[\s\S]*ca_sha/);
     const app = job(publish, 'publish-to-app');
-    expect(app).toContain("needs.publish-to-origin.outputs.verified == 'true'");
+    expect(app).toContain("needs.publish-to-origin.outputs.verified_sha != ''");
+    expect(app).toContain(
+      'needs.publish-to-origin.outputs.verified_sha == needs.publish-needed.outputs.target_sha'
+    );
   });
 
   it('restores the exact prior immutable release when post-activation proof fails', () => {

@@ -148,24 +148,26 @@ jobs:
   # package.json:
   #
   #   check-realtime-publication      (merged in #3375, this same session)
-  #   check-bbj-functions-match-production   (the BBJ money path vs production)
+  #   check-bbj-functions-match-production   (the production BBJ function set is rebuildable from this repo)
   #   check-cosmetic-catalog-drift           (the price list vs the trigger)
   #
   # That is CLAUDE.md 10.86 rule 3 - "a guard must have a reader, and you must
   # name them" - and the first of the three was written by the agent quoting
   # that rule, which is how easy it is to do.
   #
-  # They run HERE, not in ci.yml, because each asks the LIVE database: a
-  # pull-request check has no business depending on production being
-  # reachable. ubuntu-latest for the same reason main_is_green uses it - an
-  # alarm must not share a failure domain with the thing it watches - and psql
-  # is preinstalled there.
+  # The realtime and cosmetics detectors ask the LIVE database. The BBJ guard
+  # is different: it proves the watched production function names can be
+  # rebuilt from tracked migrations and prints fingerprints for a separately
+  # witnessed comparison. It must never be reported as a live comparison.
+  # They run HERE, not in ci.yml, so pull-request checks do not depend on
+  # production being reachable. ubuntu-latest keeps the live readers outside
+  # the failure domain they inspect.
   #
   # Each detector records its exit code so all three can run. The final verdict
   # carries every failure or unknown into the native Actions conclusion; this
   # audit has no issue-writing or repair side channel.
   live_drift:
-    name: The repo and production still agree
+    name: Live drift and BBJ rebuild coverage remain clean
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -186,12 +188,8 @@ jobs:
           node scripts/ci/check-realtime-publication.mjs 2>&1 | tee /tmp/drift-realtime.log
           echo "code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
 
-      - name: The BBJ money path in the repo is the one production runs
+      - name: Every watched BBJ money function can be rebuilt from the repo
         id: bbj
-        env:
-          SUPABASE_URL: https://kuklfnapbkmacvwxktbh.supabase.co
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
           set +e
           node scripts/ci/check-bbj-functions-match-production.mjs 2>&1 | tee /tmp/drift-bbj.log
@@ -223,10 +221,10 @@ jobs:
             }
           done
           if [ "$RT" = 0 ] && [ "$BBJ" = 0 ] && [ "$COS" = 0 ]; then
-            echo 'All live-drift detectors returned clean evidence.'
+            echo 'All live-drift readers and repository rebuild guards returned clean evidence.'
             exit 0
           fi
-          echo "::error title=LIVE DRIFT OR UNKNOWN::realtime=$RT bbj=$BBJ cosmetics=$COS. Read the detector logs; no repair was attempted."
+          echo "::error title=INTEGRITY DRIFT OR UNKNOWN::realtime=$RT bbj_rebuild=$BBJ cosmetics=$COS. Read the detector logs; no repair was attempted."
           exit 1
 
   # Chip and diamond conservation is a production invariant, not merely a

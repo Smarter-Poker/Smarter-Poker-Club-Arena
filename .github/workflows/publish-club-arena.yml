@@ -561,7 +561,8 @@ jobs:
       vars.CAPGO_OTA_ENABLED == 'true' &&
       needs.build-and-store.result == 'success' &&
       needs.publish-to-origin.result == 'success' &&
-      needs.publish-to-origin.outputs.verified == 'true' &&
+      needs.publish-to-origin.outputs.verified_sha != '' &&
+      needs.publish-to-origin.outputs.verified_sha == needs.publish-needed.outputs.target_sha &&
       (needs.client-tests.result == 'success' ||
        (needs.client-tests.result == 'skipped' &&
         needs.publish-needed.outputs.tests_proven == 'true'))
@@ -671,7 +672,7 @@ jobs:
       actions: read
     outputs:
       verdict: ${{ steps.verdict.outputs.verdict }}
-      verified: ${{ steps.verify.outputs.verified }}
+      verified_sha: ${{ steps.verified.outputs.sha }}
     env:
       ORIGIN_HOST: ${{ secrets.CA_ORIGIN_HOST }}
       ORIGIN_USER: ci
@@ -1244,7 +1245,7 @@ jobs:
 
       - name: Verify the origin serves this bundle
         if: steps.verdict.outputs.verdict == 'publish'
-        id: verify
+        id: verified
         run: |
           set -euo pipefail
           SHA="${{ steps.verdict.outputs.ours }}"
@@ -1267,7 +1268,7 @@ jobs:
             fi
             if [ "$LIVE_ORIGIN" = "$SHA" ] && [ "$LIVE_PUBLIC" = "$SHA" ]; then
               echo "origin and player route serve ${SHA:0:7}"
-              echo 'verified=true' >> "$GITHUB_OUTPUT"
+              echo "sha=$SHA" >> "$GITHUB_OUTPUT"
               echo "### Published" >> "$GITHUB_STEP_SUMMARY"
               echo "\`${SHA:0:7}\` is live through the Club Arena origin and the player route." >> "$GITHUB_STEP_SUMMARY"
               exit 0

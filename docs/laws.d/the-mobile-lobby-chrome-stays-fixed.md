@@ -14,7 +14,12 @@ edit undoes silently, so this asserts the count line is centred on the painted
 title at 54.65% with room for any real count and never says Loading, that the count is
 published from a layout effect BEFORE the loading skeleton returns (it comes
 from the viewer's role, not from their money, so a dropped connection cannot
-strand it), that the sort row is sticky at the deck's measured height, and that
+strand it), that the page never resets that count itself (2026-09-10: its
+club-change effect zeroed the state in the same commit the wallet published
+it, a child's effects run before its parent's, so the plate was wiped on every
+load from the day the count shipped - which is what the photographed
+placeholder, and then an empty bay, actually were), that the sort row is
+sticky at the deck's measured height, and that
 the footer strip is CLOSED rather than covered - a black skirt was written
 first and thrown away, because `footer-clearance.test.ts` forbids an opaque
 backdrop there under Dan's 2026-09-04 clipping rule.

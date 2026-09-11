@@ -38,6 +38,38 @@ describe('the provisioner judges a node_modules by its payload', () => {
     expect(code).toContain('bash "$ROOT/scripts/check-node-modules.sh"');
   });
 
+  /**
+   * USABLE IS NOT CURRENT (2026-09-10). The Club Arena main clone sat 25
+   * commits behind origin/main; its install matched its own old lockfile and
+   * passed every test above, and every tree cut from origin/main that day came
+   * up with tsc failing on a package the tree's lockfile named and the clone's
+   * did not. The donor search compared candidates against the main clone's
+   * lockfile - the stale one - so it could never help. The reference is the
+   * lockfile the TREE will run with, for the source and for every donor.
+   */
+  it("judges an install against the tree's own lockfile, not the main clone's", () => {
+    expect(code).toMatch(/^node_modules_matches_lockfile\(\) \{/m);
+    // npm's own record of what it installed is what is compared...
+    expect(code).toContain('.package-lock.json');
+    // ...against the lockfile of the tree being provisioned, source and donor alike.
+    expect(code).toContain(
+      'node_modules_matches_lockfile "$src/node_modules" "$dst/package-lock.json"'
+    );
+    expect(code).toContain('local lock="$DIR${rel:+/$rel}/package-lock.json"');
+    expect(code).toContain('node_modules_matches_lockfile "$nm" "$lock" || continue');
+    // Optional platform packages are empty by design and must not count.
+    expect(code).toContain('v.optional) continue');
+  });
+
+  it('finishes a clone that does not satisfy the lockfile with npm ci in the tree itself', () => {
+    expect(code).toContain(
+      'node_modules_matches_lockfile "$dst/node_modules" "$dst/package-lock.json"'
+    );
+    expect(code).toContain('npm ci --no-audit --no-fund');
+    // In the TREE, never the main clone: `cd "$dst"` precedes it.
+    expect(code).toMatch(/\(cd "\$dst" && npm ci --no-audit --no-fund/);
+  });
+
   it('still calls the repair script this repo actually has', () => {
     // Invoked as `bash <path>`, so the mode does not decide whether it
     // runs: what matters is that the file the provisioner names exists.

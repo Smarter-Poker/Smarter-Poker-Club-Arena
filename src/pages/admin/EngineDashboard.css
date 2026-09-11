@@ -151,7 +151,10 @@
   box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
 }
 .btn-secondary {
-  background: rgba(255, 255, 255, 0.1);
+  /* Disabled state on this admin control: a muted dark fill, not white glass
+     (Dan 2026-09-10). This unscoped .btn-secondary only loads with the engine
+     dashboard, so it overrode the shared gunmetal here alone. */
+  background: linear-gradient(180deg, #20252c 0%, #161a20 100%);
   color: #94a3b8;
   cursor: not-allowed;
 }

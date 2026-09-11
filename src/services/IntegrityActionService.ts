@@ -72,7 +72,7 @@ export async function adminRemovePlayerFromTable(
 export async function liveSeatTableIds(clubUUID: string, userId: string): Promise<string[]> {
   const { data, error } = await supabase
     .from('table_seats')
-    .select('table_id, tables!inner(club_id)')
+    .select('table_id, tables!table_seats_table_id_fkey!inner(club_id)')
     .eq('user_id', userId)
     .is('left_at', null)
     .eq('tables.club_id', clubUUID);

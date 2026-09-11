@@ -149,8 +149,9 @@ describe('the escalated level is safe to write to the database', () => {
     expect(lvl.ante).toBe(0);
   });
 
-  it('keeps a level at least two minutes long', () => {
-    expect(escalatedBlindLevel(LAST, 11, LEN, 0.5).durationMinutes).toBe(2);
+  it('keeps the supplied positive duration, including short advertised levels', () => {
+    expect(escalatedBlindLevel(LAST, 11, LEN, 0.5).durationMinutes).toBe(0.5);
+    expect(escalatedBlindLevel(LAST, 11, LEN, 1).durationMinutes).toBe(1);
     expect(escalatedBlindLevel(LAST, 11, LEN, 7).durationMinutes).toBe(7);
   });
 });

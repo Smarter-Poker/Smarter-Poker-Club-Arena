@@ -2018,7 +2018,10 @@ sys.exit(int(os.environ.get('FAKE_GIT_ARCHIVE_FAILURE', '0')))
     } finally {
       rmSync(sandbox, { recursive: true, force: true });
     }
-  });
+  }, // Builds a repository sandbox and runs the real image builder, so it is
+  // subprocess-bound like the provenance case above; it timed out at 5046ms in
+  // a loaded full-suite run with every assertion holding. Budget, not behaviour.
+  15_000);
 
   it('revalidates restart authority under the shared lock and starts in that same shell', () => {
     const releaseLoop = transaction.indexOf(

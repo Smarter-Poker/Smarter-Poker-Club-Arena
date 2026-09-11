@@ -455,6 +455,7 @@ import { bountyWinnersOf } from '../utils/bountyBroadcast';
 import { formatPopupText } from '../utils/popupStyle';
 import { ActionErrorToast, ActionErrorData } from '../components/table/ActionErrorToast';
 import { TableModalsLayer } from '../components/table/TableModalsLayer';
+import { MastheadGameLine } from '../components/table/MastheadGameLine';
 import { MysteryBountyService, playerTotalsFromAwards } from '../services/MysteryBountyService';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -12450,7 +12451,10 @@ export default function TablePage({
                 if (live) {
                   const { count, error: seatCountErr } = await supabase
                     .from('table_seats')
-                    .select('id, tables!inner(tournament_id)', { count: 'exact', head: true })
+                    .select('id, tables!table_seats_table_id_fkey!inner(tournament_id)', {
+                      count: 'exact',
+                      head: true,
+                    })
                     .eq('user_id', userId)
                     .eq('tables.tournament_id', table.tournament_id)
                     .is('left_at', null);
@@ -15231,6 +15235,21 @@ export default function TablePage({
        * of the deal until the other table finishes its hand.
        */
       case 'SEAT_MOVE_HELD': {
+        const d = evt.data as { user_id?: string; message?: string };
+        setClusterRefreshKey((k) => k + 1);
+        if (d?.user_id !== userId || !d?.message) break;
+        toast.info(d.message);
+        break;
+      }
+      /**
+       * THE MOVE THEY WERE PROMISED DID NOT HAPPEN (2026-09-09, must-move
+       * audit). The seat filled, the table closed, or the swap partner went.
+       * Until this existed the corner notice simply vanished at the next
+       * lobby poll and the player was left in a chair they had been told they
+       * were leaving, with no explanation. They keep that chair; the engine
+       * writes the sentence and this shows it to the one player it is about.
+       */
+      case 'SEAT_MOVE_CANCELLED': {
         const d = evt.data as { user_id?: string; message?: string };
         setClusterRefreshKey((k) => k + 1);
         if (d?.user_id !== userId || !d?.message) break;
@@ -22941,13 +22960,21 @@ export default function TablePage({
                               it either blind would be a lie and it prints
                               "+ Ante". If SB antes are a real format here they
                               need a column before they can be a label. */}
+                          {/* THE LINE FITS ITS BOX (audit 2026-09-09). The
+                              10.5cqw size above was measured for "NLH
+                              0.10/0.25" alone; with the style in front and the
+                              ante behind, a 375px phone ellipsized this row to
+                              "MADNESS NLH 1/..." - the stakes gone. The span
+                              measures itself and scales down to fit, and wraps
+                              at the floor rather than cutting the stakes off.
+                              See MastheadGameLine. */}
                           <span className="table-brand__line table-brand__line--level">
-                            <span className="table-brand__game">
+                            <MastheadGameLine className="table-brand__game">
                               {tableState.gameStyle ? `${tableState.gameStyle} ` : ''}
                               {gameShort} {tableState.blinds || '1/2'}
                               {tableState.ante > 0 &&
                                 (tableState.anteMode === 'big_blind' ? ' + BB Ante' : ' + Ante')}
-                            </span>
+                            </MastheadGameLine>
                           </span>
                           {/* \u2500\u2500 LINE 3: THE ONE HOUSE RULE THAT CHANGES PLAY \u2500
                               Dan 2026-09-07, 7C: "YOU HAVE WEIRD TEXT WHERE
@@ -26283,11 +26310,13 @@ export default function TablePage({
         />
       )}
 
-      {/* THE TOURNAMENT LOBBY, ON THE FELT (Dan 2026-08-28). Opened by the
-          upper-right button on every tournament — MTT, Spin, SNG and heads-up
-          alike, since `isTournament` is one test covering all of them. Mounted
-          only while open, so a cash table pays nothing for it and the lobby's
-          own realtime subscriptions do not exist until somebody asks. */}
+      {/* THE MUST MOVE LOBBY, ON THE FELT (Dan 2026-09-05). Opened by the
+          LOBBY button in the action pill row (over the bus, above) and by the
+          SEAT CHANGE / listed / waitlist buttons in the corner. Always mounted;
+          it renders nothing and runs no poll while closed, and it goes to the
+          table the game door names through the same handler the corner uses -
+          the tab is re-pointed when embedded, the page navigates when not.
+          (This comment used to describe the tournament lobby below it.) */}
       <MustMoveLobbyModal
         isOpen={showMustMoveLobby}
         gameId={tableState.clusterId}
@@ -26302,6 +26331,11 @@ export default function TablePage({
           navigate(`/table/${dest}`);
         }}
       />
+      {/* THE TOURNAMENT LOBBY, ON THE FELT (Dan 2026-08-28). Opened by the
+          upper-right button on every tournament - MTT, Spin, SNG and heads-up
+          alike, since `isTournament` is one test covering all of them. Mounted
+          only while open, so a cash table pays nothing for it and the lobby's
+          own realtime subscriptions do not exist until somebody asks. */}
       <TournamentLobbyModal
         isOpen={showTournamentLobby}
         tournamentId={tableState.tournamentId}

@@ -1,4 +1,4 @@
-import { AsyncLocalStorage } from 'node:async_hooks';
+import { AsyncLocalStorage, AsyncResource } from 'node:async_hooks';
 
 /**
  * The server uses one service-role Supabase client.  The database still needs
@@ -30,6 +30,33 @@ interface TournamentManagerActorContext {
 
 const tournamentManagerActor = new AsyncLocalStorage<TournamentManagerActorContext>();
 const boundAuthority = Symbol('smarter.tournament-data-authority');
+
+/**
+ * THE PROCESS'S OWN SCOPE (2026-09-11). Captured here, in the same module
+ * evaluation that creates the manager store above, so it provably carries no
+ * tournament authority: nothing can have entered that store yet.
+ *
+ * A process-wide timer that is started LAZILY - by the first table engine, the
+ * first settled hand - inherits the async context of whatever started it, and
+ * AsyncLocalStorage rides on that context. When that was a tournament manager,
+ * every later tick, for every table on the box, ran inside that one
+ * tournament's authority: on the 01:55 restart the deadline scheduler's single
+ * interval did exactly that, and 561 tournament tables zombie-looped on
+ * "Tournament data authority cannot be rebound inside another manager
+ * context" while cash callbacks quietly sent that tournament's headers.
+ *
+ * Bind such a timer's callback here and it runs as the process, whoever
+ * happened to start it; each bound engine or manager method still enters its
+ * own authority, exactly as it does from a socket.
+ */
+const processRootScope = new AsyncResource('smarter.process-root');
+
+/** Run `work`, whenever it is called, outside every tournament authority. */
+export function bindToProcessRoot<Args extends unknown[], Result>(
+  work: (...args: Args) => Result
+): (...args: Args) => Result {
+  return processRootScope.bind(work) as (...args: Args) => Result;
+}
 
 type Materialized<Result> = Result extends PromiseLike<infer Value> ? Promise<Value> : Result;
 

@@ -1,0 +1,50 @@
+
+[1m[30m[46m RUN [49m[39m[22m [36mv4.1.11 [39m[90m/Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-rakeback-maturity-ui-sep11[39m
+
+ [32m✓[39m tests/definer-authorization-gate.test.ts[2m > [22mthe checker catches the shape that shipped[2m > [22mflags a DEFINER writer with no grant statement at all[32m 1[2mms[22m[39m
+ [32m✓[39m tests/definer-authorization-gate.test.ts[2m > [22mthe checker catches the shape that shipped[2m > [22mclears it once it is revoked from PUBLIC, anon and authenticated[32m 0[2mms[22m[39m
+ [32m✓[39m tests/definer-authorization-gate.test.ts[2m > [22mthe checker catches the shape that shipped[2m > [22mstill flags it when only PUBLIC is revoked and authenticated keeps a grant[32m 0[2mms[22m[39m
+ [32m✓[39m tests/definer-authorization-gate.test.ts[2m > [22mthe checker catches the shape that shipped[2m > [22mmodels the live Supabase role-specific defaults before any explicit grant[32m 0[2mms[22m[39m
+ [32m✓[39m tests/definer-authorization-gate.test.ts[2m > [22mthe checker does not cry wolf[2m > [22maccepts a writer that derives its actor from the request[32m 0[2mms[22m[39m
+ [32m✓[39m tests/definer-authorization-gate.test.ts[2m > [22mthe checker does not cry wolf[2m > [22mis not satisfied by a comment that merely names auth.uid()[32m 0[2mms[22m[39m
+ [32m✓[39m tests/definer-authorization-gate.test.ts[2m > [22mthe checker does not cry wolf[2m > [22mignores trigger functions, which cannot be invoked as an RPC[32m 0[2mms[22m[39m
+ [32m✓[39m tests/definer-authorization-gate.test.ts[2m > [22mthe checker does not cry wolf[2m > [22mignores a DEFINER function that only reads[32m 0[2mms[22m[39m
+ [32m✓[39m tests/definer-authorization-gate.test.ts[2m > [22mthe checker does not cry wolf[2m > [22mhonours the allowlist[32m 0[2mms[22m[39m
+ [32m✓[39m tests/definer-authorization-gate.test.ts[2m > [22mthe allowlist stays small and reasoned[2m > [22mholds only the two functions that were read line by line[32m 0[2mms[22m[39m
+ [32m✓[39m tests/definer-authorization-gate.test.ts[2m > [22mthe allowlist stays small and reasoned[2m > [22mgives every entry a reason long enough to be a reason[32m 0[2mms[22m[39m
+ [32m✓[39m tests/definer-authorization-gate.test.ts[2m > [22ma new definer that answers a caller with no account[2m > [22mfails when the migration writes no GRANT at all — the shape all three shipped as[32m 0[2mms[22m[39m
+ [32m✓[39m tests/definer-authorization-gate.test.ts[2m > [22ma new definer that answers a caller with no account[2m > [22mfails a revoke from anon alone, because anon inherits PUBLIC[32m 0[2mms[22m[39m
+ [32m✓[39m tests/definer-authorization-gate.test.ts[2m > [22ma new definer that answers a caller with no account[2m > [22mpasses once PUBLIC, anon and authenticated are all named[32m 0[2mms[22m[39m
+ [32m✓[39m tests/definer-authorization-gate.test.ts[2m > [22ma new definer that answers a caller with no account[2m > [22mstill sees the live anon default after a PUBLIC-only revoke[32m 0[2mms[22m[39m
+ [32m✓[39m tests/definer-authorization-gate.test.ts[2m > [22ma new definer that answers a caller with no account[2m > [22mpasses a read kept for logged-in players: this rule guards the pre-login roles only[32m 0[2mms[22m[39m
+ [32m✓[39m tests/definer-authorization-gate.test.ts[2m > [22ma new definer that answers a caller with no account[2m > [22mpasses a function that asks who is calling[32m 0[2mms[22m[39m
+ [32m✓[39m tests/definer-authorization-gate.test.ts[2m > [22ma new definer that answers a caller with no account[2m > [22mpasses a trigger function, which cannot be reached as an RPC[32m 0[2mms[22m[39m
+ [32m✓[39m tests/definer-authorization-gate.test.ts[2m > [22ma new definer that answers a caller with no account[2m > [22mpasses deliberate public surface once somebody writes down why[32m 0[2mms[22m[39m
+ [32m✓[39m tests/definer-authorization-gate.test.ts[2m > [22ma new definer that answers a caller with no account[2m > [22mdoes not fire on a migration that only revokes — the fix must not fail its own gate[32m 0[2mms[22m[39m
+ [32m✓[39m tests/definer-authorization-gate.test.ts[2m > [22ma new definer that answers a caller with no account[2m > [22msees a REVOKE that lands in a sibling migration of the same branch[32m 0[2mms[22m[39m
+ [32m✓[39m tests/definer-authorization-gate.test.ts[2m > [22ma new definer that answers a caller with no account[2m > [22mapplies the same branch-wide reading to the writer rule[32m 0[2mms[22m[39m
+ [32m✓[39m tests/definer-authorization-gate.test.ts[2m > [22ma new definer that answers a caller with no account[2m > [22mstarts with an empty anonPublicSurface, so the first entry costs a decision[32m 0[2mms[22m[39m
+ [32m✓[39m tests/definer-authorization-gate.test.ts[2m > [22mthe gate is actually wired to something[2m > [22mruns in CI as a blocking step[32m 1[2mms[22m[39m
+ [32m✓[39m tests/definer-authorization-gate.test.ts[2m > [22mthe gate is actually wired to something[2m > [22mruns on pre-push, because branch protection is unavailable on a private repo[32m 1[2mms[22m[39m
+ [32m✓[39m tests/definer-authorization-gate.test.ts[2m > [22ma function cloned into a new name is judged like a new function[2m > [22mtells the clone target from the function being copied[32m 1[2mms[22m[39m
+ [32m✓[39m tests/definer-authorization-gate.test.ts[2m > [22ma function cloned into a new name is judged like a new function[2m > [22mnames the one clone that migration left open, and only that one[32m 1[2mms[22m[39m
+ [32m✓[39m tests/definer-authorization-gate.test.ts[2m > [22ma function cloned into a new name is judged like a new function[2m > [22mclears it once the revoke it was missing is present[32m 0[2mms[22m[39m
+ [32m✓[39m tests/definer-authorization-gate.test.ts[2m > [22ma function cloned into a new name is judged like a new function[2m > [22mis not satisfied by revoking authenticated while PUBLIC still holds it[32m 0[2mms[22m[39m
+ [32m✓[39m tests/definer-authorization-gate.test.ts[2m > [22ma function cloned into a new name is judged like a new function[2m > [22mhas no auth.uid() exemption, because the body is not in the file[32m 0[2mms[22m[39m
+ [32m✓[39m tests/definer-authorization-gate.test.ts[2m > [22ma function cloned into a new name is judged like a new function[2m > [22maccepts a written decision instead, like the other two rules[32m 0[2mms[22m[39m
+ [32m✓[39m tests/definer-authorization-gate.test.ts[2m > [22ma grant statement cannot be read across a semicolon[2m > [22mdoes not let a stray verb in a string relabel the next statement[32m 0[2mms[22m[39m
+ [32m✓[39m tests/definer-authorization-gate.test.ts[2m > [22ma roster nobody can be scoped out of[2m > [22mnames the function that shipped, in the shape it shipped in[32m 0[2mms[22m[39m
+ [32m✓[39m tests/definer-authorization-gate.test.ts[2m > [22ma roster nobody can be scoped out of[2m > [22mclears it once the migration that closes it is read alongside[32m 0[2mms[22m[39m
+ [32m✓[39m tests/definer-authorization-gate.test.ts[2m > [22ma roster nobody can be scoped out of[2m > [22mis not satisfied by revoking the browser roles while PUBLIC still holds it[32m 0[2mms[22m[39m
+ [32m✓[39m tests/definer-authorization-gate.test.ts[2m > [22ma roster nobody can be scoped out of[2m > [22mpasses a roster the function scopes to its caller itself[32m 0[2mms[22m[39m
+ [32m✓[39m tests/definer-authorization-gate.test.ts[2m > [22ma roster nobody can be scoped out of[2m > [22mpasses a function that takes an argument, because an argument can be scoped[32m 0[2mms[22m[39m
+ [32m✓[39m tests/definer-authorization-gate.test.ts[2m > [22ma roster nobody can be scoped out of[2m > [22mpasses a parameterless definer that returns a scalar[32m 0[2mms[22m[39m
+ [32m✓[39m tests/definer-authorization-gate.test.ts[2m > [22ma roster nobody can be scoped out of[2m > [22mcatches the SETOF form as well as TABLE([32m 0[2mms[22m[39m
+ [32m✓[39m tests/definer-authorization-gate.test.ts[2m > [22ma roster nobody can be scoped out of[2m > [22mpasses SECURITY INVOKER, which RLS still applies to[32m 0[2mms[22m[39m
+ [32m✓[39m tests/definer-authorization-gate.test.ts[2m > [22ma roster nobody can be scoped out of[2m > [22maccepts a written decision, like the three rules above it[32m 0[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m41 passed[39m[22m[90m (41)[39m
+[2m   Start at [22m 03:19:02
+[2m   Duration [22m 890ms[2m (transform 51ms, setup 270ms, import 14ms, tests 22ms, environment 441ms)[22m
+

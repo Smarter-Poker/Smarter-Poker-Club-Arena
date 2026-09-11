@@ -156,6 +156,74 @@ describe('useCoalescedRefresh re-reads on a floor, not on an event', () => {
     act(() => void vi.advanceTimersByTime(60_000));
     expect(refresh).toHaveBeenCalledTimes(1);
   });
+
+  it('defers an already queued read when the tab becomes hidden', () => {
+    const refresh = vi.fn();
+    const spy = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+    const { result } = renderHook(() => useCoalescedRefresh(refresh));
+    act(() => {
+      result.current.request();
+      result.current.request();
+    });
+    spy.mockReturnValue('hidden');
+    act(() => void document.dispatchEvent(new Event('visibilitychange')));
+    act(() => void vi.advanceTimersByTime(60_000));
+    expect(refresh).toHaveBeenCalledTimes(1);
+    spy.mockReturnValue('visible');
+    act(() => void document.dispatchEvent(new Event('visibilitychange')));
+    expect(refresh).toHaveBeenCalledTimes(2);
+    act(() => void vi.advanceTimersByTime(60_000));
+    expect(refresh).toHaveBeenCalledTimes(2);
+    spy.mockRestore();
+  });
+
+  it('catches up immediately even when returning before the queued deadline', () => {
+    const refresh = vi.fn();
+    const spy = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+    const { result } = renderHook(() => useCoalescedRefresh(refresh));
+    act(() => {
+      result.current.request();
+      result.current.request();
+    });
+    spy.mockReturnValue('hidden');
+    act(() => void document.dispatchEvent(new Event('visibilitychange')));
+    act(() => void vi.advanceTimersByTime(1000));
+    spy.mockReturnValue('visible');
+    act(() => void document.dispatchEvent(new Event('visibilitychange')));
+    expect(refresh).toHaveBeenCalledTimes(2);
+    act(() => void vi.advanceTimersByTime(20_000));
+    expect(refresh).toHaveBeenCalledTimes(2);
+    spy.mockRestore();
+  });
+
+  it('rechecks visibility at the deadline even if the browser delayed its event', () => {
+    const refresh = vi.fn();
+    const spy = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+    const { result } = renderHook(() => useCoalescedRefresh(refresh));
+    act(() => {
+      result.current.request();
+      result.current.request();
+    });
+    spy.mockReturnValue('hidden');
+    act(() => void vi.advanceTimersByTime(20_000));
+    expect(refresh).toHaveBeenCalledTimes(1);
+    spy.mockReturnValue('visible');
+    act(() => void document.dispatchEvent(new Event('visibilitychange')));
+    expect(refresh).toHaveBeenCalledTimes(2);
+    spy.mockRestore();
+  });
+
+  it('does not rearm a timer from a callback retained after unmount', () => {
+    const refresh = vi.fn();
+    const { result, unmount } = renderHook(() => useCoalescedRefresh(refresh));
+    const request = result.current.request;
+    act(() => request());
+    unmount();
+    const timers = vi.getTimerCount();
+    act(() => request());
+    expect(vi.getTimerCount()).toBe(timers);
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
 });
 
 /**

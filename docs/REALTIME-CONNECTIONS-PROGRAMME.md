@@ -10,6 +10,12 @@ for source identities, production evidence and the remaining engine/device/log
 acceptance. The historical receipts below remain intact; this is not a claim
 that the full programme is certified complete.
 
+The September 11 closeout audit repairs hidden-tab refresh delivery and ticker
+account/read ownership. Its scope and regression evidence are recorded in
+`docs/changelog/2026-09-11-realtime-refresh-recovery-closeout.md`. Publication is
+verified through the associated PR release receipt. The engine, natural-event,
+physical-device and detailed-log gates remain open.
+
 ## Built-In Execution Standard (September 9, 2026)
 
 Significant Club Arena work must have a built-in server owner and durable
@@ -138,6 +144,10 @@ not lost: Log Out scope (global today; local by default with an explicit
 "Sign Out Everywhere" is the usual shape); Supabase JWT expiry (7 days
 today; 1 hour surfaces a revoked session within the hour); a second engine
 upstream (the standby was collapsed on 2026-08-23 and there is no failover).
+
+The final entry-read audit also repairs Daily Bonus host and account lifetime.
+See `docs/changelog/2026-09-11-daily-bonus-entry-read-lifetime.md` for the seven
+reproduced regressions and the unchanged wider acceptance gates.
 
 ## Found during Phase 1: the alert rules on the box are not the ones in this repo
 

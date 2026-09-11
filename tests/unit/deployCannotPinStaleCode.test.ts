@@ -145,3 +145,20 @@ describe('there is no bypass around current restart authority', () => {
     );
   });
 });
+
+/**
+ * THE ONE-BUILD EXCEPTION IS SPENT (2026-09-11).
+ *
+ * Dan approved replacing build 404948b3 without a readyForRestart certificate
+ * because its frozen tables could never park (#4235). It was used once, at the
+ * 06:55 break, and removed. An exception that outlives its build is a force
+ * input with a longer name, so it may not come back quietly: the next frozen
+ * build must earn its certificate (a frozen hand is reaped and re-parked inside
+ * the break), or be put in front of Dan again.
+ */
+describe('the one frozen-build exception is spent', () => {
+  it('names no build and has no expiry left', () => {
+    expect(WF).not.toMatch(/FROZEN_BUILD_OVERRIDE/);
+    expect(WF).not.toMatch(/frozen_override/);
+  });
+});

@@ -1,0 +1,24 @@
+{
+  "reviewer": "/root/satellite_closeout",
+  "scope": "Read-only independent SQL and native-evidence review, no duplicate tests or production actions",
+  "result": "No bounded source or proof blocker",
+  "entrypoint_sha256": "a55e792f12040799a20fcf6d54969059efecaea3869c3aa148191fe1b083c4c7",
+  "source_hashes_checked": 12,
+  "groups_checked": {
+    "duplicate": 19,
+    "first_install_partial": 2,
+    "first_install_all": 1
+  },
+  "observations": [
+    "Exact atomic entrypoint preserves 01 and 02 statements while replacing transaction wrappers.",
+    "Both first-install overlap proofs start with guards absent and apply exact bytes while the original public frame waits.",
+    "Blocked installation rolls back every owner/helper/trigger change.",
+    "Existing owner/ACL sets preserved; original funding paths and receipt links reconcile with zero net suspense."
+  ],
+  "limits": [
+    "Old claim/new weekly lock inversion may produce 40P01 requiring retry.",
+    "Malformed legacy receipt basis requires explicit repair; no live census.",
+    "UTC fixtures test timezone equivalence and closed UTC-yesterday dates, not a real midnight wait.",
+    "No production SQL activation or live browser/API validation."
+  ]
+}

@@ -135,7 +135,7 @@ const BASELINE = new Map<string, number>([
   ['src/pages/FlashPoolPage.tsx', 0],
   ['src/pages/CreditAdminPanel.tsx', 1],
   ['src/pages/ClubAnnouncementsPage.tsx', 1],
-  ['src/components/tournament/TournamentStartingTicker.tsx', 2],
+  ['src/components/tournament/TournamentStartingTicker.tsx', 0],
   ['src/components/social/OnlineFriendsPill.tsx', 2],
   ['src/components/social/FriendListPanel.tsx', 1],
   ['src/components/gameplay/PlayerNotesPanel.tsx', 1],

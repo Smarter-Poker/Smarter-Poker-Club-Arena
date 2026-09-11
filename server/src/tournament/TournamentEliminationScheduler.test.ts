@@ -210,6 +210,58 @@ describe('TournamentEliminationScheduler', () => {
     scheduler.stop();
   });
 
+  it('an urgent upgrade leaves no stale routine reference for a rerun to jump the queue with', async () => {
+    // 2026-09-11. The upgrade used to leave A's old routine reference at the
+    // head. After A's urgent sweep ran, a routine rerun queued A as routine
+    // again and that old reference was valid once more: A ran twice before B
+    // and C, which had been waiting all along (X, A, A, B, C). A coalesced
+    // rerun belongs at the tail.
+    vi.useFakeTimers();
+    const scheduler = new TournamentEliminationScheduler({
+      maxConcurrent: 1,
+      sweepWarnMs: 0,
+      startTimers: false,
+    });
+    const order: string[] = [];
+    const gates = new Map<string, () => void>();
+    const run = (id: string, holds: number) => {
+      let calls = 0;
+      return async () => {
+        order.push(id);
+        if (calls++ < holds) await new Promise<void>((resolve) => gates.set(id, resolve));
+      };
+    };
+    const settle = async (): Promise<void> => {
+      for (let turn = 0; turn < 10; turn++) await flush();
+    };
+
+    // X holds the only slot; A, B and C wait behind it as routine.
+    scheduler.register({ tournamentId: 'X', run: run('X', 1) });
+    await flush();
+    scheduler.register({ tournamentId: 'A', run: run('A', 1) });
+    scheduler.register({ tournamentId: 'B', run: run('B', 0) });
+    scheduler.register({ tournamentId: 'C', run: run('C', 0) });
+    await flush();
+    expect(order).toEqual(['X']);
+
+    // A bust at A upgrades it in place, so A runs next, ahead of B and C.
+    scheduler.wakeUrgentAfter('A', 0);
+    await vi.advanceTimersByTimeAsync(0);
+    gates.get('X')!();
+    await settle();
+    expect(order).toEqual(['X', 'A']);
+
+    // While A runs, a routine feature wake marks it for one coalesced rerun.
+    scheduler.wakeAfter('A', 0);
+    await vi.advanceTimersByTimeAsync(0);
+    gates.get('A')!();
+    await settle();
+
+    expect(order).toEqual(['X', 'A', 'B', 'C', 'A']);
+    expect(scheduler.snapshot()).toMatchObject({ queued: 0, running: 0 });
+    scheduler.stop();
+  });
+
   it('admits a delayed unresolved bust ahead of a loaded routine causal backlog', async () => {
     vi.useFakeTimers();
     const scheduler = new TournamentEliminationScheduler({
@@ -244,6 +296,144 @@ describe('TournamentEliminationScheduler', () => {
     releaseBlocker();
     await flush();
     expect(order[1]).toBe('unresolved-bust');
+    scheduler.stop();
+  });
+
+  /**
+   * An urgent wake is a promotion, never a demotion (2026-09-11).
+   *
+   * After the 06:57 boot of c58dfafd about 350 events kept the urgent lane
+   * full, and a wake for an event already waiting in the routine lane pushed
+   * it onto the tail of that urgent lane, orphaning the routine place it had
+   * almost reached. The oldest-wait gauge climbed from 49 s to 1,470 s while
+   * routine work queued after it was served. The shape here is that
+   * incident in miniature: twelve events with urgent work, one routine event
+   * that has waited longest, one that arrived after it.
+   */
+  it('an urgent wake keeps the routine place a waiting tournament already holds', async () => {
+    vi.useFakeTimers();
+    const scheduler = new TournamentEliminationScheduler({
+      maxConcurrent: 1,
+      sweepWarnMs: 0,
+      urgentBurst: 3,
+      startTimers: false,
+    });
+    const order: string[] = [];
+    for (let i = 0; i < 12; i++) {
+      scheduler.register({
+        tournamentId: `busy-${i}`,
+        run: async () => void order.push(`busy-${i}`),
+      });
+    }
+    for (
+      let turn = 0;
+      turn < 50 && scheduler.snapshot().queued + scheduler.snapshot().running > 0;
+      turn++
+    ) {
+      await flush();
+    }
+    expect(scheduler.snapshot()).toMatchObject({ queued: 0, running: 0 });
+    order.length = 0;
+
+    let releaseBlocker!: () => void;
+    scheduler.register({
+      tournamentId: 'blocker',
+      run: async () => {
+        order.push('blocker');
+        await new Promise<void>((resolve) => (releaseBlocker = resolve));
+      },
+    });
+    await flush();
+    scheduler.register({ tournamentId: 'oldest', run: async () => void order.push('oldest') });
+    scheduler.register({ tournamentId: 'newer', run: async () => void order.push('newer') });
+    for (let i = 0; i < 12; i++) scheduler.wake(`busy-${i}`);
+    scheduler.wake('oldest');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(scheduler.snapshot()).toMatchObject({ running: 1, queued: 14 });
+
+    releaseBlocker();
+    for (
+      let turn = 0;
+      turn < 50 && scheduler.snapshot().queued + scheduler.snapshot().running > 0;
+      turn++
+    ) {
+      await flush();
+    }
+
+    // Three urgent turns, then the routine turn - which is the place 'oldest'
+    // was already waiting in. It is served once, not again from the urgent tail.
+    expect(order.slice(0, 5)).toEqual(['blocker', 'busy-0', 'busy-1', 'busy-2', 'oldest']);
+    expect(order.indexOf('oldest')).toBeLessThan(order.indexOf('newer'));
+    expect(order.filter((id) => id === 'oldest')).toHaveLength(1);
+    expect(order).toHaveLength(15);
+    scheduler.stop();
+  });
+
+  it('a place given up by an earlier pass never serves a later one ahead of its peers', async () => {
+    vi.useFakeTimers();
+    const scheduler = new TournamentEliminationScheduler({
+      maxConcurrent: 1,
+      sweepWarnMs: 0,
+      urgentBurst: 3,
+      startTimers: false,
+    });
+    const order: string[] = [];
+    let releaseBlocker!: () => void;
+    let releaseHot!: () => void;
+    scheduler.register({
+      tournamentId: 'blocker',
+      run: async () => {
+        order.push('blocker');
+        await new Promise<void>((resolve) => (releaseBlocker = resolve));
+      },
+    });
+    await flush();
+    scheduler.register({
+      tournamentId: 'hot',
+      run: async () => {
+        order.push('hot');
+        if (order.filter((id) => id === 'hot').length === 1) {
+          await new Promise<void>((resolve) => (releaseHot = resolve));
+        }
+      },
+    });
+    for (let i = 0; i < 5; i++) {
+      scheduler.register({
+        tournamentId: `peer-${i}`,
+        run: async () => void order.push(`peer-${i}`),
+      });
+    }
+    // Upgrade 'hot' while its routine place is at the head of the lane.
+    scheduler.wake('hot');
+    await vi.advanceTimersByTimeAsync(0);
+
+    releaseBlocker();
+    await flush();
+    expect(order).toEqual(['blocker', 'hot']);
+
+    // Routine follow-up work arrives while the pass runs, so the tournament is
+    // queued again - at the TAIL of the routine lane, behind every peer.
+    scheduler.wakeAfter('hot', 0);
+    await vi.advanceTimersByTimeAsync(0);
+    releaseHot();
+    for (
+      let turn = 0;
+      turn < 50 && scheduler.snapshot().queued + scheduler.snapshot().running > 0;
+      turn++
+    ) {
+      await flush();
+    }
+
+    expect(order).toEqual([
+      'blocker',
+      'hot',
+      'peer-0',
+      'peer-1',
+      'peer-2',
+      'peer-3',
+      'peer-4',
+      'hot',
+    ]);
     scheduler.stop();
   });
 

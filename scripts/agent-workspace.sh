@@ -46,6 +46,42 @@ SAFE_AGENT=$(printf '%s' "$AGENT" | tr -c 'A-Za-z0-9._-' '-')
 BRANCH="agent/${SAFE_AGENT}/$(printf '%s' "$SLUG" | sed 's#^agent/[^/]*/##')"
 DIR="$TREES/$SAFE_AGENT"
 
+# ── THE COPY ON DISK IS NOT NECESSARILY THE ESTATE'S (2026-09-11) ───────────
+#
+# This script is invoked from the MAIN CLONE, and the main clone's working tree
+# is not kept current by anything. On 2026-09-11 the Club Arena clone was 624
+# commits behind origin/main with 408 staged entries left over from an
+# abandoned index, and two separate things followed from it in one morning:
+#
+#   1. `./scripts/agent-workspace.sh` was 100644 there and refused to run,
+#      while origin/main has had it 100755 all along.
+#   2. The copy that DID run was the pre-2026-09-10 provisioner, which judges
+#      node_modules against the MAIN CLONE's lockfile instead of the tree's -
+#      the exact bug fixed in #4205 and synced to the Hub in #1735. Every tree
+#      claimed from that clone would have come up short again.
+#
+# The worktree itself was never at risk: it is cut from origin/main a few lines
+# below. The risk is entirely that the LOGIC doing the cutting is old, and an
+# agent has no way to tell - the script prints a confident banner either way.
+#
+# So: fetch, compare this file against origin/main's, and if they differ, hand
+# over to main's copy. The guard variable is what stops that being a loop, and
+# it is set on the exec so a nested invocation inherits it.
+#
+# Deliberately NOT a warning. An agent reading a warning has to decide whether
+# a 624-commit-old provisioner matters, with no information to decide it with.
+git -C "$ROOT" fetch origin main --quiet 2>/dev/null || true
+if [ -z "${AGENT_WORKSPACE_REEXEC:-}" ] && [ -r "$0" ]; then
+  _MAIN_COPY=$(git -C "$ROOT" show origin/main:scripts/agent-workspace.sh 2>/dev/null || true)
+  if [ -n "$_MAIN_COPY" ] && [ "$_MAIN_COPY" != "$(cat "$0")" ]; then
+    _MAIN_SCRIPT=$(mktemp "${TMPDIR:-/tmp}/agent-workspace.XXXXXX")
+    printf '%s\n' "$_MAIN_COPY" > "$_MAIN_SCRIPT"
+    echo "# this copy of agent-workspace.sh differs from origin/main - running main's copy instead" >&2
+    echo "#   (the clone at $ROOT is $(git -C "$ROOT" rev-list --count HEAD..origin/main 2>/dev/null || echo '?') commit(s) behind)" >&2
+    AGENT_WORKSPACE_REEXEC=1 exec bash "$_MAIN_SCRIPT" "$@"
+  fi
+fi
+
 # Share the main clone's dependencies. The alternative is an npm install per
 # tree - minutes each, gigabytes across 47 trees - or a test gate that silently
 # skips, which is how a red test reaches main and blocks the bundle for all.

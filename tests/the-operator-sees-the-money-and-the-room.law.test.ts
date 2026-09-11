@@ -43,6 +43,26 @@ const DIR = resolve(__dirname, '..', 'supabase/migrations');
 const ROOT = resolve(__dirname, '..');
 const files = readdirSync(DIR).filter((f) => f.endsWith('.sql'));
 
+/**
+ * ONE READ OF THE CORPUS PER FILE, NOT ONE PER FUNCTION (2026-09-11).
+ *
+ * supabase/migrations holds 2,917 files and 32MB. inForce has to scan all of
+ * them to find the last declaration of a function, and it was re-reading the
+ * whole corpus for every distinct name, so a law asking about four functions
+ * read 128MB. Under the full suite's parallelism that put this file and about
+ * seventy-five other migration-scanning laws over vitest's 5 second budget:
+ * every one of them a timeout, none of them an assertion failure, all of them
+ * green when run alone. The contents are cached by filename instead.
+ */
+const fileCache = new Map<string, string>();
+function read(f: string): string {
+  const hit = fileCache.get(f);
+  if (hit !== undefined) return hit;
+  const sql = readFileSync(resolve(DIR, f), 'utf8');
+  fileCache.set(f, sql);
+  return sql;
+}
+
 const cache = new Map<string, { name: string; sql: string }>();
 /** The last migration to DECLARE the function is the one in force. */
 function inForce(fn: string): { name: string; sql: string } {
@@ -50,7 +70,7 @@ function inForce(fn: string): { name: string; sql: string } {
   if (hit) return hit;
   const hits = files
     .filter((f) => {
-      const sql = readFileSync(resolve(DIR, f), 'utf8');
+      const sql = read(f);
       return (
         sql.includes(`CREATE OR REPLACE FUNCTION public.${fn}(`) ||
         sql.includes(`CREATE FUNCTION public.${fn}(`)
@@ -59,7 +79,7 @@ function inForce(fn: string): { name: string; sql: string } {
     .sort();
   expect(hits.length, `no migration declares ${fn}`).toBeGreaterThan(0);
   const name = hits[hits.length - 1];
-  const found = { name, sql: readFileSync(resolve(DIR, name), 'utf8') };
+  const found = { name, sql: read(name) };
   cache.set(fn, found);
   return found;
 }

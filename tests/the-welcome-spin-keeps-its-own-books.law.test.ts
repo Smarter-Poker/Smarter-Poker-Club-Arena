@@ -50,7 +50,7 @@ function latest(fragment: string): { name: string; sql: string } {
     .sort()
     .pop();
   expect(name, `no migration named like ${fragment}`).toBeTruthy();
-  return { name: name as string, sql: readFileSync(resolve(DIR, name as string), 'utf8') };
+  return { name: name as string, sql: read(name as string) };
 }
 
 function body(sql: string, fn: string): string {
@@ -77,6 +77,26 @@ function body(sql: string, fn: string): string {
  * function is the one in force, which is exactly how Postgres sees it. A
  * rewrite of any of these functions now has to bring the law with it.
  */
+/**
+ * ONE READ OF THE CORPUS PER FILE, NOT ONE PER FUNCTION (2026-09-11).
+ *
+ * supabase/migrations holds 2,917 files and 32MB, and inForce has to scan all
+ * of them to find the last declaration of a function. Re-reading the corpus per
+ * NAME is what put this file and about seventy-five other migration-scanning
+ * laws over vitest's 5 second budget under the full suite's parallelism: every
+ * one a timeout, none an assertion failure, all green when run alone. The
+ * contents are cached by filename instead, and this file went from 1.3s to
+ * under a tenth of that.
+ */
+const fileCache = new Map<string, string>();
+function read(f: string): string {
+  const hit = fileCache.get(f);
+  if (hit !== undefined) return hit;
+  const sql = readFileSync(resolve(DIR, f), 'utf8');
+  fileCache.set(f, sql);
+  return sql;
+}
+
 const inForceCache = new Map<string, { name: string; sql: string }>();
 function inForce(fn: string): { name: string; sql: string } {
   const hit = inForceCache.get(fn);
@@ -84,7 +104,7 @@ function inForce(fn: string): { name: string; sql: string } {
   const hits = files
     .filter((f) => f.endsWith('.sql'))
     .filter((f) => {
-      const sql = readFileSync(resolve(DIR, f), 'utf8');
+      const sql = read(f);
       return (
         sql.includes(`CREATE OR REPLACE FUNCTION public.${fn}(`) ||
         sql.includes(`CREATE FUNCTION public.${fn}(`)
@@ -93,7 +113,7 @@ function inForce(fn: string): { name: string; sql: string } {
     .sort();
   expect(hits.length, `no migration defines ${fn}`).toBeGreaterThan(0);
   const name = hits[hits.length - 1];
-  const found = { name, sql: readFileSync(resolve(DIR, name), 'utf8') };
+  const found = { name, sql: read(name) };
   inForceCache.set(fn, found);
   return found;
 }

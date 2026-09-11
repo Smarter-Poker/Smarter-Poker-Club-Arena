@@ -122,9 +122,9 @@ END $assert$;
         }
         for route in ["/rpc/process_tournament_rebuy", "/rest/v1/rpc/fn_decline_tournament_rebuy"]:
             check("authenticated", route, {}, "browser")
-            check("anon", route, {}, error="TOURNAMENT_MANAGER_AUTHORITY_REQUIRED")
-            check("service_role", route, {}, error="TOURNAMENT_MANAGER_AUTHORITY_REQUIRED")
-            check("service_role", route, service, error="TOURNAMENT_MANAGER_AUTHORITY_REQUIRED")
+            check("anon", route, {}, error="PLAYER_OR_MANAGER_AUTHORITY_REQUIRED")
+            check("service_role", route, {}, error="PLAYER_OR_MANAGER_AUTHORITY_REQUIRED")
+            check("service_role", route, service, error="PLAYER_OR_MANAGER_AUTHORITY_REQUIRED")
             check("authenticated", route, manager, error="DATA_ACTOR_FORBIDDEN")
             check("service_role", route, manager, "tournament-manager")
         check("authenticated", "/rpc/fn_spin_draw_and_settle_atomic", {},

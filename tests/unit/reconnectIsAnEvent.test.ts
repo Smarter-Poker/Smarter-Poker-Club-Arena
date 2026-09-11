@@ -152,7 +152,9 @@ describe("the player's own facts ride the engine socket (audit items 11 + 12, 20
 
   it('the hook exposes it and TablePage reconciles hole cards and the pre-action from it', () => {
     const hook = strip(read('src/hooks/useEngineTableState.ts'));
-    expect(hook).toMatch(/onUserEvent: \(payload\) => setLastUserEvent\(payload\),/);
+    expect(hook).toMatch(
+      /onUserEvent: \(payload\) => \{\s*if \(clientRef\.current !== client\) return;\s*flushSync\(\(\) => setLastUserEvent\(payload\)\)/
+    );
     expect(hook).toMatch(/lastUserEvent/);
     const page = strip(PAGE);
     expect(page).toMatch(/lastUserEvent: engineLastUserEvent,/);

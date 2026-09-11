@@ -1,3 +1,4 @@
+import type { MaintenanceThawRequest } from './maintenanceThawV3.js';
 /**
  * ═══════════════════════════════════════════════════════════════════════════
  *  A BREAK WITH NO ROW IS STILL A BREAK
@@ -89,6 +90,9 @@ class FakeEngine {
 }
 
 class FakeStore implements MaintenanceBreakStore {
+  async loadReleaseBoundary(): Promise<number | null> {
+    return null;
+  }
   row: PersistedMaintenanceBreak | null = null;
   /** Make load() throw, the way a database at its slowest does at :56. */
   unreadable = false;
@@ -130,8 +134,14 @@ function build(engineCount = 3) {
     isRunning: () => true,
     emit: () => {},
     store,
-    thaw: async (breakStartedAt: number, frozenSeconds: number) => {
-      thaws.push({ breakStartedAt, frozenSeconds });
+    thaw: async (request: MaintenanceThawRequest) => {
+      thaws.push({ breakStartedAt: request.freezeStartedAt, frozenSeconds: request.frozenSeconds });
+      store.row = null; // The synthetic v3 RPC commits the owned deletion.
+      return {
+        ...request,
+        creditedThroughAt: Date.now(),
+        effectiveFrozenSeconds: (Date.now() - request.freezeStartedAt) / 1000,
+      };
     },
     recordOutcome: async () => {},
   } as any);
@@ -212,7 +222,7 @@ describe('an engine that boots inside the window with nothing to adopt', () => {
        is handed, so over-claiming would move every clock on the platform on an
        assumption, on every cold boot inside the window. */
     expect(thaws[0].breakStartedAt).toBe(CUTOVER);
-    expect(thaws[0].frozenSeconds).toBe(Math.round((HOUR - CUTOVER) / 1000));
+    expect(thaws[0].frozenSeconds).toBe((HOUR - CUTOVER) / 1000);
 
     for (const [id, e] of engines) {
       expect(e.paused, `${id} never resumed`).toBe(false);
@@ -356,13 +366,14 @@ describe('a break nobody was alive to end', () => {
     store.row = expiredRow();
 
     await mb.start();
+    await vi.advanceTimersByTimeAsync(1);
 
     // The thaw ran at all - it did not for 14:00, 15:00 or 16:00.
     expect(thaws, 'the frozen minutes were never handed back').toHaveLength(1);
     // Measured from the row's own countdown start to its own end: the freeze
     // that actually happened, not anything derived from this boot instant.
     expect(thaws[0].breakStartedAt).toBe(ABANDONED_START);
-    expect(thaws[0].frozenSeconds).toBe(300);
+    expect(thaws[0].frozenSeconds).toBeCloseTo((LATE_BOOT - ABANDONED_START) / 1000, 2);
 
     // And the platform still comes back: the row goes, nothing stays parked.
     expect(store.row, 'the expired row was left behind').toBeNull();
@@ -371,7 +382,7 @@ describe('a break nobody was alive to end', () => {
     }
   });
 
-  it('still clears the row when the thaw itself fails', async () => {
+  it('retains the owned row when thaw fails', async () => {
     vi.setSystemTime(LATE_BOOT);
     const engines = new Map<string, FakeEngine>();
     engines.set('t0', new FakeEngine());
@@ -389,14 +400,15 @@ describe('a break nobody was alive to end', () => {
     } as any);
 
     await mb.start();
+    await vi.advanceTimersByTimeAsync(1);
 
     /* end() makes the same call for the same reason: five minutes of clock
        drift is a wrong that heals, a platform that stays frozen is not. */
-    expect(store.row, 'a failed thaw stranded the break row').toBeNull();
-    expect(engines.get('t0')!.paused).toBe(false);
+    expect(store.row, 'failed thaw erased the durable freeze').not.toBeNull();
+    expect(engines.get('t0')!.paused).toBe(true);
   });
 
-  it('does not invent a freeze for a last-hand row that never counted down', async () => {
+  it('recovers the scheduled freeze of an expired durable last-hand row', async () => {
     vi.setSystemTime(AT('2026-09-08T16:00:30.000Z'));
     const { mb, store, thaws } = build();
     // Announced, then the engine died before :55. Nothing was ever frozen by a
@@ -404,15 +416,13 @@ describe('a break nobody was alive to end', () => {
     store.row = expiredRow({ phase: 'last_hand', breakStartedAt: null, breakEndsAt: null });
 
     await mb.start();
+    await vi.advanceTimersByTimeAsync(1);
 
-    expect(
-      thaws,
-      'shifted every deadline on the platform for a freeze that never ran'
-    ).toHaveLength(0);
+    expect(thaws, 'the durable scheduled freeze was not recovered').toHaveLength(1);
     expect(store.row).toBeNull();
   });
 
-  it('refuses a freeze longer than fn_thaw_platform will accept', async () => {
+  it('recovers a durable freeze longer than the former 900 second cap', async () => {
     // A skewed clock, or a row from a break that was never bounded. The RPC
     // answers `implausible_frozen_seconds` past 900s; this declines first so
     // the refusal is a log line rather than a silent ok:false.
@@ -422,8 +432,10 @@ describe('a break nobody was alive to end', () => {
     store.row = expiredRow({ breakStartedAt: absurdStart });
 
     await mb.start();
+    await vi.advanceTimersByTimeAsync(1);
 
-    expect(thaws).toHaveLength(0);
+    expect(thaws).toHaveLength(1);
+    expect(thaws[0].frozenSeconds).toBeGreaterThan(900);
     expect(store.row).toBeNull();
   });
 });

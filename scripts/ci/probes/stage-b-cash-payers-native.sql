@@ -9,6 +9,13 @@ DECLARE
 BEGIN
   PERFORM pg_temp.deal_assert(current_setting('session_replication_role')='origin',
     'all financial checks run with native triggers active');
+  v_result:=public.fn_settle_tournament_obligation(
+    '87000000-0000-0000-0000-000000000001','refund',NULL,
+    md5('atomic-deal-user:1')::uuid,1,'stage_b_probe',NULL,NULL);
+  PERFORM pg_temp.deal_assert(
+    v_result->>'refused_reason'='exact_refund_authority_required'
+      AND (v_result->>'ok')::boolean=false,
+    'strict public payer keeps every refund behind exact entitlement authority');
   FOREACH v_kind IN ARRAY ARRAY['place','bubble_protection','final_table_deal',
       'late_reg_adjustment','satellite_remainder','seat']
   LOOP

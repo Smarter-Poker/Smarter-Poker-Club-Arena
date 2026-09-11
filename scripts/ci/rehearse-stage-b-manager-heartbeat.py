@@ -29,6 +29,22 @@ SIGNATURES = [
     'public.heartbeat_tournament_leases_v4(text,jsonb,integer)',
 ]
 
+def exact_migration(migration_name):
+    migration_directory = ROOT / 'supabase/migrations'
+    matches = sorted(
+        path for path in migration_directory.iterdir()
+        if path.is_file() and re.fullmatch(
+            rf'[0-9]{{14}}_{re.escape(migration_name)}\.sql(?:\.pending)?',
+            path.name,
+        )
+    )
+    if len(matches) != 1:
+        raise RuntimeError(
+            f'expected exactly one staged-or-promoted {migration_name} migration; '
+            f'found {len(matches)}'
+        )
+    return matches[0]
+
 def function(source, name):
     match = re.search(r'CREATE (?:OR REPLACE )?FUNCTION '+re.escape(name)+r'\(.*?\bAS\s+(\$\w*\$)(.*?)\1;', source, re.S | re.I)
     if not match:
@@ -86,9 +102,9 @@ def main():
       'takeover':'supabase/migrations/20260908042900_tournament_leases_have_fencing_generations.sql',
       'heartbeat':'supabase/migrations/20260908221010_lease_heartbeats_skip_busy_generations.sql',
       'busy_fix':'supabase/migrations/20260910063559_a_busy_manager_keeps_its_lease.sql',
-      'stage_b':'scripts/deploy/phase-three-strict-tournament-cutover.sql',
+      'stage_b':exact_migration('stage_b_current_postimage_contraction'),
     }
-    src = {k:(ROOT/v).read_text() for k,v in paths.items()}
+    src = {k:((ROOT/v) if isinstance(v, str) else v).read_text() for k,v in paths.items()}
     old = subprocess.check_output(['git','show','be6855907166c49ed5645fe4b351b93415dd0810:scripts/deploy/phase-three-strict-tournament-cutover.sql'],cwd=ROOT,text=True)
     old_hook, old_body = function(old, 'smarter_private.fn_smarter_data_api_pre_request')
     check(hashlib.md5(old_body.encode()).hexdigest() == '6812e4d06b27aa2888c852c93f94dcfd', 'regression source is the prior prepared hook')

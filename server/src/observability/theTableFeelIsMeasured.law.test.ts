@@ -110,9 +110,12 @@ describe('LAW 7 - the clock measures action-to-broadcast, not the gap between ac
   it('the human path arms the clock BEFORE performAction', () => {
     const seg = sliceMethod(turns, 'protected _handlePlayerActionInner');
     const arm = seg.indexOf('this.lastActionAcceptedAtMs = Date.now();');
-    const act = seg.indexOf('const actionApplied = this.handController.performAction(');
+    const measured = seg.indexOf('const actionApplied = EngineTelemetry.measureAcceptedAction(');
+    const act = seg.indexOf('() => this.handController!.performAction(');
     expect(arm).toBeGreaterThan(0);
+    expect(measured).toBeGreaterThan(arm);
     expect(act).toBeGreaterThan(0);
+    expect(act).toBeGreaterThan(measured);
     expect(
       arm,
       'arming must precede performAction, or the sample is the previous action'

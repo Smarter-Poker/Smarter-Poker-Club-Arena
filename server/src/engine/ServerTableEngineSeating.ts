@@ -1,3 +1,4 @@
+import { EngineTelemetry } from './EngineTelemetry.js';
 import { requestSeatDeparture, type AdminDepartureAuthority } from '../services/supabase/seats.js';
 /**
  * ServerTableEngine, layer 2/8 — buy-ins, cash-outs, sit-out/leave, admin locks, BB entry.
@@ -1082,7 +1083,13 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
           if (enginePlayer && !enginePlayer.is_folded && !enginePlayer.is_all_in) {
             let folded = false;
             try {
-              folded = this.handController?.performAction(enginePlayer.seat, 'fold') === true;
+              folded = EngineTelemetry.measureAcceptedAction(
+                this.engineTelemetry,
+                this.tableId,
+                userId,
+                'fold',
+                () => this.handController?.performAction(enginePlayer.seat, 'fold') === true
+              );
               if (folded) {
                 console.log(
                   `[ServerTableEngine:${this.tableId}] Tournament player ${userId} auto-folded on leave`
@@ -1240,7 +1247,13 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
           // moment action reaches them.
           let folded = false;
           try {
-            folded = this.handController?.performAction(enginePlayer.seat, 'fold') === true;
+            folded = EngineTelemetry.measureAcceptedAction(
+              this.engineTelemetry,
+              this.tableId,
+              userId,
+              'fold',
+              () => this.handController?.performAction(enginePlayer.seat, 'fold') === true
+            );
             if (folded) {
               console.log(
                 `[ServerTableEngine:${this.tableId}] Player ${userId} auto-folded on leave`

@@ -10,7 +10,7 @@
 
 import nodeCrypto from 'node:crypto';
 import { UUID_SHAPE as UUID } from '../lib/uuidShape.js';
-import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
+import { isMaintenanceFrozen, onNextMaintenanceThaw } from '../maintenance/freezeState.js';
 import { supabase } from '../services/supabase.js';
 import { raiseFinancialAlert } from '../services/financialAlerts.js';
 import { reportError } from '../services/errorReporter.js';
@@ -132,13 +132,59 @@ class TerminalSettlementCommittedError extends Error {
   }
 }
 
+/** Spread owed work through the existing scheduler after the actual thaw. */
+export function thawPassDelayMs(tournamentId: string, spreadMs: number): number {
+  if (!(spreadMs > 0)) return 0;
+  const head = Number.parseInt(tournamentId.replace(/-/g, '').slice(0, 8), 16);
+  return Number.isFinite(head) ? head % spreadMs : 0;
+}
+
 export abstract class TournamentManagerEliminations extends TournamentManagerBase {
+  private thawPass: { generation: number; cancel: () => void } | null = null;
+  // A thaw wake can resume a cursor already past a frozen stage. Retain the
+  // exact debt until that stage actually runs in a later cycle.
+  private readonly frozenStagesOwed = new Set<number>();
+  static readonly THAW_PASS_SPREAD_MS = 10_000;
+
+  private owePassAfterTheThaw(): void {
+    const lifecycle = this.captureLifecycleToken();
+    if (!lifecycle || !this.lifecycleIsCurrent(lifecycle)) return;
+    if (this.thawPass?.generation === lifecycle.generation) return;
+    this.thawPass?.cancel();
+    const cancel = onNextMaintenanceThaw(() => {
+      this.thawPass = null;
+      if (!this.lifecycleIsCurrent(lifecycle)) return;
+      if (isMaintenanceFrozen()) {
+        this.owePassAfterTheThaw();
+        return;
+      }
+      this.requestUrgentEliminationSweepAfter(
+        thawPassDelayMs(this.tournamentId, TournamentManagerEliminations.THAW_PASS_SPREAD_MS)
+      );
+    }, lifecycle.signal);
+    this.thawPass = { generation: lifecycle.generation, cancel };
+  }
+
   /**
    * Cooperative continuation through the bounded manager work unit. A slow
    * but successful database request advances this cursor before yielding, so
    * the next admission never restarts the same prefix forever.
    */
   private readonly eliminationSweepCursor = new TournamentSweepWorkCursor();
+  /**
+   * A BALANCE IS A DEBT UNTIL IT RUNS (2026-09-11). The balance stage used to
+   * be marked complete whether or not `checkTableBalance` had done anything:
+   * it returns without a word when the sweep budget runs out between its
+   * reads, and the stage is skipped outright while the platform is frozen. The
+   * cursor then handed the next admission stage 6, and a field spread one
+   * player per table - no hand to deal, no bust to record - had nothing left
+   * that would ever start another pass. `balanceRetriedThisCycle` allows one
+   * fresh-budget re-entry of the stage per cycle (so an event whose reads can
+   * never fit a budget still records its busts), and `balanceOwedAfterCycle`
+   * asks for a new cycle when even that retry ran out.
+   */
+  private balanceRetriedThisCycle = false;
+  private balanceOwedAfterCycle = false;
   /** Latest level-triggered generation observed for each durable wake identity. */
   private readonly pendingManagerWakeGenerations = new Map<number, number>();
   /**
@@ -1330,6 +1376,19 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           await this.checkTableBalance();
           if (sweepStopped()) return;
 
+          // A balance the budget cut short is re-entered with a fresh budget
+          // (once per cycle), never recorded as done. See balanceRetriedThisCycle.
+          if (this.eliminationWorkBudgetExpired()) {
+            if (!this.balanceRetriedThisCycle) {
+              this.balanceRetriedThisCycle = true;
+              this.requestEliminationSweep();
+              return;
+            }
+            this.balanceOwedAfterCycle = true;
+          }
+
+          if (!this.eliminationWorkBudgetExpired()) this.frozenStagesOwed.delete(5);
+
           // The old five-second manager interval also happened to poll final
           // table deal votes. Preserve the feature's intended ten-second
           // cadence only after table balancing has proved the field is on one
@@ -1348,6 +1407,10 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
             );
             this.requestUrgentEliminationSweepAfter(dueIn);
           }
+        } else {
+          // The skipped stage owes one pass when the actual freeze lifts.
+          this.frozenStagesOwed.add(5);
+          this.owePassAfterTheThaw();
         }
         if (completedStage(6)) return;
       }
@@ -1357,6 +1420,14 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         // FIX 155: Check if new tables need to be created during rebuy/late-reg period
         if (!isMaintenanceFrozen() && !(await this.checkDynamicTableExpansion())) return;
         if (sweepStopped()) return;
+        // The same debt as the balance stage above: an expansion the freeze
+        // skipped is asked for again after the thaw, never dropped.
+        if (isMaintenanceFrozen()) {
+          this.frozenStagesOwed.add(6);
+          this.owePassAfterTheThaw();
+        } else {
+          this.frozenStagesOwed.delete(6);
+        }
         if (completedStage(7)) return;
       }
 
@@ -1557,6 +1628,14 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         if (completedStage(8)) return;
       }
       this.eliminationSweepCursor.reset();
+      this.balanceRetriedThisCycle = false;
+      if (
+        this.balanceOwedAfterCycle ||
+        (!isMaintenanceFrozen() && this.frozenStagesOwed.size > 0)
+      ) {
+        this.balanceOwedAfterCycle = false;
+        this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
+      }
       completedWholeSweep = true;
     } catch (err) {
       reportError(err, 'Tournament.elimination_check_error');

@@ -340,6 +340,8 @@ export type TableLeaseHeartbeatOutcome =
   | {
       status: 'answered';
       proofs: TableLeaseHeartbeatProof[];
+      /** Exact-generation successes whose own conservative window has elapsed. */
+      obsoleteProofs?: TableLeaseHeartbeatProof[];
       lostTableIds: string[];
     }
   | {
@@ -438,6 +440,7 @@ export async function heartbeatTables(
     }
 
     const proofs: TableLeaseHeartbeatProof[] = [];
+    const obsoleteProofs: TableLeaseHeartbeatProof[] = [];
     const lostTableIds: string[] = [];
 
     for (const claim of claims) {
@@ -445,12 +448,12 @@ export async function heartbeatTables(
       const exactGeneration =
         typeof row.leaseGeneration === 'string' &&
         row.leaseGeneration.toLowerCase() === claim.leaseGeneration.toLowerCase();
-      if (
-        row.state === 'kept' &&
-        exactGeneration &&
-        tableLeaseMonotonicNow() < proofDeadlineMonotonicMs
-      ) {
-        proofs.push({ ...claim, proofDeadlineMonotonicMs });
+      if (row.state === 'kept' && exactGeneration) {
+        const proof = { ...claim, proofDeadlineMonotonicMs };
+        // A slow older success is not a takeover. It grants no authority when
+        // obsolete; the owner separately checks its greatest existing proof.
+        if (tableLeaseMonotonicNow() < proofDeadlineMonotonicMs) proofs.push(proof);
+        else obsoleteProofs.push(proof);
         continue;
       }
 
@@ -479,7 +482,12 @@ export async function heartbeatTables(
       );
     }
 
-    return { status: 'answered', proofs, lostTableIds };
+    return {
+      status: 'answered',
+      proofs,
+      lostTableIds,
+      ...(obsoleteProofs.length > 0 ? { obsoleteProofs } : {}),
+    };
   } catch (err) {
     heartbeatErrors++;
     if (heartbeatErrors <= 3) {

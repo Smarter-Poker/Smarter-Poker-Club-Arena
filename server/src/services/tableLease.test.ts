@@ -431,7 +431,10 @@ describe('heartbeatTables', () => {
     ).resolves.toEqual({
       status: 'answered',
       proofs: [],
-      lostTableIds: [TABLE],
+      lostTableIds: [],
+      obsoleteProofs: [
+        { tableId: TABLE, leaseGeneration: GENERATION, proofDeadlineMonotonicMs: 20_000 },
+      ],
     });
   });
 

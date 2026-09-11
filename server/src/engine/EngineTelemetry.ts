@@ -62,6 +62,7 @@ interface HandTiming {
 
 // Bible V8 §9.1 Performance Thresholds
 const ACTION_PROCESSING_THRESHOLD_MS = 50; // §9.1.1: < 50ms server-side
+const ACTION_SAMPLE_WINDOW_MS = 5 * 60_000;
 const BROADCAST_LATENCY_THRESHOLD_MS = 100; // §9.1.2: < 100ms to all clients
 
 interface ActionTiming {
@@ -72,6 +73,7 @@ interface ActionTiming {
   broadcastMs: number | null; // null if not measured
   timestamp: number;
   exceededThreshold: boolean;
+  sampledAtMonotonicMs: number;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -85,6 +87,11 @@ export class EngineTelemetry {
   // Monotonic hand counts. NOT derived from tableTimings, which is a capped
   // ring buffer — see the note in recordHandTiming().
   private handsRecorded: number = 0;
+  private actionsRecorded = 0;
+  private lastHandRecordedAt: number | null = null;
+  private lastActionRecordedAt: number | null = null;
+  private lastActionRecordedMonotonicMs: number | null = null;
+  private lastHandRecordedMonotonicMs: number | null = null;
   private handsRecordedByTable: Map<string, number> = new Map();
   // Per-table player counts
   private tablePlayers: Map<string, number> = new Map();
@@ -143,7 +150,10 @@ export class EngineTelemetry {
     // three hours while the fleet dealt ~27,000 hands an hour.
     // This is the real monotonic count, and it is what the counter reads now.
     this.handsRecorded++;
+    this.lastHandRecordedAt = Date.now();
+    this.lastHandRecordedMonotonicMs = performance.now();
     this.handsRecordedByTable.set(tableId, (this.handsRecordedByTable.get(tableId) || 0) + 1);
+    EngineTelemetry.bankEngineCounters(this);
   }
 
   /**
@@ -185,6 +195,27 @@ export class EngineTelemetry {
    * Record action processing time (Bible V8 §9.1.1: < 50ms).
    * Called after every player action is processed.
    */
+  static measureAcceptedAction(
+    telemetry: EngineTelemetry,
+    tableId: string,
+    userId: string,
+    action: string,
+    apply: () => boolean
+  ): boolean {
+    const started = performance.now();
+    // Only synchronous rule execution/broadcast work is measured. Human wait,
+    // horse computation and visible pacing have already finished at this boundary.
+    const applied = apply();
+    if (applied) {
+      try {
+        telemetry.recordActionProcessingTime(tableId, userId, action, performance.now() - started);
+      } catch {
+        // An accepted poker action must retain its result if telemetry fails.
+      }
+    }
+    return applied;
+  }
+
   recordActionProcessingTime(
     tableId: string,
     userId: string,
@@ -192,12 +223,20 @@ export class EngineTelemetry {
     processingMs: number,
     broadcastMs: number | null = null
   ): void {
-    const exceeded =
-      processingMs > ACTION_PROCESSING_THRESHOLD_MS ||
-      (broadcastMs !== null && broadcastMs > BROADCAST_LATENCY_THRESHOLD_MS);
+    if (!Number.isFinite(processingMs) || processingMs < 0) return;
+    if (broadcastMs !== null && (!Number.isFinite(broadcastMs) || broadcastMs < 0))
+      broadcastMs = null;
+    this.actionsRecorded++;
+    this.lastActionRecordedAt = Date.now();
+    this.lastActionRecordedMonotonicMs = performance.now();
+    const processingExceeded = processingMs > ACTION_PROCESSING_THRESHOLD_MS;
+    const broadcastExceeded = broadcastMs !== null && broadcastMs > BROADCAST_LATENCY_THRESHOLD_MS;
+    const exceeded = processingExceeded || broadcastExceeded;
+    if (processingExceeded) this.actionThresholdViolations++;
+    if (broadcastExceeded) this.broadcastThresholdViolations++;
+    EngineTelemetry.bankEngineCounters(this);
 
     if (exceeded) {
-      this.actionThresholdViolations++;
       // Log warning for threshold violations
       const parts = [`§9.1 PERF WARNING: ${action} on ${tableId}`];
       if (processingMs > ACTION_PROCESSING_THRESHOLD_MS) {
@@ -205,7 +244,6 @@ export class EngineTelemetry {
       }
       if (broadcastMs !== null && broadcastMs > BROADCAST_LATENCY_THRESHOLD_MS) {
         parts.push(`broadcast=${broadcastMs}ms (>${BROADCAST_LATENCY_THRESHOLD_MS}ms)`);
-        this.broadcastThresholdViolations++;
       }
       console.warn(parts.join(' | '));
     }
@@ -218,6 +256,7 @@ export class EngineTelemetry {
       broadcastMs,
       timestamp: Date.now(),
       exceededThreshold: exceeded,
+      sampledAtMonotonicMs: this.lastActionRecordedMonotonicMs,
     });
 
     // Keep last 500 action timings
@@ -238,8 +277,15 @@ export class EngineTelemetry {
     actionCount: number;
     processingViolations: number;
     broadcastViolations: number;
+    broadcastSampleCount: number;
+    totalActionsRecorded: number;
+    lastActionAt: number | null;
+    sampleWindowMs: number;
   } {
-    const timings = this.actionTimings;
+    const now = performance.now();
+    const timings = this.actionTimings.filter(
+      (t) => now - t.sampledAtMonotonicMs <= ACTION_SAMPLE_WINDOW_MS
+    );
     if (timings.length === 0) {
       return {
         avgProcessingMs: 0,
@@ -247,6 +293,10 @@ export class EngineTelemetry {
         p95ProcessingMs: 0,
         p95BroadcastMs: 0,
         actionCount: 0,
+        broadcastSampleCount: 0,
+        totalActionsRecorded: this.actionsRecorded,
+        lastActionAt: this.lastActionRecordedAt,
+        sampleWindowMs: ACTION_SAMPLE_WINDOW_MS,
         processingViolations: this.actionThresholdViolations,
         broadcastViolations: this.broadcastThresholdViolations,
       };
@@ -272,6 +322,10 @@ export class EngineTelemetry {
       p95ProcessingMs: processingTimes[p95Index] ?? 0,
       p95BroadcastMs: broadcastTimes[bP95Index] ?? 0,
       actionCount: timings.length,
+      broadcastSampleCount: broadcastTimes.length,
+      totalActionsRecorded: this.actionsRecorded,
+      lastActionAt: this.lastActionRecordedAt,
+      sampleWindowMs: ACTION_SAMPLE_WINDOW_MS,
       processingViolations: this.actionThresholdViolations,
       broadcastViolations: this.broadcastThresholdViolations,
     };
@@ -557,22 +611,30 @@ export class EngineTelemetry {
    * minute. With an 18x numerator it could never fire. The alarm written to
    * close the gap was itself unable to close it.
    *
-   * THE FIX IS TO BANK DELTAS, not to sum a shifting set. Each scrape, every
-   * engine's own lifetime count is compared with what it last reported; only
-   * the INCREASE is added to a process-wide total. An engine that disappears
-   * simply stops contributing — everything it dealt is already banked — so the
-   * fleet total is monotonic for the life of the process by construction, and
-   * needs no hook at any of the seven `tableEngines.delete()` sites.
+   * THE FIX IS TO BANK DELTAS, not to sum a shifting set. Recording and disposal
+   * bank each engine's increase immediately, and snapshots reconcile the same
+   * ledger. Waiting for a scrape loses work when a table retires between reads.
+   * Health and Prometheus share this process-wide ledger; neither sums hand
+   * ordinals or the live set's ring-buffer lengths. No deletion-site hooks or
+   * separate endpoint counters are needed.
    *
    * `activeTables`, `activePlayers` and the averages are GAUGES and are left
    * summed: they are supposed to fall when a table closes.
    */
   private static readonly fleetCounters = {
     hands: 0,
+    actions: 0,
+    lastHandAt: null as number | null,
+    lastActionAt: null as number | null,
+    lastActionMonotonicMs: null as number | null,
+    lastHandMonotonicMs: null as number | null,
     processingViolations: 0,
     broadcastViolations: 0,
     /** Per-engine last-seen values, so only increases are banked. */
-    seen: new WeakMap<EngineTelemetry, { hands: number; proc: number; bcast: number }>(),
+    seen: new WeakMap<
+      EngineTelemetry,
+      { hands: number; actions: number; proc: number; bcast: number }
+    >(),
   };
 
   /**
@@ -582,29 +644,49 @@ export class EngineTelemetry {
    * cannot fall today, but a counter that silently absorbs a negative delta is
    * exactly the class of bug this whole note is about.
    */
-  private static bankEngineCounters(
-    e: EngineTelemetry,
-    hands: number,
-    proc: number,
-    bcast: number
-  ): void {
+  private static bankEngineCounters(e: EngineTelemetry): void {
     const f = EngineTelemetry.fleetCounters;
-    const prev = f.seen.get(e) ?? { hands: 0, proc: 0, bcast: 0 };
-    if (hands > prev.hands) f.hands += hands - prev.hands;
-    if (proc > prev.proc) f.processingViolations += proc - prev.proc;
-    if (bcast > prev.bcast) f.broadcastViolations += bcast - prev.bcast;
-    f.seen.set(e, { hands, proc, bcast });
+    const prev = f.seen.get(e) ?? { hands: 0, actions: 0, proc: 0, bcast: 0 };
+    const hands = Math.max(prev.hands, e.handsRecorded);
+    const actions = Math.max(prev.actions, e.actionsRecorded);
+    const proc = Math.max(prev.proc, e.actionThresholdViolations);
+    const bcast = Math.max(prev.bcast, e.broadcastThresholdViolations);
+    f.hands += hands - prev.hands;
+    f.actions += actions - prev.actions;
+    f.processingViolations += proc - prev.proc;
+    f.broadcastViolations += bcast - prev.bcast;
+    if (
+      e.lastHandRecordedMonotonicMs !== null &&
+      (f.lastHandMonotonicMs === null || e.lastHandRecordedMonotonicMs >= f.lastHandMonotonicMs)
+    ) {
+      f.lastHandAt = e.lastHandRecordedAt;
+      f.lastHandMonotonicMs = e.lastHandRecordedMonotonicMs;
+    }
+    if (
+      e.lastActionRecordedMonotonicMs !== null &&
+      (f.lastActionMonotonicMs === null ||
+        e.lastActionRecordedMonotonicMs >= f.lastActionMonotonicMs)
+    ) {
+      f.lastActionAt = e.lastActionRecordedAt;
+      f.lastActionMonotonicMs = e.lastActionRecordedMonotonicMs;
+    }
+    f.seen.set(e, { hands, actions, proc, bcast });
   }
 
   /** Test seam: reset the process-wide banked totals. */
   static __resetFleetCountersForTest(): void {
     EngineTelemetry.fleetCounters.hands = 0;
+    EngineTelemetry.fleetCounters.actions = 0;
+    EngineTelemetry.fleetCounters.lastHandAt = null;
+    EngineTelemetry.fleetCounters.lastActionAt = null;
+    EngineTelemetry.fleetCounters.lastActionMonotonicMs = null;
+    EngineTelemetry.fleetCounters.lastHandMonotonicMs = null;
     EngineTelemetry.fleetCounters.processingViolations = 0;
     EngineTelemetry.fleetCounters.broadcastViolations = 0;
     EngineTelemetry.fleetCounters.seen = new WeakMap();
   }
 
-  static renderFleetMetrics(engines: Iterable<EngineTelemetry>): string {
+  static getFleetSnapshot(engines: Iterable<EngineTelemetry>) {
     let activeTables = 0;
     let activePlayers = 0;
     let handsPerHourWeighted = 0;
@@ -614,9 +696,9 @@ export class EngineTelemetry {
     let processingWeighted = 0;
     let broadcastWeighted = 0;
     let actionCount = 0;
+    let broadcastSampleCount = 0;
     let p95Processing = 0;
     let p95Broadcast = 0;
-    const tableLines: string[] = [];
 
     for (const e of engines) {
       const s = e.getSnapshot();
@@ -625,22 +707,17 @@ export class EngineTelemetry {
       activePlayers += s.global.activePlayers;
       // Counters are BANKED, never summed over the live set — see the note on
       // `fleetCounters`. Summing them made increase() over-report 18x.
-      EngineTelemetry.bankEngineCounters(
-        e,
-        s.global.totalHandsDealt,
-        p.processingViolations,
-        p.broadcastViolations
-      );
+      EngineTelemetry.bankEngineCounters(e);
       handsPerHourWeighted += s.global.avgHandsPerHour * s.global.activeTables;
       handDurationWeighted += s.global.avgHandDurationMs * s.global.activeTables;
       cacheHits += e.cacheHits;
       cacheMisses += e.cacheMisses;
       processingWeighted += p.avgProcessingMs * p.actionCount;
-      broadcastWeighted += p.avgBroadcastMs * p.actionCount;
+      broadcastWeighted += p.avgBroadcastMs * p.broadcastSampleCount;
       actionCount += p.actionCount;
+      broadcastSampleCount += p.broadcastSampleCount;
       p95Processing = Math.max(p95Processing, p.p95ProcessingMs);
       p95Broadcast = Math.max(p95Broadcast, p.p95BroadcastMs);
-      tableLines.push(...e.getPrometheusTableLines());
     }
 
     // Read the BANKED totals, not a sum over whoever happens to be alive.
@@ -649,10 +726,53 @@ export class EngineTelemetry {
     const broadcastViolations = EngineTelemetry.fleetCounters.broadcastViolations;
 
     const cacheTotal = cacheHits + cacheMisses;
-    const g = (name: string, help: string, type: string, value: number): string[] => [
+    const f = EngineTelemetry.fleetCounters;
+    return {
+      activeTables,
+      activePlayers,
+      totalHandsDealt,
+      avgHandsPerHour: activeTables > 0 ? Math.round(handsPerHourWeighted / activeTables) : null,
+      avgHandDurationMs: activeTables > 0 ? Math.round(handDurationWeighted / activeTables) : null,
+      cacheHitRatio: cacheTotal > 0 ? Math.round((cacheHits / cacheTotal) * 100) : null,
+      avgProcessingMs: actionCount > 0 ? Math.round(processingWeighted / actionCount) : null,
+      avgBroadcastMs:
+        broadcastSampleCount > 0 ? Math.round(broadcastWeighted / broadcastSampleCount) : null,
+      p95Processing: actionCount > 0 ? p95Processing : null,
+      p95Broadcast: broadcastSampleCount > 0 ? p95Broadcast : null,
+      actionSampleCount: actionCount,
+      broadcastSampleCount,
+      totalActionsRecorded: f.actions,
+      processingViolations,
+      broadcastViolations,
+      lastHandAt: f.lastHandAt,
+      lastActionAt: f.lastActionAt,
+      lastHandAgeMs:
+        f.lastHandMonotonicMs === null
+          ? null
+          : Math.max(0, performance.now() - f.lastHandMonotonicMs),
+      lastActionAgeMs:
+        f.lastActionMonotonicMs === null
+          ? null
+          : Math.max(0, performance.now() - f.lastActionMonotonicMs),
+      actionSampleWindowMs: ACTION_SAMPLE_WINDOW_MS,
+    };
+  }
+
+  static renderFleetMetrics(engines: Iterable<EngineTelemetry>): string {
+    const current = Array.from(engines);
+    const fleet = EngineTelemetry.getFleetSnapshot(current);
+    const {
+      activeTables,
+      activePlayers,
+      totalHandsDealt,
+      processingViolations,
+      broadcastViolations,
+    } = fleet;
+    const tableLines = current.flatMap((e) => e.getPrometheusTableLines());
+    const g = (name: string, help: string, type: string, value: number | null): string[] => [
       `# HELP ${name} ${help}`,
       `# TYPE ${name} ${type}`,
-      `${name} ${value}`,
+      `${name} ${value ?? 'NaN'}`,
     ];
 
     const lines: string[] = [
@@ -678,19 +798,19 @@ export class EngineTelemetry {
         'poker_avg_hands_per_hour',
         'Hands per hour, averaged over active tables',
         'gauge',
-        activeTables > 0 ? Math.round(handsPerHourWeighted / activeTables) : 0
+        fleet.avgHandsPerHour
       ),
       ...g(
         'poker_avg_hand_duration_ms',
         'Hand duration in ms, averaged over active tables',
         'gauge',
-        activeTables > 0 ? Math.round(handDurationWeighted / activeTables) : 0
+        fleet.avgHandDurationMs
       ),
       ...g(
         'poker_cache_hit_ratio',
         'Evaluator cache hit ratio percentage across the fleet',
         'gauge',
-        cacheTotal > 0 ? Math.round((cacheHits / cacheTotal) * 100) : 0
+        fleet.cacheHitRatio
       ),
       ...g(
         'poker_uptime_seconds',
@@ -714,25 +834,49 @@ export class EngineTelemetry {
         'poker_action_processing_ms',
         'Average action processing time across the fleet',
         'gauge',
-        actionCount > 0 ? Math.round(processingWeighted / actionCount) : 0
+        fleet.avgProcessingMs
       ),
       ...g(
         'poker_action_processing_p95_ms',
         'Worst per-table P95 action processing time',
         'gauge',
-        p95Processing
+        fleet.p95Processing
       ),
       ...g(
         'poker_broadcast_latency_ms',
         'Average broadcast latency across the fleet',
         'gauge',
-        actionCount > 0 ? Math.round(broadcastWeighted / actionCount) : 0
+        fleet.avgBroadcastMs
       ),
       ...g(
         'poker_broadcast_latency_p95_ms',
         'Worst per-table P95 broadcast latency',
         'gauge',
-        p95Broadcast
+        fleet.p95Broadcast
+      ),
+      ...g(
+        'poker_actions_recorded_total',
+        'Accepted actions recorded since process start',
+        'counter',
+        fleet.totalActionsRecorded
+      ),
+      ...g(
+        'poker_action_processing_samples',
+        'Live-engine action samples in the last five minutes (at most 500 per engine)',
+        'gauge',
+        fleet.actionSampleCount
+      ),
+      ...g(
+        'poker_broadcast_latency_samples',
+        'Measured broadcast latency samples in the action window',
+        'gauge',
+        fleet.broadcastSampleCount
+      ),
+      ...g(
+        'poker_last_action_sample_age_ms',
+        'Age of the last accepted action sample; NaN when none',
+        'gauge',
+        fleet.lastActionAgeMs
       ),
       '# HELP poker_threshold_violations_total SLA threshold violations',
       '# TYPE poker_threshold_violations_total counter',
@@ -755,6 +899,7 @@ export class EngineTelemetry {
   // ═══════════════════════════════════════════════════════════════════════════
 
   dispose(): void {
+    EngineTelemetry.bankEngineCounters(this);
     if (this.emitInterval) {
       clearInterval(this.emitInterval);
       this.emitInterval = null;

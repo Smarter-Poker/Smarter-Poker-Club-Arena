@@ -209,7 +209,7 @@ describe('direct table-engine terminal recovery', () => {
     }
   });
 
-  it('runs one serialized ownership lifecycle independently of discovery', () => {
+  it('runs bounded independent ownership scopes independently of discovery', () => {
     const boot = method('private async performStart(');
     const renewalStart = boot.indexOf('this.runOwnershipLeaseRenewalLoop(generation)');
     const cashDiscovery = boot.indexOf('this.discoverCashTables()', renewalStart);
@@ -219,14 +219,18 @@ describe('direct table-engine terminal recovery', () => {
     expect(tournamentDiscovery).toBeGreaterThan(renewalStart);
 
     const wrapper = method('private renewOwnedEngineLeaseProofs()');
-    expect(wrapper).toContain('const existing = this.ownershipLeaseRenewalOperation;');
-    expect(wrapper).toContain('if (existing) return existing;');
-    expect(wrapper).toContain('this.performOwnedEngineLeaseProofRenewal()');
+    expect(wrapper).toContain("this.admitOwnershipLeaseRenewal('cash')");
+    expect(wrapper).toContain("this.admitOwnershipLeaseRenewal('tournament')");
+    const admission = method('private admitOwnershipLeaseRenewal(');
+    expect(admission).toContain('state.pending.size >= OWNERSHIP_LEASE_MAX_IN_FLIGHT_PER_SCOPE');
+    expect(admission).toContain(
+      'state.nextAttemptMonotonicMs = now + OWNERSHIP_LEASE_RENEWAL_CADENCE_MS'
+    );
 
-    const pass = method('private async performOwnedEngineLeaseProofRenewal()');
-    expect(pass).toContain('await Promise.allSettled([');
-    expect(pass).toContain('this.renewVerifiedCashTableLeaseProofs()');
-    expect(pass).toContain('this.renewVerifiedTournamentManagerLeaseProofs()');
+    const pass = method('private async performOwnedEngineLeaseProofRenewal(');
+    expect(pass).not.toContain('Promise.allSettled');
+    expect(pass).toContain('await this.renewVerifiedCashTableLeaseProofs()');
+    expect(pass).toContain('await this.renewVerifiedTournamentManagerLeaseProofs()');
     expect(pass).not.toContain('discoverCashTables');
     expect(pass).not.toContain('discoverTournaments');
   });

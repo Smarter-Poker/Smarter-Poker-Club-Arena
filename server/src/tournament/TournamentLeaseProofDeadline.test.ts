@@ -126,6 +126,18 @@ describe('tournament lease proof deadline', () => {
     await manager.stop();
   });
 
+  it('refuses new proof after an event-loop stall before the old expiry timer runs', async () => {
+    vi.useFakeTimers();
+    let now = 0;
+    _setTournamentLeaseMonotonicNowForTests(() => now);
+    const manager = new LeaseDeadlineHarness(20_000);
+    manager.activate();
+    now = 20_001;
+    expect(manager.renewTournamentLeaseProof(GENERATION, 25_000)).toBe(false);
+    expect(manager.authorityIsCurrent()).toBe(false);
+    await manager.stop();
+  });
+
   it('keeps the exact manager generation alive throughout a shutdown drain longer than 20s', async () => {
     vi.useFakeTimers();
     let now = 0;

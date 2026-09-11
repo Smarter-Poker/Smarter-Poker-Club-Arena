@@ -194,6 +194,7 @@ import {
   releaseTables,
   leaseDiagnostics,
   TABLE_LEASE_PROOF_WINDOW_MS,
+  tableLeaseMonotonicNow,
 } from './services/tableLease.js';
 
 export { TournamentManager };
@@ -237,14 +238,20 @@ const PAST_START_TOP_UP_MAX_INTERVAL_MS = 10 * 60 * 1000;
 const TOURNAMENT_RESUME_STAGGER_MS = 40;
 /**
  * Ownership renewal is a primary lifecycle, not part of table discovery.
- * Start each pass at least four times inside the shorter conservative proof
- * window. A slow pass subtracts its own elapsed time before sleeping, so a 15s
- * PostgREST timeout is followed immediately rather than turning 15s + 5s into
- * an accidental expiry at the exact 20s local boundary.
+ * Admit each scope every five seconds even while an earlier RPC is pending.
+ * Three actual calls per scope share one admission owner across primary,
+ * direct and shutdown callers; a saturated tick creates no catch-up work.
  */
 const OWNERSHIP_LEASE_RENEWAL_CADENCE_MS = Math.floor(
   Math.min(TABLE_LEASE_PROOF_WINDOW_MS, TOURNAMENT_LEASE_PROOF_WINDOW_MS) / 4
 );
+
+type OwnershipLeaseScope = 'cash' | 'tournament';
+const OWNERSHIP_LEASE_MAX_IN_FLIGHT_PER_SCOPE = 3;
+type OwnershipLeaseRenewalScope = {
+  pending: Set<Promise<void>>;
+  nextAttemptMonotonicMs: number;
+};
 
 /**
  * The four materially different answers to a direct table admission attempt.
@@ -390,8 +397,11 @@ export class GameServer {
   private discoveryJobs = new Set<Promise<void>>();
   /** Non-discovery async work launched by timers, subscriptions, or boot. */
   private serverLifecycleJobs = new Set<Promise<void>>();
-  /** Keeps exact table/tournament authority alive only through shutdown drain. */
-  private ownershipLeaseRenewalOperation: Promise<void> | null = null;
+  /** Shared RPC admission, including calls still pending during shutdown. */
+  private readonly ownershipLeaseRenewalScopes = new Map<
+    OwnershipLeaseScope,
+    OwnershipLeaseRenewalScope
+  >();
   private shutdownOwnershipLeaseRenewalActive = false;
   private shutdownOwnershipLeaseRenewalOperation: Promise<void> | null = null;
   /** One distributed claim + manager publication operation per tournament id. */
@@ -573,6 +583,10 @@ export class GameServer {
       }
     }
 
+    const renewalGeneration = this.lifecycleGeneration;
+    const candidateGenerations = new Map(
+      candidates.map(([id, engine]) => [id, engine.getEngineLeaseAuthority()?.generation])
+    );
     const heartbeat = await heartbeatTables(
       candidates.map(([tableId, engine]) => {
         const authority = engine.getEngineLeaseAuthority();
@@ -582,15 +596,22 @@ export class GameServer {
         return { tableId, leaseGeneration: authority.generation };
       })
     );
+    if (this.lifecycleGeneration !== renewalGeneration) return new Map();
     if (heartbeat.status === 'answered') {
       for (const proof of heartbeat.proofs) {
         const captured = candidates.find(([tableId]) => tableId === proof.tableId)?.[1];
         if (!captured || this.tableEngines.get(proof.tableId) !== captured) continue;
         const authority = captured.getEngineLeaseAuthority();
         if (
+          authority?.generation !== candidateGenerations.get(proof.tableId) ||
+          authority?.generation !== proof.leaseGeneration
+        )
+          continue;
+        if (
           !authority ||
           authority.scope !== 'cash' ||
           !authority.verified ||
+          !captured.hasCurrentEngineLeaseAuthority() ||
           !captured.renewEngineLeaseProof({
             ...authority,
             proofDeadlineMonotonicMs: proof.proofDeadlineMonotonicMs,
@@ -601,7 +622,11 @@ export class GameServer {
       }
       for (const tableId of heartbeat.lostTableIds) {
         const captured = candidates.find(([id]) => id === tableId)?.[1];
-        if (captured && this.tableEngines.get(tableId) === captured) {
+        if (
+          captured &&
+          this.tableEngines.get(tableId) === captured &&
+          captured.getEngineLeaseAuthority()?.generation === candidateGenerations.get(tableId)
+        ) {
           lostEngines.set(tableId, captured);
         }
       }
@@ -642,12 +667,14 @@ export class GameServer {
       }
     }
 
+    const renewalGeneration = this.lifecycleGeneration;
     const heartbeat = await heartbeatTournaments(
       [...candidates].map(([tournamentId, candidate]) => ({
         tournamentId,
         leaseGeneration: candidate.leaseGeneration,
       }))
     );
+    if (this.lifecycleGeneration !== renewalGeneration) return new Map();
     if (heartbeat.status === 'answered') {
       for (const proof of heartbeat.proofs) {
         const captured = candidates.get(proof.tournamentId);
@@ -655,6 +682,7 @@ export class GameServer {
           continue;
         }
         if (
+          !captured.manager.hasCurrentTournamentLeaseAuthority() ||
           !captured.manager.renewTournamentLeaseProof(
             proof.leaseGeneration,
             proof.proofDeadlineMonotonicMs
@@ -665,7 +693,11 @@ export class GameServer {
       }
       for (const tournamentId of heartbeat.lostTournamentIds) {
         const captured = candidates.get(tournamentId);
-        if (captured && this.tournamentEngines.get(tournamentId) === captured.manager) {
+        if (
+          captured &&
+          this.tournamentEngines.get(tournamentId) === captured.manager &&
+          captured.manager.getTournamentLeaseGeneration() === captured.leaseGeneration
+        ) {
           lostManagers.set(tournamentId, captured.manager);
         }
       }
@@ -684,45 +716,50 @@ export class GameServer {
     return lostManagers;
   }
 
-  /**
-   * One serialized ownership pass for both lease scopes. Heartbeats run in
-   * parallel so the cash RPC cannot consume the tournament proof window (or
-   * vice versa). Every proven loss is fenced synchronously before any physical
-   * teardown awaits; teardown/release remains in its exact causal registry so
-   * this primary renewal lifecycle can begin its next pass on time.
-   */
+  /** Each scope applies its own answer immediately, without waiting for its peer. */
   private renewOwnedEngineLeaseProofs(): Promise<void> {
-    const existing = this.ownershipLeaseRenewalOperation;
-    if (existing) return existing;
-    const operation = this.performOwnedEngineLeaseProofRenewal();
+    return Promise.all([
+      this.admitOwnershipLeaseRenewal('cash'),
+      this.admitOwnershipLeaseRenewal('tournament'),
+    ]).then(() => undefined);
+  }
+
+  private admitOwnershipLeaseRenewal(scope: OwnershipLeaseScope): Promise<void> {
+    let state = this.ownershipLeaseRenewalScopes.get(scope);
+    if (!state) {
+      state = { pending: new Set(), nextAttemptMonotonicMs: Number.NEGATIVE_INFINITY };
+      this.ownershipLeaseRenewalScopes.set(scope, state);
+    }
+    const now = tableLeaseMonotonicNow();
+    if (
+      now < state.nextAttemptMonotonicMs ||
+      state.pending.size >= OWNERSHIP_LEASE_MAX_IN_FLIGHT_PER_SCOPE
+    ) {
+      // Skip, without attaching another waiter to potentially hung work.
+      // The final shutdown barrier explicitly joins the bounded pending set.
+      return Promise.resolve();
+    }
+    state.nextAttemptMonotonicMs = now + OWNERSHIP_LEASE_RENEWAL_CADENCE_MS;
+    const admittedState = state;
     let tracked!: Promise<void>;
-    tracked = operation.finally(() => {
-      if (this.ownershipLeaseRenewalOperation === tracked) {
-        this.ownershipLeaseRenewalOperation = null;
-      }
-    });
-    this.ownershipLeaseRenewalOperation = tracked;
+    tracked = this.performOwnedEngineLeaseProofRenewal(scope)
+      .catch((error) => reportError(error, `GameServer.${scope}_lease_renewal_pass_failed`))
+      .finally(() => {
+        admittedState.pending.delete(tracked);
+      });
+    state.pending.add(tracked);
     return tracked;
   }
 
-  private async performOwnedEngineLeaseProofRenewal(): Promise<void> {
-    const [cashResult, tournamentResult] = await Promise.allSettled([
-      this.renewVerifiedCashTableLeaseProofs(),
-      this.renewVerifiedTournamentManagerLeaseProofs(),
-    ]);
-
+  private async performOwnedEngineLeaseProofRenewal(scope: OwnershipLeaseScope): Promise<void> {
     const lostTables =
-      cashResult.status === 'fulfilled' ? cashResult.value : new Map<string, ServerTableEngine>();
-    if (cashResult.status === 'rejected') {
-      reportError(cashResult.reason, 'GameServer.cash_lease_renewal_pass_failed');
-    }
+      scope === 'cash'
+        ? await this.renewVerifiedCashTableLeaseProofs()
+        : new Map<string, ServerTableEngine>();
     const lostTournamentIds =
-      tournamentResult.status === 'fulfilled'
-        ? tournamentResult.value
+      scope === 'tournament'
+        ? await this.renewVerifiedTournamentManagerLeaseProofs()
         : new Map<string, TournamentManager>();
-    if (tournamentResult.status === 'rejected') {
-      reportError(tournamentResult.reason, 'GameServer.tournament_lease_renewal_pass_failed');
-    }
 
     const lostCashEngines: Array<[string, ServerTableEngine]> = [];
     for (const [tableId, engine] of lostTables) {
@@ -802,20 +839,21 @@ export class GameServer {
   }
 
   /**
-   * Primary, serialized lease lifecycle. Discovery may spend its full timeout
-   * adopting or inspecting tables without delaying this loop. Cadence is based
-   * on pass start, not pass completion, so slow RPC time is charged against the
-   * next sleep rather than silently added to the authority gap.
+   * Primary hedged renewal lifecycle. Discovery and pending renewals cannot
+   * hold its next cadence. Admission above owns every caller and both bounds;
+   * a delayed event loop admits one tick, never a burst of missed ticks.
    */
   private async runOwnershipLeaseRenewalLoop(generation: number): Promise<void> {
     while (this.directAdmissionIsCurrent(generation)) {
       const passStartedAt = performance.now();
       try {
-        await this.renewOwnedEngineLeaseProofs();
+        void this.renewOwnedEngineLeaseProofs().catch((error) =>
+          reportError(error, 'GameServer.ownership_lease_renewal_pass_threw')
+        );
       } catch (error) {
         // A programming or transport surprise cannot permanently remove the
         // platform's primary ownership lifecycle. Existing local deadlines stay
-        // authoritative and the next serialized pass still runs.
+        // authoritative and the next bounded cadence still runs.
         reportError(error, 'GameServer.ownership_lease_renewal_pass_threw');
       }
       if (!this.directAdmissionIsCurrent(generation)) return;
@@ -839,7 +877,7 @@ export class GameServer {
   private async runShutdownOwnershipLeaseRenewalLoop(): Promise<void> {
     while (this.shutdownOwnershipLeaseRenewalActive) {
       const passStartedAt = performance.now();
-      await this.renewOwnedEngineLeaseProofs().catch((error) =>
+      void this.renewOwnedEngineLeaseProofs().catch((error) =>
         reportError(error, 'GameServer.shutdown_lease_renewal_pass_threw')
       );
       if (!this.shutdownOwnershipLeaseRenewalActive) return;
@@ -852,6 +890,11 @@ export class GameServer {
     this.shutdownOwnershipLeaseRenewalActive = false;
     const operation = this.shutdownOwnershipLeaseRenewalOperation;
     if (operation) await operation;
+    // Admission has stopped. Join every old and shutdown generation before
+    // the final fence/release, so late RPCs cannot race the successor.
+    await Promise.allSettled(
+      [...this.ownershipLeaseRenewalScopes.values()].flatMap((state) => [...state.pending])
+    );
   }
   /** Last orphaned-seat repair pass. See tournament/orphanedSeatRepair.ts. */
   private lastOrphanSeatSweepAt = 0;
@@ -2961,41 +3004,9 @@ export class GameServer {
     const { deadStalledCount, dealableTableCount, wholeFleetStalled, barrenLeaderDead } =
       livenessVerdict;
 
-    let totalHands = 0;
-    // FIX 153: Aggregate telemetry from all table engines for health endpoint
-    const tableMetrics: any[] = [];
-    for (const engine of this.tableEngines.values()) {
-      totalHands += engine.getHandCount();
-      const snapshot = engine.getTelemetrySnapshot();
-      if (snapshot.tables.length > 0) {
-        tableMetrics.push(...snapshot.tables);
-      }
-    }
-    const avgHandDurationMs =
-      tableMetrics.length > 0
-        ? Math.round(
-            tableMetrics.reduce((s, t) => s + t.avgHandDurationMs, 0) / tableMetrics.length
-          )
-        : 0;
-    const avgHandsPerHour =
-      tableMetrics.length > 0
-        ? Math.round(tableMetrics.reduce((s, t) => s + t.handsPerHour, 0) / tableMetrics.length)
-        : 0;
-    // Bible V8 §9.1: Aggregate action performance metrics
-    let totalActionProcessingMs = 0;
-    let actionCount = 0;
-    let processingViolations = 0;
-    let broadcastViolations = 0;
-    for (const engine of this.tableEngines.values()) {
-      // Performance summary is on the telemetry instance via engine
-      const perf = engine.getPerformanceSummary();
-      if (perf) {
-        totalActionProcessingMs += perf.avgProcessingMs * perf.actionCount;
-        actionCount += perf.actionCount;
-        processingViolations += perf.processingViolations;
-        broadcastViolations += perf.broadcastViolations;
-      }
-    }
+    const fleetTelemetry = EngineTelemetry.getFleetSnapshot(
+      Array.from(this.tableEngines.values(), (engine) => engine.telemetry)
+    );
 
     return {
       // ── Phase 5.1.4: spec-compliant top-level fields (master plan §8.1.4)
@@ -3208,19 +3219,25 @@ export class GameServer {
             })),
         };
       })(),
-      totalHandsDealt: totalHands,
+      totalHandsDealt: fleetTelemetry.totalHandsDealt,
       telemetry: {
-        avgHandDurationMs,
-        avgHandsPerHour,
-        tablesWithMetrics: tableMetrics.length,
+        avgHandDurationMs: fleetTelemetry.avgHandDurationMs,
+        avgHandsPerHour: fleetTelemetry.avgHandsPerHour,
+        tablesWithMetrics: fleetTelemetry.activeTables,
+        lastHandSampleAt: fleetTelemetry.lastHandAt,
+        lastHandSampleAgeMs: fleetTelemetry.lastHandAgeMs,
       },
-      // Bible V8 §9.1 Performance Instrumentation
       performance: {
-        avgActionProcessingMs:
-          actionCount > 0 ? Math.round(totalActionProcessingMs / actionCount) : 0,
-        totalActionsRecorded: actionCount,
-        processingThresholdViolations: processingViolations,
-        broadcastThresholdViolations: broadcastViolations,
+        avgActionProcessingMs: fleetTelemetry.avgProcessingMs,
+        totalActionsRecorded: fleetTelemetry.totalActionsRecorded,
+        actionSampleCount: fleetTelemetry.actionSampleCount,
+        actionSampleWindowMs: fleetTelemetry.actionSampleWindowMs,
+        lastActionSampleAt: fleetTelemetry.lastActionAt,
+        lastActionSampleAgeMs: fleetTelemetry.lastActionAgeMs,
+        avgBroadcastMs: fleetTelemetry.avgBroadcastMs,
+        broadcastSampleCount: fleetTelemetry.broadcastSampleCount,
+        processingThresholdViolations: fleetTelemetry.processingViolations,
+        broadcastThresholdViolations: fleetTelemetry.broadcastViolations,
       },
     };
   }

@@ -24,12 +24,47 @@
  */
 
 let frozen = false;
+const thawListeners = new Set<() => void>();
 
 export function setMaintenanceFrozen(value: boolean): void {
+  const thawing = frozen && !value;
   frozen = value;
+  if (!thawing) return;
+  const due = [...thawListeners];
+  thawListeners.clear();
+  for (const listener of due) listener();
 }
 
 /** True from the :53 announcement until the :00 resume. */
 export function isMaintenanceFrozen(): boolean {
   return frozen;
+}
+
+/**
+ * Subscribe once to the actual thaw edge. This also works for an on-demand
+ * freeze or an overrun: a wall-clock boundary never substitutes for authority.
+ * Lifecycle abort removes the subscription immediately. An already-thawed
+ * caller is delivered on a cancellable microtask, without awaiting a new freeze.
+ */
+export function onNextMaintenanceThaw(listener: () => void, signal?: AbortSignal): () => void {
+  let active = !signal?.aborted;
+  const cancel = () => {
+    active = false;
+    thawListeners.delete(deliver);
+    signal?.removeEventListener('abort', cancel);
+  };
+  const deliver = () => {
+    if (!active) return;
+    cancel();
+    try {
+      listener();
+    } catch (error) {
+      console.warn('[MaintenanceBreak] a thaw listener failed', error);
+    }
+  };
+  if (!active) return cancel;
+  signal?.addEventListener('abort', cancel, { once: true });
+  if (frozen) thawListeners.add(deliver);
+  else queueMicrotask(deliver);
+  return cancel;
 }

@@ -1,0 +1,36 @@
+{
+  "recorded_at_utc": "2026-09-11T07:58:10.180313+00:00",
+  "status": "BACKEND APPLIED AND VERIFIED; PAIRED UI PUBLICATION PENDING NORMAL RELEASE GATES",
+  "verified_by": "Root production readbacks, independently reviewed by satellite",
+  "active_migration_path": "supabase/migrations/20260911072837_legacy_rakeback_closed_period_single_payer.sql",
+  "active_migration_sha256": "a55e792f12040799a20fcf6d54969059efecaea3869c3aa148191fe1b083c4c7",
+  "raw_receipts_sha256": {
+    "approved-rakeback-adoption-final.json.txt": "54201b28ab09a951748495b2a1878234584f68b9e67c89abbeb0cb4527bcf786",
+    "approved-rakeback-ledger-alignment.sql": "0dc3ef5121e828feb307371e3f293924175bd3bbd58f3578c274f6bc185f5c2e"
+  },
+  "runtime_verified_at": "2026-09-11 07:50:03.546161+00",
+  "runtime_functions_passed": 6,
+  "runtime_triggers_passed": 2,
+  "final_ledger": {
+    "checked_at": "2026-09-11 07:53:52.586074+00",
+    "version": "20260911072837",
+    "name": "legacy_rakeback_closed_period_single_payer",
+    "statement_count": 1,
+    "single_source_sha256": "a55e792f12040799a20fcf6d54969059efecaea3869c3aa148191fe1b083c4c7",
+    "newline_source_sha256": "a55e792f12040799a20fcf6d54969059efecaea3869c3aa148191fe1b083c4c7",
+    "joined_source_sha256": "a55e792f12040799a20fcf6d54969059efecaea3869c3aa148191fe1b083c4c7",
+    "statements_array_sha256": "3c715b21e06f89f2995fee730c3f29d9f810c444b68c793913958b81f34406c2"
+  },
+  "generated_ledger_version": "20260911074903",
+  "ledger_alignment": "Root performed one guarded metadata-only version alignment; original statements array and approved SQL unchanged; no SQL reapplication.",
+  "application_response_success": true,
+  "backend_adoption_verified": true,
+  "ui_publication_verified": false,
+  "raw_receipt_format": "The .json.txt file contains exact original UTF-8 JSON bytes, retained without formatter changes.",
+  "historical_records": "preparation.json and all prior pending/rejection records remain their original timestamped observations. This adoption record supersedes their pending backend state.",
+  "limits": [
+    "No live financial RPC probes",
+    "Common producer/bank finality not claimed",
+    "UI not yet published"
+  ]
+}

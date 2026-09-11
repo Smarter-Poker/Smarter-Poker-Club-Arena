@@ -1,0 +1,17 @@
+{
+  "recorded_at_utc": "2026-09-11T07:46:33.664211+00:00",
+  "reviewer": "/root/satellite_closeout",
+  "phase": "Prepared source identity and adoption-order review before root application",
+  "verdict": "No bounded preparation blocker",
+  "active_migration_path": "supabase/migrations/20260911072837_legacy_rakeback_closed_period_single_payer.sql",
+  "active_migration_sha256": "a55e792f12040799a20fcf6d54969059efecaea3869c3aa148191fe1b083c4c7",
+  "reviewed_preparation_sha256": "6d09053f6b1c54f350a9f98c639b19fe929c89d24bdc03b0c4955cb63e856e4f",
+  "reviewed_changelog_sha256": "5b4884a67d281df8e33bde0c1e9459e5a3676be59de47bcd8ab41b93a1cdf3d1",
+  "backend_source_commit": "988db864469e0d2543b969fc0032c4d8eb7b9fa3",
+  "backend_files_byte_identical": 36,
+  "backend_extra_files": 0,
+  "frozen_ui_inputs_matching": 5,
+  "order_verified": "Root current admission, exact approved backend application, runtime/ledger readback, then normal commit/push and paired UI publication.",
+  "reviewer_reran_tests": false,
+  "limit": "This preparation verdict does not itself assert production application or readback success."
+}

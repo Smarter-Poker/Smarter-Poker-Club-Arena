@@ -1,0 +1,8 @@
+{
+  "prepared_at_utc": "2026-09-11T08:17:21.333563+00:00",
+  "migration": "supabase/migrations/20260911081721_legacy_round3_preserve_server_only_acl.sql",
+  "sha256": "da06b3acca81a28a54e1354932aab87d515bc3202b4922e9cccc8e1971e867d5",
+  "bytes": 3849,
+  "head": "7b99a142472c280c654ea272255379fac0e8a272",
+  "status": "prepared; root application and readback pending"
+}

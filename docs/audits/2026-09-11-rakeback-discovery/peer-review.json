@@ -1,0 +1,20 @@
+{
+  "recorded_at_utc": "2026-09-11T06:46:04.726571+00:00",
+  "reviewer": "/root/satellite_closeout",
+  "verdict": "No bounded source or component-proof blocker",
+  "source_sha256": {
+    "src/pages/RakebackPage.tsx": "664269ea8e7dd6432d191edd47bc6155d17a349158eb643af73420d6a9413ca8",
+    "src/utils/rakebackReadiness.ts": "7ccf2504c5b0529f8f1ec18891a8c19f7cd6d0f1cdd1c1307b625acfdc7e3189",
+    "src/utils/rakebackClaimResult.ts": "845810cb1e139330df6fd76e5a2fe6a476732152cbd13d3d141a85d352d20efc",
+    "src/utils/retryFetch.ts": "df4269defb7d97028058f078dd7a1ac8d6663392bbc0d9ad2b03ad163c90b14b",
+    "tests/components/rakeback-readiness.test.tsx": "25367c9a5285c0253a0ae39474a6ba74fffab085147b673005d1f64a653058df"
+  },
+  "raw_output_sha256": "e9f4909a9247dfa5be192cc70c093c09c9e9d76744407eb4de42c6992ca25031",
+  "independently_observed_cases": 44,
+  "reviewer_reran_tests": false,
+  "limitations": [
+    "Mocked external boundaries do not establish production HTTP or RLS behavior.",
+    "The lost-response case models uncertainty; it is not proof of a real committed production payment.",
+    "Coordinated backend adoption and runtime readback are required before UI publication."
+  ]
+}

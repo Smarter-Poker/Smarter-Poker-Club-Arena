@@ -1,0 +1,11 @@
+# Dormant legacy maturity and receipt pointer candidate
+
+This preserved intermediate candidate contains no captured-source or V2 activation. It is not the complete legacy duplicate-payment repair. Apply neither this file nor a replacement migration until the final coordinated legacy repair is reviewed. The UI candidate 9da95b3b3a0b4f93e93f059f88cc9bb00dabb42f cannot constrain server period selection by itself because its RPC supplies only a club ID.
+
+`01-legacy-maturity-only.sql` replaces the captured claim and close bodies under exact source hash gates, retains their existing funding and journal behavior, limits claim selection to closed inclusive UTC earning periods, refuses direct open-period close, normalizes the cold UTC scan, and moves the existing wallet pointer update after the actual wallet row insert. A BEFORE status transition guard also refuses old-body positive, zero and existing-receipt open finalization. Existing paid and expired history remains unchanged.
+
+The installed atomic rakeback credit does not itself insert a wallet transaction; the original early pointer update therefore leaves a null audit backpointer. The read-only installed catalogue had no FK on that pointer. This is a receipt-link defect, not an observed FK failure of every positive claim.
+
+The 10 native groups in `maturity-proof.json` passed against captured legacy owners and the captured financial-trigger subset in a fresh socket-only PG17 cluster. They cover mature/open same-club authenticated claims, linked receipts, direct bypass refusal, preserved old-body positive/zero/existing-receipt rollback, paid and expired preservation, actual UTC-yesterday rollover across UTC/Honolulu, and final-journal rollback. Old-body tests rename preserved function definitions; they do not establish a call spanning live replacement. The fixture uses synthetic identities and no live money calls. It is not the complete production schema or live browser/API acceptance.
+
+The intended final package must additionally prevent legacy direct-claim/Round3 duplicate payment while retaining the installed aggregate-per-player shortfall decision. That successor is required before claiming complete repair. Required adoption order is reviewed legacy SQL, exact function/trigger/ACL readback, then UI publication; root owns any production decision.

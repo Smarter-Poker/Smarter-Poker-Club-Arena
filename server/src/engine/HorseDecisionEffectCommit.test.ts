@@ -138,7 +138,10 @@ function harness(intendedActionAccepted: boolean) {
     performAction,
   };
   engine.disconnectEngine = { isSittingOut: () => false };
-  engine.timeBankEngine = { getPlayerBank: () => null };
+  engine.timeBankEngine = {
+    isArmed: () => false,
+    getPlayerBank: () => null,
+  };
   engine.getEngineLeaseAuthority = () => ({ verified: true, generation: 'lease-9' });
   engine.humansSeated = () => 0;
   engine.tableFormat = () => 'cash';
@@ -463,5 +466,88 @@ describe('authoritative horse action effect commit', () => {
 
     expect(performAction).not.toHaveBeenCalled();
     expect(decisionWorker.commitDecisionEffects).not.toHaveBeenCalled();
+  });
+});
+
+// Phase 10 must reconcile through the same real scheduled action boundary.
+describe('Phase 10 authoritative execution receipts', () => {
+  it.each([
+    [true, 'intended', 'bet'],
+    [false, 'fallback', 'check'],
+  ] as const)(
+    'records the authoritative Phase 10 execution receipt (%s -> %s)',
+    async (accepted, expectedStatus, expectedAction) => {
+      const { engine, player, enginePlayer, state, performAction } = harness(accepted);
+      const receipt: any = {
+        finalAction: 'bet',
+        finalAmount: 20,
+        executedAction: null,
+        executedAmount: null,
+        executionStatus: 'pending',
+      };
+      decisionWorker.decideFast.mockImplementationOnce(async (snapshot: any) => ({
+        type: 'FAST_RESULT' as const,
+        requestId: 41,
+        generation: snapshot.generation,
+        fence: snapshot.fence,
+        decision: {
+          action: 'bet' as const,
+          amount: 20,
+          thinkTime: 1,
+          plo4Policy: receipt,
+        },
+        rngBefore: 11,
+        rngAfter: 22,
+        computeMs: 2,
+        governorScale: 1,
+        effects: [],
+      }));
+
+      engine.scheduleHorseAction(player, 1, enginePlayer, state);
+      await vi.advanceTimersByTimeAsync(250);
+
+      expect(receipt.executionStatus).toBe(expectedStatus);
+      expect(receipt.executedAction).toBe(expectedAction);
+      expect(receipt.executedAmount).toBe(expectedAction === 'bet' ? 20 : null);
+      expect(performAction).toHaveBeenCalledTimes(accepted ? 1 : 2);
+    }
+  );
+
+  it('closes a pending Phase 10 receipt when the authority fence expires before commit', async () => {
+    const { engine, player, enginePlayer, state, performAction } = harness(true);
+    const receipt: any = {
+      finalAction: 'bet',
+      finalAmount: 20,
+      executedAction: null,
+      executedAmount: null,
+      executionStatus: 'pending',
+    };
+    decisionWorker.decideFast.mockImplementationOnce(async (snapshot: any) => ({
+      type: 'FAST_RESULT' as const,
+      requestId: 42,
+      generation: snapshot.generation,
+      fence: snapshot.fence,
+      decision: {
+        action: 'bet' as const,
+        amount: 20,
+        thinkTime: 1_000,
+        plo4Policy: receipt,
+      },
+      rngBefore: 11,
+      rngAfter: 22,
+      computeMs: 2,
+      governorScale: 1,
+      effects: [],
+    }));
+
+    engine.scheduleHorseAction(player, 1, enginePlayer, state);
+    await vi.advanceTimersByTimeAsync(0);
+    engine.handCount += 1;
+    await vi.advanceTimersByTimeAsync(1_500);
+
+    expect(receipt.executionStatus).toBe('not_executed');
+    expect(receipt.executedAction).toBeNull();
+    expect(receipt.executedAmount).toBeNull();
+    expect(performAction).not.toHaveBeenCalled();
   });
 });

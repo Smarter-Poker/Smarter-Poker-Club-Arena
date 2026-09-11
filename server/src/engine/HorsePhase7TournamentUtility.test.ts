@@ -1631,10 +1631,15 @@ describe('Phase 7 live action-clock wiring', () => {
     const utility = readFileSync(join(here, 'HorseTournamentUtility.ts'), 'utf8');
     const logic = readFileSync(join(here, 'HorseLogic.ts'), 'utf8');
     const turns = readFileSync(join(here, 'ServerTableEngineTurns.ts'), 'utf8');
-    const arbiter = logic.indexOf('const evaluation = evaluateTournamentUtilityDetailed({');
+    const arbiter = logic.indexOf(
+      'const evaluation = evaluateTournamentUtilityDetailed(phase8UtilityInput)'
+    );
     const finalThink = logic.indexOf('decision.thinkTime = this.computeThinkTime(', arbiter);
     expect(arbiter).toBeGreaterThan(0);
     expect(finalThink).toBeGreaterThan(arbiter);
+    const continuation = logic.indexOf('evaluateTournamentPostflop(', arbiter);
+    expect(continuation).toBeGreaterThan(arbiter);
+    expect(finalThink).toBeGreaterThan(continuation);
     expect(logic.slice(arbiter, finalThink)).not.toMatch(/decision\s*=\s*this\.decide/);
     expect(utility).not.toMatch(/\btightness\s*:|\bbluffFreq\s*:|\bmoodOf\(|\bHorseStyle\b.*from/);
     expect(turns).toContain('...deepResult.decision');

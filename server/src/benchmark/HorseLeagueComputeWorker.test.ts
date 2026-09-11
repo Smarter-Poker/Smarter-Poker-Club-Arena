@@ -423,6 +423,13 @@ describe('Horse League compute isolation', () => {
     expect(clientSource).toContain('fork(');
     expect(clientSource).toContain('HorseLeagueComputeProcess');
     expect(clientSource).toContain('message.executionNice !== osConstants.priority.PRIORITY_LOW');
+    expect(clientSource).toContain("EQUITY_GOVERNOR: 'off'");
+    const workerSource = readFileSync(
+      new URL('./HorseLeagueComputeWorker.ts', import.meta.url),
+      'utf8'
+    );
+    expect(workerSource).toContain("process.env.EQUITY_GOVERNOR !== 'off'");
+    expect(workerSource).toContain('Tournament evidence requires a fixed equity sample budget');
     expect(clientSource).not.toContain('new Worker(');
     expect(processSource).toContain('setPriority(0, osConstants.priority.PRIORITY_LOW)');
     expect(processSource).toContain('getPriority(0)');

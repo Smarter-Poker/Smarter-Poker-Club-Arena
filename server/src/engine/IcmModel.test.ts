@@ -10,6 +10,24 @@ import {
 } from './IcmModel.js';
 
 describe('icmEquity', () => {
+  it('bounds optional future-hand work with truthful uncertainty and unchanged default work', () => {
+    const stacks = Array.from({ length: 18 }, () => 1000),
+      payouts = [50, 30, 20];
+    const baseline = createIcmEquityEstimator(stacks, payouts, 0);
+    const future = createIcmEquityEstimator(stacks, payouts, 0, undefined, 128);
+    expect(baseline.trials).toBe(1200);
+    expect(future.trials).toBe(128);
+    const a = baseline.estimate(stacks),
+      b = future.estimate(stacks);
+    expect(b.errorBound).toBeGreaterThan(a.errorBound);
+    expect(Math.abs(b.equity - 100 / 18)).toBeLessThanOrEqual(b.errorBound);
+    expect(future.estimate(stacks)).toEqual(b);
+    expect(createIcmEquityEstimator(stacks, payouts, 0, undefined, 1).trials).toBe(96);
+    expect(createIcmEquityEstimator(stacks, payouts, 0, undefined, 100000).trials).toBe(1200);
+    expect(
+      createIcmEquityEstimator([100, 200], [100], 0, undefined, 128).estimate([100, 200])
+    ).toEqual(createIcmEquityEstimator([100, 200], [100], 0).estimate([100, 200]));
+  });
   it('two players: closed form p*(P1-P2)+P2', () => {
     // 60/40 chips, payouts 100/60: hero(60%) = 0.6*100 + 0.4*60 = 84
     expect(icmEquity([600, 400], [100, 60], 0)).toBeCloseTo(84, 6);

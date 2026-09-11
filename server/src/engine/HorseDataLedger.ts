@@ -529,6 +529,21 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'Phase7'
   ),
   flag(
+    'phase8Postflop',
+    'tournament postflop counterfactual; shadow by default; candidate mode is offline promotion only',
+    'Phase8'
+  ),
+  flag(
+    'phase10Plo4',
+    'bounded PLO4 policy for every street; shadow by default; candidate mode is offline promotion only',
+    'Phase10'
+  ),
+  flag(
+    'phase10EvidenceMode',
+    'offline fixed-work PLO4 evidence clock; rejected by the live decision worker',
+    'Phase10'
+  ),
+  flag(
     'v43Tempo',
     'tempo reads: a river big bet priced by how fast it was made against what this player shows down at that tempo',
     'V43'
@@ -1573,6 +1588,144 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'Phase7',
     'phase6_tournament_context_complete',
     0.99
+  ),
+  receipt(
+    'phase10_seen',
+    'HorseLogic -> evaluatePlo4LivePolicy',
+    'natural PLO4 decisions entering the versioned policy',
+    'Phase10'
+  ),
+  receipt(
+    'phase10_eligible',
+    'evaluatePlo4LivePolicy',
+    'complete supported single-board PLO4 nodes',
+    'Phase10'
+  ),
+  receipt(
+    'phase10_fired',
+    'evaluatePlo4LivePolicy',
+    'completed bounded PLO4 policy evaluation',
+    'Phase10'
+  ),
+  receipt(
+    'phase10_shadow_changed',
+    'evaluatePlo4LivePolicy',
+    'proposal differs from baseline; not a live action claim',
+    'Phase10'
+  ),
+  receipt(
+    'phase10_applied',
+    'HorseLogic',
+    'approved policy proposal accepted before final utility and enforcement',
+    'Phase10'
+  ),
+  receipt(
+    'phase10_baseline_retained',
+    'HorseLogic',
+    'shadow or unavailable policy retained the existing action',
+    'Phase10'
+  ),
+  receipt(
+    'phase10_reason_*',
+    'evaluatePlo4LivePolicy',
+    'exact selection or unavailable reason',
+    'Phase10',
+    'phase10_seen',
+    0.99
+  ),
+  receipt(
+    'phase10_street_*',
+    'evaluatePlo4LivePolicy',
+    'street coverage for completed policy evaluations',
+    'Phase10',
+    'phase10_fired',
+    0.99
+  ),
+  receipt(
+    'phase10_utility_*',
+    'HorseLogic -> HorseTournamentUtility',
+    'cash or existing tournament utility ownership',
+    'Phase10',
+    'phase10_seen',
+    0.99
+  ),
+  receipt(
+    'phase10_execution_*',
+    'ServerTableEngineTurns',
+    'authoritative action or retired decision accounting',
+    'Phase10'
+  ),
+  receipt(
+    'phase8_seen',
+    'HorseLogic -> HorseTournamentPostflop',
+    'natural tournament postflop decisions entering the Phase 8 gate',
+    'Phase8'
+  ),
+  receipt(
+    'phase8_eligible',
+    'HorseTournamentPostflop',
+    'canonical NLH single-board decisions with action-specific utility',
+    'Phase8'
+  ),
+  receipt(
+    'phase8_fired',
+    'HorseTournamentPostflop',
+    'completed bounded continuation evaluations',
+    'Phase8'
+  ),
+  receipt(
+    'phase8_shadow_changed',
+    'HorseTournamentPostflop',
+    'counterfactual differs from accepted baseline; not proof of changed play',
+    'Phase8'
+  ),
+  receipt(
+    'phase8_applied',
+    'HorseTournamentPostflop',
+    'promoted candidate accepted before authoritative enforcement',
+    'Phase8'
+  ),
+  receipt(
+    'phase8_baseline_retained',
+    'HorseTournamentPostflop',
+    'shadow or unavailable candidate preserves baseline',
+    'Phase8'
+  ),
+  receipt(
+    'phase8_reason_*',
+    'HorseTournamentPostflop',
+    'one explicit selection or fallback reason per observed decision',
+    'Phase8',
+    'phase8_seen',
+    0.99
+  ),
+  receipt(
+    'phase8_objective_*',
+    'HorseTournamentPostflop',
+    'objective partitions completed candidate evaluations',
+    'Phase8',
+    'phase8_fired',
+    0.99
+  ),
+  receipt(
+    'phase8_feature_*',
+    'HorseTournamentPostflop',
+    'specific geometry and objective evidence, not independent overwrites',
+    'Phase8'
+  ),
+  receipt(
+    'phase8_format_*',
+    'HorseLogic',
+    'format partitions every observed tournament postflop gate',
+    'Phase8',
+    'phase8_seen',
+    0.99
+  ),
+  receipt(
+    'phase8_execution_*',
+    'ServerTableEngineTurns',
+    'authoritative action acceptance, coercion, fallback or retired request',
+    'Phase8'
   ),
   receipt(
     'phase7_objective_*',

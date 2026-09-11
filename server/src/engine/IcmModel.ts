@@ -167,7 +167,8 @@ export function createIcmEquityEstimator(
   stacks: number[],
   payouts: number[],
   heroIdx: number,
-  mutableIndices: number[] = stacks.map((_, index) => index)
+  mutableIndices: number[] = stacks.map((_, index) => index),
+  maximumTrials: number = MC_MAX_TRIALS
 ): IcmEquityEstimator {
   const reference = cleanStacks(stacks);
   const prizes = cleanPayouts(payouts);
@@ -209,7 +210,16 @@ export function createIcmEquityEstimator(
   const fixed = reference
     .map((stack, index) => ({ stack, index }))
     .filter((entry) => entry.stack > 0 && !mutableSet.has(entry.index));
-  const trials = mcTrials(live);
+  const trials = Math.min(
+    mcTrials(live),
+    Math.max(
+      MC_MIN_TRIALS,
+      Math.min(
+        MC_MAX_TRIALS,
+        Number.isFinite(maximumTrials) ? Math.floor(maximumTrials) : MC_MAX_TRIALS
+      )
+    )
+  );
   const mutableDraws = mutable.map(() => new Float64Array(trials));
   const remoteClocks: Float64Array[] = new Array(trials);
 

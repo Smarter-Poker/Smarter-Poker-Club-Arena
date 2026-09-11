@@ -1079,7 +1079,16 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
                * engine's terminal cash authority - ranks every bust by that
                * hand's commit time before it pays, not by when it was recorded
                * (20260911062048). A skipped player recorded late therefore
-               * finishes where they busted.
+               * finishes where they busted - in a cash ladder; a satellite or
+               * a final-table deal still pays the recording order
+               * (bustOrder.ts). For the two refusals that can never clear by
+               * themselves - `unresolved_knockout_generation_chain`, and
+               * `knockout_bust_time_unproven` for a generation the player
+               * played on from - the door also writes one critical
+               * financial_alerts row per player
+               * (`knockout_door.payout_blocked_by_unrecordable_bust`), so the
+               * stuck event reaches the money board and not only this log
+               * line.
                */
               if (streak < TournamentManagerBase.BUST_REFUSAL_SKIP_AFTER) return;
               reportError(

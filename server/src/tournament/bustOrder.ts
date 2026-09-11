@@ -36,7 +36,14 @@
  * (TDA) - then user id. The knockout doors stamp `eliminated_at` by exactly
  * that rule, and `fn_settle_tournament_places`, the engine's terminal cash
  * authority, re-derives every place from it before it pays (migration
- * 20260911062048).
+ * 20260911062048). Where the hand-history prune has already deleted a hand's
+ * commit row (horse-only hands, after seven days), the finish reads the
+ * generation's capture time instead, which precedes that commit by
+ * milliseconds; it never falls back to the order busts were recorded in.
+ * Satellites and final-table deals settle through their own authorities
+ * (`fn_settle_satellite_tournament`, `fn_settle_tournament_final_table_deal`),
+ * which still number places by `elimination_sequence` - the recording order.
+ * The rule above is not yet theirs.
  *
  * This sweep does NOT sort by commit time. It records busts in HAND-NUMBER
  * order - the global deal order - because the PKO watermark

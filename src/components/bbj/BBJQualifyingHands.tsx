@@ -159,9 +159,16 @@ export function BBJQualifyingHands({
           {BBJ_RULES.requireBothHoleCards
             ? ' Both Players Must Use Two Cards From Their Own Hand.'
             : ''}
+          {/* THE RULE, NOT THE ASPIRATION (2026-09-11). This branch printed
+              "The Prize Is Divided Between Them" whenever the flag was true,
+              and the flag was true while the engine paid a single holder. The
+              engine evaluates every loser and pays the strongest qualifying
+              hand, which is the one that took the worse beat; a player has to
+              be able to read that and predict it. If the flag is ever turned
+              on, the sentence follows it back. */}
           {BBJ_RULES.splitIfMultipleQualify
             ? ' If More Than One Player Loses With A Qualifying Hand, The Prize Is Divided Between Them.'
-            : ''}
+            : ' If More Than One Player Loses With A Qualifying Hand, The Strongest Losing Hand Takes It.'}
         </p>
       )}
 

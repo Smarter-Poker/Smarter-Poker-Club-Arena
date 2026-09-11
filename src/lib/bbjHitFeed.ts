@@ -115,9 +115,17 @@ async function announce(row: BbjWinnerRow, poolId: string): Promise<void> {
      except here what gets muted is the real jackpot.
 
      A mini is not hidden: it gets the full celebration AT ITS OWN TABLE from
-     the engine's `bbj_hit` event, it appears in the ticker, and it is listed
-     and badged on the Previous Winners page. It just does not interrupt
-     everybody else.
+     the engine's `bbj_hit` event, the table plate names what it pays at these
+     stakes, the rules panel and the info modal carry its own qualifying bar,
+     and it is listed and badged on the Previous Winners page. It just does not
+     interrupt everybody else.
+
+     CORRECTED 2026-09-11: this list used to include "it appears in the
+     ticker". `BBJTicker` is not mounted on any page - `tests/every-file-under-
+     src-is-reachable.law.test.ts` allowlists it as read only by a test - so
+     one of the three compensations offered here for not announcing a mini
+     platform-wide did not exist. The surfaces named above are the ones that
+     actually render, checked file by file rather than remembered.
 
      A row with no `kind` is a main jackpot - every row written before today. */
   if ((row.kind || 'main') !== 'main') {

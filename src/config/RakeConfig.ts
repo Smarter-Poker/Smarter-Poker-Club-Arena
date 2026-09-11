@@ -526,6 +526,30 @@ export function getBBJQualifyingInfo(gameType: string | null | undefined): BBJWi
 // BBJ GENERAL RULES
 // ═══════════════════════════════════════════════════════════════════════════════
 
+/**
+ * HOW A MAIN JACKPOT IS DIVIDED, IN ONE PLACE (2026-09-11).
+ *
+ * 50 to the bad-beat hand, 25 to the hand that won it, 25 shared by everyone
+ * dealt in - `server/src/config/RakeConfig.ts` computes exactly this as
+ * `totalPayoutPercent / 2`, `/ 4`, `/ 4`, and `fn_bbj_payout_atomic` applies
+ * it in SQL.
+ *
+ * It was typed as bare `0.5` / `0.25` arithmetic and bare "50%" / "25%" text
+ * across six client surfaces - the jackpot page's bar, the celebration, the
+ * info modal, the basic panel, the rules panel - with nothing tying the words
+ * to the arithmetic beside them. `BBJ_MINI_SPLIT_PERCENT` was created for the
+ * mini on exactly this reasoning ("a caption quietly disagreeing with the
+ * number under it"); the main, which is the larger money, had no equivalent.
+ */
+export const BBJ_MAIN_SPLIT = { loser: 0.5, winner: 0.25, table: 0.25 } as const;
+
+/** The percentage a surface PRINTS, derived from the split rather than typed. */
+export const BBJ_MAIN_SPLIT_PERCENT: Record<keyof typeof BBJ_MAIN_SPLIT, string> = {
+  loser: `${Math.round(BBJ_MAIN_SPLIT.loser * 100)}%`,
+  winner: `${Math.round(BBJ_MAIN_SPLIT.winner * 100)}%`,
+  table: `${Math.round(BBJ_MAIN_SPLIT.table * 100)}%`,
+};
+
 export const BBJ_RULES = {
   /**
    * PAYOUT floor ONLY (Dan 2026-08-29): the drop is collected on every flop
@@ -549,7 +573,12 @@ export const BBJ_RULES = {
   miniMinPlayersDealt: 3,
   excludeDoubleBoard: true,
   onlyFirstRunout: true,
-  splitIfMultipleQualify: true,
+  /* FALSE, MIRRORING server BBJ_RULES.splitIfMultipleQualify (2026-09-11).
+     This read `true` and BBJQualifyingHands printed a promise that the prize
+     is divided between multiple qualifying losers. The engine has always paid
+     the STRONGEST qualifying losing hand - one holder, deterministically, the
+     worse beat. The surface now says that. */
+  splitIfMultipleQualify: false,
   requireBothHoleCards: true,
 } as const;
 
@@ -700,10 +729,20 @@ export function getRakeConfig(
     bbjEnabled: bbjEligible,
     bbjFeeBB: bbjEligible ? bbjFeeBB : 0,
     bbjPoolAllocation: BBJ_POOL_ALLOCATION,
-    bbjPayoutTotal: 100,
-    bbjPayoutLoser: 50,
-    bbjPayoutWinner: 25,
-    bbjPayoutTable: 25,
+    /* DERIVED FROM THE TIER, AS THE ENGINE DOES (2026-09-11).
+       These four read `100, 50, 25, 25` - flat literals - and the first of
+       them was simply WRONG. No stakes tier pays 100% of the pool: the tiers
+       pay 15 / 25 / 40 / 55 / 70 / 85 (`bbjPayoutTotalPercent` above), which
+       is what `server/src/config/RakeConfig.ts` returns from the same fields.
+       Nothing on the client read these yet, so nothing was displaying the
+       wrong number - which is the only reason this was a latent defect and
+       not a live one. A wrong constant sitting in a config waiting for its
+       first reader is worse than a missing one, because the reader has no
+       reason to doubt it. Derived here so the two halves cannot disagree. */
+    bbjPayoutTotal: tier.bbjPayoutTotalPercent,
+    bbjPayoutLoser: tier.bbjPayoutTotalPercent * BBJ_MAIN_SPLIT.loser,
+    bbjPayoutWinner: tier.bbjPayoutTotalPercent * BBJ_MAIN_SPLIT.winner,
+    bbjPayoutTable: tier.bbjPayoutTotalPercent * BBJ_MAIN_SPLIT.table,
     qualifyingHand: qualifying,
     rules: BBJ_RULES,
     _exactMatch: !!scheduleMatch,

@@ -401,6 +401,79 @@ export async function setBbjMiniFloor(
   }
 }
 
+/**
+ * THE UNION'S OWN TWO CONTROLS (2026-09-11).
+ *
+ * The two above are keyed on a CLUB and both refuse a club inside a union with
+ * `union_club_follows_the_union` - correctly, because one member club must not
+ * decide what every table under a union pays. The union was then given nothing
+ * to follow that sentence to: there was no `fn_bbj_set_union_mini_*` at all,
+ * and the LARGER pool on this platform is a union pool. So the mini's switch
+ * and its reserve floor were unreachable for the pool they matter most to.
+ *
+ * Same shape as the club pair on purpose - the database decides who may call
+ * them (`fn_is_union_operator`: the union's owner, or a row in `union_admins`)
+ * and how low the floor may go (one payout at the largest enabled tier) - and
+ * the reason comes back rather than being thrown, so the surface can say why.
+ *
+ * They do NOT call `refreshBbjMini()`. That feed is keyed by club id and these
+ * take a union id; a union operator's surface re-reads the pool row it already
+ * holds. Calling it with no club in hand would refresh nothing and read as
+ * though it had.
+ */
+export async function setBbjUnionMiniEnabled(
+  unionId: string,
+  enabled: boolean
+): Promise<{ ok: true; enabled: boolean } | { ok: false; reason: string }> {
+  try {
+    const { data, error } = await supabase.rpc('fn_bbj_set_union_mini_enabled', {
+      p_union_id: unionId,
+      p_enabled: enabled,
+    });
+    if (error) {
+      reportError(error, 'bbjMiniFeed.union_set_failed', { unionId, enabled });
+      return { ok: false, reason: 'request_failed' };
+    }
+    const row = (data ?? {}) as Record<string, unknown>;
+    if (row.ok !== true) {
+      return { ok: false, reason: String(row.reason ?? 'refused') };
+    }
+    return { ok: true, enabled: row.mini_enabled !== false };
+  } catch (e) {
+    reportError(e, 'bbjMiniFeed.union_set_threw', { unionId, enabled });
+    return { ok: false, reason: 'request_failed' };
+  }
+}
+
+/** The union's reserve floor. See `setBbjUnionMiniEnabled` for why this pair exists. */
+export async function setBbjUnionMiniFloor(
+  unionId: string,
+  floor: number
+): Promise<{ ok: true; floor: number } | { ok: false; reason: string; minimum?: number }> {
+  try {
+    const { data, error } = await supabase.rpc('fn_bbj_set_union_mini_floor', {
+      p_union_id: unionId,
+      p_floor: floor,
+    });
+    if (error) {
+      reportError(error, 'bbjMiniFeed.union_set_floor_failed', { unionId, floor });
+      return { ok: false, reason: 'request_failed' };
+    }
+    const row = (data ?? {}) as Record<string, unknown>;
+    if (row.ok !== true) {
+      return {
+        ok: false,
+        reason: String(row.reason ?? 'refused'),
+        minimum: row.minimum === undefined ? undefined : num(row.minimum),
+      };
+    }
+    return { ok: true, floor: num(row.mini_reserve_floor) };
+  } catch (e) {
+    reportError(e, 'bbjMiniFeed.union_set_floor_threw', { unionId, floor });
+    return { ok: false, reason: 'request_failed' };
+  }
+}
+
 /** Test-only. Never called by the app. */
 export function __resetBbjMiniFeedForTests(): void {
   for (const feed of feeds.values()) if (feed.timer !== null) clearInterval(feed.timer);

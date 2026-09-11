@@ -1,0 +1,30 @@
+{
+  "kind": "ast_property_write_map",
+  "rows": [
+    {
+      "file": "src/components/club/CreateTournamentModal.tsx",
+      "property": "freeBuy",
+      "enclosing_scope": "tournamentConfig",
+      "ancestor_call_names": []
+    },
+    {
+      "file": "src/components/club/CreateTournamentModal.tsx",
+      "property": "addOnFromStart",
+      "enclosing_scope": "tournamentConfig",
+      "ancestor_call_names": []
+    },
+    {
+      "file": "src/services/TournamentService.ts",
+      "property": "freeBuy",
+      "enclosing_scope": "p",
+      "ancestor_call_names": []
+    },
+    {
+      "file": "src/services/TournamentService.ts",
+      "property": "addOnFromStart",
+      "enclosing_scope": "p",
+      "ancestor_call_names": []
+    }
+  ],
+  "native_execution": false
+}

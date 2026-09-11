@@ -1,0 +1,22 @@
+{
+  "status": "passed",
+  "test_summary": ["Test Files  3 passed (3)", "Tests  40 passed (40)"],
+  "source_sha256": {
+    "src/utils/freeBuy.ts": "c1a9f4bd1d8a9f41f420608b2c14e7b3ca396c4056b731c4e21882da4d536fb2",
+    "server/src/config/buyIn.ts": "8c8dab1290eb9715516049172c725d2307664b8d0e932de38c7d9e17639c4920",
+    "tests/unit/tournamentCreateEnabledOptionsWiring.test.ts": "9a881df5ec2791f4100e10a60df85c1028d510c4627ccccc6804f4a6ee3e93be",
+    "tests/unit/freeBuy.test.ts": "33830c244a9dd544163765600ab77979eb350b493e17c404b00c861fc803ea57",
+    "tests/law/FreerollsAreFreeBuy.law.test.ts": "fc71b4f80a302c3bef42058c6ddeaae191a5b5c21242e8ea7926dc540c69c5de",
+    "scripts/ci/probes/tournament-create-options-enabled-native.sql": "17d7e757b2cb04112fa1615c1e515c88da8f5d37d35b1d1b582a941362089e30",
+    "scripts/ci/probes/tournament-create-options-persist-flags-candidate.sql": "e16b3a057460833cd74c7a2da612df8b2c5269e156a7cc7b8116679d7fb6b24a",
+    "scripts/ci/probes/tournament-create-options-rehearse.py": "efbac1a6b67903ef84534455a03e8c3e9e7506f3e592b9084edf1e4c5afe0b17"
+  },
+  "config_input_kind": "authored_synthetic_input",
+  "configuration_export": false,
+  "native_execution": false,
+  "diff_whitespace_check": true,
+  "before_flag_failures": 4,
+  "predicate_changed": false,
+  "existing_price_formulas_changed": false,
+  "historical_rows_changed": false
+}

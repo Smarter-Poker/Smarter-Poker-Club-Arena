@@ -160,7 +160,7 @@ test('an RLS-filtered fixture observer cannot hide a seat or fabricate an empty 
   }
 });
 
-test('narrow NOINHERIT qualification reader includes hidden column metadata without application data grants', async () => {
+test('NOINHERIT reader can see hidden metadata but table grants alone do not establish isolation', async () => {
   const f = await fixture();
   let reader;
   try {
@@ -226,6 +226,53 @@ test('narrow NOINHERIT qualification reader includes hidden column metadata with
     }
   } finally {
     await reader?.end();
+    await f.db.end();
+  }
+});
+
+test('catalogue detects function EXECUTE, schema USAGE, default privileges, ownership and role changes', async () => {
+  const f = await fixture();
+  try {
+    await f.db.query(`CREATE ROLE acl_fixture_owner NOLOGIN;
+      CREATE SCHEMA acl_fixture AUTHORIZATION acl_fixture_owner;
+      CREATE FUNCTION public.acl_fixture_secret() RETURNS integer LANGUAGE sql SECURITY DEFINER AS $$ SELECT 1 $$;`);
+    let previous = await schemaCatalogue(f.db);
+    for (const sql of [
+      'REVOKE EXECUTE ON FUNCTION public.acl_fixture_secret() FROM PUBLIC',
+      'GRANT USAGE ON SCHEMA acl_fixture TO authenticated',
+      'ALTER DEFAULT PRIVILEGES IN SCHEMA acl_fixture GRANT SELECT ON TABLES TO authenticated',
+      'ALTER FUNCTION public.acl_fixture_secret() OWNER TO acl_fixture_owner',
+      'ALTER ROLE acl_fixture_owner BYPASSRLS',
+      'GRANT acl_fixture_owner TO authenticated WITH INHERIT FALSE',
+    ]) {
+      await f.db.query(sql);
+      const current = await schemaCatalogue(f.db);
+      assert.notEqual(current, previous, sql);
+      previous = current;
+    }
+    await f.db.query('GRANT EXECUTE ON FUNCTION public.acl_fixture_secret() TO anon,authenticated');
+    const ordered = await schemaCatalogue(f.db);
+    await f.db.query(
+      'REVOKE EXECUTE ON FUNCTION public.acl_fixture_secret() FROM anon,authenticated; GRANT EXECUTE ON FUNCTION public.acl_fixture_secret() TO authenticated,anon'
+    );
+    assert.equal(await schemaCatalogue(f.db), ordered, 'equivalent grant order is normalized');
+  } finally {
+    await f.db.end();
+  }
+});
+
+test('NOINHERIT still receives PUBLIC SECURITY DEFINER execution', async () => {
+  const f = await fixture();
+  try {
+    await f.db
+      .query(`CREATE ROLE public_acl_probe NOLOGIN NOINHERIT; CREATE FUNCTION public.public_definer_probe() RETURNS integer LANGUAGE sql SECURITY DEFINER AS $$ SELECT 1 $$;
+      SET ROLE public_acl_probe;`);
+    assert.equal(
+      (await f.db.query('SELECT public.public_definer_probe() AS value')).rows[0].value,
+      1
+    );
+    await f.db.query('RESET ROLE');
+  } finally {
     await f.db.end();
   }
 });

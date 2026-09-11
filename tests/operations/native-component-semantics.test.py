@@ -95,6 +95,17 @@ class NativeArtifactBoundary(unittest.TestCase):
             with self.subTest(tuples=tuples), self.assertRaises(RuntimeError):
                 MODULE.validate_plan({**plan, 'tuples': tuples})
 
+    def test_schema_readiness_refuses_absent_partial_or_excluded_contract(self):
+        valid = {'version': 1, 'source_sha': 'e' * 40,
+                 'current_database_contract_ready': True, 'exclusions': []}
+        self.assertEqual(MODULE.validate_source_contract(valid), 'e' * 40)
+        for value in [None, {}, [], {**valid, 'version': True},
+                      {**valid, 'current_database_contract_ready': False},
+                      {**valid, 'exclusions': ['application-role-acl-baseline']},
+                      {**valid, 'source_sha': 'not-a-sha'}, {**valid, 'unexpected': True}]:
+            with self.subTest(contract=value), self.assertRaises(RuntimeError):
+                MODULE.validate_source_contract(value)
+
     def test_driver_uses_separate_fixture_and_oracle_users_with_owned_writable_scratch(self):
         # Drive the actual Python orchestration through verified local ZIPs.
         # Docker/provider calls are explicit test doubles and stop before the
@@ -106,7 +117,7 @@ class NativeArtifactBoundary(unittest.TestCase):
             schema_path = root / 'schema.zip'
             with zipfile.ZipFile(schema_path, 'w') as archive:
                 archive.writestr('schema.sql', schema_sql)
-                archive.writestr('fixture.json', json.dumps({'supabase_host': 'kuklfnapbkmacvwxktbh.supabase.co'}))
+                archive.writestr('fixture.json', json.dumps({'supabase_host': 'kuklfnapbkmacvwxktbh.supabase.co', 'source_contract': {'version': 1, 'source_sha': 'e' * 40, 'current_database_contract_ready': True, 'exclusions': []}}))
             engine = {'source_sha': 'a' * 40, 'identity': 'sha256:' + 'b' * 64}
             components = {'club-arena-engine': engine, 'club-arena-web': web}
             plan = {'version': 1, 'tuples': [components, components],
@@ -196,6 +207,28 @@ class NativeArtifactBoundary(unittest.TestCase):
             self.assertNotIn(environment['GH_TOKEN'], repr(calls))
             self.assertFalse((output / 'receipt.json').exists())
             self.assertTrue(json.loads((output / 'cleanup/receipt.json').read_text())['complete'])
+
+            # An explicitly unready donor never reaches candidate image loading,
+            # fixture start, SQL execution or the oracle, even with valid ZIPs.
+            with zipfile.ZipFile(schema_path, 'w') as archive:
+                archive.writestr('schema.sql', schema_sql)
+                archive.writestr('fixture.json', json.dumps({
+                    'supabase_host': 'kuklfnapbkmacvwxktbh.supabase.co',
+                    'source_contract': {'version': 1, 'source_sha': 'e' * 40,
+                        'current_database_contract_ready': False,
+                        'exclusions': ['application-role-acl-baseline']}}))
+            calls.clear()
+            with patch.dict(os.environ, environment), patch.object(MODULE, 'command', side_effect=command), \
+                    patch.object(MODULE, 'provider', return_value={'total_count': 1, 'jobs': [
+                        {'id': 456, 'name': 'qualify', 'status': 'in_progress'}]}), \
+                    patch.object(MODULE, 'download_artifact', side_effect=download), \
+                    patch.object(MODULE, 'unpack_engine') as unpack:
+                with self.assertRaisesRegex(RuntimeError, 'CURRENT_DATABASE_CONTRACT_REQUIRED'):
+                    MODULE.qualify(request, operation, root / 'controls', root / 'unready-evidence')
+                unpack.assert_not_called()
+            self.assertFalse(any(args[:3] == ['docker', 'run', '-d'] for args in calls))
+            self.assertFalse(any('/opt/qualification/node_modules/.bin/tsx' in args for args in calls))
+
 
 
 if __name__ == '__main__':

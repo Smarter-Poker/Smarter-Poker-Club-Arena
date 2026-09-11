@@ -9,15 +9,26 @@ passing candidate qualification or production installation receipt.
 The controller installation pins `github.component_runtime_image` to an immutable
 OCI digest and `github.component_qualification_workflow_id` to this workflow at
 the reviewed `controlRef`/`controlSha`. `compatibility.schema.catalogue_digest`
-is the complete fixture catalogue computed by `schemaCatalogue()` as
-`qualification_reader`; `database_contract_digest` is the separate live engine
+is the complete fixture catalogue computed by the exact reviewed `schemaCatalogue()` helper; `database_contract_digest` is the separate live engine
 door catalogue digest. They must not be substituted for each other.
 Column metadata comes directly from `pg_attribute`, `pg_class`, `pg_namespace`,
 `pg_type` and `pg_attrdef`, including type/UDT, nullability, default and order.
-It does not use the privilege-filtered `information_schema.columns` view or
-read application data. Therefore a reader granted SELECT only on hand history
-and seats still certifies the metadata of other public/auth relations. Fixture
-producers must compute the digest with this same reviewed catalogue encoding.
+It does not use the privilege-filtered `information_schema.columns` view.
+The digest now also covers normalized effective ACLs and ownership for functions,
+schemas, relations, columns and types in every non-system schema; default ACLs,
+named role privilege flags and membership options are included. Grantors and
+grantees use role names, PUBLIC is explicit, implicit default ACLs are expanded,
+and grant order is normalized. Role passwords are never selected. Existing
+public/auth definitions, constraints, triggers, indexes and RLS remain included.
+Fixture producers must recompute the digest with this same reviewed encoding.
+
+**Table SELECT grants and NOINHERIT do not establish a narrow observer.** PUBLIC
+EXECUTE on application SECURITY DEFINER functions remains executable. The donor
+also lacks the current application role ACL baseline. No blanket application
+ACL revocation or added grants can substitute for qualifying the actual schema.
+The existing direct PostgreSQL oracle path is a prototype with an unresolved
+isolation dependency; it must not be represented as qualified. A fixed-query
+Unix socket bridge is being reviewed separately and is not implemented here.
 
 The missing runtime must provide the fixed `fixture-server` interface below.
 These commands accept no candidate script, shell command or production URL.
@@ -49,7 +60,17 @@ actors capable of playing continuously and an authenticated spectator. Existing
 partial SQL test bootstraps and production seeds do not establish this fixture.
 No production data dump, copied credential or new production account is implied.
 
-The schema artifact's `fixture.json` includes `supabase_host`: exactly one
+The schema artifact's `fixture.json` requires `source_contract` with exactly
+`version:1`, a 40-lowercase-hex `source_sha`,
+`current_database_contract_ready:true`, and `exclusions:[]`. The driver refuses
+absent/malformed/not-ready/excluded contracts before candidate image loading or
+fixture execution; the trusted oracle independently checks the runtime-preserved
+contract before opening its database connection or browser. The schema source
+revision is **not** required to equal before/intermediate engine revisions.
+The reviewed donor currently declares ready=false with tournament lane, mystery
+bounty and application-role ACL exclusions, and therefore cannot qualify.
+
+The schema artifact's `fixture.json` also includes `supabase_host`: exactly one
 lowercase twenty-character project reference followed by `.supabase.co`.
 The current compiled product hostname is `kuklfnapbkmacvwxktbh.supabase.co`.
 The driver rejects schemes, ports, paths, credentials, IPs and wildcards, proves
@@ -60,7 +81,7 @@ must reject every unknown Host/SNI value rather than forwarding it elsewhere.
 
 The fixture writes `/run/club-arena-qualification/fixture.json` containing:
 `version:1`, `scope:"isolated-club-arena-fixture"`, `table_id`,
-`spectator_user_id`, browser `storage_state`,
+`spectator_user_id`, browser `storage_state`, the unchanged `source_contract`,
 `base_url:"https://smarter.poker/hub/club-arena/"` and
 `engine_health_url:"https://engine.smarter.poker/health"`. Those names resolve
 only inside the native driver's internal Docker network. The TLS proxy must
@@ -84,8 +105,9 @@ with no shared groups with `fixture`, plus Chromium, `tsx`, `pg` and
 `@playwright/test` under `/opt/qualification/node_modules`. The trusted control
 checkout is mounted read-only under `/opt/qualification/controls`, so the actual
 existing `tests/e2e/support/liveTableRealtime.ts` dependency resolves from the
-same pinned checkout. `qualification_reader` can read only this disposable
-database over `/run/postgresql`; the suite never reads `DATABASE_URL`.
+same pinned checkout. The current prototype uses `qualification_reader` over
+`/run/postgresql` and never reads `DATABASE_URL`; this connection is not yet a
+qualified security boundary because of inherited PUBLIC function execution.
 The oracle's `docker exec` explicitly sets `HOME=/tmp/qualification`,
 `TMPDIR=/tmp` and `XDG_CACHE_HOME=/tmp/qualification/cache`. The oracle process
 itself, running as UID/GID 1001, creates its home and cache with mode 0700 before

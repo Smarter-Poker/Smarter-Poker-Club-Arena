@@ -1,3 +1,4 @@
+import { requireSchemaSourceContract } from './component-source-contract.mjs';
 // Runs in the installed, isolated fixture image. This is the trusted product
 // oracle; candidate JavaScript, HTML, SQL and image health metadata never write
 // a passing report. No package install or candidate test file is executed here.
@@ -19,6 +20,7 @@ export const semanticCaseNames = Object.freeze([
 ]);
 
 export async function qualifyProduct({ tuple, schema, runtimeImage, fixture, db, browser }) {
+  requireSchemaSourceContract(fixture.source_contract);
   assert.equal(fixture.version, 1);
   assert.equal(fixture.scope, 'isolated-club-arena-fixture');
   assert.match(fixture.table_id, /^[0-9a-f-]{36}$/);
@@ -134,6 +136,7 @@ if (process.argv[1]?.endsWith('/component-semantic-suite.mjs')) {
   await prepareOracleHome();
   const plan = JSON.parse(await readFile('/inputs/plan.json', 'utf8'));
   const fixture = JSON.parse(await readFile('/run/club-arena-qualification/fixture.json', 'utf8'));
+  requireSchemaSourceContract(fixture.source_contract);
   // Only a local socket to the disposable database. Never DATABASE_URL or an
   // inherited service credential from Actions/controller/gameplay.
   const db = new pg.Client({

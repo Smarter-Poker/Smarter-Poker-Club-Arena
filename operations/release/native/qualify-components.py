@@ -34,6 +34,19 @@ def require(value, reason='RELEASE_COMPONENT_SEMANTIC_REFUSED'):
         raise RuntimeError(reason)
 
 
+def validate_source_contract(contract):
+    require(isinstance(contract, dict) and set(contract) == {
+        'version', 'source_sha', 'current_database_contract_ready', 'exclusions'},
+        'RELEASE_SCHEMA_SOURCE_CONTRACT_REQUIRED')
+    require(type(contract['version']) is int and contract['version'] == 1 and
+            isinstance(contract['source_sha'], str) and
+            re.fullmatch(r'[0-9a-f]{40}', contract['source_sha']) and
+            contract['current_database_contract_ready'] is True and
+            type(contract['exclusions']) is list and len(contract['exclusions']) == 0,
+            'RELEASE_SCHEMA_CURRENT_DATABASE_CONTRACT_REQUIRED')
+    return contract['source_sha']
+
+
 def canonical(value):
     return json.dumps(value, sort_keys=True, separators=(',', ':'), ensure_ascii=False)
 
@@ -269,7 +282,9 @@ def qualify(request, operation, controls, output):
             require(archive.getinfo('schema.sql').file_size <= 128 * 1024 * 1024)
             require(digest(archive.read('schema.sql')) == plan['schema']['fixture_sha256'])
             require(archive.getinfo('fixture.json').file_size <= 1024 * 1024)
-            supabase_host = supabase_hostname(json.loads(archive.read('fixture.json'))['supabase_host'])
+            fixture_template = json.loads(archive.read('fixture.json'))
+            validate_source_contract(fixture_template.get('source_contract'))
+            supabase_host = supabase_hostname(fixture_template['supabase_host'])
         for key, item in plan['artifact_inputs'].items():
             require(re.fullmatch(r'[0-9a-f]{64}', key))
             download_artifact(item, temp / (key + '.zip'))

@@ -65,7 +65,9 @@ describe('findLiveSeatsInTournament', () => {
     // The tournament is reached through the join - table_seats has no
     // tournament_id column, which is the whole reason a partial unique index
     // cannot express this rule.
-    expect(calls.select).toContain('tables!inner(tournament_id)');
+    // The parent is named so a new foreign key on table_seats cannot make this
+    // embed ambiguous (PGRST201); see the 2026-09-09 rotator outage.
+    expect(calls.select).toContain('tables!table_seats_table_id_fkey!inner(tournament_id)');
     expect(calls.filters).toContainEqual(['is', 'left_at', null]);
     expect(calls.filters).toContainEqual(['eq', 'tables.tournament_id', TOURNEY]);
     expect(calls.filters).toContainEqual(['eq', 'user_id', PLAYER]);

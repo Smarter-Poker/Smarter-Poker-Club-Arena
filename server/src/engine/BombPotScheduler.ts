@@ -56,6 +56,9 @@ import { bettingStructureFor } from './BettingStructure.js';
  * number cannot be gamed by slowing play. The interval restarts from the bomb
  * hand as before.
  */
+
+import { reportError } from '../services/errorReporter.js';
+
 export const TIMED_ARM_WINDOW_MS = 3 * 60 * 1000;
 export const TIMED_ARM_MIN_HANDS = 1;
 export const TIMED_ARM_MAX_HANDS = 5;
@@ -103,6 +106,35 @@ export function bombPotSettingsFromTable(t: {
   bomb_pot_min_players?: number;
 }): BombPotSchedulerSettings {
   const mode = t.bomb_pot_trigger_mode;
+  const known =
+    mode === 'once_per_orbit' ||
+    mode === 'timed' ||
+    mode === 'bomb_pot_only' ||
+    mode === 'every_n_hands';
+  /**
+   * AN UNKNOWN TRIGGER IS REPORTED, NOT SWALLOWED (2026-09-11, must-move audit).
+   *
+   * A mode this build does not know used to fall through to `every_n_hands`
+   * silently, and the templates write `bomb_pot_frequency = 0`, so `modeViable`
+   * below then came out false and the table dealt with BOMB POTS OFF on a game
+   * the lobby sells as having them. Nothing said so.
+   *
+   * It is unreachable from a real row today - `tables_bomb_pot_trigger_mode_check`
+   * admits exactly the four modes above - so this stays a fall-back rather than
+   * a throw: a typo in one row must never make a table undealable. What it must
+   * not be is quiet. The next mode added to that CHECK (Lightning Poker is the
+   * likely one) will reach an older engine during the window between the
+   * migration and the :55 cutover, and this line is what will say so.
+   */
+  if (mode != null && mode !== '' && !known) {
+    reportError(
+      new Error(
+        `unknown bomb_pot_trigger_mode ${JSON.stringify(mode)}; dealing this table with bomb pots OFF until the engine that knows it is live`
+      ),
+      'BombPotScheduler.unknown_trigger_mode',
+      { mode }
+    );
+  }
   const triggerMode: BombPotTriggerMode =
     mode === 'once_per_orbit' || mode === 'timed' || mode === 'bomb_pot_only'
       ? mode

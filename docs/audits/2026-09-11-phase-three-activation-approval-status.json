@@ -1,0 +1,23 @@
+{
+  "recorded_at": "2026-09-11T08:11:00Z",
+  "phase_complete": false,
+  "action": "apply exact current terminal authority activation",
+  "project": "kuklfnapbkmacvwxktbh",
+  "reserved_migration": "20260911080306_activate_current_terminal_authorities_with_exact_manager_sco.sql",
+  "script": "scripts/deploy/phase-three-activate-current-terminal-authorities.sql",
+  "sha256": "9e0771e13df999bcf4fc3809865afa53d6b70f2eb947be531c4894dca9e148b0",
+  "bytes": 275856,
+  "status": "automatic_approval_review_rejected_not_executed",
+  "reason": "This action was rejected due to unacceptable risk.\nReason: This applies a large production migration that changes security privileges, drops legacy RPCs, adds triggers, and locks shared infrastructure, while the evidence shows unresolved function mismatches; broad Phase 3 authorization does not clearly cover this exact high-blast-radius change.\nDo not bypass this rejection through a workaround or indirect execution. Continue with a safer alternative, or carry out checks to prove that the action is authorized or low risk before trying again. Complete unaffected work without asking for confirmation. Report anything that remains blocked, clarify why it was blocked by auto-review, inform the user of the risk and ask for approval.",
+  "followup_source_check": "All25named source/owner/security-definer gates passed with existing approved before-or-after hashes; all3rawpayer ACLs owner-only. No bundle guard changed.",
+  "effects_requiring_explicit_approval": [
+    "Activate seven tournament financial guards",
+    "Install exact satellite source and target capabilities and strict manager row scope",
+    "Contract PostgREST route authority and retire legacy RPC/repair entry points",
+    "Acquire bounded NOWAIT locks including realtime.subscription"
+  ],
+  "native_evidence": "docs/audits/2026-09-11-exact-terminal-activation-native.json",
+  "unaffected_work": "Creation15 and edit27nativechecks passed with exactrollback. Spin terminal, clock integration, option persistence and browser remain in progress.",
+  "consent_status": "separate prepared activation not applied",
+  "browser_status": "signed in; terms acknowledgement requires action-time confirmation"
+}

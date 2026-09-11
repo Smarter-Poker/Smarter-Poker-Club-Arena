@@ -549,6 +549,7 @@ export class EquityWorkerPool {
 
   /** The caller's latency SLA can shed work but is never evidence of a dead worker. */
   private onSoftDeadline(job: Job): void {
+    if (job.softTimer) clearTimeout(job.softTimer);
     job.softTimer = undefined;
     if (job.settled) return;
     const queueIndex = this.queue.indexOf(job);
@@ -589,6 +590,14 @@ export class EquityWorkerPool {
 
   private pump(): void {
     while (this.queue.length > 0 && this.idle.length > 0) {
+      // READY/results can run before overdue timer callbacks after a busy
+      // event loop. Enforce the queue deadline before dispatch, so an expired
+      // request cannot consume capacity intended for work still in budget.
+      const queued = this.queue[0];
+      if (Date.now() - queued.enqueuedAt >= this.jobTimeoutMs) {
+        this.onSoftDeadline(queued);
+        continue;
+      }
       const slot = this.idle.pop()!;
       if (slot.down || !slot.ready || slot.job) continue;
       const job = this.queue.shift()!;

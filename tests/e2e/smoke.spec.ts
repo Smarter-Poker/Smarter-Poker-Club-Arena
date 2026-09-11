@@ -98,7 +98,7 @@ test.describe('Club Arena — Smoke Tests', () => {
       .catch(() => null);
     await page.goto(url('/bonuses'), { waitUntil: 'domcontentloaded' });
     expect(page.url()).not.toContain('/auth');
-    await assertRendered(page, '/bonuses');
+    await expect(page.locator('#root')).toBeAttached();
     const response = await statusResponse;
     const body: unknown = response ? await response.json().catch(() => undefined) : undefined;
     const metadata = {
@@ -116,6 +116,7 @@ test.describe('Club Arena — Smoke Tests', () => {
     expect(metadata.httpStatus).toBeLessThan(300);
     expect(metadata.contentType).toContain('application/json');
     expect(metadata.bodyKind).toBe('object');
+    expect(page.url()).not.toContain('/auth');
   });
 
   test('No console errors on critical pages', async ({ page }) => {

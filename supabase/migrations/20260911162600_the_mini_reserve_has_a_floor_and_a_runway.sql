@@ -49,124 +49,24 @@
 BEGIN;
 
 -- ── 1. THE READ PATH GAINS ITS RUNWAY ──────────────────────────────────────
--- DROP + CREATE, not CREATE OR REPLACE: the return type grows, and Postgres
--- refuses to replace a function whose OUT columns changed (42P13).
-DROP FUNCTION IF EXISTS public.fn_bbj_mini_for_club(uuid);
-
-CREATE FUNCTION public.fn_bbj_mini_for_club(p_club_id uuid)
-RETURNS TABLE(
-  pool_id uuid, enabled boolean, backup_balance numeric, reserve_floor numeric,
-  parked numeric, available numeric, tiers jsonb, hits_30d bigint, paid_30d numeric,
-  last_hit_at timestamp with time zone, club_switch boolean, can_toggle boolean,
-  is_union_pool boolean,
-  -- the runway, all over the SAME 7-day window so the two rates are comparable
-  in_per_day numeric, out_per_day numeric, net_per_day numeric,
-  days_to_floor numeric, floor_minimum numeric
-)
-LANGUAGE sql
-STABLE SECURITY DEFINER
-SET search_path TO 'public'
-AS $function$
-  WITH club AS (
-    SELECT c.id, c.union_id FROM public.clubs c WHERE c.id = p_club_id
-  ),
-  pool AS (
-    SELECT p.pool_id, p.backup_balance, p.is_union_pool
-      FROM public.fn_bbj_pool_for_club(p_club_id) p
-  ),
-  pool_row AS (
-    SELECT bp.id, COALESCE(bp.mini_reserve_floor, 0) AS reserve_floor,
-           COALESCE(bp.mini_enabled, true) AS mini_enabled
-      FROM public.bbj_pools bp JOIN pool ON pool.pool_id = bp.id
-  ),
-  parked_row AS (
-    SELECT public.fn_bbj_parked_reserve(pool.pool_id, 'backup') AS parked FROM pool
-  ),
-  tier_rows AS (
-    SELECT st.id AS tier_id, st.label, st.blind_range, st.min_bb, st.max_bb,
-           mt.amount, mt.enabled,
-           (pool_row.mini_enabled
-            AND mt.enabled
-            AND COALESCE(pool.backup_balance, 0) - parked_row.parked - mt.amount
-                >= pool_row.reserve_floor) AS payable
-      FROM public.bbj_stakes_tiers st
-      JOIN public.bbj_mini_tiers mt ON mt.tier_id = st.id
-      CROSS JOIN pool CROSS JOIN pool_row CROSS JOIN parked_row
-  ),
-  hits AS (
-    SELECT count(*) AS n,
-           COALESCE(sum(w.total_payout), 0) AS paid,
-           max(w.awarded_at) AS last_at
-      FROM public.bbj_winners w JOIN pool ON w.pool_id = pool.pool_id
-     WHERE w.kind = 'mini' AND w.awarded_at > now() - interval '30 days'
-  ),
-  /* THE RUNWAY. Both sides of the rate come from the SAME seven days: money
-     into this pool's backup bank, and money out of it as minis. A shorter
-     window on one side and a longer one on the other produces a ratio that
-     looks authoritative and means nothing. */
-  flow AS (
-    SELECT
-      COALESCE((SELECT sum(x.backup_portion) FROM public.bbj_contributions x
-                 JOIN pool ON x.pool_id = pool.pool_id
-                WHERE x.created_at > now() - interval '7 days'), 0) / 7.0 AS in_day,
-      COALESCE((SELECT sum(w.total_payout) FROM public.bbj_winners w
-                 JOIN pool ON w.pool_id = pool.pool_id
-                WHERE w.kind = 'mini' AND w.awarded_at > now() - interval '7 days'), 0) / 7.0 AS out_day
-  ),
-  /* A reserve may be small, but never too small to cover one more payout. */
-  bound AS (
-    SELECT COALESCE(max(mt.amount) FILTER (WHERE mt.enabled), 0) AS floor_min
-      FROM public.bbj_mini_tiers mt
-  )
-  SELECT pool.pool_id,
-         (pool_row.mini_enabled
-          AND EXISTS (SELECT 1 FROM public.bbj_mini_tiers t WHERE t.enabled)) AS enabled,
-         COALESCE(pool.backup_balance, 0) AS backup_balance,
-         pool_row.reserve_floor,
-         parked_row.parked,
-         GREATEST(0, COALESCE(pool.backup_balance, 0) - parked_row.parked - pool_row.reserve_floor)
-           AS available,
-         COALESCE((SELECT jsonb_agg(jsonb_build_object(
-                     'tierId', tr.tier_id,
-                     'label', tr.label,
-                     'blindRange', tr.blind_range,
-                     'minBB', tr.min_bb,
-                     'maxBB', tr.max_bb,
-                     'amount', tr.amount,
-                     'enabled', tr.enabled,
-                     'payable', tr.payable) ORDER BY tr.min_bb)
-                   FROM tier_rows tr), '[]'::jsonb) AS tiers,
-         hits.n AS hits_30d,
-         hits.paid AS paid_30d,
-         (SELECT max(w.awarded_at) FROM public.bbj_winners w
-           WHERE w.pool_id = pool.pool_id AND w.kind = 'mini') AS last_hit_at,
-         pool_row.mini_enabled AS club_switch,
-         (club.union_id IS NULL AND COALESCE(pool.is_union_pool, false) IS NOT TRUE) AS can_toggle,
-         COALESCE(pool.is_union_pool, false) AS is_union_pool,
-         ROUND(flow.in_day, 2)  AS in_per_day,
-         ROUND(flow.out_day, 2) AS out_per_day,
-         ROUND(flow.in_day - flow.out_day, 2) AS net_per_day,
-         /* NULL is the honest answer for a pool that is not draining - not a
-            huge number, and not zero. A surface must be able to tell "never, at
-            this rate" from "tomorrow". */
-         CASE WHEN flow.out_day > flow.in_day
-              THEN ROUND(
-                     GREATEST(0, COALESCE(pool.backup_balance,0) - parked_row.parked
-                                 - pool_row.reserve_floor)
-                     / (flow.out_day - flow.in_day), 1)
-              ELSE NULL END AS days_to_floor,
-         bound.floor_min AS floor_minimum
-    FROM pool, pool_row, parked_row, hits, club, flow, bound;
-$function$;
-
-COMMENT ON FUNCTION public.fn_bbj_mini_for_club(uuid) IS
-  'The mini jackpot as a player and an operator see it, for one club. Adds the '
-  'runway (phase 3): in_per_day, out_per_day and net_per_day are measured over '
-  'the SAME seven days, and days_to_floor is NULL unless the pool is actually '
-  'draining. `payable` on each tier inverts fn_bbj_mini_payout''s refusal term '
-  'for term, so a shown mini is a payable mini.';
-
-GRANT EXECUTE ON FUNCTION public.fn_bbj_mini_for_club(uuid) TO authenticated, anon, service_role;
+-- REMOVED FROM THIS FILE, DELIBERATELY, AND NOT FROM HISTORY.
+--
+-- This migration also redefined `fn_bbj_mini_for_club` to add the runway. That
+-- definition was superseded twice within eighteen minutes - by 20260911162733
+-- (the window must never be longer than the mini has existed) and then by
+-- 20260911164153 (the rates are club staff's, and the function names its own
+-- actor), which is the definition that STANDS.
+--
+-- `check-definer-authorization` judges each migration FILE on its own body, so
+-- a file that declares an anon-reachable definer which a LATER file fixes is
+-- blocked no matter what follows it - correctly, because nothing guarantees
+-- the later file exists. Keeping three declarations of one function, two of
+-- them dead on arrival, would also mean a replay installs and discards the
+-- same function twice.
+--
+-- So the function is declared ONCE, in 20260911164153. What is left in this
+-- file is `fn_bbj_set_club_mini_floor`, which is byte-for-byte what ran here
+-- and is still current.
 
 -- ── 2. THE FLOOR IS A CONTROL, NOT A CONSTANT ──────────────────────────────
 -- Same authorization shape as fn_bbj_set_club_mini_enabled, and in the same
@@ -258,18 +158,6 @@ GRANT EXECUTE ON FUNCTION public.fn_bbj_set_club_mini_floor(uuid, numeric)
 DO $$
 DECLARE v_cols integer; v_floor_fn integer; v_pools integer; v_changed integer;
 BEGIN
-  -- the read path must publish every runway column
-  SELECT count(*) INTO v_cols
-    FROM unnest(ARRAY['in_per_day','out_per_day','net_per_day','days_to_floor','floor_minimum']) c
-   WHERE EXISTS (
-     SELECT 1 FROM pg_proc p
-       JOIN pg_namespace n ON n.oid = p.pronamespace
-      WHERE n.nspname = 'public' AND p.proname = 'fn_bbj_mini_for_club'
-        AND pg_get_function_result(p.oid) LIKE '%' || c || '%');
-  IF v_cols <> 5 THEN
-    RAISE EXCEPTION 'fn_bbj_mini_for_club is missing runway columns (found %)', v_cols;
-  END IF;
-
   SELECT count(*) INTO v_floor_fn FROM pg_proc p
     JOIN pg_namespace n ON n.oid = p.pronamespace
    WHERE n.nspname = 'public' AND p.proname = 'fn_bbj_set_club_mini_floor';

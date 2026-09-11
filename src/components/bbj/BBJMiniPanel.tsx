@@ -214,31 +214,42 @@ export default function BBJMiniPanel({ clubId, canEdit }: Props) {
           faster than it fills drifted to its floor and stopped - and the only
           symptom was every tier quietly turning unpayable. Both rates are
           measured over ONE window so they are comparable. */}
-      <div className="form-row">
-        <div className="form-group">
-          <label>Reserve Filling</label>
-          <strong>{chips(mini.inPerDay)} A Day</strong>
-        </div>
-        <div className="form-group">
-          <label>Mini Paying Out</label>
-          <strong>{chips(mini.outPerDay)} A Day</strong>
-        </div>
-        <div className="form-group">
-          <label>Net</label>
-          <strong style={{ color: mini.netPerDay < 0 ? '#d9534f' : undefined }}>
-            {mini.netPerDay >= 0 ? '+' : ''}
-            {chips(mini.netPerDay)} A Day
-          </strong>
-        </div>
-      </div>
+      {/* The RATES are the club's business - in_per_day is its daily jackpot
+          rake income - so the database returns them only to that club's staff
+          and they are null for everyone else. TypeScript enforces the gate:
+          these fields do not narrow to numbers outside this branch. */}
+      {mini.isOperator &&
+        mini.inPerDay !== null &&
+        mini.outPerDay !== null &&
+        mini.netPerDay !== null && (
+          <>
+            <div className="form-row">
+              <div className="form-group">
+                <label>Reserve Filling</label>
+                <strong>{chips(mini.inPerDay)} A Day</strong>
+              </div>
+              <div className="form-group">
+                <label>Mini Paying Out</label>
+                <strong>{chips(mini.outPerDay)} A Day</strong>
+              </div>
+              <div className="form-group">
+                <label>Net</label>
+                <strong style={{ color: mini.netPerDay < 0 ? '#d9534f' : undefined }}>
+                  {mini.netPerDay >= 0 ? '+' : ''}
+                  {chips(mini.netPerDay)} A Day
+                </strong>
+              </div>
+            </div>
 
-      <small className="form-hint" style={{ display: 'block', marginBottom: 10 }}>
-        {mini.daysToFloor === null
-          ? `This Reserve Is Not Draining At The Current Rate, Measured Over ${mini.windowDays.toFixed(1)} Days.`
-          : `At The Current Rate This Reserve Reaches Its Floor In About ${mini.daysToFloor.toFixed(1)} Days, After Which The Mini Pauses Until It Refills. Measured Over ${mini.windowDays.toFixed(1)} Days.`}
-      </small>
+            <small className="form-hint" style={{ display: 'block', marginBottom: 10 }}>
+              {mini.daysToFloor === null
+                ? 'This Reserve Is Not Draining At The Current Rate.'
+                : `At The Current Rate This Reserve Reaches Its Floor In About ${mini.daysToFloor.toFixed(1)} Days, After Which The Mini Pauses Until It Refills.`}
+            </small>
+          </>
+        )}
 
-      {showSwitch && (
+      {showSwitch && mini.floorMinimum !== null && (
         <div className="form-row">
           <div className="form-group">
             <label htmlFor="bbj-mini-floor">Reserve Floor</label>

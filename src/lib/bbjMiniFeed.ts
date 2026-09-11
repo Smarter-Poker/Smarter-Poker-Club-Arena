@@ -67,14 +67,23 @@ export interface BbjMiniSnapshot {
      so they are comparable. A seven-day divisor on a four-day-old mini reported
      a spend rate about half the real one, which is how a pool can read solvent
      while draining. */
-  inPerDay: number;
-  outPerDay: number;
-  netPerDay: number;
-  /** Days until the reserve reaches its floor, or NULL when it is not draining. */
+  /**
+   * THE RATES ARE THE CLUB'S BUSINESS, so the database returns them only to
+   * that club's staff: `in_per_day` is its daily jackpot rake income. NULL
+   * here means "not yours to see", which is NOT the same as a rate of zero -
+   * so these are nullable all the way to the surface rather than flattened
+   * through `num()`. `isOperator` says which case you are in.
+   */
+  inPerDay: number | null;
+  outPerDay: number | null;
+  netPerDay: number | null;
+  /** Days until the reserve reaches its floor. NULL when not draining, or hidden. */
   daysToFloor: number | null;
   /** The lowest floor the database will accept: one payout at the largest tier. */
-  floorMinimum: number;
-  windowDays: number;
+  floorMinimum: number | null;
+  windowDays: number | null;
+  /** The caller is staff of this club, so the rates above are populated. */
+  isOperator: boolean;
 }
 
 export type BbjMiniListener = (snapshot: BbjMiniSnapshot) => void;
@@ -99,6 +108,13 @@ function documentIsVisible(): boolean {
 function num(v: unknown): number {
   const n = Number(v);
   return Number.isFinite(n) ? n : 0;
+}
+
+/** Like `num`, but NULL and undefined survive as null rather than becoming 0. */
+function maybeNum(v: unknown): number | null {
+  if (v === null || v === undefined) return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
 }
 
 function parseTiers(raw: unknown): BbjMiniTier[] {
@@ -143,6 +159,7 @@ function sameSnapshot(a: BbjMiniSnapshot | null, b: BbjMiniSnapshot): boolean {
     a.daysToFloor !== b.daysToFloor ||
     a.floorMinimum !== b.floorMinimum ||
     a.windowDays !== b.windowDays ||
+    a.isOperator !== b.isOperator ||
     a.tiers.length !== b.tiers.length
   ) {
     return false;
@@ -189,17 +206,17 @@ async function readOnce(clubId: string, feed: ClubFeed): Promise<void> {
       hits30d: num(row.hits_30d),
       paid30d: num(row.paid_30d),
       lastHitAt: row.last_hit_at ? String(row.last_hit_at) : null,
-      inPerDay: num(row.in_per_day),
-      outPerDay: num(row.out_per_day),
-      netPerDay: num(row.net_per_day),
-      /* NULL means "not draining", and that is NOT zero days. Coercing it
-         through num() would read as "the floor is reached today". */
-      daysToFloor:
-        row.days_to_floor === null || row.days_to_floor === undefined
-          ? null
-          : num(row.days_to_floor),
-      floorMinimum: num(row.floor_minimum),
-      windowDays: num(row.window_days),
+      /* NULL stays NULL on every one of these. For days_to_floor a zero would
+         read as "the floor is reached today" rather than "not draining"; for
+         the rates it would read as "this club earns nothing" rather than "you
+         may not see it". */
+      inPerDay: maybeNum(row.in_per_day),
+      outPerDay: maybeNum(row.out_per_day),
+      netPerDay: maybeNum(row.net_per_day),
+      daysToFloor: maybeNum(row.days_to_floor),
+      floorMinimum: maybeNum(row.floor_minimum),
+      windowDays: maybeNum(row.window_days),
+      isOperator: row.is_operator === true,
     };
     if (sameSnapshot(feed.last, next)) return;
     feed.last = next;

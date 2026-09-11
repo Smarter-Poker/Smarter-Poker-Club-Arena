@@ -31,7 +31,7 @@ const ROOT = resolve(__dirname, '..');
 const read = (p: string) => readFileSync(resolve(ROOT, p), 'utf8');
 
 const RUNWAY_MIGRATION =
-  'supabase/migrations/20260911162733_the_runway_window_is_never_longer_than_the_mini_has_existed.sql';
+  'supabase/migrations/20260911164153_the_reserve_is_public_to_a_player_the_rake_rate_is_not.sql';
 
 describe('the runway measures both rates over one honest window', () => {
   const sql = read(RUNWAY_MIGRATION);
@@ -52,7 +52,7 @@ describe('the runway measures both rates over one honest window', () => {
   });
 
   it('days_to_floor is NULL when nothing is draining, never zero', () => {
-    expect(sql).toMatch(/CASE WHEN flow\.out_day > flow\.in_day/);
+    expect(sql).toMatch(/flow\.out_day > flow\.in_day/);
     expect(sql).toMatch(/ELSE NULL END AS days_to_floor/);
   });
 
@@ -62,7 +62,8 @@ describe('the runway measures both rates over one honest window', () => {
 
   it('the client keeps NULL as NULL rather than coercing it to zero', () => {
     const feed = read('src/lib/bbjMiniFeed.ts');
-    expect(feed).toMatch(/daysToFloor:[\s\S]{0,160}row\.days_to_floor === null[\s\S]{0,80}\? null/);
+    expect(feed).toMatch(/function maybeNum\(v: unknown\): number \| null/);
+    expect(feed).toMatch(/daysToFloor: maybeNum\(row\.days_to_floor\)/);
     for (const f of ['inPerDay', 'outPerDay', 'netPerDay', 'floorMinimum', 'windowDays']) {
       expect(feed, `${f} must reach the surfaces`).toContain(f);
     }
@@ -73,6 +74,29 @@ describe('the runway measures both rates over one honest window', () => {
     expect(panel).toContain('mini.daysToFloor === null');
     expect(panel).toMatch(/Not Draining At The Current Rate/);
     expect(panel).toMatch(/Reaches Its Floor In About/);
+  });
+
+  it('the RATES are club staff only - a club\u2019s rake income is not public', () => {
+    // in_per_day is a club's daily jackpot rake income. check-definer-
+    // authorization blocked the first cut of this phase for handing it to anon.
+    const sql = read(
+      'supabase/migrations/20260911164153_the_reserve_is_public_to_a_player_the_rake_rate_is_not.sql'
+    );
+    expect(sql).toMatch(
+      /REVOKE ALL ON FUNCTION public\.fn_bbj_mini_for_club\(uuid\) FROM PUBLIC, anon;/
+    );
+    expect(sql).toMatch(/auth\.uid\(\) IS NOT NULL AND public\.fn_is_club_admin_uid\(p_club_id\)/);
+    for (const c of ['in_per_day', 'out_per_day', 'net_per_day', 'floor_minimum', 'window_days']) {
+      expect(sql, `${c} must be gated on is_operator`).toMatch(
+        new RegExp(`CASE WHEN caller\\.is_operator THEN[^;]*AS ${c}`)
+      );
+    }
+    // ...but the RESERVE stays visible: two player surfaces have shown it since
+    // phase 2, and hiding it would have made them read zero.
+    expect(sql).toMatch(/COALESCE\(pool\.backup_balance, 0\) AS backup_balance/);
+    expect(sql).toMatch(/^\s+pool_row\.reserve_floor,$/m);
+    const panel = read('src/components/bbj/BBJMiniPanel.tsx');
+    expect(panel).toContain('mini.isOperator &&');
   });
 });
 

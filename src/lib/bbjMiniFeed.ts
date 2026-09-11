@@ -62,6 +62,19 @@ export interface BbjMiniSnapshot {
   hits30d: number;
   paid30d: number;
   lastHitAt: string | null;
+  /* THE RUNWAY (phase 3). Both rates are measured over ONE window -
+     `windowDays`, which is seven days or the mini's age, whichever is shorter -
+     so they are comparable. A seven-day divisor on a four-day-old mini reported
+     a spend rate about half the real one, which is how a pool can read solvent
+     while draining. */
+  inPerDay: number;
+  outPerDay: number;
+  netPerDay: number;
+  /** Days until the reserve reaches its floor, or NULL when it is not draining. */
+  daysToFloor: number | null;
+  /** The lowest floor the database will accept: one payout at the largest tier. */
+  floorMinimum: number;
+  windowDays: number;
 }
 
 export type BbjMiniListener = (snapshot: BbjMiniSnapshot) => void;
@@ -124,6 +137,12 @@ function sameSnapshot(a: BbjMiniSnapshot | null, b: BbjMiniSnapshot): boolean {
     a.hits30d !== b.hits30d ||
     a.paid30d !== b.paid30d ||
     a.lastHitAt !== b.lastHitAt ||
+    a.inPerDay !== b.inPerDay ||
+    a.outPerDay !== b.outPerDay ||
+    a.netPerDay !== b.netPerDay ||
+    a.daysToFloor !== b.daysToFloor ||
+    a.floorMinimum !== b.floorMinimum ||
+    a.windowDays !== b.windowDays ||
     a.tiers.length !== b.tiers.length
   ) {
     return false;
@@ -170,6 +189,17 @@ async function readOnce(clubId: string, feed: ClubFeed): Promise<void> {
       hits30d: num(row.hits_30d),
       paid30d: num(row.paid_30d),
       lastHitAt: row.last_hit_at ? String(row.last_hit_at) : null,
+      inPerDay: num(row.in_per_day),
+      outPerDay: num(row.out_per_day),
+      netPerDay: num(row.net_per_day),
+      /* NULL means "not draining", and that is NOT zero days. Coercing it
+         through num() would read as "the floor is reached today". */
+      daysToFloor:
+        row.days_to_floor === null || row.days_to_floor === undefined
+          ? null
+          : num(row.days_to_floor),
+      floorMinimum: num(row.floor_minimum),
+      windowDays: num(row.window_days),
     };
     if (sameSnapshot(feed.last, next)) return;
     feed.last = next;
@@ -313,6 +343,43 @@ export async function setBbjMiniEnabled(
     return { ok: true, enabled: row.mini_enabled !== false };
   } catch (e) {
     reportError(e, 'bbjMiniFeed.set_threw', { clubId, enabled });
+    return { ok: false, reason: 'request_failed' };
+  }
+}
+
+/**
+ * Set a club's mini reserve floor (phase 3). Same shape as
+ * `setBbjMiniEnabled`: the DATABASE decides who may do this, whether the club
+ * owns its pool at all, and how low the floor may go - the floor may not fall
+ * below one payout at the largest enabled tier, or the felt would promise an
+ * amount the payout RPC must refuse. Returns the reason rather than throwing,
+ * and re-reads the feed on success.
+ */
+export async function setBbjMiniFloor(
+  clubId: string,
+  floor: number
+): Promise<{ ok: true; floor: number } | { ok: false; reason: string; minimum?: number }> {
+  try {
+    const { data, error } = await supabase.rpc('fn_bbj_set_club_mini_floor', {
+      p_club_id: clubId,
+      p_floor: floor,
+    });
+    if (error) {
+      reportError(error, 'bbjMiniFeed.set_floor_failed', { clubId, floor });
+      return { ok: false, reason: 'request_failed' };
+    }
+    const row = (data ?? {}) as Record<string, unknown>;
+    if (row.ok !== true) {
+      return {
+        ok: false,
+        reason: String(row.reason ?? 'refused'),
+        minimum: row.minimum === undefined ? undefined : num(row.minimum),
+      };
+    }
+    refreshBbjMini();
+    return { ok: true, floor: num(row.mini_reserve_floor) };
+  } catch (e) {
+    reportError(e, 'bbjMiniFeed.set_floor_threw', { clubId, floor });
     return { ok: false, reason: 'request_failed' };
   }
 }

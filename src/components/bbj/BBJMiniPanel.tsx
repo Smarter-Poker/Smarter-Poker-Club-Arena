@@ -27,7 +27,12 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import { watchBbjMini, setBbjMiniEnabled, type BbjMiniSnapshot } from '../../lib/bbjMiniFeed';
+import {
+  watchBbjMini,
+  setBbjMiniEnabled,
+  setBbjMiniFloor,
+  type BbjMiniSnapshot,
+} from '../../lib/bbjMiniFeed';
 import { useToast } from '../common/Toast';
 
 interface Props {
@@ -50,7 +55,14 @@ function refusalText(reason: string): string {
     case 'not_signed_in':
       return 'You Are Signed Out. Sign In Again To Change This.';
     case 'club_and_state_required':
+    case 'club_and_floor_required':
       return 'That Request Was Incomplete. Nothing Changed.';
+    case 'floor_cannot_be_negative':
+      return 'A Reserve Floor Cannot Be Negative.';
+    case 'floor_below_one_payout':
+      return 'The Floor Must Cover At Least One Mini Payout At The Largest Stakes.';
+    case 'pool_not_found':
+      return 'This Club Has No Jackpot Pool Yet.';
     default:
       return 'The Mini Jackpot Setting Could Not Be Saved. Nothing Changed.';
   }
@@ -60,6 +72,9 @@ export default function BBJMiniPanel({ clubId, canEdit }: Props) {
   const toast = useToast();
   const [mini, setMini] = useState<BbjMiniSnapshot | null>(null);
   const [busy, setBusy] = useState(false);
+  /* The floor the operator is typing. Null means "showing the stored value" -
+     the input never fights the feed while it is not being edited. */
+  const [floorDraft, setFloorDraft] = useState<string | null>(null);
 
   useEffect(() => {
     /* Clear FIRST. `watchBbjMini` replays immediately only when that club is
@@ -87,6 +102,27 @@ export default function BBJMiniPanel({ clubId, canEdit }: Props) {
       setBusy(false);
     }
   }, [mini, busy, clubId, toast]);
+
+  const onSaveFloor = useCallback(async () => {
+    if (floorDraft === null || busy) return;
+    const next = Number(floorDraft);
+    if (!Number.isFinite(next)) {
+      toast.error('That Is Not A Number.');
+      return;
+    }
+    setBusy(true);
+    try {
+      const res = await setBbjMiniFloor(clubId, next);
+      if (!res.ok) {
+        toast.error(refusalText(res.reason));
+        return;
+      }
+      setFloorDraft(null);
+      toast.success('Reserve Floor Saved');
+    } finally {
+      setBusy(false);
+    }
+  }, [floorDraft, busy, clubId, toast]);
 
   if (!clubId) return null;
 
@@ -172,6 +208,66 @@ export default function BBJMiniPanel({ clubId, canEdit }: Props) {
           <strong>{chips(mini.reserveFloor)} Chips</strong>
         </div>
       </div>
+
+      {/* THE RUNWAY (phase 3). The mini's price is global; its funding is this
+          pool's own rake. Nothing used to compare the two, so a pool paying out
+          faster than it fills drifted to its floor and stopped - and the only
+          symptom was every tier quietly turning unpayable. Both rates are
+          measured over ONE window so they are comparable. */}
+      <div className="form-row">
+        <div className="form-group">
+          <label>Reserve Filling</label>
+          <strong>{chips(mini.inPerDay)} A Day</strong>
+        </div>
+        <div className="form-group">
+          <label>Mini Paying Out</label>
+          <strong>{chips(mini.outPerDay)} A Day</strong>
+        </div>
+        <div className="form-group">
+          <label>Net</label>
+          <strong style={{ color: mini.netPerDay < 0 ? '#d9534f' : undefined }}>
+            {mini.netPerDay >= 0 ? '+' : ''}
+            {chips(mini.netPerDay)} A Day
+          </strong>
+        </div>
+      </div>
+
+      <small className="form-hint" style={{ display: 'block', marginBottom: 10 }}>
+        {mini.daysToFloor === null
+          ? `This Reserve Is Not Draining At The Current Rate, Measured Over ${mini.windowDays.toFixed(1)} Days.`
+          : `At The Current Rate This Reserve Reaches Its Floor In About ${mini.daysToFloor.toFixed(1)} Days, After Which The Mini Pauses Until It Refills. Measured Over ${mini.windowDays.toFixed(1)} Days.`}
+      </small>
+
+      {showSwitch && (
+        <div className="form-row">
+          <div className="form-group">
+            <label htmlFor="bbj-mini-floor">Reserve Floor</label>
+            <input
+              id="bbj-mini-floor"
+              type="number"
+              min={mini.floorMinimum}
+              step="100"
+              value={floorDraft ?? String(Math.round(mini.reserveFloor))}
+              onChange={(e) => setFloorDraft(e.target.value)}
+              disabled={busy}
+            />
+            <small className="form-hint">
+              The Backup Pool Never Drops Below This. Lowest Allowed Is {chips(mini.floorMinimum)} -
+              One Payout At The Largest Stakes.
+            </small>
+          </div>
+          <div className="form-group">
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={onSaveFloor}
+              disabled={busy || floorDraft === null}
+            >
+              {busy ? '...' : 'Save Floor'}
+            </button>
+          </div>
+        </div>
+      )}
 
       <small className="form-hint" style={{ display: 'block' }}>
         The Mini Pauses On Its Own While The Backup Pool Is At Its Floor, And Resumes When It

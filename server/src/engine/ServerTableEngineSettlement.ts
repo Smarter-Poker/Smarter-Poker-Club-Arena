@@ -24,6 +24,7 @@ import {
   detectBBJHit,
   detectBBJNearMiss,
   detectMiniBBJHit,
+  detectMiniBBJNearMiss,
   getTierIdForBB,
 } from '../config/RakeConfig.js';
 import type { BBJDetectionResult } from '../config/RakeConfig.js';
@@ -1258,6 +1259,63 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         } catch (nmErr) {
           // A cosmetic banner must never break settlement.
           console.warn(`[ServerTableEngine:${this.tableId}] BBJ near-miss check failed:`, nmErr);
+        }
+
+        /* THE MINI'S OWN NEAR MISS (phase 3, 2026-09-11). The check above only
+           ever judged the MAIN rule, and only for a loser who had already
+           cleared the MAIN hand bar - so the mini, which exists to catch the
+           beats the main turns away, had no near-miss record at all. Measured
+           that day: 50 near misses in seven days, ZERO about the mini, and 13
+           of them `both_cards_must_play`, a rule the mini DROPS. Its rate was
+           unmeasurable and its tuning guesswork.
+
+           Reasons are prefixed `mini_`, the same shape settlement already uses
+           for `mini_refused:<reason>`, so one table carries both jackpots and a
+           query can always tell them apart. Display and record only: like the
+           main's, this branch moves no money and cannot gate a payout. */
+        try {
+          const miniNearMiss = detectMiniBBJNearMiss(
+            this.currentHandShowdownResults,
+            this.currentHandWinnerIds,
+            variant,
+            this.currentHandPotSize,
+            this.tableInfo.big_blind,
+            dealtInPlayerIds.length,
+            { doubleBoard: this.currentHandCommunityCards2.length > 0 }
+          );
+          if (miniNearMiss.nearMiss) {
+            console.log(
+              `[ServerTableEngine:${this.tableId}] MINI BBJ near miss (${miniNearMiss.reason}): ` +
+                `${miniNearMiss.userId} held ${miniNearMiss.handName}`
+            );
+            void recordBBJNearMiss({
+              tableId: this.tableId,
+              clubId: this.tableInfo?.club_id ?? null,
+              handNumber: this.handCount,
+              variant,
+              bigBlind: this.tableInfo?.big_blind ?? null,
+              potSize: this.currentHandPotSize,
+              playersDealt: dealtInPlayerIds.length,
+              userId: miniNearMiss.userId,
+              handName: miniNearMiss.handName,
+              reason: miniNearMiss.reason,
+              message: miniNearMiss.message,
+            }).catch(() => undefined);
+            this.hub?.emitEvent(this.tableId, {
+              type: 'bbj_near_miss',
+              table_id: this.tableId,
+              hand_number: this.handCount,
+              user_id: miniNearMiss.userId,
+              hand_name: miniNearMiss.handName,
+              reason: miniNearMiss.reason,
+              message: miniNearMiss.message,
+            });
+          }
+        } catch (nmErr) {
+          console.warn(
+            `[ServerTableEngine:${this.tableId}] MINI BBJ near-miss check failed:`,
+            nmErr
+          );
         }
       }
     }

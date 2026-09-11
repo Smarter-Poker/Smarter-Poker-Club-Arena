@@ -283,6 +283,25 @@ export const BBJ_RULES = {
   minPotBB: RAKE_SPEC.rules.bbjMinPotBB,
   // FIX 145: BBJ requires 3+ players dealt in (not 4) per Dan's rule
   minPlayersDealt: RAKE_SPEC.rules.bbjMinPlayersDealt,
+  /**
+   * THE MINI'S OWN PLAYERS-DEALT FLOOR (phase 3, 2026-09-11).
+   *
+   * The mini read `minPlayersDealt` directly, so the two jackpots could never
+   * be set apart - and they are different products: the mini fires about four
+   * times a day at a flat amount out of a reserve, the main about once a day
+   * at a share of a pool.
+   *
+   * It lives HERE and not in `RAKE_SPEC.rules` deliberately. That spec is a
+   * contract with SQL - `rakeSpecChecksum()` is pinned against what the
+   * database's own serialiser returns - and the database applies no jackpot
+   * detection rule. The mini's floor is engine-only, exactly like
+   * `excludeDoubleBoard` and `requireBothHoleCards` beside it.
+   *
+   * Ships EQUAL to the main's, so nothing changes until somebody sets it. What
+   * it SHOULD be is Dan's (CLAUDE.md 10.9 - it decides who is owed a jackpot
+   * in future hands); this is only the knob.
+   */
+  miniMinPlayersDealt: RAKE_SPEC.rules.bbjMinPlayersDealt,
   excludeDoubleBoard: true,
   onlyFirstRunout: true,
   splitIfMultipleQualify: true,
@@ -1056,6 +1075,141 @@ function isAcesFullOrBetter(handRanking: number, kickers: number[]): boolean {
   return kickers.length >= 1 && kickers[0] >= RANK_VALUES.A;
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   THE MINI'S OWN NEAR MISSES (BBJ phase 3, 2026-09-11)
+
+   `detectBBJNearMiss` only ever judged the MAIN rule, and only for a loser who
+   had already cleared the MAIN hand bar. So the mini - which exists precisely
+   to catch the beats the main turns away - had NO near-miss record at all.
+   Measured on production that day: 50 near misses in seven days, ZERO of them
+   about the mini, and 13 of the 50 were `both_cards_must_play`, a rule the
+   mini DROPS. Nobody could say how often the mini nearly fired, or why it did
+   not, which makes its rate unmeasurable and its tuning guesswork.
+
+   This mirrors `detectMiniBBJHit` gate for gate and reports the FIRST unmet
+   condition, in the order a player would ask about. Every reason is prefixed
+   `mini_` so one table can carry both jackpots without a schema change and a
+   query can always tell them apart - the same shape settlement already uses
+   for `mini_refused:<reason>`.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+export type BBJMiniNearMissReason =
+  | 'mini_not_enough_players'
+  | 'mini_pot_too_small'
+  | 'mini_double_board'
+  | 'mini_winner_not_quads'
+  | 'mini_loser_below_bar';
+
+export interface BBJMiniNearMissResult {
+  nearMiss: boolean;
+  reason?: BBJMiniNearMissReason;
+  message?: string;
+  userId?: string;
+  handName?: string;
+}
+
+export function detectMiniBBJNearMiss(
+  showdownResults: Array<{
+    userId: string;
+    handRanking: number;
+    handName: string;
+    kickers: number[];
+    holeCards?: Array<{ rank: string; suit: string }>;
+  }>,
+  winnerId: string | string[],
+  variant: string,
+  potSize: number,
+  bigBlind: number,
+  numPlayersDealt: number,
+  context?: { doubleBoard?: boolean }
+): BBJMiniNearMissResult {
+  const none: BBJMiniNearMissResult = { nearMiss: false };
+
+  const normalizedVariant = variant.toLowerCase();
+  const qualifying = BBJ_QUALIFYING_HANDS[normalizedVariant];
+  // A variant with no jackpot at all has nothing to nearly miss.
+  if (!qualifying || qualifying.eligible === false || !qualifying.handRank) return none;
+
+  const winnerIds = Array.isArray(winnerId) ? winnerId.filter(Boolean) : [winnerId];
+  const winnerIdSet = new Set(winnerIds);
+  const losers = showdownResults.filter((r) => !winnerIdSet.has(r.userId));
+  const winner = showdownResults
+    .filter((r) => winnerIdSet.has(r.userId))
+    .reduce<(typeof showdownResults)[number] | undefined>((best, r) => {
+      if (!best) return r;
+      if (r.handRanking > best.handRanking) return r;
+      if (r.handRanking === best.handRanking && compareKickers(r.kickers, best.kickers) > 0)
+        return r;
+      return best;
+    }, undefined);
+  if (!winner || losers.length === 0) return none;
+
+  const isHoldemFamily = qualifying.handRank === 'full_house';
+  const meetsMiniBar = (r: (typeof showdownResults)[number]): boolean =>
+    isHoldemFamily
+      ? isAcesFullOrBetter(r.handRanking, r.kickers)
+      : r.handRanking >= HAND_RANK.FOUR_OF_A_KIND;
+
+  // The strongest loser who cleared the MINI's hand bar - the same choice
+  // detectMiniBBJHit makes, so the two name the same player.
+  let best: (typeof losers)[number] | null = null;
+  for (const loser of losers) {
+    if (!meetsMiniBar(loser)) continue;
+    if (
+      best === null ||
+      loser.handRanking > best.handRanking ||
+      (loser.handRanking === best.handRanking && compareKickers(loser.kickers, best.kickers) > 0)
+    ) {
+      best = loser;
+    }
+  }
+
+  const bar = isHoldemFamily ? 'Aces Full or better' : 'Quads or better';
+  if (!best) {
+    /* Nobody cleared the bar. That is not a near miss - it is an ordinary
+       hand, and recording it would bury the real ones. Reported only so the
+       caller can distinguish "no candidate" from "not evaluated". */
+    return { nearMiss: false, reason: 'mini_loser_below_bar' };
+  }
+
+  const base = { nearMiss: true as const, userId: best.userId, handName: best.handName };
+
+  if (numPlayersDealt < BBJ_RULES.miniMinPlayersDealt) {
+    return {
+      ...base,
+      reason: 'mini_not_enough_players',
+      message: `So close! ${best.handName} would have taken the Mini, but it needs ${BBJ_RULES.miniMinPlayersDealt}+ players dealt in.`,
+    };
+  }
+
+  if (potSize < bigBlind * BBJ_RULES.minPotBB) {
+    return {
+      ...base,
+      reason: 'mini_pot_too_small',
+      message: `So close! ${best.handName} would have taken the Mini, but the pot needs to reach ${BBJ_RULES.minPotBB} big blinds.`,
+    };
+  }
+
+  if (BBJ_RULES.excludeDoubleBoard && context?.doubleBoard === true) {
+    return {
+      ...base,
+      reason: 'mini_double_board',
+      message: `So close! ${best.handName} would have taken the Mini, but double-board hands do not qualify.`,
+    };
+  }
+
+  if (winner.handRanking < HAND_RANK.FOUR_OF_A_KIND) {
+    return {
+      ...base,
+      reason: 'mini_winner_not_quads',
+      message: `So close! ${best.handName} lost with ${bar} - but the Mini needs the WINNING hand to be Quads or better.`,
+    };
+  }
+
+  // Every gate cleared: this was a hit, not a near miss.
+  return none;
+}
+
 export function detectMiniBBJHit(
   showdownResults: Array<{
     userId: string;
@@ -1074,9 +1228,11 @@ export function detectMiniBBJHit(
 ): BBJMiniDetectionResult {
   const noHit: BBJMiniDetectionResult = { hit: false };
 
-  // The mini lives under the main, so it inherits every floor the main has.
-  // Read from BBJ_RULES rather than restated, so the two can never drift.
-  if (numPlayersDealt < BBJ_RULES.minPlayersDealt) return noHit;
+  // The mini lives under the main and inherits its floors, with ONE exception
+  // since phase 3: players-dealt is its own knob (BBJ_RULES.miniMinPlayersDealt,
+  // shipped equal to the main's), because the mini is a different product and
+  // has to be tunable without moving the main jackpot's bar.
+  if (numPlayersDealt < BBJ_RULES.miniMinPlayersDealt) return noHit;
   if (potSize < bigBlind * BBJ_RULES.minPotBB) return noHit;
   if (BBJ_RULES.excludeDoubleBoard && context?.doubleBoard === true) return noHit;
 

@@ -25,10 +25,12 @@ written and proved; a human applies it.
    rebuy chain bought players back in without resolving the busted knockout
    generation to `rebought`. The door refused each of those players' next real
    bust with `unresolved_knockout_generation_chain`: 356 refusals of `9bb330b7`
-   in 39 minutes. Four players in two RUNNING events are held this way today:
-   `798866ae 9bb330b7`, and `7aa16fa7 3a7ad729, f44d72f2, f8058099`. Each orphan
-   is followed within seconds by a posted 1.00 `rebuy` leg from the player's
-   wallet to the event's prize liability.
+   in 39 minutes. At 06:20 UTC four players in two RUNNING events were held
+   this way: `798866ae 9bb330b7`, and `7aa16fa7 3a7ad729, f44d72f2, f8058099`.
+   Each orphan is followed within seconds by a posted 1.00 `rebuy` leg from
+   the player's wallet to the event's prize liability. Separate data repairs
+   at 07:04 and 07:23 UTC resolved all four. The door rule below covers the
+   next orphan, for example `a5aa6984 dca6c345`, which still holds one.
 4. **The engine ordered busts by a different generation than the door
    recorded.** The sweep kept the EARLIEST pending hand per player. The door
    binds the LATEST.

@@ -66,12 +66,13 @@
 -- engine's finish. That is a decision about fn_settle_tournament_places, left
 -- out of this change on purpose.
 --
--- MEASURED BEFORE APPLYING (2026-09-11 ~06:20 UTC): exactly four players in
--- RUNNING events are held by an older non-rebought generation, and all four are
--- proven by the rule above (798866ae 9bb330b7; 7aa16fa7 3a7ad729, f44d72f2,
--- f8058099). The engine's next bust pass can record them, subject to every other
--- check the door makes (798866ae's other stuck player, 65f99ae2, is refused for
--- a zero-stack live seat, which this does not touch).
+-- MEASURED (2026-09-11). At ~06:20 UTC exactly four players in RUNNING events
+-- were held by an older non-rebought generation, and all four were proven by the
+-- rule above (798866ae 9bb330b7; 7aa16fa7 3a7ad729, f44d72f2, f8058099). By
+-- 07:25 UTC separate data repairs had resolved all four (07:04 and 07:23 UTC),
+-- and none was held any more. Applied now, the rule is protection for the next
+-- orphan: a5aa6984 dca6c345 still has a pending generation with a posted rebuy
+-- leg after it, and this door resolves it when that player next busts.
 --
 -- PROVED in PostgreSQL 17 against a byte-exact capture of the live bodies:
 -- scripts/dev/probe-a-bust-is-ranked-by-when-it-happened-pg17.sh runs every

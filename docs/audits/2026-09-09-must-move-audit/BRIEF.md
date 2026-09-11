@@ -9,7 +9,7 @@ STUBS, ERRORS, REGRESSIONS OR WIRING ISSUES ... FIND AND FIX EVERYTHING ...
 
 - Worktree (branch `agent/cowork-mustmove/audit/must-move-classic-action-madness`,
   base origin/main 98ef24c6a1):
-  - device_bash path: `$HOME/mnt/cowork-mustmove`  (read, grep, edit in place with
+  - device_bash path: `$HOME/mnt/cowork-mustmove` (read, grep, edit in place with
     python/sed; NEVER run any git command here - the VM strands index.lock)
   - host_terminal path: `~/Documents/.agent-trees/club-arena/cowork-mustmove`
     (real Mac bash: node/npm/vitest/tsc/git READ commands. 60 s limit per call ->
@@ -66,6 +66,7 @@ STUBS, ERRORS, REGRESSIONS OR WIRING ISSUES ... FIND AND FIX EVERYTHING ...
 ## What your report must contain
 
 Write `docs/audits/2026-09-09-must-move-audit/lane-<letter>.md` with:
+
 - Every file/function you read line by line (so the integrator knows coverage).
 - Findings: each with severity (P0 money/integrity, P1 player-visible wrong behaviour,
   P2 gap/stub/dead code, P3 polish), evidence (query output or line refs), and the

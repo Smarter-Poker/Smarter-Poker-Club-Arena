@@ -151,6 +151,17 @@ describe('LAW 5 - no outage or break can trigger a generic page reload', () => {
     const hook = readFileSync(join(ROOT, 'src', 'hooks', 'useMaintenanceBreak.ts'), 'utf8');
     expect(hook).toContain('fn_maintenance_break_state');
   });
+
+  it('a failed maintenance read is unknown, never proof that a 4404 table closed', () => {
+    const block = sliceEnclosingBlock(
+      TABLE_PAGE,
+      'const durableBreak = await refreshMaintenanceBreak(true)'
+    );
+    expect(block).toContain('if (!durableBreak)');
+    expect(block.indexOf('if (!durableBreak)')).toBeLessThan(
+      block.indexOf("heartbeatToastRef.current?.info?.('This Table Is No Longer Running')")
+    );
+  });
 });
 
 describe('LAW 6 - additive: an engine without the field changes nothing', () => {
@@ -217,8 +228,8 @@ describe('LAW 7 - a player who joins after the announcement is covered too', () 
   });
 
   it('TablePage passes the DATABASE-backed break, and reads it before the socket', () => {
-    expect(TABLE_PAGE).toContain(
-      'scheduledRestartUntil: maintenanceBreak.active ? maintenanceBreak.breakEndsAtMs : null'
+    expect(TABLE_PAGE).toMatch(
+      /scheduledRestartUntil:\s*maintenanceBreak\.active\s*\? maintenanceBreak\.connectionProtectedUntilMs\s*:\s*null/
     );
     const code = blankNonCode(TABLE_PAGE);
     expect(

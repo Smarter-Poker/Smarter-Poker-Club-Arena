@@ -62,6 +62,16 @@ import { raiseFinancialAlert } from '../services/financialAlerts.js';
 import { createHandStateMachine, type HandFSMState } from './StateMachine.js';
 import { bigBlindAnteTotal } from './AnteMath.js';
 import { HAND_COMPLETION } from '../config/handCompletionSpec.js';
+import {
+  assertTournamentGameState,
+  assertTournamentHandEvent,
+  assertTournamentHandInputs,
+  assertWholeTournamentChip,
+  isWholeTournamentChip,
+  TOURNAMENT_WHOLE_CHIP_ERROR,
+} from './TournamentChipIntegrity.js';
+import { scaleWinnerUnitsForRake } from './WinnerScaling.js';
+export { scaleWinnerCentsForRake } from './WinnerScaling.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // HAND CONTROLLER
@@ -93,58 +103,6 @@ import { HAND_COMPLETION } from '../config/handCompletionSpec.js';
  * Placing the remainder under the pre-rake caps always succeeds: total headroom
  * is `rakeCents + remainder`, which is never less than `remainder`.
  */
-export function scaleWinnerCentsForRake(
-  preRakeAmounts: readonly number[],
-  totalWinnings: number
-): number[] {
-  return scaleWinnerUnitsForRake(preRakeAmounts, totalWinnings, 100);
-}
-
-function scaleWinnerUnitsForRake(
-  preRakeAmounts: readonly number[],
-  totalWinnings: number,
-  unitsPerAmount: 1 | 100
-): number[] {
-  // Round 40 audit Pass 3 fix: integer-cents arithmetic with Math.round (NOT
-  // Math.trunc) for the float->cents conversion. IEEE 754 drift can make a pot
-  // of "$140.30" actually be 140.29999..., and Math.trunc(140.299... * 100) is
-  // 13479 rather than 13480 — exactly 1c lost per chop pot with any drift.
-  const totalCents = Math.round(totalWinnings * unitsPerAmount);
-  const entitlementCents = preRakeAmounts.map((a) => Math.round(a * unitsPerAmount));
-  const totalWinnerCents = entitlementCents.reduce((s, c) => s + c, 0) || 1;
-
-  const adjusted = entitlementCents.map((c) => Math.round((c * totalCents) / totalWinnerCents));
-
-  let remainder = totalCents - adjusted.reduce((s, a) => s + a, 0);
-
-  // Positive remainder: rounding dust. Place it only where it does not exceed
-  // the winner's pre-rake entitlement.
-  let placedOne = true;
-  while (remainder > 0 && placedOne) {
-    placedOne = false;
-    for (let i = 0; i < adjusted.length && remainder > 0; i++) {
-      if (adjusted[i] >= entitlementCents[i]) continue;
-      adjusted[i]++;
-      remainder--;
-      placedOne = true;
-    }
-  }
-
-  // Negative remainder: rounding overshot. Pull back evenly, never below zero.
-  let pulledOne = true;
-  while (remainder < 0 && pulledOne) {
-    pulledOne = false;
-    for (let i = 0; i < adjusted.length && remainder < 0; i++) {
-      if (adjusted[i] <= 0) continue;
-      adjusted[i]--;
-      remainder++;
-      pulledOne = true;
-    }
-  }
-
-  return adjusted;
-}
-
 export class HandController {
   private config: HandConfig;
   private state: GameState;
@@ -223,6 +181,10 @@ export class HandController {
       }
     }
     this.config = config;
+    // Tournament chips are indivisible counters. Refuse a bad hand before a
+    // blind, event, or card can leave the controller; rounding here would move
+    // value between players and change side-pot eligibility.
+    assertTournamentHandInputs(config, players);
 
     const deck = new Deck();
     if (config.gameVariant === 'short_deck') {
@@ -235,6 +197,7 @@ export class HandController {
       communityCards: [],
       communityCards2: [],
       communityCards3: [],
+      revealedDeadCards: [],
       pot: 0,
       currentBet: 0,
       lastRaise: config.bigBlind,
@@ -261,6 +224,10 @@ export class HandController {
   }
 
   private emit(event: HandEvent): void {
+    if (this.config.isTournament) {
+      assertTournamentGameState(this.state, `before_${event.type}`);
+      assertTournamentHandEvent(event);
+    }
     // Late runout callbacks must not distribute an already completed pot again.
     if (event.type === 'HAND_COMPLETE') this.handCompleted = true;
     for (const handler of this.eventHandlers) {
@@ -326,6 +293,8 @@ export class HandController {
   // ─────────────────────────────────────────────────────────────────────────
 
   start(): void {
+    assertTournamentHandInputs(this.config, this.state.players);
+    if (this.config.isTournament) assertTournamentGameState(this.state, 'start');
     /* ═══ A HAND THAT IS STARTING MUST BE A BLANK HAND (2026-08-31) ════════
        The rake-law alarm's no_flop_no_drop criticals were hands played inside
        a controller that a STALE runout continuation from the PREVIOUS hand
@@ -892,6 +861,12 @@ export class HandController {
    * action amount stay clean for the DB, the clients, and the horse logic.
    */
   private snapChips(): void {
+    if (this.config.isTournament) {
+      // Never "repair" a tournament hand by rounding it. Once chips have
+      // entered a pot, rounding can change eligibility and award ownership.
+      assertTournamentGameState(this.state, 'chip_mutation');
+      return;
+    }
     const r = (n: number) => Math.round(n * 100) / 100;
     for (const p of this.state.players) {
       p.stack = r(p.stack);
@@ -921,6 +896,21 @@ export class HandController {
     // not in the decision. This is the authoritative guard; every caller that
     // trusts currentPlayerSeat is now safe by construction.
     if (player.is_folded || player.is_all_in || player.is_sitting_out) return false;
+
+    if (this.config.isTournament) {
+      // Check the unmodified request before structure clamps can turn a
+      // fractional wager into some other legal amount. Human, horse and
+      // pre-action callers all terminate at this boundary.
+      if (amount !== undefined && !isWholeTournamentChip(amount)) {
+        reportError(
+          new Error(`${TOURNAMENT_WHOLE_CHIP_ERROR}: requestedWager=${String(amount)}`),
+          'HandController.fractional_tournament_wager_refused'
+        );
+        return false;
+      }
+      assertTournamentHandInputs(this.config, this.state.players);
+      assertTournamentGameState(this.state, 'before_action');
+    }
 
     // ── ALL-IN-OR-FOLD (2026-08-22 parity) ──────────────────────────────────
     // Preflop the only actions are fold or all-in; the BB (or anyone owing
@@ -1854,6 +1844,17 @@ export class HandController {
    * the database move by the same number and cannot drift apart.
    */
   public applyStackDeltas(deltas: Map<string, number>): void {
+    if (this.config.isTournament) {
+      assertTournamentHandInputs(this.config, this.state.players);
+      assertTournamentGameState(this.state, 'before_stack_deltas');
+      // Validate the whole batch before mutating the first player. A bad
+      // runout/side-payment narrative must be atomic: all deltas land or none.
+      for (const [userId, delta] of deltas) {
+        assertWholeTournamentChip(delta, `stackDelta[${userId}]`, true);
+        const player = this.state.players.find((p) => p.user_id === userId);
+        if (player) assertWholeTournamentChip(player.stack + delta, `stackAfterDelta[${userId}]`);
+      }
+    }
     if (this.config.asset === 'diamonds') {
       for (const [userId, amount] of deltas) {
         const player = this.state.players.find((p) => p.user_id === userId);
@@ -2055,6 +2056,7 @@ export class HandController {
          left their hand and it is still theirs to review. Same private event,
          same RLS-protected destination. */
       if (forced[0]) {
+        this.state.revealedDeadCards.push({ ...forced[0] });
         this.emit({ type: 'PINEAPPLE_DISCARDED', seat: player.seat, card: forced[0] });
       }
 
@@ -2096,6 +2098,11 @@ export class HandController {
       this.emit({ type: 'CARDS_DEALT', seat: player.seat, cards: [...player.cards] });
     }
     return true;
+  }
+
+  /** Return copies of cards the table already saw leave all-in Pineapple hands. */
+  public getVisibleEquityDeadCards(): Card[] {
+    return this.state.revealedDeadCards.map((card) => ({ ...card }));
   }
 
   private resolvePendingPineappleDiscards(): boolean {
@@ -2285,6 +2292,12 @@ export class HandController {
     // The merged winner list sums to exactly the original pot cents, so rake
     // scaling and chip conservation downstream are untouched.
     let winners: Winner[];
+    // Cash chips settle to cents; tournament chips are indivisible counters.
+    // Pass the denomination into every pot/half allocator instead of rounding
+    // the merged result later, which could move an odd chip across side-pot
+    // eligibility. This is also the value used when a pot is split by board.
+    const settlementUnitsPerChip: 1 | 100 =
+      this.config.isTournament || this.config.asset === 'diamonds' ? 1 : 100;
     const settlementBoards: Card[][] = [this.state.communityCards];
     if (this.multiBoardActive && this.state.communityCards2.length === 5) {
       settlementBoards.push(this.state.communityCards2);
@@ -2296,16 +2309,17 @@ export class HandController {
       const boardCount = settlementBoards.length;
       // Per-board pot arrays: potsByBoard[b][p] is pot layer p's share on
       // board b. splitAcrossBoards (spec §18.1): floor division, remainder
-      // cents to ascending board order.
+      // settlement units to ascending board order (cents in cash, whole chips
+      // in tournaments).
       const potsByBoard: Pot[][] = Array.from({ length: boardCount }, () => []);
       for (const pot of pots) {
-        const cents = Math.round(pot.amount * 100);
-        const base = Math.floor(cents / boardCount);
-        const remainder = cents % boardCount;
+        const units = Math.round(pot.amount * settlementUnitsPerChip);
+        const base = Math.floor(units / boardCount);
+        const remainder = units % boardCount;
         for (let b = 0; b < boardCount; b++) {
-          const shareCents = base + (b < remainder ? 1 : 0);
+          const shareUnits = base + (b < remainder ? 1 : 0);
           potsByBoard[b].push({
-            amount: shareCents / 100,
+            amount: shareUnits / settlementUnitsPerChip,
             eligiblePlayers: [...pot.eligiblePlayers],
           });
         }
@@ -2325,7 +2339,9 @@ export class HandController {
           this.state.dealerSeat,
           perPot,
           undefined,
-          // A tournament chip does not divide (2026-09-08).
+          // A tournament chip does not divide (2026-09-08). determineWinners
+          // and neither does a diamond. The local board splitter above uses
+          // the reciprocal scale for exact integer arithmetic.
           this.config.isTournament || this.config.asset === 'diamonds' ? 1 : 0.01
         );
         winnersPerBoard.push(boardWinners);
@@ -2471,15 +2487,22 @@ export class HandController {
 
       // 3. Still nothing: split among the contenders. Never by list position.
       if (winners.length === 0 && contenders.length > 0) {
-        const unitsPerAmount = this.config.asset === 'diamonds' ? 1 : 100;
-        const cents = Math.round(totalPot * unitsPerAmount);
-        const share = Math.floor(cents / contenders.length);
-        const remainder = cents - share * contenders.length;
-        winners = contenders.map((p, i) => ({
+        const units = Math.round(totalPot * settlementUnitsPerChip);
+        const share = Math.floor(units / contenders.length);
+        const remainder = units - share * contenders.length;
+        const maxSeat = Math.max(...contenders.map((p) => p.seat), this.state.dealerSeat) + 1;
+        const clockwiseDistance = (seat: number) => {
+          const d = (seat - this.state.dealerSeat + maxSeat * 10) % maxSeat;
+          return d === 0 ? maxSeat : d;
+        };
+        const clockwise = [...contenders].sort(
+          (a, b) => clockwiseDistance(a.seat) - clockwiseDistance(b.seat)
+        );
+        winners = clockwise.map((p, i) => ({
           userId: p.user_id,
-          // The odd cents go to the earliest seats, the same rule the split-pot
-          // path uses, so the total is exact and the choice is not arbitrary.
-          amount: (share + (i < remainder ? 1 : 0)) / unitsPerAmount,
+          // Odd settlement units go clockwise from the dealer, the same rule
+          // as the ordinary split-pot path.
+          amount: (share + (i < remainder ? 1 : 0)) / settlementUnitsPerChip,
         }));
         reportError(
           new Error(
@@ -2543,11 +2566,9 @@ export class HandController {
     const adjustedCents = scaleWinnerUnitsForRake(
       winners.map((w) => w.amount),
       totalWinnings,
-      this.config.asset === 'diamonds' ? 1 : 100
+      settlementUnitsPerChip
     );
-    const adjustedAmounts = adjustedCents.map(
-      (c) => c / (this.config.asset === 'diamonds' ? 1 : 100)
-    );
+    const adjustedAmounts = adjustedCents.map((c) => c / settlementUnitsPerChip);
     const adjustedWinners = winners.map((w, i) => ({ ...w, amount: adjustedAmounts[i] }));
 
     for (const winner of adjustedWinners) {
@@ -3333,6 +3354,9 @@ export class HandController {
       ...this.state,
       players: this.state.players.map((p) => ({ ...p, cards: [...p.cards] })),
       communityCards: [...this.state.communityCards],
+      communityCards2: [...this.state.communityCards2],
+      communityCards3: [...this.state.communityCards3],
+      revealedDeadCards: this.state.revealedDeadCards.map((card) => ({ ...card })),
       pots: this.state.pots.map((p) => ({ ...p, eligiblePlayers: [...p.eligiblePlayers] })),
       actionHistory: [...this.state.actionHistory],
     };
@@ -3504,6 +3528,13 @@ export class HandController {
     pot: number,
     opts: { forecast?: boolean } = {}
   ): { rake: number; bbjFee: number } {
+    // Tournament pots never pay cash-table rake or BBJ drops. This is the
+    // authoritative pricing boundary, so a copied/stale cash configuration is
+    // inert even when a caller constructs HandController outside the normal
+    // ServerTableEngineDealing path. In particular, no fractional deduction
+    // may mutate winner stacks before the whole-chip assertion can run.
+    if (this.config.isTournament) return { rake: 0, bbjFee: 0 };
+
     /* ═══ NO FLOP, NO DROP IS SETTLED BY THE BOARD, NOT BY A FLAG ══════════
        2026-08-31. `sawFlop` is a mutable flag written in five places; the
        board is the evidence. Every time the two have disagreed, the flag has

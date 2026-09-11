@@ -28,6 +28,7 @@
 import type { Card } from '../types.js';
 import { reportError } from '../services/errorReporter.js';
 import { deadlineScheduler, type DeadlineScheduler } from './DeadlineScheduler.js';
+import { isHiLoVariant } from './VariantRules.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -92,10 +93,18 @@ export interface InsuranceOffer {
    * while flop/turn declines stay FINAL for the hand (Dan 2026-08-26).
    */
   boardLength: number;
+  /** Proof that the aggregate winner list can settle this contract exactly. */
+  settlementScope: InsuranceSettlementScope;
   // Phase 1.2 PR-G-real: timeouts routed through DeadlineScheduler singleton via
   // the engine's private `scheduler` ref, keyed by
   // eventId = `insurance_offer:${playerId}` on the offer's tableId. The raw
   // setTimeout handle was deleted — nothing else to store on the offer.
+}
+
+export interface InsuranceSettlementScope {
+  kind: 'single_high_pot';
+  potIndex: 0;
+  eligiblePlayerIds: string[];
 }
 
 export interface InsuranceSettlement {
@@ -188,7 +197,12 @@ export class InsuranceEngine {
   }
 
   configure(tableId: string, config: Partial<InsuranceConfig>): void {
-    this.tableConfigs.set(tableId, { ...this.DEFAULT_CONFIG, ...config });
+    const resolved = { ...this.DEFAULT_CONFIG, ...config };
+    this.tableConfigs.set(tableId, resolved);
+    // Disabling is a hard boundary, not just a gate on creating the next
+    // offer. Accepted/cashed-out state from an earlier configuration must not
+    // remain settleable after the feature (or table format) turns off.
+    if (!resolved.enabled) this.endHand(tableId);
   }
 
   isEnabled(tableId: string): boolean {
@@ -215,7 +229,8 @@ export class InsuranceEngine {
     shortDeck: boolean,
     // Mandatory worker-authored contract outcomes. There is intentionally no
     // synchronous or bare-equity fallback on the authoritative table thread.
-    precomputed: InsurancePricingComponents
+    precomputed: InsurancePricingComponents,
+    settlementScope: InsuranceSettlementScope
   ): InsuranceOffer[] {
     const config = this.tableConfigs.get(tableId) || this.DEFAULT_CONFIG;
     if (!config.enabled || pot < config.minPotForInsurance) return [];
@@ -223,6 +238,25 @@ export class InsuranceEngine {
     if (allInPlayers.length < 2) return [];
     // Insurance requires cards still to come (board can be 0 for a preflop all-in).
     if (board.length >= 5) return [];
+
+    const participantIds = allInPlayers.map((player) => player.playerId);
+    const scopeIds = settlementScope?.eligiblePlayerIds;
+    if (
+      isHiLoVariant(variant) ||
+      settlementScope?.kind !== 'single_high_pot' ||
+      settlementScope?.potIndex !== 0 ||
+      !Array.isArray(scopeIds) ||
+      scopeIds.length !== participantIds.length ||
+      new Set(scopeIds).size !== scopeIds.length ||
+      new Set(participantIds).size !== participantIds.length ||
+      participantIds.some((playerId) => !scopeIds.includes(playerId))
+    ) {
+      reportError(
+        new Error('Insurance offer refused: settlement scope is not one complete high-only pot'),
+        'InsuranceEngine.invalid_settlement_scope'
+      );
+      return [];
+    }
 
     const leader = allInPlayers.find((p) => p.playerId === leaderId);
     if (!leader) return [];
@@ -330,6 +364,11 @@ export class InsuranceEngine {
       declinedForHand: false,
       evCashoutAmount,
       boardLength: board.length,
+      settlementScope: {
+        kind: 'single_high_pot',
+        potIndex: 0,
+        eligiblePlayerIds: [...scopeIds],
+      },
     };
 
     // Phase 1.2 PR-G-real: expiry via DeadlineScheduler.
@@ -528,10 +567,39 @@ export class InsuranceEngine {
    * insurance is voided for the winner (no premium charged, no payout).
    */
   settle(tableId: string, winnerIds: string | string[]): InsuranceSettlement[] {
+    // Fail closed even if stale accepted/cashed-out offers somehow survived a
+    // prior configuration transition. A disabled contract cannot move chips
+    // or emit a settlement event.
+    if (!this.isEnabled(tableId)) {
+      this.endHand(tableId);
+      return [];
+    }
     const offers = this.activeOffers.get(tableId);
     if (!offers) return [];
 
     const winners = Array.isArray(winnerIds) ? winnerIds : [winnerIds];
+    if (
+      winners.length === 0 ||
+      new Set(winners).size !== winners.length ||
+      offers.some(
+        (offer) =>
+          offer.settlementScope?.kind !== 'single_high_pot' ||
+          offer.settlementScope?.potIndex !== 0 ||
+          !Array.isArray(offer.settlementScope.eligiblePlayerIds) ||
+          offer.settlementScope.eligiblePlayerIds.length < 2 ||
+          !offer.settlementScope.eligiblePlayerIds.includes(offer.playerId) ||
+          winners.some((winnerId) => !offer.settlementScope.eligiblePlayerIds.includes(winnerId))
+      )
+    ) {
+      reportError(
+        new Error(
+          'Insurance settlement refused: winner set is outside the frozen single-pot scope'
+        ),
+        'InsuranceEngine.invalid_settlement_winner_scope'
+      );
+      this.endHand(tableId);
+      return [];
+    }
     const isChop = winners.length > 1;
     const settlements: InsuranceSettlement[] = [];
 

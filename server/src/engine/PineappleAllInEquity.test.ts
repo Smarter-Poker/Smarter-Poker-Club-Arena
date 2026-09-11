@@ -21,11 +21,24 @@
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
 
-const estimateEquity = vi.hoisted(() =>
-  vi.fn(async (hands: unknown[][]) => hands.map(() => 1 / hands.length))
+const estimateLayeredEquity = vi.hoisted(() =>
+  vi.fn(async (hands: unknown[][], ...args: unknown[]) => {
+    const pots = args[6] as unknown[];
+    const totalWinnings = args[8] as number;
+    return {
+      equities: hands.map(() => 1 / hands.length),
+      layerEquities: pots.map(() => hands.map(() => 1 / hands.length)),
+      expectedNetReturns: hands.map(() => totalWinnings / hands.length),
+      strictLossPcts: hands.map(() => 50),
+      pushPcts: hands.map(() => 0),
+      seed: 424242,
+      exact: true,
+      runouts: 1,
+    };
+  })
 );
 vi.mock('./equity/EquityWorkerPool.js', () => ({
-  getEquityPool: () => ({ estimateEquity }),
+  getEquityPool: () => ({ estimateLayeredEquity }),
 }));
 
 import { ServerTableEngine } from './ServerTableEngine.js';
@@ -50,15 +63,25 @@ function bindLiveBoard(engine: any, board: Array<{ rank: string; suit: string }>
       communityCards: board,
       communityCards2: [],
       communityCards3: [],
+      dealerSeat: 1,
     }),
+    computeLivePots: () => [{ amount: 100, eligiblePlayers: ['u1', 'u2'] }],
+    computeRakeAndBBJ: () => ({ rake: 0, bbjFee: 0 }),
+    getVisibleEquityDeadCards: () => [],
   };
 }
 
+const SUITS: Record<string, string> = {
+  c: 'clubs',
+  d: 'diamonds',
+  h: 'hearts',
+  s: 'spades',
+};
 const seat = (n: number, cards: string[]) => ({
-  seat_number: n,
+  seat: n,
   user_id: `u${n}`,
   username: `P${n}`,
-  cards: cards.map((s) => ({ rank: s.slice(0, -1), suit: s.slice(-1) })),
+  cards: cards.map((s) => ({ rank: s.slice(0, -1), suit: SUITS[s.slice(-1)] })),
 });
 
 describe('all-in equity on a pineapple table', () => {
@@ -98,9 +121,9 @@ describe('all-in equity on a pineapple table', () => {
     const emitted: any[] = [];
     engine.hub.emitEvent = vi.fn((_t: string, e: unknown) => emitted.push(e));
     const board = [
-      { rank: '7', suit: 'h' },
-      { rank: '8', suit: 'h' },
-      { rank: '3', suit: 'c' },
+      { rank: '7', suit: 'hearts' },
+      { rank: '8', suit: 'hearts' },
+      { rank: '3', suit: 'clubs' },
     ];
     bindLiveBoard(engine, board);
 

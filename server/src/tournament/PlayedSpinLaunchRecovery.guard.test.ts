@@ -8,7 +8,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const manager = readFileSync(join(here, 'TournamentManagerBase.ts'), 'utf8');
 const start = sliceMethod(manager, 'private async startLifecycle(');
 const prove = sliceMethod(manager, 'private async proveTournamentLaunchSetup(');
-const tableBuild = sliceMethod(manager, 'createTablesAndSeatPlayers(tournament: any)');
+const tableBuild = sliceMethod(manager, 'protected async createTablesAndSeatPlayers(');
 const migration = readFileSync(
   join(
     here,

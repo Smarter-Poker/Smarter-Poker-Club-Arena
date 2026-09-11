@@ -1211,7 +1211,27 @@ export abstract class ServerTableEngineBase {
      *  part of the live bet level, so it never counts toward a call and must
      *  not be differenced against a raise-TO level. */
     dead?: boolean;
+    /** Durable all-in runout and equity evidence is attached to the player's
+     * existing canonical action, never emitted as a second synthetic action. */
+    allInRunout?: true;
+    allInRunoutStreet?: 'preflop' | 'flop' | 'turn';
+    allInEquity?: number;
+    allInEvReturned?: number;
+    allInEquityVersion?: string;
+    allInEquityExact?: boolean;
+    allInEquityRunouts?: number;
+    allInEquitySeed?: number;
+    allInEquityInputHash?: string;
   }[] = [];
+  /** The first all-in equity job for this hand. Settlement joins this
+   * already-running off-thread computation before freezing the hand row. */
+  protected currentHandAllInEquityEvidence: Promise<void> | null = null;
+  protected currentHandAllInEquityEvidenceDone: (() => void) | null = null;
+  protected currentHandAllInEquityBoundaryKey: string | null = null;
+  /** Pineapple evidence waits until the required discard has reduced every
+   * live holding to the legal two-card settlement input. */
+  protected currentHandAllInEquityDeferredForPineapple = false;
+  protected currentHandAllInEquityEvidenceClosed = false;
   protected currentHandWinners: {
     userId: string;
     amount: number;
@@ -3240,8 +3260,7 @@ export abstract class ServerTableEngineBase {
        have fetched anyway, so this costs the same single round trip - and
        having it HERE is what lets a table that cannot deal still release a
        swap hold whose move has died (see reconcileSeatMoveHolds). */
-    const pending =
-      prefetched === undefined ? await this.readPendingSeatMoves() : prefetched;
+    const pending = prefetched === undefined ? await this.readPendingSeatMoves() : prefetched;
     if (!this.lifecycleCanMutate()) return [];
     if (pending === null) return [];
     this.reconcileSeatMoveHolds(pending);
@@ -5665,7 +5684,8 @@ export abstract class ServerTableEngineBase {
         (this.tableInfo as any).seven_deuce_amount =
           (tableRow as any).seven_deuce_amount ?? undefined;
         this.tableInfo.straddle_enabled = (tableRow as any).straddle_enabled ?? undefined;
-        (this.tableInfo as any).auto_utg_straddle = (tableRow as any).auto_utg_straddle ?? undefined;
+        (this.tableInfo as any).auto_utg_straddle =
+          (tableRow as any).auto_utg_straddle ?? undefined;
         (this.tableInfo as any).voluntary_straddle =
           (tableRow as any).voluntary_straddle ?? undefined;
         this.tableInfo.min_buy_in = (tableRow as any).min_buy_in ?? undefined;

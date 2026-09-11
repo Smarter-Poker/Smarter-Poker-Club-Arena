@@ -236,6 +236,28 @@ describe('tournament sit-outs retain their forced-bet obligations', () => {
     await expect(engine.dealHand(seats)).resolves.toBeUndefined();
     expect(engine.handController).toBeNull();
   });
+
+  it('refuses a prepared roster whose matching occupancy has a different exact seat generation', async () => {
+    for (const changedGeneration of [
+      { seat_id: '00000000-0000-4000-8000-000000000009' },
+      { seat_joined_at: '2026-09-10T00:00:01.123456Z' },
+    ]) {
+      const { engine, seats } = fixture();
+      const preparedRoster = seats.slice(0, 2).map((seat) => ({ ...seat }));
+      const currentGeneration = { ...preparedRoster[0], ...changedGeneration };
+      engine.seatedPlayers = [currentGeneration, preparedRoster[1], seats[2]];
+      engine.takePreparedHandNumber = vi.fn();
+
+      expect(currentGeneration).toMatchObject({
+        user_id: preparedRoster[0].user_id,
+        seat_number: preparedRoster[0].seat_number,
+        occupancy_id: preparedRoster[0].occupancy_id,
+      });
+      await expect(engine.dealHand(preparedRoster)).resolves.toBeUndefined();
+      expect(engine.takePreparedHandNumber).not.toHaveBeenCalled();
+      expect(engine.handController).toBeNull();
+    }
+  });
 });
 
 describe('a pause arriving while the controller is being prepared', () => {

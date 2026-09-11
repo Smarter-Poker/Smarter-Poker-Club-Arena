@@ -97,17 +97,29 @@ function stripComments(sql: string): string {
 }
 
 function migrationFiles(): string[] {
-  return readdirSync(MIGRATIONS)
-    .filter((f) => f.endsWith('.sql'))
-    .sort();
+  return migrationInventory().map(({ file }) => file);
+}
+
+let cachedMigrationInventory: Array<{ file: string; raw: string; uncommented: string }> | undefined;
+
+/** Read the immutable migration tree once. Re-reading every large SQL file for
+ * every assertion made this law exceed Vitest's timeout as the ledger grew. */
+function migrationInventory(): Array<{ file: string; raw: string; uncommented: string }> {
+  cachedMigrationInventory ??= readdirSync(MIGRATIONS)
+    .filter((file) => file.endsWith('.sql'))
+    .sort()
+    .map((file) => {
+      const raw = readFileSync(resolve(MIGRATIONS, file), 'utf8');
+      return { file, raw, uncommented: stripComments(raw) };
+    });
+  return cachedMigrationInventory;
 }
 
 /** The LAST migration that declares `what`, which is the one production has. */
 function latestDeclaring(what: string): { file: string; sql: string } {
   let found = { file: '', sql: '' };
-  for (const f of migrationFiles()) {
-    const sql = stripComments(readFileSync(resolve(MIGRATIONS, f), 'utf8'));
-    if (sql.includes(what)) found = { file: f, sql };
+  for (const { file, uncommented } of migrationInventory()) {
+    if (uncommented.includes(what)) found = { file, sql: uncommented };
   }
   return found;
 }
@@ -127,7 +139,8 @@ function liveBody(): { file: string; body: string } {
 function armedMigration(): { file: string; sql: string } {
   const file = migrationFiles().find((f) => f.endsWith('_the_seat_guard_is_armed.sql'));
   expect(file, 'the migration that armed the guard must stay in the tree').toBeDefined();
-  return { file: file as string, sql: readFileSync(resolve(MIGRATIONS, file as string), 'utf8') };
+  const row = migrationInventory().find((entry) => entry.file === file);
+  return { file: file as string, sql: row?.raw ?? '' };
 }
 
 /** The statement beginning at `from`, up to and including its terminating `;`. */
@@ -178,7 +191,7 @@ describe('the seat guard is armed', () => {
       /_the_seat_guard_is_armed\.sql$/,
       /_the_seat_guard_says_what_it_actually_does\.sql$/,
       /_spin_reserve_settlement_commits_its_journal_or_nothing\.sql$/,
-      /_tournament_reseating_uses_one_database_chosen_legal_chair\.sql$/,
+      /_stage_b_current_postimage_contraction\.sql$/,
     ];
     expect(
       SANCTIONED_REDECLARATIONS.some((re) => re.test(file)),

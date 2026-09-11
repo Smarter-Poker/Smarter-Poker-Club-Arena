@@ -17,6 +17,26 @@ import {
 // What the phase 3 migrations add to the payload: the 7-day all-in runout
 // equity coverage as ca_stats_health() returned it on 2026-09-04 22:48 UTC.
 const LIVE_EV = { allInShowdowns: 715, withoutEquity: 1, ratio: 0.9986 };
+const READY_EQUITY_WINDOW = {
+  configured: true,
+  writerCutoverAt: '2026-08-28T00:00:00+00:00',
+  writerSha: '0123456789abcdef0123456789abcdef01234567',
+  recordedAt: '2026-08-28T00:05:00+00:00',
+  fullWindowAt: '2026-09-04T00:00:00+00:00',
+  latestAuditAt: '2026-09-04T00:15:00+00:00',
+  latestWitnessAt: '2026-09-04T00:14:00+00:00',
+  coverageWindowSeconds: 604800,
+  windowLabel: '7d',
+  windowReady: true,
+};
+const COLLECTING_EQUITY_WINDOW = {
+  ...READY_EQUITY_WINDOW,
+  writerCutoverAt: '2026-09-03T00:00:00+00:00',
+  fullWindowAt: '2026-09-10T00:00:00+00:00',
+  coverageWindowSeconds: 86400,
+  windowLabel: 'collecting',
+  windowReady: false,
+};
 
 // The jsonb ca_stats_health() returned in production on 2026-09-04 08:55 UTC,
 // verbatim, so the parser is pinned to the real shape and not to a guess.
@@ -193,18 +213,40 @@ describe('StatsHealthMonitor', () => {
   });
 
   it('parses the phase 3 EV coverage block and exposes it as gauges', async () => {
-    const s = parseStatsHealth({ ...LIVE_SAMPLE, evCoverage7d: LIVE_EV }, 'fb');
+    const s = parseStatsHealth(
+      {
+        ...LIVE_SAMPLE,
+        evCoverage7d: LIVE_EV,
+        equityWitnessReadiness: READY_EQUITY_WINDOW,
+      },
+      'fb'
+    );
     expect(s.evCoverage7d).toEqual(LIVE_EV);
+    expect(s.equityWitnessReadiness).toEqual(READY_EQUITY_WINDOW);
     expect(parseStatsHealth(LIVE_SAMPLE, 'fb').evCoverage7d).toBeNull();
-    const { mon } = harness([{ ...LIVE_SAMPLE, evCoverage7d: LIVE_EV }]);
+    const { mon } = harness([
+      {
+        ...LIVE_SAMPLE,
+        evCoverage7d: LIVE_EV,
+        equityWitnessReadiness: READY_EQUITY_WINDOW,
+      },
+    ]);
     await mon.tick();
     const lines = mon.prometheusLines().join('\n');
     expect(lines).toContain('poker_stats_ev_coverage_7d 0.9986');
     expect(lines).toContain('poker_stats_allin_showdowns_7d 715');
+    expect(lines).toContain('poker_stats_ev_coverage_window_ready 1');
+    expect(lines).toContain('poker_stats_ev_coverage_window_seconds 604800');
   });
 
   it('the measured 99.86% coverage raises nothing and resolves the EV alert', async () => {
-    const { mon, raise, resolve } = harness([{ ...LIVE_SAMPLE, evCoverage7d: LIVE_EV }]);
+    const { mon, raise, resolve } = harness([
+      {
+        ...LIVE_SAMPLE,
+        evCoverage7d: LIVE_EV,
+        equityWitnessReadiness: READY_EQUITY_WINDOW,
+      },
+    ]);
     await mon.tick();
     expect(raise.mock.calls.some((c) => c[0]?.alertname === STATS_EV_COVERAGE_ALERT)).toBe(false);
     expect(resolve).toHaveBeenCalledWith(
@@ -221,8 +263,13 @@ describe('StatsHealthMonitor', () => {
       {
         ...LIVE_SAMPLE,
         evCoverage7d: { ...low, allInShowdowns: STATS_EV_COVERAGE_MIN_SAMPLE - 1 },
+        equityWitnessReadiness: READY_EQUITY_WINDOW,
       },
-      { ...LIVE_SAMPLE, evCoverage7d: low },
+      {
+        ...LIVE_SAMPLE,
+        evCoverage7d: low,
+        equityWitnessReadiness: READY_EQUITY_WINDOW,
+      },
     ]);
     await mon.tick();
     expect(raise.mock.calls.some((c) => c[0]?.alertname === STATS_EV_COVERAGE_ALERT)).toBe(false);
@@ -233,11 +280,17 @@ describe('StatsHealthMonitor', () => {
     expect(ev?.[0].labels?.without_equity_7d).toBe('10');
     expect(ev?.[0].summary).toContain('80.0%');
     expect(ev?.[0].description).toContain('all_in_equity IS NULL');
+    expect(ev?.[0].description).toContain('all_in_equity_owed IS TRUE');
+    expect(ev?.[0].description).toContain('No hand-history reconstruction is required');
   });
 
   it('the first cut of the measure (98.46%, side pots counted as gaps) WOULD have paged: that is why the audit was refined', async () => {
     const { mon, raise } = harness([
-      { ...LIVE_SAMPLE, evCoverage7d: { allInShowdowns: 715, withoutEquity: 11, ratio: 0.9846 } },
+      {
+        ...LIVE_SAMPLE,
+        evCoverage7d: { allInShowdowns: 715, withoutEquity: 11, ratio: 0.9846 },
+        equityWitnessReadiness: READY_EQUITY_WINDOW,
+      },
     ]);
     await mon.tick();
     expect(raise.mock.calls.some((c) => c[0]?.alertname === STATS_EV_COVERAGE_ALERT)).toBe(true);
@@ -245,7 +298,44 @@ describe('StatsHealthMonitor', () => {
 
   it('does not touch the EV alert when the week had no all-in showdowns (ratio null)', async () => {
     const { mon, raise, resolve } = harness([
-      { ...LIVE_SAMPLE, evCoverage7d: { allInShowdowns: 0, withoutEquity: 0, ratio: null } },
+      {
+        ...LIVE_SAMPLE,
+        evCoverage7d: { allInShowdowns: 0, withoutEquity: 0, ratio: null },
+        equityWitnessReadiness: READY_EQUITY_WINDOW,
+      },
+    ]);
+    await mon.tick();
+    expect(raise.mock.calls.some((c) => c[0]?.alertname === STATS_EV_COVERAGE_ALERT)).toBe(false);
+    expect(resolve.mock.calls.some((c) => c[0] === STATS_EV_COVERAGE_ALERT)).toBe(false);
+    expect(mon.prometheusLines().join('\n')).toContain('poker_stats_ev_coverage_7d NaN');
+  });
+
+  it('labels a partial post-cutover window and never pages its raw ratio as seven days', async () => {
+    const { mon, raise, resolve } = harness([
+      {
+        ...LIVE_SAMPLE,
+        evCoverage7d: { allInShowdowns: 100, withoutEquity: 100, ratio: 0 },
+        equityWitnessReadiness: COLLECTING_EQUITY_WINDOW,
+      },
+    ]);
+    await mon.tick();
+    expect(raise.mock.calls.some((c) => c[0]?.alertname === STATS_EV_COVERAGE_ALERT)).toBe(false);
+    expect(resolve).toHaveBeenCalledWith(
+      STATS_EV_COVERAGE_ALERT,
+      STATS_HEALTH_COMPONENT,
+      expect.stringContaining('collecting from the fleet cutover')
+    );
+    expect(mon.publish()?.equityWitnessReadiness?.windowLabel).toBe('collecting');
+    const lines = mon.prometheusLines().join('\n');
+    expect(lines).toContain('poker_stats_ev_coverage_7d NaN');
+    expect(lines).toContain('poker_stats_allin_showdowns_7d NaN');
+    expect(lines).toContain('poker_stats_ev_coverage_window_ready 0');
+    expect(lines).toContain('poker_stats_ev_coverage_window_seconds 86400');
+  });
+
+  it('fails closed when the health payload omits fleet readiness', async () => {
+    const { mon, raise, resolve } = harness([
+      { ...LIVE_SAMPLE, evCoverage7d: { allInShowdowns: 100, withoutEquity: 100, ratio: 0 } },
     ]);
     await mon.tick();
     expect(raise.mock.calls.some((c) => c[0]?.alertname === STATS_EV_COVERAGE_ALERT)).toBe(false);

@@ -4429,7 +4429,7 @@
     }
   ],
   "installed_catalog_body_md5": "b5769b647e5b106caaf51982ac245ee8",
-  "proposal_file": "supabase/migrations/20260910132723_booked_spin_continuation_preserves_floating_point_rounding.sql",
+  "proposal_file": "supabase/migrations/20260910141101_booked_spin_continuation_preserves_floating_point_rounding.sql",
   "production_writes": false,
   "summary": {
     "rows_executed": 93,

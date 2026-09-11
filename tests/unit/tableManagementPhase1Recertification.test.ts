@@ -6,7 +6,7 @@ const ROOT = resolve(__dirname, '../..');
 const MIGRATIONS = resolve(ROOT, 'supabase/migrations');
 const RECERTIFICATION = '20260906091511_phase_1_table_management_authority_recertified.sql';
 const CANCELLATION = '20260909014444_tournament_cancellation_commits_one_stored_receipt.sql';
-const SEAT_EXIT = '20260909014545_tournament_seat_exits_stay_inside_tournament_authority.sql';
+const SEAT_EXIT = '20260910055955_stage_b_current_postimage_contraction.sql';
 const COMPOSED_CLOSE =
   '20260909192240_managed_close_preserves_cash_occupancy_and_atomic_tournament_cancellation.sql';
 const recertification = readFileSync(resolve(MIGRATIONS, RECERTIFICATION), 'utf8');

@@ -44,14 +44,14 @@ const MIGRATION = readFileSync(
 const ATOMIC_CREATION = readFileSync(
   resolve(
     __dirname,
-    '../../supabase/migrations/20260908043250_seat_first_board_creation_is_one_transaction.sql'
+    '../../supabase/migrations/20260908130000_seat_first_board_creation_is_one_transaction.sql'
   ),
   'utf8'
 );
 const SPIN_CUTOVER = readFileSync(
   resolve(
     __dirname,
-    '../../supabase/migrations/20260909014433_spin_reserve_settlement_commits_its_journal_or_nothing.sql'
+    '../../supabase/migrations/20260909205412_spin_reserve_settlement_commits_its_journal_or_nothing.sql'
   ),
   'utf8'
 );

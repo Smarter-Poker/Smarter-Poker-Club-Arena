@@ -368,6 +368,41 @@ jobs:
       # every run. The deploy's receipt is ca_engine_deploy_attempts, written
       # by the ledger step near the end of this job.
 
+      # Exact dedupe asks the host as well as HTTP and the database. Install
+      # the pinned transport before that check; a genuinely deduped run still
+      # removes it in the unconditional final cleanup step.
+      - name: Setup SSH key
+        env:
+          # The two repos disagreed on the name of this secret: World Hub's
+          # workflows read HETZNER_SSH_PRIVATE_KEY, this one read
+          # HETZNER_SSH_KEY, and the Club Arena repo happens to hold BOTH.
+          SSH_KEY_CANONICAL: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          SSH_KEY_LEGACY: ${{ secrets.HETZNER_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          if [ -n "$SSH_KEY_CANONICAL" ]; then
+            echo "Using HETZNER_SSH_PRIVATE_KEY (canonical)"
+            printf '%s\n' "$SSH_KEY_CANONICAL" > ~/.ssh/id_deploy
+          elif [ -n "$SSH_KEY_LEGACY" ]; then
+            echo "::warning::Falling back to HETZNER_SSH_KEY. Set HETZNER_SSH_PRIVATE_KEY to match the World Hub repo."
+            printf '%s\n' "$SSH_KEY_LEGACY" > ~/.ssh/id_deploy
+          else
+            echo "::error::Neither HETZNER_SSH_PRIVATE_KEY nor HETZNER_SSH_KEY is set — every ssh below would fail."
+            exit 1
+          fi
+          chmod 600 ~/.ssh/id_deploy
+          ssh-keygen -y -f ~/.ssh/id_deploy > /dev/null \
+            || { echo "::error::The Hetzner deploy key is not a valid private key."; exit 1; }
+          # A pinned host key avoids ssh-keyscan's fail2ban-triggering probes
+          # and does not trust a fresh network answer on every release.
+          echo "${{ secrets.HETZNER_HOST_KEY }}" > ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+          test -s ~/.ssh/known_hosts \
+            || { echo "::error::HETZNER_HOST_KEY secret is empty or unset — every ssh below would fail, including the safety net"; exit 1; }
+          printf '#!/bin/bash\nexec ssh -i ~/.ssh/id_deploy -o BatchMode=yes -o ConnectTimeout=20 "%s@%s" "$@"\n' \
+            "$SSH_USER" "$HETZNER_HOST" > ~/hssh
+          chmod +x ~/hssh
+
       # 2026-08-24: DEDUPE. A restart is not free — it disconnects every
       # player and voids in-flight hands — so an engine already serving this
       # exact commit must not be bounced again. This is what makes the hourly
@@ -384,6 +419,10 @@ jobs:
       # Nothing bypasses readyForRestart: not a push, not a dispatch.
       - name: Skip if production already serves this commit
         id: dedupe
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SUPABASE_URL: https://kuklfnapbkmacvwxktbh.supabase.co
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
           if [ "${{ steps.control.outputs.superseded }}" = "true" ]; then
             echo "skip=true" >> $GITHUB_OUTPUT
@@ -392,13 +431,163 @@ jobs:
             exit 0
           fi
           SHORT="${SHA:0:8}"
-          BODY=$(curl -sf --max-time 10 "$ENGINE_URL/health" 2>/dev/null || echo "")
+          BODY=$(curl -q -sf --max-time 10 -H 'Cache-Control: no-cache, no-store' \
+            "$ENGINE_URL/health?nocache=$(date -u +%s%N)" 2>/dev/null || echo "")
           VER=$(echo "$BODY" | python3 -c "import json,sys;print(json.load(sys.stdin).get('version',''))" 2>/dev/null || echo "")
           if [ -n "$VER" ] && [ "$VER" = "$SHORT" ]; then
-            echo "skip=true" >> $GITHUB_OUTPUT
-            echo "reason=already_live" >> $GITHUB_OUTPUT
-            echo "Production already serves $SHORT — nothing to deploy."
-            exit 0
+            # HTTP is evidence, not authority. A cancelled deploy can leave a
+            # target process answering while the durable seal still names the
+            # previous image. Only fresh database + sealed host agreement may
+            # make this run skip the certified cutover.
+            echo "Public health names $SHORT; proving database, seal, and exact host identity."
+
+            npm ls pg >/dev/null 2>&1 || npm i pg@8 --no-save --no-audit --no-fund >/dev/null 2>&1 || true
+            if MODE=match TARGET_SHA="$SHA" node "$ENGINE_RELEASE_PROOF_SCRIPT"; then
+              HOST_RESULT=$(~/hssh bash -s -- \
+                "$CONTAINER" "$IMAGE_REPO:current" "$SHA" "8080" <<'REMOTE'
+          set -euo pipefail
+          CONTAINER="$1"
+          CURRENT_IMAGE="$2"
+          TARGET_SHA="$3"
+          PORT="$4"
+          CONTROL=/usr/local/lib/club-arena/engine-control
+
+          [[ "$TARGET_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [ "$PORT" = "8080" ]
+          [ -x "$CONTROL/engine-release-seal.py" ]
+
+          exec 9>/var/lock/club-arena-engine-up.lock
+          flock -w 30 9
+
+          SEALED_SHA="$($CONTROL/engine-release-seal.py get desired-sha)"
+          SEALED_IMAGE_ID="$($CONTROL/engine-release-seal.py get desired-image-id)"
+          SEALED_LEGACY="$($CONTROL/engine-release-seal.py get desired-legacy-unlabelled)"
+          [ "$SEALED_SHA" = "$TARGET_SHA" ]
+          [[ "$SEALED_IMAGE_ID" =~ ^sha256:[0-9a-f]{64}$ ]]
+          case "$SEALED_LEGACY" in true|false) ;; *) exit 1 ;; esac
+          [ "$(docker image inspect -f '{{.Id}}' "$SEALED_IMAGE_ID")" = "$SEALED_IMAGE_ID" ]
+          [ "$($CONTROL/engine-release-seal.py classify-running --container "$CONTAINER" --with-sha)" = "desired $TARGET_SHA" ]
+          [ "$(docker container inspect -f '{{.State.Status}}' sp-autoheal)" = running ]
+
+          validate_all_state_identity() {
+            local ids inventory
+            ids="$(docker ps -aq)"
+            [ -n "$ids" ] || return 1
+            inventory="$(docker container inspect $ids)"
+            printf '%s' "$inventory" | python3 -c '
+          import json, sys
+
+          container, expected_image, target_sha, legacy, port = sys.argv[1:]
+          rows = json.load(sys.stdin)
+          if not isinstance(rows, list):
+              raise SystemExit(1)
+
+          def name(row):
+              value = row.get("Name")
+              return value[1:] if isinstance(value, str) and value.startswith("/") else value
+
+          def labels(row):
+              config = row.get("Config")
+              value = config.get("Labels") if isinstance(config, dict) else None
+              return value if isinstance(value, dict) else {}
+
+          def bindings(row):
+              host = row.get("HostConfig")
+              value = host.get("PortBindings") if isinstance(host, dict) else None
+              return value if isinstance(value, dict) else {}
+
+          named = [row for row in rows if name(row) == container]
+          labelled = [row for row in rows if labels(row).get("sp.role") == "engine"]
+          publishers = [
+              row
+              for row in rows
+              if any(
+                  isinstance(entries, list)
+                  and any(
+                      isinstance(entry, dict) and entry.get("HostPort") == port
+                      for entry in entries
+                  )
+                  for entries in bindings(row).values()
+              )
+          ]
+          if [name(row) for row in named] != [container]:
+              raise SystemExit(1)
+          if [name(row) for row in labelled] != [container]:
+              raise SystemExit(1)
+          if [name(row) for row in publishers] != [container]:
+              raise SystemExit(1)
+
+          row = named[0]
+          state = row.get("State") if isinstance(row.get("State"), dict) else {}
+          host = row.get("HostConfig") if isinstance(row.get("HostConfig"), dict) else {}
+          restart = host.get("RestartPolicy") if isinstance(host.get("RestartPolicy"), dict) else {}
+          release = labels(row).get("sp.release.sha")
+          exact_release = release == target_sha or (legacy == "true" and release in (None, ""))
+          exact_binding = {"8080/tcp": [{"HostIp": "", "HostPort": port}]}
+          if state.get("Status") != "running":
+              raise SystemExit(1)
+          if row.get("Image") != expected_image:
+              raise SystemExit(1)
+          if labels(row).get("autoheal") != "true" or not exact_release:
+              raise SystemExit(1)
+          if restart.get("Name") != "always" or bindings(row) != exact_binding:
+              raise SystemExit(1)
+          identity = row.get("Id")
+          started = state.get("StartedAt")
+          if not isinstance(identity, str) or not identity or not isinstance(started, str) or not started:
+              raise SystemExit(1)
+          print(f"{identity}|{started}|{expected_image}")
+          ' "$CONTAINER" "$SEALED_IMAGE_ID" "$TARGET_SHA" "$SEALED_LEGACY" "$PORT"
+          }
+
+          FINGERPRINT_BEFORE="$(validate_all_state_identity)"
+          BODY="$(curl -q -sf --noproxy '*' --max-time 10 -H 'Cache-Control: no-cache, no-store' \
+            "http://127.0.0.1:${PORT}/health?nocache=$(date -u +%s%N)")"
+          printf '%s' "$BODY" | python3 -c '
+          import json, sys
+          value = json.load(sys.stdin)
+          ok = value.get("running") is True and value.get("liveness") == "ok" and value.get("version") == sys.argv[1]
+          raise SystemExit(0 if ok else 1)
+          ' "${TARGET_SHA:0:8}"
+          [ "$(validate_all_state_identity)" = "$FINGERPRINT_BEFORE" ]
+
+          CURRENT_IMAGE_ID="$(docker image inspect -f '{{.Id}}' "$CURRENT_IMAGE" 2>/dev/null || true)"
+          if [ "$CURRENT_IMAGE_ID" != "$SEALED_IMAGE_ID" ]; then
+            # :current is a cache only. Repairing it is safe only after the
+            # durable seal, database leader, and running container all agreed.
+            docker tag "$SEALED_IMAGE_ID" "$CURRENT_IMAGE"
+            [ "$(docker image inspect -f '{{.Id}}' "$CURRENT_IMAGE")" = "$SEALED_IMAGE_ID" ]
+            [ "$(validate_all_state_identity)" = "$FINGERPRINT_BEFORE" ]
+            echo repaired
+          else
+            echo exact
+          fi
+          REMOTE
+              ) 2>/dev/null || true
+
+              FINAL_BODY=$(curl -q -sf --max-time 10 -H 'Cache-Control: no-cache, no-store' \
+                "$ENGINE_URL/health?nocache=$(date -u +%s%N)" 2>/dev/null || echo "")
+              FINAL_VER=$(echo "$FINAL_BODY" | python3 -c "import json,sys;print(json.load(sys.stdin).get('version',''))" 2>/dev/null || echo "")
+              case "$HOST_RESULT:$FINAL_VER" in
+                exact:$SHORT)
+                  echo "skip=true" >> "$GITHUB_OUTPUT"
+                  echo "reason=already_live" >> "$GITHUB_OUTPUT"
+                  echo "Public health, fresh database leader, durable seal, sole host container, direct health, autoheal, and :current prove $SHA."
+                  exit 0
+                  ;;
+                repaired:$SHORT)
+                  echo "skip=true" >> "$GITHUB_OUTPUT"
+                  echo "reason=already_live" >> "$GITHUB_OUTPUT"
+                  echo "Repaired :current to sealed $SHA without restarting; every release witness now agrees."
+                  exit 0
+                  ;;
+                *)
+                  echo "Database matched, but exact sealed host/public identity did not. The certified deploy continues."
+                  ;;
+              esac
+            else
+              echo "HTTP named the target but the fresh database leader did not. The certified deploy continues."
+            fi
           fi
           # LIVE BY INCLUSION (2026-09-10). A commit that production's build
           # already CONTAINS is live. With a push trigger, a push event that
@@ -541,52 +730,6 @@ jobs:
               || echo "::warning::could not file the advisory issue - the run annotation and ca_drift_incidents row still carry the finding"
           fi
           exit 0
-
-      - name: Setup SSH key
-        if: steps.dedupe.outputs.skip != 'true'
-        env:
-          # The two repos disagreed on the name of this secret: World Hub's
-          # workflows read HETZNER_SSH_PRIVATE_KEY, this one read
-          # HETZNER_SSH_KEY, and the Club Arena repo happens to hold BOTH. That
-          # works right up until somebody rotates the key and updates one name,
-          # at which point the other repo's deploy fails with an SSH error that
-          # says nothing about a secret. Accept either, prefer the World Hub's
-          # name as canonical, and say which one was used.
-          SSH_KEY_CANONICAL: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
-          SSH_KEY_LEGACY: ${{ secrets.HETZNER_SSH_KEY }}
-        run: |
-          mkdir -p ~/.ssh
-          if [ -n "$SSH_KEY_CANONICAL" ]; then
-            echo "Using HETZNER_SSH_PRIVATE_KEY (canonical)"
-            printf '%s\n' "$SSH_KEY_CANONICAL" > ~/.ssh/id_deploy
-          elif [ -n "$SSH_KEY_LEGACY" ]; then
-            echo "::warning::Falling back to HETZNER_SSH_KEY. Set HETZNER_SSH_PRIVATE_KEY to match the World Hub repo."
-            printf '%s\n' "$SSH_KEY_LEGACY" > ~/.ssh/id_deploy
-          else
-            echo "::error::Neither HETZNER_SSH_PRIVATE_KEY nor HETZNER_SSH_KEY is set — every ssh below would fail."
-            exit 1
-          fi
-          chmod 600 ~/.ssh/id_deploy
-          # Fail here, loudly, rather than 20 lines later on a confusing
-          # 'Permission denied (publickey)'.
-          ssh-keygen -y -f ~/.ssh/id_deploy > /dev/null \
-            || { echo "::error::The Hetzner deploy key is not a valid private key."; exit 1; }
-          # DO NOT use ssh-keyscan. It opens five parallel probes offering
-          # different host key types; four disconnect pre-auth, which fail2ban's
-          # aggressive sshd filter counts as four failures and bans the runner
-          # inside the same second (maxretry=4, bantime=24h). That made every
-          # deploy a coin flip from the moment fail2ban was installed until
-          # 2026-08-15. Pinning is also strictly better security — ssh-keyscan
-          # trusts whatever the network hands back, on every run.
-          echo "${{ secrets.HETZNER_HOST_KEY }}" > ~/.ssh/known_hosts
-          chmod 644 ~/.ssh/known_hosts
-          test -s ~/.ssh/known_hosts \
-            || { echo "::error::HETZNER_HOST_KEY secret is empty or unset — every ssh below would fail, including the safety net"; exit 1; }
-          # One reusable alias. BatchMode so a prompt can never hang the job
-          # while it holds the deploy-hetzner concurrency lock.
-          printf '#!/bin/bash\nexec ssh -i ~/.ssh/id_deploy -o BatchMode=yes -o ConnectTimeout=20 "%s@%s" "$@"\n' \
-            "$SSH_USER" "$HETZNER_HOST" > ~/hssh
-          chmod +x ~/hssh
 
       - name: Capture pre-deploy host state
         id: pre

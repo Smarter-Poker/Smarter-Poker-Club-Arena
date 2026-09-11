@@ -334,7 +334,7 @@ describe('a final-table deal pays every share or none', () => {
     );
   });
 
-  it('freezes the deal lines and installs the terminal guard dormant for rolling compatibility', () => {
+  it('freezes the deal lines and refuses a legacy or incomplete terminal transition', () => {
     expect(executableSql).toMatch(
       /REVOKE ALL ON public\.tournament_obligations FROM service_role[\s\S]*?GRANT SELECT ON public\.tournament_obligations TO service_role/
     );

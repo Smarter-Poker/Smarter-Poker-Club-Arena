@@ -19,6 +19,11 @@ import type { Card } from '../types.js';
 
 const LEADER = 'leader-1';
 const OPP = 'opp-1';
+const singlePotScope = {
+  kind: 'single_high_pot' as const,
+  potIndex: 0 as const,
+  eligiblePlayerIds: [LEADER, OPP],
+};
 
 const c = (rank: string, suit: string) => ({ rank, suit }) as never as Card;
 
@@ -52,7 +57,8 @@ function offerLeader(e: InsuranceEngine, pot = 300) {
     pot,
     'nlh',
     false,
-    insuranceEquity(leaderCards, [oppCards], board, 'nlh')
+    insuranceEquity(leaderCards, [oppCards], board, 'nlh'),
+    singlePotScope
   );
 }
 

@@ -33,11 +33,16 @@ describe('Cap', () => {
   it('measures the ceiling against the WHOLE HAND, not one street', () => {
     // player.bet is this street only; capping on that would let a player
     // commit the cap once per street, four times over.
-    // Two different scopes on purpose. The positive is about the cap block as
-    // a whole; the negative is about ONE statement, and widening it to the
-    // block made it read a `player.bet` belonging to something else entirely.
-    expect(sliceEnclosingBlock(TURNS, 'const capBB =')).toContain('totalInvested');
-    expect(sliceStatement(TURNS, 'const capRemaining =')).not.toMatch(/player\.bet/);
+    // Keep both assertions on the exact remaining-cap statement. The cap
+    // scalar is now resolved by the shared cash-only helper, so anchoring on
+    // that helper's private `capBB` implementation would no longer inspect
+    // the human wager path this test protects.
+    const cap = sliceStatement(TURNS, 'const capChips = cashHandCapChips(');
+    const remaining = sliceStatement(TURNS, 'const capRemaining =');
+    expect(cap).toContain('cashHandCapChips(');
+    expect(cap).toContain('this.isTournamentTable()');
+    expect(remaining).toContain('totalInvested');
+    expect(remaining).not.toMatch(/player\.bet/);
   });
 
   it('is Infinity when the table is uncapped, so every clamp is a no-op', () => {

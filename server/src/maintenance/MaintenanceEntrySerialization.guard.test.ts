@@ -6,7 +6,7 @@
  * lock, while every admission and rebuy path takes the matching shared lock
  * and holds it through commit or rollback.
  */
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
@@ -26,18 +26,18 @@ const ATOMIC_SEAT_FIRST_SQL = readFileSync(
     '..',
     'supabase',
     'migrations',
-    '20260908043250_seat_first_board_creation_is_one_transaction.sql'
+    '20260908130000_seat_first_board_creation_is_one_transaction.sql'
   ),
   'utf8'
 );
+const migrationBySuffix = (suffix: string): string => {
+  const directory = resolve(process.cwd(), '..', 'supabase', 'migrations');
+  const matches = readdirSync(directory).filter((name) => name.endsWith(`_${suffix}`));
+  expect(matches, `expected one migration ending in ${suffix}`).toHaveLength(1);
+  return resolve(directory, matches[0] ?? '');
+};
 const SEAT_FIRST_RETIREMENT_SQL = readFileSync(
-  resolve(
-    process.cwd(),
-    '..',
-    'supabase',
-    'migrations',
-    '20260908043450_seat_first_inventory_is_created_atomically.sql'
-  ),
+  migrationBySuffix('seat_first_inventory_is_created_atomically.sql'),
   'utf8'
 );
 const STORE = readFileSync(
@@ -48,20 +48,22 @@ const SUPABASE_CLIENT = readFileSync(
   resolve(process.cwd(), 'src', 'services', 'supabase', 'client.ts'),
   'utf8'
 );
+const SERVER_INDEX = readFileSync(resolve(process.cwd(), 'src', 'index.ts'), 'utf8');
+const ENGINE_UP = readFileSync(resolve(process.cwd(), 'scripts', 'engine-up.sh'), 'utf8');
 
-const MAINTENANCE_SAVE_SQL = readFileSync(
+const MAINTENANCE_LIFETIME_SQL = readFileSync(
   resolve(
     process.cwd(),
     '..',
     'supabase',
     'migrations',
-    '20260909001350_expired_maintenance_owners_cannot_block_a_new_hour.sql'
+    '20260909180615_maintenance_ownership_fits_process_lifetime.sql'
   ),
   'utf8'
 );
 
 function functionDefinition(name: string): string {
-  const source = name === 'fn_save_engine_maintenance_break' ? MAINTENANCE_SAVE_SQL : SQL;
+  const source = name === 'fn_save_engine_maintenance_break' ? MAINTENANCE_LIFETIME_SQL : SQL;
   const start = source.indexOf(`CREATE OR REPLACE FUNCTION public.${name}(`);
   expect(start, `${name} definition`).toBeGreaterThan(-1);
   const end = source.indexOf('$function$;', start);
@@ -179,32 +181,47 @@ describe('maintenance and new entries share one transaction boundary', () => {
     );
   });
 
-  it('uses that ordering once, proves the atomic creator, then removes the repair door', () => {
+  it('proves the atomic creator and clean inventory, then removes the repair door', () => {
     expect(ATOMIC_SEAT_FIRST_SQL).not.toContain(
       'DROP FUNCTION IF EXISTS public.fn_repair_seat_first_games(integer)'
     );
+    expect(SEAT_FIRST_RETIREMENT_SQL).not.toContain(
+      'SELECT public.fn_repair_seat_first_games(1000)'
+    );
     expect(SEAT_FIRST_RETIREMENT_SQL).toMatch(
-      /fn_create_seat_first_game_atomic\(uuid,jsonb\)[\s\S]*?SELECT public\.fn_repair_seat_first_games\(1000\)[\s\S]*?unjoinable legacy listing remains[\s\S]*?DROP FUNCTION IF EXISTS public\.fn_repair_seat_first_games\(integer\) RESTRICT[\s\S]*?DROP FUNCTION IF EXISTS public\.fn_repair_seat_first_games_before_maintenance_gate\(integer\)[\s\S]*?RESTRICT/
+      /fn_create_seat_first_game_atomic\(uuid,jsonb\)[\s\S]*?unjoinable legacy listing requires intentional repair[\s\S]*?DROP FUNCTION IF EXISTS public\.fn_repair_seat_first_games\(integer\) RESTRICT[\s\S]*?DROP FUNCTION IF EXISTS public\.fn_repair_seat_first_games_before_maintenance_gate\(integer\)[\s\S]*?RESTRICT/
     );
     expect(ATOMIC_SEAT_FIRST_SQL).toMatch(
       /CREATE OR REPLACE FUNCTION public\.fn_create_seat_first_game_atomic[\s\S]*?pg_advisory_xact_lock_shared\(530090, 1\)[\s\S]*?INSERT INTO public\.tournaments[\s\S]*?INSERT INTO public\.tables/
     );
   });
 
-  it('persists and clears maintenance through a longer first-lock writer RPC', () => {
+  it('bounds every maintenance owner operation inside process and supervisor lifetime', () => {
+    expect(MAINTENANCE_LIFETIME_SQL.match(/^BEGIN;$/gm) ?? []).toHaveLength(1);
+    expect(MAINTENANCE_LIFETIME_SQL.match(/^COMMIT;$/gm) ?? []).toHaveLength(1);
+    expect(MAINTENANCE_LIFETIME_SQL.trimEnd().endsWith('COMMIT;')).toBe(true);
+    expect(MAINTENANCE_LIFETIME_SQL).not.toMatch(/cron|watch(?:er|list)?/i);
     for (const door of [
       'fn_save_engine_maintenance_break',
       'fn_claim_engine_maintenance_break',
       'fn_clear_engine_maintenance_break',
     ]) {
       const definition = functionDefinition(door);
-      expect(definition, door).toMatch(
-        /SET statement_timeout = '45s'\s+SET lock_timeout = '40s'[\s\S]*?PERFORM pg_advisory_xact_lock\(530090, 1\)/
-      );
+      expect(definition, door).toMatch(/PERFORM pg_advisory_xact_lock\(530090, 1\)/);
     }
+    expect(functionDefinition('fn_save_engine_maintenance_break')).toMatch(
+      /SET statement_timeout = '6s'\s+SET lock_timeout = '5s'/
+    );
+    expect(MAINTENANCE_LIFETIME_SQL).toMatch(
+      /ALTER FUNCTION public\.fn_claim_engine_maintenance_break\(uuid, uuid, text\)[\s\S]*?SET statement_timeout = '6s';[\s\S]*?SET lock_timeout = '5s';/
+    );
+    expect(MAINTENANCE_LIFETIME_SQL).toMatch(
+      /ALTER FUNCTION public\.fn_clear_engine_maintenance_break\([\s\S]*?SET statement_timeout = '6s';[\s\S]*?fn_clear_engine_maintenance_break\([\s\S]*?SET lock_timeout = '5s';/
+    );
     expect(STORE).toContain("maintenanceSupabase.rpc('fn_save_engine_maintenance_break'");
     expect(STORE).toContain("maintenanceSupabase.rpc('fn_clear_engine_maintenance_break'");
     expect(STORE).toContain("maintenanceSupabase.rpc('fn_claim_engine_maintenance_break'");
+    expect(STORE).toMatch(/await maintenanceSupabase\s+\.from\(TABLE\)/);
     expect(STORE).not.toMatch(/\.from\(TABLE\)\.(?:upsert|delete)/);
     expect(functionDefinition('fn_save_engine_maintenance_break')).toMatch(
       /ownership_token = EXCLUDED\.ownership_token[\s\S]*?WHERE public\.engine_maintenance_break\.ownership_token = EXCLUDED\.ownership_token/
@@ -216,10 +233,36 @@ describe('maintenance and new entries share one transaction boundary', () => {
       'p_require_exact'
     );
     expect(STORE).not.toContain('p_require_exact');
-    expect(SUPABASE_CLIENT).toMatch(/MAINTENANCE_SUPABASE_TIMEOUT_MS[\s\S]*?50_000/);
+    expect(SUPABASE_CLIENT).toMatch(/Math\.min\(requestedMaintenanceTimeoutMs, 8_000\)/);
     expect(SUPABASE_CLIENT).toMatch(
-      /maintenanceSupabase[\s\S]*?createBoundedServiceClient\([\s\S]*?MAINTENANCE_DB_TIMEOUT_MS/
+      /maintenanceSupabase[\s\S]*?createBoundedServiceClient\(\s*MAINTENANCE_DB_TIMEOUT_MS,\s*0\s*\)/
     );
+
+    const httpCeilingMs = 8_000;
+    const appDeadline = Number(
+      SERVER_INDEX.match(/SHUTDOWN_DEADLINE_MS = ([\d_]+)/)![1].replaceAll('_', '')
+    );
+    const dockerGrace = Number(ENGINE_UP.match(/docker stop -t (\d+)/)![1]) * 1000;
+    // save timeout + exact read-back is the longest mutation receipt path
+    // stop() can own. Even three sequential maintenance transports remain
+    // inside the app deadline, and the app deadline remains inside Docker.
+    expect(httpCeilingMs * 2).toBeLessThan(30_000);
+    expect(httpCeilingMs * 3).toBeLessThan(appDeadline);
+    expect(appDeadline).toBeLessThan(dockerGrace);
+  });
+
+  it('rejects late declarations in the database, after acquiring the shared entry boundary', () => {
+    const save = functionDefinition('fn_save_engine_maintenance_break');
+    const lockAt = save.indexOf('pg_advisory_xact_lock(530090, 1)');
+    const clockAt = save.indexOf('v_now := clock_timestamp()');
+    const boundaryAt = save.indexOf("v_now >= p_announced_at + INTERVAL '2 minutes'");
+    const insertAt = save.indexOf('INSERT INTO public.engine_maintenance_break');
+    expect(lockAt).toBeGreaterThan(-1);
+    expect(clockAt).toBeGreaterThan(lockAt);
+    expect(boundaryAt).toBeGreaterThan(clockAt);
+    expect(insertAt).toBeGreaterThan(boundaryAt);
+    expect(save).toMatch(/MAINTENANCE_LAST_HAND_BOUNDARY_EXPIRED/);
+    expect(save).toMatch(/v_now >= p_break_ends_at[\s\S]*?MAINTENANCE_COUNTDOWN_BOUNDARY_EXPIRED/);
   });
 
   it('keeps receipt helpers and every renamed money core private to their wrappers', () => {

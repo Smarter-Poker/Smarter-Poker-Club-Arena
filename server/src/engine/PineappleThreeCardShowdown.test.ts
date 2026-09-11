@@ -169,6 +169,8 @@ describe('pineapple: nobody reaches showdown holding three cards', () => {
     const snapshot = prepareWorkerResult(hc, 1);
     expect(hc.commitPreparedPineappleRunoutDiscards(snapshot.flop)).toBe(true);
     expect(holdings(st)).toEqual([2, 2, 2]);
+    expect(hc.getState().revealedDeadCards).toHaveLength(3);
+    expect(hc.getVisibleEquityDeadCards()).toEqual(hc.getState().revealedDeadCards);
   });
 
   it('a NON-pineapple variant is untouched by the resolve', () => {

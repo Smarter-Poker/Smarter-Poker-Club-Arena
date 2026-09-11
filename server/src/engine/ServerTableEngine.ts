@@ -57,6 +57,8 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
       pot: state.pot ?? 0,
       community_cards: state.communityCards ?? [],
       community_cards2: state.communityCards2 ?? [],
+      community_cards3: state.communityCards3 ?? [],
+      revealed_dead_cards: state.revealedDeadCards ?? [],
       current_bet: state.currentBet ?? 0,
       stage: state.stage ?? 'preflop',
       dealer_seat: state.dealerSeat ?? this.currentHandDealerSeat,
@@ -274,6 +276,7 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
       community_cards2: state.communityCards2 ?? [],
       // TRIPLE-BOARD BOMB POT 2026-08-27: third board (empty unless active).
       community_cards3: state.communityCards3 ?? [],
+      revealed_dead_cards: state.revealedDeadCards ?? [],
       // VARIANT OVERRIDE 2026-08-28 (spec §10.1): what game THIS hand is —
       // clients size villain card-backs and winner highlights from it.
       hand_variant: this.activeHandVariant(),
@@ -505,6 +508,7 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
       community_cards2: state.communityCards2 ?? [],
       // TRIPLE-BOARD BOMB POT 2026-08-27: third board (empty unless active).
       community_cards3: state.communityCards3 ?? [],
+      revealed_dead_cards: state.revealedDeadCards ?? [],
       // VARIANT OVERRIDE 2026-08-28 (spec §10.1): what game THIS hand is.
       hand_variant: this.activeHandVariant(),
       // ROUND 3 (2026-08-20): hands until the next bomb pot (1 = next hand).
@@ -770,6 +774,7 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
       community_cards: [],
       community_cards2: [],
       community_cards3: [],
+      revealed_dead_cards: [],
       hand_variant: this.activeHandVariant(),
       ...this.bombPotSnapshotFields(),
       ...this.anteSnapshotFields(),

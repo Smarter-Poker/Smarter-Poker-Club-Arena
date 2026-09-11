@@ -40,9 +40,31 @@ function stalledBody(status = 200) {
   });
 }
 
+/** A broken transport that ignores AbortSignal entirely. */
+function abortDeafBody(status = 200) {
+  return vi.fn(
+    async () =>
+      new Response(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode('{'));
+            // Deliberately never close, error, or listen for abort.
+          },
+        }),
+        { status }
+      )
+  );
+}
+
 const ordinaryDatabaseFetch = (): typeof fetch => {
   const boundedFetch = captured.fetches[0];
   if (!boundedFetch) throw new Error('ordinary database client fetch was not captured');
+  return boundedFetch;
+};
+
+const maintenanceDatabaseFetch = (): typeof fetch => {
+  const boundedFetch = captured.fetches[1];
+  if (!boundedFetch) throw new Error('maintenance database client fetch was not captured');
   return boundedFetch;
 };
 
@@ -60,6 +82,84 @@ describe('database deadline includes response body and caller cancellation', () 
     expect(vi.getTimerCount()).toBe(0);
   });
 
+  it('rejects at the application boundary when the transport ignores abort', async () => {
+    const transport = abortDeafBody();
+    vi.stubGlobal('fetch', transport);
+    const outcome = ordinaryDatabaseFetch()('https://example.test/rpc', {
+      method: 'POST',
+    }).then(
+      () => 'unexpected success',
+      (error: Error) => error.message
+    );
+    await vi.advanceTimersByTimeAsync(101);
+    expect(await outcome).toBe('supabase_timeout');
+    expect(transport).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('rejects when fetch itself never resolves or observes abort', async () => {
+    const transport = vi.fn(() => new Promise<Response>(() => undefined));
+    vi.stubGlobal('fetch', transport);
+    const outcome = ordinaryDatabaseFetch()('https://example.test/rpc', {
+      method: 'POST',
+    }).then(
+      () => 'unexpected success',
+      (error: Error) => error.message
+    );
+    await vi.advanceTimersByTimeAsync(101);
+    expect(await outcome).toBe('supabase_timeout');
+    expect(transport).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('owns a late transport rejection after the application deadline wins', async () => {
+    let rejectTransport!: (reason: unknown) => void;
+    const transport = vi.fn(
+      () =>
+        new Promise<Response>((_resolve, reject) => {
+          rejectTransport = reject;
+        })
+    );
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => unhandled.push(reason);
+    process.on('unhandledRejection', onUnhandled);
+    try {
+      vi.stubGlobal('fetch', transport);
+      const outcome = ordinaryDatabaseFetch()('https://example.test/rpc').then(
+        () => 'unexpected success',
+        (error: Error) => error.message
+      );
+      await vi.advanceTimersByTimeAsync(101);
+      expect(await outcome).toBe('supabase_timeout');
+      rejectTransport(new Error('late_transport_failure'));
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(unhandled).toEqual([]);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      process.off('unhandledRejection', onUnhandled);
+    }
+  });
+
+  it('caps the stale production override at fifteen seconds', async () => {
+    vi.resetModules();
+    captured.fetches.length = 0;
+    vi.stubEnv('SUPABASE_TIMEOUT_MS', '60000');
+    await import('./client.js');
+    expect(captured.fetches).toHaveLength(2);
+
+    const transport = abortDeafBody();
+    vi.stubGlobal('fetch', transport);
+    const outcome = ordinaryDatabaseFetch()('https://example.test/rpc').then(
+      () => 'unexpected success',
+      (error: Error) => error.message
+    );
+    await vi.advanceTimersByTimeAsync(15_001);
+    expect(await outcome).toBe('supabase_timeout');
+    expect(transport).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it('does not send an already cancelled request', async () => {
     const transport = vi.fn().mockResolvedValue(new Response('{}'));
     vi.stubGlobal('fetch', transport);
@@ -69,6 +169,23 @@ describe('database deadline includes response body and caller cancellation', () 
       ordinaryDatabaseFetch()('https://example.test', { signal: controller.signal })
     ).rejects.toThrow('caller_cancelled');
     expect(transport).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('settles immediately when a caller cancels an abort-deaf request', async () => {
+    const transport = abortDeafBody();
+    vi.stubGlobal('fetch', transport);
+    const controller = new AbortController();
+    const outcome = ordinaryDatabaseFetch()('https://example.test', {
+      signal: controller.signal,
+    }).then(
+      () => 'unexpected success',
+      (error: Error) => error.message
+    );
+    controller.abort(new Error('caller_cancelled_midflight'));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(await outcome).toBe('caller_cancelled_midflight');
+    expect(transport).toHaveBeenCalledTimes(1);
     expect(vi.getTimerCount()).toBe(0);
   });
 
@@ -181,4 +298,44 @@ describe('database transport compatibility', () => {
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }
   }, 15000);
+});
+
+describe('maintenance ownership transport', () => {
+  it('never hides a second mutation attempt behind a pre-execution 503', async () => {
+    const transport = vi
+      .fn()
+      .mockResolvedValue(new Response('{"code":"PGRST002"}', { status: 503 }));
+    vi.stubGlobal('fetch', transport);
+
+    const response = await maintenanceDatabaseFetch()('https://example.test/rpc', {
+      method: 'POST',
+      body: '{}',
+    });
+
+    expect(response.status).toBe(503);
+    expect(transport).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('caps even an unsafe environment override at eight seconds', async () => {
+    vi.resetModules();
+    captured.fetches.length = 0;
+    vi.stubEnv('MAINTENANCE_SUPABASE_TIMEOUT_MS', '60000');
+    await import('./client.js');
+    expect(captured.fetches).toHaveLength(2);
+
+    const transport = stalledBody();
+    vi.stubGlobal('fetch', transport);
+    const outcome = maintenanceDatabaseFetch()('https://example.test/rpc', {
+      method: 'POST',
+    }).then(
+      () => 'unexpected success',
+      (error: Error) => error.message
+    );
+
+    await vi.advanceTimersByTimeAsync(8_001);
+    expect(await outcome).toBe('supabase_timeout');
+    expect(transport).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
+  });
 });

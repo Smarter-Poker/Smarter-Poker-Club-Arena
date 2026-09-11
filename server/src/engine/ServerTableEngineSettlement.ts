@@ -58,6 +58,7 @@ import { buildDailyMissionHandEvents } from './dailyMissionEvents.js';
 import { checkTournamentChipConservation } from './tournamentChipConservation.js';
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { INSTANCE_ID } from '../services/tableLease.js';
+import type { InsuranceSettlement } from './InsuranceEngine.js';
 import { requireHandSeatGeneration } from './handSeatGeneration.js';
 
 /**
@@ -89,6 +90,80 @@ const cents = (n: number): number => {
 const RABBIT_HUNT_OFFER_TTL_MS = 90_000;
 
 export abstract class ServerTableEngineSettlement extends ServerTableEngineDealing {
+  /**
+   * Insurance and EV cashout are cash-only contracts. Expire any stale offer
+   * on a tournament before asking InsuranceEngine to settle, emit or mutate.
+   */
+  protected settleInsuranceCashOnly(winnerIds: readonly string[]): InsuranceSettlement[] {
+    // Own the per-hand narrative here as well as the offer engine. This makes
+    // the durable ledger input empty even if a corrupt caller arrives with no
+    // winner list or the prior hand left a stale in-memory snapshot.
+    this.currentHandInsuranceSettlements = [];
+    if (this.isTournamentTable()) {
+      this.insuranceEngine.endHand(this.tableId);
+      return [];
+    }
+    if (winnerIds.length === 0) return [];
+    const winnerSet = new Set(winnerIds);
+    const isChop = winnerSet.size > 1;
+    for (const offer of this.insuranceEngine.getOffers(this.tableId)) {
+      if (offer.status !== 'accepted' && offer.status !== 'cashed_out') continue;
+      const seatedPlayer = this.seatedPlayers.find((player) => player.user_id === offer.playerId);
+      const cashoutPayout =
+        offer.status === 'cashed_out' ? Math.round((offer.cashoutAmount ?? 0) * 100) / 100 : 0;
+      const cashoutRedirect =
+        offer.status === 'cashed_out'
+          ? Math.round(
+              this.currentHandWinners
+                .filter((winner) => winner.userId === offer.playerId)
+                .reduce((sum, winner) => sum + winner.amount, 0) * 100
+            ) / 100
+          : 0;
+      const premium =
+        offer.status === 'accepted' && winnerSet.has(offer.playerId) && !isChop ? offer.premium : 0;
+      const available = (seatedPlayer?.stack ?? -1) + cashoutPayout;
+      if (
+        !seatedPlayer ||
+        !Number.isFinite(available) ||
+        available + 0.005 < premium + cashoutRedirect
+      ) {
+        const error = new Error(
+          `Insurance settlement is not exactly collectible for ${offer.playerId}: ` +
+            `available=${available}, premium=${premium}, redirect=${cashoutRedirect}`
+        );
+        reportError(error, 'ServerTableEngine.insurance_settlement_not_collectible');
+        void raiseFinancialAlert(
+          'critical',
+          'ServerTableEngine.insurance_settlement_not_collectible',
+          error.message,
+          {
+            tableId: this.tableId,
+            handNumber: this.handCount,
+            playerId: offer.playerId,
+            available,
+            premium,
+            cashoutRedirect,
+            cashoutPayout,
+          }
+        ).catch((alertError) =>
+          reportError(alertError, 'ServerTableEngine.insurance_collectibility_alert_failed')
+        );
+        this.insuranceEngine.endHand(this.tableId);
+        this.killForRestart('insurance_settlement_not_collectible');
+        throw error;
+      }
+    }
+    this.currentHandInsuranceSettlements = this.insuranceEngine.settle(this.tableId, [
+      ...winnerIds,
+    ]);
+    return this.currentHandInsuranceSettlements;
+  }
+
+  /** 7-2 is a cash side game, never tournament settlement. */
+  protected sevenDeuceCashAllowed(): boolean {
+    return !this.isTournamentTable();
+  }
+
   /**
    * Stack and payout values are money authority. JavaScript's NaN/Infinity
    * arithmetic is contagious, while `value || 0` silently turns NaN into a
@@ -672,12 +747,8 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     // SETTLEMENT STEP 6 (continued): Insurance settlement — distribute insurance payouts
     // Bible V8 §4.19: Settle insurance BEFORE disposing (offers cleared on dispose)
     // FIX 118: Pass ALL winner IDs — chops (multiple winners) = PUSH (insurance voided)
+    this.settleInsuranceCashOnly(this.currentHandWinnerIds);
     if (this.currentHandWinnerIds.length > 0) {
-      this.currentHandInsuranceSettlements = this.insuranceEngine.settle(
-        this.tableId,
-        this.currentHandWinnerIds
-      );
-
       // Bible V8 §4.19: Insurance settlement — applied like rake at the end.
       // - LOSER who bought insurance: Gets insuredAmount from union/club bank → credited to table stack
       // - WINNER who bought insurance: Premium deducted from winnings (taken at end like rake)
@@ -708,10 +779,12 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           // stack. EV CASHOUT 2026-08-28: a cashed-out player's locked amount
           // rides the same branch — paid from the bank regardless of outcome.
           if (seatedPlayer) {
+            const before = seatedPlayer.stack;
             seatedPlayer.stack = cents(seatedPlayer.stack + settlement.payout);
+            const applied = cents(seatedPlayer.stack - before);
             insuranceDeltas.set(
               settlement.playerId,
-              (insuranceDeltas.get(settlement.playerId) ?? 0) + settlement.payout
+              cents((insuranceDeltas.get(settlement.playerId) ?? 0) + applied)
             );
             console.log(
               `[ServerTableEngine:${this.tableId}] ${settlement.kind === 'ev_cashout' ? 'EV cashout' : 'Insurance payout'}: ${settlement.playerId} → +$${settlement.payout} from bank`
@@ -757,7 +830,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
             this.currentHandCashoutRedirects.set(settlement.playerId, applied);
             insuranceDeltas.set(
               settlement.playerId,
-              (insuranceDeltas.get(settlement.playerId) ?? 0) - applied
+              cents((insuranceDeltas.get(settlement.playerId) ?? 0) - applied)
             );
             console.log(
               `[ServerTableEngine:${this.tableId}] EV cashout redirect: ${settlement.playerId} won $${wonAmt} → bank`
@@ -806,9 +879,10 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
             seatedPlayer.stack = cents(Math.max(0, seatedPlayer.stack - settlement.premium));
             // The CLAMPED amount, not settlement.premium — a short stack pays
             // what it has and the engine must debit exactly that.
+            const applied = cents(beforePremium - seatedPlayer.stack);
             insuranceDeltas.set(
               settlement.playerId,
-              (insuranceDeltas.get(settlement.playerId) ?? 0) + (seatedPlayer.stack - beforePremium)
+              cents((insuranceDeltas.get(settlement.playerId) ?? 0) - applied)
             );
             console.log(
               `[ServerTableEngine:${this.tableId}] Insurance premium: ${settlement.playerId} → -$${settlement.premium} (stack: $${seatedPlayer.stack})`
@@ -852,6 +926,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     const sevenDeuceSawFlop = this.currentHandCommunityCards.length >= 3;
     const sevenDeuceIsNlh = (this.tableInfo?.game_variant || 'nlh') === 'nlh';
     if (
+      this.sevenDeuceCashAllowed() &&
       sevenDeuceEnabled &&
       sevenDeuceSawFlop &&
       sevenDeuceIsNlh &&

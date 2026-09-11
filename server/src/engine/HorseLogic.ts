@@ -6997,8 +6997,13 @@ export class HorseLogic {
     // before the fallback: an ugly-but-legal action still beats a rejected one,
     // and this path only runs when the exact amount failed validation.
     const step = chipStep(gs.bigBlind);
-    const candidates =
-      step === 1
+    // Tournament chips have no cent fallback. If the requested whole-chip
+    // sizing and its adjacent whole chips are not legal, take the safe action
+    // instead of handing HandController a fractional horse wager it must
+    // refuse. Cash keeps the established one-cent boundary recovery.
+    const candidates = isTournamentMode(gs)
+      ? [d.amount!, d.amount! + 1, d.amount! - 1].filter(Number.isSafeInteger)
+      : step === 1
         ? [
             d.amount!,
             d.amount! + 1,

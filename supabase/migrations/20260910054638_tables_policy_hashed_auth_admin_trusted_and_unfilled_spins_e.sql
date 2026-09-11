@@ -19,7 +19,7 @@
 --    MAINTENANCE_RELEASE_CERTIFICATE_CALLER_REQUIRED (signup_errors id 9318,
 --    2026-09-10 03:06 UTC). Body otherwise identical to 20260910034411.
 --
--- 3. fn_spin_expire_unfilled: `spin_multiplier IS NOT NULL` -> 
+-- 3. fn_spin_expire_unfilled: `spin_multiplier IS NOT NULL` ->
 --    `COALESCE(spin_multiplier, 0) > 0`. tournaments.spin_multiplier has
 --    DEFAULT 0 and the seat-first creator omits the column, so the sweep read
 --    every undrawn Spin as drawn and expired NOTHING since 2026-09-08: a
@@ -34,7 +34,7 @@ BEGIN;
 
 ALTER POLICY poker_arena_table_access ON public.tables USING (((club_id IS NULL) AND (union_id IS NULL)) OR (COALESCE(union_id, club_id) IN (SELECT c.id FROM public.clubs c WHERE public.fn_poker_can_read_games(c.id))));
 
-launch may commit
+-- A concurrent table launch may commit before the cancellation sweep locks its candidate; the function below rechecks after locking.
 CREATE OR REPLACE FUNCTION public.fn_active_maintenance_release_boundary()
  RETURNS timestamp with time zone
  LANGUAGE plpgsql

@@ -34,7 +34,11 @@ import { describe, it, expect } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import { sliceEnclosingBlock } from '../testHelpers/sourceWindow.js';
-import { applySpinDrawPatch } from './spinDrawSync.js';
+import {
+  applySpinDrawPatch,
+  launchPatchValueMatches,
+  launchStructuredValueMatches,
+} from './spinDrawSync.js';
 
 const BASE = fs.readFileSync(
   path.join(process.cwd(), 'src/tournament/TournamentManagerBase.ts'),
@@ -129,6 +133,84 @@ describe('the committed draw and presentation reach memory before RUNNING', () =
 
   it('recovery skips the presentation rewrite after proving the immutable receipt', () => {
     expect(CODE).toContain('let spinPresentationWritten = playedSpinRecovery !== null;');
+  });
+});
+
+describe('Spin draw read-back compares JSON semantics across PostgREST representations', () => {
+  const expected = [
+    { level: 1, smallBlind: 10, bigBlind: 20 },
+    { level: 2, smallBlind: 15, bigBlind: 30 },
+  ];
+
+  it('accepts the same array returned as legacy JSON text', () => {
+    expect(launchStructuredValueMatches(JSON.stringify(expected), expected)).toBe(true);
+  });
+
+  it('accepts objects whose JSONB key order changed', () => {
+    expect(
+      launchStructuredValueMatches(
+        '[{"bigBlind":20,"smallBlind":10,"level":1},{"smallBlind":15,"level":2,"bigBlind":30}]',
+        expected
+      )
+    ).toBe(true);
+  });
+
+  it.each([
+    ['malformed JSON', '[{"level":1}'],
+    ['a scalar JSON string', '42'],
+    ['a different level', '[{"level":9,"smallBlind":10,"bigBlind":20}]'],
+    ['reordered array entries', JSON.stringify([...expected].reverse())],
+  ])('fails closed for %s', (_label, actual) => {
+    expect(launchStructuredValueMatches(actual, expected)).toBe(false);
+  });
+
+  it('does not erase prototype-named or ordinary extra JSON keys', () => {
+    const expectedObject = { level: 1, smallBlind: 10, bigBlind: 20 };
+    expect(
+      launchStructuredValueMatches(
+        JSON.parse('{"level":1,"smallBlind":10,"bigBlind":20,"__proto__":{"polluted":true}}'),
+        expectedObject
+      )
+    ).toBe(false);
+    expect(
+      launchStructuredValueMatches({ ...expectedObject, unexpected: true }, expectedObject)
+    ).toBe(false);
+  });
+
+  it('wires the semantic comparator into launchRowMatchesPatch', () => {
+    const matcher = CODE.slice(
+      CODE.indexOf('private launchRowMatchesPatch'),
+      CODE.indexOf('private async beginTournamentLaunch')
+    );
+    expect(matcher).toContain('launchPatchValueMatches(row, key, expected)');
+    expect(matcher).not.toContain('JSON.stringify(actual) === JSON.stringify(expected)');
+  });
+
+  it('requires an own projected key and exact null read-back', () => {
+    const inherited = Object.create({ draw_receipt_id: null }) as Record<string, unknown>;
+    expect(launchPatchValueMatches({}, 'draw_receipt_id', null)).toBe(false);
+    expect(launchPatchValueMatches(inherited, 'draw_receipt_id', null)).toBe(false);
+    expect(launchPatchValueMatches({ draw_receipt_id: undefined }, 'draw_receipt_id', null)).toBe(
+      false
+    );
+    expect(launchPatchValueMatches({ draw_receipt_id: null }, 'draw_receipt_id', null)).toBe(true);
+  });
+
+  it.each([null, false, true, '', ' 0', '0 ', [], {}, '00', Number.NaN, Infinity])(
+    'does not coerce malformed numeric read-back %j to zero',
+    (actual) => {
+      expect(launchPatchValueMatches({ spin_reveal_lag_ms: actual }, 'spin_reveal_lag_ms', 0)).toBe(
+        false
+      );
+    }
+  );
+
+  it('accepts only an exact finite numeric value or JSON-number string', () => {
+    expect(launchPatchValueMatches({ spin_reveal_lag_ms: 0 }, 'spin_reveal_lag_ms', 0)).toBe(true);
+    expect(launchPatchValueMatches({ spin_reveal_lag_ms: '0' }, 'spin_reveal_lag_ms', 0)).toBe(
+      true
+    );
+    expect(launchPatchValueMatches({ multiplier: '2.5' }, 'multiplier', 2.5)).toBe(true);
   });
 });
 

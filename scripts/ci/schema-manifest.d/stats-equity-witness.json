@@ -1,0 +1,18 @@
+{
+  "_owner": "agent/codex-live-realtime/stage-b-v2",
+  "tables": ["ca_stats_equity_witness_cutover"],
+  "functions": [
+    "ca_stats_equity_witness_readiness",
+    "fn_ca_stats_equity_witness_cutover_immutable"
+  ],
+  "columns": {
+    "ca_hand_facts": ["all_in_equity_owed"],
+    "ca_stats_equity_witness_cutover": [
+      "id",
+      "writer_cutover_at",
+      "writer_sha",
+      "recorded_at",
+      "recorded_by"
+    ]
+  }
+}

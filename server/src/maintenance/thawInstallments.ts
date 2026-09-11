@@ -22,21 +22,56 @@
 export interface ThawCallResult {
   ok?: boolean;
   complete?: boolean;
+  retryable?: boolean;
+  retry_after_ms?: number | string | null;
   reason?: string;
+  released?: boolean;
+  abandoned?: boolean;
+  freeze_started_at?: string;
+  credited_through_at?: string | null;
+  effective_frozen_seconds?: number;
+  ownership_token?: string;
   steps_this_call?: string[];
   elapsed_ms?: number;
   shifted?: Record<string, unknown>;
 }
 
+/** A semantic database refusal. Retrying the same owner/identity is unsafe. */
+export class ThawRefusedError extends Error {
+  readonly retryable = false;
+
+  constructor(readonly reason: string) {
+    super(`thaw refused: ${reason}`);
+    this.name = 'ThawRefusedError';
+  }
+}
+
+/**
+ * The exact ancient row was atomically released without a broad clock shift.
+ * Callers may reopen only after their independent null-row receipt agrees.
+ */
+export class ThawAbandonedError extends Error {
+  readonly retryable = false;
+  readonly released = true;
+
+  constructor(
+    readonly reason: string,
+    readonly receipt: ThawCallResult
+  ) {
+    super(`thaw abandoned: ${reason}`);
+    this.name = 'ThawAbandonedError';
+  }
+}
+
 export interface ThawInstallmentOptions {
-  /** Upper bound on RPC calls, complete or not. */
-  maxCalls?: number;
   /** Consecutive transport failures tolerated before giving up. */
   maxConsecutiveErrors?: number;
   /** Pause between calls (ms); lets a lock-holder finish. */
   pauseMs?: number;
-  sleep?: (ms: number) => Promise<void>;
+  sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
   log?: (line: string) => void;
+  /** Process-lifecycle fence. No new installment/backoff begins after abort. */
+  signal?: AbortSignal;
 }
 
 export interface ThawInstallmentSummary {
@@ -46,11 +81,39 @@ export interface ThawInstallmentSummary {
   last: ThawCallResult | null;
 }
 
-export const THAW_MAX_CALLS = 12;
 export const THAW_MAX_CONSECUTIVE_ERRORS = 3;
 export const THAW_PAUSE_MS = 250;
+/** A receipt can defer work, but it cannot park one process indefinitely. */
+export const THAW_RETRY_AFTER_MAX_MS = 60_000;
 
-const defaultSleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+function retryAfterMs(receipt: ThawCallResult, fallbackMs: number): number {
+  const requested = Number(receipt.retry_after_ms);
+  const baseline = Math.max(0, fallbackMs);
+  const candidate = Number.isFinite(requested) && requested >= 0 ? Math.ceil(requested) : baseline;
+  // Preserve the caller's anti-spin floor while honoring a later database
+  // release target. The upper fence keeps one sleep observable/cancellable;
+  // a longer target is approached through bounded normal partial calls.
+  return Math.min(THAW_RETRY_AFTER_MAX_MS, Math.max(baseline, candidate));
+}
+
+const defaultSleep = (ms: number, signal?: AbortSignal) =>
+  new Promise<void>((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(signal.reason ?? new Error('thaw_aborted'));
+      return;
+    }
+    const timer = setTimeout(done, ms);
+    const abort = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', abort);
+      reject(signal?.reason ?? new Error('thaw_aborted'));
+    };
+    function done() {
+      signal?.removeEventListener('abort', abort);
+      resolve();
+    }
+    signal?.addEventListener('abort', abort, { once: true });
+  });
 
 /**
  * Drive fn_thaw_platform to completion. Resolves with the summary when the
@@ -60,26 +123,34 @@ const defaultSleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
  * can do will change that answer.
  */
 export async function runThawInstallments(
-  call: () => Promise<ThawCallResult>,
+  call: (signal?: AbortSignal) => Promise<ThawCallResult>,
   opts: ThawInstallmentOptions = {}
 ): Promise<ThawInstallmentSummary> {
-  const maxCalls = opts.maxCalls ?? THAW_MAX_CALLS;
   const maxErrors = opts.maxConsecutiveErrors ?? THAW_MAX_CONSECUTIVE_ERRORS;
   const pauseMs = opts.pauseMs ?? THAW_PAUSE_MS;
   const sleep = opts.sleep ?? defaultSleep;
   const log = opts.log ?? (() => undefined);
+  const signal = opts.signal;
 
   let calls = 0;
   let errors = 0;
   let consecutiveErrors = 0;
   let last: ThawCallResult | null = null;
 
-  while (calls < maxCalls) {
+  // Successful checkpoint calls are expected normal progress. The number is
+  // data-dependent (notably level_started_at batches of 40), so a fixed call
+  // ceiling would turn a healthy fleet above 480 targets into a false thaw
+  // failure. Lifecycle abort owns the total operation; only consecutive
+  // transport failures consume the bounded error budget.
+  while (true) {
+    signal?.throwIfAborted();
     calls += 1;
     try {
-      last = (await call()) ?? {};
+      last = (await call(signal)) ?? {};
+      signal?.throwIfAborted();
       consecutiveErrors = 0;
     } catch (err) {
+      signal?.throwIfAborted();
       errors += 1;
       consecutiveErrors += 1;
       log(
@@ -94,12 +165,21 @@ export async function runThawInstallments(
           }`
         );
       }
-      if (pauseMs > 0) await sleep(pauseMs);
+      if (pauseMs > 0) await sleep(pauseMs, signal);
       continue;
     }
 
-    if (last.ok === false) {
-      throw new Error(`thaw refused: ${last.reason ?? 'unknown'}`);
+    if (last.abandoned === true) {
+      if (last.released !== true || last.complete !== true) {
+        throw new ThawRefusedError('invalid_abandonment_receipt');
+      }
+      throw new ThawAbandonedError(last.reason ?? 'unknown', last);
+    }
+    if (
+      last.complete !== true &&
+      (last.retryable === false || (last.ok === false && last.retryable !== true))
+    ) {
+      throw new ThawRefusedError(last.reason ?? 'unknown');
     }
     log(
       `[MaintenanceBreak] thaw call ${calls}: ${
@@ -107,10 +187,19 @@ export async function runThawInstallments(
       } steps=${JSON.stringify(last.steps_this_call ?? [])} elapsed=${last.elapsed_ms ?? '?'}ms`
     );
     if (last.complete === true) {
+      if (last.ok === false) {
+        throw new ThawRefusedError(last.reason ?? 'complete_but_not_ok');
+      }
+      if (last.released !== true) {
+        throw new ThawRefusedError('complete_without_atomic_release');
+      }
       return { complete: true, calls, errors, last };
     }
-    if (pauseMs > 0) await sleep(pauseMs);
+    // A retryable semantic receipt is prepared work, not an RPC failure. Keep
+    // both error counters at zero and honor the database's release target.
+    // Clamp the hint so malformed/hostile values can neither hot-spin nor
+    // strand one process forever; the lifecycle signal owns the wait.
+    const nextPauseMs = last.retryable === true ? retryAfterMs(last, pauseMs) : pauseMs;
+    if (nextPauseMs > 0) await sleep(nextPauseMs, signal);
   }
-
-  throw new Error(`thaw incomplete after ${calls} call(s) (${errors} error(s))`);
 }

@@ -8,6 +8,7 @@ import {
 
 import { ensureAcceptedTerms } from './ensureAcceptedTerms';
 import { ensurePlayableProfile } from './ensurePlayableProfile';
+import { ensureAcceptedTerms } from './ensureAcceptedTerms';
 import type { TemporaryCustomizationAccount } from './temporaryCustomizationAccount';
 
 export const DAILY_MISSIONS_RESPONSE_TIMEOUT = 60_000;

@@ -68,6 +68,7 @@ function makeServer(overrides: Partial<Record<string, unknown>> = {}) {
       allowed: true,
       reason: 'club_member',
       clubId: 'club-1',
+      observerShowCards: false,
     }),
     ...overrides,
   } as never);
@@ -94,13 +95,60 @@ describe('EngineWebSocketServer /ws/multi', () => {
     (server as unknown as { onUpgradedMux: Handler }).onUpgradedMux(ws, 'user-1', '1.2.3.4');
   });
 
-  it('SUBSCRIBE acks, subscribes the hub, and requests a hole-card resync', async () => {
+  it('SUBSCRIBE acks and carries the observer privacy policy into the hub', async () => {
     ws.emitMessage({ type: 'SUBSCRIBE', tableId: T1 });
     await flush();
     expect(hub.subscribe).toHaveBeenCalledTimes(1);
     expect(hub.subscribe.mock.calls[0][0]).toBe(T1);
+    expect(hub.subscribe.mock.calls[0][1]).toMatchObject({
+      userId: 'user-1',
+      viewerRole: 'observer',
+      observerShowCards: false,
+    });
     const acks = ws.sent.map((s) => JSON.parse(s));
     expect(acks.some((m) => m.type === 'SUBSCRIBED' && m.tableId === T1)).toBe(true);
+  });
+
+  it('keeps observer policy on subscribe and RESYNC while preserving user-scoped recovery', async () => {
+    const onResync = vi.fn();
+    const onConnect = vi.fn();
+    ({ server, hub } = makeServer({ onResync, onConnect }));
+    ws = makeFakeWs();
+    (server as unknown as { onUpgradedMux: Handler }).onUpgradedMux(ws, 'user-1', '1.2.3.4');
+
+    ws.emitMessage({ type: 'SUBSCRIBE', tableId: T1 });
+    await flush();
+    ws.emitMessage({ type: 'RESYNC', tableId: T1 });
+
+    expect(onResync).toHaveBeenCalledTimes(2);
+    expect(onConnect).toHaveBeenCalledWith(T1, 'user-1');
+    expect(hub.resync).toHaveBeenCalledOnce();
+  });
+
+  it('retains private replay and presence wiring for an authorized seated player', async () => {
+    const onResync = vi.fn();
+    const onConnect = vi.fn();
+    ({ server, hub } = makeServer({
+      onResync,
+      onConnect,
+      authorizeViewer: async () => ({
+        allowed: true,
+        reason: 'seated',
+        clubId: 'club-1',
+        observerShowCards: false,
+      }),
+    }));
+    ws = makeFakeWs();
+    (server as unknown as { onUpgradedMux: Handler }).onUpgradedMux(ws, 'user-1', '1.2.3.4');
+
+    ws.emitMessage({ type: 'SUBSCRIBE', tableId: T1 });
+    await flush();
+    expect(hub.subscribe.mock.calls[0][1]).toMatchObject({ viewerRole: 'seated' });
+    expect(onResync).toHaveBeenCalledOnce();
+    expect(onConnect).toHaveBeenCalledWith(T1, 'user-1');
+
+    ws.emitMessage({ type: 'RESYNC', tableId: T1 });
+    expect(onResync).toHaveBeenCalledTimes(2);
   });
 
   it('re-SUBSCRIBE to the same table is idempotent: one hub.subscribe, ack + resync instead', async () => {
@@ -551,14 +599,85 @@ describe('EngineWebSocketServer heartbeat scheduler debt', () => {
   });
 });
 
+describe('EngineWebSocketServer single-table viewer policy', () => {
+  it('wires a restricted observer while preserving user-scoped recovery', () => {
+    const onResync = vi.fn();
+    const onConnect = vi.fn();
+    const { server, hub } = makeServer({ onResync, onConnect });
+    const ws = makeFakeWs();
+    (server as unknown as { onUpgraded: Handler }).onUpgraded(
+      ws,
+      {},
+      'watcher',
+      T1,
+      '1.2.3.4',
+      'token',
+      {
+        allowed: true,
+        reason: 'club_member',
+        clubId: 'club-1',
+        observerShowCards: false,
+      }
+    );
+
+    expect(hub.subscribe.mock.calls[0][1]).toMatchObject({
+      userId: 'watcher',
+      viewerRole: 'observer',
+      observerShowCards: false,
+    });
+    expect(onResync).toHaveBeenCalledOnce();
+    expect(onConnect).toHaveBeenCalledWith(T1, 'watcher');
+    ws.emitMessage({ type: 'RESYNC' });
+    expect(hub.resync).toHaveBeenCalledOnce();
+    expect(onResync).toHaveBeenCalledTimes(2);
+  });
+
+  it('retains the full reconnect path for an authorized seat', () => {
+    const onResync = vi.fn();
+    const onConnect = vi.fn();
+    const { server, hub } = makeServer({ onResync, onConnect });
+    const ws = makeFakeWs();
+    (server as unknown as { onUpgraded: Handler }).onUpgraded(
+      ws,
+      {},
+      'hero',
+      T1,
+      '1.2.3.4',
+      'token',
+      {
+        allowed: true,
+        reason: 'seated',
+        clubId: 'club-1',
+        observerShowCards: false,
+      }
+    );
+
+    expect(hub.subscribe.mock.calls[0][1]).toMatchObject({ viewerRole: 'seated' });
+    expect(onResync).toHaveBeenCalledOnce();
+    expect(onConnect).toHaveBeenCalledWith(T1, 'hero');
+    ws.emitMessage({ type: 'RESYNC' });
+    expect(onResync).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe('engine resync failure isolation', () => {
   const brokenResync = () => {
     throw new Error('engine rebuilding');
   };
+  const seatedAccess = async () => ({
+    allowed: true as const,
+    reason: 'seated' as const,
+    clubId: 'club-1',
+    observerShowCards: false,
+  });
 
   it('still marks the player connected when initial private-state replay throws', async () => {
     const onConnect = vi.fn();
-    const { server, hub } = makeServer({ onResync: brokenResync, onConnect });
+    const { server, hub } = makeServer({
+      onResync: brokenResync,
+      onConnect,
+      authorizeViewer: seatedAccess,
+    });
     const ws = makeFakeWs();
     (server as unknown as { onUpgradedMux: Handler }).onUpgradedMux(ws, 'user-1', '1.2.3.4');
     ws.emitMessage({ type: 'SUBSCRIBE', tableId: T1 });
@@ -573,7 +692,7 @@ describe('engine resync failure isolation', () => {
       .fn()
       .mockImplementationOnce(() => {})
       .mockImplementationOnce(brokenResync);
-    const { server, hub } = makeServer({ onResync });
+    const { server, hub } = makeServer({ onResync, authorizeViewer: seatedAccess });
     const ws = makeFakeWs();
     (server as unknown as { onUpgradedMux: Handler }).onUpgradedMux(ws, 'user-1', '1.2.3.4');
     ws.emitMessage({ type: 'SUBSCRIBE', tableId: T1 });
@@ -587,7 +706,10 @@ describe('engine resync failure isolation', () => {
   });
 
   it('does not reject an idempotent subscribe when private-state replay throws', async () => {
-    const { server, hub } = makeServer({ onResync: brokenResync });
+    const { server, hub } = makeServer({
+      onResync: brokenResync,
+      authorizeViewer: seatedAccess,
+    });
     const ws = makeFakeWs();
     (server as unknown as { onUpgradedMux: Handler }).onUpgradedMux(ws, 'user-1', '1.2.3.4');
     ws.emitMessage({ type: 'SUBSCRIBE', tableId: T1 });

@@ -180,6 +180,9 @@ describe('one tournament manager carries one database fencing generation', () =>
     expect(managerSource).toContain('protected readonly tournamentLeaseGeneration: string | null;');
     for (const rpc of [
       'fn_begin_tournament_launch_atomic',
+      'fn_issue_tournament_launch_stacks',
+      'fn_materialize_tournament_launch_seats',
+      'fn_project_tournament_launch_seat_stacks',
       'fn_complete_tournament_launch_atomic',
       'fn_spin_draw_and_settle_atomic',
     ]) {

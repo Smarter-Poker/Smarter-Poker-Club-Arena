@@ -36,112 +36,14 @@ import { reportError } from '../errorReporter.js';
 import { allocateWeightedShareCents } from '../rakeAllocation.js';
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 1. ALL-IN EQUITY CAPTURE
+// 1. ALL-IN EQUITY EVIDENCE
 // ═══════════════════════════════════════════════════════════════════════════
 //
-// The engine already computes EXACT all-in equity in
-// ServerTableEngineRunout.broadcastAllInEquity() — in an all-in every hand is
-// known, so it prices each holding against the known others rather than
-// against a random range. The result is broadcast to clients and observed into
-// a Prometheus histogram, then discarded.
-//
-// Runout.ts is over the deploy file-size ceiling, so rather than editing it we
-// intercept the `all_in_equity` event on its way out through TableStateHub.
-// That is a 2-line edit to a 13KB file and gives us equity, board (hence
-// street) and pot for free.
-
-interface CapturedEquity {
-  /** userId -> equity as a FRACTION 0..1 (the event carries percent, 1dp). */
-  byUser: Map<string, number>;
-  street: string;
-  capturedAt: number;
-}
-
-const equityByHand = new Map<string, CapturedEquity>();
-
-/** Bounded so a long-lived process cannot leak on tables that never settle. */
-const EQUITY_CACHE_MAX = 5000;
-const EQUITY_CACHE_TTL_MS = 10 * 60 * 1000;
-
-function equityKey(tableId: string, handNumber: number | string): string {
-  return `${tableId}:${handNumber}`;
-}
-
-function streetFromBoard(boardLength: number): string {
-  if (boardLength >= 5) return 'river';
-  if (boardLength === 4) return 'turn';
-  if (boardLength === 3) return 'flop';
-  return 'preflop';
-}
-
-function pruneEquityCache(): void {
-  if (equityByHand.size <= EQUITY_CACHE_MAX) return;
-  const cutoff = Date.now() - EQUITY_CACHE_TTL_MS;
-  for (const [k, v] of equityByHand) {
-    if (v.capturedAt < cutoff) equityByHand.delete(k);
-  }
-  // Still oversized (pathological): drop oldest-inserted until under the cap.
-  if (equityByHand.size > EQUITY_CACHE_MAX) {
-    const overflow = equityByHand.size - EQUITY_CACHE_MAX;
-    let dropped = 0;
-    for (const k of equityByHand.keys()) {
-      equityByHand.delete(k);
-      if (++dropped >= overflow) break;
-    }
-  }
-}
-
-/**
- * Called from TableStateHub.emitEvent for every `all_in_equity` payload.
- *
- * Only the FIRST all-in point of a hand is kept. broadcastAllInEquity fires
- * again on each subsequent street of a paced runout, and by the river the
- * "equity" is 0% or 100% — recording that would make every all-in look like it
- * ran exactly to plan. The first firing is the moment the stack was committed,
- * which is the only one that means anything.
- *
- * Never throws: a stats capture must not be able to break a table broadcast.
- */
-export function captureAllInEquity(tableId: string, payload: Record<string, unknown>): void {
-  try {
-    if (!tableId || payload?.type !== 'all_in_equity') return;
-
-    const handNumber = payload.hand_number;
-    if (handNumber === undefined || handNumber === null) return;
-
-    const key = equityKey(tableId, String(handNumber));
-    if (equityByHand.has(key)) return; // first all-in point only
-
-    const raw = payload.equities;
-    if (!Array.isArray(raw) || raw.length === 0) return;
-
-    const byUser = new Map<string, number>();
-    for (const e of raw as Array<{ userId?: string; equity?: number }>) {
-      if (!e?.userId || typeof e.equity !== 'number' || !Number.isFinite(e.equity)) continue;
-      // The event carries percent with one decimal; store the fraction.
-      const fraction = Math.min(1, Math.max(0, e.equity / 100));
-      byUser.set(e.userId, fraction);
-    }
-    if (byUser.size === 0) return;
-
-    const board = Array.isArray(payload.board) ? payload.board : [];
-    equityByHand.set(key, {
-      byUser,
-      street: streetFromBoard(board.length),
-      capturedAt: Date.now(),
-    });
-    pruneEquityCache();
-  } catch {
-    /* stats capture must never affect gameplay */
-  }
-}
-
-function takeEquity(tableId: string, handNumber: number): CapturedEquity | null {
-  const key = equityKey(tableId, String(handNumber));
-  const hit = equityByHand.get(key);
-  if (hit) equityByHand.delete(key);
-  return hit ?? null;
-}
+// The engine marks exactly one existing action per active player at the
+// ALL_IN_RUNOUT boundary, then attaches the first computed equity to that same
+// object. The action array commits atomically with hand_history. There is no
+// process-local cache to lose on a crash, handoff, failed fact write, or late
+// event broadcast; a missing equity value remains an explicit durable gap.
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 1b. RUN-IT-TWICE LIFECYCLE TELEMETRY
@@ -245,11 +147,6 @@ export function captureRitEvent(tableId: string, payload: Record<string, unknown
   } catch {
     /* never affect gameplay */
   }
-}
-
-/** Test seam. Not used in production paths. */
-export function __resetEquityCacheForTests(): void {
-  equityByHand.clear();
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -356,6 +253,17 @@ export interface HandAction {
   amount?: number;
   timestamp?: number;
   stage: string;
+  allInRunout?: true;
+  allInRunoutStreet?: 'preflop' | 'flop' | 'turn';
+  allInEquity?: number;
+  /** Exact side-pot-aware expected chips returned at the runout boundary. */
+  allInEvReturned?: number;
+  /** Reproducible worker evidence stored with the same atomic action row. */
+  allInEquityVersion?: string;
+  allInEquityExact?: boolean;
+  allInEquityRunouts?: number;
+  allInEquitySeed?: number;
+  allInEquityInputHash?: string;
 }
 
 export interface FlowFlags {
@@ -374,6 +282,19 @@ export interface FlowFlags {
   passive_actions: number;
   was_all_in: boolean;
   all_in_street: string | null;
+}
+
+/**
+ * Whether a settlement row owes an all-in equity figure. This reads only the
+ * marker frozen into hand_history.actions; no process-local observation can
+ * become authority for a durable stat.
+ */
+export function allInEquityIsOwed(input: {
+  wentToShowdown: boolean;
+  runoutStreet: string | null;
+}): boolean {
+  if (!input.wentToShowdown) return false;
+  return input.runoutStreet !== null && input.runoutStreet !== 'river';
 }
 
 const AGGRESSIVE = new Set(['bet', 'raise', 'all_in']);
@@ -408,7 +329,7 @@ export function deriveFlowFlags(
   for (const a of mine) {
     if (AGGRESSIVE.has(a.action)) aggressive++;
     else if (PASSIVE.has(a.action)) passive++;
-    if (a.action === 'all_in' && !wasAllIn) {
+    if ((a.action === 'all_in' || a.allInRunout === true) && !wasAllIn) {
       wasAllIn = true;
       allInStreet = a.stage || null;
     }
@@ -753,12 +674,10 @@ export async function writeHandFacts(input: HandFactsInput): Promise<void> {
     ]);
 
     const nets = new Map<string, number>();
-    const investedList: number[] = [];
     for (const uid of participants) {
       const invested = r2(input.contributions.get(uid) ?? 0);
       const returned = r2(returnedBy.get(uid) ?? 0);
       nets.set(uid, r2(returned - invested));
-      investedList.push(invested);
     }
 
     const nonFoldedCount = (() => {
@@ -769,14 +688,6 @@ export async function writeHandFacts(input: HandFactsInput): Promise<void> {
       for (const uid of participants) if (!folded.has(uid)) live++;
       return live;
     })();
-
-    let totalAwarded = 0;
-    for (const v of returnedBy.values()) totalAwarded += v;
-    let totalInvested = 0;
-    for (const v of investedList) totalInvested += v;
-    const rakeFactor = totalInvested > 0 ? totalAwarded / totalInvested : 0;
-
-    const equity = takeEquity(input.tableId, input.handNumber);
 
     // Without a real big blind every bb-normalised column would be written as
     // RAW CHIPS - a plausible-looking number 10x out at a 5/10 table, which
@@ -841,7 +752,38 @@ export async function writeHandFacts(input: HandFactsInput): Promise<void> {
       let evReturned: number | null = null;
       let evNet = net;
 
-      const eq = equity?.byUser.get(uid);
+      const runoutMarkers = input.actions.filter(
+        (action) => action.userId === uid && action.allInRunout === true
+      );
+      if (runoutMarkers.length > 1) {
+        throw new Error(`writeHandFacts: duplicate all-in runout marker for ${uid}`);
+      }
+      const runoutMarker = runoutMarkers[0] ?? null;
+      const eq = runoutMarker?.allInEquity;
+      const expectedReturn = runoutMarker?.allInEvReturned;
+      if (eq !== undefined && (!Number.isFinite(eq) || eq < 0 || eq > 1)) {
+        throw new Error(`writeHandFacts: invalid all-in equity for ${uid}`);
+      }
+      if (
+        expectedReturn !== undefined &&
+        (!Number.isFinite(expectedReturn) || expectedReturn < 0)
+      ) {
+        throw new Error(`writeHandFacts: invalid all-in expected return for ${uid}`);
+      }
+      if ((eq === undefined) !== (expectedReturn === undefined)) {
+        throw new Error(`writeHandFacts: incomplete all-in equity witness for ${uid}`);
+      }
+      if (
+        eq !== undefined &&
+        (runoutMarker?.allInEquityVersion !== 'layered-settlement-v1' ||
+          typeof runoutMarker.allInEquityExact !== 'boolean' ||
+          !Number.isSafeInteger(runoutMarker.allInEquityRunouts) ||
+          (runoutMarker.allInEquityRunouts ?? 0) <= 0 ||
+          !Number.isSafeInteger(runoutMarker.allInEquitySeed) ||
+          !/^[a-f0-9]{64}$/.test(runoutMarker.allInEquityInputHash ?? ''))
+      ) {
+        throw new Error(`writeHandFacts: incomplete all-in equity provenance for ${uid}`);
+      }
 
       // FIX 2026-08-21: was_all_in used to come from the action log alone, and
       // the action log CANNOT see an all-in made by calling. HandController
@@ -851,22 +793,24 @@ export async function writeHandFacts(input: HandFactsInput): Promise<void> {
       // dropped from the EV adjustment. That is one whole side of most all-in
       // confrontations missing from the luck graph.
       //
-      // Presence in the equity map is the sound test: it is populated only for
-      // an ALL_IN_RUNOUT, and everyone in it had their committed chips run out
-      // with no further betting possible - which is exactly what the EV
-      // adjustment is measuring, whether they got there by shoving or calling.
-      const inAllInRunout = typeof eq === 'number';
+      // The marker is attached to every active player's last canonical action
+      // at ALL_IN_RUNOUT, including calls, forced blind/ante all-ins, and the
+      // covering stack. Its own action stage remains the personal commit
+      // street; allInRunoutStreet separately records when betting ended.
+      const inAllInRunout = runoutMarker !== null;
       const wasAllIn = flags.was_all_in || inAllInRunout;
+      const allInEquityOwed = allInEquityIsOwed({
+        wentToShowdown: flags.went_to_showdown,
+        runoutStreet: runoutMarker?.allInRunoutStreet ?? null,
+      });
 
-      if (inAllInRunout) {
+      if (typeof eq === 'number') {
         allInEquity = eq;
-        const eligible = maxWinnable(invested, investedList) * rakeFactor;
-        // NOTE: `eq` is equity against the whole all-in field while `eligible`
-        // caps at this player's main pot. In a side-pot spot a short stack's
-        // true share of the main pot is higher than its share of the field, so
-        // ev_returned is biased slightly LOW for short stacks. Exact for the
-        // two-way case that dominates volume.
-        evReturned = r2(eq * eligible);
+        // The worker freezes every physical pot layer, its eligible field,
+        // hi/lo split, board/run share, odd unit and post-deduction penny
+        // scaling at the all-in boundary. A whole-field percentage cannot be
+        // multiplied back into an unequal-stack side pot without lying.
+        evReturned = r2(expectedReturn as number);
         evNet = r2(evReturned - invested);
       }
 
@@ -948,8 +892,9 @@ export async function writeHandFacts(input: HandFactsInput): Promise<void> {
         // recorded as an all-in "on the flop" - a street the player never
         // chose to commit on. Fall back to the runout street only when the
         // action log has nothing (i.e. they got all-in by calling).
-        all_in_street: wasAllIn ? (flags.all_in_street ?? equity?.street ?? null) : null,
+        all_in_street: wasAllIn ? (flags.all_in_street ?? runoutMarker?.stage ?? null) : null,
         all_in_at_risk: wasAllIn ? invested : null,
+        all_in_equity_owed: allInEquityOwed,
         all_in_equity: allInEquity,
         ev_returned: evReturned,
         ev_net: evNet,

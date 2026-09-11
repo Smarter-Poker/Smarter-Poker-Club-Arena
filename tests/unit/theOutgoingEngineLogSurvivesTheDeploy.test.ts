@@ -39,7 +39,18 @@ describe('engine-up.sh saves the outgoing log before it removes the container', 
     const fn = sliceMethod(sh, 'save_outgoing_log() {');
     expect(fn).toMatch(/-mtime \+"\$LOG_KEEP_DAYS" -delete/);
     expect(fn).toMatch(/-gt "\$LOG_KEEP_MB"/);
-    expect(fn).toMatch(/wc -l\)" -gt 1 \] \|\| break/);
+    const keepNewest = fn.match(
+      /\[\s*"\$\(ls -1 "\$LOG_DIR"\/engine-\*\.log\.gz 2>\/dev\/null \| wc -l\)"\s+-gt 1\s*\]\s*\|\|\s*break/
+    );
+    expect(keepNewest, 'size retention must stop when only the newest log remains').not.toBeNull();
+    const selectOldest = fn.indexOf(
+      'oldest="$(ls -1tr "$LOG_DIR"/engine-*.log.gz 2>/dev/null | head -1)"'
+    );
+    const removeOldest = fn.indexOf('rm -f "$oldest"');
+    expect(selectOldest, 'retention must select the oldest timestamped log').toBeGreaterThan(-1);
+    expect(removeOldest, 'retention must remove only the selected oldest log').toBeGreaterThan(
+      selectOldest
+    );
   });
 
   it('the deploy names the saved file in its own log', () => {

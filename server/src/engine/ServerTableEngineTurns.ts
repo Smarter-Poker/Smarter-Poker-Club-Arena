@@ -57,6 +57,11 @@ import {
   type FastHorseDecisionResult,
   type LiveHorseDecisionSnapshot,
 } from './horseDecision/index.js';
+import {
+  cashHandCapChips,
+  isWholeTournamentChip,
+  TOURNAMENT_WHOLE_CHIP_ERROR,
+} from './TournamentChipIntegrity.js';
 
 /**
  * Why a decision did NOT earn a V44 second look (2026-09-06).
@@ -1411,6 +1416,17 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       return { success: false, error: 'Player not found at this table' };
     }
 
+    if (
+      this.isTournamentTable() &&
+      maxCallAmount !== undefined &&
+      !isWholeTournamentChip(maxCallAmount)
+    ) {
+      return {
+        success: false,
+        error: `${TOURNAMENT_WHOLE_CHIP_ERROR}: maxCallAmount=${String(maxCallAmount)}`,
+      };
+    }
+
     if (action === 'clear') {
       this.preActionEngine.clearPreAction(this.tableId, userId);
       return { success: true };
@@ -1557,6 +1573,18 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       return { success: false, error: 'Not your turn' };
     }
 
+    // Reject the player's original wager before fixed/pot-limit/cap clamps can
+    // turn a fractional request into a different legal action. HandController
+    // repeats this at the authoritative mutation boundary for horses,
+    // pre-actions and every other caller.
+    if (this.isTournamentTable() && amount !== undefined && !isWholeTournamentChip(amount)) {
+      return {
+        success: false,
+        error: `${TOURNAMENT_WHOLE_CHIP_ERROR}: requestedWager=${String(amount)}`,
+        code: 'INVALID_AMOUNT',
+      };
+    }
+
     // AUDIT FIX 2026-07-19: the player is present and acting — clear any
     // consecutive-timeout streak so a single AFK lapse doesn't accumulate
     // toward an auto-sit-out.
@@ -1637,11 +1665,12 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
      * cap game, and it is why the all-in promotions below have to be measured
      * against the capped figure rather than the raw stack.
      */
-    const capBB = Number(this.tableInfo?.cap_bb) || 0;
-    const capChips =
-      this.tableInfo?.cap_enabled === true && capBB > 0
-        ? capBB * (Number(this.tableInfo?.big_blind) || 0)
-        : 0;
+    const capChips = cashHandCapChips(
+      this.isTournamentTable(),
+      this.tableInfo?.cap_enabled,
+      this.tableInfo?.cap_bb,
+      this.tableInfo?.big_blind
+    );
     /* What this player may still commit this hand. Infinity when uncapped, so
        every Math.min below is a no-op on an ordinary table. */
     const capRemaining =
@@ -1740,6 +1769,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     // Step 4: Run ServerActionValidator for timing, duplicate suppression, and state validation
     const currentPlayer = state.players.find((p) => p.seat === state.currentPlayerSeat);
     const validationCtx: ValidationContext = {
+      isTournament: this.isTournamentTable(),
       currentPlayerId: currentPlayer?.user_id ?? '',
       stage: state.stage,
       currentBet: state.currentBet,
@@ -3089,12 +3119,14 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
             : 0;
           /* CAP FIX 2026-08-27: this commit-side check predates the Phase 5 shared
          canonical cap menu. Keep it as a final belt against a stale delayed
-         decision; the worker has already received the same ceiling. */
-          const horseCapBB = Number(this.tableInfo?.cap_bb) || 0;
-          const horseCapChips =
-            this.tableInfo?.cap_enabled === true && horseCapBB > 0
-              ? horseCapBB * (Number(this.tableInfo?.big_blind) || 0)
-              : 0;
+         decision; the worker has already received the same ceiling. Use the
+         shared cash-only helper here too so tournament chips are never capped. */
+          const horseCapChips = cashHandCapChips(
+            this.isTournamentTable(),
+            this.tableInfo?.cap_enabled,
+            this.tableInfo?.cap_bb,
+            this.tableInfo?.big_blind
+          );
           const horseCapRemaining =
             horseCapChips > 0
               ? Math.max(0, horseCapChips - (Number(enginePlayer.totalInvested) || 0))

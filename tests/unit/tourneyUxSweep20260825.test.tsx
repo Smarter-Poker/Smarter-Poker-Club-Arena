@@ -778,10 +778,12 @@ describe('Audit - the dialog cannot confirm a buy-in nobody was shown', () => {
     expect(wallet).toMatch(/return \{ balance: null, source: 'failed' \}/);
   });
 
-  it('does not tell a late registrant they cannot unregister near the start', () => {
+  it('states the exact pre-start unregister rule only for a scheduled pre-start entry', () => {
     // A late registration cannot be unregistered at all, and an SNG has no
-    // start time for the rule to be about.
+    // scheduled start label for this rule to be about.
     expect(src).toMatch(/!o\.isLateRegistration && !!startLabel/);
+    expect(src).toContain('You Can Unregister Any Time Before The Tournament Starts');
+    expect(src).not.toContain('Cannot Unregister Within 1 Minute');
   });
 
   it('traps focus and gives it back', () => {

@@ -101,6 +101,7 @@
 import { randomUUID } from 'node:crypto';
 import { completeReconnectFreeze, completeTableReconnectFreeze } from './reconnectFreeze.js';
 import { setMaintenanceFrozen } from './freezeState.js';
+import { ThawRefusedError } from './thawInstallments.js';
 
 /**
  * The parking primitive, as this module needs it.
@@ -133,6 +134,11 @@ export interface PausableTableEngine {
 
 export type MaintenanceBreakPhase = 'last_hand' | 'counting_down';
 
+type LastHandPersistenceResult =
+  | { status: 'confirmed' }
+  | { status: 'uncertain'; error: unknown }
+  | { status: 'cancelled' };
+
 export interface PersistedMaintenanceBreak {
   phase: MaintenanceBreakPhase;
   announcedAt: number;
@@ -152,6 +158,12 @@ export interface PersistedMaintenanceBreak {
 /** Durable side, so the tests can drive this without a database. */
 export interface MaintenanceBreakStore {
   load(): Promise<PersistedMaintenanceBreak | null>;
+  /**
+   * A completed thaw can exact-clear the singleton before its future credited
+   * boundary. A replacement process must still discover that short durable
+   * tail and keep every restored table parked until the database releases it.
+   */
+  loadReleaseBoundary(): Promise<number | null>;
   save(state: PersistedMaintenanceBreak): Promise<void>;
   /** Atomically replace an observed owner's token and return the current row. */
   claim(
@@ -180,26 +192,19 @@ export interface MaintenanceBreakOutcome {
   thawOk: boolean | null;
 }
 
-/**
- * Why a break did not run the way it was announced (2026-09-10).
- *
- * The 00:00 and 07:00 breaks of 2026-09-10 never started: the :53 save timed
- * out behind an entry, one timeout cancelled the whole hour, and the tables
- * dealt 750 and 2476 hands through the window. The only record of WHY was a
- * container log that the next deploy deleted; the scorecard, twelve minutes
- * later, could only list consequences ("it dealt hands", "the thaw did not
- * run"). This is the durable half of that sentence.
- */
+/** Atomic database release receipt; optional only for isolated legacy test fakes. */
+export interface MaintenanceThawReceipt {
+  /** Every durable and in-memory clock must remain frozen through this instant. */
+  creditedThroughAtMs: number;
+}
+
+/** Durable evidence explaining why an announced maintenance window degraded. */
 export interface MaintenanceBreakFault {
-  /** The :53 announcement instant that names the hour's break. */
+  /** The :53 announcement instant that identifies the hourly break. */
   announcedAtMs: number;
-  /** Which durable write could not be made. */
+  /** The durable transition that failed. */
   stage: 'announcement' | 'countdown' | 'adoption' | 'boot';
-  /**
-   * `cancelled`: no break ran, and the fleet dealt through the window.
-   * `held_without_restart`: the break ran to the hour on a row that was
-   * already durable, but carried no restart certificate.
-   */
+  /** Whether no break ran, or it ran without authorizing an engine restart. */
   outcome: 'cancelled' | 'held_without_restart';
   error: string;
 }
@@ -218,6 +223,26 @@ export interface ResumeWavesProgress {
   tables: number;
   tablesResumed: number;
   gapMs: number;
+}
+
+/**
+ * The deploy certificate published at `/health.maintenance`.
+ *
+ * `durableConfirmed` is deliberately independent from `active`: an engine can
+ * conservatively hold tables through a possibly-committed break while refusing
+ * to authorize a process replacement. Deployment automation must require both
+ * `durableConfirmed` and `readyForRestart` as exact booleans.
+ */
+export interface MaintenanceBreakSnapshot {
+  active: boolean;
+  phase: MaintenanceBreakPhase | 'idle';
+  durableConfirmed: boolean;
+  breakEndsAt: number | null;
+  remainingMs: number;
+  unparkedTables: number;
+  readyForRestart: boolean;
+  reason: string;
+  resumeWaves: ResumeWavesProgress | null;
 }
 
 export interface MaintenanceBreakDeps {
@@ -243,12 +268,8 @@ export interface MaintenanceBreakDeps {
    * Receives the break's own measurements at `end()`. Optional; failures
    * are reported and never delay the resume.
    */
-  recordOutcome?: (outcome: MaintenanceBreakOutcome) => Promise<void>;
-  /**
-   * Receives the reason a break did not run as announced, so the scorecard can
-   * name the CAUSE rather than its symptoms. Optional and best-effort: it is
-   * called after the decision is taken and never delays or changes it.
-   */
+  recordOutcome?: (outcome: MaintenanceBreakOutcome, signal: AbortSignal) => Promise<void>;
+  /** Best-effort durable cause record; it never changes or delays the safety decision. */
   recordFault?: (fault: MaintenanceBreakFault) => Promise<void>;
   /**
    * THE THAW (Dan 2026-09-01: "picks back up exactly as it was").
@@ -261,7 +282,12 @@ export interface MaintenanceBreakDeps {
    * Idempotent on the server side (keyed on the freeze start instant), so two
    * engines racing at :00 cannot shift the clocks twice.
    */
-  thaw?: (freezeStartedAtMs: number, frozenSeconds: number) => Promise<void>;
+  thaw: (
+    freezeStartedAtMs: number,
+    frozenSeconds: number,
+    signal: AbortSignal,
+    identity: { announcedAtMs: number; ownershipToken: string }
+  ) => Promise<MaintenanceThawReceipt | void>;
   /** Injectable purely so the tests are not real-time. */
   now?: () => number;
   setTimer?: (fn: () => void, ms: number) => NodeJS.Timeout;
@@ -279,21 +305,62 @@ export class MaintenanceBreak {
   static readonly LAST_HAND_LEAD_MS = 2 * 60 * 1000;
 
   /**
-   * How old a persisted break row may be and still be adopted by a booting
-   * engine (2026-09-07).
-   *
-   * The whole legitimate span is the announcement lead plus the break itself —
-   * an engine that boots at :58 is adopting a row announced at :53, five
-   * minutes earlier. A minute of slack covers a slow boot and a clock skew.
-   * Anything older belongs to an hour that has already finished, and adopting
-   * it parks the entire fleet for a break nobody announced. Before this
-   * existed, `restoreFromStore` computed a full five minutes for any
-   * `last_hand` row regardless of age, so its staleness check could never
-   * fire and an orphaned row was a fleet-wide freeze waiting for the next
-   * boot.
+   * A failed :53 persistence call is retried while the tables remain safely
+   * gated. The delay grows quickly enough not to hammer an unhealthy store,
+   * but is capped so a recovery late in the two-minute lead is still used.
+   * The absolute :55 boundary, never an attempt count, is the final limit.
    */
-  static readonly ADOPTABLE_ROW_MAX_AGE_MS =
-    MaintenanceBreak.LAST_HAND_LEAD_MS + MaintenanceBreak.BREAK_DURATION_MS + 60_000;
+  static readonly LAST_HAND_PERSIST_RETRY_INITIAL_MS = 1000;
+  static readonly LAST_HAND_PERSIST_RETRY_MAX_MS = 15_000;
+
+  /**
+   * PostgreSQL lock/statement timeouts prove that the attempted statement was
+   * cancelled, so they may be retried on a fixed cadence and ultimately
+   * rejected before :55. Transport failures do not provide that proof and
+   * continue to use the full fixed-boundary ambiguity protocol below.
+   */
+  static readonly ANNOUNCE_PERSIST_BUDGET_MS = 90 * 1000;
+  static readonly ANNOUNCE_PERSIST_RETRY_MS = 5 * 1000;
+
+  static isLockOrStatementTimeout(error: unknown): boolean {
+    const message = String((error as Error)?.message ?? error ?? '');
+    if (
+      /MAINTENANCE_(OWNERSHIP_LOST|LAST_HAND_BOUNDARY_EXPIRED|COUNTDOWN_BOUNDARY_EXPIRED)/.test(
+        message
+      )
+    ) {
+      return false;
+    }
+    return /lock timeout|statement timeout|lock_not_available|55P03|canceling statement/i.test(
+      message
+    );
+  }
+
+  /**
+   * Errors for which replaying this exact maintenance-state CAS is safe.
+   * Deliberate database refusals are decisions and are never retried.
+   */
+  static isRetryablePersistenceError(error: unknown): boolean {
+    const message = String((error as Error)?.message ?? error ?? '');
+    if (/MAINTENANCE_[A-Z_]+/.test(message)) return false;
+    if (MaintenanceBreak.isLockOrStatementTimeout(error)) return true;
+    return /supabase_timeout|fetch failed|AbortError|ECONNRESET|ECONNREFUSED|ETIMEDOUT|EAI_AGAIN|EPIPE|socket hang up|other side closed|PGRST00[0-3]|deadlock detected|40P01|Bad Gateway|Service Unavailable|Gateway Time-?out/i.test(
+      message
+    );
+  }
+
+  private static isDefinitiveLastHandRejection(error: unknown): boolean {
+    const message = String((error as Error)?.message ?? error ?? '');
+    return MaintenanceBreak.isLockOrStatementTimeout(error) || /MAINTENANCE_[A-Z_]+/.test(message);
+  }
+
+  /**
+   * A thaw is a required phase transition, not best-effort bookkeeping. The
+   * database function checkpoints each installment, so retrying joins the same
+   * work and cannot double-credit clocks. Keep one lifecycle-owned retry loop
+   * alive until it completes or this process is stopped.
+   */
+  static readonly THAW_RECOVERY_RETRY_MS = 1000;
 
   /**
    * How long a table is allowed to stay parked before `awaitPauseGate`'s
@@ -377,26 +444,6 @@ export class MaintenanceBreak {
   private unparkedAtCountdown = 0;
   private peakUnparked = 0;
   private readyForRestartAtMs: number | null = null;
-  /**
-   * True only when the exact in-memory phase/timestamps/token have either
-   * committed or been recovered by a byte-for-byte read-back.  Kept separate
-   * from `readyForRestart`: parking every table is necessary, but it is not
-   * proof that a replacement process can recover the same break.
-   *
-   * This additive field is the rolling-upgrade bridge for the stricter deploy
-   * gate.  Older deploy code ignores it; newer deploy code refuses to replace
-   * this process unless it is exactly true.
-   */
-  private durableConfirmed = false;
-  /**
-   * The last exact state this process knows the database holds: a save that
-   * returned, a read-back that matched, or an adoption receipt. The end of a
-   * break clears it as well as the final state, because a countdown that could
-   * not be saved leaves the LAST-HAND row in place - and that row keeps every
-   * entry door frozen until it is deleted (fn_entry_purchases_frozen has no
-   * end time for it).
-   */
-  private lastDurableState: PersistedMaintenanceBreak | null = null;
   /** Bumped each break; a scheduled resume wave from a superseded break is dropped. */
   private resumeToken = 0;
   /**
@@ -408,14 +455,34 @@ export class MaintenanceBreak {
   private breakEndsAt = 0;
   private reason = 'Scheduled Engine Maintenance';
   private ownershipToken: string = randomUUID();
+  /** True only after the exact state represented by `phase` is durable. */
+  private durablePhaseConfirmed = false;
+  /**
+   * Exact states that may have committed behind a lost transport response.
+   * They are retained until the fixed :00 end and cleared only by full CAS.
+   */
+  private potentiallyDurableStates: PersistedMaintenanceBreak[] = [];
+  /** Do not send an `ended` frame when no maintenance frame was ever sent. */
+  private playerAnnouncementVisible = false;
+  /**
+   * True when boot found no break row but did find the completed v3 release
+   * certificate. The database clocks are already credited, so this process
+   * must park locally through the certificate without thawing or clearing the
+   * old break a second time.
+   */
+  private releaseCertificateOnly = false;
 
   private announceTimer: NodeJS.Timeout | null = null;
   private countdownTimer: NodeJS.Timeout | null = null;
   private endTimer: NodeJS.Timeout | null = null;
+  private lastHandPersistRetryTimer: NodeJS.Timeout | null = null;
+  private wakeLastHandPersistRetry: ((reason: 'elapsed' | 'cancelled') => void) | null = null;
   private resumeWaveTimers = new Set<NodeJS.Timeout>();
   private lifecycleJobs = new Set<Promise<void>>();
   private lifecycleGeneration = 0;
   private acceptingLifecycleWork = true;
+  /** Cancels bounded database/HTTP work before stop() joins lifecycle jobs. */
+  private readonly lifecycleAbort = new AbortController();
   private startOperation: Promise<void> | null = null;
   private stopOperation: Promise<void> | null = null;
   private started = false;
@@ -463,10 +530,12 @@ export class MaintenanceBreak {
     this.started = false;
     this.acceptingLifecycleWork = false;
     this.lifecycleGeneration += 1;
+    this.lifecycleAbort.abort(new Error('maintenance_break_stopped'));
     this.resumeToken += 1;
     for (const t of [this.announceTimer, this.countdownTimer, this.endTimer]) {
       if (t) this.clearTimer(t);
     }
+    this.cancelLastHandPersistRetryWait();
     for (const timer of this.resumeWaveTimers) this.clearTimer(timer);
     this.resumeWaveTimers.clear();
     this.announceTimer = null;
@@ -483,6 +552,7 @@ export class MaintenanceBreak {
     for (const t of [this.announceTimer, this.countdownTimer, this.endTimer]) {
       if (t) this.clearTimer(t);
     }
+    this.cancelLastHandPersistRetryWait();
     for (const timer of this.resumeWaveTimers) this.clearTimer(timer);
     this.resumeWaveTimers.clear();
     this.announceTimer = null;
@@ -526,7 +596,7 @@ export class MaintenanceBreak {
    */
   /**
    * How many times the boot-time read of the break row is attempted before
-   * the engine gives up and starts unpaused. The common reason this read
+   * startup fails closed. The common reason this read
    * fails is the reason it matters most: the engine is booting at ~:55-:58,
    * inside the break, when the database is at its slowest, and a single
    * timed-out read used to mean the fleet came back dealing into a break
@@ -636,72 +706,6 @@ export class MaintenanceBreak {
   }
 
   /**
-   * Give back the frozen minutes of a break that ENDED while nobody was alive
-   * to end it (2026-09-08).
-   *
-   * `end()` is the only caller of the thaw, and `end()` only ever runs on a
-   * process still holding the break when its own timer fires. So when the
-   * engine that declared a break dies inside it and its replacement arrives
-   * after the hour, this path deleted the row, started dealing, and the frozen
-   * minutes were never handed back to anything.
-   *
-   * That is not a reporting gap. `fn_thaw_platform` is what moves every
-   * in-flight absolute deadline forward by the frozen duration - sit-out
-   * clocks, seat holds, rebuy prompts, blind levels, bomb-pot timers,
-   * reconnect windows. Skipping it burns all of them, for every player who was
-   * mid-decision at :55. On 2026-09-08 it was skipped three hours running:
-   * 14:00, 15:00 and 16:00 all recorded `thaw_ran: false`, and by 16:00 the
-   * break was otherwise perfect - zero hands in the window, the fleet held
-   * from 15:54 to 16:00 - with the missing thaw the only remaining fault.
-   *
-   * SAFE ON A BREAK SOMEBODY ELSE MAY ALREADY HAVE THAWED.
-   * `engine_maintenance_thaws` is keyed `PRIMARY KEY (freeze_started_at)`, and
-   * the function claims that row with `ON CONFLICT DO NOTHING`, returning
-   * `already_thawed` once it is complete. A second call for the same freeze
-   * therefore cannot shift the platform's clocks twice. This was read out of
-   * the deployed function before relying on it, not assumed.
-   *
-   * ONLY A COUNTDOWN IS EVIDENCE. A `last_hand` row that expired never began
-   * its five minutes, so there is no frozen interval to return and this
-   * declines. Inventing one would shift every deadline on the platform for a
-   * freeze that never ran.
-   */
-  private async thawAnAbandonedBreak(
-    abandoned: PersistedMaintenanceBreak,
-    endsAt: number
-  ): Promise<void> {
-    if (!this.deps.thaw) return;
-    if (abandoned.phase !== 'counting_down' || !abandoned.breakStartedAt) return;
-
-    const startedAt = abandoned.breakStartedAt;
-    const frozenSeconds = Math.round((endsAt - startedAt) / 1000);
-    if (frozenSeconds <= 0 || frozenSeconds > MaintenanceBreak.MAX_THAWABLE_SECONDS) {
-      console.warn(
-        `[MaintenanceBreak] an abandoned break claims ${frozenSeconds}s of freeze, outside what ` +
-          'fn_thaw_platform accepts. Leaving every clock alone rather than shifting the whole ' +
-          'platform by a number nobody can defend.'
-      );
-      return;
-    }
-
-    /* The same marker end() sets, so engines built during the rehydration that
-       follows still get their reconnect deadlines shifted. */
-    completeReconnectFreeze(startedAt, frozenSeconds * 1000);
-    try {
-      await this.deps.thaw(startedAt, frozenSeconds);
-      console.warn(
-        `[MaintenanceBreak] thawed a break nobody was alive to end (+${frozenSeconds}s) - the ` +
-          'engine that declared it did not survive to its own resume.'
-      );
-    } catch (err) {
-      /* end() makes the same call: a failed thaw costs the clocks their
-         minutes, but refusing to clear the row would leave the platform
-         frozen, which is strictly worse. */
-      console.error('[MaintenanceBreak] THAW FAILED for an abandoned break', err);
-    }
-  }
-
-  /**
    * Hold the fleet for the rest of a break the clock says is running, when
    * there was no durable row to adopt.
    *
@@ -747,18 +751,22 @@ export class MaintenanceBreak {
     const derived = this.persistedState();
     try {
       await this.persist(derived);
+      this.durablePhaseConfirmed = true;
     } catch (error) {
-      /* The same call announceLastHand makes, for the same reason: a break
-         nobody else can see is worse than no break, because the database half
-         stays disarmed - fn_platform_frozen reads this row - while the engine
-         half holds. Resume, and let the next hour try. (beginCountdown no
-         longer cancels: by :55 the last-hand row IS the database half.) */
+      /* A transport failure cannot prove the save did not commit. Resuming
+         here can put cards underneath an exact durable row whose response was
+         lost. Keep the local break to its fixed end with the restart gate
+         closed, then let end() resolve the row, complete any required thaw,
+         and exact-clear it before admission reopens. */
+      this.rememberPotentiallyDurable(derived);
+      this.durablePhaseConfirmed = false;
       console.error(
-        '[MaintenanceBreak] could not durably declare the clock-derived break; cancelling it',
+        '[MaintenanceBreak] clock-derived persistence remained ambiguous; honoring the fixed break with restart disabled',
         error
       );
-      await this.cancelBreakAfterPersistenceFailure(false, derived);
-      this.reportFault('boot', 'cancelled', error, derived.announcedAt);
+      this.reportFault('boot', 'held_without_restart', error, derived.announcedAt);
+      if (!this.lifecycleIsCurrent(generation)) return;
+      this.armEndTimer();
       return;
     }
     if (!this.lifecycleIsCurrent(generation)) return;
@@ -769,11 +777,16 @@ export class MaintenanceBreak {
 
   private async restoreFromStore(generation: number): Promise<void> {
     let saved: PersistedMaintenanceBreak | null = null;
+    let releaseBoundary: number | null = null;
     let lastErr: unknown = null;
     let loaded = false;
     for (let attempt = 1; attempt <= MaintenanceBreak.RESTORE_ATTEMPTS && !loaded; attempt++) {
       try {
         saved = await this.deps.store.load();
+        // The exact-clear and the future release certificate are one durable
+        // authority split across two rows. A null singleton is not an idle
+        // receipt until this second read also proves there is no release tail.
+        releaseBoundary = saved === null ? await this.deps.store.loadReleaseBoundary() : null;
         if (!this.lifecycleIsCurrent(generation)) return;
         loaded = true;
       } catch (err) {
@@ -790,19 +803,24 @@ export class MaintenanceBreak {
       }
     }
     if (!loaded) {
-      // Fail OPEN, but only after the retries above. A break we cannot read
-      // is a break we cannot honour, and refusing to deal because the
-      // database is unhappy would turn a storage blip into a platform outage.
-      console.warn(
-        `[MaintenanceBreak] could not read the persisted break after ${
-          MaintenanceBreak.RESTORE_ATTEMPTS
-        } attempts: ${(lastErr as Error)?.message ?? lastErr}`
+      // Unknown is not the same as absent. A fresh process is normally booting
+      // because the previous one was stopped inside this very break; dealing
+      // after three unreadable receipts would put cards underneath the
+      // countdown still visible in every browser. Reject startup so the
+      // container can retry from a fresh process and no discovery/admission
+      // loop starts without one authoritative row-or-null answer.
+      throw new Error(
+        `maintenance_break_restore_unavailable_after_${MaintenanceBreak.RESTORE_ATTEMPTS}_attempts: ${
+          (lastErr as Error)?.message ?? lastErr
+        }`
       );
-      await this.enterBreakFromTheClock(generation, 'the persisted break could not be read');
-      return;
     }
     if (!saved) {
-      await this.enterBreakFromTheClock(generation, 'there was no persisted break to adopt');
+      if (releaseBoundary !== null) {
+        this.holdCompletedReleaseCertificate(releaseBoundary, generation);
+      } else {
+        await this.enterBreakFromTheClock(generation, 'there was no persisted break to adopt');
+      }
       return;
     }
     if (!this.lifecycleIsCurrent(generation)) return;
@@ -870,54 +888,12 @@ export class MaintenanceBreak {
       : (saved.breakEndsAt as number);
     const remaining = endsAt - this.now();
 
-    // ── AND A STALE ROW CANNOT FREEZE THE PLATFORM HOURS LATER ─────────────
-    // For a `last_hand` row `remaining` used to be the constant
-    // BREAK_DURATION_MS, so the staleness check below could NEVER fire: an
-    // orphaned announcement from any earlier hour would be adopted by any
-    // engine booting at any later time and would park the entire fleet for
-    // five minutes from that boot. Bounding by the row's own age closes it,
-    // and the clamp above already refuses to run past the hour.
-    const rowAgeMs = saved.announcedAt ? this.now() - saved.announcedAt : 0;
-    if (rowAgeMs > MaintenanceBreak.ADOPTABLE_ROW_MAX_AGE_MS) {
-      console.warn(
-        `[MaintenanceBreak] ignoring a persisted break announced ${Math.round(
-          rowAgeMs / 1000
-        )}s ago - older than the ${Math.round(
-          MaintenanceBreak.ADOPTABLE_ROW_MAX_AGE_MS / 1000
-        )}s adoption window, so it belongs to an hour that has already passed.`
-      );
-      const claimed = await this.claimPersistedState(saved);
-      if (!claimed) {
-        console.warn(
-          '[MaintenanceBreak] stale break ownership changed before cleanup; leaving the newer owner untouched'
-        );
-        return;
-      }
-      await this.safeClear(claimed);
-      await this.enterBreakFromTheClock(
-        generation,
-        'the persisted break belonged to an hour that has already passed'
-      );
-      return;
-    }
-
-    if (remaining <= 1000) {
-      // Expired while we were down. Own the exact row before clearing it so a
-      // retiring process cannot erase a replacement's state; if clear fails,
-      // retaining the claimed token lets this process replace it next hour.
-      const claimed = await this.claimPersistedState(saved);
-      if (!claimed) {
-        console.warn(
-          '[MaintenanceBreak] expired break ownership changed before cleanup; leaving the newer owner untouched'
-        );
-        return;
-      }
-      /* The break really ran and nobody ended it. Hand the frozen minutes back
-         BEFORE the row goes, so a thaw that throws still leaves the evidence
-         of what was frozen in place for the next boot to find. */
-      await this.thawAnAbandonedBreak(claimed, endsAt);
-      await this.safeClear(claimed);
-      await this.enterBreakFromTheClock(generation, 'the persisted break had already expired');
+    // An expired exact row is never cleanup debris. It may represent a process
+    // that died after any v3 checkpoint, including a recovery tail longer than
+    // fifteen minutes. Claim its owner generation, finish the per-target
+    // credit ledger, and reopen only on the atomic release receipt.
+    if (remaining <= 0) {
+      await this.finishRecoveredBreak(saved, generation);
       return;
     }
 
@@ -931,16 +907,24 @@ export class MaintenanceBreak {
       throw new Error('maintenance_break_ownership_changed_before_adoption');
     }
     saved = claimed;
-    this.lastDurableState = { ...claimed };
     if (!this.lifecycleIsCurrent(generation)) return;
+
+    // claim()+its exact receipt read-back are bounded, not instantaneous. If
+    // they crossed :00, never publish a countdown that is already over; finish
+    // the persisted freeze through the checkpointed recovery path instead.
+    if (this.now() >= endsAt) {
+      await this.finishRecoveredBreak(saved, generation, true);
+      return;
+    }
 
     this.reason = saved.reason;
     this.announcedAt = saved.announcedAt;
-    // A stored countdown plus the exact token-rotation receipt is already a
-    // durable certificate. A stored last-hand row is about to be transformed
-    // locally and remains unconfirmed until that transformed row commits.
-    this.durableConfirmed = saved.phase === 'counting_down' && saved.breakEndsAt !== null;
     this.phase = 'counting_down';
+    // A stored countdown is already the exact durable phase represented
+    // locally. A stored last-hand row is durable, but the countdown we are
+    // about to upgrade it to is not; keep the restart gate shut until that
+    // second state has itself committed.
+    this.durablePhaseConfirmed = saved.phase === 'counting_down';
     // The previous engine's start instant, so the thaw measures the WHOLE
     // freeze, not just the slice this process lived through.
     //
@@ -972,27 +956,187 @@ export class MaintenanceBreak {
       const adopted = this.persistedState();
       try {
         await this.persist(adopted);
+        this.durablePhaseConfirmed = true;
       } catch (error) {
-        /* THE ADOPTED ROW IS ALREADY THE FREEZE (2026-09-10). The last-hand
-           row this process has just claimed is durable, and the database
-           honours it until it is deleted - fn_entry_purchases_frozen from the
-           announcement, fn_platform_frozen from :55. Cancelling here used to
-           resume the fleet under a countdown every screen was showing while
-           the database went on refusing entries: the two halves disagreeing,
-           which is the one outcome the row exists to prevent. So hold to the
-           same end. All that is lost is the countdown certificate, and an
-           adopting engine is not waiting for a restart. end() clears the
-           claimed row through lastDurableState. */
         console.error(
-          '[MaintenanceBreak] could not durably upgrade the adopted last-hand row; holding the break on the adopted row until it ends',
+          '[MaintenanceBreak] could not durably upgrade the adopted last-hand row; honoring its fixed end with restart disabled',
           error
         );
         this.reportFault('adoption', 'held_without_restart', error, saved.announcedAt);
+        this.rememberPotentiallyDurable(saved);
+        this.rememberPotentiallyDurable(adopted);
+        this.durablePhaseConfirmed = false;
+        if (!this.lifecycleIsCurrent(generation)) return;
+        if (this.now() >= endsAt) {
+          await this.end();
+          return;
+        }
+        // The claimed last-hand row is already the durable database freeze.
+        // Keep the player clock honest even though this hour cannot restart.
+        this.broadcast('counting_down');
+        this.armEndTimer();
+        return;
       }
     }
     if (!this.lifecycleIsCurrent(generation)) return;
+    if (this.now() >= endsAt) {
+      await this.end();
+      return;
+    }
     this.broadcast('counting_down');
     this.armEndTimer();
+  }
+
+  /**
+   * Adopt the narrow certificate left after a completed thaw exact-cleared the
+   * singleton. The restored snapshots already contain their full clock credit;
+   * this process therefore has one job only: keep every engine locally parked
+   * until the database clock says the certificate is no longer active.
+   *
+   * Do not await the whole interval from start(). A large but healthy thaw can
+   * reserve more than Docker's five-minute startup grace. Returning with an
+   * active local gate lets normal discovery rehydrate the fleet, and adopt()
+   * parks every engine it creates without advertising routing readiness early.
+   */
+  private holdCompletedReleaseCertificate(boundaryAt: number, generation: number): void {
+    if (!Number.isFinite(boundaryAt) || boundaryAt <= 0) {
+      throw new Error('maintenance_release_certificate_invalid');
+    }
+    if (!this.lifecycleIsCurrent(generation)) return;
+
+    this.releaseCertificateOnly = true;
+    this.phase = 'counting_down';
+    this.durablePhaseConfirmed = false;
+    this.playerAnnouncementVisible = false;
+    this.potentiallyDurableStates = [];
+    this.announcedAt = 0;
+    this.breakStartedAt = 0;
+    this.breakEndsAt = boundaryAt;
+    this.reason = 'Restoring Every Frozen Table Clock';
+    setMaintenanceFrozen(true);
+    this.parkEveryEngine();
+
+    console.warn(
+      `[MaintenanceBreak] adopted the completed thaw release certificate through ` +
+        `${new Date(boundaryAt).toISOString()}; restored tables remain parked.`
+    );
+    this.armReleaseCertificateCheck(generation, Math.max(0, boundaryAt - this.now()));
+  }
+
+  private armReleaseCertificateCheck(generation: number, delayMs: number): void {
+    if (this.endTimer) this.clearTimer(this.endTimer);
+    this.endTimer = this.setTimer(
+      () => {
+        this.endTimer = null;
+        if (!this.lifecycleIsCurrent(generation) || !this.releaseCertificateOnly) return;
+        this.launchLifecycleJob(
+          this.refreshCompletedReleaseCertificate(generation),
+          'release certificate recovery failed'
+        );
+      },
+      Math.max(0, delayMs)
+    );
+  }
+
+  /**
+   * Re-read at the apparent endpoint because the database clock owns release.
+   * An engine clock that is ahead must not resume into still-frozen writes, and
+   * an unreadable receipt is UNKNOWN rather than permission to deal.
+   */
+  private async refreshCompletedReleaseCertificate(generation: number): Promise<void> {
+    if (!this.lifecycleIsCurrent(generation) || !this.releaseCertificateOnly) return;
+
+    let boundaryAt: number | null;
+    try {
+      boundaryAt = await this.deps.store.loadReleaseBoundary();
+    } catch (error) {
+      console.error(
+        `[MaintenanceBreak] release certificate is unreadable; keeping every table frozen and ` +
+          `retrying in ${MaintenanceBreak.THAW_RECOVERY_RETRY_MS}ms.`,
+        error
+      );
+      if (this.lifecycleIsCurrent(generation) && this.releaseCertificateOnly) {
+        this.armReleaseCertificateCheck(generation, MaintenanceBreak.THAW_RECOVERY_RETRY_MS);
+      }
+      return;
+    }
+    if (!this.lifecycleIsCurrent(generation) || !this.releaseCertificateOnly) return;
+
+    if (boundaryAt !== null) {
+      if (!Number.isFinite(boundaryAt) || boundaryAt <= 0) {
+        throw new Error('maintenance_release_certificate_invalid');
+      }
+      this.breakEndsAt = boundaryAt;
+      this.parkEveryEngine();
+      // A locally-ahead clock would otherwise hot-spin at zero. Re-check once
+      // a second until the database itself returns the authoritative null.
+      this.armReleaseCertificateCheck(
+        generation,
+        Math.max(MaintenanceBreak.THAW_RECOVERY_RETRY_MS, boundaryAt - this.now())
+      );
+      return;
+    }
+
+    this.releaseCertificateOnly = false;
+    this.phase = 'idle';
+    this.durablePhaseConfirmed = false;
+    this.playerAnnouncementVisible = false;
+    this.breakStartedAt = 0;
+    this.breakEndsAt = 0;
+    this.announcedAt = 0;
+    setMaintenanceFrozen(false);
+    const resumed = this.resumeEveryEngine();
+    console.log(
+      `[MaintenanceBreak] completed thaw certificate released by the database; resumed ${resumed} restored table(s).`
+    );
+  }
+
+  /**
+   * Complete an expired but still-recoverable break before table discovery.
+   *
+   * fn_thaw_platform is an exact per-target installment ledger keyed by the
+   * owned break identity. Calling it again joins a partially completed thaw
+   * rather than crediting any clock twice. The database derives the duration
+   * from that locked row and advances only each target's uncredited suffix.
+   */
+  private async finishRecoveredBreak(
+    observed: PersistedMaintenanceBreak,
+    generation: number,
+    alreadyClaimed = false
+  ): Promise<void> {
+    const claimed = alreadyClaimed ? observed : await this.claimPersistedState(observed);
+    if (!claimed) {
+      throw new Error('maintenance_break_ownership_changed_before_recovery');
+    }
+    if (!this.lifecycleIsCurrent(generation)) return;
+
+    const scheduledStartAt =
+      claimed.breakStartedAt ?? claimed.announcedAt + MaintenanceBreak.LAST_HAND_LEAD_MS;
+    const scheduledEndAt =
+      claimed.breakEndsAt ??
+      claimed.announcedAt + MaintenanceBreak.LAST_HAND_LEAD_MS + MaintenanceBreak.BREAK_DURATION_MS;
+    // The database gate remains closed while the durable row exists. If the
+    // replacement did not reach this recovery until after the scheduled :00,
+    // that delay was frozen player time too. Credit through the instant this
+    // exact recovery starts, not merely through the scheduled five minutes.
+    const thawThroughAt = this.now();
+    const freezeMs = thawThroughAt - scheduledStartAt;
+    if (!Number.isFinite(scheduledStartAt) || !Number.isFinite(scheduledEndAt) || freezeMs <= 0) {
+      throw new Error('maintenance_break_recovery_interval_invalid');
+    }
+
+    this.reason = claimed.reason;
+    this.announcedAt = claimed.announcedAt;
+    this.breakStartedAt = scheduledStartAt;
+    this.breakEndsAt = scheduledEndAt;
+    this.phase = 'counting_down';
+    this.durablePhaseConfirmed = false;
+    this.playerAnnouncementVisible = false;
+    this.rememberPotentiallyDurable(claimed);
+    setMaintenanceFrozen(true);
+    this.parkEveryEngine();
+
+    await this.end();
   }
 
   /**
@@ -1006,7 +1150,12 @@ export class MaintenanceBreak {
   adopt(tableId: string, engine: PausableTableEngine): void {
     if (!this.acceptingLifecycleWork || !this.isActive()) return;
     engine.pauseForMaintenance(this.remainingParkBudgetMs());
-    this.deps.emit(tableId, this.eventPayload(tableId, this.phase as MaintenanceBreakPhase));
+    // During a silent :53/clock ambiguity there is no player promise to copy.
+    // Once a durable last-hand row allowed a frame, however, every later table
+    // must see the same countdown even while its restart certificate retries.
+    if (this.playerAnnouncementVisible) {
+      this.deps.emit(tableId, this.eventPayload(tableId, this.phase as MaintenanceBreakPhase));
+    }
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -1028,6 +1177,10 @@ export class MaintenanceBreak {
     if (this.announceTimer) this.clearTimer(this.announceTimer);
 
     const msUntil = this.msUntilNextAnnouncement();
+    // Capture the wall-clock target now. The callback may run late under the
+    // same event-loop pressure this break exists to contain; using callback
+    // time would slide :55 and :00 by that delay.
+    const scheduledAnnouncementAt = this.now() + msUntil;
     console.log(
       `[MaintenanceBreak] Next maintenance break announcement in ${Math.round(
         msUntil / 60000
@@ -1041,7 +1194,7 @@ export class MaintenanceBreak {
       this.launchLifecycleJob(
         (async () => {
           try {
-            await this.announceLastHand();
+            await this.announceLastHand(scheduledAnnouncementAt);
           } finally {
             if (this.lifecycleIsCurrent(generation)) {
               // A storage failure cancels this break, but it must not cancel
@@ -1103,14 +1256,28 @@ export class MaintenanceBreak {
    * seat fills at :56. A table with cards in the air still finishes, because
    * the loop cannot come back around until dealHand() resolves.
    */
-  async announceLastHand(): Promise<void> {
+  async announceLastHand(scheduledAnnouncementAt = this.now()): Promise<void> {
     const generation = this.lifecycleGeneration;
     if (!this.lifecycleIsCurrent(generation) || !this.deps.isRunning()) return;
     if (this.isActive()) return; // already in one
 
-    this.durableConfirmed = false;
+    const fixedBoundaryAt = scheduledAnnouncementAt + MaintenanceBreak.LAST_HAND_LEAD_MS;
+    // A callback that wakes at or after :55 missed this hour. Starting a fresh
+    // two-minute lead now would move both the break and its restart beyond the
+    // tournament's fixed :55-:00 window.
+    if (this.now() >= fixedBoundaryAt) {
+      console.warn(
+        '[MaintenanceBreak] skipped a late announcement callback after its fixed :55 boundary'
+      );
+      return;
+    }
+
     this.phase = 'last_hand';
-    this.announcedAt = this.now();
+    this.releaseCertificateOnly = false;
+    this.durablePhaseConfirmed = false;
+    this.potentiallyDurableStates = [];
+    this.playerAnnouncementVisible = false;
+    this.announcedAt = scheduledAnnouncementAt;
     this.breakEndsAt = 0;
     /* Keep this process generation's token across locally-created breaks.
        If the prior hour's exact clear committed but its response was lost, or
@@ -1136,13 +1303,40 @@ export class MaintenanceBreak {
 
     const declared = this.persistedState();
     try {
-      await this.persistAnnouncement(declared, generation);
+      const persistence = await this.persistLastHandUntilBoundary(declared, generation);
+      if (persistence.status === 'cancelled') return;
+      if (persistence.status === 'uncertain') {
+        this.reportFault(
+          'announcement',
+          'held_without_restart',
+          persistence.error,
+          declared.announcedAt
+        );
+        this.honorPotentiallyDurableBreak(declared, generation);
+        return;
+      }
     } catch (error) {
-      await this.cancelBreakAfterPersistenceFailure(false, declared);
-      this.reportFault('announcement', 'cancelled', error, declared.announcedAt);
-      throw error;
+      if (MaintenanceBreak.isDefinitiveLastHandRejection(error)) {
+        this.reportFault('announcement', 'cancelled', error, declared.announcedAt);
+        this.cancelUnpublishedLastHand();
+        throw error;
+      }
+      // A transport/database failure cannot prove that the serialized write
+      // did not commit. Honor the fixed break locally so a durable row can
+      // never tell players "maintenance" while the tables keep dealing.
+      console.error(
+        '[MaintenanceBreak] last-hand persistence remained ambiguous; honoring the fixed break without a player frame',
+        error
+      );
+      this.reportFault('announcement', 'held_without_restart', error, declared.announcedAt);
+      this.honorPotentiallyDurableBreak(declared, generation);
+      return;
     }
-    if (!this.lifecycleIsCurrent(generation)) return;
+    if (!this.lastHandDeclarationIsCurrent(declared, generation) || this.now() >= fixedBoundaryAt) {
+      this.honorPotentiallyDurableBreak(declared, generation);
+      return;
+    }
+    this.durablePhaseConfirmed = true;
 
     // The player-visible promise comes only after the database boundary is
     // durable. A process kill after this frame can therefore be adopted.
@@ -1181,7 +1375,12 @@ export class MaintenanceBreak {
    */
   async beginCountdown(): Promise<void> {
     const generation = this.lifecycleGeneration;
-    if (!this.lifecycleIsCurrent(generation) || this.phase !== 'last_hand') return;
+    if (
+      !this.lifecycleIsCurrent(generation) ||
+      this.phase !== 'last_hand' ||
+      !this.durablePhaseConfirmed
+    )
+      return;
 
     // Anything created during the last-hand wait, and anything that somehow
     // slipped the first pass, is parked now. Cheap, and it makes "every table
@@ -1205,6 +1404,7 @@ export class MaintenanceBreak {
       );
     }
 
+    const announced = this.persistedState();
     /* announcedAt is the durable schedule authority. A delayed save or a
        briefly delayed event loop may make this method execute after :55, but
        neither is permission to extend the break past the promised :00. These
@@ -1212,10 +1412,8 @@ export class MaintenanceBreak {
        frame's resume_expected_at. */
     const scheduledStartAt = this.announcedAt + MaintenanceBreak.LAST_HAND_LEAD_MS;
     const invokedAt = this.now();
-    // The last-hand row is durable, but the countdown identity is not yet.
-    // Close the deploy gate before changing any of its semantic fields.
-    this.durableConfirmed = false;
     this.phase = 'counting_down';
+    this.durablePhaseConfirmed = false;
     /* beginCountdown is also the explicit/manual entry point. An intentional
        early call starts its five minutes immediately; an on-time or late
        scheduled call stays anchored to the already-promised boundary and can
@@ -1229,44 +1427,51 @@ export class MaintenanceBreak {
       } minutes. Play resumes on the hour.`
     );
 
-    /* THE BREAK NO LONGER DEPENDS ON THIS WRITE (2026-09-10).
+    const countingDown = this.persistedState();
+    // end() may race a slow/lost persistence response. Register both exact
+    // shapes before the request starts so its CAS clear cannot omit a write
+    // that commits while the response is still in flight.
+    this.rememberPotentiallyDurable(announced);
+    this.rememberPotentiallyDurable(countingDown);
 
-       The last-hand row committed at :53 is already the database half of the
-       freeze: fn_entry_purchases_frozen honours it from the announcement,
-       fn_platform_frozen from :55, and neither lets go until the row is
-       deleted. So from here the break runs to the promised :00 whatever this
-       save does, and the countdown players see starts on time.
+    if (this.now() >= this.breakEndsAt) {
+      // A delayed callback must never flash a countdown whose absolute end is
+      // already past. Finish the durable last-hand freeze through normal thaw.
+      await this.end();
+      return;
+    }
 
-       What the save still decides is whether the hour carries a restart.
-       readyForRestart stays shut until the countdown row is exact and durable
-       (durableConfirmed), so the deploy never replaces this process on a break
-       a new one could not adopt. The save is retried like the announcement's -
-       it waits on the same exclusive boundary, behind the same entry doors -
-       and gives up once there is no longer room for a restart in the window.
-
-       It used to be the other way round. One failed save here cancelled a
-       break players had been watching for two minutes, resumed every table
-       at :55, and - if the cleanup failed too - left the database refusing
-       entries behind a felt that was dealing. */
+    // The durable last-hand row already freezes database admission at :55.
+    // Publish the promised player clock on time; persistence below controls
+    // only whether this hour has an exact restart certificate.
     this.broadcast('counting_down');
     this.armEndTimer();
 
-    const countingDown = this.persistedState();
     try {
-      await this.persistWithRetry(
-        countingDown,
-        generation,
-        this.breakEndsAt - MaintenanceBreak.MIN_REMAINING_FOR_RESTART_MS,
-        'countdown'
-      );
+      const persisted = await this.persistCountdownUntilRestartCutoff(countingDown, generation);
+      if (!persisted || !this.countdownStateIsCurrent(countingDown, generation)) return;
+      this.durablePhaseConfirmed = true;
     } catch (error) {
-      if (!this.lifecycleIsCurrent(generation)) return;
+      if (!this.countdownStateIsCurrent(countingDown, generation)) return;
+      // `announced` is already a durable promise and a failed transport cannot
+      // prove that `countingDown` did not also commit. Never resume underneath
+      // either possible row. Keep the fixed :55-:00 hold, keep the deploy gate
+      // closed, and compare-delete both exact shapes at :00.
+      this.durablePhaseConfirmed = false;
       console.error(
-        '[MaintenanceBreak] the countdown could not be made durable; the break holds on the ' +
-          'durable announcement until the hour and carries no restart this hour',
+        '[MaintenanceBreak] countdown persistence was ambiguous; honoring the fixed break with restart disabled',
         error
       );
       this.reportFault('countdown', 'held_without_restart', error, countingDown.announcedAt);
+      return;
+    }
+    if (!this.lifecycleIsCurrent(generation)) return;
+    if (this.now() >= this.breakEndsAt) {
+      // An event-loop stall can resume this continuation after :00. The row is
+      // already self-expired then; emitting a countdown with a past end would
+      // flash a false break over tables that are due to resume.
+      await this.end();
+      return;
     }
   }
 
@@ -1288,12 +1493,10 @@ export class MaintenanceBreak {
   /**
    * Resume every table, together, and clear the row.
    *
-   * The row is cleared even if a resume throws. A stranded row is worse than a
-   * stranded engine: the engine has its own safety timeout inside
-   * awaitPauseGate and will deal again on its own, whereas a row nobody
-   * deletes keeps every browser on the platform showing a break screen for a
-   * break that ended. fn_maintenance_break_state self-expires for the same
-   * reason, as a second line of defence.
+   * The row is exact-cleared after the thaw and before the first resume. The
+   * database predicates keep admission frozen while that row remains, so a
+   * failed or ambiguous clear must stay inside this phase transition rather
+   * than waking tables behind a database that still refuses their writes.
    */
   /**
    * Re-entrancy latch for end(). The idle check alone is not enough: the
@@ -1309,6 +1512,10 @@ export class MaintenanceBreak {
   async end(): Promise<void> {
     const generation = this.lifecycleGeneration;
     if (!this.lifecycleIsCurrent(generation) || this.phase === 'idle' || this.ending) return;
+    if (this.releaseCertificateOnly) {
+      await this.refreshCompletedReleaseCertificate(generation);
+      return;
+    }
     this.ending = true;
 
     /**
@@ -1316,37 +1523,117 @@ export class MaintenanceBreak {
      * was"). Deadlines are shifted while every table is still parked, so no
      * clock can be judged - a sit-out evicted, a seat hold expired, a Spin
      * level rolled - in the gap between the first table resuming and the
-     * shift landing. If the thaw itself fails, play still resumes: five
-     * minutes of clock drift is a wrong that heals, a platform that stays
-     * frozen is not.
+     * shift landing. A failed installment keeps this exact transition alive:
+     * the durable ledger makes it safe to retry, while resuming and clearing
+     * would permanently strand a partially shifted set of player clocks.
      */
     const reconnectFreezeStartedAt = this.breakStartedAt;
-    completeReconnectFreeze(reconnectFreezeStartedAt, this.now() - reconnectFreezeStartedAt);
+    const thawThroughAt = this.now();
+    const frozenDurationMs = Math.max(0, thawThroughAt - reconnectFreezeStartedAt);
+    const completedState = this.persistedState();
+    const statesToClear = [completedState, ...this.potentiallyDurableStates].filter(
+      (state, index, states) =>
+        states.findIndex((candidate) => MaintenanceBreak.samePersistedState(candidate, state)) ===
+        index
+    );
+    let databaseThawRequired = true;
+    if (!this.durablePhaseConfirmed) {
+      const durableState = await this.resolvePotentiallyDurableStateBeforeThaw(
+        statesToClear,
+        generation
+      );
+      if (durableState === undefined || !this.lifecycleIsCurrent(generation)) {
+        this.ending = false;
+        return;
+      }
+      databaseThawRequired = durableState !== null;
+    }
     let thawOk: boolean | null = null;
-    if (this.deps.thaw && this.breakStartedAt > 0) {
-      const frozenSeconds = Math.max(1, Math.round((this.now() - this.breakStartedAt) / 1000));
-      try {
-        await this.deps.thaw(this.breakStartedAt, frozenSeconds);
-        if (!this.lifecycleIsCurrent(generation)) {
-          this.ending = false;
-          return;
+    let reconnectCreditIsSafe = !databaseThawRequired;
+    let reconnectCreditedThroughAtMs = this.now();
+    if (!this.deps.thaw && this.breakStartedAt > 0) {
+      this.ending = false;
+      throw new Error('maintenance_thaw_dependency_missing');
+    }
+    if (databaseThawRequired && this.deps.thaw && this.breakStartedAt > 0) {
+      const frozenSeconds = Math.max(1, Math.round(frozenDurationMs / 1000));
+      while (this.lifecycleIsCurrent(generation)) {
+        try {
+          const receipt = await this.deps.thaw(
+            this.breakStartedAt,
+            frozenSeconds,
+            this.lifecycleAbort.signal,
+            {
+              announcedAtMs: this.announcedAt,
+              ownershipToken: this.ownershipToken,
+            }
+          );
+          if (!this.lifecycleIsCurrent(generation)) {
+            this.ending = false;
+            return;
+          }
+          if (
+            receipt !== undefined &&
+            (!Number.isFinite(receipt.creditedThroughAtMs) ||
+              receipt.creditedThroughAtMs < this.breakStartedAt)
+          ) {
+            throw new ThawRefusedError('maintenance_thaw_credit_receipt_invalid');
+          }
+          const creditedThroughAtMs = receipt?.creditedThroughAtMs ?? this.now();
+          if (!(await this.waitForReleaseCertificateToClear(generation, creditedThroughAtMs))) {
+            this.ending = false;
+            return;
+          }
+          thawOk = true;
+          reconnectCreditIsSafe = true;
+          reconnectCreditedThroughAtMs = creditedThroughAtMs;
+          console.log(
+            `[MaintenanceBreak] Thawed the platform clocks (+${frozenSeconds}s), ` +
+              `credited through ${new Date(creditedThroughAtMs).toISOString()}.`
+          );
+          break;
+        } catch (err) {
+          if (!this.lifecycleIsCurrent(generation)) {
+            this.ending = false;
+            return;
+          }
+          if (err instanceof ThawRefusedError) {
+            // Rolling deploy compatibility and clock-skew hardening. Older SQL
+            // labelled this genuinely transient answer terminal; the current
+            // contract returns retryable:true and the installment helper waits
+            // between calls. Either version must wait rather than consume the
+            // only end timer and strand the fleet forever.
+            if (err.reason === 'maintenance_break_not_due') {
+              console.warn(
+                `[MaintenanceBreak] database clock says the break is not due yet; ` +
+                  `keeping every table frozen and retrying in ${MaintenanceBreak.THAW_RECOVERY_RETRY_MS}ms.`
+              );
+              if (!(await this.waitForLifecycleRetry(generation))) {
+                this.ending = false;
+                return;
+              }
+              continue;
+            }
+            this.ending = false;
+            throw err;
+          }
+          thawOk = false;
+          console.error(
+            `[MaintenanceBreak] THAW INCOMPLETE - keeping every table frozen and retrying ` +
+              `the same checkpointed freeze in ${MaintenanceBreak.THAW_RECOVERY_RETRY_MS}ms.`,
+            err
+          );
+          if (!(await this.waitForLifecycleRetry(generation))) {
+            this.ending = false;
+            return;
+          }
         }
-        thawOk = true;
-        console.log(`[MaintenanceBreak] Thawed the platform clocks (+${frozenSeconds}s).`);
-      } catch (err) {
-        thawOk = false;
-        console.error(
-          '[MaintenanceBreak] THAW FAILED - resuming anyway; clocks lost the frozen minutes.',
-          err
-        );
       }
     }
     if (!this.lifecycleIsCurrent(generation)) {
       this.ending = false;
       return;
     }
-    // The database wait is still frozen time for every reconnect allowance.
-    completeReconnectFreeze(reconnectFreezeStartedAt, this.now() - reconnectFreezeStartedAt);
     const outcome: MaintenanceBreakOutcome = {
       breakStartedAtMs: this.breakStartedAt,
       breakEndedAtMs: this.now(),
@@ -1356,8 +1643,33 @@ export class MaintenanceBreak {
       tablesResumed: 0,
       thawOk,
     };
-    const completedState = this.persistedState();
-    const durableState = this.lastDurableState;
+    const shouldBroadcastEnded = this.playerAnnouncementVisible;
+    // The durable freeze remains true after the visible clock reaches zero so
+    // no browser/background write can race between thaw installments. Release
+    // that authority, with an exact read-back receipt, before waking the first
+    // table. A lost DELETE response is safe: null is the only accepted proof.
+    let cleared = false;
+    try {
+      cleared = await this.clearBeforeAdmission(statesToClear, generation);
+    } catch (error) {
+      this.ending = false;
+      throw error;
+    }
+    if (!cleared || !this.lifecycleIsCurrent(generation)) {
+      this.ending = false;
+      return;
+    }
+    // Publish the in-memory reconnect credit only after the same exact absent-
+    // row receipt that authorizes local admission. Use the actual release
+    // instant, so installment retries and receipt recovery cannot burn clock
+    // time. A locally held interval with an authoritative no-row receipt is
+    // safe to credit locally but never authorizes a database-wide shift.
+    if (reconnectCreditIsSafe) {
+      completeReconnectFreeze(
+        reconnectFreezeStartedAt,
+        Math.max(0, reconnectCreditedThroughAtMs - reconnectFreezeStartedAt)
+      );
+    }
     /**
      * THE BREAK IS OVER BEFORE THE FIRST TABLE WAKES (review fix, 2026-09-03).
      *
@@ -1377,8 +1689,10 @@ export class MaintenanceBreak {
      * are woken. The outcome was captured above, so the record stays honest.
      */
     this.phase = 'idle';
-    this.durableConfirmed = false;
-    this.lastDurableState = null;
+    this.releaseCertificateOnly = false;
+    this.durablePhaseConfirmed = false;
+    this.potentiallyDurableStates = [];
+    this.playerAnnouncementVisible = false;
     this.breakStartedAt = 0;
     this.breakEndsAt = 0;
     this.announcedAt = 0;
@@ -1392,12 +1706,17 @@ export class MaintenanceBreak {
     // time this is awaited, and nothing below gates them.
     if (this.deps.recordOutcome) {
       try {
-        await this.deps.recordOutcome(outcome);
+        await this.deps.recordOutcome(outcome, this.lifecycleAbort.signal);
         if (!this.lifecycleIsCurrent(generation)) return;
       } catch (err) {
         console.warn('[MaintenanceBreak] could not record the break outcome', err);
       }
     }
+
+    // recordOutcome is abortable. Its rejection path must observe the same
+    // generation fence as its success path; otherwise a stopped process can
+    // still emit the ended frame and clear the row a replacement must adopt.
+    if (!this.lifecycleIsCurrent(generation)) return;
 
     console.log(
       `[MaintenanceBreak] BREAK ENDED. Resumed ${resumed} table(s). ` +
@@ -1408,15 +1727,7 @@ export class MaintenanceBreak {
             : 'at ' + new Date(outcome.readyForRestartAtMs).toISOString()
         }.`
     );
-    this.broadcastEnded();
-    await this.safeClear(completedState);
-    /* A countdown or an adoption upgrade that never became durable leaves the
-       earlier row in the database, and that row freezes entries until it is
-       deleted. Both clears are exact compare-and-deletes on this process's
-       token, so whichever does not match the stored row is a no-op. */
-    if (durableState && !MaintenanceBreak.samePersistedState(durableState, completedState)) {
-      await this.safeClear(durableState);
-    }
+    if (shouldBroadcastEnded) this.broadcastEnded();
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -1648,9 +1959,15 @@ export class MaintenanceBreak {
       try {
         if (!engine.isRunning()) continue;
         if (!engine.isBetweenHands()) out.push(tableId);
-      } catch {
-        // Unreadable engines are not counted against the gate; an engine that
-        // throws on inspection is already being handled by the reapers.
+      } catch (error) {
+        // Restart authorization is fail-closed. A reaper may eventually repair
+        // an unreadable engine, but until it can prove whether cards are in the
+        // air this process must treat the table as unsafe to replace.
+        out.push(tableId);
+        console.error(
+          `[MaintenanceBreak] could not inspect ${tableId}; keeping the restart gate closed`,
+          error
+        );
       }
     }
     if (this.phase === 'counting_down' && out.length > this.peakUnparked) {
@@ -1734,6 +2051,7 @@ export class MaintenanceBreak {
   }
 
   private broadcast(phase: MaintenanceBreakPhase): void {
+    this.playerAnnouncementVisible = true;
     for (const [tableId] of this.deps.engines()) {
       try {
         this.deps.emit(tableId, this.eventPayload(tableId, phase));
@@ -1791,131 +2109,375 @@ export class MaintenanceBreak {
   }
 
   /**
-   * How long the announcement keeps trying to make its durable promise, and
-   * how long it rests between tries.
+   * Persist the :53 declaration without dropping the safety gate on the first
+   * transient store error.
    *
-   * THE SAVE WAITS BEHIND EVERY ENTRY IN FLIGHT (2026-09-10). The row write
-   * takes the maintenance boundary exclusively; every buy-in, rebuy, Spin
-   * draw and seat-first fill holds it shared for the life of its transaction,
-   * and those money doors run under a 30 s statement budget while the save
-   * runs under a 5 s lock budget. So on a busy hour one slow buy-in (27 s
-   * observed) makes the save fail with "canceling statement due to lock
-   * timeout" - and one such failure used to cancel the WHOLE break: no
-   * last-hand row, no :55 countdown, no readyForRestart certificate, and the
-   * deploy that was waiting on it shipped nothing. That is how 06:53 UTC on
-   * 2026-09-10 left production a merge behind for an hour with nobody told.
-   *
-   * The database itself accepts a last-hand row until announcedAt + 2 min
-   * (fn_save_engine_maintenance_break: MAINTENANCE_LAST_HAND_BOUNDARY_EXPIRED),
-   * and the countdown is armed from that same absolute announcedAt, so a
-   * retry inside the lead changes nothing a player sees: the :55 boundary
-   * stays where it was announced. The budget stops well short of the two
-   * minutes so a late success never races the countdown's own save.
-   *
-   * Only a lock or statement timeout is retried. An ownership loss, an
-   * expired boundary, or an unreachable database is a decision, not a queue,
-   * and still cancels straight away.
+   * The retry budget is the already-promised wall-clock lead, not "N tries":
+   * every delay is capped by the original :55 boundary, so an unhealthy store
+   * can neither spin nor slide the break later. While this runs the phase stays
+   * `last_hand`, every engine remains paused before its next deal, no frame is
+   * emitted, and `beginCountdown` is fenced by `durablePhaseConfirmed`.
    */
-  static readonly ANNOUNCE_PERSIST_BUDGET_MS = 90 * 1000;
-  static readonly ANNOUNCE_PERSIST_RETRY_MS = 5 * 1000;
-
-  /**
-   * A failure worth another try inside the same budget (2026-09-10).
-   *
-   * Lock and statement timeouts, as before, plus the transport failures that
-   * say nothing about the database's answer: the request timed out on this
-   * side, the socket dropped, or a gateway in front of PostgREST could not
-   * reach it. Re-sending is safe for exactly this write and no other: the save
-   * is a compare-and-set on this process's ownership token, so an attempt that
-   * did land makes the next one a no-op upsert of the same state, and
-   * `persist` has already done the exact read-back before this is asked.
-   * (The shared client deliberately retries none of these - CLAUDE.md,
-   * production DDL policy rule 6 - because replaying an arbitrary executed
-   * write is a money hazard. This one is idempotent by construction.)
-   *
-   * Every refusal the database gives on purpose - an ownership loss, an
-   * expired boundary, a missing token - is still a decision, not a queue.
-   */
-  static isRetryablePersistenceError(error: unknown): boolean {
-    const text = String((error as Error)?.message ?? error ?? '');
-    if (/MAINTENANCE_[A-Z_]+/.test(text)) return false;
-    if (MaintenanceBreak.isLockOrStatementTimeout(error)) return true;
-    return /supabase_timeout|fetch failed|AbortError|ECONNRESET|ECONNREFUSED|ETIMEDOUT|EAI_AGAIN|EPIPE|socket hang up|other side closed|PGRST00[0-3]|deadlock detected|40P01|Bad Gateway|Service Unavailable|Gateway Time-?out/i.test(
-      text
-    );
-  }
-
-  static isLockOrStatementTimeout(error: unknown): boolean {
-    const text = String((error as Error)?.message ?? error ?? '');
-    if (
-      /MAINTENANCE_(OWNERSHIP_LOST|LAST_HAND_BOUNDARY_EXPIRED|COUNTDOWN_BOUNDARY_EXPIRED)/.test(
-        text
-      )
-    ) {
-      return false;
-    }
-    return /lock timeout|statement timeout|lock_not_available|55P03|canceling statement/i.test(
-      text
-    );
-  }
-
-  private async persistAnnouncement(
+  private async persistLastHandUntilBoundary(
     state: PersistedMaintenanceBreak,
     generation: number
-  ): Promise<void> {
-    await this.persistWithRetry(
-      state,
-      generation,
-      state.announcedAt + MaintenanceBreak.ANNOUNCE_PERSIST_BUDGET_MS,
-      'announcement'
+  ): Promise<LastHandPersistenceResult> {
+    const boundaryAt = state.announcedAt + MaintenanceBreak.LAST_HAND_LEAD_MS;
+    let retryMs = MaintenanceBreak.LAST_HAND_PERSIST_RETRY_INITIAL_MS;
+    let attempt = 0;
+    let lastError: unknown = null;
+
+    while (this.lastHandDeclarationIsCurrent(state, generation) && this.now() < boundaryAt) {
+      attempt += 1;
+      const persistence = this.persist(state).then(
+        () => ({ kind: 'saved' as const }),
+        (error: unknown) => ({ kind: 'failed' as const, error })
+      );
+      const deadline = this.waitForLastHandPersistRetry(boundaryAt - this.now()).then((reason) =>
+        reason === 'elapsed' ? { kind: 'boundary' as const } : { kind: 'cancelled' as const }
+      );
+      const outcome = await Promise.race([persistence, deadline]);
+
+      if (outcome.kind === 'saved') {
+        this.cancelLastHandPersistRetryWait();
+        if (!this.lastHandDeclarationIsCurrent(state, generation)) return { status: 'cancelled' };
+        // Promise.race orders completions, not wall-clock authority. An I/O
+        // completion can run before an overdue timer after the event loop was
+        // blocked. Never turn that late receipt into a last-hand frame.
+        return this.now() < boundaryAt
+          ? { status: 'confirmed' }
+          : {
+              status: 'uncertain',
+              error: new Error('last-hand persistence completed after the fixed boundary'),
+            };
+      }
+      if (outcome.kind === 'cancelled') {
+        // stop() woke the boundary wait. Keep the in-flight save owned until
+        // it settles, but do not erase a declaration the replacement process
+        // may need to adopt.
+        this.launchLifecycleJob(
+          persistence.then(() => undefined),
+          'cancelled last-hand persistence did not settle'
+        );
+        return { status: 'cancelled' };
+      }
+      if (outcome.kind === 'boundary') {
+        /* The transport may conceal a commit made before :55. Do not clear and
+           resume underneath that potentially public row. Keep ownership of the
+           promise until it settles, and honor the fixed break conservatively. */
+        this.launchLifecycleJob(
+          persistence.then(() => undefined),
+          'late last-hand persistence did not settle'
+        );
+        return {
+          status: 'uncertain',
+          error: new Error('last-hand persistence remained pending at the fixed boundary'),
+        };
+      }
+
+      this.cancelLastHandPersistRetryWait();
+      lastError = outcome.error;
+
+      const lockOrStatementTimeout = MaintenanceBreak.isLockOrStatementTimeout(lastError);
+      const message = String((lastError as Error)?.message ?? lastError ?? '');
+      if (/MAINTENANCE_[A-Z_]+/.test(message)) {
+        throw lastError;
+      }
+
+      // Unknown/deliberate refusals are not replayed. They remain ambiguous
+      // unless the database named a terminal MAINTENANCE_* decision, so the
+      // local gate holds silently to the fixed boundary instead of failing open.
+      if (!MaintenanceBreak.isRetryablePersistenceError(lastError)) break;
+
+      if (!this.lastHandDeclarationIsCurrent(state, generation)) return { status: 'cancelled' };
+      const retryDeadline = Math.min(
+        boundaryAt,
+        state.announcedAt + MaintenanceBreak.ANNOUNCE_PERSIST_BUDGET_MS
+      );
+      const remainingMs = retryDeadline - this.now();
+      if (remainingMs <= 0) {
+        if (lockOrStatementTimeout) throw lastError;
+        break;
+      }
+      const delayMs = Math.min(
+        lockOrStatementTimeout ? MaintenanceBreak.ANNOUNCE_PERSIST_RETRY_MS : retryMs,
+        remainingMs
+      );
+      console.warn(
+        `[MaintenanceBreak] could not persist the last-hand boundary (attempt ${attempt}); ` +
+          `keeping every table gated and retrying in ${delayMs}ms: ${
+            (lastError as Error)?.message ?? lastError
+          }`
+      );
+      const waitResult = await this.waitForLastHandPersistRetry(delayMs);
+      if (waitResult === 'cancelled') return { status: 'cancelled' };
+      if (!lockOrStatementTimeout) {
+        retryMs = Math.min(MaintenanceBreak.LAST_HAND_PERSIST_RETRY_MAX_MS, retryMs * 2);
+      }
+    }
+
+    if (!this.lastHandDeclarationIsCurrent(state, generation)) return { status: 'cancelled' };
+    if (lastError) {
+      console.error(
+        '[MaintenanceBreak] last-hand persistence reached the fixed boundary without proof',
+        lastError
+      );
+    }
+    return {
+      status: 'uncertain',
+      error:
+        lastError ?? new Error('last-hand persistence reached the fixed boundary without proof'),
+    };
+  }
+
+  /**
+   * A database rejection such as lock timeout or ownership loss proves that
+   * no last-hand row committed. Undo only this unpublished local hold; an
+   * ambiguous transport failure never reaches this path.
+   */
+  private cancelUnpublishedLastHand(): void {
+    this.cancelLastHandPersistRetryWait();
+    for (const timer of [this.countdownTimer, this.endTimer]) {
+      if (timer) this.clearTimer(timer);
+    }
+    this.countdownTimer = null;
+    this.endTimer = null;
+    this.resumeToken += 1;
+    for (const timer of this.resumeWaveTimers) this.clearTimer(timer);
+    this.resumeWaveTimers.clear();
+
+    this.phase = 'idle';
+    this.releaseCertificateOnly = false;
+    this.durablePhaseConfirmed = false;
+    this.potentiallyDurableStates = [];
+    this.playerAnnouncementVisible = false;
+    this.announcedAt = 0;
+    this.breakStartedAt = 0;
+    this.breakEndsAt = 0;
+    this.ending = false;
+    setMaintenanceFrozen(false);
+    this.resumeEveryEngine();
+  }
+
+  /**
+   * A request that was still ambiguous at :55 may already have committed its
+   * public/freeze-enforcing row. The only safe local action is therefore to
+   * honor the same fixed :55-:00 interval while keeping the restart gate shut.
+   * No frame is emitted: durable confirmation is still absent.
+   */
+  private honorPotentiallyDurableBreak(
+    declared: PersistedMaintenanceBreak,
+    generation: number
+  ): void {
+    if (!this.lastHandDeclarationIsCurrent(declared, generation)) return;
+    this.rememberPotentiallyDurable(declared);
+
+    const boundaryAt = declared.announcedAt + MaintenanceBreak.LAST_HAND_LEAD_MS;
+    const endsAt = boundaryAt + MaintenanceBreak.BREAK_DURATION_MS;
+    const now = this.now();
+
+    if (now < boundaryAt) {
+      if (this.countdownTimer) this.clearTimer(this.countdownTimer);
+      this.countdownTimer = this.setTimer(() => {
+        this.countdownTimer = null;
+        if (!this.lifecycleIsCurrent(generation)) return;
+        this.honorPotentiallyDurableBreak(declared, generation);
+      }, boundaryAt - now);
+      return;
+    }
+
+    if (now >= endsAt) {
+      // The tables really were held through this interval even if the save's
+      // receipt was lost. Route through the same checkpointed thaw as a normal
+      // end; direct resume+clear used to abandon a partial thaw at exactly :00.
+      this.phase = 'counting_down';
+      this.durablePhaseConfirmed = false;
+      this.breakStartedAt = boundaryAt;
+      this.breakEndsAt = endsAt;
+      this.parkEveryEngine();
+      this.launchLifecycleJob(this.end(), 'expired ambiguous maintenance recovery failed');
+      return;
+    }
+
+    this.phase = 'counting_down';
+    this.durablePhaseConfirmed = false;
+    this.breakStartedAt = boundaryAt;
+    this.breakEndsAt = endsAt;
+    this.parkEveryEngine();
+    const stragglers = this.unparkedTables();
+    this.unparkedAtCountdown = stragglers.length;
+    this.peakUnparked = stragglers.length;
+    this.readyForRestartAtMs = null;
+    console.warn(
+      '[MaintenanceBreak] honoring a potentially durable break through the fixed :00 boundary; restart remains disabled'
+    );
+    this.armEndTimer();
+  }
+
+  private rememberPotentiallyDurable(state: PersistedMaintenanceBreak): void {
+    if (
+      this.potentiallyDurableStates.some((candidate) =>
+        MaintenanceBreak.samePersistedState(candidate, state)
+      )
+    )
+      return;
+    this.potentiallyDurableStates.push({ ...state });
+  }
+
+  private lastHandDeclarationIsCurrent(
+    state: PersistedMaintenanceBreak,
+    generation: number
+  ): boolean {
+    return (
+      this.lifecycleIsCurrent(generation) &&
+      this.phase === 'last_hand' &&
+      this.announcedAt === state.announcedAt &&
+      this.ownershipToken === state.ownershipToken
+    );
+  }
+
+  private countdownStateIsCurrent(state: PersistedMaintenanceBreak, generation: number): boolean {
+    return (
+      this.lifecycleIsCurrent(generation) &&
+      this.phase === 'counting_down' &&
+      this.announcedAt === state.announcedAt &&
+      this.breakStartedAt === state.breakStartedAt &&
+      this.breakEndsAt === state.breakEndsAt &&
+      this.ownershipToken === state.ownershipToken
     );
   }
 
   /**
-   * One durable write, retried every ANNOUNCE_PERSIST_RETRY_MS while the
-   * failure is retryable and there is budget left before `deadline`. Stops
-   * the moment the local phase has moved on, so a late success can never
-   * re-declare a phase this process has already left - and the database
-   * refuses a late one anyway (its boundary checks run after the lock).
+   * Retry only the idempotent countdown CAS while a restart can still fit.
+   * The last-hand row already owns the freeze, so exhaustion degrades this
+   * hour to a no-restart break; it never cancels or extends the break.
    */
-  private async persistWithRetry(
+  private async persistCountdownUntilRestartCutoff(
     state: PersistedMaintenanceBreak,
-    generation: number,
-    deadline: number,
-    what: 'announcement' | 'countdown'
-  ): Promise<void> {
-    for (let attempt = 1; ; attempt++) {
+    generation: number
+  ): Promise<boolean> {
+    const deadline = (state.breakEndsAt ?? 0) - MaintenanceBreak.MIN_REMAINING_FOR_RESTART_MS;
+    for (let attempt = 1; this.countdownStateIsCurrent(state, generation); attempt += 1) {
       try {
         await this.persist(state);
         if (attempt > 1) {
           console.warn(
-            `[MaintenanceBreak] the ${what} became durable on attempt ${attempt}; the announced boundaries are unchanged`
+            `[MaintenanceBreak] countdown became durable on attempt ${attempt}; the announced boundaries are unchanged`
           );
         }
-        return;
+        return this.countdownStateIsCurrent(state, generation);
       } catch (error) {
-        const rest = MaintenanceBreak.ANNOUNCE_PERSIST_RETRY_MS;
-        if (
-          !MaintenanceBreak.isRetryablePersistenceError(error) ||
-          !this.lifecycleIsCurrent(generation) ||
-          this.phase !== state.phase ||
-          this.now() + rest > deadline
-        ) {
+        if (!this.countdownStateIsCurrent(state, generation)) return false;
+        const remainingMs = deadline - this.now();
+        if (!MaintenanceBreak.isRetryablePersistenceError(error) || remainingMs <= 0) {
           throw error;
         }
+        const delayMs = Math.min(MaintenanceBreak.ANNOUNCE_PERSIST_RETRY_MS, remainingMs);
         console.warn(
-          `[MaintenanceBreak] the ${what} save failed (attempt ${attempt}); retrying in ${
-            rest / 1000
-          }s, ${Math.max(0, Math.round((deadline - this.now()) / 1000))}s of budget left: ${
+          `[MaintenanceBreak] countdown save failed (attempt ${attempt}); keeping the restart gate closed and retrying in ${delayMs}ms: ${
             (error as Error)?.message ?? error
           }`
         );
-        await new Promise<void>((resolve) => this.setTimer(resolve, rest));
+        if (!(await this.waitForLifecycleDelay(generation, delayMs))) return false;
       }
     }
+    return false;
   }
 
-  /** Hand the reason a break did not run as announced to recordFault, best-effort. */
+  /** A cancellable sleep so stop() never waits out a retry backoff. */
+  private waitForLastHandPersistRetry(ms: number): Promise<'elapsed' | 'cancelled'> {
+    return new Promise<'elapsed' | 'cancelled'>((resolve) => {
+      let settled = false;
+      let timer!: NodeJS.Timeout;
+      const finish = (reason: 'elapsed' | 'cancelled') => {
+        if (settled) return;
+        settled = true;
+        if (this.lastHandPersistRetryTimer === timer) {
+          this.lastHandPersistRetryTimer = null;
+          this.wakeLastHandPersistRetry = null;
+        }
+        resolve(reason);
+      };
+      timer = this.setTimer(() => finish('elapsed'), ms);
+      this.lastHandPersistRetryTimer = timer;
+      this.wakeLastHandPersistRetry = finish;
+    });
+  }
+
+  private cancelLastHandPersistRetryWait(): void {
+    const timer = this.lastHandPersistRetryTimer;
+    const wake = this.wakeLastHandPersistRetry;
+    this.lastHandPersistRetryTimer = null;
+    this.wakeLastHandPersistRetry = null;
+    if (timer) this.clearTimer(timer);
+    wake?.('cancelled');
+  }
+
+  /** One cancellable continuation in the thaw state machine; never a poller. */
+  private waitForLifecycleDelay(generation: number, delayMs: number): Promise<boolean> {
+    return new Promise<boolean>((resolve) => {
+      if (!this.lifecycleIsCurrent(generation) || this.lifecycleAbort.signal.aborted) {
+        resolve(false);
+        return;
+      }
+      let settled = false;
+      let timer!: NodeJS.Timeout;
+      const finish = (elapsed: boolean) => {
+        if (settled) return;
+        settled = true;
+        this.lifecycleAbort.signal.removeEventListener('abort', onAbort);
+        resolve(elapsed && this.lifecycleIsCurrent(generation));
+      };
+      const onAbort = () => {
+        this.clearTimer(timer);
+        finish(false);
+      };
+      timer = this.setTimer(() => finish(true), Math.max(0, delayMs));
+      this.lifecycleAbort.signal.addEventListener('abort', onAbort, { once: true });
+    });
+  }
+
+  private waitForLifecycleRetry(generation: number): Promise<boolean> {
+    return this.waitForLifecycleDelay(generation, MaintenanceBreak.THAW_RECOVERY_RETRY_MS);
+  }
+
+  /**
+   * A complete thaw exact-clears the break row before its future credit
+   * boundary. The database release-certificate function owns the final word:
+   * a locally fast clock, delayed response, or clock adjustment must never
+   * resume tables while database admission still answers PLATFORM_FROZEN.
+   */
+  private async waitForReleaseCertificateToClear(
+    generation: number,
+    creditedThroughAtMs: number
+  ): Promise<boolean> {
+    let nextCheckAt = creditedThroughAtMs;
+    while (this.lifecycleIsCurrent(generation)) {
+      const waitMs = Math.max(0, nextCheckAt - this.now());
+      if (waitMs > 0 && !(await this.waitForLifecycleDelay(generation, waitMs))) return false;
+      if (!this.lifecycleIsCurrent(generation)) return false;
+
+      try {
+        const boundaryAt = await this.deps.store.loadReleaseBoundary();
+        if (!this.lifecycleIsCurrent(generation)) return false;
+        if (boundaryAt === null) return true;
+        if (!Number.isFinite(boundaryAt) || boundaryAt <= 0) {
+          throw new Error('maintenance_release_certificate_invalid');
+        }
+        nextCheckAt = Math.max(boundaryAt, this.now() + MaintenanceBreak.THAW_RECOVERY_RETRY_MS);
+      } catch (error) {
+        console.error(
+          `[MaintenanceBreak] release certificate is unreadable; keeping every table frozen and ` +
+            `retrying in ${MaintenanceBreak.THAW_RECOVERY_RETRY_MS}ms.`,
+          error
+        );
+        nextCheckAt = this.now() + MaintenanceBreak.THAW_RECOVERY_RETRY_MS;
+      }
+    }
+    return false;
+  }
+
+  /** Persist the cause without ever delaying or changing the chosen safety path. */
   private reportFault(
     stage: MaintenanceBreakFault['stage'],
     outcome: MaintenanceBreakFault['outcome'],
@@ -1930,17 +2492,12 @@ export class MaintenanceBreak {
       outcome,
       error: String((error as Error)?.message ?? error ?? 'unknown').slice(0, 500),
     };
-    this.launchLifecycleJob(
-      record(fault),
-      'could not record why the break did not run as announced'
-    );
+    this.launchLifecycleJob(record(fault), 'could not record why the maintenance break degraded');
   }
 
   private async persist(state = this.persistedState()): Promise<void> {
     try {
       await this.deps.store.save(state);
-      this.durableConfirmed = true;
-      this.lastDurableState = { ...state };
       return;
     } catch (saveError) {
       /* A timed-out HTTP response can hide a committed upsert. Read the row
@@ -1953,8 +2510,6 @@ export class MaintenanceBreak {
           console.warn(
             '[MaintenanceBreak] persistence response was lost, but exact durable state was verified'
           );
-          this.durableConfirmed = true;
-          this.lastDurableState = { ...state };
           return;
         }
       } catch (readError) {
@@ -1964,42 +2519,90 @@ export class MaintenanceBreak {
     }
   }
 
-  private async cancelBreakAfterPersistenceFailure(
-    wasVisible: boolean,
-    ...ownedStates: PersistedMaintenanceBreak[]
-  ): Promise<void> {
-    for (const timer of [this.countdownTimer, this.endTimer]) {
-      if (timer) this.clearTimer(timer);
+  /**
+   * Clear every possible exact shape and prove the singleton is absent before
+   * local admission reopens. This is receipt recovery for an idempotent CAS,
+   * not a background reconciler: the phase transition itself remains pending.
+   */
+  private async clearBeforeAdmission(
+    states: PersistedMaintenanceBreak[],
+    generation: number
+  ): Promise<boolean> {
+    while (this.lifecycleIsCurrent(generation)) {
+      let mutationError: unknown = null;
+      for (const state of states) {
+        try {
+          await this.deps.store.clear(state);
+        } catch (error) {
+          mutationError = error;
+        }
+        if (!this.lifecycleIsCurrent(generation)) return false;
+      }
+
+      try {
+        const stored = await this.deps.store.load();
+        if (!this.lifecycleIsCurrent(generation)) return false;
+        if (stored === null) return true;
+        if (!states.some((state) => MaintenanceBreak.samePersistedState(stored, state))) {
+          throw new Error('maintenance_break_ownership_changed_before_admission_release');
+        }
+        mutationError ??= new Error('maintenance_break_clear_not_committed');
+      } catch (error) {
+        if (
+          error instanceof Error &&
+          error.message === 'maintenance_break_ownership_changed_before_admission_release'
+        ) {
+          throw error;
+        }
+        mutationError = error;
+      }
+
+      console.error(
+        `[MaintenanceBreak] durable clear is not confirmed; keeping every table frozen and retrying ` +
+          `in ${MaintenanceBreak.THAW_RECOVERY_RETRY_MS}ms.`,
+        mutationError
+      );
+      if (!(await this.waitForLifecycleRetry(generation))) return false;
     }
-    this.countdownTimer = null;
-    this.endTimer = null;
-    this.resumeToken += 1;
-    for (const timer of this.resumeWaveTimers) this.clearTimer(timer);
-    this.resumeWaveTimers.clear();
-
-    this.phase = 'idle';
-    this.durableConfirmed = false;
-    this.announcedAt = 0;
-    this.breakStartedAt = 0;
-    this.breakEndsAt = 0;
-    this.ending = false;
-    setMaintenanceFrozen(false);
-    this.resumeEveryEngine();
-    if (wasVisible) this.broadcastEnded();
-
-    // Compare-and-delete each state this process may have committed. The
-    // store implementation includes every field in the DELETE predicate, so
-    // a newer owner or phase can never be erased by this cleanup.
-    for (const state of ownedStates) await this.safeClear(state);
-    this.lastDurableState = null;
+    return false;
   }
 
-  private async safeClear(expected: PersistedMaintenanceBreak): Promise<void> {
-    try {
-      await this.deps.store.clear(expected);
-    } catch (err) {
-      console.error('[MaintenanceBreak] failed to clear the break row', err);
+  /**
+   * Resolve a write whose transport result was ambiguous before deciding
+   * whether a database-wide thaw is authorized. Null is an authoritative
+   * no-row receipt: this process still gives its local reconnect clocks back,
+   * but must not shift database rows that were never protected by a durable
+   * freeze. A different row is another owner's generation and fails closed.
+   */
+  private async resolvePotentiallyDurableStateBeforeThaw(
+    states: PersistedMaintenanceBreak[],
+    generation: number
+  ): Promise<PersistedMaintenanceBreak | null | undefined> {
+    while (this.lifecycleIsCurrent(generation)) {
+      try {
+        const stored = await this.deps.store.load();
+        if (!this.lifecycleIsCurrent(generation)) return undefined;
+        if (stored === null) return null;
+        if (states.some((state) => MaintenanceBreak.samePersistedState(stored, state))) {
+          return stored;
+        }
+        throw new Error('maintenance_break_ownership_changed_before_thaw');
+      } catch (error) {
+        if (
+          error instanceof Error &&
+          error.message === 'maintenance_break_ownership_changed_before_thaw'
+        ) {
+          throw error;
+        }
+        console.error(
+          `[MaintenanceBreak] ambiguous durable state is not resolved; keeping every table ` +
+            `frozen and retrying in ${MaintenanceBreak.THAW_RECOVERY_RETRY_MS}ms.`,
+          error
+        );
+        if (!(await this.waitForLifecycleRetry(generation))) return undefined;
+      }
     }
+    return undefined;
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -2053,8 +2656,7 @@ export class MaintenanceBreak {
    * tables again, which is where we started.
    */
   readyForRestart(): boolean {
-    if (this.phase !== 'counting_down') return false;
-    if (!this.durableConfirmed) return false;
+    if (this.phase !== 'counting_down' || !this.durablePhaseConfirmed) return false;
     if (this.unparkedTables().length > 0) return false;
     const ready = this.remainingMs() >= MaintenanceBreak.MIN_REMAINING_FOR_RESTART_MS;
     if (ready && this.readyForRestartAtMs === null) this.readyForRestartAtMs = this.now();
@@ -2062,12 +2664,12 @@ export class MaintenanceBreak {
   }
 
   /** Published on /health. */
-  snapshot(): Record<string, unknown> {
+  snapshot(): MaintenanceBreakSnapshot {
     const unparked = this.isActive() ? this.unparkedTables() : [];
     return {
       active: this.isActive(),
       phase: this.phase,
-      durableConfirmed: this.isActive() && this.durableConfirmed,
+      durableConfirmed: this.durablePhaseConfirmed,
       breakEndsAt: this.breakEndsAt > 0 ? this.breakEndsAt : null,
       remainingMs: this.remainingMs(),
       unparkedTables: unparked.length,

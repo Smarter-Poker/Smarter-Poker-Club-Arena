@@ -20,6 +20,24 @@ if (!migrationName) throw new Error('financial completion migration is missing')
 
 const SQL = readFileSync(join(migrations, migrationName), 'utf8');
 const CODE = SQL.replace(/^\s*--.*$/gm, '');
+const strictMigrationNames = readdirSync(migrations).filter((name) =>
+  name.endsWith('_stage_b_current_postimage_contraction.sql')
+);
+expect(
+  strictMigrationNames,
+  'expected one strict Stage-B tournament-manager cutover migration'
+).toHaveLength(1);
+const STRICT_SQL = readFileSync(join(migrations, strictMigrationNames[0] ?? ''), 'utf8');
+const STRICT_CODE = STRICT_SQL.replace(/^\s*--.*$/gm, '');
+const precertificationMigrationNames = readdirSync(migrations).filter((name) =>
+  name.endsWith('_stage_b_atomic_finish_precertification.sql')
+);
+expect(
+  precertificationMigrationNames,
+  'expected one stopped-engine atomic finish precertification migration'
+).toHaveLength(1);
+const PRECERT_SQL = readFileSync(join(migrations, precertificationMigrationNames[0] ?? ''), 'utf8');
+const PRECERT_CODE = PRECERT_SQL.replace(/^\s*--.*$/gm, '');
 const ELIMINATIONS = readFileSync(join(here, 'TournamentManagerEliminations.ts'), 'utf8');
 const RECOVERY = readFileSync(join(here, 'tournamentRecovery.ts'), 'utf8');
 
@@ -105,7 +123,7 @@ describe('the certificate proves every terminal obligation', () => {
 });
 
 describe('the only completion door is atomic, retryable and lock bounded', () => {
-  it('keeps both finish guards dormant during rolling Stage A compatibility', () => {
+  it('keeps both finish guards dormant for Stage A and activates both in Stage B', () => {
     for (const trigger of [
       'aa_guard_tournament_completing_claim',
       'zzzzzz_tournaments_financial_certificate',
@@ -115,10 +133,73 @@ describe('the only completion door is atomic, retryable and lock bounded', () =>
           `CREATE TRIGGER ${trigger}[\\s\\S]*?ALTER TABLE public\\.tournaments\\s+DISABLE TRIGGER ${trigger}`
         )
       );
+      expect(STRICT_CODE).toMatch(
+        new RegExp(`ALTER TABLE public\\.tournaments\\s+ENABLE TRIGGER ${trigger}`)
+      );
     }
     expect(CODE).toMatch(
       /tgname IN \([\s\S]*?'aa_guard_tournament_completing_claim'[\s\S]*?'zzzzzz_tournaments_financial_certificate'[\s\S]*?tgenabled = 'D'[\s\S]*?\) <> 2/
     );
+    expect(STRICT_CODE).toMatch(
+      /tgname IN \([\s\S]*?'aaa_guard_atomic_satellite_completion'[\s\S]*?'aa_guard_tournament_completing_claim'[\s\S]*?'zzzz_tournaments_atomic_place_completion_guard'[\s\S]*?'zzzzz_tournaments_atomic_final_table_deal_completion_guard'[\s\S]*?'zzzzzz_tournaments_financial_certificate'[\s\S]*?'zzzz_tournament_pool_finalization_window_guard'[\s\S]*?'zzzz_freeze_finalized_tournament_prize_pool'[\s\S]*?tgenabled <> 'D'[\s\S]*?\) <> 7/
+    );
+    expect(STRICT_CODE).toContain('DO $require_stage_a_atomic_finishes_precertified$');
+    expect(STRICT_CODE).toContain(
+      'Stage-B requires the stopped-engine atomic finish precertification boundary first'
+    );
+    expect(STRICT_CODE).not.toContain('DO $certificate_atomic_stage_b_window$');
+    expect(STRICT_CODE).not.toContain("'certificate_stage_b_backfill'");
+    expect(STRICT_CODE).not.toContain('fn_tournament_finish_readiness');
+    expect(STRICT_CODE).not.toMatch(/UPDATE public\.tournament_finish_receipts/);
+    const zeroBoundaryStart = STRICT_CODE.indexOf(
+      'DO $require_stage_a_atomic_finishes_precertified$'
+    );
+    const zeroBoundaryEnd = STRICT_CODE.indexOf(
+      '$require_stage_a_atomic_finishes_precertified$;',
+      zeroBoundaryStart
+    );
+    const zeroBoundary = STRICT_CODE.slice(zeroBoundaryStart, zeroBoundaryEnd);
+    expect(zeroBoundary).toContain('IF EXISTS (');
+    expect(zeroBoundary).not.toContain('LOOP');
+  });
+
+  it('certifies the finite Stage-A cohort before Stage B without inventing claims', () => {
+    expect(PRECERT_CODE).toContain("SET LOCAL statement_timeout = '120s'");
+    expect(PRECERT_CODE).toContain('DO $require_durable_maintenance_window$');
+    expect(PRECERT_CODE).toContain('DO $require_stopped_engine_and_terminal_invariant$');
+    expect(PRECERT_CODE).toContain('pg_try_advisory_xact_lock_shared(530090,1)');
+    expect(PRECERT_CODE).toContain(
+      'LOCK TABLE public.tournaments IN SHARE ROW EXCLUSIVE MODE NOWAIT'
+    );
+    for (const relation of [
+      'tournament_finish_receipts',
+      'tournament_players',
+      'tournament_obligations',
+      'tournament_payouts',
+      'tournament_place_settlement_batches',
+      'tournament_final_table_deal_batches',
+      'tournament_satellite_settlement_batches',
+      'tournament_escrow',
+      'rake_records',
+      'tournament_rake_settlements',
+      'tournament_bounty_completion_receipts',
+      'tournament_bounty_obligations',
+      'tournament_bounty_awards',
+      'tournament_bounty_award_recipients',
+      'tournament_bounties',
+      'tournament_satellite_entitlements',
+      'chip_ledger',
+    ]) {
+      expect(PRECERT_CODE).toContain(`LOCK TABLE public.${relation}`);
+    }
+    expect(PRECERT_CODE).toContain('FROM public.tournament_finish_receipts f');
+    expect(PRECERT_CODE).toContain('FOR UPDATE');
+    expect(PRECERT_CODE).toContain('public.fn_tournament_finish_readiness(r.id,v_winner)');
+    expect(PRECERT_CODE).toContain('AND certified_at IS NULL');
+    expect(PRECERT_CODE).toContain('AND completed_at IS NULL');
+    expect(PRECERT_CODE).toContain('AND evidence IS NULL');
+    expect(PRECERT_CODE).not.toContain('INSERT INTO public.tournament_finish_receipts');
+    expect(PRECERT_CODE).not.toContain('certificate_stage_b_backfill');
   });
 
   it('keeps the certificate RPC read-only and accepts only the durable domain receipt', () => {

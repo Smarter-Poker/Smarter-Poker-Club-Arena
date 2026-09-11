@@ -292,7 +292,11 @@ export interface TableInfo {
 }
 
 export interface SeatedPlayer {
-  /** Required by the dealt-hand boundary; preserved from the authoritative roster read. */
+  /**
+   * Database row identity and exact join timestamp for the current occupancy.
+   * The authoritative roster supplies both; the dealt-hand boundary validates
+   * and snapshots them before this mutable roster can be used for settlement.
+   */
   seat_id?: string;
   seat_joined_at?: string;
   /** Database-generated seating identity, required at every cashout boundary. */
@@ -454,6 +458,14 @@ export interface GameState {
    * lockstep with communityCards and communityCards2.
    */
   communityCards3: Card[];
+  /**
+   * Cards whose identity was publicly exposed before leaving a live hand.
+   * This is intentionally narrower than the muck: today it contains only the
+   * forced Crazy Pineapple discard made after an all-in reveal. Keeping it in
+   * authoritative state makes reconnect and late-join snapshots describe the
+   * same public card universe used for equity and insurance.
+   */
+  revealedDeadCards: Card[];
   pot: number;
   /** Missing SB/BB chips, used only for preflop pot-limit sizing. Never money. */
   potLimitBlindAdjustment?: number;
@@ -484,6 +496,8 @@ export interface HandStateBroadcast {
   community_cards2?: Card[];
   /** TRIPLE-BOARD BOMB POT 2026-08-27: third board (empty unless active). */
   community_cards3?: Card[];
+  /** Publicly exposed cards that subsequently left a live holding. */
+  revealed_dead_cards?: Card[];
   /**
    * VARIANT OVERRIDE 2026-08-28 (spec §10.1): the variant THIS hand is being
    * played as — differs from the table's game on a variant-override bomb pot.

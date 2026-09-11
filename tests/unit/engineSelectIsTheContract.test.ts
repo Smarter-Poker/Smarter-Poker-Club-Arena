@@ -95,6 +95,7 @@ const GAMEPLAY_COLUMNS = [
   'is_anonymous',
   'ban_chat',
   'restrict_observers',
+  'observer_show_cards',
   'cap_enabled',
   'cap_bb',
 ];

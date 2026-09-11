@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const queriedTables = vi.hoisted(() => vi.fn());
+const selectedColumns = vi.hoisted(() => vi.fn());
 
 const results = vi.hoisted(() => ({
   tables: {
@@ -9,6 +10,7 @@ const results = vi.hoisted(() => ({
       arena: { id: 'club-1', asset: 'chips', is_platform: false, union_id: null },
       union_id: null,
       restrict_observers: false,
+      observer_show_cards: false,
     } as Record<string, unknown> | null,
     error: null as unknown,
   },
@@ -25,7 +27,11 @@ vi.mock('./supabase.js', () => ({
     from: (table: keyof typeof results) => {
       queriedTables(table);
       const builder: Record<string, unknown> = {};
-      for (const method of ['select', 'eq', 'is', 'in', 'limit']) {
+      builder.select = vi.fn((columns: string) => {
+        selectedColumns(table, columns);
+        return builder;
+      });
+      for (const method of ['eq', 'is', 'in', 'limit']) {
         builder[method] = vi.fn(() => builder);
       }
       builder.maybeSingle = vi.fn(async () => results[table]);
@@ -37,17 +43,23 @@ vi.mock('./supabase.js', () => ({
   },
 }));
 
-import { authorizeTableViewer } from './TableViewerAccess.js';
+import {
+  authorizeTableViewer,
+  isSeatedTableViewer,
+  viewerCanSeeTabledCards,
+} from './TableViewerAccess.js';
 
 describe('authorizeTableViewer', () => {
   beforeEach(() => {
     queriedTables.mockClear();
+    selectedColumns.mockClear();
     results.tables = {
       data: {
         club_id: 'club-1',
         arena: { id: 'club-1', asset: 'chips', is_platform: false, union_id: null },
         union_id: null,
         restrict_observers: false,
+        observer_show_cards: false,
       },
       error: null,
     };
@@ -61,16 +73,39 @@ describe('authorizeTableViewer', () => {
       allowed: true,
       reason: 'club_member',
       clubId: 'club-1',
+      observerShowCards: false,
     });
+  });
+
+  it('carries the explicit show-cards policy and otherwise fails closed', async () => {
+    results.tables.data!.observer_show_cards = true;
+    const optedIn = await authorizeTableViewer('table-1', 'user-1');
+    expect(optedIn).toMatchObject({
+      allowed: true,
+      reason: 'club_member',
+      observerShowCards: true,
+    });
+    expect(viewerCanSeeTabledCards(optedIn)).toBe(true);
+    expect(selectedColumns).toHaveBeenCalledWith(
+      'tables',
+      expect.stringContaining('observer_show_cards')
+    );
+
+    expect(
+      viewerCanSeeTabledCards({ allowed: true, reason: 'club_member', clubId: 'club-1' })
+    ).toBe(false);
   });
 
   it('allows a currently seated player even if membership changed', async () => {
     results.table_seats.data = { id: 'seat-1' };
     results.club_members.data = [];
-    await expect(authorizeTableViewer('table-1', 'user-1')).resolves.toMatchObject({
+    const access = await authorizeTableViewer('table-1', 'user-1');
+    expect(access).toMatchObject({
       allowed: true,
       reason: 'seated',
     });
+    expect(isSeatedTableViewer(access)).toBe(true);
+    expect(viewerCanSeeTabledCards(access)).toBe(true);
   });
 
   it('denies a non-seated member when the table restricts observers', async () => {
@@ -79,12 +114,14 @@ describe('authorizeTableViewer', () => {
       arena: { id: 'club-1', asset: 'chips', is_platform: false, union_id: null },
       union_id: null,
       restrict_observers: true,
+      observer_show_cards: false,
     };
 
     await expect(authorizeTableViewer('table-1', 'user-1')).resolves.toEqual({
       allowed: false,
       reason: 'observers_restricted',
       clubId: 'club-1',
+      observerShowCards: false,
     });
   });
 
@@ -94,6 +131,7 @@ describe('authorizeTableViewer', () => {
       arena: { id: 'club-1', asset: 'chips', is_platform: false, union_id: null },
       union_id: null,
       restrict_observers: true,
+      observer_show_cards: false,
     };
     results.table_seats.data = { id: 'seat-1' };
 
@@ -123,6 +161,7 @@ describe('authorizeTableViewer', () => {
       arena: { id: 'union-shell', asset: 'chips', is_platform: false, union_id: null },
       union_id: 'union-1',
       restrict_observers: false,
+      observer_show_cards: false,
     };
     results.scope.data = ['union-shell', 'club-1', 'club-2'];
     results.club_members.data = [{ club_id: 'club-2' }];
@@ -131,6 +170,7 @@ describe('authorizeTableViewer', () => {
       allowed: true,
       reason: 'club_member',
       clubId: 'union-1',
+      observerShowCards: false,
     });
   });
 
@@ -140,6 +180,7 @@ describe('authorizeTableViewer', () => {
       arena: { id: 'union-shell', asset: 'chips', is_platform: false, union_id: null },
       union_id: null,
       restrict_observers: false,
+      observer_show_cards: false,
     };
     results.scope.data = ['union-shell', 'club-1'];
     results.club_members.data = [{ club_id: 'club-1' }];
@@ -155,6 +196,7 @@ describe('authorizeTableViewer', () => {
       club_id: null,
       union_id: 'union-1',
       restrict_observers: false,
+      observer_show_cards: false,
     };
     results.scope.data = ['union-1', 'club-1'];
     results.club_members.data = [{ club_id: 'club-1' }];
@@ -163,6 +205,7 @@ describe('authorizeTableViewer', () => {
       allowed: true,
       reason: 'club_member',
       clubId: 'union-1',
+      observerShowCards: false,
     });
   });
 
@@ -179,12 +222,14 @@ describe('authorizeTableViewer', () => {
 describe('seated reconnect access dependencies', () => {
   beforeEach(() => {
     queriedTables.mockClear();
+    selectedColumns.mockClear();
     results.tables = {
       data: {
         club_id: 'club-1',
         arena: { id: 'club-1', asset: 'chips', is_platform: false, union_id: null },
         union_id: null,
         restrict_observers: true,
+        observer_show_cards: false,
       },
       error: null,
     };
@@ -222,10 +267,12 @@ describe('seated reconnect access dependencies', () => {
 describe('Diamond Arena entitlement', () => {
   beforeEach(() => {
     queriedTables.mockClear();
+    selectedColumns.mockClear();
     results.tables = {
       data: {
         club_id: 'diamond',
         restrict_observers: false,
+        observer_show_cards: false,
         arena: { id: 'diamond', asset: 'diamonds', is_platform: true, union_id: null },
       },
       error: null,
@@ -238,6 +285,7 @@ describe('Diamond Arena entitlement', () => {
       allowed: true,
       reason: 'diamond_member',
       clubId: 'diamond',
+      observerShowCards: false,
     });
     expect(queriedTables.mock.calls.flat()).not.toContain('club_members');
   });

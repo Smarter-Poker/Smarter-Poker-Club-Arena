@@ -23,7 +23,7 @@ import './MaintenanceBreakScreen.css';
 
 export interface MaintenanceBreakScreenProps {
   isVisible: boolean;
-  phase: 'last_hand' | 'counting_down';
+  phase: 'last_hand' | 'counting_down' | 'recovering';
   /** Absolute instant, epoch ms. Null while the last hand is still in play. */
   breakEndsAtMs: number | null;
   reason?: string;
@@ -43,6 +43,7 @@ export function MaintenanceBreakScreen({
 }: MaintenanceBreakScreenProps) {
   const [minimized, setMinimized] = useState(false);
   const countingDown = phase === 'counting_down' && !!breakEndsAtMs;
+  const recovering = phase === 'recovering';
 
   const read = useMemo(
     () => () => (breakEndsAtMs ? Math.max(0, Math.round((breakEndsAtMs - serverNow()) / 1000)) : 0),
@@ -72,10 +73,13 @@ export function MaintenanceBreakScreen({
   }, [isVisible]);
 
   const progressPercent = useMemo(() => {
+    // Recovery has no invented completion percentage. An empty ring is a
+    // truthful indeterminate state; a full ring would visually say "done".
+    if (recovering) return 0;
     if (!countingDown) return 100;
     const pct = (remaining / 300) * 100;
     return Number.isFinite(pct) ? Math.min(100, Math.max(0, pct)) : 0;
-  }, [countingDown, remaining]);
+  }, [countingDown, recovering, remaining]);
 
   if (!isVisible) return null;
 
@@ -93,7 +97,9 @@ export function MaintenanceBreakScreen({
         <span className="maintenance-break__mini-badge">
           {countingDown
             ? `Maintenance Break: ${formatTime(remaining)}`
-            : 'Maintenance Break: Last Hand In Play'}
+            : recovering
+              ? 'Maintenance Break: Restoring Tables'
+              : 'Maintenance Break: Last Hand In Play'}
         </span>
       </div>
     );
@@ -119,7 +125,11 @@ export function MaintenanceBreakScreen({
         <div className="maintenance-break__header">
           <span className="maintenance-break__badge">Scheduled Maintenance</span>
           <h1 id="maintenance-break-title" className="maintenance-break__title">
-            {countingDown ? 'All Tables On Break' : 'Finishing The Current Hand'}
+            {countingDown
+              ? 'All Tables On Break'
+              : recovering
+                ? 'Restoring Every Table'
+                : 'Finishing The Current Hand'}
           </h1>
         </div>
 
@@ -137,10 +147,14 @@ export function MaintenanceBreakScreen({
             </svg>
             <div className="maintenance-break__timer-text">
               <span className="maintenance-break__time">
-                {countingDown ? formatTime(remaining) : 'Last Hand'}
+                {countingDown ? formatTime(remaining) : recovering ? 'Restoring' : 'Last Hand'}
               </span>
               <span className="maintenance-break__time-label">
-                {countingDown ? 'Until Play Resumes' : 'The Break Starts When Every Table Finishes'}
+                {countingDown
+                  ? 'Until Play Resumes'
+                  : recovering
+                    ? 'Play Resumes Automatically After Recovery Completes'
+                    : 'The Break Starts When Every Table Finishes'}
               </span>
             </div>
           </div>
@@ -171,7 +185,9 @@ export function MaintenanceBreakScreen({
           <li>
             <span className="maintenance-break__fact-title">The Table May Briefly Go Quiet</span>
             <span className="maintenance-break__fact-body">
-              You Do Not Need To Reload. Play Resumes Automatically When The Countdown Ends.
+              {recovering
+                ? 'You Do Not Need To Reload. Play Resumes Automatically After Every Table Is Restored.'
+                : 'You Do Not Need To Reload. Play Resumes Automatically When The Countdown Ends.'}
             </span>
           </li>
         </ul>

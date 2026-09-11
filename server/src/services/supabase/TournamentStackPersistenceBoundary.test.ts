@@ -37,10 +37,25 @@ const PLAYER_A = '00000000-0000-4000-8000-000000000003';
 const PLAYER_B = '00000000-0000-4000-8000-000000000004';
 const HISTORY_ID = '00000000-0000-4000-8000-000000000005';
 const LEASE_GENERATION = '00000000-0000-4000-8000-000000000006';
+const SEAT_A = '00000000-0000-4000-8000-000000000007';
+const SEAT_B = '00000000-0000-4000-8000-000000000008';
+const SEAT_JOINED_AT = '2026-09-09T12:00:00.000Z';
 
 const stacks = [
-  { user_id: PLAYER_A, stack: 0, stack_before: 1_000 },
-  { user_id: PLAYER_B, stack: 3_000, stack_before: 2_000 },
+  {
+    seat_id: SEAT_A,
+    seat_joined_at: SEAT_JOINED_AT,
+    user_id: PLAYER_A,
+    stack: 0,
+    stack_before: 1_000,
+  },
+  {
+    seat_id: SEAT_B,
+    seat_joined_at: SEAT_JOINED_AT,
+    user_id: PLAYER_B,
+    stack: 3_000,
+    stack_before: 2_000,
+  },
 ];
 
 const exactReceipt = {
@@ -92,8 +107,20 @@ const request = (handNumber: number) => ({
     postCommitObligations: {
       version: 1 as const,
       time_banks: [
-        { user_id: PLAYER_A, uses_remaining: 0, seconds_remaining: 0 },
-        { user_id: PLAYER_B, uses_remaining: 0, seconds_remaining: 0 },
+        {
+          seat_id: SEAT_A,
+          seat_joined_at: SEAT_JOINED_AT,
+          user_id: PLAYER_A,
+          uses_remaining: 0,
+          seconds_remaining: 0,
+        },
+        {
+          seat_id: SEAT_B,
+          seat_joined_at: SEAT_JOINED_AT,
+          user_id: PLAYER_B,
+          uses_remaining: 0,
+          seconds_remaining: 0,
+        },
       ],
       rake: null,
       bbj_contribution: null,

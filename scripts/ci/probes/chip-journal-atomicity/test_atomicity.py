@@ -600,6 +600,18 @@ if mode=="fixed":
  verify_satellite(run)
 
 if mode=="fixed":
+ satellite_root=Path(__file__).resolve().parent.parents[3]
+ satellite_materializer=_function_state(satellite_root).get(
+  ("fn_materialize_satellite_entitlements_locked",("uuid",))
+ )
+ if satellite_materializer is None:
+  raise RuntimeError(
+   "Missing authoritative public.fn_materialize_satellite_entitlements_locked(uuid)"
+  )
+ from test_satellite_entitlements import verify_satellite_entitlement_cents
+ verify_satellite_entitlement_cents(run,satellite_materializer.declaration)
+
+if mode=="fixed":
  from test_cashout import verify_cashout
  verify_cashout(run)
 

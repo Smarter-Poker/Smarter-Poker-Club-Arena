@@ -17,6 +17,11 @@ import type { Card } from '../types.js';
 
 const LEADER = 'leader-1';
 const OPP = 'opp-1';
+const singlePotScope = {
+  kind: 'single_high_pot' as const,
+  potIndex: 0 as const,
+  eligiblePlayerIds: [LEADER, OPP],
+};
 const c = (rank: string, suit: string) => ({ rank, suit }) as never as Card;
 
 // AA vs KQo — a clear preflop favorite, no board.
@@ -48,7 +53,8 @@ function offer(e: InsuranceEngine, board: Card[], pot = 200) {
     pot,
     'nlh',
     false,
-    insuranceEquity(leaderCards, [oppCards], board, 'nlh')
+    insuranceEquity(leaderCards, [oppCards], board, 'nlh'),
+    singlePotScope
   );
 }
 
@@ -126,7 +132,8 @@ describe('timeout finality follows the street', () => {
       200,
       'nlh',
       false,
-      insuranceEquity(leaderCards, [oppCards], board, 'nlh')
+      insuranceEquity(leaderCards, [oppCards], board, 'nlh'),
+      singlePotScope
     );
     expect(fired).toHaveLength(1);
     fired[0]();

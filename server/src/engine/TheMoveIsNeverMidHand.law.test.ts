@@ -67,12 +67,9 @@ const DEALING = read('./ServerTableEngineDealing.ts');
 const SETTLEMENT = read('./ServerTableEngineSettlement.ts');
 const MOVES = read('../services/supabase/seatMoves.ts');
 const HUB = read('../transport/TableStateHub.ts');
-const TABLE_PAGE = readFileSync(
-  resolve(__dirname, '../../../src/pages/TablePage.tsx'),
-  'utf8'
-);
+const TABLE_PAGE = readFileSync(resolve(__dirname, '../../../src/pages/TablePage.tsx'), 'utf8');
 
-describe('D1 - a read that FAILED changes nothing (the invariant, through main\'s throw)', () => {
+describe("D1 - a read that FAILED changes nothing (the invariant, through main's throw)", () => {
   /* THE MECHANISM CHANGED AT THE 2026-09-10 MERGE, THE LAW DID NOT.
      This lane shipped `pendingSeatMoves` returning `null` on a failed read.
      Main solved the same defect the other way, and harder: it THROWS (#3974,
@@ -122,7 +119,7 @@ describe('D1 - a read that FAILED changes nothing (the invariant, through main\'
     expect(read).not.toHaveBeenCalled();
   });
 
-  it('the service keeps MAIN\'s contract: an unreadable enumeration throws', () => {
+  it("the service keeps MAIN's contract: an unreadable enumeration throws", () => {
     const fn = MOVES.slice(
       MOVES.indexOf('export async function pendingSeatMoves'),
       MOVES.indexOf('export async function announceSeatMoves')
@@ -152,7 +149,9 @@ describe('D1 - a read that FAILED changes nothing (the invariant, through main\'
 
 describe('D2 - a hold is released wherever the table is, not only before a deal', () => {
   it('the release lives in a helper both loops reach, not inside the announce', () => {
-    expect(BASE).toMatch(/protected reconcileSeatMoveHolds\(pending: readonly PendingSeatMove\[\]\): void \{/);
+    expect(BASE).toMatch(
+      /protected reconcileSeatMoveHolds\(pending: readonly PendingSeatMove\[\]\): void \{/
+    );
     // The mechanism itself is unchanged, it has only moved house.
     expect(BASE).toMatch(
       /for \(const uid of this\.heldForSwap\) \{\s*if \(!liveHeld\.has\(uid\)\) this\.heldForSwap\.delete\(uid\)/
@@ -219,12 +218,18 @@ describe('D3 - a move that did not happen is said out loud', () => {
   });
 
   it('the service collects them and the engine tells the one player', () => {
-    expect(MOVES).toMatch(/refused: Array<\{ move_id: string; player_id: string; reason: string \}>/);
+    expect(MOVES).toMatch(
+      /refused: Array<\{ move_id: string; player_id: string; reason: string \}>/
+    );
     /* MERGED 2026-09-10: main proves the outcome is a real refusal carrying a
        real reason BEFORE this lane classifies it. The order is the pin - a
        reason nobody could read must never be classified as anything. */
-    const arm = MOVES.slice(MOVES.indexOf("} else {", MOVES.indexOf('Seat swap hold does not prove')));
-    expect(arm.indexOf("throw new Error('Seat move outcome was not confirmed')")).toBeGreaterThan(-1);
+    const arm = MOVES.slice(
+      MOVES.indexOf('} else {', MOVES.indexOf('Seat swap hold does not prove'))
+    );
+    expect(arm.indexOf("throw new Error('Seat move outcome was not confirmed')")).toBeGreaterThan(
+      -1
+    );
     expect(arm.indexOf("throw new Error('Seat move outcome was not confirmed')")).toBeLessThan(
       arm.indexOf('SEAT_MOVE_NON_TERMINAL_REASONS.has(res.reason)')
     );
@@ -278,13 +283,17 @@ describe('D4 - an entry hold never outlives the deal that made it meaningless', 
       DEALING.indexOf('if (this.dealingLoopFirstIteration) {'),
       DEALING.indexOf('this.dealingLoopFirstIteration = false;')
     );
-    expect(first).toMatch(/const rowHold = \(p as \{ entry_hold\?: string \| null \}\)\.entry_hold \?\? null;/);
+    expect(first).toMatch(
+      /const rowHold = \(p as \{ entry_hold\?: string \| null \}\)\.entry_hold \?\? null;/
+    );
     expect(first).toMatch(
       /if \(rowHold !== null && !this\.postingBBToEnter\.has\(p\.user_id\)\) \{\s*this\.persistEntryHold\(p\.user_id, \{ hold: null, agreed: false \}\);\s*continue;/
     );
     // `continue` matters as much as the clear: a chair that has never been
     // dealt a hand here must not be seeded as a veteran.
-    expect(first.indexOf('const rowHold')).toBeLessThan(first.indexOf('this.dealtInUserIds.add(p.user_id)'));
+    expect(first.indexOf('const rowHold')).toBeLessThan(
+      first.indexOf('this.dealtInUserIds.add(p.user_id)')
+    );
   });
 
   it('the restore is still once per process, which is WHY the clear is needed', () => {
@@ -292,7 +301,9 @@ describe('D4 - an entry hold never outlives the deal that made it meaningless', 
       BASE.indexOf('protected restoreEntryHoldsFromSeats'),
       BASE.indexOf('protected restoreEntryHoldsFromSeats') + 400
     );
-    expect(restore).toMatch(/if \(this\.entryHoldsRestored\) return;\s*this\.entryHoldsRestored = true;/);
+    expect(restore).toMatch(
+      /if \(this\.entryHoldsRestored\) return;\s*this\.entryHoldsRestored = true;/
+    );
     // and the wait loop is what spends it first on a feeder
     const wait = BASE.slice(
       BASE.indexOf("this.setLoopPhase('start_wait_for_players');"),
@@ -303,8 +314,12 @@ describe('D4 - an entry hold never outlives the deal that made it meaningless', 
 
   it('the two arrival states are still exactly as Dan set them', () => {
     // moved by the game: nothing owed. seat change: posts the BB.
-    expect(DEALING).toMatch(/entryHold === 'moved'[\s\S]{0,900}?this\.persistEntryHold\(p\.user_id, \{ hold: null, agreed: false \}\)/);
-    expect(DEALING).toMatch(/entryHold === 'waiting' && entryAgreed[\s\S]{0,600}?this\.postBBWhenClear\.add\(p\.user_id\)/);
+    expect(DEALING).toMatch(
+      /entryHold === 'moved'[\s\S]{0,900}?this\.persistEntryHold\(p\.user_id, \{ hold: null, agreed: false \}\)/
+    );
+    expect(DEALING).toMatch(
+      /entryHold === 'waiting' && entryAgreed[\s\S]{0,600}?this\.postBBWhenClear\.add\(p\.user_id\)/
+    );
   });
 });
 
@@ -327,7 +342,9 @@ describe('D5 - a player who left leaves nothing of themselves behind', () => {
 
   it('and the move path still deposits presence BEFORE it forgets the player', () => {
     const at = BASE.indexOf('this.depositPresenceForMove(m.player_id, m.to_table_id);');
-    const forget = BASE.indexOf('this.disconnectEngine.unregisterPlayer(this.tableId, m.player_id);');
+    const forget = BASE.indexOf(
+      'this.disconnectEngine.unregisterPlayer(this.tableId, m.player_id);'
+    );
     expect(at).toBeGreaterThan(0);
     expect(forget).toBeGreaterThan(at);
   });
@@ -369,7 +386,9 @@ describe('D8 - a check that cannot read says so', () => {
       BASE.indexOf('protected isContinuityActive')
     );
     expect(fn).not.toMatch(/if \(error \|\| !data\) return;/);
-    expect(fn).toMatch(/reportError\(error, 'ServerTableEngine\.' \+ this\.tableId \+ '\.cluster_closed_read_failed'\)/);
+    expect(fn).toMatch(
+      /reportError\(error, 'ServerTableEngine\.' \+ this\.tableId \+ '\.cluster_closed_read_failed'\)/
+    );
   });
 });
 
@@ -379,7 +398,9 @@ describe('D9 - the waiting table wakes its game too', () => {
       BASE.indexOf("this.setLoopPhase('start_wait_for_players');"),
       BASE.indexOf("this.tableFSM.transition('seating');")
     );
-    expect(wait).toMatch(/const idsBeforeSweep = new Set\(this\.seatedPlayers\.map\(\(p\) => p\.user_id\)\);/);
+    expect(wait).toMatch(
+      /const idsBeforeSweep = new Set\(this\.seatedPlayers\.map\(\(p\) => p\.user_id\)\);/
+    );
     expect(wait).toMatch(/!firstWaitSweep &&/);
     expect(wait).toMatch(/this\.wakeClusterGame\('seat_change'\);/);
     expect(wait).toMatch(/firstWaitSweep = false;/);

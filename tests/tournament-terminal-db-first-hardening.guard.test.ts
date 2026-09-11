@@ -7,12 +7,19 @@ import { runtimeFilesMatching } from './helpers/runtimeSourceSearch';
 
 const root = resolve(__dirname, '..');
 const migration = readFileSync(
-  resolve(
-    root,
-    'supabase/migrations/20260909043000_tournament_terminal_roots_are_db_first_hardened.sql'
-  ),
+  resolve(root, 'supabase/migrations/20260910055955_stage_b_current_postimage_contraction.sql'),
   'utf8'
 );
+const terminalBoundaryStart = migration.indexOf(
+  '-- FORWARD-COMPOSED BOUNDARY: DB-FIRST TERMINAL ROOTS'
+);
+const terminalBoundaryEnd = migration.indexOf(
+  '-- FORWARD-COMPOSED BOUNDARY: COMMITTED MOVE RESPONSE RECOVERY',
+  terminalBoundaryStart
+);
+expect(terminalBoundaryStart, 'DB-first terminal boundary').toBeGreaterThan(-1);
+expect(terminalBoundaryEnd, 'committed-move boundary').toBeGreaterThan(terminalBoundaryStart);
+const terminalBoundary = migration.slice(terminalBoundaryStart, terminalBoundaryEnd);
 
 const rollingServiceRoots = [
   'fn_apply_prize_guarantee(uuid,text)',
@@ -58,34 +65,36 @@ const ownerOnlyLeaves = [
 
 describe('terminal settlement DB-first hardening', () => {
   it('keeps every deployed-engine root present and exact service-only', () => {
-    expect(migration).not.toMatch(/\bDROP\s+FUNCTION\b/i);
+    expect(terminalBoundary).not.toMatch(/\bDROP\s+FUNCTION\b/i);
     for (const signature of rollingServiceRoots) {
-      expect(migration).toContain(
+      expect(terminalBoundary).toContain(
         `REVOKE ALL ON FUNCTION public.${signature}\n  FROM PUBLIC,anon,authenticated,service_role`
       );
-      expect(migration).toContain(
+      expect(terminalBoundary).toContain(
         `GRANT EXECUTE ON FUNCTION public.${signature}\n  TO service_role`
       );
     }
-    expect(migration).toContain('v_service_only text[] := ARRAY[');
-    expect(migration).toContain('aclexplode(');
-    expect(migration).toContain("a.grantee<>ALL(ARRAY[v_owner,'service_role'::regrole::oid])");
+    expect(terminalBoundary).toContain('v_service_only text[] := ARRAY[');
+    expect(terminalBoundary).toContain('aclexplode(');
+    expect(terminalBoundary).toContain(
+      "a.grantee<>ALL(ARRAY[v_owner,'service_role'::regrole::oid])"
+    );
   });
 
   it('makes every wrapper-only terminal implementation owner-only', () => {
     for (const signature of ownerOnlyLeaves) {
-      expect(migration).toContain(
+      expect(terminalBoundary).toContain(
         `REVOKE ALL ON FUNCTION public.${signature}\n  FROM PUBLIC,anon,authenticated,service_role`
       );
     }
-    expect(migration).toContain('v_owner_only text[] := ARRAY[');
-    expect(migration).toContain('AND a.grantee<>v_owner');
+    expect(terminalBoundary).toContain('v_owner_only text[] := ARRAY[');
+    expect(terminalBoundary).toContain('AND a.grantee<>v_owner');
   });
 
   it('refuses a revoked ticket session before any acquisition lock or ticket mutation', () => {
-    const bodyStart = migration.indexOf('$ticket_registration_terminal_gate$');
-    const bodyEnd = migration.indexOf('$ticket_registration_terminal_gate$', bodyStart + 1);
-    const body = migration.slice(bodyStart, bodyEnd);
+    const bodyStart = terminalBoundary.indexOf('$ticket_registration_terminal_gate$');
+    const bodyEnd = terminalBoundary.indexOf('$ticket_registration_terminal_gate$', bodyStart + 1);
+    const body = terminalBoundary.slice(bodyStart, bodyEnd);
     const sessionGate = body.indexOf('public.fn_caller_session_is_live() IS DISTINCT FROM TRUE');
     const acquisitionLock = body.indexOf('public.fn_ca_lock_tournament_seat_acquisition(');
     const ticketCore = body.indexOf(

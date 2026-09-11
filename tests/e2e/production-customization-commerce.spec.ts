@@ -9,6 +9,7 @@ import {
 
 import { ensureAcceptedTerms } from './support/ensureAcceptedTerms';
 import { ensurePlayableProfile } from './support/ensurePlayableProfile';
+import { ensureAcceptedTerms } from './support/ensureAcceptedTerms';
 import {
   cleanupTemporaryCustomizationAccount,
   cleanupStaleTemporaryCustomizationAccounts,

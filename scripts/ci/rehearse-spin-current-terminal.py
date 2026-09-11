@@ -49,17 +49,30 @@ functions=[
  (m4,'fn_ca_settle_final_table_deal_share_raw','58e2768644b692f23a9a071a8a5d1ee8',None),
  (shared,'fn_settle_tournament_obligation','915f3ebd5c4a2efb97ad3a354dfeb365',None),
 ]
-seat=repo/'supabase/migrations/20260909014545_tournament_seat_exits_stay_inside_tournament_authority.sql'
-seat_sha='27cf35a8b9cb3c7322265b755d0ec42f0d3feceb12dd4917e14589375b4c7036'
-assert sha(seat.read_text())==seat_sha
+stage_b_matches=list((repo/'supabase/migrations').glob('*_stage_b_current_postimage_contraction.sql'))
+assert len(stage_b_matches)==1,stage_b_matches
+seat_stage_b=stage_b_matches[0]
+seat_move=repo/'supabase/migrations/20260910051447_the_seat_move_door_the_engine_calls_exists.sql'
+seat_source_sha256={
+ str(seat_stage_b.relative_to(repo)):sha(seat_stage_b.read_text()),
+ str(seat_move.relative_to(repo)):sha(seat_move.read_text()),
+}
+assert seat_source_sha256[str(seat_stage_b.relative_to(repo))]=='1f1c28e1ca437839271c0e21ba64d395d9f15f33dfe366e03e3df67a040e3e94'
+assert seat_source_sha256[str(seat_move.relative_to(repo))]=='b3f1bb62152627444b33c82b806c00ba3587aeebbe3d13800faf69fae7809ea2'
 seat_functions=[
  ('fn_complete_tournament_terminal','uuid,uuid,text','098ae780395481eaf3b4f273a97b6aa5','2b237a636306fa1c95eb227b522aafd1'),
  ('fn_ca_open_tournament_seat_exit_authority','uuid,text,uuid','25cf8792d0d7b4ebf1d383072ca2834c','ad9a7af4abc4d2b1614f715be049a4b2'),
  ('fn_ca_close_tournament_seat_exit_authority','uuid,boolean','0811b7a7795234ed8bc84c606d9a5a62','df0e8e155ca789f10bd49007fc9d13a6'),
  ('fn_tournament_live_seat_exit_requires_authority','','74c1a1a6b2c9ccbf8fe04f875bfba2e2','b128af26b36dff84e9a12666a2a7e957'),
 ]
-# Authenticate the original tracked wrapper/helpers; the strict fixture adds G+B below.
-for name,signature,body,full in seat_functions:get_definition(seat,name,body)
+# Authenticate the tracked active wrapper/helpers; the strict fixture adds G+B below.
+seat_sources={
+ 'fn_complete_tournament_terminal':seat_stage_b,
+ 'fn_ca_open_tournament_seat_exit_authority':seat_move,
+ 'fn_ca_close_tournament_seat_exit_authority':seat_move,
+ 'fn_tournament_live_seat_exit_requires_authority':seat_stage_b,
+}
+for name,signature,body,full in seat_functions:get_definition(seat_sources[name],name,body)
 native_prerequisites=seat_functions+[
  ('fn_complete_tournament_terminal_pre_seat_guard','uuid,uuid,text','589388ad7204fef460a1deebf32ecb69','abc4701e65b366394414ac39def60ffe')
 ]
@@ -131,7 +144,7 @@ GRANT EXECUTE ON FUNCTION public.fn_attribute_tournament_rake(uuid),public.credi
 
 # Strict retained fixture: acquire the complete money lane before seat rows.
 if args.composition!='overwritten-wrapper':
- strict_wrapper=get_definition(seat,'fn_complete_tournament_terminal','098ae780395481eaf3b4f273a97b6aa5')
+ strict_wrapper=get_definition(seat_stage_b,'fn_complete_tournament_terminal','098ae780395481eaf3b4f273a97b6aa5')
  strict_wrapper=strict_wrapper.replace('  v_token:=public.fn_ca_open_tournament_seat_exit_authority(',
   '  PERFORM public.fn_ca_lock_settlement_lane_global();\n  v_token:=public.fn_ca_open_tournament_seat_exit_authority(',1)
  match=re.search(r'AS\s+(\$[A-Za-z_]*\$)',strict_wrapper,re.I)
@@ -262,5 +275,5 @@ if args.bubble_state and verified and passed:
   'Exact rollback of public function metadata, all triggers and 34 tracked table states',
  ]
 print('COMPOSITION',args.composition,'EXIT',run.returncode,'PASS',passed,'NEGATIVE_REGRESSION_PASS',negative_passed,'ROLLBACK_EXACT',before==after);print(log[-4500:])
-args.output.write_text(json.dumps({'verified_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'composition':args.composition,'fixture':'normal-bubble-cash' if args.bubble_state else 'spin-terminal','bubble_state':args.bubble_state,'negative_regression_passed':negative_passed,'verified':verified,'seat_source_sha256':seat_sha,'seat_source_fingerprints':[{'name':n,'body_md5':b,'original_full_md5':f} for n,_,b,f in native_prerequisites],'original_seat_acl':'NULL schema-only dump ACL; preserved exactly after rollback','exercised_seat_acl':'tracked owner-only private core/open/close and token table; postgres+service_role public wrapper','passed':passed,'rollback_exact':before==after,'before_sha256':sha(before),'after_sha256':sha(after),'tables':tables,'base_source_definitions':[{'name':name,'source_body_md5':b,'intermediate_composed_body_md5':a or b} for _,name,b,a in functions],'terminal_evidence':terminal_evidence,'cash_evidence':bubble_evidence,'exercised_runtime_catalog':runtime_catalog,'runtime_catalog_complete':runtime_complete,'prepared_blocks_sha256':{'canonical_place_batch':'5463368592ace44854fe970e8dbc2c12499e82328e9bc7c49986a68d0d922692','canonical_readiness':'1e910a42e4eee077584b662eaed4fdd777026be7bb3904106b2062f279950521','cash_batch_payers':'5a74950603c140919592fe3d75d8ded02b0b3e992f2642ad3a2b9dc554e88e8c'} if args.composition=='guarded' else {},'composed_sql_sha256':sha(sql),'input_file_sha256':{str(p.relative_to(repo)):sha(p.read_text()) for p in [Path(__file__).resolve(),args.spin_source.resolve(),args.lane_source.resolve(),seat,m4,m5,shared,repo/'scripts/deploy/2026-09-10-restore-rake-attribution-retries.sql',repo/'scripts/deploy/phase-three-strict-tournament-cutover.sql',repo/'scripts/ci/probes/spin-zero-projection-native.sql',repo/'scripts/ci/probes/spin-current-terminal-native.sql',repo/'scripts/ci/probes/canonical-bubble-cash-native.sql']},'verified_checkpoint_count':len(verified_checkpoints),'verified_checkpoints':verified_checkpoints,'scope_limits':(['Local rollback-only synthetic opening custody and standings; all payments and paid-before amounts use the actual native payer.','The normal Bubble proof stops at COMPLETING with prize escrow zero; it does not claim terminal closure.','Paid-before Bubble variants cover 0, 0.40 and 1.00 only; this is not the broader payout/rounding matrix.','Final-deal version-2 helper/writer remains blocked and absent; its readiness branch is pending.','Whole Stage B remains undeployed.'] if args.bubble_state else ['Local rollback-only synthetic custody fixture; registration was not exercised.','Native guarded seat wrapper is a strict fixture composition, not a production requirement.','This Spin terminal run covers the one-winner payout path. Bubble paid-before cash coverage is recorded separately; zero-pool and sparse/rounded ladder variants remain unverified.','No two-session hand/terminal concurrency proof is claimed by this runner.','Final-deal version-2 helper/writer was blocked by automatic approval review and remains absent; readiness dispatch for it is pending and unexercised.','Stage B was not applied to production.']),'native_exit':run.returncode},indent=2)+'\n')
+args.output.write_text(json.dumps({'verified_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'composition':args.composition,'fixture':'normal-bubble-cash' if args.bubble_state else 'spin-terminal','bubble_state':args.bubble_state,'negative_regression_passed':negative_passed,'verified':verified,'seat_source_sha256':seat_source_sha256,'seat_source_fingerprints':[{'name':n,'body_md5':b,'original_full_md5':f} for n,_,b,f in native_prerequisites],'original_seat_acl':'NULL schema-only dump ACL; preserved exactly after rollback','exercised_seat_acl':'tracked owner-only private core/open/close and token table; postgres+service_role public wrapper','passed':passed,'rollback_exact':before==after,'before_sha256':sha(before),'after_sha256':sha(after),'tables':tables,'base_source_definitions':[{'name':name,'source_body_md5':b,'intermediate_composed_body_md5':a or b} for _,name,b,a in functions],'terminal_evidence':terminal_evidence,'cash_evidence':cash_evidence,'exercised_runtime_catalog':runtime_catalog,'runtime_catalog_complete':runtime_complete,'prepared_blocks_sha256':{'canonical_place_batch':'5463368592ace44854fe970e8dbc2c12499e82328e9bc7c49986a68d0d922692','canonical_readiness':'1e910a42e4eee077584b662eaed4fdd777026be7bb3904106b2062f279950521','cash_batch_payers':'5a74950603c140919592fe3d75d8ded02b0b3e992f2642ad3a2b9dc554e88e8c'} if args.composition=='guarded' else {},'composed_sql_sha256':sha(sql),'input_file_sha256':{str(p.relative_to(repo)):sha(p.read_text()) for p in [Path(__file__).resolve(),args.spin_source.resolve(),args.lane_source.resolve(),seat_stage_b,seat_move,m4,m5,shared,repo/'scripts/deploy/2026-09-10-restore-rake-attribution-retries.sql',repo/'scripts/deploy/phase-three-strict-tournament-cutover.sql',repo/'scripts/ci/probes/spin-zero-projection-native.sql',repo/'scripts/ci/probes/spin-current-terminal-native.sql',repo/'scripts/ci/probes/canonical-bubble-cash-native.sql']},'verified_checkpoint_count':len(verified_checkpoints),'verified_checkpoints':verified_checkpoints,'scope_limits':(['Local rollback-only synthetic opening custody and standings; all payments and paid-before amounts use the actual native payer.','The normal Bubble proof stops at COMPLETING with prize escrow zero; it does not claim terminal closure.','Paid-before Bubble variants cover 0, 0.40 and 1.00 only; this is not the broader payout/rounding matrix.','Final-deal version-2 helper/writer remains blocked and absent; its readiness branch is pending.','Whole Stage B remains undeployed.'] if args.bubble_state else ['Local rollback-only synthetic custody fixture; registration was not exercised.','Native guarded seat wrapper is a strict fixture composition, not a production requirement.','This Spin terminal run covers the one-winner payout path. Bubble paid-before cash coverage is recorded separately; zero-pool and sparse/rounded ladder variants remain unverified.','No two-session hand/terminal concurrency proof is claimed by this runner.','Final-deal version-2 helper/writer was blocked by automatic approval review and remains absent; readiness dispatch for it is pending and unexercised.','Stage B was not applied to production.']),'native_exit':run.returncode},indent=2)+'\n')
 if not verified:raise SystemExit(1)

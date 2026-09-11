@@ -8,7 +8,7 @@
  * compares it with the target; none of them asked what the engine WROTE
  * about itself, and none compared against what was running BEFORE.
  *
- * Two modes, one file, so the two halves cannot drift:
+ * Three modes, one file, so the release checks cannot drift:
  *
  *   MODE=record  At the START of the job. Reads the version production is
  *                running right now and appends PRE_CUTOVER_VERSION and
@@ -20,6 +20,11 @@
  *                the version still equals PRE_CUTOVER_VERSION, or names some
  *                third build. Raises an in-app notification the way
  *                publish-watchdog.sh does when the credentials are present.
+ *
+ *   MODE=match   Before an already-serving dedupe. Reads the database once
+ *                and succeeds only when a fresh leader heartbeat names the
+ *                exact target. It never pages: a mismatch means the deploy
+ *                continues to the normal certified cutover.
  *
  * THE WITNESS IS THE DATABASE FIRST. public.engine_leader.engine_version is
  * written by the running leader itself (claim_engine_leadership, renewed every
@@ -42,7 +47,8 @@ const ENGINE_URL = (process.env.ENGINE_URL || 'https://engine.smarter.poker').re
 const DATABASE_URL = process.env.DATABASE_URL || '';
 const SUPABASE_URL = (process.env.SUPABASE_URL || '').replace(/\/$/, '');
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
-const TARGET = (process.env.TARGET_SHA || '').trim().slice(0, 8);
+const TARGET_SHA = (process.env.TARGET_SHA || '').trim();
+const TARGET = /^[0-9a-f]{40}$/.test(TARGET_SHA) ? TARGET_SHA.slice(0, 8) : '';
 const PRE = (process.env.PRE_CUTOVER_VERSION || '').trim();
 const PRE_SOURCE = (process.env.PRE_CUTOVER_SOURCE || 'unknown').trim();
 const TIMEOUT_S = Number(process.env.TIMEOUT_S || 240);
@@ -77,7 +83,10 @@ async function readLeaderPg() {
       'SELECT engine_version, EXTRACT(EPOCH FROM (now() - heartbeat_at))::int AS age FROM public.engine_leader WHERE id = true'
     );
     if (!rows[0]) return { version: '', heartbeatAgeS: null, empty: true };
-    return { version: String(rows[0].engine_version || ''), heartbeatAgeS: Number(rows[0].age) };
+    return {
+      version: String(rows[0].engine_version || ''),
+      heartbeatAgeS: rows[0].age === null ? null : Number(rows[0].age),
+    };
   } catch (err) {
     say(`  engine_leader via pg unreadable: ${err?.message || err}`);
     return null;
@@ -123,11 +132,22 @@ async function readHealth() {
   }
 }
 
-/** One reading from the best available witness. */
-async function readOnce() {
+/** One database reading. HTTP must never authorize a dedupe. */
+async function readLeaderOnce() {
   const leader = (await readLeaderPg()) ?? (await readLeaderRest());
+  if (leader === null) return null;
+  return { ...leader, source: 'engine_leader' };
+}
+
+/** Record/prove reading from the best available witness. */
+async function readOnce() {
+  const leader = await readLeaderOnce();
   if (leader && !leader.empty && leader.version) {
-    return { version: leader.version, source: 'engine_leader', heartbeatAgeS: leader.heartbeatAgeS };
+    return {
+      version: leader.version,
+      source: 'engine_leader',
+      heartbeatAgeS: leader.heartbeatAgeS,
+    };
   }
   const health = await readHealth();
   if (health) return { version: health, source: '/health', heartbeatAgeS: null };
@@ -191,16 +211,51 @@ async function record() {
       `PRE_CUTOVER_VERSION=${version}\nPRE_CUTOVER_SOURCE=${source}\n`
     );
   }
-  if (!version) say('::warning::could not read the pre-cutover version; the proof will still require the target.');
+  if (!version)
+    say(
+      '::warning::could not read the pre-cutover version; the proof will still require the target.'
+    );
   process.exit(0);
+}
+
+function freshExactLeader(leader) {
+  return (
+    leader !== null &&
+    !leader.empty &&
+    leader.version === TARGET &&
+    Number.isFinite(leader.heartbeatAgeS) &&
+    leader.heartbeatAgeS >= -60 &&
+    leader.heartbeatAgeS <= 60
+  );
+}
+
+async function match() {
+  if (!TARGET) {
+    say('::error::TARGET_SHA must be the immutable lowercase 40-hex commit being matched.');
+    process.exit(1);
+  }
+  const leader = await readLeaderOnce();
+  if (freshExactLeader(leader)) {
+    say(`MATCHED: fresh engine_leader reports ${TARGET}.`);
+    process.exit(0);
+  }
+  if (leader === null) say('NOT MATCHED: database leader witness is unreadable.');
+  else if (leader.empty || !leader.version) say('NOT MATCHED: database leader row is empty.');
+  else {
+    const age = Number.isFinite(leader.heartbeatAgeS) ? `${leader.heartbeatAgeS}s` : 'unavailable';
+    say(`NOT MATCHED: engine_leader reports ${leader.version}, heartbeat age ${age}.`);
+  }
+  process.exit(1);
 }
 
 async function prove() {
   if (!TARGET) {
-    say('::error::TARGET_SHA is required to prove a deploy.');
+    say('::error::TARGET_SHA must be the immutable lowercase 40-hex commit being deployed.');
     process.exit(1);
   }
-  say(`proving the engine moved: target ${TARGET}, was ${PRE || '<unknown>'} (${PRE_SOURCE}), budget ${TIMEOUT_S}s`);
+  say(
+    `proving the engine moved: target ${TARGET}, was ${PRE || '<unknown>'} (${PRE_SOURCE}), budget ${TIMEOUT_S}s`
+  );
   const deadline = Date.now() + TIMEOUT_S * 1000;
   let last = null;
   let attempt = 0;
@@ -213,14 +268,16 @@ async function prove() {
       say(`attempt ${attempt}: ${r.source} says ${r.version}${hb} (want ${TARGET})`);
       // The leader row must be FRESH: a stale row with the right version is
       // an old heartbeat, not proof. 60 s is six renew intervals.
-      const fresh = r.heartbeatAgeS === null || r.heartbeatAgeS <= 60;
+      const fresh = r.source === 'engine_leader' ? freshExactLeader(r) : r.heartbeatAgeS === null;
       // Strict release sealing requires the fresh database row written by the
       // elected leader. HTTP remains useful diagnostic evidence, but a proxy or
       // stale twin must never advance durable release authority.
       const authoritative = !STRICT_PROOF || r.source === 'engine_leader';
       if (r.version === TARGET && fresh && authoritative) {
         say(`PROVED: ${r.source} reports ${TARGET}${PRE ? `, moved from ${PRE}` : ''}.`);
-        summary(`### Deploy proved\n\n\`${r.source}\` reports \`${TARGET}\`${PRE ? ` (was \`${PRE}\`)` : ''} after ${attempt} attempt(s).`);
+        summary(
+          `### Deploy proved\n\n\`${r.source}\` reports \`${TARGET}\`${PRE ? ` (was \`${PRE}\`)` : ''} after ${attempt} attempt(s).`
+        );
         process.exit(0);
       }
       if (r.version === TARGET && fresh && !authoritative) {
@@ -237,7 +294,9 @@ async function prove() {
     const verdict = STRICT_PROOF
       ? 'The durable release seal was NOT advanced.'
       : 'Not treating silence as a failed deploy; the verify step already saw the target in the container.';
-    say(`::warning title=DEPLOY PROOF INCONCLUSIVE::Neither engine_leader nor ${ENGINE_URL}/health could be read for ${TIMEOUT_S}s. ${verdict}`);
+    say(
+      `::warning title=DEPLOY PROOF INCONCLUSIVE::Neither engine_leader nor ${ENGINE_URL}/health could be read for ${TIMEOUT_S}s. ${verdict}`
+    );
     summary(`### Deploy proof inconclusive\n\nNo witness answered for ${TIMEOUT_S}s. ${verdict}`);
     process.exit(STRICT_PROOF ? 1 : 0);
   }
@@ -257,4 +316,5 @@ async function prove() {
 }
 
 if (MODE === 'record') await record();
+else if (MODE === 'match') await match();
 else await prove();

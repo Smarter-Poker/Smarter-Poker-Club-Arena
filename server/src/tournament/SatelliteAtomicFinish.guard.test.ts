@@ -1,10 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, '..', '..', '..');
+const migrationBySuffix = (suffix: string): string => {
+  const migrations = join(root, 'supabase', 'migrations');
+  const matches = readdirSync(migrations).filter((name) => name.endsWith(`_${suffix}`));
+  expect(matches, `expected one migration ending in ${suffix}`).toHaveLength(1);
+  return readFileSync(join(migrations, matches[0] ?? ''), 'utf8');
+};
 const SQL = readFileSync(
   join(
     root,
@@ -19,6 +25,7 @@ const PLACE_SQL = readFileSync(
   ),
   'utf8'
 );
+const STRICT_SQL = migrationBySuffix('stage_b_current_postimage_contraction.sql');
 const MANAGER = readFileSync(join(here, 'TournamentManager.ts'), 'utf8');
 const ELIMINATIONS = readFileSync(join(here, 'TournamentManagerEliminations.ts'), 'utf8');
 const SETTLEMENT_RPC = readFileSync(join(here, 'satelliteSettlementRpc.ts'), 'utf8');
@@ -113,12 +120,20 @@ describe('the atomic finalizer cannot certify partial money', () => {
 });
 
 describe('the engine and ACL expose only the atomic doors', () => {
-  it('contracts satellite cash to the private core during rolling compatibility', () => {
+  it('contracts satellite cash to the private core before the public payer becomes strict', () => {
     const cash = bodyFrom(PLACE_SQL, 'fn_settle_satellite_cash_entitlement_exact');
+    const strictPayer = bodyFrom(STRICT_SQL, 'fn_settle_tournament_obligation');
     expect(cash).toContain('fn_settle_tournament_obligation_before_atomic_batch_gate(');
     expect(cash).not.toContain('public.fn_settle_tournament_obligation(');
+    expect(strictPayer).toContain("'satellite_remainder'");
+    expect(strictPayer).toContain("'seat'");
+    expect(strictPayer).toContain('v_kind = ANY(v_atomic_kinds)');
+    expect(strictPayer).toContain("'refused_reason', 'atomic_batch_required'");
     expect(SQL).toMatch(
       /CREATE TRIGGER aaa_guard_atomic_satellite_completion[\s\S]*?ALTER TABLE public\.tournaments\s+DISABLE TRIGGER aaa_guard_atomic_satellite_completion/
+    );
+    expect(STRICT_SQL).toMatch(
+      /ALTER TABLE public\.tournaments\s+ENABLE TRIGGER aaa_guard_atomic_satellite_completion/
     );
   });
 

@@ -60,14 +60,28 @@ const EFFECTIVE_SERVICE_ROLE_KEY =
  * A hard deadline turns a hung request into a rejection the loop's existing
  * catch can back off and retry on.
  */
-const DB_TIMEOUT_MS = Number(process.env.SUPABASE_TIMEOUT_MS ?? 15_000);
-/* Maintenance boundary writers may legitimately wait behind a guarded entry
- * transaction for up to 30 seconds. They use a dedicated client whose HTTP
- * deadline is longer than the database function's 45-second hard ceiling;
- * widening the ordinary game-data client would let a hung hand stall longer. */
-const MAINTENANCE_DB_TIMEOUT_MS = Number(process.env.MAINTENANCE_SUPABASE_TIMEOUT_MS ?? 50_000);
+/* The host once carried SUPABASE_TIMEOUT_MS=60000 as a temporary response to
+ * an upstream incident.  That incident is over, but a host override is not
+ * allowed to turn one lost acknowledgement into a minute-long table freeze.
+ * Invalid values also fail to the safe ceiling instead of becoming an
+ * effectively unbounded timer. */
+const requestedDbTimeoutMs = Number(process.env.SUPABASE_TIMEOUT_MS ?? 15_000);
+const DB_TIMEOUT_MS =
+  Number.isFinite(requestedDbTimeoutMs) && requestedDbTimeoutMs > 0
+    ? Math.min(requestedDbTimeoutMs, 15_000)
+    : 15_000;
+/* Maintenance ownership work participates in the process shutdown certificate.
+ * Its database functions have a six-second ceiling and this transport has an
+ * eight-second ceiling, leaving over thirty seconds inside the app's 40-second
+ * hard exit. The :53 declaration retries at the protocol layer while tables
+ * remain gated; an individual HTTP request must never outlive its process. */
+const requestedMaintenanceTimeoutMs = Number(process.env.MAINTENANCE_SUPABASE_TIMEOUT_MS ?? 8_000);
+const MAINTENANCE_DB_TIMEOUT_MS =
+  Number.isFinite(requestedMaintenanceTimeoutMs) && requestedMaintenanceTimeoutMs > 0
+    ? Math.min(requestedMaintenanceTimeoutMs, 8_000)
+    : 8_000;
 
-function createBoundedServiceClient(timeoutMs: number): SupabaseClient {
+function createBoundedServiceClient(timeoutMs: number, maxPreExecutionRetries = 2): SupabaseClient {
   const client = createClient(SUPABASE_URL, EFFECTIVE_SERVICE_ROLE_KEY, {
     auth: {
       autoRefreshToken: false,
@@ -100,8 +114,26 @@ function createBoundedServiceClient(timeoutMs: number): SupabaseClient {
           const attemptInput =
             typeof Request !== 'undefined' && input instanceof Request ? input.clone() : input;
           const ctl = new AbortController();
-          const t = setTimeout(() => ctl.abort(new Error('supabase_timeout')), timeoutMs);
-          const onAbort = () => ctl.abort(callerSignal?.reason);
+          let rejectBoundary!: (reason: unknown) => void;
+          const boundary = new Promise<never>((_resolve, reject) => {
+            rejectBoundary = reject;
+          });
+          const timeoutError = new Error('supabase_timeout');
+          const t = setTimeout(() => {
+            /* Abort asks the transport and its response stream to stop.  The
+             * explicit rejection is separate and essential: an undici/socket
+             * continuation is allowed to be broken enough that it never
+             * acknowledges AbortSignal.  Production proved that shape when
+             * PostgreSQL completed a hand obligation while the engine kept
+             * awaiting its HTTP promise for hours. */
+            ctl.abort(timeoutError);
+            rejectBoundary(timeoutError);
+          }, timeoutMs);
+          const onAbort = () => {
+            const reason = callerSignal?.reason ?? new Error('supabase_cancelled');
+            ctl.abort(reason);
+            rejectBoundary(reason);
+          };
           callerSignal?.addEventListener('abort', onAbort, { once: true });
           const headers = new Headers(
             typeof Request !== 'undefined' && attemptInput instanceof Request
@@ -113,7 +145,7 @@ function createBoundedServiceClient(timeoutMs: number): SupabaseClient {
           // Headers object nor a consumed Request can change authority.
           new Headers(init.headers).forEach((value, name) => headers.set(name, value));
           const authoritativeHeaders = dataActorHeaders(headers);
-          try {
+          const transport = (async (): Promise<Response> => {
             const response = await fetch(attemptInput, {
               ...init,
               headers: authoritativeHeaders,
@@ -135,6 +167,12 @@ function createBoundedServiceClient(timeoutMs: number): SupabaseClient {
             }
             ctl.signal.throwIfAborted();
             return response;
+          })();
+          try {
+            /* Never depend on the transport honoring abort in order to settle
+             * the application promise. Promise.race installs rejection
+             * handlers on both inputs, so a late transport failure is owned. */
+            return await Promise.race([transport, boundary]);
           } finally {
             clearTimeout(t);
             callerSignal?.removeEventListener('abort', onAbort);
@@ -150,7 +188,12 @@ function createBoundedServiceClient(timeoutMs: number): SupabaseClient {
           // the fence (tournamentManagerFence.ts). The response itself is
           // still returned so the caller's own error handling runs once.
           if (resp.status === 403) await observeFenceInResponse(resp);
-          if (resp.status !== 503 || attempt >= DELAYS_MS.length) return resp;
+          if (
+            resp.status !== 503 ||
+            attempt >= DELAYS_MS.length ||
+            attempt >= maxPreExecutionRetries
+          )
+            return resp;
           let code: unknown;
           try {
             code = ((await resp.clone().json()) as { code?: unknown } | null)?.code;
@@ -169,9 +212,15 @@ function createBoundedServiceClient(timeoutMs: number): SupabaseClient {
 
 export const supabase: SupabaseClient = createBoundedServiceClient(DB_TIMEOUT_MS);
 
-/** Only the serialized maintenance save/clear RPCs use this longer deadline. */
-export const maintenanceSupabase: SupabaseClient =
-  createBoundedServiceClient(MAINTENANCE_DB_TIMEOUT_MS);
+/**
+ * Maintenance owns its retries and exact receipt recovery. Disabling the
+ * transport's hidden 503 replay makes eight seconds the ceiling for one
+ * ownership operation rather than eight seconds per invisible attempt.
+ */
+export const maintenanceSupabase: SupabaseClient = createBoundedServiceClient(
+  MAINTENANCE_DB_TIMEOUT_MS,
+  0
+);
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // REALTIME BROADCASTING — Push hand state to all connected clients

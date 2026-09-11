@@ -8,10 +8,77 @@
  * table instead of pausing it).
  */
 
-import { maintenanceSupabase, supabase } from '../services/supabase.js';
+import { maintenanceSupabase } from '../services/supabase.js';
 import type { MaintenanceBreakStore, PersistedMaintenanceBreak } from './MaintenanceBreak.js';
 
 const TABLE = 'engine_maintenance_break';
+
+type MaintenanceBreakRow = {
+  phase?: unknown;
+  announced_at?: unknown;
+  break_started_at?: unknown;
+  break_ends_at?: unknown;
+  reason?: unknown;
+  ownership_token?: unknown;
+};
+
+function parseTimestamp(value: unknown, field: string, nullable: true): number | null;
+function parseTimestamp(value: unknown, field: string, nullable?: false): number;
+function parseTimestamp(value: unknown, field: string, nullable = false): number | null {
+  if (nullable && (value === null || value === undefined)) return null;
+  if (typeof value !== 'string') throw new Error(`maintenance_break_invalid_${field}`);
+  const parsed = Date.parse(value);
+  if (!Number.isFinite(parsed)) throw new Error(`maintenance_break_invalid_${field}`);
+  return parsed;
+}
+
+/** Reject malformed durable authority rather than turning NaN into an immediate resume. */
+export function decodeMaintenanceBreakRow(raw: MaintenanceBreakRow): PersistedMaintenanceBreak {
+  if (raw.phase !== 'last_hand' && raw.phase !== 'counting_down') {
+    throw new Error('maintenance_break_invalid_phase');
+  }
+  const announcedAt = parseTimestamp(raw.announced_at, 'announced_at');
+  const breakStartedAt = parseTimestamp(raw.break_started_at, 'break_started_at', true);
+  const breakEndsAt = parseTimestamp(raw.break_ends_at, 'break_ends_at', true);
+  if (typeof raw.reason !== 'string' || raw.reason.trim().length === 0) {
+    throw new Error('maintenance_break_invalid_reason');
+  }
+  if (
+    typeof raw.ownership_token !== 'string' ||
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      raw.ownership_token
+    )
+  ) {
+    throw new Error('maintenance_break_invalid_ownership_token');
+  }
+  if (raw.phase === 'last_hand' && (breakStartedAt !== null || breakEndsAt !== null)) {
+    throw new Error('maintenance_break_invalid_last_hand_shape');
+  }
+  if (
+    raw.phase === 'counting_down' &&
+    (breakStartedAt === null ||
+      breakEndsAt === null ||
+      breakStartedAt < announcedAt ||
+      breakEndsAt <= breakStartedAt ||
+      breakEndsAt >= announcedAt + 15 * 60_000)
+  ) {
+    throw new Error('maintenance_break_invalid_countdown_shape');
+  }
+  return {
+    phase: raw.phase,
+    announcedAt,
+    breakStartedAt,
+    breakEndsAt,
+    reason: raw.reason,
+    ownershipToken: raw.ownership_token,
+  };
+}
+
+/** Decode the narrow scalar RPC without ever treating malformed time as idle. */
+export function decodeMaintenanceReleaseBoundary(raw: unknown): number | null {
+  if (raw === null || raw === undefined) return null;
+  return parseTimestamp(raw, 'release_boundary');
+}
 
 export function createSupabaseMaintenanceBreakStore(version?: string): MaintenanceBreakStore {
   return {
@@ -19,7 +86,10 @@ export function createSupabaseMaintenanceBreakStore(version?: string): Maintenan
       // .maybeSingle() per CLAUDE.md rule 5.1 - the common case is no row at
       // all, and .single() throws PGRST116 on zero rows, which on this path
       // would make every ordinary boot log an error.
-      const { data, error } = await supabase
+      // Use the same short, no-hidden-retry transport as writes. Boot and
+      // ambiguous-write receipt recovery are part of shutdown ownership and
+      // must fit comfortably inside the process's 40-second hard deadline.
+      const { data, error } = await maintenanceSupabase
         .from(TABLE)
         .select('phase, announced_at, break_started_at, break_ends_at, reason, ownership_token')
         .eq('id', true)
@@ -28,14 +98,15 @@ export function createSupabaseMaintenanceBreakStore(version?: string): Maintenan
       if (error) throw new Error(error.message);
       if (!data) return null;
 
-      return {
-        phase: data.phase as PersistedMaintenanceBreak['phase'],
-        announcedAt: Date.parse(data.announced_at),
-        breakStartedAt: data.break_started_at ? Date.parse(data.break_started_at) : null,
-        breakEndsAt: data.break_ends_at ? Date.parse(data.break_ends_at) : null,
-        reason: data.reason,
-        ownershipToken: data.ownership_token,
-      };
+      return decodeMaintenanceBreakRow(data);
+    },
+
+    async loadReleaseBoundary(): Promise<number | null> {
+      const { data, error } = await maintenanceSupabase.rpc(
+        'fn_active_maintenance_release_boundary'
+      );
+      if (error) throw new Error(error.message);
+      return decodeMaintenanceReleaseBoundary(data);
     },
 
     async claim(
@@ -49,21 +120,14 @@ export function createSupabaseMaintenanceBreakStore(version?: string): Maintenan
       });
       if (error) throw new Error(error.message);
       if (!data?.ok) return null;
-      return {
-        phase: data.phase as PersistedMaintenanceBreak['phase'],
-        announcedAt: Date.parse(data.announced_at),
-        breakStartedAt: data.break_started_at ? Date.parse(data.break_started_at) : null,
-        breakEndsAt: data.break_ends_at ? Date.parse(data.break_ends_at) : null,
-        reason: data.reason,
-        ownershipToken: data.ownership_token,
-      };
+      return decodeMaintenanceBreakRow(data);
     },
 
     async save(state: PersistedMaintenanceBreak): Promise<void> {
       /* This RPC takes the exclusive maintenance advisory lock as its first
-         database statement and has a 45-second database ceiling. Its dedicated
-         client waits 50 seconds, so an already-admitted 30-second purchase can
-         commit before the announcement without making the hour disappear. */
+         database statement and has a six-second ceiling. A blocked :53 write
+         fails quickly and is retried by MaintenanceBreak until the fixed :55
+         boundary; no single request can outlive process ownership. */
       const { error } = await maintenanceSupabase.rpc('fn_save_engine_maintenance_break', {
         p_phase: state.phase,
         p_announced_at: new Date(state.announcedAt).toISOString(),

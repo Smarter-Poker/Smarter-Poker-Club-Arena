@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { completeReconnectFreeze, thawReconnectClock } from './reconnectFreeze.js';
+import {
+  completeReconnectFreeze,
+  thawReconnectClock,
+  type ReconnectClock,
+} from './reconnectFreeze.js';
 import { DisconnectEngine } from '../engine/DisconnectEngine.js';
 import { PreciseActionTimer } from '../engine/PreciseActionTimer.js';
 
@@ -15,6 +19,21 @@ function engine() {
   return new DisconnectEngine(timer);
 }
 describe('maintenance preserves reconnect time without refilling it', () => {
+  it('credits a legitimate recovery tail longer than the old fifteen-minute ceiling', () => {
+    epoch += 3_600_000;
+    const start = epoch;
+    const duration = 21 * 60_000;
+    const clock: ReconnectClock = {
+      reconnectGrantedAtMs: start,
+      reconnectDeadlineMs: start + 30_000,
+    };
+
+    completeReconnectFreeze(start, duration);
+    thawReconnectClock(clock);
+    expect(clock.reconnectDeadlineMs).toBe(start + 30_000 + duration);
+    expect(clock.reconnectThawedAtMs).toBe(start + duration);
+  });
+
   it.each([30, 45])(
     'retains the unused portion of a %s-second grant through both restore orders',
     (seconds) => {

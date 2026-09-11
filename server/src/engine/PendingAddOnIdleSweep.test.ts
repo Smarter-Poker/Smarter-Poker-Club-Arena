@@ -89,10 +89,14 @@ function idleEngine() {
   engine.stopIfClusterTableClosed = vi.fn(async () => {});
   engine.refreshBlinds = vi.fn().mockResolvedValue(undefined);
   engine.refreshRakeConfig = vi.fn().mockResolvedValue(undefined);
-  engine.allocateGlobalHandNumber = vi.fn(async () => 8_000_000);
-  engine.executePendingSeatMoves = vi.fn(async () => {});
   engine.standUpBustedCashPlayers = vi.fn(async () => {});
   engine.recoverBustedSeatedHorses = vi.fn().mockResolvedValue(undefined);
+  // The production loop overlaps the leave settlement RPC with its roster
+  // read, then consumes that promise before the idle seat-move sweep. These
+  // tests exercise the ordering/progress contract after that boundary, so do
+  // not let a real, unconfigured PostgREST request spend the entire per-step
+  // budget and turn the assertion into a network-speed race.
+  engine.takePreparedLeavePending = vi.fn().mockResolvedValue([]);
   // No outstanding rows in the stand-up guard; addon behavior is driven below.
   engine.usersWithPendingLedgerChips = vi.fn(async () => new Set<string>());
   engine.isTournamentTable = () => false;

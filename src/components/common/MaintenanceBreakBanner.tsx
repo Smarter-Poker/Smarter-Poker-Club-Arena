@@ -75,7 +75,9 @@ export function MaintenanceBreakBanner() {
       <span className="maintenance-banner__text">
         {countingDown
           ? `Maintenance Break In Progress. All Tables Resume In ${formatTime(remaining)}. Seats And Chips Are Safe.`
-          : 'Maintenance Break Starting. Tables Are Finishing Their Current Hand.'}
+          : maintenanceBreak.phase === 'recovering'
+            ? 'Maintenance Recovery In Progress. Tables, Seats, Chips, And Player Clocks Remain Protected.'
+            : 'Maintenance Break Starting. Tables Are Finishing Their Current Hand.'}
       </span>
     </div>
   );

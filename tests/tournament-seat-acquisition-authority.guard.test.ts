@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 const root = (path: string) => resolve(__dirname, '..', path);
 const sql = readFileSync(
   root(
-    'supabase/migrations/20260909014433_spin_reserve_settlement_commits_its_journal_or_nothing.sql'
+    'supabase/migrations/20260909205412_spin_reserve_settlement_commits_its_journal_or_nothing.sql'
   ),
   'utf8'
 );
@@ -267,8 +267,9 @@ describe('tournament seats are acquired below one hard root authority', () => {
     );
   });
 
-  it('leaves launch authoritative and removes the periodic late-registration writer', () => {
-    const launch = method(base, 'createTablesAndSeatPlayers(tournament: any)');
+  it('leaves launch under atomic database authority and removes the periodic late-registration writer', () => {
+    const launch = method(base, 'protected async createTablesAndSeatPlayers(');
+    expect(launch).toContain('await this.materializeTournamentLaunchSeats(');
     expect(launch).toContain('assignTournamentPlayerSeatAtomically({');
     expect(launch).not.toMatch(/from\('table_seats'\)[\s\S]{0,100}\.(?:insert|update|delete)\(/);
     expect(launch).not.toMatch(/\.update\(\{\s*current_players:/);

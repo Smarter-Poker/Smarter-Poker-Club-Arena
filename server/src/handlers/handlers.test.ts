@@ -21,7 +21,17 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 vi.mock('../http/auth.js', () => ({ authenticateRequest: vi.fn() }));
 vi.mock('../http/body.js', () => ({ readBody: vi.fn() }));
 vi.mock('../services/errorReporter.js', () => ({ reportError: vi.fn() }));
-vi.mock('../services/TableViewerAccess.js', () => ({ authorizeTableViewer: vi.fn() }));
+vi.mock('../services/TableViewerAccess.js', () => ({
+  authorizeTableViewer: vi.fn(),
+  isSeatedTableViewer: (access: { allowed: boolean; reason: string }) =>
+    access.allowed === true && access.reason === 'seated',
+  viewerCanSeeTabledCards: (access: {
+    allowed: boolean;
+    reason: string;
+    observerShowCards?: boolean;
+  }) =>
+    access.allowed === true && (access.reason === 'seated' || access.observerShowCards === true),
+}));
 
 // Audit S1: admin/pause|resume now resolve the caller's club-admin role via
 // supabase (tables.club_id -> club_members.role). Mock it with mutable results.
@@ -472,6 +482,130 @@ describe('handleGetState', () => {
     expect(captured.statusCode).toBe(200);
 
     expect((engine as any).getTableState).toHaveBeenCalledWith('u1');
+  });
+
+  it('scrubs tabled hole cards and revealed dead cards for an observer when the policy is false', async () => {
+    vi.mocked(authenticateRequest).mockResolvedValue({ userId: 'watcher' });
+    vi.mocked(authorizeTableViewer).mockResolvedValue({
+      allowed: true,
+      reason: 'club_member',
+      clubId: 'club-1',
+      observerShowCards: false,
+    });
+    const engine = mockEngine({
+      getTableState: vi.fn().mockReturnValue({
+        table_id: 't1',
+        stage: 'showdown',
+        community_cards: [{ rank: 'A', suit: 's' }],
+        revealed_dead_cards: [{ rank: 'Q', suit: 'h' }],
+        players: [
+          { user_id: 'hero', cards: [{ rank: 'K', suit: 's' }] },
+          { user_id: 'villain', holeCards: [{ rank: 'J', suit: 'd' }] },
+        ],
+      }),
+    });
+    const { res, captured } = mockRes();
+
+    await handleGetState(mockReq(), res, 't1', { gameServer: mockGameServer(engine, 't1') });
+
+    expect(captured.statusCode).toBe(200);
+    expect(parseJson(captured)).toEqual({
+      table_id: 't1',
+      stage: 'showdown',
+      community_cards: [{ rank: 'A', suit: 's' }],
+      revealed_dead_cards: [],
+      players: [
+        { user_id: 'hero', cards: [] },
+        { user_id: 'villain', holeCards: [], cards: [] },
+      ],
+    });
+  });
+
+  it('retains the authorized player view for a seated player', async () => {
+    vi.mocked(authenticateRequest).mockResolvedValue({ userId: 'hero' });
+    vi.mocked(authorizeTableViewer).mockResolvedValue({
+      allowed: true,
+      reason: 'seated',
+      clubId: 'club-1',
+      observerShowCards: false,
+    });
+    const state = {
+      table_id: 't1',
+      stage: 'turn',
+      revealed_dead_cards: [{ rank: 'Q', suit: 'h' }],
+      players: [{ user_id: 'hero', cards: [{ rank: 'K', suit: 's' }] }],
+    };
+    const engine = mockEngine({
+      getTableState: vi.fn().mockReturnValue(state),
+      getObserverState: vi.fn().mockReturnValue({ table_id: 't1', players: [] }),
+    });
+    const { res, captured } = mockRes();
+
+    await handleGetState(mockReq(), res, 't1', { gameServer: mockGameServer(engine, 't1') });
+
+    expect(captured.statusCode).toBe(200);
+    expect(parseJson(captured)).toEqual(state);
+    expect((engine as any).getObserverState).not.toHaveBeenCalled();
+  });
+
+  it('uses the stage-aware observer serializer before honoring an explicit show-cards policy', async () => {
+    vi.mocked(authenticateRequest).mockResolvedValue({ userId: 'watcher' });
+    vi.mocked(authorizeTableViewer).mockResolvedValue({
+      allowed: true,
+      reason: 'club_member',
+      clubId: 'club-1',
+      observerShowCards: true,
+    });
+    const observerState = {
+      table_id: 't1',
+      stage: 'preflop',
+      revealed_dead_cards: [],
+      players: [{ user_id: 'hero', cards: [] }],
+    };
+    const engine = mockEngine({
+      // If the route accidentally uses the requesting-player serializer, the
+      // observer receives a live private hand before it is tabled.
+      getTableState: vi.fn().mockReturnValue({
+        table_id: 't1',
+        stage: 'preflop',
+        players: [{ user_id: 'watcher', cards: [{ rank: 'A', suit: 's' }] }],
+      }),
+      getObserverState: vi.fn().mockReturnValue(observerState),
+    });
+    const { res, captured } = mockRes();
+
+    await handleGetState(mockReq(), res, 't1', { gameServer: mockGameServer(engine, 't1') });
+
+    expect(captured.statusCode).toBe(200);
+    expect(parseJson(captured)).toEqual(observerState);
+    expect((engine as any).getObserverState).toHaveBeenCalledOnce();
+    expect((engine as any).getTableState).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when an older engine peer has no observer serializer', async () => {
+    vi.mocked(authenticateRequest).mockResolvedValue({ userId: 'watcher' });
+    vi.mocked(authorizeTableViewer).mockResolvedValue({
+      allowed: true,
+      reason: 'club_member',
+      clubId: 'club-1',
+      observerShowCards: true,
+    });
+    const engine = mockEngine({
+      getTableState: vi.fn().mockReturnValue({
+        table_id: 't1',
+        stage: 'preflop',
+        revealed_dead_cards: [{ rank: 'Q', suit: 'h' }],
+        players: [{ user_id: 'watcher', cards: [{ rank: 'A', suit: 's' }] }],
+      }),
+    });
+    const { res, captured } = mockRes();
+
+    await handleGetState(mockReq(), res, 't1', { gameServer: mockGameServer(engine, 't1') });
+
+    expect(parseJson(captured)).toMatchObject({
+      revealed_dead_cards: [],
+      players: [{ user_id: 'watcher', cards: [] }],
+    });
   });
 
   it('403 prevents a non-member from reading live table state', async () => {

@@ -19,6 +19,8 @@ import { wakeHandProjection } from './handProjection.js';
 
 export interface AtomicHandCommitInput {
   stacks: Array<{
+    seat_id: string;
+    seat_joined_at: string;
     user_id: string;
     stack: number;
     stack_before: number;
@@ -43,6 +45,8 @@ export interface AtomicHandCommitInput {
   postCommitObligations?: {
     version: 1;
     time_banks: Array<{
+      seat_id: string;
+      seat_joined_at: string;
       user_id: string;
       uses_remaining: number;
       seconds_remaining: number;
@@ -318,6 +322,15 @@ export async function logHandHistory(params: {
     amount?: number;
     timestamp?: number;
     stage: string;
+    allInRunout?: true;
+    allInRunoutStreet?: 'preflop' | 'flop' | 'turn';
+    allInEquity?: number;
+    allInEvReturned?: number;
+    allInEquityVersion?: string;
+    allInEquityExact?: boolean;
+    allInEquityRunouts?: number;
+    allInEquitySeed?: number;
+    allInEquityInputHash?: string;
   }[];
   showdownResults?: {
     userId: string;

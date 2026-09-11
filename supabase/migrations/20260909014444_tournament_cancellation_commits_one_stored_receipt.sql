@@ -470,7 +470,9 @@ ALTER TABLE public.tournament_spin_cancellation_unwinds ENABLE ROW LEVEL SECURIT
 REVOKE ALL ON public.tournament_spin_cancellation_unwinds
   FROM PUBLIC, anon, authenticated, service_role;
 
--- The published draw stays immutable while a Spin is live. The sole terminal
+-- The published draw stays immutable while a Spin is live. Before the third
+-- paid seat there is no reserve booking, so an objectively unstarted Spin may
+-- still book or return its provisional prize contribution. The sole terminal
 -- exception is an exact zeroing performed after the reserve unwind receipt is
 -- already durable in the same transaction.
 CREATE OR REPLACE FUNCTION public.fn_spin_tournament_contract_is_draw()
@@ -514,6 +516,33 @@ BEGIN
     INTO v_count,v_multiplier,v_prize
     FROM public.spin_reserve_ledger r
    WHERE r.tournament_id = NEW.id AND r.kind = 'jackpot_draw';
+
+  -- A Spin's fill-window deadline is not start truth. Until launch completion,
+  -- status, started_at and the immutable launch receipt all prove that it has
+  -- not started. Requiring no reserve booking limits this door to the first
+  -- two paid seats; the third-seat booking closes it permanently.
+  IF v_count = 0
+     AND upper(COALESCE(OLD.status::text,''))
+           IN ('ANNOUNCED','REGISTERING')
+     AND upper(COALESCE(NEW.status::text,''))
+           IN ('ANNOUNCED','REGISTERING')
+     AND OLD.started_at IS NULL
+     AND NEW.started_at IS NULL
+     AND COALESCE(OLD.spin_multiplier,0) = 0
+     AND COALESCE(NEW.spin_multiplier,0) = 0
+     AND OLD.spin_locked_tiers IS NULL
+     AND NEW.spin_locked_tiers IS NULL
+     AND NOT EXISTS (
+       SELECT 1 FROM public.tournament_launch_receipts r
+        WHERE r.tournament_id = NEW.id
+          AND r.completed_at IS NOT NULL)
+     AND NOT EXISTS (
+       SELECT 1 FROM public.spin_reserve_ledger r
+        WHERE r.tournament_id = NEW.id
+          AND r.kind IN ('contribution','jackpot_draw')) THEN
+    RETURN NEW;
+  END IF;
+
   IF v_count <> 1
      OR NEW.spin_multiplier IS DISTINCT FROM v_multiplier
      OR NEW.prize_pool IS DISTINCT FROM v_prize THEN
@@ -1713,11 +1742,12 @@ GRANT EXECUTE ON FUNCTION public.atomic_cancel_tournament(uuid, uuid)
 -- The managed-game close command used to bypass the atomic cancellation
 -- authority for an empty tournament. Its direct CANCELLED write cannot satisfy
 -- the exact deferred receipt invariant above, and it also takes the tournament
--- row before the terminal settlement lock. Install the current native
--- cash-occupancy parent-before-table lock order and active-seat snapshot in the
--- same declaration that routes the tournament branch through the one atomic
--- cancellation authority. The cutover therefore cannot temporarily restore an
--- older cash close while waiting for a later composition migration.
+-- row before the terminal settlement lock. Preserve the current native
+-- cash-occupancy parent-before-table lock order, active-seat snapshot and
+-- stale-context refusal in the same declaration that routes only the tournament
+-- branch through the one atomic cancellation authority. The cutover therefore
+-- cannot temporarily restore an older cash close while waiting for a later
+-- composition migration.
 CREATE OR REPLACE FUNCTION public.fn_close_managed_game(
   p_kind text,
   p_game_id uuid

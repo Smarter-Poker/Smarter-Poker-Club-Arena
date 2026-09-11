@@ -3,7 +3,7 @@ import { availableParallelism } from 'node:os';
 
 import { describe, expect, it } from 'vitest';
 import { blankNonCode, sliceMethod } from '../../testHelpers/sourceWindow.js';
-import { EquityWorkerPool } from './EquityWorkerPool.js';
+import { EquityWorkerPool, equityWorkerPoolPreservesDealerLiveness } from './EquityWorkerPool.js';
 
 const gameServer = readFileSync(new URL('../../GameServer.ts', import.meta.url), 'utf8');
 const instruments = readFileSync(
@@ -49,11 +49,17 @@ describe('equity worker capacity is a routing prerequisite', () => {
     expect(cashRelease).toBeGreaterThan(ownershipGate);
   });
 
-  it('publishes queue pressure and refuses healthy routing at partial capacity', () => {
+  it('derives dealer liveness from explicit full pool status', () => {
+    const predicate = equityWorkerPoolPreservesDealerLiveness.toString();
+    expect(predicate).toContain('status.routingReady');
+  });
+
+  it('publishes replacement pressure without mapping it to whole-engine failure', () => {
     const health = sliceMethod(gameServer, 'getStatus()');
     const metrics = sliceMethod(gameServer, 'getPrometheusMetrics()');
     expect(health).toContain('equityWorkerPool: equityWorkers');
-    expect(health).toContain("equityWorkers.phase === 'ready'");
+    expect(health).toContain('equityWorkerPoolPreservesDealerLiveness(equityWorkers)');
+    expect(health).not.toContain('equityWorkerPoolPreservesDealerLiveness(equityWorkers.phase)');
     expect(metrics).toContain('equityWorkerPoolQueueDepth.set(equityWorkers.queueDepth)');
     expect(metrics).toContain(
       'equityWorkerPoolOldestQueuedAgeMs.set(equityWorkers.oldestQueuedAgeMs)'

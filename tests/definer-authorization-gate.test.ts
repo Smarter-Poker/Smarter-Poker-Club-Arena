@@ -457,6 +457,54 @@ GRANT EXECUTE ON FUNCTION public.fn_reader(uuid) TO service_role;
   });
 });
 
+describe('one ACL statement governs every function it names', () => {
+  it('applies grouped revokes and grants to later targets, not only the first one', () => {
+    const grouped = `
+CREATE FUNCTION public.fn_first(p_id uuid)
+RETURNS jsonb LANGUAGE sql SECURITY DEFINER AS $$ SELECT '{}'::jsonb $$;
+CREATE FUNCTION public.fn_second(p_id uuid)
+RETURNS jsonb LANGUAGE sql SECURITY DEFINER AS $$ SELECT '{}'::jsonb $$;
+REVOKE ALL ON FUNCTION public.fn_first(uuid), public.fn_second(uuid)
+  FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.fn_first(uuid), public.fn_second(uuid) TO authenticated;
+`;
+
+    for (const name of ['fn_first', 'fn_second']) {
+      expect(effectiveGrants(grouped, name)).toEqual({
+        public: false,
+        anon: false,
+        authenticated: true,
+      });
+    }
+    expect(anonReadableDefiners(grouped)).toEqual([]);
+  });
+
+  it('reads the already-applied Phase-3 grouped ACLs exactly as PostgreSQL did', () => {
+    const phase3 = readFileSync(
+      resolve(
+        __dirname,
+        '..',
+        'supabase/migrations/20260910125453_phase_three_versioned_final_deal_expansion.sql'
+      ),
+      'utf8'
+    );
+
+    for (const name of [
+      'fn_ca_tournament_deal_snapshot',
+      'fn_get_tournament_deal_consensus',
+      'fn_resolve_tournament_terminal_proposal_outcome',
+      'fn_ca_tournament_deal_review_result',
+    ]) {
+      expect(effectiveGrants(phase3, name), name).toEqual({
+        public: false,
+        anon: false,
+        authenticated: false,
+      });
+    }
+    expect(anonReadableDefiners(phase3)).toEqual([]);
+  });
+});
+
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  RULE 4: A ROSTER NOBODY CAN BE SCOPED OUT OF (2026-09-06)

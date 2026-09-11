@@ -51,7 +51,7 @@ print(f'INFO  engine {d.get("version")} up {int(d.get("uptime", 0))}s')
 print(
     f'INFO  break: active={m.get("active")} phase={m.get("phase")} '
     f'remainingMs={m.get("remainingMs")} unparked={m.get("unparkedTables")} '
-    f'ready={m.get("readyForRestart")}'
+    f'durable={m.get("durableConfirmed")} ready={m.get("readyForRestart")}'
 )
 
 skew = m.get("dbClockSkewMs")

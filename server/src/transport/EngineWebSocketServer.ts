@@ -35,7 +35,11 @@ import type { Server as HttpServer } from 'http';
 import { randomUUID } from 'crypto';
 import { supabase } from '../services/supabase.js';
 import { reportError } from '../services/errorReporter.js';
-import { authorizeTableViewer, type TableViewerAccess } from '../services/TableViewerAccess.js';
+import {
+  authorizeTableViewer,
+  isSeatedTableViewer,
+  type TableViewerAccess,
+} from '../services/TableViewerAccess.js';
 import type { TableStateHub, HubSubscriber } from './TableStateHub.js';
 // Round 70: blacklist gate + Round 67/190: connection audit log both use
 // the supabase client imported above. No additional import needed.
@@ -673,7 +677,7 @@ export class EngineWebSocketServer {
           this.logConnectionAudit(auth.userId, tableId, clientIp);
 
           this.wss.handleUpgrade(req, socket, head, (ws) => {
-            this.onUpgraded(ws, req, auth.userId, tableId, clientIp, token);
+            this.onUpgraded(ws, req, auth.userId, tableId, clientIp, token, viewerAccess);
           });
         })
         .catch(() => {
@@ -972,7 +976,8 @@ export class EngineWebSocketServer {
     userId: string,
     tableId: string,
     clientIp: string | null = null,
-    token = ''
+    token = '',
+    viewerAccess?: TableViewerAccess
   ): void {
     if (this.refuseIfOverSocketCap(ws, userId)) return;
     const conn: ConnectionState = {
@@ -995,6 +1000,12 @@ export class EngineWebSocketServer {
     const subscriber: HubSubscriber = {
       id: conn.id,
       userId,
+      viewerRole: isSeatedTableViewer(
+        viewerAccess ?? { allowed: false, reason: 'check_failed', clubId: null }
+      )
+        ? 'seated'
+        : 'observer',
+      observerShowCards: viewerAccess?.observerShowCards === true,
       get readyState() {
         return ws.readyState;
       },
@@ -1215,6 +1226,8 @@ export class EngineWebSocketServer {
       const subscriber: HubSubscriber = {
         id: `${conn.id}:${tableId}`,
         userId: conn.userId,
+        viewerRole: isSeatedTableViewer(viewerAccess) ? 'seated' : 'observer',
+        observerShowCards: viewerAccess.observerShowCards === true,
         get readyState() {
           return ws.readyState;
         },

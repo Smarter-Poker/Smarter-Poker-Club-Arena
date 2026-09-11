@@ -192,7 +192,11 @@ describe('the last-hand window is the same window everywhere', () => {
     );
     expect(HOOK).toMatch(/MAINTENANCE_WINDOW_MS = 7 \* 60 \* 1000/);
     expect(HOOK).toContain('data.resume_expected_at');
-    expect(HOOK).toMatch(/if \(s\.breakEndsAtMs && serverNow\(\) >= s\.breakEndsAtMs\)/);
+    expect(HOOK).toMatch(
+      /s\.phase !== 'recovering'[\s\S]{0,160}s\.breakEndsAtMs[\s\S]{0,80}serverNow\(\) >= s\.breakEndsAtMs/
+    );
+    expect(HOOK).toContain("phase: 'recovering'");
+    expect(HOOK).toContain('connectionProtectedUntilMs');
   });
 });
 

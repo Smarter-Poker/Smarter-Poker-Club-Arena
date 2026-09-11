@@ -139,6 +139,21 @@ interface PlayableBlindLevel {
   adjusted: boolean;
 }
 
+function wholeChip(value: unknown, label: string, positive: boolean): number {
+  const decoded =
+    typeof value === 'number'
+      ? value
+      : typeof value === 'string' && value.trim() !== ''
+        ? Number(value)
+        : Number.NaN;
+  if (!Number.isSafeInteger(decoded) || decoded < 0 || (positive && decoded <= 0)) {
+    throw new Error(
+      `Tournament blind level requires a ${positive ? 'positive' : 'nonnegative'} whole ${label}, got ${String(value)}`
+    );
+  }
+  return decoded;
+}
+
 /**
  * Preserve the relationship between the three numbers after any independent
  * ceiling or scale. A shared numeric ceiling can turn a valid 1:2 level into
@@ -149,26 +164,22 @@ export function enforcePlayableBlindLevel(level: {
   bigBlind?: unknown;
   ante?: unknown;
 }): PlayableBlindLevel {
-  const positive = (value: unknown, fallback: number) => {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) && parsed > 0 ? Math.min(parsed, MAX_BLIND_VALUE) : fallback;
-  };
-  const rawSmallBlind = positive(level?.smallBlind, 1);
-  const rawBigBlind = positive(level?.bigBlind, 2);
-  const rawAnte = Number(level?.ante);
-  const bigBlind = Math.max(2, rawBigBlind);
+  const rawSmallBlind = wholeChip(level?.smallBlind, 'small blind', false);
+  const rawBigBlind = wholeChip(level?.bigBlind, 'big blind', true);
+  const rawAnte = wholeChip(level?.ante ?? 0, 'ante', false);
+  const bigBlind = Math.max(2, Math.min(rawBigBlind, MAX_BLIND_VALUE));
+  const boundedSmallBlind = Math.min(rawSmallBlind, MAX_BLIND_VALUE);
   const smallBlind =
-    rawSmallBlind < bigBlind ? rawSmallBlind : Math.max(1, Math.floor(bigBlind / 2));
-  const ante = Number.isFinite(rawAnte) && rawAnte >= 0 ? Math.min(rawAnte, MAX_BLIND_VALUE) : 0;
+    boundedSmallBlind > 0 && boundedSmallBlind < bigBlind
+      ? boundedSmallBlind
+      : Math.max(1, Math.floor(bigBlind / 2));
+  const ante = Math.min(rawAnte, MAX_BLIND_VALUE);
 
   return {
     smallBlind,
     bigBlind,
     ante,
-    adjusted:
-      smallBlind !== Number(level?.smallBlind) ||
-      bigBlind !== Number(level?.bigBlind) ||
-      ante !== Number(level?.ante),
+    adjusted: smallBlind !== rawSmallBlind || bigBlind !== rawBigBlind || ante !== rawAnte,
   };
 }
 
@@ -191,7 +202,7 @@ export function capLevelToChipsInPlay(
 
   const total = Number(totalChipsInPlay);
   const minBB = Number(minTotalBigBlinds);
-  if (!Number.isFinite(total) || total <= 0 || !Number.isFinite(minBB) || minBB <= 0) {
+  if (!Number.isSafeInteger(total) || total <= 0 || !Number.isFinite(minBB) || minBB <= 0) {
     return { smallBlind, bigBlind, ante, capped: playable.adjusted };
   }
 
@@ -241,14 +252,20 @@ export function escalatedBlindLevel(
   autoEscalated: true;
 } {
   const factor = escalationFactor(index, persistedLength, ratio);
-  const scale = (v: unknown) => {
-    const n = Number(v);
-    return Math.min((Number.isFinite(n) ? n : 0) * factor, MAX_BLIND_VALUE);
+  const scale = (value: unknown, label: string, positive: boolean): number => {
+    const source = wholeChip(value, label, positive);
+    const capped = Math.min(source * factor, MAX_BLIND_VALUE);
+    // Explicit nearest-whole-chip allocation. The relative epsilon makes an
+    // intended x.5 boundary stable when binary multiplication lands one ULP
+    // below it, while the final cap remains exact and restart-independent.
+    const epsilon = Number.EPSILON * Math.max(1, Math.abs(capped)) * 4;
+    const whole = Math.floor(capped + 0.5 + epsilon);
+    return source > 0 ? Math.max(1, whole) : 0;
   };
   const playable = enforcePlayableBlindLevel({
-    smallBlind: scale(lastPlayable?.smallBlind),
-    bigBlind: scale(lastPlayable?.bigBlind),
-    ante: scale(lastPlayable?.ante),
+    smallBlind: scale(lastPlayable?.smallBlind, 'small blind', false),
+    bigBlind: scale(lastPlayable?.bigBlind, 'big blind', true),
+    ante: scale(lastPlayable?.ante ?? 0, 'ante', false),
   });
   return {
     level: index + 1,

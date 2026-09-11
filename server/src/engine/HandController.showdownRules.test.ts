@@ -376,6 +376,47 @@ describe('MULTIWAY ordering, muck, side pots (spec sections 3, 5, 10, 11)', () =
     expect(wins.length).toBe(2);
     expect(wins[0].amount).toBeCloseTo(wins[1].amount, 2);
   });
+
+  it('a tournament odd-chip chop stays whole through HandConfig.isTournament', () => {
+    const h = harness(
+      mkConfig({
+        isTournament: true,
+        ante: 1,
+        smallBlind: 1,
+        bigBlind: 2,
+        rakeConfig: { percent: 0, cap: 0, noFlopNoDrop: true },
+      }),
+      mkPlayers([100, 100, 100]),
+      1
+    );
+    h.hc.start();
+    // Three antes + completed 1/2 blinds = a 9-chip pot. Seat 2 folds on the
+    // flop after contributing three, leaving seats 1 and 3 to chop an odd pot.
+    h.actSeat(1, 'call');
+    h.actSeat(2, 'call');
+    h.actSeat(3, 'check');
+    h.actSeat(2, 'fold');
+    h.actSeat(3, 'check');
+    h.actSeat(1, 'check');
+    h.actSeat(3, 'check');
+    h.actSeat(1, 'check');
+    h.setBoard([
+      c('A', 'spades'),
+      c('K', 'diamonds'),
+      c('Q', 'clubs'),
+      c('J', 'hearts'),
+      c('T', 'spades'),
+    ]);
+    h.actSeat(3, 'check');
+    h.actSeat(1, 'check');
+
+    const wins = h.winners();
+    expect(wins.reduce((s, w) => s + w.amount, 0)).toBe(9);
+    expect(wins.every((w) => Number.isInteger(w.amount))).toBe(true);
+    // Button is seat 1, so seat 3 is first clockwise among the tied winners.
+    expect(wins.find((w) => w.userId === 'u3')?.amount).toBe(5);
+    expect(wins.find((w) => w.userId === 'u1')?.amount).toBe(4);
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────

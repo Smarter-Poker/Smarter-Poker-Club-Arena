@@ -115,7 +115,7 @@ describe('the database boundary excludes accepted-hand rows', () => {
       '..',
       'supabase',
       'migrations',
-      '20260908043400_post_commit_obligations_are_atomic_and_resumable.sql'
+      '20260908130009_post_commit_obligations_are_atomic_and_resumable.sql'
     ),
     'utf8'
   );

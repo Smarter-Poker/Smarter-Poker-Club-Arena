@@ -73,13 +73,21 @@ async function settle(turns = 10) {
 function persistence(delayMs = 0) {
   const writes: { id: string; deadline: string }[] = [];
   vi.spyOn(supabase, 'from').mockReturnValue({
-    update: (patch: { break_ends_at: string }) => ({
-      eq: async (_column: string, id: string) => {
-        writes.push({ id, deadline: patch.break_ends_at });
-        vi.setSystemTime(Date.now() + delayMs);
-        return { error: null };
-      },
-    }),
+    update: (patch: { break_ends_at: string }) => {
+      let id = '';
+      const query = {
+        eq: (column: string, value: string) => {
+          if (column === 'id') id = value;
+          return query;
+        },
+        is: async () => {
+          writes.push({ id, deadline: patch.break_ends_at });
+          vi.setSystemTime(Date.now() + delayMs);
+          return { error: null, count: 1 };
+        },
+      };
+      return query;
+    },
   } as never);
   return writes;
 }

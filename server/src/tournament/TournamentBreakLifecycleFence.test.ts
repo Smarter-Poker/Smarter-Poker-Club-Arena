@@ -60,14 +60,37 @@ class BreakHarness extends TournamentManagerBase {
   }
 }
 
-function stubBreakPersistence(result: Promise<unknown> = Promise.resolve({ error: null })) {
-  const eq = vi.fn(() => result);
-  const update = vi.fn(() => ({ eq }));
-  const from = vi.spyOn(supabase, 'from').mockReturnValue({ update } as never);
-  return { from, update, eq };
+function stubBreakPersistence(
+  result: Promise<unknown> = Promise.resolve({ error: null, count: 1 }),
+  readback: Promise<unknown> = Promise.resolve({ data: null, error: null })
+) {
+  const updateQuery = {
+    eq: vi.fn(),
+    is: vi.fn(),
+    then: result.then.bind(result),
+  } as {
+    eq: ReturnType<typeof vi.fn>;
+    is: ReturnType<typeof vi.fn>;
+    then: typeof result.then;
+  };
+  updateQuery.eq.mockImplementation(() => updateQuery);
+  updateQuery.is.mockImplementation(() => updateQuery);
+  const readQuery = {
+    eq: vi.fn(),
+    maybeSingle: vi.fn(() => readback),
+  } as {
+    eq: ReturnType<typeof vi.fn>;
+    maybeSingle: ReturnType<typeof vi.fn>;
+  };
+  readQuery.eq.mockImplementation(() => readQuery);
+  const update = vi.fn(() => updateQuery);
+  const select = vi.fn(() => readQuery);
+  const from = vi.spyOn(supabase, 'from').mockReturnValue({ update, select } as never);
+  return { from, update, select, eq: updateQuery.eq, is: updateQuery.is };
 }
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
 });
 
@@ -101,9 +124,9 @@ describe('tournament break lifecycle fence', () => {
     manager.addTableEngine(engine);
 
     const pausing = manager.pauseForBreak(300_000);
-    await vi.waitFor(() => expect(persist.eq).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(persist.eq).toHaveBeenCalled());
     manager.fence();
-    persistence.resolve({ error: null });
+    persistence.resolve({ error: null, count: 1 });
     await pausing;
 
     expect(manager.broadcastCall).not.toHaveBeenCalled();
@@ -136,12 +159,87 @@ describe('tournament break lifecycle fence', () => {
     const persist = stubBreakPersistence(persistence.promise);
 
     const countingDown = manager.beginBreakCountdown(300_000);
-    await vi.waitFor(() => expect(persist.eq).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(persist.eq).toHaveBeenCalled());
     manager.fence();
-    persistence.resolve({ error: null });
+    persistence.resolve({ error: null, count: 1 });
     await countingDown;
 
     expect(manager.broadcastCall).not.toHaveBeenCalled();
+  });
+
+  it('does not pause or announce when durable status is no longer RUNNING', async () => {
+    const manager = new BreakHarness();
+    manager.activate();
+    const persist = stubBreakPersistence(Promise.resolve({ error: null, count: 0 }));
+    const engine = { pauseAfterHand: vi.fn() };
+    manager.addTableEngine(engine);
+
+    await manager.pauseForBreak(300_000);
+
+    expect(persist.eq).toHaveBeenCalledWith('status', 'RUNNING');
+    expect(manager.breakIsActive()).toBe(false);
+    expect(manager.broadcastCall).not.toHaveBeenCalled();
+    expect(engine.pauseAfterHand).not.toHaveBeenCalled();
+  });
+
+  it('accepts the +00:00 PostgREST spelling of an ambiguously committed break start', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-09T18:55:05.123Z'));
+    const manager = new BreakHarness();
+    manager.activate();
+    const persist = stubBreakPersistence(
+      Promise.resolve({ error: new Error('transport response lost'), count: null }),
+      Promise.resolve({
+        data: {
+          status: 'RUNNING',
+          on_break: true,
+          break_started_at: '2026-09-09T18:55:05.123+00:00',
+          break_ends_at: null,
+        },
+        error: null,
+      })
+    );
+    const engine = { pauseAfterHand: vi.fn() };
+    manager.addTableEngine(engine);
+
+    await manager.pauseForBreak(300_000);
+
+    expect(persist.select).toHaveBeenCalledWith(
+      'status, on_break, break_started_at, break_ends_at'
+    );
+    expect(manager.breakIsActive()).toBe(true);
+    expect(manager.broadcastCall).toHaveBeenCalledWith(
+      'tournament_break',
+      expect.objectContaining({ phase: 'last_hand' })
+    );
+    expect(engine.pauseAfterHand).toHaveBeenCalledOnce();
+  });
+
+  it('accepts the +00:00 PostgREST spelling of an ambiguously committed countdown', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-09T18:57:00.000Z'));
+    const manager = new BreakHarness();
+    manager.activate();
+    manager.forceBreakState();
+    const persist = stubBreakPersistence(
+      Promise.resolve({ error: new Error('transport response lost'), count: null }),
+      Promise.resolve({
+        data: {
+          status: 'RUNNING',
+          on_break: true,
+          break_ends_at: '2026-09-09T19:02:00.000+00:00',
+        },
+        error: null,
+      })
+    );
+
+    await manager.beginBreakCountdown(300_000);
+
+    expect(persist.select).toHaveBeenCalledWith('status, on_break, break_ends_at');
+    expect(manager.broadcastCall).toHaveBeenCalledWith(
+      'tournament_break_started',
+      expect.objectContaining({ breakEndsAt: '2026-09-09T19:02:00.000Z' })
+    );
   });
 });
 
@@ -176,7 +274,11 @@ describe('tournament break resume waits for the maintenance thaw', () => {
     await vi.advanceTimersByTimeAsync(TournamentManagerBase.MAINTENANCE_THAW_POLL_MS);
     await resuming;
     expect(manager.breakIsActive()).toBe(false);
-    expect(persist.update).toHaveBeenCalledWith({ on_break: false, break_ends_at: null });
+    expect(persist.update).toHaveBeenCalledWith({
+      on_break: false,
+      break_started_at: null,
+      break_ends_at: null,
+    });
     expect(manager.broadcastCall).toHaveBeenCalledWith('break_ended', expect.anything());
   });
 

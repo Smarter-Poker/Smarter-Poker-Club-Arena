@@ -73,6 +73,23 @@ export interface StatsHealthSnapshot {
     withoutEquity: number | null;
     ratio: number | null;
   } | null;
+  /**
+   * The operator-stamped boundary at which every engine writer was on the
+   * durable witness SHA. A first TRUE fact row is deliberately not readiness:
+   * mixed-version fleets can produce one while old writers still omit rows.
+   */
+  equityWitnessReadiness: {
+    configured: boolean | null;
+    writerCutoverAt: string | null;
+    writerSha: string | null;
+    recordedAt: string | null;
+    fullWindowAt: string | null;
+    latestAuditAt: string | null;
+    latestWitnessAt: string | null;
+    coverageWindowSeconds: number | null;
+    windowLabel: string | null;
+    windowReady: boolean | null;
+  } | null;
   lastAudit: {
     ranAt: string | null;
     hands: number | null;
@@ -153,6 +170,7 @@ export function parseStatsHealth(raw: unknown, fallbackCheckedAt: string): Stats
   const repair = obj(r.repair);
   const seatfill = obj(r.seatBackfill);
   const ev = obj(r.evCoverage7d);
+  const equityReadiness = obj(r.equityWitnessReadiness);
   const audit = obj(r.lastAudit);
   return {
     checkedAt: str(r.checkedAt) ?? fallbackCheckedAt,
@@ -184,6 +202,20 @@ export function parseStatsHealth(raw: unknown, fallbackCheckedAt: string): Stats
           allInShowdowns: num(ev.allInShowdowns),
           withoutEquity: num(ev.withoutEquity),
           ratio: num(ev.ratio),
+        }
+      : null,
+    equityWitnessReadiness: equityReadiness
+      ? {
+          configured: bool(equityReadiness.configured),
+          writerCutoverAt: str(equityReadiness.writerCutoverAt),
+          writerSha: str(equityReadiness.writerSha),
+          recordedAt: str(equityReadiness.recordedAt),
+          fullWindowAt: str(equityReadiness.fullWindowAt),
+          latestAuditAt: str(equityReadiness.latestAuditAt),
+          latestWitnessAt: str(equityReadiness.latestWitnessAt),
+          coverageWindowSeconds: num(equityReadiness.coverageWindowSeconds),
+          windowLabel: str(equityReadiness.windowLabel),
+          windowReady: bool(equityReadiness.windowReady),
         }
       : null,
     lastAudit: audit
@@ -356,6 +388,8 @@ export class StatsHealthMonitor {
   prometheusLines(): string[] {
     const s = this.snapshot;
     const audit = s?.lastAudit;
+    const equityReadiness = s?.equityWitnessReadiness;
+    const equityWindowReady = equityReadiness?.windowReady === true;
     const disagree =
       audit && (audit.buttonDisagree !== null || audit.showdownDisagree !== null)
         ? (audit.buttonDisagree ?? 0) + (audit.showdownDisagree ?? 0)
@@ -398,13 +432,27 @@ export class StatsHealthMonitor {
       ),
       ...g(
         'poker_stats_ev_coverage_7d',
-        'Share of all-in runout seats (pre-river all-in, reached showdown, no betting after the last all-in) in the last 7 days that carry an all-in equity figure; NaN when there were none',
-        s?.evCoverage7d?.ratio ?? null
+        'Share of all-in runout seats in a complete post-cutover trailing 7-day window that carry equity; NaN while the fleet boundary is unset or collecting',
+        equityWindowReady ? (s?.evCoverage7d?.ratio ?? null) : null
       ),
       ...g(
         'poker_stats_allin_showdowns_7d',
-        'All-in runout seats in the last 7 days that owe an equity figure, from the last witness audit',
-        s?.evCoverage7d?.allInShowdowns ?? null
+        'All-in runout seats in a complete post-cutover trailing 7-day window that owe equity; NaN while collecting',
+        equityWindowReady ? (s?.evCoverage7d?.allInShowdowns ?? null) : null
+      ),
+      ...g(
+        'poker_stats_ev_coverage_window_ready',
+        '1 only after an operator-stamped all-writers cutover has aged seven days and a later audit has run',
+        equityReadiness?.windowReady === null || equityReadiness?.windowReady === undefined
+          ? null
+          : equityReadiness.windowReady
+            ? 1
+            : 0
+      ),
+      ...g(
+        'poker_stats_ev_coverage_window_seconds',
+        'Seconds of the post-fleet-cutover equity witness window collected, capped at seven days',
+        equityReadiness?.coverageWindowSeconds ?? null
       ),
       ...g(
         'poker_stats_health_age_seconds',
@@ -534,6 +582,28 @@ export class StatsHealthMonitor {
     // 4. All-in equity coverage. The EV line on the stats page is only as
     //    honest as this ratio; a week with enough all-ins and a coverage
     //    below the bar means the settlement writer is dropping equity again.
+    const readiness = s.equityWitnessReadiness;
+    if (readiness && readiness.windowReady === false) {
+      if (
+        !(await this.deliverAlert(generation, () =>
+          this.deps.resolve(
+            STATS_EV_COVERAGE_ALERT,
+            STATS_HEALTH_COMPONENT,
+            readiness.configured
+              ? `All-in equity coverage is collecting from the fleet cutover; full window at ${readiness.fullWindowAt ?? 'unknown'}`
+              : 'All-in equity coverage is waiting for the operator-stamped fleet writer cutover'
+          )
+        ))
+      )
+        return;
+      return;
+    }
+    // Missing readiness is fail-closed too, but unlike an explicit collecting
+    // state it cannot safely resolve an existing alert: the health contract may
+    // itself have regressed. Leave the alert untouched until the boundary is
+    // explicit and a complete post-cutover audit exists.
+    if (readiness?.windowReady !== true) return;
+
     const ev = s.evCoverage7d;
     if (ev && ev.allInShowdowns !== null && ev.ratio !== null) {
       // Capture narrowed scalars before the alert callback. TypeScript cannot
@@ -551,14 +621,12 @@ export class StatsHealthMonitor {
                 `All-in equity coverage is ${(ratio * 100).toFixed(1)}% over 7 days ` +
                 `(${ev.withoutEquity ?? 0} of ${allInShowdowns} all-in runout seats without equity)`,
               description:
-                'ca_hand_facts.all_in_equity is captured from the all_in_equity broadcast of every ' +
-                'all-in runout and written at settlement. The EV line, "EV Adjusted" and the luck ' +
-                'readouts on the stats page are computed from it, so a missing figure understates or ' +
-                'overstates a player. Find the hands with ' +
-                'SELECT hand_id FROM ca_hand_facts WHERE was_all_in AND went_to_showdown AND ' +
-                "coalesce(all_in_street,'') <> 'river' AND all_in_equity IS NULL AND played_at >= now() - interval '7 days' " +
-                '(then discard the ones whose action log shows betting after the last all-in: those ' +
-                'were side pots, not runouts, and owe nothing).',
+                'The engine writes ca_hand_facts.all_in_equity_owed at the exact all-in runout ' +
+                'boundary, before the optional equity worker starts. The EV line, "EV Adjusted" ' +
+                'and luck readouts use all_in_equity, so a missing owed figure misstates a player. ' +
+                'Find the exact seats with SELECT hand_id, user_id FROM ca_hand_facts WHERE ' +
+                'all_in_equity_owed IS TRUE AND all_in_equity IS NULL AND played_at >= ' +
+                "now() - interval '7 days'. No hand-history reconstruction is required.",
               labels: {
                 allin_showdowns_7d: String(allInShowdowns),
                 without_equity_7d: String(ev.withoutEquity ?? 0),

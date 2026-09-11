@@ -1,8 +1,7 @@
--- 20260910154446_the_database_refuses_migrations_inside_the_break_window.sql
+-- 20260910152737_the_database_refuses_migrations_inside_the_break_window.sql
 --
--- Version reserved by scripts/new-migration.mjs as 20260910152737, then
--- aligned to 20260910154446, the version apply_migration recorded when it ran
--- at 15:44:46 UTC, so the repo and supabase_migrations agree.
+-- Version reserved by scripts/new-migration.mjs against origin/main and every
+-- remote branch, so it cannot collide with another agent's in-flight work.
 --
 -- ═══════════════════════════════════════════════════════════════════════════
 -- WHAT THIS CHANGES, AND WHY

@@ -47,6 +47,7 @@ const sqlNamed = (needle: string) =>
 const seatFirstSql = sqlNamed('seat_first_games_that_can_never_be_joined');
 const atomicSeatFirstSql = sqlNamed('seat_first_board_creation_is_one_transaction');
 const seatFirstRetirementSql = sqlNamed('seat_first_inventory_is_created_atomically');
+const legacyPlayedAdoptionSql = sqlNamed('legacy_played_seat_first_games_are_adopted_as_running');
 const countsSql = sqlNamed('club_home_own_members_and_live_players');
 
 describe('a listing only counts if a player could sit at it', () => {
@@ -64,12 +65,14 @@ describe('a listing only counts if a player could sit at it', () => {
     expect(atomicSeatFirstSql.match(/^COMMIT;$/gm)).toHaveLength(1);
   });
 
-  it('retires the timer-driven repair after one bounded migration pass', () => {
+  it('retires the timer-driven repair without mutating unrelated joinable boards', () => {
     expect(atomicSeatFirstSql).not.toContain(
       'DROP FUNCTION IF EXISTS public.fn_repair_seat_first_games(integer)'
     );
-    expect(seatFirstRetirementSql).toContain('SELECT public.fn_repair_seat_first_games(1000)');
-    expect(seatFirstRetirementSql).toContain('unjoinable legacy listing remains');
+    expect(seatFirstRetirementSql).not.toContain('SELECT public.fn_repair_seat_first_games(1000)');
+    expect(seatFirstRetirementSql).toContain(
+      'unjoinable legacy listing requires intentional repair'
+    );
     expect(seatFirstRetirementSql).toContain(
       'DROP FUNCTION IF EXISTS public.fn_repair_seat_first_games(integer) RESTRICT'
     );
@@ -96,6 +99,59 @@ describe('a listing only counts if a player could sit at it', () => {
     expect(service).toMatch(/withJoinableTable\.has\(r\.id\)/);
     expect(service).toContain(".select('tournament_id, status, is_deleted')");
     expect(service).toContain('isJoinableTableRow');
+  });
+
+  it('adopts only the measured pre-atomic games that already dealt real hands', () => {
+    expect(legacyPlayedAdoptionSql.length).toBeGreaterThan(0);
+    expect(legacyPlayedAdoptionSql).toContain('v_count IS DISTINCT FROM 39');
+    expect(legacyPlayedAdoptionSql).toContain('v_hand_count IS DISTINCT FROM 870');
+    expect(legacyPlayedAdoptionSql).toContain('v_spin_count IS DISTINCT FROM 22');
+    expect(legacyPlayedAdoptionSql).toContain('v_heads_up_count IS DISTINCT FROM 17');
+    expect(legacyPlayedAdoptionSql).toContain(
+      '3d7f10f5150526e93c8e302837da8f9f6a8265f4fcb6d0d83870b0c44de77aec'
+    );
+    expect(legacyPlayedAdoptionSql).toContain('FOR UPDATE OF t NOWAIT');
+    expect(legacyPlayedAdoptionSql).toContain('FOR UPDATE OF p NOWAIT');
+    expect(legacyPlayedAdoptionSql).toContain('FOR UPDATE OF tb NOWAIT');
+    expect(legacyPlayedAdoptionSql).toContain('FOR UPDATE OF s NOWAIT');
+    const realtimeLock = legacyPlayedAdoptionSql.indexOf(
+      'LOCK TABLE realtime.subscription IN ACCESS EXCLUSIVE MODE NOWAIT'
+    );
+    const leaseLock = legacyPlayedAdoptionSql.indexOf(
+      'LOCK TABLE public.engine_tournament_leases,'
+    );
+    const tournamentLock = legacyPlayedAdoptionSql.indexOf(
+      'DISABLE TRIGGER zz_freeze_launch_guard'
+    );
+    expect(realtimeLock).toBeGreaterThan(-1);
+    expect(leaseLock).toBeGreaterThan(realtimeLock);
+    expect(tournamentLock).toBeGreaterThan(leaseLock);
+    expect(legacyPlayedAdoptionSql).toContain('pointed.tournament_id = p.tournament_id');
+    expect(legacyPlayedAdoptionSql).toContain("pointed.status = 'running'");
+  });
+
+  it('changes only the historical parent lifecycle fields and invents no receipt', () => {
+    const disable = legacyPlayedAdoptionSql.indexOf('DISABLE TRIGGER zz_freeze_launch_guard');
+    const update = legacyPlayedAdoptionSql.indexOf('UPDATE public.tournaments t');
+    const enable = legacyPlayedAdoptionSql.indexOf('ENABLE TRIGGER zz_freeze_launch_guard');
+
+    expect(disable).toBeGreaterThan(-1);
+    expect(update).toBeGreaterThan(disable);
+    expect(enable).toBeGreaterThan(update);
+    expect(legacyPlayedAdoptionSql).toMatch(
+      /SET status = 'RUNNING',\s+started_at = a\.first_hand_at,\s+updated_at = clock_timestamp\(\)/
+    );
+    expect(legacyPlayedAdoptionSql).toContain(
+      "to_jsonb(t) - ARRAY['status', 'started_at', 'updated_at']::text[]"
+    );
+    expect(legacyPlayedAdoptionSql).not.toMatch(
+      /INSERT\s+INTO\s+public\.tournament_launch_receipts/i
+    );
+    expect(legacyPlayedAdoptionSql).not.toMatch(
+      /UPDATE\s+public\.(?:wallets|table_seats|tournament_players)/i
+    );
+    expect(legacyPlayedAdoptionSql).not.toMatch(/CREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION/i);
+    expect(legacyPlayedAdoptionSql).not.toMatch(/\bSELECT\s+cron\.schedule|pg_cron/i);
   });
 });
 

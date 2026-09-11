@@ -1,8 +1,7 @@
--- 20260910160841_the_break_window_refusal_names_its_rule_and_explains_list_migrations.sql
+-- 20260910154914_the_break_window_refusal_names_its_rule_and_explains_list_migrations.sql
 --
--- Version reserved by scripts/new-migration.mjs as 20260910154914, then
--- aligned to 20260910160841, the version apply_migration recorded when it ran
--- at 16:08:41 UTC, so the repo and supabase_migrations agree.
+-- Version reserved by scripts/new-migration.mjs against origin/main and every
+-- remote branch, so it cannot collide with another agent's in-flight work.
 --
 -- ═══════════════════════════════════════════════════════════════════════════
 -- WHAT THIS CHANGES, AND WHY

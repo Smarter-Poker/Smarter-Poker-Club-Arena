@@ -64,6 +64,7 @@ describe('durable blind-level transition', () => {
         { smallBlind: 50, bigBlind: 100, durationMinutes: 10 },
       ];
       const row: Record<string, any> = {
+        starting_chips: 1000,
         current_level: 0,
         level_started_at: '2026-09-10T12:00:00.000Z',
         blind_structure: structure,
@@ -131,6 +132,7 @@ describe('blind rows at manager recovery', () => {
         { smallBlind: 50, bigBlind: 100, durationMinutes: 10 },
       ];
       const row: Record<string, any> = {
+        starting_chips: 1000,
         current_level: 0,
         level_started_at: '2026-09-10T12:00:00.000Z',
         blind_structure: structure,

@@ -1623,15 +1623,18 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
   protected async dealHand(players: SeatedPlayer[]): Promise<void> {
     const releaseSeatBoundary = await this.acquireSeatBoundary();
     try {
-      // The roster was selected before the between-hand rest and may now contain
-      // a cashed-out occupancy. Revalidate it while departures cannot run.
+      // The roster was selected before the between-hand rest. Re-prove the
+      // exact seat generation while departures and moves cannot run, so a
+      // replaced occupancy can never be dealt from a stale in-memory row.
       players = players.filter(
         (p) =>
           this.seatedPlayers.some(
             (current) =>
               current.user_id === p.user_id &&
               current.seat_number === p.seat_number &&
-              current.occupancy_id === p.occupancy_id
+              current.occupancy_id === p.occupancy_id &&
+              current.seat_id === p.seat_id &&
+              current.seat_joined_at === p.seat_joined_at
           ) &&
           (this.isTournamentTable() || !this.disconnectEngine.isSittingOut(this.tableId, p.user_id))
       );
@@ -1667,6 +1670,11 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       // SHOWDOWN POLISH 2026-08-25: per-pot award breakdown is per-hand.
       this.currentHandPerPotAwards = [];
       this.currentHandActions = [];
+      this.currentHandAllInEquityEvidence = null;
+      this.currentHandAllInEquityEvidenceDone = null;
+      this.currentHandAllInEquityBoundaryKey = null;
+      this.currentHandAllInEquityDeferredForPineapple = false;
+      this.currentHandAllInEquityEvidenceClosed = false;
       this.currentHandWinners = [];
       // Dan section 29: a stale pot breakdown would attribute THIS hand's
       // knockout to the previous hand's side pots, so it is cleared with the

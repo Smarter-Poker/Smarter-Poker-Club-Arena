@@ -29,10 +29,10 @@ def definition(path,name):
     return suffix[:body.end()],hashlib.md5(body.group(2).encode()).hexdigest(),sha(s)
 move_sig='public.fn_move_tournament_player(uuid,uuid,uuid,uuid,integer,uuid,text)'
 lane_sig='public.fn_ca_lock_settlement_lane_for_tournament(uuid,uuid)'
-move,move_md5,move_source_sha=definition(Path('supabase/migrations/20260910051125_the_seat_move_door_the_engine_calls_exists.sql'),'fn_move_tournament_player')
-lane,lane_md5,lane_source_sha=definition(Path('supabase/migrations/20260910035245_the_settlement_lane_is_per_tournament_not_platform_wide.sql'),'fn_ca_lock_settlement_lane_for_tournament')
+move,move_md5,move_source_sha=definition(Path('supabase/migrations/20260910051447_the_seat_move_door_the_engine_calls_exists.sql'),'fn_move_tournament_player')
+lane,lane_md5,lane_source_sha=definition(Path('supabase/migrations/20260910035435_the_settlement_lane_is_per_tournament_not_platform_wide.sql'),'fn_ca_lock_settlement_lane_for_tournament')
 reader_sig='public.fn_ca_tournament_seat_move_receipt(uuid)'
-reader,reader_md5,reader_source_sha=definition(Path('supabase/migrations/20260910051125_the_seat_move_door_the_engine_calls_exists.sql'),'fn_ca_tournament_seat_move_receipt')
+reader,reader_md5,reader_source_sha=definition(Path('supabase/migrations/20260910051447_the_seat_move_door_the_engine_calls_exists.sql'),'fn_ca_tournament_seat_move_receipt')
 assert move_md5=='466c39065b59cf7922a5859df9f26bd3'
 assert reader_md5=='68813ee03e355e2eec053e15bf40f98d'
 catalog_sql="""SELECT jsonb_build_object(

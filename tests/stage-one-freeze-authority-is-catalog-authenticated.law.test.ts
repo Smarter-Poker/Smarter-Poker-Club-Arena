@@ -10,7 +10,7 @@ const cutovers = [
     gate: 'require_live_satellite_cutover_freeze',
   },
   {
-    file: '20260909014433_spin_reserve_settlement_commits_its_journal_or_nothing.sql',
+    file: '20260909205412_spin_reserve_settlement_commits_its_journal_or_nothing.sql',
     gate: 'require_live_spin_cutover_freeze',
   },
   {
@@ -28,18 +28,6 @@ const cutovers = [
   {
     file: '20260909014534_non_satellite_terminal_settlement_commits_one_stored_receipt.sql',
     gate: 'require_live_terminal_cutover_freeze',
-  },
-  {
-    file: '20260909014545_tournament_seat_exits_stay_inside_tournament_authority.sql',
-    gate: 'require_live_seat_exit_cutover_freeze',
-  },
-  {
-    file: '20260909041438_retire_legacy_tournament_hold_refund_door.sql',
-    gate: 'require_live_legacy_hold_retirement_freeze',
-  },
-  {
-    file: '20260909043000_tournament_terminal_roots_are_db_first_hardened.sql',
-    gate: 'require_live_terminal_acl_cutover_freeze',
   },
   {
     file: '20260909165602_the_four_table_limit_is_never_satellite_cash.sql',

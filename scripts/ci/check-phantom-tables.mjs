@@ -31,8 +31,14 @@
  */
 
 import { readdirSync, readFileSync, statSync, existsSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import process from 'node:process';
+import {
+  FROM_REFERENCE,
+  RPC_REFERENCE,
+  namesNeedingLiveProof,
+} from './phantom-live-proof-policy.mjs';
 import { supabaseServerHeaders } from './supabase-auth-headers.mjs';
 import { loadSchemaManifest } from './schema-manifest.mjs';
 
@@ -41,6 +47,7 @@ const MANIFEST = join(REPO, 'scripts/ci/supabase-schema-manifest.json');
 const ALLOWLIST = join(REPO, 'scripts/ci/supabase-invariants.allowlist.json');
 const SCAN_DIRS = ['src', 'server/src'];
 const WARN_ONLY = process.argv.includes('--warn');
+const BASE_REF_ARG = process.argv.find((arg) => arg.startsWith('--base-ref='));
 
 // ─── 1. Load the live-schema manifest + allowlist ───────────────────────────
 function loadJson(path, label) {
@@ -187,6 +194,118 @@ function collect(regex) {
   return hits;
 }
 
+function gitText(args) {
+  return execFileSync('git', args, {
+    cwd: REPO,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+}
+
+function resolveBaseTree() {
+  const requested =
+    BASE_REF_ARG?.slice('--base-ref='.length) ||
+    process.env.PHANTOM_BASE_REF ||
+    (process.env.GITHUB_BASE_REF ? `origin/${process.env.GITHUB_BASE_REF}` : 'origin/main');
+  try {
+    gitText(['rev-parse', '--verify', `${requested}^{commit}`]);
+    return gitText(['merge-base', 'HEAD', requested]).trim();
+  } catch (err) {
+    throw new Error(
+      `cannot resolve phantom-reference comparison tree ${requested}; fetch the target branch or pass --base-ref=<target>: ${err.message}`
+    );
+  }
+}
+
+function gitTreePaths(tree, ...prefixes) {
+  return gitText(['ls-tree', '-r', '--name-only', tree, '--', ...prefixes])
+    .split('\n')
+    .filter(Boolean);
+}
+
+function gitTreeFile(tree, path) {
+  return gitText(['show', `${tree}:${path}`]);
+}
+
+const gitTreeSourceCache = new Map();
+
+function loadGitTreeSources(tree) {
+  if (gitTreeSourceCache.has(tree)) return gitTreeSourceCache.get(tree);
+  let matchedPaths = '';
+  try {
+    matchedPaths = gitText([
+      'grep',
+      '-F',
+      '-Il',
+      '-e',
+      '.rpc',
+      '-e',
+      '.from',
+      tree,
+      '--',
+      ...SCAN_DIRS,
+    ]);
+  } catch (err) {
+    if (err.status !== 1) throw err;
+  }
+  const candidatePaths = matchedPaths
+    .split('\n')
+    .filter(Boolean)
+    .map((entry) => entry.slice(entry.indexOf(':') + 1));
+  const paths = candidatePaths.filter(
+    (path) => /\.(ts|tsx|js|jsx|mjs|cjs)$/.test(path) && !/\.test\./.test(path)
+  );
+  if (paths.length === 0) {
+    gitTreeSourceCache.set(tree, []);
+    return [];
+  }
+  const request = `${paths.map((path) => `${tree}:${path}`).join('\n')}\n`;
+  const batch = execFileSync('git', ['cat-file', '--batch'], {
+    cwd: REPO,
+    input: request,
+    maxBuffer: 128 * 1024 * 1024,
+    stdio: ['pipe', 'pipe', 'pipe'],
+  });
+  const sources = [];
+  let offset = 0;
+  for (const path of paths) {
+    const headerEnd = batch.indexOf(10, offset);
+    if (headerEnd < 0) throw new Error(`git cat-file omitted the header for ${path}`);
+    const header = batch.subarray(offset, headerEnd).toString('utf8');
+    const match = header.match(/^[0-9a-f]+ blob (\d+)$/);
+    if (!match) throw new Error(`git cat-file returned an invalid header for ${path}: ${header}`);
+    const size = Number(match[1]);
+    const start = headerEnd + 1;
+    const end = start + size;
+    sources.push({ path, source: batch.subarray(start, end).toString('utf8') });
+    offset = end + 1;
+  }
+  gitTreeSourceCache.set(tree, sources);
+  return sources;
+}
+
+function collectGitTree(tree, regex) {
+  const names = new Set();
+  for (const { source } of loadGitTreeSources(tree)) {
+    const src = stripComments(source);
+    regex.lastIndex = 0;
+    let match;
+    while ((match = regex.exec(src))) names.add(match[1]);
+  }
+  return names;
+}
+
+function loadBaseManifest(tree) {
+  const base = JSON.parse(gitTreeFile(tree, 'scripts/ci/supabase-schema-manifest.json'));
+  // Fragments are merge-conflict avoidance declarations, not deployment
+  // receipts. A fragment already present in the base can still be awaiting the
+  // nightly live-schema refresh, so it cannot certify a newly added caller.
+  return {
+    tables: new Set(base.tables || []),
+    functions: new Set(base.functions || []),
+  };
+}
+
 // Match the opening `.from('name'` / `.rpc('name'` only — do NOT require a
 // closing paren, since .rpc('fn', {args}) and .from('t') as a base for a
 // chained query both continue past the name.
@@ -195,8 +314,33 @@ function collect(regex) {
 // relation, and matching it reported `images` as a phantom table with no way
 // to resolve it except allowlisting a bucket as if it were a table. Any new
 // bucket would have redded the build the same way.
-const fromRefs = collect(/(?<!storage)\.from\s*\(\s*['"]([a-z_][a-z0-9_]*)['"]/g);
-const rpcRefs = collect(/\.rpc\s*\(\s*['"]([a-z_][a-z0-9_]*)['"]/g);
+const fromRefs = collect(FROM_REFERENCE);
+const rpcRefs = collect(RPC_REFERENCE);
+
+let baseProof;
+try {
+  const tree = resolveBaseTree();
+  const baseManifest = loadBaseManifest(tree);
+  const baseAllow = JSON.parse(gitTreeFile(tree, 'scripts/ci/supabase-invariants.allowlist.json'));
+  baseProof = {
+    tree,
+    tables: namesNeedingLiveProof({
+      currentNames: fromRefs.keys(),
+      baseSourceNames: collectGitTree(tree, FROM_REFERENCE),
+      baseManifestNames: baseManifest.tables,
+      baseAllowNames: allowSet(baseAllow.nonPublicTargets),
+    }),
+    rpcs: namesNeedingLiveProof({
+      currentNames: rpcRefs.keys(),
+      baseSourceNames: collectGitTree(tree, RPC_REFERENCE),
+      baseManifestNames: baseManifest.functions,
+      baseAllowNames: [],
+    }),
+  };
+} catch (err) {
+  console.error(`ERROR: ${err.message}`);
+  process.exit(2);
+}
 
 // ─── 3. Diff against the manifest ───────────────────────────────────────────
 const phantomTables = [];
@@ -209,6 +353,17 @@ for (const [name, sites] of rpcRefs) {
   if (realFns.has(name) || allowRpcs.has(name)) continue;
   phantomRpcs.push({ name, sites });
 }
+const pendingTableProof = new Set(baseProof.tables);
+const pendingRpcProof = new Set(baseProof.rpcs);
+
+function addMissingEntries(target, names, sitesByName) {
+  const present = new Set(target.map((entry) => entry.name));
+  for (const name of names) {
+    if (present.has(name)) continue;
+    target.push({ name, sites: sitesByName.get(name) || [] });
+    present.add(name);
+  }
+}
 
 // ─── 4. Report ──────────────────────────────────────────────────────────────
 console.log(
@@ -220,8 +375,17 @@ console.log(
 console.log(
   `[check-phantom-refs] phantoms: ${phantomTables.length} tables, ${phantomRpcs.length} rpcs`
 );
+console.log(
+  `[check-phantom-refs] branch-new names needing live proof from ${baseProof.tree.slice(0, 12)}: ` +
+    `${pendingTableProof.size} tables, ${pendingRpcProof.size} rpcs`
+);
 
-if (phantomTables.length === 0 && phantomRpcs.length === 0) {
+if (
+  phantomTables.length === 0 &&
+  phantomRpcs.length === 0 &&
+  pendingTableProof.size === 0 &&
+  pendingRpcProof.size === 0
+) {
   console.log('OK — every .from() and .rpc() resolves to a live table/view/function.');
   process.exit(0);
 }
@@ -294,32 +458,51 @@ const live = await liveSchema();
 // blocked by a database blip, on the same day branch protection started
 // REQUIRING this check.
 //
-// That is the exact failure the live re-check was added to end, arriving
-// through the back door. The reasoning above is explicit: when credentials are
-// present the LIVE SCHEMA is the source of truth, because the snapshot is
-// known-stale by construction — it is refreshed daily while schema lands
-// continuously via the Supabase MCP. If the live schema cannot be reached, the
-// gate has no trustworthy evidence at all, and absence of evidence is not
-// evidence of a phantom.
-//
-// So it reports what it WOULD have flagged and passes. This is deliberately a
-// weaker gate during an outage: a genuine phantom is caught on the next run
-// minutes later, whereas blocking every merge in the repo on someone else's
-// downtime is not a tradeoff worth making. Behaviour with no credentials
-// (forks, local runs) is unchanged — the snapshot is all there is, so it still
-// fails.
+// The outage exception is intentionally narrow. References already present in
+// the comparison tree remain nonblocking because this branch did not create
+// their snapshot drift. A table/RPC first called by this branch has no such
+// history: an outage means its deployment cannot be proved, so strict mode
+// fails it closed. A current fragment or allowlist cannot widen that boundary.
+// With no credentials, inherited behavior still follows the snapshot while a
+// branch-new caller likewise requires schema-first proof.
 if (live === UNAVAILABLE) {
-  console.log('');
-  console.log('[check-phantom-refs] The live schema could not be reached after 3 attempts, so the');
-  console.log('    snapshot is the only evidence available — and the snapshot is stale by design.');
-  console.log('    NOT failing the build on it. Would have flagged:');
-  for (const { name } of phantomTables) console.log(`      table  ${name}`);
-  for (const { name } of phantomRpcs) console.log(`      rpc    ${name}`);
-  console.log('    Re-run once Supabase is answering to check these for real.');
-  process.exit(0);
+  if (pendingTableProof.size || pendingRpcProof.size) {
+    phantomTables.length = 0;
+    phantomRpcs.length = 0;
+    addMissingEntries(phantomTables, pendingTableProof, fromRefs);
+    addMissingEntries(phantomRpcs, pendingRpcProof, rpcRefs);
+    console.log('');
+    console.log(
+      '[check-phantom-refs] Live schema proof is unavailable for a reference introduced on this branch.'
+    );
+    console.log(
+      '    Current-branch manifest fragments and allowlist edits cannot certify their own callers.'
+    );
+    console.log('    Apply and verify the schema first, then rerun this gate.');
+  } else {
+    console.log('');
+    console.log(
+      '[check-phantom-refs] The live schema could not be reached after 3 attempts; every'
+    );
+    console.log('    unresolved reference was already present in the comparison tree, so this');
+    console.log('    outage does not turn inherited snapshot drift into an unrelated failure.');
+    for (const { name } of phantomTables) console.log(`      inherited table  ${name}`);
+    for (const { name } of phantomRpcs) console.log(`      inherited rpc    ${name}`);
+    process.exit(0);
+  }
 }
 
 if (live) {
+  addMissingEntries(
+    phantomTables,
+    [...pendingTableProof].filter((name) => !live.tables.has(name)),
+    fromRefs
+  );
+  addMissingEntries(
+    phantomRpcs,
+    [...pendingRpcProof].filter((name) => !live.functions.has(name)),
+    rpcRefs
+  );
   const stale = [];
   const keepTables = [];
   const keepRpcs = [];
@@ -350,26 +533,57 @@ if (live) {
       process.exit(0);
     }
   }
+  if (phantomTables.length === 0 && phantomRpcs.length === 0) {
+    console.log('');
+    console.log('OK — every branch-new reference resolves against the LIVE schema.');
+    process.exit(0);
+  }
+} else if (live === null) {
+  addMissingEntries(phantomTables, pendingTableProof, fromRefs);
+  addMissingEntries(phantomRpcs, pendingRpcProof, rpcRefs);
+  if (pendingTableProof.size || pendingRpcProof.size) {
+    console.log('');
+    console.log(
+      '[check-phantom-refs] A reference introduced on this branch has no base-schema or live proof.'
+    );
+    console.log('    Apply and verify the schema before merging its caller.');
+  }
 }
 
-const printGroup = (title, arr, kind) => {
+const printGroup = (title, arr, kind, pendingProof) => {
   if (!arr.length) return;
   console.log('');
   console.log(title);
   for (const { name, sites } of arr) {
-    console.log(`  ${name}`);
+    const proofLabel = pendingProof.has(name) ? ' [BRANCH-NEW: LIVE PROOF REQUIRED]' : '';
+    console.log(`  ${name}${proofLabel}`);
     for (const s of sites) console.log(`    ${s.file}:${s.line}`);
   }
   console.log('');
   console.log(`Fix a phantom ${kind}:`);
   console.log(`  1. It SHOULD exist -> add the migration and regenerate the manifest.`);
   console.log(`  2. The name is wrong -> correct it to the real ${kind}.`);
-  console.log(`  3. It is an intentional unbuilt-feature ref -> add it (with a reason) to`);
-  console.log(`     scripts/ci/supabase-invariants.allowlist.json.`);
+  if ([...pendingProof].some((name) => arr.some((entry) => entry.name === name))) {
+    console.log('  3. Branch-new references cannot be allowlisted or fragment-certified;');
+    console.log('     publish and verify the schema before merging the caller.');
+  } else {
+    console.log(`  3. An inherited intentional unbuilt-feature ref may remain in the`);
+    console.log(`     reasoned invariants allowlist.`);
+  }
 };
 
-printGroup('PHANTOM TABLES DETECTED (.from() → missing table/view):', phantomTables, 'table');
-printGroup('PHANTOM RPCS DETECTED (.rpc() → missing function):', phantomRpcs, 'rpc');
+printGroup(
+  'PHANTOM TABLES DETECTED (.from() → missing table/view):',
+  phantomTables,
+  'table',
+  pendingTableProof
+);
+printGroup(
+  'PHANTOM RPCS DETECTED (.rpc() → missing function):',
+  phantomRpcs,
+  'rpc',
+  pendingRpcProof
+);
 
 if (WARN_ONLY) {
   console.log('[--warn] exiting 0 despite phantoms.');

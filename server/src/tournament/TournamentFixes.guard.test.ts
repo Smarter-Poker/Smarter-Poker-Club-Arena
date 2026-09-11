@@ -462,7 +462,7 @@ describe('no seating path may write a second live seat in the same tournament', 
 
   it('start-seating delegates the complete seat mutation to one database authority', () => {
     const src = code(BASE);
-    const fn = sliceMethod(src, 'createTablesAndSeatPlayers(tournament: any): Promise<void>');
+    const fn = sliceMethod(src, 'protected async createTablesAndSeatPlayers(');
     const loop = fn.indexOf('for (let i = 0; i < toSeat.length; i++)');
     const assignment = fn.indexOf('assignTournamentPlayerSeatAtomically({', loop);
     expect(loop).toBeGreaterThan(-1);
@@ -515,14 +515,14 @@ describe('seating a tournament twice must not build a second set of tables', () 
    */
   it('adopts tables the tournament already has instead of recreating them', () => {
     const src = code(BASE);
-    const fn = src.slice(src.indexOf('createTablesAndSeatPlayers(tournament: any)'));
+    const fn = src.slice(src.indexOf('protected async createTablesAndSeatPlayers('));
     expect(fn).toMatch(/existingTables/);
     expect(fn).toMatch(/tablesToCreate/);
   });
 
   it('creates only the shortfall, and measures it in SEATS not tables', () => {
     const src = code(BASE);
-    const fn = src.slice(src.indexOf('createTablesAndSeatPlayers(tournament: any)'));
+    const fn = src.slice(src.indexOf('protected async createTablesAndSeatPlayers('));
     /**
      * UPDATED 2026-08-25. This used to pin
      * `Math.max(0, numTables - alreadyHave)`, and that formula is the defect:
@@ -546,7 +546,7 @@ describe('seating a tournament twice must not build a second set of tables', () 
 
   it('never re-seats a player who already holds a live seat', () => {
     const src = code(BASE);
-    const fn = src.slice(src.indexOf('createTablesAndSeatPlayers(tournament: any)'));
+    const fn = src.slice(src.indexOf('protected async createTablesAndSeatPlayers('));
     expect(fn).toMatch(/alreadySeated/);
     // Anchored to the INSERT itself, not to a slice that runs to end of file:
     // the row written must come from the filtered list, and must NOT come from
@@ -563,7 +563,7 @@ describe('seating a tournament twice must not build a second set of tables', () 
 
   it('gives a new seat the lowest FREE seat number WITHIN the table capacity', () => {
     const src = code(BASE);
-    const fn = src.slice(src.indexOf('createTablesAndSeatPlayers(tournament: any)'));
+    const fn = src.slice(src.indexOf('protected async createTablesAndSeatPlayers('));
     /**
      * UPDATED 2026-08-25. The pinned scan was `while (taken.has(seatNumber))
      * seatNumber++` — lowest free, with NO CEILING. Handed a full 9-max table

@@ -46,6 +46,7 @@ CREATE TABLE public.table_seats (
   user_id uuid NOT NULL,
   seat_number integer NOT NULL,
   stack numeric NOT NULL,
+  status text NOT NULL DEFAULT 'seated',
   left_at timestamptz,
   time_bank_uses_remaining integer,
   time_bank_remaining integer,

@@ -157,28 +157,32 @@ function changedMigrations(base) {
       process.exit(2);
     }
   }
-  return out
-    .split('\n')
-    .map((l) => l.trim())
-    .filter((l) => l.startsWith(DIR) && l.endsWith('.sql'))
-    // BACKFILL EXEMPTION (2026-09-01). A file whose first line marks it as a
-    // recovered record of an ALREADY-APPLIED migration is history, not new
-    // work. It cannot introduce a new definer: the function is already live in
-    // whatever state later migrations left it, and THAT live grant - not this
-    // file's historical creation-time GRANT - is what a browser can actually
-    // reach. Judging a backfill on its own creation-time grants produces false
-    // positives against production truth (verified 2026-09-01). New
-    // declarations are unaffected, and live grants stay covered by
-    // audit-live-definer-exposure.mjs (which asks production directly) and by
-    // this gate on every genuinely new migration. Marker is machine-written by
-    // scripts/ci/backfill-unrecorded-migrations.mjs.
-    .filter((f) => {
-      try {
-        return !/^--\s*(BACKFILLED|UNRECOVERABLE STUB)\b/.test(readFileSync(join(REPO, f), 'utf8'));
-      } catch {
-        return true; // unreadable: check it rather than skip it
-      }
-    });
+  return (
+    out
+      .split('\n')
+      .map((l) => l.trim())
+      .filter((l) => l.startsWith(DIR) && l.endsWith('.sql'))
+      // BACKFILL EXEMPTION (2026-09-01). A file whose first line marks it as a
+      // recovered record of an ALREADY-APPLIED migration is history, not new
+      // work. It cannot introduce a new definer: the function is already live in
+      // whatever state later migrations left it, and THAT live grant - not this
+      // file's historical creation-time GRANT - is what a browser can actually
+      // reach. Judging a backfill on its own creation-time grants produces false
+      // positives against production truth (verified 2026-09-01). New
+      // declarations are unaffected, and live grants stay covered by
+      // audit-live-definer-exposure.mjs (which asks production directly) and by
+      // this gate on every genuinely new migration. Marker is machine-written by
+      // scripts/ci/backfill-unrecorded-migrations.mjs.
+      .filter((f) => {
+        try {
+          return !/^--\s*(BACKFILLED|UNRECOVERABLE STUB)\b/.test(
+            readFileSync(join(REPO, f), 'utf8')
+          );
+        } catch {
+          return true; // unreadable: check it rather than skip it
+        }
+      })
+  );
 }
 
 /** Comments carry no behaviour, and a comment that merely NAMES auth.uid()
@@ -240,15 +244,28 @@ function effectiveGrants(sql, name) {
      stray "revoke" ahead of a real GRANT - it clears a function that is wide
      open, which is the whole failure this file exists to prevent. `[^;]*?`
      keeps a verb inside its own statement. */
+  /* ONE ACL STATEMENT MAY NAME MANY FUNCTIONS. The old matcher stopped at the
+     first identity, so later targets falsely retained the default browser
+     grants. Capture the whole target list up to the verb-specific role
+     delimiter and enumerate it. Keep every gap semicolon-bounded so a word in
+     a function body or RAISE string cannot relabel a later ACL statement. */
   const re = new RegExp(
-    String.raw`\b(GRANT|REVOKE)\b([^;]*?)\bON\s+FUNCTION\s+(?:public\.)?(\w+)\s*\(([^)]*)\)([^;]*?);`,
+    String.raw`\b(GRANT|REVOKE)\b([^;]*?)\bON\s+FUNCTION\s+([^;]*?)\b(TO|FROM)\b([^;]*?);`,
     'gi'
   );
   let m;
   while ((m = re.exec(sql))) {
-    if (m[3].toLowerCase() !== name.toLowerCase()) continue;
     const verb = m[1].toUpperCase();
-    const named = `${m[2]} ${m[5]}`.toLowerCase();
+    const delimiter = m[4].toUpperCase();
+    if ((verb === 'GRANT' && delimiter !== 'TO') || (verb === 'REVOKE' && delimiter !== 'FROM')) {
+      continue;
+    }
+    const targets = [];
+    const target = /(?:public\.)?([A-Za-z_]\w*)\s*\([^)]*\)/gi;
+    let targetMatch;
+    while ((targetMatch = target.exec(m[3]))) targets.push(targetMatch[1].toLowerCase());
+    if (!targets.includes(name.toLowerCase())) continue;
+    const named = m[5].toLowerCase();
     for (const role of BROWSER_ROLES) {
       if (new RegExp(String.raw`\b${role}\b`).test(named)) {
         held[role] = verb === 'GRANT';
@@ -474,10 +491,9 @@ export function unscopedRosterDefiners(sql, allowlist = new Set(), grantSql = sq
     // No arguments: `name(` immediately followed by `)`, allowing whitespace.
     // An argument list is the caller's chance to be scoped, so its presence
     // takes the function out of this rule entirely.
-    const takesNoArgs = new RegExp(
-      `FUNCTION\\s+(?:public\\.)?${fn.name}\\s*\\(\\s*\\)`,
-      'i'
-    ).test(fn.header);
+    const takesNoArgs = new RegExp(`FUNCTION\\s+(?:public\\.)?${fn.name}\\s*\\(\\s*\\)`, 'i').test(
+      fn.header
+    );
     if (!takesNoArgs) continue;
 
     // Returns a set: SETOF ..., or TABLE(...). A scalar return answers one
@@ -558,16 +574,12 @@ export function clonedFunctions(sql) {
 export function unrevokedClones(sql, allowlist = new Set(), grantSql = sql) {
   const clean = stripComments(sql);
   const grants = grantSql === sql ? clean : stripComments(grantSql);
-  return clonedFunctions(clean).filter((name) => anonReachable(grants, name) && !allowlist.has(name));
+  return clonedFunctions(clean).filter(
+    (name) => anonReachable(grants, name) && !allowlist.has(name)
+  );
 }
 
-export {
-  stripComments,
-  declaredFunctions,
-  browserReachable,
-  anonReachable,
-  effectiveGrants,
-};
+export { stripComments, declaredFunctions, browserReachable, anonReachable, effectiveGrants };
 
 function main() {
   const base = ALL ? null : baseRef();
@@ -639,9 +651,7 @@ function main() {
 
   if (rosterOffenders.length > 0) {
     console.error('');
-    console.error(
-      '[check-definer-authorization] BLOCKED -- a roster nobody can be scoped out of.'
-    );
+    console.error('[check-definer-authorization] BLOCKED -- a roster nobody can be scoped out of.');
     console.error('');
     for (const o of rosterOffenders) {
       console.error(`  ${o.name}`);
@@ -674,7 +684,9 @@ function main() {
     console.error('     function. That both scopes it and satisfies this rule.');
     console.error('');
     console.error('  3. IT IS GENUINELY A PUBLIC LIST (a leaderboard, a lobby). Add it to the');
-    console.error('     anonPublicSurface block of scripts/ci/definer-authorization.allowlist.json');
+    console.error(
+      '     anonPublicSurface block of scripts/ci/definer-authorization.allowlist.json'
+    );
     console.error('     with a reason saying why every row in it is safe for anyone to read.');
     console.error('');
     process.exit(1);
@@ -688,7 +700,9 @@ function main() {
       console.error(`  ${o.name}`);
       console.error(`    cloned in ${o.file}`);
       console.error('    A function copied into a new name is a NEW function, and a new function');
-      console.error('    holds EXECUTE for PUBLIC until something revokes it. This migration never');
+      console.error(
+        '    holds EXECUTE for PUBLIC until something revokes it. This migration never'
+      );
       console.error('    says who may execute this one.');
       console.error('');
     }

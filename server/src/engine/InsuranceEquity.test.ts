@@ -73,6 +73,18 @@ describe('leaderOuts - the cards that put the leader behind on the next street',
     expect(ranks).not.toContain('9');
   });
 
+  it('never advertises a publicly revealed all-in Pineapple discard as an out', () => {
+    const hero = [c('A', 'h'), c('A', 'd')];
+    const opp = [c('K', 'c'), c('Q', 'c')];
+    const board = [c('A', 's'), c('7', 'c'), c('2', 'c'), c('9', 'h')];
+    const visibleDiscard = c('8', 'c');
+
+    const outs = leaderOuts(hero, [opp], board, 'nlh', false, [visibleDiscard]);
+
+    expect(outs).toHaveLength(6);
+    expect(outs).not.toContainEqual(visibleDiscard);
+  });
+
   it('a leader who cannot be overtaken next street has zero outs against them', () => {
     const hero = [c('A', 'h'), c('A', 'd')];
     const opp = [c('K', 'd'), c('K', 's')];

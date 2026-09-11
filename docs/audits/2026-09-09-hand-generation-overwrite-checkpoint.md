@@ -8,7 +8,7 @@ The terminal-settlement migration applied at live version 20260909215641 replace
 
 ## Correction And Live Evidence
 
-Migration file: `20260909234723_restore_exact_hand_generation_after_terminal_writer.sql`.
+Migration file: `20260909234808_restore_exact_hand_generation_after_terminal_writer.sql`.
 Applied to the authorized Club Arena project at live version **20260909234808**.
 Verified definition MD5s: inner `9be5d1da12d8f674a47a50ffb9a6df81`; 12-argument outer `f93a85ebe5a509ccb7dfedb9be1ed3fa`.
 The inner stays owner-only; the outer stays service-only. Anonymous and authenticated roles cannot execute either.

@@ -6,7 +6,7 @@ const sql = readFileSync(
   resolve(
     __dirname,
     '..',
-    'supabase/migrations/20260909014433_spin_reserve_settlement_commits_its_journal_or_nothing.sql'
+    'supabase/migrations/20260909205412_spin_reserve_settlement_commits_its_journal_or_nothing.sql'
   ),
   'utf8'
 );
@@ -14,7 +14,7 @@ const closeout = readFileSync(
   resolve(
     __dirname,
     '..',
-    'supabase/migrations/20260909053000_complete_known_spin_journal_adoption_after_freeze.sql'
+    'supabase/migrations/20260909210018_complete_known_spin_journal_adoption_after_freeze.sql'
   ),
   'utf8'
 );

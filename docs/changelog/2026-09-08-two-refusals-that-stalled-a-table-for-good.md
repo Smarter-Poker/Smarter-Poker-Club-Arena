@@ -27,7 +27,7 @@ in two hours and the departed rows are pruned behind them. `ca_seat_stack_exits`
 survives that, and against it **13 of 13 stalled tables** had a seat exit within
 15 minutes of their refusal.
 
-The chips were never at risk. The alert says so itself: the hand *committed*,
+The chips were never at risk. The alert says so itself: the hand _committed_,
 and only its post-commit envelope was held back.
 
 Fixed at the root: an item whose seat is no longer present is **accounted for**,

@@ -225,6 +225,30 @@ describe('authenticated production account preflight', () => {
     );
   });
 
+  it('takes every isolated production account through Terms before the inner profile gate', () => {
+    const entryCallers = [
+      'tests/e2e/global-setup.ts',
+      'tests/e2e/production-customization-realtime.spec.ts',
+      'tests/e2e/production-customization-commerce.spec.ts',
+      'tests/e2e/support/DailyMissionsPage.ts',
+    ];
+
+    for (const path of entryCallers) {
+      const caller = source(path);
+      const termsCalls = [...caller.matchAll(/await ensureAcceptedTerms\(page\);/g)];
+      const profileCalls = [...caller.matchAll(/await ensurePlayableProfile\(page\);/g)];
+
+      expect(termsCalls, `${path} must resolve the outer TOSGuard exactly once`).toHaveLength(1);
+      expect(profileCalls, `${path} must resolve the inner profile gate exactly once`).toHaveLength(
+        1
+      );
+      expect(
+        termsCalls[0].index,
+        `${path} must resolve TOS before profile onboarding`
+      ).toBeLessThan(profileCalls[0].index);
+    }
+  });
+
   it('preflights the dedicated account through the real public club join flow', () => {
     const setup = source('tests/e2e/global-setup.ts');
     expect(setup).toContain('ensureClubMembership(');

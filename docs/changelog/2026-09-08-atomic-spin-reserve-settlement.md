@@ -16,7 +16,7 @@ three-seat contribution twice while evaluating affordability.
 
 ## Root Repair
 
-Migration `20260909014433_spin_reserve_settlement_commits_its_journal_or_nothing`
+Migration `20260909205412_spin_reserve_settlement_commits_its_journal_or_nothing`
 installs one database-owned Spin money boundary:
 
 - The earlier platform-wide strict `fn_ca_autoledger` makes each
@@ -76,7 +76,7 @@ wallet, adjustment, or membership state.
 
 Because that append is a top-level journal write, it is intentionally not part
 of the frozen broad schema transaction. Migration
-`20260909053000_complete_known_spin_journal_adoption_after_freeze` takes the
+`20260909210018_complete_known_spin_journal_adoption_after_freeze` takes the
 terminal-global and shared maintenance roots, refuses while the entry freeze is
 still active or the platform remains frozen, proves the committed
 `20260909014433` cutover, and performs only the exact post-thaw adoption. It is

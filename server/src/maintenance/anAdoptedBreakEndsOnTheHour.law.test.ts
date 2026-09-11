@@ -32,11 +32,9 @@
  * TWO PINS:
  *   1. an adopted `last_hand` break ends at the next :00, whatever time the
  *      process happened to boot;
- *   2. a `last_hand` row older than the whole announcement-plus-break span is
- *      refused rather than adopted. Before the fix `remaining` was the
- *      CONSTANT five minutes for such a row, so the staleness check above it
- *      could never fire, and an orphaned announcement from any earlier hour
- *      would park the entire platform for five minutes from any later boot.
+ *   2. an expired exact row is recovered through the owned thaw ledger rather
+ *      than adopted as a new visible break or discarded without compensating
+ *      the clocks it froze.
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -74,9 +72,13 @@ class FakeEngine {
 
 class FakeStore implements MaintenanceBreakStore {
   row: PersistedMaintenanceBreak | null = null;
+  releaseBoundary: number | null = null;
   clears = 0;
   async load() {
     return this.row;
+  }
+  async loadReleaseBoundary() {
+    return this.releaseBoundary;
   }
   async save(s: PersistedMaintenanceBreak) {
     if (this.row && this.row.ownershipToken !== s.ownershipToken) {
@@ -100,14 +102,18 @@ function build(engineCount = 3) {
   const engines = new Map<string, FakeEngine>();
   for (let i = 0; i < engineCount; i++) engines.set(`t${i}`, new FakeEngine());
   const store = new FakeStore();
+  const thaws: Array<{ startMs: number; frozenSeconds: number }> = [];
   const mb = new MaintenanceBreak({
     engines: () => engines.entries() as any,
     isRunning: () => true,
     emit: () => {},
     store,
+    thaw: async (startMs, frozenSeconds) => {
+      thaws.push({ startMs, frozenSeconds });
+    },
     recordOutcome: async () => {},
   });
-  return { mb, engines, store };
+  return { mb, engines, store, thaws };
 }
 
 /**
@@ -175,15 +181,12 @@ describe('an adopted last-hand break', () => {
   /**
    * THE SIXTY-MINUTE FREEZE. The first fix computed "the next :00", and
    * `nextHourBoundary()` returned the FOLLOWING hour for a boot at exactly
-   * :00:00.000 — while the staleness guard admits rows up to eight minutes
-   * old, leaving a sixty-second window right after the hour in which an
-   * adopted break would have parked the whole fleet for an hour.
+   * :00:00.000, leaving a boundary right after the hour in which an adopted
+   * break would have parked the whole fleet for an hour.
    *
-   * Nothing would have caught it in production: `fn_platform_frozen` only arms
-   * within fifteen minutes of the end, so buy-ins would have flowed while
-   * nothing dealt; `fn_thaw_platform` refuses anything over 900s, so every
-   * in-flight deadline would have burned; and every fleet alarm is muted while
-   * `poker_maintenance_break_active == 1`.
+   * The end is derived from the declaration, never the boot instant. An
+   * already-expired identity goes through thaw recovery immediately and does
+   * not become a new player-visible five-minute break.
    */
   it('NEVER holds the fleet longer than a break, whatever instant it boots at', async () => {
     // Walk the whole admission window a second at a time, straddling the hour.
@@ -193,8 +196,7 @@ describe('an adopted last-hand break', () => {
       const { mb, store } = build(2);
       store.row = {
         phase: 'last_hand',
-        // Announced at :53 of the hour that has just ended - the row the
-        // staleness guard still (correctly) admits for a few more minutes.
+        // Announced at :53 of the hour that has just ended.
         announcedAt: AT('2026-09-06T18:53:00.000Z'),
         breakStartedAt: null,
         breakEndsAt: null,
@@ -217,13 +219,13 @@ describe('an adopted last-hand break', () => {
     }
   });
 
-  it('refuses a row from an hour that has already finished', async () => {
+  it('thaws a row from an earlier hour without adopting it as a new break', async () => {
     const boot = new Date('2026-09-06T21:07:00.000Z').getTime();
     vi.setSystemTime(boot);
-    const { mb, engines, store } = build();
-    // Announced at 18:53 and never cleared. Under the old arithmetic this
-    // would have frozen every table on the platform for five minutes, at
-    // 21:07, for a break nobody announced and no screen was showing.
+    const { mb, engines, store, thaws } = build();
+    // Announced at 18:53 and never released. It must not become a fresh break
+    // at 21:07, but it also must not be directly cleared around the clocks it
+    // protected. Exact v3 thaw recovery owns that transition.
     store.row = {
       phase: 'last_hand',
       announcedAt: new Date('2026-09-06T18:53:00.000Z').getTime(),
@@ -239,6 +241,8 @@ describe('an adopted last-hand break', () => {
       expect(e.paused, `${id} was frozen by a stale announcement`).toBe(false);
     }
     expect(mb.isActive()).toBe(false);
+    expect(thaws).toHaveLength(1);
+    expect(thaws[0].frozenSeconds).toBeGreaterThan(15 * 60);
     expect(store.clears).toBeGreaterThan(0);
     expect(store.row).toBeNull();
   });

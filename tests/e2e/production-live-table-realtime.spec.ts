@@ -53,7 +53,12 @@ interface EngineHealth {
   stalledTableCount: number;
   deadStalledCount: number;
   wholeFleetStalled: boolean;
-  maintenance?: { active?: boolean; phase?: string | null } | null;
+  maintenance: {
+    active: boolean;
+    phase: string | null;
+    durableConfirmed: boolean;
+    readyForRestart: boolean;
+  };
   equityGovernor?: { scale?: number; p50Ms?: number; p99Ms?: number } | null;
   telemetry?: { avgHandDurationMs?: number; avgHandsPerHour?: number } | null;
   tableLiveness: EngineTableLiveness[];
@@ -122,7 +127,15 @@ async function readEngineHealth(request: APIRequestContext): Promise<EngineHealt
     engineVersionMatchesExpected(String(health.version || '')),
     `engine version ${health.version || '(missing)'} did not match ${EXPECTED_ENGINE_SHA}`
   ).toBe(true);
-  if (health.maintenance?.active) {
+  expect(
+    typeof health.maintenance?.durableConfirmed,
+    'the expected production build omitted maintenance.durableConfirmed'
+  ).toBe('boolean');
+  expect(
+    typeof health.maintenance?.readyForRestart,
+    'the expected production build omitted maintenance.readyForRestart'
+  ).toBe('boolean');
+  if (health.maintenance.active) {
     throw new Error(
       `production engine is in scheduled maintenance (${health.maintenance.phase || 'unknown phase'}); ` +
         'live-table continuity must be certified after normal dealing resumes'

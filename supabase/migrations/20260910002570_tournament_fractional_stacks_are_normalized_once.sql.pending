@@ -1,0 +1,2586 @@
+-- 20260910002570_tournament_fractional_stacks_are_normalized_once
+--
+-- THE WHOLE-CHIP ENGINE CANNOT INHERIT A FRACTIONAL TOURNAMENT FELT.
+--
+-- The legacy tournament allocator could write fractional table_seats.stack
+-- values while tournament_players.chips stored only floor(stack). A prior
+-- seat-only transition removed some fractions before this cutover and could
+-- leave the exact rounded-up seat one chip above its unchanged roster mirror.
+-- The new allocator prevents both defects at the source, but merely deploying
+-- it does not make the already-running fields whole or repair that exact
+-- residue. It is also unsafe to round rows one by one: independent rounding
+-- creates or destroys tournament chips, and an engine holding the old
+-- in-memory stack can overwrite a database-only repair when it resumes.
+--
+-- This is therefore a deliberately operator-bound, one-time cutover, not a
+-- general repair function.  It remains FAIL CLOSED until all nine literals in
+-- the DO block are replaced from one locked observation of the stopped exact
+-- engine build.  The migration then:
+--
+--   * takes the repository-wide realtime.subscription lock first and every
+--     public authority/lifecycle relation NOWAIT;
+--   * proves the exact whole-chip build declared an active counting_down
+--     freeze, all engine heartbeats are stale, no hand is in flight, the
+--     strict exact-seat database doors are installed, and the measured cohort
+--     has not changed;
+--   * treats table_seats as the canonical pre-cutover balance, assigns each
+--     tournament's integral fractional remainder by largest remainder, with
+--     (table_id, seat_number, seat_id, joined_at, user_id) as the stable tie;
+--   * updates only the exact active (id, joined_at) seat generations and their
+--     exact tournament_players mirrors in the same transaction, including a
+--     whole-seat mirror only when the stopped observation proves it is exactly
+--     one chip low; and
+--   * verifies the complete postimage and per-tournament conservation before
+--     commit.  A skipped trigger row, pointer mismatch, lock race, stale
+--     source, or partial update raises and rolls the whole transaction back.
+--
+-- Wallets and terminal COMPLETED/CANCELLED history are neither selected nor
+-- written.  There is no cron, watcher, redrive, or later reconciliation path.
+-- Permanent write-time guards and strict sync RPCs prevent the repaired state
+-- from being contaminated again. Exact postimage recognition makes an
+-- immediate retry after an ambiguous response a verified no-op; any other
+-- drift is refused.
+--
+-- CUTOVER ORDER (manual and mandatory): follow
+-- docs/runbooks/tournament-fractional-stack-cutover.md. Deploy/prove the exact
+-- whole-chip build as sole; enter counting_down; stop it; wait beyond the
+-- audited 30-second lease window; render one private artifact from the single
+-- locked observation; verify its bytes and pristine ledger name; apply those
+-- exact private bytes through apply_migration. The DB-first atomic move
+-- authority must already be installed before the capable application build is
+-- published, so no deployed caller can ever name an absent function. Restart
+-- the same build only after ledger and postcondition proofs pass. The tracked
+-- source and real ledger-assigned filename are sealed afterward; never patch
+-- this staging template before apply and never hand-edit values from separate
+-- queries.
+
+BEGIN;
+
+SET LOCAL lock_timeout = '1s';
+SET LOCAL statement_timeout = '30s';
+-- Full-row JSON hashes must be invariant across the operator and Supabase
+-- sessions. In particular, to_jsonb(timestamptz) follows the session zone.
+SET LOCAL TimeZone = 'UTC';
+SET LOCAL DateStyle = 'ISO, YMD';
+SET LOCAL IntervalStyle = 'iso_8601';
+SET LOCAL extra_float_digits = 3;
+SET LOCAL bytea_output = 'hex';
+
+-- Supabase Realtime's global catalog boundary is always first.  A busy
+-- cutover aborts instead of making a live table wait behind this migration.
+LOCK TABLE realtime.subscription IN ACCESS EXCLUSIVE MODE NOWAIT;
+
+DO $normalize_fractional_tournament_stacks$
+DECLARE
+  /*
+   * These are syntactically valid sentinels on purpose: the checked-in file
+   * can be reviewed and tested, but it cannot mutate a row until an operator
+   * replaces every value from the same locked quiet-window observation.
+   */
+  c_engine_sha8 constant text := '__CUTOVER_ENGINE_SHA8__';
+  c_tournament_ids_csv constant text := '__CUTOVER_TOURNAMENT_IDS_CSV__';
+  c_tournament_count constant integer := -1;
+  c_table_count constant integer := -1;
+  c_active_seat_count constant integer := -1;
+  c_fractional_seat_count constant integer := -1;
+  c_total_chips constant numeric := -1;
+  c_preimage_sha256 constant text := '__CUTOVER_PREIMAGE_SHA256__';
+  c_postimage_sha256 constant text := '__CUTOVER_POSTIMAGE_SHA256__';
+
+  v_cutover_at timestamptz;
+  v_break_announced_at timestamptz;
+  v_tournament_ids uuid[];
+  v_parsed_id_count integer;
+  v_actual_tournament_count integer;
+  v_actual_table_count integer;
+  v_actual_seat_count integer;
+  v_actual_fractional_count integer;
+  v_actual_total numeric;
+  v_actual_preimage_sha256 text;
+  v_planned_postimage_sha256 text;
+  v_actual_postimage_sha256 text;
+  v_expected_seat_updates integer;
+  v_expected_player_updates integer;
+  v_updated integer;
+  v_inner text;
+  v_outer text;
+  v_sync text;
+  v_live_sync text;
+  v_literals_ready boolean;
+  v_literals_all_sentinel boolean;
+BEGIN
+  v_literals_all_sentinel :=
+    c_engine_sha8 = '__CUTOVER_ENGINE_SHA8__'
+    AND c_tournament_ids_csv = '__CUTOVER_TOURNAMENT_IDS_CSV__'
+    AND c_tournament_count = -1
+    AND c_table_count = -1
+    AND c_active_seat_count = -1
+    AND c_fractional_seat_count = -1
+    AND c_total_chips = -1
+    AND c_preimage_sha256 = '__CUTOVER_PREIMAGE_SHA256__'
+    AND c_postimage_sha256 = '__CUTOVER_POSTIMAGE_SHA256__';
+  v_literals_ready :=
+    c_engine_sha8 ~ '^[0-9a-f]{8}$'
+    AND c_tournament_ids_csv <> '__CUTOVER_TOURNAMENT_IDS_CSV__'
+    AND c_preimage_sha256 ~ '^[0-9a-f]{64}$'
+    AND c_postimage_sha256 ~ '^[0-9a-f]{64}$'
+    AND (
+      (
+        c_tournament_count > 0
+        AND c_table_count > 0
+        AND c_active_seat_count > 0
+        AND c_fractional_seat_count >= 0
+        AND c_fractional_seat_count <= c_active_seat_count
+        AND c_total_chips >= 0
+        AND c_total_chips = trunc(c_total_chips)
+        AND c_preimage_sha256 <> c_postimage_sha256
+      )
+      OR (
+        c_tournament_ids_csv = ''
+        AND c_tournament_count = 0
+        AND c_table_count = 0
+        AND c_active_seat_count = 0
+        AND c_fractional_seat_count = 0
+        AND c_total_chips = 0
+        AND c_preimage_sha256 =
+          'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'
+        AND c_postimage_sha256 = c_preimage_sha256
+      )
+    );
+
+  IF v_literals_ready THEN
+    IF c_tournament_count = 0 THEN
+      v_tournament_ids := '{}'::uuid[];
+      v_parsed_id_count := 0;
+    ELSE
+      BEGIN
+        SELECT array_agg(parsed.id ORDER BY parsed.id), count(*)
+          INTO v_tournament_ids, v_parsed_id_count
+          FROM (
+            SELECT btrim(raw.id)::uuid AS id
+              FROM unnest(string_to_array(c_tournament_ids_csv, ',')) AS raw(id)
+             WHERE btrim(raw.id) <> ''
+          ) parsed;
+      EXCEPTION WHEN invalid_text_representation THEN
+        RAISE EXCEPTION 'FRACTIONAL_STACK_CUTOVER_IDS_INVALID: tournament cohort is not canonical UUID CSV'
+          USING ERRCODE = '22023';
+      END;
+    END IF;
+
+    IF v_parsed_id_count <> c_tournament_count
+       OR cardinality(v_tournament_ids) <> c_tournament_count
+       OR (SELECT count(DISTINCT id) FROM unnest(v_tournament_ids) AS ids(id))
+            <> c_tournament_count THEN
+      RAISE EXCEPTION
+        'FRACTIONAL_STACK_CUTOVER_IDS_INVALID: expected % unique ids, parsed %',
+        c_tournament_count,
+        COALESCE(v_parsed_id_count, 0)
+        USING ERRCODE = '22023';
+    END IF;
+  ELSE
+    v_tournament_ids := '{}'::uuid[];
+  END IF;
+
+  /*
+   * After realtime.subscription, keep one fixed public lock order.  SHARE ROW
+   * EXCLUSIVE blocks every ordinary writer.  NOWAIT means an already-running
+   * writer aborts the cutover whole rather than being waited out invisibly.
+   */
+  LOCK TABLE supabase_migrations.schema_migrations IN SHARE MODE NOWAIT;
+  LOCK TABLE public.engine_maintenance_break IN SHARE ROW EXCLUSIVE MODE NOWAIT;
+  LOCK TABLE public.engine_leader IN SHARE ROW EXCLUSIVE MODE NOWAIT;
+  LOCK TABLE public.engine_table_leases IN SHARE ROW EXCLUSIVE MODE NOWAIT;
+  LOCK TABLE public.engine_tournament_leases IN SHARE ROW EXCLUSIVE MODE NOWAIT;
+  -- These four receive permanent ingress triggers after the one-time rewrite.
+  -- Take their final DDL strength NOWAIT now; never upgrade later while a
+  -- reader has entered behind this transaction.
+  LOCK TABLE public.tournaments IN ACCESS EXCLUSIVE MODE NOWAIT;
+  LOCK TABLE public.tournament_players IN ACCESS EXCLUSIVE MODE NOWAIT;
+  IF to_regclass('public.tournament_flights') IS NOT NULL THEN
+    EXECUTE 'LOCK TABLE public.tournament_flights IN ACCESS EXCLUSIVE MODE NOWAIT';
+  END IF;
+  LOCK TABLE public.tables IN ACCESS EXCLUSIVE MODE NOWAIT;
+  LOCK TABLE public.table_seats IN ACCESS EXCLUSIVE MODE NOWAIT;
+  LOCK TABLE public.hand_state_snapshots IN SHARE ROW EXCLUSIVE MODE NOWAIT;
+  LOCK TABLE public.settlement_idempotency_keys IN SHARE ROW EXCLUSIVE MODE NOWAIT;
+  LOCK TABLE public.hand_atomic_commits IN SHARE ROW EXCLUSIVE MODE NOWAIT;
+
+  v_cutover_at := clock_timestamp();
+
+  /* Row locks catch a pre-existing SELECT ... FOR UPDATE holder which has not
+     yet taken a conflicting relation write lock.  Stable order also keeps an
+     operator-visible lock graph deterministic. */
+  PERFORM 1 FROM public.engine_maintenance_break b ORDER BY b.id FOR UPDATE NOWAIT;
+  PERFORM 1 FROM public.engine_leader l ORDER BY l.id FOR UPDATE NOWAIT;
+  PERFORM 1 FROM public.engine_table_leases l ORDER BY l.table_id FOR UPDATE NOWAIT;
+  PERFORM 1 FROM public.engine_tournament_leases l ORDER BY l.tournament_id FOR UPDATE NOWAIT;
+  PERFORM 1 FROM public.tournaments t
+    WHERE t.id = ANY(v_tournament_ids) ORDER BY t.id FOR UPDATE NOWAIT;
+  PERFORM 1 FROM public.tournament_players p
+    WHERE p.tournament_id = ANY(v_tournament_ids)
+    ORDER BY p.tournament_id, p.id FOR UPDATE NOWAIT;
+  PERFORM 1 FROM public.tables t
+    WHERE t.tournament_id = ANY(v_tournament_ids)
+    ORDER BY t.tournament_id, t.id FOR UPDATE NOWAIT;
+  PERFORM 1
+    FROM public.table_seats s
+    JOIN public.tables t ON t.id = s.table_id
+   WHERE t.tournament_id = ANY(v_tournament_ids)
+   ORDER BY t.tournament_id, s.table_id, s.seat_number, s.id
+   FOR UPDATE OF s NOWAIT;
+  PERFORM 1
+    FROM public.hand_state_snapshots h
+   WHERE h.table_id IN (
+     SELECT t.id FROM public.tables t WHERE t.tournament_id = ANY(v_tournament_ids)
+   )
+   ORDER BY h.table_id, h.hand_number, h.id FOR UPDATE NOWAIT;
+  PERFORM 1
+    FROM public.settlement_idempotency_keys k
+   WHERE k.table_id IN (
+     SELECT t.id FROM public.tables t WHERE t.tournament_id = ANY(v_tournament_ids)
+   )
+   ORDER BY k.table_id, k.hand_id FOR UPDATE NOWAIT;
+  PERFORM 1
+    FROM public.hand_atomic_commits c
+   WHERE c.table_id IN (
+     SELECT t.id FROM public.tables t WHERE t.tournament_id = ANY(v_tournament_ids)
+   )
+   ORDER BY c.table_id, c.hand_number FOR UPDATE NOWAIT;
+
+  IF EXISTS (
+    SELECT 1
+      FROM (VALUES
+        ('hand_settlement_targets_exact_seat_generation'),
+        ('stage_b_current_postimage_contraction'),
+        ('stage_b_lease_keyshare_once')
+      ) AS required(name)
+     WHERE (SELECT count(*)
+              FROM supabase_migrations.schema_migrations m
+             WHERE m.name = required.name) <> 1
+  ) THEN
+    RAISE EXCEPTION
+      'FRACTIONAL_STACK_PREREQUISITE_MISSING: exact-seat expansion and the complete current Stage-B contraction/key-share chain must already be installed'
+      USING ERRCODE = '55000';
+  END IF;
+
+  IF to_regprocedure(
+       'public.fn_move_tournament_player(uuid,uuid,uuid,uuid,integer,uuid,text)'
+     ) IS NULL
+     OR to_regclass('public.tournament_seat_move_receipts') IS NULL
+     OR NOT EXISTS (
+          SELECT 1
+            FROM pg_class index_relation
+            JOIN pg_namespace index_namespace
+              ON index_namespace.oid = index_relation.relnamespace
+            JOIN pg_index index_catalog
+              ON index_catalog.indexrelid = index_relation.oid
+           WHERE index_namespace.nspname = 'public'
+             AND index_relation.relname =
+                   'idx_tournament_players_one_active_destination_pointer'
+             AND index_catalog.indrelid = 'public.tournament_players'::regclass
+             AND index_catalog.indisunique
+             AND index_catalog.indisvalid
+             AND index_catalog.indisready
+             AND index_catalog.indnkeyatts = 3
+             AND index_catalog.indnatts = 3
+             AND ARRAY(
+                   SELECT attribute.attname::text
+                     FROM unnest(index_catalog.indkey)
+                          WITH ORDINALITY AS key_column(attnum, position)
+                     JOIN pg_attribute attribute
+                       ON attribute.attrelid = index_catalog.indrelid
+                      AND attribute.attnum = key_column.attnum
+                    ORDER BY key_column.position
+                 ) = ARRAY['tournament_id', 'table_id', 'seat_number']::text[]
+             AND pg_get_expr(
+                   index_catalog.indpred, index_catalog.indrelid, true
+                 ) = '(status = ANY (ARRAY[''registered''::text, ''playing''::text])) AND table_id IS NOT NULL AND seat_number IS NOT NULL'
+        ) THEN
+    RAISE EXCEPTION
+      'FRACTIONAL_STACK_PREREQUISITE_MISSING: atomic tournament move authority is incomplete'
+      USING ERRCODE = '55000';
+  END IF;
+
+  IF to_regprocedure(
+       'public.fn_ca_settle_hand_stacks_absolute(uuid,bigint,jsonb,numeric,numeric,text,numeric)'
+     ) IS NULL
+     OR to_regprocedure(
+       'public.fn_ca_commit_hand_settlement(uuid,bigint,jsonb,numeric,numeric,text,numeric,jsonb,jsonb,text,uuid,jsonb)'
+     ) IS NULL
+     OR to_regprocedure(
+       'public.fn_ca_commit_hand_settlement(uuid,bigint,jsonb,numeric,numeric,text,numeric,jsonb,jsonb)'
+     ) IS NOT NULL
+     OR to_regprocedure(
+       'public.fn_ca_commit_hand_settlement(uuid,bigint,jsonb,numeric,numeric,text,numeric,jsonb,jsonb,text,uuid)'
+     ) IS NOT NULL THEN
+    RAISE EXCEPTION
+      'FRACTIONAL_STACK_STRICT_DOOR_DRIFT: exact 12-argument settlement must be the sole public hand door'
+      USING ERRCODE = '55000';
+  END IF;
+
+  SELECT pg_get_functiondef(
+    'public.fn_ca_settle_hand_stacks_absolute(uuid,bigint,jsonb,numeric,numeric,text,numeric)'::regprocedure
+  ) INTO v_inner;
+  SELECT pg_get_functiondef(
+    'public.fn_ca_commit_hand_settlement(uuid,bigint,jsonb,numeric,numeric,text,numeric,jsonb,jsonb,text,uuid,jsonb)'::regprocedure
+  ) INTO v_outer;
+  IF to_regprocedure('public.fn_sync_tournament_chips(uuid,jsonb)') IS NULL THEN
+    RAISE EXCEPTION
+      'FRACTIONAL_STACK_STRICT_DOOR_DRIFT: tournament chip sync RPC is missing'
+      USING ERRCODE = '55000';
+  END IF;
+  SELECT pg_get_functiondef(
+    'public.fn_sync_tournament_chips(uuid,jsonb)'::regprocedure
+  ) INTO v_sync;
+  IF to_regprocedure('public.fn_sync_tournament_live_seat_chips(uuid)') IS NULL THEN
+    RAISE EXCEPTION
+      'FRACTIONAL_STACK_STRICT_DOOR_DRIFT: live-seat tournament chip sync RPC is missing'
+      USING ERRCODE = '55000';
+  END IF;
+  SELECT pg_get_functiondef(
+    'public.fn_sync_tournament_live_seat_chips(uuid)'::regprocedure
+  ) INTO v_live_sync;
+
+  IF position('Exact seat generation is required for every hand settlement participant' IN v_inner) = 0
+     OR position('exact_stack_seat_generation_required' IN v_outer) = 0
+     OR position('exact_time_bank_seat_generation_required' IN v_outer) = 0
+     OR has_function_privilege(
+          'service_role',
+          'public.fn_ca_settle_hand_stacks_absolute(uuid,bigint,jsonb,numeric,numeric,text,numeric)',
+          'EXECUTE'
+        )
+     OR NOT has_function_privilege(
+          'service_role',
+          'public.fn_ca_commit_hand_settlement(uuid,bigint,jsonb,numeric,numeric,text,numeric,jsonb,jsonb,text,uuid,jsonb)',
+          'EXECUTE'
+        )
+     OR position('ORDER BY tp.user_id' IN v_sync) = 0
+     OR (
+       position('floor(GREATEST(u.chips, 0))::integer' IN v_sync) = 0
+       AND position('TOURNAMENT_CHIP_SYNC_INPUT_INVALID' IN v_sync) = 0
+     )
+     OR NOT (
+       (
+         position('floor(GREATEST(u.chips, 0))::integer' IN v_sync) > 0
+         AND position('TOURNAMENT_CHIP_SYNC_INPUT_INVALID' IN v_sync) = 0
+         AND has_function_privilege(
+              'service_role',
+              'public.fn_sync_tournament_chips(uuid,jsonb)',
+              'EXECUTE'
+            )
+       )
+       OR (
+         position('TOURNAMENT_CHIP_SYNC_INPUT_INVALID' IN v_sync) > 0
+         AND position('TOURNAMENT_CHIP_SYNC_RECIPIENT_MISMATCH' IN v_sync) > 0
+         AND NOT has_function_privilege(
+              'service_role',
+              'public.fn_sync_tournament_chips(uuid,jsonb)',
+              'EXECUTE'
+            )
+       )
+     )
+     OR has_function_privilege(
+          'authenticated',
+          'public.fn_sync_tournament_chips(uuid,jsonb)',
+          'EXECUTE'
+        )
+     OR has_function_privilege(
+          'anon',
+          'public.fn_sync_tournament_chips(uuid,jsonb)',
+          'EXECUTE'
+        )
+     OR (
+       position(
+         'floor(GREATEST(COALESCE(latest_stack,0),0))' IN v_live_sync
+       ) = 0
+       AND position(
+         'TOURNAMENT_LIVE_SEAT_CHIP_INPUT_INVALID' IN v_live_sync
+       ) = 0
+     )
+     OR NOT has_function_privilege(
+          'service_role',
+          'public.fn_sync_tournament_live_seat_chips(uuid)',
+          'EXECUTE'
+        )
+     OR has_function_privilege(
+          'authenticated',
+          'public.fn_sync_tournament_live_seat_chips(uuid)',
+          'EXECUTE'
+        )
+     OR has_function_privilege(
+          'anon',
+          'public.fn_sync_tournament_live_seat_chips(uuid)',
+          'EXECUTE'
+        ) THEN
+    RAISE EXCEPTION
+      'FRACTIONAL_STACK_STRICT_DOOR_DRIFT: strict source markers or application ACL changed'
+      USING ERRCODE = '55000';
+  END IF;
+
+  IF format_type(
+       (SELECT a.atttypid FROM pg_attribute a
+         WHERE a.attrelid = 'public.table_seats'::regclass
+           AND a.attname = 'stack' AND NOT a.attisdropped),
+       (SELECT a.atttypmod FROM pg_attribute a
+         WHERE a.attrelid = 'public.table_seats'::regclass
+           AND a.attname = 'stack' AND NOT a.attisdropped)
+     ) <> 'numeric(15,2)'
+     OR format_type(
+       (SELECT a.atttypid FROM pg_attribute a
+         WHERE a.attrelid = 'public.tournament_players'::regclass
+           AND a.attname = 'chips' AND NOT a.attisdropped),
+       (SELECT a.atttypmod FROM pg_attribute a
+         WHERE a.attrelid = 'public.tournament_players'::regclass
+           AND a.attname = 'chips' AND NOT a.attisdropped)
+     ) NOT IN ('integer', 'bigint') THEN
+    RAISE EXCEPTION
+      'FRACTIONAL_STACK_SCHEMA_DRIFT: expected table_seats.stack numeric(15,2) and tournament_players.chips legacy integer or canonical bigint'
+      USING ERRCODE = '55000';
+  END IF;
+
+  /* Certification is global even though mutation is cohort-scoped. An empty
+     measured cohort must not make the bidirectional seat/roster proof vacuous:
+     the engine is about to restart against the whole nonterminal estate. */
+  IF EXISTS (
+    SELECT 1
+      FROM public.table_seats s
+      JOIN public.tables tb ON tb.id = s.table_id
+      LEFT JOIN public.tournaments t ON t.id = tb.tournament_id
+     WHERE s.left_at IS NULL
+       AND (
+         (tb.tournament_id IS NOT NULL
+          AND upper(COALESCE(t.status::text, ''))
+                NOT IN ('COMPLETED', 'CANCELLED', 'CANCELED'))
+         OR (tb.tournament_id IS NULL
+             AND lower(COALESCE(tb.game_type::text, '')) = 'tournament')
+       )
+       AND (
+         s.stack IS NULL
+         OR lower(s.stack::text) IN ('nan', 'infinity', '-infinity')
+         OR s.stack < 0
+         OR s.stack > 9999999999999
+         OR (
+           SELECT count(*)
+             FROM public.tournament_players tp
+            WHERE tp.tournament_id = t.id
+              AND tp.user_id = s.user_id
+              AND (
+                tp.status::text IN ('registered', 'playing')
+                OR (
+                  upper(COALESCE(t.status::text, '')) = 'COMPLETING'
+                  AND tp.status::text = 'winner'
+                )
+              )
+              AND (
+                upper(COALESCE(t.status::text, '')) <> 'RUNNING'
+                OR tp.status::text = 'playing'
+              )
+              AND tp.table_id = tb.id
+              AND tp.seat_number = s.seat_number
+              AND (
+                tp.chips::numeric = s.stack
+                OR (
+                  tp.chips = floor(s.stack)::bigint
+                )
+                OR (
+                  s.stack = trunc(s.stack)
+                  AND s.stack >= 1
+                  AND tp.chips = s.stack::bigint - 1
+                )
+              )
+         ) <> 1
+       )
+  )
+  OR EXISTS (
+    SELECT 1
+      FROM public.tournament_players tp
+      JOIN public.tournaments t ON t.id = tp.tournament_id
+     WHERE upper(COALESCE(t.status::text, ''))
+             NOT IN ('COMPLETED', 'CANCELLED', 'CANCELED')
+       AND (
+         (upper(COALESCE(t.status::text, '')) = 'RUNNING'
+          AND tp.status::text = 'playing')
+         OR (
+           tp.status::text IN ('registered', 'playing')
+           AND (tp.table_id IS NOT NULL OR tp.seat_number IS NOT NULL)
+         )
+         OR (
+           upper(COALESCE(t.status::text, '')) = 'COMPLETING'
+           AND tp.status::text = 'winner'
+           AND (tp.table_id IS NOT NULL OR tp.seat_number IS NOT NULL)
+         )
+       )
+       AND (
+         SELECT count(*)
+           FROM public.table_seats s
+           JOIN public.tables tb ON tb.id = s.table_id
+          WHERE tb.tournament_id = tp.tournament_id
+            AND s.user_id = tp.user_id
+            AND s.left_at IS NULL
+            AND s.table_id IS NOT DISTINCT FROM tp.table_id
+            AND s.seat_number IS NOT DISTINCT FROM tp.seat_number
+            AND (
+              s.stack = tp.chips::numeric
+              OR (
+                tp.chips = floor(s.stack)::bigint
+              )
+              OR (
+                s.stack = trunc(s.stack)
+                AND s.stack >= 1
+                AND tp.chips = s.stack::bigint - 1
+              )
+            )
+       ) <> 1
+  ) THEN
+    RAISE EXCEPTION
+      'FRACTIONAL_STACK_IDENTITY_MISMATCH: global nonterminal seat/roster topology is not one exact whole-chip mirror'
+      USING ERRCODE = '55000';
+  END IF;
+
+  /* Cumulative tournament stacks share table_seats.numeric(15,2)'s whole
+     domain. Widen both the active roster and the legacy multi-day bag before
+     any repaired value is rendered or written. Function bodies are replaced
+     below while this same stopped-engine transaction still owns the tables. */
+  IF format_type(
+       (SELECT a.atttypid FROM pg_attribute a
+         WHERE a.attrelid = 'public.tournament_players'::regclass
+           AND a.attname = 'chips' AND NOT a.attisdropped),
+       (SELECT a.atttypmod FROM pg_attribute a
+         WHERE a.attrelid = 'public.tournament_players'::regclass
+           AND a.attname = 'chips' AND NOT a.attisdropped)
+     ) = 'integer' THEN
+    EXECUTE 'ALTER TABLE public.tournament_players ALTER COLUMN chips TYPE bigint USING chips::bigint';
+  END IF;
+  IF to_regclass('public.tournament_flights') IS NOT NULL THEN
+    IF format_type(
+         (SELECT a.atttypid FROM pg_attribute a
+           WHERE a.attrelid = 'public.tournament_flights'::regclass
+             AND a.attname = 'bagged_chips' AND NOT a.attisdropped),
+         (SELECT a.atttypmod FROM pg_attribute a
+           WHERE a.attrelid = 'public.tournament_flights'::regclass
+             AND a.attname = 'bagged_chips' AND NOT a.attisdropped)
+       ) NOT IN ('integer', 'bigint', 'numeric(18,4)') THEN
+      RAISE EXCEPTION
+        'FRACTIONAL_STACK_SCHEMA_DRIFT: tournament_flights.bagged_chips must be a known legacy integer/numeric(18,4) or canonical bigint type'
+        USING ERRCODE = '55000';
+    END IF;
+    IF EXISTS (
+      SELECT 1 FROM public.tournament_flights f
+       WHERE lower(f.bagged_chips::text) IN ('nan', 'infinity', '-infinity')
+          OR f.bagged_chips < 0
+          OR f.bagged_chips > 9999999999999
+          OR f.bagged_chips <> trunc(f.bagged_chips)
+    ) THEN
+      RAISE EXCEPTION
+        'TOURNAMENT_CHIP_DOMAIN_INVALID: tournament_flights.bagged_chips is outside 0..9999999999999'
+        USING ERRCODE = '23514';
+    END IF;
+    IF format_type(
+         (SELECT a.atttypid FROM pg_attribute a
+           WHERE a.attrelid = 'public.tournament_flights'::regclass
+             AND a.attname = 'bagged_chips' AND NOT a.attisdropped),
+         (SELECT a.atttypmod FROM pg_attribute a
+           WHERE a.attrelid = 'public.tournament_flights'::regclass
+             AND a.attname = 'bagged_chips' AND NOT a.attisdropped)
+       ) <> 'bigint' THEN
+      EXECUTE 'ALTER TABLE public.tournament_flights ALTER COLUMN bagged_chips TYPE bigint USING bagged_chips::bigint';
+    END IF;
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_constraint c
+       WHERE c.conrelid = 'public.tournament_flights'::regclass
+         AND c.conname = 'tournament_flights_bagged_chips_safe_domain'
+    ) THEN
+      EXECUTE 'ALTER TABLE public.tournament_flights ADD CONSTRAINT tournament_flights_bagged_chips_safe_domain CHECK (bagged_chips >= 0 AND bagged_chips <= 9999999999999)';
+    END IF;
+  END IF;
+
+  /* The checked-in all-sentinel artifact is executable only on a truly empty
+     chronological rebuild. Prerequisite names, strict function sources/ACLs,
+     schema types and all locks were proved above before this return. Any
+     tournament estate at all keeps the sentinel file fail closed. A partial
+     literal patch is never a clean-replay token. */
+  IF NOT v_literals_ready THEN
+    IF v_literals_all_sentinel
+       AND NOT EXISTS (SELECT 1 FROM public.tournaments)
+       AND NOT EXISTS (SELECT 1 FROM public.tournament_players)
+       AND NOT EXISTS (
+         SELECT 1 FROM public.tables tb
+          WHERE tb.tournament_id IS NOT NULL
+             OR lower(COALESCE(tb.game_type::text, '')) = 'tournament'
+       ) THEN
+      RAISE NOTICE
+        'empty chronological replay: no tournament estate; installing ingress guard only';
+      RETURN;
+    END IF;
+    RAISE EXCEPTION
+      'FRACTIONAL_STACK_CUTOVER_LITERALS_UNSET: replace all nine literals from one locked stopped-engine observation'
+      USING ERRCODE = '55000';
+  END IF;
+
+  /* Once the production literals are checked in, later clean databases may
+     likewise lack those UUIDs. They can install the guard without inventing a
+     freeze receipt only when no active nonterminal tournament balance exists. */
+  IF NOT EXISTS (
+       SELECT 1 FROM public.tournaments t WHERE t.id = ANY(v_tournament_ids)
+     )
+     AND NOT EXISTS (
+       SELECT 1
+         FROM public.table_seats s
+         JOIN public.tables tb ON tb.id = s.table_id
+         LEFT JOIN public.tournaments t ON t.id = tb.tournament_id
+        WHERE s.left_at IS NULL
+          AND (
+            (tb.tournament_id IS NOT NULL
+             AND upper(COALESCE(t.status::text, ''))
+                   NOT IN ('COMPLETED', 'CANCELLED', 'CANCELED'))
+            OR (tb.tournament_id IS NULL
+                AND lower(COALESCE(tb.game_type::text, '')) = 'tournament')
+          )
+     )
+     AND NOT EXISTS (
+       SELECT 1
+         FROM public.tournament_players tp
+         JOIN public.tournaments t ON t.id = tp.tournament_id
+        WHERE tp.status::text = 'playing'
+          AND upper(COALESCE(t.status::text, ''))
+                NOT IN ('COMPLETED', 'CANCELLED', 'CANCELED')
+     ) THEN
+    RAISE NOTICE
+      'clean chronological replay: production cohort absent and no active tournament balance; installing ingress guard only';
+    RETURN;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1
+      FROM public.engine_maintenance_break b
+     WHERE b.id
+       AND b.phase = 'counting_down'
+       AND b.enforce_freeze
+       AND b.break_started_at IS NOT NULL
+       AND b.break_ends_at > v_cutover_at + interval '45 seconds'
+       AND b.break_ends_at < v_cutover_at + interval '15 minutes'
+       AND b.declared_by = c_engine_sha8
+  ) OR NOT public.fn_platform_frozen() THEN
+    RAISE EXCEPTION
+      'FRACTIONAL_STACK_FREEZE_INVALID: exact build % must own a live enforced counting_down window with at least 45 seconds left',
+      c_engine_sha8
+      USING ERRCODE = '55000';
+  END IF;
+  SELECT b.announced_at
+    INTO STRICT v_break_announced_at
+    FROM public.engine_maintenance_break b
+   WHERE b.id;
+
+  /* The process must be stopped, not merely parked: an in-memory fractional
+     stack cannot be allowed to overwrite this postimage after commit. */
+  IF EXISTS (
+       SELECT 1 FROM public.engine_leader l
+        WHERE l.heartbeat_at >= v_cutover_at - interval '30 seconds'
+     )
+     OR EXISTS (
+       SELECT 1 FROM public.engine_table_leases l
+        WHERE l.heartbeat_at >= v_cutover_at - interval '30 seconds'
+     )
+     OR EXISTS (
+       SELECT 1 FROM public.engine_tournament_leases l
+        WHERE l.heartbeat_at >= v_cutover_at - interval '30 seconds'
+     ) THEN
+    RAISE EXCEPTION
+      'FRACTIONAL_STACK_ENGINE_STILL_LIVE: zero fresh leader, table, and tournament leases are required'
+      USING ERRCODE = '55000';
+  END IF;
+
+  /* If graceful stop left no lease rows, the break is the exact-build receipt.
+     Old lease rows are historical debris, not authority: production retains
+     leases from builds which stopped long before this freeze. Only an authority
+     acquired or heartbeating at/after this exact break announcement can make
+     the cutover's "sole build" claim, so those causal rows must be the exact
+     protocol-2 build. Every fresh row was already refused above regardless of
+     version, and the relation/row locks prevent any stale row from freshening. */
+  IF EXISTS (
+       SELECT 1 FROM public.engine_leader l
+        WHERE (l.acquired_at >= v_break_announced_at
+               OR l.heartbeat_at >= v_break_announced_at)
+          AND l.engine_version IS DISTINCT FROM c_engine_sha8
+     )
+     OR EXISTS (
+       SELECT 1 FROM public.engine_table_leases l
+        WHERE (l.acquired_at >= v_break_announced_at
+               OR l.heartbeat_at >= v_break_announced_at)
+          AND (l.engine_version IS DISTINCT FROM c_engine_sha8
+               OR l.protocol_version IS DISTINCT FROM 2)
+     )
+     OR EXISTS (
+       SELECT 1 FROM public.engine_tournament_leases l
+        WHERE (l.acquired_at >= v_break_announced_at
+               OR l.heartbeat_at >= v_break_announced_at)
+          AND (l.engine_version IS DISTINCT FROM c_engine_sha8
+               OR l.protocol_version IS DISTINCT FROM 2)
+     ) THEN
+    RAISE EXCEPTION
+      'FRACTIONAL_STACK_ENGINE_VERSION_DRIFT: every authority acquired or heartbeating since the break announcement must be exact build % protocol 2',
+      c_engine_sha8
+      USING ERRCODE = '55000';
+  END IF;
+
+  IF EXISTS (
+       SELECT 1
+         FROM public.hand_state_snapshots h
+         JOIN public.tables t ON t.id = h.table_id
+        WHERE (
+                t.tournament_id = ANY(v_tournament_ids)
+                OR (c_tournament_count = 0 AND t.tournament_id IS NOT NULL)
+              )
+          AND NOT h.is_complete
+     )
+     OR EXISTS (
+       SELECT 1
+         FROM public.settlement_idempotency_keys k
+         JOIN public.tables t ON t.id = k.table_id
+        WHERE (
+                t.tournament_id = ANY(v_tournament_ids)
+                OR (c_tournament_count = 0 AND t.tournament_id IS NOT NULL)
+              )
+          AND k.status = 'in_flight'
+     )
+     OR EXISTS (
+       SELECT 1
+         FROM public.hand_atomic_commits c
+         JOIN public.tables t ON t.id = c.table_id
+        WHERE (
+                t.tournament_id = ANY(v_tournament_ids)
+                OR (c_tournament_count = 0 AND t.tournament_id IS NOT NULL)
+              )
+          AND c.post_commit_payload IS NOT NULL
+          AND c.post_commit_completed_at IS NULL
+     ) THEN
+    RAISE EXCEPTION
+      'FRACTIONAL_STACK_HAND_IN_FLIGHT: snapshot, settlement, and post-commit obligations must all be quiet'
+      USING ERRCODE = '55000';
+  END IF;
+
+  IF (SELECT count(*) FROM public.tournaments t WHERE t.id = ANY(v_tournament_ids))
+       <> c_tournament_count
+     OR EXISTS (
+       SELECT 1 FROM public.tournaments t
+        WHERE t.id = ANY(v_tournament_ids)
+          AND upper(COALESCE(t.status::text, ''))
+                IN ('COMPLETED', 'CANCELLED', 'CANCELED')
+     ) THEN
+    RAISE EXCEPTION
+      'FRACTIONAL_STACK_COHORT_DRIFT: every measured tournament must still exist and remain nonterminal'
+      USING ERRCODE = '55000';
+  END IF;
+
+  /* Fractions OR the exact one-chip legacy mirror residue in any other
+     nonterminal tournament are an unmeasured live liability. The stopped
+     measurement uses this same predicate; apply must not accept a narrower
+     world than the artifact observed. Terminal rows are historical testimony
+     and stay untouched. */
+  IF EXISTS (
+    SELECT 1
+      FROM public.table_seats s
+      JOIN public.tables tb ON tb.id = s.table_id
+      LEFT JOIN public.tournaments t ON t.id = tb.tournament_id
+     WHERE s.left_at IS NULL
+       AND s.stack IS NOT NULL
+       AND (
+         lower(s.stack::text) IN ('nan', 'infinity', '-infinity')
+         OR s.stack <> trunc(s.stack)
+         OR (
+           s.stack = trunc(s.stack)
+           AND s.stack >= 1
+           AND EXISTS (
+             SELECT 1
+               FROM public.tournament_players tp
+              WHERE tp.tournament_id = tb.tournament_id
+                AND tp.user_id = s.user_id
+                AND tp.table_id = tb.id
+                AND tp.seat_number = s.seat_number
+                AND tp.status::text IN ('registered', 'playing')
+                AND tp.chips = s.stack::bigint - 1
+           )
+         )
+       )
+       AND (
+         (tb.tournament_id IS NOT NULL
+          AND upper(COALESCE(t.status::text, ''))
+                NOT IN ('COMPLETED', 'CANCELLED', 'CANCELED')
+          AND NOT (t.id = ANY(v_tournament_ids)))
+         OR (tb.tournament_id IS NULL
+             AND lower(COALESCE(tb.game_type::text, '')) = 'tournament')
+       )
+  ) THEN
+    RAISE EXCEPTION
+      'FRACTIONAL_STACK_UNMEASURED_LIVE_COHORT: another nonterminal tournament still has a fractional active stack or exact one-chip legacy mirror residue'
+      USING ERRCODE = '55000';
+  END IF;
+
+  /* A stack-only repair would immediately regress if its running tournament
+     still sourced a fractional blind, ante, starting stack, rebuy, or add-on.
+     Refuse every nonterminal source before the permanent write guards below
+     are armed. Integer-typed columns are checked for sign as well as type;
+     the JSON ladder and numeric table columns are checked explicitly. */
+  IF EXISTS (
+    SELECT 1
+      FROM public.tournaments t
+     WHERE upper(COALESCE(t.status::text, ''))
+             NOT IN ('COMPLETED', 'CANCELLED', 'CANCELED')
+       AND (
+         t.starting_chips IS NULL OR t.starting_chips < 0
+         OR (t.rebuy_chips IS NOT NULL AND t.rebuy_chips < 0)
+         OR (t.addon_chips IS NOT NULL AND t.addon_chips < 0)
+       )
+  )
+  OR EXISTS (
+    SELECT 1
+      FROM public.tables tb
+      LEFT JOIN public.tournaments t ON t.id = tb.tournament_id
+     WHERE (
+         (tb.tournament_id IS NOT NULL
+          AND upper(COALESCE(t.status::text, ''))
+                NOT IN ('COMPLETED', 'CANCELLED', 'CANCELED'))
+         OR (tb.tournament_id IS NULL
+             AND lower(COALESCE(tb.game_type::text, '')) = 'tournament')
+       )
+       AND (
+         tb.small_blind IS NULL
+         OR lower(tb.small_blind::text) IN ('nan', 'infinity', '-infinity')
+         OR tb.small_blind < 0
+         OR tb.small_blind <> trunc(tb.small_blind)
+         OR tb.big_blind IS NULL
+         OR lower(tb.big_blind::text) IN ('nan', 'infinity', '-infinity')
+         OR tb.big_blind <= 0
+         OR tb.big_blind <> trunc(tb.big_blind)
+         OR lower(COALESCE(tb.ante, 0)::text)
+              IN ('nan', 'infinity', '-infinity')
+         OR COALESCE(tb.ante, 0) < 0
+         OR COALESCE(tb.ante, 0) <> trunc(COALESCE(tb.ante, 0))
+         OR (
+           tb.bomb_pot_ante_multiplier IS NOT NULL
+           AND tb.bomb_pot_ante_multiplier < 0
+         )
+         OR (
+           tb.bomb_pot_ante_fixed IS NOT NULL
+           AND (
+             lower(tb.bomb_pot_ante_fixed::text)
+               IN ('nan', 'infinity', '-infinity')
+             OR tb.bomb_pot_ante_fixed < 0
+             OR tb.bomb_pot_ante_fixed <> trunc(tb.bomb_pot_ante_fixed)
+           )
+         )
+       )
+  )
+  OR EXISTS (
+    SELECT 1
+      FROM public.tournament_players tp
+      JOIN public.tournaments t ON t.id = tp.tournament_id
+     WHERE upper(COALESCE(t.status::text, ''))
+             NOT IN ('COMPLETED', 'CANCELLED', 'CANCELED')
+       AND (tp.chips IS NULL OR tp.chips < 0 OR tp.chips > 9999999999999)
+  ) THEN
+    RAISE EXCEPTION
+      'TOURNAMENT_WHOLE_CHIP_SOURCE_INVALID: live stack/config/blind sources must be nonnegative whole chips'
+      USING ERRCODE = '23514';
+  END IF;
+
+  BEGIN
+    IF EXISTS (
+      SELECT 1
+        FROM public.tournaments t
+       WHERE upper(COALESCE(t.status::text, ''))
+               NOT IN ('COMPLETED', 'CANCELLED', 'CANCELED')
+         AND (
+           (to_jsonb(t) ->> 'blind_structure') IS NULL
+           OR jsonb_typeof(
+                (to_jsonb(t) ->> 'blind_structure')::jsonb
+              ) <> 'array'
+           OR jsonb_array_length(
+                (to_jsonb(t) ->> 'blind_structure')::jsonb
+              ) = 0
+           OR NOT EXISTS (
+                SELECT 1
+                  FROM jsonb_array_elements(
+                    (to_jsonb(t) ->> 'blind_structure')::jsonb
+                  ) candidate(level)
+                 WHERE jsonb_typeof(candidate.level) = 'object'
+                   AND NOT COALESCE(
+                     (candidate.level ->> 'isBreak')::boolean, false
+                   )
+              )
+         )
+    ) THEN
+      RAISE EXCEPTION
+        'TOURNAMENT_WHOLE_CHIP_SOURCE_INVALID: blind_structure must be a JSON array with numeric whole-chip levels'
+        USING ERRCODE = '23514';
+    END IF;
+    IF EXISTS (
+      SELECT 1
+        FROM public.tournaments t
+        CROSS JOIN LATERAL jsonb_array_elements(
+          (to_jsonb(t) ->> 'blind_structure')::jsonb
+        ) AS levels(level)
+       WHERE upper(COALESCE(t.status::text, ''))
+               NOT IN ('COMPLETED', 'CANCELLED', 'CANCELED')
+         AND NOT COALESCE((levels.level ->> 'isBreak')::boolean, false)
+         AND (
+           jsonb_typeof(levels.level) <> 'object'
+           OR COALESCE(
+                levels.level ->> 'smallBlind',
+                levels.level ->> 'small_blind',
+                levels.level ->> 'small',
+                levels.level ->> 'sb'
+              ) IS NULL
+           OR COALESCE(
+                levels.level ->> 'bigBlind',
+                levels.level ->> 'big_blind',
+                levels.level ->> 'big',
+                levels.level ->> 'bb'
+              ) IS NULL
+           OR COALESCE(
+                levels.level ->> 'smallBlind',
+                levels.level ->> 'small_blind',
+                levels.level ->> 'small',
+                levels.level ->> 'sb'
+             )::numeric < 0
+           OR lower(COALESCE(
+                levels.level ->> 'smallBlind',
+                levels.level ->> 'small_blind',
+                levels.level ->> 'small',
+                levels.level ->> 'sb'
+              )::numeric::text) IN ('nan', 'infinity', '-infinity')
+           OR COALESCE(
+                levels.level ->> 'smallBlind',
+                levels.level ->> 'small_blind',
+                levels.level ->> 'small',
+                levels.level ->> 'sb'
+              )::numeric
+              <> trunc(COALESCE(
+                levels.level ->> 'smallBlind',
+                levels.level ->> 'small_blind',
+                levels.level ->> 'small',
+                levels.level ->> 'sb'
+              )::numeric)
+           OR COALESCE(
+                levels.level ->> 'bigBlind',
+                levels.level ->> 'big_blind',
+                levels.level ->> 'big',
+                levels.level ->> 'bb'
+             )::numeric <= 0
+           OR lower(COALESCE(
+                levels.level ->> 'bigBlind',
+                levels.level ->> 'big_blind',
+                levels.level ->> 'big',
+                levels.level ->> 'bb'
+              )::numeric::text) IN ('nan', 'infinity', '-infinity')
+           OR COALESCE(
+                levels.level ->> 'bigBlind',
+                levels.level ->> 'big_blind',
+                levels.level ->> 'big',
+                levels.level ->> 'bb'
+              )::numeric
+              <> trunc(COALESCE(
+                levels.level ->> 'bigBlind',
+                levels.level ->> 'big_blind',
+                levels.level ->> 'big',
+                levels.level ->> 'bb'
+              )::numeric)
+           OR lower(COALESCE(levels.level ->> 'ante', '0')::numeric::text)
+                IN ('nan', 'infinity', '-infinity')
+           OR COALESCE(levels.level ->> 'ante', '0')::numeric < 0
+           OR COALESCE(levels.level ->> 'ante', '0')::numeric
+              <> trunc(COALESCE(levels.level ->> 'ante', '0')::numeric)
+         )
+    ) THEN
+      RAISE EXCEPTION
+        'TOURNAMENT_WHOLE_CHIP_SOURCE_INVALID: every non-break blind level must have whole smallBlind/bigBlind/ante values'
+        USING ERRCODE = '23514';
+    END IF;
+  EXCEPTION
+    WHEN invalid_text_representation OR invalid_parameter_value THEN
+      RAISE EXCEPTION
+        'TOURNAMENT_WHOLE_CHIP_SOURCE_INVALID: blind_structure must be a JSON array with numeric whole-chip levels'
+        USING ERRCODE = '23514';
+  END;
+
+  CREATE TEMP TABLE pg_temp.fractional_stack_cutover_plan
+  ON COMMIT DROP
+  AS
+  SELECT
+    t.id AS tournament_id,
+    upper(COALESCE(t.status::text, '')) AS tournament_status,
+    tb.id AS table_id,
+    s.id AS seat_id,
+    s.joined_at AS seat_joined_at,
+    s.seat_number,
+    s.user_id,
+    s.stack AS old_stack,
+    tp.id AS tournament_player_id,
+    tp.chips AS old_player_chips,
+    tp.status::text AS old_player_status,
+    to_jsonb(t) AS tournament_before,
+    to_jsonb(tb) AS table_before,
+    to_jsonb(s) AS seat_before,
+    to_jsonb(tp) AS player_before,
+    NULL::numeric(15,2) AS target_stack
+  FROM public.tournaments t
+  JOIN public.tables tb ON tb.tournament_id = t.id
+  JOIN public.table_seats s ON s.table_id = tb.id AND s.left_at IS NULL
+  LEFT JOIN public.tournament_players tp
+    ON tp.tournament_id = t.id AND tp.user_id = s.user_id
+  WHERE t.id = ANY(v_tournament_ids);
+
+  SELECT
+    count(DISTINCT p.tournament_id),
+    count(DISTINCT p.table_id),
+    count(*),
+    count(*) FILTER (WHERE p.old_stack <> trunc(p.old_stack)),
+    COALESCE(sum(p.old_stack), 0)
+  INTO
+    v_actual_tournament_count,
+    v_actual_table_count,
+    v_actual_seat_count,
+    v_actual_fractional_count,
+    v_actual_total
+  FROM pg_temp.fractional_stack_cutover_plan p;
+
+  SELECT encode(extensions.digest(COALESCE(string_agg(
+      jsonb_build_object(
+        'tournament', p.tournament_before,
+        'table', p.table_before,
+        'seat', p.seat_before,
+        'tournament_player', p.player_before
+      )::text,
+      E'\n' ORDER BY p.tournament_id, p.table_id, p.seat_number,
+                     p.seat_id, p.seat_joined_at, p.user_id
+    ), ''), 'sha256'), 'hex')
+  INTO v_actual_preimage_sha256
+  FROM pg_temp.fractional_stack_cutover_plan p;
+
+  IF v_actual_tournament_count <> c_tournament_count
+     OR v_actual_table_count <> c_table_count
+     OR v_actual_seat_count <> c_active_seat_count
+     OR v_actual_total IS DISTINCT FROM c_total_chips THEN
+    RAISE EXCEPTION
+      'FRACTIONAL_STACK_COHORT_DRIFT: expected tournaments/tables/seats/total %/%/%/%, found %/%/%/%',
+      c_tournament_count, c_table_count, c_active_seat_count, c_total_chips,
+      v_actual_tournament_count, v_actual_table_count, v_actual_seat_count,
+      v_actual_total
+      USING ERRCODE = '55000';
+  END IF;
+
+  /* The roster topology is outside the row-image hash because seatless roster
+     rows have no seat generation to order beside. Prove the complete
+     bidirectional relation before accepting either the measured preimage or an
+     exact-postimage retry. Otherwise a new seatless/mispointed live roster row
+     could arrive after the first commit and make a later retry look exact. */
+  IF EXISTS (
+    SELECT 1
+      FROM pg_temp.fractional_stack_cutover_plan p
+      JOIN public.tournament_players tp ON tp.id = p.tournament_player_id
+     WHERE tp.tournament_id <> p.tournament_id
+        OR tp.user_id <> p.user_id
+        OR NOT (
+          tp.status::text IN ('registered', 'playing')
+          OR (
+            p.tournament_status = 'COMPLETING'
+            AND tp.status::text = 'winner'
+          )
+        )
+        OR (p.tournament_status = 'RUNNING' AND tp.status::text <> 'playing')
+        OR tp.table_id IS DISTINCT FROM p.table_id
+        OR tp.seat_number IS DISTINCT FROM p.seat_number
+  )
+  OR EXISTS (
+    SELECT 1
+      FROM pg_temp.fractional_stack_cutover_plan p
+     GROUP BY p.tournament_id, p.user_id
+    HAVING count(*) <> 1
+  )
+  OR EXISTS (
+    SELECT 1
+      FROM public.tournament_players tp
+      JOIN public.tournaments t ON t.id = tp.tournament_id
+     WHERE tp.tournament_id = ANY(v_tournament_ids)
+       AND (
+         (upper(COALESCE(t.status::text, '')) = 'RUNNING'
+          AND tp.status::text = 'playing')
+         OR (
+           tp.status::text IN ('registered', 'playing')
+           AND (tp.table_id IS NOT NULL OR tp.seat_number IS NOT NULL)
+         )
+         OR (
+           upper(COALESCE(t.status::text, '')) = 'COMPLETING'
+           AND tp.status::text = 'winner'
+           AND (tp.table_id IS NOT NULL OR tp.seat_number IS NOT NULL)
+         )
+       )
+       AND NOT EXISTS (
+         SELECT 1
+           FROM pg_temp.fractional_stack_cutover_plan p
+          WHERE p.tournament_player_id = tp.id
+       )
+  ) THEN
+    RAISE EXCEPTION
+      'FRACTIONAL_STACK_IDENTITY_MISMATCH: player status/table/seat or one-active-generation mapping drifted'
+      USING ERRCODE = '55000';
+  END IF;
+
+  /* Exact postimage means the preceding execution committed and the response
+     was lost.  Validate it independently, then return without a write. */
+  IF v_actual_preimage_sha256 = c_postimage_sha256 THEN
+    IF v_actual_fractional_count <> 0
+       OR EXISTS (
+         SELECT 1 FROM pg_temp.fractional_stack_cutover_plan p
+          WHERE p.tournament_player_id IS NULL
+             OR p.seat_joined_at IS NULL
+             OR p.user_id IS NULL
+             OR p.old_stack IS NULL
+             OR p.old_stack < 0
+             OR p.old_stack > 9999999999999
+             OR lower(p.old_stack::text) IN ('nan', 'infinity', '-infinity')
+             OR p.old_stack <> trunc(p.old_stack)
+             OR p.old_player_chips IS DISTINCT FROM p.old_stack::bigint
+       )
+       OR EXISTS (
+         SELECT 1
+           FROM pg_temp.fractional_stack_cutover_plan p
+           JOIN public.tournament_players tp ON tp.id = p.tournament_player_id
+          WHERE NOT (
+                  tp.status::text IN ('registered', 'playing')
+                  OR (
+                    p.tournament_status = 'COMPLETING'
+                    AND tp.status::text = 'winner'
+                  )
+                )
+             OR tp.table_id IS DISTINCT FROM p.table_id
+             OR tp.seat_number IS DISTINCT FROM p.seat_number
+       ) THEN
+      RAISE EXCEPTION
+        'FRACTIONAL_STACK_RETRY_POSTIMAGE_INVALID: hash matched but integer mirror invariants did not'
+        USING ERRCODE = '55000';
+    END IF;
+    RAISE NOTICE
+      'fractional tournament stack cutover already has exact postimage %, no rows written',
+      c_postimage_sha256;
+    RETURN;
+  END IF;
+
+  IF v_actual_preimage_sha256 <> c_preimage_sha256
+     OR v_actual_fractional_count <> c_fractional_seat_count THEN
+    RAISE EXCEPTION
+      'FRACTIONAL_STACK_SOURCE_DRIFT: expected preimage % with % fractional seats, found % with %',
+      c_preimage_sha256, c_fractional_seat_count,
+      v_actual_preimage_sha256, v_actual_fractional_count
+      USING ERRCODE = '55000';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM pg_temp.fractional_stack_cutover_plan p
+     WHERE p.tournament_player_id IS NULL
+        OR p.seat_joined_at IS NULL
+        OR p.user_id IS NULL
+        OR p.old_stack IS NULL
+        OR p.old_stack < 0
+        OR p.old_stack > 9999999999999
+        OR lower(p.old_stack::text) IN ('nan', 'infinity', '-infinity')
+        OR (
+          p.old_player_chips IS DISTINCT FROM floor(p.old_stack)::bigint
+          AND NOT (
+            p.old_stack = trunc(p.old_stack)
+            AND p.old_stack >= 1
+            AND p.old_player_chips = p.old_stack::bigint - 1
+          )
+        )
+  ) THEN
+    RAISE EXCEPTION
+      'FRACTIONAL_STACK_IDENTITY_MISMATCH: each exact seat needs one finite floor mirror or the exact legacy one-chip rounded-seat residue'
+      USING ERRCODE = '55000';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+      FROM pg_temp.fractional_stack_cutover_plan p
+     GROUP BY p.tournament_id
+    HAVING sum(p.old_stack) <> trunc(sum(p.old_stack))
+  ) THEN
+    RAISE EXCEPTION
+      'FRACTIONAL_STACK_AGGREGATE_IS_FRACTIONAL: every tournament source total must already be a whole chip'
+      USING ERRCODE = '22003';
+  END IF;
+
+  WITH ranked AS (
+    SELECT
+      p.seat_id,
+      p.seat_joined_at,
+      floor(p.old_stack) AS base_stack,
+      (sum(p.old_stack) OVER (PARTITION BY p.tournament_id)
+       - sum(floor(p.old_stack)) OVER (PARTITION BY p.tournament_id))::bigint
+        AS bonus_count,
+      row_number() OVER (
+        PARTITION BY p.tournament_id
+        ORDER BY (p.old_stack - floor(p.old_stack)) DESC,
+                 p.table_id, p.seat_number, p.seat_id,
+                 p.seat_joined_at, p.user_id
+      ) AS remainder_rank
+    FROM pg_temp.fractional_stack_cutover_plan p
+  )
+  UPDATE pg_temp.fractional_stack_cutover_plan p
+     SET target_stack = (
+       r.base_stack + CASE WHEN r.remainder_rank <= r.bonus_count THEN 1 ELSE 0 END
+     )::numeric(15,2)
+    FROM ranked r
+   WHERE r.seat_id = p.seat_id
+     AND r.seat_joined_at = p.seat_joined_at;
+
+  IF EXISTS (
+    SELECT 1
+      FROM pg_temp.fractional_stack_cutover_plan p
+     WHERE p.target_stack IS NULL
+        OR p.target_stack <> trunc(p.target_stack)
+        OR p.target_stack < 0
+        OR p.target_stack > 9999999999999
+  )
+  OR EXISTS (
+    SELECT 1
+      FROM pg_temp.fractional_stack_cutover_plan p
+     GROUP BY p.tournament_id
+    HAVING sum(p.target_stack) IS DISTINCT FROM sum(p.old_stack)
+  ) THEN
+    RAISE EXCEPTION
+      'FRACTIONAL_STACK_PLAN_INVALID: largest-remainder plan is not whole or conservative'
+      USING ERRCODE = '22003';
+  END IF;
+
+  SELECT encode(extensions.digest(COALESCE(string_agg(
+      jsonb_build_object(
+        'tournament', p.tournament_before,
+        'table', p.table_before,
+        'seat', jsonb_set(p.seat_before, '{stack}', to_jsonb(p.target_stack), false),
+        'tournament_player', jsonb_set(
+          p.player_before, '{chips}', to_jsonb(p.target_stack::bigint), false
+        )
+      )::text,
+      E'\n' ORDER BY p.tournament_id, p.table_id, p.seat_number,
+                     p.seat_id, p.seat_joined_at, p.user_id
+    ), ''), 'sha256'), 'hex')
+  INTO v_planned_postimage_sha256
+  FROM pg_temp.fractional_stack_cutover_plan p;
+
+  IF v_planned_postimage_sha256 <> c_postimage_sha256 THEN
+    RAISE EXCEPTION
+      'FRACTIONAL_STACK_POSTIMAGE_DRIFT: expected %, deterministic plan produced %',
+      c_postimage_sha256, v_planned_postimage_sha256
+      USING ERRCODE = '55000';
+  END IF;
+
+  SELECT count(*) FILTER (WHERE p.old_stack IS DISTINCT FROM p.target_stack),
+         count(*) FILTER (WHERE p.old_player_chips IS DISTINCT FROM p.target_stack::bigint)
+    INTO v_expected_seat_updates, v_expected_player_updates
+    FROM pg_temp.fractional_stack_cutover_plan p;
+
+  /* The platform freeze trigger intentionally rejects stack movement.  This
+     transaction-local bypass is armed only after every cutover proof above;
+     it cannot leak through a pool or survive commit/rollback. */
+  PERFORM set_config('app.freeze_bypass', 'on', true);
+
+  UPDATE public.table_seats s
+     SET stack = p.target_stack
+    FROM pg_temp.fractional_stack_cutover_plan p
+   WHERE s.id = p.seat_id
+     AND s.joined_at = p.seat_joined_at
+     AND s.table_id = p.table_id
+     AND s.seat_number = p.seat_number
+     AND s.user_id = p.user_id
+     AND s.left_at IS NULL
+     AND s.stack IS NOT DISTINCT FROM p.old_stack
+     AND s.stack IS DISTINCT FROM p.target_stack;
+  GET DIAGNOSTICS v_updated = ROW_COUNT;
+  IF v_updated <> v_expected_seat_updates THEN
+    RAISE EXCEPTION
+      'FRACTIONAL_STACK_PARTIAL_SEAT_WRITE: expected %, updated %',
+      v_expected_seat_updates, v_updated
+      USING ERRCODE = '55000';
+  END IF;
+
+  UPDATE public.tournament_players tp
+     SET chips = p.target_stack::bigint
+    FROM pg_temp.fractional_stack_cutover_plan p
+   WHERE tp.id = p.tournament_player_id
+     AND tp.tournament_id = p.tournament_id
+     AND tp.user_id = p.user_id
+     AND tp.status::text = p.old_player_status
+     AND tp.table_id = p.table_id
+     AND tp.seat_number = p.seat_number
+     AND tp.chips IS NOT DISTINCT FROM p.old_player_chips
+     AND tp.chips IS DISTINCT FROM p.target_stack::bigint;
+  GET DIAGNOSTICS v_updated = ROW_COUNT;
+  IF v_updated <> v_expected_player_updates THEN
+    RAISE EXCEPTION
+      'FRACTIONAL_STACK_PARTIAL_PLAYER_WRITE: expected %, updated %',
+      v_expected_player_updates, v_updated
+      USING ERRCODE = '55000';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+      FROM pg_temp.fractional_stack_cutover_plan p
+      LEFT JOIN public.table_seats s
+        ON s.id = p.seat_id
+       AND s.joined_at = p.seat_joined_at
+       AND s.table_id = p.table_id
+       AND s.seat_number = p.seat_number
+       AND s.user_id = p.user_id
+       AND s.left_at IS NULL
+      LEFT JOIN public.tournament_players tp
+        ON tp.id = p.tournament_player_id
+       AND tp.tournament_id = p.tournament_id
+       AND tp.user_id = p.user_id
+       AND tp.status::text = p.old_player_status
+       AND tp.table_id = p.table_id
+       AND tp.seat_number = p.seat_number
+     WHERE s.stack IS DISTINCT FROM p.target_stack
+        OR tp.chips IS DISTINCT FROM p.target_stack::bigint
+  )
+  OR EXISTS (
+    SELECT 1
+      FROM pg_temp.fractional_stack_cutover_plan p
+      JOIN public.table_seats s
+        ON s.id = p.seat_id AND s.joined_at = p.seat_joined_at
+      JOIN public.tournament_players tp ON tp.id = p.tournament_player_id
+     GROUP BY p.tournament_id
+    HAVING sum(s.stack) IS DISTINCT FROM sum(p.old_stack)
+        OR sum(tp.chips::numeric) IS DISTINCT FROM sum(p.old_stack)
+  ) THEN
+    RAISE EXCEPTION
+      'FRACTIONAL_STACK_POSTCONDITION_FAILED: exact mirrors or tournament conservation failed'
+      USING ERRCODE = '55000';
+  END IF;
+
+  SELECT encode(extensions.digest(COALESCE(string_agg(
+      jsonb_build_object(
+        'tournament', to_jsonb(t),
+        'table', to_jsonb(tb),
+        'seat', to_jsonb(s),
+        'tournament_player', to_jsonb(tp)
+      )::text,
+      E'\n' ORDER BY p.tournament_id, p.table_id, p.seat_number,
+                     p.seat_id, p.seat_joined_at, p.user_id
+    ), ''), 'sha256'), 'hex')
+  INTO v_actual_postimage_sha256
+  FROM pg_temp.fractional_stack_cutover_plan p
+  JOIN public.tournaments t ON t.id = p.tournament_id
+  JOIN public.tables tb ON tb.id = p.table_id
+  JOIN public.table_seats s
+    ON s.id = p.seat_id AND s.joined_at = p.seat_joined_at
+  JOIN public.tournament_players tp ON tp.id = p.tournament_player_id;
+
+  IF v_actual_postimage_sha256 <> c_postimage_sha256 THEN
+    RAISE EXCEPTION
+      'FRACTIONAL_STACK_POSTIMAGE_FAILED: expected %, actual %',
+      c_postimage_sha256, v_actual_postimage_sha256
+      USING ERRCODE = '55000';
+  END IF;
+
+  RAISE NOTICE
+    'normalized % fractional stacks across % tournaments; exact postimage %; aggregate % conserved',
+    c_fractional_seat_count, c_tournament_count,
+    c_postimage_sha256, c_total_chips;
+END;
+$normalize_fractional_tournament_stacks$;
+
+/*
+ * DEPENDENT CUMULATIVE WRITERS
+ * ----------------------------
+ * The accepted-hand door and the private rebuy money core predate BIGINT
+ * roster storage. Replace only their inspected chip-width anchors, preserving
+ * every surrounding lock, receipt, money and exact-seat rule verbatim.
+ */
+DO $widen_dependent_tournament_chip_writers$
+DECLARE
+  v_source text;
+  v_anchor text;
+  v_replacement text;
+  v_hits integer;
+BEGIN
+  SELECT pg_get_functiondef(
+    'public.fn_ca_commit_hand_settlement(uuid,bigint,jsonb,numeric,numeric,text,numeric,jsonb,jsonb,text,uuid,jsonb)'::regprocedure
+  ) INTO v_source;
+  IF position('accepted tournament hand produced fractional stack' IN v_source) > 0 THEN
+    IF position('greatest(v_written,0)::bigint' IN v_source) = 0 THEN
+      v_anchor := $old$     AND (x->>'stack_before')::numeric>=0;$old$;
+      v_replacement := $new$     AND (x->>'stack_before')::numeric>=0
+     AND (x->>'stack')::numeric<=9999999999999
+     AND (x->>'stack_before')::numeric<=9999999999999;$new$;
+      v_hits := (length(v_source) - length(replace(v_source, v_anchor, ''))) /
+                length(v_anchor);
+      IF v_hits <> 1 THEN
+        RAISE EXCEPTION
+          'TOURNAMENT_BIGINT_SOURCE_DRIFT: accepted-hand safe-domain anchor count is %',
+          v_hits USING ERRCODE = '55000';
+      END IF;
+      v_source := replace(v_source, v_anchor, v_replacement);
+
+      v_anchor := 'greatest(v_written,0)::integer';
+      v_hits := (length(v_source) - length(replace(v_source, v_anchor, ''))) /
+                length(v_anchor);
+      IF v_hits <> 2 THEN
+        RAISE EXCEPTION
+          'TOURNAMENT_BIGINT_SOURCE_DRIFT: accepted-hand integer mirror anchor count is %',
+          v_hits USING ERRCODE = '55000';
+      END IF;
+      v_source := replace(v_source, v_anchor, 'greatest(v_written,0)::bigint');
+      EXECUTE v_source;
+    ELSIF position('(x->>''stack'')::numeric<=9999999999999' IN v_source) = 0 THEN
+      RAISE EXCEPTION
+        'TOURNAMENT_BIGINT_SOURCE_DRIFT: accepted-hand bigint mirror lacks its safe-domain validation'
+        USING ERRCODE = '55000';
+    END IF;
+  END IF;
+
+  IF to_regprocedure(
+       'public.process_tournament_rebuy_before_atomic_live_seat_lock(uuid,uuid,text,numeric,numeric,integer,text)'
+     ) IS NOT NULL THEN
+    SELECT pg_get_functiondef(
+      'public.process_tournament_rebuy_before_atomic_live_seat_lock(uuid,uuid,text,numeric,numeric,integer,text)'::regprocedure
+    ) INTO v_source;
+    IF position('v_add bigint; v_new_chips bigint;' IN v_source) = 0 THEN
+      v_anchor := 'v_add integer; v_new_chips integer;';
+      v_hits := (length(v_source) - length(replace(v_source, v_anchor, ''))) /
+                length(v_anchor);
+      IF v_hits <> 1 THEN
+        RAISE EXCEPTION
+          'TOURNAMENT_BIGINT_SOURCE_DRIFT: rebuy cumulative variable anchor count is %',
+          v_hits USING ERRCODE = '55000';
+      END IF;
+      v_source := replace(v_source, v_anchor, 'v_add bigint; v_new_chips bigint;');
+
+      v_anchor := '::integer';
+      v_hits := (length(v_source) - length(replace(v_source, v_anchor, ''))) /
+                length(v_anchor);
+      IF v_hits <> 3 THEN
+        RAISE EXCEPTION
+          'TOURNAMENT_BIGINT_SOURCE_DRIFT: rebuy chip cast anchor count is %',
+          v_hits USING ERRCODE = '55000';
+      END IF;
+      v_source := replace(v_source, v_anchor, '::bigint');
+
+      v_anchor := $old$  v_legacy_ratio := CASE$old$;
+      v_replacement := $new$  IF v_add IS NULL OR v_add < 0 OR v_add > 9999999999999
+     OR (p_rebuy_type <> 'reentry'
+         AND COALESCE(v_p.chips, 0)::numeric + v_add > 9999999999999) THEN
+    RAISE EXCEPTION
+      'TOURNAMENT_CHIP_DOMAIN_INVALID: rebuy/add-on result must be in 0..9999999999999'
+      USING ERRCODE = '23514';
+  END IF;
+
+  v_legacy_ratio := CASE$new$;
+      v_hits := (length(v_source) - length(replace(v_source, v_anchor, ''))) /
+                length(v_anchor);
+      IF v_hits <> 1 THEN
+        RAISE EXCEPTION
+          'TOURNAMENT_BIGINT_SOURCE_DRIFT: rebuy safe-domain anchor count is %',
+          v_hits USING ERRCODE = '55000';
+      END IF;
+      v_source := replace(v_source, v_anchor, v_replacement);
+      EXECUTE v_source;
+    ELSIF position('TOURNAMENT_CHIP_DOMAIN_INVALID' IN v_source) = 0
+       OR position('9999999999999' IN v_source) = 0 THEN
+      RAISE EXCEPTION
+        'TOURNAMENT_BIGINT_SOURCE_DRIFT: rebuy bigint writer lacks its safe-domain validation'
+        USING ERRCODE = '55000';
+    END IF;
+  END IF;
+END;
+$widen_dependent_tournament_chip_writers$;
+
+/*
+ * STRICT TOURNAMENT-CHIP SYNC DOOR
+ * --------------------------------
+ * tournament_players.chips is BIGINT storage, matching every whole value in
+ * table_seats.stack numeric(15,2). PostgreSQL
+ * assignment casts a trusted raw numeric expression before any row trigger
+ * can inspect its original fractional value. This owner-only child validates
+ * the parent live-seat snapshot's JSON numeric source before the cast. Parse
+ * and validate the complete batch, reject duplicate or unknown recipients,
+ * lock every exact playing row in one order, and only then issue the one
+ * set-based update. Any bad member leaves every member unchanged. Only the
+ * source-owning live-seat wrapper below is an application RPC.
+ */
+CREATE OR REPLACE FUNCTION public.fn_sync_tournament_chips(
+  p_tournament_id uuid,
+  p_updates jsonb
+) RETURNS integer
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $function$
+DECLARE
+  v_item jsonb;
+  v_ordinality bigint;
+  v_user_text text;
+  v_user_id uuid;
+  v_chip_value numeric;
+  v_user_ids uuid[] := '{}'::uuid[];
+  v_chip_values numeric[] := '{}'::numeric[];
+  v_matched_count integer := 0;
+  v_updated_count integer := 0;
+BEGIN
+  IF p_tournament_id IS NULL
+     OR p_updates IS NULL
+     OR jsonb_typeof(p_updates) <> 'array' THEN
+    RAISE EXCEPTION
+      'TOURNAMENT_CHIP_SYNC_INPUT_INVALID: tournament id and JSON array are required'
+      USING ERRCODE = '22023';
+  END IF;
+
+  FOR v_item, v_ordinality IN
+    SELECT value, ordinality
+      FROM jsonb_array_elements(p_updates) WITH ORDINALITY AS input(value, ordinality)
+     ORDER BY ordinality
+  LOOP
+    IF jsonb_typeof(v_item) <> 'object'
+       OR NOT (v_item ? 'user_id')
+       OR NOT (v_item ? 'chips')
+       OR (v_item - ARRAY['user_id', 'chips']) <> '{}'::jsonb
+       OR jsonb_typeof(v_item -> 'user_id') <> 'string'
+       OR jsonb_typeof(v_item -> 'chips') <> 'number' THEN
+      RAISE EXCEPTION
+        'TOURNAMENT_CHIP_SYNC_INPUT_INVALID: update % must be exactly {user_id:string,chips:number}',
+        v_ordinality
+        USING ERRCODE = '22023';
+    END IF;
+
+    v_user_text := v_item ->> 'user_id';
+    IF v_user_text !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN
+      RAISE EXCEPTION
+        'TOURNAMENT_CHIP_SYNC_INPUT_INVALID: update % has a noncanonical user_id',
+        v_ordinality
+        USING ERRCODE = '22023';
+    END IF;
+    v_user_id := v_user_text::uuid;
+    v_chip_value := (v_item ->> 'chips')::numeric;
+    IF v_chip_value < 0
+       OR v_chip_value > 9999999999999
+       OR v_chip_value <> trunc(v_chip_value) THEN
+      RAISE EXCEPTION
+        'TOURNAMENT_CHIP_SYNC_INPUT_INVALID: update % chips must be a whole value in 0..9999999999999',
+        v_ordinality
+        USING ERRCODE = '23514';
+    END IF;
+    IF v_user_id = ANY(v_user_ids) THEN
+      RAISE EXCEPTION
+        'TOURNAMENT_CHIP_SYNC_INPUT_INVALID: duplicate user_id at update %',
+        v_ordinality
+        USING ERRCODE = '22023';
+    END IF;
+    v_user_ids := array_append(v_user_ids, v_user_id);
+    v_chip_values := array_append(v_chip_values, v_chip_value);
+  END LOOP;
+
+  IF cardinality(v_user_ids) = 0 THEN
+    RETURN 0;
+  END IF;
+
+  /* One global order prevents the historical sync-vs-sync deadlock. Lock all
+     recipients, including no-ops, so status cannot change between exact-match
+     proof and the update predicate. */
+  PERFORM tp.id
+    FROM public.tournament_players tp
+    JOIN unnest(v_user_ids) AS input(user_id) ON input.user_id = tp.user_id
+   WHERE tp.tournament_id = p_tournament_id
+     AND tp.status::text = 'playing'
+   ORDER BY tp.user_id
+   FOR UPDATE OF tp;
+  GET DIAGNOSTICS v_matched_count = ROW_COUNT;
+  IF v_matched_count <> cardinality(v_user_ids) THEN
+    RAISE EXCEPTION
+      'TOURNAMENT_CHIP_SYNC_RECIPIENT_MISMATCH: expected % exact playing rows, matched %',
+      cardinality(v_user_ids), v_matched_count
+      USING ERRCODE = '23503';
+  END IF;
+
+  UPDATE public.tournament_players tp
+     SET chips = input.chips::bigint
+    FROM unnest(v_user_ids, v_chip_values) AS input(user_id, chips)
+   WHERE tp.tournament_id = p_tournament_id
+     AND tp.user_id = input.user_id
+     AND tp.status::text = 'playing'
+     AND tp.chips IS DISTINCT FROM input.chips::bigint;
+  GET DIAGNOSTICS v_updated_count = ROW_COUNT;
+  RETURN v_updated_count;
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.fn_sync_tournament_chips(uuid, jsonb)
+  FROM PUBLIC, anon, authenticated, service_role;
+
+/* The elimination sweep's parent RPC must preserve the exact source. If it
+   floors/coalesces here, the strict child can never distinguish a corrupt
+   active seat from a whole zero. Lock roster rows in user order, then active
+   source seats in stable order. Atomic elimination's tournament -> roster ->
+   seat order either owns a roster row first or waits for this RPC without a
+   cycle; this RPC must not first own the tournament because legacy child-row
+   BEFORE triggers can enter child -> launch receipt -> tournament. A hand
+   settlement only needs the seat locks, so it can finish before this snapshot
+   continues; this transaction's later statement then reads the committed
+   stack while holding that seat.
+
+   A stable active-seat/non-playing-roster mismatch is not a legitimate
+   elimination transition: atomic elimination holds the tournament and roster
+   locks while it changes roster and seat together. Exclude every ambiguous or
+   mismatched user from v_updates, return both exact quarantine sets, and let
+   the caller remove their identities from every bust/finish inference. Healthy
+   exact users still sync in the same transaction; no stale value is guessed. */
+CREATE OR REPLACE FUNCTION public.fn_sync_tournament_live_seat_chips(
+  p_tournament_id uuid
+) RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $function$
+DECLARE
+  v_updates jsonb;
+  v_open_user_ids jsonb;
+  v_ambiguous_user_ids jsonb;
+  v_recipient_mismatch_user_ids jsonb;
+  v_locked_user_ids uuid[] := '{}'::uuid[];
+  v_input_invalid integer := 0;
+  v_synced integer;
+BEGIN
+  IF p_tournament_id IS NULL THEN
+    RAISE EXCEPTION
+      'TOURNAMENT_LIVE_SEAT_CHIP_INPUT_INVALID: tournament id is required'
+      USING ERRCODE = '22023';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM public.tournaments t WHERE t.id = p_tournament_id
+  ) THEN
+    RAISE EXCEPTION
+      'TOURNAMENT_LIVE_SEAT_CHIP_INPUT_INVALID: tournament does not exist'
+      USING ERRCODE = '23503';
+  END IF;
+
+  /* LIVE_SEAT_LOCK_ORDER_PLAYERS_SEATS. Lock only the live roster plus any
+     row named by a currently active seat; eliminated historical rows are not
+     hot-path lock amplification. registered rows cover a concurrent legal
+     seat acquisition, playing rows cover a temporarily seatless table move,
+     and the EXISTS arm captures stable inactive-seat corruption for exact
+     refusal below. Never take the tournament row first: child mutation
+     triggers can already own their executor row before reaching the
+     tournament launch proof. */
+  SELECT COALESCE(
+           array_agg(locked.user_id ORDER BY locked.user_id, locked.id),
+           '{}'::uuid[]
+         )
+    INTO v_locked_user_ids
+    FROM (
+      SELECT tp.id, tp.user_id
+        FROM public.tournament_players tp
+       WHERE tp.tournament_id = p_tournament_id
+         AND (
+           tp.status::text IN ('registered', 'playing')
+           OR EXISTS (
+             SELECT 1
+               FROM public.tables active_table
+               JOIN public.table_seats active_seat
+                 ON active_seat.table_id = active_table.id
+                AND active_seat.left_at IS NULL
+              WHERE active_table.tournament_id = p_tournament_id
+                AND active_seat.user_id = tp.user_id
+           )
+         )
+       ORDER BY tp.user_id, tp.id
+       FOR UPDATE OF tp
+    ) AS locked;
+
+  /* If a hand already owns a source row, READ COMMITTED waits here and the
+     statement following this lock sees its committed new stack. Once held,
+     no hand can move the source between validation and the child update. */
+  PERFORM s.id
+    FROM public.tables tb
+    JOIN public.table_seats s
+      ON s.table_id = tb.id AND s.left_at IS NULL
+   WHERE tb.tournament_id = p_tournament_id
+   ORDER BY s.user_id NULLS FIRST, s.joined_at NULLS FIRST,
+            s.table_id, s.seat_number, s.id
+   FOR UPDATE OF s;
+
+  WITH live AS (
+    SELECT s.id, s.user_id, s.stack, s.joined_at, s.table_id, s.seat_number
+      FROM public.tables tb
+      JOIN public.table_seats s
+        ON s.table_id = tb.id AND s.left_at IS NULL
+     WHERE tb.tournament_id = p_tournament_id
+  ), latest AS (
+    SELECT user_id, max(joined_at) AS latest_joined_at
+      FROM live
+     GROUP BY user_id
+  ), classified AS (
+    SELECT
+      l.user_id,
+      count(*) AS active_count,
+      m.latest_joined_at,
+      count(*) FILTER (WHERE l.joined_at = m.latest_joined_at) AS latest_count,
+      max(l.stack) FILTER (WHERE l.joined_at = m.latest_joined_at) AS latest_stack,
+      (array_agg(l.table_id ORDER BY l.table_id)
+         FILTER (WHERE l.joined_at = m.latest_joined_at))[1] AS latest_table_id,
+      max(l.seat_number)
+         FILTER (WHERE l.joined_at = m.latest_joined_at) AS latest_seat_number
+      FROM live l
+      JOIN latest m ON m.user_id IS NOT DISTINCT FROM l.user_id
+     GROUP BY l.user_id, m.latest_joined_at
+  ), roster AS (
+    /* A playing row without an active seat is just as unsafe as an active seat
+       without a playing row. Include both sides of the identity relation so a
+       stale playing zero can never disappear from every quarantine array. */
+    SELECT
+      tp.user_id,
+      count(*) AS player_count,
+      (array_agg(tp.id ORDER BY tp.id))[1] AS player_id,
+      (array_agg(tp.status::text ORDER BY tp.id))[1] AS player_status,
+      (array_agg(tp.table_id ORDER BY tp.id))[1] AS player_table_id,
+      (array_agg(tp.seat_number ORDER BY tp.id))[1] AS player_seat_number
+      FROM public.tournament_players tp
+     WHERE tp.tournament_id = p_tournament_id
+       AND tp.status::text = 'playing'
+     GROUP BY tp.user_id
+  ), exact AS (
+    SELECT
+      COALESCE(c.user_id, r.user_id) AS user_id,
+      COALESCE(c.active_count, 0) AS active_count,
+      c.latest_joined_at,
+      COALESCE(c.latest_count, 0) AS latest_count,
+      c.latest_stack,
+      c.latest_table_id,
+      c.latest_seat_number,
+      COALESCE(r.player_count, 0) AS player_count,
+      r.player_id,
+      r.player_status,
+      r.player_table_id,
+      r.player_seat_number
+      FROM classified c
+      FULL OUTER JOIN roster r ON r.user_id = c.user_id
+  )
+  SELECT
+    COALESCE(
+      jsonb_agg(DISTINCT user_id ORDER BY user_id)
+        FILTER (WHERE user_id IS NOT NULL),
+      '[]'::jsonb
+    ),
+    COALESCE(
+      jsonb_agg(user_id ORDER BY user_id) FILTER (
+        WHERE user_id IS NOT NULL
+          AND active_count > 0
+          AND (
+            active_count <> 1
+            OR latest_joined_at IS NULL
+            OR latest_count <> 1
+          )
+      ),
+      '[]'::jsonb
+    ),
+    COALESCE(
+      jsonb_agg(user_id ORDER BY user_id) FILTER (
+        WHERE user_id IS NOT NULL
+          AND NOT (
+            active_count > 0
+            AND (
+              active_count <> 1
+              OR latest_joined_at IS NULL
+              OR latest_count <> 1
+            )
+          )
+          AND (
+            active_count = 0
+            OR player_count <> 1
+            OR NOT (user_id = ANY(v_locked_user_ids))
+            OR player_id IS NULL
+            OR player_status <> 'playing'
+            OR player_table_id IS DISTINCT FROM latest_table_id
+            OR player_seat_number IS DISTINCT FROM latest_seat_number
+          )
+      ),
+      '[]'::jsonb
+    ),
+    COALESCE(
+      jsonb_agg(
+        jsonb_build_object('user_id', user_id, 'chips', latest_stack)
+        ORDER BY user_id
+      ) FILTER (
+        WHERE user_id IS NOT NULL
+          AND latest_joined_at IS NOT NULL
+          AND active_count = 1
+          AND latest_count = 1
+          AND user_id = ANY(v_locked_user_ids)
+          AND player_count = 1
+          AND player_id IS NOT NULL
+          AND player_status = 'playing'
+          AND player_table_id IS NOT DISTINCT FROM latest_table_id
+          AND player_seat_number IS NOT DISTINCT FROM latest_seat_number
+      ),
+      '[]'::jsonb
+    ),
+    count(*) FILTER (
+      WHERE user_id IS NULL
+         OR (
+           active_count > 0
+           AND
+           latest_joined_at IS NOT NULL
+           AND latest_count = 1
+           AND (
+             latest_stack IS NULL
+             OR lower(latest_stack::text) IN ('nan', 'infinity', '-infinity')
+             OR latest_stack < 0
+             OR latest_stack > 9999999999999
+             OR latest_stack <> trunc(latest_stack)
+           )
+         )
+    )::integer
+    INTO v_open_user_ids, v_ambiguous_user_ids,
+         v_recipient_mismatch_user_ids, v_updates, v_input_invalid
+    FROM exact;
+
+  IF v_input_invalid <> 0 THEN
+    RAISE EXCEPTION
+      'TOURNAMENT_LIVE_SEAT_CHIP_INPUT_INVALID: % unique latest seat source(s) are null, negative, fractional, out of range, or unidentified',
+      v_input_invalid
+      USING ERRCODE = '23514';
+  END IF;
+  v_synced := public.fn_sync_tournament_chips(p_tournament_id, v_updates);
+  RETURN jsonb_build_object(
+    'ok', true,
+    'synced', COALESCE(v_synced, 0),
+    'open_user_ids', v_open_user_ids,
+    'ambiguous_user_ids', v_ambiguous_user_ids,
+    'recipient_mismatch_user_ids', v_recipient_mismatch_user_ids
+  );
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.fn_sync_tournament_live_seat_chips(uuid)
+  FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.fn_sync_tournament_live_seat_chips(uuid)
+  TO service_role;
+
+/*
+ * PERMANENT ROOT-CAUSE GUARD
+ * --------------------------
+ * The engine rejects a fractional tournament hand before it starts.  These
+ * triggers close the database half of that contract so a future direct SQL,
+ * SECURITY DEFINER RPC, manager path, table refresh, or new seat cannot store
+ * the bad input in the first place.  Cash table cents are deliberately outside
+ * the rule.  Column-scoped UPDATE triggers avoid rewriting or even touching
+ * immutable terminal history unless somebody tries to change its chip input.
+ */
+CREATE OR REPLACE FUNCTION public.trg_require_whole_tournament_chips()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $function$
+DECLARE
+  v_tournament_id uuid;
+  v_tournament_status text;
+  v_is_tournament boolean;
+  v_row jsonb;
+  v_structure jsonb;
+  v_level jsonb;
+  v_key text;
+  v_text text;
+  v_small numeric;
+  v_big numeric;
+  v_ante numeric;
+BEGIN
+  IF TG_TABLE_NAME = 'tournaments' THEN
+    v_row := to_jsonb(NEW);
+    FOREACH v_key IN ARRAY ARRAY['starting_chips', 'rebuy_chips', 'addon_chips'] LOOP
+      v_text := v_row ->> v_key;
+      IF v_text IS NOT NULL THEN
+        BEGIN
+          v_small := v_text::numeric;
+        EXCEPTION WHEN invalid_text_representation OR numeric_value_out_of_range THEN
+          RAISE EXCEPTION
+            'TOURNAMENT_WHOLE_CHIP_REQUIRED: %.% is not numeric', TG_TABLE_NAME, v_key
+            USING ERRCODE = '23514';
+        END;
+        IF lower(v_small::text) IN ('nan', 'infinity', '-infinity')
+           OR v_small < 0 OR v_small <> trunc(v_small) THEN
+          RAISE EXCEPTION
+            'TOURNAMENT_WHOLE_CHIP_REQUIRED: %.% must be a nonnegative whole chip, got %',
+            TG_TABLE_NAME, v_key, v_text
+            USING ERRCODE = '23514';
+        END IF;
+      ELSIF v_key = 'starting_chips' THEN
+        RAISE EXCEPTION
+          'TOURNAMENT_WHOLE_CHIP_REQUIRED: tournaments.starting_chips cannot be null'
+          USING ERRCODE = '23514';
+      END IF;
+    END LOOP;
+
+    BEGIN
+      v_structure := (v_row ->> 'blind_structure')::jsonb;
+    EXCEPTION WHEN invalid_text_representation THEN
+      RAISE EXCEPTION
+        'TOURNAMENT_WHOLE_CHIP_REQUIRED: blind_structure must be valid JSON'
+        USING ERRCODE = '23514';
+    END;
+    IF v_structure IS NULL OR jsonb_typeof(v_structure) <> 'array' THEN
+      RAISE EXCEPTION
+        'TOURNAMENT_WHOLE_CHIP_REQUIRED: blind_structure must be a JSON array'
+        USING ERRCODE = '23514';
+    END IF;
+    IF jsonb_array_length(v_structure) = 0
+       OR NOT EXISTS (
+         SELECT 1
+           FROM jsonb_array_elements(v_structure) candidate(level)
+          WHERE jsonb_typeof(candidate.level) = 'object'
+            AND NOT COALESCE((candidate.level ->> 'isBreak')::boolean, false)
+       ) THEN
+      RAISE EXCEPTION
+        'TOURNAMENT_WHOLE_CHIP_REQUIRED: blind_structure needs a non-break level'
+        USING ERRCODE = '23514';
+    END IF;
+
+    FOR v_level IN SELECT value FROM jsonb_array_elements(v_structure) AS x(value) LOOP
+      IF jsonb_typeof(v_level) <> 'object' THEN
+        RAISE EXCEPTION
+          'TOURNAMENT_WHOLE_CHIP_REQUIRED: each blind level must be an object'
+          USING ERRCODE = '23514';
+      END IF;
+      BEGIN
+        IF COALESCE((v_level ->> 'isBreak')::boolean, false) THEN
+          CONTINUE;
+        END IF;
+        v_text := COALESCE(
+          v_level ->> 'smallBlind', v_level ->> 'small_blind',
+          v_level ->> 'small', v_level ->> 'sb'
+        );
+        IF v_text IS NULL THEN
+          RAISE EXCEPTION 'missing small blind' USING ERRCODE = '22023';
+        END IF;
+        v_small := v_text::numeric;
+        v_text := COALESCE(
+          v_level ->> 'bigBlind', v_level ->> 'big_blind',
+          v_level ->> 'big', v_level ->> 'bb'
+        );
+        IF v_text IS NULL THEN
+          RAISE EXCEPTION 'missing big blind' USING ERRCODE = '22023';
+        END IF;
+        v_big := v_text::numeric;
+        v_ante := COALESCE(v_level ->> 'ante', '0')::numeric;
+      EXCEPTION
+        WHEN invalid_text_representation OR invalid_parameter_value
+          OR numeric_value_out_of_range THEN
+          RAISE EXCEPTION
+            'TOURNAMENT_WHOLE_CHIP_REQUIRED: a non-break blind level has missing or nonnumeric chips'
+            USING ERRCODE = '23514';
+      END;
+      IF lower(v_small::text) IN ('nan', 'infinity', '-infinity')
+         OR lower(v_big::text) IN ('nan', 'infinity', '-infinity')
+         OR lower(v_ante::text) IN ('nan', 'infinity', '-infinity')
+         OR v_small < 0 OR v_small <> trunc(v_small)
+         OR v_big <= 0 OR v_big <> trunc(v_big)
+         OR v_ante < 0 OR v_ante <> trunc(v_ante) THEN
+        RAISE EXCEPTION
+          'TOURNAMENT_WHOLE_CHIP_REQUIRED: non-break blinds/antes must be whole (small %, big %, ante %)',
+          v_small, v_big, v_ante
+          USING ERRCODE = '23514';
+      END IF;
+    END LOOP;
+
+    /* A terminal row may carry old malformed testimony. Reopening it through
+       status alone must validate every child which would become playable; the
+       status column is part of this trigger's UPDATE list below. Every child
+       chip-setting writer independently passes this same trigger family, so
+       an ordinary predicate read is sufficient and avoids parent/child lock
+       inversion with a row trigger whose executor already owns the child. */
+    IF upper(COALESCE(NEW.status::text, ''))
+         NOT IN ('COMPLETED', 'CANCELLED', 'CANCELED') THEN
+      IF EXISTS (
+        SELECT 1 FROM public.tables tb
+         WHERE tb.tournament_id = NEW.id
+           AND (
+             tb.small_blind IS NULL
+             OR lower(tb.small_blind::text)
+                  IN ('nan', 'infinity', '-infinity')
+             OR tb.small_blind < 0
+             OR tb.small_blind <> trunc(tb.small_blind)
+             OR tb.big_blind IS NULL
+             OR lower(tb.big_blind::text)
+                  IN ('nan', 'infinity', '-infinity')
+             OR tb.big_blind <= 0
+             OR tb.big_blind <> trunc(tb.big_blind)
+             OR lower(COALESCE(tb.ante, 0)::text)
+                  IN ('nan', 'infinity', '-infinity')
+             OR COALESCE(tb.ante, 0) < 0
+             OR COALESCE(tb.ante, 0) <> trunc(COALESCE(tb.ante, 0))
+             OR (
+               tb.bomb_pot_ante_multiplier IS NOT NULL
+               AND tb.bomb_pot_ante_multiplier < 0
+             )
+             OR (
+               tb.bomb_pot_ante_fixed IS NOT NULL
+               AND (
+                 lower(tb.bomb_pot_ante_fixed::text)
+                   IN ('nan', 'infinity', '-infinity')
+                 OR tb.bomb_pot_ante_fixed < 0
+                 OR tb.bomb_pot_ante_fixed
+                      <> trunc(tb.bomb_pot_ante_fixed)
+               )
+             )
+           )
+      ) OR EXISTS (
+        SELECT 1
+          FROM public.table_seats s
+          JOIN public.tables tb ON tb.id = s.table_id
+         WHERE tb.tournament_id = NEW.id
+           AND s.left_at IS NULL
+           AND (
+             s.stack IS NULL
+             OR lower(s.stack::text) IN ('nan', 'infinity', '-infinity')
+             OR s.stack < 0
+             OR s.stack > 9999999999999
+             OR s.stack <> trunc(s.stack)
+           )
+      ) OR EXISTS (
+        SELECT 1 FROM public.tournament_players tp
+         WHERE tp.tournament_id = NEW.id
+           AND (tp.chips IS NULL OR tp.chips < 0 OR tp.chips > 9999999999999)
+      ) THEN
+        RAISE EXCEPTION
+          'TOURNAMENT_WHOLE_CHIP_REQUIRED: a terminal tournament with malformed child chips cannot become nonterminal'
+          USING ERRCODE = '23514';
+      END IF;
+    END IF;
+    RETURN NEW;
+  END IF;
+
+  IF TG_TABLE_NAME = 'tables' THEN
+    v_tournament_id := NEW.tournament_id;
+    v_is_tournament :=
+      v_tournament_id IS NOT NULL
+      OR lower(COALESCE(NEW.game_type::text, '')) = 'tournament';
+    IF NOT v_is_tournament THEN
+      RETURN NEW; -- cash keeps its established cent denomination
+    END IF;
+    IF NEW.small_blind IS NULL OR NEW.big_blind IS NULL
+       OR lower(NEW.small_blind::text) IN ('nan', 'infinity', '-infinity')
+       OR lower(NEW.big_blind::text) IN ('nan', 'infinity', '-infinity')
+       OR lower(COALESCE(NEW.ante, 0)::text) IN ('nan', 'infinity', '-infinity')
+       OR NEW.small_blind < 0 OR NEW.small_blind <> trunc(NEW.small_blind)
+       OR NEW.big_blind <= 0 OR NEW.big_blind <> trunc(NEW.big_blind)
+       OR COALESCE(NEW.ante, 0) < 0
+       OR COALESCE(NEW.ante, 0) <> trunc(COALESCE(NEW.ante, 0))
+       OR (
+         NEW.bomb_pot_ante_multiplier IS NOT NULL
+         AND NEW.bomb_pot_ante_multiplier < 0
+       )
+       OR (
+         NEW.bomb_pot_ante_fixed IS NOT NULL
+         AND (
+           lower(NEW.bomb_pot_ante_fixed::text)
+             IN ('nan', 'infinity', '-infinity')
+           OR NEW.bomb_pot_ante_fixed < 0
+           OR NEW.bomb_pot_ante_fixed <> trunc(NEW.bomb_pot_ante_fixed)
+         )
+       ) THEN
+      RAISE EXCEPTION
+        'TOURNAMENT_WHOLE_CHIP_REQUIRED: tournament table blinds/ante/bomb-pot configuration must be nonnegative whole chips'
+        USING ERRCODE = '23514';
+    END IF;
+    /* Every seat writer locks this parent FOR SHARE below. The table UPDATE's
+       executor owns the parent row before this BEFORE trigger runs, so either
+       an earlier seat writer commits and this predicate sees it, or the seat
+       waits and then sees tournament classification. Do not lock the child:
+       parent->child here would invert the seat trigger's child->parent order. */
+    IF EXISTS (
+      SELECT 1 FROM public.table_seats s
+       WHERE s.table_id = NEW.id
+         AND s.left_at IS NULL
+         AND (
+           s.stack IS NULL
+           OR lower(s.stack::text) IN ('nan', 'infinity', '-infinity')
+           OR s.stack < 0
+           OR s.stack > 9999999999999
+           OR s.stack <> trunc(s.stack)
+         )
+    ) THEN
+      RAISE EXCEPTION
+        'TOURNAMENT_WHOLE_CHIP_REQUIRED: a table with fractional active seats cannot become a tournament table'
+        USING ERRCODE = '23514';
+    END IF;
+    RETURN NEW;
+  END IF;
+
+  IF TG_TABLE_NAME = 'table_seats' THEN
+    SELECT tb.tournament_id,
+           (tb.tournament_id IS NOT NULL
+            OR lower(COALESCE(tb.game_type::text, '')) = 'tournament'),
+           upper(COALESCE(t.status::text, ''))
+      INTO v_tournament_id, v_is_tournament, v_tournament_status
+      FROM public.tables tb
+      LEFT JOIN public.tournaments t ON t.id = tb.tournament_id
+     WHERE tb.id = NEW.table_id
+     FOR SHARE OF tb;
+    IF NOT FOUND THEN
+      RAISE EXCEPTION
+        'TOURNAMENT_WHOLE_CHIP_REQUIRED: seat target table is missing'
+        USING ERRCODE = '23503';
+    END IF;
+    IF NOT v_is_tournament THEN
+      RETURN NEW; -- cash keeps cents
+    END IF;
+    /* Terminal fractional rows are immutable testimony, not playable chips.
+       Cleanup must still be able to close one exact active generation without
+       rewriting that testimony. Reactivation, movement, identity change, or
+       a simultaneous stack change remains prohibited and falls through. */
+    IF TG_OP = 'UPDATE'
+       AND v_tournament_id IS NOT NULL
+       AND v_tournament_status IN ('COMPLETED', 'CANCELLED', 'CANCELED')
+       AND OLD.left_at IS NULL
+       AND NEW.left_at IS NOT NULL
+       AND NEW.table_id IS NOT DISTINCT FROM OLD.table_id
+       AND NEW.user_id IS NOT DISTINCT FROM OLD.user_id
+       AND NEW.seat_number IS NOT DISTINCT FROM OLD.seat_number
+       AND NEW.joined_at IS NOT DISTINCT FROM OLD.joined_at
+       AND NEW.stack IS NOT DISTINCT FROM OLD.stack THEN
+      RETURN NEW;
+    END IF;
+    IF NEW.stack IS NULL
+       OR lower(NEW.stack::text) IN ('nan', 'infinity', '-infinity')
+       OR NEW.stack < 0 OR NEW.stack > 9999999999999
+       OR NEW.stack <> trunc(NEW.stack) THEN
+      RAISE EXCEPTION
+        'TOURNAMENT_WHOLE_CHIP_REQUIRED: tournament seat stack must be a nonnegative whole chip'
+        USING ERRCODE = '23514';
+    END IF;
+    RETURN NEW;
+  END IF;
+
+  IF TG_TABLE_NAME = 'tournament_players' THEN
+    /* BIGINT is the fraction barrier; this trigger enforces the exact
+       numeric(15,2) whole-stack domain shared with active seats. */
+    IF NEW.chips IS NULL OR NEW.chips < 0 OR NEW.chips > 9999999999999 THEN
+      RAISE EXCEPTION
+        'TOURNAMENT_WHOLE_CHIP_REQUIRED: tournament_players.chips must be in 0..9999999999999'
+        USING ERRCODE = '23514';
+    END IF;
+    RETURN NEW;
+  END IF;
+
+  RAISE EXCEPTION
+    'TOURNAMENT_WHOLE_CHIP_GUARD_INVALID: unsupported relation %', TG_TABLE_NAME
+    USING ERRCODE = '55000';
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.trg_require_whole_tournament_chips()
+  FROM PUBLIC, anon, authenticated, service_role;
+
+DROP TRIGGER IF EXISTS a1_require_whole_tournament_chips ON public.tournaments;
+CREATE TRIGGER a1_require_whole_tournament_chips
+  BEFORE INSERT OR UPDATE OF status, starting_chips, rebuy_chips, addon_chips, blind_structure
+  ON public.tournaments
+  FOR EACH ROW EXECUTE FUNCTION public.trg_require_whole_tournament_chips();
+
+DROP TRIGGER IF EXISTS a1_require_whole_tournament_chips ON public.tables;
+CREATE TRIGGER a1_require_whole_tournament_chips
+  BEFORE INSERT OR UPDATE OF tournament_id, game_type, small_blind, big_blind, ante,
+    bomb_pot_enabled, bomb_pot_ante_multiplier, bomb_pot_ante_fixed
+  ON public.tables
+  FOR EACH ROW EXECUTE FUNCTION public.trg_require_whole_tournament_chips();
+
+DROP TRIGGER IF EXISTS a1_require_whole_tournament_chips ON public.table_seats;
+CREATE TRIGGER a1_require_whole_tournament_chips
+  BEFORE INSERT OR UPDATE OF table_id, stack, left_at
+  ON public.table_seats
+  FOR EACH ROW EXECUTE FUNCTION public.trg_require_whole_tournament_chips();
+
+DROP TRIGGER IF EXISTS a1_require_whole_tournament_chips ON public.tournament_players;
+CREATE TRIGGER a1_require_whole_tournament_chips
+  BEFORE INSERT OR UPDATE OF chips
+  ON public.tournament_players
+  FOR EACH ROW EXECUTE FUNCTION public.trg_require_whole_tournament_chips();
+
+DO $assert_whole_tournament_chip_guard$
+DECLARE
+  v_source text;
+  v_sync_source text;
+  v_live_sync_source text;
+  v_table_trigger text;
+  v_commit_source text;
+  v_rebuy_source text;
+BEGIN
+  SELECT pg_get_functiondef(
+    'public.trg_require_whole_tournament_chips()'::regprocedure
+  ) INTO v_source;
+  IF position('TOURNAMENT_WHOLE_CHIP_REQUIRED' IN v_source) = 0
+     OR position('blind_structure must be a JSON array' IN v_source) = 0
+     OR position('cash keeps cents' IN v_source) = 0
+     OR position('s.stack <> trunc(s.stack)' IN v_source) = 0
+     OR position('bomb_pot_ante_fixed <> trunc' IN v_source) = 0
+     OR position('bomb_pot_ante_multiplier < 0' IN v_source) = 0
+     OR position('FOR SHARE' IN v_source) = 0
+     OR position('game_type::text' IN v_source) = 0
+     OR position('v_is_tournament' IN v_source) = 0 THEN
+    RAISE EXCEPTION 'TOURNAMENT_WHOLE_CHIP_GUARD_INVALID: source markers are incomplete';
+  END IF;
+
+  IF (SELECT count(*) FROM pg_trigger g
+       WHERE g.tgname = 'a1_require_whole_tournament_chips'
+         AND g.tgrelid IN (
+           'public.tournaments'::regclass,
+           'public.tournament_players'::regclass,
+           'public.tables'::regclass,
+           'public.table_seats'::regclass
+         )
+         AND NOT g.tgisinternal
+         AND g.tgenabled = 'O') <> 4 THEN
+    RAISE EXCEPTION 'TOURNAMENT_WHOLE_CHIP_GUARD_INVALID: all four triggers are required';
+  END IF;
+
+  SELECT pg_get_triggerdef(g.oid)
+    INTO v_table_trigger
+    FROM pg_trigger g
+   WHERE g.tgname = 'a1_require_whole_tournament_chips'
+     AND g.tgrelid = 'public.tables'::regclass
+     AND NOT g.tgisinternal;
+  IF position('bomb_pot_ante_multiplier' IN COALESCE(v_table_trigger, '')) = 0 THEN
+    RAISE EXCEPTION
+      'TOURNAMENT_WHOLE_CHIP_GUARD_INVALID: table trigger must observe bomb_pot_ante_multiplier updates';
+  END IF;
+
+  IF format_type(
+       (SELECT a.atttypid FROM pg_attribute a
+         WHERE a.attrelid = 'public.tournament_players'::regclass
+           AND a.attname = 'chips' AND NOT a.attisdropped),
+       (SELECT a.atttypmod FROM pg_attribute a
+         WHERE a.attrelid = 'public.tournament_players'::regclass
+           AND a.attname = 'chips' AND NOT a.attisdropped)
+     ) <> 'bigint'
+     OR (
+       to_regclass('public.tournament_flights') IS NOT NULL
+       AND format_type(
+         (SELECT a.atttypid FROM pg_attribute a
+           WHERE a.attrelid = 'public.tournament_flights'::regclass
+             AND a.attname = 'bagged_chips' AND NOT a.attisdropped),
+         (SELECT a.atttypmod FROM pg_attribute a
+           WHERE a.attrelid = 'public.tournament_flights'::regclass
+             AND a.attname = 'bagged_chips' AND NOT a.attisdropped)
+       ) <> 'bigint'
+     )
+     OR (
+       to_regclass('public.tournament_flights') IS NOT NULL
+       AND NOT EXISTS (
+         SELECT 1 FROM pg_constraint c
+          WHERE c.conrelid = 'public.tournament_flights'::regclass
+            AND c.conname = 'tournament_flights_bagged_chips_safe_domain'
+            AND c.contype = 'c'
+            AND position('bagged_chips' IN pg_get_constraintdef(c.oid)) > 0
+            AND position('9999999999999' IN pg_get_constraintdef(c.oid)) > 0
+       )
+     )
+     OR format_type(
+       (SELECT a.atttypid FROM pg_attribute a
+         WHERE a.attrelid = 'public.tournaments'::regclass
+           AND a.attname = 'starting_chips' AND NOT a.attisdropped),
+       (SELECT a.atttypmod FROM pg_attribute a
+         WHERE a.attrelid = 'public.tournaments'::regclass
+           AND a.attname = 'starting_chips' AND NOT a.attisdropped)
+     ) <> 'integer'
+     OR format_type(
+       (SELECT a.atttypid FROM pg_attribute a
+         WHERE a.attrelid = 'public.tournaments'::regclass
+           AND a.attname = 'rebuy_chips' AND NOT a.attisdropped),
+       (SELECT a.atttypmod FROM pg_attribute a
+         WHERE a.attrelid = 'public.tournaments'::regclass
+           AND a.attname = 'rebuy_chips' AND NOT a.attisdropped)
+     ) <> 'integer'
+     OR format_type(
+       (SELECT a.atttypid FROM pg_attribute a
+         WHERE a.attrelid = 'public.tournaments'::regclass
+           AND a.attname = 'addon_chips' AND NOT a.attisdropped),
+       (SELECT a.atttypmod FROM pg_attribute a
+         WHERE a.attrelid = 'public.tournaments'::regclass
+           AND a.attname = 'addon_chips' AND NOT a.attisdropped)
+     ) <> 'integer' THEN
+    RAISE EXCEPTION
+      'TOURNAMENT_WHOLE_CHIP_GUARD_INVALID: cumulative player/flight storage must be bigint while per-purchase configuration remains integer';
+  END IF;
+
+  IF has_function_privilege(
+       'service_role', 'public.trg_require_whole_tournament_chips()', 'EXECUTE'
+     ) THEN
+    RAISE EXCEPTION
+      'TOURNAMENT_WHOLE_CHIP_GUARD_INVALID: trigger function is directly callable';
+  END IF;
+
+  SELECT pg_get_functiondef(
+    'public.fn_sync_tournament_chips(uuid,jsonb)'::regprocedure
+  ) INTO v_sync_source;
+  IF position('TOURNAMENT_CHIP_SYNC_INPUT_INVALID' IN v_sync_source) = 0
+     OR position('TOURNAMENT_CHIP_SYNC_RECIPIENT_MISMATCH' IN v_sync_source) = 0
+     OR position('ORDER BY tp.user_id' IN v_sync_source) = 0
+     OR position('FOR UPDATE OF tp' IN v_sync_source) = 0
+     OR position('9999999999999' IN v_sync_source) = 0
+     OR position('input.chips::bigint' IN v_sync_source) = 0
+     OR position('floor(' IN lower(v_sync_source)) <> 0
+     OR position('greatest(' IN lower(v_sync_source)) <> 0
+     OR has_function_privilege(
+          'service_role', 'public.fn_sync_tournament_chips(uuid,jsonb)', 'EXECUTE'
+        )
+     OR has_function_privilege(
+          'authenticated', 'public.fn_sync_tournament_chips(uuid,jsonb)', 'EXECUTE'
+        )
+     OR has_function_privilege(
+          'anon', 'public.fn_sync_tournament_chips(uuid,jsonb)', 'EXECUTE'
+        ) THEN
+    RAISE EXCEPTION
+      'TOURNAMENT_WHOLE_CHIP_GUARD_INVALID: owner-only tournament chip sync child is incomplete or exposed';
+  END IF;
+
+  SELECT pg_get_functiondef(
+    'public.fn_sync_tournament_live_seat_chips(uuid)'::regprocedure
+  ) INTO v_live_sync_source;
+  IF position(
+       'TOURNAMENT_LIVE_SEAT_CHIP_INPUT_INVALID' IN v_live_sync_source
+     ) = 0
+     OR position(
+       'LIVE_SEAT_LOCK_ORDER_PLAYERS_SEATS' IN v_live_sync_source
+     ) = 0
+     OR position(
+       '''recipient_mismatch_user_ids'', v_recipient_mismatch_user_ids'
+       IN v_live_sync_source
+     ) = 0
+     OR position('FULL OUTER JOIN roster' IN v_live_sync_source) = 0
+     OR position('active_count = 0' IN v_live_sync_source) = 0
+     OR position('active_count <> 1' IN v_live_sync_source) = 0
+     OR position('active_count = 1' IN v_live_sync_source) = 0
+     OR position('user_id = ANY(v_locked_user_ids)' IN v_live_sync_source) = 0
+     OR position('''chips'', latest_stack' IN v_live_sync_source) = 0
+     OR position('latest_stack > 9999999999999' IN v_live_sync_source) = 0
+     OR position('COALESCE(latest_stack' IN v_live_sync_source) <> 0
+     OR position('floor(' IN lower(v_live_sync_source)) <> 0
+     OR position('greatest(' IN lower(v_live_sync_source)) <> 0
+     OR NOT has_function_privilege(
+          'service_role',
+          'public.fn_sync_tournament_live_seat_chips(uuid)',
+          'EXECUTE'
+        )
+     OR has_function_privilege(
+          'authenticated',
+          'public.fn_sync_tournament_live_seat_chips(uuid)',
+          'EXECUTE'
+        )
+     OR has_function_privilege(
+          'anon',
+          'public.fn_sync_tournament_live_seat_chips(uuid)',
+          'EXECUTE'
+        ) THEN
+    RAISE EXCEPTION
+      'TOURNAMENT_WHOLE_CHIP_GUARD_INVALID: strict live-seat chip snapshot door is incomplete';
+  END IF;
+
+  SELECT pg_get_functiondef(
+    'public.fn_ca_commit_hand_settlement(uuid,bigint,jsonb,numeric,numeric,text,numeric,jsonb,jsonb,text,uuid,jsonb)'::regprocedure
+  ) INTO v_commit_source;
+  IF position('accepted tournament hand produced fractional stack' IN v_commit_source) > 0
+     AND (
+       position('greatest(v_written,0)::integer' IN v_commit_source) > 0
+       OR position('greatest(v_written,0)::bigint' IN v_commit_source) = 0
+       OR position('(x->>''stack'')::numeric<=9999999999999' IN v_commit_source) = 0
+     ) THEN
+    RAISE EXCEPTION
+      'TOURNAMENT_WHOLE_CHIP_GUARD_INVALID: accepted-hand roster mirror is not bigint-safe';
+  END IF;
+
+  IF to_regprocedure(
+       'public.process_tournament_rebuy_before_atomic_live_seat_lock(uuid,uuid,text,numeric,numeric,integer,text)'
+     ) IS NOT NULL THEN
+    SELECT pg_get_functiondef(
+      'public.process_tournament_rebuy_before_atomic_live_seat_lock(uuid,uuid,text,numeric,numeric,integer,text)'::regprocedure
+    ) INTO v_rebuy_source;
+    IF position('v_add bigint; v_new_chips bigint;' IN v_rebuy_source) = 0
+       OR position('TOURNAMENT_CHIP_DOMAIN_INVALID' IN v_rebuy_source) = 0
+       OR position('SET chips=(SELECT stack FROM table_seats WHERE id=v_seat.id)::bigint' IN v_rebuy_source) = 0 THEN
+      RAISE EXCEPTION
+        'TOURNAMENT_WHOLE_CHIP_GUARD_INVALID: rebuy cumulative writer is not bigint-safe';
+    END IF;
+  END IF;
+
+  /* This also validates the guard-only clean-replay branch. Permanent
+     terminal testimony may remain fractional, but no nonterminal source may
+     be armed for a future fractional hand. */
+  IF EXISTS (
+    SELECT 1
+      FROM public.table_seats s
+      JOIN public.tables tb ON tb.id = s.table_id
+      LEFT JOIN public.tournaments t ON t.id = tb.tournament_id
+     WHERE s.left_at IS NULL
+       AND (
+         (tb.tournament_id IS NOT NULL
+          AND upper(COALESCE(t.status::text, ''))
+                NOT IN ('COMPLETED', 'CANCELLED', 'CANCELED'))
+         OR (tb.tournament_id IS NULL
+             AND lower(COALESCE(tb.game_type::text, '')) = 'tournament')
+       )
+       AND (
+         s.stack IS NULL
+         OR lower(s.stack::text) IN ('nan', 'infinity', '-infinity')
+         OR s.stack < 0
+         OR s.stack > 9999999999999
+         OR s.stack <> trunc(s.stack)
+       )
+  )
+  OR EXISTS (
+    SELECT 1
+      FROM public.tables tb
+      LEFT JOIN public.tournaments t ON t.id = tb.tournament_id
+     WHERE (
+         (tb.tournament_id IS NOT NULL
+          AND upper(COALESCE(t.status::text, ''))
+                NOT IN ('COMPLETED', 'CANCELLED', 'CANCELED'))
+         OR (tb.tournament_id IS NULL
+             AND lower(COALESCE(tb.game_type::text, '')) = 'tournament')
+       )
+       AND (
+         tb.small_blind IS NULL
+         OR lower(tb.small_blind::text) IN ('nan', 'infinity', '-infinity')
+         OR tb.small_blind < 0
+         OR tb.small_blind <> trunc(tb.small_blind)
+         OR tb.big_blind IS NULL
+         OR lower(tb.big_blind::text) IN ('nan', 'infinity', '-infinity')
+         OR tb.big_blind <= 0
+         OR tb.big_blind <> trunc(tb.big_blind)
+         OR lower(COALESCE(tb.ante, 0)::text)
+              IN ('nan', 'infinity', '-infinity')
+         OR COALESCE(tb.ante, 0) < 0
+         OR COALESCE(tb.ante, 0) <> trunc(COALESCE(tb.ante, 0))
+         OR (
+           tb.bomb_pot_ante_multiplier IS NOT NULL
+           AND tb.bomb_pot_ante_multiplier < 0
+         )
+         OR (
+           tb.bomb_pot_ante_fixed IS NOT NULL
+           AND (
+             lower(tb.bomb_pot_ante_fixed::text)
+               IN ('nan', 'infinity', '-infinity')
+             OR tb.bomb_pot_ante_fixed < 0
+             OR tb.bomb_pot_ante_fixed <> trunc(tb.bomb_pot_ante_fixed)
+           )
+         )
+       )
+  )
+  OR EXISTS (
+    SELECT 1
+      FROM public.tournaments t
+     WHERE upper(COALESCE(t.status::text, ''))
+             NOT IN ('COMPLETED', 'CANCELLED', 'CANCELED')
+       AND (
+         t.starting_chips IS NULL OR t.starting_chips < 0
+         OR (t.rebuy_chips IS NOT NULL AND t.rebuy_chips < 0)
+         OR (t.addon_chips IS NOT NULL AND t.addon_chips < 0)
+       )
+  ) THEN
+    RAISE EXCEPTION
+      'TOURNAMENT_WHOLE_CHIP_GUARD_INVALID: a nonterminal stored chip source violates the guard';
+  END IF;
+
+  BEGIN
+    IF EXISTS (
+      SELECT 1
+        FROM public.tournaments t
+       WHERE upper(COALESCE(t.status::text, ''))
+               NOT IN ('COMPLETED', 'CANCELLED', 'CANCELED')
+         AND (
+           (to_jsonb(t) ->> 'blind_structure') IS NULL
+           OR jsonb_typeof(
+                (to_jsonb(t) ->> 'blind_structure')::jsonb
+              ) <> 'array'
+           OR jsonb_array_length(
+                (to_jsonb(t) ->> 'blind_structure')::jsonb
+              ) = 0
+           OR NOT EXISTS (
+                SELECT 1
+                  FROM jsonb_array_elements(
+                    (to_jsonb(t) ->> 'blind_structure')::jsonb
+                  ) candidate(level)
+                 WHERE jsonb_typeof(candidate.level) = 'object'
+                   AND NOT COALESCE(
+                     (candidate.level ->> 'isBreak')::boolean, false
+                   )
+              )
+         )
+    ) THEN
+      RAISE EXCEPTION
+        'TOURNAMENT_WHOLE_CHIP_GUARD_INVALID: a nonterminal blind_structure is malformed';
+    END IF;
+    IF EXISTS (
+      SELECT 1
+        FROM public.tournaments t
+        CROSS JOIN LATERAL jsonb_array_elements(
+          (to_jsonb(t) ->> 'blind_structure')::jsonb
+        ) AS levels(level)
+       WHERE upper(COALESCE(t.status::text, ''))
+               NOT IN ('COMPLETED', 'CANCELLED', 'CANCELED')
+         AND NOT COALESCE((levels.level ->> 'isBreak')::boolean, false)
+         AND (
+           jsonb_typeof(levels.level) <> 'object'
+           OR COALESCE(
+                levels.level ->> 'smallBlind', levels.level ->> 'small_blind',
+                levels.level ->> 'small', levels.level ->> 'sb'
+              ) IS NULL
+           OR lower(COALESCE(
+                levels.level ->> 'smallBlind', levels.level ->> 'small_blind',
+                levels.level ->> 'small', levels.level ->> 'sb'
+              )::numeric::text) IN ('nan', 'infinity', '-infinity')
+           OR lower(COALESCE(
+                levels.level ->> 'bigBlind', levels.level ->> 'big_blind',
+                levels.level ->> 'big', levels.level ->> 'bb'
+              )::numeric::text) IN ('nan', 'infinity', '-infinity')
+           OR lower(COALESCE(levels.level ->> 'ante', '0')::numeric::text)
+                IN ('nan', 'infinity', '-infinity')
+           OR COALESCE(
+                levels.level ->> 'bigBlind', levels.level ->> 'big_blind',
+                levels.level ->> 'big', levels.level ->> 'bb'
+              ) IS NULL
+           OR COALESCE(
+                levels.level ->> 'smallBlind', levels.level ->> 'small_blind',
+                levels.level ->> 'small', levels.level ->> 'sb'
+              )::numeric < 0
+           OR COALESCE(
+                levels.level ->> 'bigBlind', levels.level ->> 'big_blind',
+                levels.level ->> 'big', levels.level ->> 'bb'
+              )::numeric <= 0
+           OR COALESCE(levels.level ->> 'ante', '0')::numeric < 0
+           OR COALESCE(
+                levels.level ->> 'smallBlind', levels.level ->> 'small_blind',
+                levels.level ->> 'small', levels.level ->> 'sb'
+              )::numeric <> trunc(COALESCE(
+                levels.level ->> 'smallBlind', levels.level ->> 'small_blind',
+                levels.level ->> 'small', levels.level ->> 'sb'
+              )::numeric)
+           OR COALESCE(
+                levels.level ->> 'bigBlind', levels.level ->> 'big_blind',
+                levels.level ->> 'big', levels.level ->> 'bb'
+              )::numeric <> trunc(COALESCE(
+                levels.level ->> 'bigBlind', levels.level ->> 'big_blind',
+                levels.level ->> 'big', levels.level ->> 'bb'
+              )::numeric)
+           OR COALESCE(levels.level ->> 'ante', '0')::numeric
+                <> trunc(COALESCE(levels.level ->> 'ante', '0')::numeric)
+         )
+    ) THEN
+      RAISE EXCEPTION
+        'TOURNAMENT_WHOLE_CHIP_GUARD_INVALID: a non-break stored blind level is fractional';
+    END IF;
+  EXCEPTION WHEN invalid_text_representation OR invalid_parameter_value THEN
+    RAISE EXCEPTION
+      'TOURNAMENT_WHOLE_CHIP_GUARD_INVALID: a nonterminal blind_structure is malformed';
+  END;
+END;
+$assert_whole_tournament_chip_guard$;
+
+COMMIT;

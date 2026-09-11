@@ -95,6 +95,10 @@ describe('the deploy gate waits on hands, never on humanity', () => {
       src.indexOf('Cut over to the new image')
     );
     expect(gate).toMatch(/readyForRestart/);
+    expect(gate).toMatch(/durableConfirmed/);
+    const certificate = gate.match(/STATE=.*?python3 -c '([^']+)'/)?.[1] ?? '';
+    expect(certificate).toContain('m.get("readyForRestart") is True');
+    expect(certificate).toContain('m.get("durableConfirmed") is True');
     expect(gate).not.toMatch(/d\.get\("humansSeatedTotal"\)/);
     expect(gate).not.toMatch(/is_horse|isHorse/);
   });
@@ -106,8 +110,11 @@ describe('the deploy gate waits on hands, never on humanity', () => {
     // Phase 1 (to-do #2563 item 4) widened the block to carry the measured
     // clock skew alongside the break snapshot, so the pin now requires BOTH:
     // the snapshot spread and the skew field riding with it.
-    expect(gs).toMatch(/maintenance: \{ \.\.\.this\.maintenanceBreak\.snapshot\(\), dbClockSkewMs/);
-    expect(read('server/src/maintenance/MaintenanceBreak.ts')).toMatch(/readyForRestart\(\)/);
+    expect(gs).toMatch(/dbClockSkewMs: this\.lastDbSkewMs/);
+    expect(gs).toMatch(/dbClockSkewMeasuredAt: this\.lastDbSkewMeasuredAtMs/);
+    const maintenance = read('server/src/maintenance/MaintenanceBreak.ts');
+    expect(maintenance).toMatch(/readyForRestart\(\)/);
+    expect(maintenance).toMatch(/durableConfirmed: this\.durablePhaseConfirmed/);
   });
 
   it('the break parks every table without asking who is sitting at it', () => {

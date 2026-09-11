@@ -7,10 +7,11 @@ import { sliceMethod } from '../testHelpers/sourceWindow.js';
 
 const read = (file: string): string => readFileSync(join(process.cwd(), file), 'utf8');
 const settlement = read('src/engine/ServerTableEngineSettlement.ts');
+const tables = read('src/services/supabase/tables.ts');
 const handHistory = read('src/services/supabase/handHistory.ts');
 const projection = read('src/services/supabase/handProjection.ts');
 const migration = read(
-  '../supabase/migrations/20260908043400_post_commit_obligations_are_atomic_and_resumable.sql'
+  '../supabase/migrations/20260908130009_post_commit_obligations_are_atomic_and_resumable.sql'
 );
 
 describe('an accepted hand cannot outrun its durable post-commit obligations', () => {
@@ -23,6 +24,12 @@ describe('an accepted hand cannot outrun its durable post-commit obligations', (
     );
     expect(postHand).toContain('const acceptedPostCommitFacts = durablePostCommitObligations');
     expect(postHand).toContain('const postCommitObligations = durablePostCommitObligations');
+    expect(postHand).toMatch(
+      /time_banks:\s*playersForRecord\.map[\s\S]*?requireHandSeatGeneration\(snap\.seatGenerations, player\.user_id\)/
+    );
+    expect(postHand).toMatch(
+      /stacks:\s*playersForRecord\.map[\s\S]*?requireHandSeatGeneration\(snap\.seatGenerations, p\.user_id\)/
+    );
     expect(postHand).toContain('leaseGeneration: leaseAuthority.generation');
     expect(postHand).toContain('postCommitObligations,');
     expect(postHand).toContain('acceptedPostCommitFacts,');
@@ -32,6 +39,30 @@ describe('an accepted hand cannot outrun its durable post-commit obligations', (
     expect(writer).toContain('_accepted_post_commit_facts: atomicCommit.acceptedPostCommitFacts');
     expect(writer).toContain('atomicCommit.assertLeaseAuthority?.();');
     expect(writer).toContain('result.post_commit_obligations !== true');
+  });
+
+  it('carries the immutable seat generation from the roster into both settlement narratives', () => {
+    expect(tables).toContain("'id, joined_at, user_id, occupancy_id, stack, seat_number,");
+    expect(tables).toContain('seat_id: seat.id,');
+    expect(tables).toContain('seat_joined_at: seat.joined_at,');
+
+    const timeBanks = postHand.slice(
+      postHand.indexOf('time_banks: playersForRecord.map'),
+      postHand.indexOf('rake:', postHand.indexOf('time_banks: playersForRecord.map'))
+    );
+    const stacks = postHand.slice(
+      postHand.indexOf('stacks: playersForRecord.map'),
+      postHand.indexOf('rake:', postHand.indexOf('stacks: playersForRecord.map'))
+    );
+    expect(timeBanks).toContain(
+      '...requireHandSeatGeneration(snap.seatGenerations, player.user_id)'
+    );
+    expect(timeBanks).toContain('const timeBank = snap.timeBanks.get(player.user_id)');
+    expect(timeBanks).toContain('uses_remaining: timeBank.time_bank_uses_remaining');
+    expect(timeBanks).toContain('seconds_remaining: timeBank.time_bank_remaining');
+    expect(stacks).toContain('...requireHandSeatGeneration(snap.seatGenerations, p.user_id)');
+    expect(timeBanks).not.toMatch(/seat_id:\s*player\.user_id|seat_id:\s*player\.seat_number/);
+    expect(stacks).not.toMatch(/seat_id:\s*p\.user_id|seat_id:\s*p\.seat_number/);
   });
 
   it('terminates an uncommitted generation before any later settlement step can run', () => {

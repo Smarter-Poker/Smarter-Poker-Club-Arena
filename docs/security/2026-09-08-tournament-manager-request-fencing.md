@@ -1,5 +1,12 @@
 # Tournament-manager request fencing
 
+> **Historical design record, superseded for execution.** This document keeps
+> the original Stage-A/Stage-B rationale. The old isolated Stage-B artifacts
+> were never applied and are archived as non-executable evidence. The only
+> supported activation path is the ordered `stage_b_forward_authority_expansion`
+> through `stage_b_lease_keyshare_once` chain; the composed manager-fencing
+> postimage lives in `stage_b_current_postimage_contraction`.
+
 ## Failure being closed
 
 A tournament lease generation previously fenced admission, heartbeat, launch
@@ -237,11 +244,10 @@ safe database-wide guess in this migration.
 
 ## Implemented Stage B migration
 
-`*_tournament_manager_request_fencing_is_strict.sql` is the forward-only
-activation migration. Its numeric prefix is a branch-local placeholder until
-the final current-main rebase assigns the whole dependency chain fresh ordered
-versions; the suffix is the stable identity used by the executable probes. It
-is intentionally not part of the
+`*_stage_b_current_postimage_contraction.sql` is the composed forward-only
+activation boundary. Its numeric prefix is assigned only after rebasing the
+whole dependency chain above the current production ledger head; the stable
+suffix is used by executable source laws. It is intentionally not part of the
 database-first Stage-A rollout and must remain unapplied until deployment
 evidence proves the exact Stage-A engine build is the sole running build.
 

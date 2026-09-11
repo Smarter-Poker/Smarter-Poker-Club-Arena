@@ -2136,7 +2136,9 @@ export default function TablePage({
     enabled: USE_ENGINE_WS,
     /* The break's end, from the database, handed to the reconnect ladder so it
        waits out a restart it may never have been told about over a socket. */
-    scheduledRestartUntil: maintenanceBreak.active ? maintenanceBreak.breakEndsAtMs : null,
+    scheduledRestartUntil: maintenanceBreak.active
+      ? maintenanceBreak.connectionProtectedUntilMs
+      : null,
   });
 
   /**
@@ -3655,10 +3657,15 @@ export default function TablePage({
         // the round trip cannot queue three more of these.
         tableClosedToastShownRef.current = true;
         void (async () => {
-          await refreshMaintenanceBreak();
-          if (maintenanceBreakRef.current.active) {
+          const durableBreak = await refreshMaintenanceBreak(true);
+          if (maintenanceBreakRef.current.active || durableBreak?.active) {
             // It was a break after all. Release the slot so a genuine closure
             // later in this session can still be announced.
+            tableClosedToastShownRef.current = false;
+            return;
+          }
+          if (!durableBreak) {
+            // A failed read is unknown, never proof that this table closed.
             tableClosedToastShownRef.current = false;
             return;
           }

@@ -20,6 +20,7 @@ import {
 } from './engine/horseDecision/client.js';
 import {
   EquityWorkerPoolAbortedError,
+  equityWorkerPoolPreservesDealerLiveness,
   equityWorkerPoolStatus,
   startEquityWorkerPool,
   stopEquityWorkerPool,
@@ -33,6 +34,7 @@ import {
 } from './observability/SettlementHealth.js';
 import {
   supabase,
+  maintenanceSupabase,
   startHandProjectionWorker,
   stopHandProjectionWorker,
 } from './services/supabase.js';
@@ -166,6 +168,7 @@ import { MaintenanceBreak } from './maintenance/MaintenanceBreak.js';
 import { createSupabaseMaintenanceBreakStore } from './maintenance/maintenanceBreakStore.js';
 import { StatsHealthMonitor } from './observability/StatsHealthMonitor.js';
 import { runThawInstallments } from './maintenance/thawInstallments.js';
+import { resyncManagersAfterMaintenanceThaw } from './maintenance/postThawManagerResync.js';
 import { ENGINE_START_BUDGET_MAX, nextEngineStartBudget } from './engineStartBudget.js';
 import { resumesHoldingASlot, selectRunningResumes } from './tournamentResumeBudget.js';
 import { isWakeableCashTable } from './services/onDemandTableWake.js';
@@ -1578,6 +1581,8 @@ export class GameServer {
    * null until the first successful measurement.
    */
   private lastDbSkewMs: number | null = null;
+  /** Host-clock midpoint (Unix ms) of the last successful database-clock sample. */
+  private lastDbSkewMeasuredAtMs: number | null = null;
 
   private readonly maintenanceBreak = new MaintenanceBreak({
     engines: () => this.tableEngines.entries(),
@@ -1612,27 +1617,30 @@ export class GameServer {
     // countdown, peak, when readyForRestart first opened) and not only what
     // hand_history reveals from outside. Insert-only; a failure is reported
     // by MaintenanceBreak and never delays the resume.
-    recordOutcome: async (o) => {
+    recordOutcome: async (o, signal) => {
       try {
-        const { error } = await supabase.from('engine_maintenance_break_log').insert({
-          break_started_at: new Date(o.breakStartedAtMs).toISOString(),
-          break_ended_at: new Date(o.breakEndedAtMs).toISOString(),
-          unparked_at_countdown: o.unparkedAtCountdown,
-          peak_unparked: o.peakUnparked,
-          ready_for_restart_at:
-            o.readyForRestartAtMs === null ? null : new Date(o.readyForRestartAtMs).toISOString(),
-          tables_resumed: o.tablesResumed,
-          thaw_ok: o.thawOk,
-          engine_version:
-            process.env.GIT_COMMIT_SHA?.substring(0, 8) || process.env.ENGINE_VERSION || 'local',
-        });
+        const { error } = await maintenanceSupabase
+          .from('engine_maintenance_break_log')
+          .insert({
+            break_started_at: new Date(o.breakStartedAtMs).toISOString(),
+            break_ended_at: new Date(o.breakEndedAtMs).toISOString(),
+            unparked_at_countdown: o.unparkedAtCountdown,
+            peak_unparked: o.peakUnparked,
+            ready_for_restart_at:
+              o.readyForRestartAtMs === null ? null : new Date(o.readyForRestartAtMs).toISOString(),
+            tables_resumed: o.tablesResumed,
+            thaw_ok: o.thawOk,
+            engine_version:
+              process.env.GIT_COMMIT_SHA?.substring(0, 8) || process.env.ENGINE_VERSION || 'local',
+          })
+          .abortSignal(signal);
         if (error) throw new Error(error.message);
       } finally {
         // A committed obligation received during the freeze deliberately did
         // not move money.  Thaw is the causal event that makes it runnable;
         // re-drive the durable queue now instead of polling throughout the
         // break or waiting for an unrelated tournament discovery pass.
-        this.requestPendingTournamentBountyRecovery();
+        if (!signal.aborted) this.requestPendingTournamentBountyRecovery();
       }
     },
     // WHY A BREAK DID NOT RUN (2026-09-10): the 00:00 and 07:00 breaks were
@@ -1659,41 +1667,57 @@ export class GameServer {
     // runThawInstallments calls again until complete, and retries a call that
     // died - a timed-out call committed nothing, so the retry is exactly
     // right. Idempotent per freeze and per step on the database side.
-    thaw: async (freezeStartedAtMs, frozenSeconds) => {
+    thaw: async (freezeStartedAtMs, frozenSeconds, signal, identity) => {
       const args = {
+        p_announced_at: new Date(identity.announcedAtMs).toISOString(),
         p_freeze_started: new Date(freezeStartedAtMs).toISOString(),
         p_frozen_seconds: frozenSeconds,
+        p_ownership_token: identity.ownershipToken,
         p_thawed_by:
           process.env.GIT_COMMIT_SHA?.substring(0, 8) || process.env.ENGINE_VERSION || 'local',
       };
       const summary = await runThawInstallments(
-        async () => {
-          const { data, error } = await supabase.rpc('fn_thaw_platform', args);
+        async (installmentSignal) => {
+          const { data, error } = await maintenanceSupabase
+            .rpc('fn_thaw_platform', args)
+            .abortSignal(installmentSignal ?? signal);
           if (error) throw new Error(error.message);
           return (data ?? {}) as Record<string, unknown>;
         },
-        { log: (line) => console.log(line) }
+        { log: (line) => console.log(line), signal }
       );
+      signal.throwIfAborted();
+      const receiptFreezeStartedAt = Date.parse(String(summary.last?.freeze_started_at ?? ''));
+      const creditedThroughAtMs = Date.parse(String(summary.last?.credited_through_at ?? ''));
+      if (
+        summary.last?.released !== true ||
+        summary.last.ownership_token !== identity.ownershipToken ||
+        receiptFreezeStartedAt !== freezeStartedAtMs ||
+        !Number.isFinite(creditedThroughAtMs) ||
+        creditedThroughAtMs < freezeStartedAtMs
+      ) {
+        throw new Error('maintenance_thaw_release_receipt_mismatch');
+      }
       console.log(
-        `[MaintenanceBreak] thaw: complete in ${summary.calls} call(s), ${summary.errors} error(s):`,
+        `[MaintenanceBreak] thaw: complete in ${summary.calls} call(s), ${summary.errors} error(s), ` +
+          `credited ${summary.last.effective_frozen_seconds ?? '?'}s:`,
         JSON.stringify(summary.last?.shifted ?? null)
       );
 
-      /* fn_thaw_platform has just moved every open add-on deadline. Managers
-         armed their timers from the pre-break value and clients are counting
-         down that same absolute instant, so both must adopt the committed row
-         before any table resumes. Managers without an active window return
-         without I/O; failures are isolated per event and their live timer
-         keeps re-reading the durable deadline. */
-      await Promise.all(
-        [...this.tournamentEngines.values()].map(async (manager) => {
-          try {
-            await manager.resyncAddOnPeriodAfterMaintenanceThaw();
-          } catch (error) {
-            reportError(error, 'GameServer.addon_period_thaw_resync_failed');
-          }
-        })
+      /* fn_thaw_platform has moved every open add-on deadline and exact-cleared
+         the break row. Its complete v3 release certificate still keeps every
+         database admission guard closed through creditedThroughAtMs, which the
+         MaintenanceBreak controller awaits before resuming locally. Manager
+         refreshes are therefore important but cannot be allowed to extend the
+         release boundary. Each one independently re-reads the durable deadline
+         under its own lifecycle fence and is bounded/failure-isolated. */
+      this.launchServerLifecycleJob(
+        resyncManagersAfterMaintenanceThaw(this.tournamentEngines.values(), signal, (error) =>
+          reportError(error, 'GameServer.addon_period_thaw_resync_failed')
+        ),
+        'GameServer.addon_period_thaw_resync_job_failed'
       );
+      return { creditedThroughAtMs };
     },
   });
 
@@ -1924,8 +1948,10 @@ export class GameServer {
     /**
      * All-in equity and insurance are also hard realtime dependencies. Every
      * configured worker must author a READY handshake before table discovery
-     * can route a hand here; degraded capacity removes this process from
-     * routing instead of moving calculator work back onto the table thread.
+     * can route a hand here. After that startup boundary, a timed-out worker
+     * is replaced without moving calculator work back onto the table thread;
+     * callers already omit optional equity/insurance and continue the runout
+     * while the pool reports its separate degraded telemetry.
      */
     try {
       await startEquityWorkerPool();
@@ -3003,22 +3029,22 @@ export class GameServer {
       // last ten minutes. `over` is the number that means the bookkeeping did
       // not fit inside the rest. See engine/NextHandGap.ts.
       nextHandGap: nextHandGap.snapshot(),
-      // Deploy drain gate reads this. A restart voids in-flight hands, so a
-      // routine server/ push waits (or is explicitly forced) while real people
-      // are seated. Horses are excluded — they do not care.
+      // Diagnostic only. Deployment no longer authorizes a restart from a
+      // people count; the maintenance certificate below treats every hand the
+      // same and has no force bypass.
       humansSeatedTotal: tableLiveness.reduce((n, t) => n + t.humans, 0),
-      // HANDS, NOT PEOPLE (2026-08-27). humansSeatedTotal drove the deploy
-      // drain gate and counted only humans, so a horse's hand could be voided
-      // by a restart while a human's could not. This counts tables actually
-      // mid-hand, whoever is sitting at them, and is what the gate reads now.
+      // HANDS, NOT PEOPLE (2026-08-27). Retained as fleet telemetry. The deploy
+      // gate now reads the durable maintenance certificate instead of racing
+      // this moving count.
       handsInFlightTotal: tableLiveness.filter(
         (t) => t.dealable >= 2 && !t.paused && t.msSinceProgress < 120_000
       ).length,
       /**
        * THE RESTART GATE (Dan 2026-09-01).
        *
-       * `maintenance.readyForRestart` is what auto-deploy-hetzner.yml waits
-       * for now, in place of the old handsInFlightTotal drain. The difference
+       * `maintenance.readyForRestart` plus `maintenance.durableConfirmed` is
+       * what auto-deploy-hetzner.yml waits for now, in place of the old
+       * handsInFlightTotal drain. The difference
        * matters: the drain gate asked "is anybody mid-hand right now", which
        * is a moving target that a busy fleet never holds still for, and it
        * restarted on live tables the moment it timed out. This asks "has the
@@ -3026,7 +3052,11 @@ export class GameServer {
        * break left to finish inside it" - a state the engine DECLARES rather
        * than a race the workflow observes.
        */
-      maintenance: { ...this.maintenanceBreak.snapshot(), dbClockSkewMs: this.lastDbSkewMs },
+      maintenance: {
+        ...this.maintenanceBreak.snapshot(),
+        dbClockSkewMs: this.lastDbSkewMs,
+        dbClockSkewMeasuredAt: this.lastDbSkewMeasuredAtMs,
+      },
       // The stats pipeline: index lag, trigger gaps, the money repair cursor
       // and the last witness audit. null until the first read completes.
       stats: this.statsHealth.publish(),
@@ -3047,11 +3077,15 @@ export class GameServer {
       stalledTables: stalledTables.slice(0, 20),
       discoveryStaleMs,
       tableLiveness,
+      // A post-ready worker timeout is a local, recoverable calculator outage,
+      // not a stopped dealer. The pool remains separately degraded in this
+      // payload and in Prometheus. Startup, exhausted recovery, shutdown, and
+      // the authoritative HorseDecision worker still fail routing readiness.
       status:
         this.running &&
         this.dealerPrerequisitesReady &&
         liveHorseDecision.phase === 'ready' &&
-        equityWorkers.phase === 'ready'
+        equityWorkerPoolPreservesDealerLiveness(equityWorkers)
           ? 'ok'
           : 'degraded',
       version: process.env.GIT_COMMIT_SHA?.substring(0, 8) || process.env.ENGINE_VERSION || 'local',
@@ -3769,8 +3803,9 @@ export class GameServer {
   /** Hourly reaper. Paired with the boot-time sweep, not a replacement for it. */
   /**
    * Measure engine-vs-database clock skew: one fn_db_now round trip, halved
-   * RTT subtracted as the classic NTP-style estimate. Every 30 minutes and at
-   * boot; published on /health (maintenance.dbClockSkewMs) and as
+   * RTT subtracted as the classic NTP-style estimate. Every minute and at
+   * boot; published on /health (maintenance.dbClockSkewMs plus its measured-at
+   * timestamp) and as
    * poker_db_clock_skew_ms. Past 5 seconds it raises a warning alert - that
    * is drift an order of magnitude beyond healthy NTP and one more order
    * short of breaking the freeze, which is exactly when a human should hear
@@ -3789,7 +3824,9 @@ export class GameServer {
         const dbMs = Date.parse(data as string);
         if (!Number.isFinite(dbMs)) throw new Error('unparseable fn_db_now: ' + String(data));
         // Engine clock at the midpoint of the round trip vs the DB's stamp.
-        this.lastDbSkewMs = Math.round((t0 + t1) / 2 - dbMs);
+        const midpointMs = Math.round((t0 + t1) / 2);
+        this.lastDbSkewMs = midpointMs - dbMs;
+        this.lastDbSkewMeasuredAtMs = midpointMs;
         if (Math.abs(this.lastDbSkewMs) > 5000) {
           await raiseEngineAlert({
             alertname: 'ClubArenaClockSkew',
@@ -3811,13 +3848,17 @@ export class GameServer {
           );
         }
       } catch (err) {
+        // A prior numeric skew must never remain eligible as restart authority
+        // after the database can no longer be sampled. Retain it for telemetry,
+        // but explicitly revoke its freshness witness.
+        this.lastDbSkewMeasuredAtMs = null;
         console.warn('[GameServer] clock skew measurement failed:', (err as Error)?.message);
       }
     };
     this.launchServerLifecycleJob(measure(), 'GameServer.clock_skew_measurement_failed');
     this.clockSkewTimer = setInterval(
       () => this.launchServerLifecycleJob(measure(), 'GameServer.clock_skew_measurement_failed'),
-      30 * 60 * 1000
+      60 * 1000
     );
     this.clockSkewTimer.unref?.();
   }
@@ -4621,10 +4662,10 @@ export class GameServer {
             await recoverStuckCompletingTournaments('startup-cleanup');
 
             // Terminal table and seat closeout is now owned by the atomic
-            // settlement/cancellation transaction. Migration 20260909014545
-            // closes the exact historical backlog once under the same write
-            // barrier, records every affected id, and arms the permanent
-            // seat-exit guard. Process startup never repairs this state.
+            // settlement/cancellation transaction. The Stage-B exact-precondition
+            // repair closes and receipts the historical backlog once; the
+            // current-postimage contraction arms the permanent seat-exit guard.
+            // Process startup never repairs this state.
           } catch (bgErr) {
             reportError(bgErr, 'GameServer.background_stale_cleanup_error');
           }
@@ -4826,12 +4867,6 @@ export class GameServer {
          * The COUNTS are kept so each engine can be measured against its own
          * threshold below.
          */
-        const seatedCounts = new Map<string, number>(
-          ((ready || []) as Array<{ table_id: string; player_count: number }>).map((r) => [
-            r.table_id,
-            Number(r.player_count) || 0,
-          ])
-        );
         for (const [id, engine] of this.tableEngines) {
           if (!engine.isRunning()) {
             /* TournamentManager owns its child's causal restart callback and
@@ -4860,12 +4895,23 @@ export class GameServer {
           // TournamentManager sweep, so here we only need to stop treating a
           // cash-only list as the definition of "should be dealing".
           //
-          // 2026-08-27: a cash table "should be dealing" when it has reached
-          // ITS OWN deal threshold — dealThreshold() is minPlayersToDeal, the
-          // same number the dealing loop and the turn watchdog use.
-          const shouldBeDealing =
-            (seatedCounts.get(id) ?? 0) >= engine.dealThreshold() ||
-            this.tournamentOwnedTables.has(id);
+          // 2026-09-08: one definition of "should be dealing", from the
+          // engine's exact live seat generation. The cash-only discovery RPC
+          // cannot count tournament seats, so the old fallback treated EVERY
+          // tournament-owned table as dealable. A heads-up/MTT table waiting
+          // legally with one positive stack consequently made no progress for
+          // 180 seconds, was labelled `tournament_table_zombie`, rebuilt, and
+          // repeated that reconnect loop forever. Production recorded 85 such
+          // kills in five minutes while /health showed the affected tables in
+          // `start_wait_for_players` with one dealable seat.
+          //
+          // `dealableCount()` is the same predicate the dealing loop and
+          // liveness endpoint use (positive stack, not held for a seat swap,
+          // and not waiting for a blind where applicable). `dealThreshold()`
+          // is the same format/config threshold. A table is therefore reaped
+          // only when the engine itself proves that it could start a hand but
+          // has failed to make progress.
+          const shouldBeDealing = engine.dealableCount() >= engine.dealThreshold();
           /**
            * Dan 2026-08-19: PAUSED IS NOT DEAD — the other half of the break fix.
            *

@@ -38,6 +38,7 @@ import {
   deriveFlowFlags,
   computeTransfers,
   maxWinnable,
+  allInEquityIsOwed,
   type HandAction,
 } from '../server/src/services/supabase/handFacts';
 
@@ -84,6 +85,48 @@ describe('computeHandClass — the 169-grid key', () => {
     }
     seen.delete('' as string);
     expect(seen.size).toBe(169);
+  });
+});
+
+describe('all-in equity obligation witness', () => {
+  it('still says equity was owed when the worker emitted nothing', () => {
+    expect(
+      allInEquityIsOwed({
+        wentToShowdown: true,
+        runoutStreet: 'turn',
+      })
+    ).toBe(true);
+  });
+
+  it('does not invent an obligation without a durable marker or for a river commit', () => {
+    for (const input of [
+      { wentToShowdown: false, runoutStreet: 'flop' },
+      { wentToShowdown: true, runoutStreet: 'river' },
+      { wentToShowdown: true, runoutStreet: null },
+    ]) {
+      expect(allInEquityIsOwed(input)).toBe(false);
+    }
+  });
+
+  it('uses the action stage as the personal commit street and the marker as the runout street', () => {
+    const f = deriveFlowFlags(
+      'early-shover',
+      [
+        {
+          seat: 1,
+          userId: 'early-shover',
+          action: 'all_in',
+          amount: 100,
+          stage: 'preflop',
+          allInRunout: true,
+          allInRunoutStreet: 'flop',
+        },
+      ],
+      { boardLength: 5, returned: 0, nonFoldedCount: 2 }
+    );
+    expect(f.was_all_in).toBe(true);
+    expect(f.all_in_street).toBe('preflop');
+    expect(allInEquityIsOwed({ wentToShowdown: true, runoutStreet: 'flop' })).toBe(true);
   });
 });
 

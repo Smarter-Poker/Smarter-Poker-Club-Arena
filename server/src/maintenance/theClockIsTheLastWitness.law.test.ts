@@ -30,17 +30,16 @@
  * WHY IT COULD HAPPEN. `restoreFromStore()` decided whether this process
  * stood inside a break by reading ONE ROW, and both of its no-row exits -
  * `!loaded` after the read retries, and `!saved` - returned silently into a
- * dealing engine. Failing open on the ROW is correct and stays: an unreadable
- * database must not become a platform outage. Failing open on the SCHEDULE is
- * not, and there is no blip to blame for it. The timeline is fixed and
- * carries no time zone, so a process booting at 14:56:33 can tell from the
- * wall clock alone that it is standing in the middle of a break.
+ * dealing engine. A proven empty row can fall back to the wall clock. An
+ * unreadable row is UNKNOWN, including whether an exact-clear release
+ * certificate still holds, so startup must fail closed and let the container
+ * retry before table discovery.
  *
  * FOUR PINS:
  *   1. an engine booting inside the window with NO row holds the fleet to the
  *      hour anyway, and the thaw runs;
- *   2. so does one that cannot READ the row - the retries are exhausted, and
- *      the clock is still the clock;
+ *   2. one that cannot READ either durable authority rejects startup after
+ *      bounded retries instead of admitting play;
  *   3. it never holds the fleet outside [:53, :00), at any minute of the
  *      hour, including the boundaries;
  *   4. a row that CAN be adopted still wins - the clock is the last witness,
@@ -61,6 +60,7 @@ import {
   type MaintenanceBreakStore,
   type PersistedMaintenanceBreak,
 } from './MaintenanceBreak.js';
+import { ThawRefusedError } from './thawInstallments.js';
 
 class FakeEngine {
   paused = false;
@@ -97,6 +97,10 @@ class FakeStore implements MaintenanceBreakStore {
     this.loads++;
     if (this.unreadable) throw new Error('statement timeout');
     return this.row;
+  }
+  async loadReleaseBoundary() {
+    if (this.unreadable) throw new Error('statement timeout');
+    return null;
   }
   async save(s: PersistedMaintenanceBreak) {
     if (this.row && this.row.ownershipToken !== s.ownershipToken) {
@@ -193,6 +197,34 @@ describe('an engine that boots inside the window with nothing to adopt', () => {
     expect(declared, 'the clock-derived break was never written down').not.toBeNull();
     expect(declared?.phase).toBe('counting_down');
     expect(declared?.breakEndsAt).toBe(HOUR);
+    expect(mb.snapshot().durableConfirmed).toBe(true);
+    expect(mb.readyForRestart()).toBe(true);
+  });
+
+  it('keeps the fleet frozen until exact absence is proved when the declaration is ambiguous', async () => {
+    vi.setSystemTime(CUTOVER);
+    const { mb, engines, store, thaws } = build();
+    vi.spyOn(store, 'save').mockRejectedValue(new Error('PGRST002'));
+
+    await mb.start();
+
+    expect(mb.snapshot()).toMatchObject({
+      active: true,
+      phase: 'counting_down',
+      durableConfirmed: false,
+      readyForRestart: false,
+    });
+    for (const [id, engine] of engines) {
+      expect(engine.paused, `${id} resumed under an ambiguously committed row`).toBe(true);
+    }
+
+    await vi.advanceTimersByTimeAsync(HOUR - Date.now() + 1_000);
+
+    expect(store.row).toBeNull();
+    expect(thaws, 'an authoritative no-row receipt shifted database clocks').toHaveLength(0);
+    for (const [id, engine] of engines) {
+      expect(engine.paused, `${id} stayed frozen after exact absence was proved`).toBe(false);
+    }
   });
 
   it('runs the thaw, and measures only the freeze it can actually evidence', async () => {
@@ -219,7 +251,7 @@ describe('an engine that boots inside the window with nothing to adopt', () => {
     }
   });
 
-  it('holds even when the row cannot be READ, not merely when it is absent', async () => {
+  it('rejects startup when the durable authority cannot be read', async () => {
     vi.setSystemTime(CUTOVER);
     const { mb, engines, store } = build();
     store.unreadable = true;
@@ -227,19 +259,19 @@ describe('an engine that boots inside the window with nothing to adopt', () => {
     /* The retry loop sleeps on a timer between attempts, so under fake timers
        start() cannot settle until they are advanced. Drive them rather than
        awaiting a promise that is waiting on us. */
-    const started = mb.start();
+    const rejected = expect(mb.start()).rejects.toThrow(
+      'maintenance_break_restore_unavailable_after_3_attempts'
+    );
     await vi.advanceTimersByTimeAsync(
       MaintenanceBreak.RESTORE_ATTEMPTS * MaintenanceBreak.RESTORE_RETRY_MS + 1_000
     );
-    await started;
+    await rejected;
 
-    // The read retries are exhausted and the database is still unhappy. That
-    // is a reason to distrust the row. It is not a reason to distrust the
-    // clock.
+    // The read retries are exhausted and the database is still unhappy.
+    // Startup never reaches discovery/admission with an unknown break or
+    // exact-clear release certificate.
     expect(store.loads).toBe(MaintenanceBreak.RESTORE_ATTEMPTS);
-    for (const [id, e] of engines) {
-      expect(e.paused, `${id} dealt because the database was slow`).toBe(true);
-    }
+    expect(Array.from(engines.values()).some((engine) => engine.paused)).toBe(false);
   });
 });
 
@@ -359,10 +391,11 @@ describe('a break nobody was alive to end', () => {
 
     // The thaw ran at all - it did not for 14:00, 15:00 or 16:00.
     expect(thaws, 'the frozen minutes were never handed back').toHaveLength(1);
-    // Measured from the row's own countdown start to its own end: the freeze
-    // that actually happened, not anything derived from this boot instant.
+    // Measured from the row's own countdown start through recovery. The
+    // replacement remained frozen for the eight seconds after the scheduled
+    // end too, so those player clocks must receive the same credit.
     expect(thaws[0].breakStartedAt).toBe(ABANDONED_START);
-    expect(thaws[0].frozenSeconds).toBe(300);
+    expect(thaws[0].frozenSeconds).toBe(Math.round((LATE_BOOT - ABANDONED_START) / 1000));
 
     // And the platform still comes back: the row goes, nothing stays parked.
     expect(store.row, 'the expired row was left behind').toBeNull();
@@ -371,59 +404,76 @@ describe('a break nobody was alive to end', () => {
     }
   });
 
-  it('still clears the row when the thaw itself fails', async () => {
+  it('keeps the fleet frozen and retries the same checkpoint after a transient thaw failure', async () => {
     vi.setSystemTime(LATE_BOOT);
     const engines = new Map<string, FakeEngine>();
     engines.set('t0', new FakeEngine());
     const store = new FakeStore();
     store.row = expiredRow();
+    let attempts = 0;
     const mb = new MaintenanceBreak({
       engines: () => engines.entries() as any,
       isRunning: () => true,
       emit: () => {},
       store,
       thaw: async () => {
-        throw new Error('PGRST002');
+        attempts++;
+        if (attempts === 1) throw new Error('PGRST002');
       },
       recordOutcome: async () => {},
     } as any);
 
-    await mb.start();
+    const started = mb.start();
+    await vi.advanceTimersByTimeAsync(MaintenanceBreak.THAW_RECOVERY_RETRY_MS);
+    await started;
 
-    /* end() makes the same call for the same reason: five minutes of clock
-       drift is a wrong that heals, a platform that stays frozen is not. */
-    expect(store.row, 'a failed thaw stranded the break row').toBeNull();
+    expect(attempts).toBe(2);
+    expect(store.row, 'a completed retry did not exact-clear the break row').toBeNull();
     expect(engines.get('t0')!.paused).toBe(false);
   });
 
-  it('does not invent a freeze for a last-hand row that never counted down', async () => {
+  it('credits an expired last-hand hold from its scheduled :55 boundary', async () => {
     vi.setSystemTime(AT('2026-09-08T16:00:30.000Z'));
     const { mb, store, thaws } = build();
-    // Announced, then the engine died before :55. Nothing was ever frozen by a
-    // countdown, so there is nothing to give back.
+    // Announced, then the engine died before :55. Its replacement still
+    // inherits the durable before-next-hand hold, so credit the defensible
+    // interval from the scheduled :55 boundary through recovery.
     store.row = expiredRow({ phase: 'last_hand', breakStartedAt: null, breakEndsAt: null });
 
     await mb.start();
 
-    expect(
-      thaws,
-      'shifted every deadline on the platform for a freeze that never ran'
-    ).toHaveLength(0);
+    expect(thaws).toEqual([
+      {
+        breakStartedAt: ABANDONED_START,
+        frozenSeconds: Math.round((Date.now() - ABANDONED_START) / 1000),
+      },
+    ]);
     expect(store.row).toBeNull();
   });
 
-  it('refuses a freeze longer than fn_thaw_platform will accept', async () => {
+  it('fails startup closed when fn_thaw_platform refuses an implausible freeze', async () => {
     // A skewed clock, or a row from a break that was never bounded. The RPC
     // answers `implausible_frozen_seconds` past 900s; this declines first so
     // the refusal is a log line rather than a silent ok:false.
     const absurdStart = ABANDONED_END - (MaintenanceBreak.MAX_THAWABLE_SECONDS + 60) * 1000;
     vi.setSystemTime(LATE_BOOT);
-    const { mb, store, thaws } = build();
+    const engines = new Map<string, FakeEngine>([['t0', new FakeEngine()]]);
+    const store = new FakeStore();
     store.row = expiredRow({ breakStartedAt: absurdStart });
+    const mb = new MaintenanceBreak({
+      engines: () => engines.entries() as any,
+      isRunning: () => true,
+      emit: () => {},
+      store,
+      thaw: async () => {
+        throw new ThawRefusedError('implausible_frozen_seconds');
+      },
+      recordOutcome: async () => {},
+    } as any);
 
-    await mb.start();
+    await expect(mb.start()).rejects.toThrow('implausible_frozen_seconds');
 
-    expect(thaws).toHaveLength(0);
-    expect(store.row).toBeNull();
+    expect(store.row, 'a refused thaw lost its durable retry authority').not.toBeNull();
+    expect(engines.get('t0')!.paused).toBe(true);
   });
 });

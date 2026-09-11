@@ -2,6 +2,28 @@
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
+/* The real obligations-aware settlement resolves pgcrypto through the
+   production `extensions` schema. Keep the focused fixture's historical
+   public install, but expose the same bytea digest signature for the final
+   surviving-door execution probe. */
+CREATE SCHEMA extensions;
+CREATE FUNCTION extensions.digest(bytea, text)
+RETURNS bytea
+LANGUAGE sql
+IMMUTABLE
+PARALLEL SAFE
+AS $function$
+  SELECT public.digest($1, $2)
+$function$;
+
+/* Stage B acquires the global Realtime catalog lock before any public
+   relation lock or DDL. The focused database must carry that production
+   relation so a missing or reordered lock cannot be hidden by the fixture. */
+CREATE SCHEMA realtime;
+CREATE TABLE realtime.subscription (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY
+);
+
 DO $roles$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
@@ -196,9 +218,51 @@ CREATE TABLE public.table_seats (
   user_id uuid,
   seat_number integer NOT NULL,
   stack numeric NOT NULL DEFAULT 0,
+  joined_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+  club_id uuid,
   left_at timestamptz,
+  time_bank_uses_remaining integer,
+  time_bank_remaining integer,
   PRIMARY KEY (table_id, seat_number)
 );
+
+/* Minimal durable receipt reached by the real obligations-aware 12-argument
+   door during the final Stage-B execution probe. The owner-only core below
+   creates the accepted-hand receipt; the exact outer function attaches its
+   immutable envelope to these production-named columns. */
+CREATE TABLE public.hand_atomic_commits (
+  table_id uuid NOT NULL,
+  hand_number bigint NOT NULL,
+  hand_id uuid NOT NULL UNIQUE,
+  post_commit_payload jsonb,
+  post_commit_request_hash text,
+  post_commit_payload_hash text,
+  post_commit_completed_at timestamptz,
+  PRIMARY KEY (table_id, hand_number)
+);
+
+CREATE TABLE public.table_pending_addons (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  table_id uuid NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+  resolved_at timestamptz
+);
+
+/* Prerequisites reached by the real zero-delta migration while constructing
+   the exact predecessor definition inspected by 20260908161534. */
+CREATE TABLE public.training_answers (
+  user_id uuid,
+  is_correct boolean,
+  ev_loss numeric,
+  level integer
+);
+
+CREATE OR REPLACE FUNCTION public.fn_ca_currency_meter()
+RETURNS integer
+LANGUAGE sql
+AS $function$
+  SELECT 1
+$function$;
 
 /* This authority probe exercises Stage B without replaying the unrelated
    4,000-line place-settlement migration. Model the exact Stage-A expand
@@ -706,18 +770,170 @@ AS $function$ SELECT jsonb_build_object('success', true) $function$;
 CREATE OR REPLACE FUNCTION public.fn_ca_commit_hand_settlement_exact_before_obligations(
   uuid, bigint, jsonb, numeric, numeric, text, numeric, jsonb, jsonb, text, uuid
 ) RETURNS jsonb
-LANGUAGE sql SECURITY DEFINER
-AS $function$ SELECT jsonb_build_object('success', true) $function$;
+LANGUAGE plpgsql SECURITY DEFINER
+AS $function$
+DECLARE
+  v_hand_id uuid := '60000000-0000-4000-8000-000000000099';
+  v_replay boolean;
+BEGIN
+  INSERT INTO public.hand_atomic_commits(table_id, hand_number, hand_id)
+  VALUES ($1, $2, v_hand_id)
+  ON CONFLICT (table_id, hand_number) DO NOTHING;
+  v_replay := NOT FOUND;
+  SELECT c.hand_id INTO v_hand_id
+    FROM public.hand_atomic_commits c
+   WHERE c.table_id = $1
+     AND c.hand_number = $2;
+  RETURN jsonb_build_object(
+    'success', true,
+    'atomic_hand_commit', true,
+    'history_id', v_hand_id,
+    'replay', v_replay
+  );
+END;
+$function$;
 
 CREATE OR REPLACE FUNCTION public.fn_ca_commit_hand_settlement(
-  uuid, bigint, jsonb, numeric, numeric, text, numeric, jsonb, jsonb, text, uuid,
-  jsonb
+  p_table_id uuid,
+  p_hand_number bigint,
+  p_stacks jsonb,
+  p_rake numeric,
+  p_bbj numeric,
+  p_ref text,
+  p_inflow numeric,
+  p_hand_row jsonb,
+  p_units jsonb,
+  p_instance_id text,
+  p_lease_generation uuid,
+  p_post_commit_obligations jsonb
 ) RETURNS jsonb
-LANGUAGE sql SECURITY DEFINER
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = public, pg_temp
 AS $function$
-  SELECT public.fn_ca_commit_hand_settlement_exact_before_obligations(
-    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
-  ) || jsonb_build_object('post_commit_obligations', true)
+DECLARE
+  v_exact_seat_generation boolean := false;
+  v_item jsonb;
+  v_result jsonb;
+  v_row_count integer;
+  v_updated integer := 0;
+BEGIN
+  /* Model the real 20260908161534 expand contract, rather than satisfying
+     Stage B with source-code marker strings. A request is wholly legacy or
+     wholly exact, and an exact time-bank target must name the same immutable
+     (seat id, joined_at) generation as its stack row. */
+  IF jsonb_typeof(p_stacks) = 'array' AND jsonb_array_length(p_stacks) > 0 THEN
+    IF EXISTS (
+      SELECT 1
+        FROM jsonb_array_elements(p_stacks) x
+       WHERE (x ? 'seat_id') IS DISTINCT FROM (x ? 'seat_joined_at')
+          OR CASE WHEN x ? 'seat_id'
+                  THEN jsonb_typeof(x->'seat_id') IS DISTINCT FROM 'string'
+                    OR jsonb_typeof(x->'seat_joined_at') IS DISTINCT FROM 'string'
+                  ELSE false END
+          OR CASE WHEN jsonb_typeof(x->'seat_id') = 'string'
+                  THEN (x->>'seat_id') !~*
+                    '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+                  ELSE false END
+          OR CASE WHEN jsonb_typeof(x->'seat_joined_at') = 'string'
+                  THEN NOT pg_input_is_valid(
+                    x->>'seat_joined_at', 'timestamp with time zone'
+                  )
+                  ELSE false END
+    ) THEN
+      RAISE EXCEPTION
+        'atomic hand commit refused (invalid_stack_seat_generation)';
+    END IF;
+    IF EXISTS (
+         SELECT 1 FROM jsonb_array_elements(p_stacks) x WHERE x ? 'seat_id'
+       ) AND EXISTS (
+         SELECT 1 FROM jsonb_array_elements(p_stacks) x WHERE NOT (x ? 'seat_id')
+       ) THEN
+      RAISE EXCEPTION
+        'atomic hand commit refused (mixed_stack_seat_generation_protocol)';
+    END IF;
+
+    SELECT COALESCE(bool_and(x ? 'seat_id' AND x ? 'seat_joined_at'), false)
+      INTO v_exact_seat_generation
+      FROM jsonb_array_elements(p_stacks) x;
+
+    IF jsonb_typeof(p_post_commit_obligations->'time_banks')
+         IS DISTINCT FROM 'array' THEN
+      RAISE EXCEPTION
+        'atomic hand commit refused (invalid_time_bank_seat_generation)';
+    END IF;
+    IF EXISTS (
+      SELECT 1
+        FROM jsonb_array_elements(p_post_commit_obligations->'time_banks') x
+       WHERE (x ? 'seat_id') IS DISTINCT FROM (x ? 'seat_joined_at')
+          OR CASE WHEN x ? 'seat_id'
+                  THEN jsonb_typeof(x->'seat_id') IS DISTINCT FROM 'string'
+                    OR jsonb_typeof(x->'seat_joined_at') IS DISTINCT FROM 'string'
+                  ELSE false END
+          OR CASE WHEN jsonb_typeof(x->'seat_id') = 'string'
+                  THEN (x->>'seat_id') !~*
+                    '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+                  ELSE false END
+          OR CASE WHEN jsonb_typeof(x->'seat_joined_at') = 'string'
+                  THEN NOT pg_input_is_valid(
+                    x->>'seat_joined_at', 'timestamp with time zone'
+                  )
+                  ELSE false END
+          OR (x ? 'seat_id') IS DISTINCT FROM v_exact_seat_generation
+    ) THEN
+      RAISE EXCEPTION
+        'atomic hand commit refused (invalid_time_bank_seat_generation)';
+    END IF;
+
+    IF v_exact_seat_generation AND EXISTS (
+      SELECT 1
+        FROM jsonb_array_elements(p_post_commit_obligations->'time_banks') x
+       WHERE NOT EXISTS (
+         SELECT 1
+           FROM jsonb_array_elements(p_stacks) s
+          WHERE s->>'user_id' = x->>'user_id'
+            AND s->>'seat_id' = x->>'seat_id'
+            AND (s->>'seat_joined_at')::timestamptz =
+                (x->>'seat_joined_at')::timestamptz
+       )
+    ) THEN
+      RAISE EXCEPTION
+        'atomic hand commit refused (time_bank_seat_generation_mismatch)';
+    END IF;
+  END IF;
+
+  v_result := public.fn_ca_commit_hand_settlement_exact_before_obligations(
+    p_table_id, p_hand_number, p_stacks, p_rake, p_bbj, p_ref, p_inflow,
+    p_hand_row, p_units, p_instance_id, p_lease_generation
+  );
+
+  FOR v_item IN
+    SELECT value
+      FROM jsonb_array_elements(p_post_commit_obligations->'time_banks')
+  LOOP
+    UPDATE public.table_seats s
+       SET time_bank_uses_remaining = (v_item->>'uses_remaining')::integer,
+           time_bank_remaining = (v_item->>'seconds_remaining')::integer
+     WHERE s.table_id = p_table_id
+       AND s.user_id = (v_item->>'user_id')::uuid
+       AND (
+         (v_exact_seat_generation
+           AND s.id = (v_item->>'seat_id')::uuid
+           AND s.joined_at = (v_item->>'seat_joined_at')::timestamptz)
+         OR (NOT v_exact_seat_generation AND s.left_at IS NULL)
+       );
+    GET DIAGNOSTICS v_row_count = ROW_COUNT;
+    v_updated := v_updated + v_row_count;
+  END LOOP;
+
+  IF v_updated IS DISTINCT FROM jsonb_array_length(
+       p_post_commit_obligations->'time_banks'
+     ) THEN
+    RAISE EXCEPTION
+      'atomic hand commit refused (time_bank_seat_generation_mismatch)';
+  END IF;
+
+  RETURN v_result || jsonb_build_object('post_commit_obligations', true);
+END;
 $function$;
 
 CREATE OR REPLACE FUNCTION public.fn_ca_process_hand_post_commit_obligations(
@@ -755,17 +971,19 @@ INSERT INTO public.tournaments (id, name, status) VALUES
   ('10000000-0000-4000-8000-000000000002', 'Fence B', 'RUNNING');
 
 INSERT INTO public.tables (
-  id, tournament_id, status, current_players, max_players
+  id, club_id, tournament_id, status, current_players, max_players
 ) VALUES (
   '20000000-0000-4000-8000-000000000001',
+  '70000000-0000-4000-8000-000000000001',
   '10000000-0000-4000-8000-000000000001',
   'running', 0, 9
 );
 
 INSERT INTO public.tables (
-  id, tournament_id, status, current_players, max_players
+  id, club_id, tournament_id, status, current_players, max_players
 ) VALUES (
   '20000000-0000-4000-8000-000000000002',
+  '70000000-0000-4000-8000-000000000002',
   NULL,
   'running', 0, 9
 );
@@ -806,3 +1024,98 @@ INSERT INTO public.engine_table_leases (
   'pg17-probe', 'probe', clock_timestamp(),
   '60000000-0000-4000-8000-000000000001', 2
 );
+
+/* Prove this focused postimage really enforces the exact-seat expansion that
+   Stage B pins. A replaced same-row seat generation must roll its hand receipt
+   back whole rather than mutate the new occupant's time bank. */
+DO $exact_seat_postimage_is_behavioral$
+DECLARE
+  v_result jsonb;
+  v_refused boolean := false;
+  v_stacks jsonb := jsonb_build_array(jsonb_build_object(
+    'user_id', '80000000-0000-4000-8000-000000000001',
+    'seat_id', '81000000-0000-4000-8000-000000000001',
+    'seat_joined_at', '2026-09-08T10:00:00Z',
+    'stack_before', 100,
+    'stack', 100
+  ));
+  v_obligations jsonb := jsonb_build_object(
+    'time_banks', jsonb_build_array(jsonb_build_object(
+      'user_id', '80000000-0000-4000-8000-000000000001',
+      'seat_id', '81000000-0000-4000-8000-000000000001',
+      'seat_joined_at', '2026-09-08T10:00:00Z',
+      'uses_remaining', 3,
+      'seconds_remaining', 30
+    ))
+  );
+BEGIN
+  INSERT INTO public.table_seats (
+    id, table_id, user_id, seat_number, stack, joined_at,
+    time_bank_uses_remaining, time_bank_remaining
+  ) VALUES (
+    '81000000-0000-4000-8000-000000000001',
+    '20000000-0000-4000-8000-000000000002',
+    '80000000-0000-4000-8000-000000000001',
+    1, 100, '2026-09-08T10:00:00Z', 0, 0
+  );
+
+  v_result := public.fn_ca_commit_hand_settlement(
+    '20000000-0000-4000-8000-000000000002', 9001, v_stacks,
+    0, 0, 'fixture:exact-seat-valid', 0, '{}'::jsonb, '[]'::jsonb,
+    'fixture', '60000000-0000-4000-8000-000000000001', v_obligations
+  );
+  IF COALESCE((v_result->>'success')::boolean, false) IS NOT TRUE
+     OR NOT EXISTS (
+       SELECT 1 FROM public.table_seats s
+        WHERE s.table_id = '20000000-0000-4000-8000-000000000002'
+          AND s.seat_number = 1
+          AND s.time_bank_uses_remaining = 3
+          AND s.time_bank_remaining = 30
+     ) THEN
+    RAISE EXCEPTION 'exact-seat fixture did not update the named generation';
+  END IF;
+
+  DELETE FROM public.hand_atomic_commits
+   WHERE table_id = '20000000-0000-4000-8000-000000000002'
+     AND hand_number = 9001;
+  UPDATE public.table_seats
+     SET joined_at = '2026-09-08T10:01:00Z',
+         time_bank_uses_remaining = 0,
+         time_bank_remaining = 0
+   WHERE table_id = '20000000-0000-4000-8000-000000000002'
+     AND seat_number = 1;
+
+  BEGIN
+    PERFORM public.fn_ca_commit_hand_settlement(
+      '20000000-0000-4000-8000-000000000002', 9002, v_stacks,
+      0, 0, 'fixture:replaced-seat-refused', 0, '{}'::jsonb, '[]'::jsonb,
+      'fixture', '60000000-0000-4000-8000-000000000001', v_obligations
+    );
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM LIKE '%time_bank_seat_generation_mismatch%' THEN
+      v_refused := true;
+    ELSE
+      RAISE;
+    END IF;
+  END;
+
+  IF NOT v_refused
+     OR EXISTS (
+       SELECT 1 FROM public.hand_atomic_commits
+        WHERE table_id = '20000000-0000-4000-8000-000000000002'
+          AND hand_number = 9002
+     )
+     OR EXISTS (
+       SELECT 1 FROM public.table_seats s
+        WHERE s.table_id = '20000000-0000-4000-8000-000000000002'
+          AND s.seat_number = 1
+          AND (s.time_bank_uses_remaining <> 0 OR s.time_bank_remaining <> 0)
+     ) THEN
+    RAISE EXCEPTION 'replaced exact-seat generation did not fail closed';
+  END IF;
+
+  DELETE FROM public.table_seats
+   WHERE table_id = '20000000-0000-4000-8000-000000000002'
+     AND seat_number = 1;
+END;
+$exact_seat_postimage_is_behavioral$;

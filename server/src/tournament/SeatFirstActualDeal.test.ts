@@ -171,6 +171,9 @@ function fixture(
   const rule_manifest = spinRuleManifest(1, stack);
   const tier = rule_manifest.tiers.find((candidate) => candidate.multiplier === 10)!;
   rpc.mockImplementation(async (name: string, args: any) => {
+    if (name === 'fn_ca_paid_spin_launch_entitlements') {
+      return { data: structuredClone(entitlements), error: null };
+    }
     if (name === 'fn_begin_tournament_launch_atomic') {
       launchId = args.p_launch_id;
       admittedStart = args.p_started_at ?? admittedStart;
@@ -184,6 +187,7 @@ function fixture(
           launch_id: launchId,
           started_at: admittedStart,
           lease_generation: LEASE,
+          supply_version: 1,
         },
       };
     }
@@ -217,6 +221,24 @@ function fixture(
         },
       };
     }
+    if (name === 'fn_issue_tournament_launch_stacks') {
+      return {
+        error: null,
+        data: {
+          ok: true,
+          tournament_id: EVENT,
+          launch_id: launchId,
+          lease_generation: LEASE,
+          supply_version: 1,
+          expected_player_count: seats.length,
+          credited_player_count: seats.length,
+          created_event_count: seats.length,
+          issued_chips: seats.length * stack,
+          roster_chips: seats.length * stack,
+          players: seats.map((seat) => ({ user_id: seat.user_id, chips: stack })),
+        },
+      };
+    }
     if (name === 'fn_complete_tournament_launch_atomic') {
       if (options.completionDelay)
         await new Promise((resolve) => setTimeout(resolve, options.completionDelay));
@@ -233,6 +255,10 @@ function fixture(
           started_at: admittedStart,
           completed_at: new Date().toISOString(),
           lease_generation: LEASE,
+          supply_version: 1,
+          issued_chips: seats.length * stack,
+          roster_chips: seats.length * stack,
+          felt_chips: seats.length * stack,
         },
       };
     }

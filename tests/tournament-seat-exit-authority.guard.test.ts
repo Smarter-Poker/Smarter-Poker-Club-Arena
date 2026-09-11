@@ -4,8 +4,15 @@ import { describe, expect, it } from 'vitest';
 import { sliceMethod } from './helpers/sourceWindow';
 
 const root = (path: string) => resolve(__dirname, '..', path);
-const migration = '20260909014545_tournament_seat_exits_stay_inside_tournament_authority.sql';
-const sql = readFileSync(root(`supabase/migrations/${migration}`), 'utf8');
+const readMigration = (file: string): string =>
+  readFileSync(root(`supabase/migrations/${file}`), 'utf8');
+const seatMoveHotfixSql = readMigration(
+  '20260910051447_the_seat_move_door_the_engine_calls_exists.sql'
+);
+const expansionSql = readMigration('20260910055856_stage_b_forward_authority_expansion.sql');
+const repairSql = readMigration('20260910055909_stage_b_exact_precondition_repairs.sql');
+const contractionSql = readMigration('20260910055955_stage_b_current_postimage_contraction.sql');
+const sql = `${expansionSql}\n${repairSql}\n${contractionSql}`;
 const eliminationProbe = readFileSync(
   root('scripts/ci/probes/tournament-elimination-seat-exit-authority.sql'),
   'utf8'
@@ -22,51 +29,62 @@ const manager = readFileSync(root('server/src/tournament/TournamentManager.ts'),
 const moveRpc = readFileSync(root('server/src/tournament/tournamentSeatMoveRpc.ts'), 'utf8');
 const tournamentService = readFileSync(root('src/services/TournamentService.ts'), 'utf8');
 
-function taggedBody(tag: string): string {
+function taggedBody(source: string, tag: string): string {
   const delimiter = `$${tag}$`;
-  const first = sql.indexOf(delimiter);
-  const second = sql.indexOf(delimiter, first + delimiter.length);
+  const first = source.indexOf(delimiter);
+  const second = source.indexOf(delimiter, first + delimiter.length);
   expect(first, `opening ${delimiter}`).toBeGreaterThan(-1);
   expect(second, `closing ${delimiter}`).toBeGreaterThan(first);
-  return sql.slice(first + delimiter.length, second);
+  return source.slice(first + delimiter.length, second);
 }
 
-const seatGuard = taggedBody('seat_exit_guard');
-const handSeatOpener = taggedBody('open_hand_seat_exit_authority');
-const handStackWrapper = taggedBody('accepted_hand_stack_with_seat_authority');
-const managerWake = taggedBody('manager_wake_with_accepted_hand_bust');
-const terminalOrphanCutover = taggedBody('terminal_orphan_cutover');
-const cutoverPlayerLockPrefix = taggedBody('cutover_player_lock_prefix');
-const cutoverReceiptsAppendOnly = taggedBody('cutover_receipts_append_only');
-const atomicMove = taggedBody('atomic_tournament_move');
-const spinExpiry = taggedBody('expire_unfilled_without_reconciler');
-const cancellation = taggedBody('cancel_with_seat_authority');
-const elimination = taggedBody('elimination_with_seat_authority');
-const bountyElimination = taggedBody('bounty_elimination_with_seat_authority');
-const lateSeat = taggedBody('late_seat_without_reconciler');
-const managedUpdate = taggedBody('managed_update_without_reconciler');
-const reconcilerPreflight = taggedBody('legacy_reconciler_preflight');
-const cashPlayerLeave = taggedBody('cash_player_leave');
-const globalWalletCheck = taggedBody('global_wallet_check_without_legacy_unregister');
-const unionMoneyPath = taggedBody('union_money_path_without_legacy_unregister');
-const unionOverload = taggedBody('union_overload_without_legacy_unregister');
-const walletGuard = taggedBody('wallet_guard_without_legacy_unregister');
-const legacyPreflight = taggedBody('legacy_unregister_preflight');
-const legacyPublicExitPreflight = taggedBody('legacy_public_exit_preflight');
-const legacyCutoverProof = taggedBody('legacy_unregister_cutover_proof');
-const chipSyncPreflight = taggedBody('legacy_chip_sync_preflight');
+const seatGuard = taggedBody(contractionSql, 'seat_exit_guard');
+const handSeatOpener = taggedBody(contractionSql, 'open_hand_seat_exit_authority');
+const handStackWrapper = taggedBody(contractionSql, 'accepted_hand_stack_with_seat_authority');
+const managerWake = taggedBody(contractionSql, 'manager_wake_with_accepted_hand_bust');
+const terminalOrphanCutover = taggedBody(repairSql, 'terminal_orphan_cutover');
+const cutoverPlayerLockPrefix = taggedBody(repairSql, 'cutover_player_lock_prefix');
+const cutoverReceiptsAppendOnly = taggedBody(expansionSql, 'cutover_receipts_append_only');
+const atomicMove = taggedBody(contractionSql, 'atomic_tournament_move');
+const spinExpiry = taggedBody(contractionSql, 'expire_unfilled_without_reconciler');
+const cancellation = taggedBody(contractionSql, 'cancel_with_seat_authority');
+const elimination = taggedBody(contractionSql, 'elimination_with_seat_authority');
+const bountyElimination = taggedBody(contractionSql, 'bounty_elimination_with_seat_authority');
+const lateSeat = taggedBody(contractionSql, 'late_seat_without_reconciler');
+const managedUpdate = taggedBody(contractionSql, 'managed_update_without_reconciler');
+const reconcilerPreflight = taggedBody(contractionSql, 'legacy_reconciler_preflight');
+const cashPlayerLeave = taggedBody(contractionSql, 'cash_player_leave');
+const globalWalletCheck = taggedBody(
+  contractionSql,
+  'global_wallet_check_without_legacy_unregister'
+);
+const unionMoneyPath = taggedBody(contractionSql, 'union_money_path_without_legacy_unregister');
+const unionOverload = taggedBody(contractionSql, 'union_overload_without_legacy_unregister');
+const walletGuard = taggedBody(contractionSql, 'wallet_guard_without_legacy_unregister');
+const legacyPreflight = taggedBody(contractionSql, 'legacy_unregister_preflight');
+const legacyPublicExitPreflight = taggedBody(contractionSql, 'legacy_public_exit_preflight');
+const legacyCutoverProof = taggedBody(contractionSql, 'legacy_unregister_cutover_proof');
+const chipSyncPreflight = taggedBody(contractionSql, 'legacy_chip_sync_preflight');
 
 describe('tournament seat exits have one hard authority', () => {
   it('fails closed if the production lock trough is missed', () => {
-    const begin = sql.indexOf('BEGIN;');
-    const firstLock = sql.indexOf('pg_advisory_xact_lock(', begin);
+    const begin = repairSql.indexOf('BEGIN;');
+    const firstLock = repairSql.indexOf('pg_advisory_xact_lock(', begin);
     expect(begin).toBeGreaterThan(-1);
-    expect(sql.indexOf("SET LOCAL lock_timeout = '10s';", begin)).toBeGreaterThan(begin);
-    expect(sql.indexOf("SET LOCAL statement_timeout = '120s';", begin)).toBeGreaterThan(begin);
-    expect(sql.indexOf("SET LOCAL transaction_timeout = '180s';", begin)).toBeGreaterThan(begin);
-    expect(sql.indexOf("SET LOCAL lock_timeout = '10s';", begin)).toBeLessThan(firstLock);
-    expect(sql.indexOf("SET LOCAL statement_timeout = '120s';", begin)).toBeLessThan(firstLock);
-    expect(sql.indexOf("SET LOCAL transaction_timeout = '180s';", begin)).toBeLessThan(firstLock);
+    expect(repairSql.indexOf("SET LOCAL lock_timeout = '10s';", begin)).toBeGreaterThan(begin);
+    expect(repairSql.indexOf("SET LOCAL statement_timeout = '120s';", begin)).toBeGreaterThan(
+      begin
+    );
+    expect(repairSql.indexOf("SET LOCAL transaction_timeout = '150s';", begin)).toBeGreaterThan(
+      begin
+    );
+    expect(repairSql.indexOf("SET LOCAL lock_timeout = '10s';", begin)).toBeLessThan(firstLock);
+    expect(repairSql.indexOf("SET LOCAL statement_timeout = '120s';", begin)).toBeLessThan(
+      firstLock
+    );
+    expect(repairSql.indexOf("SET LOCAL transaction_timeout = '150s';", begin)).toBeLessThan(
+      firstLock
+    );
   });
 
   it('repairs the exact historical terminal backlog once under a write barrier', () => {
@@ -78,14 +96,29 @@ describe('tournament seat exits have one hard authority', () => {
       "SELECT pg_advisory_xact_lock(hashtext('reconcile-tournament-denormals'))"
     );
     expect(sql).not.toContain('LOCK TABLE cron.job');
-    const reconcilerLock = sql.indexOf(
+    const repairReconcilerLock = repairSql.indexOf(
       "SELECT pg_advisory_xact_lock(hashtext('reconcile-tournament-denormals'))"
     );
-    const reconcilerUnschedule = sql.indexOf('PERFORM cron.unschedule(j.jobid)');
-    const reconcilerAbsenceProof = sql.indexOf(
+    const retirementRootLock = contractionSql.indexOf(
+      "SELECT pg_advisory_xact_lock(\n  hashtextextended('ca:tournament-terminal-settlement:v1',0));"
+    );
+    const retirementMaintenanceLock = contractionSql.indexOf(
+      'SELECT pg_advisory_xact_lock_shared(530090,1);',
+      retirementRootLock
+    );
+    const retirementReconcilerLock = contractionSql.indexOf(
+      "SELECT pg_advisory_xact_lock(hashtext('reconcile-tournament-denormals'))",
+      retirementMaintenanceLock
+    );
+    const reconcilerUnschedule = contractionSql.indexOf('PERFORM cron.unschedule(j.jobid)');
+    const reconcilerAbsenceProof = contractionSql.indexOf(
       "RAISE EXCEPTION 'tournament denormal reconciler cron survived unschedule'"
     );
-    expect(reconcilerUnschedule).toBeGreaterThan(reconcilerLock);
+    expect(repairReconcilerLock).toBeGreaterThan(-1);
+    expect(retirementRootLock).toBeGreaterThan(-1);
+    expect(retirementMaintenanceLock).toBeGreaterThan(retirementRootLock);
+    expect(retirementReconcilerLock).toBeGreaterThan(retirementMaintenanceLock);
+    expect(reconcilerUnschedule).toBeGreaterThan(retirementReconcilerLock);
     expect(reconcilerAbsenceProof).toBeGreaterThan(reconcilerUnschedule);
     expect(terminalOrphanCutover).toContain('public.fn_ca_has_committed_tournament_receipt(t.id)');
     expect(terminalOrphanCutover).toContain('s.left_at IS NULL');
@@ -105,13 +138,15 @@ describe('tournament seat exits have one hard authority', () => {
   });
 
   it('takes the terminal root before every cutover lock and reuses private seating cores', () => {
-    const globalLock = sql.indexOf("hashtextextended('ca:tournament-terminal-settlement:v1',0)");
-    const maintenanceLock = sql.indexOf('pg_advisory_xact_lock_shared(530090,1)');
-    const reconcilerLock = sql.indexOf(
+    const globalLock = repairSql.indexOf(
+      "hashtextextended('ca:tournament-terminal-settlement:v1',0)"
+    );
+    const maintenanceLock = repairSql.indexOf('pg_advisory_xact_lock_shared(530090,1)');
+    const reconcilerLock = repairSql.indexOf(
       "pg_advisory_xact_lock(hashtext('reconcile-tournament-denormals'))"
     );
-    const playerLocks = sql.indexOf('$cutover_player_lock_prefix$');
-    const relationLocks = sql.indexOf(
+    const playerLocks = repairSql.indexOf('$cutover_player_lock_prefix$');
+    const relationLocks = repairSql.indexOf(
       'LOCK TABLE public.tournament_launch_receipts IN SHARE ROW EXCLUSIVE MODE'
     );
 
@@ -127,17 +162,17 @@ describe('tournament seat exits have one hard authority', () => {
   });
 
   it('classifies every paid knockout generation from exact immutable evidence', () => {
-    const windows = sql.slice(
-      sql.indexOf('CREATE TEMP TABLE ca_cutover_candidate_windows'),
-      sql.indexOf('CREATE TEMP TABLE ca_cutover_candidate_rebuy_payments')
+    const windows = repairSql.slice(
+      repairSql.indexOf('CREATE TEMP TABLE ca_cutover_candidate_windows'),
+      repairSql.indexOf('CREATE TEMP TABLE ca_cutover_candidate_rebuy_payments')
     );
-    const ordinals = sql.slice(
-      sql.indexOf('CREATE TEMP TABLE ca_cutover_rebuy_entitlement_ordinals'),
-      sql.indexOf('CREATE TEMP TABLE ca_cutover_candidate_rebuy_payments')
+    const ordinals = repairSql.slice(
+      repairSql.indexOf('CREATE TEMP TABLE ca_cutover_rebuy_entitlement_ordinals'),
+      repairSql.indexOf('CREATE TEMP TABLE ca_cutover_candidate_rebuy_payments')
     );
-    const payments = sql.slice(
-      sql.indexOf('CREATE TEMP TABLE ca_cutover_candidate_rebuy_payments'),
-      sql.indexOf('CREATE TEMP TABLE ca_cutover_paid_candidates')
+    const payments = repairSql.slice(
+      repairSql.indexOf('CREATE TEMP TABLE ca_cutover_candidate_rebuy_payments'),
+      repairSql.indexOf('CREATE TEMP TABLE ca_cutover_paid_candidates')
     );
 
     expect(windows).toContain('lead(c.id) OVER generation_order');
@@ -308,11 +343,13 @@ describe('tournament seat exits have one hard authority', () => {
   });
 
   it('vacates only exact unpaid pending-zero legacy reseats before chip mirroring', () => {
-    const classificationStart = sql.indexOf('CREATE TEMP TABLE ca_cutover_pending_zero_seats');
-    const mirrorStart = sql.indexOf('WITH exact_live AS (');
-    const classification = sql.slice(
+    const classificationStart = repairSql.indexOf(
+      'CREATE TEMP TABLE ca_cutover_pending_zero_seats'
+    );
+    const mirrorStart = repairSql.indexOf('WITH exact_live AS (');
+    const classification = repairSql.slice(
       classificationStart,
-      sql.indexOf('-- The old process-start sweep', classificationStart)
+      repairSql.indexOf('-- The old process-start sweep', classificationStart)
     );
     const zeroRepair = terminalOrphanCutover.slice(
       terminalOrphanCutover.indexOf('-- A playing zero roster is already committed'),
@@ -544,7 +581,26 @@ describe('tournament seat exits have one hard authority', () => {
     expect(atomicMove).toContain('INSERT INTO public.tournament_seat_move_receipts');
     expect(atomicMove).toContain('fn_ca_open_tournament_seat_exit_authority');
     expect(atomicMove).toContain('fn_ca_close_tournament_seat_exit_authority');
-    expect(sql).toContain('BEFORE UPDATE OR DELETE ON public.tournament_seat_move_receipts');
+    expect(seatMoveHotfixSql).toContain(
+      'BEFORE UPDATE OR DELETE ON public.tournament_seat_move_receipts'
+    );
+    expect(expansionSql).toContain('stage_b_move_receipt_preimage');
+    expect(contractionSql).toContain('stage_b_contraction_move_receipt_preimage');
+    expect(contractionSql).toContain(
+      'Stage-B contraction changed an immutable seat-move receipt preimage'
+    );
+    const receiptLock = contractionSql.indexOf(
+      'LOCK TABLE public.tournament_seat_exit_authorizations,'
+    );
+    const firstMoveReplacement = contractionSql.indexOf(
+      'CREATE OR REPLACE FUNCTION public.fn_ca_open_tournament_seat_exit_authority('
+    );
+    expect(receiptLock).toBeGreaterThan(-1);
+    expect(receiptLock).toBeLessThan(firstMoveReplacement);
+    expect(contractionSql.slice(receiptLock, firstMoveReplacement)).toContain(
+      'IN SHARE MODE NOWAIT;'
+    );
+    expect(contractionSql).not.toMatch(/receipt_count\s*=\s*(?:44|60)\b/);
   });
 
   it('makes the manager call one retry-safe RPC instead of split writes', () => {

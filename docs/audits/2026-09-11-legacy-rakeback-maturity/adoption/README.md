@@ -11,6 +11,8 @@ The tool generated migration version 20260911074903 with one stored statement wh
 - applied-ledger-alignment.sql.txt preserves the exact already-executed metadata statement for audit comparison. It is historical evidence, not a migration or an instruction to execute it again. The receipt pins its SHA256.
 - read-only-receipt.json preserves the earlier automatic rejection and unchanged production readback. Specific user approval was supplied afterward; those earlier observations are historical.
 
+Normal repository hooks formatted the two JSON receipts without changing their parsed content; equality against the original received objects was verified before updating the manifest. The original admission receipt SHA256 was 679d894b56b7d1a49f58149e10683a27e2c497d18c6bbdd1f0699c22cf478f05, and root's original application receipt SHA256 was 54201b28ab09a951748495b2a1878234584f68b9e67c89abbeb0cb4527bcf786. artifact-hashes.json records the final formatted file hashes separately.
+
 This supplemental directory does not change the immutable 988db864469e0d2543b969fc0032c4d8eb7b9fa3 source subtree outside adoption or the reviewed atomic SQL. The normal repository migration is 20260911072837_legacy_rakeback_closed_period_single_payer.sql. The earlier 20260911070726 reservation mentioned in the historical preparation was superseded before application.
 
 ## Read-only query references

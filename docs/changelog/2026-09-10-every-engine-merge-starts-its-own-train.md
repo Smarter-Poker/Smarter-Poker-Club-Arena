@@ -1,5 +1,12 @@
 # Every engine merge starts its own deploy; nothing has to notice one is missing
 
+> **SUPERSEDED / HISTORICAL: DO NOT IMPLEMENT THIS RELEASE DESIGN.** This file
+> records the intermediate 2026-09-10 design. The current authority is
+> `stage-engine-release.yml` (detect an engine-affecting main change and emit
+> one exact-SHA event) followed by `auto-deploy-hetzner.yml` (the single receiver
+> and durable host transaction). The in-workflow hand-on, watchdog dispatch,
+> `DEPLOY_RETRY_LIMIT`, and cancelled-run retry described below are retired.
+
 **Dan, 2026-09-10:** "i do not want any watch dogs, i want hard coded fixes that
 solve this problem and prevent it from breaking or regressing, i want any and
 all pushes to be published in the order that they come in! ... don't just agree

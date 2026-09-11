@@ -1826,9 +1826,10 @@ Rules that follow from it, all enforced:
 7. **The constants are law**: `tests/the-break-clocks-agree.law.test.ts` pins
    the :55 minute, the deploy's break-gate minute, freeze ceiling and windows
    across all five surfaces. (The deploy has no cron since 2026-09-10: every
-   engine push starts its own run, which waits in its break gate; see the
-   `on:` block of `auto-deploy-hetzner.yml`.) If you deliberately change one, change them together with the
-   law, in one commit.
+   engine-affecting push is classified by `stage-engine-release.yml`, which
+   sends one exact-SHA event to `auto-deploy-hetzner.yml`; that single receiver
+   stages the durable host transaction and waits in its break gate.) If you
+   deliberately change one, change them together with the law, in one commit.
 
 Full history and rationale: `docs/changelog/2026-09-01-scheduled-maintenance-break.md`
 and `docs/changelog/2026-09-01-total-platform-freeze.md`. Remaining backlog:

@@ -64,7 +64,11 @@ const harness = readFileSync(
   'utf8'
 );
 const runbook = readFileSync(
-  resolve(root, 'docs/runbooks/tournament-fractional-stack-cutover.md'),
+  resolve(root, 'docs/runbooks/lease-heartbeat-keyshare-cutover.md'),
+  'utf8'
+);
+const zeroAuthority = readFileSync(
+  resolve(root, 'scripts/ops/verify-stage-b-zero-authority.sh'),
   'utf8'
 );
 const productionPostimage = readFileSync(
@@ -114,6 +118,8 @@ describe('the reserved Stage-B forward authority remains one bounded chain', () 
     expect(canonicalStart).toBeGreaterThan(stopEngine);
     expect(startAutoheal).toBeGreaterThan(canonicalStart);
     expect(startTimer).toBeGreaterThan(startAutoheal);
+    expect(runbook).toContain('verify-stage-b-zero-authority.sh "$SHA8"');
+    expect(zeroAuthority).toContain('STAGE_B_ZERO_AUTHORITY_VERIFIED');
   });
 
   it('authenticates bounded prerequisites instead of a moving ledger head', () => {

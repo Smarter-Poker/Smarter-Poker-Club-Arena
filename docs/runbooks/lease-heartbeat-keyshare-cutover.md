@@ -101,13 +101,45 @@ scripts/ops/verify-migration-ledger-artifact.sh \
 
 ## Scale authority to zero
 
-Use the natural enforced maintenance break and the host sequence in
-`tournament-fractional-stack-cutover.md`: acquire
-`/var/lock/club-arena-engine-up.lock`, stop the supervisor timer and service,
-gracefully stop the sole engine container, wait 30 seconds, and require the
-checked-in zero-authority proof to show no fresh leader, table, or tournament
-lease. A live process, active deployment, unexpected relation lock, missing
-graceful shutdown receipt, or mismatched image SHA aborts the cutover.
+Use the natural enforced maintenance break. Keep one root shell on the engine
+host for the entire stop, apply, and restart sequence. Acquire the canonical
+engine-up lock before stopping any authority:
+
+```sh
+exec 9>/var/lock/club-arena-engine-up.lock
+if ! flock -n 9; then
+  echo 'engine-up lock is already owned; aborting before any authority is stopped' >&2
+  exec 9>&-
+  exit 1
+fi
+systemctl stop club-arena-supervisor.timer
+systemctl stop club-arena-supervisor.service || true
+docker stop -t 15 sp-autoheal
+docker stop -t 45 club-arena-engine
+```
+
+Require every stopped-state readback in that same shell:
+
+```sh
+test "$(systemctl is-active club-arena-supervisor.timer)" = inactive
+test "$(systemctl is-active club-arena-supervisor.service)" = inactive
+test "$(docker inspect -f '{{.State.Status}}' sp-autoheal)" = exited
+test "$(docker ps -q --filter label=sp.role=engine | wc -l)" -eq 0
+test "$(docker inspect -f '{{.State.Running}}' club-arena-engine)" = false
+! curl -sf --max-time 3 http://127.0.0.1:8080/health
+! pgrep -af 'node.*club-arena.*server|node.*dist/index' | grep -v pgrep
+```
+
+After 30 seconds, run the checked-in read-only proof with the exact deployed
+eight-character engine SHA:
+
+```sh
+scripts/ops/verify-stage-b-zero-authority.sh "$SHA8"
+```
+
+It proves the enforced break and zero fresh leader, table, or tournament lease.
+A live process, active deployment, unexpected relation lock, missing graceful
+shutdown receipt, or mismatched image SHA aborts the cutover.
 
 ## Apply and verify
 
@@ -147,6 +179,20 @@ timestamps to advance and require zero active-manager `busy` expiry,
 `tournament_lease_proof_expired`, or child `tournament_lease_lost` teardown.
 Inspect at least one cash table, multi-table tournament, Sit & Go, and Spin.
 
+The ordered restart in the still-locked root shell is:
+
+```sh
+ENGINE_UP_LOCK_HELD=1 IMAGE="club-arena-engine:$FULL_SHA" \
+  /usr/local/lib/club-arena/engine-control/engine-up.sh
+curl -fsS --max-time 5 http://127.0.0.1:8080/health
+curl -fsS --max-time 10 https://engine.smarter.poker/health
+docker start sp-autoheal
+test "$(docker inspect -f '{{.State.Running}}' sp-autoheal)" = true
+systemctl start club-arena-supervisor.timer
+test "$(systemctl is-active club-arena-supervisor.timer)" = active
+exec 9>&-
+```
+
 ## Seal and publish
 
 Seal all six applied Stage-B artifacts named in the non-negotiable order above,
@@ -163,19 +209,25 @@ not only the final key-share artifact. For each of
    tests, manifests, and runbooks, then prove no stale path reference remains.
 
 Commit and push the complete six-artifact source seal. After the PR is merged,
-first verify and record its exact 40-character merge SHA. Then immediately
-dispatch that already-merged SHA, before any workflow wait or status poll
-(replace the placeholder with the verified SHA):
+first verify and record its exact 40-character merge SHA. A protected-main push
+that changes an eligible engine path is the dispatch: before any workflow wait
+or status poll, identify the single `auto-deploy-hetzner.yml` receiver for that
+SHA. Do not submit a duplicate manual dispatch while that run, or a newer run
+which contains it, is active or queued. If no eligible receiver exists, first
+prove current main still equals the recorded SHA and no active or queued
+descendant contains it, then dispatch the canonical workflow once on current
+main.
 
-```sh
-gh workflow run auto-deploy-hetzner.yml --ref main -f ref_sha=<exact-40-char-merged-sha>
-```
+Never wait for the maintenance window or a later observer to dispatch this
+release. Dispatching and waiting for the protected break are separate: the
+release enters the train immediately, while its receiver alone owns the bounded
+production window.
 
-Never wait for the hourly engine window or scheduler to dispatch this release.
-Only after the immediate dispatch is accepted may the required workflows be
-polled to completion. Completion requires the served engine image SHA (and
-World Hub `build-info.json` if the client bundle changed) to equal the merged
-release SHA. A healthy old image, open PR, or running workflow is not
+Completion requires the public engine health response to serve the exact merged
+release SHA. If the client bundle changed, both the Club Arena origin
+`https://ca-static.smarter.poker/build-info.json` and the player route
+`https://smarter.poker/hub/club-arena/build-info.json` must serve that same SHA.
+A healthy old image, open PR, accepted event, or running workflow is not
 publication.
 
 Rollback after commit is a reviewed forward migration. Never delete the

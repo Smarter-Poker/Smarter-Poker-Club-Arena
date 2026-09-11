@@ -2,7 +2,7 @@
 set -euo pipefail
 
 [[ "$#" -eq 1 && "$1" =~ ^[0-9a-f]{8}$ ]] || {
-  echo 'Usage: verify-tournament-fractional-stack-zero-authority.sh ENGINE_SHA8' >&2
+  echo 'Usage: verify-stage-b-zero-authority.sh ENGINE_SHA8' >&2
   exit 64
 }
 engine_sha8="$1"
@@ -16,7 +16,7 @@ command -v "$psql_bin" >/dev/null 2>&1 || {
   exit 69
 }
 repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-query="$repo_dir/scripts/ops/verify-tournament-fractional-stack-zero-authority.sql"
+query="$repo_dir/scripts/ops/verify-stage-b-zero-authority.sql"
 [[ -r "$query" ]] || {
   echo 'Read-only zero-authority query is unavailable.' >&2
   exit 69
@@ -45,6 +45,6 @@ IFS='|' read -r phase enforce_freeze break_started_at break_ends_at remaining_se
   echo "Stopped exact-build authority proof failed: $observed" >&2
   exit 65
 }
-printf 'TOURNAMENT_CUTOVER_ZERO_AUTHORITY_VERIFIED engine=%s remaining_seconds=%s last_heartbeats=%s,%s,%s\n' \
+printf 'STAGE_B_ZERO_AUTHORITY_VERIFIED engine=%s remaining_seconds=%s last_heartbeats=%s,%s,%s\n' \
   "$engine_sha8" "$remaining_seconds" "${last_leader:-none}" \
   "${last_table:-none}" "${last_tournament:-none}"

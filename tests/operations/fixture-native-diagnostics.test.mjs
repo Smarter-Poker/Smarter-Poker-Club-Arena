@@ -6,6 +6,24 @@ import { promisify } from 'node:util';
 import { nativeFailureDiagnostic } from '../../operations/release/fixture/runtime-files.mjs';
 
 test('listener diagnostics permit only reviewed reasons and bounded integer counts', () => {
+  const endpoint = nativeFailureDiagnostic('realtime-loopback-and-gateway', {
+    name: 'Error',
+    listener_reason: 'listener-set',
+    listener_http_port: 4000,
+    listener_http_address: 'ipv4-loopback',
+  });
+  assert.equal(endpoint.listener_http_port, 4000);
+  assert.equal(endpoint.listener_http_address, 'ipv4-loopback');
+  for (const invalid of ['PRIVATE ADDRESS', 'ipv4-loopback\n', [], null, true]) {
+    assert.equal(
+      nativeFailureDiagnostic('realtime-loopback-and-gateway', {
+        name: 'Error',
+        listener_reason: 'listener-set',
+        listener_http_address: invalid,
+      }).listener_http_address,
+      undefined
+    );
+  }
   for (const invalid of [-1, 65536, '1', true, null, [], 1.5]) {
     const result = nativeFailureDiagnostic('realtime-loopback-and-gateway', {
       name: 'Error',

@@ -122,7 +122,7 @@ export async function adaptRealtimeConfiguration() {
 
 // Actual Linux network-namespace evidence, independent of application config.
 // A healthy loopback request alone cannot exclude an additional wildcard bind.
-export function assertRealtimeHttpListener(tcp, tcp6) {
+export function assertRealtimeHttpListener(tcp, tcp6, endpoint) {
   const listeners = [];
   const inspected = { listener_rows4: 0, listener_rows6: 0, listener_port4000: 0 };
   const refuse = (reason) => {
@@ -139,6 +139,9 @@ export function assertRealtimeHttpListener(tcp, tcp6) {
       listener_reason: reason,
       ...counts,
       ...inspected,
+      ...(endpoint
+        ? { listener_http_port: endpoint.port, listener_http_address: endpoint.address }
+        : {}),
     });
   };
   for (const [family, source] of [

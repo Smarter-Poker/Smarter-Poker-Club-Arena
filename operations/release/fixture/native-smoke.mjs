@@ -557,26 +557,33 @@ async function services() {
         'hash = fn value -> Base.encode16(:crypto.hash(:sha256, value), case: :lower) end; ' +
           'IO.write(Jason.encode!(%{node: Atom.to_string(node()), named: Node.alive?(), ' +
           'otp: hash.(Atom.to_string(:erlang.get_cookie())), gen_rpc: hash.(:gen_rpc_auth.get_cookie()), ' +
-          'http_loopback: Phoenix.Endpoint.Cowboy2Adapter.server_info(RealtimeWeb.Endpoint, :http) == {:ok, {{127, 0, 0, 1}, 4000}}, ' +
+          'http_listener: (case Phoenix.Endpoint.Cowboy2Adapter.server_info(RealtimeWeb.Endpoint, :http) do ' +
+          '{:ok, {addr, port}} -> %{port: port, address: cond do ' +
+          'addr == {127, 0, 0, 1} -> "ipv4-loopback"; addr == {0, 0, 0, 0} -> "ipv4-wildcard"; ' +
+          'addr == {0, 0, 0, 0, 0, 0, 0, 1} -> "ipv6-loopback"; addr == {0, 0, 0, 0, 0, 0, 0, 0} -> "ipv6-wildcard"; ' +
+          'is_tuple(addr) and tuple_size(addr) == 4 -> "ipv4-other"; ' +
+          'is_tuple(addr) and tuple_size(addr) == 8 -> "ipv6-other"; true -> "unknown" end}; ' +
+          '_ -> %{port: 0, address: "unknown"} end), ' +
           'override_absent: Application.get_env(:gen_rpc, :secret_cookie) == nil, ' +
           'insecure_fallback: Application.get_env(:gen_rpc, :insecure_auth_fallback_allowed, false)}))',
       ],
       realtimeEnv
     );
     stage = 'realtime-cookie-proof';
-    assert.deepEqual(JSON.parse(cookieProof.stdout), {
+    const { http_listener: httpListener, ...cookieIdentity } = JSON.parse(cookieProof.stdout);
+    assert.deepEqual(cookieIdentity, {
       node: 'realtime@127.0.0.1',
       named: true,
       otp: realtimeCookie.sha256,
       gen_rpc: realtimeCookie.sha256,
-      http_loopback: true,
       override_absent: true,
       insecure_fallback: false,
     });
     stage = 'realtime-loopback-and-gateway';
     assertRealtimeHttpListener(
       await readFile('/proc/net/tcp', 'utf8'),
-      await readFile('/proc/net/tcp6', 'utf8')
+      await readFile('/proc/net/tcp6', 'utf8'),
+      httpListener
     );
     await command('/usr/bin/openssl', [
       'req',

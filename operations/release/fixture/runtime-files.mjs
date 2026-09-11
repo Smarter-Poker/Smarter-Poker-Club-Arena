@@ -39,11 +39,24 @@ export function nativeFailureDiagnostic(stage, error) {
       'listener_rows4',
       'listener_rows6',
       'listener_port4000',
+      'listener_http_port',
     ]) {
       if (Number.isInteger(error[field]) && error[field] >= 0 && error[field] <= 65535) {
         record[field] = error[field];
       }
     }
+    if (
+      new Set([
+        'ipv4-loopback',
+        'ipv4-wildcard',
+        'ipv4-other',
+        'ipv6-loopback',
+        'ipv6-wildcard',
+        'ipv6-other',
+        'unknown',
+      ]).has(error.listener_http_address)
+    )
+      record.listener_http_address = error.listener_http_address;
   }
   if (
     new Set([

@@ -67,11 +67,14 @@ def native_failures(output):
             continue
         listener = {key: row.pop(key) for key in ('listener_reason', 'listener_loopback4',
                     'listener_other4', 'listener_ipv6', 'listener_rows4', 'listener_rows6',
-                    'listener_port4000') if key in row}
+                    'listener_port4000', 'listener_http_port', 'listener_http_address') if key in row}
         if listener and (not isinstance(listener.get('listener_reason'), str)
                 or listener['listener_reason'] not in {'header', 'row-shape', 'address-shape', 'listener-set'}
+                or ('listener_http_address' in listener and (not isinstance(listener['listener_http_address'], str)
+                    or listener['listener_http_address'] not in {'ipv4-loopback', 'ipv4-wildcard', 'ipv4-other',
+                        'ipv6-loopback', 'ipv6-wildcard', 'ipv6-other', 'unknown'}))
                 or any(type(value) is not int or not 0 <= value <= 65535
-                       for key, value in listener.items() if key != 'listener_reason')):
+                       for key, value in listener.items() if key not in {'listener_reason', 'listener_http_address'})):
             continue
         auth = {key: row.pop(key) for key in ('auth_stage', 'auth_http_status') if key in row}
         if ('auth_stage' in auth and (not isinstance(auth['auth_stage'], str)

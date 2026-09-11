@@ -617,6 +617,30 @@ groups:
   - name: hand-projection
     interval: 30s
     rules:
+      - alert: HandProjectionDrainWedged
+        # NAMES THE CAUSE, NOT THE SYMPTOM (2026-09-11). The backlog alarm below
+        # fires whenever the outbox is old, which covers both "the lane is slow"
+        # and "the lane has stopped". Those need different answers. A pass that
+        # never settles used to leave drainPromise non-null for ever, and
+        # pollIsDue opens by returning false on exactly that, so the 5 s safety
+        # poll - the only cross-process wake left on this host, with Realtime in
+        # CHANNEL_ERROR and LISTEN unconfigured - was switched off. Measured that
+        # evening: drains_total frozen at 324 for fifteen minutes while the outbox
+        # climbed to 27,356 rows and fifty-one minutes old. The pass is bounded
+        # now (HAND_PROJECTION_DRAIN_DEADLINE_MS, 120s), so this should be
+        # unreachable; if it fires, the bound itself has failed.
+        expr: poker_hand_projection_drain_age_ms > 180000
+        for: 2m
+        labels:
+          severity: critical
+          component: club-arena-engine
+        annotations:
+          summary: 'A hand projection drain has been in flight for {{ $value | printf "%.0f" }} ms'
+          description: |
+            One drain pass has not settled. While a pass is in flight the safety
+            poll does not run, so nothing else will project a hand until it
+            clears. The pass carries its own deadline; this firing means the
+            deadline did not release the lane.
       - alert: HandProjectionOutboxBacklog
         expr: |
           poker_hand_projection_outbox_oldest_age_seconds > 300

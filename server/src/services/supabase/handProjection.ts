@@ -244,6 +244,15 @@ export function handProjectionWakesToPrometheus(): string[] {
     '# HELP poker_hand_projection_drains_total Drain passes started since process start.',
     '# TYPE poker_hand_projection_drains_total counter',
     `poker_hand_projection_drains_total ${drainsTotal}`,
+    /* HOW LONG THE CURRENT PASS HAS BEEN RUNNING, zero when none is. A pass
+       that never settles used to take the safety poll out of service with no
+       series anywhere saying so: `drains_total` simply stopped moving, which
+       reads identically to a quiet outbox. It is bounded now
+       (DRAIN_DEADLINE_MS), and this is the number that shows a pass
+       approaching that bound before it is hit. */
+    '# HELP poker_hand_projection_drain_age_ms Age of the drain pass in flight, zero when none is.',
+    '# TYPE poker_hand_projection_drain_age_ms gauge',
+    `poker_hand_projection_drain_age_ms ${drainPromise === null ? 0 : Math.max(0, Date.now() - lastDrainStartedAt)}`,
     '# HELP poker_hand_projection_drain_concurrency Per-table chains the drain projects at once (HAND_PROJECTION_DRAIN_CONCURRENCY).',
     '# TYPE poker_hand_projection_drain_concurrency gauge',
     `poker_hand_projection_drain_concurrency ${handProjectionDrainConcurrency()}`,
@@ -445,13 +454,87 @@ function armCausalRetry(): void {
   retryTimer.unref?.();
 }
 
+/**
+ * A DRAIN THAT NEVER SETTLES DISABLES THE ONLY REMAINING WAKE (2026-09-11).
+ *
+ * `pollIsDue` opens with `if (state.drainRunning) return false`, and
+ * `drainRunning` is `drainPromise !== null`. The escape hatch below it - "no
+ * drain has STARTED for RETRY_MAX_MS plus two poll intervals, so the retry is
+ * not doing its job" - is written for a stuck RETRY and is unreachable for a
+ * stuck DRAIN, because the first line has already returned. So one pass whose
+ * promise never resolves takes the poll out of service permanently.
+ *
+ * That is not hypothetical. Measured on engine-01 this evening:
+ * `poker_hand_projection_drains_total` frozen at 324 and
+ * `..._drain_results_total{result="projected"}` frozen at 73,438 across
+ * fifteen minutes, while `poker_hand_projection_outbox_depth` climbed from
+ * 24,442 to 27,356 and its oldest row passed fifty-one minutes. The engine was
+ * healthy and dealing throughout. The wedge began during an image build on the
+ * same host, when the box was at load 20 and every database call was slow.
+ *
+ * It wedges so completely because the two cross-process wakes are gone: the
+ * Realtime channel is in CHANNEL_ERROR (logged repeatedly) and LISTEN is
+ * unconfigured on this host. The 5 s poll is the whole net, and this is what
+ * switches it off.
+ *
+ * THE FIX IS TO MAKE THE PROMISE ALWAYS SETTLE, not to let a second drain
+ * start beside a first. Ordering inside a table's chain is what this worker
+ * exists to preserve, so two concurrent passes is the one thing that must not
+ * happen. A bounded pass restores every net that already exists: the promise
+ * clears, `pollIsDue` answers again, and the causal retry re-arms.
+ */
+const DRAIN_DEADLINE_MS = boundedEnvInt(
+  'HAND_PROJECTION_DRAIN_DEADLINE_MS',
+  120_000,
+  10_000,
+  600_000
+);
+
+/** Reject if the pass has not settled inside its deadline. */
+function withDeadline(
+  pass: Promise<HandProjectionDrainSummary>,
+  budgetMs: number = DRAIN_DEADLINE_MS
+): Promise<HandProjectionDrainSummary> {
+  return new Promise<HandProjectionDrainSummary>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(
+        new Error(
+          `[HandProjection] drain pass did not settle within ${budgetMs}ms - ` +
+            'releasing the lane so the safety poll can run again'
+        )
+      );
+    }, budgetMs);
+    timer.unref?.();
+    pass.then(
+      (summary) => {
+        clearTimeout(timer);
+        resolve(summary);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err);
+      }
+    );
+  });
+}
+
+/** Test seam: the deadline wrapper with an explicit budget. */
+export function withDrainDeadlineForTest(
+  pass: Promise<HandProjectionDrainSummary>,
+  budgetMs: number
+): Promise<HandProjectionDrainSummary> {
+  return withDeadline(pass, budgetMs);
+}
+
+export { DRAIN_DEADLINE_MS as HAND_PROJECTION_DRAIN_DEADLINE_MS };
+
 /** Start or join the one process-wide ordered drain. */
 function beginDrain(): Promise<HandProjectionDrainSummary> {
   if (drainPromise) {
     wakeAfterDrain = true;
     return drainPromise;
   }
-  const active = runDrain();
+  const active = withDeadline(runDrain());
   drainPromise = active;
   let causalRetryOwed = false;
   void active

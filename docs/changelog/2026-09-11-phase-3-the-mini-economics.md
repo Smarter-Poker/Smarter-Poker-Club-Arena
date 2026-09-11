@@ -66,8 +66,13 @@ would read as the latter. `lib/bbjMiniFeed` keeps the NULL rather than passing
 it through `num()`, which would have flattened it to 0.
 
 The club settings panel now shows all three rates and says, in words, either
-that the reserve is not draining or how many days are left - with the window
-named, so the number can be interpreted.
+that the reserve is not draining or how many days are left, and names the
+window the rates are an average of.
+
+> **The window was published and then not shown.** `window_days` exists so a
+> rate can be interpreted, and the first cut of the panel printed "X A Day"
+> without it — which is how a rate goes back to being a number with no stated
+> basis. The audit caught it; the panel states it.
 
 ### 2. The reserve floor became a control
 
@@ -82,7 +87,15 @@ a stranger cannot learn a club's union shape from a refusal.
 one more payout - below that the felt would show an amount the payout RPC must
 refuse, which is the one thing this programme's governing rule forbids.
 
-The migration **asserts it changed no pool's floor** and aborts if it did.
+The migration asserts that every pool carries a floor before the control ships,
+and aborts if one does not.
+
+> **Corrected in the audit that followed.** The first version asserted every
+> floor is exactly 5,000 — right about the intent, wrong as a permanent check,
+> because the same file ships the control whose job is to change that value.
+> Any replay after one club had set a floor would have aborted on a number that
+> club was entitled to set. What the migration must not do is change a floor
+> _itself_, and it contains no such write; that is what is asserted now.
 
 ### 3. The mini has its own near misses
 

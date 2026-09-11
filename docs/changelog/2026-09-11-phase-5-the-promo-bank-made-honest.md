@@ -59,7 +59,13 @@ can't be undone"_, and was rewarded with a toast reading, literally,
 
 It is **removed, not disabled**. A disabled control still advertises a feature,
 and CLAUDE.md 10.12 is explicit that a thing which looks live and is not is the
-defect. `BBJService` is now an empty object with the reason written on it.
+defect.
+
+> **And then the service itself went.** Removing the only method left
+> `export const BBJService = {}` plus a `BBJPool` type nothing imported — an
+> empty exported object is precisely the thing 10.12 forbids, so the file, both
+> barrel exports and an archived test's dangling import are gone. The law
+> asserts the file's **absence**.
 
 ## The operator bar drew a flow as a slice
 

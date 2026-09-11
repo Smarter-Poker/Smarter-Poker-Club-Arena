@@ -110,7 +110,11 @@ The one stall nothing inside a workflow can fix is a run whose runner dies so
 hard that its `always()` steps never execute; the watchdog's alarm (report only)
 names that one.
 
-## Follow-up, 2026-09-11: the web publisher hands itself on too
+## Historical Follow-Up, 2026-09-11: The Web Publisher Hands Itself On Too (Retired)
+
+> This intermediate design is retired by the current exact-SHA authority named
+> at the top of this file. The text below is retained only as incident history;
+> none of its self-dispatch or watchdog paths may be restored.
 
 `publish-club-arena.yml` already published on every push and always publishes
 the TIP of main (a replaced run is carried by the run that replaced it), and it

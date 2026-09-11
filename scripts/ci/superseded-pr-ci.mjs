@@ -204,7 +204,15 @@ export function githubClient(execute = promisify(execFile)) {
     try {
       const result = await execute(
         'gh',
-        ['api', '--hostname', 'github.com', '--method', method, endpoint],
+        [
+          'api',
+          '--hostname',
+          'github.com',
+          '--method',
+          method,
+          ...(method === 'GET' ? ['--header', 'Cache-Control: no-cache'] : []),
+          endpoint,
+        ],
         {
           encoding: 'utf8',
           timeout: 15_000,

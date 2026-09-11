@@ -487,6 +487,25 @@ describe('fresh authority and bounded API behavior', () => {
 });
 
 describe('transport and trusted workflow boundary', () => {
+  it('requests cache revalidation on every discovery and final authority GET', async () => {
+    const p = provider();
+    const execute = vi.fn(async (_file: string, args: string[], _options: unknown) => ({
+      stdout: JSON.stringify(await p.api.get(args.at(-1)!)),
+    }));
+    const result = await code.inspectSupersededPrCi({
+      api: code.githubClient(execute),
+      sourceRunId: 200,
+    });
+    expect(result.decisions[0].action).toBe('would-cancel');
+    expect(execute).toHaveBeenCalledTimes(9);
+    for (const [, args] of execute.mock.calls) {
+      expect(args[args.indexOf('--method') + 1]).toBe('GET');
+      expect(args[args.indexOf('--header') + 1]).toBe('Cache-Control: no-cache');
+      expect(args).not.toContain('--cache');
+    }
+    expect(execute.mock.calls.at(-1)?.[1].at(-1)).toBe(`${prefix}/pulls/${p.state.pr.number}`);
+  });
+
   it('uses the configured gh client against github.com and only the specific cancel endpoint', async () => {
     const execute = vi.fn(async (_file: string, _args: string[], _options: unknown) => ({
       stdout: '{"id":200}',

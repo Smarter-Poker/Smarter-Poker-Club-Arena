@@ -30,8 +30,10 @@ PR association data establishes identity and repository/ref linkage only.
 Discovery reads both bounded active-run inventories before any mutation. A
 truncated, contradictory, or oversized inventory fails closed. Immediately before
 each individual cancellation request, the helper re-fetches the workflow, old
-run, replacement run, and PR, with the PR read last. A changed run attempt,
-identity, PR head, workflow, or successful-replacement status refuses the target.
+run, replacement run, and PR, with the PR read last. Every API GET explicitly
+requests `Cache-Control: no-cache` revalidation and omits client-side caching.
+A changed run attempt, identity, PR head, workflow, or successful-replacement
+status refuses the target.
 It never applies a previously prepared list and never force-cancels or retries a
 failed cancel request. Receipts distinguish `would-cancel` from `cancel-requested`;
 a request is not a claim that cancellation has completed.
@@ -41,7 +43,7 @@ A PR may change after the last read and before GitHub accepts the cancellation.
 The repeated reads bound that race but cannot remove it. Activation remains an
 explicit owner decision; this proposal is inactive and performs no cancellation.
 
-Validation passes 262 tests across eleven files, including 97 focused tests for
+Validation passes 263 tests across eleven files, including 98 focused tests for
 real API-shaped identities, every excluded operation type,
 current-head protection, API errors and malformed JSON, duplicate/overflowed/
 truncated inventories, changed attempts, concurrent pushes between candidates,

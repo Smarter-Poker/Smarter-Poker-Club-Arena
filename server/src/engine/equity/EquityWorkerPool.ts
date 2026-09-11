@@ -391,6 +391,14 @@ export class EquityWorkerPool {
 
   private pump(): void {
     while (this.queue.length > 0 && this.idle.length > 0) {
+      // READY/results can run before overdue timer callbacks after a busy
+      // event loop. Do not hand an already-expired request to a healthy
+      // worker: its late timer would immediately retire that capacity.
+      const queued = this.queue[0];
+      if (Date.now() - queued.enqueuedAt >= this.jobTimeoutMs) {
+        this.onJobTimeout(queued);
+        continue;
+      }
       const slot = this.idle.pop()!;
       if (slot.down || !slot.ready || slot.job) continue;
       const job = this.queue.shift()!;

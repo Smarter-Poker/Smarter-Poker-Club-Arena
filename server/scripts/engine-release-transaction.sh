@@ -303,6 +303,19 @@ health_instance_for_sha() {
   printf '%s' "$body" | parse_health_instance_for_sha "$expected_sha"
 }
 
+parse_sealed_source_instance_for_sha() {
+  EXPECTED_SHA="$1" python3 -c '
+import json,os,re,sys
+d=json.load(sys.stdin)
+expected=os.environ["EXPECTED_SHA"]
+instance=d.get("instanceId")
+identity=(d.get("releaseSha")==expected) or ("releaseSha" not in d and d.get("version")==expected[:8])
+ok=(d.get("running") is True and identity and d.get("liveness")=="ok" and isinstance(instance,str) and re.fullmatch(r"[1-9][0-9]*-[0-9a-f]{8}",instance))
+if not ok: raise SystemExit(1)
+print(instance)
+' 2>/dev/null
+}
+
 source_instance_for_sha() {
   local url="$1" expected_sha="$2" response http_code body curl_timeout=15 proof_remaining
   if [ "${BREAK_END_EPOCH:-0}" -gt 0 ]; then
@@ -314,7 +327,9 @@ source_instance_for_sha() {
   # The serving rollback source may be non-routing-ready because an optional
   # subsystem is the defect this release replaces. Accept only a complete 200
   # or 503 response, then prove exact process identity and liveness from the
-  # common JSON body. Candidate, pre-commit, and final checks use the strict helper.
+  # common JSON body. The caller first binds the image's unique full source
+  # identity to the durable seal. Only this predecessor path may read the
+  # absent-field legacy version; candidate/pre-commit/final stay strict.
   response="$(curl -sS --max-time "$curl_timeout" -H 'Cache-Control: no-cache, no-store' \
     --write-out $'\n%{http_code}' "$url" 2>/dev/null)" || return 1
   http_code="${response##*$'\n'}"
@@ -323,7 +338,7 @@ source_instance_for_sha() {
     200|503) ;;
     *) return 1 ;;
   esac
-  printf '%s' "$body" | parse_health_instance_for_sha "$expected_sha"
+  printf '%s' "$body" | parse_sealed_source_instance_for_sha "$expected_sha"
 }
 
 health_instance() {
@@ -483,7 +498,7 @@ exact_runtime_instance() {
 prove_rollback_readiness() {
   local rollback_sha rollback_image rollback_legacy rollback_cid rollback_started_at
   local actual_image actual_release state autoheal_label role_label restart_policy autoheal_state
-  local local_instance public_instance final_cid final_started_at final_local final_public
+  local local_instance public_instance final_cid final_started_at final_local final_public image_source
 
   [ -s "$ENV_FILE" ] || die 'rollback readiness refused an absent or empty engine environment'
   if grep -Eq '^[[:space:]]*(GIT_COMMIT_SHA|ENGINE_VERSION)[[:space:]]*=' "$ENV_FILE"; then
@@ -503,6 +518,17 @@ prove_rollback_readiness() {
   case "$rollback_legacy" in true|false) ;; *) die 'rollback readiness found invalid legacy state' ;; esac
   bounded_break_command 8 docker image inspect "$rollback_image" >/dev/null \
     || die 'rollback readiness found the sealed desired image absent'
+  image_source="$(bounded_break_command 8 docker image inspect \
+    --format '{{json .Config.Env}}' "$rollback_image" | python3 -c '
+import json,re,sys
+entries=json.load(sys.stdin)
+if not isinstance(entries,list): raise SystemExit(1)
+values=[v.split("=",1)[1] for v in entries if isinstance(v,str) and v.startswith("GIT_COMMIT_SHA=")]
+if len(values)!=1 or not re.fullmatch(r"[0-9a-f]{40}",values[0]): raise SystemExit(1)
+print(values[0])
+')" || die 'rollback readiness found no unique full image source'
+  [ "$image_source" = "$rollback_sha" ] \
+    || die 'rollback readiness found image source different from the durable seal'
 
   rollback_cid="$(bounded_break_command 8 docker container inspect -f '{{.Id}}' "$CONTAINER")" \
     || die 'rollback readiness could not identify the serving desired container'

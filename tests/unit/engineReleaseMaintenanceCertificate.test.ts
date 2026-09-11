@@ -13,10 +13,15 @@ const helper = transaction.slice(helperStart, helperEnd);
 const identityParserStart = transaction.indexOf('parse_health_instance_for_sha() {');
 const identityParserEnd = transaction.indexOf('\nhealth_instance_for_sha() {', identityParserStart);
 const identityParser = transaction.slice(identityParserStart, identityParserEnd);
-const strictIdentityStart = transaction.indexOf('health_instance_for_sha() {');
-const strictIdentityEnd = transaction.indexOf('\nsource_instance_for_sha() {', strictIdentityStart);
+const strictIdentityStart = transaction.indexOf('\nhealth_instance_for_sha() {') + 1;
+const strictIdentityEnd = transaction.indexOf(
+  '\nparse_sealed_source_instance_for_sha() {',
+  strictIdentityStart
+);
 const strictIdentity = transaction.slice(strictIdentityStart, strictIdentityEnd);
-const sourceIdentityStart = transaction.indexOf('source_instance_for_sha() {');
+const sealedParserStart = transaction.indexOf('parse_sealed_source_instance_for_sha() {');
+const sourceIdentityStart = transaction.indexOf('\nsource_instance_for_sha() {') + 1;
+const sealedParser = transaction.slice(sealedParserStart, sourceIdentityStart);
 const sourceIdentityEnd = transaction.indexOf('\nhealth_instance() {', sourceIdentityStart);
 const sourceIdentity = transaction.slice(sourceIdentityStart, sourceIdentityEnd);
 
@@ -94,6 +99,7 @@ curl() {
   return "$MOCK_CURL_EXIT"
 }
 ${identityParser}
+${sealedParser}
 ${sourceIdentity}
 source_instance_for_sha 'https://engine.example.invalid/health' "$MOCK_EXPECTED_SHA"`,
     ],
@@ -110,7 +116,7 @@ source_instance_for_sha 'https://engine.example.invalid/health' "$MOCK_EXPECTED_
   );
 }
 
-function runStrictIdentity(httpCode: string) {
+function runStrictIdentity(httpCode: string, body = JSON.stringify(validSourceIdentity)) {
   return spawnSync(
     'bash',
     [
@@ -128,7 +134,7 @@ health_instance_for_sha 'https://engine.example.invalid/health' "$MOCK_EXPECTED_
       encoding: 'utf8',
       env: {
         ...process.env,
-        MOCK_BODY: JSON.stringify(validSourceIdentity),
+        MOCK_BODY: body,
         MOCK_HTTP_CODE: httpCode,
         MOCK_EXPECTED_SHA: sourceSha,
       },
@@ -184,6 +190,40 @@ describe('the release transaction can read only an explicit maintenance health r
 });
 
 describe('the already-sealed source remains replaceable when routing readiness is degraded', () => {
+  const legacy = {
+    running: true,
+    version: sourceSha.slice(0, 8),
+    liveness: 'ok',
+    instanceId: '12345-deadbeef',
+  };
+  it.each(['200', '503'])(
+    'accepts the exact legacy predecessor with an absent field at HTTP %s',
+    (httpCode) => {
+      const body = JSON.stringify(legacy);
+      expect(runSourceIdentity({ body, httpCode }).status).toBe(0);
+      expect(runStrictIdentity('200', body).status).not.toBe(0);
+    }
+  );
+  it.each([null, '', false, 42, {}, 'a'.repeat(8), 'b'.repeat(40)])(
+    'refuses a present invalid releaseSha %j even with the matching legacy version',
+    (releaseSha) => {
+      expect(
+        runSourceIdentity({ body: JSON.stringify({ ...legacy, releaseSha }) }).status
+      ).not.toBe(0);
+    }
+  );
+  it.each([
+    { version: 'b'.repeat(8) },
+    { version: 'a'.repeat(7) },
+    { version: 'a'.repeat(9) },
+    { running: false },
+    { liveness: 'dead' },
+    { instanceId: 'bad' },
+  ])('refuses an incomplete legacy identity %j', (change) => {
+    expect(runSourceIdentity({ body: JSON.stringify({ ...legacy, ...change }) }).status).not.toBe(
+      0
+    );
+  });
   it.each(['200', '503'])('accepts exact live source identity carried by HTTP %s', (httpCode) => {
     const result = runSourceIdentity({ httpCode });
     expect(result.status, result.stderr).toBe(0);

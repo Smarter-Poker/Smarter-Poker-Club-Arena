@@ -453,6 +453,7 @@ if [ "$kind" = image ]; then
   case "$ref" in '${A_IMAGE}'|club-arena-engine:current) ;; *) exit 1 ;; esac
   case "$format" in
     '{{.Id}}') printf '%s\\n' '${A_IMAGE}' ;;
+    '{{json .Config.Env}}') printf '%s\\n' '["GIT_COMMIT_SHA=${A_SHA}"]' ;;
     *) printf '{"Id":"%s"}\\n' '${A_IMAGE}' ;;
   esac
   exit 0
@@ -567,7 +568,11 @@ if [ "$kind" = image ] && [ "$action" = inspect ]; then
     ${B_IMAGE}|club-arena-engine:current) id='${B_IMAGE}' ;;
     *) exit 1 ;;
   esac
-  case "$format" in '{{.Id}}') printf '%s\\n' "$id" ;; *) printf '{"Id":"%s"}\\n' "$id" ;; esac
+  case "$format" in
+    '{{.Id}}') printf '%s\\n' "$id" ;;
+    '{{json .Config.Env}}') [ "$id" = '${A_IMAGE}' ] && printf '%s\\n' '["GIT_COMMIT_SHA=${A_SHA}"]' || printf '%s\\n' '["GIT_COMMIT_SHA=${B_SHA}"]' ;;
+    *) printf '{"Id":"%s"}\\n' "$id" ;;
+  esac
   exit 0
 fi
 if [ "$kind" = container ] && [ "$action" = inspect ] && [ "$ref" = club-arena-engine ]; then

@@ -34,7 +34,7 @@ import { join } from 'path';
 
 const MIGRATIONS = join(__dirname, '..', 'supabase', 'migrations');
 const files = readdirSync(MIGRATIONS)
-  .filter((f) => f.endsWith('.sql'))
+  .filter((f) => f.endsWith('.sql') || f.endsWith('.sql.pending'))
   .sort();
 const read = (needle: string) => {
   const f = files.find((x) => x.includes(needle));
@@ -47,7 +47,7 @@ const m4 = read('a_seat_cashout_locks_the_game_before_the_seat');
 const m5 = read('seating_a_horse_takes_the_missions_lock_before_the_game_row');
 const m7 = read('one_seat_first_repair_runs_at_a_time');
 const m8 = read('non_satellite_terminal_settlement_commits_one_stored_receipt');
-const m9 = read('tournament_seat_exits_stay_inside_tournament_authority');
+const m9 = read('stage_b_current_postimage_contraction');
 
 /** The body of one CREATE OR REPLACE FUNCTION in a migration. */
 function body(sql: string, fn: string): string {

@@ -9,12 +9,24 @@
  */
 
 import { maintenanceSupabase, supabase } from '../services/supabase.js';
+import { bindToProcessRoot } from '../services/supabase/dataActorContext.js';
 import type { MaintenanceBreakStore, PersistedMaintenanceBreak } from './MaintenanceBreak.js';
 
 const TABLE = 'engine_maintenance_break';
 
 export function createSupabaseMaintenanceBreakStore(version?: string): MaintenanceBreakStore {
   return {
+    loadReleaseBoundary: bindToProcessRoot(async (): Promise<number | null> => {
+      const { data, error } = await maintenanceSupabase.rpc(
+        'fn_active_maintenance_release_boundary'
+      );
+      if (error) throw new Error(error.message);
+      if (data === null) return null;
+      if (typeof data !== 'string' || !Number.isFinite(Date.parse(data))) {
+        throw new Error('maintenance_release_boundary_response_invalid');
+      }
+      return Date.parse(data);
+    }),
     async load(): Promise<PersistedMaintenanceBreak | null> {
       // .maybeSingle() per CLAUDE.md rule 5.1 - the common case is no row at
       // all, and .single() throws PGRST116 on zero rows, which on this path

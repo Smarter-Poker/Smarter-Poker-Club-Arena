@@ -1,0 +1,10 @@
+{
+  "_owner": "fix/satellites-never-feed-a-bounty-target",
+  "_comment": "A satellite may only be created into a target whose seat the satellite settlement authority can deliver (20260911110907).",
+  "tables": [],
+  "functions": [
+    "fn_satellite_target_is_deliverable",
+    "fn_satellite_feeds_only_a_deliverable_target"
+  ],
+  "columns": {}
+}

@@ -1,9 +1,10 @@
--- Run as postgres on a disposable production-shape clone after
--- 20260909014545. Both fixtures carry the complete accepted-hand chain. The
+-- Run as postgres on a disposable production-shape clone after the complete
+-- six-boundary Stage-B chain. Both fixtures carry the complete accepted-hand
+-- chain. The
 -- hand-history UUID deliberately differs from the internal settlement request
 -- UUID, proving that no layer conflates those identities. One exact live zero
 -- seat remains only to exercise the cutover seat-exit capability. The final
--- PASS exception rolls every fixture row back.
+-- explicit ROLLBACK removes every fixture row after the acceptance notice.
 BEGIN;
 
 DO $fixture_guard$
@@ -73,7 +74,35 @@ BEGIN
         WHERE c.conrelid='public.hand_atomic_commits'::regclass
           AND c.contype='p'
           AND pg_get_constraintdef(c.oid)=
-            'PRIMARY KEY (table_id, hand_number)') THEN
+            'PRIMARY KEY (table_id, hand_number)')
+     OR EXISTS (
+       WITH expected(identity,source_md5,source_bytes,acl_text) AS (
+         VALUES
+           ('public.fn_eliminate_tournament_player_atomic_pre_seat_guard(uuid,uuid,integer,numeric,numeric)',
+            '9447da284f1a3beb6d51dd87151c080f',11865,
+            '{postgres=X/postgres}'),
+           ('public.fn_eliminate_tournament_player_atomic(uuid,uuid,integer,numeric,numeric)',
+            '37d156f47ae7a98fbc463ace4f396e60',1754,
+            '{postgres=X/postgres,service_role=X/postgres}'),
+           ('public.fn_claim_tournament_bounty_elimination_pre_seat_guard(uuid,uuid,integer,numeric,uuid,uuid,bigint,timestamp with time zone,uuid,jsonb,numeric,boolean)',
+            'e099757eb087ef222e2fc92030ececaf',13502,
+            '{postgres=X/postgres}'),
+           ('public.fn_claim_tournament_bounty_elimination(uuid,uuid,integer,numeric,uuid,uuid,bigint,timestamp with time zone,uuid,jsonb,numeric,boolean)',
+            'd4e6c9977aba4b1dd1972a9060cf7dc8',2215,
+            '{postgres=X/postgres,service_role=X/postgres}'),
+           ('public.fn_claim_bounty_legacy_candidate_20260907(uuid,uuid,integer,numeric,uuid,uuid,bigint,timestamp with time zone,uuid,jsonb,numeric,boolean)',
+            'd10ceaad9c867902c7407f20151f28b7',22168,
+            '{postgres=X/postgres}')
+       )
+       SELECT 1
+         FROM expected e
+         LEFT JOIN pg_proc p ON p.oid=to_regprocedure(e.identity)
+        WHERE p.oid IS NULL
+           OR md5(p.prosrc) IS DISTINCT FROM e.source_md5
+           OR octet_length(p.prosrc) IS DISTINCT FROM e.source_bytes
+           OR p.proowner IS DISTINCT FROM 'postgres'::regrole
+           OR p.prosecdef IS DISTINCT FROM true
+           OR p.proacl::text IS DISTINCT FROM e.acl_text) THEN
     RAISE EXCEPTION
       'FAIL global hand or immutable knockout-generation identity changed';
   END IF;
@@ -100,7 +129,9 @@ BEGIN
      OR position('fn_ca_tournament_rebuy_window(v_tournament_id)' IN v_hand)=0
      OR position('v_rebuy_cap' IN v_hand)<>0
      OR v_plain IS NULL
-     OR position('SET state=''rebought''' IN v_plain)<>0
+     OR position(
+          'SETstate=''rebought'',resolved_at=clock_timestamp()WHEREc.id=ANY(v_rebought_generations)ANDc.tournament_id=p_tournament_idANDc.eliminated_user_id=p_user_idANDc.state=''pending'''
+          IN regexp_replace(v_plain,'[[:space:]]+','','g'))=0
      OR position('max(s.joined_at)' IN replace(v_plain,' ',''))<>0
      OR position(
           'fn_ca_latest_committed_knockout_candidate'
@@ -237,16 +268,18 @@ $rebuy_window_branches$;
 
 INSERT INTO public.tables(
   id,name,club_id,tournament_id,status,current_players,small_blind,big_blind,
-  stakes,max_players,game_type)
+  stakes,max_players,game_type,seat_game_scope,seat_admission_key)
 VALUES
   ('97200000-0000-4000-8000-000000000001','Plain Elimination Table',
    '97010000-0000-4000-8000-000000000001',
    '97100000-0000-4000-8000-000000000001','running',2,5,10,'5/10',9,
-   'tournament'),
+   'tournament','table:97200000-0000-4000-8000-000000000001',
+   'tournament:97100000-0000-4000-8000-000000000001'),
   ('97200000-0000-4000-8000-000000000002','Bounty Elimination Table',
    '97010000-0000-4000-8000-000000000001',
    '97100000-0000-4000-8000-000000000002','running',2,5,10,'5/10',9,
-   'tournament');
+   'tournament','table:97200000-0000-4000-8000-000000000002',
+   'tournament:97100000-0000-4000-8000-000000000002');
 
 INSERT INTO public.tournament_players(
   id,tournament_id,user_id,club_id,status,chips,table_id,seat_number,
@@ -276,28 +309,37 @@ VALUES
 
 INSERT INTO public.table_seats(
   id,table_id,seat_number,user_id,stack,status,joined_at,left_at,
-  leave_pending,is_sitting_out,is_away,club_id)
+  leave_pending,is_sitting_out,is_away,club_id,active_game_scope,
+  active_parent_key)
 VALUES
   ('97300000-0000-4000-8000-000000000001',
    '97200000-0000-4000-8000-000000000001',1,
    '97000000-0000-4000-8000-000000000001',0,'active',
    now()-interval '2 minutes',NULL,false,false,false,
-   '97010000-0000-4000-8000-000000000001'),
+   '97010000-0000-4000-8000-000000000001',
+   'table:97200000-0000-4000-8000-000000000001',
+   'tournament:97100000-0000-4000-8000-000000000001'),
   ('97300000-0000-4000-8000-000000000002',
    '97200000-0000-4000-8000-000000000001',2,
    '97000000-0000-4000-8000-000000000002',100,'active',
    now()-interval '2 minutes',NULL,false,false,false,
-   '97010000-0000-4000-8000-000000000001'),
+   '97010000-0000-4000-8000-000000000001',
+   'table:97200000-0000-4000-8000-000000000001',
+   'tournament:97100000-0000-4000-8000-000000000001'),
   ('97300000-0000-4000-8000-000000000003',
    '97200000-0000-4000-8000-000000000002',1,
    '97000000-0000-4000-8000-000000000003',0,'active',
    now()-interval '2 minutes',NULL,false,false,false,
-   '97010000-0000-4000-8000-000000000001'),
+   '97010000-0000-4000-8000-000000000001',
+   'table:97200000-0000-4000-8000-000000000002',
+   'tournament:97100000-0000-4000-8000-000000000002'),
   ('97300000-0000-4000-8000-000000000004',
    '97200000-0000-4000-8000-000000000002',2,
    '97000000-0000-4000-8000-000000000004',100,'active',
    now()-interval '2 minutes',NULL,false,false,false,
-   '97010000-0000-4000-8000-000000000001');
+   '97010000-0000-4000-8000-000000000001',
+   'table:97200000-0000-4000-8000-000000000002',
+   'tournament:97100000-0000-4000-8000-000000000002');
 
 INSERT INTO public.settlement_idempotency_keys(
   table_id,hand_id,status,result,completed_at)
@@ -545,7 +587,9 @@ BEGIN
   END IF;
 
   SET CONSTRAINTS ALL IMMEDIATE;
-  RAISE EXCEPTION
+  RAISE NOTICE
     'AUDIT_TEST_PASS: level- and minute-bounded rebuy clocks opened exact capped prompts; non-bounty and bounty eliminations each proved a distinct hand-history id -> atomic commit -> internal settlement request id chain, consumed one scoped seat-exit capability, committed candidate/roster/seat/table/outbox state atomically, replayed without mutation, and left no authorization row; fixture rolled back';
 END;
 $exercise$;
+
+ROLLBACK;

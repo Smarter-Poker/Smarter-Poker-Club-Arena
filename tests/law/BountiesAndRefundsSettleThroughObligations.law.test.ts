@@ -1,19 +1,20 @@
 /**
  * ===========================================================================
- *  LAW: BOUNTIES AND REFUNDS SETTLE THROUGH THE OBLIGATION FUNCTION (2026-09-02)
+ *  LAW: BOUNTIES USE OBLIGATIONS; REFUNDS USE EXACT FUNDING AUTHORITY
  * ===========================================================================
  *
- * Chip Accounting Standard 3.2 (MTT steps 6 and 8) and rule R3; Chip
- * Accounting Roadmap Phase 1.1. The ONLY function that credits a player from
- * a tournament is fn_settle_tournament_obligation. The engine cut its own
- * payers over on 2026-09-02; this law pins the eight database-side payers
- * that were still crediting directly:
+ * Chip Accounting Standard 3.2 (MTT steps 5, 6 and 8) and rule R3. The
+ * 2026-09-02 migration consolidated bounty payers behind tournament
+ * obligations. Later exact-provenance authorities deliberately superseded
+ * its refund routing: the generic eight-argument obligation dispatcher must
+ * fail closed for kind=refund, wallet charges return only through
+ * fn_settle_tournament_refund_exact, and noncash satellite/ticket entries
+ * return only through fn_ca_return_satellite_entitlement_as_ticket.
  *
- *   fn_collect_bounty (581 credits / 3,168.21 a day, the only post-cutover
- *   R3 violator), fn_finalize_bounty_pool, fn_mystery_bounty_pay,
- *   fn_mystery_bounty_settle, atomic_cancel_tournament (349 spin-expiry
- *   refunds a day), atomic_tournament_unregister, fn_unregister_from_tournament,
- *   fn_leave_seat_and_refund.
+ * This law therefore keeps the original negative controls for the four
+ * bounty payers and separately pins the executable current Stage-B refund
+ * authority. It must never let the historical migration's generic refund
+ * calls masquerade as the current contract.
  *
  * Measured before the migration (rolled-back probe on PKO f56e23ae): with
  * the knockout's idempotency key already spent, fn_collect_bounty paid
@@ -35,10 +36,30 @@ const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8')
 const MIGRATION =
   'supabase/migrations/20260902222000_bounties_and_refunds_settle_through_obligations.sql';
 const SQL = read(MIGRATION);
+const cancellationSql = read(
+  'supabase/migrations/20260909014444_tournament_cancellation_commits_one_stored_receipt.sql'
+);
+const contractionFiles = fs
+  .readdirSync(path.join(process.cwd(), 'supabase/migrations'))
+  .filter(
+    (file) =>
+      file.endsWith('_stage_b_current_postimage_contraction.sql') ||
+      file.endsWith('_stage_b_current_postimage_contraction.sql.pending')
+  );
+if (contractionFiles.length !== 1) {
+  throw new Error(
+    `expected one staged-or-promoted Stage-B contraction, found ${contractionFiles.length}`
+  );
+}
+const currentStageB = read(`supabase/migrations/${contractionFiles[0]}`);
 
-/** The body of one CREATE OR REPLACE FUNCTION block, by name. */
+/** The last CREATE FUNCTION or CREATE OR REPLACE FUNCTION body, by name. */
 function functionBody(sql: string, name: string): string {
-  const start = sql.indexOf(`CREATE OR REPLACE FUNCTION public.${name}(`);
+  const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const definitions = [
+    ...sql.matchAll(new RegExp(`CREATE(?: OR REPLACE)? FUNCTION public\\.${escapedName}\\(`, 'g')),
+  ];
+  const start = definitions.at(-1)?.index ?? -1;
   expect(start, `${name} is defined in ${MIGRATION}`).toBeGreaterThan(-1);
   // Bodies are dollar-quoted with $function$, $fn$ or $$ depending on the
   // migration's author; the terminator is the same tag followed by ';'.
@@ -56,10 +77,6 @@ const PAYERS = [
   'fn_finalize_bounty_pool',
   'fn_mystery_bounty_pay',
   'fn_mystery_bounty_settle',
-  'atomic_cancel_tournament',
-  'atomic_tournament_unregister',
-  'fn_unregister_from_tournament',
-  'fn_leave_seat_and_refund',
 ] as const;
 
 const BOUNTY_KINDS: Record<string, string> = {
@@ -68,13 +85,6 @@ const BOUNTY_KINDS: Record<string, string> = {
   fn_mystery_bounty_pay: 'mystery_bounty',
   fn_mystery_bounty_settle: 'mystery_bounty',
 };
-
-const REFUNDERS = [
-  'atomic_cancel_tournament',
-  'atomic_tournament_unregister',
-  'fn_unregister_from_tournament',
-  'fn_leave_seat_and_refund',
-];
 
 /** The direct credit primitives none of these bodies may call any more. */
 const DIRECT_CREDIT = [
@@ -104,18 +114,9 @@ const PREVIOUS: Record<string, string> = {
   fn_mystery_bounty_settle: read(
     'supabase/migrations/20260830040000_a_settled_chest_cannot_be_paid_a_second_time.sql'
   ),
-  atomic_cancel_tournament: read(
-    'supabase/migrations/20260826_tournament_rake_settlement_integrity.sql'
-  ),
-  fn_unregister_from_tournament: read(
-    'supabase/migrations/20260828033311_unregister_writes_the_refund_row_the_ledger_needs.sql'
-  ),
-  fn_leave_seat_and_refund: read(
-    'supabase/migrations/20260821e_seat_is_a_reservation_and_leaving_refunds.sql'
-  ),
 };
 
-describe('one payer: every bounty and refund path settles through the obligation function', () => {
+describe('every bounty payer settles through the generic obligation function', () => {
   for (const name of PAYERS) {
     it(`${name} calls fn_settle_tournament_obligation and no direct credit primitive`, () => {
       const body = functionBody(SQL, name);
@@ -185,52 +186,43 @@ describe('bounty obligations are user-keyed cumulative totals', () => {
   });
 });
 
-describe('refund obligations are the full entry charge, cumulative with what the ledger already refunded', () => {
-  for (const name of REFUNDERS) {
-    it(`${name} settles kind 'refund'`, () => {
-      const body = functionBody(SQL, name);
-      expect(body).toMatch(/'refund', NULL, [a-z_.]+,/);
-    });
-  }
-
-  it('atomic_cancel_tournament passes the GROSS entry debits as the total (the settle function seeds prior refunds)', () => {
-    const body = functionBody(SQL, 'atomic_cancel_tournament');
-    expect(body).toMatch(/INTO v_gross, v_paid/);
-    expect(body).toMatch(/'refund', NULL, v_player\.user_id, v_gross,/);
-  });
-
-  it('the unregister and seat-release paths add the refund credits already on the ledger and settle BEFORE deleting the registration', () => {
-    for (const name of [
-      'atomic_tournament_unregister',
-      'fn_unregister_from_tournament',
-      'fn_leave_seat_and_refund',
-    ]) {
-      const body = functionBody(SQL, name);
-      expect(body, name).toMatch(
-        /AND w\.type = 'credit' AND lower\(w\.category\) IN \('refund','tournament_refund'\)/
-      );
-      expect(body, name).toMatch(/round\(v_already \+ /);
-      const settleAt = body.indexOf('public.fn_settle_tournament_obligation(');
-      const deleteAt = body.indexOf('DELETE FROM public.tournament_players');
-      const deleteAt2 = body.indexOf('DELETE FROM tournament_players');
-      const del = deleteAt > -1 ? deleteAt : deleteAt2;
-      expect(del, `${name} deletes the registration`).toBeGreaterThan(-1);
-      expect(settleAt, `${name} settles before deleting`).toBeLessThan(del);
-    }
-  });
-
-  it('the seat-first exit charges buy-in + fee (fn_tournament_entry_split.charge)', () => {
-    const body = functionBody(SQL, 'fn_leave_seat_and_refund');
-    expect(body).toMatch(/round\(v_already \+ v_split\.charge, 2\)/);
-    expect(functionBody(SQL, 'fn_unregister_from_tournament')).toMatch(
-      /v_amount := v_split\.charge;/
+describe('refunds use exact funding-provenance authorities', () => {
+  it('the generic dispatcher fails closed before reaching its legacy payer', () => {
+    const generic = functionBody(currentStageB, 'fn_settle_tournament_obligation');
+    const refusal = generic.indexOf("IF v_kind = 'refund' THEN");
+    const legacy = generic.indexOf(
+      'RETURN public.fn_settle_tournament_obligation_before_atomic_batch_gate('
     );
+    expect(refusal).toBeGreaterThanOrEqual(0);
+    expect(generic.slice(refusal, legacy)).toContain("'exact_refund_authority_required'");
+    expect(refusal).toBeLessThan(legacy);
   });
 
-  it('negative control: the previous seat-release credited directly and logged unconditionally', () => {
-    const prev = functionBody(PREVIOUS.fn_leave_seat_and_refund, 'fn_leave_seat_and_refund');
-    expect(prev).toMatch(/credit_player_wallet\(/);
-    expect(prev).toMatch(/log_wallet_transaction\(/);
+  it('cancellation returns wallet charges to their source wallet and noncash entries as tickets', () => {
+    const cancel = functionBody(cancellationSql, 'atomic_cancel_tournament');
+    expect(cancel).toMatch(
+      /entitlement_kind='wallet_charge'[\s\S]*?fn_settle_tournament_refund_exact\([\s\S]*?v_entitlement\.refund_wallet_club_id/
+    );
+    expect(cancel).toMatch(
+      /entitlement_kind IN \([\s\S]*?'satellite_seat','tournament_ticket'[\s\S]*?fn_ca_return_satellite_entitlement_as_ticket\(/
+    );
+    expect(cancel).not.toContain('fn_settle_tournament_obligation(');
+  });
+
+  it('unregistration settles exact cash/ticket entitlements before deleting the roster row', () => {
+    const unregister = functionBody(
+      currentStageB,
+      'fn_ca_unregister_tournament_player_exact_seat_exit_core_v2'
+    );
+    const walletRefund = unregister.indexOf('public.fn_settle_tournament_refund_exact(');
+    const ticketReturn = unregister.indexOf('public.fn_ca_return_satellite_entitlement_as_ticket(');
+    const deleteAt = unregister.indexOf('DELETE FROM public.tournament_players');
+    expect(walletRefund).toBeGreaterThanOrEqual(0);
+    expect(ticketReturn).toBeGreaterThan(walletRefund);
+    expect(deleteAt).toBeGreaterThan(ticketReturn);
+    expect(unregister).not.toContain('public.fn_settle_tournament_obligation(');
+    expect(unregister).toContain('v_ent.refund_wallet_club_id');
+    expect(unregister).toContain("e.entitlement_kind IN ('satellite_seat','tournament_ticket')");
   });
 });
 
@@ -281,7 +273,7 @@ describe('the engine-facing return shapes are unchanged', () => {
     ]) {
       expect(settle).toContain(`'${key}',`);
     }
-    const cancel = functionBody(SQL, 'atomic_cancel_tournament');
+    const cancel = functionBody(cancellationSql, 'atomic_cancel_tournament');
     for (const key of ['success', 'refunded_count', 'total_refunded', 'fees_reversed']) {
       expect(cancel).toContain(`'${key}',`);
     }

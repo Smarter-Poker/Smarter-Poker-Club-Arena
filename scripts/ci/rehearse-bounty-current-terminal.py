@@ -21,17 +21,18 @@ import tempfile
 PROBE = "scripts/ci/probes/bounty-current-terminal-native.sql"
 BOUNTY_RUNNER = "scripts/ci/rehearse-current-bounty-mystery-lifecycle.py"
 FINAL_RUNNER = "scripts/ci/rehearse-final-deal-current-terminal.py"
-M7 = "supabase/migrations/20260909014545_tournament_seat_exits_stay_inside_tournament_authority.sql"
+STAGE_B_RESOLVER = "scripts/ci/stage_b_migration_source.py"
 ROLLING = "supabase/migrations/20260910173147_the_settlement_lane_is_per_tournament_for_rolling_authorities.sql"
 SWEEP = "supabase/migrations/20260910174349_the_bounty_sweep_takes_one_tournament_lane_per_call.sql"
 FELT = "supabase/migrations/20260910002804_the_felt_decides_who_busted.sql"
 LEDGER = "supabase/migrations/20260910130421_a_revealed_mystery_bounty_may_name_its_own_obligation.sql"
+BUST_ORDER = "supabase/migrations/20260911062048_a_bust_is_ranked_by_when_it_happened.sql"
 EXACT_SOURCES = {
     FELT: "d3182320e289a832f8aeb2804e6cd8cd9314d8d20bfbf7c862338261fce4868e",
     LEDGER: "2236fdbd5ce9f765dba5e9e5dc2cdb5ae5590f6e3b1f5e5180145b9918b9d400",
-    M7: "27cf35a8b9cb3c7322265b755d0ec42f0d3feceb12dd4917e14589375b4c7036",
     ROLLING: "bc620a6b093ab9769615427168763bc35aaed44e60ee190202470dfcef0f744b",
     SWEEP: "0e209beadad2f8b52e8c72c0bd3559b6fe64fab9917bfb8ac6516a6297f66a17",
+    BUST_ORDER: "d2d0acba73031ed8617a243840eecea0e0e227a6dce5a78ce3ce2bfcfb79cf73",
 }
 CLAIM_ARGS = "uuid,uuid,integer,numeric,uuid,uuid,bigint,timestamptz,uuid,jsonb,numeric,boolean"
 OWNED_BOUNTY_GUARD = """DO $owned_baseline$ BEGIN
@@ -84,19 +85,19 @@ def narrow_authorities(root, bounty):
         if digest(text) != expected:
             raise ValueError("reviewed narrow source changed: " + relative)
         sources[relative] = text
-    m5 = bounty.source(root, bounty.M5)
+    stage_b = module(root / STAGE_B_RESOLVER, "bounty_stage_b_source").resolve(root).read_text()
     claimant_name = "fn_claim_tournament_bounty_elimination"
     private_name = claimant_name + "_pre_seat_guard"
-    private = bounty.definition(m5, claimant_name)
-    if bounty.body_hash(private) != "876456f79250a307292dc6f2ae1564f3":
+    private = bounty.definition(sources[BUST_ORDER], claimant_name)
+    if bounty.body_hash(private) != "e099757eb087ef222e2fc92030ececaf":
         raise ValueError("reviewed exact-hand claimant source changed")
-    # Header-only substitution mirrors M7's private authority expansion while
-    # retaining every exact-hand and entry-generation check in the body.
+    # Header-only substitution retains every exact-hand and entry-generation
+    # check in the private body consumed by Stage-B's current public wrapper.
     private = once(private, "FUNCTION public." + claimant_name + "(",
                    "FUNCTION public." + private_name + "(")
-    wrapper = bounty.definition(sources[M7], claimant_name)
-    if bounty.body_hash(wrapper) != "b9e73a0752c87b13b2261542ae9fa2e3":
-        raise ValueError("reviewed M7 seat-authorized claimant source changed")
+    wrapper = bounty.definition(stage_b, claimant_name)
+    if bounty.body_hash(wrapper) != "d4e6c9977aba4b1dd1972a9060cf7dc8":
+        raise ValueError("reviewed Stage-B seat-authorized claimant source changed")
     sql = private + "\n" + wrapper + "\n"
     for name in (private_name, claimant_name):
         sql += ("REVOKE ALL ON FUNCTION public." + name + "(" + CLAIM_ARGS +
@@ -104,8 +105,8 @@ def narrow_authorities(root, bounty):
     sql += ("GRANT EXECUTE ON FUNCTION public." + claimant_name + "(" + CLAIM_ARGS +
             ") TO service_role;\n")
     expected_bodies = {
-        claimant_name + "(" + CLAIM_ARGS + ")": "b9e73a0752c87b13b2261542ae9fa2e3",
-        private_name + "(" + CLAIM_ARGS + ")": "876456f79250a307292dc6f2ae1564f3",
+        claimant_name + "(" + CLAIM_ARGS + ")": "d4e6c9977aba4b1dd1972a9060cf7dc8",
+        private_name + "(" + CLAIM_ARGS + ")": "e099757eb087ef222e2fc92030ececaf",
     }
     # The rolling helper takes G shared and T(id) exclusive. These exact
     # current trigger bodies accept that event-local proof. No trigger is
@@ -284,8 +285,10 @@ def main():
               and terminal.get("native_replication_role") == "origin"
               and terminal.get("deferred_constraints_checked") is True
               and len(terminal.get("cases", [])) == 3)
+    stage_b_path = module(root / STAGE_B_RESOLVER, "bounty_stage_b_evidence").resolve(root)
     sources = set(EXACT_SOURCES) | set(bounty.SOURCES) | set(bounty.EXTRA_SOURCES) | {
         PROBE, BOUNTY_RUNNER, FINAL_RUNNER, "scripts/ci/rehearse-bounty-current-terminal.py",
+        STAGE_B_RESOLVER, str(stage_b_path.relative_to(root)),
         "scripts/deploy/phase-three-final-deal-terminal-v2.sql",
         "scripts/deploy/phase-three-bounty-rebuy-generation.sql",
         "scripts/deploy/phase-three-strict-tournament-cutover.sql",

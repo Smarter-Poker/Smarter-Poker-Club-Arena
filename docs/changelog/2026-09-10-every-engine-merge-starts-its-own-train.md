@@ -72,3 +72,33 @@ failed run silent.
 - `tests/engine-watchdog-asks-production.test.ts`,
   `tests/the-break-clocks-agree.law.test.ts` - the watchdog and the deploy gate
   agree on the break minute without a cron to compare against.
+
+## Follow-up, 2026-09-11: a run that never touched production heals itself
+
+Dan, re-sent the same night: "WORK ON HARD CODE IMPROVEMENTS TO THE PIPELINE, SO
+WE AREN'T RELYING ON WATCH DOGS, OR CRONS".
+
+Two stalls were still left for a person or the watchdog alarm to notice:
+
+- **A run that FAILED before its cutover** - a flaky test, a network blip in the
+  build, a control-plane dispatch refused - just stopped, and its commit waited
+  for the next engine push. It now retries itself from its Verdict step while
+  fewer than `DEPLOY_RETRY_LIMIT` (2) earlier runs have failed on the same
+  commit, counted from the Actions API. A commit that fails three times is
+  broken, not unlucky: the run says `GAVE UP ON <sha>` and the fix's own push
+  starts the next run. If the count cannot be read it stops (`TRAIN STOPPED`)
+  rather than risk a loop.
+- **A CANCELLED run** stranded its commit. A cancel is not a stop any more: a run
+  cancelled before its cutover hands the train on. To stop deploys on purpose,
+  disable the workflow - a disabled workflow refuses the hand-on dispatch, and
+  that refusal is the stop. (This is also what an agent should do instead of
+  cancelling runs to hold the production window, as a coordinator did on
+  2026-09-10.)
+
+What still never retries: a run whose cutover RAN. A failed cutover rolled
+production back, and retrying it would restart production into the same broken
+build every hour.
+
+The one stall nothing inside a workflow can fix is a run whose runner dies so
+hard that its `always()` steps never execute; the watchdog's alarm (report only)
+names that one.

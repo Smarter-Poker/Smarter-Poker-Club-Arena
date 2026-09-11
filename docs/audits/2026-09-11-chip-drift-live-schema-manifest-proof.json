@@ -1,0 +1,28 @@
+{
+  "checked_at": "2026-09-11T08:47:52.30017+00:00",
+  "functions": [
+    {
+      "identity": "fn_ca_stage_b_ledger_bootstrap_allowed(text,text,text)",
+      "body_md5": "ac9d5cdc943e88aa0c0bb6cd2410fbdc",
+      "definition_md5": "8cbd9ea1c1dbc24c24be02fb9d447b20"
+    },
+    {
+      "identity": "fn_ca_verify_terminal_final_deal_batch(uuid,boolean)",
+      "body_md5": "260c94b41d7f2bb021a88a546a1714ac",
+      "definition_md5": "cb81d2c33985e46bd56dc3c4f1320e67"
+    },
+    {
+      "identity": "trg_freeze_canonical_final_deal_batch()",
+      "body_md5": "80362aed787137219432f6039bf03158",
+      "definition_md5": "c5bbfca7dcc4aedc286c4004f5f5d2c1"
+    }
+  ],
+  "column": [
+    {
+      "name": "contract_version",
+      "type": "integer",
+      "notnull": true
+    }
+  ],
+  "migration_versions": ["20260910164655", "20260911050554"]
+}

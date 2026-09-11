@@ -1,0 +1,12 @@
+{
+  "_owner": "agent/codex-chip-drift-final/fix/phase-three-activation-review",
+  "_comment": "Production catalog verified 2026-09-11 08:47:52 UTC through Supabase execute_sql. Already-applied migrations 20260910164655 and 20260911050554. Exact identities and body hashes are preserved in docs/audits/2026-09-11-chip-drift-live-schema-manifest-proof.json. No new database activation is asserted.",
+  "functions": [
+    "fn_ca_stage_b_ledger_bootstrap_allowed",
+    "fn_ca_verify_terminal_final_deal_batch",
+    "trg_freeze_canonical_final_deal_batch"
+  ],
+  "columns": {
+    "tournament_final_table_deal_batches": ["contract_version"]
+  }
+}

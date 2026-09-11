@@ -316,4 +316,3 @@ BEGIN
  IF NOT EXISTS(SELECT 1 FROM pg_trigger WHERE tgrelid='public.tournament_satellite_manager_targets'::regclass AND tgname='satellite_manager_target_immutable' AND tgenabled='O' AND tgfoid='public.fn_ca_satellite_manager_target_immutable()'::regprocedure AND tgtype=27) THEN RAISE EXCEPTION 'satellite target immutability trigger differs'; END IF;
 END $postflight$;
 COMMIT;
-

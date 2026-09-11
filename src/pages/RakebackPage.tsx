@@ -18,6 +18,7 @@ import { formatDateShort as formatDate } from '../utils/format';
 import { reportError } from '../utils/errorReporter';
 import { ErrorState } from '../components/common/EmptyState';
 import RewardsSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
+import { getRakebackReadiness } from '../utils/rakebackReadiness';
 
 interface RakebackPeriod {
   id: string;
@@ -39,6 +40,7 @@ export default function RakebackPage() {
   const toast = useToast();
 
   const [periods, setPeriods] = useState<RakebackPeriod[]>([]);
+  const [readinessAt, setReadinessAt] = useState(Date.now);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [totalEarned, setTotalEarned] = useState(0);
@@ -80,6 +82,7 @@ export default function RakebackPage() {
       if (getIsMounted && !getIsMounted()) return;
       if (error) throw error;
       setPeriods(data || []);
+      setReadinessAt(Date.now());
       setTotalEarned((data || []).reduce((sum, p) => sum + (p.rakeback_earned || 0), 0));
       if (data && data.length > 0) {
         setCurrentRate(data[0].rakeback_rate || 0);
@@ -183,12 +186,22 @@ export default function RakebackPage() {
       }));
   }, [periods]);
 
-  const pendingAmount = periods
-    .filter((p) => p.status === 'pending')
-    .reduce((sum, p) => sum + p.rakeback_earned, 0);
+  const { readyAmount, pendingAmount, targetClubId, nextChangeAt, readyPeriodIds } = useMemo(
+    () => getRakebackReadiness(periods, readinessAt),
+    [periods, readinessAt]
+  );
+
+  // Keep an open page accurate when a displayed earning period closes, without polling.
+  useEffect(() => {
+    if (nextChangeAt === null) return;
+    const delay = Math.max(0, Math.min(nextChangeAt - Date.now(), 2_147_483_647));
+    const timer = setTimeout(() => setReadinessAt(Date.now()), delay);
+    return () => clearTimeout(timer);
+  }, [nextChangeAt, readinessAt]);
 
   // ── Claim rakeback handler ──
   const handleClaimRakeback = async () => {
+    if (loading || loadError || claimStatus === 'claiming') return;
     setClaimStatus('claiming');
     setClaimMessage('');
     try {
@@ -205,7 +218,14 @@ export default function RakebackPage() {
       // the old client-side "mark paid, then credit with a client-supplied amount" flow,
       // which could not write the wallet under RLS (leaving periods flipped to paid with
       // no chips delivered) and trusted a client-supplied amount.
-      const targetClubId = periods.find((p) => p.status === 'pending')?.club_id ?? null;
+      // Recheck the current clock at the click boundary and always scope the legacy RPC.
+      const targetClubId = getRakebackReadiness(periods, Date.now()).targetClubId;
+      if (!targetClubId) {
+        setClaimStatus('error');
+        setClaimMessage('No Closed Earning Periods Are Ready To Claim.');
+        setReadinessAt(Date.now());
+        return;
+      }
 
       const { data: claimRes, error: claimErr } = await retryAsync(
         () => supabase.rpc('fn_claim_rakeback', { p_club_id: targetClubId }),
@@ -262,7 +282,7 @@ export default function RakebackPage() {
         metrics={[
           { label: 'Total Earned', value: totalEarned.toLocaleString(), tone: 'live' },
           { label: 'Current Rate', value: `${(currentRate * 100).toFixed(1)}%` },
-          { label: 'Ready To Claim', value: pendingAmount.toLocaleString(), tone: 'attention' },
+          { label: 'Ready To Claim', value: readyAmount.toLocaleString(), tone: 'attention' },
         ]}
       />
       {/* Promotional Banner — WPT-style */}
@@ -287,13 +307,14 @@ export default function RakebackPage() {
             <span className="card-label">Your Rate</span>
           </div>
           <div className="summary-card pending">
-            <span className="card-value">{pendingAmount.toLocaleString()}</span>
-            <span className="card-label">Pending</span>
-            {pendingAmount > 0 && (
+            <span className="card-value">{readyAmount.toLocaleString()}</span>
+            <span className="card-label">Ready To Claim</span>
+            <p className="card-label">Pending Earnings: {pendingAmount.toLocaleString()}</p>
+            {targetClubId && (
               <button
                 className="claim-btn"
                 onClick={() => handleClaimRakeback()}
-                disabled={claimStatus === 'claiming'}
+                disabled={loading || !!loadError || claimStatus === 'claiming'}
                 style={{
                   marginTop: '8px',
                   padding: '6px 16px',
@@ -315,7 +336,7 @@ export default function RakebackPage() {
                   ? 'Claiming...'
                   : claimStatus === 'success'
                     ? '✓ Claimed!'
-                    : 'Claim All'}
+                    : 'Claim Rakeback'}
               </button>
             )}
           </div>
@@ -370,7 +391,8 @@ export default function RakebackPage() {
         <h3>How Rakeback Works</h3>
         <p>
           You Earn Back A Percentage Of The Rake You Generate At The Tables. Your Rate Increases As
-          You Play More And Move Up VIP Levels.
+          You Play More And Move Up VIP Levels. Earning Periods Close At 00:00 UTC After Their End
+          Date. Claims Are Processed One Club At A Time, And The Server Confirms The Payout.
         </p>
       </div>
 
@@ -416,7 +438,11 @@ export default function RakebackPage() {
                     {(period.rakeback_earned || 0).toLocaleString()}
                   </span>
                   <span className={`status ${period.status}`}>
-                    {period.status === 'paid' ? ' Paid' : ' Pending'}
+                    {period.status === 'paid'
+                      ? ' Paid'
+                      : readyPeriodIds.has(period.id)
+                        ? ' Ready To Claim'
+                        : ' Pending'}
                   </span>
                 </div>
               </div>

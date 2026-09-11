@@ -183,6 +183,85 @@ describe('TournamentBrainContext lifecycle cache', () => {
     });
   });
 
+  it('does not count a zero-chip playing row as a live ICM stack while elimination status catches up', async () => {
+    successfulResponses();
+    h.responses.set('tournament_players', {
+      data: [
+        { user_id: 'horse-1', chips: 1500, status: 'playing', current_bounty: 12.34 },
+        { user_id: 'horse-2', chips: 2500, status: 'playing', current_bounty: 5 },
+        {
+          user_id: 'busted-status-lag',
+          chips: 0,
+          status: 'playing',
+          current_bounty: 99,
+          rebuys: 1,
+          add_on: true,
+        },
+      ],
+      error: null,
+    });
+
+    refreshTournamentBrainContext('t-zero-chip-status-lag');
+    await settleRefresh();
+
+    const snapshot = getTournamentBrainContextSnapshot('t-zero-chip-status-lag');
+    expect(snapshot.status).toBe('complete');
+    expect(snapshot.context).toMatchObject({
+      entrants: 3,
+      playersLeft: 2,
+      avgStackChips: 2000,
+      stacks: [2500, 1500],
+      stackByUser: { 'horse-1': 1500, 'horse-2': 2500 },
+      meanBountyCents: 867,
+      bountyByUser: { 'horse-1': 1234, 'horse-2': 500 },
+      reloadsByUser: { 'horse-1': 0, 'horse-2': 0, 'busted-status-lag': 1 },
+      addOnTakenByUser: {
+        'horse-1': false,
+        'horse-2': false,
+        'busted-status-lag': true,
+      },
+    });
+    expect(snapshot.context?.stackByUser).not.toHaveProperty('busted-status-lag');
+    expect(snapshot.context?.bountyByUser).not.toHaveProperty('busted-status-lag');
+
+    // The same durable roster row becomes live again as soon as the atomic
+    // recovery transaction credits its stack; no status transition is needed
+    // for the field cache to reconcile the player back into Phase 7.
+    vi.setSystemTime(NOW + 20_001);
+    h.responses.set('tournament_players', {
+      data: [
+        { user_id: 'horse-1', chips: 1500, status: 'playing', current_bounty: 12.34 },
+        { user_id: 'horse-2', chips: 2500, status: 'playing', current_bounty: 5 },
+        {
+          user_id: 'busted-status-lag',
+          chips: 1000,
+          status: 'playing',
+          current_bounty: 99,
+          rebuys: 2,
+          add_on: true,
+        },
+      ],
+      error: null,
+    });
+    refreshTournamentBrainContext('t-zero-chip-status-lag');
+    await settleRefresh();
+
+    expect(
+      getTournamentBrainContextSnapshot('t-zero-chip-status-lag', NOW + 20_001).context
+    ).toMatchObject({
+      playersLeft: 3,
+      avgStackChips: 5000 / 3,
+      stacks: [2500, 1500, 1000],
+      stackByUser: {
+        'horse-1': 1500,
+        'horse-2': 2500,
+        'busted-status-lag': 1000,
+      },
+      reloadsByUser: { 'horse-1': 0, 'horse-2': 0, 'busted-status-lag': 2 },
+      bountyByUser: { 'horse-1': 1234, 'horse-2': 500, 'busted-status-lag': 9900 },
+    });
+  });
+
   it('turns a failed first read into an explicit incomplete state instead of warming forever', async () => {
     successfulResponses();
     h.responses.set('tournaments', {

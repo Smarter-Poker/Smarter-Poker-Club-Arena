@@ -1494,14 +1494,22 @@ async function refresh(tournamentId: string, e: CacheEntry, generation: number):
       ) {
         continue;
       }
-      playersLeft += 1;
       const chips = Number(row.chips) || 0;
+      // The atomic hand settlement writes the busted stack before the
+      // elimination sweep advances tournament_players.status. Under load that
+      // status hand-off can lag for many sweeps, so `status = playing` is not
+      // proof that a player still belongs in an ICM field. A zero-chip row has
+      // no live stack and cannot take an action; counting it made playersLeft
+      // disagree with the positive stack vector and forced Phase 7 to fail
+      // closed with field_reconciliation. Recovery usage remains captured
+      // above so a later rebuy/re-entry reappears naturally once its positive
+      // stack is durably credited.
+      if (chips <= 0) continue;
+      playersLeft += 1;
       chipSum += chips;
-      if (chips > 0) {
-        liveStacks.push(chips);
-        if (typeof row.user_id === 'string' && row.user_id) {
-          stackByUser[row.user_id] = chips;
-        }
+      liveStacks.push(chips);
+      if (typeof row.user_id === 'string' && row.user_id) {
+        stackByUser[row.user_id] = chips;
       }
 
       // tournament_players.current_bounty is stored in whole currency units;

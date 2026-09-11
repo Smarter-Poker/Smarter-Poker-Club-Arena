@@ -553,6 +553,12 @@ $assert$;
 -- fn_nit_check is the door a signed-in player's own client asks about the VPIP
 -- floor, so authenticated keeps it. fn_nit_status is the eviction query the
 -- engine runs; nothing in a browser calls it.
+-- fn_cash_vpip_status is read by a signed-in player's own felt (the VPIP badge
+-- and the hero tracker), so authenticated keeps it and anon does not. These are
+-- the grants production already carries; stated here so a fresh apply matches.
+REVOKE ALL ON FUNCTION public.fn_cash_vpip_status(uuid) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.fn_cash_vpip_status(uuid) TO authenticated, service_role;
+
 -- fn_cash_apply_ruleset is the reconciler the cluster tick runs every pass; it
 -- WRITES the table from its game's snapshot. Nothing in a browser calls it
 -- (grep of src/ returns one comment and no call), it backs no RLS policy

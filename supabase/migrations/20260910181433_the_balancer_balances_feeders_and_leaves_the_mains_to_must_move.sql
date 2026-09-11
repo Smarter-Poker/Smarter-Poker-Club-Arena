@@ -238,4 +238,14 @@ BEGIN
 END;
 $assert$;
 
+-- WHO MAY CALL THIS (2026-09-11). The balancer is the cluster tick's own second
+-- half: fn_cash_clusters_tick_all calls it once per pass and nothing in a
+-- browser does. It WRITES seat moves, it is SECURITY DEFINER, and it derives
+-- its actor from nothing - so a browser role must never hold it. Production
+-- already grants it to service_role alone and it backs no RLS policy
+-- (pg_policy scan, 0 rows); CREATE OR REPLACE keeps that ACL here, but a fresh
+-- apply of this file alone would have handed it to PUBLIC.
+REVOKE ALL ON FUNCTION public.fn_cash_cluster_balance(uuid, timestamp with time zone) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_cash_cluster_balance(uuid, timestamp with time zone) TO service_role;
+
 COMMIT;

@@ -492,4 +492,14 @@ BEGIN
 END;
 $realign$;
 
+-- WHO MAY CALL THIS (2026-09-11). fn_cash_game_ensure creates or adopts a game
+-- for a Stable Hand order; it WRITES, it is SECURITY DEFINER, and it takes the
+-- club from a parameter rather than from auth.uid(), so a browser role holding
+-- it could open a game in somebody else's club. The fleet calls it as
+-- service_role, which is exactly what production grants today, and it backs no
+-- RLS policy (pg_policy scan, 0 rows). A host creating a game goes through
+-- fn_cash_game_create, which does ask who is calling.
+REVOKE ALL ON FUNCTION public.fn_cash_game_ensure(uuid, text, numeric, numeric, text, integer) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_cash_game_ensure(uuid, text, numeric, numeric, text, integer) TO service_role;
+
 COMMIT;

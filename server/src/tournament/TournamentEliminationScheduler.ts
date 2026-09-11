@@ -401,14 +401,42 @@ export class TournamentEliminationScheduler {
     return null;
   }
 
+  /**
+   * pump() is never re-entered (2026-09-10). Everything it calls back into may
+   * ask for another pump while this one is still on the stack: isActive() is a
+   * manager's lifecycleIsCurrent(), which, once the manager's lease proof has
+   * expired, fences its tables, applies the stop fence and unregisters - and
+   * the unregister closure pumps. Recursing there nested one pump per dead
+   * manager. In a lease storm hundreds of queued managers expire together, and
+   * at 20:13 and 20:57 that day ~350 of them ran the stack out: RangeError from
+   * inside a promise reaction, an unhandled rejection, a fatal restart. A pump
+   * requested while one is running is folded into the running one, which
+   * re-reads capacity and both queues on every turn anyway, so the walk over
+   * any number of dead managers is flat.
+   */
+  private pumping = false;
+  private pumpRequestedWhilePumping = false;
+
   private pump(): void {
-    while (this.runningCount < this.maxConcurrent) {
-      const entry = this.next();
-      if (!entry) break;
-      entry.queuedAs = null;
-      entry.enqueuedAt = null;
-      if (entry.isActive?.() === false) continue;
-      this.dispatch(entry);
+    if (this.pumping) {
+      this.pumpRequestedWhilePumping = true;
+      return;
+    }
+    this.pumping = true;
+    try {
+      do {
+        this.pumpRequestedWhilePumping = false;
+        while (this.runningCount < this.maxConcurrent) {
+          const entry = this.next();
+          if (!entry) break;
+          entry.queuedAs = null;
+          entry.enqueuedAt = null;
+          if (entry.isActive?.() === false) continue;
+          this.dispatch(entry);
+        }
+      } while (this.pumpRequestedWhilePumping);
+    } finally {
+      this.pumping = false;
     }
     this.refreshMetrics();
   }

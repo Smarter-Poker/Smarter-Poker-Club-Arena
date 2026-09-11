@@ -1,0 +1,62 @@
+{
+  "source_entrypoint_sha256": "a55e792f12040799a20fcf6d54969059efecaea3869c3aa148191fe1b083c4c7",
+  "observed_native_authority": [
+    {
+      "signature": "fn_ca_legacy_period_maturity()",
+      "prosrc_md5": "8ae80ac89843cc1f19f8dfdf03812a0b",
+      "prosecdef": false,
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres}"
+    },
+    {
+      "signature": "fn_ca_legacy_round3_wallet_receipt()",
+      "prosrc_md5": "db707f33692fd511fde2352a98780ebc",
+      "prosecdef": true,
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres}"
+    },
+    {
+      "signature": "fn_claim_rakeback(uuid)",
+      "prosrc_md5": "b254af98fbc6dd155ac0012438f8edea",
+      "prosecdef": true,
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres,authenticated=X/postgres}"
+    },
+    {
+      "signature": "fn_close_settlement_period(uuid)",
+      "prosrc_md5": "c41f1ff29aee99e71ceecdc3fddc4e1a",
+      "prosecdef": true,
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "signature": "fn_settle_round3_agents_to_players(uuid,timestamp with time zone,timestamp with time zone)",
+      "prosrc_md5": "18c6571f37401e14116e59310235b7b2",
+      "prosecdef": true,
+      "owner": "postgres",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}"
+    }
+  ],
+  "admission_helper_expected_from_exact_sql": {
+    "signature": "fn_lock_rakeback_payer_clubs(uuid[])",
+    "prosrc_md5": "23afec197fccc0433fd3cfc6276ac3ba",
+    "prosecdef": false,
+    "owner": "postgres",
+    "acl": "{postgres=X/postgres}",
+    "provenance": "Computed from exact tested SQL function body; helper operations exercised natively, metadata not separately selected in proof."
+  },
+  "required_triggers": [
+    {
+      "name": "ca_legacy_period_maturity",
+      "table": "public.rakeback_periods",
+      "event": "BEFORE UPDATE OF status",
+      "function": "fn_ca_legacy_period_maturity()"
+    },
+    {
+      "name": "ca_legacy_round3_wallet_receipt",
+      "table": "public.wallet_transactions",
+      "event": "BEFORE INSERT",
+      "function": "fn_ca_legacy_round3_wallet_receipt()"
+    }
+  ]
+}

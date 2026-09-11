@@ -6,6 +6,33 @@ import { promisify } from 'node:util';
 
 const exec = promisify(execFile);
 
+// Native smoke diagnostics must not serialize database messages, queries, or
+// service output: bootstrap queries contain fixture-only credentials.
+export function nativeFailureDiagnostic(stage, error) {
+  const names = new Set([
+    'Error',
+    'AssertionError',
+    'TypeError',
+    'RangeError',
+    'SyntaxError',
+    'TimeoutError',
+    'AggregateError',
+    'error',
+  ]);
+  const record = { status: 'failed', stage, error: names.has(error?.name) ? error.name : 'Error' };
+  if (
+    record.error === 'error' &&
+    typeof error.code === 'string' &&
+    /^[0-9A-Z]{5}$/.test(error.code)
+  ) {
+    record.sqlstate = error.code;
+    if (typeof error.position === 'string' && /^[1-9][0-9]{0,5}$/.test(error.position)) {
+      record.position = Number(error.position);
+    }
+  }
+  return record;
+}
+
 // This identity comes from the immutable host-controlled input mount, never
 // from the candidate archive, application schema or a runtime environment key.
 export function observationControl(value) {

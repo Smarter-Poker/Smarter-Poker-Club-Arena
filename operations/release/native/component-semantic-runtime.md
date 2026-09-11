@@ -1,9 +1,9 @@
 # Component semantic qualification runtime contract
 
 Source status: the provider adapter, owned workflow, archive/image boundary and
-actual product oracle are implemented. **The complete isolated fixture runtime
-and sanitized full application fixture are not implemented or qualified.** The
-workflow deliberately refuses their absence. Native boundary tests are not a
+actual product oracle and isolated service runtime source are implemented.
+**The complete application fixture and native product combinations remain
+unqualified.** The workflow refuses absent or excluded inputs. Native boundary tests are not a
 passing candidate qualification or production installation receipt.
 
 The controller installation pins `github.component_runtime_image` to an immutable
@@ -26,11 +26,13 @@ Fixture producers must recompute the digest with this same reviewed encoding.
 EXECUTE on application SECURITY DEFINER functions remains executable. The donor
 also lacks the current application role ACL baseline. No blanket application
 ACL revocation or added grants can substitute for qualifying the actual schema.
-The existing direct PostgreSQL oracle path is a prototype with an unresolved
-isolation dependency; it must not be represented as qualified. A fixed-query
-Unix socket bridge is being reviewed separately and is not implemented here.
+The oracle therefore has no PostgreSQL role or credentials. The implemented
+fixed-query Unix socket bridge owns a private connection and exposes only three
+bounded reads from pinned control source. Native service qualification and the
+full application fixture remain required; adding this boundary does not close
+the source contract's application-role ACL exclusion.
 
-The missing runtime must provide the fixed `fixture-server` interface below.
+The implemented runtime provides the fixed `fixture-server` interface below.
 These commands accept no candidate script, shell command or production URL.
 The driver invokes the fixed `/usr/local/bin/fixture-server` wrapper. That wrapper
 executes the packaged `/opt/qualification/runtime/fixture-server.mjs`; related
@@ -65,7 +67,7 @@ The schema artifact's `fixture.json` requires `source_contract` with exactly
 `current_database_contract_ready:true`, and `exclusions:[]`. The driver refuses
 absent/malformed/not-ready/excluded contracts before candidate image loading or
 fixture execution; the trusted oracle independently checks the runtime-preserved
-contract before opening its database connection or browser. The schema source
+contract before opening its observation client or browser. The schema source
 revision is **not** required to equal before/intermediate engine revisions.
 The reviewed donor currently declares ready=false with tournament lane, mystery
 bounty and application-role ACL exclusions, and therefore cannot qualify.
@@ -82,6 +84,8 @@ must reject every unknown Host/SNI value rather than forwarding it elsewhere.
 The fixture writes `/run/club-arena-qualification/fixture.json` containing:
 `version:1`, `scope:"isolated-club-arena-fixture"`, `table_id`,
 `spectator_user_id`, browser `storage_state`, the unchanged `source_contract`,
+`observation_bridge` (fresh instance UUID, control SHA, table/spectator IDs and
+the fixed `/run/fixture-observer/observation.sock` path),
 `base_url:"https://smarter.poker/hub/club-arena/"` and
 `engine_health_url:"https://engine.smarter.poker/health"`. Those names resolve
 only inside the native driver's internal Docker network. The TLS proxy must
@@ -95,6 +99,13 @@ starts its service container as `1000:1000`. Its `/tmp`, `/run` and
 1777 so the separate oracle user can use its own scratch without sharing a
 private service directory. The read-only root filesystem and `cap-drop=ALL`
 remain enforced. The engine's own `/tmp` uses the same owner and sticky mode.
+The candidate engine is a separate container with no fixture mounts or shared
+PID namespace; the shared numeric UID does not grant access to private fixture
+files. The trusted supervisor waits for its network health endpoint and does
+not execute candidate code in the service container. Realtime's native HTTP
+listener is bound to fixture loopback through a whole-preimage-checked pinned
+configuration adaptation. The external gateway refuses tenant administration;
+real player/service JWT authentication remains unchanged.
 Before mounting, the driver gives only the sanitized immutable input directory
 mode 0755 and its artifact/plan files mode 0444, so a different host-runner UID
 cannot make the read-only `/inputs` mount inaccessible to `fixture`. Runtime
@@ -105,13 +116,13 @@ with no shared groups with `fixture`, plus Chromium, `tsx`, `pg` and
 `@playwright/test` under `/opt/qualification/node_modules`. The trusted control
 checkout is mounted read-only under `/opt/qualification/controls`, so the actual
 existing `tests/e2e/support/liveTableRealtime.ts` dependency resolves from the
-same pinned checkout. The current prototype uses `qualification_reader` over
-`/run/postgresql` and never reads `DATABASE_URL`; this connection is not yet a
-qualified security boundary because of inherited PUBLIC function execution.
+same pinned checkout. The oracle uses the fixed-query bridge and never reads
+`DATABASE_URL` or connects to `/run/postgresql`. It has no database role. The
+bridge's separately owned postgres connection remains private to UID1000.
 The oracle's `docker exec` explicitly sets `HOME=/tmp/qualification`,
 `TMPDIR=/tmp` and `XDG_CACHE_HOME=/tmp/qualification/cache`. The oracle process
 itself, running as UID/GID 1001, creates its home and cache with mode 0700 before
-constructing the PostgreSQL client or launching Chromium. The fixture service
+constructing the observation client or launching Chromium. The fixture service
 UID 1000 must not pre-create or attempt to chown that home. The oracle refuses
 symlinks, a different owner/group, or permissive pre-existing directory modes.
 The fixture's `net.ipv4.ip_unprivileged_port_start=0` setting permits its local
@@ -121,9 +132,11 @@ only the public fixture descriptor
 `/run/club-arena-qualification/fixture.json` is readable by `qualification`.
 The runtime must permit traversal to that public descriptor without granting
 the oracle access to private service data or synthetic service keys.
-Its reads must expose all fixture rows. The SQL oracle sets `row_security=off`,
-which makes PostgreSQL error if the observer would otherwise receive filtered
-rows; it does not grant RLS bypass or modify the browser/engine connections.
+Bridge reads must expose all fixture rows. They run fixed parameterized queries
+inside repeatable-read, read-only transactions with `row_security=off` and
+bounded deadlines. The bridge locks and validates actual base relations and
+types before hand/seat reads. It never changes browser/engine grants or accepts
+SQL, relation names, credentials, or a pass verdict from the oracle.
 
 The driver checks native Docker image identity and source label, every static
 file against the exact manifest and archive digest, schema bytes, internal
@@ -159,6 +172,6 @@ The artifact contains one `receipt.json`, written by the driver under
 the verifier proves this exact operation/run/request's completed cleanup; a
 missing or incomplete cleanup artifact remains an unknown external outcome.
 
-Remaining completion work is the actual runtime/service bootstrap source,
-sanitized fixture generation and execution under the pinned before/intermediate/
+Remaining completion work is native service/bootstrap verification,
+complete source-faithful fixture qualification and execution under the pinned before/intermediate/
 after artifacts in credential-free Linux CI. No production activation is granted.

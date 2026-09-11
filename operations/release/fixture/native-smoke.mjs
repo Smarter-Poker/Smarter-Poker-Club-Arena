@@ -1,4 +1,4 @@
-// Real binaries and protocols in one disposable, network=none Linux container.
+// Real binaries/protocols in an internal-network fixture, with a separate peer.
 // This deliberately does not emit a product semantic certificate.
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
@@ -9,7 +9,13 @@ import pg from 'pg';
 import { chromium } from '@playwright/test';
 import { fixtureSecrets, fixtureAuth, assertFixtureAuthVersion } from './auth-fixture.mjs';
 import { startObservationBridge } from './observation-bridge.mjs';
-import { prepareRealtimeCookie } from './fixture-server.mjs';
+import {
+  prepareRealtimeCookie,
+  assertRealtimeHttpListener,
+  verifyRealtimePeerBoundary,
+} from './fixture-server.mjs';
+import { createFixtureGateway } from './gateway.mjs';
+import { nativeFailureDiagnostic } from './runtime-files.mjs';
 
 const exec = promisify(execFile);
 const root = '/run/native-smoke';
@@ -22,6 +28,7 @@ const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 let stage = 'initialization';
 const children = [];
 let bridgeFailure = null;
+let gatewayFailure = false;
 
 async function smokeControl() {
   const control = JSON.parse(await readFile(controls + '/smoke-control.json', 'utf8'));
@@ -35,6 +42,7 @@ async function eventually(check, milliseconds = 60000) {
   const deadline = Date.now() + milliseconds;
   for (;;) {
     assert.equal(bridgeFailure, null, 'native observation bridge failed');
+    assert.equal(gatewayFailure, false, 'native gateway failed');
     assert.ok(
       children.every(
         (child) => !child.nativeFailed && child.exitCode === null && child.signalCode === null
@@ -282,7 +290,7 @@ async function services() {
     database,
   });
   await db.connect();
-  let bridge;
+  let bridge, gateway;
   try {
     stage = 'postgresql-wal2json-native-slot';
     // Load the real output plugin through PostgreSQL. Its presence on disk
@@ -291,11 +299,14 @@ async function services() {
       "SELECT slot_name FROM pg_create_logical_replication_slot('fixture_wal2json_probe','wal2json',true)"
     );
     assert.equal(slot.rows[0]?.slot_name, 'fixture_wal2json_probe');
+    stage = 'postgresql-wal2json-slot-inspection';
     const installed = await db.query(
       "SELECT plugin,temporary FROM pg_replication_slots WHERE slot_name='fixture_wal2json_probe'"
     );
     assert.deepEqual(installed.rows, [{ plugin: 'wal2json', temporary: true }]);
+    stage = 'postgresql-wal2json-slot-drop';
     await db.query("SELECT pg_drop_replication_slot('fixture_wal2json_probe')");
+    stage = 'postgresql-bootstrap-roles';
     await db.query(`
       CREATE ROLE dashboard_user NOLOGIN;
       CREATE ROLE anon NOLOGIN;
@@ -306,17 +317,26 @@ async function services() {
       CREATE ROLE supabase_auth_admin LOGIN CREATEROLE PASSWORD '${password}';
       CREATE ROLE supabase_admin LOGIN SUPERUSER PASSWORD '${password}';
       GRANT anon, authenticated, service_role TO supabase_admin WITH ADMIN OPTION;
+    `);
+    stage = 'postgresql-bootstrap-schemas';
+    await db.query(`
       CREATE SCHEMA auth AUTHORIZATION supabase_auth_admin;
       GRANT CREATE ON DATABASE ${database} TO supabase_auth_admin;
       CREATE SCHEMA extensions;
       CREATE SCHEMA _realtime AUTHORIZATION supabase_admin;
-      CREATE EXTENSION dblink;
-      CREATE EXTENSION pg_stat_statements WITH SCHEMA extensions;
-      CREATE EXTENSION pg_trgm;
-      CREATE EXTENSION pgcrypto WITH SCHEMA extensions;
-      CREATE EXTENSION "uuid-ossp" WITH SCHEMA extensions;
-      CREATE EXTENSION vector WITH SCHEMA extensions;
     `);
+    for (const [name, statement] of [
+      ['dblink', 'CREATE EXTENSION dblink'],
+      ['pg-stat-statements', 'CREATE EXTENSION pg_stat_statements WITH SCHEMA extensions'],
+      ['pg-trgm', 'CREATE EXTENSION pg_trgm'],
+      ['pgcrypto', 'CREATE EXTENSION pgcrypto WITH SCHEMA extensions'],
+      ['uuid-ossp', 'CREATE EXTENSION "uuid-ossp" WITH SCHEMA extensions'],
+      ['vector', 'CREATE EXTENSION vector WITH SCHEMA extensions'],
+    ]) {
+      stage = `postgresql-extension-${name}`;
+      await db.query(statement);
+    }
+    stage = 'postgresql-extension-inventory';
     const extensions = await db.query(
       "SELECT extname FROM pg_extension WHERE extname IN ('dblink','pg_stat_statements','pg_trgm','pgcrypto','uuid-ossp','vector')"
     );
@@ -461,8 +481,55 @@ async function services() {
       override_absent: true,
       insecure_fallback: false,
     });
+    stage = 'realtime-loopback-and-gateway';
+    assertRealtimeHttpListener(
+      await readFile('/proc/net/tcp', 'utf8'),
+      await readFile('/proc/net/tcp6', 'utf8')
+    );
+    await command('/usr/bin/openssl', [
+      'req',
+      '-x509',
+      '-newkey',
+      'rsa:2048',
+      '-nodes',
+      '-days',
+      '1',
+      '-subj',
+      '/CN=isolated-native-smoke',
+      '-keyout',
+      root + '/private/tls.key',
+      '-out',
+      root + '/private/tls.crt',
+    ]);
+    gateway = createFixtureGateway({
+      supabaseHost: 'componentfixturetest.supabase.co',
+      publicAnonKey: secrets.anonKey,
+      localAnonKey: secrets.anonKey,
+      // Unused smoke-only static bytes are never candidate product artifacts.
+      files: new Map([
+        ['index.html', Buffer.from('Native protocol smoke')],
+        ['build-info.json', Buffer.from('{"scope":"native-service-smoke"}')],
+      ]),
+      tls: {
+        key: await readFile(root + '/private/tls.key'),
+        cert: await readFile(root + '/private/tls.crt'),
+      },
+      onFailure: () => {
+        gatewayFailure = true;
+      },
+    });
+    await gateway.listen();
+    for (const token of [secrets.serviceKey, user.session.access_token]) {
+      const response = await fetch('http://fixture:8000/realtime/v1/api/tenants/realtime-dev', {
+        headers: { authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(3000),
+        redirect: 'error',
+      });
+      assert.equal(response.status, 403);
+      await response.body?.cancel();
+    }
     const socket = new WebSocket(
-      `ws://realtime-dev.supabase-realtime:4000/socket/websocket?apikey=${encodeURIComponent(secrets.anonKey)}&vsn=1.0.0`
+      `ws://fixture:8000/realtime/v1/websocket?apikey=${encodeURIComponent(secrets.anonKey)}&vsn=1.0.0`
     );
     const messages = [];
     let socketError = false;
@@ -636,12 +703,15 @@ async function services() {
         mfa: 'aal2',
         postgrest: '14.5',
         realtime: '2.134.10',
+        realtime_listener: '127.0.0.1:4000',
+        realtime_gateway: 'authenticated-change-observed',
         change: 'observed',
         observation_bridge: 'native-synthetic-protocol',
         retries: 0,
       })
     );
   } finally {
+    await gateway?.close();
     await bridge?.close();
     await db.end();
   }
@@ -653,14 +723,28 @@ try {
     console.error(JSON.stringify({ status: 'failed', stage, reason: 'deadline' }));
     process.exit(1);
   }, 300000);
-  if (process.argv.length === 3 && process.argv[2] === '--oracle') await oracle();
+  if (process.argv.length === 3 && process.argv[2] === '--peer') {
+    stage = 'candidate-peer-isolation';
+    assert.equal(process.getuid(), 1000);
+    assert.equal(process.getgid(), 1000);
+    await verifyRealtimePeerBoundary();
+    console.log(
+      JSON.stringify({
+        scope: 'native-service-smoke',
+        peer: 'passed',
+        gateway: 'reachable',
+        realtime_direct: 'refused',
+        tenant_administration: 'refused',
+      })
+    );
+  } else if (process.argv.length === 3 && process.argv[2] === '--oracle') await oracle();
   else {
     assert.equal(process.argv.length, 2);
     await services();
   }
 } catch (error) {
   // Keep raw service output, SQL, JWTs, session objects, and URLs out of CI logs.
-  console.error(JSON.stringify({ status: 'failed', stage, error: error.name }));
+  console.error(JSON.stringify(nativeFailureDiagnostic(stage, error)));
   process.exitCode = 1;
 } finally {
   clearTimeout(timer);

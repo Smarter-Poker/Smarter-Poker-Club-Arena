@@ -1,25 +1,73 @@
-# Fixed-query observation bridge - unqualified source handoff
+# Fixed-query observation bridge — native qualification pending
 
-Base committed controller: 81c60208519c3cf63f8af70118dbe471f4e8b447. These follow-up files are uncommitted permitted staging; the external worktree is preserved. No production or remote publication action occurred.
+The bridge and runtime integration are implemented source. A passing native
+service smoke and the complete schema/web/engine matrix remain required. The
+schema contract's exclusions must not be closed by bridge or transport tests.
 
 ## Runtime interface
 
-startObservationBridge({db,binding,onFailure}) returns {binding,close}. Runtime supplies a separately connected private pg.Client exclusively owned by the bridge. Binding has exactly version:1, fresh instance_id UUID, control_sha, seeded table_id and spectator_user_id. The final fixed driver input is /inputs/observation-control.json with exactly version:1 and control_sha from verified control HEAD. It is independent of schema source SHA. Public fixture.observation_bridge contains binding plus socket:/run/fixture-observer/observation.sock. Start bridge after schema and seed, before engine/actors. close owns db.end.
+`startObservationBridge({db,binding,onFailure})` returns `{binding,close}`. The
+trusted runtime supplies a separately connected private `pg.Client` exclusively
+owned by the bridge. Binding contains exactly version1, a fresh instance UUID,
+control SHA, seeded table ID and spectator ID. `/inputs/observation-control.json`
+comes from verified control HEAD, independently of the schema source revision.
+The public fixture descriptor includes that binding and the fixed socket path
+`/run/fixture-observer/observation.sock`. The bridge starts after schema and seed,
+before the engine/actors; `close()` owns database connection shutdown.
 
-Only observation-bridge.mjs belongs in the fixture image. It imports component-observation-protocol.mjs and component-semantic-observations.mjs from the exact mounted trusted controls. No candidate/environment import path is accepted. A second source-only test harness argument provides temporary socket paths/current UID and real helper modules for native workstation tests; runtime must not supply it.
+Only the bridge implementation belongs in the fixture image. Its protocol and
+query helpers load from exact read-only mounted controls. No candidate or
+environment input selects an import path. A separate source-only test harness
+can supply temporary paths/current IDs and real helpers; production supplies
+no harness argument.
 
-Driver creates fresh /run/fixture-observer tmpfs uid1000,gid1001,mode2750. Bridge never chmods parent; socket must inherit gid1001 and is chmod0660 with strict lstat checks. This uses Linux filesystem access control, not a claimed Node peer-credential check. Runtime must remove oracle PostgreSQL roles/HBA mappings/credentials and keep PostgreSQL socket/data directories private0700. Application ACLs stay unchanged. Root owns that runtime/packaging glue; it is not in this archive.
+## Process and filesystem boundary
+
+The fixture service container runs as UID1000. The trusted oracle runs as
+UID/GID1001 without supplementary group1000. The **candidate engine runs in a
+separate container**, with its own mount and PID namespaces and no shared
+fixture mounts. Its numeric UID1000 does not make it a fixture process.
+
+The driver creates `/run/fixture-observer` as tmpfs UID1000/GID1001/mode2750.
+The bridge validates that parent, creates a socket inheriting GID1001 and sets
+mode0660. Both ends check ownership, mode, type and absence of symlinks. These
+are Linux filesystem checks, not a claimed Node peer-credential API. The oracle
+cannot create/unlink the socket. It has no PostgreSQL role, password or socket
+access. PostgreSQL's socket/data and runtime secrets remain private; application
+ACLs are preserved. The candidate receives only its synthetic application key.
 
 ## Protocol and query boundaries
 
-Three reads only: catalogue, hand_presence, hand_facts. Requests are newline-framed, at most4096bytes, exact-key and exact-binding validated, one per socket, unique request IDs, max256 requests, max4 connections and one active read. Replies are at most65536bytes and contain raw allowlisted facts, not pass flags. Errors expose fixed categories only. First future hand tuple binds permanently across clients and opens one15second persistence deadline. The startup table hand high-water mark rejects historical hands. The oracle derives success from returned counts, monetary values, action/player counts and spectator absence.
+Three reads exist: `catalogue`, `hand_presence`, `hand_facts`. Requests are
+newline-framed, at most4096bytes, with exact keys/binding, unique request IDs,
+one request per socket, max256 requests, max4 connections and one active read.
+Replies are at most65536bytes and contain allowlisted facts, never pass flags.
+The startup hand high-water mark rejects historical hands. The first future
+hand tuple binds all subsequent reads and their original15second deadline.
 
-Bridge starts repeatable-read read-only transactions, sets pg_catalog search path/row_security off, bounds statements at5seconds and overall reads6seconds (also bounded by remaining persistence time). Base relations are locked then checked for expected pg_catalog types before fixed parameterized hand/seat reads; views/type substitution fail. Catalogue deparse now canonicalizes search_path to pg_catalog and restores caller setting, fixing a producer/bridge digest mismatch found in native testing. Producers must recompute the catalogue with this exact helper.
+Queries run in repeatable-read, read-only transactions with pg_catalog search
+path, row_security off, statements bounded to5seconds and overall reads6seconds
+(also bounded by remaining persistence time). Base relations are locked then
+checked for expected pg_catalog types before parameterized hand/seat queries;
+views or substituted types fail. Catalogue deparsing uses a canonical search
+path. Producers must use the same exact helper for their expected digest.
 
-## Evidence and unresolved verification
+The oracle derives success from actual returned row counts, monetary values,
+action/player counts and spectator absence. It also checks the catalogue before
+and after application execution. This is a compatibility/correctness oracle;
+it is not a claim to validate complete poker accounting or every malicious
+engine's fabricated-but-accepted application data.
 
-Before permissions narrowed:8 Unix-socket tests passed;3of4 native PostgreSQL tests passed (view substitution, read-only query enforcement, backend death). The facts test failed on search-path-dependent catalogue digest. That source fix is included but has NOT passed a new native run.
+## Required native evidence
 
-Under current sandbox: Unix listen fails EPERM and PostgreSQL initdb shmget is prohibited. The attempted native run failed at those environment boundaries. No bypass was attempted. Current source passes5 nonnetwork protocol/source-contract tests,6 driver boundary tests, and JavaScript syntax checks.
+The service smoke checks UID1001 file/environment/argument/socket denials and
+the real bridge with explicitly synthetic protocol rows. It emits only a
+`native-service-smoke` receipt, never a product certificate. It also proves the
+Realtime listener is loopback-only and a separate engine-shaped peer cannot
+bypass gateway tenant-administration denial. Same-container loopback access is
+intentional. Passing local source/transport tests are not native Linux proof.
 
-Owner must rerun observation-bridge.test.mjs and observation-bridge.native.test.mjs plus component-semantic.native.test.mjs in an authorized environment. Actual Linux distinct UID/GID socket DAC, packaged services, runtime shutdown, browser/engine/schema tuple execution and clean container teardown remain UNVERIFIED. This is source preparation, not a passing qualification or completion claim.
+The full product driver must subsequently restore a qualified exact schema and
+run every pinned before/intermediate/after combination, with genuine gameplay,
+browser observations, matching persisted hands and verified container/network/
+image cleanup. No production activation follows from this source preparation.

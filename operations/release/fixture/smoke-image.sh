@@ -19,21 +19,37 @@ helpers=(operations/release/native/component-observation-protocol.mjs operations
 git -C "$repo_dir" diff --quiet HEAD -- "${helpers[@]}" || { echo 'Commit reviewed observation helpers before smoke' >&2; exit 2; }
 name=${FIXTURE_SMOKE_CONTAINER:-"ca-fixture-smoke-$(python3 -c 'import uuid; print(uuid.uuid4().hex)')"}
 [[ "$name" =~ ^ca-fixture-smoke-[a-f0-9]{32}$ ]] || { echo 'Invalid owned smoke container name' >&2; exit 2; }
+peer="$name-peer"
+network="$name-network"
 # Refuse a pre-existing name before installing cleanup; it is not ours to remove.
 existing=$(docker container ls --all --format '{{.Names}}')
-[[ $'\n'"$existing"$'\n' != *$'\n'"$name"$'\n'* ]] || { echo 'Owned smoke container name is already occupied' >&2; exit 2; }
+for owned in "$name" "$peer"; do
+  [[ $'\n'"$existing"$'\n' != *$'\n'"$owned"$'\n'* ]] || { echo 'Owned smoke container name is already occupied' >&2; exit 2; }
+done
+existing_networks=$(docker network ls --format '{{.Name}}')
+[[ $'\n'"$existing_networks"$'\n' != *$'\n'"$network"$'\n'* ]] || { echo 'Owned smoke network name is already occupied' >&2; exit 2; }
 smoke_controls=''
 cleanup() {
   local result=$?
   trap - EXIT
-  if docker container inspect "$name" >/dev/null 2>&1; then
-    docker rm --force "$name" >/dev/null || result=1
-  fi
+  local owned
+  for owned in "$peer" "$name"; do
+    if docker container inspect "$owned" >/dev/null 2>&1; then
+      docker rm --force "$owned" >/dev/null || result=1
+    fi
+  done
   local inventory
   inventory=$(docker container ls --all --format '{{.Names}}') || result=1
-  if [[ $'\n'"$inventory"$'\n' == *$'\n'"$name"$'\n'* ]]; then result=1; fi
+  for owned in "$peer" "$name"; do
+    if [[ $'\n'"$inventory"$'\n' == *$'\n'"$owned"$'\n'* ]]; then result=1; fi
+  done
+  if docker network inspect "$network" >/dev/null 2>&1; then
+    docker network rm "$network" >/dev/null || result=1
+  fi
+  inventory=$(docker network ls --format '{{.Name}}') || result=1
+  if [[ $'\n'"$inventory"$'\n' == *$'\n'"$network"$'\n'* ]]; then result=1; fi
   if [[ -n "$smoke_controls" ]]; then rm -rf -- "$smoke_controls" || result=1; fi
-  if [[ "$result" == 0 ]]; then echo 'Native service smoke and container cleanup passed (not a product certificate).'; fi
+  if [[ "$result" == 0 ]]; then echo 'Native service smoke and container/network cleanup passed (not a product certificate).'; fi
   exit "$result"
 }
 trap cleanup EXIT
@@ -51,7 +67,9 @@ done
 printf '{"version":1,"control_sha":"%s"}\n' "$revision" > "$smoke_controls/smoke-control.json"
 chmod 0444 "$smoke_controls/smoke-control.json"
 
-docker run --detach --name "$name" --network=none --read-only --user 1000:1000 \
+docker network create --internal --label "com.smarter-poker.fixture-smoke=$name" "$network" >/dev/null
+[[ $(docker network inspect --format '{{.Internal}}' "$network") == true ]] || exit 1
+docker run --detach --name "$name" --network "$network" --network-alias fixture --read-only --user 1000:1000 \
   --label "com.smarter-poker.fixture-smoke=$name" \
   --cap-drop=ALL --security-opt=no-new-privileges --pids-limit=1024 --memory=8g --cpus=2 \
   --sysctl net.ipv4.ip_unprivileged_port_start=0 \
@@ -70,6 +88,13 @@ while ! docker exec "$name" test -f /run/native-smoke/ready; do
   (( SECONDS < deadline )) || { echo 'Native service smoke readiness timed out' >&2; exit 1; }
   sleep 1
 done
+# A distinct mount/PID/network namespace proves peer isolation; docker exec in
+# the service container would merely prove its intended local access.
+docker run --name "$peer" --network "$network" --read-only --user 1000:1000 \
+  --label "com.smarter-poker.fixture-smoke=$name" \
+  --cap-drop=ALL --security-opt=no-new-privileges --pids-limit=256 --memory=1g --cpus=1 \
+  --tmpfs /tmp:rw,nosuid,mode=1777,uid=1000,gid=1000,size=64m \
+  "$image_id" node /opt/qualification/runtime/native-smoke.mjs --peer
 docker exec --user 1001:1001 --env HOME=/tmp/qualification --env XDG_CACHE_HOME=/tmp/qualification/cache \
   "$name" node /opt/qualification/runtime/native-smoke.mjs --oracle
 exit_code=$(docker wait "$name")

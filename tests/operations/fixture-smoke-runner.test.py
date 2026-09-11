@@ -20,8 +20,11 @@ RECORDS = [dict(scope='native-service-smoke', observer='passed', browser='chromi
                 observation_bridge='native-synthetic-protocol', postgres_socket='denied'),
            dict(scope='native-service-smoke', postgres='17.11', extensions=6, auth='2.196.0', mfa='aal2',
                 postgrest='14.5', realtime='2.134.10', change='observed', retries=0,
-                observation_bridge='native-synthetic-protocol')]
-SMOKE = '\n'.join(map(json.dumps, RECORDS)) + '\nNative service smoke and container cleanup passed (not a product certificate).\n'
+                realtime_listener='127.0.0.1:4000', realtime_gateway='authenticated-change-observed',
+                observation_bridge='native-synthetic-protocol'),
+           dict(scope='native-service-smoke', peer='passed', gateway='reachable',
+                realtime_direct='refused', tenant_administration='refused')]
+SMOKE = '\n'.join(map(json.dumps, RECORDS)) + '\nNative service smoke and container/network cleanup passed (not a product certificate).\n'
 
 
 class RunnerTests(unittest.TestCase):
@@ -94,9 +97,10 @@ class RunnerTests(unittest.TestCase):
                 (fixture / 'Dockerfile').unlink()
                 (fixture / 'Dockerfile').symlink_to(fixture / 'package.json')
             calls = []
-            present = fault == 'timeout'
+            present = set()
+            network_present = False
             def run(args, cwd, env, timeout=120):
-                nonlocal present
+                nonlocal network_present
                 calls.append(args)
                 self.assertNotIn('GH_TOKEN', env)
                 if args[:3] == ['git', 'rev-parse', 'HEAD']:
@@ -106,14 +110,22 @@ class RunnerTests(unittest.TestCase):
                     if fault == 'labels': labels['com.smarter-poker.control-revision'] = 'd' * 40
                     return json.dumps([{'Id': IMAGE, 'Os': 'linux', 'Architecture': 'amd64', 'Config': {'Labels': labels}}])
                 if args[:2] == ['bash', m.PREFIX + 'smoke-image.sh']:
-                    if fault == 'timeout': raise TimeoutError('PRIVATE TOKEN MUST NOT LEAK')
+                    if fault == 'timeout':
+                        present.update((env['FIXTURE_SMOKE_CONTAINER'], env['FIXTURE_SMOKE_CONTAINER'] + '-peer'))
+                        network_present = True
+                        raise TimeoutError('PRIVATE TOKEN MUST NOT LEAK')
                     if fault == 'native-stage':
                         raise m.NativeSmokeFailure(json.dumps({'status': 'failed', 'stage': 'initialization', 'error': 'Error'}) + '\nPRIVATE TOKEN')
                     return SMOKE if fault != 'missing-service' else json.dumps(RECORDS[0])
                 if args[:3] == ['docker', 'container', 'ls']:
-                    return 'container-id' if present else ''
+                    owned = args[-1].removeprefix('name=^/').removesuffix('$')
+                    return 'container-id' if owned in present else ''
                 if args[:3] == ['docker', 'container', 'rm']:
-                    present = False
+                    present.discard(args[-1])
+                if args[:3] == ['docker', 'network', 'ls']:
+                    return env['FIXTURE_SMOKE_CONTAINER'] + '-network' if network_present else ''
+                if args[:3] == ['docker', 'network', 'rm']:
+                    network_present = False
                 return ''
             code = m.execute(root, root / 'evidence', SHA, run)
             text = (root / 'evidence/native-smoke-receipt.json').read_text()
@@ -152,8 +164,17 @@ class RunnerTests(unittest.TestCase):
         code, receipt, calls = self.exercise('timeout')
         self.assertEqual(code, 1)
         removals = [call for call in calls if call[:3] == ['docker', 'container', 'rm']]
-        self.assertEqual(removals, [['docker', 'container', 'rm', '--force', receipt['container']]])
+        self.assertEqual(removals, [['docker', 'container', 'rm', '--force', receipt['peer']],
+                                   ['docker', 'container', 'rm', '--force', receipt['container']]])
+        self.assertIn(['docker', 'network', 'rm', receipt['network']], calls)
         self.assertTrue(receipt['cleanup']['container_absent'])
+        self.assertTrue(receipt['cleanup']['peer_absent'])
+        self.assertTrue(receipt['cleanup']['network_absent'])
+
+    def test_missing_peer_or_old_service_evidence_cannot_pass(self):
+        for missing in (RECORDS[1], RECORDS[2]):
+            with self.assertRaises(RuntimeError):
+                m.smoke_records(SMOKE.replace(json.dumps(missing), ''))
 
     def test_duplicate_smoke_observation_refused(self):
         with self.assertRaises(RuntimeError):

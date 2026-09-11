@@ -4,6 +4,7 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
 import { mkdir, writeFile, readFile, open, access, rm, chmod, lstat } from 'node:fs/promises';
 import { promisify } from 'node:util';
+import net from 'node:net';
 import { pathToFileURL } from 'node:url';
 import { fixtureSecrets, fixtureAuth, browserStorage } from './auth-fixture.mjs';
 import { createFixtureGateway, loadStaticManifest, findPublicAnonKey } from './gateway.mjs';
@@ -88,6 +89,84 @@ export async function adaptRealtimeLauncher() {
   );
   await writeFile(launcher, adapted);
   await chmod(launcher, 0o555);
+}
+
+// The pinned upstream HTTP listener otherwise binds every interface. Keep the
+// genuine endpoint/auth implementation, but expose it only to our local gateway.
+export function loopbackRealtimeConfiguration(source) {
+  assert.equal(
+    createHash('sha256').update(source).digest('hex'),
+    '6892bee389b9974972ece8e8737d2cdbe8bac50e82f2776037641e786b16d84c',
+    'FIXTURE_REALTIME_CONFIG_PREIMAGE_REFUSED'
+  );
+  const before = 'socket_opts: [realtime_ip_version]';
+  assert.equal(source.split(before).length - 1, 1);
+  return source.replace(before, 'socket_opts: [realtime_ip_version, {:ip, {127, 0, 0, 1}}]');
+}
+
+export async function adaptRealtimeConfiguration() {
+  assert.equal(process.getuid(), 0);
+  const file = '/app/releases/2.134.10/runtime.exs';
+  const details = await lstat(file);
+  assert.ok(details.isFile() && !details.isSymbolicLink());
+  const adapted = loopbackRealtimeConfiguration(await readFile(file, 'utf8'));
+  await writeFile(file, adapted);
+  await chmod(file, 0o444);
+}
+
+// Actual Linux network-namespace evidence, independent of application config.
+// A healthy loopback request alone cannot exclude an additional wildcard bind.
+export function assertRealtimeHttpListener(tcp, tcp6) {
+  const listeners = [];
+  for (const [family, source] of [
+    ['ipv4', tcp],
+    ['ipv6', tcp6],
+  ]) {
+    const lines = source.trim().split('\n');
+    assert.match(lines.shift(), /local_address\s+rem(?:ote)?_address\s+st/);
+    for (const line of lines) {
+      const fields = line.trim().split(/\s+/);
+      assert.ok(fields.length >= 10, 'FIXTURE_REALTIME_LISTENER_TABLE_REFUSED');
+      const local = fields[1];
+      assert.match(
+        local,
+        family === 'ipv4' ? /^[A-F0-9]{8}:[A-F0-9]{4}$/ : /^[A-F0-9]{32}:[A-F0-9]{4}$/
+      );
+      if (local.endsWith(':0FA0') && fields[3] === '0A') listeners.push([family, local]);
+    }
+  }
+  assert.deepEqual(listeners, [['ipv4', '0100007F:0FA0']], 'FIXTURE_REALTIME_LISTENER_REFUSED');
+}
+
+// Run only in the separate smoke peer. Positive gateway reachability must pass
+// before ECONNREFUSED can count; DNS errors/timeouts never prove isolation.
+export async function verifyRealtimePeerBoundary(testHarness = {}) {
+  const { host = 'fixture', apiPort = 8000, realtimePort = 4000 } = testHarness;
+  const healthResponse = await fetch(`http://${host}:${apiPort}/auth/v1/health`, {
+    signal: AbortSignal.timeout(3000),
+    redirect: 'error',
+  });
+  assert.equal(healthResponse.status, 200);
+  await healthResponse.body?.cancel();
+  await new Promise((resolve, reject) => {
+    const socket = net.createConnection({ host, port: realtimePort });
+    socket.setTimeout(3000, () => socket.destroy(new Error('FIXTURE_PEER_CONNECTION_TIMEOUT')));
+    socket.once('connect', () => {
+      socket.destroy();
+      reject(new Error('FIXTURE_PEER_REALTIME_EXPOSED'));
+    });
+    socket.once('error', (error) => {
+      socket.destroy();
+      if (error.code === 'ECONNREFUSED') resolve();
+      else reject(new Error('FIXTURE_PEER_CONNECTION_UNPROVEN'));
+    });
+  });
+  const refused = await fetch(`http://${host}:${apiPort}/realtime/v1/api/tenants/realtime-dev`, {
+    signal: AbortSignal.timeout(3000),
+    redirect: 'error',
+  });
+  assert.equal(refused.status, 403);
+  await refused.body?.cancel();
 }
 
 // The optional harness is for local filesystem tests; no wire or environment
@@ -558,6 +637,10 @@ async function start(args) {
       jsonHealth('http://127.0.0.1:4000/api/tenants/realtime-dev/health', 'healthy', {
         authorization: `Bearer ${secrets.anonKey}`,
       })
+    );
+    assertRealtimeHttpListener(
+      await readFile('/proc/net/tcp', 'utf8'),
+      await readFile('/proc/net/tcp6', 'utf8')
     );
     stage = 'tls-proxy';
     await supervisor.command('/usr/bin/openssl', [

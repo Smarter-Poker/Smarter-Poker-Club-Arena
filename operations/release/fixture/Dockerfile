@@ -80,7 +80,7 @@ RUN test "$(dpkg --print-architecture)" = amd64 \
 WORKDIR /opt/qualification
 # These are trusted, reviewed runtime files, never supplied by a candidate archive.
 COPY fixture-server.mjs runtime-files.mjs gateway.mjs auth-fixture.mjs actors.mjs seed-fixture.mjs native-smoke.mjs observation-bridge.mjs /opt/qualification/runtime/
-RUN node --input-type=module -e "import {adaptRealtimeLauncher} from '/opt/qualification/runtime/fixture-server.mjs'; await adaptRealtimeLauncher();" \
+RUN node --input-type=module -e "import {adaptRealtimeLauncher,adaptRealtimeConfiguration} from '/opt/qualification/runtime/fixture-server.mjs'; await adaptRealtimeLauncher(); await adaptRealtimeConfiguration();" \
     && printf '#!/bin/sh\nexec /usr/local/bin/node /opt/qualification/runtime/fixture-server.mjs "$@"\n' > /usr/local/bin/fixture-server \
     && chmod 0555 /usr/local/bin/fixture-server \
     && chmod -R a+rX /opt/qualification/runtime

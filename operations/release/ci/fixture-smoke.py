@@ -20,9 +20,15 @@ CONTROL_FILES = tuple('operations/release/native/' + name for name in (
 NATIVE_STAGES = frozenset((
     'initialization', 'observer-user-isolation', 'native-observation-bridge',
     'chromium-native-read-and-rls', 'postgresql-17-extensions',
-    'postgresql-wal2json-native-slot', 'gotrue-genuine-migrations-and-mfa',
+    'postgresql-wal2json-native-slot', 'postgresql-wal2json-slot-inspection',
+    'postgresql-wal2json-slot-drop', 'postgresql-bootstrap-roles', 'postgresql-bootstrap-schemas',
+    'postgresql-extension-dblink', 'postgresql-extension-pg-stat-statements',
+    'postgresql-extension-pg-trgm', 'postgresql-extension-pgcrypto',
+    'postgresql-extension-uuid-ossp', 'postgresql-extension-vector',
+    'postgresql-extension-inventory', 'gotrue-genuine-migrations-and-mfa',
     'postgrest-14-5-authentication-and-rls', 'realtime-genuine-migrations-and-change',
-    'native-observation-bridge-start', 'observer-and-browser-handoff'))
+    'native-observation-bridge-start', 'observer-and-browser-handoff',
+    'realtime-loopback-and-gateway', 'candidate-peer-isolation'))
 NATIVE_ERROR_NAMES = frozenset(('Error', 'AssertionError', 'TypeError', 'RangeError',
                                 'SyntaxError', 'TimeoutError', 'AggregateError', 'error'))
 
@@ -44,6 +50,15 @@ def native_failures(output):
         if (set(row) == {'status', 'stage', 'error'} and isinstance(row['error'], str)
                 and row['error'] in NATIVE_ERROR_NAMES):
             record = {'stage': row['stage'], 'category': row['error']}
+        elif (set(row) in ({'status', 'stage', 'error', 'sqlstate'},
+                           {'status', 'stage', 'error', 'sqlstate', 'position'})
+                and row['error'] == 'error' and isinstance(row['sqlstate'], str)
+                and re.fullmatch('[0-9A-Z]{5}', row['sqlstate'])
+                and ('position' not in row or (type(row['position']) is int
+                     and 1 <= row['position'] <= 999999))):
+            record = {'stage': row['stage'], 'category': 'error', 'sqlstate': row['sqlstate']}
+            if 'position' in row:
+                record['position'] = row['position']
         elif set(row) == {'status', 'stage', 'reason'} and row['reason'] == 'deadline':
             record = {'stage': row['stage'], 'category': 'deadline'}
         else:
@@ -123,21 +138,27 @@ def smoke_records(output):
                 'extensions': 6, 'auth': '2.196.0', 'mfa': 'aal2',
                 'postgrest': '14.5', 'realtime': '2.134.10',
                 'change': 'observed', 'retries': 0,
+                'realtime_listener': '127.0.0.1:4000',
+                'realtime_gateway': 'authenticated-change-observed',
                 'observation_bridge': 'native-synthetic-protocol'}
-    require(rows.count(observer) == 1 and rows.count(services) == 1)
-    require('Native service smoke and container cleanup passed (not a product certificate).' in output.splitlines())
-    return [observer, services]
+    peer = {'scope': 'native-service-smoke', 'peer': 'passed', 'gateway': 'reachable',
+            'realtime_direct': 'refused', 'tenant_administration': 'refused'}
+    require(rows.count(observer) == 1 and rows.count(services) == 1 and rows.count(peer) == 1)
+    require('Native service smoke and container/network cleanup passed (not a product certificate).' in output.splitlines())
+    return [observer, services, peer]
 
 
 def execute(repo, output, expected, run=command):
     receipt = {'version': 1, 'scope': 'draft-pr-native-service-smoke',
                'product_certificate': False, 'status': 'failed',
-               'stage': 'source', 'cleanup': {'container_absent': False, 'image_removed': False}}
+               'stage': 'source', 'cleanup': {'container_absent': False, 'peer_absent': False,
+                                             'network_absent': False, 'image_removed': False}}
     output.mkdir(parents=True, exist_ok=True)
     env = {key: os.environ[key] for key in ('PATH', 'HOME') if key in os.environ}
     env.update({'LANG': 'C.UTF-8', 'GIT_CONFIG_GLOBAL': '/dev/null',
                 'GIT_CONFIG_SYSTEM': '/dev/null', 'GIT_NO_REPLACE_OBJECTS': '1'})
     name = 'ca-fixture-smoke-' + uuid.uuid4().hex
+    peer, network = name + '-peer', name + '-network'
     tag = 'club-arena-component-fixture:smoke-' + uuid.uuid4().hex
     env['FIXTURE_SMOKE_CONTAINER'] = name
     env['FIXTURE_SMOKE_BUILD_LOG'] = str(output / 'native-build.log')
@@ -156,7 +177,7 @@ def execute(repo, output, expected, run=command):
             run(['git', 'ls-files', '--error-unmatch', relative], repo, env)
             manifest[relative] = hashlib.sha256(path.read_bytes()).hexdigest()
         receipt.update({'control_revision': revision, 'source_revision': revision,
-                        'source_sha256': manifest, 'container': name})
+                        'source_sha256': manifest, 'container': name, 'peer': peer, 'network': network})
         receipt['stage'] = 'build'
         build_started = True
         run(['bash', PREFIX + 'build-image.sh', tag], repo, env, timeout=2400)
@@ -176,13 +197,21 @@ def execute(repo, output, expected, run=command):
         failed = True
     finally:
         try:
-            # Exact caller-owned name, never a broad prune or container scan.
-            ids = run(['docker', 'container', 'ls', '-aq', '--filter', 'name=^/' + name + '$'], repo, env).split()
-            if ids:
-                run(['docker', 'container', 'rm', '--force', name], repo, env)
-                failed = True  # Smoke did not itself finish cleanup.
-            require(not run(['docker', 'container', 'ls', '-aq', '--filter', 'name=^/' + name + '$'], repo, env).strip())
-            receipt['cleanup']['container_absent'] = True
+            # Exact caller-owned names, never a broad prune. Remove containers
+            # before their network, including when the peer check fails early.
+            for owned, field in ((peer, 'peer_absent'), (name, 'container_absent')):
+                ids = run(['docker', 'container', 'ls', '-aq', '--filter', 'name=^/' + owned + '$'], repo, env).split()
+                if ids:
+                    run(['docker', 'container', 'rm', '--force', owned], repo, env)
+                    failed = True  # Smoke did not itself finish cleanup.
+                require(not run(['docker', 'container', 'ls', '-aq', '--filter', 'name=^/' + owned + '$'], repo, env).strip())
+                receipt['cleanup'][field] = True
+            names = run(['docker', 'network', 'ls', '--filter', 'name=^' + network + '$', '--format', '{{.Name}}'], repo, env).split()
+            if network in names:
+                run(['docker', 'network', 'rm', network], repo, env)
+                failed = True
+            require(network not in run(['docker', 'network', 'ls', '--filter', 'name=^' + network + '$', '--format', '{{.Name}}'], repo, env).split())
+            receipt['cleanup']['network_absent'] = True
             if build_started:
                 ids = run(['docker', 'image', 'ls', '-q', '--no-trunc', tag], repo, env).split()
                 if ids:

@@ -7,10 +7,12 @@ Only synthetic credentials are created at runtime. Candidate frontend, engine,
 and schema artifacts are inputs to the separate trusted runtime/controller.
 
 **Status: updated source awaiting native qualification.** The earlier image at
-`799eebf49d4c3a36b4241adcaddb73b40733e011` built on Linux, but its native smoke
-failed. The cookie launcher adaptation below has local shell/filesystem tests;
-its actual image preimages, Erlang authentication and UID isolation still need
-the next Linux smoke. The full product matrix must also pass before admission.
+`c9e2319b93cc516f8eefa49b714b979ad45c3423` built on Linux, including its exact
+launcher/environment preimage checks, but smoke stopped at the PostgreSQL
+wal2json stage before Realtime. The loopback configuration adaptation and peer
+isolation proof below have local source/transport tests; actual image config
+preimage, Erlang authentication, listener and UID/peer isolation still need the
+next Linux smoke. The full product matrix must also pass before admission.
 Neither local tests nor a successful image build substitutes for that proof.
 
 ## Pinned inputs
@@ -159,6 +161,28 @@ home cookie file. No cookie, authentication environment, or raw service log is
 printed. The shell tests use a capture executable only to inspect launcher
 arguments; they do not claim native Erlang, database, or browser proof.
 
+The build also calls `adaptRealtimeConfiguration()`. It accepts only the entire
+pinned `config/runtime.exs` (SHA256
+`6892bee389b9974972ece8e8737d2cdbe8bac50e82f2776037641e786b16d84c`) at the fixed
+release path and adds only `{:ip, {127, 0, 0, 1}}` to its HTTP socket options.
+The default upstream listener otherwise exposes port4000 to peer containers;
+the genuine tenant-administration JWT verifier accepts the synthetic service
+JWT used by the engine. Binding loopback makes the existing gateway's tenant
+administration refusal the peer-container boundary without changing player,
+service or tenant JWT authority. No undocumented bind-address environment
+variable or replacement service is used.
+
+Both full runtime and native smoke inspect the actual Linux `/proc/net/tcp` and
+`tcp6` tables after service readiness, requiring exactly one port4000 listener
+at IPv4 127.0.0.1 and no IPv6 listener. Native smoke uses the actual gateway for
+the genuine authenticated Realtime subscription and causal database change;
+it separately requires administration refusal with service and player tokens.
+A separate same-image UID1000 container proves gateway reachability, requires
+direct port4000 `ECONNREFUSED` (DNS failures/timeouts do not count), and requires
+gateway tenant-administration refusal. This peer receives no service secrets,
+fixture mounts or oracle descriptor. Same-container loopback access remains
+intentional and is not described as denied.
+
 ## Genuine service bootstrap
 
 1. Initialize a new PG17 database `club_arena_qualification`, local roles and
@@ -198,21 +222,24 @@ bash operations/release/fixture/smoke-image.sh club-arena-component-fixture:ci
 
 The build refuses untracked/missing runtime sources and a dirty fixture tree.
 It labels the image with the exact checked-out commit and never pushes. The
-smoke uses the local immutable image ID and `--network=none`; only loopback and
-an explicit loopback Realtime hostname exist. It checks six real extensions,
+smoke uses the local immutable image ID and a fresh internal Docker network
+with no egress or published ports. Only the fixture and its separate refusal
+probe peer join that network. It checks six real extensions,
 GoTrue migrations/users/TOTP to AAL2, PostgREST authentication/RLS, a causal
 Realtime database event, separate-user credential denial and read-only SQL,
 and Chromium fetching the authenticated native endpoint. It creates no trace,
 video, external fixture or credentials artifact. Output is bounded status,
 version/count facts; raw logs and session values stay in disposable memory.
 Readiness is bounded; failed services, browsers and assertions are never retried.
-The enclosing script removes its exact container and verifies absence even on
-failure. No success statement is printed until container cleanup succeeds.
+The enclosing script removes both exact containers and their network, then
+verifies absence even on failure. No success statement is printed until that
+cleanup succeeds. The outer runner also records and checks all three absences.
 
 For a runner-owned timeout cleanup, set `FIXTURE_SMOKE_CONTAINER` to exactly
 `ca-fixture-smoke-` followed by 32 lowercase hexadecimal characters. Without the
-override the script generates a UUID hex suffix. An occupied name is refused
-before cleanup is armed, so the script cannot remove a pre-existing container.
+override the script generates a UUID hex suffix. The peer/network names append
+`-peer`/`-network`. Occupied names are refused before cleanup is armed, so the
+script cannot remove a pre-existing resource.
 Image labels `com.smarter-poker.control-revision` and
 `com.smarter-poker.source-revision` both bind the reviewed checkout revision.
 

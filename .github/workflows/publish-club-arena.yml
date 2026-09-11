@@ -682,6 +682,13 @@ jobs:
       KEEP_RELEASES: '10'
 
     steps:
+      - name: Checkout the exact protected-main publish control
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.publish-needed.outputs.target_sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
       - name: Download the dist built by the previous job
         uses: actions/download-artifact@v4
         with:

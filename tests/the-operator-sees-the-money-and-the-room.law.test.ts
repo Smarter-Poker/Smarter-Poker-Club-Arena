@@ -210,4 +210,29 @@ describe('one component, so the two consoles cannot drift apart', () => {
     expect(ui).toContain('g.capped_by_cover');
     expect(ui).toContain('The Cover Is Holding This One Down');
   });
+
+  it('and it says when a game is held by its own intake, which needs nothing', () => {
+    // Without this the operator sees a top win far under the ceiling and no
+    // reason for it, which invites them to move chips that would change nothing.
+    expect(ui).toContain('g.capped_by_intake && !g.capped_by_cover');
+    expect(ui).toContain('Held By What It Has Taken In, Not By Your Cover. Nothing To Do');
+  });
+
+  it('never prints a real figure as zero, and never prints minus zero', () => {
+    // compactChips floors the absolute value, which is right everywhere it is
+    // already used and wrong for a P and L: the live console showed "0" for a
+    // net of half a chip and would have shown "-0" for a loss of one. Under a
+    // chip the figure is stated in diamonds, which are always whole.
+    expect(ui).toContain('function money(');
+    expect(ui).toContain('if (Math.abs(n) >= 1) return compactChips(n);');
+    expect(ui).toContain('Math.round(n * perChip)');
+    // and no money cell may go back to the flooring formatter
+    const cells = ui.split('\n').filter((l) => l.includes('_chips') && l.includes('compactChips('));
+    expect(cells).toEqual([]);
+  });
+
+  it('shows a refusal rather than an empty table that looks like no history', () => {
+    expect(ui).toContain('[pnl, room, players].find((r) => r && !r.ok)?.error ?? null');
+    expect(ui).toContain('sc-ink--red');
+  });
 });

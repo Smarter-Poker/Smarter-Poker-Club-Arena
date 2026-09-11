@@ -54,6 +54,7 @@ import {
   type WheelFairnessVerdict,
 } from '../utils/wheelFairness';
 import { compactChips } from '../utils/format';
+import TodayLine from '../components/games/TodayLine';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { reportError } from '../utils/errorReporter';
 import { triggerHaptic } from '../services/HapticService';
@@ -97,6 +98,17 @@ function worth(valueChips: number): string {
 }
 
 const MAX_CLIENT_SEED = 64;
+
+/**
+ * THE ONE BLOCKER WITH A WAY OUT (2026-09-11). Every other reason the plate is
+ * dead is the club's to fix or the clock's; this one is the player's, and it
+ * used to be a dead end: the plate simply sat there disabled saying they were
+ * short. Named once so the blocker and the door can never drift apart.
+ */
+const SHORT_OF_DIAMONDS = 'Not Enough Diamonds For A Spin';
+
+/** Where a player buys diamonds. The same door the wallet's plate opens. */
+const BUY_DIAMONDS = '/marketplace?tab=diamonds';
 
 export default function DiamondWheelPage() {
   const { clubId: routeClubId } = useParams();
@@ -240,12 +252,14 @@ export default function DiamondWheelPage() {
     if (player && player.spendable < price) {
       return cfg?.purchased_only && player.diamonds >= price
         ? 'This Wheel Spins Purchased Diamonds Only'
-        : 'Not Enough Diamonds For A Spin';
+        : SHORT_OF_DIAMONDS;
     }
     return null;
   }, [state, player, cfg, price, welcomeMode]);
 
   // The pause between paid spins is the paid wheel's; a spin on the house does not wait for it.
+  /** The only blocker a player can do something about, so the plate becomes the door. */
+  const shortOfDiamonds = blocker === SHORT_OF_DIAMONDS;
   const canSpin = Boolean(
     clubUuid && commit && !spinning && !blocker && (welcomeMode || waitSeconds <= 0)
   );
@@ -446,13 +460,25 @@ export default function DiamondWheelPage() {
           label: 'Odds',
           onClick: () => oddsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
         }}
-        primary={{
-          label: spinLabel,
-          ink: welcomeMode ? 'gold' : 'white',
-          onClick: handleSpin,
-          disabled: !canSpin,
-        }}
+        primary={
+          shortOfDiamonds
+            ? { label: 'Get Diamonds', ink: 'gold', onClick: () => navigate(BUY_DIAMONDS) }
+            : {
+                label: spinLabel,
+                ink: welcomeMode ? 'gold' : 'white',
+                onClick: handleSpin,
+                disabled: !canSpin,
+              }
+        }
       >
+        <TodayLine
+          used={player?.spins_today ?? 0}
+          cap={cfg?.max_spins_per_player_per_day ?? 0}
+          spentDiamonds={player?.diamonds_today ?? 0}
+          noun="Spins"
+          /* The Today bay already prints the count; this line carries the cost. */
+          showCount={false}
+        />
         <div className={styles.stage} ref={stageRef}>
           <DiamondWheel
             segments={rim}

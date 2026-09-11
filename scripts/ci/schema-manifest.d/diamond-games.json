@@ -53,7 +53,8 @@
     "fn_wheel_welcome_room",
     "fn_diamond_game_pnl",
     "fn_diamond_game_room",
-    "fn_diamond_game_players"
+    "fn_diamond_game_players",
+    "fn_diamond_games_spent_today"
   ],
   "columns": {
     "wheel_configs": [

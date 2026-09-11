@@ -59,6 +59,7 @@ import {
   type CrashFairnessVerdict,
 } from '../utils/diamondGamesFairness';
 import { compactChips } from '../utils/format';
+import TodayLine from '../components/games/TodayLine';
 import { autoRunVerdict, cycleRunSize, type AutoRun } from '../utils/autoRun';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { reportError } from '../utils/errorReporter';
@@ -86,6 +87,17 @@ function reachChance(cents: number): string {
   const pct = 80 / (cents / 100);
   return `${pct.toFixed(pct < 1 ? 2 : pct < 10 ? 1 : 0)}%`;
 }
+
+/**
+ * THE ONE BLOCKER WITH A WAY OUT (2026-09-11). Every other reason the plate is
+ * dead is the club's to fix or the clock's; this one is the player's, and it
+ * used to be a dead end: the plate simply sat there disabled saying they were
+ * short. Named once so the blocker and the door can never drift apart.
+ */
+const SHORT_OF_DIAMONDS = 'Not Enough Diamonds For That Bet';
+
+/** Where a player buys diamonds. The same door the wallet's plate opens. */
+const BUY_DIAMONDS = '/marketplace?tab=diamonds';
 
 export default function DiamondCrashPage() {
   const { clubId: routeClubId } = useParams();
@@ -292,13 +304,15 @@ export default function DiamondCrashPage() {
     if (player && player.spendable < bet) {
       return cfg?.purchased_only && player.diamonds >= bet
         ? 'Crash Takes Purchased Diamonds Only'
-        : 'Not Enough Diamonds For That Bet';
+        : SHORT_OF_DIAMONDS;
     }
     return null;
   }, [state, player, cfg, bet, betOption]);
 
   const open = phase === 'open';
   const running = autoRun !== null;
+  /** The only blocker a player can do something about, so the plate becomes the door. */
+  const shortOfDiamonds = blocker === SHORT_OF_DIAMONDS;
   const canStart = Boolean(
     clubUuid && commit && !open && !starting && !blocker && waitSeconds <= 0
   );
@@ -589,6 +603,9 @@ export default function DiamondCrashPage() {
               }
         }
         primary={
+          // A round that is OPEN keeps its cash-out plate whatever the wallet
+          // says: the money is already on the table and getting it back is not
+          // something a shortage may stand in front of.
           open
             ? {
                 label: cashing ? 'Cashing Out' : `Cash Out ${multiplierLabel(liveCents)}`,
@@ -596,13 +613,21 @@ export default function DiamondCrashPage() {
                 onClick: handleCashOut,
                 disabled: cashing,
               }
-            : running
-              ? { label: startLabel, ink: 'gold', disabled: true }
-              : autoSize
-                ? { label: startLabel, ink: 'gold', onClick: startRun, disabled: !canStart }
-                : { label: startLabel, ink: 'white', onClick: handleStart, disabled: !canStart }
+            : shortOfDiamonds
+              ? { label: 'Get Diamonds', ink: 'gold', onClick: () => navigate(BUY_DIAMONDS) }
+              : running
+                ? { label: startLabel, ink: 'gold', disabled: true }
+                : autoSize
+                  ? { label: startLabel, ink: 'gold', onClick: startRun, disabled: !canStart }
+                  : { label: startLabel, ink: 'white', onClick: handleStart, disabled: !canStart }
         }
       >
+        <TodayLine
+          used={player?.rounds_today ?? 0}
+          cap={cfg?.max_rounds_per_player_per_day ?? 0}
+          spentDiamonds={player?.diamonds_today ?? 0}
+          noun="Rounds"
+        />
         <div className={styles.stage} ref={stageRef}>
           <CrashPointsStrip points={floor?.crash_points ?? []} />
           <div className={styles.board}>

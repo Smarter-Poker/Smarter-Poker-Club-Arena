@@ -89,6 +89,8 @@ export interface WheelPlayerView {
   purchased_available: number;
   spendable: number;
   spins_today: number;
+  /** Every diamond this player has put through all three games at this host today. */
+  diamonds_today: number;
   seconds_until_next: number;
   is_member: boolean;
   member_chips: number | null;
@@ -394,6 +396,7 @@ function normaliseState(raw: Record<string, unknown>): WheelState {
           purchased_available: num(player.purchased_available),
           spendable: num(player.spendable),
           spins_today: num(player.spins_today),
+          diamonds_today: num(player.diamonds_today),
           seconds_until_next: num(player.seconds_until_next),
           is_member: Boolean(player.is_member),
           member_chips: numOrNull(player.member_chips),

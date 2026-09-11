@@ -41,7 +41,27 @@ import { reportError } from '../../utils/errorReporter';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import styles from '../../pages/diamondGames.module.css';
 
-const chips = (n: number | null | undefined) => compactChips(Number(n ?? 0));
+/**
+ * MONEY IN THIS TABLE IS WHOLE, AND NEVER A FALSE ZERO (2026-09-11).
+ *
+ * Dan 2026-09-08: never a decimal point on a forward-facing page, and always
+ * rounded DOWN so a printed figure never overstates. compactChips does exactly
+ * that, which is right everywhere it is already used and wrong for a P and L:
+ * it floors the absolute value, so a real net of half a chip printed as "0" and
+ * a real LOSS of half a chip printed as "-0". The audit after phase 3 found
+ * both on the live console, on a host genuinely down 50 diamonds.
+ *
+ * Under one chip the figure is stated in DIAMONDS instead. A diamond is the
+ * atomic unit and always whole (1 diamond is 1 cent), so the rule is kept, the
+ * figure is exact, and nothing reads as zero that is not zero.
+ */
+function money(v: number | null | undefined, rate: number): string {
+  const n = Number(v ?? 0);
+  if (n === 0) return '0';
+  if (Math.abs(n) >= 1) return compactChips(n);
+  const perChip = rate > 0 ? rate : 100;
+  return `${Math.round(n * perChip)} \u25C6`;
+}
 const GAME_WORD: Record<string, string> = { wheel: 'Wheel', plinko: 'Plinko', crash: 'Crash' };
 const gameWord = (g: string) => GAME_WORD[g] ?? g;
 
@@ -121,6 +141,10 @@ export default function DiamondGamesMoney({ clubId }: { clubId: string | null })
   if (!clubId) return null;
 
   const state = worstState(room);
+  const rate = pnl?.diamonds_per_chip ?? 100;
+  /* A read the server refused says so, rather than rendering as an empty table
+     that looks like a host with no history. */
+  const refusal = [pnl, room, players].find((r) => r && !r.ok)?.error ?? null;
   const day = pnl?.windows.find((w) => w.window === '24 Hours') ?? null;
   const roster = players?.players ?? [];
 
@@ -140,18 +164,21 @@ export default function DiamondGamesMoney({ clubId }: { clubId: string | null })
           Make Rather Than The Paid Game Losing Money.
         </p>
         <div className={styles.rows}>
+          {refusal ? <p className="sc-copy sc-ink--red">{refusal}</p> : null}
           <Head cells={['Window', 'Rounds', 'Taken In', 'Net']} />
           {(pnl?.windows ?? []).map((w) => (
             <div key={w.window} className={styles.grid4}>
               <span className={styles.cell}>{w.window}</span>
               <span className={`${styles.cell} ${styles.cellRight}`}>{w.rounds}</span>
-              <span className={`${styles.cell} ${styles.cellRight}`}>{chips(w.intake_chips)}</span>
+              <span className={`${styles.cell} ${styles.cellRight}`}>
+                {money(w.intake_chips, rate)}
+              </span>
               <span
                 className={`${styles.cell} ${styles.cellRight} sc-ink--${
                   w.net_chips >= 0 ? 'green' : 'red'
                 }`}
               >
-                {chips(w.net_chips)}
+                {money(w.net_chips, rate)}
               </span>
             </div>
           ))}
@@ -163,14 +190,14 @@ export default function DiamondGamesMoney({ clubId }: { clubId: string | null })
                   <span className={styles.cell}>{gameWord(g.game)}</span>
                   <span className={`${styles.cell} ${styles.cellRight}`}>{g.rounds}</span>
                   <span className={`${styles.cell} ${styles.cellRight}`}>
-                    {chips(g.chips_paid)}
+                    {money(g.chips_paid, rate)}
                   </span>
                   <span
                     className={`${styles.cell} ${styles.cellRight} sc-ink--${
                       g.net_chips >= 0 ? 'green' : 'red'
                     }`}
                   >
-                    {chips(g.net_chips)}
+                    {money(g.net_chips, rate)}
                   </span>
                 </div>
               ))}
@@ -183,7 +210,7 @@ export default function DiamondGamesMoney({ clubId }: { clubId: string | null })
                     </span>
                   </span>
                   <span className={`${styles.rowValue} sc-ink--gold`}>
-                    {chips(day.welcome_chips)}
+                    {money(day.welcome_chips, rate)}
                   </span>
                 </div>
               ) : null}
@@ -213,16 +240,33 @@ export default function DiamondGamesMoney({ clubId }: { clubId: string | null })
             <div key={g.game} className={styles.grid4}>
               <span className={styles.cell}>{gameWord(g.game)}</span>
               <span className={`${styles.cell} ${styles.cellRight}`}>
-                {g.game === 'wheel' ? chips(g.top_chip_prize_chips) : chips(g.max_win_chips)}
+                {g.game === 'wheel'
+                  ? money(g.top_chip_prize_chips, rate)
+                  : money(g.max_win_chips, rate)}
               </span>
               <span className={`${styles.cell} ${styles.cellRight} ${styles.cellDim}`}>
-                {g.game === 'wheel' ? 'Fixed Table' : chips(g.ceiling_win_chips)}
+                {g.game === 'wheel' ? 'Fixed Table' : money(g.ceiling_win_chips, rate)}
               </span>
               <span className={`${styles.cell} ${styles.cellRight} sc-ink--${STATE_INK[g.state]}`}>
                 {STATE_WORD[g.state]}
               </span>
             </div>
           ))}
+          {(room?.games ?? [])
+            .filter((g) => g.enabled && g.capped_by_intake && !g.capped_by_cover)
+            .map((g) => (
+              <div key={`${g.game}-intake`} className={styles.row}>
+                <span className={`sc-label sc-ink--blue ${styles.rowLabel}`}>
+                  {gameWord(g.game)}
+                  <span className={`${styles.rowMeta} sc-ink--muted`}>
+                    Held By What It Has Taken In, Not By Your Cover. Nothing To Do
+                  </span>
+                </span>
+                <span className={`${styles.rowValue} sc-ink--muted`}>
+                  {money(g.max_win_chips, rate)} Of {money(g.ceiling_win_chips, rate)}
+                </span>
+              </div>
+            ))}
           {(room?.games ?? [])
             .filter((g) => g.enabled && g.capped_by_cover)
             .map((g) => (
@@ -234,7 +278,7 @@ export default function DiamondGamesMoney({ clubId }: { clubId: string | null })
                   </span>
                 </span>
                 <span className={`${styles.rowValue} sc-ink--gold`}>
-                  {chips(g.max_win_chips)} Of {chips(g.intake_win_chips)}
+                  {money(g.max_win_chips, rate)} Of {money(g.intake_win_chips, rate)}
                 </span>
               </div>
             ))}
@@ -279,13 +323,15 @@ export default function DiamondGamesMoney({ clubId }: { clubId: string | null })
               >
                 {p.spins + p.rounds}
               </span>
-              <span className={`${styles.cell} ${styles.cellRight}`}>{chips(p.spent_chips)}</span>
+              <span className={`${styles.cell} ${styles.cellRight}`}>
+                {money(p.spent_chips, rate)}
+              </span>
               <span
                 className={`${styles.cell} ${styles.cellRight} sc-ink--${
                   p.net_chips >= 0 ? 'green' : 'muted'
                 }`}
               >
-                {chips(p.net_chips)}
+                {money(p.net_chips, rate)}
               </span>
             </div>
           ))}

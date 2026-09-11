@@ -387,9 +387,22 @@ export class TournamentEliminationScheduler {
         // let Map registration order or an eager pump invert them: enqueue the
         // whole due batch by deadline and stable scheduling order, then pump
         // once. Queue-kind priority is applied later by next().
-        due
-          .sort((a, b) => a.dueAt - b.dueAt || a.order - b.order)
-          .forEach(({ entry, kind }) => this.enqueue(entry, kind, false));
+        //
+        // The batch counts as a pump pass (2026-09-11). enqueue() asks each
+        // entry isActive(), and a manager whose lease proof has lapsed answers
+        // by unregistering, whose closure pumps. Outside a pass that pump ran
+        // right there, mid-batch, and dispatched whatever was queued so far: a
+        // routine sweep took the last slot before an urgent bust sweep later
+        // in the same batch had even been enqueued. Such a pump is now folded
+        // into the one below, exactly as it is inside pump() itself.
+        this.pumping = true;
+        try {
+          due
+            .sort((a, b) => a.dueAt - b.dueAt || a.order - b.order)
+            .forEach(({ entry, kind }) => this.enqueue(entry, kind, false));
+        } finally {
+          this.pumping = false;
+        }
         this.pump();
         this.armWakeTimer();
         this.refreshMetrics();

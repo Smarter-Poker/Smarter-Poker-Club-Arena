@@ -58,3 +58,21 @@ exactly the window in which it blocks the certificate. The follow-up makes a
 break-flagged table exempt only once it has actually parked, so a frozen
 table is reaped on its usual clock inside the break and rebuilt parked, and a
 broken build can still earn its certificate honestly — no exception needed.
+
+## Spent, and removed (2026-09-11 07:1x UTC)
+
+Run 34567969674 used it exactly once. At 06:56:13 the break was durable and
+counting down with 226 s left, 638 frozen tables had not parked, and every one
+of them had gone at least 186 s without progress (sampled on /health at the
+05:55 and 06:55 breaks; not one landed in either countdown). The run cut over
+under the exception at 06:57:16, verified c58dfafd, proved and sealed it, and
+went green. From the new build's first minutes: `callback_threw` 0,
+`cannot be rebound` 0, zombie rebuilds 0, and 1,927 tournament hands in the
+first two minutes after the 07:00 thaw.
+
+The two constants and every line that read them are removed here (a revert
+of #4235's workflow and test changes). The gate is the full certificate again,
+with no exception. `tests/unit/deployCannotPinStaleCode.test.ts` pins that
+nothing named FROZEN_BUILD_OVERRIDE comes back quietly. What stops the next
+one is the engine fix that makes the break earnable instead of waived
+(a frozen hand is reaped and re-parked inside the break).

@@ -178,12 +178,54 @@ describe('nothing after the fix puts a second relationship back', () => {
   });
 });
 
-describe('the engine still depends on the hint-less embed the fix protects', () => {
-  it('the launch reads its live-seat inventory through tables!inner(tournament_id)', () => {
+/**
+ * UPDATED 2026-09-11 (must-move audit). This block used to read "the engine
+ * still depends on the hint-less embed the fix protects" and pinned the
+ * UNHINTED spelling, so that anybody tempted to add a second foreign key could
+ * see what it would break.
+ *
+ * That dependency is gone, deliberately, and by the route this file's own
+ * refusal message offers: "enforce the rule with a trigger (see 20260909205508)
+ * OR HINT EVERY EMBED IN THE ENGINE AND THE CLIENT IN THE SAME PR". All nine
+ * `table_seats -> tables` embeds were hinted in one change - the tournament
+ * manager (x3), the seat-claim door, the recurring service, the felt, the
+ * blacklist page, the anti-cheat page and the integrity service - and
+ * tests/a-seat-read-names-its-parent.law.test.ts now refuses an unhinted one
+ * anywhere in src/ or server/src/.
+ *
+ * The pin therefore MOVES to the new mechanism rather than being deleted
+ * (CLAUDE.md 5.8 / 10.6): it asserts the launch reads through the NAMED
+ * relationship. That is strictly stronger than what it replaced - it used to
+ * guarantee a fragile dependency existed, and it now guarantees the thing that
+ * makes the dependency impossible.
+ *
+ * Everything above this block is untouched and still binding. The triggers and
+ * the one-relationship invariant remain the first line of defence; hinting is
+ * the second. Two independent protections against the same outage is the point,
+ * not a redundancy to tidy away - and the 2026-09-09 rotator outage, which cost
+ * three and a half silent hours on a path no tournament law covered, is why the
+ * second one had to exist.
+ */
+describe('the engine embeds through a NAMED relationship, so a second key cannot break it', () => {
+  it('the launch reads its live-seat inventory through the hinted embed', () => {
     const base = read('server/src/tournament/TournamentManagerBase.ts');
     const launch = base.slice(base.indexOf('protected async createTablesAndSeatPlayers('));
-    expect(launch).toContain(
-      "select('user_id, table_id, seat_number, tables!inner(tournament_id)')"
+    // Whitespace-normalised on purpose. Naming the foreign key made the call
+    // long enough for Prettier to wrap `.select(` onto its own line, which
+    // broke the previous exact-adjacency spelling of this pin while the code
+    // it guards was correct. A pin that a formatter can turn red is a pin
+    // people learn to edit rather than read (CLAUDE.md 10.86).
+    const flat = launch.replace(/\s+/g, ' ');
+    expect(flat).toContain(
+      ".select( 'user_id, table_id, seat_number, tables!table_seats_table_id_fkey!inner(tournament_id)' )"
     );
+  });
+
+  it('and carries no hint-less embed anywhere in that file', () => {
+    const base = read('server/src/tournament/TournamentManagerBase.ts');
+    const code = base
+      .replace(/\/\*[\s\S]*?\*\//g, (m) => ' '.repeat(m.length))
+      .replace(/\/\/[^\n]*/g, (m) => ' '.repeat(m.length));
+    expect(code).not.toMatch(/tables!(?!table_seats_table_id_fkey)[A-Za-z_]*!?inner\(/);
   });
 });

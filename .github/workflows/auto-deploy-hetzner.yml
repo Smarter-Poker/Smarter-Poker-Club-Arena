@@ -56,73 +56,61 @@ name: Auto-Deploy Hetzner Engine (on server/ changes)
 
 on:
   # ═══════════════════════════════════════════════════════════════════════════
-  #  THE ENGINE RESTARTS AT 7AM AND 7PM. NOT WHEN CODE MERGES.
-  #  (Dan, 2026-08-31, binding: "STOP THE ENGINE FROM RESTARTING. IT SHOULD
-  #   ONLY BE RESTARTING AT 7AM AND 7PM FROM NOW ON.")
+  #  EVERY ENGINE MERGE STARTS ITS OWN RUN. THE RUN RESTARTS NOTHING UNTIL THE
+  #  :55 BREAK. (Dan, 2026-09-10: "i do not want any watch dogs, i want hard
+  #  coded fixes that solve this problem and prevent it from breaking or
+  #  regressing, i want any and all pushes to be published in the order that
+  #  they come in!")
   # ═══════════════════════════════════════════════════════════════════════════
   #
-  # WHAT THIS REPLACES. Every merge touching `server/**` restarted production
-  # (263 such commits in one week before the dedupe was added), and a `*/20`
-  # catch-up chased whatever those runs deferred. A restart is not free even
-  # with the SIGTERM drain: every socket reconnects and ~120 tables rehydrate.
-  # Two scheduled windows a day replace that entirely -- merged engine code now
-  # WAITS for the next window, by design, and the wait is the feature.
+  # WHAT THIS REPLACES. A `35 * * * *` cron, and two dispatchers that existed
+  # only because the cron did not come. GitHub delivered 3 of ~19 hourly ticks
+  # on 2026-09-10, so nearly every deploy that day was started by
+  # .github/scripts/engine-watchdog.sh, by schedule-liveness, or by hand - at
+  # whatever minute each happened to run, and each one a band-aid on a
+  # trigger that did not work. A push is delivered every time, so the merge
+  # itself starts the run and nothing has to notice that one is missing.
   #
-  # EVERY HOUR, ON THE :55 BREAK (Dan, 2026-09-01):
+  # THIS IS NOT "RESTART ON MERGE". The 2026-08-31 rule this block used to
+  # quote ("THE ENGINE RESTARTS AT 7AM AND 7PM. NOT WHEN CODE MERGES") was
+  # about merges RESTARTING production - 263 of them in one week. That cannot
+  # happen from here: every run waits in its break gate for a fresh
+  # `maintenance.readyForRestart` inside the announced :55 break (CLAUDE.md
+  # §13), and a run may hold the group for up to its whole ceiling to do it.
+  # A merge starts a run that WAITS.
   #
-  #   "program the engine restart to be every hour on the :55 instead of every
-  #   5 hours so nothing gets lost or orphaned from production improvements."
+  # IN ORDER, BY INCLUSION. The engine restarts at most once per break and main
+  # takes dozens of merges an hour, so "every push published in the order it
+  # came in" is: every break ships a commit that CONTAINS every earlier push,
+  # in merge order, and never an older commit after a newer one (the release
+  # seal is forward-only). The `deploy-hetzner` concurrency group below is the
+  # queue - one run in flight, and one pending run that GitHub replaces with
+  # each newer push, so the pending run is always the newest push. A push whose
+  # own run was replaced is not lost: the run that replaced it contains it.
   #
-  # The restart no longer happens whenever the runner shows up. It happens
-  # inside an ANNOUNCED FIVE MINUTE BREAK: the engine tells every table at :53
-  # to finish its hand, parks the whole platform at :55 and holds it there
-  # until :00 (server/src/maintenance/MaintenanceBreak.ts). The restart, and
-  # the ~2 minutes of table rehydration behind it, now fit entirely inside a
-  # window players were warned about, on tables with no cards in the air.
-  #
-  # WHY THE FIVE WINDOWS WENT AWAY. They existed because a restart was
-  # expensive and visible, so it was rationed - and the price of rationing it
-  # was merged engine code sitting unshipped for up to six hours. That is how
-  # a fix gets orphaned, and how two agents end up reasoning about different
-  # production builds while both believe they are looking at main. A restart
-  # nobody loses a hand to does not need rationing.
-  #
-  # AN HOURLY WINDOW IS NOT AN HOURLY RESTART. The dedupe step below returns
-  # immediately when production already serves this commit, so a window with
-  # nothing to ship costs one HTTP request. The engine bounces only when there
-  # is new code, and then it does so within the hour.
-  #
-  # THE TIME ZONE IS GONE, AND THAT IS A FEATURE. This used to need ten UTC
-  # cron hours to express five Chicago hours, plus a `TZ=America/Chicago`
-  # window gate, because GitHub cron has no notion of DST. Every hour is a
-  # window now, so there is nothing to convert and nothing to get wrong on the
-  # two days a year the clocks move.
-  #
-  # ONE TICK (2026-09-02). This was three - :40, :45, :50 - because a GitHub
-  # scheduled run is best-effort and one missed tick had left the engine three
-  # hours stale on 2026-08-31. Measured since: GitHub delivers about 10% of
-  # this repo's scheduled runs, so tripling the asks was tripling the demand
-  # that gets it throttled, and today all three were dropped every hour from
-  # 14:42. Redundancy now lives in publish-watchdog's schedule-liveness check,
-  # which runs on `workflow_run` many times an hour and dispatches this
-  # workflow directly the moment it is more than an hour since it last ran by
-  # any trigger. A dropped tick costs minutes, and asks GitHub for nothing.
-  # :45 gives the runner time to check out, test and build before :55; the
-  # winner then sleeps in the break gate until `maintenance.readyForRestart`.
-  schedule:
-    # :35, not :45 (2026-09-05). The tick has to leave room for the BUILD, and
-    # the build grew from ~5 minutes to 8-18. From :45 an 8-minute build lands
-    # at :53 and a 14-minute one lands at :59 - past the break it was aiming
-    # for, so the run waits through an empty hour and ships nothing. That is
-    # how production came to sit four merges behind on 2026-09-05. From :35
-    # every build length actually observed lands inside the window, and the
-    # gate's budget (below) now stretches to the next :55 rather than a fixed
-    # fourteen minutes. tests/the-break-clocks-agree.law.test.ts holds every
-    # tick in :35-:50.
-    - cron: '35 * * * *'
+  # THE CHAIN HANDS ITSELF ON. Three hand-offs, all inside this file:
+  #   1. a push to main that touches the engine starts a run (below);
+  #   2. a run that starts after main moved its CONTROL PLANE dispatches current
+  #      main before it stands down (the "control" step), because the commits
+  #      that moved main need not touch the paths below and so may have started
+  #      no run of their own;
+  #   3. a run whose break gate could not serve it (no certificate, or it built
+  #      too late for its break) dispatches its successor from its Verdict step;
+  #      the successor waits for the next break.
+  # A run that FAILED - tests, build, or a cutover that rolled back - does not
+  # hand on. Retrying a broken commit every hour would restart production into
+  # it every hour; the next push, the fix, starts the next run.
+  push:
+    branches: [main]
+    # The engine's runtime paths - the same set engine-watchdog.sh measures
+    # "behind" against. A test or a sim change never enters the image.
+    paths:
+      - 'server/**'
+      - '!server/**/*.test.ts'
+      - '!server/sim/**'
 
-  # A manual dispatch stages the requested immutable commit immediately, but
-  # it is subject to the same maintenance certificate as the scheduled path.
+  # A dispatch - by hand, or by a run handing the train on - is subject to the
+  # same break gate and maintenance certificate as a push.
   # There is deliberately no force input: neither a human nor automation may
   # bypass readyForRestart and stop a live table engine.
   workflow_dispatch:
@@ -214,13 +202,31 @@ jobs:
     #     cold image build (worst observed)                         18
     #     longest possible wait (reach the gate just after :56)     60
     #     cutover + verify + promote + proof (CUTOVER_RESERVE_S)     9
-    #                                                             = 99  -> 110
+    #     a failed proof's ROLLBACK (proxy polls + strict proof)      8
+    #     the always() tail (summary, ledger, cleanup, verdict)       2
+    #                                                             = 109 -> 130
+    #
+    # (110 was merged first, in #4208, and left the rollback two minutes: a
+    # cutover that failed its proof at the worst start minute could have been
+    # killed by the job timeout halfway through restoring the last good image.)
     #
     # A run may now hold the deploy-hetzner group for up to an hour. That is the
-    # design, not a cost: it is the run that ships at the next :55, and
-    # engine-watchdog.sh does not dispatch while it is in flight (its
-    # INFLIGHT_STALE_MIN is derived from this number and must stay above it).
-    timeout-minutes: 110
+    # design, not a cost: it is the run that ships at the next :55, and the
+    # newest push waits pending behind it. engine-watchdog.sh (which only
+    # reports now) treats it as in flight for INFLIGHT_STALE_MIN, derived from
+    # this number: at least twice it, since a run's age includes any time it
+    # spent pending behind another.
+    timeout-minutes: 130
+
+    # The job's token, named in full because it now does one thing it never
+    # did before: hand the train on (`gh workflow run`, actions: write) when a
+    # run stands down superseded or its break gate could not serve it.
+    # contents: read checks out the commit; issues: write is the financial
+    # health-gate's best-effort report.
+    permissions:
+      contents: read
+      actions: write
+      issues: write
 
     env:
       HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
@@ -250,17 +256,76 @@ jobs:
           echo "sha=$RESOLVED_SHA" >> "$GITHUB_OUTPUT"
           echo "Resolved immutable deployment target: $RESOLVED_SHA"
 
+      # ── A SUPERSEDED RUN STANDS DOWN; IT DOES NOT FAIL (2026-09-10) ──────
+      #
+      # Only current main's control plane may touch production, so a run whose
+      # workflow commit is no longer main's tip must not proceed. It used to
+      # FAIL here, which painted every superseded run red: 8 of 8 red deploy
+      # runs on 2026-09-10 were this, not one of them a ship failure, and one
+      # opened a false "deploy train is failing" alarm (#4109). Since #4208 a
+      # run may hold the deploy group for up to an hour, so a run that waited
+      # behind it almost always starts after main has moved.
+      #
+      # Three answers now, each with its own name:
+      #   current main         -> proceed;
+      #   an ANCESTOR of main  -> superseded: touch nothing, record why, end
+      #                           green, and hand the train on (below);
+      #   anything else        -> refuse, red, exactly as before.
+      #
+      # ── MAIN MOVING IS NOT THE CONTROL PLANE MOVING (2026-09-10) ─────────
+      #
+      # With a push trigger (see `on:`) the pending run is the newest ENGINE
+      # push, and main keeps moving under it with merges that never touch the
+      # engine. Standing down on every such move would make the train restart
+      # itself for every client merge, and under a busy afternoon it might
+      # never leave the station. What "only current main's control plane may
+      # touch production" protects against is a stale DEPLOY - this workflow,
+      # the scripts it runs, the host scripts it installs - not a stale lobby.
+      # So an ancestor whose control plane is byte-identical to main's is not
+      # superseded: it ships its own commit, which is where main's engine is.
+      #
+      # When the control plane DID move, the run stands down and dispatches
+      # current main before it goes: the commits that moved it may not match
+      # the push paths, so nothing else is going to start that run. Handing
+      # on is safe to repeat - a dispatch only ever replaces the pending run
+      # with a newer one - and a dispatch that fails is red, not silent.
       - name: Stage the current release proof control
+        id: control
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CONTROL_PLANE: >-
+            .github/workflows/auto-deploy-hetzner.yml
+            scripts/ci
+            server/scripts
         run: |
           set -euo pipefail
           CONTROL_SHA='${{ github.sha }}'
           [[ "$CONTROL_SHA" =~ ^[0-9a-f]{40}$ ]] \
             || { echo "::error::workflow control SHA is not one full commit"; exit 1; }
-          git fetch --no-tags --depth=1 origin main
+          git fetch --no-tags --depth=200 origin main
           REMOTE_MAIN="$(git rev-parse FETCH_HEAD)"
-          [ "$CONTROL_SHA" = "$REMOTE_MAIN" ] \
-            || { echo "::error::this deployment workflow was not dispatched from current main; refusing rollbackable control-plane code"; exit 1; }
+          if [ "$CONTROL_SHA" = "$REMOTE_MAIN" ]; then
+            echo "superseded=false" >> "$GITHUB_OUTPUT"
+          elif git cat-file -e "${CONTROL_SHA}^{commit}" 2>/dev/null \
+               && git merge-base --is-ancestor "$CONTROL_SHA" "$REMOTE_MAIN" 2>/dev/null; then
+            # shellcheck disable=SC2086 # CONTROL_PLANE is a list of paths
+            if git diff --quiet "$CONTROL_SHA" "$REMOTE_MAIN" -- $CONTROL_PLANE; then
+              echo "superseded=false" >> "$GITHUB_OUTPUT"
+              echo "::notice title=MAIN MOVED, CONTROL PLANE DID NOT::main is at ${REMOTE_MAIN:0:8}, past this run's ${CONTROL_SHA:0:8}, but no deploy control file changed between them. This run ships ${CONTROL_SHA:0:8}; any newer engine push has its own run queued behind this one."
+            else
+              echo "superseded=true" >> "$GITHUB_OUTPUT"
+              if gh workflow run auto-deploy-hetzner.yml --repo "$GITHUB_REPOSITORY" --ref main; then
+                echo "::notice title=SUPERSEDED::main moved the deploy control plane to ${REMOTE_MAIN:0:8} after this run was queued on ${CONTROL_SHA:0:8}. This run touches nothing; it dispatched a run on current main, which ships ${CONTROL_SHA:0:8} with everything after it."
+                exit 0
+              fi
+              echo "::error title=TRAIN STOPPED::superseded on ${CONTROL_SHA:0:8} and could not dispatch a run on current main; nothing else will start one. Dispatch auto-deploy-hetzner.yml on main."
+              exit 1
+            fi
+          else
+            echo "::error::this deployment workflow was not dispatched from current main; refusing rollbackable control-plane code"
+            exit 1
+          fi
           CONTROL_DIR="$GITHUB_WORKSPACE/.engine-release-control"
           install -d -m 0700 "$CONTROL_DIR"
           git show "$CONTROL_SHA:scripts/ci/prove-engine-version-moved.mjs" \
@@ -270,10 +335,6 @@ jobs:
           chmod 0700 "$CONTROL_DIR"/*.mjs
           echo "ENGINE_RELEASE_PROOF_SCRIPT=$CONTROL_DIR/prove-engine-version-moved.mjs" >> "$GITHUB_ENV"
 
-      # PHASE 1 (2026-09-02): record that this run STARTED, before tests. The
-      # DB-side dispatcher at :41 reads this to know a run is already in flight
-      # for the coming window, so it does not fire a duplicate. Best-effort:
-      # a failure here must never stop a deploy.
       # Stamped BEFORE the build so the break gate can subtract the build's
       # real cost from its wait budget (2026-09-05). Without it the gate
       # assumes zero elapsed and can hand itself more time than the job has.
@@ -290,7 +351,7 @@ jobs:
       # running leader) with /health as the fallback. Best-effort: a failure
       # here must never stop a deploy.
       - name: Record the version production runs before the cutover
-        if: always()
+        if: always() && steps.control.outputs.superseded != 'true'
         continue-on-error: true
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
@@ -301,18 +362,11 @@ jobs:
           npm ls pg >/dev/null 2>&1 || npm i pg@8 --no-save --no-audit --no-fund >/dev/null 2>&1 || true
           node "$ENGINE_RELEASE_PROOF_SCRIPT" || echo "::warning::pre-cutover version not recorded"
 
-      - name: Record that this deploy run started
-        if: always()
-        continue-on-error: true
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          TARGET_SHA: ${{ steps.target.outputs.sha }}
-          RUN_ID: ${{ github.run_id }}
-          RUN_ACTOR: ${{ github.event_name }}
-        run: |
-          [ -z "$DATABASE_URL" ] && { echo "::warning::no DATABASE_URL; start not recorded"; exit 0; }
-          npm ls pg >/dev/null 2>&1 || npm i pg@8 --no-save --no-audit --no-fund >/dev/null 2>&1 || true
-          node scripts/ci/record-engine-deploy-start.mjs || echo "::warning::deploy-start not recorded"
+      # (2026-09-10) "Record that this deploy run started" is gone. It fed the
+      # DB dispatcher at :41, which was retired live by 20260910183316 along
+      # with fn_ca_record_engine_deploy_start, so it failed with a warning on
+      # every run. The deploy's receipt is ca_engine_deploy_attempts, written
+      # by the ledger step near the end of this job.
 
       # 2026-08-24: DEDUPE. A restart is not free — it disconnects every
       # player and voids in-flight hands — so an engine already serving this
@@ -327,61 +381,56 @@ jobs:
       # (is there even new code), and the break gate further down (has the
       # engine parked every table and said it is safe).
       #
-      # Manual dispatch bypasses only restart coalescing so an already-staged
-      # release can reach the next break. It never bypasses readyForRestart.
+      # Nothing bypasses readyForRestart: not a push, not a dispatch.
       - name: Skip if production already serves this commit
         id: dedupe
         run: |
+          if [ "${{ steps.control.outputs.superseded }}" = "true" ]; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "reason=superseded" >> $GITHUB_OUTPUT
+            echo "Superseded by a newer main - nothing to do here."
+            exit 0
+          fi
           SHORT="${SHA:0:8}"
           BODY=$(curl -sf --max-time 10 "$ENGINE_URL/health" 2>/dev/null || echo "")
           VER=$(echo "$BODY" | python3 -c "import json,sys;print(json.load(sys.stdin).get('version',''))" 2>/dev/null || echo "")
           if [ -n "$VER" ] && [ "$VER" = "$SHORT" ]; then
             echo "skip=true" >> $GITHUB_OUTPUT
+            echo "reason=already_live" >> $GITHUB_OUTPUT
             echo "Production already serves $SHORT — nothing to deploy."
             exit 0
           fi
-          # 2026-08-24: RESTART COALESCING. On the night this was added the
-          # engine restarted 5 times in one hour as a merge train landed —
-          # each restart voids in-flight hands and costs ~2 minutes of table
-          # rehydration (4404s), even with nobody human seated. A restart is
-          # only allowed once the last restart WE performed is at least 20
-          # minutes old; a younger one defers, and the next tick lands a newer
-          # HEAD that contains this commit anyway. A manual workflow_dispatch
-          # bypasses spacing only; the maintenance certificate remains mandatory.
-          MIN_RESTART_SPACING_SEC=1200
+          # LIVE BY INCLUSION (2026-09-10). A commit that production's build
+          # already CONTAINS is live. With a push trigger, a push event that
+          # GitHub delivers late can queue a run for an older commit behind a
+          # run that already shipped a newer one; deploying it would be a step
+          # backwards, which the forward-only release seal would refuse - red,
+          # for a commit that is in fact on production.
+          if [ -n "$VER" ] && git cat-file -e "${VER}^{commit}" 2>/dev/null \
+             && git merge-base --is-ancestor "$SHA" "$VER" 2>/dev/null; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "reason=already_live" >> $GITHUB_OUTPUT
+            echo "Production serves $VER, which already contains $SHORT — nothing to deploy."
+            exit 0
+          fi
+          # ── NO RESTART SPACING ANY MORE: THE BREAK IS THE SPACING (2026-09-10) ──
           #
-          # ── ASK THE LEDGER, NOT THE PROCESS (2026-09-05) ──────────────────
+          # A 20-minute "restart coalescing" gate lived here from 2026-08-24,
+          # when a merge train restarted the engine five times in one hour.
+          # Every restart now happens inside the :55 break gate, one run at a
+          # time, so two restarts can never be closer than one break apart and
+          # the spacing gate could only ever do one thing: tell a run to stand
+          # down and trust a later tick to ship its commit. With the cron gone
+          # (see `on:`) nothing comes later - the next run is the next push - so
+          # a coalesced run would strand exactly the commit it was asked to
+          # ship. Spacing was a courtesy; the break is the law, and it is enough.
           #
-          # This read `/health.uptime` until today. Uptime answers "when did
-          # this process start"; the gate is asking "when did WE last bounce
-          # production". Those are the same number only if nothing else ever
-          # restarts the engine, and something does.
-          #
-          # MEASURED on the live box the day this was written: sp-autoheal
-          # restarted the engine FIVE times - 16:06, 16:42, 17:49, 18:26,
-          # 19:04 UTC - none a deploy, none inside the announced break. Each
-          # reset uptime to zero, and every deploy arriving in the next twenty
-          # minutes read a young engine and coalesced. Run 33981313111
-          # (attempt 134, 17:33:36Z) is the recorded case: it coalesced on a
-          # 900s uptime against a commit production was not serving.
-          #
-          # The note below already predicted this and its bypass only covers an
-          # UNHEALTHY engine or one with zero tables - a healthy engine bounced
-          # by its own sidecar is precisely what slips through. So the spacing
-          # clock now comes from ca_engine_deploy_attempts, which only this
-          # pipeline writes and which nothing on the host can move.
-          #
-          # NEVER / ERR both mean "do not coalesce". Failing closed here means
-          # declining to ship, which is the failure this change exists to
-          # remove, and the real protection is downstream anyway: the break
-          # gate still refuses to restart outside an announced :55 window.
-          # Spacing is a courtesy; the break is the law.
+          # What stays is the READ: when the engine is younger than the last
+          # deploy we performed, something other than this pipeline restarted
+          # production.
           npm ls pg >/dev/null 2>&1 || npm i pg@8 --no-save --no-audit --no-fund >/dev/null 2>&1 || true
           SINCE_SHIPPED=$(node scripts/ci/last-shipped-engine-deploy.mjs 2>/dev/null | tail -1 || echo ERR)
           case "$SINCE_SHIPPED" in ''|*[!0-9]*) SINCE_SHIPPED_N=-1 ;; *) SINCE_SHIPPED_N=$SINCE_SHIPPED ;; esac
-          # Uptime is still READ, because it is what the summary and the
-          # off-break-restart detector below report. It is no longer what the
-          # gate decides on.
           UPTIME=$(echo "$BODY" | python3 -c 'import json,sys; d=json.load(sys.stdin); v=d.get("uptime"); print("ERR" if v is None else int(float(v)))' 2>/dev/null || echo ERR)
           #
           # ── AN OFF-BREAK RESTART IS AN INCIDENT, NOT A DETAIL ─────────────
@@ -397,48 +446,6 @@ jobs:
              && [ "$UPTIME" -lt "$SINCE_SHIPPED_N" ]; then
             echo "unplanned_restart=true" >> $GITHUB_OUTPUT
             echo "::warning title=UNPLANNED RESTART::Production has been up ${UPTIME}s but our last deploy was ${SINCE_SHIPPED_N}s ago, so something restarted the engine that was NOT a deploy and NOT the announced :55 break. Check sp-autoheal (docker logs sp-autoheal) and poker_engine_liveness - a restart nobody announced voids every in-flight hand."
-          fi
-
-          # 2026-08-24: COALESCING MUST NOT PROTECT A BROKEN ENGINE.
-          #
-          # The spacing gate exists to stop a merge train voiding in-flight
-          # hands. That reasoning only holds while the running engine is
-          # actually dealing. It restarts for reasons other than deploys —
-          # a healthcheck kill, a promoted standby, a crash — and when it
-          # does, its uptime is permanently under the threshold, so EVERY
-          # deploy coalesces, including the hourly catch-up. The commit that
-          # would stop the restarting is then the one commit that can never
-          # land. That deadlock held four engine fixes off production for an
-          # hour on the night this was written, while every run reported
-          # success having deployed nothing.
-          #
-          # So: an engine that is not dealing has no in-flight hands to
-          # protect, and deferring for its sake is pure downside. liveness
-          # and activeTables both come from the health body already fetched
-          # above, so this costs nothing.
-          LIVENESS=$(echo "$BODY" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("liveness",""))' 2>/dev/null || echo "")
-          TABLES=$(echo "$BODY" | python3 -c 'import json,sys; d=json.load(sys.stdin); v=d.get("activeTables"); print("ERR" if v is None else int(v))' 2>/dev/null || echo ERR)
-          UNHEALTHY=false
-          if [ -z "$BODY" ] || [ "$LIVENESS" != "ok" ]; then
-            UNHEALTHY=true
-            echo "::notice::Engine health is '${LIVENESS:-unreadable}' — spacing gate bypassed."
-          elif [ "$TABLES" != "ERR" ] && [ "$TABLES" -eq 0 ]; then
-            UNHEALTHY=true
-            echo "::notice::Engine reports 0 active tables — nothing to protect, spacing gate bypassed."
-          fi
-
-          if [ "${{ github.event_name }}" != "workflow_dispatch" ] \
-             && [ "$UNHEALTHY" = "false" ] \
-             && [ "$SINCE_SHIPPED_N" -ge 0 ] && [ "$SINCE_SHIPPED_N" -lt "$MIN_RESTART_SPACING_SEC" ]; then
-            echo "skip=true" >> $GITHUB_OUTPUT
-            # WARNING, not notice: this run is about to finish GREEN having
-            # deployed NOTHING, and an agent reading `gh run list` sees only
-            # "completed/success". A warning is an annotation, so it surfaces
-            # in the run header and in `gh run view` without anyone thinking
-            # to read the log of a successful run. See the NOT DEPLOYED step
-            # at the end of this job, which exists for the same reason.
-            echo "::warning title=NOT DEPLOYED::We restarted the engine only ${SINCE_SHIPPED_N}s ago (< ${MIN_RESTART_SPACING_SEC}s) and it is healthy with ${TABLES} tables — coalescing. This run shipped NOTHING. The catch-up schedule lands $SHORT within ${MIN_RESTART_SPACING_SEC}s."
-            exit 0
           fi
           echo "skip=false" >> $GITHUB_OUTPUT
           echo "Production serves '${VER:-unreadable}' (uptime ${UPTIME}s, our last deploy ${SINCE_SHIPPED}s ago), deploying $SHORT."
@@ -648,8 +655,9 @@ jobs:
             CONTROL_SHA='${{ github.sha }}'
             case \"\$CONTROL_SHA\" in (*[!0-9a-f]*|'') echo 'invalid control SHA'; exit 1;; esac
             [ \"\${#CONTROL_SHA}\" -eq 40 ]
-            # The runner already proved CONTROL_SHA was current main before
-            # staging this run. Main may legitimately advance while its tests
+            # The runner already proved CONTROL_SHA was current main - or an
+            # ancestor whose deploy control plane is byte-identical to main's -
+            # before staging this run. Main may legitimately advance while its tests
             # and immutable image build execute; require containment here,
             # not moving-tip equality, so unrelated merges cannot starve an
             # already-audited release forever.
@@ -838,7 +846,7 @@ jobs:
           # from one place and derived together. See the block above
           # `timeout-minutes` for the arithmetic that produced both; changing
           # either alone is the defect this step keeps re-producing.
-          JOB_TIMEOUT_S=$(( 110 * 60 ))
+          JOB_TIMEOUT_S=$(( 130 * 60 ))
           CUTOVER_RESERVE_S=540     # cutover + verify + promote (~2-4 min) + a 4-min proof that can fail
           ELAPSED_S=$(( NOW_EPOCH - ${DEPLOY_STARTED_AT:-$NOW_EPOCH} ))
           BUDGET_CAP_S=$(( JOB_TIMEOUT_S - ELAPSED_S - CUTOVER_RESERVE_S ))
@@ -853,9 +861,10 @@ jobs:
             # the expensive half of the work - and it is why this is a notice
             # rather than a warning, and why the reason recorded below says so
             # instead of blaming the break for never opening.
-            echo "::notice title=IMAGE STAGED, CUTOVER DEFERRED::The next maintenance break is ${SECS_TO_GATE}s away, beyond this run's ${BUDGET_CAP_S}s budget. $IMAGE_REPO:$SHA is built and on the host; the next window cuts over without rebuilding."
+            echo "::warning title=IMAGE STAGED, CUTOVER DEFERRED::The next maintenance break is ${SECS_TO_GATE}s away, beyond this run's ${BUDGET_CAP_S}s budget. $IMAGE_REPO:$SHA is built and on the host; the next window cuts over without rebuilding."
             echo "skip=true" >> $GITHUB_OUTPUT
-            echo "gate_reason=image staged for ${SHA:0:8}; the next break is ${SECS_TO_GATE}s away, beyond this run's budget, so the next window cuts over" >> $GITHUB_OUTPUT
+            echo "gate_kind=staged_deferred" >> $GITHUB_OUTPUT
+            echo "gate_reason=image staged for ${SHA:0:8}; the next break is ${SECS_TO_GATE}s away, beyond this run's budget, so a later run must cut it over" >> $GITHUB_OUTPUT
             exit 0
           fi
           # +90s of margin past the flag so a slow park does not lose the run.
@@ -895,6 +904,7 @@ jobs:
           # break genuinely stops firing that is an engine bug and it should be
           # loud, not routed around.
           echo "skip=true" >> $GITHUB_OUTPUT
+          echo "gate_kind=no_certificate" >> $GITHUB_OUTPUT
           echo "gate_reason=the engine never presented a complete current readyForRestart certificate" >> $GITHUB_OUTPUT
           echo "::warning title=BREAK NEVER OPENED::The engine never presented an active, durable counting_down break with readyForRestart=true, zero unparked tables, and at least 180 seconds remaining. Nothing was deployed. The next window retries automatically; fix the engine's park path rather than bypassing this authority."
           exit 0
@@ -1300,8 +1310,10 @@ jobs:
             echo "images retained:"; docker images club-arena-engine --format "  {{.Tag}}  {{.CreatedSince}}"' || true
 
       # ── THE STEP THAT EXISTS TO BE SEEN ────────────────────────────────
-      # A coalesced or drained run finishes GREEN having shipped nothing, and
-      # `gh run list` shows only "completed/success". On 2026-08-26 that cost
+      # (Since 2026-09-10 a drained run is RED - see the Verdict step - and a
+      # superseded or already-live one is green by design.)
+      # A skipped or drained run used to finish GREEN having shipped nothing, and
+      # `gh run list` showed only "completed/success". On 2026-08-26 that cost
       # a real investigation: a merged engine fix was believed live for
       # thirteen minutes because the deploy said success, and the only way to
       # learn otherwise was to read the log of a run that had not failed.
@@ -1351,8 +1363,8 @@ jobs:
           if [ "${{ steps.drain.outputs.skip }}" = "true" ]; then
             REASON="${{ steps.drain.outputs.gate_reason }}"
             [ -z "$REASON" ] && REASON="the break gate held; see the step log for which half"
-          elif [ "${{ steps.dedupe.outputs.skip }}" = "true" ]; then
-            REASON="coalescing — we restarted the engine too recently, or it is already on this commit"
+          elif [ "${{ steps.dedupe.outputs.reason }}" = "superseded" ]; then
+            REASON="superseded: main moved past this run before it started; the run on current main ships it"
           fi
           {
             echo "## THIS RUN DEPLOYED NOTHING"
@@ -1366,12 +1378,11 @@ jobs:
             # coloured red by the Verdict step at the end of the job.
             if [ "${{ steps.drain.outputs.skip }}" = "true" ]; then
               echo "This run is RED (see the Verdict step): it should have shipped"
-              echo "\`$SHA\` and did not. The engine watchdog dispatches the next"
-              echo "run, which waits in its break gate for the next :55 it can"
-              echo "reach; every cutover still requires a fresh readyForRestart certificate."
+              echo "\`$SHA\` and did not. Its Verdict step dispatches the next run,"
+              echo "which waits in its break gate for the next :55 it can reach;"
+              echo "every cutover still requires a fresh readyForRestart certificate."
             else
-              echo "Nothing needed shipping: production already serves this commit,"
-              echo "or a restart inside this same break was deliberately coalesced."
+              echo "Nothing needed shipping from this run: $REASON."
               echo "Every cutover still requires a fresh readyForRestart certificate."
             fi
             echo ""
@@ -1382,7 +1393,11 @@ jobs:
             echo "  --jq '.jobs[].steps[] | \"\\(.name): \\(.conclusion)\"'"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
-          echo "::warning title=DID NOT DEPLOY::$REASON — $SHA is NOT on production."
+          if [ "${{ steps.dedupe.outputs.reason }}" = "already_live" ]; then
+            echo "::notice title=ALREADY LIVE::production already serves $SHA; nothing to deploy."
+          else
+            echo "::warning title=DID NOT DEPLOY::$REASON — $SHA is NOT on production."
+          fi
 
       - name: Post-deploy summary
         if: always()
@@ -1434,11 +1449,13 @@ jobs:
           # DID NOT DEPLOY step prints - so the run, the summary and the
           # database can no longer tell three different stories.
           REASON: >-
-            ${{ steps.dedupe.outputs.skip == 'true' && 'coalesced or already serving this commit'
+            ${{ steps.dedupe.outputs.reason == 'superseded' && 'superseded: main moved past this run before it started; the run on current main ships it'
+             || steps.dedupe.outputs.reason == 'already_live' && 'already serving this commit'
              || (steps.drain.outputs.skip == 'true' && steps.drain.outputs.gate_reason)
              || steps.drain.outputs.skip == 'true' && 'the break gate declined without recording a reason'
              || steps.prove.outcome == 'failure' && 'cutover verified over HTTP but engine_leader never reported the new version: the version did not move'
              || steps.health.outputs.verified == 'true' && 'deployed and verified serving this commit'
+             || job.status == 'cancelled' && 'cancelled before a verified cutover'
              || 'run ended without a verified cutover' }}
         run: |
           npm ls pg >/dev/null 2>&1 || npm i pg@8 --no-save --no-audit --no-fund >/dev/null 2>&1 || true
@@ -1459,8 +1476,8 @@ jobs:
       #
       # So the colour now carries the outcome:
       #   GREEN  production serves this commit: this run cut it over, or it was
-      #          already live, or a second restart inside the same break was
-      #          deliberately coalesced (dedupe);
+      #          already live, or the run stood down superseded and handed the
+      #          train to current main (dedupe);
       #   RED    this run should have shipped and did not: the break gate
       #          declined (never opened, or out of budget) or the cutover did
       #          not verify. Every earlier failure is already red on its own.
@@ -1472,12 +1489,28 @@ jobs:
         if: always()
         env:
           DEDUPE_SKIP: ${{ steps.dedupe.outputs.skip }}
+          DEDUPE_REASON: ${{ steps.dedupe.outputs.reason }}
           DRAIN_SKIP: ${{ steps.drain.outputs.skip }}
+          GATE_KIND: ${{ steps.drain.outputs.gate_kind }}
           GATE_REASON: ${{ steps.drain.outputs.gate_reason }}
+          GH_TOKEN: ${{ github.token }}
           JOB_STATUS: ${{ job.status }}
           SHIPPED: ${{ steps.dedupe.outputs.skip != 'true' && steps.drain.outputs.skip != 'true' && steps.cutover.outcome == 'success' && steps.cutover.outputs.success == 'true' && steps.health.outputs.verified == 'true' && steps.prove.outcome == 'success' && (steps.seal_commit.outcome == 'success' || (steps.rollback.outcome == 'success' && steps.rollback.outputs.target_committed == 'true')) }}
         run: |
           SHORT="${SHA:0:8}"
+          # Hand the train on: dispatch the next run on current main. It queues
+          # behind this run and waits in its own gate for the next :55. Used
+          # only where this run's commit still has to ship and nothing else is
+          # coming for it (see THE TRAIN HANDS ITSELF ON, below).
+          hand_on() {
+            if gh workflow run auto-deploy-hetzner.yml --repo "$GITHUB_REPOSITORY" --ref main; then
+              echo "Handed on: dispatched the next run on current main; it waits for the next break."
+              echo "Handed on: the next run on current main waits for the next :55." >> "$GITHUB_STEP_SUMMARY"
+              return 0
+            fi
+            echo "::error title=TRAIN STOPPED::could not dispatch the next run; nothing else will start one. Dispatch auto-deploy-hetzner.yml on main."
+            return 1
+          }
           if [ "$JOB_STATUS" != "success" ]; then
             echo "An earlier step already failed or cancelled this run; its error is the verdict."
             exit 0
@@ -1488,12 +1521,52 @@ jobs:
             exit 0
           fi
           if [ "$DEDUPE_SKIP" = "true" ]; then
-            echo "Nothing to ship: production already serves $SHORT, or a restart inside this break was coalesced."
-            echo "### Verdict: nothing to ship (already live, or coalesced inside this break)" >> "$GITHUB_STEP_SUMMARY"
+            echo "Nothing to ship for $SHORT: ${DEDUPE_REASON:-already live}."
+            echo "### Verdict: nothing to ship (${DEDUPE_REASON:-already live})" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          # The one deliberate deferral the gate may take: another owner holds
+          # the production window. Every other decline should have shipped.
+          # Deliberate is not finished, though: the commit still has to ship
+          # once the window is free, so the deferral hands the train on too,
+          # and a hand-on that cannot be made turns the run red.
+          if [ "$DRAIN_SKIP" = "true" ] && [ "$GATE_KIND" = "lease_held_elsewhere" ]; then
+            echo "Deliberately deferred: $GATE_REASON"
+            echo "### Verdict: deferred \`$SHORT\` - $GATE_REASON" >> "$GITHUB_STEP_SUMMARY"
+            hand_on || exit 1
             exit 0
           fi
           REASON="${GATE_REASON:-the cutover did not verify}"
           [ "$DRAIN_SKIP" = "true" ] || REASON="the cutover did not verify"
+          # Ask production once before calling it a failure: the dedupe may
+          # have read an unreadable /health while the engine already served
+          # this commit. Unreadable stays red, and says it could not tell.
+          SERVED=$(curl -sf --max-time 10 "$ENGINE_URL/health?nocache=$(date +%s%N)" 2>/dev/null \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin).get("version") or "")' 2>/dev/null || echo "")
+          if [ -n "$SERVED" ] && [ "$SERVED" = "$SHORT" ]; then
+            echo "::warning title=SERVING WITHOUT A CUTOVER::$REASON, yet production serves $SHORT."
+            echo "### Verdict: production serves \`$SHORT\` although this run did not cut over ($REASON)" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          [ -n "$SERVED" ] || REASON="$REASON; could not tell what production serves (/health unreadable)"
           echo "### Verdict: DID NOT SHIP \`$SHORT\` - $REASON" >> "$GITHUB_STEP_SUMMARY"
           echo "::error title=DID NOT SHIP::$REASON. $SHA is not on production, and this run should have put it there."
+          # ── THE TRAIN HANDS ITSELF ON (2026-09-10) ───────────────────────
+          #
+          # A break gate that could not serve this run - no certificate, or the
+          # build landed too late for its break - is not the end of the commit.
+          # Nothing else is coming for it: the cron and the watchdog dispatch
+          # are gone. So the run that failed to ship dispatches its successor
+          # on current main, which queues behind this run and waits in its own
+          # gate for the next :55. At most one such run per break, because each
+          # one waits a whole break before it can decline again.
+          #
+          # ONLY a gate decline hands on. A run whose tests, build or cutover
+          # failed has already ended red above; handing THAT on would retry a
+          # broken commit every hour and restart production into it every
+          # hour. The next push - the fix - starts the next run.
+          if [ "$DRAIN_SKIP" = "true" ] \
+             && { [ "$GATE_KIND" = "staged_deferred" ] || [ "$GATE_KIND" = "no_certificate" ]; }; then
+            hand_on || true
+          fi
           exit 1

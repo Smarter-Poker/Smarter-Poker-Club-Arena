@@ -99,7 +99,11 @@ describe('the drain gate cannot pin production on stale code', () => {
     // only "success"; a warning surfaces in the run header without anyone
     // thinking to open the log of a green run. This is how three and a half
     // hours of staleness went unnoticed.
-    expect(WF).toMatch(/::warning title=NOT DEPLOYED::/);
+    // (2026-09-10: the coalescing path that raised "NOT DEPLOYED" is gone with
+    // the spacing gate; every skip that remains announces itself through the
+    // DID NOT DEPLOY step, and a decline that should have shipped is RED.)
+    expect(WF).toMatch(/::warning title=DID NOT DEPLOY::/);
+    expect(WF).toMatch(/::error title=DID NOT SHIP::/);
     // Was PROCEEDING ON STALENESS CAP, which announced the workflow giving up
     // and restarting on live tables. That path is gone; the no-op path that
     // remains is a break that never opened, and it must be just as loud.

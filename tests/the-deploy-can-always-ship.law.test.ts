@@ -76,6 +76,14 @@
  *     breaks with the fix merged. The law now covers EVERY start minute, cold
  *     and staged, and the watchdog's idea of a stale run must outlast the
  *     longest legitimate wait.
+ *
+ *  5. Later the same day the cron went altogether (Dan: "i do not want any
+ *     watch dogs ... i want any and all pushes to be published in the order
+ *     that they come in!"). Every engine push starts its own run at whatever
+ *     minute it merges, so "every start minute" stopped being a safety margin
+ *     and became the only case there is. The coalescing gate went too: the
+ *     :55 break is the spacing, and with nothing coming back later a coalesced
+ *     run would strand the commit it was asked to ship.
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync, existsSync } from 'node:fs';
@@ -86,7 +94,7 @@ const WORKFLOW = join(ROOT, '.github/workflows/auto-deploy-hetzner.yml');
 const yml = readFileSync(WORKFLOW, 'utf8');
 const imageBuilder = readFileSync(join(ROOT, 'server/scripts/build-engine-image.sh'), 'utf8');
 
-/** The step that decides whether to coalesce. */
+/** The step that decides whether there is anything to ship. */
 function dedupeStep(): string {
   const start = yml.indexOf('- name: Skip if production already serves this commit');
   const end = yml.indexOf('- name: Setup Node 22', start);
@@ -127,6 +135,12 @@ describe('the wait budget can actually reach the break', () => {
   const REUSED_ELAPSED_MIN = 12;
   /** A run that builds cold: everything above plus the worst observed build. */
   const COLD_ELAPSED_MIN = REUSED_ELAPSED_MIN + WORST_BUILD_MIN;
+  /**
+   * What a FAILED cutover still needs after the reserve: the ROLLBACK's proxy
+   * polls and strict proof (~8m) plus the always() tail (~2m). The job timeout
+   * must never be the thing that ends a rollback halfway.
+   */
+  const ROLLBACK_TAIL_MIN = 10;
   /** The gate polls until the next :56 — one minute past the flag opening. */
   const GATE_MINUTE = 56;
 
@@ -155,39 +169,23 @@ describe('the wait budget can actually reach the break', () => {
     ).toBe(timeoutMin);
   });
 
-  it('at least one scheduled tick can build from cold AND still reach the break', () => {
-    expect(cronMinutes.length, 'no cron schedule found').toBeGreaterThan(0);
-    const budgetMin = timeoutMin - WORST_BUILD_MIN - reserveS / 60;
-    const survivors = cronMinutes.filter(
-      (m) => minutesToGate((m + WORST_BUILD_MIN) % 60) <= budgetMin
+  it('no scheduled tick is left to rely on: the start minute is whenever a push lands', () => {
+    // The two tick laws that stood here proved every CRON minute could build
+    // and reach the break. There is no cron (2026-09-10): the run starts when
+    // an engine push merges, or when the run before it hands the train on, at
+    // any minute of the hour. The law below, over all sixty start minutes, is
+    // therefore the whole of the arithmetic, not its safety margin.
+    expect(cronMinutes, 'a cron schedule is back - the start-minute law is what governs').toEqual(
+      []
     );
-    expect(
-      survivors.length,
-      `no cron minute (${cronMinutes.join(', ')}) can build for ${WORST_BUILD_MIN}m and still ` +
-        `wait ${budgetMin}m for :${GATE_MINUTE}. This is the 2026-09-05 defect: a run that ` +
-        `does all the work and then refuses to spend the last three minutes.`
-    ).toBeGreaterThan(0);
-  });
-
-  it('EVERY scheduled tick reaches the break once the image is staged', () => {
-    // The staged-image path is the one that must never fail, because it is the
-    // path a retry takes: the previous run (or an off-cycle dispatch) built the
-    // image, so this run's only job is to be present at :55.
-    const budgetMin = timeoutMin - REUSED_ELAPSED_MIN - reserveS / 60;
-    for (const m of cronMinutes) {
-      const wait = minutesToGate((m + REUSED_ELAPSED_MIN) % 60);
-      expect(
-        wait,
-        `a :${m} tick reusing a staged image reaches the gate with ${wait}m to wait but only ` +
-          `${budgetMin}m of budget`
-      ).toBeLessThanOrEqual(budgetMin);
-    }
+    expect(yml).toMatch(/^\s{2}push:\s*\n\s{4}branches: \[main\]/m);
   });
 
   it('EVERY start minute reaches the next break, staged or cold', () => {
-    // The caller is not the cron. engine-watchdog.sh and agents dispatch at
-    // whatever minute they happen to run, so the budget has to serve all
-    // sixty. +1 because a run reaching the gate at :56:59 waits 59m59s, not 59m.
+    // The caller is a push, at whatever minute it merges, or the run before it
+    // handing the train on, at whatever minute that run ended - so the budget
+    // has to serve all sixty. +1 because a run reaching the gate at :56:59
+    // waits 59m59s, not 59m.
     for (const elapsed of [REUSED_ELAPSED_MIN, COLD_ELAPSED_MIN]) {
       const budgetMin = timeoutMin - elapsed - reserveS / 60;
       for (let start = 0; start < 60; start++) {
@@ -202,20 +200,34 @@ describe('the wait budget can actually reach the break', () => {
     }
   });
 
+  it('the worst start minute still leaves room for a rollback to finish', () => {
+    const worst = COLD_ELAPSED_MIN + 60 + reserveS / 60 + ROLLBACK_TAIL_MIN;
+    expect(
+      timeoutMin,
+      `a cold build reaching the gate just after :${GATE_MINUTE} needs ${worst}m including a ` +
+        `rollback, but the job is killed at ${timeoutMin}m`
+    ).toBeGreaterThanOrEqual(worst);
+  });
+
   it('the watchdog never treats a run waiting for its break as stale', () => {
     // A run can now legitimately hold the deploy group for up to an hour. If
     // the watchdog's in-flight window were shorter than the job ceiling, it
-    // would decide that run was a zombie and dispatch another behind it.
+    // would decide that run was a zombie and announce that the train had
+    // stopped while it was waiting, correctly, for its break. (It no longer
+    // dispatches anything; a false "train stopped" is still a false page.)
     const sh = readFileSync(join(ROOT, '.github/scripts/engine-watchdog.sh'), 'utf8');
     const stale = num(
       /INFLIGHT_STALE_MIN=\$\{INFLIGHT_STALE_MIN:-(\d+)\}/,
       sh,
       'INFLIGHT_STALE_MIN'
     );
+    // Age is measured from createdAt, which includes time spent PENDING behind
+    // another run of the group, so one run can be in flight for two ceilings.
     expect(
       stale,
-      `engine-watchdog.sh treats runs older than ${stale}m as stale, but a deploy may run ${timeoutMin}m`
-    ).toBeGreaterThan(timeoutMin);
+      `engine-watchdog.sh treats runs older than ${stale}m as stale, but a deploy may be in ` +
+        `flight for ${2 * timeoutMin}m (pending behind one ceiling, then running its own)`
+    ).toBeGreaterThanOrEqual(2 * timeoutMin + 10);
   });
 
   it('refusing to wait says the image is staged, and does not blame the break', () => {
@@ -228,36 +240,48 @@ describe('the wait budget can actually reach the break', () => {
   });
 });
 
-describe('the coalescing gate asks when WE last restarted production', () => {
+describe('nothing defers a run that has something to ship', () => {
   const step = dedupeStep();
 
-  it('the spacing decision does not read /health.uptime', () => {
-    // THE REGRESSION, BY NAME. Uptime is reset by anything that restarts the
-    // container - sp-autoheal did it five times in one day - so a gate keyed on
-    // it defers to events that are not deploys and cannot tell the difference.
-    const decision = step.slice(step.indexOf('github.event_name'), step.indexOf('skip=false'));
-    expect(
-      decision,
-      'the spacing gate is comparing UPTIME again - it must compare the last SHIPPED deploy'
-    ).not.toMatch(/\$UPTIME"?\s*-lt\s*"?\$MIN_RESTART_SPACING_SEC/);
-    expect(decision).toMatch(/SINCE_SHIPPED_N"?\s*-lt\s*"?\$MIN_RESTART_SPACING_SEC/);
+  it('there is no spacing decision left that could stand a run down', () => {
+    // THE REGRESSION, BY NAME, TWICE OVER. The spacing gate first read the
+    // wrong clock (/health.uptime, reset by sp-autoheal five times in one
+    // day), and once it read the right one it still had only one power: to
+    // tell a run with new code to stand down and trust a later tick. With the
+    // cron gone nothing comes later. The only skips left are "superseded" (and
+    // that run hands the train on) and "already live".
+    const code = step.replace(/^\s*#.*$/gm, '');
+    expect(code).not.toMatch(/MIN_RESTART_SPACING_SEC/);
+    expect(code).not.toMatch(/reason=coalesced/);
+    const reasons = [
+      ...new Set([...code.matchAll(/echo "reason=([a-z_]+)"/g)].map((m) => m[1])),
+    ].sort();
+    expect(reasons).toEqual(['already_live', 'superseded']);
   });
 
-  it('the spacing clock comes from the deploy ledger', () => {
+  it('a commit production already contains is live by inclusion, never redeployed backwards', () => {
+    // A push event GitHub delivers late can queue a run for an older commit
+    // behind the run that shipped a newer one. That commit is on production
+    // already; deploying it would be a step backwards that the forward-only
+    // release seal refuses, red, for no reason.
+    expect(step).toMatch(
+      /git merge-base --is-ancestor "\$SHA" "\$VER" 2>\/dev\/null; then\s*\n\s*echo "skip=true" >> \$GITHUB_OUTPUT\s*\n\s*echo "reason=already_live"/
+    );
+  });
+
+  it('the unplanned-restart clock comes from the deploy ledger', () => {
     expect(step).toMatch(/last-shipped-engine-deploy\.mjs/);
     expect(existsSync(join(ROOT, 'scripts/ci/last-shipped-engine-deploy.mjs'))).toBe(true);
   });
 
-  it('an unreadable ledger does NOT coalesce', () => {
-    // Failing closed here means declining to ship, which is the failure this
-    // whole change exists to remove. The break gate downstream is what keeps a
-    // restart inside an announced window; spacing is only a courtesy.
+  it('an unreadable ledger never invents an unplanned restart', () => {
+    // Non-numeric answers (ERR, NEVER) become -1, and the report requires a
+    // positive age: silence from the ledger is not evidence of anything.
     const script = readFileSync(join(ROOT, 'scripts/ci/last-shipped-engine-deploy.mjs'), 'utf8');
     expect(script).toMatch(/'ERR'/);
     expect(script).toMatch(/'NEVER'/);
-    // Non-numeric answers become -1, and the gate requires >= 0 to coalesce.
     expect(step).toMatch(/SINCE_SHIPPED_N=-1/);
-    expect(step).toMatch(/SINCE_SHIPPED_N"?\s*-ge\s*0/);
+    expect(step).toMatch(/"\$SINCE_SHIPPED_N" -gt 0/);
   });
 
   it('a restart nobody asked for is reported', () => {
@@ -360,21 +384,21 @@ describe('the watchdog can say WHY production is behind', () => {
     expect(sh).toMatch(/if \[ -n "\$\{DATABASE_URL:-\}" \]/);
   });
 
-  it('being behind always dispatches a deploy, even far from the break', () => {
-    // It used to refuse unless the next :55 was within 13 minutes, because a
-    // run that cannot reach the break "provably ships nothing". That rule was
-    // concentrating every dispatch into :42-:47, where the build then outlived
-    // the break it was aimed at. Since 2026-09-10 the deploy's ceiling lets a
-    // run started at ANY minute wait in its gate for the next :55 it can
-    // reach, so a dispatch always ships at a break - the only question is
-    // which one, and the watchdog says so.
-    const block = sh.slice(sh.indexOf('MINS_TO_WINDOW='), sh.indexOf('BODY=$(cat'));
-    expect(block).toMatch(/gh workflow run/);
-    expect(
-      block,
-      'a dispatch must no longer be gated on the break being close - it stages the image either way'
-    ).not.toMatch(/if \[ "\$MINS_TO_WINDOW" -le \d+ \]; then\s*\n\s*if gh workflow run/);
-    expect(block).toMatch(/waits in the break gate/);
+  it('being behind is reported, never dispatched: the train hands itself on', () => {
+    // It used to dispatch the deploy whenever the engine was behind, and on
+    // 2026-09-10 it was the thing starting nearly every deploy - a watchdog as
+    // the primary trigger (Dan: "i do not want any watch dogs"). The train now
+    // starts on every engine push and hands itself on inside the workflow, so
+    // an engine that stays behind means a run FAILED and nothing was pushed
+    // since. That needs a person; one more dispatch of the same commit does not.
+    const code = sh.replace(/^\s*#.*$/gm, '');
+    expect(code).not.toMatch(/gh workflow run/);
+    const block = sh.slice(
+      sh.indexOf('NEXT_WINDOW_EPOCH=$(window_at_or_after "$NOW_TS")'),
+      sh.indexOf('BODY=$(cat')
+    );
+    expect(block, 'it still says whether a run is waiting for the break').toMatch(/INFLIGHT=/);
+    expect(block, 'and says so loudly when nothing is coming').toMatch(/DEPLOY TRAIN STOPPED/);
     expect(block, 'the :35 tick is not a caller anyone can rely on').not.toMatch(
       /:35 tick cuts over/
     );

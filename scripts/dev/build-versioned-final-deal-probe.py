@@ -24,6 +24,24 @@ LANE_HELPERS = {
     "fn_ca_lock_settlement_lane_global": ("", "343015440ea5c84ee4ca7ae583c73d30"),
     "fn_ca_share_settlement_lane_for_table": ("uuid", "006d78a441e65d000d1d78929649bb44"),
 }
+STAGE_B_MIGRATION_NAME = "stage_b_current_postimage_contraction"
+
+
+def exact_migration(root: Path, migration_name: str) -> Path:
+    migration_directory = root / "supabase/migrations"
+    matches = sorted(
+        path for path in migration_directory.iterdir()
+        if path.is_file() and re.fullmatch(
+            rf"[0-9]{{14}}_{re.escape(migration_name)}\.sql(?:\.pending)?",
+            path.name,
+        )
+    )
+    if len(matches) != 1:
+        raise ValueError(
+            f"expected exactly one staged-or-promoted {migration_name} migration; "
+            f"found {len(matches)}"
+        )
+    return matches[0]
 
 
 def lane_helpers(path: Path) -> list[tuple[str, str, str, str]]:
@@ -108,7 +126,13 @@ def cash_leaf_gates(root: Path) -> str:
     return "".join(gates)
 
 
-def compose(root: Path, probe: Path, fixed_tail: str, lane_path: Path) -> str:
+def compose(
+    root: Path,
+    probe: Path,
+    fixed_tail: str,
+    lane_path: Path,
+    stage_b_path: Path | None = None,
+) -> str:
     expansion_path = root / "scripts/deploy/phase-three-versioned-final-deal.sql"
     activation_path = root / "scripts/deploy/phase-three-activate-versioned-final-deal.sql"
     fixture_path = root / "scripts/ci/probes/atomic-terminal-rehearsal-fixture.sql"
@@ -129,7 +153,7 @@ def compose(root: Path, probe: Path, fixed_tail: str, lane_path: Path) -> str:
     authority_gate = "DO $native_gate$ BEGIN\n" + "\n".join(
         f"IF (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.{name}(uuid)'::regprocedure) IS DISTINCT FROM '{digest}' THEN RAISE EXCEPTION 'native authority source differs: {name}'; END IF;"
         for name, digest in fingerprints) + "\nEND; $native_gate$;\n"
-    scope_path = root / "scripts/deploy/phase-three-strict-tournament-cutover.sql"
+    scope_path = stage_b_path or exact_migration(root, STAGE_B_MIGRATION_NAME)
     scope_defs = re.findall(r"(CREATE OR REPLACE FUNCTION public\.fn_assert_tournament_manager_write_scope\(.*?AS (\$[^$]*\$).*?\2;)", scope_path.read_text(), re.S)
     if len(scope_defs) != 1:
         raise ValueError("exact manager scope definition changed")

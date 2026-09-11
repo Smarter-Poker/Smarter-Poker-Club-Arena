@@ -8,7 +8,7 @@
  * in the same transaction as the zero stack and knockout evidence.
  */
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -21,13 +21,14 @@ const terminalHand = readFileSync(
   ),
   'utf8'
 );
-const seatExit = readFileSync(
-  resolve(
-    here,
-    '../../../supabase/migrations/20260909014545_tournament_seat_exits_stay_inside_tournament_authority.sql'
-  ),
-  'utf8'
+const migrationsDirectory = resolve(here, '../../../supabase/migrations');
+const contractionFiles = readdirSync(migrationsDirectory).filter(
+  (file) =>
+    file.endsWith('_stage_b_current_postimage_contraction.sql') ||
+    file.endsWith('_stage_b_current_postimage_contraction.sql.pending')
 );
+if (contractionFiles.length !== 1) throw new Error('Stage-B contraction migration is ambiguous');
+const seatExit = readFileSync(resolve(migrationsDirectory, contractionFiles[0]), 'utf8');
 
 describe('tournament seat release is committed at the root', () => {
   it('contains no engine ghost-seat watcher, timer, poll, or repair RPC', () => {

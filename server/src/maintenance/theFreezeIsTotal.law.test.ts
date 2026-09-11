@@ -265,11 +265,11 @@ describe('the tournament balancer does not move players during the break', () =>
 describe('the break is idle before the first table is woken (MaintenanceBreak.end)', () => {
   it("phase = 'idle' precedes resumeEveryEngine() inside end()", () => {
     const src = read('maintenance/MaintenanceBreak.ts');
-    const end = sliceMethod(src, 'async end(): Promise<void> {');
-    const idle = at(end, "this.phase = 'idle';", 'phase idle');
+    const end = sliceMethod(src, 'async end(): Promise<void> {').replace(/\s+/g, '');
+    const idle = at(end, "this.phase='idle';", 'phase idle');
     const resume = at(
       end,
-      'this.resumeEveryEngine(reconnectFreezeStartedAt > 0 ? reconnectFreezeStartedAt : undefined)',
+      'this.resumeEveryEngine(reconnectFreezeStartedAt>0?reconnectFreezeStartedAt:undefined)',
       'resume'
     );
     expect(

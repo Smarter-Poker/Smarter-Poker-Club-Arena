@@ -3240,8 +3240,7 @@ export abstract class ServerTableEngineBase {
        have fetched anyway, so this costs the same single round trip - and
        having it HERE is what lets a table that cannot deal still release a
        swap hold whose move has died (see reconcileSeatMoveHolds). */
-    const pending =
-      prefetched === undefined ? await this.readPendingSeatMoves() : prefetched;
+    const pending = prefetched === undefined ? await this.readPendingSeatMoves() : prefetched;
     if (!this.lifecycleCanMutate()) return [];
     if (pending === null) return [];
     this.reconcileSeatMoveHolds(pending);
@@ -5665,7 +5664,8 @@ export abstract class ServerTableEngineBase {
         (this.tableInfo as any).seven_deuce_amount =
           (tableRow as any).seven_deuce_amount ?? undefined;
         this.tableInfo.straddle_enabled = (tableRow as any).straddle_enabled ?? undefined;
-        (this.tableInfo as any).auto_utg_straddle = (tableRow as any).auto_utg_straddle ?? undefined;
+        (this.tableInfo as any).auto_utg_straddle =
+          (tableRow as any).auto_utg_straddle ?? undefined;
         (this.tableInfo as any).voluntary_straddle =
           (tableRow as any).voluntary_straddle ?? undefined;
         this.tableInfo.min_buy_in = (tableRow as any).min_buy_in ?? undefined;

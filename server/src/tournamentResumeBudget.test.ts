@@ -154,19 +154,42 @@ describe('the RUNNING re-adoption law', () => {
 });
 
 const SRC = readFileSync(resolve(__dirname, './GameServer.ts'), 'utf8');
-const DISCOVERY = sliceMethod(SRC, 'private async discoverTournaments(');
-const DISCOVERY_CODE = blankNonCode(DISCOVERY);
+/**
+ * Since 2026-09-11 the re-adoption lives in its own lane. It was inside
+ * discoverTournaments, whose pass walks every REGISTERING tournament and
+ * awaits a horse top-up for each - minutes per pass on production - so a
+ * budget applied once per pass let 25 resumes through every ~15 minutes.
+ */
+const LANE = sliceMethod(SRC, 'private async discoverRunningResumes(');
+const LANE_CODE = blankNonCode(LANE);
+const DISCOVERY_CODE = blankNonCode(sliceMethod(SRC, 'private async discoverTournaments('));
 /** The re-adoption loop itself, by its own braces. */
 const RESUME_LOOP = sliceEnclosingBlock(SRC, "'GameServer.Tournament_resume_failed_for_t'", 0, 1);
 
 describe('the RUNNING re-adoption loop is wired to the law', () => {
   it('no longer launches an admission for every managerless RUNNING tournament', () => {
-    expect(DISCOVERY_CODE).not.toContain('for (const tournament of running || [])');
-    expect(DISCOVERY).toMatch(/selectRunningResumes\(\s*running \|\| \[\]/);
+    expect(LANE_CODE).not.toContain('for (const tournament of running || [])');
+    expect(LANE).toMatch(/selectRunningResumes\(\s*running \|\| \[\]/);
+  });
+
+  it('runs on its own five-second lane, never behind the REGISTERING walk', () => {
+    // The whole re-adoption moved out of the big loop: no selection, no
+    // verdict and no RUNNING board read are left in it.
+    expect(DISCOVERY_CODE).not.toContain('selectRunningResumes(');
+    expect(DISCOVERY_CODE).not.toContain('nextEngineStartBudget(');
+    expect(DISCOVERY_CODE).not.toContain('tournamentResumeDistress');
+    // Its own loop, joined by shutdown like every discovery loop, on the
+    // discovery cadence.
+    expect(LANE).toContain('while (this.directAdmissionIsCurrent(generation))');
+    expect(LANE).toContain('await this.sleep(TOURNAMENT_DISCOVERY_INTERVAL)');
+    const boot = sliceMethod(SRC, 'private async performStart(');
+    expect(boot).toMatch(
+      /this\.launchDiscoveryJob\(\s*this\.discoverRunningResumes\(\),\s*'GameServer\.Tournament_resume_lane_fatal_err'/
+    );
   });
 
   it('selects against the budget, the in-flight resumes and the admission registry', () => {
-    const selection = DISCOVERY.slice(DISCOVERY.indexOf('selectRunningResumes('));
+    const selection = LANE.slice(LANE.indexOf('selectRunningResumes('));
     expect(selection).toContain('budget: this.tournamentResumeBudget');
     expect(selection).toContain(
       'resumesInFlight: resumesHoldingASlot(this.tournamentResumesInFlight'
@@ -195,19 +218,17 @@ describe('the RUNNING re-adoption loop is wired to the law', () => {
   });
 
   it('applies exactly one verdict per pass, in a finally, with the C20 law', () => {
-    expect(DISCOVERY).toContain(
-      'const resumeDistressSinceLastPass = this.tournamentResumeDistress;'
-    );
-    expect(DISCOVERY).toContain('this.tournamentResumeDistress = 0;');
+    expect(LANE).toContain('const resumeDistressSinceLastPass = this.tournamentResumeDistress;');
+    expect(LANE).toContain('this.tournamentResumeDistress = 0;');
     const verdict = sliceEnclosingBlock(
       SRC,
       'this.tournamentResumeBudget = nextEngineStartBudget('
     );
-    expect(DISCOVERY).toMatch(
+    expect(LANE).toMatch(
       /\}\s*finally\s*\{\s*this\.tournamentResumeBudget = nextEngineStartBudget\(\s*this\.tournamentResumeBudget,\s*resumePassDistressed\s*\)/
     );
     expect(verdict).toContain('resumePassDistressed');
-    expect(DISCOVERY_CODE.match(/nextEngineStartBudget\(/g) ?? []).toHaveLength(1);
+    expect(LANE_CODE.match(/nextEngineStartBudget\(/g) ?? []).toHaveLength(1);
   });
 
   it('an unreadable board is distress, not a clean pass', () => {

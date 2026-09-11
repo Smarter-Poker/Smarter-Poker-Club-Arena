@@ -210,6 +210,58 @@ describe('TournamentEliminationScheduler', () => {
     scheduler.stop();
   });
 
+  it('an urgent upgrade leaves no stale routine reference for a rerun to jump the queue with', async () => {
+    // 2026-09-11. The upgrade used to leave A's old routine reference at the
+    // head. After A's urgent sweep ran, a routine rerun queued A as routine
+    // again and that old reference was valid once more: A ran twice before B
+    // and C, which had been waiting all along (X, A, A, B, C). A coalesced
+    // rerun belongs at the tail.
+    vi.useFakeTimers();
+    const scheduler = new TournamentEliminationScheduler({
+      maxConcurrent: 1,
+      sweepWarnMs: 0,
+      startTimers: false,
+    });
+    const order: string[] = [];
+    const gates = new Map<string, () => void>();
+    const run = (id: string, holds: number) => {
+      let calls = 0;
+      return async () => {
+        order.push(id);
+        if (calls++ < holds) await new Promise<void>((resolve) => gates.set(id, resolve));
+      };
+    };
+    const settle = async (): Promise<void> => {
+      for (let turn = 0; turn < 10; turn++) await flush();
+    };
+
+    // X holds the only slot; A, B and C wait behind it as routine.
+    scheduler.register({ tournamentId: 'X', run: run('X', 1) });
+    await flush();
+    scheduler.register({ tournamentId: 'A', run: run('A', 1) });
+    scheduler.register({ tournamentId: 'B', run: run('B', 0) });
+    scheduler.register({ tournamentId: 'C', run: run('C', 0) });
+    await flush();
+    expect(order).toEqual(['X']);
+
+    // A bust at A upgrades it in place, so A runs next, ahead of B and C.
+    scheduler.wakeUrgentAfter('A', 0);
+    await vi.advanceTimersByTimeAsync(0);
+    gates.get('X')!();
+    await settle();
+    expect(order).toEqual(['X', 'A']);
+
+    // While A runs, a routine feature wake marks it for one coalesced rerun.
+    scheduler.wakeAfter('A', 0);
+    await vi.advanceTimersByTimeAsync(0);
+    gates.get('A')!();
+    await settle();
+
+    expect(order).toEqual(['X', 'A', 'B', 'C', 'A']);
+    expect(scheduler.snapshot()).toMatchObject({ queued: 0, running: 0 });
+    scheduler.stop();
+  });
+
   it('admits a delayed unresolved bust ahead of a loaded routine causal backlog', async () => {
     vi.useFakeTimers();
     const scheduler = new TournamentEliminationScheduler({

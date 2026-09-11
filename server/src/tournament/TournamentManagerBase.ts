@@ -646,6 +646,26 @@ export abstract class TournamentManagerBase {
     return false;
   }
 
+  /**
+   * True when this generation stood down on its own - it finished, its start
+   * or resume failed, or it was stopped - while its lease was still its own.
+   * GameServer's renewal pass still fences and retires such a manager, but it
+   * is not a lost lease and must not be charged to the RUNNING re-adoption
+   * budget (2026-09-11, performOwnedEngineLeaseProofRenewal).
+   *
+   * Read-only on purpose. isRunning() and hasCurrentTournamentLeaseAuthority()
+   * expire a lapsed proof while they read it, and expiry fences the manager,
+   * which sets the very flag read here. A manager in the between-hands
+   * shutdown drain is not running but still depends on its lease, so it has
+   * not stood down until the final shutdown fence.
+   */
+  stoodDownWithItsLeaseIntact(): boolean {
+    return (
+      !this.tournamentLeaseAuthorityExpired &&
+      (this.stopFenceApplied || (!this.running && !this.shutdownDrainFenceApplied))
+    );
+  }
+
   /** Invalidate all async work synchronously before physical teardown awaits. */
   fenceForTournamentLeaseLoss(): void {
     if (this.tournamentLeaseGeneration) this.tournamentLeaseAuthorityExpired = true;

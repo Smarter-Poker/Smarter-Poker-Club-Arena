@@ -3240,8 +3240,7 @@ export abstract class ServerTableEngineBase {
        have fetched anyway, so this costs the same single round trip - and
        having it HERE is what lets a table that cannot deal still release a
        swap hold whose move has died (see reconcileSeatMoveHolds). */
-    const pending =
-      prefetched === undefined ? await this.readPendingSeatMoves() : prefetched;
+    const pending = prefetched === undefined ? await this.readPendingSeatMoves() : prefetched;
     if (!this.lifecycleCanMutate()) return [];
     if (pending === null) return [];
     this.reconcileSeatMoveHolds(pending);
@@ -4865,6 +4864,53 @@ export abstract class ServerTableEngineBase {
     );
   }
 
+  /**
+   * A by-design pause that has TAKEN EFFECT - the question the table watchdog
+   * and GameServer's zombie reaper ask before they stand down (2026-09-11).
+   *
+   * isPausedByDesign() goes true the moment an authority raises its flag, and
+   * for what it was written for that is right: a parked table is not a stall.
+   * But almost every authority is a "stop at the next hand boundary" fence,
+   * raised on tables still playing a hand: the maintenance break at :53
+   * (maintenancePaused, on EVERY table), the tournament's own synchronized
+   * break at :55 and hand-for-hand (pauseAfterHand -> handForHandPaused, on
+   * every table of the event), and a deal hold. None of them stops the turn
+   * clock. Until the hand lands the table is PLAYING, and a hand that froze is
+   * exactly as dead under one of those flags as without it.
+   *
+   * Both readers took the flag for the fact. The watchdog stood down for every
+   * table still mid-hand when a flag went up, so a hand that lost its clock in
+   * the last-hand window could not be rescued; the reaper exempted it for
+   * MAX_HEALTHY_PAUSE_MS - ten minutes, longer than the whole break - so it
+   * could not be reaped either. It never parked, and one table that never
+   * parks keeps readyForRestart shut. On 2026-09-11 build 404948b3 froze
+   * tournament tables mid-hand (#4225) and held 514, 526 and 523 of them
+   * unparked through three countdowns: no certificate, no restart, and no way
+   * for the fix to ship without an owner-approved exception.
+   *
+   * So: between hands every authority means what it says. Mid-hand, only a
+   * fence a REBUILD WOULD LOSE still holds the table - the final-table deal,
+   * the terminal closeout and an FSM 'paused' lock live on this engine alone.
+   * The others survive a rebuild: MaintenanceBreak.adopt() parks every engine
+   * created during the break, and TournamentManagerBase.
+   * prepareManagedTableEngineForPlay() re-applies the tournament break, the
+   * add-on break and hand-for-hand to a replacement before admitting it. So a
+   * frozen hand under them is worked by the watchdog and reaped on its usual
+   * clock, and its replacement arrives parked - the certificate is earned,
+   * not waived.
+   *
+   * (First draft counted every non-maintenance authority at once, mid-hand
+   * too. Review caught it: the :55 tournament break raises handForHandPaused
+   * on every MTT table, so from :55 - the only minutes readyForRestart can
+   * open - the draft shielded a frozen MTT hand again.)
+   */
+  isParkedByDesign(): boolean {
+    if (this.isBetweenHands()) return this.isPausedByDesign();
+    return (
+      this.finalTableDealPaused || this.terminalCloseoutPaused || this.tableFSM.state === 'paused'
+    );
+  }
+
   /** Ms spent in the current by-design pause; 0 when not paused. */
   msPaused(): number {
     return this.pausedSinceMs === 0 ? 0 : Date.now() - this.pausedSinceMs;
@@ -5665,7 +5711,8 @@ export abstract class ServerTableEngineBase {
         (this.tableInfo as any).seven_deuce_amount =
           (tableRow as any).seven_deuce_amount ?? undefined;
         this.tableInfo.straddle_enabled = (tableRow as any).straddle_enabled ?? undefined;
-        (this.tableInfo as any).auto_utg_straddle = (tableRow as any).auto_utg_straddle ?? undefined;
+        (this.tableInfo as any).auto_utg_straddle =
+          (tableRow as any).auto_utg_straddle ?? undefined;
         (this.tableInfo as any).voluntary_straddle =
           (tableRow as any).voluntary_straddle ?? undefined;
         this.tableInfo.min_buy_in = (tableRow as any).min_buy_in ?? undefined;
@@ -6336,6 +6383,95 @@ export abstract class ServerTableEngineBase {
    * stays bounded by in-flight writers, not by table lifetime.
    */
   private entryHoldWriteChains: Map<string, Promise<void>> = new Map();
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════
+   *  A TABLE THAT CANNOT DEAL HOLDS NOBODY FOR A BLIND
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * Waiting for the big blind exists so a newcomer cannot enter behind the
+   * blinds and take the button for free. It is a rule about a hand that is
+   * being dealt. On a table that is NOT dealing it is a deadlock, and on
+   * 2026-09-11 it was holding seven live must-move tables shut:
+   *
+   *   tbl      | seated | waiting | active | oldest | hands in 30m
+   *   2755c54c |      6 |       5 |      1 |  94min |            0
+   *   1c45cada |      6 |       5 |      1 |  94min |            0
+   *   9e851fff |      6 |       5 |      1 |  94min |            0
+   *   1dc09e13 |      4 |       3 |      1 |  94min |            0
+   *   e670d636 |      4 |       3 |      1 |  34min |            0
+   *   5fceabfd |      2 |       1 |      1 |   7min |            0
+   *   140532e7 |      2 |       1 |      1 |   6min |            0
+   *
+   * Every one of the 129 open cluster tables that was seated-but-not-dealing
+   * was a table with a waiter on it, and no other table was stuck: the
+   * correlation was exact. The cycle is closed and cannot break itself -
+   * `activePlayers` excludes a waiter, so the deal gate sees one player and
+   * sleeps; no deal means the big blind never moves; the big blind never
+   * moving means the natural release at the top of the loop never fires. The
+   * only other way out is the player tapping "post to enter", and these were
+   * horses, which never tap. Six funded seats sat at a dead table for an hour
+   * and a half while the floor showed the game as running.
+   *
+   * So: while the table cannot deal, nobody waits. There is no blind in
+   * flight to dodge, the next deal is the table's first hand and its blinds
+   * post by position - which is exactly what the dealing loop already says
+   * about its own first iteration. The released seat is NOT seeded into
+   * `dealtInUserIds`: it has never been dealt a hand here, so "a new player
+   * never gets the button" still holds on the hand it enters.
+   *
+   * THIS IS NOT THE FREE RELEASE DAN REVERSED, and the difference is the
+   * whole point. Dan 2026-08-26, binding: "Every single player needs to
+   * either wait for the BB or post when entering a cash game... no free hands
+   * or coming in behind the blinds" - which killed a release that let a
+   * waiter in on the NEXT TICK of a running table, behind blinds that had
+   * already been posted. Nothing here runs at a running table. The gate above
+   * this call has already decided the table cannot deal, so there are no
+   * blinds to come in behind and no hand to come in behind it: every seat
+   * enters on the same hand and that hand posts its blinds by position,
+   * identical to six players opening a brand-new table, which this engine
+   * already deals without making anyone wait. `EntryPostingAndButton` still
+   * owns the running-table rule and is untouched.
+   *
+   * Only when the release actually starts the game. If the table would still
+   * be short with everyone let in, the hold costs nothing and stays - it is
+   * still a real hold for whenever the table fills.
+   *
+   * @returns how many seats were released, for the caller to log.
+   */
+  protected releaseWaitersNoBlindCanReach(): number {
+    if (this.isTournamentTable()) return 0;
+    if (this.waitingForBB.size === 0) return 0;
+
+    // The deal gate's own predicate, minus the one exclusion under test.
+    const dealableIgnoringTheWait = this.seatedPlayers.filter(
+      (p) =>
+        p.stack > 0 &&
+        !this.disconnectEngine.isSittingOut(this.tableId, p.user_id) &&
+        !this.isHeldForSwap(p.user_id)
+    );
+    if (dealableIgnoringTheWait.length < this.minPlayersToDeal()) return 0;
+
+    let released = 0;
+    for (const p of dealableIgnoringTheWait) {
+      if (!this.waitingForBB.has(p.user_id)) continue;
+      this.waitingForBB.delete(p.user_id);
+      // Same write as the natural big-blind release: the seat owes nothing
+      // from here, so a standing post agreement goes with the hold rather
+      // than surviving to bill a second blind.
+      this.postBBWhenClear.delete(p.user_id);
+      this.postingBBToEnter.delete(p.user_id);
+      this.persistEntryHold(p.user_id, { hold: null, agreed: false });
+      released += 1;
+    }
+    if (released > 0) {
+      console.log(
+        `[ServerTableEngine:${this.tableId}] released ${released} seat(s) held for a big blind that could not arrive: ` +
+          `${dealableIgnoringTheWait.length} funded seat(s) and nothing being dealt`
+      );
+    }
+    return released;
+  }
 
   protected persistEntryHold(
     userId: string,

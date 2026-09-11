@@ -14,13 +14,12 @@
  *
  * The pins: both stages re-arm through the sweep scheduler (one pending wake
  * per tournament, never a timer of their own) when the freeze made them skip,
- * and the delay lands just after the scheduled resume.
+ * and the wake follows the actual thaw without a wall-clock assumption.
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { sliceEnclosingBlock } from '../testHelpers/sourceWindow.js';
-import { msUntilMaintenanceResume } from '../maintenance/freezeState.js';
 
 const ELIM = readFileSync(resolve(__dirname, './TournamentManagerEliminations.ts'), 'utf8');
 
@@ -33,10 +32,7 @@ describe('a balance the freeze deferred is still owed', () => {
     expect(stage).toContain('await this.checkTableBalance();');
     const guard = stage.indexOf('if (!isMaintenanceFrozen()) {');
     const elseAt = stage.indexOf('} else {', guard);
-    const rearm = stage.indexOf(
-      'this.requestEliminationSweepAfter(msUntilMaintenanceResume());',
-      elseAt
-    );
+    const rearm = stage.indexOf('this.owePassAfterTheThaw();', elseAt);
     const complete = stage.indexOf('if (completedStage(6)) return;');
     expect(guard, 'the balance call must stay behind the freeze guard').toBeGreaterThan(-1);
     expect(elseAt, 'the frozen case needs its own branch').toBeGreaterThan(guard);
@@ -54,9 +50,7 @@ describe('a balance the freeze deferred is still owed', () => {
     expect(stage).toContain(
       'if (!isMaintenanceFrozen() && !(await this.checkDynamicTableExpansion())) return;'
     );
-    const rearm = stage.indexOf(
-      'if (isMaintenanceFrozen()) this.requestEliminationSweepAfter(msUntilMaintenanceResume());'
-    );
+    const rearm = stage.indexOf('if (isMaintenanceFrozen()) this.owePassAfterTheThaw();');
     expect(rearm).toBeGreaterThan(-1);
     expect(stage.indexOf('if (completedStage(7)) return;')).toBeGreaterThan(rearm);
   });
@@ -94,28 +88,12 @@ describe('a balance the freeze deferred is still owed', () => {
     }
   });
 
-  describe('msUntilMaintenanceResume', () => {
-    const at = (iso: string) => Date.parse(iso);
-    it('inside the scheduled window it waits for the :00 resume plus five seconds', () => {
-      expect(msUntilMaintenanceResume(at('2026-09-11T07:53:00.000Z'))).toBe(7 * 60_000 + 5_000);
-      expect(msUntilMaintenanceResume(at('2026-09-11T07:57:00.000Z'))).toBe(3 * 60_000 + 5_000);
-      expect(msUntilMaintenanceResume(at('2026-09-11T10:55:32.000Z'))).toBe(
-        4 * 60_000 + 28_000 + 5_000
-      );
-      expect(msUntilMaintenanceResume(at('2026-09-11T07:59:59.500Z'))).toBe(5_500);
-    });
-    it('an overrun past :00 or an off-schedule freeze is re-checked on a short cadence', () => {
-      expect(msUntilMaintenanceResume(at('2026-09-11T08:00:02.000Z'))).toBe(15_000);
-      expect(msUntilMaintenanceResume(at('2026-09-11T08:31:00.000Z'))).toBe(15_000);
-    });
-    it('is never sooner than five seconds and never later than ten minutes', () => {
-      for (let m = 0; m < 60; m++) {
-        for (const s of [0, 30, 59]) {
-          const ms = msUntilMaintenanceResume(Date.UTC(2026, 8, 11, 12, m, s));
-          expect(ms).toBeGreaterThanOrEqual(5_000);
-          expect(ms).toBeLessThanOrEqual(10 * 60_000 + 5_000);
-        }
-      }
-    });
+  it('the selected redrive uses only one lifecycle-owned thaw subscription', () => {
+    const arm = sliceEnclosingBlock(ELIM, 'const cancel = onNextMaintenanceThaw(');
+    expect(arm).toContain('this.thawPass?.generation === lifecycle.generation');
+    expect(arm).toContain('lifecycle.signal');
+    expect(arm).toContain('this.lifecycleIsCurrent(lifecycle)');
+    expect(arm).toContain('this.requestUrgentEliminationSweepAfter(');
+    expect(ELIM).not.toContain('msUntilMaintenanceResume');
   });
 });

@@ -160,6 +160,21 @@ describe('the Club Arena bundle publishes directly to its Hetzner origin', () =>
     expect(origin).toContain("needs.client-tests.result == 'success'");
   });
 
+  it('checks out the exact publish control before invoking repository proof scripts', () => {
+    const origin = job(publish, 'publish-to-origin');
+    const checkout = origin.indexOf('- name: Checkout the exact protected-main publish control');
+    const download = origin.indexOf('- name: Download the dist built by the previous job');
+    const proof = origin.indexOf(
+      'OURS_SHA=$(node scripts/ci/production-e2e-provenance.mjs build-info'
+    );
+
+    expect(checkout).toBeGreaterThan(-1);
+    expect(download).toBeGreaterThan(checkout);
+    expect(proof).toBeGreaterThan(download);
+    expect(origin).toContain('ref: ${{ needs.publish-needed.outputs.target_sha }}');
+    expect(origin).toContain('persist-credentials: false');
+  });
+
   it('has read-only repository authority while the origin SSH key performs the publish', () => {
     const origin = job(publish, 'publish-to-origin');
     expect(origin).toMatch(/^\s+contents:\s*read\s*$/m);

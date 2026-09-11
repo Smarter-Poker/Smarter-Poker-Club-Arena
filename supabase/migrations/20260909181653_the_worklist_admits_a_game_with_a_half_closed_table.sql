@@ -136,4 +136,19 @@ BEGIN
 END;
 $assert$;
 
+
+-- ---------------------------------------------------------------------------
+-- WHO MAY CALL THIS (added 2026-09-11, the pre-push definer guard refused the
+-- push without it).
+--
+-- The worklist is engine telemetry: fn_cash_clusters_tick_all reads it once per
+-- pass and nothing in a browser calls it (grep of src/ returns only a comment).
+-- CREATE OR REPLACE keeps the ACL this database already has, so production is
+-- already closed - but a fresh apply of this file alone would have created a
+-- SECURITY DEFINER function that anon can execute and that never asks who is
+-- calling. Verified first that it backs no RLS policy expression (pg_policy
+-- scan, 0 rows). This is the grant production already carries.
+REVOKE ALL ON FUNCTION public.fn_cash_clusters_to_tick() FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_cash_clusters_to_tick() TO service_role;
+
 COMMIT;

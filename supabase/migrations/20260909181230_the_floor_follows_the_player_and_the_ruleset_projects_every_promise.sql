@@ -532,4 +532,31 @@ BEGIN
 END;
 $assert$;
 
+
+-- ---------------------------------------------------------------------------
+-- WHO MAY CALL THESE (added 2026-09-11, the pre-push definer guard refused the
+-- push without it, and it was right to).
+--
+-- CREATE OR REPLACE preserves an existing function's ACL, so on THIS database
+-- these two already carry the grants below and the autorevoke event trigger
+-- keeps PUBLIC off them. That is exactly why the omission was invisible: the
+-- file read as safe because production happened to be safe. On a fresh apply
+-- the same file would have created both with the default PUBLIC EXECUTE, and a
+-- SECURITY DEFINER function that never asks auth.uid() runs past RLS for a
+-- caller with no account. A migration has to be correct on an empty database,
+-- not only on this one.
+--
+-- Verified against production before writing: neither function backs an RLS
+-- policy expression (pg_policy scan, 0 rows), so revoking cannot deny a SELECT
+-- somewhere else. The grants below are the ones production already has.
+--
+-- fn_nit_check is the door a signed-in player's own client asks about the VPIP
+-- floor, so authenticated keeps it. fn_nit_status is the eviction query the
+-- engine runs; nothing in a browser calls it.
+REVOKE ALL ON FUNCTION public.fn_nit_check(uuid, uuid, timestamp with time zone) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.fn_nit_check(uuid, uuid, timestamp with time zone) TO authenticated, service_role;
+
+REVOKE ALL ON FUNCTION public.fn_nit_status(uuid) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_nit_status(uuid) TO service_role;
+
 COMMIT;

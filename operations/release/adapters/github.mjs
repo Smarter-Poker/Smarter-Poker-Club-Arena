@@ -28,6 +28,7 @@ export function githubTransport(token, fetcher = fetch) {
         Accept: 'application/vnd.github+json',
         'X-GitHub-Api-Version': '2026-03-10',
         'Content-Type': 'application/json',
+        'Cache-Control': 'no-cache',
       },
       ...(body ? { body: JSON.stringify(body) } : {}),
     });
@@ -218,7 +219,11 @@ export class GitHubWorkflowAdapter {
         sha.test(controlSha) &&
         Number.isSafeInteger(workflowId) &&
         workflowId > 0 &&
-        ['.github/workflows/release-candidate.yml', '.github/workflows/post-deploy-e2e.yml'].includes(workflowPath) &&
+        [
+          '.github/workflows/release-candidate.yml',
+          '.github/workflows/release-frontend-candidate.yml',
+          '.github/workflows/post-deploy-e2e.yml',
+        ].includes(workflowPath) &&
         /^node:22[^@\s]*@sha256:[0-9a-f]{64}$/.test(runtimeImage)
     );
     Object.assign(this, {
@@ -243,7 +248,13 @@ export class GitHubWorkflowAdapter {
         Array.isArray(r.components) &&
         r.components.length === 1 &&
         new Set(r.components).size === r.components.length &&
-        r.components.every((c) => c === 'club-arena-engine') &&
+        r.components.every(
+          (c) =>
+            c ===
+            (this.workflowPath === '.github/workflows/release-frontend-candidate.yml'
+              ? 'club-arena-web'
+              : 'club-arena-engine')
+        ) &&
         r.control_sha === this.controlSha &&
         r.workflow_id === this.workflowId &&
         r.runtime_image === this.runtimeImage
@@ -284,6 +295,9 @@ export class GitHubWorkflowAdapter {
         : {}),
     };
   }
+  receiptRequiredOnFailure() {
+    return false;
+  }
   async reconcile(r, operation) {
     this.validate(r);
     need(uuid.test(operation.id));
@@ -311,7 +325,7 @@ export class GitHubWorkflowAdapter {
       return pending('WORKFLOW_EXECUTION_IDENTITY_MISMATCH');
     if (run.status !== 'completed')
       return { ...pending('WORKFLOW_RUNNING'), provider_operation_id: String(run.id) };
-    if (run.conclusion !== 'success')
+    if (run.conclusion !== 'success' && !this.receiptRequiredOnFailure(r))
       return {
         terminal: true,
         outcome: run.conclusion === 'cancelled' ? 'CANCELLED' : 'FAILED',
@@ -341,7 +355,7 @@ export class GitHubWorkflowAdapter {
       proof.operation_id === operation.id &&
         proof.control_sha === this.controlSha &&
         proof.run_id === String(run.id) &&
-        proof.success === true &&
+        proof.success === (run.conclusion === 'success') &&
         JSON.stringify(proof.request) === JSON.stringify(r)
     );
     if (r.phase === 'BUILD') {
@@ -363,7 +377,12 @@ export class GitHubWorkflowAdapter {
     }
     return {
       terminal: true,
-      outcome: 'SUCCEEDED',
+      outcome:
+        run.conclusion === 'success'
+          ? 'SUCCEEDED'
+          : run.conclusion === 'cancelled'
+            ? 'CANCELLED'
+            : 'FAILED',
       provider_operation_id: String(run.id),
       receipt_archive_digest: artifact.digest,
       receipt_artifact_id: String(artifact.id),

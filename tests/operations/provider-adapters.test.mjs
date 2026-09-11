@@ -220,12 +220,42 @@ test('engine intake acceptance never releases barrier; exact immutable image and
     source_sha: request.source_sha,
     control_sha: request.control_sha,
   };
+  const actions = [];
   const adapter = new HetznerIntakeAdapter({
     controlSha: request.control_sha,
-    request: async () => response,
+    request: async (action) => {
+      actions.push(action);
+      return action === 'resume-acceptance'
+        ? { accepted: true, requires_readback: true }
+        : response;
+    },
   });
   assert.equal((await adapter.submit(request, operation)).terminal, false);
   assert.equal((await adapter.reconcile(request, operation)).terminal, false);
+  response.acceptance_state = 'PARTIAL';
+  actions.length = 0;
+  assert.equal(
+    (await adapter.reconcile(request, operation)).reason,
+    'EXISTING_NATIVE_ACCEPTANCE_AWAITS_EXECUTE'
+  );
+  assert.deepEqual(actions, ['observe']);
+  await assert.rejects(
+    adapter.reconcile(request, operation, {
+      execute: true,
+      beforeEffect: async () => {
+        throw new Error('execution disabled');
+      },
+    }),
+    /execution disabled/
+  );
+  assert.deepEqual(actions, ['observe', 'observe']);
+  await adapter.reconcile(request, operation, {
+    execute: true,
+    beforeEffect: async () => {
+      actions.push('fence');
+    },
+  });
+  assert.deepEqual(actions.slice(-3), ['observe', 'fence', 'resume-acceptance']);
   response = {
     ...response,
     terminal: true,

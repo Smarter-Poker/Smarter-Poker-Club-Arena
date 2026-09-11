@@ -99,6 +99,42 @@ class NativeStage(unittest.TestCase):
         result=STAGE.observe(self.envelope,self.config)
         self.assertFalse(result['terminal']); self.assertTrue(any('start' in c for c in self.commands))
         self.assertEqual(self.loads,0)
+    def test_read_only_inspection_never_resumes_or_writes_terminal_state(self):
+        self.receive(); self.commands.clear()
+        original = {p.name:p.read_bytes() for p in self.folder.iterdir() if p.is_file()}
+        self.assertEqual(STAGE.observe(self.envelope,self.config,execute=False)['reason'],'NATIVE_STAGE_RESUME_AWAITS_EXECUTE')
+        self.assertFalse(any('start' in c for c in self.commands))
+        self.assertEqual({p.name:p.read_bytes() for p in self.folder.iterdir() if p.is_file()},original)
+        STAGE.persist(self.folder/'load-intent.json',{'image_id':self.identity,'archive_digest':self.request['archive_digest']})
+        self.loaded=True
+        self.assertEqual(STAGE.observe(self.envelope,self.config,execute=False)['reason'],'NATIVE_STAGE_COMPLETION_AWAITS_EXECUTE')
+        self.assertFalse((self.folder/'result.json').exists())
+        with patch.object(STAGE.time,'time',return_value=self.request['not_after_epoch']+1):
+            self.assertEqual(STAGE.observe(self.envelope,self.config,execute=False)['reason'],'NATIVE_STAGE_TERMINALIZATION_AWAITS_EXECUTE')
+        self.assertFalse((self.folder/'result.json').exists())
+        self.assertFalse((self.root/'leases').exists())
+        self.assertEqual(self.loads,0)
+    def test_current_reads_actual_running_image_and_rejects_same_source_wrong_image(self):
+        expected=self.request['expected_current']; running_image=expected['image_id']; restarted=False; inspections=0
+        def actual(args,**kwargs):
+            nonlocal inspections
+            self.commands.append([str(x) for x in args])
+            if 'get' in args:
+                return SimpleNamespace(returncode=0,stdout=expected['source_sha' if args[-1]=='desired-sha' else 'image_id'])
+            if args[1]=='container':
+                inspections+=1
+                body={'Id':'2'*64 if restarted and inspections%2==0 else '1'*64,'Image':running_image,
+                    'State':{'Running':True,'Status':'running','StartedAt':'2026-09-11T00:00:00Z'}}
+            else:
+                body={'Id':expected['image_id'],'Config':{'Labels':{'org.opencontainers.image.revision':expected['source_sha']}}}
+            return SimpleNamespace(returncode=0,stdout=json.dumps(body))
+        with patch.object(STAGE,'command',side_effect=actual):
+            self.assertEqual(STAGE.current(self.envelope,self.config),expected)
+            running_image='sha256:'+'8'*64
+            with self.assertRaises(ValueError): STAGE.current(self.envelope,self.config)
+            running_image=expected['image_id'];restarted=True;inspections=0
+            with self.assertRaises(ValueError): STAGE.current(self.envelope,self.config)
+        self.assertTrue(all('inspect' in c or 'get' in c for c in self.commands))
     def test_tampered_archive_and_wrong_image_manifest_refuse_before_docker_load(self):
         self.receive()
         (self.folder/'artifact.zip').write_bytes(b'changed')

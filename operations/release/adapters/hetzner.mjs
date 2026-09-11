@@ -8,11 +8,15 @@ const sha = /^[a-f0-9]{40}$/;
 // accepting new keys, inline key material, candidate shell, or host override.
 export function engineTransport(hostAlias, spawnChild = spawn, protocol = 1) {
   need(/^[a-zA-Z][a-zA-Z0-9-]{0,62}$/.test(hostAlias));
-  need([1,2].includes(protocol));
+  need([1, 2].includes(protocol));
   return (action, payload) =>
     new Promise((resolve, reject) => {
-      need(['preflight', 'submit', 'observe', 'maintenance-need', 'maintenance-safe-resume'].includes(action) ||
-        (protocol === 2 && action === 'resume-acceptance'));
+      need(
+        ['preflight', 'submit', 'observe', 'maintenance-need', 'maintenance-safe-resume'].includes(
+          action
+        ) ||
+          (protocol === 2 && action === 'resume-acceptance')
+      );
       const child = spawnChild(
         '/usr/bin/ssh',
         [
@@ -24,7 +28,7 @@ export function engineTransport(hostAlias, spawnChild = spawn, protocol = 1) {
           '-o',
           'ConnectTimeout=10',
           hostAlias,
-          `/usr/local/lib/club-arena-release-controller/${protocol===2?'engine-intake-v2.py':'engine-boundary.py'} ${action}`,
+          `/usr/local/lib/club-arena-release-controller/${protocol === 2 ? 'engine-intake-v2.py' : 'engine-boundary.py'} ${action}`,
         ],
         { env: { PATH: '/usr/bin:/bin' }, stdio: ['pipe', 'pipe', 'pipe'] }
       );
@@ -112,7 +116,7 @@ export class HetznerIntakeAdapter {
       reason: 'DURABLE_INTAKE_REQUIRES_TERMINAL_ATTESTATION',
     };
   }
-  async reconcile(r, operation) {
+  async reconcile(r, operation, { execute = false, beforeEffect } = {}) {
     const value = await this.request('observe', this.payload(r, operation));
     need(
       value.operation_id === operation.id &&
@@ -121,12 +125,24 @@ export class HetznerIntakeAdapter {
         value.control_sha === r.control_sha
     );
     if (value.terminal !== true && value.acceptance_state === 'PARTIAL') {
+      if (!execute)
+        return {
+          terminal: false,
+          provider: 'hetzner-engine',
+          run_key: r.run_key,
+          reason: 'EXISTING_NATIVE_ACCEPTANCE_AWAITS_EXECUTE',
+        };
+      await beforeEffect?.();
       // Resume only a host-attested existing immutable pin. This cannot create
       // an absent request, rearm a terminal operation or grant another trial.
       const resumed = await this.request('resume-acceptance', this.payload(r, operation));
       need(resumed.accepted === true && resumed.requires_readback === true);
-      return { terminal: false, provider: 'hetzner-engine', run_key: r.run_key,
-        reason: 'EXISTING_NATIVE_ACCEPTANCE_RESUMED_REQUIRES_TERMINAL_ATTESTATION' };
+      return {
+        terminal: false,
+        provider: 'hetzner-engine',
+        run_key: r.run_key,
+        reason: 'EXISTING_NATIVE_ACCEPTANCE_RESUMED_REQUIRES_TERMINAL_ATTESTATION',
+      };
     }
     if (value.terminal !== true)
       return {

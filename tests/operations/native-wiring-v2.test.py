@@ -159,7 +159,7 @@ import {HetznerIntakeAdapter} from ADAPTER;
 const envelope=ENVELOPE;const io=createInterface({input:process.stdin});
 const request=(action,payload)=>new Promise((resolve,reject)=>{io.once('line',line=>{const result=JSON.parse(line);result.__lost?reject(new Error('fixture lost native reply')):resolve(result);});console.log(JSON.stringify({action,payload}));});
 const adapter=new HetznerIntakeAdapter({controlSha:envelope.request.control_sha,request});
-let result;try{await adapter.reconcile(envelope.request,{id:envelope.operation_id,epoch:envelope.epoch});throw new Error('fixture must lose resume reply');}
+let result;try{await adapter.reconcile(envelope.request,{id:envelope.operation_id,epoch:envelope.epoch},{execute:true});throw new Error('fixture must lose resume reply');}
 catch{result=await adapter.reconcile(envelope.request,{id:envelope.operation_id,epoch:envelope.epoch});}
 console.log(JSON.stringify({done:result}));io.close();process.stdin.destroy();
 '''.replace('ADAPTER',json.dumps((ROOT/'operations/release/adapters/hetzner.mjs').as_uri())).replace('ENVELOPE',json.dumps(self.envelope))

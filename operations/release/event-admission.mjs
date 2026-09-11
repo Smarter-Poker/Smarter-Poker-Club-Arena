@@ -46,8 +46,11 @@ export function verifiedDelivery({ headers, body, secret, repositories }) {
 // forwards the untouched signed bytes here. No second polling coordinator.
 export async function admissionServer({
   database,
+  principal,
   secret,
   repositories,
+  certificateCallback,
+  staticPublicationCallback,
   socket = '/var/lib/club-arena-release-controller/admission.sock',
 }) {
   if (
@@ -64,13 +67,71 @@ export async function admissionServer({
   } catch (error) {
     if (error.code !== 'ENOENT') throw error;
   }
+  const server = http.createServer(
+    admissionHandler({
+      database,
+      principal,
+      secret,
+      repositories,
+      certificateCallback,
+      staticPublicationCallback,
+    })
+  );
+  server.requestTimeout = 10000;
+  server.headersTimeout = 5000;
+  server.maxConnections = 2;
+  await new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(socket, resolve);
+  });
+  await chmod(socket, 0o600);
+  return async () => {
+    await new Promise((resolve) => server.close(resolve));
+    await unlink(socket);
+  };
+}
+
+// Shared by the installed Unix socket and local HTTP integration tests.
+export async function verifyAdmissionPrincipal(client, principal) {
+  if (
+    !/^[a-z_][a-z0-9_]{0,62}$/.test(principal) ||
+    client.connection?.stream?.encrypted !== true ||
+    client.connection.stream.authorized !== true
+  )
+    invalid();
+  const identity = (
+    await client.query(`SELECT rolname, rolcanlogin AND NOT rolsuper AND NOT rolbypassrls
+    AND NOT rolcreaterole AND NOT rolcreatedb AND NOT rolreplication
+    AND pg_has_role(oid,'release_journal_submitter','MEMBER')
+    AND NOT EXISTS(SELECT 1 FROM pg_roles authority WHERE authority.rolname IN
+      ('release_journal_controller','release_journal_operator','release_journal_verifier','release_certification_callback')
+      AND pg_has_role(session_user,authority.oid,'MEMBER')) AS allowed
+    FROM pg_roles WHERE rolname=session_user`)
+  ).rows[0];
+  if (identity?.rolname !== principal || identity?.allowed !== true) invalid();
+}
+
+export function admissionHandler({
+  database,
+  principal,
+  secret,
+  repositories,
+  certificateCallback,
+  staticPublicationCallback,
+}) {
   let active = false;
-  const server = http.createServer(async (request, response) => {
+  return async (request, response) => {
     const done = (code, result) => {
       response.writeHead(code, { 'Content-Type': 'application/json' });
       response.end(JSON.stringify(result));
     };
-    if (request.method !== 'POST' || request.url !== '/github' || active) {
+    const callbackRoute =
+      request.url === '/certification'
+        ? certificateCallback
+        : request.url === '/static-publication'
+          ? staticPublicationCallback
+          : null;
+    if (request.method !== 'POST' || (!callbackRoute && request.url !== '/github') || active) {
       done(503, { accepted: false });
       request.resume();
       return;
@@ -85,19 +146,23 @@ export async function admissionServer({
         if (length > 65536) invalid();
         chunks.push(chunk);
       }
+      const body = Buffer.concat(chunks);
+      if (callbackRoute) {
+        const result = await callbackRoute.handle({
+          authorization: request.headers.authorization,
+          body: JSON.parse(body.toString('utf8')),
+        });
+        done(200, result);
+        return;
+      }
       const delivery = verifiedDelivery({
         headers: request.headers,
-        body: Buffer.concat(chunks),
+        body,
         secret,
         repositories,
       });
       client = await connect(database);
-      const identity = (
-        await client.query(
-          "SELECT rolcanlogin AND NOT rolsuper AND NOT rolbypassrls AND NOT rolcreaterole AND NOT rolcreatedb AND NOT rolreplication AND pg_has_role(oid,'release_journal_submitter','MEMBER') AS allowed FROM pg_roles WHERE rolname=session_user"
-        )
-      ).rows[0];
-      if (identity?.allowed !== true) invalid();
+      await verifyAdmissionPrincipal(client, principal);
       const result = await providerCall(client, 'enqueue_delivery', [
         delivery.delivery_id,
         delivery.payload_digest,
@@ -116,17 +181,5 @@ export async function admissionServer({
       await client?.end().catch(() => {});
       active = false;
     }
-  });
-  server.requestTimeout = 10000;
-  server.headersTimeout = 5000;
-  server.maxConnections = 2;
-  await new Promise((resolve, reject) => {
-    server.once('error', reject);
-    server.listen(socket, resolve);
-  });
-  await chmod(socket, 0o600);
-  return async () => {
-    await new Promise((resolve) => server.close(resolve));
-    await unlink(socket);
   };
 }

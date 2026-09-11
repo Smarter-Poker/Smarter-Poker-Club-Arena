@@ -36,7 +36,15 @@ async function db(config) {
   return c;
 }
 async function setup() {
-  const config = await cluster.database({ additionalMigrations: [migration] });
+  const config = await cluster.database({
+    additionalMigrations: [
+      migration,
+      new URL(
+        '../../supabase/migrations/20260911190350_component_certification_and_durable_fixture_claims.sql',
+        import.meta.url
+      ),
+    ],
+  });
   const admin = await db(config),
     name = `source_${randomUUID().replaceAll('-', '')}`;
   await admin.query(
@@ -167,8 +175,10 @@ async function setup() {
     installation: install,
     adapters: { 'github-merge': merge, 'github-workflow': workflow },
   });
-  const maintenance = {beforePublish:async()=>({ready:true,operation_id:'fixture-maintenance'}),
-    afterPublish:async()=>({ready:true,operation_id:'fixture-maintenance'})};
+  const maintenance = {
+    beforePublish: async () => ({ ready: true, operation_id: 'fixture-maintenance' }),
+    afterPublish: async () => ({ ready: true, operation_id: 'fixture-maintenance' }),
+  };
   let coordinator = new SourceCoordinator({ runner, github, maintenance });
   const tick = () => coordinator.tick({ mode: 'EXECUTE', now: Date.now() + 60000 });
   return {

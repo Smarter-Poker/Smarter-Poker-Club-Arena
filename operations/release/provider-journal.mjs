@@ -1,10 +1,23 @@
 import { call } from './journal.mjs';
+import { AggregateQualificationRunner } from './aggregate-qualification.mjs';
 
 const commands = new Set([
   'register_provider_installation',
   'enqueue_delivery',
   'source_snapshot',
   'submit_source_plan',
+  'submit_component_certification_plan',
+  'provider_operation_context',
+  'authorize_certification_cleanup',
+  'submit_aggregate_source_plan',
+  'submit_component_compatibility_plan',
+  'prepare_qualification_children',
+  'qualification_snapshot',
+  'authorize_qualification_child',
+  'record_qualification_result',
+  'qualification_terminal',
+  'submit_static_build_plan',
+  'submit_static_publication_plan',
   'begin_source_plan',
   'submit_provider_plan',
   'provider_installation',
@@ -91,13 +104,60 @@ export class ProviderRunner {
       ]);
     return { status: 'UNKNOWN', next_check_at: receipt.next_check_at };
   }
-  async reconcile(operation) {
+  async reconcile(operation, { execute = false } = {}) {
     let result;
     try {
-      result = await this.adapter(operation).reconcile(
-        operation.intent.provider_request,
-        operation
-      );
+      operation = {
+        ...operation,
+        ...(await providerCall(this.client, 'provider_operation_context', [
+          ...this.args(),
+          operation.id,
+        ])),
+      };
+      result =
+        operation.intent.adapter === 'component-aggregate'
+          ? await new AggregateQualificationRunner(this).tick(operation, { execute })
+          : await this.adapter(operation).reconcile(operation.intent.provider_request, operation, {
+              execute,
+              beforeEffect: () =>
+                providerCall(this.client, 'provider_installation', [
+                  ...this.args(),
+                  ...this.installArgs(),
+                  true,
+                ]),
+            });
+      if (
+        result.cleanup_required &&
+        operation.intent.adapter === 'github-certification' &&
+        operation.intent.provider_request.certificate_version === 2
+      ) {
+        if (!execute)
+          return this.observation(operation, {
+            terminal: false,
+            reason: 'CERTIFICATION_CLEANUP_AWAITS_EXECUTE',
+          });
+        // The original unresolved operation retains global ownership. A
+        // separate immutable dispatch intent permits one cleanup-only run.
+        const adapter = this.adapter(operation);
+        const original = await adapter.cleanupOriginal(
+          operation.intent.provider_request,
+          operation
+        );
+        const recovery = await providerCall(this.client, 'authorize_certification_cleanup', [
+          ...this.args(),
+          operation.id,
+          original,
+          ...this.installArgs(),
+          this.actor,
+        ]);
+        if (recovery.may_submit)
+          await adapter.submitCleanup(operation.intent.provider_request, operation, recovery);
+        result = {
+          terminal: false,
+          reason: 'CERTIFICATION_CLEANUP_RECOVERY_PENDING',
+          recovery_id: recovery.id,
+        };
+      }
     } catch {
       result = { terminal: false, reason: 'PROVIDER_READBACK_UNAVAILABLE' };
     }
@@ -187,7 +247,13 @@ export class ProviderRunner {
         return { state: 'UNKNOWN_READBACK_BUDGET_EXHAUSTED' };
       if (Date.parse(snapshot.observation?.next_check_at) > now)
         return { state: 'WAITING_READBACK', next_check_at: snapshot.observation.next_check_at };
-      return this.reconcile({ ...snapshot.external, previous_observation: snapshot.observation?.data });
+      return this.reconcile(
+        {
+          ...snapshot.external,
+          previous_observation: snapshot.observation?.data,
+        },
+        { execute: mode === 'EXECUTE' }
+      );
     }
     if (mode === 'EXECUTE' && snapshot.plan && !snapshot.controller.reconciliation_required)
       return this.submit(snapshot.plan);

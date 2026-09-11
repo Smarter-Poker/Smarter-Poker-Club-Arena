@@ -1,0 +1,48 @@
+name: Exact component semantic qualification
+run-name: release:${{ inputs.operation_id }}:COMPATIBILITY
+on:
+  workflow_dispatch:
+    inputs:
+      operation_id:
+        required: true
+        type: string
+      request:
+        required: true
+        type: string
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: component-semantic-${{ inputs.operation_id }}
+  cancel-in-progress: false
+jobs:
+  qualify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          path: controls
+          persist-credentials: false
+      - name: Execute exact component and schema combinations
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_REQUEST: ${{ inputs.request }}
+          RELEASE_OPERATION_ID: ${{ inputs.operation_id }}
+        run: python3 controls/operations/release/native/qualify-components.py controls evidence
+      - name: Preserve successful semantic execution and fixture cleanup
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: release-compatibility-${{ inputs.operation_id }}
+          path: evidence/receipt.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Preserve cleanup observations on success or failure
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: release-compatibility-cleanup-${{ inputs.operation_id }}
+          path: evidence/cleanup/receipt.json
+          if-no-files-found: ignore
+          retention-days: 7

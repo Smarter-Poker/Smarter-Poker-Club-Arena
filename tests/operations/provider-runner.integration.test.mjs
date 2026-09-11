@@ -128,7 +128,15 @@ function apiFixture() {
   };
 }
 async function setup() {
-  const config = await cluster.database({ additionalMigrations: [migration] });
+  const config = await cluster.database({
+    additionalMigrations: [
+      migration,
+      new URL(
+        '../../supabase/migrations/20260911190350_component_certification_and_durable_fixture_claims.sql',
+        import.meta.url
+      ),
+    ],
+  });
   const admin = await db(config);
   const role = `provider_${randomUUID().replaceAll('-', '')}`;
   await admin.query(
@@ -457,6 +465,28 @@ test('terminal observation survives failed resolve commit and is replayed withou
   };
   const result = await f.runner.tick({ mode: 'RECONCILE' });
   assert.equal(result.status, 'SUCCEEDED');
+});
+
+test('read-only reconciliation cannot invoke owned recovery and EXECUTE rechecks installed activation before an effect', async () => {
+  const f = await setup();
+  await f.runner.submit(f.plan);
+  const external = (await f.runner.snapshot()).external;
+  let effects = 0;
+  f.fixture.adapter.reconcile = async (_request, _operation, { execute, beforeEffect }) => {
+    if (execute) {
+      await beforeEffect();
+      effects++;
+    }
+    return { terminal: false, reason: 'EXPLICIT_NATIVE_RECOVERY_PENDING' };
+  };
+  await f.runner.reconcile(external, { execute: false });
+  assert.equal(effects, 0);
+  await f.admin.query('UPDATE release_ops.controller SET execution_enabled=false');
+  await f.runner.reconcile(external, { execute: true });
+  assert.equal(effects, 0);
+  await f.admin.query('UPDATE release_ops.controller SET execution_enabled=true');
+  await f.runner.reconcile(external, { execute: true });
+  assert.equal(effects, 1);
 });
 
 test('readback retry budget and persisted wake time survive reconnect without a polling publisher', async () => {

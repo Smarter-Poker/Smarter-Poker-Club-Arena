@@ -18,6 +18,7 @@ import tarfile
 import time
 import zipfile
 
+sys.dont_write_bytecode = True
 SPEC = importlib.util.spec_from_file_location('engine_boundary', Path(__file__).with_name('engine-boundary.py'))
 BASE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(BASE)
@@ -115,6 +116,23 @@ def current(envelope, config):
         result = command([scripts / 'engine-release-seal.py', 'get', field])
         require(result.returncode == 0)
         values[key] = result.stdout.strip()
+    def running():
+        result = command(['/usr/bin/docker', 'container', 'inspect', '--format', '{{json .}}', 'club-arena-engine'])
+        require(result.returncode == 0)
+        container = json.loads(result.stdout)
+        require(container['State']['Running'] is True and container['State']['Status'] == 'running')
+        require(container['Image'] == values['image_id'])
+        return container['Id'], container['Image'], container['State']['StartedAt']
+    original = running()
+    image = command(['/usr/bin/docker', 'image', 'inspect', '--format', '{{json .}}', values['image_id']])
+    require(image.returncode == 0)
+    image = json.loads(image.stdout)
+    require(image['Id'] == values['image_id'] and
+            image.get('Config', {}).get('Labels', {}).get('org.opencontainers.image.revision') == values['source_sha'])
+    for field, key in [('desired-sha', 'source_sha'), ('desired-image-id', 'image_id')]:
+        result = command([scripts / 'engine-release-seal.py', 'get', field])
+        require(result.returncode == 0 and result.stdout.strip() == values[key])
+    require(running() == original)
     return values
 
 
@@ -256,7 +274,7 @@ def apply_locked(operation_id, config):
         return result
 
 
-def observe(envelope, config):
+def observe(envelope, config, execute=True):
     r, _ = check(envelope, config)
     folder = STATE / envelope['operation_id']
     if not folder.exists():
@@ -268,7 +286,10 @@ def observe(envelope, config):
     if state.get('ActiveState') in ('activating', 'active', 'deactivating') or state.get('Job') not in ('0', '', None):
         return {'terminal': False, 'reason': 'NATIVE_STAGE_RUNNING'}
     # A receiver still streaming bytes may be the only live native process.
-    with (folder / 'receive.lock').open('a') as lock:
+    lock_path = folder / 'receive.lock'
+    if not execute and not lock_path.exists():
+        return {'terminal': False, 'reason': 'NATIVE_STAGE_LOCK_UNPROVEN'}
+    with lock_path.open('a' if execute else 'rb') as lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
@@ -276,6 +297,8 @@ def observe(envelope, config):
         loaded = (folder / 'load-intent.json').exists()
         image_present = inspect_image(r['artifact_image_id'], r) if loaded else False
         if not (folder / 'archive-accepted.json').exists() or (time.time() >= r['not_after_epoch'] and (not loaded or image_present)):
+            if not execute:
+                return {'terminal': False, 'reason': 'NATIVE_STAGE_TERMINALIZATION_AWAITS_EXECUTE'}
             # The receiver is gone, the native unit has no job, and either no
             # load was admitted or its exact image is now visible. Future
             # native retries fail their immutable deadline before mutation.
@@ -287,11 +310,15 @@ def observe(envelope, config):
             return result
         if loaded:
             if image_present:
+                if not execute:
+                    return {'terminal': False, 'reason': 'NATIVE_STAGE_COMPLETION_AWAITS_EXECUTE'}
                 return apply(envelope['operation_id'], config)
             return {'terminal': False, 'reason': 'DOCKER_LOAD_OUTCOME_UNKNOWN'}
         # Archive acceptance is durable. The same bounded native service can
         # resume after a receiver crash before its systemd acknowledgment.
         require(time.time() < r['not_after_epoch'])
+        if not execute:
+            return {'terminal': False, 'reason': 'NATIVE_STAGE_RESUME_AWAITS_EXECUTE'}
         result = command(['/usr/bin/systemctl', 'start', '--no-block', UNIT.replace('@.', '@' + envelope['operation_id'] + '.')])
         require(result.returncode == 0)
         return {'terminal': False, 'reason': 'NATIVE_STAGE_REATTACHED'}
@@ -315,6 +342,8 @@ if __name__ == '__main__':
                 result = preflight(envelope, config)
             elif sys.argv[1] == 'observe':
                 result = observe(envelope, config)
+            elif sys.argv[1] == 'inspect':
+                result = observe(envelope, config, execute=False)
             else:
                 raise ValueError('Unsupported operation')
         print(json.dumps(result))

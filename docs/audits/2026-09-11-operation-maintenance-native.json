@@ -1,0 +1,289 @@
+{
+  "version": 1,
+  "date": "2026-09-11",
+  "status": "local_native_qualification_passed",
+  "production_activation": false,
+  "repository": "Smarter-Poker/Smarter-Poker-Club-Arena",
+  "postgres": "postgres (PostgreSQL) 17.11 (Homebrew)",
+  "node": "v22.23.2",
+  "typescript": "5.9.3",
+  "migration": {
+    "path": "supabase/migrations/20260911170215_durable_operation_maintenance_authority.sql",
+    "sha256": "2ee989f3c7cd8406792ddd9110697d41bc24ba86237e830234311b8580d050b4",
+    "supersedes_pre_addon_sha256": "82dd06afd275038baa014f0e8d3ad16f8bd4e71822f8a7419ebcb12bd39c6b31",
+    "prior_matrix": {
+      "authority": 17,
+      "runtime": 13,
+      "preserved_locally": "work/maintenance-db/pinned-82dd"
+    }
+  },
+  "dependencies": {
+    "release_journal": "20260911151748_private_global_release_journal.sql",
+    "provider_boundary": "20260911160341_provider_operation_boundary.sql",
+    "provider_boundary_sha256": "487edd561b2936d84d0dc31a19eab67d373d6bfcb30489b3471b195424ef9773",
+    "sealed_e2_archive_sha256": "6be71661c49edd736ad78bf62582389ecce5cf06b46eb44237ff8a69833693c1"
+  },
+  "source_sha256": {
+    "tests/maintenance/native.py": "18c016630a15040883a937963f3f9f82488d742ef99f053d9a8bd54574ab7fee",
+    "tests/maintenance/runtime-composition.mjs": "57638322135c8ed9d1030865f5ca22bf1ae5201492e3ea3c8c4f4f84f1d8f46a",
+    "tests/maintenance/current-ancillary-catalog.json": "f80fd42efc7acd40a8f974fbe3adea293ce6aff733d05bd4ac8726e8726e2fc1",
+    "tests/maintenance/current-ancillary-triggers.json": "fb2989323b717f2e869a06272d8ee4b35b4e516d6a555f4ce3d19f9ee3606ff0",
+    "tests/maintenance/current-authority.json": "96443700a27215811259e32acf26ff8ed0da2d304c024c2e952a65e11b937dcc",
+    "tests/maintenance/current-gameplay-authority.json": "0be689e3aa5b0084570983c4ff74fbc95be2de4762e0bb0a6ed0b025681c6746",
+    "tests/maintenance/current-gameplay-catalog.json": "272a13465eeec07ccc0bfae8c57f2032941093e6fc21664b999a4c96806b5953",
+    "tests/maintenance/current-gameplay-freeze-guard.json": "be3bd4550a638344d0a1e7770b9de4189a82edba199a65087bf20c41352e7650",
+    "tests/maintenance/current-gameplay-generated-columns.json": "1c5821d6077ccecb2e86345e7335ac8cfda7e682f280d2ebb68abc5119bd1c53",
+    "tests/maintenance/current-gameplay-helpers.json": "bb2807fb7a57ff779f8f9983e87f65aa43feab08d0dde17aa1dc48e683b96b29",
+    "tests/maintenance/current-gameplay-sequences.json": "78f2eb791867d55774bba7fee0def29233c38dd67a35475c9ffa1975fccc38c1",
+    "tests/maintenance/current-gameplay-settlement-catalog.json": "6d419174b452520fce19c95f9d02b900301e31f1ff94b70866e7e94b8d0ed589",
+    "server/src/maintenance/OperationMaintenanceRuntime.ts": "0b709bffc6619c91beb95f8d460684d07b9505ef50ab873ad6a854eb5e44ab9d",
+    "server/src/maintenance/operationMaintenanceStore.ts": "22cd590efb134f8863d097393ef4f76fcfa8798f77ad19f1bb0d6733741a4e26",
+    "server/src/maintenance/operationPolicy.ts": "38bc21a332746cc2d01afacff45dc158c348fc1bcf48d2f2652b29311a10d0b9",
+    "server/src/maintenance/operationPolicy.json": "1fed78c7afc00a220839dd198f2a362befe0fbe9655b2574d9d037d2864b2bda",
+    "server/src/maintenance/maintenanceThawV3.ts": "ea315cc4a88057382fcb56ccd2ed83b6a3e1ee4371b54a639336c938c403acf9",
+    "server/src/maintenance/reconnectFreeze.ts": "79c34a66492553460f2cfec16cddc3832e583d990e71253539f906ae5b13b5c5",
+    "server/src/maintenance/freezeState.ts": "da4cb636ca1385f0f75aecfb22fdfcc9b5004a6b7b6510b5155f86be3f51ade8",
+    "tests/maintenance/integration.mjs": "c42d36de855cc640508c55e0243477c77abe133ce1a6e5398ceec720a3f5bb24",
+    "tests/maintenance/runtime-fixture.mjs": "5b15c90c94a8dbe15d9dd56622204717489d25320fac46d78ee71bee193a1e2f",
+    "tests/maintenance/runtime-precision-case.mjs": "a01bcb3cf8b7ab44039d7214a9a96cf4ff267e6c064ea6c0fec3a3f3aeb8a68f",
+    "tests/maintenance/runtime-global-tail-cases.mjs": "7faa942b81ff5d9cc43b75b738ea1b487c22d4f5a7c5fcd067626be3aae39ecd"
+  },
+  "validation": {
+    "authority_cases": [
+      {
+        "name": "native_support_installs_inactive",
+        "status": "passed",
+        "milliseconds": 3
+      },
+      {
+        "name": "six_component_activation_requires_retained_recovery",
+        "status": "passed",
+        "milliseconds": 246
+      },
+      {
+        "name": "native_admission_db_clock_exact_and_legacy_writers_refused",
+        "status": "passed",
+        "milliseconds": 270
+      },
+      {
+        "name": "concurrent_engine_adoption_has_one_winner_and_old_token_fails",
+        "status": "passed",
+        "milliseconds": 553
+      },
+      {
+        "name": "wave_plan_refuses_split_event_inventory_and_rewrite",
+        "status": "passed",
+        "milliseconds": 508
+      },
+      {
+        "name": "step_budget_is_current_owned_and_replay_is_readback_only",
+        "status": "passed",
+        "milliseconds": 831
+      },
+      {
+        "name": "maximum_deadline_never_releases_and_public_known_hold_survives",
+        "status": "passed",
+        "milliseconds": 416
+      },
+      {
+        "name": "private_permits_and_verifier_boundaries_resist_forged_context",
+        "status": "passed",
+        "milliseconds": 506
+      },
+      {
+        "name": "safe_resume_requires_exact_current_publication_and_before_final_certification",
+        "status": "passed",
+        "milliseconds": 505
+      },
+      {
+        "name": "actuator_exact_host_binding_single_use_and_lost_response_readback",
+        "status": "passed",
+        "milliseconds": 511
+      },
+      {
+        "name": "observation_budget_is_persisted_and_verification_context_is_bounded",
+        "status": "passed",
+        "milliseconds": 387
+      },
+      {
+        "name": "source_acl_drift_refuses_whole_migration_transaction",
+        "status": "passed",
+        "milliseconds": 9
+      },
+      {
+        "name": "legacy_v3_inflight_keeps_original_token_clock_and_blocks_activation",
+        "status": "passed",
+        "milliseconds": 471
+      },
+      {
+        "name": "canonical_new_hand_settles_after_wave_ack_while_later_wave_held",
+        "status": "passed",
+        "milliseconds": 39
+      },
+      {
+        "name": "actual_v3_960_seconds_all14_targets_wave_suffix_and_replay",
+        "status": "passed",
+        "milliseconds": 18747
+      },
+      {
+        "name": "actual_v3_1800_seconds_all14_targets_wave_suffix_and_replay",
+        "status": "passed",
+        "milliseconds": 18479
+      },
+      {
+        "name": "authorized_unacked_wave_adoption_is_unknown_without_more_credit",
+        "status": "passed",
+        "milliseconds": 450
+      }
+    ],
+    "runtime_store_cases": [
+      {
+        "name": "real_runtime_960s_notification_claim_ready_waves_clocks",
+        "status": "passed",
+        "milliseconds": 24277
+      },
+      {
+        "name": "real_runtime_1800s_notification_claim_ready_waves_clocks",
+        "status": "passed",
+        "milliseconds": 23662
+      },
+      {
+        "name": "failed_ready_sql_transaction_retries_same_owner",
+        "status": "passed",
+        "milliseconds": 5630
+      },
+      {
+        "name": "revoked_release_before_boundary_never_physically_resumes",
+        "status": "passed",
+        "milliseconds": 6263
+      },
+      {
+        "name": "uncertain_wave_ack_preserves_hold_and_never_duplicates_resume",
+        "status": "passed",
+        "milliseconds": 14007
+      },
+      {
+        "name": "sql_suffix_refusal_cannot_emit_ended_or_clear_global_hold",
+        "status": "passed",
+        "milliseconds": 14360
+      },
+      {
+        "name": "fractional_database_checkpoint_refuses_truncated_ack_then_credits_actual_resume",
+        "status": "passed",
+        "milliseconds": 23870
+      },
+      {
+        "name": "revoked_native_authorization_readback_refuses_resume_without_notification",
+        "status": "passed",
+        "milliseconds": 8614
+      },
+      {
+        "name": "native_store_future_ack_retries_one_captured_physical_boundary",
+        "status": "passed",
+        "milliseconds": 14492
+      },
+      {
+        "name": "global_501_targets_complete_stable_batches_without_repeating_waves",
+        "status": "passed",
+        "milliseconds": 72322
+      },
+      {
+        "name": "global_overrun_finishes_old_checkpoint_then_recovers_lost_certificate_reply",
+        "status": "passed",
+        "milliseconds": 87930
+      },
+      {
+        "name": "global_pending_checkpoint_time_and_stale_writer_never_release",
+        "status": "passed",
+        "milliseconds": 71993
+      },
+      {
+        "name": "early_wave_addon_opportunity_survives_global_purchasing_tail_and_replay",
+        "status": "passed",
+        "milliseconds": 25204
+      },
+      {
+        "name": "global_all14_clock_classes_certify_exact_boundary_and_cold_restart_readback",
+        "status": "passed",
+        "milliseconds": 18502
+      }
+    ],
+    "provider_composition_cases": [
+      {
+        "name": "native_actuator_with_real_journal_success",
+        "status": "passed",
+        "milliseconds": 618
+      },
+      {
+        "name": "native_actuator_with_real_journal_lost_response",
+        "status": "passed",
+        "milliseconds": 847
+      },
+      {
+        "name": "native_actuator_with_real_journal_owner_disconnected",
+        "status": "passed",
+        "milliseconds": 644
+      },
+      {
+        "name": "native_actuator_with_real_journal_stale_epoch",
+        "status": "passed",
+        "milliseconds": 571
+      },
+      {
+        "name": "native_actuator_with_real_journal_wrong_bundle",
+        "status": "passed",
+        "milliseconds": 765
+      },
+      {
+        "name": "native_actuator_with_real_journal_expired_step",
+        "status": "passed",
+        "milliseconds": 545
+      }
+    ],
+    "provider_integration_sha256": "a69159858f7223ace398ef1d70e254ed4001b5ba4b026a913d2eae1eb41fcc1b",
+    "focused_vitest": {
+      "OperationMaintenanceRuntime": 72,
+      "operationMaintenanceStore": 38,
+      "certifiedGlobalFreeze": 4,
+      "total": 114
+    },
+    "server_typecheck": "passed",
+    "unchanged_static_gate_findings": {
+      "bandAids": [],
+      "writers": [],
+      "anonReaders": [],
+      "roster": [],
+      "clones": []
+    }
+  },
+  "addon_opportunity": {
+    "remaining_ms": "1000.000000",
+    "global_tail_after_event_ms": "11535.000000",
+    "late_registration_started_at_unchanged": true,
+    "purchases_closed_through_tail": true,
+    "purchases_open_after_certificate": true,
+    "replay_status": "released"
+  },
+  "receipt_files": {
+    "work/maintenance-db/addon-global-final/result.json": "1491565fa28e7cdea4f967fcd4fadc921dc20edbb822febff0f0f3485bd10b67",
+    "work/maintenance-db/addon-global-final/runtime-receipt.json": "b76d8089ae26baf9448242a5f32b4a42801569685eed1d93d6d28243dd64c0ef",
+    "work/maintenance-db/addon-global-final/runtime-inputs.json": "8812b3c07f4d2c71306d82ce1e6449528ad55ee201834d5a110976c642c71c5b",
+    "work/maintenance-db/addon-global-final/addon-global-opportunity-proof.json": "5827dcca9ad617f03efcda9456df35d648848b697e1138a59aff02bd2c99e5a6",
+    "work/maintenance-db/addon-global-final/global-501-proof.json": "3f46495536cb7c4d1e30dde31c0d3dca76cb6a1a5a45dbd1fd0c2ac416a099e8",
+    "work/maintenance-db/addon-global-final/global-overrun-lost-reply-proof.json": "13bd91d11a8a2a5c3f3df643c88340e9c012e2504663cd5ed04bde23ce932db7",
+    "work/maintenance-db/addon-global-final/global-all14-cold-readback-proof.json": "ff8c2762ea96e68e9ce7617e8633018064623f2042fc8d067e8a021e38517d87",
+    "work/maintenance-db/provider-final-addon/result.json": "cc1c3f0195ff5aff85c525b7307391c58032e2e5971346c309a30bd28bcee236",
+    "work/maintenance-db/node22-focused-validation.json": "0e96f4d6069a7ede865f4385835648dc8e6276cf8fbb81115ef2b43bd4252f21",
+    "work/maintenance-db/current-static-gates.json": "85ca162a3f023011229955fdeffdd412f883f6497ce43b8f15253ae95328a98b"
+  },
+  "limits": [
+    "Socket-only PostgreSQL, not PostgREST/Supabase Realtime transport",
+    "Instrumented engine pause/resume, not whole GameServer",
+    "Historical clock rows are explicit fixture setup; actual authorities apply every credit",
+    "No production SQL, host action, credential creation or activation was performed.",
+    "Actual TournamentManager timer suspension and manager lifecycle integration require separate qualification.",
+    "SQL deferred checks reject stale finalization within the transaction but do not prove a bound on later scheduler, WAL or commit-visibility stalls.",
+    "An uninformed or disconnected process remains locally closed until durable readback; simultaneous process/client release during a network partition is not proven.",
+    "Runtime and provider source dependencies are separately owned and must be composed at their recorded hashes."
+  ]
+}

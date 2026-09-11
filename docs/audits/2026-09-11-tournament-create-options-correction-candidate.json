@@ -1,0 +1,16 @@
+{
+  "client_correction": {
+    "helper_edit_sites": 3,
+    "source_sha256": "c1a9f4bd1d8a9f41f420608b2c14e7b3ca396c4056b731c4e21882da4d536fb2"
+  },
+  "governed_before_md5": "855086582b43d915ed6bc4c124a34696",
+  "governed_after_md5": "19497dda6c39de94cda7d175f2cdcaeb",
+  "creator_source_path": "supabase/migrations/20260903172703_an_event_may_restart_every_week.sql",
+  "creator_source_sha256": "793e7a8ad0b1c224314ce866079c22b77b48e6cb7e4c60caf72804e4db8e4df4",
+  "added_columns": ["free_buy", "addon_from_start"],
+  "changed_existing_price_expressions": false,
+  "historical_rows_rewritten": false,
+  "candidate_sha256": "207ccdb5e6df8d532c255354dcb23dcf43cc3f9fa1cde2e39b4feb77fb76d778",
+  "native_execution": false,
+  "unit_before_failure_messages": []
+}

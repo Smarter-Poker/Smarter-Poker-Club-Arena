@@ -153,7 +153,7 @@ rehearsal runs the exact 42,772-byte bounty-rebuy atomicity probe after all six
 boundaries; its SHA-256 is
 `ef8e7fe7c0705ad265dab8f416485302b379437ab94f055f08c98e5cff3a6a5e`.
 It then executes three rollback-contained exact-origin probes against that same
-postimage: request-bound cross-club wallet-charge unregistration (14,666 bytes,
+postimage: request-bound cross-club wallet-charge unregistration (14,986 bytes,
 `a21100a43e73cbf0398e980475bd2a6d602d8245cad821204206de13576383c1`),
 satellite-seat and redeemed-ticket return/replay (35,058 bytes,
 `ed7f2d925a2971a89bb4e88efd5250ccfc2b3b813bd8adb6dca9c3f182e1b1ad`),

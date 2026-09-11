@@ -536,6 +536,18 @@ export class SourceCoordinator {
       return { state: 'EXACT_READINESS_SELECTED' };
     }
     if (q.state === 'APPLYING') {
+      const componentReadiness = q.resolution_manifest.components.some(
+        (c) => c.target === 'club-arena-web'
+      )
+        ? q.resolution_manifest.components.some((c) => c.target === 'club-arena-engine')
+          ? this.mixedReadiness
+          : this.staticReadiness
+        : null;
+      // Every publication boundary re-observes the exact owned prefix. An
+      // unresolved external operation returns through the runner above, so this
+      // read can never reinterpret an uncertain effect as a fresh baseline.
+      if (componentReadiness?.compatibilityReadiness?.resolveBaseline)
+        await componentReadiness.compatibilityReadiness.resolveBaseline(state);
       const requests = receipts.READINESS?.data.provider_requests ?? {};
       const changed = q.resolution_manifest.components.map((c) => c.target);
       const mixed = changed.includes('club-arena-web') && changed.includes('club-arena-engine');

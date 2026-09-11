@@ -130,6 +130,7 @@ const callbackFunctions = new Set([
   'claim_static_publication',
   'component_engine_publication',
   'component_retained_evidence',
+  'component_compatibility_baseline',
 ]);
 export async function certificationCall(client, name, args) {
   need(callbackFunctions.has(name));

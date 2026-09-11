@@ -180,10 +180,14 @@ jobs:
     # on a fresh hosted image, never on a persistent runner that has executed
     # pull-request code.
     runs-on: ubuntu-latest
-    # Serialize only jobs that will really touch the shared production test
-    # accounts. Gate-only no-op runs never occupy this lock.
+    # Keep the shared production lock and preserve already pending run identities.
+    # GitHub's default single pending slot replaces work even when cancellation
+    # of running jobs is disabled. queue:max retains up to100 pending jobs; a
+    # rejected overflow is an unsuccessful exact operation, never a certificate.
+    # Gate-only runs never occupy this lock. Cleanup retains the same key.
     concurrency:
       group: post-deploy-e2e-production
+      queue: max
       cancel-in-progress: false
     # Cashier plus six isolated stateful groups and the 138-test responsive
     # sweep take 20-24 minutes when production is under normal publish load.
@@ -684,6 +688,7 @@ jobs:
     timeout-minutes: 15
     concurrency:
       group: post-deploy-e2e-production
+      queue: max
       cancel-in-progress: false
     permissions:
       contents: read

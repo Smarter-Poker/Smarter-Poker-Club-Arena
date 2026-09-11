@@ -3,7 +3,8 @@ import { open, rename } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { call, connect, configuration, sanitizedError } from './journal.mjs';
+import { call, connect, sanitizedError } from './journal.mjs';
+import { controllerDatabase, verifyControllerPrincipal } from './controller-owner.mjs';
 import { ProviderRunner, providerCall } from './provider-journal.mjs';
 import { admissionServer } from './event-admission.mjs';
 import { MaintenanceCoordinator } from './maintenance-coordinator.mjs';
@@ -75,6 +76,7 @@ export async function controllerSession(
   });
   signal?.addEventListener('abort', abort, { once: true });
   try {
+    if (dbConfig.ownerPrincipal) await verifyControllerPrincipal(client, dbConfig.ownerPrincipal);
     await client.query('LISTEN release_journal_events');
     await afterListen?.(client);
     const owner = await call(client, 'acquire_owner', [
@@ -160,7 +162,7 @@ async function main() {
   if (process.argv.length !== 3) throw new Error('RELEASE_INSTALLED_CONFIGURATION_REQUIRED');
   const { config, installation } = await installedConfiguration(process.argv[2]);
   const mode = config.mode ?? 'OBSERVE';
-  const dbConfig = configuration({ ...process.env, RELEASE_JOURNAL_MODE: 'OBSERVE' });
+  const dbConfig = await controllerDatabase(config);
   const runtime = await controllerRuntime(config);
   let closeAdmission;
   if (config.admission && mode !== 'OBSERVE') {

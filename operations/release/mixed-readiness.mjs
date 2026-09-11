@@ -7,6 +7,7 @@ import {
   uuid,
 } from './component-certificate.mjs';
 import { compatibilityPlan } from './component-compatibility.mjs';
+import { baselineGeneration } from './component-baseline.mjs';
 
 export const mixedCutoverOrder = Object.freeze(['club-arena-engine', 'club-arena-web']);
 const identity = (part, target) => ({
@@ -18,16 +19,38 @@ const identity = (part, target) => ({
 // This adapter only reads a separately executed semantic qualification. It
 // cannot turn a catalogue, manifest or reachable endpoint into a passing run.
 export class ComponentCompatibilityReadiness {
-  constructor({ contract, readBefore, qualifier, retainedEvidence }) {
-    Object.assign(this, { contract, readBefore, qualifier, retainedEvidence });
+  constructor({ contract, readBefore, resolveBaseline, qualifier, retainedEvidence }) {
+    Object.assign(this, { contract, readBefore, resolveBaseline, qualifier, retainedEvidence });
   }
   async qualification(snapshot) {
     need(
-      typeof this.readBefore === 'function' && typeof this.qualifier?.verify === 'function',
+      (typeof this.readBefore === 'function' || typeof this.resolveBaseline === 'function') &&
+        typeof this.qualifier?.verify === 'function',
       'RELEASE_SEMANTIC_QUALIFIER_INSTALLATION_REQUIRED'
     );
-    const before = await this.readBefore(snapshot);
-    const plan = compatibilityPlan(snapshot, before, this.contract);
+    const installedOrder = this.contract?.cutover_order;
+    const changed = snapshot.queue.resolution_manifest.components.map((c) => c.target);
+    need(
+      Array.isArray(installedOrder) &&
+        installedOrder.length > 0 &&
+        sameFacts(
+          installedOrder,
+          mixedCutoverOrder.filter((target) => installedOrder.includes(target))
+        ) &&
+        changed.every((target) => installedOrder.includes(target)),
+      'RELEASE_COMPONENT_CUTOVER_ORDER_REQUIRED'
+    );
+    const baseline = this.resolveBaseline ? await this.resolveBaseline(snapshot) : null;
+    const before = baseline ? baseline.before_components : await this.readBefore(snapshot);
+    // Match the journal's projection of the installed order onto this release.
+    // The same installation can qualify web-only and mixed releases without
+    // changing its immutable contract or discarding the engine-first ordering.
+    const plan = compatibilityPlan(snapshot, before, {
+      ...this.contract,
+      ...(baseline ? { retained_artifacts: baseline.retained_artifacts } : {}),
+      cutover_order: installedOrder.filter((target) => changed.includes(target)),
+    });
+    if (baseline) plan.baseline = baselineGeneration(baseline);
     return { before, plan };
   }
   async plan(snapshot) {

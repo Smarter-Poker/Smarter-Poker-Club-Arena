@@ -21,6 +21,7 @@ import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { operationPolicyDigest } from '../../operations/release/operation-policy.mjs';
 import { SourceCoordinator } from '../../operations/release/source-coordinator.mjs';
+import { baselineGeneration } from '../../operations/release/component-baseline.mjs';
 
 let cluster;
 const clients = new Set();
@@ -54,11 +55,16 @@ const migrations = [
   '20260911190350_component_certification_and_durable_fixture_claims.sql',
   '20260911192023_bind_existing_static_publisher_to_private_release_journal.sql',
   '20260911194548_aggregate_component_qualification_under_one_release_operatio.sql',
+  '20260911210645_resolve_continuous_component_baselines_from_owned_certificat.sql',
 ].map((name) => new URL(`../../supabase/migrations/${name}`, import.meta.url));
 
 // This seed isolates the callback authority after plan admission. It makes no
 // static-publisher or browser certification claim; those have separate cases.
-async function setup({ admissionTarget = 'club-arena-engine', createCertificate = true } = {}) {
+async function setup({
+  admissionTarget = 'club-arena-engine',
+  createCertificate = true,
+  semanticBootstrap,
+} = {}) {
   const config = await cluster.database({ additionalMigrations: migrations });
   const admin = await db(config),
     controllerName = `controller_${randomUUID().replaceAll('-', '')}`,
@@ -87,6 +93,7 @@ async function setup({ admissionTarget = 'club-arena-engine', createCertificate 
       compatibility: {
         schema: semanticSchema,
         cutover_order: ['club-arena-engine', 'club-arena-web'],
+        ...(semanticBootstrap ? { bootstrap: semanticBootstrap } : {}),
       },
       github: {
         control_sha: sha,
@@ -822,8 +829,35 @@ test('cleanup-only recovery keeps original outcome, one dispatch, exact new run,
 
 for (const aggregate of [false, true])
   test(`${aggregate ? 'aggregate' : 'ordinary'} real static artifact and private PG preserve build ownership through one same-run publication and certification`, async () => {
-    const t = await setup({ admissionTarget: 'club-arena-web', createCertificate: false });
     const native = await staticArtifactFixture();
+    const bootstrapBefore = {
+      'club-arena-engine': { source_sha: '9'.repeat(40), identity: `sha256:${'9'.repeat(64)}` },
+      'club-arena-web': {
+        source_sha: sha,
+        identity: `sha256:${native.manifestDigest}`,
+        manifest_digest: native.manifestDigest,
+      },
+    };
+    const semanticBootstrap = {
+      before_components: bootstrapBefore,
+      retained_artifacts: Object.fromEntries(
+        Object.entries(bootstrapBefore).map(([target, component], index) => [
+          target,
+          {
+            target,
+            ...component,
+            build_run_id: String(990 + index),
+            artifact_id: String(992 + index),
+            archive_digest: `sha256:${'9'.repeat(64)}`,
+          },
+        ])
+      ),
+    };
+    const t = await setup({
+      admissionTarget: 'club-arena-web',
+      createCertificate: false,
+      semanticBootstrap,
+    });
     try {
       let q = t.q;
       const selected = {};
@@ -1194,7 +1228,15 @@ for (const aggregate of [false, true])
           cutover_order: ['club-arena-web'],
           schema: semanticSchema,
           tuples: [before, structuredClone(before)],
-          artifact_inputs: {},
+          artifact_inputs: Object.fromEntries(
+            Object.values(semanticBootstrap.retained_artifacts).map((part) => [
+              factDigest(part),
+              part,
+            ])
+          ),
+          baseline: baselineGeneration(
+            await certificationCall(t.client, 'component_compatibility_baseline', [t.release.id])
+          ),
         };
         const semanticRequest = {
           phase: 'COMPATIBILITY',

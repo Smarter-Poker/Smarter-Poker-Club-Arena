@@ -34,6 +34,7 @@ const migrations = [
   '20260911190350_component_certification_and_durable_fixture_claims.sql',
   '20260911192023_bind_existing_static_publisher_to_private_release_journal.sql',
   '20260911194548_aggregate_component_qualification_under_one_release_operatio.sql',
+  '20260911210645_resolve_continuous_component_baselines_from_owned_certificat.sql',
 ].map((f) => new URL('../../supabase/migrations/' + f, import.meta.url));
 async function db(config) {
   const c = await connect(config);

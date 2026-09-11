@@ -143,6 +143,7 @@ describe('retained frontend keeps the existing publication and all browser cover
     expect(reports.match(/e2e-report\/[\w-]+\.json/g)).toHaveLength(11);
     expect(publisher.concurrency).toEqual({
       group: 'publish-club-arena-production',
+      queue: 'max',
       'cancel-in-progress': false,
     });
     expect(e2eText).not.toContain('should_run=false');

@@ -8,6 +8,8 @@ import pg from 'pg';
 import { EngineSocketJournal } from '../../../tests/e2e/support/liveTableRealtime.ts';
 
 import { verifyPersistedHand, schemaCatalogue } from './component-semantic-observations.mjs';
+import { waitForExactEngineReady } from './component-semantic-readiness.mjs';
+import { prepareOracleHome } from './component-semantic-home.mjs';
 export const semanticCaseNames = Object.freeze([
   'exact-schema-catalogue',
   'authenticated-web-bundle',
@@ -31,24 +33,13 @@ export async function qualifyProduct({ tuple, schema, runtimeImage, fixture, db,
     ignoreHTTPSErrors: true,
     storageState: fixture.storage_state,
   });
-  let causal, persisted;
+  let causal, persisted, engineReadiness;
   try {
-    const healthDeadline = Date.now() + 60000;
-    for (;;) {
-      let health;
-      try {
-        health = await context.request.get(fixture.engine_health_url, { timeout: 3000 });
-      } catch {
-        assert.ok(Date.now() < healthDeadline, 'exact candidate engine health unavailable');
-      }
-      if (health?.status() === 200) {
-        const engine = await health.json();
-        assert.equal(engine.releaseSha, tuple['club-arena-engine'].source_sha);
-        if (engine.running === true) break;
-      }
-      assert.ok(Date.now() < healthDeadline, 'exact candidate engine did not become ready');
-      await new Promise((r) => setTimeout(r, 200));
-    }
+    engineReadiness = await waitForExactEngineReady({
+      request: context.request,
+      healthUrl: fixture.engine_health_url,
+      sourceSha: tuple['club-arena-engine'].source_sha,
+    });
     const page = await context.newPage();
     const bad = [];
     page.on('pageerror', (error) => bad.push(error.name));
@@ -131,11 +122,16 @@ export async function qualifyProduct({ tuple, schema, runtimeImage, fixture, db,
     skipped: 0,
     retries: 0,
     cases: semanticCaseNames.map((name) => ({ name, passed: true })),
+    engine_readiness: engineReadiness,
     causal_hand: persisted,
   };
 }
 
 if (process.argv[1]?.endsWith('/component-semantic-suite.mjs')) {
+  assert.equal(process.env.HOME, '/tmp/qualification');
+  assert.equal(process.env.TMPDIR, '/tmp');
+  assert.equal(process.env.XDG_CACHE_HOME, '/tmp/qualification/cache');
+  await prepareOracleHome();
   const plan = JSON.parse(await readFile('/inputs/plan.json', 'utf8'));
   const fixture = JSON.parse(await readFile('/run/club-arena-qualification/fixture.json', 'utf8'));
   // Only a local socket to the disposable database. Never DATABASE_URL or an

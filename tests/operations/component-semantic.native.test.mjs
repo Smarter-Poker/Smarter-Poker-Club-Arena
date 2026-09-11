@@ -19,7 +19,8 @@ after(async () => {
   await cluster.close();
 });
 async function fixture() {
-  const db = await connect(await cluster.database({ migrate: false }));
+  const config = await cluster.database({ migrate: false });
+  const db = await connect(config);
   const base = await readFile(
     new URL('../../supabase/migrations/001_club_arena_schema.sql', import.meta.url),
     'utf8'
@@ -49,7 +50,7 @@ async function fixture() {
     VALUES($1,17,25,1,'[{"type":"call"},{"type":"pot_win"}]','[{"seat":1},{"seat":2}]')`,
       [tableId]
     );
-  return { db, tableId, userId, write, cycle: { handNumber: 17, nextHandNumber: 18 } };
+  return { db, config, tableId, userId, write, cycle: { handNumber: 17, nextHandNumber: 18 } };
 }
 
 test('product observation requires exactly the browser-observed persisted hand and no spectator seat', async () => {
@@ -155,6 +156,76 @@ test('an RLS-filtered fixture observer cannot hide a seat or fabricate an empty 
     );
   } finally {
     await f.db.query('RESET ROLE');
+    await f.db.end();
+  }
+});
+
+test('narrow NOINHERIT qualification reader includes hidden column metadata without application data grants', async () => {
+  const f = await fixture();
+  let reader;
+  try {
+    await f.db.query(`CREATE ROLE qualification_reader LOGIN BYPASSRLS NOINHERIT
+      NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION;
+      GRANT USAGE ON SCHEMA public,auth TO qualification_reader;
+      GRANT SELECT ON public.hand_history,public.table_seats TO qualification_reader;
+      CREATE TABLE public.hidden_qualification_contract(amount numeric(12,2) DEFAULT 1, label text);
+      CREATE TABLE auth.hidden_qualification_auth(token text DEFAULT 'opaque');`);
+    reader = await connect({ ...f.config, user: 'qualification_reader' });
+    const identity = (
+      await reader.query(`SELECT current_user,rolbypassrls,rolinherit,rolsuper,
+      (SELECT count(*)::integer FROM pg_auth_members WHERE member=pg_roles.oid) AS memberships
+      FROM pg_roles WHERE rolname=current_user`)
+    ).rows[0];
+    assert.deepEqual(identity, {
+      current_user: 'qualification_reader',
+      rolbypassrls: true,
+      rolinherit: false,
+      rolsuper: false,
+      memberships: 0,
+    });
+    const grants = (
+      await reader.query(`SELECT table_schema,table_name,privilege_type FROM information_schema.role_table_grants
+      WHERE grantee=current_user ORDER BY table_schema,table_name,privilege_type`)
+    ).rows;
+    assert.deepEqual(grants, [
+      { table_schema: 'public', table_name: 'hand_history', privilege_type: 'SELECT' },
+      { table_schema: 'public', table_name: 'table_seats', privilege_type: 'SELECT' },
+    ]);
+    assert.equal(
+      (
+        await reader.query(`SELECT count(*)::integer AS count FROM information_schema.columns
+      WHERE table_name IN ('hidden_qualification_contract','hidden_qualification_auth')`)
+      ).rows[0].count,
+      0
+    );
+    await assert.rejects(
+      reader.query('SELECT * FROM public.hidden_qualification_contract'),
+      (error) => error.code === '42501'
+    );
+    let previous = await schemaCatalogue(reader);
+    assert.equal(previous, await schemaCatalogue(f.db));
+    for (const mutation of [
+      'ALTER TABLE public.hidden_qualification_contract ALTER COLUMN amount SET DEFAULT 7',
+      'ALTER TABLE public.hidden_qualification_contract ALTER COLUMN amount TYPE numeric(16,4)',
+      'ALTER TABLE public.hidden_qualification_contract ALTER COLUMN amount SET NOT NULL',
+      "ALTER TABLE auth.hidden_qualification_auth ALTER COLUMN token SET DEFAULT 'changed'",
+    ]) {
+      await f.db.query(mutation);
+      const next = await schemaCatalogue(reader);
+      assert.notEqual(
+        next,
+        previous,
+        'hidden column-only change must alter the narrow reader catalogue'
+      );
+      assert.equal(
+        next,
+        await schemaCatalogue(f.db),
+        'privilege-independent metadata must equal the owner observation'
+      );
+      previous = next;
+    }
+  } finally {
+    await reader?.end();
     await f.db.end();
   }
 });

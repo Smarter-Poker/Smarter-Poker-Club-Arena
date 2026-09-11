@@ -6,6 +6,7 @@ import {
   compatibilityPlan,
   GitHubComponentCompatibility,
 } from '../../operations/release/component-compatibility.mjs';
+import { ComponentCompatibilityReadiness } from '../../operations/release/mixed-readiness.mjs';
 const sha = (c) => c.repeat(40),
   hash = (c) => c.repeat(64),
   engine = 'club-arena-engine',
@@ -80,6 +81,65 @@ const config = {
   controlSha: sha('c'),
   runtimeImage: `registry.example/fixture@sha256:${hash('d')}`,
 };
+
+test('one installed compatibility order supports web-only and mixed releases without changing the contract', async () => {
+  const f = fixture();
+  const originalContract = structuredClone(f.contract);
+  const readiness = new ComponentCompatibilityReadiness({
+    contract: f.contract,
+    readBefore: async () => f.before,
+    qualifier: { verify() {} },
+  });
+  const webOnly = structuredClone(f.snapshot);
+  webOnly.queue.resolution_manifest.components = [{ target: web }];
+  delete webOnly.receipts.BUILD.data.artifact.components[engine];
+  const { plan: webPlan } = await readiness.qualification(webOnly);
+  assert.deepEqual(webPlan.cutover_order, [web]);
+  assert.deepEqual(
+    webPlan.tuples.map((tuple) => [tuple[engine].source_sha, tuple[web].source_sha]),
+    [
+      [sha('a'), sha('a')],
+      [sha('a'), sha('b')],
+    ]
+  );
+  f.snapshot.queue.resolution_manifest.components.reverse();
+  const { plan: mixedPlan } = await readiness.qualification(f.snapshot);
+  assert.deepEqual(mixedPlan.cutover_order, [engine, web]);
+  assert.deepEqual(
+    mixedPlan.tuples.map((tuple) => [tuple[engine].source_sha, tuple[web].source_sha]),
+    [
+      [sha('a'), sha('a')],
+      [sha('b'), sha('a')],
+      [sha('b'), sha('b')],
+    ]
+  );
+  assert.deepEqual(f.contract, originalContract);
+});
+
+test('invalid or missing installed compatibility order is refused before native reads', async () => {
+  const f = fixture();
+  let reads = 0;
+  for (const cutover_order of [
+    undefined,
+    null,
+    [],
+    [web, engine],
+    [engine, engine, web],
+    [engine, web, 'foreign'],
+    [web],
+  ]) {
+    const readiness = new ComponentCompatibilityReadiness({
+      contract: { ...f.contract, cutover_order },
+      readBefore: async () => {
+        reads++;
+        return f.before;
+      },
+      qualifier: { verify() {} },
+    });
+    await assert.rejects(readiness.qualification(f.snapshot), /COMPONENT_CUTOVER_ORDER_REQUIRED/);
+  }
+  assert.equal(reads, 0);
+});
 
 test('plan preserves exact before/intermediate/after states and retains original artifact provenance', () => {
   const f = fixture(),

@@ -144,7 +144,9 @@ test('semantic configuration wires the owned qualifier into both static and mixe
   const c = config();
   c.github.componentQualificationWorkflowId = 500;
   c.github.componentRuntimeImage = `qualifier@sha256:${'f'.repeat(64)}`;
-  c.components.compatibility = { contract: { version: 1 } };
+  c.components.compatibility = {
+    contract: { version: 1, cutover_order: ['club-arena-engine', 'club-arena-web'] },
+  };
   const d = await dependencies();
   const r = await controllerRuntime(c, d.options);
   assert.equal(r.adapters['github-compatibility'].workflowId, 500);

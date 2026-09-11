@@ -29,19 +29,32 @@ commands; source presence is not installed evidence.
 
 ## Configuration mapping
 
+Owner startup requires `journal.database_principal` and
+`journal.database_ca_path` in the installed configuration, plus the existing
+`RELEASE_JOURNAL_DATABASE_URL` and verified session/direct endpoint. Both
+controller and upgrade bootstrap inspect the authenticated TLS/login before
+ownership or journal inspection; no identity is supplied by this source.
+For an explicitly reviewed session pooler login, optional
+`journal.database_username` may be the same principal with its exact lowercase
+twenty-character project suffix. The authenticated PostgreSQL session must still
+report the configured narrow `database_principal`; the pooler username never
+substitutes for that role check.
+
 Configuration is root-owned, immutable-bundle verified and journal-bound. Values
 below describe required fields; they are not credentials or an execution-ready
 installation example.
 
-| Runtime configuration                                                     | Journal installation binding                                                   |
-| ------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| `github.controlSha`, `github.controlRef`                                  | `github.control_sha`, pinned branch checked against that source                |
-| `github.workflowId`, `github.runtimeImage`                                | `github.workflow_id`, `github.runtime_image`                                   |
-| `github.frontendWorkflowId`, `github.frontendRuntimeImage`                | `github.frontend_qualification_workflow_id`, `github.frontend_runtime_image`   |
-| `github.staticWorkflowId`                                                 | `github.static_workflow_id`                                                    |
-| `github.certificationVersion: 2`, `github.certificationWorkflowId`        | installed component certificate ingress and `github.certification_workflow_id` |
-| `github.componentQualificationWorkflowId`, `github.componentRuntimeImage` | `github.component_qualification_workflow_id`, `github.component_runtime_image` |
-| `components.compatibility.contract.schema`, `.cutover_order`              | `compatibility.schema`, `compatibility.cutover_order`                          |
+| Runtime configuration                                                        | Journal installation binding                                                   |
+| ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `github.controlSha`, `github.controlRef`                                     | `github.control_sha`, pinned branch checked against that source                |
+| `github.workflowId`, `github.runtimeImage`                                   | `github.workflow_id`, `github.runtime_image`                                   |
+| `github.frontendWorkflowId`, `github.frontendRuntimeImage`                   | `github.frontend_qualification_workflow_id`, `github.frontend_runtime_image`   |
+| `github.staticWorkflowId`                                                    | `github.static_workflow_id`                                                    |
+| `github.certificationVersion: 2`, `github.certificationWorkflowId`           | installed component certificate ingress and `github.certification_workflow_id` |
+| `github.componentQualificationWorkflowId`, `github.componentRuntimeImage`    | `github.component_qualification_workflow_id`, `github.component_runtime_image` |
+| `components.compatibility.contract.schema`, `.cutover_order`                 | `compatibility.schema`, `compatibility.cutover_order`                          |
+| `components.static_control_receipt_path` (verified receipt contents)         | `github.static_control_closure.digest`                                         |
+| `components.compatibility.contract.before_components`, `.retained_artifacts` | `compatibility.bootstrap.before_components`, `.retained_artifacts`             |
 
 `components.compatibility.contract` also includes `version:1`,
 `before_components` and `retained_artifacts`. The full schema `catalogue_digest`
@@ -63,6 +76,18 @@ URL, audience and installation receipt. Certificate OIDC binds the installed
 control branch; static publisher OIDC binds `refs/heads/main`. A newer static
 source is accepted only when its complete reviewed control closure is unchanged.
 Neither callback gets the controller's owner session.
+
+The installed cutover order is filtered to each release's changed components.
+One engine-then-web order therefore supports both web-only and mixed releases.
+The installed `before_components` and `retained_artifacts` seed only bootstrap;
+the same values must bind to journal `compatibility.bootstrap`. Later baselines
+come from the private durable resolver's exact completed certificates, cleanup
+and original artifact ancestry. Once an attempt has captured its compatibility
+plan, its initial tuple is immutable and only its own successful publication
+prefix changes the expected native state across a restart.
+
+See `installation-capabilities.md` for the complete source versus installation
+boundary, credential/socket prerequisites and bootstrap verification limits.
 
 ## Source limits and outstanding work
 

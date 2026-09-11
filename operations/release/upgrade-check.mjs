@@ -3,7 +3,9 @@ import { readFile } from 'node:fs/promises';
 import { isDeepStrictEqual } from 'node:util';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { call, connect, configuration } from './journal.mjs';
+import { call, connect } from './journal.mjs';
+import { rootOwnedFile } from './installed-bundle.mjs';
+import { controllerDatabase, verifyControllerPrincipal } from './controller-owner.mjs';
 
 // Run by the already installed native oneshot BEFORE stopping its predecessor.
 // Only read-only inspection; it cannot mark the upgrade/release successful.
@@ -34,7 +36,12 @@ export function validateUpgrade(snapshot, intent) {
 async function main() {
   let client;
   try {
-    client = await connect(configuration({ ...process.env, RELEASE_JOURNAL_MODE: 'OBSERVE' }));
+    const config = JSON.parse(
+      await rootOwnedFile('/etc/club-arena-release-controller/controller.json')
+    );
+    const database = await controllerDatabase(config);
+    client = await connect(database);
+    await verifyControllerPrincipal(client, database.ownerPrincipal);
     const bootstrap = process.argv[2] === '--bootstrap';
     const intent = bootstrap ? null : JSON.parse(await readFile(process.argv[2], 'utf8'));
     const snapshot = await call(client, 'inspect', [intent?.release_id ?? null]);

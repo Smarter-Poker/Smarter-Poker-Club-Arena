@@ -54,21 +54,21 @@ on:
 # sync step, so production sat on one sha (7547a6e45) for hours while main
 # moved far ahead. The queue was never idle and never finished.
 #
-# false is correct here because of how GitHub scopes it: a new run still
-# cancels an older PENDING run in the group, but a run already RUNNING is
-# allowed to finish. The group therefore holds at most one in-flight build
-# plus the newest queued commit, and each wave of pushes converges on
-# publishing the latest main instead of publishing nothing at all.
+# Keep running and already pending operation identities. GitHub's default
+# single pending slot replaces earlier work even with cancel-in-progress:false.
+# queue:max preserves up to 100 pending runs; overflow cancels the new run and
+# must be reconciled as that exact unsuccessful operation, never redispatched.
 #
-# The key is intentionally static because there is one production resource:
-# push and repository_dispatch must serialize even if GitHub gives the two
-# event types different refs.
+# All events retain the shared production resource key. The journal grants one
+# publication and the native host lock/CAS remain mandatory. Installed ordinary
+# writer exclusion is still a separate activation prerequisite.
 # One-time adoption rule: every run created from the former ref-scoped key must
 # be terminal before this definition first reaches main. That older definition
-# did not take the host lock. After adoption, every event shares this static key
-# and the host lock plus compare-and-swap provide the second serialization layer.
+# did not take the host lock. The host lock plus compare-and-swap still provide
+# the native serialization layer for every publication.
 concurrency:
   group: publish-club-arena-production
+  queue: max
   cancel-in-progress: false
 
 jobs:

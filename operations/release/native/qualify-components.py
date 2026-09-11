@@ -23,6 +23,7 @@ import zipfile
 from contextlib import contextmanager
 
 REPO = 'Smarter-Poker/Smarter-Poker-Club-Arena'
+FIXTURE_SERVER = '/usr/local/bin/fixture-server'
 CASES = ['exact-schema-catalogue', 'authenticated-web-bundle',
          'engine-browser-causal-hand', 'completed-hand-persisted',
          'spectator-does-not-acquire-seat']
@@ -172,13 +173,19 @@ def validate_web(path, expected, supabase_host=None):
 
 
 def validate_native(result, tuple_value, schema, runtime_image):
+    readiness = result.get('engine_readiness', {})
     require(result.get('scope') == 'club-arena-product' and result.get('product_suite') == 'live-table-schema-v1' and
             result.get('tuple') == tuple_value and result.get('runtime_image') == runtime_image and
             result.get('schema_fixture_sha256') == schema['fixture_sha256'] and
             result.get('schema_catalogue_digest') == schema['catalogue_digest'] and
             result.get('success') is True and result.get('executed') == len(CASES) and
             result.get('failed') == 0 and result.get('skipped') == 0 and result.get('retries') == 0 and
-            result.get('cases') == [{'name': name, 'passed': True} for name in CASES],
+            result.get('cases') == [{'name': name, 'passed': True} for name in CASES] and
+            readiness.get('timeout_ms') == 90000 and
+            type(readiness.get('elapsed_ms')) is int and 0 <= readiness['elapsed_ms'] <= 90000 and
+            type(readiness.get('observations')) is int and readiness['observations'] > 0 and
+            readiness.get('source_sha') == tuple_value['club-arena-engine']['source_sha'] and
+            readiness.get('running') is True,
             'RELEASE_SEMANTIC_PRODUCT_EXECUTION_REQUIRED')
 
 
@@ -246,7 +253,7 @@ def qualify(request, operation, controls, output):
     command(['docker', 'pull', runtime_image], timeout=600)
     capability = command(['docker', 'run', '--rm', '--network=none', '--read-only', '--cap-drop=ALL',
                           '--security-opt=no-new-privileges', runtime_image,
-                          'fixture-server', 'capabilities'], check=False)
+                          FIXTURE_SERVER, 'capabilities'], check=False)
     require(capability.returncode == 0, 'RELEASE_SEMANTIC_FIXTURE_RUNTIME_CAPABILITY_REQUIRED')
     require(json.loads(capability.stdout) == {'version': 1, 'scope': 'isolated-club-arena-fixture',
             'product_suite': 'live-table-schema-v1', 'services': ['auth', 'postgresql', 'postgrest', 'realtime', 'tls-proxy'],
@@ -270,6 +277,14 @@ def qualify(request, operation, controls, output):
                 unpack_engine(temp / (key + '.zip'), temp / (key + '.tar'), item)
             else:
                 validate_web(temp / (key + '.zip'), item, supabase_host)
+        # The host runner need not share the fixture UID. These are sanitized
+        # immutable input artifacts, not runtime-generated service credentials.
+        # Explicit read-only modes let UID1000 read the mount and UID1001 read
+        # the plan; private fixture state remains in the fixture-owned tmpfs.
+        temp.chmod(0o755)
+        for item in temp.iterdir():
+            require(item.is_file() and not item.is_symlink())
+            item.chmod(0o444)
         for index, tuple_value in enumerate(plan['tuples']):
             prefix = f'release-semantic-{operation}-{index}'
             network, fixture, engine = prefix + '-network', prefix + '-fixture', prefix + '-engine'
@@ -285,18 +300,21 @@ def qualify(request, operation, controls, output):
                 # bytes. No Docker socket, provider token, runner environment,
                 # output directory or candidate checkout is mounted.
                 command(['docker', 'run', '-d', '--name', fixture, '--network', network,
+                         '--user', '1000:1000',
                          '--network-alias', 'fixture', '--network-alias', 'smarter.poker',
                          '--network-alias', 'ca-static.smarter.poker', '--network-alias', 'engine.smarter.poker',
                          '--network-alias', supabase_host,
                          '--cap-drop=ALL', '--security-opt=no-new-privileges', '--read-only', '--pids-limit=1024',
-                         '--memory=8g', '--cpus=2', '--tmpfs', '/tmp:rw,nosuid,size=2g',
-                         '--tmpfs', '/run:rw,nosuid,size=2g', '--tmpfs', '/var/lib/postgresql:rw,nosuid,size=4g',
+                         '--sysctl', 'net.ipv4.ip_unprivileged_port_start=0',
+                         '--memory=8g', '--cpus=2', '--tmpfs', '/tmp:rw,nosuid,size=2g,uid=1000,gid=1000,mode=1777',
+                         '--tmpfs', '/run:rw,nosuid,size=2g,uid=1000,gid=1000',
+                         '--tmpfs', '/var/lib/postgresql:rw,nosuid,size=4g,uid=1000,gid=1000',
                          '--mount', f'type=bind,source={temp},target=/inputs,readonly',
                          '--mount', f'type=bind,source={controls},target=/opt/qualification/controls,readonly',
-                         runtime_image, 'fixture-server', 'start', '--schema=/inputs/schema.zip',
+                         runtime_image, FIXTURE_SERVER, 'start', '--schema=/inputs/schema.zip',
                          f'--web=/inputs/{web_key}.zip', '--engine=http://engine:8080'])
-                command(['docker', 'exec', fixture, 'fixture-server', 'ready'], timeout=120)
-                env = json.loads(command(['docker', 'exec', fixture, 'fixture-server', 'engine-environment']).stdout)
+                command(['docker', 'exec', fixture, FIXTURE_SERVER, 'ready'], timeout=120)
+                env = json.loads(command(['docker', 'exec', fixture, FIXTURE_SERVER, 'engine-environment']).stdout)
                 require(set(env) == {'SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'PORT', 'NODE_ENV'} and
                         env['SUPABASE_URL'] == 'http://fixture:8000' and env['PORT'] == '8080' and
                         env['NODE_ENV'] == 'production', 'RELEASE_SEMANTIC_FIXTURE_ENVIRONMENT_REFUSED')
@@ -304,7 +322,8 @@ def qualify(request, operation, controls, output):
                 # credentials. The candidate receives no other environment.
                 args = ['docker', 'run', '-d', '--name', engine, '--network', network, '--network-alias', 'engine',
                         '--user', '1000:1000', '--read-only', '--cap-drop=ALL', '--security-opt=no-new-privileges',
-                        '--pids-limit=1024', '--memory=6g', '--cpus=2', '--tmpfs', '/tmp:rw,nosuid,size=2g']
+                        '--pids-limit=1024', '--memory=6g', '--cpus=2',
+                        '--tmpfs', '/tmp:rw,nosuid,size=2g,uid=1000,gid=1000,mode=1777']
                 for key, value in env.items():
                     require(isinstance(value, str) and '\n' not in value and '\x00' not in value)
                     args.extend(['--env', f'{key}={value}'])
@@ -312,7 +331,9 @@ def qualify(request, operation, controls, output):
                 command(args)
                 observed = json.loads(command(['docker', 'inspect', engine]).stdout)[0]
                 require(observed['Image'] == tuple_value['club-arena-engine']['identity'])
-                result = command(['docker', 'exec', '--user', 'qualification', fixture,
+                result = command(['docker', 'exec', '--user', 'qualification',
+                                  '--env', 'HOME=/tmp/qualification', '--env', 'TMPDIR=/tmp',
+                                  '--env', 'XDG_CACHE_HOME=/tmp/qualification/cache', fixture,
                                   '/opt/qualification/node_modules/.bin/tsx',
                                   '/opt/qualification/controls/operations/release/native/component-semantic-suite.mjs',
                                   str(index), runtime_image], timeout=240)

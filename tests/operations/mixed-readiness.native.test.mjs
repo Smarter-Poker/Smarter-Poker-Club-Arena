@@ -22,6 +22,7 @@ import { factDigest, certificateReports } from '../../operations/release/compone
 import { operationPolicyDigest } from '../../operations/release/operation-policy.mjs';
 import { certificationCall } from '../../operations/release/certification-callback.mjs';
 import { GitHubComponentCompatibility } from '../../operations/release/component-compatibility.mjs';
+import { ComponentBaselineResolver } from '../../operations/release/component-baseline.mjs';
 
 const engine = 'club-arena-engine',
   web = 'club-arena-web';
@@ -34,6 +35,7 @@ const migrations = [
   '20260911190350_component_certification_and_durable_fixture_claims.sql',
   '20260911192023_bind_existing_static_publisher_to_private_release_journal.sql',
   '20260911194548_aggregate_component_qualification_under_one_release_operatio.sql',
+  '20260911210645_resolve_continuous_component_baselines_from_owned_certificat.sql',
 ].map((name) => new URL(`../../supabase/migrations/${name}`, import.meta.url));
 let cluster;
 const clients = new Set(),
@@ -93,6 +95,7 @@ async function setup() {
   };
   const contract = {
     version: 1,
+    before_components: prior,
     cutover_order: [engine, web],
     schema: {
       fixture_sha256: 'f'.repeat(64),
@@ -144,7 +147,11 @@ async function setup() {
         component_runtime_image: github.runtimeImage,
       },
       engine: { control_sha: github.controlSha },
-      compatibility: { schema: contract.schema, cutover_order: contract.cutover_order },
+      compatibility: {
+        schema: contract.schema,
+        cutover_order: contract.cutover_order,
+        bootstrap: { before_components: prior, retained_artifacts: contract.retained_artifacts },
+      },
     },
     evidence([
       'installed_code',
@@ -533,9 +540,35 @@ async function setup() {
       throw new Error(`unexpected semantic route ${route}`);
     },
   });
+  const baselineReads = [];
+  let baselineEngineDrift = false;
+  const baselineResolver = new ComponentBaselineResolver({
+    bootstrap: contract,
+    resolve: (release) =>
+      certificationCall(callback, 'component_compatibility_baseline', [release]),
+    observe: async (expected) => {
+      baselineReads.push(structuredClone(expected));
+      const native = await current.readNative();
+      const enginePublished = [...observations.values()].find(
+        (observation) => observation.result === 'sealed'
+      );
+      return {
+        [engine]: baselineEngineDrift
+          ? { source_sha: sha('f'), identity: image('f') }
+          : enginePublished
+            ? { source_sha: enginePublished.source_sha, identity: enginePublished.image_id }
+            : prior[engine],
+        [web]: {
+          source_sha: native.source_sha,
+          identity: `sha256:${native.manifest_sha256}`,
+          manifest_digest: native.manifest_sha256,
+        },
+      };
+    },
+  });
   const compatibilityReadiness = new ComponentCompatibilityReadiness({
     contract,
-    readBefore: async () => prior,
+    resolveBaseline: (snapshot) => baselineResolver.read(snapshot),
     qualifier,
   });
   const staticReadiness = new StaticReadiness({
@@ -732,6 +765,10 @@ async function setup() {
     compatibilityReadiness,
     mixedReadiness,
     tick,
+    baselineReads,
+    setBaselineEngineDrift(value) {
+      baselineEngineDrift = value;
+    },
     get coordinator() {
       return coordinator;
     },
@@ -816,12 +853,24 @@ test('native PG mixed coordinator binds both child builds, three tuples and orde
   t.setVisible(false);
   await t.tick();
   assert.equal(t.counts.engine, 1);
+  const readsBeforeUnknown = t.baselineReads.length;
   await t.takeover();
   await t.tick();
+  assert.equal(
+    t.baselineReads.length,
+    readsBeforeUnknown,
+    'unresolved publication is reconciliation only'
+  );
   assert.equal(t.counts.engine, 1);
   assert.equal(t.counts.web, 0);
   assert.equal((await t.coordinator.snapshot()).queue.state, 'UNKNOWN_EXTERNAL_OUTCOME');
   t.setVisible(true);
+  await t.tick();
+  assert.equal((await t.coordinator.snapshot()).queue.state, 'APPLYING');
+  t.setBaselineEngineDrift(true);
+  await assert.rejects(t.tick(), /BASELINE_NATIVE_DRIFT/);
+  assert.equal(t.counts.web, 0, 'engine prefix drift cannot authorize the next web publication');
+  t.setBaselineEngineDrift(false);
   await until(t, 'VERIFYING');
   assert.deepEqual(t.order, [engine, web]);
   await until(t, 'VERIFIED');
@@ -841,6 +890,12 @@ test('native PG mixed coordinator binds both child builds, three tuples and orde
   );
   assert.equal(cleanup.rows[0].count, '1');
   assert.equal((await t.tick()).state, 'CLAIMED');
+  const next = await t.compatibilityReadiness.resolveBaseline(await t.coordinator.snapshot());
+  assert.equal(next.origin, 'completed');
+  assert.equal(next.baseline_release_id, t.first.id);
+  assert.equal(next.before_components[engine].source_sha, sha('a'));
+  assert.equal(next.retained_artifacts[engine].build_run_id, '677');
+  assert.equal(next.retained_artifacts[web].build_run_id, '678');
 });
 
 test('mixed readiness refuses omitted intermediate semantics, changed child identity and staged baseline drift', async () => {

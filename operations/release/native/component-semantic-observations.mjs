@@ -52,9 +52,18 @@ export async function schemaCatalogue(db) {
       ORDER BY n.nspname,p.proname,pg_get_function_identity_arguments(p.oid)),'[]'::jsonb)
       FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
       WHERE n.nspname IN ('public','auth') AND p.prokind IN ('f','p')),
-    'columns',(SELECT coalesce(jsonb_agg(jsonb_build_array(table_schema,table_name,column_name,
-      data_type,udt_name,is_nullable,column_default) ORDER BY table_schema,table_name,ordinal_position),'[]'::jsonb)
-      FROM information_schema.columns WHERE table_schema IN ('public','auth')),
+    'columns',(SELECT coalesce(jsonb_agg(jsonb_build_array(n.nspname,c.relname,a.attname,
+      format_type(a.atttypid,a.atttypmod),tn.nspname,t.typname,
+      NOT (a.attnotnull OR (t.typtype='d' AND t.typnotnull)),pg_get_expr(d.adbin,d.adrelid),
+      a.attnum,a.atttypmod,t.typtype,
+      CASE WHEN t.typtype='d' THEN format_type(t.typbasetype,t.typtypmod) ELSE NULL END)
+      ORDER BY n.nspname,c.relname,a.attnum),'[]'::jsonb)
+      FROM pg_attribute a JOIN pg_class c ON c.oid=a.attrelid
+      JOIN pg_namespace n ON n.oid=c.relnamespace JOIN pg_type t ON t.oid=a.atttypid
+      JOIN pg_namespace tn ON tn.oid=t.typnamespace
+      LEFT JOIN pg_attrdef d ON d.adrelid=a.attrelid AND d.adnum=a.attnum
+      WHERE n.nspname IN ('public','auth') AND c.relkind IN ('r','p','v','m','f')
+        AND a.attnum>0 AND NOT a.attisdropped),
     'policies',(SELECT coalesce(jsonb_agg(to_jsonb(p) ORDER BY schemaname,tablename,policyname),'[]'::jsonb)
       FROM pg_policies p WHERE schemaname IN ('public','auth')),
     'constraints',(SELECT coalesce(jsonb_agg(jsonb_build_array(n.nspname,c.relname,k.conname,

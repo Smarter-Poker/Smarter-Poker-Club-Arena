@@ -12,9 +12,18 @@ the reviewed `controlRef`/`controlSha`. `compatibility.schema.catalogue_digest`
 is the complete fixture catalogue computed by `schemaCatalogue()` as
 `qualification_reader`; `database_contract_digest` is the separate live engine
 door catalogue digest. They must not be substituted for each other.
+Column metadata comes directly from `pg_attribute`, `pg_class`, `pg_namespace`,
+`pg_type` and `pg_attrdef`, including type/UDT, nullability, default and order.
+It does not use the privilege-filtered `information_schema.columns` view or
+read application data. Therefore a reader granted SELECT only on hand history
+and seats still certifies the metadata of other public/auth relations. Fixture
+producers must compute the digest with this same reviewed catalogue encoding.
 
 The missing runtime must provide the fixed `fixture-server` interface below.
 These commands accept no candidate script, shell command or production URL.
+The driver invokes the fixed `/usr/local/bin/fixture-server` wrapper. That wrapper
+executes the packaged `/opt/qualification/runtime/fixture-server.mjs`; related
+runtime modules live in the same fixed package, outside candidate artifacts.
 
 1. `capabilities` returns exactly the version, scope, service list, browser and
    synthetic-local-only credential disposition required by `qualify-components.py`.
@@ -24,6 +33,8 @@ These commands accept no candidate script, shell command or production URL.
    starts real auth/PostgREST/realtime services and serves the exact frontend
    archive. No rebuilding, substituted API responses or candidate test execution.
 3. `ready` succeeds only after those local services and the fixture are ready.
+   This occurs before the candidate engine starts and does not prove that
+   engine's readiness.
 4. `engine-environment` returns exactly the four allowed keys in the native
    driver. The service key must authenticate only the disposable local fixture.
    It must never originate from an Actions/controller/production credential.
@@ -57,12 +68,37 @@ also route the exact compiled bundle's Supabase and engine hosts to local
 services. An unhandled hostname must fail, never escape to production. Browser
 TLS verification is disabled solely for that disposable offline fixture.
 
-The runtime includes a non-root `qualification` user, Chromium, `tsx`, `pg` and
+The image's default OS user is `fixture`, UID/GID 1000, and the driver explicitly
+starts its service container as `1000:1000`. Its `/tmp`, `/run` and
+`/var/lib/postgresql` tmpfs mounts are owned by UID/GID 1000. `/tmp` uses mode
+1777 so the separate oracle user can use its own scratch without sharing a
+private service directory. The read-only root filesystem and `cap-drop=ALL`
+remain enforced. The engine's own `/tmp` uses the same owner and sticky mode.
+Before mounting, the driver gives only the sanitized immutable input directory
+mode 0755 and its artifact/plan files mode 0444, so a different host-runner UID
+cannot make the read-only `/inputs` mount inaccessible to `fixture`. Runtime
+service credentials must never be placed in those public input artifacts.
+
+The runtime includes a separate non-root `qualification` user, UID/GID 1001,
+with no shared groups with `fixture`, plus Chromium, `tsx`, `pg` and
 `@playwright/test` under `/opt/qualification/node_modules`. The trusted control
 checkout is mounted read-only under `/opt/qualification/controls`, so the actual
 existing `tests/e2e/support/liveTableRealtime.ts` dependency resolves from the
 same pinned checkout. `qualification_reader` can read only this disposable
 database over `/run/postgresql`; the suite never reads `DATABASE_URL`.
+The oracle's `docker exec` explicitly sets `HOME=/tmp/qualification`,
+`TMPDIR=/tmp` and `XDG_CACHE_HOME=/tmp/qualification/cache`. The oracle process
+itself, running as UID/GID 1001, creates its home and cache with mode 0700 before
+constructing the PostgreSQL client or launching Chromium. The fixture service
+UID 1000 must not pre-create or attempt to chown that home. The oracle refuses
+symlinks, a different owner/group, or permissive pre-existing directory modes.
+The fixture's `net.ipv4.ip_unprivileged_port_start=0` setting permits its local
+unprivileged TLS proxy to bind the declared ports without adding capabilities.
+Private runtime files/directories remain mode 0700 and owned by `fixture`;
+only the public fixture descriptor
+`/run/club-arena-qualification/fixture.json` is readable by `qualification`.
+The runtime must permit traversal to that public descriptor without granting
+the oracle access to private service data or synthetic service keys.
 Its reads must expose all fixture rows. The SQL oracle sets `row_security=off`,
 which makes PostgreSQL error if the observer would otherwise receive filtered
 rows; it does not grant RLS bypass or modify the browser/engine connections.
@@ -75,6 +111,16 @@ by the next hand, and one matching PostgreSQL hand record with actions/players.
 It also proves that the spectator did not acquire a seat. Every combination is
 tested from a fresh fixture. A failed/absent/skipped/retried case or incomplete
 cleanup cannot produce a successful receipt.
+
+Before browser navigation, the trusted oracle separately waits at most 90
+seconds for HTTP 200 with the exact expected engine `releaseSha` and
+`running:true`. A wrong nonempty `releaseSha` fails immediately, including on a
+startup error response. Each request is bounded by the remaining original
+deadline; late correct responses cannot extend it. The native receipt records
+`engine_readiness.timeout_ms` (90000), elapsed time, observation count, exact
+source and running state. This startup allowance consumes the existing
+240-second oracle command budget. It is not a browser/test retry and never
+replaces or restarts the engine or selects another hand.
 
 A hard workflow termination may prevent Python cleanup from executing. Such a
 run has no successful semantic/cleanup receipt and cannot qualify. Its failed

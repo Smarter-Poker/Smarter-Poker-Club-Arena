@@ -277,6 +277,13 @@ test('real PG serializes qualification, one exact merge and build; UNKNOWN survi
       return { terminal: true, outcome: 'SUCCEEDED' };
     },
   };
+  t.coordinator.mixedReadiness = {
+    compatibilityReadiness: {
+      resolveBaseline: async () => {
+        assert.fail('ordinary engine publication must retain its own readiness contract');
+      },
+    },
+  };
   for (let n = 0; n < 7; n++) await t.tick();
   s = await t.coordinator.snapshot();
   assert.equal(s.queue.state, 'VERIFYING');

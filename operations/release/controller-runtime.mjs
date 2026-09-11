@@ -9,7 +9,7 @@ import { AggregateQualificationAdapter } from './aggregate-qualification.mjs';
 import { EngineStageAdapter, artifactDownload, stageTransport } from './adapters/engine-stage.mjs';
 import { HetznerIntakeAdapter, engineTransport } from './adapters/hetzner.mjs';
 import { VercelPromoteAdapter, vercelTransport } from './adapters/vercel.mjs';
-import { EngineReadiness, liveCatalogue } from './engine-readiness.mjs';
+import { EngineReadiness, liveCatalogue, publicReleaseJSON } from './engine-readiness.mjs';
 import { StaticReadiness } from './static-readiness.mjs';
 import { componentReadback } from './component-readback.mjs';
 import {
@@ -26,6 +26,7 @@ import {
 import { StaticPublicationCallback } from './static-publication-callback.mjs';
 import { proveExistingArtifact, requirePriorPublication } from './frontend-artifact-proof.mjs';
 import { requireCertificate as need, sameFacts, uuid } from './component-certificate.mjs';
+import { ComponentBaselineResolver } from './component-baseline.mjs';
 
 export async function installedCredential(name) {
   need(
@@ -247,57 +248,88 @@ export async function controllerRuntime(
           request: githubRequest,
         });
         adapters['github-compatibility'] = qualifier;
-        const readBefore = async (snapshot) => {
-          const before = c.compatibility.contract?.before_components;
-          need(
-            before && before['club-arena-engine'] && before['club-arena-web'],
-            'RELEASE_COMPONENT_PREHISTORY_REQUIRED'
-          );
-          const e = before['club-arena-engine'];
-          let engine;
-          if (
-            snapshot.queue.resolution_manifest.components.some(
+        const baselineResolver = new ComponentBaselineResolver({
+          bootstrap: c.compatibility.contract,
+          resolve: async (release) => {
+            const client = await database();
+            try {
+              return await certificationCall(client, 'component_compatibility_baseline', [release]);
+            } finally {
+              await client.end();
+            }
+          },
+          observe: async (expected, { snapshot, baseline }) => {
+            const e = expected['club-arena-engine'];
+            const published = baseline.publication_prefix.find(
               (part) => part.target === 'club-arena-engine'
-            )
-          ) {
-            // Mixed releases already have an immutable, completed native stage
-            // operation. Read its current host directly; do not manufacture a
-            // historical VERIFIED certificate just to bootstrap readback.
-            const stagePlan = snapshot.stage_plan ?? snapshot.plan;
-            const stageOperation = snapshot.stage_operation ?? snapshot.operation;
+            );
+            const original =
+              baseline.origin === 'attempt' ? baseline.captured_baseline.origin : baseline.origin;
+            const readEngine = async () => {
+              if (
+                !published &&
+                original === 'bootstrap' &&
+                snapshot.queue.resolution_manifest.components.some(
+                  (part) => part.target === 'club-arena-engine'
+                )
+              ) {
+                const stagePlan = snapshot.stage_plan ?? snapshot.plan;
+                const stageOperation = snapshot.stage_operation ?? snapshot.operation;
+                need(
+                  stagePlan?.phase === 'STAGE' &&
+                    stageOperation?.status === 'SUCCEEDED' &&
+                    adapters['engine-stage'],
+                  'RELEASE_ORIGINAL_ENGINE_STAGE_REQUIRED'
+                );
+                return adapters['engine-stage'].current(stagePlan.request, stageOperation);
+              }
+              const reference = published
+                ? { ...e, mode: 'changed', publication_operation_id: published.operation_id }
+                : await retainedEvidence(
+                    snapshot.queue.release_id,
+                    'club-arena-engine',
+                    e.source_sha,
+                    e.identity
+                  );
+              return readNativeEngine({
+                release_id: snapshot.queue.release_id,
+                component_tuple: { 'club-arena-engine': reference },
+              });
+            };
+            const engine = await readEngine();
             need(
-              stagePlan?.phase === 'STAGE' &&
-                stageOperation?.status === 'SUCCEEDED' &&
-                adapters['engine-stage'],
-              'RELEASE_ORIGINAL_ENGINE_STAGE_REQUIRED'
+              engine.source_sha === e.source_sha && engine.image_id === e.identity,
+              'RELEASE_COMPONENT_BASELINE_NATIVE_DRIFT'
             );
-            engine = await adapters['engine-stage'].current(stagePlan.request, stageOperation);
-          } else {
-            const previous = await retainedEvidence(
-              snapshot.queue.release_id,
-              'club-arena-engine',
-              e.source_sha,
-              e.identity
-            );
-            engine = await readNativeEngine({
-              release_id: snapshot.queue.release_id,
-              component_tuple: { 'club-arena-engine': previous },
-            });
-          }
-          need(engine.source_sha === e.source_sha && engine.image_id === e.identity);
-          const web = (await readFrontend()).native;
-          need(
-            sameFacts(before['club-arena-web'], {
+            const web = (await readFrontend()).native;
+            const observedWeb = {
               source_sha: web.source_sha,
               identity: `sha256:${web.manifest_sha256}`,
               manifest_digest: web.manifest_sha256,
-            })
-          );
-          return structuredClone(before);
-        };
+            };
+            need(
+              sameFacts(observedWeb, expected['club-arena-web']),
+              'RELEASE_COMPONENT_BASELINE_NATIVE_DRIFT'
+            );
+            const health = await publicReleaseJSON('https://engine.smarter.poker/health');
+            need(
+              health.running === true &&
+                health.liveness === 'ok' &&
+                health.releaseSha === e.source_sha,
+              'RELEASE_COMPONENT_BASELINE_NATIVE_DRIFT'
+            );
+            const finalEngine = await readEngine();
+            need(sameFacts(finalEngine, engine), 'RELEASE_COMPONENT_BASELINE_NATIVE_DRIFT');
+            return {
+              'club-arena-engine': { source_sha: engine.source_sha, identity: engine.image_id },
+              'club-arena-web': observedWeb,
+            };
+          },
+        });
+        runtime.componentBaseline = baselineResolver;
         const compatibility = new ComponentCompatibilityReadiness({
           contract: c.compatibility.contract,
-          readBefore,
+          resolveBaseline: (snapshot) => baselineResolver.read(snapshot),
           qualifier,
           retainedEvidence,
         });

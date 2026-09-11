@@ -442,6 +442,54 @@ export const actionsFleetTotal: Counter = alwaysOnRegistry.counter(
 );
 
 /**
+ * ═══ THE HORSE'S INPUT DEVICE, COUNTED (2026-09-11) ══════════════════════════
+ *
+ * Dan, 2026-09-11: "I SHOULD GET PUSH NOTIFICATIONS OR TEXT IF ANYTHING INSIDE
+ * THE HORSES IS FAILING OR THEY CAN'T PLAY." Until today the only horse series
+ * on `/metrics` described the decision WORKER (queue depth, expiries); nothing
+ * said whether a seated horse actually got its action onto the felt. These
+ * four count the ways the input device (CLAUDE.md 10.5) fails a seated horse,
+ * fleet-wide, no table or user label, so a rule can read them:
+ *
+ *   turn_timeouts    the clock resolved a horse's seat instead of the horse:
+ *                    kind=timer (17 s primary expiry) or kind=timebank (a bank
+ *                    deadline, including an orphaned one from a previous turn,
+ *                    which was 67/hour on 2026-09-11 before the settle fix);
+ *   decision_fallbacks  the worker failed or expired and the seat took the
+ *                    legal check/fold instead of a computed decision;
+ *   seat_unactable   every one of the three commit attempts was rejected and
+ *                    the seat was left to the watchdog;
+ *   forced_sit_outs  the three-strike ladder sat a horse out - a horse has no
+ *                    "I'm back" button, so this is a seat lost until eviction.
+ *
+ * Measured baseline for the thresholds lives beside the rules in
+ * `infra/monitoring/alert-rules.yml` (group `horse-fleet`).
+ */
+export const horseTurnTimeoutsTotal: Counter = alwaysOnRegistry.counter(
+  'poker_horse_turn_timeouts_total',
+  'Seated horse turns resolved by the clock instead of by the horse (label: kind=timer|timebank)'
+);
+export const horseDecisionFallbacksTotal: Counter = alwaysOnRegistry.counter(
+  'poker_horse_decision_fallbacks_total',
+  'Horse turns that took the legal check/fold because the decision worker failed or expired'
+);
+export const horseSeatUnactableTotal: Counter = alwaysOnRegistry.counter(
+  'poker_horse_seat_unactable_total',
+  'Horse turns where every commit attempt (intended, check, fold) was rejected'
+);
+export const horseForcedSitOutsTotal: Counter = alwaysOnRegistry.counter(
+  'poker_horse_forced_sit_outs_total',
+  'Horses sat out by the consecutive-timeout ladder (label: format=cash|spin|hu_sng|sng|mtt)'
+);
+horseTurnTimeoutsTotal.inc(0, { kind: 'timer' });
+horseTurnTimeoutsTotal.inc(0, { kind: 'timebank' });
+horseDecisionFallbacksTotal.inc(0);
+horseSeatUnactableTotal.inc(0);
+for (const format of ['cash', 'spin', 'hu_sng', 'sng', 'mtt']) {
+  horseForcedSitOutsTotal.inc(0, { format });
+}
+
+/**
  * Duplicate suppression on `POST /action` (Phase 3 - 2026-09-05). Three
  * series, no table and no user: `stored` is one intent reaching the engine,
  * `replay` is a retry answered from memory instead of moving chips twice, and

@@ -33,9 +33,18 @@ route:
   group_interval: 5m
   repeat_interval: 1h
   routes:
-    # ── THE 3AM PAGER (2026-09-04) ─────────────────────────────────────
-    # Exactly six rules carry `page: sms`, chosen by Dan; the list is pinned
-    # by tests/the-pager-list-is-exactly-six.test.ts in this repo. They post to
+    # ── THE 3AM PAGER (2026-09-04; the horse fleet joined it 2026-09-11) ──
+    # Six rules carried `page: sms` when this route was written, chosen by
+    # Dan. On 2026-09-11 he added a seventh subject in his own words - "I
+    # SHOULD GET PUSH NOTIFICATIONS OR TEXT IF ANYTHING INSIDE THE HORSES IS
+    # FAILING OR THEY CAN'T PLAY" - and the `horse-fleet` group in
+    # alert-rules.yml carries the label on nine rules for it. The route needs
+    # no change for that: it matches the LABEL, never a list of names, and
+    # the World Hub's pager endpoint does the same (its own test pins the
+    # label filter, not an allowlist). The comment said the list was pinned
+    # by `tests/the-pager-list-is-exactly-six.test.ts`; no such file exists in
+    # either repo, and a claim like that is read as current by every agent
+    # after it (CLAUDE.md 10.86). They post to
     # the World Hub, which texts the phone deploy-monitor.js already pages.
     # `continue: true` so the same alert also lands in the critical email.
     # repeat_interval 4h: an unresolved incident re-pages every four hours,

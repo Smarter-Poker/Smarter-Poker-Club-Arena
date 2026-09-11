@@ -48,7 +48,12 @@
 import { supabase } from './supabase.js';
 import { fetchAllRows } from './supabase/pagination.js';
 import { selectInChunks } from './supabase/chunkedIn.js';
-import { chicagoNow, type FloorSnapshot, type HostSnapshot } from './StableHandController.js';
+import {
+  chicagoNow,
+  type EnabledGame,
+  type FloorSnapshot,
+  type HostSnapshot,
+} from './StableHandController.js';
 import { MIDWAY_UNION_ID, DSS_CLUB_ID, WALLETS_FOR_HOST, killed } from './StableHand.js';
 
 /** Membership statuses that make somebody a member of a club. */
@@ -162,6 +167,40 @@ export async function eligibleBodies(hostId: string): Promise<number | null> {
   return horses.rows.length;
 }
 
+/**
+ * The games the operator has enabled on a host, or null when the read was
+ * not complete. Null is "no opinion": the planner then reasons about the
+ * platform ladder as it did before 2026-09-11 and the seeder's disabled-game
+ * check still refuses a closed key. Not cached: `enabled` is the one human
+ * knob (OPORD 1.4 18.4) and an order for a game switched off a minute ago is
+ * exactly the order this exists to stop.
+ */
+export async function enabledGamesFor(hostId: string): Promise<EnabledGame[] | null> {
+  const page = await fetchAllRows<{ id: string; variant: string; sb: unknown; bb: unknown }>(
+    (cursor, want) => {
+      let q = supabase
+        .from('cash_games')
+        .select('id, variant, sb, bb')
+        .eq('club_id', hostId)
+        .eq('enabled', true)
+        .is('closed_at', null)
+        .order('id', { ascending: true })
+        .limit(want);
+      if (cursor) q = q.gt('id', cursor);
+      return q;
+    },
+    { label: 'StableHand.games', maxRows: 10_000 }
+  );
+  if (!page.complete) return null;
+  return page.rows
+    .map((g) => ({
+      variant: String(g.variant ?? '').toLowerCase(),
+      sb: Number(g.sb),
+      bb: Number(g.bb),
+    }))
+    .filter((g) => g.variant.length > 0 && Number.isFinite(g.bb) && g.bb > 0);
+}
+
 export async function buildFloorSnapshot(): Promise<FloorSnapshot> {
   const now = chicagoNow();
   const hosts: HostSnapshot[] = [];
@@ -203,7 +242,13 @@ export async function buildFloorSnapshot(): Promise<FloorSnapshot> {
       (batch) =>
         supabase
           .from('table_seats')
-          .select('table_id, user_id, stack')
+          /* joined_at and is_sitting_out feed pickYieldVictims (Section 5.5:
+             sitting out first, then shortest time at the table). Until
+             2026-09-11 both were hard-coded false / 0, so the order fell
+             through to smallest stack and the person waiting always took the
+             short stack's chair - a sitting-out horse kept its seat while a
+             playing one was stood. */
+          .select('table_id, user_id, stack, joined_at, is_sitting_out')
           .in('table_id', batch)
           .is('left_at', null),
       'StableHand.seats'
@@ -276,10 +321,17 @@ export async function buildFloorSnapshot(): Promise<FloorSnapshot> {
        alone overshot the curve by exactly the number of real players. */
     const uniqueLive = new Set(seats.map((s) => String(s.user_id))).size;
 
+    /* The operator's ladder for this host. An unreadable one is left out
+       (undefined), never emptied: an empty list would tell the planner the
+       host deals nothing and suppress every open order. */
+    const enabledGames = await enabledGamesFor(hostId);
+    const nowMs = Date.now();
+
     hosts.push({
       hostId,
       n,
       uniqueLive,
+      ...(enabledGames ? { enabledGames } : {}),
       tables: tables.map((t: any) => {
         const rows = seatsByTable.get(String(t.id)) ?? [];
         const horses = rows.filter((r: any) => horseIds.has(String(r.user_id)));
@@ -294,13 +346,19 @@ export async function buildFloorSnapshot(): Promise<FloorSnapshot> {
           humansSeated: rows.length - horses.length,
           humansWaiting: waitingByTable.get(String(t.id)) ?? 0,
           waitlistOldestJoinedAtMs: oldestWaitByTable.get(String(t.id)),
-          seatedHorses: horses.map((h: any) => ({
-            horseId: String(h.user_id),
-            sittingOut: false,
-            minutesAtTable: 0,
-            isRed: false,
-            stack: Number(h.stack ?? 0),
-          })),
+          seatedHorses: horses.map((h: any) => {
+            const joined = Date.parse(String(h.joined_at ?? ''));
+            return {
+              horseId: String(h.user_id),
+              sittingOut: h.is_sitting_out === true,
+              minutesAtTable: Number.isFinite(joined) ? Math.max(0, (nowMs - joined) / 60_000) : 0,
+              /* Red/green needs the invested figure the rotator computes from
+                 the ledger; the snapshot does not read it, so the tie falls
+                 through to the stack, as before. */
+              isRed: false,
+              stack: Number(h.stack ?? 0),
+            };
+          }),
           status: String(t.status ?? ''),
           clusterId: t.cluster_id ? String(t.cluster_id) : null,
         };

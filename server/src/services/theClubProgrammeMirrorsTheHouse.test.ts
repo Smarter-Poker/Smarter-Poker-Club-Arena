@@ -457,7 +457,7 @@ describe('2. a table over the cap drains through the engine, never a mid-hand cu
        the read can no longer be broken from a distance by a migration in
        another lane. */
     expect(ROTATOR).toMatch(
-      /tables!table_seats_table_id_fkey!inner\(id, big_blind, tournament_id, status, settings, cluster_id, role, main_index, lifecycle, created_at\)/
+      /tables!table_seats_table_id_fkey!inner\(id, big_blind, tournament_id, status, settings, cluster_id, role, main_index, lifecycle, created_at, max_players, min_buy_in, max_buy_in\)/
     );
     // 2026-09-05: and the drain never touches a cluster table.
     expect(ROTATOR).toMatch(

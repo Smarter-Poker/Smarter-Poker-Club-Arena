@@ -84,6 +84,13 @@ export interface TableSnapshot {
   clusterId?: string | null;
 }
 
+/** One enabled cash game on a host: what the host deals, as configured. */
+export interface EnabledGame {
+  variant: string;
+  sb: number;
+  bb: number;
+}
+
 export interface HostSnapshot {
   hostId: string;
   /** Unique BODIES eligible for this host. Union 584, DSS 416. */
@@ -91,6 +98,20 @@ export interface HostSnapshot {
   /** Unique bodies currently seated anywhere on this host. */
   uniqueLive: number;
   tables: TableSnapshot[];
+  /**
+   * The games the operator has ENABLED on this host (`cash_games.enabled`,
+   * not closed), or undefined when that read failed.
+   *
+   * THE OPEN ORDER NAMES A GAME THE HOST HAS (2026-09-11). Without this the
+   * planner reasoned about the platform ladder: `neediestStakeBand` found the
+   * `high` band at zero seats on Midway Union - the operator closed every
+   * game above 2/5 on 2026-09-04 - and asked for it on every under-curve
+   * cycle, and the seeder refused the same 25/50 order 328 times in 90
+   * minutes ("switched off by an operator"). An order that can never be
+   * filled is not an order. Undefined (unreadable) keeps the old behaviour,
+   * which the seeder's own disabled-game check still refuses safely.
+   */
+  enabledGames?: EnabledGame[];
 }
 
 export interface FloorSnapshot {
@@ -129,6 +150,12 @@ export interface OpenOrder {
   variant: string;
   band: StakeBand;
   count: number;
+  /**
+   * The rung to open at, chosen from the host's OWN enabled ladder when the
+   * snapshot carried one. Absent when it did not, and the seeder falls back
+   * to `stakeForBand` (the platform ladder's top rung of the band).
+   */
+  stake?: { sb: number; bb: number };
 }
 
 export interface FloorPlan {
@@ -217,6 +244,43 @@ function shapedTables(h: HostSnapshot): TableSnapshot[] {
      a body in a chair exactly as a seat at 0.25/0.50 is. Anything reaching
      here is already a real, open, playable cash table. */
   return h.tables.filter((t) => t.status !== 'closed');
+}
+
+/**
+ * PURE. The open order for the band furthest below its share on this host,
+ * or null when no band the host deals a game in is worth opening.
+ *
+ * With an enabled ladder in hand, the order names the highest enabled rung of
+ * that band (nlh first, the same preference `stakeForBand` has for the top of
+ * a band), so `fn_cash_game_ensure` is asked for a game the operator has
+ * switched on. Without one it is the old order - band only - and the seeder's
+ * own disabled-game check is the last line.
+ */
+export function openOrderFor(
+  host: HostSnapshot,
+  running: TableSnapshot[],
+  count: number
+): OpenOrder | null {
+  const bandSeats = emptyBandSeats();
+  running.forEach((t) => {
+    bandSeats[stakeBandOf(t.bb)] += t.occupied;
+  });
+  const games = host.enabledGames;
+  if (!games) {
+    const band = neediestStakeBand(bandSeats);
+    return band === null ? null : { hostId: host.hostId, variant: 'nlh', band, count };
+  }
+  const eligible = new Set<StakeBand>(games.map((g) => stakeBandOf(g.bb)));
+  const band = neediestStakeBand(bandSeats, eligible);
+  if (band === null) return null;
+  const inBand = games.filter((g) => stakeBandOf(g.bb) === band);
+  const variant = inBand.some((g) => g.variant.toLowerCase() === 'nlh')
+    ? 'nlh'
+    : inBand[0].variant.toLowerCase();
+  const rung = inBand
+    .filter((g) => g.variant.toLowerCase() === variant)
+    .sort((a, b) => b.bb - a.bb)[0];
+  return { hostId: host.hostId, variant, band, count, stake: { sb: rung.sb, bb: rung.bb } };
 }
 
 export function planFloor(snap: FloorSnapshot): FloorPlan {
@@ -362,16 +426,9 @@ export function planFloor(snap: FloorSnapshot): FloorPlan {
             );
           });
         } else {
-          const bandSeats = emptyBandSeats();
-          running.forEach((t) => {
-            bandSeats[stakeBandOf(t.bb)] += t.occupied;
-          });
-          plan.open.push({
-            hostId: host.hostId,
-            variant: 'nlh',
-            band: neediestStakeBand(bandSeats),
-            count: needJoinable,
-          });
+          const order = openOrderFor(host, running, needJoinable);
+          if (order) plan.open.push(order);
+          else plan.alerts.push(`open_suppressed_no_enabled_game host=${host.hostId}`);
         }
       }
 
@@ -398,16 +455,9 @@ export function planFloor(snap: FloorSnapshot): FloorPlan {
         );
         const stillShort = short - absorbable.length;
         if (stillShort > 0 && roomForMore) {
-          const bandSeats = emptyBandSeats();
-          running.forEach((t) => {
-            bandSeats[stakeBandOf(t.bb)] += t.occupied;
-          });
-          plan.open.push({
-            hostId: host.hostId,
-            variant: 'nlh',
-            band: neediestStakeBand(bandSeats),
-            count: Math.max(1, Math.ceil(stillShort / 6)),
-          });
+          const order = openOrderFor(host, running, Math.max(1, Math.ceil(stillShort / 6)));
+          if (order) plan.open.push(order);
+          else plan.alerts.push(`open_suppressed_no_enabled_game host=${host.hostId}`);
         }
       } else if (host.uniqueLive > occ.max) {
         const over = host.uniqueLive - occ.max;

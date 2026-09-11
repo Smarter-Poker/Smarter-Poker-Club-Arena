@@ -866,6 +866,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
             // grinding at four stale tables at once). A time-bank expiry is a
             // timeout too — count it toward the auto-sit-out cap.
             this.disconnectEngine.recordConnectedTimeout(this.tableId, userId);
+            this.noteHorseTurnTimeout(userId, 'timebank');
 
             this.engineTelemetry.recordTimerExpired(this.tableId);
             const tbUsesLeft = this.timeBankEngine.getUsesRemaining(this.tableId, userId);
@@ -1006,6 +1007,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       // AFK player is auto-sat-out after the cap (was only counted on the
       // disconnect path — an app-open-but-idle player never got sat out).
       this.disconnectEngine.recordConnectedTimeout(this.tableId, userId);
+      this.noteHorseTurnTimeout(userId, 'timer');
 
       this.engineTelemetry.recordTimerExpired(this.tableId);
       const usesLeft = this.timeBankEngine.getUsesRemaining(this.tableId, userId);
@@ -2535,6 +2537,64 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     };
   }
 
+  /**
+   * THE HORSE'S ACTION RELEASES ITS CLOCKS THE WAY A HUMAN'S DOES (2026-09-11).
+   *
+   * `_handlePlayerActionInner` does four things around performAction that the
+   * horse path, which calls performAction directly, never did:
+   *   - cancels the seat's own `turn:<uid>` deadline;
+   *   - `timeBankEngine.playerActed` when a bank was spent or armed this turn;
+   *   - `disconnectEngine.recordPlayerActed` (strikes to zero, everActed);
+   *   - `engineTelemetry.recordTimerActed`.
+   *
+   * Measured on the live fleet, 60 minutes to 13:27 UTC 2026-09-11, zero
+   * humans seated: 67 lines of "Time bank expiry: FSM in 'timer_running' but
+   * seat N is still current - resolving anyway". That line has exactly one
+   * route: a `timebank:<uid>` deadline armed by the auto-activation on a
+   * PREVIOUS turn of the same seat, never released because the horse acted
+   * without `playerActed`, firing 20 s later while the seat is on the clock
+   * again. Each fire forced a check/fold over the horse's real decision
+   * (`forceResolveSeat` cancels the pending think timer first), counted a
+   * strike via `recordConnectedTimeout`, and left `bank.isActive` true so the
+   * horse's next deliberate bank burn hit 'already_active' and auto-folded at
+   * 17 s with its answer discarded. Strikes never reset (no
+   * `recordPlayerActed`), so three orphans at one table forced a sit-out:
+   * `engine_presence_parked` at the 14:55 park carried 12 horses SAT_OUT
+   * 'forced' and 257 horse entries with strikes, and nothing ever sits a
+   * horse back in. That is the input device denying a horse what a human
+   * gets (CLAUDE.md 10.5), one call at a time. Same bookkeeping, same order.
+   *
+   * Runs only after an action LANDED: on the triple-rejection path the
+   * ordinary clock must stay armed so the seat still auto-resolves at 17 s.
+   */
+  /**
+   * A seated horse whose turn the CLOCK resolved. The counter behind Dan's
+   * 2026-09-11 "tell me if the horses can't play": a horse has no browser, so
+   * a timeout at its seat is the input device failing, never a person away
+   * from the keyboard. Fleet-wide, no table label (always-on registry).
+   */
+  protected noteHorseTurnTimeout(userId: string, kind: 'timer' | 'timebank'): void {
+    try {
+      if (!this.seatedPlayers.find((p) => p.user_id === userId)?.is_horse) return;
+      EngineMetrics.horseTurnTimeoutsTotal.inc(1, { kind });
+    } catch {
+      /* metrics must never affect gameplay */
+    }
+  }
+
+  protected settleHorseSeatActed(userId: string): void {
+    try {
+      this.preciseTimer.cancelTimer(this.tableId, userId);
+      if (this.timeBankActivatedThisTurn || this.timeBankEngine.isArmed(this.tableId, userId)) {
+        this.timeBankEngine.playerActed(this.tableId, userId);
+      }
+      this.disconnectEngine.recordPlayerActed(this.tableId, userId);
+      this.engineTelemetry.recordTimerActed(this.tableId);
+    } catch (err) {
+      reportError(err, 'ServerTableEngine.' + this.tableId + '.horse_seat_settle_threw');
+    }
+  }
+
   protected scheduleHorseAction(
     player: SeatedPlayer,
     seat: number,
@@ -2796,6 +2856,11 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         }
         reportError(error, 'ServerTableEngine.' + this.tableId + '.horse_decision_worker_failed');
         if (!fenceIsCurrent()) throw new HorseDecisionAbortedError();
+        try {
+          EngineMetrics.horseDecisionFallbacksTotal.inc(1);
+        } catch {
+          /* metrics must never affect gameplay */
+        }
 
         // A single failed job must not strand a live seat. This is only the
         // legal liveness action for the already-authoritative turn; it does not
@@ -2882,9 +2947,16 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         // ONLY when a full activation is genuinely available; otherwise the tank
         // stays inside the ordinary clock.
         const bank = this.timeBankEngine?.getPlayerBank?.(this.tableId, player.user_id);
+        // 2026-09-11: mirror EVERY refusal tryActivate can return, not only
+        // 'depleted'. A bank still counting down from this seat's previous
+        // turn ('already_active') or a street that has spent both activations
+        // ('street_limit') refuses the auto-activation at 17 s, and the seat
+        // is auto-folded with its real answer still in the think timer.
         const bankUsable =
           this.tableInfo?.time_bank_enabled !== false &&
           bank != null &&
+          (bank as { isActive?: boolean }).isActive !== true &&
+          ((bank as { streetActivations?: number }).streetActivations ?? 0) < 2 &&
           (bank as { usesRemaining?: number }).usesRemaining !== 0 &&
           ((bank as { remainingSeconds?: number }).remainingSeconds ?? 0) * 1000 >
             ServerTableEngineTurns.HORSE_MAX_BANK_BURN_MS + 2000;
@@ -3263,6 +3335,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
           // Unconditional markProgress() here reset watchdogTrips even when all
           // three actions were rejected, hiding a genuine stall for a full window.
           if (applied) {
+            this.settleHorseSeatActed(player.user_id);
             // Realtime programme Phase 1 (2026-09-04): a horse's action is timed
             // exactly like a human's. This path bypasses _handlePlayerActionInner,
             // so before this the act-to-broadcast clock started only for HTTP
@@ -3288,6 +3361,11 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
             // Nothing landed, so no broadcast carries this clock. Put back what
             // was pending; a dead attempt must not become the next sample.
             this.lastActionAcceptedAtMs = horseClockWasArmed;
+            try {
+              EngineMetrics.horseSeatUnactableTotal.inc(1);
+            } catch {
+              /* metrics must never affect gameplay */
+            }
             reportError(
               new Error(
                 'Horse seat ' + seat + ' could not be acted - leaving stall visible to watchdog'

@@ -3079,6 +3079,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
            */
           const rebuyAmount = await horseRebuyAmount({
             clubId: this.tableInfo?.club_id || '',
+            tableId: this.tableId,
             userId: horse.user_id,
             bigBlind: Number(this.tableInfo?.big_blind) || 0,
             minBuyIn: this.tableInfo?.min_buy_in as number | null | undefined,

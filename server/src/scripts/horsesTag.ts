@@ -19,6 +19,7 @@
 import { supabase } from '../services/supabase.js';
 import { bankrollPolicyFor } from '../services/HorseBankroll.js';
 import { fetchAllRows } from '../services/supabase/pagination.js';
+import { chicagoNow } from '../services/StableHandController.js';
 import {
   assignTags,
   assignVariants,
@@ -94,8 +95,81 @@ async function loadHorseMemberships(clubIds: string[]): Promise<MemberRow[]> {
   return out;
 }
 
+/**
+ * THE HOST'S LADDER: variant -> the big blinds the operator has enabled for
+ * it (`cash_games.enabled`, not closed). A tag names a stake from THIS, never
+ * from the platform ladder alone.
+ *
+ * Measured 2026-09-11 against the tags written on 09-05: the two hosts deal
+ * different ladders (Midway Union has no 0.01/0.02, no 0.02/0.05, nothing
+ * above 2/5 in any variant, and 1/2 only in three variants), so 57 Midway
+ * tags named a stake the host does not deal and 23 more named one it deals
+ * only in a variant the horse is not tagged for. 51 of 530 cash-capable
+ * Midway bodies could never sit on their own host, and never fell through to
+ * the merit band either, because the seeder's stranded-tag test is
+ * platform-wide and Deep Stack deals every one of those rungs.
+ *
+ * Read whole or not at all: a half-read ladder would tag a fleet for half a
+ * host.
+ */
+async function loadHostLadder(hostId: string): Promise<Map<string, Set<number>>> {
+  const page = await fetchAllRows<{ id: string; variant: string; bb: unknown }>(
+    (cursor, want) => {
+      let q = supabase
+        .from('cash_games')
+        .select('id, variant, bb')
+        .eq('club_id', hostId)
+        .eq('enabled', true)
+        .is('closed_at', null)
+        .order('id', { ascending: true })
+        .limit(want);
+      if (cursor) q = q.gt('id', cursor);
+      return q;
+    },
+    { label: 'horsesTag.ladder', maxRows: 10_000, idKey: 'id' }
+  );
+  if (!page.complete) {
+    throw new Error(
+      `cash_games read incomplete for host ${hostId} - refusing to tag against half a ladder`
+    );
+  }
+  const out = new Map<string, Set<number>>();
+  for (const g of page.rows) {
+    const variant = String(g.variant ?? '').toLowerCase();
+    const bb = Number(g.bb);
+    if (!variant || !Number.isFinite(bb) || bb <= 0) continue;
+    if (!out.has(variant)) out.set(variant, new Set());
+    out.get(variant)!.add(bb);
+  }
+  return out;
+}
+
+/** The rungs a horse can be tagged for: every rung its host deals in ANY of
+ *  its variants. Undefined (no ceiling) only when the host deals nothing at
+ *  all, so the draw stands and the seeder's stranded-tag fallthrough - which
+ *  fires exactly when no preferred stake has a game anywhere - can take it. */
+function dealtFor(ladder: Map<string, Set<number>>, variants: string[]): Set<number> | undefined {
+  const dealt = new Set<number>();
+  for (const v of variants) for (const bb of ladder.get(v) ?? []) dealt.add(bb);
+  return dealt.size > 0 ? dealt : undefined;
+}
+
 export async function runTagger(opts: { force: boolean; dryRun: boolean; clubs: string[] }) {
   const memberships = await loadHorseMemberships(opts.clubs);
+  const laddersByHost = new Map<string, Map<string, Set<number>>>();
+  for (const hostId of new Set(
+    opts.clubs.map((c) => hostForWallet(c)).filter(Boolean) as string[]
+  )) {
+    const ladder = await loadHostLadder(hostId);
+    laddersByHost.set(hostId, ladder);
+    console.log(
+      `[stable-hand:tag] host ${hostId.slice(0, 8)} deals ` +
+        [...ladder.entries()]
+          .sort((a, b) => a[0].localeCompare(b[0]))
+          .map(([v, bbs]) => `${v}=[${[...bbs].sort((a, b) => a - b).join(',')}]`)
+          .join(' ')
+    );
+  }
   console.log(
     `[stable-hand:tag] ${memberships.length} horse memberships across ${opts.clubs.length} wallet(s)`
   );
@@ -115,10 +189,15 @@ export async function runTagger(opts: { force: boolean; dryRun: boolean; clubs: 
       STABLE_HAND_SEED
     );
     const cashEligible = tags.filter((t) => t.mode !== 'tourney').map((t) => t.horseId);
-    const variants = assignVariants(cashEligible, STABLE_HAND_SEED);
+    const host = hostForWallet(clubId);
+    const ladder = (host && laddersByHost.get(host)) ?? new Map<string, Set<number>>();
+    const variants = assignVariants(
+      cashEligible,
+      STABLE_HAND_SEED,
+      ladder.size > 0 ? new Set(ladder.keys()) : undefined
+    );
 
     const split = tagSplit(rows.length);
-    const host = hostForWallet(clubId);
     console.log(
       `[stable-hand:tag]   ${clubId} host=${host === MIDWAY_UNION_ID ? 'Midway Union' : 'DSS'} ` +
         `n=${rows.length} cash=${split.cash} tourney=${split.tourney} both=${split.both} freeroll=${split.cashFreeroll}`
@@ -137,8 +216,10 @@ export async function runTagger(opts: { force: boolean; dryRun: boolean; clubs: 
       if (Number.isFinite(bal)) rollOf.set(r.user_id, bal);
     });
 
+    const taggedAt = new Date().toISOString();
     for (const t of tags) {
       const isTourneyOnly = t.mode === 'tourney';
+      const horseVariants = isTourneyOnly ? [] : (variants.get(t.horseId) ?? ['nlh']);
       tagRows.push({
         horse_id: t.horseId,
         club_id: t.clubId,
@@ -147,15 +228,22 @@ export async function runTagger(opts: { force: boolean; dryRun: boolean; clubs: 
         persona_cash: t.personaCash,
         persona_mtt: t.personaMtt,
         // Section 7.2: a tourney-only horse carries no cash variants.
-        variants: isTourneyOnly ? [] : (variants.get(t.horseId) ?? ['nlh']),
+        variants: horseVariants,
         preferred_stakes: isTourneyOnly
           ? []
           : assignPreferredStakes(t.horseId, {
               roll: rollOf.get(t.horseId),
               buyInsToSit: bankrollPolicyFor(t.horseId).buyInsToSit,
+              /* THE HOST'S LADDER, for this horse's variants. See loadHostLadder. */
+              dealt: dealtFor(ladder, horseVariants),
             }),
         max_tables: t.maxTables,
         tag_seed: t.tagSeed,
+        /* STAMPED ON EVERY WRITE. The column's default only fires on INSERT,
+           so the 09-05 re-tag rewrote every preferred_stakes value and left
+           tagged_at at 09-04 08:42 on all 1,580 rows: nothing could say when
+           the book was last written. A re-tag is a write; it says so. */
+        tagged_at: taggedAt,
       });
     }
   }
@@ -230,13 +318,17 @@ export async function runTagger(opts: { force: boolean; dryRun: boolean; clubs: 
   tagRows.forEach((r) => {
     if (r.persona_cash) personaOf.set(r.horse_id as string, r.persona_cash as CashPersona);
   });
-  const today = new Date();
+  /* The Chicago weekday, like every other calendar in Stable Hand - the
+     engine runs in UTC and `new Date().getDay()` here answered a different
+     day for five hours of every night. The value is still frozen at tag
+     time (weekend_heavy's Fri-Sun / off-day split cannot follow the calendar
+     from one stored number); see the lane C audit for the reader-side fix. */
   const stateRows = bodies.map((horseId, i) => {
     const weekday = restWeekdayFor(i);
     return {
       horse_id: horseId,
       rest_weekday: weekday,
-      daily_cap_minutes: dailyCapMinutes(personaOf.get(horseId) ?? 'regular', today.getDay()),
+      daily_cap_minutes: dailyCapMinutes(personaOf.get(horseId) ?? 'regular', chicagoNow().weekday),
     };
   });
 

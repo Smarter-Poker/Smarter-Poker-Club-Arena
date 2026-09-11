@@ -484,13 +484,27 @@ export const STAKE_MIX: Record<StakeBand, number> = {
  *  A band with a target of ZERO is skipped rather than compared: an empty
  *  band with a zero target has a deficit of exactly 0, which beats every
  *  oversubscribed band's negative deficit and would make the launcher chase
- *  a band nobody asked for. */
-export function neediestStakeBand(seatsByBand: Record<StakeBand, number>): StakeBand {
+ *  a band nobody asked for.
+ *
+ *  A BAND THE HOST HAS NO ENABLED GAME IN IS NOT NEEDY, IT IS CLOSED
+ *  (2026-09-11). `eligible` is the set of bands with at least one enabled
+ *  game on the host; a band outside it is never returned. Without it the
+ *  planner asked for `high` on Midway Union on every under-curve cycle -
+ *  the operator closed every game above 2/5 on 2026-09-04, so `high` held
+ *  zero seats, a deficit of 0.11 beat every other band, and the seeder
+ *  refused the same 25/50 order 328 times in 90 minutes on 2026-09-09
+ *  ("switched off by an operator"). Returns null when no band is eligible. */
+export function neediestStakeBand(
+  seatsByBand: Record<StakeBand, number>,
+  eligible?: ReadonlySet<StakeBand>
+): StakeBand | null {
+  const bands = STAKE_BANDS.filter((b) => !eligible || eligible.has(b));
+  if (bands.length === 0) return null;
   const total = STAKE_BANDS.reduce((n, b) => n + (seatsByBand[b] ?? 0), 0);
-  if (total === 0) return 'micro';
-  let best: StakeBand = 'micro';
+  if (total === 0) return bands[0];
+  let best: StakeBand | null = null;
   let largestDeficit = -Infinity;
-  STAKE_BANDS.forEach((b) => {
+  bands.forEach((b) => {
     if (STAKE_MIX[b] <= 0) return;
     const deficit = STAKE_MIX[b] - (seatsByBand[b] ?? 0) / total;
     if (deficit > largestDeficit) {
@@ -498,7 +512,7 @@ export function neediestStakeBand(seatsByBand: Record<StakeBand, number>): Stake
       best = b;
     }
   });
-  return best;
+  return best ?? bands[0];
 }
 
 /** An empty per-band seat tally. One helper so a new band cannot be
@@ -1260,8 +1274,20 @@ export interface SitRequest {
   clubId: string;
   tableHostId: string;
   bb: number;
-  available: number;
-  sessionStartBalance: number;
+  /**
+   * The wallet's balance, or NULL when it could not be read.
+   *
+   * NULL IS NOT ZERO (2026-09-11). HorseSitVerdict fed this gate
+   * `bankrolls.get(...) ?? 0`, so a bankroll read that failed - the map empty,
+   * `bankrollsLoaded` false, every OTHER gate in the cycle failing open as the
+   * 2026-08-31 doctrine requires - reached `isLicensed(0, bb)` here and
+   * refused every tagged horse `brm`. The one gate that fails closed on an
+   * unreadable roll is the one that empties the floor; see rollUnknownVerdict
+   * below for the doctrine. An unknown roll gets no MONEY opinion and every
+   * identity check still applies.
+   */
+  available: number | null;
+  sessionStartBalance: number | null;
   currentCommit: number;
   buyIn: number;
   persona: CashPersona | null;
@@ -1273,9 +1299,11 @@ export interface SitRequest {
 /**
  * Section 11. The single gate. Order matters: cheap identity checks first,
  * money last, so a rejected sit costs one comparison rather than a wallet
- * read. Note there is NO fail-open branch - the recon found the existing
- * fleet manager seats a horse when its membership row is unreadable, and
- * this gate refuses instead.
+ * read. There is no fail-open branch on IDENTITY - a horse whose club, host,
+ * seat count, persona or day is known is judged on them. The MONEY checks
+ * are skipped only when the caller says the roll was not read (`available:
+ * null`), which is the 2026-08-31 doctrine: solvency is the buy-in RPC's to
+ * refuse, and a gate must never refuse on a number it did not measure.
  */
 export function evaluateSit(r: SitRequest): SitRejection {
   if (r.killed) return 'killed';
@@ -1291,8 +1319,12 @@ export function evaluateSit(r: SitRequest): SitRejection {
   if (!stakeIsWithinLadder(r.bb)) return 'stake_above_ladder_top';
   if (r.isRestDay) return 'rest_day';
   if (!maySitOnKey(r.persona, r.sitsOnKeyToday)) return 'sit_cap';
+  /* THE MONEY, LAST, AND ONLY WHEN IT WAS READ. `atomic_table_buyin` still
+     refuses a seat the wallet cannot cover, so an unread roll is safe for the
+     wallet; what it must not do is refuse on a number nobody measured. */
+  if (r.available === null) return 'ok';
   if (!isLicensed(r.available, r.bb)) return 'brm';
-  if (!commitAllows(r.sessionStartBalance, r.currentCommit, r.buyIn)) return 'brm';
+  if (!commitAllows(r.sessionStartBalance ?? r.available, r.currentCommit, r.buyIn)) return 'brm';
   return 'ok';
 }
 
@@ -1534,12 +1566,20 @@ export const MAX_VARIANTS_PER_HORSE = 3;
  * same first three. Coverage is then exact rather than probabilistic, which
  * is what lets the assert in the tagger be a hard check instead of a hope.
  */
-export function assignVariants(horseIds: string[], seed = STABLE_HAND_SEED): Map<string, string[]> {
+export function assignVariants(
+  horseIds: string[],
+  seed = STABLE_HAND_SEED,
+  /** The variants the host deals (has an enabled game of). Omit for all. A
+   *  tag for a variant the host has no game of is a horse that can never sit
+   *  there; see PreferredStakeOptions.dealt for the measured cost. */
+  allowed?: ReadonlySet<string>
+): Map<string, string[]> {
   const out = new Map<string, string[]>(horseIds.map((h) => [h, []]));
   const n = horseIds.length;
   if (n === 0) return out;
 
   for (const [variant, share] of VARIANT_COVERAGE) {
+    if (allowed && !allowed.has(variant)) continue;
     const want = Math.ceil(share * n);
     const ordered = [...horseIds].sort((a, b) =>
       shDigest(variant, a, seed).localeCompare(shDigest(variant, b, seed))
@@ -1555,9 +1595,11 @@ export function assignVariants(horseIds: string[], seed = STABLE_HAND_SEED): Map
     }
   }
 
-  // Nobody sits with an empty variant list - NLHE is the fallback floor.
+  // Nobody sits with an empty variant list - NLHE is the fallback floor (or
+  // the first variant the host deals, on a host with no NLHE game at all).
+  const floor = !allowed || allowed.has('nlh') ? 'nlh' : ([...allowed][0] ?? 'nlh');
   out.forEach((v, k) => {
-    if (v.length === 0) out.set(k, ['nlh']);
+    if (v.length === 0) out.set(k, [floor]);
   });
   return out;
 }
@@ -1573,6 +1615,30 @@ export interface PreferredStakeOptions {
   /** `bankrollPolicyFor(horseId).buyInsToSit`. See buyInsRequiredFor. */
   buyInsToSit?: number;
   seed?: string;
+  /**
+   * THE BIG BLINDS THE HOST ACTUALLY DEALS for at least one of this horse's
+   * variants (`cash_games` enabled and not closed, on the wallet's host).
+   *
+   * Omit it and the whole platform ladder is eligible, which is what the tag
+   * book was written against until 2026-09-11. Measured that day: the two
+   * hosts deal different ladders (Midway Union deals no 0.01/0.02, no
+   * 0.02/0.05 and nothing above 2/5 in any variant; 1/2 only in three
+   * variants), so 57 Midway tags named stakes the host does not deal and 23
+   * more named a stake the host deals only in a variant the horse does not
+   * play - 51 of 530 cash-capable Midway bodies that could never sit on their
+   * own host, and never fell through to the band either, because the
+   * stranded-tag test in the seeder is platform-wide and Deep Stack deals
+   * every one of those rungs. A tag is a promise the seat gate keeps; it
+   * must name a game the host has.
+   */
+  dealt?: ReadonlySet<number>;
+}
+
+/** Is this rung one the host deals? No `dealt` set means every rung is. */
+function rungIsDealt(bb: number, dealt: ReadonlySet<number> | undefined): boolean {
+  if (!dealt) return true;
+  for (const d of dealt) if (Math.abs(d - bb) < 1e-9) return true;
+  return false;
 }
 
 /**
@@ -1625,19 +1691,52 @@ export function assignPreferredStakes(horseId: string, opts: PreferredStakeOptio
     const ceiling = highestBandSupported(roll as number, opts.buyInsToSit);
     if (ceiling === null) {
       // Cannot fund even the cheapest rung. It plays the cheapest game there
-      // is, which is where `isBroke` will meet it and send it to a freeroll.
-      return [STAKE_LADDER[0].bb];
+      // is (the cheapest its host deals), which is where `isBroke` will meet
+      // it and send it to a freeroll.
+      const cheapestDealt = STAKE_LADDER.find((s) => rungIsDealt(s.bb, opts.dealt));
+      return [cheapestDealt ? cheapestDealt.bb : STAKE_LADDER[0].bb];
     }
     const drawnIdx = STAKE_BANDS.indexOf(band);
     const ceilingIdx = STAKE_BANDS.indexOf(ceiling);
     if (ceilingIdx < drawnIdx) band = ceiling;
   }
 
-  const inBand = STAKE_LADDER.filter(
-    (s) =>
-      stakeBandOf(s.bb) === band &&
-      (!hasRoll || rollSupportsStake(roll as number, s.bb, opts.buyInsToSit))
-  ).map((s) => s.bb);
+  const dealt = opts.dealt;
+  const eligible = (b: StakeBand): number[] =>
+    STAKE_LADDER.filter(
+      (s) =>
+        stakeBandOf(s.bb) === b &&
+        rungIsDealt(s.bb, dealt) &&
+        (!hasRoll || rollSupportsStake(roll as number, s.bb, opts.buyInsToSit))
+    ).map((s) => s.bb);
+
+  let inBand = eligible(band);
+
+  /* 3. THE HOST'S LADDER, applied the same way the roll is: DOWNWARD ONLY.
+     A band the host deals nothing in (for this horse's variants) drops to
+     the nearest band below it that it does. Never upward - a horse drawn
+     into micro on a host with no micro game is not sent to 2/5 by that fact;
+     it gets the cheapest dealt rung the roll supports instead, which is the
+     nearest thing to the draw the host can honour. */
+  if (inBand.length === 0 && dealt) {
+    for (let i = STAKE_BANDS.indexOf(band) - 1; i >= 0 && inBand.length === 0; i--) {
+      inBand = eligible(STAKE_BANDS[i]);
+    }
+    if (inBand.length === 0) {
+      const cheapest = STAKE_LADDER.filter(
+        (s) =>
+          rungIsDealt(s.bb, dealt) &&
+          (!hasRoll || rollSupportsStake(roll as number, s.bb, opts.buyInsToSit))
+      ).map((s) => s.bb);
+      if (cheapest.length > 0) inBand = [cheapest[0]];
+    }
+    if (inBand.length === 0) {
+      /* The host deals nothing this roll supports. The cheapest rung the
+         host deals at all, which is where `isBroke` will meet it. */
+      const anyDealt = STAKE_LADDER.filter((s) => rungIsDealt(s.bb, dealt)).map((s) => s.bb);
+      if (anyDealt.length > 0) return [anyDealt[0]];
+    }
+  }
 
   /* A band whose every rung is out of reach cannot happen once the ceiling
      above has run - the ceiling picked this band precisely because one of its
@@ -1649,5 +1748,8 @@ export function assignPreferredStakes(horseId: string, opts: PreferredStakeOptio
   const anchor = inBand[anchorIdx];
   const ladderIdx = STAKE_LADDER.findIndex((s) => s.bb === anchor);
   const neighbour = STAKE_LADDER[Math.max(0, ladderIdx - 1)].bb;
+  /* The adjacent rung rides along only when the host deals it: a tag naming
+     a rung nobody deals is not a spread, it is a promise nobody can keep. */
+  if (!rungIsDealt(neighbour, dealt)) return [anchor];
   return Array.from(new Set([neighbour, anchor])).sort((a, b) => a - b);
 }

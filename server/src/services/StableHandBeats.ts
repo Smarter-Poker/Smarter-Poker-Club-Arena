@@ -173,7 +173,17 @@ export async function readRecentBeats(limit = 120): Promise<any[]> {
   return (data ?? []) as any[];
 }
 
-/** When the controller last beat, or null when it never has. */
+/**
+ * When the controller last beat, or null when it never has.
+ *
+ * A READ THAT FAILED THROWS (2026-09-11, CLAUDE.md 10.86). It used to return
+ * null on `error`, and null here means `never_beat` to beatVerdict - so a
+ * PostgREST blip made the fleet file a financial alert saying "the controller
+ * looks installed but is not running" about a controller that was beating
+ * every 30 seconds, and the dashboard printed the same verdict with HTTP 200.
+ * "Could not tell" is its own outcome: the fleet's caller reports it through
+ * its try/catch and raises nothing, the dashboard answers 500.
+ */
 export async function lastBeatAt(): Promise<number | null> {
   const { data, error } = await (supabase as any)
     .from('stable_hand_beats')
@@ -181,7 +191,12 @@ export async function lastBeatAt(): Promise<number | null> {
     .order('beat_at', { ascending: false })
     .limit(1)
     .maybeSingle();
-  if (error || !data) return null;
+  if (error) {
+    throw new Error(
+      `stable_hand_beats unreadable: ${String((error as { message?: string }).message ?? error)}`
+    );
+  }
+  if (!data) return null;
   const at = Date.parse(String((data as { beat_at?: string }).beat_at ?? ''));
   return Number.isFinite(at) ? at : null;
 }

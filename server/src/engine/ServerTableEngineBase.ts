@@ -1825,9 +1825,20 @@ export abstract class ServerTableEngineBase {
       // fire-and-forget, the UI write must never affect gameplay.
       if (event.type === 'PLAYER_SAT_OUT' || event.type === 'PLAYER_SAT_BACK') {
         const sittingOut = event.type === 'PLAYER_SAT_OUT';
-        const occupancyId = this.seatedPlayers.find(
-          (p) => p.user_id === event.playerId
-        )?.occupancy_id;
+        const satPlayer = this.seatedPlayers.find((p) => p.user_id === event.playerId);
+        const occupancyId = satPlayer?.occupancy_id;
+        /* A horse the strike ladder sat out has lost its seat: nothing on the
+           platform sits a horse back in (sitBack is POST /sitout only), so a
+           cash seat is evicted after 2 orbits / 5 minutes and a tournament
+           seat is blinded off. Counted fleet-wide so it can page (Dan
+           2026-09-11). Twelve were parked this way at 14:55 UTC that day. */
+        if (sittingOut && event.reason === 'forced' && satPlayer?.is_horse) {
+          try {
+            EngineMetrics.horseForcedSitOutsTotal.inc(1, { format: this.tableFormat() });
+          } catch {
+            /* metrics must never affect gameplay */
+          }
+        }
         if (!occupancyId) return;
         void Promise.resolve(
           supabase
@@ -3992,6 +4003,17 @@ export abstract class ServerTableEngineBase {
    */
   humansSeated(): number {
     return this.seatedPlayers.filter((p) => !p.is_horse && p.stack > 0).length;
+  }
+
+  /**
+   * Horses currently seated with chips, the twin of humansSeated() for the
+   * fleet gauges (`poker_horses_seated`, `poker_tables_with_horses` in
+   * GameServer.getPrometheusMetrics). Identification only (CLAUDE.md 10.5):
+   * it counts, it decides nothing. Dan 2026-09-11: the page for "the horses
+   * can't play" needs the number of horses playing to exist as a series.
+   */
+  horsesSeated(): number {
+    return this.seatedPlayers.filter((p) => p.is_horse === true && p.stack > 0).length;
   }
 
   /**

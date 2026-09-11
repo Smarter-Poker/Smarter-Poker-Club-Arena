@@ -1,0 +1,349 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# HISTORICAL. This is lane F's PROPOSAL as it was written, kept for its
+# measurements and for the five rules that are not shipped yet. The eleven
+# rules whose series exist are MERGED into infra/monitoring/alert-rules.yml
+# (group `horse-fleet`), which is the file Prometheus loads; read that one for
+# what is live. Do not deploy this file - it is not in `rule_files`, not
+# mounted, and not symlinked by deploy.sh (CLAUDE.md 10.84).
+# ─────────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
+# HORSE FLEET ALERTS (lane F, 2026-09-11)
+#
+# Dan, 2026-09-11, verbatim: "I SHOULD GET PUSH NOTIFICATIONS OR TEXT IF
+# ANYTHING INSIDE THE HORSES IS FAILING OR THEY CAN'T PLAY."
+#
+# WHERE THIS GOES. This file is a proposed group for `infra/monitoring/
+# alert-rules.yml` (CLAUDE.md 10.84: a monitoring change is a pull request in
+# infra/monitoring/, deployed by deploy-monitoring.yml, live only when
+# `/api/v1/rules` on engine-01 says so). `infra/` is not in this snapshot, so the
+# group is written here in full and must be merged into that file by the agent
+# holding the infra tree. `promtool check rules` on this file before merging.
+#
+# HOW A PAGE REACHES A PHONE TODAY (read from the repo and the database):
+#   - Alertmanager on engine-01 routes `page="sms"` to the `pager-sms`
+#     receiver, which posts to the World Hub and texts a phone (added on the
+#     box 2026-09-04, brought into the repo 2026-09-06, changelog
+#     2026-09-06-realtime-phase-7-guardrails.md). Its token is the file
+#     `cron_secret` mounted into Alertmanager (`/etc/alertmanager/cron_secret`).
+#     The World Hub's pager endpoint holds an ALLOWLIST of alert names
+#     (`tests/the-pager-list-is-exactly-six.test.ts` in the World Hub) - every
+#     `page: sms` rule below must be added to that list or it is emailed only.
+#     The SMS provider credential and the destination number live where the
+#     World Hub reads them (the hub-vanguard Vercel environment), never here.
+#   - `severity="critical"` without `page` reaches `email-critical`.
+#   - The engine-side twin (raiseEngineAlert with `page: true`, added by lane F)
+#     pushes to the phones in `ca_incident_recipients` through
+#     fn_raise_notification -> push_outbox -> the per-minute push dispatch.
+#     That path does not depend on Prometheus and covers the engine's own
+#     verdicts (ClubArenaFleetFloorLost / ClubArenaFleetSilent).
+#
+# THRESHOLDS ARE MEASURED (10.84). Every `expr` carries the live numbers it
+# was set against, taken 2026-09-11 13:26-15:20 UTC from hand_history,
+# ca_horse_fleet_heartbeat, stable_hand_beats, engine_presence_parked and the
+# 60-minute engine log. The benchmark incident is 2026-09-10 20:00 -> 01:00
+# UTC (15:00-20:00 Chicago), when horse hands/hour fell 33,343 -> 546, cash
+# tables dealing fell 138 -> 8, Midway live horses hit 0 and DSS 8, and the
+# only alarm that fired (ClubArenaFleetFloorLost, twice, 23:46-23:50) went to
+# email.
+#
+# THE BREAK GUARD. Every fleet-level rule carries
+# `unless max_over_time(poker_maintenance_break_active[6m]) == 1` (CLAUDE.md
+# section 13 rule 6). Measured heartbeat gaps around the break are 450-632 s
+# every hour; `for:` windows below are all longer than that. A guard on a
+# `sum()` (no labels) must be `unless on()`, or it matches nothing and
+# never suppresses - the shape is different from the bare-gauge rules.
+#
+# SERIES THIS FILE READS, AND WHO PUBLISHES THEM:
+#   exists today on /metrics (always-on registry / GameServer):
+#     poker_dealable_tables, poker_maintenance_break_active,
+#     poker_actions_fleet_total{audience,format},
+#     poker_horse_decision_worker_ready, poker_horse_decision_worker_expired_jobs,
+#     poker_tournaments_overdue_start
+#   added by lane F (server/src/observability/engineInstruments.ts, wired in
+#   ServerTableEngineTurns.ts / ServerTableEngineBase.ts):
+#     poker_horse_turn_timeouts_total{kind}, poker_horse_decision_fallbacks_total,
+#     poker_horse_seat_unactable_total, poker_horse_forced_sit_outs_total{format}
+#   NOT YET PUBLISHED - the rule is written, the series is described in
+#   docs/changelog/2026-09-11-the-horse-audit.md under "the page Dan asked
+#   `scripts/ci/check-alert-rules-match.mjs` will refuse the rule until the
+#   series exists on production (it refuses any metric Prometheus has never
+#   seen). Merge those rules in the same PR as the metric, not before:
+#     poker_horses_seated, poker_tables_with_horses            (GameServer, lane D)
+#     poker_horse_fleet_heartbeat_age_seconds                  (HorseFleetManager, lane A)
+#     poker_horse_fleet_zero_fill_cycles, poker_horse_fleet_open_cash_seats
+#                                                              (HorseFleetManager, lane A)
+#     poker_stable_hand_live_horses{host}, poker_stable_hand_target{host}
+#                                                              (StableHandBeats, lane C)
+#     poker_horse_rebuy_total{outcome,club}                    (wallets.ts / Settlement, lane B)
+#     poker_horse_rotator_seat_read_failed_total               (HorseSessionRotator, lane B)
+#     poker_horse_tournament_fill_failed_total{reason}         (TournamentRecurringService, lane D)
+#     poker_horse_fleet_state_upsert_failed_total              (HorseFleetManager, lane A)
+# ─────────────────────────────────────────────────────────────────────────────
+groups:
+  - name: horse-fleet
+    rules:
+
+      # ── THE FLEET CANNOT PLAY ──────────────────────────────────────────────
+
+      - alert: HorseFleetCollapsed
+        # poker_dealable_tables = tables with 2+ dealable seats, not paused.
+        # Measured from hand_history, tables dealing horse-only hands per hour,
+        # 2026-09-10 14:00 -> 2026-09-11 15:00 UTC: healthy hours 65 (04:00
+        # UTC night trough) .. 1,167; the collapse 47 (21:00), 17 (22:00),
+        # 10 (23:00). Boot ramp is 0 tables at 62 s and 59 at 139 s (measured
+        # 2026-08-30), inside the 15 m window. The engine's own FLEET_FLOOR_
+        # TABLES stays at 3 because below it /health's restart verdict is
+        # skipped; this is the page.
+        expr: |
+          poker_dealable_tables < 20
+          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 15m
+        labels:
+          severity: critical
+          page: sms
+          component: club-arena-engine
+        annotations:
+          summary: "Only {{ $value }} tables are dealing - the horse fleet has collapsed"
+          description: "Fewer than 20 tables have two dealable seats for 15 minutes outside a break. On 2026-09-10 21:00-00:00 UTC this read 47/17/10 while the fleet was down to a handful of horses. Check HorseFleetManager heartbeat (ca_horse_fleet_heartbeat), the stable hand caps, and whether tournaments are stuck REGISTERING holding the four-game limit."
+          runbook: docs/changelog/2026-09-11-lane-f-horse-input-device.md
+
+      - alert: HorseCashActionsStopped
+        # Horse actions per minute at cash tables, fleet-wide. Measured from
+        # hand_history (has_human=false, tournament_id null), actions per hour
+        # / 60: healthy floor 313/min (12:00 UTC 2026-09-11, 43 tables, the
+        # quietest healthy hour), 426/min at 04:00 UTC; the collapse 215
+        # (21:00), 95 (22:00), 54 (23:00), ~90 (00:00). 150 sits under every
+        # healthy hour and over every collapse hour past the first.
+        expr: |
+          sum(rate(poker_actions_fleet_total{audience="horse",format="cash"}[10m])) * 60 < 150
+          unless on() max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 15m
+        labels:
+          severity: critical
+          page: sms
+          component: club-arena-engine
+        annotations:
+          summary: "Horse cash actions fell to {{ $value | printf \"%.0f\" }}/min"
+          description: "Horses at cash tables are acting under 150 times a minute for 15 minutes outside a break (healthy floor 313/min). Either the horses are not seated (fleet manager / stable hand / four-game limit) or seated horses are not acting (decision worker, turn timeouts)."
+          runbook: docs/changelog/2026-09-11-lane-f-horse-input-device.md
+
+      - alert: HorseHostBelowTarget
+        # REQUIRES poker_stable_hand_live_horses{host} / poker_stable_hand_target{host}
+        # (lane C, StableHandBeats.ts: publish unique_live and target per host
+        # alongside the stable_hand_beats row). Measured from stable_hand_beats
+        # 24 h: unique_live/target p50 DSS 0.96, Midway 0.43; the collapse
+        # 0.00-0.10 for five hours; the 02:00-08:00 UTC night ran 0.10-0.15
+        # (the "handful of horses" Dan reported). 0.25 fires on both and on no
+        # healthy daytime hour. target >= 20 excludes the deliberate night
+        # minimum (target_min 20/29).
+        expr: |
+          (
+            poker_stable_hand_live_horses / poker_stable_hand_target < 0.25
+            and poker_stable_hand_target >= 20
+          )
+          unless on() max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 30m
+        labels:
+          severity: critical
+          page: sms
+          component: club-arena-engine
+        annotations:
+          summary: "Host {{ $labels.host }} has {{ $value | printf \"%.0f%%\" }} of its horse target seated"
+          description: "The stable hand's live horse count on this host has been under a quarter of its occupancy target for 30 minutes. Read the last stable_hand_beats row for the host and the fleet heartbeat `gates` detail: four-game limit, tag exclusions, rest day, daily cap, per-host cap."
+          runbook: docs/changelog/2026-09-11-lane-f-horse-input-device.md
+
+      - alert: HorseFleetHeartbeatStale
+        # REQUIRES poker_horse_fleet_heartbeat_age_seconds (lane A,
+        # HorseFleetManager: seconds since the last fn_ca_fleet_state_upsert
+        # beat succeeded; publish -1 before the first). Measured from
+        # ca_horse_fleet_heartbeat 24 h: gap p50 30 s, p95 51 s, hourly break
+        # gaps 447-632 s, one 2,461 s gap at 01:33 UTC 2026-09-11 (the fleet
+        # loop was gone for 41 minutes; nothing fired). 900 s clears every
+        # break gap and catches that one 26 minutes in.
+        expr: |
+          poker_horse_fleet_heartbeat_age_seconds > 900
+          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 5m
+        labels:
+          severity: critical
+          page: sms
+          component: club-arena-engine
+        annotations:
+          summary: "The horse fleet loop has not beaten for {{ $value | printf \"%.0f\" }}s"
+          description: "HorseFleetManager's seeding cycle writes ca_horse_fleet_heartbeat every ~30 s. No beat for 15 minutes means no horse is being seated anywhere. Check the engine log for the cycle's last error and /health."
+          runbook: docs/changelog/2026-09-11-lane-f-horse-input-device.md
+
+      - alert: HorseFleetStateUpsertFailing
+        # REQUIRES poker_horse_fleet_state_upsert_failed_total (lane A: count
+        # every fn_ca_fleet_state_upsert error). Baseline 0 (lane E: the beat
+        # row is fresh on every cycle today).
+        expr: increase(poker_horse_fleet_state_upsert_failed_total[15m]) >= 5
+        for: 0m
+        labels:
+          severity: warning
+          component: club-arena-engine
+        annotations:
+          summary: "fn_ca_fleet_state_upsert failed {{ $value }} times in 15m"
+          description: "The fleet loop runs but cannot record its state. The floor is unaffected (the upsert is telemetry), but the heartbeat-stale page above is now blind, so this warns first."
+
+      # ── THE INPUT DEVICE (a seated horse that does not act) ────────────────
+
+      - alert: HorseDecisionWorkerDown
+        # Exists today. 1 only while the sole HorseLogic worker is READY.
+        # A worker that is down means every horse turn on the platform takes
+        # the check/fold fallback: 1,300 cash actions/min become folds.
+        expr: poker_horse_decision_worker_ready == 0
+        for: 3m
+        labels:
+          severity: critical
+          page: sms
+          component: club-arena-engine
+        annotations:
+          summary: "The live horse decision worker is not ready"
+          description: "poker_horse_decision_worker_ready has read 0 for 3 minutes. Every seated horse is folding or checking blind. The GameServer lifecycle treats terminal worker failure as fatal; if the process is up and this is still 0, the restart did not bring the worker back."
+
+      - alert: HorseTurnTimeouts
+        # Lane F counter. A horse has no browser: a timeout at its seat is the
+        # input device failing, never a person away from the keyboard.
+        # Measured 60 min to 13:27 UTC 2026-09-11: 67 orphaned time-bank
+        # expiries per hour (1.1/min) from the settle defect lane F fixed;
+        # expected after the fix: ~0. 0.5/min for 15 m = 7 timeouts is well
+        # above the fixed baseline and a tenth of the broken one.
+        expr: |
+          sum(rate(poker_horse_turn_timeouts_total[15m])) * 60 > 0.5
+        for: 15m
+        labels:
+          severity: warning
+          component: club-arena-engine
+        annotations:
+          summary: "Horses are timing out at {{ $value | printf \"%.1f\" }}/min"
+          description: "Seated horses are being resolved by the clock instead of by their own decision (kind=timer: the 17 s primary clock; kind=timebank: a bank deadline). Check the decision worker queue (oldest_queued_age_ms) and the engine log for 'Time bank expiry' and 'timed out'."
+
+      - alert: HorseTurnTimeoutStorm
+        # Same series, the fleet-wide failure: at 1,300 horse actions/min a
+        # dead think-timer path times out hundreds a minute.
+        expr: |
+          sum(rate(poker_horse_turn_timeouts_total[10m])) * 60 > 5
+        for: 10m
+        labels:
+          severity: critical
+          page: sms
+          component: club-arena-engine
+        annotations:
+          summary: "Horses are timing out at {{ $value | printf \"%.1f\" }}/min - the input device is broken"
+          description: "More than five seated horses a minute are being auto-folded or auto-checked for ten minutes. The horses are seated and cannot play."
+
+      - alert: HorseDecisionFallbacks
+        # Lane F counter: the worker failed or expired and the seat took the
+        # legal check/fold. Baseline unknown (the path reported to Sentry only);
+        # poker_horse_decision_worker_expired_jobs on /metrics is the worker's
+        # own count of the same event. 5/min for 10 m is 50 seats folded blind.
+        expr: |
+          sum(rate(poker_horse_decision_fallbacks_total[10m])) * 60 > 5
+        for: 10m
+        labels:
+          severity: critical
+          page: sms
+          component: club-arena-engine
+        annotations:
+          summary: "{{ $value | printf \"%.1f\" }} horse decisions/min are falling back to check/fold"
+          description: "The decision worker is failing or expiring jobs and seated horses are acting without a decision. Read poker_horse_decision_worker_oldest_queued_age_ms and _expired_jobs; the 8 s job budget is being exceeded or the worker is rejecting requests."
+
+      - alert: HorseSeatsUnactable
+        # Lane F counter: intended, check and fold all rejected; the seat is
+        # left to the watchdog (45 s, then a forced action, then a rebuild).
+        # Baseline 0 in the 60-minute log (no 'horse_seat_unactable' report).
+        expr: increase(poker_horse_seat_unactable_total[15m]) >= 3
+        for: 0m
+        labels:
+          severity: warning
+          component: club-arena-engine
+        annotations:
+          summary: "{{ $value }} horse seats could not be acted in 15m"
+          description: "A horse's decision and both fallbacks were rejected by HandController. Each one costs a table a 45 s stall and a watchdog action. Read the engine log for 'could not be acted'."
+
+      - alert: HorseForcedSitOuts
+        # Lane F counter. The three-strike ladder sat a horse out. Nothing sits
+        # a horse back in, so a cash seat is evicted after 2 orbits / 5 min and
+        # a tournament seat is blinded off. Measured: engine_presence_parked at
+        # the 14:55 UTC park carried 12 horses SAT_OUT 'forced' (8 of them in
+        # one second at 01:41 UTC); expected after the settle fix: 0.
+        expr: increase(poker_horse_forced_sit_outs_total[1h]) >= 3
+        for: 0m
+        labels:
+          severity: critical
+          page: sms
+          component: club-arena-engine
+        annotations:
+          summary: "{{ $value }} horses were forced to sit out in the last hour"
+          description: "Horses timed out three turns in a row and were sat out by the AFK ladder - a seat lost until eviction. Something upstream is stopping seated horses from acting (worker, timers, orphaned deadlines)."
+
+      # ── MONEY: a horse that busts and cannot come back ─────────────────────
+
+      - alert: HorseRebuysDeclinedByTreasury
+        # REQUIRES poker_horse_rebuy_total{outcome,club} (lane B: increment in
+        # autoRebuyHorse / Settlement step 5 with outcome = funded |
+        # declined_treasury | declined_no_seat | unknown | stop_loss |
+        # left_by_roll; club = the four club ids, bounded). Measured in the
+        # 60-minute log: 21 'Horse X left - insufficient funds' (lane E
+        # finding 1: the union row's treasury is 0.50). Baseline after lane
+        # E's migration: 0.
+        expr: sum by (club) (increase(poker_horse_rebuy_total{outcome="declined_treasury"}[1h])) >= 5
+        for: 0m
+        labels:
+          severity: critical
+          page: sms
+          component: club-arena-engine
+        annotations:
+          summary: "{{ $value }} horse rebuys were refused by the treasury of club {{ $labels.club }} in the last hour"
+          description: "Busted horses are being stood up because the club treasury the seat funds from cannot cover the reload. Read chip_ledger category horse_funding and the club's chip_treasury. This is money, not seating: treat as an incident."
+
+      # ── TOURNAMENTS: horses registered for events that never start ─────────
+
+      - alert: HorseTournamentsOverdue
+        # Exists today (MTT only). Measured 13:26 UTC 2026-09-11: 97 events
+        # REGISTERING more than 30 min past start_time (92 seat-first + 1 MTT
+        # by lane D's count; 40 of them dealt on 2026-09-08 and never left
+        # REGISTERING). Every one holds horse seats that count toward the
+        # four-game limit and keeps those horses off the cash floor.
+        expr: |
+          poker_tournaments_overdue_start >= 5
+          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 30m
+        labels:
+          severity: critical
+          page: sms
+          component: club-arena-engine
+        annotations:
+          summary: "{{ $value }} MTTs are past their start time and nobody started them"
+          description: "Tournaments stuck REGISTERING hold horse seats and bookings; the four-game limit then keeps those horses off the cash floor (lane A measured 428 of 448 seated Midway horses at the limit on 2026-09-09). See lane D's report for the two populations."
+
+      - alert: HorseTournamentFillFailing
+        # REQUIRES poker_horse_tournament_fill_failed_total{reason} (lane D:
+        # horse_load_seats_failed | start_failed | four_table_limit; the
+        # 4,451 'FOUR TABLE LIMIT ... may not ENTER' refusals in 24 h are the
+        # four_table_limit baseline until lane D's booking-horizon fix lands).
+        expr: sum by (reason) (increase(poker_horse_tournament_fill_failed_total{reason!="four_table_limit"}[30m])) >= 10
+        for: 0m
+        labels:
+          severity: warning
+          component: club-arena-engine
+        annotations:
+          summary: "Horse tournament fills are failing: {{ $labels.reason }} x{{ $value }} in 30m"
+          description: "TournamentRecurringService could not seat horses into events. reason=horse_load_seats_failed is a seat read that did not resolve; start_failed is an event that could not launch."
+
+      # ── THE ROTATOR AND THE SEAT READS ─────────────────────────────────────
+
+      - alert: HorseRotatorSeatReadFailing
+        # REQUIRES poker_horse_rotator_seat_read_failed_total (lane B: count
+        # every seat_read_failed pass). Baseline 0 since the 2026-09-09
+        # PGRST201 fix; 15 hours of it that day emptied the floor.
+        expr: increase(poker_horse_rotator_seat_read_failed_total[30m]) >= 3
+        for: 0m
+        labels:
+          severity: critical
+          page: sms
+          component: club-arena-engine
+        annotations:
+          summary: "The horse rotator cannot read the seat map ({{ $value }} failed passes in 30m)"
+          description: "HorseSessionRotator's seat read is failing, so no horse is rotated, topped up or stood for a human. On 2026-09-09 this ran for fifteen hours after the composite-FK migration (PGRST201)."

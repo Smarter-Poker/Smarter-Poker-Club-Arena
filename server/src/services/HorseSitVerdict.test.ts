@@ -129,6 +129,27 @@ describe('sitVerdictFor - the ok path', () => {
     expect(v.sitKey).toBe(`${MIDWAY_UNION_ID}:NLH 1/2 Classic Feeder 1:nlh:1:2`);
   });
 
+  it('a cluster table is judged on its GAME key, so a feeder and its main count as one game', () => {
+    /* 2026-09-09: keyed on the table name, "X Feeder" and "X" were two keys,
+       so the per-key daily sit cap counted per chair and a must-move read as
+       a seat given up. See gameKeyForTable. */
+    const cluster = '6ea8f314-206c-4ea0-b207-f7c50887b77b';
+    const onFeeder = sitVerdictFor(
+      HORSE,
+      { ...TABLE, cluster_id: cluster },
+      ctxWith({ book: bookWith() })
+    );
+    const onMain = sitVerdictFor(
+      HORSE,
+      { ...TABLE, id: 'tbl-2', name: 'NLH 1/2 Classic', cluster_id: cluster },
+      ctxWith({ book: bookWith() })
+    );
+    expect(onFeeder.ok && onMain.ok).toBe(true);
+    if (!onFeeder.ok || !onMain.ok) return;
+    expect(onFeeder.sitKey).toBe(`${MIDWAY_UNION_ID}:${cluster}:nlh:1:2`);
+    expect(onMain.sitKey).toBe(onFeeder.sitKey);
+  });
+
   it('hands the sizing the rejoin floor keyed the way the filter keyed the bar', () => {
     const floors = new Map([[rejoinPlayerKey(HORSE, rejoinTableKey(TABLE)), 333]]);
     let seen: number | undefined = -1;

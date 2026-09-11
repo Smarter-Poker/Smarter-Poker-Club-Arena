@@ -47,11 +47,41 @@ export interface SitTable {
   name?: string | null;
   club_id?: string | null;
   union_id?: string | null;
+  /** The must-move game this table belongs to (tables.cluster_id). */
+  cluster_id?: string | null;
   game_variant?: string | null;
   small_blind?: number | string | null;
   big_blind: number;
   min_buy_in?: number | string | null;
   max_buy_in?: number | string | null;
+}
+
+/**
+ * THE GAME KEY IS THE GAME, NOT THE TABLE (2026-09-09).
+ *
+ * The Stable Hand's per-key daily sit cap and two-hour window are written
+ * against `gameKey(host, template, variant, sb, bb)`, where `template` is the
+ * cash game's template ('classic' / 'action' / 'madness' - see StableHand.test
+ * T32 and OPORD section 10). Both callers in this engine passed the TABLE NAME
+ * as the template, and a must-move game names its tables differently: "NLH
+ * 1/2 Classic", "NLH 1/2 Classic Feeder", "NLH 1/2 Classic Main 2". So one
+ * game was three keys: the sit cap counted per chair rather than per game, and
+ * the seat-key diff in the seeding cycle read every controller move between a
+ * game's tables as a seat GIVEN UP - measured 2026-09-09, 1,438 must-moves in
+ * 90 minutes against ~1 real departure a minute, and the cycle line said
+ * "5-9 seat(s) given up, 0 sit(s)" every 30 seconds.
+ *
+ * A cluster table's key is its game (one game per key by construction, Gate
+ * 7). A table outside any game keeps its name, exactly as before.
+ */
+export function gameKeyForTable(table: SitTable): string {
+  return gameKey({
+    hostId: String(table.club_id ?? ''),
+    template: String(table.cluster_id ?? table.name ?? ''),
+    variant: String(table.game_variant ?? ''),
+    sb: Number(table.small_blind) || 0,
+    bb: Number(table.big_blind) || 0,
+  });
 }
 
 /** What sizing a buy-in returns: the amount, and the telemetry it would emit. */
@@ -181,14 +211,19 @@ export function sitVerdictFor(
   const sitState = ctx.book?.states.get(horseId);
   let sitKey: string | undefined;
   if (seatClub && sitTag && sitState && sitTag.personaCash) {
-    const key = gameKey({
-      hostId: String(table.club_id ?? ''),
-      template: String(table.name ?? ''),
-      variant: String(table.game_variant ?? ''),
-      sb: Number(table.small_blind) || 0,
-      bb: Number(table.big_blind) || 0,
-    });
-    const balance = ctx.bankrolls.get(`${seatClub}:${horseId}`) ?? 0;
+    const key = gameKeyForTable(table);
+    /* AN UNREAD ROLL IS NULL, NOT ZERO (2026-09-11).
+       This was `?? 0`, and zero is a MEASUREMENT: `evaluateSit` fed it to
+       `isLicensed(0, bb)`, which is false at every stake, so a cycle whose
+       bankroll read failed - the map empty, `bankrollsLoaded` false, every
+       OTHER gate in this file and in the candidate filter deliberately
+       failing open per the 2026-08-31 doctrine - refused `brm` to every
+       tagged horse at every table. One gate failing closed on a number
+       nobody read is the exact shape that emptied the cash floor for forty
+       minutes that day. Null means "no money opinion"; the identity checks
+       still apply and `atomic_table_buyin` is still the wallet's guard. */
+    const storedRoll = ctx.bankrolls.get(`${seatClub}:${horseId}`);
+    const balance = ctx.bankrollsLoaded && storedRoll !== undefined ? storedRoll : null;
     const verdict = evaluateSit({
       activeClubId: ctx.activeClubOf.get(horseId) ?? null,
       activeHostId: ctx.activeHostOf.get(horseId) ?? null,
@@ -200,8 +235,22 @@ export function sitVerdictFor(
       available: balance,
       /* The session-start balance is what the 50% cap is measured against.
          An unknown one falls back to the balance now, which is the same
-         number on the first sit of a session. */
-      sessionStartBalance: sitState.sessionStartBalance ?? balance,
+         number on the first sit of a session.
+
+         A NEW SESSION NEVER INHERITS THE LAST ONE'S START (2026-09-11).
+         `session_start_balance` is written when a horse with nothing open
+         sits down (HorseFleetManager) and never cleared, so a horse that
+         has since stood up everywhere was judged on the balance it started
+         a session with hours ago - which after a losing session reads as a
+         far larger roll than it holds, and after a winning one as a smaller.
+         A horse holding no seat IS starting a session, so its start is the
+         balance now. */
+      sessionStartBalance:
+        balance === null
+          ? null
+          : (ctx.horseTables.get(horseId)?.size ?? 0) === 0
+            ? balance
+            : (sitState.sessionStartBalance ?? balance),
       currentCommit: ctx.horseExposure.get(horseId) ?? 0,
       buyIn,
       persona: sitTag.personaCash,

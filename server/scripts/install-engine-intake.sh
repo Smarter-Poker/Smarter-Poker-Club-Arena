@@ -104,7 +104,8 @@ Type=oneshot
 ExecStart=/var/lib/club-arena/control-staging/%i/server/scripts/engine-release-intake.sh --run-id %i
 TimeoutStartSec=20min
 Restart=on-failure
-RestartForceExitStatus=75
+# Exit 75 is already a failure, so Restart=on-failure retries it naturally.
+# RestartForceExitStatus is invalid for Type=oneshot on production systemd.
 RestartPreventExitStatus=1
 RestartSec=60s
 KillMode=control-group
@@ -130,7 +131,16 @@ Unit=club-arena-engine-intake-v1@%i.service
 [Install]
 WantedBy=multi-user.target
 UNIT
-systemd-analyze verify "$UNIT_STAGE" "$PATH_STAGE"
+# `systemd-analyze verify` substitutes the synthetic instance `i` for a bare
+# template, which would point ExecStart at a staging directory that cannot
+# exist. Verify copies named for this real staged run so %i resolves to the
+# executable already authenticated above; install the canonical templates.
+VERIFY_UNIT_STAGE="$UNIT_STAGE_DIR/club-arena-engine-intake-v1@$RUN_ID.service"
+VERIFY_PATH_STAGE="$UNIT_STAGE_DIR/club-arena-engine-intake-v1@$RUN_ID.path"
+install -m 0644 "$UNIT_STAGE" "$VERIFY_UNIT_STAGE"
+install -m 0644 "$PATH_STAGE" "$VERIFY_PATH_STAGE"
+systemd-analyze verify "$VERIFY_UNIT_STAGE" "$VERIFY_PATH_STAGE"
+rm -f -- "$VERIFY_UNIT_STAGE" "$VERIFY_PATH_STAGE"
 fsync_paths "$UNIT_STAGE" "$PATH_STAGE"
 NEXT_UNIT="/etc/systemd/system/.$UNIT_BASENAME.next.$$"
 install -m 0644 "$UNIT_STAGE" "$NEXT_UNIT"

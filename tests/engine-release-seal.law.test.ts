@@ -1442,6 +1442,7 @@ describe('every host mutation path obeys the durable release authority', () => {
     expect(installer).not.toContain('ENGINE_CONTROL_SOURCE_DIR');
     expect(installer).not.toContain('ExecStart=$CONTROL_DIR/engine-supervisor.sh');
     expect(installer).toContain('ExecStart=$UNIT_WRAPPER_V1 start %i');
+    expect(installer).toContain('ExecStart=/bin/bash $CONTROL_DIR/verify-recovery-stack.sh');
     expect(workflow).toContain('STAGE="/var/lib/club-arena/control-staging/$RUN_KEY"');
     expect(workflow).toContain('git -C "$REPO_DIR" archive "$CONTROL_SHA" server/scripts');
     expect(workflow).toContain('"$STAGE/server/scripts/install-engine-intake.sh"');
@@ -1798,6 +1799,10 @@ describe('every host mutation path obeys the durable release authority', () => {
 
   it('queues frozen intake before request publication and lets the host complete the handoff', () => {
     const unit = 'club-arena-engine-intake-v1@';
+    const intakeServiceUnit = intakeInstaller.slice(
+      intakeInstaller.indexOf('cat > "$UNIT_STAGE"'),
+      intakeInstaller.indexOf('cat > "$PATH_STAGE"')
+    );
     expect(intakeInstaller).toContain('UNIT_BASENAME="club-arena-engine-intake-v1@.service"');
     expect(intakeInstaller).toContain('ln -- "$NEXT_UNIT" "$UNIT_PATH"');
     expect(intakeInstaller).toContain('cmp -s "$NEXT_UNIT" "$UNIT_PATH"');
@@ -1811,6 +1816,26 @@ describe('every host mutation path obeys the durable release authority', () => {
     const durableEnable = intakeInstaller.indexOf('fsync_paths "$WANTS_DIR"', enable);
     const armPath = intakeInstaller.indexOf('systemctl start "$PATH_UNIT"', durableEnable);
     const start = intakeInstaller.indexOf('systemctl start --no-block "$UNIT"', durableIntent);
+    const authenticatedEntrypoint = intakeInstaller.indexOf(
+      '[ -x "$STAGE/server/scripts/engine-release-intake.sh" ]'
+    );
+    const verifyCopy = intakeInstaller.indexOf('VERIFY_UNIT_STAGE=');
+    const verifyInstance = intakeInstaller.indexOf(
+      'systemd-analyze verify "$VERIFY_UNIT_STAGE" "$VERIFY_PATH_STAGE"',
+      verifyCopy
+    );
+    const removeVerifyCopies = intakeInstaller.indexOf(
+      'rm -f -- "$VERIFY_UNIT_STAGE" "$VERIFY_PATH_STAGE"',
+      verifyInstance
+    );
+    const fsyncCanonicalTemplates = intakeInstaller.indexOf(
+      'fsync_paths "$UNIT_STAGE" "$PATH_STAGE"',
+      removeVerifyCopies
+    );
+    const installCanonicalTemplate = intakeInstaller.indexOf(
+      'install -m 0644 "$UNIT_STAGE" "$NEXT_UNIT"',
+      fsyncCanonicalTemplates
+    );
     expect(publishIntent).toBeGreaterThan(0);
     expect(durableIntent).toBeGreaterThan(publishIntent);
     expect(enable).toBeGreaterThan(0);
@@ -1819,15 +1844,31 @@ describe('every host mutation path obeys the durable release authority', () => {
     expect(publishIntent).toBeGreaterThan(armPath);
     expect(durableIntent).toBeGreaterThan(publishIntent);
     expect(start).toBeGreaterThan(durableIntent);
+    expect(verifyCopy).toBeGreaterThan(authenticatedEntrypoint);
+    expect(verifyInstance).toBeGreaterThan(verifyCopy);
+    expect(removeVerifyCopies).toBeGreaterThan(verifyInstance);
+    expect(fsyncCanonicalTemplates).toBeGreaterThan(removeVerifyCopies);
+    expect(installCanonicalTemplate).toBeGreaterThan(fsyncCanonicalTemplates);
     expect(intakeInstaller.indexOf('ln -- "$TMP_REQUEST" "$REQUEST_FILE"')).toBe(-1);
     expect(intakeInstaller).toContain('PATH_BASENAME="club-arena-engine-intake-v1@.path"');
     expect(intakeInstaller).toContain(
       'PathExists=/var/lib/club-arena/engine-intake-requests/%i.intent'
     );
-    expect(intakeInstaller).toContain('Restart=on-failure');
-    expect(intakeInstaller).toContain('RestartForceExitStatus=75');
-    expect(intakeInstaller).toContain('RestartPreventExitStatus=1');
+    expect(intakeServiceUnit).toContain('Type=oneshot');
+    expect(intakeServiceUnit).toContain('Restart=on-failure');
+    expect(intakeServiceUnit).not.toContain('RestartForceExitStatus=');
+    expect(intakeServiceUnit).toContain('RestartPreventExitStatus=1');
     expect(intakeInstaller).not.toContain('Requires=docker.service');
+    expect(intakeInstaller).toContain(
+      'VERIFY_UNIT_STAGE="$UNIT_STAGE_DIR/club-arena-engine-intake-v1@$RUN_ID.service"'
+    );
+    expect(intakeInstaller).toContain(
+      'VERIFY_PATH_STAGE="$UNIT_STAGE_DIR/club-arena-engine-intake-v1@$RUN_ID.path"'
+    );
+    expect(intakeInstaller).toContain(
+      'systemd-analyze verify "$VERIFY_UNIT_STAGE" "$VERIFY_PATH_STAGE"'
+    );
+    expect(intakeInstaller).not.toContain('systemd-analyze verify "$UNIT_STAGE" "$PATH_STAGE"');
     expect(intakeInstaller).toContain('flock -w 30 7');
     expect(intake).toContain('flock -w 30 7');
     expect(intakeInstaller).toContain('fsync_paths "$INTAKE_ROOT" "$(dirname "$INTAKE_ROOT")"');
@@ -2591,8 +2632,9 @@ exit 91
       installer.indexOf('cat > "$UNIT_STAGE/club-arena-engine-release-v1@.service"'),
       installer.indexOf('systemd-analyze verify')
     );
+    expect(releaseUnit).toContain('Type=oneshot');
     expect(releaseUnit).toContain('Restart=on-failure');
-    expect(releaseUnit).toContain('RestartForceExitStatus=75');
+    expect(releaseUnit).not.toContain('RestartForceExitStatus=');
     expect(releaseUnit).toContain('RestartPreventExitStatus=1');
     expect(releaseUnit).toContain('TimeoutStopSec=330s');
     expect(releaseUnit).not.toContain('Requires=docker.service');

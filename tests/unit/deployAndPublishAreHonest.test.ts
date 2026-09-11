@@ -25,6 +25,12 @@
  *   THE SKIP IS TEMPORARY. The catch-up schedule must fire at least as often as
  *   the coalescing window, or a commit that defers at minute 18 waits for the
  *   next hour despite becoming eligible at minute 38.
+ *
+ * 2026-09-10: both the coalescing skip and the catch-up schedule are gone. The
+ * :55 break gate is the spacing, every engine push starts its own run, and a
+ * run that cannot ship hands the train on itself. What survives from above is
+ * the first answer - a run that shipped nothing says so where it is seen -
+ * and the Verdict step now makes such a run RED.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -74,10 +80,20 @@ describe('the engine deploy tells the truth when it skips', () => {
     );
   });
 
-  it('annotates the coalesce as a WARNING, not a notice', () => {
+  it('annotates a run that shipped nothing as a WARNING, and has no spacing skip left', () => {
     // A notice does not surface on a green run. A warning does.
-    expect(HETZNER).toMatch(/::warning title=NOT DEPLOYED::/);
+    expect(HETZNER).toMatch(/::warning title=DID NOT DEPLOY::/);
     expect(HETZNER).not.toMatch(/::notice::Engine restarted only/);
+    // 2026-09-10: the 20-minute restart-coalescing skip is GONE. Every restart
+    // happens inside the :55 break gate, one run at a time, so the break is
+    // the spacing - and with no cron left, a coalesced run would strand the
+    // very commit it was asked to ship, because nothing comes back for it.
+    const runnable = HETZNER.split('\n')
+      .filter((l) => !/^\s*#/.test(l))
+      .join('\n');
+    expect(runnable).not.toMatch(/MIN_RESTART_SPACING_SEC/);
+    expect(runnable).not.toMatch(/reason=coalesced/);
+    expect(runnable).not.toMatch(/::warning title=NOT DEPLOYED::/);
   });
 
   /**
@@ -113,11 +129,14 @@ describe('the engine deploy tells the truth when it skips', () => {
     // run, and the loudest was the only false one.
     const drainAt = block.indexOf('steps.drain.outputs.skip');
     const gateReasonAt = block.indexOf('gate_reason');
-    const coalesceAt = block.indexOf('coalescing');
+    const supersededAt = block.indexOf('superseded');
     expect(drainAt, 'the break gate is one of the reasons').toBeGreaterThan(-1);
     expect(gateReasonAt, 'and it supplies its own reason').toBeGreaterThan(-1);
-    expect(coalesceAt, 'coalescing is still a reason').toBeGreaterThan(-1);
-    expect(drainAt, 'the gate that held is read FIRST').toBeLessThan(coalesceAt);
+    expect(supersededAt, 'superseded is a reason').toBeGreaterThan(-1);
+    expect(drainAt, 'the gate that held is read FIRST').toBeLessThan(supersededAt);
+    // The spacing skip was deleted on 2026-09-10; a reason that names it
+    // would send the reader to investigate a gate that no longer exists.
+    expect(block, 'coalescing is not a reason any more').not.toContain('coalescing');
 
     // NEGATIVE, and this is the half that matters. CLAUDE.md section 13 says
     // the 7am/7pm text is old and must not come back; a stale sentence sitting
@@ -175,50 +194,116 @@ describe('the engine deploy tells the truth when it skips', () => {
     expect(truth).toContain('steps.drain.outputs.gate_reason');
   });
 
-  it('never restarts on a merge — there is no push trigger', () => {
+  /**
+   * 2026-09-10, Dan: "i do not want any watch dogs, i want hard coded fixes
+   * that solve this problem and prevent it from breaking or regressing, i want
+   * any and all pushes to be published in the order that they come in!"
+   *
+   * This test used to pin the opposite - "never restarts on a merge - there is
+   * no push trigger" - from the 2026-08-31 rule, when a merge RESTARTED
+   * production (263 times in one week). What that rule protects still holds,
+   * and is pinned below: a merge starts a run, and the run restarts nothing
+   * until the break gate has a fresh certificate.
+   */
+  it('every engine push starts its own run, and nothing in that run restarts outside the break', () => {
     const triggers = HETZNER.slice(HETZNER.indexOf('\non:'), HETZNER.indexOf('\nconcurrency:'));
-    expect(triggers).not.toMatch(/^\s{2}push:/m);
-    expect(triggers).toMatch(/^\s{2}schedule:/m);
+    const push = sliceYamlBlock(triggers, '  push:');
+    expect(push).toMatch(/branches: \[main\]/);
+    // The engine's runtime paths, the same set engine-watchdog.sh measures
+    // "behind" against: a test or a sim change never enters the image.
+    expect(push).toContain("- 'server/**'");
+    expect(push).toContain("- '!server/**/*.test.ts'");
+    expect(push).toContain("- '!server/sim/**'");
     expect(triggers).toMatch(/^\s{2}workflow_dispatch:/m);
+    // The one queue: one run in flight, the newest push pending behind it.
+    expect(HETZNER).toMatch(
+      /concurrency:\s*\n\s*group: deploy-hetzner\s*\n\s*cancel-in-progress: false/
+    );
+    // And the restart is behind the break gate whatever started the run.
+    const cutover = sliceYamlEntry(HETZNER, 'name: Cut over to the new image');
+    expect(cutover).toMatch(
+      /if: steps\.dedupe\.outputs\.skip != 'true' && steps\.drain\.outputs\.skip != 'true'/
+    );
   });
 
-  it('gets one tick before the :55 break of EVERY hour, and the watchdog covers a dropped one', () => {
+  it('has no cron and needs no watchdog: the train hands itself on', () => {
     /**
-     * REPLACED THE FIVE-WINDOW SCHEDULE (Dan 2026-09-01): "program the engine
-     * restart to be every hour on the :55 instead of every 5 hours so nothing
-     * gets lost or orphaned from production improvements."
-     *
-     * The tick sits before :55 so the runner is checked out, tested and built
-     * by the time the engine parks the platform; the break gate then does the
-     * waiting.
-     *
-     * ONE tick, not three (2026-09-02). There were three because a GitHub
-     * scheduled run is best-effort and is sometimes dropped. Measured since:
-     * GitHub delivers about 10% of this repo's scheduled runs, so tripling the
-     * asks was tripling the demand that gets it throttled, and on 2026-09-02
-     * all three were dropped every hour from 14:42. The redundancy moved to
-     * publish-watchdog's schedule-liveness check, which runs on workflow_run
-     * many times an hour and dispatches this workflow the moment it is more
-     * than an hour since it last ran by any trigger. That is pinned in
-     * tests/schedule-liveness.test.ts; what is pinned here is that the one
-     * tick is still hourly and still lands before :55.
+     * The `35 * * * *` tick was the only scheduled start, and GitHub delivered
+     * 3 of ~19 of them on 2026-09-10; engine-watchdog.sh and schedule-liveness
+     * dispatched the rest, at whatever minute they ran. Both were band-aids on
+     * a trigger that did not work, and Dan asked for neither. The start is now
+     * the push itself, and the two ways a started train could stall hand on
+     * from inside the run.
      */
-    // :35 since #3070 (2026-09-05): builds grew to 8-18 minutes and the :45
-    // tick's fixed poll gave up 23 s before :55. The range below is the rule;
-    // the minute is whatever lands every observed build length in the window.
-    expect(HETZNER).toMatch(/cron: '35 \* \* \* \*'/);
-    expect(cronEveryMinutes(HETZNER)).toBeNull();
+    const triggers = HETZNER.slice(HETZNER.indexOf('\non:'), HETZNER.indexOf('\nconcurrency:'));
+    expect(triggers).not.toMatch(/^\s{2}schedule:/m);
+    expect(HETZNER).not.toMatch(/^\s*- cron:/m);
 
-    const [, minutes, hours] = HETZNER.match(/cron: '([0-9,]+) ([^ ]+) \* \* \*'/)!;
-    // Every hour, so no hour list to get wrong.
-    expect(hours).toBe('*');
-    // Every tick must leave time to build before :55, and none may land
-    // inside the break itself - a run arriving at :56 would wait 59 minutes
-    // for the next one.
-    for (const m of minutes.split(',').map(Number)) {
-      expect(m, `tick at :${m} is too late to build before the break`).toBeLessThanOrEqual(50);
-      expect(m, `tick at :${m} is needlessly early`).toBeGreaterThanOrEqual(35);
+    // 1. A run that main superseded dispatches current main before it goes,
+    //    because the commits that moved main may have started no run.
+    const stage = sliceYamlEntry(HETZNER, 'name: Stage the current release proof control');
+    expect(stage).toMatch(
+      /echo "superseded=true" >> "\$GITHUB_OUTPUT"\s*\n\s*if gh workflow run auto-deploy-hetzner\.yml --repo "\$GITHUB_REPOSITORY" --ref main; then/
+    );
+    // 2. A run its break gate could not serve dispatches its successor -
+    //    and ONLY those: a failed test, build or cutover never retries itself.
+    //    A deliberate lease deferral hands on too: its commit still has to ship.
+    const verdict = sliceYamlEntry(HETZNER, "name: 'Verdict");
+    expect(verdict).toMatch(
+      /hand_on\(\) \{\s*\n\s*if gh workflow run auto-deploy-hetzner\.yml --repo "\$GITHUB_REPOSITORY" --ref main; then/
+    );
+    expect(verdict).toMatch(
+      /"\$GATE_KIND" = "staged_deferred" \] \|\| \[ "\$GATE_KIND" = "no_certificate" \]; \}; then\s*\n\s*hand_on/
+    );
+    expect(verdict).toMatch(
+      /"\$GATE_KIND" = "lease_held_elsewhere" \]; then[\s\S]{0,300}?hand_on \|\| exit 1\s*\n\s*exit 0/
+    );
+    // 3. (2026-09-11) A run that never touched production heals itself: a
+    //    cancel hands on, and a failure retries up to DEPLOY_RETRY_LIMIT failed
+    //    runs per commit, counted from the API, failing closed when uncounted.
+    //    A run whose cutover RAN never hands on - that would restart production
+    //    into a broken build every hour.
+    const failed = sliceBetween(
+      verdict,
+      'if [ "$JOB_STATUS" != "success" ]; then',
+      '\n          fi\n          if [ "$SHIPPED"'
+    );
+    expect(failed).toMatch(
+      /if \[ -z "\$CUTOVER_OUTCOME" \] \|\| \[ "\$CUTOVER_OUTCOME" = "skipped" \]; then/
+    );
+    expect(failed).toMatch(
+      /if \[ "\$JOB_STATUS" = "cancelled" \]; then[\s\S]{0,200}?hand_on \|\| true/
+    );
+    expect(failed).toMatch(
+      /gh run list --repo "\$GITHUB_REPOSITORY" \\\s*\n\s*--workflow auto-deploy-hetzner\.yml --commit "\$SHA" --status failure/
+    );
+    expect(failed).toMatch(
+      /if \[ "\$FAILED_BEFORE" -lt "\$DEPLOY_RETRY_LIMIT" \]; then[\s\S]{0,300}?hand_on \|\| true/
+    );
+    expect(failed).toMatch(/::error title=GAVE UP ON/);
+    expect(failed, 'an unreadable count stops, never loops').toMatch(
+      /''\|\*\[!0-9\]\*\)[\s\S]{0,400}?::error title=TRAIN STOPPED::/
+    );
+    expect(verdict).toMatch(/CUTOVER_OUTCOME: \$\{\{ steps\.cutover\.outcome \}\}/);
+    expect(Number(verdict.match(/DEPLOY_RETRY_LIMIT: '(\d+)'/)![1])).toBeGreaterThan(0);
+    // Every hand-on in the failed/cancelled branch sits inside the
+    // "production was never touched" guard.
+    const guardAt = failed.indexOf('if [ -z "$CUTOVER_OUTCOME" ]');
+    for (const at of [...failed.matchAll(/hand_on \|\| true/g)].map((m) => m.index!)) {
+      expect(at).toBeGreaterThan(guardAt);
     }
+    // All four hand-on sites, and no others: lease deferral, gate decline,
+    // cancel, bounded retry.
+    const calls = verdict.split('\n').filter((l) => /^\s*hand_on\b(?!\(\))/.test(l));
+    expect(calls.length).toBe(4);
+    expect(verdict).toMatch(/GH_TOKEN: \$\{\{ github\.token \}\}/);
+    // A hand-on that could not be made is red, never silent.
+    expect(stage).toMatch(/::error title=TRAIN STOPPED::/);
+    expect(verdict).toMatch(/::error title=TRAIN STOPPED::/);
+    // The token may dispatch, and is named in full.
+    const job = sliceYamlBlock(HETZNER, '    permissions:');
+    expect(job).toMatch(/actions: write/);
+    expect(job).toMatch(/contents: read/);
   });
 
   it('has no timezone left to get wrong', () => {
@@ -287,10 +372,15 @@ describe('the engine deploy tells the truth when it skips', () => {
     expect(gate).toMatch(/Missing\/legacy\/straggler states are/);
   });
 
-  it('still bypasses the spacing gate for a manual dispatch', () => {
-    // This is the lever an agent uses to land a commit now. Losing it would
-    // mean waiting out the window with no way to override.
-    expect(HETZNER).toContain('!= "workflow_dispatch"');
+  it('treats a push and a dispatch the same: no event may skip or bypass anything', () => {
+    // The spacing gate's "!= workflow_dispatch" bypass went with the gate.
+    // What is left must not branch on who started the run, except for the
+    // audited rollback, which exists only on a dispatch.
+    const runnable = HETZNER.split('\n')
+      .filter((l) => !/^\s*#/.test(l))
+      .join('\n');
+    expect(runnable).not.toContain('!= "workflow_dispatch"');
+    expect(runnable).not.toMatch(/github\.event_name \}\}" != /);
   });
 });
 
@@ -329,20 +419,30 @@ describe('a green engine deploy means production serves the commit (2026-09-10)'
     expect(shippedOf(verdict)).toBe(shippedOf(ledger));
   });
 
-  it('a run the break gate declined is red; already-live and coalesced are green', () => {
+  it('a run the break gate declined is red; already-live and superseded are green', () => {
     const script = verdict.slice(verdict.indexOf('run: |'));
     // Shipped -> exit 0 before anything else is considered.
     expect(script).toMatch(/if \[ "\$SHIPPED" = "true" \]; then[\s\S]{0,200}?exit 0/);
-    // Deliberate stand-downs (already serving, coalesced inside the break).
+    // Deliberate stand-downs (already serving, superseded and handed on).
     expect(script).toMatch(/if \[ "\$DEDUPE_SKIP" = "true" \]; then[\s\S]{0,300}?exit 0/);
     // Everything else that reaches the end of a green job shipped nothing and
     // should have: that is a failure, and it says so in an error annotation.
-    const tail = script.slice(script.lastIndexOf('fi'));
-    expect(tail).toMatch(/::error title=DID NOT SHIP::/);
+    const tail = script.slice(script.lastIndexOf('::error title=DID NOT SHIP::'));
+    expect(tail).toMatch(/^::error title=DID NOT SHIP::/);
     expect(tail.trim().endsWith('exit 1')).toBe(true);
+    // Handing the train on happens on the way to red; it never turns it green.
+    expect(tail).not.toMatch(/exit 0/);
     // An earlier failure is already red; the verdict never double-reports it
     // and never turns a red run green.
-    expect(script).toMatch(/if \[ "\$JOB_STATUS" != "success" \]; then[\s\S]{0,200}?exit 0/);
+    const failedBranch = sliceBetween(
+      script,
+      'if [ "$JOB_STATUS" != "success" ]; then',
+      '\n          fi\n          if [ "$SHIPPED"'
+    );
+    expect(failedBranch.trim().endsWith('exit 0')).toBe(true);
+    expect(failedBranch, 'the verdict never turns a failed run red twice or green').not.toMatch(
+      /exit 1/
+    );
     expect(verdict).toMatch(/JOB_STATUS: \$\{\{ job\.status \}\}/);
   });
 
@@ -351,9 +451,15 @@ describe('a green engine deploy means production serves the commit (2026-09-10)'
     expect(script).toMatch(
       /if \[ "\$DRAIN_SKIP" = "true" \] && \[ "\$GATE_KIND" = "lease_held_elsewhere" \]; then[\s\S]{0,300}?exit 0/
     );
-    expect(script, 'budget and certificate declines are failures to ship').not.toMatch(
-      /"(staged_deferred|no_certificate)"/
-    );
+    // Budget and certificate declines are failures to ship. They are named in
+    // the script for ONE reason only - to hand the train on - and that branch
+    // sits after the DID NOT SHIP error, on the way to `exit 1`.
+    const redAt = script.lastIndexOf('::error title=DID NOT SHIP::');
+    expect(redAt).toBeGreaterThan(-1);
+    for (const kind of ['staged_deferred', 'no_certificate']) {
+      const at = script.indexOf(`"${kind}"`);
+      expect(at, `${kind} is handed on`).toBeGreaterThan(redAt);
+    }
     const gate = sliceYamlBlock(
       HETZNER,
       '      - name: Wait for the maintenance break to park every table'
@@ -369,8 +475,7 @@ describe('a green engine deploy means production serves the commit (2026-09-10)'
       '      - name: Skip if production already serves this commit'
     );
     expect(
-      (d.match(/echo "reason=(already_live|coalesced|superseded)" >> \$GITHUB_OUTPUT/g) ?? [])
-        .length
+      (d.match(/echo "reason=(already_live|superseded)" >> \$GITHUB_OUTPUT/g) ?? []).length
     ).toBe((d.match(/echo "skip=true" >> \$GITHUB_OUTPUT/g) ?? []).length);
     expect(sliceYamlEntry(HETZNER, "name: 'DID NOT DEPLOY")).toMatch(
       /"already_live" \]; then\s*\n\s*echo "::notice title=ALREADY LIVE::/
@@ -383,8 +488,22 @@ describe('a green engine deploy means production serves the commit (2026-09-10)'
     // "train is failing" alarm (#4109).
     const stage = sliceYamlEntry(HETZNER, 'name: Stage the current release proof control');
     expect(stage).toMatch(
-      /git merge-base --is-ancestor "\$CONTROL_SHA" "\$REMOTE_MAIN"[\s\S]{0,200}?echo "superseded=true" >> "\$GITHUB_OUTPUT"[\s\S]{0,300}?exit 0/
+      /git merge-base --is-ancestor "\$CONTROL_SHA" "\$REMOTE_MAIN"[\s\S]{0,1200}?echo "superseded=true" >> "\$GITHUB_OUTPUT"[\s\S]{0,800}?exit 0/
     );
+    // 2026-09-10: main moving is not the control plane moving. With a push
+    // trigger the pending run is the newest ENGINE push and main keeps moving
+    // under it with client merges; an ancestor whose deploy control plane is
+    // byte-identical to main's ships its own commit instead of standing down.
+    expect(stage).toMatch(
+      /if git diff --quiet "\$CONTROL_SHA" "\$REMOTE_MAIN" -- \$CONTROL_PLANE; then\s*\n\s*echo "superseded=false" >> "\$GITHUB_OUTPUT"/
+    );
+    for (const path of [
+      '.github/workflows/auto-deploy-hetzner.yml',
+      'scripts/ci',
+      'server/scripts',
+    ]) {
+      expect(stage, `${path} is part of the control plane`).toContain(path);
+    }
     // A commit that is NOT an ancestor of main is still refused, red.
     expect(stage).toMatch(
       /not dispatched from current main; refusing rollbackable control-plane code"\s*\n\s*exit 1/

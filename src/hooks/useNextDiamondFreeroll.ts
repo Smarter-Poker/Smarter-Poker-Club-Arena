@@ -11,7 +11,7 @@
  * the database once a minute and again the moment a countdown expires (the
  * freeroll that just started is no longer "next").
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { DIAMOND_ARENA_CLUB_ID } from '../lib/constants';
 import { reportError } from '../utils/errorReporter';
@@ -77,3 +77,74 @@ export function useNextDiamondFreeroll(enabled = true): NextDiamondFreeroll {
 }
 
 export default useNextDiamondFreeroll;
+
+/** Inside this many seconds the clock is about to matter; the surface reddens. */
+export const FREEROLL_IMMINENT_SECONDS = 10;
+
+/** "M:SS" under an hour, "H:MM:SS" under a day, "2d 4h" beyond. */
+export function formatFreerollCountdown(seconds: number): string {
+  if (seconds >= 86_400) {
+    const days = Math.floor(seconds / 86_400);
+    const hours = Math.floor((seconds % 86_400) / 3_600);
+    return `${days}d ${hours}h`;
+  }
+  const whole = Math.max(0, Math.floor(seconds));
+  const h = Math.floor(whole / 3_600);
+  const m = Math.floor((whole % 3_600) / 60);
+  const s = whole % 60;
+  return h > 0
+    ? `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+    : `${m}:${String(s).padStart(2, '0')}`;
+}
+
+export interface FreerollCountdown {
+  /** Ready to print: "0:00" when nothing is scheduled, never a word. */
+  text: string;
+  /** Inside the last ten seconds. */
+  imminent: boolean;
+  /** Tooltip: the name and wall-clock start, or that none is scheduled. */
+  title: string;
+  startsAt: number | null;
+}
+
+/**
+ * The countdown itself: one database read a minute, one local tick a second,
+ * and a re-read the moment a clock runs out, because the freeroll that just
+ * started is no longer the next one.
+ *
+ * `override` is the test seam and the "I already know the time" path: pass a
+ * number or null and no read is issued at all.
+ */
+export function useDiamondFreerollCountdown(override?: number | null): FreerollCountdown {
+  const live = useNextDiamondFreeroll(override === undefined);
+  const startsAt = override === undefined ? live.startsAt : override;
+
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (startsAt == null) return;
+    setNow(Date.now());
+    const tick = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(tick);
+  }, [startsAt]);
+
+  const remaining = startsAt == null ? null : Math.max(0, Math.floor((startsAt - now) / 1000));
+  const expired = remaining === 0;
+  const isLive = override === undefined;
+  const { refresh } = live;
+  useEffect(() => {
+    if (expired && isLive) refresh();
+  }, [expired, isLive, refresh]);
+
+  return useMemo(
+    () => ({
+      startsAt,
+      text: remaining == null ? '0:00' : formatFreerollCountdown(remaining),
+      imminent: remaining != null && remaining > 0 && remaining <= FREEROLL_IMMINENT_SECONDS,
+      title:
+        startsAt == null
+          ? 'No Freeroll Scheduled Yet'
+          : `${live.name ?? 'Freeroll'} Starts ${new Date(startsAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`,
+    }),
+    [live.name, remaining, startsAt]
+  );
+}

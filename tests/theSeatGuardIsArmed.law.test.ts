@@ -1,5 +1,7 @@
+import { readdirSync, readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { migrationCorpus } from './helpers/migrationCorpus';
+import { MIGRATIONS_DIR, migrationCorpus, type MigrationFile } from './helpers/migrationCorpus';
 
 /**
  * THE SEAT GUARD IS ARMED (binding, 2026-09-06)
@@ -116,10 +118,29 @@ function stripComments(sql: string): string {
  *     there before. Pre-filtering on the raw text is a superset, and the
  *     stripped check still decides - a header that QUOTES the old dry-run
  *     body is still not a declaration.
+ *
+ * The shared corpus intentionally represents applied `.sql` migrations. This
+ * law must also see the six staged Stage-B `.sql.pending` declarations before
+ * production assigns their final versions, so it reads only those pending
+ * files once and merges them into this test-local, version-ordered view.
  */
+const pendingMigrationCorpus: MigrationFile[] = readdirSync(MIGRATIONS_DIR)
+  .filter((name) => name.endsWith('.sql.pending'))
+  .sort()
+  .map((name) => ({
+    name,
+    sql: readFileSync(resolve(MIGRATIONS_DIR, name), 'utf8'),
+  }));
+
+const seatGuardMigrationCorpus: MigrationFile[] = [
+  ...migrationCorpus(),
+  ...pendingMigrationCorpus,
+].sort((left, right) => left.name.localeCompare(right.name));
+
+/** The last declaration in applied history plus the staged Stage-B cutover. */
 function latestDeclaring(what: string): { file: string; sql: string } {
   let found = { file: '', sql: '' };
-  for (const migration of migrationCorpus()) {
+  for (const migration of seatGuardMigrationCorpus) {
     if (!migration.sql.includes(what)) continue;
     const sql = stripComments(migration.sql);
     if (sql.includes(what)) found = { file: migration.name, sql };
@@ -195,7 +216,7 @@ describe('the seat guard is armed', () => {
       /_the_seat_guard_is_armed\.sql$/,
       /_the_seat_guard_says_what_it_actually_does\.sql$/,
       /_spin_reserve_settlement_commits_its_journal_or_nothing\.sql$/,
-      /_tournament_reseating_uses_one_database_chosen_legal_chair\.sql$/,
+      /_stage_b_current_postimage_contraction\.sql(?:\.pending)?$/,
     ];
     expect(
       SANCTIONED_REDECLARATIONS.some((re) => re.test(file)),

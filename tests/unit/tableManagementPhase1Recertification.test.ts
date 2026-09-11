@@ -6,14 +6,20 @@ const ROOT = resolve(__dirname, '../..');
 const MIGRATIONS = resolve(ROOT, 'supabase/migrations');
 const RECERTIFICATION = '20260906091511_phase_1_table_management_authority_recertified.sql';
 const CANCELLATION = '20260909014444_tournament_cancellation_commits_one_stored_receipt.sql';
-const SEAT_EXIT = '20260909014545_tournament_seat_exits_stay_inside_tournament_authority.sql';
+const seatExitCandidates = readdirSync(MIGRATIONS).filter(
+  (name) =>
+    name.endsWith('_stage_b_current_postimage_contraction.sql') ||
+    name.endsWith('_stage_b_current_postimage_contraction.sql.pending')
+);
+if (seatExitCandidates.length !== 1) throw new Error('Stage-B contraction migration is ambiguous');
+const SEAT_EXIT = seatExitCandidates[0];
 const COMPOSED_CLOSE =
   '20260909192240_managed_close_preserves_cash_occupancy_and_atomic_tournament_cancellation.sql';
 const recertification = readFileSync(resolve(MIGRATIONS, RECERTIFICATION), 'utf8');
 const cancellation = readFileSync(resolve(MIGRATIONS, CANCELLATION), 'utf8');
 const seatExit = readFileSync(resolve(MIGRATIONS, SEAT_EXIT), 'utf8');
 const migrationSources = readdirSync(MIGRATIONS)
-  .filter((name) => name.endsWith('.sql'))
+  .filter((name) => name.endsWith('.sql') || name.endsWith('.sql.pending'))
   .sort()
   .map((file) => ({ file, source: readFileSync(resolve(MIGRATIONS, file), 'utf8') }));
 

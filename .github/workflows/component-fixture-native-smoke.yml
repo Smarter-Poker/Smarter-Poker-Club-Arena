@@ -1,0 +1,35 @@
+name: Draft component fixture native smoke
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, converted_to_draft]
+    paths:
+      - operations/release/fixture/**
+      - operations/release/ci/fixture-smoke.py
+      - .github/workflows/component-fixture-native-smoke.yml
+permissions:
+  contents: read
+concurrency:
+  group: draft-fixture-smoke-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+jobs:
+  native-smoke:
+    if: github.event.pull_request.draft == true && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Build exact committed fixture and smoke native services
+        env:
+          FIXTURE_SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+        run: python3 operations/release/ci/fixture-smoke.py . "$RUNNER_TEMP/fixture-smoke-evidence" "$FIXTURE_SOURCE_SHA"
+      - name: Preserve sanitized native smoke and cleanup observations
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: draft-native-fixture-smoke-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/fixture-smoke-evidence/native-smoke-receipt.json
+          if-no-files-found: error
+          retention-days: 7

@@ -1,0 +1,30 @@
+{
+  "_": "Measured readings from scripts/art/check-asset-matte.mjs. An asset only appears here when the detector reads it at or above 0.5% - 142 of 148 read below that and need no entry. A reading ABOVE the value recorded here fails the build, because a reading that rises is an export that put the white matte back. Every entry below is a case where the detector is eating ARTWORK, and every reason says what was looked at. Do not add an entry without doing that work; see the header of check-asset-matte.mjs.",
+  "assets": {
+    "public/assets/club-buttons/club/club-identity-icon-club-v1.png": {
+      "pct": 7.8,
+      "reason": "Artwork, confirmed by picture and by divergence. The icon is a silver temple, and silver IS smooth, neutral and bright - exactly what the detector calls matte. Cleaning a copy slices the left end of the pediment, the left column's outer face and the left end of the plinth clean off. Re-checking the cleaned copy reads 12.0%: it does not converge, which is the signature of the detector eating art rather than removing a matte. Reverted on 2026-09-10 for this reason."
+    },
+    "public/assets/club-buttons/club/club-identity-icon-player-v1.png": {
+      "pct": 2.8,
+      "reason": "Artwork. This one CONVERGES (2.8% then 0.1%), which is why convergence alone is not the test. The before/after picture shows the head's dark outline broken on the upper right and lower left and the shoulder bevel chewed off the left edge. Same silver-on-transparent problem as its sibling above. Reverted on 2026-09-10."
+    },
+    "public/assets/club-buttons/console/spade-console-v1/mid.png": {
+      "pct": 4.2,
+      "reason": "Artwork, and the measurement is unambiguous: this is a 1000x8 horizontal TILING rail, and cleaning removes 40 pixels that are 5 complete columns - 5 in every one of the 8 rows. Tiled across a console that is five transparent slits through the rail. The pixels it wants are the light brushed band in the rail, which is smooth and neutral by design."
+    },
+    "public/assets/club-buttons/game-cards/plo/shark-four-bay-v1/live-dot.png": {
+      "pct": 0.7,
+      "reason": "Noise, not matte. 23 pixels, mean luminance 20 - nearly black. It is nibbling the dark glow halo around the green dot, not a white ramp. Before and after are indistinguishable."
+    },
+    "public/assets/club-buttons/wallets/mobile/wallet-union-bank-v1.webp": {
+      "pct": 0.6,
+      "reason": "Artwork. 3780 pixels of mean luminance 171 - bright silver - and NOT ONE of them within 4px of the image border; they are spread across rows 12-368 and columns 97-1791 of an 1800x380 plate. A baked matte hugs the outside edge by definition. These are the chrome frame's own highlights."
+    },
+    "public/assets/club-buttons/wallets/square/wallet-promo-wallet-square-v1.png": {
+      "pct": 0.5,
+      "reason": "Sits exactly on the floor and under the cleaner's own threshold, so clean-shell-matte.py writes nothing for it. Recorded so the number is pinned rather than left one rounding tick away from failing the build."
+    }
+  },
+  "generated": "2026-09-11"
+}

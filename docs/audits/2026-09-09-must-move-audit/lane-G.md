@@ -22,20 +22,20 @@ Nothing was committed, pushed or applied.
 
 Client:
 
-| file | what was read |
-| --- | --- |
-| `src/components/lobby/lobbyEntries.ts` | `LobbyTableRow` (all cluster fields), `LobbyEntry.game`, `cashStatus`, `isClusterFront`, `isHiddenClusterMember`, `cashEntry` in full, `seatsTakenLabel`, `cashTemplateLabel`, `countStylesOnBoard`, `styleCountsLine`, `cashTitleLines`, `VARIANT_HEAD` / `STAKES_HEAD`, `classifyTournament` |
-| `src/services/cashGameLobby.ts` | all 346 lines: every interface, `lobbyTableLabel`, `isMainOne`, `pendingMoveDestination`, `pendingMoveNotice`, `mustMoveListRows`, `fetchCashGameLobby`, `SEAT_CHANGE_REFUSALS`, `seatChangeRefusalText`, `requestSeatChange`, `cancelSeatChange`, `seatChangeOutcomeText`, `joinCashGame`, `JOIN_GAME_REFUSALS`, `joinGameRefusalText`, `waitlistedText` |
-| `src/components/cash/CashGameCard.tsx` + `.css` | all 288 lines: the three `ZONES` maps, `zoneStyle`, `shrink`, the render, `rulesLineFor` |
-| `src/components/lobby/game-cards/arenaGameCardAdapter.ts` | all 186 lines: `compactCashBuyInLabel`, `stripTableIndex`, `repeatsTitle`, `cashCardTitle` (both branches), `familyOf`, `statusOf`, `arenaGameCardDataFromEntry` |
-| `src/components/lobby/game-cards/ArenaLobbyGameCard.tsx` | all 236 lines: `arenaGameCardActionsForEntry` (cash branch line by line), the figure cache, the wrapper |
-| `src/components/lobby/game-cards/ArenaGameCard.tsx` / `.css` | `LiveValue`, `NlhMachine`, `PloMachine`, `zoneText`, the `--agc-players-*` zone variables and the `Players` label rule |
-| `src/components/lobby/LobbyTable.tsx` | `GameCounter`, `SeatsMeter`, `StartsCell`, `COL_NAME` cash branch, `COL_ACTIONS` cash branch, the Stakes menu / style counts wiring |
-| `src/components/lobby/advancedFilterSpec.ts` | `CASH_STYLES`, `CASH_STATUSES`, the three cash `FILTER_SPECS`, `FilterableRow`, `variantKey`, `rowPassesFilter` (games / styles / range / seats / statuses) |
-| `src/components/lobby/GameLobbyPanel.tsx` | the cash CTA `useMemo`, the seat-map effect, the staff tick effect, the Game Information list, `cashMachineData` |
-| `src/components/lobby/CasinoPlaque.tsx` | `PlaqueSeats` |
-| `src/components/lobby/lobbyCardContext.ts` | all 30 lines |
-| `src/pages/ClubHomePage.tsx` | the club-home cache helpers, `TableData`, `mergeFastRows`, the realtime admission rules and `handleTableChange`, the `get_club_home` fast path, the chain `tableQuery` and its merge, `styleCounts`, `filteredTables`, `lobbyEntries`, `handleJoinTable`, `loadMyGameStates`, the waitlist effects |
+| file                                                         | what was read                                                                                                                                                                                                                                                                                                                                             |
+| ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/components/lobby/lobbyEntries.ts`                       | `LobbyTableRow` (all cluster fields), `LobbyEntry.game`, `cashStatus`, `isClusterFront`, `isHiddenClusterMember`, `cashEntry` in full, `seatsTakenLabel`, `cashTemplateLabel`, `countStylesOnBoard`, `styleCountsLine`, `cashTitleLines`, `VARIANT_HEAD` / `STAKES_HEAD`, `classifyTournament`                                                            |
+| `src/services/cashGameLobby.ts`                              | all 346 lines: every interface, `lobbyTableLabel`, `isMainOne`, `pendingMoveDestination`, `pendingMoveNotice`, `mustMoveListRows`, `fetchCashGameLobby`, `SEAT_CHANGE_REFUSALS`, `seatChangeRefusalText`, `requestSeatChange`, `cancelSeatChange`, `seatChangeOutcomeText`, `joinCashGame`, `JOIN_GAME_REFUSALS`, `joinGameRefusalText`, `waitlistedText` |
+| `src/components/cash/CashGameCard.tsx` + `.css`              | all 288 lines: the three `ZONES` maps, `zoneStyle`, `shrink`, the render, `rulesLineFor`                                                                                                                                                                                                                                                                  |
+| `src/components/lobby/game-cards/arenaGameCardAdapter.ts`    | all 186 lines: `compactCashBuyInLabel`, `stripTableIndex`, `repeatsTitle`, `cashCardTitle` (both branches), `familyOf`, `statusOf`, `arenaGameCardDataFromEntry`                                                                                                                                                                                          |
+| `src/components/lobby/game-cards/ArenaLobbyGameCard.tsx`     | all 236 lines: `arenaGameCardActionsForEntry` (cash branch line by line), the figure cache, the wrapper                                                                                                                                                                                                                                                   |
+| `src/components/lobby/game-cards/ArenaGameCard.tsx` / `.css` | `LiveValue`, `NlhMachine`, `PloMachine`, `zoneText`, the `--agc-players-*` zone variables and the `Players` label rule                                                                                                                                                                                                                                    |
+| `src/components/lobby/LobbyTable.tsx`                        | `GameCounter`, `SeatsMeter`, `StartsCell`, `COL_NAME` cash branch, `COL_ACTIONS` cash branch, the Stakes menu / style counts wiring                                                                                                                                                                                                                       |
+| `src/components/lobby/advancedFilterSpec.ts`                 | `CASH_STYLES`, `CASH_STATUSES`, the three cash `FILTER_SPECS`, `FilterableRow`, `variantKey`, `rowPassesFilter` (games / styles / range / seats / statuses)                                                                                                                                                                                               |
+| `src/components/lobby/GameLobbyPanel.tsx`                    | the cash CTA `useMemo`, the seat-map effect, the staff tick effect, the Game Information list, `cashMachineData`                                                                                                                                                                                                                                          |
+| `src/components/lobby/CasinoPlaque.tsx`                      | `PlaqueSeats`                                                                                                                                                                                                                                                                                                                                             |
+| `src/components/lobby/lobbyCardContext.ts`                   | all 30 lines                                                                                                                                                                                                                                                                                                                                              |
+| `src/pages/ClubHomePage.tsx`                                 | the club-home cache helpers, `TableData`, `mergeFastRows`, the realtime admission rules and `handleTableChange`, the `get_club_home` fast path, the chain `tableQuery` and its merge, `styleCounts`, `filteredTables`, `lobbyEntries`, `handleJoinTable`, `loadMyGameStates`, the waitlist effects                                                        |
 
 Database (live bodies, `pg_get_functiondef`): `get_club_home(text)`,
 `fn_cash_game_lobby(uuid)`, `fn_cash_game_join(uuid)`,
@@ -56,12 +56,12 @@ Tests read: `tests/a-game-counts-its-players-like-a-tournament.law.test.ts`,
 
 ### What the three were
 
-| | tables | players |
-| --- | --- | --- |
-| `fn_cash_cluster_census` (the authority the controller runs on) | census predicate | seats on census tables |
-| `get_club_home` (fast path) | census predicate | census predicate |
-| `fn_cash_game_lobby` | census predicate | per-table `seated` |
-| **the client** | `Number(t.cluster_tables ?? 1) \|\| 1` | `Number(t.cluster_players ?? t.current_players ?? 0)` |
+|                                                                 | tables                                 | players                                               |
+| --------------------------------------------------------------- | -------------------------------------- | ----------------------------------------------------- |
+| `fn_cash_cluster_census` (the authority the controller runs on) | census predicate                       | seats on census tables                                |
+| `get_club_home` (fast path)                                     | census predicate                       | census predicate                                      |
+| `fn_cash_game_lobby`                                            | census predicate                       | per-table `seated`                                    |
+| **the client**                                                  | `Number(t.cluster_tables ?? 1) \|\| 1` | `Number(t.cluster_players ?? t.current_players ?? 0)` |
 
 `20260906163151` had already made the three SQL readers agree verbatim on
 
@@ -78,11 +78,11 @@ The client was the fourth answer, and it was not merely a fallback.
 `cluster_players` and `cluster_tables` are computed inside `get_club_home`.
 They are not columns. Nothing else on the client ever writes them:
 
-* the fast path runs **once** - `if (listsPaintedRef.current) return;` skips it
+- the fast path runs **once** - `if (listsPaintedRef.current) return;` skips it
   on every warm reload (the 90 s timer, `visibilitychange`, every bus event);
-* the authoritative chain `tableQuery` never selected them, and
+- the authoritative chain `tableQuery` never selected them, and
   `mergeFastRows` deliberately keeps a value the incoming row does not carry;
-* realtime `handleTableChange` merges `{...t, ...updated}` where `updated` is a
+- realtime `handleTableChange` merges `{...t, ...updated}` where `updated` is a
   raw `public.tables` row, which has no such columns.
 
 So on a board left open, a must-move game's PLAYERS number never moved again
@@ -97,8 +97,8 @@ On the next visit `getClubHomeCache` hydrates `tables` from that entry and the
 board paints from it immediately - so the fallback fired for real, on the
 instant-paint path every returning player sees:
 
-* `cluster_tables ?? 1` printed **"1 Table"** for a three-table game;
-* `cluster_players ?? current_players` printed **Main 1's own seat count** as
+- `cluster_tables ?? 1` printed **"1 Table"** for a three-table game;
+- `cluster_players ?? current_players` printed **Main 1's own seat count** as
   the whole game's count - a 30-player game reading "6", which is the same
   class of lie as the "0/6" R10 was written to kill, in the other direction.
 
@@ -120,9 +120,9 @@ Zero drift, which is what lane A measured independently. So summing
 derivation, and they are the same rule the SQL runs:
 
 ```ts
-export function isCensusTable(t): boolean       // the three SQL clauses, verbatim
-export function clusterFigures(rows): Map<string, {players, tables}>
-export function withClusterFigures(rows): rows  // stamps every cluster row
+export function isCensusTable(t): boolean; // the three SQL clauses, verbatim
+export function clusterFigures(rows): Map<string, { players; tables }>;
+export function withClusterFigures(rows): rows; // stamps every cluster row
 ```
 
 `ClubHomePage.boardTables` drops any cluster row that is not a census table
@@ -289,43 +289,43 @@ no em dash anywhere in the diff.
 
 ## 3. CHECKED AND FOUND CORRECT (no change)
 
-* **JOIN GAME calls the door, never Main 1.** `handleJoinTable` tests
+- **JOIN GAME calls the door, never Main 1.** `handleJoinTable` tests
   `row.cluster_id && row.cluster_must_move !== false`, calls `joinCashGame`,
   and navigates to `r.table_id` - the shortest live Main with an unreserved
   chair, then the feeder (read off the live `fn_cash_game_join` body). The
   waitlist branch navigates to Main 1 to WATCH while the place is held, which
   is deliberate and commented.
-* **The waitlist copy.** `waitlistedText` prints the opening-hold sentence
+- **The waitlist copy.** `waitlistedText` prints the opening-hold sentence
   ("The Next Table Opens When One More Player Sits") only when the door
   returned `opening_hold_since`, and the numbered form otherwise.
-* **The refusal vocabulary.** Every code in `SEAT_CHANGE_REFUSALS` and
+- **The refusal vocabulary.** Every code in `SEAT_CHANGE_REFUSALS` and
   `JOIN_GAME_REFUSALS` matches a string the live functions raise, and
   `GAME_BARRED` is deliberately delegated to `cashBuyInRefusalText` so the two
   doors cannot quote different bars. Title Case, no em dash, all branches.
-* **The style subtitle.** `cashTitleLines` reads the template off the game row
+- **The style subtitle.** `cashTitleLines` reads the template off the game row
   rather than parsing it back out of a table name; `cashCardTitle` leads the
   phone card's second line with the style unless the title already says the
   word; `countStylesOnBoard` counts one per cluster front, so a three-table
   game counts once, and `styleCountsLine` prints zeros rather than gaps.
-* **One row per GAME.** `isHiddenClusterMember` removes every non-front cluster
+- **One row per GAME.** `isHiddenClusterMember` removes every non-front cluster
   row before entries are built, and the chain select has carried the identity
   columns since 2026-09-05, so the ~300 ms overlay leak stays fixed. The v3
   boot cache could still reintroduce it for entries written before that date
   (TTL is seven days, so up to 2026-09-12); the v4 bump closes that window.
-* **An old bookmark to a feeder table id.** `?game=<id>` is resolved against
+- **An old bookmark to a feeder table id.** `?game=<id>` is resolved against
   the built entries and dropped on the first loaded list if it matches none, so
   a bookmarked feeder - which is never an entry under R10 - closes cleanly
   instead of lying in wait. A selected row that leaves the list closes the
   panel. Both were already correct.
-* **`pendingMoveNotice`** matches the engine's wording for all four reasons and
+- **`pendingMoveNotice`** matches the engine's wording for all four reasons and
   carries no "in N hands"; `cash_seat_moves` has no hands-until column, which
   `movingAfterThisHandAndTheLobbySaysTheStyle` already pins.
-* **Realtime lag.** With the derivation in place the figures now move on every
+- **Realtime lag.** With the derivation in place the figures now move on every
   `tables` UPDATE (a seat transition writes `current_players`), and the 90 s
   reload plus `visibilitychange` re-derive from a fresh chain read. If realtime
   drops entirely the numbers are stale until the next reload - which is
   strictly better than before, where they were stale until the tab was closed.
-* **No `.single()`, no emoji, no `.limit()` on an array, no em dash** anywhere
+- **No `.single()`, no emoji, no `.limit()` on an array, no em dash** anywhere
   in this lane's diff.
 
 ---
@@ -334,17 +334,17 @@ no em dash anywhere in the diff.
 
 Shared files - the integrator should reconcile these against lanes H and I:
 
-| file | hunks |
-| --- | --- |
-| `src/components/lobby/lobbyEntries.ts` (+145) | `LobbyTableRow` gains `cluster_enabled`, `is_deleted`. New block immediately before `cashEntry`: `isCensusTable`, `ClusterFigures`, `ClusterFigureSource`, `clusterFigures`, `withClusterFigures`, `clusterFiguresOf`. `cashEntry`: the `cluster` / `gamePlayers` / `st` derivation only. Nothing else in the file is touched. |
-| `src/pages/ClubHomePage.tsx` (+99) | imports (`isCensusTable`, `isClusterFront`, `withClusterFigures`); `CLUB_HOME_CACHE_VER` v3 -> v4; `TableData` gains six cluster fields; `handleTableChange` UPDATE adds `lifecycle === 'closed'`; the chain `.select(...)` adds the `cluster:cash_games!tables_cluster_id_fkey(...)` embed; the merge flattens the embed into `flattenedTables`; `setClubHomeCache` stores the flattened rows; new `boardTables` memo; `styleCounts` and `filteredTables` read `boardTables`; the `rowPassesFilter` call gains `game` and a game-aware `seatsTaken`. |
-| `src/components/lobby/LobbyTable.tsx` (+18) | cash action column only: `seated` via `playerStateOf`, the `closed` branch, `!closed &&` on the waitlist and join buttons. |
-| `src/components/lobby/GameLobbyPanel.tsx` (+45) | the cash CTA's closed branch; `PlaqueSeats` gains `gameTables`; the Players row becomes Players + Tables on a game. |
-| `src/components/lobby/advancedFilterSpec.ts` (+12) | `FilterableRow.game`; the `full` and `open` status arms. |
-| `src/components/lobby/game-cards/ArenaLobbyGameCard.tsx` (+13) | the `entry.status === 'closed'` branch in the cash arm of `arenaGameCardActionsForEntry`. |
-| `src/components/lobby/lobbyCardContext.ts` (+8) | `lobbyPlayerStateOf` cash branch: also match `entry.game.id`. |
-| `src/components/lobby/CasinoPlaque.tsx` (+21) | `PlaqueSeats` gains the `gameTables` shape. |
-| `tests/one-definition-of-a-games-players.law.test.ts` | the client half of the law appended (19 new assertions in 6 describes). The existing SQL half is untouched. No new law file, so no `docs/laws.d/` entry is owed - it is the same law. |
+| file                                                           | hunks                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/components/lobby/lobbyEntries.ts` (+145)                  | `LobbyTableRow` gains `cluster_enabled`, `is_deleted`. New block immediately before `cashEntry`: `isCensusTable`, `ClusterFigures`, `ClusterFigureSource`, `clusterFigures`, `withClusterFigures`, `clusterFiguresOf`. `cashEntry`: the `cluster` / `gamePlayers` / `st` derivation only. Nothing else in the file is touched.                                                                                                                                                                                                                        |
+| `src/pages/ClubHomePage.tsx` (+99)                             | imports (`isCensusTable`, `isClusterFront`, `withClusterFigures`); `CLUB_HOME_CACHE_VER` v3 -> v4; `TableData` gains six cluster fields; `handleTableChange` UPDATE adds `lifecycle === 'closed'`; the chain `.select(...)` adds the `cluster:cash_games!tables_cluster_id_fkey(...)` embed; the merge flattens the embed into `flattenedTables`; `setClubHomeCache` stores the flattened rows; new `boardTables` memo; `styleCounts` and `filteredTables` read `boardTables`; the `rowPassesFilter` call gains `game` and a game-aware `seatsTaken`. |
+| `src/components/lobby/LobbyTable.tsx` (+18)                    | cash action column only: `seated` via `playerStateOf`, the `closed` branch, `!closed &&` on the waitlist and join buttons.                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `src/components/lobby/GameLobbyPanel.tsx` (+45)                | the cash CTA's closed branch; `PlaqueSeats` gains `gameTables`; the Players row becomes Players + Tables on a game.                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `src/components/lobby/advancedFilterSpec.ts` (+12)             | `FilterableRow.game`; the `full` and `open` status arms.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `src/components/lobby/game-cards/ArenaLobbyGameCard.tsx` (+13) | the `entry.status === 'closed'` branch in the cash arm of `arenaGameCardActionsForEntry`.                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `src/components/lobby/lobbyCardContext.ts` (+8)                | `lobbyPlayerStateOf` cash branch: also match `entry.game.id`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `src/components/lobby/CasinoPlaque.tsx` (+21)                  | `PlaqueSeats` gains the `gameTables` shape.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `tests/one-definition-of-a-games-players.law.test.ts`          | the client half of the law appended (19 new assertions in 6 describes). The existing SQL half is untouched. No new law file, so no `docs/laws.d/` entry is owed - it is the same law.                                                                                                                                                                                                                                                                                                                                                                 |
 
 I did not touch `CashClusterHUD`, `MustMoveLobbyModal`, `TablePage`,
 `MultiTablePage` or `CashGameCreateFlow`. No migration was written by this

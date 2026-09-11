@@ -161,7 +161,13 @@ describe('the board counts the game the controller runs', () => {
       row({ id: 'm2', role: 'main', main_index: 2, current_players: 5 }),
       row({ id: 'f1', role: 'feeder', main_index: null, current_players: 2 }),
       // Out of the census: neither is counted.
-      row({ id: 'dead', role: 'feeder', main_index: null, current_players: 9, lifecycle: 'closed' }),
+      row({
+        id: 'dead',
+        role: 'feeder',
+        main_index: null,
+        current_players: 9,
+        lifecycle: 'closed',
+      }),
       row({ id: 'gone', role: 'feeder', main_index: null, current_players: 4, is_deleted: true }),
       // Another game, and a table in no game at all.
       row({ id: 'x1', cluster_id: 'g2', current_players: 3 }),
@@ -188,10 +194,7 @@ describe('the board counts the game the controller runs', () => {
   });
 
   it('cashEntry has no fallback arithmetic left: no "?? 1", no "?? current_players"', () => {
-    const SRC = readFileSync(
-      join(__dirname, '..', 'src/components/lobby/lobbyEntries.ts'),
-      'utf8'
-    );
+    const SRC = readFileSync(join(__dirname, '..', 'src/components/lobby/lobbyEntries.ts'), 'utf8');
     const start = SRC.indexOf('export function cashEntry(');
     expect(start).toBeGreaterThan(-1);
     const body = SRC.slice(start, SRC.indexOf('\nexport function tournamentEntry('));
@@ -314,12 +317,12 @@ describe('a seat anywhere in the game is a seat in the game', () => {
   };
 
   it('matches on the GAME id, not only on Main 1 table id', () => {
-    expect(
-      lobbyPlayerStateOf(gameRow as never, { ...ctx, seatedIds: new Set(['g1']) })
-    ).toBe('seated');
-    expect(
-      lobbyPlayerStateOf(gameRow as never, { ...ctx, seatedIds: new Set(['main-1']) })
-    ).toBe('seated');
+    expect(lobbyPlayerStateOf(gameRow as never, { ...ctx, seatedIds: new Set(['g1']) })).toBe(
+      'seated'
+    );
+    expect(lobbyPlayerStateOf(gameRow as never, { ...ctx, seatedIds: new Set(['main-1']) })).toBe(
+      'seated'
+    );
     expect(lobbyPlayerStateOf(gameRow as never, ctx)).toBeNull();
   });
 

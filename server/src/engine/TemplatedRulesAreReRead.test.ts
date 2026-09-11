@@ -182,7 +182,13 @@ describe('refreshRakeConfig re-reads the whole templated rule set', () => {
 
     // A game whose tables disagreed on run-it: this one is switched OFF.
     maybeSingle.mockResolvedValueOnce({
-      data: { ...actionRow, run_it_mode: 'none', run_it_twice: false, allow_run_it_twice: false, run_it_twice_enabled: false },
+      data: {
+        ...actionRow,
+        run_it_mode: 'none',
+        run_it_twice: false,
+        allow_run_it_twice: false,
+        run_it_twice_enabled: false,
+      },
     });
     await e.refreshRakeConfig(true);
     e.preciseTimer?.dispose?.();

@@ -1,5 +1,5 @@
 name: Post-Deploy E2E (production)
-run-name: Post-Deploy E2E ${{ github.event.client_payload.engine_sha || github.sha }}
+run-name: ${{ github.event_name == 'workflow_dispatch' && format('release:{0}:CERTIFY', inputs.operation_id) || format('Post-Deploy E2E {0}', github.event.client_payload.engine_sha || github.sha) }}
 
 # ─────────────────────────────────────────────────────────────────────────────
 # THE TIER THAT DID NOT EXIST (Dan 2026-08-29)
@@ -34,6 +34,14 @@ run-name: Post-Deploy E2E ${{ github.event.client_payload.engine_sha || github.s
 # ─────────────────────────────────────────────────────────────────────────────
 
 on:
+  workflow_dispatch:
+    inputs:
+      operation_id:
+        required: true
+        type: string
+      request:
+        required: true
+        type: string
   workflow_run:
     # This is the publisher's `name:`, not its filename. #2676 deleted
     # build-for-world-hub.yml (name 'Build for World Hub Sync') and repointed
@@ -69,10 +77,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           EVENT_NAME: ${{ github.event_name }}
           SOURCE_RUN_ID: ${{ github.event.workflow_run.id || '' }}
-          ENGINE_TRIGGER_SHA: ${{ github.event.client_payload.engine_sha || '' }}
+          ENGINE_TRIGGER_SHA: ${{ fromJSON(inputs.request || '{}').source_sha || github.event.client_payload.engine_sha || '' }}
         run: |
           set -euo pipefail
-          if [ "$EVENT_NAME" = repository_dispatch ]; then
+          if [ "$EVENT_NAME" = repository_dispatch ] || [ "$EVENT_NAME" = workflow_dispatch ]; then
             [[ "$ENGINE_TRIGGER_SHA" =~ ^[0-9a-f]{40}$ ]] \
               || { echo '::error::An engine-triggered production certificate requires one full lowercase engine SHA.'; exit 1; }
             echo "engine_trigger_sha=$ENGINE_TRIGGER_SHA" >> "$GITHUB_OUTPUT"
@@ -166,7 +174,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           # The step below may need to resolve the sha production is actually
           # serving, which is usually an ancestor of this run's commit and is
@@ -193,7 +201,7 @@ jobs:
           echo "Exact protected-main engine component: \`$ENGINE_SHA\`" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Setup Node 20
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 20
           cache: npm
@@ -251,6 +259,13 @@ jobs:
           echo "ready=false" >> "$GITHUB_OUTPUT"
           echo "::error::production did not serve one valid full build-info.json SHA."
           exit 1
+
+      - name: Bind the controlled certificate to the exact served components
+        if: github.event_name == 'workflow_dispatch' && steps.live.outputs.ready == 'true'
+        env:
+          RELEASE_CERTIFICATE_REQUEST: ${{ inputs.request }}
+          RELEASE_CERTIFICATE_OPERATION: ${{ inputs.operation_id }}
+        run: node operations/release/certificate-proof.mjs start "$RUNNER_TEMP/release-certificate"
 
       # ───────────────────────────────────────────────────────────────────
       # THE SPECS AND THE BUNDLE MUST COME FROM THE SAME COMMIT.
@@ -549,6 +564,7 @@ jobs:
       # on a red run too - a run can be BOTH failed and dishonest, and the
       # second fact is the one nobody was being told.
       - name: Did the suite actually verify production?
+        id: certificate_honesty
         if: always() && steps.live.outputs.ready == 'true'
         run: >-
           node scripts/ci/assert-e2e-actually-ran.mjs
@@ -565,6 +581,7 @@ jobs:
           e2e-report/sweep.json
 
       - name: Hard-delete the isolated production E2E account
+        id: certificate_cleanup
         if: always() && steps.live.outputs.ready == 'true'
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -579,6 +596,7 @@ jobs:
       # changed or unreadable final document is a non-verdict, not eventual
       # success for the release this run claims to have tested.
       - name: Prove production stayed on one exact release during certification
+        id: certificate_unchanged
         if: always() && steps.live.outputs.ready == 'true'
         env:
           EXPECTED_LIVE_SHA: ${{ steps.live.outputs.sha }}
@@ -592,13 +610,33 @@ jobs:
           [ "$FINAL_SHA" = "$EXPECTED_LIVE_SHA" ]
           echo "Production stayed on \`$FINAL_SHA\` for the complete browser certificate." >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Preserve the exact controlled terminal certificate
+        if: always() && github.event_name == 'workflow_dispatch' && steps.live.outputs.ready == 'true'
+        env:
+          RELEASE_CERTIFICATE_REQUEST: ${{ inputs.request }}
+          RELEASE_CERTIFICATE_OPERATION: ${{ inputs.operation_id }}
+          CERTIFICATE_JOB_STATUS: ${{ job.status }}
+          CERTIFICATE_CLEANUP: ${{ steps.certificate_cleanup.outcome }}
+          CERTIFICATE_HONESTY: ${{ steps.certificate_honesty.outcome }}
+          CERTIFICATE_UNCHANGED: ${{ steps.certificate_unchanged.outcome }}
+        run: node operations/release/certificate-proof.mjs finish "$RUNNER_TEMP/release-certificate"
+
+      - name: Upload the immutable controlled certificate
+        if: success() && github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: release-receipt-${{ inputs.operation_id }}
+          path: ${{ runner.temp }}/release-certificate/receipt.json
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Upload the report when something is wrong on production
         # `failure()` is false when GitHub cancels a job at its time limit. The
         # old condition therefore discarded the only report from exactly the
         # run that exposed the obsolete timeout. Preserve evidence for both
         # kinds of non-verdict, while still skipping uploads on a clean run.
         if: always() && (failure() || cancelled())
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: post-deploy-playwright-report
           path: |

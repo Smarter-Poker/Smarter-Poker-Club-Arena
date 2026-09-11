@@ -42,7 +42,7 @@ export async function createCluster() {
     await admin.query('CREATE ROLE anon NOLOGIN; CREATE ROLE authenticated NOLOGIN; CREATE ROLE service_role NOLOGIN');
     await admin.end();
     return { directory, socket, version: version.trim(), start, stop, base,
-      async database({ migrate = true } = {}) {
+      async database({ migrate = true, additionalMigrations = [] } = {}) {
         const name = `rj_${randomUUID().replaceAll('-', '')}`;
         const admin = await connect(base);
         await admin.query(`CREATE DATABASE ${name}`);
@@ -50,6 +50,7 @@ export async function createCluster() {
         const config = { ...base, database: name };
         const db = await connect(config);
         if (migrate) await db.query(await readFile(migration, 'utf8'));
+        for (const extra of additionalMigrations) await db.query(await readFile(extra, 'utf8'));
         await db.end();
         return config;
       },

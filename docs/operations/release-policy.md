@@ -1,5 +1,10 @@
 # Global release policy: bootstrap journal v1
 
+The base journal contract below remains unchanged. The additive, inactive provider runner and
+native installation/upgrade implementation are described in [provider-boundary.md](provider-boundary.md).
+That slice adds executable provider operations behind installed-identity gates; it does not install,
+activate or qualify the global release train.
+
 The release journal is implemented in `operations/release/` and the allocated migration
 `supabase/migrations/20260911151748_private_global_release_journal.sql`. The machine-readable
 policy is `operations/release/policy.json`. This document describes the current implementation

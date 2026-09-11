@@ -55,6 +55,7 @@ import {
 } from '../utils/wheelFairness';
 import { compactChips } from '../utils/format';
 import TodayLine from '../components/games/TodayLine';
+import { autoRunVerdict, cycleRunSize, type AutoRun } from '../utils/autoRun';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { reportError } from '../utils/errorReporter';
 import { triggerHaptic } from '../services/HapticService';
@@ -110,6 +111,18 @@ const SHORT_OF_DIAMONDS = 'Not Enough Diamonds For A Spin';
 /** Where a player buys diamonds. The same door the wallet's plate opens. */
 const BUY_DIAMONDS = '/marketplace?tab=diamonds';
 
+/**
+ * AUTO SPIN (2026-09-11). Plinko has had Auto Drop and Crash Auto Play since
+ * 2026-09-10; the wheel, which is the slowest of the three to press by hand,
+ * had neither. Same plate, same runner, same one decision: press Spin when the
+ * page would let a thumb press it, and stop the moment the page would stop one.
+ *
+ * The pause is longer than Plinko's 700ms and shorter than Crash's 1500ms. The
+ * wheel's own landing already takes five seconds, and the prize sits under the
+ * pointer at the end of it; this is the beat to read it, not to wait through.
+ */
+const AUTO_PAUSE_MS = 1200;
+
 export default function DiamondWheelPage() {
   const { clubId: routeClubId } = useParams();
   const navigate = useNavigate();
@@ -132,6 +145,10 @@ export default function DiamondWheelPage() {
   const [commit, setCommit] = useState<{ id: string; hash: string } | null>(null);
   const [clientSeed, setClientSeed] = useState<string>(() => randomClientSeed());
   const [spinning, setSpinning] = useState(false);
+  const [autoSize, setAutoSize] = useState<number>(0);
+  const [autoRun, setAutoRun] = useState<AutoRun | null>(null);
+  const autoRunRef = useRef<AutoRun | null>(null);
+  autoRunRef.current = autoRun;
   const [pending, setPending] = useState<WheelSpinResult | null>(null);
   const [lastResult, setLastResult] = useState<WheelSpinResult | null>(null);
   const [spinKey, setSpinKey] = useState(0);
@@ -260,6 +277,33 @@ export default function DiamondWheelPage() {
   // The pause between paid spins is the paid wheel's; a spin on the house does not wait for it.
   /** The only blocker a player can do something about, so the plate becomes the door. */
   const shortOfDiamonds = blocker === SHORT_OF_DIAMONDS;
+  const running = autoRun !== null;
+
+  /* A WELCOME SPIN IS NEVER AUTO-PLAYED. It is once per member, ever, and it
+     costs nothing, so there is no run to make of it: the size cannot be set and
+     a run cannot be started while the wheel is on the house. */
+  const cycleAuto = useCallback(() => {
+    if (running || spinning || welcomeMode) return;
+    setAutoSize(cycleRunSize);
+    triggerHaptic('light');
+  }, [running, spinning, welcomeMode]);
+
+  const endAuto = useCallback(
+    (why: string | null) => {
+      if (!autoRunRef.current) return;
+      setAutoRun(null);
+      if (why) toast.info(why);
+    },
+    [toast]
+  );
+
+  const startAuto = useCallback(() => {
+    if (!autoSize || running || spinning || welcomeMode) return;
+    triggerHaptic('medium');
+    setAutoRun({ total: autoSize, done: 0 });
+  }, [autoSize, running, spinning, welcomeMode]);
+
+  const stopAuto = useCallback(() => endAuto('Auto Spin Stopped'), [endAuto]);
   const canSpin = Boolean(
     clubUuid && commit && !spinning && !blocker && (welcomeMode || waitSeconds <= 0)
   );
@@ -278,6 +322,7 @@ export default function DiamondWheelPage() {
       if (!live()) return;
       if (!result.ok) {
         toast.error(result.error || 'The Spin Was Refused');
+        endAuto(autoRunRef.current ? 'Auto Spin Stopped' : null);
         if (welcomeMode) {
           /* The server said why (used, the pot is spent, the switch is off);
              the welcome state carries the same reason, so read it again and let
@@ -297,12 +342,24 @@ export default function DiamondWheelPage() {
       setSpinning(true);
     } catch (err) {
       reportError(err, 'DiamondWheelPage.spin');
+      endAuto(autoRunRef.current ? 'Auto Spin Stopped' : null);
       if (live()) toast.error('The Spin Did Not Go Through. Nothing Was Charged');
       await freshCommit();
     } finally {
       busyRef.current = false;
     }
-  }, [clubUuid, commit, spinning, clientSeed, live, toast, freshCommit, welcomeMode, loadWelcome]);
+  }, [
+    clubUuid,
+    commit,
+    spinning,
+    clientSeed,
+    live,
+    toast,
+    freshCommit,
+    welcomeMode,
+    loadWelcome,
+    endAuto,
+  ]);
 
   const handleLanded = useCallback(() => {
     if (!pending) return;
@@ -321,6 +378,7 @@ export default function DiamondWheelPage() {
       toast.success(outcomeHeadline(result));
     }
     setClientSeed(randomClientSeed());
+    setAutoRun((r) => (r ? { ...r, done: r.done + 1 } : r));
     if (result.welcome) setWelcomeMode(false); // the welcome spin is spent: the paid wheel returns
     if (clubUuid) {
       void loadState(clubUuid).catch((err) => reportError(err, 'DiamondWheelPage.reload'));
@@ -330,6 +388,32 @@ export default function DiamondWheelPage() {
     }
     void freshCommit();
   }, [pending, toast, clubUuid, loadState, loadWelcome, loadHistory, freshCommit, refreshFloor]);
+
+  /* The runner. It presses Spin when the page would let a thumb press it: a
+     fresh commit in hand, the pause between spins served, nothing blocking. It
+     never decides an outcome and never presses while the wheel is turning, and
+     it stops the moment the page would refuse a thumb (CLAUDE.md 10.12: the
+     guard is the page's own blocker, not a watch built around it). */
+  useEffect(() => {
+    const verdict = autoRunVerdict(
+      autoRun,
+      { busy: spinning || pending !== null, blocker, ready: canSpin },
+      AUTO_PAUSE_MS
+    );
+    if (verdict.kind === 'wait') return;
+    if (verdict.kind === 'finished') {
+      setAutoRun(null);
+      toast.success(`Auto Spin Finished: ${autoRun?.total ?? 0} Spins`);
+      return;
+    }
+    if (verdict.kind === 'blocked') {
+      setAutoRun(null);
+      toast.info(`Auto Spin Stopped: ${verdict.why}`);
+      return;
+    }
+    const t = setTimeout(() => void handleSpin(), verdict.delayMs);
+    return () => clearTimeout(t);
+  }, [autoRun, spinning, pending, blocker, canSpin, handleSpin, toast]);
 
   const handleVerify = useCallback(
     async (result: WheelSpinResult) => {
@@ -377,13 +461,22 @@ export default function DiamondWheelPage() {
   }
 
   const landingOrd = pending?.outcome.ord ?? null;
-  const spinLabel = spinning
-    ? 'Spinning'
-    : welcomeMode
-      ? 'Welcome Spin'
-      : waitSeconds > 0
-        ? `Ready In ${waitSeconds}s`
-        : `Spin ${price.toLocaleString()}`;
+  const spinLabel = autoRun
+    ? `Spin ${Math.min(autoRun.done + 1, autoRun.total)} Of ${autoRun.total}`
+    : spinning
+      ? 'Spinning'
+      : welcomeMode
+        ? 'Welcome Spin'
+        : waitSeconds > 0
+          ? `Ready In ${waitSeconds}s`
+          : autoSize
+            ? `Auto Spin ${autoSize}`
+            : `Spin ${price.toLocaleString()}`;
+  /* The run plate, the same one Plinko and Crash carry. The Odds plate it
+     replaces was a scroll shortcut to a console that sits immediately below
+     this one, and the wheel is the only one of the three that had it; the run
+     is the control the other two put here and the wheel had nowhere. */
+  const autoLabel = running ? 'Stop' : autoSize ? `Run ${autoSize}` : 'Run Off';
   const pill = state.frozen
     ? 'Break'
     : state.available
@@ -456,19 +549,35 @@ export default function DiamondWheelPage() {
             ink: 'muted',
           },
         ]}
-        secondary={{
-          label: 'Odds',
-          onClick: () => oddsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
-        }}
+        secondary={
+          running
+            ? { label: autoLabel, ink: 'red', onClick: stopAuto }
+            : welcomeMode
+              ? {
+                  label: 'Odds',
+                  onClick: () =>
+                    oddsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
+                }
+              : {
+                  label: autoLabel,
+                  ink: autoSize ? 'gold' : 'silver',
+                  onClick: cycleAuto,
+                  disabled: spinning,
+                }
+        }
         primary={
           shortOfDiamonds
             ? { label: 'Get Diamonds', ink: 'gold', onClick: () => navigate(BUY_DIAMONDS) }
-            : {
-                label: spinLabel,
-                ink: welcomeMode ? 'gold' : 'white',
-                onClick: handleSpin,
-                disabled: !canSpin,
-              }
+            : running
+              ? { label: spinLabel, ink: 'gold', disabled: true }
+              : autoSize && !welcomeMode
+                ? { label: spinLabel, ink: 'gold', onClick: startAuto, disabled: !canSpin }
+                : {
+                    label: spinLabel,
+                    ink: welcomeMode ? 'gold' : 'white',
+                    onClick: handleSpin,
+                    disabled: !canSpin,
+                  }
         }
       >
         <TodayLine

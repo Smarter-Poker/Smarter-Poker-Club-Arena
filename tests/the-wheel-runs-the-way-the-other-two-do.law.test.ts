@@ -1,0 +1,139 @@
+/**
+ * THE WHEEL RUNS THE WAY THE OTHER TWO DO (2026-09-11, BINDING)
+ *
+ * Phase 5 of 6. Plinko has had Auto Drop and Crash Auto Play since 2026-09-10.
+ * The wheel, which is the slowest of the three to press by hand because its
+ * landing takes five seconds, had neither.
+ *
+ * The danger in adding one is that it becomes a SECOND runner: a loop with its
+ * own idea of when to press, its own idea of when to stop, and its own bugs.
+ * There is one runner in this codebase, `autoRunVerdict`, and it makes exactly
+ * one decision - wait, press, finish, or stop because the page would refuse a
+ * thumb. This law holds the wheel to it.
+ *
+ * And two rules that are the wheel's alone:
+ *
+ *   A WELCOME SPIN IS NEVER AUTO-PLAYED. It is once per member, ever, and it
+ *   costs nothing. There is no run to make of it, so the size cannot be set and
+ *   a run cannot be started while the wheel is on the house.
+ *
+ *   THE RUN NEVER PRESSES WHILE THE WHEEL IS TURNING. Plinko and Crash finish a
+ *   round at the server; the wheel's result is decided at the server and then
+ *   SPUN for five seconds before the player sees it. `busy` therefore covers
+ *   the animation as well as the request, and the spin is counted when it
+ *   lands, not when it is asked for.
+ */
+import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'fs';
+import { resolve } from 'path';
+
+const ROOT = resolve(__dirname, '..');
+const src = (p: string) => readFileSync(resolve(ROOT, p), 'utf8');
+
+const WHEEL = src('src/pages/DiamondWheelPage.tsx');
+const PLINKO = src('src/pages/DiamondPlinkoPage.tsx');
+const CRASH = src('src/pages/DiamondCrashPage.tsx');
+const RUNNER = src('src/utils/autoRun.ts');
+
+describe('there is one runner, and all three games use it', () => {
+  it.each([
+    ['wheel', WHEEL],
+    ['plinko', PLINKO],
+    ['crash', CRASH],
+  ])('%s asks autoRunVerdict rather than deciding for itself', (_n, page) => {
+    expect(page).toContain("from '../utils/autoRun'");
+    expect(page).toContain('autoRunVerdict(');
+    expect(page).toContain('cycleRunSize');
+  });
+
+  it('the wheel handles all four verdicts, and no fifth thing', () => {
+    const effect = WHEEL.slice(WHEEL.indexOf('const verdict = autoRunVerdict('));
+    const block = effect.slice(0, effect.indexOf('const handleVerify'));
+    for (const k of ["'wait'", "'finished'", "'blocked'"]) expect(block).toContain(k);
+    expect(block).toContain('setTimeout(() => void handleSpin(), verdict.delayMs)');
+    // The runner presses the same function a thumb presses. A private spin path
+    // would be a second implementation of the one thing that moves money.
+    expect(block).not.toContain('DiamondWheelService.spin(');
+    expect(block).not.toContain('DiamondWheelService.welcomeSpin(');
+  });
+
+  it('and the runner still decides nothing about the outcome', () => {
+    // Its own comment says so; this asserts the CODE does, with the prose
+    // stripped out so the words in the doc block cannot satisfy the test.
+    const code = RUNNER.replace(/\/\*[\s\S]*?\*\//g, '')
+      .split('\n')
+      .filter((l) => !l.trim().startsWith('//') && !l.trim().startsWith('*'))
+      .join('\n');
+    expect(code).not.toMatch(/outcome|prize|segment|payout/i);
+  });
+});
+
+describe('the run stops wherever a thumb would be stopped', () => {
+  it('on any blocker the page would print', () => {
+    expect(WHEEL).toContain('{ busy: spinning || pending !== null, blocker, ready: canSpin }');
+  });
+
+  it('on a refusal from the server', () => {
+    const spin = WHEEL.slice(
+      WHEEL.indexOf('const handleSpin'),
+      WHEEL.indexOf('const handleLanded')
+    );
+    expect(spin).toContain("endAuto(autoRunRef.current ? 'Auto Spin Stopped' : null)");
+    // Once in the refusal branch and once in the catch: a request that never
+    // answered must not leave a run pressing into the dark.
+    expect(spin.match(/endAuto\(autoRunRef\.current/g)?.length).toBe(2);
+  });
+
+  it('and the stop plate is the run plate, in red, while it runs', () => {
+    expect(WHEEL).toContain(
+      "const autoLabel = running ? 'Stop' : autoSize ? `Run ${autoSize}` : 'Run Off';"
+    );
+    expect(WHEEL).toContain("{ label: autoLabel, ink: 'red', onClick: stopAuto }");
+  });
+});
+
+describe('a welcome spin is never auto-played', () => {
+  it('the size cannot be cycled while the wheel is on the house', () => {
+    const cycle = WHEEL.slice(WHEEL.indexOf('const cycleAuto'), WHEEL.indexOf('const endAuto'));
+    expect(cycle).toContain('if (running || spinning || welcomeMode) return;');
+  });
+
+  it('and a run cannot be started', () => {
+    const start = WHEEL.slice(WHEEL.indexOf('const startAuto'), WHEEL.indexOf('const stopAuto'));
+    expect(start).toContain('if (!autoSize || running || spinning || welcomeMode) return;');
+  });
+
+  it('the primary plate stays the single welcome spin, never an auto run', () => {
+    expect(WHEEL).toContain('autoSize && !welcomeMode');
+  });
+
+  it('and the Odds plate is what the welcome spin keeps in the run plate seat', () => {
+    // Nothing is lost on the one screen where a run is meaningless.
+    const sec = WHEEL.slice(
+      WHEEL.indexOf('        secondary={'),
+      WHEEL.indexOf('        primary={')
+    );
+    expect(sec).toContain('welcomeMode');
+    expect(sec).toContain("label: 'Odds'");
+  });
+});
+
+describe('the wheel turns before the spin is counted', () => {
+  it('busy covers the landing animation, not just the request', () => {
+    expect(WHEEL).toContain('busy: spinning || pending !== null');
+    // Plinko and Crash finish at the server and have no five second landing.
+    expect(PLINKO).toContain('busy: dropping');
+  });
+
+  it('the count moves on landing, where the result finally belongs to the player', () => {
+    const landed = WHEEL.slice(WHEEL.indexOf('const handleLanded'));
+    const block = landed.slice(0, landed.indexOf('const handleVerify'));
+    expect(block).toContain('setAutoRun((r) => (r ? { ...r, done: r.done + 1 } : r));');
+  });
+
+  it('the pause is the wheel own, longer than Plinko and shorter than Crash', () => {
+    expect(WHEEL).toContain('const AUTO_PAUSE_MS = 1200;');
+    expect(PLINKO).toContain('const AUTO_PAUSE_MS = 700;');
+    expect(CRASH).toContain('const AUTO_PAUSE_MS = 1500;');
+  });
+});

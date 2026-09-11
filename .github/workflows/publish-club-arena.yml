@@ -34,48 +34,34 @@
 # runners. Verified identical before deleting - 320 non-comment lines each,
 # zero difference once name, path, group and runs-on were normalised.
 #
-# THIS IS NOW THE ONLY PUBLISHER. There is no second path to production. The
-# nets that catch it when it fails - publish-watchdog.sh's re-dispatch, the
-# */30 catch-up above, and the laws in tests/ - were all still pointing at the
-# deleted file and were repointed here in the same commit. If you ever add a
-# second publisher again, give it the SAME concurrency group as this one or
-# they will not serialise.
+# THIS IS NOW THE ONLY PUBLISHER. There is no second path to production. If you
+# ever add a second publisher again, give it the SAME concurrency group as this
+# one or they will not serialise.
+#
+# NO CRON, NO WATCHDOG RE-DISPATCH (2026-09-11). Dan: "i do not want any watch
+# dogs, i want hard coded fixes ... i want any and all pushes to be published".
+# Every push starts a run and every run publishes the TIP of main, so a push
+# whose run was replaced is carried by the run that replaced it. What the
+# */30 catch-up and publish-watchdog.sh's re-dispatch still covered was a run
+# that FAILED or was CANCELLED with nothing queued behind it. That is now the
+# `hand-on` job at the bottom of this file: the failed run dispatches its own
+# retry (bounded), and publish-watchdog.sh only reports.
 # ─────────────────────────────────────────────────────────────────────────────
 name: Publish Club Arena
 
 on:
   push:
     branches: [main]
+  # A dispatch by hand publishes unconditionally. `handed_on` marks the retry a
+  # run dispatches for itself (the Converge step and the hand-on job): that one
+  # first asks production, and costs one curl when production already serves
+  # the tip.
   workflow_dispatch:
-  schedule:
-    # CATCH-UP, because `push` alone is not a guarantee that main publishes.
-    #
-    # The concurrency rule below is right and deliberate: when a new push
-    # arrives, GitHub cancels the run that was PENDING in the group, which is
-    # what makes each wave converge on the newest main instead of publishing
-    # nothing.
-    #
-    # It USED to mean that the publish of a given commit could be cancelled
-    # and then never re-attempted, because only another push started this
-    # workflow. As of 2026-09-02 that is no longer true by construction: every
-    # run resolves and publishes the TIP of main (see "NO COMMIT LEFT BEHIND"
-    # in publish-needed), so a cancelled run carries nothing that the surviving
-    # run does not also carry.
-    #
-    # This catch-up still earns its place for the case the tip-resolution
-    # cannot cover: no run at all. If every run in a wave fails, or the pushes
-    # stop at the moment of a failure, nothing is queued to converge anything.
-    # publish-watchdog.yml also notices and re-dispatches (up to three times,
-    # not counting cancellations). Three overlapping nets, each catching a
-    # different hole.
-    #
-    # `publish-needed` below keeps an up-to-date cycle down to one curl.
-    #
-    # 2026-09-01 (cost audit): */20 -> */30. The catch-up only matters when
-    # pushes STOP right after a cancellation, and publish-watchdog re-dispatches
-    # within its own cycle anyway. 24 fewer runs a day, each of which was
-    # usually just the dedupe curl plus a billed minute.
-    - cron: '*/30 * * * *'
+    inputs:
+      handed_on:
+        description: 'Dispatched by a publish run handing itself on (dedupes against production)'
+        type: boolean
+        default: false
 
 # 2026-08-21: was cancel-in-progress: true, which deadlocked publishing.
 # This build takes about 4 minutes. With several agents pushing to main every
@@ -128,10 +114,10 @@ jobs:
   # build-and-store would have let the whole test suite run anyway on a cycle
   # that had nothing to publish, which is most of the cost it is meant to save.
   #
-  # Only the SCHEDULE is deduped. A push is by definition new work, and a human
-  # dispatching this by hand is usually forcing a republish of something that
-  # looks stuck - deduping either would be the publish bug this exists to
-  # prevent.
+  # Only a HANDED-ON retry is deduped (it was the */30 schedule until
+  # 2026-09-11). A push is by definition new work, and a human dispatching this
+  # by hand is usually forcing a republish of something that looks stuck -
+  # deduping either would be the publish bug this exists to prevent.
   publish-needed:
     runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     permissions:
@@ -189,7 +175,7 @@ jobs:
 
       - name: Compare production against the tip of main
         id: dedupe
-        if: github.event_name == 'schedule'
+        if: github.event_name == 'workflow_dispatch' && inputs.handed_on
         run: |
           LIVE=$(curl -fsS --max-time 20 \
             https://smarter.poker/hub/club-arena/build-info.json 2>/dev/null \
@@ -273,9 +259,9 @@ jobs:
       - name: Has this exact tree already passed the client suite?
         id: proven
         # SKIPPED WHEN THERE IS NOTHING TO PUBLISH (2026-09-08). This step made
-        # four gh api calls unconditionally, including on every */30 catch-up
-        # tick that the dedupe step above had already decided to skip - about
-        # 48 times a day answering a question nobody was going to ask.
+        # four gh api calls unconditionally, including on every catch-up cycle
+        # that the dedupe step above had already decided to skip, answering a
+        # question nobody was going to ask.
         if: steps.dedupe.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
@@ -880,7 +866,11 @@ jobs:
           TIP=$(gh api "repos/${{ github.repository }}/commits/main" --jq .sha 2>/dev/null || echo "")
 
           if [ -z "$TIP" ]; then
-            echo "::warning::Could not read the tip of main to check for convergence. The catch-up cron and publish-watchdog still cover this."
+            # No cron is coming to check later (2026-09-11). A handed-on run
+            # asks production first, so when in doubt, chain one.
+            echo "::warning::Could not read the tip of main to check for convergence - chaining a handed-on publish, which dedupes against production."
+            gh workflow run "publish-club-arena.yml" --repo "${{ github.repository }}" --ref main -f handed_on=true \
+              || echo "::error title=PUBLISH TRAIN STOPPED::could not chain the next publish; nothing else will start one until the next push."
             exit 0
           fi
 
@@ -895,8 +885,71 @@ jobs:
           echo "::notice::main is ${AHEAD} commit(s) past ${PUBLISHED:0:7} - chaining the next publish now rather than waiting for the catch-up."
           echo "- main moved ${AHEAD} commit(s) to \`${TIP:0:7}\` during this build; chained the next publish" >> $GITHUB_STEP_SUMMARY
 
-          if gh workflow run "publish-club-arena.yml" --repo "${{ github.repository }}" --ref main; then
+          if gh workflow run "publish-club-arena.yml" --repo "${{ github.repository }}" --ref main -f handed_on=true; then
             echo "chained publish dispatched for ${TIP:0:7}"
           else
-            echo "::warning::Chain dispatch failed. The */30 catch-up and publish-watchdog remain."
+            echo "::error title=PUBLISH TRAIN STOPPED::chain dispatch failed; ${TIP:0:7} waits for the next push."
+          fi
+
+  # ═════════════════════════════════════════════════════════════════════════
+  # A PUBLISH THAT COULD NOT FINISH HANDS ITSELF ON (2026-09-11)
+  #
+  # This is what the */30 catch-up cron and publish-watchdog.sh's re-dispatch
+  # were for: a run that FAILED - a flaky shard, a 5xx from the origin, a runner
+  # that dropped - or was CANCELLED, with no newer push queued behind it to
+  # converge the tip. Nothing else was coming for those commits.
+  #
+  # Now the run itself dispatches a handed-on retry, which resolves the tip of
+  # main again and costs one curl if production already serves it. Bounded:
+  # after RETRY_LIMIT failed runs in a row (cancellations and skips are not
+  # evidence of a fault) it stops and says so, because a publish that fails
+  # the same way repeatedly is broken, not unlucky - the fix's own push starts
+  # the next run. On a GitHub-hosted runner on purpose: it must still run when
+  # the self-hosted CI runner is the thing that failed.
+  # ═════════════════════════════════════════════════════════════════════════
+  hand-on:
+    name: Hand the publish on if this run could not finish
+    needs: [publish-needed, build-and-store, client-tests, publish-to-origin]
+    if: >-
+      always() &&
+      (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled'))
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - name: Retry, up to the limit, or stop and say so
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RETRY_LIMIT: '3'
+        run: |
+          set -uo pipefail
+          # Failed runs in a row, newest first, excluding this one (still
+          # running) and anything cancelled or skipped - those say nothing
+          # about whether the build is broken.
+          if ! CONCLUSIONS=$(gh run list --repo "${{ github.repository }}" \
+                 --workflow publish-club-arena.yml --limit 30 \
+                 --json databaseId,status,conclusion \
+                 --jq '.[] | select(.databaseId != ${{ github.run_id }})
+                           | select(.status == "completed")
+                           | select(.conclusion != "cancelled" and .conclusion != "skipped")
+                           | .conclusion'); then
+            # Fail closed: a streak nobody can count is how a broken build
+            # would retry itself forever.
+            echo "::error title=PUBLISH TRAIN STOPPED::could not count earlier failed publishes, so this run will not retry itself. Dispatch publish-club-arena.yml once the failure above is understood."
+            exit 0
+          fi
+          STREAK=$(printf '%s\n' "$CONCLUSIONS" | awk '
+            $0 == "failure" || $0 == "timed_out" || $0 == "startup_failure" { n++; next }
+            NF { exit }
+            END { print n + 0 }')
+          if [ "$STREAK" -ge "$RETRY_LIMIT" ]; then
+            echo "::error title=PUBLISH GAVE UP::$STREAK publish runs in a row failed before this one. It is broken, not unlucky: the next push starts the next run."
+            exit 0
+          fi
+          if gh workflow run publish-club-arena.yml --repo "${{ github.repository }}" --ref main -f handed_on=true; then
+            echo "Handed on: a retry of the tip of main is queued ($STREAK earlier failure(s) in a row, limit $RETRY_LIMIT)."
+            echo "Handed on: a retry of the tip of main is queued." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::error title=PUBLISH TRAIN STOPPED::could not dispatch the retry; nothing else will start one until the next push."
           fi

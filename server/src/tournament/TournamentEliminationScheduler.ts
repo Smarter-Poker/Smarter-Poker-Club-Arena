@@ -289,8 +289,17 @@ export class TournamentEliminationScheduler {
     }
     if (entry.queuedAs) {
       if (entry.queuedAs === 'routine' && kind === 'urgent') {
-        // Upgrade in place. The old routine-array reference becomes a harmless
-        // stale item; logical queue depth remains one.
+        // Upgrade in place, and take the routine reference out with it
+        // (2026-09-11). It was left behind as "a harmless stale item", but
+        // shiftValid accepts any reference whose entry is queued as its kind:
+        // once the upgraded sweep ran and a rerun or routine wake queued the
+        // entry as routine again, that old reference was valid once more and
+        // dispatched the entry from its old place near the head instead of
+        // the tail - a hot tournament jumping the peers already waiting, the
+        // exact thing finish()'s tail insertion exists to prevent. One
+        // reference per queued entry.
+        const stale = this.routineQueue.indexOf(entry);
+        if (stale >= 0) this.routineQueue.splice(stale, 1);
         entry.queuedAs = 'urgent';
         this.urgentQueue.push(entry);
       }
@@ -342,9 +351,22 @@ export class TournamentEliminationScheduler {
         // let Map registration order or an eager pump invert them: enqueue the
         // whole due batch by deadline and stable scheduling order, then pump
         // once. Queue-kind priority is applied later by next().
-        due
-          .sort((a, b) => a.dueAt - b.dueAt || a.order - b.order)
-          .forEach(({ entry, kind }) => this.enqueue(entry, kind, false));
+        //
+        // The batch counts as a pump pass (2026-09-11). enqueue() asks each
+        // entry isActive(), and a manager whose lease proof has lapsed answers
+        // by unregistering, whose closure pumps. Outside a pass that pump ran
+        // right there, mid-batch, and dispatched whatever was queued so far: a
+        // routine sweep took the last slot before an urgent bust sweep later
+        // in the same batch had even been enqueued. Such a pump is now folded
+        // into the one below, exactly as it is inside pump() itself.
+        this.pumping = true;
+        try {
+          due
+            .sort((a, b) => a.dueAt - b.dueAt || a.order - b.order)
+            .forEach(({ entry, kind }) => this.enqueue(entry, kind, false));
+        } finally {
+          this.pumping = false;
+        }
         this.pump();
         this.armWakeTimer();
         this.refreshMetrics();

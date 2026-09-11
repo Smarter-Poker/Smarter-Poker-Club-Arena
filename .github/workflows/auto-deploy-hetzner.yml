@@ -1,4 +1,11 @@
 name: Auto-Deploy Hetzner Engine (on server/ changes)
+# A rollback is named for what it is, so the train can find one the queue
+# dropped (the control step, below). Every other run keeps GitHub's own title:
+# a run-name that is empty falls back to it.
+run-name: >-
+  ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.rollback == 'true'
+  && format('ROLLBACK {0} {1}', github.event.inputs.ref_sha, github.event.inputs.rollback_reason)
+  || '' }}
 
 # The ONLY path that may start the production engine container.
 #
@@ -97,17 +104,27 @@ on:
   #   3. a run whose break gate could not serve it (no certificate, or it built
   #      too late for its break) dispatches its successor from its Verdict step;
   #      the successor waits for the next break.
-  # A run that FAILED - tests, build, or a cutover that rolled back - does not
-  # hand on. Retrying a broken commit every hour would restart production into
-  # it every hour; the next push, the fix, starts the next run.
+  # A run whose CUTOVER ran and failed - it rolled production back - does not
+  # hand on: retrying it would restart production into the same broken build
+  # every hour. A run that ended BEFORE its cutover (tests, build, a refused
+  # certificate check, a cancel) retries within the chain's bound - see the
+  # Verdict - and the next push, the fix, starts a fresh chain.
   push:
     branches: [main]
     # The engine's runtime paths - the same set engine-watchdog.sh measures
     # "behind" against. A test or a sim change never enters the image.
+    #
+    # And the deploy's own control plane (2026-09-11). A fix to this file or
+    # to scripts/ci used to start nothing, so a commit whose cutover failed on
+    # a control-plane defect waited for an unrelated engine push. A run that
+    # carries no engine change ends at the dedupe ("the same engine tree is
+    # live") in about a minute and restarts nothing.
     paths:
       - 'server/**'
       - '!server/**/*.test.ts'
       - '!server/sim/**'
+      - '.github/workflows/auto-deploy-hetzner.yml'
+      - 'scripts/ci/**'
 
   # A dispatch - by hand, or by a run handing the train on - is subject to the
   # same break gate and maintenance certificate as a push.
@@ -125,6 +142,10 @@ on:
         default: false
       rollback_reason:
         description: 'Required incident reason when rollback is true'
+        required: false
+        type: string
+      retries:
+        description: 'Set by the train itself - how many runs in a row ended before their cutover. Leave empty.'
         required: false
         type: string
 
@@ -312,7 +333,18 @@ jobs:
             # shellcheck disable=SC2086 # CONTROL_PLANE is a list of paths
             if git diff --quiet "$CONTROL_SHA" "$REMOTE_MAIN" -- $CONTROL_PLANE; then
               echo "superseded=false" >> "$GITHUB_OUTPUT"
-              echo "::notice title=MAIN MOVED, CONTROL PLANE DID NOT::main is at ${REMOTE_MAIN:0:8}, past this run's ${CONTROL_SHA:0:8}, but no deploy control file changed between them. This run ships ${CONTROL_SHA:0:8}; any newer engine push has its own run queued behind this one."
+              echo "::notice title=MAIN MOVED, CONTROL PLANE DID NOT::main is at ${REMOTE_MAIN:0:8}, past this run's ${CONTROL_SHA:0:8}, but no deploy control file changed between them. This run ships ${CONTROL_SHA:0:8}."
+              # "Any newer engine push has its own run queued behind this one"
+              # was an assumption, not a check (review, 2026-09-11): the group
+              # keeps one pending run and a later-created run replaces it, older
+              # SHA or not. When main is ahead in the ENGINE paths, the Verdict
+              # hands on after this run ships, so a newer engine commit is never
+              # left without a run. A dispatch only ever replaces the pending
+              # run with an equal-or-newer main, so an extra one is harmless.
+              if ! git diff --quiet "$CONTROL_SHA" "$REMOTE_MAIN" -- server \
+                     ':(exclude)server/**/*.test.ts' ':(exclude)server/sim'; then
+                echo "main_ahead=true" >> "$GITHUB_OUTPUT"
+              fi
             else
               echo "superseded=true" >> "$GITHUB_OUTPUT"
               if gh workflow run auto-deploy-hetzner.yml --repo "$GITHUB_REPOSITORY" --ref main; then
@@ -325,6 +357,48 @@ jobs:
           else
             echo "::error::this deployment workflow was not dispatched from current main; refusing rollbackable control-plane code"
             exit 1
+          fi
+          # A ROLLBACK IS NEVER LOST IN THE QUEUE (review, 2026-09-11). The
+          # deploy-hetzner group keeps ONE pending run and GitHub cancels it
+          # whenever a newer run is queued, so a rollback dispatched while a
+          # deploy held the group was replaced by the next engine push: it ran
+          # no step, and nothing said so. A rollback is named
+          # "ROLLBACK <sha> <reason>" (run-name, above). A forward run that finds
+          # the newest such run cancelled before it started - within three hours,
+          # and at the moment a newer run was queued, which is what a queue
+          # replacement looks like and a person's cancel does not - dispatches
+          # it again and stands down, so the rollback goes first.
+          if [ "${{ github.event.inputs.rollback || 'false' }}" != "true" ]; then
+            LOST=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow auto-deploy-hetzner.yml \
+                     --limit 50 --json databaseId,displayTitle,status,conclusion,createdAt,updatedAt \
+                     --jq '. as $all
+                           | ([.[] | select(.displayTitle | startswith("ROLLBACK "))] | sort_by(.createdAt) | last) as $r
+                           | if $r == null then empty
+                             elif $r.status != "completed" or $r.conclusion != "cancelled" then empty
+                             elif (now - ($r.createdAt | fromdateiso8601)) > 10800 then empty
+                             elif ([$all[] | select(.databaseId != $r.databaseId)
+                                    | select((.createdAt | fromdateiso8601) >= (($r.updatedAt | fromdateiso8601) - 20)
+                                             and (.createdAt | fromdateiso8601) <= (($r.updatedAt | fromdateiso8601) + 5))]
+                                   | length) == 0 then empty
+                             else "\($r.databaseId) \($r.displayTitle)" end' 2>/dev/null || echo "")
+            if [ -n "$LOST" ]; then
+              LOST_ID="${LOST%% *}"
+              LOST_TITLE="${LOST#* }"
+              STARTED=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$LOST_ID/jobs" \
+                          --jq '[.jobs[] | select((.steps // []) | length > 0)] | length' 2>/dev/null || echo "unknown")
+              if [ "$STARTED" = "0" ]; then
+                read -r _ LOST_SHA LOST_REASON <<< "$LOST_TITLE"
+                if [[ "$LOST_SHA" =~ ^[0-9a-f]{7,40}$ ]] && [ -n "$LOST_REASON" ] \
+                   && gh workflow run auto-deploy-hetzner.yml --repo "$GITHUB_REPOSITORY" --ref main \
+                        -f ref_sha="$LOST_SHA" -f rollback=true -f rollback_reason="$LOST_REASON"; then
+                  echo "superseded=true" >> "$GITHUB_OUTPUT"
+                  echo "::warning title=ROLLBACK RESTORED::run $LOST_ID - a rollback to ${LOST_SHA:0:8} - was replaced in the queue before it started. It has been dispatched again and this run stands down so the rollback goes first; forward deploys resume with the next push."
+                  exit 0
+                fi
+                echo "::error title=ROLLBACK LOST::run $LOST_ID - a rollback to ${LOST_SHA:-?} - was replaced in the queue before it started, and could not be dispatched again. This run stops rather than deploy forward over it. Dispatch the rollback again by hand."
+                exit 1
+              fi
+            fi
           fi
           CONTROL_DIR="$GITHUB_WORKSPACE/.engine-release-control"
           install -d -m 0700 "$CONTROL_DIR"
@@ -384,6 +458,8 @@ jobs:
       # Nothing bypasses readyForRestart: not a push, not a dispatch.
       - name: Skip if production already serves this commit
         id: dedupe
+        env:
+          ROLLBACK_REQUESTED: ${{ github.event.inputs.rollback || 'false' }}
         run: |
           if [ "${{ steps.control.outputs.superseded }}" = "true" ]; then
             echo "skip=true" >> $GITHUB_OUTPUT
@@ -406,11 +482,34 @@ jobs:
           # run that already shipped a newer one; deploying it would be a step
           # backwards, which the forward-only release seal would refuse - red,
           # for a commit that is in fact on production.
-          if [ -n "$VER" ] && git cat-file -e "${VER}^{commit}" 2>/dev/null \
+          #
+          # A ROLLBACK IS EXEMPT (review, 2026-09-11). A rollback target is by
+          # definition contained in the build it rolls back from, so this
+          # branch called every audited rollback "already live", skipped the
+          # seal - the only place MODE=rollback exists - and went green in a
+          # minute with production still on the bad build.
+          if [ "$ROLLBACK_REQUESTED" != "true" ] && [ -n "$VER" ] \
+             && git cat-file -e "${VER}^{commit}" 2>/dev/null \
              && git merge-base --is-ancestor "$SHA" "$VER" 2>/dev/null; then
             echo "skip=true" >> $GITHUB_OUTPUT
             echo "reason=already_live" >> $GITHUB_OUTPUT
             echo "Production serves $VER, which already contains $SHORT — nothing to deploy."
+            exit 0
+          fi
+          # THE SAME ENGINE IS LIVE (2026-09-11). The control plane now starts a
+          # run of its own (see `on.push.paths`), and such a run usually carries
+          # nothing for the engine. The image is built from `$SHA:server` alone
+          # (server/scripts/build-engine-image.sh labels it with that exact tree),
+          # so when production's build has the same server tree, the image would
+          # be byte-for-byte the one already running: nothing to deploy, and no
+          # reason to restart anything. Never for a rollback.
+          SHA_TREE=$(git rev-parse --verify -q "${SHA}:server" 2>/dev/null || echo "")
+          if [ "$ROLLBACK_REQUESTED" != "true" ] && [ -n "$VER" ] && [ -n "$SHA_TREE" ] \
+             && git cat-file -e "${VER}^{commit}" 2>/dev/null \
+             && [ "$(git rev-parse --verify -q "${VER}:server" 2>/dev/null)" = "$SHA_TREE" ]; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "reason=already_live" >> $GITHUB_OUTPUT
+            echo "Production serves $VER, whose engine tree is identical to $SHORT's — nothing to deploy."
             exit 0
           fi
           # ── NO RESTART SPACING ANY MORE: THE BREAK IS THE SPACING (2026-09-10) ──
@@ -462,6 +561,11 @@ jobs:
 
       - name: Server tests must pass before anything is deployed
         if: steps.dedupe.outputs.skip != 'true'
+        # A hang must end as a counted step FAILURE, not as the 130-minute job
+        # timeout, which GitHub reports as a cancel (review, 2026-09-11). Only
+        # steps that touch nothing live get one; the cutover and everything
+        # after it must never be killed half-way.
+        timeout-minutes: 30
         working-directory: server
         run: |
           npm ci
@@ -583,14 +687,18 @@ jobs:
           test -s ~/.ssh/known_hosts \
             || { echo "::error::HETZNER_HOST_KEY secret is empty or unset — every ssh below would fail, including the safety net"; exit 1; }
           # One reusable alias. BatchMode so a prompt can never hang the job
-          # while it holds the deploy-hetzner concurrency lock.
-          printf '#!/bin/bash\nexec ssh -i ~/.ssh/id_deploy -o BatchMode=yes -o ConnectTimeout=20 "%s@%s" "$@"\n' \
+          # while it holds the deploy-hetzner concurrency lock. ServerAlive*
+          # (2026-09-11): a connection that died mid-command used to hang
+          # until the 130-minute job timeout, which GitHub reports as a CANCEL;
+          # now it fails its step in about a minute, and a failure is counted.
+          printf '#!/bin/bash\nexec ssh -i ~/.ssh/id_deploy -o BatchMode=yes -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=4 "%s@%s" "$@"\n' \
             "$SSH_USER" "$HETZNER_HOST" > ~/hssh
           chmod +x ~/hssh
 
       - name: Capture pre-deploy host state
         id: pre
         if: steps.dedupe.outputs.skip != 'true'
+        timeout-minutes: 10
         run: |
           # No 2>&1 here: it folded ssh/git stderr into the value, which then
           # went into $GITHUB_OUTPUT (multi-line values break the file-command
@@ -619,6 +727,7 @@ jobs:
 
       - name: Pre-flight checks
         if: steps.dedupe.outputs.skip != 'true'
+        timeout-minutes: 10
         run: |
           # An empty .env yields a container that boots and then fails every
           # query — worse than not deploying, because it looks alive.
@@ -643,6 +752,7 @@ jobs:
 
       - name: Pull the exact commit onto the host
         if: steps.dedupe.outputs.skip != 'true'
+        timeout-minutes: 15
         run: |
           # Preserve the control plane from the audited workflow commit before
           # checking out an application rollback target. An intentional rollback
@@ -717,6 +827,7 @@ jobs:
       - name: Build immutable image (or adopt the one already staged)
         id: image
         if: steps.dedupe.outputs.skip != 'true'
+        timeout-minutes: 45
         run: |
           set -euo pipefail
           RESULT_FILE="$(mktemp)"
@@ -1497,8 +1608,16 @@ jobs:
           JOB_STATUS: ${{ job.status }}
           # Empty or 'skipped' means production was never touched by this run.
           CUTOVER_OUTCOME: ${{ steps.cutover.outcome }}
-          # Failed runs allowed per commit before the train stops on it.
+          # Written only once the cutover got past its locked certificate check.
+          CUTOVER_ATTEMPTED: ${{ steps.cutover.outputs.attempted }}
+          # Runs in a row that may end before their cutover (failed or
+          # cancelled) before the train stops. The count rides the chain.
           DEPLOY_RETRY_LIMIT: '2'
+          PRIOR_RETRIES: ${{ github.event.inputs.retries || '0' }}
+          ROLLBACK_REQUESTED: ${{ github.event.inputs.rollback || 'false' }}
+          ROLLBACK_REASON: ${{ github.event.inputs.rollback_reason || '' }}
+          # main moved past this run in the engine paths (control step).
+          MAIN_AHEAD: ${{ steps.control.outputs.main_ahead }}
           SHIPPED: ${{ steps.dedupe.outputs.skip != 'true' && steps.drain.outputs.skip != 'true' && steps.cutover.outcome == 'success' && steps.cutover.outputs.success == 'true' && steps.health.outputs.verified == 'true' && steps.prove.outcome == 'success' && (steps.seal_commit.outcome == 'success' || (steps.rollback.outcome == 'success' && steps.rollback.outputs.target_committed == 'true')) }}
         run: |
           SHORT="${SHA:0:8}"
@@ -1506,8 +1625,23 @@ jobs:
           # behind this run and waits in its own gate for the next :55. Used
           # only where this run's commit still has to ship and nothing else is
           # coming for it (see THE TRAIN HANDS ITSELF ON, below).
+          #
+          # $1 is the chain's count of runs in a row that ended before their
+          # cutover, THIS one included. A run that got past its build passes 0.
+          # A ROLLBACK hands on as the same rollback (review, 2026-09-11): its
+          # successor used to be a plain forward run of main, which silently
+          # dropped the owner's decision.
           hand_on() {
-            if gh workflow run auto-deploy-hetzner.yml --repo "$GITHUB_REPOSITORY" --ref main; then
+            if [ "$ROLLBACK_REQUESTED" = "true" ]; then
+              if gh workflow run auto-deploy-hetzner.yml --repo "$GITHUB_REPOSITORY" --ref main \
+                   -f ref_sha="$SHA" -f rollback=true -f rollback_reason="$ROLLBACK_REASON" \
+                   -f retries="${1:-0}"; then
+                echo "Handed on: re-dispatched the rollback to $SHORT; it waits for the next break."
+                echo "Handed on: the rollback to \`$SHORT\` waits for the next :55." >> "$GITHUB_STEP_SUMMARY"
+                return 0
+              fi
+            elif gh workflow run auto-deploy-hetzner.yml --repo "$GITHUB_REPOSITORY" --ref main \
+                   -f retries="${1:-0}"; then
               echo "Handed on: dispatched the next run on current main; it waits for the next break."
               echo "Handed on: the next run on current main waits for the next :55." >> "$GITHUB_STEP_SUMMARY"
               return 0
@@ -1527,49 +1661,60 @@ jobs:
             # notice. Neither is a guarantee.
             #
             # So a run that ended BEFORE its cutover step ran hands the train on:
-            #   - cancelled: always. A cancel is not a stop. To STOP deploys,
-            #     disable this workflow: a disabled workflow refuses the
-            #     dispatch below, and that refusal is the stop.
-            #   - failed: while fewer than DEPLOY_RETRY_LIMIT earlier runs have
-            #     failed on this same commit. A commit that fails the same way
-            #     three times is broken, not unlucky; the run says so loudly and
-            #     the fix's own push starts the next run.
+            #   - cancelled or failed: while fewer than DEPLOY_RETRY_LIMIT runs IN
+            #     A ROW have ended before their cutover. A cancel is not a stop:
+            #     to STOP deploys, disable this workflow - a disabled workflow
+            #     refuses the dispatch below, and that refusal is the stop.
             # A run whose cutover RAN never hands on, whatever its outcome: a
             # failed cutover rolled production back, and retrying it would
             # restart production into the same broken build every hour.
-            if [ -z "$CUTOVER_OUTCOME" ] || [ "$CUTOVER_OUTCOME" = "skipped" ]; then
-              if [ "$JOB_STATUS" = "cancelled" ]; then
-                echo "Cancelled before any cutover; a cancel is not a stop, so the train goes on."
-                hand_on || true
-              else
-                FAILED_BEFORE=$(gh run list --repo "$GITHUB_REPOSITORY" \
-                  --workflow auto-deploy-hetzner.yml --commit "$SHA" --status failure \
-                  --limit 20 --json databaseId --jq 'length' 2>/dev/null || echo "")
-                case "$FAILED_BEFORE" in
-                  ''|*[!0-9]*)
-                    # Fail closed: a retry count nobody can read is how a
-                    # broken commit would loop forever.
-                    echo "::error title=TRAIN STOPPED::could not count earlier failed runs on $SHORT, so this run will not retry itself. Dispatch auto-deploy-hetzner.yml on main once the failure above is understood." ;;
-                  *)
-                    if [ "$FAILED_BEFORE" -lt "$DEPLOY_RETRY_LIMIT" ]; then
-                      echo "Failed before any cutover; $FAILED_BEFORE earlier failed run(s) on $SHORT, $DEPLOY_RETRY_LIMIT allowed. Retrying."
-                      hand_on || true
-                    else
-                      echo "::error title=GAVE UP ON $SHORT::$((FAILED_BEFORE + 1)) runs have failed on this commit before any cutover. It is broken, not unlucky: the next engine push starts the next run."
-                    fi ;;
-                esac
-              fi
+            #
+            # "Before its cutover" includes a cutover step that REFUSED before
+            # touching anything (review, 2026-09-11): the locked certificate
+            # re-check, the host lock, the localhost read or the ssh connect can
+            # each fail first, and only a step that got past the locked check
+            # writes attempted=true. Those runs used to stop the train dead.
+            #
+            # THE BOUND BELONGS TO THE TRAIN, NOT TO ONE COMMIT (review,
+            # 2026-09-11). It counted failed runs on this SHA, but the hand-on
+            # dispatches main, so any merge reset it and a failure spanning
+            # commits looped all day; and a cancel - which is also how GitHub
+            # reports a job timeout - was never counted at all. The count now
+            # rides the chain: each run that ends before its cutover passes
+            # PRIOR_RETRIES+1 to the next, a run that got past its build passes
+            # 0, and a push starts a fresh chain.
+            if [ -z "$CUTOVER_OUTCOME" ] || [ "$CUTOVER_OUTCOME" = "skipped" ] \
+               || { [ "$CUTOVER_OUTCOME" = "failure" ] && [ "$CUTOVER_ATTEMPTED" != "true" ]; }; then
+              case "$PRIOR_RETRIES" in
+                ''|*[!0-9]*)
+                  # Fail closed: a retry count nobody can read is how a broken
+                  # train would loop forever.
+                  echo "::error title=TRAIN STOPPED::the chain's retry count ('$PRIOR_RETRIES') is not a number, so this run will not retry itself. Dispatch auto-deploy-hetzner.yml on main once the failure above is understood." ;;
+                *)
+                  if [ "$PRIOR_RETRIES" -lt "$DEPLOY_RETRY_LIMIT" ]; then
+                    echo "Ended ($JOB_STATUS) before any cutover; $PRIOR_RETRIES earlier run(s) in a row did too, $DEPLOY_RETRY_LIMIT allowed. The train goes on."
+                    hand_on $((PRIOR_RETRIES + 1)) || true
+                  else
+                    echo "::error title=GAVE UP ON $SHORT::$((PRIOR_RETRIES + 1)) runs in a row have ended before their cutover (failed or cancelled). That is a broken train, not bad luck: the next engine push starts the next run."
+                  fi ;;
+              esac
             fi
             exit 0
           fi
-          if [ "$SHIPPED" = "true" ]; then
-            echo "SHIPPED: production serves $SHORT."
-            echo "### Verdict: SHIPPED \`$SHORT\`" >> "$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
-          if [ "$DEDUPE_SKIP" = "true" ]; then
-            echo "Nothing to ship for $SHORT: ${DEDUPE_REASON:-already live}."
-            echo "### Verdict: nothing to ship (${DEDUPE_REASON:-already live})" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$SHIPPED" = "true" ] || [ "$DEDUPE_SKIP" = "true" ]; then
+            if [ "$SHIPPED" = "true" ]; then
+              echo "SHIPPED: production serves $SHORT."
+              echo "### Verdict: SHIPPED \`$SHORT\`" >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "Nothing to ship for $SHORT: ${DEDUPE_REASON:-already live}."
+              echo "### Verdict: nothing to ship (${DEDUPE_REASON:-already live})" >> "$GITHUB_STEP_SUMMARY"
+            fi
+            # A newer engine commit is on main and nothing proved it has a run
+            # of its own (control step). Give it one; the run is green either
+            # way, because this commit is live.
+            if [ "$MAIN_AHEAD" = "true" ] && [ "$DEDUPE_REASON" != "superseded" ]; then
+              hand_on 0 || true
+            fi
             exit 0
           fi
           # The one deliberate deferral the gate may take: another owner holds
@@ -1580,7 +1725,7 @@ jobs:
           if [ "$DRAIN_SKIP" = "true" ] && [ "$GATE_KIND" = "lease_held_elsewhere" ]; then
             echo "Deliberately deferred: $GATE_REASON"
             echo "### Verdict: deferred \`$SHORT\` - $GATE_REASON" >> "$GITHUB_STEP_SUMMARY"
-            hand_on || exit 1
+            hand_on 0 || exit 1
             exit 0
           fi
           REASON="${GATE_REASON:-the cutover did not verify}"
@@ -1614,6 +1759,6 @@ jobs:
           # hour. The next push - the fix - starts the next run.
           if [ "$DRAIN_SKIP" = "true" ] \
              && { [ "$GATE_KIND" = "staged_deferred" ] || [ "$GATE_KIND" = "no_certificate" ]; }; then
-            hand_on || true
+            hand_on 0 || true
           fi
           exit 1

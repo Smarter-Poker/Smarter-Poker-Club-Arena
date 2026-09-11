@@ -236,6 +236,32 @@ jobs:
       - name: Every source pin is bounded by a structure
         run: npx vitest run tests/unit/noFixedSizeSourceWindows.test.ts
 
+      # ── NO ASSET SHIPS A WHITE MATTE (2026-09-11) ─────────────────────────
+      # Four painted shells reached production with their glow exported as a
+      # WHITE ramp at full alpha instead of cut out - club-nav-shell was 12.7%
+      # matte - and they were cleaned by hand on 2026-09-10. This is what stops
+      # the next export putting it back.
+      #
+      # It lives in this UNGATED job on purpose. An asset change touches
+      # neither src/ nor tests/, so every `changes`-gated job below skips
+      # precisely the pull request that needs this one.
+      #
+      # It is a recorded baseline, not a threshold: the obvious gate was
+      # measured against all 148 assets first and every reading above the floor
+      # turned out to be the detector eating ARTWORK. docs/art/matte-baseline.json
+      # records those six with the reason each was looked at and kept, and the
+      # build fails when a reading RISES above what is recorded. See
+      # docs/laws.d/an-asset-never-ships-a-white-matte.md.
+      - name: No asset ships a white matte
+        run: npm run art:matte
+
+      # The gate above judges the pixels. This judges the baseline: that every
+      # entry names a file that exists and carries a reason saying what was
+      # looked at. A pull request that edits only docs/art/ runs no other
+      # vitest, which is exactly when an excuse would slip in unread.
+      - name: The matte baseline is a record, not a list of excuses
+        run: npx vitest run tests/an-asset-never-ships-a-white-matte.law.test.ts
+
   stub_gate:
     if: github.event_name == 'pull_request'
     name: Stub Gate

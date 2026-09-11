@@ -250,37 +250,53 @@ describe('the engine deploy tells the truth when it skips', () => {
     //    A deliberate lease deferral hands on too: its commit still has to ship.
     const verdict = sliceYamlEntry(HETZNER, "name: 'Verdict");
     expect(verdict).toMatch(
-      /hand_on\(\) \{\s*\n\s*if gh workflow run auto-deploy-hetzner\.yml --repo "\$GITHUB_REPOSITORY" --ref main; then/
+      /elif gh workflow run auto-deploy-hetzner\.yml --repo "\$GITHUB_REPOSITORY" --ref main \\\s*\n\s*-f retries="\$\{1:-0\}"; then/
+    );
+    // (2026-09-11) A rollback hands on as the SAME rollback, never as a plain
+    // forward run of main: that silently dropped the owner's decision.
+    expect(verdict).toMatch(
+      /hand_on\(\) \{\s*\n\s*if \[ "\$ROLLBACK_REQUESTED" = "true" \]; then\s*\n\s*if gh workflow run auto-deploy-hetzner\.yml --repo "\$GITHUB_REPOSITORY" --ref main \\\s*\n\s*-f ref_sha="\$SHA" -f rollback=true -f rollback_reason="\$ROLLBACK_REASON" \\/
+    );
+    expect(verdict).toMatch(
+      /ROLLBACK_REQUESTED: \$\{\{ github\.event\.inputs\.rollback \|\| 'false' \}\}/
     );
     expect(verdict).toMatch(
       /"\$GATE_KIND" = "staged_deferred" \] \|\| \[ "\$GATE_KIND" = "no_certificate" \]; \}; then\s*\n\s*hand_on/
     );
     expect(verdict).toMatch(
-      /"\$GATE_KIND" = "lease_held_elsewhere" \]; then[\s\S]{0,300}?hand_on \|\| exit 1\s*\n\s*exit 0/
+      /"\$GATE_KIND" = "lease_held_elsewhere" \]; then[\s\S]{0,300}?hand_on 0 \|\| exit 1\s*\n\s*exit 0/
     );
     // 3. (2026-09-11) A run that never touched production heals itself: a
-    //    cancel hands on, and a failure retries up to DEPLOY_RETRY_LIMIT failed
-    //    runs per commit, counted from the API, failing closed when uncounted.
-    //    A run whose cutover RAN never hands on - that would restart production
-    //    into a broken build every hour.
+    //    cancel or a failure hands on while fewer than DEPLOY_RETRY_LIMIT runs
+    //    IN A ROW ended before their cutover. The count rides the chain as the
+    //    `retries` input (a per-commit count reset on every merge and never saw
+    //    cancels), and an unreadable count stops the train. A cutover step
+    //    that REFUSED before its mutation marker never touched production and
+    //    counts as "before". A run whose cutover RAN never hands on - that
+    //    would restart production into a broken build every hour.
     const failed = sliceBetween(
       verdict,
       'if [ "$JOB_STATUS" != "success" ]; then',
       '\n          fi\n          if [ "$SHIPPED"'
     );
     expect(failed).toMatch(
-      /if \[ -z "\$CUTOVER_OUTCOME" \] \|\| \[ "\$CUTOVER_OUTCOME" = "skipped" \]; then/
+      /if \[ -z "\$CUTOVER_OUTCOME" \] \|\| \[ "\$CUTOVER_OUTCOME" = "skipped" \] \\\s*\n\s*\|\| \{ \[ "\$CUTOVER_OUTCOME" = "failure" \] && \[ "\$CUTOVER_ATTEMPTED" != "true" \]; \}; then/
     );
+    expect(verdict).toMatch(/CUTOVER_ATTEMPTED: \$\{\{ steps\.cutover\.outputs\.attempted \}\}/);
     expect(failed).toMatch(
-      /if \[ "\$JOB_STATUS" = "cancelled" \]; then[\s\S]{0,200}?hand_on \|\| true/
+      /if \[ "\$PRIOR_RETRIES" -lt "\$DEPLOY_RETRY_LIMIT" \]; then[\s\S]{0,300}?hand_on \$\(\(PRIOR_RETRIES \+ 1\)\) \|\| true/
     );
-    expect(failed).toMatch(
-      /gh run list --repo "\$GITHUB_REPOSITORY" \\\s*\n\s*--workflow auto-deploy-hetzner\.yml --commit "\$SHA" --status failure/
-    );
-    expect(failed).toMatch(
-      /if \[ "\$FAILED_BEFORE" -lt "\$DEPLOY_RETRY_LIMIT" \]; then[\s\S]{0,300}?hand_on \|\| true/
-    );
+    expect(verdict).toMatch(/PRIOR_RETRIES: \$\{\{ github\.event\.inputs\.retries \|\| '0' \}\}/);
+    // No per-commit count and no unbounded cancel path survive.
+    expect(failed).not.toMatch(/--commit "\$SHA" --status failure/);
+    expect(failed).not.toMatch(/FAILED_BEFORE/);
     expect(failed).toMatch(/::error title=GAVE UP ON/);
+    // The input exists, so a hand-on's -f retries= is accepted.
+    const inputs = HETZNER.slice(
+      HETZNER.indexOf('  workflow_dispatch:'),
+      HETZNER.indexOf('\nconcurrency:')
+    );
+    expect(inputs).toMatch(/\n {6}retries:\n/);
     expect(failed, 'an unreadable count stops, never loops').toMatch(
       /''\|\*\[!0-9\]\*\)[\s\S]{0,400}?::error title=TRAIN STOPPED::/
     );
@@ -289,13 +305,26 @@ describe('the engine deploy tells the truth when it skips', () => {
     // Every hand-on in the failed/cancelled branch sits inside the
     // "production was never touched" guard.
     const guardAt = failed.indexOf('if [ -z "$CUTOVER_OUTCOME" ]');
-    for (const at of [...failed.matchAll(/hand_on \|\| true/g)].map((m) => m.index!)) {
+    const retryAt = [...failed.matchAll(/hand_on [^\n]*\|\| true/g)].map((m) => m.index!);
+    expect(retryAt.length).toBe(1);
+    for (const at of retryAt) {
       expect(at).toBeGreaterThan(guardAt);
     }
-    // All four hand-on sites, and no others: lease deferral, gate decline,
-    // cancel, bounded retry.
+    // All four hand-on sites, and no others: lease deferral, gate decline and
+    // a newer engine commit on main after this one shipped (all reset the
+    // chain with 0), and the bounded before-cutover retry.
     const calls = verdict.split('\n').filter((l) => /^\s*hand_on\b(?!\(\))/.test(l));
     expect(calls.length).toBe(4);
+    expect(calls.filter((l) => /hand_on 0 /.test(l)).length).toBe(3);
+    // A newer engine commit is never left without a run (review, 2026-09-11):
+    // the control step checks the engine paths instead of assuming.
+    expect(stage).toMatch(
+      /if ! git diff --quiet "\$CONTROL_SHA" "\$REMOTE_MAIN" -- server \\\s*\n\s*':\(exclude\)server\/\*\*\/\*\.test\.ts' ':\(exclude\)server\/sim'; then\s*\n\s*echo "main_ahead=true" >> "\$GITHUB_OUTPUT"/
+    );
+    expect(verdict).toMatch(/MAIN_AHEAD: \$\{\{ steps\.control\.outputs\.main_ahead \}\}/);
+    expect(verdict).toMatch(
+      /if \[ "\$MAIN_AHEAD" = "true" \] && \[ "\$DEDUPE_REASON" != "superseded" \]; then\s*\n\s*hand_on 0 \|\| true/
+    );
     expect(verdict).toMatch(/GH_TOKEN: \$\{\{ github\.token \}\}/);
     // A hand-on that could not be made is red, never silent.
     expect(stage).toMatch(/::error title=TRAIN STOPPED::/);
@@ -304,6 +333,76 @@ describe('the engine deploy tells the truth when it skips', () => {
     const job = sliceYamlBlock(HETZNER, '    permissions:');
     expect(job).toMatch(/actions: write/);
     expect(job).toMatch(/contents: read/);
+  });
+
+  it('a rollback the queue dropped is dispatched again, and goes first (2026-09-11)', () => {
+    // The group keeps one pending run and GitHub cancels it when a newer run
+    // is queued, so a rollback waiting behind a deploy was replaced by the
+    // next engine push and ran no step. Rollbacks are named for what they are,
+    // and a forward run that finds the newest one cancelled before it started
+    // - at the moment a newer run was queued - dispatches it again and stands
+    // down.
+    const runName = HETZNER.slice(HETZNER.indexOf('\nrun-name:'), HETZNER.indexOf('\non:'));
+    expect(runName).toMatch(
+      /github\.event_name == 'workflow_dispatch' && github\.event\.inputs\.rollback == 'true'[\s\S]*format\('ROLLBACK \{0\} \{1\}', github\.event\.inputs\.ref_sha, github\.event\.inputs\.rollback_reason\)[\s\S]*\|\| ''/
+    );
+    const control = sliceYamlEntry(HETZNER, 'name: Stage the current release proof control');
+    const block = control.slice(control.indexOf('A ROLLBACK IS NEVER LOST IN THE QUEUE'));
+    expect(block).toContain(
+      `if [ "\${{ github.event.inputs.rollback || 'false' }}" != "true" ]; then`
+    );
+    expect(block).toContain('select(.displayTitle | startswith("ROLLBACK "))');
+    expect(block).toContain('$r.status != "completed" or $r.conclusion != "cancelled"');
+    expect(block).toMatch(/> 10800 then empty/);
+    // A person's cancel is not a queue replacement: a newer run must have been
+    // queued at the moment the rollback was cancelled.
+    expect(block).toMatch(/\(\(\$r\.updatedAt \| fromdateiso8601\) - 20\)/);
+    // It never started a step.
+    expect(block).toMatch(/actions\/runs\/\$LOST_ID\/jobs/);
+    expect(block).toContain('if [ "$STARTED" = "0" ]; then');
+    // Same rollback, same reason; this run stands down; a failed re-dispatch
+    // stops the run instead of deploying forward over the rollback.
+    expect(block).toContain(
+      '-f ref_sha="$LOST_SHA" -f rollback=true -f rollback_reason="$LOST_REASON"'
+    );
+    expect(block).toMatch(/echo "superseded=true" >> "\$GITHUB_OUTPUT"[\s\S]{0,400}?exit 0/);
+    expect(block).toMatch(/::error title=ROLLBACK LOST::[\s\S]{0,400}?exit 1/);
+    expect(control.indexOf('A ROLLBACK IS NEVER LOST IN THE QUEUE')).toBeLessThan(
+      control.indexOf('CONTROL_DIR="$GITHUB_WORKSPACE/.engine-release-control"')
+    );
+  });
+
+  it('a hang fails its step in minutes; nothing from the cutover on can be killed half-way (2026-09-11)', () => {
+    // A hang used to end only at the 130-minute job timeout, which GitHub
+    // reports as a CANCEL - and a cancel handed the train on unconditionally,
+    // so a deterministic hang looped every 130 minutes, forever.
+    const timeout = (name: string) =>
+      sliceYamlEntry(HETZNER, `name: ${name}`).match(/\n\s+timeout-minutes: (\d+)\n/)?.[1];
+    for (const [name, most] of [
+      ['Server tests must pass before anything is deployed', 30],
+      ['Capture pre-deploy host state', 10],
+      ['Pre-flight checks', 10],
+      ['Pull the exact commit onto the host', 15],
+      ['Build immutable image (or adopt the one already staged)', 45],
+    ] as const) {
+      expect(Number(timeout(name)), name).toBeGreaterThan(0);
+      expect(Number(timeout(name)), name).toBeLessThanOrEqual(most);
+    }
+    for (const name of [
+      'Exactly one engine may answer for this host',
+      'Install/refresh host supervisor',
+      'Wait for the maintenance break to park every table',
+      'Prepare one-use sealed cutover authority',
+      'Cut over to the new image',
+      "'PROVE the version moved: the engine wrote the new build, not just answered with it'",
+      'ROLLBACK — restore the last known-good image',
+      'Revoke unused authority and GUARANTEE the sealed engine',
+    ]) {
+      expect(timeout(name), `${name} must never be killed half-way`).toBeUndefined();
+    }
+    // A connection that died mid-command fails in about a minute.
+    const ssh = sliceYamlEntry(HETZNER, 'name: Setup SSH key');
+    expect(ssh).toMatch(/-o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=4/);
   });
 
   it('has no timezone left to get wrong', () => {
@@ -421,10 +520,12 @@ describe('a green engine deploy means production serves the commit (2026-09-10)'
 
   it('a run the break gate declined is red; already-live and superseded are green', () => {
     const script = verdict.slice(verdict.indexOf('run: |'));
-    // Shipped -> exit 0 before anything else is considered.
-    expect(script).toMatch(/if \[ "\$SHIPPED" = "true" \]; then[\s\S]{0,200}?exit 0/);
-    // Deliberate stand-downs (already serving, superseded and handed on).
-    expect(script).toMatch(/if \[ "\$DEDUPE_SKIP" = "true" \]; then[\s\S]{0,300}?exit 0/);
+    // Shipped, and the deliberate stand-downs (already serving, superseded and
+    // handed on) -> exit 0 before anything else is considered. (2026-09-11:
+    // one branch, so both can give a newer engine commit its run - MAIN_AHEAD.)
+    expect(script).toMatch(
+      /if \[ "\$SHIPPED" = "true" \] \|\| \[ "\$DEDUPE_SKIP" = "true" \]; then[\s\S]{0,1200}?exit 0/
+    );
     // Everything else that reaches the end of a green job shipped nothing and
     // should have: that is a failure, and it says so in an error annotation.
     const tail = script.slice(script.lastIndexOf('::error title=DID NOT SHIP::'));
@@ -488,7 +589,7 @@ describe('a green engine deploy means production serves the commit (2026-09-10)'
     // "train is failing" alarm (#4109).
     const stage = sliceYamlEntry(HETZNER, 'name: Stage the current release proof control');
     expect(stage).toMatch(
-      /git merge-base --is-ancestor "\$CONTROL_SHA" "\$REMOTE_MAIN"[\s\S]{0,1200}?echo "superseded=true" >> "\$GITHUB_OUTPUT"[\s\S]{0,800}?exit 0/
+      /git merge-base --is-ancestor "\$CONTROL_SHA" "\$REMOTE_MAIN"[\s\S]{0,2400}?echo "superseded=true" >> "\$GITHUB_OUTPUT"[\s\S]{0,800}?exit 0/
     );
     // 2026-09-10: main moving is not the control plane moving. With a push
     // trigger the pending run is the newest ENGINE push and main keeps moving
@@ -534,20 +635,26 @@ describe('a green engine deploy means production serves the commit (2026-09-10)'
 });
 
 describe('the publish path cannot be left waiting on a push that never comes', () => {
-  it('has a catch-up schedule of its own', () => {
-    // `push` was the ONLY trigger. GitHub cancels the run that was PENDING in
-    // the concurrency group when a newer push arrives, so a publish can be
-    // cancelled and never retried if the pushes stop right afterwards.
-    expect(cronEveryMinutes(SYNC)).not.toBeNull();
+  it('needs no catch-up schedule: a run that cannot finish hands itself on', () => {
+    // `push` was the ONLY trigger once, and a run that failed or was cancelled
+    // with no newer push behind it was never retried; a */30 catch-up and the
+    // watchdog's re-dispatch covered that. Since 2026-09-11 the run itself
+    // hands on (the hand-on job) and there is no cron.
+    expect(cronEveryMinutes(SYNC)).toBeNull();
+    expect(SYNC).not.toMatch(/^\s*- cron:/m);
+    expect(SYNC).toMatch(/\n {2}hand-on:\n/);
   });
 
-  it('a scheduled cycle costs nothing when production is already current', () => {
-    // Without this the catch-up would install, test and build a bundle that is
-    // already published, every cycle, forever.
+  it('a handed-on retry costs nothing when production is already current', () => {
+    // Without this every hand-on retry would install, test and build a bundle
+    // that a newer push's run may already have published.
     expect(SYNC).toMatch(/publish-needed:/);
     expect(SYNC).toMatch(/id: dedupe/);
-    expect(SYNC).toMatch(/if: github\.event_name == 'schedule'/);
+    expect(SYNC).toMatch(/if: github\.event_name == 'workflow_dispatch' && inputs\.handed_on/);
     expect(SYNC).toMatch(/build-info\.json/);
+    expect(SYNC).toMatch(
+      /handed_on:\s*\n\s*description:[^\n]*\n\s*type: boolean\s*\n\s*default: false/
+    );
   });
 
   it('the check is a JOB, so the TEST SUITE skips with the build', () => {
@@ -569,9 +676,10 @@ describe('the publish path cannot be left waiting on a push that never comes', (
   it('a push and a manual dispatch are NEVER deduped', () => {
     // A push is by definition new work; a human dispatching this is usually
     // forcing a republish of something that looks stuck. Deduping either would
-    // be the publish bug this is meant to prevent.
+    // be the publish bug this is meant to prevent. Only a run's own handed-on
+    // retry (handed_on=true, default false) asks production first.
     const dedupe = sliceYamlEntry(SYNC, 'id: dedupe');
-    expect(dedupe).toMatch(/if: github\.event_name == 'schedule'/);
+    expect(dedupe).toMatch(/if: github\.event_name == 'workflow_dispatch' && inputs\.handed_on/);
   });
 
   it('an unreadable build-info publishes rather than assuming it is current', () => {

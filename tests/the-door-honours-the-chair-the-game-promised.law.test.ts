@@ -26,59 +26,92 @@ import path from 'path';
 
 const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8');
 
-const MIG = read('supabase/migrations/20260910184427_the_door_honours_the_chair_the_game_promised.sql');
+const MIG = read(
+  'supabase/migrations/20260910184427_the_door_honours_the_chair_the_game_promised.sql'
+);
 const OPEN_SEATS = read(
   'supabase/migrations/20260905060000_the_must_move_lobby_a_seat_change_and_the_order_you_joined.sql'
 );
 
 describe('the door honours the chair the game promised', () => {
-  it('counts pending, unlinked moves into the table, never the player\'s own', () => {
+  it("counts pending, unlinked moves into the table, never the player's own", () => {
     expect(MIG).toMatch(/SELECT COUNT\(\*\) INTO v_moves\s*\n\s*FROM public\.cash_seat_moves m/);
-    expect(MIG).toMatch(/m\.to_table_id = p_table_id\s*\n\s*AND m\.state = 'pending'\s*\n\s*AND m\.swap_move_id IS NULL\s*\n\s*AND m\.player_id <> p_user_id;/);
+    expect(MIG).toMatch(
+      /m\.to_table_id = p_table_id\s*\n\s*AND m\.state = 'pending'\s*\n\s*AND m\.swap_move_id IS NULL\s*\n\s*AND m\.player_id <> p_user_id;/
+    );
   });
 
   it('counts exactly what fn_cash_game_open_seats counts', () => {
     // The census's predicate, from the migration that defines it.
-    expect(OPEN_SEATS).toMatch(/m\.to_table_id = t\.id AND m\.state = 'pending' AND m\.swap_move_id IS NULL/);
+    expect(OPEN_SEATS).toMatch(
+      /m\.to_table_id = t\.id AND m\.state = 'pending' AND m\.swap_move_id IS NULL/
+    );
     // No reason filter and no expires_at filter here either: the two readers
     // must agree in the 5 s before the tick sweeps a lapsed move.
     // The clause as written into the gate (the last occurrence; the header
     // quotes it once more in prose).
     const start = MIG.lastIndexOf('SELECT COUNT(*) INTO v_moves');
-    const clause = MIG.slice(start, MIG.indexOf('IF v_seats_taken + v_holds >= v_max_players', start));
+    const clause = MIG.slice(
+      start,
+      MIG.indexOf('IF v_seats_taken + v_holds >= v_max_players', start)
+    );
     expect(clause).not.toMatch(/reason/);
     expect(clause).not.toMatch(/expires_at/);
-    expect(MIG).toMatch(/fn_cash_game_open_seats no longer counts pending unlinked moves the way the door now does/);
+    expect(MIG).toMatch(
+      /fn_cash_game_open_seats no longer counts pending unlinked moves the way the door now does/
+    );
   });
 
   it('names every reason a pending move can exist, and says which are reservations', () => {
     for (const reason of ['must_move', 'break', 'balance', 'seat_change']) {
       expect(MIG).toMatch(new RegExp(`^--   ${reason}`, 'm'));
     }
-    expect(MIG).toMatch(/seat_change, linked \(swap_move_id IS NOT NULL\)[\s\S]{0,400}NOT A RESERVATION/);
+    expect(MIG).toMatch(
+      /seat_change, linked \(swap_move_id IS NOT NULL\)[\s\S]{0,400}NOT A RESERVATION/
+    );
   });
 
   it('refuses with the SEAT_RESERVED prefix the client already recovers from', () => {
-    expect(MIG).toMatch(/'SEAT_RESERVED: the open seat is held for a player the game is moving here'/);
+    expect(MIG).toMatch(
+      /'SEAT_RESERVED: the open seat is held for a player the game is moving here'/
+    );
     // and keeps the waiting-list refusal as it was
-    expect(MIG).toMatch(/'SEAT_RESERVED: the open seat is held for the next player on the waiting list'/);
+    expect(MIG).toMatch(
+      /'SEAT_RESERVED: the open seat is held for the next player on the waiting list'/
+    );
     expect(MIG).toMatch(/the waiting-list refusal was lost/);
   });
 
   it('names the client copy that lane G would add, without editing the client', () => {
     expect(MIG).toMatch(/src\/lib\/cashBuyIn\.ts/);
     expect(MIG).toMatch(/SEAT_RESERVED: \.\*moving here/);
-    expect(MIG).toMatch(/This Chair Is Held For A Player The Game Is Moving Here\. Tap Join Game For The Next Open Chair\./);
+    expect(MIG).toMatch(
+      /This Chair Is Held For A Player The Game Is Moving Here\. Tap Join Game For The Next Open Chair\./
+    );
   });
 
   it('patches the live gate by anchor and checks every landmark of the money path', () => {
-    expect(MIG).toMatch(/pg_get_functiondef\('public\.atomic_table_buyin_before_maintenance_announcement_gate'::regproc\)/);
+    expect(MIG).toMatch(
+      /pg_get_functiondef\('public\.atomic_table_buyin_before_maintenance_announcement_gate'::regproc\)/
+    );
     expect(MIG).not.toMatch(/CREATE OR REPLACE FUNCTION public\.atomic_table_buyin/);
     for (const landmark of [
-      'transaction_idempotency_keys', 'fn_caller_session_is_live', 'fn_cash_rejoin_floor', 'BUYIN_BELOW_FLOOR',
-      'Banned from this club', 'VIP_ONLY', 'fn_nit_check', 'Player already seated at this table',
-      'TABLE_SIZE: table is full', 'TABLE_CAP_REACHED', 'fn_seat_club_for_user', 'fn_ensure_club_wallet',
-      'chip_balance = chip_balance - p_amount', 'Insufficient club chips for buy-in', 'fn_cash_session_open', 'wallet_transactions',
+      'transaction_idempotency_keys',
+      'fn_caller_session_is_live',
+      'fn_cash_rejoin_floor',
+      'BUYIN_BELOW_FLOOR',
+      'Banned from this club',
+      'VIP_ONLY',
+      'fn_nit_check',
+      'Player already seated at this table',
+      'TABLE_SIZE: table is full',
+      'TABLE_CAP_REACHED',
+      'fn_seat_club_for_user',
+      'fn_ensure_club_wallet',
+      'chip_balance = chip_balance - p_amount',
+      'Insufficient club chips for buy-in',
+      'fn_cash_session_open',
+      'wallet_transactions',
     ]) {
       expect(MIG).toContain(landmark);
     }

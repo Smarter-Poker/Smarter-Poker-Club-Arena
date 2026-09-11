@@ -51,37 +51,21 @@ export interface BBJPool {
   updated_at?: string;
 }
 
-export const BBJService = {
-  /**
-   * Distribute part of the promo pool to currently-active players.
-   *
-   * Authorisation is the RPC's job (SECURITY DEFINER, checks club/union
-   * ownership itself); the UI gate is a convenience, not the control.
-   * Returns the number of players paid.
-   */
-  async executePromoRain(poolId: string, amount: number, reason = 'Promo rain'): Promise<number> {
-    const { data, error } = await supabase.rpc('fn_bbj_promo_rain', {
-      p_pool_id: poolId,
-      p_amount: amount,
-      p_reason: reason,
-    });
-    if (error) {
-      reportError(error, 'BBJService.executePromoRain');
-      throw new Error(error.message);
-    }
-    if (!data?.success) {
-      const map: Record<string, string> = {
-        not_authorized: 'Only the club/union owner can distribute the promo pool.',
-        no_active_players: 'No active players to rain to right now.',
-        insufficient_promo_balance: 'Not enough in the promo pool for that amount.',
-        invalid_amount: 'Enter a valid amount.',
-        pool_not_found: 'Promo pool not found.',
-      };
-      throw new Error(map[data?.error] || data?.error || 'Promo rain failed');
-    }
-    masterBus.emit('BALANCE_UPDATED', { source: 'bbj_promo_rain' });
-    return Number(data.recipient_count || 0);
-  },
-};
+/* `executePromoRain` REMOVED (phase 5, 2026-09-11), and with it the last
+   method on this object.
+
+   It called `fn_bbj_promo_rain`, which Dan made a deliberate stub on
+   2026-09-03: "the splash pot has never been built or specified and is to be
+   added later ... Until its rules exist - eligibility, size, frequency, and
+   what stops a single click emptying a union's promo float - THIS MOVES NO
+   CHIPS." The method did not even map `not_built_yet`, so an operator who
+   filled in an amount and confirmed a dialog reading "this can't be undone"
+   was rewarded with a toast reading, literally, `not_built_yet`.
+
+   Promo is disbursed two ways, both built and both ruled on: an owner sends it
+   with `fn_promo_disburse` (see WalletService), and leaderboards pay it
+   automatically. The jackpot page now says that instead of offering a button
+   that cannot work. */
+export const BBJService = {};
 
 export default BBJService;

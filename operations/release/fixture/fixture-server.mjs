@@ -124,24 +124,42 @@ export async function adaptRealtimeConfiguration() {
 // A healthy loopback request alone cannot exclude an additional wildcard bind.
 export function assertRealtimeHttpListener(tcp, tcp6) {
   const listeners = [];
+  const refuse = (reason) => {
+    const counts = {
+      listener_loopback4: listeners.filter(
+        ([family, address]) => family === 'ipv4' && address === '0100007F:0FA0'
+      ).length,
+      listener_other4: listeners.filter(
+        ([family, address]) => family === 'ipv4' && address !== '0100007F:0FA0'
+      ).length,
+      listener_ipv6: listeners.filter(([family]) => family === 'ipv6').length,
+    };
+    throw Object.assign(new Error('FIXTURE_REALTIME_LISTENER_REFUSED'), {
+      listener_reason: reason,
+      ...counts,
+    });
+  };
   for (const [family, source] of [
     ['ipv4', tcp],
     ['ipv6', tcp6],
   ]) {
     const lines = source.trim().split('\n');
-    assert.match(lines.shift(), /local_address\s+rem(?:ote)?_address\s+st/);
+    if (!/local_address\s+rem(?:ote)?_address\s+st/.test(lines.shift())) refuse('header');
     for (const line of lines) {
       const fields = line.trim().split(/\s+/);
-      assert.ok(fields.length >= 10, 'FIXTURE_REALTIME_LISTENER_TABLE_REFUSED');
+      if (fields.length < 10) refuse('row-shape');
       const local = fields[1];
-      assert.match(
-        local,
-        family === 'ipv4' ? /^[A-F0-9]{8}:[A-F0-9]{4}$/ : /^[A-F0-9]{32}:[A-F0-9]{4}$/
-      );
+      if (
+        !(family === 'ipv4' ? /^[A-F0-9]{8}:[A-F0-9]{4}$/ : /^[A-F0-9]{32}:[A-F0-9]{4}$/).test(
+          local
+        )
+      )
+        refuse('address-shape');
       if (local.endsWith(':0FA0') && fields[3] === '0A') listeners.push([family, local]);
     }
   }
-  assert.deepEqual(listeners, [['ipv4', '0100007F:0FA0']], 'FIXTURE_REALTIME_LISTENER_REFUSED');
+  if (listeners.length !== 1 || listeners[0][0] !== 'ipv4' || listeners[0][1] !== '0100007F:0FA0')
+    refuse('listener-set');
 }
 
 // Run only in the separate smoke peer. Positive gateway reachability must pass

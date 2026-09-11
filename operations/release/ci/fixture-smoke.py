@@ -65,6 +65,13 @@ def native_failures(output):
         native_line = row.pop('native_line', None)
         if has_native_line and (type(native_line) is not int or not 1 <= native_line <= 9999):
             continue
+        listener = {key: row.pop(key) for key in ('listener_reason', 'listener_loopback4',
+                    'listener_other4', 'listener_ipv6') if key in row}
+        if listener and (not isinstance(listener.get('listener_reason'), str)
+                or listener['listener_reason'] not in {'header', 'row-shape', 'address-shape', 'listener-set'}
+                or any(type(value) is not int or not 0 <= value <= 65535
+                       for key, value in listener.items() if key != 'listener_reason')):
+            continue
         auth = {key: row.pop(key) for key in ('auth_stage', 'auth_http_status') if key in row}
         if ('auth_stage' in auth and (not isinstance(auth['auth_stage'], str)
                 or auth['auth_stage'] not in {'mfa-enroll', 'mfa-factor-id', 'mfa-challenge',
@@ -115,6 +122,7 @@ def native_failures(output):
         if native_line is not None:
             record['native_line'] = native_line
         record.update(auth)
+        record.update(listener)
         if record not in records:
             records.append(record)
     return records

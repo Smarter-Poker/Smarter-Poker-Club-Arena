@@ -29,6 +29,16 @@ export function nativeFailureDiagnostic(stage, error) {
       : null;
   if (frame) record.native_line = Number(frame[1]);
   if (
+    new Set(['header', 'row-shape', 'address-shape', 'listener-set']).has(error?.listener_reason)
+  ) {
+    record.listener_reason = error.listener_reason;
+    for (const field of ['listener_loopback4', 'listener_other4', 'listener_ipv6']) {
+      if (Number.isInteger(error[field]) && error[field] >= 0 && error[field] <= 65535) {
+        record[field] = error[field];
+      }
+    }
+  }
+  if (
     new Set([
       'mfa-enroll',
       'mfa-factor-id',

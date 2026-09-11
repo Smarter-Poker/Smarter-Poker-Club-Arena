@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import http from 'node:http';
 import net from 'node:net';
+import { nativeFailureDiagnostic } from '../../operations/release/fixture/runtime-files.mjs';
 import { readFile } from 'node:fs/promises';
 import {
   loopbackRealtimeConfiguration,
@@ -51,6 +52,33 @@ test('actual listener table permits only one IPv4 127.0.0.1 port4000 listener', 
   ])
     assert.throws(() => assertRealtimeHttpListener(v4, v6), /LISTENER_REFUSED/);
   assert.throws(() => assertRealtimeHttpListener('unreadable', table()));
+});
+
+test('listener refusal identifies the failed boundary without retaining socket addresses', () => {
+  for (const [v4, v6, reason, loopback4, other4, ipv6] of [
+    ['PRIVATE HEADER', table(), 'header', 0, 0, 0],
+    [table('PRIVATE ROW'), table(), 'row-shape', 0, 0, 0],
+    [table(row('PRIVATE ADDRESS')), table(), 'address-shape', 0, 0, 0],
+    [table(row('0100007F'), row('0200007F')), table(row('0'.repeat(32))), 'listener-set', 1, 1, 1],
+  ]) {
+    assert.throws(
+      () => assertRealtimeHttpListener(v4, v6),
+      (error) => {
+        assert.deepEqual(nativeFailureDiagnostic('realtime-loopback-and-gateway', error), {
+          status: 'failed',
+          stage: 'realtime-loopback-and-gateway',
+          error: 'Error',
+          listener_reason: reason,
+          listener_loopback4: loopback4,
+          listener_other4: other4,
+          listener_ipv6: ipv6,
+        });
+        assert.ok(!JSON.stringify(error).includes('PRIVATE'));
+        assert.ok(!JSON.stringify(error).includes('0200007F'));
+        return true;
+      }
+    );
+  }
 });
 
 async function listen(server) {

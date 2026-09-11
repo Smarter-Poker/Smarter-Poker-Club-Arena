@@ -192,6 +192,11 @@ gateway tenant-administration refusal. This peer receives no service secrets,
 fixture mounts or oracle descriptor. Same-container loopback access remains
 intentional and is not described as denied.
 
+Listener inspection failures retain only a fixed reason (`header`, `row-shape`,
+`address-shape` or `listener-set`) and bounded counts for expected IPv4 loopback,
+other IPv4 and IPv6 listeners. Neither socket addresses nor raw namespace tables
+enter the failure receipt. The one-loopback-listener requirement stays enforced.
+
 ## Genuine service bootstrap
 
 1. Initialize a new PG17 database `club_arena_qualification`, local roles and

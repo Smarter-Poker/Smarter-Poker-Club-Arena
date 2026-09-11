@@ -5,6 +5,30 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { nativeFailureDiagnostic } from '../../operations/release/fixture/runtime-files.mjs';
 
+test('listener diagnostics permit only reviewed reasons and bounded integer counts', () => {
+  for (const invalid of [-1, 65536, '1', true, null, [], 1.5]) {
+    const result = nativeFailureDiagnostic('realtime-loopback-and-gateway', {
+      name: 'Error',
+      listener_reason: 'listener-set',
+      listener_other4: invalid,
+    });
+    assert.equal(result.listener_reason, 'listener-set');
+    assert.equal(result.listener_other4, undefined);
+  }
+  for (const invalid of ['PRIVATE ADDRESS', 'header\n', null, [], true]) {
+    const result = nativeFailureDiagnostic('realtime-loopback-and-gateway', {
+      name: 'Error',
+      listener_reason: invalid,
+      listener_other4: 1,
+    });
+    assert.deepEqual(result, {
+      status: 'failed',
+      stage: 'realtime-loopback-and-gateway',
+      error: 'Error',
+    });
+  }
+});
+
 test('actual failed command retains only exit status and unique source-backed failure codes', async () => {
   let failure;
   try {

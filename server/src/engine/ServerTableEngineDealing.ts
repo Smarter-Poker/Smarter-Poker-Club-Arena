@@ -27,7 +27,11 @@ import {
   readClubChipBalances,
 } from '../services/supabase.js';
 import { cashMinBuyIn } from '../config/cashBuyIn.js';
-import { atRebuyStopLoss, horseRebuyAmount } from '../services/HorseRebuyPolicy.js';
+import {
+  atRebuyStopLoss,
+  horseRebuyAmount,
+  rebuyStopLossReached,
+} from '../services/HorseRebuyPolicy.js';
 import type { SeatPlayer, GameVariant, HandConfig, HandEvent, SeatedPlayer } from '../types.js';
 import { reportError } from '../services/errorReporter.js';
 import { holeCardCount, deckSizeFor, maxSeatsFor } from './VariantRules.js';
@@ -3174,7 +3178,9 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
    * HORSES ARE PLAYERS (CLAUDE.md 10.5), and this is one of the two places
    * where the horse's INPUT DEVICE legitimately differs: a horse has no member
    * wallet, it is funded from the club treasury by autoRebuyHorse, and its
-   * stop-loss is two rebuys. So "can afford" is asked of the treasury path for
+   * stop-loss is its temperament's (HorseRebuyPolicy: a nit stops at two
+   * buy-ins committed, standard at three, a gambler at four). So "can afford"
+   * is asked of the treasury path for
    * a horse and of club_members.chip_balance for a human. What must not differ
    * — and does not — is the outcome: a seat that cannot fund a rebuy gets no
    * pause and is stood up, whichever kind of player is in it.
@@ -3191,11 +3197,16 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     // A table we cannot price is not a table anyone is stood up from.
     if (!Number.isFinite(minBuyIn) || minBuyIn <= 0) return true;
 
-    // A horse below its stop-loss still has a funding route (the treasury), so
-    // it is owed the window. recoverBustedSeatedHorses does the actual attempt.
+    // A horse inside its stop-loss still has a funding route (the treasury),
+    // so it is owed the window. Settlement step 5 does the actual attempt.
+    // The stop-loss is the temperament's (HorseRebuyPolicy), the same figure
+    // that decides the reload itself - this used to hard-code `< 2`, which
+    // held the felt for a nit that was leaving and did not hold it for a
+    // gambler that was reloading (2026-09-09).
     const horses = busted.filter((p) => p.is_horse);
     for (const horse of horses) {
-      if ((this.horseRebuys.get(horse.user_id) || 0) < 2) return true;
+      if (!rebuyStopLossReached(horse.user_id, this.horseRebuys.get(horse.user_id) || 0))
+        return true;
     }
 
     const humans = busted.filter((p) => !p.is_horse);
@@ -3390,6 +3401,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       // horse ends up disciplined on one code path and not the other.
       const rebuyAmount = await horseRebuyAmount({
         clubId: this.tableInfo?.club_id || '',
+        tableId: this.tableId,
         userId: horse.user_id,
         bigBlind: Number(this.tableInfo?.big_blind) || 0,
         minBuyIn: this.tableInfo?.min_buy_in as number | null | undefined,

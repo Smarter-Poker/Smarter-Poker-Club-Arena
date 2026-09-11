@@ -29,6 +29,7 @@
 import { supabase } from './supabase.js';
 import { HorseMind } from '../engine/HorseMind.js';
 import { reportError } from './errorReporter.js';
+import { POSTGREST_PAGE } from './supabase/pagination.js';
 
 // V11 (Dan 2026-08-22): deeper memory — the horses keep improving the more
 // they play, and a restart should cost as little of that learning as
@@ -49,18 +50,42 @@ export async function hydrateHorseMind(sinceIso?: string | null): Promise<void> 
     const windowStart = new Date(Date.now() - HYDRATION_WINDOW_HOURS * 3600 * 1000).toISOString();
     const since = sinceIso && sinceIso > windowStart ? sinceIso : windowStart;
 
-    const { data, error } = await supabase
-      .from('hand_history')
-      .select('actions')
-      .gt('created_at', since)
-      .order('created_at', { ascending: true })
-      .limit(HYDRATION_MAX_HANDS);
-
-    if (error) {
-      reportError(new Error(error.message || 'hydration query failed'), 'HorseMindHydrator.query');
-      return;
+    /* PAGED, NEWEST FIRST (2026-09-09). This was one select with
+       `.limit(12000)`, and PostgREST caps every select at db-max-rows (1,000)
+       without a word - so the replay was the OLDEST thousand hands of the
+       window, ascending from seventy-two hours ago, out of the 1.56 million
+       the window holds. Keyset on created_at, descending, up to the cap, then
+       replayed in the order they were dealt. A short read replays what it
+       read: fewer hands is the pre-V6 engine, not a wrong engine. */
+    type HandRow = { actions: unknown; created_at: string };
+    const newestFirst: HandRow[] = [];
+    let cursor: string | null = null;
+    while (newestFirst.length < HYDRATION_MAX_HANDS) {
+      const want = Math.min(POSTGREST_PAGE, HYDRATION_MAX_HANDS - newestFirst.length);
+      let q = supabase
+        .from('hand_history')
+        .select('actions, created_at')
+        .gt('created_at', since)
+        .order('created_at', { ascending: false })
+        .limit(want);
+      if (cursor) q = q.lt('created_at', cursor);
+      const { data: rows, error } = await q;
+      if (error) {
+        reportError(
+          new Error(error.message || 'hydration query failed'),
+          'HorseMindHydrator.query'
+        );
+        break; // replay what was read
+      }
+      const got = (rows ?? []) as HandRow[];
+      newestFirst.push(...got);
+      if (got.length < want) break;
+      const last = got[got.length - 1]?.created_at;
+      if (!last) break;
+      cursor = last;
     }
-    if (!data || data.length === 0) {
+    const data = newestFirst.reverse();
+    if (data.length === 0) {
       console.log('[HorseMind] Hydration: no recent hand history to replay');
       return;
     }

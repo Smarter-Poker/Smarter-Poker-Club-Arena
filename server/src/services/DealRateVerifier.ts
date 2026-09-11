@@ -87,7 +87,29 @@ const CONSECUTIVE_TO_DECLARE_DEAD = 3;
  * therefore its own alarm, and the one that would catch a catastrophe the
  * deal-rate check cannot even see.
  */
+/*
+ * MEASURED 2026-09-11 (lane F of the horse audit), from `hand_history` per
+ * hour over the previous 24 h, tables dealing horse-only hands: healthy hours
+ * 65 (04:00 UTC, the night trough) to 1,167; the 2026-09-10 21:00-00:00 UTC
+ * collapse 47, 17, 10 tables dealing while horse hands/hour fell 33,343 -> 546.
+ * This floor never fired through that evening (two fires at 23:46-23:50 when
+ * the count touched 2). It is deliberately NOT raised here: below it the
+ * deal-rate verdict is skipped and /health's restart signal with it, so a
+ * higher value would trade a restart for an alert on a 12-table fleet
+ * (DealRateVerifier.test.ts "reports its evidence"). The fleet-size page
+ * lives where a threshold belongs (CLAUDE.md 10.84): `HorseFleetCollapsed`
+ * in `infra/monitoring/alert-rules.yml` reads `poker_dealable_tables < 20`.
+ */
 const FLEET_FLOOR_TABLES = 3;
+/**
+ * How stale the horse fleet's own pulse may be before it is a page. Measured
+ * 2026-09-11 over 24 h of `ca_horse_fleet_heartbeat`: gap p50 30 s, p95 51 s,
+ * the hourly break 447-632 s (skipped here anyway, this check sits behind the
+ * freeze guard), and one genuine 2,461 s stall. See checkFleetLoopPulse.
+ */
+const FLEET_PULSE_STALE_SECONDS = 900;
+/** Consecutive minute checks above it before the page. */
+const CONSECUTIVE_PULSE_STALE = 2;
 /** Consecutive checks below the floor before it is called in. */
 const CONSECUTIVE_BELOW_FLOOR = 3;
 
@@ -166,7 +188,29 @@ export class DealRateVerifier {
    *        AND believes should be dealing right now. The verifier's job is to
    *        find out whether that belief is producing hands.
    */
-  constructor(private readonly dealingTableIds: () => string[]) {}
+  /**
+   * ── THE SEEDING LOOP HAS ITS OWN PULSE, AND NOTHING WATCHED IT ───────────
+   *
+   * Dan, 2026-09-11: "I SHOULD GET PUSH NOTIFICATIONS OR TEXT IF ANYTHING
+   * INSIDE THE HORSES IS FAILING OR THEY CAN'T PLAY."
+   *
+   * This class already answers "is the fleet above the floor" and "are the
+   * dealing tables producing hands". Neither can see the third way the horses
+   * stop playing: HorseFleetManager's 30-second cycle simply stopping while
+   * the process stays up and the tables that are already seated carry on
+   * dealing. Measured on `ca_horse_fleet_heartbeat`, 24 hours to 2026-09-11:
+   * beat gap p50 30 s, p95 51 s, the hourly break 447-632 s, and one gap of
+   * 2,461 s at 01:33 UTC - 41 minutes in which no horse anywhere could be
+   * seated, no alarm fired, and the floor simply drained as sessions ended.
+   *
+   * `fleetHeartbeatAgeSeconds` returns that age (-1 before the first beat of
+   * this process, which is not a fault). Optional, so a caller that has no
+   * fleet - a test, a follower instance - is unchanged.
+   */
+  constructor(
+    private readonly dealingTableIds: () => string[],
+    private readonly fleetHeartbeatAgeSeconds?: () => number
+  ) {}
 
   private lifecycleIsCurrent(generation: number): boolean {
     return this.isRunning && this.lifecycleGeneration === generation;
@@ -342,6 +386,78 @@ export class DealRateVerifier {
   }
 
   /** Exposed for tests; the timer calls this. */
+  /** Consecutive checks whose fleet pulse was stale. See checkFleetLoopPulse. */
+  private fleetLoopStalledChecks = 0;
+
+  /**
+   * THE SEEDING LOOP IS ALIVE, OR DAN'S PHONE SAYS SO.
+   *
+   * Threshold measured, not guessed (CLAUDE.md 10.84). A beat is written on
+   * every completed cycle: p50 30 s, p95 51 s, worst ordinary gap 632 s
+   * (the hourly break, which this check is behind the freeze guard for).
+   * `FLEET_PULSE_STALE_SECONDS` sits above all of them and below the only
+   * real outage in the day's data (2,461 s), and two consecutive minute
+   * checks are required so a slow cycle on a saturated database - the 118 s
+   * worst case this file's own history records - can never page.
+   *
+   * Fires once, resolves once, through the same `raiseEngineAlert` state the
+   * other two criticals use. `page: true`, because a fleet that cannot seat
+   * anybody is exactly the thing Dan asked to be told about.
+   */
+  private checkFleetLoopPulse(): void {
+    if (!this.fleetHeartbeatAgeSeconds) return;
+    let age: number;
+    try {
+      age = this.fleetHeartbeatAgeSeconds();
+    } catch {
+      return; // A reader that throws is not evidence of a stopped fleet.
+    }
+    // -1 is "this process has not completed its first cycle yet", which a
+    // boot legitimately shows for up to a couple of minutes.
+    if (!Number.isFinite(age) || age < 0) {
+      this.fleetLoopStalledChecks = 0;
+      return;
+    }
+    if (age <= FLEET_PULSE_STALE_SECONDS) {
+      if (this.fleetLoopStalledChecks >= CONSECUTIVE_PULSE_STALE) {
+        /* Through the owned launcher, like every other alert here: a
+           fire-and-forget promise nobody holds is one shutdown cannot drain
+           (ProducerShutdownOwnership). */
+        this.launchAlert(
+          resolveEngineAlert(
+            'ClubArenaHorseFleetLoopStopped',
+            COMPONENT,
+            'The horse fleet seeding cycle is beating again'
+          ),
+          'DealRateVerifier.fleet_pulse_resolve_failed'
+        );
+      }
+      this.fleetLoopStalledChecks = 0;
+      return;
+    }
+    this.fleetLoopStalledChecks++;
+    if (this.fleetLoopStalledChecks !== CONSECUTIVE_PULSE_STALE) return;
+    this.launchAlert(
+      raiseEngineAlert({
+        alertname: 'ClubArenaHorseFleetLoopStopped',
+        severity: 'critical',
+        component: COMPONENT,
+        // Dan 2026-09-11: the horses unable to take a seat reaches his phone.
+        page: true,
+        summary: 'The horse fleet has not completed a seeding cycle for ' + Math.round(age) + 's',
+        description:
+          'HorseFleetManager writes a heartbeat on every completed cycle (about every 30s; ' +
+          'p95 51s). It has not completed one for ' +
+          Math.round(age) +
+          's outside a maintenance break, so no horse is being seated anywhere on the platform - ' +
+          'the floor drains as sessions end and nothing refills it. Read the engine log for the ' +
+          "cycle's last error, and ca_horse_fleet_heartbeat for the last beat it recorded.",
+        labels: { fleet_pulse_seconds: String(Math.round(age)) },
+      }),
+      'DealRateVerifier.fleet_pulse_raise_failed'
+    );
+  }
+
   async check(): Promise<void> {
     if (!this.acceptingChecks) return;
     const releaseLifecycle = this.openLifecycleScope();
@@ -368,9 +484,12 @@ export class DealRateVerifier {
         this.belowFloorChecks = 0;
         this.silentChecks = 0;
         this.handsInWindow = null;
+        this.fleetLoopStalledChecks = 0;
         this.lastCheckedAt = Date.now();
         return;
       }
+
+      this.checkFleetLoopPulse();
 
       const tableIds = this.dealingTableIds();
       this.tablesExpectedDealing = tableIds.length;
@@ -426,6 +545,8 @@ export class DealRateVerifier {
               alertname: 'ClubArenaFleetFloorLost',
               severity: 'critical',
               component: COMPONENT,
+              // Dan 2026-09-11: the fleet unable to play reaches his phone.
+              page: true,
               summary:
                 'Only ' + tableIds.length + ' table(s) should be dealing - the fleet has collapsed',
               description:
@@ -512,6 +633,8 @@ export class DealRateVerifier {
               alertname: 'ClubArenaFleetSilent',
               severity: 'critical',
               component: COMPONENT,
+              // Dan 2026-09-11: the fleet unable to play reaches his phone.
+              page: true,
               summary:
                 'ZERO hands in ' +
                 Math.round(LOOKBACK_MS / 60_000) +

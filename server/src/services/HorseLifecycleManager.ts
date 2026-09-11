@@ -31,6 +31,8 @@ const STALE_SEAT_THRESHOLD_HOURS = 4; // Cleanup table_seats older than 4 hours
 // dead/abandoned; only then may a >4h seat be force-cashed. Guards against reaping
 // active cash players and against converting live tournament chips to wallet chips.
 const STALE_SEAT_TABLE_IDLE_MINUTES = 30;
+/** How far back the finished-tournament reset looks: a few cycles, overlapping. */
+const FINISHED_TOURNAMENT_WINDOW_MS = 15 * 60 * 1000;
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // HORSE LIFECYCLE MANAGER CLASS
@@ -167,10 +169,24 @@ export class HorseLifecycleManager {
 
   private async cleanupFinishedTournaments(): Promise<void> {
     try {
-      const { data: tournaments } = await supabase
+      /* ONLY WHAT JUST FINISHED (2026-09-09). This read every COMPLETED and
+         CANCELLED tournament the platform has ever run - 143,769 of them -
+         with no order and no limit, so PostgREST handed back the first
+         thousand it found (the oldest, from April) and this pass spent
+         roughly 4,600 queries every cycle re-checking horses from events that
+         ended five months ago, and never once reached one that ended today.
+         The job is to reset a horse whose event has just ended; a window of
+         a few cycles over `ended_at` is that job. Re-visiting an event is
+         harmless (the reset is idempotent), so the window overlaps. */
+      const endedSince = new Date(Date.now() - FINISHED_TOURNAMENT_WINDOW_MS).toISOString();
+      const { data: tournaments, error: tErr } = await supabase
         .from('tournaments')
         .select('id, name')
-        .in('status', ['COMPLETED', 'CANCELLED']);
+        .in('status', ['COMPLETED', 'CANCELLED'])
+        .gte('ended_at', endedSince)
+        .order('ended_at', { ascending: false })
+        .limit(1000);
+      if (tErr) throw new Error(tErr.message);
 
       if (!tournaments || tournaments.length === 0) return;
 
@@ -378,16 +394,22 @@ export class HorseLifecycleManager {
         (activeTournaments && activeTournaments.length > 0);
 
       if (!hasActiveGames) {
-        // Only reset if they have NO active games at all
-        const { error } = await supabase
+        // Only reset if they have NO active games at all - and only a row that
+        // is not already 'available' (2026-09-09): rewriting the same value
+        // touched `profiles.updated_at` for every horse in every finished
+        // field on every pass, and reported a reset that reset nothing.
+        const { data: changed, error } = await supabase
           .from('profiles')
           .update({ horse_status: 'available', updated_at: new Date().toISOString() })
-          .eq('id', horseId);
+          .eq('id', horseId)
+          .neq('horse_status', 'available')
+          .select('id');
 
         if (error) {
           reportError(error, 'Lifecycle.Failed_to_reset_horse_horseId');
           return false;
         }
+        if (!changed || changed.length === 0) return false; // already available
         await this.persistLifecycleLog(horseId, 'natural_reset', {
           reason: 'tournament_completed_no_active_games',
         });
@@ -551,6 +573,28 @@ export class HorseLifecycleManager {
       const staleSeats = stalePage.rows;
       if (staleSeats.length === 0) return;
 
+      /* THE TABLES, ONCE (2026-09-09). This read `tables` one row at a time
+         inside the loop - 843 seats older than four hours today, every one of
+         them at a tournament or cluster table and skipped, at one query each,
+         every minute. Read the distinct tables in chunks first; a table this
+         cannot classify is not swept (a sweep that cashes seats out does not
+         act on a row it could not read). */
+      const staleTableIds = [...new Set(staleSeats.map((seat) => seat.table_id))];
+      const tableRead = await selectInChunks<{
+        id: string;
+        tournament_id: string | null;
+        cluster_id: string | null;
+      }>(
+        staleTableIds,
+        (batch) => supabase.from('tables').select('id, tournament_id, cluster_id').in('id', batch),
+        'HorseLifecycle.staleSeatTables'
+      );
+      if (!tableRead.complete) {
+        console.warn('[HorseLifecycle] stale-seat table read incomplete - retrying next pass');
+        return;
+      }
+      const tableById = new Map(tableRead.rows.map((t) => [t.id, t]));
+
       let cleaned = 0;
       // SWEEP #4 P0-1 FIX (2026-07-23): this loop previously force-cashed-out
       // EVERY seat older than 4h with no filter on table status, tournament, or
@@ -567,11 +611,8 @@ export class HorseLifecycleManager {
       for (const seat of staleSeats) {
         try {
           // Skip tournament seats entirely — never cash tournament chips to wallets here.
-          const { data: tableRow } = await supabase
-            .from('tables')
-            .select('tournament_id, cluster_id')
-            .eq('id', seat.table_id)
-            .maybeSingle();
+          const tableRow = tableById.get(seat.table_id);
+          if (!tableRow) continue; // a seat whose table this read could not see
           if (tableRow?.tournament_id) continue;
           // A CLUSTER TABLE'S SEATS ARE THE CONTROLLER'S (2026-09-05). A
           // must-move carries `joined_at` with the player (seniority travels,

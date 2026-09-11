@@ -62,7 +62,19 @@ import { bankrollEvent } from './HorseBankrollTelemetry.js';
  */
 
 export interface HorseRebuyRequest {
+  /** The TABLE's club. For a union table this is the union row, which holds
+   *  no member wallet; the wallet club is on the seat (see `tableId`). */
   clubId: string;
+  /**
+   * The table, so the roll can be read from the club the SEAT was bought
+   * from (2026-09-09). `table_seats.club_id` is the wallet the buy-in left -
+   * JAQK or SHARK for a Midway Union table whose own `club_id` is the union.
+   * Read against the union there is no membership row, the roll is unknown,
+   * and every Midway reload was the legacy flat amount with no bankroll
+   * opinion at all while a Deep Stack Society horse got the policy. Optional
+   * so an old caller still gets the table-club read.
+   */
+  tableId?: string;
   userId: string;
   bigBlind: number;
   minBuyIn?: number | null;
@@ -104,6 +116,18 @@ export function legacyRebuyAmount(bigBlind: number): number {
   return Math.round(raw * 100) / 100;
 }
 
+/**
+ * The same question with no telemetry side effect, for a caller that is
+ * only deciding whether to HOLD the five-second rebuy window (the dealing
+ * loop's `anyBustedPlayerCanAffordARebuy`). That check used to hard-code
+ * `< 2` while the temperaments stop at 2, 3 and 4 - so a gambler on its
+ * third reload got no pause and reloaded anyway, and a nit on its second got
+ * a pause for a reload it was never going to make.
+ */
+export function rebuyStopLossReached(userId: string, rebuysTaken: number): boolean {
+  return rebuysTaken + 1 >= bankrollPolicyFor(userId).stopLossBuyIns;
+}
+
 /** Is this horse done reloading, on temperament alone? Cheap and synchronous. */
 export function atRebuyStopLoss(userId: string, rebuysTaken: number): boolean {
   // rebuysTaken + 1 is the buy-ins COMMITTED - see rebuyDecision for why the
@@ -137,8 +161,11 @@ export async function horseRebuyAmount(req: HorseRebuyRequest): Promise<number> 
 
   let roll: number | undefined;
   try {
-    const { readClubChipBalances } = await import('./supabase/wallets.js');
-    const balances = await readClubChipBalances(clubId, [userId]);
+    const { readClubChipBalances, readSeatWalletClub } = await import('./supabase/wallets.js');
+    // The seat's wallet club first (a union table's own club has no wallets);
+    // the table's club when the seat cannot say.
+    const walletClub = (req.tableId && (await readSeatWalletClub(req.tableId, userId))) || clubId;
+    const balances = await readClubChipBalances(walletClub, [userId]);
     roll = balances.get(userId);
   } catch {
     return legacy; // a thrown read is an unknown balance, not a poor one

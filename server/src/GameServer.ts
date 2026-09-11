@@ -183,6 +183,7 @@ import {
   selectRunningResumes,
 } from './tournamentResumeBudget.js';
 import { isWakeableCashTable } from './services/onDemandTableWake.js';
+import { fetchAllRows } from './services/supabase/pagination.js';
 import { ENGINE_RELEASE_IDENTITY } from './releaseIdentity.js';
 // 2026-08-16: single-owner table leases + per-process identity. See
 // services/tableLease.ts for the dual-container incident that motivated them.
@@ -1538,6 +1539,13 @@ export class GameServer {
    */
   private pastStartTopUpClock: Map<string, { at: number; misses: number }> = new Map();
   /**
+   * REGISTERING rows whose prize pool is already finalized, reported once each
+   * (2026-09-11). Such a row has left registration whatever its status says;
+   * the ramp and the past-start top-up withhold from it. Pruned with
+   * lastMttRampAt so it only ever holds rows still on the board.
+   */
+  private registeringButFinalizedReported: Set<string> = new Set();
+  /**
    * When each seat-first game was FIRST seen holding every seat it sells.
    *
    * The clock for the fully-paid-but-never-started watchdog (2026-08-24 audit
@@ -1637,10 +1645,14 @@ export class GameServer {
    * resets its counters instead, which is the truthful statement: during a
    * freeze there is nothing to verify, not a fleet of zero.
    */
-  private dealRateVerifier = new DealRateVerifier(() =>
-    this.tableLivenessSnapshot()
-      .filter((t) => t.dealable >= 2 && !t.paused)
-      .map((t) => t.tableId)
+  private dealRateVerifier = new DealRateVerifier(
+    () =>
+      this.tableLivenessSnapshot()
+        .filter((t) => t.dealable >= 2 && !t.paused)
+        .map((t) => t.tableId),
+    // The horse fleet's own pulse, so a seeding loop that stops while the
+    // process lives is a page rather than a silence (Dan 2026-09-11).
+    () => this.horseFleet.heartbeatAgeSeconds()
   );
   // BUG 008 FIX: settler reads rake_records (durable per-hand log) every 30 min and
   // upserts per-player rakeback_periods rows. Without this the in-memory accumulator
@@ -3256,6 +3268,17 @@ export class GameServer {
       (t) => t.dealable >= 2 && !t.paused && t.msSinceProgress > 120_000
     );
     const pausedCount = liveness.filter((t) => t.paused).length;
+    /* One walk of the live engines for the two horse gauges below. Counted
+       here rather than from `liveness` because the seat rows carry the flag
+       and the liveness snapshot does not. */
+    const horseSeatCounts = { horses: 0, tables: 0 };
+    for (const engine of this.tableEngines.values()) {
+      const n = engine.horsesSeated();
+      if (n > 0) {
+        horseSeatCounts.horses += n;
+        horseSeatCounts.tables += 1;
+      }
+    }
     /**
      * 2026-09-05: the gauge below used `stalled.length === 0` — the 120s
      * VISIBILITY list — while getStatus() killed on the 300s list. Two
@@ -3275,6 +3298,29 @@ export class GameServer {
       '# HELP poker_dealable_tables Tables with 2+ dealable seats and not paused by design - the denominator of the liveness verdict',
       '# TYPE poker_dealable_tables gauge',
       `poker_dealable_tables ${livenessVerdict.dealableTableCount}`,
+      /* ── THE HORSES, AS NUMBERS AN ALERT CAN READ (Dan 2026-09-11) ────────
+         "I SHOULD GET PUSH NOTIFICATIONS OR TEXT IF ANYTHING INSIDE THE
+         HORSES IS FAILING OR THEY CAN'T PLAY."
+
+         /metrics carried 2,978 poker_ series and not one of them said how
+         many horses were playing. The fleet's own record is a database table
+         (`ca_horse_fleet_heartbeat`) and no alert rule reads tables, so on
+         2026-09-10 the floor fell from 33,343 horse hands an hour to 546
+         over five hours and the only rule that fired was the generic deal
+         rate, twice, into email. These three are the series the horse-fleet
+         alert group is written against.
+
+         Identification only (CLAUDE.md 10.5): they count, they decide
+         nothing, and the same line publishes the human count beside them. */
+      '# HELP poker_horses_seated Horses seated with chips across every live table',
+      '# TYPE poker_horses_seated gauge',
+      `poker_horses_seated ${horseSeatCounts.horses}`,
+      '# HELP poker_tables_with_horses Live tables holding at least one horse with chips',
+      '# TYPE poker_tables_with_horses gauge',
+      `poker_tables_with_horses ${horseSeatCounts.tables}`,
+      '# HELP poker_horse_fleet_heartbeat_age_seconds Seconds since the horse fleet completed and recorded a seeding cycle; -1 before its first',
+      '# TYPE poker_horse_fleet_heartbeat_age_seconds gauge',
+      `poker_horse_fleet_heartbeat_age_seconds ${this.horseFleet.heartbeatAgeSeconds()}`,
       '# HELP poker_paused_tables Tables paused on purpose (hand-for-hand/break) - excluded from stall detection',
       '# TYPE poker_paused_tables gauge',
       `poker_paused_tables ${pausedCount}`,
@@ -5070,12 +5116,46 @@ export class GameServer {
       try {
         // Find REGISTERING tournaments ready to start
         const registeringReadAt = Date.now();
-        const { data: registering, error: registeringErr } = await supabase
-          .from('tournaments')
-          .select(
-            'id, name, start_time, current_players, min_players, max_players, variant, tournament_type, buy_in_amount, buy_in_fee, guaranteed_prize, prize_pool'
-          )
-          .eq('status', 'REGISTERING');
+        /* PAGED (2026-09-11). This was one unbounded `.eq('status',
+           'REGISTERING')`, and PostgREST answers at most db-max-rows (1,000)
+           without a word: the 1,001st REGISTERING row would never be started,
+           ramped or topped up, and nothing would say so. 335 today, 353 after a
+           thaw, and every activated club adds its own seat-first board, so the
+           ceiling is a matter of when. Keyset on id; an incomplete read is the
+           same unreadable board the branch below already refuses to act on. */
+        const registeringPage = await fetchAllRows<{
+          id: string;
+          name: string;
+          start_time: string | null;
+          current_players: number;
+          min_players: number | null;
+          max_players: number;
+          variant: string | null;
+          tournament_type: string | null;
+          buy_in_amount: number | null;
+          buy_in_fee: number | null;
+          guaranteed_prize: number | null;
+          prize_pool: number | null;
+          prize_pool_finalized: boolean | null;
+        }>(
+          (cursor, want) => {
+            let q = supabase
+              .from('tournaments')
+              .select(
+                'id, name, start_time, current_players, min_players, max_players, variant, tournament_type, buy_in_amount, buy_in_fee, guaranteed_prize, prize_pool, prize_pool_finalized'
+              )
+              .eq('status', 'REGISTERING')
+              .order('id', { ascending: true })
+              .limit(want);
+            if (cursor) q = q.gt('id', cursor);
+            return q;
+          },
+          { label: 'GameServer.registeringBoard', maxRows: 50_000 }
+        );
+        const registering = registeringPage.rows;
+        const registeringErr = registeringPage.complete
+          ? null
+          : { message: 'the REGISTERING board read came back incomplete' };
         if (registeringErr) {
           /* An unreadable board is not an EMPTY board. Discarding this error
              let a failed read fall through as "nothing is registering", so
@@ -5146,6 +5226,39 @@ export class GameServer {
           const minPlayers = tournament.min_players || 3;
 
           /**
+           * A FINALIZED POOL IS NOT A REGISTERING EVENT (2026-09-11).
+           *
+           * Thirty-nine seat-first games and one MTT dealt on 2026-09-08 (hands in
+           * hand_history, entrants eliminated, prize_pool_finalized true) and
+           * were still REGISTERING with started_at NULL three days later: the
+           * engine that dealt them stopped at :53 before the launch commit,
+           * and no lane looks at a REGISTERING row except this one, which read
+           * "past start, short of min_players" and asked for a top-up every
+           * backoff - 1,796 locked seat RPCs and 1,169 locked registration RPCs
+           * in one hour that both doors refuse (the pool is finalized), and
+           * 298 "CANNOT FILL" alarms an hour naming the wrong cause. Every
+           * healthy REGISTERING row on the board reads finalized=false, so the
+           * column is the exact separator. Such a row needs the finish path
+           * (settle what it dealt), never a ramp or a fill. Only the RAMP and
+           * the PAST-START TOP-UP are withheld: the start gate below still
+           * runs, because a launch that finalized the pool and then lost its
+           * engine before RUNNING committed is recovered by exactly that gate
+           * (the launch receipt is adopted on the next 'start'). Said once per
+           * row per process with the state recovery needs. topUpWithHorses
+           * refuses it as well, for every other caller.
+           */
+          const poolFinalized = tournament.prize_pool_finalized === true;
+          if (poolFinalized && !this.registeringButFinalizedReported.has(tournament.id)) {
+            this.registeringButFinalizedReported.add(tournament.id);
+            reportError(
+              new Error(
+                `[GameServer] ${tournament.name} (${String(tournament.id).slice(0, 8)}) is REGISTERING with a finalized prize pool - it has left registration (dealt, or launched) and will not be ramped or filled; it needs the finish path`
+              ),
+              'GameServer.registering_with_finalized_pool'
+            );
+          }
+
+          /**
            * Dan 2026-08-19: TOURNAMENTS RUN. THEY DO NOT CANCEL.
            *
            * This used to cancel any tournament still short of min_players 30
@@ -5185,7 +5298,7 @@ export class GameServer {
            * rule is bought seats, not registrations.
            */
           const msUntilStart = startTime - now;
-          if (msUntilStart > 0 && msUntilStart <= MTT_PRESTART_RAMP_MS) {
+          if (!poolFinalized && msUntilStart > 0 && msUntilStart <= MTT_PRESTART_RAMP_MS) {
             const lastRamp = this.lastMttRampAt.get(tournament.id) ?? 0;
             if (now - lastRamp >= 45_000) {
               // The whole decision - window, curve, seat-first exclusion, pool
@@ -5224,7 +5337,7 @@ export class GameServer {
           }
 
           const isPastStart = startTime <= now;
-          if (isPastStart && tournament.current_players < minPlayers) {
+          if (!poolFinalized && isPastStart && tournament.current_players < minPlayers) {
             /**
              * Dan 2026-08-19: fill to a FULL FIELD, every format.
              *
@@ -5494,6 +5607,7 @@ export class GameServer {
         if (
           this.lastMttRampAt.size > 0 ||
           this.pastStartTopUpClock.size > 0 ||
+          this.registeringButFinalizedReported.size > 0 ||
           spinLaunchParks.size > 0
         ) {
           const stillRegistering = new Set((registering || []).map((r) => String(r.id)));
@@ -5502,6 +5616,9 @@ export class GameServer {
           }
           for (const id of this.pastStartTopUpClock.keys()) {
             if (!stillRegistering.has(id)) this.pastStartTopUpClock.delete(id);
+          }
+          for (const id of this.registeringButFinalizedReported) {
+            if (!stillRegistering.has(id)) this.registeringButFinalizedReported.delete(id);
           }
           // The park registry is bounded the same way (2026-09-10): a park
           // gates a 'start', and a Spin that has left REGISTERING (RUNNING,
@@ -7104,7 +7221,9 @@ export class GameServer {
           // game the recycler sets it to "when the human window ends" (see
           // seatFirstHumanWindowMs in TournamentRecurringService).
           .from('tournaments')
-          .select('id, name, max_players, variant, start_time')
+          // prize_pool_finalized: a board whose pool is finalized has left
+          // registration (see the fill gate below), whatever its status says.
+          .select('id, name, max_players, variant, start_time, prize_pool_finalized')
           .eq('status', 'REGISTERING')
           .in('variant', ['spin', 'sng']);
         if (registeringErr) {
@@ -7178,7 +7297,19 @@ export class GameServer {
              * (60-150s window), and the held-empty rotation — filling those
              * here would erase both designs.
              */
-            if (seats > 0 && paid > 0 && paid < seats) {
+            /* A FINALIZED POOL IS NOT FILLED (2026-09-11). Thirty-nine seat-first
+               games dealt on 2026-09-08 sat REGISTERING at 1/2 and 2/3 with
+               their pools finalized, and this lane asked topUpWithHorses to
+               fill each one every backoff and raised `seat_first_human_waiting`
+               for it every minute - 298 alarms an hour saying "CANNOT FILL"
+               about games that had already been played. The seat RPC answers
+               tournament_full for a finalized seat-first row (every entry it
+               sold is counted, busted or not), so the ask can only ever cost
+               the lock. The main walk reports the row once; here it is simply
+               not asked. The start gate below is untouched. */
+            const finalized =
+              (t as { prize_pool_finalized?: boolean | null }).prize_pool_finalized === true;
+            if (!finalized && seats > 0 && paid > 0 && paid < seats) {
               /* Has the human window closed? A missing or unparseable
                  start_time is treated as NOT closed, so a malformed row can
                  never cause a board to be filled early - it simply waits for
@@ -7631,7 +7762,21 @@ export class GameServer {
     why: string
   ): Promise<void> {
     const added = await this.tournamentRecurring.topUpWithHorses(tournamentId, seats);
-    const shortfall = seats - paid;
+    let shortfall = seats - paid;
+    /* THE ALARM IS JUDGED ON WHAT THE TOP-UP SAW, NOT ON THE COUNT THIS LANE
+       READ A SECOND EARLIER (2026-09-11). `paid` is this lane's read; the
+       top-up reads the seats again under the same five seconds, and the main
+       walk's past-start top-up runs beside it. Measured 12:27-13:27 UTC: 64
+       of 103 boards alarmed "CANNOT FILL ... top-up added 0 of 1 needed" were
+       live boards the other lane had just filled (the fill pass logged
+       `seated=3` seconds before the alarm); the top-up correctly found nothing
+       to do and this line read that as a failure. A short result is re-read
+       once before it is believed; an unreadable re-read keeps the alarm (an
+       unknown is not "full"). */
+    if (added < shortfall) {
+      const fresh = (await this.readSeatFirstPaidSeats([{ id: tournamentId }])).get(tournamentId);
+      if (fresh !== undefined && fresh >= seats) shortfall = 0;
+    }
     // See the backoff in fillPartialSeatFirstGame: a filled board forgets its
     // misses, a short one counts another.
     if (added >= shortfall) this.seatFirstFillMisses.delete(tournamentId);

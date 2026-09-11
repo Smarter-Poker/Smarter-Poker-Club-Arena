@@ -1006,3 +1006,120 @@ describe('the night keeps open the tables it still needs', () => {
     expect(NIGHT_MIN_PLAYERS).toBe(4);
   });
 });
+
+/* ──────────────────────────────────────────────────────────────────────────
+   LANE C (2026-09-11): a tag names a game the host has, and an unread roll
+   is not a zero. Every pin here is a defect measured on production that day.
+   ────────────────────────────────────────────────────────────────────────── */
+describe('a tag names a stake its host deals', () => {
+  // Midway Union's real nlh ladder on 2026-09-11: no 0.02, no 0.05, no 1.00,
+  // nothing above 5.
+  const MIDWAY_NLH = new Set([0.1, 0.25, 0.5, 2, 5]);
+
+  it('never tags a rung the host does not deal, at any roll', async () => {
+    const { assignPreferredStakes } = await import('./StableHand.js');
+    [300, 5_000, 25_000, 5_000_000].forEach((roll) => {
+      for (let i = 0; i < 300; i++) {
+        assignPreferredStakes(`h-${i}`, { roll, dealt: MIDWAY_NLH }).forEach((bb) =>
+          expect(MIDWAY_NLH.has(bb), `h-${i} roll ${roll} tagged ${bb}`).toBe(true)
+        );
+      }
+    });
+  });
+
+  it('drops to the band BELOW when the drawn band has no dealt rung, never above', async () => {
+    const { assignPreferredStakes, stakeBandOf, STAKE_BANDS } = await import('./StableHand.js');
+    // A host that deals only micro and mid: a horse drawn into low lands in micro.
+    const dealt = new Set([0.25, 0.5, 5]);
+    for (let i = 0; i < 300; i++) {
+      const open = assignPreferredStakes(`h-${i}`, { roll: 5_000_000 });
+      const got = assignPreferredStakes(`h-${i}`, { roll: 5_000_000, dealt });
+      const drawn = stakeBandOf(Math.max(...open));
+      const landed = stakeBandOf(Math.max(...got));
+      if (drawn === 'low') expect(landed).toBe('micro');
+      if (drawn === 'high') expect(landed).toBe('mid');
+      expect(STAKE_BANDS.indexOf(landed)).toBeLessThanOrEqual(STAKE_BANDS.indexOf(drawn));
+    }
+  });
+
+  it('carries the adjacent rung only when the host deals it', async () => {
+    const { assignPreferredStakes } = await import('./StableHand.js');
+    for (let i = 0; i < 300; i++) {
+      const st = assignPreferredStakes(`h-${i}`, { roll: 5_000_000, dealt: MIDWAY_NLH });
+      // 2 is dealt and 1 is not, so an anchor at 2 rides alone; an anchor at
+      // 0.5 keeps 0.25, and 1 never appears at all.
+      expect(st).not.toContain(1);
+      if (Math.max(...st) === 2) expect(st).toEqual([2]);
+      if (Math.max(...st) === 0.5) expect(st).toEqual([0.25, 0.5]);
+    }
+  });
+
+  it('gives the cheapest dealt rung to a roll that funds nothing the host deals', async () => {
+    const { assignPreferredStakes } = await import('./StableHand.js');
+    expect(assignPreferredStakes('broke', { roll: 10, dealt: new Set([0.5, 2]) })).toEqual([0.5]);
+  });
+
+  it('is deterministic with a ladder, and identical to the old draw without one', async () => {
+    const { assignPreferredStakes } = await import('./StableHand.js');
+    expect(assignPreferredStakes('a', { roll: 25_000, dealt: MIDWAY_NLH })).toEqual(
+      assignPreferredStakes('a', { roll: 25_000, dealt: MIDWAY_NLH })
+    );
+    expect(assignPreferredStakes('a', { roll: 25_000 })).toEqual(
+      assignPreferredStakes('a', { roll: 25_000, dealt: undefined })
+    );
+  });
+
+  it('assignVariants never hands out a variant the host has no game of', async () => {
+    const { assignVariants } = await import('./StableHand.js');
+    const ids = Array.from({ length: 200 }, (_, i) => `h-${i}`);
+    const allowed = new Set(['nlh', 'plo4']);
+    assignVariants(ids, undefined, allowed).forEach((v) => {
+      expect(v.length).toBeGreaterThanOrEqual(1);
+      v.forEach((x) => expect(allowed.has(x)).toBe(true));
+    });
+    // A host with no NLHE at all still gives everybody a variant it deals.
+    assignVariants(ids, undefined, new Set(['plo5'])).forEach((v) => expect(v).toEqual(['plo5']));
+  });
+});
+
+describe('an unread roll is not a zero at the mutex', () => {
+  it('skips the two money checks and nothing else when available is null', () => {
+    expect(evaluateSit({ ...baseSit, available: null, sessionStartBalance: null })).toBe('ok');
+    // Identity still decides.
+    expect(
+      evaluateSit({ ...baseSit, available: null, sessionStartBalance: null, activeSeatCount: 4 })
+    ).toBe('seat_cap');
+    expect(
+      evaluateSit({ ...baseSit, available: null, sessionStartBalance: null, sitsOnKeyToday: 99 })
+    ).toBe('sit_cap');
+    expect(
+      evaluateSit({ ...baseSit, available: null, sessionStartBalance: null, isRestDay: true })
+    ).toBe('rest_day');
+    expect(
+      evaluateSit({ ...baseSit, available: null, sessionStartBalance: null, killed: true })
+    ).toBe('killed');
+  });
+
+  it('a read roll still refuses brm, and a missing session start falls back to it', () => {
+    expect(evaluateSit({ ...baseSit, available: 0 })).toBe('brm');
+    expect(evaluateSit({ ...baseSit, available: 10_000, sessionStartBalance: null })).toBe('ok');
+    expect(
+      evaluateSit({ ...baseSit, available: 10_000, sessionStartBalance: null, buyIn: 6_000 })
+    ).toBe('brm');
+  });
+});
+
+describe('the neediest band is one the host deals', () => {
+  it('never names a band with no enabled game, and says so with null when none has one', async () => {
+    const { neediestStakeBand } = await import('./StableHand.js');
+    type Band = 'micro' | 'low' | 'mid' | 'high';
+    const bands = (...b: Band[]) => new Set<Band>(b);
+    // Midway Union 2026-09-11: high at zero seats because every game above
+    // 2/5 is switched off. The old answer was 'high', 328 refused orders.
+    const seats = { micro: 84, low: 116, mid: 25, high: 0 };
+    expect(neediestStakeBand(seats)).toBe('high');
+    expect(neediestStakeBand(seats, bands('micro', 'low', 'mid'))).toBe('mid');
+    expect(neediestStakeBand(seats, bands())).toBeNull();
+    expect(neediestStakeBand({ micro: 0, low: 0, mid: 0, high: 0 }, bands('low'))).toBe('low');
+  });
+});

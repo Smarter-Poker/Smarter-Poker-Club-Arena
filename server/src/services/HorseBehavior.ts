@@ -437,7 +437,34 @@ export function applyStakeBandSupply(bands: Iterable<HorseStakeBand>): {
  * playing mid because the high games are switched off is an ordinary thing to
  * see; a hundred names that vanish from the floor entirely is not.
  */
+let unhydratedRefusalReported = false;
+
+/** Has the assignment been loaded at all? False from boot until the first
+ *  successful HorseLaneLoader pass, and in a test that cleared the map. */
+export function stakeBandsHydrated(): boolean {
+  return assignedStakeBands.size > 0;
+}
+
 export function stakeBandAllows(horseId: string, bigBlind: number): boolean {
+  /* NOTHING LOADED IS NOT "EVERYONE IS MICRO" (2026-09-09). `stakeBandFor`
+     answers 'micro' for a horse with no record, which is right for one new
+     horse and wrong for a whole fleet whose records have not been read yet:
+     for the fleet's first cycle after a restart that made every horse a
+     micro name, so the pass that refills the floor could seat the 25/50
+     regulars at 0.05/0.10 and nobody anywhere else. An unread assignment
+     refuses, once per process out loud, and HorseLaneLoader loads at boot
+     and retries a failed first load within a minute. This is the
+     fail-closed half of the doctrine: an incomplete horse pool skips the
+     decision; it never guesses it. */
+  if (assignedStakeBands.size === 0) {
+    if (!unhydratedRefusalReported) {
+      unhydratedRefusalReported = true;
+      console.warn(
+        '[HorseBehavior] stake bands not loaded yet - the band gate refuses every seat it decides until HorseLaneLoader lands'
+      );
+    }
+    return false;
+  }
   return effectiveStakeBandFor(horseId) === stakeBandForBigBlind(bigBlind);
 }
 

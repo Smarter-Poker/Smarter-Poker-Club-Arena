@@ -67,6 +67,22 @@ describe('a sit is counted against the key the mutex judged', () => {
     expect(rows[0].cash_sits_today).toEqual({ k: 1 });
     expect(rows[0].counters_reset_on).toBe(TODAY);
   });
+
+  it('stamps updated_at on every row, because the column default never fires', () => {
+    /* 2026-09-11: `updated_at` is `DEFAULT now() NOT NULL`, and a default
+       fires on INSERT only. Every write after a horse's first is the upsert's
+       UPDATE path, so the column held 2026-09-04 for a fleet writing these
+       counters every thirty seconds - and "when did the Stable Hand last
+       touch this horse" was unanswerable from the row that exists to answer
+       it. */
+    const before = Date.now();
+    const { rows } = fold([state({ cashSitsToday: {} })], [{ horseId: 'h1', sitOnKey: 'k' }]);
+    expect(typeof rows[0].updated_at).toBe('string');
+    const stamped = Date.parse(rows[0].updated_at);
+    expect(Number.isFinite(stamped)).toBe(true);
+    expect(stamped).toBeGreaterThanOrEqual(before - 1000);
+    expect(stamped).toBeLessThanOrEqual(Date.now() + 1000);
+  });
 });
 
 describe('THE DAY RESETS ITSELF - there is no midnight job to miss', () => {

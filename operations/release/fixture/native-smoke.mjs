@@ -1,25 +1,39 @@
 // Real binaries and protocols in one disposable, network=none Linux container.
 // This deliberately does not emit a product semantic certificate.
 import assert from 'node:assert/strict';
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { spawn, execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdir, writeFile, readFile, access, open, readdir } from 'node:fs/promises';
+import { mkdir, writeFile, readFile, access, open, readdir, lstat, unlink } from 'node:fs/promises';
 import pg from 'pg';
 import { chromium } from '@playwright/test';
 import { fixtureSecrets, fixtureAuth } from './auth-fixture.mjs';
+import { startObservationBridge } from './observation-bridge.mjs';
 
 const exec = promisify(execFile);
 const root = '/run/native-smoke';
 const pgBin = '/usr/lib/postgresql/17/bin';
 const database = 'club_arena_qualification';
+const controls = '/opt/qualification/controls';
+const controlModules = controls + '/operations/release/native/';
+const observationSocket = '/run/fixture-observer/observation.sock';
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 let stage = 'initialization';
 const children = [];
+let bridgeFailure = null;
+
+async function smokeControl() {
+  const control = JSON.parse(await readFile(controls + '/smoke-control.json', 'utf8'));
+  assert.deepEqual(Object.keys(control).sort(), ['control_sha', 'version']);
+  assert.equal(control.version, 1);
+  assert.match(control.control_sha, /^[0-9a-f]{40}$/);
+  return control;
+}
 
 async function eventually(check, milliseconds = 60000) {
   const deadline = Date.now() + milliseconds;
   for (;;) {
+    assert.equal(bridgeFailure, null, 'native observation bridge failed');
     assert.ok(
       children.every(
         (child) => !child.nativeFailed && child.exitCode === null && child.signalCode === null
@@ -74,6 +88,8 @@ async function command(binary, args, env = {}) {
 async function oracle() {
   stage = 'observer-user-isolation';
   assert.equal(process.getuid(), 1001);
+  assert.equal(process.getgid(), 1001);
+  assert.ok(!process.getgroups().includes(1000));
   await mkdir('/tmp/qualification', { recursive: true, mode: 0o700 });
   await assert.rejects(readFile(`${root}/private/service.json`), {
     code: 'EACCES',
@@ -100,30 +116,53 @@ async function oracle() {
       );
     }
   }
-  const reader = new pg.Client({
-    host: '/run/postgresql',
-    database,
-    user: 'qualification_reader',
-  });
-  await reader.connect();
-  try {
-    await reader.query('SET row_security=off');
-    const roles = await reader.query(
-      'SELECT current_user, rolsuper, rolcreaterole FROM pg_roles WHERE rolname=current_user'
-    );
-    assert.equal(roles.rows[0].current_user, 'qualification_reader');
-    assert.equal(roles.rows[0].rolsuper, false);
-    assert.equal(roles.rows[0].rolcreaterole, false);
-    assert.equal(
-      (await reader.query('SELECT count(*)::int AS n FROM public.fixture_smoke')).rows[0].n,
-      2
-    );
-    await assert.rejects(reader.query('DELETE FROM public.fixture_smoke'), {
-      code: '42501',
+  const pgDirectory = await lstat('/run/postgresql');
+  assert.ok(pgDirectory.isDirectory() && !pgDirectory.isSymbolicLink());
+  assert.equal(pgDirectory.uid, 1000);
+  assert.equal(pgDirectory.gid, 1000);
+  assert.equal(pgDirectory.mode & 0o7777, 0o700);
+  await assert.rejects(readdir('/run/postgresql'), { code: 'EACCES' });
+  for (const user of ['postgres', 'qualification_reader']) {
+    const denied = new pg.Client({
+      host: '/run/postgresql',
+      database,
+      user,
+      connectionTimeoutMillis: 3000,
     });
-    await assert.rejects(reader.query('SET ROLE postgres'), { code: '42501' });
+    try {
+      // This must be filesystem denial, not merely a failed SQL privilege check.
+      await assert.rejects(denied.connect(), { code: 'EACCES' });
+    } finally {
+      await denied.end();
+    }
+  }
+  stage = 'native-observation-bridge';
+  const control = await smokeControl();
+  await assert.rejects(writeFile(controls + '/smoke-control.json', '{}'), { code: 'EROFS' });
+  await assert.rejects(unlink(observationSocket), { code: 'EACCES' });
+  await assert.rejects(
+    writeFile('/run/fixture-observer/oracle-created', 'refused', { flag: 'wx' }),
+    { code: 'EACCES' }
+  );
+  const { createObservationClient } = await import(
+    controlModules + 'component-observation-client.mjs'
+  );
+  const observer = createObservationClient(fixture.observation_bridge, control);
+  try {
+    assert.deepEqual(await observer.catalogue(), { catalogue_digest: fixture.catalogue_digest });
+    // Fixed synthetic protocol data only: these are not engine or browser hands.
+    const hand = { hand_number: 2, next_hand_number: 3 };
+    assert.deepEqual(await observer.handPresence(hand), { count: 1 });
+    assert.deepEqual(await observer.handFacts(hand), {
+      count: 1,
+      rows: [
+        { hand_number: 2, pot_size: '3.00', rake_amount: '0.00', action_count: 1, player_count: 2 },
+      ],
+      seat_count: 0,
+    });
+    assert.deepEqual(await observer.catalogue(), { catalogue_digest: fixture.catalogue_digest });
   } finally {
-    await reader.end();
+    observer.close();
   }
   stage = 'chromium-native-read-and-rls';
   const browser = await chromium.launch({ headless: true });
@@ -154,6 +193,8 @@ async function oracle() {
     JSON.stringify({
       scope: 'native-service-smoke',
       observer: 'passed',
+      observation_bridge: 'native-synthetic-protocol',
+      postgres_socket: 'denied',
       browser: 'chromium',
       retries: 0,
     })
@@ -162,11 +203,14 @@ async function oracle() {
 
 async function services() {
   assert.equal(process.getuid(), 1000);
+  assert.equal(process.getgid(), 1000);
+  assert.ok(!process.getgroups().includes(1001));
   assert.equal(process.version, 'v22.23.2');
   await mkdir(root, { recursive: true, mode: 0o755 });
   await mkdir(`${root}/private`, { mode: 0o700 });
   await mkdir('/tmp/fixture/realtime', { recursive: true, mode: 0o700 });
-  await mkdir('/run/postgresql', { mode: 0o755 });
+  await mkdir('/run/postgresql', { mode: 0o700 });
+  const control = await smokeControl();
   const secrets = { ...fixtureSecrets(), realtimeCookie: randomBytes(48).toString('hex') };
   await writeFile(`${root}/private/service.json`, JSON.stringify(secrets), {
     mode: 0o600,
@@ -195,10 +239,7 @@ async function services() {
     `${data}/pg_hba.conf`,
     'local all all peer map=fixture_users\nhost all all 127.0.0.1/32 scram-sha-256\n'
   );
-  await writeFile(
-    `${data}/pg_ident.conf`,
-    'fixture_users fixture postgres\nfixture_users qualification qualification_reader\n'
-  );
+  await writeFile(`${data}/pg_ident.conf`, 'fixture_users fixture postgres\n');
   await start('postgres', `${pgBin}/postgres`, [
     '-D',
     data,
@@ -238,6 +279,7 @@ async function services() {
     database,
   });
   await db.connect();
+  let bridge;
   try {
     stage = 'postgresql-wal2json-native-slot';
     // Load the real output plugin through PostgreSQL. Its presence on disk
@@ -261,7 +303,6 @@ async function services() {
       CREATE ROLE supabase_auth_admin LOGIN CREATEROLE PASSWORD '${password}';
       CREATE ROLE supabase_admin LOGIN SUPERUSER PASSWORD '${password}';
       GRANT anon, authenticated, service_role TO supabase_admin WITH ADMIN OPTION;
-      CREATE ROLE qualification_reader LOGIN NOINHERIT BYPASSRLS;
       CREATE SCHEMA auth AUTHORIZATION supabase_auth_admin;
       GRANT CREATE ON DATABASE ${database} TO supabase_auth_admin;
       CREATE SCHEMA extensions;
@@ -320,9 +361,8 @@ async function services() {
       CREATE TABLE public.fixture_smoke (id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, owner_id uuid NOT NULL REFERENCES auth.users(id), payload text NOT NULL);
       ALTER TABLE public.fixture_smoke ENABLE ROW LEVEL SECURITY;
       CREATE POLICY own_rows ON public.fixture_smoke FOR SELECT TO authenticated USING (owner_id::text = current_setting('request.jwt.claims',true)::json->>'sub');
-      GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role, qualification_reader;
-      GRANT SELECT ON public.fixture_smoke TO anon, authenticated, service_role, qualification_reader;
-      GRANT CONNECT ON DATABASE ${database} TO qualification_reader;
+      GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
+      GRANT SELECT ON public.fixture_smoke TO anon, authenticated, service_role;
       CREATE PUBLICATION supabase_realtime FOR TABLE public.fixture_smoke;
     `);
     await db.query('INSERT INTO public.fixture_smoke(owner_id,payload) VALUES($1,$2)', [
@@ -465,6 +505,75 @@ async function services() {
     } finally {
       socket.close();
     }
+    stage = 'native-observation-bridge-start';
+    // These minimal base tables satisfy the exact production observation helper
+    // types. They deliberately contain synthetic protocol rows, not gameplay.
+    await db.query(`CREATE TABLE public.hand_history (
+      table_id uuid NOT NULL, hand_number bigint NOT NULL,
+      pot_size numeric(20,2) NOT NULL, rake_amount numeric(20,2) NOT NULL,
+      actions jsonb NOT NULL, players jsonb NOT NULL);
+      CREATE TABLE public.table_seats (table_id uuid NOT NULL, user_id uuid NOT NULL);
+      ALTER TABLE public.hand_history ENABLE ROW LEVEL SECURITY;
+      ALTER TABLE public.table_seats ENABLE ROW LEVEL SECURITY;`);
+    assert.equal(
+      (
+        await db.query(
+          "SELECT count(*)::integer AS count FROM pg_roles WHERE rolname='qualification_reader'"
+        )
+      ).rows[0].count,
+      0
+    );
+    const binding = {
+      version: 1,
+      instance_id: randomUUID(),
+      control_sha: control.control_sha,
+      table_id: randomUUID(),
+      spectator_user_id: users[2].id,
+    };
+    const insertHand = (number) =>
+      db.query(
+        `INSERT INTO public.hand_history
+      (table_id,hand_number,pot_size,rake_amount,actions,players) VALUES($1,$2,3,0,$3,$4)`,
+        [
+          binding.table_id,
+          number,
+          JSON.stringify([{ type: 'synthetic-protocol-row' }]),
+          JSON.stringify([users[0].id, users[1].id]),
+        ]
+      );
+    await insertHand(1);
+    await db.query('INSERT INTO public.table_seats(table_id,user_id) VALUES($1,$2),($1,$3)', [
+      binding.table_id,
+      users[0].id,
+      users[1].id,
+    ]);
+    const observerDb = new pg.Client({
+      host: '/run/postgresql',
+      user: 'postgres',
+      database,
+      connectionTimeoutMillis: 5000,
+      query_timeout: 5000,
+      statement_timeout: 5000,
+    });
+    try {
+      await observerDb.connect();
+    } catch (error) {
+      await observerDb.end().catch(() => {});
+      throw error;
+    }
+    bridge = await startObservationBridge({
+      db: observerDb,
+      binding,
+      onFailure: (category) => {
+        bridgeFailure = category;
+      },
+    });
+    // The actual bridge captures floor=1 before this new, fixed test row exists.
+    await insertHand(2);
+    const { schemaCatalogue } = await import(
+      controlModules + 'component-semantic-observations.mjs'
+    );
+    const catalogueDigest = await schemaCatalogue(db);
     stage = 'observer-and-browser-handoff';
     await writeFile(
       `${root}/oracle.json`,
@@ -475,6 +584,8 @@ async function services() {
           .map(([, value]) => createHash('sha256').update(value).digest('hex')),
         user_id: user.id,
         access_token: user.session.access_token,
+        observation_bridge: { ...bridge.binding, socket: observationSocket },
+        catalogue_digest: catalogueDigest,
       }),
       { mode: 0o644 }
     );
@@ -498,10 +609,12 @@ async function services() {
         postgrest: '14.5',
         realtime: '2.134.10',
         change: 'observed',
+        observation_bridge: 'native-synthetic-protocol',
         retries: 0,
       })
     );
   } finally {
+    await bridge?.close();
     await db.end();
   }
 }

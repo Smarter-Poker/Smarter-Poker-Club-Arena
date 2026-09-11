@@ -12,8 +12,11 @@ import uuid
 
 FILES = ('Dockerfile', 'package.json', 'package-lock.json', 'fixture-server.mjs',
          'runtime-files.mjs', 'gateway.mjs', 'auth-fixture.mjs', 'actors.mjs',
-         'seed-fixture.mjs', 'native-smoke.mjs', 'build-image.sh', 'smoke-image.sh')
+         'seed-fixture.mjs', 'native-smoke.mjs', 'observation-bridge.mjs', 'build-image.sh', 'smoke-image.sh')
 PREFIX = 'operations/release/fixture/'
+CONTROL_FILES = tuple('operations/release/native/' + name for name in (
+    'component-observation-protocol.mjs', 'component-observation-client.mjs',
+    'component-semantic-observations.mjs'))
 
 
 def require(value):
@@ -61,11 +64,13 @@ def smoke_records(output):
             except json.JSONDecodeError:
                 continue
     observer = {'scope': 'native-service-smoke', 'observer': 'passed',
-                'browser': 'chromium', 'retries': 0}
+                'browser': 'chromium', 'retries': 0,
+                'observation_bridge': 'native-synthetic-protocol', 'postgres_socket': 'denied'}
     services = {'scope': 'native-service-smoke', 'postgres': '17.11',
                 'extensions': 6, 'auth': '2.196.0', 'mfa': 'aal2',
                 'postgrest': '14.5', 'realtime': '2.134.10',
-                'change': 'observed', 'retries': 0}
+                'change': 'observed', 'retries': 0,
+                'observation_bridge': 'native-synthetic-protocol'}
     require(rows.count(observer) == 1 and rows.count(services) == 1)
     require('Native service smoke and container cleanup passed (not a product certificate).' in output.splitlines())
     return [observer, services]
@@ -91,11 +96,11 @@ def execute(repo, output, expected, run=command):
         require(revision == expected)
         run(['git', 'diff', '--exit-code', 'HEAD', '--', PREFIX], repo, env)
         manifest = {}
-        for file in FILES:
-            path = repo / PREFIX / file
+        for relative in tuple(PREFIX + file for file in FILES) + CONTROL_FILES:
+            path = repo / relative
             require(path.is_file() and not path.is_symlink())
-            run(['git', 'ls-files', '--error-unmatch', PREFIX + file], repo, env)
-            manifest[PREFIX + file] = hashlib.sha256(path.read_bytes()).hexdigest()
+            run(['git', 'ls-files', '--error-unmatch', relative], repo, env)
+            manifest[relative] = hashlib.sha256(path.read_bytes()).hexdigest()
         receipt.update({'control_revision': revision, 'source_revision': revision,
                         'source_sha256': manifest, 'container': name})
         receipt['stage'] = 'build'

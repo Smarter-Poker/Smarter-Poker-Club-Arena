@@ -15,9 +15,11 @@ LABELS = {'org.opencontainers.image.revision': SHA,
           'com.smarter-poker.scope': 'isolated-component-fixture',
           'com.smarter-poker.control-revision': SHA,
           'com.smarter-poker.source-revision': SHA}
-RECORDS = [dict(scope='native-service-smoke', observer='passed', browser='chromium', retries=0),
+RECORDS = [dict(scope='native-service-smoke', observer='passed', browser='chromium', retries=0,
+                observation_bridge='native-synthetic-protocol', postgres_socket='denied'),
            dict(scope='native-service-smoke', postgres='17.11', extensions=6, auth='2.196.0', mfa='aal2',
-                postgrest='14.5', realtime='2.134.10', change='observed', retries=0)]
+                postgrest='14.5', realtime='2.134.10', change='observed', retries=0,
+                observation_bridge='native-synthetic-protocol')]
 SMOKE = '\n'.join(map(json.dumps, RECORDS)) + '\nNative service smoke and container cleanup passed (not a product certificate).\n'
 
 
@@ -29,6 +31,10 @@ class RunnerTests(unittest.TestCase):
             fixture.mkdir(parents=True)
             for file in m.FILES:
                 (fixture / file).write_text('committed fixture source')
+            for relative in m.CONTROL_FILES:
+                helper = root / relative
+                helper.parent.mkdir(parents=True, exist_ok=True)
+                helper.write_text('committed observation helper')
             if fault == 'symlink':
                 (fixture / 'Dockerfile').unlink()
                 (fixture / 'Dockerfile').symlink_to(fixture / 'package.json')

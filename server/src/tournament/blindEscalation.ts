@@ -241,9 +241,21 @@ export function escalatedBlindLevel(
   autoEscalated: true;
 } {
   const factor = escalationFactor(index, persistedLength, ratio);
+  /**
+   * WHOLE CHIPS (2026-09-11). ratio^k is fractional at every ratio but 2, and
+   * tournament chips are whole: `tournament_players.chips` is an INTEGER
+   * column. At the observed 1.278 cadence, 200/400 became 255.58/511.15 and
+   * dealt pots of fractional chips. The hand commit writes the integer column,
+   * compares it with the exact numeric stack it was asked to write, finds they
+   * differ, and rolls the WHOLE hand back ("did not durably sync every final
+   * seat stack"): 11, 9 and 2 refused hands on three heads-up SNGs between
+   * 00:00 and 00:02 UTC, and 12 more SNGs by 01:37. The persisted ladders are
+   * already whole (blindLadder.niceValuesFrom); this is the one place a level
+   * is invented, so this is where it becomes whole.
+   */
   const scale = (v: unknown) => {
     const n = Number(v);
-    return Math.min((Number.isFinite(n) ? n : 0) * factor, MAX_BLIND_VALUE);
+    return Math.round(Math.min((Number.isFinite(n) ? n : 0) * factor, MAX_BLIND_VALUE));
   };
   const playable = enforcePlayableBlindLevel({
     smallBlind: scale(lastPlayable?.smallBlind),

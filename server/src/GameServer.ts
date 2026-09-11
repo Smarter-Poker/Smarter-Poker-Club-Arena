@@ -3912,7 +3912,13 @@ export class GameServer {
         if (summary.scanned > 0) {
           console.log(
             `[FeeReconciler] scanned ${summary.scanned}, resolved ${summary.resolved}, ` +
-              `still failing ${summary.stillFailing}, exhausted ${summary.exhausted}`
+              `still failing ${summary.stillFailing}, exhausted ${summary.exhausted}` +
+              /* A jackpot deferred by the break is neither resolved nor still
+                 failing, and a row that leaves no trace in this line reads as
+                 a row that was never there. */
+              (summary.deferredFrozen > 0
+                ? `, deferred for the break ${summary.deferredFrozen}`
+                : '')
           );
         }
       } catch (err) {

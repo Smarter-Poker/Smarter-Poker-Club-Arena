@@ -11,6 +11,7 @@
     "Assert registration charges and stamps its host-club wallet while preserving the other club wallet.",
     "Require the wallet-funded entrant to receive one 100-chip refund in its exact source wallet.",
     "Require the satellite-funded entrant to receive one 100-chip tournament-entry-only ticket and zero wallet chips.",
+    "Require the tournament-ticket-funded entrant to receive exactly one replacement 100-chip tournament-entry-only ticket and zero wallet chips.",
     "Retain exact stored receipt replay, fee attribution, escrow closure and immutable evidence assertions.",
     "Restore only the exact tracked atomic_cancel_tournament platform-source seed omitted from the schema-only database."
   ],
@@ -51,7 +52,8 @@
       },
       "semantic_acceptance": true,
       "rollback_verified": true,
-      "current_corrected_sql_sha256": "6dcf7a7e9b4008d9d3cf4cc5d716dff99997524e45704d9c19fc2f3fa04cb5ab",
+      "current_corrected_sql_bytes": 29164,
+      "current_corrected_sql_sha256": "485d48aad7147ab9b54d8c0f3118a6d928948468aade3da2361452f9ccedfce5",
       "log": "/tmp/codex-chip-entry-cancellation-seeded-native.log"
     }
   ],

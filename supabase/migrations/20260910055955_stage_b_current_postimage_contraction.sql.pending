@@ -5,9 +5,12 @@
 -- intermediate authority, overwrite later live fixes, and split one scheduler
 -- retirement across transactions. This forward-only boundary composes their
 -- final contract over the measured catalog state through the byte-authenticated
--- 20260911052648 live tail, including the 20260910063559 and 20260910064701
--- lease-heartbeat repairs, final-deal v2, wheel free-spin retirement, and
--- exact-generation bounty rebuy settlement. In particular,
+-- 20260911072837 live tail, including the 20260910063559 and 20260910064701
+-- lease-heartbeat repairs, final-deal v2, wheel free-spin retirement,
+-- exact-generation bounty rebuy settlement, welcome-spin coherence, the
+-- corrected unstarted-entry return policy, operator/player game views, retired
+-- mint reporting, and the closed-period single-payer rakeback boundary.
+-- In particular,
 -- this contraction may never reinstall a lease-row FOR SHARE fence that makes
 -- a busy tournament manager starve its own heartbeat.
 --
@@ -328,7 +331,19 @@ BEGIN
       ('20260911052216','the_daily_free_spin_leaves_the_building',49343,
        '4778ce9d373a98e8b10cb31e496bf18e4e527c0a158f37a4e4fcf500b3c9b995'),
       ('20260911052648','bounty_rebuy_settles_its_exact_prior_entry_generation',22463,
-       '4f9616b84906a7479c60dd0a266c2c2d1bb056828aa53ef45095ea31d058c5e2')
+       '4f9616b84906a7479c60dd0a266c2c2d1bb056828aa53ef45095ea31d058c5e2'),
+      ('20260911061449','the_welcome_spin_answers_the_same_everywhere',45362,
+       '3d6efc9bc8f00e5e9840ed09d806ea9fa3d8513117a8acb8f7580d56443f4cc1'),
+      ('20260911061723','cancel_unstarted_entries_to_their_exact_funded_origin_wallet',16739,
+       '84f2d79130e27bd687c848a45bb65bf5b63ac2ebf0d4e9bf360dc1ec19cd284a'),
+      ('20260911062053','the_operator_sees_the_money_and_the_room',22888,
+       '3f01c9da1e26451d8d8a938e1b942f70f2bdcff4db7a96e452210c5632d07648'),
+      ('20260911064427','the_player_can_see_the_day_and_the_way_out',20833,
+       '9a5109e118fd3877b816126652b3e5ac0f8b54780d2dc6b37be33e61cd4b0bc6'),
+      ('20260911072424','the_mint_that_is_gone_stops_being_reported',22537,
+       'a12119f40903928cf8febcca78f10b34a5b44cd8be6a996ccc68dd9c0dc69ecc'),
+      ('20260911072837','legacy_rakeback_closed_period_single_payer',36786,
+       'a55e792f12040799a20fcf6d54969059efecaea3869c3aa148191fe1b083c4c7')
   )
   SELECT count(*)::integer,
          count(*) FILTER (
@@ -343,9 +358,9 @@ BEGIN
     FROM expected
     LEFT JOIN supabase_migrations.schema_migrations m
       ON m.version=expected.version AND m.name=expected.name;
-  IF v_count<>3 OR v_bad<>0 THEN
+  IF v_count<>9 OR v_bad<>0 THEN
     RAISE EXCEPTION
-      'Stage-B requires the three byte-exact 20260911050554..20260911052648 live-tail receipts'
+      'Stage-B requires the nine byte-exact 20260911050554..20260911072837 live-tail receipts'
       USING ERRCODE='55000';
   END IF;
 
@@ -697,6 +712,34 @@ BEGIN
           AND NOT tg.tginitdeferred)
      OR NOT EXISTS (
        SELECT 1 FROM pg_proc p JOIN pg_language l ON l.oid=p.prolang
+        WHERE p.oid=to_regprocedure(
+              'public.fn_ca_tournament_cancellation_receipt(uuid,uuid)')
+          AND md5(p.prosrc)='1e4c6d2f87ac2068455dbff2ace3fb2e'
+          AND octet_length(p.prosrc)=20655
+          AND encode(extensions.digest(
+                convert_to(p.prosrc,'UTF8'),'sha256'),'hex')=
+              'f271fae63384e7ea642f8ffc0c8c7efe7b0158991b51621f6c168531fd968f06'
+          AND md5(pg_get_functiondef(p.oid))=
+              'ed52b6ba06cd98d665dd7123a6460b5a'
+          AND octet_length(pg_get_functiondef(p.oid))=20937
+          AND encode(extensions.digest(convert_to(
+                pg_get_functiondef(p.oid),'UTF8'),'sha256'),'hex')=
+              '745a5eb666bea65fe3f0f6afd5e3d1e10d6579a579a1b114c9c371c4d8d1f4ad'
+          AND p.proowner='postgres'::regrole AND l.lanname='plpgsql'
+          AND p.prosecdef AND p.provolatile='s' AND p.proparallel='u'
+          AND NOT p.proisstrict AND NOT p.proleakproof
+          AND p.prokind='f' AND NOT p.proretset
+          AND p.prorettype='jsonb'::regtype
+          AND p.pronargs=2 AND p.pronargdefaults=1
+          AND p.proargnames=ARRAY[
+                'p_tournament_id','p_observed_actor_id']::text[]
+          AND p.proargmodes IS NULL AND p.proallargtypes IS NULL
+          AND p.proargdefaults IS NOT NULL
+          AND p.proconfig=ARRAY[
+                'search_path=public','statement_timeout=30s']::text[]
+          AND p.proacl::text='{postgres=X/postgres}')
+     OR NOT EXISTS (
+       SELECT 1 FROM pg_proc p JOIN pg_language l ON l.oid=p.prolang
         WHERE p.oid=
               'public.process_tournament_rebuy(uuid,uuid,text,numeric,numeric,integer,text)'::regprocedure
           AND md5(p.prosrc)='607e4daf9060a1176e032016b8879808'
@@ -732,7 +775,7 @@ BEGIN
           WHERE source='fn_collect_bounty'
             AND note='Exact-generation fixed and PKO bounty payer used by the atomic live authority.')<>1 THEN
     RAISE EXCEPTION
-      'Stage-B found a drifted final-deal or bounty-rebuy live-tail contract'
+      'Stage-B found a drifted final-deal, cancellation, or bounty-rebuy live-tail contract'
       USING ERRCODE='55000';
   END IF;
 
@@ -11107,11 +11150,34 @@ COMMENT ON FUNCTION public.fn_ca_eliminate_absent_tournament_players(
 DO $verify_stage_b_171924_mutable_sources_carried$
 BEGIN
   IF NOT EXISTS (
-       SELECT 1 FROM pg_proc p
+       SELECT 1 FROM pg_proc p JOIN pg_language l ON l.oid=p.prolang
         WHERE p.oid=to_regprocedure(
           'public.atomic_cancel_tournament_pre_seat_guard(uuid,uuid)')
           AND md5(p.prosrc)='16ea7acbbf76613a0a1193dff18f1330'
-          AND octet_length(p.prosrc)=32778)
+          AND octet_length(p.prosrc)=32778
+          AND encode(extensions.digest(
+                convert_to(p.prosrc,'UTF8'),'sha256'),'hex')=
+              '30288544fd40e61f902fd6f363368e05e220cbef06ab10edba9ea1e387709f2c'
+          AND md5(pg_get_functiondef(p.oid))=
+              '43c2d426de3475410f8e0a1be988ad07'
+          AND octet_length(pg_get_functiondef(p.oid))=33053
+          AND encode(extensions.digest(convert_to(
+                pg_get_functiondef(p.oid),'UTF8'),'sha256'),'hex')=
+              '2d23b1ecdec88e8f4210110ba1393b317b9a412a1c385ce650103d318d478b2d'
+          AND p.proowner='postgres'::regrole AND l.lanname='plpgsql'
+          AND p.prosecdef AND p.provolatile='v' AND p.proparallel='u'
+          AND NOT p.proisstrict AND NOT p.proleakproof
+          AND p.prokind='f' AND NOT p.proretset
+          AND p.prorettype='jsonb'::regtype
+          AND p.pronargs=2 AND p.pronargdefaults=0
+          AND p.proargnames=ARRAY[
+                'p_tournament_id','p_admin_id']::text[]
+          AND p.proargmodes IS NULL AND p.proallargtypes IS NULL
+          AND p.proargdefaults IS NULL
+          AND p.proconfig=ARRAY[
+                'search_path=public, extensions, pg_temp',
+                'statement_timeout=120s']::text[]
+          AND p.proacl::text='{postgres=X/postgres}')
      OR NOT EXISTS (
        SELECT 1 FROM pg_proc p
         WHERE p.oid=to_regprocedure(

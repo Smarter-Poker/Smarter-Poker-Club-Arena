@@ -1,9 +1,12 @@
 -- 20260910042007_stage_b_forward_authority_expansion
 --
 -- Thirteen historical Stage-B migrations are absent from production while
--- production has continued through the byte-authenticated 20260911052648 live
--- tail (final-deal v2, wheel free-spin retirement, and exact-generation bounty
--- rebuy settlement), after the 20260910051447-promoted seat-move hotfix.
+-- production has continued through the byte-authenticated 20260911072837 live
+-- tail (final-deal v2, wheel free-spin retirement, exact-generation bounty
+-- rebuy settlement, welcome-spin coherence, the corrected unstarted-entry
+-- return policy, operator/player game views, retired mint reporting, and the
+-- closed-period single-payer rakeback boundary), after the
+-- 20260910051447-promoted seat-move hotfix.
 -- Replaying those files
 -- would mix historical repair DML with runtime authority changes and overwrite
 -- newer production definitions. This forward expansion creates only the
@@ -502,13 +505,305 @@ BEGIN
             AND octet_length(m.statements[1])=22463
             AND encode(extensions.digest(
                   convert_to(m.statements[1],'UTF8'),'sha256'),'hex')=
-                '4f9616b84906a7479c60dd0a266c2c2d1bb056828aa53ef45095ea31d058c5e2')<>1 THEN
+                '4f9616b84906a7479c60dd0a266c2c2d1bb056828aa53ef45095ea31d058c5e2')<>1
+     OR (SELECT count(*)
+           FROM supabase_migrations.schema_migrations m
+          WHERE m.version='20260911061449'
+            AND m.name='the_welcome_spin_answers_the_same_everywhere'
+            AND cardinality(m.statements)=1
+            AND octet_length(m.statements[1])=45362
+            AND encode(extensions.digest(
+                  convert_to(m.statements[1],'UTF8'),'sha256'),'hex')=
+                '3d6efc9bc8f00e5e9840ed09d806ea9fa3d8513117a8acb8f7580d56443f4cc1')<>1
+     OR (SELECT count(*)
+           FROM supabase_migrations.schema_migrations m
+          WHERE m.version='20260911061723'
+            AND m.name='cancel_unstarted_entries_to_their_exact_funded_origin_wallet'
+            AND cardinality(m.statements)=1
+            AND octet_length(m.statements[1])=16739
+            AND encode(extensions.digest(
+                  convert_to(m.statements[1],'UTF8'),'sha256'),'hex')=
+                '84f2d79130e27bd687c848a45bb65bf5b63ac2ebf0d4e9bf360dc1ec19cd284a')<>1
+     OR (SELECT count(*)
+           FROM supabase_migrations.schema_migrations m
+          WHERE m.version='20260911062053'
+            AND m.name='the_operator_sees_the_money_and_the_room'
+            AND cardinality(m.statements)=1
+            AND octet_length(m.statements[1])=22888
+            AND encode(extensions.digest(
+                  convert_to(m.statements[1],'UTF8'),'sha256'),'hex')=
+                '3f01c9da1e26451d8d8a938e1b942f70f2bdcff4db7a96e452210c5632d07648')<>1
+     OR (SELECT count(*)
+           FROM supabase_migrations.schema_migrations m
+          WHERE m.version='20260911064427'
+            AND m.name='the_player_can_see_the_day_and_the_way_out'
+            AND cardinality(m.statements)=1
+            AND octet_length(m.statements[1])=20833
+            AND encode(extensions.digest(
+                  convert_to(m.statements[1],'UTF8'),'sha256'),'hex')=
+                '9a5109e118fd3877b816126652b3e5ac0f8b54780d2dc6b37be33e61cd4b0bc6')<>1
+     OR (SELECT count(*)
+           FROM supabase_migrations.schema_migrations m
+          WHERE m.version='20260911072424'
+            AND m.name='the_mint_that_is_gone_stops_being_reported'
+            AND cardinality(m.statements)=1
+            AND octet_length(m.statements[1])=22537
+            AND encode(extensions.digest(
+                  convert_to(m.statements[1],'UTF8'),'sha256'),'hex')=
+                'a12119f40903928cf8febcca78f10b34a5b44cd8be6a996ccc68dd9c0dc69ecc')<>1
+     OR (SELECT count(*)
+           FROM supabase_migrations.schema_migrations m
+          WHERE m.version='20260911072837'
+            AND m.name='legacy_rakeback_closed_period_single_payer'
+            AND cardinality(m.statements)=1
+            AND octet_length(m.statements[1])=36786
+            AND encode(extensions.digest(
+                  convert_to(m.statements[1],'UTF8'),'sha256'),'hex')=
+                'a55e792f12040799a20fcf6d54969059efecaea3869c3aa148191fe1b083c4c7')<>1 THEN
     RAISE EXCEPTION
-      'Stage-B expansion requires the exact 20260911050554..20260911052648 live tail'
+      'Stage-B expansion requires the exact 20260911050554..20260911072837 live tail'
       USING ERRCODE='55000';
   END IF;
 END;
 $require_exact_live_tail_receipts$;
+
+/* 20260911061723 changed unstarted satellite-seat and redeemed-ticket
+   cancellation into chip refunds. Stage B preserves the funded-origin policy
+   reviewed before that receipt: wallet_charge returns chips to its exact
+   originating wallet, while satellite_seat and tournament_ticket return only
+   tournament tickets. Authenticate that exact live source and catalog, then
+   apply one forward correction. Every other preimage refuses atomically. */
+DO $restore_ticket_returns_before_stage_b_ddl$
+DECLARE
+  v_oid oid;
+  v_source text;
+  v_definition text;
+  v_next text;
+  v_before jsonb;
+  v_after jsonb;
+BEGIN
+  v_oid:='public.atomic_cancel_tournament(uuid,uuid)'::regprocedure;
+  SELECT p.prosrc,pg_get_functiondef(p.oid),to_jsonb(p)-'prosrc'
+    INTO STRICT v_source,v_definition,v_before
+    FROM pg_proc p JOIN pg_language l ON l.oid=p.prolang
+   WHERE p.oid=v_oid
+     AND md5(p.prosrc)='623100aa87ed6d0ef1a3598fb9ccb8b3'
+     AND octet_length(p.prosrc)=30326
+     AND encode(extensions.digest(convert_to(p.prosrc,'UTF8'),'sha256'),'hex')=
+         '6377fbeb9c7f9367e25d6c789e6182c382693a07dd122f261b37a94a7c90e029'
+     AND md5(pg_get_functiondef(p.oid))='455f7f1934d136e27c13310eab07e3c6'
+     AND octet_length(pg_get_functiondef(p.oid))=30586
+     AND encode(extensions.digest(
+           convert_to(pg_get_functiondef(p.oid),'UTF8'),'sha256'),'hex')=
+         '17136069945c4f0bac6a2d012da0c6eeb1bb2320c36c4d936d0b436e6c3515db'
+     AND p.proowner='postgres'::regrole AND l.lanname='plpgsql'
+     AND p.prosecdef AND p.provolatile='v' AND p.proparallel='u'
+     AND NOT p.proisstrict AND NOT p.proleakproof
+     AND p.prokind='f' AND NOT p.proretset
+     AND p.prorettype='jsonb'::regtype
+     AND p.pronargs=2 AND p.pronargdefaults=0
+     AND p.proargnames=ARRAY['p_tournament_id','p_admin_id']::text[]
+     AND p.proargmodes IS NULL AND p.proallargtypes IS NULL
+     AND p.proargdefaults IS NULL
+     AND p.proconfig=ARRAY[
+           'search_path=public, extensions, pg_temp',
+           'statement_timeout=120s']::text[]
+     AND p.proacl::text='{postgres=X/postgres,service_role=X/postgres}';
+
+  v_next:=v_source;
+  IF length(v_next)-length(replace(v_next,$new_decl$  v_settle jsonb;
+  v_receipt jsonb;$new_decl$,''))<>
+     length($new_decl$  v_settle jsonb;
+  v_receipt jsonb;$new_decl$) THEN
+    RAISE EXCEPTION 'atomic cancellation ticket declaration anchor differs';
+  END IF;
+  v_next:=replace(v_next,$new_decl$  v_settle jsonb;
+  v_receipt jsonb;$new_decl$,$old_decl$  v_settle jsonb;
+  v_ticket jsonb;
+  v_receipt jsonb;$old_decl$);
+
+  IF length(v_next)-length(replace(v_next,$cash_comment$  -- Return each unconsumed funded entitlement as cash to its recorded club.
+  -- The exact refund payer proves wallet, satellite transfer or redeemed-ticket
+  -- funding and excludes value already returned as a ticket. Stored historical
+  -- cancellation receipts continue to replay through their original evidence.$cash_comment$,''))<>
+     length($cash_comment$  -- Return each unconsumed funded entitlement as cash to its recorded club.
+  -- The exact refund payer proves wallet, satellite transfer or redeemed-ticket
+  -- funding and excludes value already returned as a ticket. Stored historical
+  -- cancellation receipts continue to replay through their original evidence.$cash_comment$) THEN
+    RAISE EXCEPTION 'atomic cancellation funded-origin comment anchor differs';
+  END IF;
+  v_next:=replace(v_next,$cash_comment$  -- Return each unconsumed funded entitlement as cash to its recorded club.
+  -- The exact refund payer proves wallet, satellite transfer or redeemed-ticket
+  -- funding and excludes value already returned as a ticket. Stored historical
+  -- cancellation receipts continue to replay through their original evidence.$cash_comment$,$ticket_comment$  -- Consume one immutable entitlement at a time. Wallet charges go back as
+  -- chips to their exact source club. A satellite-funded seat or spent entry
+  -- ticket is not chips: it becomes a tournament-entry-only ticket carrying
+  -- the same immutable rails and original satellite identity.$ticket_comment$);
+
+  IF length(v_next)-length(replace(v_next,$cash_kinds$      IF v_entitlement.entitlement_kind IN (
+          'wallet_charge','satellite_seat','tournament_ticket') THEN$cash_kinds$,''))<>
+     length($cash_kinds$      IF v_entitlement.entitlement_kind IN (
+          'wallet_charge','satellite_seat','tournament_ticket') THEN$cash_kinds$) THEN
+    RAISE EXCEPTION 'atomic cancellation cash-kind anchor differs';
+  END IF;
+  v_next:=replace(v_next,$cash_kinds$      IF v_entitlement.entitlement_kind IN (
+          'wallet_charge','satellite_seat','tournament_ticket') THEN$cash_kinds$,
+    $wallet_kind$      IF v_entitlement.entitlement_kind='wallet_charge' THEN$wallet_kind$);
+
+  IF length(v_next)-length(replace(v_next,
+       $settle_kind$           OR v_settle->>'entitlement_kind' IS DISTINCT FROM v_entitlement.entitlement_kind$settle_kind$,''))<>
+     length($settle_kind$           OR v_settle->>'entitlement_kind' IS DISTINCT FROM v_entitlement.entitlement_kind$settle_kind$) THEN
+    RAISE EXCEPTION 'atomic cancellation settlement-kind anchor differs';
+  END IF;
+  v_next:=replace(v_next,
+    $settle_kind$           OR v_settle->>'entitlement_kind' IS DISTINCT FROM v_entitlement.entitlement_kind$settle_kind$,
+    $wallet_settle$           OR v_settle->>'entitlement_kind' IS DISTINCT FROM 'wallet_charge'$wallet_settle$);
+
+  IF length(v_next)-length(replace(v_next,
+       $receipt_kind$          'entitlement_kind',v_entitlement.entitlement_kind,$receipt_kind$,''))<>
+     length($receipt_kind$          'entitlement_kind',v_entitlement.entitlement_kind,$receipt_kind$) THEN
+    RAISE EXCEPTION 'atomic cancellation receipt-kind anchor differs';
+  END IF;
+  v_next:=replace(v_next,
+    $receipt_kind$          'entitlement_kind',v_entitlement.entitlement_kind,$receipt_kind$,
+    $wallet_receipt$          'entitlement_kind','wallet_charge',$wallet_receipt$);
+
+  IF length(v_next)-length(replace(v_next,$ticket_slot$        v_total_refunded:=round(
+          v_total_refunded+(v_settle->>'paid')::numeric,2);
+      ELSE$ticket_slot$,''))<>
+     length($ticket_slot$        v_total_refunded:=round(
+          v_total_refunded+(v_settle->>'paid')::numeric,2);
+      ELSE$ticket_slot$) THEN
+    RAISE EXCEPTION 'atomic cancellation ticket-return insertion anchor differs';
+  END IF;
+  v_next:=replace(v_next,$ticket_slot$        v_total_refunded:=round(
+          v_total_refunded+(v_settle->>'paid')::numeric,2);
+      ELSE$ticket_slot$,$ticket_branch$        v_total_refunded:=round(
+          v_total_refunded+(v_settle->>'paid')::numeric,2);
+      ELSIF v_entitlement.entitlement_kind IN (
+          'satellite_seat','tournament_ticket') THEN
+        v_ticket:=public.fn_ca_return_satellite_entitlement_as_ticket(
+          v_entitlement.id,'atomic_cancel_tournament',
+          'Cancelled tournament seat returned as entry ticket: '
+            ||COALESCE(v_t.name,'Unknown'));
+        IF COALESCE((v_ticket->>'ok')::boolean,false) IS NOT TRUE
+           OR COALESCE((v_ticket->>'replayed')::boolean,true) IS NOT FALSE
+           OR (v_ticket->>'entitlement_id')::uuid
+                IS DISTINCT FROM v_entitlement.id
+           OR (v_ticket->>'value')::numeric IS DISTINCT FROM v_entitlement.gross
+           OR (v_ticket->>'refund_prize')::numeric
+                IS DISTINCT FROM v_entitlement.refund_prize
+           OR (v_ticket->>'refund_bounty')::numeric
+                IS DISTINCT FROM v_entitlement.refund_bounty
+           OR (v_ticket->>'refund_fee')::numeric
+                IS DISTINCT FROM v_entitlement.refund_fee
+           OR (v_ticket->>'refund_wallet_club_id')::uuid
+                IS DISTINCT FROM v_entitlement.refund_wallet_club_id
+           OR NULLIF(v_ticket->>'ticket_id','') IS NULL
+           OR NULLIF(v_ticket->>'ledger_id','') IS NULL
+           OR NULLIF(v_ticket->>'transaction_id','') IS NULL THEN
+          RAISE EXCEPTION 'satellite ticket return refused entitlement %: %',
+            v_entitlement.id,v_ticket USING ERRCODE='55000';
+        END IF;
+        v_ticket_return_ids:=array_append(
+          v_ticket_return_ids,(v_ticket->>'ticket_id')::uuid);
+        v_ticket_returns:=v_ticket_returns||jsonb_build_array(jsonb_build_object(
+          'registration_id',v_registration_id,
+          'user_id',v_player.user_id,
+          'entitlement_id',v_entitlement.id,
+          'entitlement_kind',v_entitlement.entitlement_kind,
+          'ticket_id',(v_ticket->>'ticket_id')::uuid,
+          'value',(v_ticket->>'value')::numeric,
+          'source_wallet_club_id',v_entitlement.refund_wallet_club_id,
+          'source_satellite_id',v_entitlement.source_satellite_id,
+          'refund_prize',(v_ticket->>'refund_prize')::numeric,
+          'refund_bounty',(v_ticket->>'refund_bounty')::numeric,
+          'refund_fee',(v_ticket->>'refund_fee')::numeric,
+          'ledger_id',(v_ticket->>'ledger_id')::uuid,
+          'transaction_id',(v_ticket->>'transaction_id')::uuid));
+        v_ticket_return_count:=v_ticket_return_count+1;
+        v_total_ticket_returned:=round(
+          v_total_ticket_returned+(v_ticket->>'value')::numeric,2);
+      ELSE$ticket_branch$);
+
+  IF md5(v_next)<>'16ea7acbbf76613a0a1193dff18f1330'
+     OR octet_length(v_next)<>32778
+     OR encode(extensions.digest(convert_to(v_next,'UTF8'),'sha256'),'hex')<>
+        '30288544fd40e61f902fd6f363368e05e220cbef06ab10edba9ea1e387709f2c' THEN
+    RAISE EXCEPTION 'atomic cancellation restored candidate differs';
+  END IF;
+  EXECUTE replace(v_definition,v_source,v_next);
+  SELECT to_jsonb(p)-'prosrc' INTO STRICT v_after FROM pg_proc p WHERE p.oid=v_oid;
+  IF v_after IS DISTINCT FROM v_before
+     OR NOT EXISTS (SELECT 1 FROM pg_proc p WHERE p.oid=v_oid
+       AND md5(p.prosrc)='16ea7acbbf76613a0a1193dff18f1330'
+       AND octet_length(p.prosrc)=32778
+       AND encode(extensions.digest(convert_to(p.prosrc,'UTF8'),'sha256'),'hex')=
+           '30288544fd40e61f902fd6f363368e05e220cbef06ab10edba9ea1e387709f2c'
+       AND md5(pg_get_functiondef(p.oid))='bdfeeafe38b7691305f02c741faa1d12'
+       AND octet_length(pg_get_functiondef(p.oid))=33038
+       AND encode(extensions.digest(convert_to(
+             pg_get_functiondef(p.oid),'UTF8'),'sha256'),'hex')=
+           'c2e469b5894407c7a806b30177bf0062654effcfddc378544e038426b6691dc6') THEN
+    RAISE EXCEPTION 'atomic cancellation restored postimage differs';
+  END IF;
+
+  v_oid:='public.fn_ca_tournament_cancellation_receipt(uuid,uuid)'::regprocedure;
+  SELECT p.prosrc,pg_get_functiondef(p.oid),to_jsonb(p)-'prosrc'
+    INTO STRICT v_source,v_definition,v_before
+    FROM pg_proc p JOIN pg_language l ON l.oid=p.prolang
+   WHERE p.oid=v_oid
+     AND md5(p.prosrc)='0b6abcc8e4bb561856699e5d24a86fc9'
+     AND octet_length(p.prosrc)=20684
+     AND encode(extensions.digest(convert_to(p.prosrc,'UTF8'),'sha256'),'hex')=
+         'c69b1b1899847dbcaff1f40f1451d96d4d51613e2414230ab274d38f2e3b54e3'
+     AND md5(pg_get_functiondef(p.oid))='bf4a7dfd3cfb89194c139f897c0dd0e7'
+     AND octet_length(pg_get_functiondef(p.oid))=20966
+     AND encode(extensions.digest(convert_to(
+           pg_get_functiondef(p.oid),'UTF8'),'sha256'),'hex')=
+         'f17ebc38b24b9d7ab8bca6e1e4eaa5ce94b0a46d03627d4e0b57f99a837da914'
+     AND p.proowner='postgres'::regrole AND l.lanname='plpgsql'
+     AND p.prosecdef AND p.provolatile='s' AND p.proparallel='u'
+     AND NOT p.proisstrict AND NOT p.proleakproof
+     AND p.prokind='f' AND NOT p.proretset
+     AND p.prorettype='jsonb'::regtype
+     AND p.pronargs=2 AND p.pronargdefaults=1
+     AND p.proargnames=ARRAY[
+           'p_tournament_id','p_observed_actor_id']::text[]
+     AND p.proargmodes IS NULL AND p.proallargtypes IS NULL
+     AND p.proargdefaults IS NOT NULL
+     AND p.proconfig=ARRAY[
+           'search_path=public','statement_timeout=30s']::text[]
+     AND p.proacl::text='{postgres=X/postgres}';
+  IF length(v_source)-length(replace(v_source,$cash_verify$           OR e.entitlement_kind NOT IN ('wallet_charge','satellite_seat','tournament_ticket')$cash_verify$,''))<>
+     length($cash_verify$           OR e.entitlement_kind NOT IN ('wallet_charge','satellite_seat','tournament_ticket')$cash_verify$) THEN
+    RAISE EXCEPTION 'cancellation receipt funded-kind anchor differs';
+  END IF;
+  v_next:=replace(v_source,$cash_verify$           OR e.entitlement_kind NOT IN ('wallet_charge','satellite_seat','tournament_ticket')$cash_verify$,
+    $ticket_verify$           OR e.entitlement_kind IS DISTINCT FROM 'wallet_charge'$ticket_verify$);
+  IF md5(v_next)<>'1e4c6d2f87ac2068455dbff2ace3fb2e'
+     OR octet_length(v_next)<>20655
+     OR encode(extensions.digest(convert_to(v_next,'UTF8'),'sha256'),'hex')<>
+        'f271fae63384e7ea642f8ffc0c8c7efe7b0158991b51621f6c168531fd968f06' THEN
+    RAISE EXCEPTION 'cancellation receipt restored candidate differs';
+  END IF;
+  EXECUTE replace(v_definition,v_source,v_next);
+  SELECT to_jsonb(p)-'prosrc' INTO STRICT v_after FROM pg_proc p WHERE p.oid=v_oid;
+  IF v_after IS DISTINCT FROM v_before
+     OR NOT EXISTS (SELECT 1 FROM pg_proc p WHERE p.oid=v_oid
+       AND md5(p.prosrc)='1e4c6d2f87ac2068455dbff2ace3fb2e'
+       AND octet_length(p.prosrc)=20655
+       AND encode(extensions.digest(convert_to(p.prosrc,'UTF8'),'sha256'),'hex')=
+           'f271fae63384e7ea642f8ffc0c8c7efe7b0158991b51621f6c168531fd968f06'
+       AND md5(pg_get_functiondef(p.oid))='ed52b6ba06cd98d665dd7123a6460b5a'
+       AND octet_length(pg_get_functiondef(p.oid))=20937
+       AND encode(extensions.digest(convert_to(
+             pg_get_functiondef(p.oid),'UTF8'),'sha256'),'hex')=
+           '745a5eb666bea65fe3f0f6afd5e3d1e10d6579a579a1b114c9c371c4d8d1f4ad') THEN
+    RAISE EXCEPTION 'cancellation receipt restored postimage differs';
+  END IF;
+END;
+$restore_ticket_returns_before_stage_b_ddl$;
 
 LOCK TABLE public.tournament_seat_exit_authorizations,
            public.tournament_seat_move_receipts

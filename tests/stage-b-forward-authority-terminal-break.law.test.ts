@@ -127,8 +127,8 @@ describe('the reserved Stage-B forward authority remains one bounded chain', () 
   it('authenticates bounded prerequisites instead of a moving ledger head', () => {
     expect(harness).not.toContain('current_live_ledger_head');
     expect(harness).not.toContain('SELECT max(version)');
-    expect(harness).toContain('if [[ "$anchor_receipts" != \'56\' ]]');
-    expect(harness).toContain('if [[ "$descriptor_receipts" != \'5\' ]]');
+    expect(harness).toContain('if [[ "$anchor_receipts" != \'62\' ]]');
+    expect(harness).toContain('if [[ "$descriptor_receipts" != \'11\' ]]');
     expect(harness).toContain(
       'if [[ "$audited_tail_receipts" != \'38\' || "$audited_tail_statements" != \'41\' ]]'
     );
@@ -212,7 +212,7 @@ describe('the reserved Stage-B forward authority remains one bounded chain', () 
     }
   });
 
-  it('authenticates and preserves the exact live tail through 11052648', () => {
+  it('authenticates and preserves the exact live tail through 11072837', () => {
     const exactTail = [
       [
         '20260911050554',
@@ -231,6 +231,42 @@ describe('the reserved Stage-B forward authority remains one bounded chain', () 
         'bounty_rebuy_settles_its_exact_prior_entry_generation',
         '22463',
         '4f9616b84906a7479c60dd0a266c2c2d1bb056828aa53ef45095ea31d058c5e2',
+      ],
+      [
+        '20260911061449',
+        'the_welcome_spin_answers_the_same_everywhere',
+        '45362',
+        '3d6efc9bc8f00e5e9840ed09d806ea9fa3d8513117a8acb8f7580d56443f4cc1',
+      ],
+      [
+        '20260911061723',
+        'cancel_unstarted_entries_to_their_exact_funded_origin_wallet',
+        '16739',
+        '84f2d79130e27bd687c848a45bb65bf5b63ac2ebf0d4e9bf360dc1ec19cd284a',
+      ],
+      [
+        '20260911062053',
+        'the_operator_sees_the_money_and_the_room',
+        '22888',
+        '3f01c9da1e26451d8d8a938e1b942f70f2bdcff4db7a96e452210c5632d07648',
+      ],
+      [
+        '20260911064427',
+        'the_player_can_see_the_day_and_the_way_out',
+        '20833',
+        '9a5109e118fd3877b816126652b3e5ac0f8b54780d2dc6b37be33e61cd4b0bc6',
+      ],
+      [
+        '20260911072424',
+        'the_mint_that_is_gone_stops_being_reported',
+        '22537',
+        'a12119f40903928cf8febcca78f10b34a5b44cd8be6a996ccc68dd9c0dc69ecc',
+      ],
+      [
+        '20260911072837',
+        'legacy_rakeback_closed_period_single_payer',
+        '36786',
+        'a55e792f12040799a20fcf6d54969059efecaea3869c3aa148191fe1b083c4c7',
       ],
     ] as const;
     for (const descriptor of exactTail) {
@@ -256,6 +292,36 @@ describe('the reserved Stage-B forward authority remains one bounded chain', () 
         '20260911052648_bounty_rebuy_settles_its_exact_prior_entry_generation.sql',
         22463,
         '4f9616b84906a7479c60dd0a266c2c2d1bb056828aa53ef45095ea31d058c5e2',
+      ],
+      [
+        '20260911061449_the_welcome_spin_answers_the_same_everywhere.sql',
+        45362,
+        '3d6efc9bc8f00e5e9840ed09d806ea9fa3d8513117a8acb8f7580d56443f4cc1',
+      ],
+      [
+        '20260911061723_cancel_unstarted_entries_to_their_exact_funded_origin_wallet.sql',
+        16739,
+        '84f2d79130e27bd687c848a45bb65bf5b63ac2ebf0d4e9bf360dc1ec19cd284a',
+      ],
+      [
+        '20260911062053_the_operator_sees_the_money_and_the_room.sql',
+        22888,
+        '3f01c9da1e26451d8d8a938e1b942f70f2bdcff4db7a96e452210c5632d07648',
+      ],
+      [
+        '20260911064427_the_player_can_see_the_day_and_the_way_out.sql',
+        20833,
+        '9a5109e118fd3877b816126652b3e5ac0f8b54780d2dc6b37be33e61cd4b0bc6',
+      ],
+      [
+        '20260911072424_the_mint_that_is_gone_stops_being_reported.sql',
+        22537,
+        'a12119f40903928cf8febcca78f10b34a5b44cd8be6a996ccc68dd9c0dc69ecc',
+      ],
+      [
+        '20260911072837_legacy_rakeback_closed_period_single_payer.sql',
+        36786,
+        'a55e792f12040799a20fcf6d54969059efecaea3869c3aa148191fe1b083c4c7',
       ],
     ] as const) {
       const receipt = readFileSync(resolve(migrationsDirectory, fileName));
@@ -286,9 +352,14 @@ describe('the reserved Stage-B forward authority remains one bounded chain', () 
       expect(harness).toContain(exactPreservation);
     }
     expect(createHash('sha256').update(bountyRebuyProbe).digest('hex')).toBe(
-      '69d5392b3afbf01b0be37ad94637bec19047ef79232aafd0e0cceb6f34d4b02c'
+      'ef8e7fe7c0705ad265dab8f416485302b379437ab94f055f08c98e5cff3a6a5e'
     );
-    expect(Buffer.byteLength(bountyRebuyProbe)).toBe(40468);
+    expect(Buffer.byteLength(bountyRebuyProbe)).toBe(42772);
+    expect(bountyRebuyProbe).toContain(
+      "VALUES('fn_mystery_bounty_pay','DB caller') ON CONFLICT(source) DO NOTHING"
+    );
+    expect(runbook).toContain('exact 42,772-byte bounty-rebuy atomicity probe');
+    expect(runbook).toContain('ef8e7fe7c0705ad265dab8f416485302b379437ab94f055f08c98e5cff3a6a5e');
     for (const exactLiveFunctionDefinition of [
       '480be3139fe0878e637ce54f533a2170',
       '8397b4f24c6d1a072d7b2d946f45e3d6',

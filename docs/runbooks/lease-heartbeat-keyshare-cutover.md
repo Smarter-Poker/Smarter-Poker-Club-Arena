@@ -65,7 +65,7 @@ therefore its definition MD5) while preserving the pinned source body. The
 immediately following strict contraction preserves terminal receipts while
 removing the legacy payload fallback.
 
-The reviewed production prerequisite tail now ends at `20260911052648`. Before
+The reviewed production prerequisite tail now ends at `20260911072837`. Before
 the first Stage-B DDL, and again at entry and exit of the final contraction,
 require these exact one-statement ledger receipts:
 
@@ -77,7 +77,37 @@ require these exact one-statement ledger receipts:
   `4778ce9d373a98e8b10cb31e496bf18e4e527c0a158f37a4e4fcf500b3c9b995`;
 - `20260911052648_bounty_rebuy_settles_its_exact_prior_entry_generation`:
   22,463 bytes, SHA-256
-  `4f9616b84906a7479c60dd0a266c2c2d1bb056828aa53ef45095ea31d058c5e2`.
+  `4f9616b84906a7479c60dd0a266c2c2d1bb056828aa53ef45095ea31d058c5e2`;
+- `20260911061449_the_welcome_spin_answers_the_same_everywhere`: 45,362 bytes,
+  SHA-256
+  `3d6efc9bc8f00e5e9840ed09d806ea9fa3d8513117a8acb8f7580d56443f4cc1`;
+- `20260911061723_cancel_unstarted_entries_to_their_exact_funded_origin_wallet`:
+  16,739 bytes, SHA-256
+  `84f2d79130e27bd687c848a45bb65bf5b63ac2ebf0d4e9bf360dc1ec19cd284a`;
+- `20260911062053_the_operator_sees_the_money_and_the_room`: 22,888 bytes,
+  SHA-256
+  `3f01c9da1e26451d8d8a938e1b942f70f2bdcff4db7a96e452210c5632d07648`;
+- `20260911064427_the_player_can_see_the_day_and_the_way_out`: 20,833 bytes,
+  SHA-256
+  `9a5109e118fd3877b816126652b3e5ac0f8b54780d2dc6b37be33e61cd4b0bc6`;
+- `20260911072424_the_mint_that_is_gone_stops_being_reported`: 22,537 bytes,
+  SHA-256
+  `a12119f40903928cf8febcca78f10b34a5b44cd8be6a996ccc68dd9c0dc69ecc`;
+- `20260911072837_legacy_rakeback_closed_period_single_payer`: 36,786 bytes,
+  SHA-256
+  `a55e792f12040799a20fcf6d54969059efecaea3869c3aa148191fe1b083c4c7`.
+
+The `20260911061723` receipt authenticates the exact live preimage; it does not
+approve its cash-all cancellation policy as the Stage-B postimage. Boundary #1
+accepts only atomic cancellation source MD5
+`623100aa87ed6d0ef1a3598fb9ccb8b3` and cancellation verifier source MD5
+`0b6abcc8e4bb561856699e5d24a86fc9`, then hard-forwards them to source MD5
+`16ea7acbbf76613a0a1193dff18f1330` and
+`1e4c6d2f87ac2068455dbff2ace3fb2e`, respectively. The restored policy sends
+cash only for `wallet_charge` entitlements to their exact recorded source
+wallet; `satellite_seat` and `tournament_ticket` entitlements return as tickets
+and create no wallet chips. Any other preimage aborts before Stage-B DDL, and
+the final contraction must carry both restored sources unchanged.
 
 The chain deliberately composes the final-deal completion guard from source
 MD5 `d994347e1b76c936ce13361d73f94fd2` to
@@ -85,9 +115,9 @@ MD5 `d994347e1b76c936ce13361d73f94fd2` to
 It otherwise preserves the final-deal wrapper and payer catalogs, the complete
 welcome-wheel catalog fingerprint, and the public/private bounty-rebuy pair
 plus the exact `ca_settle_sources.fn_collect_bounty` live-tail note (`Exact-generation fixed and PKO bounty payer used by the atomic live authority.`). The disposable PG17
-rehearsal runs the exact 40,468-byte bounty-rebuy atomicity probe after all six
+rehearsal runs the exact 42,772-byte bounty-rebuy atomicity probe after all six
 boundaries; its SHA-256 is
-`69d5392b3afbf01b0be37ad94637bec19047ef79232aafd0e0cceb6f34d4b02c`.
+`ef8e7fe7c0705ad265dab8f416485302b379437ab94f055f08c98e5cff3a6a5e`.
 
 ## Preflight
 

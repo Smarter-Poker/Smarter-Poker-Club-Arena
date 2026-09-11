@@ -9,6 +9,7 @@ resolver="$repo_dir/scripts/ops/lib/resolve-staged-or-promoted-migration.sh"
 diamond_fixture="$repo_dir/scripts/dev/fixtures/stage-b-diamond-accepted-hand-current-schema.sql"
 bounty_rebuy_fixture="$repo_dir/scripts/ci/probes/atomic-terminal-rehearsal-fixture.sql"
 bounty_rebuy_probe="$repo_dir/scripts/ci/probes/bounty-rebuy-generation-atomicity.sql"
+cancellation_probe="$repo_dir/scripts/ci/probes/tournament-cancellation-entrant-refunds.sql"
 seat_move_hotfix_statement_sha256='b3f1bb62152627444b33c82b806c00ba3587aeebbe3d13800faf69fae7809ea2'
 manager_request_authority_statement_sha256='2cbcab5f263e8ca02b16f6c47ebbd7f6d47eb783d81c5939133c1e39b5d306f4'
 busy_manager_statement_sha256='2e95299dd7693a09ee310a4086b2dcdf16f0f942582007bdede0c4c81024e07d'
@@ -24,7 +25,14 @@ elimination_guard_sha256='f818fd0881db431fe5d1323fbf50efbb64c175ff10a7165b8cb5f6
 final_deal_v2_statement_sha256='b4af55173b825be5ecf48c6c3bbcca1e828493cdafc47becf00d73ad3186c871'
 wheel_welcome_statement_sha256='4778ce9d373a98e8b10cb31e496bf18e4e527c0a158f37a4e4fcf500b3c9b995'
 bounty_rebuy_statement_sha256='4f9616b84906a7479c60dd0a266c2c2d1bb056828aa53ef45095ea31d058c5e2'
-bounty_rebuy_probe_sha256='69d5392b3afbf01b0be37ad94637bec19047ef79232aafd0e0cceb6f34d4b02c'
+welcome_spin_answer_statement_sha256='3d6efc9bc8f00e5e9840ed09d806ea9fa3d8513117a8acb8f7580d56443f4cc1'
+cancellation_origin_statement_sha256='84f2d79130e27bd687c848a45bb65bf5b63ac2ebf0d4e9bf360dc1ec19cd284a'
+operator_visibility_statement_sha256='3f01c9da1e26451d8d8a938e1b942f70f2bdcff4db7a96e452210c5632d07648'
+player_day_exit_statement_sha256='9a5109e118fd3877b816126652b3e5ac0f8b54780d2dc6b37be33e61cd4b0bc6'
+retired_mint_reporting_statement_sha256='a12119f40903928cf8febcca78f10b34a5b44cd8be6a996ccc68dd9c0dc69ecc'
+legacy_rakeback_single_payer_statement_sha256='a55e792f12040799a20fcf6d54969059efecaea3869c3aa148191fe1b083c4c7'
+bounty_rebuy_probe_sha256='ef8e7fe7c0705ad265dab8f416485302b379437ab94f055f08c98e5cff3a6a5e'
+cancellation_probe_sha256='485d48aad7147ab9b54d8c0f3118a6d928948468aade3da2361452f9ccedfce5'
 
 usage() {
   cat >&2 <<'USAGE'
@@ -116,10 +124,20 @@ done
   echo 'The exact-generation bounty-rebuy fixture or probe is unreadable.' >&2
   exit 66
 }
-if [[ "$(wc -c < "$bounty_rebuy_probe" | tr -d '[:space:]')" != '40468' \
+if [[ "$(wc -c < "$bounty_rebuy_probe" | tr -d '[:space:]')" != '42772' \
    || "$(shasum -a 256 "$bounty_rebuy_probe" | awk '{print $1}')" \
       != "$bounty_rebuy_probe_sha256" ]]; then
   echo 'The exact-generation bounty-rebuy probe bytes are not canonical.' >&2
+  exit 65
+fi
+[[ -r "$cancellation_probe" ]] || {
+  echo 'The exact-origin tournament cancellation probe is unreadable.' >&2
+  exit 66
+}
+if [[ "$(wc -c < "$cancellation_probe" | tr -d '[:space:]')" != '29164' \
+   || "$(shasum -a 256 "$cancellation_probe" | awk '{print $1}')" \
+      != "$cancellation_probe_sha256" ]]; then
+  echo 'The exact-origin tournament cancellation probe bytes are not canonical.' >&2
   exit 65
 fi
 
@@ -198,6 +216,12 @@ psql_cmd=(
   -v "final_deal_v2_statement_sha256=$final_deal_v2_statement_sha256"
   -v "wheel_welcome_statement_sha256=$wheel_welcome_statement_sha256"
   -v "bounty_rebuy_statement_sha256=$bounty_rebuy_statement_sha256"
+  -v "welcome_spin_answer_statement_sha256=$welcome_spin_answer_statement_sha256"
+  -v "cancellation_origin_statement_sha256=$cancellation_origin_statement_sha256"
+  -v "operator_visibility_statement_sha256=$operator_visibility_statement_sha256"
+  -v "player_day_exit_statement_sha256=$player_day_exit_statement_sha256"
+  -v "retired_mint_reporting_statement_sha256=$retired_mint_reporting_statement_sha256"
+  -v "legacy_rakeback_single_payer_statement_sha256=$legacy_rakeback_single_payer_statement_sha256"
 )
 
 emit_zero_player_data_assertion_function() {
@@ -393,7 +417,13 @@ WITH required_prerequisites(version,name) AS (
     ('20260910181549','active_means_who_is_on_the_floor_cash_and_events_counted_apa'),
     ('20260911050554','final_deal_receipts_survive_real_terminal_settlement'),
     ('20260911052216','the_daily_free_spin_leaves_the_building'),
-    ('20260911052648','bounty_rebuy_settles_its_exact_prior_entry_generation')
+    ('20260911052648','bounty_rebuy_settles_its_exact_prior_entry_generation'),
+    ('20260911061449','the_welcome_spin_answers_the_same_everywhere'),
+    ('20260911061723','cancel_unstarted_entries_to_their_exact_funded_origin_wallet'),
+    ('20260911062053','the_operator_sees_the_money_and_the_room'),
+    ('20260911064427','the_player_can_see_the_day_and_the_way_out'),
+    ('20260911072424','the_mint_that_is_gone_stops_being_reported'),
+    ('20260911072837','legacy_rakeback_closed_period_single_payer')
 ), exact_body_rows(version,name,statement_sha256) AS (
   VALUES
     ('20260910051447','the_seat_move_door_the_engine_calls_exists',
@@ -413,7 +443,19 @@ WITH required_prerequisites(version,name) AS (
     ('20260911052216','the_daily_free_spin_leaves_the_building',49343,
      :'wheel_welcome_statement_sha256'),
     ('20260911052648','bounty_rebuy_settles_its_exact_prior_entry_generation',22463,
-     :'bounty_rebuy_statement_sha256')
+     :'bounty_rebuy_statement_sha256'),
+    ('20260911061449','the_welcome_spin_answers_the_same_everywhere',45362,
+     :'welcome_spin_answer_statement_sha256'),
+    ('20260911061723','cancel_unstarted_entries_to_their_exact_funded_origin_wallet',16739,
+     :'cancellation_origin_statement_sha256'),
+    ('20260911062053','the_operator_sees_the_money_and_the_room',22888,
+     :'operator_visibility_statement_sha256'),
+    ('20260911064427','the_player_can_see_the_day_and_the_way_out',20833,
+     :'player_day_exit_statement_sha256'),
+    ('20260911072424','the_mint_that_is_gone_stops_being_reported',22537,
+     :'retired_mint_reporting_statement_sha256'),
+    ('20260911072837','legacy_rakeback_closed_period_single_payer',36786,
+     :'legacy_rakeback_single_payer_statement_sha256')
 ), audited_tail_rows(version,name,statement_count) AS (
   VALUES
     ('20260910072322','the_knockout_door_owns_every_bust_a_hand_took',1),
@@ -542,6 +584,12 @@ WITH required_prerequisites(version,name) AS (
   VALUES
     ('tournament_bounties','trg_attach_bounty_ledger_obligation',7,
      'ff3e9305edae93d151545b1e39f519c3')
+), cancellation_forward_input_functions(identity,body_md5) AS (
+  VALUES
+    ('public.atomic_cancel_tournament(uuid,uuid)',
+     '623100aa87ed6d0ef1a3598fb9ccb8b3'),
+    ('public.fn_ca_tournament_cancellation_receipt(uuid,uuid)',
+     '0b6abcc8e4bb561856699e5d24a86fc9')
 ), final_deal_v2_functions(
   identity,body_md5,definition_md5,config,service_execute,return_type,defaults
 ) AS (
@@ -1081,6 +1129,12 @@ SELECT current_database(),
        END,
        CASE WHEN (
          SELECT count(*)
+           FROM cancellation_forward_input_functions expected
+           JOIN pg_proc p ON p.oid=to_regprocedure(expected.identity)
+          WHERE md5(p.prosrc)=expected.body_md5
+       )=2 THEN 1 ELSE 0 END,
+       CASE WHEN (
+         SELECT count(*)
            FROM final_deal_v2_functions expected
            JOIN pg_proc p ON p.oid=to_regprocedure(expected.identity)
            JOIN pg_language l ON l.oid=p.prolang
@@ -1198,7 +1252,8 @@ IFS='|' read -r actual_database major_version server_address locality \
   fresh_authorities immutable_guard_acl contract_document_shape donor_data_rows \
   cron_control_exact money_control_exact absent_functions_exact \
   absent_function_acls player_id_functions_exact tail_functions_exact \
-  bounty_trigger_binding_exact final_deal_v2_functions_exact \
+  bounty_trigger_binding_exact cancellation_forward_input_exact \
+  final_deal_v2_functions_exact \
   final_deal_v2_schema_exact \
   break_fault_catalog_exact \
   maintenance_proconfigs elimination_guard \
@@ -1213,16 +1268,16 @@ if [[ "$major_version" != '17' || "$locality" != 'local' ]]; then
   echo "Rehearsal requires local PostgreSQL 17; observed ${server_address:-unknown}." >&2
   exit 65
 fi
-if [[ "$anchor_receipts" != '56' ]]; then
-  echo "The donor does not contain all 56 bounded Stage-B prerequisite receipts: ${anchor_receipts:-0}/56 present." >&2
+if [[ "$anchor_receipts" != '62' ]]; then
+  echo "The donor does not contain all 62 bounded Stage-B prerequisite receipts: ${anchor_receipts:-0}/62 present." >&2
   exit 65
 fi
 if [[ "$exact_body_receipts" != '3' ]]; then
   echo 'The donor does not contain all three byte-exact live body ledger rows (051447, 063559, 064701).' >&2
   exit 65
 fi
-if [[ "$descriptor_receipts" != '5' ]]; then
-  echo 'The donor does not contain the byte-exact 055857, 060034, and 11050554..11052648 ledger metadata.' >&2
+if [[ "$descriptor_receipts" != '11' ]]; then
+  echo 'The donor does not contain the byte-exact 055857, 060034, and 11050554..11072837 ledger metadata.' >&2
   exit 65
 fi
 if [[ "$audited_tail_receipts" != '38' || "$audited_tail_statements" != '41' ]]; then
@@ -1269,6 +1324,10 @@ if [[ "$tail_functions_exact" != '12' ]]; then
 fi
 if [[ "$bounty_trigger_binding_exact" != '1' ]]; then
   echo 'The donor does not preserve the exact bounty-ledger binding required by Stage-B.' >&2
+  exit 65
+fi
+if [[ "$cancellation_forward_input_exact" != '1' ]]; then
+  echo 'The donor does not preserve the exact 11061723 cancellation input bodies for the M1 forward correction.' >&2
   exit 65
 fi
 if [[ "$final_deal_v2_functions_exact" != '1' \
@@ -1776,6 +1835,31 @@ $fingerprint$;
 SQL
 }
 
+emit_stage_b_cancellation_forward_correction_assertion() {
+  cat <<'SQL'
+DO $verify_stage_b_cancellation_forward_correction$
+BEGIN
+  IF NOT EXISTS (
+       SELECT 1
+         FROM pg_proc p
+        WHERE p.oid=
+              'public.atomic_cancel_tournament(uuid,uuid)'::regprocedure
+          AND md5(p.prosrc)='16ea7acbbf76613a0a1193dff18f1330')
+     OR NOT EXISTS (
+       SELECT 1
+         FROM pg_proc p
+        WHERE p.oid=
+              'public.fn_ca_tournament_cancellation_receipt(uuid,uuid)'::regprocedure
+          AND md5(p.prosrc)='1e4c6d2f87ac2068455dbff2ace3fb2e') THEN
+    RAISE EXCEPTION 'STAGE_B_M1_CANCELLATION_FORWARD_CORRECTION_MISSING'
+      USING ERRCODE='55000';
+  END IF;
+END;
+$verify_stage_b_cancellation_forward_correction$;
+SELECT 'STAGE_B_M1_CANCELLATION_FORWARD_CORRECTION_OK';
+SQL
+}
+
 run_chain_prefix() {
   local migration_count="$1"
   local replay_keyshare="$2"
@@ -1789,6 +1873,9 @@ run_chain_prefix() {
       migration_file="${chain_files[$index]}"
       printf '%s\n' "\\echo APPLYING $(basename "$migration_file")"
       printf '%s\n' "\\ir '$migration_file'"
+      if [[ "$index" -eq 0 ]]; then
+        emit_stage_b_cancellation_forward_correction_assertion
+      fi
     done
     if [[ "$replay_keyshare" == true ]]; then
       emit_keyshare_fingerprint_function
@@ -2302,6 +2389,23 @@ BEGIN
       USING ERRCODE='55000';
   END IF;
 
+  IF NOT EXISTS (
+       SELECT 1
+         FROM pg_proc p
+        WHERE p.oid=to_regprocedure(
+              'public.atomic_cancel_tournament_pre_seat_guard(uuid,uuid)')
+          AND md5(p.prosrc)='16ea7acbbf76613a0a1193dff18f1330')
+     OR NOT EXISTS (
+       SELECT 1
+         FROM pg_proc p
+        WHERE p.oid=to_regprocedure(
+              'public.fn_ca_tournament_cancellation_receipt(uuid,uuid)')
+          AND md5(p.prosrc)='1e4c6d2f87ac2068455dbff2ace3fb2e') THEN
+    RAISE EXCEPTION
+      'STAGE_B_CANCELLATION_FORWARD_CORRECTION_POSTIMAGE_CHANGED'
+      USING ERRCODE='55000';
+  END IF;
+
   RETURN 'STAGE_B_080728_CONTROL_POSTIMAGE_OK';
 END;
 $assert_stage_b_080728_control_postimage$;
@@ -2337,6 +2441,9 @@ prepare_current_postimage_template() {
       migration_file="${chain_files[$index]}"
       printf '%s\n' "\\echo APPLYING $(basename "$migration_file")"
       printf '%s\n' "\\ir '$migration_file'"
+      if [[ "$index" -eq 0 ]]; then
+        emit_stage_b_cancellation_forward_correction_assertion
+      fi
     done
     emit_stage_b_bounded_postimage_assertion
     printf '%s\n' \
@@ -3382,12 +3489,141 @@ SQL
   echo 'STAGE_B_LEASE_KEYSHARE_UNKNOWN_PREIMAGE_ROLLBACK_OK'
 }
 
+thaw_synthetic_freeze_for_rollback_probe() {
+  local database="$1"
+  local freeze_fingerprint=''
+
+  freeze_fingerprint="$(
+    "${psql_cmd[@]}" --dbname="$database" -Atq <<'SQL'
+SELECT encode(extensions.digest(
+         convert_to(to_jsonb(b)::text,'UTF8'),'sha256'),'hex')
+  FROM public.engine_maintenance_break b
+ WHERE b.id
+   AND b.phase='counting_down'
+   AND b.enforce_freeze
+   AND b.reason='Stage B PG17 Rehearsal'
+   AND b.declared_by='stage-b-forward-chain-pg17'
+   AND b.ownership_token='72000000-0000-4000-8000-000000000001'
+   AND b.break_ends_at>clock_timestamp()+interval '2 minutes';
+SQL
+  )"
+  if [[ ! "$freeze_fingerprint" =~ ^[0-9a-f]{64}$ ]]; then
+    echo 'The rollback probe found no exact synthetic Stage-B freeze with enough headroom.' >&2
+    return 1
+  fi
+
+  if ! "${psql_cmd[@]}" --dbname="$database" -q <<'SQL'; then
+BEGIN;
+DO $thaw_synthetic_freeze_for_rollback_probe$
+DECLARE
+  v_changed integer;
+BEGIN
+  IF (SELECT count(*) FROM public.engine_maintenance_break b
+       WHERE b.id AND b.phase='counting_down' AND b.enforce_freeze
+         AND b.reason='Stage B PG17 Rehearsal'
+         AND b.declared_by='stage-b-forward-chain-pg17'
+         AND b.ownership_token='72000000-0000-4000-8000-000000000001'
+         AND b.break_ends_at>clock_timestamp()+interval '2 minutes')<>1
+     OR public.fn_platform_frozen() IS NOT TRUE
+     OR public.fn_entry_purchases_frozen() IS NOT TRUE THEN
+    RAISE EXCEPTION 'STAGE_B_ROLLBACK_PROBE_FREEZE_PREIMAGE_DRIFTED'
+      USING ERRCODE='55000';
+  END IF;
+  UPDATE public.engine_maintenance_break
+     SET enforce_freeze=false
+   WHERE id AND phase='counting_down' AND enforce_freeze
+     AND reason='Stage B PG17 Rehearsal'
+     AND declared_by='stage-b-forward-chain-pg17'
+     AND ownership_token='72000000-0000-4000-8000-000000000001';
+  GET DIAGNOSTICS v_changed=ROW_COUNT;
+  IF v_changed<>1 OR public.fn_platform_frozen()
+     OR public.fn_entry_purchases_frozen() THEN
+    RAISE EXCEPTION 'STAGE_B_ROLLBACK_PROBE_LOCAL_THAW_FAILED'
+      USING ERRCODE='55000';
+  END IF;
+END;
+$thaw_synthetic_freeze_for_rollback_probe$;
+COMMIT;
+SQL
+    echo 'The rollback probe could not establish its bounded local thaw.' >&2
+    return 1
+  fi
+  printf '%s\n' "$freeze_fingerprint"
+}
+
+restore_synthetic_freeze_after_rollback_probe() {
+  local database="$1"
+  local freeze_fingerprint="$2"
+
+  if ! "${psql_cmd[@]}" --dbname="$database" -q \
+      -v expected_freeze_fingerprint="$freeze_fingerprint" <<'SQL' >/dev/null
+BEGIN;
+SELECT set_config(
+  'app.stage_b_expected_freeze_fingerprint',
+  :'expected_freeze_fingerprint',true);
+DO $restore_synthetic_freeze_after_rollback_probe$
+DECLARE
+  v_changed integer;
+  v_restored_fingerprint text;
+BEGIN
+  IF (SELECT count(*) FROM public.engine_maintenance_break b
+       WHERE b.id AND b.phase='counting_down' AND NOT b.enforce_freeze
+         AND b.reason='Stage B PG17 Rehearsal'
+         AND b.declared_by='stage-b-forward-chain-pg17'
+         AND b.ownership_token='72000000-0000-4000-8000-000000000001')<>1
+     OR public.fn_platform_frozen()
+     OR public.fn_entry_purchases_frozen() THEN
+    RAISE EXCEPTION 'STAGE_B_ROLLBACK_PROBE_LOCAL_THAW_DRIFTED'
+      USING ERRCODE='55000';
+  END IF;
+  UPDATE public.engine_maintenance_break
+     SET enforce_freeze=true
+   WHERE id AND phase='counting_down' AND NOT enforce_freeze
+     AND reason='Stage B PG17 Rehearsal'
+     AND declared_by='stage-b-forward-chain-pg17'
+     AND ownership_token='72000000-0000-4000-8000-000000000001';
+  GET DIAGNOSTICS v_changed=ROW_COUNT;
+  SELECT encode(extensions.digest(
+           convert_to(to_jsonb(b)::text,'UTF8'),'sha256'),'hex')
+    INTO STRICT v_restored_fingerprint
+    FROM public.engine_maintenance_break b WHERE b.id;
+  IF v_changed<>1
+     OR v_restored_fingerprint IS DISTINCT FROM current_setting(
+          'app.stage_b_expected_freeze_fingerprint')
+     OR public.fn_platform_frozen() IS NOT TRUE
+     OR public.fn_entry_purchases_frozen() IS NOT TRUE THEN
+    RAISE EXCEPTION 'STAGE_B_ROLLBACK_PROBE_FREEZE_RESTORE_FAILED'
+      USING ERRCODE='55000';
+  END IF;
+END;
+$restore_synthetic_freeze_after_rollback_probe$;
+COMMIT;
+SQL
+  then
+    echo 'The rollback probe did not restore its exact synthetic Stage-B freeze.' >&2
+    return 1
+  fi
+}
+
 run_bounty_rebuy_generation_atomicity() {
   local database="$1"
   local probe_log=''
+  local probe_status=0
+  local freeze_fingerprint=''
 
-  if probe_log="$("${psql_cmd[@]}" --dbname="$database" \
-      -f "$bounty_rebuy_fixture" -f "$bounty_rebuy_probe" 2>&1)"; then
+  if ! freeze_fingerprint="$(
+      thaw_synthetic_freeze_for_rollback_probe "$database")"; then
+    return 1
+  fi
+  probe_log="$("${psql_cmd[@]}" --dbname="$database" \
+    -f "$bounty_rebuy_fixture" -f "$bounty_rebuy_probe" 2>&1)" \
+    || probe_status=$?
+  if ! restore_synthetic_freeze_after_rollback_probe \
+      "$database" "$freeze_fingerprint"; then
+    return 1
+  fi
+
+  if (( probe_status == 0 )); then
     echo 'The bounty-rebuy probe did not end in its intentional rollback exception.' >&2
     return 1
   fi
@@ -3399,6 +3635,42 @@ run_bounty_rebuy_generation_atomicity() {
     return 1
   fi
   echo 'STAGE_B_11052648_BOUNTY_REBUY_ATOMICITY_OK'
+}
+
+run_tournament_cancellation_entrant_refunds() {
+  local database="$1"
+  local probe_log=''
+  local probe_status=0
+  local freeze_fingerprint=''
+
+  # Registration is correctly closed during the synthetic Stage-B freeze. Thaw
+  # only this disposable scenario for the rollback-only semantic proof.
+  if ! freeze_fingerprint="$(
+      thaw_synthetic_freeze_for_rollback_probe "$database")"; then
+    return 1
+  fi
+  probe_log="$("${psql_cmd[@]}" --dbname="$database" \
+    -f "$cancellation_probe" 2>&1)" || probe_status=$?
+  if ! restore_synthetic_freeze_after_rollback_probe \
+      "$database" "$freeze_fingerprint"; then
+    return 1
+  fi
+
+  if (( probe_status != 0 )); then
+    printf '%s\n' "$probe_log" >&2
+    echo 'The post-six exact-origin tournament cancellation proof failed.' >&2
+    return 1
+  fi
+  if ! grep -Fq 'TOURNAMENT_CANCELLATION_ENTRANT_REFUNDS_PASS' \
+      <<<"$probe_log" \
+     || ! grep -Fq \
+      'AUDIT_TEST_PASS: cancellation returned the cash entrant exactly 100 chips' \
+      <<<"$probe_log"; then
+    printf '%s\n' "$probe_log" >&2
+    echo 'The post-six exact-origin tournament cancellation proof emitted no acceptance marker.' >&2
+    return 1
+  fi
+  echo 'STAGE_B_11061723_CANCELLATION_EXACT_ORIGIN_OK'
 }
 
 assert_donor_unchanged() {
@@ -3443,6 +3715,7 @@ if [[ "$probe_mode" == 'replay' ]]; then
   run_chain_prefix 6 true "$replay_database"
   assert_unrelated_later_receipt_survived "$replay_database"
   assert_stage_b_bounded_postimage "$replay_database"
+  run_tournament_cancellation_entrant_refunds "$replay_database"
   run_bounty_rebuy_generation_atomicity "$replay_database"
   echo 'STAGE_B_LEASE_KEYSHARE_REPLAY_OK'
   assert_donor_unchanged
@@ -3491,6 +3764,7 @@ run_keyshare_unknown_preimage_rollback "$mixed_database"
 assert_stage_b_bounded_postimage "$mixed_database"
 run_chain_prefix 6 true "$clean_database" 5
 assert_stage_b_bounded_postimage "$clean_database"
+run_tournament_cancellation_entrant_refunds "$clean_database"
 run_bounty_rebuy_generation_atomicity "$clean_database"
 echo 'STAGE_B_LEASE_KEYSHARE_REPLAY_OK'
 

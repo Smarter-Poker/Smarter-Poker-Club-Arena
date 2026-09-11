@@ -84,7 +84,24 @@ describe('verified original seat move outcomes', () => {
       data: { ok: false, reason: 'original_occupancy_gone' },
       error: null,
     });
-    expect(await run()).toEqual({ done: [], held: [] });
+    /* PIN MOVED 2026-09-10 (must-move audit lane D, CLAUDE.md 5.8/10.6). What
+       this asserts is unchanged and still asserted: a refused move is NO
+       TRANSFER - nothing done, nothing held. The outcome now additionally
+       REPORTS the refusal, because a player who was promised "Moving After
+       This Hand" and then was not moved used to be told nothing at all.
+       `original_occupancy_gone` is terminal, so it belongs in `refused`; the
+       freeze, a retryable deadlock and a partner still to arrive never do. */
+    expect(await run()).toEqual({
+      done: [],
+      held: [],
+      refused: [
+        {
+          move_id: '66666666-6666-4666-8666-666666666666',
+          player_id: '55555555-5555-4555-8555-555555555555',
+          reason: 'original_occupancy_gone',
+        },
+      ],
+    });
   });
   it('requires exact original scope for a swap hold', async () => {
     mock.rpc.mockResolvedValue({

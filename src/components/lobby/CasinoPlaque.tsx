@@ -100,11 +100,32 @@ export function PlaqueSeats({
   players,
   capacity,
   bareCount = false,
+  gameTables = null,
 }: {
   players: number;
   capacity: number;
   bareCount?: boolean;
+  /**
+   * R10 (Dan 2026-09-04): a must-move game counts its players like a
+   * tournament - no denominator, no pips - with how many tables are open
+   * beside it. Set on a game row; null for a single table.
+   */
+  gameTables?: number | null;
 }) {
+  if (gameTables != null) {
+    const tables = Math.max(0, Number(gameTables) || 0);
+    const tablesWord = tables === 1 ? 'Table' : 'Tables';
+    return (
+      <div
+        className="cplaque__seats cplaque__seats--game"
+        aria-label={`${players} Players, ${tables} ${tablesWord} Open`}
+      >
+        <span className="cplaque__seats-num">
+          {players.toLocaleString()} Players {'\u00b7'} {tables.toLocaleString()} {tablesWord}
+        </span>
+      </div>
+    );
+  }
   if (bareCount) {
     return (
       <div className="cplaque__seats" aria-label={`${players} Entered`}>

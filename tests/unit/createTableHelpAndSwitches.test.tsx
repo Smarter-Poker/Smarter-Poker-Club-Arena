@@ -11,6 +11,12 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import fs from 'node:fs';
 import path from 'node:path';
 import { HelpPopover } from '../../src/components/common/HelpPopover';
+import {
+  CASH_TEMPLATES,
+  templatePromiseLines,
+  type CashRulesetSnapshot,
+  type CashTemplate,
+} from '../../src/config/cashGames';
 
 afterEach(cleanup);
 
@@ -75,6 +81,11 @@ describe('Create-Table Switch And Bomb-Schedule Markup', () => {
     path.join(process.cwd(), 'src', 'pages', 'TableConfigPage.css'),
     'utf8'
   );
+  // Where the bomb cadence copy lives now (see the pin below).
+  const vocab = fs.readFileSync(
+    path.join(process.cwd(), 'src', 'config', 'cashGames.ts'),
+    'utf8'
+  );
 
   it('Uses An Isolated Conventional Switch With A Visible On Or Off Status', () => {
     expect(controls).toContain('className="table-config-switch"');
@@ -93,11 +104,53 @@ describe('Create-Table Switch And Bomb-Schedule Markup', () => {
     expect(css).toContain('height: 28px');
   });
 
+  /* THE PIN MOVED WITH ITS MECHANISM (2026-09-09, must-move audit lane I).
+     This read the cadence strings out of CashGameCreateFlow.tsx, because the
+     flow OFFERED a bomb trigger radio. It does not any more: since
+     20260909035303 fn_cash_game_create takes the whole bombs object from
+     fn_cash_template_defaults and reads nothing the caller sends, so the
+     controls were replaced by read-only readouts of the template's promise
+     (docs/changelog/2026-09-09-a-classic-game-has-no-antes-and-no-bombs.md).
+     The RULE is unchanged and is what is pinned here: a host is told the bomb
+     cadence in words, never a bare N. It is now asserted through the function
+     that produces the words rather than by grepping a file, so it survives the
+     copy moving again. */
   it('Explains The Bomb Schedule Without An Unexplained N', () => {
     expect(form).not.toContain('Every N Hands');
     expect(flow).not.toContain('Every N Hands');
-    expect(flow).toContain('Every 15 Minutes');
-    expect(flow).toContain('Every Orbit');
+    expect(vocab).not.toContain('Every N Hands');
+    expect(vocab).not.toMatch(/Every N\b/);
+
+    const cadence = (
+      template: CashTemplate,
+      bombs: CashRulesetSnapshot['bombs']
+    ): string =>
+      templatePromiseLines({
+        template,
+        regular_ante: 'none',
+        vpip_floor: 0,
+        vpip_window: 10,
+        bombs,
+      }).find((l) => l.key === 'bombs')!.value;
+
+    // Every template that RUNS bombs spells its cadence out.
+    expect(cadence('action', { enabled: true, trigger: 'timed_15m', ante_bb: 2, boards: 2 })).toBe(
+      'Double Board, 2 BB Ante, Every 15 Minutes'
+    );
+    expect(
+      cadence('madness', { enabled: true, trigger: 'every_orbit', ante_bb: 3, boards: 2 })
+    ).toBe('Double Board, 3 BB Ante, Every Orbit');
+    // And the one that does not says so, rather than leaving the row blank.
+    expect(cadence('classic', { enabled: false, trigger: null, ante_bb: null, boards: null })).toBe(
+      'No Bomb Pots'
+    );
+
+    // The template card a host picks from says the same thing, in the same words.
+    const blurb = Object.fromEntries(CASH_TEMPLATES.map((t) => [t.id, t.blurb]));
+    expect(blurb.action).toContain('Every 15 Minutes');
+    expect(blurb.madness).toContain('Every Orbit');
+    expect(blurb.classic).toContain('No Bombs');
+    for (const t of CASH_TEMPLATES) expect(t.blurb).not.toMatch(/\bN\b/);
   });
 
   it('Leaves No Passive Tooltip Spans On The Create-Table Page', () => {

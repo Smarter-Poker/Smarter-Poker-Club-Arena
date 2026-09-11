@@ -26,5 +26,16 @@
   "prepared_bytes": 275855,
   "latest_native_assertions": 138,
   "latest_native_exact_rollback": true,
-  "formatting_change": "Removed extra EOF blank lines from two component/probe files; regenerated bundle from exact components. Production SQL behavior unchanged; new exact artifact passed138."
+  "formatting_change": "Removed extra EOF blank lines from two component/probe files; regenerated bundle from exact components. Production SQL behavior unchanged; new exact artifact passed138.",
+  "active_coordinator_verified_review": {
+    "at": "2026-09-11T09:54:18.405555+00:00",
+    "source_merge_commit": "ef93a89b698ea138d2ab9bbc2d89150a78b4e179",
+    "phase_three_complete": false,
+    "approval_gates": "2026-09-11-phase-three-specific-approval-gates.json",
+    "prepared_sha256": "1f6c8ac88ead4612085c8c6de0da258914d50eb06d94300cf9931bb343eafb40",
+    "prepared_bytes": 276794,
+    "native_assertions": 138,
+    "exact_rollback": true,
+    "production_applied": false
+  }
 }

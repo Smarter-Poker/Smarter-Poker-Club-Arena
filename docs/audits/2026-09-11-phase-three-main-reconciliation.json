@@ -20,5 +20,11 @@
   "preserved_untracked_manifest": "/tmp/codex-phase-three-premerge-preserve-h7xbc1_i/manifest.json",
   "incoming_whitespace": "Seven incoming unrelated rakeback raw-output files already have terminal blank-line warnings. They are retained byte-for-byte at reconciliation rather than rewriting third-party proof artifacts.",
   "regenerated_bundle_sha256": "1f6c8ac88ead4612085c8c6de0da258914d50eb06d94300cf9931bb343eafb40",
-  "native_reverification_pending": true
+  "native_reverification_pending": false,
+  "native_reverification": {
+    "assertions": 138,
+    "exact_rollback": true,
+    "source_inputs_stable": true,
+    "evidence": "2026-09-11-exact-terminal-activation-native.json"
+  }
 }

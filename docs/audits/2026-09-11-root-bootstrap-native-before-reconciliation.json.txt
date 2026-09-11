@@ -1,14 +1,13 @@
 {
-  "recorded_at": "2026-09-11T09:51:08.450486+00:00",
+  "recorded_at": "2026-09-11T08:07:59.690795+00:00",
   "database": "full_stage1",
-  "native_socket": "/tmp/codex-chip-drift-cutover-e2iav203/socket",
   "baseline": "full_stage1|postgres|true|15|12|0|3|false",
   "status": "passed",
   "whole_stage_b_executed_twice": false,
   "production_ddl_applied": false,
   "activation_bundle_executed_once": true,
   "activation_bundle_source": "/Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-chip-entry-swarm/scripts/deploy/phase-three-activate-current-terminal-authorities.sql",
-  "activation_bundle_sha256": "1f6c8ac88ead4612085c8c6de0da258914d50eb06d94300cf9931bb343eafb40",
+  "activation_bundle_sha256": "9e0771e13df999bcf4fc3809865afa53d6b70f2eb947be531c4894dca9e148b0",
   "one_outer_rollback_transaction": true,
   "composition_order": [
     "current dependencies",
@@ -20,10 +19,10 @@
   "source_inputs_changed": [],
   "engine_adoption_verified": false,
   "production_break_bootstrap_covered": false,
-  "outside_window_production_guard_compatibility": false,
+  "outside_window_production_guard_compatibility": true,
   "native_role_fixture": "initdb postgres is SUPERUSER; deployed postgres is NOSUPERUSER. Only the historical installer role assertion is adapted. Production function and trigger bodies are unchanged.",
-  "bootstrap_source": null,
-  "bootstrap_source_sha256": null,
+  "bootstrap_source": "/Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-chip-entry-swarm/supabase/migrations/20260910164655_stage_b_break_window_bootstrap_compatibility.sql",
+  "bootstrap_source_sha256": "4d613b7193b1d1d42950040a336f985c7843db6b095cd02c4d751d27d30c5ec6",
   "coverage_gaps": [
     "Protected-window management-transport bootstrap exception is not certified; this rehearsal and activation are outside the protected window."
   ],
@@ -79,12 +78,12 @@
       ],
       "source": "engine.fn_settle_tournament_final_table_deal",
       "live_count": 5,
-      "settled_at": "2026-09-11T04:51:06.526491-05:00",
+      "settled_at": "2026-09-11T03:07:57.84509-05:00",
       "amount_owed": 100.0,
       "chip_leader": "fb93f802-2713-0498-7ad7-894ea4701ec4",
       "deal_amount": 95.0,
       "field_count": 6,
-      "prepared_at": "2026-09-11T04:51:06.526491-05:00",
+      "prepared_at": "2026-09-11T03:07:57.84509-05:00",
       "amount_moved": 95.0,
       "place_amount": 5.0,
       "bubble_source": null,
@@ -135,7 +134,7 @@
       "live_input_fingerprint": "508da461d2cbaf8b4072283a3c838fa9",
       "bubble_contract_required": false,
       "bubble_amount_paid_before": 0.0,
-      "prior_standings_fingerprint": "40dd7a438f0030c051a46936960e935d"
+      "prior_standings_fingerprint": "8c172a77ed6025dced402d60da2b92d2"
     },
     "claim": {
       "evidence": {
@@ -154,12 +153,12 @@
         "tournament_id": "87000000-0000-0000-0000-000000000001",
         "winner_user_id": "fb93f802-2713-0498-7ad7-894ea4701ec4"
       },
-      "claimed_at": "2026-09-11T04:51:06.526491-05:00",
-      "updated_at": "2026-09-11T04:51:06.526491-05:00",
+      "claimed_at": "2026-09-11T03:07:57.84509-05:00",
+      "updated_at": "2026-09-11T03:07:57.84509-05:00",
       "finish_kind": "final_table_deal",
-      "certified_at": "2026-09-11T04:51:06.526491-05:00",
+      "certified_at": "2026-09-11T03:07:57.84509-05:00",
       "claim_source": "engine.fn_settle_tournament_final_table_deal",
-      "completed_at": "2026-09-11T04:51:06.526491-05:00",
+      "completed_at": "2026-09-11T03:07:57.84509-05:00",
       "tournament_id": "87000000-0000-0000-0000-000000000001",
       "winner_user_id": "fb93f802-2713-0498-7ad7-894ea4701ec4",
       "certification_version": 1
@@ -237,9 +236,9 @@
       "rake": {
         "amount": 0.0,
         "attributed": true,
-        "settled_at": "2026-09-11T04:51:06.526491-05:00",
+        "settled_at": "2026-09-11T03:07:57.84509-05:00",
         "destination": "none",
-        "attributed_at": "2026-09-11T04:51:06.526491-05:00",
+        "attributed_at": "2026-09-11T03:07:57.84509-05:00",
         "attributed_users": 0
       },
       "bounty": {
@@ -249,7 +248,7 @@
         "residual": 0
       },
       "escrow": {
-        "closed_at": "2026-09-11T04:51:06.526491-05:00",
+        "closed_at": "2026-09-11T03:07:57.84509-05:00",
         "close_note": "terminal receipt: exact zero",
         "fee_balance": 0.0,
         "prize_balance": 0.0,
@@ -288,9 +287,9 @@
           "user_id": "23fafd63-bdd2-0fc1-9cb7-d0d754c3c626"
         }
       ],
-      "revision": "ea153f5c9f0191c118fdbe9d51bd6f3e9bf5f376a3bd61fcfa757871e6efa1d5",
+      "revision": "91e6dfd61d3d6fd57273c6bef58179f4d9ec39816f31e7edec9b0aa10952c143",
       "winner_id": "fb93f802-2713-0498-7ad7-894ea4701ec4",
-      "settled_at": "2026-09-11T04:51:06.526491-05:00",
+      "settled_at": "2026-09-11T03:07:57.84509-05:00",
       "deal_shares": [
         {
           "place": 1,
@@ -318,7 +317,7 @@
           "user_id": "57d53dfe-a185-81c2-b670-61eae6f3c57a"
         }
       ],
-      "proposal_id": "89ffdc60-1277-403f-88a7-fea428d724d9",
+      "proposal_id": "5e8fbd97-0cb3-47e0-97ca-b604f45b46b1",
       "fully_settled": true,
       "table_closure": {
         "source_seat_ids": [
@@ -328,7 +327,9 @@
           "ac151685-cb70-6425-cf96-9e2f50e91197",
           "b446e659-d0ab-7d1d-228f-042a815df3cf"
         ],
-        "closed_table_ids": ["87200000-0000-0000-0000-000000000001"],
+        "closed_table_ids": [
+          "87200000-0000-0000-0000-000000000001"
+        ],
         "released_seat_ids": [
           "3ee1cc43-5eed-93c9-0a0a-dc88a025b16e",
           "40b8f24a-a534-4592-0c31-2a49b89a0aac",
@@ -377,7 +378,7 @@
           "amount": 100.0,
           "user_id": "d1000000-0000-4000-8000-000000000002",
           "position": 1,
-          "registration_id": "02de17f4-7cfb-450f-af4b-e774262f5f1a"
+          "registration_id": "df1190c2-6f1b-4a1c-9fdd-4957d809d759"
         }
       ],
       "awards": [
@@ -385,10 +386,10 @@
           "amount": 100.0,
           "user_id": "d1000000-0000-4000-8000-000000000002",
           "position": 1,
-          "payout_id": "d4335c5d-e3b5-4243-b7e1-a4d364988662",
+          "payout_id": "1a5eb80f-0eba-47dd-9d25-a2e7184070ce",
           "ticket_id": null,
           "delivery_kind": "seat",
-          "registration_id": "02de17f4-7cfb-450f-af4b-e774262f5f1a"
+          "registration_id": "df1190c2-6f1b-4a1c-9fdd-4957d809d759"
         }
       ],
       "status": "COMPLETED",
@@ -397,19 +398,25 @@
       "winner_id": "d1000000-0000-4000-8000-000000000002",
       "field_size": 1,
       "seat_count": 1,
-      "settled_at": "2026-09-11T04:51:06.526491-05:00",
+      "settled_at": "2026-09-11T03:07:57.84509-05:00",
       "ticket_cost": 100.0,
       "fully_settled": true,
       "tournament_id": "d3000000-0000-4000-8000-000000000001",
       "winner_amount": 100.0,
       "receipt_version": 2,
       "source_closeout": {
-        "closed_at": "2026-09-11T04:51:06.526491-05:00",
-        "source_seat_ids": ["d6000000-0000-4000-8000-000000000001"],
-        "escrow_closed_at": "2026-09-11T04:51:06.526491-05:00",
-        "source_table_ids": ["d5000000-0000-4000-8000-000000000001"],
+        "closed_at": "2026-09-11T03:07:57.84509-05:00",
+        "source_seat_ids": [
+          "d6000000-0000-4000-8000-000000000001"
+        ],
+        "escrow_closed_at": "2026-09-11T03:07:57.84509-05:00",
+        "source_table_ids": [
+          "d5000000-0000-4000-8000-000000000001"
+        ],
         "escrow_close_note": "atomic satellite terminal receipt: exact zero",
-        "released_seat_ids": ["d6000000-0000-4000-8000-000000000001"],
+        "released_seat_ids": [
+          "d6000000-0000-4000-8000-000000000001"
+        ],
         "source_seat_count": 1,
         "source_table_count": 1,
         "released_seat_count": 1
@@ -426,15 +433,15 @@
       "enforced": true,
       "gross_in": 100.0,
       "bounty_in": 0.0,
-      "closed_at": "2026-09-11T04:51:06.526491-05:00",
-      "opened_at": "2026-09-11T04:51:06.526491-05:00",
+      "closed_at": "2026-09-11T03:07:57.84509-05:00",
+      "opened_at": "2026-09-11T03:07:57.84509-05:00",
       "prize_out": 100.0,
       "bounty_out": 0.0,
       "close_note": "atomic satellite terminal receipt: exact zero",
       "overlay_in": 0.0,
       "refund_fee": 0.0,
       "reserve_in": 0.0,
-      "updated_at": "2026-09-11T04:51:06.526491-05:00",
+      "updated_at": "2026-09-11T03:07:57.84509-05:00",
       "fee_balance": 0.0,
       "opened_from": "shadow at first sight (tournament_buyin)",
       "reserve_out": 0.0,
@@ -446,7 +453,7 @@
       "bounty_balance": 0.0,
       "fee_entries_in": 0.0,
       "satellite_fee_in": 0.0,
-      "terminal_closed_at": "2026-09-11T04:51:06.526491-05:00"
+      "terminal_closed_at": "2026-09-11T03:07:57.84509-05:00"
     },
     "target_escrow": {
       "fee_out": 0.0,
@@ -454,14 +461,14 @@
       "gross_in": 100.0,
       "bounty_in": 0.0,
       "closed_at": null,
-      "opened_at": "2026-09-11T04:51:06.526491-05:00",
+      "opened_at": "2026-09-11T03:07:57.84509-05:00",
       "prize_out": 0.0,
       "bounty_out": 0.0,
       "close_note": null,
       "overlay_in": 0.0,
       "refund_fee": 0.0,
       "reserve_in": 0.0,
-      "updated_at": "2026-09-11T04:51:06.526491-05:00",
+      "updated_at": "2026-09-11T03:07:57.84509-05:00",
       "fee_balance": 20.0,
       "opened_from": "shadow at first sight (tournament_buyin)",
       "reserve_out": 0.0,
@@ -479,22 +486,22 @@
       {
         "action": "INSERT",
         "capability": {
-          "token": "e362a3cf-4f81-4f25-8079-c59b9ac433af",
+          "token": "bb537006-b00d-48eb-963b-9b72c189b034",
           "seat_id": "d6000000-0000-4000-8000-000000000001",
           "user_id": "d1000000-0000-4000-8000-000000000002",
           "operation": "satellite_finish",
-          "created_at": "2026-09-11T04:51:06.526491-05:00",
+          "created_at": "2026-09-11T03:07:57.84509-05:00",
           "tournament_id": "d3000000-0000-4000-8000-000000000001"
         }
       },
       {
         "action": "DELETE",
         "capability": {
-          "token": "e362a3cf-4f81-4f25-8079-c59b9ac433af",
+          "token": "bb537006-b00d-48eb-963b-9b72c189b034",
           "seat_id": "d6000000-0000-4000-8000-000000000001",
           "user_id": "d1000000-0000-4000-8000-000000000002",
           "operation": "satellite_finish",
-          "created_at": "2026-09-11T04:51:06.526491-05:00",
+          "created_at": "2026-09-11T03:07:57.84509-05:00",
           "tournament_id": "d3000000-0000-4000-8000-000000000001"
         }
       }
@@ -504,7 +511,10 @@
     "hook_md5": "c43a9c75d3d4c1e4945c908d16e3b5d6",
     "scope_triggers": 4,
     "legacy_hand_door": null,
-    "break_window_triggers": [],
+    "break_window_triggers": [
+      "ca_break_window_refuses_ddl",
+      "ca_break_window_refuses_drops"
+    ],
     "lease_table_service_write": false
   },
   "satellite_actual_manager_request": true,
@@ -512,47 +522,76 @@
     {
       "acl": null,
       "owner": "postgres",
-      "config": ["search_path=public"],
+      "config": [
+        "search_path=public"
+      ],
       "body_md5": "d0ec5c348f062b27f5f3f51583084723",
       "identity": "fn_ca_capture_satellite_seat_entitlement()",
       "security_definer": true
     },
     {
-      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "acl": [
+        "postgres=X/postgres",
+        "service_role=X/postgres"
+      ],
       "owner": "postgres",
-      "config": ["search_path=public, pg_temp"],
+      "config": [
+        "search_path=public, pg_temp"
+      ],
       "body_md5": "343015440ea5c84ee4ca7ae583c73d30",
       "identity": "fn_ca_lock_settlement_lane_global()",
       "security_definer": false
     },
     {
-      "acl": ["postgres=X/postgres"],
+      "acl": [
+        "postgres=X/postgres"
+      ],
       "owner": "postgres",
-      "config": ["search_path=public", "statement_timeout=30s"],
+      "config": [
+        "search_path=public",
+        "statement_timeout=30s"
+      ],
       "body_md5": "381b3e0691a2b9303693653f5110d568",
       "identity": "fn_ca_satellite_settlement_receipt(uuid,uuid)",
       "security_definer": true
     },
     {
-      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "acl": [
+        "postgres=X/postgres",
+        "service_role=X/postgres"
+      ],
       "owner": "postgres",
-      "config": ["search_path=public", "statement_timeout=45s"],
+      "config": [
+        "search_path=public",
+        "statement_timeout=45s"
+      ],
       "body_md5": "c332627d5d8c7c9ac951392c95c53551",
       "identity": "fn_resolve_satellite_settlement_outcome(uuid,uuid)",
       "security_definer": true
     },
     {
-      "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+      "acl": [
+        "postgres=X/postgres",
+        "service_role=X/postgres"
+      ],
       "owner": "postgres",
-      "config": ["search_path=public, pg_temp", "statement_timeout=30s"],
+      "config": [
+        "search_path=public, pg_temp",
+        "statement_timeout=30s"
+      ],
       "body_md5": "486d0e6729de8d518d7faf0c253b65d3",
       "identity": "fn_settle_satellite_tournament(uuid,uuid)",
       "security_definer": true
     },
     {
-      "acl": ["postgres=X/postgres"],
+      "acl": [
+        "postgres=X/postgres"
+      ],
       "owner": "postgres",
-      "config": ["search_path=public", "statement_timeout=30s"],
+      "config": [
+        "search_path=public",
+        "statement_timeout=30s"
+      ],
       "body_md5": "83bf8b297d07bbae671707f24afec271",
       "identity": "fn_settle_satellite_tournament_pre_money_path_gate(uuid,uuid)",
       "security_definer": true
@@ -618,189 +657,290 @@
     ],
     "functions": [
       {
-        "acl": ["postgres=X/postgres"],
+        "acl": [
+          "postgres=X/postgres"
+        ],
         "owner": "postgres",
-        "config": ["search_path=public"],
+        "config": [
+          "search_path=public"
+        ],
         "body_md5": "0811b7a7795234ed8bc84c606d9a5a62",
         "signature": "fn_ca_close_tournament_seat_exit_authority(uuid,boolean)",
         "definition_md5": "df0e8e155ca789f10bd49007fc9d13a6",
         "security_definer": true
       },
       {
-        "acl": ["postgres=X/postgres"],
+        "acl": [
+          "postgres=X/postgres"
+        ],
         "owner": "postgres",
-        "config": ["search_path=public, pg_temp"],
+        "config": [
+          "search_path=public, pg_temp"
+        ],
         "body_md5": "0f491a45693fcf3182719647c5ed7aee",
         "signature": "fn_ca_open_tournament_seat_exit_authority(uuid,text,uuid)",
         "definition_md5": "1b03285a00dc01df0f177e25ebe57147",
         "security_definer": true
       },
       {
-        "acl": ["postgres=X/postgres"],
+        "acl": [
+          "postgres=X/postgres"
+        ],
         "owner": "postgres",
-        "config": ["search_path=public"],
+        "config": [
+          "search_path=public"
+        ],
         "body_md5": "852e35483b67c1fc59b6347b51c79cb8",
         "signature": "fn_ca_settle_final_table_deal_share_raw(uuid,uuid,numeric)",
         "definition_md5": "3437a8e83051385947c6b48e7c399a90",
         "security_definer": true
       },
       {
-        "acl": ["postgres=X/postgres"],
+        "acl": [
+          "postgres=X/postgres"
+        ],
         "owner": "postgres",
-        "config": ["search_path=public"],
+        "config": [
+          "search_path=public"
+        ],
         "body_md5": "f1fc7a0bf480b1034f0f1d9cba3b4d0b",
         "signature": "fn_ca_settle_tournament_bubble_raw(uuid,uuid,numeric)",
         "definition_md5": "6bbb0ff983fc61c9f8c18cc2201e0f93",
         "security_definer": true
       },
       {
-        "acl": ["postgres=X/postgres"],
+        "acl": [
+          "postgres=X/postgres"
+        ],
         "owner": "postgres",
-        "config": ["search_path=public"],
+        "config": [
+          "search_path=public"
+        ],
         "body_md5": "3585ddbfdb0a197243d5e6eefb6b670f",
         "signature": "fn_ca_settle_tournament_place_raw(uuid,integer,uuid,numeric)",
         "definition_md5": "f676b2cbb361896dfa61f7e5f9413f46",
         "security_definer": true
       },
       {
-        "acl": ["postgres=X/postgres"],
+        "acl": [
+          "postgres=X/postgres"
+        ],
         "owner": "postgres",
-        "config": ["search_path=public", "statement_timeout=30s"],
+        "config": [
+          "search_path=public",
+          "statement_timeout=30s"
+        ],
         "body_md5": "bb4b0e1d1c758943fca29f9a83d064e4",
         "signature": "fn_ca_tournament_terminal_receipt(uuid,uuid)",
         "definition_md5": "185dcb02134aa1f1fd2d87cdddbcfd26",
         "security_definer": true
       },
       {
-        "acl": ["postgres=X/postgres"],
+        "acl": [
+          "postgres=X/postgres"
+        ],
         "owner": "postgres",
-        "config": ["search_path=public, pg_temp"],
+        "config": [
+          "search_path=public, pg_temp"
+        ],
         "body_md5": "260c94b41d7f2bb021a88a546a1714ac",
         "signature": "fn_ca_verify_terminal_final_deal_batch(uuid,boolean)",
         "definition_md5": "cb81d2c33985e46bd56dc3c4f1320e67",
         "security_definer": true
       },
       {
-        "acl": ["postgres=X/postgres"],
+        "acl": [
+          "postgres=X/postgres"
+        ],
         "owner": "postgres",
-        "config": ["search_path=public, pg_temp"],
+        "config": [
+          "search_path=public, pg_temp"
+        ],
         "body_md5": "393570c0639c1b01acfc8f7db733f9b2",
         "signature": "fn_ca_verify_terminal_place_batch(uuid,boolean)",
         "definition_md5": "d9a32d594f472456cdc58e7428cc4505",
         "security_definer": true
       },
       {
-        "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+        "acl": [
+          "postgres=X/postgres",
+          "service_role=X/postgres"
+        ],
         "owner": "postgres",
-        "config": ["search_path=public, pg_temp", "statement_timeout=30s"],
+        "config": [
+          "search_path=public, pg_temp",
+          "statement_timeout=30s"
+        ],
         "body_md5": "f311bf0c9982cb078e3ead104b61b310",
         "signature": "fn_claim_tournament_finish(uuid,uuid,text)",
         "definition_md5": "9c60ce0e2be89a658fb361713ba6400b",
         "security_definer": true
       },
       {
-        "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+        "acl": [
+          "postgres=X/postgres",
+          "service_role=X/postgres"
+        ],
         "owner": "postgres",
-        "config": ["search_path=public, pg_temp", "statement_timeout=45s"],
+        "config": [
+          "search_path=public, pg_temp",
+          "statement_timeout=45s"
+        ],
         "body_md5": "96a61ea5e16560735bcb70b355aa79ab",
         "signature": "fn_complete_tournament_terminal(uuid,uuid,text)",
         "definition_md5": "480be3139fe0878e637ce54f533a2170",
         "security_definer": true
       },
       {
-        "acl": ["postgres=X/postgres"],
+        "acl": [
+          "postgres=X/postgres"
+        ],
         "owner": "postgres",
-        "config": ["search_path=public", "statement_timeout=45s"],
+        "config": [
+          "search_path=public",
+          "statement_timeout=45s"
+        ],
         "body_md5": "90f7506df2f1a94fe22952714fcd9f85",
         "signature": "fn_complete_tournament_terminal_pre_seat_guard(uuid,uuid,text)",
         "definition_md5": "8397b4f24c6d1a072d7b2d946f45e3d6",
         "security_definer": true
       },
       {
-        "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+        "acl": [
+          "postgres=X/postgres",
+          "service_role=X/postgres"
+        ],
         "owner": "postgres",
-        "config": ["search_path=public, pg_temp"],
+        "config": [
+          "search_path=public, pg_temp"
+        ],
         "body_md5": "5d796d4b26601b4fe6e1d30b1531c6e2",
         "signature": "fn_complete_tournament_terminal_proposal(uuid,uuid,text,uuid,text)",
         "definition_md5": "20a359f0554e5eaaa58dd0ae4be14864",
         "security_definer": true
       },
       {
-        "acl": ["postgres=X/postgres"],
+        "acl": [
+          "postgres=X/postgres"
+        ],
         "owner": "postgres",
-        "config": ["search_path=public, pg_temp"],
+        "config": [
+          "search_path=public, pg_temp"
+        ],
         "body_md5": "d994347e1b76c936ce13361d73f94fd2",
         "signature": "fn_guard_tournament_completed_certificate()",
         "definition_md5": "8a05956d1fd25d649f1f80b133ed3ed0",
         "security_definer": true
       },
       {
-        "acl": ["postgres=X/postgres"],
+        "acl": [
+          "postgres=X/postgres"
+        ],
         "owner": "postgres",
-        "config": ["search_path=public, pg_temp"],
+        "config": [
+          "search_path=public, pg_temp"
+        ],
         "body_md5": "82078938fd926c94a0ab778acd77dd61",
         "signature": "fn_guard_tournament_completing_claim()",
         "definition_md5": "311ed77e7726f0c7515859a9140d526c",
         "security_definer": true
       },
       {
-        "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+        "acl": [
+          "postgres=X/postgres",
+          "service_role=X/postgres"
+        ],
         "owner": "postgres",
-        "config": ["search_path=public", "statement_timeout=45s"],
+        "config": [
+          "search_path=public",
+          "statement_timeout=45s"
+        ],
         "body_md5": "022c1883533939caf8ebed0cb5699e8c",
         "signature": "fn_resolve_tournament_terminal_outcome(uuid,uuid,text)",
         "definition_md5": "2af79604b25faf6e4a26a9d3cdddbf1f",
         "security_definer": true
       },
       {
-        "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+        "acl": [
+          "postgres=X/postgres",
+          "service_role=X/postgres"
+        ],
         "owner": "postgres",
-        "config": ["search_path=public, pg_temp"],
+        "config": [
+          "search_path=public, pg_temp"
+        ],
         "body_md5": "8b9acfb4802f04723d87069607225588",
         "signature": "fn_resolve_tournament_terminal_proposal_outcome(uuid,uuid,text,uuid,text)",
         "definition_md5": "3b9c4472cf38ac7e622b0fa7b3625c4f",
         "security_definer": true
       },
       {
-        "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+        "acl": [
+          "postgres=X/postgres",
+          "service_role=X/postgres"
+        ],
         "owner": "postgres",
-        "config": ["search_path=public", "statement_timeout=30s"],
+        "config": [
+          "search_path=public",
+          "statement_timeout=30s"
+        ],
         "body_md5": "b1941b2e55dade307ecd74068ab3e500",
         "signature": "fn_settle_tournament_final_table_deal(uuid)",
         "definition_md5": "c7bee6802ab30d625c32503a4d6609e1",
         "security_definer": true
       },
       {
-        "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+        "acl": [
+          "postgres=X/postgres",
+          "service_role=X/postgres"
+        ],
         "owner": "postgres",
-        "config": ["search_path=public, pg_temp"],
+        "config": [
+          "search_path=public, pg_temp"
+        ],
         "body_md5": "642b0a5a4b5cd5ab2194e265eadba75c",
         "signature": "fn_settle_tournament_obligation(uuid,text,integer,uuid,numeric,text,text,uuid)",
         "definition_md5": "f2b20a0a5d9680f06fc0b918e09a735b",
         "security_definer": true
       },
       {
-        "acl": ["postgres=X/postgres"],
+        "acl": [
+          "postgres=X/postgres"
+        ],
         "owner": "postgres",
-        "config": ["search_path=public"],
+        "config": [
+          "search_path=public"
+        ],
         "body_md5": "ebabbaf0456d80335aaa2e04471d0ab6",
         "signature": "fn_settle_tournament_obligation_before_atomic_batch_gate(uuid,text,integer,uuid,numeric,text,text,uuid)",
         "definition_md5": "5a3aa8bd1a48d18b793e39c09b645b41",
         "security_definer": true
       },
       {
-        "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+        "acl": [
+          "postgres=X/postgres",
+          "service_role=X/postgres"
+        ],
         "owner": "postgres",
-        "config": ["search_path=public", "statement_timeout=30s"],
+        "config": [
+          "search_path=public",
+          "statement_timeout=30s"
+        ],
         "body_md5": "2fb9eb9761e248315f36df617e519512",
         "signature": "fn_settle_tournament_places(uuid,uuid)",
         "definition_md5": "df2574e893dfeacd4789369416ccf42a",
         "security_definer": true
       },
       {
-        "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+        "acl": [
+          "postgres=X/postgres",
+          "service_role=X/postgres"
+        ],
         "owner": "postgres",
-        "config": ["search_path=public, pg_temp", "statement_timeout=30s"],
+        "config": [
+          "search_path=public, pg_temp",
+          "statement_timeout=30s"
+        ],
         "body_md5": "be08a61e1a867519048c4692b41ab1fd",
         "signature": "fn_settle_tournament_rake(uuid,text)",
         "definition_md5": "657781a399203068a1a4888354757878",
@@ -809,16 +949,22 @@
       {
         "acl": null,
         "owner": "postgres",
-        "config": ["search_path=public"],
+        "config": [
+          "search_path=public"
+        ],
         "body_md5": "da7d45473b1c4422fde12c2c234dddeb",
         "signature": "fn_stamp_tournament_terminal_evidence_markers()",
         "definition_md5": "eeec4e4610901fe4b44b0b8f270d1ef7",
         "security_definer": true
       },
       {
-        "acl": ["postgres=X/postgres"],
+        "acl": [
+          "postgres=X/postgres"
+        ],
         "owner": "postgres",
-        "config": ["search_path=public, pg_temp"],
+        "config": [
+          "search_path=public, pg_temp"
+        ],
         "body_md5": "0388659818612493c16b02048dae5b3f",
         "signature": "fn_tournament_finish_readiness(uuid,uuid)",
         "definition_md5": "b25696d42d9eb6dad5d44b93ddf45d7c",
@@ -827,43 +973,64 @@
       {
         "acl": null,
         "owner": "postgres",
-        "config": ["search_path=public, pg_temp"],
+        "config": [
+          "search_path=public, pg_temp"
+        ],
         "body_md5": "74c1a1a6b2c9ccbf8fe04f875bfba2e2",
         "signature": "fn_tournament_live_seat_exit_requires_authority()",
         "definition_md5": "b128af26b36dff84e9a12666a2a7e957",
         "security_definer": true
       },
       {
-        "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+        "acl": [
+          "postgres=X/postgres",
+          "service_role=X/postgres"
+        ],
         "owner": "postgres",
-        "config": ["search_path=public"],
+        "config": [
+          "search_path=public"
+        ],
         "body_md5": "9f5f5fefa77ae93bfeffc9f414a63a0d",
         "signature": "trg_atomic_final_table_deal_completion_guard()",
         "definition_md5": "38bf96ba348994fd40264584c26107d8",
         "security_definer": true
       },
       {
-        "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+        "acl": [
+          "postgres=X/postgres",
+          "service_role=X/postgres"
+        ],
         "owner": "postgres",
-        "config": ["search_path=public"],
+        "config": [
+          "search_path=public"
+        ],
         "body_md5": "d338c5278ef1247ff0f4a7c4ba774cc5",
         "signature": "trg_freeze_atomic_final_table_deal_obligation()",
         "definition_md5": "237168031dfb0fb80bdaa8ff15f25172",
         "security_definer": true
       },
       {
-        "acl": ["postgres=X/postgres"],
+        "acl": [
+          "postgres=X/postgres"
+        ],
         "owner": "postgres",
-        "config": ["search_path=public, pg_temp"],
+        "config": [
+          "search_path=public, pg_temp"
+        ],
         "body_md5": "80362aed787137219432f6039bf03158",
         "signature": "trg_freeze_canonical_final_deal_batch()",
         "definition_md5": "c5bbfca7dcc4aedc286c4004f5f5d2c1",
         "security_definer": true
       },
       {
-        "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+        "acl": [
+          "postgres=X/postgres",
+          "service_role=X/postgres"
+        ],
         "owner": "postgres",
-        "config": ["search_path=public"],
+        "config": [
+          "search_path=public"
+        ],
         "body_md5": "ddc5e3121ed9cc73d41525e6c1ba6c34",
         "signature": "trg_lock_atomic_final_table_deal_status()",
         "definition_md5": "b16256830158e669defcff8751cb5be7",
@@ -1078,7 +1245,7 @@
       "count": 0
     },
     "pg_catalog.pg_class": {
-      "md5": "d62ba45e1cf2a01a5f7bd5510a8b1c87",
+      "md5": "396aae371cfb135da6df3e7be341d4c5",
       "count": 6619
     },
     "pg_catalog.pg_index": {
@@ -5876,7 +6043,7 @@
       "count": 0
     },
     "pg_catalog.pg_class": {
-      "md5": "d62ba45e1cf2a01a5f7bd5510a8b1c87",
+      "md5": "396aae371cfb135da6df3e7be341d4c5",
       "count": 6619
     },
     "pg_catalog.pg_index": {
@@ -10584,17 +10751,19 @@
       "count": 0
     }
   },
-  "output_directory": "/tmp/codex-whole-phase-three-fqakmrlh",
-  "sql_sha256": "0c155a5da9e98b0386d508bf4c732318b5802b03e4a6b1b302915d958e6b5e71",
+  "output_directory": "/tmp/codex-whole-phase-three-gsrojwx2",
+  "sql_sha256": "d7866fd9274f0494de600a700ed9af5cf2c11e511dd8569fb7b4ec4cf2f8bbaf",
   "source_sha256": {
     "docs/audits/2026-09-10-native-current-money-authorities.json": "9cd8238b83ce94da5ff74d90a193028fb3a2aac891d2cfaac40aaeca76fe0f8b",
     "docs/audits/2026-09-10-native-current-seat-authority.json": "0fae11af62bf824820b386611c4478b82ca24a0747f297ab123993ec7c10c536",
     "docs/audits/2026-09-10-native-current-settlement-lane.json": "654dfc198ff4fcc58b93f8a4b70b0c5ef191b3e04b830b7df0d3b8133312aeef",
+    "scripts/ci/fixtures/production-20260910154446.sql": "772758b80f3a5f44296b84aabdb1def68278f541a1d49b8b58c49f33c5d9f082",
+    "scripts/ci/fixtures/production-20260910160841.sql": "7e018da306ab9d56e82fa603f84535174a2975793aa7a74c4a4e931fc83ef34d",
     "scripts/ci/probes/atomic-terminal-final-deal-replay.sql": "54fe5a01d7f7c2afde6e1f64f413c2098ef0e3b02179d081e18dd1fa8869c0d9",
     "scripts/ci/probes/atomic-terminal-rehearsal-fixture.sql": "207ab33a49fbe2951553df90f0c298241181578c617f69714b6062d8d53dfdba",
     "scripts/ci/probes/existing-ticket-current-redemption-native.sql": "28b94e1cb392a3655c763f9afbd2d872efc22d9629ec9a57119a40a6401c7e0f",
     "scripts/ci/probes/final-deal-current-terminal-native.sql": "8be0add8344d7b3916a94cbc0b0522497996b96d7a945196f3854b41b3fd9d8f",
-    "scripts/ci/probes/phase-three-current-manager-routes.sql": "5e814d11685a499087327eb8f3a0848327632ca583199c4b95beed0fa35556a6",
+    "scripts/ci/probes/phase-three-current-manager-routes.sql": "cb489fec5c13a5904d4dd0dc826f35d91144e19902c7712cec8ec1ac93980f8e",
     "scripts/ci/probes/satellite-cancel-current-native.sql": "ec5c0c77435c1a1eec085db1001fcb41fc65ba7cfdb7b7f52229d7e67add9531",
     "scripts/ci/probes/satellite-full-terminal-native.sql": "1e82cf186cc71570ebbca8f615360d0be620cf69a67b70899e52be55667c9ac8",
     "scripts/ci/probes/satellite-manager-target-negative-native.sql": "c2449d23b78997315d44bb4aa12b593a1f6873d0e4cb0d42084f90c404457aab",
@@ -10605,15 +10774,15 @@
     "scripts/ci/rehearse-satellite-cancel-current.py": "6530882d7dec13eca29bbce6af1feea927f6bc6a1cdd8b07494a6e35c1d32470",
     "scripts/ci/rehearse-satellite-full-terminal.py": "8562a73099c3c0103eae31e6b3574fb8a677c5afd4a08f26b8b7e3cce8911ad1",
     "scripts/ci/rehearse-stage-b-cash-payers.py": "4990134f6353cdfe7d6509570602617b3db96cf58d5d0ba471a9cf112b3fb6d4",
-    "scripts/ci/rehearse-whole-phase-three-cutover.py": "6383961ebbfa7ea9036892ebf29a161b1c97df02db706452308fb5ebd15fe38f",
+    "scripts/ci/rehearse-whole-phase-three-cutover.py": "9aba08c670f152e9d1e01a8aa67ddf15a187fccf6d75db43da888eaab54cb908",
     "scripts/ci/satellite-stage-b-manager-probe.py": "0d3ac40c3b7814e74d7a249c969e686b1a310574883b7b6565c3ece933eddb20",
     "scripts/deploy/2026-09-10-restore-rake-attribution-retries.sql": "f912f858c7f35004bfc2447fdf70329afc8a52029970e052c85c8e106fc83f2c",
-    "scripts/deploy/phase-three-activate-current-terminal-authorities.sql": "1f6c8ac88ead4612085c8c6de0da258914d50eb06d94300cf9931bb343eafb40",
+    "scripts/deploy/phase-three-activate-current-terminal-authorities.sql": "9e0771e13df999bcf4fc3809865afa53d6b70f2eb947be531c4894dca9e148b0",
     "scripts/deploy/phase-three-activate-versioned-final-deal.sql": "e29ca9f4a2e48a70d1d618d2bd62685fb750a56b244aa444f36a0e3b98d1a972",
     "scripts/deploy/phase-three-cancellation-origin-cash.sql": "84f2d79130e27bd687c848a45bb65bf5b63ac2ebf0d4e9bf360dc1ec19cd284a",
     "scripts/deploy/phase-three-current-satellite-terminal.sql": "a6444cab844a6e2da87600ee4443c3349e0f2d6c988b5a3198a356bc5a333d2f",
     "scripts/deploy/phase-three-final-deal-terminal-v2.sql": "b4af55173b825be5ecf48c6c3bbcca1e828493cdafc47becf00d73ad3186c871",
-    "scripts/deploy/phase-three-satellite-manager-target-scope.sql": "2ab1719a7c8f22ac975f232845fa145e7cb0492742bb8fd41b12e4737010bc0a",
+    "scripts/deploy/phase-three-satellite-manager-target-scope.sql": "bc6e6ea0af0f2475a6f4cd3f3bfbe4732aa69bb583152f5468adf57530cdc775",
     "scripts/deploy/phase-three-strict-tournament-cutover.sql": "2862c27eae420c623a3ccc9ccc086245d208fc48dad3c0e97f2a5b0da1c6dabc",
     "scripts/deploy/phase-three-versioned-final-deal.sql": "6a122c52afea42df937c9f41e6845c49362d783beb1fdcd375a6b8aa402ab636",
     "scripts/dev/build-versioned-final-deal-probe.py": "e75bb5e19be5ff787caa8cda53782f3ca62cee06007b53af1167a68e6e171a8e",
@@ -10640,6 +10809,7 @@
     "supabase/migrations/20260910035245_the_settlement_lane_is_per_tournament_not_platform_wide.sql": "d07cbe35f62ef4a18e29779c812526c27420da4a82c891c0bf2f136b9e6a31fe",
     "supabase/migrations/20260910063559_a_busy_manager_keeps_its_lease.sql": "2e95299dd7693a09ee310a4086b2dcdf16f0f942582007bdede0c4c81024e07d",
     "supabase/migrations/20260910064305_a_union_ticket_is_issued_at_the_club_the_winner_plays_from.sql": "cb0b9260f8e250d479cb82a62a74ecbdea28b826a75adb105d34f444ee2be7cb",
+    "supabase/migrations/20260910164655_stage_b_break_window_bootstrap_compatibility.sql": "4d613b7193b1d1d42950040a336f985c7843db6b095cd02c4d751d27d30c5ec6",
     "supabase/migrations/20260910171843_started_tournaments_resume_or_settle_instead_of_cancelling.sql": "85e02d3f2350b4c1c7229ab2b58e789b3b8651869c0c3834a3318d7547b10bf6",
     "supabase/migrations/20260910171924_satellite_seats_count_once_and_keep_the_funded_prize.sql": "9a00bc662f729d5a6db25c4f10a5ceeb45509b230e35f48252620fe9dcef3fc3",
     "supabase/migrations/20260910173147_the_settlement_lane_is_per_tournament_for_rolling_authorities.sql": "bc620a6b093ab9769615427168763bc35aaed44e60ee190202470dfcef0f744b",
@@ -10649,11 +10819,13 @@
     "docs/audits/2026-09-10-native-current-money-authorities.json": "9cd8238b83ce94da5ff74d90a193028fb3a2aac891d2cfaac40aaeca76fe0f8b",
     "docs/audits/2026-09-10-native-current-seat-authority.json": "0fae11af62bf824820b386611c4478b82ca24a0747f297ab123993ec7c10c536",
     "docs/audits/2026-09-10-native-current-settlement-lane.json": "654dfc198ff4fcc58b93f8a4b70b0c5ef191b3e04b830b7df0d3b8133312aeef",
+    "scripts/ci/fixtures/production-20260910154446.sql": "772758b80f3a5f44296b84aabdb1def68278f541a1d49b8b58c49f33c5d9f082",
+    "scripts/ci/fixtures/production-20260910160841.sql": "7e018da306ab9d56e82fa603f84535174a2975793aa7a74c4a4e931fc83ef34d",
     "scripts/ci/probes/atomic-terminal-final-deal-replay.sql": "54fe5a01d7f7c2afde6e1f64f413c2098ef0e3b02179d081e18dd1fa8869c0d9",
     "scripts/ci/probes/atomic-terminal-rehearsal-fixture.sql": "207ab33a49fbe2951553df90f0c298241181578c617f69714b6062d8d53dfdba",
     "scripts/ci/probes/existing-ticket-current-redemption-native.sql": "28b94e1cb392a3655c763f9afbd2d872efc22d9629ec9a57119a40a6401c7e0f",
     "scripts/ci/probes/final-deal-current-terminal-native.sql": "8be0add8344d7b3916a94cbc0b0522497996b96d7a945196f3854b41b3fd9d8f",
-    "scripts/ci/probes/phase-three-current-manager-routes.sql": "5e814d11685a499087327eb8f3a0848327632ca583199c4b95beed0fa35556a6",
+    "scripts/ci/probes/phase-three-current-manager-routes.sql": "cb489fec5c13a5904d4dd0dc826f35d91144e19902c7712cec8ec1ac93980f8e",
     "scripts/ci/probes/satellite-cancel-current-native.sql": "ec5c0c77435c1a1eec085db1001fcb41fc65ba7cfdb7b7f52229d7e67add9531",
     "scripts/ci/probes/satellite-full-terminal-native.sql": "1e82cf186cc71570ebbca8f615360d0be620cf69a67b70899e52be55667c9ac8",
     "scripts/ci/probes/satellite-manager-target-negative-native.sql": "c2449d23b78997315d44bb4aa12b593a1f6873d0e4cb0d42084f90c404457aab",
@@ -10664,15 +10836,15 @@
     "scripts/ci/rehearse-satellite-cancel-current.py": "6530882d7dec13eca29bbce6af1feea927f6bc6a1cdd8b07494a6e35c1d32470",
     "scripts/ci/rehearse-satellite-full-terminal.py": "8562a73099c3c0103eae31e6b3574fb8a677c5afd4a08f26b8b7e3cce8911ad1",
     "scripts/ci/rehearse-stage-b-cash-payers.py": "4990134f6353cdfe7d6509570602617b3db96cf58d5d0ba471a9cf112b3fb6d4",
-    "scripts/ci/rehearse-whole-phase-three-cutover.py": "6383961ebbfa7ea9036892ebf29a161b1c97df02db706452308fb5ebd15fe38f",
+    "scripts/ci/rehearse-whole-phase-three-cutover.py": "9aba08c670f152e9d1e01a8aa67ddf15a187fccf6d75db43da888eaab54cb908",
     "scripts/ci/satellite-stage-b-manager-probe.py": "0d3ac40c3b7814e74d7a249c969e686b1a310574883b7b6565c3ece933eddb20",
     "scripts/deploy/2026-09-10-restore-rake-attribution-retries.sql": "f912f858c7f35004bfc2447fdf70329afc8a52029970e052c85c8e106fc83f2c",
-    "scripts/deploy/phase-three-activate-current-terminal-authorities.sql": "1f6c8ac88ead4612085c8c6de0da258914d50eb06d94300cf9931bb343eafb40",
+    "scripts/deploy/phase-three-activate-current-terminal-authorities.sql": "9e0771e13df999bcf4fc3809865afa53d6b70f2eb947be531c4894dca9e148b0",
     "scripts/deploy/phase-three-activate-versioned-final-deal.sql": "e29ca9f4a2e48a70d1d618d2bd62685fb750a56b244aa444f36a0e3b98d1a972",
     "scripts/deploy/phase-three-cancellation-origin-cash.sql": "84f2d79130e27bd687c848a45bb65bf5b63ac2ebf0d4e9bf360dc1ec19cd284a",
     "scripts/deploy/phase-three-current-satellite-terminal.sql": "a6444cab844a6e2da87600ee4443c3349e0f2d6c988b5a3198a356bc5a333d2f",
     "scripts/deploy/phase-three-final-deal-terminal-v2.sql": "b4af55173b825be5ecf48c6c3bbcca1e828493cdafc47becf00d73ad3186c871",
-    "scripts/deploy/phase-three-satellite-manager-target-scope.sql": "2ab1719a7c8f22ac975f232845fa145e7cb0492742bb8fd41b12e4737010bc0a",
+    "scripts/deploy/phase-three-satellite-manager-target-scope.sql": "bc6e6ea0af0f2475a6f4cd3f3bfbe4732aa69bb583152f5468adf57530cdc775",
     "scripts/deploy/phase-three-strict-tournament-cutover.sql": "2862c27eae420c623a3ccc9ccc086245d208fc48dad3c0e97f2a5b0da1c6dabc",
     "scripts/deploy/phase-three-versioned-final-deal.sql": "6a122c52afea42df937c9f41e6845c49362d783beb1fdcd375a6b8aa402ab636",
     "scripts/dev/build-versioned-final-deal-probe.py": "e75bb5e19be5ff787caa8cda53782f3ca62cee06007b53af1167a68e6e171a8e",
@@ -10699,6 +10871,7 @@
     "supabase/migrations/20260910035245_the_settlement_lane_is_per_tournament_not_platform_wide.sql": "d07cbe35f62ef4a18e29779c812526c27420da4a82c891c0bf2f136b9e6a31fe",
     "supabase/migrations/20260910063559_a_busy_manager_keeps_its_lease.sql": "2e95299dd7693a09ee310a4086b2dcdf16f0f942582007bdede0c4c81024e07d",
     "supabase/migrations/20260910064305_a_union_ticket_is_issued_at_the_club_the_winner_plays_from.sql": "cb0b9260f8e250d479cb82a62a74ecbdea28b826a75adb105d34f444ee2be7cb",
+    "supabase/migrations/20260910164655_stage_b_break_window_bootstrap_compatibility.sql": "4d613b7193b1d1d42950040a336f985c7843db6b095cd02c4d751d27d30c5ec6",
     "supabase/migrations/20260910171843_started_tournaments_resume_or_settle_instead_of_cancelling.sql": "85e02d3f2350b4c1c7229ab2b58e789b3b8651869c0c3834a3318d7547b10bf6",
     "supabase/migrations/20260910171924_satellite_seats_count_once_and_keep_the_funded_prize.sql": "9a00bc662f729d5a6db25c4f10a5ceeb45509b230e35f48252620fe9dcef3fc3",
     "supabase/migrations/20260910173147_the_settlement_lane_is_per_tournament_for_rolling_authorities.sql": "bc620a6b093ab9769615427168763bc35aaed44e60ee190202470dfcef0f744b",

@@ -1,0 +1,73 @@
+{
+  "status": "composition_only_passed",
+  "python_ast": true,
+  "sql_native_parser_used": false,
+  "native_database_executed": false,
+  "production_database_executed": false,
+  "source_composition_verified": true,
+  "source_files_from_github": true,
+  "sql_sha256": "a068daad466e1754560e74b3d6b9378e77c006497191ae7fe1e90d5beb28667e",
+  "actual_database_assertions_passed": 0,
+  "mac_repo_copy_completed": true,
+  "approval_review_rejections": [
+    "live thaw identity/hash metadata",
+    "local native identity/hash metadata"
+  ],
+  "unknown_fixture_compatibility": true,
+  "metadata_json_parse": true,
+  "scratch_composed_sql_sha256": "018eee1932a8c783d508900b77ec23b35de5b2c4b31a2cb5d035be587a930908",
+  "repository_source_composition_verified": true,
+  "source_sha256": {
+    "scripts/ci/probes/phase-three-clock-thaw-native.sql": "2a152dc1546799ca152357d156b4494f23ed3646c79ccedab07fcd9323ffedfa",
+    "supabase/tests/reconnect_allowance_maintenance.sql": "970dbf08a960330dba282ca96ccbb6a089e797efc579cb13472cb4bab92e6e61",
+    "supabase/migrations/20260908032311_reconnect_allowance_survives_maintenance.sql": "8385d20650eea033d49ca36980d0cdc86fe8b39e498d10eaa1408da282347a2e",
+    "docs/audits/2026-09-10-phase3-clock-deadline-evidence.json": "0858db44d9cbe6565d6460a7e50f182bd3ba459c46e89f865857e4d24a8b2d9f",
+    "scripts/ci/prepare-phase-three-clock-thaw-native.py": "93c37e2d73fd7b46036f717e7c7b8fa505ceb4fb1a18376439e071d0b4a0ecc2"
+  },
+  "reconnect_helper_tracked_source_md5": "189080931555259ca2a6e9961dec8bf3",
+  "prepared_output": "/private/tmp/codex-phase3-ca09-clock-thaw.sql",
+  "execution_ready": false,
+  "current_source_recovery": {
+    "checked_at": "2026-09-11T09:32:52.861499+00:00",
+    "all_nine_function_bodies_match_live_by_coordinator_equality_only": true,
+    "manifest": "scripts/ci/fixtures/phase-three-current-thaw-authority.json",
+    "release_reader_body_md5": "66f0ca0e4ebf27a74dd4b7c211c4fd0f",
+    "release_reader_whitespace_review": {
+      "difference_from_newest_tracked_body_bytes": 2,
+      "both_differences_whitespace_only": true,
+      "whitespace_normalized_equal": true
+    },
+    "native_executed": true,
+    "native_successful_proof_rows": 2,
+    "failed_attempts_preserved": [
+      "/tmp/codex-ca09-v3-300-attempt1/result.json",
+      "/tmp/codex-ca09-v3-300-attempt2/result.json"
+    ],
+    "all_failed_attempts_1199_snapshot_entries_equal": true,
+    "catalogs_checked": 15,
+    "inputs_stable": true,
+    "guard_suppression_used": false,
+    "pending": "Nonempty bomb-pot and accepted-player sit-out coverage remain unavailable; no PostgREST/runtime/deployment claim.",
+    "runtime_transport_and_deployment_proved": false,
+    "final_native_evidence": "docs/audits/2026-09-11-phase-three-current-thaw-native.json",
+    "native_core_status": "PASS_FOR_STATED_NATIVE_CORE_SCOPE",
+    "frozen_seconds_scenarios": [300, 1200]
+  },
+  "additional_automatic_review_rejections": [
+    {
+      "action": "remote command printing full tracked release SQL and local builder",
+      "executed": false,
+      "response": "No retry or alternate source retrieval; safer local known-candidate equality and whitespace-only comparison succeeded."
+    },
+    {
+      "action": "remote command printing synthetic Spin call snippets",
+      "executed": false,
+      "response": "No retry or alternate source retrieval; named local fixture composition or explicit coverage gap only."
+    },
+    {
+      "action": "remote identifier-only Spin dependency output",
+      "executed": false,
+      "response": "Stopped source-disclosure path; did not reroute; used explicit narrower proof scope."
+    }
+  ]
+}

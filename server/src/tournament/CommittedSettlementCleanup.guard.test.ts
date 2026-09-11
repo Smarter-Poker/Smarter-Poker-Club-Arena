@@ -24,9 +24,17 @@ const eliminations = code(read('src/tournament/TournamentManagerEliminations.ts'
 const recovery = code(read('src/tournament/tournamentRecovery.ts'));
 const gameServer = code(read('src/GameServer.ts'));
 const managerBase = code(read('src/tournament/TournamentManagerBase.ts'));
-const seatExitMigration = read(
-  '../supabase/migrations/20260909014545_tournament_seat_exits_stay_inside_tournament_authority.sql'
-);
+const migrationsDirectory = path.join(process.cwd(), '..', 'supabase/migrations');
+const stageBMigration = (suffix: string): string => {
+  const matches = fs.readdirSync(migrationsDirectory).filter(
+    (file) => file.endsWith(`_${suffix}.sql`) || file.endsWith(`_${suffix}.sql.pending`)
+  );
+  if (matches.length !== 1) throw new Error(`Stage-B ${suffix} migration is ambiguous`);
+  return fs.readFileSync(path.join(migrationsDirectory, matches[0]), 'utf8');
+};
+const seatExitSchema = stageBMigration('stage_b_forward_authority_expansion');
+const seatExitRepair = stageBMigration('stage_b_exact_precondition_repairs');
+const seatExitMigration = stageBMigration('stage_b_current_postimage_contraction');
 describe('Bubble Protection has no application-layer prepayment path', () => {
   it('records the elimination and leaves Bubble money to the terminal atomic batch', () => {
     const eliminate = sliceMethod(
@@ -351,16 +359,12 @@ describe('the startup orphan reconciler is retired behind a one-time write barri
     expect(cleanup).not.toMatch(/nonterminalTableQuery|liveSeatQuery/);
   });
 
-  it('moves the historical repair into the atomic migration and records exact identities', () => {
-    expect(seatExitMigration).toContain(
-      'LOCK TABLE public.table_seats IN SHARE ROW EXCLUSIVE MODE'
-    );
-    expect(seatExitMigration).toContain(
-      'CREATE TABLE public.tournament_seat_exit_authority_cutover'
-    );
-    expect(seatExitMigration).toContain('repaired_seat_ids uuid[] NOT NULL');
-    expect(seatExitMigration).toContain('repaired_table_ids uuid[] NOT NULL');
-    expect(seatExitMigration).toContain('public.fn_ca_has_committed_tournament_receipt(t.id)');
+  it('moves the historical repair into the ordered forward chain and records exact identities', () => {
+    expect(seatExitRepair).toContain('LOCK TABLE public.table_seats IN SHARE ROW EXCLUSIVE MODE');
+    expect(seatExitSchema).toContain('CREATE TABLE public.tournament_seat_exit_authority_cutover');
+    expect(seatExitSchema).toContain('repaired_seat_ids uuid[] NOT NULL');
+    expect(seatExitSchema).toContain('repaired_table_ids uuid[] NOT NULL');
+    expect(seatExitRepair).toContain('public.fn_ca_has_committed_tournament_receipt(t.id)');
     expect(seatExitMigration).toContain(
       'terminal seat-exit cutover receipt lost its exact repair state'
     );

@@ -90,3 +90,17 @@ test('unknown PostgreSQL source locations are represented only by digests', () =
   }
   assert.ok(!JSON.stringify(diagnostic).includes('PRIVATE'));
 });
+
+test('only the fixed native smoke source line is retained from a private stack', () => {
+  const record = nativeFailureDiagnostic('postgresql-start', {
+    name: 'AssertionError',
+    stack:
+      'PRIVATE VALUE\n at services (file:///opt/qualification/runtime/native-smoke.mjs:324:5)\nPRIVATE VALUE',
+  });
+  assert.deepEqual(record, {
+    status: 'failed',
+    stage: 'postgresql-start',
+    error: 'AssertionError',
+    native_line: 324,
+  });
+});

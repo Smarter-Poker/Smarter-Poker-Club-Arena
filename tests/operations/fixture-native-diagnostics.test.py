@@ -59,6 +59,14 @@ class NativeDiagnosticsTests(unittest.TestCase):
         for invalid in ['PRIVATE FILE', 'a' * 63, 'A' * 64, ['b' * 64], None]:
             self.assertEqual(m.native_failures(json.dumps({**row, 'file_sha256': invalid})), [])
 
+    def test_native_source_line_is_numeric_and_bounded(self):
+        row = {'status': 'failed', 'stage': 'postgresql-start', 'error': 'AssertionError', 'native_line': 324}
+        self.assertEqual(m.native_failures(json.dumps(row)), [{
+            'stage': row['stage'], 'category': 'AssertionError', 'native_line': 324,
+        }])
+        for invalid in [True, None, '324', 0, 10000, ['324'], 'PRIVATE STACK']:
+            self.assertEqual(m.native_failures(json.dumps({**row, 'native_line': invalid})), [])
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -21,6 +21,13 @@ export function nativeFailureDiagnostic(stage, error) {
     'error',
   ]);
   const record = { status: 'failed', stage, error: names.has(error?.name) ? error.name : 'Error' };
+  const frame =
+    typeof error?.stack === 'string'
+      ? error.stack.match(
+          /file:\/\/\/opt\/qualification\/runtime\/native-smoke\.mjs:([1-9][0-9]{0,3}):[0-9]+/
+        )
+      : null;
+  if (frame) record.native_line = Number(frame[1]);
   if (
     record.error === 'error' &&
     typeof error.code === 'string' &&

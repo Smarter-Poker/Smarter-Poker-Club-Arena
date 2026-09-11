@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import {
   assertFixtureAuthVersion,
   browserStorage,
@@ -18,6 +20,16 @@ test('accepts the pinned native GoTrue version output and refuses changed binari
   for (const changed of ['v2.196.1', 'v2.196.01', 'v2.196.0-dev', 'v2.196.0\nv2.197.0', '']) {
     assert.throws(() => assertFixtureAuthVersion(changed));
   }
+});
+
+test('a version command keeps its stdout protocol separate from shutdown diagnostics', async () => {
+  // Pinned version_cmd.go prints stdout; main.go separately logs cancellation.
+  const result = await promisify(execFile)(process.execPath, [
+    '-e',
+    'process.stdout.write("v2.196.0\\n");process.stderr.write("received graceful shutdown signal\\n")',
+  ]);
+  assert.doesNotThrow(() => assertFixtureAuthVersion(result.stdout));
+  assert.throws(() => assertFixtureAuthVersion(result.stdout + result.stderr));
 });
 
 test('synthetic service/anonymous tokens are isolated per fixture and cryptographically bound', () => {

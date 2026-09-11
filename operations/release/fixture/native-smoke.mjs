@@ -233,13 +233,18 @@ async function services() {
   const password = secrets.databasePassword;
   assert.match(password, /^[a-f0-9]{64}$/);
   const data = '/var/lib/postgresql/data';
-  stage = 'postgresql-17-extensions';
+  stage = 'postgresql-version';
   const version = await command(`${pgBin}/postgres`, ['--version']);
   assert.match(version.stdout, /PostgreSQL\) 17\.11\b/);
+  stage = 'postgrest-version';
   const restVersion = await command('/usr/local/bin/postgrest', ['--version']);
   assert.match(restVersion.stdout, /\b14\.5\b/);
+  stage = 'gotrue-version';
   const authVersion = await command('/usr/local/bin/auth', ['version']);
-  assertFixtureAuthVersion(authVersion.stdout + authVersion.stderr);
+  // The pinned command prints its version on stdout. main.go's deferred
+  // cancellation may also log shutdown on stderr as the process exits.
+  assertFixtureAuthVersion(authVersion.stdout);
+  stage = 'postgresql-initialize';
   await command(`${pgBin}/initdb`, [
     '-D',
     data,
@@ -255,6 +260,7 @@ async function services() {
     'local all all peer map=fixture_users\nhost all all 127.0.0.1/32 scram-sha-256\n'
   );
   await writeFile(`${data}/pg_ident.conf`, 'fixture_users fixture postgres\n');
+  stage = 'postgresql-start';
   await start('postgres', `${pgBin}/postgres`, [
     '-D',
     data,
@@ -271,6 +277,7 @@ async function services() {
     '-c',
     'shared_preload_libraries=pg_stat_statements',
   ]);
+  stage = 'postgresql-ready';
   await eventually(async () => {
     try {
       await command(`${pgBin}/pg_isready`, ['-h', '/run/postgresql', '-U', 'postgres']);
@@ -279,6 +286,7 @@ async function services() {
       return false;
     }
   });
+  stage = 'postgresql-create-database';
   const admin = databaseOwner.own(
     new pg.Client({
       host: '/run/postgresql',

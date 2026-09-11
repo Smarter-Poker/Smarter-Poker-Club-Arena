@@ -20,6 +20,8 @@ CONTROL_FILES = tuple('operations/release/native/' + name for name in (
 NATIVE_STAGES = frozenset((
     'initialization', 'observer-user-isolation', 'native-observation-bridge',
     'chromium-native-read-and-rls', 'postgresql-17-extensions',
+    'postgresql-version', 'postgrest-version', 'gotrue-version', 'postgresql-initialize',
+    'postgresql-start', 'postgresql-ready', 'postgresql-create-database',
     'postgresql-client-connection', 'postgresql-client-cleanup', 'postgresql-slot-identity',
     'postgresql-wal2json-native-slot', 'postgresql-wal2json-slot-inspection',
     'postgresql-wal2json-slot-drop', 'postgresql-bootstrap-roles', 'postgresql-bootstrap-schemas',
@@ -52,6 +54,10 @@ def native_failures(output):
         if (not isinstance(row, dict) or row.get('status') != 'failed'
                 or not isinstance(row.get('stage'), str) or row['stage'] not in NATIVE_STAGES):
             continue
+        has_native_line = 'native_line' in row
+        native_line = row.pop('native_line', None)
+        if has_native_line and (type(native_line) is not int or not 1 <= native_line <= 9999):
+            continue
         if (set(row) == {'status', 'stage', 'error'} and isinstance(row['error'], str)
                 and row['error'] in NATIVE_ERROR_NAMES):
             record = {'stage': row['stage'], 'category': row['error']}
@@ -78,6 +84,8 @@ def native_failures(output):
             record = {'stage': row['stage'], 'category': 'deadline'}
         else:
             continue
+        if native_line is not None:
+            record['native_line'] = native_line
         if record not in records:
             records.append(record)
     return records

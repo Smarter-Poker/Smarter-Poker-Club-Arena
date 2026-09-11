@@ -674,6 +674,9 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
      The countdown reads nothing at all on a chip club: `null` is the "already
      know the time" seam, so the hook issues no query there. */
   const arenaFreeroll = useDiamondFreerollCountdown(isAutomaticArena ? undefined : null);
+  /* Undefined for every chip club, so their cards are untouched. */
+  const arenaSeatsClosedLabel =
+    isAutomaticArena && arenaAccess?.cashGamesEnabled !== true ? 'Not Open Yet' : undefined;
   useVisibilityRefresh(() => loadClubData());
   const navigate = useAppNavigate();
   const isMountedRef = useIsMounted();
@@ -4175,6 +4178,10 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         );
       },
       onJoinTable: (e) => handleJoinTable(e.id),
+      /* Diamond Arena's ladder is listed while funded play is closed, and the
+         buy-in door refuses every seat until it opens. Say so on the card
+         rather than offering a Join that the server will reject. */
+      seatsClosedLabel: arenaSeatsClosedLabel,
       /* A full table's primary action is the waitlist, not a join that cannot
          succeed. The page already owns this flow for the panel; the card runs
          the same one rather than inventing a second. */

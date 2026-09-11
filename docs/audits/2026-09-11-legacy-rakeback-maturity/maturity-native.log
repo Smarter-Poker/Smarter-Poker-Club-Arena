@@ -1,0 +1,11 @@
+PASS legacy-only schema has no captured source prerequisites
+PASS UI club-scoped claim pays mature period and leaves same-club open period accruing
+PASS direct low-level close refuses open period before any mutation
+PASS captured original positive open close rolls back at status fence
+PASS captured original zero open close rolls back at status fence
+PASS already-paid history is unchanged by claim and replay
+PASS UTC maturity and cold scan remain correct after UTC rollover across session timezones
+PASS final journal failure rolls back the unchanged legacy funding path
+PASS captured original existing-receipt branch cannot finalize an open period
+PASS expired historical period remains unchanged on low-level replay
+{"passed":10}

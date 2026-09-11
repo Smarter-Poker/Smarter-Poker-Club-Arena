@@ -1,0 +1,29 @@
+{
+  "recorded_at_utc": "2026-09-11T08:21:26.663309+00:00",
+  "command": "node_modules/.bin/vitest run tests/definer-authorization-gate.test.ts --reporter=verbose",
+  "result": {
+    "files_passed": 1,
+    "tests_passed": 41,
+    "duration_ms": 890,
+    "exit_code": 0
+  },
+  "inputs": [
+    {
+      "path": "scripts/ci/check-definer-authorization.mjs",
+      "sha256": "b99052b96ddcab882a293cd5e0d2ad1ce298f222b6d6b99f433720d894e4fa9b"
+    },
+    {
+      "path": "scripts/ci/definer-authorization.allowlist.json",
+      "sha256": "1567fbe1d9a3cf610553e659f6ca6d68edc12dc6166cb5afc40d5c2cfc25392d"
+    },
+    {
+      "path": "tests/definer-authorization-gate.test.ts",
+      "sha256": "e189262742a3f41a097911c8551d6847cc54f41c966df38cf942b7275f5f8acb"
+    }
+  ],
+  "raw_output": {
+    "path": "docs/audits/2026-09-11-rakeback-maturity-ui/round3-acl-restatement/definer-gate-tests-raw.txt",
+    "sha256": "1941ef07d6ca967b95c99521a623a7241cd60eb4eece06bb76511a38fcd26481"
+  },
+  "limits": "Existing static authorization checker suite only; no production SQL execution or payout testing."
+}

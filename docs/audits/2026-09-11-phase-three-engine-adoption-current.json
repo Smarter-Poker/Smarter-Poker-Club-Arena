@@ -1,0 +1,227 @@
+{
+  "schema_version": 1,
+  "task": "Phase 3 bounded engine adoption observation",
+  "observed_date_utc": "2026-09-11",
+  "conclusion": {
+    "timer_fix_adopted": true,
+    "compatible_final_deal_source_adopted": true,
+    "fresh_database_leader_verified": true,
+    "public_hand_progression_observed": true,
+    "overall_http_readiness_passed": false,
+    "stage_b_equity_dependency_found": false,
+    "stage_b_application_verified_by_this_report": false,
+    "exact_consent_browser_verified": false,
+    "pre_cutover_frozen_hand_reconciliation_verified": false,
+    "native_recovered_hand_bridge_executed": false,
+    "phase_three_complete": false
+  },
+  "deployed_engine_sha": "c58dfafdc6902fb46b56441e9d20bd754a3eceb6",
+  "frontend": {
+    "observation_utc": "2026-09-11T07:42\u201307:43Z",
+    "urls": [
+      "https://ca-static.smarter.poker/build-info.json",
+      "https://smarter.poker/hub/club-arena/build-info.json"
+    ],
+    "both_http_status": 200,
+    "ca_sha": "53edbd4d102206d5fa36e54d4d58090d9dffedd0",
+    "built_at": "2026-09-11T07:30:53Z",
+    "built_by": "publish-club-arena.yml",
+    "run_id": 34574538946,
+    "cache_busted": true
+  },
+  "leader": {
+    "observed_at": "2026-09-11T07:45:46.147179+00:00",
+    "engine_version": "c58dfafd",
+    "heartbeat_age_seconds": 5.75,
+    "fresh_within_60s": true,
+    "version_matches_cutover": true,
+    "column": "heartbeat_at",
+    "query": "SELECT jsonb_build_object('observed_at',clock_timestamp(),'engine_version',engine_version,'heartbeat_age_seconds',EXTRACT(EPOCH FROM(clock_timestamp()-heartbeat_at))::numeric(12,2),'fresh_within_60s',heartbeat_at>clock_timestamp()-interval '60 seconds','version_matches_cutover',engine_version='c58dfafd') FROM public.engine_leader WHERE id=true;"
+  },
+  "ancestry": {
+    "timer_fix": "999b57756ea68b6c243a909771add9a74a212ea7",
+    "final_deal_compatibility": "52883bfde240a5790f31680bfef70b7cbd4f4bf0",
+    "both_ancestors_of_engine_verified_by_git": true,
+    "frontend_ahead_of_engine": 13,
+    "frontend_behind_engine": 0,
+    "github_merge_base": "c58dfafdc6902fb46b56441e9d20bd754a3eceb6",
+    "local_head_at_observation": "7060ba53fefa6441b9ec0ff36f54beab3485a317",
+    "repo_merge_commit_push_performed": false
+  },
+  "progression": {
+    "first_observation": "2026-09-11T07:43:53.016717+00:00",
+    "second_observation": "2026-09-11T07:45:35.628482+00:00",
+    "same_instance": true,
+    "instance_id": "1-941a631f",
+    "matched_tables": 1145,
+    "cash_tables_with_advancing_hand_id": 77,
+    "tournament_tables_with_advancing_hand_id": 16,
+    "durable_receipts_independently_verified": false,
+    "note": "Hand identifier advancement is public engine progression evidence. The totalHandsDealt wire field is not treated as a completed-hand count."
+  },
+  "health_dependency": {
+    "status": "degraded",
+    "http_status": 503,
+    "live_horse_decision_phase": "ready",
+    "equity_pool_phase": "failed",
+    "equity_ready_workers": 0,
+    "equity_last_error": "Equity worker operation timed out after 2500ms",
+    "direct_cause_proved_by_source": "GameServer.ts:3050-3056 requires equityWorkers.phase ready; handlers/health.ts requires status ok for HTTP 200 routing readiness.",
+    "scope": "EquityWorkerPool feeds all-in equity and insurance via ServerTableEngineRunout. Failure omits equity; insurance failure re-enters pacedAllInRunout only after lifecycle/controller/hand checks. No equity dependency found in the inspected Stage B SQL or exact final-deal terminal/consent paths.",
+    "stage_b_assessment": "This isolated service failure does not itself contradict the compatible manager/terminal database contract. Stage B still requires its own complete native and live SQL preflight, source pins, exclusions and quiet-window locks. Overall service readiness and user-flow verification remain open.",
+    "pool_failure_cause_limit": "Timeout is observed; exhausted respawn budget is a source-consistent inference, not an independently measured runtime field."
+  },
+  "normal_rollout": {
+    "run_id": 34571396262,
+    "job_id": 103176629394,
+    "target_sha": "3ab179ac220fefe643a6e75a29a9d00eb803307d",
+    "latest_job_status": "completed",
+    "latest_job_conclusion": "failure",
+    "cutover_steps_19_through_27": "skipped",
+    "did_not_deploy_step": "success",
+    "final_verdict_step": "failure",
+    "exact_refusal_cause": "not exposed in step summaries; no unknown logs retrieved",
+    "target_ahead_of_current_engine": 6,
+    "target_behind": 0,
+    "changed_server_files": [
+      "server/src/engine/theDeadlineClockBelongsToNoTournament.test.ts",
+      "server/src/services/HorseHandReview.ts",
+      "server/src/services/supabase/dataActorContext.ts",
+      "server/src/tournament/blindEscalation.test.ts",
+      "server/src/tournament/blindEscalation.ts"
+    ],
+    "known_equity_worker_repair_in_target": false,
+    "note": "Run was in progress at the first current summary and completed without deployment by the next job summary. No duplicate dispatch. A restart alone would not prove a durable equity fix."
+  },
+  "cutover": {
+    "run_id": 34567969674,
+    "job_id": 103163889357,
+    "target_sha": "c58dfafdc6902fb46b56441e9d20bd754a3eceb6",
+    "gate_at": "2026-09-11T06:56:13.8853820Z",
+    "remaining_seconds": 226,
+    "unparked_tables": 638,
+    "ready_for_restart": false,
+    "normal_zero_unparked_certificate": false,
+    "exception": "Workflow explicitly used separately documented owner-approved one-time frozen404 exception.",
+    "authorization_source": "docs/changelog/2026-09-11-the-frozen-build-can-be-replaced.md at 53edbd4d102206d5fa36e54d4d58090d9dffedd0 records Dan choosing option 1 at 05:22 UTC; this agent did not directly witness that consent.",
+    "seal_prepared_at": "2026-09-11T06:56:14.8000974Z",
+    "deploy_truth_at": "2026-09-11T06:58:13.8413377Z",
+    "deploy_attempt": 389,
+    "workflow_reported_shipped": true,
+    "old_638_hands_reconciled_by_this_task": false,
+    "historic_changelog_counters_independently_verified": false,
+    "selected_action_lines": [
+      "2026-09-11T06:53:09.4603732Z attempt 169/189: waiting for a complete restart certificate \u2014 active=True phase=last_hand durable=True remaining=0s unparked=667 ready=False",
+      "2026-09-11T06:53:24.8962885Z attempt 170/189: waiting for a complete restart certificate \u2014 active=True phase=last_hand durable=True remaining=0s unparked=652 ready=False",
+      "2026-09-11T06:53:40.3365093Z attempt 171/189: waiting for a complete restart certificate \u2014 active=True phase=last_hand durable=True remaining=0s unparked=647 ready=False",
+      "2026-09-11T06:53:55.5770882Z attempt 172/189: waiting for a complete restart certificate \u2014 active=True phase=last_hand durable=True remaining=0s unparked=639 ready=False",
+      "2026-09-11T06:54:11.0485218Z attempt 173/189: waiting for a complete restart certificate \u2014 active=True phase=last_hand durable=True remaining=0s unparked=638 ready=False",
+      "2026-09-11T06:54:26.3002662Z attempt 174/189: waiting for a complete restart certificate \u2014 active=True phase=last_hand durable=True remaining=0s unparked=638 ready=False",
+      "2026-09-11T06:54:41.6693364Z attempt 175/189: waiting for a complete restart certificate \u2014 active=True phase=last_hand durable=True remaining=0s unparked=638 ready=False",
+      "2026-09-11T06:54:56.9282241Z attempt 176/189: waiting for a complete restart certificate \u2014 active=True phase=last_hand durable=True remaining=0s unparked=638 ready=False",
+      "2026-09-11T06:55:12.4780218Z attempt 177/189: waiting for a complete restart certificate \u2014 active=True phase=counting_down durable=True remaining=287s unparked=638 ready=False (frozen build 404948b3: the exception cuts over at 235s remaining)",
+      "2026-09-11T06:55:27.7423390Z attempt 178/189: waiting for a complete restart certificate \u2014 active=True phase=counting_down durable=True remaining=272s unparked=638 ready=False (frozen build 404948b3: the exception cuts over at 235s remaining)",
+      "2026-09-11T06:55:43.0168171Z attempt 179/189: waiting for a complete restart certificate \u2014 active=True phase=counting_down durable=True remaining=257s unparked=638 ready=False (frozen build 404948b3: the exception cuts over at 235s remaining)",
+      "2026-09-11T06:55:58.3983943Z attempt 180/189: waiting for a complete restart certificate \u2014 active=True phase=counting_down durable=True remaining=241s unparked=638 ready=False (frozen build 404948b3: the exception cuts over at 235s remaining)",
+      "2026-09-11T06:56:13.8853820Z attempt 181/189: production serves the frozen build 404948b3; the break is durable and counting down with 226s left and 638 frozen table(s) unparked \u2014 cutting over under the owner-approved exception",
+      "2026-09-11T06:56:13.8859834Z ##[warning]Production serves 404948b3, the one build Dan approved replacing without a readyForRestart certificate (2026-09-11): it cannot park its frozen tables, so it can never certify. The break is active, durable and counting down with 226s left; 638 frozen table(s) never parked. Cutting over.",
+      "2026-09-11T06:56:14.8000974Z Prepared sealed deploy authority for c58dfafdc6902fb46b56441e9d20bd754a3eceb6 immediately before cutover.",
+      "2026-09-11T06:58:06.5212538Z attempt 9: running=True version=c58dfafd (want c58dfafd) liveness=ok",
+      "2026-09-11T06:58:06.6569189Z public attempt 1: https://engine.smarter.poker serves version=c58dfafd (want c58dfafd)",
+      "2026-09-11T06:58:13.8413377Z deploy truth recorded: attempt 389 target=c58dfafd shipped=true reason=deployed and verified serving this commit"
+    ]
+  },
+  "native_bridge": {
+    "status": "historical prepared-only, never executed; not current-production-equivalent",
+    "local_js_tests": 7,
+    "local_test_files": 3,
+    "durable_financial_proof": false,
+    "live_pins_supplied_by_root_at": "2026-09-11T07:41Z",
+    "stack_public_body_md5": "e67e89b3aec325f8038e0507a1511eec",
+    "pre_seat_exit_alias": "ABSENT",
+    "exact_before_obligations_body_md5": "457ad8f1e1528ad205f7bd43488f3e14",
+    "share_lane_body_md5": "006d78a441e65d000d1d78929649bb44",
+    "mismatch": "Prepared bridge retains old stack wrapper and exact-before-obligations core. Correct outer bodies alone cannot certify current native equivalence.",
+    "hotpatch_experiment_resumed": false
+  },
+  "blocked_verifications": [
+    {
+      "action": "SSH retrieval of unknown production Docker logs",
+      "result": "Automatic approval review rejected; did not execute",
+      "reason": "Potential sensitive payload disclosure was not specifically authorized",
+      "rerouted": false
+    },
+    {
+      "action": "Supabase hand-history/atomic-receipt aggregate query for newly progressing hands",
+      "result": "Automatic approval review rejected; did not execute",
+      "reason": "Private-source aggregate metadata disclosure through connector was not specifically authorized",
+      "rerouted": false
+    }
+  ],
+  "production_mutations_performed_by_this_task": false,
+  "saved_at_utc": "2026-09-11T08:03:31.478085+00:00",
+  "public_health_samples": {
+    "first": {
+      "observed_at": "2026-09-11T07:43:53.016717+00:00",
+      "http_status": 503,
+      "fields": {
+        "status": "degraded",
+        "liveness": "ok",
+        "version": "c58dfafd",
+        "instanceId": "1-941a631f",
+        "uptime": 2795,
+        "running": true,
+        "activeTables": 1145,
+        "activeTournaments": 654,
+        "handsInFlightTotal": 96,
+        "stalledTableCount": 0,
+        "blockedSettlementCount": 0,
+        "deadStalledCount": 0,
+        "settlementStatus": "ok",
+        "dealerPrerequisitesReady": true,
+        "wholeFleetStalled": false,
+        "equityWorkerPool": {
+          "phase": "failed",
+          "configuredWorkers": 1,
+          "readyWorkers": 0,
+          "busyWorkers": 0,
+          "queueDepth": 0,
+          "oldestQueuedAgeMs": 0,
+          "lastCompletionAgeMs": 2606791,
+          "lastError": "Equity worker operation timed out after 2500ms"
+        }
+      }
+    },
+    "second": {
+      "observed_at": "2026-09-11T07:45:35.628482+00:00",
+      "http_status": 503,
+      "fields": {
+        "status": "degraded",
+        "liveness": "ok",
+        "version": "c58dfafd",
+        "instanceId": "1-941a631f",
+        "uptime": 2898,
+        "running": true,
+        "activeTables": 1145,
+        "activeTournaments": 655,
+        "handsInFlightTotal": 89,
+        "stalledTableCount": 0,
+        "blockedSettlementCount": 0,
+        "deadStalledCount": 0,
+        "settlementStatus": "ok",
+        "dealerPrerequisitesReady": true,
+        "wholeFleetStalled": false,
+        "equityWorkerPool": {
+          "phase": "failed",
+          "configuredWorkers": 1,
+          "readyWorkers": 0,
+          "busyWorkers": 0,
+          "queueDepth": 0,
+          "oldestQueuedAgeMs": 0,
+          "lastCompletionAgeMs": 2709563,
+          "lastError": "Equity worker operation timed out after 2500ms"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "01-admission.sql": "d8fa07a6266e4ec6d6c07e90c7021b598206595c26b8d06c7afe4a7baf543528",
+  "02-malformed-closed-periods.sql": "ea2802bfbf5b61f748ab511a3ae6fea1cd5f1b8e6e7c74b8d719a475f61a06bb",
+  "03-post-apply.sql": "60e23add8362df2b23735fd477d7044e2585bcdb9629f4251a8dbf017bc59498",
+  "04-migration-receipt.sql": "3ba05df16d6743ec0d3704d54e11397ed0588639f75dd1d8db169c3d5f2654b0",
+  "README.md": "5f70e918379fdc9977c6c585eecb0b67077e3a4afdd3c6cb5a7fd89835f433f3",
+  "read-only-receipt.json": "9a16eef0860dd1383824288e0da6f05de403d0e03c548566523b815df6a85838"
+}

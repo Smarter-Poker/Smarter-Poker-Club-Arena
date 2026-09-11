@@ -1,0 +1,266 @@
+{
+  "project_id": "kuklfnapbkmacvwxktbh",
+  "source_commit": "988db864469e0d2543b969fc0032c4d8eb7b9fa3",
+  "source_entrypoint_sha256": "a55e792f12040799a20fcf6d54969059efecaea3869c3aa148191fe1b083c4c7",
+  "reserved_migration_file": "20260911070726_legacy_rakeback_closed_period_single_payer.sql",
+  "normal_tool_name": "legacy_rakeback_closed_period_single_payer",
+  "production_mutations_by_this_agent": false,
+  "automatic_review": {
+    "status": "rejected_as_reported_by_root",
+    "action": "Production application of the standalone financial payout owner replacements and guards",
+    "reason": "Broad audit/push/publish approval was insufficient authorization for this exact live security-definer financial mutation.",
+    "retry_or_alternative_route": false
+  },
+  "admission_before_rejection": [
+    {
+      "checked_at": "2026-09-11 07:06:49.67267+00",
+      "break_window_refusal": null,
+      "owners": [
+        {
+          "acl": "{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+          "pass": true,
+          "owner": "postgres",
+          "proconfig": ["search_path=public, extensions"],
+          "prosecdef": true,
+          "signature": "public.fn_claim_rakeback(uuid)",
+          "actual_md5": "930e4b70fa3580c010abe99e23181598"
+        },
+        {
+          "acl": "{postgres=X/postgres,service_role=X/postgres}",
+          "pass": true,
+          "owner": "postgres",
+          "proconfig": ["search_path=public"],
+          "prosecdef": true,
+          "signature": "public.fn_close_settlement_period(uuid)",
+          "actual_md5": "5f1b3b29c972620ca06143a2f58444c9"
+        },
+        {
+          "acl": "{postgres=X/postgres,service_role=X/postgres}",
+          "pass": true,
+          "owner": "postgres",
+          "proconfig": ["search_path=public"],
+          "prosecdef": true,
+          "signature": "public.fn_settle_round3_agents_to_players(uuid,timestamptz,timestamptz)",
+          "actual_md5": "5234e460b1ea1f666fbc6bac7a9a1b17"
+        }
+      ],
+      "state": {
+        "append_only_md5": "c19c4314bcb44b29f5d15e32e4dacccd",
+        "capture_state_absent": true,
+        "receipt_unique_present": true,
+        "new_trigger_names_clear": true,
+        "new_function_names_clear": true
+      },
+      "potentially_conflicting_relation_locks": 0
+    }
+  ],
+  "malformed_before_rejection": [
+    {
+      "checked_at": "2026-09-11 07:07:21.399534+00",
+      "row_cap": 5001,
+      "closed_pending_scanned": 1767,
+      "complete_for_closed_pending_filter": true,
+      "negative_periods": 0,
+      "invalid_positive_amounts": 0,
+      "invalid_positive_rates": 0,
+      "invalid_positive_rake_basis": 0
+    }
+  ],
+  "post_query_before_application": [
+    {
+      "checked_at": "2026-09-11 07:09:42.582147+00",
+      "functions": [
+        {
+          "acl": null,
+          "pass": false,
+          "owner": null,
+          "proconfig": null,
+          "prosecdef": null,
+          "signature": "public.fn_ca_legacy_period_maturity()",
+          "actual_md5": null,
+          "proargnames": null,
+          "expected_md5": "8ae80ac89843cc1f19f8dfdf03812a0b",
+          "pronargdefaults": null
+        },
+        {
+          "acl": null,
+          "pass": false,
+          "owner": null,
+          "proconfig": null,
+          "prosecdef": null,
+          "signature": "public.fn_ca_legacy_round3_wallet_receipt()",
+          "actual_md5": null,
+          "proargnames": null,
+          "expected_md5": "db707f33692fd511fde2352a98780ebc",
+          "pronargdefaults": null
+        },
+        {
+          "acl": "{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+          "pass": false,
+          "owner": "postgres",
+          "proconfig": ["search_path=public, extensions"],
+          "prosecdef": true,
+          "signature": "public.fn_claim_rakeback(uuid)",
+          "actual_md5": "930e4b70fa3580c010abe99e23181598",
+          "proargnames": ["p_club_id"],
+          "expected_md5": "b254af98fbc6dd155ac0012438f8edea",
+          "pronargdefaults": 1
+        },
+        {
+          "acl": "{postgres=X/postgres,service_role=X/postgres}",
+          "pass": false,
+          "owner": "postgres",
+          "proconfig": ["search_path=public"],
+          "prosecdef": true,
+          "signature": "public.fn_close_settlement_period(uuid)",
+          "actual_md5": "5f1b3b29c972620ca06143a2f58444c9",
+          "proargnames": ["p_period_id"],
+          "expected_md5": "c41f1ff29aee99e71ceecdc3fddc4e1a",
+          "pronargdefaults": 0
+        },
+        {
+          "acl": null,
+          "pass": false,
+          "owner": null,
+          "proconfig": null,
+          "prosecdef": null,
+          "signature": "public.fn_lock_rakeback_payer_clubs(uuid[])",
+          "actual_md5": null,
+          "proargnames": null,
+          "expected_md5": "23afec197fccc0433fd3cfc6276ac3ba",
+          "pronargdefaults": null
+        },
+        {
+          "acl": "{postgres=X/postgres,service_role=X/postgres}",
+          "pass": false,
+          "owner": "postgres",
+          "proconfig": ["search_path=public"],
+          "prosecdef": true,
+          "signature": "public.fn_settle_round3_agents_to_players(uuid,timestamptz,timestamptz)",
+          "actual_md5": "5234e460b1ea1f666fbc6bac7a9a1b17",
+          "proargnames": ["p_union_id", "p_period_start", "p_period_end"],
+          "expected_md5": "18c6571f37401e14116e59310235b7b2",
+          "pronargdefaults": 0
+        }
+      ],
+      "triggers": [
+        {
+          "pass": false,
+          "tgenabled": null,
+          "definition": null,
+          "table_name": "public.rakeback_periods",
+          "trigger_name": "ca_legacy_period_maturity"
+        },
+        {
+          "pass": false,
+          "tgenabled": null,
+          "definition": null,
+          "table_name": "public.wallet_transactions",
+          "trigger_name": "ca_legacy_round3_wallet_receipt"
+        }
+      ],
+      "all_runtime_checks_pass": false
+    }
+  ],
+  "after_rejection_admission": [
+    {
+      "checked_at": "2026-09-11 07:14:36.91837+00",
+      "break_window_refusal": null,
+      "owners": [
+        {
+          "acl": "{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+          "pass": true,
+          "owner": "postgres",
+          "proconfig": ["search_path=public, extensions"],
+          "prosecdef": true,
+          "signature": "public.fn_claim_rakeback(uuid)",
+          "actual_md5": "930e4b70fa3580c010abe99e23181598"
+        },
+        {
+          "acl": "{postgres=X/postgres,service_role=X/postgres}",
+          "pass": true,
+          "owner": "postgres",
+          "proconfig": ["search_path=public"],
+          "prosecdef": true,
+          "signature": "public.fn_close_settlement_period(uuid)",
+          "actual_md5": "5f1b3b29c972620ca06143a2f58444c9"
+        },
+        {
+          "acl": "{postgres=X/postgres,service_role=X/postgres}",
+          "pass": true,
+          "owner": "postgres",
+          "proconfig": ["search_path=public"],
+          "prosecdef": true,
+          "signature": "public.fn_settle_round3_agents_to_players(uuid,timestamptz,timestamptz)",
+          "actual_md5": "5234e460b1ea1f666fbc6bac7a9a1b17"
+        }
+      ],
+      "state": {
+        "append_only_md5": "c19c4314bcb44b29f5d15e32e4dacccd",
+        "capture_state_absent": true,
+        "receipt_unique_present": true,
+        "new_trigger_names_clear": true,
+        "new_function_names_clear": true
+      },
+      "potentially_conflicting_relation_locks": 0
+    }
+  ],
+  "after_rejection_matching_history_rows": [],
+  "historical_name_version_examples": [
+    {
+      "checked_at": "2026-09-11 07:07:42.608673+00",
+      "version": "manual",
+      "name": "training_api_indexes.sql"
+    },
+    {
+      "checked_at": "2026-09-11 07:07:42.608673+00",
+      "version": "20260911064427",
+      "name": "the_player_can_see_the_day_and_the_way_out"
+    },
+    {
+      "checked_at": "2026-09-11 07:07:42.608673+00",
+      "version": "20260911062053",
+      "name": "the_operator_sees_the_money_and_the_room"
+    },
+    {
+      "checked_at": "2026-09-11 07:07:42.608673+00",
+      "version": "20260911061723",
+      "name": "cancel_unstarted_entries_to_their_exact_funded_origin_wallet"
+    },
+    {
+      "checked_at": "2026-09-11 07:07:42.608673+00",
+      "version": "20260911061449",
+      "name": "the_welcome_spin_answers_the_same_everywhere"
+    },
+    {
+      "checked_at": "2026-09-11 07:07:42.608673+00",
+      "version": "20260911052648",
+      "name": "bounty_rebuy_settles_its_exact_prior_entry_generation"
+    },
+    {
+      "checked_at": "2026-09-11 07:07:42.608673+00",
+      "version": "20260911052216",
+      "name": "the_daily_free_spin_leaves_the_building"
+    },
+    {
+      "checked_at": "2026-09-11 07:07:42.608673+00",
+      "version": "20260911050554",
+      "name": "final_deal_receipts_survive_real_terminal_settlement"
+    }
+  ],
+  "break_window_definition": [
+    {
+      "checked_at": "2026-09-11 07:05:28.067252+00",
+      "signature": "fn_ca_break_window_refuses_migrations(timestamp with time zone)",
+      "result_type": "text",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_break_window_refuses_migrations(p_at timestamp with time zone)\n RETURNS text\n LANGUAGE plpgsql\n STABLE PARALLEL SAFE\n SET search_path TO 'pg_catalog', 'pg_temp'\nAS $function$\nDECLARE\n  -- Pinned by tests/the-break-clocks-agree.law.test.ts: the window has to\n  -- enclose the :53 announcement and the :00 thaw with margin.\n  c_window_opens_minute  CONSTANT integer := 50;\n  c_window_closes_minute CONSTANT integer := 3;\n  v_minute integer;\nBEGIN\n  IF p_at IS NULL THEN\n    RETURN NULL;\n  END IF;\n\n  v_minute := extract(minute FROM (p_at AT TIME ZONE 'UTC'))::integer;\n\n  IF v_minute >= c_window_opens_minute OR v_minute < c_window_closes_minute THEN\n    RETURN to_char(p_at AT TIME ZONE 'UTC', 'HH24:MI:SS')\n        || ' UTC is inside the hourly maintenance break window (:'\n        || lpad(c_window_opens_minute::text, 2, '0') || '-:'\n        || lpad(c_window_closes_minute::text, 2, '0') || ' UTC); apply after :'\n        || lpad(c_window_closes_minute::text, 2, '0')\n        || ', or for an emergency fix SET LOCAL ca.break_window_migration_override'\n        || ' = ''<reason>'' in the same transaction';\n  END IF;\n\n  RETURN NULL;\nEND;\n$function$\n"
+    }
+  ],
+  "interpretation": "The 07:14:36 UTC read confirms original owners and ACL sets unchanged, candidate function and trigger names clear, capture state absent and no conflicting relation locks at that instant. Matching migration-history query returned zero rows in the same read batch. No successful application or history mutation is claimed.",
+  "limits": [
+    "Read-only metadata observations do not guarantee future absence of lock contention.",
+    "The four malformed predicates covered all 1767 closed pending rows within cap5001 at07:07:21 UTC; no broader cleanliness claim.",
+    "Before-application post-query false results are expected and are preserved as syntax/readback evidence, not as applied runtime validation.",
+    "Metadata reconciliation has not been executed or authorized after automatic rejection; only required evidence and conditions are documented."
+  ]
+}

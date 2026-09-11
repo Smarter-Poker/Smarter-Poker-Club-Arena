@@ -27,7 +27,14 @@
 4. **Money/tournament state:** all rulings applied today verified clean, and the satellite ruling closed at 12:11 (15 settled, 15 seated, 1 cancelled). Still open:
    - 59 tournaments cannot finish on their own: 57 one-seat-per-table events, plus c1f15c30 and a5aa6984. The fix and rulings are prepared, but ordering is mandatory (§6.4).
    - 79 horse-only REGISTERING events from 09-08 need a ruling.
-5. **Two PRs are open and should merge:** #4292 (mystery engine follow-up; manifests regenerated, CI re-running) and #4296 (satellite feeder; its migration is already applied).
+5. **Three PRs are open and should merge, but MERGES ARE BLOCKED.** At **12:20:32 UTC** someone updated the `main protection` ruleset to add the required status check **`Stage B Release Freeze`**.
+   - No workflow on main emits that check, so nothing can merge right now. It looks like the Codex Stage-B release freeze (#4232). I do not know who set it.
+   - **Do not bypass it** (no admin merge, no fake status). Ask Dan first.
+   - The blocked PRs:
+     - #4292: mystery engine follow-up; manifests regenerated
+     - #4296: satellite feeder; its migration is already applied
+     - #4299: this handoff, docs only
+   - #4292 and #4296 had been opened as drafts; I marked them ready for review.
 6. **Two backup branches must NOT be merged before their preconditions:**
    - `backup/claude-2026-09-11/a-frozen-sweep-owes-the-balancer-a-pass-after-the-thaw`
    - `backup/claude-2026-09-11/late-status-flip-keeps-paid-ladder`
@@ -279,6 +286,9 @@ Decisions taken, with the reasons:
 - **Mystery rulings:** `~/Documents/.agent-trees/club-arena/mystery-bust-phase-ruling/` (`ruling_5aa7eeba.sql`, `ruling_9536150e.sql`, `finish_functions.sql`, `rehearse_ruling.sh`, `load_data.sql`). Applied copies are under `~/tmp-claude/mystery/`.
 - **Re-sequence tooling:** `~/tmp-claude/reseq2/` (`body.sql`, `commit.sql`, `dry_*.sql`, backups).
 - **Breakfast Turbo (my draft):** `~/Documents/.agent-trees/club-arena/c1f15c30-ruling/ruling_c1f15c30.sql` (md5 `e688d1621e65bf09dcf3165c94bbf9d3`), `makegood_optional.sql`.
+- **Freeroll rulings and the second balance fix (orphans agent):**
+  - `~/Documents/.agent-trees/club-arena/freeze-deferred-balance-redrive/`, branch `fix/freeze-deferred-balance-redrive` (`cf64e76666`), pushed as `backup/claude-2026-09-11/freeze-deferred-balance-redrive`
+  - rulings R1/R2/R3 and `MAKEGOOD_undelivered_rebuy_legs_readonly.sql` under `docs/changelog/2026-09-11-freeroll-rulings-7aa16fa7-a5aa6984/`
 - **Stuck-event fixes and rulings (sweep agent):** `~/Documents/.agent-trees/club-arena/thaw-balance-sweep/`, also pushed to `backup/claude-2026-09-11/a-frozen-sweep-owes-the-balancer-a-pass-after-the-thaw`:
   - `scripts/deploy/2026-09-11-wake-the-one-seat-tables.sql`
   - `scripts/deploy/2026-09-11-resequence-inputs.sql`
@@ -320,8 +330,10 @@ Decisions taken, with the reasons:
 
 ### 6.3 P1 — Merge and ship the open PRs
 
-- #4292: wait for CI (manifests regenerated at `8004205650`), then merge. It deploys at the next break.
-- #4296: merge (the migration is applied). This stops the `satellite_atomic_creation_failed` noise.
+- **Blocked:** the required check `Stage B Release Freeze` was added to ruleset `main protection` (id 21163380) at 12:20:32 UTC, and no workflow produces it. Find out from Dan whether the freeze is intentional and when it lifts. Never fake the status or admin-merge.
+- #4292: all runs green at `8004205650` (manifests regenerated), marked ready. Merge when the freeze lifts. It deploys at the next break.
+- #4296: all runs green at `ceb96f193f`, marked ready. Merge when the freeze lifts. This stops the `satellite_atomic_creation_failed` noise.
+- #4299: this handoff (docs only). Merge when the freeze lifts.
 - After each deploy: `/health` version, the engine log greps, and the doors step green.
 
 ### 6.4 P1 — 59 tournaments that cannot finish (ORDER IS MANDATORY)
@@ -368,10 +380,46 @@ Evidence: `evidence/2026-09-11T1230-stuck-events-investigations.md` (sweep, 12:1
 - they need a ruling
 - moving them straight from REGISTERING to COMPLETING trips the same paid-ladder rewrite, so apply the trigger fix first
 
-**E. Orphans:**
+**E. Orphans: 7aa16fa7 and a5aa6984.** The orphans agent finished at 12:40; full report in `evidence/…stuck-events-investigations.md` under "investigate:orphans".
 
-- 7aa16fa7 chip drift +10,000; a5aa6984 +2,500 (river222).
-- The orphans agent was still running at export; its result will be in the workflow journal if that session still exists. Otherwise re-investigate.
+- **Chip drift:** every hand conserved chips; all the drift happened outside hands.
+  - 7aa16fa7 is +10,000: 145,000 created minus 135,000 lost. 27 rebuys were charged but never delivered. tankChamp got +115,000 from a since-deleted repair re-seat. Six players were seated with 10,000 against one 5,000 purchase each.
+  - a5aa6984 is +2,500.
+  - Created chips are NOT taken back (standing rule). The code paths responsible are already fixed or deleted.
+- **31 undelivered rebuy charges × 1.00 = 31.00 are owed** (7aa16fa7: 27 charges to 25 players; a5aa6984: 4).
+  - `fn_settle_tournament_refund_exact` cannot be used on these events: before the finish it breaks the escrow balance, and after the finish it is refused.
+  - So they belong in the house-funded **make-good door**. List: `MAKEGOOD_undelivered_rebuy_legs_readonly.sql` (31 rows, none already refunded).
+- **River222 (a5aa6984):** refund, not honour. The rebuy came 14m47s after his window closed at 06:13:39. The current code would refuse that purchase.
+- **Rulings:** in `~/Documents/.agent-trees/club-arena/freeze-deferred-balance-redrive/docs/changelog/2026-09-11-freeroll-rulings-7aa16fa7-a5aa6984/`.
+  - **R1** `R1_a5aa6984_record_river222_bust.sql`: sets his mirror chips to 0, calls `fn_eliminate_tournament_player_atomic(tid, river222, 2, 0, 0)`, then wakes the manager. **Rehearsed on PG17 through the real final settlement: COMPLETED, 99.30 paid in true order.**
+  - **R2** `R2_7aa16fa7_wake_stalled_manager.sql`: one wake, applied outside :53-:00.
+  - **R3** (optional): wakes all of the 57.
+- **Dan decides:** tankChamp's 13th place (4.37) exists only because of created chips. Ruling his bust at hand 8775892 instead would drop him to 36th (1.94) and move 23 players up one place. Decide before 7aa16fa7 settles.
+- **The orphans agent touched production beyond plain SELECTs:**
+  - two calls of the VOLATILE `fn_ca_tournament_place_amounts` (read only)
+  - a full-schema `pg_dump` that held ACCESS SHARE locks on ~1,366 tables for ~4 minutes (nothing waited)
+
+**E2. RECONCILE the two agents before acting. They disagree.**
+
+- **The sweep agent says:** apply the 7 re-sequences (94 toggles) before any wake or deploy of the balance fix, or the events pay in the old order. Its wake script refuses while "standings out of order".
+- **The orphans agent says:** the live `fn_settle_tournament_places` (from migration 20260911062048) already re-ranks everyone by bust time before paying, whenever no prize money has moved. Its PG17 rehearsal of a5aa6984 paid in true order with no re-sequence.
+- **Next agent:** rehearse one of the seven (e.g. bee519fa) on PG17 through final settlement without toggles.
+  - If it pays in true order, the re-sequences are unnecessary for money; drop the wake script's misorder guard, or keep it as a safety check.
+  - If it doesn't, apply the toggles first.
+  - Also check whether any bust inside the paid range creates a place obligation at bust time. If it does, settlement could not re-rank that place.
+
+**E3. There are TWO competing code fixes for the same "frozen balance step" defect. Pick one or merge them.**
+
+- **Sweep agent:** `backup/claude-2026-09-11/a-frozen-sweep-owes-the-balancer-a-pass-after-the-thaw` (`26e727c8cc`). A thaw listener arms one urgent sweep.
+- **Orphans agent:** `fix/freeze-deferred-balance-redrive` (`cf64e76666`, **local only, not pushed**, worktree `freeze-deferred-balance-redrive`). Adds a retry when the balance step runs out of its 5 s budget. Law test `aDeferredBalanceIsStillOwed.law.test.ts`.
+- The orphans version covers the extra budget-exhaustion case. Combine the best of both into one PR.
+
+**F2. Satellite-seated PKOs with empty bounty pools (from the satellites report):**
+
+- PKOs `3f19bd70` (66 entrants) and `a21c0cb6` (155 entrants) were seated entirely by satellites last week.
+- Their bounty pools of 2,310.00 and 5,425.00 hold **no money** (`bounty_in` 0), and no bounties were paid. The critical alerts are still open.
+- This is a separate incident with no ruling yet.
+- **Product call for Dan:** the PKOs have no satellite feeders until bounty-aware satellite settlement ships. The pending Phase-3 activation script pins the settlement function and receipt reader by md5, so build bounty support on top of Phase 3.
 
 **F. Unexplained:**
 
@@ -404,9 +452,14 @@ Evidence: `evidence/2026-09-11T1230-stuck-events-investigations.md` (sweep, 12:1
    - the deploy run `34598480706` Verdict is green
    - if the cutover failed: read the run logs (`actions/jobs/<id>/logs`) and the ROLLBACK step. Do not force anything.
 2. **Watch 15 minutes of load:** Prometheus queue depth and oldest age, `avgHandDurationMs`, and `top -H`. Decide §6.1 options 1 and 2. Tell Dan about capacity with numbers.
-3. **Merge #4292** when CI is green, and **merge #4296**. They deploy at the next break; verify each.
+3. **Merge #4292, #4296 and #4299 once Dan lifts the `Stage B Release Freeze`** (§6.3; it blocks every merge since 12:20:32 UTC). Each deploys at the next break; verify each.
 4. **Write the lease heartbeat fix** (§6.2): PR, CI, merge, deploy, verify. Next time a supabase_timeout burst hits, the kills should not happen.
-5. **Stuck tournaments** (§6.4 A, in order): 7 re-sequences, then the wake script, then a PR from the backup branch.
+5. **Stuck tournaments** (§6.4 A/E/E2/E3):
+   - first reconcile the two agents on PG17 (E2)
+   - then apply R1 for a5aa6984 (rehearsed)
+   - then either the re-sequences plus wake, or the wakes directly
+   - then one combined balance fix PR (E3)
+   - Dan decides tankChamp before 7aa16fa7 settles
 6. **c1f15c30:** trigger migration `20260911110000` (review and apply), then the ladder restore. Then a5aa6984 (rehearse, then apply).
 7. **79 REGISTERING events:** draft a ruling and get Dan's OK on the policy (refund vs complete).
 8. **P2 list** (§6.5), with an audit and a fix for each.

@@ -1,4 +1,4 @@
-# Workflow evidence: stuck-events investigations (wf_e0f1bbf3-217, exported 2026-09-11 ~12:30 UTC)
+# Workflow evidence: stuck-events investigations (wf_e0f1bbf3-217, all four agents, exported 2026-09-11 ~12:40 UTC)
 
 ---
 
@@ -326,3 +326,175 @@ Files are in /Users/smarter.poker/Documents/.agent-trees/club-arena/thaw-balance
 - `scripts/deploy/2026-09-11-resequence-inputs.sql`
 - `scripts/deploy/2026-09-11-a5aa6984-the-stranded-rebuy-busted-first.sql`
 - `scripts/deploy/2026-09-11-c1f15c30-keeps-the-ladder-it-paid.sql`
+
+---
+
+## investigate:orphans
+
+I've written and rehearsed rulings for both freerolls; nothing on production was changed. The a5aa6984 ruling completes the event in true bust order when rehearsed against a PG17 copy of production. 7aa16fa7 needs no data fix; it only needs its manager woken, because an engine defect stops tables with one player each from being merged. That defect is currently stalling 57 events platform-wide. There's a code fix for it with tests on a local branch, committed but not pushed.
+
+## 1. Current state (read at 12:34 UTC)
+
+**7aa16fa7 ($100 Freeroll 12:00 PM)**
+
+- RUNNING, 385 entrants, 381 eliminated, 4 still playing, each alone at a separate table:
+  - NinesWizard 1,101,480 (Table 47)
+  - antesheriff 900,000 (Table 49)
+  - lilqueen 265,000 (Table 45)
+  - vkowal 248,520 (Table 44)
+- Seat stacks match the roster chip counts exactly. No pending knockout candidates.
+- The three 09-08 candidates set to 'rebought' at 07:23 were real rebuys (each had two rebuy charges in the window, both chips delivered). Their real busts were recorded at 07:47–07:57 as places 7, 6 and 5.
+- No prize money has moved: no payouts or obligations; prize bank 204.40 (pool finalized), fee bank 11.60.
+- Last hand was 02:00:24. Blinds have been escalating on empty tables since.
+
+**a5aa6984 (Early Bird Freeroll)**
+
+- RUNNING, 98 eliminated, 2 playing:
+  - MIAJordan: 320,000, seated alone. Her stale candidate was fixed at 07:23 (a legitimate in-window rebuy).
+  - river222: no seat, 2,500 chips in the roster mirror only, 1 rebuy counted, one pending candidate (d0ac2895, hand 8569325).
+- No money moved; prize bank 99.30, fee bank 2.70.
+- river222 is the only row like this on the whole platform (checked).
+
+## 2. Chip drift, per player (from the engine's own hand records)
+
+Every hand in both events conserved chips. All drift happened outside hands.
+
+**7aa16fa7: +10,000 = 145,000 created − 135,000 lost**
+
+- Issued: 385 × 5,000 plus 116 rebuys charged × 5,000 = 2,505,000. No add-ons were bought.
+- **Charged, never delivered: 27 rebuys (135,000 chips).**
+  - 23 rebuys (21 players) bought after their last hand. Their seat had been vacated in the bust hand itself, so the old rebuy code credited only the roster mirror, and the later elimination zeroed it. Sal, Sir Kurt and the_hunter bought 17–34 s after their window closed; the rest were inside it.
+  - 4 second charges for a single bust where only 5,000 of 10,000 reached the table: RussDET, Philly_Reid, CamilleABQ, jester_90.
+- **Created without a purchase: 145,000 chips.**
+  - tankChamp: 115,000. Hand 8775892 (09-09 22:35:09) took his whole stack. His bust-hand seat was then reused by another player at 22:39:42, and at 22:40:01 the since-deleted stranded-player repair re-seated him from his older Table 1 seat, which still showed 115,000.
+  - 6 players (limpcobra, UncleJules, RaySA, flush007, slowninja, broadway) were seated at 09-09 18:03:36 with 10,000 against one 5,000 purchase each: +30,000.
+
+**a5aa6984: +2,500 = 12,500 created − 10,000 lost**
+
+- Charged, never delivered: 4 rebuys, all after the window closed — river222, BigDale, rachel1995, kayla.weber.
+- Created: 5 × 2,500 at the same 18:03:36 seating (merchant_92, KickerHawk, jester_90, muckfish23, Cole).
+- Totals check: 250,000 + 57,500 delivered + 12,500 created = 320,000, MIAJordan's stack.
+
+The code paths that caused all of this are already fixed or deleted:
+
+- Rebuys are now tied to the specific bust, refused after the window, and seated in the same transaction, so a purchase can't land without a seat.
+- The 18:03 and 22:40 repair functions no longer exist.
+- Seat assignment now reads the actual seat stack and cannot raise the event's total chips.
+
+Per the standing rule, created chips are not taken back. The drift will keep showing until each event completes.
+
+## 3. river222: refund, not honour
+
+- His bust was hand 8569325, committed 06:13:09.079 (stack 2,330 → 0). His window closed at 06:13:39.
+- The 1.00 charge (wallet_transactions 77480914, chip_ledger a0378437, refund entitlement 834c1864) came 14m47s later. It never seated him and no later hand included him.
+- The current rebuy code would refuse that purchase outright. Honouring it would put an invalid entry heads-up for the title against 320,000.
+- He is stuck because three checks all read the 2,500 mirror:
+  - the knockout-recording function refuses with 'not_busted';
+  - the engine's bust scan skips him;
+  - the absent-player sweep leaves pending candidates to the knockout function.
+
+## 4. The refund function: found, but not usable on these events
+
+The platform's refund function is `fn_settle_tournament_refund_exact`, and every charge has an exact refund entitlement. Rehearsed:
+
+- **Before the finish:** it credits the wallet correctly but takes 0.90 from the prize bank and 0.10 from the fee bank. The final settlement then refuses: "escrow does not exactly fund its remaining obligations". The finalized pool can't be lowered (a trigger blocks it), so the event would be stuck forever.
+- **After the finish:** refused with "terminal tournament escrow evidence is immutable".
+
+So these refunds belong in your house-funded make-good door. Owed: **31 charges × 1.00 = 31.00.**
+
+| Event    | Charges | Players | Club wallet a0000000-…0001 | Club wallet a41434bb-… |
+| -------- | ------- | ------- | -------------------------- | ---------------------- |
+| 7aa16fa7 | 27      | 25      | 15                         | 12                     |
+| a5aa6984 | 4       | 4       | 3                          | 1                      |
+
+Each charge's wallet transaction, ledger row, entitlement and club wallet are listed in `MAKEGOOD_undelivered_rebuy_legs_readonly.sql`. I ran it against production: 31 rows, 31.00, none already refunded.
+
+Not owed: 7 players were double-charged but got both sets of chips and played them (RebuyDonkey, MrGrinder, chief_89, TreyJr, SDLegend, j.petrov95, sneakychief).
+
+## 5. Ruling SQL
+
+All files are in `/Users/smarter.poker/Documents/.agent-trees/club-arena/freeze-deferred-balance-redrive/docs/changelog/2026-09-11-freeroll-rulings-7aa16fa7-a5aa6984/`.
+
+**R1 (a5aa6984)** — `R1_a5aa6984_record_river222_bust.sql`, one transaction:
+
+- Refuses during :50–:03; 5 s lock timeout; locks tournament, then roster, then candidates.
+- Preflight checks: pool 99.30, escrow untouched, no payouts or obligations, 100/98/2 roster counts, river222's exact row, the single pending candidate and its committed zero-stack hand, the single late charge, no later hands for him, place 2 free.
+- Then:
+  1. Set river222's mirror chips from 2,500 to 0 (exactly one row).
+  2. Call `fn_eliminate_tournament_player_atomic(tid, river222, 2, 0, 0)`; it must return ok and claimed.
+  3. Emit a manager wake (reason 'rebuy').
+- Postflight: river222 eliminated at exactly 06:13:09.079372, candidate eliminated, MIAJordan the only player left, 99 placed eliminations, no money moved, escrow unchanged.
+- Rehearsed on the PG17 copy (all 2,573 plpgsql function bodies identical to production), followed by the real final settlement. Result: COMPLETED, 99.30 paid:
+
+| Place | Player     | Paid  |
+| ----- | ---------- | ----- |
+| 1     | MIAJordan  | 27.85 |
+| 2     | d.kim94    | 16.00 |
+| 3     | Rebuy Gia  | 11.57 |
+| 4     | MamaRob    | 9.19  |
+| 5     | UncleJules | 7.69  |
+| 6     | RexSr      | 6.64  |
+| 7     | tim        | 5.87  |
+| 8     | andre      | 5.27  |
+| 9     | pokerchad  | 4.81  |
+| 10    | lake13     | 4.41  |
+
+river222 finishes 100th. Rake 2.70 went to the union; escrow closed at zero.
+
+**R2 (7aa16fa7)** — `R2_7aa16fa7_wake_stalled_manager.sql`:
+
+- Guards: RUNNING, pool 204.40, escrow 204.40 / 11.60, no pending candidates, 381 placed eliminations, the 4 named survivors each alone on a table with seat stack equal to roster chips.
+- Writes one wake. Must commit outside :53–:00, or the woken sweep will skip seat moves again.
+- Expected within a couple of minutes: 3 seat-move receipts, a single table, hands resuming.
+
+**R3 (optional)** — `R3_optional_wake_every_fragmented_field.sql`: wakes whichever of the 57 captured stalled events are still one-player-per-table when applied.
+
+## 6. True bust order
+
+Both events' recorded orders are wrong inside the paid range:
+
+- a5aa6984: river222 would be recorded 2nd; lake13 is truly 10th but recorded 17th; MamaRob and UncleJules are swapped.
+- 7aa16fa7: places 12–30 are shuffled.
+
+The live `fn_settle_tournament_places` (applied today, migration 20260911062048) re-ranks everyone by bust time before paying whenever no prize money has moved yet. The rehearsal confirmed this for a5aa6984, so your re-sequence script isn't needed for money. If you still want to run it on a5aa6984, do it inside R1 before the wake — the event finishes seconds after R1 commits.
+
+7aa16fa7 true order for places 5–39 (recorded place in brackets where different):
+
+- 5 TreyJr, 6 MrGrinder, 7 j.petrov95, 8 ace007, 9 RexSr, 10 KenjiReno, 11 OUTLAW
+- 12 l0jackking [13], 13 tankChamp [12], 14 SDLegend [18], 15 the_donk [19], 16 GumboRamen [20], 17 boat [21], 18 Chad [14]
+- 19 the_outlaw [29], 20 PhillyMaya [30], 21 cbus_rashid [25], 22 STRADDLEREG [26], 23 binkBoss [27], 24 Rebuy23 [28]
+- 25 sneakychief [15], 26 talia.lopez [16], 27 NINJA [17], 28 LouIII [22], 29 rookiee [23], 30 JulienPoker [24]
+- 31–39 unchanged: Rachel, xmachine, sa_jules, pancake99, the_turn, awong, chief_89, Pocket21, pokerchad
+
+## 7. Code fix
+
+Branch `fix/freeze-deferred-balance-redrive`, commit `cf64e76666` (not pushed), worktree `/Users/smarter.poker/Documents/.agent-trees/club-arena/freeze-deferred-balance-redrive`.
+
+**The defect:** the engine's elimination sweep marks its table-balancing step done even when it didn't run — skipped during the :53–:00 maintenance freeze, or cut off when the sweep's 5 s budget ran out. With one player per table, no hand or bust ever wakes the manager again.
+
+**Evidence:**
+
+- 7aa16fa7's last two busts were recorded inside the 07:53 freeze.
+- The engine restarted at 10:55, also inside a freeze, which pushed every resumed tournament down the same exit.
+- Its 07:23 wake was marked consumed at 08:28:50 without any consolidation. The budget cut-off is my best explanation for that; I couldn't confirm it because logs from before the 10:55 restart are gone.
+
+**The change:**
+
+- A frozen balance step asks for one more sweep just after the :00 resume.
+- A balance step that runs out of budget is retried once per cycle with a fresh budget; if that also runs out, a new cycle is requested.
+- Changed files: `server/src/maintenance/freezeState.ts` and `server/src/tournament/TournamentManagerEliminations.ts`, plus a new test, `aDeferredBalanceIsStillOwed.law.test.ts`.
+
+**Checks:**
+
+- Type check passes.
+- 155 of 156 test files in `src/tournament` and `src/maintenance` pass. The one failure is an environment problem: the node_modules I borrowed from the main checkout is missing `pg`.
+
+## 8. Risks and decisions for you
+
+- **tankChamp:** his current 13th place (4.37) exists only because of the 115,000 created chips. Under your "latest eliminated candidate" rule and the don't-take-chips-back rule, it stands. If you rule his bust at hand 8775892 instead, he drops to 36th (1.94) and 23 players each move up one place. Your call before 7aa16fa7 settles.
+- **AuntieKurt (7aa16fa7) and ReidSr (a5aa6984)** are ranked by a bust they rebought from and played on after. Both are out of the money either way.
+- If R2 doesn't produce a single table within about 5 minutes (outside the freeze), there is a third blocker I haven't found; check the engine log for "spread over 4 tables".
+- **Things I did that touched production beyond plain SELECTs:**
+  - Called `fn_ca_tournament_place_amounts` twice. It is marked VOLATILE and briefly locks the tournament row; it writes nothing.
+  - A full-schema pg_dump held read locks on about 1,366 tables for roughly 4 minutes before it exited without output, and a tables-only dump took about 20 seconds. No other session was waiting on either.
+- The local cluster and all copied production rows have been deleted.

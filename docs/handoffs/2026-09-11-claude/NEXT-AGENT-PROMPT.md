@@ -16,7 +16,8 @@ You are taking over live operations of **Club Arena** (the Smarter Poker engine 
    - `expiredJobs` flat
      If the lane is still at capacity, follow §6.1.
 4. The ordered tournament work in §6.4 is safety-critical. Apply the 7 re-sequences BEFORE the wake script and BEFORE merging `backup/claude-2026-09-11/a-frozen-sweep-owes-the-balancer-a-pass-after-the-thaw`.
-5. §8 is the horse-brain/engine separation design. Present it to Dan with costs. Build it only after he approves.
-6. Report to Dan in plain language with numbers. Make operational calls yourself, and tell him when he is wrong.
+5. Merges to main are blocked. Since 12:20:32 UTC the required check `Stage B Release Freeze` has been part of the `main protection` ruleset, and no workflow emits it. Ask Dan before merging #4292, #4296 or #4299. Never bypass the freeze.
+6. §8 is the horse-brain/engine separation design. Present it to Dan with costs. Build it only after he approves.
+7. Report to Dan in plain language with numbers. Make operational calls yourself, and tell him when he is wrong.
 
 Raw evidence for every claim is in `docs/handoffs/2026-09-11-claude/evidence/`.

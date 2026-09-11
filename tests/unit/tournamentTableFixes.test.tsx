@@ -108,14 +108,34 @@ describe('Tournament Table Engine Seating & Dealing Rules', () => {
 });
 
 describe('BBJ Exclusion Rules in TableModalsLayer', () => {
+  /* THE RULE MOVED, SO THE PIN MOVED WITH IT (2026-09-11, CLAUDE.md rule 8).
+     It used to be an inline condition in TableModalsLayer's JSX. The mini
+     jackpot row hangs under the same plate and the felt reserves height for it
+     (`--sp-bbj-h`), so TablePage has to make the SAME decision to stamp
+     `data-bbj-mini`. Two copies of one condition drift, so it became one
+     helper - src/components/table/bbjPlateVisibility.ts - and that is where
+     the rule is now pinned. Every clause is unchanged; what changed is that
+     there is exactly one of it. */
   it('hides Bad Beat Jackpot on MTT, Spins, and Heads-Up tables', () => {
-    const code = tsCode(read(MODALS_LAYER_SRC));
-    expect(code).toMatch(/!isTournament/);
-    expect(code).toMatch(/!tournamentId/);
-    expect(code).toMatch(/maxPlayers\s*>\s*2/);
-    expect(code).toMatch(/gameType\s*!==\s*'heads_up'/);
-    expect(code).toMatch(/gameType\s*!==\s*'spin'/);
-    expect(code).toMatch(/gameType\s*!==\s*'spins'/);
+    const code = tsCode(read('src/components/table/bbjPlateVisibility.ts'));
+    expect(code).toMatch(/ctx\.isTournament/);
+    expect(code).toMatch(/ctx\.tournamentId/);
+    expect(code).toMatch(/ctx\.maxPlayers\s*>\s*2/);
+    expect(code).toMatch(/gameType\s*===\s*'heads_up'/);
+    expect(code).toMatch(/gameType\s*===\s*'spin'/);
+    expect(code).toMatch(/gameType\s*===\s*'spins'/);
+    expect(code).toMatch(/getBBJQualifyingInfo\(gameType\)\.eligible/);
+  });
+
+  it('is asked by BOTH the plate and the felt reserve, and re-stated by neither', () => {
+    const layer = tsCode(read(MODALS_LAYER_SRC));
+    const page = tsCode(read('src/pages/TablePage.tsx'));
+    expect(layer).toMatch(/isBbjPlateShown\(\{/);
+    expect(page).toMatch(/isBbjPlateShown\(\{/);
+    // The old inline form must not come back beside the helper.
+    expect(layer).not.toMatch(
+      /bbjInfo\.eligible\s*&&\s*!isTournament\s*&&\s*!tournamentId\s*&&\s*maxPlayers\s*>\s*2/
+    );
   });
 });
 

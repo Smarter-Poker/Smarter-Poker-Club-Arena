@@ -70,8 +70,13 @@
   background:
     var(--sp-dialog-blue) padding-box,
     var(--sp-nickel) border-box;
-  border: 5px solid transparent;
-  border-radius: 11px;
+  /* Dan 2026-09-11, with the plate in front of him: "THE BBJ FRAME NEEDS TO BE
+     THINNER, ITS TOO THICK." 5px -> 2px. The bezel is still milled nickel
+     painted in the border box; it is a frame now rather than a slab. The inner
+     bezel (::before) thins with it, 1.5px -> 1px, so the recess cue keeps its
+     proportion to the frame. */
+  border: 2px solid transparent;
+  border-radius: 9px;
   padding: 4px 14px;
   cursor: pointer;
   z-index: 50;
@@ -98,7 +103,7 @@
   position: absolute;
   inset: 0;
   border-radius: 7px;
-  padding: 1.5px;
+  padding: 1px;
   background: var(--sp-nickel-inner);
   -webkit-mask:
     linear-gradient(#000 0 0) content-box,
@@ -186,6 +191,116 @@
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   THE MINI ROW (Dan 2026-09-11)
+   ═══════════════════════════════════════════════════════════════════════════════
+
+   "UNDER IT SHOULD BE A MINI BBJ AMOUNT THAT IS DYNAMIC AND ADJUSTS WITH THE
+   TABLE. (IT SHOULD DISPLAY WHAT IT PAYS OUT UNDER IT)."
+
+   A second, smaller plate hung directly under the nameplate: the same navy
+   body and nickel frame at a smaller scale, so it reads as part of the same
+   fixture rather than a badge stuck on. It carries the flat amount the mini
+   pays at THIS table's stakes (lib/bbjMiniFeed, tier by big blind), and it is
+   not rendered at all when the mini cannot pay - a promise the engine would
+   refuse is not shown.
+
+   Desktop: the nameplate is `top: 6px` and stacks label over amount, about
+   40px tall with the 2px frame; the mini row sits at 48px and is 16px tall,
+   ending at 64px against the desktop felt reserve of 76px. Phone: the
+   nameplate is the declared --sp-bbj-plate-h and the row is --sp-bbj-mini-h,
+   both published from the <=768px block below; the felt reserve reads their
+   sum, so the row can never be under a top seat. */
+/* ── PUBLISHED CONTRACT: the nameplate, the mini row, and their sum ────────
+   Declared HERE, at every width, and re-stated with phone values inside the
+   <=768px block below.
+
+   It lived only inside that phone block until 2026-09-11, which made the whole
+   contract phone-only: above 768px none of these three properties existed, so
+   `.table-page[data-bbj-mini='1']` was inert on desktop and the mini row hung
+   at a hard-coded `top: 48px; height: 16px` whose clearance against the felt's
+   76px desktop reserve was arithmetic in a comment (48 + 16 = 64 < 76) rather
+   than anything a stylesheet could check. That is precisely the shape of bug
+   this contract exists to prevent, so the desktop numbers are now values of
+   the same three properties and the row's geometry is read, never repeated.
+
+   --sp-bbj-plate-h  the nameplate alone: where the mini row hangs from.
+   --sp-bbj-mini-h   the mini row, 0 until TablePage stamps data-bbj-mini="1".
+   --sp-bbj-h        their sum. TablePage.css's top reserve reads this. */
+:root {
+  --sp-bbj-plate-h: 48px;
+  --sp-bbj-mini-h: 0px;
+  --sp-bbj-h: calc(var(--sp-bbj-plate-h) + var(--sp-bbj-mini-h));
+}
+
+.table-page[data-bbj-mini='1'] {
+  --sp-bbj-mini-h: 16px;
+  --sp-bbj-h: calc(var(--sp-bbj-plate-h) + var(--sp-bbj-mini-h));
+}
+
+.bbj-mini-plate {
+  position: absolute;
+  top: var(--sp-bbj-plate-h);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: var(--sp-bbj-mini-h);
+  padding: 0 10px;
+  background:
+    var(--sp-dialog-blue, linear-gradient(165deg, #1b3a68 0%, #12253f 52%, #0a1626 100%))
+      padding-box,
+    var(
+        --sp-nickel,
+        linear-gradient(
+          145deg,
+          #6f767e 0%,
+          #cdd3d9 14%,
+          #8d949c 30%,
+          #eef1f4 46%,
+          #9aa1a9 62%,
+          #d6dbe0 80%,
+          #70777f 100%
+        )
+      )
+      border-box;
+  border: 1px solid transparent;
+  border-radius: 0 0 7px 7px;
+  cursor: pointer;
+  z-index: 49;
+  white-space: nowrap;
+  box-shadow:
+    0 2px 4px rgba(0, 0, 0, 0.5),
+    0 0 12px rgba(36, 92, 168, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.16);
+}
+
+.bbj-mini-plate__label {
+  font-size: 0.5rem;
+  font-weight: 700;
+  color: #9fb4d0;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  line-height: 1;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.6);
+}
+
+.bbj-mini-plate__amount {
+  font-size: 0.625rem;
+  font-weight: 800;
+  line-height: 1;
+  font-family: 'JetBrains Mono', monospace;
+  letter-spacing: 0.02em;
+  color: #fff;
+  background: linear-gradient(180deg, #ffffff 0%, #dfe5ec 42%, #a8b2bf 72%, #eef2f7 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  filter: drop-shadow(0 1px 0 rgba(0, 0, 0, 0.75));
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
@@ -544,14 +659,49 @@
 
      If a later pass changes this number, grep for --sp-bbj-h and for the
      "~21px the BBJ nameplate" note in TablePage.css in the SAME commit. That
-     reserve is the only thing between this plate and a top seat. */
+     reserve is the only thing between this plate and a top seat.
+
+     2026-09-11 (Dan: "UNDER IT SHOULD BE A MINI BBJ AMOUNT THAT IS DYNAMIC AND
+     ADJUSTS WITH THE TABLE"): the plate now has a second row hanging under it,
+     `.bbj-mini-plate`, so the contract splits in two. --sp-bbj-plate-h is the
+     nameplate alone (still 22px, still one row); --sp-bbj-h is what everything
+     else reads and is now the plate PLUS the mini row, so the felt reserve in
+     TablePage.css follows on its own and a top seat still cannot reach the
+     mini. The mini row is 14px on a phone (a 10px line in a 14px box) and 16px
+     above 768px; both are values of --sp-bbj-mini-h, declared with the rest of
+     the contract above `.bbj-mini-plate`, so neither is written twice. Hung 0px below the
+     plate's bottom bezel.
+
+     The row is only reserved when it is DRAWN. TablePage stamps
+     data-bbj-mini="1" on the page root under exactly the condition that
+     renders `.bbj-mini-plate` (isBbjPlateShown + a payable tier for these
+     stakes), and the override below re-derives --sp-bbj-h on `.table-page`,
+     which is an ancestor of `.table-container` - a custom property is
+     substituted where it is DECLARED, so redefining --sp-bbj-mini-h alone on
+     the page would leave :root's --sp-bbj-h at 22px. Without the stamp the
+     felt keeps the reserve it had before today. */
   :root {
-    --sp-bbj-h: 22px;
+    --sp-bbj-plate-h: 22px;
+  }
+
+  .table-page[data-bbj-mini='1'] {
+    --sp-bbj-mini-h: 14px;
+  }
+
+  .bbj-mini-plate {
+    padding: 0 8px;
+    gap: 5px;
+    border-radius: 0 0 6px 6px;
+  }
+
+  .bbj-mini-plate__label,
+  .bbj-mini-plate__amount {
+    font-size: 0.5625rem;
   }
 
   .bbj-widget {
     top: 0;
-    height: var(--sp-bbj-h);
+    height: var(--sp-bbj-plate-h);
     display: flex;
     flex-direction: row;
     /* `center`, not `baseline`. Baseline alignment made sense while the label

@@ -19,6 +19,8 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import type { ArenaAccessContext } from '../../server/src/domain/ArenaContext';
 
 const mocks = vi.hoisted(() => ({ workspace: vi.fn(), navigate: vi.fn() }));
@@ -115,6 +117,29 @@ describe('One open club: the chip membership guard never evicts a Diamond player
       expect(mocks.navigate).toHaveBeenCalledWith('/invite/diamond', { replace: true })
     );
     expect(screen.queryByText('Shared Club Lobby')).toBeNull();
+  });
+});
+
+describe('Played with diamonds: the chip jackpot strip stays off the arena lobby', () => {
+  const page = readFileSync(join(__dirname, '..', '..', 'src/pages/ClubHomePage.tsx'), 'utf8');
+
+  it('wraps the Bad Beat Jackpot strip in the arena check', () => {
+    const wrapper = page.indexOf('{!isAutomaticArena && (');
+    const strip = page.indexOf('className="lobby-bbj"');
+    expect(wrapper, 'the arena check is gone from the lobby').toBeGreaterThan(-1);
+    expect(strip).toBeGreaterThan(wrapper);
+    expect(strip - wrapper).toBeLessThan(200);
+  });
+
+  /* A bare block comment in JSX children position is TEXT, not a comment, and
+     this one sat directly above the strip: written that way it would have
+     painted its own explanation across every chip club lobby. Caught in review
+     on 2026-09-11, pinned here because nothing else would notice. */
+  it('comments the strip in JSX form so the note never paints itself', () => {
+    const note = page.indexOf('The Bad Beat Jackpot is a chip pool');
+    expect(note).toBeGreaterThan(-1);
+    expect(page.slice(note - 120, note)).toContain('{/*');
+    expect(page).not.toMatch(/\n\s+\/\* The Bad Beat Jackpot is a chip pool/);
   });
 });
 

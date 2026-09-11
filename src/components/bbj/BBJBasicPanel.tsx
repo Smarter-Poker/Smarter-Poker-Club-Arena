@@ -61,6 +61,8 @@ import {
 } from '../../config/RakeConfig';
 import { supabase } from '../../lib/supabase';
 import { reportError } from '../../utils/errorReporter';
+import { miniTierForBB, type BbjMiniSnapshot } from '../../lib/bbjMiniFeed';
+import { BBJ_MINI_SPLIT } from '../../config/bbjMini';
 import './BBJBasicPanel.css';
 
 export interface BBJBasicPanelProps {
@@ -68,6 +70,15 @@ export interface BBJBasicPanelProps {
   poolAmount?: number;
   /** Big blind of the table the player is sitting at — its row is marked. */
   highlightBB?: number | null;
+  /**
+   * WHICH JACKPOT (Dan 2026-09-11: the Basic page "NEEDS TO BE UPDATED WITH NEW
+   * MINI BBJ INFO AND DATA"). `mini` renders the mini's own schedule from the
+   * live feed: the flat amount per stakes tier, its 50/25/25 split in chips,
+   * and whether the reserve can pay it right now.
+   */
+  kind?: 'main' | 'mini';
+  /** The mini feed snapshot (lib/bbjMiniFeed); required for `kind === 'mini'`. */
+  mini?: BbjMiniSnapshot | null;
 }
 
 interface TierRow {
@@ -209,7 +220,103 @@ function mapDbTiers(rows: DbTier[]): TierRow[] {
     .sort((a, b) => a.pct - b.pct);
 }
 
-export function BBJBasicPanel({ poolAmount = 0, highlightBB = null }: BBJBasicPanelProps) {
+/**
+ * THE MINI'S SCHEDULE. Flat amounts, live from the feed - there is no client
+ * fallback ladder because the amounts are Dan's configuration (bbj_mini_tiers)
+ * and a stale copy printed here would be a number nobody is paying.
+ */
+export function BBJMiniBasicPanel({
+  mini,
+  highlightBB = null,
+}: {
+  mini: BbjMiniSnapshot | null | undefined;
+  highlightBB?: number | null;
+}) {
+  const here =
+    typeof highlightBB === 'number' && highlightBB > 0 && mini
+      ? miniTierForBB(mini, highlightBB)
+      : null;
+  const tiers = mini ? [...mini.tiers].sort((a, b) => a.maxBB - b.maxBB) : [];
+
+  return (
+    <div className="bbj-basic">
+      <p className="bbj-basic__rules">
+        The Mini Jackpot Pays A Flat Amount, Set By The Stakes You Were Playing, For A Bad Beat That
+        Meets The Mini Bar But Not The Main One: Aces Full Or Better Losing To Quads Or Better In
+        Hold’em, Any Quads Losing To Bigger Quads Or Better In Omaha. The Same Pot, Player Count And
+        Board Conditions Apply As For The Main Jackpot. No Extra Fee Is Taken For The Mini: It Is
+        Paid From The Jackpot’s Backup Reserve, And It Pauses While The Reserve Is At Its Floor.
+      </p>
+
+      {!mini && <p className="bbj-basic__stale">Reading The Mini Jackpot Schedule.</p>}
+
+      {mini && !mini.enabled && (
+        <p className="bbj-basic__stale">The Mini Jackpot Is Switched Off For This Jackpot.</p>
+      )}
+
+      {mini && mini.enabled && (
+        <div className="bbj-basic__scroll">
+          <table className="bbj-basic__table">
+            <thead>
+              <tr>
+                <th>Stakes</th>
+                <th>Blinds</th>
+                <th>Mini Pays</th>
+                <th>
+                  Split
+                  <span className="bbj-basic__subhead">Bad Beat / Winner / Table</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {tiers.map((t) => {
+                const isHere = here?.tierId === t.tierId;
+                const loser = t.amount * BBJ_MINI_SPLIT.loser;
+                const winner = t.amount * BBJ_MINI_SPLIT.winner;
+                const table = t.amount - loser - winner;
+                return (
+                  <tr key={t.tierId} className={isHere ? 'is-current' : ''}>
+                    <td>
+                      <span className="bbj-basic__tier">{t.label}</span>
+                      {isHere && <span className="bbj-basic__here">YOUR STAKES</span>}
+                    </td>
+                    <td className="bbj-basic__blinds">{t.blindRange.replace(/\u2013/g, '-')}</td>
+                    <td className="bbj-basic__pay">
+                      <span className="bbj-basic__pcts">{chips(t.amount)}</span>
+                      <span className="bbj-basic__today">
+                        {t.enabled ? (t.payable ? 'Pays Now' : 'Paused - Reserve At Floor') : 'Off'}
+                      </span>
+                    </td>
+                    <td className="bbj-basic__pay">
+                      <span className="bbj-basic__pcts">
+                        {chips(loser)} / {chips(winner)} / {chips(table)}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <p className="bbj-basic__note">
+        A Mini Is Split Like The Main Jackpot: Half To The Bad Beat Hand, A Quarter To The Winner, A
+        Quarter Shared By Everyone Else Dealt In. One Hand Pays One Jackpot, Never Both. Chips Are
+        Credited To Your Stack At The Table The Moment It Hits.
+      </p>
+    </div>
+  );
+}
+
+export function BBJBasicPanel({
+  poolAmount = 0,
+  highlightBB = null,
+  kind = 'main',
+  mini = null,
+}: BBJBasicPanelProps) {
+  /* Hooks below must run unconditionally; the mini branch is rendered after
+     them so React sees the same hook order on every render. */
   const fallback = useMemo(buildFallbackTiers, []);
   const [dbTiers, setDbTiers] = useState<TierRow[] | null>(null);
   /**
@@ -262,6 +369,8 @@ export function BBJBasicPanel({ poolAmount = 0, highlightBB = null }: BBJBasicPa
   }, []);
 
   const tiers = dbTiers ?? fallback;
+
+  if (kind === 'mini') return <BBJMiniBasicPanel mini={mini} highlightBB={highlightBB} />;
 
   /* Highlight the player's own row from the SAME window the payout uses. When
      the live tiers are up that is min_bb/max_bb; only the fallback path is

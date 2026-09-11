@@ -908,6 +908,30 @@ jobs:
       # We wait for that flag. It is not a snapshot that can go stale between
       # the read and the SIGTERM - the platform is held still, on purpose, for
       # the whole five minutes, and the players were told at :53.
+      # ── THE ENGINE SHIPS ONLY WITH ITS DOORS (2026-09-11) ─────────────
+      # Twice in two days a build went live calling a database function
+      # production did not have: fn_move_tournament_player (2026-09-10, every
+      # seat move failed and the fleet wound down hourly) and
+      # fn_ca_reprice_unpaid_tournament_place (2026-09-11, any event whose
+      # prizes needed recertifying could never finish). Both hid behind a
+      # schema-manifest fragment that declared the function before its
+      # migration was applied, so the phantom-reference gate believed it.
+      # This asks production's pg_proc, which cannot be declared into
+      # existence, BEFORE the run waits for a break: a build whose migration
+      # is not applied yet fails here, red and named, and the train's hand-on
+      # retries once the database has caught up. An unreadable database is a
+      # warning (never the reason an urgent fix cannot ship), and a rollback
+      # is reported, not blocked. scripts/ci/check-engine-doors-exist.mjs.
+      - name: Every database function this build calls exists in production
+        id: doors
+        if: steps.dedupe.outputs.skip != 'true'
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          ROLLBACK_REQUESTED: ${{ github.event.inputs.rollback || 'false' }}
+        run: |
+          npm ls pg >/dev/null 2>&1 || npm i pg@8 --no-save --no-audit --no-fund >/dev/null 2>&1 || true
+          node scripts/ci/check-engine-doors-exist.mjs
+
       - name: Wait for the maintenance break to park every table
         id: drain
         if: steps.dedupe.outputs.skip != 'true'

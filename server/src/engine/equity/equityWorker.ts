@@ -80,6 +80,34 @@ function countCombos(n: number, k: number): number {
   return Math.round(c);
 }
 
+const INSURANCE_SAMPLE_MAX_RUNOUTS = 6_000;
+const INSURANCE_SAMPLE_MIN_RUNOUTS = 1_000;
+const INSURANCE_SAMPLE_EVALUATION_BUDGET = 90_000;
+
+/**
+ * Bound preflop sampling by evaluator work, not only board count. A Hold'em
+ * hand has one hole-card choice; Omaha evaluates every two-card choice from
+ * each player's four, five, or six hole cards on every sampled board.
+ *
+ * The returned count is deterministic from the known field shape. Callers
+ * still receive `exact: false` and the actual `runouts` count, so reducing the
+ * sample never masquerades as exact enumeration or as the former 6,000-board
+ * fidelity. Ordinary Hold'em fields retain all 6,000 samples.
+ */
+export function insuranceSampleRunoutCap(hands: Card[][], isOmaha: boolean): number {
+  const unitsPerRunout = Math.max(
+    1,
+    hands.reduce((sum, hand) => sum + (isOmaha ? countCombos(hand.length, 2) : 1), 0)
+  );
+  return Math.min(
+    INSURANCE_SAMPLE_MAX_RUNOUTS,
+    Math.max(
+      INSURANCE_SAMPLE_MIN_RUNOUTS,
+      Math.floor(INSURANCE_SAMPLE_EVALUATION_BUDGET / unitsPerRunout)
+    )
+  );
+}
+
 /** Visit every k-combination without materialising the complete runout set. */
 function visitCombinations<T>(arr: T[], k: number, visit: (items: T[]) => void): void {
   const selected: T[] = [];
@@ -164,12 +192,13 @@ export function computeInsuranceComponentsForHands(
     throw new Error('Not enough unseen cards to complete insurance runout');
   }
 
-  const exact = countCombos(remaining.length, cardsToCome) <= 20_000;
+  const boundedRunouts = insuranceSampleRunoutCap(hands, isOmaha);
+  const exact = countCombos(remaining.length, cardsToCome) <= boundedRunouts;
   if (exact) {
     visitCombinations(remaining, cardsToCome, score);
   } else {
     const rng = new SeededRandom(hashSeed(...Array.from(known).sort(), cardsToCome));
-    for (let iteration = 0; iteration < 6_000; iteration++) {
+    for (let iteration = 0; iteration < boundedRunouts; iteration++) {
       const pick: Card[] = [];
       const pickedIndices = new Set<number>();
       while (pick.length < cardsToCome) {

@@ -13,6 +13,7 @@ import type { EquityOptions, InsuranceEquityComponents } from './equityWorker.js
 import { hashSeed } from './SeededRandom.js';
 
 const DEFAULT_JOB_TIMEOUT_MS = 2_500;
+const DEFAULT_HARD_JOB_TIMEOUT_MS = 15_000;
 const DEFAULT_READY_TIMEOUT_MS = 10_000;
 const RESPAWN_DELAY_MS = 250;
 const DEFAULT_RESPAWN_BUDGET = 10;
@@ -28,6 +29,9 @@ export type EquityWorkerPoolPhase =
 
 export interface EquityWorkerPoolStatus {
   phase: EquityWorkerPoolPhase;
+  routingReady: boolean;
+  acceptingWork: boolean;
+  recoveryInFlight: boolean;
   configuredWorkers: number;
   readyWorkers: number;
   busyWorkers: number;
@@ -35,6 +39,14 @@ export interface EquityWorkerPoolStatus {
   oldestQueuedAgeMs: number;
   lastCompletionAgeMs: number | null;
   lastError: string | null;
+}
+
+/**
+ * Optional calculator capacity may recover without taking a healthy dealer
+ * out of service. Startup, exhausted recovery, and shutdown still fail closed.
+ */
+export function equityWorkerPoolPreservesDealerLiveness(status: EquityWorkerPoolStatus): boolean {
+  return status.routingReady;
 }
 
 export class EquityWorkerUnavailableError extends Error {
@@ -92,7 +104,8 @@ interface Job<T = any> {
   resolve: (value: T) => void;
   reject: (error: Error) => void;
   validate: (message: Record<string, unknown>) => T;
-  timer?: ReturnType<typeof setTimeout>;
+  softTimer?: ReturnType<typeof setTimeout>;
+  hardTimer?: ReturnType<typeof setTimeout>;
   settled: boolean;
 }
 
@@ -101,6 +114,7 @@ interface WorkerSlot {
   ready: boolean;
   down: boolean;
   job?: Job;
+  readyTimer?: ReturnType<typeof setTimeout>;
 }
 
 export interface EquityWorkerPoolOptions {
@@ -108,7 +122,10 @@ export interface EquityWorkerPoolOptions {
   disabled?: boolean;
   workerFactory?: () => WorkerLike;
   readyTimeoutMs?: number;
+  /** Caller-facing queue plus compute SLA. Missing it does not kill a worker. */
   jobTimeoutMs?: number;
+  /** Execution-only deadline that identifies a genuinely wedged worker. */
+  hardJobTimeoutMs?: number;
   respawnBudget?: number;
 }
 
@@ -118,6 +135,7 @@ export class EquityWorkerPool {
   private readonly workerFactory: () => WorkerLike;
   private readonly readyTimeoutMs: number;
   private readonly jobTimeoutMs: number;
+  private readonly hardJobTimeoutMs: number;
   private readonly maxRespawnBudget: number;
   private respawnBudget: number;
   private phase: EquityWorkerPoolPhase = 'idle';
@@ -125,7 +143,7 @@ export class EquityWorkerPool {
   private readonly idle: WorkerSlot[] = [];
   private readonly queue: Job[] = [];
   private nextId = 1;
-  private pendingRespawns = 0;
+  private readonly respawnTimers = new Set<ReturnType<typeof setTimeout>>();
   private hasReachedReady = false;
   private lastCompletedAt: number | null = null;
   private lastError: string | null = null;
@@ -151,16 +169,31 @@ export class EquityWorkerPool {
     this.workerFactory = options.workerFactory ?? (() => new Worker(workerUrl));
     this.readyTimeoutMs = Math.max(1, options.readyTimeoutMs ?? DEFAULT_READY_TIMEOUT_MS);
     this.jobTimeoutMs = Math.max(1, options.jobTimeoutMs ?? DEFAULT_JOB_TIMEOUT_MS);
+    this.hardJobTimeoutMs = Math.max(
+      this.jobTimeoutMs + 1,
+      options.hardJobTimeoutMs ?? DEFAULT_HARD_JOB_TIMEOUT_MS
+    );
     this.maxRespawnBudget = Math.max(0, options.respawnBudget ?? DEFAULT_RESPAWN_BUDGET);
     this.respawnBudget = this.maxRespawnBudget;
   }
 
   status(): EquityWorkerPoolStatus {
     const now = Date.now();
-    const readyWorkers = [...this.slots].filter((slot) => slot.ready && !slot.down).length;
+    const readyWorkers = this.readyWorkerCount();
     const busyWorkers = [...this.slots].filter((slot) => slot.job && !slot.down).length;
+    const recoveryInFlight = this.recoveryInFlight();
+    const routingReady =
+      this.hasReachedReady &&
+      (readyWorkers === this.size || (this.phase === 'degraded' && recoveryInFlight));
+    const acceptingWork =
+      this.hasReachedReady &&
+      readyWorkers > 0 &&
+      (this.phase === 'ready' || this.phase === 'degraded');
     return {
       phase: this.phase,
+      routingReady,
+      acceptingWork,
+      recoveryInFlight,
       configuredWorkers: this.size,
       readyWorkers,
       busyWorkers,
@@ -176,8 +209,7 @@ export class EquityWorkerPool {
   }
 
   isAvailable(): boolean {
-    const status = this.status();
-    return (status.phase === 'ready' || status.phase === 'degraded') && status.readyWorkers > 0;
+    return this.status().acceptingWork;
   }
 
   /** Start all configured workers and wait for worker-authored READY messages. */
@@ -203,10 +235,7 @@ export class EquityWorkerPool {
       const error = new EquityWorkerUnavailableError(
         `Equity workers did not become ready within ${this.readyTimeoutMs}ms`
       );
-      this.lastError = error.message;
-      this.phase = 'failed';
-      this.rejectReadiness?.(error);
-      this.clearReadinessWaiters();
+      this.failStartup(error);
     }, this.readyTimeoutMs);
     this.readinessTimer.unref?.();
     for (let i = 0; i < this.size; i++) this.spawnWorker();
@@ -288,7 +317,7 @@ export class EquityWorkerPool {
     payload: EquityPayload | InsurancePayload,
     validate: (message: Record<string, unknown>) => T
   ): Promise<T> {
-    if (this.phase !== 'ready' && this.phase !== 'degraded') {
+    if (!this.status().acceptingWork) {
       return Promise.reject(new EquityWorkerUnavailableError());
     }
     return new Promise<T>((resolve, reject) => {
@@ -301,8 +330,8 @@ export class EquityWorkerPool {
         validate,
         settled: false,
       };
-      job.timer = setTimeout(() => this.onJobTimeout(job), this.jobTimeoutMs);
-      job.timer.unref?.();
+      job.softTimer = setTimeout(() => this.onSoftJobTimeout(job), this.jobTimeoutMs);
+      job.softTimer.unref?.();
       if (payload.type === 'INSURANCE_ALL') {
         // Real-money pricing outranks optional percentage displays. Preserve
         // FIFO within each class; never preempt an operation already running.
@@ -316,7 +345,7 @@ export class EquityWorkerPool {
     });
   }
 
-  private spawnWorker(): void {
+  private spawnWorker(isReplacement = false): void {
     if (this.phase === 'stopping' || this.phase === 'stopped' || this.disabled) return;
     let worker: WorkerLike;
     try {
@@ -324,6 +353,7 @@ export class EquityWorkerPool {
     } catch (error) {
       this.lastError = this.errorMessage(error);
       this.scheduleRespawn();
+      this.updatePhaseAfterCapacityChange();
       return;
     }
     const slot: WorkerSlot = { worker, ready: false, down: false };
@@ -332,6 +362,19 @@ export class EquityWorkerPool {
     worker.on('error', (error) => this.onWorkerDown(slot, error));
     worker.on('exit', (code) => this.onWorkerDown(slot, new Error(`Equity worker exited ${code}`)));
     worker.unref?.();
+    if (isReplacement) {
+      slot.readyTimer = setTimeout(() => {
+        if (slot.down || slot.ready || !this.slots.has(slot)) return;
+        this.retireWorker(
+          slot,
+          new EquityWorkerUnavailableError(
+            `Equity replacement worker did not become ready within ${this.readyTimeoutMs}ms`
+          )
+        );
+      }, this.readyTimeoutMs);
+      slot.readyTimer.unref?.();
+    }
+    this.updatePhaseAfterCapacityChange();
   }
 
   private onMessage(slot: WorkerSlot, rawMessage: unknown): void {
@@ -346,6 +389,7 @@ export class EquityWorkerPool {
         return;
       }
       if (!slot.ready) {
+        this.clearSlotReadyTimer(slot);
         slot.ready = true;
         this.idle.push(slot);
       }
@@ -378,15 +422,27 @@ export class EquityWorkerPool {
     this.pump();
   }
 
-  private onJobTimeout(job: Job): void {
+  private onSoftJobTimeout(job: Job): void {
     if (job.settled) return;
     const queueIndex = this.queue.indexOf(job);
     if (queueIndex >= 0) this.queue.splice(queueIndex, 1);
-    const slot = [...this.slots].find((candidate) => candidate.job === job);
     const error = new EquityWorkerTimeoutError(this.jobTimeoutMs);
     this.lastError = error.message;
+    // The caller's latency budget is not evidence of a wedged worker. If the
+    // operation is active, leave its hard deadline armed and validate its late
+    // response before returning the same worker to the pool. If it was still
+    // queued, simply remove it; no worker ever owned it.
+    this.rejectJob(job, error, queueIndex < 0);
+  }
+
+  private onHardJobTimeout(slot: WorkerSlot, job: Job): void {
+    if (slot.down || slot.job !== job) return;
+    const error = new EquityWorkerUnavailableError(
+      `Equity worker exceeded hard execution deadline after ${this.hardJobTimeoutMs}ms`
+    );
+    this.lastError = error.message;
     this.rejectJob(job, error);
-    if (slot) this.retireWorker(slot, error);
+    this.retireWorker(slot, error);
   }
 
   private pump(): void {
@@ -395,6 +451,8 @@ export class EquityWorkerPool {
       if (slot.down || !slot.ready || slot.job) continue;
       const job = this.queue.shift()!;
       slot.job = job;
+      job.hardTimer = setTimeout(() => this.onHardJobTimeout(slot, job), this.hardJobTimeoutMs);
+      job.hardTimer.unref?.();
       try {
         slot.worker.postMessage({ id: job.id, ...job.payload });
       } catch (error) {
@@ -407,6 +465,7 @@ export class EquityWorkerPool {
   private retireWorker(slot: WorkerSlot, reason: unknown): void {
     if (slot.down) return;
     slot.down = true;
+    this.clearSlotReadyTimer(slot);
     this.lastError = this.errorMessage(reason);
     this.slots.delete(slot);
     const idleIndex = this.idle.indexOf(slot);
@@ -415,9 +474,9 @@ export class EquityWorkerPool {
       this.rejectJob(slot.job, new EquityWorkerUnavailableError(this.lastError));
       slot.job = undefined;
     }
-    if (this.phase !== 'starting') this.phase = 'degraded';
     void slot.worker.terminate().catch(() => {});
     this.scheduleRespawn();
+    this.updatePhaseAfterCapacityChange();
   }
 
   private onWorkerDown(slot: WorkerSlot, reason: unknown): void {
@@ -429,50 +488,104 @@ export class EquityWorkerPool {
       this.phase === 'stopping' ||
       this.phase === 'stopped' ||
       this.respawnBudget <= 0 ||
-      this.slots.size + this.pendingRespawns >= this.size
+      this.slots.size + this.respawnTimers.size >= this.size
     ) {
-      if (
-        this.hasReachedReady &&
-        this.respawnBudget <= 0 &&
-        this.slots.size === 0 &&
-        this.pendingRespawns === 0
-      ) {
-        this.phase = 'failed';
-      }
       return;
     }
     this.respawnBudget -= 1;
-    this.pendingRespawns += 1;
     const timer = setTimeout(() => {
-      this.pendingRespawns -= 1;
-      this.spawnWorker();
+      this.respawnTimers.delete(timer);
+      if (this.phase === 'stopping' || this.phase === 'stopped' || this.disabled) return;
+      this.spawnWorker(true);
     }, RESPAWN_DELAY_MS);
+    this.respawnTimers.add(timer);
     timer.unref?.();
   }
 
   private updatePhaseAfterCapacityChange(): void {
-    const readyWorkers = [...this.slots].filter((slot) => slot.ready && !slot.down).length;
-    if (readyWorkers === this.size) {
+    if (this.phase === 'stopping' || this.phase === 'stopped') return;
+    const readyWorkers = this.readyWorkerCount();
+    if (!this.hasReachedReady && readyWorkers === this.size && this.phase === 'starting') {
       this.hasReachedReady = true;
       this.phase = 'ready';
       this.resolveReadiness?.(this.status());
       this.clearReadinessWaiters();
-    } else if (this.phase !== 'starting') {
-      this.phase = readyWorkers > 0 ? 'degraded' : 'failed';
+      return;
+    }
+    if (!this.hasReachedReady) return;
+
+    if (readyWorkers === this.size) this.phase = 'ready';
+    else if (readyWorkers > 0 || this.recoveryInFlight()) this.phase = 'degraded';
+    else this.phase = 'failed';
+
+    if (readyWorkers === 0) this.rejectQueuedJobsWithoutCapacity();
+  }
+
+  private readyWorkerCount(): number {
+    return [...this.slots].filter((slot) => slot.ready && !slot.down).length;
+  }
+
+  private recoveryInFlight(): boolean {
+    if (!this.hasReachedReady) return false;
+    return (
+      this.respawnTimers.size > 0 ||
+      [...this.slots].some((slot) => !slot.down && !slot.ready && slot.readyTimer !== undefined)
+    );
+  }
+
+  private rejectQueuedJobsWithoutCapacity(): void {
+    if (this.readyWorkerCount() > 0 || this.queue.length === 0) return;
+    const error = new EquityWorkerUnavailableError(
+      this.lastError ?? 'Equity worker pool has no ready workers'
+    );
+    for (const job of this.queue.splice(0)) this.rejectJob(job, error);
+  }
+
+  private clearSlotReadyTimer(slot: WorkerSlot): void {
+    if (slot.readyTimer) clearTimeout(slot.readyTimer);
+    slot.readyTimer = undefined;
+  }
+
+  private cancelRespawnTimers(): void {
+    for (const timer of this.respawnTimers) clearTimeout(timer);
+    this.respawnTimers.clear();
+  }
+
+  private failStartup(error: Error): void {
+    this.lastError = error.message;
+    this.phase = 'failed';
+    this.rejectReadiness?.(error);
+    this.clearReadinessWaiters();
+    this.cancelRespawnTimers();
+    for (const slot of this.slots) {
+      slot.down = true;
+      this.clearSlotReadyTimer(slot);
+      void slot.worker.terminate().catch(() => {});
+    }
+    this.slots.clear();
+    this.idle.length = 0;
+  }
+
+  private clearJobTimers(job: Job, keepHardTimer = false): void {
+    if (job.softTimer) clearTimeout(job.softTimer);
+    job.softTimer = undefined;
+    if (!keepHardTimer) {
+      if (job.hardTimer) clearTimeout(job.hardTimer);
+      job.hardTimer = undefined;
     }
   }
 
   private resolveJob<T>(job: Job<T>, result: T): void {
+    this.clearJobTimers(job);
     if (job.settled) return;
     job.settled = true;
-    if (job.timer) clearTimeout(job.timer);
     job.resolve(result);
   }
 
-  private rejectJob(job: Job, error: Error): void {
+  private rejectJob(job: Job, error: Error, keepHardTimer = false): void {
+    this.clearJobTimers(job, keepHardTimer);
     if (job.settled) return;
     job.settled = true;
-    if (job.timer) clearTimeout(job.timer);
     job.reject(error);
   }
 
@@ -502,10 +615,12 @@ export class EquityWorkerPool {
     const aborted = new EquityWorkerPoolAbortedError();
     this.rejectReadiness?.(aborted);
     this.clearReadinessWaiters();
+    this.cancelRespawnTimers();
     for (const job of this.queue.splice(0)) this.rejectJob(job, aborted);
     const terminations: Promise<number>[] = [];
     for (const slot of this.slots) {
       slot.down = true;
+      this.clearSlotReadyTimer(slot);
       if (slot.job) this.rejectJob(slot.job, aborted);
       terminations.push(slot.worker.terminate().catch(() => 0));
     }
@@ -532,6 +647,9 @@ export function equityWorkerPoolStatus(): EquityWorkerPoolStatus {
   return (
     pool?.status() ?? {
       phase: 'idle',
+      routingReady: false,
+      acceptingWork: false,
+      recoveryInFlight: false,
       configuredWorkers: 0,
       readyWorkers: 0,
       busyWorkers: 0,

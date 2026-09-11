@@ -1,3 +1,10 @@
+-- FILE VERSION CORRECTED 2026-09-11: this was named 20260911153610, a version
+-- I typed rather than read back. Production stamped 20260911153539. That is the
+-- same drift CLAUDE.md 4.5 exists to stop, and it is invisible to
+-- `check-migrations-applied` here because this migration declares no OBJECT -
+-- only a COMMENT - so the guard has nothing to look for. Read the stamp; never
+-- guess it.
+--
 -- The COMMENT installed by 20260911153422 named migration 20260911153245 - the
 -- version `reserve-migration-version.sh` handed me. The management API stamps
 -- its OWN timestamp at apply time, so what actually landed was 20260911153422,

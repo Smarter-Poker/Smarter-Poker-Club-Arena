@@ -1,9 +1,9 @@
 {
   "status": "passed",
   "case": "D9-cash-completion",
-  "runtime": "/tmp/ca-e2-owned-s_ewq2rd/rehearsal",
-  "modernRuntime": "/tmp/ca-e2-owned-s_ewq2rd/modern-regression",
-  "manifestSha256": "54ad4a87627b8a138837a81af95ffe860583da06668ecddca247f3d08174b394",
+  "runtime": "/tmp/ca-e2-owned-lbgdb6sb/rehearsal",
+  "modernRuntime": "/tmp/ca-e2-owned-lbgdb6sb/modern-regression",
+  "manifestSha256": "4423d1943c08ce14c9af0a19ff3da0ef52f4eed5f43cad8914323ad1ec176169",
   "cashCompleted": 21,
   "cohort28Remaining": 7,
   "satelliteHistoricalEconomicsOutstanding": 3,
@@ -12,5 +12,6 @@
   "broaderCohortAdditionalUnfinished": 11,
   "broaderCohortAdditionalPaidHistory": 1,
   "productionWrites": 0,
-  "privateAclDriftRefused": true
+  "privateAclDriftRefused": true,
+  "placePayerAclDriftRefused": true
 }

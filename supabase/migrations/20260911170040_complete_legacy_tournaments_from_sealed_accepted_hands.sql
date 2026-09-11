@@ -14,6 +14,9 @@ BEGIN
  OR md5((SELECT prosrc FROM pg_proc WHERE oid='public.fn_ca_legacy_tournament_finish_witness(uuid)'::regprocedure))<>'3c525ec1bccfe36fe4306b3a62e33e60' THEN
   RAISE EXCEPTION 'legacy accepted-source prerequisite differs'; END IF;
  IF md5((SELECT prosrc FROM pg_proc WHERE oid='public.fn_settle_tournament_places(uuid,uuid)'::regprocedure)) IS DISTINCT FROM '473f67cf3949b938f5277c89fb64edef' THEN RAISE EXCEPTION 'legacy integration source differs: fn_settle_tournament_places(uuid,uuid)'; END IF;
+ IF EXISTS(SELECT 1 FROM pg_proc WHERE oid='public.fn_settle_tournament_places(uuid,uuid)'::regprocedure
+  AND (proowner IS DISTINCT FROM 'postgres'::regrole OR proacl IS DISTINCT FROM ARRAY['postgres=X/postgres','service_role=X/postgres']::aclitem[])) THEN
+  RAISE EXCEPTION 'legacy place settlement permission prerequisite differs'; END IF;
  IF md5((SELECT prosrc FROM pg_proc WHERE oid='public.fn_refuse_new_entries_while_frozen()'::regprocedure)) IS DISTINCT FROM 'd21668d1254e1bdb49661f6365fd9cfc' THEN RAISE EXCEPTION 'legacy integration source differs: fn_refuse_new_entries_while_frozen()'; END IF;
  IF md5((SELECT prosrc FROM pg_proc WHERE oid='public.fn_ca_verify_terminal_place_batch(uuid,boolean)'::regprocedure)) IS DISTINCT FROM '8be8c827e64ac853a562e294cd25735b' THEN RAISE EXCEPTION 'legacy integration source differs: fn_ca_verify_terminal_place_batch(uuid,boolean)'; END IF;
  IF EXISTS(SELECT 1 FROM pg_proc WHERE oid='public.fn_ca_verify_terminal_place_batch(uuid,boolean)'::regprocedure
@@ -1527,4 +1530,5 @@ END $legacy_patch$;
 -- This body replacement preserves its existing private caller contract. The
 -- prerequisite above refuses ACL drift instead of silently removing a grant.
 REVOKE ALL ON FUNCTION public.fn_ca_verify_terminal_place_batch(uuid,boolean) FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON FUNCTION public.fn_settle_tournament_places(uuid,uuid) FROM PUBLIC,anon,authenticated;
 COMMIT;

@@ -4,7 +4,7 @@ from pathlib import Path
 import hashlib,subprocess,sys,tarfile,tempfile
 base=Path(__file__).resolve().parent
 archive=base/'fixtures/d9-cash-completion-20260911.tar.gz'
-assert hashlib.sha256(archive.read_bytes()).hexdigest()=='1c7ca4dc0574a4c8014e5cc7be2f6fa9295a30f0a6dc7728df5d28e9d1442479'
+assert hashlib.sha256(archive.read_bytes()).hexdigest()=='347d9dd85b3a02214bf0209f9f5f0d2861654771f6f833f2d2356f7a7904af39'
 out=Path(tempfile.mkdtemp(prefix='ca-d9-completion-',dir='/tmp'))
 with tarfile.open(archive) as source:
  for member in source.getmembers():

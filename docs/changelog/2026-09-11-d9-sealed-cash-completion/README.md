@@ -18,8 +18,8 @@ Modern regression: the genuine E2 fixture with its original11 hypothetical futur
 
 Satellite scope remains distinct:3 source/target contract histories prove a20 entry promise plus8.50 remainder from each28.50 pool, but all3 lack original economic and entry-close receipts. Current target terms or a late start-trigger snapshot are not used as substitutes. Their completion is refused before any seal, status repair or payout while the separate reconstruction boundary is developed.
 
-Migration SHA256 `ce144d81c28fa1484435f77ae5dbccbb72b021edfe28602f826e26f6839f2796`. Archive SHA256 `1c7ca4dc0574a4c8014e5cc7be2f6fa9295a30f0a6dc7728df5d28e9d1442479`. Manifest SHA256 `54ad4a87627b8a138837a81af95ffe860583da06668ecddca247f3d08174b394`.
+Migration SHA256 `efe4f05fbabb807ec637d13234543b6d043eda96ad8608d74d8acbcfdd8c8b1d`. Archive SHA256 `347d9dd85b3a02214bf0209f9f5f0d2861654771f6f833f2d2356f7a7904af39`. Manifest SHA256 `4423d1943c08ce14c9af0a19ff3da0ef52f4eed5f43cad8914323ad1ec176169`.
 
-The terminal verifier explicitly retains its existing postgres-only execution contract. Migration preflight refuses permission drift before any source or accounting change; native validation added an authenticated grant, observed that refusal and complete rollback, restored the original ACL, then repeated all cash and modern E2 checks.
+The terminal verifier explicitly retains its existing postgres-only execution contract, and the ordinary place payer retains its exact postgres/service_role contract. Migration preflight refuses permission drift before any source or accounting change. Two native probes separately added an authenticated grant to each function, observed refusal and complete rollback, restored the original ACL, then repeated all cash and modern E2 checks. The explicit revokes preserve those observed permissions while making the security declarations inspectable by the normal static gate.
 
 No production writes, wakes or World Hub edits were performed.

@@ -13,6 +13,16 @@ spec.loader.exec_module(m)
 
 
 class NativeDiagnosticsTests(unittest.TestCase):
+    def test_auth_diagnostics_accept_only_fixed_stages_and_http_status(self):
+        row = {'status':'failed', 'stage':'gotrue-real-mfa-enrollment', 'error':'Error',
+               'auth_stage':'mfa-verify', 'auth_http_status':422}
+        self.assertEqual(m.native_failures(json.dumps(row)), [{
+            'stage':row['stage'], 'category':'Error', 'auth_stage':'mfa-verify', 'auth_http_status':422}])
+        for invalid in [99, 600, '422', True, None, [], 400.5]:
+            self.assertEqual(m.native_failures(json.dumps({**row, 'auth_http_status':invalid})), [])
+        for invalid in ['PRIVATE TOKEN', 'mfa-verify\n', True, None, []]:
+            self.assertEqual(m.native_failures(json.dumps({**row, 'auth_stage':invalid})), [])
+
     def test_native_command_diagnostics_are_strict_and_bounded(self):
         row = {'status': 'failed', 'stage': 'gotrue-migrate-command', 'error': 'Error',
                'exit_code': 1, 'command_phase': 'auth-connect', 'command_sqlstate': '42501'}

@@ -2,6 +2,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import http from 'node:http';
+import { once } from 'node:events';
+import { nativeFailureDiagnostic } from '../../operations/release/fixture/runtime-files.mjs';
 import {
   assertFixtureAuthVersion,
   browserStorage,
@@ -11,6 +14,44 @@ import {
   totp,
   verifyFixtureToken,
 } from '../../operations/release/fixture/auth-fixture.mjs';
+
+for (const [status, payload, expected] of [
+  [403, { message: 'PRIVATE SERVICE VALUE' }, { auth_stage: 'mfa-enroll', auth_http_status: 403 }],
+  [200, { id: 'PRIVATE FACTOR VALUE' }, { auth_stage: 'mfa-factor-id' }],
+]) {
+  test(`native HTTP ${status} MFA failure exposes only the fixed step and status`, async () => {
+    const server = http.createServer((request, response) => {
+      request.resume();
+      response.writeHead(status, { 'content-type': 'application/json' });
+      response.end(JSON.stringify(payload));
+    });
+    server.listen(0, '127.0.0.1');
+    await once(server, 'listening');
+    try {
+      const secret = fixtureSecrets();
+      const api = fixtureAuth({ endpoint: `http://127.0.0.1:${server.address().port}`, ...secret });
+      await assert.rejects(
+        api.enrollMfa({
+          id: '90000000-0000-4000-8000-000000000001',
+          session: { access_token: 'PRIVATE ACCESS TOKEN' },
+        }),
+        (error) => {
+          assert.deepEqual(nativeFailureDiagnostic('gotrue-real-mfa-enrollment', error), {
+            status: 'failed',
+            stage: 'gotrue-real-mfa-enrollment',
+            error: 'Error',
+            ...expected,
+          });
+          assert.ok(!String(error.stack).includes('PRIVATE'));
+          return true;
+        }
+      );
+    } finally {
+      server.closeAllConnections();
+      await new Promise((resolve) => server.close(resolve));
+    }
+  });
+}
 
 test('accepts the pinned native GoTrue version output and refuses changed binaries', () => {
   // Captured from the actual successful Linux image build at 799eebf49d.

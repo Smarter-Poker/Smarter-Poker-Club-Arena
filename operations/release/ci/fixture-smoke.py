@@ -61,6 +61,14 @@ def native_failures(output):
         native_line = row.pop('native_line', None)
         if has_native_line and (type(native_line) is not int or not 1 <= native_line <= 9999):
             continue
+        auth = {key: row.pop(key) for key in ('auth_stage', 'auth_http_status') if key in row}
+        if ('auth_stage' in auth and (not isinstance(auth['auth_stage'], str)
+                or auth['auth_stage'] not in {'mfa-enroll', 'mfa-factor-id', 'mfa-challenge',
+                    'mfa-challenge-id', 'mfa-totp', 'mfa-verify', 'mfa-session'})):
+            continue
+        if ('auth_http_status' in auth and (type(auth['auth_http_status']) is not int
+                or not 100 <= auth['auth_http_status'] <= 599)):
+            continue
         if (set(row) == {'status', 'stage', 'error'} and isinstance(row['error'], str)
                 and row['error'] in NATIVE_ERROR_NAMES):
             record = {'stage': row['stage'], 'category': row['error']}
@@ -102,6 +110,7 @@ def native_failures(output):
             continue
         if native_line is not None:
             record['native_line'] = native_line
+        record.update(auth)
         if record not in records:
             records.append(record)
     return records

@@ -106,7 +106,12 @@ export function fixtureAuth({ endpoint = 'http://127.0.0.1:9999', serviceKey, jw
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(10000),
     });
-    assert.ok(response.ok, `local auth refused HTTP ${response.status}`);
+    if (!response.ok) {
+      await response.body?.cancel();
+      const failure = new Error('fixture Auth request refused');
+      failure.auth_http_status = response.status;
+      throw failure;
+    }
     const text = await response.text();
     assert.ok(text.length <= 128 * 1024, 'local auth response too large');
     return JSON.parse(text);
@@ -148,20 +153,36 @@ export function fixtureAuth({ endpoint = 'http://127.0.0.1:9999', serviceKey, jw
     },
     async enrollMfa(user) {
       const token = user.session.access_token;
-      const factor = await request(
-        '/factors',
-        { factor_type: 'totp', friendly_name: 'component-fixture', issuer: 'component-fixture' },
-        token
-      );
-      assert.match(factor.id, uuid);
-      const challenge = await request(`/factors/${factor.id}/challenge`, {}, token);
-      assert.match(challenge.id, uuid);
-      const session = await request(
-        `/factors/${factor.id}/verify`,
-        { challenge_id: challenge.id, code: totp(factor.totp.secret) },
-        token
-      );
-      return { ...user, session: validateSession(session, user.id, 'aal2') };
+      let stage = 'mfa-enroll';
+      try {
+        const factor = await request(
+          '/factors',
+          { factor_type: 'totp', friendly_name: 'component-fixture', issuer: 'component-fixture' },
+          token
+        );
+        stage = 'mfa-factor-id';
+        assert.match(factor.id, uuid);
+        stage = 'mfa-challenge';
+        const challenge = await request(`/factors/${factor.id}/challenge`, {}, token);
+        stage = 'mfa-challenge-id';
+        assert.match(challenge.id, uuid);
+        stage = 'mfa-totp';
+        const code = totp(factor.totp.secret);
+        stage = 'mfa-verify';
+        const session = await request(
+          `/factors/${factor.id}/verify`,
+          { challenge_id: challenge.id, code },
+          token
+        );
+        stage = 'mfa-session';
+        return { ...user, session: validateSession(session, user.id, 'aal2') };
+      } catch (error) {
+        const failure = new Error('fixture MFA refused');
+        failure.auth_stage = stage;
+        if (Number.isInteger(error?.auth_http_status))
+          failure.auth_http_status = error.auth_http_status;
+        throw failure;
+      }
     },
   };
 }

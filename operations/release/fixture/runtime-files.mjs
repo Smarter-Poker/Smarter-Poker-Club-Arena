@@ -29,6 +29,24 @@ export function nativeFailureDiagnostic(stage, error) {
       : null;
   if (frame) record.native_line = Number(frame[1]);
   if (
+    new Set([
+      'mfa-enroll',
+      'mfa-factor-id',
+      'mfa-challenge',
+      'mfa-challenge-id',
+      'mfa-totp',
+      'mfa-verify',
+      'mfa-session',
+    ]).has(error?.auth_stage)
+  )
+    record.auth_stage = error.auth_stage;
+  if (
+    Number.isInteger(error?.auth_http_status) &&
+    error.auth_http_status >= 100 &&
+    error.auth_http_status <= 599
+  )
+    record.auth_http_status = error.auth_http_status;
+  if (
     record.error === 'Error' &&
     Number.isInteger(error?.code) &&
     error.code >= 1 &&

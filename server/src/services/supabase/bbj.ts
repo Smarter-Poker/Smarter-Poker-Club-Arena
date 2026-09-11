@@ -339,8 +339,48 @@ export async function processBBJPayout(
       `[processBBJPayout] deferring ${params.kind === 'mini' ? 'mini ' : ''}jackpot for ` +
         `${params.tableId}#${params.handNumber}: ${reason}`
     );
-    if (owned) {
-      await queueSafely(() => bbjPayoutQueue!.claim(params, `deferred: ${reason}`), 'claim');
+    /* THE DEFERRAL IS ONLY SAFE IF THE RECORD LANDED.
+       The first cut of this gate called `claim` and threw the answer away,
+       which made it the one `queued` return in this function that could leave
+       NOTHING behind. The failure it misses is not exotic - it is Postgres
+       being unreachable while the flag is set, which is the outage shape this
+       queue exists for - and the cost is the whole parameter set: the table is
+       told "your jackpot is coming" by the pending event, and nothing anywhere
+       knows who was dealt in, who took the beat, or which tier it was.
+       So the claim's answer is read. Both attempts, because the write-ahead
+       above can fail for the same reason and this is its second chance. */
+    /* The claim is made even when the write-ahead already confirmed, and NOT
+       short-circuited past it: `queueUnpaidBBJPayout` refreshes `last_error`
+       on its own open row, so this is what turns the note from "detected,
+       payout not yet attempted" into "deferred for the break". An operator
+       reading the queue during a break should see why a jackpot is sitting
+       there, not a stale note that makes it look stuck. */
+    const deferralNoted =
+      options.fromQueue === true
+        ? true // the reconciler owns the row; it is on disk by definition
+        : await queueSafely(() => bbjPayoutQueue!.claim(params, `deferred: ${reason}`), 'claim');
+    const deferralRecorded = claimConfirmed || deferralNoted;
+
+    if (!deferralRecorded) {
+      /* Loud, and carrying everything needed to re-drive by hand - the same
+         payload the exhausted path raises. This is NOT the alarm-that-is-
+         always-on that the gate exists to avoid: it fires only when the
+         durable write failed, never on an ordinary break. */
+      const detail =
+        `[BBJ] Jackpot DEFERRED for the maintenance break with NO durable claim ` +
+        `(table ${params.tableId} hand #${params.handNumber}, club ${params.clubId}, ` +
+        `bad beat ${params.loserUserId} with ${params.loserHandName} beaten by ` +
+        `${params.winnerUserId} with ${params.winnerHandName}, ` +
+        `${params.dealtInPlayerIds.length} dealt in, ` +
+        `${params.kind === 'mini' ? `Mini tier ${params.tierId}` : `${params.payoutTotalPercent}% of main`}). ` +
+        `The platform is frozen so it was not paid, and the queue write did not confirm, ` +
+        `so nothing will re-drive it. The jackpot RPC is idempotent on (pool, table, hand).`;
+      reportError(new Error(detail), 'processBBJPayout.frozen_without_a_claim');
+      await raiseFinancialAlert('critical', 'processBBJPayout.frozen_without_a_claim', detail, {
+        ...params,
+        frozen: true,
+        queued: false,
+      });
     }
     return { status: 'queued', lastError: reason };
   }

@@ -565,6 +565,34 @@ export async function reconcilePendingFees(): Promise<{
   if (rows.length === 0) return summary;
 
   for (const row of rows) {
+    /* ═══════════════════════════════════════════════════════════════════════
+       THE SWEEP CHECKS THE FREEZE, FOR EVERY KIND (section 13 rule 5, 2026-09-11)
+       ═══════════════════════════════════════════════════════════════════════
+
+       Every row this loop re-drives moves money: `bbj_payout` credits seats,
+       `rake` calls `atomic_distribute_rake`, and the fall-through banks a BBJ
+       drop through `logBBJCollection`. Dan, section 13: "NO CHIP MOVEMENTS."
+
+       The first cut of this check gated only the jackpot branch, on the
+       reasoning that jackpots were what this programme was about. That left
+       the other two moving money through the break, and made the check's own
+       justification false: it is here so that a caller which forgets to gate
+       the cycle cannot slip money through, and two thirds of the money was
+       still slipping. `GameServer` does return early while frozen, but the
+       cycle is sized to run "comfortably under a minute of sequential RPCs" -
+       a freeze that begins MID-cycle is exactly the case a caller-level gate
+       cannot cover, and exactly the case this one is for.
+
+       The row is left completely untouched rather than attempted and failed:
+       bumping its attempt counter and writing a failure message would read in
+       the log as work that failed, when what happened is a break we scheduled.
+       It is also checked FIRST, before the `hand_history` resolution below,
+       so a deferred row costs no reads either. */
+    if (isMaintenanceFrozen()) {
+      summary.deferredFrozen++;
+      continue;
+    }
+
     let ok = false;
     let failureMessage = '';
     /* A jackpot that landed from the durable fee queue rather than live. The table is told
@@ -627,17 +655,6 @@ export async function reconcilePendingFees(): Promise<{
           typeof receipt.rake_record_id === 'string' &&
           receipt.rake_record_id.trim() !== '';
         failureMessage = rdErr?.message ?? (ok ? '' : 'Rake banking receipt was not confirmed');
-      } else if (row.kind === 'bbj_payout' && isMaintenanceFrozen()) {
-        /* THE SWEEP CHECKS THE FREEZE (section 13 rule 5, added 2026-09-11).
-           Re-driving a jackpot credits a seat, which is a chip movement, and
-           the platform is stopped. `processBBJPayout` refuses it too - one
-           gate covering both callers - but it would do so by BUMPING this
-           row's attempt counter and writing a failure message, which reads in
-           the log as a payout that failed rather than a break we scheduled.
-           The row is left untouched and the next cycle after the thaw takes
-           it, which is the difference between deferred and failed. */
-        summary.deferredFrozen++;
-        continue;
       } else if (row.kind === 'bbj_payout') {
         // BBJ AUDIT 2026-09-05: re-drive a jackpot payout the live path could
         // not land. The parameter set was frozen at hit time (who was dealt

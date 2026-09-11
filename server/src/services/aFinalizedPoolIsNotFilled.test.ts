@@ -26,7 +26,7 @@
  * Plus the picker's booking horizon (30 min) disagreeing with the trigger's
  * (60 min): pinned in HorseConcurrency.test.ts.
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -94,7 +94,7 @@ describe('1. a finalized prize pool is not filled', () => {
   const TABLE = 'bbbbbbbb-0000-4000-8000-000000000001';
   let svc: TournamentRecurringService;
   let pick: ReturnType<typeof vi.spyOn>;
-  let warn: ReturnType<typeof vi.spyOn>;
+  let warn: MockInstance<typeof console.warn>;
 
   beforeEach(() => {
     rpcMock.mockReset();

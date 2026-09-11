@@ -9,7 +9,7 @@ vi.mock('./client.js', () => ({
 }));
 vi.mock('../errorReporter.js', () => ({ reportError: vi.fn() }));
 vi.mock('../financialAlerts.js', () => ({ raiseFinancialAlert: vi.fn() }));
-import { processBBJPayout, setBBJPayoutQueue } from './bbj.js';
+import { processBBJPayout, setBBJPayoutQueue, type BBJPayoutQueue } from './bbj.js';
 
 const params = {
   tableId: 'table-1',
@@ -26,7 +26,7 @@ const params = {
 type Row = Record<string, unknown>;
 let rows: Record<string, Row[]>;
 let errors: Record<string, string>;
-let settle: ReturnType<typeof vi.fn>;
+let settle: ReturnType<typeof vi.fn<BBJPayoutQueue['settle']>>;
 beforeEach(() => {
   vi.clearAllMocks();
   rows = {
@@ -39,7 +39,7 @@ beforeEach(() => {
     bbj_payouts: [],
   };
   errors = {};
-  settle = vi.fn();
+  settle = vi.fn<BBJPayoutQueue['settle']>();
   setBBJPayoutQueue({ claim: vi.fn(), settle });
   from.mockImplementation((name: string) => {
     const filters: Array<[string, unknown]> = [];

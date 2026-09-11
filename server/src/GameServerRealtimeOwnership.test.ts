@@ -27,7 +27,7 @@ let GameServer: typeof import('./GameServer.js').GameServer;
 let supabase: typeof import('./services/supabase/client.js').supabase;
 let channels: Channel[];
 let server: any;
-let requestSweep: ReturnType<typeof vi.fn>;
+let requestSweep: ReturnType<typeof vi.fn<(reason?: string) => void>>;
 let serviceCalls: Array<ReturnType<typeof currentTournamentDataAuthority>>;
 
 beforeAll(async () => {

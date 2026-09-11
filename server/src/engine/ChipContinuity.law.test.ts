@@ -32,6 +32,7 @@ import {
   isLeaveLocked,
   leaveLabel,
   stayRemainingMs,
+  type ChipContinuityDeps,
 } from './ChipContinuity.js';
 import { blankNonCode, sliceMethod } from '../testHelpers/sourceWindow.js';
 import type { CashSessionRow } from '../services/supabase/cashSessions.js';
@@ -90,7 +91,11 @@ describe('the stay clock the engine renders is the one the database keeps', () =
 });
 
 describe('the tracker reports transitions and renders answers', () => {
-  const make = (evaluate = vi.fn(async () => [] as any[]), frozen = false, cash = true) =>
+  const make = (
+    evaluate: ChipContinuityDeps['evaluate'] = vi.fn(async () => []),
+    frozen = false,
+    cash = true
+  ) =>
     new ChipContinuityTracker({
       tableId: 't1',
       isCash: () => cash,

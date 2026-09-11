@@ -1,0 +1,3 @@
+# tests/a-seat-exit-guard-needs-its-consumer.law.test.ts
+
+The seat-exit authority close raises "left N live seat(s) unconsumed" only while its one consumer, the trigger zy_tournament_live_seat_exit_requires_authority on table_seats, exists and is enabled. Production has never had that trigger. From 05:05 UTC on 2026-09-11 a wrapper that required consumption on success refused every tournament finish with a seated winner (532 refusals in 75 minutes, each replayed under the global settlement lock) until 20260911081910 made the raise conditional on the consumer. The law pins that the newest definition of the close keeps that condition before its single RAISE, and still deletes the rows and clears the session scope first.

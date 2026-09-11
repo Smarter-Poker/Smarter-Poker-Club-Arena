@@ -112,10 +112,7 @@ on:
   # A dispatch - by hand, or by a run handing the train on - is subject to the
   # same break gate and maintenance certificate as a push.
   # There is deliberately no force input: neither a human nor automation may
-  # bypass readyForRestart and stop a live table engine. The one exception is
-  # not an input either: FROZEN_BUILD_OVERRIDE (job env, below) names ONE
-  # outgoing build, approved by Dan, that can never certify its own
-  # replacement, and it expires on its own.
+  # bypass readyForRestart and stop a live table engine.
   workflow_dispatch:
     inputs:
       ref_sha:
@@ -243,38 +240,6 @@ jobs:
       REPO_DIR: /opt/club-arena
       ENGINE_URL: https://engine.smarter.poker
       SHA: ${{ github.event.inputs.ref_sha || github.sha }}
-      # ── ONE BUILD THAT CAN NEVER CERTIFY ITS OWN REPLACEMENT ─────────────
-      #
-      # Dan, 2026-09-11 05:22 UTC, choosing option 1 of 2: a one-time
-      # override bound to exactly one broken build. ("2" was: hold, and let
-      # the fix land only when this process dies of something else.)
-      #
-      # 404948b3 captured one tournament's data authority in the process-wide
-      # deadline clock when it booted at 01:56 (fixed by #4225). Every
-      # deadline of every OTHER tournament throws, so those tables freeze
-      # mid-hand and the zombie reaper voids and rebuilds them every ~183s.
-      # A table frozen mid-hand never parks, so this build can never open
-      # readyForRestart: 514, 526 and 523 tables stayed unparked through the
-      # 02:55, 03:55 and 04:55 countdowns (engine_maintenance_break_log, and
-      # peak == count at countdown each time: not one of them landed). The
-      # gate is right to refuse a restart over a live hand. These hands are
-      # not live - the engine voids every one of them itself minutes after
-      # the thaw, horse or human alike (CLAUDE.md 10.5).
-      #
-      # Scope, re-proved on the host under the engine lock before anything
-      # is touched:
-      #   * the serving /health.version is EXACTLY this build;
-      #   * every other clause of the certificate still holds: the engine is
-      #     running, the break is active, counting_down and durable, and at
-      #     least 180s remain;
-      #   * it waits until 235s remain, so every hand that CAN finish has had
-      #     the whole last-hand warning plus a minute of countdown to land;
-      #   * it is dead after FROZEN_BUILD_OVERRIDE_UNTIL, and dead the moment
-      #     any other build serves. It is not an input: no dispatch, human or
-      #     automated, can name a build.
-      # Remove both lines once production has moved off 404948b3.
-      FROZEN_BUILD_OVERRIDE: '404948b3'
-      FROZEN_BUILD_OVERRIDE_UNTIL: '2026-09-11T12:00:00Z'
 
     steps:
       - name: Checkout the exact commit being deployed
@@ -939,17 +904,6 @@ jobs:
           # would then be killed mid-flight.
           GATE_DEADLINE=$(( $(date -u +%s) + SECS_TO_GATE + 90 ))
           READY=no
-          # The one owner-approved exception (job env FROZEN_BUILD_OVERRIDE).
-          # Inert unless it names one exact build and is inside its expiry.
-          FROZEN=""
-          FROZEN_CUT=no
-          if [ -n "${FROZEN_BUILD_OVERRIDE:-}" ] && [ -n "${FROZEN_BUILD_OVERRIDE_UNTIL:-}" ]; then
-            UNTIL_EPOCH=$(date -u -d "$FROZEN_BUILD_OVERRIDE_UNTIL" +%s 2>/dev/null || echo 0)
-            if [[ "$FROZEN_BUILD_OVERRIDE" =~ ^[0-9a-f]{8}$ ]] && [ "$(date -u +%s)" -lt "$UNTIL_EPOCH" ]; then
-              FROZEN="$FROZEN_BUILD_OVERRIDE"
-              echo "break gate: the frozen-build exception is armed for $FROZEN until $FROZEN_BUILD_OVERRIDE_UNTIL"
-            fi
-          fi
           for i in $(seq 1 $ATTEMPTS); do
             [ "$(date -u +%s)" -ge "$GATE_DEADLINE" ] && { echo "attempt $i/$ATTEMPTS: the gate deadline passed"; break; }
             BODY=$(curl -sf --max-time 10 "$ENGINE_URL/health" 2>/dev/null || echo "")
@@ -958,22 +912,6 @@ jobs:
             # remains for a graceful stop. Missing/legacy/straggler states are
             # not alternate authority paths.
             STATE=$(echo "$BODY" | python3 -c 'import json,sys; d=json.load(sys.stdin); m=d.get("maintenance"); ok=isinstance(m,dict) and m.get("active") is True and m.get("phase")=="counting_down" and m.get("durableConfirmed") is True and m.get("readyForRestart") is True and m.get("unparkedTables")==0 and int(m.get("remainingMs") or 0)>=180000; print("READY" if ok else "active=%s phase=%s durable=%s remaining=%ss unparked=%s ready=%s" % ((m or {}).get("active"), (m or {}).get("phase"), (m or {}).get("durableConfirmed"), int(((m or {}).get("remainingMs") or 0)/1000), (m or {}).get("unparkedTables"), (m or {}).get("readyForRestart")))' 2>/dev/null || echo ERR)
-            if [ "$STATE" != "READY" ] && [ "$STATE" != "ERR" ] && [ -n "$FROZEN" ]; then
-              # Everything the certificate asks except the parked count, from
-              # an engine that is EXACTLY the frozen build. CUT only inside
-              # 200-235s remaining: late enough that every hand that can land
-              # has landed, early enough that the host's own >=180s re-check
-              # still passes.
-              FROZEN_STATE=$(echo "$BODY" | FROZEN="$FROZEN" python3 -c 'import json,os,sys; d=json.load(sys.stdin); m=d.get("maintenance"); f=os.environ["FROZEN"]; base=str(d.get("version") or "")==f and d.get("running") is True and isinstance(m,dict) and m.get("active") is True and m.get("phase")=="counting_down" and m.get("durableConfirmed") is True; rem=int((m or {}).get("remainingMs") or 0); print((("CUT" if 200000<=rem<=235000 else ("WAIT" if rem>235000 else "LATE")) if base else "NO") + " %d %s" % (rem//1000, (m or {}).get("unparkedTables")))' 2>/dev/null || echo "NO 0 ?")
-              read -r FROZEN_VERDICT FROZEN_REMAINING FROZEN_UNPARKED <<< "$FROZEN_STATE"
-              if [ "$FROZEN_VERDICT" = "CUT" ]; then
-                READY=yes; FROZEN_CUT=yes
-                echo "attempt $i/$ATTEMPTS: production serves the frozen build $FROZEN; the break is durable and counting down with ${FROZEN_REMAINING}s left and ${FROZEN_UNPARKED} frozen table(s) unparked — cutting over under the owner-approved exception"
-                echo "::warning title=FROZEN-BUILD OVERRIDE::Production serves $FROZEN, the one build Dan approved replacing without a readyForRestart certificate (2026-09-11): it cannot park its frozen tables, so it can never certify. The break is active, durable and counting down with ${FROZEN_REMAINING}s left; ${FROZEN_UNPARKED} frozen table(s) never parked. Cutting over."
-                break
-              fi
-              [ "$FROZEN_VERDICT" = "WAIT" ] && STATE="$STATE (frozen build $FROZEN: the exception cuts over at 235s remaining)"
-            fi
             case "$STATE" in
               READY)  READY=yes; echo "attempt $i/$ATTEMPTS: break is running and every table is parked — restarting now"; break ;;
               ERR)    echo "attempt $i/$ATTEMPTS: /health unreadable — retrying" ;;
@@ -982,10 +920,7 @@ jobs:
             sleep 15
           done
 
-          if [ "$READY" = "yes" ]; then
-            [ "$FROZEN_CUT" = "yes" ] && echo "frozen_override=true" >> $GITHUB_OUTPUT
-            exit 0
-          fi
+          if [ "$READY" = "yes" ]; then exit 0; fi
 
           # FAILS CLOSED, and it can afford to. A missed window costs at most
           # one hour of slightly older code; restarting outside the break puts
@@ -1024,9 +959,6 @@ jobs:
             echo "::error::rollback_reason is invalid unless rollback=true"
             exit 1
           fi
-          if [ "$MODE" = deploy ] && [ "${{ steps.drain.outputs.frozen_override }}" = "true" ]; then
-            REASON="owner-approved one-time replacement of frozen build ${FROZEN_BUILD_OVERRIDE} (Dan 2026-09-11): its frozen tables can never park, so it can never certify"
-          fi
           REASON_B64=$(printf '%s' "$REASON" | base64 | tr -d '\n')
           TOKEN=$(~/hssh "
             set -e
@@ -1060,24 +992,13 @@ jobs:
           # is allowed to replace the untouched serving container.
           MUTATION_MARKER=__SP_CUTOVER_MUTATION_AUTHORIZED__
           IDENTITY_MARKER=__SP_CUTOVER_IDENTITY__
-          # The frozen-build exception is re-proved HERE, under the host's
-          # engine lock: the drain step must have chosen it, and the engine
-          # answering on localhost must still be that exact build with every
-          # other clause of the certificate intact. Otherwise it is empty and
-          # the locked check below is the full certificate, unchanged.
-          FROZEN=""
-          if [ "${{ steps.drain.outputs.frozen_override }}" = "true" ]; then
-            FROZEN="${FROZEN_BUILD_OVERRIDE:-}"
-            [[ "$FROZEN" =~ ^[0-9a-f]{8}$ ]] \
-              || { echo "::error::the frozen-build exception names no exact build"; exit 1; }
-          fi
           set +e
           CUTOVER_LOG=$(~/hssh "
             set -euo pipefail
             exec 9>/var/lock/club-arena-engine-up.lock
             flock -w 30 9
             BODY=\$(curl -sf --max-time 10 http://127.0.0.1:8080/health)
-            printf '%s' \"\$BODY\" | python3 -c 'import json,sys; d=json.load(sys.stdin); m=d.get(\"maintenance\"); base=d.get(\"running\") is True and isinstance(m,dict) and m.get(\"active\") is True and m.get(\"phase\")==\"counting_down\" and m.get(\"durableConfirmed\") is True and int(m.get(\"remainingMs\") or 0)>=180000; ok=base and m.get(\"readyForRestart\") is True and m.get(\"unparkedTables\")==0; frozen=base and len(\"$FROZEN\")==8 and str(d.get(\"version\") or \"\")==\"$FROZEN\"; sys.exit(0 if (ok or frozen) else 75)'
+            printf '%s' \"\$BODY\" | python3 -c 'import json,sys; d=json.load(sys.stdin); m=d.get(\"maintenance\"); ok=d.get(\"running\") is True and isinstance(m,dict) and m.get(\"active\") is True and m.get(\"phase\")==\"counting_down\" and m.get(\"durableConfirmed\") is True and m.get(\"readyForRestart\") is True and m.get(\"unparkedTables\")==0 and int(m.get(\"remainingMs\") or 0)>=180000; sys.exit(0 if ok else 75)'
             echo '$MUTATION_MARKER'
             # The stock autoheal sidecar is intentionally not release-aware.
             # Fence it before a pending candidate exists; otherwise it can
@@ -1512,7 +1433,6 @@ jobs:
             echo "- Trigger: ${{ github.event_name }}"
             echo "- Deduped (already serving this commit, or we restarted it too recently): ${{ steps.dedupe.outputs.skip || 'n/a' }}"
             echo "- Deferred by the break gate: ${{ steps.drain.outputs.skip || 'n/a' }}${{ steps.drain.outputs.gate_reason && format(' — {0}', steps.drain.outputs.gate_reason) || '' }}"
-            echo "- Frozen-build exception (Dan 2026-09-11, only for ${FROZEN_BUILD_OVERRIDE:-none}): ${{ steps.drain.outputs.frozen_override == 'true' && 'USED - the outgoing build could not certify' || 'not used' }}"
             echo "- Image: ${{ steps.image.outputs.reused == 'true' && 'reused the staged build' || steps.image.outputs.reused == 'false' && 'built by this run' || 'not reached' }}"
             echo "- Unplanned (non-deploy, non-break) restart seen: ${{ steps.dedupe.outputs.unplanned_restart || 'no' }}"
             echo "- Deploying: \`$SHA\`"

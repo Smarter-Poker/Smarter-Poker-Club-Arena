@@ -36,7 +36,9 @@ structure):
 - The sweep's balance stage (and its expansion stage) is gated on the freeze.
   It skipped, the sweep completed, and nothing ever asked again: neither
   `MaintenanceBreak.end()` nor `resumeFromBreak()` requests a sweep.
-- The same thing happened at 08:55 and 10:55. Between restarts the one
+- The same thing happened at 08:55 and 10:55, and again at 11:56 while this
+  was being written: all 57 logged `BREAK ENDED` at 12:00:03 and none of them
+  balanced, while live events balanced normally. Between restarts the one
   non-frozen adoption (01:31) did try to break tables and was refused by the
   seat-exit guard (`Table break ... incomplete - 0/1 moved`), fixed at 08:22.
 

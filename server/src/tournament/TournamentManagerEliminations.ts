@@ -205,7 +205,8 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
    * holding exactly one funded player (7d6f3d3b: 43 players on 43 tables;
    * 2dbc9bb6: 35 on 35), frozen since between 2026-09-10 06:40 and 09:51
    * today. Each logged `Resumed DURING a break` at 10:56, `BREAK ENDED` at
-   * 11:00:03, and then only its blind clock - level 1405 on the oldest.
+   * 11:00:03, and then only its blind clock (5e1f17e4 at level 251 of a
+   * 40-level structure) - and did exactly the same after the 11:56 restart.
    *
    * So a frozen skip arms ONE pass for the thaw, per manager and per freeze.
    * It is not a poll: nothing is armed while thawed, a single-table format

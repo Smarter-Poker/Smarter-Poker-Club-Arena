@@ -12,7 +12,7 @@ permissions: {}
 
 jobs:
   detect:
-    name: Prove Whether The Server Tree Changed
+    name: Prove Whether Runtime Or Release Controls Changed
     runs-on: ubuntu-latest
     timeout-minutes: 3
     permissions:
@@ -31,37 +31,14 @@ jobs:
           ref: ${{ github.sha }}
           fetch-depth: 0
 
-      - name: Compare the complete server tree
+      - name: Classify the complete runtime and release-control change
         id: change
         env:
           AFTER_SHA: ${{ github.sha }}
           BEFORE_SHA: ${{ github.event.before }}
         run: |
           set -euo pipefail
-          [[ "$AFTER_SHA" =~ ^[0-9a-f]{40}$ ]] \
-            || { echo "::error::Protected-main push did not provide one full lowercase commit SHA."; exit 1; }
-
-          LATEST_REQUIRED=$(git log "$AFTER_SHA" -1 --format=%H -- \
-            'server/**' ':(exclude)server/**/*.test.ts' ':(exclude)server/sim/**')
-          [[ "$LATEST_REQUIRED" =~ ^[0-9a-f]{40}$ ]] \
-            || { echo "::error::Could not resolve one engine-runtime commit from protected main."; exit 1; }
-
-          RELEASE_REQUIRED=true
-          if [[ "$BEFORE_SHA" =~ ^[0-9a-f]{40}$ ]] && \
-             [ "$BEFORE_SHA" != "0000000000000000000000000000000000000000" ] && \
-             git cat-file -e "${BEFORE_SHA}^{commit}" 2>/dev/null; then
-            if git diff --quiet "$BEFORE_SHA" "$AFTER_SHA" -- \
-              'server/**' ':(exclude)server/**/*.test.ts' ':(exclude)server/sim/**'; then
-              RELEASE_REQUIRED=false
-            fi
-          else
-            echo "::notice::Previous commit is missing or unreadable; failing closed by staging the exact SHA."
-          fi
-
-          echo "release_required=$RELEASE_REQUIRED" >> "$GITHUB_OUTPUT"
-          echo "target_sha=$LATEST_REQUIRED" >> "$GITHUB_OUTPUT"
-          echo "Engine runtime release required: $RELEASE_REQUIRED"
-          echo "Exact engine component SHA: $LATEST_REQUIRED"
+          node scripts/ci/classify-engine-release.mjs | tee -a "$GITHUB_OUTPUT"
 
   signal:
     name: Dispatch The Exact Main SHA

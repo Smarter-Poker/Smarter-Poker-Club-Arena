@@ -54,6 +54,17 @@ describe('engine deployment reports what actually happened', () => {
     expect(doors).toMatch(/^ {4}needs: preflight$/m);
     expect(doors).toContain('DATABASE_URL: ${{ secrets.DATABASE_URL }}');
     expect(doors).toContain('node scripts/ci/check-engine-doors-exist.mjs');
+    expect(doors).toContain('CONTROL_SHA: ${{ github.sha }}');
+    expect(doors).toContain('TARGET_SHA: ${{ needs.preflight.outputs.target_sha }}');
+    expect(doors).toContain('ref: ${{ github.sha }}');
+    expect(doors).toContain('path: engine-target');
+    expect(doors).toContain('sparse-checkout: server/src');
+    expect(doors).toContain('ENGINE_DOORS_TARGET_ROOT: ${{ github.workspace }}/engine-target');
+    expect(doors).toContain('[ "$(git rev-parse --verify \'HEAD^{commit}\')" = "$CONTROL_SHA" ]');
+    expect(doors).toContain(
+      '[ "$(git -C engine-target rev-parse --verify \'HEAD^{commit}\')" = "$TARGET_SHA" ]'
+    );
+
     expect(doors).not.toMatch(/secrets\.HETZNER_|\bSSH_(?:USER|KEY|DIR)\b|\bHSSH\b/);
 
     expect(release).toMatch(/^ {2}deploy:/);

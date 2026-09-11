@@ -39,17 +39,19 @@
  *     build production already ran, and an emergency must not wait on this.
  *   - a name in scripts/ci/engine-doors.allowlist.json, each with a reason.
  *
- * Usage:  node scripts/ci/check-engine-doors-exist.mjs
+ * Usage:  ENGINE_DOORS_TARGET_ROOT=/exact/target node scripts/ci/check-engine-doors-exist.mjs
  * Exit:   0 all present / unreadable / rollback,  1 a door is missing
  */
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
+import { dirname, join, relative, resolve } from 'node:path';
 import process from 'node:process';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
-const ROOT = process.cwd();
+const ROOT = process.env.ENGINE_DOORS_TARGET_ROOT || process.cwd();
 const SCAN_ROOT = join(ROOT, 'server', 'src');
-const ALLOWLIST = join(ROOT, 'scripts', 'ci', 'engine-doors.allowlist.json');
+// The policy follows the executed checker, never the target's older checkout.
+const CONTROL_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
+const ALLOWLIST = join(CONTROL_ROOT, 'scripts', 'ci', 'engine-doors.allowlist.json');
 
 /** Removes // and /* *\/ comments so a JSDoc example is not a call site. */
 export function stripComments(src) {
@@ -189,7 +191,9 @@ async function main() {
   }
   const missing = names.filter((n) => !live.found.has(n) && !allow[n]);
   if (missing.length === 0) {
-    console.log(`OK - all ${names.length} database functions this build calls exist in production.`);
+    console.log(
+      `OK - all ${names.length} database functions this build calls exist in production.`
+    );
     return 0;
   }
   const level = rollback ? 'warning' : 'error';
@@ -199,7 +203,9 @@ async function main() {
     );
   }
   if (rollback) {
-    console.log('Rollback: reported, not blocked. A rollback restores a build production already ran.');
+    console.log(
+      'Rollback: reported, not blocked. A rollback restores a build production already ran.'
+    );
     return 0;
   }
   console.log(
@@ -208,12 +214,16 @@ async function main() {
   return 1;
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
+if (
+  process.argv[1] &&
+  existsSync(process.argv[1]) &&
+  import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href
+) {
   main().then(
     (code) => process.exit(code),
     (err) => {
-      console.log(`::warning title=DATABASE DOORS UNCHECKED::${err?.message || err}`);
-      process.exit(0);
+      console.error(`::error title=ENGINE DOOR SOURCE INVALID::${err?.message || err}`);
+      process.exit(1);
     }
   );
 }

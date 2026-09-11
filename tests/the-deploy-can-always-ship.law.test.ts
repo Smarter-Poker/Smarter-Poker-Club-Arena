@@ -55,9 +55,10 @@ describe('the engine deploy has one fail-closed Hetzner authority', () => {
     expect(engineSignal).toMatch(/^\s{2}detect:\s*$/m);
     expect(engineSignal).toContain('fetch-depth: 0');
     expect(engineSignalCode).toContain('BEFORE_SHA: ${{ github.event.before }}');
-    expect(engineSignalCode).toContain('git diff --quiet "$BEFORE_SHA" "$AFTER_SHA" --');
-    expect(engineSignalCode).toContain('RELEASE_REQUIRED=true');
-    expect(engineSignalCode).toContain('Previous commit is missing or unreadable; failing closed');
+    expect(engineSignalCode).toContain(
+      'node scripts/ci/classify-engine-release.mjs | tee -a "$GITHUB_OUTPUT"'
+    );
+    expect(engineSignalCode).not.toContain('git diff --quiet');
     expect(engineSignal).toContain("if: needs.detect.outputs.release_required == 'true'");
     expect(engineSignal).toMatch(/^\s{6}contents:\s*write\s*$/m);
     expect(engineSignalCode).toContain('GH_TOKEN: ${{ github.token }}');

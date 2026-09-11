@@ -786,11 +786,12 @@ CREATE TRIGGER makegood_debt_satisfaction BEFORE INSERT ON public.wallet_credit_
   FOR EACH ROW EXECUTE FUNCTION ca_makegood.guard_ordinary_credit();
 
 REVOKE ALL ON ALL FUNCTIONS IN SCHEMA ca_makegood FROM PUBLIC,anon,authenticated,service_role;
-REVOKE ALL ON FUNCTION public.fn_ca_makegood_register_funding(uuid,text),
-  public.fn_ca_makegood_propose(text,uuid,uuid,numeric,text,uuid),public.fn_ca_makegood_pay(uuid)
-  FROM PUBLIC,anon,authenticated;
-GRANT EXECUTE ON FUNCTION public.fn_ca_makegood_register_funding(uuid,text),
-  public.fn_ca_makegood_propose(text,uuid,uuid,numeric,text,uuid),public.fn_ca_makegood_pay(uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.fn_ca_makegood_register_funding(uuid,text) FROM PUBLIC,anon,authenticated;
+REVOKE ALL ON FUNCTION public.fn_ca_makegood_propose(text,uuid,uuid,numeric,text,uuid) FROM PUBLIC,anon,authenticated;
+REVOKE ALL ON FUNCTION public.fn_ca_makegood_pay(uuid) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_ca_makegood_register_funding(uuid,text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.fn_ca_makegood_propose(text,uuid,uuid,numeric,text,uuid) TO service_role;
+GRANT EXECUTE ON FUNCTION public.fn_ca_makegood_pay(uuid) TO service_role;
 -- The ordinary credit already owns the wallet key and payout evidence; pass
 -- that same identity to the existing receiving-wallet journal trigger. Without
 -- it a real normal payout produces an unkeyed leg and cannot be safely imported

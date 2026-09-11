@@ -41,9 +41,11 @@ const migrationDirectory = path.join(process.cwd(), '..', 'supabase', 'migration
 const allMigrationNames = fs.readdirSync(migrationDirectory);
 const migrationNames = allMigrationNames.filter((name) => name.endsWith('.sql'));
 const stagedOrPromotedMigration = (logicalName: string): string => {
-  const matches = allMigrationNames.filter(
-    (name) => name.endsWith(`_${logicalName}.sql`) || name.endsWith(`_${logicalName}.sql.pending`)
-  );
+  if (!/^[a-z0-9_]+$/.test(logicalName)) {
+    throw new Error(`invalid staged-or-promoted migration name: ${logicalName}`);
+  }
+  const exactName = new RegExp(`^[0-9]{14}_${logicalName}\\.sql(?:\\.pending)?$`);
+  const matches = allMigrationNames.filter((name) => exactName.test(name));
   if (matches.length !== 1) {
     throw new Error(
       `expected exactly one staged-or-promoted ${logicalName} migration; found ${matches.length}`

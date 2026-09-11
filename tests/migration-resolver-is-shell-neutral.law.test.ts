@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -23,6 +23,14 @@ afterEach(() => {
 });
 
 describe('the staged migration resolver is safe in every supported caller shell', () => {
+  it('keeps the path loop local without mutating zsh special state', () => {
+    const source = readFileSync(RESOLVER, 'utf8');
+
+    expect(source).toContain('local resolved_path');
+    expect(source).toContain('while IFS= read -r resolved_path; do');
+    expect(source).not.toMatch(/\bread\s+-r\s+match\b/);
+  });
+
   const expectExactResolution = (shell: 'bash' | 'zsh') => {
     const directory = fixture();
     const output = execFileSync(

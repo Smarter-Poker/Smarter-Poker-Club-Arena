@@ -1759,7 +1759,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       // the candidate is stale or the player has already entered a new generation.
       const { data: liveSeatRows, error: liveSeatErr } = await supabase
         .from('table_seats')
-        .select('id,table_id,joined_at,stack,tables!inner(tournament_id)')
+        .select('id,table_id,joined_at,stack,tables!table_seats_table_id_fkey!inner(tournament_id)')
         .eq('user_id', userId)
         .eq('tables.tournament_id', this.tournamentId)
         .is('left_at', null)

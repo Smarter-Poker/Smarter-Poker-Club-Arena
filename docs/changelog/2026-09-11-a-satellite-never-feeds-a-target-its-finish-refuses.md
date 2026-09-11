@@ -71,3 +71,27 @@ the head seeded at the bounty slice) is a change to the settlement core, the
 receipt reader, the seat-entitlement trigger and the cap-ticket redemption door,
 and it belongs on top of the Phase 3 terminal bundle that pins those functions.
 When it lands, the predicate above changes with it, in the same change.
+
+## Applied (2026-09-11)
+
+- Migration `20260911110907_a_satellite_never_feeds_a_target_its_finish_refuses`
+  applied 11:38:34 UTC and recorded in `supabase_migrations.schema_migrations`.
+- Ruling applied 12:11:02-12:11:15 UTC as one transaction. It was the third
+  attempt: the first two rolled back with zero writes because
+  `ca_drift_incidents.correction_ref` must match
+  `fn_ca_resolution_needs_a_cause()` ("migration <name>", "ruling: ...", ...).
+  The incidents now cite the migration.
+- Fresh preflight at 12:10:45: settle 15, cancel 1, in play 0, unexpected 0.
+  b9af829c had been played out since the 11:23 count. Every row passed the
+  pool, escrow, untouched, not-registered and horse checks. The largest
+  winner game load was 4.
+- Result: settled 15, seated 15 (8 into 8171f9f6, 7 into e9541c66), and
+  cancelled 1 (aa7b7b59, nothing to refund). The full NOTICE log is
+  `scripts/deploy/2026-09-11-settle-satellites-into-bounty-targets.applied.log`.
+- Postflight:
+  - A: no decided or unstarted feeders remain.
+  - B: 15 headers are COMPLETED with zero escrow, 2 payouts each and 5.00
+    rake attributed.
+  - C: the targets hold 9 and 8 funded 35.00 heads, and escrow agrees.
+  - D: the engine logged no `unsupported bounty or Spin` line after 12:11:20.
+  - All 15 drift incidents are resolved.

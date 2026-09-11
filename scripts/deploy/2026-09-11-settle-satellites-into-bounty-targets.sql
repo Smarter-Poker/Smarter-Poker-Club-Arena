@@ -1,3 +1,4 @@
+\set ON_ERROR_STOP 1
 -- 2026-09-11-settle-satellites-into-bounty-targets.sql
 --
 -- RULING (CLAUDE.md 10.9). Applied by the orchestrator as ONE transaction,
@@ -66,8 +67,8 @@ SET LOCAL statement_timeout = '120s';
 DO $ruling$
 DECLARE
   -- ── Set these three from the preflight query, immediately before applying.
-  c_expected_settle   constant integer := 14;  -- decided: 1 live + 1 eliminated
-  c_expected_cancel   constant integer := 2;   -- never started, no entrant: cancelled
+  c_expected_settle   constant integer := 15;  -- decided: 1 live + 1 eliminated
+  c_expected_cancel   constant integer := 1;   -- never started, no entrant: cancelled
   c_expected_in_play  constant integer := 0;   -- still being played or filling: left alone, re-run later
   -- ── true: each winner is then entered in the PKO through the ordinary paid
   --    horse door, 75.00 = 32.50 prize + 35.00 funded bounty head + 7.50 fee.
@@ -440,7 +441,7 @@ BEGIN
   UPDATE public.ca_drift_incidents i
      SET status = 'resolved', resolved_at = now(),
          root_cause = 'The heads-up satellite feeder (TournamentRecurringService.pickSatelliteTargets) chose the dearest open events without reading their bounty flags, so it opened satellites into the Sunday Funday High Roller PKOs (e9541c66, 8171f9f6). The one satellite settlement authority refuses a bounty target by design (a seat must not book its 35.00 bounty slice as prize), so every finished feeder was refused at settlement.',
-         correction_ref = c_ref,
+         correction_ref = 'migration 20260911110907_a_satellite_never_feeds_a_target_its_finish_refuses',
          resolution = 'Settled by ruling: each winner paid the exact 75.00 target entry (32.50 prize + 35.00 bounty + 7.50 fee) through fn_credit_and_log with a verified v2 cash receipt, the bubble paid the 20.00 remainder, 5.00 rake settled and attributed, escrow closed at zero'
            || CASE WHEN c_deliver_seats THEN '; each horse winner then entered the PKO through fn_register_horse_for_tournament with a funded 35.00 bounty head.' ELSE '.' END
            || ' Creation is now refused for any target the authority refuses (migration 20260911110907).'

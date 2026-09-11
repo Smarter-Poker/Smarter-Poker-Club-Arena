@@ -992,7 +992,9 @@ jobs:
           READY=no
           for i in $(seq 1 $ATTEMPTS); do
             [ "$(date -u +%s)" -ge "$GATE_DEADLINE" ] && { echo "attempt $i/$ATTEMPTS: the gate deadline passed"; break; }
-            BODY=$(curl -sf --max-time 10 "$ENGINE_URL/health" 2>/dev/null || echo "")
+            # A degraded engine can still park every table. Read only 200/503
+            # bodies after a complete transfer; the certificate below is authority.
+            BODY=$(CERT_RESPONSE=$(curl -sS --max-time 10 -w '\n%{http_code}' "$ENGINE_URL/health") && printf '%s' "$CERT_RESPONSE" | python3 -c 'import sys; body, _, status = sys.stdin.read().rpartition("\n"); print(body if status in ("200", "503") else "")') || BODY=""
             # A restart certificate is complete only while the break is
             # actively counting down, every table is parked, and enough time
             # remains for a graceful stop. Missing/legacy/straggler states are
@@ -1083,7 +1085,9 @@ jobs:
             set -euo pipefail
             exec 9>/var/lock/club-arena-engine-up.lock
             flock -w 30 9
-            BODY=\$(curl -sf --max-time 10 http://127.0.0.1:8080/health)
+            # A degraded engine can still park every table. Read only 200/503
+            # bodies after a complete transfer; the certificate below is authority.
+            BODY=\$(CERT_RESPONSE=\$(curl -sS --max-time 10 -w '\\n%{http_code}' http://127.0.0.1:8080/health) && printf '%s' \"\$CERT_RESPONSE\" | python3 -c 'import sys; body, _, status = sys.stdin.read().rpartition(\"\\n\"); print(body if status in (\"200\", \"503\") else \"\")')
             printf '%s' \"\$BODY\" | python3 -c 'import json,sys; d=json.load(sys.stdin); m=d.get(\"maintenance\"); ok=d.get(\"running\") is True and isinstance(m,dict) and m.get(\"active\") is True and m.get(\"phase\")==\"counting_down\" and m.get(\"durableConfirmed\") is True and m.get(\"readyForRestart\") is True and m.get(\"unparkedTables\")==0 and int(m.get(\"remainingMs\") or 0)>=180000; sys.exit(0 if ok else 75)'
             echo '$MUTATION_MARKER'
             # The stock autoheal sidecar is intentionally not release-aware.

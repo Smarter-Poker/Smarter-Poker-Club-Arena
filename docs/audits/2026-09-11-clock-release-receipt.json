@@ -1,0 +1,70 @@
+{
+  "ci": {
+    "conclusion": "success",
+    "run": 34516967031,
+    "successful_jobs": 14,
+    "skipped_jobs": ["Post-Deploy Verification", "Live Production E2E"],
+    "funding_proof": {
+      "job": 103004674403,
+      "groups": 69,
+      "observed_at": "2026-09-10T18:59:50.7794792Z",
+      "evidence": "run-isolated.sh includes --with-heads-up-payout; completed CI log reports 69 groups passed"
+    }
+  },
+  "engine_adoption": {
+    "ancestry": {
+      "ahead_by": 16,
+      "behind_by": 0,
+      "merge_base": "9762b5d164b866edd22b12ecac0fa766c4ba59b6",
+      "status": "ahead"
+    },
+    "clock_files_changed_since_merge": [],
+    "conclusion": "success",
+    "container_health_and_version_at": "2026-09-11T01:55:53.6023265Z",
+    "deploy_truth_at": "2026-09-11T01:55:59.7501400Z",
+    "job": 103109447694,
+    "leader_adoption_at": "2026-09-11T01:55:55.4792302Z",
+    "public_hostname_version_at": "2026-09-11T01:55:53.8266761Z",
+    "release_seal_at": "2026-09-11T01:55:56.4494425Z",
+    "run": 34549573490,
+    "sha": "404948b35478e18b81bd8633ebc88d69512b0aa8"
+  },
+  "head": "da12f8091cfdb24ca260da831690129ddb7fe0c9",
+  "limits": [
+    "Historical deployment evidence verifies adoption; it is not a claim that the same engine version is still running now.",
+    "This receipt does not certify all platform requirements or production database activation.",
+    "Closed PR final narrative update was automatically rejected and was not retried.",
+    "A later scheduler incident is recorded by commit 999b57756ea68b6c243a909771add9a74a212ea7. The earlier engine identity and healthy-start receipts do not establish sustained tournament recovery."
+  ],
+  "merge": "9762b5d164b866edd22b12ecac0fa766c4ba59b6",
+  "merged_at": "2026-09-10T19:01:28Z",
+  "pr": 4203,
+  "public_readback": {
+    "ancestry": {
+      "ahead_by": 17,
+      "behind_by": 0,
+      "merge_base": "9762b5d164b866edd22b12ecac0fa766c4ba59b6",
+      "status": "ahead"
+    },
+    "built_at": "2026-09-11T04:29:04Z",
+    "http_status": [200, 200],
+    "observed_at": "2026-09-11T04:41:52Z",
+    "publisher": 34562223566,
+    "publisher_conclusion": "success",
+    "sha": "999b57756ea68b6c243a909771add9a74a212ea7",
+    "urls": [
+      "https://ca-static.smarter.poker/build-info.json",
+      "https://smarter.poker/hub/club-arena/build-info.json"
+    ]
+  },
+  "publisher": {
+    "attempt": 1,
+    "conclusion": "success",
+    "exact_merge_observed_at": "2026-09-10T19:05:02.9150067Z",
+    "origin_job": 103008836450,
+    "run": 34517899366,
+    "verified_sha_output": true
+  },
+  "schema_version": 1,
+  "scope": "Mechanical release verification for PR 4203 only"
+}

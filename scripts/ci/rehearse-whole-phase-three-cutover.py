@@ -77,6 +77,22 @@ def assemble_activation_bundle(root):
         "-- One atomic transaction: current satellite adapter, target authority, strict cutover.\n"
         "BEGIN;\n\n-- Preserve the strict cutover's global-catalog-before-public-DDL lock order.\n"
         + lock_block + "\n"]
+    # Acquire the same canonical public lock boundary before any component DDL.
+    # A protocol-2 request takes a lease lock before touching its table. Leaving
+    # the lease until after DDL permits a request to hold it while waiting for
+    # the migration's table lock. Preserve ordering and NOWAIT; never retry.
+    public_locks = list(re.finditer(
+        r"^LOCK TABLE public\.([a-z_]+)\s+IN (SHARE ROW EXCLUSIVE|EXCLUSIVE) MODE NOWAIT;",
+        strict, re.M))
+    expected = ("tables", "tournament_table_origins", "tournament_capacity_table_receipts",
+        "tournament_manager_wakes", "engine_tournament_leases", "tournaments",
+        "tournament_obligations", "tournament_payouts", "tournament_final_table_deal_batches",
+        "tournament_final_table_deal_receipts")
+    if tuple(m[1] for m in public_locks) != expected:
+        raise ValueError("strict canonical public lock boundary differs")
+    parts.append("\n-- Acquire the unchanged canonical public lock boundary before component DDL.\n"
+        "-- Managers that arrive after this boundary cannot hold a lease across cutover.\n"
+        + "\n".join(m[0] for m in public_locks) + "\n")
     for name in ACTIVATION_COMPONENTS:
         source = (root / name).read_text()
         body = without_transaction(source)
@@ -402,14 +418,18 @@ def source_fingerprints(root, bootstrap=None, activation_bundle=None):
 
 
 def main():
+    global SOCKET
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, required=True)
     parser.add_argument("--evidence", type=Path, required=True)
+    parser.add_argument("--native-socket", type=Path, help="owned local fixture socket; TCP is still refused by baseline checks")
     parser.add_argument("--bootstrap-migration", type=Path)
     parser.add_argument("--activation-bundle", type=Path,
         help="prove the exact prepared one-pass base/target/strict activation bundle")
     parser.add_argument("--emit-only", type=Path, help="compose SQL without a database connection")
     args = parser.parse_args()
+    if args.native_socket:
+        SOCKET = str(args.native_socket.resolve())
     root = args.root.resolve()
     if "/.agent-trees/" not in str(root):
         raise SystemExit("requires the explicitly owned repository worktree")
@@ -456,7 +476,7 @@ SELECT current_database()||'|'||current_user||'|'||(inet_server_addr() IS NULL):
     passed = run.returncode == 0 and before == after and terminal is not None and cutover is not None and satellite is not None and stable_sources
     covered = bootstrap is not None and cutover is not None and len(cutover["break_window_triggers"]) == 2
     evidence = {"recorded_at":datetime.datetime.now(datetime.timezone.utc).isoformat(),
-        "database":DB,"baseline":baseline,"status":"passed" if passed else "failed",
+        "database":DB,"native_socket":SOCKET,"baseline":baseline,"status":"passed" if passed else "failed",
         "whole_stage_b_executed_twice":run.returncode == 0 and activation_bundle is None,"production_ddl_applied":False,
         "activation_bundle_executed_once":run.returncode == 0 and activation_bundle is not None,
         "activation_bundle_source":str(activation_bundle) if activation_bundle else None,

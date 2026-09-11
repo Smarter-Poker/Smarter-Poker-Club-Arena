@@ -24,5 +24,97 @@
       "notnull": true
     }
   ],
-  "migration_versions": ["20260910164655", "20260911050554"]
+  "migration_versions": ["20260910164655", "20260911050554"],
+  "deal_rpc_followup": [
+    {
+      "name": "fn_begin_tournament_deal_review",
+      "deployed": [
+        {
+          "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+          "body_md5": "5f4e9ba1a3adcc84fcf62b3e22253b25",
+          "signature": "fn_begin_tournament_deal_review(uuid,uuid)"
+        }
+      ]
+    },
+    {
+      "name": "fn_cancel_tournament_deal_review",
+      "deployed": [
+        {
+          "acl": ["postgres=X/postgres", "authenticated=X/postgres"],
+          "body_md5": "036efbd357a591f69e5727b790b87cd8",
+          "signature": "fn_cancel_tournament_deal_review(uuid,uuid,uuid)"
+        }
+      ]
+    },
+    {
+      "name": "fn_close_tournament_deal_review",
+      "deployed": [
+        {
+          "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+          "body_md5": "27471182d604538bb1a9562871b5870c",
+          "signature": "fn_close_tournament_deal_review(uuid,uuid,text)"
+        }
+      ]
+    },
+    {
+      "name": "fn_complete_tournament_terminal_proposal",
+      "deployed": [
+        {
+          "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+          "body_md5": "5d796d4b26601b4fe6e1d30b1531c6e2",
+          "signature": "fn_complete_tournament_terminal_proposal(uuid,uuid,text,uuid,text)"
+        }
+      ]
+    },
+    {
+      "name": "fn_get_tournament_deal_consensus",
+      "deployed": [
+        {
+          "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+          "body_md5": "0d2c4b7ac54354ab0501337e0e2364fc",
+          "signature": "fn_get_tournament_deal_consensus(uuid)"
+        }
+      ]
+    },
+    {
+      "name": "fn_get_tournament_deal_proposal",
+      "deployed": [
+        {
+          "acl": ["postgres=X/postgres", "authenticated=X/postgres"],
+          "body_md5": "b9176e96f19f8b76f91e797f21e23334",
+          "signature": "fn_get_tournament_deal_proposal(uuid)"
+        }
+      ]
+    },
+    {
+      "name": "fn_get_tournament_deal_review",
+      "deployed": [
+        {
+          "acl": ["postgres=X/postgres", "authenticated=X/postgres"],
+          "body_md5": "9db8d596c585990444b2e15f42e0a4e2",
+          "signature": "fn_get_tournament_deal_review(uuid)"
+        }
+      ]
+    },
+    {
+      "name": "fn_request_tournament_deal_review",
+      "deployed": [
+        {
+          "acl": ["postgres=X/postgres", "authenticated=X/postgres"],
+          "body_md5": "48ddc5818b9105059c37151cf78f52ce",
+          "signature": "fn_request_tournament_deal_review(uuid,uuid)"
+        }
+      ]
+    },
+    {
+      "name": "fn_resolve_tournament_terminal_proposal_outcome",
+      "deployed": [
+        {
+          "acl": ["postgres=X/postgres", "service_role=X/postgres"],
+          "body_md5": "8b9acfb4802f04723d87069607225588",
+          "signature": "fn_resolve_tournament_terminal_proposal_outcome(uuid,uuid,text,uuid,text)"
+        }
+      ]
+    }
+  ]
 }

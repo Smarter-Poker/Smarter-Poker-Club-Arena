@@ -67,6 +67,26 @@ const bountyRebuyProbe = readFileSync(
   resolve(root, 'scripts/ci/probes/bounty-rebuy-generation-atomicity.sql'),
   'utf8'
 );
+const postSixUnregistrationProbes = [
+  [
+    'tournament-unregistration-cross-club.sql',
+    14986,
+    'a21100a43e73cbf0398e980475bd2a6d602d8245cad821204206de13576383c1',
+    'STAGE_B_WALLET_CHARGE_UNREGISTRATION_AND_REPLAY_OK',
+  ],
+  [
+    'atomic-satellite-ticket-return.sql',
+    35058,
+    'ed7f2d925a2971a89bb4e88efd5250ccfc2b3b813bd8adb6dca9c3f182e1b1ad',
+    'STAGE_B_SATELLITE_SEAT_AND_TOURNAMENT_TICKET_RETURN_REPLAY_OK',
+  ],
+  [
+    'seat-first-unregistration-actual-start.sql',
+    21504,
+    'f9025d6c48ae00e88bca43a41f854b5766d25f596150379d445a532722ab4507',
+    'STAGE_B_ACTUAL_START_AND_HAND_HISTORY_UNREGISTRATION_REFUSAL_OK',
+  ],
+] as const;
 const runbook = readFileSync(
   resolve(root, 'docs/runbooks/lease-heartbeat-keyshare-cutover.md'),
   'utf8'
@@ -127,12 +147,12 @@ describe('the reserved Stage-B forward authority remains one bounded chain', () 
   it('authenticates bounded prerequisites instead of a moving ledger head', () => {
     expect(harness).not.toContain('current_live_ledger_head');
     expect(harness).not.toContain('SELECT max(version)');
-    expect(harness).toContain('if [[ "$anchor_receipts" != \'64\' ]]');
-    expect(harness).toContain('if [[ "$descriptor_receipts" != \'13\' ]]');
+    expect(harness).toContain('if [[ "$anchor_receipts" != \'66\' ]]');
+    expect(harness).toContain('if [[ "$descriptor_receipts" != \'15\' ]]');
     expect(harness).toContain(
       'if [[ "$audited_tail_receipts" != \'38\' || "$audited_tail_statements" != \'41\' ]]'
     );
-    expect(harness).toContain('if [[ "$tail_functions_exact" != \'12\' ]]');
+    expect(harness).toContain('if [[ "$tail_functions_exact" != \'16\' ]]');
     expect(harness).toContain('assert_zero_player_data_baseline');
     expect(harness).toContain('20260910164655');
     for (const exactFinalDealPrerequisite of [
@@ -212,8 +232,14 @@ describe('the reserved Stage-B forward authority remains one bounded chain', () 
     }
   });
 
-  it('authenticates and preserves the exact live tail through 11081910', () => {
+  it('authenticates and preserves the exact live tail through 11090347', () => {
     const exactTail = [
+      [
+        '20260910190537',
+        'late_entry_uses_canonical_capacity_and_charged_wallet_receip',
+        '9097',
+        'a4e7bf3d2f352c8d12030ea83fd3697054ac3045e4276293362b6d72e2040ed4',
+      ],
       [
         '20260911050554',
         'final_deal_receipts_survive_real_terminal_settlement',
@@ -280,6 +306,12 @@ describe('the reserved Stage-B forward authority remains one bounded chain', () 
         '7525',
         'a1a762df5c6e9e62b63d1602a360a7349c087d652c00e22c63dac481a953a623',
       ],
+      [
+        '20260911090347',
+        'the_prize_reprice_door_the_engine_calls_exists',
+        '9372',
+        'e528b35403f6e439287b14c54b0c7308b186d0455bf9a1198b661d26e97e2d8a',
+      ],
     ] as const;
     for (const descriptor of exactTail) {
       for (const value of descriptor) {
@@ -290,6 +322,11 @@ describe('the reserved Stage-B forward authority remains one bounded chain', () 
     }
 
     for (const [fileName, expectedBytes, expectedSha256] of [
+      [
+        '20260910190537_late_entry_uses_canonical_capacity_and_charged_wallet_receip.sql',
+        9098,
+        'e7d8e53de468e504d4c22c1ed9f701f22cb3adb3a3fdafda3ab2dbe5dadec5ed',
+      ],
       [
         '20260911050554_final_deal_receipts_survive_real_terminal_settlement.sql',
         82770,
@@ -344,6 +381,11 @@ describe('the reserved Stage-B forward authority remains one bounded chain', () 
         '20260911081910_a_seat_exit_guard_without_its_consumer_refuses_nothing.sql',
         7525,
         'a1a762df5c6e9e62b63d1602a360a7349c087d652c00e22c63dac481a953a623',
+      ],
+      [
+        '20260911090347_the_prize_reprice_door_the_engine_calls_exists.sql',
+        9372,
+        'e528b35403f6e439287b14c54b0c7308b186d0455bf9a1198b661d26e97e2d8a',
       ],
     ] as const) {
       const receipt = readFileSync(resolve(migrationsDirectory, fileName));
@@ -403,10 +445,37 @@ describe('the reserved Stage-B forward authority remains one bounded chain', () 
       '3437a8e83051385947c6b48e7c399a90',
       'a6adf208eae8476128f197c16f83d6c5',
       '0286145366f00c7cad0a996f05630851',
+      '231f56742d40351b5121622ef068d02c',
+      '4f1800b2cd9bbf61cf926130eb8f03db',
+      '53e97347076b0a6de0a5f7f4abaf359d',
+      'b9df97fa4e796726443bffd8d51da248',
     ]) {
       expect(contraction).toContain(exactLiveFunctionDefinition);
       expect(harness).toContain(exactLiveFunctionDefinition);
     }
+  });
+
+  it('executes every funded-origin and started-event refusal proof after all six boundaries', () => {
+    expect(harness).toContain('run_all_unregistration_origin_proofs "$clean_database"');
+    expect(harness).toContain('run_all_unregistration_origin_proofs "$replay_database"');
+    for (const [fileName, expectedBytes, expectedSha256, receipt] of postSixUnregistrationProbes) {
+      const probe = readFileSync(resolve(root, 'scripts/ci/probes', fileName));
+      expect(probe.byteLength).toBe(expectedBytes);
+      expect(createHash('sha256').update(probe).digest('hex')).toBe(expectedSha256);
+      expect(harness).toContain(fileName);
+      expect(harness).toContain(expectedSha256);
+      expect(harness).toContain(receipt);
+      if (fileName === 'tournament-unregistration-cross-club.sql') {
+        const source = probe.toString('utf8');
+        expect(source).toContain('public.fn_register_for_tournament_request(');
+        expect(source).not.toMatch(/public\.fn_register_for_tournament\(\s*\n?\s*'/);
+      }
+    }
+    expect(harness).toContain('AUDIT_TEST_PASS: buy-in and rebuy debited entry Club A');
+    expect(harness).toContain('request-key replay exact before and after start');
+    expect(harness).toContain(
+      'AUDIT_TEST_PASS: persisted hand history independently closes Spin and Heads-Up SNG unregistration'
+    );
   });
 
   it('changes only the audited final-deal completion-guard call site', () => {

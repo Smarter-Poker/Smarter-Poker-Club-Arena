@@ -1,7 +1,7 @@
 -- 20260910042007_stage_b_forward_authority_expansion
 --
 -- Thirteen historical Stage-B migrations are absent from production while
--- production has continued through the byte-authenticated 20260911081910 live
+-- production has continued through the byte-authenticated 20260911090347 live
 -- tail (final-deal v2, wheel free-spin retirement, exact-generation bounty
 -- rebuy settlement, welcome-spin coherence, the corrected unstarted-entry
 -- return policy, operator/player game views, retired mint reporting, and the
@@ -481,7 +481,16 @@ DO $require_exact_live_tail_receipts$
 BEGIN
   IF (SELECT count(*)
         FROM supabase_migrations.schema_migrations m
-       WHERE m.version='20260911050554'
+       WHERE m.version='20260910190537'
+         AND m.name='late_entry_uses_canonical_capacity_and_charged_wallet_receip'
+         AND cardinality(m.statements)=1
+         AND octet_length(m.statements[1])=9097
+         AND encode(extensions.digest(
+               convert_to(m.statements[1],'UTF8'),'sha256'),'hex')=
+             'a4e7bf3d2f352c8d12030ea83fd3697054ac3045e4276293362b6d72e2040ed4')<>1
+     OR (SELECT count(*)
+           FROM supabase_migrations.schema_migrations m
+          WHERE m.version='20260911050554'
          AND m.name='final_deal_receipts_survive_real_terminal_settlement'
          AND cardinality(m.statements)=1
          AND octet_length(m.statements[1])=82770
@@ -577,9 +586,18 @@ BEGIN
             AND octet_length(m.statements[1])=7525
             AND encode(extensions.digest(
                   convert_to(m.statements[1],'UTF8'),'sha256'),'hex')=
-                'a1a762df5c6e9e62b63d1602a360a7349c087d652c00e22c63dac481a953a623')<>1 THEN
+                'a1a762df5c6e9e62b63d1602a360a7349c087d652c00e22c63dac481a953a623')<>1
+     OR (SELECT count(*)
+           FROM supabase_migrations.schema_migrations m
+          WHERE m.version='20260911090347'
+            AND m.name='the_prize_reprice_door_the_engine_calls_exists'
+            AND cardinality(m.statements)=1
+            AND octet_length(m.statements[1])=9372
+            AND encode(extensions.digest(
+                  convert_to(m.statements[1],'UTF8'),'sha256'),'hex')=
+                'e528b35403f6e439287b14c54b0c7308b186d0455bf9a1198b661d26e97e2d8a')<>1 THEN
     RAISE EXCEPTION
-      'Stage-B expansion requires the exact 20260911050554..20260911081910 live tail'
+      'Stage-B expansion requires the exact 20260910190537 and 20260911050554..20260911090347 live tail'
       USING ERRCODE='55000';
   END IF;
 END;

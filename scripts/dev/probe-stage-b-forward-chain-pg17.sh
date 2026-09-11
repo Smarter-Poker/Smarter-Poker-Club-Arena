@@ -10,6 +10,9 @@ diamond_fixture="$repo_dir/scripts/dev/fixtures/stage-b-diamond-accepted-hand-cu
 bounty_rebuy_fixture="$repo_dir/scripts/ci/probes/atomic-terminal-rehearsal-fixture.sql"
 bounty_rebuy_probe="$repo_dir/scripts/ci/probes/bounty-rebuy-generation-atomicity.sql"
 cancellation_probe="$repo_dir/scripts/ci/probes/tournament-cancellation-entrant-refunds.sql"
+cash_unregistration_probe="$repo_dir/scripts/ci/probes/tournament-unregistration-cross-club.sql"
+satellite_ticket_return_probe="$repo_dir/scripts/ci/probes/atomic-satellite-ticket-return.sql"
+actual_start_unregistration_probe="$repo_dir/scripts/ci/probes/seat-first-unregistration-actual-start.sql"
 seat_move_hotfix_statement_sha256='b3f1bb62152627444b33c82b806c00ba3587aeebbe3d13800faf69fae7809ea2'
 manager_request_authority_statement_sha256='2cbcab5f263e8ca02b16f6c47ebbd7f6d47eb783d81c5939133c1e39b5d306f4'
 busy_manager_statement_sha256='2e95299dd7693a09ee310a4086b2dcdf16f0f942582007bdede0c4c81024e07d'
@@ -33,8 +36,13 @@ retired_mint_reporting_statement_sha256='a12119f40903928cf8febcca78f10b34a5b44cd
 legacy_rakeback_single_payer_statement_sha256='a55e792f12040799a20fcf6d54969059efecaea3869c3aa148191fe1b083c4c7'
 legacy_round3_acl_statement_sha256='da06b3acca81a28a54e1354932aab87d515bc3202b4922e9cccc8e1971e867d5'
 seat_exit_consumer_guard_statement_sha256='a1a762df5c6e9e62b63d1602a360a7349c087d652c00e22c63dac481a953a623'
+late_entry_ledger_statement_sha256='a4e7bf3d2f352c8d12030ea83fd3697054ac3045e4276293362b6d72e2040ed4'
+prize_reprice_statement_sha256='e528b35403f6e439287b14c54b0c7308b186d0455bf9a1198b661d26e97e2d8a'
 bounty_rebuy_probe_sha256='ef8e7fe7c0705ad265dab8f416485302b379437ab94f055f08c98e5cff3a6a5e'
 cancellation_probe_sha256='485d48aad7147ab9b54d8c0f3118a6d928948468aade3da2361452f9ccedfce5'
+cash_unregistration_probe_sha256='a21100a43e73cbf0398e980475bd2a6d602d8245cad821204206de13576383c1'
+satellite_ticket_return_probe_sha256='ed7f2d925a2971a89bb4e88efd5250ccfc2b3b813bd8adb6dca9c3f182e1b1ad'
+actual_start_unregistration_probe_sha256='f9025d6c48ae00e88bca43a41f854b5766d25f596150379d445a532722ab4507'
 
 usage() {
   cat >&2 <<'USAGE'
@@ -142,6 +150,22 @@ if [[ "$(wc -c < "$cancellation_probe" | tr -d '[:space:]')" != '29164' \
   echo 'The exact-origin tournament cancellation probe bytes are not canonical.' >&2
   exit 65
 fi
+for probe_spec in \
+  "$cash_unregistration_probe|14986|$cash_unregistration_probe_sha256" \
+  "$satellite_ticket_return_probe|35058|$satellite_ticket_return_probe_sha256" \
+  "$actual_start_unregistration_probe|21504|$actual_start_unregistration_probe_sha256"
+do
+  IFS='|' read -r probe_file probe_bytes probe_sha256 <<<"$probe_spec"
+  [[ -r "$probe_file" ]] || {
+    echo "The post-six unregistration probe is unreadable: ${probe_file}." >&2
+    exit 66
+  }
+  if [[ "$(wc -c < "$probe_file" | tr -d '[:space:]')" != "$probe_bytes" \
+     || "$(shasum -a 256 "$probe_file" | awk '{print $1}')" != "$probe_sha256" ]]; then
+    echo "The post-six unregistration probe bytes are not canonical: ${probe_file}." >&2
+    exit 65
+  fi
+done
 
 [[ -r "$manifest" ]] || {
   echo 'The retired Stage-B SHA-256 manifest is unreadable.' >&2
@@ -226,6 +250,8 @@ psql_cmd=(
   -v "legacy_rakeback_single_payer_statement_sha256=$legacy_rakeback_single_payer_statement_sha256"
   -v "legacy_round3_acl_statement_sha256=$legacy_round3_acl_statement_sha256"
   -v "seat_exit_consumer_guard_statement_sha256=$seat_exit_consumer_guard_statement_sha256"
+  -v "late_entry_ledger_statement_sha256=$late_entry_ledger_statement_sha256"
+  -v "prize_reprice_statement_sha256=$prize_reprice_statement_sha256"
 )
 
 emit_zero_player_data_assertion_function() {
@@ -419,6 +445,7 @@ WITH required_prerequisites(version,name) AS (
     ('20260910173147','the_settlement_lane_is_per_tournament_for_rolling_authorities'),
     ('20260910174349','the_bounty_sweep_takes_one_tournament_lane_per_call'),
     ('20260910181549','active_means_who_is_on_the_floor_cash_and_events_counted_apa'),
+    ('20260910190537','late_entry_uses_canonical_capacity_and_charged_wallet_receip'),
     ('20260911050554','final_deal_receipts_survive_real_terminal_settlement'),
     ('20260911052216','the_daily_free_spin_leaves_the_building'),
     ('20260911052648','bounty_rebuy_settles_its_exact_prior_entry_generation'),
@@ -429,7 +456,8 @@ WITH required_prerequisites(version,name) AS (
     ('20260911072424','the_mint_that_is_gone_stops_being_reported'),
     ('20260911072837','legacy_rakeback_closed_period_single_payer'),
     ('20260911081721','legacy_round3_preserve_server_only_acl'),
-    ('20260911081910','a_seat_exit_guard_without_its_consumer_refuses_nothing')
+    ('20260911081910','a_seat_exit_guard_without_its_consumer_refuses_nothing'),
+    ('20260911090347','the_prize_reprice_door_the_engine_calls_exists')
 ), exact_body_rows(version,name,statement_sha256) AS (
   VALUES
     ('20260910051447','the_seat_move_door_the_engine_calls_exists',
@@ -444,6 +472,8 @@ WITH required_prerequisites(version,name) AS (
      :'bounty_evidence_statement_sha256'),
     ('20260910060034','cash_entry_close_proves_the_reserved_unpaid_ladder',7344,
      :'cash_entry_ladder_statement_sha256'),
+    ('20260910190537','late_entry_uses_canonical_capacity_and_charged_wallet_receip',9097,
+     :'late_entry_ledger_statement_sha256'),
     ('20260911050554','final_deal_receipts_survive_real_terminal_settlement',82770,
      :'final_deal_v2_statement_sha256'),
     ('20260911052216','the_daily_free_spin_leaves_the_building',49343,
@@ -465,7 +495,9 @@ WITH required_prerequisites(version,name) AS (
     ('20260911081721','legacy_round3_preserve_server_only_acl',3849,
      :'legacy_round3_acl_statement_sha256'),
     ('20260911081910','a_seat_exit_guard_without_its_consumer_refuses_nothing',7525,
-     :'seat_exit_consumer_guard_statement_sha256')
+     :'seat_exit_consumer_guard_statement_sha256'),
+    ('20260911090347','the_prize_reprice_door_the_engine_calls_exists',9372,
+     :'prize_reprice_statement_sha256')
 ), audited_tail_rows(version,name,statement_count) AS (
   VALUES
     ('20260910072322','the_knockout_door_owns_every_bust_a_hand_took',1),
@@ -1115,6 +1147,78 @@ SELECT current_database(),
            AND p.proconfig=ARRAY['search_path=public, pg_temp']::text[]
            AND p.proacl::text=
              '{postgres=X/postgres,service_role=X/postgres}'
+         ) OR (
+           p.oid=to_regprocedure(
+             'public.fn_ensure_late_registration_capacity(uuid,integer)')
+           AND md5(pg_get_functiondef(p.oid))=
+               '231f56742d40351b5121622ef068d02c'
+           AND md5(p.prosrc)='b36dd36a9348d29be1092c7d42954c03'
+           AND p.proowner='postgres'::regrole AND l.lanname='plpgsql'
+           AND p.prosecdef AND p.provolatile='v' AND p.proparallel='u'
+           AND NOT p.proleakproof AND p.prokind='f'
+           AND NOT p.proisstrict AND NOT p.proretset
+           AND p.prorettype='jsonb'::regtype
+           AND p.pronargs=2 AND p.pronargdefaults=1
+           AND p.proconfig=ARRAY['search_path=public, pg_temp']::text[]
+           AND p.proacl::text=
+             '{postgres=X/postgres,service_role=X/postgres}'
+           AND position('public.fn_tournament_current_blinds(p_tournament_id)'
+                        IN p.prosrc)>0
+           AND position('tournament_capacity_table_receipts' IN p.prosrc)>0
+         ) OR (
+           p.oid=to_regprocedure(
+             'public.fn_seat_late_registrant_before_maintenance_gate(uuid,uuid)')
+           AND md5(pg_get_functiondef(p.oid))=
+               '4f1800b2cd9bbf61cf926130eb8f03db'
+           AND md5(p.prosrc)='9311ef4ed0c2fa6fbb0f1d8fa169137f'
+           AND p.proowner='postgres'::regrole AND l.lanname='plpgsql'
+           AND p.prosecdef AND p.provolatile='v' AND p.proparallel='u'
+           AND NOT p.proleakproof AND p.prokind='f'
+           AND NOT p.proisstrict AND NOT p.proretset
+           AND p.prorettype='jsonb'::regtype
+           AND p.pronargs=2 AND p.pronargdefaults=0
+           AND p.proconfig=ARRAY['search_path=public']::text[]
+           AND p.proacl::text='{postgres=X/postgres}'
+           AND position(
+                 'public.fn_ensure_late_registration_capacity(p_tournament_id,0)'
+                 IN p.prosrc)>0
+         ) OR (
+           p.oid=to_regprocedure(
+             'public.log_wallet_transaction(uuid,text,numeric,text,text,text,uuid,uuid,uuid)')
+           AND md5(pg_get_functiondef(p.oid))=
+               '53e97347076b0a6de0a5f7f4abaf359d'
+           AND md5(p.prosrc)='d1dd7af2ba51d15355f05d10057ec04a'
+           AND p.proowner='postgres'::regrole AND l.lanname='plpgsql'
+           AND NOT p.prosecdef AND p.provolatile='v' AND p.proparallel='u'
+           AND NOT p.proleakproof AND p.prokind='f'
+           AND NOT p.proisstrict AND NOT p.proretset
+           AND p.prorettype='void'::regtype
+           AND p.pronargs=9 AND p.pronargdefaults=3
+           AND p.proconfig=ARRAY['search_path=public, extensions']::text[]
+           AND p.proacl::text=
+             '{postgres=X/postgres,service_role=X/postgres}'
+         ) OR (
+           p.oid=to_regprocedure(
+             'public.fn_ca_reprice_unpaid_tournament_place(uuid,uuid,numeric,numeric)')
+           AND md5(pg_get_functiondef(p.oid))=
+               'b9df97fa4e796726443bffd8d51da248'
+           AND octet_length(pg_get_functiondef(p.oid))=4297
+           AND encode(sha256(convert_to(
+                 pg_get_functiondef(p.oid),'UTF8')),'hex')=
+               '3273dca6e3606a7ec94533255e7e090492a6d282d31939b947ee33ec2c5593c2'
+           AND md5(p.prosrc)='691a3f79a0a36e48f822832d98e12052'
+           AND octet_length(p.prosrc)=4025
+           AND encode(sha256(convert_to(p.prosrc,'UTF8')),'hex')=
+               '7248ae3fe0700331c9ef45ea028acb7d320662617736ed83c714f684c3416830'
+           AND p.proowner='postgres'::regrole AND l.lanname='plpgsql'
+           AND p.prosecdef AND p.provolatile='v' AND p.proparallel='u'
+           AND NOT p.proleakproof AND p.prokind='f'
+           AND NOT p.proisstrict AND NOT p.proretset
+           AND p.prorettype='jsonb'::regtype
+           AND p.pronargs=4 AND p.pronargdefaults=0
+           AND p.proconfig=ARRAY['search_path=public, pg_temp']::text[]
+           AND p.proacl::text=
+             '{postgres=X/postgres,service_role=X/postgres}'
          )),
        CASE
          WHEN (SELECT count(*)
@@ -1278,16 +1382,16 @@ if [[ "$major_version" != '17' || "$locality" != 'local' ]]; then
   echo "Rehearsal requires local PostgreSQL 17; observed ${server_address:-unknown}." >&2
   exit 65
 fi
-if [[ "$anchor_receipts" != '64' ]]; then
-  echo "The donor does not contain all 64 bounded Stage-B prerequisite receipts: ${anchor_receipts:-0}/64 present." >&2
+if [[ "$anchor_receipts" != '66' ]]; then
+  echo "The donor does not contain all 66 bounded Stage-B prerequisite receipts: ${anchor_receipts:-0}/66 present." >&2
   exit 65
 fi
 if [[ "$exact_body_receipts" != '3' ]]; then
   echo 'The donor does not contain all three byte-exact live body ledger rows (051447, 063559, 064701).' >&2
   exit 65
 fi
-if [[ "$descriptor_receipts" != '13' ]]; then
-  echo 'The donor does not contain the byte-exact 055857, 060034, and 11050554..11081910 ledger metadata.' >&2
+if [[ "$descriptor_receipts" != '15' ]]; then
+  echo 'The donor does not contain the byte-exact 055857, 060034, 10190537, and 11050554..11090347 ledger metadata.' >&2
   exit 65
 fi
 if [[ "$audited_tail_receipts" != '38' || "$audited_tail_statements" != '41' ]]; then
@@ -1328,7 +1432,7 @@ if [[ "$player_id_functions_exact" != '2' ]]; then
   echo 'The donor does not preserve the exact 124023 player-id function postimage.' >&2
   exit 65
 fi
-if [[ "$tail_functions_exact" != '12' ]]; then
+if [[ "$tail_functions_exact" != '16' ]]; then
   echo 'The donor does not preserve the exact bounded Stage-B prerequisite function postimage.' >&2
   exit 65
 fi
@@ -1396,6 +1500,10 @@ WITH target_functions(identity) AS (
     ('public.fn_tournament_live_seat_acquisition_requires_authority()'),
     ('public.fn_tournament_payouts_are_append_only()'),
     ('public.fn_sweep_pending_tournament_bounties(uuid,integer)'),
+    ('public.fn_ensure_late_registration_capacity(uuid,integer)'),
+    ('public.fn_seat_late_registrant_before_maintenance_gate(uuid,uuid)'),
+    ('public.log_wallet_transaction(uuid,text,numeric,text,text,text,uuid,uuid,uuid)'),
+    ('public.fn_ca_reprice_unpaid_tournament_place(uuid,uuid,numeric,numeric)'),
     ('public.fn_save_engine_maintenance_break(text,timestamptz,timestamptz,timestamptz,text,text,uuid)'),
     ('public.fn_clear_engine_maintenance_break(text,timestamptz,timestamptz,timestamptz,text,uuid)'),
     ('public.fn_claim_engine_maintenance_break(uuid,uuid,text)'),
@@ -3683,6 +3791,60 @@ run_tournament_cancellation_entrant_refunds() {
   echo 'STAGE_B_11061723_CANCELLATION_EXACT_ORIGIN_OK'
 }
 
+run_post_six_rollback_probe() {
+  local database="$1"
+  local probe_file="$2"
+  local receipt="$3"
+  shift 3
+  local probe_log=''
+  local probe_status=0
+  local freeze_fingerprint=''
+  local acceptance_marker=''
+
+  if ! freeze_fingerprint="$(
+      thaw_synthetic_freeze_for_rollback_probe "$database")"; then
+    return 1
+  fi
+  probe_log="$("${psql_cmd[@]}" --dbname="$database" \
+    -f "$probe_file" 2>&1)" || probe_status=$?
+  if ! restore_synthetic_freeze_after_rollback_probe \
+      "$database" "$freeze_fingerprint"; then
+    return 1
+  fi
+
+  if (( probe_status != 0 )); then
+    printf '%s\n' "$probe_log" >&2
+    echo "The post-six rollback probe failed: ${probe_file}." >&2
+    return 1
+  fi
+  for acceptance_marker in "$@"; do
+    if ! grep -Fq "$acceptance_marker" <<<"$probe_log"; then
+      printf '%s\n' "$probe_log" >&2
+      echo "The post-six rollback probe emitted no required marker: ${acceptance_marker}." >&2
+      return 1
+    fi
+  done
+  echo "$receipt"
+}
+
+run_all_unregistration_origin_proofs() {
+  local database="$1"
+
+  run_post_six_rollback_probe "$database" "$cash_unregistration_probe" \
+    'STAGE_B_WALLET_CHARGE_UNREGISTRATION_AND_REPLAY_OK' \
+    'AUDIT_TEST_PASS: buy-in and rebuy debited entry Club A' \
+    'AUDIT_TEST_PASS: identical request replays one immutable cross-club receipt'
+  run_post_six_rollback_probe "$database" "$satellite_ticket_return_probe" \
+    'STAGE_B_SATELLITE_SEAT_AND_TOURNAMENT_TICKET_RETURN_REPLAY_OK' \
+    'PASS satellite seat -> ticket -> admission -> ticket-only return' \
+    'request-key replay exact before and after start' \
+    'cash and forged redemptions refused'
+  run_post_six_rollback_probe "$database" "$actual_start_unregistration_probe" \
+    'STAGE_B_ACTUAL_START_AND_HAND_HISTORY_UNREGISTRATION_REFUSAL_OK' \
+    'AUDIT_TEST_PASS: Spin and Heads-Up SNG separately refunded after their fill-window deadlines' \
+    'AUDIT_TEST_PASS: persisted hand history independently closes Spin and Heads-Up SNG unregistration'
+}
+
 assert_donor_unchanged() {
   local donor_fingerprint_after
   restore_dump_lost_postgrest_role_setting
@@ -3727,6 +3889,7 @@ if [[ "$probe_mode" == 'replay' ]]; then
   assert_stage_b_bounded_postimage "$replay_database"
   run_tournament_cancellation_entrant_refunds "$replay_database"
   run_bounty_rebuy_generation_atomicity "$replay_database"
+  run_all_unregistration_origin_proofs "$replay_database"
   echo 'STAGE_B_LEASE_KEYSHARE_REPLAY_OK'
   assert_donor_unchanged
   echo 'STAGE_B_FORWARD_CHAIN_PG17_OK'
@@ -3776,6 +3939,7 @@ run_chain_prefix 6 true "$clean_database" 5
 assert_stage_b_bounded_postimage "$clean_database"
 run_tournament_cancellation_entrant_refunds "$clean_database"
 run_bounty_rebuy_generation_atomicity "$clean_database"
+run_all_unregistration_origin_proofs "$clean_database"
 echo 'STAGE_B_LEASE_KEYSHARE_REPLAY_OK'
 
 move_receipts_after="$(move_receipt_fingerprint "$clean_database")"

@@ -65,10 +65,13 @@ therefore its definition MD5) while preserving the pinned source body. The
 immediately following strict contraction preserves terminal receipts while
 removing the legacy payload fallback.
 
-The reviewed production prerequisite tail now ends at `20260911081910`. Before
+The reviewed production prerequisite tail now ends at `20260911090347`. Before
 the first Stage-B DDL, and again at entry and exit of the final contraction,
 require these exact one-statement ledger receipts:
 
+- `20260910190537_late_entry_uses_canonical_capacity_and_charged_wallet_receip`:
+  production ledger statement 9,097 bytes, SHA-256
+  `a4e7bf3d2f352c8d12030ea83fd3697054ac3045e4276293362b6d72e2040ed4`;
 - `20260911050554_final_deal_receipts_survive_real_terminal_settlement`:
   82,770 bytes, SHA-256
   `b4af55173b825be5ecf48c6c3bbcca1e828493cdafc47becf00d73ad3186c871`;
@@ -101,7 +104,10 @@ require these exact one-statement ledger receipts:
   `da06b3acca81a28a54e1354932aab87d515bc3202b4922e9cccc8e1971e867d5`;
 - `20260911081910_a_seat_exit_guard_without_its_consumer_refuses_nothing`:
   7,525 bytes, SHA-256
-  `a1a762df5c6e9e62b63d1602a360a7349c087d652c00e22c63dac481a953a623`.
+  `a1a762df5c6e9e62b63d1602a360a7349c087d652c00e22c63dac481a953a623`;
+- `20260911090347_the_prize_reprice_door_the_engine_calls_exists`: 9,372 bytes,
+  SHA-256
+  `e528b35403f6e439287b14c54b0c7308b186d0455bf9a1198b661d26e97e2d8a`.
 
 The Round3 receipt only restates the already server-only ACL and does not touch
 any Stage-B authority. The seat-exit receipt changes the Stage-B boundary #1
@@ -109,6 +115,21 @@ preimage of `fn_ca_close_tournament_seat_exit_authority` to source MD5
 `319441969e49923b3ee8d65f8f0b1e82`; boundary #1 pins that exact body. Once
 Stage-B installs the seat-exit consumer trigger, the conditional guard and the
 final contracted guard have the same enforced-consumption behavior.
+
+The `20260910190537` receipt is carried unchanged. The final contraction
+authenticates its canonical capacity writer, late-seat delegate and charged-
+wallet ledger writer at entry and exit; it must never reinstall the retired
+bespoke late-registration table creator. The tracked migration artifact is
+9,098 bytes with SHA-256
+`e7d8e53de468e504d4c22c1ed9f701f22cb3adb3a3fdafda3ab2dbe5dadec5ed`;
+the production migration API normalized only its final newline when storing
+the 9,097-byte ledger statement above. Both forms are pinned so content drift
+cannot be mistaken for that one-byte transport normalization.
+
+The `20260911090347` receipt is also carried unchanged. Its prize-repricing
+door uses the tournament-scoped settlement lane; Stage B authenticates that
+exact live source and service-only ACL at both contraction boundaries instead
+of re-emitting the older global-lane body.
 
 The `20260911061723` receipt authenticates the exact live preimage; it does not
 approve its cash-all cancellation policy as the Stage-B postimage. Boundary #1
@@ -131,6 +152,13 @@ plus the exact `ca_settle_sources.fn_collect_bounty` live-tail note (`Exact-gene
 rehearsal runs the exact 42,772-byte bounty-rebuy atomicity probe after all six
 boundaries; its SHA-256 is
 `ef8e7fe7c0705ad265dab8f416485302b379437ab94f055f08c98e5cff3a6a5e`.
+It then executes three rollback-contained exact-origin probes against that same
+postimage: request-bound cross-club wallet-charge unregistration (14,666 bytes,
+`a21100a43e73cbf0398e980475bd2a6d602d8245cad821204206de13576383c1`),
+satellite-seat and redeemed-ticket return/replay (35,058 bytes,
+`ed7f2d925a2971a89bb4e88efd5250ccfc2b3b813bd8adb6dca9c3f182e1b1ad`),
+and durable-start/launch-receipt/persisted-hand refusal (21,504 bytes,
+`f9025d6c48ae00e88bca43a41f854b5766d25f596150379d445a532722ab4507`).
 
 ## Preflight
 

@@ -15,15 +15,23 @@ const expansionMigration = stageBMigration('stage_b_forward_authority_expansion'
 const finalMigration = stageBMigration('stage_b_current_postimage_contraction');
 const expansionSql = readFileSync(expansionMigration, 'utf8');
 const finalSql = readFileSync(finalMigration, 'utf8');
+const repriceHotfixSql = readFileSync(
+  resolve(migrationsDirectory, '20260911090347_the_prize_reprice_door_the_engine_calls_exists.sql'),
+  'utf8'
+);
 const sql = `${expansionSql}\n${finalSql}`;
 
-function taggedBody(tag: string): string {
+function taggedBodyIn(source: string, tag: string): string {
   const delimiter = `$${tag}$`;
-  const first = sql.indexOf(delimiter);
-  const second = sql.indexOf(delimiter, first + delimiter.length);
+  const first = source.indexOf(delimiter);
+  const second = source.indexOf(delimiter, first + delimiter.length);
   expect(first, `opening ${delimiter}`).toBeGreaterThan(-1);
   expect(second, `closing ${delimiter}`).toBeGreaterThan(first);
-  return sql.slice(first + delimiter.length, second);
+  return source.slice(first + delimiter.length, second);
+}
+
+function taggedBody(tag: string): string {
+  return taggedBodyIn(sql, tag);
 }
 
 describe('the final tournament seat authority converges after M6', () => {
@@ -258,7 +266,7 @@ describe('periodic tournament mutation is retired at its root', () => {
 });
 
 describe('prize repricing has one service-only compare-and-set door', () => {
-  const reprice = taggedBody('reprice_unpaid_tournament_place');
+  const reprice = taggedBodyIn(repriceHotfixSql, 'reprice_unpaid_tournament_place');
 
   it('locks the terminal root and refuses every prepared or paid boundary', () => {
     const root = reprice.indexOf(
@@ -291,8 +299,20 @@ describe('prize repricing has one service-only compare-and-set door', () => {
     expect(sql).toContain(
       'REVOKE INSERT,UPDATE,DELETE ON TABLE public.tournament_players\n  FROM service_role;'
     );
-    expect(sql).toMatch(
+    expect(repriceHotfixSql).toMatch(
       /REVOKE ALL ON FUNCTION public\.fn_ca_reprice_unpaid_tournament_place\([\s\S]*?FROM PUBLIC,anon,authenticated;[\s\S]*?GRANT EXECUTE ON FUNCTION public\.fn_ca_reprice_unpaid_tournament_place\([\s\S]*?TO service_role;/
+    );
+    expect(finalSql).not.toContain('$reprice_unpaid_tournament_place$');
+    expect(finalSql).not.toMatch(
+      /CREATE OR REPLACE FUNCTION public\.fn_ca_reprice_unpaid_tournament_place/
+    );
+    expect(finalSql).toContain("md5(p.prosrc)='691a3f79a0a36e48f822832d98e12052'");
+    expect(finalSql).toContain("'b9df97fa4e796726443bffd8d51da248'");
+    expect(finalSql).toContain(
+      "'7248ae3fe0700331c9ef45ea028acb7d320662617736ed83c714f684c3416830'"
+    );
+    expect(finalSql).toContain(
+      "'3273dca6e3606a7ec94533255e7e090492a6d282d31939b947ee33ec2c5593c2'"
     );
     expect(sql).toContain(
       "has_table_privilege(\n       'service_role','public.tournament_players','UPDATE')"

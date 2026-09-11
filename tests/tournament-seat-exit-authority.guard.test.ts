@@ -1,4 +1,5 @@
 import { readFileSync, readdirSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { sliceMethod } from './helpers/sourceWindow';
@@ -8,14 +9,19 @@ const migrationsDirectory = root('supabase/migrations');
 const readMigration = (file: string): string => {
   if (file.endsWith('.sql')) return readFileSync(resolve(migrationsDirectory, file), 'utf8');
   const matches = readdirSync(migrationsDirectory).filter(
-    (candidate) =>
-      candidate.endsWith(`_${file}.sql`) || candidate.endsWith(`_${file}.sql.pending`)
+    (candidate) => candidate.endsWith(`_${file}.sql`) || candidate.endsWith(`_${file}.sql.pending`)
   );
   if (matches.length !== 1) throw new Error(`Stage-B ${file} migration is ambiguous`);
   return readFileSync(resolve(migrationsDirectory, matches[0]), 'utf8');
 };
 const seatMoveHotfixSql = readMigration(
   '20260910051447_the_seat_move_door_the_engine_calls_exists.sql'
+);
+const lateRegistrationCapacitySql = readMigration(
+  '20260908042200_late_registration_can_build_its_first_table.sql'
+);
+const lateEntrySql = readMigration(
+  '20260910190537_late_entry_uses_canonical_capacity_and_charged_wallet_receip.sql'
 );
 const expansionSql = readMigration('stage_b_forward_authority_expansion');
 const repairSql = readMigration('stage_b_exact_precondition_repairs');
@@ -58,7 +64,15 @@ const spinExpiry = taggedBody(contractionSql, 'expire_unfilled_without_reconcile
 const cancellation = taggedBody(contractionSql, 'cancel_with_seat_authority');
 const elimination = taggedBody(contractionSql, 'elimination_with_seat_authority');
 const bountyElimination = taggedBody(contractionSql, 'bounty_elimination_with_seat_authority');
-const lateSeat = taggedBody(contractionSql, 'late_seat_without_reconciler');
+const canonicalLateSeat = taggedBody(lateEntrySql, 'replacement_0');
+const canonicalCapacity = lateRegistrationCapacitySql.slice(
+  lateRegistrationCapacitySql.indexOf(
+    'CREATE OR REPLACE FUNCTION public.fn_ensure_late_registration_capacity('
+  ),
+  lateRegistrationCapacitySql.indexOf(
+    '-- Idempotent acknowledgement of an exact, bounded hand-off set.'
+  )
+);
 const managedUpdate = taggedBody(contractionSql, 'managed_update_without_reconciler');
 const reconcilerPreflight = taggedBody(contractionSql, 'legacy_reconciler_preflight');
 const cashPlayerLeave = taggedBody(contractionSql, 'cash_player_leave');
@@ -75,6 +89,23 @@ const legacyCutoverProof = taggedBody(contractionSql, 'legacy_unregister_cutover
 const chipSyncPreflight = taggedBody(contractionSql, 'legacy_chip_sync_preflight');
 
 describe('tournament seat exits have one hard authority', () => {
+  it('distinguishes the tracked late-entry artifact from its normalized ledger statement', () => {
+    expect(Buffer.byteLength(lateEntrySql, 'utf8')).toBe(9098);
+    expect(createHash('sha256').update(lateEntrySql).digest('hex')).toBe(
+      'e7d8e53de468e504d4c22c1ed9f701f22cb3adb3a3fdafda3ab2dbe5dadec5ed'
+    );
+    expect(lateEntrySql.endsWith('\n')).toBe(true);
+    const ledgerStatement = lateEntrySql.slice(0, -1);
+    expect(Buffer.byteLength(ledgerStatement, 'utf8')).toBe(9097);
+    expect(createHash('sha256').update(ledgerStatement).digest('hex')).toBe(
+      'a4e7bf3d2f352c8d12030ea83fd3697054ac3045e4276293362b6d72e2040ed4'
+    );
+    expect(expansionSql).toContain('octet_length(m.statements[1])=9097');
+    expect(expansionSql).toContain(
+      "'a4e7bf3d2f352c8d12030ea83fd3697054ac3045e4276293362b6d72e2040ed4'"
+    );
+  });
+
   it('fails closed if the production lock trough is missed', () => {
     const begin = repairSql.indexOf('BEGIN;');
     const firstLock = repairSql.indexOf('pg_advisory_xact_lock(', begin);
@@ -667,14 +698,24 @@ describe('tournament seat exits have one hard authority', () => {
   });
 
   it('hard-codes every remaining denormal at the writer that owns it', () => {
-    expect(lateSeat).toContain('INSERT INTO public.tables(');
-    expect(lateSeat).toContain('stakes,blind_structure,status,current_players');
-    expect(lateSeat).toContain("trim_scale(v_sb)::text||'/'||trim_scale(v_bb)::text");
+    expect(canonicalCapacity).toContain('INSERT INTO public.tables(');
+    expect(canonicalCapacity).toContain('game_type,game_variant,stakes,');
+    expect(canonicalCapacity).toContain("v_sb::text||'/'||v_bb::text");
+    expect(canonicalCapacity).toContain('public.fn_tournament_current_blinds(p_tournament_id)');
+    expect(canonicalCapacity).toContain('tournament_capacity_table_receipts');
+    expect(canonicalLateSeat).toContain(
+      'public.fn_ensure_late_registration_capacity(p_tournament_id,0)'
+    );
+    expect(canonicalLateSeat).toContain('COALESCE(tb.is_deleted,false)=false');
+    expect(contractionSql).not.toContain('$late_seat_without_reconciler$');
+    expect(contractionSql).not.toMatch(
+      /CREATE OR REPLACE FUNCTION\s+public\.fn_seat_late_registrant_before_maintenance_gate/
+    );
+    expect(contractionSql).toContain("md5(p.prosrc)='9311ef4ed0c2fa6fbb0f1d8fa169137f'");
+    expect(contractionSql).toContain("md5(p.prosrc)='b36dd36a9348d29be1092c7d42954c03'");
+    expect(contractionSql).toContain("p.proacl::text='{postgres=X/postgres}'");
     expect(managedUpdate).toContain('small_blind=v_sb,big_blind=v_bb');
     expect(managedUpdate).toContain("stakes=trim_scale(v_sb)::text||'/'||trim_scale(v_bb)::text");
-    expect(sql).toMatch(
-      /REVOKE ALL ON FUNCTION\s+public\.fn_seat_late_registrant_before_maintenance_gate\(uuid,uuid\)\s+FROM PUBLIC,anon,authenticated,service_role;/
-    );
     expect(sql).toMatch(
       /REVOKE ALL ON FUNCTION public\.fn_update_managed_game\(text,uuid,jsonb\)\s+FROM PUBLIC,anon,authenticated;/
     );
@@ -826,7 +867,7 @@ describe('tournament seat exits have one hard authority', () => {
     );
     expect(seatExitProbe).toContain('receipt.fee_source_rake_record_ids IS DISTINCT FROM ARRAY(');
     expect(seatExitProbe).toContain('original.club_id=reversal.club_id');
-    expect(crossClubUnregisterProbe).toContain('public.fn_register_for_tournament(');
+    expect(crossClubUnregisterProbe).toContain('public.fn_register_for_tournament_request(');
     expect(crossClubUnregisterProbe).toContain(
       'public.fn_ca_process_tournament_chip_purchase_money_v1('
     );

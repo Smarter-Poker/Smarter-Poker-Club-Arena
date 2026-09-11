@@ -33,6 +33,27 @@ const cashoutPostimage = readFileSync(
   ),
   'utf8'
 );
+const lateRegistrationCapacityPostimage = readFileSync(
+  resolve(
+    root,
+    'supabase/migrations/20260908042200_late_registration_can_build_its_first_table.sql'
+  ),
+  'utf8'
+);
+const lateEntryPostimage = readFileSync(
+  resolve(
+    root,
+    'supabase/migrations/20260910190537_late_entry_uses_canonical_capacity_and_charged_wallet_receip.sql'
+  ),
+  'utf8'
+);
+const repricePostimage = readFileSync(
+  resolve(
+    root,
+    'supabase/migrations/20260911090347_the_prize_reprice_door_the_engine_calls_exists.sql'
+  ),
+  'utf8'
+);
 const contractionCode = contraction.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*--.*$/gm, '');
 const stageBOneThroughFive = [
   'stage_b_forward_authority_expansion',
@@ -177,15 +198,49 @@ describe('Stage-B contraction preserves its exact bounded production prerequisit
     expect(postcondition).not.toContain('421488851cad34b81b8fea7f2f796fed');
   });
 
-  it('never recreates or drops either preserved body in boundaries one through five', () => {
+  it('never recreates or drops any carried live body in boundaries one through five', () => {
     for (const name of [
       'fn_active_maintenance_release_boundary',
       'fn_ca_eliminate_absent_tournament_players',
+      'fn_ensure_late_registration_capacity',
+      'fn_seat_late_registrant_before_maintenance_gate',
+      'log_wallet_transaction',
+      'fn_ca_reprice_unpaid_tournament_place',
     ]) {
       expect(stageBOneThroughFive).not.toMatch(
         new RegExp(`(?:CREATE(?: OR REPLACE)?|DROP) FUNCTION\\s+public\\.${name}\\s*\\(`)
       );
     }
+  });
+
+  it('carries the exact canonical late-entry, wallet receipt and repricing authorities', () => {
+    const ownedPostimage = dollarBody('assert_stage_b_owned_postimage');
+    for (const exactHash of [
+      'b36dd36a9348d29be1092c7d42954c03',
+      '231f56742d40351b5121622ef068d02c',
+      '9311ef4ed0c2fa6fbb0f1d8fa169137f',
+      '4f1800b2cd9bbf61cf926130eb8f03db',
+      'd1dd7af2ba51d15355f05d10057ec04a',
+      '53e97347076b0a6de0a5f7f4abaf359d',
+      '691a3f79a0a36e48f822832d98e12052',
+      'b9df97fa4e796726443bffd8d51da248',
+      '7248ae3fe0700331c9ef45ea028acb7d320662617736ed83c714f684c3416830',
+      '3273dca6e3606a7ec94533255e7e090492a6d282d31939b947ee33ec2c5593c2',
+    ]) {
+      expect(ownedPostimage).toContain(exactHash);
+    }
+    expect(lateRegistrationCapacityPostimage).toContain(
+      'CREATE OR REPLACE FUNCTION public.fn_ensure_late_registration_capacity('
+    );
+    expect(lateEntryPostimage).toContain(
+      'public.fn_ensure_late_registration_capacity(p_tournament_id,0)'
+    );
+    expect(lateEntryPostimage).toContain(
+      'Tournament entry receipt cannot read its charged club wallet'
+    );
+    expect(repricePostimage).toContain(
+      'public.fn_ca_lock_settlement_lane_for_tournament(p_tournament_id)'
+    );
   });
 });
 

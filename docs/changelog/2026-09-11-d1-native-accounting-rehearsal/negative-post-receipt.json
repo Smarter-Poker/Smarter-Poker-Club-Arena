@@ -1,0 +1,67 @@
+{
+  "phase": "post",
+  "checks": {
+    "evidence_update": {
+      "refused": true,
+      "unchanged": true,
+      "expectedError": "knockout invalidation evidence is immutable"
+    },
+    "evidence_delete": {
+      "refused": true,
+      "unchanged": true,
+      "expectedError": "knockout invalidation evidence is immutable"
+    },
+    "evidence_truncate": {
+      "refused": true,
+      "unchanged": true,
+      "expectedError": "knockout invalidation evidence is immutable"
+    },
+    "invalidated_revival": {
+      "refused": true,
+      "unchanged": true,
+      "expectedError": "adjudicated candidate permits only its evidenced terminal transition"
+    },
+    "source_rebuy_revival": {
+      "refused": true,
+      "unchanged": true,
+      "expectedError": "adjudicated candidate permits only its evidenced terminal transition"
+    },
+    "candidate_delete": {
+      "refused": true,
+      "unchanged": true,
+      "expectedError": "an adjudicated knockout generation cannot be deleted"
+    },
+    "candidate_identity_rewrite": {
+      "refused": true,
+      "unchanged": true,
+      "expectedError": "adjudicated candidate permits only its evidenced terminal transition"
+    },
+    "native_elimination_replay": {
+      "unchanged": true,
+      "result": {
+        "ok": false,
+        "reason": "unresolved_knockout_generation_chain"
+      }
+    },
+    "latest_helper_keeps_invalidated_barrier": {
+      "candidateId": "bea72c06-dde6-4d97-b3d5-dd003627a676",
+      "matches": true
+    }
+  },
+  "unchangedHashes": {
+    "tournaments": "467de54f7a331f3d8679323b725e60d4",
+    "tournament_players": "558f702aa41c1fc1b4cc1c35f660b0e6",
+    "tournament_knockout_candidates": "460fdc7918902e487976dbd1bd4c267c",
+    "tournament_knockout_invalidations": "7787be1a136f94120b22711d41db9ded",
+    "hand_atomic_commits": "918aca04b966fc6b25b1d4966c528b41",
+    "tournament_escrow": "f03d560b5f94b649152115485a6c3323",
+    "chip_ledger": "d16b7b863790a341fded24f36494b81a",
+    "wallet_transactions": "85861e0016a41f3f321eebf6df7f4826",
+    "tournament_obligations": "d751713988987e9331980363e24189ce",
+    "tournament_payouts": "d751713988987e9331980363e24189ce",
+    "tournament_manager_wakes": "b042d27cae8c49f9276fa41882acbb50",
+    "club_members": "b24c399bd21de4ead49a9ad198710ce9",
+    "union_wallets": "bd57038dbe4c9677a616f51d1e6938e0",
+    "table_seats": "4a5032444838759d9b6d41d6eda4e141"
+  }
+}

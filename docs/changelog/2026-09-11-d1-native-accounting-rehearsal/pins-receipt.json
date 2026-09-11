@@ -1,0 +1,14 @@
+{
+  "functionBodiesMatch": 521,
+  "triggerDefinitionsAndStatesMatch": 293,
+  "disabledTournamentGuards": [
+    "aa_guard_tournament_completing_claim",
+    "aaa_guard_atomic_satellite_completion",
+    "zzzz_freeze_finalized_tournament_prize_pool",
+    "zzzz_tournament_pool_finalization_window_guard",
+    "zzzz_tournaments_atomic_place_completion_guard",
+    "zzzzz_tournaments_atomic_final_table_deal_completion_guard",
+    "zzzzzz_tournaments_financial_certificate"
+  ],
+  "postgres": "17.11 (Homebrew)"
+}

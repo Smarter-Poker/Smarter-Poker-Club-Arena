@@ -1,0 +1,661 @@
+{
+  "verifiedAt": "2026-09-11T16:14:10.036063+00:00",
+  "eventId": "7aa16fa7-adf7-4fb9-81b9-b565d8e4af7d",
+  "expectedOrderAll385Matches": true,
+  "tankChamp": {
+    "userId": "373a7bc7-1505-4c4c-b6b0-ba437b569a8a",
+    "currentCachedPlace": 12,
+    "currentCachedPrize": 4.68,
+    "ordinaryTrueOrderPlace": 13,
+    "ordinaryTrueOrderPrize": 4.37,
+    "ruledPlace": 36,
+    "ruledPrize": 1.94,
+    "otherFinishersMovedUp": 23
+  },
+  "resequencingToggles": 0,
+  "proof": {
+    "escrow": {
+      "fee_out": 11.6,
+      "enforced": true,
+      "gross_in": 116,
+      "bounty_in": 0,
+      "closed_at": "2026-09-11T16:14:08.789613+00:00",
+      "opened_at": "2026-09-08T17:48:33.189562+00:00",
+      "prize_out": 204.4,
+      "bounty_out": 0,
+      "close_note": "terminal receipt: exact zero",
+      "overlay_in": 100,
+      "refund_fee": 0,
+      "reserve_in": 0,
+      "updated_at": "2026-09-11T16:14:08.789613+00:00",
+      "fee_balance": 0.0,
+      "opened_from": "shadow at first sight (overlay)",
+      "reserve_out": 0,
+      "refund_prize": 0,
+      "satellite_in": 0,
+      "prize_balance": 0.0,
+      "refund_bounty": 0,
+      "tournament_id": "7aa16fa7-adf7-4fb9-81b9-b565d8e4af7d",
+      "bounty_balance": 0.0,
+      "fee_entries_in": 11.6,
+      "satellite_fee_in": 0,
+      "terminal_closed_at": "2026-09-11T16:14:08.789613+00:00"
+    },
+    "status": "COMPLETED",
+    "member_credit": 204.4,
+    "pending_wakes": 0,
+    "rake_settlement": {
+      "amount": 11.6,
+      "source": "engine.fn_complete_tournament_terminal",
+      "club_id": "fade0000-0000-0000-0000-000000000001",
+      "union_id": "fade0000-0000-0000-0000-000000000001",
+      "created_at": "2026-09-11T16:14:08.789613+00:00",
+      "settled_at": "2026-09-11T16:14:08.789613+00:00",
+      "destination": "union:fade0000-0000-0000-0000-000000000001",
+      "attributed_at": "2026-09-11T16:14:08.789613+00:00",
+      "tournament_id": "7aa16fa7-adf7-4fb9-81b9-b565d8e4af7d",
+      "attributed_users": 91,
+      "attribution_error": null,
+      "terminal_closed_at": "2026-09-11T16:14:08.789613+00:00"
+    },
+    "new_ledger_total": 216.0,
+    "terminal_receipts": 1,
+    "trigger_execution": "origin",
+    "union_rake_credit": 11.6,
+    "remaining_live_seats": 0,
+    "original_ledger_unchanged": true,
+    "original_entitlements_unchanged": true,
+    "original_wallet_financial_fields_unchanged": true
+  },
+  "history": {
+    "ruling": {
+      "id": "566fdb5e-2b18-59e4-9283-5c27a4a9b9e1",
+      "reason": "D1 authorized true-bust ruling: tankChamp actually busted in committed hand 8775892 at 2026-09-09 22:35:09.777892 UTC. The later chair generation began at 22:40:01.958437 after a since-deleted repair created 115000 chips; it was not a purchased rebuy. Retain both accepted hands and candidate identities, invalidate only the repair-created generation, and restore the original bust as the ranking witness. Other players keep chips won; no money is clawed back. Normal settlement must place tankChamp 36th for 1.94 and move the 23 intervening true-order finishers up one place.",
+      "user_id": "373a7bc7-1505-4c4c-b6b0-ba437b569a8a",
+      "created_at": "2026-09-11T16:14:06.865196+00:00",
+      "created_by": "postgres",
+      "player_before": {
+        "id": "e9ed600b-9b77-49a3-9e71-8d9941bd814d",
+        "chips": 0,
+        "prize": 4.68,
+        "add_on": false,
+        "rebuys": 0,
+        "status": "eliminated",
+        "club_id": "a0000000-0000-0000-0000-000000000001",
+        "user_id": "373a7bc7-1505-4c4c-b6b0-ba437b569a8a",
+        "position": 12,
+        "table_id": "223a54f7-3daa-4e9b-9b90-4df312f0402a",
+        "username": "tankChamp",
+        "chip_count": 0,
+        "seat_number": 6,
+        "push_2m_sent": true,
+        "eliminated_at": "2026-09-10T12:49:51.282399+00:00",
+        "push_15m_sent": true,
+        "registered_at": "2026-09-08T15:45:08.935365+00:00",
+        "tournament_id": "7aa16fa7-adf7-4fb9-81b9-b565d8e4af7d",
+        "current_bounty": 0,
+        "bounty_winnings": 0.0,
+        "bounties_collected": 0,
+        "rebuy_prompt_until": null,
+        "terminal_closed_at": null,
+        "source_satellite_id": null,
+        "elimination_sequence": 21794,
+        "mystery_bounty_value": 0.0,
+        "is_satellite_qualifier": false
+      },
+      "source_before": {
+        "id": "266af3b0-7791-4681-8e49-752a62deeb45",
+        "state": "rebought",
+        "hand_id": "836f5a38-f2ed-41a7-810c-ec122748a13c",
+        "seat_id": "59841fb4-0f0b-4ef1-8623-e7bd3e228636",
+        "table_id": "391dd0c2-9c1b-4926-acfe-1dfd5936568a",
+        "created_at": "2026-09-09T22:35:09.701136+00:00",
+        "hand_number": 8775892,
+        "resolved_at": "2026-09-10T12:45:24.48164+00:00",
+        "stack_after": 0.0,
+        "stack_before": 115000.0,
+        "tournament_id": "7aa16fa7-adf7-4fb9-81b9-b565d8e4af7d",
+        "seat_joined_at": "2026-09-09T22:34:25.081124+00:00",
+        "eliminated_user_id": "373a7bc7-1505-4c4c-b6b0-ba437b569a8a",
+        "rebuy_prompt_until": null
+      },
+      "source_commit": {
+        "hand_id": "836f5a38-f2ed-41a7-810c-ec122748a13c",
+        "table_id": "391dd0c2-9c1b-4926-acfe-1dfd5936568a",
+        "hand_number": 8775892,
+        "committed_at": "2026-09-09T22:35:09.777892+00:00",
+        "payload_hash": "2de31954062287aa807031000f52ec42e11ff3e75d42d2abf7c853c702c11098",
+        "stack_result": {
+          "bbj": 0,
+          "mode": "delta",
+          "rake": 0,
+          "inflow": 0,
+          "hand_id": "86650ad8-d201-708a-0d63-7f172bf7008a",
+          "players": 9,
+          "rebased": {},
+          "request": {
+            "bbj": 0,
+            "rake": 0,
+            "inflow": 0,
+            "stacks": [
+              {
+                "stack": 0,
+                "user_id": "373a7bc7-1505-4c4c-b6b0-ba437b569a8a",
+                "stack_before": 115000
+              },
+              {
+                "stack": 0,
+                "user_id": "5c9528bd-1166-4619-9d54-ee93fb315e7e",
+                "stack_before": 65000
+              },
+              {
+                "stack": 0,
+                "user_id": "611cf850-2298-4a87-8c1e-9ac0a763c486",
+                "stack_before": 80000
+              },
+              {
+                "stack": 0,
+                "user_id": "7d2a36ee-19f0-4d5e-9600-9a2cd996c0b9",
+                "stack_before": 60000
+              },
+              {
+                "stack": 116737,
+                "user_id": "7f348e8f-a98d-4bf8-8f59-e34a78d1f87b",
+                "stack_before": 141651
+              },
+              {
+                "stack": 0,
+                "user_id": "b5b6395d-e618-4536-8ea8-5b89ee3878d1",
+                "stack_before": 65000
+              },
+              {
+                "stack": 59743,
+                "user_id": "cb50fee0-a87b-4ac8-a6fe-8e665c5ddd8c",
+                "stack_before": 99829
+              },
+              {
+                "stack": 565000,
+                "user_id": "f44d72f2-a596-4938-af60-2e36b18de73f",
+                "stack_before": 65000
+              },
+              {
+                "stack": 0,
+                "user_id": "fb7c947d-79ce-4706-8c33-bb4f39359c59",
+                "stack_before": 50000
+              }
+            ]
+          },
+          "success": true,
+          "written": {
+            "373a7bc7-1505-4c4c-b6b0-ba437b569a8a": 0,
+            "5c9528bd-1166-4619-9d54-ee93fb315e7e": 0,
+            "611cf850-2298-4a87-8c1e-9ac0a763c486": 0,
+            "7d2a36ee-19f0-4d5e-9600-9a2cd996c0b9": 0,
+            "7f348e8f-a98d-4bf8-8f59-e34a78d1f87b": 116737,
+            "b5b6395d-e618-4536-8ea8-5b89ee3878d1": 0,
+            "cb50fee0-a87b-4ac8-a6fe-8e665c5ddd8c": 59743,
+            "f44d72f2-a596-4938-af60-2e36b18de73f": 565000,
+            "fb7c947d-79ce-4706-8c33-bb4f39359c59": 0
+          },
+          "departed": [],
+          "table_id": "391dd0c2-9c1b-4926-acfe-1dfd5936568a",
+          "net_deltas": 0,
+          "hand_number": 8775892,
+          "tournament_id": "7aa16fa7-adf7-4fb9-81b9-b565d8e4af7d",
+          "conservation_checked": true,
+          "tournament_player_chips": [
+            {
+              "chips": 0,
+              "user_id": "373a7bc7-1505-4c4c-b6b0-ba437b569a8a"
+            },
+            {
+              "chips": 0,
+              "user_id": "5c9528bd-1166-4619-9d54-ee93fb315e7e"
+            },
+            {
+              "chips": 0,
+              "user_id": "611cf850-2298-4a87-8c1e-9ac0a763c486"
+            },
+            {
+              "chips": 0,
+              "user_id": "7d2a36ee-19f0-4d5e-9600-9a2cd996c0b9"
+            },
+            {
+              "chips": 116737,
+              "user_id": "7f348e8f-a98d-4bf8-8f59-e34a78d1f87b"
+            },
+            {
+              "chips": 0,
+              "user_id": "b5b6395d-e618-4536-8ea8-5b89ee3878d1"
+            },
+            {
+              "chips": 59743,
+              "user_id": "cb50fee0-a87b-4ac8-a6fe-8e665c5ddd8c"
+            },
+            {
+              "chips": 565000,
+              "user_id": "f44d72f2-a596-4938-af60-2e36b18de73f"
+            },
+            {
+              "chips": 0,
+              "user_id": "fb7c947d-79ce-4706-8c33-bb4f39359c59"
+            }
+          ],
+          "tournament_player_count": 9,
+          "tournament_players_synced": true,
+          "tournament_player_user_ids": [
+            "373a7bc7-1505-4c4c-b6b0-ba437b569a8a",
+            "5c9528bd-1166-4619-9d54-ee93fb315e7e",
+            "611cf850-2298-4a87-8c1e-9ac0a763c486",
+            "7d2a36ee-19f0-4d5e-9600-9a2cd996c0b9",
+            "7f348e8f-a98d-4bf8-8f59-e34a78d1f87b",
+            "b5b6395d-e618-4536-8ea8-5b89ee3878d1",
+            "cb50fee0-a87b-4ac8-a6fe-8e665c5ddd8c",
+            "f44d72f2-a596-4938-af60-2e36b18de73f",
+            "fb7c947d-79ce-4706-8c33-bb4f39359c59"
+          ],
+          "tournament_zero_stack_seat_ids": [
+            "00f2a4a7-99e2-4daf-b8d8-3a04694b0fbc",
+            "2d0dbffb-fe0f-4577-91e7-2f82a3a0b772",
+            "59841fb4-0f0b-4ef1-8623-e7bd3e228636",
+            "6db427fb-d417-45fe-ac3f-5ce225d76772",
+            "b282d88d-b2be-4d8b-8d9d-18a658e6228b",
+            "c5080003-55e3-4d0c-bcef-5e2db6e1615b"
+          ],
+          "tournament_zero_stack_user_ids": [
+            "373a7bc7-1505-4c4c-b6b0-ba437b569a8a",
+            "5c9528bd-1166-4619-9d54-ee93fb315e7e",
+            "611cf850-2298-4a87-8c1e-9ac0a763c486",
+            "7d2a36ee-19f0-4d5e-9600-9a2cd996c0b9",
+            "b5b6395d-e618-4536-8ea8-5b89ee3878d1",
+            "fb7c947d-79ce-4706-8c33-bb4f39359c59"
+          ],
+          "tournament_table_live_seat_count": 3,
+          "tournament_zero_stack_seat_count": 6,
+          "tournament_zero_stack_vacated_at": "2026-09-09T22:35:09.520478+00:00",
+          "tournament_zero_stack_seats_vacated": true,
+          "tournament_zero_stack_seat_generations": [
+            {
+              "seat_id": "00f2a4a7-99e2-4daf-b8d8-3a04694b0fbc",
+              "user_id": "fb7c947d-79ce-4706-8c33-bb4f39359c59",
+              "joined_at": "2026-09-08T17:41:54.484+00:00",
+              "seat_number": 2
+            },
+            {
+              "seat_id": "2d0dbffb-fe0f-4577-91e7-2f82a3a0b772",
+              "user_id": "5c9528bd-1166-4619-9d54-ee93fb315e7e",
+              "joined_at": "2026-09-09T22:34:25.081124+00:00",
+              "seat_number": 7
+            },
+            {
+              "seat_id": "59841fb4-0f0b-4ef1-8623-e7bd3e228636",
+              "user_id": "373a7bc7-1505-4c4c-b6b0-ba437b569a8a",
+              "joined_at": "2026-09-09T22:34:25.081124+00:00",
+              "seat_number": 3
+            },
+            {
+              "seat_id": "6db427fb-d417-45fe-ac3f-5ce225d76772",
+              "user_id": "611cf850-2298-4a87-8c1e-9ac0a763c486",
+              "joined_at": "2026-09-09T22:34:25.081124+00:00",
+              "seat_number": 5
+            },
+            {
+              "seat_id": "b282d88d-b2be-4d8b-8d9d-18a658e6228b",
+              "user_id": "b5b6395d-e618-4536-8ea8-5b89ee3878d1",
+              "joined_at": "2026-09-09T22:34:25.081124+00:00",
+              "seat_number": 6
+            },
+            {
+              "seat_id": "c5080003-55e3-4d0c-bcef-5e2db6e1615b",
+              "user_id": "7d2a36ee-19f0-4d5e-9600-9a2cd996c0b9",
+              "joined_at": "2026-09-09T22:34:25.081124+00:00",
+              "seat_number": 9
+            }
+          ]
+        }
+      },
+      "tournament_id": "7aa16fa7-adf7-4fb9-81b9-b565d8e4af7d",
+      "invalid_before": {
+        "id": "bea72c06-dde6-4d97-b3d5-dd003627a676",
+        "state": "eliminated",
+        "hand_id": "9b6e5be9-d990-4916-ba7d-b76a6fb8094a",
+        "seat_id": "c198f227-bb3d-42a2-9bf6-81c31f0f01bf",
+        "table_id": "223a54f7-3daa-4e9b-9b90-4df312f0402a",
+        "created_at": "2026-09-10T02:00:40.79641+00:00",
+        "hand_number": 8803695,
+        "resolved_at": "2026-09-10T12:49:52.350704+00:00",
+        "stack_after": 0.0,
+        "stack_before": 55000.0,
+        "tournament_id": "7aa16fa7-adf7-4fb9-81b9-b565d8e4af7d",
+        "seat_joined_at": "2026-09-09T22:40:01.958437+00:00",
+        "eliminated_user_id": "373a7bc7-1505-4c4c-b6b0-ba437b569a8a",
+        "rebuy_prompt_until": null
+      },
+      "invalid_commit": {
+        "hand_id": "9b6e5be9-d990-4916-ba7d-b76a6fb8094a",
+        "table_id": "223a54f7-3daa-4e9b-9b90-4df312f0402a",
+        "hand_number": 8803695,
+        "committed_at": "2026-09-10T02:00:40.822288+00:00",
+        "payload_hash": "fca0023ecde37d7a6ece5ff8a260a180e8e7b16e94cd6500c3c36cce8f1efa40",
+        "stack_result": {
+          "bbj": 0,
+          "mode": "delta",
+          "rake": 0,
+          "inflow": 0,
+          "hand_id": "b515ae86-de0c-750d-3783-1e98de4c8722",
+          "players": 2,
+          "rebased": {},
+          "request": {
+            "bbj": 0,
+            "rake": 0,
+            "inflow": 0,
+            "stacks": [
+              {
+                "stack": 0,
+                "seat_id": "c198f227-bb3d-42a2-9bf6-81c31f0f01bf",
+                "user_id": "373a7bc7-1505-4c4c-b6b0-ba437b569a8a",
+                "stack_before": 55000,
+                "seat_joined_at": "2026-09-09T22:40:01.958437+00:00"
+              },
+              {
+                "stack": 380000,
+                "seat_id": "f3ba623a-ad1f-4e7b-aaa6-eb5daaf7a5a8",
+                "user_id": "f8058099-1f42-4de5-ba90-a27dde896f4a",
+                "stack_before": 325000,
+                "seat_joined_at": "2026-09-09T22:39:42.210959+00:00"
+              }
+            ]
+          },
+          "success": true,
+          "written": {
+            "373a7bc7-1505-4c4c-b6b0-ba437b569a8a": 0,
+            "f8058099-1f42-4de5-ba90-a27dde896f4a": 380000
+          },
+          "departed": [],
+          "table_id": "223a54f7-3daa-4e9b-9b90-4df312f0402a",
+          "net_deltas": 0,
+          "hand_number": 8803695,
+          "tournament_id": "7aa16fa7-adf7-4fb9-81b9-b565d8e4af7d",
+          "conservation_checked": true,
+          "tournament_player_chips": [
+            {
+              "chips": 0,
+              "user_id": "373a7bc7-1505-4c4c-b6b0-ba437b569a8a"
+            },
+            {
+              "chips": 380000,
+              "user_id": "f8058099-1f42-4de5-ba90-a27dde896f4a"
+            }
+          ],
+          "tournament_player_count": 2,
+          "tournament_players_synced": true,
+          "tournament_player_user_ids": [
+            "373a7bc7-1505-4c4c-b6b0-ba437b569a8a",
+            "f8058099-1f42-4de5-ba90-a27dde896f4a"
+          ],
+          "tournament_zero_stack_seat_ids": ["c198f227-bb3d-42a2-9bf6-81c31f0f01bf"],
+          "tournament_zero_stack_user_ids": ["373a7bc7-1505-4c4c-b6b0-ba437b569a8a"],
+          "tournament_table_live_seat_count": 1,
+          "tournament_zero_stack_seat_count": 1,
+          "tournament_zero_stack_vacated_at": "2026-09-10T02:00:40.697354+00:00",
+          "tournament_zero_stack_seats_vacated": true,
+          "tournament_zero_stack_seat_generations": [
+            {
+              "seat_id": "c198f227-bb3d-42a2-9bf6-81c31f0f01bf",
+              "user_id": "373a7bc7-1505-4c4c-b6b0-ba437b569a8a",
+              "joined_at": "2026-09-09T22:40:01.958437+00:00",
+              "seat_number": 6
+            }
+          ]
+        }
+      },
+      "source_candidate_id": "266af3b0-7791-4681-8e49-752a62deeb45",
+      "invalid_candidate_id": "bea72c06-dde6-4d97-b3d5-dd003627a676"
+    },
+    "other_historical_times_unchanged": true,
+    "captured_atomic_receipts_unchanged": true,
+    "latest_candidate_still_invalidated": true,
+    "candidate_identity_fields_unchanged": true,
+    "historical_status_chips_sequence_unchanged": true
+  },
+  "payouts": [
+    {
+      "place": 1,
+      "userId": "a70a0d4c-232e-482d-898f-37518fe134bc",
+      "amount": 34.11
+    },
+    {
+      "place": 2,
+      "userId": "753e81a9-1513-4923-be2b-bd684ed7133c",
+      "amount": 19.58
+    },
+    {
+      "place": 3,
+      "userId": "9585521c-a98d-4880-a915-c7248289a162",
+      "amount": 14.16
+    },
+    {
+      "place": 4,
+      "userId": "55ee6465-bdc1-4eb1-b7fd-7630ff315e04",
+      "amount": 11.24
+    },
+    {
+      "place": 5,
+      "userId": "3a7ad729-fef0-4091-b675-747cd760d2f8",
+      "amount": 9.42
+    },
+    {
+      "place": 6,
+      "userId": "f44d72f2-a596-4938-af60-2e36b18de73f",
+      "amount": 8.14
+    },
+    {
+      "place": 7,
+      "userId": "f8058099-1f42-4de5-ba90-a27dde896f4a",
+      "amount": 7.19
+    },
+    {
+      "place": 8,
+      "userId": "7f348e8f-a98d-4bf8-8f59-e34a78d1f87b",
+      "amount": 6.46
+    },
+    {
+      "place": 9,
+      "userId": "6fa1c8e2-c2bb-4168-b121-6281a549b94f",
+      "amount": 5.89
+    },
+    {
+      "place": 10,
+      "userId": "40f9d2b3-14d5-45f8-a3e7-f89d1449d054",
+      "amount": 5.4
+    },
+    {
+      "place": 11,
+      "userId": "a0d2909b-4b76-4a44-b88d-781ccca63623",
+      "amount": 5.01
+    },
+    {
+      "place": 12,
+      "userId": "28d30605-63d5-4fc7-ba26-3ecb1a04ccd1",
+      "amount": 4.68
+    },
+    {
+      "place": 13,
+      "userId": "8376185d-fab8-483c-a004-52c8a5cce763",
+      "amount": 4.37
+    },
+    {
+      "place": 14,
+      "userId": "00000000-0000-0000-0000-000000000041",
+      "amount": 4.13
+    },
+    {
+      "place": 15,
+      "userId": "eb2e16b6-8a39-4acc-a644-1c5bf4041b0c",
+      "amount": 3.9
+    },
+    {
+      "place": 16,
+      "userId": "660d14dc-9f42-425b-9985-55644a95a984",
+      "amount": 3.72
+    },
+    {
+      "place": 17,
+      "userId": "ef1baf0a-72de-4d60-a90f-b9b608b051b3",
+      "amount": 3.54
+    },
+    {
+      "place": 18,
+      "userId": "cb50fee0-a87b-4ac8-a6fe-8e665c5ddd8c",
+      "amount": 3.37
+    },
+    {
+      "place": 19,
+      "userId": "8338bf08-f33d-481e-9072-fba81076bc9a",
+      "amount": 3.23
+    },
+    {
+      "place": 20,
+      "userId": "2143ec37-02ed-4712-9642-a56f1945c379",
+      "amount": 3.11
+    },
+    {
+      "place": 21,
+      "userId": "00000000-0000-0000-0000-000000000017",
+      "amount": 2.98
+    },
+    {
+      "place": 22,
+      "userId": "f687be6b-fef1-4713-be59-9ed6e8b55eef",
+      "amount": 2.88
+    },
+    {
+      "place": 23,
+      "userId": "57d5af45-0b1c-417c-bc41-64ca9fd1b4b9",
+      "amount": 2.78
+    },
+    {
+      "place": 24,
+      "userId": "0097309f-2864-4d09-b02b-56bca012a9c3",
+      "amount": 2.68
+    },
+    {
+      "place": 25,
+      "userId": "2478c921-4ed2-40dc-b343-51c9987ba922",
+      "amount": 2.6
+    },
+    {
+      "place": 26,
+      "userId": "f45f73b2-edc0-44d1-9865-1c79bb4d6838",
+      "amount": 2.51
+    },
+    {
+      "place": 27,
+      "userId": "54a0a8e8-a5e6-4b62-8855-9d68fe69ee6d",
+      "amount": 2.45
+    },
+    {
+      "place": 28,
+      "userId": "4aa0d45c-056b-48fa-af36-fc514aee4d57",
+      "amount": 2.37
+    },
+    {
+      "place": 29,
+      "userId": "00000000-0000-0000-0000-000000000050",
+      "amount": 2.31
+    },
+    {
+      "place": 30,
+      "userId": "0a714eff-ef23-4928-b2a7-addecc97b467",
+      "amount": 2.25
+    },
+    {
+      "place": 31,
+      "userId": "ca905025-0dfc-4353-ac1e-444ce5763c83",
+      "amount": 2.19
+    },
+    {
+      "place": 32,
+      "userId": "7e4ba828-ba3c-43ca-a9f7-8a697be64c15",
+      "amount": 2.13
+    },
+    {
+      "place": 33,
+      "userId": "8703e327-5739-475e-b256-8eca013b9b7b",
+      "amount": 2.08
+    },
+    {
+      "place": 34,
+      "userId": "06f7b8ff-889c-4634-b7bb-7d6c010ad8a1",
+      "amount": 2.02
+    },
+    {
+      "place": 35,
+      "userId": "00000000-0000-0000-0000-000000000013",
+      "amount": 1.98
+    },
+    {
+      "place": 36,
+      "userId": "373a7bc7-1505-4c4c-b6b0-ba437b569a8a",
+      "amount": 1.94
+    },
+    {
+      "place": 37,
+      "userId": "611cf850-2298-4a87-8c1e-9ac0a763c486",
+      "amount": 1.9
+    },
+    {
+      "place": 38,
+      "userId": "b5b6395d-e618-4536-8ea8-5b89ee3878d1",
+      "amount": 1.86
+    },
+    {
+      "place": 39,
+      "userId": "5c9528bd-1166-4619-9d54-ee93fb315e7e",
+      "amount": 1.84
+    }
+  ],
+  "idempotentTerminalReplay": {
+    "unchanged": true,
+    "beforeHashes": {
+      "tournaments": "89796c63106ea027a8f8bb71760e1fa2",
+      "tournament_players": "759bc8546b7e47477e9ae478a153ffb6",
+      "tournament_payouts": "6fac4e3202d727a2aec7f74d24e75f37",
+      "tournament_obligations": "76802f6b4e0f23bb8e09626818f03322",
+      "tournament_terminal_settlements": "c3646acd184f6a5c3216882d62c14fdf",
+      "tournament_escrow": "46a751379b671a71f5732addda40cef6",
+      "chip_ledger": "f1b1aeec3b109b9be002606ac428e853",
+      "wallet_transactions": "de6928ccd29d23d41dc117b52f4b9718",
+      "club_members": "18cc59940d18e27da7e5d7c1247e9076",
+      "union_wallets": "868495c7f73fa7913f6f91977f53306b",
+      "club_wallets": "4dfffce2a63430941ce6863cfd85187b",
+      "tables": "4976d81af92b7f5f66e0e806329a0fbc",
+      "table_seats": "989571eadec417577a4722da946ecd63",
+      "tournament_manager_wakes": "b042d27cae8c49f9276fa41882acbb50",
+      "tournament_knockout_candidates": "05b8a4e955e509b2406f29cb1c5eb5ed",
+      "hand_atomic_commits": "bafaa3f30a5c5c6d741ed2e1709275d9",
+      "tournament_refund_entitlements": "83f711b291c9221b311dc42c5154187e",
+      "tournament_knockout_invalidations": "7787be1a136f94120b22711d41db9ded"
+    },
+    "afterHashes": {
+      "tournaments": "89796c63106ea027a8f8bb71760e1fa2",
+      "tournament_players": "759bc8546b7e47477e9ae478a153ffb6",
+      "tournament_payouts": "6fac4e3202d727a2aec7f74d24e75f37",
+      "tournament_obligations": "76802f6b4e0f23bb8e09626818f03322",
+      "tournament_terminal_settlements": "c3646acd184f6a5c3216882d62c14fdf",
+      "tournament_escrow": "46a751379b671a71f5732addda40cef6",
+      "chip_ledger": "f1b1aeec3b109b9be002606ac428e853",
+      "wallet_transactions": "de6928ccd29d23d41dc117b52f4b9718",
+      "club_members": "18cc59940d18e27da7e5d7c1247e9076",
+      "union_wallets": "868495c7f73fa7913f6f91977f53306b",
+      "club_wallets": "4dfffce2a63430941ce6863cfd85187b",
+      "tables": "4976d81af92b7f5f66e0e806329a0fbc",
+      "table_seats": "989571eadec417577a4722da946ecd63",
+      "tournament_manager_wakes": "b042d27cae8c49f9276fa41882acbb50",
+      "tournament_knockout_candidates": "05b8a4e955e509b2406f29cb1c5eb5ed",
+      "hand_atomic_commits": "bafaa3f30a5c5c6d741ed2e1709275d9",
+      "tournament_refund_entitlements": "83f711b291c9221b311dc42c5154187e",
+      "tournament_knockout_invalidations": "7787be1a136f94120b22711d41db9ded"
+    }
+  }
+}

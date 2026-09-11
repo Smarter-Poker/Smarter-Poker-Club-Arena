@@ -1,0 +1,91 @@
+{
+  "phase": "pre",
+  "checks": {
+    "unaudited_invalidation": {
+      "refused": true,
+      "unchanged": true,
+      "expectedError": "invalidation requires immutable privileged evidence"
+    },
+    "ordinary_role_evidence_insert": {
+      "refused": true,
+      "unchanged": true,
+      "expectedError": "permission denied for table tournament_knockout_invalidations"
+    },
+    "orphan_evidence": {
+      "refused": true,
+      "unchanged": true,
+      "expectedError": "both audited knockout transitions must commit together"
+    },
+    "one_transition_only": {
+      "refused": true,
+      "unchanged": true,
+      "expectedError": "both audited knockout transitions must commit together"
+    },
+    "false_source_before_image": {
+      "refused": true,
+      "unchanged": true,
+      "expectedError": "knockout ruling before-images or generation identities changed"
+    },
+    "invalid_candidate_wrong_seat": {
+      "refused": true,
+      "unchanged": true,
+      "expectedError": "knockout ruling candidate seat generation differs from its accepted receipt"
+    },
+    "source_candidate_wrong_seat": {
+      "refused": true,
+      "unchanged": true,
+      "expectedError": "knockout ruling candidate seat generation differs from its accepted receipt"
+    },
+    "invalid_candidate_wrong_generation": {
+      "refused": true,
+      "unchanged": true,
+      "expectedError": "knockout ruling candidate seat generation differs from its accepted receipt"
+    },
+    "source_candidate_wrong_generation": {
+      "refused": true,
+      "unchanged": true,
+      "expectedError": "knockout ruling candidate seat generation differs from its accepted receipt"
+    },
+    "null_finalized_flag": {
+      "refused": true,
+      "unchanged": true,
+      "expectedError": "knockout ruling requires an unpaid running non-bounty event and an eliminated seatless player"
+    },
+    "null_chips_before_evidence": {
+      "refused": true,
+      "unchanged": true,
+      "expectedError": "knockout ruling requires an unpaid running non-bounty event and an eliminated seatless player"
+    },
+    "null_chips_at_commit": {
+      "refused": true,
+      "unchanged": true,
+      "expectedError": "player elimination must carry the evidenced real bust time"
+    },
+    "unrelated_player_field_rewrite": {
+      "refused": true,
+      "unchanged": true,
+      "expectedError": "player elimination must carry the evidenced real bust time"
+    },
+    "false_commit_receipt": {
+      "refused": true,
+      "unchanged": true,
+      "expectedError": "knockout ruling lacks an exact committed zero-stack settlement receipt"
+    }
+  },
+  "unchangedHashes": {
+    "tournaments": "467de54f7a331f3d8679323b725e60d4",
+    "tournament_players": "fc03baf65f96c812e3ffb99725f34c13",
+    "tournament_knockout_candidates": "ddf3ac7e210689718941808420ff96f3",
+    "tournament_knockout_invalidations": "d751713988987e9331980363e24189ce",
+    "hand_atomic_commits": "918aca04b966fc6b25b1d4966c528b41",
+    "tournament_escrow": "f03d560b5f94b649152115485a6c3323",
+    "chip_ledger": "d16b7b863790a341fded24f36494b81a",
+    "wallet_transactions": "85861e0016a41f3f321eebf6df7f4826",
+    "tournament_obligations": "d751713988987e9331980363e24189ce",
+    "tournament_payouts": "d751713988987e9331980363e24189ce",
+    "tournament_manager_wakes": "b042d27cae8c49f9276fa41882acbb50",
+    "club_members": "b24c399bd21de4ead49a9ad198710ce9",
+    "union_wallets": "bd57038dbe4c9677a616f51d1e6938e0",
+    "table_seats": "4a5032444838759d9b6d41d6eda4e141"
+  }
+}

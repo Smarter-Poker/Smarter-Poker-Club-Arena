@@ -14,28 +14,28 @@ is inside `BEGIN ... ROLLBACK`. Nothing was applied.
 
 ### Live function bodies (dumped to `/tmp/laneA/live_<name>.sql`)
 
-| function | bytes | md5 (live) |
-| --- | --- | --- |
-| `fn_cash_cluster_tick(uuid,integer)` | 34,999 | `ae91ea39aef3746371029528cb8e343d` |
-| `fn_cash_clusters_tick_all(jsonb)` | 7,143 | `56c15668b184c2d79b79fec3303e363d` |
-| `fn_cash_clusters_to_tick()` | 1,293 | `a53afb0f2ad173e6da9fc835c80c2d84` |
-| `fn_cash_cluster_census(uuid,timestamptz)` | 1,287 | `e8d7f1befc313c17b2f4eead0b69e442` |
-| `fn_cash_cluster_open_table(uuid,text,int,text,uuid)` | 5,385 | `93ba1525ad56ce5d3d5f7421f633952b` |
-| `fn_cash_cluster_balance(uuid,timestamptz)` | 3,395 | `2becc9f54f99a12641c1fa4aa888dfcf` |
-| `fn_cash_stake_band(numeric)` | 411 | `28c6c970f6095901b3713664573fbdb1` |
-| `fn_platform_frozen()` | 393 | `d291f8e063975d28d15ccab131b0c4f2` |
-| `fn_entry_purchases_frozen()` | - | read in full |
-| `fn_active_maintenance_release_boundary()` | - | read in full |
-| `fn_cash_seat_move_execute(uuid)` | 8,511 | `64f02e161035c9d9da50ebeae5b11574` |
-| `fn_cash_seat_move_execute_before_maintenance_gate(uuid)` | 6,623 | `fdb0bf744ee0c134e3fb235fd68c903f` |
-| `fn_cash_seat_swap_execute(uuid)` | 288 | `f7512a5eff8fb4a6fd7d652326ebe6e4` |
-| `fn_cash_seat_swap_execute_before_maintenance_gate(uuid)` | 6,968 | `8d78a8e720c5931c9357dba60a06b1a9` |
-| `fn_cash_seat_moves_pending(uuid)`, `fn_cash_seat_move_announce(uuid[])`, `fn_cash_seat_move_window(uuid)`, `fn_cash_seat_move_set_window()` | small | read in full |
-| `fn_cash_seat_change_request / _plan / _cancel / _status` | 4,837 / 6,601 / 1,180 / 2,028 | read in full |
-| `fn_cash_game_join`, `fn_cash_game_lobby`, `fn_cash_game_must_move_list`, `fn_cash_game_create` | - | read in full |
-| `fn_thaw_platform(...)` | 14,524 | cluster steps read line by line |
-| `fn_cash_apply_ruleset(uuid)` | 5,799 | read |
-| `fn_refuse_seat_on_closed_cluster_table()` | 1,629 | read in full |
+| function                                                                                                                                     | bytes                         | md5 (live)                         |
+| -------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- | ---------------------------------- |
+| `fn_cash_cluster_tick(uuid,integer)`                                                                                                         | 34,999                        | `ae91ea39aef3746371029528cb8e343d` |
+| `fn_cash_clusters_tick_all(jsonb)`                                                                                                           | 7,143                         | `56c15668b184c2d79b79fec3303e363d` |
+| `fn_cash_clusters_to_tick()`                                                                                                                 | 1,293                         | `a53afb0f2ad173e6da9fc835c80c2d84` |
+| `fn_cash_cluster_census(uuid,timestamptz)`                                                                                                   | 1,287                         | `e8d7f1befc313c17b2f4eead0b69e442` |
+| `fn_cash_cluster_open_table(uuid,text,int,text,uuid)`                                                                                        | 5,385                         | `93ba1525ad56ce5d3d5f7421f633952b` |
+| `fn_cash_cluster_balance(uuid,timestamptz)`                                                                                                  | 3,395                         | `2becc9f54f99a12641c1fa4aa888dfcf` |
+| `fn_cash_stake_band(numeric)`                                                                                                                | 411                           | `28c6c970f6095901b3713664573fbdb1` |
+| `fn_platform_frozen()`                                                                                                                       | 393                           | `d291f8e063975d28d15ccab131b0c4f2` |
+| `fn_entry_purchases_frozen()`                                                                                                                | -                             | read in full                       |
+| `fn_active_maintenance_release_boundary()`                                                                                                   | -                             | read in full                       |
+| `fn_cash_seat_move_execute(uuid)`                                                                                                            | 8,511                         | `64f02e161035c9d9da50ebeae5b11574` |
+| `fn_cash_seat_move_execute_before_maintenance_gate(uuid)`                                                                                    | 6,623                         | `fdb0bf744ee0c134e3fb235fd68c903f` |
+| `fn_cash_seat_swap_execute(uuid)`                                                                                                            | 288                           | `f7512a5eff8fb4a6fd7d652326ebe6e4` |
+| `fn_cash_seat_swap_execute_before_maintenance_gate(uuid)`                                                                                    | 6,968                         | `8d78a8e720c5931c9357dba60a06b1a9` |
+| `fn_cash_seat_moves_pending(uuid)`, `fn_cash_seat_move_announce(uuid[])`, `fn_cash_seat_move_window(uuid)`, `fn_cash_seat_move_set_window()` | small                         | read in full                       |
+| `fn_cash_seat_change_request / _plan / _cancel / _status`                                                                                    | 4,837 / 6,601 / 1,180 / 2,028 | read in full                       |
+| `fn_cash_game_join`, `fn_cash_game_lobby`, `fn_cash_game_must_move_list`, `fn_cash_game_create`                                              | -                             | read in full                       |
+| `fn_thaw_platform(...)`                                                                                                                      | 14,524                        | cluster steps read line by line    |
+| `fn_cash_apply_ruleset(uuid)`                                                                                                                | 5,799                         | read                               |
+| `fn_refuse_seat_on_closed_cluster_table()`                                                                                                   | 1,629                         | read in full                       |
 
 ### Triggers on `public.tables` and `public.table_seats`
 
@@ -102,12 +102,12 @@ UPDATE). Live and main agree there.
 
 The live body ALSO contains three edits that exist on **no file on `origin/main`**:
 
-| live text | migration that wrote it | on main? | applied? |
-| --- | --- | --- | --- |
-| `-- Active seats cannot commit against a closed parent; no reopen repair is needed.` (replaces the whole `closed_table_reopened_to_break` loop) | `20260909062236_terminal_tables_cannot_commit_live_occupancies.sql` | no - only on `origin/codex/club-arena-phase-two-occupancy-contract` | yes, as version `20260909172529` |
-| `-- Duplicate committed chairs are rejected by one_committed_seat_per_game_player.` (replaces the second-chair cashout) | `..._retire_cluster_duplicate_chair_cashouts_after_native_ownership.sql` | no - same branch | yes, as `20260909172447` |
-| `-- Native committed ownership makes duplicate-chair cashout unnecessary.` (in the break loop) | same | no | yes |
-| `source_occupancy_id` / `source_seat_number` binding in `fn_cash_seat_move_execute` | `20260909074353_bind_cash_seat_moves_to_original_occupancies.sql` | no - same branch | yes, as `20260909173145` |
+| live text                                                                                                                                       | migration that wrote it                                                  | on main?                                                            | applied?                         |
+| ----------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------- | -------------------------------- |
+| `-- Active seats cannot commit against a closed parent; no reopen repair is needed.` (replaces the whole `closed_table_reopened_to_break` loop) | `20260909062236_terminal_tables_cannot_commit_live_occupancies.sql`      | no - only on `origin/codex/club-arena-phase-two-occupancy-contract` | yes, as version `20260909172529` |
+| `-- Duplicate committed chairs are rejected by one_committed_seat_per_game_player.` (replaces the second-chair cashout)                         | `..._retire_cluster_duplicate_chair_cashouts_after_native_ownership.sql` | no - same branch                                                    | yes, as `20260909172447`         |
+| `-- Native committed ownership makes duplicate-chair cashout unnecessary.` (in the break loop)                                                  | same                                                                     | no                                                                  | yes                              |
+| `source_occupancy_id` / `source_seat_number` binding in `fn_cash_seat_move_execute`                                                             | `20260909074353_bind_cash_seat_moves_to_original_occupancies.sql`        | no - same branch                                                    | yes, as `20260909173145`         |
 
 **Which is right: production.** Those migrations are applied and the schema they
 depend on is real (`one_committed_seat_per_game_player`,
@@ -150,51 +150,52 @@ definition.
  waiting | live      | feeder |     1 |     0
  waiting | live      | main   |    67 |     3
 ```
+
 150 `cash_games`, all `must_move`, 109 enabled, 47 `state='live'`.
 
 ### Invariants over the live board (all 14 run; 12 clean)
 
-| check | count |
-| --- | --- |
-| a table seated over its capacity | 0 |
-| a player holding two chairs in one cluster | 0 |
-| a roster row open with no chair and no pending move | 0 |
-| a chair in the game with no open roster row | 0 |
-| two non-closed tables sharing a `main_index` | 0 |
-| a gap in a cluster's `main_index` sequence | 0 |
-| a live seat on a closed/deleted table | 0 |
-| an enabled game with no live Main 1 | 0 |
-| `current_players` disagreeing with the seats | 0 |
-| a pending move older than 5 minutes | 0 |
-| a seat change spent with no request behind it | 0 |
-| a live feeder with 1 player while a Main has room | 0 |
-| **two feeders live/opening in one game** | **1** (transient, correct - see A6) |
-| **`status` and `lifecycle` disagreeing** | **2** (FINDING A4) |
+| check                                               | count                               |
+| --------------------------------------------------- | ----------------------------------- |
+| a table seated over its capacity                    | 0                                   |
+| a player holding two chairs in one cluster          | 0                                   |
+| a roster row open with no chair and no pending move | 0                                   |
+| a chair in the game with no open roster row         | 0                                   |
+| two non-closed tables sharing a `main_index`        | 0                                   |
+| a gap in a cluster's `main_index` sequence          | 0                                   |
+| a live seat on a closed/deleted table               | 0                                   |
+| an enabled game with no live Main 1                 | 0                                   |
+| `current_players` disagreeing with the seats        | 0                                   |
+| a pending move older than 5 minutes                 | 0                                   |
+| a seat change spent with no request behind it       | 0                                   |
+| a live feeder with 1 player while a Main has room   | 0                                   |
+| **two feeders live/opening in one game**            | **1** (transient, correct - see A6) |
+| **`status` and `lifecycle` disagreeing**            | **2** (FINDING A4)                  |
 
 ### The move pipeline, 24 hours
 
 `move_planned` 22,474, `seat_moved` 21,940 - **97.6% of planned moves land.**
 
-| state | reason | note | count |
-| --- | --- | --- | --- |
-| done | must_move | - | 11,738 |
-| done | balance | - | 10,094 |
-| done | seat_change | - | 46 |
-| done | must_move/balance | `retry after 40P01: deadlock detected` | 49 |
-| done | balance | `retry after 55P03: lock timeout` | 1 |
-| done | break | - | 3 |
-| cancelled | balance | `destination_unavailable` | 126 |
-| cancelled | must_move | `player_not_seated` | 85 |
-| cancelled | must_move | `destination_full` | 68 |
-| cancelled | balance | `player_not_seated` | 52 |
-| cancelled | balance | `destination_full` | 47 |
-| cancelled | must_move/balance | `original_occupancy_not_recorded` | 17 |
-| cancelled | must_move | `original_occupancy_gone` | 1 |
-| cancelled | balance | `busted` | 1 |
-| **expired** | **balance** | **`engine_did_not_execute_before_expiry`** | **92** |
-| **expired** | **must_move** | **`engine_did_not_execute_before_expiry`** | **42** |
-| expired | must_move | `player_left_before_boundary` | 3 |
-| pending | - | - | 8 |
+| state       | reason            | note                                       | count  |
+| ----------- | ----------------- | ------------------------------------------ | ------ |
+| done        | must_move         | -                                          | 11,738 |
+| done        | balance           | -                                          | 10,094 |
+| done        | seat_change       | -                                          | 46     |
+| done        | must_move/balance | `retry after 40P01: deadlock detected`     | 49     |
+| done        | balance           | `retry after 55P03: lock timeout`          | 1      |
+| done        | break             | -                                          | 3      |
+| cancelled   | balance           | `destination_unavailable`                  | 126    |
+| cancelled   | must_move         | `player_not_seated`                        | 85     |
+| cancelled   | must_move         | `destination_full`                         | 68     |
+| cancelled   | balance           | `player_not_seated`                        | 52     |
+| cancelled   | balance           | `destination_full`                         | 47     |
+| cancelled   | must_move/balance | `original_occupancy_not_recorded`          | 17     |
+| cancelled   | must_move         | `original_occupancy_gone`                  | 1      |
+| cancelled   | balance           | `busted`                                   | 1      |
+| **expired** | **balance**       | **`engine_did_not_execute_before_expiry`** | **92** |
+| **expired** | **must_move**     | **`engine_did_not_execute_before_expiry`** | **42** |
+| expired     | must_move         | `player_left_before_boundary`              | 3      |
+| pending     | -                 | -                                          | 8      |
 
 ### `cash_cluster_events` kinds, 24 hours
 
@@ -208,13 +209,13 @@ definition.
 
 ### `controller_tick_error` taxonomy, 24 hours (14 rows)
 
-| sqlstate | message | count |
-| --- | --- | --- |
-| 55P03 | canceling statement due to lock timeout | 7 |
-| 23505 | duplicate key `cash_seat_moves_one_pending_per_player` | 2 |
-| 40P01 | deadlock detected | 2 |
-| XX000 | cannot find parent statement on pldbgapi2 call stack | 2 |
-| P0001 | This table cannot be closed while players are seated | 1 |
+| sqlstate | message                                                | count |
+| -------- | ------------------------------------------------------ | ----- |
+| 55P03    | canceling statement due to lock timeout                | 7     |
+| 23505    | duplicate key `cash_seat_moves_one_pending_per_player` | 2     |
+| 40P01    | deadlock detected                                      | 2     |
+| XX000    | cannot find parent statement on pldbgapi2 call stack   | 2     |
+| P0001    | This table cannot be closed while players are seated   | 1     |
 
 Against ~17,280 passes a day this is noise, and each is retried five seconds
 later. The 09-07 audit's headline number (11 deadlocks in six hours cancelling
@@ -411,8 +412,7 @@ horse uses the identical door. **No violation found.**
 
 ### Stranding - clean
 
-`seat on a closed table` 0, `roster row without chair` 0, `chair without roster`
-0. Since the applied occupancy-contract family, a live seat on a terminal table
+`seat on a closed table` 0, `roster row without chair` 0, `chair without roster` 0. Since the applied occupancy-contract family, a live seat on a terminal table
 is refused by the FK `live_seat_parent_cannot_close` rather than repaired after
 the fact, and the tick's old `closed_table_reopened_to_break` loop was retired
 because it can no longer have anything to do. The single P0001
@@ -423,18 +423,18 @@ is that guard doing its job on a close the tick attempted.
 
 ## 5. Status of each fix
 
-| finding | severity | fix | state |
-| --- | --- | --- | --- |
-| A1 main-vs-production migration drift | P2 | none (integrator merge) | REPORTED |
-| A2 deadline burns during the park | P1 | `20260909181632` | DONE - written, probed, board 14 |
-| A3 expiry paths with no reason / a lie | P2 | `20260909181642` | DONE - written, probed, board 11 |
-| A4 worklist cannot reach a half-closed game | P1 | `20260909181653` | DONE - written, probed, board 12 |
-| A5 breaking main keeps a taken index | P2 | `20260909181704` | DONE - written, probed, board 13 |
-| A6 two feeders | P3 | none needed | CLOSED |
-| A7 back-off keyed on plan time | P2 | none | NOT FIXED, scoped below |
-| A8 occupancy cutover artefact | P3 | none needed | CLOSED |
-| A9 two harness boards pin retired mechanisms | P2 | boards 2 and 8 rewritten | DONE - both pass |
-| A10 `fn_platform_frozen` changed under the audit | P2 | none (not this lane) | REPORTED |
+| finding                                          | severity | fix                      | state                            |
+| ------------------------------------------------ | -------- | ------------------------ | -------------------------------- |
+| A1 main-vs-production migration drift            | P2       | none (integrator merge)  | REPORTED                         |
+| A2 deadline burns during the park                | P1       | `20260909181632`         | DONE - written, probed, board 14 |
+| A3 expiry paths with no reason / a lie           | P2       | `20260909181642`         | DONE - written, probed, board 11 |
+| A4 worklist cannot reach a half-closed game      | P1       | `20260909181653`         | DONE - written, probed, board 12 |
+| A5 breaking main keeps a taken index             | P2       | `20260909181704`         | DONE - written, probed, board 13 |
+| A6 two feeders                                   | P3       | none needed              | CLOSED                           |
+| A7 back-off keyed on plan time                   | P2       | none                     | NOT FIXED, scoped below          |
+| A8 occupancy cutover artefact                    | P3       | none needed              | CLOSED                           |
+| A9 two harness boards pin retired mechanisms     | P2       | boards 2 and 8 rewritten | DONE - both pass                 |
+| A10 `fn_platform_frozen` changed under the audit | P2       | none (not this lane)     | REPORTED                         |
 
 ### FINDING A9 (P2) - two boards of the probe harness pin mechanisms production retired today. FIXED.
 
@@ -442,10 +442,10 @@ is that guard doing its job on a close the tick attempted.
 of its ten boards assert events that are no longer in the live function, so
 both are red by construction:
 
-| board | asserts | in the live tick? |
-| --- | --- | --- |
-| 2 | `closed_table_reopened_to_break` | 0 occurrences |
-| 8 | `second_chair_cashed_out`, `second_chair_leave_pending` | 0 occurrences each |
+| board | asserts                                                 | in the live tick?  |
+| ----- | ------------------------------------------------------- | ------------------ |
+| 2     | `closed_table_reopened_to_break`                        | 0 occurrences      |
+| 8     | `second_chair_cashed_out`, `second_chair_leave_pending` | 0 occurrences each |
 
 Both mechanisms were REPAIRS, and both were deliberately deleted today by the
 occupancy-contract migrations (Finding A1) that replaced them with constraints -
@@ -507,20 +507,20 @@ do not record:
 
 ## 6. Boundary conditions checked one by one (the `>=` vs `>` sweep)
 
-| rule | live predicate | intended (OPORD 1.4 s18.3 / changelogs) | verdict |
-| --- | --- | --- | --- |
-| feeder goes live | `c.seated >= 2` | "live at two seated" | correct |
-| OPEN needs buyers | `v_buyers >= 2` | "at least two buyers" | correct |
-| OPEN table cap | `v_live_tables < g.cap_mains + 1 (+1)` | mains + one feeder | correct |
-| ceiling trigger | `v_live >= cap_mains + 1 + second_feeder + 2` | backstop above the tick's own cap | correct, deliberately looser |
-| break fit | `v_seated_total < v_remaining_capacity` | STRICT: everyone fits AND a seat stays open | correct |
-| break window (clock) | `break_eligible_since <= v_now - v_window` | 5 min, or 60 s when <= 1 seated | correct |
-| break window (orbits) | `v_hands >= 2 * v_orbit` | two completed orbits | correct |
-| feeder abandoned | `opened_at < v_now - interval '6 minutes'` | six minutes empty | correct |
-| rest after abandon | `e.at > v_now - interval '2 minutes'` | two minutes | correct |
-| opening hold | `opening_hold_since < v_now - interval '60 seconds'` | 60 s | correct |
-| balance trigger | `hi.n - lo.n >= 2 AND hi.n >= 3 AND lo.n >= 1` | "within one player of each other" | correct |
-| move back-off | `m.created_at > v_now - interval '60 seconds'` | "the refusal gets a minute" | **WRONG - Finding A7** |
+| rule                  | live predicate                                       | intended (OPORD 1.4 s18.3 / changelogs)     | verdict                      |
+| --------------------- | ---------------------------------------------------- | ------------------------------------------- | ---------------------------- |
+| feeder goes live      | `c.seated >= 2`                                      | "live at two seated"                        | correct                      |
+| OPEN needs buyers     | `v_buyers >= 2`                                      | "at least two buyers"                       | correct                      |
+| OPEN table cap        | `v_live_tables < g.cap_mains + 1 (+1)`               | mains + one feeder                          | correct                      |
+| ceiling trigger       | `v_live >= cap_mains + 1 + second_feeder + 2`        | backstop above the tick's own cap           | correct, deliberately looser |
+| break fit             | `v_seated_total < v_remaining_capacity`              | STRICT: everyone fits AND a seat stays open | correct                      |
+| break window (clock)  | `break_eligible_since <= v_now - v_window`           | 5 min, or 60 s when <= 1 seated             | correct                      |
+| break window (orbits) | `v_hands >= 2 * v_orbit`                             | two completed orbits                        | correct                      |
+| feeder abandoned      | `opened_at < v_now - interval '6 minutes'`           | six minutes empty                           | correct                      |
+| rest after abandon    | `e.at > v_now - interval '2 minutes'`                | two minutes                                 | correct                      |
+| opening hold          | `opening_hold_since < v_now - interval '60 seconds'` | 60 s                                        | correct                      |
+| balance trigger       | `hi.n - lo.n >= 2 AND hi.n >= 3 AND lo.n >= 1`       | "within one player of each other"           | correct                      |
+| move back-off         | `m.created_at > v_now - interval '60 seconds'`       | "the refusal gets a minute"                 | **WRONG - Finding A7**       |
 
 The one that reads wrong is A7, and it is wrong in the operand rather than in
 the operator.
@@ -601,14 +601,14 @@ is the tick, on the real schema, against real games").
 
 ## 8. Files this lane changed
 
-| file | what |
-| --- | --- |
-| `supabase/migrations/20260909181632_a_move_cannot_be_late_while_the_platform_is_parking.sql` | new - holds a move's deadline through the park (A2) |
-| `supabase/migrations/20260909181642_every_expiry_says_why_including_the_executors.sql` | new - names both executor expiry paths (A3) |
-| `supabase/migrations/20260909181653_the_worklist_admits_a_game_with_a_half_closed_table.sql` | new - worklist reads both liveness fields (A4) |
-| `supabase/migrations/20260909181704_a_main_keeps_its_number_while_it_breaks.sql` | new - breaking main releases a live index (A5) |
-| `scripts/dev/probe-cluster-boards.sql` | **SHARED FILE** - boards 2 and 8 rewritten (A9), boards 11-14 appended |
-| `docs/audits/2026-09-09-must-move-audit/lane-A.md` | this report |
+| file                                                                                         | what                                                                   |
+| -------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `supabase/migrations/20260909181632_a_move_cannot_be_late_while_the_platform_is_parking.sql` | new - holds a move's deadline through the park (A2)                    |
+| `supabase/migrations/20260909181642_every_expiry_says_why_including_the_executors.sql`       | new - names both executor expiry paths (A3)                            |
+| `supabase/migrations/20260909181653_the_worklist_admits_a_game_with_a_half_closed_table.sql` | new - worklist reads both liveness fields (A4)                         |
+| `supabase/migrations/20260909181704_a_main_keeps_its_number_while_it_breaks.sql`             | new - breaking main releases a live index (A5)                         |
+| `scripts/dev/probe-cluster-boards.sql`                                                       | **SHARED FILE** - boards 2 and 8 rewritten (A9), boards 11-14 appended |
+| `docs/audits/2026-09-09-must-move-audit/lane-A.md`                                           | this report                                                            |
 
 **Shared-file note for the integrator (brief rule 9):** the only shared file
 this lane touched is `scripts/dev/probe-cluster-boards.sql`, and the edits are
@@ -729,14 +729,14 @@ PASS  a second pass plans nothing: A counts 2 outbound-adjusted, B counts 2 inbo
 **Expected drop, from the hour before the probe (17:24-18:24 UTC, `state='done'`,
 roles as they are now):**
 
-| | count |
-| --- | --- |
-| done moves in the hour | 1,123 |
-| `balance` main -> feeder | 410 |
-| `must_move` feeder -> main | 443 |
+|                                                                                                                                    | count   |
+| ---------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| done moves in the hour                                                                                                             | 1,123   |
+| `balance` main -> feeder                                                                                                           | 410     |
+| `must_move` feeder -> main                                                                                                         | 443     |
 | **exact round trips** (balance main->feeder, then the SAME player must_move from that feeder back to that SAME main within 10 min) | **374** |
-| `balance` feeder -> feeder | 117 |
-| distinct players moved | 81 |
+| `balance` feeder -> feeder                                                                                                         | 117     |
+| distinct players moved                                                                                                             | 81      |
 
 Once applied, every `balance main -> feeder` move and its return leg
 disappear: **~784 of ~1,123 moves an hour (~70%)**, leaving roughly 340 an
@@ -843,14 +843,14 @@ column, no `zz_cash_seat_move_resolved` trigger, no maintenance-break row.
 
 ### 10.5 Files changed in this follow-up
 
-| file | what |
-| --- | --- |
-| `supabase/migrations/20260910181433_the_balancer_balances_feeders_and_leaves_the_mains_to_must_move.sql` | new (J-1) |
-| `supabase/migrations/20260910181447_a_refusal_gets_its_minute_from_the_moment_it_was_refused.sql` | new (A7) |
-| `supabase/migrations/20260909181642_every_expiry_says_why_including_the_executors.sql` | F4 folded in (second anchored replacement, header, assertions) |
-| `scripts/ci/schema-manifest.d/a-refusal-gets-its-minute.json` | new column + trigger function declared |
-| `scripts/dev/probe-cluster-boards.sql` | helpers `pick_dormant_game_except`, `fill`, `pending`; boards 15-18 inserted before board 14 (which must stay last: it holds the maintenance advisory lock); banner now "eighteen" |
-| `docs/audits/2026-09-09-must-move-audit/lane-A.md` | this section |
+| file                                                                                                     | what                                                                                                                                                                               |
+| -------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `supabase/migrations/20260910181433_the_balancer_balances_feeders_and_leaves_the_mains_to_must_move.sql` | new (J-1)                                                                                                                                                                          |
+| `supabase/migrations/20260910181447_a_refusal_gets_its_minute_from_the_moment_it_was_refused.sql`        | new (A7)                                                                                                                                                                           |
+| `supabase/migrations/20260909181642_every_expiry_says_why_including_the_executors.sql`                   | F4 folded in (second anchored replacement, header, assertions)                                                                                                                     |
+| `scripts/ci/schema-manifest.d/a-refusal-gets-its-minute.json`                                            | new column + trigger function declared                                                                                                                                             |
+| `scripts/dev/probe-cluster-boards.sql`                                                                   | helpers `pick_dormant_game_except`, `fill`, `pending`; boards 15-18 inserted before board 14 (which must stay last: it holds the maintenance advisory lock); banner now "eighteen" |
+| `docs/audits/2026-09-09-must-move-audit/lane-A.md`                                                       | this section                                                                                                                                                                       |
 
 Lane A now holds six migrations. Apply order is version order and every
 guard refuses out-of-order application rather than guessing. No TypeScript

@@ -255,6 +255,119 @@ describe('DailyBonusEntry', () => {
     expect(mocks.getStatus).toHaveBeenCalledTimes(1);
   });
 
+  function pendingStatus() {
+    let resolve!: (value: ReturnType<typeof status>) => void;
+    let reject!: (error: Error) => void;
+    const promise = new Promise<ReturnType<typeof status>>((done, fail) => {
+      resolve = done;
+      reject = fail;
+    });
+    return { promise, resolve, reject };
+  }
+
+  it('does not spend the day when an old host resolves after unmount', async () => {
+    const old = pendingStatus();
+    mocks.getStatus.mockReturnValueOnce(old.promise).mockResolvedValue(status());
+    const first = render(<DailyBonusEntry />);
+    first.unmount();
+    await act(async () => old.resolve(status()));
+    expect(wasSeenToday('u1', '2026-09-08')).toBe(false);
+    expect(quietUntil('u1')).toBeNull();
+    render(<DailyBonusEntry />);
+    expect(await screen.findByRole('dialog')).toBeTruthy();
+    expect(mocks.getStatus).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not report or retry a request that rejects after unmount', async () => {
+    const old = pendingStatus();
+    mocks.getStatus.mockReturnValueOnce(old.promise).mockResolvedValue(status());
+    const view = render(<DailyBonusEntry />);
+    view.unmount();
+    await act(async () => old.reject(new Error('late network failure')));
+    await act(async () => vi.advanceTimersByTimeAsync(RETRY_DELAY_MS * 4));
+    expect(mocks.reportError).not.toHaveBeenCalled();
+    expect(mocks.getStatus).toHaveBeenCalledTimes(1);
+    expect(wasSeenToday('u1', '2026-09-08')).toBe(false);
+  });
+
+  it('starts the new account read immediately and retires an old rejection', async () => {
+    const old = pendingStatus();
+    const current = pendingStatus();
+    mocks.getStatus.mockReturnValueOnce(old.promise).mockReturnValueOnce(current.promise);
+    const view = render(<DailyBonusEntry />);
+    mocks.userId = 'u2';
+    view.rerender(<DailyBonusEntry />);
+    expect(mocks.getStatus).toHaveBeenCalledTimes(2);
+    await act(async () => old.reject(new Error('old account failed')));
+    expect(mocks.reportError).not.toHaveBeenCalled();
+    act(() => window.dispatchEvent(new Event('focus')));
+    expect(mocks.getStatus).toHaveBeenCalledTimes(2);
+    await act(async () => current.resolve(status()));
+    expect(screen.queryByRole('dialog')).toBeTruthy();
+    expect(wasSeenToday('u1', '2026-09-08')).toBe(false);
+    expect(wasSeenToday('u2', '2026-09-08')).toBe(true);
+  });
+
+  it('does not let an old completion release a newer pending read', async () => {
+    const old = pendingStatus();
+    const current = pendingStatus();
+    mocks.getStatus.mockReturnValueOnce(old.promise).mockReturnValueOnce(current.promise);
+    const view = render(<DailyBonusEntry />);
+    mocks.userId = 'u2';
+    view.rerender(<DailyBonusEntry />);
+    expect(mocks.getStatus).toHaveBeenCalledTimes(2);
+    await act(async () => old.resolve(status({ unclaimed: 0 })));
+    act(() => window.dispatchEvent(new Event('online')));
+    expect(mocks.getStatus).toHaveBeenCalledTimes(2);
+    expect(quietUntil('u1')).toBeNull();
+    await act(async () => current.resolve(status()));
+    expect(screen.queryByRole('dialog')).toBeTruthy();
+  });
+
+  it('does not spend the day when the player enters a table during the read', async () => {
+    const old = pendingStatus();
+    mocks.getStatus.mockReturnValueOnce(old.promise).mockResolvedValue(status());
+    const view = render(<DailyBonusEntry />);
+    mocks.pathname = '/table/abc';
+    view.rerender(<DailyBonusEntry />);
+    await act(async () => old.resolve(status()));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(wasSeenToday('u1', '2026-09-08')).toBe(false);
+    mocks.pathname = '/clubs/x';
+    view.rerender(<DailyBonusEntry />);
+    expect(await screen.findByRole('dialog')).toBeTruthy();
+    expect(mocks.getStatus).toHaveBeenCalledTimes(2);
+  });
+
+  it('waits for the host to resume if it suspends while the read is pending', async () => {
+    const old = pendingStatus();
+    mocks.getStatus.mockReturnValueOnce(old.promise).mockResolvedValue(status());
+    const view = render(<DailyBonusEntry />);
+    view.rerender(<DailyBonusEntry suspended />);
+    await act(async () => old.resolve(status()));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(wasSeenToday('u1', '2026-09-08')).toBe(false);
+    view.rerender(<DailyBonusEntry />);
+    expect(await screen.findByRole('dialog')).toBeTruthy();
+    expect(mocks.getStatus).toHaveBeenCalledTimes(2);
+  });
+
+  it('retires the first StrictMode effect without disabling the remounted host', async () => {
+    const retired = pendingStatus();
+    const current = pendingStatus();
+    mocks.getStatus.mockReturnValueOnce(retired.promise).mockReturnValueOnce(current.promise);
+    render(
+      <React.StrictMode>
+        <DailyBonusEntry />
+      </React.StrictMode>
+    );
+    expect(mocks.getStatus).toHaveBeenCalledTimes(2);
+    await act(async () => retired.resolve(status()));
+    expect(wasSeenToday('u1', '2026-09-08')).toBe(false);
+    await act(async () => current.resolve(status()));
+    expect(screen.queryByRole('dialog')).toBeTruthy();
+  });
+
   it('markQuiet ignores a reset_at it cannot parse', () => {
     markQuiet('u1', 'not-a-date');
     expect(quietUntil('u1')).toBeNull();

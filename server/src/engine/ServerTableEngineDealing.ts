@@ -795,6 +795,16 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
             this.tableFSM.transition('waiting');
           }
           this.setLoopPhase('idle_not_enough_players');
+          /* NOBODY WAITS FOR A BLIND THAT CANNOT ARRIVE (2026-09-11).
+             `activePlayers` above excludes a player waiting for the big
+             blind, so a table whose seats are mostly waiters reads as short
+             and sleeps here - and sleeping is what stops the big blind that
+             would have released them. Seven live must-move tables were shut
+             that way, one for an hour and a half with six funded seats on it.
+             See releaseWaitersNoBlindCanReach: it fires only when letting
+             everyone in actually starts the game, and the released seat is
+             still not a veteran, so the button rule is untouched. */
+          this.releaseWaitersNoBlindCanReach();
           // MUST-MOVE (Slice 2; moved here 2026-09-05): a table with no hand
           // to finish is at a hand boundary all the time, so every pending
           // move lands now, announced or not. This used to run in the

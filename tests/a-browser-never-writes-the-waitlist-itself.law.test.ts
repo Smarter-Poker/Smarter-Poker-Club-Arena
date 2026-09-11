@@ -23,17 +23,23 @@ import path from 'path';
 
 const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8');
 
-const MIG = read('supabase/migrations/20260910184439_a_browser_never_writes_the_waitlist_itself.sql');
+const MIG = read(
+  'supabase/migrations/20260910184439_a_browser_never_writes_the_waitlist_itself.sql'
+);
 
 describe('a browser never writes the waitlist itself', () => {
   it('replaces the FOR ALL policy with a SELECT-only one', () => {
     expect(MIG).toMatch(/DROP POLICY IF EXISTS waitlist_user_own ON public\.table_waitlist;/);
-    expect(MIG).toMatch(/CREATE POLICY waitlist_user_own_read ON public\.table_waitlist\s*\n\s*FOR SELECT TO authenticated/);
+    expect(MIG).toMatch(
+      /CREATE POLICY waitlist_user_own_read ON public\.table_waitlist\s*\n\s*FOR SELECT TO authenticated/
+    );
     expect(MIG).toMatch(/a write policy exists on table_waitlist for a browser role/);
   });
 
   it('revokes the write grants from the browser roles and keeps SELECT', () => {
-    expect(MIG).toMatch(/REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON public\.table_waitlist FROM authenticated, anon;/);
+    expect(MIG).toMatch(
+      /REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON public\.table_waitlist FROM authenticated, anon;/
+    );
     expect(MIG).toMatch(/GRANT SELECT ON public\.table_waitlist TO authenticated;/);
     expect(MIG).toMatch(/the read grant was revoked with the writes/);
     expect(MIG).toMatch(/the service lost its writes/);
@@ -41,9 +47,19 @@ describe('a browser never writes the waitlist itself', () => {
 
   it('gives the two legitimate browser writes SECURITY DEFINER doors keyed on auth.uid()', () => {
     for (const fn of ['fn_table_waitlist_join', 'fn_table_waitlist_leave']) {
-      expect(MIG).toMatch(new RegExp(`CREATE OR REPLACE FUNCTION public\\.${fn}\\(p_table_id uuid\\)[\\s\\S]{0,200}SECURITY DEFINER`));
-      expect(MIG).toMatch(new RegExp(`GRANT EXECUTE ON FUNCTION public\\.${fn}\\(uuid\\) TO authenticated, service_role;`));
-      expect(MIG).toMatch(new RegExp(`REVOKE ALL ON FUNCTION public\\.${fn}\\(uuid\\) FROM PUBLIC, anon;`));
+      expect(MIG).toMatch(
+        new RegExp(
+          `CREATE OR REPLACE FUNCTION public\\.${fn}\\(p_table_id uuid\\)[\\s\\S]{0,200}SECURITY DEFINER`
+        )
+      );
+      expect(MIG).toMatch(
+        new RegExp(
+          `GRANT EXECUTE ON FUNCTION public\\.${fn}\\(uuid\\) TO authenticated, service_role;`
+        )
+      );
+      expect(MIG).toMatch(
+        new RegExp(`REVOKE ALL ON FUNCTION public\\.${fn}\\(uuid\\) FROM PUBLIC, anon;`)
+      );
     }
     expect(MIG).toMatch(/v_uid uuid := auth\.uid\(\);/);
     expect(MIG).not.toMatch(/fn_table_waitlist_(join|leave)\(p_table_id uuid, p_user_id/);
@@ -67,7 +83,10 @@ describe('a browser never writes the waitlist itself', () => {
   });
 
   it('reads is_horse nowhere (CLAUDE.md 10.5)', () => {
-    const doors = MIG.slice(MIG.indexOf('CREATE OR REPLACE FUNCTION public.fn_table_waitlist_join'), MIG.indexOf('-- A definer states who may call it'));
+    const doors = MIG.slice(
+      MIG.indexOf('CREATE OR REPLACE FUNCTION public.fn_table_waitlist_join'),
+      MIG.indexOf('-- A definer states who may call it')
+    );
     expect(doors).not.toMatch(/is_horse/);
     expect(MIG).toMatch(/a waitlist door reads is_horse/);
   });

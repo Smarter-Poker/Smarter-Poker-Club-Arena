@@ -96,12 +96,12 @@ function TileRender({
   kind,
   vip,
   seconds,
-  factor,
+  hours,
 }: {
   kind: DailyBonusTileKind;
   vip: boolean;
   seconds: number;
-  factor: number;
+  hours: number;
 }) {
   if (kind === 'throwables') {
     return (
@@ -121,10 +121,13 @@ function TileRender({
     );
   }
   if (kind === 'boost') {
+    /* The DURATION here, never the multiplier: the multiplier is already the
+       row's figure, and printing it in both slots read as a mistake. Same
+       shape as the time bank above - render the total, figure the count. */
     return (
       <span className="dbs-row__render dbs-row__render--print sc-ink--blue" aria-hidden="true">
-        {factor}
-        <small>×</small>
+        {hours}
+        <small>H</small>
       </span>
     );
   }
@@ -148,7 +151,7 @@ function offered(tile: DailyBonusTile): { figure: string; sub: string } {
     case 'shield':
       return { figure: `×${tile.quantity}`, sub: 'Covers One Missed Day' };
     case 'boost':
-      return { figure: '2×', sub: `Double Daily Mission Diamonds For ${tile.quantity} Hours` };
+      return { figure: '2×', sub: 'Double Daily Mission Diamonds' };
     default:
       return { figure: `×${tile.quantity}`, sub: 'Yours For 7 Days' };
   }
@@ -164,7 +167,7 @@ function granted(g: DailyBonusGranted): { figure: string; sub: string } {
     case 'shield':
       return { figure: `×${g.quantity}`, sub: 'Held For 30 Days' };
     case 'boost':
-      return { figure: `${g.factor ?? 2}×`, sub: `Running For ${g.hours ?? g.quantity} Hours` };
+      return { figure: `${g.factor ?? 2}×`, sub: 'Boost Is Running' };
     default:
       return { figure: `×${g.quantity}`, sub: 'Yours For 7 Days' };
   }
@@ -215,7 +218,12 @@ function BonusRow({ tile, busy, disabled, onClaim, burst, revealed }: RowProps) 
       data-revealed={revealed || undefined}
       aria-label={`${tile.label}, ${g ? grantedWords(g) : `${lines.figure} ${lines.sub}`}`}
     >
-      <TileRender kind={renderKind} vip={tile.vip_only} seconds={seconds} factor={g?.factor ?? 2} />
+      <TileRender
+        kind={renderKind}
+        vip={tile.vip_only}
+        seconds={seconds}
+        hours={g ? (g.hours ?? g.quantity) : tile.quantity}
+      />
       <span className="dbs-row__lines">
         <span className={`sc-label sc-ink--${typeInk} dbs-row__type`}>{tile.label}</span>
         <span className="dbs-row__title">

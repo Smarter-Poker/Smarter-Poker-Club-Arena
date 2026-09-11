@@ -383,7 +383,12 @@ describe("I1 - the template's promise is printed, never offered (2026-09-09)", (
     expect(screen.queryByRole('switch', { name: 'Bomb Pots' })).toBeNull();
     expect(screen.queryByLabelText('Bomb Ante')).toBeNull();
     // And the source carries none of the old controls either.
-    for (const gone of ['name="regular_ante"', 'label="Bomb Pots"', 'label="Bomb Ante"', 'name="bomb_trigger"']) {
+    for (const gone of [
+      'name="regular_ante"',
+      'label="Bomb Pots"',
+      'label="Bomb Ante"',
+      'name="bomb_trigger"',
+    ]) {
       expect(FLOW).not.toContain(gone);
     }
   });
@@ -408,9 +413,11 @@ describe("I1 - the template's promise is printed, never offered (2026-09-09)", (
 
   it('a Classic game prints No Ante, No VPIP Floor, No Bomb Pots - the blurb, kept', async () => {
     await walkToRules(/^Classic/, 'NLH', /Manual Individual Table/);
-    const values = [...screen.getByTestId('cash-create-promise').querySelectorAll('.cash-create__rule-readout__value')].map(
-      (v) => v.textContent
-    );
+    const values = [
+      ...screen
+        .getByTestId('cash-create-promise')
+        .querySelectorAll('.cash-create__rule-readout__value'),
+    ].map((v) => v.textContent);
     expect(values).toEqual(['No Ante', 'No VPIP Floor', 'No Bomb Pots']);
     // The group title and every note say which template set it.
     expect(screen.getAllByText(/Set By The Classic Template/).length).toBe(4);
@@ -421,15 +428,21 @@ describe("I1 - the template's promise is printed, never offered (2026-09-09)", (
     // The card the lobby will paint says the template's rules, not a host edit.
     expect(document.querySelector('.cgc')?.textContent).toContain('1 BB ANTE');
     fireEvent.click(screen.getByRole('button', { name: /^Save$/ }));
-    await waitFor(() => expect(mocks.rpc).toHaveBeenCalledWith('fn_cash_game_create', expect.anything()));
+    await waitFor(() =>
+      expect(mocks.rpc).toHaveBeenCalledWith('fn_cash_game_create', expect.anything())
+    );
     const { p_overrides } = createArgs();
     for (const locked of ['regular_ante', 'vpip_floor', 'vpip_window', 'bombs']) {
       expect(p_overrides, `${locked} must not be sent`).not.toHaveProperty(locked);
     }
     // What the host DOES edit still travels.
-    expect(Object.keys(p_overrides).sort()).toEqual(
-      ['max_buyin_bb', 'min_buyin_bb', 'options', 'rejoin_window_min', 'stay_clock_min']
-    );
+    expect(Object.keys(p_overrides).sort()).toEqual([
+      'max_buyin_bb',
+      'min_buyin_bb',
+      'options',
+      'rejoin_window_min',
+      'stay_clock_min',
+    ]);
   });
 });
 
@@ -442,7 +455,8 @@ describe('I4 - two taps create one game, and a failed create re-arms for exactly
       }
       if (fn === 'fn_cash_game_create') {
         return new Promise((resolve) => {
-          release = () => resolve({ data: { ok: true, game_id: 'g1', table_id: 't1' }, error: null });
+          release = () =>
+            resolve({ data: { ok: true, game_id: 'g1', table_id: 't1' }, error: null });
         });
       }
       return { data: null, error: new Error(`unexpected rpc ${fn}`) };
@@ -496,7 +510,14 @@ describe('I5 - a rung the club already holds is greyed with the reason', () => {
 
   it('Action NLH: every rung in a band the club holds is closed, with the holder as its title', async () => {
     held([
-      { name: 'NLH 1/2 Action', template_name: 'action', variant: 'nlh', sb: 1, bb: 2, must_move: true },
+      {
+        name: 'NLH 1/2 Action',
+        template_name: 'action',
+        variant: 'nlh',
+        sb: 1,
+        bb: 2,
+        must_move: true,
+      },
     ]);
     mount();
     fireEvent.click(screen.getByRole('button', { name: /^Action/ }));
@@ -504,7 +525,9 @@ describe('I5 - a rung the club already holds is greyed with the reason', () => {
     fireEvent.click(screen.getByRole('button', { name: /Manual Individual Table/ }));
     // 0.50/1 and 1/2 are both `low`; 0.25/0.50 is micro and 2/5 is mid.
     await waitFor(() =>
-      expect((screen.getByRole('button', { name: '0.50/1' }) as HTMLButtonElement).disabled).toBe(true)
+      expect((screen.getByRole('button', { name: '0.50/1' }) as HTMLButtonElement).disabled).toBe(
+        true
+      )
     );
     expect((screen.getByRole('button', { name: '1/2' }) as HTMLButtonElement).disabled).toBe(true);
     /* The reason is VISIBLE copy, not a title: a disabled button is not
@@ -521,14 +544,23 @@ describe('I5 - a rung the club already holds is greyed with the reason', () => {
     expect(screen.getByRole('button', { name: '1/2' }).hasAttribute('title')).toBe(false);
     // Said once, however many rungs of the band it closes.
     expect(screen.getAllByText(/Already Runs NLH 1\/2 Action/)).toHaveLength(1);
-    expect((screen.getByRole('button', { name: '0.25/0.50' }) as HTMLButtonElement).disabled).toBe(false);
+    expect((screen.getByRole('button', { name: '0.25/0.50' }) as HTMLButtonElement).disabled).toBe(
+      false
+    );
     expect((screen.getByRole('button', { name: '2/5' }) as HTMLButtonElement).disabled).toBe(false);
     expect(screen.getByText(/Action Runs One Game Per Blind Band Per Variant/)).toBeTruthy();
   });
 
   it('Classic is unrestricted by band; only the exact must-move key is closed, and a manual table never is', async () => {
     held([
-      { name: 'NLH 1/2 Classic', template_name: 'classic', variant: 'nlh', sb: 1, bb: 2, must_move: true },
+      {
+        name: 'NLH 1/2 Classic',
+        template_name: 'classic',
+        variant: 'nlh',
+        sb: 1,
+        bb: 2,
+        must_move: true,
+      },
     ]);
     mount();
     fireEvent.click(screen.getByRole('button', { name: /^Classic/ }));
@@ -537,16 +569,27 @@ describe('I5 - a rung the club already holds is greyed with the reason', () => {
     await waitFor(() =>
       expect((screen.getByRole('button', { name: '1/2' }) as HTMLButtonElement).disabled).toBe(true)
     );
-    expect((screen.getByRole('button', { name: '0.50/1' }) as HTMLButtonElement).disabled).toBe(false);
+    expect((screen.getByRole('button', { name: '0.50/1' }) as HTMLButtonElement).disabled).toBe(
+      false
+    );
     fireEvent.click(screen.getByRole('button', { name: /Manual Individual Table/ }));
     await waitFor(() =>
-      expect((screen.getByRole('button', { name: '1/2' }) as HTMLButtonElement).disabled).toBe(false)
+      expect((screen.getByRole('button', { name: '1/2' }) as HTMLButtonElement).disabled).toBe(
+        false
+      )
     );
   });
 
   it('a chosen rung that closes when the template changes un-picks itself', async () => {
     held([
-      { name: 'NLH 1/2 Action', template_name: 'action', variant: 'nlh', sb: 1, bb: 2, must_move: true },
+      {
+        name: 'NLH 1/2 Action',
+        template_name: 'action',
+        variant: 'nlh',
+        sb: 1,
+        bb: 2,
+        must_move: true,
+      },
     ]);
     mount();
     fireEvent.click(screen.getByRole('button', { name: /^Classic/ }));
@@ -559,7 +602,9 @@ describe('I5 - a rung the club already holds is greyed with the reason', () => {
     await waitFor(() =>
       expect(screen.getByRole('button', { name: '1/2' }).getAttribute('aria-pressed')).toBe('false')
     );
-    expect((screen.getByRole('button', { name: /^Save$/ }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole('button', { name: /^Save$/ }) as HTMLButtonElement).disabled).toBe(
+      true
+    );
   });
 });
 
@@ -578,8 +623,12 @@ describe('a host without create rights cannot confirm, and is told why (NOT_AUTH
     fireEvent.click(screen.getByRole('button', { name: /Manual Individual Table/ }));
     await waitFor(() => expect(seatButtons().length).toBeGreaterThan(0));
     fireEvent.click(screen.getByRole('button', { name: 'Use The Usual Stakes' }));
-    expect((screen.getByRole('button', { name: /^Save$/ }) as HTMLButtonElement).disabled).toBe(true);
-    expect((screen.getByRole('button', { name: /^Start$/ }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole('button', { name: /^Save$/ }) as HTMLButtonElement).disabled).toBe(
+      true
+    );
+    expect((screen.getByRole('button', { name: /^Start$/ }) as HTMLButtonElement).disabled).toBe(
+      true
+    );
     expect(screen.getByText('This Club Is Managed By Its Union')).toBeTruthy();
     expect(mocks.rpc.mock.calls.filter(([fn]) => fn === 'fn_cash_game_create')).toHaveLength(0);
   });

@@ -111,7 +111,12 @@ export interface CashRulesetSnapshot {
  * would ignore. tests/cash-games-are-created-from-a-template.law.test.tsx
  * pins both halves.
  */
-export const TEMPLATE_LOCKED_RULES = ['regular_ante', 'vpip_floor', 'vpip_window', 'bombs'] as const;
+export const TEMPLATE_LOCKED_RULES = [
+  'regular_ante',
+  'vpip_floor',
+  'vpip_window',
+  'bombs',
+] as const;
 export type TemplateLockedRule = (typeof TEMPLATE_LOCKED_RULES)[number];
 
 /** The host's editable copy of the section 8 fields, sent as `p_overrides`. */

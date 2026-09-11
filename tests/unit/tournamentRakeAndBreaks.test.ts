@@ -303,7 +303,7 @@ describe('a restart mid-break does not resume play', () => {
 
   it('re-arms the resume for the remainder', () => {
     expect(resumeFn).toMatch(
-      /setLifecycleTimeout\([\s\S]{0,100}resumeFromBreak\(\)[\s\S]{0,40}remainingMs\)/
+      /setLifecycleTimeout\([\s\S]{0,100}resumeFromBreak\(\)[\s\S]{0,40}Math\.max\(0,\s*remainingMs\)\s*\)/
     );
   });
 

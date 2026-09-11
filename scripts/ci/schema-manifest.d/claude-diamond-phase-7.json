@@ -1,0 +1,4 @@
+{
+  "_owner": "agent/claude-diamond-phase-7/feature/cash-game-parity. Phase 7 needs a way to create a Diamond table at all: the only live cash creation path writes a cluster id, run it twice on and rake -1, every one of which the Phase 6 admission guard refuses, so Phase 6 created tables by fixture INSERT and production has none. Applied to kuklfnapbkmacvwxktbh on 2026-09-11 with Dan's approval as production version 20260911222904; the source file is 20260911222328 and the applied body md5 306204be63827160d341db46d5a0fb63 matches it exactly. Opens no admission and sets no economics.",
+  "functions": ["fn_poker_diamond_open_cash_table"]
+}

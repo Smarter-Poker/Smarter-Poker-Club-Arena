@@ -353,12 +353,46 @@ describe('the accepted-hand projection worker', () => {
     const executable = blankNonCode(source);
     // One interval: the safety poll. The causal retry stays the one setTimeout.
     expect(executable.match(/\bsetInterval\s*\(/g)).toHaveLength(1);
-    expect(executable.match(/\bsetTimeout\s*\(/g)).toHaveLength(1);
+    /* TWO TIMERS, BOTH DELIBERATE (2026-09-11). The first is the causal
+       retry. The second is the drain deadline, added because a pass whose
+       promise never settled left `drainPromise` non-null for ever and
+       `pollIsDue` opens by returning false on exactly that - so one hung pass
+       took the only remaining wake out of service. Measured live:
+       drains_total frozen at 324 for fifteen minutes while the outbox climbed
+       past 27,000 rows and fifty-one minutes. Both timers are unref'd; a third
+       is still a regression worth catching here. */
+    expect(executable.match(/\bsetTimeout\s*\(/g)).toHaveLength(2);
+    expect(source).toContain('const active = withDeadline(runDrain());');
+    expect(source).toContain('function withDeadline(');
     expect(source).toContain('if (!workerActive || stopping) return;');
     expect(source).toContain('drainRunning: drainPromise !== null,');
     expect(source).toContain('retryArmed: retryTimer !== null,');
     expect(source).toContain('causalRetryOwed = summary.failed > 0 || summary.deferred > 0');
     expect(source).toContain('cancelCausalRetry(true)');
+  });
+
+  it('a drain pass cannot run for ever, because the only remaining wake is gated on it', async () => {
+    /* THE WEDGE, in one test. `pollIsDue` returns false while a drain is
+       running, and the escape hatch beneath it is about a stuck RETRY, so a
+       pass that never settles disables the safety poll permanently. On
+       2026-09-11 that is exactly what happened on engine-01: the Realtime
+       channel was in CHANNEL_ERROR, LISTEN was unconfigured, the 5 s poll was
+       the whole net, and a pass that hung during an image build on the same
+       host switched it off. The lane is bounded now, so the promise always
+       settles and every existing net resumes. */
+    expect(worker.HAND_PROJECTION_DRAIN_DEADLINE_MS).toBeGreaterThanOrEqual(10_000);
+
+    const neverSettles = new Promise<never>(() => {});
+    await expect(worker.withDrainDeadlineForTest(neverSettles, 25)).rejects.toThrow(
+      /did not settle/
+    );
+
+    // A pass that DOES settle is passed through untouched, and its timer is
+    // cleared rather than left to fire.
+    const summary = { projected: 3, alreadyCompleted: 0, deferred: 0, failed: 0 };
+    await expect(worker.withDrainDeadlineForTest(Promise.resolve(summary), 25)).resolves.toEqual(
+      summary
+    );
   });
 
   it('pollIsDue: a running drain always wins, an armed retry wins only while it can still fire', () => {

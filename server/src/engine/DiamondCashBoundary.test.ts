@@ -23,8 +23,15 @@ const table = {
   min_buy_in: 20,
   max_buy_in: 200,
   ante: 0,
+  /* Every deduction EXPLICITLY zero and every default-on feature EXPLICITLY
+     false. This fixture used to omit the last three, which is precisely how
+     the admit-then-refuse-every-hand gap survived: unset reads as zero here
+     and as "inherit the chip schedule" in the engine. */
   rake_percent: 0,
+  rake_cap_bb: 0,
   bbj_percent: 0,
+  run_it_twice: false,
+  allow_run_it_twice: false,
 };
 const hand = {
   arena: diamond,
@@ -60,12 +67,40 @@ describe('the first Diamond game stays inside the custody boundary', () => {
       { all_in_or_fold: true },
       { pineapple_holdem: true },
       { cap_enabled: true },
+      { rake_cap_bb: 1 },
+      { allow_run_it_twice: true },
       { small_blind: 0.5 },
       { min_buy_in: 0 },
       { max_buy_in: Infinity },
       { ante: 0.5 },
     ])
       expect(() => assertDiamondCashTable({ ...table, ...change })).toThrow();
+  });
+
+  /* UNSET IS NOT OFF. The engine's default for each of these columns is the
+     chip club's, and the chip club's default is ON: an unset rake cap inherits
+     the published schedule cap, an unset bbj_percent reads as 100, and unset
+     run-it columns read as true. A table admitted with any of them missing is
+     then refused by HandController on every hand, so it seats players and
+     never deals. Each column is named individually because each one has its
+     own default in a different file. */
+  it('refuses a table that leaves a chip default unset rather than off', () => {
+    for (const key of ['rake_cap_bb', 'bbj_percent', 'rake_percent'] as const) {
+      const missing: Record<string, unknown> = { ...table };
+      delete missing[key];
+      expect(() => assertDiamondCashTable(missing), `${key} unset was admitted`).toThrow(
+        'Diamond Plain Cash Table Required'
+      );
+      expect(() => assertDiamondCashTable({ ...table, [key]: null })).toThrow();
+    }
+    for (const key of ['run_it_twice', 'allow_run_it_twice'] as const) {
+      const missing: Record<string, unknown> = { ...table };
+      delete missing[key];
+      expect(() => assertDiamondCashTable(missing), `${key} unset was admitted`).toThrow(
+        'Diamond Plain Cash Table Required'
+      );
+      expect(() => assertDiamondCashTable({ ...table, [key]: null })).toThrow();
+    }
   });
 
   it('requires protocol 2 and refuses unsupported accepted facts before any writer', () => {

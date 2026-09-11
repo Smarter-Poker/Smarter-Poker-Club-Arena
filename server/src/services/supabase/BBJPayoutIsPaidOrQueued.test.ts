@@ -38,6 +38,7 @@ import {
   setBBJPayoutQueue,
   resolveJackpotSiblingClubIds,
 } from './bbj.js';
+import { setMaintenanceFrozen } from '../../maintenance/freezeState.js';
 
 const POOL = 'f9806a7f-e7a2-47d2-a676-36336e3a5337';
 const PARAMS = {
@@ -705,4 +706,92 @@ it('reports unreadable parked shares at their source without retrying payment', 
     'processBBJPayout.parked_share_read_failed'
   );
   expect(from.mock.calls.some(([name]) => name === 'notifications')).toBe(false);
+});
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  A JACKPOT IS A CHIP MOVEMENT, AND THE PLATFORM FREEZES (2026-09-11)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * The header of this file already names "the :55 maintenance freeze refusing
+ * the write" as one of the causes the queue exists to survive. It could never
+ * refuse us: `fn_refuse_while_frozen` returns early for any caller whose
+ * `request.jwt.claims.role` is `service_role`, and the engine holds
+ * SUPABASE_SERVICE_ROLE_KEY. So `zz_freeze_guard` on `table_seats` and
+ * `club_members` - the two tables this payout credits - stops browsers and
+ * not the engine, and on this path the engine was the only thing that could
+ * honour Dan's "NO CHIP MOVEMENTS" and it did not ask.
+ *
+ * Measured before the fix: zero of the 27 payouts since the freeze shipped
+ * landed inside the frozen window (:53 announcement to :00 resume). That is
+ * the break working rather than a guarantee - a long hand, `drainHands()`
+ * parking at the :57 restart, or a re-drive landing in the window would each
+ * put a credit inside the freeze.
+ */
+describe('a payout defers to the maintenance break instead of moving chips through it', () => {
+  beforeEach(() => {
+    setMaintenanceFrozen(false);
+  });
+
+  it('makes no RPC call at all while the platform is frozen', async () => {
+    setMaintenanceFrozen(true);
+    const outcome = await run();
+    expect(outcome.status).toBe('queued');
+    /* The whole point: not "it tried and the database said no", but that it
+       never asked. The freeze guard cannot refuse a service_role caller. */
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it('does not burn its retries or raise a CRITICAL alert for a break we scheduled', async () => {
+    setMaintenanceFrozen(true);
+    await run();
+    /* Falling into the attempt loop would spend four attempts and end in
+       processBBJPayout.exhausted - an alarm that fires every hour on a
+       maintenance break is an alarm that gets muted (CLAUDE.md 10.84). */
+    expect(raiseFinancialAlert).not.toHaveBeenCalled();
+  });
+
+  it('still writes the durable claim, because a record is not a chip movement', async () => {
+    const claim = vi.fn().mockResolvedValue(undefined);
+    setBBJPayoutQueue({ claim, settle: vi.fn().mockResolvedValue(undefined) } as never);
+    setMaintenanceFrozen(true);
+    const outcome = await run();
+    expect(outcome.status).toBe('queued');
+    /* The claim is what survives the :57 engine restart and what the
+       reconciler re-drives at the thaw. Deferring without it would be
+       dropping the jackpot, which is the defect this whole file exists for. */
+    expect(claim).toHaveBeenCalled();
+    setBBJPayoutQueue(null);
+  });
+
+  it('says WHY it queued, so a deferral is not read as a failure', async () => {
+    setMaintenanceFrozen(true);
+    const outcome = await run();
+    expect(outcome.status).toBe('queued');
+    if (outcome.status === 'queued') {
+      expect(outcome.lastError).toMatch(/frozen/i);
+      expect(outcome.lastError).toMatch(/reconciler pays it when play resumes/i);
+    }
+  });
+
+  it('the MINI defers on the same gate', async () => {
+    setMaintenanceFrozen(true);
+    /* Awaited directly rather than through `run()`: the gate returns before
+       the attempt loop exists, so there are no backoff timers to drain, and
+       the mini's outcome is its own narrower shape. */
+    const outcome = await processMiniBBJPayout({
+      ...PARAMS,
+      tierId: 'small',
+    } as never);
+    expect(rpc).not.toHaveBeenCalled();
+    expect(outcome.status).toBe('queued');
+  });
+
+  it('CONTROL: with the platform running, nothing about the payout changes', async () => {
+    setMaintenanceFrozen(false);
+    rpc.mockResolvedValueOnce({ data: [appliedRow()], error: null });
+    const outcome = await run();
+    expect(outcome.status).toBe('paid');
+    expect(rpc).toHaveBeenCalledTimes(1);
+  });
 });

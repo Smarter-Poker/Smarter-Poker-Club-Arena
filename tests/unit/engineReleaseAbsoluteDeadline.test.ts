@@ -5,6 +5,7 @@ import { resolve } from 'node:path';
 
 const root = resolve(__dirname, '..', '..');
 const workflow = readFileSync(resolve(root, '.github/workflows/auto-deploy-hetzner.yml'), 'utf8');
+const observer = readFileSync(resolve(root, 'server/scripts/observe-engine-release.sh'), 'utf8');
 
 const between = (start: string, end: string): string => {
   const from = workflow.indexOf(start);
@@ -55,11 +56,35 @@ describe('the Hetzner release has one absolute wall-clock budget', () => {
   });
 
   it('makes intake, observation, and uncertain reattachment share the absolute cutoff', () => {
+    const observerMaximum = Number(observer.match(/\[ "\$OBSERVE_SECONDS" -le (\d+) \]/)?.[1]);
     expect(dispatch).not.toContain('SECONDS +');
     expect(dispatch).not.toContain('remaining + 30');
     expect(dispatch.match(/RELEASE_DISPATCH_DEADLINE_EPOCH - \$\(date \+%s\)/g)).toHaveLength(3);
+    expect(observerMaximum).toBeGreaterThan(0);
+    expect(dispatch).toContain(`local observer_max_seconds=${observerMaximum}`);
+    expect(dispatch).toContain('local observer_transport_grace_seconds=5');
+    expect(dispatch).toContain('[ "$remaining" -gt $((observer_transport_grace_seconds * 2)) ]');
     expect(dispatch).toContain(
-      "ENGINE_RELEASE_OBSERVE_SECONDS='$transport_timeout' ENGINE_RELEASE_INVOCATION_WAIT_SECONDS='$invocation_wait'"
+      'transport_timeout=$((remaining - observer_transport_grace_seconds))'
+    );
+    expect(dispatch).toContain(
+      '[ "$transport_timeout" -gt $((observer_max_seconds + observer_transport_grace_seconds)) ]'
+    );
+    expect(dispatch).toContain(
+      'transport_timeout=$((observer_max_seconds + observer_transport_grace_seconds))'
+    );
+    expect(dispatch).toContain(
+      'observe_seconds=$((transport_timeout - observer_transport_grace_seconds))'
+    );
+    expect(dispatch).toContain(
+      "ENGINE_RELEASE_OBSERVE_SECONDS='$observe_seconds' ENGINE_RELEASE_INVOCATION_WAIT_SECONDS='$invocation_wait'"
+    );
+    expect(dispatch).not.toContain("ENGINE_RELEASE_OBSERVE_SECONDS='$transport_timeout'");
+    expect(dispatch).toContain(
+      '[ "$invocation_wait" -le "$observe_seconds" ] || invocation_wait="$observe_seconds"'
+    );
+    expect(dispatch.indexOf('observe_seconds=$((transport_timeout')).toBeLessThan(
+      dispatch.indexOf("ENGINE_RELEASE_OBSERVE_SECONDS='$observe_seconds'")
     );
     expect(dispatch).toContain('timeout --signal=TERM --kill-after=5s "${transport_timeout}s"');
     expect(dispatch).toContain('DISPATCH_FINALIZE_RESERVE_SECONDS=15');

@@ -1,0 +1,21 @@
+{
+  "captured_at": "2026-09-11",
+  "source": "production pg_get_functiondef (read-only)",
+  "bodies": {
+    "public.fn_safe_jsonb_array(text)": "f7d50c875a67fb5a84ae4f1c32bdf941",
+    "public.fn_tournament_payout_key_is_place_evidence(uuid,text)": "0ac277c3ebf89bede86d63f6f38bcc66",
+    "public.fn_stamp_tournament_elimination_sequence()": "78943d7a0d060e33830281500f08dfca",
+    "public.fn_tournament_elimination_has_a_place()": "1d00219cefe6de725da5d33fe0b38002",
+    "public.fn_ca_latest_committed_knockout_candidate(uuid,uuid)": "0602827901be20bbb6e0dce6ece17f94",
+    "public.fn_eliminate_player_legacy_candidate_20260907(uuid,uuid,integer,numeric,numeric)": "f596d731cacf8d7e62a4549204ce73fc",
+    "public.fn_eliminate_tournament_player_atomic(uuid,uuid,integer,numeric,numeric)": "b4937067d9bf337e1466095b9e1d5424",
+    "public.fn_normalize_tournament_final_standings(uuid)": "ad865880f99bc28896bec03c66ae55a9",
+    "public.fn_prepare_tournament_place_obligations(uuid,text)": "ca0abbc6d297f3009143676261d8cf19",
+    "public.fn_ca_tournament_place_amounts(uuid)": "8f6cde5f5b799949506259f3064568b9",
+    "public.fn_settle_tournament_places(uuid,uuid)": "d0262f4928b12eea1cc5e9175cbf2737",
+    "public.fn_claim_bounty_legacy_candidate_20260907(uuid,uuid,integer,numeric,uuid,uuid,bigint,timestamp with time zone,uuid,jsonb,numeric,boolean)": "590f0f782e127288f33763bbab8c89f0",
+    "public.fn_claim_tournament_bounty_elimination(uuid,uuid,integer,numeric,uuid,uuid,bigint,timestamp with time zone,uuid,jsonb,numeric,boolean)": "876456f79250a307292dc6f2ae1564f3",
+    "public.fn_ca_tournament_finished_but_not_completed(integer)": "e1eebfe28f393f2617c0a1ac93c2583a",
+    "public.fn_bounty_obligation_has_complete_marker(uuid)": "bd29069e8d07bedf84e24e57242c2afe"
+  }
+}

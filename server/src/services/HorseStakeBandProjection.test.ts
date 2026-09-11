@@ -56,6 +56,20 @@ const MIGRATION = readFileSync(
   'utf8'
 );
 
+/**
+ * The 2026-09-11 migration that made availability a question about ONE HOST.
+ * MIGRATION above is still read for the ladder, the cut points and the
+ * downward-only projection, which that file defines and this one does not
+ * touch; the pins below are the part that moved.
+ */
+const HOST_MIGRATION = readFileSync(
+  new URL(
+    '../../../supabase/migrations/20260911163821_a_stake_band_is_projected_onto_the_games_the_horses_own_host_deals.sql',
+    import.meta.url
+  ).pathname,
+  'utf8'
+);
+
 describe('the projection: merit decides the order, the floor decides which rungs exist', () => {
   it('a band with a game keeps its horses', () => {
     for (const floor of allFloors()) {
@@ -219,5 +233,65 @@ describe('the SQL half is actually written that way', () => {
   it('the ladder in SQL is the ladder in TypeScript, in the same order', () => {
     expect(MIGRATION).toContain("VALUES ('micro', 1), ('low', 2), ('mid', 3), ('high', 4)");
     expect([...STAKE_BAND_LADDER]).toEqual(['micro', 'low', 'mid', 'high']);
+  });
+});
+
+/**
+ * A BAND WITH NO GAME *ON THIS HORSE'S HOST* GETS NO HORSES (2026-09-11).
+ *
+ * The 09-06 answer asked whether a band had a game ANYWHERE on the platform.
+ * A horse only sits where it holds a membership, and the two hosts are
+ * disjoint sets of horses: Deep Stack Society deals micro/low/mid/high,
+ * Midway Union deals micro/low/mid. One Deep Stack 25/50 game therefore made
+ * 'high' "available" to every Midway horse. Re-measured read-only against
+ * production that afternoon: the next assignment run would have written
+ * 'high' onto 76 Midway horses, none of which has a high game to sit at.
+ */
+describe('availability is asked of the horse own host', () => {
+  it('fn_available_stake_bands takes a host, and NULL still means the platform', () => {
+    expect(HOST_MIGRATION).toContain(
+      'CREATE OR REPLACE FUNCTION public.fn_available_stake_bands(p_host uuid DEFAULT NULL)'
+    );
+    expect(HOST_MIGRATION).toContain('COALESCE(cg.union_id, cg.club_id) = p_host');
+    expect(HOST_MIGRATION).toContain('p_host IS NULL OR');
+    // The supply is still READ from the floor, never a constant.
+    expect(HOST_MIGRATION).toContain('FROM public.cash_games cg');
+    expect(HOST_MIGRATION).toContain('WHERE cg.enabled IS TRUE');
+  });
+
+  it('the zero-argument form is dropped, so a bare call cannot be ambiguous', () => {
+    expect(HOST_MIGRATION).toContain('DROP FUNCTION IF EXISTS public.fn_available_stake_bands();');
+  });
+
+  it('a horse is projected onto the union of the bands its own hosts deal', () => {
+    // The host key is coalesce(union_id, club_id) - the same key
+    // StableHandSnapshot.enabledGamesFor uses, so the two halves agree.
+    expect(HOST_MIGRATION).toContain('coalesce(c.union_id, c.id) as host');
+    expect(HOST_MIGRATION).toContain("where cm.status in ('active', 'approved')");
+    expect(HOST_MIGRATION).toContain('public.fn_available_stake_bands(h.host) as bands');
+    // A horse with no membership keeps the platform-wide set: that is what
+    // every horse got before, so nobody is made worse off by the change.
+    expect(HOST_MIGRATION).toContain('else v_available end');
+  });
+
+  it('the merit ladder and the fail-open are untouched by the host change', () => {
+    expect(HOST_MIGRATION).toContain('when merit_pct <  22 then');
+    expect(HOST_MIGRATION).toContain('when merit_pct <  74 then');
+    expect(HOST_MIGRATION).toContain('when merit_pct <  89 then');
+    expect(HOST_MIGRATION).toContain('p_min_hands integer DEFAULT 1000');
+    expect(HOST_MIGRATION).toContain('if coalesce(array_length(v_available, 1), 0) = 0 then');
+  });
+
+  it('the projection is still downward only', () => {
+    // fn_project_stake_band is the only thing that chooses a band, in both
+    // the merit step and the clamp after hysteresis. An assignment that
+    // walked UP would promote a micro grinder into a big game.
+    expect(HOST_MIGRATION).toContain('public.fn_project_stake_band(');
+    expect(HOST_MIGRATION).not.toMatch(/a\.ord\s*>=?\s*w\.ord/);
+  });
+
+  it('it is one transaction, per the production DDL policy', () => {
+    expect(HOST_MIGRATION.match(/^BEGIN;$/gm)?.length).toBe(1);
+    expect(HOST_MIGRATION.match(/^COMMIT;$/gm)?.length).toBe(1);
   });
 });

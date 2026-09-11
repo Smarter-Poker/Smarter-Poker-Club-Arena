@@ -83,7 +83,10 @@ describe('both decision points consult it', () => {
 
   it('the bankroll gate sits alongside the stake band, not instead of it', () => {
     // A band says what a horse has EARNED; the bankroll says what it AFFORDS.
-    expect(SRC).toContain('stakeBandAllows(h.id, table.big_blind)');
+    // The band gate also takes the TABLE'S HOST since 2026-09-11, because a
+    // band is only meaningful against the ladder that host actually deals.
+    expect(SRC).toContain('!stakeBandAllows(');
+    expect(SRC).toContain('table.big_blind,');
     expect(SRC).toContain('canSit(roll, ref, bankrollPolicyFor(h.id))');
   });
 });

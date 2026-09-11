@@ -218,12 +218,19 @@ describe('1. a finalized prize pool is not filled', () => {
     expect(walk).toContain(
       'if (!poolFinalized && isPastStart && tournament.current_players < minPlayers)'
     );
-    // Reported once, never a `continue` that would also skip the start gate
-    // (a launch that finalized the pool and lost its engine is recovered there).
+    // Reported once, never a `continue` that would also skip the start gate.
+    //
+    // AND THE START GATE NOW ACTUALLY RECOVERS ONE (2026-09-11). This comment
+    // used to say a launch that finalized its pool and lost its engine "is
+    // recovered there". It was not: both arms of the gate count a field that
+    // has not played yet, and a played game's field has shrunk to its
+    // survivor, so not one of the forty rows dealt on 2026-09-08 satisfied
+    // either. The gate has a third arm now, `finishingADealtGame`, and the
+    // database decides it.
     const report = walk.indexOf("'GameServer.registering_with_finalized_pool'");
-    const gate = walk.indexOf(
-      'const shouldStart = isSngOrSpin ? seatFirstReady : maxReached || timeReached;'
-    );
+    const gate = walk.indexOf('const shouldStart =');
+    expect(walk).toContain('|| finishingADealtGame;');
+    expect(walk).toContain('const finishingADealtGame =');
     expect(report).toBeGreaterThan(-1);
     expect(gate).toBeGreaterThan(report);
     expect(walk.slice(report, gate)).not.toMatch(/poolFinalized\)\s*\{[^}]*continue;/);

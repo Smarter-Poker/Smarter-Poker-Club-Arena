@@ -6023,7 +6023,22 @@ export class GameServer {
             this.tournamentManagerAdmissionOperations.has(id) ||
             this.tournamentManagerAdmissionRetryTimers.has(id),
           coolingDown: (id) => this.tournamentResumeCooldowns.coolingDown(id, selectedAt),
-          resumesInFlight: resumesHoldingASlot(this.tournamentResumesInFlight.values(), selectedAt),
+          /*
+           * ...and an admission waiting on its retry timer HOLDS a slot while it
+           * waits (2026-09-11). Skipping those ids without charging them would
+           * let the lane launch a fresh budget every pass while the earlier
+           * ones kept retrying: against a database that answers every claim
+           * with a retryable failure, the retry population grows by a budget a
+           * pass until every RUNNING event claims every 15s (~50 claims/s on
+           * a 740-event board) - the re-adoption storm again, one layer down.
+           * Charged, retries plus launches never exceed the budget. A head
+           * that settles WITHOUT a retry (resume_failed, owned_elsewhere)
+           * holds nothing: it cools down instead, which is what lets the tail
+           * through.
+           */
+          resumesInFlight:
+            resumesHoldingASlot(this.tournamentResumesInFlight.values(), selectedAt) +
+            this.tournamentManagerAdmissionRetryTimers.size,
           budget: this.tournamentResumeBudget,
         });
         for (const [index, tournament] of resumes.entries()) {

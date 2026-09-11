@@ -324,8 +324,8 @@ describe('the RUNNING re-adoption loop is wired to the law', () => {
   it('selects against the budget, the in-flight resumes and the admission registry', () => {
     const selection = LANE.slice(LANE.indexOf('selectRunningResumes('));
     expect(selection).toContain('budget: this.tournamentResumeBudget');
-    expect(selection).toContain(
-      'resumesInFlight: resumesHoldingASlot(this.tournamentResumesInFlight'
+    expect(selection).toMatch(
+      /resumesInFlight:\s*resumesHoldingASlot\(this\.tournamentResumesInFlight\.values\(\), selectedAt\) \+\s*this\.tournamentManagerAdmissionRetryTimers\.size/
     );
     // In flight includes a retry still waiting on its timer (2026-09-11):
     // reading only the operations map relaunched those ids ahead of the tail.

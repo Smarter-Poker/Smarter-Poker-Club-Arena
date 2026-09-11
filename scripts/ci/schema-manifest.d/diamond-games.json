@@ -50,7 +50,10 @@
     "fn_wheel_welcome_spin",
     "fn_wheel_set_welcome_spin",
     "fn_wheel_welcome_spent",
-    "fn_wheel_welcome_room"
+    "fn_wheel_welcome_room",
+    "fn_diamond_game_pnl",
+    "fn_diamond_game_room",
+    "fn_diamond_game_players"
   ],
   "columns": {
     "wheel_configs": [

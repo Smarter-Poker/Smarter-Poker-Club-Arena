@@ -44,6 +44,7 @@ import { multiplierLabel } from '../../utils/diamondGamesFairness';
 import { compactChips } from '../../utils/format';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
 import { reportError } from '../../utils/errorReporter';
+import DiamondGamesMoney from '../../components/club/DiamondGamesMoney';
 import { uuid } from '../../utils/uuid';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import styles from '../diamondGames.module.css';
@@ -481,6 +482,8 @@ export default function ClubDiamondGamesOperationsPage() {
           />
         </div>
       </SpadeConsole>
+
+      <DiamondGamesMoney clubId={clubUuid} />
 
       <SpadeConsole eyebrow="Against The 80% Spec" title="Realised Return" foot="foot">
         <div className={styles.rows}>

@@ -192,6 +192,83 @@ export interface CrashRound {
   created_at: string;
 }
 
+/** One window of the operator's P and L, all three games together. */
+export interface GamePnlWindow {
+  window: string;
+  rounds: number;
+  intake_diamonds: number;
+  intake_chips: number;
+  chips_paid: number;
+  diamonds_paid: number;
+  welcome_chips: number;
+  net_chips: number;
+  games: Array<{
+    game: string;
+    rounds: number;
+    intake_diamonds: number;
+    chips_paid: number;
+    diamonds_paid: number;
+    net_chips: number;
+  }>;
+}
+
+export interface GamePnl {
+  ok: boolean;
+  error?: string;
+  diamonds_per_chip: number;
+  windows: GamePnlWindow[];
+}
+
+/** open: the cover is not what limits the game. thin: it is. stopped: it cannot pay. */
+export type GameRoomState = 'open' | 'thin' | 'stopped' | 'closed';
+
+export interface GameRoom {
+  ok: boolean;
+  error?: string;
+  cover_chips: number;
+  promo_chips: number;
+  bank_chips: number;
+  owner_diamonds: number;
+  games: Array<{
+    game: string;
+    enabled: boolean;
+    state: GameRoomState;
+    /** The three multiplier games: what a player could win at the largest bet. */
+    max_win_chips?: number;
+    intake_win_chips?: number;
+    ceiling_win_chips?: number;
+    capped_by_cover: boolean;
+    capped_by_intake: boolean;
+    /** The wheel, whose prizes are a fixed table rather than a multiplier. */
+    top_chip_prize_chips?: number;
+    top_diamond_prize_diamonds?: number;
+    chip_prize_covered?: boolean;
+    diamond_prize_covered?: boolean;
+  }>;
+}
+
+export interface GamePlayers {
+  ok: boolean;
+  error?: string;
+  spins_cap: number;
+  rounds_cap: number;
+  players: Array<{
+    user_id: string;
+    name: string;
+    spins: number;
+    rounds: number;
+    spins_cap: number;
+    rounds_cap: number;
+    at_spin_cap: boolean;
+    at_round_cap: boolean;
+    spent_diamonds: number;
+    spent_chips: number;
+    won_chips: number;
+    won_diamonds: number;
+    net_chips: number;
+  }>;
+}
+
 export interface GameMetricsWindow {
   window: '1h' | '24h' | '7d';
   rounds: number;
@@ -810,6 +887,125 @@ const DiamondGamesService = {
       replayed: Boolean(raw.replayed),
       promo_chips: raw.promo_chips === undefined ? undefined : Number(raw.promo_chips),
       bank_chips: raw.bank_chips === undefined ? undefined : Number(raw.bank_chips),
+    };
+  },
+
+  /**
+   * WHAT THE HOST IS UP OR DOWN (2026-09-11), across all three games, over four
+   * windows, with a per-game breakdown. Stated in chips because a chip is a
+   * dollar and an owner thinks in dollars. The server decides who may read it.
+   */
+  async pnl(clubId: string): Promise<GamePnl> {
+    const { data, error } = await supabase.rpc('fn_diamond_game_pnl', { p_club_id: clubId });
+    if (error) throw error;
+    const raw = rec(data);
+    return {
+      ok: Boolean(raw.ok),
+      error: raw.error ? String(raw.error) : undefined,
+      diamonds_per_chip: num(raw.diamonds_per_chip),
+      windows: Array.isArray(raw.windows)
+        ? (raw.windows as Record<string, unknown>[]).map((w) => ({
+            window: String(w.window ?? ''),
+            rounds: num(w.rounds),
+            intake_diamonds: num(w.intake_diamonds),
+            intake_chips: num(w.intake_chips),
+            chips_paid: num(w.chips_paid),
+            diamonds_paid: num(w.diamonds_paid),
+            welcome_chips: num(w.welcome_chips),
+            net_chips: num(w.net_chips),
+            games: Array.isArray(w.games)
+              ? (w.games as Record<string, unknown>[]).map((g) => ({
+                  game: String(g.game ?? ''),
+                  rounds: num(g.rounds),
+                  intake_diamonds: num(g.intake_diamonds),
+                  chips_paid: num(g.chips_paid),
+                  diamonds_paid: num(g.diamonds_paid),
+                  net_chips: num(g.net_chips),
+                }))
+              : [],
+          }))
+        : [],
+    };
+  },
+
+  /**
+   * HOW MUCH GAME IS LEFT IN THE COVER (2026-09-11). Per game, the biggest win
+   * a player could take right now next to the biggest the configuration allows,
+   * and which of the two ceilings is binding: the intake headroom (the law
+   * working, nothing to act on) or the cover (the operator's to fix).
+   */
+  async room(clubId: string): Promise<GameRoom> {
+    const { data, error } = await supabase.rpc('fn_diamond_game_room', { p_club_id: clubId });
+    if (error) throw error;
+    const raw = rec(data);
+    return {
+      ok: Boolean(raw.ok),
+      error: raw.error ? String(raw.error) : undefined,
+      cover_chips: num(raw.cover_chips),
+      promo_chips: num(raw.promo_chips),
+      bank_chips: num(raw.bank_chips),
+      owner_diamonds: num(raw.owner_diamonds),
+      games: Array.isArray(raw.games)
+        ? (raw.games as Record<string, unknown>[]).map((g) => ({
+            game: String(g.game ?? ''),
+            enabled: Boolean(g.enabled),
+            state: (['open', 'thin', 'stopped', 'closed'] as const).includes(
+              String(g.state) as GameRoomState
+            )
+              ? (String(g.state) as GameRoomState)
+              : 'closed',
+            max_win_chips: g.max_win_chips === undefined ? undefined : num(g.max_win_chips),
+            intake_win_chips:
+              g.intake_win_chips === undefined ? undefined : num(g.intake_win_chips),
+            ceiling_win_chips:
+              g.ceiling_win_chips === undefined ? undefined : num(g.ceiling_win_chips),
+            capped_by_cover: Boolean(g.capped_by_cover),
+            capped_by_intake: Boolean(g.capped_by_intake),
+            top_chip_prize_chips:
+              g.top_chip_prize_chips === undefined ? undefined : num(g.top_chip_prize_chips),
+            top_diamond_prize_diamonds:
+              g.top_diamond_prize_diamonds === undefined
+                ? undefined
+                : num(g.top_diamond_prize_diamonds),
+            chip_prize_covered:
+              g.chip_prize_covered === undefined ? undefined : Boolean(g.chip_prize_covered),
+            diamond_prize_covered:
+              g.diamond_prize_covered === undefined ? undefined : Boolean(g.diamond_prize_covered),
+          }))
+        : [],
+    };
+  },
+
+  /** WHO IS PLAYING TODAY (2026-09-11), against the two daily ceilings. */
+  async players(clubId: string, limit = 25): Promise<GamePlayers> {
+    const { data, error } = await supabase.rpc('fn_diamond_game_players', {
+      p_club_id: clubId,
+      p_limit: limit,
+    });
+    if (error) throw error;
+    const raw = rec(data);
+    return {
+      ok: Boolean(raw.ok),
+      error: raw.error ? String(raw.error) : undefined,
+      spins_cap: num(raw.spins_cap),
+      rounds_cap: num(raw.rounds_cap),
+      players: Array.isArray(raw.players)
+        ? (raw.players as Record<string, unknown>[]).map((p) => ({
+            user_id: String(p.user_id ?? ''),
+            name: String(p.name ?? ''),
+            spins: num(p.spins),
+            rounds: num(p.rounds),
+            spins_cap: num(p.spins_cap),
+            rounds_cap: num(p.rounds_cap),
+            at_spin_cap: Boolean(p.at_spin_cap),
+            at_round_cap: Boolean(p.at_round_cap),
+            spent_diamonds: num(p.spent_diamonds),
+            spent_chips: num(p.spent_chips),
+            won_chips: num(p.won_chips),
+            won_diamonds: num(p.won_diamonds),
+            net_chips: num(p.net_chips),
+          }))
+        : [],
     };
   },
 

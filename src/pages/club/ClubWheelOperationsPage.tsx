@@ -51,6 +51,7 @@ import DiamondGamesService from '../../services/DiamondGamesService';
 import { compactChips } from '../../utils/format';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
 import { reportError } from '../../utils/errorReporter';
+import DiamondGamesMoney from '../../components/club/DiamondGamesMoney';
 import { uuid } from '../../utils/uuid';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import styles from '../diamondGames.module.css';
@@ -732,6 +733,8 @@ export default function ClubWheelOperationsPage() {
           />
         </div>
       </SpadeConsole>
+
+      <DiamondGamesMoney clubId={clubUuid} />
 
       <SpadeConsole
         eyebrow="Lifetime"

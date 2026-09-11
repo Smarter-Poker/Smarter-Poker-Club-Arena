@@ -1,0 +1,36 @@
+{
+  "recorded_at": "2026-09-11T04:46:58.844787+00:00",
+  "status": "PRESERVED UNVERIFIED, NOT ACCEPTANCE OR PRODUCTION EVIDENCE",
+  "scope": "Preservation only after parent instruction reporting an automatic cybersecurity flag; no blocked diagnostic was retried after that instruction.",
+  "original_observation": "Original baseline same-window run confirmed bank debit equalled wallet credit, then failed the unsupported expectation that paid exceeded unique historical basis. No overpayment was established from that observed run.",
+  "diagnostic_process": {
+    "desktop_commander_pid": 27156,
+    "started_before_stop_instruction": true,
+    "observed_completed_exit": 0,
+    "reported_checks": 18,
+    "reported_private_cluster_stopped": true,
+    "reported_private_cluster_removed": false,
+    "outcomes_reviewed": false,
+    "acceptance_verified": false
+  },
+  "automatic_flag": "Parent reported an automatic cybersecurity flag and ordered the diagnostic lane stopped. No detailed rejection text was supplied to this agent. A subsequent task explicitly authorized preservation of already-written artifacts only.",
+  "not_completed": [
+    "Independent review of diagnostic RPC outcomes and assertions",
+    "Independent settlement-writer review",
+    "Candidate acceptance verification",
+    "Any production rollout or finality certification"
+  ],
+  "production_mutations": false,
+  "new_database_runs_after_stop": false,
+  "peer_source_edits": false,
+  "preserved_artifact_sha256": {
+    "initial-unverified-expectation.log": "1d06de3ef7fd4851c4ea4a382c8040636b680bd88b829a936d24d5025e87d8cc",
+    "latest-observations.json": "5046c36083e501dce53f44b14a30badb4aa090e5774e933fddc27d5b47475bce",
+    "native-probe.py": "33898a9c4e0337c589f695750717016ae25234d39d1490b7a78839539e03de15",
+    "native-proof.json": "296598759d9e49ad200e38da99a97ba6878d98f2e7b8a83e2ef47d00c3320114",
+    "native-run.log": "0e08269a4d97fc1cd1811ec7c17ddb046c52c9279f0ee5a66fc75faa8ca7a7e8",
+    "run-local.py": "2c94b5b3af25e2650c0f88366bda2534c3d3d322fe42a448885afeb1b3ae983b"
+  },
+  "backup_branch": "backup/resume-poker-sep11/legacy-races",
+  "backup_intent": "Preserve unfinished audit artifacts against orphaning. Do not treat backup publication as production activation or successful verification."
+}

@@ -1,0 +1,647 @@
+{
+  "verified_at": "2026-09-11T04:43:42.725198+00:00",
+  "checks": [
+    "baseline same window bank debit equals actual wallet credit",
+    "baseline same window returned native outcomes for both contenders",
+    "baseline overlapping windows bank debit equals actual wallet credit",
+    "baseline overlapping windows returned native outcomes for both contenders",
+    "baseline R2/direct-claim conflict commits only one 13-chip payment",
+    "baseline R2/direct-claim reports its actual deadlock victim",
+    "baseline R2/direct-claim retry causes no additional money or receipt",
+    "candidate same window bank debit equals actual wallet credit",
+    "candidate same window stale writer aborts with 40001",
+    "candidate same window retry pays exactly the remaining historical basis",
+    "candidate same window exact completed replay changes no public row",
+    "candidate overlapping windows bank debit equals actual wallet credit",
+    "candidate overlapping windows stale writer aborts with 40001",
+    "candidate overlapping windows retry pays exactly the remaining historical basis",
+    "candidate overlapping windows exact completed replay changes no public row",
+    "candidate R2/direct-claim conflict commits only one 13-chip payment",
+    "candidate R2/direct-claim reports its actual deadlock victim",
+    "candidate R2/direct-claim retry causes no additional money or receipt"
+  ],
+  "isolation": {
+    "database": "postgres",
+    "data_directory": "/tmp/ca-legacy-r2-native.5eNljR/data",
+    "server_address": null,
+    "server_port": null,
+    "version": "PostgreSQL 17.11 (Homebrew) on aarch64-apple-darwin25.6.0, compiled by Apple clang version 21.0.0 (clang-2100.1.1.101), 64-bit",
+    "backend_pid": 27314
+  },
+  "observations": [
+    {
+      "case": "baseline same window",
+      "barrier": "third session holds actual club row; two RPC waits observed before release",
+      "barrier_pid": 27334,
+      "observed_waits": [
+        {
+          "pid": 27337,
+          "application_name": "legacy-r2-first",
+          "wait_event_type": "Lock",
+          "wait_event": "transactionid",
+          "blocking_pids": [
+            27334
+          ]
+        },
+        {
+          "pid": 27344,
+          "application_name": "legacy-r2-second",
+          "wait_event_type": "Lock",
+          "wait_event": "tuple",
+          "blocking_pids": [
+            27337
+          ]
+        }
+      ],
+      "outputs": [
+        {
+          "exit": 0,
+          "result": {
+            "name": "club_to_agents",
+            "round": 2,
+            "amount": 17.0,
+            "detail": [],
+            "payees": 1,
+            "shortfalls": 0
+          },
+          "sqlstate": null,
+          "error": ""
+        },
+        {
+          "exit": 1,
+          "result": null,
+          "sqlstate": "23505",
+          "error": "ERROR:  23505: duplicate key value violates unique constraint \"chip_ledger_idem_pkey\"\nDETAIL:  Key (idempotency_key)=(round2:00000000-0000-4000-8000-000000000901:2026-03-02:00000000-0000-4000-8000-000000000900:00000000-0000-4000-8000-000000000302) already exists.\nCONTEXT:  SQL statement \"INSERT INTO public.chip_ledger_idem (idempotency_key, leg_id, created_at)\n  VALUES (NEW.idempotency_key, NEW.id, COALESCE(NEW.created_at, now()))\"\nPL/pgSQL function zz_chip_ledger_key_is_claimed_once() line 11 at SQL statement\nSQL statement \"INSERT INTO public.chip_ledger\n      (performed_by, from_type, from_entity_id, to_type, to_entity_id,\n       amount, category, club_id, union_id, description, idempotency_key, metadata)\n    VALUES\n      (COALESCE(auth.uid(), '2d1cd6c3-5700-4af9-a271-d4863fdab20d'::uuid),\n       'club_treasury', r.club_id, 'player_wallet', r.agent_user,\n       round(r.owed, 2), 'commission', r.club_id, p_union_id,\n       'Round 2: club -> agent commission (period '\n         || to_char(p_period_start, 'YYYY-MM-DD') || '..'\n         || to_char(p_period_end, 'YYYY-MM-DD') || ')',\n       'round2:' || p_union_id::text || ':'\n         || to_char(p_period_start at time zone 'UTC', 'YYYY-MM-DD') || ':'\n         || r.club_id::text || ':' || r.agent_user::text,\n       jsonb_build_object('period_start', p_period_start, 'period_end', p_period_end,\n                          'rows_count', r.n, 'agent_balance_after', v_agent_bal))\n    ON CONFLICT DO NOTHING\"\nPL/pgSQL function fn_settle_round2_club_to_agents(uuid,timestamp with time zone,timestamp with time zone) line 102 at SQL statement\nSCHEMA NAME:  public\nTABLE NAME:  chip_ledger_idem\nCONSTRAINT NAME:  chip_ledger_idem_pkey\nLOCATION:  _bt_check_unique, nbtinsert.c:673"
+        }
+      ],
+      "before": {
+        "bank": 1000.0,
+        "wallet": 0.0,
+        "receipts": 0,
+        "receipt_amount": 0,
+        "journal_amount": 0
+      },
+      "after": {
+        "bank": 983.0,
+        "wallet": 17.0,
+        "receipts": 1,
+        "receipt_amount": 17.0,
+        "journal_amount": 17.0
+      },
+      "unique_legacy_amount": 17,
+      "duplicate_amount": 0.0,
+      "baseline_outcome": "no_overpayment_observed"
+    },
+    {
+      "case": "baseline overlapping windows",
+      "barrier": "third session holds actual club row; two RPC waits observed before release",
+      "barrier_pid": 27360,
+      "observed_waits": [
+        {
+          "pid": 27363,
+          "application_name": "legacy-r2-first",
+          "wait_event_type": "Lock",
+          "wait_event": "transactionid",
+          "blocking_pids": [
+            27360
+          ]
+        },
+        {
+          "pid": 27369,
+          "application_name": "legacy-r2-second",
+          "wait_event_type": "Lock",
+          "wait_event": "tuple",
+          "blocking_pids": [
+            27363
+          ]
+        }
+      ],
+      "outputs": [
+        {
+          "exit": 0,
+          "result": {
+            "name": "club_to_agents",
+            "round": 2,
+            "amount": 12.0,
+            "detail": [],
+            "payees": 1,
+            "shortfalls": 0
+          },
+          "sqlstate": null,
+          "error": ""
+        },
+        {
+          "exit": 0,
+          "result": {
+            "name": "club_to_agents",
+            "round": 2,
+            "amount": 18.0,
+            "detail": [],
+            "payees": 1,
+            "shortfalls": 0
+          },
+          "sqlstate": null,
+          "error": ""
+        }
+      ],
+      "before": {
+        "bank": 983.0,
+        "wallet": 17.0,
+        "receipts": 1,
+        "receipt_amount": 17.0,
+        "journal_amount": 17.0
+      },
+      "after": {
+        "bank": 953.0,
+        "wallet": 47.0,
+        "receipts": 3,
+        "receipt_amount": 47.0,
+        "journal_amount": 47.0
+      },
+      "unique_legacy_amount": 23,
+      "duplicate_amount": 7.0,
+      "baseline_outcome": "overpaid"
+    },
+    {
+      "case": "baseline R2 versus direct claim",
+      "barrier": "third session holds actual club row; two RPC waits observed before release",
+      "barrier_pid": 27381,
+      "observed_waits": [
+        {
+          "pid": 27384,
+          "application_name": "legacy-r2-first",
+          "wait_event_type": "Lock",
+          "wait_event": "transactionid",
+          "blocking_pids": [
+            27381
+          ]
+        },
+        {
+          "pid": 27391,
+          "application_name": "legacy-r2-second",
+          "wait_event_type": "Lock",
+          "wait_event": "tuple",
+          "blocking_pids": [
+            27384
+          ]
+        }
+      ],
+      "outputs": [
+        {
+          "exit": 0,
+          "result": {
+            "name": "club_to_agents",
+            "round": 2,
+            "amount": 13.0,
+            "detail": [],
+            "payees": 1,
+            "shortfalls": 0
+          },
+          "sqlstate": null,
+          "error": ""
+        },
+        {
+          "exit": 1,
+          "result": null,
+          "sqlstate": "40P01",
+          "error": "ERROR:  40P01: deadlock detected\nDETAIL:  Process 27391 waits for ShareLock on transaction 3935; blocked by process 27384.\nProcess 27384 waits for ShareLock on transaction 3934; blocked by process 27391.\nHINT:  See server log for query details.\nCONTEXT:  while locking tuple (0,6) in relation \"clubs\"\nSQL statement \"SELECT COALESCE(c.chip_treasury, 0), c.name\n                                        FROM clubs c WHERE c.id = p_club_id FOR UPDATE\"\nPL/pgSQL function fn_agent_claim_commission(uuid,uuid,integer) line 150 at SQL statement\nLOCATION:  DeadLockReport, deadlock.c:1135"
+        }
+      ],
+      "before": {
+        "bank": 953.0,
+        "wallet": 47.0,
+        "receipts": 3,
+        "receipt_amount": 47.0,
+        "journal_amount": 47.0
+      },
+      "after": {
+        "bank": 940.0,
+        "wallet": 60.0,
+        "receipts": 4,
+        "receipt_amount": 60.0,
+        "journal_amount": 60.0
+      },
+      "unique_legacy_amount": 13
+    },
+    {
+      "case": "candidate same window",
+      "barrier": "third session holds actual club row; two RPC waits observed before release",
+      "barrier_pid": 27430,
+      "observed_waits": [
+        {
+          "pid": 27433,
+          "application_name": "legacy-r2-first",
+          "wait_event_type": "Lock",
+          "wait_event": "transactionid",
+          "blocking_pids": [
+            27430
+          ]
+        },
+        {
+          "pid": 27439,
+          "application_name": "legacy-r2-second",
+          "wait_event_type": "Lock",
+          "wait_event": "tuple",
+          "blocking_pids": [
+            27433
+          ]
+        }
+      ],
+      "outputs": [
+        {
+          "exit": 0,
+          "result": {
+            "name": "club_to_agents",
+            "round": 2,
+            "amount": 17.0,
+            "detail": [],
+            "payees": 1,
+            "shortfalls": 0
+          },
+          "sqlstate": null,
+          "error": ""
+        },
+        {
+          "exit": 1,
+          "result": null,
+          "sqlstate": "40001",
+          "error": "ERROR:  40001: Legacy commission receipt includes captured source or stale payable basis; retry\nCONTEXT:  PL/pgSQL function fn_ca_legacy_commission_receipt_excludes_captured() line 16 at RAISE\nSQL statement \"INSERT INTO public.agent_commission_settlements\n      (club_id, user_id, union_id, period_start, period_end, amount, rows_count, paid_at, settlement_ref)\n    VALUES (r.club_id, r.agent_user, p_union_id, p_period_start, p_period_end, round(r.owed, 2), r.n, now(),\n            'round2:' || p_union_id::text || ':' || to_char(p_period_start at time zone 'UTC', 'YYYY-MM-DD'))\n    ON CONFLICT (club_id, user_id, period_start, period_end) DO NOTHING\"\nPL/pgSQL function fn_settle_round2_club_to_agents(uuid,timestamp with time zone,timestamp with time zone) line 88 at SQL statement\nLOCATION:  exec_stmt_raise, pl_exec.c:3911"
+        }
+      ],
+      "before": {
+        "bank": 940.0,
+        "wallet": 0.0,
+        "receipts": 0,
+        "receipt_amount": 0,
+        "journal_amount": 0
+      },
+      "after": {
+        "bank": 923.0,
+        "wallet": 17.0,
+        "receipts": 1,
+        "receipt_amount": 17.0,
+        "journal_amount": 17.0
+      },
+      "unique_legacy_amount": 17,
+      "after_partial_retry": {
+        "bank": 923.0,
+        "wallet": 17.0,
+        "receipts": 1,
+        "receipt_amount": 17.0,
+        "journal_amount": 17.0
+      }
+    },
+    {
+      "case": "candidate overlapping windows",
+      "barrier": "third session holds actual club row; two RPC waits observed before release",
+      "barrier_pid": 27471,
+      "observed_waits": [
+        {
+          "pid": 27474,
+          "application_name": "legacy-r2-first",
+          "wait_event_type": "Lock",
+          "wait_event": "transactionid",
+          "blocking_pids": [
+            27471
+          ]
+        },
+        {
+          "pid": 27481,
+          "application_name": "legacy-r2-second",
+          "wait_event_type": "Lock",
+          "wait_event": "tuple",
+          "blocking_pids": [
+            27474
+          ]
+        }
+      ],
+      "outputs": [
+        {
+          "exit": 0,
+          "result": {
+            "name": "club_to_agents",
+            "round": 2,
+            "amount": 12.0,
+            "detail": [],
+            "payees": 1,
+            "shortfalls": 0
+          },
+          "sqlstate": null,
+          "error": ""
+        },
+        {
+          "exit": 1,
+          "result": null,
+          "sqlstate": "40001",
+          "error": "ERROR:  40001: Legacy commission receipt includes captured source or stale payable basis; retry\nCONTEXT:  PL/pgSQL function fn_ca_legacy_commission_receipt_excludes_captured() line 16 at RAISE\nSQL statement \"INSERT INTO public.agent_commission_settlements\n      (club_id, user_id, union_id, period_start, period_end, amount, rows_count, paid_at, settlement_ref)\n    VALUES (r.club_id, r.agent_user, p_union_id, p_period_start, p_period_end, round(r.owed, 2), r.n, now(),\n            'round2:' || p_union_id::text || ':' || to_char(p_period_start at time zone 'UTC', 'YYYY-MM-DD'))\n    ON CONFLICT (club_id, user_id, period_start, period_end) DO NOTHING\"\nPL/pgSQL function fn_settle_round2_club_to_agents(uuid,timestamp with time zone,timestamp with time zone) line 88 at SQL statement\nLOCATION:  exec_stmt_raise, pl_exec.c:3911"
+        }
+      ],
+      "before": {
+        "bank": 923.0,
+        "wallet": 17.0,
+        "receipts": 1,
+        "receipt_amount": 17.0,
+        "journal_amount": 17.0
+      },
+      "after": {
+        "bank": 911.0,
+        "wallet": 29.0,
+        "receipts": 2,
+        "receipt_amount": 29.0,
+        "journal_amount": 29.0
+      },
+      "unique_legacy_amount": 23,
+      "after_partial_retry": {
+        "bank": 900.0,
+        "wallet": 40.0,
+        "receipts": 3,
+        "receipt_amount": 40.0,
+        "journal_amount": 40.0
+      }
+    },
+    {
+      "case": "candidate R2 versus direct claim",
+      "barrier": "third session holds actual club row; two RPC waits observed before release",
+      "barrier_pid": 27510,
+      "observed_waits": [
+        {
+          "pid": 27513,
+          "application_name": "legacy-r2-first",
+          "wait_event_type": "Lock",
+          "wait_event": "transactionid",
+          "blocking_pids": [
+            27510
+          ]
+        },
+        {
+          "pid": 27519,
+          "application_name": "legacy-r2-second",
+          "wait_event_type": "Lock",
+          "wait_event": "tuple",
+          "blocking_pids": [
+            27513
+          ]
+        }
+      ],
+      "outputs": [
+        {
+          "exit": 0,
+          "result": {
+            "name": "club_to_agents",
+            "round": 2,
+            "amount": 13.0,
+            "detail": [],
+            "payees": 1,
+            "shortfalls": 0
+          },
+          "sqlstate": null,
+          "error": ""
+        },
+        {
+          "exit": 1,
+          "result": null,
+          "sqlstate": "40P01",
+          "error": "ERROR:  40P01: deadlock detected\nDETAIL:  Process 27519 waits for ShareLock on transaction 3956; blocked by process 27513.\nProcess 27513 waits for ShareLock on transaction 3955; blocked by process 27519.\nHINT:  See server log for query details.\nCONTEXT:  while locking tuple (0,2) in relation \"clubs\"\nSQL statement \"SELECT COALESCE(c.chip_treasury, 0), c.name\n                                        FROM clubs c WHERE c.id = p_club_id FOR UPDATE\"\nPL/pgSQL function fn_agent_claim_commission(uuid,uuid,integer) line 153 at SQL statement\nLOCATION:  DeadLockReport, deadlock.c:1135"
+        }
+      ],
+      "before": {
+        "bank": 900.0,
+        "wallet": 40.0,
+        "receipts": 3,
+        "receipt_amount": 40.0,
+        "journal_amount": 40.0
+      },
+      "after": {
+        "bank": 887.0,
+        "wallet": 53.0,
+        "receipts": 4,
+        "receipt_amount": 53.0,
+        "journal_amount": 53.0
+      },
+      "unique_legacy_amount": 13
+    }
+  ],
+  "candidate_sha256": {
+    "00-expand.sql": "ea409c359a7842aaad9e5d85a8015aab767d780cf3c4f3e46247985f9ed23054",
+    "00-online-index.sql": "e67f37fcd0f92f805ca524548b56f5f05a6f620ae5bdcabeb88e4e46e35f2148",
+    "00-preflight.sql": "a58d3a5cdd7f415f61e0358375ef517f4f5fe9576ef1493664c21c08738d3dd1",
+    "01-source-exclusion.sql": "0929a4df935810875168ecae2af5fb27a640a9acfe350ee05ffc711e4842a791",
+    "02-excluded-owners.sql": "5f9f9ad42f9a16fb1c1f7028bf8e61a2480d68277974592f91b5f2598c61f743",
+    "03-excluded-unpaid-rollups.sql": "c323476f71c3320ab49764198d0b2750640160eb9f53ead24dcf00da370bae28"
+  },
+  "original_owner_catalog": [
+    {
+      "acl": "{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+      "arguments": "p_club_id uuid, p_op_id uuid DEFAULT NULL::uuid, p_max_rows integer DEFAULT 1000",
+      "body_md5": "ecd40da476bd8dd829d381fb2ee5a03e",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_agent_claim_commission(p_club_id uuid, p_op_id uuid DEFAULT NULL::uuid, p_max_rows integer DEFAULT 1000)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  v_actor      uuid;\n  v_op_id      uuid := COALESCE(p_op_id, gen_random_uuid());\n  v_role       text;\n  v_amount     numeric;\n  v_rows       bigint;\n  v_bank_before numeric;\n  v_bank_after  numeric;\n  v_to_after    numeric;\n  v_prior      jsonb;\n  v_club_name  text;\n  v_batch      integer;\n  v_more       boolean;\n  v_ids        uuid[];\n  v_cutoff     timestamptz;\n  v_safe       timestamptz := now() - interval '5 minutes';\n  v_settled    uuid;\nBEGIN\n  /* ZERO-DRIFT phase 6: commission claims journal as commission. */\n  PERFORM set_config('app.ledger_category', 'commission', true);\n  PERFORM set_config('app.ledger_counterparty', 'agent_wallet', true);\n  PERFORM set_config('app.ledger_counterparty_entity', '', true);\n  -- IDENTITY. auth.uid() is the only identity a browser can establish, and this\n  -- RPC pays the caller. There is deliberately no p_user_id: a parameter naming\n  -- somebody else would make this a way to move another person's earnings, and\n  -- Dan's rule is that agents handle their own payouts.\n  v_actor := auth.uid();\n  IF v_actor IS NULL THEN\n    RETURN jsonb_build_object('success', false, 'error', 'Sign In To Claim Your Commission');\n  END IF;\n\n  -- REPLAY. Same op_id, same answer, no second payment. The client sends one\n  -- id per intent, so a double tap or a retried request settles once.\n  SELECT metadata INTO v_prior\n    FROM chip_transactions\n   WHERE club_id = p_club_id\n     AND to_user_id = v_actor\n     AND transaction_type = 'commission_claim'\n     AND metadata ->> 'op_id' = v_op_id::text\n   LIMIT 1;\n  IF v_prior IS NOT NULL THEN\n    RETURN jsonb_build_object('success', true, 'replayed', true,\n      'amount', (v_prior ->> 'amount')::numeric,\n      'rows_settled', (v_prior ->> 'rows_settled')::bigint,\n      'more', EXISTS (SELECT 1 FROM public.agent_commissions ac WHERE ac.club_id = p_club_id AND ac.user_id = v_actor AND ac.settled_at IS NULL AND NOT EXISTS (SELECT 1 FROM public.agent_commission_settlements s WHERE s.club_id = ac.club_id AND s.user_id = ac.user_id AND ac.created_at >= s.period_start AND ac.created_at < s.period_end)),\n      'op_id', v_op_id);\n  END IF;\n\n  /* ONE CLAIM PER PAIR AT A TIME (Phase 7, 20260908). The batch used to be\n     held with FOR UPDATE, which is what stopped two concurrent claims paying\n     the same rows. Nothing is stamped now, so the pair is serialised here\n     instead; every statement after this takes a fresh snapshot, so the\n     second claim sees the first one's settlement row. */\n  PERFORM pg_advisory_xact_lock(hashtextextended('agent_claim:' || p_club_id::text || ':' || v_actor::text, 42));\n\n  -- MEMBERSHIP, NOT ROLE. A demoted agent keeps what they earned - Phase 4 let\n  -- the demotion through precisely because \"the agents row survives with the\n  -- figure intact\". If claiming required an agent role, the demotion would have\n  -- quietly confiscated the money instead of deferring it.\n  SELECT cm.role INTO v_role\n    FROM club_members cm\n   WHERE cm.club_id = p_club_id\n     AND cm.user_id = v_actor\n     AND COALESCE(cm.status, 'active') IN ('active', 'approved')\n     -- FOR UPDATE, added 2026-09-02. Without it this row can be deleted\n     -- between here and the credit ninety lines below, and the credit\n     -- silently matches nothing while the bank has already been debited.\n     FOR UPDATE;\n  IF v_role IS NULL THEN\n    RETURN jsonb_build_object('success', false,\n      'error', 'You Are Not An Active Member Of This Club');\n  END IF;\n\n  -- WHAT IS OWED, LOCKED, AND BOUNDED.\n  --\n  -- MEASURED ON PRODUCTION, 2026-08-31: the largest agent has 192,135 unsettled\n  -- rows, and settling all of them in one statement took 64.6 SECONDS. The\n  -- authenticated role's statement_timeout is 8s, so the three biggest agents\n  -- (192k, 114k, 113k rows) could never have been paid at all.\n  --\n  -- The timeout is the smaller half of the problem. That statement also holds\n  -- FOR UPDATE on the clubs row for its whole life, so a single claim would\n  -- have frozen every chip movement in that club for a minute.\n  --\n  -- So a claim settles a BATCH and reports whether more is left. Measured on\n  -- production against the largest agent: 2,000 rows took 2.95s, so the default\n  -- is 1,000 - roughly 1.5s, a comfortable margin under 8s on a database that\n  -- is also serving everybody else. The caller repeats while `more` is true -\n  -- WITH A FRESH op_id EACH TIME, because op_id identifies one batch. Reusing\n  -- one is what makes a retry safe; reusing one for the NEXT batch would\n  -- replay the previous answer instead of settling anything.\n  v_batch := LEAST(GREATEST(COALESCE(p_max_rows, 1000), 1), 5000);\n\n  -- LOCK AND TOTAL THE BATCH. NOTHING IS WRITTEN YET.\n  --\n  -- ORDER MATTERS HERE AND IT IS THE WHOLE POINT. A refusal below returns\n  -- JSON, and a plain RETURN does not roll anything back - PostgREST commits\n  -- the transaction. So every write in this function happens AFTER the last\n  -- thing that can refuse. An earlier draft folded the lock, the settle and\n  -- the sum into one CTE for speed, which stamped settled_at before the club\n  -- bank had been checked: a short bank would then have returned \"cannot pay\"\n  -- while leaving the rows marked paid. That is the worst bug this function\n  -- could have had, and it is why the settle is the last write, below.\n  /* Phase 7 (20260908): the batch is the pair's OPEN rows - unstamped, and\n     not covered by a settlement row - so a claim can never re-pay a row a\n     period already covers. The anti-join rides agent_commissions_open_idx\n     and stops at the LIMIT; the ORDER BY note below is history. */\n  /* THE CUTOFF: the created_at of the batch-th oldest open row, clamped to\n     five minutes ago. Oldest-first is agent_commissions_open_idx's own\n     order, so the ORDER BY below is an index walk, not a sort. */\n  SELECT ac.created_at INTO v_cutoff\n    FROM public.agent_commissions ac\n   WHERE ac.club_id = p_club_id AND ac.user_id = v_actor\n     AND ac.settled_at IS NULL\n     AND ac.created_at < v_safe\n     AND NOT EXISTS (SELECT 1 FROM public.agent_commission_settlements s\n                      WHERE s.club_id = ac.club_id AND s.user_id = ac.user_id\n                        AND ac.created_at >= s.period_start AND ac.created_at < s.period_end)\n   ORDER BY ac.created_at\n  OFFSET v_batch LIMIT 1;\n  v_cutoff := LEAST(COALESCE(v_cutoff, v_safe), v_safe);\n  SELECT COALESCE(SUM(ac.amount), 0), COUNT(*)\n    INTO v_amount, v_rows\n    FROM (\n      SELECT ac.amount\n        FROM public.agent_commissions ac\n       WHERE ac.club_id = p_club_id AND ac.user_id = v_actor\n         AND ac.settled_at IS NULL\n         AND ac.created_at < v_cutoff\n         AND NOT EXISTS (SELECT 1 FROM public.agent_commission_settlements s\n                          WHERE s.club_id = ac.club_id AND s.user_id = ac.user_id\n                            AND ac.created_at >= s.period_start AND ac.created_at < s.period_end)\n       /* No LIMIT and no FOR UPDATE: the cutoff already bounds the set, and\n          nothing here is stamped, so there is no row to hold. The pair's\n          advisory lock above is what serialises two claims. */\n    ) ac;\n\n  IF COALESCE(v_amount, 0) <= 0 THEN\n    RETURN jsonb_build_object('success', false, 'nothing_owed', true,\n      'error', 'You Have No Commission To Claim Yet');\n  END IF;\n\n  v_amount := round(v_amount, 2);\n\n  -- THE CLUB BANK PAYS, AND IT PAYS ONLY WHAT IT HAS. Midway Union owes 568.18\n  -- against a treasury of 0.00, so this refusal is not hypothetical. Naming the\n  -- shortfall is the difference between \"try later\" and \"somebody has to fund\n  -- the bank\" - and it is the same refusal fn_club_bank_send already gives.\n  SELECT COALESCE(c.chip_treasury, 0), c.name\n    INTO v_bank_before, v_club_name\n    FROM clubs c WHERE c.id = p_club_id FOR UPDATE;\n  IF v_bank_before IS NULL THEN\n    RETURN jsonb_build_object('success', false, 'error', 'Club Not Found');\n  END IF;\n  IF v_bank_before < v_amount THEN\n    RETURN jsonb_build_object('success', false, 'bank_short', true,\n      'error', 'The Club Bank Holds '\n               || trim(to_char(v_bank_before, 'FM999,999,999,990.00'))\n               || ' Chips And Owes You '\n               || trim(to_char(v_amount, 'FM999,999,999,990.00'))\n               || '. Ask An Owner To Fund The Bank, Then Claim Again.',\n      'balance', v_bank_before, 'requested', v_amount);\n  END IF;\n\n  UPDATE clubs\n     SET chip_treasury = COALESCE(chip_treasury, 0) - v_amount,\n         updated_at = now()\n   WHERE id = p_club_id\n   RETURNING chip_treasury INTO v_bank_after;\n\n  -- INTO THEIR OWN MONEY, not the agent wallet. See the header.\n  UPDATE club_members\n     SET chip_balance = COALESCE(chip_balance, 0) + v_amount,\n         updated_at = now()\n   WHERE club_id = p_club_id AND user_id = v_actor\n   RETURNING chip_balance INTO v_to_after;\n\n  -- THE CREDIT MUST HAVE LANDED. The bank is already debited at this\n  -- point, so a credit that matched no row would leave the chips nowhere\n  -- and stamp the rows paid. The role read above holds FOR UPDATE, so\n  -- this should be unreachable; RAISE rather than RETURN because a\n  -- refusal here has to take the debit back with it, and only an\n  -- exception rolls back what PostgREST would otherwise commit.\n  IF v_to_after IS NULL THEN\n    RAISE EXCEPTION 'commission claim could not credit the member wallet'\n      USING ERRCODE = '25000';\n  END IF;\n\n  -- SETTLED, LAST. This is the line execute_commission_payout never had, and\n  -- its absence is what let that function pay the same row forever. It runs\n  -- after the bank has been debited and the agent credited, so no row is ever\n  -- marked paid by a claim that did not pay.\n  INSERT INTO public.agent_commission_settlements\n    (club_id, user_id, union_id, period_start, period_end, amount, rows_count, paid_at, settlement_ref)\n  VALUES (p_club_id, v_actor, NULL, '-infinity'::timestamptz, v_cutoff,\n          round(v_amount, 2), v_rows, now(), 'claim:' || v_op_id::text)\n  ON CONFLICT (club_id, user_id, period_start, period_end) DO NOTHING\n  RETURNING id INTO v_settled;\n  IF v_settled IS NULL THEN\n    /* A concurrent claim recorded the same cutoff. The bank is already\n       debited in this transaction, so the only safe answer is to take it\n       all back: RAISE rolls the claim back and the caller retries. */\n    RAISE EXCEPTION 'another claim recorded this window; retry'\n      USING ERRCODE = '40001';\n  END IF;\n\n  /* CONTROL (phase 8): the claim is two balanced legs on the journal, the\n       same movement chip_transactions records one-sidedly below. */\n    INSERT INTO public.chip_ledger\n      (performed_by, from_type, from_entity_id, to_type, to_entity_id,\n       amount, category, club_id, description, idempotency_key, metadata)\n    VALUES\n      (v_actor, 'club_treasury', p_club_id, 'player_wallet', v_actor,\n       round(v_amount, 2), 'commission', p_club_id,\n       'Agent claimed commission from the club bank',\n       'agent_claim:' || v_op_id::text,\n       jsonb_build_object('op_id', v_op_id, 'rows_settled', v_rows,\n                          'bank_after', v_bank_after,\n                          'agent_balance_after', v_to_after))\n    ON CONFLICT DO NOTHING;\n\n    INSERT INTO chip_transactions\n    (club_id, from_user_id, to_user_id, amount, transaction_type, notes, metadata, balance_after)\n  VALUES\n    (p_club_id, NULL, v_actor, v_amount, 'commission_claim',\n     'Commission Claimed By Agent',\n     jsonb_build_object(\n       'op_id', v_op_id,\n       'amount', v_amount,\n       'rows_settled', v_rows,\n       'role_at_claim', v_role,\n       'bank_before', v_bank_before,\n       'bank_after', v_bank_after),\n     v_to_after);\n\n  BEGIN\n    PERFORM public.fn_raise_notification(\n      v_actor, 'commission_claimed',\n      'You Claimed ' || trim(to_char(v_amount, 'FM999,999,999,990.00')) || ' Chips',\n      'Your Commission From ' || COALESCE(v_club_name, 'Your Club')\n        || ' Is Now In Your Chip Balance.',\n      '/clubs/' || p_club_id::text,\n      jsonb_build_object('club_id', p_club_id, 'amount', v_amount, 'rows_settled', v_rows));\n  EXCEPTION WHEN OTHERS THEN\n    NULL;  -- the money has moved and is recorded; the notice is a courtesy\n  END;\n\n  -- IS THERE MORE? An EXISTS, not a COUNT and a SUM.\n  --\n  -- Reporting the exact remaining figure here cost 1,474ms on production,\n  -- because it re-scans every one of the agent's remaining rows - on a call\n  -- whose entire budget is 8 seconds. EXISTS answers the only question the\n  -- caller needs in order to loop (0.25ms), and the exact figure is available\n  -- from fn_agent_unsettled_commission on a screen that can afford it.\n  SELECT EXISTS (\n    SELECT 1 FROM public.agent_commissions ac\n     WHERE ac.club_id = p_club_id AND ac.user_id = v_actor AND ac.settled_at IS NULL\n       AND NOT EXISTS (SELECT 1 FROM public.agent_commission_settlements s\n                        WHERE s.club_id = ac.club_id AND s.user_id = ac.user_id\n                          AND ac.created_at >= s.period_start AND ac.created_at < s.period_end)\n  ) INTO v_more;\n\n  RETURN jsonb_build_object('success', true, 'amount', v_amount,\n    'rows_settled', v_rows, 'chip_balance', v_to_after,\n    'bank_after', v_bank_after, 'op_id', v_op_id,\n    'more', v_more);\nEND;\n$function$\n",
+      "owner": "postgres",
+      "proconfig": [
+        "search_path=public"
+      ],
+      "proisstrict": false,
+      "prosecdef": true,
+      "provolatile": "v",
+      "result": "jsonb",
+      "signature": "fn_agent_claim_commission(uuid,uuid,integer)"
+    },
+    {
+      "acl": "{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+      "arguments": "p_club_id uuid, p_user_id uuid",
+      "body_md5": "65099653461a48858b024c1a022409f2",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_agent_unsettled_commission(p_club_id uuid, p_user_id uuid)\n RETURNS numeric\n LANGUAGE plpgsql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nBEGIN\n  IF p_club_id IS NULL OR p_user_id IS NULL THEN\n    RAISE EXCEPTION 'fn_agent_unsettled_commission needs a club and a user'\n      USING ERRCODE = '22023';\n  END IF;\n\n  IF NOT public.fn_agent_may_read_commission(p_club_id, p_user_id) THEN\n    -- Not a zero. A zero is indistinguishable from \"owes nothing\", and this\n    -- caller is not entitled to know which of the two it is.\n    RAISE EXCEPTION 'not authorized to read that member''s commission'\n      USING ERRCODE = '42501';\n  END IF;\n\n  RETURN (\n    SELECT COALESCE(SUM(ac.amount), 0)::numeric\n      FROM public.agent_commissions ac\n     WHERE ac.club_id = p_club_id\n       AND ac.user_id = p_user_id\n       AND ac.settled_at IS NULL\n       AND NOT EXISTS (SELECT 1 FROM public.agent_commission_settlements s\n                        WHERE s.club_id = ac.club_id AND s.user_id = ac.user_id\n                          AND ac.created_at >= s.period_start AND ac.created_at < s.period_end));\nEND\n$function$\n",
+      "owner": "postgres",
+      "proconfig": [
+        "search_path=public"
+      ],
+      "proisstrict": false,
+      "prosecdef": true,
+      "provolatile": "s",
+      "result": "numeric",
+      "signature": "fn_agent_unsettled_commission(uuid,uuid)"
+    },
+    {
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "arguments": "p_union_id uuid, p_period_start timestamp with time zone, p_period_end timestamp with time zone",
+      "body_md5": "6b6e58eb5eaba25f7ff3fd69e742cb01",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_settle_round2_club_to_agents(p_union_id uuid, p_period_start timestamp with time zone, p_period_end timestamp with time zone)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  r record; v_club_bal numeric; v_paid numeric := 0;\n  v_payees int := 0; v_short int := 0; v_detail jsonb := '[]'::jsonb;\n  v_debit jsonb; v_agent_bal numeric; v_pairs jsonb := '[]'::jsonb;\nBEGIN\n  IF NOT public.fn_caller_is_engine() AND (auth.uid() IS NULL OR NOT public.fn_is_union_overseer(p_union_id, auth.uid())) THEN\n    RAISE EXCEPTION 'not_authorised';\n  END IF;\n  IF EXISTS (SELECT 1 FROM settlement_locks WHERE lock_type = 'GLOBAL_SETTLEMENT_FREEZE' AND is_active = true) THEN\n    RAISE EXCEPTION 'EMERGENCY_PROFIT_DRIFT_LOCK';\n  END IF;\n  IF p_union_id IS NULL OR p_period_start IS NULL OR p_period_end IS NULL OR p_period_end <= p_period_start THEN\n    RETURN jsonb_build_object('round', 2, 'name', 'club_to_agents', 'success', false, 'error', 'bad_params',\n                              'payees', 0, 'amount', 0, 'shortfalls', 0, 'detail', '[]'::jsonb);\n  END IF;\n  /* A row's created_at is its transaction's start. The longest transaction that\n     writes agent_commissions is an eight-second engine call; five minutes after\n     the period closes, nothing that began inside it is still in flight. Before\n     that, a period recorded as paid could swallow a row that landed late. */\n  IF p_period_end > now() - interval '5 minutes' THEN\n    RETURN jsonb_build_object('round', 2, 'name', 'club_to_agents', 'success', false, 'retryable', true,\n                              'error', 'period_too_fresh', 'period_end', p_period_end,\n                              'payees', 0, 'amount', 0, 'shortfalls', 0, 'detail', '[]'::jsonb);\n  END IF;\n\n  /* What each pair is owed INSIDE this period: unstamped, and not already\n     covered by a settlement row. One index scan per pair, no materialised set. */\n  FOR r IN\n    SELECT ac.club_id, ac.user_id AS agent_user, SUM(ac.amount) AS owed, count(*) AS n\n      FROM agent_commissions ac\n      JOIN union_clubs uc ON uc.club_id = ac.club_id AND uc.union_id = p_union_id\n      JOIN agents a ON a.user_id = ac.user_id AND a.club_id = ac.club_id AND a.status = 'active'\n     WHERE ac.created_at >= p_period_start AND ac.created_at < p_period_end\n       AND ac.settled_at IS NULL\n       AND NOT EXISTS (SELECT 1 FROM agent_commission_settlements s\n                        WHERE s.club_id = ac.club_id AND s.user_id = ac.user_id\n                          AND ac.created_at >= s.period_start AND ac.created_at < s.period_end)\n     GROUP BY ac.club_id, ac.user_id\n    HAVING SUM(ac.amount) > 0\n     ORDER BY 1, 2\n  LOOP\n    -- Same pot Round 1 credits (clubs.chip_treasury), not club_wallets.\n    SELECT COALESCE(chip_treasury, 0) INTO v_club_bal FROM clubs WHERE id = r.club_id FOR UPDATE;\n\n    IF COALESCE(v_club_bal, 0) < r.owed THEN\n      v_short := v_short + 1;\n      v_detail := v_detail || jsonb_build_object('club_id', r.club_id, 'agent', r.agent_user,\n                    'owed', r.owed, 'club_treasury', COALESCE(v_club_bal, 0), 'skipped', true);\n      CONTINUE;\n    END IF;\n\n    /* ONE MOVEMENT, ONE LEG (2026-09-09). The leg for this payment is\n       written by hand at the bottom of this loop, carrying the period, the\n       row count and an idempotency key that a replay can recognise. Until\n       today both balance writes ALSO fired their own journal triggers, and\n       neither had been told who the counterparty was, so each wrote an\n       anonymous twin through settlement_suspense. Every commission was\n       therefore journalled twice. The two stand-downs are set immediately\n       before each write and cleared immediately after, so a CONTINUE out of\n       this iteration can never leave a later statement silently unjournalled. */\n    PERFORM set_config('app.ledger_autoskip_clubs', '1', true);\n    v_debit := public.fn_debit_treasury(\n      r.club_id, r.owed,\n      'Round 2: club -> agent commission',\n      jsonb_build_object('union_id', p_union_id, 'agent_user_id', r.agent_user,\n                         'period_start', p_period_start, 'period_end', p_period_end));\n    PERFORM set_config('app.ledger_autoskip_clubs', '', true);\n    IF COALESCE((v_debit->>'success')::boolean, false) IS NOT TRUE THEN\n      v_short := v_short + 1;\n      v_detail := v_detail || jsonb_build_object('club_id', r.club_id, 'agent', r.agent_user,\n                    'owed', r.owed, 'error', v_debit, 'skipped', true);\n      CONTINUE;\n    END IF;\n\n    PERFORM public.fn_ensure_club_wallet(r.agent_user, r.club_id);\n    PERFORM set_config('app.ledger_autoskip_club_members', '1', true);\n    UPDATE club_members\n       SET chip_balance = COALESCE(chip_balance, 0) + r.owed, updated_at = now()\n     WHERE user_id = r.agent_user AND club_id = r.club_id\n     RETURNING chip_balance INTO v_agent_bal;\n    PERFORM set_config('app.ledger_autoskip_club_members', '', true);\n\n    /* THE RECORD, instead of two million stamps: one row says this pair's\n       rows inside this period are paid. A second call finds no open rows\n       inside the period and pays nothing. */\n    INSERT INTO public.agent_commission_settlements\n      (club_id, user_id, union_id, period_start, period_end, amount, rows_count, paid_at, settlement_ref)\n    VALUES (r.club_id, r.agent_user, p_union_id, p_period_start, p_period_end, round(r.owed, 2), r.n, now(),\n            'round2:' || p_union_id::text || ':' || to_char(p_period_start at time zone 'UTC', 'YYYY-MM-DD'))\n    ON CONFLICT (club_id, user_id, period_start, period_end) DO NOTHING;\n\n    -- Both sides of the entry: club-side debit above, agent credit here.\n    INSERT INTO wallet_transactions\n      (user_id, wallet_type, type, amount, category, description, balance_after)\n    VALUES\n      (r.agent_user, 'PLAYER', 'credit', r.owed, 'commission',\n       'Round 2: club -> agent commission [club wallet]', v_agent_bal);\n\n    /* CONTROL (phase 8): the same movement as two balanced legs, on the\n       journal fn_ca_trial_balance reads. */\n    INSERT INTO public.chip_ledger\n      (performed_by, from_type, from_entity_id, to_type, to_entity_id,\n       amount, category, club_id, union_id, description, idempotency_key, metadata)\n    VALUES\n      (COALESCE(auth.uid(), '2d1cd6c3-5700-4af9-a271-d4863fdab20d'::uuid),\n       'club_treasury', r.club_id, 'player_wallet', r.agent_user,\n       round(r.owed, 2), 'commission', r.club_id, p_union_id,\n       'Round 2: club -> agent commission (period '\n         || to_char(p_period_start, 'YYYY-MM-DD') || '..'\n         || to_char(p_period_end, 'YYYY-MM-DD') || ')',\n       'round2:' || p_union_id::text || ':'\n         || to_char(p_period_start at time zone 'UTC', 'YYYY-MM-DD') || ':'\n         || r.club_id::text || ':' || r.agent_user::text,\n       jsonb_build_object('period_start', p_period_start, 'period_end', p_period_end,\n                          'rows_count', r.n, 'agent_balance_after', v_agent_bal))\n    ON CONFLICT DO NOTHING;\n\n    v_pairs := v_pairs || jsonb_build_object('club_id', r.club_id, 'user_id', r.agent_user);\n    v_paid := v_paid + r.owed;\n    v_payees := v_payees + 1;\n  END LOOP;\n\n  IF v_pairs <> '[]'::jsonb THEN\n    PERFORM public.fn_agent_commission_rollup_recompute(v_pairs);\n  END IF;\n\n  RETURN jsonb_build_object('round', 2, 'name', 'club_to_agents',\n    'payees', v_payees, 'amount', round(v_paid, 2), 'shortfalls', v_short, 'detail', v_detail);\nEND\n$function$\n",
+      "owner": "postgres",
+      "proconfig": [
+        "search_path=public"
+      ],
+      "proisstrict": false,
+      "prosecdef": true,
+      "provolatile": "v",
+      "result": "jsonb",
+      "signature": "fn_settle_round2_club_to_agents(uuid,timestamp with time zone,timestamp with time zone)"
+    }
+  ],
+  "production_mutations": false,
+  "limits": [
+    "Synthetic principals, historical commission basis rows and pre-trigger opening treasury.",
+    "Third-session club-row barrier deliberately schedules old aggregation before contested locks.",
+    "Actual captured R2/direct-claim owners and financial trigger graph perform every payment.",
+    "R2/direct-claim lock inversion remains a deadlock/retry limitation; this candidate adds no new locks.",
+    "No complete outer cascade, common source finality or production rollout is claimed."
+  ],
+  "runner_exit": 0,
+  "private_cluster_removed": false,
+  "private_cluster_stopped": true,
+  "private_cluster_path": "/tmp/ca-legacy-r2-native.5eNljR",
+  "frozen_input_sha256": {
+    "runner/01-release-writer.sql": "c273641757388a1e6019b052e72f66aac6c6ca4db2deaa83ed6140a59f5378ce",
+    "runner/README.md": "fb14bee3c941780bc1f5b20c02767948f1973f9b786cd759f802be3e0e98d75f",
+    "runner/activate-fixture.py": "937f10723aaec5fefdf1e46be78b6319d0fde99893ab9f94292febf11d2f1982",
+    "runner/carry-counterexample-proof.json": "f98f7cc1797d31c7e5df3dd84f83c0203b0367632f614e7a25cb4ed3ec4c6f6f",
+    "runner/carry-counterexample.mjs": "73e43ae00f6cddd33939884976beef74f26db9e3d30a6740cc60be4e2609fc3c",
+    "runner/carry-counterexample.sql": "fbb13689b845c85b951dd888cd176950d255d5f5bda2bee98e60b43badfee95b",
+    "runner/claim-native-probe.py": "0daf8bbfad835e470161371df7701d18aeb181815c5db17b7b47acb453ccce81",
+    "runner/claim-native-proof.json": "90b8cb838ffba0b972ba8f4415d3e4808fc02eb063210b76d3763b320fe36a09",
+    "runner/fixture-clock.sql": "0988e0559975003078ee5680bacbd03c000ce2752bf2a1473611c512b2175c8e",
+    "runner/fixture-seed.sql": "6f663a80203c8dc917327bc70d77fa0a6564213ebba5047005e4974c8ad60fd2",
+    "runner/fixture_helpers.py": "4a69327fbc4c3dcf2d5180d9d1bb780d0ad6a8f9c3157e9900b28fe81a6d3d51",
+    "runner/function-catalog-capacity-extra.json": "0b18244aa81b96709748d9e03207e54c4e28205b405f7a652cbb246a712a28e2",
+    "runner/function-catalog-round1.json": "0eba9e8f69bc590be3e9f3edcf14413c4c47e9fdd8d13a8cc28214a57cdffa8f",
+    "runner/native-claim-paid-v2.json": "e4e079e3a8eb77a5ab7f4d79f4d1aa8913386acf9805f990ca808744583233f3",
+    "runner/native-claim-paid-v2.json.txt": "a915964fad275456c7dcd75447c46acc547fc2fb6c028a93ee6978dc7b23f4b5",
+    "runner/native-probe.py": "47ae40c0548d5a8a3e7fc11e98a21bcb7e15bc469076ebadaa108db0afffc65b",
+    "runner/native-proof.json": "6938fa2878e036585cd38071496379e9c4bc809e7f09bff3f6597c1782790b06",
+    "runner/native-read-after-claims-v2.json": "3f73b43b4032cc488064c49de38dd3aa53e96d1bba05f11ae8b97dee445f52a3",
+    "runner/player-native-probe.py": "a7044e0be985bc5001ae5897b8b23f780bf9cd10c8922314c082e29b67aa6fd2",
+    "runner/player-native-proof.json": "bafaa4d74337713fd6f7b399eb9cd587eec06ba22066a55111a433c92cbfadaf",
+    "runner/read-v2/01-capability.sql": "5d9680308ff55fb7b86d231377b640d3f20ee75fa95b04b0d5ac6b52f4cda044",
+    "runner/read-v2/02-getter.sql": "2db8b751b5d759dc7420b0c24349c584d8f1c1364d472c875306a143b624b129",
+    "runner/read-v2/legacy-owner-catalog.json": "0595a250c42b526bd1202d0380e82c9f04578b45863ce90cebbb429f40065adf",
+    "runner/read-v2/synthetic-capability.sql": "d55f7706d107aa04ef364cbffa82c8d7326358a38132789b587a1d69fc1c8faf",
+    "runner/run-counterexample.sh": "5d28e849942257174c4da39990522ab5c7dfebd6a88b54e78605740a4b0f0ae2",
+    "runner/run-local.sh": "91c82bf4d22c196c17a9bfc2c9a6e01ee612882555eaa18177f18078f1604d58",
+    "runner/table-catalog-capacity-extra.json": "92cc9ad82592da9f27a6013e42597eedefe8a6a3a9f36e3b0c96bfda592ef22c",
+    "runner/table-catalog-round1.json": "66c097646c02d88d9ec2559cdb7ed5801081bd65e4cc8edd526e964e236c86ec",
+    "runner/trigger-catalog-capacity-extra.json": "1ed68ea5ece51d26fdccbb5e03a585f5a9a56cded458a1ebd9f646940b067a8d",
+    "runner/vendor/01-schema.sql": "8c8e97307b7bd080bc1e24ba0a08d204f1735af2b24593118da2a1f319524fbc",
+    "runner/vendor/02-online-index.sql": "1c4b3153dc102cb1c125a260997ba3690d9391095fa950f81850a470ea1f7f00",
+    "runner/vendor/03-cutover.sql": "dc18f66fe46b24f04d566ebefdc38ea5f5d3bac661f6652797f02b1bced26b48",
+    "runner/vendor/capacity-owner/01-capacity-schema.sql": "0c9c19e5a4dd9da4e518468c7560857af315fdb3e7304679b78f87f7136dc2c2",
+    "runner/vendor/capacity-owner/02-source-admission.sql": "cae509868f0704f79ddc077e8c135b8345b322b9bae79da1b7c12feb6fcf24a1",
+    "runner/vendor/capacity-owner/03-capacity-assertions.sql": "8831292bec0467e9b24eb4cc6b88b053228138d939dbeae0b53ea2c45d48188b",
+    "runner/vendor/capacity-owner/04-agent-payment.sql": "ff11ff483820d93fca2c04e825f548dbc435e59996d52d1134d0a4651743dd04",
+    "runner/vendor/source-authority/01-source-schema.sql": "d26a4fb28daff10d320995ba24b9802de027b675058e7b76e434e66df1f4ba9f",
+    "runner/vendor/source-authority/02-capture.sql": "170cbf60d12a663d62238b5b5e1e061304cbc521a37f6f71bef2eac864d9bd30",
+    "runner/vendor/source-authority/03-accepted-owner-patch.sql": "5d69ce06a5d21742cf96cf1167f8ffd9ed7a83e18ed3b5d3d275ee09fb5ba363",
+    "runner/vendor/source-authority/03-receipt-source-boundary.sql": "b18fe8fb81016f94d064bdd542590d63c40e4f1c47c591a68a6dca3b93d84a83",
+    "runner/vendor/source-authority/04-cash-admission.sql": "b5eaf4c8ee41a8326298d39d47c2701c124f842029280b8a204c774210650037",
+    "runner/vendor/source-authority/05-immutable-receipts.sql": "439639dc2289fa75103ed2f4220b652e986300bb4f2ca0e82e0df1856ef56fdd",
+    "runner/vendor/source-authority/README.md": "bf388a67e719527d9e85e162a303527136f84248122ff948b26a86b36d4abb93",
+    "runner/vendor/source-authority/assertions.sql": "82a2de8dbfa99db7f033a21e53106f66bf2ea668fb2242682afa12258adcfe08",
+    "runner/vendor/source-authority/bank-owner/00-bank-legacy-index.sql": "23d9ffaa94c11f0f9778f4ca8dff150a5654af1ee90b02ad360dc3d473c981b5",
+    "runner/vendor/source-authority/bank-owner/01-bank-receipts.sql": "bd53948436444cd00ae72003098e33c3674e95050b785c705607f249f53978ed",
+    "runner/vendor/source-authority/bank-owner/02-bank-owner.sql": "744ab195b134d5d398f8812339ce57f61ce1dafe42d86751c7fc8eb7822ee6e1",
+    "runner/vendor/source-authority/bank-owner/actual-bank-owner.sql": "db6e950608f8c9a862fcc51a523140fea748980cf2ea9e2260d9de082364ebc1",
+    "runner/vendor/source-authority/bank-owner/add-balance-patch.py": "648258d17beabe9d0431ebce3c23dcfcbf55ae3d5b8e092be81bde67a276391a",
+    "runner/vendor/source-authority/bank-owner/additional-probe.py": "34279e87e9c8bd019ef573cb3d06447f3d36884a2f9c2976fd90ca399487bec6",
+    "runner/vendor/source-authority/bank-owner/build-owner.py": "850322f975ac4cf314c2e50e4f55dcba1eb38e246645ee1ed2dce0cfc9bc3670",
+    "runner/vendor/source-authority/bank-owner/legacy-club_to_union-proof.json": "c9e2e25aaed4383c42f043ed03e1fe9d4dcb49e38776e76a269a8ac37582b9b9",
+    "runner/vendor/source-authority/bank-owner/legacy-overlap.py": "fdc3097cee5e712c54934bf0a4b06be8a92e9b8b74512a86d89265c784311b1c",
+    "runner/vendor/source-authority/bank-owner/legacy-union_to_club-proof.json": "a7d219fb4e36df05e2cb16386f80d28862caa1d688d76d4527650f7ba43b0d66",
+    "runner/vendor/source-authority/bank-owner/local-proof.json": "284629db8d2baf49d430559f427bb571cba36c15ab45d88aa10eef5ce7d85554",
+    "runner/vendor/source-authority/bank-owner/native-probe.py": "7276c3cc72c35b540ea0b14376995783f5be4320160b49b7c7140d3478c6e7f1",
+    "runner/vendor/source-authority/bank-owner/overlap-proof.json": "8fa5cdee189ed5178b95a0b3991bdd9f5df6c2e9ce5abb0efd8d99d2e0f42c28",
+    "runner/vendor/source-authority/bank-owner/overlap.py": "0b6d4baef16192a5c8617eedefc51a9e70d882f8ce1cace1e003f36835f9953f",
+    "runner/vendor/source-authority/bank-owner/run-local.sh": "f35d7dbb7089ad155998efd2c77c20625bd7f84f422d77bccb6723ba1ff6be62",
+    "runner/vendor/source-authority/fixture.sql": "c4f4c517b36301782b298a9afd50f3fc0d362446a9b13e20506713bb7ea7c85b",
+    "runner/vendor/source-authority/live-accepted-owner.sql": "33a19fc91da354895b82ea07e938d7dfafa01f638fbbd282989778c9cd43d062",
+    "runner/vendor/source-authority/live-allocator.sql": "486a933cd97c9bc8652935f5fc7da062a1354b135d625d4a139ac395a34eaf96",
+    "runner/vendor/source-authority/live-commission-triggers.sql": "1379a6d778219d52b05b6683f5e74f25e527343380dad88ed5c689236a8e9b66",
+    "runner/vendor/source-authority/live-trigger-inventory.json": "1d2f80666036a4417fcc574744b5c59f00fe4ee53f47f3501d95dbb9540bc943",
+    "runner/vendor/source-authority/local-proof.json": "ceffbc69e7e5bc69870ed9d0fc51bd1e3072d4128aa43f5b6cb84bea3e9cfb47",
+    "runner/vendor/source-authority/owner-composition/.gitignore": "aef3e397235596b4252b239fe52af1dbdb5334d3df0a1c0581a5839f652a0c89",
+    "runner/vendor/source-authority/owner-composition/README.md": "03c35cbc87fe2dfe27385b4914c28ce1c5f810e5baca4d1d2b36fb5ed7e2a7b4",
+    "runner/vendor/source-authority/owner-composition/atomic-distribute-rake.sql": "4c46975aa90a50ea00fb5cad0918808ffc9fee7cbc3d9e0451949b2c96a9e6a5",
+    "runner/vendor/source-authority/owner-composition/build-fixture.py": "1d35307d46a26a3c29a66d601eb0b8424e8ccc6a331635160fe27462e6f92f48",
+    "runner/vendor/source-authority/owner-composition/catalog-summary.json": "7577431d7a7e503080adc151046debfe4ce536555c1f0838e2c7990b447ea012",
+    "runner/vendor/source-authority/owner-composition/exercise.sql": "9ec06e133e4c6358991a754d20e0804e6a2a574f95cf5cf182670c90d336fee4",
+    "runner/vendor/source-authority/owner-composition/fn_ca_commit_hand_settlement_before_lease_generation.sql": "8228c6035ab17b41882821d5c4436a18a774a3932476fd4206ffcf611f721747",
+    "runner/vendor/source-authority/owner-composition/fn_ca_commit_hand_settlement_exact_before_obligations.sql": "a52e3fac3a64448cc8d7f9844c6b15e71832f1b07cc9e0416ec7f564935c3ccd",
+    "runner/vendor/source-authority/owner-composition/fn_ca_settle_hand_stacks_absolute.sql": "5d3160fdf10bfac07ce82c1d3cbbabd38b3b43fa5745278d0eb4e6bbfffa9f96",
+    "runner/vendor/source-authority/owner-composition/function-catalog-0.json": "6eece114a77e9bae01240035738df423d905e3dd731cf9ef02c4eba2aa28a3a3",
+    "runner/vendor/source-authority/owner-composition/function-catalog-1.json": "cbedff45dc139ff09fada39cd82b5f0572caf0de378d2b93244f2c25c78364b5",
+    "runner/vendor/source-authority/owner-composition/function-catalog-2.json": "ec66c5d9aa55a11d11642f4aaacd8564160651eee5a92751426218b9ffcf2cd3",
+    "runner/vendor/source-authority/owner-composition/function-catalog-3.json": "e72bca1e0a126288e516ce78cf2ce80e35963a5d10e1763a7de2be85fa1b359e",
+    "runner/vendor/source-authority/owner-composition/function-catalog-4.json": "89e87653971254c70cda66675be4966d084eb8e4438f18b83c6f4f71d8af0115",
+    "runner/vendor/source-authority/owner-composition/function-catalog-5.json": "5181d15be2ff6fcc04e331374ab5ccd6249fd5406092aac96555da863cd1f829",
+    "runner/vendor/source-authority/owner-composition/function-catalog-6.json": "63953d29c64f7cf71c41e8a2a7e07792cf72c5b5cde6bfbde1a04403e90305fe",
+    "runner/vendor/source-authority/owner-composition/function-catalog-7.json": "22291035e064ed79e30b07c2cdc1ab93568cd146f9b9d24fe90011088feae157",
+    "runner/vendor/source-authority/owner-composition/function-catalog-8.json": "ba60a38f4290898b5ddb7317062d83c44da8ab62fd9ec62d805c4be7d3294560",
+    "runner/vendor/source-authority/owner-composition/function-catalog-authority.json": "f5844f775c4e97694472aa2618b12ee83982d1a9b6c81babb2d9ea4eabe19dfe",
+    "runner/vendor/source-authority/owner-composition/function-catalog-bank-rollup.json": "0674c380fbd1fa4583516173d489b25045c067c5af2531f021fd345f1bf4b194",
+    "runner/vendor/source-authority/owner-composition/function-catalog-booked-policy.json": "18a4308cc2c849edd3e1992ebb2ded71209bf1f2fbea50cbed775ba0f369774c",
+    "runner/vendor/source-authority/owner-composition/function-catalog-commission-batch.json": "2e52ed63a16790233f8824956e54d52632f3394242159187c16f7dacc53aa72c",
+    "runner/vendor/source-authority/owner-composition/function-catalog-extra.json": "73c576a0fef96523a5407d9a98116717f3df7afdf1179add4b6199d62fb42631",
+    "runner/vendor/source-authority/owner-composition/function-catalog-legacy.json": "8d4ee7c392feaf3b749016d81d674b45dfc8491afe42d4b7bc56be0fefb93614",
+    "runner/vendor/source-authority/owner-composition/function-catalog-nested.json": "f08fbea77951d0e1d4008a835c7ff98c3b1d69170c4f10730cb9831ef62fcefc",
+    "runner/vendor/source-authority/owner-composition/function-catalog-reader-dependencies.json": "10dbc650e16f1b15edf299ff0d608a5b9df9c77da2f6cf10bf6d69ec0d26e6bd",
+    "runner/vendor/source-authority/owner-composition/local-proof.json": "c471b48ebbce7a3b7266a70a72fc66de0976f5535925ff2a6773d87e37a45fda",
+    "runner/vendor/source-authority/owner-composition/needed-functions.json": "bd998a3decd46eb4a533b9cb8a12020179f364a6c25a60fbc54719ccffade40a",
+    "runner/vendor/source-authority/owner-composition/overlap.py": "8821a63ba2ee16a71dfc65b371cdb0b9eb2db77c6a48051fc15abf5f704fbcd1",
+    "runner/vendor/source-authority/owner-composition/run-local.sh": "48e4348e6f7e78751110ec3281b9c7005c15b77805597eba5d02955ede80df49",
+    "runner/vendor/source-authority/owner-composition/schema-constraints.sql": "db759405942497dea4b6210013428d4969f9a2811846778dd3df7600344804f2",
+    "runner/vendor/source-authority/owner-composition/schema-defaults.sql": "c743af3c17570b1bf4f5fa315827200b1de48fb2b3272a668b3b89321711ddd6",
+    "runner/vendor/source-authority/owner-composition/schema-foreign-keys.sql": "098a30de1e36642640db763911a89a2452df19a6e903253c26a406400953c7b9",
+    "runner/vendor/source-authority/owner-composition/schema-functions.sql": "01511365ddb6dd70e1a32696fdffa28ad216418e91011e164adfd55c530f4282",
+    "runner/vendor/source-authority/owner-composition/schema-tables.sql": "ebf4174c5a610575838c208399892e4cf234fd0c2e061b0a62af318299066ffa",
+    "runner/vendor/source-authority/owner-composition/schema-triggers.sql": "a53f247e218bf59e2aa2e449b299d0500912599f6bd77d80b0ca08fcb262600f",
+    "runner/vendor/source-authority/owner-composition/seed.sql": "ae8b022d1ae30404a3f4a5c26a8b6526e4a7e4707b84727a68f316a25c411325",
+    "runner/vendor/source-authority/owner-composition/table-catalog-0.json": "6f476317b7981243599af66eba605596a09d035c79c37b605f28d9cb2c451b27",
+    "runner/vendor/source-authority/owner-composition/table-catalog-1.json": "73b0dfade6cd20abb091a35082733e6eaa92528c0988764401202a53d568652f",
+    "runner/vendor/source-authority/owner-composition/table-catalog-2.json": "74858ee95e6219ad4f633464ce38a35c4261c694bd604a9f9d29bc2733eed7cd",
+    "runner/vendor/source-authority/owner-composition/table-catalog-3.json": "be0a9056f75960b63bc1bc8da8b47739b342f0d60929f5742907f96e8a46feae",
+    "runner/vendor/source-authority/owner-composition/table-catalog-4.json": "1d0316ca3e7187d0cbf416fadbe1d83fef0a252701663211d8bdb7e91577a43e",
+    "runner/vendor/source-authority/owner-composition/table-catalog-5.json": "4b965977afb1262ea1c3d7ab861001a96acc2cac92225f535500ef63d6c54340",
+    "runner/vendor/source-authority/owner-composition/table-catalog-bank-rollup.json": "970d48c1149e6b0c6ba12e6164f61c99ded9bd8b3dae402391f23212f25ee48a",
+    "runner/vendor/source-authority/owner-composition/table-catalog-extra.json": "2e5c5f57ce8e251108beda10b3b7cc93ec63f367b1726412ffef7dca40ac0b88",
+    "runner/vendor/source-authority/owner-composition/table-catalog-legacy.json": "5c6b9af4621164af49c02aef50d5f6b176586621cbf9480129eedeff189677ad",
+    "runner/vendor/source-authority/owner-composition/table-catalog-settings.json": "bcc9669ba045c7806a72ae25644fe0ed291a56e7afd341ed3e1151b20068f00f",
+    "runner/vendor/source-authority/owner-composition/trigger-catalog-bank.json": "301e84cb0c4e71f331f5985990682db315c7cd6d8251d450c551b196bfdb7559",
+    "runner/vendor/source-authority/owner-composition/trigger-catalog-extra.json": "b370f245bf06b160b00a000f5736ece5f7e0a3f65e86025c43c44b49a70b4a40",
+    "runner/vendor/source-authority/owner-composition/trigger-catalog-legacy.json": "1d30354e93903741dea727516b422edfb60c92d53d2069b78f9a69ba86a5947e",
+    "runner/vendor/source-authority/owner-composition/trigger-catalog.json": "275c96d2407d0d4e3e225971db5d5944588de5a1cd77c05bdaea9722a5303aff",
+    "runner/vendor/source-authority/owner-graph-live.json": "268fcc616d5f6aff908df4116556459a00ceb7385eb3c398169556ac2e0de68a",
+    "runner/vendor/source-authority/parallel-probes.py": "146ffaaa790af22e5da8c758d396adad9617e89f482850492c57c24e46150487",
+    "runner/vendor/source-authority/run-local.sh": "1a5639584257f4e474a5ca69d295d8df2f360ce38b81200ab6d70b4493d67725",
+    "runner/vendor-input-hashes.json": "d59d2bd3bf93074470785f3f8983065bbf0418415036ebb3110e1b35d829f8bc",
+    "source-candidate/00-expand.sql": "ea409c359a7842aaad9e5d85a8015aab767d780cf3c4f3e46247985f9ed23054",
+    "source-candidate/00-online-index.sql": "e67f37fcd0f92f805ca524548b56f5f05a6f620ae5bdcabeb88e4e46e35f2148",
+    "source-candidate/00-preflight.sql": "a58d3a5cdd7f415f61e0358375ef517f4f5fe9576ef1493664c21c08738d3dd1",
+    "source-candidate/01-source-exclusion.sql": "0929a4df935810875168ecae2af5fb27a640a9acfe350ee05ffc711e4842a791",
+    "source-candidate/02-excluded-owners.sql": "5f9f9ad42f9a16fb1c1f7028bf8e61a2480d68277974592f91b5f2598c61f743",
+    "source-candidate/03-excluded-unpaid-rollups.sql": "c323476f71c3320ab49764198d0b2750640160eb9f53ead24dcf00da370bae28",
+    "source-candidate/README.md": "081b4595cc8b591f71c00b1909402d46fb54036f550d1882777228e25a175ea9",
+    "source-candidate/compiled-overlap-proof.json": "f8d319a782c9ee4a4872cce4a34ac9187b3462d175231d96d3a31cbcde21a0bd",
+    "source-candidate/compiled-overlap.py": "a0c6eddd56c0c009da2cdbf048dd6a01b3f7ba5b0c33f05fdc35b53861fe4cff",
+    "source-candidate/current-writer-inventory.json": "f796bc8703d27afeeacec58f23c2956e08ca2c7a741fb4703db216559e0057cd",
+    "source-candidate/fixture-view.sql": "ec8840e0eaf48ce23c442c0833627089f0d192585cf9f47fbcfa6aef002d1e1b",
+    "source-candidate/function-catalog-commission-batch.json": "2e52ed63a16790233f8824956e54d52632f3394242159187c16f7dacc53aa72c",
+    "source-candidate/function-catalog-legacy.json": "8d4ee7c392feaf3b749016d81d674b45dfc8491afe42d4b7bc56be0fefb93614",
+    "source-candidate/function-catalog-reader-dependencies.json": "10dbc650e16f1b15edf299ff0d608a5b9df9c77da2f6cf10bf6d69ec0d26e6bd",
+    "source-candidate/installed-after-proof.json": "deef528d99a9451f24b134ce30f3cbd251d532e3d77a6c8f8f37d5a398293f93",
+    "source-candidate/installed-catalog.json": "716f498eb86837f584e0c884c21024f7c726dcf4b84c0b2cfbfe2430a1c3d6b7",
+    "source-candidate/installed-rollup-view-catalog.json": "2b9bf679a1149d12be69538a7d8b56d3366f085be599837dd0ea170ad7052e6a",
+    "source-candidate/native-probe.py": "a13364f18de2e9671e52b1fa633c7783485020fd637345bea24feb2c35a28ed6",
+    "source-candidate/native-proof.json": "2d2f3eaeac49bafd88cdf1f7766a67363ddf76d6c8e4ef52c0b7ba90377553c7",
+    "source-candidate/native.log": "81c11ddc1de20f07153b82db99ee06bba6c0f017b670e1904a2a36f721f5ad76",
+    "source-candidate/patch-manifest.json": "b47e6d27caaba36393a5f7cd3160c44d5af315c15d63a0828e6af79f5b0ee678",
+    "source-candidate/postconditions.py": "7aca0111a193b3740a6ef08517e5a5b0785fdd81e6a79621b8d4dc4d4852f019",
+    "source-candidate/proof_format.py": "0dcaba94a58907e2db1077a5ccaee5c2af60240d2639c5b179a2a142f45e88af",
+    "source-candidate/query-plan-probe.py": "10932903976a6c5dcb94732b31f130a592deb8940f6bae80ffdde572869edd31",
+    "source-candidate/query-plan-proof.json": "518dc112a755462d633e215b54e78b57b56ea35342bd41595ee97020c3d99765",
+    "source-candidate/run-local.sh": "522acb02c08120dd11efb06a27dc3aba15408b873e6fa9163327adf1c5c1d13b",
+    "source-candidate/table-catalog-legacy.json": "5c6b9af4621164af49c02aef50d5f6b176586621cbf9480129eedeff189677ad",
+    "source-candidate/trigger-catalog-legacy.json": "1d30354e93903741dea727516b422edfb60c92d53d2069b78f9a69ba86a5947e",
+    "source-payer-proposal.sql": "7e7fef180dd8b53a07063de5b458f12f7034ca3db05242962d86cfe687a04cce"
+  },
+  "harness_sha256": {
+    "run-local.py": "2c94b5b3af25e2650c0f88366bda2534c3d3d322fe42a448885afeb1b3ae983b",
+    "native-probe.py": "33898a9c4e0337c589f695750717016ae25234d39d1490b7a78839539e03de15"
+  },
+  "opening_custody_fixture": "club 900 treasury set to 1000 before captured financial triggers are enabled"
+}

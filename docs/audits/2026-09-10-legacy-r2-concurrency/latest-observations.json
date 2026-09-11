@@ -1,0 +1,325 @@
+[
+  {
+    "case": "baseline same window",
+    "barrier": "third session holds actual club row; two RPC waits observed before release",
+    "barrier_pid": 27334,
+    "observed_waits": [
+      {
+        "pid": 27337,
+        "application_name": "legacy-r2-first",
+        "wait_event_type": "Lock",
+        "wait_event": "transactionid",
+        "blocking_pids": [
+          27334
+        ]
+      },
+      {
+        "pid": 27344,
+        "application_name": "legacy-r2-second",
+        "wait_event_type": "Lock",
+        "wait_event": "tuple",
+        "blocking_pids": [
+          27337
+        ]
+      }
+    ],
+    "outputs": [
+      {
+        "exit": 0,
+        "result": {
+          "name": "club_to_agents",
+          "round": 2,
+          "amount": 17.0,
+          "detail": [],
+          "payees": 1,
+          "shortfalls": 0
+        },
+        "sqlstate": null,
+        "error": ""
+      },
+      {
+        "exit": 1,
+        "result": null,
+        "sqlstate": "23505",
+        "error": "ERROR:  23505: duplicate key value violates unique constraint \"chip_ledger_idem_pkey\"\nDETAIL:  Key (idempotency_key)=(round2:00000000-0000-4000-8000-000000000901:2026-03-02:00000000-0000-4000-8000-000000000900:00000000-0000-4000-8000-000000000302) already exists.\nCONTEXT:  SQL statement \"INSERT INTO public.chip_ledger_idem (idempotency_key, leg_id, created_at)\n  VALUES (NEW.idempotency_key, NEW.id, COALESCE(NEW.created_at, now()))\"\nPL/pgSQL function zz_chip_ledger_key_is_claimed_once() line 11 at SQL statement\nSQL statement \"INSERT INTO public.chip_ledger\n      (performed_by, from_type, from_entity_id, to_type, to_entity_id,\n       amount, category, club_id, union_id, description, idempotency_key, metadata)\n    VALUES\n      (COALESCE(auth.uid(), '2d1cd6c3-5700-4af9-a271-d4863fdab20d'::uuid),\n       'club_treasury', r.club_id, 'player_wallet', r.agent_user,\n       round(r.owed, 2), 'commission', r.club_id, p_union_id,\n       'Round 2: club -> agent commission (period '\n         || to_char(p_period_start, 'YYYY-MM-DD') || '..'\n         || to_char(p_period_end, 'YYYY-MM-DD') || ')',\n       'round2:' || p_union_id::text || ':'\n         || to_char(p_period_start at time zone 'UTC', 'YYYY-MM-DD') || ':'\n         || r.club_id::text || ':' || r.agent_user::text,\n       jsonb_build_object('period_start', p_period_start, 'period_end', p_period_end,\n                          'rows_count', r.n, 'agent_balance_after', v_agent_bal))\n    ON CONFLICT DO NOTHING\"\nPL/pgSQL function fn_settle_round2_club_to_agents(uuid,timestamp with time zone,timestamp with time zone) line 102 at SQL statement\nSCHEMA NAME:  public\nTABLE NAME:  chip_ledger_idem\nCONSTRAINT NAME:  chip_ledger_idem_pkey\nLOCATION:  _bt_check_unique, nbtinsert.c:673"
+      }
+    ],
+    "before": {
+      "bank": 1000.0,
+      "wallet": 0.0,
+      "receipts": 0,
+      "receipt_amount": 0,
+      "journal_amount": 0
+    },
+    "after": {
+      "bank": 983.0,
+      "wallet": 17.0,
+      "receipts": 1,
+      "receipt_amount": 17.0,
+      "journal_amount": 17.0
+    },
+    "unique_legacy_amount": 17,
+    "duplicate_amount": 0.0,
+    "baseline_outcome": "no_overpayment_observed"
+  },
+  {
+    "case": "baseline overlapping windows",
+    "barrier": "third session holds actual club row; two RPC waits observed before release",
+    "barrier_pid": 27360,
+    "observed_waits": [
+      {
+        "pid": 27363,
+        "application_name": "legacy-r2-first",
+        "wait_event_type": "Lock",
+        "wait_event": "transactionid",
+        "blocking_pids": [
+          27360
+        ]
+      },
+      {
+        "pid": 27369,
+        "application_name": "legacy-r2-second",
+        "wait_event_type": "Lock",
+        "wait_event": "tuple",
+        "blocking_pids": [
+          27363
+        ]
+      }
+    ],
+    "outputs": [
+      {
+        "exit": 0,
+        "result": {
+          "name": "club_to_agents",
+          "round": 2,
+          "amount": 12.0,
+          "detail": [],
+          "payees": 1,
+          "shortfalls": 0
+        },
+        "sqlstate": null,
+        "error": ""
+      },
+      {
+        "exit": 0,
+        "result": {
+          "name": "club_to_agents",
+          "round": 2,
+          "amount": 18.0,
+          "detail": [],
+          "payees": 1,
+          "shortfalls": 0
+        },
+        "sqlstate": null,
+        "error": ""
+      }
+    ],
+    "before": {
+      "bank": 983.0,
+      "wallet": 17.0,
+      "receipts": 1,
+      "receipt_amount": 17.0,
+      "journal_amount": 17.0
+    },
+    "after": {
+      "bank": 953.0,
+      "wallet": 47.0,
+      "receipts": 3,
+      "receipt_amount": 47.0,
+      "journal_amount": 47.0
+    },
+    "unique_legacy_amount": 23,
+    "duplicate_amount": 7.0,
+    "baseline_outcome": "overpaid"
+  },
+  {
+    "case": "baseline R2 versus direct claim",
+    "barrier": "third session holds actual club row; two RPC waits observed before release",
+    "barrier_pid": 27381,
+    "observed_waits": [
+      {
+        "pid": 27384,
+        "application_name": "legacy-r2-first",
+        "wait_event_type": "Lock",
+        "wait_event": "transactionid",
+        "blocking_pids": [
+          27381
+        ]
+      },
+      {
+        "pid": 27391,
+        "application_name": "legacy-r2-second",
+        "wait_event_type": "Lock",
+        "wait_event": "tuple",
+        "blocking_pids": [
+          27384
+        ]
+      }
+    ],
+    "outputs": [
+      {
+        "exit": 0,
+        "result": {
+          "name": "club_to_agents",
+          "round": 2,
+          "amount": 13.0,
+          "detail": [],
+          "payees": 1,
+          "shortfalls": 0
+        },
+        "sqlstate": null,
+        "error": ""
+      },
+      {
+        "exit": 1,
+        "result": null,
+        "sqlstate": "40P01",
+        "error": "ERROR:  40P01: deadlock detected\nDETAIL:  Process 27391 waits for ShareLock on transaction 3935; blocked by process 27384.\nProcess 27384 waits for ShareLock on transaction 3934; blocked by process 27391.\nHINT:  See server log for query details.\nCONTEXT:  while locking tuple (0,6) in relation \"clubs\"\nSQL statement \"SELECT COALESCE(c.chip_treasury, 0), c.name\n                                        FROM clubs c WHERE c.id = p_club_id FOR UPDATE\"\nPL/pgSQL function fn_agent_claim_commission(uuid,uuid,integer) line 150 at SQL statement\nLOCATION:  DeadLockReport, deadlock.c:1135"
+      }
+    ],
+    "before": {
+      "bank": 953.0,
+      "wallet": 47.0,
+      "receipts": 3,
+      "receipt_amount": 47.0,
+      "journal_amount": 47.0
+    },
+    "after": {
+      "bank": 940.0,
+      "wallet": 60.0,
+      "receipts": 4,
+      "receipt_amount": 60.0,
+      "journal_amount": 60.0
+    },
+    "unique_legacy_amount": 13
+  },
+  {
+    "case": "candidate same window",
+    "barrier": "third session holds actual club row; two RPC waits observed before release",
+    "barrier_pid": 27430,
+    "observed_waits": [
+      {
+        "pid": 27433,
+        "application_name": "legacy-r2-first",
+        "wait_event_type": "Lock",
+        "wait_event": "transactionid",
+        "blocking_pids": [
+          27430
+        ]
+      },
+      {
+        "pid": 27439,
+        "application_name": "legacy-r2-second",
+        "wait_event_type": "Lock",
+        "wait_event": "tuple",
+        "blocking_pids": [
+          27433
+        ]
+      }
+    ],
+    "outputs": [
+      {
+        "exit": 0,
+        "result": {
+          "name": "club_to_agents",
+          "round": 2,
+          "amount": 17.0,
+          "detail": [],
+          "payees": 1,
+          "shortfalls": 0
+        },
+        "sqlstate": null,
+        "error": ""
+      },
+      {
+        "exit": 1,
+        "result": null,
+        "sqlstate": "40001",
+        "error": "ERROR:  40001: Legacy commission receipt includes captured source or stale payable basis; retry\nCONTEXT:  PL/pgSQL function fn_ca_legacy_commission_receipt_excludes_captured() line 16 at RAISE\nSQL statement \"INSERT INTO public.agent_commission_settlements\n      (club_id, user_id, union_id, period_start, period_end, amount, rows_count, paid_at, settlement_ref)\n    VALUES (r.club_id, r.agent_user, p_union_id, p_period_start, p_period_end, round(r.owed, 2), r.n, now(),\n            'round2:' || p_union_id::text || ':' || to_char(p_period_start at time zone 'UTC', 'YYYY-MM-DD'))\n    ON CONFLICT (club_id, user_id, period_start, period_end) DO NOTHING\"\nPL/pgSQL function fn_settle_round2_club_to_agents(uuid,timestamp with time zone,timestamp with time zone) line 88 at SQL statement\nLOCATION:  exec_stmt_raise, pl_exec.c:3911"
+      }
+    ],
+    "before": {
+      "bank": 940.0,
+      "wallet": 0.0,
+      "receipts": 0,
+      "receipt_amount": 0,
+      "journal_amount": 0
+    },
+    "after": {
+      "bank": 923.0,
+      "wallet": 17.0,
+      "receipts": 1,
+      "receipt_amount": 17.0,
+      "journal_amount": 17.0
+    },
+    "unique_legacy_amount": 17,
+    "after_partial_retry": {
+      "bank": 923.0,
+      "wallet": 17.0,
+      "receipts": 1,
+      "receipt_amount": 17.0,
+      "journal_amount": 17.0
+    }
+  },
+  {
+    "case": "candidate overlapping windows",
+    "barrier": "third session holds actual club row; two RPC waits observed before release",
+    "barrier_pid": 27471,
+    "observed_waits": [
+      {
+        "pid": 27474,
+        "application_name": "legacy-r2-first",
+        "wait_event_type": "Lock",
+        "wait_event": "transactionid",
+        "blocking_pids": [
+          27471
+        ]
+      },
+      {
+        "pid": 27481,
+        "application_name": "legacy-r2-second",
+        "wait_event_type": "Lock",
+        "wait_event": "tuple",
+        "blocking_pids": [
+          27474
+        ]
+      }
+    ],
+    "outputs": [
+      {
+        "exit": 0,
+        "result": {
+          "name": "club_to_agents",
+          "round": 2,
+          "amount": 12.0,
+          "detail": [],
+          "payees": 1,
+          "shortfalls": 0
+        },
+        "sqlstate": null,
+        "error": ""
+      },
+      {
+        "exit": 1,
+        "result": null,
+        "sqlstate": "40001",
+        "error": "ERROR:  40001: Legacy commission receipt includes captured source or stale payable basis; retry\nCONTEXT:  PL/pgSQL function fn_ca_legacy_commission_receipt_excludes_captured() line 16 at RAISE\nSQL statement \"INSERT INTO public.agent_commission_settlements\n      (club_id, user_id, union_id, period_start, period_end, amount, rows_count, paid_at, settlement_ref)\n    VALUES (r.club_id, r.agent_user, p_union_id, p_period_start, p_period_end, round(r.owed, 2), r.n, now(),\n            'round2:' || p_union_id::text || ':' || to_char(p_period_start at time zone 'UTC', 'YYYY-MM-DD'))\n    ON CONFLICT (club_id, user_id, period_start, period_end) DO NOTHING\"\nPL/pgSQL function fn_settle_round2_club_to_agents(uuid,timestamp with time zone,timestamp with time zone) line 88 at SQL statement\nLOCATION:  exec_stmt_raise, pl_exec.c:3911"
+      }
+    ],
+    "before": {
+      "bank": 923.0,
+      "wallet": 17.0,
+      "receipts": 1,
+      "receipt_amount": 17.0,
+      "journal_amount": 17.0
+    },
+    "after": {
+      "bank": 911.0,
+      "wallet": 29.0,
+      "receipts": 2,
+      "receipt_amount": 29.0,
+      "journal_amount": 29.0
+    },
+    "unique_legacy_amount": 23
+  }
+]

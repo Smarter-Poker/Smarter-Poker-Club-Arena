@@ -1,0 +1,30 @@
+{
+  "tables": 124,
+  "functions": 240,
+  "triggers": 177,
+  "missing_foreign_tables": []
+}
+
+ actual_owner_success 
+----------------------
+ t
+(1 row)
+
+ test_assert 
+-------------
+ 
+(1 row)
+
+Loaded unchanged accepted/bank owners and prospective Round1 with actual money graph
+PASS baseline same window bank debit equals actual wallet credit
+Traceback (most recent call last):
+  File "/Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-legacy-r2-concurrency-sep10/docs/audits/2026-09-10-legacy-r2-concurrency/native-probe.py", line 164, in <module>
+    run_r2_case('baseline','same window',302,[('2026-03-03',17)],r2('2026-03-02','2026-03-09'),r2('2026-03-02','2026-03-09'),17)
+    ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-legacy-r2-concurrency-sep10/docs/audits/2026-09-10-legacy-r2-concurrency/native-probe.py", line 129, in run_r2_case
+    check(mode+' '+name+' independently observed payment exceeds unique historical basis',paid>owed)
+    ~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-legacy-r2-concurrency-sep10/docs/audits/2026-09-10-legacy-r2-concurrency/native-probe.py", line 37, in check
+    assert ok, label
+           ^^
+AssertionError: baseline same window independently observed payment exceeds unique historical basis

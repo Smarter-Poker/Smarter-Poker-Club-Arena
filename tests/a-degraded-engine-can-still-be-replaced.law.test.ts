@@ -27,7 +27,8 @@ const unitWrapper = readFileSync(
 const supervisor = readFileSync(resolve(root, 'server/scripts/engine-supervisor.sh'), 'utf8');
 
 function shellFunction(name: string, nextName: string): string {
-  const start = transaction.indexOf(`${name}() {`);
+  const marker = transaction.indexOf(`\n${name}() {`);
+  const start = marker < 0 ? -1 : marker + 1;
   const end = transaction.indexOf(`\n${nextName}() {`, start);
   expect(start, `${name} exists`).toBeGreaterThan(-1);
   expect(end, `${nextName} follows ${name}`).toBeGreaterThan(start);
@@ -67,7 +68,10 @@ describe('a degraded engine can still be replaced', () => {
   });
 
   it('admits a degraded exact source and rollback without weakening candidate proof', () => {
-    const strictHealth = shellFunction('health_instance_for_sha', 'source_instance_for_sha');
+    const strictHealth = shellFunction(
+      'health_instance_for_sha',
+      'parse_sealed_source_instance_for_sha'
+    );
     const sourceHealth = shellFunction('source_instance_for_sha', 'health_instance');
     const rollbackReadiness = shellFunction('prove_rollback_readiness', 'emit_already_released');
 
@@ -294,6 +298,12 @@ esac
 if [ "\${1:-}" = info ]; then exit 0; fi
 if [ "\${1:-}" = image ] && [ "\${2:-}" = inspect ]; then
   if [ "\${3:-}" = --format ]; then
+    if [ "\${4:-}" = '{{json .Config.Env}}' ]; then
+      [ "\${5:-}" = '${sourceImage}' ] || exit 92
+      printf '%s\\n' '["GIT_COMMIT_SHA=${sourceSha}"]'
+      printf '%s\\n' image-source-proof >> '${eventLog}'
+      exit 0
+    fi
     printf '%s\\n' '{"Id":"${targetImage}","Config":{"Labels":{"org.opencontainers.image.revision":"${targetSha}","com.smarterpoker.engine.source-tree":"${sourceTree}","com.smarterpoker.engine.build-contract":"clean-server-archive-v1"}}}'
   fi
   exit 0
@@ -379,6 +389,8 @@ exit 91
         .map((event, index) => ({ event, index }))
         .filter(({ event }) => event.startsWith('source-503:'));
       const databaseProof = events.indexOf('database-proof');
+      expect(events.indexOf('image-source-proof')).toBeGreaterThan(-1);
+      expect(events.indexOf('image-source-proof')).toBeLessThan(sourceProofs[0].index);
       expect(certificates).toHaveLength(2);
       expect(sourceProofs).toHaveLength(4);
       expect(databaseProof).toBeGreaterThan(sourceProofs[1].index);

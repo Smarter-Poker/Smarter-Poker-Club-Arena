@@ -1,0 +1,71 @@
+[
+  {
+    "file": "server/src/config/buyIn.ts",
+    "source_sha256": "072ceac09a3f5ca374080ff7a772db33a88e66a85fe0981d33362ae5b3ef1250",
+    "helper_objects": [
+      {
+        "function": "freeBuyColumns",
+        "parent_name": null,
+        "fields": [
+          "buy_in_fee",
+          "is_rebuy",
+          "is_reentry",
+          "add_on_available",
+          "rebuy_cost",
+          "addon_cost",
+          "rebuy_chips",
+          "addon_chips",
+          "rebuy_levels",
+          "addon_levels",
+          "max_rebuys"
+        ]
+      }
+    ],
+    "flag_consumer_scopes": []
+  },
+  {
+    "file": "server/src/services/FreeBuy.ts",
+    "source_sha256": "036a64671d73d95be4eb11f56b4ef1798182c131e8f859b8b3fddc65b365a11b",
+    "helper_objects": [],
+    "flag_consumer_scopes": [
+      {
+        "flag": "addon_from_start",
+        "scope": "auditFreeBuyRow"
+      }
+    ]
+  },
+  {
+    "file": "server/src/tournament/TournamentManagerBase.ts",
+    "source_sha256": "ab1539cc77659c2bc00e979d77eacea8954d7065fd5666ba29ab02c67b84042d",
+    "helper_objects": [],
+    "flag_consumer_scopes": [
+      {
+        "flag": "addon_from_start",
+        "scope": "startLifecycle"
+      },
+      {
+        "flag": "addon_from_start",
+        "scope": "tryTournamentAddOns"
+      },
+      {
+        "flag": "addon_from_start",
+        "scope": "triggerAddOnPeriod"
+      }
+    ]
+  },
+  {
+    "file": "src/services/TournamentService.ts",
+    "source_sha256": "8040cd30c2faa2c5507e4725ed6d923343abf5d7b2b9c08365ff650d7403bcc7",
+    "helper_objects": [],
+    "flag_consumer_scopes": [
+      {
+        "flag": "freeBuy",
+        "scope": "buildRpcConfig"
+      },
+      {
+        "flag": "addOnFromStart",
+        "scope": "buildRpcConfig"
+      }
+    ]
+  }
+]

@@ -280,6 +280,8 @@ describe('3. the client applies the rule and the form says so', () => {
 
   it('client freeBuyConfig produces the rule for a freeroll and nothing for a paid event', () => {
     expect(freeBuyConfig({ buyIn: 0, type: 'mtt', startingStack: 5000 })).toEqual({
+      freeBuy: true,
+      addOnFromStart: true,
       isRebuy: true,
       isReentry: true,
       addOnAvailable: true,

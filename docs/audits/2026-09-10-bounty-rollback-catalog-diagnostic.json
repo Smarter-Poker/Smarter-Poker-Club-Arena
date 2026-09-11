@@ -1,0 +1,7 @@
+{
+  "recorded_at": "2026-09-10T17:34:53.674582+00:00",
+  "exit_code": 3,
+  "pg_class_differences": [],
+  "no_production_mutation": true,
+  "previous_difference": "pg_class only; every observed business table and seven other catalogs restored exactly"
+}

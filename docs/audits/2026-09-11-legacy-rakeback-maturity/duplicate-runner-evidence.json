@@ -1,0 +1,39 @@
+{
+  "runs": [
+    {
+      "mode": "duplicate",
+      "socket": "/tmp/ca-rakeback-payer.g_ksn6oa",
+      "data_directory": "/tmp/ca-rakeback-payer.g_ksn6oa/data",
+      "tcp_listeners": "",
+      "pass": true
+    },
+    {
+      "mode": "first-install-partial",
+      "socket": "/tmp/ca-rakeback-payer.4uie56dg",
+      "data_directory": "/tmp/ca-rakeback-payer.4uie56dg/data",
+      "tcp_listeners": "",
+      "pass": true
+    },
+    {
+      "mode": "first-install-all",
+      "socket": "/tmp/ca-rakeback-payer.znubx05f",
+      "data_directory": "/tmp/ca-rakeback-payer.znubx05f/data",
+      "tcp_listeners": "",
+      "pass": true
+    }
+  ],
+  "source_hashes": {
+    "probe.mjs": "e3767d746ee6131abc1d695abb4e4bcf3fd7f43a842f01ffccd5e070dc1e5072",
+    "fixture.sql": "72b2a77c0d805989e7b3bb48593321258dfd79dc698d42d167397d57394ca42d",
+    "run-local.py": "65dcd792cfa14b0f44d8ffab92a3c69975aee10e36a5dee75f1ff4695aa56442",
+    "run-duplicate.py": "1d5f72abfcfd0d35018a1fa663d33bb7ef739ac9856d061c8b6df13a2738adf5",
+    "probe-first-install.mjs": "0884df8ae8a278ffa8e1425aa4c0aa7bc5800ec049c52b71f28a9c1a31203bdc",
+    "money-guards.sql": "e7ac35f1cc08f6b947c386532a39bcc460a94e0c75949b5071e4098cbf3b9958",
+    "probe-duplicate.mjs": "a578bc038e319d2bb28f37dc5101972851a2cc45cbc7953c345922e1dae11a5b",
+    "02-legacy-single-payer.sql": "cbbe60ad29e2151449ae41bcaf92b838334d62540b170f41517d726b5cc901f4",
+    "basis-fixture.sql": "07c2075f0de20b308e71f1de66994ff97ddc2ec3d0f3cd91fcc2d9f683c9a926",
+    "aggregate-proof.mjs": "7528a1fd408c8b8349f6beecccbd314f5da55eb33ab8db2fc8636e643e96ede3",
+    "01-legacy-maturity-only.sql": "2de42d7c883ecad8ad1c50170e8581c39f6773e848284c266532ada46b17615f",
+    "00-apply-legacy-repair.sql": "a55e792f12040799a20fcf6d54969059efecaea3869c3aa148191fe1b083c4c7"
+  }
+}

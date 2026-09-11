@@ -125,17 +125,6 @@
       "action",
       "target_type"
     ],
-    "autofix_attempts": [
-      "repo"
-    ],
-    "autofix_budget": [
-      "source",
-      "daily_cap_usd"
-    ],
-    "autofix_projects": [
-      "id",
-      "source"
-    ],
     "avatar_shop_aliases": [
       "alias",
       "avatar_id"
@@ -369,6 +358,12 @@
       "break_ended_at",
       "break_started_at"
     ],
+    "ca_break_window_migration_overrides": [
+      "txid",
+      "reason",
+      "session_role",
+      "first_command"
+    ],
     "ca_bridge_rate": [
       "id",
       "diamonds_per_chip",
@@ -504,10 +499,6 @@
       "table_name",
       "trigger_name"
     ],
-    "ca_deploy_dispatch_log": [
-      "window_hour",
-      "action"
-    ],
     "ca_detector_registry": [
       "source",
       "owner"
@@ -561,10 +552,6 @@
     "ca_engine_deploy_attempts": [
       "target_sha",
       "shipped"
-    ],
-    "ca_engine_deploy_runs_started": [
-      "run_id",
-      "target_sha"
     ],
     "ca_epoch_closing_positions": [
       "capture_ref",
@@ -2098,6 +2085,11 @@
       "phase",
       "ownership_token"
     ],
+    "engine_maintenance_break_faults": [
+      "announced_at",
+      "stage",
+      "outcome"
+    ],
     "engine_maintenance_break_log": [
       "break_started_at",
       "break_ended_at",
@@ -3229,6 +3221,12 @@
       "player_id",
       "club_id"
     ],
+    "player_boosts": [
+      "user_id",
+      "kind",
+      "factor",
+      "ends_at"
+    ],
     "player_notes": [
       "user_id"
     ],
@@ -3285,6 +3283,12 @@
       "target_id",
       "entry_key"
     ],
+    "poker_diamond_hand_receipts": [
+      "table_id",
+      "hand_number",
+      "request",
+      "receipt"
+    ],
     "poker_diamond_lot_reservations": [
       "custody_id",
       "lot_id",
@@ -3298,7 +3302,6 @@
       "amount",
       "source_account",
       "destination_account",
-      "wallet_journal_id",
       "request",
       "receipt"
     ],
@@ -4334,6 +4337,27 @@
       "amount",
       "reason"
     ],
+    "tournament_deal_proposal_consents": [
+      "proposal_id",
+      "user_id"
+    ],
+    "tournament_deal_proposal_executions": [
+      "tournament_id",
+      "proposal_id",
+      "revision"
+    ],
+    "tournament_deal_proposals": [
+      "tournament_id",
+      "revision",
+      "snapshot"
+    ],
+    "tournament_deal_reviews": [
+      "tournament_id",
+      "requested_by",
+      "state",
+      "requested_hand_revision",
+      "expires_at"
+    ],
     "tournament_deal_votes": [
       "tournament_id",
       "user_id"
@@ -4668,6 +4692,27 @@
       "days_of_week",
       "config"
     ],
+    "tournament_seat_exit_authorizations": [
+      "token",
+      "seat_id",
+      "tournament_id",
+      "user_id",
+      "operation"
+    ],
+    "tournament_seat_move_receipts": [
+      "request_id",
+      "tournament_id",
+      "user_id",
+      "source_table_id",
+      "destination_table_id",
+      "source_seat_id",
+      "destination_seat_id",
+      "source_seat_number",
+      "destination_seat_number",
+      "source_mode",
+      "stack",
+      "moved_at"
+    ],
     "tournament_series": [
       "name",
       "location",
@@ -4965,6 +5010,31 @@
       "street",
       "hero_position"
     ],
+    "training_solver_bounded_canary_targets": [
+      "machine_id",
+      "solver_version",
+      "solver_binary_checksum",
+      "pipeline_commit",
+      "manifest_version",
+      "manifest_checksum",
+      "target_role",
+      "artifact_id",
+      "scenario_hash",
+      "street",
+      "node",
+      "hero_position",
+      "approved_by"
+    ],
+    "training_solver_ingest_scopes": [
+      "machine_id",
+      "solver_version",
+      "solver_binary_checksum",
+      "pipeline_commit",
+      "manifest_version",
+      "manifest_checksum",
+      "admission_mode",
+      "configured_by"
+    ],
     "training_solver_provenance_authority": [
       "machine_id",
       "solver_version",
@@ -4976,6 +5046,9 @@
       "training_game_contracts_sha256",
       "manifest_contracts",
       "approved_by"
+    ],
+    "training_solver_scope_migration_state": [
+      "migration_id"
     ],
     "training_solver_worker_receipts": [
       "machine_id",
@@ -5673,6 +5746,28 @@
       "host_id",
       "host_kind",
       "segment_version"
+    ],
+    "wheel_free_segments": [
+      "ord",
+      "label",
+      "amount",
+      "weight"
+    ],
+    "wheel_free_spins": [
+      "host_id",
+      "host_kind",
+      "club_id",
+      "user_id",
+      "day",
+      "commit_id",
+      "server_seed_hash",
+      "server_seed",
+      "client_seed",
+      "nonce",
+      "roll",
+      "weight_total",
+      "outcome_ord",
+      "outcome_amount"
     ],
     "wheel_pools": [
       "host_id"

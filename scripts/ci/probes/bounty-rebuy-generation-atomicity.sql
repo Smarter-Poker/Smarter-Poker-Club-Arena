@@ -22,6 +22,12 @@ BEGIN
 END;
 $fixture_guard$;
 
+-- Restore the exact tracked platform source seed omitted by the zero-data
+-- schema donor. Provenance: 20260905203123, exact tuple
+-- ('fn_mystery_bounty_pay', 'DB caller').
+INSERT INTO public.ca_settle_sources(source,note)
+VALUES('fn_mystery_bounty_pay','DB caller') ON CONFLICT(source) DO NOTHING;
+
 SET LOCAL session_replication_role=replica;
 
 INSERT INTO auth.users(id)
@@ -165,24 +171,33 @@ SELECT (jsonb_populate_record(NULL::public.tournaments,
 
 INSERT INTO public.tables(
   id,name,tournament_id,status,lifecycle,current_players,game_type,club_id,
-  max_players,small_blind,big_blind,stakes)
+  max_players,small_blind,big_blind,stakes,seat_game_scope,
+  seat_admission_key)
 VALUES(
   'b7300000-0000-4000-8000-000000000001',
   'Atomic Standard Bounty Rebuy Table',
   'b7200000-0000-4000-8000-000000000001','running','live',2,
-  'tournament','20000000-0000-0000-0000-000000000001',9,5,10,'5/10'),
+  'tournament','20000000-0000-0000-0000-000000000001',9,5,10,'5/10',
+  'table:b7300000-0000-4000-8000-000000000001',
+  'tournament:b7200000-0000-4000-8000-000000000001'),
   ('b7300000-0000-4000-8000-000000000002',
    'Atomic PKO Rebuy Table',
    'b7200000-0000-4000-8000-000000000002','running','live',2,
-   'tournament','20000000-0000-0000-0000-000000000001',9,5,10,'5/10'),
+   'tournament','20000000-0000-0000-0000-000000000001',9,5,10,'5/10',
+   'table:b7300000-0000-4000-8000-000000000002',
+   'tournament:b7200000-0000-4000-8000-000000000002'),
   ('b7300000-0000-4000-8000-000000000003',
    'Atomic Mystery Bounty Rebuy Table',
    'b7200000-0000-4000-8000-000000000003','running','live',2,
-   'tournament','20000000-0000-0000-0000-000000000001',9,5,10,'5/10'),
+   'tournament','20000000-0000-0000-0000-000000000001',9,5,10,'5/10',
+   'table:b7300000-0000-4000-8000-000000000003',
+   'tournament:b7200000-0000-4000-8000-000000000003'),
   ('b7300000-0000-4000-8000-000000000004',
    'Atomic Bounty Rebuy Rollback Table',
    'b7200000-0000-4000-8000-000000000004','running','live',2,
-   'tournament','20000000-0000-0000-0000-000000000001',9,5,10,'5/10');
+   'tournament','20000000-0000-0000-0000-000000000001',9,5,10,'5/10',
+   'table:b7300000-0000-4000-8000-000000000004',
+   'tournament:b7200000-0000-4000-8000-000000000004');
 
 INSERT INTO public.tournament_players(
   id,tournament_id,user_id,club_id,status,chips,table_id,seat_number,
@@ -235,48 +250,83 @@ VALUES
 
 INSERT INTO public.table_seats(
   id,table_id,seat_number,user_id,stack,status,joined_at,left_at,
-  leave_pending,is_sitting_out,is_away,club_id)
+  leave_pending,is_sitting_out,is_away,club_id,active_game_scope,
+  active_parent_key)
 VALUES
   ('b7400000-0000-4000-8000-000000000001',
    'b7300000-0000-4000-8000-000000000001',1,
    'b7100000-0000-4000-8000-000000000001',0,'active',
    clock_timestamp()-interval '2 minutes',NULL,false,false,false,
-   '20000000-0000-0000-0000-000000000001'),
+   '20000000-0000-0000-0000-000000000001',
+   'table:b7300000-0000-4000-8000-000000000001',
+   'tournament:b7200000-0000-4000-8000-000000000001'),
   ('b7400000-0000-4000-8000-000000000002',
    'b7300000-0000-4000-8000-000000000001',2,
    'b7100000-0000-4000-8000-000000000002',100,'active',
    clock_timestamp()-interval '2 minutes',NULL,false,false,false,
-   '20000000-0000-0000-0000-000000000001'),
+   '20000000-0000-0000-0000-000000000001',
+   'table:b7300000-0000-4000-8000-000000000001',
+   'tournament:b7200000-0000-4000-8000-000000000001'),
   ('b7400000-0000-4000-8000-000000000003',
    'b7300000-0000-4000-8000-000000000002',1,
    'b7100000-0000-4000-8000-000000000003',0,'active',
    clock_timestamp()-interval '2 minutes',NULL,false,false,false,
-   '20000000-0000-0000-0000-000000000001'),
+   '20000000-0000-0000-0000-000000000001',
+   'table:b7300000-0000-4000-8000-000000000002',
+   'tournament:b7200000-0000-4000-8000-000000000002'),
   ('b7400000-0000-4000-8000-000000000004',
    'b7300000-0000-4000-8000-000000000002',2,
    'b7100000-0000-4000-8000-000000000004',100,'active',
    clock_timestamp()-interval '2 minutes',NULL,false,false,false,
-   '20000000-0000-0000-0000-000000000001'),
+   '20000000-0000-0000-0000-000000000001',
+   'table:b7300000-0000-4000-8000-000000000002',
+   'tournament:b7200000-0000-4000-8000-000000000002'),
   ('b7400000-0000-4000-8000-000000000005',
    'b7300000-0000-4000-8000-000000000003',1,
    'b7100000-0000-4000-8000-000000000005',0,'active',
    clock_timestamp()-interval '2 minutes',NULL,false,false,false,
-   '20000000-0000-0000-0000-000000000001'),
+   '20000000-0000-0000-0000-000000000001',
+   'table:b7300000-0000-4000-8000-000000000003',
+   'tournament:b7200000-0000-4000-8000-000000000003'),
   ('b7400000-0000-4000-8000-000000000006',
    'b7300000-0000-4000-8000-000000000003',2,
    'b7100000-0000-4000-8000-000000000006',100,'active',
    clock_timestamp()-interval '2 minutes',NULL,false,false,false,
-   '20000000-0000-0000-0000-000000000001'),
+   '20000000-0000-0000-0000-000000000001',
+   'table:b7300000-0000-4000-8000-000000000003',
+   'tournament:b7200000-0000-4000-8000-000000000003'),
   ('b7400000-0000-4000-8000-000000000007',
    'b7300000-0000-4000-8000-000000000004',1,
    'b7100000-0000-4000-8000-000000000007',0,'active',
    clock_timestamp()-interval '2 minutes',NULL,false,false,false,
-   '20000000-0000-0000-0000-000000000001'),
+   '20000000-0000-0000-0000-000000000001',
+   'table:b7300000-0000-4000-8000-000000000004',
+   'tournament:b7200000-0000-4000-8000-000000000004'),
   ('b7400000-0000-4000-8000-000000000008',
    'b7300000-0000-4000-8000-000000000004',2,
    'b7100000-0000-4000-8000-000000000008',100,'active',
    clock_timestamp()-interval '2 minutes',NULL,false,false,false,
-   '20000000-0000-0000-0000-000000000001');
+   '20000000-0000-0000-0000-000000000001',
+   'table:b7300000-0000-4000-8000-000000000004',
+   'tournament:b7200000-0000-4000-8000-000000000004');
+
+DO $fixture_active_seats_match_canonical_parent_scope$
+BEGIN
+  IF (SELECT count(*)
+        FROM public.table_seats s
+        JOIN public.tables t ON t.id=s.table_id
+       WHERE s.id::text LIKE 'b7400000-0000-4000-8000-%'
+         AND s.left_at IS NULL
+         AND s.active_game_scope=t.seat_game_scope
+         AND s.active_parent_key=t.seat_admission_key
+         AND t.seat_game_scope='table:'||t.id::text
+         AND t.seat_admission_key='tournament:'||t.tournament_id::text)<>8 THEN
+    RAISE EXCEPTION
+      'bounty rebuy fixture active seats do not match their canonical table scope'
+      USING ERRCODE='55000';
+  END IF;
+END;
+$fixture_active_seats_match_canonical_parent_scope$;
 
 INSERT INTO public.tournament_escrow(
   tournament_id,gross_in,fee_entries_in,satellite_fee_in,bounty_in,

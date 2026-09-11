@@ -404,7 +404,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
                the zero stack and the knockout evidence
                (20260909014534_non_satellite_terminal_settlement_commits_one_stored_receipt),
                and every elimination holds a scoped seat-exit capability
-               (20260909014545_tournament_seat_exits_stay_inside_tournament_authority).
+               (the Stage-B current-postimage contraction).
                An engine-side poll or repair here would be exactly the split
                transaction that removal closed, and
                TournamentGhostSeat.law pins this file against re-growing one.

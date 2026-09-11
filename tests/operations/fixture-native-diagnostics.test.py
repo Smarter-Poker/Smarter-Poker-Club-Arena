@@ -13,6 +13,19 @@ spec.loader.exec_module(m)
 
 
 class NativeDiagnosticsTests(unittest.TestCase):
+    def test_native_command_diagnostics_are_strict_and_bounded(self):
+        row = {'status': 'failed', 'stage': 'gotrue-migrate-command', 'error': 'Error',
+               'exit_code': 1, 'command_phase': 'auth-connect', 'command_sqlstate': '42501'}
+        self.assertEqual(m.native_failures(json.dumps(row)), [{
+            'stage': row['stage'], 'category': 'Error', 'exit_code': 1,
+            'command_phase': 'auth-connect', 'command_sqlstate': '42501'}])
+        for invalid in [True, None, '1', 0, 256, 1.5, ['1']]:
+            self.assertEqual(m.native_failures(json.dumps({**row, 'exit_code': invalid})), [])
+        for key in ['command_phase', 'command_sqlstate']:
+            for invalid in ['PRIVATE CREDENTIAL', None, [], True]:
+                self.assertEqual(m.native_failures(json.dumps({**row, key: invalid})), [])
+        self.assertEqual(m.native_failures(json.dumps({**row, 'stderr': 'PRIVATE'})), [])
+
     def test_actual_node_failure_survives_private_child_capture(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

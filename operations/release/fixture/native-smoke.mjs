@@ -399,18 +399,25 @@ async function services() {
       GOTRUE_DISABLE_SIGNUP: 'false',
       GOTRUE_LOG_LEVEL: 'error',
     };
+    stage = 'gotrue-migrate-command';
     await command('/usr/local/bin/auth', ['migrate'], authEnv);
+    stage = 'gotrue-migration-ledger';
     assert.ok(
       (await db.query('SELECT count(*)::int AS n FROM auth.schema_migrations')).rows[0].n > 0
     );
+    stage = 'gotrue-server-start';
     const auth = await start('auth', '/usr/local/bin/auth', ['serve'], authEnv);
+    stage = 'gotrue-server-ready';
     await eventually(() => healthy('http://127.0.0.1:9999/health'));
     const api = fixtureAuth({
       serviceKey: secrets.serviceKey,
       jwtSecret: secrets.jwtSecret,
     });
+    stage = 'gotrue-real-user-signin';
     const users = await api.createUsers();
+    stage = 'gotrue-real-mfa-enrollment';
     const user = await api.enrollMfa(users[0]);
+    stage = 'gotrue-real-mfa-persistence';
     assert.equal(
       (await db.query("SELECT count(*)::int AS n FROM auth.mfa_factors WHERE status='verified'"))
         .rows[0].n,

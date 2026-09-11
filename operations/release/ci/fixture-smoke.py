@@ -29,6 +29,9 @@ NATIVE_STAGES = frozenset((
     'postgresql-extension-pg-trgm', 'postgresql-extension-pgcrypto',
     'postgresql-extension-uuid-ossp', 'postgresql-extension-vector',
     'postgresql-extension-inventory', 'gotrue-genuine-migrations-and-mfa',
+    'gotrue-migrate-command', 'gotrue-migration-ledger', 'gotrue-server-start',
+    'gotrue-server-ready', 'gotrue-real-user-signin', 'gotrue-real-mfa-enrollment',
+    'gotrue-real-mfa-persistence',
     'postgrest-14-5-authentication-and-rls', 'realtime-genuine-migrations-and-change',
     'native-observation-bridge-start', 'observer-and-browser-handoff',
     'realtime-loopback-and-gateway', 'candidate-peer-isolation'))
@@ -61,6 +64,19 @@ def native_failures(output):
         if (set(row) == {'status', 'stage', 'error'} and isinstance(row['error'], str)
                 and row['error'] in NATIVE_ERROR_NAMES):
             record = {'stage': row['stage'], 'category': row['error']}
+        elif ({'status', 'stage', 'error', 'exit_code'} <= set(row)
+                <= {'status', 'stage', 'error', 'exit_code', 'command_phase', 'command_sqlstate'}
+                and row['error'] == 'Error' and type(row['exit_code']) is int
+                and 1 <= row['exit_code'] <= 255
+                and ('command_phase' not in row or (isinstance(row['command_phase'], str)
+                     and row['command_phase'] in {'auth-url', 'auth-open', 'auth-connect',
+                                                 'auth-migrator', 'auth-migrations'}))
+                and ('command_sqlstate' not in row or (isinstance(row['command_sqlstate'], str)
+                     and re.fullmatch('[0-9A-Z]{5}', row['command_sqlstate'])))):
+            record = {'stage': row['stage'], 'category': 'Error', 'exit_code': row['exit_code']}
+            for key in ('command_phase', 'command_sqlstate'):
+                if key in row:
+                    record[key] = row[key]
         elif ({'status', 'stage', 'error', 'sqlstate'} <= set(row)
                 <= {'status', 'stage', 'error', 'sqlstate', 'position', 'routine', 'routine_sha256', 'file_sha256'}
                 and row['error'] == 'error' and isinstance(row['sqlstate'], str)

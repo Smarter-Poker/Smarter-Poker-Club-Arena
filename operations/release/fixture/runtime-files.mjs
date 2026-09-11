@@ -29,6 +29,31 @@ export function nativeFailureDiagnostic(stage, error) {
       : null;
   if (frame) record.native_line = Number(frame[1]);
   if (
+    record.error === 'Error' &&
+    Number.isInteger(error?.code) &&
+    error.code >= 1 &&
+    error.code <= 255
+  ) {
+    record.exit_code = error.code;
+    // GoTrue's pinned migrate command wraps failures with these fixed phases.
+    // Keep only a unique reviewed phase and SQLSTATE, never the private log.
+    const output = [error.stdout, error.stderr]
+      .filter((value) => typeof value === 'string' && value.length <= 8 * 1024 * 1024)
+      .join('\n');
+    const phases = [
+      ['parsing db connection url', 'auth-url'],
+      ['opening db connection', 'auth-open'],
+      ['checking database connection', 'auth-connect'],
+      ['creating db migrator', 'auth-migrator'],
+      ['running db migrations', 'auth-migrations'],
+    ].filter(([pattern]) => output.includes(pattern));
+    if (phases.length === 1) record.command_phase = phases[0][1];
+    const states = [
+      ...new Set([...output.matchAll(/\(SQLSTATE ([0-9A-Z]{5})\)/g)].map((match) => match[1])),
+    ];
+    if (states.length === 1) record.command_sqlstate = states[0];
+  }
+  if (
     record.error === 'error' &&
     typeof error.code === 'string' &&
     /^[0-9A-Z]{5}$/.test(error.code)

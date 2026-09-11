@@ -1,7 +1,42 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createHash } from 'node:crypto';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { nativeFailureDiagnostic } from '../../operations/release/fixture/runtime-files.mjs';
+
+test('actual failed command retains only exit status and unique source-backed failure codes', async () => {
+  let failure;
+  try {
+    await promisify(execFile)(process.execPath, [
+      '-e',
+      'process.stderr.write("running db migrations: PRIVATE SQL PASSWORD (SQLSTATE 42501)");process.exit(1)',
+    ]);
+  } catch (error) {
+    failure = error;
+  }
+  assert.deepEqual(nativeFailureDiagnostic('gotrue-migrate-command', failure), {
+    status: 'failed',
+    stage: 'gotrue-migrate-command',
+    error: 'Error',
+    exit_code: 1,
+    command_phase: 'auth-migrations',
+    command_sqlstate: '42501',
+  });
+  for (const code of [0, 256, -1, 1.5, '1', true, null]) {
+    assert.equal(
+      nativeFailureDiagnostic('gotrue-migrate-command', { name: 'Error', code }).exit_code,
+      undefined
+    );
+  }
+  const ambiguous = nativeFailureDiagnostic('gotrue-migrate-command', {
+    name: 'Error',
+    code: 1,
+    stderr: 'opening db connection checking database connection (SQLSTATE 42501) (SQLSTATE 42P01)',
+  });
+  assert.equal(ambiguous.command_phase, undefined);
+  assert.equal(ambiguous.command_sqlstate, undefined);
+});
 
 test('database diagnostics retain SQLSTATE and bounded query position without private fields', () => {
   const error = Object.assign(new Error('PRIVATE PASSWORD'), {

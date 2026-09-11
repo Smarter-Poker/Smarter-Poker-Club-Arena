@@ -1,0 +1,32 @@
+Verified fresh private PG17 identity with no TCP listener
+{
+  "tables": 124,
+  "functions": 240,
+  "triggers": 177,
+  "missing_foreign_tables": []
+}
+
+ actual_owner_success 
+----------------------
+ t
+(1 row)
+
+ test_assert 
+-------------
+ 
+(1 row)
+
+Loaded unchanged accepted/bank owners and prospective Round1 with actual money graph
+PASS: Existing historical row without accepted receipt remains unchanged and payable
+PASS: Actual unchanged legacy claim still pays existing no-hand historical entitlement once
+PASS: Historical lost-response replay creates no second money movement
+PASS: Historical fixture comes from actual accepted owner before capture activation
+PASS: Known historical accepted source retains NULL commission authority
+PASS: Actual accepted bank and batch owners classify new captured projections as marker one
+PASS: Unknown cash source cannot insert payable legacy projection
+PASS: Existing no-hand historical liability does not authorize a new projection
+PASS: Legitimate tournament source type retains existing legacy classification
+PASS: Historical accepted source cannot be forged into captured authority
+PASS: Updated classification helper retains private execution privileges
+{"passed": 11}
+Retained isolated proof directory: /tmp/ca-source-admission-mjhlv1tr

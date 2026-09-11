@@ -28,12 +28,14 @@ source(1800001,'20','2026-08-25T12:00:00Z','2026-08-25T12:00:00Z')
 batch=json.loads(sql("SELECT fn_credit_agent_commissions_batch(jsonb_agg(jsonb_build_object('user_id',player_id,'club_id',booked_club_id,'rake_credit',rake_credit,'source_type','rake_settlement','source_id',hand_id))) FROM ca_cash_commission_facts WHERE hand_id=test_id(1800001) AND rake_credit>0;"))
 assert batch.get('failed')==0,batch
 check('Actual accepted and bank owners emitted captured positive commission projections',int(sql("SELECT count(*) FROM agent_commissions WHERE source_id=test_id(1800001) AND amount>0"))>0)
-# Historical basis rows are synthetic test inputs, not claimed historical owner emission.
+# Historical basis rows are synthetic inputs. Hand 1000001 was emitted by the actual
+# accepted owner before marker activation in the companion exercise.sql; its marker is NULL.
+# The commission rows themselves are not claimed historical owner emission.
 sql("""INSERT INTO agent_commissions(club_id,user_id,amount,commission_rate,source_type,source_id,contributing_user_id,created_at)
 VALUES(test_id(900),test_id(301),3,.70,'tournament_rake_settlement',test_id(1800002),test_id(201),'2026-08-25T12:00:01Z'),
 (test_id(900),test_id(301),7,.70,'rake_settlement',test_id(1000001),test_id(201),'2026-08-25T12:00:02Z'),
 (test_id(900),test_id(303),5,.30,'tournament_rake_settlement',test_id(1800004),test_id(201),'2026-08-25T12:00:03Z');""")
-check('Historical unknown source and tournament source stay legacy; captured cash is excluded',sql("SELECT ARRAY[fn_ca_commission_uses_captured_source('rake_settlement',test_id(1800001)),fn_ca_commission_uses_captured_source('rake_settlement',test_id(1000001)),fn_ca_commission_uses_captured_source('tournament_rake_settlement',test_id(1800001))]::text;")=='{t,f,f}')
+check('Known historical accepted source and tournament source stay legacy; captured cash is excluded',sql("SELECT ARRAY[fn_ca_commission_uses_captured_source('rake_settlement',test_id(1800001)),fn_ca_commission_uses_captured_source('rake_settlement',test_id(1000001)),fn_ca_commission_uses_captured_source('tournament_rake_settlement',test_id(1800001))]::text;")=='{t,f,f}')
 refused('Actual unchanged legacy Round2 owner rolls back its money when final receipt includes projections',"SELECT fn_settle_round2_club_to_agents(test_id(901),'2026-08-24','2026-08-31');")
 before=state();err=sql("SELECT fn_agent_claim_commission(test_id(900),test_id(1800101),1000);",False,actor=301)
 check('Actual unchanged direct claim rolls back debit and credit before final projection receipt', 'Legacy commission receipt includes captured' in err and before==state())

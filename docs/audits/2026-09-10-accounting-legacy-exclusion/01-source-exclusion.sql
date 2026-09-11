@@ -1,11 +1,21 @@
 -- UNAPPLIED. The marker is prospective and immutable; historical NULL remains payable.
 -- Marker 1 never falls back to a historical payer, even when capture is deferred.
 CREATE FUNCTION public.fn_ca_commission_uses_captured_source(p_source_type text,p_source_id uuid)
-RETURNS boolean LANGUAGE sql STABLE SET search_path TO public,pg_temp AS $f$
- SELECT coalesce(p_source_type='rake_settlement',false) AND EXISTS(
-  SELECT 1 FROM public.hand_atomic_commits h
-  WHERE h.hand_id=p_source_id AND h.commission_capture_version=1);
-$f$;
+RETURNS boolean LANGUAGE plpgsql STABLE SET search_path TO public,pg_temp AS $f$
+DECLARE v_capture_version integer;
+BEGIN
+ IF p_source_type IS DISTINCT FROM 'rake_settlement' THEN RETURN false; END IF;
+ SELECT h.commission_capture_version INTO v_capture_version
+ FROM public.hand_atomic_commits h WHERE h.hand_id=p_source_id;
+ IF NOT FOUND THEN
+   -- The approved accrual owner returns without allocating when only legacy
+   -- bank evidence exists. Absence cannot authorize a new payable projection.
+   -- Existing historical rows never pass through this INSERT classification.
+   RAISE EXCEPTION 'Cash commission projection requires an accepted hand receipt'
+     USING ERRCODE='23514';
+ END IF;
+ RETURN v_capture_version IS NOT DISTINCT FROM 1;
+END $f$;
 REVOKE ALL ON FUNCTION public.fn_ca_commission_uses_captured_source(text,uuid)
  FROM PUBLIC,anon,authenticated,service_role;
 -- This local marker makes the legacy-open partial index bounded after cutover.

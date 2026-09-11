@@ -432,11 +432,16 @@ describe('the accepted-hand projection worker', () => {
     // HAND_PROJECTION_POLL_MS is fixed at import: 5 s by default, never 0 (a
     // copied empty .env.example line is Number("") === 0).
     expect(worker.HAND_PROJECTION_POLL_MS).toBe(5_000);
-    expect(worker.HAND_PROJECTION_DRAIN_CONCURRENCY_DEFAULT).toBe(4);
+    // 16, not 4, since 2026-09-11: at four lanes the drain projected 295 rows
+    // a minute against 825 hands dealt, which is an unbounded queue rather
+    // than a backlog. 97% of each chain is a round trip, not database time
+    // (mean 28.3 ms over a million calls, zero lock waits), so lanes are the
+    // lever. See the constant's own comment for the full measurement.
+    expect(worker.HAND_PROJECTION_DRAIN_CONCURRENCY_DEFAULT).toBe(16);
     vi.stubEnv('HAND_PROJECTION_DRAIN_CONCURRENCY', '');
-    expect(worker.handProjectionDrainConcurrency()).toBe(4);
+    expect(worker.handProjectionDrainConcurrency()).toBe(16);
     vi.stubEnv('HAND_PROJECTION_DRAIN_CONCURRENCY', 'lots');
-    expect(worker.handProjectionDrainConcurrency()).toBe(4);
+    expect(worker.handProjectionDrainConcurrency()).toBe(16);
     vi.stubEnv('HAND_PROJECTION_DRAIN_CONCURRENCY', '0');
     expect(worker.handProjectionDrainConcurrency()).toBe(1);
     vi.stubEnv('HAND_PROJECTION_DRAIN_CONCURRENCY', '999');

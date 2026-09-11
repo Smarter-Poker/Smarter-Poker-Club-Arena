@@ -15,7 +15,7 @@ import {
   verifyRealtimePeerBoundary,
 } from './fixture-server.mjs';
 import { createFixtureGateway } from './gateway.mjs';
-import { nativeFailureDiagnostic } from './runtime-files.mjs';
+import { nativeFailureDiagnostic, NativeDatabaseOwner } from './runtime-files.mjs';
 
 const exec = promisify(execFile);
 const root = '/run/native-smoke';
@@ -27,6 +27,7 @@ const observationSocket = '/run/fixture-observer/observation.sock';
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 let stage = 'initialization';
 const children = [];
+const databaseOwner = new NativeDatabaseOwner();
 let bridgeFailure = null;
 let gatewayFailure = false;
 
@@ -41,6 +42,7 @@ async function smokeControl() {
 async function eventually(check, milliseconds = 60000) {
   const deadline = Date.now() + milliseconds;
   for (;;) {
+    databaseOwner.check();
     assert.equal(bridgeFailure, null, 'native observation bridge failed');
     assert.equal(gatewayFailure, false, 'native gateway failed');
     assert.ok(
@@ -60,7 +62,7 @@ async function healthy(url, headers = {}) {
     return (
       await fetch(url, {
         headers,
-        signal: AbortSignal.timeout(1000),
+        signal: AbortSignal.any([databaseOwner.signal, AbortSignal.timeout(1000)]),
         redirect: 'error',
       })
     ).ok;
@@ -73,6 +75,7 @@ async function start(name, binary, args, env = {}) {
   const log = await open(`${root}/private/${name}.log`, 'wx', 0o600);
   const child = spawn(binary, args, {
     env: { ...process.env, ...env },
+    signal: databaseOwner.signal,
     stdio: ['ignore', log.fd, log.fd],
   });
   child.on('error', () => {
@@ -89,6 +92,7 @@ async function command(binary, args, env = {}) {
   // Output can contain local bootstrap configuration: never print it in CI.
   return exec(binary, args, {
     env: { ...process.env, ...env },
+    signal: databaseOwner.signal,
     timeout: 90000,
     maxBuffer: 8 * 1024 * 1024,
   });
@@ -275,23 +279,46 @@ async function services() {
       return false;
     }
   });
-  const admin = new pg.Client({
-    host: '/run/postgresql',
-    user: 'postgres',
-    database: 'postgres',
-  });
+  const admin = databaseOwner.own(
+    new pg.Client({
+      host: '/run/postgresql',
+      user: 'postgres',
+      database: 'postgres',
+    })
+  );
   await admin.connect();
   await admin.query(`CREATE DATABASE ${database}`);
   await admin.query('REVOKE CONNECT ON DATABASE postgres, template1 FROM PUBLIC');
-  await admin.end();
-  const db = new pg.Client({
-    host: '/run/postgresql',
-    user: 'postgres',
-    database,
-  });
+  await databaseOwner.end(admin);
+  const db = databaseOwner.own(
+    new pg.Client({
+      host: '/run/postgresql',
+      user: 'postgres',
+      database,
+    })
+  );
   await db.connect();
   let bridge, gateway;
   try {
+    stage = 'postgresql-slot-identity';
+    const slotIdentity = await db.query(`
+      SELECT current_user = 'postgres' AND session_user = 'postgres' AS identity,
+        r.rolsuper AS superuser, r.rolreplication AS replication,
+        current_database() = 'club_arena_qualification' AS database,
+        current_setting('data_directory') = '/var/lib/postgresql/data' AS data_directory,
+        current_setting('wal_level') = 'logical' AS logical_wal
+      FROM pg_catalog.pg_roles r WHERE r.rolname = current_user
+    `);
+    assert.deepEqual(slotIdentity.rows, [
+      {
+        identity: true,
+        superuser: true,
+        replication: true,
+        database: true,
+        data_directory: true,
+        logical_wal: true,
+      },
+    ]);
     stage = 'postgresql-wal2json-native-slot';
     // Load the real output plugin through PostgreSQL. Its presence on disk
     // alone does not prove Realtime can create its required logical slot.
@@ -639,18 +666,20 @@ async function services() {
       users[0].id,
       users[1].id,
     ]);
-    const observerDb = new pg.Client({
-      host: '/run/postgresql',
-      user: 'postgres',
-      database,
-      connectionTimeoutMillis: 5000,
-      query_timeout: 5000,
-      statement_timeout: 5000,
-    });
+    const observerDb = databaseOwner.own(
+      new pg.Client({
+        host: '/run/postgresql',
+        user: 'postgres',
+        database,
+        connectionTimeoutMillis: 5000,
+        query_timeout: 5000,
+        statement_timeout: 5000,
+      })
+    );
     try {
       await observerDb.connect();
     } catch (error) {
-      await observerDb.end().catch(() => {});
+      await databaseOwner.end(observerDb).catch(() => {});
       throw error;
     }
     bridge = await startObservationBridge({
@@ -684,6 +713,7 @@ async function services() {
       }),
       { mode: 0o644 }
     );
+    databaseOwner.check();
     await writeFile(`${root}/ready`, 'ready', { mode: 0o644 });
     await eventually(async () => {
       try {
@@ -694,6 +724,7 @@ async function services() {
       }
     }, 90000);
     assert.equal(await readFile('/tmp/native-smoke-oracle-complete', 'utf8'), 'complete');
+    databaseOwner.check();
     console.log(
       JSON.stringify({
         scope: 'native-service-smoke',
@@ -713,7 +744,7 @@ async function services() {
   } finally {
     await gateway?.close();
     await bridge?.close();
-    await db.end();
+    await databaseOwner.end(db);
   }
 }
 
@@ -744,11 +775,24 @@ try {
   }
 } catch (error) {
   // Keep raw service output, SQL, JWTs, session objects, and URLs out of CI logs.
-  console.error(JSON.stringify(nativeFailureDiagnostic(stage, error)));
+  console.error(
+    JSON.stringify(
+      nativeFailureDiagnostic(
+        databaseOwner.failure ? 'postgresql-client-connection' : stage,
+        databaseOwner.failure ?? error
+      )
+    )
+  );
   process.exitCode = 1;
 } finally {
   clearTimeout(timer);
   for (const child of children.toReversed()) if (child.exitCode === null) child.kill('SIGTERM');
   await pause(500);
   for (const child of children) if (child.exitCode === null) child.kill('SIGKILL');
+  try {
+    await databaseOwner.close();
+  } catch (error) {
+    console.error(JSON.stringify(nativeFailureDiagnostic('postgresql-client-cleanup', error)));
+    process.exitCode = 1;
+  }
 }

@@ -45,6 +45,15 @@ class NativeDiagnosticsTests(unittest.TestCase):
             'stage': valid['stage'], 'category': 'error', 'sqlstate': '58P01',
         }])
 
+    def test_only_allowlisted_postgres_routines_can_be_retained(self):
+        row = {'status': 'failed', 'stage': 'postgresql-wal2json-native-slot', 'error': 'error',
+               'sqlstate': '42501', 'routine': 'CreateSlotOnDisk'}
+        self.assertEqual(m.native_failures(json.dumps(row)), [{
+            'stage': row['stage'], 'category': 'error', 'sqlstate': '42501', 'routine': 'CreateSlotOnDisk',
+        }])
+        for routine in ['PRIVATE SQL', ['CreateSlotOnDisk'], None, 'CreateSlotOnDisk\n']:
+            self.assertEqual(m.native_failures(json.dumps({**row, 'routine': routine})), [])
+
 
 if __name__ == '__main__':
     unittest.main()

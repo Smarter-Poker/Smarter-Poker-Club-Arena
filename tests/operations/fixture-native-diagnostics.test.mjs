@@ -59,3 +59,17 @@ test('untrusted codes, names and positions cannot become diagnostic text', () =>
     error: 'Error',
   });
 });
+
+test('database source routines are restricted to reviewed PostgreSQL slot/file/ACL labels', () => {
+  const error = { name: 'error', code: '42501', routine: 'CheckSlotPermissions' };
+  assert.equal(
+    nativeFailureDiagnostic('postgresql-wal2json-native-slot', error).routine,
+    error.routine
+  );
+  for (const routine of ['PRIVATE SQL', 'CheckSlotPermissions\n', ['CheckSlotPermissions']]) {
+    assert.equal(
+      nativeFailureDiagnostic('postgresql-wal2json-native-slot', { ...error, routine }).routine,
+      undefined
+    );
+  }
+});

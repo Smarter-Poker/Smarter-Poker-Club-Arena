@@ -20,6 +20,7 @@ CONTROL_FILES = tuple('operations/release/native/' + name for name in (
 NATIVE_STAGES = frozenset((
     'initialization', 'observer-user-isolation', 'native-observation-bridge',
     'chromium-native-read-and-rls', 'postgresql-17-extensions',
+    'postgresql-client-connection', 'postgresql-client-cleanup', 'postgresql-slot-identity',
     'postgresql-wal2json-native-slot', 'postgresql-wal2json-slot-inspection',
     'postgresql-wal2json-slot-drop', 'postgresql-bootstrap-roles', 'postgresql-bootstrap-schemas',
     'postgresql-extension-dblink', 'postgresql-extension-pg-stat-statements',
@@ -31,6 +32,10 @@ NATIVE_STAGES = frozenset((
     'realtime-loopback-and-gateway', 'candidate-peer-isolation'))
 NATIVE_ERROR_NAMES = frozenset(('Error', 'AssertionError', 'TypeError', 'RangeError',
                                 'SyntaxError', 'TimeoutError', 'AggregateError', 'error'))
+NATIVE_PG_ROUTINES = frozenset((
+    'CheckSlotPermissions', 'CheckLogicalDecodingRequirements', 'internal_load_library',
+    'CreateSlotOnDisk', 'SaveSlotToPath', 'XLogFileRead', 'XLogFileReadAnyTLI',
+    'ReorderBufferRestoreChanges', 'ReorderBufferSerializeTXN', 'aclcheck_error'))
 
 
 def native_failures(output):
@@ -50,15 +55,19 @@ def native_failures(output):
         if (set(row) == {'status', 'stage', 'error'} and isinstance(row['error'], str)
                 and row['error'] in NATIVE_ERROR_NAMES):
             record = {'stage': row['stage'], 'category': row['error']}
-        elif (set(row) in ({'status', 'stage', 'error', 'sqlstate'},
-                           {'status', 'stage', 'error', 'sqlstate', 'position'})
+        elif ({'status', 'stage', 'error', 'sqlstate'} <= set(row)
+                <= {'status', 'stage', 'error', 'sqlstate', 'position', 'routine'}
                 and row['error'] == 'error' and isinstance(row['sqlstate'], str)
                 and re.fullmatch('[0-9A-Z]{5}', row['sqlstate'])
                 and ('position' not in row or (type(row['position']) is int
-                     and 1 <= row['position'] <= 999999))):
+                     and 1 <= row['position'] <= 999999))
+                and ('routine' not in row or (isinstance(row['routine'], str)
+                     and row['routine'] in NATIVE_PG_ROUTINES))):
             record = {'stage': row['stage'], 'category': 'error', 'sqlstate': row['sqlstate']}
             if 'position' in row:
                 record['position'] = row['position']
+            if 'routine' in row:
+                record['routine'] = row['routine']
         elif set(row) == {'status', 'stage', 'reason'} and row['reason'] == 'deadline':
             record = {'stage': row['stage'], 'category': 'deadline'}
         else:

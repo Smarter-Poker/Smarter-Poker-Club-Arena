@@ -29,8 +29,89 @@ export function nativeFailureDiagnostic(stage, error) {
     if (typeof error.position === 'string' && /^[1-9][0-9]{0,5}$/.test(error.position)) {
       record.position = Number(error.position);
     }
+    if (
+      new Set([
+        'CheckSlotPermissions',
+        'CheckLogicalDecodingRequirements',
+        'internal_load_library',
+        'CreateSlotOnDisk',
+        'SaveSlotToPath',
+        'XLogFileRead',
+        'XLogFileReadAnyTLI',
+        'ReorderBufferRestoreChanges',
+        'ReorderBufferSerializeTXN',
+        'aclcheck_error',
+      ]).has(error.routine)
+    )
+      record.routine = error.routine;
   }
   return record;
+}
+
+// An established pg.Client can emit an error while no query is pending. Own
+// that event before connecting, retain only safe fields, and abort dependent
+// commands instead of letting EventEmitter print the original driver error.
+export class NativeDatabaseOwner {
+  #clients = new Map();
+  #controller = new AbortController();
+  #failure = null;
+  #closed = false;
+  get signal() {
+    return this.#controller.signal;
+  }
+  get failure() {
+    return this.#failure;
+  }
+  own(client) {
+    assert.ok(!this.#closed && !this.#failure, 'native database owner unavailable');
+    assert.ok(!this.#clients.has(client), 'native database client already owned');
+    client.on('error', (error) => {
+      if (this.#failure) return;
+      const safe = nativeFailureDiagnostic('postgresql-client-connection', error);
+      const failure = new Error('native database connection failed');
+      failure.name = safe.error;
+      if (safe.sqlstate) failure.code = safe.sqlstate;
+      if (safe.position) failure.position = String(safe.position);
+      if (safe.routine) failure.routine = safe.routine;
+      this.#failure = failure;
+      this.#controller.abort(failure);
+    });
+    this.#clients.set(client, null);
+    return client;
+  }
+  check() {
+    if (this.#failure) throw this.#failure;
+  }
+  async end(client) {
+    assert.ok(this.#clients.has(client), 'native database client not owned');
+    if (!this.#clients.get(client))
+      this.#clients.set(
+        client,
+        Promise.resolve().then(() => client.end())
+      );
+    await this.#clients.get(client);
+  }
+  async close(milliseconds = 10000) {
+    this.#closed = true;
+    let timer;
+    try {
+      const results = await Promise.race([
+        Promise.allSettled([...this.#clients.keys()].map((client) => this.end(client))),
+        new Promise((_, reject) => {
+          timer = setTimeout(
+            () => reject(new Error('native database close timed out')),
+            milliseconds
+          );
+        }),
+      ]);
+      assert.ok(
+        results.every((result) => result.status === 'fulfilled'),
+        'native database close failed'
+      );
+    } finally {
+      clearTimeout(timer);
+    }
+  }
 }
 
 // This identity comes from the immutable host-controlled input mount, never

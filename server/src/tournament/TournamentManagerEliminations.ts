@@ -54,6 +54,7 @@ import {
   SatelliteSettlementRefusedError,
 } from './satelliteSettlementRpc.js';
 import { horseRebuyAllowance } from '../services/FreeBuy.js';
+import { bindLatestKnockoutCandidates } from './bustOrder.js';
 
 interface FinalTableDealConsensus {
   reviewId: string | null;
@@ -613,12 +614,17 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
             const userIds = busted
               .slice(offset, offset + bustOrderLookupSize)
               .map((player) => player.user_id);
+            // Every generation of these players, not only the pending ones: the
+            // order must come from the generation the door binds, which is the
+            // LATEST whatever its state (bustOrder.ts). Keeping the earliest
+            // pending hand ranked a player by an orphan the 2026-09-08/09 rebuy
+            // chain left behind, a day before the bust the door records.
             const { data: bustHands, error: bustHandsErr } = await supabase
               .from('tournament_knockout_candidates')
-              .select('eliminated_user_id, hand_number, stack_before')
+              .select('id, eliminated_user_id, hand_number, stack_before, state')
               .eq('tournament_id', this.tournamentId)
-              .eq('state', 'pending')
-              .in('eliminated_user_id', userIds);
+              .in('eliminated_user_id', userIds)
+              .order('hand_number', { ascending: false });
             if (sweepStopped()) return;
             if (bustHandsErr) {
               reportError(bustHandsErr, 'Tournament.bust_order_unreadable');
@@ -627,20 +633,9 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
               );
               return;
             }
-            for (const row of bustHands ?? []) {
-              const uid = String((row as { eliminated_user_id?: unknown }).eliminated_user_id);
-              const hand = Number((row as { hand_number?: unknown }).hand_number);
-              const stackBefore = Number((row as { stack_before?: unknown }).stack_before);
-              if (!uid || !Number.isFinite(hand) || !Number.isFinite(stackBefore)) continue;
-              const seen = bustHandNumbers.get(uid);
-              if (
-                seen === undefined ||
-                hand < seen ||
-                (hand === seen && stackBefore < (bustStartingStacks.get(uid) ?? Number.MAX_VALUE))
-              ) {
-                bustHandNumbers.set(uid, hand);
-                bustStartingStacks.set(uid, stackBefore);
-              }
+            for (const [uid, bust] of bindLatestKnockoutCandidates(bustHands ?? [])) {
+              bustHandNumbers.set(uid, bust.handNumber);
+              bustStartingStacks.set(uid, bust.stackBefore);
             }
           }
 
@@ -1017,10 +1012,15 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
                * player, and after that this pass records the rest of the field
                * and says out loud who it could not record. Skipping is the
                * lesser harm and it is bounded: hand order is preserved for
-               * everyone the door accepts, the blocked player keeps their
-               * chronological `eliminated_at` when they are finally recorded,
-               * and fn_normalize_tournament_final_standings re-derives every
-               * finishing place from that chronology before the event pays.
+               * everyone the door accepts, and the blocked player is stamped
+               * with the commit time of the hand that busted them when they
+               * are finally recorded (20260911062048), so
+               * fn_normalize_tournament_final_standings re-derives the place
+               * from that chronology on the prepare path. NOT on the engine's
+               * terminal path: fn_settle_tournament_places orders eliminated
+               * players by elimination_sequence, the RECORDING order, so a
+               * skipped player recorded late still finishes above everyone
+               * recorded before them there.
                */
               if (streak < TournamentManagerBase.BUST_REFUSAL_SKIP_AFTER) return;
               reportError(

@@ -119,9 +119,20 @@ describe('a refusal cannot corrupt the global bust order', () => {
   });
 
   it('reads the complete bust order before slicing and fails closed on a partial read', () => {
+    // Every generation of each busted player, not only the pending ones: the
+    // order is taken from the generation the door binds, the LATEST, whatever
+    // its state (bustOrder.ts, 2026-09-11). An `.eq('state', 'pending')` filter
+    // here is what let an orphaned older generation set a player's rank.
     expect(ELIM).toMatch(
-      /\.from\('tournament_knockout_candidates'\)\s*\.select\('eliminated_user_id, hand_number, stack_before'\)/
+      /\.from\('tournament_knockout_candidates'\)\s*\.select\('id, eliminated_user_id, hand_number, stack_before, state'\)\s*\.eq\('tournament_id', this\.tournamentId\)\s*\.in\('eliminated_user_id', userIds\)/
     );
+    const orderRead = ELIM.slice(
+      ELIM.indexOf('const bustHandNumbers = new Map<string, number>()'),
+      ELIM.indexOf('const bustRank =')
+    );
+    expect(orderRead).not.toContain(".eq('state', 'pending')");
+    expect(orderRead).toContain('bindLatestKnockoutCandidates(bustHands ?? [])');
+    expect(orderRead, 'the earliest-pending rule is gone').not.toMatch(/hand < seen/);
     const orderReadAt = ELIM.indexOf('const bustHandNumbers = new Map<string, number>()');
     const sliceAt = ELIM.indexOf('const bustedTotal = busted.length');
     expect(orderReadAt).toBeGreaterThan(0);

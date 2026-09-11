@@ -1,0 +1,1045 @@
+{
+  "checks": {
+    "productionAdmissionAllClosed": {
+      "query": "SET LOCAL statement_timeout='2000ms'; WITH scan AS MATERIALIZED (SELECT rakeback_amount,rakeback_rate,rake_generated,total_rake_paid FROM public.rakeback_periods WHERE status='pending' AND (period_end+1)::timestamp AT TIME ZONE 'UTC'<=statement_timestamp() ORDER BY id LIMIT 5001) SELECT statement_timestamp() checked_at,5001 row_cap,count(*) closed_pending_scanned,count(*)<5001 complete_for_closed_pending_filter,count(*) FILTER(WHERE rakeback_amount<0) negative_periods,count(*) FILTER(WHERE rakeback_amount>0 AND (rakeback_amount::text IN('NaN','Infinity','-Infinity') OR rakeback_amount<>round(rakeback_amount,2))) invalid_positive_amounts,count(*) FILTER(WHERE rakeback_amount>0 AND (rakeback_rate IS NULL OR rakeback_rate<0 OR rakeback_rate>1 OR rakeback_rate::text IN('NaN','Infinity','-Infinity'))) invalid_positive_rates,count(*) FILTER(WHERE rakeback_amount>0 AND (coalesce(rake_generated,total_rake_paid) IS NULL OR coalesce(rake_generated,total_rake_paid)<0 OR coalesce(rake_generated,total_rake_paid)::text IN('NaN','Infinity','-Infinity'))) invalid_positive_rake_basis FROM scan;",
+      "rows": [
+        {
+          "checked_at": "2026-09-11 06:31:21.013569+00",
+          "closed_pending_scanned": 1767,
+          "complete_for_closed_pending_filter": true,
+          "invalid_positive_amounts": 0,
+          "invalid_positive_rake_basis": 0,
+          "invalid_positive_rates": 0,
+          "negative_periods": 0,
+          "row_cap": 5001
+        }
+      ]
+    },
+    "productionAdmissionChangedGuards": {
+      "query": "SET LOCAL statement_timeout='2000ms'; SELECT statement_timestamp() checked_at,p.oid::regprocedure::text signature,md5(p.prosrc) prosrc_md5,pg_get_functiondef(p.oid) definition FROM pg_proc p WHERE p.oid IN(to_regprocedure('public.fn_ca_journal_append_only()'),to_regprocedure('public.fn_ca_escrow_on_wallet_tx()')) ORDER BY signature;",
+      "rows": [
+        {
+          "checked_at": "2026-09-11 06:34:01.730283+00",
+          "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_escrow_on_wallet_tx()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  v_cat text := lower(COALESCE(NEW.category,''));\n  v_amt numeric := round(COALESCE(NEW.amount,0),2);\n  v_bounty numeric;\n  v_split record;\n  v_ent_count bigint;\n  v_ent_amount numeric;\n  v_wallet_count bigint;\n  v_wallet_amount numeric;\n  v_exact_token uuid := NULLIF(\n    current_setting('app.ca_exact_refund_token',true),'')::uuid;\n  v_authorization public.tournament_refund_authorizations%ROWTYPE;\n  v_rows integer;\n  v_credit_ledger_id uuid;\nBEGIN\n  IF NEW.related_entity_id IS NULL OR v_amt = 0 THEN RETURN NULL; END IF;\n  IF NEW.type = 'debit' AND v_cat IN ('tournament_buyin','rebuy','addon') THEN\n    SELECT * INTO v_split FROM public.fn_ca_tournament_charge_split(\n      NEW.related_entity_id,v_cat,v_amt);\n    SELECT count(*),round(COALESCE(sum(e.gross),0),2)\n      INTO v_ent_count,v_ent_amount\n      FROM public.tournament_refund_entitlements e\n     WHERE e.tournament_id=NEW.related_entity_id AND e.user_id=NEW.user_id\n       AND e.entitlement_kind='wallet_charge'\n       AND e.charge_category=v_cat;\n    SELECT count(*),round(COALESCE(sum(w.amount),0),2)\n      INTO v_wallet_count,v_wallet_amount\n      FROM public.wallet_transactions w\n     WHERE w.related_entity_id=NEW.related_entity_id AND w.user_id=NEW.user_id\n       AND w.type='debit' AND lower(w.category)=v_cat;\n    IF v_ent_count IS DISTINCT FROM v_wallet_count\n       OR v_ent_amount IS DISTINCT FROM v_wallet_amount THEN\n      RAISE EXCEPTION\n        'tournament wallet debit has no exact immutable charge entitlement'\n        USING ERRCODE = 'P0404';\n    END IF;\n    v_bounty := v_split.refund_bounty;\n    PERFORM public.fn_ca_escrow_apply(\n      NEW.related_entity_id,v_cat,p_gross_in => v_amt,p_bounty_in => v_bounty);\n  ELSIF NEW.type = 'credit' AND v_cat = 'prize' THEN\n    PERFORM public.fn_ca_escrow_apply(\n      NEW.related_entity_id,'prize',p_prize_out => v_amt);\n  ELSIF NEW.type = 'debit' AND v_cat IN ('prize','prize_reversal') THEN\n    PERFORM public.fn_ca_escrow_apply(\n      NEW.related_entity_id,'prize reversal',p_prize_out => -v_amt);\n  ELSIF NEW.type = 'credit' AND v_cat = 'bounty' THEN\n    PERFORM public.fn_ca_escrow_apply(\n      NEW.related_entity_id,'bounty',p_bounty_out => v_amt);\n  ELSIF NEW.type = 'credit' AND v_cat IN ('refund','tournament_refund') THEN\n    IF v_exact_token IS NULL THEN\n      RAISE EXCEPTION\n        'tournament refund credits require the one-use exact refund authority'\n        USING ERRCODE = '42501';\n    ELSE\n      SELECT * INTO v_authorization\n        FROM public.tournament_refund_authorizations a\n       WHERE a.token = v_exact_token FOR UPDATE;\n      IF v_authorization.token IS NULL\n         OR v_authorization.tournament_id IS DISTINCT FROM NEW.related_entity_id\n         OR v_authorization.user_id IS DISTINCT FROM NEW.user_id\n         OR v_authorization.amount_paid_now IS DISTINCT FROM v_amt\n         OR v_authorization.description IS DISTINCT FROM NEW.description\n         OR NOT EXISTS (\n           SELECT 1 FROM public.tournament_refund_entitlements e\n            WHERE e.id=v_authorization.entitlement_id\n              AND e.tournament_id=NEW.related_entity_id\n              AND e.user_id=NEW.user_id\n              AND e.refund_wallet_club_id=\n                    v_authorization.source_wallet_club_id\n              AND e.gross=v_authorization.amount_paid_now\n              AND e.refund_prize=v_authorization.refund_prize\n              AND e.refund_bounty=v_authorization.refund_bounty\n              AND e.refund_fee=v_authorization.refund_fee)\n         OR NOT EXISTS (\n           SELECT 1 FROM public.tournament_obligations o\n            WHERE o.id = v_authorization.obligation_id\n              AND o.tournament_id = NEW.related_entity_id\n              AND o.kind = 'refund' AND o.place IS NULL\n              AND o.user_id = NEW.user_id\n              AND o.amount_paid IS NOT DISTINCT FROM\n                    v_authorization.amount_paid_before)\n         OR NOT EXISTS (\n           SELECT 1 FROM public.wallet_credit_idempotency k\n            WHERE k.key = v_authorization.idempotency_key\n              AND k.user_id = NEW.user_id AND k.amount = v_amt) THEN\n        RAISE EXCEPTION 'wallet refund has no exact authorized component tranche'\n          USING ERRCODE = 'P0404';\n      END IF;\n      DELETE FROM public.tournament_refund_authorizations a\n       WHERE a.token = v_exact_token;\n      GET DIAGNOSTICS v_rows = ROW_COUNT;\n      IF v_rows <> 1 THEN\n        RAISE EXCEPTION 'exact refund authorization was not consumed once'\n          USING ERRCODE = '40001';\n      END IF;\n      SELECT count(*),min(l.id::text)::uuid\n        INTO v_rows,v_credit_ledger_id\n        FROM public.chip_ledger l\n       WHERE l.idempotency_key = v_authorization.idempotency_key\n         AND l.tournament_id = NEW.related_entity_id\n         AND l.club_id = v_authorization.source_wallet_club_id\n         AND l.category = 'refund'\n         AND l.from_type = 'prize_liability'\n         AND l.from_entity_id = NEW.related_entity_id\n         AND l.to_type = 'player_wallet'\n         AND l.to_entity_id = NEW.user_id\n         AND l.amount = v_amt;\n      IF v_rows <> 1 OR v_credit_ledger_id IS NULL THEN\n        RAISE EXCEPTION\n          'wallet refund has no single exact source-club journal credit'\n          USING ERRCODE = 'P0404';\n      END IF;\n      INSERT INTO public.tournament_refund_tranches(\n        wallet_transaction_id,idempotency_key,tournament_id,obligation_id,user_id,\n        source_wallet_club_id,entitlement_id,credit_ledger_id,\n        amount_paid_before,amount_paid_now,refund_prize,refund_bounty,refund_fee,\n        source,description,created_at)\n      VALUES(\n        NEW.id,v_authorization.idempotency_key,NEW.related_entity_id,\n        v_authorization.obligation_id,NEW.user_id,\n        v_authorization.source_wallet_club_id,\n        v_authorization.entitlement_id,v_credit_ledger_id,\n        v_authorization.amount_paid_before,v_amt,\n        v_authorization.refund_prize,v_authorization.refund_bounty,\n        v_authorization.refund_fee,v_authorization.source,\n        NEW.description,transaction_timestamp());\n      PERFORM public.fn_ca_escrow_apply_exact_refund(\n        NEW.related_entity_id,'authorized exact refund',\n        v_authorization.refund_prize,v_authorization.refund_bounty,\n        v_authorization.refund_fee);\n    END IF;\n  END IF;\n  RETURN NULL;\nEND;\n$function$\n",
+          "prosrc_md5": "e773958f21214ee1aa4dd622234477a6",
+          "signature": "fn_ca_escrow_on_wallet_tx()"
+        },
+        {
+          "checked_at": "2026-09-11 06:34:01.730283+00",
+          "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_journal_append_only()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  v_reason text := NULLIF(current_setting('app.ledger_maintenance', true), '');\n  v_allowed_update boolean := false;\n  v_kind text;\n  v_sev text;\n  v_j jsonb;\nBEGIN\n  IF TG_OP = 'UPDATE' THEN\n    IF TG_TABLE_NAME = 'chip_transactions' THEN\n      v_allowed_update :=\n        NEW.amount IS NOT DISTINCT FROM OLD.amount\n        AND NEW.transaction_type IS NOT DISTINCT FROM OLD.transaction_type\n        AND NEW.from_user_id IS NOT DISTINCT FROM OLD.from_user_id\n        AND NEW.to_user_id IS NOT DISTINCT FROM OLD.to_user_id\n        AND NEW.club_id IS NOT DISTINCT FROM OLD.club_id\n        AND NEW.created_at IS NOT DISTINCT FROM OLD.created_at;\n    ELSIF TG_TABLE_NAME = 'chip_ledger' THEN\n      v_allowed_update :=\n        NEW.amount IS NOT DISTINCT FROM OLD.amount\n        AND NEW.from_type IS NOT DISTINCT FROM OLD.from_type\n        AND NEW.from_entity_id IS NOT DISTINCT FROM OLD.from_entity_id\n        AND NEW.to_type IS NOT DISTINCT FROM OLD.to_type\n        AND NEW.to_entity_id IS NOT DISTINCT FROM OLD.to_entity_id\n        AND NEW.category IS NOT DISTINCT FROM OLD.category\n        AND NEW.created_at IS NOT DISTINCT FROM OLD.created_at\n        AND NEW.chain_seq IS NOT DISTINCT FROM OLD.chain_seq\n        AND NEW.prev_hash IS NOT DISTINCT FROM OLD.prev_hash\n        AND NEW.row_hash IS NOT DISTINCT FROM OLD.row_hash\n        AND NEW.idempotency_key IS NOT DISTINCT FROM OLD.idempotency_key\n        AND NEW.correlation_id IS NOT DISTINCT FROM OLD.correlation_id\n        AND NEW.settlement_id IS NOT DISTINCT FROM OLD.settlement_id\n        AND NEW.epoch_id IS NOT DISTINCT FROM OLD.epoch_id;\n    ELSIF TG_TABLE_NAME = 'vip_points_ledger' THEN\n      /* Phase 8 (2026-09-08). A VIP leg is written once, final: the award\n         writer no longer inserts 0 and updates it afterwards. Nothing on this\n         table may change. */\n      v_allowed_update := false;\n    ELSIF TG_TABLE_NAME = 'agent_commissions' THEN\n      /* Phase 8. A commission row is what was earned on one hand. The only\n         thing that happens to it afterwards is being settled, once. */\n      v_allowed_update :=\n        NEW.amount IS NOT DISTINCT FROM OLD.amount\n        AND NEW.club_id IS NOT DISTINCT FROM OLD.club_id\n        AND NEW.user_id IS NOT DISTINCT FROM OLD.user_id\n        AND NEW.source_type IS NOT DISTINCT FROM OLD.source_type\n        AND NEW.source_id IS NOT DISTINCT FROM OLD.source_id\n        AND NEW.commission_rate IS NOT DISTINCT FROM OLD.commission_rate\n        AND NEW.created_at IS NOT DISTINCT FROM OLD.created_at\n        AND (OLD.settled_at IS NULL OR NEW.settled_at IS NOT DISTINCT FROM OLD.settled_at);\n    ELSIF TG_TABLE_NAME = 'rakeback_period_payouts' THEN\n      /* Phase 8. What was paid, to whom, for which period, never changes;\n         status, paid_at, wallet_transaction_id and failure_reason are the\n         payout's own bookkeeping. */\n      v_allowed_update :=\n        NEW.payout_amount IS NOT DISTINCT FROM OLD.payout_amount\n        AND NEW.user_id IS NOT DISTINCT FROM OLD.user_id\n        AND NEW.club_id IS NOT DISTINCT FROM OLD.club_id\n        AND NEW.rakeback_period_id IS NOT DISTINCT FROM OLD.rakeback_period_id\n        AND NEW.currency IS NOT DISTINCT FROM OLD.currency\n        AND NEW.created_at IS NOT DISTINCT FROM OLD.created_at;\n    ELSE\n      v_allowed_update :=\n        NEW.amount IS NOT DISTINCT FROM OLD.amount\n        AND NEW.created_at IS NOT DISTINCT FROM OLD.created_at;\n    END IF;\n  END IF;\n\n  IF TG_OP = 'UPDATE' AND v_allowed_update THEN\n    RETURN NEW;\n  END IF;\n\n  /* Phase 8. fn_close_settlement_period inserts a payout row as its\n     idempotency claim BEFORE debiting the treasury and deletes it again on a\n     shortfall, inside the same transaction. That is a compensation, not a\n     mutation of history, so this table's DELETE is allowed - and RECORDED,\n     every time, so a person can tell a compensation from a hand on the\n     table. The meter counts these. */\n  IF TG_OP = 'DELETE' AND TG_TABLE_NAME = 'rakeback_period_payouts' THEN\n    INSERT INTO public.ca_ledger_mutation_log\n      (source_table, operation, db_role, application, reason, old_row, new_row)\n    VALUES (TG_TABLE_NAME, TG_OP, current_user,\n            current_setting('application_name', true),\n            COALESCE(v_reason, 'rakeback-payout-delete: compensation on a treasury shortfall, or maintenance without app.ledger_maintenance'),\n            to_jsonb(OLD), NULL);\n    RETURN OLD;\n  END IF;\n\n  IF v_reason IS NOT NULL THEN\n    INSERT INTO public.ca_ledger_mutation_log\n      (source_table, operation, db_role, application, reason, old_row, new_row)\n    VALUES (TG_TABLE_NAME, TG_OP, current_user,\n            current_setting('application_name', true), v_reason,\n            to_jsonb(OLD), CASE WHEN TG_OP='UPDATE' THEN to_jsonb(NEW) END);\n\n    BEGIN\n      v_kind := split_part(v_reason, ':', 1);\n      -- a routine, recorded maintenance is filed, not shouted about\n      SELECT k.severity INTO v_sev\n        FROM public.ca_ledger_maintenance_kinds k WHERE k.kind = v_kind;\n      v_sev := COALESCE(v_sev, 'warning');\n      /* A REGISTERED MAINTENANCE KIND MARKED `info` IS RECORDED, NOT RAISED\n         (2026-09-10). The row above is already written to\n         ca_ledger_mutation_log, whole, before this point. A kind the\n         registry declares `info` says so deliberately - \"expected,\n         scheduled and reversible: recorded, not alarming\" - so it does not\n         also open a board item once per run, for ever. An UNREGISTERED\n         kind still defaults to warning and still raises. */\n      IF v_sev <> 'info' THEN\n      PERFORM public.fn_ca_raise_drift_incident(\n        'fn_ca_journal_append_only', 'unauthorized_adjustment', v_sev,\n        'journal-bypass:' || TG_TABLE_NAME || ':' || TG_OP || ':' || v_kind,\n        0, NULL, NULL, 'ledger', TG_TABLE_NAME,\n        NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,\n        'append-only bypass used on ' || TG_TABLE_NAME || ': ' || TG_OP\n          || ' permitted because app.ledger_maintenance was set to \"' || v_reason\n          || '\". The rows are preserved whole in ca_ledger_mutation_log - this incident'\n          || ' counts them (occurrences) rather than the chips; query that table by'\n          || ' reason for the full inventory. Confirm the maintenance was intended,'\n          || ' then resolve.',\n        true,\n        jsonb_build_object('table', TG_TABLE_NAME, 'operation', TG_OP,\n                           'reason', v_reason, 'reason_kind', v_kind,\n                           'db_role', current_user,\n                           'application', current_setting('application_name', true)));\n      END IF;\n    EXCEPTION WHEN OTHERS THEN NULL;\n    END;\n\n    -- DR5. The diamond journal is deleted from on an hourly cadence by the\n    -- certification fleet. Keep the row and say who took it. Nothing here can\n    -- refuse the DELETE the branch above has already permitted.\n    IF TG_TABLE_NAME = 'diamond_transactions' AND TG_OP = 'DELETE' THEN\n      BEGIN\n        v_j := to_jsonb(OLD);\n        INSERT INTO public.ca_diamond_journal_archive\n          (id, user_id, type, amount, balance_after, description, reference_id, created_at,\n           transaction_type, source, metadata, counterparty, issuance_class,\n           deleted_profile_id, deletion_reason)\n        VALUES\n          ((v_j->>'id')::uuid, (v_j->>'user_id')::uuid, v_j->>'type',\n           (v_j->>'amount')::integer, (v_j->>'balance_after')::integer,\n           v_j->>'description', v_j->>'reference_id', (v_j->>'created_at')::timestamptz,\n           v_j->>'transaction_type', v_j->>'source',\n           COALESCE(v_j->'metadata', '{}'::jsonb),\n           v_j->>'counterparty', v_j->>'issuance_class',\n           (v_j->>'user_id')::uuid, v_reason)\n        ON CONFLICT (id) DO NOTHING;\n\n        PERFORM public.fn_ca_diamond_incident(\n          'DR5:journal_row_deleted_under_maintenance', 'info',\n          (v_j->>'user_id')::uuid, (v_j->>'amount')::numeric,\n          'fn_ca_journal_append_only',\n          jsonb_build_object('reason', v_reason,\n                             'reference_id', v_j->>'reference_id',\n                             'type', v_j->>'type',\n                             'db_role', current_user));\n      EXCEPTION WHEN OTHERS THEN\n        RAISE WARNING 'ca_diamond_journal_archive could not preserve a journal row deleted under maintenance (%): %',\n          v_reason, SQLERRM;\n      END;\n    END IF;\n\n    IF TG_OP = 'DELETE' THEN RETURN OLD; ELSE RETURN NEW; END IF;\n  END IF;\n\n  RAISE EXCEPTION\n    '% on % is forbidden: financial journals are append-only. Corrections are new linked rows (category=correction). Set app.ledger_maintenance with an incident reference for authorized maintenance.',\n    TG_OP, TG_TABLE_NAME\n    USING ERRCODE = 'P0403';\nEND $function$\n",
+          "prosrc_md5": "c19c4314bcb44b29f5d15e32e4dacccd",
+          "signature": "fn_ca_journal_append_only()"
+        }
+      ]
+    },
+    "productionAdmissionHelpers": {
+      "query": "SET LOCAL statement_timeout='2000ms'; SELECT statement_timestamp() checked_at,p.oid::regprocedure::text signature,md5(p.prosrc) prosrc_md5,pg_get_userbyid(p.proowner) owner,p.prosecdef,p.proacl::text acl,p.proconfig FROM pg_proc p WHERE p.oid IN(to_regprocedure('public.fn_caller_is_engine()'),to_regprocedure('public.fn_is_platform_admin()'),to_regprocedure('public.fn_platform_frozen()'),to_regprocedure('public.fn_player_rakeback_rate(uuid,uuid,numeric)'),to_regprocedure('public.fn_rake_shares_for_record(uuid,numeric,jsonb,text)'),to_regprocedure('public.fn_rake_record_is_ghost_twin(uuid,uuid,jsonb)')) ORDER BY signature;",
+      "rows": [
+        {
+          "acl": "{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+          "checked_at": "2026-09-11 06:31:12.970743+00",
+          "owner": "postgres",
+          "proconfig": ["search_path=pg_catalog, public, auth"],
+          "prosecdef": false,
+          "prosrc_md5": "36e18a86ba143ac90e90648b0bc020ea",
+          "signature": "fn_caller_is_engine()"
+        },
+        {
+          "acl": "{postgres=X/postgres,service_role=X/postgres,authenticated=X/postgres}",
+          "checked_at": "2026-09-11 06:31:12.970743+00",
+          "owner": "postgres",
+          "proconfig": ["search_path=public"],
+          "prosecdef": true,
+          "prosrc_md5": "a8d8672e0201c8036e326989ea82d05c",
+          "signature": "fn_is_platform_admin()"
+        },
+        {
+          "acl": "{postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+          "checked_at": "2026-09-11 06:31:12.970743+00",
+          "owner": "postgres",
+          "proconfig": ["search_path=public, pg_temp"],
+          "prosecdef": false,
+          "prosrc_md5": "112b1265824ee082b8adc67ea367d826",
+          "signature": "fn_platform_frozen()"
+        },
+        {
+          "acl": "{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+          "checked_at": "2026-09-11 06:31:12.970743+00",
+          "owner": "postgres",
+          "proconfig": ["search_path=public"],
+          "prosecdef": true,
+          "prosrc_md5": "0f3c31ed1a9f42ef48d1dc0392b1bd3f",
+          "signature": "fn_player_rakeback_rate(uuid,uuid,numeric)"
+        },
+        {
+          "acl": "{postgres=X/postgres,service_role=X/postgres}",
+          "checked_at": "2026-09-11 06:31:12.970743+00",
+          "owner": "postgres",
+          "proconfig": ["search_path=public"],
+          "prosecdef": false,
+          "prosrc_md5": "0ed6daaa5bf333aceafa413a569dce95",
+          "signature": "fn_rake_record_is_ghost_twin(uuid,uuid,jsonb)"
+        },
+        {
+          "acl": "{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+          "checked_at": "2026-09-11 06:31:12.970743+00",
+          "owner": "postgres",
+          "proconfig": ["search_path=public"],
+          "prosecdef": false,
+          "prosrc_md5": "9e975d2d4cd8b63e677eff970a5c80b9",
+          "signature": "fn_rake_shares_for_record(uuid,numeric,jsonb,text)"
+        }
+      ]
+    },
+    "productionAdmissionIndexes": {
+      "query": "SET LOCAL statement_timeout='2000ms'; SELECT statement_timestamp() checked_at,c.conname,c.contype,pg_get_constraintdef(c.oid) definition FROM pg_constraint c WHERE c.conrelid IN(to_regclass('public.rakeback_period_payouts'),to_regclass('public.rakeback_periods')) AND c.contype IN('p','u','c') ORDER BY c.conrelid,c.conname;",
+      "rows": [
+        {
+          "checked_at": "2026-09-11 06:30:12.693906+00",
+          "conname": "ck_whole_cents",
+          "contype": "c",
+          "definition": "CHECK (((created_at < '2026-09-07 22:00:00+00'::timestamp with time zone) OR ((rakeback_amount = round(rakeback_amount, 2)) AND (rake_generated = round(rake_generated, 2))))) NOT VALID"
+        },
+        {
+          "checked_at": "2026-09-11 06:30:12.693906+00",
+          "conname": "rakeback_periods_pkey",
+          "contype": "p",
+          "definition": "PRIMARY KEY (id)"
+        },
+        {
+          "checked_at": "2026-09-11 06:30:12.693906+00",
+          "conname": "rakeback_periods_status_check",
+          "contype": "c",
+          "definition": "CHECK ((status = ANY (ARRAY['pending'::text, 'open'::text, 'closed'::text, 'claiming'::text, 'claimed'::text, 'paid'::text, 'expired'::text])))"
+        },
+        {
+          "checked_at": "2026-09-11 06:30:12.693906+00",
+          "conname": "rakeback_periods_user_id_club_id_period_start_period_end_key",
+          "contype": "u",
+          "definition": "UNIQUE (user_id, club_id, period_start, period_end)"
+        },
+        {
+          "checked_at": "2026-09-11 06:30:12.693906+00",
+          "conname": "chk_payout_amount_is_two_decimal_places",
+          "contype": "c",
+          "definition": "CHECK (((payout_amount IS NULL) OR (payout_amount = round(payout_amount, 2))))"
+        },
+        {
+          "checked_at": "2026-09-11 06:30:12.693906+00",
+          "conname": "ck_whole_cents",
+          "contype": "c",
+          "definition": "CHECK (((created_at < '2026-09-07 22:00:00+00'::timestamp with time zone) OR (payout_amount = round(payout_amount, 2)))) NOT VALID"
+        },
+        {
+          "checked_at": "2026-09-11 06:30:12.693906+00",
+          "conname": "rakeback_period_payouts_payout_amount_check",
+          "contype": "c",
+          "definition": "CHECK ((payout_amount >= (0)::numeric))"
+        },
+        {
+          "checked_at": "2026-09-11 06:30:12.693906+00",
+          "conname": "rakeback_period_payouts_pkey",
+          "contype": "p",
+          "definition": "PRIMARY KEY (id)"
+        },
+        {
+          "checked_at": "2026-09-11 06:30:12.693906+00",
+          "conname": "rakeback_period_payouts_rakeback_pct_check",
+          "contype": "c",
+          "definition": "CHECK (((rakeback_pct >= (0)::numeric) AND (rakeback_pct <= (100)::numeric)))"
+        },
+        {
+          "checked_at": "2026-09-11 06:30:12.693906+00",
+          "conname": "rakeback_period_payouts_rakeback_period_id_user_id_key",
+          "contype": "u",
+          "definition": "UNIQUE (rakeback_period_id, user_id)"
+        },
+        {
+          "checked_at": "2026-09-11 06:30:12.693906+00",
+          "conname": "rakeback_period_payouts_status_check",
+          "contype": "c",
+          "definition": "CHECK ((status = ANY (ARRAY['pending'::text, 'paid'::text, 'clawed_back'::text, 'failed'::text])))"
+        },
+        {
+          "checked_at": "2026-09-11 06:30:12.693906+00",
+          "conname": "rakeback_period_payouts_user_rake_contribution_check",
+          "contype": "c",
+          "definition": "CHECK ((user_rake_contribution >= (0)::numeric))"
+        }
+      ]
+    },
+    "productionAdmissionMalformed": {
+      "query": "SET LOCAL statement_timeout='2000ms'; WITH scan AS MATERIALIZED (SELECT id,club_id,user_id,rakeback_amount,rakeback_rate,rake_generated,total_rake_paid FROM public.rakeback_periods WHERE status='pending' AND (period_end+1)::timestamp AT TIME ZONE 'UTC'<=statement_timestamp() ORDER BY id LIMIT 5001), eligible AS (SELECT s.* FROM scan s WHERE EXISTS(SELECT 1 FROM public.union_clubs uc WHERE uc.club_id=s.club_id) AND EXISTS(SELECT 1 FROM public.club_members cm WHERE cm.club_id=s.club_id AND cm.user_id=s.user_id AND cm.agent_id IS NOT NULL) AND NOT EXISTS(SELECT 1 FROM public.rakeback_period_payouts p WHERE p.rakeback_period_id=s.id AND p.user_id=s.user_id)) SELECT statement_timestamp() checked_at,5001 row_cap,(SELECT count(*) FROM scan) closed_pending_scanned,(SELECT count(*)<5001 FROM scan) complete_for_closed_pending_filter,count(*) round3_eligible_scanned,count(*) FILTER(WHERE rakeback_amount<0) negative_periods,count(*) FILTER(WHERE rakeback_amount>0 AND (rakeback_amount::text IN('NaN','Infinity','-Infinity') OR rakeback_amount<>round(rakeback_amount,2))) invalid_positive_amounts,count(*) FILTER(WHERE rakeback_amount>0 AND (rakeback_rate IS NULL OR rakeback_rate<0 OR rakeback_rate>1 OR rakeback_rate::text IN('NaN','Infinity','-Infinity'))) invalid_positive_rates,count(*) FILTER(WHERE rakeback_amount>0 AND (coalesce(rake_generated,total_rake_paid) IS NULL OR coalesce(rake_generated,total_rake_paid)<0 OR coalesce(rake_generated,total_rake_paid)::text IN('NaN','Infinity','-Infinity'))) invalid_positive_rake_basis FROM eligible;",
+      "rows": [
+        {
+          "checked_at": "2026-09-11 06:30:03.96924+00",
+          "closed_pending_scanned": 1767,
+          "complete_for_closed_pending_filter": true,
+          "invalid_positive_amounts": 0,
+          "invalid_positive_rake_basis": 0,
+          "invalid_positive_rates": 0,
+          "negative_periods": 0,
+          "round3_eligible_scanned": 0,
+          "row_cap": 5001
+        }
+      ]
+    },
+    "productionAdmissionOwners": {
+      "query": "Exact-name function metadata read; SET LOCAL statement_timeout='2000ms'",
+      "rows": [
+        {
+          "acl": "{postgres=X/postgres,service_role=X/postgres}",
+          "checked_at": "2026-09-11 06:29:08.686465+00",
+          "owner": "postgres",
+          "proconfig": ["search_path=public, extensions"],
+          "prosecdef": false,
+          "prosrc_md5": "be06a409371e63480439da6c5dfd3821",
+          "signature": "atomic_credit_wallet_and_log(uuid,numeric,text,text,uuid,uuid,uuid,text)"
+        },
+        {
+          "acl": "{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+          "checked_at": "2026-09-11 06:29:08.686465+00",
+          "owner": "postgres",
+          "proconfig": ["search_path=public, extensions"],
+          "prosecdef": true,
+          "prosrc_md5": "930e4b70fa3580c010abe99e23181598",
+          "signature": "fn_claim_rakeback(uuid)"
+        },
+        {
+          "acl": "{postgres=X/postgres,service_role=X/postgres}",
+          "checked_at": "2026-09-11 06:29:08.686465+00",
+          "owner": "postgres",
+          "proconfig": ["search_path=public"],
+          "prosecdef": true,
+          "prosrc_md5": "5f1b3b29c972620ca06143a2f58444c9",
+          "signature": "fn_close_settlement_period(uuid)"
+        },
+        {
+          "acl": "{postgres=X/postgres,service_role=X/postgres}",
+          "checked_at": "2026-09-11 06:29:08.686465+00",
+          "owner": "postgres",
+          "proconfig": ["search_path=public, extensions"],
+          "prosecdef": false,
+          "prosrc_md5": "8f43bf345fba1310ca8c3c40d6f8439d",
+          "signature": "fn_debit_treasury(uuid,numeric,text,jsonb)"
+        },
+        {
+          "acl": "{postgres=X/postgres,service_role=X/postgres}",
+          "checked_at": "2026-09-11 06:29:08.686465+00",
+          "owner": "postgres",
+          "proconfig": ["search_path=public"],
+          "prosecdef": true,
+          "prosrc_md5": "5234e460b1ea1f666fbc6bac7a9a1b17",
+          "signature": "fn_settle_round3_agents_to_players(uuid,timestamp with time zone,timestamp with time zone)"
+        }
+      ]
+    },
+    "productionAdmissionState": {
+      "query": "SET LOCAL statement_timeout='2000ms'; SELECT statement_timestamp() checked_at, to_regprocedure('public.fn_ca_legacy_period_maturity()') maturity_guard, to_regprocedure('public.fn_ca_legacy_round3_wallet_receipt()') receipt_guard, to_regprocedure('public.fn_lock_rakeback_payer_clubs(uuid[])') admission_helper, to_regprocedure('public.fn_ca_rakeback_period_has_captured(uuid,uuid,date,date)') captured_helper, EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid=to_regclass('public.hand_atomic_commits') AND attname='commission_capture_version' AND NOT attisdropped) capture_marker_present, ARRAY(SELECT n FROM unnest(ARRAY['ca_cash_bank_receipts','ca_cash_commission_facts','ca_source_funding_lots','ca_source_player_funding_admissions','ca_source_club_cash_releases','ca_source_agent_cash_payments','ca_source_player_cash_payments']) n WHERE to_regclass('public.'||n) IS NOT NULL) present_capture_relations, ARRAY(SELECT tgname FROM pg_trigger WHERE tgrelid IN(to_regclass('public.rakeback_periods'),to_regclass('public.wallet_transactions')) AND tgname IN('ca_legacy_period_maturity','ca_legacy_round3_wallet_receipt')) conflicting_trigger_names;",
+      "rows": [
+        {
+          "admission_helper": null,
+          "capture_marker_present": false,
+          "captured_helper": null,
+          "checked_at": "2026-09-11 06:29:56.140086+00",
+          "conflicting_trigger_names": "{}",
+          "maturity_guard": null,
+          "present_capture_relations": [],
+          "receipt_guard": null
+        }
+      ]
+    },
+    "productionAdmissionTriggers": {
+      "query": "SET LOCAL statement_timeout='2000ms'; SELECT statement_timestamp() checked_at,c.relname AS table_name,t.tgname,t.tgenabled,p.oid::regprocedure::text signature,md5(p.prosrc) prosrc_md5,pg_get_triggerdef(t.oid) definition FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid JOIN pg_proc p ON p.oid=t.tgfoid WHERE NOT t.tgisinternal AND t.tgrelid IN(to_regclass('public.rakeback_periods'),to_regclass('public.rakeback_period_payouts'),to_regclass('public.wallet_transactions'),to_regclass('public.chip_ledger'),to_regclass('public.chip_transactions'),to_regclass('public.club_members'),to_regclass('public.clubs')) ORDER BY c.relname,t.tgname LIMIT 100;",
+      "rows": [
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "90e2944fd1af031edd2cc4c791fa5a5b",
+          "signature": "fn_ca_capture_tournament_charge_entitlement()",
+          "table_name": "chip_ledger",
+          "tgenabled": "O",
+          "tgname": "aa_ca_capture_tournament_charge_entitlement"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "9dc93e1a464e6694f588345f19640869",
+          "signature": "fn_cancelled_tournament_evidence_is_immutable()",
+          "table_name": "chip_ledger",
+          "tgenabled": "O",
+          "tgname": "cancelled_tournament_evidence_is_immutable"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "6f0c873ffaa7ed73f0936fb681da1a66",
+          "signature": "fn_satellite_transfer_ledger_is_immutable()",
+          "table_name": "chip_ledger",
+          "tgenabled": "O",
+          "tgname": "satellite_transfer_ledger_is_immutable"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "e6fbb738a0528aa0f32e33d004bf2045",
+          "signature": "fn_terminal_tournament_evidence_is_immutable()",
+          "table_name": "chip_ledger",
+          "tgenabled": "O",
+          "tgname": "terminal_tournament_evidence_is_immutable"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "c19c4314bcb44b29f5d15e32e4dacccd",
+          "signature": "fn_ca_journal_append_only()",
+          "table_name": "chip_ledger",
+          "tgenabled": "O",
+          "tgname": "trg_ca_append_only"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "f9f8a8946bc474c4dad9941869f69399",
+          "signature": "fn_ca_chip_ledger_enrich()",
+          "table_name": "chip_ledger",
+          "tgenabled": "O",
+          "tgname": "trg_ca_chip_ledger_enrich"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "9b13958f57a83cef5a563bfccbc4e4d9",
+          "signature": "enforce_chip_ledger_performed_by()",
+          "table_name": "chip_ledger",
+          "tgenabled": "O",
+          "tgname": "trg_chip_ledger_performed_by"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "814ac29a8ce63deaade4aa763d1b9ab8",
+          "signature": "fn_ca_attested_day_is_restated()",
+          "table_name": "chip_ledger",
+          "tgenabled": "O",
+          "tgname": "zz_ca_attested_day_is_restated_del"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "814ac29a8ce63deaade4aa763d1b9ab8",
+          "signature": "fn_ca_attested_day_is_restated()",
+          "table_name": "chip_ledger",
+          "tgenabled": "O",
+          "tgname": "zz_ca_attested_day_is_restated_upd"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "d59358cb9ddfc8f84c48aa2469f68897",
+          "signature": "fn_ca_escrow_on_overlay_leg()",
+          "table_name": "chip_ledger",
+          "tgenabled": "O",
+          "tgname": "zz_ca_escrow_overlay_leg"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "81de14870f02c55604fc56eedfbb9ef9",
+          "signature": "fn_ca_escrow_on_reserve_leg()",
+          "table_name": "chip_ledger",
+          "tgenabled": "O",
+          "tgname": "zz_ca_escrow_reserve_leg"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "227d11db5fe0b4ad403b2f45d098a166",
+          "signature": "fn_ca_escrow_on_seat_transfer_leg()",
+          "table_name": "chip_ledger",
+          "tgenabled": "O",
+          "tgname": "zz_ca_escrow_seat_transfer_leg"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "c1d8a753e3f9b70d417c6106d4364668",
+          "signature": "fn_ca_issuance_leg_is_registered()",
+          "table_name": "chip_ledger",
+          "tgenabled": "O",
+          "tgname": "zz_ca_issuance_leg_is_registered"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "0f12b7a71b1920e854850dd713d631c5",
+          "signature": "zz_chip_ledger_key_is_claimed_once()",
+          "table_name": "chip_ledger",
+          "tgenabled": "O",
+          "tgname": "zz_chip_ledger_key_is_claimed_once"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "ead41fa15e6cb9aaa37e65d3eef8a682",
+          "signature": "fn_refuse_while_frozen()",
+          "table_name": "chip_ledger",
+          "tgenabled": "O",
+          "tgname": "zz_freeze_guard"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "c19c4314bcb44b29f5d15e32e4dacccd",
+          "signature": "fn_ca_journal_append_only()",
+          "table_name": "chip_transactions",
+          "tgenabled": "O",
+          "tgname": "trg_ca_append_only"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "ead41fa15e6cb9aaa37e65d3eef8a682",
+          "signature": "fn_refuse_while_frozen()",
+          "table_name": "chip_transactions",
+          "tgenabled": "O",
+          "tgname": "zz_freeze_guard"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "17d032048fecb62ca9efeaa84b97ae3b",
+          "signature": "fn_refuse_operator_move_while_settling()",
+          "table_name": "chip_transactions",
+          "tgenabled": "O",
+          "tgname": "zz_settlement_freeze_guard"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "da5ac28a58c8b4bb30209bf0d3d7082c",
+          "signature": "update_updated_at_column()",
+          "table_name": "club_members",
+          "tgenabled": "O",
+          "tgname": "club_members_updated_at"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "8521f215a6493172f043134361e9b6a9",
+          "signature": "lock_club_cashier_hierarchy_mutation()",
+          "table_name": "club_members",
+          "tgenabled": "O",
+          "tgname": "lock_cashier_hierarchy_insert_delete"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "8521f215a6493172f043134361e9b6a9",
+          "signature": "lock_club_cashier_hierarchy_mutation()",
+          "table_name": "club_members",
+          "tgenabled": "O",
+          "tgname": "lock_cashier_hierarchy_update"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "02119ab7ee36b0d38029570ff7dc1f19",
+          "signature": "fn_poker_guard_arena_structure()",
+          "table_name": "club_members",
+          "tgenabled": "O",
+          "tgname": "poker_arena_membership_guard"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "af35d175cb233304c13904e1dbeb74a6",
+          "signature": "fn_admin_holds_no_player_wallet()",
+          "table_name": "club_members",
+          "tgenabled": "O",
+          "tgname": "trg_admin_holds_no_player_wallet"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "14ad046c2432d02ce858a468cb3a353c",
+          "signature": "fn_membership_approval_gate()",
+          "table_name": "club_members",
+          "tgenabled": "O",
+          "tgname": "trg_approval_gate_ins"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "14ad046c2432d02ce858a468cb3a353c",
+          "signature": "fn_membership_approval_gate()",
+          "table_name": "club_members",
+          "tgenabled": "O",
+          "tgname": "trg_approval_gate_upd"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "56d086b92b40598eb2c7c8925ae5ee4e",
+          "signature": "fn_audit_club_entry_mutation()",
+          "table_name": "club_members",
+          "tgenabled": "O",
+          "tgname": "trg_audit_club_join"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "18e3e3bf0e239b39b9c805fe34349c50",
+          "signature": "fn_audit_club_member_change()",
+          "table_name": "club_members",
+          "tgenabled": "O",
+          "tgname": "trg_audit_club_member_delete"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "18e3e3bf0e239b39b9c805fe34349c50",
+          "signature": "fn_audit_club_member_change()",
+          "table_name": "club_members",
+          "tgenabled": "O",
+          "tgname": "trg_audit_club_member_update"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "026cb9b02831cc1877a81f08b2c488ad",
+          "signature": "fn_block_browser_balance_inserts()",
+          "table_name": "club_members",
+          "tgenabled": "O",
+          "tgname": "trg_block_browser_balance_inserts"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "38ab35fd89aca4874777025a0537efed",
+          "signature": "fn_block_browser_balance_writes()",
+          "table_name": "club_members",
+          "tgenabled": "O",
+          "tgname": "trg_block_browser_balance_writes"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "936fc64feb1ee48cd7d4ea0ac8d2c121",
+          "signature": "fn_ca_autoledger()",
+          "table_name": "club_members",
+          "tgenabled": "O",
+          "tgname": "trg_ca_autoledger"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "068d3b8072fa0b3ea4d025630f6d43d1",
+          "signature": "fn_ca_autoledger_delete()",
+          "table_name": "club_members",
+          "tgenabled": "O",
+          "tgname": "trg_ca_autoledger_delete"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "936fc64feb1ee48cd7d4ea0ac8d2c121",
+          "signature": "fn_ca_autoledger()",
+          "table_name": "club_members",
+          "tgenabled": "O",
+          "tgname": "trg_ca_autoledger_insert"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "cdbfed53f710715795b2a5c9516776ee",
+          "signature": "fn_club_member_notes_guard()",
+          "table_name": "club_members",
+          "tgenabled": "O",
+          "tgname": "trg_club_member_notes_guard"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "6d6cfda08515d6bdd4f3ed4fabe7b36d",
+          "signature": "fn_club_members_ledger_writer()",
+          "table_name": "club_members",
+          "tgenabled": "O",
+          "tgname": "trg_club_members_audit_chip_movement"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "232e5a999e935d3bc6ec0032f28927c3",
+          "signature": "fn_club_members_bot_follows_horse()",
+          "table_name": "club_members",
+          "tgenabled": "O",
+          "tgname": "trg_club_members_bot_follows_horse"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "17e0b806e47734770ea84973330e2abe",
+          "signature": "fn_emit_management_access_event()",
+          "table_name": "club_members",
+          "tgenabled": "O",
+          "tgname": "trg_club_members_emit_management_access"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "3af5bb1377ef28a2e1f84c600b4268d6",
+          "signature": "fn_guard_membership_lifecycle_write()",
+          "table_name": "club_members",
+          "tgenabled": "O",
+          "tgname": "trg_club_members_guard_lifecycle_write"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "cf49d581f597ce8235f3a30073bd54f6",
+          "signature": "fn_ca_reject_automated_user_club_row()",
+          "table_name": "club_members",
+          "tgenabled": "O",
+          "tgname": "trg_club_members_human_user_club_only"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "9c1c432db2c8380a4460e6cc70b9a8dc",
+          "signature": "trg_auto_recompute_club_level()",
+          "table_name": "club_members",
+          "tgenabled": "O",
+          "tgname": "trg_club_members_level_sync"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "808a425e8b92beab089f5e45e42ce727",
+          "signature": "fn_club_members_no_agent_cycle()",
+          "table_name": "club_members",
+          "tgenabled": "O",
+          "tgname": "trg_club_members_no_agent_cycle_ins"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "808a425e8b92beab089f5e45e42ce727",
+          "signature": "fn_club_members_no_agent_cycle()",
+          "table_name": "club_members",
+          "tgenabled": "O",
+          "tgname": "trg_club_members_no_agent_cycle_upd"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "6a71248fcfe2288300d268be68272244",
+          "signature": "fn_require_explicit_club_membership_source()",
+          "table_name": "club_members",
+          "tgenabled": "O",
+          "tgname": "trg_club_members_require_explicit_join"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "d836571a0e897e868696a65c40b4a2ec",
+          "signature": "fn_club_members_role_guard()",
+          "table_name": "club_members",
+          "tgenabled": "O",
+          "tgname": "trg_club_members_role_guard"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "9da1e464076776f49d00713e9d83e154",
+          "signature": "fn_club_members_staff_earn_no_rakeback()",
+          "table_name": "club_members",
+          "tgenabled": "O",
+          "tgname": "trg_club_members_staff_earn_no_rakeback"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "066dd18bd32f040beae30c770ea64688",
+          "signature": "fn_deep_stack_society_cannot_be_deleted_by_accident()",
+          "table_name": "club_members",
+          "tgenabled": "O",
+          "tgname": "trg_deep_stack_members_are_protected"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "c833127edb902506927c9ef612e749ba",
+          "signature": "fn_enforce_four_club_limit()",
+          "table_name": "club_members",
+          "tgenabled": "O",
+          "tgname": "trg_four_club_limit_ins"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "c833127edb902506927c9ef612e749ba",
+          "signature": "fn_enforce_four_club_limit()",
+          "table_name": "club_members",
+          "tgenabled": "O",
+          "tgname": "trg_four_club_limit_upd"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "f056528dab49bf3260faed436a1dee71",
+          "signature": "fn_guard_retired_club_mutation()",
+          "table_name": "club_members",
+          "tgenabled": "O",
+          "tgname": "trg_guard_retired_club_mutation"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "7db9358306d340e7c994f1bed6dc2ddd",
+          "signature": "fn_membership_starts_with_zero_chips()",
+          "table_name": "club_members",
+          "tgenabled": "O",
+          "tgname": "trg_membership_starts_with_zero_chips"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "9c1c432db2c8380a4460e6cc70b9a8dc",
+          "signature": "fn_recompute_club_level_on_member_change()",
+          "table_name": "club_members",
+          "tgenabled": "O",
+          "tgname": "trg_recompute_club_level_on_member_change"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "14349f98b4dbe6ff923b38f62f2355aa",
+          "signature": "fn_sync_agent_player_counts()",
+          "table_name": "club_members",
+          "tgenabled": "O",
+          "tgname": "trg_sync_agent_player_counts"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "d4caf01d8b7532e2a4105a4e62ba5cb2",
+          "signature": "fn_sync_club_member_count()",
+          "table_name": "club_members",
+          "tgenabled": "O",
+          "tgname": "trg_sync_club_member_count"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "c25251b2e4f7929d38f4c3c80d34b31c",
+          "signature": "fn_sync_mfa_required_on_club_role()",
+          "table_name": "club_members",
+          "tgenabled": "O",
+          "tgname": "trg_sync_mfa_required_on_club_role"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "ead41fa15e6cb9aaa37e65d3eef8a682",
+          "signature": "fn_refuse_while_frozen()",
+          "table_name": "club_members",
+          "tgenabled": "O",
+          "tgname": "zz_freeze_guard"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "da5ac28a58c8b4bb30209bf0d3d7082c",
+          "signature": "update_updated_at_column()",
+          "table_name": "clubs",
+          "tgenabled": "O",
+          "tgname": "clubs_updated_at"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "02119ab7ee36b0d38029570ff7dc1f19",
+          "signature": "fn_poker_guard_arena_structure()",
+          "table_name": "clubs",
+          "tgenabled": "O",
+          "tgname": "poker_arena_identity_guard"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "56d086b92b40598eb2c7c8925ae5ee4e",
+          "signature": "fn_audit_club_entry_mutation()",
+          "table_name": "clubs",
+          "tgenabled": "O",
+          "tgname": "trg_audit_club_created"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "f727de5e9af12e42878fa1f686c83d7f",
+          "signature": "fn_audit_club_delete()",
+          "table_name": "clubs",
+          "tgenabled": "O",
+          "tgname": "trg_audit_club_delete"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "017ea59a09c429d8c9b15a6760c53883",
+          "signature": "fn_audit_club_settings_change()",
+          "table_name": "clubs",
+          "tgenabled": "O",
+          "tgname": "trg_audit_club_settings"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "e348f5192fa6d2f6acf1cd63b40e4e69",
+          "signature": "trg_fn_autocreate_club_social_page()",
+          "table_name": "clubs",
+          "tgenabled": "O",
+          "tgname": "trg_autocreate_club_social_page"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "38ab35fd89aca4874777025a0537efed",
+          "signature": "fn_block_browser_balance_writes()",
+          "table_name": "clubs",
+          "tgenabled": "O",
+          "tgname": "trg_block_browser_treasury_writes"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "936fc64feb1ee48cd7d4ea0ac8d2c121",
+          "signature": "fn_ca_autoledger()",
+          "table_name": "clubs",
+          "tgenabled": "O",
+          "tgname": "trg_ca_autoledger"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "068d3b8072fa0b3ea4d025630f6d43d1",
+          "signature": "fn_ca_autoledger_delete()",
+          "table_name": "clubs",
+          "tgenabled": "O",
+          "tgname": "trg_ca_autoledger_delete"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "0d495aee160bdd91f878e129532bb169",
+          "signature": "fn_ca_club_gets_a_baseline()",
+          "table_name": "clubs",
+          "tgenabled": "O",
+          "tgname": "trg_ca_club_gets_a_baseline"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "ee5f2770fdb89df4c11e0ed71b42ae8a",
+          "signature": "fn_emit_management_content_event()",
+          "table_name": "clubs",
+          "tgenabled": "O",
+          "tgname": "trg_club_identity_emit_management_event"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "c0e436d873b750eb19ff803aa22083ce",
+          "signature": "fn_emit_club_union_access_event()",
+          "table_name": "clubs",
+          "tgenabled": "O",
+          "tgname": "trg_club_owner_emit_management_access"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "dc98d9e710e684b9182cf50db6f737f5",
+          "signature": "fn_club_owner_has_a_player_wallet()",
+          "table_name": "clubs",
+          "tgenabled": "O",
+          "tgname": "trg_club_owner_has_a_player_wallet"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "c0e436d873b750eb19ff803aa22083ce",
+          "signature": "fn_emit_club_union_access_event()",
+          "table_name": "clubs",
+          "tgenabled": "O",
+          "tgname": "trg_club_union_emit_management_access"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "af1f14bfc1178ebe99d8f73a8f1d6647",
+          "signature": "fn_guard_club_lifecycle_write()",
+          "table_name": "clubs",
+          "tgenabled": "O",
+          "tgname": "trg_clubs_guard_lifecycle_write"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "1319f6dd60b8fea63d9cc4531cc37acf",
+          "signature": "fn_clubs_lobby_message_keeps_its_own_books()",
+          "table_name": "clubs",
+          "tgenabled": "O",
+          "tgname": "trg_clubs_lobby_message_keeps_its_own_books"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "f3bb2ae036239e051b203eea2c970da3",
+          "signature": "trg_protect_club_level_columns()",
+          "table_name": "clubs",
+          "tgenabled": "O",
+          "tgname": "trg_clubs_protect_level_columns"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "ba97b45cf38070f8abef53fc2de18113",
+          "signature": "trg_fn_delete_club_social_page()",
+          "table_name": "clubs",
+          "tgenabled": "O",
+          "tgname": "trg_delete_club_social_page"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "5fa8a504757adfba1ad3939722dd0064",
+          "signature": "guard_wallet_balance_write()",
+          "table_name": "clubs",
+          "tgenabled": "O",
+          "tgname": "trg_guard_clubs_chip_pool_ins"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "5fa8a504757adfba1ad3939722dd0064",
+          "signature": "guard_wallet_balance_write()",
+          "table_name": "clubs",
+          "tgenabled": "O",
+          "tgname": "trg_guard_clubs_chip_pool_upd"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "fb7498f62d760e8baaa978460720c880",
+          "signature": "fn_mark_new_club_opening_checklist()",
+          "table_name": "clubs",
+          "tgenabled": "O",
+          "tgname": "trg_mark_new_club_opening_checklist"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "84f7134103d9b89f61337a44e98be884",
+          "signature": "fn_new_club_gets_the_ladder()",
+          "table_name": "clubs",
+          "tgenabled": "O",
+          "tgname": "trg_new_club_gets_the_ladder"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "b283eaaf0286f3fe5ad8ef0a81a857de",
+          "signature": "fn_record_new_club_opening_bank()",
+          "table_name": "clubs",
+          "tgenabled": "O",
+          "tgname": "trg_record_new_club_opening_bank"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "b26f9ec01e4e5f219d4e95ff4a70e154",
+          "signature": "fn_seed_new_club_opening_bank()",
+          "table_name": "clubs",
+          "tgenabled": "O",
+          "tgname": "trg_seed_new_club_opening_bank"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "378b9c56d98054bca96c88b45b6900ad",
+          "signature": "fn_spin_pool_follows_union_membership()",
+          "table_name": "clubs",
+          "tgenabled": "O",
+          "tgname": "trg_spin_pool_follows_union_membership"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "15fe7f95ea7966d5c20fa216c566b53d",
+          "signature": "fn_sync_mfa_required_on_club_owner()",
+          "table_name": "clubs",
+          "tgenabled": "O",
+          "tgname": "trg_sync_mfa_required_on_club_owner"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "f4779226e480e950c9db9cecab805268",
+          "signature": "fn_union_totals_follow_club_counts()",
+          "table_name": "clubs",
+          "tgenabled": "O",
+          "tgname": "trg_union_totals_follow_club_counts"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "ead41fa15e6cb9aaa37e65d3eef8a682",
+          "signature": "fn_refuse_while_frozen()",
+          "table_name": "clubs",
+          "tgenabled": "O",
+          "tgname": "zz_freeze_guard"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "b9f2cff86b7418d8de4f8557aeebf98a",
+          "signature": "fn_poker_reject_diamond_hierarchy()",
+          "table_name": "rakeback_period_payouts",
+          "tgenabled": "O",
+          "tgname": "poker_arena_no_hierarchy"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "c19c4314bcb44b29f5d15e32e4dacccd",
+          "signature": "fn_ca_journal_append_only()",
+          "table_name": "rakeback_period_payouts",
+          "tgenabled": "O",
+          "tgname": "trg_ca_append_only"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "b9f2cff86b7418d8de4f8557aeebf98a",
+          "signature": "fn_poker_reject_diamond_hierarchy()",
+          "table_name": "rakeback_periods",
+          "tgenabled": "O",
+          "tgname": "poker_arena_no_hierarchy"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "2dc6aa649f3b0bb8a6bfb3e09fb00503",
+          "signature": "trg_ca_reporting_follows_a_changed_fact()",
+          "table_name": "wallet_transactions",
+          "tgenabled": "O",
+          "tgname": "ca_reporting_wallet_change"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "1648dffde2ac428d4b680f97989b9e50",
+          "signature": "trg_ca_reporting_repair_changed_days()",
+          "table_name": "wallet_transactions",
+          "tgenabled": "O",
+          "tgname": "ca_reporting_wallet_change_del"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "1648dffde2ac428d4b680f97989b9e50",
+          "signature": "trg_ca_reporting_repair_changed_days()",
+          "table_name": "wallet_transactions",
+          "tgenabled": "O",
+          "tgname": "ca_reporting_wallet_change_upd"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "05cff3cd3111a01271fa5b74d1dc18d3",
+          "signature": "trg_ca_reporting_wallet_insert()",
+          "table_name": "wallet_transactions",
+          "tgenabled": "O",
+          "tgname": "ca_reporting_wallet_insert"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "3be8b56169be207597cbf1e2c7f34d50",
+          "signature": "fn_cancelled_tournament_wallet_is_immutable()",
+          "table_name": "wallet_transactions",
+          "tgenabled": "O",
+          "tgname": "cancelled_tournament_wallet_is_immutable"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "f054ed37c1af938c38d3ae4df159ac5d",
+          "signature": "fn_terminal_wallet_transaction_is_immutable()",
+          "table_name": "wallet_transactions",
+          "tgenabled": "O",
+          "tgname": "terminal_wallet_transaction_is_immutable"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "c19c4314bcb44b29f5d15e32e4dacccd",
+          "signature": "fn_ca_journal_append_only()",
+          "table_name": "wallet_transactions",
+          "tgenabled": "O",
+          "tgname": "trg_ca_append_only"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "50950bedd50824104879be8d13ec4739",
+          "signature": "fn_ca_money_path_log()",
+          "table_name": "wallet_transactions",
+          "tgenabled": "O",
+          "tgname": "trg_ca_money_path_log"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "e773958f21214ee1aa4dd622234477a6",
+          "signature": "fn_ca_escrow_on_wallet_tx()",
+          "table_name": "wallet_transactions",
+          "tgenabled": "O",
+          "tgname": "zz_ca_escrow_wallet_tx"
+        },
+        {
+          "checked_at": "2026-09-11 06:33:25.943975+00",
+          "prosrc_md5": "ead41fa15e6cb9aaa37e65d3eef8a682",
+          "signature": "fn_refuse_while_frozen()",
+          "table_name": "wallet_transactions",
+          "tgenabled": "O",
+          "tgname": "zz_freeze_guard"
+        }
+      ]
+    },
+    "productionAdmissionAllocator": {
+      "query": "SET LOCAL statement_timeout='2000ms'; SELECT statement_timestamp() checked_at,p.oid::regprocedure::text signature,md5(p.prosrc) prosrc_md5,pg_get_userbyid(p.proowner) owner,p.prosecdef,p.proacl::text acl FROM pg_proc p WHERE p.pronamespace='public'::regnamespace AND p.proname='fn_allocate_rake_credits' LIMIT 5;",
+      "rows": [
+        {
+          "checked_at": "2026-09-11 06:36:36.791735+00",
+          "signature": "fn_allocate_rake_credits(numeric,jsonb,text)",
+          "prosrc_md5": "a63ce6760dc4178f000f2214a7cf7cd6",
+          "owner": "postgres",
+          "prosecdef": false,
+          "acl": "{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}"
+        }
+      ]
+    }
+  },
+  "entrypoint_sha256": "a55e792f12040799a20fcf6d54969059efecaea3869c3aa148191fe1b083c4c7",
+  "financial_rows_returned": false,
+  "mode": "read_only_admission",
+  "production_mutations": false,
+  "project_id": "kuklfnapbkmacvwxktbh",
+  "statement_timeout_ms": 2000
+}

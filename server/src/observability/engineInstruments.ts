@@ -521,12 +521,71 @@ export const horseForcedSitOutsTotal: Counter = alwaysOnRegistry.counter(
   'poker_horse_forced_sit_outs_total',
   'Horses sat out by the consecutive-timeout ladder (label: format=cash|spin|hu_sng|sng|mtt)'
 );
+/**
+ * A horse turn that scheduleHorseAction ABANDONED because the authority it
+ * started under is no longer current, labelled with which authority and at
+ * which stage.
+ *
+ * Added 2026-09-11, because this was the one horse failure with no number at
+ * all. `scheduleHorseAction` guards every stage with the same fence - abort
+ * signal, turn token, hand controller, hand number, lifecycle, current seat,
+ * engine lease generation - and three of its four call sites simply
+ * `return`ed. A horse whose table lost its lease mid-turn was therefore never
+ * scheduled, never asked the worker for anything, and counted nowhere: the
+ * seventeen-second clock resolved the seat as a forced check/fold, and every
+ * decision-path gauge stayed perfect while it happened.
+ *
+ * Measured that evening: `poker_horse_decision_fallbacks_total` 0 and the
+ * worker idle (queue depth 0, 4.9 ms compute) while `turn_timeouts{kind=timer}`
+ * ran at 19-40 a minute against 164 hands a minute, alongside 1,652 engine
+ * lease losses a minute across 1,570 tables. The same counts were zero in the
+ * quiet window half an hour earlier. Nothing in the horse subsystem could say
+ * that, which is why nothing did.
+ *
+ * reason: why the fence refused -
+ *   aborted           this turn's controller was aborted;
+ *   superseded        a newer turn replaced this one;
+ *   hand_replaced     the hand controller or hand number moved on;
+ *   lifecycle_locked  the table may not mutate right now;
+ *   seat_moved        the table is no longer on this seat;
+ *   lease_lost        the engine lease generation changed or stopped verifying.
+ * stage: how far the turn got - schedule | fallback | fast_result |
+ *   deep_start | deep_result | commit.
+ * A `commit` abandonment is the expensive one: the decision was computed and
+ * then dropped.
+ */
+export const horseTurnsAbandonedTotal: Counter = alwaysOnRegistry.counter(
+  'poker_horse_turns_abandoned_total',
+  'Horse turns abandoned because the authority they began under was no longer current (labels: reason, stage)'
+);
 horseTurnTimeoutsTotal.inc(0, { kind: 'timer' });
 horseTurnTimeoutsTotal.inc(0, { kind: 'timebank' });
 horseDecisionFallbacksTotal.inc(0);
 horseSeatUnactableTotal.inc(0);
 for (const format of ['cash', 'spin', 'hu_sng', 'sng', 'mtt']) {
   horseForcedSitOutsTotal.inc(0, { format });
+}
+/* Zero-seeded so a rule reading this never faces an absent metric: an alert on
+   a name with no series cannot fire, which is the failure this whole evening
+   was spent removing. */
+for (const reason of [
+  'aborted',
+  'superseded',
+  'hand_replaced',
+  'lifecycle_locked',
+  'seat_moved',
+  'lease_lost',
+]) {
+  for (const stage of [
+    'schedule',
+    'fallback',
+    'fast_result',
+    'deep_start',
+    'deep_result',
+    'commit',
+  ]) {
+    horseTurnsAbandonedTotal.inc(0, { reason, stage });
+  }
 }
 
 /**

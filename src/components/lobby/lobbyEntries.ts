@@ -1103,7 +1103,10 @@ export function clusterFigures(
  * true when it was taken, and this one is true now.
  */
 export function withClusterFigures<
-  T extends ClusterFigureSource & { cluster_players?: number | null; cluster_tables?: number | null },
+  T extends ClusterFigureSource & {
+    cluster_players?: number | null;
+    cluster_tables?: number | null;
+  },
 >(rows: ReadonlyArray<T>): T[] {
   const figures = clusterFigures(rows);
   return rows.map((r) => {
@@ -1119,7 +1122,12 @@ export function withClusterFigures<
 function clusterFiguresOf(t: LobbyTableRow): ClusterFigures {
   const players = Number(t.cluster_players);
   const tables = Number(t.cluster_tables);
-  if (t.cluster_players != null && t.cluster_tables != null && Number.isFinite(players) && Number.isFinite(tables)) {
+  if (
+    t.cluster_players != null &&
+    t.cluster_tables != null &&
+    Number.isFinite(players) &&
+    Number.isFinite(tables)
+  ) {
     return { players: Math.max(0, players), tables: Math.max(0, tables) };
   }
   return clusterFigures([t]).get(String(t.cluster_id)) ?? { players: 0, tables: 0 };

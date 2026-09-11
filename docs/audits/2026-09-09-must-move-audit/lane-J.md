@@ -22,17 +22,17 @@ this file is a recollection.
 
 ## 1. Census of `cash_games` (read 18:05:01 UTC / 13:05 CDT)
 
-| measure | value |
-| --- | --- |
-| rows | 150 |
-| enabled | 109 |
-| closed (`closed_at` set) | 41 (all 41 are `dormant/false`) |
-| enabled by template | classic 69, action 20, madness 20 |
-| all rows by template | classic 88, action 31, madness 31 |
-| enabled by band (`fn_cash_stake_band(bb)`) | micro 59, low 33, mid 16, high 1 |
-| enabled by variant | nlh 20, plo4 18, plo5 18, plo6 18, pineapple 8, short_deck 8, plo8 7, flh 6, flo8 6 |
-| enabled by state | live 49, dormant 60 |
-| every enabled game | `must_move = true` (109/109) |
+| measure                                    | value                                                                               |
+| ------------------------------------------ | ----------------------------------------------------------------------------------- |
+| rows                                       | 150                                                                                 |
+| enabled                                    | 109                                                                                 |
+| closed (`closed_at` set)                   | 41 (all 41 are `dormant/false`)                                                     |
+| enabled by template                        | classic 69, action 20, madness 20                                                   |
+| all rows by template                       | classic 88, action 31, madness 31                                                   |
+| enabled by band (`fn_cash_stake_band(bb)`) | micro 59, low 33, mid 16, high 1                                                    |
+| enabled by variant                         | nlh 20, plo4 18, plo5 18, plo6 18, pineapple 8, short_deck 8, plo8 7, flh 6, flo8 6 |
+| enabled by state                           | live 49, dormant 60                                                                 |
+| every enabled game                         | `must_move = true` (109/109)                                                        |
 
 Per template x band x variant (read 18:05:06 UTC): every action and madness
 combination is exactly ONE game (20 each: low 7, micro 9, mid 4); classic holds
@@ -44,27 +44,27 @@ from 79 to 49.
 
 ## 2. Tables and lifecycle/status agreement (read 18:05:20 UTC)
 
-| measure | value |
-| --- | --- |
-| tables with `cluster_id` (all time) | 4,514 |
-| open cluster tables (`lifecycle <> 'closed' AND status <> 'closed'`) | **137** (main 120, feeder 17) |
-| lifecycle/status pairs over all 4,514 | live/running 69, live/waiting 68, closed/closed 4,375, **closed/waiting 2** |
-| `lifecycle='closed' AND status<>'closed'` | **2** |
-| `status='closed' AND lifecycle<>'closed'` | 0 |
-| open but `is_deleted` | 0 |
-| open table whose `cluster_id` has no `cash_games` row | 0 |
-| open table on a DISABLED game | 0 |
-| cash table (no tournament) open with NO `cluster_id` | 0 |
-| tables in `lifecycle IN ('opening','breaking')` | 0 (re-read 18:15:50) |
+| measure                                                              | value                                                                       |
+| -------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| tables with `cluster_id` (all time)                                  | 4,514                                                                       |
+| open cluster tables (`lifecycle <> 'closed' AND status <> 'closed'`) | **137** (main 120, feeder 17)                                               |
+| lifecycle/status pairs over all 4,514                                | live/running 69, live/waiting 68, closed/closed 4,375, **closed/waiting 2** |
+| `lifecycle='closed' AND status<>'closed'`                            | **2**                                                                       |
+| `status='closed' AND lifecycle<>'closed'`                            | 0                                                                           |
+| open but `is_deleted`                                                | 0                                                                           |
+| open table whose `cluster_id` has no `cash_games` row                | 0                                                                           |
+| open table on a DISABLED game                                        | 0                                                                           |
+| cash table (no tournament) open with NO `cluster_id`                 | 0                                                                           |
+| tables in `lifecycle IN ('opening','breaking')`                      | 0 (re-read 18:15:50)                                                        |
 
 The two closed/waiting rows (read 18:05:27 UTC), both on disabled dormant games,
 both `main_index NULL`, both with `updated_at` inside the last ten minutes
 (18:00:00 and 17:56:59), so something is still touching them every tick:
 
-| table id | name | game | enabled | seated |
-| --- | --- | --- | --- | --- |
-| `fd9335bb-894c-451f-8514-59e15d0785d1` | FLO8 0.50/1 Action | `14dfcb84-7d6c-43bd-8976-58ce59b3e715` | false | 0 |
-| `b652e87b-36eb-4f30-9181-8cb02b52f7a8` | FLO8 0.50/1 Madness | `1ff1ef89-a29f-41a1-b7f8-9cf123baf09b` | false | 0 |
+| table id                               | name                | game                                   | enabled | seated |
+| -------------------------------------- | ------------------- | -------------------------------------- | ------- | ------ |
+| `fd9335bb-894c-451f-8514-59e15d0785d1` | FLO8 0.50/1 Action  | `14dfcb84-7d6c-43bd-8976-58ce59b3e715` | false   | 0      |
+| `b652e87b-36eb-4f30-9181-8cb02b52f7a8` | FLO8 0.50/1 Madness | `1ff1ef89-a29f-41a1-b7f8-9cf123baf09b` | false   | 0      |
 
 The live `fn_cash_cluster_tick` (section 9) carries a `status_followed_lifecycle`
 repair for exactly this shape; 15 `status_followed_lifecycle` events fired in the
@@ -75,25 +75,25 @@ none (0 seated, game disabled, not in the lobby). Severity P2.
 
 ## 3. Seats vs roster, and the nine invariants (read 18:05:46 UTC / 13:05 CDT)
 
-| check | result |
-| --- | --- |
-| open seats on open cluster tables | **306** |
-| open seats on ANY cluster table | 306 |
-| `cash_game_roster` rows with `left_at IS NULL` | **306** (306 on enabled games, 0 on disabled) |
-| distinct (game_id, user_id) open roster pairs | 306 (0 duplicates) |
-| a table seated over `max_players` | 0 |
-| a player holding two chairs in one cluster | 0 |
-| roster row with no chair in the game | 0 |
-| chair with no open roster row | 0 |
-| duplicate `main_index` inside a cluster | 0 |
-| gap in a cluster's `main_index` sequence (or min <> 1) | 0 |
-| open main with `main_index NULL` | 0 |
-| `seat_change_used_at` stamped with no request behind it | 0 |
-| `cluster_id` pointing at no game (any table) | 0 |
-| open cash table with no `cluster_id` | 0 |
-| cash table (no cluster) still holding a seat | 0 |
-| pending move past its own `expires_at` | 0 |
-| `fn_unaccounted_seat_exits()` | 0 |
+| check                                                   | result                                        |
+| ------------------------------------------------------- | --------------------------------------------- |
+| open seats on open cluster tables                       | **306**                                       |
+| open seats on ANY cluster table                         | 306                                           |
+| `cash_game_roster` rows with `left_at IS NULL`          | **306** (306 on enabled games, 0 on disabled) |
+| distinct (game_id, user_id) open roster pairs           | 306 (0 duplicates)                            |
+| a table seated over `max_players`                       | 0                                             |
+| a player holding two chairs in one cluster              | 0                                             |
+| roster row with no chair in the game                    | 0                                             |
+| chair with no open roster row                           | 0                                             |
+| duplicate `main_index` inside a cluster                 | 0                                             |
+| gap in a cluster's `main_index` sequence (or min <> 1)  | 0                                             |
+| open main with `main_index NULL`                        | 0                                             |
+| `seat_change_used_at` stamped with no request behind it | 0                                             |
+| `cluster_id` pointing at no game (any table)            | 0                                             |
+| open cash table with no `cluster_id`                    | 0                                             |
+| cash table (no cluster) still holding a seat            | 0                                             |
+| pending move past its own `expires_at`                  | 0                                             |
+| `fn_unaccounted_seat_exits()`                           | 0                                             |
 
 Seats vs roster drift: **zero**. All nine invariants clean at that minute. For
 scale: the 2026-09-07 handoff read 572 seats on 182 tables; today the floor is
@@ -101,28 +101,28 @@ scale: the 2026-09-07 handoff read 572 seats on 182 tables; today the floor is
 
 ## 4. `cash_cluster_events` by kind (read 18:05:54 UTC / 13:05 CDT)
 
-| kind | last 1h | last 24h | last at (UTC) |
-| --- | --- | --- | --- |
-| move_planned | 820 | 22,505 | 18:05:48 |
-| seat_moved | 801 | 21,984 | 18:05:48 |
-| game_dormant | 31 | 935 | 18:05:13 |
-| game_woken | 35 | 901 | 18:04:48 |
-| table_opening_hold | 19 | 352 | 18:04:49 |
-| table_opening_hold_expired | 18 | 214 | 18:04:28 |
-| feeder_opened | 5 | 194 | 18:01:28 |
-| feeder_live | 3 | 159 | 18:01:43 |
-| feeder_abandoned | 2 | 36 | 18:00:10 |
-| table_break_started | 0 | 187 | 14:46:45 |
-| table_break_completed | 0 | 187 | 14:46:45 |
-| main_demoted_to_feeder | 0 | 100 | 13:13:28 |
-| feeder_promoted_to_main | 2 | 88 | 17:18:11 |
-| seat_change_requested | 1 | 50 | 17:11:08 |
-| ruleset_applied | 0 | 23 | 03:54:45 |
-| status_followed_lifecycle | 0 | 15 | 04:00:41 |
-| controller_tick_error | 0 | 15 | 11:16:14 |
-| seat_change_returned | 0 | 3 | 14:19:08 |
-| swap_planned | 0 | 2 | 02:44:24 |
-| main_renumbered | 0 | 2 | 2026-09-08 19:06:45 |
+| kind                       | last 1h | last 24h | last at (UTC)       |
+| -------------------------- | ------- | -------- | ------------------- |
+| move_planned               | 820     | 22,505   | 18:05:48            |
+| seat_moved                 | 801     | 21,984   | 18:05:48            |
+| game_dormant               | 31      | 935      | 18:05:13            |
+| game_woken                 | 35      | 901      | 18:04:48            |
+| table_opening_hold         | 19      | 352      | 18:04:49            |
+| table_opening_hold_expired | 18      | 214      | 18:04:28            |
+| feeder_opened              | 5       | 194      | 18:01:28            |
+| feeder_live                | 3       | 159      | 18:01:43            |
+| feeder_abandoned           | 2       | 36       | 18:00:10            |
+| table_break_started        | 0       | 187      | 14:46:45            |
+| table_break_completed      | 0       | 187      | 14:46:45            |
+| main_demoted_to_feeder     | 0       | 100      | 13:13:28            |
+| feeder_promoted_to_main    | 2       | 88       | 17:18:11            |
+| seat_change_requested      | 1       | 50       | 17:11:08            |
+| ruleset_applied            | 0       | 23       | 03:54:45            |
+| status_followed_lifecycle  | 0       | 15       | 04:00:41            |
+| controller_tick_error      | 0       | 15       | 11:16:14            |
+| seat_change_returned       | 0       | 3        | 14:19:08            |
+| swap_planned               | 0       | 2        | 02:44:24            |
+| main_renumbered            | 0       | 2        | 2026-09-08 19:06:45 |
 
 Feeder ratio, 24h: 194 opened / 159 live / 36 abandoned = **82% of feeders
 went live**, 18.6% abandoned. Last hour: 5 / 3 / 2. Breaks: 187 started and 187
@@ -138,32 +138,32 @@ expired 0 (0.000%).
 
 Taxonomy (state / note / reason, 24h):
 
-| state | note | reason | n |
-| --- | --- | --- | --- |
-| done | (none) | must_move | 11,758 |
-| done | (none) | balance | 10,100 |
-| done | (none) | seat_change | 46 |
-| done | retry after 40P01: deadlock detected | must_move | 27 |
-| done | retry after 40P01: deadlock detected | balance | 22 |
-| done | (none) | break | 3 |
-| done | retry after 55P03: lock timeout | balance | 1 |
-| cancelled | destination_unavailable | balance | 126 |
-| cancelled | player_not_seated | must_move | 85 |
-| cancelled | destination_full | must_move | 69 |
-| cancelled | player_not_seated | balance | 52 |
-| cancelled | destination_full | balance | 47 |
-| cancelled | original_occupancy_not_recorded | must_move | 9 |
-| cancelled | original_occupancy_not_recorded | balance | 8 |
-| cancelled | destination_unavailable | must_move | 4 |
-| cancelled | destination_full | seat_change | 2 |
-| cancelled | original_occupancy_gone | must_move | 1 |
-| cancelled | busted | balance | 1 |
-| cancelled | destination_unavailable | seat_change | 1 |
-| expired | engine_did_not_execute_before_expiry | balance | 92 |
-| expired | engine_did_not_execute_before_expiry | must_move | 42 |
-| expired | player_left_before_boundary | must_move | 3 |
-| pending | (none) | balance | 5 |
-| pending | (none) | must_move | 3 |
+| state     | note                                 | reason      | n      |
+| --------- | ------------------------------------ | ----------- | ------ |
+| done      | (none)                               | must_move   | 11,758 |
+| done      | (none)                               | balance     | 10,100 |
+| done      | (none)                               | seat_change | 46     |
+| done      | retry after 40P01: deadlock detected | must_move   | 27     |
+| done      | retry after 40P01: deadlock detected | balance     | 22     |
+| done      | (none)                               | break       | 3      |
+| done      | retry after 55P03: lock timeout      | balance     | 1      |
+| cancelled | destination_unavailable              | balance     | 126    |
+| cancelled | player_not_seated                    | must_move   | 85     |
+| cancelled | destination_full                     | must_move   | 69     |
+| cancelled | player_not_seated                    | balance     | 52     |
+| cancelled | destination_full                     | balance     | 47     |
+| cancelled | original_occupancy_not_recorded      | must_move   | 9      |
+| cancelled | original_occupancy_not_recorded      | balance     | 8      |
+| cancelled | destination_unavailable              | must_move   | 4      |
+| cancelled | destination_full                     | seat_change | 2      |
+| cancelled | original_occupancy_gone              | must_move   | 1      |
+| cancelled | busted                               | balance     | 1      |
+| cancelled | destination_unavailable              | seat_change | 1      |
+| expired   | engine_did_not_execute_before_expiry | balance     | 92     |
+| expired   | engine_did_not_execute_before_expiry | must_move   | 42     |
+| expired   | player_left_before_boundary          | must_move   | 3      |
+| pending   | (none)                               | balance     | 5      |
+| pending   | (none)                               | must_move   | 3      |
 
 - `player_not_seated` cancels, 24h: 85 + 52 = **137** (this is lane B's number,
   see section 17).
@@ -175,7 +175,7 @@ Taxonomy (state / note / reason, 24h):
   than 24h.
 - The 17 `original_occupancy_not_recorded` cancels all fall between 17:30:57 and
   17:31:41 UTC: they are moves planned BEFORE migration `20260909173145
-  bind_cash_seat_moves_to_original_occupancies` (recorded on production at
+bind_cash_seat_moves_to_original_occupancies` (recorded on production at
   ~17:31:45) and executed by the new executor, which refuses a move with no
   `source_occupancy_id`. A one-time transition cost: all 17 players were
   re-planned within 60-120 s and every one is seated now (read 18:06:35). Row
@@ -198,12 +198,12 @@ This is the largest thing on the floor right now and it is not in any handoff.
 Direction of every DONE move in the last hour, by reason and by the roles of
 the two tables (read 18:06:53 UTC / 13:06 CDT):
 
-| reason | direction | n |
-| --- | --- | --- |
-| balance | main -> feeder | **381** |
-| must_move | feeder -> main | **394** |
-| must_move | main -> main | 9 |
-| seat_change | main -> feeder | 1 |
+| reason      | direction      | n       |
+| ----------- | -------------- | ------- |
+| balance     | main -> feeder | **381** |
+| must_move   | feeder -> main | **394** |
+| must_move   | main -> main   | 9       |
+| seat_change | main -> feeder | 1       |
 
 Exact round trips in that hour (a `balance` move main->feeder followed by a
 `must_move` move of the SAME player from that feeder back to that SAME main):
@@ -276,13 +276,13 @@ be refilled from the feeder. Whichever is chosen needs the round-trip test:
 
 ## 7. `controller_tick_error` taxonomy, 24h (read 18:09:02 UTC / 13:09 CDT)
 
-| sqlstate | message | n | games | last at (UTC) |
-| --- | --- | --- | --- | --- |
-| 55P03 | canceling statement due to lock timeout | 8 | 6 | 04:26:10 |
-| 23505 | duplicate key value violates unique constraint "cash_seat_moves_one_pending_per_player" | 2 | 2 | 05:08:03 |
-| 40P01 | deadlock detected | 2 | 2 | 04:00:37 |
-| XX000 | cannot find parent statement on pldbgapi2 call stack | 2 | 1 | 11:16:14 |
-| P0001 | This table cannot be closed while players are seated | 1 | 1 | 2026-09-08 19:48:46 |
+| sqlstate | message                                                                                 | n   | games | last at (UTC)       |
+| -------- | --------------------------------------------------------------------------------------- | --- | ----- | ------------------- |
+| 55P03    | canceling statement due to lock timeout                                                 | 8   | 6     | 04:26:10            |
+| 23505    | duplicate key value violates unique constraint "cash_seat_moves_one_pending_per_player" | 2   | 2     | 05:08:03            |
+| 40P01    | deadlock detected                                                                       | 2   | 2     | 04:00:37            |
+| XX000    | cannot find parent statement on pldbgapi2 call stack                                    | 2   | 1     | 11:16:14            |
+| P0001    | This table cannot be closed while players are seated                                    | 1   | 1     | 2026-09-08 19:48:46 |
 
 15 errors in 24h against ~1.9M game-ticks; 0 in the last hour. Every one is
 retried on the next pass. Rows worth a look by the owning lane: event 198994
@@ -293,16 +293,16 @@ constraint held).
 
 ## 8. Games ticked vs enabled, and the engine leader (read 18:09:17 UTC / 13:09 CDT)
 
-| measure | value |
-| --- | --- |
-| enabled games | 109 |
-| enabled games with `last_tick_at` in the last 90 s | **109 / 109** |
-| in the last 30 s | 108 |
-| live enabled games ticked in 90 s | 47 / 47 |
-| disabled games ticked in 90 s | 0 |
-| newest `last_tick_at` | 18:09:17.456 (the read minute) |
-| oldest enabled `last_tick_at` | 18:08:43 |
-| `engine_leader` | instance `1-931ef9fb`, **engine_version `5dd902e9`**, acquired 17:56:23 UTC (the :55 restart), heartbeat 18:09:14 (3 s old) |
+| measure                                            | value                                                                                                                       |
+| -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| enabled games                                      | 109                                                                                                                         |
+| enabled games with `last_tick_at` in the last 90 s | **109 / 109**                                                                                                               |
+| in the last 30 s                                   | 108                                                                                                                         |
+| live enabled games ticked in 90 s                  | 47 / 47                                                                                                                     |
+| disabled games ticked in 90 s                      | 0                                                                                                                           |
+| newest `last_tick_at`                              | 18:09:17.456 (the read minute)                                                                                              |
+| oldest enabled `last_tick_at`                      | 18:08:43                                                                                                                    |
+| `engine_leader`                                    | instance `1-931ef9fb`, **engine_version `5dd902e9`**, acquired 17:56:23 UTC (the :55 restart), heartbeat 18:09:14 (3 s old) |
 
 The two FLO8 closed/waiting tables of section 2 sit on DISABLED games, which is
 why "0 disabled games ticked" is consistent with them not being repaired.
@@ -321,7 +321,7 @@ Git, host terminal, read 18:08-18:09 UTC (`git fetch origin main` first):
   #3979, #3984. `git diff --stat 5dd902e9..origin/main -- server/src` touches
   ONLY `server/src/services/DiamondCustody.ts` and its test; **no
   `server/src/cluster/**`, `HorseFleetManager`, `HorseSessionRotator`, engine
-  seat or must-move code is missing from the running engine as of 18:09 UTC.**
+  seat or must-move code is missing from the running engine as of 18:09 UTC.\*\*
   (Re-checked at the end of the session in section 16.)
 
 ## 9. Production function bodies that are NOT on `origin/main` (read 17:31-18:10 UTC)
@@ -418,16 +418,16 @@ ante `sb` / bombs `timed_15m` x2 / VPIP 30; madness ante `bb` / bombs
 `every_orbit` x3 / VPIP 50; seats PLO 6 locked, holdem classic 9 with choices
 [9,6], others 6):
 
-| key | games disagreeing |
-| --- | --- |
-| regular_ante | **0** |
-| bombs.enabled | **0** |
-| bombs.trigger | 0 |
-| bombs.ante_bb | 0 |
-| vpip_floor | **0** |
-| seats | 9 (all NLH/FLH classic snapshots say 6, default 9; 6 is inside the template's `seat_choices` [9,6] and 8 of the 9 were `adopted_from` an existing 6-max table) |
-| min_buyin_bb / max_buyin_bb | 5 (FLO8 0.25/0.50 Classic and FLO8 0.50/1 Classic snapshot 400/1000 vs default 40/200; PLO4 1/2, PLO6 0.25/0.50, PLO6 2/5 Classic 100 vs 40) |
-| seat_choices | 14 (locked to [6] on adopted tables) |
+| key                         | games disagreeing                                                                                                                                              |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| regular_ante                | **0**                                                                                                                                                          |
+| bombs.enabled               | **0**                                                                                                                                                          |
+| bombs.trigger               | 0                                                                                                                                                              |
+| bombs.ante_bb               | 0                                                                                                                                                              |
+| vpip_floor                  | **0**                                                                                                                                                          |
+| seats                       | 9 (all NLH/FLH classic snapshots say 6, default 9; 6 is inside the template's `seat_choices` [9,6] and 8 of the 9 were `adopted_from` an existing 6-max table) |
+| min_buyin_bb / max_buyin_bb | 5 (FLO8 0.25/0.50 Classic and FLO8 0.50/1 Classic snapshot 400/1000 vs default 40/200; PLO4 1/2, PLO6 0.25/0.50, PLO6 2/5 Classic 100 vs 40)                   |
+| seat_choices                | 14 (locked to [6] on adopted tables)                                                                                                                           |
 
 Every other differing key (`sb`, `bb`, `options`, `table_mode`, `adopted_from`,
 `resolved_at`, `created_by`) is a snapshot-only key the defaults function does
@@ -439,11 +439,11 @@ allowed to make at creation, not drift.
 
 137 open tables on enabled games (classic 97, madness 20, action 20):
 
-| template | tables | ante_enabled | ante > 0 | bomb_pot_enabled | nit_game | bb_ante | bomb config | ante config |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| classic | 97 | **0** | **0** | **0** | **0** | 0 | (columns still say every_n_hands x2, 1 board, but enabled=false) | ante 0 / maintain 0% |
-| action | 20 | 20 | 20 | 20 | 20 | 0 | timed x2, 2 boards, 900 s, min 2 players | ante = sb (0.25 / 0.50 / 1 / 2; ante_bb 0.5 or 0.4 at 2/5), maintain 30%, 10 hands |
-| madness | 20 | 20 | 20 | 20 | 20 | 20 | once_per_orbit x3, 2 boards, min 2 | ante = bb (0.5 / 1 / 2 / 5; ante_bb 1), maintain 50%, 10 hands |
+| template | tables | ante_enabled | ante > 0 | bomb_pot_enabled | nit_game | bb_ante | bomb config                                                      | ante config                                                                        |
+| -------- | ------ | ------------ | -------- | ---------------- | -------- | ------- | ---------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| classic  | 97     | **0**        | **0**    | **0**            | **0**    | 0       | (columns still say every_n_hands x2, 1 board, but enabled=false) | ante 0 / maintain 0%                                                               |
+| action   | 20     | 20           | 20       | 20               | 20       | 0       | timed x2, 2 boards, 900 s, min 2 players                         | ante = sb (0.25 / 0.50 / 1 / 2; ante_bb 0.5 or 0.4 at 2/5), maintain 30%, 10 hands |
+| madness  | 20     | 20           | 20       | 20               | 20       | 20      | once_per_orbit x3, 2 boards, min 2                               | ante = bb (0.5 / 1 / 2 / 5; ante_bb 1), maintain 50%, 10 hands                     |
 
 Classic tables carrying an ante, a bomb or a VPIP floor: **0 of 97**. Action /
 Madness tables missing any of them: **0 of 40**. The 2026-09-09
@@ -467,12 +467,12 @@ P3 hygiene, no player effect. `run_it_twice` on 104 of 137.
 
 ## 12. Horse band distribution vs enabled games per band (read 18:15:14-18:15:25 UTC / 13:15 CDT)
 
-| band | enabled games | horses seated at cash (distinct) | human seats at cash |
-| --- | --- | --- | --- |
-| micro | 59 | 75 | 0 |
-| low | 33 | 105 | 0 |
-| mid | 16 | 7 | 0 |
-| high | 1 | 0 | 0 |
+| band  | enabled games | horses seated at cash (distinct) | human seats at cash |
+| ----- | ------------- | -------------------------------- | ------------------- |
+| micro | 59            | 75                               | 0                   |
+| low   | 33            | 105                              | 0                   |
+| mid   | 16            | 7                                | 0                   |
+| high  | 1             | 0                                | 0                   |
 
 - Horses at cash cluster tables: **154 distinct** (297 on 2026-09-07, 348 on
   2026-09-06). Human seats at cash: **0**, unchanged from the handoff.
@@ -487,12 +487,12 @@ P3 hygiene, no player effect. `run_it_twice` on 104 of 137.
 
 ## 13. Seat change requests, 24h (read 18:15:39 UTC / 13:15 CDT)
 
-| status / note | n |
-| --- | --- |
-| moved / seat_open | 42 |
-| moved / swap | 4 |
-| cancelled / left_table | 3 |
-| cancelled / left_game | 1 |
+| status / note          | n   |
+| ---------------------- | --- |
+| moved / seat_open      | 42  |
+| moved / swap           | 4   |
+| cancelled / left_table | 3   |
+| cancelled / left_game  | 1   |
 
 Open (`requested`) right now: 0. `left_table` cancels since the 2026-09-07
 16:45 UTC fix: 5; of those, requests whose player still holds the game with the
@@ -521,25 +521,25 @@ Atomic Occupancy Receipts` (`bb4401d5ca`, merged **18:29:29 UTC**) carries eight
 of them, and PR #3994 (`15552f9ce5`, merged 23:10:08) carries four more. What
 remains true, and matters to the integrator:
 
-| ledger version (production) | file on origin/main | note |
-| --- | --- | --- |
-| 20260909172143 bind_cashout_requests_to_seat_occupancy | `20260908220604_...` (#3974) | ledger version <> file version |
-| 20260909172241 table_close_requires_every_occupancy_cashout_to_commit | `20260909024909_...` (#3974) | same |
-| 20260909172312 admin_departure_authority_is_recorded_before_cashout | `20260909040806_...` (#3974) | same |
-| 20260909172350 one_committed_cash_game_seat_per_player | `20260909052547_...` (#3974) | same |
-| 20260909172447 retire_cluster_duplicate_chair_cashouts_after_native_ownership | `20260909054702_...` (#3974) | same |
-| 20260909172529 terminal_tables_cannot_commit_live_occupancies | `20260909062236_...` (#3974) | same |
-| 20260909172615 retain_original_admin_departure_outcomes | `20260909072021_...` (#3974) | same |
-| 20260909173145 bind_cash_seat_moves_to_original_occupancies | `20260909074353_...` (#3974) | same |
-| 20260909175543 ca_a_chair_change_is_not_a_fifth_game | same version (#3994) | ok |
-| 20260909175754 ca_a_tournament_seat_moves_in_one_transaction | same version (#3994) | ok |
-| 20260909175822 ca_stranded_players_come_back_to_the_felt | same version (#3994) | ok |
-| 20260909180316 ca_the_cap_is_at_the_door_not_at_the_chair | same version (#3994) | ok |
-| 20260909180615 maintenance_ownership_fits_process_lifetime | **MISSING** | no file on origin/main at 23:49 |
-| 20260909035821 status_follows_lifecycle_without_stealing_the_row_count | **MISSING** | no file on origin/main at 23:49 |
-| 20260909035407 a_classic_game_has_no_antes_and_no_bombs | `20260909035303_...` | ledger drift only |
-| 20260909035745 status_follows_lifecycle_down_as_well_as_up | `20260909035726_...` | ledger drift only |
-| 20260909051111 retire_sql_eviction_that_bypasses_the_live_hand | `20260909045227_...` | ledger drift only |
+| ledger version (production)                                                   | file on origin/main          | note                            |
+| ----------------------------------------------------------------------------- | ---------------------------- | ------------------------------- |
+| 20260909172143 bind_cashout_requests_to_seat_occupancy                        | `20260908220604_...` (#3974) | ledger version <> file version  |
+| 20260909172241 table_close_requires_every_occupancy_cashout_to_commit         | `20260909024909_...` (#3974) | same                            |
+| 20260909172312 admin_departure_authority_is_recorded_before_cashout           | `20260909040806_...` (#3974) | same                            |
+| 20260909172350 one_committed_cash_game_seat_per_player                        | `20260909052547_...` (#3974) | same                            |
+| 20260909172447 retire_cluster_duplicate_chair_cashouts_after_native_ownership | `20260909054702_...` (#3974) | same                            |
+| 20260909172529 terminal_tables_cannot_commit_live_occupancies                 | `20260909062236_...` (#3974) | same                            |
+| 20260909172615 retain_original_admin_departure_outcomes                       | `20260909072021_...` (#3974) | same                            |
+| 20260909173145 bind_cash_seat_moves_to_original_occupancies                   | `20260909074353_...` (#3974) | same                            |
+| 20260909175543 ca_a_chair_change_is_not_a_fifth_game                          | same version (#3994)         | ok                              |
+| 20260909175754 ca_a_tournament_seat_moves_in_one_transaction                  | same version (#3994)         | ok                              |
+| 20260909175822 ca_stranded_players_come_back_to_the_felt                      | same version (#3994)         | ok                              |
+| 20260909180316 ca_the_cap_is_at_the_door_not_at_the_chair                     | same version (#3994)         | ok                              |
+| 20260909180615 maintenance_ownership_fits_process_lifetime                    | **MISSING**                  | no file on origin/main at 23:49 |
+| 20260909035821 status_follows_lifecycle_without_stealing_the_row_count        | **MISSING**                  | no file on origin/main at 23:49 |
+| 20260909035407 a_classic_game_has_no_antes_and_no_bombs                       | `20260909035303_...`         | ledger drift only               |
+| 20260909035745 status_follows_lifecycle_down_as_well_as_up                    | `20260909035726_...`         | ledger drift only               |
+| 20260909051111 retire_sql_eviction_that_bypasses_the_live_hand                | `20260909045227_...`         | ledger drift only               |
 
 So: eight cash-occupancy migrations are recorded on production under a version
 that no file carries (the MCP `apply_migration` timestamp drift the 2026-09-07
@@ -563,8 +563,8 @@ handoff describes, section 4 item 4), and TWO applied migrations have no file on
   `services/supabase/rake.ts` (#4049), `tournament/blindEscalation.ts`, `types.ts`,
   plus tests. Of the cash/cluster/must-move surface the brief names, the engine
   lacks exactly two commits: **#4034** `feat(horses): add canonical phase five
-  decision state` (21:55:29) and **#4051** `fix(horses): close Phase 5 Round 1
-  safety gaps` (23:49:03). Nothing under `server/src/cluster/**`,
+decision state` (21:55:29) and **#4051** `fix(horses): close Phase 5 Round 1
+safety gaps` (23:49:03). Nothing under `server/src/cluster/**`,
   `HorseFleetManager.ts`, `HorseSessionRotator.ts`, `HorseGameLoad.ts`,
   `services/supabase/seatMoves.ts`, `nitGame.ts`, `handProjection.ts` or
   `tables.ts` differs between the running engine and `origin/main`.
@@ -613,6 +613,7 @@ over the 24h ending 23:53 is 96 (the window has rolled past the 2026-09-08
 evening peak).
 
 **17d. Lane F: "the horse session rotator was dead from 17:23 to 20:55 UTC today; four cluster tables held one horse for 415, 129, 121 and 54 minutes against a ten-minute rule".** Read 23:51:14-23:52:28 UTC.
+
 - The departure side, from `cash_player_session` closes by horses at cluster
   tables, half-hour buckets (voluntary = the rotator's own leave):
   16:00 18, 16:30 6, 17:00 6, **17:30 0, 18:00 2, 18:30 1, 19:00 2, 19:30 0,
@@ -664,10 +665,10 @@ Hands in the last 60 minutes, `hand_history` joined to `tables` and `cash_games`
 (23:48:56 UTC):
 
 | template | hands | tables dealing | bomb hands (`bomb_pot` not null) | `bomb_ante` actions | regular `ante` actions | any ante | straddle | ante on an ante-disabled table | bomb on a bomb-disabled table | no ante on an ante table |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| classic | 3,978 | 67 | **0** | 0 | **0** | 0 | 0 | 0 | 0 | 0 |
-| action | 80 | 8 | **8** (all `timed`) | 8 | 72 | 80 | 0 | 0 | 0 | 0 |
-| madness | 286 | 14 | **78** (all `once_per_orbit`) | 78 | 208 | 286 | 0 | 0 | 0 | 0 |
+| -------- | ----- | -------------- | -------------------------------- | ------------------- | ---------------------- | -------- | -------- | ------------------------------ | ----------------------------- | ------------------------ |
+| classic  | 3,978 | 67             | **0**                            | 0                   | **0**                  | 0        | 0        | 0                              | 0                             | 0                        |
+| action   | 80    | 8              | **8** (all `timed`)              | 8                   | 72                     | 80       | 0        | 0                              | 0                             | 0                        |
+| madness  | 286   | 14             | **78** (all `once_per_orbit`)    | 78                  | 208                    | 286      | 0        | 0                              | 0                             | 0                        |
 
 Every action and madness hand carries exactly one kind of ante (a bomb hand
 posts `bomb_ante` instead of the regular ante: 8 + 72 = 80, 78 + 208 = 286), and
@@ -681,10 +682,10 @@ templates are three games on the felt.
 `cash_player_session` closes on cluster tables, 24h to 23:49:20 UTC:
 
 | template | closed sessions | vpip_evicted | system | voluntary | evicted share | avg session | median session | median EVICTED session | evicted last 1h / 4h |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| classic | 1,998 | **0** | 850 | 1,146 | 0.0% | 211.1 min | 131.0 min | n/a | 0 / 0 |
-| action | 439 | 88 | 257 | 94 | **20.0%** | 71.9 min | 40.5 min | **10.6 min** | 0 / 0 |
-| madness | 627 | 314 | 233 | 79 | **50.1%** | 55.8 min | 19.2 min | **12.6 min** | 14 / 17 |
+| -------- | --------------- | ------------ | ------ | --------- | ------------- | ----------- | -------------- | ---------------------- | -------------------- |
+| classic  | 1,998           | **0**        | 850    | 1,146     | 0.0%          | 211.1 min   | 131.0 min      | n/a                    | 0 / 0                |
+| action   | 439             | 88           | 257    | 94        | **20.0%**     | 71.9 min    | 40.5 min       | **10.6 min**           | 0 / 0                |
+| madness  | 627             | 314          | 233    | 79        | **50.1%**     | 55.8 min    | 19.2 min       | **12.6 min**           | 14 / 17              |
 
 At 18:16 UTC the same 24h read said madness 577 / action 205 evictions (lane F,
 24h to 22:00: madness 586 = 56%, action 206 = 27%). The three reads agree on
@@ -709,29 +710,29 @@ update.
 
 ## 19. The floor re-read at the end of the session (23:52:54-23:54:37 UTC / 18:53 CDT)
 
-| measure | 18:05-18:16 UTC | 23:52-23:54 UTC |
-| --- | --- | --- |
-| open cluster tables | 137 (main 120 / feeder 17) | **141** (main 127 / feeder 14) |
-| seats = open roster rows | 306 = 306 | **446 = 446** |
-| horses at cash / human seats | 154 / 0 | **230 / 0** |
-| nine invariants (over capacity, two chairs, roster/chair both ways, dup/gap main_index, seated on closed or breaking, unaccounted exits) | all 0 | **all 0** |
-| `lifecycle closed / status waiting` | 2 | 2 (same two rows) |
-| enabled games ticked in 90 s | 109 / 109 | **109 / 109** |
-| controller_tick_error, last 1h | 0 | **8**, all `55P03 lock timeout`, on NLH 0.50/1 (3), NLH 0.25/0.50 (2), PLO6 0.50/1 (3), NLH 0.10/0.25 (1): the games in section 6 |
-| moves last 1h (done / cancelled / expired / pending) | 787 / 21 / 0 / 11 | **413 / 1 / 4 / 11** |
-| balance main->feeder / must_move feeder->main, last 1h | 381 / 394 | **193 / 213** |
-| exact balance-then-must-move round trips, last 1h | 355 | **170** (43 players moved; top player `5f7757f0-31e1-40f3-9daa-e2a3fcc064f3` moved **41 times** in the hour) |
-| expired % of moves created in 24h | 0.609% | 0.451% |
-| oldest pending move | 105 s | 78 s |
-| pending past its own expiry | 0 | 0 |
-| feeders last 1h opened / live / abandoned | 5 / 3 / 2 | 2 / 0 / 2 |
-| `hand_projection_outbox` rows / oldest | 108,823 / 08:13 UTC | **55,522 / 17:07 UTC** (draining, ~7.5k/h net) |
-| unresolved `post_commit_obligations_pending` alerts | 15 | **0** (resolved by another lane) |
-| new unresolved cash/cluster/seat alerts in the last 6h | - | 0 |
+| measure                                                                                                                                  | 18:05-18:16 UTC            | 23:52-23:54 UTC                                                                                                                   |
+| ---------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| open cluster tables                                                                                                                      | 137 (main 120 / feeder 17) | **141** (main 127 / feeder 14)                                                                                                    |
+| seats = open roster rows                                                                                                                 | 306 = 306                  | **446 = 446**                                                                                                                     |
+| horses at cash / human seats                                                                                                             | 154 / 0                    | **230 / 0**                                                                                                                       |
+| nine invariants (over capacity, two chairs, roster/chair both ways, dup/gap main_index, seated on closed or breaking, unaccounted exits) | all 0                      | **all 0**                                                                                                                         |
+| `lifecycle closed / status waiting`                                                                                                      | 2                          | 2 (same two rows)                                                                                                                 |
+| enabled games ticked in 90 s                                                                                                             | 109 / 109                  | **109 / 109**                                                                                                                     |
+| controller_tick_error, last 1h                                                                                                           | 0                          | **8**, all `55P03 lock timeout`, on NLH 0.50/1 (3), NLH 0.25/0.50 (2), PLO6 0.50/1 (3), NLH 0.10/0.25 (1): the games in section 6 |
+| moves last 1h (done / cancelled / expired / pending)                                                                                     | 787 / 21 / 0 / 11          | **413 / 1 / 4 / 11**                                                                                                              |
+| balance main->feeder / must_move feeder->main, last 1h                                                                                   | 381 / 394                  | **193 / 213**                                                                                                                     |
+| exact balance-then-must-move round trips, last 1h                                                                                        | 355                        | **170** (43 players moved; top player `5f7757f0-31e1-40f3-9daa-e2a3fcc064f3` moved **41 times** in the hour)                      |
+| expired % of moves created in 24h                                                                                                        | 0.609%                     | 0.451%                                                                                                                            |
+| oldest pending move                                                                                                                      | 105 s                      | 78 s                                                                                                                              |
+| pending past its own expiry                                                                                                              | 0                          | 0                                                                                                                                 |
+| feeders last 1h opened / live / abandoned                                                                                                | 5 / 3 / 2                  | 2 / 0 / 2                                                                                                                         |
+| `hand_projection_outbox` rows / oldest                                                                                                   | 108,823 / 08:13 UTC        | **55,522 / 17:07 UTC** (draining, ~7.5k/h net)                                                                                    |
+| unresolved `post_commit_obligations_pending` alerts                                                                                      | 15                         | **0** (resolved by another lane)                                                                                                  |
+| new unresolved cash/cluster/seat alerts in the last 6h                                                                                   | -                          | 0                                                                                                                                 |
 
 Two things the postgres log adds (`query_logs`, source `postgres_logs`, read
 23:53-23:54 UTC; the log carries message text, not function names, so
-"mentions fn_cash_" matches only migration bodies):
+"mentions fn*cash*" matches only migration bodies):
 
 - **`SEAT_MOVE_GAME_SCOPE_MISMATCH` raised 30 times between 23:01:10 and
   23:04:52 UTC**, and in the same window the moves of NLH 0.25/0.50 Classic
@@ -746,7 +747,7 @@ Two things the postgres log adds (`query_logs`, source `postgres_logs`, read
 - Other error text in the last 6 hours, for scale, none of it cash-cluster:
   `permission denied for table tournament_refund_entitlements` 61,116;
   `TOURNAMENT_TRANSITION_BUSY` 18,010; `canceling statement due to statement
-  timeout` 4,406; `canceling statement due to lock timeout` 556;
+timeout` 4,406; `canceling statement due to lock timeout` 556;
   `TABLE_CLOSING` refusals 22 (00:37-08:28); `CASHOUT_STALE_OCCUPANCY` 5
   (21:19-21:47); `SEAT_CHANGE_USED` 3; `cash_seat_moves_one_pending_per_player`
   duplicate 3.

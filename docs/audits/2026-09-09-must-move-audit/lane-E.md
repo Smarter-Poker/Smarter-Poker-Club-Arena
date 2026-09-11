@@ -17,11 +17,11 @@ from PRODUCTION (`kuklfnapbkmacvwxktbh`) between 17:40 and 20:10 UTC on
 The three blurbs a player is sold (`fn_cash_template_defaults`, and the picker
 copy quoted in `docs/changelog/2026-09-09-a-classic-game-has-no-antes-and-no-bombs.md`):
 
-| template | promised | does the felt do it |
-| --- | --- | --- |
-| classic | No Antes, No Bombs, No VPIP Floor | **YES** - verified on 24,000 live hands |
-| action | Small Blind Ante, VPIP Floor 30/10, Double Board Bomb Every 15 Minutes | **YES** on all four, with one caveat (E1) |
-| madness | Big Blind Ante, VPIP Floor 50/10, Double Board Bomb Every Orbit | **YES** on all four, with one caveat (E1) |
+| template | promised                                                               | does the felt do it                       |
+| -------- | ---------------------------------------------------------------------- | ----------------------------------------- |
+| classic  | No Antes, No Bombs, No VPIP Floor                                      | **YES** - verified on 24,000 live hands   |
+| action   | Small Blind Ante, VPIP Floor 30/10, Double Board Bomb Every 15 Minutes | **YES** on all four, with one caveat (E1) |
+| madness  | Big Blind Ante, VPIP Floor 50/10, Double Board Bomb Every Orbit        | **YES** on all four, with one caveat (E1) |
 
 Read from `hand_history` joined to `cash_games`, 2026-09-09 03:00-06:00 UTC:
 
@@ -87,17 +87,17 @@ bomb_pot_announce_seconds, bomb_pot_manual_pending
 Every other templated column is read off the cached row for the life of the
 process:
 
-| column | who reads it | refreshed? |
-| --- | --- | --- |
-| `ante_enabled`, `ante` | `ServerTableEngineDealing` HandConfig line 2438 | **NO** |
-| `big_blind_ante_enabled` | HandConfig line 2444; `anteSnapshotFields()` | **NO** |
-| `nit_game`, `maintain_percent_min` | `vpipFloor()` line 4755; the eviction gate line 5301 | **NO** |
-| `run_it_twice`, `allow_run_it_twice`, `run_it_twice_enabled`, `run_it_mode` | `applyRunItTwiceConfig()` line 2186-2215 | **NO** (its own comment says so) |
-| `insurance_enabled` | same | **NO** |
-| `seven_deuce_enabled`, `seven_deuce_amount` | `ServerTableEngineSettlement` line 855 | **NO** |
-| `straddle_enabled`, `auto_utg_straddle` | Dealing line 1966 | **NO** |
-| `max_buy_in` | Base line 4416, Settlement line 3170 | **NO** |
-| `action_time_seconds` | turn timer | **NO** |
+| column                                                                      | who reads it                                         | refreshed?                       |
+| --------------------------------------------------------------------------- | ---------------------------------------------------- | -------------------------------- |
+| `ante_enabled`, `ante`                                                      | `ServerTableEngineDealing` HandConfig line 2438      | **NO**                           |
+| `big_blind_ante_enabled`                                                    | HandConfig line 2444; `anteSnapshotFields()`         | **NO**                           |
+| `nit_game`, `maintain_percent_min`                                          | `vpipFloor()` line 4755; the eviction gate line 5301 | **NO**                           |
+| `run_it_twice`, `allow_run_it_twice`, `run_it_twice_enabled`, `run_it_mode` | `applyRunItTwiceConfig()` line 2186-2215             | **NO** (its own comment says so) |
+| `insurance_enabled`                                                         | same                                                 | **NO**                           |
+| `seven_deuce_enabled`, `seven_deuce_amount`                                 | `ServerTableEngineSettlement` line 855               | **NO**                           |
+| `straddle_enabled`, `auto_utg_straddle`                                     | Dealing line 1966                                    | **NO**                           |
+| `max_buy_in`                                                                | Base line 4416, Settlement line 3170                 | **NO**                           |
+| `action_time_seconds`                                                       | turn timer                                           | **NO**                           |
 
 `applyRunItTwiceConfig`'s own doc comment states the caveat exactly and calls
 adding a per-hand read "a separate decision ... deliberately NOT taken here".
@@ -116,17 +116,17 @@ called "not a cosmetic mismatch".
 **What production can and cannot show, precisely (CLAUDE.md 10.86 - "I could
 not tell" is its own answer):**
 
-* It cannot settle the 09-09 event. The apply ran at **03:54:45**, the
+- It cannot settle the 09-09 event. The apply ran at **03:54:45**, the
   maintenance announce is at **:53** and the hourly engine restart at **:55**.
   Only 3 hands were dealt on any classic table between the apply and the 04:00
   thaw. So the observed "antes go to zero at 04:00" is equally consistent with
   the re-read working and with the restart fixing it. I am not claiming the
   measurement proves my case; the code does.
-* It does show there is **no divergence live right now** (the 45-minute read in
+- It does show there is **no divergence live right now** (the 45-minute read in
   section 0), which is what the hourly restart guarantees: the blast radius of
   this defect is bounded at one hour, which is why it did not show up as a
   flood of complaints.
-* The hourly restart is also why this must be fixed at the root rather than
+- The hourly restart is also why this must be fixed at the root rather than
   detected. Under CLAUDE.md 10.11/10.12 a restart that happens to wash the
   problem away is not a fix; it is the platform getting lucky on a clock.
 
@@ -192,6 +192,7 @@ window.** The floor the card sells as "High VPIP Floor" could not judge a
 player that the game itself kept moving. The hero tracker
 (`fn_cash_vpip_status`) and the horse brain's board (`fn_nit_status`) read the
 same per-table sample, so all three agreed on a number that reset on every move
+
 - a rule, a warning and a steering signal that were consistently wrong together.
 
 This is not a stale-snapshot problem (that was `20260907190515`, and the floor
@@ -199,14 +200,15 @@ VALUES are correct today: action 30, madness 50, classic 0, window 10, on every
 game and every table - verified, 0 disagreements). It is a scope problem.
 
 **THE FIX:** on a cluster table the sample is the player's sitting in the GAME
+
 - every `ca_hand_facts` row on any table of the cluster since
-`cash_game_roster.joined_at`. That roster row is the right anchor because a move
-does not close it (`fn_cash_game_roster_track` declares the move via
-`app.cash_seat_move` and skips the close) while a real leave does, so a player
-who comes back after a break still starts a fresh count. Verified before
-choosing it: 302 of 302 players seated on cluster tables hold a live roster row,
-and none has a roster `joined_at` later than their chair. A table with no
-cluster keeps the per-table rule unchanged.
+  `cash_game_roster.joined_at`. That roster row is the right anchor because a move
+  does not close it (`fn_cash_game_roster_track` declares the move via
+  `app.cash_seat_move` and skips the close) while a real leave does, so a player
+  who comes back after a break still starts a fresh count. Verified before
+  choosing it: 302 of 302 players seated on cluster tables hold a live roster row,
+  and none has a roster `joined_at` later than their chair. A table with no
+  cluster keeps the per-table rule unchanged.
 
 All three readers change together, so what a player is stood up on, what the
 tracker prints, and what a horse steers by remain one number.
@@ -255,11 +257,11 @@ but missing from the `WHERE` drift predicate, so a row that differed only on
 one of them was never selected for repair and stayed wrong until something else
 moved:
 
-* `bomb_pot_min_players` - 4 live tables sat at 3 where the opener writes 2. On
+- `bomb_pot_min_players` - 4 live tables sat at 3 where the opener writes 2. On
   a two-handed table that is the difference between a due bomb firing and
   sitting pending for ever.
-* `ante_bb` - the felt's ante-in-big-blinds readout.
-* `seven_deuce_amount` - 4 tables carried 2 with the bounty switched off.
+- `ante_bb` - the felt's ante-in-big-blinds readout.
+- `seven_deuce_amount` - 4 tables carried 2 with the bounty switched off.
 
 Also added: `seven_deuce_enabled` is now guarded `AND g.variant = 'nlh'` in the
 projection, matching the guard the create path already has
@@ -274,7 +276,8 @@ table.
 ```ts
 const triggerMode: BombPotTriggerMode =
   mode === 'once_per_orbit' || mode === 'timed' || mode === 'bomb_pot_only'
-    ? mode : 'every_n_hands';
+    ? mode
+    : 'every_n_hands';
 ```
 
 A misspelled or future trigger mode becomes `every_n_hands`, and since the
@@ -298,11 +301,11 @@ pins) and `server/src/engine/HorseVariantProfile.ts` (`Object.keys(PRE)`). They
 happen to agree. The vocabulary is currently in lockstep across all four
 places, verified live:
 
-* `src/config/cashGames.ts` `CASH_VARIANT_IDS` = 9 ids;
-* `VariantRules.KNOWN_VARIANTS` = the same 9;
-* `cash_games_variant_check` CHECK on production = the same 9;
-* `fn_cash_game_create_impl_20260905`'s `VARIANT_UNAVAILABLE` gate = the same 9;
-* `cash_games_template_name_check` = classic, action, madness.
+- `src/config/cashGames.ts` `CASH_VARIANT_IDS` = 9 ids;
+- `VariantRules.KNOWN_VARIANTS` = the same 9;
+- `cash_games_variant_check` CHECK on production = the same 9;
+- `fn_cash_game_create_impl_20260905`'s `VARIANT_UNAVAILABLE` gate = the same 9;
+- `cash_games_template_name_check` = classic, action, madness.
 
 The one fragility: the test reads the vocabulary out of the **migration file**
 `20260904160500_cash_games_slice_1.sql`, not out of production, so a later
@@ -350,22 +353,22 @@ down.
 
 `HandController.postBlinds()` lines 396-408 and 544-558.
 
-* **Individual ante** (`config.ante && !config.bigBlindAnte`): every non-sitting-out
+- **Individual ante** (`config.ante && !config.bigBlindAnte`): every non-sitting-out
   player pays `min(ante, stack)` BEFORE the live blinds, into `deadInvested`,
   all-in at zero. Action's `sb`-sized ante takes this path.
-* **Big blind ante** (`config.ante && config.bigBlindAnte`): the big blind
+- **Big blind ante** (`config.ante && config.bigBlindAnte`): the big blind
   fronts `bigBlindAnteTotal(ante, seats, bigBlind)` AFTER posting the blind,
   also dead money. Madness's `bb`-sized ante takes this path, and
   `AnteMath.bigBlindAnteTotal` reads `ante >= bigBlind` as "the structure
   authored a TOTAL", which is exactly the madness case (`ante = g.bb`), so a
   6-max madness table collects ONE big blind, not six. The `BBA_CEILING_BB = 2`
   backstop caps any structure that is neither.
-* **Heads-up:** `activePlayers.length === 2` puts the small blind on the button;
+- **Heads-up:** `activePlayers.length === 2` puts the small blind on the button;
   the ante loop is independent of position, so both players ante. Correct.
-* **Short-handed / all-in for less than the ante:** `min(ante, stack)` and the
+- **Short-handed / all-in for less than the ante:** `min(ante, stack)` and the
   all-in flag; the pot-cap arithmetic uses `individualAnteInvested` so the
   history buckets stay blinds-then-antes.
-* **The cash toggle is honoured, the tournament one is not:** HandConfig line
+- **The cash toggle is honoured, the tournament one is not:** HandConfig line
   2438 gives a tournament the level's ante unconditionally and a cash table the
   ante only when `ante_enabled`. Deliberate, commented, and correct for us:
   Classic's `ante_enabled=false` is what makes "No Antes" true even if `ante`
@@ -384,18 +387,18 @@ every open cluster table.
 `BombPotScheduler.ts` read in full (595 lines) plus its decision site at
 `ServerTableEngineDealing.ts` 2037-2310.
 
-* **Action = `timed`, 900s, 2x BB, 2 boards.** `bombPotSettingsFromTable` maps
+- **Action = `timed`, 900s, 2x BB, 2 boards.** `bombPotSettingsFromTable` maps
   the row; `noteHandStart` sets one pending token when `now >= nextDueAtMs`,
   never a backlog; the token is consumed only at `dealtInCount >= minPlayers`
   and the interval restarts **from the consuming hand**, not the old due time.
   Production: 45/34/18 bombs per hour across ~20 action tables, and the four
   sampled tables' inter-bomb gaps were 15:04, 15:31, 15:02.
-* **Madness = `once_per_orbit`, 3x BB, 2 boards.** The orbit is tracked by the
+- **Madness = `once_per_orbit`, 3x BB, 2 boards.** The orbit is tracked by the
   button CROSSING an anchor seat (`buttonCrossedAnchor`, a clockwise arc test
   needing no table-size modulus), not by counting hands, so a seat joining or
   leaving mid-orbit neither adds nor skips a bomb. `from === to` correctly
   returns false (the 2026-08-29 runaway fix).
-* **The timer across a restart / table break / promotion.** `exportState()` is
+- **The timer across a restart / table break / promotion.** `exportState()` is
   written to `tables.bomb_pot_sched_state` after the decision (so a bomb hand
   persists ITS own button seat, not the previous one), guarded by a JSON diff so
   it is one row write only when something moved, and a disabled schedule clears
@@ -406,13 +409,13 @@ every open cluster table.
   table id and therefore a different scheduler**, which is correct: a feeder
   promoted to a main keeps its own bomb clock, and a player moved between them
   is subject to the destination's.
-* **A bomb hand at the must-move boundary.** The move executes at a hand
+- **A bomb hand at the must-move boundary.** The move executes at a hand
   boundary (`fn_cash_seat_move_execute` and the engine's settlement branch), and
   the bomb decision is taken at the hand boundary too, BEFORE `HandConfig` is
   built - `ServerTableEngineDealing` line 2044 comment: "a hand already in
   progress can never become a bomb pot". A player moved out before the deal is
   simply not in `players`, so they neither ante nor are dealt in. No overlap.
-* **A new arrival during a bomb.** An arrival is registered into `waitingForBB`
+- **A new arrival during a bomb.** An arrival is registered into `waitingForBB`
   at the top of the loop and is held out of the deal until the big blind reaches
   them or they post; `entry_hold='moved'` (a must-move arrival) is dealt in
   free, which is Dan's 2026-09-05 ruling ("NO POST ... THEY ALREADY POSTED AT THE
@@ -420,11 +423,11 @@ every open cluster table.
   not, and a bomb charges only `state.players.filter(p => !p.is_sitting_out)`.
   I found no path by which an arrival pays a bomb ante for a hand they are not
   dealt into.
-* **Board count.** `bomb_pot_board_count` wins; the legacy `double_board`
+- **Board count.** `bomb_pot_board_count` wins; the legacy `double_board`
   boolean maps to 2; `HandController` downgrades stepwise only if the deck
   cannot cover `players x holeCards + 5 x boards`. Both templates request 2 and
   every live table is at 2.
-* **Variant override.** Null on every cluster table, so `resolveBombPotVariant`
+- **Variant override.** Null on every cluster table, so `resolveBombPotVariant`
   returns the table's own variant. The whitelist plus the fixed-limit-line and
   `maxSeatsForVariant` checks were read and are correct.
 
@@ -432,41 +435,41 @@ every open cluster table.
 
 ## 4. THE VPIP FLOOR, LINE BY LINE
 
-* `tables.nit_game / maintain_percent_min / maintain_hands` are the columns;
+- `tables.nit_game / maintain_percent_min / maintain_hands` are the columns;
   `career_percent_min` is always 0 on a templated game and the career branch is
   therefore dead there.
-* The rule is a QUERY, not engine state: `fn_nit_evictions` -> `fn_nit_check`
+- The rule is a QUERY, not engine state: `fn_nit_evictions` -> `fn_nit_check`
   over `ca_hand_facts`, called at every hand boundary from the shared eviction
   pass at `ServerTableEngineBase` 5301. Failure returns an empty list, so a
   stats query that cannot answer never removes anyone.
-* `collectNitStatus` (`fn_nit_status`) is read beside it and handed to the horse
+- `collectNitStatus` (`fn_nit_status`) is read beside it and handed to the horse
   brain as `vpipFloor` + `ownVpip`, so a horse widens toward the floor instead of
   being stood up by it (10.5). The floor it is handed comes from `vpipFloor()`,
   which is cached - that is E1's fourth row.
-* The eviction cashes out with `leaveMode: 'vpip_evicted'`, which is what makes
+- The eviction cashes out with `leaveMode: 'vpip_evicted'`, which is what makes
   the two-hour bar fire; every other eviction stays a plain system exit.
-* Horses: no `is_horse` predicate anywhere in `fn_nit_evictions`,
+- Horses: no `is_horse` predicate anywhere in `fn_nit_evictions`,
   `fn_nit_check`, `fn_nit_status` or the engine gate. Verified on the live
   bodies.
-* The floor VALUES are the template's, not a stale snapshot: 0 games and 0 open
+- The floor VALUES are the template's, not a stale snapshot: 0 games and 0 open
   tables disagree with `fn_cash_template_defaults` on `vpip_floor`,
   `vpip_window`, `regular_ante` or the whole `bombs` object (one query, 109
   enabled games). `20260907190515`'s trigger `zz_cash_game_floor_from_template`
   is live and holds.
-* **The scope was wrong, and that is E2.**
+- **The scope was wrong, and that is E2.**
 
 ---
 
 ## 5. STRADDLE, SEVEN-DEUCE, RUN-IT
 
-* **Straddle is off (R2)** on all 137 open cluster tables, all three spellings
+- **Straddle is off (R2)** on all 137 open cluster tables, all three spellings
   (`straddle_enabled`, `auto_utg_straddle`, `voluntary_straddle`), and both the
   opener and the reconciler force all three false unconditionally. The engine's
   straddle block is gated on `tableInfo.straddle_enabled` so it never runs.
-* **Seven-deuce only on NLH:** the create path guards
+- **Seven-deuce only on NLH:** the create path guards
   `... AND v_v = 'nlh'`; production has 0 non-NLH games and 0 non-NLH tables
   with it on. The reconciler now carries the same guard (E4).
-* **Run-it:** `run_it_n_times: 'opt_in'` on every template, RIT is cash-only
+- **Run-it:** `run_it_n_times: 'opt_in'` on every template, RIT is cash-only
   (`ritIsTournament` gate), the mode is read additively so an unrecognised value
   can only ever remove the QUESTION and never the feature, and the three
   booleans are OR-ed the way owner intent demands. The drift was E3.
@@ -487,34 +490,34 @@ the SQL out of the slice-1 migration (E6).
 
 Engine:
 
-* `server/src/engine/BombPotScheduler.ts` - all 595 lines.
-* `server/src/engine/AnteMath.ts` - all 85 lines.
-* `server/src/engine/ServerTableEngineDealing.ts` - 260-560 (arrival, entry
+- `server/src/engine/BombPotScheduler.ts` - all 595 lines.
+- `server/src/engine/AnteMath.ts` - all 85 lines.
+- `server/src/engine/ServerTableEngineDealing.ts` - 260-560 (arrival, entry
   hold, wait-for-BB, post-to-enter), 1500-1560 (`readNextHandInputs`,
   `refreshBlinds`), 1955-2480 (straddle, bomb decision, scheduler persistence,
   away-blind cap, `HandConfig`), 2610-2630 (`mustPostBB`).
-* `server/src/engine/ServerTableEngineBase.ts` - 2085-2250
+- `server/src/engine/ServerTableEngineBase.ts` - 2085-2250
   (`applyRunItTwiceConfig`), 2290-2400 (`start()` config block), 4745-4770
   (`vpipFloor`, `nitStatus`), 4780-4820 (manual bomb push), 4860-4960
   (`refreshRakeConfig`), 5275-5400 (the shared eviction pass).
-* `server/src/engine/HandController.ts` - 360-560 (`postBlinds`, ante, dead
+- `server/src/engine/HandController.ts` - 360-560 (`postBlinds`, ante, dead
   blinds, snapshots), 672-800 (`postBombPotAntes`), 2050-2100
   (`returnUncalledBet`).
-* `server/src/engine/ServerTableEngine.ts` - 160-180 (`anteSnapshotFields`).
-* `server/src/engine/RunItTwiceEngine.ts` - 20-80 (`RunItMode`, `RITConfig`).
-* `server/src/engine/VariantRules.ts` - 100-135.
-* `server/src/services/supabase/nitGame.ts` - all 133 lines.
-* `server/src/services/supabase/tables.ts` - the `TABLE_COLUMNS` select.
-* `server/src/types.ts` - the `TableInfo` and `HandConfig` ante/bomb/RIT fields.
+- `server/src/engine/ServerTableEngine.ts` - 160-180 (`anteSnapshotFields`).
+- `server/src/engine/RunItTwiceEngine.ts` - 20-80 (`RunItMode`, `RITConfig`).
+- `server/src/engine/VariantRules.ts` - 100-135.
+- `server/src/services/supabase/nitGame.ts` - all 133 lines.
+- `server/src/services/supabase/tables.ts` - the `TABLE_COLUMNS` select.
+- `server/src/types.ts` - the `TableInfo` and `HandConfig` ante/bomb/RIT fields.
 
 Client / config:
 
-* `src/config/cashGames.ts`, `tests/unit/cashGamesVocabulary.test.ts`,
+- `src/config/cashGames.ts`, `tests/unit/cashGamesVocabulary.test.ts`,
   `src/components/table/HeroVpipTracker.tsx`.
 
 Production function bodies (`pg_get_functiondef`, live):
 
-* `fn_cash_template_defaults`, `fn_cash_apply_ruleset`,
+- `fn_cash_template_defaults`, `fn_cash_apply_ruleset`,
   `fn_cash_cluster_open_table`, `fn_cash_game_create_impl_20260905` (the options
   and snapshot block), `fn_nit_check`, `fn_nit_evictions`, `fn_nit_status`,
   `fn_cash_vpip_status`, `fn_cash_game_roster_track`, `fn_tables_sync_rit`, and
@@ -525,13 +528,14 @@ Production function bodies (`pg_get_functiondef`, live):
 ## 8. MIGRATION
 
 `supabase/migrations/20260909181230_the_floor_follows_the_player_and_the_ruleset_projects_every_promise.sql`
+
 - one `BEGIN`/`COMMIT`, reasoning in the header, assertions at the foot that
-abort the transaction if the board moved. Version reserved with
-`scripts/reserve-migration-version.sh` (never hand-picked, 4.5). Carries E2, E3
-and E4. Lane C's `20260909191454` sorts after it and edits the same function by
-anchored literal replacement, and the anchors it needs (`min_buy_in` /
-`max_buy_in` in both the SET list and the predicate) are preserved verbatim in
-my body.
+  abort the transaction if the board moved. Version reserved with
+  `scripts/reserve-migration-version.sh` (never hand-picked, 4.5). Carries E2, E3
+  and E4. Lane C's `20260909191454` sorts after it and edits the same function by
+  anchored literal replacement, and the anchors it needs (`min_buy_in` /
+  `max_buy_in` in both the SET list and the predicate) are preserved verbatim in
+  my body.
 
 Probe, rolled back against production, one `execute_sql` call, `pg_temp` copies
 of all four bodies, ending in `RAISE EXCEPTION`:
@@ -572,8 +576,6 @@ once a player is moved.
    now agree column for column, but it is lane C's file and the divergence that
    mattered was in the reconciler.
 5. **Nothing was committed, pushed or applied.** Both probes were rolled back.
-
-
 
 ---
 
@@ -655,12 +657,12 @@ seated_without_roster 0    (302 of 302 seated players hold a live roster row)
 
 ## 11. WHAT THE INTEGRATOR NEEDS FROM ME
 
-| file | mine? | note |
-| --- | --- | --- |
-| `supabase/migrations/20260909181230_the_floor_follows_the_player_and_the_ruleset_projects_every_promise.sql` | new, mine | E2 + E3 + E4. Replaces the whole body of `fn_cash_apply_ruleset`; lane C's `20260909191454` sorts after it and edits by anchored literal on `min_buy_in`/`max_buy_in`, which my body preserves verbatim in both the SET list and the predicate. **Apply mine first.** |
-| `server/src/engine/ServerTableEngineBase.ts` | **SHARED** | E1. Two methods touched. No control flow moved, no signature changed. See the hunk list below. |
-| `server/src/engine/TemplatedRulesAreReRead.test.ts` | new, mine | 7 pins, negative-controlled. |
-| `docs/audits/2026-09-09-must-move-audit/lane-E.md` | new, mine | this file. |
+| file                                                                                                         | mine?      | note                                                                                                                                                                                                                                                                  |
+| ------------------------------------------------------------------------------------------------------------ | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `supabase/migrations/20260909181230_the_floor_follows_the_player_and_the_ruleset_projects_every_promise.sql` | new, mine  | E2 + E3 + E4. Replaces the whole body of `fn_cash_apply_ruleset`; lane C's `20260909191454` sorts after it and edits by anchored literal on `min_buy_in`/`max_buy_in`, which my body preserves verbatim in both the SET list and the predicate. **Apply mine first.** |
+| `server/src/engine/ServerTableEngineBase.ts`                                                                 | **SHARED** | E1. Two methods touched. No control flow moved, no signature changed. See the hunk list below.                                                                                                                                                                        |
+| `server/src/engine/TemplatedRulesAreReRead.test.ts`                                                          | new, mine  | 7 pins, negative-controlled.                                                                                                                                                                                                                                          |
+| `docs/audits/2026-09-09-must-move-audit/lane-E.md`                                                           | new, mine  | this file.                                                                                                                                                                                                                                                            |
 
 No schema-manifest fragment is needed: the migration only does
 `CREATE OR REPLACE` on four functions that already exist in production, and
@@ -673,12 +675,12 @@ seat-move notice work: the `seatMoveCancelledNotice` import at line 69 and the
 hunks between 2454 and 3285). **Those are not mine.** Mine are four, all in
 two methods:
 
-| hunk (post-edit line) | what |
-| --- | --- |
+| hunk (post-edit line)  | what                                                                                                                                                                                        |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `@@ -2128,11 +2129,19` | `applyRunItTwiceConfig` doc comment only. Replaces the "ONE CAVEAT ... deliberately NOT taken here" paragraph, which now asserts the opposite of what the code does. Zero executable lines. |
-| `@@ -4892,0 +4995,24` | `refreshRakeConfig` doc comment only. Adds the "IT IS NOT ONLY RAKE ANY MORE" section. Zero executable lines. |
-| `@@ -4910 +5036,5` | the `select` list: 19 columns appended, plus a 4-line comment. |
-| `@@ -4945,0 +5076,57` | the assignment block: 19 writes onto `this.tableInfo`, one `this.applyRunItTwiceConfig()` call, and the comment explaining why insurance is not re-configured. |
+| `@@ -4892,0 +4995,24`  | `refreshRakeConfig` doc comment only. Adds the "IT IS NOT ONLY RAKE ANY MORE" section. Zero executable lines.                                                                               |
+| `@@ -4910 +5036,5`     | the `select` list: 19 columns appended, plus a 4-line comment.                                                                                                                              |
+| `@@ -4945,0 +5076,57`  | the assignment block: 19 writes onto `this.tableInfo`, one `this.applyRunItTwiceConfig()` call, and the comment explaining why insurance is not re-configured.                              |
 
 Two of the four are comments. The whole executable change is 20 assignments and
 one method call inside a method that already existed to do exactly this job.

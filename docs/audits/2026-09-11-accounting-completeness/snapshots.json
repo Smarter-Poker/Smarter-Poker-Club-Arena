@@ -1,0 +1,977 @@
+{
+  "banked_only": {
+    "gaps": [
+      {
+        "kind": "missing_funding_lot",
+        "hand_id": "00000000-0000-4000-8000-000003100001",
+        "player_id": "00000000-0000-4000-8000-000000000201"
+      },
+      {
+        "kind": "missing_club_funding_admission",
+        "hand_id": "00000000-0000-4000-8000-000003100001",
+        "player_id": "00000000-0000-4000-8000-000000000201"
+      },
+      {
+        "kind": "missing_contributor_receipt",
+        "hand_id": "00000000-0000-4000-8000-000003100001",
+        "player_id": "00000000-0000-4000-8000-000000000201"
+      },
+      {
+        "kind": "missing_recipient_accrual",
+        "hand_id": "00000000-0000-4000-8000-000003100001",
+        "agent_id": "00000000-0000-4000-8000-000000000103",
+        "player_id": "00000000-0000-4000-8000-000000000201"
+      },
+      {
+        "kind": "missing_agent_funding_admission",
+        "hand_id": "00000000-0000-4000-8000-000003100001",
+        "agent_id": "00000000-0000-4000-8000-000000000103",
+        "player_id": "00000000-0000-4000-8000-000000000201"
+      },
+      {
+        "kind": "missing_recipient_accrual",
+        "hand_id": "00000000-0000-4000-8000-000003100001",
+        "agent_id": "00000000-0000-4000-8000-000000000102",
+        "player_id": "00000000-0000-4000-8000-000000000201"
+      },
+      {
+        "kind": "missing_agent_funding_admission",
+        "hand_id": "00000000-0000-4000-8000-000003100001",
+        "agent_id": "00000000-0000-4000-8000-000000000102",
+        "player_id": "00000000-0000-4000-8000-000000000201"
+      },
+      {
+        "kind": "missing_recipient_accrual",
+        "hand_id": "00000000-0000-4000-8000-000003100001",
+        "agent_id": "00000000-0000-4000-8000-000000000101",
+        "player_id": "00000000-0000-4000-8000-000000000201"
+      },
+      {
+        "kind": "missing_agent_funding_admission",
+        "hand_id": "00000000-0000-4000-8000-000003100001",
+        "agent_id": "00000000-0000-4000-8000-000000000101",
+        "player_id": "00000000-0000-4000-8000-000000000201"
+      },
+      {
+        "kind": "missing_player_funding_admission",
+        "hand_id": "00000000-0000-4000-8000-000003100001",
+        "player_id": "00000000-0000-4000-8000-000000000201"
+      },
+      {
+        "kind": "missing_funding_lot",
+        "hand_id": "00000000-0000-4000-8000-000003100001",
+        "player_id": "00000000-0000-4000-8000-000000000202"
+      },
+      {
+        "kind": "missing_club_funding_admission",
+        "hand_id": "00000000-0000-4000-8000-000003100001",
+        "player_id": "00000000-0000-4000-8000-000000000202"
+      },
+      {
+        "kind": "missing_contributor_receipt",
+        "hand_id": "00000000-0000-4000-8000-000003100001",
+        "player_id": "00000000-0000-4000-8000-000000000202"
+      },
+      {
+        "kind": "missing_recipient_accrual",
+        "hand_id": "00000000-0000-4000-8000-000003100001",
+        "agent_id": "00000000-0000-4000-8000-000000000103",
+        "player_id": "00000000-0000-4000-8000-000000000202"
+      },
+      {
+        "kind": "missing_agent_funding_admission",
+        "hand_id": "00000000-0000-4000-8000-000003100001",
+        "agent_id": "00000000-0000-4000-8000-000000000103",
+        "player_id": "00000000-0000-4000-8000-000000000202"
+      },
+      {
+        "kind": "missing_recipient_accrual",
+        "hand_id": "00000000-0000-4000-8000-000003100001",
+        "agent_id": "00000000-0000-4000-8000-000000000102",
+        "player_id": "00000000-0000-4000-8000-000000000202"
+      },
+      {
+        "kind": "missing_agent_funding_admission",
+        "hand_id": "00000000-0000-4000-8000-000003100001",
+        "agent_id": "00000000-0000-4000-8000-000000000102",
+        "player_id": "00000000-0000-4000-8000-000000000202"
+      },
+      {
+        "kind": "missing_recipient_accrual",
+        "hand_id": "00000000-0000-4000-8000-000003100001",
+        "agent_id": "00000000-0000-4000-8000-000000000101",
+        "player_id": "00000000-0000-4000-8000-000000000202"
+      },
+      {
+        "kind": "missing_agent_funding_admission",
+        "hand_id": "00000000-0000-4000-8000-000003100001",
+        "agent_id": "00000000-0000-4000-8000-000000000101",
+        "player_id": "00000000-0000-4000-8000-000000000202"
+      },
+      {
+        "kind": "missing_player_funding_admission",
+        "hand_id": "00000000-0000-4000-8000-000003100001",
+        "player_id": "00000000-0000-4000-8000-000000000202"
+      }
+    ],
+    "scope": "known_captured_sources_only",
+    "union_id": "00000000-0000-4000-8000-000000000901",
+    "bank_from": "2026-08-31T02:00:00-05:00",
+    "period_closed": false,
+    "common_finality": false,
+    "finality_reason": "complete_producer_legacy_bank_and_period_authority_still_required",
+    "manifest_sha256": "29c9602593eb7acebe85c086e5c6bc15b5d1a2335e82b73d281231f8ca259b0d",
+    "bank_to_exclusive": "2026-09-07T02:00:00-05:00",
+    "known_attribution": {
+      "club": {
+        "exact": "1.8000000000000000000000",
+        "allocated": 0,
+        "remaining_exact": "1.8000000000000000000000"
+      },
+      "agent": {
+        "exact": "1.400000000000000000000000",
+        "allocated": 0,
+        "remaining_exact": "1.400000000000000000000000"
+      },
+      "player": {
+        "exact": "0.300000000000000000000000",
+        "allocated": 0,
+        "remaining_exact": "0.300000000000000000000000"
+      }
+    },
+    "known_rows_complete": false,
+    "earning_closed_through": "2026-09-07",
+    "sources_in_bank_window": 1,
+    "future_earning_contributors": 0,
+    "retained_union_contributors": 0,
+    "sources_outside_bank_window": 0,
+    "amounts_are_attribution_not_new_spendable_cash": true
+  },
+  "contributor_only": {
+    "gaps": [
+      {
+        "kind": "missing_funding_lot",
+        "hand_id": "00000000-0000-4000-8000-000003100001",
+        "player_id": "00000000-0000-4000-8000-000000000201"
+      },
+      {
+        "kind": "missing_club_funding_admission",
+        "hand_id": "00000000-0000-4000-8000-000003100001",
+        "player_id": "00000000-0000-4000-8000-000000000201"
+      },
+      {
+        "kind": "missing_recipient_accrual",
+        "hand_id": "00000000-0000-4000-8000-000003100001",
+        "agent_id": "00000000-0000-4000-8000-000000000103",
+        "player_id": "00000000-0000-4000-8000-000000000201"
+      },
+      {
+        "kind": "missing_agent_funding_admission",
+        "hand_id": "00000000-0000-4000-8000-000003100001",
+        "agent_id": "00000000-0000-4000-8000-000000000103",
+        "player_id": "00000000-0000-4000-8000-000000000201"
+      },
+      {
+        "kind": "missing_recipient_accrual",
+        "hand_id": "00000000-0000-4000-8000-000003100001",
+        "agent_id": "00000000-0000-4000-8000-000000000102",
+        "player_id": "00000000-0000-4000-8000-000000000201"
+      },
+      {
+        "kind": "missing_agent_funding_admission",
+        "hand_id": "00000000-0000-4000-8000-000003100001",
+        "agent_id": "00000000-0000-4000-8000-000000000102",
+        "player_id": "00000000-0000-4000-8000-000000000201"
+      },
+      {
+        "kind": "missing_recipient_accrual",
+        "hand_id": "00000000-0000-4000-8000-000003100001",
+        "agent_id": "00000000-0000-4000-8000-000000000101",
+        "player_id": "00000000-0000-4000-8000-000000000201"
+      },
+      {
+        "kind": "missing_agent_funding_admission",
+        "hand_id": "00000000-0000-4000-8000-000003100001",
+        "agent_id": "00000000-0000-4000-8000-000000000101",
+        "player_id": "00000000-0000-4000-8000-000000000201"
+      },
+      {
+        "kind": "missing_player_funding_admission",
+        "hand_id": "00000000-0000-4000-8000-000003100001",
+        "player_id": "00000000-0000-4000-8000-000000000201"
+      },
+      {
+        "kind": "missing_funding_lot",
+        "hand_id": "00000000-0000-4000-8000-000003100001",
+        "player_id": "00000000-0000-4000-8000-000000000202"
+      },
+      {
+        "kind": "missing_club_funding_admission",
+        "hand_id": "00000000-0000-4000-8000-000003100001",
+        "player_id": "00000000-0000-4000-8000-000000000202"
+      },
+      {
+        "kind": "missing_recipient_accrual",
+        "hand_id": "00000000-0000-4000-8000-000003100001",
+        "agent_id": "00000000-0000-4000-8000-000000000103",
+        "player_id": "00000000-0000-4000-8000-000000000202"
+      },
+      {
+        "kind": "missing_agent_funding_admission",
+        "hand_id": "00000000-0000-4000-8000-000003100001",
+        "agent_id": "00000000-0000-4000-8000-000000000103",
+        "player_id": "00000000-0000-4000-8000-000000000202"
+      },
+      {
+        "kind": "missing_recipient_accrual",
+        "hand_id": "00000000-0000-4000-8000-000003100001",
+        "agent_id": "00000000-0000-4000-8000-000000000102",
+        "player_id": "00000000-0000-4000-8000-000000000202"
+      },
+      {
+        "kind": "missing_agent_funding_admission",
+        "hand_id": "00000000-0000-4000-8000-000003100001",
+        "agent_id": "00000000-0000-4000-8000-000000000102",
+        "player_id": "00000000-0000-4000-8000-000000000202"
+      },
+      {
+        "kind": "missing_recipient_accrual",
+        "hand_id": "00000000-0000-4000-8000-000003100001",
+        "agent_id": "00000000-0000-4000-8000-000000000101",
+        "player_id": "00000000-0000-4000-8000-000000000202"
+      },
+      {
+        "kind": "missing_agent_funding_admission",
+        "hand_id": "00000000-0000-4000-8000-000003100001",
+        "agent_id": "00000000-0000-4000-8000-000000000101",
+        "player_id": "00000000-0000-4000-8000-000000000202"
+      },
+      {
+        "kind": "missing_player_funding_admission",
+        "hand_id": "00000000-0000-4000-8000-000003100001",
+        "player_id": "00000000-0000-4000-8000-000000000202"
+      }
+    ],
+    "scope": "known_captured_sources_only",
+    "union_id": "00000000-0000-4000-8000-000000000901",
+    "bank_from": "2026-08-31T02:00:00-05:00",
+    "period_closed": false,
+    "common_finality": false,
+    "finality_reason": "complete_producer_legacy_bank_and_period_authority_still_required",
+    "manifest_sha256": "29c9602593eb7acebe85c086e5c6bc15b5d1a2335e82b73d281231f8ca259b0d",
+    "bank_to_exclusive": "2026-09-07T02:00:00-05:00",
+    "known_attribution": {
+      "club": {
+        "exact": "1.8000000000000000000000",
+        "allocated": 0,
+        "remaining_exact": "1.8000000000000000000000"
+      },
+      "agent": {
+        "exact": "1.400000000000000000000000",
+        "allocated": 0,
+        "remaining_exact": "1.400000000000000000000000"
+      },
+      "player": {
+        "exact": "0.300000000000000000000000",
+        "allocated": 0,
+        "remaining_exact": "0.300000000000000000000000"
+      }
+    },
+    "known_rows_complete": false,
+    "earning_closed_through": "2026-09-07",
+    "sources_in_bank_window": 1,
+    "future_earning_contributors": 0,
+    "retained_union_contributors": 0,
+    "sources_outside_bank_window": 0,
+    "amounts_are_attribution_not_new_spendable_cash": true
+  },
+  "rights_admitted": {
+    "gaps": [
+      {
+        "kind": "missing_club_funding_admission",
+        "hand_id": "00000000-0000-4000-8000-000003100001",
+        "player_id": "00000000-0000-4000-8000-000000000201"
+      },
+      {
+        "kind": "missing_agent_funding_admission",
+        "hand_id": "00000000-0000-4000-8000-000003100001",
+        "agent_id": "00000000-0000-4000-8000-000000000103",
+        "player_id": "00000000-0000-4000-8000-000000000201"
+      },
+      {
+        "kind": "missing_agent_funding_admission",
+        "hand_id": "00000000-0000-4000-8000-000003100001",
+        "agent_id": "00000000-0000-4000-8000-000000000102",
+        "player_id": "00000000-0000-4000-8000-000000000201"
+      },
+      {
+        "kind": "missing_agent_funding_admission",
+        "hand_id": "00000000-0000-4000-8000-000003100001",
+        "agent_id": "00000000-0000-4000-8000-000000000101",
+        "player_id": "00000000-0000-4000-8000-000000000201"
+      },
+      {
+        "kind": "missing_player_funding_admission",
+        "hand_id": "00000000-0000-4000-8000-000003100001",
+        "player_id": "00000000-0000-4000-8000-000000000201"
+      },
+      {
+        "kind": "missing_club_funding_admission",
+        "hand_id": "00000000-0000-4000-8000-000003100001",
+        "player_id": "00000000-0000-4000-8000-000000000202"
+      },
+      {
+        "kind": "missing_agent_funding_admission",
+        "hand_id": "00000000-0000-4000-8000-000003100001",
+        "agent_id": "00000000-0000-4000-8000-000000000103",
+        "player_id": "00000000-0000-4000-8000-000000000202"
+      },
+      {
+        "kind": "missing_agent_funding_admission",
+        "hand_id": "00000000-0000-4000-8000-000003100001",
+        "agent_id": "00000000-0000-4000-8000-000000000102",
+        "player_id": "00000000-0000-4000-8000-000000000202"
+      },
+      {
+        "kind": "missing_agent_funding_admission",
+        "hand_id": "00000000-0000-4000-8000-000003100001",
+        "agent_id": "00000000-0000-4000-8000-000000000101",
+        "player_id": "00000000-0000-4000-8000-000000000202"
+      },
+      {
+        "kind": "missing_player_funding_admission",
+        "hand_id": "00000000-0000-4000-8000-000003100001",
+        "player_id": "00000000-0000-4000-8000-000000000202"
+      }
+    ],
+    "scope": "known_captured_sources_only",
+    "union_id": "00000000-0000-4000-8000-000000000901",
+    "bank_from": "2026-08-31T02:00:00-05:00",
+    "period_closed": false,
+    "common_finality": false,
+    "finality_reason": "complete_producer_legacy_bank_and_period_authority_still_required",
+    "manifest_sha256": "29c9602593eb7acebe85c086e5c6bc15b5d1a2335e82b73d281231f8ca259b0d",
+    "bank_to_exclusive": "2026-09-07T02:00:00-05:00",
+    "known_attribution": {
+      "club": {
+        "exact": "1.8000000000000000000000",
+        "allocated": 0,
+        "remaining_exact": "1.8000000000000000000000"
+      },
+      "agent": {
+        "exact": "1.400000000000000000000000",
+        "allocated": 0,
+        "remaining_exact": "1.400000000000000000000000"
+      },
+      "player": {
+        "exact": "0.300000000000000000000000",
+        "allocated": 0,
+        "remaining_exact": "0.300000000000000000000000"
+      }
+    },
+    "known_rows_complete": false,
+    "earning_closed_through": "2026-09-07",
+    "sources_in_bank_window": 1,
+    "future_earning_contributors": 0,
+    "retained_union_contributors": 0,
+    "sources_outside_bank_window": 0,
+    "amounts_are_attribution_not_new_spendable_cash": true
+  },
+  "club_released": {
+    "gaps": [
+      {
+        "kind": "missing_agent_funding_admission",
+        "hand_id": "00000000-0000-4000-8000-000003100001",
+        "agent_id": "00000000-0000-4000-8000-000000000103",
+        "player_id": "00000000-0000-4000-8000-000000000201"
+      },
+      {
+        "kind": "missing_agent_funding_admission",
+        "hand_id": "00000000-0000-4000-8000-000003100001",
+        "agent_id": "00000000-0000-4000-8000-000000000102",
+        "player_id": "00000000-0000-4000-8000-000000000201"
+      },
+      {
+        "kind": "missing_agent_funding_admission",
+        "hand_id": "00000000-0000-4000-8000-000003100001",
+        "agent_id": "00000000-0000-4000-8000-000000000101",
+        "player_id": "00000000-0000-4000-8000-000000000201"
+      },
+      {
+        "kind": "missing_player_funding_admission",
+        "hand_id": "00000000-0000-4000-8000-000003100001",
+        "player_id": "00000000-0000-4000-8000-000000000201"
+      },
+      {
+        "kind": "missing_agent_funding_admission",
+        "hand_id": "00000000-0000-4000-8000-000003100001",
+        "agent_id": "00000000-0000-4000-8000-000000000103",
+        "player_id": "00000000-0000-4000-8000-000000000202"
+      },
+      {
+        "kind": "missing_agent_funding_admission",
+        "hand_id": "00000000-0000-4000-8000-000003100001",
+        "agent_id": "00000000-0000-4000-8000-000000000102",
+        "player_id": "00000000-0000-4000-8000-000000000202"
+      },
+      {
+        "kind": "missing_agent_funding_admission",
+        "hand_id": "00000000-0000-4000-8000-000003100001",
+        "agent_id": "00000000-0000-4000-8000-000000000101",
+        "player_id": "00000000-0000-4000-8000-000000000202"
+      },
+      {
+        "kind": "missing_player_funding_admission",
+        "hand_id": "00000000-0000-4000-8000-000003100001",
+        "player_id": "00000000-0000-4000-8000-000000000202"
+      }
+    ],
+    "scope": "known_captured_sources_only",
+    "union_id": "00000000-0000-4000-8000-000000000901",
+    "bank_from": "2026-08-31T02:00:00-05:00",
+    "period_closed": false,
+    "common_finality": false,
+    "finality_reason": "complete_producer_legacy_bank_and_period_authority_still_required",
+    "manifest_sha256": "29c9602593eb7acebe85c086e5c6bc15b5d1a2335e82b73d281231f8ca259b0d",
+    "bank_to_exclusive": "2026-09-07T02:00:00-05:00",
+    "known_attribution": {
+      "club": {
+        "exact": "1.8000000000000000000000",
+        "allocated": "1.8000000000000000000000",
+        "remaining_exact": "0E-22"
+      },
+      "agent": {
+        "exact": "1.400000000000000000000000",
+        "allocated": 0,
+        "remaining_exact": "1.400000000000000000000000"
+      },
+      "player": {
+        "exact": "0.300000000000000000000000",
+        "allocated": 0,
+        "remaining_exact": "0.300000000000000000000000"
+      }
+    },
+    "known_rows_complete": false,
+    "earning_closed_through": "2026-09-07",
+    "sources_in_bank_window": 1,
+    "future_earning_contributors": 0,
+    "retained_union_contributors": 0,
+    "sources_outside_bank_window": 0,
+    "amounts_are_attribution_not_new_spendable_cash": true
+  },
+  "agents_paid": {
+    "gaps": [
+      {
+        "kind": "missing_player_funding_admission",
+        "hand_id": "00000000-0000-4000-8000-000003100001",
+        "player_id": "00000000-0000-4000-8000-000000000201"
+      },
+      {
+        "kind": "missing_player_funding_admission",
+        "hand_id": "00000000-0000-4000-8000-000003100001",
+        "player_id": "00000000-0000-4000-8000-000000000202"
+      }
+    ],
+    "scope": "known_captured_sources_only",
+    "union_id": "00000000-0000-4000-8000-000000000901",
+    "bank_from": "2026-08-31T02:00:00-05:00",
+    "period_closed": false,
+    "common_finality": false,
+    "finality_reason": "complete_producer_legacy_bank_and_period_authority_still_required",
+    "manifest_sha256": "29c9602593eb7acebe85c086e5c6bc15b5d1a2335e82b73d281231f8ca259b0d",
+    "bank_to_exclusive": "2026-09-07T02:00:00-05:00",
+    "known_attribution": {
+      "club": {
+        "exact": "1.8000000000000000000000",
+        "allocated": "1.8000000000000000000000",
+        "remaining_exact": "0E-22"
+      },
+      "agent": {
+        "exact": "1.400000000000000000000000",
+        "allocated": "1.400000000000000000000000",
+        "remaining_exact": "0E-24"
+      },
+      "player": {
+        "exact": "0.300000000000000000000000",
+        "allocated": 0,
+        "remaining_exact": "0.300000000000000000000000"
+      }
+    },
+    "known_rows_complete": false,
+    "earning_closed_through": "2026-09-07",
+    "sources_in_bank_window": 1,
+    "future_earning_contributors": 0,
+    "retained_union_contributors": 0,
+    "sources_outside_bank_window": 0,
+    "amounts_are_attribution_not_new_spendable_cash": true
+  },
+  "players_paid": {
+    "gaps": [],
+    "scope": "known_captured_sources_only",
+    "union_id": "00000000-0000-4000-8000-000000000901",
+    "bank_from": "2026-08-31T02:00:00-05:00",
+    "period_closed": false,
+    "common_finality": false,
+    "finality_reason": "complete_producer_legacy_bank_and_period_authority_still_required",
+    "manifest_sha256": "29c9602593eb7acebe85c086e5c6bc15b5d1a2335e82b73d281231f8ca259b0d",
+    "bank_to_exclusive": "2026-09-07T02:00:00-05:00",
+    "known_attribution": {
+      "club": {
+        "exact": "1.8000000000000000000000",
+        "allocated": "1.8000000000000000000000",
+        "remaining_exact": "0E-22"
+      },
+      "agent": {
+        "exact": "1.400000000000000000000000",
+        "allocated": "1.400000000000000000000000",
+        "remaining_exact": "0E-24"
+      },
+      "player": {
+        "exact": "0.300000000000000000000000",
+        "allocated": "0.30000000000000000000",
+        "remaining_exact": "0E-24"
+      }
+    },
+    "known_rows_complete": true,
+    "earning_closed_through": "2026-09-07",
+    "sources_in_bank_window": 1,
+    "future_earning_contributors": 0,
+    "retained_union_contributors": 0,
+    "sources_outside_bank_window": 0,
+    "amounts_are_attribution_not_new_spendable_cash": true
+  },
+  "omitted_banked_source": {
+    "gaps": [
+      {
+        "kind": "bank_source_omitted_from_manifest",
+        "hand_id": "00000000-0000-4000-8000-000003100002"
+      }
+    ],
+    "scope": "known_captured_sources_only",
+    "union_id": "00000000-0000-4000-8000-000000000901",
+    "bank_from": "2026-08-31T02:00:00-05:00",
+    "period_closed": false,
+    "common_finality": false,
+    "finality_reason": "complete_producer_legacy_bank_and_period_authority_still_required",
+    "manifest_sha256": "29c9602593eb7acebe85c086e5c6bc15b5d1a2335e82b73d281231f8ca259b0d",
+    "bank_to_exclusive": "2026-09-07T02:00:00-05:00",
+    "known_attribution": {
+      "club": {
+        "exact": "1.8000000000000000000000",
+        "allocated": "1.8000000000000000000000",
+        "remaining_exact": "0E-22"
+      },
+      "agent": {
+        "exact": "1.400000000000000000000000",
+        "allocated": "1.400000000000000000000000",
+        "remaining_exact": "0E-24"
+      },
+      "player": {
+        "exact": "0.300000000000000000000000",
+        "allocated": "0.30000000000000000000",
+        "remaining_exact": "0E-24"
+      }
+    },
+    "known_rows_complete": false,
+    "earning_closed_through": "2026-09-07",
+    "sources_in_bank_window": 1,
+    "future_earning_contributors": 0,
+    "retained_union_contributors": 0,
+    "sources_outside_bank_window": 0,
+    "amounts_are_attribution_not_new_spendable_cash": true
+  },
+  "fractional_attribution": {
+    "gaps": [],
+    "scope": "known_captured_sources_only",
+    "union_id": "00000000-0000-4000-8000-000000000901",
+    "bank_from": "2026-08-31T02:00:00-05:00",
+    "period_closed": false,
+    "common_finality": false,
+    "finality_reason": "complete_producer_legacy_bank_and_period_authority_still_required",
+    "manifest_sha256": "4d40b0e8bb41a654f28be842ac4fd736f215e01baf0aa5119061a2d3194128d8",
+    "bank_to_exclusive": "2026-09-07T02:00:00-05:00",
+    "known_attribution": {
+      "club": {
+        "exact": "3.6540000000000000000000",
+        "allocated": "3.6500000000000000000000",
+        "remaining_exact": "0.0040000000000000000000"
+      },
+      "agent": {
+        "exact": "2.842000000000000000000000",
+        "allocated": "2.830000000000000000000000",
+        "remaining_exact": "0.012000000000000000000000"
+      },
+      "player": {
+        "exact": "0.609000000000000000000000",
+        "allocated": "0.60000000000000000000",
+        "remaining_exact": "0.009000000000000000000000"
+      }
+    },
+    "known_rows_complete": true,
+    "earning_closed_through": "2026-09-07",
+    "sources_in_bank_window": 3,
+    "future_earning_contributors": 0,
+    "retained_union_contributors": 0,
+    "sources_outside_bank_window": 0,
+    "amounts_are_attribution_not_new_spendable_cash": true
+  },
+  "bank_boundary": {
+    "gaps": [],
+    "scope": "known_captured_sources_only",
+    "union_id": "00000000-0000-4000-8000-000000000901",
+    "bank_from": "2026-08-31T02:00:00-05:00",
+    "period_closed": false,
+    "common_finality": false,
+    "finality_reason": "complete_producer_legacy_bank_and_period_authority_still_required",
+    "manifest_sha256": "15476158ce0b0b06ef7e5ac42c47df58bae9b6aa1ec5c3bfe065766dcaea20bb",
+    "bank_to_exclusive": "2026-09-07T02:00:00-05:00",
+    "known_attribution": {
+      "club": {
+        "exact": "3.6540000000000000000000",
+        "allocated": "3.6500000000000000000000",
+        "remaining_exact": "0.0040000000000000000000"
+      },
+      "agent": {
+        "exact": "2.842000000000000000000000",
+        "allocated": "2.830000000000000000000000",
+        "remaining_exact": "0.012000000000000000000000"
+      },
+      "player": {
+        "exact": "0.609000000000000000000000",
+        "allocated": "0.60000000000000000000",
+        "remaining_exact": "0.009000000000000000000000"
+      }
+    },
+    "known_rows_complete": true,
+    "earning_closed_through": "2026-09-07",
+    "sources_in_bank_window": 3,
+    "future_earning_contributors": 0,
+    "retained_union_contributors": 0,
+    "sources_outside_bank_window": 1,
+    "amounts_are_attribution_not_new_spendable_cash": true
+  },
+  "future_earning_week": {
+    "gaps": [],
+    "scope": "known_captured_sources_only",
+    "union_id": "00000000-0000-4000-8000-000000000901",
+    "bank_from": "2026-08-31T02:00:00-05:00",
+    "period_closed": false,
+    "common_finality": false,
+    "finality_reason": "complete_producer_legacy_bank_and_period_authority_still_required",
+    "manifest_sha256": "3223eef0e1153427be28edef4479fc7f67a6cedb3a6565178ed7bdaaf5482bfb",
+    "bank_to_exclusive": "2026-09-07T02:00:00-05:00",
+    "known_attribution": {
+      "club": {
+        "exact": "5.4540000000000000000000",
+        "allocated": "5.4500000000000000000000",
+        "remaining_exact": "0.0040000000000000000000"
+      },
+      "agent": {
+        "exact": "2.842000000000000000000000",
+        "allocated": "2.830000000000000000000000",
+        "remaining_exact": "0.012000000000000000000000"
+      },
+      "player": {
+        "exact": "0.609000000000000000000000",
+        "allocated": "0.60000000000000000000",
+        "remaining_exact": "0.009000000000000000000000"
+      }
+    },
+    "known_rows_complete": true,
+    "earning_closed_through": "2026-09-07",
+    "sources_in_bank_window": 4,
+    "future_earning_contributors": 2,
+    "retained_union_contributors": 0,
+    "sources_outside_bank_window": 1,
+    "amounts_are_attribution_not_new_spendable_cash": true
+  },
+  "current_terms_changed": {
+    "gaps": [],
+    "scope": "known_captured_sources_only",
+    "union_id": "00000000-0000-4000-8000-000000000901",
+    "bank_from": "2026-08-31T02:00:00-05:00",
+    "period_closed": false,
+    "common_finality": false,
+    "finality_reason": "complete_producer_legacy_bank_and_period_authority_still_required",
+    "manifest_sha256": "3223eef0e1153427be28edef4479fc7f67a6cedb3a6565178ed7bdaaf5482bfb",
+    "bank_to_exclusive": "2026-09-07T02:00:00-05:00",
+    "known_attribution": {
+      "club": {
+        "exact": "5.4540000000000000000000",
+        "allocated": "5.4500000000000000000000",
+        "remaining_exact": "0.0040000000000000000000"
+      },
+      "agent": {
+        "exact": "2.842000000000000000000000",
+        "allocated": "2.830000000000000000000000",
+        "remaining_exact": "0.012000000000000000000000"
+      },
+      "player": {
+        "exact": "0.609000000000000000000000",
+        "allocated": "0.60000000000000000000",
+        "remaining_exact": "0.009000000000000000000000"
+      }
+    },
+    "known_rows_complete": true,
+    "earning_closed_through": "2026-09-07",
+    "sources_in_bank_window": 4,
+    "future_earning_contributors": 2,
+    "retained_union_contributors": 0,
+    "sources_outside_bank_window": 1,
+    "amounts_are_attribution_not_new_spendable_cash": true
+  },
+  "zero_credit_missing_rows": {
+    "gaps": [
+      {
+        "kind": "missing_funding_lot",
+        "hand_id": "00000000-0000-4000-8000-000003100006",
+        "player_id": "00000000-0000-4000-8000-000000000201"
+      },
+      {
+        "kind": "missing_club_funding_admission",
+        "hand_id": "00000000-0000-4000-8000-000003100006",
+        "player_id": "00000000-0000-4000-8000-000000000201"
+      },
+      {
+        "kind": "unresolved_or_overpromised_original_rights",
+        "hand_id": "00000000-0000-4000-8000-000003100006",
+        "player_id": "00000000-0000-4000-8000-000000000201"
+      },
+      {
+        "kind": "missing_funding_lot",
+        "hand_id": "00000000-0000-4000-8000-000003100006",
+        "player_id": "00000000-0000-4000-8000-000000000202"
+      },
+      {
+        "kind": "missing_club_funding_admission",
+        "hand_id": "00000000-0000-4000-8000-000003100006",
+        "player_id": "00000000-0000-4000-8000-000000000202"
+      },
+      {
+        "kind": "missing_recipient_accrual",
+        "hand_id": "00000000-0000-4000-8000-000003100006",
+        "agent_id": "00000000-0000-4000-8000-000000000103",
+        "player_id": "00000000-0000-4000-8000-000000000202"
+      },
+      {
+        "kind": "missing_agent_funding_admission",
+        "hand_id": "00000000-0000-4000-8000-000003100006",
+        "agent_id": "00000000-0000-4000-8000-000000000103",
+        "player_id": "00000000-0000-4000-8000-000000000202"
+      },
+      {
+        "kind": "missing_recipient_accrual",
+        "hand_id": "00000000-0000-4000-8000-000003100006",
+        "agent_id": "00000000-0000-4000-8000-000000000102",
+        "player_id": "00000000-0000-4000-8000-000000000202"
+      },
+      {
+        "kind": "missing_agent_funding_admission",
+        "hand_id": "00000000-0000-4000-8000-000003100006",
+        "agent_id": "00000000-0000-4000-8000-000000000102",
+        "player_id": "00000000-0000-4000-8000-000000000202"
+      },
+      {
+        "kind": "missing_recipient_accrual",
+        "hand_id": "00000000-0000-4000-8000-000003100006",
+        "agent_id": "00000000-0000-4000-8000-000000000101",
+        "player_id": "00000000-0000-4000-8000-000000000202"
+      },
+      {
+        "kind": "missing_agent_funding_admission",
+        "hand_id": "00000000-0000-4000-8000-000003100006",
+        "agent_id": "00000000-0000-4000-8000-000000000101",
+        "player_id": "00000000-0000-4000-8000-000000000202"
+      },
+      {
+        "kind": "missing_player_funding_admission",
+        "hand_id": "00000000-0000-4000-8000-000003100006",
+        "player_id": "00000000-0000-4000-8000-000000000202"
+      }
+    ],
+    "scope": "known_captured_sources_only",
+    "union_id": "00000000-0000-4000-8000-000000000901",
+    "bank_from": "2026-08-31T02:00:00-05:00",
+    "period_closed": false,
+    "common_finality": false,
+    "finality_reason": "complete_producer_legacy_bank_and_period_authority_still_required",
+    "manifest_sha256": "098576016a5efb75fdd561bcbb4bd35c6398cc9897471e354a729c95679a29cc",
+    "bank_to_exclusive": "2026-09-07T02:00:00-05:00",
+    "known_attribution": {
+      "club": {
+        "exact": "5.4550000000000000000000",
+        "allocated": "5.4500000000000000000000",
+        "remaining_exact": "0.0050000000000000000000"
+      },
+      "agent": {
+        "exact": "2.842000000000000000000000",
+        "allocated": "2.830000000000000000000000",
+        "remaining_exact": "0.012000000000000000000000"
+      },
+      "player": {
+        "exact": "0.609000000000000000000000",
+        "allocated": "0.60000000000000000000",
+        "remaining_exact": "0.009000000000000000000000"
+      }
+    },
+    "known_rows_complete": false,
+    "earning_closed_through": "2026-09-07",
+    "sources_in_bank_window": 5,
+    "future_earning_contributors": 2,
+    "retained_union_contributors": 0,
+    "sources_outside_bank_window": 1,
+    "amounts_are_attribution_not_new_spendable_cash": true
+  },
+  "zero_credit_actual_admission": {
+    "gaps": [
+      {
+        "kind": "missing_club_funding_admission",
+        "hand_id": "00000000-0000-4000-8000-000003100006",
+        "player_id": "00000000-0000-4000-8000-000000000201"
+      },
+      {
+        "kind": "unresolved_or_overpromised_original_rights",
+        "hand_id": "00000000-0000-4000-8000-000003100006",
+        "player_id": "00000000-0000-4000-8000-000000000201"
+      },
+      {
+        "kind": "missing_club_funding_admission",
+        "hand_id": "00000000-0000-4000-8000-000003100006",
+        "player_id": "00000000-0000-4000-8000-000000000202"
+      },
+      {
+        "kind": "missing_agent_funding_admission",
+        "hand_id": "00000000-0000-4000-8000-000003100006",
+        "agent_id": "00000000-0000-4000-8000-000000000103",
+        "player_id": "00000000-0000-4000-8000-000000000202"
+      },
+      {
+        "kind": "missing_agent_funding_admission",
+        "hand_id": "00000000-0000-4000-8000-000003100006",
+        "agent_id": "00000000-0000-4000-8000-000000000102",
+        "player_id": "00000000-0000-4000-8000-000000000202"
+      },
+      {
+        "kind": "missing_agent_funding_admission",
+        "hand_id": "00000000-0000-4000-8000-000003100006",
+        "agent_id": "00000000-0000-4000-8000-000000000101",
+        "player_id": "00000000-0000-4000-8000-000000000202"
+      },
+      {
+        "kind": "missing_player_funding_admission",
+        "hand_id": "00000000-0000-4000-8000-000003100006",
+        "player_id": "00000000-0000-4000-8000-000000000202"
+      }
+    ],
+    "scope": "known_captured_sources_only",
+    "union_id": "00000000-0000-4000-8000-000000000901",
+    "bank_from": "2026-08-31T02:00:00-05:00",
+    "period_closed": false,
+    "common_finality": false,
+    "finality_reason": "complete_producer_legacy_bank_and_period_authority_still_required",
+    "manifest_sha256": "098576016a5efb75fdd561bcbb4bd35c6398cc9897471e354a729c95679a29cc",
+    "bank_to_exclusive": "2026-09-07T02:00:00-05:00",
+    "known_attribution": {
+      "club": {
+        "exact": "5.4550000000000000000000",
+        "allocated": "5.4500000000000000000000",
+        "remaining_exact": "0.0050000000000000000000"
+      },
+      "agent": {
+        "exact": "2.842000000000000000000000",
+        "allocated": "2.830000000000000000000000",
+        "remaining_exact": "0.012000000000000000000000"
+      },
+      "player": {
+        "exact": "0.609000000000000000000000",
+        "allocated": "0.60000000000000000000",
+        "remaining_exact": "0.009000000000000000000000"
+      }
+    },
+    "known_rows_complete": false,
+    "earning_closed_through": "2026-09-07",
+    "sources_in_bank_window": 5,
+    "future_earning_contributors": 2,
+    "retained_union_contributors": 0,
+    "sources_outside_bank_window": 1,
+    "amounts_are_attribution_not_new_spendable_cash": true
+  },
+  "accepted_without_bank": {
+    "gaps": [
+      {
+        "kind": "missing_club_funding_admission",
+        "hand_id": "00000000-0000-4000-8000-000003100006",
+        "player_id": "00000000-0000-4000-8000-000000000201"
+      },
+      {
+        "kind": "unresolved_or_overpromised_original_rights",
+        "hand_id": "00000000-0000-4000-8000-000003100006",
+        "player_id": "00000000-0000-4000-8000-000000000201"
+      },
+      {
+        "kind": "missing_club_funding_admission",
+        "hand_id": "00000000-0000-4000-8000-000003100006",
+        "player_id": "00000000-0000-4000-8000-000000000202"
+      },
+      {
+        "kind": "missing_agent_funding_admission",
+        "hand_id": "00000000-0000-4000-8000-000003100006",
+        "agent_id": "00000000-0000-4000-8000-000000000103",
+        "player_id": "00000000-0000-4000-8000-000000000202"
+      },
+      {
+        "kind": "missing_agent_funding_admission",
+        "hand_id": "00000000-0000-4000-8000-000003100006",
+        "agent_id": "00000000-0000-4000-8000-000000000102",
+        "player_id": "00000000-0000-4000-8000-000000000202"
+      },
+      {
+        "kind": "missing_agent_funding_admission",
+        "hand_id": "00000000-0000-4000-8000-000003100006",
+        "agent_id": "00000000-0000-4000-8000-000000000101",
+        "player_id": "00000000-0000-4000-8000-000000000202"
+      },
+      {
+        "kind": "missing_player_funding_admission",
+        "hand_id": "00000000-0000-4000-8000-000003100006",
+        "player_id": "00000000-0000-4000-8000-000000000202"
+      },
+      {
+        "kind": "missing_bank_receipt",
+        "hand_id": "00000000-0000-4000-8000-000003100007"
+      }
+    ],
+    "scope": "known_captured_sources_only",
+    "union_id": "00000000-0000-4000-8000-000000000901",
+    "bank_from": "2026-08-31T02:00:00-05:00",
+    "period_closed": false,
+    "common_finality": false,
+    "finality_reason": "complete_producer_legacy_bank_and_period_authority_still_required",
+    "manifest_sha256": "9ac053eecc9c7437a660add21ff93c0ee0c1f1bad2b950cc01ec9c1f007cad34",
+    "bank_to_exclusive": "2026-09-07T02:00:00-05:00",
+    "known_attribution": {
+      "club": {
+        "exact": "5.4550000000000000000000",
+        "allocated": "5.4500000000000000000000",
+        "remaining_exact": "0.0050000000000000000000"
+      },
+      "agent": {
+        "exact": "2.842000000000000000000000",
+        "allocated": "2.830000000000000000000000",
+        "remaining_exact": "0.012000000000000000000000"
+      },
+      "player": {
+        "exact": "0.609000000000000000000000",
+        "allocated": "0.60000000000000000000",
+        "remaining_exact": "0.009000000000000000000000"
+      }
+    },
+    "known_rows_complete": false,
+    "earning_closed_through": "2026-09-07",
+    "sources_in_bank_window": 5,
+    "future_earning_contributors": 2,
+    "retained_union_contributors": 0,
+    "sources_outside_bank_window": 1,
+    "amounts_are_attribution_not_new_spendable_cash": true
+  }
+}

@@ -1,0 +1,51 @@
+ISOLATION VERIFIED: own fresh data directory, own Unix socket, no TCP listener, zero public tables
+OUTER INPUTS FROZEN: 221 actual function definitions
+{
+  "tables": 137,
+  "functions": 259,
+  "triggers": 178,
+  "missing_foreign_tables": []
+}
+
+ actual_owner_success 
+----------------------
+ t
+(1 row)
+
+ test_assert 
+-------------
+ 
+(1 row)
+
+Loaded unchanged accepted/bank owners and prospective Round1 with actual money graph
+PASS: Actual accepted and bank owners cannot appear complete when no funding lots exist
+PASS: Expected captured hierarchy reveals missing accruals before any recipient row exists
+PASS: Missing contributor and all three funding admission stages are explicit
+PASS: Actual contributor receipts clear only their own missing-row gap
+PASS: Actual source owner creates all expected lots and hierarchy accruals
+PASS: Actual club release clears club admission while agent/player gaps remain
+PASS: Actual agent owner clears agent admission without inventing player admission
+PASS: Actual player owner completes expected known rows and all exact attribution
+PASS: Complete observed rows never become common period finality
+PASS: Inspector and existing assertions execute in a read-only database transaction
+PASS: A mismatched manifest hash refuses without mutation
+PASS: A valid hash cannot authorize a different original Union
+PASS: Missing original club lock refuses before inspection
+PASS: A rehashed altered facts manifest still conflicts with accepted authority
+PASS: Duplicate source identity cannot be counted twice
+PASS: Extra contributor allocation refuses and rolls back the private corruption fault
+PASS: Private inspector refuses anon execution
+PASS: Private inspector refuses authenticated execution
+PASS: Private inspector refuses service_role execution
+PASS: Reverse bank coverage detects an omitted accepted source
+PASS: Exact fractional rights remain visible after actual cumulative cents payments
+PASS: Attribution is explicitly separate from spendable cash and finality
+PASS: A bank receipt exactly at the period end belongs outside the half-open interval
+PASS: Closed bank funding does not invent admissions for a still-open earning week
+PASS: Current table Union and agent terms cannot rewrite original inspected rights
+PASS: Allocator zero-credit contributor still requires a lot and captured hierarchy accruals
+PASS: Actual source owner admits the same zero-credit expected rows despite higher captured hierarchy rate
+PASS: Positive overpromised original rights remain explicitly unresolved
+PASS: Accepted source without a matching bank receipt cannot appear complete
+PASS: Inspector creates no settlement period completion rows
+{"passing": 30, "common_finality": false}

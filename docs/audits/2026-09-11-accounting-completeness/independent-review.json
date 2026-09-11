@@ -1,0 +1,44 @@
+{
+  "scope": "Private known-source expected-row completeness only; no common period finality",
+  "source_review": {
+    "reviewer": "/root/accounting_outer_closeout",
+    "read_only": true,
+    "sql_or_tests_executed": false,
+    "source_sha256": "1cdf44aa5c4e43cc9665c3f18d56fdbcbb75c435f185913ec2f4a18e3738de00",
+    "result": "No additional blocker within stated scope after zero-credit monetary eligibility and exact contributor allocation coverage corrections.",
+    "checked": [
+      "Expected lot/accrual/recipient identities derived from original captured facts",
+      "Retrospective admission boundary validation",
+      "Half-open observed bank coverage",
+      "Retained, future and fractional attribution",
+      "Private ACL and common_finality=false boundary"
+    ]
+  },
+  "native_evidence_review": {
+    "reviewer": "/root/legacy_races_closeout",
+    "read_only": true,
+    "sql_or_tests_executed": false,
+    "result": "No new blocker within private known-source inspector scope.",
+    "passing": 30,
+    "snapshot_count": 14,
+    "hashes": {
+      "01-known-source-inspector.sql": "1cdf44aa5c4e43cc9665c3f18d56fdbcbb75c435f185913ec2f4a18e3738de00",
+      "native-probe.py": "ff0ec5c3b965395f22af38301dd6a3cd82f875e76d47c821bb07feaa5422d917",
+      "run-local.sh": "332ffaa2b4162420da5ec8b0d0e253cea8d80809dcbe0ea47d0dd5f6a49c287c",
+      "owner-setup.py": "6eed34236ba32bf00d5ef0da69d81e05a28a6ccdef330d2b7ed79cf959fd3c18",
+      "native-proof.json": "f80a37c3d0da61e2c933729bdae4f3b299d5371cd0e4fd15224a29ac4321693d",
+      "native.log": "9ace4e1ae3fa34154e508afdb922a62a00b70176c87ab6f3e8897589afb94fdd",
+      "snapshots.json": "43b0ab7a499b0c6e27708a081b6adb124af3900ddcbe00bb024de5491583eed3"
+    },
+    "checked": [
+      "All 30 saved labels match raw log and all four executable hashes match",
+      "Actual accepted/bank/contributor/admission/release/agent/player call assertions",
+      "Read-only transaction and all three direct private schema role refusals",
+      "Zero-credit expected rows and explicit rolled-back corruption fault",
+      "Observed omitted-bank coverage, exact fractions and future earning scope",
+      "All 14 snapshots retain common_finality=false and period_closed=false",
+      "Git blobs: source 30, payer 24, outer 21 exact; derived selector runner and runtime cluster receipt classified separately"
+    ],
+    "production_or_global_period_claim": false
+  }
+}

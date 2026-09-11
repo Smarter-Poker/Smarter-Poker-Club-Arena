@@ -237,7 +237,7 @@ export function ClubIdentityCard({
               }`}
               title={arenaStats.freerollTitle}
             >
-              <span className="club-identity__arena-label">NEXT FREEROLL</span>
+              <span className="club-identity__arena-label">FREEROLL</span>
               <strong
                 className="club-identity__arena-value club-identity__arena-value--timer"
                 role="timer"

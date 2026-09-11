@@ -21,6 +21,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { sliceStatement } from '../helpers/sourceWindow';
 import type { ArenaAccessContext } from '../../server/src/domain/ArenaContext';
 
 const mocks = vi.hoisted(() => ({ workspace: vi.fn(), navigate: vi.fn() }));
@@ -153,10 +154,11 @@ describe('One open club: the arena asks no chip-only feed a question it cannot a
      exist there. Hiding the strip was not enough; the queries behind it also
      had to stop. */
   it('does not subscribe to club_members realtime in the arena', () => {
-    const channel = page.indexOf('`club-members-${clubId}`');
-    expect(channel).toBeGreaterThan(-1);
-    const block = page.slice(channel, channel + 400);
-    expect(block).toContain('!isAutomaticArena');
+    /* The whole useMasterBusChannel statement, bound by its own structure:
+       a window of N bytes would stop covering the `enabled` line the moment a
+       comment grew above it, and would do so silently. */
+    const subscription = sliceStatement(page, "table: 'club_members'");
+    expect(subscription).toContain('enabled: !!resolvedClubId && !isAutomaticArena');
   });
 
   it('does not start the jackpot feeds in the arena', () => {

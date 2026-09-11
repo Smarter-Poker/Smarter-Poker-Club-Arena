@@ -1,3 +1,15 @@
+## 2026-09-11: Satellite Places Follow The Accepted Bust Witness
+
+Migration `20260911204452` replaces only the modern satellite rank normalization
+in composed manager core `6eb5860aad223fd1cfd14a48de2064bb` with the existing
+cash accepted-hand ordering contract and finite-evidence refusal. Output body
+`6d6637426f916cb766e606764af5e0a8` preserves the sealed legacy branch, winner
+selection, paid receipt replay and all function metadata. Re-read: yes. Twenty
+native PostgreSQL 17 ranking scenarios and exact-source double application
+passed; full current manager/financial/deferred execution and production remain
+separate integration gates. See
+`docs/changelog/2026-09-11-satellite-places-follow-the-accepted-bust-witness.md`.
+
 ## 2026-09-10: Restore Bounded Rake Attribution Retries
 
 Prepare an exact-source guarded restoration of the committed attribution retry loop while preserving settlement lane exclusion and function metadata. Thirty-five native rollback assertions passed; the tracked composer reproduces the executed proof exactly. See docs/changelog/2026-09-10-rake-attribution-retry-restoration.md for scope and limits. Application remains separate from source publication.

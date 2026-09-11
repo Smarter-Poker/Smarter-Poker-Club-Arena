@@ -320,7 +320,8 @@ describe('heartbeatTournaments - "could not ask" is not "lost everything"', () =
     ).resolves.toEqual({
       status: 'answered',
       proofs: [],
-      lostTournamentIds: [T],
+      lostTournamentIds: [],
+      obsoleteProofs: [{ tournamentId: T, leaseGeneration: G, proofDeadlineMonotonicMs: 20_500 }],
     });
   });
 

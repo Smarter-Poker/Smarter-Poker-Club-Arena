@@ -181,4 +181,67 @@ describe('database transport compatibility', () => {
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }
   }, 15000);
+  it.each(['table', 'tournament'])(
+    'three pending %s heartbeats leave the peer scope real HTTP capacity',
+    async (stalledScope) => {
+      vi.useRealTimers();
+      vi.resetModules();
+      vi.stubEnv('SUPABASE_TIMEOUT_MS', '15000');
+      captured.fetches.length = 0;
+      await import('./client.js');
+      vi.stubGlobal('fetch', nativeFetch);
+      const requests: string[] = [];
+      const held: import('node:http').ServerResponse[] = [];
+      let allArrived!: () => void;
+      const arrival = new Promise<void>((resolve) => {
+        allArrived = resolve;
+      });
+      const server = createServer((request, response) => {
+        requests.push(request.url!);
+        if (requests.length === 6) allArrived();
+        response.setHeader('content-type', 'application/json');
+        if (request.url === `/rest/v1/rpc/heartbeat_${stalledScope}_leases_v4`) {
+          held.push(response);
+        } else response.end('[]');
+      });
+      await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+      try {
+        const address = server.address() as { port: number };
+        const actual =
+          await vi.importActual<typeof import('@supabase/supabase-js')>('@supabase/supabase-js');
+        const client = actual.createClient(
+          `http://127.0.0.1:${address.port}`,
+          'isolated-test-key',
+          {
+            auth: { persistSession: false, autoRefreshToken: false },
+            global: { fetch: ordinaryDatabaseFetch() },
+          }
+        );
+        const peerScope = stalledScope === 'table' ? 'tournament' : 'table';
+        const invoke = (scope: string) =>
+          Promise.resolve(
+            client.rpc(`heartbeat_${scope}_leases_v4`, {
+              p_instance_id: 'isolated-test',
+              p_claims: [],
+              p_stale_seconds: 30,
+            })
+          );
+        const pending = Array.from({ length: 3 }, () => invoke(stalledScope));
+        const healthyReplies = Promise.all(Array.from({ length: 3 }, () => invoke(peerScope)));
+        await arrival;
+        const healthy = await healthyReplies;
+        expect(healthy.every((reply) => reply.error === null)).toBe(true);
+        // All six requests reached the real server; no local semaphore or
+        // connection pool serialized the healthy scope behind the held three.
+        expect(requests).toHaveLength(6);
+        expect(held).toHaveLength(3);
+        for (const response of held) response.end('[]');
+        expect((await Promise.all(pending)).every((reply) => reply.error === null)).toBe(true);
+      } finally {
+        server.closeAllConnections();
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+      }
+    },
+    20000
+  );
 });

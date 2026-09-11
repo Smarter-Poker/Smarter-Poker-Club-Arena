@@ -92,6 +92,18 @@ describe('table-engine distributed lease proof deadline', () => {
     expect(engine.isRunning()).toBe(false);
   });
 
+  it('refuses new proof after an event-loop stall before the old expiry timer runs', () => {
+    vi.useFakeTimers();
+    let now = 0;
+    _setEngineLeaseMonotonicNowForTests(() => now);
+    const engine = new ServerTableEngine(TABLE, verifiedCash(20_000));
+    activate(engine);
+    now = 20_001;
+    expect(engine.renewEngineLeaseProof(verifiedCash(25_000))).toBe(false);
+    expect(engine.getEngineLeaseAuthority()).toMatchObject({ proofDeadlineMonotonicMs: 20_000 });
+    expect(engine.hasCurrentEngineLeaseAuthority()).toBe(false);
+  });
+
   it('keeps only an explicitly injected test-harness authority unverified', () => {
     let now = 1_000_000;
     _setEngineLeaseMonotonicNowForTests(() => now);

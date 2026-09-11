@@ -106,7 +106,7 @@ function bareServer(engines: Map<string, Generation>, lost: () => Map<string, Ge
   server.renewVerifiedTournamentManagerLeaseProofs = async () => lost();
   server.stopTournamentManagerIfOwned = vi.fn(async () => false);
   return server as {
-    performOwnedEngineLeaseProofRenewal(): Promise<void>;
+    performOwnedEngineLeaseProofRenewal(scope: 'tournament'): Promise<void>;
     tournamentResumeDistress: number;
     stopTournamentManagerIfOwned: ReturnType<typeof vi.fn>;
   };
@@ -157,7 +157,7 @@ describe('only a lost lease is re-adoption distress', () => {
     const server = bareServer(engines, () => new Map(engines));
     reportErrorMock.mockClear();
 
-    await server.performOwnedEngineLeaseProofRenewal();
+    await server.performOwnedEngineLeaseProofRenewal('tournament');
 
     expect(server.tournamentResumeDistress).toBe(3);
     expect(leaseLostReports()).toEqual(['t-expired', 't-db-fenced', 't-taken-over']);
@@ -173,7 +173,7 @@ describe('only a lost lease is re-adoption distress', () => {
     engines.set('t-late-loss', lateLoss);
     server.tournamentResumeDistress = 0; // the lane read and cleared it
 
-    await server.performOwnedEngineLeaseProofRenewal();
+    await server.performOwnedEngineLeaseProofRenewal('tournament');
 
     expect(server.tournamentResumeDistress).toBe(1);
     expect(leaseLostReports()).toEqual(['t-expired', 't-db-fenced', 't-taken-over', 't-late-loss']);
@@ -181,7 +181,7 @@ describe('only a lost lease is re-adoption distress', () => {
 
     // And once more, with nothing new: nothing is charged at all.
     server.tournamentResumeDistress = 0;
-    await server.performOwnedEngineLeaseProofRenewal();
+    await server.performOwnedEngineLeaseProofRenewal('tournament');
     expect(server.tournamentResumeDistress).toBe(0);
     expect(leaseLostReports()).toHaveLength(4);
   });

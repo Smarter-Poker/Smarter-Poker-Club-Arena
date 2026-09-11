@@ -78,16 +78,16 @@ describe('every live dealer carries and re-checks distributed authority', () => 
     expect(renewal).toContain('!engine.hasCurrentEngineLeaseAuthority()');
 
     const coordinator = sliceMethod(gameServer, 'private renewOwnedEngineLeaseProofs()');
-    expect(coordinator).toContain('const existing = this.ownershipLeaseRenewalOperation;');
-    expect(coordinator).toContain('if (existing) return existing;');
-    expect(coordinator).toContain('this.performOwnedEngineLeaseProofRenewal()');
-    expect(coordinator).toContain('this.ownershipLeaseRenewalOperation = tracked;');
+    expect(coordinator).toContain("this.admitOwnershipLeaseRenewal('cash')");
+    expect(coordinator).toContain("this.admitOwnershipLeaseRenewal('tournament')");
+    const admission = sliceMethod(gameServer, 'private admitOwnershipLeaseRenewal(');
+    expect(admission).toContain('state.pending.size >= OWNERSHIP_LEASE_MAX_IN_FLIGHT_PER_SCOPE');
 
     const renewalPass = sliceMethod(
       gameServer,
-      'private async performOwnedEngineLeaseProofRenewal()'
+      'private async performOwnedEngineLeaseProofRenewal('
     );
-    expect(renewalPass).toContain('await Promise.allSettled([');
+    expect(renewalPass).not.toContain('Promise.allSettled');
     const firstFence = renewalPass.indexOf('engine.fenceForEngineLeaseLoss(');
     const teardownLoop = renewalPass.indexOf('for (const [tableId, engine] of lostCashEngines)');
     expect(firstFence).toBeGreaterThan(-1);

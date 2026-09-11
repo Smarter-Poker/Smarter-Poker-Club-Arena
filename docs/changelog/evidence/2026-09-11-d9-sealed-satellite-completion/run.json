@@ -1,0 +1,20 @@
+{
+  "status": "passed",
+  "case": "D9-sealed-satellite-completion",
+  "observedAt": "2026-09-11T19:46:21.724654+00:00",
+  "postgres": "postgres (PostgreSQL) 17.11 (Homebrew)",
+  "archiveSha256": "6348a41f1f03250d0196bbf8ac18cee4cd4d5bf8214d45620a68bcd34ef29145",
+  "migrationSha256": "537b9076099a68561783a7a9714acb4c86f99543a9fc976332490e7d2ecfa133",
+  "runnerSha256": "8b446c3f315cefd0472bf9bac8aaf6f65757c73065de4256fd10ef3dcd285f7d",
+  "completed": 3,
+  "cashCompletedPreviously": 21,
+  "negativeCases": 23,
+  "dependencyDriftRefusals": 6,
+  "ordinaryModernCompletionAfterSatelliteMigration": true,
+  "comparedTables": 30,
+  "ordinaryStartIgnoresUnsealedRecoveryHint": {
+    "seals": 0,
+    "snapshot": "start_trigger"
+  },
+  "productionWrites": 0
+}

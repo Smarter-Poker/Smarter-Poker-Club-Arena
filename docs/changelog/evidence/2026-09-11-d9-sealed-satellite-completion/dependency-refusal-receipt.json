@@ -1,0 +1,51 @@
+{
+  "cases": [
+    {
+      "case": "strict_body",
+      "refused": true,
+      "unchangedAfterRollback": true,
+      "reason": "strict receipt authority differs"
+    },
+    {
+      "case": "strict_owner",
+      "refused": true,
+      "unchangedAfterRollback": true,
+      "reason": "strict receipt private metadata differs"
+    },
+    {
+      "case": "strict_acl",
+      "refused": true,
+      "unchangedAfterRollback": true,
+      "reason": "strict receipt private metadata differs"
+    },
+    {
+      "case": "strict_config",
+      "refused": true,
+      "unchangedAfterRollback": true,
+      "reason": "strict receipt authority differs"
+    },
+    {
+      "case": "wrapper_body",
+      "refused": true,
+      "unchangedAfterRollback": true,
+      "reason": "public settlement wrapper differs"
+    },
+    {
+      "case": "wrapper_acl",
+      "refused": true,
+      "unchangedAfterRollback": true,
+      "reason": "public settlement metadata differs"
+    }
+  ],
+  "before": {
+    "functions": "1a174752f96cb902aa605e8256dd3ed3",
+    "legacy_rows": "109787646835b426e43e4abf6bde7721",
+    "satellite_column": false
+  },
+  "after": {
+    "functions": "1a174752f96cb902aa605e8256dd3ed3",
+    "legacy_rows": "109787646835b426e43e4abf6bde7721",
+    "satellite_column": false
+  },
+  "productionWrites": 0
+}

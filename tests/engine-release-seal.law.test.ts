@@ -1359,6 +1359,7 @@ describe('every host mutation path obeys the durable release authority', () => {
   const launcher = read('server/scripts/launch-engine-release.sh');
   const intakeInstaller = read('server/scripts/install-engine-intake.sh');
   const intake = read('server/scripts/engine-release-intake.sh');
+  const retention = read('server/scripts/retain-engine-images.sh');
   const observer = read('server/scripts/observe-engine-release.sh');
   const unitWrapper = read('server/scripts/engine-release-unit-wrapper.sh');
   const databaseProof = read('server/scripts/engine-release-database-proof.py');
@@ -1459,6 +1460,139 @@ describe('every host mutation path obeys the durable release authority', () => {
 
     expect(hostStage).toContain("grep -Fi 'smarter-poker/smarter-poker-club-arena'");
     expect(hostStage).not.toContain("grep -F 'Smarter-Poker/Smarter-Poker-Club-Arena'");
+  });
+
+  it('accepts single-digit run attempts while rejecting malformed or traversing stage paths', () => {
+    const hostStage = workflow.slice(
+      workflow.indexOf('name: Stage exact control bytes'),
+      workflow.indexOf('name: Dispatch the staged SHA through the durable Hetzner intake')
+    );
+    const guard = hostStage.match(
+      /^\s*(\[\[ "\$STAGE" =~ \^\/var\/lib\/club-arena\/control-staging\/[^\n]+ \]\])$/m
+    )?.[1];
+
+    expect(guard).toBe(
+      '[[ "$STAGE" =~ ^/var/lib/club-arena/control-staging/[1-9][0-9]*-[1-9][0-9]*$ ]]'
+    );
+    expect(hostStage).not.toContain('case "$STAGE" in');
+    expect(hostStage.indexOf('STAGE="/var/lib/club-arena/control-staging/$RUN_KEY"')).toBeLessThan(
+      hostStage.indexOf(guard ?? 'missing stage guard')
+    );
+    expect(hostStage.indexOf(guard ?? 'missing stage guard')).toBeLessThan(
+      hostStage.indexOf('rm -rf -- "$STAGE"')
+    );
+
+    const accepts = (stage: string) =>
+      spawnSync('bash', ['-c', guard ?? 'exit 99'], {
+        encoding: 'utf8',
+        env: { ...process.env, STAGE: stage },
+      }).status === 0;
+
+    expect(accepts('/var/lib/club-arena/control-staging/34613015733-1')).toBe(true);
+    for (const invalid of [
+      '/var/lib/club-arena/control-staging/34613015733-',
+      '/var/lib/club-arena/control-staging/34613015733-01',
+      '/var/lib/club-arena/control-staging/0-1',
+      '/var/lib/club-arena/control-staging/34613015733-1-extra',
+      '/var/lib/club-arena/control-staging/34613015733-1/../../escape',
+      join(tmpdir(), 'control-staging/34613015733-1'),
+    ]) {
+      expect(accepts(invalid), invalid).toBe(false);
+    }
+  });
+
+  it('uses exact numeric guards throughout intake, recovery, and image-lease cleanup', () => {
+    const extractGuard = (source: string, variable: string) => {
+      const marker = `[[ "$${variable}" =~ `;
+      const line = source.split('\n').find((candidate) => candidate.includes(marker));
+      expect(line, `missing ${variable} guard`).toBeDefined();
+      return line!.slice(line!.indexOf('[['), line!.indexOf(']]') + 2);
+    };
+    const accepts = (guard: string, env: NodeJS.ProcessEnv) =>
+      spawnSync('bash', ['-c', guard], {
+        encoding: 'utf8',
+        env: { ...process.env, ...env },
+      }).status === 0;
+
+    const intakeLockGuard =
+      '[[ "$INTAKE_LOCK" =~ ^/var/lock/club-arena-engine-intake-[1-9][0-9]*-[1-9][0-9]*\\.lock$ ]]';
+    for (const [name, source] of [
+      ['install-engine-intake.sh', intakeInstaller],
+      ['engine-release-intake.sh', intake],
+    ] as const) {
+      const guard = extractGuard(source, 'INTAKE_LOCK');
+      expect(guard, name).toBe(intakeLockGuard);
+      expect(
+        accepts(guard, {
+          INTAKE_LOCK: '/var/lock/club-arena-engine-intake-34613015733-1.lock',
+        }),
+        name
+      ).toBe(true);
+      for (const invalid of [
+        '/var/lock/club-arena-engine-intake-34613015733-01.lock',
+        '/var/lock/club-arena-engine-intake-34613015733-1-extra.lock',
+        '/var/lock/club-arena-engine-intake-34613015733-1/../../escape.lock',
+        join(tmpdir(), 'club-arena-engine-intake-34613015733-1.lock'),
+      ]) {
+        expect(accepts(guard, { INTAKE_LOCK: invalid }), `${name}: ${invalid}`).toBe(false);
+      }
+    }
+
+    for (const [pathVariable, rootVariable, root, suffix] of [
+      ['PIN_FILE', 'PIN_ROOT', '/var/lib/club-arena/engine-release-generation-pins', 'generation'],
+      ['LEASE_FILE', 'LEASE_ROOT', '/var/lib/club-arena/engine-image-leases', 'lease'],
+      [
+        'BREAK_DEADLINE_FILE',
+        'REQUEST_ROOT',
+        '/var/lib/club-arena/engine-release-requests',
+        'break-deadline',
+      ],
+      ['INTENT_FILE', 'REQUEST_ROOT', '/var/lib/club-arena/engine-release-requests', 'intent'],
+      ['REQUEST_FILE', 'REQUEST_ROOT', '/var/lib/club-arena/engine-release-requests', 'request'],
+    ] as const) {
+      const guard = extractGuard(recovery, pathVariable);
+      const rootEnv = { [rootVariable]: root };
+      expect(
+        accepts(guard, { ...rootEnv, [pathVariable]: `${root}/34613015733-1.${suffix}` })
+      ).toBe(true);
+      expect(accepts(guard, { ...rootEnv, [pathVariable]: `${root}/34613015733.${suffix}` })).toBe(
+        true
+      );
+      for (const invalid of [
+        `${root}/34613015733-01.${suffix}`,
+        `${root}/34613015733-1-extra.${suffix}`,
+        `${root}/34613015733-1/../../escape.${suffix}`,
+        join(tmpdir(), `34613015733-1.${suffix}`),
+      ]) {
+        expect(accepts(guard, { ...rootEnv, [pathVariable]: invalid }), invalid).toBe(false);
+      }
+    }
+
+    const leaseNameGuard = extractGuard(retention, 'lease_name');
+    expect(accepts(leaseNameGuard, { lease_name: '34613015733-1.lease' })).toBe(true);
+    expect(accepts(leaseNameGuard, { lease_name: '34613015733.lease' })).toBe(true);
+    for (const invalid of [
+      '34613015733-01.lease',
+      '34613015733-1-extra.lease',
+      '34613015733-1/../../escape.lease',
+      'prefix-34613015733-1.lease',
+    ]) {
+      expect(accepts(leaseNameGuard, { lease_name: invalid }), invalid).toBe(false);
+    }
+
+    for (const [name, source] of [
+      ['workflow', workflow],
+      ['install-engine-intake.sh', intakeInstaller],
+      ['engine-release-intake.sh', intake],
+      ['engine-release-recover.sh', recovery],
+      ['retain-engine-images.sh', retention],
+    ] as const) {
+      for (const caseBlock of source.match(/\bcase\b[\s\S]*?\besac\b/g) ?? []) {
+        expect(caseBlock, `${name} retains a numeric pseudo-regex in a case glob`).not.toMatch(
+          /\[1-9\]\[0-9\]\*/
+        );
+      }
+    }
   });
 
   it('admits only generations compatible with the frozen release v1 wire contract', () => {

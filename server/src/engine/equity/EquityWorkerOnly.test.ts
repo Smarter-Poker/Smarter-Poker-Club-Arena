@@ -3,6 +3,11 @@ import { readFileSync } from 'node:fs';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+// These lifecycle tests exercise two-slot routing and replacement behavior.
+// Keep their fake-worker topology deterministic on small CI hosts while the
+// capacity guard continues to verify the production availableParallelism cap.
+vi.mock('node:os', () => ({ availableParallelism: () => 4 }));
+
 import type { Card, CardRank, CardSuit } from '../../types.js';
 import { insuranceEquity } from '../InsuranceEquity.js';
 import {

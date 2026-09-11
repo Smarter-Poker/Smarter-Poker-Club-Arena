@@ -1,0 +1,115 @@
+[
+  {
+    "relname": "engine_table_leases",
+    "columns": [
+      {
+        "name": "table_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true
+      },
+      {
+        "name": "instance_id",
+        "type": "text",
+        "default": null,
+        "notnull": true
+      },
+      {
+        "name": "engine_version",
+        "type": "text",
+        "default": null,
+        "notnull": false
+      },
+      {
+        "name": "acquired_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": true
+      },
+      {
+        "name": "heartbeat_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": true
+      },
+      {
+        "name": "lease_generation",
+        "type": "uuid",
+        "default": "gen_random_uuid()",
+        "notnull": true
+      },
+      {
+        "name": "protocol_version",
+        "type": "integer",
+        "default": "1",
+        "notnull": true
+      }
+    ],
+    "constraints": [
+      {
+        "name": "engine_table_leases_pkey",
+        "definition": "PRIMARY KEY (table_id)"
+      },
+      {
+        "name": "engine_table_leases_protocol_version_check",
+        "definition": "CHECK ((protocol_version = ANY (ARRAY[1, 2])))"
+      }
+    ],
+    "triggers": null
+  },
+  {
+    "relname": "hand_projection_outbox",
+    "columns": [
+      {
+        "name": "hand_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true
+      },
+      {
+        "name": "table_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true
+      },
+      {
+        "name": "hand_number",
+        "type": "bigint",
+        "default": null,
+        "notnull": true
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "clock_timestamp()",
+        "notnull": true
+      }
+    ],
+    "constraints": [
+      {
+        "name": "hand_projection_outbox_hand_number_check",
+        "definition": "CHECK ((hand_number >= 1000000))"
+      },
+      {
+        "name": "hand_projection_outbox_hand_number_key",
+        "definition": "UNIQUE (hand_number)"
+      },
+      {
+        "name": "hand_projection_outbox_pkey",
+        "definition": "PRIMARY KEY (hand_id)"
+      }
+    ],
+    "triggers": [
+      {
+        "enabled": "O",
+        "definition": "CREATE TRIGGER a0_finish_hand_post_commit_obligations BEFORE DELETE ON public.hand_projection_outbox FOR EACH ROW EXECUTE FUNCTION trg_finish_hand_post_commit_obligations()",
+        "function_definition": "CREATE OR REPLACE FUNCTION public.trg_finish_hand_post_commit_obligations()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nDECLARE\n  v_result jsonb;\nBEGIN\n  v_result := public.fn_ca_process_hand_post_commit_obligations(OLD.hand_id);\n  IF COALESCE((v_result->>'ok')::boolean, false) IS NOT TRUE\n     AND v_result->>'reason' <> 'legacy_no_obligations' THEN\n    RAISE EXCEPTION 'hand post-commit obligations remain pending for %: %',\n      OLD.hand_id, v_result;\n  END IF;\n  RETURN OLD;\nEND;\n$function$\n"
+      },
+      {
+        "enabled": "O",
+        "definition": "CREATE TRIGGER z9_notify_hand_projection_outbox AFTER INSERT ON public.hand_projection_outbox FOR EACH ROW EXECUTE FUNCTION trg_notify_hand_projection_outbox()",
+        "function_definition": "CREATE OR REPLACE FUNCTION public.trg_notify_hand_projection_outbox()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nBEGIN\n  -- The engine treats this as a wake-up only: it re-reads the outbox ordered\n  -- by hand_number (server/src/services/supabase/handProjection.ts runDrain).\n  -- hand_id:table_id is carried for logging and metrics, never consumed.\n  PERFORM pg_notify('hand_projection_outbox', NEW.hand_id::text || ':' || coalesce(NEW.table_id::text, ''));\n  RETURN NEW;\nEND;\n$function$\n"
+      }
+    ]
+  }
+]

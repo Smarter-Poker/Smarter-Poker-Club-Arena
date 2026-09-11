@@ -1,0 +1,635 @@
+{
+  "observedAt": "2026-09-11T17:13:05.729Z",
+  "rows": [
+    {
+      "relname": "cash_player_session",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "default": "gen_random_uuid()",
+          "notnull": true
+        },
+        {
+          "name": "player_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "club_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false
+        },
+        {
+          "name": "scope_type",
+          "type": "text",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "scope_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "table_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "variant",
+          "type": "text",
+          "default": null,
+          "notnull": false
+        },
+        {
+          "name": "sb",
+          "type": "numeric(14,2)",
+          "default": null,
+          "notnull": false
+        },
+        {
+          "name": "bb",
+          "type": "numeric(14,2)",
+          "default": null,
+          "notnull": false
+        },
+        {
+          "name": "baseline",
+          "type": "numeric(14,2)",
+          "default": "0",
+          "notnull": true
+        },
+        {
+          "name": "stay_clock_ms",
+          "type": "integer",
+          "default": "600000",
+          "notnull": true
+        },
+        {
+          "name": "rejoin_window_ms",
+          "type": "integer",
+          "default": "7200000",
+          "notnull": true
+        },
+        {
+          "name": "stay_remaining_ms",
+          "type": "integer",
+          "default": "600000",
+          "notnull": true
+        },
+        {
+          "name": "stay_running",
+          "type": "boolean",
+          "default": "false",
+          "notnull": true
+        },
+        {
+          "name": "stay_last_tick_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": true
+        },
+        {
+          "name": "opened_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": true
+        },
+        {
+          "name": "closed_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "notnull": false
+        },
+        {
+          "name": "closed_reason",
+          "type": "text",
+          "default": null,
+          "notnull": false
+        }
+      ],
+      "constraints": [
+        {
+          "name": "cash_player_session_clock_floor",
+          "type": "c",
+          "definition": "CHECK ((stay_clock_ms >= 600000))"
+        },
+        {
+          "name": "cash_player_session_pkey",
+          "type": "p",
+          "definition": "PRIMARY KEY (id)"
+        },
+        {
+          "name": "cash_player_session_remaining_nonneg",
+          "type": "c",
+          "definition": "CHECK ((stay_remaining_ms >= 0))"
+        },
+        {
+          "name": "cash_player_session_scope_type_check",
+          "type": "c",
+          "definition": "CHECK ((scope_type = ANY (ARRAY['table'::text, 'cluster'::text])))"
+        },
+        {
+          "name": "cash_player_session_window_floor",
+          "type": "c",
+          "definition": "CHECK ((rejoin_window_ms >= 7200000))"
+        }
+      ]
+    },
+    {
+      "relname": "cash_rejoin_constraints",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "default": "gen_random_uuid()",
+          "notnull": true
+        },
+        {
+          "name": "player_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "club_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "variant",
+          "type": "text",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "sb",
+          "type": "numeric(14,2)",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "bb",
+          "type": "numeric(14,2)",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "required_stack",
+          "type": "numeric(14,2)",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "left_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": true
+        },
+        {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "source_table_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false
+        },
+        {
+          "name": "barred_until",
+          "type": "timestamp with time zone",
+          "default": null,
+          "notnull": false
+        }
+      ],
+      "constraints": [
+        {
+          "name": "cash_rejoin_constraints_pkey",
+          "type": "p",
+          "definition": "PRIMARY KEY (id)"
+        },
+        {
+          "name": "cash_rejoin_constraints_required_stack_check",
+          "type": "c",
+          "definition": "CHECK ((required_stack > (0)::numeric))"
+        }
+      ]
+    },
+    {
+      "relname": "cash_seat_moves",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "default": "gen_random_uuid()",
+          "notnull": true
+        },
+        {
+          "name": "game_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "player_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "from_table_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "to_table_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "reason",
+          "type": "text",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "state",
+          "type": "text",
+          "default": "'pending'::text",
+          "notnull": true
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": true
+        },
+        {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "executed_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "notnull": false
+        },
+        {
+          "name": "to_seat_number",
+          "type": "integer",
+          "default": null,
+          "notnull": false
+        },
+        {
+          "name": "note",
+          "type": "text",
+          "default": null,
+          "notnull": false
+        },
+        {
+          "name": "announced_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "notnull": false
+        },
+        {
+          "name": "swap_move_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false
+        },
+        {
+          "name": "ready_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "notnull": false
+        },
+        {
+          "name": "source_occupancy_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": false
+        },
+        {
+          "name": "source_seat_number",
+          "type": "integer",
+          "default": null,
+          "notnull": false
+        },
+        {
+          "name": "resolved_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "notnull": false
+        }
+      ],
+      "constraints": [
+        {
+          "name": "cash_seat_moves_from_table_id_fkey",
+          "type": "f",
+          "definition": "FOREIGN KEY (from_table_id) REFERENCES tables(id) ON DELETE CASCADE"
+        },
+        {
+          "name": "cash_seat_moves_game_id_fkey",
+          "type": "f",
+          "definition": "FOREIGN KEY (game_id) REFERENCES cash_games(id) ON DELETE CASCADE"
+        },
+        {
+          "name": "cash_seat_moves_pkey",
+          "type": "p",
+          "definition": "PRIMARY KEY (id)"
+        },
+        {
+          "name": "cash_seat_moves_reason_check",
+          "type": "c",
+          "definition": "CHECK ((reason = ANY (ARRAY['must_move'::text, 'break'::text, 'seat_change'::text, 'balance'::text])))"
+        },
+        {
+          "name": "cash_seat_moves_state_check",
+          "type": "c",
+          "definition": "CHECK ((state = ANY (ARRAY['pending'::text, 'done'::text, 'cancelled'::text, 'expired'::text])))"
+        },
+        {
+          "name": "cash_seat_moves_to_table_id_fkey",
+          "type": "f",
+          "definition": "FOREIGN KEY (to_table_id) REFERENCES tables(id) ON DELETE CASCADE"
+        },
+        {
+          "name": "pending_move_has_original_occupancy",
+          "type": "c",
+          "definition": "CHECK (((state <> 'pending'::text) OR ((source_occupancy_id IS NOT NULL) AND (source_seat_number IS NOT NULL))))"
+        }
+      ]
+    },
+    {
+      "relname": "engine_maintenance_thaw_targets",
+      "columns": [
+        {
+          "name": "freeze_started_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "step",
+          "type": "text",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "target_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "credited_seconds",
+          "type": "numeric",
+          "default": "0",
+          "notnull": true
+        }
+      ],
+      "constraints": [
+        {
+          "name": "engine_maintenance_thaw_targets_credited_seconds_check",
+          "type": "c",
+          "definition": "CHECK ((credited_seconds >= (0)::numeric))"
+        },
+        {
+          "name": "engine_maintenance_thaw_targets_freeze_started_at_fkey",
+          "type": "f",
+          "definition": "FOREIGN KEY (freeze_started_at) REFERENCES engine_maintenance_thaws(freeze_started_at) ON DELETE CASCADE"
+        },
+        {
+          "name": "engine_maintenance_thaw_targets_pkey",
+          "type": "p",
+          "definition": "PRIMARY KEY (freeze_started_at, step, target_id)"
+        }
+      ]
+    },
+    {
+      "relname": "engine_presence_parked",
+      "columns": [
+        {
+          "name": "table_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "disconnect_states",
+          "type": "jsonb",
+          "default": "'{}'::jsonb",
+          "notnull": true
+        },
+        {
+          "name": "parked_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": true
+        },
+        {
+          "name": "engine_instance",
+          "type": "text",
+          "default": null,
+          "notnull": false
+        }
+      ],
+      "constraints": [
+        {
+          "name": "engine_presence_parked_pkey",
+          "type": "p",
+          "definition": "PRIMARY KEY (table_id)"
+        }
+      ]
+    },
+    {
+      "relname": "hand_state_snapshots",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "default": "gen_random_uuid()",
+          "notnull": true
+        },
+        {
+          "name": "table_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "hand_number",
+          "type": "integer",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "state_json",
+          "type": "jsonb",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "config_json",
+          "type": "jsonb",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "dealer_seat",
+          "type": "integer",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "players_json",
+          "type": "jsonb",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "stage",
+          "type": "text",
+          "default": "'preflop'::text",
+          "notnull": true
+        },
+        {
+          "name": "is_complete",
+          "type": "boolean",
+          "default": "false",
+          "notnull": true
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": true
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": true
+        },
+        {
+          "name": "pending_deadlines",
+          "type": "jsonb",
+          "default": "'[]'::jsonb",
+          "notnull": true
+        },
+        {
+          "name": "disconnect_states",
+          "type": "jsonb",
+          "default": "'{}'::jsonb",
+          "notnull": true
+        }
+      ],
+      "constraints": [
+        {
+          "name": "hand_state_snapshots_pkey",
+          "type": "p",
+          "definition": "PRIMARY KEY (id)"
+        },
+        {
+          "name": "hand_state_snapshots_table_id_fkey",
+          "type": "f",
+          "definition": "FOREIGN KEY (table_id) REFERENCES tables(id) ON DELETE CASCADE"
+        }
+      ]
+    },
+    {
+      "relname": "table_waitlist",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "default": "gen_random_uuid()",
+          "notnull": true
+        },
+        {
+          "name": "table_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "user_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true
+        },
+        {
+          "name": "position",
+          "type": "integer",
+          "default": "1",
+          "notnull": true
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "default": "'waiting'::text",
+          "notnull": true
+        },
+        {
+          "name": "notified_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "notnull": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": false
+        },
+        {
+          "name": "hold_expires_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "notnull": false
+        }
+      ],
+      "constraints": [
+        {
+          "name": "fk_table_waitlist_user_id_profiles",
+          "type": "f",
+          "definition": "FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE"
+        },
+        {
+          "name": "table_waitlist_pkey",
+          "type": "p",
+          "definition": "PRIMARY KEY (id)"
+        },
+        {
+          "name": "table_waitlist_status_check",
+          "type": "c",
+          "definition": "CHECK ((status = ANY (ARRAY['waiting'::text, 'notified'::text, 'seated'::text, 'left'::text, 'cleared'::text, 'expired'::text])))"
+        },
+        {
+          "name": "table_waitlist_table_id_fkey",
+          "type": "f",
+          "definition": "FOREIGN KEY (table_id) REFERENCES tables(id) ON DELETE CASCADE"
+        },
+        {
+          "name": "table_waitlist_user_id_fkey",
+          "type": "f",
+          "definition": "FOREIGN KEY (user_id) REFERENCES auth.users(id)"
+        }
+      ]
+    }
+  ]
+}

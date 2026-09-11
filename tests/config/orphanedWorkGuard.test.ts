@@ -33,6 +33,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync, copyFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { gitFixtureEnvironment } from '../helpers/gitFixtureEnvironment';
 
 const GUARD = path.resolve(__dirname, '../..', 'scripts/ci/check-no-orphaned-work.mjs');
 
@@ -42,17 +43,15 @@ let repo: string;
 // leak into this fixture, every command below targets the caller's worktree
 // instead of the throwaway repository, and `commit('base')` can stage the
 // real checkout as deleted. Strip every GIT_* override before invoking Git so
-// cwd is the only repository selector.
-const scratchGitEnv = Object.fromEntries(
-  Object.entries(process.env).filter(([name]) => !name.startsWith('GIT_'))
-);
+// cwd is the only repository selector. Global and system config must not inject
+// hooks or other workstation behavior into the disposable fixture either.
 
 /** Run a git command in the scratch repo; throws with output on failure. */
 function git(...args: string[]): string {
   return execFileSync('git', args, {
     cwd: repo,
     encoding: 'utf8',
-    env: scratchGitEnv,
+    env: gitFixtureEnvironment(),
   }).trim();
 }
 
@@ -75,7 +74,7 @@ function runGuard(sha: string, note: string): { code: number; out: string } {
     const out = execFileSync('node', [GUARD], {
       cwd: repo,
       encoding: 'utf8',
-      env: scratchGitEnv,
+      env: gitFixtureEnvironment(),
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     return { code: 0, out };

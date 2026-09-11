@@ -1,0 +1,17 @@
+# Durable operation maintenance authority
+
+This prepared database expansion adds on-demand engine maintenance to the sole release journal. It remains inactive until exact database, engine, client, controller, host-cutover and retained-recovery compatibility evidence is registered. Existing hourly maintenance and all retained v3 signatures remain available before activation; active v2 ownership prevents legacy overwrite.
+
+The interval starts at admission, includes last-hand drain, and keeps its original five-, twenty- and thirty-minute boundaries. Consequential steps require measured recovery budget. Only explicit validated release authorizes wave thaw; no deadline opens play. Process adoption remains distinct from controller epoch ownership.
+
+Each durable wave has exact table order, event grouping, ownership, credited endpoint and actual-resumption acknowledgment. Unknown physical outcomes hold for reconciliation. A new canonical accepted hand is tested in the acknowledged first wave while later tables and global ancillary work remain held.
+
+Final global credit uses fixed checkpoints across bounded worker installments. A complete immutable certificate binds all acknowledged waves and exact target credits; the database predicates and informed runtime shared predicate honor its endpoint without depending on a timer callback. Missed checkpoints finish before a later endpoint is appended. Lost replies and adoption do not repeat physical waves or clock credit. Deferred certificate checks roll back work that reaches an expired endpoint during transaction finalization.
+
+Add-on purchase opportunity follows the final global purchasing boundary, preserving its original remaining time. Event level clocks stay tied to the actual wave acknowledgment. Minutes-based late registration retains its existing wall-clock contract; `started_at` is not shifted.
+
+SQL SHA256 `82dd06afd275038baa014f0e8d3ad16f8bd4e71822f8a7419ebcb12bd39c6b31` passed and is preserved as the pre-add-on 17-authority/13-runtime matrix. The explicitly revised add-on scope is SQL SHA256 `2ee989f3c7cd8406792ddd9110697d41bc24ba86237e830234311b8580d050b4`. Receipt schema is unchanged. Its native opportunity/replay regression passes with the actual Runtime/Store and SQL.
+
+Validation uses isolated socket-only PostgreSQL 17.11 and production Node 22.23.2, with exact captured catalog/function prerequisites. The unchanged definer authorization and no-new-band-aids checks report zero findings; their gates were not weakened. Focused Runtime/Store/freeze tests pass 114/114 and server TypeScript passes. The final native matrix passes 17/17 authority cases and 14/14 actual Runtime/Store cases. Provider composition passes 6/6 against the same SQL, with its own 17-case authority bootstrap. Sanitized source pins, case names and limits are committed in `docs/audits/2026-09-11-operation-maintenance-native.json`.
+
+No production migration, activation, login/credential creation or host action is performed. SQL cannot establish an absolute scheduling/WAL commit-visibility bound after its final deferred check; that remains an activation review prerequisite. Runtime table stand-ins do not prove real TournamentManager timer suspension, Supabase Realtime, PostgREST or partition-wide simultaneous release. The independent manager integration and compatible native installation must qualify those boundaries before activation.

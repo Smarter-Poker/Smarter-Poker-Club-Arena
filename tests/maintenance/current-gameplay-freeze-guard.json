@@ -1,0 +1,16 @@
+[
+  {
+    "tgname": "zz_freeze_guard",
+    "tgenabled": "O",
+    "trigger_definition": "CREATE TRIGGER zz_freeze_guard BEFORE INSERT OR DELETE OR UPDATE ON public.table_seats FOR EACH ROW EXECUTE FUNCTION fn_refuse_while_frozen('stack', 'left_at', 'sit_out_at')",
+    "proname": "fn_refuse_while_frozen",
+    "body_md5": "ead41fa15e6cb9aaa37e65d3eef8a682",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_refuse_while_frozen()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nDECLARE\n  col  TEXT;\n  changed BOOLEAN := FALSE;\n  v_claims TEXT;\nBEGIN\n  IF TG_OP = 'UPDATE' AND TG_NARGS > 0 THEN\n    FOREACH col IN ARRAY TG_ARGV LOOP\n      IF to_jsonb(NEW) -> col IS DISTINCT FROM to_jsonb(OLD) -> col THEN\n        changed := TRUE;\n        EXIT;\n      END IF;\n    END LOOP;\n    IF NOT changed THEN\n      RETURN NEW;\n    END IF;\n  END IF;\n\n  -- ONBOARDING NEVER FREEZES (to-do #2563 item 1). A membership row carrying\n  -- no chips is identity, not money. This table, INSERT only, zero balance.\n  IF TG_TABLE_NAME = 'club_members' AND TG_OP = 'INSERT'\n     AND COALESCE((to_jsonb(NEW) ->> 'chip_balance')::numeric, 0) = 0 THEN\n    RETURN NEW;\n  END IF;\n\n  IF public.fn_freeze_bypass_active() THEN\n    RETURN COALESCE(NEW, OLD);\n  END IF;\n\n  -- CHIP STANDARD (2026-09-05): A JOURNAL ROW IS THE RECORD OF A WRITE, NOT A\n  -- WRITE. When a balance write was permitted (a money table outside this\n  -- guard, or a permitted role), its chip_ledger leg is written by the\n  -- autoledger inside that same statement, at trigger depth 2 or more.\n  -- Refusing the leg while the write stands is the one outcome the standard\n  -- cannot allow: 104 BBJ bank moves (9.69 chips) lost their legs this way at :55 and\n  -- :00 up to 09-05 06:58 (ca_ledger_write_failures, sqlstate 55006), each one an unexplained movement on the BBJ meter. A direct\n  -- INSERT on chip_ledger from a client (depth 1) is still refused.\n  IF TG_TABLE_NAME = 'chip_ledger' AND pg_trigger_depth() > 1 THEN\n    RETURN COALESCE(NEW, OLD);\n  END IF;\n\n  BEGIN\n    v_claims := current_setting('request.jwt.claims', TRUE);\n    IF v_claims IS NOT NULL AND v_claims <> ''\n       AND (v_claims::jsonb ->> 'role') = 'service_role' THEN\n      RETURN COALESCE(NEW, OLD);\n    END IF;\n  EXCEPTION WHEN OTHERS THEN\n    NULL;\n  END;\n\n  IF public.fn_platform_frozen() THEN\n    RAISE EXCEPTION\n      'PLATFORM_FROZEN: the platform is on a scheduled maintenance break. % on % was refused; it will succeed when play resumes.',\n      TG_OP, TG_TABLE_NAME\n      USING ERRCODE = '55006',\n            HINT = 'Scheduled maintenance breaks run from :55 to :00. Nothing is lost - retry after the break.';\n  END IF;\n\n  RETURN COALESCE(NEW, OLD);\nEND;\n$function$\n",
+    "owner": "postgres",
+    "proacl": "{postgres=X/postgres,service_role=X/postgres}",
+    "proconfig": [
+      "search_path=public, pg_temp"
+    ],
+    "prosecdef": false
+  }
+]

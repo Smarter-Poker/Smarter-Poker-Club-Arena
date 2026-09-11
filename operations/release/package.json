@@ -1,0 +1,17 @@
+{
+  "name": "club-arena-release-journal",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Private global release journal bootstrap; observation only",
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "pg": "8.16.3"
+  },
+  "scripts": {
+    "test": "node --test ../../tests/operations/release-journal.integration.test.mjs",
+    "observe": "node cli.mjs observe"
+  }
+}

@@ -1,0 +1,12 @@
+[
+  {
+    "relname": "ca_seat_stack_rebases_id_seq",
+    "type": "bigint",
+    "seqstart": 1,
+    "seqincrement": 1,
+    "seqmax": "9223372036854775807",
+    "seqmin": 1,
+    "seqcache": 1,
+    "seqcycle": false
+  }
+]

@@ -1,0 +1,298 @@
+[
+  {
+    "relname": "ca_settlements",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "default": "gen_random_uuid()",
+        "notnull": true
+      },
+      {
+        "name": "settlement_type",
+        "type": "text",
+        "default": null,
+        "notnull": true
+      },
+      {
+        "name": "external_ref",
+        "type": "text",
+        "default": null,
+        "notnull": true
+      },
+      {
+        "name": "state",
+        "type": "text",
+        "default": "'open'::text",
+        "notnull": true
+      },
+      {
+        "name": "club_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false
+      },
+      {
+        "name": "union_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false
+      },
+      {
+        "name": "table_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false
+      },
+      {
+        "name": "tournament_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false
+      },
+      {
+        "name": "hand_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false
+      },
+      {
+        "name": "idempotency_key",
+        "type": "text",
+        "default": null,
+        "notnull": false
+      },
+      {
+        "name": "correlation_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false
+      },
+      {
+        "name": "epoch_id",
+        "type": "integer",
+        "default": "fn_ca_current_epoch()",
+        "notnull": false
+      },
+      {
+        "name": "totals",
+        "type": "jsonb",
+        "default": "'{}'::jsonb",
+        "notnull": true
+      },
+      {
+        "name": "error_detail",
+        "type": "text",
+        "default": null,
+        "notnull": false
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": true
+      },
+      {
+        "name": "updated_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": true
+      }
+    ],
+    "constraints": [
+      {
+        "name": "ca_settlements_pkey",
+        "definition": "PRIMARY KEY (id)"
+      },
+      {
+        "name": "ca_settlements_settlement_type_external_ref_key",
+        "definition": "UNIQUE (settlement_type, external_ref)"
+      },
+      {
+        "name": "ca_settlements_state_check",
+        "definition": "CHECK ((state = ANY (ARRAY['open'::text, 'locked_for_calculation'::text, 'calculated'::text, 'validated'::text, 'ledger_posted'::text, 'post_commit_verified'::text, 'final'::text, 'failed'::text])))"
+      }
+    ],
+    "triggers": [
+      {
+        "enabled": "O",
+        "definition": "CREATE TRIGGER trg_ca_settlement_guard BEFORE UPDATE ON public.ca_settlements FOR EACH ROW EXECUTE FUNCTION fn_ca_settlement_transition_guard()",
+        "function_definition": "CREATE OR REPLACE FUNCTION public.fn_ca_settlement_transition_guard()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nDECLARE\n  ord_old int; ord_new int;\nBEGIN\n  IF NEW.state = OLD.state THEN RETURN NEW; END IF;\n  ord_old := array_position(ARRAY['open','locked_for_calculation','calculated',\n              'validated','ledger_posted','post_commit_verified','final'], OLD.state);\n  ord_new := array_position(ARRAY['open','locked_for_calculation','calculated',\n              'validated','ledger_posted','post_commit_verified','final'], NEW.state);\n  IF OLD.state = 'final' THEN\n    RAISE EXCEPTION 'settlement % is final and cannot change state', OLD.id;\n  END IF;\n  IF NEW.state = 'failed' THEN\n    NEW.updated_at := now(); RETURN NEW;\n  END IF;\n  IF OLD.state = 'failed' THEN  -- resume: re-enter anywhere at or before ledger_posted\n    IF ord_new IS NULL OR ord_new > 5 THEN\n      RAISE EXCEPTION 'failed settlement % may only resume at or before ledger_posted', OLD.id;\n    END IF;\n    NEW.updated_at := now(); RETURN NEW;\n  END IF;\n  IF ord_old IS NULL OR ord_new IS NULL OR ord_new <> ord_old + 1 THEN\n    RAISE EXCEPTION 'invalid settlement transition % -> % for %', OLD.state, NEW.state, OLD.id;\n  END IF;\n  NEW.updated_at := now();\n  RETURN NEW;\nEND $function$\n"
+      }
+    ]
+  },
+  {
+    "relname": "ca_seat_stack_rebases",
+    "columns": [
+      {
+        "name": "id",
+        "type": "bigint",
+        "default": "nextval('ca_seat_stack_rebases_id_seq'::regclass)",
+        "notnull": true
+      },
+      {
+        "name": "settlement_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": false
+      },
+      {
+        "name": "table_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true
+      },
+      {
+        "name": "hand_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true
+      },
+      {
+        "name": "hand_number",
+        "type": "bigint",
+        "default": null,
+        "notnull": false
+      },
+      {
+        "name": "user_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true
+      },
+      {
+        "name": "engine_before",
+        "type": "numeric",
+        "default": null,
+        "notnull": true
+      },
+      {
+        "name": "db_before",
+        "type": "numeric",
+        "default": null,
+        "notnull": true
+      },
+      {
+        "name": "engine_after",
+        "type": "numeric",
+        "default": null,
+        "notnull": true
+      },
+      {
+        "name": "written",
+        "type": "numeric",
+        "default": null,
+        "notnull": true
+      },
+      {
+        "name": "amount",
+        "type": "numeric",
+        "default": "(db_before - engine_before)",
+        "notnull": false
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": true
+      }
+    ],
+    "constraints": [
+      {
+        "name": "ca_seat_stack_rebases_pkey",
+        "definition": "PRIMARY KEY (id)"
+      },
+      {
+        "name": "chk_amount_is_two_decimal_places",
+        "definition": "CHECK (((amount IS NULL) OR (amount = round(amount, 2))))"
+      }
+    ],
+    "triggers": null
+  },
+  {
+    "relname": "table_pending_addons",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "default": "gen_random_uuid()",
+        "notnull": true
+      },
+      {
+        "name": "table_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true
+      },
+      {
+        "name": "user_id",
+        "type": "uuid",
+        "default": null,
+        "notnull": true
+      },
+      {
+        "name": "amount",
+        "type": "numeric",
+        "default": null,
+        "notnull": true
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "notnull": true
+      },
+      {
+        "name": "resolved_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "notnull": false
+      },
+      {
+        "name": "applied_to_stack",
+        "type": "numeric",
+        "default": null,
+        "notnull": false
+      },
+      {
+        "name": "refunded",
+        "type": "numeric",
+        "default": null,
+        "notnull": false
+      },
+      {
+        "name": "kind",
+        "type": "text",
+        "default": "'addon'::text",
+        "notnull": true
+      }
+    ],
+    "constraints": [
+      {
+        "name": "table_pending_addons_amount_check",
+        "definition": "CHECK ((amount > (0)::numeric))"
+      },
+      {
+        "name": "table_pending_addons_amount_is_cents",
+        "definition": "CHECK (((amount IS NULL) OR (((amount)::text <> ALL (ARRAY['NaN'::text, 'Infinity'::text, '-Infinity'::text])) AND (amount = round(amount, 2))))) NOT VALID"
+      },
+      {
+        "name": "table_pending_addons_applied_is_cents",
+        "definition": "CHECK (((applied_to_stack IS NULL) OR (((applied_to_stack)::text <> ALL (ARRAY['NaN'::text, 'Infinity'::text, '-Infinity'::text])) AND (applied_to_stack = round(applied_to_stack, 2))))) NOT VALID"
+      },
+      {
+        "name": "table_pending_addons_kind_check",
+        "definition": "CHECK ((kind = ANY (ARRAY['addon'::text, 'rebuy'::text])))"
+      },
+      {
+        "name": "table_pending_addons_pkey",
+        "definition": "PRIMARY KEY (id)"
+      },
+      {
+        "name": "table_pending_addons_refunded_is_cents",
+        "definition": "CHECK (((refunded IS NULL) OR (((refunded)::text <> ALL (ARRAY['NaN'::text, 'Infinity'::text, '-Infinity'::text])) AND (refunded = round(refunded, 2))))) NOT VALID"
+      }
+    ],
+    "triggers": null
+  }
+]

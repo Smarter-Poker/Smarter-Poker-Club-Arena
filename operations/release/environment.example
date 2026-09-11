@@ -1,0 +1,6 @@
+# Existing service-specific secret reference; never use a browser/runtime key.
+RELEASE_JOURNAL_DATABASE_URL=postgresql://EXISTING_SERVICE_IDENTITY@VERIFIED_SESSION_ENDPOINT/DATABASE
+# Must be independently verified at the installed endpoint. Transaction pooling is refused.
+RELEASE_JOURNAL_CONNECTION_MODE=session
+# This bootstrap has no EXECUTE mode or publishing adapter.
+RELEASE_JOURNAL_MODE=OBSERVE

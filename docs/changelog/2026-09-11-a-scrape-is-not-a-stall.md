@@ -63,3 +63,26 @@ carries a `table_id`. The two new fleet counters are deliberately named
 `poker_fleet_per_table_*` rather than `poker_table_*` so that law keeps meaning
 exactly what it says. `poker_blocked_settlements`, the alarm that matters, is
 unchanged.
+
+## The same disease in the second endpoint
+
+`/health` is rendered on the same thread and polled by Docker every twenty
+seconds, by the deploy gate and by the supervisor. Measured the same evening:
+**341 KB, 106-183 ms to render, and `tableLiveness` was 362 KB of JSON before
+compaction - 98% of the body.**
+
+Nothing outside the engine process ever read it: not a workflow, not a script,
+not the client. And the answer it existed to give was already on the line above
+it, capped at twenty (`stalledTables`), with `humansSeatedTotal`,
+`handsInFlightTotal` and the settlement health all derived from the same array
+and already published.
+
+The array now stays inside the process, where every real consumer of it lives,
+and the endpoint carries `tableLivenessSummary`: table count, stalled count,
+undealable count, the worst `msSinceProgress`, and total dealable seats. A
+reader that wants to name a table still has `stalledTables`; a reader that
+wants a total gets one that is always present instead of one it has to reduce a
+thousand objects to compute.
+
+Together the two endpoints were costing roughly 300 ms every fifteen seconds
+and 150 ms every twenty, on the one thread that cannot be parallelised.

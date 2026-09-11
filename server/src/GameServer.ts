@@ -3193,7 +3193,34 @@ export class GameServer {
       equityWorkerPool: equityWorkers,
       stalledTables: stalledTables.slice(0, 20),
       discoveryStaleMs,
-      tableLiveness,
+      /* ── /health IS RENDERED ON THE AUTHORITATIVE EVENT LOOP (2026-09-11) ──
+       *
+       * This used to carry the WHOLE `tableLiveness` array. Measured on
+       * engine-01 that evening: the body was 341 KB, of which this one field
+       * was 362 KB of JSON before compaction - 98% of it - and rendering it
+       * cost 106-183 ms on the single thread that runs every turn timer,
+       * broadcast and horse decision round trip. Docker polls this endpoint
+       * every twenty seconds, and so do the deploy gate and the supervisor.
+       *
+       * Nothing outside this process ever read it. Not a workflow, not a
+       * script, not the client. And the answer it was there to give already
+       * sat one line above, capped: `stalledTables.slice(0, 20)`, plus
+       * `humansSeatedTotal`, `handsInFlightTotal` and the settlement health
+       * spread in below, all of which are derived from the same array.
+       *
+       * So the array stays inside the process, where every consumer of it
+       * already lives, and the endpoint carries the counts instead. A reader
+       * that wants to NAME a table still has `stalledTables`; a reader that
+       * wants a total now gets one that is always present rather than one it
+       * has to reduce a thousand objects to compute.
+       */
+      tableLivenessSummary: {
+        tables: tableLiveness.length,
+        stalled: stalledTables.length,
+        undealable: tableLiveness.filter((t) => t.dealable <= 0).length,
+        maxMsSinceProgress: tableLiveness.reduce((max, t) => Math.max(max, t.msSinceProgress), 0),
+        dealableSeats: tableLiveness.reduce((sum, t) => sum + t.dealable, 0),
+      },
       // Optional calculator capacity may recover after initial readiness
       // without taking a healthy dealer out of routing. Startup, exhausted
       // cooldown, and shutdown remain non-routing states.

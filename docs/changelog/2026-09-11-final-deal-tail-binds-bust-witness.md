@@ -37,7 +37,7 @@ python3 tests/a-final-deal-tail-binds-bust-witness.law.test.py \
   --output work/deal-witness/native
 ```
 
-The owned PG17 fixture was copied read-only with `pg_dump` from the retained `full_stage1` fixture. Restore exposed an existing synthetic baseline foreign key whose two legacy member rows lack profiles; the same foreign key was restored locally as `NOT VALID`, preserving enforcement on all new fixture rows. No source fixture was changed. `scripts/ci/rehearse-final-deal-current-terminal.py::compose` supplies the already-qualified current runtime foundation. The initial broad all-catalog checksum spilled temporary sort files into the nearly full local volume; final evidence uses bounded affected-catalog checks and sequential aggregates. It does not treat that interrupted run as acceptance.
+The owned PG17 fixture was copied read-only with `pg_dump` from the retained `full_stage1` fixture. Restore exposed an existing synthetic baseline foreign key whose one legacy member row lacks a profile; the same foreign key was restored locally as `NOT VALID`, preserving enforcement on all new fixture rows. No source fixture was changed. `scripts/ci/rehearse-final-deal-current-terminal.py::compose` supplies the already-qualified current runtime foundation. The initial broad all-catalog checksum spilled temporary sort files into the nearly full local volume; final evidence uses bounded affected-catalog checks and sequential aggregates. It does not treat that interrupted run as acceptance.
 
 ## Integration order and remaining dependencies
 

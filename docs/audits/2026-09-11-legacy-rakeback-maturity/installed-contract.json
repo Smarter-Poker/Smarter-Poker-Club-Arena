@@ -10,5 +10,16 @@
   "wallet_pointer_fk_found": false,
   "maturity_rule": "inclusive period_end closes at following UTC midnight; statement_timestamp reference",
   "preserved_catalogue_source_commit": "f39368fefe22b4385e9e89e5350bb671c587fb4a",
-  "complete_duplicate_payer_repair": false
+  "complete_duplicate_payer_repair": false,
+  "complete_duplicate_payer_candidate": true,
+  "production_applied": false,
+  "entrypoint": "00-apply-legacy-repair.sql",
+  "full_capture_payer_pin": "c12f993244b1f6b01dd950a8e8fee2b0de07ffef",
+  "current_proof_groups": {
+    "duplicate": 19,
+    "first_install_partial": 2,
+    "first_install_all": 1
+  },
+  "rolling_limit": "40P01 abort requires caller retry; both victims conserve and retry zero",
+  "first_install_overlap_proved": true
 }

@@ -14,7 +14,7 @@ Round 1 excludes transactions already bound to captured bank receipts. The basis
 
 - `before-proof.json`: three negative-control groups against the captured original payer bodies.
 - `guards-proof.json`: the same three groups with 17 captured money guards. Existing journal uniqueness stops one weekly duplicate but does not stop the independent direct-claim payment.
-- `after-proof.json`: 24 corrected groups, including observed transaction/advisory waits, authenticated actor scope, the two historical funding paths, mixed and captured-only periods, pointer evidence, shortfall preservation, final-journal rollback, and both captured old-body refusals.
+- `after-proof.json`: 33 corrected groups, including observed transaction/advisory waits, authenticated actor scope, the two historical funding paths, mixed and captured-only periods, pointer evidence, shortfall preservation, final-journal rollback, and both captured old-body refusals.
 - `runner-evidence.json`: exact executed source hashes and private cluster identity.
 - `basis-fixture-pins.json`: repository provenance for the actual allocator, ledger-backed share reader and ghost-twin predicate.
 

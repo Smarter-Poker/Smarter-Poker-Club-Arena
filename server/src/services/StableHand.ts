@@ -1264,6 +1264,7 @@ export type SitRejection =
   | 'bullet_cap'
   | 'stake_above_ladder_top'
   | 'rest_day'
+  | 'two_hour_window'
   | 'killed';
 
 export interface SitRequest {
@@ -1293,6 +1294,23 @@ export interface SitRequest {
   persona: CashPersona | null;
   sitsOnKeyToday: number;
   isRestDay: boolean;
+  /**
+   * Has this horse cashed out of THIS game key inside the last two hours?
+   *
+   * Section 9. The window opens when a horse leaves a key and stops it buying
+   * straight back into the same game, which is what a reload looks like and
+   * what a real player does not do. `two_hour_window` is written on every
+   * cycle by the fleet's state fold and, until 2026-09-11, was read by nothing
+   * at all: the column existed, the helper existed, the constant existed, and
+   * the rule they were written for was never enforced anywhere. An audit found
+   * it as "no live caller"; the answer to a rule with no reader is to give it
+   * one, not to delete the rule.
+   *
+   * It sits with the identity checks rather than the money ones on purpose: it
+   * is a statement about what this horse just did, not about what it can
+   * afford, and it is knowable without a wallet read.
+   */
+  inTwoHourWindow: boolean;
   killed: boolean;
 }
 
@@ -1318,6 +1336,7 @@ export function evaluateSit(r: SitRequest): SitRejection {
      deals. The bankroll decides everything below it, three lines down. */
   if (!stakeIsWithinLadder(r.bb)) return 'stake_above_ladder_top';
   if (r.isRestDay) return 'rest_day';
+  if (r.inTwoHourWindow) return 'two_hour_window';
   if (!maySitOnKey(r.persona, r.sitsOnKeyToday)) return 'sit_cap';
   /* THE MONEY, LAST, AND ONLY WHEN IT WAS READ. `atomic_table_buyin` still
      refuses a seat the wallet cannot cover, so an unread roll is safe for the

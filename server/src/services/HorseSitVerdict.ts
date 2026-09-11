@@ -27,10 +27,11 @@
  */
 import { canOpenAnotherTable, bankrollPolicyFor } from './HorseBankroll.js';
 import type { BankrollEvent } from './HorseBankrollTelemetry.js';
-import { evaluateSit, gameKey, type SitRejection } from './StableHand.js';
+import { evaluateSit, gameKey, TWO_HOUR_WINDOW_MS, type SitRejection } from './StableHand.js';
 import {
   isRestDayFor,
   sitsOnKeyToday,
+  inTwoHourWindow,
   tagKey,
   tagMaxTables,
   type TagBook,
@@ -117,6 +118,15 @@ export interface SitVerdictContext {
   book: TagBook | null;
   todayKey: string;
   chicagoWeekday: number;
+  /**
+   * The cycle's own clock, in epoch milliseconds.
+   *
+   * Passed rather than read here so every verdict in one cycle judges the
+   * two-hour window against one moment: a pass that takes seconds must not
+   * refuse the first table and admit the last one because the clock moved
+   * underneath it.
+   */
+  nowMs: number;
   /** The Stable Hand kill switch, read once per cycle. */
   killed: boolean;
   /** The platform ceiling on tables per horse (MAX_TABLES_PER_HORSE). */
@@ -255,6 +265,7 @@ export function sitVerdictFor(
       buyIn,
       persona: sitTag.personaCash,
       sitsOnKeyToday: sitsOnKeyToday(sitState, key, ctx.todayKey),
+      inTwoHourWindow: inTwoHourWindow(sitState, key, ctx.nowMs, TWO_HOUR_WINDOW_MS),
       isRestDay: isRestDayFor(sitState, ctx.chicagoWeekday),
       killed: ctx.killed,
     });

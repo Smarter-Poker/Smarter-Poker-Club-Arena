@@ -347,6 +347,17 @@ const BOMB_LEDGER_REPAIR_BATCH = 500;
  * and watches the same held felt for the same minute a human does.
  */
 const TOURNAMENT_PRESEAT_LEAD_MS = 60_000;
+/**
+ * How often a REGISTERING row with a finalized pool is offered to the launch
+ * completion RPC (2026-09-11).
+ *
+ * The proof that decides it (fn_prove_played_launch_recovery) reads rows that
+ * do not change between passes - hands dealt, entrant statuses, the receipt's
+ * own moment - so a refusal is a stable answer. Five minutes is far more often
+ * than any of those can plausibly change and far less often than the discovery
+ * pass, which runs every few seconds.
+ */
+const FINALIZED_FINISH_RETRY_MS = 5 * 60_000;
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // GAME SERVER — Main Orchestrator
@@ -1545,6 +1556,18 @@ export class GameServer {
    * lastMttRampAt so it only ever holds rows still on the board.
    */
   private registeringButFinalizedReported: Set<string> = new Set();
+  /**
+   * When each REGISTERING-but-finalized row was last offered to the launch
+   * completion RPC, and the last reason it refused (2026-09-11).
+   *
+   * A row that has already dealt is started by the gate below with the field
+   * it has; the DATABASE is the authority on whether it really dealt
+   * (fn_prove_played_launch_recovery), so the engine proposes and the proof
+   * decides. Without a clock the proposal would be re-made every pass for a
+   * row the proof refuses, so it is offered at most once every five minutes
+   * and each distinct refusal is reported once. Pruned with lastMttRampAt.
+   */
+  private finalizedFinishAttempt: Map<string, number> = new Map();
   /**
    * When each seat-first game was FIRST seen holding every seat it sells.
    *
@@ -5246,6 +5269,17 @@ export class GameServer {
            * (the launch receipt is adopted on the next 'start'). Said once per
            * row per process with the state recovery needs. topUpWithHorses
            * refuses it as well, for every other caller.
+           *
+           * CORRECTED 2026-09-11 (same day): this paragraph used to say the
+           * start gate below "still runs, because a launch that finalized the
+           * pool and then lost its engine before RUNNING committed is
+           * recovered by exactly that gate". The gate is reached, and it
+           * refuses every such row, because both its arms are counts of a
+           * field that has since been played down - see the start gate for the
+           * measurement. A sentence true of the code and false of the board is
+           * the whole of CLAUDE.md 10.86; the gate now has an arm that is
+           * about a dealt game, and this is where it was supposed to be all
+           * along.
            */
           const poolFinalized = tournament.prize_pool_finalized === true;
           if (poolFinalized && !this.registeringButFinalizedReported.has(tournament.id)) {
@@ -5454,20 +5488,56 @@ export class GameServer {
 
           // SNG/Spin: only start when every seat has been bought and paid for.
           // MTT variants: start at scheduled time with minimum players.
-          const shouldStart = isSngOrSpin ? seatFirstReady : maxReached || timeReached;
+          /**
+           * A GAME THAT HAS ALREADY DEALT STARTS WITH THE FIELD IT HAS
+           * (2026-09-11).
+           *
+           * The comment above says the start gate still runs for a finalized
+           * row, so a launch that lost its engine before the RUNNING commit is
+           * recovered here. It does not, and it never did: `seatFirstReady`
+           * wants every seat sold and `timeReached` wants current_players >=
+           * min_players, and a game that has been PLAYED has neither, because
+           * its field has shrunk to the survivor. Measured on the forty rows
+           * dealt on 2026-09-08: seventeen at 1 seat of 2, twenty-two at 1-2
+           * of 3, one MTT at 2 of 4. Not one of them satisfied either gate, so
+           * the sentence was true of the code and false of the board, and the
+           * games sat for three days with their winners unpaid.
+           *
+           * The engine proposes and the database decides. This gate offers the
+           * row to the launch completion RPC; the proof inside it
+           * (fn_prove_played_launch_recovery) requires a finalized pool, a
+           * hand actually dealt, the receipt's own started_at equal to the
+           * moment of that first hand, no entrant in a pre-deal status, a
+           * dealt field that met the requirement, and every survivor seated.
+           * A row that cannot show that is refused there, which is where the
+           * evidence lives - never guessed here off a counter.
+           *
+           * Offered at most once every five minutes per row, because a refusal
+           * is a stable answer and not something to re-ask sixty times a
+           * minute.
+           */
+          const lastFinishAttempt = this.finalizedFinishAttempt.get(tournament.id) ?? 0;
+          const finishingADealtGame =
+            poolFinalized && isPastStart && now - lastFinishAttempt >= FINALIZED_FINISH_RETRY_MS;
+          if (finishingADealtGame) this.finalizedFinishAttempt.set(tournament.id, now);
+
+          const shouldStart =
+            (isSngOrSpin ? seatFirstReady : maxReached || timeReached) || finishingADealtGame;
 
           if (shouldStart) {
             /* Report the number the decision was actually made on. A Spin is
                gated on SEATS, and current_players can disagree with those —
                logging it here is how a drifted counter reads as a healthy
                start in the logs. */
-            const reason = isSngOrSpin
-              ? `seats sold (${paidSeats}/${tournament.max_players})`
-              : maxReached
-                ? `full (${tournament.current_players}/${tournament.max_players})`
-                : startTime > now
-                  ? `pre-seating ${tournament.current_players} players, cards in ${Math.round((startTime - now) / 1000)}s`
-                  : `${tournament.current_players} players`;
+            const reason = finishingADealtGame
+              ? `finalized pool, already dealt - finishing with the field it has (${tournament.current_players} on the board)`
+              : isSngOrSpin
+                ? `seats sold (${paidSeats}/${tournament.max_players})`
+                : maxReached
+                  ? `full (${tournament.current_players}/${tournament.max_players})`
+                  : startTime > now
+                    ? `pre-seating ${tournament.current_players} players, cards in ${Math.round((startTime - now) / 1000)}s`
+                    : `${tournament.current_players} players`;
             /* Re-check in the same tick as the set: the seat-first fast lane
                (discoverSeatFirstStarts) may have started this game while this
                pass was busy with earlier rows. Both sites check-and-set with
@@ -5619,6 +5689,9 @@ export class GameServer {
           }
           for (const id of this.registeringButFinalizedReported) {
             if (!stillRegistering.has(id)) this.registeringButFinalizedReported.delete(id);
+          }
+          for (const id of this.finalizedFinishAttempt.keys()) {
+            if (!stillRegistering.has(id)) this.finalizedFinishAttempt.delete(id);
           }
           // The park registry is bounded the same way (2026-09-10): a park
           // gates a 'start', and a Spin that has left REGISTERING (RUNNING,

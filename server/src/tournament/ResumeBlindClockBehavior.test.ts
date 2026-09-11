@@ -82,7 +82,7 @@ function harness(
       LAST_HAND_GRACE_MS: 120000,
       BREAK_DURATION_MS: 300000,
       MAINTENANCE_THAW_POLL_MS: staticNumber('MAINTENANCE_THAW_POLL_MS'),
-      MAINTENANCE_THAW_WAIT_CEILING_MS: staticNumber('MAINTENANCE_THAW_WAIT_CEILING_MS'),
+      MAINTENANCE_THAW_WARN_AFTER_MS: staticNumber('MAINTENANCE_THAW_WARN_AFTER_MS'),
     },
     reportError,
     maintenanceFrozen
@@ -187,6 +187,37 @@ describe('the persisted blind clock survives an engine restart during a break', 
     expect(second.state.blindTimer.delay).toBe(300000);
     expect(second.state.savedBlindTimerRemaining).toBe(0);
     expect(second.writes).toEqual([{ level_started_at: '2026-09-09T12:55:00.000Z' }]);
+  });
+
+  it('adopts an expired countdown without burning the level during a continuing maintenance hold', async () => {
+    vi.useFakeTimers();
+    let frozen = true;
+    const tournament = fixture();
+    vi.setSystemTime(new Date('2026-09-09T13:15:00.000Z'));
+    const first = harness(tournament, { maintenanceFrozen: () => frozen });
+    await first.state.restore(tournament);
+    expect(first.state.onBreak).toBe(true);
+    expect(first.state.blindTimer).toBeNull();
+    expect(first.state.savedBlindTimerRemaining).toBe(300000);
+    expect(first.writes).toEqual([]);
+
+    vi.setSystemTime(new Date('2026-09-09T13:20:00.000Z'));
+    const second = harness(tournament, { maintenanceFrozen: () => frozen });
+    await second.state.restore(tournament);
+    expect(second.state.blindTimer).toBeNull();
+    expect(second.state.savedBlindTimerRemaining).toBe(300000);
+    expect(second.writes).toEqual([]);
+    expect(tournament.level_started_at).toBe('2026-09-09T12:50:00.000Z');
+    const resume = second.state.resumeFromBreak();
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(second.state.clearPersistedBreak).not.toHaveBeenCalled();
+    frozen = false;
+    await vi.advanceTimersByTimeAsync(staticNumber('MAINTENANCE_THAW_POLL_MS'));
+    await resume;
+    expect(second.state.blindTimer.delay).toBe(300000);
+    expect(second.writes).toEqual([
+      { level_started_at: new Date(Date.now() - 300000).toISOString() },
+    ]);
   });
 
   it('ends a break whose countdown was never written with the maintenance break (2026-09-10)', async () => {
@@ -297,7 +328,7 @@ describe('the persisted blind clock survives an engine restart during a break', 
  * freeze is on - MaintenanceBreak.end() lifts it only after the thaw.
  */
 describe('a running tournament comes off its break only after the maintenance thaw', () => {
-  const ceilingMs = staticNumber('MAINTENANCE_THAW_WAIT_CEILING_MS');
+  const warningMs = staticNumber('MAINTENANCE_THAW_WARN_AFTER_MS');
   const pollMs = staticNumber('MAINTENANCE_THAW_POLL_MS');
 
   function table() {
@@ -343,33 +374,42 @@ describe('a running tournament comes off its break only after the maintenance th
     expect(writes).toEqual([{ level_started_at: new Date(Date.now() - 300000).toISOString() }]);
   });
 
-  it('resumes after the ceiling when the freeze never lifts, naming the event', async () => {
+  it('reports a long hold once and resumes only after the authoritative thaw', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-09-09T13:00:00.000Z'));
     const tournament = fixture();
-    const { state, reportError } = harness(tournament, { maintenanceFrozen: true });
+    let frozen = true;
+    const { state, reportError } = harness(tournament, { maintenanceFrozen: () => frozen });
     const engine = table();
     state.tableEngines = new Map([['t1', engine]]);
     state.onBreak = true;
     state.savedBlindTimerRemaining = 300000;
 
     const resuming = state.resumeFromBreak();
-    await vi.advanceTimersByTimeAsync(ceilingMs - pollMs);
+    await vi.advanceTimersByTimeAsync(warningMs - pollMs);
     expect(state.onBreak).toBe(true);
     expect(reportError).not.toHaveBeenCalled();
     expect(engine.resumeDealing).not.toHaveBeenCalled();
 
     await vi.advanceTimersByTimeAsync(pollMs);
-    await resuming;
     expect(reportError).toHaveBeenCalledOnce();
     const [error, context] = reportError.mock.calls[0];
     expect(context).toBe('TournamentManagerBase.resumeFromBreak_thaw_wait_ceiling');
     expect(String((error as Error).message)).toContain('clock-restart');
+    await vi.advanceTimersByTimeAsync(15 * 60_000);
+    expect(reportError).toHaveBeenCalledOnce();
+    expect(state.onBreak).toBe(true);
+    expect(state.clearPersistedBreak).not.toHaveBeenCalled();
+    expect(engine.resumeDealing).not.toHaveBeenCalled();
+    expect(state.blindTimer).toBeNull();
+    expect(state.savedBlindTimerRemaining).toBe(300000);
+    frozen = false;
+    await vi.advanceTimersByTimeAsync(pollMs);
+    await resuming;
     expect(state.onBreak).toBe(false);
     expect(state.clearPersistedBreak).toHaveBeenCalledOnce();
-    // Released by the tournament; the table's own maintenance pause still
-    // refuses to deal until the break's resume wave clears it.
     expect(engine.resumeDealing).toHaveBeenCalledOnce();
+    expect(state.blindTimer.delay).toBe(300000);
   });
 
   it('leaves the break for its next owner when this lifecycle ends during the wait', async () => {

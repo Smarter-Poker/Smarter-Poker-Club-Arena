@@ -158,45 +158,51 @@ describe('tournament break resume waits for the maintenance thaw', () => {
     vi.useRealTimers();
   });
 
-  it('comes off its break once the maintenance freeze lifts, not before', async () => {
-    vi.useFakeTimers();
-    setMaintenanceFrozen(true);
-    const manager = new BreakHarness();
-    manager.activate();
-    manager.forceBreakState();
-    const persist = stubBreakPersistence();
+  it.each([3_000, 15 * 60_000])(
+    'keeps its break through a %i ms hold until the freeze lifts',
+    async (holdMs) => {
+      vi.useFakeTimers();
+      setMaintenanceFrozen(true);
+      const manager = new BreakHarness();
+      manager.activate();
+      manager.forceBreakState();
+      const persist = stubBreakPersistence();
 
-    const resuming = manager.resumeFromBreak();
-    await vi.advanceTimersByTimeAsync(3_000);
-    expect(manager.breakIsActive()).toBe(true);
-    expect(persist.update).not.toHaveBeenCalled();
-    expect(manager.broadcastCall).not.toHaveBeenCalled();
+      const resuming = manager.resumeFromBreak();
+      await vi.advanceTimersByTimeAsync(holdMs);
+      expect(manager.breakIsActive()).toBe(true);
+      expect(persist.update).not.toHaveBeenCalled();
+      expect(manager.broadcastCall).not.toHaveBeenCalled();
 
-    setMaintenanceFrozen(false);
-    await vi.advanceTimersByTimeAsync(TournamentManagerBase.MAINTENANCE_THAW_POLL_MS);
-    await resuming;
-    expect(manager.breakIsActive()).toBe(false);
-    expect(persist.update).toHaveBeenCalledWith({ on_break: false, break_ends_at: null });
-    expect(manager.broadcastCall).toHaveBeenCalledWith('break_ended', expect.anything());
-  });
+      setMaintenanceFrozen(false);
+      await vi.advanceTimersByTimeAsync(TournamentManagerBase.MAINTENANCE_THAW_POLL_MS);
+      await resuming;
+      expect(manager.breakIsActive()).toBe(false);
+      expect(persist.update).toHaveBeenCalledWith({ on_break: false, break_ends_at: null });
+      expect(manager.broadcastCall).toHaveBeenCalledWith('break_ended', expect.anything());
+    }
+  );
 
-  it('stops waiting the moment the manager is fenced, and leaves the break for the next owner', async () => {
-    vi.useFakeTimers();
-    setMaintenanceFrozen(true);
-    const manager = new BreakHarness();
-    manager.activate();
-    manager.forceBreakState();
-    const persist = stubBreakPersistence();
+  it.each([1_000, 15 * 60_000])(
+    'leaves the break for the next owner when fenced after %i ms',
+    async (holdMs) => {
+      vi.useFakeTimers();
+      setMaintenanceFrozen(true);
+      const manager = new BreakHarness();
+      manager.activate();
+      manager.forceBreakState();
+      const persist = stubBreakPersistence();
 
-    const resuming = manager.resumeFromBreak();
-    await vi.advanceTimersByTimeAsync(1_000);
-    // A deploy cutover fences the manager while the thaw is still running.
-    manager.fence();
-    await vi.advanceTimersByTimeAsync(TournamentManagerBase.MAINTENANCE_THAW_POLL_MS);
-    await resuming;
+      const resuming = manager.resumeFromBreak();
+      await vi.advanceTimersByTimeAsync(holdMs);
+      // A deploy cutover fences the manager while the thaw is still running.
+      manager.fence();
+      await vi.advanceTimersByTimeAsync(TournamentManagerBase.MAINTENANCE_THAW_POLL_MS);
+      await resuming;
 
-    expect(manager.breakIsActive()).toBe(true);
-    expect(persist.from).not.toHaveBeenCalled();
-    expect(manager.broadcastCall).not.toHaveBeenCalled();
-  });
+      expect(manager.breakIsActive()).toBe(true);
+      expect(persist.from).not.toHaveBeenCalled();
+      expect(manager.broadcastCall).not.toHaveBeenCalled();
+    }
+  );
 });

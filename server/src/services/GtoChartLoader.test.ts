@@ -132,23 +132,33 @@ describe('GTO chart corpus refresh guard', () => {
 
   it('loads each live store exactly once before arming its failure-adaptive refresh', () => {
     const workerSource = readFileSync(
-      fileURLToPath(new URL('../engine/horseDecision/workerRuntime.ts', import.meta.url)),
+      fileURLToPath(new URL('../engine/horseDecision/localServices.ts', import.meta.url)),
+      'utf8'
+    );
+    const bindings = readFileSync(
+      new URL('../engine/horseDecision/localDependencies.ts', import.meta.url),
       'utf8'
     );
     const stores = [
       {
         load: 'loadGtoCharts',
+        localLoad: 'loadCharts',
         start: 'startGtoChartLoader',
+        localStart: 'startChartLoader',
         source: './GtoChartLoader.ts',
       },
       {
         load: 'loadGtoPostflop',
+        localLoad: 'loadPostflop',
         start: 'startGtoPostflopLoader',
+        localStart: 'startPostflopLoader',
         source: './GtoPostflopLoader.ts',
       },
       {
         load: 'loadGtoPostflopV31',
+        localLoad: 'loadPostflopV31',
         start: 'startGtoPostflopV31Loader',
+        localStart: 'startPostflopV31Loader',
         source: './GtoPostflopV31Loader.ts',
       },
     ] as const;
@@ -158,13 +168,17 @@ describe('GTO chart corpus refresh guard', () => {
         fileURLToPath(new URL(store.source, import.meta.url)),
         'utf8'
       );
-      const loadCalls = workerSource.match(new RegExp(`\\b${store.load}\\(\\)`, 'g')) ?? [];
-      const startCalls = workerSource.match(new RegExp(`\\b${store.start}\\(\\)`, 'g')) ?? [];
+      const loadCalls =
+        workerSource.match(new RegExp(`services\\.${store.localLoad}\\(\\)`, 'g')) ?? [];
+      const startCalls =
+        workerSource.match(new RegExp(`services\\.${store.localStart}\\(\\)`, 'g')) ?? [];
 
+      expect(bindings).toContain(`${store.localLoad}: ${store.load}`);
+      expect(bindings).toContain(`${store.localStart}: ${store.start}`);
       expect(loadCalls, `${store.load} must have one authoritative boot read`).toHaveLength(1);
       expect(startCalls, `${store.start} must arm one refresh owner`).toHaveLength(1);
-      expect(workerSource.indexOf(`${store.load}()`)).toBeLessThan(
-        workerSource.indexOf(`${store.start}()`)
+      expect(workerSource.indexOf(`services.${store.localLoad}()`)).toBeLessThan(
+        workerSource.indexOf(`services.${store.localStart}()`)
       );
       expect(loaderSource).toContain('createAdaptiveRefreshLoop({');
       expect(loaderSource).toContain('retryMs: RETRY_MS');

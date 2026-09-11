@@ -553,10 +553,15 @@ describe('the wiring - HorseLogic consults the open-node cells on every street',
     const { readFileSync } = await import('node:fs');
     const idx = readFileSync(new URL('../index.ts', import.meta.url).pathname, 'utf8');
     const worker = readFileSync(
-      new URL('./horseDecision/workerRuntime.ts', import.meta.url).pathname,
+      new URL('./horseDecision/localDependencies.ts', import.meta.url).pathname,
       'utf8'
     );
-    expect(worker).toContain('startGtoPostflopLoader()');
+    expect(worker).toContain('startPostflopLoader: startGtoPostflopLoader');
+    const lifecycle = readFileSync(
+      new URL('./horseDecision/localServices.ts', import.meta.url),
+      'utf8'
+    );
+    expect(lifecycle).toContain('services.startPostflopLoader()');
     expect(idx).toContain('startGtoAggregationDriver()');
   });
 });

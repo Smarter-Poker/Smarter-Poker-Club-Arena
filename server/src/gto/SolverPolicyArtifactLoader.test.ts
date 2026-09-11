@@ -560,10 +560,13 @@ describe('atomic artifact hydration', () => {
   it('wires boot, health, the horse action path, and nightly agreement to the memory artifact', () => {
     const source = (relative: string) =>
       readFileSync(fileURLToPath(new URL(relative, import.meta.url)), 'utf8');
-    const worker = source('../engine/horseDecision/workerRuntime.ts');
-    expect(worker).toContain('startSolverPolicyArtifactLoader();');
-    expect(worker.indexOf('startSolverPolicyArtifactLoader();')).toBeLessThan(
-      worker.indexOf('startGtoChartLoader();')
+    const worker = source('../engine/horseDecision/localServices.ts');
+    const bindings = source('../engine/horseDecision/localDependencies.ts');
+    expect(bindings).toContain('startPolicyLoader: startSolverPolicyArtifactLoader');
+    expect(bindings).toContain('stopPolicyLoader: stopSolverPolicyArtifactLoader');
+    expect(worker).toContain('services.startPolicyLoader();');
+    expect(worker.indexOf('services.startPolicyLoader();')).toBeLessThan(
+      worker.indexOf('services.startChartLoader();')
     );
     expect(source('../GameServer.ts')).toContain(
       'solverPolicyArtifact: liveHorseDecision.solverPolicyArtifact'
@@ -572,7 +575,8 @@ describe('atomic artifact hydration', () => {
     expect(source('../engine/GtoCharts.ts')).toContain('hydrateChartPolicyArtifact');
     expect(source('../benchmark/HorseSolverAgreement.ts')).toContain('lookupChartPolicyAdvice');
     expect(source('../benchmark/HorseLeague.ts')).toContain('scoreSolverAgreement()');
-    expect(worker).toContain('stopSolverPolicyArtifactLoader()');
-    expect(worker).toContain('stopGtoChartLoader()');
+    expect(worker).toContain('services.stopPolicyLoader()');
+    expect(worker).toContain('services.stopChartLoader()');
+    expect(bindings).toContain('stopChartLoader: stopGtoChartLoader');
   });
 });

@@ -6,7 +6,16 @@ import { blankNonCode, sliceMethod } from '../testHelpers/sourceWindow.js';
 const gameServerSource = readFileSync(new URL('../GameServer.ts', import.meta.url), 'utf8');
 const indexSource = readFileSync(new URL('../index.ts', import.meta.url), 'utf8');
 const workerSource = readFileSync(
+  new URL('./horseDecision/localDependencies.ts', import.meta.url),
+  'utf8'
+);
+
+const pureRuntimeSource = readFileSync(
   new URL('./horseDecision/workerRuntime.ts', import.meta.url),
+  'utf8'
+);
+const entrypointSource = readFileSync(
+  new URL('./horseDecision/worker.ts', import.meta.url),
   'utf8'
 );
 
@@ -91,8 +100,13 @@ describe('live HorseLogic has one lifecycle owner', () => {
     ]) {
       expect(indexSource).not.toContain(mainThreadOwner);
       expect(workerSource).toContain(mainThreadOwner);
+      expect(pureRuntimeSource).not.toContain(mainThreadOwner);
     }
 
+    expect(entrypointSource).toContain("await import('./localDependencies.js')");
+    expect(entrypointSource).toMatch(
+      /new HorseDecisionWorkerRuntime\([\s\S]*localHorseDecisionWorkerDependencies/
+    );
     expect(indexSource).toContain('startBrainTelemetryFlush()');
     expect(indexSource).toContain('startGtoAggregationDriver()');
     expect(indexSource).toContain('startGtoAggregationDriverV31()');

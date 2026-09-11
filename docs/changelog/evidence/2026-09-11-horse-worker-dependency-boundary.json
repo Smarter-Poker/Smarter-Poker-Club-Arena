@@ -1,0 +1,97 @@
+{
+  "validatedAt": "2026-09-11T15:58:53.619122+00:00",
+  "phase": "D5 pure-runtime dependency prerequisite",
+  "worktree": "/Users/smarter.poker/Documents/.agent-trees/club-arena/codex-pipeline-brain",
+  "branch": "fix/pipeline-horse-brain-transport",
+  "baseHead": "29b6ae08b20ca34b575d27492370d4cf5ad1bd67",
+  "productionMode": "Existing LOCAL worker remains authoritative; no remote or shadow mode added",
+  "serverSuite": {
+    "testFilesPassed": 685,
+    "testFilesSkipped": 1,
+    "testsPassed": 9372,
+    "testsSkipped": 145,
+    "durationSeconds": 32.22,
+    "log": "/Users/smarter.poker/Documents/.agent-trees/club-arena/codex-pipeline-brain/server/work/horse-brain-validation/server-suite-final.log"
+  },
+  "checks": {
+    "typescript": "tsc --noEmit passed",
+    "formatting": "Prettier passed",
+    "whitespace": "All 16 owned files pass",
+    "computeBindings": {
+      "computeBindingsUnchanged": [
+        "decide",
+        "decideDiscard",
+        "captureDecisionEffects",
+        "applyDecisionEffects",
+        "saveRng",
+        "restoreRng",
+        "governorScale",
+        "workerReadiness",
+        "observeCompletedHand",
+        "noteDecision",
+        "noteFeature",
+        "now"
+      ],
+      "nativeNode": "v26.3.0",
+      "sourceCommit": "29b6ae08b20ca34b575d27492370d4cf5ad1bd67"
+    },
+    "nativeProbe": {
+      "imported": 17,
+      "externalEffects": 0,
+      "serviceRolePresent": false,
+      "vitestPresent": false
+    }
+  },
+  "pinnedSourceFilesUnchanged": [
+    "server/src/engine/horseDecision/client.ts",
+    "server/src/engine/horseDecision/protocol.ts",
+    "server/src/engine/horseDecision/client.test.ts",
+    "server/src/engine/horseDecision/workerRuntime.test.ts",
+    "server/src/engine/HorseMind.ts",
+    "server/src/engine/HorseLogic.ts",
+    "server/src/engine/BrainTelemetry.ts",
+    "server/src/engine/ServerTableEngineTurns.ts",
+    "server/src/GameServer.ts",
+    "server/src/services/HorseMindHydrator.ts",
+    "server/src/services/HorseMindPersistence.ts",
+    "server/src/services/BrainTelemetryFlush.ts",
+    "server/src/services/GtoChartLoader.ts",
+    "server/src/services/GtoPostflopLoader.ts",
+    "server/src/services/GtoPostflopV31Loader.ts",
+    "server/src/gto/SolverPolicyArtifactLoader.ts",
+    "server/src/services/supabase/client.ts"
+  ],
+  "files": {
+    "server/src/engine/horseDecision/worker.ts": "995f7a1023ae933d490eb99ba6e8cade88367fbf90bc57e2e7f6d2a2c1938f34",
+    "server/src/engine/horseDecision/workerRuntime.ts": "d8aaa955ff84c8fda89f7990f1a2379731b8e697098487e6099cf2b76f37cba8",
+    "server/src/engine/horseDecision/localDependencies.ts": "819c29b9f4f6f58c96cac691edc7297b87fe83aa817e833f60e1c465d5e7a02a",
+    "server/src/engine/horseDecision/localServices.ts": "84284f7eda882e5569c47f7f71046d22964341b62261bdbe07ee637abcef2d05",
+    "server/src/engine/horseDecision/localDependencies.test.ts": "3ac797bd5191ac6f8c64a2848c96e721b5b67c4816a989e1afcdf9ecb8814f4d",
+    "server/src/engine/horseDecision/localServices.test.ts": "579b38e7bb6dc95330e4ddfb246ff583c87c0cf6bb3939795340e625dfaef318",
+    "server/src/engine/horseDecision/pureImport.test.ts": "b0d670190865b05c13a0e4591273319c51ec26b045fd6e45fa65737517c90fea",
+    "server/src/engine/horseDecision/testing/pureImportProbe.mjs": "3cb4b81765244982af71a353af71d9c926b277508c57a1b991133de54ac5f94c",
+    "server/src/engine/GtoCharts.test.ts": "8ce15eef7eae5031b63bc25152d32bb2bcea121bbd2662782735971d9d3cdebe",
+    "server/src/engine/GtoPostflop.test.ts": "562f4b3fc95fb978745336912687ade696fd6aa8287130b23b943740b3510fbf",
+    "server/src/engine/GtoPostflopV31.test.ts": "bef37d416cf2e349793a2a0ec1006b26481fe5eab01b76a32a877fefdec067c6",
+    "server/src/engine/LiveHorseDecisionWorkerLifecycle.guard.test.ts": "165b38f77fa7da43bbeb03c7a594faab0290a616b8e09f4e71de24a6a42e0b17",
+    "server/src/engine/LiveHorseDecisionWorkerWiring.guard.test.ts": "37e0c2eb94f07df92df23fd76690610db10204db9674082e29ce24b084c7e427",
+    "server/src/gto/SolverPolicyArtifactLoader.test.ts": "a3dcbc9f99d198f68e6659db5d2bef64f53ae2ac5e67f196205bd9ce7870dce7",
+    "server/src/services/GtoChartLoader.test.ts": "5b932e192978dba63820ef48a3a637325d60da83be33ba474e8abcf4f1c8cafa"
+  },
+  "mutations": {
+    "commits": false,
+    "pushes": false,
+    "pullRequests": false,
+    "credentialsChanged": false,
+    "hostProviderOrDatabaseActions": false
+  },
+  "remainingD5": [
+    "Scoped read identity and real account-grant proof",
+    "Ordered public-observation and selected-effect replay receipts",
+    "Allowlisted private network DTO",
+    "Original action deadline and measured fallback reserve",
+    "Authenticated remote transport and remote-loss lifecycle",
+    "Shadow/capacity/production qualification"
+  ],
+  "note": "Code hashes describe the verified working diff over baseHead; this receipt and its linking changelog are not self-hashed."
+}

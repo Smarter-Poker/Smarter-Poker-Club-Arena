@@ -1,48 +1,9 @@
-import { performance } from 'node:perf_hooks';
-
-import { HorseLogic } from '../HorseLogic.js';
-import { HorseMind } from '../HorseMind.js';
+import type { HorseLogic } from '../HorseLogic.js';
 import type { CapturedHorseMindDecision, HorseMindDecisionEffect } from '../HorseMind.js';
-import { restoreFastRandom, saveFastRandom } from '../HorseEval.js';
-import { equityGovernor } from '../EquityLoadGovernor.js';
 import { bettingStructureFor } from '../BettingStructure.js';
 import { calculateContestablePot } from '../PokerEngine.js';
 import { horseVariantRulesFor, isKnownVariant } from '../VariantRules.js';
 import { buildTournamentMState, TOURNAMENT_CONTEXT_INCOMPLETE } from '../HorseTournamentPreflop.js';
-import { noteDecisionMs, noteFire } from '../BrainTelemetry.js';
-import { gtoChartCount } from '../GtoCharts.js';
-import { gtoPostflopCount } from '../GtoPostflop.js';
-import { gtoPostflopV31Count, gtoPostflopV31Dataset } from '../GtoPostflopV31.js';
-import { hydrateHorseMind } from '../../services/HorseMindHydrator.js';
-import {
-  hydrateHorseMindFromDb,
-  startHorseMindPersistence,
-  stopHorseMindPersistence,
-} from '../../services/HorseMindPersistence.js';
-import {
-  startBrainTelemetryFlush,
-  stopBrainTelemetryFlush,
-} from '../../services/BrainTelemetryFlush.js';
-import {
-  loadGtoCharts,
-  startGtoChartLoader,
-  stopGtoChartLoader,
-} from '../../services/GtoChartLoader.js';
-import {
-  loadGtoPostflop,
-  startGtoPostflopLoader,
-  stopGtoPostflopLoader,
-} from '../../services/GtoPostflopLoader.js';
-import {
-  loadGtoPostflopV31,
-  startGtoPostflopV31Loader,
-  stopGtoPostflopV31Loader,
-} from '../../services/GtoPostflopV31Loader.js';
-import {
-  solverPolicyArtifactStatus,
-  startSolverPolicyArtifactLoader,
-  stopSolverPolicyArtifactLoader,
-} from '../../gto/SolverPolicyArtifactLoader.js';
 import type {
   DeepHorseDecisionRequest,
   DecidePineappleDiscardRequest,
@@ -57,6 +18,7 @@ import type {
 } from './protocol.js';
 import { buildHorseDecisionKey } from './protocol.js';
 
+/** Explicit authority boundary. Importing/constructing the runtime starts no production services. */
 export interface HorseDecisionWorkerDependencies {
   startServices(): Promise<HorseDecisionWorkerReadiness>;
   stopServices(): Promise<void>;
@@ -73,111 +35,6 @@ export interface HorseDecisionWorkerDependencies {
   noteFeature(feature: string): void;
   now(): number;
 }
-
-let ownedServicesStarted = false;
-
-/**
- * Start every mutable service consumed by HorseLogic inside the worker that
- * owns HorseLogic. READY is withheld until the durable mind and all solver
- * stores have completed their initial hydration.
- */
-async function startOwnedServices(): Promise<HorseDecisionWorkerReadiness> {
-  if (ownedServicesStarted) {
-    return {
-      solverStores: {
-        charts: gtoChartCount(),
-        postflop: gtoPostflopCount(),
-        postflopV31: gtoPostflopV31Count(),
-        postflopV31Dataset: gtoPostflopV31Dataset(),
-      },
-      solverPolicyArtifact: solverPolicyArtifactStatus(),
-      governor: equityGovernor.snapshot(),
-    };
-  }
-  ownedServicesStarted = true;
-
-  try {
-    // Persistence starts before hydration, matching the production invariant:
-    // a slow read may never prevent newly learned rows from becoming flushable.
-    startHorseMindPersistence();
-    startBrainTelemetryFlush();
-    equityGovernor.startSampling();
-    startSolverPolicyArtifactLoader();
-
-    const lastFlush = await hydrateHorseMindFromDb();
-    await Promise.all([
-      hydrateHorseMind(lastFlush),
-      loadGtoCharts(),
-      loadGtoPostflop(),
-      loadGtoPostflopV31(),
-    ]);
-
-    // Periodic refresh begins only after the first authoritative load. The
-    // loader start functions are idempotent and own unref'd timers.
-    startGtoChartLoader();
-    startGtoPostflopLoader();
-    startGtoPostflopV31Loader();
-
-    return {
-      solverStores: {
-        charts: gtoChartCount(),
-        postflop: gtoPostflopCount(),
-        postflopV31: gtoPostflopV31Count(),
-        postflopV31Dataset: gtoPostflopV31Dataset(),
-      },
-      solverPolicyArtifact: solverPolicyArtifactStatus(),
-      governor: equityGovernor.snapshot(),
-    };
-  } catch (error) {
-    await stopOwnedServices();
-    throw error;
-  }
-}
-
-/** Stop clocks first, then drain the two durable writers. Idempotent. */
-async function stopOwnedServices(): Promise<void> {
-  if (!ownedServicesStarted) return;
-  ownedServicesStarted = false;
-  stopGtoPostflopV31Loader();
-  stopGtoPostflopLoader();
-  stopGtoChartLoader();
-  stopSolverPolicyArtifactLoader();
-  equityGovernor.stopSampling();
-  await Promise.all([stopBrainTelemetryFlush(), stopHorseMindPersistence()]);
-}
-
-export const defaultHorseDecisionWorkerDependencies: HorseDecisionWorkerDependencies = {
-  startServices: startOwnedServices,
-  stopServices: stopOwnedServices,
-  decide: HorseLogic.decide.bind(HorseLogic),
-  decideDiscard: HorseLogic.decideDiscard.bind(HorseLogic),
-  captureDecisionEffects: (fn) => HorseMind.captureDecisionEffects(fn),
-  applyDecisionEffects: (effects) => HorseMind.applyDecisionEffects(effects),
-  saveRng: saveFastRandom,
-  restoreRng: restoreFastRandom,
-  governorScale: () => equityGovernor.current(),
-  workerReadiness: () => ({
-    solverStores: {
-      charts: gtoChartCount(),
-      postflop: gtoPostflopCount(),
-      postflopV31: gtoPostflopV31Count(),
-      postflopV31Dataset: gtoPostflopV31Dataset(),
-    },
-    solverPolicyArtifact: solverPolicyArtifactStatus(),
-    governor: equityGovernor.snapshot(),
-  }),
-  observeCompletedHand: (request) =>
-    HorseMind.observeHandComplete(
-      request.handKey,
-      request.actions,
-      request.bigBlind,
-      request.showdown,
-      request.scope
-    ),
-  noteDecision: noteDecisionMs,
-  noteFeature: noteFire,
-  now: () => performance.now(),
-};
 
 /**
  * Resolve on a later event-loop turn (setImmediate's check phase), never inside
@@ -215,10 +72,12 @@ export class HorseDecisionWorkerRuntime {
   private readyPromise: Promise<HorseDecisionWorkerReadiness> | null = null;
   constructor(
     private readonly send: (message: HorseDecisionWorkerResponse) => void,
-    private readonly deps: HorseDecisionWorkerDependencies = defaultHorseDecisionWorkerDependencies,
+    private readonly deps: HorseDecisionWorkerDependencies,
     /** Test seam; production always yields to a real event-loop turn. */
     private readonly turnEventLoop: () => Promise<void> = nextEventLoopTurn
-  ) {}
+  ) {
+    if (!deps) throw new Error('Horse decision runtime requires explicit dependencies');
+  }
 
   start(): Promise<HorseDecisionWorkerReadiness> {
     if (this.readyPromise) return this.readyPromise;

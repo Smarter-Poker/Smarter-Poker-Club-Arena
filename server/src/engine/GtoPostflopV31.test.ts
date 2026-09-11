@@ -1046,14 +1046,19 @@ describe('V31 reaches the full horse decision path', () => {
 
   it('the worker owns the loader and the loader reads only the certified RPC', () => {
     const worker = readFileSync(
-      new URL('./horseDecision/workerRuntime.ts', import.meta.url).pathname,
+      new URL('./horseDecision/localDependencies.ts', import.meta.url).pathname,
       'utf8'
     );
     const loader = readFileSync(
       new URL('../services/GtoPostflopV31Loader.ts', import.meta.url).pathname,
       'utf8'
     );
-    expect(worker).toContain('startGtoPostflopV31Loader()');
+    expect(worker).toContain('startPostflopV31Loader: startGtoPostflopV31Loader');
+    const lifecycle = readFileSync(
+      new URL('./horseDecision/localServices.ts', import.meta.url),
+      'utf8'
+    );
+    expect(lifecycle).toContain('services.startPostflopV31Loader()');
     expect(loader).toContain("supabase.rpc('fn_gto_v31_active_cells'");
     expect(loader).not.toContain(".from('gto_postflop_v31')");
   });

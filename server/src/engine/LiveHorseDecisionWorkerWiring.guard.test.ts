@@ -10,6 +10,7 @@ const base = read('./ServerTableEngineBase.ts');
 const handHistory = read('../services/supabase/handHistory.ts');
 const client = read('./horseDecision/client.ts');
 const workerRuntime = read('./horseDecision/workerRuntime.ts');
+const localDependencies = read('./horseDecision/localDependencies.ts');
 
 describe('live horse decisions stay outside the table event loop', () => {
   it('routes fast and deep decisions through the worker with one exact turn fence', () => {
@@ -63,7 +64,8 @@ describe('live horse decisions stay outside the table event loop', () => {
     );
     expect(workerRuntime).toContain("request.type === 'OBSERVE_COMPLETED_HAND'");
     expect(workerRuntime).toContain('this.executeObservation(request)');
-    expect(workerRuntime).toContain('HorseMind.observeHandComplete(');
+    expect(workerRuntime).toContain('this.deps.observeCompletedHand(request)');
+    expect(localDependencies).toContain('HorseMind.observeHandComplete(');
   });
 
   it('commits speculative mind plans only after the intended wager lands', () => {

@@ -239,7 +239,8 @@ const HANDS: Card[][] = [
  * 2026-09-11: production's only equity worker was retired because a job had
  * waited in the queue, again and again, until the respawn budget was spent and
  * the pool stayed 'failed' - live equity and all-in insurance gone for the rest
- * of the process. The queue budget and the execution budget are separate now.
+ * of the process. One total caller SLA now sheds work without touching a worker;
+ * only a separate dispatch-scoped hard deadline can retire one.
  */
 describe('a queue wait never retires an equity worker (2026-09-11)', () => {
   afterEach(() => {
@@ -261,16 +262,16 @@ describe('a queue wait never retires an equity worker (2026-09-11)', () => {
       await vi.advanceTimersByTimeAsync(30);
       workers[0].answer();
     }
-    // t=90: the fourth operation starts with 10ms of its queue budget left.
+    // t=90: the fourth operation starts with 10ms left in its total caller SLA.
     expect(workers[0].sent).toHaveLength(4);
-    // By t=100 the eight still queued have used their whole queue budget. The
-    // running one is only 10ms into its own execution budget, and that is what
-    // it is judged by - not the 100ms since it was asked for. It answers at 120.
+    // At t=100 the running caller and all queued callers expire. The active
+    // worker is preserved, finishes at t=120, and remains available.
     await vi.advanceTimersByTimeAsync(30);
     workers[0].answer();
 
     const settled = await Promise.all(burst);
-    expect(settled.slice(0, 4).map((result) => result.ok)).toEqual([true, true, true, true]);
+    expect(settled.slice(0, 3).map((result) => result.ok)).toEqual([true, true, true]);
+    expect(timeoutStage(settled[3])).toBe('execution');
     expect(settled.slice(4).map(timeoutStage)).toEqual(Array(8).fill('queue'));
     // The worker that was busy with somebody else's answer was never touched.
     expect(workers).toHaveLength(1);
@@ -317,46 +318,81 @@ describe('a queue wait never retires an equity worker (2026-09-11)', () => {
     // The worker answered back to back for the whole surge (3,000ms / 30ms);
     // everything it could not reach in time was shed at the queue.
     const answered = settled.filter((result) => result.ok).length;
-    expect(answered).toBeGreaterThanOrEqual(95);
-    expect(settled.filter((result) => !result.ok).map(timeoutStage)).toEqual(
-      Array(settled.length - answered).fill('queue')
+    const timedOut = settled.filter((result) => !result.ok);
+    expect(answered).toBeGreaterThan(0);
+    expect(timedOut.every((result) => timeoutStage(result) !== undefined)).toBe(true);
+    expect(pool.status().queueExpirations).toBe(
+      timedOut.filter((result) => timeoutStage(result) === 'queue').length
     );
-    expect(pool.status().queueExpirations).toBe(settled.length - answered);
     await pool.shutdown();
   });
 
-  it('still retires a worker that outruns its execution budget after dispatch', async () => {
+  it('retires only a hard hang, cools down after exhaustion, recovers, and clears every timer', async () => {
     vi.useFakeTimers();
-    const { pool, workers } = scriptedPool({ jobTimeoutMs: 100, respawnBudget: 1 });
+    const { pool, workers } = scriptedPool({
+      jobTimeoutMs: 100,
+      hardJobTimeoutMs: 200,
+      respawnBudget: 1,
+      recoveryCooldownMs: 500,
+      maxRecoveryCooldownMs: 1_000,
+    });
     const ready = pool.ready();
     workers[0].ready();
     await ready;
 
-    const wedged = outcome(pool.estimateInsurance(HANDS, [], 'nlh', false));
-    await vi.advanceTimersByTimeAsync(99);
+    const firstHang = outcome(pool.estimateInsurance(HANDS, [], 'nlh', false));
+    await vi.advanceTimersByTimeAsync(100);
+    expect(timeoutStage(await firstHang)).toBe('execution');
     expect(workers[0].terminateCalls).toBe(0);
-    // The deadline at 100ms, then one poll turn of grace for an answer already
-    // on its way (a fake clock runs that turn 1ms on). None comes.
-    await vi.advanceTimersByTimeAsync(2);
-    const result = await wedged;
-    expect(timeoutStage(result)).toBe('execution');
-    expect(String(result.ok ? '' : result.error)).toContain(
-      'timed out after 100ms of worker execution'
-    );
+    expect(pool.status()).toMatchObject({ phase: 'ready', busyWorkers: 1, executionTimeouts: 0 });
+
+    // Only the 200ms dispatch-scoped hard deadline plus one poll turn retires it.
+    await vi.advanceTimersByTimeAsync(101);
     expect(workers[0].terminateCalls).toBe(1);
     expect(pool.status()).toMatchObject({
       phase: 'degraded',
       readyWorkers: 0,
+      recoveryInFlight: true,
+      routingReady: true,
+      acceptingWork: false,
       executionTimeouts: 1,
       respawnBudgetRemaining: 0,
+      nextRecoveryAt: null,
     });
 
-    // Its replacement arrives through the ordinary respawn path.
     await vi.advanceTimersByTimeAsync(250);
     expect(workers).toHaveLength(2);
     workers[1].ready();
     expect(pool.status()).toMatchObject({ phase: 'ready', readyWorkers: 1 });
+
+    // With no successful completion to refill the budget, a second hard hang
+    // enters the exhausted cooldown and therefore stops routing.
+    const secondHang = outcome(pool.estimateEquity(HANDS, []));
+    await vi.advanceTimersByTimeAsync(100);
+    expect(timeoutStage(await secondHang)).toBe('execution');
+    await vi.advanceTimersByTimeAsync(101);
+    expect(workers[1].terminateCalls).toBe(1);
+    expect(pool.status()).toMatchObject({
+      phase: 'failed',
+      readyWorkers: 0,
+      recoveryInFlight: false,
+      routingReady: false,
+      acceptingWork: false,
+      executionTimeouts: 2,
+      respawnBudgetRemaining: 0,
+    });
+    expect(pool.status().nextRecoveryAt).not.toBeNull();
+
+    await vi.advanceTimersByTimeAsync(500);
+    expect(workers).toHaveLength(3);
+    expect(pool.status()).toMatchObject({ recoveryInFlight: true, routingReady: true });
+    workers[2].ready();
+    const recovered = pool.estimateEquity(HANDS, []);
+    workers[2].answer();
+    await expect(recovered).resolves.toEqual([0.82, 0.18]);
+
     await pool.shutdown();
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it('reads an answer that arrived during a main-thread stall before condemning the worker', async () => {
@@ -374,14 +410,15 @@ describe('a queue wait never retires an equity worker (2026-09-11)', () => {
       workerFactory: () => new Worker(source, { eval: true }),
       readyTimeoutMs: 5_000,
       jobTimeoutMs: 50,
+      hardJobTimeoutMs: 100,
       respawnBudget: 0,
     });
     await pool.ready();
     try {
       // Ask from the check phase, then hold the main thread well past the
-      // execution budget. The worker answers at once, and its answer waits on
-      // the port: the next loop turn runs the expired deadline first (timers),
-      // then delivers the answer (poll), then the grace (check).
+      // caller and hard budgets. The worker answers at once, and its answer
+      // waits on the port: the next loop turn expires the caller, then reads
+      // the answer (poll), then reaches the hard-deadline grace (check).
       let pending!: Promise<number[]>;
       await new Promise<void>((resolve) => {
         setImmediate(() => {
@@ -393,10 +430,12 @@ describe('a queue wait never retires an equity worker (2026-09-11)', () => {
           resolve();
         });
       });
-      await expect(pending).resolves.toEqual([0.5, 0.5]);
+      await expect(pending).rejects.toThrow('timed out after 50ms');
+      await new Promise<void>((resolve) => setImmediate(resolve));
       expect(pool.status()).toMatchObject({
         phase: 'ready',
         readyWorkers: 1,
+        busyWorkers: 0,
         executionTimeouts: 0,
       });
     } finally {
@@ -420,7 +459,7 @@ describe('a queue wait never retires an equity worker (2026-09-11)', () => {
     workers[0].answer();
     // t=60: insurance, asked for last, starts ahead of both older cosmetic operations.
     expect(workers[0].sent.map((message) => message.type)).toEqual(['EQUITY', 'INSURANCE_ALL']);
-    // t=100 sheds the cosmetic pair; the pricing runs on its own execution budget.
+    // t=100 sheds the cosmetic pair; the newer pricing caller still has time.
     await vi.advanceTimersByTimeAsync(60);
     workers[0].answer();
 

@@ -1,0 +1,30 @@
+{
+  "observed_scope": "Read-only catalog existence and signature inventory. definition_md5 hashes pg_get_functiondef, not the earlier prosrc body-hash field.",
+  "project": "kuklfnapbkmacvwxktbh",
+  "query": "BEGIN READ ONLY; SET LOCAL statement_timeout = '5s'; SELECT clock_timestamp() AS observed_at, p.proname AS function_name, p.oid::regprocedure::text AS identity, md5(pg_get_functiondef(p.oid)) AS definition_md5, pg_get_userbyid(p.proowner) AS owner FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace AND p.proname IN ('fn_ca_legacy_period_maturity','fn_lock_rakeback_payer_clubs','fn_ca_legacy_round3_wallet_receipt') ORDER BY p.proname, p.oid::regprocedure::text; COMMIT;",
+  "rows": [
+    {
+      "observed_at": "2026-09-11 08:55:48.032158+00",
+      "function_name": "fn_ca_legacy_period_maturity",
+      "identity": "fn_ca_legacy_period_maturity()",
+      "definition_md5": "d257e983e33d19f2d7778fd3bdb897f7",
+      "owner": "postgres"
+    },
+    {
+      "observed_at": "2026-09-11 08:55:48.032163+00",
+      "function_name": "fn_ca_legacy_round3_wallet_receipt",
+      "identity": "fn_ca_legacy_round3_wallet_receipt()",
+      "definition_md5": "c5ba8ac20552a67af4265b764a75a7ad",
+      "owner": "postgres"
+    },
+    {
+      "observed_at": "2026-09-11 08:55:48.032164+00",
+      "function_name": "fn_lock_rakeback_payer_clubs",
+      "identity": "fn_lock_rakeback_payer_clubs(uuid[])",
+      "definition_md5": "f59f1c9899c4f5d2ad1383c28fa29331",
+      "owner": "postgres"
+    }
+  ],
+  "production_changes": false,
+  "already_applied_version": "20260911072837"
+}

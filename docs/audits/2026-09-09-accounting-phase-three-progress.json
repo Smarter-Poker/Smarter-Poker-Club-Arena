@@ -257,7 +257,7 @@
     "evidence": "docs/changelog/2026-09-09-unbound-tournament-registration-is-retired.md",
     "full_phase_acceptance": false
   },
-  "resume_checkpoint": "docs/audits/2026-09-10-chip-drift-continuation-status.md",
+  "resume_checkpoint": "docs/audits/2026-09-11-phase-three-resume-checkpoint.json",
   "exact_hand_generation": {
     "status": "database_and_engine_adoption_verified",
     "engine_sha": "b4c427a6e8474d796d29b682a9e153e03d78755d",
@@ -284,13 +284,18 @@
     "production_expansion_and_rake_verified": true,
     "full_stage_b_applied": false,
     "proposal_activated": false,
-    "final_deal_v2_implementation_blocked_by_automatic_review": true,
+    "final_deal_v2_implementation_blocked_by_automatic_review": false,
     "phase_four_first_batch": {
       "pr": 4146,
       "merge": "146128eb5c89edb1880473905524556b956b613f",
       "frontend_publisher": 34451807707,
       "status": "merged_and_frontend_publication_verified"
     },
-    "historical_notes": "Older observations are retained as historical evidence. Use resume_checkpoint for current prerequisites, native acceptance, release state and remaining gaps."
+    "historical_notes": "Earlier dated observations remain historical. The Sep11 resume checkpoint and current native evidence supersede resolved body, deployment and connection blockers. Phase3 remains open pending full current satellite and cancellation integration, StageB, exact consent activation and release/browser verification.",
+    "recorded_at": "2026-09-11T05:33:45.810023+00:00",
+    "final_deal_v2_applied_version": "20260911050554",
+    "entry_correction_applied_version": "20260910190537",
+    "bounty_generation_applied_version": "20260911052648",
+    "browser_connection": "working, signed-in flows unverified"
   }
 }

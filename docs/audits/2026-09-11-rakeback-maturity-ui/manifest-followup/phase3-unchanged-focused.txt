@@ -1,0 +1,17 @@
+
+[1m[30m[46m RUN [49m[39m[22m [36mv4.1.11 [39m[90m/Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-rakeback-maturity-ui-sep11[39m
+
+ [32m✓[39m tests/unit/tableManagementPhase3Recertification.test.ts[2m > [22mTable Management Phase 3 remains exactly once[2m > [22mserializes the global command identity before reading its receipt[32m 18[2mms[22m[39m
+ [32m✓[39m tests/unit/tableManagementPhase3Recertification.test.ts[2m > [22mTable Management Phase 3 remains exactly once[2m > [22mkeeps distinct commands for one game serialized on the canonical row[32m 18[2mms[22m[39m
+ [32m✓[39m tests/unit/tableManagementPhase3Recertification.test.ts[2m > [22mTable Management Phase 3 remains exactly once[2m > [22mreasserts one browser mutation door[33m 508[2mms[22m[39m
+ [32m✓[39m tests/unit/tableManagementPhase3Recertification.test.ts[2m > [22mTable Management Phase 3 remains exactly once[2m > [22mmakes terminal receipt evidence self-consistent in the database[32m 0[2mms[22m[39m
+ [32m✓[39m tests/unit/tableManagementPhase3Recertification.test.ts[2m > [22mTable Management Phase 3 remains exactly once[2m > [22maccepts no successful browser response without terminal receipt evidence[32m 0[2mms[22m[39m
+ [32m✓[39m tests/unit/tableManagementPhase3Recertification.test.ts[2m > [22mTable Management Phase 3 remains exactly once[2m > [22mtreats thrown requests and partial receipts as ambiguous, then reconciles[32m 0[2mms[22m[39m
+ [32m✓[39m tests/unit/tableManagementPhase3Recertification.test.ts[2m > [22mTable Management Phase 3 remains exactly once[2m > [22mkeys in-flight row commands by game kind and UUID[32m 0[2mms[22m[39m
+ [32m✓[39m tests/unit/tableManagementPhase3Recertification.test.ts[2m > [22mTable Management Phase 3 remains exactly once[2m > [22mrejects a same-game double tap synchronously while allowing distinct games[32m 0[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m8 passed[39m[22m[90m (8)[39m
+[2m   Start at [22m 03:55:54
+[2m   Duration [22m 1.49s[2m (transform 41ms, setup 171ms, import 354ms, tests 546ms, environment 294ms)[22m
+

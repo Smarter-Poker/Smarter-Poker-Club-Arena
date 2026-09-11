@@ -97,7 +97,6 @@ test.describe('the content security policy', () => {
       grouped.get(key)!.routes.add(v.route);
     }
     for (const [key, { v, routes }] of grouped) {
-       
       console.log(
         `CSP ${v.disposition}: ${key}\n    routes: ${[...routes].join(', ')}` +
           (v.sourceFile ? `\n    from ${v.sourceFile}:${v.lineNumber}` : '')

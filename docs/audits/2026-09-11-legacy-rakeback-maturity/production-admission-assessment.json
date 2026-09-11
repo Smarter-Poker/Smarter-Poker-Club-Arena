@@ -1,0 +1,31 @@
+{
+  "entrypoint_sha256": "a55e792f12040799a20fcf6d54969059efecaea3869c3aa148191fe1b083c4c7",
+  "matched_legacy_function_and_acl_sets": [
+    "atomic_credit_wallet_and_log(uuid,numeric,text,text,uuid,uuid,uuid,text)",
+    "fn_claim_rakeback(uuid)",
+    "fn_close_settlement_period(uuid)",
+    "fn_debit_treasury(uuid,numeric,text,jsonb)",
+    "fn_settle_round3_agents_to_players(uuid,timestamp with time zone,timestamp with time zone)",
+    "fn_caller_is_engine()",
+    "fn_platform_frozen()",
+    "fn_player_rakeback_rate(uuid,uuid,numeric)"
+  ],
+  "live_basis_readers_match_fixture": [
+    "fn_rake_shares_for_record(uuid,numeric,jsonb,text)",
+    "fn_rake_record_is_ghost_twin(uuid,uuid,jsonb)"
+  ],
+  "guard_metadata_rows": 96,
+  "captured_guard_differences": [
+    {
+      "table": "chip_transactions",
+      "trigger": "trg_ca_append_only",
+      "fixture_md5": "398286e00164ff8224a29c6223349118",
+      "live_md5": "c19c4314bcb44b29f5d15e32e4dacccd"
+    }
+  ],
+  "changed_append_only_assessment": "Current c19c owner retains the exact rakeback receipt bookkeeping allowance and compensation-delete branch; current read-only body inspection found no conflict with the candidate pointer update. Native fixture has earlier3982 owner; no fresh native current-guard composition is claimed.",
+  "additional_guard_assessment": "Current escrow wallet trigger has no rakeback branch; related payout UUID does not invoke tournament payment/refund authority. Other production triggers are catalogued, not claimed fully exercised.",
+  "fixture_limit": "fn_is_platform_admin is a false synthetic auth fixture helper; no platform-admin acceptance is claimed. Actual installed helper identity/ACL is recorded without replacement.",
+  "pending_filter_scope": "At06:31:21 UTC all1767 closed pending rows fit cap5001 and none matched the four specified malformed receipt predicates.0 currently R3-eligible at06:30:03 UTC. This says nothing about future/open/paid periods or unrelated accounting conditions.",
+  "production_admission_result": "Exact owner gates, absent conflicting capture/guards, uniqueness and bounded malformed-data reads passed; production activation and runtime readback remain separate root-controlled actions."
+}

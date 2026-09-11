@@ -202,8 +202,12 @@ describe('nobody busts from a fabricated zero-stack field', () => {
      * produce — it can only mean the stacks were never written. A restart
      * inside the reveal window rearms no timer, and a broken seat sync is not
      * on a timer at all, so this guard cannot be folded into the one above.
+     *
+     * (2026-09-11) The guard now reads the same `status='playing'` count the
+     * ladder seed uses - one round trip instead of two identical ones - so
+     * the count it compares against is `playingCount`.
      */
-    expect(ELIM).toMatch(/busted\.length >= liveCount/);
+    expect(ELIM).toMatch(/busted\.length >= playingCount/);
     expect(ELIM).toMatch(/zero_chip_field_refused/);
   });
 
@@ -212,7 +216,7 @@ describe('nobody busts from a fabricated zero-stack field', () => {
     // stack for a genuine all-in showdown, but it can no longer be reached
     // with an all-zero field, because the invariant returns before it.
     const sweep = ELIM.slice(ELIM.indexOf('startEliminationChecker'));
-    const zeroGuard = sweep.indexOf('busted.length >= liveCount');
+    const zeroGuard = sweep.indexOf('busted.length >= playingCount');
     const spareTop = sweep.indexOf('bustedOrdered.slice(0, -1)');
     expect(zeroGuard).toBeGreaterThan(-1);
     expect(spareTop).toBeGreaterThan(-1);

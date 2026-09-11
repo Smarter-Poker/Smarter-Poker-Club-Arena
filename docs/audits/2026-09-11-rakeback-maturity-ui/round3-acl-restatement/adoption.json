@@ -1,0 +1,40 @@
+{
+  "recorded_at_utc": "2026-09-11T08:25:37.539075+00:00",
+  "status": "Companion applied and exact runtime/source ledger verified; UI publication pending normal release gates",
+  "migration": "supabase/migrations/20260911081721_legacy_round3_preserve_server_only_acl.sql",
+  "source_sha256": "da06b3acca81a28a54e1354932aab87d515bc3202b4922e9cccc8e1971e867d5",
+  "runtime_checked_at_utc": "2026-09-11 08:21:31.738162+00",
+  "final_ledger": [
+    {
+      "checked_at": "2026-09-11 08:23:41.843994+00",
+      "name": "legacy_rakeback_closed_period_single_payer",
+      "single_source_sha256": "a55e792f12040799a20fcf6d54969059efecaea3869c3aa148191fe1b083c4c7",
+      "statement_count": 1,
+      "statements_array_sha256": "3c715b21e06f89f2995fee730c3f29d9f810c444b68c793913958b81f34406c2",
+      "version": "20260911072837"
+    },
+    {
+      "checked_at": "2026-09-11 08:23:41.843994+00",
+      "name": "legacy_round3_preserve_server_only_acl",
+      "single_source_sha256": "da06b3acca81a28a54e1354932aab87d515bc3202b4922e9cccc8e1971e867d5",
+      "statement_count": 1,
+      "statements_array_sha256": "6873cb7a3f80c2f4a913ff876480c3045d0ed985c31301ba8a94c3084fa616c2",
+      "version": "20260911081721"
+    }
+  ],
+  "raw_receipt": {
+    "path": "docs/audits/2026-09-11-rakeback-maturity-ui/round3-acl-restatement/approved-rakeback-round3-acl-final.json.txt",
+    "sha256": "6b76defa338c3f4334151b583eda33594adbc6780df460ad57a5324d3e1f3453"
+  },
+  "metadata_only_alignment": {
+    "path": "docs/audits/2026-09-11-rakeback-maturity-ui/round3-acl-restatement/approved-rakeback-round3-acl-ledger-alignment.sql",
+    "sha256": "8af0c13c066a9fcaeb93e4ad5f7d4a8f4e48ca05b198bfd3b90138749e78c630",
+    "archive_only": true,
+    "sql_reapplication": false
+  },
+  "normal_gate_reason": "Conservative explicit branch permission record requirement; runtime authority was already closed",
+  "checker_or_allowlist_changed": false,
+  "original_repair_or_frozen_inputs_changed": false,
+  "ui_publication_verified": false,
+  "broader_captured_accounting_activated": false
+}

@@ -5,9 +5,9 @@
     "docs/changelog/2026-09-11-legacy-sealed-release-reconciliation.md": "d549fec9ac69da0c42e0cacba4f77f2b1c7d0fc4fc9cafa4abe505d29e5f7647",
     "docs/operations/legacy-sealed-release-reconciliation.md": "82e890e3e86c634429feb978f2a63470548a90aa6d5eaec163ed20d75e57f31a",
     "server/scripts/reconcile-legacy-sealed-release-v1.py": "0d96bca66d01b6dfccd48877fdc65f8d6d115317d8628e830d2ed8f24c70f274",
-    "server/scripts/install-legacy-sealed-reconciliation-v1.py": "a06ee519e21456c648048499f76a14bc633f39abeb110e86793224affd850fbf",
+    "server/scripts/install-legacy-sealed-reconciliation-v1.py": "29286266e1b715774d230fe6053da7776e1dcddad433bcf626c34e97cec2b068",
     "tests/engine-legacy-sealed-reconciliation.native.test.ts": "64ea5ee5b67f0046ac6667d7abe8f41c4fc601db2b1957e25895a99262d28b7e",
-    "tests/engine-legacy-sealed-reconciliation.test.py": "23b326c56410f835441a635f8ac46bafb7a36fdee795a5112f28097d92341dec",
+    "tests/engine-legacy-sealed-reconciliation.test.py": "35f98de65a1b1963be3bc9f58f48a54a72b736d2e6b5a0e43f6ccb5188ab078f",
     "tests/fixtures/legacy-sealed-source/bc525-health-parser.json": "4e3561c3d32edcf919577c362124beb9419bc805e2508df63c55a2d8c3f7a66c"
   },
   "validation": {
@@ -25,8 +25,8 @@
     ]
   },
   "logs": {
-    "native-tests.log": "6f84fbc9bfeaa9c92a9b747774a953e840e470845eda1b023093782ad054d8d7",
-    "vitest-bridge.log": "ea0a70196423b4e66bb4b9459cf41f1d9acf4bf5a1ab307b36f440716b3f7cb4"
+    "native-tests.log": "d85a9703d51d167391aeace884210c804a853dc2a87e32fc429c5c57e9a31017",
+    "vitest-bridge.log": "2250fec2dd35f0cbfee0f5c261b1a9885accd2a0a19e1bdc5efbb60187cfa873"
   },
   "limitations": [
     "Actual immutable installation receipt remains pending sole production owner execution.",

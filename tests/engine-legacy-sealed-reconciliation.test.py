@@ -156,10 +156,15 @@ class FixtureHost(recovery.Host):
 class ReconciliationTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory(prefix="legacy-reconciliation-")
-        self.host = FixtureHost(Path(self.temporary.name).resolve())
+        fixture_root = Path(self.temporary.name).resolve()
+        native_parent_check = installer.trusted_parents
+        self.parent_check = patch.object(installer, "trusted_parents", lambda path, owner=0: native_parent_check(path, owner, boundary=fixture_root))
+        self.parent_check.start()
+        self.host = FixtureHost(fixture_root)
         self.manifest_digest = recovery.digest(json.dumps(self.host.manifest).encode())
 
     def tearDown(self):
+        self.parent_check.stop()
         self.temporary.cleanup()
 
     def run_recovery(self):

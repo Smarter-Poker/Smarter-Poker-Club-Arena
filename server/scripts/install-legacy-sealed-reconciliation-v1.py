@@ -65,12 +65,18 @@ class Native:
         return output.decode().strip()
 
 
-def trusted_parents(path, owner=0):
+def trusted_parents(path, owner=0, *, boundary=Path("/")):
+    # The executable always checks through /. Native tests inject only their
+    # disposable filesystem boundary; no CLI or environment override exists.
+    if path != boundary and boundary not in path.parents:
+        raise RuntimeError("installation path escaped trusted boundary")
     for parent in (path, *path.parents):
         value = parent.lstat()
         if (not stat.S_ISDIR(value.st_mode) or value.st_uid not in (0, owner)
                 or stat.S_IMODE(value.st_mode) & 0o022 or parent.resolve() != parent):
             raise RuntimeError("installation input or target has an untrusted ancestor")
+        if parent == boundary:
+            return
 
 
 def directory(core, path):

@@ -95,9 +95,56 @@ export interface SeatMoveOutcome {
     partner_id: string;
     source_occupancy_id: string;
   }>;
+  /**
+   * Moves the executor ENDED without landing (2026-09-09, must-move audit):
+   * the destination filled or closed, the swap partner vanished, the chair is
+   * gone. The player was told "Moving After This Hand" at the deal and keeps
+   * their chair; the engine tells them so. A transient (`transient`), the
+   * freeze, a partner still to arrive and a move that had already landed are
+   * NOT refusals and are never in this list.
+   */
+  refused: Array<{ move_id: string; player_id: string; reason: string }>;
 }
 
-/** The moves waiting on this table's next hand boundary. A failed read stays unknown. */
+/**
+ * Executor answers that leave the move alive or already landed. Everything
+ * else is terminal: the row is cancelled or expired and the player stays.
+ *   - `transient`: 40P01 / 55P03 / 40001, the next boundary retries it;
+ *   - `frozen` / `platform_frozen`: the :55 break, the thaw gives the window back;
+ *   - `waiting_partner`: a swap side holding (handled as `held` above);
+ *   - `done`: the receipt of a move that already landed (idempotent re-run).
+ *
+ * Read only AFTER the outcome has been confirmed to carry a real reason (the
+ * `Seat move outcome was not confirmed` throw below). Classifying an answer
+ * nobody could read is the mistake this whole file is careful about.
+ */
+export const SEAT_MOVE_NON_TERMINAL_REASONS: ReadonlySet<string> = new Set([
+  'transient',
+  'frozen',
+  'platform_frozen',
+  'waiting_partner',
+  'done',
+]);
+
+/**
+ * The moves waiting on this table's next hand boundary. A failed read stays
+ * unknown.
+ *
+ * IT THROWS, AND THAT IS THE POINT (main's contract, #3974; kept over this
+ * lane's `| null` at the 2026-09-10 merge). The invariant both mechanisms
+ * exist to protect is the same one: A READ THAT FAILED MUST NEVER BE READ AS
+ * "NO MOVES PENDING". One caller PRUNES from this answer -
+ * `reconcileSeatMoveHolds` releases every held swap side that is not in the
+ * list, and a held swap side is the only thing keeping the first half of a
+ * swap OUT of the deal while the OTHER table's transaction stands ready to
+ * land both chairs. Release it on a failed read, deal that player into a hand,
+ * and the partner's boundary moves them mid-hand.
+ *
+ * A throw enforces that more strongly than a null did: a caller cannot ignore
+ * it by accident, because there is no value to ignore. The engine translates
+ * it into "change nothing" at the two sites where that is the right answer -
+ * see ServerTableEngineBase.readPendingSeatMoves.
+ */
 export async function pendingSeatMoves(tableId: string): Promise<PendingSeatMove[]> {
   const { data, error } = await supabase.rpc('fn_cash_seat_moves_pending', {
     p_table_id: tableId,
@@ -146,13 +193,14 @@ export interface ExecuteSeatMovesOptions {
 export async function executePendingSeatMoves(
   tableId: string,
   opts: ExecuteSeatMovesOptions = { announcedOnly: false },
-  /** Optional fresh candidate read from this same hand boundary, never cached. */
+  /** Fresh candidates read at this same hand boundary, never cached. */
   prefetched?: readonly PendingSeatMove[]
 ): Promise<SeatMoveOutcome> {
   const pending = prefetched ?? (await pendingSeatMoves(tableId));
   const due = opts.announcedOnly ? pending.filter((m) => m.announced_at != null) : pending;
   const done: ExecutedSeatMove[] = [];
   const held: SeatMoveOutcome['held'] = [];
+  const refused: SeatMoveOutcome['refused'] = [];
   for (const m of due) {
     let data: unknown;
     let failure: unknown;
@@ -270,14 +318,42 @@ export async function executePendingSeatMoves(
         partner_id: res.partner_id ?? '',
       });
     } else {
+      /* THROW ON AN UNREADABLE OUTCOME, CLASSIFY A READABLE ONE. The two
+         compose, and the order is the whole argument: main proves the answer
+         is a real refusal carrying a real reason, and only then does this lane
+         decide whether that reason is one the PLAYER has to be told about. */
       if (res.ok !== false || typeof res.reason !== 'string' || !res.reason)
         throw new Error('Seat move outcome was not confirmed');
       console.log(
-        `[seatMoves:${tableId}] move ${m.move_id} for ${m.player_id} not executed: ${res.reason ?? 'unknown'}`
+        `[seatMoves:${tableId}] move ${m.move_id} for ${m.player_id} not executed: ${res.reason}`
       );
+      if (!SEAT_MOVE_NON_TERMINAL_REASONS.has(res.reason)) {
+        refused.push({ move_id: m.move_id, player_id: m.player_id, reason: res.reason });
+      }
     }
   }
-  return { done, held };
+  return { done, held, refused };
+}
+
+/**
+ * What the player is told when a move they were promised did not happen. Title
+ * case, no em dash, no question. The reason vocabulary is the executor's own
+ * (`fn_cash_seat_move_execute` and the swap executor); anything unnamed gets
+ * the general sentence, because every refusal has the same consequence for the
+ * player: they keep the chair they are in.
+ */
+export function seatMoveCancelledNotice(reason: string): string {
+  switch (reason) {
+    case 'destination_full':
+      return 'The Seat Was Taken. You Keep Your Chair.';
+    case 'destination_unavailable':
+      return 'That Table Has Closed. You Keep Your Chair.';
+    case 'swap_partner_gone':
+    case 'swap_cancelled':
+      return 'The Seat Change Was Cancelled. You Keep Your Chair.';
+    default:
+      return 'Your Move Was Cancelled. You Keep Your Chair.';
+  }
 }
 
 /** Where a move goes, in the player's words. */

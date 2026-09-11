@@ -1,6 +1,5 @@
-import { readFileSync, readdirSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { migrationCorpus, migrationsMentioning } from './helpers/migrationCorpus';
 
 /**
  * A LIST THAT STOPS EARLY SAYS SO (binding)
@@ -29,19 +28,22 @@ import { describe, expect, it } from 'vitest';
  * unpaged read.
  */
 
-const MIGRATIONS = resolve(__dirname, '../supabase/migrations');
 const HELPERS = ['fn_ca_rake_by_agent', 'fn_ca_rake_by_club', 'fn_ca_rake_by_downline'];
 
+/**
+ * The LAST migration that defines this function, which is the one in force.
+ *
+ * This used to read all of `supabase/migrations` from disk on every call, and
+ * `body()` below called it a second time for the same name - about two full
+ * directory reads per question, over 2,897 files and growing. It crossed
+ * vitest's 5-second default under a loaded full-suite run and passed in the
+ * next run on unchanged work, which is the coin flip `migrationCorpus`'s header
+ * was written about. The corpus is read once per test file and memoised; the
+ * answer is identical, and the assertions below are untouched.
+ */
 function latestDefining(fnName: string): string {
-  const files = readdirSync(MIGRATIONS)
-    .filter((f) => f.endsWith('.sql'))
-    .sort();
-  let found = '';
-  for (const f of files) {
-    const sql = readFileSync(resolve(MIGRATIONS, f), 'utf8');
-    if (sql.includes(`FUNCTION public.${fnName}(`)) found = sql;
-  }
-  return found;
+  const defining = migrationsMentioning(`FUNCTION public.${fnName}(`);
+  return defining.length ? defining[defining.length - 1].sql : '';
 }
 
 /**
@@ -119,9 +121,8 @@ describe('a list that stops early says so', () => {
     // Adding p_offset with a DEFAULT creates a SECOND definition rather than
     // replacing the first, and a call with the old argument count then matches
     // both. Postgres resolves that by erroring - on the page.
-    const all = readdirSync(MIGRATIONS)
-      .filter((f) => f.endsWith('.sql'))
-      .map((f) => readFileSync(resolve(MIGRATIONS, f), 'utf8'))
+    const all = migrationCorpus()
+      .map((m) => m.sql)
       .join('\n');
     expect(all).toMatch(
       /DROP FUNCTION IF EXISTS public\.fn_ca_rake_by_agent\(uuid, date, date, integer\)/

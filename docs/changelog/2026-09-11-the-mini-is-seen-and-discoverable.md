@@ -33,7 +33,7 @@ it off turned the mini off for every club on the platform.
 
 ## The read path
 
-Three migrations, all applied.
+Four migrations, all applied (the fourth is the guard-driven correction below).
 
 | version          | what                                                                                                                                                       |
 | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -47,7 +47,7 @@ recorded, not the one `new-migration.mjs` reserved: the management API stamps
 its own timestamp at apply time, and the reserved name was renamed to match so
 the file and `schema_migrations` agree. The executable SQL is **identical** -
 verified by normalising both sides with the same algorithm (strip `/* */` and
-`--`, collapse whitespace) and comparing md5s, which match for all three. The
+`--`, collapse whitespace) and comparing md5s, which match for all four. The
 on-disk files carry FULLER header reasoning than the text that was submitted;
 that is the only difference, and it is the direction CLAUDE.md asks for.
 

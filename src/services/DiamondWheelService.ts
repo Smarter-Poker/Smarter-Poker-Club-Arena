@@ -62,7 +62,6 @@ export interface WheelConfigView {
 export interface WheelPoolView {
   spins: number;
   intake_diamonds: number;
-  chips_minted: number;
   chips_paid: number;
   diamond_float: number;
   diamonds_paid: number;
@@ -215,7 +214,7 @@ export interface WheelSpinResult {
   };
   fairness: WheelFairness;
   balances: { diamonds: number; member_chips: number | null };
-  pool: { chips_minted: number; chips_paid: number; diamond_float: number };
+  pool: { chips_paid: number; diamond_float: number };
   created_at: string;
 }
 
@@ -254,7 +253,6 @@ export interface WheelMetrics {
   pool?: {
     spins: number;
     intake_diamonds: number;
-    chips_minted: number;
     mint_carry: number;
     chips_paid: number;
     diamond_float: number;
@@ -376,7 +374,6 @@ function normaliseState(raw: Record<string, unknown>): WheelState {
       ? {
           spins: num(pool.spins),
           intake_diamonds: num(pool.intake_diamonds),
-          chips_minted: num(pool.chips_minted),
           chips_paid: num(pool.chips_paid),
           diamond_float: num(pool.diamond_float),
           diamonds_paid: num(pool.diamonds_paid),
@@ -451,7 +448,6 @@ function normaliseSpin(raw: Record<string, unknown>): WheelSpinResult {
     },
     balances: { diamonds: num(balances.diamonds), member_chips: numOrNull(balances.member_chips) },
     pool: {
-      chips_minted: num(pool.chips_minted),
       chips_paid: num(pool.chips_paid),
       diamond_float: num(pool.diamond_float),
     },
@@ -625,7 +621,6 @@ const DiamondWheelService = {
         ? {
             spins: num(pool.spins),
             intake_diamonds: num(pool.intake_diamonds),
-            chips_minted: num(pool.chips_minted),
             mint_carry: num(pool.mint_carry),
             chips_paid: num(pool.chips_paid),
             diamond_float: num(pool.diamond_float),

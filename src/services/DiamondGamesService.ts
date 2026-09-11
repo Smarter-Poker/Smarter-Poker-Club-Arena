@@ -67,7 +67,6 @@ export interface GameConfigView {
 export interface GamePoolView {
   rounds: number;
   intake_diamonds: number;
-  chips_minted: number;
   chips_paid: number;
   reserved_chips: number;
   headroom_chips: number;
@@ -144,7 +143,7 @@ export interface PlinkoDrop {
     hmac_hex: string;
   };
   balances: { diamonds: number; member_chips: number | null };
-  pool: { chips_minted: number; chips_paid: number };
+  pool: { chips_paid: number };
   created_at: string;
 }
 
@@ -190,7 +189,7 @@ export interface CrashRound {
     crash_cents?: number;
   };
   balances: { diamonds: number; member_chips: number | null };
-  pool: { chips_minted: number | null; chips_paid: number | null };
+  pool: { chips_paid: number | null };
   created_at: string;
 }
 
@@ -294,7 +293,6 @@ export interface GameMetrics {
   pool: {
     rounds: number;
     intake_diamonds: number;
-    chips_minted: number;
     chips_paid: number;
     reserved_chips: number;
     constrained_rounds: number;
@@ -490,7 +488,7 @@ function normaliseCrash(raw: Record<string, unknown>): CrashRound {
       crash_cents: fairness.crash_cents === undefined ? undefined : num(fairness.crash_cents),
     },
     balances: { diamonds: num(balances.diamonds), member_chips: numOrNull(balances.member_chips) },
-    pool: { chips_minted: numOrNull(pool.chips_minted), chips_paid: numOrNull(pool.chips_paid) },
+    pool: { chips_paid: numOrNull(pool.chips_paid) },
     created_at: String(raw.created_at ?? ''),
   };
 }
@@ -532,7 +530,7 @@ function normaliseDrop(raw: Record<string, unknown>): PlinkoDrop {
       hmac_hex: String(fairness.hmac_hex ?? ''),
     },
     balances: { diamonds: num(balances.diamonds), member_chips: numOrNull(balances.member_chips) },
-    pool: { chips_minted: num(pool.chips_minted), chips_paid: num(pool.chips_paid) },
+    pool: { chips_paid: num(pool.chips_paid) },
     created_at: String(raw.created_at ?? ''),
   };
 }
@@ -582,7 +580,6 @@ function normaliseState(raw: Record<string, unknown>): GameState {
       ? {
           rounds: num(pool.rounds),
           intake_diamonds: num(pool.intake_diamonds),
-          chips_minted: num(pool.chips_minted),
           chips_paid: num(pool.chips_paid),
           reserved_chips: num(pool.reserved_chips),
           headroom_chips: num(pool.headroom_chips),
@@ -738,7 +735,6 @@ const DiamondGamesService = {
         ? {
             rounds: num(pool.rounds),
             intake_diamonds: num(pool.intake_diamonds),
-            chips_minted: num(pool.chips_minted),
             chips_paid: num(pool.chips_paid),
             reserved_chips: num(pool.reserved_chips),
             constrained_rounds: num(pool.constrained_rounds),

@@ -25,29 +25,19 @@
  * describing it, not when something better exists beside it.
  */
 import { describe, it, expect } from 'vitest';
-import { readFileSync, readdirSync, existsSync } from 'fs';
+import { readFileSync, existsSync } from 'fs';
 import { resolve } from 'path';
+import { latestNamed, migrationFiles, readMigration } from './helpers/migrations';
 
-const DIR = resolve(__dirname, '..', 'supabase/migrations');
 const ROOT = resolve(__dirname, '..');
-const files = readdirSync(DIR).filter((f) => f.endsWith('.sql'));
-
-function latest(fragment: string): string {
-  const name = files
-    .filter((f) => f.includes(fragment))
-    .sort()
-    .pop();
-  expect(name, `no migration named like ${fragment}`).toBeTruthy();
-  return readFileSync(resolve(DIR, name as string), 'utf8');
-}
 const src = (p: string) => readFileSync(resolve(ROOT, p), 'utf8');
 
-const OUT = latest('the_daily_free_spin_leaves_the_building');
+const OUT = latestNamed('the_daily_free_spin_leaves_the_building').sql;
 
 /** Every migration that runs AFTER the retirement, so a later one cannot undo it. */
-const AFTER = files
+const AFTER = migrationFiles()
   .filter((f) => f >= '20260911052216')
-  .map((f) => readFileSync(resolve(DIR, f), 'utf8'))
+  .map(readMigration)
   .join('\n');
 
 describe('the dead column is gone, not deprecated in a comment', () => {

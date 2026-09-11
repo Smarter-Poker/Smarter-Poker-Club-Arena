@@ -38,85 +38,16 @@
  *     reach, and both doors ask who is calling before they delegate.
  */
 import { describe, it, expect } from 'vitest';
-import { readFileSync, readdirSync } from 'fs';
+import { readFileSync } from 'fs';
+
 import { resolve } from 'path';
+import {
+  functionBody as body,
+  latestDeclaring as inForce,
+  latestNamed,
+} from './helpers/migrations';
 
-const DIR = resolve(__dirname, '..', 'supabase/migrations');
-const files = readdirSync(DIR);
-
-function latest(fragment: string): { name: string; sql: string } {
-  const name = files
-    .filter((f) => f.includes(fragment))
-    .sort()
-    .pop();
-  expect(name, `no migration named like ${fragment}`).toBeTruthy();
-  return { name: name as string, sql: read(name as string) };
-}
-
-function body(sql: string, fn: string): string {
-  const open = Math.max(
-    sql.lastIndexOf(`CREATE OR REPLACE FUNCTION public.${fn}(`),
-    sql.lastIndexOf(`CREATE FUNCTION public.${fn}(`)
-  );
-  expect(open, `${fn} has moved or gone`).toBeGreaterThan(-1);
-  const start = sql.indexOf('$function$', open);
-  const end = sql.indexOf('$function$', start + 10);
-  expect(end).toBeGreaterThan(start);
-  return sql.slice(start, end);
-}
-
-/**
- * THE LAW READS WHAT IS DEPLOYED, NOT A MIGRATION IT WAS WRITTEN AGAINST
- * (2026-09-11). This pinned `latest('the_welcome_spin_keeps_its_own_books')`
- * by name, so when the next migration rewrote fn_wheel_spin_core the law went
- * on reading the OLD file and went on passing green while production
- * contradicted three of its claims. That is the SECOND time a law here has
- * gone stale that way, and a law nobody can trust is worse than no law.
- *
- * So the migration is resolved by what it DEFINES: the last one to declare the
- * function is the one in force, which is exactly how Postgres sees it. A
- * rewrite of any of these functions now has to bring the law with it.
- */
-/**
- * ONE READ OF THE CORPUS PER FILE, NOT ONE PER FUNCTION (2026-09-11).
- *
- * supabase/migrations holds 2,917 files and 32MB, and inForce has to scan all
- * of them to find the last declaration of a function. Re-reading the corpus per
- * NAME is what put this file and about seventy-five other migration-scanning
- * laws over vitest's 5 second budget under the full suite's parallelism: every
- * one a timeout, none an assertion failure, all green when run alone. The
- * contents are cached by filename instead, and this file went from 1.3s to
- * under a tenth of that.
- */
-const fileCache = new Map<string, string>();
-function read(f: string): string {
-  const hit = fileCache.get(f);
-  if (hit !== undefined) return hit;
-  const sql = readFileSync(resolve(DIR, f), 'utf8');
-  fileCache.set(f, sql);
-  return sql;
-}
-
-const inForceCache = new Map<string, { name: string; sql: string }>();
-function inForce(fn: string): { name: string; sql: string } {
-  const hit = inForceCache.get(fn);
-  if (hit) return hit;
-  const hits = files
-    .filter((f) => f.endsWith('.sql'))
-    .filter((f) => {
-      const sql = read(f);
-      return (
-        sql.includes(`CREATE OR REPLACE FUNCTION public.${fn}(`) ||
-        sql.includes(`CREATE FUNCTION public.${fn}(`)
-      );
-    })
-    .sort();
-  expect(hits.length, `no migration defines ${fn}`).toBeGreaterThan(0);
-  const name = hits[hits.length - 1];
-  const found = { name, sql: read(name) };
-  inForceCache.set(fn, found);
-  return found;
-}
+const latest = latestNamed;
 
 const bank = latest('the_bank_backs_the_promo_wallet');
 const books = latest('the_welcome_spin_keeps_its_own_books');

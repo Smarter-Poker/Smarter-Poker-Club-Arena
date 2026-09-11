@@ -19,62 +19,12 @@
  * nowhere: the message named a store it could not open.
  */
 import { describe, it, expect } from 'vitest';
-import { readFileSync, readdirSync } from 'fs';
+import { readFileSync } from 'fs';
 import { resolve } from 'path';
+import { functionBody as body, latestDeclaring as inForce } from './helpers/migrations';
 
-const DIR = resolve(__dirname, '..', 'supabase/migrations');
 const ROOT = resolve(__dirname, '..');
-const files = readdirSync(DIR).filter((f) => f.endsWith('.sql'));
 
-/**
- * ONE READ OF THE CORPUS PER FILE, NOT ONE PER FUNCTION (2026-09-11).
- *
- * supabase/migrations holds 2,917 files and 32MB. inForce has to scan all of
- * them to find the last declaration of a function, and it was re-reading the
- * whole corpus for every distinct name, so a law asking about four functions
- * read 128MB. Under the full suite's parallelism that put this file and about
- * seventy-five other migration-scanning laws over vitest's 5 second budget:
- * every one of them a timeout, none of them an assertion failure, all of them
- * green when run alone. The contents are cached by filename instead.
- */
-const fileCache = new Map<string, string>();
-function read(f: string): string {
-  const hit = fileCache.get(f);
-  if (hit !== undefined) return hit;
-  const sql = readFileSync(resolve(DIR, f), 'utf8');
-  fileCache.set(f, sql);
-  return sql;
-}
-
-const cache = new Map<string, { name: string; sql: string }>();
-function inForce(fn: string): { name: string; sql: string } {
-  const hit = cache.get(fn);
-  if (hit) return hit;
-  const hits = files
-    .filter((f) => {
-      const sql = read(f);
-      return (
-        sql.includes(`CREATE OR REPLACE FUNCTION public.${fn}(`) ||
-        sql.includes(`CREATE FUNCTION public.${fn}(`)
-      );
-    })
-    .sort();
-  expect(hits.length, `no migration declares ${fn}`).toBeGreaterThan(0);
-  const name = hits[hits.length - 1];
-  const found = { name, sql: read(name) };
-  cache.set(fn, found);
-  return found;
-}
-function body(sql: string, fn: string): string {
-  const open = Math.max(
-    sql.lastIndexOf(`CREATE OR REPLACE FUNCTION public.${fn}(`),
-    sql.lastIndexOf(`CREATE FUNCTION public.${fn}(`)
-  );
-  expect(open, `${fn} has moved or gone`).toBeGreaterThan(-1);
-  const start = sql.indexOf('$function$', open);
-  const end = sql.indexOf('$function$', start + 10);
-  return sql.slice(start, end);
-}
 const src = (p: string) => readFileSync(resolve(ROOT, p), 'utf8');
 
 const SPENT = body(inForce('fn_diamond_games_spent_today').sql, 'fn_diamond_games_spent_today');

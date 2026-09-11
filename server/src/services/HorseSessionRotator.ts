@@ -49,6 +49,7 @@ import {
   isActiveNow,
   isNightParkedTable,
   isRetiringTable,
+  pruneSeatChangeMemo,
   seatChangeVerdict,
   wantsTableChange,
 } from './HorseBehavior.js';
@@ -135,6 +136,8 @@ export class HorseSessionRotator {
    *    cycle.
    */
   private seatChangeAsked = new Map<string, number>();
+  /** When a failed seat page was last reported. See the read in rotate(). */
+  private lastSeatReadFailureReportAt = 0;
 
   private static readonly SEAT_CHANGE_STAY_MS = 12 * 60 * 60_000;
   private static readonly SEAT_CHANGE_RETRY_MS = 30 * 60_000;
@@ -269,7 +272,19 @@ export class HorseSessionRotator {
           // (which has no seat change) and whether the table is closing.
           // created_at joined 2026-09-05 for the lone-horse pass: an opening
           // feeder younger than its grace window is being filled, not dead.
-          'table_id, user_id, seat_number, stack, joined_at, club_id, tables!inner(id, big_blind, tournament_id, status, settings, cluster_id, role, main_index, lifecycle, created_at)'
+          //
+          // THE PARENT IS NAMED (2026-09-09). `table_seats` carries THREE
+          // foreign keys to `tables` since the 17:23 UTC migrations of this
+          // day (table_id; the live-seat parent key; the game-scope key), and
+          // PostgREST refuses an unqualified embed between two tables with
+          // more than one relationship (HTTP 300, PGRST201). This read failed
+          // on every cycle from that minute on, the `return` below declined
+          // the pass in silence, and the rotator was dead: no session ends,
+          // no lone stands, no tournament leaves, no seat changes, no top-ups,
+          // and no seat released for a waiting human. Found from the felt -
+          // horses alone on dead tables for 121 and 129 minutes against a
+          // ten-minute rule - not from a log, because nothing was logged.
+          'table_id, user_id, seat_number, stack, joined_at, club_id, tables!table_seats_table_id_fkey!inner(id, big_blind, tournament_id, status, settings, cluster_id, role, main_index, lifecycle, created_at)'
         )
         .is('left_at', null)
         .order('table_id', { ascending: true })
@@ -279,7 +294,31 @@ export class HorseSessionRotator {
       // A failed page means an INCOMPLETE room, and rotating against half a
       // room is how a table gets picked that should not have been. Decline
       // the pass; it runs again on the next cycle.
-      if (error || !chunk) return;
+      //
+      // AND SAY SO (2026-09-09, CLAUDE.md 10.86). This used to be a bare
+      // `return`: a rotator that could not read the room looked exactly like
+      // a rotator with nothing to do, for as long as the read stayed broken.
+      // "I could not tell" is its own outcome and it is reported, throttled
+      // to one report per five minutes so a persistent failure stays
+      // readable rather than becoming forty identical events an hour.
+      if (error || !chunk) {
+        const now = Date.now();
+        if (now - this.lastSeatReadFailureReportAt >= 5 * 60_000) {
+          this.lastSeatReadFailureReportAt = now;
+          reportError(
+            new Error(
+              `[HorseSessionRotator] seat read failed on page ${page} - the pass is declined ` +
+                `and NOTHING rotates until this reads clean: ${error?.message ?? 'no rows'}`
+            ),
+            'HorseSessionRotator.seat_read_failed'
+          );
+          console.warn(
+            `[SessionRotator] seat read failed (${error?.message ?? 'no rows'}) - pass declined; ` +
+              'no session ends, lone stands, tournament leaves or seat changes until it reads'
+          );
+        }
+        return;
+      }
       seats.push(...chunk);
       if (chunk.length < PAGE) break;
     }
@@ -1199,17 +1238,28 @@ export class HorseSessionRotator {
     if (isMaintenanceFrozen() || !this.lifecycleIsCurrent(generation)) return;
 
     const now = Date.now();
-    for (const [k, until] of [...this.seatChangeAsked]) {
-      if (until <= now) this.seatChangeAsked.delete(k);
-    }
-
     /* Only tables that belong to a must-move game. Everything else has no
        seat change to ask for, which `seatChangeVerdict` also says. */
     const clusterIds = new Set<string>();
+    /* Every (game, horse) pair that holds a seat right now: the memo below
+       is pruned against it, so a stay that has ended frees its entry. */
+    const seatedPairs = new Set<string>();
     for (const seats of byTable.values()) {
       const t = seats[0]?.tables as { cluster_id?: string | null } | undefined;
-      if (t?.cluster_id) clusterIds.add(t.cluster_id);
+      if (!t?.cluster_id) continue;
+      clusterIds.add(t.cluster_id);
+      for (const seat of seats) {
+        const uid = String(seat.user_id ?? '');
+        if (uid && horseIds.has(uid)) {
+          seatedPairs.add(HorseSessionRotator.seatChangeKey(t.cluster_id, uid));
+        }
+      }
     }
+    /* THE MEMO DIES WITH THE STAY (2026-09-09): expired entries go, and so
+       does every entry for a horse no longer seated in that game - the door's
+       once-per-stay budget is a fresh roster row on the next stay, for a
+       horse exactly as for a person. See pruneSeatChangeMemo. */
+    pruneSeatChangeMemo(this.seatChangeAsked, seatedPairs, now);
     if (clusterIds.size === 0) return;
 
     /* HOW MANY OTHER TABLES A CHANGE COULD GO TO. Read from `tables` rather

@@ -71,6 +71,7 @@ import {
   announceSeatMoves,
   executePendingSeatMoves,
   pendingSeatMoves,
+  seatMoveCancelledNotice,
   seatMoveNotice,
   type PendingSeatMove,
 } from '../services/supabase/seatMoves.js';
@@ -2190,15 +2191,23 @@ export abstract class ServerTableEngineBase {
    * decision for the two to disagree, and no code path can reach the offer
    * without passing through it.
    *
-   * ONE CAVEAT, and it is the important one: `this.tableInfo` is itself a
-   * cached snapshot. It is assigned exactly once (start(), from loadTable) and
-   * the only thing that refreshes any part of it afterwards is refreshBlinds(),
-   * which copies back three columns — small_blind, big_blind, ante — and only
-   * for tournament tables. So this method re-reads the freshest values the
-   * PROCESS has; it does not re-read the DATABASE. Adding a per-hand
-   * `loadTable` for these five columns is a separate decision (an extra round
-   * trip on every hand, under the 90s deal watchdog) and is deliberately NOT
-   * taken here.
+   * THE CAVEAT THAT USED TO BE HERE IS GONE (2026-09-09, lane E). It read:
+   * "`this.tableInfo` is itself a cached snapshot ... this method re-reads the
+   * freshest values the PROCESS has; it does not re-read the DATABASE. Adding
+   * a per-hand `loadTable` for these five columns is a separate decision ...
+   * and is deliberately NOT taken here."
+   *
+   * That was the correct call while a table's rules were set once by a host.
+   * It stopped being correct at Gate 5, when `fn_cash_apply_ruleset` began
+   * rewriting the four run-it columns from the game's template on every
+   * cluster tick - and it showed up as `NLH 0.50/1 Classic` offering Run It
+   * Twice on four of its five tables and not on the fifth, with a must-move
+   * carrying players between them mid-session.
+   *
+   * `refreshRakeConfig` now re-reads those columns (throttled, one row, at the
+   * hand boundary) and calls this method afterwards, so the RIT engine is
+   * compiled from the fresh row rather than the boot one. This method itself
+   * is unchanged: it still reads `this.tableInfo`, which is now kept current.
    *
    * Returns `insuranceEnabled` so start() can keep configuring the insurance
    * engine from the same computation. The insurance engine is deliberately NOT
@@ -2516,6 +2525,9 @@ export abstract class ServerTableEngineBase {
 
       // Wait for the host's AutoStart figure (2 unless they raised it)
       this.setLoopPhase('start_wait_for_players');
+      // The first sweep is the boot read, not a change: nothing was known
+      // before it, and a game with anyone seated is on every pass already.
+      let firstWaitSweep = true;
       while (this.running) {
         /**
          * THE QUIET TABLE PARKS TOO (Dan 2026-09-01).
@@ -2553,6 +2565,7 @@ export abstract class ServerTableEngineBase {
           if (!this.running) break;
           this.setLoopPhase('start_wait_for_players');
         }
+        const idsBeforeSweep = new Set(this.seatedPlayers.map((p) => p.user_id));
         try {
           this.seatedPlayers = await loadSeatedPlayers(this.tableId);
           if (!this.lifecycleCanMutate()) return;
@@ -2566,6 +2579,20 @@ export abstract class ServerTableEngineBase {
           await this.sleep(5000);
           continue;
         }
+        // A SEAT CHANGED WHILE WAITING (2026-09-09, must-move audit). The
+        // dealing loop's roster diff wakes the game's ClusterController; this
+        // loop, where a one-player Main 1 or a fresh feeder spends its life,
+        // did not - so the second chair that takes a feeder live, or the seat
+        // that opens on a waiting Main 1, reached the controller at the next
+        // pass instead of inside a second. Same wake, same debounce.
+        if (
+          !firstWaitSweep &&
+          (this.seatedPlayers.length !== idsBeforeSweep.size ||
+            this.seatedPlayers.some((p) => !idsBeforeSweep.has(p.user_id)))
+        ) {
+          this.wakeClusterGame('seat_change');
+        }
+        firstWaitSweep = false;
         /* A cash table below its deal minimum never reaches dealingLoop(). A
            bust rebuy can still be committed from the player's cashier while
            the table waits here, so this boundary must run the same exact,
@@ -3024,19 +3051,25 @@ export abstract class ServerTableEngineBase {
   protected heldForSwap: Set<string> = new Set();
 
   /**
-   * MUST-MOVE, the engine's half (OPORD 1.3 s9.5, OPORD 1.4 s18.3). At the
-   * START of a hand every player with a planned move is told, once:
-   * "Seat Open On Main 2. Moving After This Hand." Nothing is asked.
+   * WHAT THIS ENGINE STILL HOLDS FOR A MOVE, AGAINST WHAT IS STILL PENDING
+   * (2026-09-09, must-move audit).
    *
-   * THE PROMISE IS WRITTEN DOWN (2026-09-05): the row is stamped announced_at
-   * and its expiry extended to cover the hand, so settlement executes exactly
-   * the moves the deal promised, and a slow hand cannot expire one from under
-   * the player who was told. Called immediately before dealHand, so it only
-   * ever speaks of a hand that is about to be dealt.
+   * Both prunes used to live inside `announcePendingSeatMoves`, which runs
+   * IMMEDIATELY BEFORE `dealHand` and therefore never runs on a table that
+   * cannot deal. A held swap side is filtered out of `activePlayers`, so on a
+   * two-handed table one hold drops the table below the minimum, it takes the
+   * idle branch, and it never announces again: if that swap then died in a way
+   * the executor is never asked about - the planner cancelling the request, or
+   * plain expiry - the player stayed out of the deal for ever and the table
+   * never dealt another hand. Called from the announce AND from every execute,
+   * so both loops reach it (idle: every 3 s, waiting: every 5 s).
+   *
+   * NEVER CALLED WITH A FAILED READ. `pendingSeatMoves` returns null for that,
+   * and pruning against a list that is empty only because PostgREST hiccuped
+   * would release a hold whose entire job is to keep a player out of a hand
+   * the other table is about to move them out of.
    */
-  protected async announcePendingSeatMoves(): Promise<void> {
-    if (this.isTournamentTable() || !this.tableInfo?.cluster_id) return;
-    const pending = await pendingSeatMoves(this.tableId);
+  protected reconcileSeatMoveHolds(pending: readonly PendingSeatMove[]): void {
     const live = new Set(pending.map((m) => m.move_id));
     for (const id of this.announcedSeatMoves) {
       if (!live.has(id)) this.announcedSeatMoves.delete(id);
@@ -3048,6 +3081,51 @@ export abstract class ServerTableEngineBase {
     for (const uid of this.heldForSwap) {
       if (!liveHeld.has(uid)) this.heldForSwap.delete(uid);
     }
+  }
+
+  /**
+   * MUST-MOVE, the engine's half (OPORD 1.3 s9.5, OPORD 1.4 s18.3). At the
+   * START of a hand every player with a planned move is told, once:
+   * "Seat Open On Main 2. Moving After This Hand." Nothing is asked.
+   *
+   * THE PROMISE IS WRITTEN DOWN (2026-09-05): the row is stamped announced_at
+   * and its expiry extended to cover the hand, so settlement executes exactly
+   * the moves the deal promised, and a slow hand cannot expire one from under
+   * the player who was told. Called immediately before dealHand, so it only
+   * ever speaks of a hand that is about to be dealt.
+   */
+  /**
+   * The pending list, or `null` when the read FAILED.
+   *
+   * `pendingSeatMoves` THROWS on an unreadable answer (#3974, and see the long
+   * note on that function). That is the right contract for the service: an
+   * enumeration nobody could read must never be mistaken for an empty one, and
+   * a throw cannot be ignored by accident the way a value can.
+   *
+   * At these two call sites the correct response to "I could not tell" is to
+   * CHANGE NOTHING - do not prune, do not release a swap hold, do not announce
+   * - and then carry on. A notice that could not be read must never stop a
+   * table dealing, and an unread list must never look like an empty one. So
+   * the throw is translated here, once, and reported: everything above this
+   * line keeps main's contract, everything below it keeps this lane's
+   * invariant.
+   */
+  private async readPendingSeatMoves(): Promise<PendingSeatMove[] | null> {
+    try {
+      return await pendingSeatMoves(this.tableId);
+    } catch (err) {
+      reportError(err, 'ServerTableEngine.' + this.tableId + '.pending_seat_moves_unreadable');
+      return null;
+    }
+  }
+
+  protected async announcePendingSeatMoves(): Promise<void> {
+    if (this.isTournamentTable() || !this.tableInfo?.cluster_id) return;
+    const pending = await this.readPendingSeatMoves();
+    // A read that failed says nothing about what is pending: announce nothing,
+    // release nothing. The next hand asks again.
+    if (pending === null) return;
+    this.reconcileSeatMoveHolds(pending);
     const fresh: string[] = [];
     for (const m of pending) {
       /* PRESENCE FOLLOWS THE PLAYER (2026-09-05). Stamped here, once per
@@ -3154,13 +3232,46 @@ export abstract class ServerTableEngineBase {
 
   protected async executePendingSeatMoves(
     opts: { announcedOnly: boolean } = { announcedOnly: false },
-    prefetched?: readonly PendingSeatMove[]
+    /** Read at this boundary by the caller; `null` is a read that FAILED. */
+    prefetched?: readonly PendingSeatMove[] | null
   ): Promise<string[]> {
     if (this.isTournamentTable() || !this.tableInfo?.cluster_id) return [];
-    const { done, held } = await executePendingSeatMoves(this.tableId, opts, prefetched);
+    /* ONE READ, USED TWICE (2026-09-09). The list is what the service would
+       have fetched anyway, so this costs the same single round trip - and
+       having it HERE is what lets a table that cannot deal still release a
+       swap hold whose move has died (see reconcileSeatMoveHolds). */
+    const pending =
+      prefetched === undefined ? await this.readPendingSeatMoves() : prefetched;
+    if (!this.lifecycleCanMutate()) return [];
+    if (pending === null) return [];
+    this.reconcileSeatMoveHolds(pending);
+    const { done, held, refused } = await executePendingSeatMoves(this.tableId, opts, pending);
     // The SQL move is durable and idempotent, but this process's mirrors and
     // broadcasts belong only to the exact engine generation that requested it.
     if (!this.lifecycleCanMutate()) return [];
+    // A MOVE THAT DID NOT HAPPEN IS SAID OUT LOUD (2026-09-09, must-move
+    // audit). The deal promised "Moving After This Hand"; the executor then
+    // found the seat taken, the table closed, or the swap partner gone, and
+    // cancelled the row with a note. The row said so and the player was told
+    // nothing - the corner notice simply vanished on the next lobby poll. They
+    // keep the chair they are in; this says so, once, for the one player it
+    // is about. The row is already terminal, so it cannot repeat.
+    for (const r of refused) {
+      this.announcedSeatMoves.delete(r.move_id);
+      this.heldForSwap.delete(r.player_id);
+      this.hub?.emitEvent(this.tableId, {
+        type: 'seat_move_cancelled',
+        table_id: this.tableId,
+        user_id: r.player_id,
+        move_id: r.move_id,
+        reason: r.reason,
+        message: seatMoveCancelledNotice(r.reason),
+        timestamp: Date.now(),
+      });
+      console.log(
+        `[ServerTableEngine:${this.tableId}] move ${r.move_id} for ${r.player_id} refused (${r.reason}) - the player keeps their chair`
+      );
+    }
     // The first side of a swap to reach its boundary: held out of the deal
     // until the other table lands both chairs. Told once.
     for (const h of held) {
@@ -3202,6 +3313,14 @@ export abstract class ServerTableEngineBase {
       // The session row followed the player; only this engine's mirror of
       // it is dropped. The destination engine rebuilds its mirror from rows.
       this.chipContinuity.forget(m.player_id);
+      /* THE TAB FOLLOWS THE CHAIR, EVEN THROUGH A DROPPED SOCKET (2026-09-09,
+         must-move audit). `seat_moved` is the one packet that tells the
+         hero's client their chair is now at another table. It was fire-once:
+         a hero whose socket was between reconnects for the instant the move
+         landed came back to a table they no longer sit at, with nothing to
+         tell them where they went. `replay_until` asks the hub to hand it to
+         a subscriber that (re)joins this room inside a minute (D3 retention:
+         once per subscriber, never to one that already got it live). */
       this.hub?.emitEvent(this.tableId, {
         type: 'seat_moved',
         table_id: this.tableId,
@@ -3212,6 +3331,7 @@ export abstract class ServerTableEngineBase {
         stack: m.stack,
         reason: m.reason,
         timestamp: Date.now(),
+        replay_until: Date.now() + 60_000,
       });
       console.log(
         `[ServerTableEngine:${this.tableId}] ${m.player_id} moved to ${m.to_table_id} seat ${m.to_seat_number} with ${m.stack} (${m.reason})`
@@ -3232,6 +3352,7 @@ export abstract class ServerTableEngineBase {
           stack: m.partner.stack,
           reason: 'seat_change',
           timestamp: Date.now(),
+          replay_until: Date.now() + 60_000,
         });
         console.log(
           `[ServerTableEngine:${this.tableId}] swap: ${m.partner.player_id} arrived from ${m.partner.from_table_id} into seat ${m.partner.to_seat_number}`
@@ -3349,7 +3470,14 @@ export abstract class ServerTableEngineBase {
       .select('lifecycle, status')
       .eq('id', this.tableId)
       .maybeSingle();
-    if (error || !data) return;
+    if (error) {
+      // Once a minute and harmless to miss once - but a read that keeps
+      // failing keeps an engine on a closed table for ever, and a swallowed
+      // error is how nobody finds out (CLAUDE.md 10.86).
+      reportError(error, 'ServerTableEngine.' + this.tableId + '.cluster_closed_read_failed');
+      return;
+    }
+    if (!data) return;
     const row = data as { lifecycle?: string | null; status?: string | null };
     if (row.lifecycle === 'closed' || row.status === 'closed') {
       console.log(
@@ -5420,6 +5548,30 @@ export abstract class ServerTableEngineBase {
    * changes perhaps twice a year.
    *
    * Deliberately best-effort: on any error the previous values stand.
+   *
+   * ── IT IS NOT ONLY RAKE ANY MORE (2026-09-09, lane E of the must-move audit)
+   *
+   * "A value that changes perhaps twice a year" was true of every column this
+   * read, and stopped being true at Gate 5. A cluster table's rules are now
+   * written by `fn_cash_apply_ruleset` on EVERY tick from the template its
+   * players chose the game by, so the ante, the VPIP floor, run-it-N-times,
+   * seven-deuce, the straddle switches, the buy-in band and the action clock
+   * are all values the database can change under a running engine.
+   *
+   * They were not in this read. `this.tableInfo` has exactly three writers -
+   * `start()` (once per process), `refreshBlinds()` (tournaments only) and
+   * this method - so every one of them was a boot-time snapshot held until the
+   * engine restarted.
+   *
+   * MEASURED: on 2026-09-09 the realignment turned antes off on 19 live
+   * Classic tables and bombs off on 24. The bomb half followed within this
+   * method's 60-second throttle because those columns were already here. The
+   * ante half would have gone on being collected until each table's next
+   * restart, on a game sold as "No Antes".
+   *
+   * The hourly :55 restart caps the damage at an hour. That is luck, not a
+   * fix (10.11/10.12), so the whole templated rule set is read here now.
+   * A rule the player was sold under the game's name follows the row.
    */
   protected async refreshRakeConfig(force = false): Promise<void> {
     if (!this.tableInfo || this.isTournamentTable()) return;
@@ -5437,7 +5589,11 @@ export abstract class ServerTableEngineBase {
           // BOMB POT STANDARDIZATION 2026-08-27: the five new canonical
           // columns ride along — board count, trigger mode, timed interval,
           // minimum players and fixed ante.
-          'rake_percent, rake_cap_bb, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_ante_multiplier, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_min_players, bomb_pot_ante_fixed, bomb_pot_variant, bomb_pot_button_policy, bomb_pot_announce_seconds, bomb_pot_manual_pending'
+          // THE WHOLE TEMPLATED RULE SET RIDES ALONG TOO (2026-09-09, lane E
+          // of the must-move audit). See the doc comment above for why: these
+          // are no longer host settings that change twice a year, they are
+          // rewritten by fn_cash_apply_ruleset on every cluster tick.
+          'rake_percent, rake_cap_bb, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_ante_multiplier, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_min_players, bomb_pot_ante_fixed, bomb_pot_variant, bomb_pot_button_policy, bomb_pot_announce_seconds, bomb_pot_manual_pending, ante_enabled, ante, big_blind_ante_enabled, nit_game, maintain_percent_min, maintain_hands, career_percent_min, run_it_mode, run_it_twice, allow_run_it_twice, run_it_twice_enabled, insurance_enabled, seven_deuce_enabled, seven_deuce_amount, straddle_enabled, auto_utg_straddle, voluntary_straddle, min_buy_in, max_buy_in, action_time_seconds'
         )
         .eq('id', this.tableId)
         .maybeSingle();
@@ -5473,6 +5629,63 @@ export abstract class ServerTableEngineBase {
         // rather than having to wait for an engine restart to be able to fire
         // a manual bomb at all.
         if (this.tableInfo.bomb_pot_enabled === true) this.subscribeManualBomb();
+
+        /* ── THE TEMPLATED RULES, RE-READ (2026-09-09, lane E) ──────────────
+           Everything below is a rule the PLAYER was sold under the game's
+           name - Classic "No Antes, No Bombs, No VPIP Floor", Action "Small
+           Blind Ante ...", Madness "Big Blind Ante ...". Until today only the
+           bomb half of that promise was re-read; the rest was sampled once in
+           start() and held for the life of the process.
+
+           On 2026-09-09 the realignment migration turned the ante off on 19
+           live Classic tables and the bombs off on 24. The bombs stopped
+           inside a minute. THE ANTES WOULD HAVE KEPT BEING COLLECTED until
+           each engine's next restart, in a game whose own card says it has
+           none. Forced money out of a stack is not a cosmetic mismatch.
+
+           The hourly :55 restart bounded that at one hour, which is why it
+           never showed up as a flood. A defect that a restart happens to wash
+           away is not fixed (CLAUDE.md 10.11/10.12); it is the platform
+           getting lucky on a clock. So the rules follow the row. */
+        this.tableInfo.ante_enabled = (tableRow as any).ante_enabled ?? undefined;
+        this.tableInfo.ante = (tableRow as any).ante ?? undefined;
+        this.tableInfo.big_blind_ante_enabled =
+          (tableRow as any).big_blind_ante_enabled ?? undefined;
+        this.tableInfo.nit_game = (tableRow as any).nit_game ?? undefined;
+        this.tableInfo.maintain_percent_min = (tableRow as any).maintain_percent_min ?? undefined;
+        this.tableInfo.maintain_hands = (tableRow as any).maintain_hands ?? undefined;
+        this.tableInfo.career_percent_min = (tableRow as any).career_percent_min ?? undefined;
+        this.tableInfo.run_it_mode = (tableRow as any).run_it_mode ?? undefined;
+        this.tableInfo.run_it_twice = (tableRow as any).run_it_twice ?? undefined;
+        this.tableInfo.allow_run_it_twice = (tableRow as any).allow_run_it_twice ?? undefined;
+        this.tableInfo.run_it_twice_enabled = (tableRow as any).run_it_twice_enabled ?? undefined;
+        this.tableInfo.insurance_enabled = (tableRow as any).insurance_enabled ?? undefined;
+        (this.tableInfo as any).seven_deuce_enabled =
+          (tableRow as any).seven_deuce_enabled ?? undefined;
+        (this.tableInfo as any).seven_deuce_amount =
+          (tableRow as any).seven_deuce_amount ?? undefined;
+        this.tableInfo.straddle_enabled = (tableRow as any).straddle_enabled ?? undefined;
+        (this.tableInfo as any).auto_utg_straddle = (tableRow as any).auto_utg_straddle ?? undefined;
+        (this.tableInfo as any).voluntary_straddle =
+          (tableRow as any).voluntary_straddle ?? undefined;
+        this.tableInfo.min_buy_in = (tableRow as any).min_buy_in ?? undefined;
+        this.tableInfo.max_buy_in = (tableRow as any).max_buy_in ?? undefined;
+        this.tableInfo.action_time_seconds = (tableRow as any).action_time_seconds ?? undefined;
+
+        /* The four run-it columns are not read directly at the offer; they are
+           COMPILED into the RIT engine by applyRunItTwiceConfig. Refreshing
+           the row without re-running it would leave the engine configured from
+           the boot row, so the re-read would be silently ineffective for the
+           one rule most likely to differ between two tables of one game.
+
+           Insurance is deliberately NOT re-configured here: start() sets only
+           `enabled` on that engine while other call sites also set houseMargin
+           and offerTimeoutSeconds, so a partial re-configure mid-flow would
+           drop them. applyRunItTwiceConfig only READS insurance_enabled (it
+           returns it), so this is safe. The straddle and seven-deuce columns
+           are read straight off tableInfo at the moment they matter, so the
+           assignment above is the whole of their fix. */
+        this.applyRunItTwiceConfig();
       }
       const clubId = this.tableInfo?.club_id;
       if (clubId) {

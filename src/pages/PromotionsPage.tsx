@@ -2,14 +2,14 @@
  *  PROMOTIONS PAGE — Club Promotions & Bonuses with Live Updates
  */
 
-import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { readClubContextParam } from '../utils/clubScopedPath';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { useMasterBusSubscriptions } from '../hooks/useMasterBusSubscription';
 import LeaderboardCard from '../components/leaderboard/LeaderboardCard';
-import { ArenaActionButton, ClubButtonsSurface } from '../components/club-buttons/ClubButtons';
+import { ThrowableImage } from '../components/table/ThrowableImage';
 import ReferralModal from '../components/social/ReferralModal';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
@@ -17,13 +17,11 @@ import { promotionService } from '../services/PromotionService';
 import './PromotionsPage.css';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { resolveClubUUID } from '../utils/clubIdResolver';
-import { formatDateShort as formatDate } from '../utils/format';
+import { compactChips, formatDateShort as formatDate } from '../utils/format';
 import { retryFetch } from '../utils/retryFetch';
 import { useIsMounted } from '../hooks/useIsMounted';
-import PageSkeleton from '../components/common/PageSkeleton';
 import StandardContentLayout from '../components/layouts/StandardContentLayout';
 import { reportError } from '../utils/errorReporter';
-import { ErrorState } from '../components/common/EmptyState';
 import RewardsSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
 import { publicOrigin } from '../lib/appBase';
 
@@ -291,18 +289,24 @@ export default function PromotionsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filteredPromos.length]);
 
-  const getTypeIcon = (type: string): string => {
-    switch (type) {
+  // Every offer type is a 3D render from the throwable kit, drawn through the
+  // table's own cutout pipeline: an organic object on the glass, never a glyph.
+  const getTypeRender = (type: string): string => {
+    switch (type.toLowerCase()) {
       case 'bonus':
-        return '◈';
+        return 'diamond';
       case 'freeroll':
-        return '★';
+        return 'star';
       case 'leaderboard':
-        return '▦';
+      case 'high_hand':
+        return 'trophy';
       case 'rakeback':
-        return '◆';
+      case 'rake_race':
+        return 'cash_stack';
+      case 'milestone':
+        return 'horseshoe';
       default:
-        return '★';
+        return 'star';
     }
   };
 
@@ -328,184 +332,187 @@ export default function PromotionsPage() {
     const diffDays = Math.floor(diffMs / 86400000);
     const diffHours = Math.floor((diffMs % 86400000) / 3600000);
 
-    if (diffDays > 0) return `${diffDays}d ${diffHours}h left`;
-    if (diffHours > 0) return `${diffHours}h left`;
-    return 'Ending soon';
+    if (diffDays > 0) return `${diffDays}d ${diffHours}h`;
+    if (diffHours > 0) return `${diffHours}h`;
+    return 'Ending Soon';
   };
 
   return (
     <StandardContentLayout className="promotions-page">
+      {/* ONE PICTURE (#ClubArenaConsole): the Rewards Circuit console carries the
+          title and the status word in its painted head, the view words, every
+          offer and its claim on the glass, and the two doors on its painted
+          plates. Nothing on this page is drawn. */}
       <RewardsSurfaceHeader
         eyebrow="Rewards Circuit / Promotions"
-        title="Promotion Exchange"
-        description="Discover Active Club Offers, Scheduled Events, Referral Rewards, And Leaderboard Opportunities Without Losing The Live Eligibility And Claim Workflows Beneath Them."
+        title="Promotions"
+        description="Active Club Offers, Scheduled Events, Referral Rewards And Leaderboard Races, With The Live Eligibility And Claim Workflows Beneath Them."
         art="market"
         status="OFFER INDEX // LIVE"
-        metrics={[
-          { label: 'Visible Offers', value: filteredPromos.length, tone: 'live' },
-          { label: 'View', value: filter.toUpperCase() },
-        ]}
-      />
-      {/* Daily Club Arena Bonus: the painted action shell, not a flat banner. */}
-      <ClubButtonsSurface className="promotions-daily-bonus">
-        <ArenaActionButton
-          icon="diamond"
-          label="Daily Club Arena Bonus"
-          sublabel="Claim Today’s Tiles"
-          size="large"
-          onClick={() => navigate('/bonuses')}
-        />
-      </ClubButtonsSurface>
+        crest="flat"
+        pill={`${filteredPromos.length} ${filter}`}
+        pillInk={filteredPromos.length > 0 ? 'green' : 'muted'}
+        plates={{
+          secondary: {
+            label: 'Invite Friends',
+            ink: 'silver',
+            onClick: () => setShowReferral(true),
+            'aria-haspopup': 'dialog',
+          },
+          primary: {
+            label: 'Daily Bonus',
+            ink: 'white',
+            onClick: () => navigate('/bonuses'),
+          },
+        }}
+      >
+        <div className="promo-views" role="group" aria-label="Offer View">
+          {(['active', 'upcoming', 'all'] as const).map((f) => (
+            <button
+              key={f}
+              type="button"
+              className={`promo-views__word ${filter === f ? 'sc-ink--white' : 'sc-ink--muted'}`}
+              aria-pressed={filter === f}
+              onClick={() => setFilter(f)}
+            >
+              {f.charAt(0).toUpperCase() + f.slice(1)}
+            </button>
+          ))}
+        </div>
 
-      {/* Referral Banner */}
-      <div className="referral-banner" onClick={() => setShowReferral(true)}>
-        <span className="bonus-icon">◈</span>
-        <span className="bonus-text">Invite Friends & Earn 5% Rake!</span>
-        <span className="bonus-arrow">›</span>
-      </div>
-
-      <div className="promo-filters">
-        {(['active', 'upcoming', 'all'] as const).map((f) => (
-          <button key={f} className={filter === f ? 'active' : ''} onClick={() => setFilter(f)}>
-            {f.charAt(0).toUpperCase() + f.slice(1)}
-          </button>
-        ))}
-      </div>
-
-      <div className="promotions-list">
         {loading ? (
-          <div className="promo-skeleton-list">
-            {Array.from({ length: 3 }).map((_, i) => (
-              <div key={i} className="promo-skeleton-card">
-                <div className="promo-skel-icon" />
-                <div className="promo-skel-body">
-                  <div className="promo-skel-line" style={{ width: '60%' }} />
-                  <div className="promo-skel-line" style={{ width: '80%' }} />
-                  <div className="promo-skel-line" style={{ width: '45%' }} />
-                </div>
-              </div>
-            ))}
+          <div className="promo-state" role="status" aria-busy="true" aria-live="polite">
+            <p className="sc-copy sc-copy--center promo-word--busy">Reading The Offer Index</p>
           </div>
         ) : loadError ? (
-          <ErrorState message={loadError} onRetry={() => void loadPromotions()} />
-        ) : filteredPromos.length === 0 ? (
-          <div className="empty-state" style={{ textAlign: 'center', padding: '2.5rem 1.5rem' }}>
-            <span
-              style={{
-                fontSize: '2.5rem',
-                display: 'block',
-                marginBottom: '0.75rem',
-                opacity: 0.5,
-              }}
+          <div className="promo-state" role="alert">
+            <p className="sc-copy sc-copy--center">{loadError}</p>
+            <button
+              type="button"
+              className="promo-word sc-ink--white"
+              onClick={() => void loadPromotions()}
             >
-              ◈
+              Try Again
+            </button>
+          </div>
+        ) : filteredPromos.length === 0 ? (
+          <div className="promo-state" role="status">
+            <span className="promo-state__render" aria-hidden="true">
+              <ThrowableImage throwableId="star" size={96} loading="lazy" />
             </span>
-            <p style={{ fontSize: '1.05rem', fontWeight: 600, margin: '0 0 0.5rem' }}>
+            <p className="promo-state__title sc-ink--silver">
               {filter === 'active'
                 ? 'No Active Promotions'
                 : filter === 'upcoming'
                   ? 'No Upcoming Promotions'
                   : 'No Promotions'}
             </p>
-            <p style={{ color: 'var(--soft-white, #B0B3B8)', fontSize: '0.85rem', margin: 0 }}>
+            <p className="sc-copy sc-copy--center promo-state__copy">
               {filter === 'active'
-                ? 'There Are No Promotions Running Right Now. Check Back Soon!'
+                ? 'There Are No Promotions Running Right Now. Check Back Soon.'
                 : filter === 'upcoming'
-                  ? 'No Promotions Are Scheduled Yet. Stay Tuned!'
+                  ? 'No Promotions Are Scheduled Yet. Stay Tuned.'
                   : 'No Promotions Have Been Created For This Club Yet.'}
             </p>
           </div>
         ) : (
-          filteredPromos.map((promo, index) => (
-            <div
-              key={promo.id}
-              className="promo-card"
-              style={{
-                opacity: visiblePromoCards.has(index) ? 1 : 0,
-                transform: visiblePromoCards.has(index) ? 'translateY(0)' : 'translateY(10px)',
-                transition: 'all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-              }}
-            >
-              {promo.image_url && (
-                <div className="promo-image">
-                  <img src={promo.image_url} alt="" loading="lazy" />
-                </div>
-              )}
-              <div className="promo-content">
-                <div className="promo-header">
-                  <span className="promo-icon">{getTypeIcon(promo.type)}</span>
-                  <span className="promo-type">{formatPromoType(promo.type)}</span>
-                </div>
-                <h3 className="promo-title">{promo.title}</h3>
-                <p className="promo-desc">{promo.description}</p>
-
-                <div className="promo-meta">
-                  <span className="promo-dates">
-                    {formatDate(promo.start_date)} - {formatDate(promo.end_date)}
-                  </span>
-                  {promo.prize_pool && (
-                    <span className="promo-prize">{promo.prize_pool.toLocaleString()}</span>
-                  )}
-                </div>
-
-                {new Date(promo.end_date) > now && new Date(promo.start_date) <= now && (
-                  <div className="promo-countdown-row">
-                    <span className="promo-countdown">{getTimeRemaining(promo.end_date)}</span>
-                    {new Date(promo.end_date).getTime() - now.getTime() < 86400000 && (
-                      <span className="ending-soon-badge">⚠ Ending Soon</span>
-                    )}
-                  </div>
-                )}
-
-                {/* Show LeaderboardCard for leaderboard promotions */}
-                {promo.type === 'leaderboard' && (
-                  <div className="promo-leaderboard">
-                    <LeaderboardCard
-                      promotionId={promo.id}
-                      title={`${promo.title || 'Leaderboard'} Rankings`}
-                      limit={5}
-                      showCurrentUser={true}
+          <ul className="promo-list" aria-label="Offers">
+            {filteredPromos.map((promo, index) => {
+              const running = new Date(promo.end_date) > now && new Date(promo.start_date) <= now;
+              const endingSoon =
+                running && new Date(promo.end_date).getTime() - now.getTime() < 86400000;
+              const claimed = claimedIds.has(promo.id);
+              const claiming = claimingId === promo.id;
+              return (
+                /* A ROW on the glass, not a card: the render beside the words,
+                   the figures on one line, CLAIM a lit word at the end. */
+                <li
+                  key={promo.id}
+                  className="promo-row"
+                  data-type={promo.type}
+                  style={{
+                    opacity: visiblePromoCards.has(index) ? 1 : 0,
+                    transform: visiblePromoCards.has(index) ? 'translateY(0)' : 'translateY(10px)',
+                    transition: 'all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+                  }}
+                >
+                  <span className="promo-row__render" aria-hidden="true">
+                    <ThrowableImage
+                      throwableId={getTypeRender(promo.type)}
+                      size={96}
+                      loading="lazy"
                     />
-                  </div>
-                )}
-
-                {/* Claim action — active, non-leaderboard promos (leaderboard payouts
-                    are ranked, not manually claimed). */}
-                {promo.type !== 'leaderboard' &&
-                  new Date(promo.end_date) > now &&
-                  new Date(promo.start_date) <= now && (
-                    <button
-                      className="promo-claim-btn"
-                      disabled={claimedIds.has(promo.id) || claimingId === promo.id}
-                      onClick={() => handleClaimPromo(promo.id)}
-                      style={{
-                        marginTop: '0.75rem',
-                        width: '100%',
-                        padding: '0.7rem',
-                        borderRadius: '10px',
-                        border: 'none',
-                        fontWeight: 700,
-                        fontSize: '0.9rem',
-                        cursor: claimedIds.has(promo.id) ? 'default' : 'pointer',
-                        color: '#fff',
-                        background: claimedIds.has(promo.id)
-                          ? 'rgba(255,255,255,0.12)'
-                          : 'linear-gradient(135deg,#31A24C,#248a3d)',
-                        opacity: claimingId === promo.id ? 0.6 : 1,
-                      }}
-                    >
-                      {claimedIds.has(promo.id)
-                        ? '✓ Claimed'
-                        : claimingId === promo.id
-                          ? 'Claiming…'
-                          : 'Claim'}
-                    </button>
-                  )}
-              </div>
-            </div>
-          ))
+                  </span>
+                  <span className="promo-row__lines">
+                    <span className="sc-label sc-ink--blue promo-row__type">
+                      {formatPromoType(promo.type)}
+                    </span>
+                    <span className="promo-row__title sc-ink--silver">{promo.title}</span>
+                    {promo.description && (
+                      <span className="sc-copy promo-row__desc">{promo.description}</span>
+                    )}
+                    <span className="promo-row__meta">
+                      <span className="promo-row__fact">
+                        <span className="sc-label sc-ink--blue">Runs</span>
+                        <span className="sc-ink--silver promo-row__figure">
+                          {formatDate(promo.start_date)} To {formatDate(promo.end_date)}
+                        </span>
+                      </span>
+                      {promo.prize_pool != null && promo.prize_pool > 0 && (
+                        <span className="promo-row__fact">
+                          <span className="sc-label sc-ink--blue">Prize</span>
+                          <span className="sc-ink--green promo-row__figure">
+                            {compactChips(promo.prize_pool)}
+                          </span>
+                        </span>
+                      )}
+                      {running && (
+                        <span className="promo-row__fact">
+                          <span className="sc-label sc-ink--blue">Left</span>
+                          <span
+                            className={`promo-row__figure ${endingSoon ? 'sc-ink--red' : 'sc-ink--gold'}`}
+                          >
+                            {getTimeRemaining(promo.end_date)}
+                          </span>
+                        </span>
+                      )}
+                    </span>
+                    {/* Leaderboard promotions carry their standings on the same glass. */}
+                    {promo.type === 'leaderboard' && (
+                      <span className="promo-row__board">
+                        <LeaderboardCard
+                          promotionId={promo.id}
+                          title={`${promo.title || 'Leaderboard'} Rankings`}
+                          limit={5}
+                          showCurrentUser={true}
+                          variant="glass"
+                        />
+                      </span>
+                    )}
+                  </span>
+                  {/* Claim: active, non-leaderboard promos (leaderboard payouts are
+                      ranked, not manually claimed). A lit word, nothing drawn. */}
+                  {promo.type !== 'leaderboard' &&
+                    running &&
+                    (claimed ? (
+                      <span className="promo-word sc-ink--green promo-row__action">Claimed</span>
+                    ) : (
+                      <button
+                        type="button"
+                        className={`promo-word sc-ink--white promo-row__action${claiming ? ' promo-word--busy' : ''}`}
+                        disabled={claiming}
+                        aria-busy={claiming || undefined}
+                        onClick={() => handleClaimPromo(promo.id)}
+                      >
+                        {claiming ? 'Claiming' : 'Claim'}
+                      </button>
+                    ))}
+                </li>
+              );
+            })}
+          </ul>
         )}
-      </div>
+      </RewardsSurfaceHeader>
 
       {/* Referral Modal */}
       <ReferralModal

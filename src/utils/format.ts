@@ -306,3 +306,31 @@ export const ordinal = (n: unknown): string => {
   const suffix = ({ 1: 'st', 2: 'nd', 3: 'rd' } as Record<number, string>)[v % 10] ?? 'th';
   return `${v}${suffix}`;
 };
+
+/**
+ * #ClubArenaConsole money, forward-facing (Dan 2026-09-09): "NEVER USE DECIMAL
+ * POINTS ON ANY FORWARD FACING PAGE ... ONCE SOMETHING HITS OVER 1,000 USE 1K,
+ * IF ITS 1200 USE 1.2K, IF ITS 10,000 USE 10K." Whole numbers under 1,000; one
+ * decimal above, always rounded DOWN so a figure is never overstated, and a
+ * trailing .0 is dropped. Chips on the felt are never abbreviated: that is
+ * formatTableChips' law, and this helper is for everything outside the felt.
+ * @example compactChips(950) -> "950", compactChips(1200) -> "1.2K",
+ *          compactChips(1290) -> "1.2K", compactChips(10000) -> "10K"
+ */
+export const compactChips = (n: number | null | undefined): string => {
+  const v = Math.floor(Math.abs(Number(n) || 0));
+  const sign = Number(n) < 0 ? '-' : '';
+  const units: Array<[number, string]> = [
+    [1_000_000_000, 'B'],
+    [1_000_000, 'M'],
+    [1_000, 'K'],
+  ];
+  for (const [unit, suffix] of units) {
+    if (v >= unit) {
+      const tenths = Math.floor((v / unit) * 10) / 10;
+      const text = Number.isInteger(tenths) ? String(tenths) : tenths.toFixed(1);
+      return `${sign}${text}${suffix}`;
+    }
+  }
+  return `${sign}${v}`;
+};

@@ -173,6 +173,47 @@ CREATE FUNCTION pg_temp.events(p_game uuid, p_kind text, p_table uuid DEFAULT NU
      AND (p_table IS NULL OR e.table_id = p_table)
 $$;
 
+-- A second dormant game, for a board that needs two.
+CREATE FUNCTION pg_temp.pick_dormant_game_except(p_not uuid) RETURNS uuid LANGUAGE sql AS $$
+  SELECT g.id FROM public.cash_games g
+   WHERE g.must_move AND g.enabled AND g.state = 'dormant' AND g.id <> p_not
+     AND public.fn_ca_house_board_allows_automation(g.club_id)
+     AND g.opening_hold_since IS NULL
+     AND (SELECT count(*) FROM public.tables t WHERE t.cluster_id = g.id AND t.lifecycle <> 'closed' AND coalesce(t.is_deleted, false) = false) = 1
+     AND EXISTS (SELECT 1 FROM public.tables t WHERE t.cluster_id = g.id AND t.lifecycle = 'live' AND t.status = 'waiting'
+                    AND t.role = 'main' AND t.main_index = 1 AND coalesce(t.is_deleted, false) = false
+                    AND NOT EXISTS (SELECT 1 FROM public.table_seats ts WHERE ts.table_id = t.id AND ts.left_at IS NULL))
+     AND NOT EXISTS (SELECT 1 FROM public.cash_seat_moves m WHERE m.game_id = g.id AND m.state = 'pending')
+     AND NOT EXISTS (SELECT 1 FROM public.cash_game_waitlist w WHERE w.game_id = g.id AND w.status IN ('waiting', 'notified'))
+     AND NOT EXISTS (SELECT 1 FROM public.cash_cluster_events e WHERE e.game_id = g.id AND e.kind = 'feeder_abandoned' AND e.at > now() - interval '2 minutes')
+   ORDER BY g.last_tick_at NULLS FIRST, g.created_at
+   LIMIT 1
+$$;
+
+-- Seats p_n players on p_table, oldest first, so the NEWEST arrival is the
+-- last element. A departed row already holding a seat number is skipped (the
+-- (table_id, seat_number) key is not partial).
+CREATE FUNCTION pg_temp.fill(p_table uuid, p_n integer) RETURNS uuid[] LANGUAGE plpgsql AS $$
+DECLARE i integer; seat integer := 0; out uuid[] := '{}';
+BEGIN
+  FOR i IN 1..p_n LOOP
+    seat := seat + 1;
+    WHILE EXISTS (SELECT 1 FROM public.table_seats x WHERE x.table_id = p_table AND x.seat_number = seat) LOOP
+      seat := seat + 1;
+    END LOOP;
+    out := out || pg_temp.seat_copy(p_table, seat, (p_n - i) * interval '1 minute');
+  END LOOP;
+  RETURN out;
+END $$;
+
+-- The game's pending moves with the roles of both ends.
+CREATE FUNCTION pg_temp.pending(p_game uuid)
+RETURNS TABLE(reason text, from_role text, to_role text, player_id uuid, from_table_id uuid, to_table_id uuid) LANGUAGE sql AS $$
+  SELECT m.reason, f.role, t.role, m.player_id, m.from_table_id, m.to_table_id
+    FROM public.cash_seat_moves m JOIN public.tables f ON f.id = m.from_table_id JOIN public.tables t ON t.id = m.to_table_id
+   WHERE m.game_id = p_game AND m.state = 'pending'
+$$;
+
 -- ── preamble: not frozen, and which tick this is ───────────────────────────
 DO $$
 DECLARE v_md5 text; v_n integer;
@@ -218,29 +259,47 @@ ROLLBACK;
 
 -- ═══════════════════════════════════════════════════════════════════════════
 \echo
-\echo '---- BOARD 2: a live seat on a CLOSED table: the tick puts it back to breaking and plans the player out (closed_table_reopened_to_break)'
+\echo '---- BOARD 2: a live seat''s parent CANNOT close - the shape this board used to repair is now impossible to build'
+-- REWRITTEN 2026-09-09 (lane A of the must-move audit). This board used to
+-- assert `closed_table_reopened_to_break`: the tick found a live seat on a
+-- lifecycle-closed table and put the table back to `breaking` so the player
+-- could be planned off it. That repair is GONE from the live function, and
+-- correctly so - `20260909062236_terminal_tables_cannot_commit_live_occupancies`
+-- (on production as version 20260909172529) made the shape unbuildable and
+-- deleted the repair in the same migration, leaving the comment
+--     -- Active seats cannot commit against a closed parent; no reopen repair is needed.
+-- The board asserting the old event could never pass again, so it asserts the
+-- new guarantee instead: the CLOSE is refused, at the schema, by
+-- `live_seat_parent_cannot_close` FK (table_id, active_parent_key) ->
+-- tables(id, seat_admission_key). A guard is better than a repair (CLAUDE.md
+-- 10.11), and this pins that the repair may not come back while the guard
+-- stands.
 BEGIN;
 DO $$
-DECLARE g uuid; m1 uuid; f uuid; p uuid; t record; mv record;
+DECLARE g uuid; f uuid; p uuid; t record; v_err text; refused boolean := false; v_def text;
 BEGIN
   g := pg_temp.pick_dormant_game(); IF g IS NULL THEN RAISE EXCEPTION 'no dormant game to build on'; END IF;
-  m1 := pg_temp.main1(g);
-  PERFORM pg_temp.seat_copy(m1, 1, interval '10 minutes');
   f := public.fn_cash_cluster_open_table(g, 'feeder', NULL, 'live', NULL);
   p := pg_temp.seat_copy(f, 1, interval '5 minutes');
-  -- The door refuses a seat on a closed table, and the status path refuses to
-  -- close a seated table (fn_guard_managed_game_lifecycle) and would cash the
-  -- seat out (trg_tables_auto_cashout_on_close). So the shape that reached
-  -- production is built the only way it can be: lifecycle closed, status not.
-  UPDATE public.tables SET lifecycle = 'closed' WHERE id = f;
-  RAISE NOTICE '      game % : feeder % lifecycle=closed status=waiting with player % on it', g, f, p;
-  PERFORM pg_temp.tick(g, 0);
+  RAISE NOTICE '      game % : feeder % with player % on it', g, f, p;
+
+  BEGIN
+    UPDATE public.tables SET lifecycle = 'closed' WHERE id = f;
+  EXCEPTION WHEN OTHERS THEN
+    GET STACKED DIAGNOSTICS v_err = MESSAGE_TEXT;
+    refused := true;
+    RAISE NOTICE '      close refused: %', left(v_err, 120);
+  END;
+  PERFORM pg_temp.ok(refused, 'a table holding a live seat cannot be walked to lifecycle=closed');
+
   SELECT * INTO t FROM public.tables WHERE id = f;
-  PERFORM pg_temp.ok(t.lifecycle = 'breaking', 'the closed table with a seat is back to breaking');
-  PERFORM pg_temp.ok(t.break_started_at IS NOT NULL, 'break_started_at is stamped');
-  PERFORM pg_temp.ok(pg_temp.events(g, 'closed_table_reopened_to_break', f) = 1, 'event closed_table_reopened_to_break');
-  SELECT * INTO mv FROM public.cash_seat_moves WHERE game_id = g AND player_id = p AND state = 'pending' AND from_table_id = f;
-  PERFORM pg_temp.ok(mv.id IS NOT NULL AND mv.to_table_id = m1, format('a move is planned for the stranded player onto Main 1 (reason %s)', mv.reason));
+  PERFORM pg_temp.ok(t.lifecycle <> 'closed', format('the table is still open (lifecycle=%s)', t.lifecycle));
+  PERFORM pg_temp.ok(EXISTS (SELECT 1 FROM public.table_seats ts WHERE ts.table_id = f AND ts.left_at IS NULL),
+                     'and the player still holds the chair - nobody was stranded to be repaired later');
+
+  v_def := pg_get_functiondef('public.fn_cash_cluster_tick'::regproc);
+  PERFORM pg_temp.ok(position('closed_table_reopened_to_break' in v_def) = 0,
+                     'the retired reopen-to-break repair has not come back');
 END $$;
 ROLLBACK;
 \echo '     rolled back'
@@ -393,13 +452,28 @@ ROLLBACK;
 
 -- ═══════════════════════════════════════════════════════════════════════════
 \echo
-\echo '---- BOARD 8: a second chair in one game: the door refuses it; forced past the door, the tick settles it (20260905090006)'
+\echo '---- BOARD 8: ONE committed chair per player per game - the door refuses it, and so does the schema, even for the executor'
+-- REWRITTEN 2026-09-09 (lane A of the must-move audit). This board used to
+-- force a second chair past the trigger door with the executor's own GUC and
+-- then assert that the TICK cleaned it up - `second_chair_leave_pending` on a
+-- running table, `second_chair_cashed_out` on a waiting one. Both of those
+-- reconcile branches are GONE from the live function, replaced by
+--     -- Duplicate committed chairs are rejected by one_committed_seat_per_game_player.
+-- (`..._retire_cluster_duplicate_chair_cashouts_after_native_ownership`, on
+-- production as version 20260909172447). A cleanup that runs after the fact
+-- was replaced by a constraint that makes the state unreachable, which is the
+-- right direction (CLAUDE.md 10.12), and this board now pins THAT.
+--
+-- `one_committed_seat_per_game_player` is UNIQUE (user_id, active_game_scope)
+-- DEFERRABLE INITIALLY DEFERRED, and `fn_stamp_table_game_scope` stamps every
+-- cluster table `cluster:<cash_games.id>` - so two live chairs anywhere in one
+-- must-move game collide on it. Deferred means the violation surfaces at
+-- COMMIT; the board makes it IMMEDIATE so a rolled-back probe can see it.
 BEGIN;
 DO $$
-DECLARE g uuid; a record; b record; seat_b integer; v_err text; refused boolean := false;
-        newseat uuid; v_club uuid; t record; s record; ev record; bal_before numeric; bal_after numeric;
+DECLARE g uuid; a record; b record; seat_b integer; v_err text;
+        door_refused boolean := false; schema_refused boolean := false; v_def text;
 BEGIN
-  -- a REAL live game with two open tables and a seated player: the oldest chair is theirs
   SELECT ts.user_id, ts.table_id, ts.stack, ts.club_id, tb.cluster_id AS game_id, ts.joined_at
     INTO a
     FROM public.table_seats ts JOIN public.tables tb ON tb.id = ts.table_id JOIN public.cash_games cg ON cg.id = tb.cluster_id
@@ -407,9 +481,6 @@ BEGIN
      AND tb.lifecycle = 'live' AND cg.must_move AND cg.enabled
      AND (SELECT count(*) FROM public.table_seats o WHERE o.user_id = ts.user_id AND o.left_at IS NULL) = 1
      AND NOT EXISTS (SELECT 1 FROM public.cash_seat_moves m WHERE m.player_id = ts.user_id AND m.state = 'pending')
-     -- a second table with a seat NUMBER that has no row at all: seat rows are
-     -- unique per (table, seat) and a departed one is revived by UPDATE, and
-     -- this board only ever INSERTs
      AND EXISTS (SELECT 1 FROM public.tables o WHERE o.cluster_id = tb.cluster_id AND o.id <> tb.id AND o.lifecycle = 'live'
                     AND o.status IN ('waiting', 'running') AND coalesce(o.is_deleted, false) = false
                     AND (SELECT count(*) FROM public.table_seats x WHERE x.table_id = o.id) < coalesce(o.max_players, 9))
@@ -424,52 +495,42 @@ BEGIN
    WHERE NOT EXISTS (SELECT 1 FROM public.table_seats x WHERE x.table_id = b.id AND x.seat_number = n);
   RAISE NOTICE '      game % : player % seated on % ; second table % (%) seat %', g, a.user_id, a.table_id, b.id, b.status, seat_b;
 
-  -- 1. the door
+  -- 1. the door (fn_refuse_seat_on_closed_cluster_table)
   BEGIN
     INSERT INTO public.table_seats (table_id, seat_number, user_id, stack, status, joined_at)
     VALUES (b.id, seat_b, a.user_id, a.stack, 'active', clock_timestamp());
   EXCEPTION WHEN OTHERS THEN
     GET STACKED DIAGNOSTICS v_err = MESSAGE_TEXT;
-    refused := v_err LIKE 'ALREADY_IN_GAME%';
+    door_refused := v_err LIKE 'ALREADY_IN_GAME%';
     RAISE NOTICE '      door: %', left(v_err, 100);
   END;
-  PERFORM pg_temp.ok(refused, 'the door refuses a second chair in the same game (ALREADY_IN_GAME)');
+  PERFORM pg_temp.ok(door_refused, 'the door refuses a second chair in the same game (ALREADY_IN_GAME)');
 
-  -- 2. past the door (the executor flag, as the pre-door fleet effectively was), then the tick
-  PERFORM set_config('app.cash_seat_move', 'on', true);
-  INSERT INTO public.table_seats (table_id, seat_number, user_id, stack, status, joined_at)
-  VALUES (b.id, seat_b, a.user_id, a.stack, 'active', clock_timestamp()) RETURNING id INTO newseat;
-  PERFORM set_config('app.cash_seat_move', '', true);
-  SELECT club_id INTO v_club FROM public.table_seats WHERE id = newseat;   -- the wallet the cash-out credits
-  PERFORM pg_temp.ok(newseat IS NOT NULL AND v_club IS NOT NULL, 'with the executor flag the second chair is seated (the pre-door shape)');
-
-  -- 2a. on a RUNNING table: leave_pending, chips untouched (sub-block, undone after)
+  -- 2. past the door, with the executor's own flag: the SCHEMA refuses it too.
+  --    This is the case the retired reconcile branches existed to clean up.
   BEGIN
-    UPDATE public.tables SET status = 'running' WHERE id = b.id AND status <> 'running';
-    PERFORM pg_temp.tick(g, 0);
-    SELECT * INTO s FROM public.table_seats WHERE id = newseat;
-    SELECT * INTO ev FROM public.cash_cluster_events WHERE game_id = g AND kind = 'second_chair_leave_pending' AND table_id = b.id AND at >= now();
-    PERFORM pg_temp.ok(s.left_at IS NULL AND s.leave_pending, 'running table: the newer chair is flagged leave_pending for the hand boundary');
-    PERFORM pg_temp.ok(ev.id IS NOT NULL AND (ev.payload->>'player_id')::uuid = a.user_id, 'event second_chair_leave_pending names the player');
-    SELECT * INTO s FROM public.table_seats WHERE table_id = a.table_id AND user_id = a.user_id AND left_at IS NULL;
-    PERFORM pg_temp.ok(s.id IS NOT NULL AND coalesce(s.leave_pending, false) = false, 'the older chair is untouched');
-    RAISE EXCEPTION USING ERRCODE = 'P9999', MESSAGE = 'undo sub-board 2a';
-  EXCEPTION WHEN SQLSTATE 'P9999' THEN NULL;
+    SET CONSTRAINTS public.one_committed_seat_per_game_player IMMEDIATE;
+    PERFORM set_config('app.cash_seat_move', 'on', true);
+    INSERT INTO public.table_seats (table_id, seat_number, user_id, stack, status, joined_at)
+    VALUES (b.id, seat_b, a.user_id, a.stack, 'active', clock_timestamp());
+    PERFORM set_config('app.cash_seat_move', '', true);
+  EXCEPTION WHEN OTHERS THEN
+    GET STACKED DIAGNOSTICS v_err = MESSAGE_TEXT;
+    PERFORM set_config('app.cash_seat_move', '', true);
+    schema_refused := v_err LIKE '%one_committed_seat_per_game_player%';
+    RAISE NOTICE '      schema: %', left(v_err, 140);
   END;
+  PERFORM pg_temp.ok(schema_refused,
+                     'one_committed_seat_per_game_player refuses the second chair even with the executor flag set');
 
-  -- 2b. on a WAITING table: cashed out now, through the tick's own path
-  SELECT coalesce(chip_balance, 0) INTO bal_before FROM public.club_members WHERE user_id = a.user_id AND club_id = v_club;
-  UPDATE public.tables SET status = 'waiting' WHERE id = b.id AND status <> 'waiting';
-  PERFORM pg_temp.tick(g, 0);
-  SELECT * INTO s FROM public.table_seats WHERE id = newseat;
-  SELECT * INTO ev FROM public.cash_cluster_events WHERE game_id = g AND kind = 'second_chair_cashed_out' AND table_id = b.id AND at >= now();
-  SELECT coalesce(chip_balance, 0) INTO bal_after FROM public.club_members WHERE user_id = a.user_id AND club_id = v_club;
-  PERFORM pg_temp.ok(s.left_at IS NOT NULL, 'waiting table: the newer chair is cashed out now');
-  PERFORM pg_temp.ok(ev.id IS NOT NULL AND ev.payload->>'where' = 'reconcile', 'event second_chair_cashed_out {where: reconcile}');
-  PERFORM pg_temp.ok(bal_after - bal_before = a.stack, format('the stack (%s) went back to the club wallet (%s -> %s)', a.stack, bal_before, bal_after));
-  PERFORM pg_temp.ok(NOT EXISTS (SELECT 1 FROM public.fn_unaccounted_seat_exits() u WHERE u.table_id = b.id), 'fn_unaccounted_seat_exits() has nothing for that table');
-  SELECT * INTO s FROM public.table_seats WHERE table_id = a.table_id AND user_id = a.user_id AND left_at IS NULL;
-  PERFORM pg_temp.ok(s.id IS NOT NULL, 'the older chair is still theirs');
+  PERFORM pg_temp.ok(EXISTS (SELECT 1 FROM public.table_seats ts
+                              WHERE ts.table_id = a.table_id AND ts.user_id = a.user_id AND ts.left_at IS NULL),
+                     'the older chair is still theirs, and no chip moved');
+
+  v_def := pg_get_functiondef('public.fn_cash_cluster_tick'::regproc);
+  PERFORM pg_temp.ok(position('second_chair_cashed_out' in v_def) = 0
+                 AND position('second_chair_leave_pending' in v_def) = 0,
+                     'the retired duplicate-chair cleanup has not come back');
 END $$;
 ROLLBACK;
 \echo '     rolled back'
@@ -524,7 +585,322 @@ END $$;
 ROLLBACK;
 \echo '     rolled back'
 
+-- ═══════════════════════════════════════════════════════════════════════════
+-- BOARDS 11-14 were added on 2026-09-09 by lane A of the must-move audit, one
+-- per migration in that lane. THEY REQUIRE THOSE MIGRATIONS TO BE APPLIED:
+--   20260909181632  a_move_cannot_be_late_while_the_platform_is_parking
+--   20260909181642  every_expiry_says_why_including_the_executors
+--   20260909181653  the_worklist_admits_a_game_with_a_half_closed_table
+--   20260909181704  a_main_keeps_its_number_while_it_breaks
+-- Until the integrator applies them these four fail, and that failure is the
+-- correct reading: the behaviour they pin is not on the database yet.
+-- ═══════════════════════════════════════════════════════════════════════════
+\echo
+\echo '---- BOARD 11: no expiry path in the tick OR either executor writes a state without a reason (20260909181642)'
+BEGIN;
+DO $$
+DECLARE v_move text; v_swap text; v_tick text;
+BEGIN
+  v_move := pg_get_functiondef('public.fn_cash_seat_move_execute_before_maintenance_gate'::regproc);
+  v_swap := pg_get_functiondef('public.fn_cash_seat_swap_execute_before_maintenance_gate'::regproc);
+  v_tick := pg_get_functiondef('public.fn_cash_cluster_tick'::regproc);
+  PERFORM pg_temp.ok(position('expired_before_the_executor_reached_it' in v_move) > 0,
+                     'the move executor names its own late arrival');
+  PERFORM pg_temp.ok(position('own_ttl_expired' in v_swap) > 0 AND position('swap_partner_expired' in v_swap) > 0,
+                     'the swap executor tells its own timeout from its partner''s, and does not mark a live partner expired');
+  PERFORM pg_temp.ok(position($q$SET state = 'expired' WHERE$q$ in v_move) = 0
+                 AND position($q$SET state = 'expired' WHERE$q$ in v_swap) = 0
+                 AND position($q$SET state = 'expired' WHERE$q$ in v_tick) = 0,
+                     'nowhere in the move lifecycle is `expired` written without a note');
+END $$;
+ROLLBACK;
+\echo '     rolled back'
+
+-- ═══════════════════════════════════════════════════════════════════════════
+\echo
+\echo '---- BOARD 12: a game whose only table is half-closed is ticked, and one tick makes the two fields agree (20260909181653)'
+BEGIN;
+DO $$
+DECLARE t record; g uuid; n integer; before_n integer; r jsonb;
+BEGIN
+  SELECT tb.* INTO t FROM public.tables tb JOIN public.cash_games cg ON cg.id = tb.cluster_id
+   WHERE cg.must_move AND coalesce(tb.is_deleted, false) = false
+     AND tb.lifecycle = 'closed'
+     AND lower(coalesce(tb.status, '')) NOT IN ('closed','completed','cancelled','finished')
+     AND NOT EXISTS (SELECT 1 FROM public.table_seats ts WHERE ts.table_id = tb.id AND ts.left_at IS NULL)
+   ORDER BY tb.updated_at LIMIT 1;
+  IF t.id IS NULL THEN
+    -- Nothing is stranded right now, which is the outcome this fix produces.
+    -- Build the shape rather than skipping: the point is that the worklist
+    -- reaches it.
+    SELECT tb.* INTO t FROM public.tables tb JOIN public.cash_games cg ON cg.id = tb.cluster_id
+     WHERE cg.must_move AND NOT cg.enabled AND coalesce(tb.is_deleted, false) = false
+       AND tb.lifecycle = 'closed' AND lower(coalesce(tb.status,'')) = 'closed'
+       AND NOT EXISTS (SELECT 1 FROM public.table_seats ts WHERE ts.table_id = tb.id AND ts.left_at IS NULL)
+     ORDER BY tb.updated_at DESC LIMIT 1;
+    IF t.id IS NULL THEN RAISE NOTICE 'SKIP  no disabled game with a closed table to build the shape on'; RETURN; END IF;
+    UPDATE public.tables SET status = 'waiting' WHERE id = t.id;
+    SELECT * INTO t FROM public.tables WHERE id = t.id;
+  END IF;
+  g := t.cluster_id;
+  RAISE NOTICE '      table % (%): status=% lifecycle=%', t.id, t.name, t.status, t.lifecycle;
+
+  SELECT count(*) INTO n FROM public.fn_cash_clusters_to_tick() l WHERE l.game_id = g;
+  PERFORM pg_temp.ok(n = 1, 'its game is on the worklist, so the repair inside the tick can reach it');
+
+  SELECT count(*) INTO before_n FROM public.cash_cluster_events
+   WHERE game_id = g AND kind = 'status_followed_lifecycle' AND at >= now();
+  r := pg_temp.tick(g, 0);
+  SELECT * INTO t FROM public.tables WHERE id = t.id;
+  PERFORM pg_temp.ok(lower(t.status) = 'closed' AND t.lifecycle = 'closed',
+                     format('one tick made the two fields agree (status=%s lifecycle=%s)', t.status, t.lifecycle));
+  SELECT count(*) INTO n FROM public.cash_cluster_events
+   WHERE game_id = g AND kind = 'status_followed_lifecycle' AND at >= now();
+  PERFORM pg_temp.ok(n > before_n, 'and said so with status_followed_lifecycle');
+  SELECT count(*) INTO n FROM public.fn_cash_clusters_to_tick() l WHERE l.game_id = g;
+  PERFORM pg_temp.ok(n = 0, 'the game then leaves the worklist: admitted once, not for ever');
+END $$;
+ROLLBACK;
+\echo '     rolled back'
+
+-- ═══════════════════════════════════════════════════════════════════════════
+\echo
+\echo '---- BOARD 13: a breaking Main does not keep a number a survivor is renumbered into (20260909181704)'
+BEGIN;
+DO $$
+DECLARE g uuid; m1 uuid; m2 uuid; m3 uuid; fd uuid; p uuid; r jsonb;
+        v_m2 record; v_m3 record; v_dupes integer;
+BEGIN
+  g := pg_temp.pick_dormant_game(); IF g IS NULL THEN RAISE EXCEPTION 'no dormant game to build on'; END IF;
+  m1 := pg_temp.main1(g);
+  m2 := public.fn_cash_cluster_open_table(g, 'main', 2, 'live', NULL);
+  m3 := public.fn_cash_cluster_open_table(g, 'main', 3, 'live', NULL);
+  -- a live feeder, so the demote-to-feeder step does not take Main 3 instead
+  fd := public.fn_cash_cluster_open_table(g, 'feeder', NULL, 'live', NULL);
+  -- Main 2 breaks holding one player: an EMPTY breaking table is closed by
+  -- step 5 before the roles step is ever reached.
+  p := pg_temp.seat_copy(m2, 1);
+  UPDATE public.tables SET lifecycle = 'breaking', break_started_at = clock_timestamp() WHERE id = m2;
+  RAISE NOTICE '      game % : main1 % main2 %(breaking, 1 seat) main3 % feeder %', g, m1, m2, m3, fd;
+
+  r := pg_temp.tick(g, 0);
+  SELECT id, name, role, main_index, lifecycle INTO v_m2 FROM public.tables WHERE id = m2;
+  SELECT id, name, role, main_index, lifecycle INTO v_m3 FROM public.tables WHERE id = m3;
+  RAISE NOTICE '      after: breaking main_index=% name=% ; survivor main_index=% name=%',
+    v_m2.main_index, v_m2.name, v_m3.main_index, v_m3.name;
+
+  PERFORM pg_temp.ok(v_m3.main_index = 2,
+                     'the survivor is renumbered into the breaking table''s old index (the collision is reachable)');
+  PERFORM pg_temp.ok(v_m2.main_index > v_m3.main_index,
+                     format('and the breaking table was moved above the live range (%s)', v_m2.main_index));
+  PERFORM pg_temp.ok(v_m2.lifecycle = 'breaking', 'its lifecycle is untouched');
+  SELECT count(*) INTO v_dupes FROM (
+    SELECT main_index FROM public.tables
+     WHERE cluster_id = g AND role = 'main' AND main_index IS NOT NULL
+       AND lifecycle <> 'closed' AND coalesce(is_deleted, false) = false
+     GROUP BY 1 HAVING count(*) > 1) d;
+  PERFORM pg_temp.ok(v_dupes = 0, 'no two open tables of the game share a main_index');
+  PERFORM pg_temp.ok(r->'actions' @> jsonb_build_array(jsonb_build_object('breaking_main_renumbered', m2)),
+                     format('the tick says so: %s', r->'actions'));
+END $$;
+ROLLBACK;
+\echo '     rolled back'
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- BOARDS 15-18 were added on 2026-09-10 (lane A follow-up). THEY REQUIRE
+--   20260910181433  the_balancer_balances_feeders_and_leaves_the_mains_to_must_move
+--   20260910181447  a_refusal_gets_its_minute_from_the_moment_it_was_refused
+--   20260909181642  every_expiry_says_why_including_the_executors (with the F4 fold)
+-- Board 14 stays LAST in the file: it holds the maintenance advisory lock.
+-- ═══════════════════════════════════════════════════════════════════════════
+\echo
+\echo '---- BOARD 15: the round trip is gone - the balancer leaves a full main alone, and the tick has nothing to reverse (J-1, 20260910181433)'
+BEGIN;
+DO $$
+DECLARE g uuid; m1 uuid; m2 uuid; f uuid; n integer; r jsonb; c integer;
+BEGIN
+  g := pg_temp.pick_dormant_game(); IF g IS NULL THEN RAISE EXCEPTION 'no dormant game to build on'; END IF;
+  m1 := pg_temp.main1(g);
+  UPDATE public.tables SET max_players = 2 WHERE id = m1;  PERFORM pg_temp.fill(m1, 2);   -- Main 1 full
+  m2 := public.fn_cash_cluster_open_table(g, 'main', 2, 'live', NULL);
+  UPDATE public.tables SET max_players = 3 WHERE id = m2;  PERFORM pg_temp.fill(m2, 3);   -- Main 2 full
+  f := public.fn_cash_cluster_open_table(g, 'feeder', NULL, 'live', NULL);
+  PERFORM pg_temp.fill(f, 1);                                                             -- feeder at 1
+  RAISE NOTICE '      game % : Main 1 %/2 full, Main 2 %/3 full, feeder 1 (%)', g, m1, m2, f;
+
+  -- The 20260906011318 pool was "everything but Main 1": Main 2 (3) vs the
+  -- feeder (1) satisfied hi - lo >= 2, hi >= 3, lo >= 1 and the newest
+  -- arrival on Main 2 was sent to the feeder - then step 2 sent the
+  -- longest-seated feeder player straight back. 355 exact round trips in
+  -- one hour on production (lane J section 6).
+  n := public.fn_cash_cluster_balance(g, clock_timestamp());
+  PERFORM pg_temp.ok(n = 0, format('the balancer plans %s moves on Main 1 full / Main 2 full / feeder at 1', n));
+  r := pg_temp.tick(g, 0);
+  n := public.fn_cash_cluster_balance(g, clock_timestamp());
+  SELECT count(*) INTO c FROM pg_temp.pending(g);
+  PERFORM pg_temp.ok(c = 0 AND n = 0, format('a full tick + balance pass plans nothing (pending=%s, balanced=%s): no leg to reverse, no round trip', c, n));
+  PERFORM pg_temp.ok(NOT EXISTS (SELECT 1 FROM pg_temp.pending(g) p WHERE p.from_role = 'main' AND p.to_role = 'feeder'),
+                     'no move takes a player off a main onto the feeder');
+  -- a main with an OPEN seat still gets nobody from the balancer: that seat is step 2's
+  UPDATE public.tables SET max_players = 4 WHERE id = m2;
+  n := public.fn_cash_cluster_balance(g, clock_timestamp());
+  PERFORM pg_temp.ok(n = 0, 'a main with an open seat receives no balance move');
+  r := pg_temp.tick(g, 0);
+  PERFORM pg_temp.ok(EXISTS (SELECT 1 FROM pg_temp.pending(g) p WHERE p.reason = 'must_move' AND p.to_table_id = m2 AND p.from_table_id = f),
+                     'and step 2 fills it from the feeder, in must-move order, as the rule says');
+END $$;
+ROLLBACK;
+\echo '     rolled back'
+
+-- ═══════════════════════════════════════════════════════════════════════════
+\echo
+\echo '---- BOARD 16: two feeders still balance to within one player of each other (20260910181433)'
+BEGIN;
+DO $$
+DECLARE g uuid; m1 uuid; fa uuid; fb uuid; players uuid[]; n integer; r record; t jsonb;
+BEGIN
+  g := pg_temp.pick_dormant_game(); IF g IS NULL THEN RAISE EXCEPTION 'no dormant game to build on'; END IF;
+  m1 := pg_temp.main1(g);
+  UPDATE public.tables SET max_players = 2 WHERE id = m1;  PERFORM pg_temp.fill(m1, 2);   -- Main 1 full: step 2 idle
+  fa := public.fn_cash_cluster_open_table(g, 'feeder', NULL, 'live', NULL);
+  fb := public.fn_cash_cluster_open_table(g, 'feeder', NULL, 'live', NULL);
+  players := pg_temp.fill(fa, 3);                                                         -- feeder A at 3
+  PERFORM pg_temp.fill(fb, 1);                                                            -- feeder B at 1
+  RAISE NOTICE '      game % : Main 1 full, feeder A % at 3, feeder B % at 1', g, fa, fb;
+  n := public.fn_cash_cluster_balance(g, clock_timestamp());
+  SELECT * INTO r FROM pg_temp.pending(g) LIMIT 1;
+  PERFORM pg_temp.ok(n = 1 AND r.reason = 'balance' AND r.from_table_id = fa AND r.to_table_id = fb,
+                     format('feeder A (3) -> feeder B (1): %s balance move planned, feeder -> feeder', n));
+  PERFORM pg_temp.ok(r.player_id = players[3], 'and it is the NEWEST arrival on feeder A who moves');
+  t := pg_temp.tick(g, 0);
+  PERFORM pg_temp.ok((SELECT count(*) FROM pg_temp.pending(g)) = 1
+                 AND NOT EXISTS (SELECT 1 FROM pg_temp.pending(g) p WHERE p.reason = 'must_move'),
+                     'the tick plans no must_move against it (Main 1 is full); the balance stands');
+  n := public.fn_cash_cluster_balance(g, clock_timestamp());
+  PERFORM pg_temp.ok(n = 0, 'a second pass plans nothing: A counts 2 outbound-adjusted, B counts 2 inbound-adjusted');
+END $$;
+ROLLBACK;
+\echo '     rolled back'
+
+-- ═══════════════════════════════════════════════════════════════════════════
+\echo
+\echo '---- BOARD 17: a refusal gets its minute from the moment it was refused (A7, 20260910181447)'
+BEGIN;
+DO $$
+DECLARE g uuid; m1 uuid; fa uuid; fb uuid; mv record; mv2 record; n integer; who uuid;
+BEGIN
+  g := pg_temp.pick_dormant_game(); IF g IS NULL THEN RAISE EXCEPTION 'no dormant game to build on'; END IF;
+  m1 := pg_temp.main1(g);
+  UPDATE public.tables SET max_players = 2 WHERE id = m1;  PERFORM pg_temp.fill(m1, 2);
+  fa := public.fn_cash_cluster_open_table(g, 'feeder', NULL, 'live', NULL);
+  fb := public.fn_cash_cluster_open_table(g, 'feeder', NULL, 'live', NULL);
+  PERFORM pg_temp.fill(fa, 3);  PERFORM pg_temp.fill(fb, 1);
+  n := public.fn_cash_cluster_balance(g, clock_timestamp());
+  SELECT m.* INTO mv FROM public.cash_seat_moves m WHERE m.game_id = g AND m.state = 'pending' AND m.reason = 'balance';
+  PERFORM pg_temp.ok(n = 1 AND mv.resolved_at IS NULL, 'a pending move carries no resolved_at');
+  -- the engine refuses it, the way an executor does
+  UPDATE public.cash_seat_moves SET state = 'cancelled', note = 'destination_full' WHERE id = mv.id;
+  SELECT m.* INTO mv FROM public.cash_seat_moves m WHERE m.id = mv.id;
+  PERFORM pg_temp.ok(mv.resolved_at IS NOT NULL AND mv.resolved_at >= mv.created_at,
+                     format('the refusal is stamped by the trigger: resolved_at=%s', mv.resolved_at));
+  -- Planned ten minutes ago, refused just now. Under the old rule (created_at)
+  -- the minute was long gone and THIS player - the newest arrival, the
+  -- balancer's first choice - was re-planned at once.
+  UPDATE public.cash_seat_moves SET created_at = clock_timestamp() - interval '10 minutes' WHERE id = mv.id;
+  n := public.fn_cash_cluster_balance(g, clock_timestamp());
+  SELECT p.player_id INTO who FROM pg_temp.pending(g) p;
+  PERFORM pg_temp.ok(n = 1 AND who <> mv.player_id,
+                     'planned 10 min ago, refused now: the refused player is backed off and the balancer takes the next newest');
+  SELECT m.* INTO mv2 FROM public.cash_seat_moves m WHERE m.game_id = g AND m.state = 'pending';
+  UPDATE public.cash_seat_moves SET state = 'cancelled', note = 'destination_full' WHERE id = mv2.id;
+  UPDATE public.cash_seat_moves SET resolved_at = clock_timestamp() - interval '61 seconds' WHERE id = mv.id;
+  n := public.fn_cash_cluster_balance(g, clock_timestamp());
+  SELECT p.player_id INTO who FROM pg_temp.pending(g) p;
+  PERFORM pg_temp.ok(n = 1 AND who = mv.player_id,
+                     'refused 61 s ago: that player''s minute is served and they are planned again; the one refused just now is not');
+  SELECT m.* INTO mv2 FROM public.cash_seat_moves m WHERE m.game_id = g AND m.state = 'pending';
+  UPDATE public.cash_seat_moves SET state = 'done', executed_at = clock_timestamp() WHERE id = mv2.id;
+  SELECT m.* INTO mv2 FROM public.cash_seat_moves m WHERE m.id = mv2.id;
+  PERFORM pg_temp.ok(mv2.state = 'done' AND mv2.resolved_at IS NOT NULL AND mv2.executed_at IS NOT NULL,
+                     'a landed move carries both executed_at and resolved_at');
+END $$;
+ROLLBACK;
+\echo '     rolled back'
+
+-- ═══════════════════════════════════════════════════════════════════════════
+\echo
+\echo '---- BOARD 18: the swap gate refuses a destination that does not exist (F4, folded into 20260909181642)'
+BEGIN;
+DO $$
+DECLARE v_swap text;
+BEGIN
+  v_swap := pg_get_functiondef('public.fn_cash_seat_swap_execute_before_maintenance_gate'::regproc);
+  PERFORM pg_temp.ok(position('ta.id IS NULL OR tb.id IS NULL' in v_swap) > 0
+                 AND position($q$ta.status NOT IN ('waiting', 'running', 'active')$q$ in v_swap) > 0
+                 AND position($q$tb.status NOT IN ('waiting', 'running', 'active')$q$ in v_swap) > 0,
+                     'both destinations must exist and be open by lifecycle AND status');
+  PERFORM pg_temp.ok(position($q$IF ta.lifecycle IN ('breaking', 'closed') OR tb.lifecycle IN ('breaking', 'closed') THEN$q$ in v_swap) = 0,
+                     'the lifecycle-only test is gone');
+END $$;
+ROLLBACK;
+\echo '     rolled back'
+
+-- ═══════════════════════════════════════════════════════════════════════════
+\echo
+\echo '---- BOARD 14: a move planned before the park is HELD, not expired, and not blamed on the engine (20260909181632)'
+-- THIS BOARD WRITES engine_maintenance_break, whose statement trigger takes
+-- pg_advisory_xact_lock(530090, 1) EXCLUSIVE for the rest of the transaction -
+-- and every live fn_cash_seat_move_execute takes the same key in SHARE mode.
+-- It is therefore LAST in the file and its transaction is rolled back
+-- immediately, so the lock is held for about a second. Do not move it earlier
+-- and do not add statements after the ROLLBACK.
+BEGIN;
+DO $$
+DECLARE g uuid; m1 uuid; f uuid; p uuid; mv public.cash_seat_moves%ROWTYPE; r jsonb; e0 timestamptz;
+BEGIN
+  g := pg_temp.pick_dormant_game(); IF g IS NULL THEN RAISE EXCEPTION 'no dormant game to build on'; END IF;
+  m1 := pg_temp.main1(g);
+  f := public.fn_cash_cluster_open_table(g, 'feeder', NULL, 'live', NULL);
+  p := pg_temp.seat_copy(f, 1);
+  RAISE NOTICE '      game % main1 % feeder % player %', g, m1, f, p;
+
+  r := pg_temp.tick(g, 0);
+  SELECT * INTO mv FROM public.cash_seat_moves WHERE game_id = g AND player_id = p AND state = 'pending';
+  PERFORM pg_temp.ok(mv.id IS NOT NULL AND mv.to_table_id = m1 AND mv.reason = 'must_move',
+                     format('the tick planned a must_move for the feeder player onto Main 1 (%s)', mv.id));
+
+  -- The :52:30-to-:55:00 window: fn_entry_purchases_frozen() is true from
+  -- announced_at - 30s, fn_platform_frozen() only from announced_at + 2min.
+  UPDATE public.cash_seat_moves SET expires_at = clock_timestamp() - interval '1 second' WHERE id = mv.id;
+  INSERT INTO public.engine_maintenance_break
+    (id, phase, announced_at, break_started_at, break_ends_at, reason, declared_by, enforce_freeze, ownership_token)
+  VALUES (true, 'last_hand', clock_timestamp(), NULL, NULL,
+          'probe-cluster-boards (rolled back)', 'probe-cluster-boards', true, gen_random_uuid());
+  PERFORM pg_temp.ok(public.fn_entry_purchases_frozen() AND NOT public.fn_platform_frozen(),
+                     'the board is in the park window: entry purchases frozen, platform not yet frozen');
+  PERFORM pg_temp.ok(public.fn_cash_seat_move_execute(mv.id) ->> 'reason' = 'platform_frozen',
+                     'and the executor refuses this exact move with platform_frozen');
+
+  SELECT expires_at INTO e0 FROM public.cash_seat_moves WHERE id = mv.id;
+  r := pg_temp.tick(g, 0);
+  SELECT * INTO mv FROM public.cash_seat_moves WHERE id = mv.id;
+  PERFORM pg_temp.ok(mv.state = 'pending', format('the move is still pending, not expired (state=%s)', mv.state));
+  PERFORM pg_temp.ok(mv.expires_at > clock_timestamp() AND mv.expires_at >= e0,
+                     'its deadline was held forward past now, and never shortened');
+  PERFORM pg_temp.ok(r->'actions' @> '[{"moves_held_for_maintenance": 1}]'::jsonb,
+                     format('the tick says so: %s', r->'actions'));
+
+  DELETE FROM public.engine_maintenance_break;
+  UPDATE public.cash_seat_moves SET expires_at = clock_timestamp() - interval '1 second' WHERE id = mv.id;
+  r := pg_temp.tick(g, 0);
+  SELECT * INTO mv FROM public.cash_seat_moves WHERE id = mv.id;
+  PERFORM pg_temp.ok(mv.state = 'expired' AND mv.note = 'engine_did_not_execute_before_expiry',
+                     format('outside the park it expires exactly as before (state=%s note=%s)', mv.state, mv.note));
+END $$;
+ROLLBACK;
+\echo '     rolled back'
+
 \echo
 \echo ================================================================
-\echo  all ten boards passed; every transaction was rolled back
+\echo  all eighteen boards passed; every transaction was rolled back
 \echo ================================================================

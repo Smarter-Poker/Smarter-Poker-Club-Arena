@@ -347,8 +347,17 @@ describe('2. a table over the cap drains through the engine, never a mid-hand cu
     // closing. The columns this pin was written for (settings, for
     // isRetiringTable, and cluster_id, for the drain below) are still there.
     // 2026-09-05 (no lone horse): and created_at, for the opening-feeder grace.
+    /* 2026-09-09: THE EMBED NAMES ITS PARENT NOW, and the pin moved with it
+       (CLAUDE.md 10.6). `table_seats` gained two composite foreign keys to
+       `tables` that afternoon, so the unqualified `tables!inner(...)` this
+       used to pin was refused by PostgREST (PGRST201) and the rotator read
+       nothing for three and a half hours. The COLUMNS this pin was written
+       for are the point and every one of them is still asserted below; what
+       changed is that the relationship is named, which is strictly stronger -
+       the read can no longer be broken from a distance by a migration in
+       another lane. */
     expect(ROTATOR).toMatch(
-      /tables!inner\(id, big_blind, tournament_id, status, settings, cluster_id, role, main_index, lifecycle, created_at\)/
+      /tables!table_seats_table_id_fkey!inner\(id, big_blind, tournament_id, status, settings, cluster_id, role, main_index, lifecycle, created_at\)/
     );
     // 2026-09-05: and the drain never touches a cluster table.
     expect(ROTATOR).toMatch(

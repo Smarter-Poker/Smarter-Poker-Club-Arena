@@ -1,0 +1,119 @@
+
+[1m[30m[46m RUN [49m[39m[22m [36mv4.1.11 [39m[90m/Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-clock-final-sep10[39m
+
+ [32m✓[39m tests/unit/spinLevelDurationIsSeconds.test.ts [2m([22m[2m12 tests[22m[2m)[22m[32m 3[2mms[22m[39m
+[90mstderr[2m | tests/unit/TournamentTimerService.test.ts[2m > [22m[2mTournamentTimerService[2m > [22m[2mtimer lifecycle[2m > [22m[2mshould not create duplicate timers
+[22m[39m[TournamentTimerService.Timer_already_running_for_tournamentId] Error: [TournamentTimer] Timer already running for t1
+    at TournamentTimerServiceClass.startTimer [90m(/Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-clock-final-sep10/[39msrc/services/TournamentTimerService.ts:62:9[90m)[39m
+    at [90m/Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-clock-final-sep10/[39mtests/unit/TournamentTimerService.test.ts:191:30
+    at [90mfile:///Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-clock-final-sep10/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:302:11
+    at [90mfile:///Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-clock-final-sep10/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:1903:26
+    at [90mfile:///Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-clock-final-sep10/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2326:20
+    at new Promise (<anonymous>)
+    at runWithCancel [90m(file:///Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-clock-final-sep10/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2323:10[90m)[39m
+    at [90mfile:///Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-clock-final-sep10/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2305:20
+    at new Promise (<anonymous>)
+    at runWithTimeout [90m(file:///Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-clock-final-sep10/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2272:10[90m)[39m
+
+ [32m✓[39m tests/unit/TournamentTimerService.test.ts [2m([22m[2m16 tests[22m[2m)[22m[32m 11[2mms[22m[39m
+[90mstderr[2m | tests/unit/TournamentService.test.ts[2m > [22m[2mTournamentService[2m > [22m[2munregisterPlayer (AUDIT M19)[2m > [22m[2mretains the original identity after both transport attempts fail
+[22m[39m[TournamentService.unregisterPlayer_result_unconfirmed] Error: Lost Replay
+    at [90m/Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-clock-final-sep10/[39mtests/unit/TournamentService.test.ts:353:32
+    at [90mfile:///Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-clock-final-sep10/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:302:11
+    at [90mfile:///Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-clock-final-sep10/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:1903:26
+    at [90mfile:///Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-clock-final-sep10/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2326:20
+    at new Promise (<anonymous>)
+    at runWithCancel [90m(file:///Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-clock-final-sep10/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2323:10[90m)[39m
+    at [90mfile:///Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-clock-final-sep10/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2305:20
+    at new Promise (<anonymous>)
+    at runWithTimeout [90m(file:///Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-clock-final-sep10/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2272:10[90m)[39m
+    at [90mfile:///Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-clock-final-sep10/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2956:64
+
+[90mstderr[2m | tests/unit/TournamentService.test.ts[2m > [22m[2mTournamentService[2m > [22m[2munregisterPlayer (AUDIT M19)[2m > [22m[2mretries one unknown outcome and then fails closed
+[22m[39m[TournamentService.unregisterPlayer_result_unconfirmed] { message: [32m'boom'[39m }
+
+[90mstderr[2m | tests/unit/TournamentService.test.ts[2m > [22m[2mTournament Purchase Confirmation[2m > [22m[2mreplays the exact rebuy purchase after eligibility and level change
+[22m[39m[TournamentService.Rebuy_RPC_outcome_unconfirmed] Error: Lost Response
+    at [90m/Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-clock-final-sep10/[39mtests/unit/TournamentService.test.ts:709:58
+    at [90mfile:///Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-clock-final-sep10/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:302:11
+    at [90mfile:///Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-clock-final-sep10/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:1903:26
+    at [90mfile:///Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-clock-final-sep10/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2326:20
+    at new Promise (<anonymous>)
+    at runWithCancel [90m(file:///Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-clock-final-sep10/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2323:10[90m)[39m
+    at [90mfile:///Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-clock-final-sep10/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2305:20
+    at new Promise (<anonymous>)
+    at runWithTimeout [90m(file:///Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-clock-final-sep10/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2272:10[90m)[39m
+    at [90mfile:///Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-clock-final-sep10/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2956:64
+
+[90mstderr[2m | tests/unit/TournamentService.test.ts[2m > [22m[2mTournament Purchase Confirmation[2m > [22m[2mpreserves an unknown transport outcome for rebuy
+[22m[39m[TournamentService.Rebuy_RPC_outcome_unconfirmed] Error: Response Lost
+    at [90m/Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-clock-final-sep10/[39mtests/unit/TournamentService.test.ts:731:21
+    at [90mfile:///Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-clock-final-sep10/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:302:11
+    at [90mfile:///Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-clock-final-sep10/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:1903:26
+    at [90mfile:///Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-clock-final-sep10/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2326:20
+    at new Promise (<anonymous>)
+    at runWithCancel [90m(file:///Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-clock-final-sep10/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2323:10[90m)[39m
+    at [90mfile:///Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-clock-final-sep10/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2305:20
+    at new Promise (<anonymous>)
+    at runWithTimeout [90m(file:///Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-clock-final-sep10/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2272:10[90m)[39m
+    at [90mfile:///Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-clock-final-sep10/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2956:64
+
+[90mstderr[2m | tests/unit/TournamentService.test.ts[2m > [22m[2mTournament Purchase Confirmation[2m > [22m[2mreplays the exact reentry purchase after eligibility and level change
+[22m[39m[TournamentService.Rebuy_RPC_outcome_unconfirmed] Error: Lost Response
+    at [90m/Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-clock-final-sep10/[39mtests/unit/TournamentService.test.ts:709:58
+    at [90mfile:///Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-clock-final-sep10/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:302:11
+    at [90mfile:///Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-clock-final-sep10/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:1903:26
+    at [90mfile:///Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-clock-final-sep10/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2326:20
+    at new Promise (<anonymous>)
+    at runWithCancel [90m(file:///Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-clock-final-sep10/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2323:10[90m)[39m
+    at [90mfile:///Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-clock-final-sep10/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2305:20
+    at new Promise (<anonymous>)
+    at runWithTimeout [90m(file:///Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-clock-final-sep10/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2272:10[90m)[39m
+    at [90mfile:///Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-clock-final-sep10/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2956:64
+
+[90mstderr[2m | tests/unit/TournamentService.test.ts[2m > [22m[2mTournament Purchase Confirmation[2m > [22m[2mpreserves an unknown transport outcome for reentry
+[22m[39m[TournamentService.Rebuy_RPC_outcome_unconfirmed] Error: Response Lost
+    at [90m/Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-clock-final-sep10/[39mtests/unit/TournamentService.test.ts:731:21
+    at [90mfile:///Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-clock-final-sep10/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:302:11
+    at [90mfile:///Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-clock-final-sep10/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:1903:26
+    at [90mfile:///Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-clock-final-sep10/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2326:20
+    at new Promise (<anonymous>)
+    at runWithCancel [90m(file:///Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-clock-final-sep10/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2323:10[90m)[39m
+    at [90mfile:///Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-clock-final-sep10/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2305:20
+    at new Promise (<anonymous>)
+    at runWithTimeout [90m(file:///Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-clock-final-sep10/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2272:10[90m)[39m
+    at [90mfile:///Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-clock-final-sep10/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2956:64
+
+[90mstderr[2m | tests/unit/TournamentService.test.ts[2m > [22m[2mTournament Purchase Confirmation[2m > [22m[2mreplays the exact addon purchase after eligibility and level change
+[22m[39m[TournamentService.Addon_RPC_outcome_unconfirmed] Error: Lost Response
+    at [90m/Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-clock-final-sep10/[39mtests/unit/TournamentService.test.ts:709:58
+    at [90mfile:///Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-clock-final-sep10/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:302:11
+    at [90mfile:///Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-clock-final-sep10/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:1903:26
+    at [90mfile:///Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-clock-final-sep10/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2326:20
+    at new Promise (<anonymous>)
+    at runWithCancel [90m(file:///Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-clock-final-sep10/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2323:10[90m)[39m
+    at [90mfile:///Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-clock-final-sep10/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2305:20
+    at new Promise (<anonymous>)
+    at runWithTimeout [90m(file:///Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-clock-final-sep10/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2272:10[90m)[39m
+    at [90mfile:///Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-clock-final-sep10/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2956:64
+
+[90mstderr[2m | tests/unit/TournamentService.test.ts[2m > [22m[2mTournament Purchase Confirmation[2m > [22m[2mpreserves an unknown transport outcome for addon
+[22m[39m[TournamentService.Addon_RPC_outcome_unconfirmed] Error: Response Lost
+    at [90m/Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-clock-final-sep10/[39mtests/unit/TournamentService.test.ts:731:21
+    at [90mfile:///Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-clock-final-sep10/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:302:11
+    at [90mfile:///Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-clock-final-sep10/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:1903:26
+    at [90mfile:///Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-clock-final-sep10/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2326:20
+    at new Promise (<anonymous>)
+    at runWithCancel [90m(file:///Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-clock-final-sep10/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2323:10[90m)[39m
+    at [90mfile:///Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-clock-final-sep10/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2305:20
+    at new Promise (<anonymous>)
+    at runWithTimeout [90m(file:///Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-clock-final-sep10/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2272:10[90m)[39m
+    at [90mfile:///Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-clock-final-sep10/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2956:64
+
+ [32m✓[39m tests/unit/TournamentService.test.ts [2m([22m[2m90 tests[22m[2m)[22m[32m 27[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m3 passed[39m[22m[90m (3)[39m
+[2m      Tests [22m [1m[32m118 passed[39m[22m[90m (118)[39m
+[2m   Start at [22m 13:14:41
+[2m   Duration [22m 621ms[2m (transform 320ms, setup 329ms, import 306ms, tests 42ms, environment 624ms)[22m
+

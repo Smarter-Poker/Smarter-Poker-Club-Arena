@@ -444,6 +444,7 @@ jobs:
           run_suite sweep.json \
             tests/e2e/smoke.spec.ts \
             tests/e2e/club-data-deep.spec.ts \
+            tests/e2e/production-mobile-lobby-chrome.spec.ts \
             tests/e2e/mobile-fit-audit.spec.ts \
             tests/e2e/mobile-tap-targets.spec.ts \
             tests/e2e/mobile-input-zoom.spec.ts \
@@ -455,6 +456,7 @@ jobs:
             tests/e2e/tournament-buy-in-dialog.spec.ts \
             tests/e2e/tournament-watch.spec.ts \
             tests/e2e/footer-route.spec.ts \
+            tests/e2e/mobile-lobby-chrome.spec.ts \
             tests/e2e/header-portrait-frame.spec.ts \
             tests/e2e/routes \
             --reporter=line,json --workers=2 --retries=0

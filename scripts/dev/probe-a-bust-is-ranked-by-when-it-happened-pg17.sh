@@ -2,8 +2,13 @@
 # A BUST IS RANKED BY WHEN IT HAPPENED - PostgreSQL 17 behaviour gate.
 #
 # Runs every scenario in scripts/dev/fixtures/a-bust-is-ranked-by-when-it-happened
-# against a byte-exact capture of the LIVE knockout door, standings normalizer and
-# place prepare (installed.sql), then applies the migration twice and runs them
+# against a byte-exact capture of the LIVE bodies (installed.sql): the engine's
+# terminal cash authority (fn_settle_tournament_places), both knockout doors and
+# their write halves, the standings normalizer, the place prepare and the
+# unfinished-finish alarm. The money authorities the settlement calls - the
+# settlement lane, guarantee funding and the raw place payer - are small test
+# doubles in bootstrap.sql, named as such; everything the migration pins is the
+# captured production body. Then it applies the migration twice and runs them
 # all again:
 #
 #   FIXED scenarios must FAIL on the live bodies, on a probe assertion (never on

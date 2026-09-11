@@ -43,6 +43,13 @@ BEGIN
   ON CONFLICT (table_id, hand_id) DO UPDATE
      SET result = jsonb_set(public.settlement_idempotency_keys.result, '{written}',
            (public.settlement_idempotency_keys.result->'written') || jsonb_build_object(p_user::text, 0));
+  -- The hand's history row, which the bounty door reads: the player ends it at 0.
+  INSERT INTO public.hand_history (id, table_id, tournament_id, hand_number, created_at, players)
+  VALUES (v_hand_id, p_table, p_tournament, p_hand, p_committed_at,
+          jsonb_build_array(jsonb_build_object('userId', p_user::text, 'stack', 0)))
+  ON CONFLICT (id) DO UPDATE
+     SET players = public.hand_history.players
+                   || jsonb_build_array(jsonb_build_object('userId', p_user::text, 'stack', 0));
   INSERT INTO public.table_seats (table_id, seat_number, user_id, stack, joined_at, left_at)
   VALUES (p_table, 1 + (p_hand % 9)::integer, p_user, 0,
           p_committed_at - interval '1 hour', p_committed_at + interval '2 seconds')
@@ -92,4 +99,62 @@ $$;
 CREATE FUNCTION probe.state(p_candidate uuid) RETURNS text
 LANGUAGE sql AS $$
   SELECT c.state FROM public.tournament_knockout_candidates c WHERE c.id = p_candidate;
+$$;
+
+-- A later hand of the event that deals p_user in with p_stack chips.
+CREATE FUNCTION probe.dealt(p_tournament uuid, p_table uuid, p_user uuid, p_hand bigint,
+                            p_stack numeric, p_at timestamptz)
+RETURNS void LANGUAGE sql AS $$
+  INSERT INTO public.hand_history (id, table_id, tournament_id, hand_number, created_at, players)
+  VALUES (md5('hand:' || p_hand)::uuid, p_table, p_tournament, p_hand, p_at,
+          jsonb_build_array(jsonb_build_object('userId', p_user::text, 'stack', p_stack)))
+  ON CONFLICT (id) DO UPDATE
+     SET players = public.hand_history.players
+                   || jsonb_build_array(jsonb_build_object('userId', p_user::text, 'stack', p_stack));
+$$;
+
+-- The bounty door, bound to the player's latest generation exactly as the
+-- engine calls it; the claimants are left for the door to work out.
+CREATE FUNCTION probe.claim(p_tournament uuid, p_user uuid, p_position integer, p_prize numeric DEFAULT 0)
+RETURNS jsonb LANGUAGE sql AS $$
+  SELECT public.fn_claim_tournament_bounty_elimination(
+           p_tournament, p_user, p_position, p_prize, c.table_id, c.hand_id, c.hand_number,
+           c.seat_joined_at, NULL, NULL, 0, false)
+    FROM public.tournament_knockout_candidates c
+   WHERE c.tournament_id = p_tournament AND c.eliminated_user_id = p_user
+   ORDER BY c.hand_number DESC, c.id DESC
+   LIMIT 1;
+$$;
+
+-- The engine's terminal cash authority, called as fn_complete_tournament_terminal calls it.
+CREATE FUNCTION probe.settle(p_tournament uuid, p_winner uuid) RETURNS jsonb
+LANGUAGE sql AS $$
+  SELECT public.fn_settle_tournament_places(p_tournament, p_winner);
+$$;
+
+-- The roster as 'user=position/prize', best place first; users by their last hex digit.
+CREATE FUNCTION probe.roster(p_tournament uuid) RETURNS text
+LANGUAGE sql AS $$
+  SELECT string_agg(right(tp.user_id::text, 1) || '=' || COALESCE(tp.position::text, '-')
+                    || '/' || round(COALESCE(tp.prize, 0), 2), ',' ORDER BY tp.position NULLS LAST, tp.user_id)
+    FROM public.tournament_players tp WHERE tp.tournament_id = p_tournament;
+$$;
+
+-- What each place was paid, as 'place:user:amount'.
+CREATE FUNCTION probe.paid(p_tournament uuid) RETURNS text
+LANGUAGE sql AS $$
+  SELECT string_agg(p.position || ':' || right(p.user_id::text, 1) || ':' || round(p.amount, 2), ','
+                    ORDER BY p.position)
+    FROM public.tournament_payouts p WHERE p.tournament_id = p_tournament;
+$$;
+
+-- A settlement refusal, as its message (NULL when it settled).
+CREATE FUNCTION probe.settle_refusal(p_tournament uuid, p_winner uuid) RETURNS text
+LANGUAGE plpgsql AS $$
+BEGIN
+  PERFORM public.fn_settle_tournament_places(p_tournament, p_winner);
+  RETURN NULL;
+EXCEPTION WHEN OTHERS THEN
+  RETURN SQLERRM;
+END;
 $$;

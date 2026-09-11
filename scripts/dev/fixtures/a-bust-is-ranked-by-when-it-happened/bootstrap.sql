@@ -199,3 +199,190 @@ INSERT INTO public.spin_payout_ladder (multiplier, structure) VALUES
 -- The seat-first player-count mirror is not what these probes are about.
 CREATE FUNCTION public.fn_sync_seat_first_player_count(p_tournament_id uuid)
 RETURNS integer LANGUAGE sql AS $$ SELECT 0 $$;
+
+-- ---------------------------------------------------------------------------
+-- The place settlement and the bounty door (2026-09-11, second pass). The
+-- columns and tables they read, with production's types and constraints.
+-- ---------------------------------------------------------------------------
+ALTER TABLE public.tournaments
+  ADD COLUMN bounty_amount numeric DEFAULT 0,
+  ADD COLUMN bounty_pool numeric NOT NULL DEFAULT 0,
+  ADD COLUMN mystery_bounty_stage text NOT NULL DEFAULT 'pending',
+  ADD COLUMN mystery_bounty_activation_generation bigint NOT NULL DEFAULT 0,
+  ADD COLUMN started_at timestamptz;
+ALTER TABLE public.tournament_players
+  ADD COLUMN current_bounty numeric DEFAULT 0;
+
+CREATE TABLE public.hand_history (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  created_at timestamptz DEFAULT now(),
+  table_id uuid,
+  tournament_id uuid,
+  hand_number integer,
+  players jsonb DEFAULT '[]'::jsonb
+);
+
+CREATE TABLE public.tournament_bounty_obligations (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tournament_id uuid NOT NULL REFERENCES public.tournaments(id),
+  eliminated_user_id uuid NOT NULL,
+  table_id uuid NOT NULL,
+  hand_id uuid NOT NULL,
+  hand_number bigint NOT NULL CHECK (hand_number >= 1000000),
+  settlement_completed_at timestamptz NOT NULL,
+  seat_joined_at timestamptz NOT NULL,
+  position integer NOT NULL CHECK (position >= 2),
+  prize numeric NOT NULL CHECK (prize >= 0),
+  bubble_refund numeric NOT NULL DEFAULT 0 CHECK (bubble_refund >= 0),
+  mode text NOT NULL CHECK (mode = ANY (ARRAY['regular', 'pko', 'mystery_pre', 'mystery_chest'])),
+  activation_generation bigint NOT NULL DEFAULT 0 CHECK (activation_generation >= 0),
+  head_amount numeric NOT NULL CHECK (head_amount > 0),
+  knocker_user_id uuid NOT NULL,
+  claimants jsonb NOT NULL CHECK (jsonb_typeof(claimants) = 'array'),
+  state text NOT NULL DEFAULT 'pending' CHECK (state = ANY (ARRAY['pending', 'settled'])),
+  attempt_count integer NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
+  next_attempt_at timestamptz NOT NULL DEFAULT now(),
+  last_error text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  settled_at timestamptz,
+  CHECK ((mode = 'mystery_chest' AND activation_generation > 0)
+         OR (mode <> 'mystery_chest' AND activation_generation = 0)),
+  UNIQUE (tournament_id, eliminated_user_id, seat_joined_at),
+  UNIQUE (tournament_id, hand_number, eliminated_user_id)
+);
+
+CREATE TABLE public.tournament_pko_settlement_watermarks (
+  tournament_id uuid PRIMARY KEY REFERENCES public.tournaments(id),
+  last_settled_hand_number bigint NOT NULL CHECK (last_settled_hand_number >= 1000000),
+  last_obligation_id uuid NOT NULL REFERENCES public.tournament_bounty_obligations(id),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE public.tournament_mystery_activation_receipts (
+  tournament_id uuid NOT NULL,
+  activation_generation bigint NOT NULL,
+  activated_at timestamptz NOT NULL,
+  chest_count integer NOT NULL,
+  pool_cents bigint NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE public.financial_alerts (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  severity text NOT NULL CHECK (severity = ANY (ARRAY['critical', 'warning', 'info'])),
+  source text NOT NULL,
+  message text NOT NULL,
+  context jsonb DEFAULT '{}'::jsonb,
+  resolved boolean NOT NULL DEFAULT false,
+  resolved_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE public.wallet_credit_idempotency (
+  key text PRIMARY KEY,
+  user_id uuid,
+  amount numeric,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- TEST DOUBLES. These stand in for money authorities the settlement calls;
+-- they are what these probes are NOT about, and none of them is md5-pinned.
+-- The one global settlement lane.
+CREATE FUNCTION public.fn_ca_lock_settlement_lane_global()
+RETURNS void LANGUAGE sql AS $$ SELECT $$;
+-- Guarantee funding: finalize the pool at no less than the guarantee.
+CREATE FUNCTION public.fn_apply_prize_guarantee(p_tournament_id uuid, p_source text)
+RETURNS jsonb LANGUAGE plpgsql AS $$
+DECLARE v_pool numeric;
+BEGIN
+  UPDATE public.tournaments
+     SET prize_pool = GREATEST(prize_pool, COALESCE(guaranteed_prize, 0)),
+         prize_pool_finalized = true
+   WHERE id = p_tournament_id
+  RETURNING prize_pool INTO v_pool;
+  RETURN jsonb_build_object('ok', true, 'overlay', 0, 'prize_pool', v_pool);
+END;
+$$;
+-- One place paid from its exact obligation, idempotently: a wallet-credit
+-- identity and a payout row for whatever is still owed.
+CREATE FUNCTION public.fn_ca_settle_tournament_place_raw(
+  p_tournament_id uuid, p_place integer, p_user_id uuid, p_amount numeric)
+RETURNS jsonb LANGUAGE plpgsql AS $$
+DECLARE
+  v_ob public.tournament_obligations%ROWTYPE;
+  v_due numeric;
+  v_key text;
+BEGIN
+  SELECT * INTO v_ob FROM public.tournament_obligations o
+   WHERE o.tournament_id = p_tournament_id AND o.kind = 'place' AND o.place = p_place
+   FOR UPDATE;
+  IF NOT FOUND OR v_ob.user_id IS DISTINCT FROM p_user_id OR v_ob.amount_owed <> p_amount THEN
+    RAISE EXCEPTION 'probe payer: no exact obligation for place %', p_place;
+  END IF;
+  v_due := v_ob.amount_owed - v_ob.amount_paid;
+  IF v_due > 0 THEN
+    v_key := 'tourney:' || p_tournament_id::text || ':obl:' || v_ob.id::text || ':place';
+    INSERT INTO public.wallet_credit_idempotency (key, user_id, amount)
+    VALUES (v_key, p_user_id, v_due);
+    INSERT INTO public.tournament_payouts (tournament_id, user_id, position, amount, source, idempotency_key)
+    VALUES (p_tournament_id, p_user_id, p_place, v_due, 'structure', v_key);
+    UPDATE public.tournament_obligations
+       SET amount_paid = amount_owed, settled_at = now()
+     WHERE id = v_ob.id;
+  END IF;
+  RETURN jsonb_build_object('fully_settled', true);
+END;
+$$;
+CREATE FUNCTION public.fn_ca_settle_tournament_bubble_raw(
+  p_tournament_id uuid, p_user_id uuid, p_amount numeric)
+RETURNS jsonb LANGUAGE plpgsql AS $$
+BEGIN
+  RAISE EXCEPTION 'probe: no scenario here carries Bubble Protection';
+END;
+$$;
+-- The exact winner of the busted player's last pot: the probe names it in
+-- probe.claimants.
+CREATE TABLE public.probe_claimants (
+  hand_id uuid NOT NULL,
+  eliminated_user_id uuid NOT NULL,
+  claimants jsonb NOT NULL,
+  PRIMARY KEY (hand_id, eliminated_user_id)
+);
+CREATE FUNCTION public.fn_exact_tournament_knockout_claimants(
+  p_tournament_id uuid, p_hand_id uuid, p_eliminated_user_id uuid)
+RETURNS jsonb LANGUAGE sql STABLE AS $$
+  SELECT c.claimants FROM public.probe_claimants c
+   WHERE c.hand_id = p_hand_id AND c.eliminated_user_id = p_eliminated_user_id;
+$$;
+
+-- What a bounty obligation's complete marker reads (the marker itself is
+-- captured byte-exact in installed.sql).
+CREATE TABLE public.tournament_bounties (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tournament_id uuid NOT NULL,
+  eliminated_player_id uuid NOT NULL,
+  collector_player_id uuid NOT NULL,
+  bounty_amount numeric NOT NULL,
+  added_to_collector_bounty numeric DEFAULT 0,
+  is_mystery_revealed boolean DEFAULT false,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  bounty_obligation_id uuid
+);
+CREATE TABLE public.tournament_bounty_awards (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tournament_id uuid NOT NULL,
+  chest_id uuid NOT NULL,
+  eliminated_user_id uuid NOT NULL,
+  amount_cents bigint NOT NULL,
+  tier text NOT NULL,
+  status text NOT NULL DEFAULT 'reserved',
+  op_id uuid NOT NULL,
+  bounty_obligation_id uuid
+);
+CREATE TABLE public.tournament_bounty_award_recipients (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  award_id uuid NOT NULL,
+  user_id uuid NOT NULL,
+  amount_cents bigint NOT NULL,
+  paid_at timestamptz
+);

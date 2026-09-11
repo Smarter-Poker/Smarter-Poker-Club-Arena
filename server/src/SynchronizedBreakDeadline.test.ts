@@ -26,6 +26,9 @@ afterEach(() => {
 function manager(id: string) {
   return Object.assign(Object.create(TournamentManagerBase.prototype), {
     tournamentId: id,
+    operationHold: null,
+    operationWork: new Map(),
+    operationWorkFailed: new Set(),
     currentLevel: 0,
     onBreak: true,
     breakCountdownStarted: false,

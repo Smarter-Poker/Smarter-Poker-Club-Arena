@@ -1,0 +1,191 @@
+{
+  "scope": "Held Club Arena actual TournamentManager operation-clock integration. No production installation or activation.",
+  "base": "7867126a0bf1c6d89f4df3eb4e75a09ee3859e43",
+  "prerequisites": {
+    "synchronized_break_wait": {
+      "original": "16a96e755802d708a2ea46db2064605e1afbb9bb",
+      "local": "e3c122305e"
+    },
+    "reviewed_server_snapshot": "a4c3897ef1",
+    "root_guard": {
+      "original": "84759d7cdb",
+      "local": "e88c307dea73260d36faad3177b126cee16a2732"
+    },
+    "maintenance_sql_commit": "78c2c18392a450dd319b5be22e6ffbc99e2053bb",
+    "maintenance_sql_sha256": "2ee989f3c7cd8406792ddd9110697d41bc24ba86237e830234311b8580d050b4",
+    "provider_sql_sha256": "487edd561b2936d84d0dc31a19eab67d373d6bfcb30489b3471b195424ef9773"
+  },
+  "owned_files_sha256": {
+    "docs/changelog/2026-09-11-tournament-clocks-adopt-committed-operation-waves.md": "7c20d2c6cac7573ea6be71e3d01ba80e1a9afd1881003d1644434f79a2c5fe8f",
+    "docs/changelog/evidence/2026-09-11-tournament-operation-prerequisites.json": "01c14331376b65b325f51fc9d9a1b510928f167a95b7ae481e1bd271136ffcdd",
+    "server/src/GameServer.ts": "e82c3758052381b13273569dd19590872d152d997e5646a9b5e65bd6d825bd05",
+    "server/src/SynchronizedBreakDeadline.test.ts": "0ddc10d00459b5399222bfe6594b904e28bbb5715d13f9820109d7705c9154cc",
+    "server/src/engine/PresenceSurvivesTheRestart.test.ts": "6dfa19aa98d104fbd6de79bd4f82570c0be838c4d7faa594da5ca66c89092ec9",
+    "server/src/maintenance/MaintenanceBreak.ts": "70bceb01f8b5a9c9d0118685f1363e6a61d4dbc873b6bcec1d0098f37127eb4f",
+    "server/src/maintenance/OperationMaintenanceRuntime.ts": "45b6ee0074183ada351e4d90c1abdceee9039f67e0829b286df9cdab5380a89c",
+    "server/src/maintenance/OperationTournament.ts": "94d3e3736fde3ffcd6befb13959bf38b28e1219cc32393622c7ee84db074f12a",
+    "server/src/tournament/AddOnFundingFinalization.test.ts": "4ead6289782a922b3b268b96c13641fbbac89c095cacbc02e849cc08513a189f",
+    "server/src/tournament/BlindLevelTransitionRecovery.test.ts": "b1f9ede7e2b4c025f3b1403a2004c4f4fb87fc5321417f08b5fa6bc16edc96e3",
+    "server/src/tournament/BreakClockIntegrity.test.ts": "8e8a4426f2ce32edbe42335cc09fe4b14f863191057608c4c6fc7b45bcbcefc9",
+    "server/src/tournament/LevelClockAcrossBreaks.test.ts": "0ca024b5ec75c51c14c7a385153a9a6e6af1f6b49f205683d3f1b4aa6ed056d3",
+    "server/src/tournament/LevelDurationComposition.test.ts": "b813666ff23984197e62ebb70a907fca302a36ea091d627c55247e2d124c00d2",
+    "server/src/tournament/ResumeBlindClockBehavior.test.ts": "53103baf4e290b94860a9cfdb8308df7d00c59293208b19449a6446657dca664",
+    "server/src/tournament/TournamentFixes.guard.test.ts": "b7547192242825ccd89e14951ac34ada93829575abff672c3df832237ec3a712",
+    "server/src/tournament/TournamentLifecycleOwnership.guard.test.ts": "3c993929f447ddb2b51bb248d782e0a2c7b73c918c18968c221a2d3ea0f17100",
+    "server/src/tournament/TournamentManagerBase.ts": "5fae891f9a6a9af6794d874f6553aeb0a76d2eb6cbe052d7f1e620e22022f5a7",
+    "server/src/tournament/TournamentOperationClock.native.test.ts": "149b20c3600bae7f4c27cd48d4b30ddd1a89fe1b7c40514928e0215b3dd8bc2b",
+    "server/src/tournament/TournamentOperationClock.test.ts": "d0be4f70644b040a1468991d80b3fa5426b04a59d05e35457b4c0cfc1f286c75",
+    "tests/a-tournament-pays-every-place-or-none.law.test.ts": "190cf545af93eaabe913e99e50544dad67c06e1c7c010be2c7bf77fe2f1137ba",
+    "tests/maintenance/tournament-manager-composition.mjs": "f559ed221b8efaa42475e45aa6aae912585c5185a410c8b1df8718ece65aba5c",
+    "tests/unit/tournamentRakeAndBreaks.test.ts": "aa654744ae155ca9e2bbf2cc274fd1a550fbad3365c48d322565e01f9b0ec00e"
+  },
+  "verification": {
+    "node": "v22.23.2",
+    "server_vitest": "2.1.9",
+    "server": {
+      "numPassedTests": 10000,
+      "numFailedTests": 0,
+      "numPendingTests": 148
+    },
+    "actual_manager_tests": 41,
+    "root_related": {
+      "numPassedTests": 825,
+      "numFailedTests": 0,
+      "numPendingTests": 0
+    },
+    "server_typecheck": "passed",
+    "native_postgres": "postgres (PostgreSQL) 17.11 (Homebrew)",
+    "native_cases": [
+      {
+        "name": "native actual manager and committed SQL clock adoption adopts the actual committed wave suffix after a 16-minute hold with no manager anchor write",
+        "status": "passed",
+        "message": ""
+      },
+      {
+        "name": "native actual manager and committed SQL clock adoption refuses a real authority revocation between the clock row and strict operation readback",
+        "status": "passed",
+        "message": ""
+      },
+      {
+        "name": "native actual manager and committed SQL clock adoption writes an own-break clear and exact anchor atomically and reconciles a genuinely committed lost response",
+        "status": "passed",
+        "message": ""
+      }
+    ],
+    "authority_bootstrap_cases": [
+      {
+        "name": "native_support_installs_inactive",
+        "status": "passed",
+        "milliseconds": 4
+      },
+      {
+        "name": "six_component_activation_requires_retained_recovery",
+        "status": "passed",
+        "milliseconds": 286
+      },
+      {
+        "name": "native_admission_db_clock_exact_and_legacy_writers_refused",
+        "status": "passed",
+        "milliseconds": 361
+      },
+      {
+        "name": "concurrent_engine_adoption_has_one_winner_and_old_token_fails",
+        "status": "passed",
+        "milliseconds": 706
+      },
+      {
+        "name": "wave_plan_refuses_split_event_inventory_and_rewrite",
+        "status": "passed",
+        "milliseconds": 493
+      },
+      {
+        "name": "step_budget_is_current_owned_and_replay_is_readback_only",
+        "status": "passed",
+        "milliseconds": 576
+      },
+      {
+        "name": "maximum_deadline_never_releases_and_public_known_hold_survives",
+        "status": "passed",
+        "milliseconds": 366
+      },
+      {
+        "name": "private_permits_and_verifier_boundaries_resist_forged_context",
+        "status": "passed",
+        "milliseconds": 578
+      },
+      {
+        "name": "safe_resume_requires_exact_current_publication_and_before_final_certification",
+        "status": "passed",
+        "milliseconds": 548
+      },
+      {
+        "name": "actuator_exact_host_binding_single_use_and_lost_response_readback",
+        "status": "passed",
+        "milliseconds": 543
+      },
+      {
+        "name": "observation_budget_is_persisted_and_verification_context_is_bounded",
+        "status": "passed",
+        "milliseconds": 606
+      },
+      {
+        "name": "source_acl_drift_refuses_whole_migration_transaction",
+        "status": "passed",
+        "milliseconds": 14
+      },
+      {
+        "name": "legacy_v3_inflight_keeps_original_token_clock_and_blocks_activation",
+        "status": "passed",
+        "milliseconds": 683
+      },
+      {
+        "name": "canonical_new_hand_settles_after_wave_ack_while_later_wave_held",
+        "status": "passed",
+        "milliseconds": 33
+      },
+      {
+        "name": "actual_v3_960_seconds_all14_targets_wave_suffix_and_replay",
+        "status": "passed",
+        "milliseconds": 18807
+      },
+      {
+        "name": "actual_v3_1800_seconds_all14_targets_wave_suffix_and_replay",
+        "status": "passed",
+        "milliseconds": 18761
+      },
+      {
+        "name": "authorized_unacked_wave_adoption_is_unknown_without_more_credit",
+        "status": "passed",
+        "milliseconds": 460
+      }
+    ],
+    "native_inputs": {
+      "/Users/smarter.poker/Documents/.agent-trees/club-arena/codex-tournament-operation-clock/server/src/tournament/TournamentManagerBase.ts": "5fae891f9a6a9af6794d874f6553aeb0a76d2eb6cbe052d7f1e620e22022f5a7",
+      "/Users/smarter.poker/Documents/.agent-trees/club-arena/codex-tournament-operation-clock/server/src/tournament/TournamentOperationClock.native.test.ts": "149b20c3600bae7f4c27cd48d4b30ddd1a89fe1b7c40514928e0215b3dd8bc2b",
+      "/Users/smarter.poker/Documents/.agent-trees/club-arena/codex-tournament-operation-clock/server/src/maintenance/OperationTournament.ts": "94d3e3736fde3ffcd6befb13959bf38b28e1219cc32393622c7ee84db074f12a",
+      "/Users/smarter.poker/Documents/.agent-trees/club-arena/codex-tournament-operation-clock/server/src/maintenance/OperationMaintenanceRuntime.ts": "45b6ee0074183ada351e4d90c1abdceee9039f67e0829b286df9cdab5380a89c",
+      "/Users/smarter.poker/Documents/.agent-trees/club-arena/codex-tournament-operation-clock/server/src/maintenance/operationMaintenanceStore.ts": "22cd590efb134f8863d097393ef4f76fcfa8798f77ad19f1bb0d6733741a4e26",
+      "/Users/smarter.poker/Documents/.agent-trees/club-arena/codex-tournament-operation-clock/server/src/maintenance/operationPolicy.ts": "38bc21a332746cc2d01afacff45dc158c348fc1bcf48d2f2652b29311a10d0b9",
+      "/Users/smarter.poker/Documents/.agent-trees/club-arena/codex-tournament-operation-clock/server/src/maintenance/operationPolicy.json": "1fed78c7afc00a220839dd198f2a362befe0fbe9655b2574d9d037d2864b2bda",
+      "/Users/smarter.poker/Documents/.agent-trees/club-arena/codex-tournament-operation-clock/server/src/maintenance/freezeState.ts": "da4cb636ca1385f0f75aecfb22fdfcc9b5004a6b7b6510b5155f86be3f51ade8",
+      "/Users/smarter.poker/Documents/.agent-trees/club-arena/codex-tournament-operation-clock/tests/maintenance/tournament-manager-composition.mjs": "f559ed221b8efaa42475e45aa6aae912585c5185a410c8b1df8718ece65aba5c",
+      "/Users/smarter.poker/Documents/.agent-trees/club-arena/codex-pipeline-maintenance-db/tests/maintenance/integration.mjs": "c42d36de855cc640508c55e0243477c77abe133ce1a6e5398ceec720a3f5bb24",
+      "/Users/smarter.poker/Documents/.agent-trees/club-arena/codex-pipeline-maintenance-db/tests/maintenance/runtime-fixture.mjs": "5b15c90c94a8dbe15d9dd56622204717489d25320fac46d78ee71bee193a1e2f"
+    }
+  },
+  "local_evidence": {
+    "work/tournament-operation-clock/server-ready.json": "cbc1ac8e16b8f84b0ccae1417de7072a091725b84ce3810cef11f11ebeec295a",
+    "work/tournament-operation-clock/root-ready.json": "0d3783792382b8f3c659b6b6718285a5958b29654188f736d916cfa4c1126979",
+    "work/tournament-operation-clock/tsc-delivery.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "work/tournament-operation-clock/native-ninth/result.json": "110ec78081d0f999f9d4c8c3b0bfbfe2e2e82ae350391dbbd5455973c222f9c6",
+    "work/tournament-operation-clock/native-ninth/manager-inputs.json": "147adf6120386395ad90db3b104b91e116670bf9a75c75e45effa3a9de75e51c",
+    "work/tournament-operation-clock/native-ninth/manager-trace.json": "72f9c72b3b4046ebefbb82c8c8138964564bce6f53c8be5a93d0207b9f4c6f45"
+  },
+  "limits": [
+    "No production or host actions, policy activation, or provider/credential changes.",
+    "Native fixture table ACLs omitted by the sealed E2 loader are supplied as public-table SELECT, auth schema USAGE, and updates only to the three tested tournament clock columns; this is not production RLS/ACL certification.",
+    "Table network infrastructure and the abstract prize calculator are controlled test substitutes. Actual manager methods, lifecycle/timers, Store, authority RPCs and clock rows execute.",
+    "Global certificate COMMIT visibility and physical PostgREST lifetime bounds remain separate unresolved activation requirements.",
+    "Already resumed waves retain current authoritative operation/generation/receipt semantics; this does not invent a new recovery freeze."
+  ]
+}

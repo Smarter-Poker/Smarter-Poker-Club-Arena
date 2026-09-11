@@ -12,7 +12,9 @@ import {
   setMaintenanceFrozen,
   certifyOperationGlobalRelease,
   isMaintenanceFrozen,
+  onNextMaintenanceThaw,
 } from './freezeState.js';
+import type { OperationTournament, OperationTournamentProof } from './OperationTournament.js';
 import {
   OperationHoldClock,
   operationMaintenancePolicy as policy,
@@ -63,6 +65,7 @@ export interface OperationMaintenanceStore {
 interface Dependencies {
   store: OperationMaintenanceStore;
   engines(): Iterable<[string, PausableTableEngine]>;
+  tournaments?(): Iterable<OperationTournament>;
   emit(tableId: string, payload: Record<string, unknown>): void;
   thaw(
     request: Readonly<MaintenanceThawRequest>,
@@ -102,6 +105,14 @@ export class OperationMaintenanceRuntime {
   private baseReleased = false;
   private readonly resumedTables = new Set<string>();
   private readonly waitingTimers = new Map<ReturnType<typeof setTimeout>, () => void>();
+  private tournamentJob: Promise<void> | null = null;
+  private tournamentWakePending = false;
+  private readonly adoptedTournaments = new WeakSet<OperationTournament>();
+  private readonly tournamentJobs = new Map<
+    OperationTournament,
+    { promise: Promise<void>; again: boolean }
+  >();
+  private cancelTournamentThaw: (() => void) | null = null;
 
   constructor(private readonly deps: Dependencies) {}
 
@@ -119,6 +130,7 @@ export class OperationMaintenanceRuntime {
   async stop(): Promise<void> {
     this.started = false;
     this.abort.abort();
+    this.cancelTournamentThaw?.();
     if (this.deadlineTimer) clearTimeout(this.deadlineTimer);
     if (this.drainTimer) clearTimeout(this.drainTimer);
     if (this.retryTimer) clearTimeout(this.retryTimer);
@@ -130,7 +142,14 @@ export class OperationMaintenanceRuntime {
     }
     this.waitingTimers.clear();
     await this.unsubscribe?.();
-    await Promise.allSettled([this.refreshJob, this.releaseJob].filter(Boolean));
+    await Promise.allSettled(
+      [
+        this.refreshJob,
+        this.releaseJob,
+        this.tournamentJob,
+        ...[...this.tournamentJobs.values()].map((job) => job.promise),
+      ].filter(Boolean)
+    );
   }
 
   private wait(ms: number): Promise<void> {
@@ -263,6 +282,8 @@ export class OperationMaintenanceRuntime {
       if (state.phase === 'resumed') {
         this.baseReleased = true;
         if (state.scope.type === 'platform') setMaintenanceFrozen(false);
+        this.adoptTournaments();
+        this.redriveTournaments();
         continue;
       }
       if (state.scope.type === 'platform') {
@@ -275,7 +296,16 @@ export class OperationMaintenanceRuntime {
           );
       }
       for (const id of this.resumedTables) markOperationTableResumed(id);
+      this.adoptTournaments();
+      if (first) {
+        this.cancelTournamentThaw?.();
+        this.cancelTournamentThaw = onNextMaintenanceThaw(
+          () => this.redriveTournaments(),
+          this.abort.signal
+        );
+      }
       this.parkAndAnnounce();
+      this.redriveTournaments();
       this.armProgress();
       if (
         ['release_authorized', 'releasing'].includes(state.phase) &&
@@ -308,6 +338,142 @@ export class OperationMaintenanceRuntime {
     if (!state) return [];
     const ids = state.scope.type === 'tables' ? new Set(state.scope.tableIds) : null;
     return [...this.deps.engines()].filter(([id]) => !ids || ids.has(id));
+  }
+
+  private tournaments(): OperationTournament[] {
+    const state = this.current;
+    if (!state) return [];
+    return [...(this.deps.tournaments?.() ?? [])].filter(
+      (manager) =>
+        (state.phase !== 'resumed' || this.adoptedTournaments.has(manager)) &&
+        (state.scope.type === 'platform' ||
+          manager
+            .getTableIds()
+            .some((id) => state.scope.type === 'tables' && state.scope.tableIds.includes(id)))
+    );
+  }
+
+  /** Must run synchronously before manager.start/resume, including empty managers. */
+  adoptTournament(manager: OperationTournament): void {
+    const state = this.current;
+    if (!this.started || !state || !this.enabled() || state.phase === 'resumed') return;
+    if (
+      state.scope.type === 'platform' ||
+      manager
+        .getTableIds()
+        .some((id) => state.scope.type === 'tables' && state.scope.tableIds.includes(id))
+    ) {
+      manager.adoptOperationMaintenance(state);
+      this.adoptedTournaments.add(manager);
+    }
+  }
+
+  private adoptTournaments(): void {
+    for (const manager of this.tournaments()) this.adoptTournament(manager);
+  }
+
+  private tournamentsDrained(): boolean {
+    return this.tournaments().every((manager) => manager.operationMaintenanceDrain().ready);
+  }
+
+  private async tournamentProof(
+    state: OperationMaintenanceState,
+    phases: readonly string[] = ['releasing', 'resumed']
+  ): Promise<OperationMaintenanceState> {
+    const snapshot = await this.deps.store.loadOperation(state.intervalId);
+    const fresh = snapshot.operation && validateOperationState(snapshot.operation);
+    if (
+      !this.started ||
+      snapshot.policyVersion !== 2 ||
+      snapshot.activationReceipt !== this.activationReceipt ||
+      !fresh ||
+      fresh.operationId !== state.operationId ||
+      fresh.releaseId !== state.releaseId ||
+      fresh.intervalId !== state.intervalId ||
+      fresh.ownershipToken !== state.ownershipToken ||
+      fresh.generation !== state.generation ||
+      fresh.freezeStartedAt !== state.freezeStartedAt ||
+      JSON.stringify(fresh.scope) !== JSON.stringify(state.scope) ||
+      !phases.includes(fresh.phase) ||
+      this.current?.intervalId !== state.intervalId ||
+      this.current.ownershipToken !== state.ownershipToken
+    )
+      throw new Error('maintenance_tournament_readback_unowned');
+    return fresh;
+  }
+
+  /** Restart/readback consumes committed ACKs; it never repeats physical resume. */
+  reconcileTournament(manager: OperationTournament): Promise<void> {
+    if (!this.started) return Promise.resolve();
+    const running = this.tournamentJobs.get(manager);
+    if (running) {
+      // A later ACK/certificate cannot be consumed by an earlier in-flight read.
+      running.again = true;
+      return running.promise;
+    }
+    const job = { promise: Promise.resolve(), again: true };
+    job.promise = Promise.resolve()
+      .then(async () => {
+        do {
+          job.again = false;
+          await this.reconcileTournamentOnce(manager);
+        } while (this.started && job.again);
+      })
+      .finally(() => this.tournamentJobs.delete(manager));
+    this.tournamentJobs.set(manager, job);
+    return job.promise;
+  }
+
+  private async reconcileTournamentOnce(manager: OperationTournament): Promise<void> {
+    this.adoptTournament(manager);
+    if (!this.adoptedTournaments.has(manager)) return;
+    const state = this.current;
+    if (
+      !state ||
+      !['releasing', 'resumed'].includes(state.phase) ||
+      manager.getTableIds().length === 0
+    )
+      return;
+    const ids = manager.getTableIds();
+    const wave = state.resumeWaves.find((w) => ids.every((id) => w.tableIds.includes(id)));
+    if (!wave || wave.resumedAt === null) return;
+    const proof: OperationTournamentProof = {
+      state,
+      readback: () => this.tournamentProof(state),
+      isCurrent: () =>
+        this.started &&
+        this.current?.intervalId === state.intervalId &&
+        this.current.ownershipToken === state.ownershipToken &&
+        this.current.generation === state.generation &&
+        this.current.operationId === state.operationId &&
+        this.current.releaseId === state.releaseId &&
+        ['releasing', 'resumed'].includes(this.current.phase),
+      now: () => this.clock!.now(),
+    };
+    await manager.resumeOperationClock(proof);
+    if (state.globalTail?.receiptId && this.clock!.now() >= state.globalTail.creditedThroughAt) {
+      isMaintenanceFrozen(); // Realize the certificate before the financial readback.
+      await manager.resumeOperationGlobal(proof);
+    }
+  }
+
+  private redriveTournaments(): void {
+    if (!this.started) return;
+    this.tournamentWakePending = true;
+    if (this.tournamentJob) return;
+    this.tournamentJob = (async () => {
+      do {
+        this.tournamentWakePending = false;
+        for (const manager of this.tournaments()) await this.reconcileTournament(manager);
+      } while (this.started && this.tournamentWakePending);
+    })()
+      .catch((error) => {
+        this.deps.report(error);
+        this.retry(error);
+      })
+      .finally(() => {
+        this.tournamentJob = null;
+      });
   }
 
   holds(tableId: string): boolean {
@@ -388,8 +554,23 @@ export class OperationMaintenanceRuntime {
       if (this.clock!.now() >= this.presenceRetryAt) {
         this.presenceRetryAt = this.clock!.now() + 5000;
         for (const [, engine] of engines) engine.retryMaintenancePresence?.();
+        // Only unresolved accepted own-break writes cause a row read. Their
+        // exact committed state can be reconciled while held; no new writer
+        // is admitted by this readiness retry.
+        const proof: OperationTournamentProof = {
+          state,
+          readback: () => this.tournamentProof(state, ['last_hand', 'draining']),
+          isCurrent: () =>
+            this.owned(state) && ['last_hand', 'draining'].includes(this.current!.phase),
+          now: () => this.clock!.now(),
+        };
+        for (const manager of this.tournaments()) await manager.reconcileOperationHold(proof);
+        if (!this.owned(state)) return;
       }
-      if (engines.every(([, e]) => e.isMaintenanceDrained?.() === true)) {
+      if (
+        engines.every(([, e]) => e.isMaintenanceDrained?.() === true) &&
+        this.tournamentsDrained()
+      ) {
         await this.deps.store.reportOperationReady(
           state,
           engines.map(([id]) => id),
@@ -410,7 +591,8 @@ export class OperationMaintenanceRuntime {
     if (
       this.selected().some(
         ([id, e]) => !this.resumedTables.has(id) && e.isMaintenanceDrained?.() !== true
-      )
+      ) ||
+      !this.tournamentsDrained()
     ) {
       throw new Error('maintenance_release_live_hand');
     }
@@ -441,6 +623,7 @@ export class OperationMaintenanceRuntime {
       if (planned.resumedAt !== null) {
         if (!planned.receiptId) throw new Error('maintenance_resumed_wave_receipt_missing');
         receipts.push(planned.receiptId);
+        for (const manager of this.tournaments()) await this.reconcileTournament(manager);
         continue;
       }
       if (wave) await this.wait(this.deps.waveGapMs);
@@ -480,6 +663,13 @@ export class OperationMaintenanceRuntime {
         resumedAt
       );
       if (!this.owned(state)) return;
+      // Read the committed suffix ACK before loading tournament clocks. The
+      // authorization/base receipt predates the physical resume and cannot do this.
+      if (this.deps.tournaments) {
+        const acknowledged = await this.tournamentProof(state);
+        this.current = acknowledged;
+        for (const manager of this.tournaments()) await this.reconcileTournament(manager);
+      }
       for (const id of expected) this.deps.emit(id, this.payload(true, proof.receiptId));
     }
     // Every physical wave is already durably acknowledged. Global credit is
@@ -584,7 +774,8 @@ export class OperationMaintenanceRuntime {
       this.owned(this.current) &&
       ['ready', 'applying'].includes(this.current.phase) &&
       this.clock!.decision(0, policy.recoveryReserveMs, 0) === 'forward' &&
-      this.selected().every(([, e]) => e.isMaintenanceDrained?.() === true)
+      this.selected().every(([, e]) => e.isMaintenanceDrained?.() === true) &&
+      this.tournamentsDrained()
     );
   }
   snapshot(): Record<string, unknown> {
@@ -598,6 +789,10 @@ export class OperationMaintenanceRuntime {
       reconciliationError: this.lastError,
       releaseInDoubt: this.releaseInDoubt,
       resumedTables: this.resumedTables.size,
+      tournamentDrains: this.tournaments().map((manager) => ({
+        tableIds: manager.getTableIds(),
+        ...manager.operationMaintenanceDrain(),
+      })),
       remainingMs: this.current ? Math.max(0, this.current.targetAt - this.clock!.now()) : 0,
     };
   }

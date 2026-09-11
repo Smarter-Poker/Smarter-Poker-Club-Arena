@@ -13,12 +13,21 @@ const manager = ast.statements.find(
     ts.isClassDeclaration(node) && node.name?.text === 'TournamentManagerBase'
 );
 if (!manager) throw new Error('TournamentManagerBase class missing');
-const method = manager.members.find(
-  (node): node is ts.MethodDeclaration =>
-    ts.isMethodDeclaration(node) && node.name.getText(ast) === 'finalizeAfterAddOn'
-);
-if (!method) throw new Error('Production finalizeAfterAddOn method missing');
-const compiled = ts.transpileModule(`class Subject { ${method.getText(ast)} }\nreturn Subject;`, {
+const names = [
+  'finalizeAfterAddOn',
+  'finalizeAfterAddOnOnce',
+  'operationFinancialHeld',
+  'trackOperationWork',
+];
+const methods = names.map((name) => {
+  const method = manager.members.find(
+    (node): node is ts.MethodDeclaration =>
+      ts.isMethodDeclaration(node) && node.name.getText(ast) === name
+  );
+  if (!method) throw new Error(`Production ${name} method missing`);
+  return method.getText(ast);
+});
+const compiled = ts.transpileModule(`class Subject { ${methods.join('\n')} }\nreturn Subject;`, {
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },
 }).outputText;
 
@@ -58,6 +67,9 @@ function fixture(failFirst = false) {
   const lifecycle = {};
   const subject = Object.assign(new Subject(), {
     tournamentId: 'addon-test',
+    operationHold: null,
+    operationWork: new Map(),
+    operationWorkFailed: new Set(),
     currentLevel: 9,
     prizePoolFinalized: false,
     addOnPeriodFinalizing: false,

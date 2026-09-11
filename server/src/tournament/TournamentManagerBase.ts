@@ -94,6 +94,8 @@ import {
   type TournamentLifecycleToken,
 } from './TournamentLifecycleEpoch.js';
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
+import type { OperationMaintenanceState } from '../maintenance/operationPolicy.js';
+import type { OperationTournamentProof } from '../maintenance/OperationTournament.js';
 import { horseAddsOnImmediately } from '../services/FreeBuy.js';
 import { tournamentLeaseMonotonicNow } from '../services/tournamentLease.js';
 import { registerTournamentManagerFenceHandler } from '../services/supabase/tournamentManagerFence.js';
@@ -192,6 +194,26 @@ export abstract class TournamentManagerBase {
   private readonly lifecycleIntervals = new Set<ReturnType<typeof setInterval>>();
   /** Async work launched by lifecycle timers or table-engine starts. */
   private readonly lifecycleJobs = new Set<Promise<unknown>>();
+  /** Operation maintenance owns clocks independently of a tournament's break. */
+  private operationHold: {
+    intervalId: string;
+    operationId: string;
+    releaseId: string;
+    generation: number;
+    ownershipToken: string;
+    freezeStartedAt: number;
+    clockReleased: boolean;
+    globalReleased: boolean;
+    globalReconciled: boolean;
+  } | null = null;
+  private readonly operationWork = new Map<string, number>();
+  private readonly operationWorkFailed = new Set<string>();
+  private blindTransition: Promise<void> | null = null;
+  private operationClockNow: (() => number) | null = null;
+  private operationDeferredOwnBreakResume = false;
+  private operationDeferredOwnBreakEnded = false;
+  private ownBreakResume: Promise<void> | null = null;
+  private pendingOwnBreakResume: { anchor: number | undefined; level: number } | null = null;
   /** Starts must settle before start/resume may advertise admission complete. */
   private readonly tableEngineStartJobs = new Set<Promise<void>>();
   /** Full start loops may wait for players; stop engines before draining these. */
@@ -1364,6 +1386,329 @@ export abstract class TournamentManagerBase {
     return [...this.tableEngines.keys()];
   }
 
+  /** Synchronous, including before start/resume has created a lifecycle token. */
+  adoptOperationMaintenance(state: OperationMaintenanceState): void {
+    const previous = this.operationHold;
+    if (
+      previous?.intervalId === state.intervalId &&
+      previous.ownershipToken === state.ownershipToken &&
+      previous.operationId === state.operationId &&
+      previous.releaseId === state.releaseId &&
+      previous.generation === state.generation
+    )
+      return;
+    this.operationHold = {
+      intervalId: state.intervalId,
+      operationId: state.operationId,
+      releaseId: state.releaseId,
+      generation: state.generation,
+      ownershipToken: state.ownershipToken,
+      freezeStartedAt: state.freezeStartedAt,
+      clockReleased: false,
+      globalReleased: false,
+      globalReconciled: false,
+    };
+    // Keep the first anchor; never set on_break or persist a replacement clock.
+    if (this.blindTimer) this.clearLifecycleTimeout(this.blindTimer);
+    this.blindTimer = null;
+    this.clearTournamentEntryCloseTimer();
+    for (const timer of [
+      this.addOnPeriodEndTimer,
+      this.addOnBreakStartTimer,
+      this.addOnBreakEndTimer,
+      this.addOnResumeBroadcastRetryTimer,
+      this.addOnFinalTailReplayTimer,
+    ]) {
+      if (timer) this.clearLifecycleTimeout(timer);
+    }
+    this.addOnPeriodEndTimer = this.addOnBreakStartTimer = this.addOnBreakEndTimer = null;
+    this.addOnResumeBroadcastRetryTimer = this.addOnFinalTailReplayTimer = null;
+  }
+
+  private operationClockHeld(): boolean {
+    return this.operationHold !== null && !this.operationHold.clockReleased;
+  }
+
+  private operationFinancialHeld(): boolean {
+    return this.operationHold !== null && !this.operationHold.globalReleased;
+  }
+
+  private async trackOperationWork<T>(name: string, work: () => Promise<T>): Promise<T> {
+    this.operationWork.set(name, (this.operationWork.get(name) ?? 0) + 1);
+    try {
+      return await work();
+    } catch (error) {
+      this.operationWorkFailed.add(name);
+      throw error;
+    } finally {
+      const remaining = (this.operationWork.get(name) ?? 1) - 1;
+      if (remaining) this.operationWork.set(name, remaining);
+      else this.operationWork.delete(name);
+    }
+  }
+
+  operationMaintenanceDrain(): { ready: boolean; pending: string[]; failed: string[] } {
+    const pending = [...this.operationWork.keys()];
+    if (this.lifecycleOperation) pending.push('manager_initialization');
+    if (this.tournamentEntryCloseOperation) pending.push('entry_close_reprice');
+    if (this.addOnPeriodOpening) pending.push('addon_open');
+    if (this.addOnPeriodFinalizing) pending.push('addon_close');
+    const failed = [...this.operationWorkFailed];
+    return {
+      ready: !!this.operationHold && pending.length === 0 && failed.length === 0,
+      pending: [...new Set(pending)],
+      failed,
+    };
+  }
+
+  private assertOperationProof(
+    proof: OperationTournamentProof,
+    state: OperationMaintenanceState,
+    hold: NonNullable<TournamentManagerBase['operationHold']>,
+    lifecycle: TournamentLifecycleToken,
+    global: boolean
+  ): void {
+    this.assertLifecycleCurrent(lifecycle);
+    if (
+      this.operationHold !== hold ||
+      !proof.isCurrent() ||
+      state.intervalId !== hold.intervalId ||
+      state.ownershipToken !== hold.ownershipToken ||
+      state.operationId !== hold.operationId ||
+      state.releaseId !== hold.releaseId ||
+      state.generation !== hold.generation ||
+      state.generation !== proof.state.generation ||
+      state.freezeStartedAt !== hold.freezeStartedAt ||
+      state.operationId !== proof.state.operationId ||
+      state.releaseId !== proof.state.releaseId ||
+      !['releasing', 'resumed'].includes(state.phase)
+    ) {
+      throw new Error('tournament_operation_readback_owner_changed');
+    }
+    const ids = this.getTableIds();
+    const wave = state.resumeWaves.find(
+      (w) => ids.length > 0 && ids.every((id) => w.tableIds.includes(id))
+    );
+    const originalWave = proof.state.resumeWaves.find((w) => w.index === wave?.index);
+    if (
+      !wave ||
+      !wave.receiptId ||
+      wave.resumedAt === null ||
+      wave.creditedThroughAt === null ||
+      wave.resumedAt < wave.creditedThroughAt ||
+      wave.resumedAt > proof.now() ||
+      wave.receiptId !== originalWave?.receiptId ||
+      wave.resumedAt !== originalWave.resumedAt ||
+      wave.creditedThroughAt !== originalWave.creditedThroughAt ||
+      JSON.stringify(wave.tableIds) !== JSON.stringify(originalWave.tableIds)
+    ) {
+      throw new Error('tournament_operation_wave_not_acknowledged');
+    }
+    if (global) {
+      const tail = state.globalTail;
+      if (
+        !tail?.receiptId ||
+        tail.receiptId !== proof.state.globalTail?.receiptId ||
+        tail.receiptOwnershipToken !== proof.state.globalTail?.receiptOwnershipToken ||
+        tail.receiptGeneration !== proof.state.globalTail?.receiptGeneration ||
+        tail.creditedThroughAt !== proof.state.globalTail?.creditedThroughAt ||
+        tail.targetDigest !== proof.state.globalTail?.targetDigest ||
+        tail.targetCount !== proof.state.globalTail?.targetCount ||
+        tail.checkpointId !== proof.state.globalTail?.checkpointId ||
+        tail.certifiedAt !== proof.state.globalTail?.certifiedAt ||
+        !['certified', 'released'].includes(tail.status) ||
+        tail.remaining !== 0 ||
+        tail.creditedThroughAt > proof.now() ||
+        isMaintenanceFrozen()
+      ) {
+        throw new Error('tournament_operation_global_release_unproven');
+      }
+    }
+  }
+
+  /** Resolve only an already-admitted exact own-break write. No new write,
+   * timer, hand release authority or end announcement is created here. */
+  async reconcileOperationHold(proof: OperationTournamentProof): Promise<void> {
+    const intent = this.pendingOwnBreakResume;
+    if (!intent || !this.operationWorkFailed.has('own_break_resume')) return;
+    const hold = this.operationHold,
+      lifecycle = this.captureLifecycleToken();
+    const current = (state: OperationMaintenanceState) =>
+      !!hold &&
+      !!lifecycle &&
+      this.lifecycleIsCurrent(lifecycle) &&
+      this.operationHold === hold &&
+      this.pendingOwnBreakResume === intent &&
+      proof.isCurrent() &&
+      state.operationId === hold.operationId &&
+      state.releaseId === hold.releaseId &&
+      state.intervalId === hold.intervalId &&
+      state.ownershipToken === hold.ownershipToken &&
+      state.generation === hold.generation &&
+      state.freezeStartedAt === hold.freezeStartedAt &&
+      ['last_hand', 'draining'].includes(state.phase);
+    if (!current(proof.state)) throw new Error('tournament_own_break_readback_unowned');
+    await this.trackOperationWork('own_break_readback', async () => {
+      const { data: row, error } = await supabase
+        .from('tournaments')
+        .select('on_break, current_level, level_started_at')
+        .eq('id', this.tournamentId)
+        .maybeSingle();
+      const fresh = await proof.readback();
+      if (!current(fresh)) throw new Error('tournament_own_break_readback_unowned');
+      if (
+        error ||
+        !row ||
+        row.on_break !== false ||
+        row.current_level !== intent.level ||
+        (intent.anchor !== undefined && Date.parse(row.level_started_at) !== intent.anchor)
+      )
+        throw new Error('tournament_own_break_readback_unresolved');
+      this.operationWorkFailed.delete('own_break_resume');
+      this.operationWorkFailed.delete('own_break_readback');
+      this.pendingOwnBreakResume = null;
+      this.onBreak = false;
+      this.breakCountdownStarted = false;
+      if (this.addOnBreakActive) {
+        this.addOnBreakOwnsPause = true;
+        this.addOnBreakOwnsLevelClock = true;
+      } else {
+        this.savedBlindTimerRemaining = 0;
+        if (!this.handForHandActive)
+          for (const engine of this.tableEngines.values()) {
+            // Clear only the own-break latch; the independently adopted operation
+            // pause and native new-hand gate remain in force until their wave.
+            try {
+              engine.resumeDealing();
+            } catch (error) {
+              reportError(error, 'TournamentManagerBase.resumeFromBreak_resume_engine');
+            }
+          }
+      }
+      this.operationDeferredOwnBreakEnded = true;
+    });
+  }
+
+  /** Strict read-only adoption: a wave ACK is the last writer of this anchor. */
+  async resumeOperationClock(proof: OperationTournamentProof): Promise<void> {
+    const hold = this.operationHold,
+      lifecycle = this.captureLifecycleToken();
+    if (!hold || !lifecycle || !this.lifecycleIsCurrent(lifecycle))
+      throw new Error('tournament_operation_manager_not_ready');
+    if (hold.clockReleased) return;
+    this.assertOperationProof(proof, proof.state, hold, lifecycle, false);
+    if (!this.operationMaintenanceDrain().ready)
+      throw new Error('tournament_operation_clock_not_drained');
+    const { data: row, error } = await supabase
+      .from('tournaments')
+      .select('id, current_level, level_started_at, blind_structure, on_break, status')
+      .eq('id', this.tournamentId)
+      .maybeSingle();
+    const state = await proof.readback();
+    this.assertOperationProof(proof, state, hold, lifecycle, false);
+    const anchor = Date.parse(String(row?.level_started_at ?? ''));
+    // The installed column is TEXT; start/resume also accept parsed structures.
+    // Strict adoption never substitutes an empty/default level on invalid JSON.
+    let structure: unknown = row?.blind_structure;
+    if (typeof structure === 'string') {
+      try {
+        structure = JSON.parse(structure);
+      } catch {
+        structure = null;
+      }
+    }
+    if (
+      error ||
+      !row ||
+      row.id !== this.tournamentId ||
+      row.status !== 'RUNNING' ||
+      !Number.isSafeInteger(row.current_level) ||
+      row.current_level < 0 ||
+      !Number.isFinite(anchor) ||
+      anchor > proof.now() ||
+      !Array.isArray(structure) ||
+      structure.length === 0 ||
+      typeof row.on_break !== 'boolean'
+    ) {
+      throw new Error('tournament_operation_clock_anchor_unreadable');
+    }
+    if (this.operationDeferredOwnBreakEnded) {
+      await this.broadcast('break_ended', { level: row.current_level });
+      this.assertOperationProof(proof, await proof.readback(), hold, lifecycle, false);
+      this.operationDeferredOwnBreakEnded = false;
+    }
+    this.currentLevel = row.current_level;
+    this.blindTimerStartedAt = anchor;
+    if (this.tournamentCache)
+      Object.assign(this.tournamentCache, row, { blind_structure: structure });
+    hold.clockReleased = true;
+    this.operationClockNow = proof.now;
+    if (row.on_break || this.isOnBreak()) return;
+    try {
+      this.armBlindTimerFromAnchor(structure, anchor, proof.now());
+    } catch (error) {
+      hold.clockReleased = false;
+      throw error;
+    }
+  }
+
+  /** Global financial clocks have a later certificate than event wave clocks. */
+  async resumeOperationGlobal(proof: OperationTournamentProof): Promise<void> {
+    const hold = this.operationHold,
+      lifecycle = this.captureLifecycleToken();
+    if (!hold || !lifecycle || !this.lifecycleIsCurrent(lifecycle))
+      throw new Error('tournament_operation_manager_not_ready');
+    if (hold.globalReconciled) return;
+    this.assertOperationProof(proof, proof.state, hold, lifecycle, true);
+    const { data: row, error } = await supabase
+      .from('tournaments')
+      .select(
+        'id, addon_period_triggered, addon_period_started_at, addon_period_ends_at, add_on_available, prize_pool, prize_pool_finalized, status'
+      )
+      .eq('id', this.tournamentId)
+      .maybeSingle();
+    const state = await proof.readback();
+    this.assertOperationProof(proof, state, hold, lifecycle, true);
+    if (
+      error ||
+      !row ||
+      row.id !== this.tournamentId ||
+      row.status !== 'RUNNING' ||
+      typeof row.addon_period_triggered !== 'boolean' ||
+      typeof row.prize_pool_finalized !== 'boolean'
+    )
+      throw new Error('tournament_operation_addon_anchor_unreadable');
+    if (
+      row.addon_period_triggered &&
+      !row.prize_pool_finalized &&
+      (row.add_on_available !== true ||
+        !Number.isFinite(Date.parse(row.addon_period_started_at)) ||
+        !Number.isFinite(Date.parse(row.addon_period_ends_at)) ||
+        Date.parse(row.addon_period_ends_at) <= Date.parse(row.addon_period_started_at))
+    )
+      throw new Error('tournament_operation_addon_anchor_unreadable');
+    hold.globalReleased = true;
+    this.operationClockNow = proof.now;
+    this.addOnPeriodTriggered = row.addon_period_triggered;
+    if (this.tournamentCache) Object.assign(this.tournamentCache, row);
+    if (this.addOnPeriodTriggered) await this.drivePersistedAddOnDeadline(true, row);
+    if (this.operationHold !== hold || !this.lifecycleIsCurrent(lifecycle)) return;
+    if (this.operationDeferredOwnBreakResume) {
+      await this.resumeFromBreak();
+      if (this.operationHold !== hold || !this.lifecycleIsCurrent(lifecycle)) return;
+      this.operationDeferredOwnBreakResume = false;
+    }
+    if (this.operationHold !== hold || !this.lifecycleIsCurrent(lifecycle)) return;
+    await this.reconcileTournamentEntryWindow('engine.operation_global_release');
+    if (this.operationHold !== hold || !this.lifecycleIsCurrent(lifecycle)) return;
+    this.requestEliminationSweep('operation_global_release');
+    hold.globalReconciled = true;
+  }
+
+  private tournamentClockNow(): number {
+    return this.operationClockNow?.() ?? Date.now();
+  }
+
   /**
    * Is this tournament on a break of its own right now?
    *
@@ -1528,6 +1873,13 @@ export abstract class TournamentManagerBase {
 
   /** Synchronized break: pause blind timer and broadcast break event */
   async pauseForBreak(breakDurationMs: number): Promise<void> {
+    if (this.operationClockHeld()) return;
+    return this.trackOperationWork('own_break_admission', () =>
+      this.pauseForBreakOnce(breakDurationMs)
+    );
+  }
+
+  private async pauseForBreakOnce(breakDurationMs: number): Promise<void> {
     const lifecycle = this.captureLifecycleToken();
     if (!lifecycle || !this.lifecycleIsCurrent(lifecycle) || this.onBreak) return;
     /**
@@ -1553,7 +1905,7 @@ export abstract class TournamentManagerBase {
     const applies = await this.breakApplies();
     // breakApplies may be waiting on the tournament row while shutdown fences
     // this manager. Never let that retired continuation begin a new break.
-    if (!this.lifecycleIsCurrent(lifecycle)) return;
+    if (!this.lifecycleIsCurrent(lifecycle) || this.operationClockHeld()) return;
     if (!applies) {
       console.log(
         `[Tournament:${this.tournamentId.slice(0, 8)}] Break refused - this format does not take the :55 break`
@@ -1610,7 +1962,7 @@ export abstract class TournamentManagerBase {
      * why a break runs a little over five minutes end to end.
      */
     try {
-      await supabase
+      const { error } = await supabase
         .from('tournaments')
         .update({
           on_break: true,
@@ -1618,7 +1970,9 @@ export abstract class TournamentManagerBase {
           break_ends_at: null,
         })
         .eq('id', this.tournamentId);
+      if (error) throw new Error(error.message);
     } catch (err) {
+      this.operationWorkFailed.add('own_break_admission');
       reportError(err, 'TournamentManagerBase.pauseForBreak_persist');
     }
     // Persistence was admitted by this generation, but its response may return
@@ -1745,6 +2099,15 @@ export abstract class TournamentManagerBase {
     breakDurationMs: number,
     deadlineMs = Date.now() + breakDurationMs
   ): Promise<void> {
+    return this.trackOperationWork('own_break_countdown', () =>
+      this.beginBreakCountdownOnce(breakDurationMs, deadlineMs)
+    );
+  }
+
+  private async beginBreakCountdownOnce(
+    breakDurationMs: number,
+    deadlineMs: number
+  ): Promise<void> {
     const lifecycle = this.captureLifecycleToken();
     if (!lifecycle || !this.lifecycleIsCurrent(lifecycle) || !this.onBreak) return;
     /**
@@ -1764,11 +2127,13 @@ export abstract class TournamentManagerBase {
     this.breakCountdownStarted = true;
     const endsAt = new Date(deadlineMs).toISOString();
     try {
-      await supabase
+      const { error } = await supabase
         .from('tournaments')
         .update({ break_ends_at: endsAt })
         .eq('id', this.tournamentId);
+      if (error) throw new Error(error.message);
     } catch (err) {
+      this.operationWorkFailed.add('own_break_countdown');
       reportError(err, 'TournamentManagerBase.beginBreakCountdown_persist');
     }
     // The database write began while this manager owned the generation. If its
@@ -1792,14 +2157,22 @@ export abstract class TournamentManagerBase {
    * tournament that ENDS on a break has to come off it too, and that path does
    * not resume anything.
    */
-  protected async clearPersistedBreak(): Promise<void> {
+  protected async clearPersistedBreak(levelAnchor?: number, strict = false): Promise<void> {
     try {
-      await supabase
+      const { error } = await supabase
         .from('tournaments')
-        .update({ on_break: false, break_ends_at: null })
+        .update({
+          on_break: false,
+          break_ends_at: null,
+          ...(levelAnchor === undefined
+            ? {}
+            : { level_started_at: new Date(levelAnchor).toISOString() }),
+        })
         .eq('id', this.tournamentId);
+      if (error) throw new Error(error.message);
     } catch (err) {
       reportError(err, 'TournamentManagerBase.resumeFromBreak_persist');
+      if (strict) throw err;
     }
   }
 
@@ -1845,6 +2218,21 @@ export abstract class TournamentManagerBase {
 
   /** Resume from synchronized break: restart blind timer with remaining time */
   async resumeFromBreak(): Promise<void> {
+    if (this.ownBreakResume) return this.ownBreakResume;
+    const operation = this.resumeFromBreakOnce();
+    this.ownBreakResume = operation;
+    try {
+      await operation;
+    } finally {
+      if (this.ownBreakResume === operation) this.ownBreakResume = null;
+    }
+  }
+
+  private async resumeFromBreakOnce(): Promise<void> {
+    if (this.operationFinancialHeld()) {
+      this.operationDeferredOwnBreakResume = true;
+      return;
+    }
     if (!this.onBreak) return;
     /**
      * A RUNNING TOURNAMENT COMES OFF ITS BREAK AFTER THE THAW (2026-09-10).
@@ -1881,93 +2269,91 @@ export abstract class TournamentManagerBase {
       // Everything the wait may have changed is read again.
       if (!this.onBreak || !lifecycle || !this.lifecycleIsCurrent(lifecycle)) return;
     }
+    if (this.operationFinancialHeld()) {
+      this.operationDeferredOwnBreakResume = true;
+      return;
+    }
+    return this.trackOperationWork('own_break_resume', () => this.commitOwnBreakResume());
+  }
+
+  private async commitOwnBreakResume(): Promise<void> {
+    const lifecycle = this.captureLifecycleToken();
+    const wasRunning = this.running;
+    const blindStructure = this.tournamentCache?.blind_structure || [];
+    const level = this.resolveBlindLevel(blindStructure, this.currentLevel);
+    const duration = level ? this.levelDurationMs(level) : 0;
+    const observedAt = this.tournamentClockNow();
+    const remaining =
+      this.savedBlindTimerRemaining > 0
+        ? Math.min(this.savedBlindTimerRemaining, duration)
+        : Math.max(1000, duration - (observedAt - this.blindTimerStartedAt));
+    const intent = this.pendingOwnBreakResume ?? {
+      anchor:
+        this.running && duration > 0 && !this.addOnBreakActive
+          ? Math.floor(observedAt - (duration - remaining))
+          : undefined,
+      level: this.currentLevel,
+    };
+    this.pendingOwnBreakResume = intent;
+    const anchor = intent.anchor;
+    // The flag and resumed clock are one durable state transition. An operation
+    // adopted during this await cannot observe on_break=false with the old clock.
+    try {
+      await this.clearPersistedBreak(anchor, true);
+    } catch (error) {
+      if (wasRunning && (!lifecycle || !this.lifecycleIsCurrent(lifecycle))) return;
+      // A lost response is not a second resume. Reconcile the exact atomic
+      // write; an uncommitted retry retains the original anchor and deadline.
+      const { data: row, error: readError } = await supabase
+        .from('tournaments')
+        .select('on_break, current_level, level_started_at')
+        .eq('id', this.tournamentId)
+        .maybeSingle();
+      if (
+        readError ||
+        !row ||
+        row.on_break !== false ||
+        row.current_level !== intent.level ||
+        (anchor !== undefined && Date.parse(row.level_started_at) !== anchor)
+      )
+        throw error;
+    }
+    if (wasRunning && (!lifecycle || !this.lifecycleIsCurrent(lifecycle))) return;
+    this.operationWorkFailed.delete('own_break_resume');
+    this.pendingOwnBreakResume = null;
     this.onBreak = false;
     this.breakCountdownStarted = false;
-
-    /**
-     * A TOURNAMENT THAT ENDS ON A BREAK STILL HAS TO COME OFF IT (2026-08-25).
-     *
-     * The guard here was `if (!this.running || !this.onBreak) return` — a
-     * single early return that fired BEFORE the persisted flags were cleared.
-     * stop() sets running = false, so a tournament whose final hand landed
-     * during a break (or one torn down by a redeploy) left `on_break = true`
-     * on its row with nothing left alive that would ever clear it. Measured
-     * 2026-08-25: 7 tournaments carry on_break = true against no live break,
-     * the oldest stamped 2026-08-22 09:55 and still true 70 hours later.
-     *
-     * The database is cleared unconditionally now; only the RESUMING half —
-     * broadcasting, un-pausing engines, re-arming the level clock — is skipped
-     * when the tournament is no longer running.
-     */
-    await this.clearPersistedBreak();
     if (!this.running) return;
 
-    console.log(`[Tournament:${this.tournamentId.slice(0, 8)}] BREAK ENDED - resuming play`);
-
-    await this.broadcast('break_ended', { level: this.currentLevel });
-
-    /* Undo the pause taken in pauseForBreak only when no durable add-on break
-       is still holding it. This is the exact Free Buy boundary: the :55
-       synchronized break commonly overlaps the add-on break at start + 60m.
-       Hand pause ownership to that break rather than dealing for the seconds
-       between the two deadlines. Hand-for-hand independently owns its pause
-       when active. */
-    const addOnBreakStillActive = this.addOnBreakActive;
-    if (addOnBreakStillActive) {
+    if (this.addOnBreakActive) {
       this.addOnBreakOwnsPause = true;
       this.addOnBreakOwnsLevelClock = true;
-    }
-    if (!this.handForHandActive && !addOnBreakStillActive) {
-      for (const engine of this.tableEngines.values()) {
-        try {
-          engine.resumeDealing();
-        } catch (err) {
-          reportError(err, 'TournamentManagerBase.resumeFromBreak_resume_engine');
+    } else {
+      this.savedBlindTimerRemaining = 0;
+      if (!this.handForHandActive) {
+        // Maintenance has a separate pause owner. Releasing this own-break
+        // latch cannot start a hand through an adopted operation hold.
+        for (const engine of this.tableEngines.values()) {
+          try {
+            engine.resumeDealing();
+          } catch (error) {
+            reportError(error, 'TournamentManagerBase.resumeFromBreak_resume_engine');
+          }
         }
       }
     }
-
-    // Restart blind timer with saved remaining time. AUDIT FIX 2026-07-19: on
-    // fire, run the SAME full level transition as the normal timer (writes
-    // blinds to tables, emits level_up, chip race, late-reg/add-on) instead of
-    // a bare currentLevel++ that left table blinds unchanged and could freeze
-    // escalation.
-    /**
-     * DRIFTING LEVEL CLOCK (2026-08-23). This used to hand-roll its own
-     * setTimeout and set `blindTimerStartedAt = Date.now()` while the level's
-     * nominal duration stayed the FULL level. pauseForBreak measures remaining
-     * as `fullDuration - (now - blindTimerStartedAt)`, so a SECOND break in
-     * the same level gave the level back every minute it had already played —
-     * a level with one minute left returned from the break with ten. Across an
-     * hourly break cadence that is how a level stops going up.
-     *
-     * startBlindTimer already solves this: it clamps the override to the level
-     * duration and BACK-DATES blindTimerStartedAt by the difference, so the
-     * next pause measures the true remaining time. Routing through it also
-     * re-persists level_started_at, so a restart mid-level resumes correctly,
-     * and wraps advanceBlindLevel in the catch that keeps a throw from
-     * silently ending escalation.
-     *
-     * Arming is unconditional. A zero here used to mean "no clock at all"
-     * (see pauseForBreak); startBlindTimer with no override grants a fresh
-     * full level, which is the safe direction to be wrong in.
-     */
-    if (!addOnBreakStillActive) {
-      const blindStructure = this.tournamentCache?.blind_structure || [];
-      const remaining = this.savedBlindTimerRemaining;
-      // Cleared before arming: a stale value from a previous level must never
-      // be readable by a later break that cannot measure the clock.
-      this.savedBlindTimerRemaining = 0;
-      this.startBlindTimer(blindStructure, remaining > 0 ? remaining : undefined);
+    if (this.operationClockHeld()) this.operationDeferredOwnBreakEnded = true;
+    else {
+      await this.broadcast('break_ended', { level: this.currentLevel });
+      if (!lifecycle || !this.lifecycleIsCurrent(lifecycle)) return;
+      if (anchor !== undefined)
+        this.armBlindTimerFromAnchor(blindStructure, anchor, this.tournamentClockNow());
     }
-
-    // If add-on period was deferred due to break, trigger it now
-    if (this.pendingAddOnPeriod && !this.addOnPeriodTriggered) {
+    if (this.pendingAddOnPeriod && !this.addOnPeriodTriggered && !this.operationFinancialHeld()) {
       this.pendingAddOnPeriod = false;
       await this.triggerAddOnPeriod();
     }
-    // Tables may all have parked during the break. Recheck after any deferred
-    // add-on has acquired its own hold; no new table completion edge is due.
+    if (!lifecycle || !this.lifecycleIsCurrent(lifecycle)) return;
     this.advanceHandForHandBarrier();
   }
 
@@ -2108,6 +2494,7 @@ export abstract class TournamentManagerBase {
    * hosts never decide whether a paid entry is still legal.
    */
   private armTournamentEntryCloseTimer(retryAfterMs: number): void {
+    if (this.operationFinancialHeld()) return;
     this.clearTournamentEntryCloseTimer();
     const delayMs = Math.min(Math.max(0, Math.ceil(retryAfterMs)), 2_147_483_647);
     this.tournamentEntryCloseTimer = this.setLifecycleTimeout(() => {
@@ -2125,7 +2512,9 @@ export abstract class TournamentManagerBase {
   protected async reconcileTournamentEntryWindow(source: string): Promise<boolean> {
     if (this.tournamentEntryCloseOperation) return this.tournamentEntryCloseOperation;
     let operation!: Promise<boolean>;
-    operation = this.reconcileTournamentEntryWindowOnce(source).finally(() => {
+    operation = this.trackOperationWork('entry_close_reprice', () =>
+      this.reconcileTournamentEntryWindowOnce(source)
+    ).finally(() => {
       if (this.tournamentEntryCloseOperation === operation) {
         this.tournamentEntryCloseOperation = null;
       }
@@ -2136,7 +2525,8 @@ export abstract class TournamentManagerBase {
 
   private async reconcileTournamentEntryWindowOnce(source: string): Promise<boolean> {
     const lifecycle = this.captureLifecycleToken();
-    if (!lifecycle || !this.lifecycleIsCurrent(lifecycle)) return false;
+    if (!lifecycle || !this.lifecycleIsCurrent(lifecycle) || this.operationFinancialHeld())
+      return false;
 
     let data: unknown;
     let error: { message?: string } | null = null;
@@ -2150,7 +2540,7 @@ export abstract class TournamentManagerBase {
     } catch (err) {
       error = { message: err instanceof Error ? err.message : String(err) };
     }
-    if (!this.lifecycleIsCurrent(lifecycle)) return false;
+    if (!this.lifecycleIsCurrent(lifecycle) || this.operationFinancialHeld()) return false;
 
     const result = (data ?? {}) as TournamentEntryWindowResult;
     if (error || result.ok !== true || typeof result.entry_closed !== 'boolean') {
@@ -2188,7 +2578,7 @@ export abstract class TournamentManagerBase {
       } catch (err) {
         reportError(err, 'Tournament.entry_window_close_broadcast_failed');
       }
-      if (!this.lifecycleIsCurrent(lifecycle)) return false;
+      if (!this.lifecycleIsCurrent(lifecycle) || this.operationFinancialHeld()) return false;
     }
 
     // The entry boundary and add-on boundary are distinct. Entry closes now;
@@ -2200,7 +2590,7 @@ export abstract class TournamentManagerBase {
           this.pendingAddOnPeriod = true;
         } else {
           await this.triggerAddOnPeriod();
-          if (!this.lifecycleIsCurrent(lifecycle)) return false;
+          if (!this.lifecycleIsCurrent(lifecycle) || this.operationFinancialHeld()) return false;
         }
       }
       return true;
@@ -2235,7 +2625,7 @@ export abstract class TournamentManagerBase {
     if (!this.tournamentEntryRepricePending) return true;
 
     const repriced = await this.recalculateEliminatedPrizes(finalPool);
-    if (!this.lifecycleIsCurrent(lifecycle)) return false;
+    if (!this.lifecycleIsCurrent(lifecycle) || this.operationFinancialHeld()) return false;
     if (!repriced) {
       this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
       return false;
@@ -2245,7 +2635,7 @@ export abstract class TournamentManagerBase {
       'fn_complete_tournament_entry_reprice',
       { p_tournament_id: this.tournamentId }
     );
-    if (!this.lifecycleIsCurrent(lifecycle)) return false;
+    if (!this.lifecycleIsCurrent(lifecycle) || this.operationFinancialHeld()) return false;
     const completion = (completeData ?? {}) as {
       ok?: boolean;
       reason?: string;
@@ -3178,6 +3568,14 @@ export abstract class TournamentManagerBase {
     this.stopFenceApplied = false;
     this.shutdownDrainFenceApplied = false;
     const lifecycle = this.lifecycleEpoch.begin();
+    if (this.operationHold) {
+      this.operationHold = {
+        ...this.operationHold,
+        clockReleased: false,
+        globalReleased: false,
+        globalReconciled: false,
+      };
+    }
     this.running = true;
     this.armTournamentLeaseExpiryTimer();
     const operation = this.startLifecycle(lifecycle);
@@ -4325,6 +4723,14 @@ export abstract class TournamentManagerBase {
     this.stopFenceApplied = false;
     this.shutdownDrainFenceApplied = false;
     const lifecycle = this.lifecycleEpoch.begin();
+    if (this.operationHold) {
+      this.operationHold = {
+        ...this.operationHold,
+        clockReleased: false,
+        globalReleased: false,
+        globalReconciled: false,
+      };
+    }
     this.running = true;
     this.armTournamentLeaseExpiryTimer();
     const operation = this.resumeLifecycle(lifecycle);
@@ -5923,7 +6329,23 @@ export abstract class TournamentManagerBase {
   protected rebuysGrantedForChipCap = 0;
   protected addonsGrantedForChipCap = 0;
 
+  private armBlindTimerFromAnchor(blindStructure: any[], anchor: number, observedAt: number): void {
+    if (this.operationClockHeld() || this.isOnBreak()) return;
+    const level = this.resolveBlindLevel(blindStructure, this.currentLevel);
+    if (!level) throw new Error('tournament_operation_level_unreadable');
+    if (this.blindTimer) this.clearLifecycleTimeout(this.blindTimer);
+    this.blindTimerStartedAt = anchor;
+    this.blindTimer = this.setLifecycleTimeout(
+      () => {
+        this.blindTimer = null;
+        return this.advanceBlindLevel(blindStructure);
+      },
+      Math.max(0, this.levelDurationMs(level) - (observedAt - anchor))
+    );
+  }
+
   protected startBlindTimer(blindStructure: any[], remainingOverrideMs?: number): void {
+    if (this.operationClockHeld()) return;
     if (blindStructure.length === 0) return;
     // Never leave two level clocks running for the same tournament. Callers
     // normally arrive with blindTimer already null (it has just fired, or
@@ -5959,24 +6381,28 @@ export abstract class TournamentManagerBase {
     // window) so a restart resumes the level mid-flight. Detached from the
     // caller, but still drained by this exact lifecycle before replacement.
     void this.trackLifecycleJob(
-      Promise.resolve(
-        supabase
-          .from('tournaments')
-          .update({ level_started_at: new Date(this.blindTimerStartedAt).toISOString() })
-          .eq('id', this.tournamentId)
-      )
-        .then(({ error }: { error: { message?: string } | null }) => {
-          if (error && !/column|schema/i.test(error.message || '')) {
+      this.trackOperationWork('blind_anchor', () =>
+        Promise.resolve(
+          supabase
+            .from('tournaments')
+            .update({ level_started_at: new Date(this.blindTimerStartedAt).toISOString() })
+            .eq('id', this.tournamentId)
+        )
+          .then(({ error }: { error: { message?: string } | null }) => {
+            if (error) {
+              this.operationWorkFailed.add('blind_anchor');
+              console.warn(
+                `[Tournament:${this.tournamentId.slice(0, 8)}] level_started_at persist failed: ${error.message}`
+              );
+            }
+          })
+          .catch((err: unknown) => {
+            this.operationWorkFailed.add('blind_anchor');
             console.warn(
-              `[Tournament:${this.tournamentId.slice(0, 8)}] level_started_at persist failed: ${error.message}`
+              `[Tournament:${this.tournamentId.slice(0, 8)}] level_started_at persist threw: ${(err as Error)?.message ?? err}`
             );
-          }
-        })
-        .catch((err: unknown) => {
-          console.warn(
-            `[Tournament:${this.tournamentId.slice(0, 8)}] level_started_at persist threw: ${(err as Error)?.message ?? err}`
-          );
-        })
+          })
+      )
     );
   }
 
@@ -5989,6 +6415,20 @@ export abstract class TournamentManagerBase {
    * escalation could freeze entirely.
    */
   protected async advanceBlindLevel(blindStructure: any[]): Promise<void> {
+    if (this.operationClockHeld()) return;
+    if (this.blindTransition) return this.blindTransition;
+    const operation = this.trackOperationWork('blind_transition', () =>
+      this.advanceBlindLevelOnce(blindStructure)
+    );
+    this.blindTransition = operation;
+    try {
+      await operation;
+    } finally {
+      if (this.blindTransition === operation) this.blindTransition = null;
+    }
+  }
+
+  private async advanceBlindLevelOnce(blindStructure: any[]): Promise<void> {
     const lifecycle = this.lifecycleEpoch.current();
     {
       {
@@ -6041,6 +6481,7 @@ export abstract class TournamentManagerBase {
           return;
         }
 
+        const levelStartedAt = Date.now();
         const prevLevel = this.currentLevel;
         this.currentLevel++;
 
@@ -6131,6 +6572,7 @@ export abstract class TournamentManagerBase {
             .eq('id', tableId);
           if (!this.lifecycleIsCurrent(lifecycle)) return;
           if (blindErr) {
+            this.operationWorkFailed.add('blind_transition');
             const blindMsg = blindErr.message?.includes('<!DOCTYPE html>')
               ? 'Cloudflare/Supabase HTML Error (502/504)'
               : blindErr.message || JSON.stringify(blindErr) || 'Unknown error';
@@ -6167,7 +6609,6 @@ export abstract class TournamentManagerBase {
 
         // Publish the new level and its clock anchor together. A replacement
         // manager must never time this level from the previous level's start.
-        const levelStartedAt = Date.now();
         this.blindTimerStartedAt = levelStartedAt;
         const { error: levelErr } = await supabase
           .from('tournaments')
@@ -6177,6 +6618,7 @@ export abstract class TournamentManagerBase {
           })
           .eq('id', this.tournamentId);
         if (!this.lifecycleIsCurrent(lifecycle)) return;
+        if (levelErr) this.operationWorkFailed.add('blind_transition');
         if (levelErr)
           reportError(
             new Error(
@@ -6260,7 +6702,8 @@ export abstract class TournamentManagerBase {
         // On a level event this call observes the current_level write above;
         // on a minutes-only event it simply confirms the still-open window and
         // leaves the one DB-relative lifecycle timer armed.
-        await this.reconcileTournamentEntryWindow('engine.level_change');
+        if (!this.operationFinancialHeld())
+          await this.reconcileTournamentEntryWindow('engine.level_change');
         if (!this.lifecycleIsCurrent(lifecycle)) return;
 
         // Schedule the next level (waits the new level's duration, then
@@ -6308,7 +6751,7 @@ export abstract class TournamentManagerBase {
           reportError(error, 'TournamentManagerBase.addon_break_finish_failed')
         );
       },
-      Math.max(0, endMs - Date.now())
+      Math.max(0, endMs - this.tournamentClockNow())
     );
   }
 
@@ -6319,6 +6762,7 @@ export abstract class TournamentManagerBase {
    * than granting a new one.
    */
   private scheduleAddOnBreak(endsAt: string | null | undefined): void {
+    if (this.operationFinancialHeld()) return;
     if (this.addOnBreakStartTimer) {
       this.clearLifecycleTimeout(this.addOnBreakStartTimer);
       this.addOnBreakStartTimer = null;
@@ -6340,7 +6784,7 @@ export abstract class TournamentManagerBase {
       return;
     }
 
-    if (endMs <= Date.now()) {
+    if (endMs <= this.tournamentClockNow()) {
       if (this.addOnBreakActive) {
         this.dispatchLifecycleCallback(
           () =>
@@ -6352,7 +6796,7 @@ export abstract class TournamentManagerBase {
       }
       return;
     }
-    if (breakStartMs <= Date.now()) {
+    if (breakStartMs <= this.tournamentClockNow()) {
       this.dispatchLifecycleCallback(
         () =>
           this.beginAddOnBreak(endMs).catch((error) =>
@@ -6368,16 +6812,22 @@ export abstract class TournamentManagerBase {
       return this.beginAddOnBreak(endMs).catch((error) =>
         reportError(error, 'TournamentManagerBase.addon_break_begin_failed')
       );
-    }, breakStartMs - Date.now());
+    }, breakStartMs - this.tournamentClockNow());
   }
 
   private async beginAddOnBreak(endMs: number): Promise<void> {
+    if (this.operationFinancialHeld()) return;
+    return this.trackOperationWork('addon_break_start', () => this.beginAddOnBreakOnce(endMs));
+  }
+
+  private async beginAddOnBreakOnce(endMs: number): Promise<void> {
     const lifecycle = this.captureLifecycleToken();
     if (
       !lifecycle ||
       !this.lifecycleIsCurrent(lifecycle) ||
+      this.operationFinancialHeld() ||
       this.prizePoolFinalized ||
-      endMs <= Date.now()
+      endMs <= this.tournamentClockNow()
     ) {
       return;
     }
@@ -6395,7 +6845,7 @@ export abstract class TournamentManagerBase {
 
     if (this.addOnBreakOwnsLevelClock) this.suspendLevelClock();
     if (this.addOnBreakOwnsPause) {
-      const remainingMs = Math.max(1_000, endMs - Date.now());
+      const remainingMs = Math.max(1_000, endMs - this.tournamentClockNow());
       for (const engine of this.tableEngines.values()) {
         try {
           engine.pauseAfterHand(remainingMs + TournamentManagerBase.LAST_HAND_GRACE_MS, {
@@ -6415,21 +6865,31 @@ export abstract class TournamentManagerBase {
     }
 
     await this.broadcast('addon_break', {
-      breakDurationMinutes: Math.max(1, Math.ceil((endMs - Date.now()) / 60_000)),
+      breakDurationMinutes: Math.max(1, Math.ceil((endMs - this.tournamentClockNow()) / 60_000)),
       breakEndsAt: new Date(endMs).toISOString(),
     });
-    if (!this.lifecycleIsCurrent(lifecycle) || isMaintenanceFrozen()) return;
+    if (
+      !this.lifecycleIsCurrent(lifecycle) ||
+      this.operationFinancialHeld() ||
+      isMaintenanceFrozen()
+    )
+      return;
 
     // The same boolean entitlement is used at opening and at the break. The
     // query excludes horses who already took it, so this cannot grant a second
     // add-on; it only gives every still-playing horse its promised timing. The
     // field-sized offer remains admitted by the process-wide scheduler.
-    this.lastAddOnOfferAt = Date.now() - TournamentManagerBase.ADD_ON_RETRY_MS;
+    this.lastAddOnOfferAt = this.tournamentClockNow() - TournamentManagerBase.ADD_ON_RETRY_MS;
     this.requestEliminationSweep();
     this.scheduleAddOnRetry();
   }
 
   private async finishAddOnBreak(): Promise<void> {
+    if (this.operationFinancialHeld()) return;
+    return this.trackOperationWork('addon_break_end', () => this.finishAddOnBreakOnce());
+  }
+
+  private async finishAddOnBreakOnce(): Promise<void> {
     if (!this.addOnBreakActive) return;
     if (isMaintenanceFrozen()) {
       // Keep the pause authority until thaw has shifted and re-read the window;
@@ -6496,10 +6956,16 @@ export abstract class TournamentManagerBase {
    * disappears again the deploy fails rather than the feature silently dying.
    */
   protected async tryTournamentAddOns(): Promise<void> {
+    if (this.operationFinancialHeld()) return;
+    return this.trackOperationWork('addon_offer', () => this.tryTournamentAddOnsOnce());
+  }
+
+  private async tryTournamentAddOnsOnce(): Promise<void> {
     if (
       isMaintenanceFrozen() ||
       !this.tournamentCache?.add_on_available ||
-      !this.eliminationMutationAllowed()
+      !this.eliminationMutationAllowed() ||
+      this.operationFinancialHeld()
     ) {
       return;
     }
@@ -6508,7 +6974,7 @@ export abstract class TournamentManagerBase {
       if (
         this.addOnPeriodTriggered &&
         Number.isFinite(persistedEndMs) &&
-        persistedEndMs <= Date.now()
+        persistedEndMs <= this.tournamentClockNow()
       ) {
         // The exact deadline timer is the normal edge. This scheduler path is
         // its bounded causal recovery when that read/RPC failed or thaw did.
@@ -6521,7 +6987,7 @@ export abstract class TournamentManagerBase {
         .select('user_id, add_on')
         .eq('tournament_id', this.tournamentId)
         .eq('status', 'playing');
-      if (!this.eliminationMutationAllowed()) return;
+      if (!this.eliminationMutationAllowed() || this.operationFinancialHeld()) return;
       if (rowsErr || !rows || rows.length === 0) {
         if (rowsErr) this.requestUrgentEliminationSweepAfter(TournamentManagerBase.ADD_ON_RETRY_MS);
         return;
@@ -6537,7 +7003,7 @@ export abstract class TournamentManagerBase {
         .select('id')
         .eq('tournament_id', this.tournamentId)
         .in('status', ['waiting', 'running', 'RUNNING', 'active']);
-      if (!this.eliminationMutationAllowed()) return;
+      if (!this.eliminationMutationAllowed() || this.operationFinancialHeld()) return;
       if (tableRowsErr || !tableRows) {
         reportError(
           tableRowsErr ?? new Error('add-on table snapshot returned no rows'),
@@ -6552,7 +7018,7 @@ export abstract class TournamentManagerBase {
           supabase.from('table_seats').select('user_id').in('table_id', batch).is('left_at', null),
         `Tournament.addOnSeats(${this.tournamentId.slice(0, 8)})`
       );
-      if (!this.eliminationMutationAllowed()) return;
+      if (!this.eliminationMutationAllowed() || this.operationFinancialHeld()) return;
       if (!seatRead.complete) {
         this.requestUrgentEliminationSweepAfter(TournamentManagerBase.ADD_ON_RETRY_MS);
         return;
@@ -6574,7 +7040,7 @@ export abstract class TournamentManagerBase {
         (batch) => supabase.from('profiles').select('id').in('id', batch).eq('is_horse', true),
         `Tournament.addOnHorses(${this.tournamentId.slice(0, 8)})`
       );
-      if (!this.eliminationMutationAllowed()) return;
+      if (!this.eliminationMutationAllowed() || this.operationFinancialHeld()) return;
       if (!horseRead.complete) {
         this.requestUrgentEliminationSweepAfter(TournamentManagerBase.ADD_ON_RETRY_MS);
         return;
@@ -6593,7 +7059,7 @@ export abstract class TournamentManagerBase {
         }
         // Dan's split is WHEN, not WHETHER: the deterministic 35% tranche may
         // buy before the break; every remaining live horse buys once it starts.
-        if (Date.now() < breakStartMs) {
+        if (this.tournamentClockNow() < breakStartMs) {
           eligibleHorseRows = eligibleHorseRows.filter((horse) =>
             horseAddsOnImmediately(horse.id, this.tournamentId)
           );
@@ -6615,7 +7081,12 @@ export abstract class TournamentManagerBase {
       let taken = 0;
       const declined = new Map<string, number>();
       for (const h of horseRows) {
-        if (isMaintenanceFrozen() || !this.eliminationMutationAllowed()) return;
+        if (
+          isMaintenanceFrozen() ||
+          !this.eliminationMutationAllowed() ||
+          this.operationFinancialHeld()
+        )
+          return;
         const { data, error } = await supabase.rpc('process_tournament_rebuy', {
           p_tournament_id: this.tournamentId,
           p_user_id: h.id,
@@ -6625,7 +7096,7 @@ export abstract class TournamentManagerBase {
           p_chips: null,
           p_current_level: this.currentLevel,
         });
-        if (!this.eliminationMutationAllowed()) return;
+        if (!this.eliminationMutationAllowed() || this.operationFinancialHeld()) return;
         if (error) {
           declined.set(error.message, (declined.get(error.message) || 0) + 1);
           // Ambiguous transport failure can follow a committed idempotent
@@ -6656,6 +7127,11 @@ export abstract class TournamentManagerBase {
   }
 
   protected async triggerAddOnPeriod(): Promise<void> {
+    if (this.operationFinancialHeld()) return;
+    return this.trackOperationWork('addon_open', () => this.triggerAddOnPeriodOnce());
+  }
+
+  private async triggerAddOnPeriodOnce(): Promise<void> {
     if (
       isMaintenanceFrozen() ||
       this.addOnPeriodTriggered ||
@@ -6665,7 +7141,7 @@ export abstract class TournamentManagerBase {
       return;
     }
     const lifecycle = this.captureLifecycleToken();
-    if (!lifecycle || !this.lifecycleIsCurrent(lifecycle)) return;
+    if (!lifecycle || !this.lifecycleIsCurrent(lifecycle) || this.operationFinancialHeld()) return;
     this.addOnPeriodOpening = true;
     let durableWindowProven = false;
 
@@ -6752,7 +7228,7 @@ export abstract class TournamentManagerBase {
         .select(projection)
         .eq('id', this.tournamentId)
         .maybeSingle();
-      if (!this.lifecycleIsCurrent(lifecycle)) return;
+      if (!this.lifecycleIsCurrent(lifecycle) || this.operationFinancialHeld()) return;
       if (proofError || !proven) {
         throw new Error(
           `could not prove the persisted add-on window: ${proofError?.message ?? 'row not found'}` +
@@ -6811,7 +7287,7 @@ export abstract class TournamentManagerBase {
         this.tournamentCache?.addon_chips || this.tournamentCache?.starting_chips || 0;
       const rebuyLevelCap =
         this.tournamentCache?.late_reg_levels ?? this.tournamentCache?.rebuy_levels ?? 8;
-      const durationSeconds = Math.max(0, Math.ceil((endMs - Date.now()) / 1000));
+      const durationSeconds = Math.max(0, Math.ceil((endMs - this.tournamentClockNow()) / 1000));
 
       // A delayed/lost write response can be recovered after the short window
       // has already elapsed. Adopt its durable state and let the zero-delay
@@ -6844,11 +7320,16 @@ export abstract class TournamentManagerBase {
         // database-backed add-on path and its close timer.
         reportError(err, 'TournamentManagerBase.addon_period_broadcast');
       }
-      if (!this.lifecycleIsCurrent(lifecycle) || isMaintenanceFrozen()) return;
+      if (
+        !this.lifecycleIsCurrent(lifecycle) ||
+        this.operationFinancialHeld() ||
+        isMaintenanceFrozen()
+      )
+        return;
 
       // Offer the add-on through the process-wide bounded scheduler. A large
       // field must never become an ungoverned loop on the engine event loop.
-      this.lastAddOnOfferAt = Date.now() - TournamentManagerBase.ADD_ON_RETRY_MS;
+      this.lastAddOnOfferAt = this.tournamentClockNow() - TournamentManagerBase.ADD_ON_RETRY_MS;
       this.requestEliminationSweep();
       this.scheduleAddOnRetry();
     } catch (err) {
@@ -6867,6 +7348,7 @@ export abstract class TournamentManagerBase {
    * be the normal minute or the longer Free Buy window, and makes a restart resume the same
    * clock instead of granting a new window or leaving it open for a level. */
   protected scheduleAddOnPeriodEnd(endsAt: string | null | undefined): void {
+    if (this.operationFinancialHeld()) return;
     const parsed = Date.parse(String(endsAt || ''));
     if (!Number.isFinite(parsed)) {
       reportError(
@@ -6877,10 +7359,11 @@ export abstract class TournamentManagerBase {
       );
       return;
     }
-    this.armAddOnPeriodEndCheck(Math.max(0, parsed - Date.now()));
+    this.armAddOnPeriodEndCheck(Math.max(0, parsed - this.tournamentClockNow()));
   }
 
   private armAddOnPeriodEndCheck(delayMs: number): void {
+    if (this.operationFinancialHeld()) return;
     if (this.addOnPeriodEndTimer) this.clearLifecycleTimeout(this.addOnPeriodEndTimer);
     this.addOnPeriodEndTimer = this.setLifecycleTimeout(
       () => {
@@ -6894,6 +7377,7 @@ export abstract class TournamentManagerBase {
   }
 
   private scheduleAddOnResumeBroadcastRetry(): void {
+    if (this.operationFinancialHeld()) return;
     if (
       !this.running ||
       this.prizePoolFinalized ||
@@ -6918,6 +7402,7 @@ export abstract class TournamentManagerBase {
    * attempts, so table-engine restoration never waits on presentation work.
    */
   private scheduleFinalizedAddOnTailReplay(finalPool: number): void {
+    if (this.operationFinancialHeld()) return;
     if (
       !this.running ||
       !Number.isFinite(finalPool) ||
@@ -6966,8 +7451,21 @@ export abstract class TournamentManagerBase {
    * idempotent.
    */
   private async finishAddOnTail(finalPool: number, alreadyRepriced = false): Promise<void> {
+    if (this.operationFinancialHeld()) return;
+    return this.trackOperationWork('addon_final_tail', () =>
+      this.finishAddOnTailOnce(finalPool, alreadyRepriced)
+    );
+  }
+
+  private async finishAddOnTailOnce(finalPool: number, alreadyRepriced = false): Promise<void> {
     const lifecycle = this.captureLifecycleToken();
-    if (!lifecycle || !this.lifecycleIsCurrent(lifecycle) || isMaintenanceFrozen()) return;
+    if (
+      !lifecycle ||
+      !this.lifecycleIsCurrent(lifecycle) ||
+      this.operationFinancialHeld() ||
+      isMaintenanceFrozen()
+    )
+      return;
     if (!Number.isFinite(finalPool) || finalPool < 0) {
       throw new Error(
         `[Tournament:${this.tournamentId.slice(0, 8)}] Cannot finish the add-on tail without a proven durable prize pool (${String(finalPool)})`
@@ -6984,12 +7482,22 @@ export abstract class TournamentManagerBase {
 
     if (!alreadyRepriced) {
       await this.recalculateEliminatedPrizes(finalPool);
-      if (!this.lifecycleIsCurrent(lifecycle) || isMaintenanceFrozen()) return;
+      if (
+        !this.lifecycleIsCurrent(lifecycle) ||
+        this.operationFinancialHeld() ||
+        isMaintenanceFrozen()
+      )
+        return;
     }
     const delivered = await this.broadcast('ADDON_PERIOD_END', {});
-    if (!this.lifecycleIsCurrent(lifecycle) || isMaintenanceFrozen()) return;
+    if (
+      !this.lifecycleIsCurrent(lifecycle) ||
+      this.operationFinancialHeld() ||
+      isMaintenanceFrozen()
+    )
+      return;
     await this.finishAddOnBreak();
-    if (!this.lifecycleIsCurrent(lifecycle)) return;
+    if (!this.lifecycleIsCurrent(lifecycle) || this.operationFinancialHeld()) return;
 
     if (this.addOnPeriodEndTimer) {
       this.clearLifecycleTimeout(this.addOnPeriodEndTimer);
@@ -7027,18 +7535,23 @@ export abstract class TournamentManagerBase {
    * armed before :55 is evidence only that it is time to ask the database.
    * It is never authority to close the shifted offer.
    */
-  private async drivePersistedAddOnDeadline(rebroadcastAfterThaw: boolean): Promise<void> {
+  private async drivePersistedAddOnDeadline(
+    rebroadcastAfterThaw: boolean,
+    provenState?: any
+  ): Promise<void> {
     const lifecycle = this.captureLifecycleToken();
-    if (!lifecycle || !this.lifecycleIsCurrent(lifecycle)) return;
+    if (!lifecycle || !this.lifecycleIsCurrent(lifecycle) || this.operationFinancialHeld()) return;
 
-    const { data: state, error } = await supabase
-      .from('tournaments')
-      .select(
-        'addon_period_triggered, addon_period_started_at, addon_period_ends_at, add_on_available, prize_pool, prize_pool_finalized, status'
-      )
-      .eq('id', this.tournamentId)
-      .maybeSingle();
-    if (!this.lifecycleIsCurrent(lifecycle)) return;
+    const { data: state, error } = provenState
+      ? { data: provenState, error: null }
+      : await supabase
+          .from('tournaments')
+          .select(
+            'addon_period_triggered, addon_period_started_at, addon_period_ends_at, add_on_available, prize_pool, prize_pool_finalized, status'
+          )
+          .eq('id', this.tournamentId)
+          .maybeSingle();
+    if (!this.lifecycleIsCurrent(lifecycle) || this.operationFinancialHeld()) return;
     if (error || !state) {
       reportError(
         new Error(
@@ -7086,7 +7599,7 @@ export abstract class TournamentManagerBase {
       this.addOnPeriodFinalizing = true;
       try {
         await this.finishAddOnTail(durablePool);
-        if (!this.lifecycleIsCurrent(lifecycle)) return;
+        if (!this.lifecycleIsCurrent(lifecycle) || this.operationFinancialHeld()) return;
       } catch (tailError) {
         reportError(tailError, 'TournamentManagerBase.addon_period_final_tail_failed');
         this.scheduleFinalizedAddOnTailReplay(durablePool);
@@ -7129,7 +7642,7 @@ export abstract class TournamentManagerBase {
     }
     this.scheduleAddOnBreak(endsAt);
 
-    const remainingMs = endMs - Date.now();
+    const remainingMs = endMs - this.tournamentClockNow();
     if (remainingMs > 0) {
       this.armAddOnPeriodEndCheck(remainingMs);
       if (rebroadcastAfterThaw) {
@@ -7146,7 +7659,7 @@ export abstract class TournamentManagerBase {
           endsAt,
           resumedAfterMaintenance: true,
         });
-        if (!this.lifecycleIsCurrent(lifecycle)) return;
+        if (!this.lifecycleIsCurrent(lifecycle) || this.operationFinancialHeld()) return;
         if (delivered) {
           if (this.addOnResumeBroadcastRetryTimer) {
             this.clearLifecycleTimeout(this.addOnResumeBroadcastRetryTimer);
@@ -7160,7 +7673,7 @@ export abstract class TournamentManagerBase {
         // callback returns. Queue the offer with the shared scheduler now; if
         // it is admitted before that edge, tryTournamentAddOns fails closed
         // and its ordinary bounded retry retains the work.
-        this.lastAddOnOfferAt = Date.now() - TournamentManagerBase.ADD_ON_RETRY_MS;
+        this.lastAddOnOfferAt = this.tournamentClockNow() - TournamentManagerBase.ADD_ON_RETRY_MS;
         this.requestEliminationSweep();
         this.scheduleAddOnRetry();
       }
@@ -7174,7 +7687,7 @@ export abstract class TournamentManagerBase {
       return;
     }
     await this.finalizeAfterAddOn();
-    if (!this.lifecycleIsCurrent(lifecycle)) return;
+    if (!this.lifecycleIsCurrent(lifecycle) || this.operationFinancialHeld()) return;
   }
 
   /** Called by the platform thaw after fn_thaw_platform commits and before
@@ -7288,8 +7801,14 @@ export abstract class TournamentManagerBase {
   }
 
   protected async finalizeAfterAddOn(): Promise<boolean> {
+    if (this.operationFinancialHeld()) return false;
+    return this.trackOperationWork('addon_close', () => this.finalizeAfterAddOnOnce());
+  }
+
+  private async finalizeAfterAddOnOnce(): Promise<boolean> {
     const lifecycle = this.captureLifecycleToken();
-    if (!lifecycle || !this.lifecycleIsCurrent(lifecycle)) return false;
+    if (!lifecycle || !this.lifecycleIsCurrent(lifecycle) || this.operationFinancialHeld())
+      return false;
     if (this.prizePoolFinalized) return true;
     if (this.addOnPeriodFinalizing) return false;
     if (isMaintenanceFrozen()) return false;
@@ -7304,7 +7823,7 @@ export abstract class TournamentManagerBase {
         p_tournament_id: this.tournamentId,
         p_source: 'engine.addon_period_end',
       });
-      if (!this.lifecycleIsCurrent(lifecycle)) return false;
+      if (!this.lifecycleIsCurrent(lifecycle) || this.operationFinancialHeld()) return false;
       const result = (data ?? {}) as {
         ok?: boolean;
         reason?: string;
@@ -7358,14 +7877,14 @@ export abstract class TournamentManagerBase {
       // entry-window close. Re-enter the one receipt consumer so a lost add-on
       // response or a crash during early-finisher top-ups is replayable.
       const repriced = await this.reconcileTournamentEntryWindow('engine.addon_period_reprice');
-      if (!this.lifecycleIsCurrent(lifecycle)) return false;
+      if (!this.lifecycleIsCurrent(lifecycle) || this.operationFinancialHeld()) return false;
       if (!repriced) {
         this.scheduleFinalizedAddOnTailReplay(finalPool);
         return false;
       }
 
       await this.finishAddOnTail(finalPool, true);
-      if (!this.lifecycleIsCurrent(lifecycle)) return false;
+      if (!this.lifecycleIsCurrent(lifecycle) || this.operationFinancialHeld()) return false;
       return true;
     } catch (err) {
       reportError(err, 'TournamentManagerBase.addon_period_finalize_failed');

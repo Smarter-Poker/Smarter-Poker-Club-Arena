@@ -316,7 +316,7 @@ describe('a restart mid-break does not resume play', () => {
       BASE.indexOf('protected async clearPersistedBreak'),
       BASE.indexOf('protected async clearPersistedBreak') + 600
     );
-    expect(clearFn).toMatch(/on_break: false, break_ends_at: null/);
+    expect(clearFn).toMatch(/on_break:\s*false,\s*break_ends_at:\s*null/);
   });
 });
 

@@ -1508,6 +1508,7 @@ export class GameServer {
     );
     this.tournamentEngines.set(tournamentId, manager);
     try {
+      this.maintenanceBreak.adoptTournament(manager);
       if (mode === 'resume') await manager.resume();
       else await manager.start();
 
@@ -1550,6 +1551,7 @@ export class GameServer {
       return;
     }
     await this.holdIfBreakIsRunning(manager);
+    await this.maintenanceBreak.reconcileTournament(manager);
     if (
       !this.directAdmissionIsCurrent(generation) ||
       !this.ownsTournamentManager(tournamentId, manager) ||
@@ -1731,6 +1733,7 @@ export class GameServer {
 
   private readonly maintenanceBreak = new MaintenanceBreak({
     engines: () => this.tableEngines.entries(),
+    tournaments: () => this.tournamentEngines.values(),
     isRunning: () => this.running,
     emit: (tableId, payload) => tableStateHub.emitEvent(tableId, payload),
     store: createSupabaseMaintenanceBreakStore(ENGINE_RELEASE_IDENTITY.version),
@@ -1826,15 +1829,16 @@ export class GameServer {
          before any table resumes. Managers without an active window return
          without I/O; failures are isolated per event and their live timer
          keeps re-reading the durable deadline. */
-      await Promise.all(
-        [...this.tournamentEngines.values()].map(async (manager) => {
-          try {
-            await manager.resyncAddOnPeriodAfterMaintenanceThaw();
-          } catch (error) {
-            reportError(error, 'GameServer.addon_period_thaw_resync_failed');
-          }
-        })
-      );
+      if (!this.maintenanceBreak.operationPolicyEnabled())
+        await Promise.all(
+          [...this.tournamentEngines.values()].map(async (manager) => {
+            try {
+              await manager.resyncAddOnPeriodAfterMaintenanceThaw();
+            } catch (error) {
+              reportError(error, 'GameServer.addon_period_thaw_resync_failed');
+            }
+          })
+        );
       return release;
     }),
   });
@@ -5057,7 +5061,9 @@ export class GameServer {
           // table is between hands, so a frozen hand is reaped on its usual
           // clock and its replacement arrives parked (maintenanceBreak.adopt,
           // prepareManagedTableEngineForPlay).
-          const pausedTooLong = engine.msPaused() > GameServer.MAX_HEALTHY_PAUSE_MS;
+          const pausedTooLong =
+            engine.msPaused() > GameServer.MAX_HEALTHY_PAUSE_MS &&
+            !this.maintenanceBreak.holdsTableForOperation(id);
           const parkedOnPurpose = engine.isParkedByDesign() && !pausedTooLong;
           if (shouldBeDealing && !parkedOnPurpose && engine.msSinceProgress() > 180_000) {
             reportError(

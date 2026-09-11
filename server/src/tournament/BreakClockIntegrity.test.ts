@@ -81,7 +81,7 @@ function methodBody(src: string, signature: string): string {
 }
 
 describe('DEFECT 1 - the level clock neither ticks nor advances during a break', () => {
-  const advance = methodBody(BASE, 'protected async advanceBlindLevel(');
+  const advance = methodBody(BASE, 'private async advanceBlindLevelOnce(');
 
   it('refuses to advance a level while the tournament is on break', () => {
     // The guard must sit BEFORE the increment, or the level is already gone.
@@ -150,7 +150,7 @@ describe('DEFECT 2 - a break with no end time yet is still a break', () => {
 });
 
 describe('DEFECT 3 - a tournament that ends on a break still comes off it', () => {
-  const resume = methodBody(BASE, 'async resumeFromBreak()');
+  const resume = methodBody(BASE, 'private async commitOwnBreakResume()');
 
   it('does not skip the persisted clear when the tournament has stopped', () => {
     expect(resume).not.toMatch(/if\s*\(\s*!this\.running\s*\|\|\s*!this\.onBreak\s*\)\s*return/);
@@ -163,17 +163,20 @@ describe('DEFECT 3 - a tournament that ends on a break still comes off it', () =
   });
 
   it('still clears both columns', () => {
-    const clear = methodBody(BASE, 'protected async clearPersistedBreak()');
+    const clear = methodBody(BASE, 'protected async clearPersistedBreak(');
     expect(clear).toMatch(/on_break:\s*false/);
     expect(clear).toMatch(/break_ends_at:\s*null/);
   });
 });
 
 describe('DEFECT 4 - a break countdown is started once, never restarted', () => {
-  const countdown = methodBody(BASE, 'async beginBreakCountdown(');
-  const pause = methodBody(BASE, 'async pauseForBreak(');
+  const countdown = methodBody(BASE, 'private async beginBreakCountdownOnce(');
+  const pause = methodBody(BASE, 'private async pauseForBreakOnce(');
 
   it('refuses a second countdown for the same break', () => {
+    expect(methodBody(BASE, 'async beginBreakCountdown(')).toContain(
+      'this.beginBreakCountdownOnce(breakDurationMs, deadlineMs)'
+    );
     expect(countdown).toMatch(/if\s*\(this\.breakCountdownStarted\)\s*return;/);
     expect(countdown).toMatch(/this\.breakCountdownStarted\s*=\s*true/);
     // The refusal must precede the write, or the extension still lands.
@@ -184,7 +187,7 @@ describe('DEFECT 4 - a break countdown is started once, never restarted', () => 
 
   it('re-opens the door for the NEXT break', () => {
     expect(pause).toMatch(/this\.breakCountdownStarted\s*=\s*false/);
-    expect(methodBody(BASE, 'async resumeFromBreak()')).toMatch(
+    expect(methodBody(BASE, 'private async commitOwnBreakResume()')).toMatch(
       /this\.breakCountdownStarted\s*=\s*false/
     );
   });

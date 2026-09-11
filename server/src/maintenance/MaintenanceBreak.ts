@@ -101,7 +101,11 @@
 import { randomUUID } from 'node:crypto';
 import { completeReconnectFreeze, completeTableReconnectFreeze } from './reconnectFreeze.js';
 import { setMaintenanceFrozen } from './freezeState.js';
-import { OperationMaintenanceRuntime, type OperationMaintenanceStore } from './OperationMaintenanceRuntime.js';
+import type { OperationTournament } from './OperationTournament.js';
+import {
+  OperationMaintenanceRuntime,
+  type OperationMaintenanceStore,
+} from './OperationMaintenanceRuntime.js';
 import { operationMaintenancePolicyDigest } from './operationPolicy.js';
 import {
   assertMaintenanceThawRelease,
@@ -239,6 +243,7 @@ export interface ResumeWavesProgress {
 export interface MaintenanceBreakDeps {
   /** Every live table engine, cash and tournament alike. */
   engines(): Iterable<[string, PausableTableEngine]>;
+  tournaments?(): Iterable<OperationTournament>;
   /** False once the process is shutting down; stops any further scheduling. */
   isRunning(): boolean;
   /** Discrete per-table event frame to every subscriber of that table. */
@@ -482,15 +487,20 @@ export class MaintenanceBreak {
     if (this.deps.store.operation) {
       if (!this.deps.thaw) throw new Error('maintenance_operation_thaw_required');
       this.operationRuntime = new OperationMaintenanceRuntime({
-        store:this.deps.store.operation, engines:this.deps.engines, emit:this.deps.emit,
-        thaw:this.deps.thaw, planWaves:MaintenanceBreak.planOperationResumeWaves,
-        waveGapMs:MaintenanceBreak.RESUME_WAVE_GAP_MS,
-        onActivated:() => {
+        store: this.deps.store.operation,
+        engines: this.deps.engines,
+        emit: this.deps.emit,
+        tournaments: this.deps.tournaments,
+        thaw: this.deps.thaw,
+        planWaves: MaintenanceBreak.planOperationResumeWaves,
+        waveGapMs: MaintenanceBreak.RESUME_WAVE_GAP_MS,
+        onActivated: () => {
           if (this.phase !== 'idle') throw new Error('maintenance_activation_during_legacy_hold');
           if (this.announceTimer) this.clearTimer(this.announceTimer);
           this.announceTimer = null;
         },
-        report:error => console.error('[MaintenanceBreak] owned operation requires reconciliation', error),
+        report: (error) =>
+          console.error('[MaintenanceBreak] owned operation requires reconciliation', error),
       });
       await this.operationRuntime.start();
       if (!this.lifecycleIsCurrent(generation) || this.operationRuntime.enabled()) return;
@@ -940,7 +950,10 @@ export class MaintenanceBreak {
    * platform dealing, which is both wrong and the loudest possible tell.
    */
   adopt(tableId: string, engine: PausableTableEngine): void {
-    if (this.operationRuntime?.enabled()) { this.operationRuntime.adopt(tableId,engine); return; }
+    if (this.operationRuntime?.enabled()) {
+      this.operationRuntime.adopt(tableId, engine);
+      return;
+    }
     if (!this.acceptingLifecycleWork || !this.isActive()) return;
     engine.pauseForMaintenance(this.remainingParkBudgetMs());
     this.deps.emit(tableId, this.eventPayload(tableId, this.phase as MaintenanceBreakPhase));
@@ -1631,21 +1644,35 @@ export class MaintenanceBreak {
 
   /** Preserve stable cash ordering, while keeping each tournament's common
    * level/add-on clocks within one durable resume wave. */
-  static planOperationResumeWaves(tables: Array<[string,PausableTableEngine]>): Array<Array<[string,PausableTableEngine]>> {
-    const grouped = new Map<string,Array<[string,PausableTableEngine]>>();
+  static planOperationResumeWaves(
+    tables: Array<[string, PausableTableEngine]>
+  ): Array<Array<[string, PausableTableEngine]>> {
+    const grouped = new Map<string, Array<[string, PausableTableEngine]>>();
     for (const pair of tables) {
       const key = pair[1].maintenanceClockGroup?.() ?? pair[0];
       const group = grouped.get(key) ?? [];
-      group.push(pair); grouped.set(key,group);
+      group.push(pair);
+      grouped.set(key, group);
     }
-    const groups = [...grouped].sort((a,b)=>fnv1a(a[0])-fnv1a(b[0]) || a[0].localeCompare(b[0]));
-    const count = Math.min(MaintenanceBreak.RESUME_WAVES, Math.max(1,Math.ceil(tables.length/MaintenanceBreak.RESUME_WAVE_MIN_TABLES)));
-    const waves: Array<Array<[string,PausableTableEngine]>> = Array.from({length:count},()=>[]);
-    for (const [,group] of groups) {
-      const lightest=waves.reduce((best,wave,i)=>wave.length<waves[best].length?i:best,0);
-      waves[lightest].push(...group.sort((a,b)=>a[0].localeCompare(b[0])));
+    const groups = [...grouped].sort(
+      (a, b) => fnv1a(a[0]) - fnv1a(b[0]) || a[0].localeCompare(b[0])
+    );
+    const count = Math.min(
+      MaintenanceBreak.RESUME_WAVES,
+      Math.max(1, Math.ceil(tables.length / MaintenanceBreak.RESUME_WAVE_MIN_TABLES))
+    );
+    const waves: Array<Array<[string, PausableTableEngine]>> = Array.from(
+      { length: count },
+      () => []
+    );
+    for (const [, group] of groups) {
+      const lightest = waves.reduce(
+        (best, wave, i) => (wave.length < waves[best].length ? i : best),
+        0
+      );
+      waves[lightest].push(...group.sort((a, b) => a[0].localeCompare(b[0])));
     }
-    return waves.filter(wave=>wave.length>0);
+    return waves.filter((wave) => wave.length > 0);
   }
 
   /**
@@ -2060,6 +2087,18 @@ export class MaintenanceBreak {
     return this.operationRuntime?.enabled() === true && this.operationRuntime.holds(tableId);
   }
 
+  adoptTournament(manager: OperationTournament): void {
+    this.operationRuntime?.adoptTournament(manager);
+  }
+
+  async reconcileTournament(manager: OperationTournament): Promise<void> {
+    await this.operationRuntime?.reconcileTournament(manager);
+  }
+
+  operationPolicyEnabled(): boolean {
+    return this.operationRuntime?.enabled() === true;
+  }
+
   remainingMs(): number {
     if (this.phase !== 'counting_down' || this.breakEndsAt === 0) return 0;
     return Math.max(0, this.breakEndsAt - this.now());
@@ -2115,13 +2154,17 @@ export class MaintenanceBreak {
 
   /** Published on /health. */
   snapshot(): Record<string, unknown> {
-    if (this.operationRuntime?.enabled()) return { ...this.operationRuntime.snapshot(), policyDigest:operationMaintenancePolicyDigest };
+    if (this.operationRuntime?.enabled())
+      return {
+        ...this.operationRuntime.snapshot(),
+        policyDigest: operationMaintenancePolicyDigest,
+      };
     const unparked = this.isActive() ? this.unparkedTables() : [];
     return {
-      policyVersion:1,
-      supportedPolicyVersions:[1,2],
-      policyDigest:operationMaintenancePolicyDigest,
-      activationReceipt:null,
+      policyVersion: 1,
+      supportedPolicyVersions: [1, 2],
+      policyDigest: operationMaintenancePolicyDigest,
+      activationReceipt: null,
       active: this.isActive(),
       phase: this.phase,
       durableConfirmed: this.isActive() && this.durableConfirmed,

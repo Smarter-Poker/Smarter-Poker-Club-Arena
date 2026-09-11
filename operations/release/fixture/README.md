@@ -1,0 +1,203 @@
+# Isolated component fixture image
+
+This is the build and native smoke package for the real fixture services used by
+`operations/release/native/qualify-components.py`. It contains PostgreSQL,
+GoTrue, PostgREST, Supabase Realtime, and Chromium. API responses are not mocked.
+Only synthetic credentials are created at runtime. Candidate frontend, engine,
+and schema artifacts are inputs to the separate trusted runtime/controller.
+
+**Status: prepared source, not a built or qualified image.** The preparation
+machine has no Linux Docker daemon. Registry manifests/configuration and signed
+Debian snapshot metadata were read; no image layers or browsers were pulled.
+The native smoke and full product matrix must run on Linux before admission.
+Neither local syntax checks nor a successful image build substitutes for them.
+
+## Pinned inputs
+
+The Dockerfile pins Linux amd64 platform manifests, verified through the official
+Docker Registry API on 2026-09-11. Other architectures deliberately fail closed.
+
+| Input             | Version                | Linux amd64 manifest digest                                               |
+| ----------------- | ---------------------- | ------------------------------------------------------------------------- |
+| Official Node     | 22.23.2, bookworm-slim | `sha256:4d676821dff059fd00d277ee4261ef34ea712317fed0737c03941481b5760c96` |
+| Supabase GoTrue   | v2.196.0               | `sha256:7e813221b93fbf54b515036438550e483bfaf057b9db52fe9bc1ce91c47e817e` |
+| PostgREST         | v14.5                  | `sha256:bb289d00570b569525e1e22fb77c49cd17c17ca3f41da9ee2b4351a35027551b` |
+| Supabase Realtime | v2.134.10              | `sha256:c1d078d929608f3eb4d441e30317bbdccc1bfcc1169efa3d1a26d4252417cc76` |
+
+Realtime's official image supplies its matching Debian trixie runtime and Erlang
+release. The [tagged upstream Dockerfile](https://github.com/supabase/realtime/blob/v2.134.10/Dockerfile)
+documents that layout. GoTrue is copied as the upstream static Go binary; the
+[tagged build](https://github.com/supabase/auth/blob/v2.196.0/Dockerfile)
+sets `CGO_ENABLED=0`. The PostgREST amd64 image supplies `/bin/postgrest`, the
+[upstream static build](https://github.com/PostgREST/postgrest/blob/v14.5/nix/tools/docker/default.nix).
+No Alpine libc or independent Erlang installation is copied into Debian.
+
+PostgreSQL server/client/libpq are **17.11-0+deb13u1**, and pgvector is **0.8.0-1**.
+Realtime's logical replication also requires **postgresql-17-wal2json=2.6-2+b1**.
+The [Debian amd64 package record](https://packages.debian.org/trixie/amd64/postgresql-17-wal2json/download)
+lists SHA-256 `70371bb2072d904ad381d29df2c50f5f2fe8c12583bc0207336b2d5772a0ac36`;
+its [file inventory](https://packages.debian.org/trixie/amd64/postgresql-17-wal2json/filelist)
+includes `/usr/lib/postgresql/17/lib/wal2json.so`. The build uses the same signed
+snapshot and the native smoke must create and drop a real temporary logical
+slot using this plugin before exercising Realtime. This addition has not yet
+been built or executed in Linux; package-index and runtime proof remain required.
+Both APT sources are frozen at `20260910T000000Z` in the official
+[Debian snapshot archive](https://snapshot.debian.org/). The exact versions were
+verified in its `trixie` and `trixie-security` amd64 package indexes. Package
+signature verification stays enabled; only the historical Release expiry check
+is disabled. PostgreSQL's package supplies the required contrib extensions;
+the image build checks for dblink, pg_stat_statements, pg_trgm, pgcrypto,
+uuid-ossp, and vector control files, and the native smoke creates all six.
+
+The npm lock pins `@playwright/test` 1.58.0, `pg` 8.20.0, and `tsx` 4.23.13,
+including package integrity hashes. The locked Playwright browser revision is
+installed at build time; its [Debian 13 dependencies](https://github.com/microsoft/playwright/blob/v1.58.0/packages/playwright-core/src/server/registry/nativeDeps.ts)
+come from the same dated APT snapshot. Nothing installs packages at runtime.
+The final built image identity must be recorded and admitted by immutable OCI
+digest; these base-image pins are not that final image's identity.
+
+## Runtime interface
+
+The image's entrypoint is `tini -s -g --`; the driver supplies the fixed
+`fixture-server` command and subcommand. The wrapper invokes the reviewed
+`/opt/qualification/runtime/fixture-server.mjs`. The build copies only the
+explicit runtime modules, manifests and smoke tool, through an allowlisted tar
+context. It does not send the repository, `.env`, schema dump, Git metadata or
+candidate artifacts to Docker.
+
+| Purpose                 | Fixed path                                                            |
+| ----------------------- | --------------------------------------------------------------------- |
+| Node                    | `/usr/local/bin/node`                                                 |
+| PostgreSQL 17           | `/usr/lib/postgresql/17/bin/{initdb,postgres,pg_ctl,psql,pg_isready}` |
+| GoTrue                  | `/usr/local/bin/auth`                                                 |
+| PostgREST               | `/usr/local/bin/postgrest`                                            |
+| Realtime                | `/app/bin/{migrate,realtime,server}`                                  |
+| Trusted runtime modules | `/opt/qualification/runtime/`                                         |
+| tsx and Playwright      | `/opt/qualification/node_modules/.bin/`                               |
+| Chromium                | resolved by locked Playwright under `/opt/qualification/browsers`     |
+| PostgreSQL socket       | `/run/postgresql`                                                     |
+
+The default OS user is `fixture`, UID/GID **1000**, and the independent oracle is
+`qualification`, UID/GID **1001**, with no shared supplementary group. PostgreSQL
+runs as fixture and uses database superuser `postgres`. Only fixture maps to
+postgres; its socket directory is mode 0700. The observer has no database role,
+password or PostgreSQL socket access. Browser/engine roles keep their actual
+RLS behavior. Default PUBLIC CONNECT on the other cluster databases is revoked.
+
+The observer connects to `/run/fixture-observer/observation.sock`. This bridge
+owns a separate private database connection and accepts only bounded catalogue,
+hand-presence and hand-facts requests. The trusted mounted controls define the
+queries and independent assertions. Each start binds a fresh instance UUID,
+the immutable `/inputs/observation-control.json` control revision, seeded table
+and spectator. The first future hand tuple binds subsequent reads to that same
+hand and original persistence deadline. No request can supply SQL, identifiers,
+credentials, alternate helpers or a product pass verdict. The runtime preserves
+schema exclusions; neither this bridge nor a successful service smoke certifies
+an incomplete application database contract.
+
+Use read-only root, all capabilities dropped, no-new-privileges, no egress, no
+host ports, and no Docker socket. Tmpfs mounts replace image directory ownership:
+
+```text
+/tmp:rw,nosuid,mode=1777,uid=1000,gid=1000,size=2g
+/run:rw,nosuid,mode=0755,uid=1000,gid=1000,size=2g
+/run/fixture-observer:rw,nosuid,noexec,mode=2750,uid=1000,gid=1001,size=1m
+/var/lib/postgresql:rw,nosuid,mode=0700,uid=1000,gid=1000,size=4g
+```
+
+Set `net.ipv4.ip_unprivileged_port_start=0` explicitly for port 443. The
+supervisor creates private mode-0700 service state under `/run`; only the
+intended browser fixture state is observer-readable. Oracle `docker exec` uses
+`--user qualification --env HOME=/tmp/qualification
+--env XDG_CACHE_HOME=/tmp/qualification/cache`. The supervisor uses
+`/tmp/fixture`; Realtime temporary configuration and crash output use that
+private location. The release cookie is readable only by root/fixture, and the supervisor supplies a fresh runtime RELEASE_COOKIE in the private Realtime child environment. Its pgdelta cache is expanded during build, so invoking the
+real Realtime migrations does not try to write beneath read-only `/app`.
+
+## Genuine service bootstrap
+
+1. Initialize a new PG17 database `club_arena_qualification`, local roles and
+   required extensions. Enable logical WAL and adequate replication slots;
+   preload pg_stat_statements. Create `auth` owned by supabase_auth_admin.
+2. With synthetic `GOTRUE_DB_DATABASE_URL` and local auth configuration, run
+   `/usr/local/bin/auth migrate`. This runs the
+   [upstream embedded migrations](https://github.com/supabase/auth/blob/v2.196.0/cmd/migrate_cmd.go).
+   Apply the reviewed app schema only after those succeed; do not replace the
+   GoTrue-owned schema with an old dump lacking its migration ledger. Start
+   `/usr/local/bin/auth serve`, then create users and MFA through its real API.
+3. Start `/usr/local/bin/postgrest` with synthetic local DB/JWT configuration.
+4. Run `/app/bin/migrate`, then `/app/bin/realtime eval
+'Realtime.Release.seeds(Realtime.Repo)'`, then `/app/bin/server`. These are
+   [upstream release commands](https://github.com/supabase/realtime/blob/v2.134.10/run.sh),
+   called directly without sudo, the image's upstream launcher, or its cloud
+   secret hooks. Set `SELF_HOST_TENANT_NAME=realtime-dev`, matching the gateway's
+   fixed `realtime-dev.supabase-realtime` host. Supply only runtime-generated
+   DB/JWT/encryption/metrics secrets. Seed exit zero alone is insufficient:
+   the upstream seed logs some tenant failures, so validate the tenant, health,
+   real authenticated subscription, and actual database change.
+
+The root-owned runtime and schema provenance remain authoritative for complete
+fixture bootstrapping. This package's tiny native SQL table checks protocols and
+binaries; it does not claim equivalence to the application schema.
+
+## Credential-free Linux CI path
+
+After the normal draft PR includes the complete reviewed runtime files, use a
+native Linux amd64 Docker runner with repository read permission and no secrets.
+Do not use a privileged production runner or a workflow-dispatch workaround.
+
+```bash
+bash operations/release/fixture/build-image.sh club-arena-component-fixture:ci
+bash operations/release/fixture/smoke-image.sh club-arena-component-fixture:ci
+```
+
+The build refuses untracked/missing runtime sources and a dirty fixture tree.
+It labels the image with the exact checked-out commit and never pushes. The
+smoke uses the local immutable image ID and `--network=none`; only loopback and
+an explicit loopback Realtime hostname exist. It checks six real extensions,
+GoTrue migrations/users/TOTP to AAL2, PostgREST authentication/RLS, a causal
+Realtime database event, separate-user credential denial and read-only SQL,
+and Chromium fetching the authenticated native endpoint. It creates no trace,
+video, external fixture or credentials artifact. Output is bounded status,
+version/count facts; raw logs and session values stay in disposable memory.
+Readiness is bounded; failed services, browsers and assertions are never retried.
+The enclosing script removes its exact container and verifies absence even on
+failure. No success statement is printed until container cleanup succeeds.
+
+For a runner-owned timeout cleanup, set `FIXTURE_SMOKE_CONTAINER` to exactly
+`ca-fixture-smoke-` followed by 32 lowercase hexadecimal characters. Without the
+override the script generates a UUID hex suffix. An occupied name is refused
+before cleanup is armed, so the script cannot remove a pre-existing container.
+Image labels `com.smarter-poker.control-revision` and
+`com.smarter-poker.source-revision` both bind the reviewed checkout revision.
+
+Only after native smoke succeeds may the independent full semantic driver run
+the before/intermediate/after artifact combinations and prove their cleanup.
+Image publication and controller admission are separate root-owned decisions;
+this package does not perform them.
+
+## Synthetic actors
+
+`actors.mjs` exports async `startFixtureActors({tableId, users, onFailure})`,
+returning `{close()}` after both authenticated subscriptions and initial native
+snapshots arrive. Supply exactly two real GoTrue sessions after the engine is
+ready. The only production endpoints are `ws://engine:8080/ws/multi?v=0` and
+`http://engine:8080/action`. A separate optional testEndpoints argument rejects
+anything except matching explicit `127.0.0.1` HTTP/WS ports.
+
+The runner consumes the engine's public SNAPSHOT/DELTA sequence and opaque
+`action_context`; EVENT/USER_EVENT never substitutes for that state. It checks
+when no chips are due, calls a covered amount, and otherwise folds. It posts
+one UUID per observed decision, waits at least 350 ms before submission to
+respect the native 250 ms rate limit, and re-reads the decision after waiting.
+There is no retry, reconnect, action fallback, seat write or SQL action. A
+broken/silent socket, malformed/gapped state, unknown frame or rejected action
+closes both actors and reports a fixed sanitized failure code. Startup is
+bounded to 20 seconds, silence to 45 seconds, and total life to 240 seconds.
+The driver removes the exact fixture container when the independent product
+oracle finishes; the supervisor closes actors on its own termination path.
+
+`actors.test.mjs` uses real loopback HTTP/WebSocket transport with small protocol
+fixtures and the repository's `ws` dependency. Its passing result is a boundary
+check, never proof that a candidate engine completed a real hand. The native
+Linux semantic matrix supplies that proof.

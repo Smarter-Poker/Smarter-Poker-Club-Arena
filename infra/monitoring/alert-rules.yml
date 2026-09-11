@@ -153,6 +153,11 @@ groups:
           description: 'SELECT * FROM v_openclaw_job_staleness WHERE is_stale. A job that stops being dispatched produces no errors at all - it simply stops appearing.'
           runbook: 'docs/changelog/2026-09-04-the-headings-that-alerted-on-nothing.md'
 
+      # humanizeDuration reads its input as SECONDS. This gauge is minutes -
+      # its name says so and the threshold below is in minutes - so the first
+      # page this rule ever produced described 19,689.6 minutes of silence as
+      # "5h 28m 9s". A page that understates a 13.7-day outage by a factor of
+      # sixty is worse than no page, because it is believed.
       - alert: OpenClawFleetLongSilence
         expr: |
           poker_cron_openclaw_worst_silence_minutes > 1440
@@ -162,7 +167,7 @@ groups:
           page: sms
           component: cron
         annotations:
-          summary: 'An Open Claw job has been silent for {{ $value | humanizeDuration }}'
+          summary: 'An Open Claw job has been silent for {{ $value | humanize }} minutes'
           description: 'More than a day with no successful run. The worst case observed before this alert existed was 18.3 days.'
           runbook: 'docs/changelog/2026-09-04-the-headings-that-alerted-on-nothing.md'
 
@@ -171,7 +176,7 @@ groups:
       - alert: PgCronFailuresElevated
         expr: |
           poker_cron_pg_failures > 10
-          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+          unless on() max_over_time(poker_maintenance_break_active[6m]) == 1
         for: 15m
         labels:
           severity: warning
@@ -187,7 +192,7 @@ groups:
         expr: |
           poker_cron_pg_runs < 50
           and poker_cron_metrics_stale_seconds < 300
-          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+          unless on() max_over_time(poker_maintenance_break_active[6m]) == 1
         for: 20m
         labels:
           severity: critical
@@ -199,8 +204,11 @@ groups:
 
       - alert: CronMetricsBlind
         expr: |
-          poker_cron_metrics_stale_seconds > 600
-          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+          (
+            poker_cron_metrics_stale_seconds > 600
+            or absent(poker_cron_metrics_stale_seconds)
+          )
+          unless on() max_over_time(poker_maintenance_break_active[6m]) == 1
         for: 10m
         labels:
           severity: warning
@@ -530,7 +538,7 @@ groups:
       - alert: HandsAreFailingToSettle
         expr: |
           poker_settlement_failure_rate > 0.02
-          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+          unless on() max_over_time(poker_maintenance_break_active[6m]) == 1
         for: 5m
         labels:
           severity: critical
@@ -546,7 +554,7 @@ groups:
       - alert: SettlementFailuresAboveBaseline
         expr: |
           poker_settlement_failure_rate > 0.005
-          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+          unless on() max_over_time(poker_maintenance_break_active[6m]) == 1
         for: 30m
         labels:
           severity: warning
@@ -562,7 +570,7 @@ groups:
         expr: |
           poker_settlement_window_hands == 0
           and poker_settlement_metrics_stale_seconds < 300
-          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+          unless on() max_over_time(poker_maintenance_break_active[6m]) == 1
         for: 10m
         labels:
           severity: critical
@@ -575,7 +583,7 @@ groups:
       - alert: SettlementsStuckMidStateMachine
         expr: |
           poker_settlement_stuck > 50
-          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+          unless on() max_over_time(poker_maintenance_break_active[6m]) == 1
         for: 15m
         labels:
           severity: warning
@@ -586,8 +594,11 @@ groups:
 
       - alert: SettlementMetricsBlind
         expr: |
-          poker_settlement_metrics_stale_seconds > 600
-          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+          (
+            poker_settlement_metrics_stale_seconds > 600
+            or absent(poker_settlement_metrics_stale_seconds)
+          )
+          unless on() max_over_time(poker_maintenance_break_active[6m]) == 1
         for: 10m
         labels:
           severity: warning
@@ -760,8 +771,11 @@ groups:
 
       - alert: MoneyHealthBlind
         expr: |
-          poker_money_health_stale_seconds > 600
-          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+          (
+            poker_money_health_stale_seconds > 600
+            or absent(poker_money_health_stale_seconds)
+          )
+          unless on() max_over_time(poker_maintenance_break_active[6m]) == 1
         for: 10m
         labels:
           severity: warning

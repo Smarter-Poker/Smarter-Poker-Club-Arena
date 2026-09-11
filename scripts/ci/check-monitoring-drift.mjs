@@ -37,11 +37,34 @@
  *      null/blackhole-style name, and not a receiver with no delivery
  *      configured at all.
  *
- * Deliberately NOT checked: rule expressions. This guards the wiring.
+ *   8. Every metric name a rule EXPRESSION references has something in this
+ *      repo that emits it. Added 2026-09-11, after fifteen rules written on
+ *      2026-09-04 were found referencing thirteen metric names that nothing in
+ *      the estate produced. `poker_settlement_failure_rate > 0.02` against a
+ *      metric with no samples is an empty vector: not an error, not a warning,
+ *      just permanently green. Four of those rules described conditions that
+ *      were true when the gap was found, two of them SMS pages, one true for
+ *      13.7 days. It had happened twice before on smaller scales - the
+ *      27 rules recovered on 2026-08-15, and `poker_hands_total` leaving
+ *      SLOHandsAreNotBeingDealt unable to fire (see slo-rules.yml) - which is
+ *      what makes it a class rather than an incident.
+ *
+ *      This check is why the header no longer says expressions are out of
+ *      scope. It does not evaluate them; it asks only whether the names they
+ *      use exist anywhere as output. A name with no producer either gets one,
+ *      or gets a line in infra/monitoring/metrics-without-a-producer.txt
+ *      saying who emits it and why CI cannot see that.
  */
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve, basename } from 'node:path';
+import {
+  rulesWithMetrics,
+  producerHaystack,
+  recordedNames,
+  readDeclaredAbsent,
+  isProduced,
+} from './rule-metric-producers.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const DIR = resolve(root, 'infra/monitoring');
@@ -217,7 +240,7 @@ if (existsSync(resolve(DIR, 'alertmanager.yml'))) {
   }
 }
 
-// ── 6. Every scrape job that ever existed still exists ──────────────────────
+// ── 7. Every scrape job that ever existed still exists ──────────────────────
 //
 // 2026-08-31: the live host carried a `turn_relay` scrape job that had been
 // added directly on engine-01 on 2026-08-28 and NEVER COMMITTED. deploy.sh
@@ -246,6 +269,55 @@ const REQUIRED_SCRAPE_JOBS = [
   }
 }
 
+// ── 8. every metric a rule NAMES must have something that emits it ──────────
+//
+// The failure this catches is silent by construction. Prometheus does not warn
+// about an expression whose metric has no samples; it returns an empty vector,
+// and an alert with an empty vector is indistinguishable from an alert whose
+// condition is false. See this file's header for the three times that has now
+// happened here.
+//
+// "Produced" is deliberately shallow: the name appears in code that runs in
+// production. It does not prove the emitter is reachable, scraped, or correct -
+// check 7 covers the scrape target and nothing in a repo can prove the rest.
+// It proves only that SOMETHING writes the name, which is the single fact whose
+// absence made all three incidents possible.
+{
+  const ruleFiles = onDisk.filter((f) => loadedNames.includes(f));
+  const rules = rulesWithMetrics(DIR, ruleFiles);
+  const haystack = producerHaystack(root);
+  const recorded = recordedNames(DIR, ruleFiles);
+  const declaredAbsent = readDeclaredAbsent(DIR);
+
+  const orphans = new Map(); // metric -> rules that name it
+  for (const rule of rules) {
+    for (const metric of rule.metrics) {
+      if (isProduced(metric, haystack, recorded, declaredAbsent)) continue;
+      if (!orphans.has(metric)) orphans.set(metric, []);
+      orphans.get(metric).push(`${rule.file}:${rule.name}`);
+    }
+  }
+
+  for (const [metric, named] of [...orphans].sort()) {
+    errors.push(
+      `${metric} is referenced by ${named.length} rule(s) (${named.join(', ')}) but nothing in server/src, server/scripts or infra/monitoring emits it. ` +
+        `A threshold on a metric with no samples evaluates to an empty vector, which reads exactly like healthy and can never fire. ` +
+        `Either add the emitter, or declare it in infra/monitoring/metrics-without-a-producer.txt with the reason.`
+    );
+  }
+
+  // A declaration that is no longer needed is its own kind of rot: it keeps the
+  // door open for the next name that lands under it.
+  for (const [metric] of declaredAbsent) {
+    const named = rules.some((r) => r.metrics.includes(metric));
+    if (!named) {
+      errors.push(
+        `infra/monitoring/metrics-without-a-producer.txt declares ${metric}, but no rule references it any more. Remove the line.`
+      );
+    }
+  }
+}
+
 if (errors.length) {
   console.error('\nFAIL: monitoring wiring is broken.\n');
   for (const e of errors) console.error(`  - ${e}`);
@@ -254,5 +326,5 @@ if (errors.length) {
 }
 
 console.log(
-  `OK: ${explicit.length} rule file(s) loaded, mounted at matching paths, non-empty; alerts route to a receiver that delivers`
+  `OK: ${explicit.length} rule file(s) loaded, mounted at matching paths, non-empty; every metric they name has a producer; alerts route to a receiver that delivers`
 );

@@ -221,6 +221,8 @@ interface BranchResult {
   heroFinishedPaid: boolean;
   bountyWonPct: number;
   bountyDeniedPct: number;
+  /** Current-hand PKO growth carried into Phase 8's next-hand valuation. */
+  futureBountyHeads?: Record<string, number>;
   heroBusted: boolean;
   heroWon: boolean;
   wonBounty: boolean;
@@ -971,10 +973,19 @@ function settleSample(args: {
 
   let bountyWonPct = 0;
   let wonBounty = false;
-  if (!hero.is_folded) {
+  const futureBountyHeads =
+    input.continuation?.futureHands && input.context.isPko && !input.context.isMysteryBounty
+      ? Object.fromEntries(
+          input.players.map((p) => [
+            p.user_id,
+            Math.max(0, input.context.bountyByUser[p.user_id] ?? input.context.meanBountyCents),
+          ])
+        )
+      : undefined;
+  if (!hero.is_folded || futureBountyHeads) {
     for (const opponentId of bustedIds) {
-      if (opponentId === input.hero.user_id) continue;
-      let ownership = 0;
+      if (opponentId === hero.user_id && !futureBountyHeads) continue;
+      let claimants: string[] = [];
       let lastEligiblePot = -1;
       for (let index = 0; index < branchPots.length; index++) {
         if (branchPots[index].eligiblePlayers.includes(opponentId)) lastEligiblePot = index;
@@ -985,11 +996,21 @@ function settleSample(args: {
       // usable winner other than the busted player, walk down as production
       // attribution does instead of inventing proportional ownership.
       for (let index = lastEligiblePot; index >= 0; index--) {
-        const claimants = [...winnersByPot[index]].filter((userId) => userId !== opponentId);
+        claimants = [...winnersByPot[index]].filter((userId) => userId !== opponentId);
         if (claimants.length === 0) continue;
-        if (claimants.includes(input.hero.user_id)) ownership = 1 / claimants.length;
         break;
       }
+      if (futureBountyHeads) {
+        // Use pre-hand heads for simultaneous knockouts. Growth is retained
+        // head value, not an additional immediate prize to the winner.
+        for (const claimant of claimants)
+          futureBountyHeads[claimant] += targetBountyCents(input, opponentId) / claimants.length;
+        futureBountyHeads[opponentId] = 0;
+      }
+      const ownership =
+        !hero.is_folded && opponentId !== hero.user_id && claimants.includes(hero.user_id)
+          ? 1 / claimants.length
+          : 0;
       if (ownership <= 0) continue;
       bountyWonPct += ownership * currencyToPoolPct(input, targetBountyCents(input, opponentId));
       wonBounty = true;
@@ -1004,6 +1025,7 @@ function settleSample(args: {
     heroFinishedPaid,
     bountyWonPct,
     bountyDeniedPct,
+    ...(futureBountyHeads ? { futureBountyHeads } : {}),
     heroBusted,
     heroWon: !hero.is_folded && heroAward > EPS,
     wonBounty,
@@ -1320,11 +1342,20 @@ function evaluateCandidate(args: {
               ) /
                 event.places.length) *
               args.payoutWeight;
-            next.bountyDeniedPct += currencyToPoolPct(args.input, ownBountyCents(args.input));
+            next.bountyDeniedPct += currencyToPoolPct(
+              args.input,
+              branch.futureBountyHeads
+                ? branch.futureBountyHeads[event.userId] * 0.5
+                : ownBountyCents(args.input)
+            );
           } else if (event.claimants.includes(args.input.hero.user_id)) {
             next.bountyWonPct +=
-              currencyToPoolPct(args.input, targetBountyCents(args.input, event.userId)) /
-              event.claimants.length;
+              currencyToPoolPct(
+                args.input,
+                branch.futureBountyHeads
+                  ? branch.futureBountyHeads[event.userId] * 0.5
+                  : targetBountyCents(args.input, event.userId)
+              ) / event.claimants.length;
             next.wonBounty = true;
           }
         }

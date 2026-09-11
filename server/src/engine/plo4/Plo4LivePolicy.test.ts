@@ -51,6 +51,62 @@ const tournament = (input: ReturnType<typeof plo4ReferenceSpot>) => {
   return input;
 };
 describe('Phase 10 complete bounded PLO4 baseline', () => {
+  it('does not mistake the best flush for the nuts on a straight-flush board', () => {
+    const input = plo4ReferenceSpot('non_nut_flush');
+    input.hero.cards = plo4Cards('As 2s Kc Qd');
+    input.state.communityCards = plo4Cards('Js Ts 9s 2d 3h');
+    const result = evaluatePlo4LivePolicy(
+      input.hero,
+      input.state,
+      input.baseline,
+      { equity: 0, samples: 100000, standardError: 0 },
+      'candidate',
+      () => 0
+    );
+    expect(result.receipt.reason).toBe('postflop_price_fold');
+    expect(result.decision.action).toBe('fold');
+  });
+  it('charges rake to the complete eligible pot, including the new call', () => {
+    const input = plo4ReferenceSpot('non_nut_flush');
+    const receipt = evaluatePlo4LivePolicy(
+      input.hero,
+      input.state,
+      input.baseline,
+      { equity: 0.261, samples: 100000, standardError: 0 },
+      'candidate',
+      () => 0
+    );
+    // Heads-up ceiling is 5%: 60 existing + 20 call - 4 rake = 76.
+    expect(receipt.receipt.callPrice).toBeCloseTo(20 / 76, 12);
+    expect(receipt.decision.action).toBe('fold');
+    input.state.rakeConfig!.cap = 2;
+    expect(
+      evaluatePlo4LivePolicy(input.hero, input.state, input.baseline, null, 'shadow', () => 0)
+        .receipt.callPrice
+    ).toBeCloseTo(20 / 78, 12);
+
+    input.hero.stack = 20;
+    input.hero.totalInvested = 10;
+    input.state.players[0] = { ...input.hero, cards: [] };
+    input.state.players[1].bet = 30;
+    input.state.players[1].totalInvested = 50;
+    input.state.players.push({ ...input.state.players[1], user_id: 'third', seat: 3 });
+    input.state.pot = 110;
+    input.state.currentBet = input.state.toCall = 30;
+    input.state.rakeConfig!.cap = 100;
+    // A 20 call can win only the 90 main pot. The 40 side pot is excluded;
+    // 10% proportional rake leaves 81 eligible, not 117 from the whole pot.
+    const sidePot = evaluatePlo4LivePolicy(
+      input.hero,
+      input.state,
+      input.baseline,
+      null,
+      'shadow',
+      () => 0
+    );
+    expect(sidePot.receipt.fired).toBe(true);
+    expect(sidePot.receipt.callPrice).toBeCloseTo(20 / 81, 12);
+  });
   it.each([
     ['Ac Kc Qd Js', 'As Ah Ad 3c 4h', 'quads'],
     ['Ac Kh Qd Js', 'As Ah Kc 3c 4h', 'full_house'],

@@ -21,6 +21,8 @@ Each phase must satisfy all eight gates:
 
 One phase uses one acceptance manifest, targeted checks during implementation, one final integrated gate after the final change, protected publication and focused live verification. Repeat a passed gate only after a relevant change, failure or new concern. Record every unresolved item; never write “100% complete” while a required gate is pending.
 
+Second-audit regressions are part of this standard: carry every affected economic state across simulated hands, price calls using net eligible pots, and distinguish category-best hands from unbeatable hands across all categories. Tests must include cases where blockers eliminate a possible tie and where one hand changes the next hand's bounty. Large matrix counts do not substitute for these independent semantic checks.
+
 ## Phase 8–10 backfill prerequisites
 
 | Phase | Required correction before advancing                                                                                                                                                                                                                                                                                                                                                         |

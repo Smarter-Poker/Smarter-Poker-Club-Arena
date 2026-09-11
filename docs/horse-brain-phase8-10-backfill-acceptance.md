@@ -21,3 +21,14 @@ Phase 8's original three Spin promotion runs remain rejected and are not reinter
 ## Verification and closeout
 
 Preserve original evidence and append new source hashes, tests, fixed seeds/results and release proof. Report implementation, independent verification, publication, natural execution and promotion separately. No Phase 11 implementation begins while applicable first-round acceptance gates are open.
+
+## Second audit corrections
+
+The independent September 11 re-audit reproduced four missing cases in the first backfill. They are required regressions, not later-round enhancements:
+
+- Phase 8 carries PKO head growth from the current hand into the funded next hand for both hero and opponent knockouts. The retained half is not immediate prize EV; later knockout payment/denial uses the grown head. Phase 7 without future-hand continuation retains its existing calculation.
+- Phase 9 recognizes a qualifying low as nut when no opponent can beat it, including when five/six-card factual inputs block every possible tie. These component fixtures do not add new low variants to the enabled-game registry.
+- Phase 10 prices a call against the entire eligible pot after rake, including rake on the call itself. Side pots hero cannot win stay excluded.
+- Phase 9 exposes physical straight-flush availability separately from category-best flush/straight facts. Phase 10 cannot use a category-best flush as a guaranteed-nuts override when a straight flush remains possible.
+
+Final source-specific integrated tests and refreshed evidence must cover these corrections. The earlier source's passing evidence is historical; publication and natural execution remain separate open gates.

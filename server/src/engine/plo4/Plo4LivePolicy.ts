@@ -365,17 +365,20 @@ export function evaluatePlo4LivePolicy(
     (suit) => s.communityCards.filter((c) => c.suit === suit).length >= 3
   );
   const isNut =
-    (nuts.category >= 9 && facts.nutStraight) ||
+    facts.nutStraightFlush ||
     (!paired &&
-      ((nuts.category === 6 && facts.flushes.some((f) => f.made && !f.higherFlushPossible)) ||
+      ((nuts.category === 6 &&
+        facts.opponentStraightFlushHigh === 0 &&
+        facts.flushes.some((f) => f.made && !f.higherFlushPossible)) ||
         (nuts.category === 5 && facts.nutStraight && !flushBoard)));
   const contestable = calculateContestablePot(s.players, hero.user_id, callCost);
   const chargedRake = calculateRake(s.pot + callCost, true, rake, seats.length);
-  const netPot = Math.max(
+  const eligibleAfterCall = contestable + callCost;
+  const netPotAfterCall = Math.max(
     0,
-    contestable - (chargedRake * contestable) / Math.max(0.01, s.pot + callCost)
+    eligibleAfterCall - (chargedRake * eligibleAfterCall) / Math.max(0.01, s.pot + callCost)
   );
-  const price = callCost / Math.max(0.01, netPot + callCost);
+  const price = callCost / Math.max(0.01, netPotAfterCall);
   receipt.callPrice = price;
   const nutDraw = facts.flushes.some((f) => f.draw && !f.higherFlushPossible);
   const nutWrap = facts.nutStraightOutCards.length >= 8;

@@ -70,6 +70,13 @@ function possibleLow(available: Card[], board: Card[]) {
   ];
   return lowScore(low, board);
 }
+function isNutLow(score: number | null, available: Card[], board: Card[]): boolean {
+  if (score === null) return false;
+  const opponentBest = possibleLow(available, board);
+  // A blocked tie does not demote an unbeatable low. Five/six-card holdings
+  // can remove every physical copy of a required opponent rank.
+  return opponentBest === null || score <= opponentBest;
+}
 function flushFacts(hole: Card[], board: Card[], available: Card[]) {
   return suits.flatMap((suit) => {
     const h = hole
@@ -123,6 +130,24 @@ export function omahaCardFacts(
   const lowAce = distinct.map((v) => (v === 14 ? 1 : v)).sort((a, b) => a - b);
   const gaps = (values: number[]) => values.slice(1).map((v, i) => Math.max(0, v - values[i] - 1));
   const currentStraight = straightHigh(hole, board);
+  const straightFlushHigh = Math.max(
+    0,
+    ...suits.map((suit) =>
+      straightHigh(
+        hole.filter((c) => c.suit === suit),
+        board.filter((c) => c.suit === suit)
+      )
+    )
+  );
+  const opponentStraightFlushHigh = Math.max(
+    0,
+    ...suits.map((suit) =>
+      possibleStraightHigh(
+        available.filter((c) => c.suit === suit),
+        board.filter((c) => c.suit === suit)
+      )
+    )
+  );
   const currentLow = includeLow ? lowScore(hole, board) : null;
   const boardRanks = [...new Set(board.map((c) => c.rank))];
   const lowHoleRanks = [
@@ -151,7 +176,7 @@ export function omahaCardFacts(
               !board.some((c) => c.rank === card.rank),
             repeatsLowHoleRank: lowHoleRanks.includes(card.rank === 'A' ? 1 : value(card)),
             qualifiesLow: includeLow ? low !== null : null,
-            nutLow: includeLow ? low !== null && low === possibleLow(rest, next) : null,
+            nutLow: includeLow ? isNutLow(low, rest, next) : null,
           };
         })
       : [];
@@ -164,6 +189,9 @@ export function omahaCardFacts(
     rankSpan: distinct[distinct.length - 1] - distinct[0],
     aceLowSpan: lowAce[lowAce.length - 1] - lowAce[0],
     straightHigh: currentStraight,
+    straightFlushHigh,
+    opponentStraightFlushHigh,
+    nutStraightFlush: straightFlushHigh > 0 && straightFlushHigh >= opponentStraightFlushHigh,
     nutStraight: currentStraight > 0 && currentStraight >= possibleStraightHigh(available, board),
     straightOutCards: nextCards.filter((c) => c.makesStraight).map((c) => c.card),
     nutStraightOutCards: nextCards
@@ -190,7 +218,7 @@ export function omahaCardFacts(
     }),
     lowHoleRanks,
     hasBackupLowCards: lowHoleRanks.length >= 3,
-    nutLow: currentLow !== null && currentLow === possibleLow(available, board),
+    nutLow: isNutLow(currentLow, available, board),
     counterfeitTransitions: nextCards
       .filter((c) => c.repeatsLowHoleRank)
       .map((c) => ({ card: c.card, nutLowAfter: c.nutLow, qualifiesLowAfter: c.qualifiesLow })),

@@ -9,6 +9,50 @@ const cards = (s: string): Card[] =>
   }));
 const key = (c: Card) => c.rank + c.suit;
 describe('Phase 9 exact Omaha card components', () => {
+  it('separates category-best flushes and straights from physical straight-flush nuts', () => {
+    const board = cards('Js Ts 9s 2d 3h');
+    const flush = omahaCardFacts(cards('As 2s Kc Qd'), board);
+    expect(flush.flushes[0].higherFlushPossible).toBe(false);
+    expect(flush.opponentStraightFlushHigh).toBe(13);
+    expect(flush.nutStraightFlush).toBe(false);
+    const nuts = omahaCardFacts(cards('Ks Qs 4c 5d'), board);
+    expect(nuts.straightFlushHigh).toBe(13);
+    expect(nuts.nutStraightFlush).toBe(true);
+    // An unrelated higher offsuit straight cannot beat a straight flush.
+    const seven = omahaCardFacts(cards('6s 7s 2c 3d'), cards('3s 4s 5s 8c 9d'));
+    expect(seven.straightFlushHigh).toBe(7);
+    expect(seven.nutStraightFlush).toBe(true);
+  });
+  it.each(['As Ah Ad Ac 2s', 'As Ah Ad Ac 2s 6s'])(
+    'retains the nut low when %s removes every possible opponent tie',
+    (text) => {
+      // These are factual component inputs, not enabled five/six-card low games.
+      const hole = cards(text),
+        board = cards('3h 4c 5d Kh');
+      const facts = omahaCardFacts(hole, board);
+      expect(facts.nutLow).toBe(true);
+      for (const transition of facts.nextCards) {
+        const next = [...board, transition.card];
+        const known = new Set([...hole, ...next].map(key));
+        const available = referenceDeck().filter((c) => !known.has(key(c)));
+        const lows = [
+          ...new Map(
+            available.filter((c) => 'A2345678'.includes(c.rank)).map((c) => [c.rank, c])
+          ).values(),
+        ];
+        const fillers = available.filter((c) => c.rank === 'Q').slice(0, 2);
+        let best = Infinity;
+        for (let i = 0; i < lows.length; i++)
+          for (let j = i + 1; j < lows.length; j++)
+            best = Math.min(
+              best,
+              referenceOmaha([lows[i], lows[j], ...fillers], next).low ?? Infinity
+            );
+        const own = referenceOmaha(hole, next).low;
+        expect(transition.nutLow).toBe(own !== null && own <= best);
+      }
+    }
+  );
   it('independently agrees on every physical next-card straight in a wrap', () => {
     const hole = cards('As Ks Qd 9h'),
       board = cards('Js Tc 2d');

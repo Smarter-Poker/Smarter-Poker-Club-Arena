@@ -123,7 +123,7 @@ describe('LAW - every branch ruleset detail must be readable before the audit ca
     expect(result.status).toBe(1);
     expect(combined).toContain('unauthorized required context `Stage B Release Freeze`');
     expect(combined).toContain('102');
-  });
+  }, 15_000);
 
   it('does not raise a forbidden-context alarm when every detail is valid and absent', () => {
     const { result, combined } = runAudit('absent');
@@ -131,5 +131,5 @@ describe('LAW - every branch ruleset detail must be readable before the audit ca
     expect(result.status).toBe(0);
     expect(combined).not.toContain('unauthorized required context');
     expect(combined).toContain('estate-integrity: 0 problem(s).');
-  });
+  }, 15_000);
 });

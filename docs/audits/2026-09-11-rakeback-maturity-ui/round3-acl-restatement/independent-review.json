@@ -1,0 +1,21 @@
+{
+  "recorded_at_utc": "2026-09-11T08:23:08.030662+00:00",
+  "reviewer": "/root/satellite_closeout",
+  "verdict": "No bounded source or static-evidence blocker",
+  "scope": [
+    "Exact companion pre/post single-function identity and normalized server-only ACL",
+    "Four actual-source checker cases including missing PUBLIC revoke and later browser grant refusal",
+    "Unchanged 41-case definer suite and source hashes"
+  ],
+  "frozen_inputs_verified": {
+    "backend_archive_files": 36,
+    "ui_inputs": 5,
+    "active_original_repair_sha256": "a55e792f12040799a20fcf6d54969059efecaea3869c3aa148191fe1b083c4c7",
+    "companion_sha256": "da06b3acca81a28a54e1354932aab87d515bc3202b4922e9cccc8e1971e867d5"
+  },
+  "limits": [
+    "Static checker matches by function name; arbitrary overload resolution is not proved",
+    "Companion checks one function and does not pin its return type; root separately checks all six functions and two triggers",
+    "No reviewer test rerun, SQL execution, or publication"
+  ]
+}

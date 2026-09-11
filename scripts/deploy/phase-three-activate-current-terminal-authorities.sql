@@ -17,6 +17,22 @@ SET LOCAL statement_timeout = '30s';
    aborts an occupied window whole instead of pausing live tables behind DDL. */
 LOCK TABLE realtime.subscription IN ACCESS EXCLUSIVE MODE NOWAIT;
 
+-- Acquire the unchanged canonical public lock boundary before component DDL.
+-- Managers that arrive after this boundary cannot hold a lease across cutover.
+LOCK TABLE public.tables IN SHARE ROW EXCLUSIVE MODE NOWAIT;
+LOCK TABLE public.tournament_table_origins IN SHARE ROW EXCLUSIVE MODE NOWAIT;
+LOCK TABLE public.tournament_capacity_table_receipts
+  IN SHARE ROW EXCLUSIVE MODE NOWAIT;
+LOCK TABLE public.tournament_manager_wakes IN SHARE ROW EXCLUSIVE MODE NOWAIT;
+LOCK TABLE public.engine_tournament_leases IN EXCLUSIVE MODE NOWAIT;
+LOCK TABLE public.tournaments IN SHARE ROW EXCLUSIVE MODE NOWAIT;
+LOCK TABLE public.tournament_obligations IN SHARE ROW EXCLUSIVE MODE NOWAIT;
+LOCK TABLE public.tournament_payouts IN SHARE ROW EXCLUSIVE MODE NOWAIT;
+LOCK TABLE public.tournament_final_table_deal_batches
+  IN SHARE ROW EXCLUSIVE MODE NOWAIT;
+LOCK TABLE public.tournament_final_table_deal_receipts
+  IN SHARE ROW EXCLUSIVE MODE NOWAIT;
+
 -- BEGIN ACTIVATION COMPONENT scripts/deploy/phase-three-current-satellite-terminal.sql SHA256 a6444cab844a6e2da87600ee4443c3349e0f2d6c988b5a3198a356bc5a333d2f
 -- Current M2 satellite receipts participate in the complete Stage B guards.
 -- Preserve the live-proved public R3 wrapper486d, money gate and durable replay door.

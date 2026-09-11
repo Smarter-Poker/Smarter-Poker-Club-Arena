@@ -175,6 +175,7 @@ def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument("--root",type=Path,required=True)
     p.add_argument("--evidence",type=Path,required=True)
+    p.add_argument("--native-socket",type=Path,help="owned local fixture socket")
     p.add_argument("--emit-only",type=Path)
     args=p.parse_args();root=args.root.resolve()
     if "/.agent-trees/" not in str(root):
@@ -186,6 +187,8 @@ def main():
           "probe_sha256":hashes[PROBE],"source_sha256":SPIN_SHA}))
         return
     whole=module(root/"scripts/ci/rehearse-whole-phase-three-cutover.py","spin_full_snapshot")
+    if args.native_socket:
+        whole.SOCKET=str(args.native_socket.resolve())
     baseline=whole.read_sql("""SELECT current_database()||'|'||current_user||'|'||(inet_server_addr() IS NULL)::text||'|'||
  (SELECT count(*) FROM auth.users)||'|'||(SELECT count(*) FROM public.tournaments)||'|'||
  (SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() AND pid<>pg_backend_pid())||'|'||
@@ -203,7 +206,7 @@ def main():
     stable=all((root/f).exists() and hashlib.sha256((root/f).read_bytes()).hexdigest()==h for f,h in hashes.items())
     passed=run.returncode==0 and before==after and len(ev)==len(manifests)==1 and stable
     evidence={"recorded_at":datetime.datetime.now(datetime.timezone.utc).isoformat(),"passed":passed,
-       "production_mutations":False,"phase_complete":False,"baseline":baseline,"exit_code":run.returncode,
+       "production_mutations":False,"phase_complete":False,"native_socket":whole.SOCKET,"baseline":baseline,"exit_code":run.returncode,
        "rollback_exact":before==after,"source_inputs_stable":stable,"source_sha256":hashes,"sql_sha256":digest(sql),
        "assertion_groups":len(re.findall(r"NOTICE:\s+PASS ",log)),
        "runtime_composition":json.loads(manifests[0]) if len(manifests)==1 else None,

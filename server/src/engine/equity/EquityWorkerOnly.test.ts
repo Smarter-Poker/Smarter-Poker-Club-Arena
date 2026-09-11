@@ -8,11 +8,23 @@ import { insuranceEquity } from '../InsuranceEquity.js';
 import {
   EquityWorkerPool,
   EquityWorkerPoolAbortedError,
+  EquityWorkerTimeoutError,
   EquityWorkerUnavailableError,
+  equityWorkerPoolPreservesDealerLiveness,
 } from './EquityWorkerPool.js';
-import { computeInsuranceComponentsForHands } from './equityWorker.js';
+import { computeInsuranceComponentsForHands, insuranceSampleRunoutCap } from './equityWorker.js';
 
 const C = (rank: CardRank, suit: CardSuit): Card => ({ rank, suit });
+
+const TEST_RANKS: CardRank[] = ['2', '3', '4', '5', '6', '7', '8', '9', 'T', 'J', 'Q', 'K', 'A'];
+const TEST_SUITS: CardSuit[] = ['clubs', 'diamonds', 'hearts', 'spades'];
+const TEST_DECK: Card[] = TEST_SUITS.flatMap((suit) => TEST_RANKS.map((rank) => C(rank, suit)));
+
+function distinctHands(players: number, holeCards: number): Card[][] {
+  return Array.from({ length: players }, (_, index) =>
+    TEST_DECK.slice(index * holeCards, (index + 1) * holeCards)
+  );
+}
 
 class FakeWorker {
   readonly sent: unknown[] = [];
@@ -92,6 +104,48 @@ describe('worker-only multi-hand insurance computation', () => {
     }
     expect(all[0].exact).toBe(false);
     expect(all[0].runouts).toBe(6000);
+  });
+
+  it('deterministically caps worst-case PLO4, PLO5, and PLO6 evaluator work', () => {
+    const sixWayCases = [
+      { hands: distinctHands(6, 4), expected: 2_500 },
+      { hands: distinctHands(6, 5), expected: 1_500 },
+      { hands: distinctHands(6, 6), expected: 1_000 },
+    ];
+    const maximumLegalFieldCases = [
+      { hands: distinctHands(11, 4), expected: 1_363 },
+      { hands: distinctHands(9, 5), expected: 1_000 },
+      { hands: distinctHands(7, 6), expected: 1_000 },
+    ];
+
+    expect(insuranceSampleRunoutCap(distinctHands(9, 2), false)).toBe(6_000);
+    for (const testCase of [...sixWayCases, ...maximumLegalFieldCases]) {
+      expect(insuranceSampleRunoutCap(testCase.hands, true)).toBe(testCase.expected);
+      expect(insuranceSampleRunoutCap(testCase.hands, true)).toBe(testCase.expected);
+    }
+  });
+
+  it('keeps bounded PLO4, PLO5, and PLO6 samples repeatable with honest fidelity', () => {
+    const cases = [
+      { variant: 'plo4', hands: distinctHands(6, 4), runouts: 2_500 },
+      { variant: 'plo5', hands: distinctHands(6, 5), runouts: 1_500 },
+      { variant: 'plo6', hands: distinctHands(6, 6), runouts: 1_000 },
+    ];
+
+    for (const testCase of cases) {
+      const first = computeInsuranceComponentsForHands(testCase.hands, [], testCase.variant, false);
+      const second = computeInsuranceComponentsForHands(
+        testCase.hands,
+        [],
+        testCase.variant,
+        false
+      );
+      expect(second).toEqual(first);
+      expect(first).toHaveLength(6);
+      for (const component of first) {
+        expect(component).toMatchObject({ exact: false, runouts: testCase.runouts });
+      }
+    }
   });
 
   it('uses the Omaha and short-deck evaluators, not Holdem defaults', () => {
@@ -226,7 +280,107 @@ describe('EquityWorkerPool fail-closed lifecycle', () => {
     await pool.shutdown();
   });
 
-  it('bounds queue plus compute time and terminates the wedged worker', async () => {
+  it('does not dispatch expired queued work when a result arrives before delayed timers', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const worker = new FakeWorker();
+    const pool = new EquityWorkerPool({ size: 1, workerFactory: () => worker, jobTimeoutMs: 100 });
+    try {
+      const ready = pool.ready();
+      worker.emitMessage({ type: 'READY' });
+      await ready;
+      const active = pool.estimateEquity(hands, []);
+      const expired = pool.estimateEquity(hands, []).catch((error) => error);
+      const activeId = (worker.sent[0] as { id: number }).id;
+      vi.setSystemTime(50);
+      const urgent = pool.estimateInsurance(hands, [], 'nlh');
+      worker.emitMessage({ type: 'EQUITY_RESULT', id: activeId, equities: [0.5, 0.5] });
+      await expect(active).resolves.toEqual([0.5, 0.5]);
+      const urgentId = (worker.sent[1] as { id: number }).id;
+      const components = hands.map(() => ({
+        equity: 50,
+        strictLossPct: 50,
+        pushPct: 0,
+        exact: false,
+        runouts: 100,
+      }));
+      // A stalled event loop can receive a worker result before its overdue
+      // timer callbacks run. Advancing the wall clock does not run the timers.
+      vi.setSystemTime(100);
+      worker.emitMessage({ type: 'INSURANCE_RESULT', id: urgentId, components });
+      await expect(urgent).resolves.toEqual(components);
+      expect(worker.sent).toHaveLength(2);
+      await expect(expired).resolves.toBeInstanceOf(EquityWorkerTimeoutError);
+      await vi.advanceTimersByTimeAsync(100);
+      expect(worker.terminateCalls).toBe(0);
+      const fresh = pool.estimateEquity(hands, []);
+      const freshId = (worker.sent[2] as { id: number }).id;
+      worker.emitMessage({ type: 'EQUITY_RESULT', id: freshId, equities: [0.4, 0.6] });
+      await expect(fresh).resolves.toEqual([0.4, 0.6]);
+      expect(pool.status()).toMatchObject({
+        phase: 'ready',
+        readyWorkers: 1,
+        queueDepth: 0,
+        queueExpirations: 1,
+        executionTimeouts: 0,
+      });
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      await pool.shutdown();
+    }
+  });
+
+  it('does not spend a replacement worker on work that expired before its READY message', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const workers: FakeWorker[] = [];
+    const pool = new EquityWorkerPool({
+      size: 2,
+      jobTimeoutMs: 100,
+      respawnBudget: 1,
+      workerFactory: () => {
+        const worker = new FakeWorker();
+        workers.push(worker);
+        return worker;
+      },
+    });
+    try {
+      const ready = pool.ready();
+      workers[0].emitMessage({ type: 'READY' });
+      workers[1].emitMessage({ type: 'READY' });
+      await ready;
+      // Keep the surviving worker occupied. The pool may accept bounded work
+      // because real capacity still exists, but only the replacement can take
+      // the queued request when it announces READY.
+      const active = pool.estimateEquity(hands, []).catch((error) => error);
+      workers[0].emitExit();
+      await vi.advanceTimersByTimeAsync(250);
+      expect(workers).toHaveLength(3);
+      const expired = pool.estimateEquity(hands, []).catch((error) => error);
+      vi.setSystemTime(350);
+      workers[2].emitMessage({ type: 'READY' });
+      expect(workers[2].sent).toEqual([]);
+      const expiredError = await expired;
+      expect(expiredError).toBeInstanceOf(EquityWorkerTimeoutError);
+      expect(expiredError).toMatchObject({ stage: 'queue' });
+      await vi.advanceTimersByTimeAsync(100);
+      expect(workers[2].terminateCalls).toBe(0);
+      expect(pool.status()).toMatchObject({
+        phase: 'ready',
+        readyWorkers: 2,
+        queueDepth: 0,
+        queueExpirations: 1,
+        executionTimeouts: 0,
+      });
+      await pool.shutdown();
+      await active;
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      await pool.shutdown();
+    }
+  });
+
+  it('lets a slow valid result miss the caller SLA without retiring its worker', async () => {
     vi.useFakeTimers();
     const worker = new FakeWorker();
     const pool = new EquityWorkerPool({
@@ -234,6 +388,7 @@ describe('EquityWorkerPool fail-closed lifecycle', () => {
       workerFactory: () => worker,
       readyTimeoutMs: 100,
       jobTimeoutMs: 25,
+      hardJobTimeoutMs: 100,
       respawnBudget: 0,
     });
     const ready = pool.ready();
@@ -244,7 +399,19 @@ describe('EquityWorkerPool fail-closed lifecycle', () => {
     const rejection = expect(pending).rejects.toThrow('timed out after 25ms');
     await vi.advanceTimersByTimeAsync(25);
     await rejection;
-    expect(worker.terminateCalls).toBe(1);
+    expect(worker.terminateCalls).toBe(0);
+    expect(pool.status()).toMatchObject({
+      phase: 'ready',
+      busyWorkers: 1,
+      routingReady: true,
+      acceptingWork: true,
+      executionTimeouts: 0,
+    });
+
+    const requestId = (worker.sent.at(-1) as { id: number }).id;
+    worker.emitMessage({ type: 'EQUITY_RESULT', id: requestId, equities: [0.82, 0.18] });
+    expect(worker.terminateCalls).toBe(0);
+    expect(pool.status()).toMatchObject({ phase: 'ready', busyWorkers: 0, readyWorkers: 1 });
     await pool.shutdown();
   });
 
@@ -290,6 +457,55 @@ describe('EquityWorkerPool fail-closed lifecycle', () => {
     workers[1].emitMessage({ type: 'READY' });
     expect(pool.status()).toMatchObject({ phase: 'ready', readyWorkers: 1 });
     await pool.shutdown();
+  });
+
+  it('keeps immediate recovery routable but makes an exhausted cooldown non-routing', async () => {
+    vi.useFakeTimers();
+    const workers: FakeWorker[] = [];
+    const pool = new EquityWorkerPool({
+      size: 2,
+      workerFactory: () => {
+        const worker = new FakeWorker();
+        workers.push(worker);
+        return worker;
+      },
+      readyTimeoutMs: 100,
+      respawnBudget: 1,
+      recoveryCooldownMs: 1_000,
+    });
+    const ready = pool.ready();
+    workers[0].emitMessage({ type: 'READY' });
+    workers[1].emitMessage({ type: 'READY' });
+    await ready;
+
+    workers[0].emitExit(1);
+    expect(pool.status()).toMatchObject({
+      phase: 'degraded',
+      readyWorkers: 1,
+      recoveryInFlight: true,
+      routingReady: true,
+      acceptingWork: true,
+      nextRecoveryAt: null,
+    });
+    expect(equityWorkerPoolPreservesDealerLiveness(pool.status())).toBe(true);
+
+    await vi.advanceTimersByTimeAsync(250);
+    expect(workers).toHaveLength(3);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(workers[2].terminateCalls).toBe(1);
+    expect(pool.status()).toMatchObject({
+      phase: 'degraded',
+      readyWorkers: 1,
+      recoveryInFlight: false,
+      routingReady: false,
+      acceptingWork: true,
+      respawnBudgetRemaining: 0,
+    });
+    expect(pool.status().nextRecoveryAt).not.toBeNull();
+    expect(equityWorkerPoolPreservesDealerLiveness(pool.status())).toBe(false);
+
+    await pool.shutdown();
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it('runs queued insurance before cosmetic equity and keeps FIFO within each class', async () => {

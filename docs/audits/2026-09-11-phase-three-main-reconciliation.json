@@ -1,0 +1,24 @@
+{
+  "at": "2026-09-11T09:49:13.620768+00:00",
+  "local_parent": "7972b0ee3ccc6525d35e7e8968b4d2fb527aa024",
+  "incoming_parent": "67e946f5aa7731e3168c1c2ae29146451c370fde",
+  "resolved_paths": [
+    "docs/audits/2026-09-11-current-terminal-activation-boundary.md",
+    "docs/audits/2026-09-11-exact-terminal-activation-native.json",
+    "docs/audits/2026-09-11-phase-three-activation-approval-status.json",
+    "docs/audits/2026-09-11-phase-three-resume-checkpoint.json",
+    "docs/audits/2026-09-11-spin-full-current-terminal-native-evidence.json",
+    "docs/audits/2026-09-11-tournament-create-permission-native.json",
+    "docs/audits/2026-09-11-tournament-edit-permission-native.json",
+    "scripts/ci/probes/phase-three-current-manager-routes.sql",
+    "scripts/ci/rehearse-spin-full-current-terminal.py",
+    "scripts/ci/rehearse-whole-phase-three-cutover.py",
+    "scripts/deploy/phase-three-activate-current-terminal-authorities.sql",
+    "scripts/deploy/phase-three-satellite-manager-target-scope.sql"
+  ],
+  "decision": "Retain each complete local proof snapshot; incoming proof provenance remains reachable through merge parent. Adopt early canonical public NOWAIT lock boundary and explicit native socket options; keep trimmed component EOFs and regenerate exact bundle. No production application.",
+  "preserved_untracked_manifest": "/tmp/codex-phase-three-premerge-preserve-h7xbc1_i/manifest.json",
+  "incoming_whitespace": "Seven incoming unrelated rakeback raw-output files already have terminal blank-line warnings. They are retained byte-for-byte at reconciliation rather than rewriting third-party proof artifacts.",
+  "regenerated_bundle_sha256": "1f6c8ac88ead4612085c8c6de0da258914d50eb06d94300cf9931bb343eafb40",
+  "native_reverification_pending": true
+}

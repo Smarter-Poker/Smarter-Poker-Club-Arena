@@ -1495,7 +1495,7 @@ describe('every host mutation path obeys the durable release authority', () => {
       '/var/lib/club-arena/control-staging/0-1',
       '/var/lib/club-arena/control-staging/34613015733-1-extra',
       '/var/lib/club-arena/control-staging/34613015733-1/../../escape',
-      '/tmp/control-staging/34613015733-1',
+      join(tmpdir(), 'control-staging/34613015733-1'),
     ]) {
       expect(accepts(invalid), invalid).toBe(false);
     }
@@ -1532,7 +1532,7 @@ describe('every host mutation path obeys the durable release authority', () => {
         '/var/lock/club-arena-engine-intake-34613015733-01.lock',
         '/var/lock/club-arena-engine-intake-34613015733-1-extra.lock',
         '/var/lock/club-arena-engine-intake-34613015733-1/../../escape.lock',
-        '/tmp/club-arena-engine-intake-34613015733-1.lock',
+        join(tmpdir(), 'club-arena-engine-intake-34613015733-1.lock'),
       ]) {
         expect(accepts(guard, { INTAKE_LOCK: invalid }), `${name}: ${invalid}`).toBe(false);
       }
@@ -1562,7 +1562,7 @@ describe('every host mutation path obeys the durable release authority', () => {
         `${root}/34613015733-01.${suffix}`,
         `${root}/34613015733-1-extra.${suffix}`,
         `${root}/34613015733-1/../../escape.${suffix}`,
-        `/tmp/34613015733-1.${suffix}`,
+        join(tmpdir(), `34613015733-1.${suffix}`),
       ]) {
         expect(accepts(guard, { ...rootEnv, [pathVariable]: invalid }), invalid).toBe(false);
       }

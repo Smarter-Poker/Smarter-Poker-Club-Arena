@@ -356,8 +356,13 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
           kind: 'gold' as const,
           run: () => onJoinTable(entry.id),
         };
-      if (status === 'closed' || status === 'deleted')
-        return { label: game ? 'Game Closed' : 'Table Closed', kind: 'disabled' as const };
+      /* `entry.status` is 'closed' for a disabled must-move game too
+         (cashEntry reads cash_games.enabled), not only for a closed table. */
+      if (status === 'closed' || status === 'deleted' || entry.status === 'closed')
+        return {
+          label: game ? `Game ${entry.statusLabel}` : `Table ${entry.statusLabel}`,
+          kind: 'disabled' as const,
+        };
       if (status === 'paused') return { label: 'Game Paused', kind: 'disabled' as const };
       const full = entry.capacity > 0 && entry.players >= entry.capacity;
       if (full && waitlisted)
@@ -652,6 +657,7 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
         players={entry.players}
         capacity={entry.capacity}
         bareCount={entry.kind === 'mtt'}
+        gameTables={entry.game ? entry.game.tables : null}
       />
       {cta.link && !busy ? (
         <Link
@@ -759,15 +765,32 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
                       {cashMoney(minBuy)} - {cashMoney(maxBuy)}
                     </dd>
                   </div>
-                  <div>
-                    <dt>Players</dt>
-                    <dd className="glp__mono">
-                      {/* `|| '-'` to match the tournament row below: a table
-                          with no seat count rendered "3 / 0", which reads as a
-                          zero-seat table rather than an unknown one. */}
-                      {entry.players} / {entry.capacity || '-'}
-                    </dd>
-                  </div>
+                  {entry.game ? (
+                    <>
+                      {/* R10: a must-move game counts its players like a
+                          tournament, with no denominator, and says how many
+                          tables are open beside it. "57 / -" was a table's
+                          shape printed on a game. */}
+                      <div>
+                        <dt>Players</dt>
+                        <dd className="glp__mono">{entry.players.toLocaleString()}</dd>
+                      </div>
+                      <div>
+                        <dt>Tables</dt>
+                        <dd className="glp__mono">{entry.game.tables.toLocaleString()}</dd>
+                      </div>
+                    </>
+                  ) : (
+                    <div>
+                      <dt>Players</dt>
+                      <dd className="glp__mono">
+                        {/* `|| '-'` to match the tournament row below: a table
+                            with no seat count rendered "3 / 0", which reads as a
+                            zero-seat table rather than an unknown one. */}
+                        {entry.players} / {entry.capacity || '-'}
+                      </dd>
+                    </div>
+                  )}
                   {/* COLUMNS, not the settings blob. `settings` is {} on every
                       live cash table, so this branch never fired while the CARD
                       showed an ANTE medallion read off the column — the row and

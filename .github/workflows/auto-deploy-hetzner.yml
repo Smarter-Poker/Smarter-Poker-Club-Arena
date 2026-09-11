@@ -240,7 +240,8 @@ jobs:
             command -v "$binary" >/dev/null || { echo "missing host prerequisite: $binary" >&2; exit 1; }
           done
           [ -s "$REPO_DIR/server/.env" ]
-          git -C "$REPO_DIR" remote get-url origin | grep -F 'Smarter-Poker/Smarter-Poker-Club-Arena' >/dev/null
+          git -C "$REPO_DIR" remote get-url origin \
+            | grep -Fi 'smarter-poker/smarter-poker-club-arena' >/dev/null
           exec 8>/var/lock/club-arena-source.lock
           flock -w 90 8
           GIT_HTTP_LOW_SPEED_LIMIT=1024 GIT_HTTP_LOW_SPEED_TIME=30 \

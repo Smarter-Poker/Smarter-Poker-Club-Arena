@@ -1451,6 +1451,16 @@ describe('every host mutation path obeys the durable release authority', () => {
     expect(unitWrapper).toContain('GENERATION="${PIN_LINES[0]}"');
   });
 
+  it('accepts the canonical engine checkout regardless of GitHub owner casing', () => {
+    const hostStage = workflow.slice(
+      workflow.indexOf('name: Stage exact control bytes'),
+      workflow.indexOf('name: Dispatch the staged SHA through the durable Hetzner intake')
+    );
+
+    expect(hostStage).toContain("grep -Fi 'smarter-poker/smarter-poker-club-arena'");
+    expect(hostStage).not.toContain("grep -F 'Smarter-Poker/Smarter-Poker-Club-Arena'");
+  });
+
   it('admits only generations compatible with the frozen release v1 wire contract', () => {
     expect(protocolV1).toBe(
       [

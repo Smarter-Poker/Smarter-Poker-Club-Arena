@@ -1,5 +1,5 @@
 {
-  "recorded_at": "2026-09-11T05:01:52.933340+00:00",
+  "recorded_at": "2026-09-11T05:07:33.428916+00:00",
   "phase_complete": false,
   "entry_migration": {
     "reserved_version": "20260910172228",
@@ -45,5 +45,26 @@
       "fresh_and_repeat": true,
       "exact_rollback": true
     }
+  },
+  "terminal_migration": {
+    "reserved_version": "20260910181508",
+    "actual_applied_version": "20260911050554",
+    "file": "supabase/migrations/20260911050554_final_deal_receipts_survive_real_terminal_settlement.sql",
+    "wrapper_md5": "96a61ea5e16560735bcb70b355aa79ab",
+    "core_md5": "90f7506df2f1a94fe22952714fcd9f85",
+    "reader_md5": "bb4b0e1d1c758943fca29f9a83d064e4",
+    "postconditions_verified": true
+  },
+  "bounty_generation_deployment": {
+    "status": "applied",
+    "reserved_version": "20260911050910",
+    "applied_version": "20260911052648",
+    "migration": "supabase/migrations/20260911052648_bounty_rebuy_settles_its_exact_prior_entry_generation.sql",
+    "source_sha256": "4f9616b84906a7479c60dd0a266c2c2d1bb056828aa53ef45095ea31d058c5e2",
+    "native_evidence": "docs/audits/2026-09-11-bounty-current-terminal-native.json",
+    "native_generation_cases": 5,
+    "native_terminal_assertions": 49,
+    "exact_rollback": true,
+    "postflight": "verified rebuy607e and owner-only helperf793"
   }
 }

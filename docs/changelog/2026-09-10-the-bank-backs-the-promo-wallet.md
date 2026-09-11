@@ -75,10 +75,16 @@ Rather than a second copy of the spin, there is one body,
 granted to `service_role` only, so a browser cannot ask for a free spin by
 argument. The migration refuses to commit if that ever stops being true.
 
-One consequence worth writing down: a SQL wrapper appears in the call stack as
+Two consequences worth writing down. A SQL wrapper appears in the call stack as
 `SQL function "fn_wheel_free_spin" statement 1`, which is not the shape
 `fn_guard_profile_privileged_columns` matches, so the first probe run refused
-every diamond prize. The guard names the core now.
+every diamond prize; the guard names the core now. And the wrappers, being one
+line of delegation, never called `auth.uid()` themselves, so
+`check-definer-authorization` blocked the push: a SECURITY DEFINER function a
+browser can reach that never asks who is calling. It was right to. "The thing I
+call asks" is not the same promise as "I ask", and nobody reading the wrapper
+can see the difference. Each door asks first now
+(`20260910235243_the_wheel_doors_ask_who_is_calling.sql`).
 
 ## What the operator sees, and can do
 

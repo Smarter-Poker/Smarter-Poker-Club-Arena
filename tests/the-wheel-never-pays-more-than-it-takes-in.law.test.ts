@@ -70,6 +70,8 @@ const host = latest('the_games_belong_to_the_host');
  * the same odds and the same gates as a paid one. The law is read off the core.
  */
 const bank = latest('the_bank_backs_the_promo_wallet');
+/** The same day again: each door asks who is calling before it delegates. */
+const doors = latest('the_wheel_doors_ask_who_is_calling');
 
 /** The spin body as it stands after the fix-forward migrations. */
 const SPIN = body(bank.sql, 'fn_wheel_spin_core');
@@ -287,12 +289,18 @@ describe("every leg is the platform's own door", () => {
   });
 
   it('the browser cannot ask for a free spin: only the two doors set the flag', () => {
-    expect(bank.sql).toContain(
-      'SELECT public.fn_wheel_spin_core(p_club_id, p_commit_id, p_client_seed, false);'
+    // The doors were rewritten the same day so each ASKS who is calling before
+    // it delegates (20260910235243): "the thing I call asks" is not the same
+    // promise as "I ask", and check-definer-authorization reads the door.
+    expect(doors.sql).toContain(
+      'RETURN public.fn_wheel_spin_core(p_club_id, p_commit_id, p_client_seed, false);'
     );
-    expect(bank.sql).toContain(
-      'SELECT public.fn_wheel_spin_core(p_club_id, p_commit_id, p_client_seed, true);'
+    expect(doors.sql).toContain(
+      'RETURN public.fn_wheel_spin_core(p_club_id, p_commit_id, p_client_seed, true);'
     );
+    expect(body(doors.sql, 'fn_wheel_spin')).toContain('IF auth.uid() IS NULL THEN');
+    expect(body(doors.sql, 'fn_wheel_free_spin')).toContain('IF auth.uid() IS NULL THEN');
+    expect(doors.sql).toContain('a wheel door still does not ask who is calling');
     expect(bank.sql).toContain(
       'REVOKE ALL ON FUNCTION public.fn_wheel_spin_core(uuid, uuid, text, boolean) FROM PUBLIC, anon, authenticated;'
     );

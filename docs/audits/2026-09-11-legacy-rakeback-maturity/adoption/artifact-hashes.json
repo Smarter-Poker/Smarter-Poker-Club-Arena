@@ -5,7 +5,7 @@
   "04-migration-receipt.sql": "3ba05df16d6743ec0d3704d54e11397ed0588639f75dd1d8db169c3d5f2654b0",
   "README.md": "4f0360fa3fd40c097efef54346b62e6ee8e8ef665bd8e21b38e6bd4509759cd2",
   "applied-ledger-alignment.sql.txt": "0dc3ef5121e828feb307371e3f293924175bd3bbd58f3578c274f6bc185f5c2e",
-  "approved-admission-receipt.json": "679d894b56b7d1a49f58149e10683a27e2c497d18c6bbdd1f0699c22cf478f05",
-  "approved-application-receipt.json": "54201b28ab09a951748495b2a1878234584f68b9e67c89abbeb0cb4527bcf786",
+  "approved-admission-receipt.json": "ba50430ee60536536e49a63279cd7c008fbf86c8b0a2ad63a0e14592fad690fc",
+  "approved-application-receipt.json": "c533c08e46286d4d2711add4a14fc34c12aba06fa5f0eb17812f1df31f2a4f84",
   "read-only-receipt.json": "9a16eef0860dd1383824288e0da6f05de403d0e03c548566523b815df6a85838"
 }

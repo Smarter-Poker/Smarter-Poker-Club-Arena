@@ -1,0 +1,26 @@
+{
+  "recorded_at_utc": "2026-09-11T06:18:49.339398+00:00",
+  "integration_base": "1579ac7c1483523ebea0aaa7ad1c215fdf1dc701",
+  "prior_ui_commit": "9da95b3b3a0b4f93e93f059f88cc9bb00dabb42f",
+  "command": "./node_modules/.bin/vitest run tests/components/rakeback-readiness.test.tsx --maxWorkers=1",
+  "result": {
+    "exit_code": 0,
+    "files_passed": 1,
+    "tests_passed": 25
+  },
+  "input_sha256": {
+    "src/pages/RakebackPage.tsx": "01fab2683ef51ce0bad2dfb1a138bb83b383dd029471de8202afba77904c122c",
+    "src/utils/rakebackReadiness.ts": "7ccf2504c5b0529f8f1ec18891a8c19f7cd6d0f1cdd1c1307b625acfdc7e3189",
+    "src/utils/rakebackClaimResult.ts": "845810cb1e139330df6fd76e5a2fe6a476732152cbd13d3d141a85d352d20efc",
+    "tests/components/rakeback-readiness.test.tsx": "b0805e57c4909aacd1f39608259f1c2220169f8762a2c584e7a4e0d0dcafe625"
+  },
+  "output_sha256": "e150f721d4ee716834b86c44f8f42aecca5e7aae68de0d42b0dc5134df4b0123",
+  "installed_claim_definition_sha256": "51ab3c900f75adf7f92f868a46f7a126fbe23f117bc7ff80119724406d01ffac",
+  "installed_catalog_captured_at": "2026-09-10T06:11:06.798Z",
+  "boundary": "Actual page, parser, readiness helper, rewards header and retry owner with mocked external boundaries. Source-only wallet subscriber review; no live financial API, backend activation or browser visual proof.",
+  "installed_claim_prosrc_md5": "930e4b70fa3580c010abe99e23181598",
+  "independent_review": {
+    "agent": "satellite_closeout",
+    "result": "No blocker in response/timer checkpoint against all four input hashes and raw 25-case output. Source-only current bus consumer trace confirms refetch/invalidation. Excludes subsequent read/discovery work and backend activation."
+  }
+}

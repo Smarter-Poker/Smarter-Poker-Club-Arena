@@ -553,6 +553,15 @@ $assert$;
 -- fn_nit_check is the door a signed-in player's own client asks about the VPIP
 -- floor, so authenticated keeps it. fn_nit_status is the eviction query the
 -- engine runs; nothing in a browser calls it.
+-- fn_cash_apply_ruleset is the reconciler the cluster tick runs every pass; it
+-- WRITES the table from its game's snapshot. Nothing in a browser calls it
+-- (grep of src/ returns one comment and no call), it backs no RLS policy
+-- (pg_policy scan, 0 rows), and production already grants it to service_role
+-- alone. Same reason as the two below: correct here, and correct on an empty
+-- database too.
+REVOKE ALL ON FUNCTION public.fn_cash_apply_ruleset(uuid) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_cash_apply_ruleset(uuid) TO service_role;
+
 REVOKE ALL ON FUNCTION public.fn_nit_check(uuid, uuid, timestamp with time zone) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.fn_nit_check(uuid, uuid, timestamp with time zone) TO authenticated, service_role;
 

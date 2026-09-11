@@ -433,7 +433,13 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     // pause outlives any plausible coordination window, report it loudly —
     // once per window, never a kill: forcing play during a legitimate pause
     // is a tournament-integrity failure, a long pause is only an incident.
-    if (this.isPausedByDesign()) {
+    //
+    // 2026-09-11: "paused" means the pause has TAKEN EFFECT (isParkedByDesign).
+    // The maintenance break raises its flag at :53 on a table still playing a
+    // hand; standing down for that hand meant a seat that lost its clock in the
+    // last-hand window could never be rescued, never parked, and kept the
+    // restart certificate shut for the whole break.
+    if (this.isParkedByDesign()) {
       const pausedMs = this.msPaused();
       if (
         pausedMs > ServerTableEngineBase.PAUSE_ALARM_MS &&

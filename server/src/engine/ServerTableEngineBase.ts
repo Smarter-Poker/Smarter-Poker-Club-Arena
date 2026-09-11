@@ -3240,8 +3240,7 @@ export abstract class ServerTableEngineBase {
        have fetched anyway, so this costs the same single round trip - and
        having it HERE is what lets a table that cannot deal still release a
        swap hold whose move has died (see reconcileSeatMoveHolds). */
-    const pending =
-      prefetched === undefined ? await this.readPendingSeatMoves() : prefetched;
+    const pending = prefetched === undefined ? await this.readPendingSeatMoves() : prefetched;
     if (!this.lifecycleCanMutate()) return [];
     if (pending === null) return [];
     this.reconcileSeatMoveHolds(pending);
@@ -4865,6 +4864,58 @@ export abstract class ServerTableEngineBase {
     );
   }
 
+  /**
+   * A by-design pause that has TAKEN EFFECT - the question the table watchdog
+   * and GameServer's zombie reaper ask before they stand down (2026-09-11).
+   *
+   * isPausedByDesign() goes true the moment an authority raises its flag, and
+   * for what it was written for that is right: a parked table is not a stall.
+   * The maintenance break raises its flag at :53 on EVERY table, including a
+   * table still playing the hand it had at :53. There the flag means "stop at
+   * the next hand boundary", not "stopped": until the hand lands the table is
+   * PLAYING, and a hand that froze is exactly as dead inside the break as
+   * outside it.
+   *
+   * Both readers took the flag for the fact. The watchdog stood down for every
+   * table still mid-hand at :53, so a hand that lost its clock in the last-hand
+   * window could not be rescued; the reaper exempted it for
+   * MAX_HEALTHY_PAUSE_MS - ten minutes, longer than the whole break - so it
+   * could not be reaped either. It never parked, and one table that never
+   * parks keeps readyForRestart shut. On 2026-09-11 build 404948b3 froze
+   * tournament tables mid-hand (#4225) and held 514, 526 and 523 of them
+   * unparked through three countdowns: no certificate, no restart, and no way
+   * for the fix to ship without an owner-approved exception.
+   *
+   * So the break's hold counts once the table is between hands. A frozen hand
+   * is then worked by the watchdog and reaped on its usual clock inside the
+   * break, and its rebuilt engine is parked on arrival by
+   * MaintenanceBreak.adopt() - the certificate is earned, not waived. Every
+   * other authority keeps exactly the meaning isPausedByDesign() gives it; a
+   * table held by one of them is parked by design even mid-hand, because a
+   * rebuild that lost e.g. the hand-for-hand flag would deal INTO it.
+   */
+  isParkedByDesign(): boolean {
+    if (this.maintenancePaused && this.isBetweenHands()) return true;
+    return this.isHeldByDesignApartFromTheBreak();
+  }
+
+  /**
+   * isPausedByDesign() without the maintenance break's clause. The two lists
+   * must name the same authorities apart from `maintenancePaused`;
+   * tests/a-parked-table-is-not-a-stalled-one.law.test.ts compares them, so a
+   * new authority added to one and not the other fails the build.
+   */
+  private isHeldByDesignApartFromTheBreak(): boolean {
+    return (
+      this.handForHandPaused ||
+      this.finalTableDealPaused ||
+      this.terminalCloseoutPaused ||
+      (this.tournamentMovePauseOwners.size > 0 && this.handForHandResolve !== null) ||
+      this.dealHoldUntilMs > Date.now() ||
+      this.tableFSM.state === 'paused'
+    );
+  }
+
   /** Ms spent in the current by-design pause; 0 when not paused. */
   msPaused(): number {
     return this.pausedSinceMs === 0 ? 0 : Date.now() - this.pausedSinceMs;
@@ -5665,7 +5716,8 @@ export abstract class ServerTableEngineBase {
         (this.tableInfo as any).seven_deuce_amount =
           (tableRow as any).seven_deuce_amount ?? undefined;
         this.tableInfo.straddle_enabled = (tableRow as any).straddle_enabled ?? undefined;
-        (this.tableInfo as any).auto_utg_straddle = (tableRow as any).auto_utg_straddle ?? undefined;
+        (this.tableInfo as any).auto_utg_straddle =
+          (tableRow as any).auto_utg_straddle ?? undefined;
         (this.tableInfo as any).voluntary_straddle =
           (tableRow as any).voluntary_straddle ?? undefined;
         this.tableInfo.min_buy_in = (tableRow as any).min_buy_in ?? undefined;

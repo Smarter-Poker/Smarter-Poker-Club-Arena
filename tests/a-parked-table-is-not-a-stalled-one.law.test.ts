@@ -154,3 +154,68 @@ describe('the stall predicate reads the by-design pause', () => {
     }
   });
 });
+
+/**
+ * A FLAG IS NOT A FACT (2026-09-11).
+ *
+ * The maintenance break raises its flag at :53 on every table, including a
+ * table still playing a hand. Before this, the table watchdog and the zombie
+ * reaper both read isPausedByDesign() and stood down for that hand for the
+ * whole break, so a hand that froze in the last-hand window could be neither
+ * rescued nor reaped. It never parked, and readyForRestart stayed shut:
+ * 514, 526 and 523 frozen tables on build 404948b3, three breaks, no restart.
+ *
+ * The readers that decide whether to intervene now ask whether the pause has
+ * TAKEN EFFECT. The ones that describe the table (the liveness snapshot, the
+ * stall filters, the SIGTERM drain) keep isPausedByDesign().
+ */
+describe('the watchdog and the reaper stand down only for a pause that has taken effect', () => {
+  const TURNS = readFileSync(join(ROOT, 'server/src/engine/ServerTableEngineTurns.ts'), 'utf8');
+
+  it('the zombie reaper exempts a table only once it is parked', () => {
+    expect(SERVER).toMatch(
+      /const parkedOnPurpose = engine\.isParkedByDesign\(\) && !pausedTooLong;/
+    );
+    expect(SERVER).not.toMatch(/const parkedOnPurpose = engine\.isPausedByDesign\(\)/);
+  });
+
+  it('the table watchdog stands down only once the table is parked', () => {
+    const watchdog = methodBody(TURNS, 'override runTableWatchdog(): void {');
+    expect(watchdog).toMatch(/if \(this\.isParkedByDesign\(\)\) \{/);
+    expect(watchdog).not.toMatch(/if \(this\.isPausedByDesign\(\)\) \{/);
+  });
+
+  it('the break counts once the table is between hands; every other authority counts at once', () => {
+    const parked = methodBody(BASE, 'isParkedByDesign(): boolean {');
+    expect(parked).toMatch(/this\.maintenancePaused && this\.isBetweenHands\(\)/);
+    expect(parked).toMatch(/this\.isHeldByDesignApartFromTheBreak\(\)/);
+  });
+
+  it('names the same authorities as isPausedByDesign, apart from the break', () => {
+    // Two lists that must not drift: a new pause authority added to
+    // isPausedByDesign() and forgotten here would let the watchdog kill a
+    // table that authority is holding - the hand-for-hand rebuild again.
+    const terms = (body: string) =>
+      new Set(
+        body
+          .slice(body.lastIndexOf('return ('))
+          .replace(/^return \(|\);?\s*\}\s*$/g, '')
+          .split('||')
+          .map((t) =>
+            t
+              .replace(/\s+/g, ' ')
+              .replace(/^return \( ?/, '')
+              .trim()
+          )
+          .filter(Boolean)
+      );
+    const paused = terms(methodBody(BASE, 'isPausedByDesign(): boolean {'));
+    const apart = terms(methodBody(BASE, 'private isHeldByDesignApartFromTheBreak(): boolean {'));
+    expect(paused.has('this.maintenancePaused')).toBe(true);
+    expect(apart.has('this.maintenancePaused')).toBe(false);
+    expect([...apart].sort()).toEqual(
+      [...paused].filter((t) => t !== 'this.maintenancePaused').sort()
+    );
+    expect(apart.size).toBeGreaterThanOrEqual(6);
+  });
+});

@@ -389,3 +389,86 @@ describe('clearTurnTimer actually cancels (was an empty function)', () => {
     expect(cancelled).toEqual([]);
   });
 });
+
+/**
+ * A HAND IN FLIGHT AT THE BREAK IS STILL A HAND (2026-09-11).
+ *
+ * The maintenance break raises `maintenancePaused` at :53 on every table,
+ * including tables still playing a hand. The watchdog used to stand down on
+ * the flag, so a hand that lost its clock in the last-hand window could not
+ * be rescued; it never parked, and one table that never parks keeps
+ * readyForRestart shut. Build 404948b3 held 514-526 frozen tables unparked
+ * through three countdowns that way. The watchdog now stands down only for a
+ * pause that has taken effect (isParkedByDesign).
+ */
+describe('table watchdog - a hand in flight at the break is still a hand', () => {
+  beforeEach(() => vi.restoreAllMocks());
+
+  it('works a stalled hand that was mid-flight when the break raised its flag', () => {
+    const h = harness({ hasClock: false });
+    const e = h.engine as any;
+    e.maintenancePaused = true;
+    e.pausedSinceMs = Date.now() - 60_000;
+    h.setStale(STALL_MS + 1_000);
+    expect(e.isPausedByDesign()).toBe(true);
+    expect(e.isParkedByDesign()).toBe(false);
+    run(h);
+    // TIER 1: the seat that lost its clock gets one back, so the hand can land.
+    expect(h.calls.startTimer).toHaveLength(1);
+    expect(h.calls.killed).toEqual([]);
+  });
+
+  it('a hand that still cannot move under the break escalates to a rebuild', () => {
+    const h = harness({ hasClock: true, action: 'reject' });
+    const e = h.engine as any;
+    e.maintenancePaused = true;
+    e.pausedSinceMs = Date.now() - 60_000;
+    for (let i = 0; i < 5 && h.calls.killed.length === 0; i++) {
+      h.setStale(STALL_MS + 1_000);
+      run(h);
+    }
+    // The rebuilt engine is parked on arrival by MaintenanceBreak.adopt().
+    expect(h.calls.killed).toEqual(['turn_unrecoverable']);
+  });
+
+  it('still leaves a table alone once it has parked between hands', () => {
+    const h = harness({ noHand: true });
+    const e = h.engine as any;
+    e.maintenancePaused = true;
+    e.pausedSinceMs = Date.now() - 4 * 60_000;
+    h.setStale(10 * 60_000);
+    expect(e.isParkedByDesign()).toBe(true);
+    run(h);
+    run(h);
+    run(h);
+    expect(h.calls.killed).toEqual([]);
+    expect(trips(h)).toBe(0);
+  });
+
+  it('every other authority still holds a table mid-hand, because a rebuild would deal into it', () => {
+    for (const hold of [
+      (e: any) => (e.handForHandPaused = true),
+      (e: any) => (e.finalTableDealPaused = true),
+      (e: any) => (e.terminalCloseoutPaused = true),
+      (e: any) => (e.dealHoldUntilMs = Date.now() + 60_000),
+    ]) {
+      const h = harness({ hasClock: false });
+      const e = h.engine as any;
+      e.maintenancePaused = true;
+      hold(e);
+      e.pausedSinceMs = Date.now() - 60_000;
+      h.setStale(10 * 60_000);
+      expect(e.isParkedByDesign()).toBe(true);
+      run(h);
+      expect(h.calls.startTimer).toHaveLength(0);
+      expect(h.calls.killed).toEqual([]);
+    }
+  });
+
+  it('without any pause, the answer is no', () => {
+    const h = harness({});
+    expect((h.engine as any).isParkedByDesign()).toBe(false);
+    const idle = harness({ noHand: true });
+    expect((idle.engine as any).isParkedByDesign()).toBe(false);
+  });
+});

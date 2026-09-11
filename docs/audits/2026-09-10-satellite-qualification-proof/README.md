@@ -2,7 +2,7 @@
 
 This proposal stops a satellite at exactly K live players when its frozen funded pool is exactly K target entries with no remainder. The immutable boundary records the source cohort, positive stacks, physical seats, lease generation, and qualification time. The existing atomic satellite payer delivers seat, noncash ticket, or cash outcomes. Version-three receipts have no winner and qualifiers have no finishing position.
 
-The proposal is local and is not production-ready while the separately owned final tournament seat-authority deployment is absent. Its source gate intentionally refuses the currently installed wrapper. No production SQL, engine restart, or push was performed by this lane.
+The proposal is local and is not production-ready while the separately owned final tournament seat-authority deployment is absent. Its source gate intentionally refuses the currently installed wrapper. No production SQL or engine restart was performed by this lane. The successor is retained in a backup namespace, outside the normal engine publication path.
 
 ## Native Verification
 
@@ -16,4 +16,16 @@ Preparation now holds the lease row FOR KEY SHARE, matching the reviewed request
 
 ## Remaining Acceptance
 
-The final seat-authority owner must deploy and verify its own prerequisite. The integration still needs the exact-K RUNNING-target physical assignment and process-level restart recovery flow, plus root publication and live verification. Threshold-crossing ties and remainder contracts remain tracked separately. The complete phase is not certified by this proposal.
+The final seat-authority owner must deploy and verify its own prerequisite. The RUNNING-target physical assignment and fresh-process recovery proof are now covered below. Root publication and live verification remain held until the prerequisite is activated through its coordinated owner. Threshold-crossing ties and remainder contracts remain tracked separately. The complete phase is not certified by this proposal.
+
+## Running Target And Restart Follow-Up (September 11)
+
+The old wrapper passed NULL coordinates into the strict seat assignment owner. The saved negative control reproduces that refusal and proves all money, awards, registrations and source chairs roll back. The corrected wrapper asks the existing capacity owner for zero additional reservations because the whole funded cohort is already registered, selects the established busiest legal table and its lowest free chair, and calls strict assignment once. It never prewrites through the older allocator. The migration also pins the eight reviewed capacity, acquisition and G/T lane prerequisites. The production body hashes, owners, grants and settings still matched at 04:46:55 UTC on September 11; the exact-K completion RPC was still absent.
+
+Four running-target cases pass with deferred constraints forced: funded promotion of all three qualifiers, dirty-chair reuse with stale session fields cleared and existing chairs unchanged, one durable capacity table/wake using current blinds, and an injected failure after the third actual assignment that restores all 600 source chips and all three source seats while removing every destination effect.
+
+`recovery-restart-native.py` then uses fresh Node processes and the actual compiled recovery, RPC and receipt-parser modules. It kills the preparation process with SIGKILL after its committed boundary, observes a frozen restart making no RPC write, observes recovery waiting on the current capacity owner's advisory lane, loses five responses after actual committed completion, recovers through the outcome resolver, and confirms fresh replay and a second cold scan change no money or receipt. The result is one header, three 200-chip awards, six target players, no source chairs and unchanged cash wallets. There is one capacity receipt and pending manager wake. The build attestation proves recompiling the archived TypeScript produces byte-identical modules to those used in this run.
+
+The initial restarted fixture correctly failed: the clone lacked the production service role's RLS bypass and four table grants. Deferred invoker triggers execute as the caller at COMMIT, after the definer returns. The original donor and failed clone are preserved. A separate private cluster has the existing production service-role equivalence; only the four catalog-confirmed grants are added in its proof database. No production role or permission changed. The failed result remains in `recovery-restart-acl-negative.json`.
+
+These are actual local PostgreSQL owners and fresh process lifetimes with an allowlisted psql transport. They are not a full GameServer, HTTP/PostgREST, browser, websocket, manager-wake consumption or live Stage-B test. The source's opening 600-chip liability and original target entrants are seeded fixtures; purchase collection is outside this proof. Threshold-crossing ties, remainder policies, rolling old clients, coordinated Stage-B activation, root integration and live publication remain explicit dependencies. This archive does not certify the whole satellite requirement group or Phase 3.

@@ -25,6 +25,34 @@ BEGIN
 END;
 $qualification_lease_gate$;
 
+DO $qualification_placement_gate$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM (VALUES
+      ('public.fn_tournament_live_seat_acquisition_requires_authority()','5a60bdd761aaaaad4b3bf982a3c50f6e','{postgres=X/postgres}',ARRAY['search_path=public, pg_temp'],true),
+      ('public.fn_assign_tournament_player_seat_atomic(uuid,uuid,uuid,integer)','68c25bbb9c7b30e19e6351e48f3f85ae','{postgres=X/postgres,service_role=X/postgres}',ARRAY['search_path=public, pg_temp','statement_timeout=30s'],true),
+      ('public.fn_ca_assign_tournament_player_seat_locked(uuid,uuid,uuid,integer)','16a587f7567336fe4379135f22e3fb41','{postgres=X/postgres}',ARRAY['search_path=public, pg_temp','statement_timeout=30s'],true),
+      ('public.fn_ca_lock_settlement_lane_for_tournament(uuid,uuid)','3acb4c1d763181905cf5b64287f8f28f','{postgres=X/postgres,service_role=X/postgres}',ARRAY['search_path=public, pg_temp'],false),
+      ('public.fn_ca_lock_settlement_lane_global()','343015440ea5c84ee4ca7ae583c73d30','{postgres=X/postgres,service_role=X/postgres}',ARRAY['search_path=public, pg_temp'],false),
+      ('public.fn_ca_lock_tournament_seat_acquisition(uuid,uuid,uuid)','b7d371b05e543f1fa9ac3131288bca13','{postgres=X/postgres}',ARRAY['search_path=public, pg_temp'],true),
+      ('public.fn_ca_tournament_seat_cap(uuid)','177e2e82ef01b126d16e7706f9d29e12','{postgres=X/postgres}',ARRAY['search_path=public, pg_temp'],true),
+      ('public.fn_ensure_late_registration_capacity(uuid,integer)','b36dd36a9348d29be1092c7d42954c03','{postgres=X/postgres,service_role=X/postgres}',ARRAY['search_path=public, pg_temp'],true)
+    ) expected(signature,body_md5,acl,settings,definer)
+    LEFT JOIN pg_proc p ON p.oid=to_regprocedure(expected.signature)
+    WHERE p.oid IS NULL OR md5(p.prosrc) IS DISTINCT FROM expected.body_md5
+       OR p.proowner IS DISTINCT FROM 'postgres'::regrole
+       OR p.proacl::text IS DISTINCT FROM expected.acl
+       OR p.proconfig IS DISTINCT FROM expected.settings
+       OR p.prosecdef IS DISTINCT FROM expected.definer
+       OR p.provolatile IS DISTINCT FROM 'v'::"char"
+       OR p.proisstrict IS DISTINCT FROM false
+  ) THEN
+    RAISE EXCEPTION 'qualification placement requires the reviewed capacity, seat and current G/T lock authorities'
+      USING ERRCODE='55000';
+  END IF;
+END;
+$qualification_placement_gate$;
+
 DO $source_gate$
 BEGIN
   IF (SELECT md5(prosrc) FROM pg_proc WHERE oid=to_regprocedure(
@@ -2439,6 +2467,10 @@ DECLARE
   v_user_id uuid;
   v_award record;
   v_assignment jsonb;
+  v_capacity jsonb;
+  v_target_cap integer;
+  v_destination_table uuid;
+  v_destination_seat integer;
   v_seat_award_count integer;
   v_assigned_count integer:=0;
   v_exact_count integer;
@@ -2519,8 +2551,47 @@ BEGIN
            AND award.delivery_kind='seat'
          ORDER BY award.user_id,award.place
       LOOP
+        -- The whole award cohort is already registered by the money core.
+        -- Zero reserves no additional entrant; existing accepted roster demand
+        -- is the canonical capacity owner's input, even if entry just closed.
+        v_capacity:=public.fn_ensure_late_registration_capacity(v_target_id,0);
+        IF COALESCE((v_capacity->>'ok')::boolean,false) IS NOT TRUE THEN
+          RAISE EXCEPTION 'RUNNING satellite target capacity is unavailable: %',
+            v_capacity USING ERRCODE='P0404';
+        END IF;
+        v_target_cap:=public.fn_ca_tournament_seat_cap(v_target_id);
+        -- Match the established busiest-legal-table/lowest-free-chair policy.
+        -- Do not lock a table ahead of the assignment owner's roster locks.
+        -- The terminal G and target parent locks remain held, and strict
+        -- assignment rechecks occupancy under its own canonical child locks.
+        SELECT tb.id,chair.seat_number
+          INTO v_destination_table,v_destination_seat
+          FROM public.tables tb
+          CROSS JOIN LATERAL (
+            SELECT n AS seat_number
+              FROM generate_series(1,LEAST(v_target_cap,
+                GREATEST(2,COALESCE(NULLIF(tb.max_players,0),v_target_cap)))) n
+             WHERE NOT EXISTS (
+               SELECT 1 FROM public.table_seats occupied
+                WHERE occupied.table_id=tb.id AND occupied.seat_number=n
+                  AND occupied.left_at IS NULL)
+             ORDER BY n LIMIT 1
+          ) chair
+         WHERE tb.tournament_id=v_target_id
+           AND lower(COALESCE(tb.status::text,'')) IN ('waiting','running','active')
+           AND NOT COALESCE(tb.is_deleted,false)
+         ORDER BY (SELECT count(*) FROM public.table_seats occupied
+                    WHERE occupied.table_id=tb.id AND occupied.left_at IS NULL
+                      AND occupied.seat_number BETWEEN 1 AND LEAST(v_target_cap,
+                        GREATEST(2,COALESCE(NULLIF(tb.max_players,0),v_target_cap)))) DESC,
+                  tb.created_at,tb.id
+         LIMIT 1;
+        IF v_destination_table IS NULL OR v_destination_seat IS NULL THEN
+          RAISE EXCEPTION 'RUNNING satellite target has no legal free chair'
+            USING ERRCODE='P0404';
+        END IF;
         v_assignment:=public.fn_assign_tournament_player_seat_atomic(
-          v_target_id,v_award.user_id,NULL,NULL);
+          v_target_id,v_award.user_id,v_destination_table,v_destination_seat);
         IF COALESCE((v_assignment->>'ok')::boolean,false) IS NOT TRUE
            OR (v_assignment->>'tournament_id')::uuid IS DISTINCT FROM v_target_id
            OR (v_assignment->>'user_id')::uuid IS DISTINCT FROM v_award.user_id

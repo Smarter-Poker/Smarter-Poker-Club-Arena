@@ -1,0 +1,487 @@
+{
+  "pass": true,
+  "capacity_overlap": {
+    "observed_blocking": [
+      {
+        "pid": 85216,
+        "wait_type": "Lock",
+        "wait_event": "advisory",
+        "blocker_pid": 85189,
+        "waiting_locks": [
+          {
+            "mode": "ExclusiveLock",
+            "objid": "1253463894",
+            "classid": "4265093629",
+            "granted": false,
+            "locktype": "advisory",
+            "objsubid": 1
+          }
+        ],
+        "blocking_application": "satellite-capacity-overlap",
+        "blocking_advisory_locks": [
+          {
+            "mode": "ExclusiveLock",
+            "objid": "635562376",
+            "classid": "2858136833",
+            "granted": true,
+            "locktype": "advisory",
+            "objsubid": 1
+          },
+          {
+            "mode": "ShareLock",
+            "objid": "1253463894",
+            "classid": "4265093629",
+            "granted": true,
+            "locktype": "advisory",
+            "objsubid": 1
+          }
+        ]
+      }
+    ],
+    "capacity_exit": 0,
+    "capacity_stdout_after_marker": "\n",
+    "capacity_stderr": "",
+    "post_retry": {
+      "ok": true,
+      "reason": "capacity_sufficient",
+      "created": false,
+      "open_seats": 6,
+      "live_capacity": 12,
+      "active_entries": 6,
+      "occupied_seats": 6,
+      "reserved_entries": 0,
+      "unseated_entries": 0,
+      "pending_table_ids": ["89fa6f9e-6e40-4acd-b596-cf55a20d0dff"],
+      "remaining_deficit": 0,
+      "pending_table_count": 1
+    }
+  },
+  "prepare_process": {
+    "prepared": true,
+    "pid": 85127,
+    "trace": [
+      {
+        "type": "rpc",
+        "name": "fn_prepare_satellite_qualification",
+        "args": {
+          "p_tournament_id": "e1000000-0000-4000-8000-000000000001",
+          "p_qualified_user_ids": [
+            "10000000-0000-0000-0000-000000000001",
+            "e1000000-0000-4000-8000-000000000004",
+            "e1000000-0000-4000-8000-000000000005"
+          ],
+          "p_lease_generation": "e1000000-0000-4000-8000-000000000051"
+        },
+        "committed": true,
+        "receiptVersion": null
+      }
+    ],
+    "errors": []
+  },
+  "killed_process_exit": -9,
+  "after_prepare": {
+    "paid": 0,
+    "status": "COMPLETING",
+    "payouts": 0,
+    "receipt": null,
+    "wallets": 0.0,
+    "receipts": 0,
+    "boundaries": 1,
+    "source_seats": 3,
+    "target_players": 3
+  },
+  "frozen_restart": {
+    "mode": "recover",
+    "pid": 85155,
+    "receipt": null,
+    "trace": [
+      {
+        "type": "select",
+        "table": "tournaments",
+        "columns": "id,name,status,payout_structure,variant,tournament_type,satellite_target_id,started_at",
+        "filters": ["status='COMPLETING'", "id='e1000000-0000-4000-8000-000000000001'"]
+      }
+    ],
+    "errors": []
+  },
+  "recovery_after_lost_responses": {
+    "mode": "recover",
+    "pid": 85191,
+    "receipt": null,
+    "trace": [
+      {
+        "type": "select",
+        "table": "tournaments",
+        "columns": "id,name,status,payout_structure,variant,tournament_type,satellite_target_id,started_at",
+        "filters": ["status='COMPLETING'", "id='e1000000-0000-4000-8000-000000000001'"]
+      },
+      {
+        "type": "select",
+        "table": "tournament_players",
+        "columns": "id,user_id,status,position,chips,eliminated_at,elimination_sequence",
+        "filters": ["tournament_id='e1000000-0000-4000-8000-000000000001'"]
+      },
+      {
+        "type": "select",
+        "table": "tournament_satellite_qualification_boundaries",
+        "columns": "qualified_user_ids",
+        "filters": ["tournament_id='e1000000-0000-4000-8000-000000000001'"]
+      },
+      {
+        "type": "rpc",
+        "name": "fn_complete_satellite_qualification",
+        "args": {
+          "p_tournament_id": "e1000000-0000-4000-8000-000000000001",
+          "p_qualified_user_ids": [
+            "10000000-0000-0000-0000-000000000001",
+            "e1000000-0000-4000-8000-000000000004",
+            "e1000000-0000-4000-8000-000000000005"
+          ]
+        },
+        "committed": true,
+        "receiptVersion": 3
+      },
+      {
+        "type": "rpc",
+        "name": "fn_complete_satellite_qualification",
+        "args": {
+          "p_tournament_id": "e1000000-0000-4000-8000-000000000001",
+          "p_qualified_user_ids": [
+            "10000000-0000-0000-0000-000000000001",
+            "e1000000-0000-4000-8000-000000000004",
+            "e1000000-0000-4000-8000-000000000005"
+          ]
+        },
+        "committed": true,
+        "receiptVersion": 3
+      },
+      {
+        "type": "rpc",
+        "name": "fn_complete_satellite_qualification",
+        "args": {
+          "p_tournament_id": "e1000000-0000-4000-8000-000000000001",
+          "p_qualified_user_ids": [
+            "10000000-0000-0000-0000-000000000001",
+            "e1000000-0000-4000-8000-000000000004",
+            "e1000000-0000-4000-8000-000000000005"
+          ]
+        },
+        "committed": true,
+        "receiptVersion": 3
+      },
+      {
+        "type": "rpc",
+        "name": "fn_complete_satellite_qualification",
+        "args": {
+          "p_tournament_id": "e1000000-0000-4000-8000-000000000001",
+          "p_qualified_user_ids": [
+            "10000000-0000-0000-0000-000000000001",
+            "e1000000-0000-4000-8000-000000000004",
+            "e1000000-0000-4000-8000-000000000005"
+          ]
+        },
+        "committed": true,
+        "receiptVersion": 3
+      },
+      {
+        "type": "rpc",
+        "name": "fn_complete_satellite_qualification",
+        "args": {
+          "p_tournament_id": "e1000000-0000-4000-8000-000000000001",
+          "p_qualified_user_ids": [
+            "10000000-0000-0000-0000-000000000001",
+            "e1000000-0000-4000-8000-000000000004",
+            "e1000000-0000-4000-8000-000000000005"
+          ]
+        },
+        "committed": true,
+        "receiptVersion": 3
+      },
+      {
+        "type": "rpc",
+        "name": "fn_resolve_satellite_qualification_outcome",
+        "args": {
+          "p_tournament_id": "e1000000-0000-4000-8000-000000000001",
+          "p_qualified_user_ids": [
+            "10000000-0000-0000-0000-000000000001",
+            "e1000000-0000-4000-8000-000000000004",
+            "e1000000-0000-4000-8000-000000000005"
+          ]
+        },
+        "committed": true,
+        "receiptVersion": null
+      }
+    ],
+    "errors": []
+  },
+  "post_recovery": {
+    "paid": 600.0,
+    "status": "COMPLETED",
+    "payouts": 3,
+    "receipt": {
+      "ok": true,
+      "pool": 600.0,
+      "seats": [
+        {
+          "amount": 200.0,
+          "user_id": "10000000-0000-0000-0000-000000000001",
+          "position": 1,
+          "registration_id": "3ef58f77-e22e-4619-97c7-5b3e313e6d98"
+        },
+        {
+          "amount": 200.0,
+          "user_id": "e1000000-0000-4000-8000-000000000004",
+          "position": 2,
+          "registration_id": "07bfba7c-1536-4236-bacf-d398c688f026"
+        },
+        {
+          "amount": 200.0,
+          "user_id": "e1000000-0000-4000-8000-000000000005",
+          "position": 3,
+          "registration_id": "c49f5fcd-dace-42d4-aa6c-f4a5317d611b"
+        }
+      ],
+      "awards": [
+        {
+          "amount": 200.0,
+          "user_id": "10000000-0000-0000-0000-000000000001",
+          "position": 1,
+          "payout_id": "71b1375c-aa7e-4a11-aed4-f24b8be9525b",
+          "ticket_id": null,
+          "delivery_kind": "seat",
+          "registration_id": "3ef58f77-e22e-4619-97c7-5b3e313e6d98"
+        },
+        {
+          "amount": 200.0,
+          "user_id": "e1000000-0000-4000-8000-000000000004",
+          "position": 2,
+          "payout_id": "c57e82b5-3092-4ebe-b9a1-876886f375b1",
+          "ticket_id": null,
+          "delivery_kind": "seat",
+          "registration_id": "07bfba7c-1536-4236-bacf-d398c688f026"
+        },
+        {
+          "amount": 200.0,
+          "user_id": "e1000000-0000-4000-8000-000000000005",
+          "position": 3,
+          "payout_id": "dca52ad4-24b9-458f-9baf-785e9cdd0afe",
+          "ticket_id": null,
+          "delivery_kind": "seat",
+          "registration_id": "c49f5fcd-dace-42d4-aa6c-f4a5317d611b"
+        }
+      ],
+      "status": "COMPLETED",
+      "remainder": null,
+      "target_id": "e1000000-0000-4000-8000-000000000002",
+      "winner_id": null,
+      "field_size": 3,
+      "qualifiers": [
+        {
+          "user_id": "10000000-0000-0000-0000-000000000001",
+          "qualified_at": "2026-09-10T23:52:36.928668-05:00",
+          "award_ordinal": 1,
+          "qualified_chips": 10000,
+          "registration_id": "cc90ecb2-f42d-45db-925a-432e419e2af1"
+        },
+        {
+          "user_id": "e1000000-0000-4000-8000-000000000004",
+          "qualified_at": "2026-09-10T23:52:36.928668-05:00",
+          "award_ordinal": 2,
+          "qualified_chips": 10000,
+          "registration_id": "29c50a19-1b25-4823-a76b-685e03592258"
+        },
+        {
+          "user_id": "e1000000-0000-4000-8000-000000000005",
+          "qualified_at": "2026-09-10T23:52:36.928668-05:00",
+          "award_ordinal": 3,
+          "qualified_chips": 10000,
+          "registration_id": "1cefc9a4-9936-440a-9bb5-c06b8c6e2243"
+        }
+      ],
+      "seat_count": 3,
+      "settled_at": "2026-09-10T23:52:37.248453-05:00",
+      "ticket_cost": 200.0,
+      "fully_settled": true,
+      "tournament_id": "e1000000-0000-4000-8000-000000000001",
+      "winner_amount": null,
+      "completion_kind": "equal_qualifiers",
+      "receipt_version": 3,
+      "source_closeout": {
+        "closed_at": "2026-09-10T23:52:37.248453-05:00",
+        "source_seat_ids": [
+          "2be7789b-02d6-47c4-89fb-b5a722ab0a2f",
+          "abd6e742-e9ac-4a41-901a-5d0232c753a5",
+          "fdf84373-e23a-42f0-9637-28622161d787"
+        ],
+        "escrow_closed_at": "2026-09-10T23:52:37.248453-05:00",
+        "source_table_ids": ["e1000000-0000-4000-8000-000000000009"],
+        "escrow_close_note": "atomic satellite terminal receipt: exact zero",
+        "released_seat_ids": [
+          "2be7789b-02d6-47c4-89fb-b5a722ab0a2f",
+          "abd6e742-e9ac-4a41-901a-5d0232c753a5",
+          "fdf84373-e23a-42f0-9637-28622161d787"
+        ],
+        "source_seat_count": 3,
+        "source_table_count": 1,
+        "released_seat_count": 3
+      },
+      "cash_ticket_count": 0,
+      "source_seat_count": 3,
+      "entry_ticket_count": 0,
+      "source_table_count": 1,
+      "ticket_award_count": 3,
+      "released_seat_count": 3
+    },
+    "wallets": 0.0,
+    "receipts": 1,
+    "boundaries": 1,
+    "source_seats": 0,
+    "target_players": 6
+  },
+  "fresh_replay": {
+    "mode": "replay",
+    "pid": 87984,
+    "receipt": {
+      "tournamentId": "e1000000-0000-4000-8000-000000000001",
+      "targetId": "e1000000-0000-4000-8000-000000000002",
+      "fieldSize": 3,
+      "pool": 600,
+      "ticketCost": 200,
+      "ticketAwardCount": 3,
+      "seatCount": 3,
+      "cashTicketCount": 0,
+      "entryTicketCount": 0,
+      "awards": [
+        {
+          "userId": "10000000-0000-0000-0000-000000000001",
+          "position": 1,
+          "amount": 200,
+          "payoutId": "71b1375c-aa7e-4a11-aed4-f24b8be9525b",
+          "deliveryKind": "seat",
+          "registrationId": "3ef58f77-e22e-4619-97c7-5b3e313e6d98",
+          "ticketId": null
+        },
+        {
+          "userId": "e1000000-0000-4000-8000-000000000004",
+          "position": 2,
+          "amount": 200,
+          "payoutId": "c57e82b5-3092-4ebe-b9a1-876886f375b1",
+          "deliveryKind": "seat",
+          "registrationId": "07bfba7c-1536-4236-bacf-d398c688f026",
+          "ticketId": null
+        },
+        {
+          "userId": "e1000000-0000-4000-8000-000000000005",
+          "position": 3,
+          "amount": 200,
+          "payoutId": "dca52ad4-24b9-458f-9baf-785e9cdd0afe",
+          "deliveryKind": "seat",
+          "registrationId": "c49f5fcd-dace-42d4-aa6c-f4a5317d611b",
+          "ticketId": null
+        }
+      ],
+      "seats": [
+        {
+          "userId": "10000000-0000-0000-0000-000000000001",
+          "position": 1,
+          "amount": 200,
+          "registrationId": "3ef58f77-e22e-4619-97c7-5b3e313e6d98"
+        },
+        {
+          "userId": "e1000000-0000-4000-8000-000000000004",
+          "position": 2,
+          "amount": 200,
+          "registrationId": "07bfba7c-1536-4236-bacf-d398c688f026"
+        },
+        {
+          "userId": "e1000000-0000-4000-8000-000000000005",
+          "position": 3,
+          "amount": 200,
+          "registrationId": "c49f5fcd-dace-42d4-aa6c-f4a5317d611b"
+        }
+      ],
+      "remainder": null,
+      "sourceCloseout": {
+        "sourceTableCount": 1,
+        "sourceTableIds": ["e1000000-0000-4000-8000-000000000009"],
+        "sourceSeatCount": 3,
+        "sourceSeatIds": [
+          "2be7789b-02d6-47c4-89fb-b5a722ab0a2f",
+          "abd6e742-e9ac-4a41-901a-5d0232c753a5",
+          "fdf84373-e23a-42f0-9637-28622161d787"
+        ],
+        "releasedSeatCount": 3,
+        "releasedSeatIds": [
+          "2be7789b-02d6-47c4-89fb-b5a722ab0a2f",
+          "abd6e742-e9ac-4a41-901a-5d0232c753a5",
+          "fdf84373-e23a-42f0-9637-28622161d787"
+        ],
+        "closedAt": "2026-09-10T23:52:37.248453-05:00"
+      },
+      "settledAt": "2026-09-10T23:52:37.248453-05:00",
+      "receiptVersion": 3,
+      "completionKind": "equal_qualifiers",
+      "winnerId": null,
+      "winnerAmount": null,
+      "qualifiers": [
+        {
+          "userId": "10000000-0000-0000-0000-000000000001",
+          "registrationId": "cc90ecb2-f42d-45db-925a-432e419e2af1",
+          "awardOrdinal": 1,
+          "qualifiedChips": 10000,
+          "qualifiedAt": "2026-09-10T23:52:36.928668-05:00"
+        },
+        {
+          "userId": "e1000000-0000-4000-8000-000000000004",
+          "registrationId": "29c50a19-1b25-4823-a76b-685e03592258",
+          "awardOrdinal": 2,
+          "qualifiedChips": 10000,
+          "qualifiedAt": "2026-09-10T23:52:36.928668-05:00"
+        },
+        {
+          "userId": "e1000000-0000-4000-8000-000000000005",
+          "registrationId": "1cefc9a4-9936-440a-9bb5-c06b8c6e2243",
+          "awardOrdinal": 3,
+          "qualifiedChips": 10000,
+          "qualifiedAt": "2026-09-10T23:52:36.928668-05:00"
+        }
+      ]
+    },
+    "trace": [
+      {
+        "type": "rpc",
+        "name": "fn_complete_satellite_qualification",
+        "args": {
+          "p_tournament_id": "e1000000-0000-4000-8000-000000000001",
+          "p_qualified_user_ids": [
+            "10000000-0000-0000-0000-000000000001",
+            "e1000000-0000-4000-8000-000000000004",
+            "e1000000-0000-4000-8000-000000000005"
+          ]
+        },
+        "committed": true,
+        "receiptVersion": 3
+      }
+    ],
+    "errors": []
+  },
+  "repeated_restart": {
+    "mode": "recover",
+    "pid": 88024,
+    "receipt": null,
+    "trace": [
+      {
+        "type": "select",
+        "table": "tournaments",
+        "columns": "id,name,status,payout_structure,variant,tournament_type,satellite_target_id,started_at",
+        "filters": ["status='COMPLETING'", "id='e1000000-0000-4000-8000-000000000001'"]
+      }
+    ],
+    "errors": []
+  },
+  "limits": [
+    "Actual compiled recovery/RPC/parser modules with allowlisted local psql transport, not HTTP/PostgREST",
+    "No full GameServer process, websocket/browser, or production Stage B activation",
+    "Initial source600 liability is seeded; target original entrants are fixture setup"
+  ]
+}

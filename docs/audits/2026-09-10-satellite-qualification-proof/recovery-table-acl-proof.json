@@ -1,0 +1,13 @@
+{
+  "source": "Read-only production pg_class catalog via Supabase connector",
+  "project": "kuklfnapbkmacvwxktbh",
+  "relations": {
+    "clubs": "{postgres=arwdDxtm/postgres,anon=arwxtm/postgres,authenticated=arwxtm/postgres,service_role=arwdDxtm/postgres}",
+    "table_seats": "{postgres=arwdDxtm/postgres,anon=arwdxtm/postgres,authenticated=arwdxtm/postgres,service_role=arwdDxtm/postgres}",
+    "tables": "{postgres=arwdDxtm/postgres,anon=arwdxtm/postgres,authenticated=arwdxtm/postgres,service_role=arwdDxtm/postgres}",
+    "player_sessions": "{postgres=arwdDxtm/postgres,anon=rm/postgres,authenticated=rm/postgres,service_role=arwdDxtm/postgres}"
+  },
+  "restored_privileges": "service_role only, exact four relations",
+  "no_production_mutation": true,
+  "recorded_at": "2026-09-11T04:46:27.934429+00:00"
+}

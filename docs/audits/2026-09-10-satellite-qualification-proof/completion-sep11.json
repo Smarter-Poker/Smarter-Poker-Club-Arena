@@ -1,0 +1,75 @@
+{
+  "recorded_at": "2026-09-11T04:54:12.531872+00:00",
+  "status": "locally_verified_candidate_held_for_coordinated_activation",
+  "archive_base": "65c34eebb8197ac4884bc29788f1d52ffdad7ecc",
+  "runtime_change": "Exact-K wrapper uses reviewed capacity and strict seat owners with explicit legal coordinates",
+  "verification": {
+    "running_target_cases": 4,
+    "old_null_coordinate_negative_control": true,
+    "fresh_process_sigkill_and_restart": true,
+    "actual_G_shared_T_exclusive_overlap_observed": true,
+    "lost_completion_responses": 5,
+    "single_settlement_header": true,
+    "payout_count": 3,
+    "payout_total": 600,
+    "source_seats_remaining": 0,
+    "target_players": 6,
+    "cash_wallet_change": 0,
+    "capacity_receipts": 1,
+    "pending_manager_wakes": 1,
+    "compiled_module_build_exit": 0,
+    "compiled_modules_byte_identical": true
+  },
+  "activation_holds": [
+    "Exact-K RPC absent in production at latest read",
+    "Stage-B cutover belongs to coordinated owner",
+    "Archived engine callers must not publish before RPC activation",
+    "Rolling-client compatibility and live browser/engine acceptance remain",
+    "Threshold-crossing ties and remainder policy are separate unsatisfied contracts"
+  ],
+  "proof_limits": [
+    "Original source600 liability and target entrants are fixtures",
+    "Actual compiled recovery/RPC/parser modules use local psql transport",
+    "No full GameServer, HTTP/PostgREST, websocket or manager-wake consumption proof",
+    "Other restored fixture objects retain local ownership; security equivalence is bounded to documented dependencies"
+  ],
+  "retained_private_clusters": [
+    "/tmp/codex-satellite-cohort-pg17",
+    "/tmp/codex-satellite-recovery-pg17"
+  ],
+  "retained_recovery_databases": [
+    "satellite_recovery_acl_negative_sep11",
+    "satellite_recovery_passed_preformat_sep11",
+    "satellite_recovery_sep10"
+  ],
+  "files": {
+    "docs/audits/2026-09-10-satellite-qualification-proof/README.md": "9e138e8730715d14253d3a808bcb42ea5f6a9343c3467c2d0bf2b5f13c0a6c25",
+    "docs/audits/2026-09-10-satellite-qualification-proof/current-funded-helpers.json": "ca7d8772cf99c288f0ceff0b97102326f21a731b3fae0d7f7ec2081cf0d2db0f",
+    "docs/audits/2026-09-10-satellite-qualification-proof/current-placement-authorities.json": "323fc1d10f9f426cd386a0766af2cbd0775bb5c5949478b52b052d07387a52dc",
+    "docs/audits/2026-09-10-satellite-qualification-proof/current-placement-gate.json": "a1b4887fefb38704cd66665255d7d4b5b475e4c982711c429e35a556cd5306fc",
+    "docs/audits/2026-09-10-satellite-qualification-proof/current-placement-gate.sql": "1174e56e3d28706fb474533e8b84257d50b0b41e4ee3489228d8235ddb527fa6",
+    "docs/audits/2026-09-10-satellite-qualification-proof/current-placement-live-recheck-sep11.json": "7ba923376ce58c6b3e3ba292c91b640b8dc696cf2109772bd6f9acc77aec3486",
+    "docs/audits/2026-09-10-satellite-qualification-proof/current-seat-authority-trigger.json": "2333a986aa2860f7821575cb5e45f7d1227783d5c7e04808f61e904de4fadc7c",
+    "docs/audits/2026-09-10-satellite-qualification-proof/prepare-recovery-clone.py": "fb7e1391d66b64e89edefb6602c760d2a0ff2b1101f23598de97c855c9fe1d87",
+    "docs/audits/2026-09-10-satellite-qualification-proof/prepare-recovery-cluster.py": "eace6b9c1ba589413944835175544b6f383116042e892cd303c06d4b39423d7a",
+    "docs/audits/2026-09-10-satellite-qualification-proof/recovery-compiled-source-proof.json": "7dccbeccd9cc1bba3964f9d2c8a56de7f16088de54094d91d361efe45d1d238f",
+    "docs/audits/2026-09-10-satellite-qualification-proof/recovery-fixture-install-results.json": "db0b4b931e1f2e6f69aee714cbbf0e41654b53786b5694f0117e22a333f0caeb",
+    "docs/audits/2026-09-10-satellite-qualification-proof/recovery-native-loader.mjs": "d15e9b30fbf56c5c612f410267315522bda48fbd4dc0f1de79672361986aa6d7",
+    "docs/audits/2026-09-10-satellite-qualification-proof/recovery-native-process.mjs": "8b98190724d4549aedc4a3aa4c45d0498e22dca0ce800a3406b8a27fc4bda91e",
+    "docs/audits/2026-09-10-satellite-qualification-proof/recovery-native-transport.mjs": "a5fe6854d44cfbe03a0ee3e630fc676d8c8e6c927e71d26cf609584b361fe237",
+    "docs/audits/2026-09-10-satellite-qualification-proof/recovery-restart-acl-negative.json": "153c41ecd82d599c8d7f104e2bbba2f3e5fae694735a3818e33dd80bd3eeb4f3",
+    "docs/audits/2026-09-10-satellite-qualification-proof/recovery-restart-native.log": "6c33d6112bdc5d5222491b1ef34be0b97180defbd025171a922dbe69e5bc981e",
+    "docs/audits/2026-09-10-satellite-qualification-proof/recovery-restart-native.py": "b1d4474e726904cf0380364786965f7e90592928ae5dd1f55cf0d576a6921443",
+    "docs/audits/2026-09-10-satellite-qualification-proof/recovery-restart-results.json": "468cd77dceea0ff0399282520bfc0d58501dbf904ea6ee5615abfd155374cbd8",
+    "docs/audits/2026-09-10-satellite-qualification-proof/recovery-server-build.log": "7596c34c89803bc9373c4905acc118b580004f7a9d6bd035d0814132300415e9",
+    "docs/audits/2026-09-10-satellite-qualification-proof/recovery-table-acl-proof.json": "808ebf916351c9beb19897c98cb10745e80168ff677c39d64153ce81da91ab80",
+    "docs/audits/2026-09-10-satellite-qualification-proof/running-target-edge-results.json": "7292a42c8e8cf78ff34734fd18a5263ab7fc973310a70a841383a04dd4cdac32",
+    "docs/audits/2026-09-10-satellite-qualification-proof/running-target-edges-native.log": "9ad1bec4a28f75948e0e8cf6931dfb3155c814c3563fa949df9f32d88836ed08",
+    "docs/audits/2026-09-10-satellite-qualification-proof/running-target-edges-native.py": "4c9ddf6e1abe93cc2d623423f089f7cc29dd99bd1a72c39341ee78b7ca022706",
+    "docs/audits/2026-09-10-satellite-qualification-proof/running-target-native.py": "e59968b174a43a6227e7deb521fdb10d5bc0d85934409e9ee6f81f3b2091e86d",
+    "docs/audits/2026-09-10-satellite-qualification-proof/running-target-negative-control.json": "580c95e43bb88728045d9ea757aa90e41dc5c98ed015347779b4bff7b76ac569",
+    "docs/audits/2026-09-10-satellite-qualification-proof/running-target-negative.log": "580c95e43bb88728045d9ea757aa90e41dc5c98ed015347779b4bff7b76ac569",
+    "docs/audits/2026-09-10-satellite-qualification-proof/running-target-results.json": "641b026be24b3638d8ac02f1e67c52fba1cda1b5f18850fdd205d46ca5440541",
+    "supabase/migrations/20260910054035_satellites_record_equal_qualifiers_without_fabricated_finish.sql": "94c1ac5003b6e883c863637366cff82e1ce6e0b203d8c4a516a235f092842b63"
+  }
+}

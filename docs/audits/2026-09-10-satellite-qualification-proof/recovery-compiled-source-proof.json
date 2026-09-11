@@ -1,0 +1,16 @@
+{
+  "verified_at": "2026-09-11T04:48:59.434107+00:00",
+  "build_exit": 0,
+  "before_equals_after": true,
+  "compiled_modules": {
+    "server/dist/tournament/tournamentRecovery.js": "f9e8d345d31898a1adb65329b1e5682b84a5423621c3d199af4021b6a95a2be0",
+    "server/dist/tournament/satelliteSettlementRpc.js": "313fce1d37230ce83c3815b3cde7a789d8eff0233936f6c015c6af88c0b90181",
+    "server/dist/tournament/satelliteSettlementReceipt.js": "47cc8761e02ffa42f48f587fbb32e34d6bedab98ea03e8ec74472e77970c3b04"
+  },
+  "source_modules": {
+    "server/src/tournament/tournamentRecovery.ts": "06bc2eb6db20686c68fc72e96df312f0815d37c3c81699239adf4b3878e1a1ee",
+    "server/src/tournament/satelliteSettlementRpc.ts": "c7c1fc45f6f703f80e6a3234cafc2cae41ed697a672dc707c596a87564ed41d6",
+    "server/src/tournament/satelliteSettlementReceipt.ts": "fe8fc55df0db932c8d777906c829eb49dec29d6bd9076f4bea2ff80ae8ea7faf"
+  },
+  "archive_commit": "65c34eebb8197ac4884bc29788f1d52ffdad7ecc"
+}

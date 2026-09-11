@@ -1,0 +1,82 @@
+[
+  {
+    "acl": "{postgres=X/postgres,service_role=X/postgres}",
+    "body_md5": "68c25bbb9c7b30e19e6351e48f3f85ae",
+    "owner": "postgres",
+    "proconfig": ["search_path=public, pg_temp", "statement_timeout=30s"],
+    "proisstrict": false,
+    "prosecdef": true,
+    "provolatile": "v",
+    "signature": "fn_assign_tournament_player_seat_atomic(uuid,uuid,uuid,integer)"
+  },
+  {
+    "acl": "{postgres=X/postgres}",
+    "body_md5": "16a587f7567336fe4379135f22e3fb41",
+    "owner": "postgres",
+    "proconfig": ["search_path=public, pg_temp", "statement_timeout=30s"],
+    "proisstrict": false,
+    "prosecdef": true,
+    "provolatile": "v",
+    "signature": "fn_ca_assign_tournament_player_seat_locked(uuid,uuid,uuid,integer)"
+  },
+  {
+    "acl": "{postgres=X/postgres,service_role=X/postgres}",
+    "body_md5": "3acb4c1d763181905cf5b64287f8f28f",
+    "owner": "postgres",
+    "proconfig": ["search_path=public, pg_temp"],
+    "proisstrict": false,
+    "prosecdef": false,
+    "provolatile": "v",
+    "signature": "fn_ca_lock_settlement_lane_for_tournament(uuid,uuid)"
+  },
+  {
+    "acl": "{postgres=X/postgres,service_role=X/postgres}",
+    "body_md5": "343015440ea5c84ee4ca7ae583c73d30",
+    "owner": "postgres",
+    "proconfig": ["search_path=public, pg_temp"],
+    "proisstrict": false,
+    "prosecdef": false,
+    "provolatile": "v",
+    "signature": "fn_ca_lock_settlement_lane_global()"
+  },
+  {
+    "acl": "{postgres=X/postgres}",
+    "body_md5": "b7d371b05e543f1fa9ac3131288bca13",
+    "owner": "postgres",
+    "proconfig": ["search_path=public, pg_temp"],
+    "proisstrict": false,
+    "prosecdef": true,
+    "provolatile": "v",
+    "signature": "fn_ca_lock_tournament_seat_acquisition(uuid,uuid,uuid)"
+  },
+  {
+    "acl": "{postgres=X/postgres}",
+    "body_md5": "177e2e82ef01b126d16e7706f9d29e12",
+    "owner": "postgres",
+    "proconfig": ["search_path=public, pg_temp"],
+    "proisstrict": false,
+    "prosecdef": true,
+    "provolatile": "v",
+    "signature": "fn_ca_tournament_seat_cap(uuid)"
+  },
+  {
+    "acl": "{postgres=X/postgres,service_role=X/postgres}",
+    "body_md5": "b36dd36a9348d29be1092c7d42954c03",
+    "owner": "postgres",
+    "proconfig": ["search_path=public, pg_temp"],
+    "proisstrict": false,
+    "prosecdef": true,
+    "provolatile": "v",
+    "signature": "fn_ensure_late_registration_capacity(uuid,integer)"
+  },
+  {
+    "acl": "{postgres=X/postgres}",
+    "body_md5": "5a60bdd761aaaaad4b3bf982a3c50f6e",
+    "owner": "postgres",
+    "proconfig": ["search_path=public, pg_temp"],
+    "signature": "fn_tournament_live_seat_acquisition_requires_authority()",
+    "prosecdef": true,
+    "proisstrict": false,
+    "provolatile": "v"
+  }
+]

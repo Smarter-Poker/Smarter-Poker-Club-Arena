@@ -1,0 +1,17 @@
+[
+  {
+    "case": "Dirty chair reuse preserves occupied slots",
+    "exit_code": 0,
+    "stderr": ""
+  },
+  {
+    "case": "Cohort capacity zero reservation creates one receipted table",
+    "exit_code": 0,
+    "stderr": ""
+  },
+  {
+    "case": "Final actual assignment failure rolls back money capacity receipts and chairs",
+    "exit_code": 0,
+    "stderr": "NOTICE:  [autorevoke] stripped PUBLIC/anon EXECUTE from public.fn_satellite_proof_assign_real(pg_catalog.uuid,pg_catalog.uuid,pg_catalog.uuid,integer) (tag CREATE FUNCTION, named=f, behaviour=t)\nNOTICE:  [autorevoke] stripped PUBLIC/anon EXECUTE from public.fn_satellite_proof_assign_real(pg_catalog.uuid,pg_catalog.uuid,pg_catalog.uuid,integer) (tag ALTER FUNCTION, named=f, behaviour=t)\n"
+  }
+]

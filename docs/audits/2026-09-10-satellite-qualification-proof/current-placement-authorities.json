@@ -1,0 +1,42 @@
+[
+  {
+    "acl": "{postgres=X/postgres,service_role=X/postgres}",
+    "body_md5": "68c25bbb9c7b30e19e6351e48f3f85ae",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_assign_tournament_player_seat_atomic(p_tournament_id uuid, p_user_id uuid, p_table_id uuid, p_seat_number integer)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\n SET statement_timeout TO '30s'\nAS $function$\nDECLARE\n  v_gate jsonb;\nBEGIN\n  IF NOT public.fn_caller_is_engine() THEN\n    RAISE EXCEPTION 'fn_assign_tournament_player_seat_atomic requires service authority'\n      USING ERRCODE='28000';\n  END IF;\n  v_gate:=public.fn_ca_lock_tournament_seat_acquisition(\n    p_tournament_id,p_table_id,p_user_id);\n  IF COALESCE((v_gate->>'ok')::boolean,false) IS NOT TRUE THEN\n    RETURN v_gate;\n  END IF;\n  RETURN public.fn_ca_assign_tournament_player_seat_locked(\n    p_tournament_id,p_user_id,p_table_id,p_seat_number);\nEND;\n$function$\n",
+    "owner": "postgres",
+    "proconfig": ["search_path=public, pg_temp", "statement_timeout=30s"],
+    "signature": "fn_assign_tournament_player_seat_atomic(uuid,uuid,uuid,integer)"
+  },
+  {
+    "acl": "{postgres=X/postgres,service_role=X/postgres}",
+    "body_md5": "343015440ea5c84ee4ca7ae583c73d30",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_lock_settlement_lane_global()\n RETURNS void\n LANGUAGE plpgsql\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nBEGIN\n  -- G then B. Terminal / rare authorities: serialised against every other\n  -- authority AND against every hand settlement, as on 2026-09-09.\n  PERFORM pg_advisory_xact_lock(\n    hashtextextended('ca:tournament-terminal-settlement:v1', 0));\n  PERFORM pg_advisory_xact_lock(\n    hashtextextended('ca:hand-settlement-barrier:v1', 0));\nEND;\n$function$\n",
+    "owner": "postgres",
+    "proconfig": ["search_path=public, pg_temp"],
+    "signature": "fn_ca_lock_settlement_lane_global()"
+  },
+  {
+    "acl": "{postgres=X/postgres}",
+    "body_md5": "b7d371b05e543f1fa9ac3131288bca13",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_lock_tournament_seat_acquisition(p_tournament_id uuid, p_table_id uuid, p_user_id uuid)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nDECLARE\n  v_tournament_id uuid:=p_tournament_id;\n  v_table_tournament_id uuid;\n  v_status text;\nBEGIN\n  PERFORM public.fn_ca_lock_settlement_lane_for_tournament(p_tournament_id, p_table_id);\n  PERFORM pg_advisory_xact_lock_shared(530090,1);\n\n  IF public.fn_entry_purchases_frozen() THEN\n    RETURN jsonb_build_object('ok',false,'reason','platform_frozen');\n  END IF;\n\n  IF p_user_id IS NOT NULL THEN\n    PERFORM public.fn_lock_daily_mission_user(p_user_id);\n  END IF;\n\n  IF p_table_id IS NOT NULL THEN\n    SELECT tb.tournament_id INTO v_table_tournament_id\n      FROM public.tables tb\n     WHERE tb.id=p_table_id;\n    IF NOT FOUND THEN\n      RETURN jsonb_build_object('ok',false,'reason','table_not_found');\n    END IF;\n    IF v_table_tournament_id IS NULL THEN\n      RETURN jsonb_build_object('ok',false,'reason','not_a_tournament_table');\n    END IF;\n    IF v_tournament_id IS NOT NULL\n       AND v_tournament_id IS DISTINCT FROM v_table_tournament_id THEN\n      RETURN jsonb_build_object(\n        'ok',false,'reason','table_tournament_mismatch');\n    END IF;\n    v_tournament_id:=v_table_tournament_id;\n  END IF;\n\n  IF v_tournament_id IS NULL THEN\n    RETURN jsonb_build_object(\n      'ok',false,'reason','tournament_or_table_required');\n  END IF;\n\n  -- Launch completion already owns receipt -> tournament. Re-entering these\n  -- locks from every seat root makes the historical aa_ launch-proof trigger\n  -- a no-op lock acquisition rather than a late inversion.\n  PERFORM r.tournament_id\n    FROM public.tournament_launch_receipts r\n   WHERE r.tournament_id=v_tournament_id\n   ORDER BY r.tournament_id\n   FOR UPDATE;\n\n  SELECT upper(COALESCE(t.status::text,'')) INTO v_status\n    FROM public.tournaments t\n   WHERE t.id=v_tournament_id\n   FOR UPDATE;\n  IF NOT FOUND THEN\n    RETURN jsonb_build_object('ok',false,'reason','tournament_not_found');\n  END IF;\n  IF v_status NOT IN ('ANNOUNCED','REGISTERING','RUNNING') THEN\n    RETURN jsonb_build_object(\n      'ok',false,'reason','tournament_not_seatable','status',v_status);\n  END IF;\n\n  RETURN jsonb_build_object(\n    'ok',true,'tournament_id',v_tournament_id,\n    'table_id',p_table_id,'status',v_status);\nEND;\n$function$\n",
+    "owner": "postgres",
+    "proconfig": ["search_path=public, pg_temp"],
+    "signature": "fn_ca_lock_tournament_seat_acquisition(uuid,uuid,uuid)"
+  },
+  {
+    "acl": "{postgres=X/postgres}",
+    "body_md5": "177e2e82ef01b126d16e7706f9d29e12",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_tournament_seat_cap(p_tournament_id uuid)\n RETURNS integer\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nDECLARE\n  v_t public.tournaments%ROWTYPE;\n  v_variant text;\n  v_format text;\n  v_cap integer;\nBEGIN\n  SELECT * INTO v_t FROM public.tournaments t\n   WHERE t.id=p_tournament_id;\n  IF NOT FOUND THEN\n    RAISE EXCEPTION 'Tournament not found' USING ERRCODE='P0002';\n  END IF;\n  v_variant:=lower(COALESCE(NULLIF(v_t.game_type,''),'nlh'));\n  v_format:=lower(COALESCE(v_t.variant,''));\n  v_cap:=CASE\n    WHEN v_format='spin' OR upper(COALESCE(v_t.tournament_type,''))='SPIN'\n      THEN 3\n    WHEN v_format='sng' OR upper(COALESCE(v_t.tournament_type,''))='SNG'\n      THEN LEAST(COALESCE(NULLIF(v_t.max_players,0),6),9)\n    ELSE LEAST(COALESCE(NULLIF(v_t.table_size,0),9),10)\n  END;\n  v_cap:=LEAST(v_cap,CASE v_variant\n    WHEN 'plo5' THEN 9\n    WHEN 'plo6' THEN 7\n    ELSE 10\n  END);\n  RETURN GREATEST(v_cap,2);\nEND;\n$function$\n",
+    "owner": "postgres",
+    "proconfig": ["search_path=public, pg_temp"],
+    "signature": "fn_ca_tournament_seat_cap(uuid)"
+  },
+  {
+    "acl": "{postgres=X/postgres,service_role=X/postgres}",
+    "body_md5": "3acb4c1d763181905cf5b64287f8f28f",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_lock_settlement_lane_for_tournament(p_tournament_id uuid, p_table_id uuid DEFAULT NULL::uuid)\n RETURNS void\n LANGUAGE plpgsql\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nDECLARE\n  v_tournament_id uuid := p_tournament_id;\nBEGIN\n  -- Resolve the tournament before any lock, so G's mode can depend on it.\n  -- tables.tournament_id is fixed for the life of a table: reading it here\n  -- gives the answer reading it under G did.\n  IF v_tournament_id IS NULL AND p_table_id IS NOT NULL THEN\n    SELECT tb.tournament_id INTO v_tournament_id\n    FROM public.tables tb\n    WHERE tb.id = p_table_id;\n  END IF;\n\n  IF v_tournament_id IS NULL THEN\n    -- Nothing to scope to: the whole lane, as it always was - G exclusive,\n    -- then B exclusive (the shape of fn_ca_lock_settlement_lane_global).\n    PERFORM pg_advisory_xact_lock(\n      hashtextextended('ca:tournament-terminal-settlement:v1', 0));\n    PERFORM pg_advisory_xact_lock(\n      hashtextextended('ca:hand-settlement-barrier:v1', 0));\n    RETURN;\n  END IF;\n\n  -- G SHARED: waits for, and excludes, terminal authorities (G exclusive)\n  -- and nothing else. Rolling authorities of different tournaments run side\n  -- by side; the trigger guards take T(id) held exclusively as their proof.\n  PERFORM pg_advisory_xact_lock_shared(\n    hashtextextended('ca:tournament-terminal-settlement:v1', 0));\n\n  -- T(id) EXCLUSIVE: one rolling authority per tournament at a time, and\n  -- this tournament's hand settlements (T(id) shared) wait for it.\n  PERFORM pg_advisory_xact_lock(\n    hashtextextended('ca:tournament-terminal-settlement:v1:' || v_tournament_id::text, 0));\nEND;\n$function$\n",
+    "owner": "postgres",
+    "proconfig": ["search_path=public, pg_temp"],
+    "signature": "fn_ca_lock_settlement_lane_for_tournament(uuid,uuid)"
+  }
+]

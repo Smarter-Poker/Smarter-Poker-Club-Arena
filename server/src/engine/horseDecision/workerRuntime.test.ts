@@ -1190,6 +1190,25 @@ describe('HorseDecisionWorkerRuntime', () => {
     expect(h.messages.at(-1)).not.toHaveProperty('recoverable');
   });
 
+  it('starts each posted job on its own event-loop turn, so a CANCEL between them is honoured', async () => {
+    const h = harness();
+    h.runtime.receive(fastRequest(1));
+    h.runtime.receive(fastRequest(2));
+    // A later port message arrives on a later macrotask. Before 2026-09-11 both
+    // jobs ran back to back in microtasks and this CANCEL found nothing pending.
+    setImmediate(() => h.runtime.receive({ type: 'CANCEL', requestId: 2 }));
+    await h.runtime.drain();
+
+    expect(h.messages.map((message) => message.type)).toEqual([
+      'READY',
+      'FAST_RESULT',
+      'CANCELLED',
+    ]);
+    expect(h.messages[1]).toMatchObject({ requestId: 1 });
+    expect(h.messages[2]).toMatchObject({ requestId: 2 });
+    expect(h.decisionsAtRng).toHaveLength(1);
+  });
+
   it('cancels a FIFO entry before it begins without running HorseLogic', async () => {
     const h = harness();
     h.runtime.receive(fastRequest(1));

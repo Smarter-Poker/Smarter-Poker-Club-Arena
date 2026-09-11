@@ -731,7 +731,7 @@ export default function AntiCheatPage() {
     try {
       const { data: seats, error: seatError } = await supabase
         .from('table_seats')
-        .select('table_id, tables!inner(club_id, status)')
+        .select('table_id, tables!table_seats_table_id_fkey!inner(club_id, status)')
         .eq('user_id', playerId)
         .is('left_at', null)
         .eq('tables.club_id', clubId);

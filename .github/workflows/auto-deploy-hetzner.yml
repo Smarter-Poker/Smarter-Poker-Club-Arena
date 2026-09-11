@@ -468,7 +468,9 @@ jobs:
             exit 0
           fi
           SHORT="${SHA:0:8}"
-          BODY=$(curl -sf --max-time 10 "$ENGINE_URL/health" 2>/dev/null || echo "")
+          # No `-f`: a degraded engine answers 503 WITH its body, and the
+          # version in that body is real (see "A 503 IS AN ANSWER" below).
+          BODY=$(curl -s --max-time 10 "$ENGINE_URL/health" 2>/dev/null || echo "")
           VER=$(echo "$BODY" | python3 -c "import json,sys;print(json.load(sys.stdin).get('version',''))" 2>/dev/null || echo "")
           if [ -n "$VER" ] && [ "$VER" = "$SHORT" ]; then
             echo "skip=true" >> $GITHUB_OUTPUT
@@ -992,7 +994,22 @@ jobs:
           READY=no
           for i in $(seq 1 $ATTEMPTS); do
             [ "$(date -u +%s)" -ge "$GATE_DEADLINE" ] && { echo "attempt $i/$ATTEMPTS: the gate deadline passed"; break; }
-            BODY=$(curl -sf --max-time 10 "$ENGINE_URL/health" 2>/dev/null || echo "")
+            # ── A 503 IS AN ANSWER, NOT SILENCE (2026-09-11) ──────────────
+            # /health answers 503 whenever the engine is not ROUTING-ready
+            # (status 'degraded': equity pool, horse worker or dealer
+            # prerequisites not ready) and sends the SAME body either way;
+            # handlers/health.ts says so, naming the deploy verifier as the
+            # reader it keeps the body for. `curl -f` threw that body away.
+            # From 06:58 UTC the equity pool sat 'failed', every /health was
+            # a 503, and run 34571396262 polled 175 times, logged "/health
+            # unreadable" every time, and let a complete certificate go by
+            # (07:55:08: counting_down, durable, 0 unparked, 290s left). The
+            # build that would have replaced the degraded engine could not
+            # ship BECAUSE the engine was degraded. The certificate is in
+            # the body, so the body is what is read; routing readiness is
+            # not restart authority in either direction. No JSON at all
+            # (proxy error, timeout) is still ERR and still fails closed.
+            BODY=$(curl -s --max-time 10 "$ENGINE_URL/health" 2>/dev/null || echo "")
             # A restart certificate is complete only while the break is
             # actively counting down, every table is parked, and enough time
             # remains for a graceful stop. Missing/legacy/straggler states are
@@ -1083,7 +1100,10 @@ jobs:
             set -euo pipefail
             exec 9>/var/lock/club-arena-engine-up.lock
             flock -w 30 9
-            BODY=\$(curl -sf --max-time 10 http://127.0.0.1:8080/health)
+            # No -f here either: a degraded engine answers 503 with the same
+            # certificate body. Connection refused or a timeout still exits
+            # non-zero under set -e, before the mutation marker.
+            BODY=\$(curl -s --max-time 10 http://127.0.0.1:8080/health)
             printf '%s' \"\$BODY\" | python3 -c 'import json,sys; d=json.load(sys.stdin); m=d.get(\"maintenance\"); ok=d.get(\"running\") is True and isinstance(m,dict) and m.get(\"active\") is True and m.get(\"phase\")==\"counting_down\" and m.get(\"durableConfirmed\") is True and m.get(\"readyForRestart\") is True and m.get(\"unparkedTables\")==0 and int(m.get(\"remainingMs\") or 0)>=180000; sys.exit(0 if ok else 75)'
             echo '$MUTATION_MARKER'
             # The stock autoheal sidecar is intentionally not release-aware.
@@ -1152,8 +1172,12 @@ jobs:
           # what it CAN answer: that the proxy is serving at all.
           for i in $(seq 1 24); do
             sleep 5
+            # `-f` is deliberate HERE and only here: a new build is not
+            # verified until it answers a routing-ready 200 (dealer gate,
+            # horse worker and equity pool all ready). Certificate and
+            # identity reads elsewhere read the body whatever the code.
             BODY=$(~/hssh "curl -sf --max-time 10 http://127.0.0.1:${PORT:-8080}/health" 2>/dev/null || echo "")
-            [ -z "$BODY" ] && { echo "attempt $i: container not answering yet"; continue; }
+            [ -z "$BODY" ] && { echo "attempt $i: container not answering 200 yet (still booting, or answering 503: not routing-ready)"; continue; }
             RUNNING=$(echo "$BODY" | python3 -c "import json,sys;print(json.load(sys.stdin).get('running'))" 2>/dev/null || echo "")
             VER=$(echo "$BODY" | python3 -c "import json,sys;print(json.load(sys.stdin).get('version',''))" 2>/dev/null || echo "")
             LIVE=$(echo "$BODY" | python3 -c "import json,sys;print(json.load(sys.stdin).get('liveness',''))" 2>/dev/null || echo "")
@@ -1178,7 +1202,7 @@ jobs:
           # If the proxy is serving a DIFFERENT version than the one we just
           # verified in the container, something else is behind that name.
           for i in $(seq 1 12); do
-            PUB=$(curl -sf --max-time 10 "$ENGINE_URL/health" | python3 -c "import json,sys;print(json.load(sys.stdin).get('version',''))" 2>/dev/null || echo "")
+            PUB=$(curl -s --max-time 10 "$ENGINE_URL/health" | python3 -c "import json,sys;print(json.load(sys.stdin).get('version',''))" 2>/dev/null || echo "")
             echo "public attempt $i: $ENGINE_URL serves version=$PUB (want $SHORT)"
             [ "$PUB" = "$SHORT" ] && { echo "Public hostname serving $SHORT"; exit 0; }
             sleep 5
@@ -1248,7 +1272,11 @@ jobs:
             [ \"\$ACTUAL_STARTED_AT\" = '${{ steps.cutover.outputs.candidate_started_at }}' ]
             [ \"\$ACTUAL_IMAGE_ID\" = \"\$TARGET_IMAGE_ID\" ]
             [ \"\$ACTUAL_RELEASE\" = '$SHA' ]
-            BODY=\$(curl -sf --max-time 10 http://127.0.0.1:${PORT:-8080}/health)
+            # Identity and liveness, read from the body: the verify step
+            # already required a routing-ready 200. A later 503 flicker
+            # (a worker pool restarting under the thaw surge) must not
+            # refuse the seal and roll a verified build back.
+            BODY=\$(curl -s --max-time 10 http://127.0.0.1:${PORT:-8080}/health)
             printf '%s' \"\$BODY\" | python3 -c 'import json,sys; d=json.load(sys.stdin); sys.exit(0 if d.get(\"running\") is True and d.get(\"version\")==\"${SHA:0:8}\" and d.get(\"liveness\")==\"ok\" else 75)'
             set +e
             /usr/local/lib/club-arena/engine-control/engine-release-seal.py commit \
@@ -1733,7 +1761,7 @@ jobs:
           # Ask production once before calling it a failure: the dedupe may
           # have read an unreadable /health while the engine already served
           # this commit. Unreadable stays red, and says it could not tell.
-          SERVED=$(curl -sf --max-time 10 "$ENGINE_URL/health?nocache=$(date +%s%N)" 2>/dev/null \
+          SERVED=$(curl -s --max-time 10 "$ENGINE_URL/health?nocache=$(date +%s%N)" 2>/dev/null \
             | python3 -c 'import json,sys; print(json.load(sys.stdin).get("version") or "")' 2>/dev/null || echo "")
           if [ -n "$SERVED" ] && [ "$SERVED" = "$SHORT" ]; then
             echo "::warning title=SERVING WITHOUT A CUTOVER::$REASON, yet production serves $SHORT."

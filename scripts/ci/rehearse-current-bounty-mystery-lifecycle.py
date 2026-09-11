@@ -24,7 +24,7 @@ SOURCES = {
     "supabase/migrations/20260909182236_bounty_rebuy_settles_the_old_head_before_the_new_generation.sql":
         "4a3ade2ce44352cc6ce1dac719bb9798896cd2bb671be8dfc3e51d34f2cdec9f",
     "scripts/ci/probes/bounty-rebuy-generation-atomicity.sql":
-        "69d5392b3afbf01b0be37ad94637bec19047ef79232aafd0e0cceb6f34d4b02c",
+        "ef8e7fe7c0705ad265dab8f416485302b379437ab94f055f08c98e5cff3a6a5e",
 }
 HELPERS = (
     ("fn_ca_lock_tournament_seat_acquisition", "uuid,uuid,uuid"),
@@ -49,6 +49,10 @@ CURRENT_BOUNTY = (
 )
 M5 = "supabase/migrations/20260909014534_non_satellite_terminal_settlement_commits_one_stored_receipt.sql"
 M5_SHA256 = "59395e0e803d7c94dcbe2e35414bb6d5f97f6f674a67e9b1e30b9822a3c9c04d"
+BUST_ORDER = "supabase/migrations/20260911062048_a_bust_is_ranked_by_when_it_happened.sql"
+MYSTERY_PHASE = "supabase/migrations/20260911094503_a_bust_belongs_to_the_phase_its_hand_was_played_in.sql"
+PLAYER_ID_SHAPE = "supabase/migrations/20260910124023_a_player_id_is_a_uuid_not_a_uuid_version.sql"
+PLACE_NOT_BOUNTY = "supabase/migrations/20260910145833_a_place_is_not_a_bounty.sql"
 EXTRA_TABLES = (
     "public.tournament_bounty_obligations", "public.tournament_bounties",
     "public.tournament_bounty_chests", "public.tournament_bounty_awards",
@@ -90,21 +94,25 @@ def definition(source, name):
     return source[start:body_end + len(tag.group(1)) + 1]
 
 
-LANE = "supabase/migrations/20260910035245_the_settlement_lane_is_per_tournament_not_platform_wide.sql"
+LANE = "supabase/migrations/20260910035435_the_settlement_lane_is_per_tournament_not_platform_wide.sql"
 EXTRA_SOURCES = {
     M5: M5_SHA256,
     LANE: "d07cbe35f62ef4a18e29779c812526c27420da4a82c891c0bf2f136b9e6a31fe",
-    "supabase/migrations/20260910124023_a_player_id_is_a_uuid_not_a_uuid_version.sql":
+    PLAYER_ID_SHAPE:
         "5bcb5cc3fd39234b329cba490b8516821296e18c1db08233399f2d450209e024",
-    "supabase/migrations/20260910145833_a_place_is_not_a_bounty.sql":
+    PLACE_NOT_BOUNTY:
         "6a52ae50c80423153705406a0bf855fd8a04baacba0ef155273455c20078c9a4",
+    BUST_ORDER:
+        "d2d0acba73031ed8617a243840eecea0e0e227a6dce5a78ce3ce2bfcfb79cf73",
+    MYSTERY_PHASE:
+        "0d620bf6061213e0ef0362126fde1e3e2feddc7b13720fa74727ad80da5fd570",
 }
 CURRENT_AFTER = {
     "fn_collect_bounty": "6142782f64defb871f9f7a0ef98f6793",
     "fn_mystery_bounty_pay": "335119d8c4c0b023955dbb003826e1da",
     "fn_mystery_bounty_settle": "161a9e5b46f1e35872c0c3c3f0d8b344",
     "fn_finalize_bounty_pool": "9cbe5164747835607f9f7d548d6064a3",
-    "fn_claim_bounty_legacy_candidate_20260907": "590f0f782e127288f33763bbab8c89f0",
+    "fn_claim_bounty_legacy_candidate_20260907": "d10ceaad9c867902c7407f20151f28b7",
     "fn_mystery_bounty_reserve": "cd622108895ded3658a9fd5871945789",
 }
 LANE_IDENTITIES = (
@@ -181,15 +189,30 @@ def current_bounty_sql(root):
         if name != "fn_claim_bounty_legacy_candidate_20260907":
             sql += ("GRANT EXECUTE ON FUNCTION public." + name + "(" + signature +
                     ") TO service_role;\n")
-    # These two exact migrations only update the existing claim/resolver bodies.
-    # Their assertions stay intact, including retaining every accepted-hand gate.
-    for relative in list(EXTRA_SOURCES)[2:]:
+    # These two exact migrations update the older claim/resolver bodies. Apply
+    # them before installing the later byte-exact claim source so their
+    # resolver changes remain represented without trying to replay them over a
+    # body that already includes their postimages.
+    for relative in (PLAYER_ID_SHAPE, PLACE_NOT_BOUNTY):
         patch = source(root, relative)
         sql += once(once(patch, "BEGIN;", ""), "COMMIT;", "") + "\n"
+    bust_order = source(root, BUST_ORDER)
+    current_claim = definition(bust_order, "fn_claim_bounty_legacy_candidate_20260907")
+    if body_hash(current_claim) != "ea7b6236b7c5c844dbc16ce2e78d2764":
+        raise ValueError("reviewed live bust-order claimant source changed")
+    sql += current_claim + "\n"
+    sql += ("REVOKE ALL ON FUNCTION public.fn_claim_bounty_legacy_candidate_20260907("
+            + next(item[1] for item in CURRENT_BOUNTY
+                   if item[0] == "fn_claim_bounty_legacy_candidate_20260907")
+            + ") FROM PUBLIC,anon,authenticated,service_role;\n")
+    # Replay the whole later migration, not just its claimant substitution: its
+    # collect and mystery-seed changes are part of the same live money state.
+    mystery_phase = source(root, MYSTERY_PHASE)
+    sql += once(once(mystery_phase, "BEGIN;", ""), "COMMIT;", "") + "\n"
     sql += """DO $current_claim$ BEGIN
  IF (SELECT md5(prosrc) FROM pg_proc WHERE oid=
   'public.fn_claim_bounty_legacy_candidate_20260907(uuid,uuid,integer,numeric,uuid,uuid,bigint,timestamptz,uuid,jsonb,numeric,boolean)'::regprocedure)
-  IS DISTINCT FROM '590f0f782e127288f33763bbab8c89f0'
+  IS DISTINCT FROM 'd10ceaad9c867902c7407f20151f28b7'
  THEN RAISE EXCEPTION 'current production claimant body differs'; END IF;
 END; $current_claim$;
 """

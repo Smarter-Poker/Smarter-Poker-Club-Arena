@@ -1372,3 +1372,76 @@ it('drops an event queued by the superseded owner before it can reach the page',
     second.c.disconnect();
   }
 });
+
+describe('a browser offline signal retires the transport immediately', () => {
+  for (const mode of ['mux', 'legacy', 'channel'] as const) {
+    it(`${mode}: closes a still-open link and restores one owner on online`, async () => {
+      const online = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true);
+      localStorage.setItem('ca_ws_mux', mode === 'legacy' ? '0' : '1');
+      const statuses: string[] = [];
+      const opts = {
+        baseUrl: 'https://engine.example',
+        getToken: async () => 'tok',
+        onStatus: (s: string) => statuses.push(s),
+      };
+      const c =
+        mode === 'channel'
+          ? new EngineChannelClient(opts)
+          : new EngineStateClient({ ...opts, tableId: TABLE, onSnapshot: () => undefined });
+      try {
+        await c.connect();
+        const old = live();
+        old._open();
+        if (mode === 'mux') old._frame({ type: 'SUBSCRIBED', tableId: TABLE });
+        expect(statuses.at(-1)).toBe('connected');
+        online.mockReturnValue(false);
+        window.dispatchEvent(new Event('offline'));
+        expect(old.readyState).toBe(FakeWebSocket.CLOSED);
+        expect(statuses.at(-1)).toBe('reconnecting');
+        await vi.advanceTimersByTimeAsync(20_000);
+        expect(FakeWebSocket.instances).toHaveLength(1);
+        online.mockReturnValue(true);
+        window.dispatchEvent(new Event('online'));
+        window.dispatchEvent(new Event('online'));
+        await flush();
+        expect(FakeWebSocket.instances).toHaveLength(2);
+        const replacement = live();
+        replacement._open();
+        if (mode === 'mux') replacement._frame({ type: 'SUBSCRIBED', tableId: TABLE });
+        expect(statuses.at(-1)).toBe('connected');
+        old._serverClose(1006);
+        expect(replacement.readyState).toBe(FakeWebSocket.OPEN);
+        c.disconnect();
+        window.dispatchEvent(new Event('offline'));
+        window.dispatchEvent(new Event('online'));
+        await flush();
+        expect(FakeWebSocket.instances).toHaveLength(2);
+      } finally {
+        c.disconnect();
+        online.mockRestore();
+        localStorage.removeItem('ca_ws_mux');
+      }
+    });
+  }
+
+  it('invalidates token work already in flight when the browser goes offline', async () => {
+    const online = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true);
+    let resolve!: (token: string) => void;
+    const token = new Promise<string>((done) => {
+      resolve = done;
+    });
+    const { c, statuses } = client({ getToken: () => token });
+    try {
+      const connecting = c.connect();
+      online.mockReturnValue(false);
+      window.dispatchEvent(new Event('offline'));
+      resolve('stale-token');
+      await connecting;
+      expect(FakeWebSocket.instances).toHaveLength(0);
+      expect(statuses.at(-1)).toBe('reconnecting');
+    } finally {
+      c.disconnect();
+      online.mockRestore();
+    }
+  });
+});

@@ -83,6 +83,17 @@ case "$DESIRED_LEGACY_UNLABELLED" in
 esac
 bounded_recovery_command 10 docker image inspect "$DESIRED_IMAGE_ID" >/dev/null 2>&1 \
   || die "sealed desired image $DESIRED_IMAGE_ID ($DESIRED_SHA) is absent"
+DESIRED_IMAGE_SOURCE="$(bounded_recovery_command 10 docker image inspect \
+  --format '{{json .Config.Env}}' "$DESIRED_IMAGE_ID" | python3 -c '
+import json,re,sys
+entries=json.load(sys.stdin)
+if not isinstance(entries,list): raise SystemExit(1)
+values=[v.split("=",1)[1] for v in entries if isinstance(v,str) and v.startswith("GIT_COMMIT_SHA=")]
+if len(values)!=1 or not re.fullmatch(r"[0-9a-f]{40}",values[0]): raise SystemExit(1)
+print(values[0])
+')" || die 'sealed desired image has no unique full source identity'
+[ "$DESIRED_IMAGE_SOURCE" = "$DESIRED_SHA" ] \
+  || die 'sealed desired image source differs from its durable seal'
 
 autoheal_status() {
   bounded_recovery_command 5 docker container inspect \
@@ -165,7 +176,7 @@ d=json.load(sys.stdin)
 instance=d.get("instanceId")
 expected=os.environ["EXPECTED_SHA"]
 sha=d.get("releaseSha")
-identity=(sha==expected) or (sha is None and d.get("version")==expected[:8])
+identity=(sha==expected) or ("releaseSha" not in d and d.get("version")==expected[:8])
 ok=(d.get("running") is True and identity and d.get("liveness")=="ok" and isinstance(instance,str) and re.fullmatch(r"[1-9][0-9]*-[0-9a-f]{8}",instance))
 if not ok: raise SystemExit(1)
 print(instance)

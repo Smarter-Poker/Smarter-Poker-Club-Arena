@@ -120,6 +120,7 @@ touch '${switched}'
 set -eu
 if [ "$1" = info ]; then exit 0; fi
 if [ "$1" = image ] && [ "$2" = inspect ]; then
+  if printf '%s' "$*" | grep -q "{{json .Config.Env}}"; then printf '%s\n' '["GIT_COMMIT_SHA=${desiredSha}"]'; fi
   if printf '%s' "$*" | grep -q "{{.Id}}"; then printf '%s\n' '${desiredImage}'; fi
   exit 0
 fi

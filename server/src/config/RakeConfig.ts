@@ -1097,8 +1097,7 @@ export type BBJMiniNearMissReason =
   | 'mini_not_enough_players'
   | 'mini_pot_too_small'
   | 'mini_double_board'
-  | 'mini_winner_not_quads'
-  | 'mini_loser_below_bar';
+  | 'mini_winner_not_quads';
 
 export interface BBJMiniNearMissResult {
   nearMiss: boolean;
@@ -1166,10 +1165,14 @@ export function detectMiniBBJNearMiss(
 
   const bar = isHoldemFamily ? 'Aces Full or better' : 'Quads or better';
   if (!best) {
-    /* Nobody cleared the bar. That is not a near miss - it is an ordinary
-       hand, and recording it would bury the real ones. Reported only so the
-       caller can distinguish "no candidate" from "not evaluated". */
-    return { nearMiss: false, reason: 'mini_loser_below_bar' };
+    /* Nobody cleared the bar. That is not a near miss - it is an ordinary hand,
+       and recording it would bury the real ones.
+       This used to return `reason: 'mini_loser_below_bar'` "so the caller can
+       distinguish no-candidate from not-evaluated", and no caller ever did:
+       the one call site tests `nearMiss` alone and cannot tell it from the
+       four other reason-less refusals. A value with no reader is the thing
+       10.86 is about, so it is gone rather than left looking meaningful. */
+    return none;
   }
 
   const base = { nearMiss: true as const, userId: best.userId, handName: best.handName };

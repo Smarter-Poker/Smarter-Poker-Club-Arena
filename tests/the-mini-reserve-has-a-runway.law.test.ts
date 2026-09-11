@@ -176,7 +176,19 @@ describe('the mini has its own near misses and its own players floor', () => {
   it('a hand nobody nearly won is NOT recorded as a near miss', () => {
     // recording every ordinary hand would bury the real ones
     const fn = rake.slice(rake.indexOf('export function detectMiniBBJNearMiss('));
-    expect(fn).toMatch(/if \(!best\) \{[\s\S]{0,320}nearMiss: false/);
+    /* MOVED 2026-09-11 (rule 8). This pinned `nearMiss: false` inline. That
+       branch also carried `reason: 'mini_loser_below_bar'`, a value no caller
+       ever read - 10.86's "a signal that answers when it does not know" - so
+       the branch returns the plain `none` now. The property is unchanged:
+       nobody cleared the bar, so nothing is recorded. */
+    const noCandidate = fn.slice(fn.indexOf('if (!best) {'), fn.indexOf('const base ='));
+    expect(noCandidate, 'the no-candidate branch must exist').toBeTruthy();
+    expect(noCandidate).toMatch(/return none;/);
+    /* On the CODE, not the prose: the function explains in a comment what the
+       retired reason was, and asserting on raw text would make that
+       explanation illegal - the same trap the promo law documents. */
+    const rakeCode = rake.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    expect(rakeCode).not.toContain("'mini_loser_below_bar'");
   });
 
   it('settlement asks the mini the question, and cannot break on the answer', () => {

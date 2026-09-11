@@ -57,10 +57,17 @@ const code = (p: string) =>
 
 describe('no surface offers the promo rain while it is a stub', () => {
   it('the client cannot call fn_bbj_promo_rain at all', () => {
+    /* BBJService.ts is gone entirely as of 2026-09-11 - removing its only
+       method left an empty exported object, which is the thing 10.12 forbids.
+       The law asserts the file's ABSENCE and then checks the surfaces. */
+    expect(
+      existsSync(resolve(ROOT, 'src/services/BBJService.ts')),
+      'BBJService was retired; an empty service must not come back'
+    ).toBe(false);
     for (const f of [
-      'src/services/BBJService.ts',
       'src/pages/BadBeatJackpotPage.tsx',
       'src/components/bbj/BBJAdminAnalytics.tsx',
+      'src/services/index.ts',
     ]) {
       const src = code(f);
       // naming it in a comment that explains the removal is the point; calling

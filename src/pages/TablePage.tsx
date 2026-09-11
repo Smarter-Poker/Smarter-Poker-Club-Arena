@@ -11157,13 +11157,16 @@ export default function TablePage({
       if (eventType === 'bbj_near_miss') {
         const nmUser = handState.user_id as string;
         const nmMessage = handState.message as string;
+        /* WHICH JACKPOT NEARLY PAID (phase 3, 2026-09-11). The engine prefixes
+           every mini reason `mini_`, and the rest of the table sees a rewritten
+           headline rather than the personal one - so a MINI near miss was being
+           announced to everyone under the MAIN jackpot's name. */
+        const nmReason = String(handState.reason || '');
+        const nmLabel = nmReason.startsWith('mini_') ? 'Mini Bad Beat:' : 'Bad Beat Jackpot:';
         if (nmMessage) {
           // The player who held the hand gets the personal framing; the rest
           // of the table sees it happened (jackpot awareness) without noise.
-          toast.info(
-            nmUser === userId ? nmMessage : nmMessage.replace('So close!', 'Bad Beat Jackpot:'),
-            4000
-          );
+          toast.info(nmUser === userId ? nmMessage : nmMessage.replace('So close!', nmLabel), 4000);
         }
         return;
       }

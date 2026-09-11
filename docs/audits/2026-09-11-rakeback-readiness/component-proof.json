@@ -1,0 +1,21 @@
+{
+  "baseline": "61bab809fce854b37f7634d84bfc4565d7e80839",
+  "recorded_at_utc": "2026-09-11T05:30:07.838241+00:00",
+  "command": "./node_modules/.bin/vitest run tests/components/rakeback-readiness.test.tsx --maxWorkers=1",
+  "result": {
+    "files_passed": 1,
+    "tests_passed": 8,
+    "exit_code": 0
+  },
+  "input_sha256": {
+    "src/utils/rakebackReadiness.ts": "7ccf2504c5b0529f8f1ec18891a8c19f7cd6d0f1cdd1c1307b625acfdc7e3189",
+    "src/pages/RakebackPage.tsx": "7517bb75fb441762fc6c353c056d837caa90abaad77fb82866f5bdb187600304",
+    "tests/components/rakeback-readiness.test.tsx": "c4c7fcf5b176fe3f6cd4d9585fbbee39107e6f20c4b2122dd230a4e532eed4e2"
+  },
+  "log_sha256": "9c2b7b1d100ebc2ec624ccfce0261c9592e556f78fddf7a9c17694158fb72a98",
+  "boundary": "Mocked Supabase and event boundaries; actual RakebackPage, readiness helper, RewardsSurfaceHeader and retryAsync. No live financial API, database, browser visual or backend maturity activation proof.",
+  "independent_review": {
+    "agent": "satellite_closeout",
+    "result": "No source or test blocker found against the recorded three input hashes. Read-only review, no reviewer test rerun."
+  }
+}

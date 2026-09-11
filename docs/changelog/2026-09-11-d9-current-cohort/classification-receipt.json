@@ -1,0 +1,1353 @@
+{
+  "captureDate": "2026-09-11",
+  "sourceBaseCommit": "5a550b6343f613a7134011b41d69cdad613642f7",
+  "productionProjectId": "kuklfnapbkmacvwxktbh",
+  "currentEvents": 40,
+  "historicalReportedEvents": 79,
+  "currentPoolTotal": "2164.6",
+  "totalPlayers": 134,
+  "allHorses": true,
+  "eliminatedRowsWithNullSequence": 82,
+  "counts": {
+    "unpaid_no_valid_finish_exact_refund_candidate": 11,
+    "paid_history_requires_compatible_ruling": 1,
+    "unpaid_finish_evidenced_pending_native_prerequisites": 28
+  },
+  "poolTotalsByClass": {
+    "unpaid_no_valid_finish_exact_refund_candidate": "460",
+    "paid_history_requires_compatible_ruling": "153",
+    "unpaid_finish_evidenced_pending_native_prerequisites": "1551.6"
+  },
+  "noProductionWrites": true,
+  "noWinnersSelected": true,
+  "nativeBatchesStillRequired": true,
+  "events": [
+    {
+      "id": "f3f050f1-569e-4fb6-859f-86b6092e682e",
+      "name": "20 Chip Deep Stack Spin PLO6",
+      "variant": "spin",
+      "status": "REGISTERING",
+      "fieldSize": 3,
+      "allEntrantsHorses": true,
+      "pool": "40",
+      "paidPlaceAmount": "0",
+      "remainingPrizeEscrow": "40",
+      "positivePlayerCount": 2,
+      "liveSeatCount": 2,
+      "recordedPositivePlayers": [
+        {
+          "userId": "e8cca6bc-24c0-43ac-9b03-58fe82fd59a1",
+          "chips": 2824
+        },
+        {
+          "userId": "8327a08a-77e7-4f33-be45-e086a718c9e2",
+          "chips": 176
+        }
+      ],
+      "acceptedObservationsMatchAllPlayerChips": true,
+      "acceptedFinishIdentityProven": true,
+      "nullEliminationSequences": 1,
+      "classification": "unpaid_no_valid_finish_exact_refund_candidate",
+      "nativeBatchRehearsed": false,
+      "existingContractVersion": 1,
+      "payoutStructureSha256": "7127ad7292d90f5d08c2b48b090de0e3e15a7814243c25fcf05eb039d9584d32",
+      "eventEvidenceSha256": "c8a3f6f5b5f276032aa81af413f866071d486107f08027380ccfa1a28284aaf0",
+      "prerequisites": [
+        "Shared migration 20260911110000 first.",
+        "Rehearse exact entry refunds and terminal cancellation using real entry and reserve/fee receipts, in a batch of at most ten.",
+        "Do not invent a winner or equate advertised pool with entry refund amount."
+      ]
+    },
+    {
+      "id": "808ef798-0942-4ce0-9ae1-eeefaaf4b0a9",
+      "name": "2 Chip Deep Stack Spin PLO4",
+      "variant": "spin",
+      "status": "REGISTERING",
+      "fieldSize": 3,
+      "allEntrantsHorses": true,
+      "pool": "4",
+      "paidPlaceAmount": "0",
+      "remainingPrizeEscrow": "4",
+      "positivePlayerCount": 2,
+      "liveSeatCount": 2,
+      "recordedPositivePlayers": [
+        {
+          "userId": "66417bd4-c8e5-4666-af6f-3d85a43593d9",
+          "chips": 1994
+        },
+        {
+          "userId": "2c73e303-bb61-4593-bcea-8debad14b6cc",
+          "chips": 1006
+        }
+      ],
+      "acceptedObservationsMatchAllPlayerChips": true,
+      "acceptedFinishIdentityProven": true,
+      "nullEliminationSequences": 1,
+      "classification": "unpaid_no_valid_finish_exact_refund_candidate",
+      "nativeBatchRehearsed": false,
+      "existingContractVersion": 1,
+      "payoutStructureSha256": "7127ad7292d90f5d08c2b48b090de0e3e15a7814243c25fcf05eb039d9584d32",
+      "eventEvidenceSha256": "dbd2c1121d5bb225816040b54e1f5222afa81ce74726f9ab34afeeee43ebfb5e",
+      "prerequisites": [
+        "Shared migration 20260911110000 first.",
+        "Rehearse exact entry refunds and terminal cancellation using real entry and reserve/fee receipts, in a batch of at most ten.",
+        "Do not invent a winner or equate advertised pool with entry refund amount."
+      ]
+    },
+    {
+      "id": "b60c7add-6b38-4549-b091-601f64d118a0",
+      "name": "1 Chip Deep Stack Spin PLO4",
+      "variant": "spin",
+      "status": "REGISTERING",
+      "fieldSize": 3,
+      "allEntrantsHorses": true,
+      "pool": "2",
+      "paidPlaceAmount": "0",
+      "remainingPrizeEscrow": "2",
+      "positivePlayerCount": 2,
+      "liveSeatCount": 2,
+      "recordedPositivePlayers": [
+        {
+          "userId": "82c24bec-26e3-476d-ab10-b9b951e1ce93",
+          "chips": 2620
+        },
+        {
+          "userId": "ca898367-27eb-4166-807e-0e674f11aca8",
+          "chips": 380
+        }
+      ],
+      "acceptedObservationsMatchAllPlayerChips": true,
+      "acceptedFinishIdentityProven": true,
+      "nullEliminationSequences": 1,
+      "classification": "unpaid_no_valid_finish_exact_refund_candidate",
+      "nativeBatchRehearsed": false,
+      "existingContractVersion": 1,
+      "payoutStructureSha256": "7127ad7292d90f5d08c2b48b090de0e3e15a7814243c25fcf05eb039d9584d32",
+      "eventEvidenceSha256": "d120d5fec7a17552a4de2b8879df57a48eccc862044682e8adcd1dab76557b3b",
+      "prerequisites": [
+        "Shared migration 20260911110000 first.",
+        "Rehearse exact entry refunds and terminal cancellation using real entry and reserve/fee receipts, in a batch of at most ten.",
+        "Do not invent a winner or equate advertised pool with entry refund amount."
+      ]
+    },
+    {
+      "id": "18c95ce7-2cbc-4ca6-9133-36e3a21d9ab6",
+      "name": "10 Chip Spin PLO6",
+      "variant": "spin",
+      "status": "REGISTERING",
+      "fieldSize": 3,
+      "allEntrantsHorses": true,
+      "pool": "20",
+      "paidPlaceAmount": "0",
+      "remainingPrizeEscrow": "20",
+      "positivePlayerCount": 2,
+      "liveSeatCount": 2,
+      "recordedPositivePlayers": [
+        {
+          "userId": "8f4acae4-1768-426a-bf4b-17d8cad7c02f",
+          "chips": 426
+        },
+        {
+          "userId": "a04d3a50-ecaf-4baa-ba5f-c5597ae5d0cc",
+          "chips": 474
+        }
+      ],
+      "acceptedObservationsMatchAllPlayerChips": true,
+      "acceptedFinishIdentityProven": true,
+      "nullEliminationSequences": 1,
+      "classification": "unpaid_no_valid_finish_exact_refund_candidate",
+      "nativeBatchRehearsed": false,
+      "existingContractVersion": 1,
+      "payoutStructureSha256": "7127ad7292d90f5d08c2b48b090de0e3e15a7814243c25fcf05eb039d9584d32",
+      "eventEvidenceSha256": "96e10e595417da8ba0939d7c413b1df3a86cc0df0ff992e5e700c6a703cf85a7",
+      "prerequisites": [
+        "Shared migration 20260911110000 first.",
+        "Rehearse exact entry refunds and terminal cancellation using real entry and reserve/fee receipts, in a batch of at most ten.",
+        "Do not invent a winner or equate advertised pool with entry refund amount."
+      ]
+    },
+    {
+      "id": "e3f4e2ab-8397-43e8-8643-6cec3fff3a63",
+      "name": "20 Chip Deep Stack Spin PLO4",
+      "variant": "spin",
+      "status": "REGISTERING",
+      "fieldSize": 3,
+      "allEntrantsHorses": true,
+      "pool": "40",
+      "paidPlaceAmount": "0",
+      "remainingPrizeEscrow": "40",
+      "positivePlayerCount": 2,
+      "liveSeatCount": 2,
+      "recordedPositivePlayers": [
+        {
+          "userId": "00000000-0000-0000-0000-000000000049",
+          "chips": 2243
+        },
+        {
+          "userId": "3fff352f-7e86-4449-8262-5fc50462195e",
+          "chips": 757
+        }
+      ],
+      "acceptedObservationsMatchAllPlayerChips": true,
+      "acceptedFinishIdentityProven": true,
+      "nullEliminationSequences": 1,
+      "classification": "unpaid_no_valid_finish_exact_refund_candidate",
+      "nativeBatchRehearsed": false,
+      "existingContractVersion": 1,
+      "payoutStructureSha256": "7127ad7292d90f5d08c2b48b090de0e3e15a7814243c25fcf05eb039d9584d32",
+      "eventEvidenceSha256": "e2e1369c6690073c5684422335a80a116c0cf11a343d9273c38db998c97cab39",
+      "prerequisites": [
+        "Shared migration 20260911110000 first.",
+        "Rehearse exact entry refunds and terminal cancellation using real entry and reserve/fee receipts, in a batch of at most ten.",
+        "Do not invent a winner or equate advertised pool with entry refund amount."
+      ]
+    },
+    {
+      "id": "5090c03b-2b36-456a-b301-485493280a51",
+      "name": "50 Chip Spin PLO4",
+      "variant": "spin",
+      "status": "REGISTERING",
+      "fieldSize": 3,
+      "allEntrantsHorses": true,
+      "pool": "100",
+      "paidPlaceAmount": "0",
+      "remainingPrizeEscrow": "100",
+      "positivePlayerCount": 2,
+      "liveSeatCount": 2,
+      "recordedPositivePlayers": [
+        {
+          "userId": "6cd9867c-92f2-495a-8e13-d52df8276de5",
+          "chips": 670
+        },
+        {
+          "userId": "2e19fb4b-ce2f-4cb8-83f0-3b44da7e36f1",
+          "chips": 230
+        }
+      ],
+      "acceptedObservationsMatchAllPlayerChips": true,
+      "acceptedFinishIdentityProven": true,
+      "nullEliminationSequences": 1,
+      "classification": "unpaid_no_valid_finish_exact_refund_candidate",
+      "nativeBatchRehearsed": false,
+      "existingContractVersion": 1,
+      "payoutStructureSha256": "7127ad7292d90f5d08c2b48b090de0e3e15a7814243c25fcf05eb039d9584d32",
+      "eventEvidenceSha256": "c2eb1871b206c4303e2d2117bab5403721ee7271af3bd94f6afce3203e5fea0b",
+      "prerequisites": [
+        "Shared migration 20260911110000 first.",
+        "Rehearse exact entry refunds and terminal cancellation using real entry and reserve/fee receipts, in a batch of at most ten.",
+        "Do not invent a winner or equate advertised pool with entry refund amount."
+      ]
+    },
+    {
+      "id": "8904c10b-6a47-4934-bdf2-def1b1e76f0b",
+      "name": "1 Chip Deep Stack Spin PLO5",
+      "variant": "spin",
+      "status": "REGISTERING",
+      "fieldSize": 3,
+      "allEntrantsHorses": true,
+      "pool": "2",
+      "paidPlaceAmount": "0",
+      "remainingPrizeEscrow": "2",
+      "positivePlayerCount": 2,
+      "liveSeatCount": 2,
+      "recordedPositivePlayers": [
+        {
+          "userId": "7c0be9c9-51e8-4c46-a3c0-a1a9aa4d1719",
+          "chips": 2034
+        },
+        {
+          "userId": "4cb9ecf4-962b-44d2-87be-95fcfa1a2918",
+          "chips": 1966
+        }
+      ],
+      "acceptedObservationsMatchAllPlayerChips": true,
+      "acceptedFinishIdentityProven": true,
+      "nullEliminationSequences": 1,
+      "classification": "unpaid_no_valid_finish_exact_refund_candidate",
+      "nativeBatchRehearsed": false,
+      "existingContractVersion": 1,
+      "payoutStructureSha256": "7127ad7292d90f5d08c2b48b090de0e3e15a7814243c25fcf05eb039d9584d32",
+      "eventEvidenceSha256": "5d93e2329104805c2b878c1140a481a6b6a615de472aabace189189b2af7dccd",
+      "prerequisites": [
+        "Shared migration 20260911110000 first.",
+        "Rehearse exact entry refunds and terminal cancellation using real entry and reserve/fee receipts, in a batch of at most ten.",
+        "Do not invent a winner or equate advertised pool with entry refund amount."
+      ]
+    },
+    {
+      "id": "f370585d-40ea-4085-bb8f-c7e8c74f3fb4",
+      "name": "Breakfast Turbo",
+      "variant": "freezeout",
+      "status": "REGISTERING",
+      "fieldSize": 34,
+      "allEntrantsHorses": true,
+      "pool": "153",
+      "paidPlaceAmount": "99.88",
+      "remainingPrizeEscrow": "53.12",
+      "positivePlayerCount": 1,
+      "liveSeatCount": 2,
+      "recordedPositivePlayers": [
+        {
+          "userId": "ae0bc48d-f98c-4b25-a9fa-e3522f986173",
+          "chips": 430255
+        }
+      ],
+      "acceptedObservationsMatchAllPlayerChips": true,
+      "acceptedFinishIdentityProven": true,
+      "nullEliminationSequences": 32,
+      "classification": "paid_history_requires_compatible_ruling",
+      "nativeBatchRehearsed": false,
+      "existingContractVersion": 3,
+      "payoutStructureSha256": "20bbd88233e64b049951033df8a29b64160231e65335ec77c038ec84f1b29aa8",
+      "eventEvidenceSha256": "8eff3141c7a926df8f6e3d348f97d82d745fe40876e8baca3dbe5333e613d6b7",
+      "prerequisites": [
+        "Preserve all four paid rows and exact receipt identities.",
+        "Resolve the zero-chip playing row from accepted hand evidence without choosing a new winner.",
+        "Resolve missing historical sequence compatibility without status toggles or resequencing.",
+        "Prove normal completion and any true-order debt separately; no blanket entry refund."
+      ],
+      "paidLadderAlreadyMatchesCurrent": true
+    },
+    {
+      "id": "199a71a9-f364-4e90-a3ba-3cdcfb7755bc",
+      "name": "5 Chip Deep Stack Spin NLH",
+      "variant": "spin",
+      "status": "REGISTERING",
+      "fieldSize": 3,
+      "allEntrantsHorses": true,
+      "pool": "10",
+      "paidPlaceAmount": "0",
+      "remainingPrizeEscrow": "10",
+      "positivePlayerCount": 2,
+      "liveSeatCount": 2,
+      "recordedPositivePlayers": [
+        {
+          "userId": "d9025f02-260a-4c89-9311-e00b792d35c4",
+          "chips": 1804
+        },
+        {
+          "userId": "00000000-0000-0000-0000-000000000005",
+          "chips": 1196
+        }
+      ],
+      "acceptedObservationsMatchAllPlayerChips": true,
+      "acceptedFinishIdentityProven": true,
+      "nullEliminationSequences": 1,
+      "classification": "unpaid_no_valid_finish_exact_refund_candidate",
+      "nativeBatchRehearsed": false,
+      "existingContractVersion": 1,
+      "payoutStructureSha256": "7127ad7292d90f5d08c2b48b090de0e3e15a7814243c25fcf05eb039d9584d32",
+      "eventEvidenceSha256": "1d9506da49ad66603523c185496f1a418cf76bdb0dadefc8e6db0b018d9ce4f8",
+      "prerequisites": [
+        "Shared migration 20260911110000 first.",
+        "Rehearse exact entry refunds and terminal cancellation using real entry and reserve/fee receipts, in a batch of at most ten.",
+        "Do not invent a winner or equate advertised pool with entry refund amount."
+      ]
+    },
+    {
+      "id": "95e43b6e-c1c9-445e-a1d9-cbe711e3bac1",
+      "name": "20 Chip Spin PLO4",
+      "variant": "spin",
+      "status": "REGISTERING",
+      "fieldSize": 3,
+      "allEntrantsHorses": true,
+      "pool": "40",
+      "paidPlaceAmount": "0",
+      "remainingPrizeEscrow": "40",
+      "positivePlayerCount": 1,
+      "liveSeatCount": 1,
+      "recordedPositivePlayers": [
+        {
+          "userId": "7b05f19d-b546-46a7-aa12-982d78d6f802",
+          "chips": 1200
+        }
+      ],
+      "acceptedObservationsMatchAllPlayerChips": true,
+      "acceptedFinishIdentityProven": true,
+      "nullEliminationSequences": 2,
+      "classification": "unpaid_finish_evidenced_pending_native_prerequisites",
+      "nativeBatchRehearsed": false,
+      "existingContractVersion": 1,
+      "payoutStructureSha256": "7127ad7292d90f5d08c2b48b090de0e3e15a7814243c25fcf05eb039d9584d32",
+      "eventEvidenceSha256": "d8f1fd4bdb8afa5a3ef7f5cd1adf583588812f3d9a86c1f0d0dbafa838a90f1b",
+      "prerequisites": [
+        "Shared migration 20260911110000 first.",
+        "Prove compatibility for NULL historical sequences in the ordinary terminal door without status toggles.",
+        "Native PG17 final payment and replay rehearsal in a batch of at most ten."
+      ]
+    },
+    {
+      "id": "44d7e2d8-66ed-48ae-a1cb-306ae92b6dfa",
+      "name": "50 Chip Spin PLO5",
+      "variant": "spin",
+      "status": "REGISTERING",
+      "fieldSize": 3,
+      "allEntrantsHorses": true,
+      "pool": "100",
+      "paidPlaceAmount": "0",
+      "remainingPrizeEscrow": "100",
+      "positivePlayerCount": 1,
+      "liveSeatCount": 1,
+      "recordedPositivePlayers": [
+        {
+          "userId": "f9d1432c-db72-4d02-90be-714269f1111f",
+          "chips": 1200
+        }
+      ],
+      "acceptedObservationsMatchAllPlayerChips": true,
+      "acceptedFinishIdentityProven": true,
+      "nullEliminationSequences": 2,
+      "classification": "unpaid_finish_evidenced_pending_native_prerequisites",
+      "nativeBatchRehearsed": false,
+      "existingContractVersion": 1,
+      "payoutStructureSha256": "7127ad7292d90f5d08c2b48b090de0e3e15a7814243c25fcf05eb039d9584d32",
+      "eventEvidenceSha256": "45dc3ecb7b4bf93c92a917cd444abe0ae84af31c950b8bd19278580d6dc7086f",
+      "prerequisites": [
+        "Shared migration 20260911110000 first.",
+        "Prove compatibility for NULL historical sequences in the ordinary terminal door without status toggles.",
+        "Native PG17 final payment and replay rehearsal in a batch of at most ten."
+      ]
+    },
+    {
+      "id": "90c4d93f-4577-4da2-bd9b-51b774019971",
+      "name": "NLH Heads-Up 1",
+      "variant": "sng",
+      "status": "REGISTERING",
+      "fieldSize": 2,
+      "allEntrantsHorses": true,
+      "pool": "1.9",
+      "paidPlaceAmount": "0",
+      "remainingPrizeEscrow": "1.9",
+      "positivePlayerCount": 1,
+      "liveSeatCount": 1,
+      "recordedPositivePlayers": [
+        {
+          "userId": "b661053c-f8b9-4938-ab8b-92c9e2f647c1",
+          "chips": 2000
+        }
+      ],
+      "acceptedObservationsMatchAllPlayerChips": true,
+      "acceptedFinishIdentityProven": true,
+      "nullEliminationSequences": 1,
+      "classification": "unpaid_finish_evidenced_pending_native_prerequisites",
+      "nativeBatchRehearsed": false,
+      "existingContractVersion": 1,
+      "payoutStructureSha256": "7127ad7292d90f5d08c2b48b090de0e3e15a7814243c25fcf05eb039d9584d32",
+      "eventEvidenceSha256": "ceaeacba133e98684476899dbe00ea3a17211d476d747866bc540d1cbfff1248",
+      "prerequisites": [
+        "Shared migration 20260911110000 first.",
+        "Prove compatibility for NULL historical sequences in the ordinary terminal door without status toggles.",
+        "Native PG17 final payment and replay rehearsal in a batch of at most ten."
+      ]
+    },
+    {
+      "id": "8d5969da-df76-44fa-8c83-5608b844ca06",
+      "name": "5 Chip Spin PLO5",
+      "variant": "spin",
+      "status": "REGISTERING",
+      "fieldSize": 3,
+      "allEntrantsHorses": true,
+      "pool": "10",
+      "paidPlaceAmount": "0",
+      "remainingPrizeEscrow": "10",
+      "positivePlayerCount": 1,
+      "liveSeatCount": 1,
+      "recordedPositivePlayers": [
+        {
+          "userId": "a04d3a50-ecaf-4baa-ba5f-c5597ae5d0cc",
+          "chips": 900
+        }
+      ],
+      "acceptedObservationsMatchAllPlayerChips": true,
+      "acceptedFinishIdentityProven": true,
+      "nullEliminationSequences": 2,
+      "classification": "unpaid_finish_evidenced_pending_native_prerequisites",
+      "nativeBatchRehearsed": false,
+      "existingContractVersion": 1,
+      "payoutStructureSha256": "7127ad7292d90f5d08c2b48b090de0e3e15a7814243c25fcf05eb039d9584d32",
+      "eventEvidenceSha256": "9f32ab663bc3ff1306af77cf55a1dca0733bbaef2e9d934da1d63ddf61b981a6",
+      "prerequisites": [
+        "Shared migration 20260911110000 first.",
+        "Prove compatibility for NULL historical sequences in the ordinary terminal door without status toggles.",
+        "Native PG17 final payment and replay rehearsal in a batch of at most ten."
+      ]
+    },
+    {
+      "id": "6d359f61-d681-49ba-82f3-00493178e5b3",
+      "name": "20 Chip Spin NLH",
+      "variant": "spin",
+      "status": "REGISTERING",
+      "fieldSize": 3,
+      "allEntrantsHorses": true,
+      "pool": "40",
+      "paidPlaceAmount": "0",
+      "remainingPrizeEscrow": "40",
+      "positivePlayerCount": 2,
+      "liveSeatCount": 2,
+      "recordedPositivePlayers": [
+        {
+          "userId": "e55c9219-b0a6-4431-9669-9dc332583100",
+          "chips": 645
+        },
+        {
+          "userId": "4d96ee37-8211-4e5a-b4b6-4b8275bbf46a",
+          "chips": 555
+        }
+      ],
+      "acceptedObservationsMatchAllPlayerChips": true,
+      "acceptedFinishIdentityProven": true,
+      "nullEliminationSequences": 1,
+      "classification": "unpaid_no_valid_finish_exact_refund_candidate",
+      "nativeBatchRehearsed": false,
+      "existingContractVersion": 1,
+      "payoutStructureSha256": "7127ad7292d90f5d08c2b48b090de0e3e15a7814243c25fcf05eb039d9584d32",
+      "eventEvidenceSha256": "e5108ac9f7317603047c1705ed9464a5b8d54f7a6be69de97bd00ec8ae68af68",
+      "prerequisites": [
+        "Shared migration 20260911110000 first.",
+        "Rehearse exact entry refunds and terminal cancellation using real entry and reserve/fee receipts, in a batch of at most ten.",
+        "Do not invent a winner or equate advertised pool with entry refund amount."
+      ]
+    },
+    {
+      "id": "b67ab0cb-e2d6-4955-8f43-4bff32551400",
+      "name": "5 Chip Deep Stack Spin PLO4",
+      "variant": "spin",
+      "status": "REGISTERING",
+      "fieldSize": 3,
+      "allEntrantsHorses": true,
+      "pool": "10",
+      "paidPlaceAmount": "0",
+      "remainingPrizeEscrow": "10",
+      "positivePlayerCount": 1,
+      "liveSeatCount": 1,
+      "recordedPositivePlayers": [
+        {
+          "userId": "0bb5a13b-e7e5-4f87-ad4c-d102b4f4f61e",
+          "chips": 3000
+        }
+      ],
+      "acceptedObservationsMatchAllPlayerChips": true,
+      "acceptedFinishIdentityProven": true,
+      "nullEliminationSequences": 2,
+      "classification": "unpaid_finish_evidenced_pending_native_prerequisites",
+      "nativeBatchRehearsed": false,
+      "existingContractVersion": 1,
+      "payoutStructureSha256": "7127ad7292d90f5d08c2b48b090de0e3e15a7814243c25fcf05eb039d9584d32",
+      "eventEvidenceSha256": "81489a0186664acde1a597e6724b69d81a1e7c8fd2beae5c9c8b540eb247e9f1",
+      "prerequisites": [
+        "Shared migration 20260911110000 first.",
+        "Prove compatibility for NULL historical sequences in the ordinary terminal door without status toggles.",
+        "Native PG17 final payment and replay rehearsal in a batch of at most ten."
+      ]
+    },
+    {
+      "id": "efd5455d-d188-4171-becb-1d35b016d06a",
+      "name": "2 Chip Spin PLO4",
+      "variant": "spin",
+      "status": "REGISTERING",
+      "fieldSize": 3,
+      "allEntrantsHorses": true,
+      "pool": "4",
+      "paidPlaceAmount": "0",
+      "remainingPrizeEscrow": "4",
+      "positivePlayerCount": 1,
+      "liveSeatCount": 1,
+      "recordedPositivePlayers": [
+        {
+          "userId": "3d85f161-27ce-45f4-b94b-1d42c62252af",
+          "chips": 900
+        }
+      ],
+      "acceptedObservationsMatchAllPlayerChips": true,
+      "acceptedFinishIdentityProven": true,
+      "nullEliminationSequences": 2,
+      "classification": "unpaid_finish_evidenced_pending_native_prerequisites",
+      "nativeBatchRehearsed": false,
+      "existingContractVersion": 1,
+      "payoutStructureSha256": "7127ad7292d90f5d08c2b48b090de0e3e15a7814243c25fcf05eb039d9584d32",
+      "eventEvidenceSha256": "c912bffb7720358a2364916bfac2d51155684aba4064f9dd13e2658984aad33d",
+      "prerequisites": [
+        "Shared migration 20260911110000 first.",
+        "Prove compatibility for NULL historical sequences in the ordinary terminal door without status toggles.",
+        "Native PG17 final payment and replay rehearsal in a batch of at most ten."
+      ]
+    },
+    {
+      "id": "097e3601-ccf9-4035-af40-eb35068d2652",
+      "name": "Sunday $200 Deep Stack Satellite Heads-Up",
+      "variant": "sng",
+      "status": "REGISTERING",
+      "fieldSize": 2,
+      "allEntrantsHorses": true,
+      "pool": "285",
+      "paidPlaceAmount": "0",
+      "remainingPrizeEscrow": "285",
+      "positivePlayerCount": 1,
+      "liveSeatCount": 1,
+      "recordedPositivePlayers": [
+        {
+          "userId": "7f2fcb20-a23c-4003-b2de-f23c01460d71",
+          "chips": 900
+        }
+      ],
+      "acceptedObservationsMatchAllPlayerChips": true,
+      "acceptedFinishIdentityProven": true,
+      "nullEliminationSequences": 1,
+      "classification": "unpaid_finish_evidenced_pending_native_prerequisites",
+      "nativeBatchRehearsed": false,
+      "existingContractVersion": 1,
+      "payoutStructureSha256": "7127ad7292d90f5d08c2b48b090de0e3e15a7814243c25fcf05eb039d9584d32",
+      "eventEvidenceSha256": "cac14903c1b670f37a8466210bf36b1653662ce51fdf86aeb39382d516650893",
+      "prerequisites": [
+        "Shared migration 20260911110000 first.",
+        "Prove compatibility for NULL historical sequences in the ordinary terminal door without status toggles.",
+        "Native PG17 final payment and replay rehearsal in a batch of at most ten."
+      ]
+    },
+    {
+      "id": "2d6dadb7-d1cb-4e03-980f-41fafce98afd",
+      "name": "NLH Heads-Up 25 Turbo",
+      "variant": "sng",
+      "status": "REGISTERING",
+      "fieldSize": 2,
+      "allEntrantsHorses": true,
+      "pool": "47.5",
+      "paidPlaceAmount": "0",
+      "remainingPrizeEscrow": "47.5",
+      "positivePlayerCount": 1,
+      "liveSeatCount": 1,
+      "recordedPositivePlayers": [
+        {
+          "userId": "4bdebc9a-65b1-4c5b-8f6c-012b9c31b4fe",
+          "chips": 600
+        }
+      ],
+      "acceptedObservationsMatchAllPlayerChips": true,
+      "acceptedFinishIdentityProven": true,
+      "nullEliminationSequences": 1,
+      "classification": "unpaid_finish_evidenced_pending_native_prerequisites",
+      "nativeBatchRehearsed": false,
+      "existingContractVersion": 1,
+      "payoutStructureSha256": "7127ad7292d90f5d08c2b48b090de0e3e15a7814243c25fcf05eb039d9584d32",
+      "eventEvidenceSha256": "cbb4fff2cf45682b41af64e038c8fbfcb3cadd0a2d7fe2e6ef9f675ae5d6131d",
+      "prerequisites": [
+        "Shared migration 20260911110000 first.",
+        "Prove compatibility for NULL historical sequences in the ordinary terminal door without status toggles.",
+        "Native PG17 final payment and replay rehearsal in a batch of at most ten."
+      ]
+    },
+    {
+      "id": "a4262ba0-cd5f-4a94-a0f8-915a028cf3a7",
+      "name": "Six-Card Feature Satellite Heads-Up",
+      "variant": "sng",
+      "status": "REGISTERING",
+      "fieldSize": 2,
+      "allEntrantsHorses": true,
+      "pool": "28.5",
+      "paidPlaceAmount": "0",
+      "remainingPrizeEscrow": "28.5",
+      "positivePlayerCount": 1,
+      "liveSeatCount": 1,
+      "recordedPositivePlayers": [
+        {
+          "userId": "d27088a8-f517-4281-9f17-7181e2f8d13b",
+          "chips": 600
+        }
+      ],
+      "acceptedObservationsMatchAllPlayerChips": true,
+      "acceptedFinishIdentityProven": true,
+      "nullEliminationSequences": 1,
+      "classification": "unpaid_finish_evidenced_pending_native_prerequisites",
+      "nativeBatchRehearsed": false,
+      "existingContractVersion": 1,
+      "payoutStructureSha256": "7127ad7292d90f5d08c2b48b090de0e3e15a7814243c25fcf05eb039d9584d32",
+      "eventEvidenceSha256": "ab6c51a38336512e172545cc98053a3b21b9af050945aba3587aa8806a9626a9",
+      "prerequisites": [
+        "Shared migration 20260911110000 first.",
+        "Prove compatibility for NULL historical sequences in the ordinary terminal door without status toggles.",
+        "Native PG17 final payment and replay rehearsal in a batch of at most ten."
+      ]
+    },
+    {
+      "id": "92c93927-614f-4168-a1f9-918849c0be19",
+      "name": "Wednesday Feature Satellite Heads-Up",
+      "variant": "sng",
+      "status": "REGISTERING",
+      "fieldSize": 2,
+      "allEntrantsHorses": true,
+      "pool": "28.5",
+      "paidPlaceAmount": "0",
+      "remainingPrizeEscrow": "28.5",
+      "positivePlayerCount": 1,
+      "liveSeatCount": 1,
+      "recordedPositivePlayers": [
+        {
+          "userId": "eaf09a18-9654-4c18-8c5d-48a26ce72259",
+          "chips": 600
+        }
+      ],
+      "acceptedObservationsMatchAllPlayerChips": true,
+      "acceptedFinishIdentityProven": true,
+      "nullEliminationSequences": 1,
+      "classification": "unpaid_finish_evidenced_pending_native_prerequisites",
+      "nativeBatchRehearsed": false,
+      "existingContractVersion": 1,
+      "payoutStructureSha256": "7127ad7292d90f5d08c2b48b090de0e3e15a7814243c25fcf05eb039d9584d32",
+      "eventEvidenceSha256": "07a2f4cbc2a93b8484b7121bdd57a220e527c427b7da7804ed8e1b850a12b8dc",
+      "prerequisites": [
+        "Shared migration 20260911110000 first.",
+        "Prove compatibility for NULL historical sequences in the ordinary terminal door without status toggles.",
+        "Native PG17 final payment and replay rehearsal in a batch of at most ten."
+      ]
+    },
+    {
+      "id": "dae6db50-4f35-4ffd-b8f5-b9f95d104c10",
+      "name": "NLH Heads-Up 50 Turbo",
+      "variant": "sng",
+      "status": "REGISTERING",
+      "fieldSize": 2,
+      "allEntrantsHorses": true,
+      "pool": "95",
+      "paidPlaceAmount": "0",
+      "remainingPrizeEscrow": "95",
+      "positivePlayerCount": 1,
+      "liveSeatCount": 1,
+      "recordedPositivePlayers": [
+        {
+          "userId": "b82cb704-5ea3-469e-b05a-88e768e8834c",
+          "chips": 600
+        }
+      ],
+      "acceptedObservationsMatchAllPlayerChips": true,
+      "acceptedFinishIdentityProven": true,
+      "nullEliminationSequences": 1,
+      "classification": "unpaid_finish_evidenced_pending_native_prerequisites",
+      "nativeBatchRehearsed": false,
+      "existingContractVersion": 1,
+      "payoutStructureSha256": "7127ad7292d90f5d08c2b48b090de0e3e15a7814243c25fcf05eb039d9584d32",
+      "eventEvidenceSha256": "c46adb11ef890205fc9c6d0cf0f84190726431acf5ed633488c920ceffd557dc",
+      "prerequisites": [
+        "Shared migration 20260911110000 first.",
+        "Prove compatibility for NULL historical sequences in the ordinary terminal door without status toggles.",
+        "Native PG17 final payment and replay rehearsal in a batch of at most ten."
+      ]
+    },
+    {
+      "id": "f670ca7c-5134-4a22-9426-eea2601c300a",
+      "name": "100 Chip Spin PLO5",
+      "variant": "spin",
+      "status": "REGISTERING",
+      "fieldSize": 3,
+      "allEntrantsHorses": true,
+      "pool": "200",
+      "paidPlaceAmount": "0",
+      "remainingPrizeEscrow": "200",
+      "positivePlayerCount": 2,
+      "liveSeatCount": 2,
+      "recordedPositivePlayers": [
+        {
+          "userId": "bbcaaed4-92b3-4ad7-86ee-7770bb36751a",
+          "chips": 540
+        },
+        {
+          "userId": "a666df27-5645-4d05-b628-090950eb8598",
+          "chips": 360
+        }
+      ],
+      "acceptedObservationsMatchAllPlayerChips": true,
+      "acceptedFinishIdentityProven": true,
+      "nullEliminationSequences": 1,
+      "classification": "unpaid_no_valid_finish_exact_refund_candidate",
+      "nativeBatchRehearsed": false,
+      "existingContractVersion": 1,
+      "payoutStructureSha256": "7127ad7292d90f5d08c2b48b090de0e3e15a7814243c25fcf05eb039d9584d32",
+      "eventEvidenceSha256": "f6d24fedc75aa30cd7020c2bd3e9ed196b52bc0d69fe6fc20e75f9791b75d7ad",
+      "prerequisites": [
+        "Shared migration 20260911110000 first.",
+        "Rehearse exact entry refunds and terminal cancellation using real entry and reserve/fee receipts, in a batch of at most ten.",
+        "Do not invent a winner or equate advertised pool with entry refund amount."
+      ]
+    },
+    {
+      "id": "106c4e13-0da7-4b62-b849-119781d25d4f",
+      "name": "NLH Heads-Up 5 Turbo",
+      "variant": "sng",
+      "status": "REGISTERING",
+      "fieldSize": 2,
+      "allEntrantsHorses": true,
+      "pool": "9.5",
+      "paidPlaceAmount": "0",
+      "remainingPrizeEscrow": "9.5",
+      "positivePlayerCount": 1,
+      "liveSeatCount": 1,
+      "recordedPositivePlayers": [
+        {
+          "userId": "e5a834e5-bae7-4acd-8be9-a3c995a52395",
+          "chips": 600
+        }
+      ],
+      "acceptedObservationsMatchAllPlayerChips": true,
+      "acceptedFinishIdentityProven": true,
+      "nullEliminationSequences": 1,
+      "classification": "unpaid_finish_evidenced_pending_native_prerequisites",
+      "nativeBatchRehearsed": false,
+      "existingContractVersion": 1,
+      "payoutStructureSha256": "7127ad7292d90f5d08c2b48b090de0e3e15a7814243c25fcf05eb039d9584d32",
+      "eventEvidenceSha256": "f7d2aa0fc501ee864c433766293a56e98318de76881dbaec7c97e23b55b02fb1",
+      "prerequisites": [
+        "Shared migration 20260911110000 first.",
+        "Prove compatibility for NULL historical sequences in the ordinary terminal door without status toggles.",
+        "Native PG17 final payment and replay rehearsal in a batch of at most ten."
+      ]
+    },
+    {
+      "id": "f5a6896b-b739-40e0-9f73-680ee36bc532",
+      "name": "NLH Heads-Up 1 Turbo",
+      "variant": "sng",
+      "status": "REGISTERING",
+      "fieldSize": 2,
+      "allEntrantsHorses": true,
+      "pool": "1.9",
+      "paidPlaceAmount": "0",
+      "remainingPrizeEscrow": "1.9",
+      "positivePlayerCount": 1,
+      "liveSeatCount": 1,
+      "recordedPositivePlayers": [
+        {
+          "userId": "b832b6c4-f58c-4b53-999b-48c9fbd1ec3c",
+          "chips": 600
+        }
+      ],
+      "acceptedObservationsMatchAllPlayerChips": true,
+      "acceptedFinishIdentityProven": true,
+      "nullEliminationSequences": 1,
+      "classification": "unpaid_finish_evidenced_pending_native_prerequisites",
+      "nativeBatchRehearsed": false,
+      "existingContractVersion": 2,
+      "payoutStructureSha256": "7127ad7292d90f5d08c2b48b090de0e3e15a7814243c25fcf05eb039d9584d32",
+      "eventEvidenceSha256": "a4c160a5553c60e1c2d2a52e1e1312789f489f0a4c9b5e2bfcbf344864ca404b",
+      "prerequisites": [
+        "Shared migration 20260911110000 first.",
+        "Prove compatibility for NULL historical sequences in the ordinary terminal door without status toggles.",
+        "Native PG17 final payment and replay rehearsal in a batch of at most ten."
+      ]
+    },
+    {
+      "id": "f58d6375-4bb4-4f80-a673-0460fcf2c1be",
+      "name": "PLO4 Heads-Up 10 Turbo",
+      "variant": "sng",
+      "status": "REGISTERING",
+      "fieldSize": 2,
+      "allEntrantsHorses": true,
+      "pool": "19",
+      "paidPlaceAmount": "0",
+      "remainingPrizeEscrow": "19",
+      "positivePlayerCount": 1,
+      "liveSeatCount": 1,
+      "recordedPositivePlayers": [
+        {
+          "userId": "a621706d-e8ea-43d1-8d28-76c1d82f21a1",
+          "chips": 600
+        }
+      ],
+      "acceptedObservationsMatchAllPlayerChips": true,
+      "acceptedFinishIdentityProven": true,
+      "nullEliminationSequences": 1,
+      "classification": "unpaid_finish_evidenced_pending_native_prerequisites",
+      "nativeBatchRehearsed": false,
+      "existingContractVersion": 1,
+      "payoutStructureSha256": "7127ad7292d90f5d08c2b48b090de0e3e15a7814243c25fcf05eb039d9584d32",
+      "eventEvidenceSha256": "9a039deeec78c2224a772868687b4560c1c95529443df949481743ac91667501",
+      "prerequisites": [
+        "Shared migration 20260911110000 first.",
+        "Prove compatibility for NULL historical sequences in the ordinary terminal door without status toggles.",
+        "Native PG17 final payment and replay rehearsal in a batch of at most ten."
+      ]
+    },
+    {
+      "id": "9cecb4fa-4fdd-4447-9e98-2fe5c20c46a8",
+      "name": "3 Chip Spin NLH",
+      "variant": "spin",
+      "status": "REGISTERING",
+      "fieldSize": 3,
+      "allEntrantsHorses": true,
+      "pool": "6",
+      "paidPlaceAmount": "0",
+      "remainingPrizeEscrow": "6",
+      "positivePlayerCount": 1,
+      "liveSeatCount": 1,
+      "recordedPositivePlayers": [
+        {
+          "userId": "345e5562-05ac-4c1f-9154-64bf8339806b",
+          "chips": 300
+        }
+      ],
+      "acceptedObservationsMatchAllPlayerChips": false,
+      "acceptedFinishIdentityProven": true,
+      "nullEliminationSequences": 2,
+      "classification": "unpaid_finish_evidenced_pending_native_prerequisites",
+      "nativeBatchRehearsed": false,
+      "existingContractVersion": 2,
+      "payoutStructureSha256": "7127ad7292d90f5d08c2b48b090de0e3e15a7814243c25fcf05eb039d9584d32",
+      "eventEvidenceSha256": "bc306412585115ff56f408d0c89b3a44bf318ca4e901763fe239acf37088b0fd",
+      "prerequisites": [
+        "Shared migration 20260911110000 first.",
+        "Prove compatibility for NULL historical sequences in the ordinary terminal door without status toggles.",
+        "Native PG17 final payment and replay rehearsal in a batch of at most ten.",
+        "Reconcile the captured roster/accepted-stack mismatch without overwriting chips or discarding this event."
+      ]
+    },
+    {
+      "id": "659d3ec6-c584-42ea-956d-5fc2004ba566",
+      "name": "NLH Heads-Up 20 Turbo",
+      "variant": "sng",
+      "status": "REGISTERING",
+      "fieldSize": 2,
+      "allEntrantsHorses": true,
+      "pool": "38",
+      "paidPlaceAmount": "0",
+      "remainingPrizeEscrow": "38",
+      "positivePlayerCount": 1,
+      "liveSeatCount": 1,
+      "recordedPositivePlayers": [
+        {
+          "userId": "56315bf9-8a2b-4625-9e53-c7fe4bde9a8c",
+          "chips": 600
+        }
+      ],
+      "acceptedObservationsMatchAllPlayerChips": true,
+      "acceptedFinishIdentityProven": true,
+      "nullEliminationSequences": 1,
+      "classification": "unpaid_finish_evidenced_pending_native_prerequisites",
+      "nativeBatchRehearsed": false,
+      "existingContractVersion": 1,
+      "payoutStructureSha256": "7127ad7292d90f5d08c2b48b090de0e3e15a7814243c25fcf05eb039d9584d32",
+      "eventEvidenceSha256": "74e90bcce41c739530c9e119a705863e8e0d356f95f258ce4f3e154b2cf643dc",
+      "prerequisites": [
+        "Shared migration 20260911110000 first.",
+        "Prove compatibility for NULL historical sequences in the ordinary terminal door without status toggles.",
+        "Native PG17 final payment and replay rehearsal in a batch of at most ten."
+      ]
+    },
+    {
+      "id": "b5fae1b3-b900-4670-85ef-76e3aa646734",
+      "name": "NLH Heads-Up 25 Turbo",
+      "variant": "sng",
+      "status": "REGISTERING",
+      "fieldSize": 2,
+      "allEntrantsHorses": true,
+      "pool": "47.5",
+      "paidPlaceAmount": "0",
+      "remainingPrizeEscrow": "47.5",
+      "positivePlayerCount": 1,
+      "liveSeatCount": 1,
+      "recordedPositivePlayers": [
+        {
+          "userId": "55ee6465-bdc1-4eb1-b7fd-7630ff315e04",
+          "chips": 600
+        }
+      ],
+      "acceptedObservationsMatchAllPlayerChips": true,
+      "acceptedFinishIdentityProven": true,
+      "nullEliminationSequences": 1,
+      "classification": "unpaid_finish_evidenced_pending_native_prerequisites",
+      "nativeBatchRehearsed": false,
+      "existingContractVersion": 1,
+      "payoutStructureSha256": "7127ad7292d90f5d08c2b48b090de0e3e15a7814243c25fcf05eb039d9584d32",
+      "eventEvidenceSha256": "b0e03fb83e3eb4d1d491353954be810906bcbc0687c517f0a264491ccea01c23",
+      "prerequisites": [
+        "Shared migration 20260911110000 first.",
+        "Prove compatibility for NULL historical sequences in the ordinary terminal door without status toggles.",
+        "Native PG17 final payment and replay rehearsal in a batch of at most ten."
+      ]
+    },
+    {
+      "id": "c2fd1c7e-9572-4b95-90dd-3b999777a145",
+      "name": "3 Chip Spin PLO6",
+      "variant": "spin",
+      "status": "REGISTERING",
+      "fieldSize": 3,
+      "allEntrantsHorses": true,
+      "pool": "6",
+      "paidPlaceAmount": "0",
+      "remainingPrizeEscrow": "6",
+      "positivePlayerCount": 1,
+      "liveSeatCount": 1,
+      "recordedPositivePlayers": [
+        {
+          "userId": "3fff352f-7e86-4449-8262-5fc50462195e",
+          "chips": 900
+        }
+      ],
+      "acceptedObservationsMatchAllPlayerChips": true,
+      "acceptedFinishIdentityProven": true,
+      "nullEliminationSequences": 2,
+      "classification": "unpaid_finish_evidenced_pending_native_prerequisites",
+      "nativeBatchRehearsed": false,
+      "existingContractVersion": 1,
+      "payoutStructureSha256": "7127ad7292d90f5d08c2b48b090de0e3e15a7814243c25fcf05eb039d9584d32",
+      "eventEvidenceSha256": "e0e09fb5046ca95ae89dad4e2aad65a7269b3c07f9b5d290f73d9811d471453d",
+      "prerequisites": [
+        "Shared migration 20260911110000 first.",
+        "Prove compatibility for NULL historical sequences in the ordinary terminal door without status toggles.",
+        "Native PG17 final payment and replay rehearsal in a batch of at most ten."
+      ]
+    },
+    {
+      "id": "482e90bb-ef9d-4135-9067-9f0332c94142",
+      "name": "2 Chip Spin NLH",
+      "variant": "spin",
+      "status": "REGISTERING",
+      "fieldSize": 3,
+      "allEntrantsHorses": true,
+      "pool": "4",
+      "paidPlaceAmount": "0",
+      "remainingPrizeEscrow": "4",
+      "positivePlayerCount": 1,
+      "liveSeatCount": 1,
+      "recordedPositivePlayers": [
+        {
+          "userId": "00000000-0000-0000-0000-000000000028",
+          "chips": 900
+        }
+      ],
+      "acceptedObservationsMatchAllPlayerChips": true,
+      "acceptedFinishIdentityProven": true,
+      "nullEliminationSequences": 2,
+      "classification": "unpaid_finish_evidenced_pending_native_prerequisites",
+      "nativeBatchRehearsed": false,
+      "existingContractVersion": 1,
+      "payoutStructureSha256": "7127ad7292d90f5d08c2b48b090de0e3e15a7814243c25fcf05eb039d9584d32",
+      "eventEvidenceSha256": "22cb8dddeeb694e22236e117410eb51e67addbd727781253bae9d104aa2ac404",
+      "prerequisites": [
+        "Shared migration 20260911110000 first.",
+        "Prove compatibility for NULL historical sequences in the ordinary terminal door without status toggles.",
+        "Native PG17 final payment and replay rehearsal in a batch of at most ten."
+      ]
+    },
+    {
+      "id": "ab4125bc-a85e-45c6-b0a7-22417d75c0c5",
+      "name": "NLH Heads-Up 2 Turbo",
+      "variant": "sng",
+      "status": "REGISTERING",
+      "fieldSize": 2,
+      "allEntrantsHorses": true,
+      "pool": "3.8",
+      "paidPlaceAmount": "0",
+      "remainingPrizeEscrow": "3.8",
+      "positivePlayerCount": 1,
+      "liveSeatCount": 1,
+      "recordedPositivePlayers": [
+        {
+          "userId": "127bff9a-8483-4018-80ac-21d7f76ce5c7",
+          "chips": 600
+        }
+      ],
+      "acceptedObservationsMatchAllPlayerChips": true,
+      "acceptedFinishIdentityProven": true,
+      "nullEliminationSequences": 1,
+      "classification": "unpaid_finish_evidenced_pending_native_prerequisites",
+      "nativeBatchRehearsed": false,
+      "existingContractVersion": 2,
+      "payoutStructureSha256": "7127ad7292d90f5d08c2b48b090de0e3e15a7814243c25fcf05eb039d9584d32",
+      "eventEvidenceSha256": "62a5c90159983d3140d678160297db10dbe313c7291c4c23bbe97eb1913b5e19",
+      "prerequisites": [
+        "Shared migration 20260911110000 first.",
+        "Prove compatibility for NULL historical sequences in the ordinary terminal door without status toggles.",
+        "Native PG17 final payment and replay rehearsal in a batch of at most ten."
+      ]
+    },
+    {
+      "id": "8c6a20c5-a422-4177-8b93-efa371d5c14d",
+      "name": "PLO4 Heads-Up 100",
+      "variant": "sng",
+      "status": "REGISTERING",
+      "fieldSize": 2,
+      "allEntrantsHorses": true,
+      "pool": "190",
+      "paidPlaceAmount": "0",
+      "remainingPrizeEscrow": "190",
+      "positivePlayerCount": 1,
+      "liveSeatCount": 1,
+      "recordedPositivePlayers": [
+        {
+          "userId": "00000000-0000-0000-0000-000000000012",
+          "chips": 2000
+        }
+      ],
+      "acceptedObservationsMatchAllPlayerChips": true,
+      "acceptedFinishIdentityProven": true,
+      "nullEliminationSequences": 1,
+      "classification": "unpaid_finish_evidenced_pending_native_prerequisites",
+      "nativeBatchRehearsed": false,
+      "existingContractVersion": 2,
+      "payoutStructureSha256": "7127ad7292d90f5d08c2b48b090de0e3e15a7814243c25fcf05eb039d9584d32",
+      "eventEvidenceSha256": "b97029f44701dfbde72ecb817fad550d23a481a879f25215e5bbd71e093ccbb0",
+      "prerequisites": [
+        "Shared migration 20260911110000 first.",
+        "Prove compatibility for NULL historical sequences in the ordinary terminal door without status toggles.",
+        "Native PG17 final payment and replay rehearsal in a batch of at most ten."
+      ]
+    },
+    {
+      "id": "7284506c-093c-491a-8da7-5816bf1ccccf",
+      "name": "2 Chip Spin PLO5",
+      "variant": "spin",
+      "status": "REGISTERING",
+      "fieldSize": 3,
+      "allEntrantsHorses": true,
+      "pool": "4",
+      "paidPlaceAmount": "0",
+      "remainingPrizeEscrow": "4",
+      "positivePlayerCount": 1,
+      "liveSeatCount": 1,
+      "recordedPositivePlayers": [
+        {
+          "userId": "3d85f161-27ce-45f4-b94b-1d42c62252af",
+          "chips": 900
+        }
+      ],
+      "acceptedObservationsMatchAllPlayerChips": true,
+      "acceptedFinishIdentityProven": true,
+      "nullEliminationSequences": 2,
+      "classification": "unpaid_finish_evidenced_pending_native_prerequisites",
+      "nativeBatchRehearsed": false,
+      "existingContractVersion": 1,
+      "payoutStructureSha256": "7127ad7292d90f5d08c2b48b090de0e3e15a7814243c25fcf05eb039d9584d32",
+      "eventEvidenceSha256": "a9be612a14dae8d265dcbb5f422d3eb0ed3ac982a739da590ecb1660dbc03b58",
+      "prerequisites": [
+        "Shared migration 20260911110000 first.",
+        "Prove compatibility for NULL historical sequences in the ordinary terminal door without status toggles.",
+        "Native PG17 final payment and replay rehearsal in a batch of at most ten."
+      ]
+    },
+    {
+      "id": "c59c8fe4-a6a8-41f5-b436-c9c55dc0f088",
+      "name": "1 Chip Spin PLO5",
+      "variant": "spin",
+      "status": "REGISTERING",
+      "fieldSize": 3,
+      "allEntrantsHorses": true,
+      "pool": "2",
+      "paidPlaceAmount": "0",
+      "remainingPrizeEscrow": "2",
+      "positivePlayerCount": 2,
+      "liveSeatCount": 2,
+      "recordedPositivePlayers": [
+        {
+          "userId": "ac254a0e-a02b-49be-993d-e89a5803a653",
+          "chips": 343
+        },
+        {
+          "userId": "3ebbefd2-c468-4853-8576-10104335b319",
+          "chips": 557
+        }
+      ],
+      "acceptedObservationsMatchAllPlayerChips": true,
+      "acceptedFinishIdentityProven": true,
+      "nullEliminationSequences": 1,
+      "classification": "unpaid_no_valid_finish_exact_refund_candidate",
+      "nativeBatchRehearsed": false,
+      "existingContractVersion": 2,
+      "payoutStructureSha256": "7127ad7292d90f5d08c2b48b090de0e3e15a7814243c25fcf05eb039d9584d32",
+      "eventEvidenceSha256": "1094ef72606381e33453ebe31b228bf75c20249515b41e7515c1c9d347e0495b",
+      "prerequisites": [
+        "Shared migration 20260911110000 first.",
+        "Rehearse exact entry refunds and terminal cancellation using real entry and reserve/fee receipts, in a batch of at most ten.",
+        "Do not invent a winner or equate advertised pool with entry refund amount."
+      ]
+    },
+    {
+      "id": "2aa4cba1-506f-426b-a1ba-d8e22e018533",
+      "name": "100 Chip Spin PLO4",
+      "variant": "spin",
+      "status": "REGISTERING",
+      "fieldSize": 3,
+      "allEntrantsHorses": true,
+      "pool": "200",
+      "paidPlaceAmount": "0",
+      "remainingPrizeEscrow": "200",
+      "positivePlayerCount": 1,
+      "liveSeatCount": 1,
+      "recordedPositivePlayers": [
+        {
+          "userId": "aef849b8-2906-4dc0-b108-251710e76d3c",
+          "chips": 900
+        }
+      ],
+      "acceptedObservationsMatchAllPlayerChips": true,
+      "acceptedFinishIdentityProven": true,
+      "nullEliminationSequences": 2,
+      "classification": "unpaid_finish_evidenced_pending_native_prerequisites",
+      "nativeBatchRehearsed": false,
+      "existingContractVersion": 2,
+      "payoutStructureSha256": "7127ad7292d90f5d08c2b48b090de0e3e15a7814243c25fcf05eb039d9584d32",
+      "eventEvidenceSha256": "fcedeb697aad436df028cc2bef1ada1e1a4d625cdd0eba859983a23675ad875e",
+      "prerequisites": [
+        "Shared migration 20260911110000 first.",
+        "Prove compatibility for NULL historical sequences in the ordinary terminal door without status toggles.",
+        "Native PG17 final payment and replay rehearsal in a batch of at most ten."
+      ]
+    },
+    {
+      "id": "00f57d7b-db16-4307-8e40-a47e24d4aa29",
+      "name": "NLH Heads-Up 20 Turbo",
+      "variant": "sng",
+      "status": "REGISTERING",
+      "fieldSize": 2,
+      "allEntrantsHorses": true,
+      "pool": "38",
+      "paidPlaceAmount": "0",
+      "remainingPrizeEscrow": "38",
+      "positivePlayerCount": 1,
+      "liveSeatCount": 1,
+      "recordedPositivePlayers": [
+        {
+          "userId": "46887b99-8cd6-45db-861c-ad24232efbfe",
+          "chips": 600
+        }
+      ],
+      "acceptedObservationsMatchAllPlayerChips": true,
+      "acceptedFinishIdentityProven": true,
+      "nullEliminationSequences": 1,
+      "classification": "unpaid_finish_evidenced_pending_native_prerequisites",
+      "nativeBatchRehearsed": false,
+      "existingContractVersion": 2,
+      "payoutStructureSha256": "7127ad7292d90f5d08c2b48b090de0e3e15a7814243c25fcf05eb039d9584d32",
+      "eventEvidenceSha256": "771b3808e25714df7fd33dfcf528bcd5eb1a83ac784a846260ece1bcbe00aff7",
+      "prerequisites": [
+        "Shared migration 20260911110000 first.",
+        "Prove compatibility for NULL historical sequences in the ordinary terminal door without status toggles.",
+        "Native PG17 final payment and replay rehearsal in a batch of at most ten."
+      ]
+    },
+    {
+      "id": "3843907b-dc12-40c3-9641-d2c66f4ebe7c",
+      "name": "NLH Heads-Up 50 Turbo",
+      "variant": "sng",
+      "status": "REGISTERING",
+      "fieldSize": 2,
+      "allEntrantsHorses": true,
+      "pool": "95",
+      "paidPlaceAmount": "0",
+      "remainingPrizeEscrow": "95",
+      "positivePlayerCount": 1,
+      "liveSeatCount": 1,
+      "recordedPositivePlayers": [
+        {
+          "userId": "57d5af45-0b1c-417c-bc41-64ca9fd1b4b9",
+          "chips": 600
+        }
+      ],
+      "acceptedObservationsMatchAllPlayerChips": true,
+      "acceptedFinishIdentityProven": true,
+      "nullEliminationSequences": 1,
+      "classification": "unpaid_finish_evidenced_pending_native_prerequisites",
+      "nativeBatchRehearsed": false,
+      "existingContractVersion": 2,
+      "payoutStructureSha256": "7127ad7292d90f5d08c2b48b090de0e3e15a7814243c25fcf05eb039d9584d32",
+      "eventEvidenceSha256": "82424f2aa1f445d4cce7229c6c1def30e316ae5986580a4d42c8de699a8c618a",
+      "prerequisites": [
+        "Shared migration 20260911110000 first.",
+        "Prove compatibility for NULL historical sequences in the ordinary terminal door without status toggles.",
+        "Native PG17 final payment and replay rehearsal in a batch of at most ten."
+      ]
+    },
+    {
+      "id": "b3b65e07-6b3a-4b6c-b5d1-aeb5af17fa99",
+      "name": "10 Chip Spin NLH",
+      "variant": "spin",
+      "status": "REGISTERING",
+      "fieldSize": 3,
+      "allEntrantsHorses": true,
+      "pool": "20",
+      "paidPlaceAmount": "0",
+      "remainingPrizeEscrow": "20",
+      "positivePlayerCount": 1,
+      "liveSeatCount": 1,
+      "recordedPositivePlayers": [
+        {
+          "userId": "62f0d4da-b736-4629-ad14-894e432d0f04",
+          "chips": 900
+        }
+      ],
+      "acceptedObservationsMatchAllPlayerChips": true,
+      "acceptedFinishIdentityProven": true,
+      "nullEliminationSequences": 2,
+      "classification": "unpaid_finish_evidenced_pending_native_prerequisites",
+      "nativeBatchRehearsed": false,
+      "existingContractVersion": 2,
+      "payoutStructureSha256": "7127ad7292d90f5d08c2b48b090de0e3e15a7814243c25fcf05eb039d9584d32",
+      "eventEvidenceSha256": "838fa44abaffbe7b77b057eb9c2fc3437e24a02ba22a347a97f4f79ef5c5887a",
+      "prerequisites": [
+        "Shared migration 20260911110000 first.",
+        "Prove compatibility for NULL historical sequences in the ordinary terminal door without status toggles.",
+        "Native PG17 final payment and replay rehearsal in a batch of at most ten."
+      ]
+    },
+    {
+      "id": "20c75b67-7f78-4b29-b7df-9594faf62af0",
+      "name": "DSS Tuesday $22 NLH Deepstack \u2022 2 PM CT Satellite Heads-Up",
+      "variant": "sng",
+      "status": "REGISTERING",
+      "fieldSize": 2,
+      "allEntrantsHorses": true,
+      "pool": "28.5",
+      "paidPlaceAmount": "0",
+      "remainingPrizeEscrow": "28.5",
+      "positivePlayerCount": 1,
+      "liveSeatCount": 1,
+      "recordedPositivePlayers": [
+        {
+          "userId": "6b3f4393-3ccb-491d-bce2-361b3385defe",
+          "chips": 600
+        }
+      ],
+      "acceptedObservationsMatchAllPlayerChips": true,
+      "acceptedFinishIdentityProven": true,
+      "nullEliminationSequences": 1,
+      "classification": "unpaid_finish_evidenced_pending_native_prerequisites",
+      "nativeBatchRehearsed": false,
+      "existingContractVersion": 2,
+      "payoutStructureSha256": "7127ad7292d90f5d08c2b48b090de0e3e15a7814243c25fcf05eb039d9584d32",
+      "eventEvidenceSha256": "efb8ed05da695bef3fe8d3b992c637d8db78a5f237762a001f1da97540797923",
+      "prerequisites": [
+        "Shared migration 20260911110000 first.",
+        "Prove compatibility for NULL historical sequences in the ordinary terminal door without status toggles.",
+        "Native PG17 final payment and replay rehearsal in a batch of at most ten."
+      ]
+    },
+    {
+      "id": "e62a97cc-40a8-4d70-a89d-04ca4cc20834",
+      "name": "NLH Heads-Up 100 Turbo",
+      "variant": "sng",
+      "status": "REGISTERING",
+      "fieldSize": 2,
+      "allEntrantsHorses": true,
+      "pool": "190",
+      "paidPlaceAmount": "0",
+      "remainingPrizeEscrow": "190",
+      "positivePlayerCount": 1,
+      "liveSeatCount": 1,
+      "recordedPositivePlayers": [
+        {
+          "userId": "a74c2c28-c2dd-4ad0-b18f-2687eba73dba",
+          "chips": 600
+        }
+      ],
+      "acceptedObservationsMatchAllPlayerChips": true,
+      "acceptedFinishIdentityProven": true,
+      "nullEliminationSequences": 1,
+      "classification": "unpaid_finish_evidenced_pending_native_prerequisites",
+      "nativeBatchRehearsed": false,
+      "existingContractVersion": 2,
+      "payoutStructureSha256": "7127ad7292d90f5d08c2b48b090de0e3e15a7814243c25fcf05eb039d9584d32",
+      "eventEvidenceSha256": "9851689e62c94a8d337f6c683077df95dca7478f2928e8c225bd0abb54bcc13c",
+      "prerequisites": [
+        "Shared migration 20260911110000 first.",
+        "Prove compatibility for NULL historical sequences in the ordinary terminal door without status toggles.",
+        "Native PG17 final payment and replay rehearsal in a batch of at most ten."
+      ]
+    }
+  ]
+}

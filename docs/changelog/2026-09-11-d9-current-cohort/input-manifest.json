@@ -1,0 +1,22 @@
+{
+  "captureDate": "2026-09-11",
+  "sourceCommit": "5a550b6343f613a7134011b41d69cdad613642f7",
+  "projectId": "kuklfnapbkmacvwxktbh",
+  "mode": "read-only classification; not a native execution receipt",
+  "currentCohortPredicate": "status='REGISTERING' AND start_time >= '2026-09-08 00:00:00+00' AND start_time < '2026-09-09 00:00:00+00'",
+  "historicalCountIsNotAnExecutionTarget": 79,
+  "sha256": {
+    "live-witness-batch-3.json": "1e9632d709861595aee7f349486204071afd4494fa5afdbe9221631fa28b734d",
+    "live-batch-3.json": "fb39d2472ac54f878fcf91bce4bdbaaec5ce55f9f92b5b1f0e269f2f9aa02179",
+    "live-batch-2.json": "e1a743ace1db0a30764e8bae478d381183d818bb09745970ade0ed5fc81e74a9",
+    "live-witness-batch-2.json": "51a663deb15acbfa949a5e2dff4d90d02cd2e5baf0e38b77c9fa5dfb3ee53e7f",
+    "live-candidate-events.json": "70cc2111f77d2577605469b3f8a1ff29b858b929f0d4b6a802a4fd5393d37384",
+    "live-witness-batch-4.json": "9c2141dcf367f95a9784c397dc16524ac310cc0fd488fbecd6a401cb539e0925",
+    "live-f370585d-paid-support.json": "98442bcaa33cff86b7d47bac8964f4dab2645a7813b4edba915f01b4da53316f",
+    "live-batch-4.json": "4921a06cc036cadd802d988243e7ca691cde8044b13112d4453ef26faa003c4d",
+    "live-witness-batch-1.json": "1d75c88ea01c4a3143ac8616db4742f25c888318ae27b6768e375ff5dcb06fa2",
+    "live-batch-1.json": "81d3a527eaca7f82ea2b2d3441ea57f9a23936f32d0720dfba5387b7584394de",
+    "live-sequence-doors.json": "de54833d9310b65930b9d90cfeff649ee2dbfb20ae30c9d6abb7c5f9171054b2",
+    "classify.py": "64293ced546f7267779b034eebeb04bde0aeb6b8f781717bdcac9c28d819673e"
+  }
+}

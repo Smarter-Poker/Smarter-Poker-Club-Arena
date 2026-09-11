@@ -1,0 +1,18 @@
+[Unit]
+Description=Club Arena controller owned upgrade %i
+After=network-online.target
+StartLimitIntervalSec=900
+StartLimitBurst=3
+
+[Service]
+Type=oneshot
+User=root
+UMask=0077
+EnvironmentFile=/etc/club-arena-release-controller/journal.env
+ExecStart=/usr/bin/python3 /usr/local/lib/club-arena-release-controller/install-controller.py --intent /var/lib/club-arena-release-controller-upgrades/%i.json
+TimeoutStartSec=180
+KillMode=control-group
+Restart=on-failure
+RestartSec=10
+# One existing native manager owns the transient upgrade. This is not a second
+# release coordinator; the journal active release remains held throughout.

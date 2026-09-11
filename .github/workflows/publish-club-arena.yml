@@ -31,6 +31,13 @@
 # re-proposed, never hidden by a timer, retry watcher, or alternate publisher.
 # ─────────────────────────────────────────────────────────────────────────────
 name: Publish Club Arena
+run-name: ${{ github.event.client_payload.release_operation_id && format('release:{0}:STATIC', github.event.client_payload.release_operation_id) || format('Publish Club Arena {0}', github.sha) }}
+
+env:
+  RELEASE_STATIC_REQUEST: ${{ github.event.client_payload.release_request && toJSON(github.event.client_payload.release_request) || '' }}
+  RELEASE_STATIC_BUILD_OPERATION: ${{ github.event.client_payload.release_operation_id || '' }}
+  RELEASE_STATIC_AUTHORITY_URL: ${{ vars.RELEASE_STATIC_AUTHORITY_URL }}
+  RELEASE_STATIC_INGRESS_RECEIPT: ${{ vars.RELEASE_STATIC_INGRESS_RECEIPT }}
 
 on:
   push:
@@ -273,14 +280,78 @@ jobs:
       - name: Client tests must pass before the bundle ships (shard ${{ matrix.shard }}/4)
         run: npx vitest run tests/ --shard=${{ matrix.shard }}/4
 
-  build-and-store:
+  frontend-identity:
     needs: publish-needed
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      retained: ${{ steps.proof.outputs.retained || 'false' }}
+    env:
+      ORIGIN_HOST: ${{ secrets.CA_ORIGIN_HOST }}
+    steps:
+      - name: Checkout the exact frontend proof control
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          path: control
+          persist-credentials: false
+      - name: Checkout the separate frontend classification target
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.publish-needed.outputs.target_sha }}
+          path: source
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Classify only reviewed non-frontend controls
+        id: classify
+        run: node control/scripts/ci/prove-retained-frontend.mjs classify source '${{ needs.publish-needed.outputs.target_sha }}' frontend-proof
+      - name: Install the read-only origin proof key
+        if: steps.classify.outputs.eligible == 'true'
+        env:
+          KEY: ${{ secrets.CA_ORIGIN_SSH_KEY }}
+          HOST_KEY: ${{ secrets.CA_ORIGIN_HOST_KEY }}
+        run: |
+          set -euo pipefail
+          [[ "$ORIGIN_HOST" =~ ^[A-Za-z0-9.-]+$ ]]
+          [ -n "$KEY" ] && [ -n "$HOST_KEY" ]
+          umask 077
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/ca_origin
+          printf '%s\n' "$HOST_KEY" > ~/.ssh/ca_origin_known_hosts
+          ssh-keygen -y -f ~/.ssh/ca_origin >/dev/null
+          ssh-keygen -l -f ~/.ssh/ca_origin_known_hosts >/dev/null
+      - name: Prove the existing immutable frontend artifact
+        id: proof
+        if: steps.classify.outputs.eligible == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node control/scripts/ci/prove-retained-frontend.mjs preview source '${{ needs.publish-needed.outputs.target_sha }}' frontend-proof
+      - name: Preserve the exact frontend retention preview
+        if: steps.proof.outputs.retained == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-retention-${{ github.run_id }}-${{ github.run_attempt }}
+          path: frontend-proof/
+          retention-days: 7
+          if-no-files-found: error
+
+  build-and-store:
+    needs: [publish-needed, frontend-identity]
+    if: needs.frontend-identity.outputs.retained != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
       # read is enough now: this job uploads an artifact instead of pushing a
       # branch, so it no longer writes to the repository at all.
       contents: read
+      actions: read
     env:
       HUSKY: '0'
 
@@ -486,6 +557,7 @@ jobs:
       # up when the run succeeds (nine were still lying around), and the
       # GITHUB_TOKEN write permission this job needed purely to create them.
       - name: Upload dist for the sync job
+        id: static_dist
         uses: actions/upload-artifact@v4
         with:
           name: club-arena-dist-${{ needs.publish-needed.outputs.target_sha }}
@@ -518,6 +590,22 @@ jobs:
           echo "### Build Complete" >> $GITHUB_STEP_SUMMARY
           echo "dist uploaded as artifact \`club-arena-dist-${{ needs.publish-needed.outputs.target_sha }}\`" >> $GITHUB_STEP_SUMMARY
           echo "Proceeding to publish to the origin..." >> $GITHUB_STEP_SUMMARY
+
+      - name: Seal the prepared static artifact for the journal
+        if: env.RELEASE_STATIC_BUILD_OPERATION != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STATIC_DIST_ARTIFACT_ID: ${{ steps.static_dist.outputs.artifact-id }}
+        run: node scripts/ci/static-publication-journal.mjs build
+
+      - name: Upload the exact static build receipt
+        if: env.RELEASE_STATIC_BUILD_OPERATION != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: release-build-${{ env.RELEASE_STATIC_BUILD_OPERATION }}
+          path: ${{ runner.temp }}/release-static/receipt.json
+          if-no-files-found: error
+          retention-days: 7
 
   # ═══════════════════════════════════════════════════════════════════════════
   #  THE APP (store readiness, phase 6): the same merge reaches installed
@@ -647,7 +735,7 @@ jobs:
     # and activated under one host lock only if `current` still names the SHA
     # observed by the ancestry check. The final symlink rename is the last
     # mutation, so a crash cannot expose a partial release.
-    needs: [publish-needed, build-and-store, client-tests]
+    needs: [publish-needed, frontend-identity, build-and-store, client-tests]
     # MUST be always() with explicit results.
     #
     # `client-tests` is now skipped when the target TREE already passed the same
@@ -661,18 +749,25 @@ jobs:
     # unnecessary. A client-tests FAILURE still stops the publish.
     if: >-
       always() &&
-      needs.build-and-store.result == 'success' &&
+      needs.publish-needed.result == 'success' &&
+      needs.frontend-identity.result == 'success' &&
+      (needs.build-and-store.result == 'success' ||
+       (needs.build-and-store.result == 'skipped' &&
+        needs.frontend-identity.outputs.retained == 'true')) &&
       (needs.client-tests.result == 'success' ||
        (needs.client-tests.result == 'skipped' &&
         needs.publish-needed.outputs.tests_proven == 'true'))
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    # Controlled publication waits for the same operation's staged semantic
+    # matrix and engine cutover. Ordinary publisher timing stays unchanged.
+    timeout-minutes: ${{ github.event.client_payload.release_operation_id && 145 || 25 }}
     permissions:
       contents: read
       actions: read
+      id-token: write
     outputs:
       verdict: ${{ steps.verdict.outputs.verdict }}
-      verified_sha: ${{ steps.verified.outputs.sha }}
+      verified_sha: ${{ steps.verified.outputs.sha || steps.retained.outputs.sha }}
     env:
       ORIGIN_HOST: ${{ secrets.CA_ORIGIN_HOST }}
       ORIGIN_USER: ci
@@ -686,10 +781,11 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ needs.publish-needed.outputs.target_sha }}
-          fetch-depth: 1
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Download the dist built by the previous job
+        if: needs.frontend-identity.outputs.retained != 'true'
         uses: actions/download-artifact@v4
         with:
           name: club-arena-dist-${{ needs.publish-needed.outputs.target_sha }}
@@ -712,7 +808,46 @@ jobs:
           timeout 5s ssh-keygen -y -f ~/.ssh/ca_origin >/dev/null
           ssh-keygen -l -f ~/.ssh/ca_origin_known_hosts >/dev/null
 
+      - name: Checkout the exact retained frontend proof control
+        if: needs.frontend-identity.outputs.retained == 'true'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          path: control
+          persist-credentials: false
+
+      - name: Download the exact frontend retention preview
+        if: needs.frontend-identity.outputs.retained == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-retention-${{ github.run_id }}-${{ github.run_attempt }}
+          path: frontend-proof
+
+      - name: Recheck the unchanged immutable frontend artifact
+        id: retained
+        if: needs.frontend-identity.outputs.retained == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node control/scripts/ci/prove-retained-frontend.mjs recheck . '${{ needs.publish-needed.outputs.target_sha }}' frontend-proof
+
+      - name: Preserve the final frontend retention receipt
+        if: steps.retained.outputs.retained == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-retention-final-${{ github.run_id }}-${{ github.run_attempt }}
+          path: frontend-proof/final.json
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Wait for the exact journal publication grant
+        id: static_authority
+        if: env.RELEASE_STATIC_BUILD_OPERATION != '' && needs.frontend-identity.outputs.retained != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/ci/static-publication-journal.mjs wait
+
       - name: Stand down if the origin already serves a newer bundle
+        if: needs.frontend-identity.outputs.retained != 'true'
         id: verdict
         env:
           GH_TOKEN: ${{ github.token }}
@@ -1284,6 +1419,21 @@ jobs:
           done
           echo "::error::origin serves '$LIVE_ORIGIN' and player route serves '$LIVE_PUBLIC'; wanted $SHA"
           exit 1
+
+      - name: Seal the exact controlled native publication
+        if: success() && env.RELEASE_STATIC_BUILD_OPERATION != '' && steps.verified.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/ci/static-publication-journal.mjs publish
+
+      - name: Upload the controlled native publication receipt
+        if: success() && env.RELEASE_STATIC_BUILD_OPERATION != '' && steps.verified.outcome == 'success'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: release-publication-${{ steps.static_authority.outputs.operation_id }}
+          path: ${{ runner.temp }}/release-static/receipt.json
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Restore the previously verified release after any publish failure
         if: failure() && steps.verdict.outputs.verdict == 'publish'

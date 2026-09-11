@@ -1,5 +1,5 @@
 name: Post-Deploy E2E (production)
-run-name: Post-Deploy E2E ${{ github.event.client_payload.engine_sha || github.sha }}
+run-name: ${{ inputs.cleanup_recovery_id && format('release:{0}:CLEANUP', inputs.cleanup_recovery_id) || github.event_name == 'workflow_dispatch' && format('release:{0}:CERTIFY', inputs.operation_id) || format('Post-Deploy E2E {0}', github.event.client_payload.engine_sha || github.sha) }}
 
 # ─────────────────────────────────────────────────────────────────────────────
 # THE TIER THAT DID NOT EXIST (Dan 2026-08-29)
@@ -34,6 +34,18 @@ run-name: Post-Deploy E2E ${{ github.event.client_payload.engine_sha || github.s
 # ─────────────────────────────────────────────────────────────────────────────
 
 on:
+  workflow_dispatch:
+    inputs:
+      operation_id:
+        required: true
+        type: string
+      request:
+        required: true
+        type: string
+      cleanup_recovery_id:
+        description: 'Private journal cleanup-only recovery; never runs browser suites or creates fixtures'
+        required: false
+        type: string
   workflow_run:
     # This is the publisher's `name:`, not its filename. #2676 deleted
     # build-for-world-hub.yml (name 'Build for World Hub Sync') and repointed
@@ -50,6 +62,7 @@ on:
 
 jobs:
   publication-gate:
+    if: ${{ !inputs.cleanup_recovery_id }}
     name: Confirm The Hetzner Web Publish Reached Production
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -69,10 +82,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           EVENT_NAME: ${{ github.event_name }}
           SOURCE_RUN_ID: ${{ github.event.workflow_run.id || '' }}
-          ENGINE_TRIGGER_SHA: ${{ github.event.client_payload.engine_sha || '' }}
+          ENGINE_TRIGGER_SHA: ${{ fromJSON(inputs.request || '{}').component_tuple.club-arena-engine.source_sha || fromJSON(inputs.request || '{}').source_sha || github.event.client_payload.engine_sha || '' }}
         run: |
           set -euo pipefail
-          if [ "$EVENT_NAME" = repository_dispatch ]; then
+          if [ "$EVENT_NAME" = repository_dispatch ] || [ "$EVENT_NAME" = workflow_dispatch ]; then
             [[ "$ENGINE_TRIGGER_SHA" =~ ^[0-9a-f]{40}$ ]] \
               || { echo '::error::An engine-triggered production certificate requires one full lowercase engine SHA.'; exit 1; }
             echo "engine_trigger_sha=$ENGINE_TRIGGER_SHA" >> "$GITHUB_OUTPUT"
@@ -112,6 +125,9 @@ jobs:
           const proofs = (origin.steps ?? []).filter(
             (entry) => entry?.name === 'Verify the origin serves this bundle'
           );
+          const retained = (origin.steps ?? []).filter(
+            (entry) => entry?.name === 'Recheck the unchanged immutable frontend artifact'
+          );
           if (verdicts.length !== 1 || publishes.length !== 1 || proofs.length !== 1) {
             throw new Error('The origin job is missing one of its release-verdict steps.');
           }
@@ -128,7 +144,14 @@ jobs:
             publishes[0].conclusion === 'skipped' &&
             proofs[0].status === 'completed' &&
             proofs[0].conclusion === 'skipped';
-          if (!originSucceeded || (!publishProved && !safeStanddown)) {
+          const retentionProved =
+            retained.length === 1 &&
+            retained[0].status === 'completed' &&
+            retained[0].conclusion === 'success' &&
+            verdicts[0].conclusion === 'skipped' &&
+            publishes[0].conclusion === 'skipped' &&
+            proofs[0].conclusion === 'skipped';
+          if (!originSucceeded || (!publishProved && !safeStanddown && !retentionProved)) {
             throw new Error(
               'The source run neither proved a Hetzner web publish nor completed a safe forward stand-down.'
             );
@@ -138,11 +161,20 @@ jobs:
 
   production-e2e:
     needs: publication-gate
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    env:
+      RELEASE_CERTIFICATE_REQUEST: ${{ github.event_name == 'workflow_dispatch' && inputs.request || '' }}
+      RELEASE_CERTIFICATE_OPERATION: ${{ github.event_name == 'workflow_dispatch' && inputs.operation_id || '' }}
+      RELEASE_CERTIFICATION_AUTHORITY_URL: ${{ vars.RELEASE_CERTIFICATION_AUTHORITY_URL }}
+      RELEASE_CERTIFICATION_INGRESS_RECEIPT: ${{ vars.RELEASE_CERTIFICATION_INGRESS_RECEIPT }}
     # A verified publish and a safe forward stand-down both certify the live
     # player route. A failed/skipped origin job makes the gate red, never green
     # without executing the browser suite. Optional downstream failures cannot
     # hide a successful web release.
-    if: needs.publication-gate.outputs.should_run == 'true'
+    if: ${{ !inputs.cleanup_recovery_id && needs.publication-gate.outputs.should_run == 'true' }}
     name: Specs that need a real deployed page
     # This trusted workflow can receive production database credentials. Run it
     # on a fresh hosted image, never on a persistent runner that has executed
@@ -166,7 +198,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           # The step below may need to resolve the sha production is actually
           # serving, which is usually an ancestor of this run's commit and is
@@ -179,6 +211,14 @@ jobs:
           ENGINE_TRIGGER_SHA: ${{ needs.publication-gate.outputs.engine_trigger_sha }}
         run: |
           set -euo pipefail
+          if [ -n "$RELEASE_CERTIFICATE_REQUEST" ] && \
+            node -e 'process.exit(JSON.parse(process.env.RELEASE_CERTIFICATE_REQUEST).certificate_version === 2 ? 0 : 1)'; then
+            ENGINE_SHA="$(node -e 'const r=JSON.parse(process.env.RELEASE_CERTIFICATE_REQUEST); if(r.control_sha!==process.env.GITHUB_SHA)throw Error("control mismatch");process.stdout.write(r.component_tuple["club-arena-engine"].source_sha)')"
+            [[ "$ENGINE_SHA" =~ ^[0-9a-f]{40}$ ]]
+            [ "$ENGINE_TRIGGER_SHA" = "$ENGINE_SHA" ]
+            echo "sha=$ENGINE_SHA" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           git fetch --no-tags origin '+refs/heads/main:refs/remotes/origin/main'
           MAIN_SHA="$(git rev-parse --verify 'origin/main^{commit}')"
           ENGINE_SHA="$(git log "$MAIN_SHA" -1 --format=%H -- \
@@ -193,7 +233,7 @@ jobs:
           echo "Exact protected-main engine component: \`$ENGINE_SHA\`" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Setup Node 20
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 20
           cache: npm
@@ -251,6 +291,13 @@ jobs:
           echo "ready=false" >> "$GITHUB_OUTPUT"
           echo "::error::production did not serve one valid full build-info.json SHA."
           exit 1
+
+      - name: Bind the controlled certificate to the exact served components
+        if: github.event_name == 'workflow_dispatch' && steps.live.outputs.ready == 'true'
+        env:
+          RELEASE_CERTIFICATE_REQUEST: ${{ inputs.request }}
+          RELEASE_CERTIFICATE_OPERATION: ${{ inputs.operation_id }}
+        run: node operations/release/certificate-proof.mjs start "$RUNNER_TEMP/release-certificate"
 
       # ───────────────────────────────────────────────────────────────────
       # THE SPECS AND THE BUNDLE MUST COME FROM THE SAME COMMIT.
@@ -549,6 +596,7 @@ jobs:
       # on a red run too - a run can be BOTH failed and dishonest, and the
       # second fact is the one nobody was being told.
       - name: Did the suite actually verify production?
+        id: certificate_honesty
         if: always() && steps.live.outputs.ready == 'true'
         run: >-
           node scripts/ci/assert-e2e-actually-ran.mjs
@@ -565,6 +613,7 @@ jobs:
           e2e-report/sweep.json
 
       - name: Hard-delete the isolated production E2E account
+        id: certificate_cleanup
         if: always() && steps.live.outputs.ready == 'true'
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -579,6 +628,7 @@ jobs:
       # changed or unreadable final document is a non-verdict, not eventual
       # success for the release this run claims to have tested.
       - name: Prove production stayed on one exact release during certification
+        id: certificate_unchanged
         if: always() && steps.live.outputs.ready == 'true'
         env:
           EXPECTED_LIVE_SHA: ${{ steps.live.outputs.sha }}
@@ -592,13 +642,33 @@ jobs:
           [ "$FINAL_SHA" = "$EXPECTED_LIVE_SHA" ]
           echo "Production stayed on \`$FINAL_SHA\` for the complete browser certificate." >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Preserve the exact controlled terminal certificate
+        if: always() && github.event_name == 'workflow_dispatch' && steps.live.outputs.ready == 'true'
+        env:
+          RELEASE_CERTIFICATE_REQUEST: ${{ inputs.request }}
+          RELEASE_CERTIFICATE_OPERATION: ${{ inputs.operation_id }}
+          CERTIFICATE_JOB_STATUS: ${{ job.status }}
+          CERTIFICATE_CLEANUP: ${{ steps.certificate_cleanup.outcome }}
+          CERTIFICATE_HONESTY: ${{ steps.certificate_honesty.outcome }}
+          CERTIFICATE_UNCHANGED: ${{ steps.certificate_unchanged.outcome }}
+        run: node operations/release/certificate-proof.mjs finish "$RUNNER_TEMP/release-certificate"
+
+      - name: Upload the immutable controlled certificate
+        if: always() && github.event_name == 'workflow_dispatch' && steps.live.outputs.ready == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: release-receipt-${{ inputs.operation_id }}
+          path: ${{ runner.temp }}/release-certificate/receipt.json
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Upload the report when something is wrong on production
         # `failure()` is false when GitHub cancels a job at its time limit. The
         # old condition therefore discarded the only report from exactly the
         # run that exposed the obsolete timeout. Preserve evidence for both
         # kinds of non-verdict, while still skipping uploads on a clean run.
         if: always() && (failure() || cancelled())
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: post-deploy-playwright-report
           path: |
@@ -606,3 +676,45 @@ jobs:
             test-results/
             e2e-report/
           retention-days: 3 # 2026-09-01 cost audit: reports are read same-day or never
+
+  cleanup-recovery:
+    if: github.event_name == 'workflow_dispatch' && inputs.cleanup_recovery_id != ''
+    name: Reconcile only the original certificate's reserved fixtures
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    concurrency:
+      group: post-deploy-e2e-production
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    env:
+      RELEASE_CERTIFICATE_REQUEST: ${{ inputs.request }}
+      RELEASE_CERTIFICATE_OPERATION: ${{ inputs.operation_id }}
+      RELEASE_CLEANUP_RECOVERY: ${{ inputs.cleanup_recovery_id }}
+      RELEASE_CERTIFICATION_AUTHORITY_URL: ${{ vars.RELEASE_CERTIFICATION_AUTHORITY_URL }}
+      RELEASE_CERTIFICATION_INGRESS_RECEIPT: ${{ vars.RELEASE_CERTIFICATION_INGRESS_RECEIPT }}
+    steps:
+      - name: Checkout the trusted exact control source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Set up Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 20
+      - name: Reconcile the exact journaled roster through existing guarded cleanup
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: node --input-type=module -e 'import {cleanupCertificateFixtures} from "./operations/release/fixture-cleanup.mjs"; await cleanupCertificateFixtures();'
+      - name: Preserve cleanup evidence without converting the original certificate
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: release-cleanup-${{ inputs.cleanup_recovery_id }}
+          path: ${{ runner.temp }}/release-certificate/cleanup.json
+          if-no-files-found: error
+          retention-days: 7

@@ -1,0 +1,34 @@
+[Unit]
+Description=Club Arena global release controller
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=3
+
+[Service]
+Type=simple
+# Bind this existing account during installation; never create an identity here.
+User=@EXISTING_SERVICE_USER@
+Group=@EXISTING_SERVICE_GROUP@
+EnvironmentFile=/etc/club-arena-release-controller/journal.env
+# Credential files are provisioned independently; no values enter the bundle.
+# LoadCredential=vercel_token:/existing/approved/credential/reference
+WorkingDirectory=/opt/club-arena-release-controller/current
+StateDirectory=club-arena-release-controller
+StateDirectoryMode=0700
+UMask=0077
+ExecStart=/usr/bin/flock --exclusive --nonblock --no-fork /var/lib/club-arena-release-controller/controller.lock /usr/bin/node /opt/club-arena-release-controller/current/controller.mjs /etc/club-arena-release-controller/controller.json
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=90
+KillMode=control-group
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+ReadWritePaths=/var/lib/club-arena-release-controller
+
+[Install]
+WantedBy=multi-user.target

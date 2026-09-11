@@ -5,6 +5,12 @@ import { appendFileSync, existsSync, readFileSync, unlinkSync, writeFileSync } f
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { supabaseServerHeaders } from './supabase-auth-headers.mjs';
+import {
+  controlledCertificate,
+  consumeFixture,
+  recordFixtureCreated,
+} from '../../operations/release/certification-client.mjs';
+import { cleanupCertificateFixtures } from '../../operations/release/fixture-cleanup.mjs';
 
 const ACCOUNT_PREFIX = 'ca-customization-cert-postdeploy-';
 const ACCOUNT_SUFFIX = '@example.invalid';
@@ -309,9 +315,11 @@ export async function createProductionE2EAccount({
 } = {}) {
   const configuration = requireEnvironment(environment);
   if (!environment.GITHUB_ENV) throw new Error('GITHUB_ENV is required to share the account.');
-  await cleanupStaleProductionE2EAccounts({ environment, fetchImpl });
+  const controlled = controlledCertificate(environment);
+  if (!controlled) await cleanupStaleProductionE2EAccounts({ environment, fetchImpl });
+  const reservedIdentity = controlled ? await consumeFixture('postdeploy', { environment }) : null;
   const suffix = `${Date.now()}-${randomUUID()}`;
-  const email = `${ACCOUNT_PREFIX}${suffix}${ACCOUNT_SUFFIX}`;
+  const email = reservedIdentity?.email ?? `${ACCOUNT_PREFIX}${suffix}${ACCOUNT_SUFFIX}`;
   const password = `Ca!${randomUUID()}aA7`;
   const alias = `PostDeploy${suffix.slice(-8)}`;
   let account;
@@ -323,6 +331,7 @@ export async function createProductionE2EAccount({
       {
         method: 'POST',
         body: JSON.stringify({
+          ...(reservedIdentity ? { id: reservedIdentity.user_id } : {}),
           email,
           password,
           email_confirm: true,
@@ -338,7 +347,10 @@ export async function createProductionE2EAccount({
     );
     const id = String(created?.id || created?.user?.id || '');
     if (!id) throw new Error('Supabase Auth created no user id for the post-deploy account.');
+    if (reservedIdentity && id !== reservedIdentity.user_id)
+      throw new Error('Reserved fixture identity mismatch.');
     account = { id, email, password, createdAt: new Date().toISOString() };
+    if (reservedIdentity) await recordFixtureCreated('postdeploy', id, { environment });
     await waitForProfile(configuration, id, fetchImpl, wait);
     await normalizeProfile(configuration, id, fetchImpl);
 
@@ -370,7 +382,8 @@ async function main() {
   const command = process.argv[2];
   if (command === 'create') return createProductionE2EAccount();
   if (command === 'prepare-staff') return prepareProductionE2EStaffMembership();
-  if (command === 'cleanup') return cleanupProductionE2EAccount();
+  if (command === 'cleanup')
+    return controlledCertificate() ? cleanupCertificateFixtures() : cleanupProductionE2EAccount();
   throw new Error('Usage: production-e2e-account.mjs <create|prepare-staff|cleanup>');
 }
 

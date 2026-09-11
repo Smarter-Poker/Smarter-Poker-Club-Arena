@@ -78,6 +78,10 @@ jobs:
     timeout-minutes: 210
     permissions:
       contents: read
+    outputs:
+      release_result: ${{ steps.release.outputs.result || 'not completed' }}
+      verified: ${{ steps.verify.outputs.verified || 'false' }}
+      shipped: ${{ (steps.release.outputs.result == 'sealed' || steps.release.outputs.result == 'already-released') && steps.verify.outputs.verified == 'true' }}
     env:
       HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
       SSH_USER: root
@@ -421,50 +425,6 @@ jobs:
           [ "$PUBLIC_INSTANCE" = "$LOCAL_INSTANCE" ]
           echo 'verified=true' >> "$GITHUB_OUTPUT"
 
-      - name: Record append-only deployment receipt
-        if: always()
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          TARGET_SHA: ${{ needs.preflight.outputs.target_sha }}
-          SHIPPED: ${{ (steps.release.outputs.result == 'sealed' || steps.release.outputs.result == 'already-released') && steps.verify.outputs.verified == 'true' }}
-          RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
-          RUN_ACTOR: ${{ github.actor }}
-          STRICT_RECEIPT: '1'
-          REASON: ${{ steps.release.outputs.result == 'already-released' && 'production already proved this exact release' || steps.verify.outputs.verified == 'true' && 'Hetzner transaction sealed and independently verified' || 'release ended without complete production proof' }}
-        run: |
-          set -euo pipefail
-          RECEIPT_REMAINING=$((RELEASE_RECEIPT_DEADLINE_EPOCH - $(date +%s)))
-          [ "$RECEIPT_REMAINING" -ge 90 ] \
-            || { echo '::error::strict deployment receipt cannot run inside its absolute budget'; exit 70; }
-          # Dependency setup may use at most two minutes and must leave at
-          # least one minute for the strict append-only database write.
-          INSTALL_TIMEOUT=$((RECEIPT_REMAINING - 65))
-          [ "$INSTALL_TIMEOUT" -le 120 ] || INSTALL_TIMEOUT=120
-          timeout --signal=TERM --kill-after=5s "${INSTALL_TIMEOUT}s" \
-            npm install pg@8 --no-save --ignore-scripts --no-audit --no-fund >/dev/null 2>&1
-          RECEIPT_REMAINING=$((RELEASE_RECEIPT_DEADLINE_EPOCH - $(date +%s)))
-          [ "$RECEIPT_REMAINING" -gt 5 ] \
-            || { echo '::error::strict deployment receipt exhausted its absolute budget'; exit 70; }
-          RECEIPT_TIMEOUT=$((RECEIPT_REMAINING - 5))
-          timeout --signal=TERM --kill-after=5s "${RECEIPT_TIMEOUT}s" \
-            node scripts/ci/record-engine-deploy-attempt.mjs
-
-      - name: Publish release summary
-        if: always()
-        run: |
-          set -euo pipefail
-          SUMMARY_REMAINING=$((RELEASE_REMOTE_CLEANUP_DEADLINE_EPOCH - $(date +%s)))
-          [ "$SUMMARY_REMAINING" -gt 15 ] \
-            || { echo '::error::release summary exhausted the absolute post-release budget'; exit 70; }
-          {
-            echo '## Hetzner Club Arena Engine Release'
-            echo "- Target: \`$SHA\`"
-            echo "- Run identity: \`$RUN_KEY\`"
-            echo "- Durable transaction: \`${{ steps.release.outputs.result || 'not completed' }}\`"
-            echo "- Independent exact-SHA proof: \`${{ steps.verify.outputs.verified || 'false' }}\`"
-            echo '- Image build: owned and bounded by the durable Hetzner transaction'
-          } >> "$GITHUB_STEP_SUMMARY"
-
       - name: Remove exact staging and ephemeral SSH material
         if: always()
         env:
@@ -507,9 +467,75 @@ jobs:
             exit "$REMOTE_CLEANUP_RC"
           fi
 
+  record-receipt:
+    name: Record The Append-Only Engine Release Receipt
+    needs: [preflight, deploy]
+    if: always() && needs.preflight.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout the exact workflow control
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Establish the receipt-job deadline
+        if: always()
+        run: |
+          set -euo pipefail
+          echo "RELEASE_RECEIPT_DEADLINE_EPOCH=$(($(date +%s) + 180))" >> "$GITHUB_ENV"
+
+      - name: Record append-only deployment receipt
+        if: always()
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          TARGET_SHA: ${{ needs.preflight.outputs.target_sha }}
+          SHIPPED: ${{ needs.deploy.outputs.shipped }}
+          RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+          RUN_ACTOR: ${{ github.actor }}
+          STRICT_RECEIPT: '1'
+          REASON: ${{ needs.deploy.outputs.release_result == 'already-released' && 'production already proved this exact release' || needs.deploy.outputs.verified == 'true' && 'Hetzner transaction sealed and independently verified' || 'release ended without complete production proof' }}
+        run: |
+          set -euo pipefail
+          RECEIPT_REMAINING=$((RELEASE_RECEIPT_DEADLINE_EPOCH - $(date +%s)))
+          [ "$RECEIPT_REMAINING" -ge 90 ] \
+            || { echo '::error::strict deployment receipt cannot run inside its absolute budget'; exit 70; }
+          # Dependency setup may use at most two minutes and must leave at
+          # least one minute for the strict append-only database write.
+          INSTALL_TIMEOUT=$((RECEIPT_REMAINING - 65))
+          [ "$INSTALL_TIMEOUT" -le 120 ] || INSTALL_TIMEOUT=120
+          timeout --signal=TERM --kill-after=5s "${INSTALL_TIMEOUT}s" \
+            npm install pg@8 --no-save --ignore-scripts --no-audit --no-fund >/dev/null 2>&1
+          RECEIPT_REMAINING=$((RELEASE_RECEIPT_DEADLINE_EPOCH - $(date +%s)))
+          [ "$RECEIPT_REMAINING" -gt 5 ] \
+            || { echo '::error::strict deployment receipt exhausted its absolute budget'; exit 70; }
+          RECEIPT_TIMEOUT=$((RECEIPT_REMAINING - 5))
+          timeout --signal=TERM --kill-after=5s "${RECEIPT_TIMEOUT}s" \
+            node scripts/ci/record-engine-deploy-attempt.mjs
+
+      - name: Publish release summary
+        if: always()
+        env:
+          TARGET_SHA: ${{ needs.preflight.outputs.target_sha }}
+          RELEASE_RESULT: ${{ needs.deploy.outputs.release_result }}
+          VERIFIED: ${{ needs.deploy.outputs.verified }}
+          RUN_KEY: ${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          {
+            echo '## Hetzner Club Arena Engine Release'
+            echo "- Target: \`$TARGET_SHA\`"
+            echo "- Run identity: \`$RUN_KEY\`"
+            echo "- Durable transaction: \`$RELEASE_RESULT\`"
+            echo "- Independent exact-SHA proof: \`$VERIFIED\`"
+            echo '- Image build: owned and bounded by the durable Hetzner transaction'
+          } >> "$GITHUB_STEP_SUMMARY"
+
   certify-production:
     name: Dispatch Exact Cross-Artifact Production Certification
-    needs: [preflight, deploy]
+    needs: [preflight, deploy, record-receipt]
     runs-on: ubuntu-latest
     timeout-minutes: 3
     permissions:

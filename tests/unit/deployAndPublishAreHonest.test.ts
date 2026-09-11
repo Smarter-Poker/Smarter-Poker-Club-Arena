@@ -26,11 +26,45 @@ describe('engine deployment reports what actually happened', () => {
     expect(deploy).toContain('[ "$UNIT_RESULT" = success ] && [ "$RESULT_SHA" = "$SHA" ]');
     expect(deploy).toContain('case "$RESULT" in sealed|already-released)');
     expect(deploy).toMatch(
-      /SHIPPED: .*steps\.release\.outputs\.result == 'sealed'.*steps\.verify\.outputs\.verified == 'true'/
+      /shipped: .*steps\.release\.outputs\.result == 'sealed'.*steps\.verify\.outputs\.verified == 'true'/
     );
     expect(deploy).toContain("steps.release.outputs.result || 'not completed'");
     expect(deploy).toContain("steps.verify.outputs.verified || 'false'");
     expect(deploy).toContain("STRICT_RECEIPT: '1'");
+  });
+
+  it('keeps npm verification on a separate runner from root SSH release authority', () => {
+    const preflight = uncommented(job(deploy, 'preflight'));
+    const release = uncommented(job(deploy, 'deploy'));
+    const receipt = uncommented(job(deploy, 'record-receipt'));
+
+    // A GitHub job is the runner isolation boundary: server dependency scripts
+    // and tests finish in preflight before the root-authorized job can start.
+    expect(preflight).toMatch(/^ {2}preflight:/);
+    expect(preflight).toMatch(/^ {4}runs-on: ubuntu-latest$/m);
+    expect(preflight).toMatch(/^ {8}working-directory: server$/m);
+    expect(preflight).toMatch(/^\s+npm ci --no-audit --no-fund\s*$/m);
+    expect(preflight).toMatch(/^\s+npm run build\s*$/m);
+    expect(preflight).toMatch(/^\s+npm test\s*$/m);
+    expect(preflight).not.toMatch(/\$\{\{[^}\n]*\bsecrets\b[^}\n]*\}\}/);
+    expect(preflight).not.toContain('SSH_USER: root');
+
+    expect(release).toMatch(/^ {2}deploy:/);
+    expect(release).toMatch(/^ {4}needs: preflight$/m);
+    expect(release).toMatch(/^ {4}runs-on: ubuntu-latest$/m);
+    expect(release).toMatch(/^ {6}SHA: \$\{\{ needs\.preflight\.outputs\.target_sha \}\}$/m);
+    expect(release).toMatch(/^ {6}SSH_USER: root$/m);
+    expect(release).toContain('SSH_KEY: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}');
+    expect(release).toContain('HOST_KEY: ${{ secrets.HETZNER_HOST_KEY }}');
+    expect(release).not.toMatch(/^\s*(?:npm|npx|pnpm|yarn)\b/m);
+    expect(release).not.toContain('actions/setup-node@');
+
+    expect(receipt).toMatch(/^ {2}record-receipt:/);
+    expect(receipt).toMatch(/^ {4}needs: \[preflight, deploy\]$/m);
+    expect(receipt).toMatch(/^ {4}runs-on: ubuntu-latest$/m);
+    expect(receipt).toContain('DATABASE_URL: ${{ secrets.DATABASE_URL }}');
+    expect(receipt).toContain('node scripts/ci/record-engine-deploy-attempt.mjs');
+    expect(receipt).not.toMatch(/secrets\.HETZNER_|\bSSH_(?:USER|KEY|DIR)\b|\bHSSH\b/);
   });
 
   it('never represents a selectable ref or force flag as deployment authority', () => {
@@ -42,7 +76,7 @@ describe('engine deployment reports what actually happened', () => {
 
   it('immediately hands a successful exact engine release to cross-artifact production E2E', () => {
     const certification = job(deploy, 'certify-production');
-    expect(certification).toContain('needs: [preflight, deploy]');
+    expect(certification).toContain('needs: [preflight, deploy, record-receipt]');
     expect(certification).toMatch(/^\s+contents:\s*write\s*$/m);
     expect(certification).toMatch(/^\s+actions:\s*read\s*$/m);
     expect(certification).toContain('ENGINE_SHA: ${{ needs.preflight.outputs.target_sha }}');

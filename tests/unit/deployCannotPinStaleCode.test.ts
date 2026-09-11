@@ -112,8 +112,9 @@ describe('the drain gate cannot pin production on stale code', () => {
     expect(WF).toContain('[ "$UNIT_RESULT" = success ] && [ "$RESULT_SHA" = "$SHA" ]');
     expect(WF).toContain('case "$RESULT" in sealed|already-released)');
     expect(WF).toMatch(
-      /SHIPPED: .*steps\.release\.outputs\.result == 'sealed'.*steps\.verify\.outputs\.verified == 'true'/
+      /shipped: .*steps\.release\.outputs\.result == 'sealed'.*steps\.verify\.outputs\.verified == 'true'/
     );
+    expect(WF).toContain('SHIPPED: ${{ needs.deploy.outputs.shipped }}');
     expect(WF).toContain("steps.release.outputs.result || 'not completed'");
     expect(WF).toContain("STRICT_RECEIPT: '1'");
   });

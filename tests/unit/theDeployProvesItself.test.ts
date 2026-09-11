@@ -49,8 +49,9 @@ describe('the durable engine release proves itself', () => {
 
   it('the database is told a deploy shipped only after exact cutover and proof success', () => {
     expect(WF).toMatch(
-      /SHIPPED: .*steps\.release\.outputs\.result == 'sealed'.*steps\.verify\.outputs\.verified == 'true'/
+      /shipped: .*steps\.release\.outputs\.result == 'sealed'.*steps\.verify\.outputs\.verified == 'true'/
     );
+    expect(WF).toContain('SHIPPED: ${{ needs.deploy.outputs.shipped }}');
     expect(WF).toContain("steps.release.outputs.result == 'already-released'");
     expect(WF).toContain('[ "$UNIT_RESULT" = success ] && [ "$RESULT_SHA" = "$SHA" ]');
     expect(WF).toContain('case "$RESULT" in sealed|already-released)');

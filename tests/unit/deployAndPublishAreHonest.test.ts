@@ -166,7 +166,9 @@ describe('the Club Arena bundle publishes directly to its Hetzner origin', () =>
 
   it('requires both the built artifact and the test verdict before publishing', () => {
     const origin = job(publish, 'publish-to-origin');
-    expect(origin).toContain('needs: [publish-needed, build-and-store, client-tests]');
+    expect(origin).toContain(
+      'needs: [publish-needed, frontend-identity, build-and-store, client-tests]'
+    );
     expect(origin).toContain("needs.build-and-store.result == 'success'");
     expect(origin).toContain("needs.client-tests.result == 'success'");
   });
@@ -366,7 +368,7 @@ describe('the Club Arena bundle publishes directly to its Hetzner origin', () =>
     const jobTimeouts = [...publish.matchAll(/^ {4}timeout-minutes: (\d+)$/gm)].map((match) =>
       Number(match[1])
     );
-    expect(jobTimeouts).toHaveLength(5);
+    expect(jobTimeouts).toHaveLength(6);
     expect(jobTimeouts.every((minutes) => minutes > 0 && minutes <= 30)).toBe(true);
     const origin = job(publish, 'publish-to-origin');
     expect(origin).toContain('timeout 35s ssh');

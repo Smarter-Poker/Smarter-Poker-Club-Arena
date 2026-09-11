@@ -1379,19 +1379,26 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
          about a jackpot by watching a counter, or not at all. One
          `bbj_winners` INSERT per hit, straight to BBJ_HIT_GLOBAL, which
          BBJHitAnnouncer already owns (lib/bbjHitFeed). */
-      stopBbjPool = watchBbjPool(resolvedId, (snap) => {
-        if (!isCurrent()) return;
-        setJackpotAmount(snap.mainBalance);
-        if (snap.poolId && snap.poolId !== watchedBbjPoolId) {
-          watchedBbjPoolId = snap.poolId;
-          if (stopBbjHits) stopBbjHits();
-          stopBbjHits = watchBbjHits(snap.poolId);
-        }
-      });
-      stopBbjMini = watchBbjMini(resolvedId, (snap) => {
-        if (!isCurrent()) return;
-        setLobbyMini(snap);
-      });
+      /* The jackpot is a chip pool banked by chip rake, and a Diamond hand
+         pays neither: the arena has no pool to watch, its strip does not
+         render, and these two feeds were only asking the database a question
+         with no answer. One of them came back as a statement timeout and a
+         500 on the live arena lobby. Both are chip club feeds now. */
+      if (!automaticMembershipRef.current) {
+        stopBbjPool = watchBbjPool(resolvedId, (snap) => {
+          if (!isCurrent()) return;
+          setJackpotAmount(snap.mainBalance);
+          if (snap.poolId && snap.poolId !== watchedBbjPoolId) {
+            watchedBbjPoolId = snap.poolId;
+            if (stopBbjHits) stopBbjHits();
+            stopBbjHits = watchBbjHits(snap.poolId);
+          }
+        });
+        stopBbjMini = watchBbjMini(resolvedId, (snap) => {
+          if (!isCurrent()) return;
+          setLobbyMini(snap);
+        });
+      }
 
       /**
        * A DROPPED SOCKET USED TO MEAN A STALE LOBBY UNTIL THE NEXT RELOAD.
@@ -1947,13 +1954,18 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
     [memberRefresh]
   );
 
+  /* An arena whose membership the server grants automatically has no
+     `club_members` rows to watch, and subscribing to them there opened a
+     realtime channel that failed on every arena load: CHANNEL_ERROR on
+     club-members-diamond-arena. Nothing was listening for an answer; the rail
+     shows who is playing, not who is a member. */
   useMasterBusChannel({
     channelName: clubId ? `club-members-${clubId}` : null,
     table: 'club_members',
     filter: resolvedClubId ? `club_id=eq.${resolvedClubId}` : null,
     event: '*',
     onPayload: handleMemberUpdate,
-    enabled: !!resolvedClubId,
+    enabled: !!resolvedClubId && !isAutomaticArena,
   });
 
   useMasterBusChannel({

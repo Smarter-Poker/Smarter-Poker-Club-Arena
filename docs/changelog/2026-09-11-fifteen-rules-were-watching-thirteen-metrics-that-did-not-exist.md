@@ -85,3 +85,30 @@ The last two are not find-and-replace. `postgres.json` needs an exporter deploye
 ## Two bugs in the checker, found by pointing it at something new
 
 `rate(foo[30m])` yields a standalone `m` to any regex that does not remove range selectors, and `m` then passed the producer check because `haystack.includes('m')` is true of every source tree ever written. The same looseness meant `poker_foo` would be satisfied by a file mentioning only `poker_foobar`. `metricsIn()` now strips range selectors and bare duration literals, and `isProduced()` matches on whole names. The law test pins both, because a guard that reports everything as produced is worse than no guard: it is a guard that says the thing it cannot see is fine.
+
+## And one the revived alerts still could not have caught
+
+Reading the horse-batch silence closely turned up a job that had stopped in a way no staleness check can see. `/cron/horse-batch/0`'s last run returned `{"skipped":"engine_disabled","success":true}` — dispatched on time, answered, logged `success`, did nothing.
+
+There are eight jobs in that state, and 782 such runs in ten days:
+
+| Job                           | Last time it did real work |
+| ----------------------------- | -------------------------- |
+| `/cron/video-library-reels`   | 2026-08-29 07:00 (327h)    |
+| `/cron/horse-batch/0`         | 2026-09-05 00:00 (166h)    |
+| `/cron/horses-stories`        | 2026-09-06 17:05 (125h)    |
+| `/cron/horse-posts`           | 2026-09-06 17:10 (125h)    |
+| `/cron/horses-social-friends` | 2026-09-06 18:15 (124h)    |
+| `/cron/horses-social-all`     | 2026-09-04 20:00 (120h)    |
+| `/cron/phase6-content`        | never                      |
+| `/cron/horse/0`               | never                      |
+
+`v_openclaw_job_staleness` reads `cron_execution_log` for rows with `status = 'success'` and reports these as perfectly healthy, because as far as the log is concerned **a skip is a success**. So `OpenClawJobsHaveGoneSilent` could not have caught this even after its metric started existing. That is the same shape as everything else in this changelog, one layer further down.
+
+The cause is a single boolean: `content_settings.engine_enabled`, `false` since `2026-01-14` and never updated since. The flag did not change in September; the code did. Handlers deployed between 2026-09-04 and 2026-09-06 began reading a switch that was already off, and each job went quiet on the day its own handler shipped.
+
+Whether that switch should be on is a product decision and is not made here. `fn_monitoring_health_snapshot()` gains `cron_jobs_skipping_all_work` and `CronJobsReportingSuccessWhileDoingNothing` fires on it after an hour, so the state is reportable either way.
+
+The staleness view is deliberately left alone. It answers "is this job still being dispatched", which is a separate and true fact; a job that is dispatched and no-ops is a different failure and deserves its own name rather than a redefinition of an existing one.
+
+A numeric `skipped` is a count of items skipped by a job that did run — `/cron/freeroll-qualification-sync` reports `"0"`, `/cron/scrape-sports-clips` reports `"15"` — so only a non-numeric string counts as a reason for skipping everything, and a 24-hour floor keeps a job that skipped once out of it. Measured cost of the whole snapshot with the new detector: 765 ms.

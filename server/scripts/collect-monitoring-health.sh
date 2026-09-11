@@ -116,6 +116,8 @@ GAUGES = [
      "Open Claw jobs past their own staleness threshold."),
     ("poker_cron_openclaw_worst_silence_minutes", "cron_openclaw_worst_silence_minutes",
      "Minutes since the last success of the most silent STALE Open Claw job."),
+    ("poker_cron_jobs_skipping_all_work", "cron_jobs_skipping_all_work",
+     "Jobs whose latest logged success skipped all their work and which have done none in 24h."),
 ]
 
 lines = []

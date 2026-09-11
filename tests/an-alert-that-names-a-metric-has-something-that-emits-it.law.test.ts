@@ -105,6 +105,10 @@ describe('an alert that names a metric has something that emits it', () => {
       'poker_cron_openclaw_stale',
       'poker_cron_openclaw_worst_silence_minutes',
       'poker_cron_metrics_stale_seconds',
+      // Added the same day, for the failure the thirteen could not have caught
+      // even once they worked: a job that is dispatched, answers, logs success
+      // and does none of its work.
+      'poker_cron_jobs_skipping_all_work',
     ];
     for (const metric of wasDead) {
       expect(isProduced(metric, haystack, recorded, declared), `${metric} has no producer`).toBe(

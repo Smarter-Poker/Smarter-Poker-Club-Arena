@@ -158,6 +158,30 @@ groups:
       # page this rule ever produced described 19,689.6 minutes of silence as
       # "5h 28m 9s". A page that understates a 13.7-day outage by a factor of
       # sixty is worse than no page, because it is believed.
+      # A job that is dispatched on time, returns 200, logs status 'success'
+      # and does none of its work is invisible to every staleness check ever
+      # written, because a skip IS a success as far as the log is concerned.
+      #
+      # Measured 2026-09-11: eight jobs in this state, 782 skipped runs in ten
+      # days, the longest 13.6 days without doing anything, all of them
+      # returning {"skipped":"engine_disabled","success":true}. The cause was a
+      # single boolean that had been false since January and that handlers
+      # deployed in September began reading.
+      #
+      # A numeric `skipped` is a count of items skipped by a job that did run,
+      # and does not count here. Only a reason does.
+      - alert: CronJobsReportingSuccessWhileDoingNothing
+        expr: |
+          poker_cron_jobs_skipping_all_work > 0
+        for: 1h
+        labels:
+          severity: warning
+          component: cron
+        annotations:
+          summary: '{{ $value }} cron job(s) have logged success for 24h while skipping all their work'
+          description: 'SELECT job_name, result FROM cron_execution_log WHERE status = ''success'' AND result ? ''skipped'' ORDER BY started_at DESC. A kill switch left off, or a handler that reads one it should not. Staleness alerts cannot see this: the job is being dispatched and is answering.'
+          runbook: 'docs/changelog/2026-09-11-fifteen-rules-were-watching-thirteen-metrics-that-did-not-exist.md'
+
       - alert: OpenClawFleetLongSilence
         expr: |
           poker_cron_openclaw_worst_silence_minutes > 1440

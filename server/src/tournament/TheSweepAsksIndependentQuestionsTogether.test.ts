@@ -101,6 +101,8 @@ function transport(answer: (request: Request) => Answer): Request[] {
       lte: (column: string, value: unknown) => filter(column, 'lte', value),
       in: (column: string, value: unknown) => filter(column, 'in', value),
       is: (column: string, value: unknown) => filter(column, 'is', value),
+      // An ORDER BY shapes the answer, not the trip.
+      order: () => query,
       not: (column: string, op: string, value: unknown) => filter(column, `not.${op}`, value),
       then: (resolve: (value: Answer) => unknown, reject: (reason: unknown) => unknown) =>
         reply(request).then(resolve, reject),
@@ -132,7 +134,20 @@ function oneBustOfTwo(overrides: (request: Request) => Answer | undefined = () =
       if (request.head) return { count: 2 };
     }
     if (request.table === 'tournament_knockout_candidates') {
-      return { data: [{ eliminated_user_id: bustedId, hand_number: 7, stack_before: 1500 }] };
+      // The generation the door binds, with the exact count the sweep asks for
+      // so it can tell a complete read from one PostgREST cut short (bustOrder.ts).
+      return {
+        data: [
+          {
+            id: '00000000-0000-4000-8000-0000000000c1',
+            eliminated_user_id: bustedId,
+            hand_number: 7,
+            stack_before: 1500,
+            state: 'pending',
+          },
+        ],
+        count: 1,
+      };
     }
     if (request.table === 'rpc:fn_open_tournament_rebuy_decisions') {
       return { data: [{ user_id: bustedId, decision_open: false }] };

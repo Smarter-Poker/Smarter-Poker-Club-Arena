@@ -98,18 +98,18 @@ describe('the thaw runs in installments until the database says complete', () =>
 });
 
 describe('source law: the engine drives the thaw through the installment loop', () => {
-  // GameServer's thaw dependency must go through runThawInstallments. A
+  // GameServer's thaw dependency must go through runMaintenanceThawV3. A
   // one-shot supabase.rpc('fn_thaw_platform') call is what this phase retires:
   // with the checkpointing function, a single call that ran out of budget
   // returns complete:false and a caller that does not call again leaves the
   // remaining clocks unshifted.
   const src = readFileSync(resolve(__dirname, '../GameServer.ts'), 'utf8');
 
-  it('GameServer imports runThawInstallments and uses it for the thaw', () => {
+  it('GameServer imports runMaintenanceThawV3 and uses it for the thaw', () => {
     expect(src).toMatch(
-      /import\s*\{[^}]*runThawInstallments[^}]*\}\s*from\s*'\.\/maintenance\/thawInstallments(\.js)?'/
+      /import\s*\{[^}]*runMaintenanceThawV3[^}]*\}\s*from\s*'\.\/maintenance\/maintenanceThawV3(\.js)?'/
     );
-    expect(src).toMatch(/runThawInstallments\(/);
+    expect(src).toMatch(/runMaintenanceThawV3\(/);
   });
 
   it('every fn_thaw_platform call in GameServer sits inside the installment loop', () => {
@@ -119,7 +119,7 @@ describe('source law: the engine drives the thaw through the installment loop', 
     const window = src.slice(Math.max(0, at - 600), at);
     expect(
       window,
-      'the RPC call is the body of the callback handed to runThawInstallments'
-    ).toMatch(/runThawInstallments\(/);
+      'the RPC call is the body of the callback handed to runMaintenanceThawV3'
+    ).toMatch(/runMaintenanceThawV3\(/);
   });
 });

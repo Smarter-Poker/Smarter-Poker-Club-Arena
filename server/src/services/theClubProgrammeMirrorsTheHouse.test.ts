@@ -30,6 +30,7 @@ import {
   satelliteHeadsUpBuyIn,
   satelliteHeadsUpName,
   pickSatelliteTargets,
+  satelliteTargetIsDeliverable,
   SATELLITE_HU_MIN_TICKET,
   SATELLITE_HU_TARGET_LEAD_MS,
   SATELLITE_HU_TARGET_HORIZON_MS,
@@ -155,8 +156,16 @@ describe('6. satellite heads-ups pay a seat into a bigger event', () => {
   it('picks the dearest open events inside the window, one per name, never a seat-first game', () => {
     const now = Date.parse('2026-09-03T18:00:00Z');
     const at = (h: number) => new Date(now + h * 3_600_000).toISOString();
+    // The flags are read from the row; a feeder never assumes them.
+    const plain = {
+      is_bounty: false,
+      is_pko: false,
+      is_mystery_bounty: false,
+      is_premium_spin: false,
+    };
     const rows: SatelliteTargetRow[] = [
       {
+        ...plain,
         id: 'a',
         name: 'Sunday $200 Deep Stack',
         start_time: at(70),
@@ -166,6 +175,7 @@ describe('6. satellite heads-ups pay a seat into a bigger event', () => {
         max_players: 1000,
       },
       {
+        ...plain,
         id: 'b',
         name: 'Sunday $200 Deep Stack',
         start_time: at(238),
@@ -175,6 +185,7 @@ describe('6. satellite heads-ups pay a seat into a bigger event', () => {
         max_players: 1000,
       },
       {
+        ...plain,
         id: 'c',
         name: 'Saturday Night Big Stack',
         start_time: at(50),
@@ -184,6 +195,7 @@ describe('6. satellite heads-ups pay a seat into a bigger event', () => {
         max_players: 500,
       },
       {
+        ...plain,
         id: 'd',
         name: 'Friday Night Feature',
         start_time: at(30),
@@ -193,6 +205,7 @@ describe('6. satellite heads-ups pay a seat into a bigger event', () => {
         max_players: 500,
       },
       {
+        ...plain,
         id: 'e',
         name: 'Turbo Tuesday Graveyard',
         start_time: at(20),
@@ -202,6 +215,7 @@ describe('6. satellite heads-ups pay a seat into a bigger event', () => {
         max_players: 500,
       },
       {
+        ...plain,
         id: 'f',
         name: 'NLH Heads-Up 100',
         start_time: at(1),
@@ -211,6 +225,7 @@ describe('6. satellite heads-ups pay a seat into a bigger event', () => {
         max_players: 2,
       },
       {
+        ...plain,
         id: 'g',
         name: 'Sunday Deep Stack Satellite $25',
         start_time: at(40),
@@ -220,6 +235,7 @@ describe('6. satellite heads-ups pay a seat into a bigger event', () => {
         max_players: 100,
       },
       {
+        ...plain,
         id: 'h',
         name: 'Starting Any Minute',
         start_time: at(0.25),
@@ -229,6 +245,7 @@ describe('6. satellite heads-ups pay a seat into a bigger event', () => {
         max_players: 500,
       },
       {
+        ...plain,
         id: 'i',
         name: 'Next Month',
         start_time: at(24 * 9),
@@ -238,6 +255,7 @@ describe('6. satellite heads-ups pay a seat into a bigger event', () => {
         max_players: 500,
       },
       {
+        ...plain,
         id: 'j',
         name: 'Union PKO Afternoon (PLO4)',
         start_time: at(60),
@@ -253,6 +271,88 @@ describe('6. satellite heads-ups pay a seat into a bigger event', () => {
     expect(SATELLITE_HU_MIN_TICKET).toBe(20);
     expect(SATELLITE_HU_TARGET_LEAD_MS).toBe(30 * 60_000);
     expect(SATELLITE_HU_TARGET_HORIZON_MS).toBe(7 * 24 * 3_600_000);
+  });
+  it('never feeds an event the satellite finish refuses: bounty, PKO, mystery, Spin or unknown', () => {
+    // 2026-09-11: the dearest weekly event was a PKO, so it got a feeder every
+    // half hour and every finished feeder was refused at settlement
+    // ("uses an unsupported bounty or Spin entry split").
+    const now = Date.parse('2026-09-11T03:00:00Z');
+    const at = (h: number) => new Date(now + h * 3_600_000).toISOString();
+    const plain = {
+      is_bounty: false,
+      is_pko: false,
+      is_mystery_bounty: false,
+      is_premium_spin: false,
+    };
+    const pko: SatelliteTargetRow = {
+      id: '8171f9f6-1243-4d51-ac4b-9acabce110dc',
+      name: 'Sunday Funday High Roller PKO',
+      start_time: at(72),
+      buy_in_amount: 67.5,
+      buy_in_fee: 7.5,
+      variant: 'progressive_bounty',
+      max_players: 500,
+      tournament_type: 'MTT',
+      is_bounty: true,
+      is_pko: true,
+      is_mystery_bounty: false,
+      is_premium_spin: false,
+    };
+    const main: SatelliteTargetRow = {
+      ...plain,
+      id: 'main',
+      name: 'Sunday Funday Main Event',
+      start_time: at(72),
+      buy_in_amount: 45,
+      buy_in_fee: 5,
+      variant: 'freezeout',
+      max_players: 500,
+      tournament_type: 'MTT',
+    };
+    const refused: SatelliteTargetRow[] = [
+      pko,
+      { ...main, id: 'flat', name: 'Flat Bounty', is_bounty: true },
+      { ...main, id: 'mystery', name: 'Mystery', is_mystery_bounty: true },
+      { ...main, id: 'premium', name: 'Premium Spin', is_premium_spin: true },
+      { ...main, id: 'spin-type', name: 'Spin Type', tournament_type: 'SPIN' },
+      { ...main, id: 'bounty-variant', name: 'Bounty Variant', variant: 'bounty' },
+      { ...main, id: 'unknown', name: 'Unknown Flags', is_pko: null },
+      { ...main, id: 'unread', name: 'Unread Flags', is_bounty: undefined },
+    ];
+    for (const row of refused) expect(satelliteTargetIsDeliverable(row)).toBe(false);
+    expect(satelliteTargetIsDeliverable(main)).toBe(true);
+    // The PKO is the dearest row, and it is still never picked.
+    expect(pickSatelliteTargets([...refused, main], now).map((r) => r.id)).toEqual(['main']);
+  });
+  it("the database refuses the same targets at creation, with the authority's own predicate", () => {
+    const guard = readFileSync(
+      join(
+        process.cwd(),
+        '../supabase/migrations/20260911110907_a_satellite_never_feeds_a_target_its_finish_refuses.sql'
+      ),
+      'utf8'
+    );
+    for (const flag of ['is_bounty', 'is_pko', 'is_mystery_bounty', 'is_premium_spin']) {
+      expect(guard).toContain(`t.${flag} IS FALSE`);
+    }
+    expect(guard).toContain("lower(COALESCE(t.variant, '')) <> 'spin'");
+    expect(guard).toContain("upper(COALESCE(t.tournament_type, '')) <> 'SPIN'");
+    expect(guard).toMatch(
+      /CREATE TRIGGER satellite_feeds_only_a_deliverable_target\s+BEFORE INSERT OR UPDATE OF satellite_target_id, satellite_target,/
+    );
+  });
+  it('reads the flags the predicate needs from the database', () => {
+    const src = RECURRING.slice(RECURRING.indexOf('private async ensureSatelliteHeadsUps('));
+    const read = src.slice(0, src.indexOf('.eq('));
+    for (const column of [
+      'tournament_type',
+      'is_bounty',
+      'is_pko',
+      'is_mystery_bounty',
+      'is_premium_spin',
+    ]) {
+      expect(read).toContain(column);
+    }
   });
   it('the row is a heads-up SNG to every seat-first reader and a satellite to the finish', () => {
     const src = RECURRING.slice(RECURRING.indexOf('private async createSatelliteHeadsUp('));

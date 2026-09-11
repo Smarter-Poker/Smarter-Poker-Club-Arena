@@ -50,7 +50,7 @@ describe('a balance the freeze deferred is still owed', () => {
     expect(stage).toContain(
       'if (!isMaintenanceFrozen() && !(await this.checkDynamicTableExpansion())) return;'
     );
-    const rearm = stage.indexOf('if (isMaintenanceFrozen()) this.owePassAfterTheThaw();');
+    const rearm = stage.indexOf('this.frozenStagesOwed.add(6);');
     expect(rearm).toBeGreaterThan(-1);
     expect(stage.indexOf('if (completedStage(7)) return;')).toBeGreaterThan(rearm);
   });

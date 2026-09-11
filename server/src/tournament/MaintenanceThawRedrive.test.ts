@@ -67,6 +67,33 @@ describe('maintenance thaw redrives the real manager', () => {
     setMaintenanceFrozen(false);
     expect(m.request).toHaveBeenCalledTimes(1);
   });
+  it('retains frozen balance debt when the thaw resumes a cursor already past that stage', async () => {
+    setMaintenanceFrozen(true);
+    const m = manager();
+    vi.spyOn(m.internal, 'resumeCommittedTerminalCleanup').mockResolvedValue(false);
+    vi.spyOn(m.internal, 'requestEliminationSweep').mockImplementation(() => {});
+    const balance = vi.spyOn(m.internal, 'checkTableBalance').mockResolvedValue(undefined);
+    vi.spyOn(m.internal, 'checkDynamicTableExpansion').mockResolvedValue(true);
+    const budget = vi.spyOn(m.internal, 'eliminationWorkBudgetExpired').mockReturnValue(true);
+    m.internal.eliminationSweepCursor.advanceTo(5);
+    await m.internal.runEliminationSweep(new AbortController().signal);
+    expect(m.internal.eliminationSweepCursor.nextStage).toBe(6);
+    expect(balance).not.toHaveBeenCalled();
+    setMaintenanceFrozen(false);
+    m.request.mockClear();
+    budget.mockReturnValue(false);
+    await m.internal.runEliminationSweep(new AbortController().signal);
+    expect(m.internal.eliminationSweepCursor.nextStage).toBe(0);
+    expect(m.request).toHaveBeenCalledWith(5_000);
+    expect(balance).not.toHaveBeenCalled();
+    // The unrelated verified prefix may finish in separate scheduler admissions.
+    m.internal.eliminationSweepCursor.advanceTo(5);
+    m.request.mockClear();
+    await m.internal.runEliminationSweep(new AbortController().signal);
+    expect(balance).toHaveBeenCalledOnce();
+    expect(m.request).not.toHaveBeenCalled();
+  });
+
   it('can owe one new pass in a later freeze', () => {
     setMaintenanceFrozen(true);
     const m = manager();

@@ -632,6 +632,7 @@ function tournamentOpenFirst(
  */
 import PageErrorBoundary from '../components/common/PageErrorBoundary';
 import ArenaAccessBoundary from '../components/arena/ArenaAccessBoundary';
+import { useArenaAccess } from '../components/arena/arenaAccess';
 import { publicOrigin } from '../lib/appBase';
 
 export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: string } = {}) {
@@ -655,6 +656,16 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
 
   const { clubId: routeClubId } = useParams<{ clubId: string }>();
   const clubId = clubIdOverride || routeClubId;
+  /* The server-verified arena entitlement, published by ArenaAccessBoundary.
+     Diamond Arena is one open club: membership is a platform entitlement with
+     no `club_members` row and no chip ledger, so the two membership checks in
+     loadClubData below would evict every Diamond player, and the chip club's
+     Bad Beat Jackpot has no Diamond counterpart to show. Null on every chip
+     route, which leaves those paths exactly as they were. */
+  const arenaAccess = useArenaAccess();
+  const isAutomaticArena = arenaAccess?.automaticMembership === true;
+  const automaticMembershipRef = useRef(isAutomaticArena);
+  automaticMembershipRef.current = isAutomaticArena;
   useVisibilityRefresh(() => loadClubData());
   const navigate = useAppNavigate();
   const isMountedRef = useIsMounted();
@@ -2216,7 +2227,10 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                 reportError(memErr, 'ClubHomePage.fastPath.membership_unreadable', {
                   clubId: home.club.id,
                 });
-              } else if (!memStat || !['active', 'approved'].includes(memStat.status)) {
+              } else if (
+                !automaticMembershipRef.current &&
+                (!memStat || !['active', 'approved'].includes(memStat.status))
+              ) {
                 bounceToInvite();
                 return;
               }
@@ -2378,8 +2392,9 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
             clubId: resolvedId,
           });
         } else if (
-          !memberResult.data ||
-          !['active', 'approved'].includes((memberResult.data as any).status)
+          !automaticMembershipRef.current &&
+          (!memberResult.data ||
+            !['active', 'approved'].includes((memberResult.data as any).status))
         ) {
           if (getIsMounted && !getIsMounted()) return;
           bounceToInvite();
@@ -4655,35 +4670,39 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
               }
             }}
           />
-
-          <button
-            type="button"
-            className="lobby-bbj"
-            onClick={() => {
-              haptic.medium();
-              setShowBBJInfo(true);
-            }}
-            aria-label={`Bad Beat Jackpot: ${
-              jackpotAmount > 0
-                ? jackpotAmount.toLocaleString('en-US', {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  })
-                : 'No Pool'
-            }`}
-          >
-            <ClubBBJShell className="lobby-bbj__shell" />
-            <span className="lobby-bbj__label">Bad Beat Jackpot</span>
-            <strong className="lobby-bbj__amount">
-              {jackpotAmount > 0
-                ? jackpotAmount.toLocaleString('en-US', {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  })
-                : '-'}
-            </strong>
-          </button>
-
+          /* The Bad Beat Jackpot is a chip pool banked by chip rake. Diamond hands carry neither
+          (rake and bbj are refused at admission and at settlement), so this strip has nothing to
+          read there and rendered a bare dash on the arena lobby. Phase 9 decides Diamond fee
+          destinations; until it does, the honest surface is no strip. */
+          {!isAutomaticArena && (
+            <button
+              type="button"
+              className="lobby-bbj"
+              onClick={() => {
+                haptic.medium();
+                setShowBBJInfo(true);
+              }}
+              aria-label={`Bad Beat Jackpot: ${
+                jackpotAmount > 0
+                  ? jackpotAmount.toLocaleString('en-US', {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })
+                  : 'No Pool'
+              }`}
+            >
+              <ClubBBJShell className="lobby-bbj__shell" />
+              <span className="lobby-bbj__label">Bad Beat Jackpot</span>
+              <strong className="lobby-bbj__amount">
+                {jackpotAmount > 0
+                  ? jackpotAmount.toLocaleString('en-US', {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })
+                  : '-'}
+              </strong>
+            </button>
+          )}
           {/* ── Wallet ──
               WALLET SEPARATION LAW (Dan 2026-08-20): this is a CLUB screen, so
               it renders CLUB money. The variant used to become 'union' whenever

@@ -10,6 +10,16 @@
 .diamond-arena-shell nav {
   margin-bottom: 20px;
 }
+/* The closed-games line above the shared lobby. It is a notice, not a lobby
+   row, so it stays quiet and does not take a game card's width. */
+.diamond-arena-notice {
+  margin: 0;
+  padding: 8px 16px;
+  color: #efd889;
+  text-align: center;
+  font-size: 0.95rem;
+}
+
 .diamond-arena-shell .btn-secondary {
   border-color: #b59a52;
   color: #fff7dc;

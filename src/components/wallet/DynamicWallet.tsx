@@ -73,6 +73,7 @@ import {
   type WalletRowKey,
 } from './walletRows';
 import { useSpinsWallet } from '../../hooks/useSpinsWallet';
+import { useArenaHasChipWallet } from '../arena/arenaAccess';
 import './DynamicWallet.css';
 import { reportError } from '../../utils/errorReporter';
 import { ClubBBJShell, ClubWalletShell, type ClubWalletArtworkKind } from './ClubWalletArtwork';
@@ -747,6 +748,12 @@ export default function DynamicWallet({
      and one passing the UUID kept two divergent cached answers for one club.
      Which OWNER the id resolves to is still the API's decision, untouched. */
   const spins = useSpinsWallet(resolvedId, variant !== 'union' && !isClubInUnion);
+  /* Every club row this component can draw is a chip ledger. Inside an arena
+     the server says holds no chip wallet, none of them exist to be shown, and
+     a "Player Wallet 0.00" beside the Diamonds row is a chip balance on a
+     Diamond screen. Defaults to true everywhere else, so no chip surface
+     changes. */
+  const hasChipWallet = useArenaHasChipWallet();
   const animSpins = useAnimatedCounter(spins.balance);
   const animUnionBank = useAnimatedCounter(data.unionBank);
   const animUnionRake = useAnimatedCounter(data.unionRake);
@@ -1464,11 +1471,13 @@ export default function DynamicWallet({
                 // temporarily inactive. Hiding it made real club money vanish
                 // from the owner's wallet panel.
                 spinsActive: spins.state !== null,
+                chipWallet: hasChipWallet,
               })
-            : clubLobbyWalletRows(rowRole)
+            : clubLobbyWalletRows(rowRole, { chipWallet: hasChipWallet })
           : clubWalletRows(rowRole, {
               standalone: !isClubInUnion,
               spinsActive: spins.state !== null,
+              chipWallet: hasChipWallet,
             })
         ).map((k) => CLUB_ROW_BY_KEY[k]);
 

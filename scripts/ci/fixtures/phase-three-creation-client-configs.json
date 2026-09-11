@@ -1,0 +1,700 @@
+{
+  "source_sha256": {
+    "src/lib/tournamentFromTableConfig.ts": "ddab8e64901a6a13a45469aabd0af7c86e16cbe4b3dcd971ac06106d1759314c",
+    "src/services/TournamentService.ts": "8040cd30c2faa2c5507e4725ed6d923343abf5d7b2b9c08365ff650d7403bcc7",
+    "tests/unit/TournamentFromTableConfig.test.ts": "0f99b2aa6fc5677b68404f38ba2999f6da91df420376f3b640f245453ed19ed5"
+  },
+  "captured_rpc_configs": {
+    "mtt": {
+      "name": "Friday Major",
+      "type": "mtt",
+      "gameVariant": "NLH",
+      "buyIn": 50,
+      "startingStack": 10000,
+      "maxPlayers": 100,
+      "minPlayers": 10,
+      "blindStructure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "ante": 0,
+          "durationMinutes": 8
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "ante": 0,
+          "durationMinutes": 8
+        },
+        {
+          "level": 3,
+          "smallBlind": 20,
+          "bigBlind": 40,
+          "ante": 0,
+          "durationMinutes": 8
+        },
+        {
+          "level": 4,
+          "smallBlind": 25,
+          "bigBlind": 50,
+          "ante": 0,
+          "durationMinutes": 8
+        },
+        {
+          "level": 5,
+          "smallBlind": 50,
+          "bigBlind": 100,
+          "ante": 10,
+          "durationMinutes": 8
+        },
+        {
+          "level": 6,
+          "smallBlind": 75,
+          "bigBlind": 150,
+          "ante": 15,
+          "durationMinutes": 8
+        },
+        {
+          "level": 7,
+          "smallBlind": 100,
+          "bigBlind": 200,
+          "ante": 25,
+          "durationMinutes": 8
+        },
+        {
+          "level": 8,
+          "smallBlind": 0,
+          "bigBlind": 0,
+          "ante": 0,
+          "durationMinutes": 5,
+          "isBreak": true
+        },
+        {
+          "level": 9,
+          "smallBlind": 150,
+          "bigBlind": 300,
+          "ante": 40,
+          "durationMinutes": 8
+        },
+        {
+          "level": 10,
+          "smallBlind": 200,
+          "bigBlind": 400,
+          "ante": 50,
+          "durationMinutes": 8
+        },
+        {
+          "level": 11,
+          "smallBlind": 300,
+          "bigBlind": 600,
+          "ante": 75,
+          "durationMinutes": 8
+        },
+        {
+          "level": 12,
+          "smallBlind": 400,
+          "bigBlind": 800,
+          "ante": 100,
+          "durationMinutes": 8
+        },
+        {
+          "level": 13,
+          "smallBlind": 500,
+          "bigBlind": 1000,
+          "ante": 150,
+          "durationMinutes": 8
+        },
+        {
+          "level": 14,
+          "smallBlind": 0,
+          "bigBlind": 0,
+          "ante": 0,
+          "durationMinutes": 5,
+          "isBreak": true
+        },
+        {
+          "level": 15,
+          "smallBlind": 600,
+          "bigBlind": 1200,
+          "ante": 200,
+          "durationMinutes": 8
+        },
+        {
+          "level": 16,
+          "smallBlind": 800,
+          "bigBlind": 1600,
+          "ante": 250,
+          "durationMinutes": 8
+        },
+        {
+          "level": 17,
+          "smallBlind": 1000,
+          "bigBlind": 2000,
+          "ante": 300,
+          "durationMinutes": 8
+        },
+        {
+          "level": 18,
+          "smallBlind": 1200,
+          "bigBlind": 2400,
+          "ante": 400,
+          "durationMinutes": 8
+        },
+        {
+          "level": 19,
+          "smallBlind": 1500,
+          "bigBlind": 3000,
+          "ante": 500,
+          "durationMinutes": 8
+        },
+        {
+          "level": 20,
+          "smallBlind": 0,
+          "bigBlind": 0,
+          "ante": 0,
+          "durationMinutes": 5,
+          "isBreak": true
+        },
+        {
+          "level": 21,
+          "smallBlind": 2000,
+          "bigBlind": 4000,
+          "ante": 600,
+          "durationMinutes": 8
+        },
+        {
+          "level": 22,
+          "smallBlind": 2500,
+          "bigBlind": 5000,
+          "ante": 750,
+          "durationMinutes": 8
+        },
+        {
+          "level": 23,
+          "smallBlind": 3000,
+          "bigBlind": 6000,
+          "ante": 1000,
+          "durationMinutes": 8
+        },
+        {
+          "level": 24,
+          "smallBlind": 4000,
+          "bigBlind": 8000,
+          "ante": 1200,
+          "durationMinutes": 8
+        },
+        {
+          "level": 25,
+          "smallBlind": 5000,
+          "bigBlind": 10000,
+          "ante": 1500,
+          "durationMinutes": 8
+        },
+        {
+          "level": 26,
+          "smallBlind": 0,
+          "bigBlind": 0,
+          "ante": 0,
+          "durationMinutes": 5,
+          "isBreak": true
+        },
+        {
+          "level": 27,
+          "smallBlind": 6000,
+          "bigBlind": 12000,
+          "ante": 2000,
+          "durationMinutes": 8
+        },
+        {
+          "level": 28,
+          "smallBlind": 8000,
+          "bigBlind": 16000,
+          "ante": 2500,
+          "durationMinutes": 8
+        },
+        {
+          "level": 29,
+          "smallBlind": 10000,
+          "bigBlind": 20000,
+          "ante": 3000,
+          "durationMinutes": 8
+        },
+        {
+          "level": 30,
+          "smallBlind": 12000,
+          "bigBlind": 24000,
+          "ante": 3500,
+          "durationMinutes": 8
+        }
+      ],
+      "payoutStructure": [
+        {
+          "place": 1,
+          "percentage": 50.13
+        },
+        {
+          "place": 2,
+          "percentage": 17.72
+        },
+        {
+          "place": 3,
+          "percentage": 9.64
+        },
+        {
+          "place": 4,
+          "percentage": 6.26
+        },
+        {
+          "place": 5,
+          "percentage": 4.48
+        },
+        {
+          "place": 6,
+          "percentage": 3.41
+        },
+        {
+          "place": 7,
+          "percentage": 2.71
+        },
+        {
+          "place": 8,
+          "percentage": 2.21
+        },
+        {
+          "place": 9,
+          "percentage": 1.86
+        },
+        {
+          "place": 10,
+          "percentage": 1.58
+        }
+      ],
+      "guaranteedPrize": 0,
+      "lateRegistrationLevels": 6,
+      "startTime": null,
+      "isRebuy": false,
+      "isReentry": false,
+      "rebuyCost": 50,
+      "rebuyChips": 10000,
+      "addOnAvailable": false,
+      "addOnCost": 50,
+      "addOnChips": 10000,
+      "addOnLevels": 1,
+      "freeBuy": false,
+      "addOnFromStart": false,
+      "bountyAmount": 0,
+      "spinType": null,
+      "satelliteTargetId": null,
+      "isXmtt": false,
+      "isPrivate": false,
+      "isVipOnly": false,
+      "banChat": false,
+      "allInOrFold": false,
+      "labelAsNew": false,
+      "hideClubName": false,
+      "actionTimeSeconds": 15,
+      "tableSize": 9,
+      "acceleratedMtt": false,
+      "bigBlindAnte": false,
+      "authorizedToRegister": false,
+      "earlyBirdEnabled": false,
+      "bubbleProtection": false,
+      "finalTableDealEnabled": false,
+      "synchronizedBreaks": true,
+      "isMultiDay": false,
+      "isFeatured": false
+    },
+    "sng": {
+      "name": "Friday Major",
+      "type": "sng",
+      "gameVariant": "NLH",
+      "buyIn": 50,
+      "startingStack": 10000,
+      "maxPlayers": 18,
+      "minPlayers": 18,
+      "blindStructure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "ante": 0,
+          "durationMinutes": 8
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "ante": 0,
+          "durationMinutes": 8
+        },
+        {
+          "level": 3,
+          "smallBlind": 20,
+          "bigBlind": 40,
+          "ante": 0,
+          "durationMinutes": 8
+        },
+        {
+          "level": 4,
+          "smallBlind": 25,
+          "bigBlind": 50,
+          "ante": 0,
+          "durationMinutes": 8
+        },
+        {
+          "level": 5,
+          "smallBlind": 50,
+          "bigBlind": 100,
+          "ante": 10,
+          "durationMinutes": 8
+        },
+        {
+          "level": 6,
+          "smallBlind": 75,
+          "bigBlind": 150,
+          "ante": 15,
+          "durationMinutes": 8
+        },
+        {
+          "level": 7,
+          "smallBlind": 100,
+          "bigBlind": 200,
+          "ante": 25,
+          "durationMinutes": 8
+        },
+        {
+          "level": 8,
+          "smallBlind": 0,
+          "bigBlind": 0,
+          "ante": 0,
+          "durationMinutes": 5,
+          "isBreak": true
+        },
+        {
+          "level": 9,
+          "smallBlind": 150,
+          "bigBlind": 300,
+          "ante": 40,
+          "durationMinutes": 8
+        },
+        {
+          "level": 10,
+          "smallBlind": 200,
+          "bigBlind": 400,
+          "ante": 50,
+          "durationMinutes": 8
+        },
+        {
+          "level": 11,
+          "smallBlind": 300,
+          "bigBlind": 600,
+          "ante": 75,
+          "durationMinutes": 8
+        },
+        {
+          "level": 12,
+          "smallBlind": 400,
+          "bigBlind": 800,
+          "ante": 100,
+          "durationMinutes": 8
+        },
+        {
+          "level": 13,
+          "smallBlind": 500,
+          "bigBlind": 1000,
+          "ante": 150,
+          "durationMinutes": 8
+        },
+        {
+          "level": 14,
+          "smallBlind": 0,
+          "bigBlind": 0,
+          "ante": 0,
+          "durationMinutes": 5,
+          "isBreak": true
+        },
+        {
+          "level": 15,
+          "smallBlind": 600,
+          "bigBlind": 1200,
+          "ante": 200,
+          "durationMinutes": 8
+        },
+        {
+          "level": 16,
+          "smallBlind": 800,
+          "bigBlind": 1600,
+          "ante": 250,
+          "durationMinutes": 8
+        },
+        {
+          "level": 17,
+          "smallBlind": 1000,
+          "bigBlind": 2000,
+          "ante": 300,
+          "durationMinutes": 8
+        },
+        {
+          "level": 18,
+          "smallBlind": 1200,
+          "bigBlind": 2400,
+          "ante": 400,
+          "durationMinutes": 8
+        },
+        {
+          "level": 19,
+          "smallBlind": 1500,
+          "bigBlind": 3000,
+          "ante": 500,
+          "durationMinutes": 8
+        },
+        {
+          "level": 20,
+          "smallBlind": 0,
+          "bigBlind": 0,
+          "ante": 0,
+          "durationMinutes": 5,
+          "isBreak": true
+        },
+        {
+          "level": 21,
+          "smallBlind": 2000,
+          "bigBlind": 4000,
+          "ante": 600,
+          "durationMinutes": 8
+        },
+        {
+          "level": 22,
+          "smallBlind": 2500,
+          "bigBlind": 5000,
+          "ante": 750,
+          "durationMinutes": 8
+        },
+        {
+          "level": 23,
+          "smallBlind": 3000,
+          "bigBlind": 6000,
+          "ante": 1000,
+          "durationMinutes": 8
+        },
+        {
+          "level": 24,
+          "smallBlind": 4000,
+          "bigBlind": 8000,
+          "ante": 1200,
+          "durationMinutes": 8
+        },
+        {
+          "level": 25,
+          "smallBlind": 5000,
+          "bigBlind": 10000,
+          "ante": 1500,
+          "durationMinutes": 8
+        },
+        {
+          "level": 26,
+          "smallBlind": 0,
+          "bigBlind": 0,
+          "ante": 0,
+          "durationMinutes": 5,
+          "isBreak": true
+        },
+        {
+          "level": 27,
+          "smallBlind": 6000,
+          "bigBlind": 12000,
+          "ante": 2000,
+          "durationMinutes": 8
+        },
+        {
+          "level": 28,
+          "smallBlind": 8000,
+          "bigBlind": 16000,
+          "ante": 2500,
+          "durationMinutes": 8
+        },
+        {
+          "level": 29,
+          "smallBlind": 10000,
+          "bigBlind": 20000,
+          "ante": 3000,
+          "durationMinutes": 8
+        },
+        {
+          "level": 30,
+          "smallBlind": 12000,
+          "bigBlind": 24000,
+          "ante": 3500,
+          "durationMinutes": 8
+        }
+      ],
+      "payoutStructure": [
+        {
+          "place": 1,
+          "percentage": 65
+        },
+        {
+          "place": 2,
+          "percentage": 35
+        }
+      ],
+      "guaranteedPrize": 0,
+      "lateRegistrationLevels": 0,
+      "startTime": null,
+      "isRebuy": false,
+      "isReentry": false,
+      "rebuyCost": 50,
+      "rebuyChips": 10000,
+      "addOnAvailable": false,
+      "addOnCost": 50,
+      "addOnChips": 10000,
+      "addOnLevels": 1,
+      "freeBuy": false,
+      "addOnFromStart": false,
+      "bountyAmount": 0,
+      "spinType": null,
+      "satelliteTargetId": null,
+      "isXmtt": false,
+      "isPrivate": false,
+      "isVipOnly": false,
+      "banChat": false,
+      "allInOrFold": false,
+      "labelAsNew": false,
+      "hideClubName": false,
+      "actionTimeSeconds": 15,
+      "tableSize": 9,
+      "acceleratedMtt": false,
+      "bigBlindAnte": false,
+      "authorizedToRegister": false,
+      "earlyBirdEnabled": false,
+      "bubbleProtection": false,
+      "finalTableDealEnabled": false,
+      "synchronizedBreaks": true,
+      "isMultiDay": false,
+      "isFeatured": false
+    },
+    "spin": {
+      "name": "Friday Major",
+      "type": "spin",
+      "gameVariant": "NLH",
+      "buyIn": 50,
+      "startingStack": 10000,
+      "maxPlayers": 3,
+      "minPlayers": 3,
+      "blindStructure": [
+        {
+          "level": 1,
+          "smallBlind": 10,
+          "bigBlind": 20,
+          "ante": 0,
+          "durationMinutes": 8
+        },
+        {
+          "level": 2,
+          "smallBlind": 15,
+          "bigBlind": 30,
+          "ante": 0,
+          "durationMinutes": 8
+        },
+        {
+          "level": 3,
+          "smallBlind": 20,
+          "bigBlind": 40,
+          "ante": 0,
+          "durationMinutes": 8
+        },
+        {
+          "level": 4,
+          "smallBlind": 30,
+          "bigBlind": 60,
+          "ante": 0,
+          "durationMinutes": 8
+        },
+        {
+          "level": 5,
+          "smallBlind": 40,
+          "bigBlind": 80,
+          "ante": 0,
+          "durationMinutes": 8
+        },
+        {
+          "level": 6,
+          "smallBlind": 50,
+          "bigBlind": 100,
+          "ante": 0,
+          "durationMinutes": 8
+        },
+        {
+          "level": 7,
+          "smallBlind": 60,
+          "bigBlind": 120,
+          "ante": 0,
+          "durationMinutes": 8
+        },
+        {
+          "level": 8,
+          "smallBlind": 75,
+          "bigBlind": 150,
+          "ante": 0,
+          "durationMinutes": 8
+        },
+        {
+          "level": 9,
+          "smallBlind": 90,
+          "bigBlind": 180,
+          "ante": 0,
+          "durationMinutes": 8
+        },
+        {
+          "level": 10,
+          "smallBlind": 105,
+          "bigBlind": 210,
+          "ante": 0,
+          "durationMinutes": 8
+        }
+      ],
+      "payoutStructure": [
+        {
+          "place": 1,
+          "percentage": 100
+        }
+      ],
+      "guaranteedPrize": 0,
+      "lateRegistrationLevels": 0,
+      "startTime": null,
+      "isRebuy": false,
+      "isReentry": false,
+      "rebuyCost": 50,
+      "rebuyChips": 10000,
+      "addOnAvailable": false,
+      "addOnCost": 50,
+      "addOnChips": 10000,
+      "addOnLevels": 1,
+      "freeBuy": false,
+      "addOnFromStart": false,
+      "bountyAmount": 0,
+      "spinType": "standard",
+      "satelliteTargetId": null,
+      "isXmtt": false,
+      "isPrivate": false,
+      "isVipOnly": false,
+      "banChat": false,
+      "allInOrFold": false,
+      "labelAsNew": false,
+      "hideClubName": false,
+      "actionTimeSeconds": 15,
+      "tableSize": 3,
+      "acceleratedMtt": false,
+      "bigBlindAnte": false,
+      "authorizedToRegister": false,
+      "earlyBirdEnabled": false,
+      "bubbleProtection": false,
+      "finalTableDealEnabled": false,
+      "synchronizedBreaks": true,
+      "isMultiDay": false,
+      "isFeatured": false
+    }
+  }
+}

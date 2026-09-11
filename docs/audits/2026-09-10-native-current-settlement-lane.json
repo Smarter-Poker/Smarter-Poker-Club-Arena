@@ -1,0 +1,10 @@
+{
+  "captured_at": "2026-09-10 18:11:59.920916+00",
+  "signature": "fn_ca_lock_settlement_lane_for_tournament(uuid,uuid)",
+  "body_md5": "3acb4c1d763181905cf5b64287f8f28f",
+  "owner": "postgres",
+  "prosecdef": false,
+  "proconfig": ["search_path=public, pg_temp"],
+  "acl": "{postgres=X/postgres,service_role=X/postgres}",
+  "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_lock_settlement_lane_for_tournament(p_tournament_id uuid, p_table_id uuid DEFAULT NULL::uuid)\n RETURNS void\n LANGUAGE plpgsql\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nDECLARE\n  v_tournament_id uuid := p_tournament_id;\nBEGIN\n  -- Resolve the tournament before any lock, so G's mode can depend on it.\n  -- tables.tournament_id is fixed for the life of a table: reading it here\n  -- gives the answer reading it under G did.\n  IF v_tournament_id IS NULL AND p_table_id IS NOT NULL THEN\n    SELECT tb.tournament_id INTO v_tournament_id\n    FROM public.tables tb\n    WHERE tb.id = p_table_id;\n  END IF;\n\n  IF v_tournament_id IS NULL THEN\n    -- Nothing to scope to: the whole lane, as it always was - G exclusive,\n    -- then B exclusive (the shape of fn_ca_lock_settlement_lane_global).\n    PERFORM pg_advisory_xact_lock(\n      hashtextextended('ca:tournament-terminal-settlement:v1', 0));\n    PERFORM pg_advisory_xact_lock(\n      hashtextextended('ca:hand-settlement-barrier:v1', 0));\n    RETURN;\n  END IF;\n\n  -- G SHARED: waits for, and excludes, terminal authorities (G exclusive)\n  -- and nothing else. Rolling authorities of different tournaments run side\n  -- by side; the trigger guards take T(id) held exclusively as their proof.\n  PERFORM pg_advisory_xact_lock_shared(\n    hashtextextended('ca:tournament-terminal-settlement:v1', 0));\n\n  -- T(id) EXCLUSIVE: one rolling authority per tournament at a time, and\n  -- this tournament's hand settlements (T(id) shared) wait for it.\n  PERFORM pg_advisory_xact_lock(\n    hashtextextended('ca:tournament-terminal-settlement:v1:' || v_tournament_id::text, 0));\nEND;\n$function$\n"
+}

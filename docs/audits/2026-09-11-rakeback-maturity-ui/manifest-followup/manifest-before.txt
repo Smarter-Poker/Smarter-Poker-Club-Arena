@@ -1,0 +1,16 @@
+[check-migrations-applied] 2 changed migration(s) vs origin/main; 3 unapplied object(s).
+
+A MIGRATION IN THIS BRANCH DECLARES SOMETHING THE LIVE SCHEMA DOES NOT HAVE:
+
+  supabase/migrations/20260911072837_legacy_rakeback_closed_period_single_payer.sql
+    function fn_ca_legacy_period_maturity
+  supabase/migrations/20260911072837_legacy_rakeback_closed_period_single_payer.sql
+    function fn_lock_rakeback_payer_clubs
+  supabase/migrations/20260911072837_legacy_rakeback_closed_period_single_payer.sql
+    function fn_ca_legacy_round3_wallet_receipt
+
+Either the migration was never applied — apply it with the Supabase MCP
+`apply_migration`, which is the only sanctioned path — or the manifest is
+stale: regenerate it with scripts/ci/gen-schema-manifest.mjs in this same PR.
+A migration file that never ran is a feature the code believes in and the
+database has never heard of.

@@ -1,0 +1,4281 @@
+[
+  {
+    "ok": true,
+    "reason": null,
+    "version": 1,
+    "standings": [
+      {
+        "hand_id": "82343861-9681-2e1b-1bec-0f734b7a423d",
+        "user_id": "46887b99-8cd6-45db-861c-ad24232efbfe",
+        "position": 1,
+        "table_id": "c2188a4f-5621-43e2-9fbb-0f5cd00b39d4",
+        "player_id": "17aa0b00-f4d3-47cc-b22d-4548b0e9247e",
+        "hand_number": 8218585,
+        "committed_at": "2026-09-08T14:50:24.573048+00:00",
+        "source_sha256": "b5f954f9a79a8a5b0c26a9aecab45c88b3bb1ef392b82a9987e2e68a57f0d9c1",
+        "observed_chips": 600,
+        "recorded_chips": 600,
+        "source_receipt": {
+          "error": null,
+          "result": {
+            "bbj": 0,
+            "mode": "delta",
+            "rake": 0,
+            "inflow": 0,
+            "hand_id": "82343861-9681-2e1b-1bec-0f734b7a423d",
+            "players": 2,
+            "rebased": {},
+            "request": {
+              "bbj": 0,
+              "rake": 0,
+              "inflow": 0,
+              "stacks": [
+                {
+                  "stack": 0,
+                  "user_id": "3cbbefb7-1a34-4111-83a1-1e04378a495e",
+                  "stack_before": 300
+                },
+                {
+                  "stack": 600,
+                  "user_id": "46887b99-8cd6-45db-861c-ad24232efbfe",
+                  "stack_before": 300
+                }
+              ]
+            },
+            "success": true,
+            "written": {
+              "3cbbefb7-1a34-4111-83a1-1e04378a495e": 0,
+              "46887b99-8cd6-45db-861c-ad24232efbfe": 600
+            },
+            "departed": [],
+            "table_id": "c2188a4f-5621-43e2-9fbb-0f5cd00b39d4",
+            "net_deltas": 0,
+            "hand_number": 8218585,
+            "conservation_checked": true
+          },
+          "status": "succeeded",
+          "hand_id": "82343861-9681-2e1b-1bec-0f734b7a423d",
+          "table_id": "c2188a4f-5621-43e2-9fbb-0f5cd00b39d4",
+          "completed_at": "2026-09-08T14:50:24.573048+00:00",
+          "attempt_count": 1,
+          "last_attempt_at": "2026-09-08T14:50:24.573048+00:00",
+          "first_attempt_at": "2026-09-08T14:50:24.573048+00:00"
+        },
+        "recorded_status": "playing",
+        "accepted_settlement_key": {
+          "hand_id": "82343861-9681-2e1b-1bec-0f734b7a423d",
+          "table_id": "c2188a4f-5621-43e2-9fbb-0f5cd00b39d4"
+        }
+      },
+      {
+        "hand_id": "82343861-9681-2e1b-1bec-0f734b7a423d",
+        "user_id": "3cbbefb7-1a34-4111-83a1-1e04378a495e",
+        "position": 2,
+        "table_id": "c2188a4f-5621-43e2-9fbb-0f5cd00b39d4",
+        "player_id": "f6fe8ddb-dc04-4342-80bc-7019ccc59abd",
+        "hand_number": 8218585,
+        "committed_at": "2026-09-08T14:50:24.573048+00:00",
+        "stack_before": 300,
+        "source_sha256": "b5f954f9a79a8a5b0c26a9aecab45c88b3bb1ef392b82a9987e2e68a57f0d9c1",
+        "recorded_chips": 0,
+        "source_receipt": {
+          "error": null,
+          "result": {
+            "bbj": 0,
+            "mode": "delta",
+            "rake": 0,
+            "inflow": 0,
+            "hand_id": "82343861-9681-2e1b-1bec-0f734b7a423d",
+            "players": 2,
+            "rebased": {},
+            "request": {
+              "bbj": 0,
+              "rake": 0,
+              "inflow": 0,
+              "stacks": [
+                {
+                  "stack": 0,
+                  "user_id": "3cbbefb7-1a34-4111-83a1-1e04378a495e",
+                  "stack_before": 300
+                },
+                {
+                  "stack": 600,
+                  "user_id": "46887b99-8cd6-45db-861c-ad24232efbfe",
+                  "stack_before": 300
+                }
+              ]
+            },
+            "success": true,
+            "written": {
+              "3cbbefb7-1a34-4111-83a1-1e04378a495e": 0,
+              "46887b99-8cd6-45db-861c-ad24232efbfe": 600
+            },
+            "departed": [],
+            "table_id": "c2188a4f-5621-43e2-9fbb-0f5cd00b39d4",
+            "net_deltas": 0,
+            "hand_number": 8218585,
+            "conservation_checked": true
+          },
+          "status": "succeeded",
+          "hand_id": "82343861-9681-2e1b-1bec-0f734b7a423d",
+          "table_id": "c2188a4f-5621-43e2-9fbb-0f5cd00b39d4",
+          "completed_at": "2026-09-08T14:50:24.573048+00:00",
+          "attempt_count": 1,
+          "last_attempt_at": "2026-09-08T14:50:24.573048+00:00",
+          "first_attempt_at": "2026-09-08T14:50:24.573048+00:00"
+        },
+        "recorded_status": "eliminated",
+        "accepted_settlement_key": {
+          "hand_id": "82343861-9681-2e1b-1bec-0f734b7a423d",
+          "table_id": "c2188a4f-5621-43e2-9fbb-0f5cd00b39d4"
+        }
+      }
+    ],
+    "field_size": 2,
+    "basis_sha256": "d69b8a6e02d940fb2e4d9e7f183db89131a42f63cfd6e6af46c04fdef72b245d",
+    "money_writes": 0,
+    "tournament_id": "00f57d7b-db16-4307-8e40-a47e24d4aa29",
+    "financial_mode": "cash_places",
+    "sequence_writes": 0,
+    "satellite_target_id": null,
+    "observed_winner_chips": 600,
+    "recorded_winner_chips": 600,
+    "accepted_receipt_count": 3,
+    "observed_winner_user_id": "46887b99-8cd6-45db-861c-ad24232efbfe",
+    "recorded_winner_chips_match": true
+  },
+  {
+    "ok": false,
+    "reason": "post_zero_positive_write",
+    "user_id": "8ba5f4d2-91ce-4d7b-9182-192663784a92",
+    "version": 1,
+    "tournament_id": "097e3601-ccf9-4035-af40-eb35068d2652"
+  },
+  {
+    "ok": true,
+    "reason": null,
+    "version": 1,
+    "standings": [
+      {
+        "hand_id": "7d99e581-d290-6d7c-73fb-df2b68786ac5",
+        "user_id": "e5a834e5-bae7-4acd-8be9-a3c995a52395",
+        "position": 1,
+        "table_id": "d58ff444-22bc-496a-9d7f-d0e13706910a",
+        "player_id": "4c535266-fa2a-4c33-a34d-02c051deb461",
+        "hand_number": 8216629,
+        "committed_at": "2026-09-08T14:46:07.441906+00:00",
+        "source_sha256": "feec58d87430cf8eef3e6f0676dc0455bad9556d6c08a75841fbd09633bc9711",
+        "observed_chips": 600,
+        "recorded_chips": 600,
+        "source_receipt": {
+          "error": null,
+          "result": {
+            "bbj": 0,
+            "mode": "delta",
+            "rake": 0,
+            "inflow": 0,
+            "hand_id": "7d99e581-d290-6d7c-73fb-df2b68786ac5",
+            "players": 2,
+            "rebased": {},
+            "request": {
+              "bbj": 0,
+              "rake": 0,
+              "inflow": 0,
+              "stacks": [
+                {
+                  "stack": 0,
+                  "user_id": "6162b471-d011-41f7-ad89-9a8d856c9ffb",
+                  "stack_before": 280
+                },
+                {
+                  "stack": 600,
+                  "user_id": "e5a834e5-bae7-4acd-8be9-a3c995a52395",
+                  "stack_before": 320
+                }
+              ]
+            },
+            "success": true,
+            "written": {
+              "6162b471-d011-41f7-ad89-9a8d856c9ffb": 0,
+              "e5a834e5-bae7-4acd-8be9-a3c995a52395": 600
+            },
+            "departed": [],
+            "table_id": "d58ff444-22bc-496a-9d7f-d0e13706910a",
+            "net_deltas": 0,
+            "hand_number": 8216629,
+            "conservation_checked": true
+          },
+          "status": "succeeded",
+          "hand_id": "7d99e581-d290-6d7c-73fb-df2b68786ac5",
+          "table_id": "d58ff444-22bc-496a-9d7f-d0e13706910a",
+          "completed_at": "2026-09-08T14:46:07.441906+00:00",
+          "attempt_count": 1,
+          "last_attempt_at": "2026-09-08T14:46:07.441906+00:00",
+          "first_attempt_at": "2026-09-08T14:46:07.441906+00:00"
+        },
+        "recorded_status": "playing",
+        "accepted_settlement_key": {
+          "hand_id": "7d99e581-d290-6d7c-73fb-df2b68786ac5",
+          "table_id": "d58ff444-22bc-496a-9d7f-d0e13706910a"
+        }
+      },
+      {
+        "hand_id": "7d99e581-d290-6d7c-73fb-df2b68786ac5",
+        "user_id": "6162b471-d011-41f7-ad89-9a8d856c9ffb",
+        "position": 2,
+        "table_id": "d58ff444-22bc-496a-9d7f-d0e13706910a",
+        "player_id": "296d3b8b-9a72-4635-aaf8-a9931fa1eec3",
+        "hand_number": 8216629,
+        "committed_at": "2026-09-08T14:46:07.441906+00:00",
+        "stack_before": 280,
+        "source_sha256": "feec58d87430cf8eef3e6f0676dc0455bad9556d6c08a75841fbd09633bc9711",
+        "recorded_chips": 0,
+        "source_receipt": {
+          "error": null,
+          "result": {
+            "bbj": 0,
+            "mode": "delta",
+            "rake": 0,
+            "inflow": 0,
+            "hand_id": "7d99e581-d290-6d7c-73fb-df2b68786ac5",
+            "players": 2,
+            "rebased": {},
+            "request": {
+              "bbj": 0,
+              "rake": 0,
+              "inflow": 0,
+              "stacks": [
+                {
+                  "stack": 0,
+                  "user_id": "6162b471-d011-41f7-ad89-9a8d856c9ffb",
+                  "stack_before": 280
+                },
+                {
+                  "stack": 600,
+                  "user_id": "e5a834e5-bae7-4acd-8be9-a3c995a52395",
+                  "stack_before": 320
+                }
+              ]
+            },
+            "success": true,
+            "written": {
+              "6162b471-d011-41f7-ad89-9a8d856c9ffb": 0,
+              "e5a834e5-bae7-4acd-8be9-a3c995a52395": 600
+            },
+            "departed": [],
+            "table_id": "d58ff444-22bc-496a-9d7f-d0e13706910a",
+            "net_deltas": 0,
+            "hand_number": 8216629,
+            "conservation_checked": true
+          },
+          "status": "succeeded",
+          "hand_id": "7d99e581-d290-6d7c-73fb-df2b68786ac5",
+          "table_id": "d58ff444-22bc-496a-9d7f-d0e13706910a",
+          "completed_at": "2026-09-08T14:46:07.441906+00:00",
+          "attempt_count": 1,
+          "last_attempt_at": "2026-09-08T14:46:07.441906+00:00",
+          "first_attempt_at": "2026-09-08T14:46:07.441906+00:00"
+        },
+        "recorded_status": "eliminated",
+        "accepted_settlement_key": {
+          "hand_id": "7d99e581-d290-6d7c-73fb-df2b68786ac5",
+          "table_id": "d58ff444-22bc-496a-9d7f-d0e13706910a"
+        }
+      }
+    ],
+    "field_size": 2,
+    "basis_sha256": "1fd76664f641b4255b737a2bd2939ae0dc20491c5f7feff0beecd6e1e569d9d5",
+    "money_writes": 0,
+    "tournament_id": "106c4e13-0da7-4b62-b849-119781d25d4f",
+    "financial_mode": "cash_places",
+    "sequence_writes": 0,
+    "satellite_target_id": null,
+    "observed_winner_chips": 600,
+    "recorded_winner_chips": 600,
+    "accepted_receipt_count": 4,
+    "observed_winner_user_id": "e5a834e5-bae7-4acd-8be9-a3c995a52395",
+    "recorded_winner_chips_match": true
+  },
+  {
+    "ok": true,
+    "reason": null,
+    "version": 1,
+    "standings": [
+      {
+        "hand_id": "540cb8df-7019-31e3-f4b2-513c523cbf68",
+        "user_id": "6b3f4393-3ccb-491d-bce2-361b3385defe",
+        "position": 1,
+        "table_id": "c970441e-3e7e-4df4-94d5-54df3c34718a",
+        "player_id": "57ed198d-c4f2-40c0-b2f2-b7f1b4737cc3",
+        "hand_number": 8219609,
+        "committed_at": "2026-09-08T14:52:08.198877+00:00",
+        "source_sha256": "eb4211917f5c43e68a990c686d573ad3890ec02eadc45de1973bdd12a6f2df55",
+        "observed_chips": 600,
+        "recorded_chips": 600,
+        "source_receipt": {
+          "error": null,
+          "result": {
+            "bbj": 0,
+            "mode": "delta",
+            "rake": 0,
+            "inflow": 0,
+            "hand_id": "540cb8df-7019-31e3-f4b2-513c523cbf68",
+            "players": 2,
+            "rebased": {},
+            "request": {
+              "bbj": 0,
+              "rake": 0,
+              "inflow": 0,
+              "stacks": [
+                {
+                  "stack": 600,
+                  "user_id": "6b3f4393-3ccb-491d-bce2-361b3385defe",
+                  "stack_before": 350
+                },
+                {
+                  "stack": 0,
+                  "user_id": "e0f03a88-afc3-448f-835a-e8e323d09b57",
+                  "stack_before": 250
+                }
+              ]
+            },
+            "success": true,
+            "written": {
+              "6b3f4393-3ccb-491d-bce2-361b3385defe": 600,
+              "e0f03a88-afc3-448f-835a-e8e323d09b57": 0
+            },
+            "departed": [],
+            "table_id": "c970441e-3e7e-4df4-94d5-54df3c34718a",
+            "net_deltas": 0,
+            "hand_number": 8219609,
+            "conservation_checked": true
+          },
+          "status": "succeeded",
+          "hand_id": "540cb8df-7019-31e3-f4b2-513c523cbf68",
+          "table_id": "c970441e-3e7e-4df4-94d5-54df3c34718a",
+          "completed_at": "2026-09-08T14:52:08.198877+00:00",
+          "attempt_count": 1,
+          "last_attempt_at": "2026-09-08T14:52:08.198877+00:00",
+          "first_attempt_at": "2026-09-08T14:52:08.198877+00:00"
+        },
+        "recorded_status": "playing",
+        "accepted_settlement_key": {
+          "hand_id": "540cb8df-7019-31e3-f4b2-513c523cbf68",
+          "table_id": "c970441e-3e7e-4df4-94d5-54df3c34718a"
+        }
+      },
+      {
+        "hand_id": "540cb8df-7019-31e3-f4b2-513c523cbf68",
+        "user_id": "e0f03a88-afc3-448f-835a-e8e323d09b57",
+        "position": 2,
+        "table_id": "c970441e-3e7e-4df4-94d5-54df3c34718a",
+        "player_id": "208c4209-f1b7-470c-ab40-bd76339afe78",
+        "hand_number": 8219609,
+        "committed_at": "2026-09-08T14:52:08.198877+00:00",
+        "stack_before": 250,
+        "source_sha256": "eb4211917f5c43e68a990c686d573ad3890ec02eadc45de1973bdd12a6f2df55",
+        "recorded_chips": 0,
+        "source_receipt": {
+          "error": null,
+          "result": {
+            "bbj": 0,
+            "mode": "delta",
+            "rake": 0,
+            "inflow": 0,
+            "hand_id": "540cb8df-7019-31e3-f4b2-513c523cbf68",
+            "players": 2,
+            "rebased": {},
+            "request": {
+              "bbj": 0,
+              "rake": 0,
+              "inflow": 0,
+              "stacks": [
+                {
+                  "stack": 600,
+                  "user_id": "6b3f4393-3ccb-491d-bce2-361b3385defe",
+                  "stack_before": 350
+                },
+                {
+                  "stack": 0,
+                  "user_id": "e0f03a88-afc3-448f-835a-e8e323d09b57",
+                  "stack_before": 250
+                }
+              ]
+            },
+            "success": true,
+            "written": {
+              "6b3f4393-3ccb-491d-bce2-361b3385defe": 600,
+              "e0f03a88-afc3-448f-835a-e8e323d09b57": 0
+            },
+            "departed": [],
+            "table_id": "c970441e-3e7e-4df4-94d5-54df3c34718a",
+            "net_deltas": 0,
+            "hand_number": 8219609,
+            "conservation_checked": true
+          },
+          "status": "succeeded",
+          "hand_id": "540cb8df-7019-31e3-f4b2-513c523cbf68",
+          "table_id": "c970441e-3e7e-4df4-94d5-54df3c34718a",
+          "completed_at": "2026-09-08T14:52:08.198877+00:00",
+          "attempt_count": 1,
+          "last_attempt_at": "2026-09-08T14:52:08.198877+00:00",
+          "first_attempt_at": "2026-09-08T14:52:08.198877+00:00"
+        },
+        "recorded_status": "eliminated",
+        "accepted_settlement_key": {
+          "hand_id": "540cb8df-7019-31e3-f4b2-513c523cbf68",
+          "table_id": "c970441e-3e7e-4df4-94d5-54df3c34718a"
+        }
+      }
+    ],
+    "field_size": 2,
+    "basis_sha256": "b543b88cdd57e7462fa9091934fc203b611cced198f0804b1d08ba6d1f5f94a2",
+    "money_writes": 0,
+    "tournament_id": "20c75b67-7f78-4b29-b7df-9594faf62af0",
+    "financial_mode": "satellite",
+    "sequence_writes": 0,
+    "satellite_target_id": "b6774df2-eed0-4ace-b6ba-767bc585e401",
+    "observed_winner_chips": 600,
+    "recorded_winner_chips": 600,
+    "accepted_receipt_count": 6,
+    "observed_winner_user_id": "6b3f4393-3ccb-491d-bce2-361b3385defe",
+    "recorded_winner_chips_match": true
+  },
+  {
+    "ok": true,
+    "reason": null,
+    "version": 1,
+    "standings": [
+      {
+        "hand_id": "fe4339d9-b583-fa6f-0682-da572b3de2b4",
+        "user_id": "aef849b8-2906-4dc0-b108-251710e76d3c",
+        "position": 1,
+        "table_id": "6eaddeaf-1511-4265-bb38-37811ae82ad9",
+        "player_id": "06377b59-94e6-4663-9fc0-5dba12675b9d",
+        "hand_number": 8218417,
+        "committed_at": "2026-09-08T14:50:25.75283+00:00",
+        "source_sha256": "360c6239500ecd2920a1273df874ae734949a773ca842e9f40aa33904a78573c",
+        "observed_chips": 900,
+        "recorded_chips": 900,
+        "source_receipt": {
+          "error": null,
+          "result": {
+            "bbj": 0,
+            "mode": "delta",
+            "rake": 0,
+            "inflow": 0,
+            "hand_id": "fe4339d9-b583-fa6f-0682-da572b3de2b4",
+            "players": 3,
+            "rebased": {},
+            "request": {
+              "bbj": 0,
+              "rake": 0,
+              "inflow": 0,
+              "stacks": [
+                {
+                  "stack": 0,
+                  "user_id": "036f0b55-c601-4d09-982a-5294cf4ea15d",
+                  "stack_before": 290
+                },
+                {
+                  "stack": 0,
+                  "user_id": "72f2fedb-a5f9-4d10-b147-d92e18102d3f",
+                  "stack_before": 270
+                },
+                {
+                  "stack": 900,
+                  "user_id": "aef849b8-2906-4dc0-b108-251710e76d3c",
+                  "stack_before": 340
+                }
+              ]
+            },
+            "success": true,
+            "written": {
+              "036f0b55-c601-4d09-982a-5294cf4ea15d": 0,
+              "72f2fedb-a5f9-4d10-b147-d92e18102d3f": 0,
+              "aef849b8-2906-4dc0-b108-251710e76d3c": 900
+            },
+            "departed": [],
+            "table_id": "6eaddeaf-1511-4265-bb38-37811ae82ad9",
+            "net_deltas": 0,
+            "hand_number": 8218417,
+            "conservation_checked": true
+          },
+          "status": "succeeded",
+          "hand_id": "fe4339d9-b583-fa6f-0682-da572b3de2b4",
+          "table_id": "6eaddeaf-1511-4265-bb38-37811ae82ad9",
+          "completed_at": "2026-09-08T14:50:25.75283+00:00",
+          "attempt_count": 1,
+          "last_attempt_at": "2026-09-08T14:50:25.75283+00:00",
+          "first_attempt_at": "2026-09-08T14:50:25.75283+00:00"
+        },
+        "recorded_status": "playing",
+        "accepted_settlement_key": {
+          "hand_id": "fe4339d9-b583-fa6f-0682-da572b3de2b4",
+          "table_id": "6eaddeaf-1511-4265-bb38-37811ae82ad9"
+        }
+      },
+      {
+        "hand_id": "fe4339d9-b583-fa6f-0682-da572b3de2b4",
+        "user_id": "036f0b55-c601-4d09-982a-5294cf4ea15d",
+        "position": 2,
+        "table_id": "6eaddeaf-1511-4265-bb38-37811ae82ad9",
+        "player_id": "bcab2749-47c7-4617-9d72-9e56de4eb616",
+        "hand_number": 8218417,
+        "committed_at": "2026-09-08T14:50:25.75283+00:00",
+        "stack_before": 290,
+        "source_sha256": "360c6239500ecd2920a1273df874ae734949a773ca842e9f40aa33904a78573c",
+        "recorded_chips": 0,
+        "source_receipt": {
+          "error": null,
+          "result": {
+            "bbj": 0,
+            "mode": "delta",
+            "rake": 0,
+            "inflow": 0,
+            "hand_id": "fe4339d9-b583-fa6f-0682-da572b3de2b4",
+            "players": 3,
+            "rebased": {},
+            "request": {
+              "bbj": 0,
+              "rake": 0,
+              "inflow": 0,
+              "stacks": [
+                {
+                  "stack": 0,
+                  "user_id": "036f0b55-c601-4d09-982a-5294cf4ea15d",
+                  "stack_before": 290
+                },
+                {
+                  "stack": 0,
+                  "user_id": "72f2fedb-a5f9-4d10-b147-d92e18102d3f",
+                  "stack_before": 270
+                },
+                {
+                  "stack": 900,
+                  "user_id": "aef849b8-2906-4dc0-b108-251710e76d3c",
+                  "stack_before": 340
+                }
+              ]
+            },
+            "success": true,
+            "written": {
+              "036f0b55-c601-4d09-982a-5294cf4ea15d": 0,
+              "72f2fedb-a5f9-4d10-b147-d92e18102d3f": 0,
+              "aef849b8-2906-4dc0-b108-251710e76d3c": 900
+            },
+            "departed": [],
+            "table_id": "6eaddeaf-1511-4265-bb38-37811ae82ad9",
+            "net_deltas": 0,
+            "hand_number": 8218417,
+            "conservation_checked": true
+          },
+          "status": "succeeded",
+          "hand_id": "fe4339d9-b583-fa6f-0682-da572b3de2b4",
+          "table_id": "6eaddeaf-1511-4265-bb38-37811ae82ad9",
+          "completed_at": "2026-09-08T14:50:25.75283+00:00",
+          "attempt_count": 1,
+          "last_attempt_at": "2026-09-08T14:50:25.75283+00:00",
+          "first_attempt_at": "2026-09-08T14:50:25.75283+00:00"
+        },
+        "recorded_status": "eliminated",
+        "accepted_settlement_key": {
+          "hand_id": "fe4339d9-b583-fa6f-0682-da572b3de2b4",
+          "table_id": "6eaddeaf-1511-4265-bb38-37811ae82ad9"
+        }
+      },
+      {
+        "hand_id": "fe4339d9-b583-fa6f-0682-da572b3de2b4",
+        "user_id": "72f2fedb-a5f9-4d10-b147-d92e18102d3f",
+        "position": 3,
+        "table_id": "6eaddeaf-1511-4265-bb38-37811ae82ad9",
+        "player_id": "1350d845-cdf8-41ad-86bf-abf2f2460cab",
+        "hand_number": 8218417,
+        "committed_at": "2026-09-08T14:50:25.75283+00:00",
+        "stack_before": 270,
+        "source_sha256": "360c6239500ecd2920a1273df874ae734949a773ca842e9f40aa33904a78573c",
+        "recorded_chips": 0,
+        "source_receipt": {
+          "error": null,
+          "result": {
+            "bbj": 0,
+            "mode": "delta",
+            "rake": 0,
+            "inflow": 0,
+            "hand_id": "fe4339d9-b583-fa6f-0682-da572b3de2b4",
+            "players": 3,
+            "rebased": {},
+            "request": {
+              "bbj": 0,
+              "rake": 0,
+              "inflow": 0,
+              "stacks": [
+                {
+                  "stack": 0,
+                  "user_id": "036f0b55-c601-4d09-982a-5294cf4ea15d",
+                  "stack_before": 290
+                },
+                {
+                  "stack": 0,
+                  "user_id": "72f2fedb-a5f9-4d10-b147-d92e18102d3f",
+                  "stack_before": 270
+                },
+                {
+                  "stack": 900,
+                  "user_id": "aef849b8-2906-4dc0-b108-251710e76d3c",
+                  "stack_before": 340
+                }
+              ]
+            },
+            "success": true,
+            "written": {
+              "036f0b55-c601-4d09-982a-5294cf4ea15d": 0,
+              "72f2fedb-a5f9-4d10-b147-d92e18102d3f": 0,
+              "aef849b8-2906-4dc0-b108-251710e76d3c": 900
+            },
+            "departed": [],
+            "table_id": "6eaddeaf-1511-4265-bb38-37811ae82ad9",
+            "net_deltas": 0,
+            "hand_number": 8218417,
+            "conservation_checked": true
+          },
+          "status": "succeeded",
+          "hand_id": "fe4339d9-b583-fa6f-0682-da572b3de2b4",
+          "table_id": "6eaddeaf-1511-4265-bb38-37811ae82ad9",
+          "completed_at": "2026-09-08T14:50:25.75283+00:00",
+          "attempt_count": 1,
+          "last_attempt_at": "2026-09-08T14:50:25.75283+00:00",
+          "first_attempt_at": "2026-09-08T14:50:25.75283+00:00"
+        },
+        "recorded_status": "eliminated",
+        "accepted_settlement_key": {
+          "hand_id": "fe4339d9-b583-fa6f-0682-da572b3de2b4",
+          "table_id": "6eaddeaf-1511-4265-bb38-37811ae82ad9"
+        }
+      }
+    ],
+    "field_size": 3,
+    "basis_sha256": "7543f530e4604af09eb5e2942a7d44a9f38aa6f942942c90fd02bf9cf7d49f4a",
+    "money_writes": 0,
+    "tournament_id": "2aa4cba1-506f-426b-a1ba-d8e22e018533",
+    "financial_mode": "spin",
+    "sequence_writes": 0,
+    "satellite_target_id": null,
+    "observed_winner_chips": 900,
+    "recorded_winner_chips": 900,
+    "accepted_receipt_count": 5,
+    "observed_winner_user_id": "aef849b8-2906-4dc0-b108-251710e76d3c",
+    "recorded_winner_chips_match": true
+  },
+  {
+    "ok": true,
+    "reason": null,
+    "version": 1,
+    "standings": [
+      {
+        "hand_id": "91d95d62-006a-c623-3c22-0574ceed2540",
+        "user_id": "4bdebc9a-65b1-4c5b-8f6c-012b9c31b4fe",
+        "position": 1,
+        "table_id": "28ce5f90-a050-436f-ae98-cfa13bad9f96",
+        "player_id": "e053b743-adf1-4817-9c81-e62ea03343b7",
+        "hand_number": 8219179,
+        "committed_at": "2026-09-08T14:51:29.480182+00:00",
+        "source_sha256": "ca3f452f34a3e6cfc9613ba542d3b9d82aa197bb557f848df90c0b393c01ae5f",
+        "observed_chips": 600,
+        "recorded_chips": 600,
+        "source_receipt": {
+          "error": null,
+          "result": {
+            "bbj": 0,
+            "mode": "delta",
+            "rake": 0,
+            "inflow": 0,
+            "hand_id": "91d95d62-006a-c623-3c22-0574ceed2540",
+            "players": 2,
+            "rebased": {},
+            "request": {
+              "bbj": 0,
+              "rake": 0,
+              "inflow": 0,
+              "stacks": [
+                {
+                  "stack": 0,
+                  "user_id": "15de44a8-2e5f-48ab-9f3c-c022f83c760d",
+                  "stack_before": 300
+                },
+                {
+                  "stack": 600,
+                  "user_id": "4bdebc9a-65b1-4c5b-8f6c-012b9c31b4fe",
+                  "stack_before": 300
+                }
+              ]
+            },
+            "success": true,
+            "written": {
+              "15de44a8-2e5f-48ab-9f3c-c022f83c760d": 0,
+              "4bdebc9a-65b1-4c5b-8f6c-012b9c31b4fe": 600
+            },
+            "departed": [],
+            "table_id": "28ce5f90-a050-436f-ae98-cfa13bad9f96",
+            "net_deltas": 0,
+            "hand_number": 8219179,
+            "conservation_checked": true
+          },
+          "status": "succeeded",
+          "hand_id": "91d95d62-006a-c623-3c22-0574ceed2540",
+          "table_id": "28ce5f90-a050-436f-ae98-cfa13bad9f96",
+          "completed_at": "2026-09-08T14:51:29.480182+00:00",
+          "attempt_count": 1,
+          "last_attempt_at": "2026-09-08T14:51:29.480182+00:00",
+          "first_attempt_at": "2026-09-08T14:51:29.480182+00:00"
+        },
+        "recorded_status": "playing",
+        "accepted_settlement_key": {
+          "hand_id": "91d95d62-006a-c623-3c22-0574ceed2540",
+          "table_id": "28ce5f90-a050-436f-ae98-cfa13bad9f96"
+        }
+      },
+      {
+        "hand_id": "91d95d62-006a-c623-3c22-0574ceed2540",
+        "user_id": "15de44a8-2e5f-48ab-9f3c-c022f83c760d",
+        "position": 2,
+        "table_id": "28ce5f90-a050-436f-ae98-cfa13bad9f96",
+        "player_id": "b63c077a-e138-4911-ba64-3a91b4a6b0d4",
+        "hand_number": 8219179,
+        "committed_at": "2026-09-08T14:51:29.480182+00:00",
+        "stack_before": 300,
+        "source_sha256": "ca3f452f34a3e6cfc9613ba542d3b9d82aa197bb557f848df90c0b393c01ae5f",
+        "recorded_chips": 0,
+        "source_receipt": {
+          "error": null,
+          "result": {
+            "bbj": 0,
+            "mode": "delta",
+            "rake": 0,
+            "inflow": 0,
+            "hand_id": "91d95d62-006a-c623-3c22-0574ceed2540",
+            "players": 2,
+            "rebased": {},
+            "request": {
+              "bbj": 0,
+              "rake": 0,
+              "inflow": 0,
+              "stacks": [
+                {
+                  "stack": 0,
+                  "user_id": "15de44a8-2e5f-48ab-9f3c-c022f83c760d",
+                  "stack_before": 300
+                },
+                {
+                  "stack": 600,
+                  "user_id": "4bdebc9a-65b1-4c5b-8f6c-012b9c31b4fe",
+                  "stack_before": 300
+                }
+              ]
+            },
+            "success": true,
+            "written": {
+              "15de44a8-2e5f-48ab-9f3c-c022f83c760d": 0,
+              "4bdebc9a-65b1-4c5b-8f6c-012b9c31b4fe": 600
+            },
+            "departed": [],
+            "table_id": "28ce5f90-a050-436f-ae98-cfa13bad9f96",
+            "net_deltas": 0,
+            "hand_number": 8219179,
+            "conservation_checked": true
+          },
+          "status": "succeeded",
+          "hand_id": "91d95d62-006a-c623-3c22-0574ceed2540",
+          "table_id": "28ce5f90-a050-436f-ae98-cfa13bad9f96",
+          "completed_at": "2026-09-08T14:51:29.480182+00:00",
+          "attempt_count": 1,
+          "last_attempt_at": "2026-09-08T14:51:29.480182+00:00",
+          "first_attempt_at": "2026-09-08T14:51:29.480182+00:00"
+        },
+        "recorded_status": "eliminated",
+        "accepted_settlement_key": {
+          "hand_id": "91d95d62-006a-c623-3c22-0574ceed2540",
+          "table_id": "28ce5f90-a050-436f-ae98-cfa13bad9f96"
+        }
+      }
+    ],
+    "field_size": 2,
+    "basis_sha256": "cb69cb27387d1591b222f3c90b0873daa568eac07b2dcc8e647e63c248d0a9c3",
+    "money_writes": 0,
+    "tournament_id": "2d6dadb7-d1cb-4e03-980f-41fafce98afd",
+    "financial_mode": "cash_places",
+    "sequence_writes": 0,
+    "satellite_target_id": null,
+    "observed_winner_chips": 600,
+    "recorded_winner_chips": 600,
+    "accepted_receipt_count": 1,
+    "observed_winner_user_id": "4bdebc9a-65b1-4c5b-8f6c-012b9c31b4fe",
+    "recorded_winner_chips_match": true
+  },
+  {
+    "ok": true,
+    "reason": null,
+    "version": 1,
+    "standings": [
+      {
+        "hand_id": "8303fcff-3f49-0a6d-1d92-46f17fc161b8",
+        "user_id": "57d5af45-0b1c-417c-bc41-64ca9fd1b4b9",
+        "position": 1,
+        "table_id": "7f93a0e8-f75f-4e7b-b7ee-b2daff488eff",
+        "player_id": "9b1b305a-a9d3-4aea-a8c5-aebeba2f7ee2",
+        "hand_number": 8219217,
+        "committed_at": "2026-09-08T14:51:29.495827+00:00",
+        "source_sha256": "6ec89a95dd345395dcddca9f09fceacf585c758f3623ab64c937dfce70198af8",
+        "observed_chips": 600,
+        "recorded_chips": 600,
+        "source_receipt": {
+          "error": null,
+          "result": {
+            "bbj": 0,
+            "mode": "delta",
+            "rake": 0,
+            "inflow": 0,
+            "hand_id": "8303fcff-3f49-0a6d-1d92-46f17fc161b8",
+            "players": 2,
+            "rebased": {},
+            "request": {
+              "bbj": 0,
+              "rake": 0,
+              "inflow": 0,
+              "stacks": [
+                {
+                  "stack": 600,
+                  "user_id": "57d5af45-0b1c-417c-bc41-64ca9fd1b4b9",
+                  "stack_before": 300
+                },
+                {
+                  "stack": 0,
+                  "user_id": "88056a18-39c6-41d8-bd36-5fb0bfb00ce9",
+                  "stack_before": 300
+                }
+              ]
+            },
+            "success": true,
+            "written": {
+              "57d5af45-0b1c-417c-bc41-64ca9fd1b4b9": 600,
+              "88056a18-39c6-41d8-bd36-5fb0bfb00ce9": 0
+            },
+            "departed": [],
+            "table_id": "7f93a0e8-f75f-4e7b-b7ee-b2daff488eff",
+            "net_deltas": 0,
+            "hand_number": 8219217,
+            "conservation_checked": true
+          },
+          "status": "succeeded",
+          "hand_id": "8303fcff-3f49-0a6d-1d92-46f17fc161b8",
+          "table_id": "7f93a0e8-f75f-4e7b-b7ee-b2daff488eff",
+          "completed_at": "2026-09-08T14:51:29.495827+00:00",
+          "attempt_count": 1,
+          "last_attempt_at": "2026-09-08T14:51:29.495827+00:00",
+          "first_attempt_at": "2026-09-08T14:51:29.495827+00:00"
+        },
+        "recorded_status": "playing",
+        "accepted_settlement_key": {
+          "hand_id": "8303fcff-3f49-0a6d-1d92-46f17fc161b8",
+          "table_id": "7f93a0e8-f75f-4e7b-b7ee-b2daff488eff"
+        }
+      },
+      {
+        "hand_id": "8303fcff-3f49-0a6d-1d92-46f17fc161b8",
+        "user_id": "88056a18-39c6-41d8-bd36-5fb0bfb00ce9",
+        "position": 2,
+        "table_id": "7f93a0e8-f75f-4e7b-b7ee-b2daff488eff",
+        "player_id": "de8ace6d-a5cf-42c2-b2ad-b0a5c5c359b3",
+        "hand_number": 8219217,
+        "committed_at": "2026-09-08T14:51:29.495827+00:00",
+        "stack_before": 300,
+        "source_sha256": "6ec89a95dd345395dcddca9f09fceacf585c758f3623ab64c937dfce70198af8",
+        "recorded_chips": 0,
+        "source_receipt": {
+          "error": null,
+          "result": {
+            "bbj": 0,
+            "mode": "delta",
+            "rake": 0,
+            "inflow": 0,
+            "hand_id": "8303fcff-3f49-0a6d-1d92-46f17fc161b8",
+            "players": 2,
+            "rebased": {},
+            "request": {
+              "bbj": 0,
+              "rake": 0,
+              "inflow": 0,
+              "stacks": [
+                {
+                  "stack": 600,
+                  "user_id": "57d5af45-0b1c-417c-bc41-64ca9fd1b4b9",
+                  "stack_before": 300
+                },
+                {
+                  "stack": 0,
+                  "user_id": "88056a18-39c6-41d8-bd36-5fb0bfb00ce9",
+                  "stack_before": 300
+                }
+              ]
+            },
+            "success": true,
+            "written": {
+              "57d5af45-0b1c-417c-bc41-64ca9fd1b4b9": 600,
+              "88056a18-39c6-41d8-bd36-5fb0bfb00ce9": 0
+            },
+            "departed": [],
+            "table_id": "7f93a0e8-f75f-4e7b-b7ee-b2daff488eff",
+            "net_deltas": 0,
+            "hand_number": 8219217,
+            "conservation_checked": true
+          },
+          "status": "succeeded",
+          "hand_id": "8303fcff-3f49-0a6d-1d92-46f17fc161b8",
+          "table_id": "7f93a0e8-f75f-4e7b-b7ee-b2daff488eff",
+          "completed_at": "2026-09-08T14:51:29.495827+00:00",
+          "attempt_count": 1,
+          "last_attempt_at": "2026-09-08T14:51:29.495827+00:00",
+          "first_attempt_at": "2026-09-08T14:51:29.495827+00:00"
+        },
+        "recorded_status": "eliminated",
+        "accepted_settlement_key": {
+          "hand_id": "8303fcff-3f49-0a6d-1d92-46f17fc161b8",
+          "table_id": "7f93a0e8-f75f-4e7b-b7ee-b2daff488eff"
+        }
+      }
+    ],
+    "field_size": 2,
+    "basis_sha256": "dc916daa37ddedd5e023fc5fe07a6adb7d04ac794c45bac42ce3620b143067d4",
+    "money_writes": 0,
+    "tournament_id": "3843907b-dc12-40c3-9641-d2c66f4ebe7c",
+    "financial_mode": "cash_places",
+    "sequence_writes": 0,
+    "satellite_target_id": null,
+    "observed_winner_chips": 600,
+    "recorded_winner_chips": 600,
+    "accepted_receipt_count": 11,
+    "observed_winner_user_id": "57d5af45-0b1c-417c-bc41-64ca9fd1b4b9",
+    "recorded_winner_chips_match": true
+  },
+  {
+    "ok": false,
+    "reason": "post_zero_positive_write",
+    "user_id": "f9d1432c-db72-4d02-90be-714269f1111f",
+    "version": 1,
+    "tournament_id": "44d7e2d8-66ed-48ae-a1cb-306ae92b6dfa"
+  },
+  {
+    "ok": true,
+    "reason": null,
+    "version": 1,
+    "standings": [
+      {
+        "hand_id": "8eddf2aa-1824-fcfe-5eb4-04ae22d4a595",
+        "user_id": "00000000-0000-0000-0000-000000000028",
+        "position": 1,
+        "table_id": "e039d37d-3b04-4fca-9f2c-116adaa0b3e9",
+        "player_id": "a4223969-58c2-461b-93de-aff5aef971c3",
+        "hand_number": 8218521,
+        "committed_at": "2026-09-08T14:50:11.564828+00:00",
+        "source_sha256": "cc47becb1328515cf9e0245c4b19d901ae7932ad148722bfa9a0445201b13e77",
+        "observed_chips": 900,
+        "recorded_chips": 900,
+        "source_receipt": {
+          "error": null,
+          "result": {
+            "bbj": 0,
+            "mode": "delta",
+            "rake": 0,
+            "inflow": 0,
+            "hand_id": "8eddf2aa-1824-fcfe-5eb4-04ae22d4a595",
+            "players": 2,
+            "rebased": {},
+            "request": {
+              "bbj": 0,
+              "rake": 0,
+              "inflow": 0,
+              "stacks": [
+                {
+                  "stack": 900,
+                  "user_id": "00000000-0000-0000-0000-000000000028",
+                  "stack_before": 620
+                },
+                {
+                  "stack": 0,
+                  "user_id": "89a23158-4840-4e26-b9b6-d837eca341ad",
+                  "stack_before": 280
+                }
+              ]
+            },
+            "success": true,
+            "written": {
+              "00000000-0000-0000-0000-000000000028": 900,
+              "89a23158-4840-4e26-b9b6-d837eca341ad": 0
+            },
+            "departed": [],
+            "table_id": "e039d37d-3b04-4fca-9f2c-116adaa0b3e9",
+            "net_deltas": 0,
+            "hand_number": 8218521,
+            "conservation_checked": true
+          },
+          "status": "succeeded",
+          "hand_id": "8eddf2aa-1824-fcfe-5eb4-04ae22d4a595",
+          "table_id": "e039d37d-3b04-4fca-9f2c-116adaa0b3e9",
+          "completed_at": "2026-09-08T14:50:11.564828+00:00",
+          "attempt_count": 1,
+          "last_attempt_at": "2026-09-08T14:50:11.564828+00:00",
+          "first_attempt_at": "2026-09-08T14:50:11.564828+00:00"
+        },
+        "recorded_status": "playing",
+        "accepted_settlement_key": {
+          "hand_id": "8eddf2aa-1824-fcfe-5eb4-04ae22d4a595",
+          "table_id": "e039d37d-3b04-4fca-9f2c-116adaa0b3e9"
+        }
+      },
+      {
+        "hand_id": "8eddf2aa-1824-fcfe-5eb4-04ae22d4a595",
+        "user_id": "89a23158-4840-4e26-b9b6-d837eca341ad",
+        "position": 2,
+        "table_id": "e039d37d-3b04-4fca-9f2c-116adaa0b3e9",
+        "player_id": "beb4eada-c857-4626-9c31-4cb2d46f0ca0",
+        "hand_number": 8218521,
+        "committed_at": "2026-09-08T14:50:11.564828+00:00",
+        "stack_before": 280,
+        "source_sha256": "cc47becb1328515cf9e0245c4b19d901ae7932ad148722bfa9a0445201b13e77",
+        "recorded_chips": 0,
+        "source_receipt": {
+          "error": null,
+          "result": {
+            "bbj": 0,
+            "mode": "delta",
+            "rake": 0,
+            "inflow": 0,
+            "hand_id": "8eddf2aa-1824-fcfe-5eb4-04ae22d4a595",
+            "players": 2,
+            "rebased": {},
+            "request": {
+              "bbj": 0,
+              "rake": 0,
+              "inflow": 0,
+              "stacks": [
+                {
+                  "stack": 900,
+                  "user_id": "00000000-0000-0000-0000-000000000028",
+                  "stack_before": 620
+                },
+                {
+                  "stack": 0,
+                  "user_id": "89a23158-4840-4e26-b9b6-d837eca341ad",
+                  "stack_before": 280
+                }
+              ]
+            },
+            "success": true,
+            "written": {
+              "00000000-0000-0000-0000-000000000028": 900,
+              "89a23158-4840-4e26-b9b6-d837eca341ad": 0
+            },
+            "departed": [],
+            "table_id": "e039d37d-3b04-4fca-9f2c-116adaa0b3e9",
+            "net_deltas": 0,
+            "hand_number": 8218521,
+            "conservation_checked": true
+          },
+          "status": "succeeded",
+          "hand_id": "8eddf2aa-1824-fcfe-5eb4-04ae22d4a595",
+          "table_id": "e039d37d-3b04-4fca-9f2c-116adaa0b3e9",
+          "completed_at": "2026-09-08T14:50:11.564828+00:00",
+          "attempt_count": 1,
+          "last_attempt_at": "2026-09-08T14:50:11.564828+00:00",
+          "first_attempt_at": "2026-09-08T14:50:11.564828+00:00"
+        },
+        "recorded_status": "eliminated",
+        "accepted_settlement_key": {
+          "hand_id": "8eddf2aa-1824-fcfe-5eb4-04ae22d4a595",
+          "table_id": "e039d37d-3b04-4fca-9f2c-116adaa0b3e9"
+        }
+      },
+      {
+        "hand_id": "81e0a8ec-c91b-42b3-3e04-8b10c248e4bf",
+        "user_id": "c025d7b4-b93e-4aa0-89e5-e391c246b0f2",
+        "position": 3,
+        "table_id": "e039d37d-3b04-4fca-9f2c-116adaa0b3e9",
+        "player_id": "cf90df6f-d0ff-4767-91a7-bae09232c846",
+        "hand_number": 8218226,
+        "committed_at": "2026-09-08T14:49:41.113244+00:00",
+        "stack_before": 250,
+        "source_sha256": "53d7a868c5803b92641beade068965faf382fb63f22259c393f85e7ffbe71367",
+        "recorded_chips": 0,
+        "source_receipt": {
+          "error": null,
+          "result": {
+            "bbj": 0,
+            "mode": "delta",
+            "rake": 0,
+            "inflow": 0,
+            "hand_id": "81e0a8ec-c91b-42b3-3e04-8b10c248e4bf",
+            "players": 3,
+            "rebased": {},
+            "request": {
+              "bbj": 0,
+              "rake": 0,
+              "inflow": 0,
+              "stacks": [
+                {
+                  "stack": 630,
+                  "user_id": "00000000-0000-0000-0000-000000000028",
+                  "stack_before": 380
+                },
+                {
+                  "stack": 270,
+                  "user_id": "89a23158-4840-4e26-b9b6-d837eca341ad",
+                  "stack_before": 270
+                },
+                {
+                  "stack": 0,
+                  "user_id": "c025d7b4-b93e-4aa0-89e5-e391c246b0f2",
+                  "stack_before": 250
+                }
+              ]
+            },
+            "success": true,
+            "written": {
+              "00000000-0000-0000-0000-000000000028": 630,
+              "89a23158-4840-4e26-b9b6-d837eca341ad": 270,
+              "c025d7b4-b93e-4aa0-89e5-e391c246b0f2": 0
+            },
+            "departed": [],
+            "table_id": "e039d37d-3b04-4fca-9f2c-116adaa0b3e9",
+            "net_deltas": 0,
+            "hand_number": 8218226,
+            "conservation_checked": true
+          },
+          "status": "succeeded",
+          "hand_id": "81e0a8ec-c91b-42b3-3e04-8b10c248e4bf",
+          "table_id": "e039d37d-3b04-4fca-9f2c-116adaa0b3e9",
+          "completed_at": "2026-09-08T14:49:41.113244+00:00",
+          "attempt_count": 1,
+          "last_attempt_at": "2026-09-08T14:49:41.113244+00:00",
+          "first_attempt_at": "2026-09-08T14:49:41.113244+00:00"
+        },
+        "recorded_status": "eliminated",
+        "accepted_settlement_key": {
+          "hand_id": "81e0a8ec-c91b-42b3-3e04-8b10c248e4bf",
+          "table_id": "e039d37d-3b04-4fca-9f2c-116adaa0b3e9"
+        }
+      }
+    ],
+    "field_size": 3,
+    "basis_sha256": "64ba9e23f99c7281190c7edcc9715c9876e58e6dbd9427b4509556c2ed9ef719",
+    "money_writes": 0,
+    "tournament_id": "482e90bb-ef9d-4135-9067-9f0332c94142",
+    "financial_mode": "spin",
+    "sequence_writes": 0,
+    "satellite_target_id": null,
+    "observed_winner_chips": 900,
+    "recorded_winner_chips": 900,
+    "accepted_receipt_count": 11,
+    "observed_winner_user_id": "00000000-0000-0000-0000-000000000028",
+    "recorded_winner_chips_match": true
+  },
+  {
+    "ok": true,
+    "reason": null,
+    "version": 1,
+    "standings": [
+      {
+        "hand_id": "8b8249c8-54e8-b528-7359-b1e257053dd4",
+        "user_id": "56315bf9-8a2b-4625-9e53-c7fe4bde9a8c",
+        "position": 1,
+        "table_id": "64f0ee4f-621f-4fae-8ce7-e6a7cff961e1",
+        "player_id": "c93e5b2f-2914-4d81-a10f-9f8239d8b1fd",
+        "hand_number": 8217640,
+        "committed_at": "2026-09-08T14:48:32.117008+00:00",
+        "source_sha256": "196f842d843e3d5df7c0c23732565af3e62f08b2c45e5be786afcdad8c2140cb",
+        "observed_chips": 600,
+        "recorded_chips": 600,
+        "source_receipt": {
+          "error": null,
+          "result": {
+            "bbj": 0,
+            "mode": "delta",
+            "rake": 0,
+            "inflow": 0,
+            "hand_id": "8b8249c8-54e8-b528-7359-b1e257053dd4",
+            "players": 2,
+            "rebased": {},
+            "request": {
+              "bbj": 0,
+              "rake": 0,
+              "inflow": 0,
+              "stacks": [
+                {
+                  "stack": 0,
+                  "user_id": "0d766e23-bdf2-437a-87f4-0268605c8120",
+                  "stack_before": 30
+                },
+                {
+                  "stack": 600,
+                  "user_id": "56315bf9-8a2b-4625-9e53-c7fe4bde9a8c",
+                  "stack_before": 570
+                }
+              ]
+            },
+            "success": true,
+            "written": {
+              "0d766e23-bdf2-437a-87f4-0268605c8120": 0,
+              "56315bf9-8a2b-4625-9e53-c7fe4bde9a8c": 600
+            },
+            "departed": [],
+            "table_id": "64f0ee4f-621f-4fae-8ce7-e6a7cff961e1",
+            "net_deltas": 0,
+            "hand_number": 8217640,
+            "conservation_checked": true
+          },
+          "status": "succeeded",
+          "hand_id": "8b8249c8-54e8-b528-7359-b1e257053dd4",
+          "table_id": "64f0ee4f-621f-4fae-8ce7-e6a7cff961e1",
+          "completed_at": "2026-09-08T14:48:32.117008+00:00",
+          "attempt_count": 1,
+          "last_attempt_at": "2026-09-08T14:48:32.117008+00:00",
+          "first_attempt_at": "2026-09-08T14:48:32.117008+00:00"
+        },
+        "recorded_status": "playing",
+        "accepted_settlement_key": {
+          "hand_id": "8b8249c8-54e8-b528-7359-b1e257053dd4",
+          "table_id": "64f0ee4f-621f-4fae-8ce7-e6a7cff961e1"
+        }
+      },
+      {
+        "hand_id": "8b8249c8-54e8-b528-7359-b1e257053dd4",
+        "user_id": "0d766e23-bdf2-437a-87f4-0268605c8120",
+        "position": 2,
+        "table_id": "64f0ee4f-621f-4fae-8ce7-e6a7cff961e1",
+        "player_id": "f73d9c6a-3f63-4afc-8ac8-24ef9a8af343",
+        "hand_number": 8217640,
+        "committed_at": "2026-09-08T14:48:32.117008+00:00",
+        "stack_before": 30,
+        "source_sha256": "196f842d843e3d5df7c0c23732565af3e62f08b2c45e5be786afcdad8c2140cb",
+        "recorded_chips": 0,
+        "source_receipt": {
+          "error": null,
+          "result": {
+            "bbj": 0,
+            "mode": "delta",
+            "rake": 0,
+            "inflow": 0,
+            "hand_id": "8b8249c8-54e8-b528-7359-b1e257053dd4",
+            "players": 2,
+            "rebased": {},
+            "request": {
+              "bbj": 0,
+              "rake": 0,
+              "inflow": 0,
+              "stacks": [
+                {
+                  "stack": 0,
+                  "user_id": "0d766e23-bdf2-437a-87f4-0268605c8120",
+                  "stack_before": 30
+                },
+                {
+                  "stack": 600,
+                  "user_id": "56315bf9-8a2b-4625-9e53-c7fe4bde9a8c",
+                  "stack_before": 570
+                }
+              ]
+            },
+            "success": true,
+            "written": {
+              "0d766e23-bdf2-437a-87f4-0268605c8120": 0,
+              "56315bf9-8a2b-4625-9e53-c7fe4bde9a8c": 600
+            },
+            "departed": [],
+            "table_id": "64f0ee4f-621f-4fae-8ce7-e6a7cff961e1",
+            "net_deltas": 0,
+            "hand_number": 8217640,
+            "conservation_checked": true
+          },
+          "status": "succeeded",
+          "hand_id": "8b8249c8-54e8-b528-7359-b1e257053dd4",
+          "table_id": "64f0ee4f-621f-4fae-8ce7-e6a7cff961e1",
+          "completed_at": "2026-09-08T14:48:32.117008+00:00",
+          "attempt_count": 1,
+          "last_attempt_at": "2026-09-08T14:48:32.117008+00:00",
+          "first_attempt_at": "2026-09-08T14:48:32.117008+00:00"
+        },
+        "recorded_status": "eliminated",
+        "accepted_settlement_key": {
+          "hand_id": "8b8249c8-54e8-b528-7359-b1e257053dd4",
+          "table_id": "64f0ee4f-621f-4fae-8ce7-e6a7cff961e1"
+        }
+      }
+    ],
+    "field_size": 2,
+    "basis_sha256": "43d8d267d731706fe4def83101362964a044c20060868c6a9437368d514b59e9",
+    "money_writes": 0,
+    "tournament_id": "659d3ec6-c584-42ea-956d-5fc2004ba566",
+    "financial_mode": "cash_places",
+    "sequence_writes": 0,
+    "satellite_target_id": null,
+    "observed_winner_chips": 600,
+    "recorded_winner_chips": 600,
+    "accepted_receipt_count": 8,
+    "observed_winner_user_id": "56315bf9-8a2b-4625-9e53-c7fe4bde9a8c",
+    "recorded_winner_chips_match": true
+  },
+  {
+    "ok": true,
+    "reason": null,
+    "version": 1,
+    "standings": [
+      {
+        "hand_id": "bdbf5656-3a16-f8dd-2e8b-3490956532c8",
+        "user_id": "3d85f161-27ce-45f4-b94b-1d42c62252af",
+        "position": 1,
+        "table_id": "776bbc54-5f2b-43b2-877c-2c6250a6b654",
+        "player_id": "9d2d1a8b-dbfa-405f-8090-fbd942b55abb",
+        "hand_number": 8219723,
+        "committed_at": "2026-09-08T14:52:15.590359+00:00",
+        "source_sha256": "6d31018e334d2ba7d978badd8456ce8a74704b6b47fca9c6a842a81bf436ff8e",
+        "observed_chips": 900,
+        "recorded_chips": 900,
+        "source_receipt": {
+          "error": null,
+          "result": {
+            "bbj": 0,
+            "mode": "delta",
+            "rake": 0,
+            "inflow": 0,
+            "hand_id": "bdbf5656-3a16-f8dd-2e8b-3490956532c8",
+            "players": 2,
+            "rebased": {},
+            "request": {
+              "bbj": 0,
+              "rake": 0,
+              "inflow": 0,
+              "stacks": [
+                {
+                  "stack": 900,
+                  "user_id": "3d85f161-27ce-45f4-b94b-1d42c62252af",
+                  "stack_before": 890
+                },
+                {
+                  "stack": 0,
+                  "user_id": "e573c327-dc89-4d87-81f0-efd0cb3c8020",
+                  "stack_before": 10
+                }
+              ]
+            },
+            "success": true,
+            "written": {
+              "3d85f161-27ce-45f4-b94b-1d42c62252af": 900,
+              "e573c327-dc89-4d87-81f0-efd0cb3c8020": 0
+            },
+            "departed": [],
+            "table_id": "776bbc54-5f2b-43b2-877c-2c6250a6b654",
+            "net_deltas": 0,
+            "hand_number": 8219723,
+            "conservation_checked": true
+          },
+          "status": "succeeded",
+          "hand_id": "bdbf5656-3a16-f8dd-2e8b-3490956532c8",
+          "table_id": "776bbc54-5f2b-43b2-877c-2c6250a6b654",
+          "completed_at": "2026-09-08T14:52:15.590359+00:00",
+          "attempt_count": 1,
+          "last_attempt_at": "2026-09-08T14:52:15.590359+00:00",
+          "first_attempt_at": "2026-09-08T14:52:15.590359+00:00"
+        },
+        "recorded_status": "playing",
+        "accepted_settlement_key": {
+          "hand_id": "bdbf5656-3a16-f8dd-2e8b-3490956532c8",
+          "table_id": "776bbc54-5f2b-43b2-877c-2c6250a6b654"
+        }
+      },
+      {
+        "hand_id": "bdbf5656-3a16-f8dd-2e8b-3490956532c8",
+        "user_id": "e573c327-dc89-4d87-81f0-efd0cb3c8020",
+        "position": 2,
+        "table_id": "776bbc54-5f2b-43b2-877c-2c6250a6b654",
+        "player_id": "6f2dbdef-54ed-4761-96e3-a7c37f301f96",
+        "hand_number": 8219723,
+        "committed_at": "2026-09-08T14:52:15.590359+00:00",
+        "stack_before": 10,
+        "source_sha256": "6d31018e334d2ba7d978badd8456ce8a74704b6b47fca9c6a842a81bf436ff8e",
+        "recorded_chips": 0,
+        "source_receipt": {
+          "error": null,
+          "result": {
+            "bbj": 0,
+            "mode": "delta",
+            "rake": 0,
+            "inflow": 0,
+            "hand_id": "bdbf5656-3a16-f8dd-2e8b-3490956532c8",
+            "players": 2,
+            "rebased": {},
+            "request": {
+              "bbj": 0,
+              "rake": 0,
+              "inflow": 0,
+              "stacks": [
+                {
+                  "stack": 900,
+                  "user_id": "3d85f161-27ce-45f4-b94b-1d42c62252af",
+                  "stack_before": 890
+                },
+                {
+                  "stack": 0,
+                  "user_id": "e573c327-dc89-4d87-81f0-efd0cb3c8020",
+                  "stack_before": 10
+                }
+              ]
+            },
+            "success": true,
+            "written": {
+              "3d85f161-27ce-45f4-b94b-1d42c62252af": 900,
+              "e573c327-dc89-4d87-81f0-efd0cb3c8020": 0
+            },
+            "departed": [],
+            "table_id": "776bbc54-5f2b-43b2-877c-2c6250a6b654",
+            "net_deltas": 0,
+            "hand_number": 8219723,
+            "conservation_checked": true
+          },
+          "status": "succeeded",
+          "hand_id": "bdbf5656-3a16-f8dd-2e8b-3490956532c8",
+          "table_id": "776bbc54-5f2b-43b2-877c-2c6250a6b654",
+          "completed_at": "2026-09-08T14:52:15.590359+00:00",
+          "attempt_count": 1,
+          "last_attempt_at": "2026-09-08T14:52:15.590359+00:00",
+          "first_attempt_at": "2026-09-08T14:52:15.590359+00:00"
+        },
+        "recorded_status": "eliminated",
+        "accepted_settlement_key": {
+          "hand_id": "bdbf5656-3a16-f8dd-2e8b-3490956532c8",
+          "table_id": "776bbc54-5f2b-43b2-877c-2c6250a6b654"
+        }
+      },
+      {
+        "hand_id": "b93bc30c-3320-f743-7c20-7f82fd1a2668",
+        "user_id": "e7925474-ad31-4cfb-826b-010039bcff3d",
+        "position": 3,
+        "table_id": "776bbc54-5f2b-43b2-877c-2c6250a6b654",
+        "player_id": "ed77e01d-65c5-4da6-9b82-d373c8da8275",
+        "hand_number": 8218089,
+        "committed_at": "2026-09-08T14:49:33.93819+00:00",
+        "stack_before": 280,
+        "source_sha256": "0c53f40f6ce50c41778f86f9c77d33cc871db78549d70e380365605138a4f794",
+        "recorded_chips": 0,
+        "source_receipt": {
+          "error": null,
+          "result": {
+            "bbj": 0,
+            "mode": "delta",
+            "rake": 0,
+            "inflow": 0,
+            "hand_id": "b93bc30c-3320-f743-7c20-7f82fd1a2668",
+            "players": 3,
+            "rebased": {},
+            "request": {
+              "bbj": 0,
+              "rake": 0,
+              "inflow": 0,
+              "stacks": [
+                {
+                  "stack": 590,
+                  "user_id": "3d85f161-27ce-45f4-b94b-1d42c62252af",
+                  "stack_before": 290
+                },
+                {
+                  "stack": 310,
+                  "user_id": "e573c327-dc89-4d87-81f0-efd0cb3c8020",
+                  "stack_before": 330
+                },
+                {
+                  "stack": 0,
+                  "user_id": "e7925474-ad31-4cfb-826b-010039bcff3d",
+                  "stack_before": 280
+                }
+              ]
+            },
+            "success": true,
+            "written": {
+              "3d85f161-27ce-45f4-b94b-1d42c62252af": 590,
+              "e573c327-dc89-4d87-81f0-efd0cb3c8020": 310,
+              "e7925474-ad31-4cfb-826b-010039bcff3d": 0
+            },
+            "departed": [],
+            "table_id": "776bbc54-5f2b-43b2-877c-2c6250a6b654",
+            "net_deltas": 0,
+            "hand_number": 8218089,
+            "conservation_checked": true
+          },
+          "status": "succeeded",
+          "hand_id": "b93bc30c-3320-f743-7c20-7f82fd1a2668",
+          "table_id": "776bbc54-5f2b-43b2-877c-2c6250a6b654",
+          "completed_at": "2026-09-08T14:49:33.93819+00:00",
+          "attempt_count": 1,
+          "last_attempt_at": "2026-09-08T14:49:33.93819+00:00",
+          "first_attempt_at": "2026-09-08T14:49:33.93819+00:00"
+        },
+        "recorded_status": "eliminated",
+        "accepted_settlement_key": {
+          "hand_id": "b93bc30c-3320-f743-7c20-7f82fd1a2668",
+          "table_id": "776bbc54-5f2b-43b2-877c-2c6250a6b654"
+        }
+      }
+    ],
+    "field_size": 3,
+    "basis_sha256": "664b052de4855956ea5d99e316c2a317f0132107da2d9dd524b475e75643e92a",
+    "money_writes": 0,
+    "tournament_id": "7284506c-093c-491a-8da7-5816bf1ccccf",
+    "financial_mode": "spin",
+    "sequence_writes": 0,
+    "satellite_target_id": null,
+    "observed_winner_chips": 900,
+    "recorded_winner_chips": 900,
+    "accepted_receipt_count": 11,
+    "observed_winner_user_id": "3d85f161-27ce-45f4-b94b-1d42c62252af",
+    "recorded_winner_chips_match": true
+  },
+  {
+    "ok": true,
+    "reason": null,
+    "version": 1,
+    "standings": [
+      {
+        "hand_id": "9fc93b4e-9527-c851-16c5-936a5d01fe95",
+        "user_id": "00000000-0000-0000-0000-000000000012",
+        "position": 1,
+        "table_id": "cff5c4cd-157b-4434-98f1-11382ce795a5",
+        "player_id": "6999a209-c198-4eac-b04c-a52716ef049e",
+        "hand_number": 8219225,
+        "committed_at": "2026-09-08T14:51:57.499639+00:00",
+        "source_sha256": "489037b8c0aa5d82747276619c15332c4c8b8203ef27454ee1d73d429151eae1",
+        "observed_chips": 2000,
+        "recorded_chips": 2000,
+        "source_receipt": {
+          "error": null,
+          "result": {
+            "bbj": 0,
+            "mode": "delta",
+            "rake": 0,
+            "inflow": 0,
+            "hand_id": "9fc93b4e-9527-c851-16c5-936a5d01fe95",
+            "players": 2,
+            "rebased": {},
+            "request": {
+              "bbj": 0,
+              "rake": 0,
+              "inflow": 0,
+              "stacks": [
+                {
+                  "stack": 2000,
+                  "user_id": "00000000-0000-0000-0000-000000000012",
+                  "stack_before": 1846
+                },
+                {
+                  "stack": 0,
+                  "user_id": "cba6d788-80d9-43e3-a151-005e76b32701",
+                  "stack_before": 154
+                }
+              ]
+            },
+            "success": true,
+            "written": {
+              "00000000-0000-0000-0000-000000000012": 2000,
+              "cba6d788-80d9-43e3-a151-005e76b32701": 0
+            },
+            "departed": [],
+            "table_id": "cff5c4cd-157b-4434-98f1-11382ce795a5",
+            "net_deltas": 0,
+            "hand_number": 8219225,
+            "conservation_checked": true
+          },
+          "status": "succeeded",
+          "hand_id": "9fc93b4e-9527-c851-16c5-936a5d01fe95",
+          "table_id": "cff5c4cd-157b-4434-98f1-11382ce795a5",
+          "completed_at": "2026-09-08T14:51:57.499639+00:00",
+          "attempt_count": 1,
+          "last_attempt_at": "2026-09-08T14:51:57.499639+00:00",
+          "first_attempt_at": "2026-09-08T14:51:57.499639+00:00"
+        },
+        "recorded_status": "playing",
+        "accepted_settlement_key": {
+          "hand_id": "9fc93b4e-9527-c851-16c5-936a5d01fe95",
+          "table_id": "cff5c4cd-157b-4434-98f1-11382ce795a5"
+        }
+      },
+      {
+        "hand_id": "9fc93b4e-9527-c851-16c5-936a5d01fe95",
+        "user_id": "cba6d788-80d9-43e3-a151-005e76b32701",
+        "position": 2,
+        "table_id": "cff5c4cd-157b-4434-98f1-11382ce795a5",
+        "player_id": "c0b73528-ee61-4c6b-a7a1-e1d18b3d97da",
+        "hand_number": 8219225,
+        "committed_at": "2026-09-08T14:51:57.499639+00:00",
+        "stack_before": 154,
+        "source_sha256": "489037b8c0aa5d82747276619c15332c4c8b8203ef27454ee1d73d429151eae1",
+        "recorded_chips": 0,
+        "source_receipt": {
+          "error": null,
+          "result": {
+            "bbj": 0,
+            "mode": "delta",
+            "rake": 0,
+            "inflow": 0,
+            "hand_id": "9fc93b4e-9527-c851-16c5-936a5d01fe95",
+            "players": 2,
+            "rebased": {},
+            "request": {
+              "bbj": 0,
+              "rake": 0,
+              "inflow": 0,
+              "stacks": [
+                {
+                  "stack": 2000,
+                  "user_id": "00000000-0000-0000-0000-000000000012",
+                  "stack_before": 1846
+                },
+                {
+                  "stack": 0,
+                  "user_id": "cba6d788-80d9-43e3-a151-005e76b32701",
+                  "stack_before": 154
+                }
+              ]
+            },
+            "success": true,
+            "written": {
+              "00000000-0000-0000-0000-000000000012": 2000,
+              "cba6d788-80d9-43e3-a151-005e76b32701": 0
+            },
+            "departed": [],
+            "table_id": "cff5c4cd-157b-4434-98f1-11382ce795a5",
+            "net_deltas": 0,
+            "hand_number": 8219225,
+            "conservation_checked": true
+          },
+          "status": "succeeded",
+          "hand_id": "9fc93b4e-9527-c851-16c5-936a5d01fe95",
+          "table_id": "cff5c4cd-157b-4434-98f1-11382ce795a5",
+          "completed_at": "2026-09-08T14:51:57.499639+00:00",
+          "attempt_count": 1,
+          "last_attempt_at": "2026-09-08T14:51:57.499639+00:00",
+          "first_attempt_at": "2026-09-08T14:51:57.499639+00:00"
+        },
+        "recorded_status": "eliminated",
+        "accepted_settlement_key": {
+          "hand_id": "9fc93b4e-9527-c851-16c5-936a5d01fe95",
+          "table_id": "cff5c4cd-157b-4434-98f1-11382ce795a5"
+        }
+      }
+    ],
+    "field_size": 2,
+    "basis_sha256": "9a4bfe96533515f1e6554d57b44260ae1aefc0be118c23b5e48c24a77604ae87",
+    "money_writes": 0,
+    "tournament_id": "8c6a20c5-a422-4177-8b93-efa371d5c14d",
+    "financial_mode": "cash_places",
+    "sequence_writes": 0,
+    "satellite_target_id": null,
+    "observed_winner_chips": 2000,
+    "recorded_winner_chips": 2000,
+    "accepted_receipt_count": 13,
+    "observed_winner_user_id": "00000000-0000-0000-0000-000000000012",
+    "recorded_winner_chips_match": true
+  },
+  {
+    "ok": true,
+    "reason": null,
+    "version": 1,
+    "standings": [
+      {
+        "hand_id": "dbcb681f-35c3-f83b-0651-93e4cfa9e338",
+        "user_id": "a04d3a50-ecaf-4baa-ba5f-c5597ae5d0cc",
+        "position": 1,
+        "table_id": "f3daebea-36fa-494f-afcd-72c37fb80d7c",
+        "player_id": "95622c63-7414-4a34-8610-bd8101a71410",
+        "hand_number": 8217376,
+        "committed_at": "2026-09-08T14:48:04.299599+00:00",
+        "source_sha256": "275ce4858c924730357b193ff541995dde5ffb1bc44224cbcf795955522fc2c7",
+        "observed_chips": 900,
+        "recorded_chips": 900,
+        "source_receipt": {
+          "error": null,
+          "result": {
+            "bbj": 0,
+            "mode": "delta",
+            "rake": 0,
+            "inflow": 0,
+            "hand_id": "dbcb681f-35c3-f83b-0651-93e4cfa9e338",
+            "players": 2,
+            "rebased": {},
+            "request": {
+              "bbj": 0,
+              "rake": 0,
+              "inflow": 0,
+              "stacks": [
+                {
+                  "stack": 0,
+                  "user_id": "45a5e770-95dd-45de-aea0-7fe2dc0302f7",
+                  "stack_before": 120
+                },
+                {
+                  "stack": 900,
+                  "user_id": "a04d3a50-ecaf-4baa-ba5f-c5597ae5d0cc",
+                  "stack_before": 780
+                }
+              ]
+            },
+            "success": true,
+            "written": {
+              "45a5e770-95dd-45de-aea0-7fe2dc0302f7": 0,
+              "a04d3a50-ecaf-4baa-ba5f-c5597ae5d0cc": 900
+            },
+            "departed": [],
+            "table_id": "f3daebea-36fa-494f-afcd-72c37fb80d7c",
+            "net_deltas": 0,
+            "hand_number": 8217376,
+            "conservation_checked": true
+          },
+          "status": "succeeded",
+          "hand_id": "dbcb681f-35c3-f83b-0651-93e4cfa9e338",
+          "table_id": "f3daebea-36fa-494f-afcd-72c37fb80d7c",
+          "completed_at": "2026-09-08T14:48:04.299599+00:00",
+          "attempt_count": 1,
+          "last_attempt_at": "2026-09-08T14:48:04.299599+00:00",
+          "first_attempt_at": "2026-09-08T14:48:04.299599+00:00"
+        },
+        "recorded_status": "playing",
+        "accepted_settlement_key": {
+          "hand_id": "dbcb681f-35c3-f83b-0651-93e4cfa9e338",
+          "table_id": "f3daebea-36fa-494f-afcd-72c37fb80d7c"
+        }
+      },
+      {
+        "hand_id": "dbcb681f-35c3-f83b-0651-93e4cfa9e338",
+        "user_id": "45a5e770-95dd-45de-aea0-7fe2dc0302f7",
+        "position": 2,
+        "table_id": "f3daebea-36fa-494f-afcd-72c37fb80d7c",
+        "player_id": "b04eca1b-ac6f-4cb2-b977-0d5708368e73",
+        "hand_number": 8217376,
+        "committed_at": "2026-09-08T14:48:04.299599+00:00",
+        "stack_before": 120,
+        "source_sha256": "275ce4858c924730357b193ff541995dde5ffb1bc44224cbcf795955522fc2c7",
+        "recorded_chips": 0,
+        "source_receipt": {
+          "error": null,
+          "result": {
+            "bbj": 0,
+            "mode": "delta",
+            "rake": 0,
+            "inflow": 0,
+            "hand_id": "dbcb681f-35c3-f83b-0651-93e4cfa9e338",
+            "players": 2,
+            "rebased": {},
+            "request": {
+              "bbj": 0,
+              "rake": 0,
+              "inflow": 0,
+              "stacks": [
+                {
+                  "stack": 0,
+                  "user_id": "45a5e770-95dd-45de-aea0-7fe2dc0302f7",
+                  "stack_before": 120
+                },
+                {
+                  "stack": 900,
+                  "user_id": "a04d3a50-ecaf-4baa-ba5f-c5597ae5d0cc",
+                  "stack_before": 780
+                }
+              ]
+            },
+            "success": true,
+            "written": {
+              "45a5e770-95dd-45de-aea0-7fe2dc0302f7": 0,
+              "a04d3a50-ecaf-4baa-ba5f-c5597ae5d0cc": 900
+            },
+            "departed": [],
+            "table_id": "f3daebea-36fa-494f-afcd-72c37fb80d7c",
+            "net_deltas": 0,
+            "hand_number": 8217376,
+            "conservation_checked": true
+          },
+          "status": "succeeded",
+          "hand_id": "dbcb681f-35c3-f83b-0651-93e4cfa9e338",
+          "table_id": "f3daebea-36fa-494f-afcd-72c37fb80d7c",
+          "completed_at": "2026-09-08T14:48:04.299599+00:00",
+          "attempt_count": 1,
+          "last_attempt_at": "2026-09-08T14:48:04.299599+00:00",
+          "first_attempt_at": "2026-09-08T14:48:04.299599+00:00"
+        },
+        "recorded_status": "eliminated",
+        "accepted_settlement_key": {
+          "hand_id": "dbcb681f-35c3-f83b-0651-93e4cfa9e338",
+          "table_id": "f3daebea-36fa-494f-afcd-72c37fb80d7c"
+        }
+      },
+      {
+        "hand_id": "6ec6ebca-4956-dba4-2140-7a61631830c8",
+        "user_id": "890b3040-18ae-4cdf-a7c8-c2df3336765b",
+        "position": 3,
+        "table_id": "f3daebea-36fa-494f-afcd-72c37fb80d7c",
+        "player_id": "71f57d85-e8d1-41ca-a521-04aef3a1ce8d",
+        "hand_number": 8217114,
+        "committed_at": "2026-09-08T14:47:31.333638+00:00",
+        "stack_before": 310,
+        "source_sha256": "27bcc567e6b0b0e86c0a8c134fa425820d6033b499add83b3149aca2030fb11f",
+        "recorded_chips": 0,
+        "source_receipt": {
+          "error": null,
+          "result": {
+            "bbj": 0,
+            "mode": "delta",
+            "rake": 0,
+            "inflow": 0,
+            "hand_id": "6ec6ebca-4956-dba4-2140-7a61631830c8",
+            "players": 3,
+            "rebased": {},
+            "request": {
+              "bbj": 0,
+              "rake": 0,
+              "inflow": 0,
+              "stacks": [
+                {
+                  "stack": 120,
+                  "user_id": "45a5e770-95dd-45de-aea0-7fe2dc0302f7",
+                  "stack_before": 330
+                },
+                {
+                  "stack": 0,
+                  "user_id": "890b3040-18ae-4cdf-a7c8-c2df3336765b",
+                  "stack_before": 310
+                },
+                {
+                  "stack": 780,
+                  "user_id": "a04d3a50-ecaf-4baa-ba5f-c5597ae5d0cc",
+                  "stack_before": 260
+                }
+              ]
+            },
+            "success": true,
+            "written": {
+              "45a5e770-95dd-45de-aea0-7fe2dc0302f7": 120,
+              "890b3040-18ae-4cdf-a7c8-c2df3336765b": 0,
+              "a04d3a50-ecaf-4baa-ba5f-c5597ae5d0cc": 780
+            },
+            "departed": [],
+            "table_id": "f3daebea-36fa-494f-afcd-72c37fb80d7c",
+            "net_deltas": 0,
+            "hand_number": 8217114,
+            "conservation_checked": true
+          },
+          "status": "succeeded",
+          "hand_id": "6ec6ebca-4956-dba4-2140-7a61631830c8",
+          "table_id": "f3daebea-36fa-494f-afcd-72c37fb80d7c",
+          "completed_at": "2026-09-08T14:47:31.333638+00:00",
+          "attempt_count": 1,
+          "last_attempt_at": "2026-09-08T14:47:31.333638+00:00",
+          "first_attempt_at": "2026-09-08T14:47:31.333638+00:00"
+        },
+        "recorded_status": "eliminated",
+        "accepted_settlement_key": {
+          "hand_id": "6ec6ebca-4956-dba4-2140-7a61631830c8",
+          "table_id": "f3daebea-36fa-494f-afcd-72c37fb80d7c"
+        }
+      }
+    ],
+    "field_size": 3,
+    "basis_sha256": "1050667751e83d114becc2e0407049030dc145f86c66e3760c18014e7f1e16db",
+    "money_writes": 0,
+    "tournament_id": "8d5969da-df76-44fa-8c83-5608b844ca06",
+    "financial_mode": "spin",
+    "sequence_writes": 0,
+    "satellite_target_id": null,
+    "observed_winner_chips": 900,
+    "recorded_winner_chips": 900,
+    "accepted_receipt_count": 28,
+    "observed_winner_user_id": "a04d3a50-ecaf-4baa-ba5f-c5597ae5d0cc",
+    "recorded_winner_chips_match": true
+  },
+  {
+    "ok": true,
+    "reason": null,
+    "version": 1,
+    "standings": [
+      {
+        "hand_id": "8a10de2a-37e2-436e-aad0-0c867eff5541",
+        "user_id": "b661053c-f8b9-4938-ab8b-92c9e2f647c1",
+        "position": 1,
+        "table_id": "2bdf523d-24ee-476f-8622-7fad7d272593",
+        "player_id": "05c4cccf-ff8b-4f16-9497-5194b1415470",
+        "hand_number": 8217948,
+        "committed_at": "2026-09-08T14:49:05.594408+00:00",
+        "source_sha256": "7c9e914777689975cebce494fe4a931b9b35f064aefe0d3a4de18a3f523baa1b",
+        "observed_chips": 2000,
+        "recorded_chips": 2000,
+        "source_receipt": {
+          "error": null,
+          "result": {
+            "bbj": 0,
+            "mode": "delta",
+            "rake": 0,
+            "inflow": 0,
+            "hand_id": "8a10de2a-37e2-436e-aad0-0c867eff5541",
+            "players": 2,
+            "rebased": {},
+            "request": {
+              "bbj": 0,
+              "rake": 0,
+              "inflow": 0,
+              "stacks": [
+                {
+                  "stack": 2000,
+                  "user_id": "b661053c-f8b9-4938-ab8b-92c9e2f647c1",
+                  "stack_before": 1127
+                },
+                {
+                  "stack": 0,
+                  "user_id": "c025d7b4-b93e-4aa0-89e5-e391c246b0f2",
+                  "stack_before": 873
+                }
+              ]
+            },
+            "success": true,
+            "written": {
+              "b661053c-f8b9-4938-ab8b-92c9e2f647c1": 2000,
+              "c025d7b4-b93e-4aa0-89e5-e391c246b0f2": 0
+            },
+            "departed": [],
+            "table_id": "2bdf523d-24ee-476f-8622-7fad7d272593",
+            "net_deltas": 0,
+            "hand_number": 8217948,
+            "conservation_checked": true
+          },
+          "status": "succeeded",
+          "hand_id": "8a10de2a-37e2-436e-aad0-0c867eff5541",
+          "table_id": "2bdf523d-24ee-476f-8622-7fad7d272593",
+          "completed_at": "2026-09-08T14:49:05.594408+00:00",
+          "attempt_count": 1,
+          "last_attempt_at": "2026-09-08T14:49:05.594408+00:00",
+          "first_attempt_at": "2026-09-08T14:49:05.594408+00:00"
+        },
+        "recorded_status": "playing",
+        "accepted_settlement_key": {
+          "hand_id": "8a10de2a-37e2-436e-aad0-0c867eff5541",
+          "table_id": "2bdf523d-24ee-476f-8622-7fad7d272593"
+        }
+      },
+      {
+        "hand_id": "8a10de2a-37e2-436e-aad0-0c867eff5541",
+        "user_id": "c025d7b4-b93e-4aa0-89e5-e391c246b0f2",
+        "position": 2,
+        "table_id": "2bdf523d-24ee-476f-8622-7fad7d272593",
+        "player_id": "91104a56-cf7b-49da-8438-80ab268df9e2",
+        "hand_number": 8217948,
+        "committed_at": "2026-09-08T14:49:05.594408+00:00",
+        "stack_before": 873,
+        "source_sha256": "7c9e914777689975cebce494fe4a931b9b35f064aefe0d3a4de18a3f523baa1b",
+        "recorded_chips": 0,
+        "source_receipt": {
+          "error": null,
+          "result": {
+            "bbj": 0,
+            "mode": "delta",
+            "rake": 0,
+            "inflow": 0,
+            "hand_id": "8a10de2a-37e2-436e-aad0-0c867eff5541",
+            "players": 2,
+            "rebased": {},
+            "request": {
+              "bbj": 0,
+              "rake": 0,
+              "inflow": 0,
+              "stacks": [
+                {
+                  "stack": 2000,
+                  "user_id": "b661053c-f8b9-4938-ab8b-92c9e2f647c1",
+                  "stack_before": 1127
+                },
+                {
+                  "stack": 0,
+                  "user_id": "c025d7b4-b93e-4aa0-89e5-e391c246b0f2",
+                  "stack_before": 873
+                }
+              ]
+            },
+            "success": true,
+            "written": {
+              "b661053c-f8b9-4938-ab8b-92c9e2f647c1": 2000,
+              "c025d7b4-b93e-4aa0-89e5-e391c246b0f2": 0
+            },
+            "departed": [],
+            "table_id": "2bdf523d-24ee-476f-8622-7fad7d272593",
+            "net_deltas": 0,
+            "hand_number": 8217948,
+            "conservation_checked": true
+          },
+          "status": "succeeded",
+          "hand_id": "8a10de2a-37e2-436e-aad0-0c867eff5541",
+          "table_id": "2bdf523d-24ee-476f-8622-7fad7d272593",
+          "completed_at": "2026-09-08T14:49:05.594408+00:00",
+          "attempt_count": 1,
+          "last_attempt_at": "2026-09-08T14:49:05.594408+00:00",
+          "first_attempt_at": "2026-09-08T14:49:05.594408+00:00"
+        },
+        "recorded_status": "eliminated",
+        "accepted_settlement_key": {
+          "hand_id": "8a10de2a-37e2-436e-aad0-0c867eff5541",
+          "table_id": "2bdf523d-24ee-476f-8622-7fad7d272593"
+        }
+      }
+    ],
+    "field_size": 2,
+    "basis_sha256": "5052d969f106b4e334012ebacc49a7941c94f75604a4bbd10efae8cfb5e43384",
+    "money_writes": 0,
+    "tournament_id": "90c4d93f-4577-4da2-bd9b-51b774019971",
+    "financial_mode": "cash_places",
+    "sequence_writes": 0,
+    "satellite_target_id": null,
+    "observed_winner_chips": 2000,
+    "recorded_winner_chips": 2000,
+    "accepted_receipt_count": 46,
+    "observed_winner_user_id": "b661053c-f8b9-4938-ab8b-92c9e2f647c1",
+    "recorded_winner_chips_match": true
+  },
+  {
+    "ok": true,
+    "reason": null,
+    "version": 1,
+    "standings": [
+      {
+        "hand_id": "60ff81e4-1b21-1adb-ada5-a1587cd32a24",
+        "user_id": "eaf09a18-9654-4c18-8c5d-48a26ce72259",
+        "position": 1,
+        "table_id": "ba102843-89fd-44aa-ab68-d2be039702c7",
+        "player_id": "dbebaa3c-6035-48fb-b0ca-029c37f0b629",
+        "hand_number": 8217217,
+        "committed_at": "2026-09-08T14:47:37.788583+00:00",
+        "source_sha256": "8dc095778e252174082f5af65a1064928e37e6c9925359aeeb461b7d8fef93c3",
+        "observed_chips": 600,
+        "recorded_chips": 600,
+        "source_receipt": {
+          "error": null,
+          "result": {
+            "bbj": 0,
+            "mode": "delta",
+            "rake": 0,
+            "inflow": 0,
+            "hand_id": "60ff81e4-1b21-1adb-ada5-a1587cd32a24",
+            "players": 2,
+            "rebased": {},
+            "request": {
+              "bbj": 0,
+              "rake": 0,
+              "inflow": 0,
+              "stacks": [
+                {
+                  "stack": 0,
+                  "user_id": "e5a834e5-bae7-4acd-8be9-a3c995a52395",
+                  "stack_before": 70
+                },
+                {
+                  "stack": 600,
+                  "user_id": "eaf09a18-9654-4c18-8c5d-48a26ce72259",
+                  "stack_before": 530
+                }
+              ]
+            },
+            "success": true,
+            "written": {
+              "e5a834e5-bae7-4acd-8be9-a3c995a52395": 0,
+              "eaf09a18-9654-4c18-8c5d-48a26ce72259": 600
+            },
+            "departed": [],
+            "table_id": "ba102843-89fd-44aa-ab68-d2be039702c7",
+            "net_deltas": 0,
+            "hand_number": 8217217,
+            "conservation_checked": true
+          },
+          "status": "succeeded",
+          "hand_id": "60ff81e4-1b21-1adb-ada5-a1587cd32a24",
+          "table_id": "ba102843-89fd-44aa-ab68-d2be039702c7",
+          "completed_at": "2026-09-08T14:47:37.788583+00:00",
+          "attempt_count": 1,
+          "last_attempt_at": "2026-09-08T14:47:37.788583+00:00",
+          "first_attempt_at": "2026-09-08T14:47:37.788583+00:00"
+        },
+        "recorded_status": "playing",
+        "accepted_settlement_key": {
+          "hand_id": "60ff81e4-1b21-1adb-ada5-a1587cd32a24",
+          "table_id": "ba102843-89fd-44aa-ab68-d2be039702c7"
+        }
+      },
+      {
+        "hand_id": "60ff81e4-1b21-1adb-ada5-a1587cd32a24",
+        "user_id": "e5a834e5-bae7-4acd-8be9-a3c995a52395",
+        "position": 2,
+        "table_id": "ba102843-89fd-44aa-ab68-d2be039702c7",
+        "player_id": "e92e8919-0440-41c4-83ce-8d7e4667e029",
+        "hand_number": 8217217,
+        "committed_at": "2026-09-08T14:47:37.788583+00:00",
+        "stack_before": 70,
+        "source_sha256": "8dc095778e252174082f5af65a1064928e37e6c9925359aeeb461b7d8fef93c3",
+        "recorded_chips": 0,
+        "source_receipt": {
+          "error": null,
+          "result": {
+            "bbj": 0,
+            "mode": "delta",
+            "rake": 0,
+            "inflow": 0,
+            "hand_id": "60ff81e4-1b21-1adb-ada5-a1587cd32a24",
+            "players": 2,
+            "rebased": {},
+            "request": {
+              "bbj": 0,
+              "rake": 0,
+              "inflow": 0,
+              "stacks": [
+                {
+                  "stack": 0,
+                  "user_id": "e5a834e5-bae7-4acd-8be9-a3c995a52395",
+                  "stack_before": 70
+                },
+                {
+                  "stack": 600,
+                  "user_id": "eaf09a18-9654-4c18-8c5d-48a26ce72259",
+                  "stack_before": 530
+                }
+              ]
+            },
+            "success": true,
+            "written": {
+              "e5a834e5-bae7-4acd-8be9-a3c995a52395": 0,
+              "eaf09a18-9654-4c18-8c5d-48a26ce72259": 600
+            },
+            "departed": [],
+            "table_id": "ba102843-89fd-44aa-ab68-d2be039702c7",
+            "net_deltas": 0,
+            "hand_number": 8217217,
+            "conservation_checked": true
+          },
+          "status": "succeeded",
+          "hand_id": "60ff81e4-1b21-1adb-ada5-a1587cd32a24",
+          "table_id": "ba102843-89fd-44aa-ab68-d2be039702c7",
+          "completed_at": "2026-09-08T14:47:37.788583+00:00",
+          "attempt_count": 1,
+          "last_attempt_at": "2026-09-08T14:47:37.788583+00:00",
+          "first_attempt_at": "2026-09-08T14:47:37.788583+00:00"
+        },
+        "recorded_status": "eliminated",
+        "accepted_settlement_key": {
+          "hand_id": "60ff81e4-1b21-1adb-ada5-a1587cd32a24",
+          "table_id": "ba102843-89fd-44aa-ab68-d2be039702c7"
+        }
+      }
+    ],
+    "field_size": 2,
+    "basis_sha256": "cd67a79d4fbdded21c71c19272d335d84081f0d6c0125a3880d2d71b2cef21d4",
+    "money_writes": 0,
+    "tournament_id": "92c93927-614f-4168-a1f9-918849c0be19",
+    "financial_mode": "satellite",
+    "sequence_writes": 0,
+    "satellite_target_id": "f9e22dd2-2d50-4fc6-be3b-ab18e7f62c13",
+    "observed_winner_chips": 600,
+    "recorded_winner_chips": 600,
+    "accepted_receipt_count": 20,
+    "observed_winner_user_id": "eaf09a18-9654-4c18-8c5d-48a26ce72259",
+    "recorded_winner_chips_match": true
+  },
+  {
+    "ok": false,
+    "reason": "post_zero_positive_write",
+    "user_id": "3d15bbe7-f752-4a49-be3a-079232d23b0f",
+    "version": 1,
+    "tournament_id": "95e43b6e-c1c9-445e-a1d9-cbe711e3bac1"
+  },
+  {
+    "ok": true,
+    "reason": null,
+    "version": 1,
+    "standings": [
+      {
+        "hand_id": "420bef01-00ce-c6f0-64f4-e987b813ab44",
+        "user_id": "345e5562-05ac-4c1f-9154-64bf8339806b",
+        "position": 1,
+        "table_id": "71f4aecf-485c-418f-8a75-93074a2e6a6e",
+        "player_id": "5de2593b-3a67-4f33-8072-12fbf15f5faf",
+        "hand_number": 8217132,
+        "committed_at": "2026-09-08T14:47:23.334887+00:00",
+        "source_sha256": "2aa30b8bd1d8d7ac3ee26cab2c5e2297b96c43770fc3ebff593d5d6db66cf344",
+        "observed_chips": 900,
+        "recorded_chips": 300,
+        "source_receipt": {
+          "error": null,
+          "result": {
+            "bbj": 0,
+            "mode": "delta",
+            "rake": 0,
+            "inflow": 0,
+            "hand_id": "420bef01-00ce-c6f0-64f4-e987b813ab44",
+            "players": 2,
+            "rebased": {},
+            "request": {
+              "bbj": 0,
+              "rake": 0,
+              "inflow": 0,
+              "stacks": [
+                {
+                  "stack": 900,
+                  "user_id": "345e5562-05ac-4c1f-9154-64bf8339806b",
+                  "stack_before": 590
+                },
+                {
+                  "stack": 0,
+                  "user_id": "75f64f35-c437-453a-b241-73d9d76dda70",
+                  "stack_before": 310
+                }
+              ]
+            },
+            "success": true,
+            "written": {
+              "345e5562-05ac-4c1f-9154-64bf8339806b": 900,
+              "75f64f35-c437-453a-b241-73d9d76dda70": 0
+            },
+            "departed": [],
+            "table_id": "71f4aecf-485c-418f-8a75-93074a2e6a6e",
+            "net_deltas": 0,
+            "hand_number": 8217132,
+            "conservation_checked": true
+          },
+          "status": "succeeded",
+          "hand_id": "420bef01-00ce-c6f0-64f4-e987b813ab44",
+          "table_id": "71f4aecf-485c-418f-8a75-93074a2e6a6e",
+          "completed_at": "2026-09-08T14:47:23.334887+00:00",
+          "attempt_count": 1,
+          "last_attempt_at": "2026-09-08T14:47:23.334887+00:00",
+          "first_attempt_at": "2026-09-08T14:47:23.334887+00:00"
+        },
+        "recorded_status": "playing",
+        "accepted_settlement_key": {
+          "hand_id": "420bef01-00ce-c6f0-64f4-e987b813ab44",
+          "table_id": "71f4aecf-485c-418f-8a75-93074a2e6a6e"
+        }
+      },
+      {
+        "hand_id": "420bef01-00ce-c6f0-64f4-e987b813ab44",
+        "user_id": "75f64f35-c437-453a-b241-73d9d76dda70",
+        "position": 2,
+        "table_id": "71f4aecf-485c-418f-8a75-93074a2e6a6e",
+        "player_id": "9f9aaee0-6af4-4e1a-8bac-d763ce22b093",
+        "hand_number": 8217132,
+        "committed_at": "2026-09-08T14:47:23.334887+00:00",
+        "stack_before": 310,
+        "source_sha256": "2aa30b8bd1d8d7ac3ee26cab2c5e2297b96c43770fc3ebff593d5d6db66cf344",
+        "recorded_chips": 0,
+        "source_receipt": {
+          "error": null,
+          "result": {
+            "bbj": 0,
+            "mode": "delta",
+            "rake": 0,
+            "inflow": 0,
+            "hand_id": "420bef01-00ce-c6f0-64f4-e987b813ab44",
+            "players": 2,
+            "rebased": {},
+            "request": {
+              "bbj": 0,
+              "rake": 0,
+              "inflow": 0,
+              "stacks": [
+                {
+                  "stack": 900,
+                  "user_id": "345e5562-05ac-4c1f-9154-64bf8339806b",
+                  "stack_before": 590
+                },
+                {
+                  "stack": 0,
+                  "user_id": "75f64f35-c437-453a-b241-73d9d76dda70",
+                  "stack_before": 310
+                }
+              ]
+            },
+            "success": true,
+            "written": {
+              "345e5562-05ac-4c1f-9154-64bf8339806b": 900,
+              "75f64f35-c437-453a-b241-73d9d76dda70": 0
+            },
+            "departed": [],
+            "table_id": "71f4aecf-485c-418f-8a75-93074a2e6a6e",
+            "net_deltas": 0,
+            "hand_number": 8217132,
+            "conservation_checked": true
+          },
+          "status": "succeeded",
+          "hand_id": "420bef01-00ce-c6f0-64f4-e987b813ab44",
+          "table_id": "71f4aecf-485c-418f-8a75-93074a2e6a6e",
+          "completed_at": "2026-09-08T14:47:23.334887+00:00",
+          "attempt_count": 1,
+          "last_attempt_at": "2026-09-08T14:47:23.334887+00:00",
+          "first_attempt_at": "2026-09-08T14:47:23.334887+00:00"
+        },
+        "recorded_status": "eliminated",
+        "accepted_settlement_key": {
+          "hand_id": "420bef01-00ce-c6f0-64f4-e987b813ab44",
+          "table_id": "71f4aecf-485c-418f-8a75-93074a2e6a6e"
+        }
+      },
+      {
+        "hand_id": "712527a7-ba46-fcca-7937-c376aa4474f7",
+        "user_id": "d2ce100a-152e-4b0e-8903-2296a9cb7cbe",
+        "position": 3,
+        "table_id": "71f4aecf-485c-418f-8a75-93074a2e6a6e",
+        "player_id": "b853deea-c620-4787-9ff7-b520b1daab0b",
+        "hand_number": 8216872,
+        "committed_at": "2026-09-08T14:46:53.82592+00:00",
+        "stack_before": 300,
+        "source_sha256": "91b84cb86532bdcf57daa48b9588ed29c1ff18c8e44f2ac03a4d6d042340cee7",
+        "recorded_chips": 0,
+        "source_receipt": {
+          "error": null,
+          "result": {
+            "bbj": 0,
+            "mode": "delta",
+            "rake": 0,
+            "inflow": 0,
+            "hand_id": "712527a7-ba46-fcca-7937-c376aa4474f7",
+            "players": 3,
+            "rebased": {},
+            "request": {
+              "bbj": 0,
+              "rake": 0,
+              "inflow": 0,
+              "stacks": [
+                {
+                  "stack": 600,
+                  "user_id": "345e5562-05ac-4c1f-9154-64bf8339806b",
+                  "stack_before": 300
+                },
+                {
+                  "stack": 300,
+                  "user_id": "75f64f35-c437-453a-b241-73d9d76dda70",
+                  "stack_before": 300
+                },
+                {
+                  "stack": 0,
+                  "user_id": "d2ce100a-152e-4b0e-8903-2296a9cb7cbe",
+                  "stack_before": 300
+                }
+              ]
+            },
+            "success": true,
+            "written": {
+              "345e5562-05ac-4c1f-9154-64bf8339806b": 600,
+              "75f64f35-c437-453a-b241-73d9d76dda70": 300,
+              "d2ce100a-152e-4b0e-8903-2296a9cb7cbe": 0
+            },
+            "departed": [],
+            "table_id": "71f4aecf-485c-418f-8a75-93074a2e6a6e",
+            "net_deltas": 0,
+            "hand_number": 8216872,
+            "conservation_checked": true
+          },
+          "status": "succeeded",
+          "hand_id": "712527a7-ba46-fcca-7937-c376aa4474f7",
+          "table_id": "71f4aecf-485c-418f-8a75-93074a2e6a6e",
+          "completed_at": "2026-09-08T14:46:53.82592+00:00",
+          "attempt_count": 1,
+          "last_attempt_at": "2026-09-08T14:46:53.82592+00:00",
+          "first_attempt_at": "2026-09-08T14:46:53.82592+00:00"
+        },
+        "recorded_status": "eliminated",
+        "accepted_settlement_key": {
+          "hand_id": "712527a7-ba46-fcca-7937-c376aa4474f7",
+          "table_id": "71f4aecf-485c-418f-8a75-93074a2e6a6e"
+        }
+      }
+    ],
+    "field_size": 3,
+    "basis_sha256": "f9f430440ad5dbb034a56e9a9e6e6979c8fe9ac54e89f76580ef31607f67e63d",
+    "money_writes": 0,
+    "tournament_id": "9cecb4fa-4fdd-4447-9e98-2fe5c20c46a8",
+    "financial_mode": "spin",
+    "sequence_writes": 0,
+    "satellite_target_id": null,
+    "observed_winner_chips": 900,
+    "recorded_winner_chips": 300,
+    "accepted_receipt_count": 3,
+    "observed_winner_user_id": "345e5562-05ac-4c1f-9154-64bf8339806b",
+    "recorded_winner_chips_match": false
+  },
+  {
+    "ok": true,
+    "reason": null,
+    "version": 1,
+    "standings": [
+      {
+        "hand_id": "22125752-cbd6-0199-d9aa-fa4cbc306814",
+        "user_id": "d27088a8-f517-4281-9f17-7181e2f8d13b",
+        "position": 1,
+        "table_id": "2620a846-310c-408a-9ce6-245ca46c5fa5",
+        "player_id": "2b29e1d4-b39d-4f01-9c1c-670171de4baf",
+        "hand_number": 8216176,
+        "committed_at": "2026-09-08T14:45:00.079159+00:00",
+        "source_sha256": "693e25e33df619b96700dccb8906b1e57f57d90ac89be2425d93beb4134f9b49",
+        "observed_chips": 600,
+        "recorded_chips": 600,
+        "source_receipt": {
+          "error": null,
+          "result": {
+            "bbj": 0,
+            "mode": "delta",
+            "rake": 0,
+            "inflow": 0,
+            "hand_id": "22125752-cbd6-0199-d9aa-fa4cbc306814",
+            "players": 2,
+            "rebased": {},
+            "request": {
+              "bbj": 0,
+              "rake": 0,
+              "inflow": 0,
+              "stacks": [
+                {
+                  "stack": 0,
+                  "user_id": "8ef81aac-30ee-4ad5-bc83-20f15046f37d",
+                  "stack_before": 280
+                },
+                {
+                  "stack": 600,
+                  "user_id": "d27088a8-f517-4281-9f17-7181e2f8d13b",
+                  "stack_before": 320
+                }
+              ]
+            },
+            "success": true,
+            "written": {
+              "8ef81aac-30ee-4ad5-bc83-20f15046f37d": 0,
+              "d27088a8-f517-4281-9f17-7181e2f8d13b": 600
+            },
+            "departed": [],
+            "table_id": "2620a846-310c-408a-9ce6-245ca46c5fa5",
+            "net_deltas": 0,
+            "hand_number": 8216176,
+            "conservation_checked": true
+          },
+          "status": "succeeded",
+          "hand_id": "22125752-cbd6-0199-d9aa-fa4cbc306814",
+          "table_id": "2620a846-310c-408a-9ce6-245ca46c5fa5",
+          "completed_at": "2026-09-08T14:45:00.079159+00:00",
+          "attempt_count": 1,
+          "last_attempt_at": "2026-09-08T14:45:00.079159+00:00",
+          "first_attempt_at": "2026-09-08T14:45:00.079159+00:00"
+        },
+        "recorded_status": "playing",
+        "accepted_settlement_key": {
+          "hand_id": "22125752-cbd6-0199-d9aa-fa4cbc306814",
+          "table_id": "2620a846-310c-408a-9ce6-245ca46c5fa5"
+        }
+      },
+      {
+        "hand_id": "22125752-cbd6-0199-d9aa-fa4cbc306814",
+        "user_id": "8ef81aac-30ee-4ad5-bc83-20f15046f37d",
+        "position": 2,
+        "table_id": "2620a846-310c-408a-9ce6-245ca46c5fa5",
+        "player_id": "85b75092-ba86-43b8-a4a6-dfd134646955",
+        "hand_number": 8216176,
+        "committed_at": "2026-09-08T14:45:00.079159+00:00",
+        "stack_before": 280,
+        "source_sha256": "693e25e33df619b96700dccb8906b1e57f57d90ac89be2425d93beb4134f9b49",
+        "recorded_chips": 0,
+        "source_receipt": {
+          "error": null,
+          "result": {
+            "bbj": 0,
+            "mode": "delta",
+            "rake": 0,
+            "inflow": 0,
+            "hand_id": "22125752-cbd6-0199-d9aa-fa4cbc306814",
+            "players": 2,
+            "rebased": {},
+            "request": {
+              "bbj": 0,
+              "rake": 0,
+              "inflow": 0,
+              "stacks": [
+                {
+                  "stack": 0,
+                  "user_id": "8ef81aac-30ee-4ad5-bc83-20f15046f37d",
+                  "stack_before": 280
+                },
+                {
+                  "stack": 600,
+                  "user_id": "d27088a8-f517-4281-9f17-7181e2f8d13b",
+                  "stack_before": 320
+                }
+              ]
+            },
+            "success": true,
+            "written": {
+              "8ef81aac-30ee-4ad5-bc83-20f15046f37d": 0,
+              "d27088a8-f517-4281-9f17-7181e2f8d13b": 600
+            },
+            "departed": [],
+            "table_id": "2620a846-310c-408a-9ce6-245ca46c5fa5",
+            "net_deltas": 0,
+            "hand_number": 8216176,
+            "conservation_checked": true
+          },
+          "status": "succeeded",
+          "hand_id": "22125752-cbd6-0199-d9aa-fa4cbc306814",
+          "table_id": "2620a846-310c-408a-9ce6-245ca46c5fa5",
+          "completed_at": "2026-09-08T14:45:00.079159+00:00",
+          "attempt_count": 1,
+          "last_attempt_at": "2026-09-08T14:45:00.079159+00:00",
+          "first_attempt_at": "2026-09-08T14:45:00.079159+00:00"
+        },
+        "recorded_status": "eliminated",
+        "accepted_settlement_key": {
+          "hand_id": "22125752-cbd6-0199-d9aa-fa4cbc306814",
+          "table_id": "2620a846-310c-408a-9ce6-245ca46c5fa5"
+        }
+      }
+    ],
+    "field_size": 2,
+    "basis_sha256": "2ea78ca2e316217a60b428ef4c4931185f84547cb8400ce97fc8a14d78ff5fa5",
+    "money_writes": 0,
+    "tournament_id": "a4262ba0-cd5f-4a94-a0f8-915a028cf3a7",
+    "financial_mode": "satellite",
+    "sequence_writes": 0,
+    "satellite_target_id": "d2910755-21bb-4d87-b317-012f78bd998a",
+    "observed_winner_chips": 600,
+    "recorded_winner_chips": 600,
+    "accepted_receipt_count": 8,
+    "observed_winner_user_id": "d27088a8-f517-4281-9f17-7181e2f8d13b",
+    "recorded_winner_chips_match": true
+  },
+  {
+    "ok": true,
+    "reason": null,
+    "version": 1,
+    "standings": [
+      {
+        "hand_id": "d0d1bcf4-a4b4-8125-f014-1d499e244696",
+        "user_id": "127bff9a-8483-4018-80ac-21d7f76ce5c7",
+        "position": 1,
+        "table_id": "7b01641c-ebb5-4104-b6cc-fb9f032149e6",
+        "player_id": "dbe13d41-7f94-4659-a9ab-049a1d6348de",
+        "hand_number": 8217648,
+        "committed_at": "2026-09-08T14:48:29.059053+00:00",
+        "source_sha256": "48847355cc938c62dc5cfc23b8b85e269d5704dd474da4f077dd92ae38fede80",
+        "observed_chips": 600,
+        "recorded_chips": 600,
+        "source_receipt": {
+          "error": null,
+          "result": {
+            "bbj": 0,
+            "mode": "delta",
+            "rake": 0,
+            "inflow": 0,
+            "hand_id": "d0d1bcf4-a4b4-8125-f014-1d499e244696",
+            "players": 2,
+            "rebased": {},
+            "request": {
+              "bbj": 0,
+              "rake": 0,
+              "inflow": 0,
+              "stacks": [
+                {
+                  "stack": 600,
+                  "user_id": "127bff9a-8483-4018-80ac-21d7f76ce5c7",
+                  "stack_before": 310
+                },
+                {
+                  "stack": 0,
+                  "user_id": "341d4951-c3cf-4446-ac75-6f1448a9bf99",
+                  "stack_before": 290
+                }
+              ]
+            },
+            "success": true,
+            "written": {
+              "127bff9a-8483-4018-80ac-21d7f76ce5c7": 600,
+              "341d4951-c3cf-4446-ac75-6f1448a9bf99": 0
+            },
+            "departed": [],
+            "table_id": "7b01641c-ebb5-4104-b6cc-fb9f032149e6",
+            "net_deltas": 0,
+            "hand_number": 8217648,
+            "conservation_checked": true
+          },
+          "status": "succeeded",
+          "hand_id": "d0d1bcf4-a4b4-8125-f014-1d499e244696",
+          "table_id": "7b01641c-ebb5-4104-b6cc-fb9f032149e6",
+          "completed_at": "2026-09-08T14:48:29.059053+00:00",
+          "attempt_count": 1,
+          "last_attempt_at": "2026-09-08T14:48:29.059053+00:00",
+          "first_attempt_at": "2026-09-08T14:48:29.059053+00:00"
+        },
+        "recorded_status": "playing",
+        "accepted_settlement_key": {
+          "hand_id": "d0d1bcf4-a4b4-8125-f014-1d499e244696",
+          "table_id": "7b01641c-ebb5-4104-b6cc-fb9f032149e6"
+        }
+      },
+      {
+        "hand_id": "d0d1bcf4-a4b4-8125-f014-1d499e244696",
+        "user_id": "341d4951-c3cf-4446-ac75-6f1448a9bf99",
+        "position": 2,
+        "table_id": "7b01641c-ebb5-4104-b6cc-fb9f032149e6",
+        "player_id": "b302113a-f9cd-4cdc-93b9-e1ff809e0224",
+        "hand_number": 8217648,
+        "committed_at": "2026-09-08T14:48:29.059053+00:00",
+        "stack_before": 290,
+        "source_sha256": "48847355cc938c62dc5cfc23b8b85e269d5704dd474da4f077dd92ae38fede80",
+        "recorded_chips": 0,
+        "source_receipt": {
+          "error": null,
+          "result": {
+            "bbj": 0,
+            "mode": "delta",
+            "rake": 0,
+            "inflow": 0,
+            "hand_id": "d0d1bcf4-a4b4-8125-f014-1d499e244696",
+            "players": 2,
+            "rebased": {},
+            "request": {
+              "bbj": 0,
+              "rake": 0,
+              "inflow": 0,
+              "stacks": [
+                {
+                  "stack": 600,
+                  "user_id": "127bff9a-8483-4018-80ac-21d7f76ce5c7",
+                  "stack_before": 310
+                },
+                {
+                  "stack": 0,
+                  "user_id": "341d4951-c3cf-4446-ac75-6f1448a9bf99",
+                  "stack_before": 290
+                }
+              ]
+            },
+            "success": true,
+            "written": {
+              "127bff9a-8483-4018-80ac-21d7f76ce5c7": 600,
+              "341d4951-c3cf-4446-ac75-6f1448a9bf99": 0
+            },
+            "departed": [],
+            "table_id": "7b01641c-ebb5-4104-b6cc-fb9f032149e6",
+            "net_deltas": 0,
+            "hand_number": 8217648,
+            "conservation_checked": true
+          },
+          "status": "succeeded",
+          "hand_id": "d0d1bcf4-a4b4-8125-f014-1d499e244696",
+          "table_id": "7b01641c-ebb5-4104-b6cc-fb9f032149e6",
+          "completed_at": "2026-09-08T14:48:29.059053+00:00",
+          "attempt_count": 1,
+          "last_attempt_at": "2026-09-08T14:48:29.059053+00:00",
+          "first_attempt_at": "2026-09-08T14:48:29.059053+00:00"
+        },
+        "recorded_status": "eliminated",
+        "accepted_settlement_key": {
+          "hand_id": "d0d1bcf4-a4b4-8125-f014-1d499e244696",
+          "table_id": "7b01641c-ebb5-4104-b6cc-fb9f032149e6"
+        }
+      }
+    ],
+    "field_size": 2,
+    "basis_sha256": "e67b2563502a9221cb6b9707e121bfd384e24e7762a3652dfe0accc2b16a7682",
+    "money_writes": 0,
+    "tournament_id": "ab4125bc-a85e-45c6-b0a7-22417d75c0c5",
+    "financial_mode": "cash_places",
+    "sequence_writes": 0,
+    "satellite_target_id": null,
+    "observed_winner_chips": 600,
+    "recorded_winner_chips": 600,
+    "accepted_receipt_count": 2,
+    "observed_winner_user_id": "127bff9a-8483-4018-80ac-21d7f76ce5c7",
+    "recorded_winner_chips_match": true
+  },
+  {
+    "ok": true,
+    "reason": null,
+    "version": 1,
+    "standings": [
+      {
+        "hand_id": "fb942492-b43d-4b37-264e-79237f9bb9e1",
+        "user_id": "62f0d4da-b736-4629-ad14-894e432d0f04",
+        "position": 1,
+        "table_id": "9eef9943-11af-4819-96db-455e8e12b7ce",
+        "player_id": "1e08c9c5-f9ba-4be3-a5f7-5ff5f219b2e3",
+        "hand_number": 8219879,
+        "committed_at": "2026-09-08T14:52:39.484886+00:00",
+        "source_sha256": "970878d91d47e257a8d8b0fe9c5d89b7f0a56ec0c727d3283fbfc9e948ae9013",
+        "observed_chips": 900,
+        "recorded_chips": 900,
+        "source_receipt": {
+          "error": null,
+          "result": {
+            "bbj": 0,
+            "mode": "delta",
+            "rake": 0,
+            "inflow": 0,
+            "hand_id": "fb942492-b43d-4b37-264e-79237f9bb9e1",
+            "players": 2,
+            "rebased": {},
+            "request": {
+              "bbj": 0,
+              "rake": 0,
+              "inflow": 0,
+              "stacks": [
+                {
+                  "stack": 900,
+                  "user_id": "62f0d4da-b736-4629-ad14-894e432d0f04",
+                  "stack_before": 680
+                },
+                {
+                  "stack": 0,
+                  "user_id": "f53f55b8-6bd9-4953-ae64-ff319c524e0f",
+                  "stack_before": 220
+                }
+              ]
+            },
+            "success": true,
+            "written": {
+              "62f0d4da-b736-4629-ad14-894e432d0f04": 900,
+              "f53f55b8-6bd9-4953-ae64-ff319c524e0f": 0
+            },
+            "departed": [],
+            "table_id": "9eef9943-11af-4819-96db-455e8e12b7ce",
+            "net_deltas": 0,
+            "hand_number": 8219879,
+            "conservation_checked": true
+          },
+          "status": "succeeded",
+          "hand_id": "fb942492-b43d-4b37-264e-79237f9bb9e1",
+          "table_id": "9eef9943-11af-4819-96db-455e8e12b7ce",
+          "completed_at": "2026-09-08T14:52:39.484886+00:00",
+          "attempt_count": 1,
+          "last_attempt_at": "2026-09-08T14:52:39.484886+00:00",
+          "first_attempt_at": "2026-09-08T14:52:39.484886+00:00"
+        },
+        "recorded_status": "playing",
+        "accepted_settlement_key": {
+          "hand_id": "fb942492-b43d-4b37-264e-79237f9bb9e1",
+          "table_id": "9eef9943-11af-4819-96db-455e8e12b7ce"
+        }
+      },
+      {
+        "hand_id": "fb942492-b43d-4b37-264e-79237f9bb9e1",
+        "user_id": "f53f55b8-6bd9-4953-ae64-ff319c524e0f",
+        "position": 2,
+        "table_id": "9eef9943-11af-4819-96db-455e8e12b7ce",
+        "player_id": "2cfaea0f-a6e3-4449-bc69-9de6079c2bb2",
+        "hand_number": 8219879,
+        "committed_at": "2026-09-08T14:52:39.484886+00:00",
+        "stack_before": 220,
+        "source_sha256": "970878d91d47e257a8d8b0fe9c5d89b7f0a56ec0c727d3283fbfc9e948ae9013",
+        "recorded_chips": 0,
+        "source_receipt": {
+          "error": null,
+          "result": {
+            "bbj": 0,
+            "mode": "delta",
+            "rake": 0,
+            "inflow": 0,
+            "hand_id": "fb942492-b43d-4b37-264e-79237f9bb9e1",
+            "players": 2,
+            "rebased": {},
+            "request": {
+              "bbj": 0,
+              "rake": 0,
+              "inflow": 0,
+              "stacks": [
+                {
+                  "stack": 900,
+                  "user_id": "62f0d4da-b736-4629-ad14-894e432d0f04",
+                  "stack_before": 680
+                },
+                {
+                  "stack": 0,
+                  "user_id": "f53f55b8-6bd9-4953-ae64-ff319c524e0f",
+                  "stack_before": 220
+                }
+              ]
+            },
+            "success": true,
+            "written": {
+              "62f0d4da-b736-4629-ad14-894e432d0f04": 900,
+              "f53f55b8-6bd9-4953-ae64-ff319c524e0f": 0
+            },
+            "departed": [],
+            "table_id": "9eef9943-11af-4819-96db-455e8e12b7ce",
+            "net_deltas": 0,
+            "hand_number": 8219879,
+            "conservation_checked": true
+          },
+          "status": "succeeded",
+          "hand_id": "fb942492-b43d-4b37-264e-79237f9bb9e1",
+          "table_id": "9eef9943-11af-4819-96db-455e8e12b7ce",
+          "completed_at": "2026-09-08T14:52:39.484886+00:00",
+          "attempt_count": 1,
+          "last_attempt_at": "2026-09-08T14:52:39.484886+00:00",
+          "first_attempt_at": "2026-09-08T14:52:39.484886+00:00"
+        },
+        "recorded_status": "eliminated",
+        "accepted_settlement_key": {
+          "hand_id": "fb942492-b43d-4b37-264e-79237f9bb9e1",
+          "table_id": "9eef9943-11af-4819-96db-455e8e12b7ce"
+        }
+      },
+      {
+        "hand_id": "7aa60dbb-c02e-1d21-f89c-046d64b2135c",
+        "user_id": "f77cb4c6-6fc4-45e9-bc6b-7791205391be",
+        "position": 3,
+        "table_id": "9eef9943-11af-4819-96db-455e8e12b7ce",
+        "player_id": "5047f938-e5e3-4727-aa2f-55af95417ea7",
+        "hand_number": 8219147,
+        "committed_at": "2026-09-08T14:51:29.490528+00:00",
+        "stack_before": 280,
+        "source_sha256": "c8af45e35469a1a16f6eb2c2bc3a393d80b0bccf63d2bbb86af6a440e04d18d4",
+        "recorded_chips": 0,
+        "source_receipt": {
+          "error": null,
+          "result": {
+            "bbj": 0,
+            "mode": "delta",
+            "rake": 0,
+            "inflow": 0,
+            "hand_id": "7aa60dbb-c02e-1d21-f89c-046d64b2135c",
+            "players": 3,
+            "rebased": {},
+            "request": {
+              "bbj": 0,
+              "rake": 0,
+              "inflow": 0,
+              "stacks": [
+                {
+                  "stack": 630,
+                  "user_id": "62f0d4da-b736-4629-ad14-894e432d0f04",
+                  "stack_before": 350
+                },
+                {
+                  "stack": 270,
+                  "user_id": "f53f55b8-6bd9-4953-ae64-ff319c524e0f",
+                  "stack_before": 270
+                },
+                {
+                  "stack": 0,
+                  "user_id": "f77cb4c6-6fc4-45e9-bc6b-7791205391be",
+                  "stack_before": 280
+                }
+              ]
+            },
+            "success": true,
+            "written": {
+              "62f0d4da-b736-4629-ad14-894e432d0f04": 630,
+              "f53f55b8-6bd9-4953-ae64-ff319c524e0f": 270,
+              "f77cb4c6-6fc4-45e9-bc6b-7791205391be": 0
+            },
+            "departed": [],
+            "table_id": "9eef9943-11af-4819-96db-455e8e12b7ce",
+            "net_deltas": 0,
+            "hand_number": 8219147,
+            "conservation_checked": true
+          },
+          "status": "succeeded",
+          "hand_id": "7aa60dbb-c02e-1d21-f89c-046d64b2135c",
+          "table_id": "9eef9943-11af-4819-96db-455e8e12b7ce",
+          "completed_at": "2026-09-08T14:51:29.490528+00:00",
+          "attempt_count": 1,
+          "last_attempt_at": "2026-09-08T14:51:29.490528+00:00",
+          "first_attempt_at": "2026-09-08T14:51:29.490528+00:00"
+        },
+        "recorded_status": "eliminated",
+        "accepted_settlement_key": {
+          "hand_id": "7aa60dbb-c02e-1d21-f89c-046d64b2135c",
+          "table_id": "9eef9943-11af-4819-96db-455e8e12b7ce"
+        }
+      }
+    ],
+    "field_size": 3,
+    "basis_sha256": "c22538ce00c3b1c6f4ed21a884b767f9f08ba0ee38e2508f54c71b1429df673e",
+    "money_writes": 0,
+    "tournament_id": "b3b65e07-6b3a-4b6c-b5d1-aeb5af17fa99",
+    "financial_mode": "spin",
+    "sequence_writes": 0,
+    "satellite_target_id": null,
+    "observed_winner_chips": 900,
+    "recorded_winner_chips": 900,
+    "accepted_receipt_count": 12,
+    "observed_winner_user_id": "62f0d4da-b736-4629-ad14-894e432d0f04",
+    "recorded_winner_chips_match": true
+  },
+  {
+    "ok": true,
+    "reason": null,
+    "version": 1,
+    "standings": [
+      {
+        "hand_id": "3a548186-09ac-a61c-ee2e-188a9ddad2e2",
+        "user_id": "55ee6465-bdc1-4eb1-b7fd-7630ff315e04",
+        "position": 1,
+        "table_id": "4fa8aec3-15f9-4a4e-96cc-832b04eda075",
+        "player_id": "5e30d6ff-ca36-4865-9276-bea1bc520d9f",
+        "hand_number": 8217233,
+        "committed_at": "2026-09-08T14:47:37.788894+00:00",
+        "source_sha256": "8ed12f7535037632d93a178e6a1ab497578bd0845182911484a518a4307a242a",
+        "observed_chips": 600,
+        "recorded_chips": 600,
+        "source_receipt": {
+          "error": null,
+          "result": {
+            "bbj": 0,
+            "mode": "delta",
+            "rake": 0,
+            "inflow": 0,
+            "hand_id": "3a548186-09ac-a61c-ee2e-188a9ddad2e2",
+            "players": 2,
+            "rebased": {},
+            "request": {
+              "bbj": 0,
+              "rake": 0,
+              "inflow": 0,
+              "stacks": [
+                {
+                  "stack": 0,
+                  "user_id": "00000000-0000-0000-0000-000000000025",
+                  "stack_before": 300
+                },
+                {
+                  "stack": 600,
+                  "user_id": "55ee6465-bdc1-4eb1-b7fd-7630ff315e04",
+                  "stack_before": 300
+                }
+              ]
+            },
+            "success": true,
+            "written": {
+              "00000000-0000-0000-0000-000000000025": 0,
+              "55ee6465-bdc1-4eb1-b7fd-7630ff315e04": 600
+            },
+            "departed": [],
+            "table_id": "4fa8aec3-15f9-4a4e-96cc-832b04eda075",
+            "net_deltas": 0,
+            "hand_number": 8217233,
+            "conservation_checked": true
+          },
+          "status": "succeeded",
+          "hand_id": "3a548186-09ac-a61c-ee2e-188a9ddad2e2",
+          "table_id": "4fa8aec3-15f9-4a4e-96cc-832b04eda075",
+          "completed_at": "2026-09-08T14:47:37.788894+00:00",
+          "attempt_count": 1,
+          "last_attempt_at": "2026-09-08T14:47:37.788894+00:00",
+          "first_attempt_at": "2026-09-08T14:47:37.788894+00:00"
+        },
+        "recorded_status": "playing",
+        "accepted_settlement_key": {
+          "hand_id": "3a548186-09ac-a61c-ee2e-188a9ddad2e2",
+          "table_id": "4fa8aec3-15f9-4a4e-96cc-832b04eda075"
+        }
+      },
+      {
+        "hand_id": "3a548186-09ac-a61c-ee2e-188a9ddad2e2",
+        "user_id": "00000000-0000-0000-0000-000000000025",
+        "position": 2,
+        "table_id": "4fa8aec3-15f9-4a4e-96cc-832b04eda075",
+        "player_id": "4978f31f-918b-4746-a4aa-d9a661e9a782",
+        "hand_number": 8217233,
+        "committed_at": "2026-09-08T14:47:37.788894+00:00",
+        "stack_before": 300,
+        "source_sha256": "8ed12f7535037632d93a178e6a1ab497578bd0845182911484a518a4307a242a",
+        "recorded_chips": 0,
+        "source_receipt": {
+          "error": null,
+          "result": {
+            "bbj": 0,
+            "mode": "delta",
+            "rake": 0,
+            "inflow": 0,
+            "hand_id": "3a548186-09ac-a61c-ee2e-188a9ddad2e2",
+            "players": 2,
+            "rebased": {},
+            "request": {
+              "bbj": 0,
+              "rake": 0,
+              "inflow": 0,
+              "stacks": [
+                {
+                  "stack": 0,
+                  "user_id": "00000000-0000-0000-0000-000000000025",
+                  "stack_before": 300
+                },
+                {
+                  "stack": 600,
+                  "user_id": "55ee6465-bdc1-4eb1-b7fd-7630ff315e04",
+                  "stack_before": 300
+                }
+              ]
+            },
+            "success": true,
+            "written": {
+              "00000000-0000-0000-0000-000000000025": 0,
+              "55ee6465-bdc1-4eb1-b7fd-7630ff315e04": 600
+            },
+            "departed": [],
+            "table_id": "4fa8aec3-15f9-4a4e-96cc-832b04eda075",
+            "net_deltas": 0,
+            "hand_number": 8217233,
+            "conservation_checked": true
+          },
+          "status": "succeeded",
+          "hand_id": "3a548186-09ac-a61c-ee2e-188a9ddad2e2",
+          "table_id": "4fa8aec3-15f9-4a4e-96cc-832b04eda075",
+          "completed_at": "2026-09-08T14:47:37.788894+00:00",
+          "attempt_count": 1,
+          "last_attempt_at": "2026-09-08T14:47:37.788894+00:00",
+          "first_attempt_at": "2026-09-08T14:47:37.788894+00:00"
+        },
+        "recorded_status": "eliminated",
+        "accepted_settlement_key": {
+          "hand_id": "3a548186-09ac-a61c-ee2e-188a9ddad2e2",
+          "table_id": "4fa8aec3-15f9-4a4e-96cc-832b04eda075"
+        }
+      }
+    ],
+    "field_size": 2,
+    "basis_sha256": "00d17909f9857308000ffd41469a04b31eccdf813c0826b1c16c140ebab7e8c1",
+    "money_writes": 0,
+    "tournament_id": "b5fae1b3-b900-4670-85ef-76e3aa646734",
+    "financial_mode": "cash_places",
+    "sequence_writes": 0,
+    "satellite_target_id": null,
+    "observed_winner_chips": 600,
+    "recorded_winner_chips": 600,
+    "accepted_receipt_count": 1,
+    "observed_winner_user_id": "55ee6465-bdc1-4eb1-b7fd-7630ff315e04",
+    "recorded_winner_chips_match": true
+  },
+  {
+    "ok": true,
+    "reason": null,
+    "version": 1,
+    "standings": [
+      {
+        "hand_id": "2b9798ab-f99e-1901-a659-ae92d974d041",
+        "user_id": "0bb5a13b-e7e5-4f87-ad4c-d102b4f4f61e",
+        "position": 1,
+        "table_id": "5fe9bcbe-2830-4ba1-8bfc-852bafa24232",
+        "player_id": "cafdc91c-51ea-4144-8b12-c4bd176d4d76",
+        "hand_number": 8218098,
+        "committed_at": "2026-09-08T14:49:30.380823+00:00",
+        "source_sha256": "e99f5b5d3b42959523f570e66980b907e1c1dbfe5c040ae692f549c3e89f13c8",
+        "observed_chips": 3000,
+        "recorded_chips": 3000,
+        "source_receipt": {
+          "error": null,
+          "result": {
+            "bbj": 0,
+            "mode": "delta",
+            "rake": 0,
+            "inflow": 0,
+            "hand_id": "2b9798ab-f99e-1901-a659-ae92d974d041",
+            "players": 2,
+            "rebased": {},
+            "request": {
+              "bbj": 0,
+              "rake": 0,
+              "inflow": 0,
+              "stacks": [
+                {
+                  "stack": 3000,
+                  "user_id": "0bb5a13b-e7e5-4f87-ad4c-d102b4f4f61e",
+                  "stack_before": 1505
+                },
+                {
+                  "stack": 0,
+                  "user_id": "4ceb0525-5b49-4138-b761-cf4c16e89a34",
+                  "stack_before": 1495
+                }
+              ]
+            },
+            "success": true,
+            "written": {
+              "0bb5a13b-e7e5-4f87-ad4c-d102b4f4f61e": 3000,
+              "4ceb0525-5b49-4138-b761-cf4c16e89a34": 0
+            },
+            "departed": [],
+            "table_id": "5fe9bcbe-2830-4ba1-8bfc-852bafa24232",
+            "net_deltas": 0,
+            "hand_number": 8218098,
+            "conservation_checked": true
+          },
+          "status": "succeeded",
+          "hand_id": "2b9798ab-f99e-1901-a659-ae92d974d041",
+          "table_id": "5fe9bcbe-2830-4ba1-8bfc-852bafa24232",
+          "completed_at": "2026-09-08T14:49:30.380823+00:00",
+          "attempt_count": 1,
+          "last_attempt_at": "2026-09-08T14:49:30.380823+00:00",
+          "first_attempt_at": "2026-09-08T14:49:30.380823+00:00"
+        },
+        "recorded_status": "playing",
+        "accepted_settlement_key": {
+          "hand_id": "2b9798ab-f99e-1901-a659-ae92d974d041",
+          "table_id": "5fe9bcbe-2830-4ba1-8bfc-852bafa24232"
+        }
+      },
+      {
+        "hand_id": "2b9798ab-f99e-1901-a659-ae92d974d041",
+        "user_id": "4ceb0525-5b49-4138-b761-cf4c16e89a34",
+        "position": 2,
+        "table_id": "5fe9bcbe-2830-4ba1-8bfc-852bafa24232",
+        "player_id": "969c9051-7c51-42b1-aec9-854cea78d1f5",
+        "hand_number": 8218098,
+        "committed_at": "2026-09-08T14:49:30.380823+00:00",
+        "stack_before": 1495,
+        "source_sha256": "e99f5b5d3b42959523f570e66980b907e1c1dbfe5c040ae692f549c3e89f13c8",
+        "recorded_chips": 0,
+        "source_receipt": {
+          "error": null,
+          "result": {
+            "bbj": 0,
+            "mode": "delta",
+            "rake": 0,
+            "inflow": 0,
+            "hand_id": "2b9798ab-f99e-1901-a659-ae92d974d041",
+            "players": 2,
+            "rebased": {},
+            "request": {
+              "bbj": 0,
+              "rake": 0,
+              "inflow": 0,
+              "stacks": [
+                {
+                  "stack": 3000,
+                  "user_id": "0bb5a13b-e7e5-4f87-ad4c-d102b4f4f61e",
+                  "stack_before": 1505
+                },
+                {
+                  "stack": 0,
+                  "user_id": "4ceb0525-5b49-4138-b761-cf4c16e89a34",
+                  "stack_before": 1495
+                }
+              ]
+            },
+            "success": true,
+            "written": {
+              "0bb5a13b-e7e5-4f87-ad4c-d102b4f4f61e": 3000,
+              "4ceb0525-5b49-4138-b761-cf4c16e89a34": 0
+            },
+            "departed": [],
+            "table_id": "5fe9bcbe-2830-4ba1-8bfc-852bafa24232",
+            "net_deltas": 0,
+            "hand_number": 8218098,
+            "conservation_checked": true
+          },
+          "status": "succeeded",
+          "hand_id": "2b9798ab-f99e-1901-a659-ae92d974d041",
+          "table_id": "5fe9bcbe-2830-4ba1-8bfc-852bafa24232",
+          "completed_at": "2026-09-08T14:49:30.380823+00:00",
+          "attempt_count": 1,
+          "last_attempt_at": "2026-09-08T14:49:30.380823+00:00",
+          "first_attempt_at": "2026-09-08T14:49:30.380823+00:00"
+        },
+        "recorded_status": "eliminated",
+        "accepted_settlement_key": {
+          "hand_id": "2b9798ab-f99e-1901-a659-ae92d974d041",
+          "table_id": "5fe9bcbe-2830-4ba1-8bfc-852bafa24232"
+        }
+      },
+      {
+        "hand_id": "d884faf4-b759-ff77-4caf-23811c400ead",
+        "user_id": "1ede808f-e293-4b2e-9811-6425f596b2cb",
+        "position": 3,
+        "table_id": "5fe9bcbe-2830-4ba1-8bfc-852bafa24232",
+        "player_id": "25c073ea-08ba-4775-b9b2-0d8fbfaa8364",
+        "hand_number": 8217232,
+        "committed_at": "2026-09-08T14:47:40.22793+00:00",
+        "stack_before": 352,
+        "source_sha256": "c1dd4cae4e9f1646f8bceef3ed16dc426fe8a35e8aa2081afbe5b0e2662d1551",
+        "recorded_chips": 0,
+        "source_receipt": {
+          "error": null,
+          "result": {
+            "bbj": 0,
+            "mode": "delta",
+            "rake": 0,
+            "inflow": 0,
+            "hand_id": "d884faf4-b759-ff77-4caf-23811c400ead",
+            "players": 3,
+            "rebased": {},
+            "request": {
+              "bbj": 0,
+              "rake": 0,
+              "inflow": 0,
+              "stacks": [
+                {
+                  "stack": 1407,
+                  "user_id": "0bb5a13b-e7e5-4f87-ad4c-d102b4f4f61e",
+                  "stack_before": 1055
+                },
+                {
+                  "stack": 0,
+                  "user_id": "1ede808f-e293-4b2e-9811-6425f596b2cb",
+                  "stack_before": 352
+                },
+                {
+                  "stack": 1593,
+                  "user_id": "4ceb0525-5b49-4138-b761-cf4c16e89a34",
+                  "stack_before": 1593
+                }
+              ]
+            },
+            "success": true,
+            "written": {
+              "0bb5a13b-e7e5-4f87-ad4c-d102b4f4f61e": 1407,
+              "1ede808f-e293-4b2e-9811-6425f596b2cb": 0,
+              "4ceb0525-5b49-4138-b761-cf4c16e89a34": 1593
+            },
+            "departed": [],
+            "table_id": "5fe9bcbe-2830-4ba1-8bfc-852bafa24232",
+            "net_deltas": 0,
+            "hand_number": 8217232,
+            "conservation_checked": true
+          },
+          "status": "succeeded",
+          "hand_id": "d884faf4-b759-ff77-4caf-23811c400ead",
+          "table_id": "5fe9bcbe-2830-4ba1-8bfc-852bafa24232",
+          "completed_at": "2026-09-08T14:47:40.22793+00:00",
+          "attempt_count": 1,
+          "last_attempt_at": "2026-09-08T14:47:40.22793+00:00",
+          "first_attempt_at": "2026-09-08T14:47:40.22793+00:00"
+        },
+        "recorded_status": "eliminated",
+        "accepted_settlement_key": {
+          "hand_id": "d884faf4-b759-ff77-4caf-23811c400ead",
+          "table_id": "5fe9bcbe-2830-4ba1-8bfc-852bafa24232"
+        }
+      }
+    ],
+    "field_size": 3,
+    "basis_sha256": "672768e6a828218e87123db7098a551fac6125b386d000e9e2fef64f5427f37c",
+    "money_writes": 0,
+    "tournament_id": "b67ab0cb-e2d6-4955-8f43-4bff32551400",
+    "financial_mode": "spin",
+    "sequence_writes": 0,
+    "satellite_target_id": null,
+    "observed_winner_chips": 3000,
+    "recorded_winner_chips": 3000,
+    "accepted_receipt_count": 35,
+    "observed_winner_user_id": "0bb5a13b-e7e5-4f87-ad4c-d102b4f4f61e",
+    "recorded_winner_chips_match": true
+  },
+  {
+    "ok": true,
+    "reason": null,
+    "version": 1,
+    "standings": [
+      {
+        "hand_id": "25f2c3f9-9fbb-b94e-ca28-c7eb34b3eb9e",
+        "user_id": "3fff352f-7e86-4449-8262-5fc50462195e",
+        "position": 1,
+        "table_id": "961e90ad-7f40-40de-849d-327d8bd7ff73",
+        "player_id": "06e99367-cbb8-41f5-b149-099ec2501dcf",
+        "hand_number": 8219029,
+        "committed_at": "2026-09-08T14:51:23.729022+00:00",
+        "source_sha256": "8fb369592e785f2b0e5e5bca28ec81161c3db9430b3d64f825c6940eb95f0cec",
+        "observed_chips": 900,
+        "recorded_chips": 900,
+        "source_receipt": {
+          "error": null,
+          "result": {
+            "bbj": 0,
+            "mode": "delta",
+            "rake": 0,
+            "inflow": 0,
+            "hand_id": "25f2c3f9-9fbb-b94e-ca28-c7eb34b3eb9e",
+            "players": 2,
+            "rebased": {},
+            "request": {
+              "bbj": 0,
+              "rake": 0,
+              "inflow": 0,
+              "stacks": [
+                {
+                  "stack": 900,
+                  "user_id": "3fff352f-7e86-4449-8262-5fc50462195e",
+                  "stack_before": 780
+                },
+                {
+                  "stack": 0,
+                  "user_id": "6f5fd01a-cdbe-4c2b-b472-f4cafcfdad17",
+                  "stack_before": 120
+                }
+              ]
+            },
+            "success": true,
+            "written": {
+              "3fff352f-7e86-4449-8262-5fc50462195e": 900,
+              "6f5fd01a-cdbe-4c2b-b472-f4cafcfdad17": 0
+            },
+            "departed": [],
+            "table_id": "961e90ad-7f40-40de-849d-327d8bd7ff73",
+            "net_deltas": 0,
+            "hand_number": 8219029,
+            "conservation_checked": true
+          },
+          "status": "succeeded",
+          "hand_id": "25f2c3f9-9fbb-b94e-ca28-c7eb34b3eb9e",
+          "table_id": "961e90ad-7f40-40de-849d-327d8bd7ff73",
+          "completed_at": "2026-09-08T14:51:23.729022+00:00",
+          "attempt_count": 1,
+          "last_attempt_at": "2026-09-08T14:51:23.729022+00:00",
+          "first_attempt_at": "2026-09-08T14:51:23.729022+00:00"
+        },
+        "recorded_status": "playing",
+        "accepted_settlement_key": {
+          "hand_id": "25f2c3f9-9fbb-b94e-ca28-c7eb34b3eb9e",
+          "table_id": "961e90ad-7f40-40de-849d-327d8bd7ff73"
+        }
+      },
+      {
+        "hand_id": "25f2c3f9-9fbb-b94e-ca28-c7eb34b3eb9e",
+        "user_id": "6f5fd01a-cdbe-4c2b-b472-f4cafcfdad17",
+        "position": 2,
+        "table_id": "961e90ad-7f40-40de-849d-327d8bd7ff73",
+        "player_id": "40294855-2fff-40fc-92e7-373a6e0e78ad",
+        "hand_number": 8219029,
+        "committed_at": "2026-09-08T14:51:23.729022+00:00",
+        "stack_before": 120,
+        "source_sha256": "8fb369592e785f2b0e5e5bca28ec81161c3db9430b3d64f825c6940eb95f0cec",
+        "recorded_chips": 0,
+        "source_receipt": {
+          "error": null,
+          "result": {
+            "bbj": 0,
+            "mode": "delta",
+            "rake": 0,
+            "inflow": 0,
+            "hand_id": "25f2c3f9-9fbb-b94e-ca28-c7eb34b3eb9e",
+            "players": 2,
+            "rebased": {},
+            "request": {
+              "bbj": 0,
+              "rake": 0,
+              "inflow": 0,
+              "stacks": [
+                {
+                  "stack": 900,
+                  "user_id": "3fff352f-7e86-4449-8262-5fc50462195e",
+                  "stack_before": 780
+                },
+                {
+                  "stack": 0,
+                  "user_id": "6f5fd01a-cdbe-4c2b-b472-f4cafcfdad17",
+                  "stack_before": 120
+                }
+              ]
+            },
+            "success": true,
+            "written": {
+              "3fff352f-7e86-4449-8262-5fc50462195e": 900,
+              "6f5fd01a-cdbe-4c2b-b472-f4cafcfdad17": 0
+            },
+            "departed": [],
+            "table_id": "961e90ad-7f40-40de-849d-327d8bd7ff73",
+            "net_deltas": 0,
+            "hand_number": 8219029,
+            "conservation_checked": true
+          },
+          "status": "succeeded",
+          "hand_id": "25f2c3f9-9fbb-b94e-ca28-c7eb34b3eb9e",
+          "table_id": "961e90ad-7f40-40de-849d-327d8bd7ff73",
+          "completed_at": "2026-09-08T14:51:23.729022+00:00",
+          "attempt_count": 1,
+          "last_attempt_at": "2026-09-08T14:51:23.729022+00:00",
+          "first_attempt_at": "2026-09-08T14:51:23.729022+00:00"
+        },
+        "recorded_status": "eliminated",
+        "accepted_settlement_key": {
+          "hand_id": "25f2c3f9-9fbb-b94e-ca28-c7eb34b3eb9e",
+          "table_id": "961e90ad-7f40-40de-849d-327d8bd7ff73"
+        }
+      },
+      {
+        "hand_id": "9fce86e1-0ea8-c968-0a31-3ae99058eef2",
+        "user_id": "5330edb2-9f93-492a-aef3-c7e077c0de68",
+        "position": 3,
+        "table_id": "961e90ad-7f40-40de-849d-327d8bd7ff73",
+        "player_id": "58ad27be-8d6e-4097-9db0-cbbaf8a1ed3c",
+        "hand_number": 8217547,
+        "committed_at": "2026-09-08T14:48:30.802235+00:00",
+        "stack_before": 290,
+        "source_sha256": "8878385bc2323ee38307412559731ffa3fb3a55c3833aef17e367fa899fbb820",
+        "recorded_chips": 0,
+        "source_receipt": {
+          "error": null,
+          "result": {
+            "bbj": 0,
+            "mode": "delta",
+            "rake": 0,
+            "inflow": 0,
+            "hand_id": "9fce86e1-0ea8-c968-0a31-3ae99058eef2",
+            "players": 3,
+            "rebased": {},
+            "request": {
+              "bbj": 0,
+              "rake": 0,
+              "inflow": 0,
+              "stacks": [
+                {
+                  "stack": 620,
+                  "user_id": "3fff352f-7e86-4449-8262-5fc50462195e",
+                  "stack_before": 310
+                },
+                {
+                  "stack": 0,
+                  "user_id": "5330edb2-9f93-492a-aef3-c7e077c0de68",
+                  "stack_before": 290
+                },
+                {
+                  "stack": 280,
+                  "user_id": "6f5fd01a-cdbe-4c2b-b472-f4cafcfdad17",
+                  "stack_before": 300
+                }
+              ]
+            },
+            "success": true,
+            "written": {
+              "3fff352f-7e86-4449-8262-5fc50462195e": 620,
+              "5330edb2-9f93-492a-aef3-c7e077c0de68": 0,
+              "6f5fd01a-cdbe-4c2b-b472-f4cafcfdad17": 280
+            },
+            "departed": [],
+            "table_id": "961e90ad-7f40-40de-849d-327d8bd7ff73",
+            "net_deltas": 0,
+            "hand_number": 8217547,
+            "conservation_checked": true
+          },
+          "status": "succeeded",
+          "hand_id": "9fce86e1-0ea8-c968-0a31-3ae99058eef2",
+          "table_id": "961e90ad-7f40-40de-849d-327d8bd7ff73",
+          "completed_at": "2026-09-08T14:48:30.802235+00:00",
+          "attempt_count": 1,
+          "last_attempt_at": "2026-09-08T14:48:30.802235+00:00",
+          "first_attempt_at": "2026-09-08T14:48:30.802235+00:00"
+        },
+        "recorded_status": "eliminated",
+        "accepted_settlement_key": {
+          "hand_id": "9fce86e1-0ea8-c968-0a31-3ae99058eef2",
+          "table_id": "961e90ad-7f40-40de-849d-327d8bd7ff73"
+        }
+      }
+    ],
+    "field_size": 3,
+    "basis_sha256": "3280844b76420e35755a4dbc85817b0e23b4c3117a18214c8f01c0ddec9121b5",
+    "money_writes": 0,
+    "tournament_id": "c2fd1c7e-9572-4b95-90dd-3b999777a145",
+    "financial_mode": "spin",
+    "sequence_writes": 0,
+    "satellite_target_id": null,
+    "observed_winner_chips": 900,
+    "recorded_winner_chips": 900,
+    "accepted_receipt_count": 18,
+    "observed_winner_user_id": "3fff352f-7e86-4449-8262-5fc50462195e",
+    "recorded_winner_chips_match": true
+  },
+  {
+    "ok": true,
+    "reason": null,
+    "version": 1,
+    "standings": [
+      {
+        "hand_id": "618fcfc5-e9c1-3a13-da28-5d50a8f70270",
+        "user_id": "b82cb704-5ea3-469e-b05a-88e768e8834c",
+        "position": 1,
+        "table_id": "493c3a70-0e93-4bcb-9df7-2525348f34d6",
+        "player_id": "0bfe60d3-310f-4a2e-beab-ee2db78b3400",
+        "hand_number": 8219823,
+        "committed_at": "2026-09-08T14:52:30.961728+00:00",
+        "source_sha256": "00d1ecd1947d1290d38be64c39ffcb9783b67deaa6aed3bf4dff00b7c7bbab35",
+        "observed_chips": 600,
+        "recorded_chips": 600,
+        "source_receipt": {
+          "error": null,
+          "result": {
+            "bbj": 0,
+            "mode": "delta",
+            "rake": 0,
+            "inflow": 0,
+            "hand_id": "618fcfc5-e9c1-3a13-da28-5d50a8f70270",
+            "players": 2,
+            "rebased": {},
+            "request": {
+              "bbj": 0,
+              "rake": 0,
+              "inflow": 0,
+              "stacks": [
+                {
+                  "stack": 0,
+                  "user_id": "94cb32db-d0c0-408a-9a4f-13e66d56d2c2",
+                  "stack_before": 300
+                },
+                {
+                  "stack": 600,
+                  "user_id": "b82cb704-5ea3-469e-b05a-88e768e8834c",
+                  "stack_before": 300
+                }
+              ]
+            },
+            "success": true,
+            "written": {
+              "94cb32db-d0c0-408a-9a4f-13e66d56d2c2": 0,
+              "b82cb704-5ea3-469e-b05a-88e768e8834c": 600
+            },
+            "departed": [],
+            "table_id": "493c3a70-0e93-4bcb-9df7-2525348f34d6",
+            "net_deltas": 0,
+            "hand_number": 8219823,
+            "conservation_checked": true
+          },
+          "status": "succeeded",
+          "hand_id": "618fcfc5-e9c1-3a13-da28-5d50a8f70270",
+          "table_id": "493c3a70-0e93-4bcb-9df7-2525348f34d6",
+          "completed_at": "2026-09-08T14:52:30.961728+00:00",
+          "attempt_count": 1,
+          "last_attempt_at": "2026-09-08T14:52:30.961728+00:00",
+          "first_attempt_at": "2026-09-08T14:52:30.961728+00:00"
+        },
+        "recorded_status": "playing",
+        "accepted_settlement_key": {
+          "hand_id": "618fcfc5-e9c1-3a13-da28-5d50a8f70270",
+          "table_id": "493c3a70-0e93-4bcb-9df7-2525348f34d6"
+        }
+      },
+      {
+        "hand_id": "618fcfc5-e9c1-3a13-da28-5d50a8f70270",
+        "user_id": "94cb32db-d0c0-408a-9a4f-13e66d56d2c2",
+        "position": 2,
+        "table_id": "493c3a70-0e93-4bcb-9df7-2525348f34d6",
+        "player_id": "96a6c2e1-f25b-445f-a9fa-7868a0918965",
+        "hand_number": 8219823,
+        "committed_at": "2026-09-08T14:52:30.961728+00:00",
+        "stack_before": 300,
+        "source_sha256": "00d1ecd1947d1290d38be64c39ffcb9783b67deaa6aed3bf4dff00b7c7bbab35",
+        "recorded_chips": 0,
+        "source_receipt": {
+          "error": null,
+          "result": {
+            "bbj": 0,
+            "mode": "delta",
+            "rake": 0,
+            "inflow": 0,
+            "hand_id": "618fcfc5-e9c1-3a13-da28-5d50a8f70270",
+            "players": 2,
+            "rebased": {},
+            "request": {
+              "bbj": 0,
+              "rake": 0,
+              "inflow": 0,
+              "stacks": [
+                {
+                  "stack": 0,
+                  "user_id": "94cb32db-d0c0-408a-9a4f-13e66d56d2c2",
+                  "stack_before": 300
+                },
+                {
+                  "stack": 600,
+                  "user_id": "b82cb704-5ea3-469e-b05a-88e768e8834c",
+                  "stack_before": 300
+                }
+              ]
+            },
+            "success": true,
+            "written": {
+              "94cb32db-d0c0-408a-9a4f-13e66d56d2c2": 0,
+              "b82cb704-5ea3-469e-b05a-88e768e8834c": 600
+            },
+            "departed": [],
+            "table_id": "493c3a70-0e93-4bcb-9df7-2525348f34d6",
+            "net_deltas": 0,
+            "hand_number": 8219823,
+            "conservation_checked": true
+          },
+          "status": "succeeded",
+          "hand_id": "618fcfc5-e9c1-3a13-da28-5d50a8f70270",
+          "table_id": "493c3a70-0e93-4bcb-9df7-2525348f34d6",
+          "completed_at": "2026-09-08T14:52:30.961728+00:00",
+          "attempt_count": 1,
+          "last_attempt_at": "2026-09-08T14:52:30.961728+00:00",
+          "first_attempt_at": "2026-09-08T14:52:30.961728+00:00"
+        },
+        "recorded_status": "eliminated",
+        "accepted_settlement_key": {
+          "hand_id": "618fcfc5-e9c1-3a13-da28-5d50a8f70270",
+          "table_id": "493c3a70-0e93-4bcb-9df7-2525348f34d6"
+        }
+      }
+    ],
+    "field_size": 2,
+    "basis_sha256": "c739ef96471b6b12bd902683bf39f763d88c3ca19642e89dd92fcac1ab896715",
+    "money_writes": 0,
+    "tournament_id": "dae6db50-4f35-4ffd-b8f5-b9f95d104c10",
+    "financial_mode": "cash_places",
+    "sequence_writes": 0,
+    "satellite_target_id": null,
+    "observed_winner_chips": 600,
+    "recorded_winner_chips": 600,
+    "accepted_receipt_count": 5,
+    "observed_winner_user_id": "b82cb704-5ea3-469e-b05a-88e768e8834c",
+    "recorded_winner_chips_match": true
+  },
+  {
+    "ok": true,
+    "reason": null,
+    "version": 1,
+    "standings": [
+      {
+        "hand_id": "a0876bbc-b52a-e011-7b2a-aaa89d3c7a5c",
+        "user_id": "a74c2c28-c2dd-4ad0-b18f-2687eba73dba",
+        "position": 1,
+        "table_id": "ab3bcea7-9994-45e0-a09d-711ef110bd6c",
+        "player_id": "e086c1b8-ae42-436c-9db6-e5c530b78ddd",
+        "hand_number": 8219146,
+        "committed_at": "2026-09-08T14:51:24.951278+00:00",
+        "source_sha256": "da7b9e390aeab79393736c62260000369283c1aa5acc5b6e7950567d50517318",
+        "observed_chips": 600,
+        "recorded_chips": 600,
+        "source_receipt": {
+          "error": null,
+          "result": {
+            "bbj": 0,
+            "mode": "delta",
+            "rake": 0,
+            "inflow": 0,
+            "hand_id": "a0876bbc-b52a-e011-7b2a-aaa89d3c7a5c",
+            "players": 2,
+            "rebased": {},
+            "request": {
+              "bbj": 0,
+              "rake": 0,
+              "inflow": 0,
+              "stacks": [
+                {
+                  "stack": 600,
+                  "user_id": "a74c2c28-c2dd-4ad0-b18f-2687eba73dba",
+                  "stack_before": 300
+                },
+                {
+                  "stack": 0,
+                  "user_id": "dec9ad0a-55c3-4dfe-9ece-5315f9a44544",
+                  "stack_before": 300
+                }
+              ]
+            },
+            "success": true,
+            "written": {
+              "a74c2c28-c2dd-4ad0-b18f-2687eba73dba": 600,
+              "dec9ad0a-55c3-4dfe-9ece-5315f9a44544": 0
+            },
+            "departed": [],
+            "table_id": "ab3bcea7-9994-45e0-a09d-711ef110bd6c",
+            "net_deltas": 0,
+            "hand_number": 8219146,
+            "conservation_checked": true
+          },
+          "status": "succeeded",
+          "hand_id": "a0876bbc-b52a-e011-7b2a-aaa89d3c7a5c",
+          "table_id": "ab3bcea7-9994-45e0-a09d-711ef110bd6c",
+          "completed_at": "2026-09-08T14:51:24.951278+00:00",
+          "attempt_count": 1,
+          "last_attempt_at": "2026-09-08T14:51:24.951278+00:00",
+          "first_attempt_at": "2026-09-08T14:51:24.951278+00:00"
+        },
+        "recorded_status": "playing",
+        "accepted_settlement_key": {
+          "hand_id": "a0876bbc-b52a-e011-7b2a-aaa89d3c7a5c",
+          "table_id": "ab3bcea7-9994-45e0-a09d-711ef110bd6c"
+        }
+      },
+      {
+        "hand_id": "a0876bbc-b52a-e011-7b2a-aaa89d3c7a5c",
+        "user_id": "dec9ad0a-55c3-4dfe-9ece-5315f9a44544",
+        "position": 2,
+        "table_id": "ab3bcea7-9994-45e0-a09d-711ef110bd6c",
+        "player_id": "f462c48a-5b1f-401a-96cd-200de2d9fd9b",
+        "hand_number": 8219146,
+        "committed_at": "2026-09-08T14:51:24.951278+00:00",
+        "stack_before": 300,
+        "source_sha256": "da7b9e390aeab79393736c62260000369283c1aa5acc5b6e7950567d50517318",
+        "recorded_chips": 0,
+        "source_receipt": {
+          "error": null,
+          "result": {
+            "bbj": 0,
+            "mode": "delta",
+            "rake": 0,
+            "inflow": 0,
+            "hand_id": "a0876bbc-b52a-e011-7b2a-aaa89d3c7a5c",
+            "players": 2,
+            "rebased": {},
+            "request": {
+              "bbj": 0,
+              "rake": 0,
+              "inflow": 0,
+              "stacks": [
+                {
+                  "stack": 600,
+                  "user_id": "a74c2c28-c2dd-4ad0-b18f-2687eba73dba",
+                  "stack_before": 300
+                },
+                {
+                  "stack": 0,
+                  "user_id": "dec9ad0a-55c3-4dfe-9ece-5315f9a44544",
+                  "stack_before": 300
+                }
+              ]
+            },
+            "success": true,
+            "written": {
+              "a74c2c28-c2dd-4ad0-b18f-2687eba73dba": 600,
+              "dec9ad0a-55c3-4dfe-9ece-5315f9a44544": 0
+            },
+            "departed": [],
+            "table_id": "ab3bcea7-9994-45e0-a09d-711ef110bd6c",
+            "net_deltas": 0,
+            "hand_number": 8219146,
+            "conservation_checked": true
+          },
+          "status": "succeeded",
+          "hand_id": "a0876bbc-b52a-e011-7b2a-aaa89d3c7a5c",
+          "table_id": "ab3bcea7-9994-45e0-a09d-711ef110bd6c",
+          "completed_at": "2026-09-08T14:51:24.951278+00:00",
+          "attempt_count": 1,
+          "last_attempt_at": "2026-09-08T14:51:24.951278+00:00",
+          "first_attempt_at": "2026-09-08T14:51:24.951278+00:00"
+        },
+        "recorded_status": "eliminated",
+        "accepted_settlement_key": {
+          "hand_id": "a0876bbc-b52a-e011-7b2a-aaa89d3c7a5c",
+          "table_id": "ab3bcea7-9994-45e0-a09d-711ef110bd6c"
+        }
+      }
+    ],
+    "field_size": 2,
+    "basis_sha256": "171129f79e199d47aed9bb2900303cf5d8eaa78362e28d11f9e00d4aaf201da4",
+    "money_writes": 0,
+    "tournament_id": "e62a97cc-40a8-4d70-a89d-04ca4cc20834",
+    "financial_mode": "cash_places",
+    "sequence_writes": 0,
+    "satellite_target_id": null,
+    "observed_winner_chips": 600,
+    "recorded_winner_chips": 600,
+    "accepted_receipt_count": 1,
+    "observed_winner_user_id": "a74c2c28-c2dd-4ad0-b18f-2687eba73dba",
+    "recorded_winner_chips_match": true
+  },
+  {
+    "ok": true,
+    "reason": null,
+    "version": 1,
+    "standings": [
+      {
+        "hand_id": "eb244349-2c83-b847-fc14-96dc03df9a3d",
+        "user_id": "3d85f161-27ce-45f4-b94b-1d42c62252af",
+        "position": 1,
+        "table_id": "9bbea1b3-d699-4c73-a610-5ffa5103b768",
+        "player_id": "60dc5340-6087-4c73-975c-fbfb6a7442f7",
+        "hand_number": 8216948,
+        "committed_at": "2026-09-08T14:47:13.609702+00:00",
+        "source_sha256": "c4f89395207940db3a328df3950bde252e6ca894a98666ba1e48f638edee52a5",
+        "observed_chips": 900,
+        "recorded_chips": 900,
+        "source_receipt": {
+          "error": null,
+          "result": {
+            "bbj": 0,
+            "mode": "delta",
+            "rake": 0,
+            "inflow": 0,
+            "hand_id": "eb244349-2c83-b847-fc14-96dc03df9a3d",
+            "players": 2,
+            "rebased": {},
+            "request": {
+              "bbj": 0,
+              "rake": 0,
+              "inflow": 0,
+              "stacks": [
+                {
+                  "stack": 0,
+                  "user_id": "3ac76bbb-de77-4f26-b2b9-c3408b5bbf1d",
+                  "stack_before": 361
+                },
+                {
+                  "stack": 900,
+                  "user_id": "3d85f161-27ce-45f4-b94b-1d42c62252af",
+                  "stack_before": 539
+                }
+              ]
+            },
+            "success": true,
+            "written": {
+              "3ac76bbb-de77-4f26-b2b9-c3408b5bbf1d": 0,
+              "3d85f161-27ce-45f4-b94b-1d42c62252af": 900
+            },
+            "departed": [],
+            "table_id": "9bbea1b3-d699-4c73-a610-5ffa5103b768",
+            "net_deltas": 0,
+            "hand_number": 8216948,
+            "conservation_checked": true
+          },
+          "status": "succeeded",
+          "hand_id": "eb244349-2c83-b847-fc14-96dc03df9a3d",
+          "table_id": "9bbea1b3-d699-4c73-a610-5ffa5103b768",
+          "completed_at": "2026-09-08T14:47:13.609702+00:00",
+          "attempt_count": 1,
+          "last_attempt_at": "2026-09-08T14:47:13.609702+00:00",
+          "first_attempt_at": "2026-09-08T14:47:13.609702+00:00"
+        },
+        "recorded_status": "playing",
+        "accepted_settlement_key": {
+          "hand_id": "eb244349-2c83-b847-fc14-96dc03df9a3d",
+          "table_id": "9bbea1b3-d699-4c73-a610-5ffa5103b768"
+        }
+      },
+      {
+        "hand_id": "eb244349-2c83-b847-fc14-96dc03df9a3d",
+        "user_id": "3ac76bbb-de77-4f26-b2b9-c3408b5bbf1d",
+        "position": 2,
+        "table_id": "9bbea1b3-d699-4c73-a610-5ffa5103b768",
+        "player_id": "18c3a331-0d71-42b1-ba0e-a007c3fc48e5",
+        "hand_number": 8216948,
+        "committed_at": "2026-09-08T14:47:13.609702+00:00",
+        "stack_before": 361,
+        "source_sha256": "c4f89395207940db3a328df3950bde252e6ca894a98666ba1e48f638edee52a5",
+        "recorded_chips": 0,
+        "source_receipt": {
+          "error": null,
+          "result": {
+            "bbj": 0,
+            "mode": "delta",
+            "rake": 0,
+            "inflow": 0,
+            "hand_id": "eb244349-2c83-b847-fc14-96dc03df9a3d",
+            "players": 2,
+            "rebased": {},
+            "request": {
+              "bbj": 0,
+              "rake": 0,
+              "inflow": 0,
+              "stacks": [
+                {
+                  "stack": 0,
+                  "user_id": "3ac76bbb-de77-4f26-b2b9-c3408b5bbf1d",
+                  "stack_before": 361
+                },
+                {
+                  "stack": 900,
+                  "user_id": "3d85f161-27ce-45f4-b94b-1d42c62252af",
+                  "stack_before": 539
+                }
+              ]
+            },
+            "success": true,
+            "written": {
+              "3ac76bbb-de77-4f26-b2b9-c3408b5bbf1d": 0,
+              "3d85f161-27ce-45f4-b94b-1d42c62252af": 900
+            },
+            "departed": [],
+            "table_id": "9bbea1b3-d699-4c73-a610-5ffa5103b768",
+            "net_deltas": 0,
+            "hand_number": 8216948,
+            "conservation_checked": true
+          },
+          "status": "succeeded",
+          "hand_id": "eb244349-2c83-b847-fc14-96dc03df9a3d",
+          "table_id": "9bbea1b3-d699-4c73-a610-5ffa5103b768",
+          "completed_at": "2026-09-08T14:47:13.609702+00:00",
+          "attempt_count": 1,
+          "last_attempt_at": "2026-09-08T14:47:13.609702+00:00",
+          "first_attempt_at": "2026-09-08T14:47:13.609702+00:00"
+        },
+        "recorded_status": "eliminated",
+        "accepted_settlement_key": {
+          "hand_id": "eb244349-2c83-b847-fc14-96dc03df9a3d",
+          "table_id": "9bbea1b3-d699-4c73-a610-5ffa5103b768"
+        }
+      },
+      {
+        "hand_id": "d6b48965-9d51-7969-fec7-97af15760172",
+        "user_id": "4845cbbb-a29c-4b34-8fbe-b8658bd6c16c",
+        "position": 3,
+        "table_id": "9bbea1b3-d699-4c73-a610-5ffa5103b768",
+        "player_id": "f315cd7a-1b82-41e3-9392-9494fc32132f",
+        "hand_number": 8214926,
+        "committed_at": "2026-09-08T14:42:21.45182+00:00",
+        "stack_before": 300,
+        "source_sha256": "04525480fe442079204b87e348cddc0eaae0bc3dc3d3df0f490b44759c9c8ccf",
+        "recorded_chips": 0,
+        "source_receipt": {
+          "error": null,
+          "result": {
+            "bbj": 0,
+            "mode": "delta",
+            "rake": 0,
+            "inflow": 0,
+            "hand_id": "d6b48965-9d51-7969-fec7-97af15760172",
+            "players": 3,
+            "rebased": {},
+            "request": {
+              "bbj": 0,
+              "rake": 0,
+              "inflow": 0,
+              "stacks": [
+                {
+                  "stack": 290,
+                  "user_id": "3ac76bbb-de77-4f26-b2b9-c3408b5bbf1d",
+                  "stack_before": 300
+                },
+                {
+                  "stack": 610,
+                  "user_id": "3d85f161-27ce-45f4-b94b-1d42c62252af",
+                  "stack_before": 300
+                },
+                {
+                  "stack": 0,
+                  "user_id": "4845cbbb-a29c-4b34-8fbe-b8658bd6c16c",
+                  "stack_before": 300
+                }
+              ]
+            },
+            "success": true,
+            "written": {
+              "3ac76bbb-de77-4f26-b2b9-c3408b5bbf1d": 290,
+              "3d85f161-27ce-45f4-b94b-1d42c62252af": 610,
+              "4845cbbb-a29c-4b34-8fbe-b8658bd6c16c": 0
+            },
+            "departed": [],
+            "table_id": "9bbea1b3-d699-4c73-a610-5ffa5103b768",
+            "net_deltas": 0,
+            "hand_number": 8214926,
+            "conservation_checked": true
+          },
+          "status": "succeeded",
+          "hand_id": "d6b48965-9d51-7969-fec7-97af15760172",
+          "table_id": "9bbea1b3-d699-4c73-a610-5ffa5103b768",
+          "completed_at": "2026-09-08T14:42:21.45182+00:00",
+          "attempt_count": 1,
+          "last_attempt_at": "2026-09-08T14:42:21.45182+00:00",
+          "first_attempt_at": "2026-09-08T14:42:21.45182+00:00"
+        },
+        "recorded_status": "eliminated",
+        "accepted_settlement_key": {
+          "hand_id": "d6b48965-9d51-7969-fec7-97af15760172",
+          "table_id": "9bbea1b3-d699-4c73-a610-5ffa5103b768"
+        }
+      }
+    ],
+    "field_size": 3,
+    "basis_sha256": "cfa071c4abd454173e2bd017e60409ada0c687c697a23c8f4e04a5d59f4b45d8",
+    "money_writes": 0,
+    "tournament_id": "efd5455d-d188-4171-becb-1d35b016d06a",
+    "financial_mode": "spin",
+    "sequence_writes": 0,
+    "satellite_target_id": null,
+    "observed_winner_chips": 900,
+    "recorded_winner_chips": 900,
+    "accepted_receipt_count": 28,
+    "observed_winner_user_id": "3d85f161-27ce-45f4-b94b-1d42c62252af",
+    "recorded_winner_chips_match": true
+  },
+  {
+    "ok": true,
+    "reason": null,
+    "version": 1,
+    "standings": [
+      {
+        "hand_id": "e2f4e742-6a31-5d2e-9275-657558283742",
+        "user_id": "a621706d-e8ea-43d1-8d28-76c1d82f21a1",
+        "position": 1,
+        "table_id": "b0f4ef37-7bdc-4106-825a-7531da09656c",
+        "player_id": "c13347cc-e837-4204-b27a-237faebb9ff2",
+        "hand_number": 8219306,
+        "committed_at": "2026-09-08T14:51:52.606113+00:00",
+        "source_sha256": "5577256578c09572a1208a4e5bae16c0ed69b70dbfb1f0125320fb3f4a86a07b",
+        "observed_chips": 600,
+        "recorded_chips": 600,
+        "source_receipt": {
+          "error": null,
+          "result": {
+            "bbj": 0,
+            "mode": "delta",
+            "rake": 0,
+            "inflow": 0,
+            "hand_id": "e2f4e742-6a31-5d2e-9275-657558283742",
+            "players": 2,
+            "rebased": {},
+            "request": {
+              "bbj": 0,
+              "rake": 0,
+              "inflow": 0,
+              "stacks": [
+                {
+                  "stack": 600,
+                  "user_id": "a621706d-e8ea-43d1-8d28-76c1d82f21a1",
+                  "stack_before": 475
+                },
+                {
+                  "stack": 0,
+                  "user_id": "d3f422d8-ccab-4ee9-ba50-7678a17ba776",
+                  "stack_before": 125
+                }
+              ]
+            },
+            "success": true,
+            "written": {
+              "a621706d-e8ea-43d1-8d28-76c1d82f21a1": 600,
+              "d3f422d8-ccab-4ee9-ba50-7678a17ba776": 0
+            },
+            "departed": [],
+            "table_id": "b0f4ef37-7bdc-4106-825a-7531da09656c",
+            "net_deltas": 0,
+            "hand_number": 8219306,
+            "conservation_checked": true
+          },
+          "status": "succeeded",
+          "hand_id": "e2f4e742-6a31-5d2e-9275-657558283742",
+          "table_id": "b0f4ef37-7bdc-4106-825a-7531da09656c",
+          "completed_at": "2026-09-08T14:51:52.606113+00:00",
+          "attempt_count": 1,
+          "last_attempt_at": "2026-09-08T14:51:52.606113+00:00",
+          "first_attempt_at": "2026-09-08T14:51:52.606113+00:00"
+        },
+        "recorded_status": "playing",
+        "accepted_settlement_key": {
+          "hand_id": "e2f4e742-6a31-5d2e-9275-657558283742",
+          "table_id": "b0f4ef37-7bdc-4106-825a-7531da09656c"
+        }
+      },
+      {
+        "hand_id": "e2f4e742-6a31-5d2e-9275-657558283742",
+        "user_id": "d3f422d8-ccab-4ee9-ba50-7678a17ba776",
+        "position": 2,
+        "table_id": "b0f4ef37-7bdc-4106-825a-7531da09656c",
+        "player_id": "088e836b-d2f0-489f-ade2-8d06f08afa95",
+        "hand_number": 8219306,
+        "committed_at": "2026-09-08T14:51:52.606113+00:00",
+        "stack_before": 125,
+        "source_sha256": "5577256578c09572a1208a4e5bae16c0ed69b70dbfb1f0125320fb3f4a86a07b",
+        "recorded_chips": 0,
+        "source_receipt": {
+          "error": null,
+          "result": {
+            "bbj": 0,
+            "mode": "delta",
+            "rake": 0,
+            "inflow": 0,
+            "hand_id": "e2f4e742-6a31-5d2e-9275-657558283742",
+            "players": 2,
+            "rebased": {},
+            "request": {
+              "bbj": 0,
+              "rake": 0,
+              "inflow": 0,
+              "stacks": [
+                {
+                  "stack": 600,
+                  "user_id": "a621706d-e8ea-43d1-8d28-76c1d82f21a1",
+                  "stack_before": 475
+                },
+                {
+                  "stack": 0,
+                  "user_id": "d3f422d8-ccab-4ee9-ba50-7678a17ba776",
+                  "stack_before": 125
+                }
+              ]
+            },
+            "success": true,
+            "written": {
+              "a621706d-e8ea-43d1-8d28-76c1d82f21a1": 600,
+              "d3f422d8-ccab-4ee9-ba50-7678a17ba776": 0
+            },
+            "departed": [],
+            "table_id": "b0f4ef37-7bdc-4106-825a-7531da09656c",
+            "net_deltas": 0,
+            "hand_number": 8219306,
+            "conservation_checked": true
+          },
+          "status": "succeeded",
+          "hand_id": "e2f4e742-6a31-5d2e-9275-657558283742",
+          "table_id": "b0f4ef37-7bdc-4106-825a-7531da09656c",
+          "completed_at": "2026-09-08T14:51:52.606113+00:00",
+          "attempt_count": 1,
+          "last_attempt_at": "2026-09-08T14:51:52.606113+00:00",
+          "first_attempt_at": "2026-09-08T14:51:52.606113+00:00"
+        },
+        "recorded_status": "eliminated",
+        "accepted_settlement_key": {
+          "hand_id": "e2f4e742-6a31-5d2e-9275-657558283742",
+          "table_id": "b0f4ef37-7bdc-4106-825a-7531da09656c"
+        }
+      }
+    ],
+    "field_size": 2,
+    "basis_sha256": "cd4403b7fd737316474eaa17d96a5285a2dfbf37a1b24f3bfe73e6378fd1b2b6",
+    "money_writes": 0,
+    "tournament_id": "f58d6375-4bb4-4f80-a673-0460fcf2c1be",
+    "financial_mode": "cash_places",
+    "sequence_writes": 0,
+    "satellite_target_id": null,
+    "observed_winner_chips": 600,
+    "recorded_winner_chips": 600,
+    "accepted_receipt_count": 32,
+    "observed_winner_user_id": "a621706d-e8ea-43d1-8d28-76c1d82f21a1",
+    "recorded_winner_chips_match": true
+  },
+  {
+    "ok": true,
+    "reason": null,
+    "version": 1,
+    "standings": [
+      {
+        "hand_id": "873c06ad-9a72-6f48-0386-cdd3ef7f4fb6",
+        "user_id": "b832b6c4-f58c-4b53-999b-48c9fbd1ec3c",
+        "position": 1,
+        "table_id": "c862560d-1edd-48e3-9ea5-35ba9337f064",
+        "player_id": "1e45dd7f-9421-49ac-9c31-5351f838da27",
+        "hand_number": 8218197,
+        "committed_at": "2026-09-08T14:49:35.610302+00:00",
+        "source_sha256": "8a7365b8ce0f72fb233cd7d05cbb0eefe7ebcabb0a4acecc89138e98b7a25d36",
+        "observed_chips": 600,
+        "recorded_chips": 600,
+        "source_receipt": {
+          "error": null,
+          "result": {
+            "bbj": 0,
+            "mode": "delta",
+            "rake": 0,
+            "inflow": 0,
+            "hand_id": "873c06ad-9a72-6f48-0386-cdd3ef7f4fb6",
+            "players": 2,
+            "rebased": {},
+            "request": {
+              "bbj": 0,
+              "rake": 0,
+              "inflow": 0,
+              "stacks": [
+                {
+                  "stack": 0,
+                  "user_id": "1f01702e-320c-4e64-b030-e58fdd47cc07",
+                  "stack_before": 210
+                },
+                {
+                  "stack": 600,
+                  "user_id": "b832b6c4-f58c-4b53-999b-48c9fbd1ec3c",
+                  "stack_before": 390
+                }
+              ]
+            },
+            "success": true,
+            "written": {
+              "1f01702e-320c-4e64-b030-e58fdd47cc07": 0,
+              "b832b6c4-f58c-4b53-999b-48c9fbd1ec3c": 600
+            },
+            "departed": [],
+            "table_id": "c862560d-1edd-48e3-9ea5-35ba9337f064",
+            "net_deltas": 0,
+            "hand_number": 8218197,
+            "conservation_checked": true
+          },
+          "status": "succeeded",
+          "hand_id": "873c06ad-9a72-6f48-0386-cdd3ef7f4fb6",
+          "table_id": "c862560d-1edd-48e3-9ea5-35ba9337f064",
+          "completed_at": "2026-09-08T14:49:35.610302+00:00",
+          "attempt_count": 1,
+          "last_attempt_at": "2026-09-08T14:49:35.610302+00:00",
+          "first_attempt_at": "2026-09-08T14:49:35.610302+00:00"
+        },
+        "recorded_status": "playing",
+        "accepted_settlement_key": {
+          "hand_id": "873c06ad-9a72-6f48-0386-cdd3ef7f4fb6",
+          "table_id": "c862560d-1edd-48e3-9ea5-35ba9337f064"
+        }
+      },
+      {
+        "hand_id": "873c06ad-9a72-6f48-0386-cdd3ef7f4fb6",
+        "user_id": "1f01702e-320c-4e64-b030-e58fdd47cc07",
+        "position": 2,
+        "table_id": "c862560d-1edd-48e3-9ea5-35ba9337f064",
+        "player_id": "05ea83d7-0848-490b-9d24-0e51968b612c",
+        "hand_number": 8218197,
+        "committed_at": "2026-09-08T14:49:35.610302+00:00",
+        "stack_before": 210,
+        "source_sha256": "8a7365b8ce0f72fb233cd7d05cbb0eefe7ebcabb0a4acecc89138e98b7a25d36",
+        "recorded_chips": 0,
+        "source_receipt": {
+          "error": null,
+          "result": {
+            "bbj": 0,
+            "mode": "delta",
+            "rake": 0,
+            "inflow": 0,
+            "hand_id": "873c06ad-9a72-6f48-0386-cdd3ef7f4fb6",
+            "players": 2,
+            "rebased": {},
+            "request": {
+              "bbj": 0,
+              "rake": 0,
+              "inflow": 0,
+              "stacks": [
+                {
+                  "stack": 0,
+                  "user_id": "1f01702e-320c-4e64-b030-e58fdd47cc07",
+                  "stack_before": 210
+                },
+                {
+                  "stack": 600,
+                  "user_id": "b832b6c4-f58c-4b53-999b-48c9fbd1ec3c",
+                  "stack_before": 390
+                }
+              ]
+            },
+            "success": true,
+            "written": {
+              "1f01702e-320c-4e64-b030-e58fdd47cc07": 0,
+              "b832b6c4-f58c-4b53-999b-48c9fbd1ec3c": 600
+            },
+            "departed": [],
+            "table_id": "c862560d-1edd-48e3-9ea5-35ba9337f064",
+            "net_deltas": 0,
+            "hand_number": 8218197,
+            "conservation_checked": true
+          },
+          "status": "succeeded",
+          "hand_id": "873c06ad-9a72-6f48-0386-cdd3ef7f4fb6",
+          "table_id": "c862560d-1edd-48e3-9ea5-35ba9337f064",
+          "completed_at": "2026-09-08T14:49:35.610302+00:00",
+          "attempt_count": 1,
+          "last_attempt_at": "2026-09-08T14:49:35.610302+00:00",
+          "first_attempt_at": "2026-09-08T14:49:35.610302+00:00"
+        },
+        "recorded_status": "eliminated",
+        "accepted_settlement_key": {
+          "hand_id": "873c06ad-9a72-6f48-0386-cdd3ef7f4fb6",
+          "table_id": "c862560d-1edd-48e3-9ea5-35ba9337f064"
+        }
+      }
+    ],
+    "field_size": 2,
+    "basis_sha256": "9fc8ed3807cbec5c38272b51957168363ddf8dc176fb1d514cec88ce6f68356e",
+    "money_writes": 0,
+    "tournament_id": "f5a6896b-b739-40e0-9f73-680ee36bc532",
+    "financial_mode": "cash_places",
+    "sequence_writes": 0,
+    "satellite_target_id": null,
+    "observed_winner_chips": 600,
+    "recorded_winner_chips": 600,
+    "accepted_receipt_count": 19,
+    "observed_winner_user_id": "b832b6c4-f58c-4b53-999b-48c9fbd1ec3c",
+    "recorded_winner_chips_match": true
+  }
+]

@@ -1,0 +1,231 @@
+{
+  "originalEvents": 28,
+  "qualified": 25,
+  "refused": {
+    "097e3601-ccf9-4035-af40-eb35068d2652": "post_zero_positive_write",
+    "44d7e2d8-66ed-48ae-a1cb-306ae92b6dfa": "post_zero_positive_write",
+    "95e43b6e-c1c9-445e-a1d9-cbe711e3bac1": "post_zero_positive_write"
+  },
+  "qualifiedSatellites": 3,
+  "chipMirrorMismatch": "9cecb4fa-4fdd-4447-9e98-2fe5c20c46a8",
+  "negativeTests": {
+    "foreign_result_table": "legacy_accepted_receipt_invalid",
+    "foreign_result_hand": "legacy_accepted_receipt_invalid",
+    "foreign_event_player": "foreign_player_in_accepted_receipt",
+    "nonconserved_success": "legacy_accepted_receipt_invalid",
+    "failed_final_receipt_cannot_be_witness": "legacy_finish_not_decided",
+    "unsettled_final_hand": "legacy_hand_not_settled",
+    "same_hand_equal_start_stacks": "legacy_bust_rank_tie_ambiguous",
+    "sole_positive_survivor_unproven": "legacy_finish_not_decided",
+    "duplicate_accepted_hand_number": "ambiguous_accepted_hand_claim",
+    "duplicate_latest_timestamp": "ambiguous_latest_player_observation",
+    "later_positive_after_zero": "post_zero_positive_write",
+    "bust_positive_bust_is_not_hidden_by_latest_zero": "post_zero_positive_write",
+    "mixed_candidate_history": "mixed_modern_or_sequenced_history",
+    "paid_credit_claim": "paid_history_requires_its_own_authority",
+    "post_zero_entry_purchase": "post_zero_entry_purchase",
+    "source_mutated_to_invalid_between_preview_and_authority": "legacy_accepted_receipt_invalid",
+    "accepted_source_byte_mutation_changes_basis": "different_basis_sha256"
+  },
+  "ordinaryExecute": {
+    "anon": false,
+    "service_role": false,
+    "authenticated": false
+  },
+  "functionMetadata": [
+    {
+      "acl": "{postgres=X/postgres}",
+      "owner": "postgres",
+      "config": [
+        "search_path=pg_catalog, public, pg_temp",
+        "TimeZone=UTC"
+      ],
+      "body_md5": "0be7ce46c91572336ee97c80e827428d",
+      "function": "fn_ca_accepted_tournament_settlement_fact",
+      "volatility": "i",
+      "security_definer": true,
+      "definition_sha256": "06a220194616f98441942de7cf8ef571fb5b6788385d9fd1f58da7271554a16a"
+    },
+    {
+      "acl": "{postgres=X/postgres}",
+      "owner": "postgres",
+      "config": [
+        "search_path=pg_catalog, public, pg_temp",
+        "TimeZone=UTC"
+      ],
+      "body_md5": "3c525ec1bccfe36fe4306b3a62e33e60",
+      "function": "fn_ca_legacy_tournament_finish_witness",
+      "volatility": "s",
+      "security_definer": true,
+      "definition_sha256": "08895b521d02271d6347c87ce9b6bb431f32947d45a85b4afccc6bacc0a6558c"
+    }
+  ],
+  "applicationTableHashesBefore": {
+    "tournaments": {
+      "md5": "9ba244a51f5bfacda7adc2169f375d8f",
+      "rows": 28
+    },
+    "tournament_players": {
+      "md5": "0076d9549a93377c4c8dec1faa7e9ace",
+      "rows": 67
+    },
+    "tables": {
+      "md5": "e49adef07cb7641b16da51f4ab5b34f8",
+      "rows": 28
+    },
+    "table_seats": {
+      "md5": "09724f3950113adc2986d30e3b98ff9a",
+      "rows": 67
+    },
+    "settlement_idempotency_keys": {
+      "md5": "b2962279506d64f08d1f5c8380cd3203",
+      "rows": 440
+    },
+    "tournament_knockout_candidates": {
+      "md5": "d41d8cd98f00b204e9800998ecf8427e",
+      "rows": 0
+    },
+    "hand_atomic_commits": {
+      "md5": "d41d8cd98f00b204e9800998ecf8427e",
+      "rows": 0
+    },
+    "tournament_escrow": {
+      "md5": "8eff76045e572ba321445f7e6a196a79",
+      "rows": 28
+    },
+    "tournament_payouts": {
+      "md5": "d41d8cd98f00b204e9800998ecf8427e",
+      "rows": 0
+    },
+    "tournament_obligations": {
+      "md5": "d41d8cd98f00b204e9800998ecf8427e",
+      "rows": 0
+    },
+    "chip_ledger": {
+      "md5": "f7a6fd5c4d747a9618ef1606e70d7441",
+      "rows": 89
+    },
+    "wallet_transactions": {
+      "md5": "d4b00c9463ea0433715c4d2885a5fc90",
+      "rows": 67
+    },
+    "wallet_credit_idempotency": {
+      "md5": "d41d8cd98f00b204e9800998ecf8427e",
+      "rows": 0
+    },
+    "tournament_refund_entitlements": {
+      "md5": "0c0a1b99176daa48b8f2931d78f065d8",
+      "rows": 67
+    },
+    "rake_records": {
+      "md5": "d84f035e2ee8d3498a65a5a2f4528130",
+      "rows": 45
+    },
+    "tournament_place_settlement_batches": {
+      "md5": "d41d8cd98f00b204e9800998ecf8427e",
+      "rows": 0
+    },
+    "tournament_terminal_settlements": {
+      "md5": "d41d8cd98f00b204e9800998ecf8427e",
+      "rows": 0
+    },
+    "managed_game_contract_versions": {
+      "md5": "f9032fb7ccf0486d51018032655a7c2b",
+      "rows": 38
+    },
+    "spin_bonus_pools": {
+      "md5": "6d32ece91f4ed85112025daae5bee871",
+      "rows": 2
+    },
+    "spin_reserve_ledger": {
+      "md5": "cf22cb15c0356b1b719c5acfd651cdb6",
+      "rows": 22
+    }
+  },
+  "applicationTableHashesAfter": {
+    "tournaments": {
+      "md5": "9ba244a51f5bfacda7adc2169f375d8f",
+      "rows": 28
+    },
+    "tournament_players": {
+      "md5": "0076d9549a93377c4c8dec1faa7e9ace",
+      "rows": 67
+    },
+    "tables": {
+      "md5": "e49adef07cb7641b16da51f4ab5b34f8",
+      "rows": 28
+    },
+    "table_seats": {
+      "md5": "09724f3950113adc2986d30e3b98ff9a",
+      "rows": 67
+    },
+    "settlement_idempotency_keys": {
+      "md5": "b2962279506d64f08d1f5c8380cd3203",
+      "rows": 440
+    },
+    "tournament_knockout_candidates": {
+      "md5": "d41d8cd98f00b204e9800998ecf8427e",
+      "rows": 0
+    },
+    "hand_atomic_commits": {
+      "md5": "d41d8cd98f00b204e9800998ecf8427e",
+      "rows": 0
+    },
+    "tournament_escrow": {
+      "md5": "8eff76045e572ba321445f7e6a196a79",
+      "rows": 28
+    },
+    "tournament_payouts": {
+      "md5": "d41d8cd98f00b204e9800998ecf8427e",
+      "rows": 0
+    },
+    "tournament_obligations": {
+      "md5": "d41d8cd98f00b204e9800998ecf8427e",
+      "rows": 0
+    },
+    "chip_ledger": {
+      "md5": "f7a6fd5c4d747a9618ef1606e70d7441",
+      "rows": 89
+    },
+    "wallet_transactions": {
+      "md5": "d4b00c9463ea0433715c4d2885a5fc90",
+      "rows": 67
+    },
+    "wallet_credit_idempotency": {
+      "md5": "d41d8cd98f00b204e9800998ecf8427e",
+      "rows": 0
+    },
+    "tournament_refund_entitlements": {
+      "md5": "0c0a1b99176daa48b8f2931d78f065d8",
+      "rows": 67
+    },
+    "rake_records": {
+      "md5": "d84f035e2ee8d3498a65a5a2f4528130",
+      "rows": 45
+    },
+    "tournament_place_settlement_batches": {
+      "md5": "d41d8cd98f00b204e9800998ecf8427e",
+      "rows": 0
+    },
+    "tournament_terminal_settlements": {
+      "md5": "d41d8cd98f00b204e9800998ecf8427e",
+      "rows": 0
+    },
+    "managed_game_contract_versions": {
+      "md5": "f9032fb7ccf0486d51018032655a7c2b",
+      "rows": 38
+    },
+    "spin_bonus_pools": {
+      "md5": "6d32ece91f4ed85112025daae5bee871",
+      "rows": 2
+    },
+    "spin_reserve_ledger": {
+      "md5": "cf22cb15c0356b1b719c5acfd651cdb6",
+      "rows": 22
+    }
+  },
+  "originTriggersDuringEveryProbe": true,
+  "nullSequencesPreserved": true,
+  "noProductionWrites": true,
+  "authorityIntegrationNotYetProved": true
+}

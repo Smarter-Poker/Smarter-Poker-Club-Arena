@@ -1,0 +1,69 @@
+{
+  "sourceCase": "D10 exact accepted hand8215053",
+  "sourceFact": {
+    "ok": true,
+    "facts": [
+      {
+        "stack": 0,
+        "user_id": "1c0dee1e-8ab9-4d42-897e-e1dd6da9f4be",
+        "stack_before": 62944
+      },
+      {
+        "stack": 480000,
+        "user_id": "5a0cd7e0-174a-466f-ba1d-6d2c80d9252a",
+        "stack_before": 417056
+      }
+    ],
+    "reason": null,
+    "hand_id": "8ba7ad8b-8da4-3345-090c-75d349962e84",
+    "version": 1,
+    "table_id": "cc49e956-40e3-460d-8e50-b39408ccf1dc",
+    "chip_total": 480000,
+    "source_key": {
+      "hand_id": "8ba7ad8b-8da4-3345-090c-75d349962e84",
+      "table_id": "cc49e956-40e3-460d-8e50-b39408ccf1dc"
+    },
+    "hand_number": 8215053,
+    "completed_at": "2026-09-08T14:42:17.317044+00:00",
+    "player_count": 2,
+    "source_sha256": "f2cfbe3f4eca2eee86a5440f0e4bb4589f14cb72a3687cef25c8495ecf1dc68b"
+  },
+  "originalReceiptCounts": {
+    "refused": 0,
+    "accepted": 440
+  },
+  "negativeCases": {
+    "failed_receipt": "receipt_not_succeeded",
+    "failed_result": "accepted_result_shape_invalid",
+    "unverified_conservation": "accepted_result_shape_invalid",
+    "foreign_table_identity": "accepted_identity_invalid",
+    "foreign_hand_identity": "accepted_identity_invalid",
+    "duplicate_user": "accepted_roster_not_one_to_one",
+    "missing_written_user": "accepted_roster_not_one_to_one",
+    "extra_written_user": "accepted_roster_not_one_to_one",
+    "string_nan_stack": "accepted_stack_shape_invalid",
+    "negative_stack": "accepted_written_stack_invalid",
+    "nonconserved_request": "accepted_stacks_not_conserved",
+    "written_disagrees": "accepted_written_stack_invalid",
+    "nonzero_tournament_rake": "non_tournament_money_component",
+    "nonzero_outside_inflow": "non_tournament_money_component",
+    "nonzero_net_delta": "accepted_net_delta_nonzero",
+    "relative_timestamp": "accepted_identity_invalid",
+    "missing_timestamp": "accepted_identity_invalid",
+    "fractional_hand_number": "accepted_identity_invalid",
+    "wrong_player_count": "accepted_roster_not_one_to_one",
+    "no_request_players": "accepted_roster_not_one_to_one",
+    "zero_total_hand": "accepted_stacks_not_conserved"
+  },
+  "negativeCaseCount": 21,
+  "ordinaryExecute": {
+    "anon": false,
+    "service_role": false,
+    "authenticated": false
+  },
+  "sourcePin": {
+    "body_md5": "0be7ce46c91572336ee97c80e827428d",
+    "definition_sha256": "06a220194616f98441942de7cf8ef571fb5b6788385d9fd1f58da7271554a16a"
+  },
+  "noDataMutations": true
+}

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { createHash } from 'node:crypto';
 import { nativeFailureDiagnostic } from '../../operations/release/fixture/runtime-files.mjs';
 
 test('database diagnostics retain SQLSTATE and bounded query position without private fields', () => {
@@ -72,4 +73,20 @@ test('database source routines are restricted to reviewed PostgreSQL slot/file/A
       undefined
     );
   }
+});
+
+test('unknown PostgreSQL source locations are represented only by digests', () => {
+  const diagnostic = nativeFailureDiagnostic('postgresql-wal2json-native-slot', {
+    name: 'error',
+    code: '42501',
+    routine: 'PRIVATE ROUTINE',
+    file: 'PRIVATE FILE',
+  });
+  for (const [field, value] of [
+    ['routine', 'PRIVATE ROUTINE'],
+    ['file', 'PRIVATE FILE'],
+  ]) {
+    assert.equal(diagnostic[`${field}_sha256`], createHash('sha256').update(value).digest('hex'));
+  }
+  assert.ok(!JSON.stringify(diagnostic).includes('PRIVATE'));
 });

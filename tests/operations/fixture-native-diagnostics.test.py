@@ -53,6 +53,11 @@ class NativeDiagnosticsTests(unittest.TestCase):
         }])
         for routine in ['PRIVATE SQL', ['CreateSlotOnDisk'], None, 'CreateSlotOnDisk\n']:
             self.assertEqual(m.native_failures(json.dumps({**row, 'routine': routine})), [])
+        row['routine_sha256'] = 'a' * 64
+        row['file_sha256'] = 'b' * 64
+        self.assertEqual(m.native_failures(json.dumps(row))[0]['routine_sha256'], 'a' * 64)
+        for invalid in ['PRIVATE FILE', 'a' * 63, 'A' * 64, ['b' * 64], None]:
+            self.assertEqual(m.native_failures(json.dumps({**row, 'file_sha256': invalid})), [])
 
 
 if __name__ == '__main__':

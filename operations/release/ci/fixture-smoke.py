@@ -56,18 +56,24 @@ def native_failures(output):
                 and row['error'] in NATIVE_ERROR_NAMES):
             record = {'stage': row['stage'], 'category': row['error']}
         elif ({'status', 'stage', 'error', 'sqlstate'} <= set(row)
-                <= {'status', 'stage', 'error', 'sqlstate', 'position', 'routine'}
+                <= {'status', 'stage', 'error', 'sqlstate', 'position', 'routine', 'routine_sha256', 'file_sha256'}
                 and row['error'] == 'error' and isinstance(row['sqlstate'], str)
                 and re.fullmatch('[0-9A-Z]{5}', row['sqlstate'])
                 and ('position' not in row or (type(row['position']) is int
                      and 1 <= row['position'] <= 999999))
                 and ('routine' not in row or (isinstance(row['routine'], str)
-                     and row['routine'] in NATIVE_PG_ROUTINES))):
+                     and row['routine'] in NATIVE_PG_ROUTINES))
+                and all(key not in row or (isinstance(row[key], str)
+                    and re.fullmatch('[0-9a-f]{64}', row[key]))
+                    for key in ('routine_sha256', 'file_sha256'))):
             record = {'stage': row['stage'], 'category': 'error', 'sqlstate': row['sqlstate']}
             if 'position' in row:
                 record['position'] = row['position']
             if 'routine' in row:
                 record['routine'] = row['routine']
+            for key in ('routine_sha256', 'file_sha256'):
+                if key in row:
+                    record[key] = row[key]
         elif set(row) == {'status', 'stage', 'reason'} and row['reason'] == 'deadline':
             record = {'stage': row['stage'], 'category': 'deadline'}
         else:

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { mkdir, writeFile, lstat } from 'node:fs/promises';
 import path from 'node:path';
@@ -26,6 +27,13 @@ export function nativeFailureDiagnostic(stage, error) {
     /^[0-9A-Z]{5}$/.test(error.code)
   ) {
     record.sqlstate = error.code;
+    // These source-location digests let the controller match the pinned
+    // PostgreSQL source offline without serializing arbitrary driver strings.
+    for (const field of ['routine', 'file']) {
+      if (typeof error[field] === 'string' && error[field].length <= 256) {
+        record[`${field}_sha256`] = createHash('sha256').update(error[field]).digest('hex');
+      }
+    }
     if (typeof error.position === 'string' && /^[1-9][0-9]{0,5}$/.test(error.position)) {
       record.position = Number(error.position);
     }

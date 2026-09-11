@@ -29,7 +29,7 @@ NATIVE_STAGES = frozenset((
     'postgresql-extension-pg-trgm', 'postgresql-extension-pgcrypto',
     'postgresql-extension-uuid-ossp', 'postgresql-extension-vector',
     'postgresql-extension-inventory', 'gotrue-genuine-migrations-and-mfa',
-    'gotrue-migrate-command', 'gotrue-migration-ledger', 'gotrue-server-start',
+    'gotrue-database-namespace', 'gotrue-migrate-command', 'gotrue-migration-ledger', 'gotrue-server-start',
     'gotrue-server-ready', 'gotrue-real-user-signin', 'gotrue-real-mfa-enrollment',
     'gotrue-real-mfa-persistence',
     'postgrest-14-5-authentication-and-rls', 'realtime-genuine-migrations-and-change',

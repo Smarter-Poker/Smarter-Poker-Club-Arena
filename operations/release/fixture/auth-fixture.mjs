@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const encode = (value) => Buffer.from(JSON.stringify(value)).toString('base64url');
@@ -8,6 +8,26 @@ const encode = (value) => Buffer.from(JSON.stringify(value)).toString('base64url
 // A word-boundary before the first digit rejects that genuine output.
 export function assertFixtureAuthVersion(output) {
   assert.equal(output.trim(), 'v2.196.0', 'unexpected fixture Auth version');
+}
+
+// Exact sorted migration filenames from pinned GoTrue v2.196.0, including 00.
+// A positive row count alone would accept a partially migrated service.
+export function assertFixtureAuthMigrations(versions) {
+  assert.ok(
+    Array.isArray(versions) && versions.length === 70,
+    'FIXTURE_AUTH_MIGRATIONS_INCOMPLETE'
+  );
+  assert.ok(
+    versions.every((value) => typeof value === 'string' && /^(?:00|[0-9]{14})$/.test(value))
+  );
+  assert.equal(new Set(versions).size, 70);
+  assert.equal(
+    createHash('sha256')
+      .update([...versions].sort().join('\n') + '\n')
+      .digest('hex'),
+    'eef970cca83c2c0954e0f1a9b28757d38f4fa6067a86677b5caed4e44997ec4d',
+    'FIXTURE_AUTH_MIGRATIONS_CHANGED'
+  );
 }
 
 export function issueFixtureToken(secret, role, now = Date.now()) {

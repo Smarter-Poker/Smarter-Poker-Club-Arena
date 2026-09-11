@@ -6,14 +6,16 @@ GoTrue, PostgREST, Supabase Realtime, and Chromium. API responses are not mocked
 Only synthetic credentials are created at runtime. Candidate frontend, engine,
 and schema artifacts are inputs to the separate trusted runtime/controller.
 
-**Status: updated source awaiting native qualification.** Linux run
-`34656264395` at `0a210520c17cc419920c97743e78633e4d3eaaca` built the pinned image
-and passed bootstrap identity checks, then refused the wal2json slot with SQLSTATE 42501. Sanitized source-location fingerprints identified PostgreSQL's trusted
-output-plugin check. Both runtimes now explicitly trust the required pinned
-plugins; a new native run must prove real slot creation. The image configuration
-preimages passed, while Erlang authentication, listener and UID/peer isolation
-still require native execution. The full product matrix must also pass before admission.
-Neither local tests nor a successful image build substitutes for that proof.
+**Status: PostgreSQL native phase passed; full qualification remains incomplete.**
+Linux run `34656984535` at `9574b494099bc96a87fc41a7ac798925a9af87dc`
+built the image, passed actual wal2json slot creation/inspection/drop and all six
+extensions, then failed inside GoTrue migrations with SQLSTATE 42501. Its pinned
+migrator uses an unqualified ledger table; this fixture omitted the upstream
+Auth-role search path. Both runtimes now set that path and require the complete
+70-version Auth ledger. The next native run must prove that repair, genuine
+sign-in/MFA, Realtime, Chromium and separate-user/peer isolation. Prior failed
+runs verified container, peer, network and image cleanup. The full product
+matrix remains required; an image build or component test cannot certify it.
 
 ## Pinned inputs
 
@@ -195,12 +197,20 @@ intentional and is not described as denied.
 1. Initialize a new PG17 database `club_arena_qualification`, local roles and
    required extensions. Enable logical WAL and adequate replication slots;
    preload pg_stat_statements. Create `auth` owned by supabase_auth_admin.
+   Set that role's search path to `auth`, matching the
+   [upstream Auth role setup](https://github.com/supabase/postgres/blob/develop/migrations/db/init-scripts/00000000000001-auth-schema.sql).
+   The pinned GoTrue/Pop migrator uses an unqualified migration-ledger name;
+   its template namespace setting does not change the connection search path.
+   The native check verifies the actual Auth login targets `auth` and has no
+   CREATE permission on `public` before running the unchanged migration command.
 2. With synthetic `GOTRUE_DB_DATABASE_URL` and local auth configuration, run
    `/usr/local/bin/auth migrate`. This runs the
    [upstream embedded migrations](https://github.com/supabase/auth/blob/v2.196.0/cmd/migrate_cmd.go).
    Apply the reviewed app schema only after those succeed; do not replace the
    GoTrue-owned schema with an old dump lacking its migration ledger. Start
    `/usr/local/bin/auth serve`, then create users and MFA through its real API.
+   Both paths require the exact 70-version migration ledger from v2.196.0,
+   including `00`; partial, replaced or fabricated extra versions fail.
 3. Start `/usr/local/bin/postgrest` with synthetic local DB/JWT configuration.
 4. Run `/app/bin/migrate`, then `/app/bin/realtime eval
 'Realtime.Release.seeds(Realtime.Repo)'`, then `/app/bin/server`. These are

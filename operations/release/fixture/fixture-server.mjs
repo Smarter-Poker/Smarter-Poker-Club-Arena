@@ -6,7 +6,12 @@ import { mkdir, writeFile, readFile, open, access, rm, chmod, lstat } from 'node
 import { promisify } from 'node:util';
 import net from 'node:net';
 import { pathToFileURL } from 'node:url';
-import { fixtureSecrets, fixtureAuth, browserStorage } from './auth-fixture.mjs';
+import {
+  fixtureSecrets,
+  fixtureAuth,
+  browserStorage,
+  assertFixtureAuthMigrations,
+} from './auth-fixture.mjs';
 import { createFixtureGateway, loadStaticManifest, findPublicAnonKey } from './gateway.mjs';
 import {
   extractArchive,
@@ -578,10 +583,14 @@ async function start(args) {
       CREATE ROLE dashboard_user NOLOGIN;
       GRANT anon, authenticated, service_role TO supabase_admin WITH ADMIN OPTION;
       CREATE SCHEMA auth AUTHORIZATION supabase_auth_admin;
+      ALTER ROLE supabase_auth_admin SET search_path TO auth;
       GRANT CREATE ON DATABASE ${database} TO supabase_auth_admin;
       CREATE SCHEMA _realtime AUTHORIZATION supabase_admin;`);
     stage = 'genuine-auth-migrations';
     await supervisor.command('/usr/local/bin/auth', ['migrate'], env.auth);
+    assertFixtureAuthMigrations(
+      (await db.query('SELECT version FROM auth.schema_migrations')).rows.map((row) => row.version)
+    );
     stage = 'genuine-realtime-migrations';
     await supervisor.command('/app/bin/migrate', [], env.realtime);
     await supervisor.command(

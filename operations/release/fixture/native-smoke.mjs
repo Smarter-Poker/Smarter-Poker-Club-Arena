@@ -7,7 +7,12 @@ import { promisify } from 'node:util';
 import { mkdir, writeFile, readFile, access, open, readdir, lstat, unlink } from 'node:fs/promises';
 import pg from 'pg';
 import { chromium } from '@playwright/test';
-import { fixtureSecrets, fixtureAuth, assertFixtureAuthVersion } from './auth-fixture.mjs';
+import {
+  fixtureSecrets,
+  fixtureAuth,
+  assertFixtureAuthVersion,
+  assertFixtureAuthMigrations,
+} from './auth-fixture.mjs';
 import { startObservationBridge } from './observation-bridge.mjs';
 import {
   prepareRealtimeCookie,
@@ -360,6 +365,7 @@ async function services() {
     stage = 'postgresql-bootstrap-schemas';
     await db.query(`
       CREATE SCHEMA auth AUTHORIZATION supabase_auth_admin;
+      ALTER ROLE supabase_auth_admin SET search_path TO auth;
       GRANT CREATE ON DATABASE ${database} TO supabase_auth_admin;
       CREATE SCHEMA extensions;
       CREATE SCHEMA _realtime AUTHORIZATION supabase_admin;
@@ -399,11 +405,38 @@ async function services() {
       GOTRUE_DISABLE_SIGNUP: 'false',
       GOTRUE_LOG_LEVEL: 'error',
     };
+    stage = 'gotrue-database-namespace';
+    const authDatabase = databaseOwner.own(
+      new pg.Client({
+        host: '127.0.0.1',
+        user: 'supabase_auth_admin',
+        password,
+        database,
+      })
+    );
+    await authDatabase.connect();
+    assert.deepEqual(
+      (
+        await authDatabase.query(`SELECT
+      current_schema() = 'auth' AS auth_namespace,
+      current_setting('search_path') = 'auth' AS auth_search_path,
+      has_schema_privilege(current_user, 'auth', 'CREATE') AS auth_create,
+      has_schema_privilege(current_user, 'public', 'CREATE') AS public_create
+    `)
+      ).rows,
+      [{ auth_namespace: true, auth_search_path: true, auth_create: true, public_create: false }]
+    );
+    await databaseOwner.end(authDatabase);
     stage = 'gotrue-migrate-command';
     await command('/usr/local/bin/auth', ['migrate'], authEnv);
     stage = 'gotrue-migration-ledger';
-    assert.ok(
-      (await db.query('SELECT count(*)::int AS n FROM auth.schema_migrations')).rows[0].n > 0
+    assertFixtureAuthMigrations(
+      (await db.query('SELECT version FROM auth.schema_migrations')).rows.map((row) => row.version)
+    );
+    assert.equal(
+      (await db.query("SELECT to_regclass('public.schema_migrations') IS NULL AS absent")).rows[0]
+        .absent,
+      true
     );
     stage = 'gotrue-server-start';
     const auth = await start('auth', '/usr/local/bin/auth', ['serve'], authEnv);

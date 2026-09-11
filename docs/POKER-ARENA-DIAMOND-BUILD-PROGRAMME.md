@@ -22,6 +22,14 @@ Phase 6 is closed. The shared NLH Diamond cash integration is merged as 85da6479
 
 Dan's standing authorization to proceed after the Phase 6 deployment and acceptance pass now applies, and Phase 7 has started in its own owned tree with its own evidence. Dan also restated the product target for the arena itself on September 11: "DIAMOND ARENA NEEDS TO BE A 1:1 CLONE OF THE CLUB ARENA. (ONLY DIFFERENCE IS ITS ALL 'ONE OPEN CLUB' WITH NO UNIONS OR AGENTS AND ITS PLAYED WITH DIAMONDS INSTEAD OF CHIPS)". Phase 7 therefore opens on lobby parity, not on a new surface: the arena's own route renders the shared Club Arena lobby rather than a placeholder panel, while the chip operator routes underneath a club keep the safe shell so that "no unions or agents" holds on a typed URL. Public funded Diamond games remain closed behind the existing accounting and release gates, and `cash_games_enabled` remains false.
 
+## Execution Update, September 11, 2026, Phase 7 Opening
+
+Phase 7 is under way. It opened on the one to one lobby parity Dan restated that day rather than on a checklist feature, because no cash game feature can be exercised or seen through the placeholder panel the arena route used to render. The arena route now renders the shared Club Arena lobby; the chip operator routes underneath a club keep the safe Diamond shell so that "no unions or agents" holds on a typed URL. Evidence, including the two defects that work introduced and repaired, is in [the lobby parity changelog](changelog/2026-09-11-diamond-phase-7-lobby-parity.md).
+
+No Phase 7 checklist item is claimed by that work. The survey the rest of the phase works from is [the supported feature survey](audits/2026-09-11-diamond-phase-7-feature-matrix.md), which also records the phase's real blocker: there is no Diamond table creation door, because the only live cash creation path always writes a cluster id, run it twice on and rake -1, all of which the Phase 6 admission guard refuses. Public funded Diamond games remain closed and `cash_games_enabled` remains false.
+
+Dan also asked, on the same day, for Diamond Arena to use a white or light colour scheme against Club Arena's dark one, explicitly in the next phase rather than this one.
+
 ## Approved Product Contract
 
 This replaces the earlier recommendation for two separate World Hub destinations. The World Hub has one player-facing Poker Arena entrance. Reuse the existing Club Arena application as the shared shell, lobby and game implementation. Diamond Arena is a diamond-only skin and operating policy inside it, not a second poker application.

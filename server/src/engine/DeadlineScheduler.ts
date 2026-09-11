@@ -32,6 +32,20 @@
  */
 
 import { reportError } from '../services/errorReporter.js';
+import { bindToProcessRoot } from '../services/supabase/dataActorContext.js';
+
+/*
+ * THE CLOCK BELONGS TO NO TOURNAMENT (2026-09-11). This scheduler is one
+ * setInterval for the whole process, started lazily by the first
+ * PreciseActionTimer - that is, by the first ServerTableEngine constructed.
+ * A tournament's table engines are constructed inside that manager's
+ * data-authority context, and a Node timer inherits the async context it was
+ * created in. On the 01:55 restart a tournament table won the boot race, so
+ * the interval and every callback for every table ran inside that one
+ * tournament's authority: 3,367 DeadlineScheduler.callback_threw and 3,389
+ * tournament_table_zombie kills across 561 tables in thirty minutes. Every
+ * tick is therefore bound to the process root (see bindToProcessRoot).
+ */
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -341,7 +355,11 @@ export class DeadlineScheduler {
   start(): void {
     if (this.running) return;
     this.running = true;
-    this.tickHandle = this.setIntervalFn(() => this.tick(), this.tickMs);
+    // Bound to the process root, never to whoever started it (see above).
+    this.tickHandle = this.setIntervalFn(
+      bindToProcessRoot(() => this.tick()),
+      this.tickMs
+    );
   }
 
   /** Stop the tick loop and clear all pending deadlines. */

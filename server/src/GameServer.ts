@@ -155,6 +155,12 @@ import { tableStateHub } from './transport/TableStateHub.js';
 import { recoverStuckCompletingTournaments } from './tournament/tournamentRecovery.js';
 import { spinLaunchParks } from './tournament/spinLaunchParking.js';
 import { managerHasOverstayed, selectCompletingDue } from './tournament/completingDwell.js';
+import {
+  DECIDED_RECOVERY_STAGGER_MS,
+  decidedRunningVerdicts,
+  readPlayingCounts,
+  verdictFor,
+} from './tournament/decidedRunningBoard.js';
 import { fieldIsStillLive } from './tournament/recoveryFieldGuard.js';
 import { resolvePayoutStructure } from './tournament/payoutStructure.js';
 import { TournamentManager } from './tournament/TournamentManager.js';
@@ -5883,15 +5889,49 @@ export class GameServer {
           .select('id, name')
           .eq('status', 'RUNNING')
           .lt('started_at', decidedCutoff);
-        for (const t of maybeDecided || []) {
-          const { count: playingCount, error: playingErr } = await supabase
-            .from('tournament_players')
-            .select('*', { count: 'exact', head: true })
-            .eq('tournament_id', t.id)
-            .eq('status', 'playing');
+        /* EVERY COUNT IN ONE READ (2026-09-11). This loop used to await an
+           exact count per tournament: 368 of them at ~110 ms, ~40 s of every
+           pass. The counts now come from one keyset-paged read of the playing
+           rows, a chunk of tournaments at a time, and the rule the old count
+           carried is kept per chunk: a chunk that did not read to the end
+           leaves every tournament in it UNKNOWN. See decidedRunningBoard.ts. */
+        const decidedBoard = maybeDecided || [];
+        const decidedVerdicts = decidedRunningVerdicts(
+          await readPlayingCounts(
+            decidedBoard.map((t) => String(t.id)),
+            (chunk, cursor, want) => {
+              let q = supabase
+                .from('tournament_players')
+                .select('id, tournament_id')
+                .eq('status', 'playing')
+                .in('tournament_id', chunk)
+                .order('id', { ascending: true })
+                .limit(want);
+              if (cursor) q = q.gt('id', cursor);
+              return q;
+            }
+          )
+        );
+        let decidedUnread = 0;
+        let decidedRecoveries = 0;
+        for (const t of decidedBoard) {
+          const verdict = verdictFor(decidedVerdicts, String(t.id));
           // PAYOUT-INTEGRITY: a count we could not read is UNKNOWN, not zero.
-          if (playingErr || playingCount === null || playingCount === undefined) continue;
-          if (playingCount > 1) continue; // still a live contest
+          if (verdict.kind === 'unknown') {
+            decidedUnread++;
+            continue;
+          }
+          if (verdict.kind === 'live') continue; // still a live contest
+          const playingCount = verdict.playingCount;
+          /* The per-tournament reads were this sweep's only brake: no two
+             recoveries could land closer than one round trip apart. Keep that
+             spacing, or a board of decided tournaments becomes one burst of
+             resumes after a restart and one burst of urgent wakes on every
+             pass (decidedRunningBoard.ts). The first recovery never waits. */
+          if (decidedRecoveries++ > 0) {
+            await this.sleep(DECIDED_RECOVERY_STAGGER_MS);
+            if (!this.directAdmissionIsCurrent(generation)) break;
+          }
           console.warn(
             `[GameServer] RUNNING tournament ${t.name} (${t.id.slice(0, 8)}) is decided (${playingCount} playing) - recovering the winner`
           );
@@ -5910,6 +5950,11 @@ export class GameServer {
               { tournamentId: String(t.id) }
             );
           }
+        }
+        if (decidedUnread > 0) {
+          console.warn(
+            `[GameServer] Decided-but-RUNNING sweep could not read the playing count of ${decidedUnread} of ${decidedBoard.length} tournament(s) - skipped this pass, not treated as decided`
+          );
         }
 
         // ── STARTED-BUT-NEVER-DEALT RECOVERY (2026-08-24) ──

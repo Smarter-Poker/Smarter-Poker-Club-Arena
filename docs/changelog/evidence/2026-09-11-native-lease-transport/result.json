@@ -1,0 +1,910 @@
+{
+  "startedAt": "2026-09-11T19:12:29.135Z",
+  "node": "v22.23.2",
+  "postgrest": "PostgREST 14.5",
+  "postgrestSha256": "97506b91c35fc0bbb77f053b443eda7edcba6d5197b290a866e05cbffeaefdcb",
+  "probeSha256": "0a84469115faa5d50cbec0c4d0fa009b696ed1fb342e2bbe9cd06af5c295a0e9",
+  "sourceSha": "16a96e755802d708a2ea46db2064605e1afbb9bb",
+  "statementTimeoutMs": 8000,
+  "poolSize": 12,
+  "poolAcquisitionTimeoutSeconds": 10,
+  "clientTimeoutMs": 15000,
+  "cases": [
+    {
+      "name": "real_role_setting",
+      "result": {
+        "marker": "role",
+        "settledAtEpochMs": 1789153950830,
+        "elapsedMs": 7,
+        "status": 200,
+        "code": null,
+        "message": null,
+        "data": {
+          "pid": 41795,
+          "heartbeat": {
+            "state": "kept",
+            "table_id": "00000000-0000-4000-8000-000000000001",
+            "lease_generation": "00000000-0000-4000-8000-000000000011"
+          },
+          "statement_timeout": "8s"
+        },
+        "ownExecutingAtSettlement": []
+      }
+    },
+    {
+      "name": "six_real_six_second_requests",
+      "physical": 6,
+      "results": [
+        {
+          "marker": "six-0",
+          "settledAtEpochMs": 1789153956848,
+          "elapsedMs": 6017,
+          "status": 200,
+          "code": null,
+          "message": null,
+          "data": {
+            "pid": 41811,
+            "heartbeat": {
+              "state": "kept",
+              "table_id": "00000000-0000-4000-8000-000000000001",
+              "lease_generation": "00000000-0000-4000-8000-000000000011"
+            },
+            "statement_timeout": "8s"
+          },
+          "ownExecutingAtSettlement": []
+        },
+        {
+          "marker": "six-1",
+          "settledAtEpochMs": 1789153956840,
+          "elapsedMs": 6009,
+          "status": 200,
+          "code": null,
+          "message": null,
+          "data": {
+            "pid": 41795,
+            "heartbeat": {
+              "state": "kept",
+              "table_id": "00000000-0000-4000-8000-000000000001",
+              "lease_generation": "00000000-0000-4000-8000-000000000011"
+            },
+            "statement_timeout": "8s"
+          },
+          "ownExecutingAtSettlement": []
+        },
+        {
+          "marker": "six-2",
+          "settledAtEpochMs": 1789153956845,
+          "elapsedMs": 6014,
+          "status": 200,
+          "code": null,
+          "message": null,
+          "data": {
+            "pid": 41807,
+            "heartbeat": {
+              "state": "busy",
+              "table_id": "00000000-0000-4000-8000-000000000001",
+              "lease_generation": "00000000-0000-4000-8000-000000000011"
+            },
+            "statement_timeout": "8s"
+          },
+          "ownExecutingAtSettlement": []
+        },
+        {
+          "marker": "six-3",
+          "settledAtEpochMs": 1789153956845,
+          "elapsedMs": 6014,
+          "status": 200,
+          "code": null,
+          "message": null,
+          "data": {
+            "pid": 41808,
+            "heartbeat": {
+              "state": "busy",
+              "tournament_id": "00000000-0000-4000-8000-000000000001",
+              "lease_generation": "00000000-0000-4000-8000-000000000011"
+            },
+            "statement_timeout": "8s"
+          },
+          "ownExecutingAtSettlement": []
+        },
+        {
+          "marker": "six-4",
+          "settledAtEpochMs": 1789153956848,
+          "elapsedMs": 6017,
+          "status": 200,
+          "code": null,
+          "message": null,
+          "data": {
+            "pid": 41809,
+            "heartbeat": {
+              "state": "busy",
+              "tournament_id": "00000000-0000-4000-8000-000000000001",
+              "lease_generation": "00000000-0000-4000-8000-000000000011"
+            },
+            "statement_timeout": "8s"
+          },
+          "ownExecutingAtSettlement": []
+        },
+        {
+          "marker": "six-5",
+          "settledAtEpochMs": 1789153956846,
+          "elapsedMs": 6015,
+          "status": 200,
+          "code": null,
+          "message": null,
+          "data": {
+            "pid": 41810,
+            "heartbeat": {
+              "state": "kept",
+              "tournament_id": "00000000-0000-4000-8000-000000000001",
+              "lease_generation": "00000000-0000-4000-8000-000000000011"
+            },
+            "statement_timeout": "8s"
+          },
+          "ownExecutingAtSettlement": []
+        }
+      ]
+    },
+    {
+      "name": "table_cannot_starve_peer",
+      "peer": [
+        {
+          "marker": "peer-0",
+          "settledAtEpochMs": 1789153957111,
+          "elapsedMs": 8,
+          "status": 200,
+          "code": null,
+          "message": null,
+          "data": {
+            "pid": 41809,
+            "heartbeat": {
+              "state": "busy",
+              "tournament_id": "00000000-0000-4000-8000-000000000001",
+              "lease_generation": "00000000-0000-4000-8000-000000000011"
+            },
+            "statement_timeout": "8s"
+          },
+          "ownExecutingAtSettlement": []
+        },
+        {
+          "marker": "peer-1",
+          "settledAtEpochMs": 1789153957113,
+          "elapsedMs": 9,
+          "status": 200,
+          "code": null,
+          "message": null,
+          "data": {
+            "pid": 41811,
+            "heartbeat": {
+              "state": "kept",
+              "tournament_id": "00000000-0000-4000-8000-000000000001",
+              "lease_generation": "00000000-0000-4000-8000-000000000011"
+            },
+            "statement_timeout": "8s"
+          },
+          "ownExecutingAtSettlement": []
+        },
+        {
+          "marker": "peer-2",
+          "settledAtEpochMs": 1789153957112,
+          "elapsedMs": 9,
+          "status": 200,
+          "code": null,
+          "message": null,
+          "data": {
+            "pid": 41810,
+            "heartbeat": {
+              "state": "kept",
+              "tournament_id": "00000000-0000-4000-8000-000000000001",
+              "lease_generation": "00000000-0000-4000-8000-000000000011"
+            },
+            "statement_timeout": "8s"
+          },
+          "ownExecutingAtSettlement": []
+        }
+      ],
+      "capped": [
+        {
+          "marker": "held-table-0",
+          "settledAtEpochMs": 1789153964859,
+          "elapsedMs": 8008,
+          "status": 500,
+          "code": "57014",
+          "message": "canceling statement due to statement timeout",
+          "data": null,
+          "ownExecutingAtSettlement": []
+        },
+        {
+          "marker": "held-table-1",
+          "settledAtEpochMs": 1789153964858,
+          "elapsedMs": 8007,
+          "status": 500,
+          "code": "57014",
+          "message": "canceling statement due to statement timeout",
+          "data": null,
+          "ownExecutingAtSettlement": []
+        },
+        {
+          "marker": "held-table-2",
+          "settledAtEpochMs": 1789153964860,
+          "elapsedMs": 8008,
+          "status": 500,
+          "code": "57014",
+          "message": "canceling statement due to statement timeout",
+          "data": null,
+          "ownExecutingAtSettlement": []
+        }
+      ]
+    },
+    {
+      "name": "tournament_cannot_starve_peer",
+      "peer": [
+        {
+          "marker": "peer-0",
+          "settledAtEpochMs": 1789153965128,
+          "elapsedMs": 11,
+          "status": 200,
+          "code": null,
+          "message": null,
+          "data": {
+            "pid": 41808,
+            "heartbeat": {
+              "state": "kept",
+              "table_id": "00000000-0000-4000-8000-000000000001",
+              "lease_generation": "00000000-0000-4000-8000-000000000011"
+            },
+            "statement_timeout": "8s"
+          },
+          "ownExecutingAtSettlement": []
+        },
+        {
+          "marker": "peer-1",
+          "settledAtEpochMs": 1789153965125,
+          "elapsedMs": 8,
+          "status": 200,
+          "code": null,
+          "message": null,
+          "data": {
+            "pid": 41795,
+            "heartbeat": {
+              "state": "kept",
+              "table_id": "00000000-0000-4000-8000-000000000001",
+              "lease_generation": "00000000-0000-4000-8000-000000000011"
+            },
+            "statement_timeout": "8s"
+          },
+          "ownExecutingAtSettlement": []
+        },
+        {
+          "marker": "peer-2",
+          "settledAtEpochMs": 1789153965127,
+          "elapsedMs": 10,
+          "status": 200,
+          "code": null,
+          "message": null,
+          "data": {
+            "pid": 41807,
+            "heartbeat": {
+              "state": "kept",
+              "table_id": "00000000-0000-4000-8000-000000000001",
+              "lease_generation": "00000000-0000-4000-8000-000000000011"
+            },
+            "statement_timeout": "8s"
+          },
+          "ownExecutingAtSettlement": []
+        }
+      ],
+      "capped": [
+        {
+          "marker": "held-tournament-0",
+          "settledAtEpochMs": 1789153972871,
+          "elapsedMs": 8007,
+          "status": 500,
+          "code": "57014",
+          "message": "canceling statement due to statement timeout",
+          "data": null,
+          "ownExecutingAtSettlement": []
+        },
+        {
+          "marker": "held-tournament-1",
+          "settledAtEpochMs": 1789153972871,
+          "elapsedMs": 8007,
+          "status": 500,
+          "code": "57014",
+          "message": "canceling statement due to statement timeout",
+          "data": null,
+          "ownExecutingAtSettlement": []
+        },
+        {
+          "marker": "held-tournament-2",
+          "settledAtEpochMs": 1789153972871,
+          "elapsedMs": 8006,
+          "status": 500,
+          "code": "57014",
+          "message": "canceling statement due to statement timeout",
+          "data": null,
+          "ownExecutingAtSettlement": []
+        }
+      ]
+    },
+    {
+      "name": "queue_plus_statement_cancellation_horizon",
+      "queuedResults": [
+        {
+          "marker": "queued-0",
+          "settledAtEpochMs": 1789153988027,
+          "elapsedMs": 15003,
+          "status": 0,
+          "code": "",
+          "message": "Error: supabase_timeout",
+          "data": null,
+          "ownExecutingAtSettlement": [
+            {
+              "application_name": "d6-probe:queued-0",
+              "pid": 41809
+            }
+          ]
+        },
+        {
+          "marker": "queued-1",
+          "settledAtEpochMs": 1789153988026,
+          "elapsedMs": 15003,
+          "status": 0,
+          "code": "",
+          "message": "Error: supabase_timeout",
+          "data": null,
+          "ownExecutingAtSettlement": [
+            {
+              "application_name": "d6-probe:queued-1",
+              "pid": 41811
+            }
+          ]
+        },
+        {
+          "marker": "queued-2",
+          "settledAtEpochMs": 1789153988026,
+          "elapsedMs": 15003,
+          "status": 0,
+          "code": "",
+          "message": "Error: supabase_timeout",
+          "data": null,
+          "ownExecutingAtSettlement": [
+            {
+              "application_name": "d6-probe:queued-2",
+              "pid": 41795
+            }
+          ]
+        },
+        {
+          "marker": "queued-3",
+          "settledAtEpochMs": 1789153988027,
+          "elapsedMs": 15003,
+          "status": 0,
+          "code": "",
+          "message": "Error: supabase_timeout",
+          "data": null,
+          "ownExecutingAtSettlement": [
+            {
+              "application_name": "d6-probe:queued-3",
+              "pid": 41807
+            }
+          ]
+        },
+        {
+          "marker": "queued-4",
+          "settledAtEpochMs": 1789153988027,
+          "elapsedMs": 15003,
+          "status": 0,
+          "code": "",
+          "message": "Error: supabase_timeout",
+          "data": null,
+          "ownExecutingAtSettlement": [
+            {
+              "application_name": "d6-probe:queued-4",
+              "pid": 41808
+            }
+          ]
+        },
+        {
+          "marker": "queued-5",
+          "settledAtEpochMs": 1789153988027,
+          "elapsedMs": 15003,
+          "status": 0,
+          "code": "",
+          "message": "Error: supabase_timeout",
+          "data": null,
+          "ownExecutingAtSettlement": [
+            {
+              "application_name": "d6-probe:queued-5",
+              "pid": 41810
+            }
+          ]
+        }
+      ],
+      "executingAfterClientSettlement": [
+        {
+          "application_name": "d6-probe:queued-2",
+          "pid": 41795
+        },
+        {
+          "application_name": "d6-probe:queued-3",
+          "pid": 41807
+        },
+        {
+          "application_name": "d6-probe:queued-4",
+          "pid": 41808
+        },
+        {
+          "application_name": "d6-probe:queued-0",
+          "pid": 41809
+        },
+        {
+          "application_name": "d6-probe:queued-5",
+          "pid": 41810
+        },
+        {
+          "application_name": "d6-probe:queued-1",
+          "pid": 41811
+        }
+      ],
+      "drainedAfterMs": 274,
+      "additionalObservationMs": 18008,
+      "latePhysical": [],
+      "enteredAfterSettlement": [],
+      "queuedEntries": [
+        {
+          "marker": "queued-3",
+          "enteredAtEpochMs": 1789153980580.414
+        },
+        {
+          "marker": "queued-2",
+          "enteredAtEpochMs": 1789153980580.456
+        },
+        {
+          "marker": "queued-4",
+          "enteredAtEpochMs": 1789153980580.414
+        },
+        {
+          "marker": "queued-1",
+          "enteredAtEpochMs": 1789153980580.453
+        },
+        {
+          "marker": "queued-5",
+          "enteredAtEpochMs": 1789153980581.276
+        },
+        {
+          "marker": "queued-0",
+          "enteredAtEpochMs": 1789153980581.412
+        }
+      ]
+    },
+    {
+      "name": "actual_admission_replacement_with_large_pool",
+      "gameServerSha256": "d6ae4a16633235a126740e8a3efb6d837b4830890504a83dd234730d41a9c7e9",
+      "admissionMethodSha256": "895dbbefefef757599794f219c7a386ab9015a7d890c3ba79c93374731ff0867",
+      "maximumPhysicalRenewals": 8,
+      "requestsIssued": 8,
+      "activity": [
+        {
+          "elapsedMs": 1,
+          "executing": 0
+        },
+        {
+          "elapsedMs": 7763,
+          "executing": 4
+        },
+        {
+          "elapsedMs": 10026,
+          "executing": 6
+        },
+        {
+          "elapsedMs": 15107,
+          "executing": 8
+        },
+        {
+          "elapsedMs": 15679,
+          "executing": 4
+        },
+        {
+          "elapsedMs": 17950,
+          "executing": 2
+        }
+      ],
+      "results": [
+        {
+          "marker": "admitted-1",
+          "settledAtEpochMs": 1789154021637,
+          "elapsedMs": 15001,
+          "status": 0,
+          "code": "",
+          "message": "Error: supabase_timeout",
+          "data": null,
+          "ownExecutingAtSettlement": [
+            {
+              "application_name": "d6-probe:admitted-1",
+              "pid": 41807
+            }
+          ]
+        },
+        {
+          "marker": "admitted-0",
+          "settledAtEpochMs": 1789154021637,
+          "elapsedMs": 15001,
+          "status": 0,
+          "code": "",
+          "message": "Error: supabase_timeout",
+          "data": null,
+          "ownExecutingAtSettlement": [
+            {
+              "application_name": "d6-probe:admitted-0",
+              "pid": 41809
+            }
+          ]
+        },
+        {
+          "marker": "admitted-2",
+          "settledAtEpochMs": 1789154022293,
+          "elapsedMs": 10650,
+          "status": 200,
+          "code": null,
+          "message": null,
+          "data": {
+            "pid": 41795,
+            "heartbeat": {
+              "state": "kept",
+              "table_id": "00000000-0000-4000-8000-000000000001",
+              "lease_generation": "00000000-0000-4000-8000-000000000011"
+            },
+            "statement_timeout": "8s"
+          },
+          "ownExecutingAtSettlement": []
+        },
+        {
+          "marker": "admitted-3",
+          "settledAtEpochMs": 1789154022293,
+          "elapsedMs": 10651,
+          "status": 200,
+          "code": null,
+          "message": null,
+          "data": {
+            "pid": 41810,
+            "heartbeat": {
+              "state": "busy",
+              "tournament_id": "00000000-0000-4000-8000-000000000001",
+              "lease_generation": "00000000-0000-4000-8000-000000000011"
+            },
+            "statement_timeout": "8s"
+          },
+          "ownExecutingAtSettlement": []
+        },
+        {
+          "marker": "admitted-5",
+          "settledAtEpochMs": 1789154024559,
+          "elapsedMs": 7911,
+          "status": 200,
+          "code": null,
+          "message": null,
+          "data": {
+            "pid": 41808,
+            "heartbeat": {
+              "state": "kept",
+              "tournament_id": "00000000-0000-4000-8000-000000000001",
+              "lease_generation": "00000000-0000-4000-8000-000000000011"
+            },
+            "statement_timeout": "8s"
+          },
+          "ownExecutingAtSettlement": []
+        },
+        {
+          "marker": "admitted-4",
+          "settledAtEpochMs": 1789154024559,
+          "elapsedMs": 7912,
+          "status": 200,
+          "code": null,
+          "message": null,
+          "data": {
+            "pid": 41811,
+            "heartbeat": {
+              "state": "kept",
+              "table_id": "00000000-0000-4000-8000-000000000001",
+              "lease_generation": "00000000-0000-4000-8000-000000000011"
+            },
+            "statement_timeout": "8s"
+          },
+          "ownExecutingAtSettlement": []
+        },
+        {
+          "marker": "admitted-6",
+          "settledAtEpochMs": 1789154029644,
+          "elapsedMs": 7908,
+          "status": 200,
+          "code": null,
+          "message": null,
+          "data": {
+            "pid": 43197,
+            "heartbeat": {
+              "state": "kept",
+              "table_id": "00000000-0000-4000-8000-000000000001",
+              "lease_generation": "00000000-0000-4000-8000-000000000011"
+            },
+            "statement_timeout": "8s"
+          },
+          "ownExecutingAtSettlement": []
+        },
+        {
+          "marker": "admitted-7",
+          "settledAtEpochMs": 1789154029645,
+          "elapsedMs": 7908,
+          "status": 200,
+          "code": null,
+          "message": null,
+          "data": {
+            "pid": 43196,
+            "heartbeat": {
+              "state": "kept",
+              "tournament_id": "00000000-0000-4000-8000-000000000001",
+              "lease_generation": "00000000-0000-4000-8000-000000000011"
+            },
+            "statement_timeout": "8s"
+          },
+          "ownExecutingAtSettlement": []
+        }
+      ]
+    },
+    {
+      "name": "actual_admission_gateway_early_close_delayed_forward",
+      "maximumPhysicalRenewals": 8,
+      "requestsIssued": 8,
+      "acceptedBeforeClientSettlementButForwardedAfter": 8,
+      "activity": [
+        {
+          "elapsedMs": 1,
+          "executing": 0
+        },
+        {
+          "elapsedMs": 20018,
+          "executing": 8
+        },
+        {
+          "elapsedMs": 27927,
+          "executing": 0
+        }
+      ],
+      "events": [
+        {
+          "marker": "gateway-admitted-1",
+          "acceptedAtEpochMs": 1789154029674,
+          "downstreamOutcome": "early_504",
+          "downstreamEndedAtEpochMs": 1789154029674,
+          "forwardedAtEpochMs": 1789154049663,
+          "upstreamStatus": 200,
+          "upstreamBody": {
+            "pid": 44330,
+            "heartbeat": {
+              "state": "kept",
+              "tournament_id": "00000000-0000-4000-8000-000000000001",
+              "lease_generation": "00000000-0000-4000-8000-000000000011"
+            },
+            "statement_timeout": "8s"
+          },
+          "upstreamCompletedAtEpochMs": 1789154057587
+        },
+        {
+          "marker": "gateway-admitted-0",
+          "acceptedAtEpochMs": 1789154029676,
+          "downstreamOutcome": "early_disconnect",
+          "downstreamEndedAtEpochMs": 1789154029676,
+          "forwardedAtEpochMs": 1789154049665,
+          "upstreamStatus": 200,
+          "upstreamBody": {
+            "pid": 44329,
+            "heartbeat": {
+              "state": "kept",
+              "table_id": "00000000-0000-4000-8000-000000000001",
+              "lease_generation": "00000000-0000-4000-8000-000000000011"
+            },
+            "statement_timeout": "8s"
+          },
+          "upstreamCompletedAtEpochMs": 1789154057587
+        },
+        {
+          "marker": "gateway-admitted-3",
+          "acceptedAtEpochMs": 1789154034679,
+          "downstreamOutcome": "early_504",
+          "downstreamEndedAtEpochMs": 1789154034679,
+          "forwardedAtEpochMs": 1789154049665,
+          "upstreamStatus": 200,
+          "upstreamBody": {
+            "pid": 44331,
+            "heartbeat": {
+              "state": "busy",
+              "tournament_id": "00000000-0000-4000-8000-000000000001",
+              "lease_generation": "00000000-0000-4000-8000-000000000011"
+            },
+            "statement_timeout": "8s"
+          },
+          "upstreamCompletedAtEpochMs": 1789154057587
+        },
+        {
+          "marker": "gateway-admitted-2",
+          "acceptedAtEpochMs": 1789154034679,
+          "downstreamOutcome": "early_disconnect",
+          "downstreamEndedAtEpochMs": 1789154034679,
+          "forwardedAtEpochMs": 1789154049665,
+          "upstreamStatus": 200,
+          "upstreamBody": {
+            "pid": 44334,
+            "heartbeat": {
+              "state": "kept",
+              "table_id": "00000000-0000-4000-8000-000000000001",
+              "lease_generation": "00000000-0000-4000-8000-000000000011"
+            },
+            "statement_timeout": "8s"
+          },
+          "upstreamCompletedAtEpochMs": 1789154057588
+        },
+        {
+          "marker": "gateway-admitted-5",
+          "acceptedAtEpochMs": 1789154039683,
+          "downstreamOutcome": "early_504",
+          "downstreamEndedAtEpochMs": 1789154039683,
+          "forwardedAtEpochMs": 1789154049666,
+          "upstreamStatus": 200,
+          "upstreamBody": {
+            "pid": 44333,
+            "heartbeat": {
+              "state": "kept",
+              "tournament_id": "00000000-0000-4000-8000-000000000001",
+              "lease_generation": "00000000-0000-4000-8000-000000000011"
+            },
+            "statement_timeout": "8s"
+          },
+          "upstreamCompletedAtEpochMs": 1789154057587
+        },
+        {
+          "marker": "gateway-admitted-4",
+          "acceptedAtEpochMs": 1789154039683,
+          "downstreamOutcome": "early_disconnect",
+          "downstreamEndedAtEpochMs": 1789154039683,
+          "forwardedAtEpochMs": 1789154049666,
+          "upstreamStatus": 200,
+          "upstreamBody": {
+            "pid": 44335,
+            "heartbeat": {
+              "state": "busy",
+              "table_id": "00000000-0000-4000-8000-000000000001",
+              "lease_generation": "00000000-0000-4000-8000-000000000011"
+            },
+            "statement_timeout": "8s"
+          },
+          "upstreamCompletedAtEpochMs": 1789154057587
+        },
+        {
+          "marker": "gateway-admitted-7",
+          "acceptedAtEpochMs": 1789154044772,
+          "downstreamOutcome": "early_504",
+          "downstreamEndedAtEpochMs": 1789154044772,
+          "forwardedAtEpochMs": 1789154049666,
+          "upstreamStatus": 200,
+          "upstreamBody": {
+            "pid": 44336,
+            "heartbeat": {
+              "state": "kept",
+              "tournament_id": "00000000-0000-4000-8000-000000000001",
+              "lease_generation": "00000000-0000-4000-8000-000000000011"
+            },
+            "statement_timeout": "8s"
+          },
+          "upstreamCompletedAtEpochMs": 1789154057588
+        },
+        {
+          "marker": "gateway-admitted-6",
+          "acceptedAtEpochMs": 1789154044773,
+          "downstreamOutcome": "early_disconnect",
+          "downstreamEndedAtEpochMs": 1789154044773,
+          "forwardedAtEpochMs": 1789154049666,
+          "upstreamStatus": 200,
+          "upstreamBody": {
+            "pid": 44337,
+            "heartbeat": {
+              "state": "kept",
+              "table_id": "00000000-0000-4000-8000-000000000001",
+              "lease_generation": "00000000-0000-4000-8000-000000000011"
+            },
+            "statement_timeout": "8s"
+          },
+          "upstreamCompletedAtEpochMs": 1789154057588
+        }
+      ],
+      "results": [
+        {
+          "marker": "gateway-admitted-1",
+          "settledAtEpochMs": 1789154029676,
+          "elapsedMs": 6,
+          "status": 504,
+          "code": "FIXTURE_GATEWAY_UNKNOWN",
+          "message": "Accepted upstream outcome unknown",
+          "data": null,
+          "ownExecutingAtSettlement": []
+        },
+        {
+          "marker": "gateway-admitted-0",
+          "settledAtEpochMs": 1789154029678,
+          "elapsedMs": 8,
+          "status": 0,
+          "code": "",
+          "message": "TypeError: fetch failed",
+          "data": null,
+          "ownExecutingAtSettlement": []
+        },
+        {
+          "marker": "gateway-admitted-3",
+          "settledAtEpochMs": 1789154034680,
+          "elapsedMs": 3,
+          "status": 504,
+          "code": "FIXTURE_GATEWAY_UNKNOWN",
+          "message": "Accepted upstream outcome unknown",
+          "data": null,
+          "ownExecutingAtSettlement": []
+        },
+        {
+          "marker": "gateway-admitted-2",
+          "settledAtEpochMs": 1789154034680,
+          "elapsedMs": 4,
+          "status": 0,
+          "code": "",
+          "message": "TypeError: fetch failed",
+          "data": null,
+          "ownExecutingAtSettlement": []
+        },
+        {
+          "marker": "gateway-admitted-5",
+          "settledAtEpochMs": 1789154039683,
+          "elapsedMs": 1,
+          "status": 504,
+          "code": "FIXTURE_GATEWAY_UNKNOWN",
+          "message": "Accepted upstream outcome unknown",
+          "data": null,
+          "ownExecutingAtSettlement": []
+        },
+        {
+          "marker": "gateway-admitted-4",
+          "settledAtEpochMs": 1789154039683,
+          "elapsedMs": 2,
+          "status": 0,
+          "code": "",
+          "message": "TypeError: fetch failed",
+          "data": null,
+          "ownExecutingAtSettlement": []
+        },
+        {
+          "marker": "gateway-admitted-7",
+          "settledAtEpochMs": 1789154044773,
+          "elapsedMs": 2,
+          "status": 504,
+          "code": "FIXTURE_GATEWAY_UNKNOWN",
+          "message": "Accepted upstream outcome unknown",
+          "data": null,
+          "ownExecutingAtSettlement": []
+        },
+        {
+          "marker": "gateway-admitted-6",
+          "settledAtEpochMs": 1789154044773,
+          "elapsedMs": 2,
+          "status": 0,
+          "code": "",
+          "message": "TypeError: fetch failed",
+          "data": null,
+          "ownExecutingAtSettlement": []
+        }
+      ],
+      "limitation": "Controlled loopback gateway fault, not a measurement of installed gateway configuration."
+    }
+  ],
+  "productionChanges": 0,
+  "heartbeatMigrationSha256": "1d0707357aa629f2aa6b15416f74ab9317238ce80a29837be7355bf41e7b22ac",
+  "clientSourceSha256": "4dc90b3306b11182076548328fd9fd234934d85f077269ca125547ab66d5df53",
+  "result": "GAP_REPRODUCED",
+  "limitation": "Isolated PostgREST 14.5 pool=12/acquisition=10s with an additional full pool+SQL observation horizon. Installed acquisition was separately read as10s on2026-09-11; this fixture makes no production configuration change and does not certify gateway behavior. For pools>=12 it executes the structurally extracted actual GameServer admission method with real five-second ticks and a native RPC callback; full proof/loss behavior remains covered separately.",
+  "completedAt": "2026-09-11T19:14:17.777Z"
+}

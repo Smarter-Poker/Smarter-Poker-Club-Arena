@@ -105,11 +105,9 @@ DECLARE
   v_claim text[][] := ARRAY[
     ARRAY[
 $o1$  v_bounty_blocked text := NULL;
-BEGIN
 $o1$,
 $n1$  v_bounty_blocked text := NULL;
   v_activated_at timestamptz;
-BEGIN
 $n1$],
     ARRAY[
 $o2$  v_mode:=CASE

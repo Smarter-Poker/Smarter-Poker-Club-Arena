@@ -5,15 +5,37 @@ async function expectUnionAccessDecision(page: Page, path: string): Promise<bool
   const rendered = await expectRoute(page, path);
   if (!rendered) return false;
 
-  if (/\/community(?:[/?#]|$)/.test(page.url())) {
-    await expect(page.getByRole('heading', { name: 'Community Center' })).toBeVisible({
-      timeout: 15_000,
-    });
-    return false;
-  }
-
   const escapedPath = path.replace(/\//g, '\\/');
-  await expect(page).toHaveURL(new RegExp(`${escapedPath}(?:[/?#]|$)`));
+  const requestedRoute = new RegExp(`${escapedPath}(?:[/?#]|$)`);
+  const allowedContent =
+    path === 'unions/create'
+      ? page.getByText(/^(?:Forge A Union|Create A Club First)$/).first()
+      : page.getByText(path === 'unions' ? 'Union Command' : 'Union Not Found').first();
+  const decision: { value: 'pending' | 'allowed' | 'denied' } = { value: 'pending' };
+  // A requested URL is not an access decision: the asynchronous allowlist
+  // check can still redirect after the generic route shell has rendered.
+  await expect
+    .poll(
+      async () => {
+        if (
+          /\/community(?:[/?#]|$)/.test(page.url()) &&
+          (await page.getByRole('heading', { name: 'Community Center' }).isVisible())
+        ) {
+          decision.value = 'denied';
+        } else if (requestedRoute.test(page.url()) && (await allowedContent.isVisible())) {
+          decision.value = 'allowed';
+        }
+        return decision.value;
+      },
+      {
+        timeout: 15_000,
+        message: 'union access must finish with its allowed page or refusal destination',
+      }
+    )
+    .not.toBe('pending');
+  if (decision.value === 'denied') return false;
+  await expect(page).toHaveURL(requestedRoute);
+  await expect(allowedContent).toBeVisible();
   return true;
 }
 

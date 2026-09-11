@@ -358,6 +358,23 @@ const TOURNAMENT_PRESEAT_LEAD_MS = 60_000;
  * pass, which runs every few seconds.
  */
 const FINALIZED_FINISH_RETRY_MS = 5 * 60_000;
+/**
+ * A table is worth naming individually in /metrics once it has gone this long
+ * without observable progress.
+ *
+ * Thirty seconds is the floor `poker_blocked_settlements` already uses, so the
+ * two read the same definition of "stuck", and it is far longer than any
+ * healthy gap between hands.
+ */
+const STALL_SAMPLE_FLOOR_MS = 30_000;
+/**
+ * How many stalled (or undealable) tables keep a per-table sample.
+ *
+ * The point of a per-table line is to NAME a table for a human. Forty names is
+ * already more than anyone reads, and the fleet gauges beside it carry the true
+ * totals, so nothing is lost by stopping there.
+ */
+const PER_TABLE_LIVENESS_SAMPLE_CAP = 40;
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // GAME SERVER — Main Orchestrator
@@ -3176,7 +3193,34 @@ export class GameServer {
       equityWorkerPool: equityWorkers,
       stalledTables: stalledTables.slice(0, 20),
       discoveryStaleMs,
-      tableLiveness,
+      /* ── /health IS RENDERED ON THE AUTHORITATIVE EVENT LOOP (2026-09-11) ──
+       *
+       * This used to carry the WHOLE `tableLiveness` array. Measured on
+       * engine-01 that evening: the body was 341 KB, of which this one field
+       * was 362 KB of JSON before compaction - 98% of it - and rendering it
+       * cost 106-183 ms on the single thread that runs every turn timer,
+       * broadcast and horse decision round trip. Docker polls this endpoint
+       * every twenty seconds, and so do the deploy gate and the supervisor.
+       *
+       * Nothing outside this process ever read it. Not a workflow, not a
+       * script, not the client. And the answer it was there to give already
+       * sat one line above, capped: `stalledTables.slice(0, 20)`, plus
+       * `humansSeatedTotal`, `handsInFlightTotal` and the settlement health
+       * spread in below, all of which are derived from the same array.
+       *
+       * So the array stays inside the process, where every consumer of it
+       * already lives, and the endpoint carries the counts instead. A reader
+       * that wants to NAME a table still has `stalledTables`; a reader that
+       * wants a total now gets one that is always present rather than one it
+       * has to reduce a thousand objects to compute.
+       */
+      tableLivenessSummary: {
+        tables: tableLiveness.length,
+        stalled: stalledTables.length,
+        undealable: tableLiveness.filter((t) => t.dealable <= 0).length,
+        maxMsSinceProgress: tableLiveness.reduce((max, t) => Math.max(max, t.msSinceProgress), 0),
+        dealableSeats: tableLiveness.reduce((sum, t) => sum + t.dealable, 0),
+      },
       // Optional calculator capacity may recover after initial readiness
       // without taking a healthy dealer out of routing. Startup, exhausted
       // cooldown, and shutdown remain non-routing states.
@@ -3279,6 +3323,18 @@ export class GameServer {
     // the process, independent of whether the engine can still report itself.
     const now = Date.now();
     const liveness = this.tableLivenessSnapshot();
+    /* The per-table liveness lines this exposition will carry: a table that has
+       stalled, and a table that cannot deal. Both capped, because a fleet-wide
+       fault must not put the old 1,363-sample bill back on the event loop at
+       the very moment the loop is the thing that is wrong. Sorted worst-first,
+       so a truncated list is still the list you wanted. */
+    const stalledSamples = liveness
+      .filter((t) => t.msSinceProgress >= STALL_SAMPLE_FLOOR_MS)
+      .sort((a, b) => b.msSinceProgress - a.msSinceProgress)
+      .slice(0, PER_TABLE_LIVENESS_SAMPLE_CAP);
+    const undealableSamples = liveness
+      .filter((t) => t.dealable <= 0)
+      .slice(0, PER_TABLE_LIVENESS_SAMPLE_CAP);
     const livenessVerdict = evaluateEngineLiveness({
       isLeader: isLeader(),
       processUptimeMs: now - this.processStartedAt,
@@ -3388,14 +3444,52 @@ export class GameServer {
       // the day this was measured, every one an unannounced restart outside
       // the §13 break. It reads the same fleet-wide rule as getStatus() now.
       `poker_engine_liveness ${livenessVerdict.prometheusValue}`,
-      '# HELP poker_table_ms_since_progress Milliseconds since this table last made observable progress',
+      /* ── A SCRAPE IS NOT A STALL (2026-09-11) ──────────────────────────
+       *
+       * These two were emitted for every table this process owns. Measured on
+       * engine-01 that evening: 1,363 samples each, 2,726 of the 7,005 in a
+       * 590 KB exposition that took 136-502 ms to BUILD - on the
+       * authoritative event loop, every fifteen seconds, while that same loop
+       * was already at 309 ms p50 and every turn timer, broadcast and horse
+       * decision round trip was queued behind it.
+       *
+       * Nothing read them per table. The only consumer anywhere was
+       * slo-rules.yml's `max(poker_table_ms_since_progress)`, which is now the
+       * always-present fleet gauge below, and `poker_table_dealable_seats` had
+       * no consumer at all.
+       *
+       * What survives per table is the part that is worth naming: a table that
+       * has actually stalled, and a table that cannot deal. A healthy fleet
+       * emits a handful of lines here; an unhealthy one emits exactly the
+       * tables you would have gone looking for. The cap keeps a pathological
+       * fleet from paying the old price all over again, and the two counters
+       * beside it mean the truncation is never silent (CLAUDE.md 10.86).
+       */
+      '# HELP poker_fleet_table_stall_max_ms Milliseconds since the least-recently-progressed table made progress',
+      '# TYPE poker_fleet_table_stall_max_ms gauge',
+      `poker_fleet_table_stall_max_ms ${liveness.reduce((max, t) => Math.max(max, t.msSinceProgress), 0)}`,
+      '# HELP poker_fleet_tables_stalled Tables that have made no observable progress for at least 30s',
+      '# TYPE poker_fleet_tables_stalled gauge',
+      `poker_fleet_tables_stalled ${liveness.filter((t) => t.msSinceProgress >= STALL_SAMPLE_FLOOR_MS).length}`,
+      '# HELP poker_fleet_dealable_seats Seats able to be dealt into, summed across every table',
+      '# TYPE poker_fleet_dealable_seats gauge',
+      `poker_fleet_dealable_seats ${liveness.reduce((sum, t) => sum + t.dealable, 0)}`,
+      '# HELP poker_fleet_tables_undealable Tables with no seat that can be dealt into',
+      '# TYPE poker_fleet_tables_undealable gauge',
+      `poker_fleet_tables_undealable ${liveness.filter((t) => t.dealable <= 0).length}`,
+      '# HELP poker_fleet_per_table_liveness_samples Per-table liveness samples this exposition carries',
+      '# TYPE poker_fleet_per_table_liveness_samples gauge',
+      `poker_fleet_per_table_liveness_samples ${stalledSamples.length + undealableSamples.length}`,
+      '# HELP poker_table_ms_since_progress Milliseconds since this table last made observable progress (stalled tables only)',
       '# TYPE poker_table_ms_since_progress gauge',
-      ...liveness.map(
+      ...stalledSamples.map(
         (t) => `poker_table_ms_since_progress{table_id="${t.tableId}"} ${t.msSinceProgress}`
       ),
-      '# HELP poker_table_dealable_seats Seats able to be dealt into on this table',
+      '# HELP poker_table_dealable_seats Seats able to be dealt into on this table (undealable tables only)',
       '# TYPE poker_table_dealable_seats gauge',
-      ...liveness.map((t) => `poker_table_dealable_seats{table_id="${t.tableId}"} ${t.dealable}`),
+      ...undealableSamples.map(
+        (t) => `poker_table_dealable_seats{table_id="${t.tableId}"} ${t.dealable}`
+      ),
       // ── SPLIT-BRAIN (2026-08-16) ─────────────────────────────────
       // Every gauge above is per-process, so with two containers behind one
       // hostname Prometheus scrapes whichever the proxy picks and silently

@@ -574,6 +574,7 @@ export function deriveContext(
     addOnTakenByUser?: Record<string, boolean>;
     rebuyAffordableByUser?: Record<string, boolean>;
     addOnAffordableByUser?: Record<string, boolean>;
+    pendingRecoveryPlayers?: number;
   } = {}
 ): TournamentBrainContext {
   const type = (row.tournament_type || '').toUpperCase();
@@ -819,8 +820,18 @@ export function deriveContext(
   if (!status) contextIssues.push('tournament_status_missing');
   if (!gameVariant) contextIssues.push('game_variant_missing');
   if (!(playersLeft > 0) || entrants < playersLeft) contextIssues.push('player_population_invalid');
+  if (Math.max(0, Math.floor(Number(playerOptions.pendingRecoveryPlayers) || 0)) > 0) {
+    // A player with a durable, unexpired recovery prompt is not eliminated,
+    // but has no positive stack that an ICM calculation can price yet. Keep
+    // the lifecycle count honest and fail closed until accept/decline/expiry
+    // turns that pending option into a positive stack or a completed bust.
+    contextIssues.push('live_field_recovery_pending');
+  }
   if (spotsPaid <= 0) contextIssues.push('payout_or_ticket_structure_missing');
   if (allLive.length === 0) contextIssues.push('live_stack_distribution_missing');
+  if (allLive.length !== playersLeft) {
+    contextIssues.push('live_field_stack_cardinality_mismatch');
+  }
   if (
     !blindState.levelIndexValid ||
     blindState.currentSmallBlind <= 0 ||
@@ -1179,6 +1190,7 @@ interface TournamentPlayerContextRow {
   current_bounty: number | null;
   rebuys?: number | null;
   add_on?: boolean | null;
+  rebuy_prompt_until?: string | null;
 }
 
 interface TournamentFundingRow {
@@ -1320,7 +1332,8 @@ async function readTournamentPlayerContext(tournamentId: string): Promise<{
   error: { message: string } | null;
 }> {
   const PAGE = 1_000;
-  const columns = 'user_id, club_id, chips, status, current_bounty, rebuys, add_on';
+  const columns =
+    'user_id, club_id, chips, status, current_bounty, rebuys, add_on, rebuy_prompt_until';
   const first = await supabase
     .from('tournament_players')
     .select(columns, { count: 'exact' })
@@ -1467,7 +1480,9 @@ async function refresh(tournamentId: string, e: CacheEntry, generation: number):
     const horseRebuyCapByUser: Record<string, number> = {};
     const addOnTakenByUser: Record<string, boolean> = {};
     const entrants = rows.length;
+    const observedAtMs = Date.now();
     let playersLeft = 0;
+    let pendingRecoveryPlayers = 0;
     let chipSum = 0;
     const liveStacks: number[] = [];
     for (const row of rows) {
@@ -1497,14 +1512,22 @@ async function refresh(tournamentId: string, e: CacheEntry, generation: number):
       const chips = Number(row.chips) || 0;
       // The atomic hand settlement writes the busted stack before the
       // elimination sweep advances tournament_players.status. Under load that
-      // status hand-off can lag for many sweeps, so `status = playing` is not
-      // proof that a player still belongs in an ICM field. A zero-chip row has
-      // no live stack and cannot take an action; counting it made playersLeft
-      // disagree with the positive stack vector and forced Phase 7 to fail
-      // closed with field_reconciliation. Recovery usage remains captured
-      // above so a later rebuy/re-entry reappears naturally once its positive
-      // stack is durably credited.
-      if (chips <= 0) continue;
+      // status hand-off can lag for many sweeps, so `status = playing` alone is
+      // not proof that a player still belongs in the active ICM stack vector.
+      // An unexpired database-owned recovery prompt is different: that player
+      // is not eliminated yet, so preserve the lifecycle count and mark the
+      // context incomplete below. Once the prompt expires, the zero stack is a
+      // completed bust for decision purposes even if the status sweep lags.
+      if (chips <= 0) {
+        const promptUntilMs = row.rebuy_prompt_until
+          ? Date.parse(row.rebuy_prompt_until)
+          : Number.NaN;
+        if (Number.isFinite(promptUntilMs) && promptUntilMs > observedAtMs) {
+          playersLeft += 1;
+          pendingRecoveryPlayers += 1;
+        }
+        continue;
+      }
       playersLeft += 1;
       chipSum += chips;
       liveStacks.push(chips);
@@ -1533,7 +1556,7 @@ async function refresh(tournamentId: string, e: CacheEntry, generation: number):
       liveBounties,
       0,
       bountyByUser,
-      Date.now(),
+      observedAtMs,
       fidelity,
       {
         stackByUser,
@@ -1542,6 +1565,7 @@ async function refresh(tournamentId: string, e: CacheEntry, generation: number):
         addOnTakenByUser,
         rebuyAffordableByUser: fundingRes.rebuyAffordableByUser,
         addOnAffordableByUser: fundingRes.addOnAffordableByUser,
+        pendingRecoveryPlayers,
       }
     );
     if (e.generation !== generation) return;

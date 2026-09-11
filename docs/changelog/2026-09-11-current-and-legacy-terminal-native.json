@@ -1,0 +1,63 @@
+{
+  "database": "d9_combined_final_fresh",
+  "production_writes": 0,
+  "table_count": 1189,
+  "scenarios": [
+    {
+      "case": "manager-expanded",
+      "exit_code": 0,
+      "assertions": 131,
+      "exact_all_table_and_catalog_rollback": true,
+      "sql_sha256": "800108ba1d9f7feaa20b141941b3399b1eea2b26abbca8509ac421b28a28b4a1"
+    },
+    {
+      "case": "final-deal-composed",
+      "exit_code": 0,
+      "assertions": 41,
+      "exact_all_table_and_catalog_rollback": true,
+      "sql_sha256": "7ec77a9060e63258700c8b48ad98dae136c684844894b12a78e320d5236e7564"
+    },
+    {
+      "case": "commit_record_inversion",
+      "exit_code": 0,
+      "assertions": 74,
+      "exact_all_table_and_catalog_rollback": true,
+      "sql_sha256": "ca27f2b6a8cfe23a8ff688fe91682973e10cf61dacaedb016d2e37e1327930a7"
+    },
+    {
+      "case": "pruned_hand_fallback",
+      "exit_code": 0,
+      "assertions": 74,
+      "exact_all_table_and_catalog_rollback": true,
+      "sql_sha256": "baad25c4ba52d7da8f08f86a6899a72b13b00847d837be8d196a25a2511493fc"
+    },
+    {
+      "case": "pruned_same_hand",
+      "exit_code": 0,
+      "assertions": 74,
+      "exact_all_table_and_catalog_rollback": true,
+      "sql_sha256": "53998237dc22ec401cc9ea89992823a833b126ce323ec7bba162c6d766ffb379"
+    },
+    {
+      "case": "same_hand_stack",
+      "exit_code": 0,
+      "assertions": 74,
+      "exact_all_table_and_catalog_rollback": true,
+      "sql_sha256": "e3d6baf863b0d0b03ae6e40360ddebc1a1c0e1b06e884df6c4cf0b04405e410f"
+    },
+    {
+      "case": "same_hand_user",
+      "exit_code": 0,
+      "assertions": 74,
+      "exact_all_table_and_catalog_rollback": true,
+      "sql_sha256": "c5e42ce0b49e21310151cc5f062c6b6bb671f24424a9adb452585dfd73d26b02"
+    },
+    {
+      "case": "unknown_witness_refusal",
+      "exit_code": 0,
+      "assertions": 75,
+      "exact_all_table_and_catalog_rollback": true,
+      "sql_sha256": "84dfdab40907d7f83562a1c0eb4d3b0ccb5fcdca513c98aecef05bb6359f32eb"
+    }
+  ]
+}

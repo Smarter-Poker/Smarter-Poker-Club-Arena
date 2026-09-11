@@ -99,6 +99,7 @@ const baseSit = {
   persona: 'grinder' as const,
   sitsOnKeyToday: 0,
   isRestDay: false,
+  inTwoHourWindow: false,
   killed: false,
 };
 

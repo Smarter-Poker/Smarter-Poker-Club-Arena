@@ -1,0 +1,22 @@
+PASS legacy-only schema has no captured source prerequisites
+PASS UI club-scoped claim pays mature period and leaves same-club open period accruing
+PASS direct low-level close refuses open period before any mutation
+PASS captured original positive open close rolls back at status fence
+PASS captured original zero open close rolls back at status fence
+PASS already-paid history is unchanged by claim and replay
+PASS UTC maturity and cold scan remain correct after UTC rollover across session timezones
+PASS final journal failure rolls back the unchanged legacy funding path
+PASS captured original existing-receipt branch cannot finalize an open period
+PASS expired historical period remains unchanged on low-level replay
+PASS actual two-period aggregate shortfall defers both then funded retry pays exact receipts once
+PASS original two-period claim category leak is preserved as evidence and corrected close restores caller context
+PASS malformed negative legacy basis refuses without discarding aggregate members
+PASS malformed missing_rate legacy basis refuses without discarding aggregate members
+PASS malformed missing_basis legacy basis refuses without discarding aggregate members
+PASS actual running old Round3 partially stale two-period set rolls back after body replacement
+PASS actual running old Round3 all stale two-period set rolls back after body replacement
+ROLLING_RESULTS [{"error":{"code":"40P01","message":"deadlock detected"}},{"rows":[{"result":{"name":"agents_to_players","round":3,"amount":30,"detail":[],"payees":1,"shortfalls":0}}]}]
+PASS observed old multi-period claim crossing replacement with claim deadlock victim resolves atomically and retries once
+ROLLING_RESULTS [{"rows":[{"result":{"success":true,"total_payout":30,"periods_claimed":2}}]},{"error":{"code":"40P01","message":"deadlock detected"}}]
+PASS observed old multi-period claim crossing replacement with weekly deadlock victim resolves atomically and retries once
+{"passed":19}

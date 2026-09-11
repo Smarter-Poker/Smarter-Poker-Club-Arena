@@ -1,0 +1,200 @@
+{
+  "updated_at": "2026-09-10T17:54:47.304525+00:00",
+  "phase3_complete": false,
+  "status": "approved_implementation_and_native_verification_in_progress",
+  "authorization": {
+    "user_response": "YES ITS APPROVED",
+    "scope": [
+      "create final-deal v2 migration",
+      "test real settlement claims and payout-receipt verification",
+      "deploy verified migration and staged activation"
+    ],
+    "prior_financial_authority_approval_block": "specific authorization now supplied"
+  },
+  "base": "852218608f3b67404c5fb3f95f105740eb3454f3",
+  "branch": "agent/codex-chip-entry-swarm/fix/approved-final-deal-v2",
+  "completed_prior_releases": {
+    "compatibility_pr": 4176,
+    "compatibility_merge": "52883bfde240a5790f31680bfef70b7cbd4f4bf0",
+    "orphan_and_reproducibility_pr": 4181,
+    "orphan_and_reproducibility_merge": "4a0b6ceaacdb9f1019d1d65732b690e828b70cab",
+    "task_content_orphan_found": false
+  },
+  "engine": {
+    "last_verified_version": "7732b971",
+    "deployed_attempt": 368,
+    "old_queued_attempt": 369,
+    "old_queued_shipped": false,
+    "standalone_852_deploy_review": "Automatic review rejected the earlier compatibility target because it did not contain the newly approved final-deal implementation. No command ran. Complete and verify the combined implementation before the next normal deployment.",
+    "new_implementation_adoption_verified": false
+  },
+  "native_database": {
+    "cluster_socket": "/tmp/codex-chip-drift-cutover-e2iav203/socket",
+    "port": 55473,
+    "prepared_database": "full_stage1",
+    "retained_baseline_users": 15,
+    "retained_baseline_events": 12,
+    "retained_move_receipts": 3,
+    "ownership": "single native writer at a time, exact catalog and data rollback required",
+    "current_replay_limitation": "pristine data but lacks the M5 terminal and seat-exit schema, not a replacement baseline"
+  },
+  "browser_acceptance": {
+    "verified": false,
+    "latest_observation": "Cloud browser created a tab; navigation/tab refresh timed out and visible DOM recovery was superseded by browser recovery."
+  },
+  "production_final_deal_v2_applied": false,
+  "production_stage_b_applied": false,
+  "production_proposal_activation": false,
+  "final_deal_v2_candidate": {
+    "sql_sha256": "b2f11f155a0d0c2c2ad90ed1e471a4e6fd6373b8b4e67e706c7422734748fd77",
+    "status": "local final-deal terminal cases pass; rollout compatibility check still open",
+    "stage_b_sha256": "ce416c5b5f14e062abdc66540e0f5c7cca61025a83955b81f6fc287588be92f2",
+    "refund_refusal_preserved": true
+  },
+  "production_before_functions": [
+    {
+      "signature": "fn_ca_settle_final_table_deal_share_raw(uuid,uuid,numeric)",
+      "source_md5": "58e2768644b692f23a9a071a8a5d1ee8",
+      "owner": "postgres",
+      "prosecdef": true,
+      "proconfig": ["search_path=public"],
+      "proacl": "{postgres=X/postgres}"
+    },
+    {
+      "signature": "fn_ca_settle_tournament_bubble_raw(uuid,uuid,numeric)",
+      "source_md5": "3a5a0f079b7884a5bd2e6bfe6a15ccb7",
+      "owner": "postgres",
+      "prosecdef": true,
+      "proconfig": ["search_path=public"],
+      "proacl": "{postgres=X/postgres}"
+    },
+    {
+      "signature": "fn_ca_settle_tournament_place_raw(uuid,integer,uuid,numeric)",
+      "source_md5": "329237bd65214e17d4ca3298f363f248",
+      "owner": "postgres",
+      "prosecdef": true,
+      "proconfig": ["search_path=public"],
+      "proacl": "{postgres=X/postgres}"
+    },
+    {
+      "signature": "fn_claim_tournament_finish(uuid,uuid,text)",
+      "source_md5": "f311bf0c9982cb078e3ead104b61b310",
+      "owner": "postgres",
+      "prosecdef": true,
+      "proconfig": ["search_path=public, pg_temp", "statement_timeout=30s"],
+      "proacl": "{postgres=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "signature": "fn_settle_tournament_final_table_deal(uuid)",
+      "source_md5": "141c723b5225bcec588b8957cf039184",
+      "owner": "postgres",
+      "prosecdef": true,
+      "proconfig": ["search_path=public", "statement_timeout=30s"],
+      "proacl": "{postgres=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "signature": "fn_tournament_finish_kind(uuid)",
+      "source_md5": "1269d0dc07db2ff5fcc5182ea5606caa",
+      "owner": "postgres",
+      "prosecdef": true,
+      "proconfig": ["search_path=public, pg_temp"],
+      "proacl": "{postgres=X/postgres}"
+    },
+    {
+      "signature": "fn_tournament_finish_readiness(uuid,uuid)",
+      "source_md5": "ac4a33b4428ca68fb385b7de764a8590",
+      "owner": "postgres",
+      "prosecdef": true,
+      "proconfig": ["search_path=public, pg_temp"],
+      "proacl": "{postgres=X/postgres}"
+    },
+    {
+      "signature": "trg_atomic_final_table_deal_completion_guard()",
+      "source_md5": "e06ea880dfb7c1efe77daddc51a893b9",
+      "owner": "postgres",
+      "prosecdef": true,
+      "proconfig": ["search_path=public"],
+      "proacl": "{postgres=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "signature": "trg_freeze_atomic_final_table_deal_obligation()",
+      "source_md5": "56a96a897002da48ccd79c9dde14eb59",
+      "owner": "postgres",
+      "prosecdef": true,
+      "proconfig": ["search_path=public"],
+      "proacl": "{postgres=X/postgres,service_role=X/postgres}"
+    }
+  ],
+  "browser_latest": {
+    "status": "unverified",
+    "existing_tab": 13,
+    "failure": "CDP operation refresh tabs timed out after 20000ms",
+    "ui_success_claimed": false
+  },
+  "entry_receipt_review": {
+    "live_logger_body_md5": "f9d423ecda16d49d698a1b3735baf7cb",
+    "finding": "entry receipt reads tournament host club while current debit may use union origin club",
+    "native_confirmation_pending": true
+  },
+  "resumed_chat": {
+    "status": "in_progress",
+    "final_deal_native": "paid, unpaid, partial each pass 41 assertions; exact catalog and data rollback; true terminal claim, final receipt late fault, replay, timezone change, and immutable evidence",
+    "new_production_applied": false,
+    "corrected_unshipped_runtime": [
+      "v2 completing claim guard",
+      "v2 status guard",
+      "v2 completion certificate dispatch",
+      "normal-place guard dispatch for v2 deal",
+      "timezone-independent batch input fingerprints"
+    ],
+    "entry_native": "21 checks pass with exact rollback; committed fc6172626360f581d4e70df6cfa7c376d410c741",
+    "next": [
+      "Correct current late-entry first-table creation and confirm the known union wallet receipt mismatch",
+      "Complete bounty/mystery, cancellation/satellite and remaining 12-control acceptance; preserve separate 58-control audit scope",
+      "Apply verified migrations, push through normal hooks, verify publication and coordinated engine adoption"
+    ],
+    "readiness_compatibility": "Resolved: to_jsonb(batch) reads absent contract_version as legacy v1; existing place behavior remains guarded and no normal-v2 helper is called before Stage B.",
+    "bounty_native": "All five current bounty/PKO/mystery generation and rollback cases pass with exact rollback at 17:41:47 UTC; terminal residual remains",
+    "publication_block": "Automatic review rejected merge/push to unverified GitHub destination, then rejected using local GitHub token to verify it. Neither command ran. Complete local acceptance; publication requires resolving that specific authorization block."
+  },
+  "resumption_updates": [
+    {
+      "recorded_at": "2026-09-10T18:17:16.997633+00:00",
+      "phase_three_closed": false,
+      "entry_commit": "fc6172626360f581d4e70df6cfa7c376d410c741",
+      "final_deal_migration": "supabase/migrations/20260910181508_final_deal_receipts_survive_real_terminal_settlement.sql",
+      "final_deal_bundle_sha256": "d294a20a507a8ca6608cc494660bd0812c0181a43922d49e85450f68315c4972",
+      "final_deal_acceptance": {
+        "paid": 41,
+        "unpaid": 41,
+        "partial": 41,
+        "exact_rollback_all": true,
+        "first_install_and_reapplication": true,
+        "current_rolling_lane_body_md5": "3acb4c1d763181905cf5b64287f8f28f",
+        "whole_stage_b_executed": false
+      },
+      "bounty_acceptance": {
+        "cases_passed": 5,
+        "latest_repeat_exact_rollback": true,
+        "prior_pg_class_hash_mismatch_retained": true,
+        "mismatch_cause": "unresolved; independent repeat recorded no row differences",
+        "terminal_completed": false,
+        "rolling_lane_body_md5_tested": "2bc939035496d764ff9d6c14b52fa1e7"
+      },
+      "production_migration_applied": false,
+      "pushed": false,
+      "published": false,
+      "remaining": [
+        "Full Stage B composition, break-window bootstrap and source/retirement/adoption gates",
+        "Bubble/normal, bounty and mystery terminal completion; overlays, satellite liabilities and cancellation through current authorities",
+        "Browser permission/persistence agreement",
+        "Current engine adoption, CI merge, production postflight and both published ca_sha checks"
+      ],
+      "automatic_review_blocks": [
+        "GitHub push to Smarter-Poker/Smarter-Poker-Club-Arena rejected as unverified external destination for production-derived audit code; command did not run",
+        "Local .env GITHUB_TOKEN API verification rejected; command did not run",
+        "Two delegated remote file/metadata review tasks rejected as private-repository disclosure through an unverified connector; commands did not run; agents stopped"
+      ]
+    }
+  ]
+}

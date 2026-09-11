@@ -17,9 +17,10 @@
  *         and its `remainder -= weight; if (remainder <= 0)` loop could award a
  *         ZERO-weight tier when the remainder landed exactly on a boundary.
  *
- * The release gate must never depend on a lucky random sample. Every assertion
- * below drives WebCrypto with an exact Uint32 sequence, including rejection
- * boundaries, and exhausts every Fisher-Yates path for a four-element array.
+ * Exact Uint32 vectors cover rejection boundaries and every Fisher-Yates path
+ * for a four-element array. The separate real-entropy check exercises Deck's
+ * production CSPRNG with an explicit 1e-6 approximate false-rejection budget;
+ * see docs/changelog/2026-09-11-shuffle-statistical-qualification.md.
  */
 
 import { afterEach, describe, it, expect, vi } from 'vitest';
@@ -55,6 +56,7 @@ const UINT32_RANGE = 0x100000000;
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -214,6 +216,32 @@ describe('Deck.shuffle', () => {
     expect(cards).toEqual([...newDeckOrder.slice(1), newDeckOrder[0]]);
     expect(new Set(cards).size).toBe(52);
     expect(entropy.getRandomValues).toHaveBeenCalledTimes(51);
+  });
+
+  it('deals the ace of spades across all positions using real CSPRNG entropy', () => {
+    // One prespecified marginal test, 52 cells, no fitted parameters: df = 51.
+    // scipy.stats.chi2.isf(1e-6, 51) = 114.07566776592196. With 26,000 decks
+    // the expected cell count is 500, supporting the chi-square approximation.
+    // Never retry until green or seed/mock this entropy source. A rejection is
+    // evidence to investigate, not permission to change cards or the threshold.
+    vi.unstubAllGlobals();
+    vi.spyOn(Math, 'random').mockImplementation(() => {
+      throw new Error('Deck must never obtain entropy from Math.random');
+    });
+    const deals = 26_000;
+    const positions = new Array<number>(52).fill(0);
+    for (let i = 0; i < deals; i++) {
+      const cards = new Deck().deal(52);
+      const position = cards.findIndex((card) => card.rank === 'A' && card.suit === 'spades');
+      if (position < 0) throw new Error('Shuffled deck lost the ace of spades');
+      positions[position]++;
+    }
+    const expected = deals / positions.length;
+    const statistic = positions.reduce((sum, count) => sum + (count - expected) ** 2 / expected, 0);
+    expect(
+      statistic,
+      `Real CSPRNG: N=${deals}, df=51, alpha=1e-6, chiSquare=${statistic}, counts=${positions.join(',')}`
+    ).toBeLessThan(114.07566776592196);
   });
 });
 

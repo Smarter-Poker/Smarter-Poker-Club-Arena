@@ -217,3 +217,65 @@
   outline: 0.4cqw solid #8fd4ff;
   outline-offset: -0.6cqw;
 }
+
+/* ── ARENA RAIL ────────────────────────────────────────────────────────────
+   Diamond Arena, Dan 2026-09-11: "HAVE IT SAY JUST 'ACTIVE' AND THE NUMBER
+   UNDER IT. AND THE FREE ROLL STARTS CLOCK."
+
+   One open club has no join code to level up and no membership to count, so
+   the master's painted "PLAYING NOW" rail and the level plate both say
+   nothing true there. This rail is OPAQUE on purpose: the label it replaces
+   is paint, not markup, so the only way to retire it is to cover it. It ends
+   above the share button and is painted before it, so that 44px target is
+   untouched. */
+.club-identity__arena {
+  position: absolute;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-items: center;
+  gap: 1.2cqw;
+  padding: 0 1cqw;
+  border-radius: 1.1cqw;
+  background: #06090d;
+  box-shadow: inset 0 0 0 0.18cqw #1d2a38;
+  overflow: hidden;
+}
+
+.club-identity__arena-stat {
+  display: grid;
+  justify-items: center;
+  gap: 0.5cqw;
+  min-width: 0;
+  text-align: center;
+}
+
+.club-identity__arena-label {
+  color: #8ea3b8;
+  font-size: 1.9cqw;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  line-height: 1;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.club-identity__arena-value {
+  display: block;
+  max-width: 100%;
+  color: #5b83e8;
+  -webkit-text-fill-color: #5b83e8;
+  font-size: 3.4cqw;
+  font-weight: 800;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.club-identity__arena-value--timer {
+  font-variant-numeric: tabular-nums;
+}
+
+.club-identity__arena-stat--imminent .club-identity__arena-value {
+  color: #ff6a6a;
+  -webkit-text-fill-color: #ff6a6a;
+}

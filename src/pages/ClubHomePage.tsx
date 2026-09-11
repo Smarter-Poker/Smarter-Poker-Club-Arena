@@ -634,6 +634,7 @@ function tournamentOpenFirst(
 import PageErrorBoundary from '../components/common/PageErrorBoundary';
 import ArenaAccessBoundary from '../components/arena/ArenaAccessBoundary';
 import { useArenaAccess } from '../components/arena/arenaAccess';
+import { useDiamondFreerollCountdown } from '../hooks/useNextDiamondFreeroll';
 import { publicOrigin } from '../lib/appBase';
 
 export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: string } = {}) {
@@ -667,6 +668,12 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
   const isAutomaticArena = arenaAccess?.automaticMembership === true;
   const automaticMembershipRef = useRef(isAutomaticArena);
   automaticMembershipRef.current = isAutomaticArena;
+  /* Dan 2026-09-11: "HAVE IT SAY JUST 'ACTIVE' AND THE NUMBER UNDER IT. AND
+     THE FREE ROLL STARTS CLOCK." The arena has no membership to count and no
+     level to climb, so its identity rail carries those two figures instead.
+     The countdown reads nothing at all on a chip club: `null` is the "already
+     know the time" seam, so the hook issues no query there. */
+  const arenaFreeroll = useDiamondFreerollCountdown(isAutomaticArena ? undefined : null);
   useVisibilityRefresh(() => loadClubData());
   const navigate = useAppNavigate();
   const isMountedRef = useIsMounted();
@@ -4628,6 +4635,16 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
             playerId={currentUser?.player_number}
             level={clubLevel?.level}
             playersPlaying={playersPlaying}
+            arenaStats={
+              isAutomaticArena
+                ? {
+                    activeCount: playersPlaying,
+                    freerollText: arenaFreeroll.text,
+                    freerollTitle: arenaFreeroll.title,
+                    freerollImminent: arenaFreeroll.imminent,
+                  }
+                : null
+            }
             onCopyClubId={() => {
               navigator.clipboard.writeText(club.club_id.toString());
               toast.success('Club ID Copied');

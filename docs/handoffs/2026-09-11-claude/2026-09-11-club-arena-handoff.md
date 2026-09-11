@@ -1,6 +1,6 @@
 # CLUB ARENA — OPERATIONAL HANDOFF (OPORD FORMAT)
 
-**From:** Claude (Cowork session `635ed867`, operator: Dan) · **As of:** 2026-09-11 ~12:35 UTC · **Classification:** internal, contains hosts/IDs, no secrets
+**From:** Claude (Cowork session `635ed867`, operator: Dan) · **As of:** 2026-09-11 ~13:06 UTC (last updated after live verification of the 12:55 deploy) · **Classification:** internal, contains hosts/IDs, no secrets
 
 > **Read this whole document before touching production.** Section 7 is the ordered pick-up checklist. Section 4 lists the rules; they are hard rules. Everything this document says was measured or written this session. Anything unverified is marked **UNVERIFIED**. The raw evidence is in `docs/handoffs/2026-09-11-claude/evidence/`:
 >
@@ -12,13 +12,22 @@
 
 ## 0. BLUF (bottom line up front)
 
-1. **The engine is degraded right now, and its horses are the bottleneck.**
-   - Build `80769f9b` has run since the 11:56 UTC restart. At 12:18 UTC: 311 dealable tables, and 311-349 horse decisions queued in the live HorseLogic lane. The oldest was 6.7-8.0 s old against an 8 s budget.
-   - 11,624 decisions expired between 11:56 and 12:18. An expired decision means the horse takes its fail-safe action (check/fold).
-   - Average hand time is ~35.6 s, and host CPU is 85% user.
-   - **Root cause #1 is fixed and shipping:** #4295 (merged as `4895030e22`).
-   - **Root cause #2, capacity, is not fixed.** See §6.1 and the horse/engine separation design in §8.
-2. **Deploy in flight:** run `34598480706` (workflow_dispatch, main `4895030e22`) cuts over in the **12:55 UTC maintenance break**. It carries:
+1. **The horse-lane fix is live and verified.** Build `4895030e` has been running since the 12:55 break (deploy run `34599636898`, success).
+   - **Before**, 12:45 UTC on build `80769f9b`, ~265 tables:
+     - 265-269 decisions queued, the oldest 7.3-7.6 s old
+     - ~258 decisions expired per minute (horses forced to check/fold)
+     - lane throughput ~32 jobs/s
+     - average hand 38.8 s
+   - **After**, 13:04 UTC on build `4895030e`, ~277 tables:
+     - queue 0-15, oldest ≤ 92 ms, **0 expired**
+     - throughput ~78 jobs/s
+     - average hand 20.7 s and falling
+   - The post-break surge (13:02-13:03, 293 tables) briefly built a 206-deep queue (oldest 2.3 s, still 0 expired), which drained by 13:04.
+   - **Capacity is still the ceiling:** the host is at ~83% user CPU and 12.7% idle. A busier hour can saturate the lane again (§6.1, §8).
+2. **Deployed at 12:55:** run **`34599636898`** (workflow_dispatch, main `4895030e22`) cut over and its Verdict is green.
+   - The first run, `34598480706`, failed its server-test step at 12:34:40 on a **flaky statistical test**: `src/engine/CryptoRandom.test.ts > Deck.shuffle > deals the ace of spades to a uniform position`, "expected 33 to be less than 32.91", 1 failed of 9,454.
+   - The train handed on by itself.
+   - It carries:
    - #4270: the deploy gate reads a degraded engine's 503 body
    - #4293: settle and doors rank a bust by hand time (engine side)
    - #4295: the horse lane is pipelined
@@ -27,14 +36,16 @@
 4. **Money/tournament state:** all rulings applied today verified clean, and the satellite ruling closed at 12:11 (15 settled, 15 seated, 1 cancelled). Still open:
    - 59 tournaments cannot finish on their own: 57 one-seat-per-table events, plus c1f15c30 and a5aa6984. The fix and rulings are prepared, but ordering is mandatory (§6.4).
    - 79 horse-only REGISTERING events from 09-08 need a ruling.
-5. **Three PRs are open and should merge, but MERGES ARE BLOCKED.** At **12:20:32 UTC** someone updated the `main protection` ruleset to add the required status check **`Stage B Release Freeze`**.
-   - No workflow on main emits that check, so nothing can merge right now. It looks like the Codex Stage-B release freeze (#4232). I do not know who set it.
-   - **Do not bypass it** (no admin merge, no fake status). Ask Dan first.
-   - The blocked PRs:
-     - #4292: mystery engine follow-up; manifests regenerated
-     - #4296: satellite feeder; its migration is already applied
-     - #4299: this handoff, docs only
-   - #4292 and #4296 had been opened as drafts; I marked them ready for review.
+5. **The unauthorized merge freeze is gone, and a guard against it is published.**
+   - At 12:20:32 UTC the required check `Stage B Release Freeze` was added to the `main protection` ruleset through the shared Smarter-Poker account (ruleset history version 49408418). No workflow produces that check, so every merge was blocked.
+   - Dan did not authorize it and ordered it removed and never allowed back. It was removed at 12:47:26 (version 49411053).
+   - Once it was gone I merged **#4292** (`5a7abc7706`) and **#4296** (`6d7b08515c`). Both deploy at the **13:55 break**; verify them.
+   - **Guard:** law test `tests/no-merge-gate-without-a-producer.law.test.ts` on `fix/no-merge-gate-without-a-producer` (`b3338e8cfe`, PR auto-opened). It pins:
+     - every required check has a producing workflow job
+     - nothing is named as a freeze
+     - only the two named scripts may write a ruleset
+   - **Remaining door (Dan's call):** agent tokens hold Administration: write, so a hand edit through the API is still possible. Restrict agent tokens to read-only on rulesets.
+   - The handoff itself is **#4299**.
 6. **Two backup branches must NOT be merged before their preconditions:**
    - `backup/claude-2026-09-11/a-frozen-sweep-owes-the-balancer-a-pass-after-the-thaw`
    - `backup/claude-2026-09-11/late-status-flip-keeps-paid-ladder`
@@ -89,13 +100,13 @@ Horses get only their own hole cards plus public state; the worker rejects any s
 
 ### 1.5 Today's deploy timeline (UTC)
 
-| Time                | Build                                                       | What                                                            |
-| ------------------- | ----------------------------------------------------------- | --------------------------------------------------------------- |
-| 06:57               | #4225 via Dan's one-build exception (#4235, spent by #4257) | deadline clock fix                                              |
-| 08:55               | `9284d7ec`                                                  | #4266 equity pool recovery, #4267 degraded-cert reads, and more |
-| 10:55               | `c113fbe7`                                                  | #4274, #4276, #4275, #4277, #4279, #4281, #4285                 |
-| 11:56               | `80769f9b`                                                  | Codex #4289 (restart at 11:56:00; not mine)                     |
-| **12:55 (pending)** | **`4895030e22`**                                            | #4270, #4293, #4295. Run `34598480706`                          |
+| Time                | Build                                                       | What                                                                                                    |
+| ------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| 06:57               | #4225 via Dan's one-build exception (#4235, spent by #4257) | deadline clock fix                                                                                      |
+| 08:55               | `9284d7ec`                                                  | #4266 equity pool recovery, #4267 degraded-cert reads, and more                                         |
+| 10:55               | `c113fbe7`                                                  | #4274, #4276, #4275, #4277, #4279, #4281, #4285                                                         |
+| 11:56               | `80769f9b`                                                  | Codex #4289 (restart at 11:56:00; not mine)                                                             |
+| **12:55 (pending)** | **`4895030e22`**                                            | #4270, #4293, #4295. Run `34599636898` (the first run, `34598480706`, failed on the CryptoRandom flake) |
 
 ---
 
@@ -279,6 +290,7 @@ Decisions taken, with the reasons:
   13. ROLLBACK on failure
   14. Verdict
 - **Catch:** a run resolves its target at step 2. A merge that lands after a run has started waits for the next break, one hour later, unless you cancel the older run before it reaches the host. I did this at 12:21 so #4295 makes 12:55.
+- When a run fails (e.g. a flaky server test), its Verdict hands on with a fresh `workflow_dispatch` on main. Seen at 12:34:43: `34599636898` replaced `34598480706`.
 
 ### 5.5 Files you will need (Mac)
 
@@ -320,20 +332,26 @@ Decisions taken, with the reasons:
   - `GameServer.ts`: `OWNERSHIP_LEASE_RENEWAL_CADENCE_MS = 20000/4 = 5000`.
   - `services/supabase/client.ts`: `DB_TIMEOUT_MS = SUPABASE_TIMEOUT_MS ?? 15000`.
   - A pass at t0 succeeds (proof until t0+20). The pass at t0+5 hangs until t0+20 and times out exactly as the proof expires, so every verified cash dealer self-terminates. One hung request is enough.
-- **Fix to write:**
-  - Give `heartbeatTables` (and `heartbeatTournaments` in `services/tournamentLease.ts`) a per-attempt deadline of about 4.5 s (`supabase.rpc(...).abortSignal(AbortSignal.timeout(4500))`). The fetch wrapper already links the caller's signal. The next serialized pass then starts immediately after a failure, so at least 3 attempts fit inside the 20 s window.
-  - Keep every fail-closed rule: UNKNOWN extends nothing, and busy extends nothing.
-  - Tests: a fake-clock test with one hung attempt must NOT expire the dealers, and three consecutive hung attempts still must.
-  - Also consider a changelog/law test, and making the heartbeat deadline a function of the remaining proof window.
-  - Optional and larger: fence-and-suspend instead of kill-for-restart. A later `kept` exact-generation proof would resume the same engine, which is safe because a takeover always writes a new generation. Discuss with Dan before building it.
+- **Fix to write. Prefer hedged heartbeats over a short timeout.** I analysed both:
+  - **Option A, a per-attempt deadline** (e.g. race the RPC against 4.5 s): three attempts fit in the 20 s window. **But it regresses a slow-but-alive database.** If every heartbeat takes ~6 s, today's code succeeds (a pass starting at t0+5 answers at t0+11 and proves until t0+25). With a 4.5 s cut, every attempt is abandoned and all dealers expire. Do not ship A alone.
+  - **Option B, hedged (overlapping) heartbeats (recommended):**
+    - The renewal loop starts a new heartbeat every cadence (5 s) even while an older one is still pending, bounded to 3 in flight.
+    - Each answer applies its own proof, anchored at that request's start. `renewEngineLeaseProof` already keeps the greatest deadline ("concurrent renewal callers can complete out of order… keep the greatest one").
+    - A hung request no longer blocks the next attempt, and a slow one still counts when it lands.
+    - Work: `GameServer.runOwnershipLeaseRenewalLoop` / `renewOwnedEngineLeaseProofs` (currently single-flight), for both scopes (`heartbeatTables`, `heartbeatTournaments`).
+    - Keep every fail-closed rule: UNKNOWN extends nothing, busy extends nothing, and taken/stale/missing is a loss.
+    - Make sure a late 'answered' loss from an older pass cannot override a newer proof unless it is a genuine taken/stale/missing, and reason through the DB ordering carefully.
+    - Overlapping `heartbeat_table_leases_v4` calls on the same rows return `busy` rather than block. Confirm in its SQL.
+  - **Tests** (fake monotonic clock, `_setTableLeaseMonotonicNowForTests`): one hung attempt plus a later healthy attempt must NOT expire dealers; a uniformly 6 s-slow DB must NOT expire dealers; three genuinely failed windows still must. Add a law test and a changelog.
+  - **Optional and larger:** fence-and-suspend instead of kill-for-restart. A later `kept` exact-generation proof would resume the same engine, which is safe because a takeover always writes a new generation. Discuss with Dan before building it.
 - **Related noise after a storm:** "33 x GameServer.table_lease_lost … to another engine instance". Only one instance exists; these are re-admissions. Check them after the fix.
 
 ### 6.3 P1 — Merge and ship the open PRs
 
-- **Blocked:** the required check `Stage B Release Freeze` was added to ruleset `main protection` (id 21163380) at 12:20:32 UTC, and no workflow produces it. Find out from Dan whether the freeze is intentional and when it lifts. Never fake the status or admin-merge.
-- #4292: all runs green at `8004205650` (manifests regenerated), marked ready. Merge when the freeze lifts. It deploys at the next break.
-- #4296: all runs green at `ceb96f193f`, marked ready. Merge when the freeze lifts. This stops the `satellite_atomic_creation_failed` noise.
-- #4299: this handoff (docs only). Merge when the freeze lifts.
+- The freeze was removed at 12:47:26; see BLUF item 5.
+- #4292 merged at 12:5x as `5a7abc7706`; it deploys at the 13:55 break. Verify that the mystery activation logs no `mystery_bounty_unrecorded_heads_unreadable`.
+- #4296 merged as `6d7b08515c`; it deploys at 13:55. Verify that `satellite_atomic_creation_failed` stops.
+- #4299 (this handoff) and the freeze-guard PR (`fix/no-merge-gate-without-a-producer`) should auto-merge. Confirm.
 - After each deploy: `/health` version, the engine log greps, and the doors step green.
 
 ### 6.4 P1 — 59 tournaments that cannot finish (ORDER IS MANDATORY)
@@ -439,20 +457,24 @@ Evidence: `evidence/2026-09-11T1230-stuck-events-investigations.md` (sweep, 12:1
 - Task #11 ("a table frozen mid-hand inside a break is reaped and re-parked, so a broken build can still certify") shipped as #4255. Verify at the next break: `maintenance.unparkedTables` should reach 0 and `readyForRestart` true.
 - Deploy pipeline edge cases, now covered by #4262: a pending rollback survives replacement, and a workflow-only fix starts a run. Re-verify with a real rollback drill when Dan allows.
 - REGISTERING pass serial count sweep: batched by #4256 and #4274.
+- **Flaky deploy-blocking test:** `server/src/engine/CryptoRandom.test.ts` "deals the ace of spades to a uniform position".
+  - A chi-square test over the real CSPRNG with a fixed critical value (32.91), so it fails by chance at roughly its significance level.
+  - It failed deploy run `34598480706` at 12:34:40 UTC.
+  - Fix: a much lower false-failure rate (e.g. a critical value for p=1e-6, or 3 trials that must all fail). Keep it a real test of the shuffle; don't seed away the CSPRNG.
 
 ---
 
 ## 7. PICK-UP CHECKLIST (do these in order)
 
-1. **~13:00-13:05 UTC, verify the 12:55 cutover:**
+1. **DONE 13:04: the 12:55 cutover to `4895030e` is verified (BLUF item 1).** Keep watching the lane through the next busy hour. The commands, for re-checks:
    - `bash ~/tmp-claude/verify_engine.sh` → `version 4895030e`, `status ok`
    - `curl -s https://engine.smarter.poker/health | python3 -c "import json,sys;h=json.load(sys.stdin)['liveHorseDecision'];print(h['queueDepth'],h['inFlightJobs'],h['oldestQueuedAgeMs'],h['expiredJobs'])"`
      - expect `inFlightJobs` ≤4 and `oldestQueuedAgeMs` in the tens of ms at moderate load
      - expect `expiredJobs` flat
-   - the deploy run `34598480706` Verdict is green
+   - the deploy run `34599636898` Verdict is green (if it failed on the CryptoRandom flake again, the train hands on; check the newest run)
    - if the cutover failed: read the run logs (`actions/jobs/<id>/logs`) and the ROLLBACK step. Do not force anything.
 2. **Watch 15 minutes of load:** Prometheus queue depth and oldest age, `avgHandDurationMs`, and `top -H`. Decide §6.1 options 1 and 2. Tell Dan about capacity with numbers.
-3. **Merge #4292, #4296 and #4299 once Dan lifts the `Stage B Release Freeze`** (§6.3; it blocks every merge since 12:20:32 UTC). Each deploys at the next break; verify each.
+3. **Verify the 13:55 deploy** of #4292 and #4296 (both merged). Confirm that #4299 (handoff) and the freeze-guard PR merged. If `Stage B Release Freeze`, or any required check with no producer, reappears in the `main protection` ruleset, remove it (Dan's order) and tell Dan.
 4. **Write the lease heartbeat fix** (§6.2): PR, CI, merge, deploy, verify. Next time a supabase_timeout burst hits, the kills should not happen.
 5. **Stuck tournaments** (§6.4 A/E/E2/E3):
    - first reconcile the two agents on PG17 (E2)

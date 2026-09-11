@@ -10,13 +10,13 @@ You are taking over live operations of **Club Arena** (the Smarter Poker engine 
    - no money or seat writes :55-:00
    - engine restarts only through the deploy train in the :55 break
    - never claim success without end-to-end production evidence
-3. Execute section 7 (pick-up checklist) in order. Step 1 comes first: verify that the 12:55 UTC cutover to main `4895030e22` (#4270, #4293, #4295) actually happened, and that the horse lane is healthy:
+3. Execute section 7 (pick-up checklist) in order. The 12:55 cutover to `4895030e` (#4270, #4293, #4295) was verified at 13:04 UTC: queue 0-15, 0 expired, ~78 jobs/s, hands 20.7 s. Keep checking that the horse lane stays healthy under load:
    - `inFlightJobs` ≤ 4
    - `oldestQueuedAgeMs` in the tens of ms
    - `expiredJobs` flat
      If the lane is still at capacity, follow §6.1.
 4. The ordered tournament work in §6.4 is safety-critical. Apply the 7 re-sequences BEFORE the wake script and BEFORE merging `backup/claude-2026-09-11/a-frozen-sweep-owes-the-balancer-a-pass-after-the-thaw`.
-5. Merges to main are blocked. Since 12:20:32 UTC the required check `Stage B Release Freeze` has been part of the `main protection` ruleset, and no workflow emits it. Ask Dan before merging #4292, #4296 or #4299. Never bypass the freeze.
+5. The unauthorized `Stage B Release Freeze` required check was removed at 12:47:26 UTC on Dan's order, and it must never come back. If it, or any required check that no workflow produces, reappears in the `main protection` ruleset, remove it and tell Dan. #4292 and #4296 are merged and deploy at 13:55; verify them.
 6. §8 is the horse-brain/engine separation design. Present it to Dan with costs. Build it only after he approves.
 7. Report to Dan in plain language with numbers. Make operational calls yourself, and tell him when he is wrong.
 

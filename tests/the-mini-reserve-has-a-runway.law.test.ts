@@ -33,6 +33,60 @@ const read = (p: string) => readFileSync(resolve(ROOT, p), 'utf8');
 const RUNWAY_MIGRATION =
   'supabase/migrations/20260911164153_the_reserve_is_public_to_a_player_the_rake_rate_is_not.sql';
 
+const FLOOR_DEFAULT_MIGRATION =
+  'supabase/migrations/20260911210458_the_mini_floor_default_scales_with_the_tiers.sql';
+
+/**
+ * THE FLOOR'S DEFAULT IS DERIVED FROM WHAT A HIT COSTS (2026-09-11).
+ *
+ * `bbj_pools.mini_reserve_floor` carried the hard literal 5000.00 as its
+ * column DEFAULT. The NUMBER was right - 3.33x the largest enabled tier,
+ * 1.23x the worst day this jackpot has had (7 hits / 4,075.00 on one pool),
+ * 2.09 days of the busiest pool's backup income - and it is unchanged.
+ *
+ * Its FORM was the defect. The floor exists so a burst of hits cannot take a
+ * reserve dark, so its whole job is defined relative to the cost of a hit.
+ * A literal cannot know that: raise the tiers and the floor silently stops
+ * covering a bad day, with nothing anywhere to say so. That is the shape
+ * CLAUDE.md 1.1.7 names - a number tuned to something else and written down
+ * as a constant outlives the thing it was tuned to.
+ */
+describe('the mini floor a new pool starts with is derived, not typed', () => {
+  const sql = read(FLOOR_DEFAULT_MIGRATION);
+
+  it('the column default is a function call, never a literal', () => {
+    expect(sql).toMatch(
+      /ALTER COLUMN mini_reserve_floor SET DEFAULT public\.fn_bbj_default_mini_floor\(\)/
+    );
+    // the literal it replaced must not come back as the default
+    expect(sql).not.toMatch(/SET DEFAULT\s+5000/);
+  });
+
+  it('it is derived from the largest ENABLED tier, so it cannot cover less than a hit', () => {
+    const fn = sql.slice(sql.indexOf('CREATE OR REPLACE FUNCTION'), sql.indexOf('COMMENT ON'));
+    expect(fn).toContain('bbj_mini_tiers');
+    expect(fn).toMatch(/WHERE\s+mt\.enabled/);
+    expect(fn).toMatch(/max\(mt\.amount\)/);
+    /* A tier that is switched off costs nobody anything, so a floor sized to
+       it would hold chips against a payout that cannot happen. */
+    expect(fn).toMatch(/GREATEST\(/);
+  });
+
+  it('the migration asserts it still evaluates to the literal it replaces', () => {
+    // identical behaviour on the day it ships is what makes this safe to apply
+    expect(sql).toMatch(/v_default <> 5000[\s\S]{0,200}RAISE EXCEPTION/);
+  });
+
+  it('it moves no pool that already carries a floor', () => {
+    /* The floor is a per-pool CONTROL (fn_bbj_set_club_mini_floor). A default
+       decides where a NEW pool starts and must never reach back over a value
+       a club was entitled to set. */
+    const body = sql.slice(sql.indexOf('DO $$'));
+    expect(body).not.toMatch(/UPDATE\s+public\.bbj_pools/i);
+    expect(sql).toMatch(/must not move an existing pool floor/);
+  });
+});
+
 describe('the runway measures both rates over one honest window', () => {
   const sql = read(RUNWAY_MIGRATION);
 

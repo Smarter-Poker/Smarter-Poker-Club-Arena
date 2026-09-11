@@ -16,11 +16,11 @@ summary and the shipping record.
 The felt keeps the promise the picker makes. Read from `hand_history` joined to
 `cash_games` over 24,000 live hands, and independently a second time by lane J:
 
-| template | sold as | what the felt did |
-| --- | --- | --- |
-| classic | No Antes, No Bombs, No VPIP Floor | 0 antes, 0 bombs, 0 floor |
-| action | Small Blind Ante, VPIP Floor 30, Double Board Bomb Every 15 Minutes | all four, every table |
-| madness | Big Blind Ante, VPIP Floor 50, Double Board Bomb Every Orbit | all four, every table |
+| template | sold as                                                             | what the felt did         |
+| -------- | ------------------------------------------------------------------- | ------------------------- |
+| classic  | No Antes, No Bombs, No VPIP Floor                                   | 0 antes, 0 bombs, 0 floor |
+| action   | Small Blind Ante, VPIP Floor 30, Double Board Bomb Every 15 Minutes | all four, every table     |
+| madness  | Big Blind Ante, VPIP Floor 50, Double Board Bomb Every Orbit        | all four, every table     |
 
 0 of 109 enabled games and 0 of 141 open tables disagree with their template,
 and 4,344 hands in the last hour carried zero cross-template mismatches. The

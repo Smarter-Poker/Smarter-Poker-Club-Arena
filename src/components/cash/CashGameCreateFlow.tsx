@@ -468,8 +468,8 @@ export default function CashGameCreateFlow({
         </div>
         {stepModeDone && template !== 'classic' && (
           <p className="cash-create__note">
-            {templateLabel(template)} Runs One Game Per Blind Band Per Variant. A Greyed Rung Is
-            One This Club Already Holds.
+            {templateLabel(template)} Runs One Game Per Blind Band Per Variant. A Greyed Rung Is One
+            This Club Already Holds.
           </p>
         )}
         {/* WHY A RUNG IS GREY, WHERE A HOST CAN ACTUALLY READ IT (2026-09-09).

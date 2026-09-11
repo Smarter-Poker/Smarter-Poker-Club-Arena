@@ -18,6 +18,8 @@ Modern regression: the genuine E2 fixture with its original11 hypothetical futur
 
 Satellite scope remains distinct:3 source/target contract histories prove a20 entry promise plus8.50 remainder from each28.50 pool, but all3 lack original economic and entry-close receipts. Current target terms or a late start-trigger snapshot are not used as substitutes. Their completion is refused before any seal, status repair or payout while the separate reconstruction boundary is developed.
 
-Migration SHA256 `61ecf75531c8848c312397f5905ef5a46c640cf8190aff3bd10ca3e4250eda50`. Archive SHA256 `9e22f74e5b4a408a58afa6bbaaceff73bc466ca2130978326fc52c5b6f8c4c55`. Manifest SHA256 `3d8a9e8c2617a9487b322f1482d52ced77178074c9b2a2942f5dd13df96e8a8d`.
+Migration SHA256 `ce144d81c28fa1484435f77ae5dbccbb72b021edfe28602f826e26f6839f2796`. Archive SHA256 `1c7ca4dc0574a4c8014e5cc7be2f6fa9295a30f0a6dc7728df5d28e9d1442479`. Manifest SHA256 `54ad4a87627b8a138837a81af95ffe860583da06668ecddca247f3d08174b394`.
 
-No production writes, wakes, pushes or World Hub edits were performed.
+The terminal verifier explicitly retains its existing postgres-only execution contract. Migration preflight refuses permission drift before any source or accounting change; native validation added an authenticated grant, observed that refusal and complete rollback, restored the original ACL, then repeated all cash and modern E2 checks.
+
+No production writes, wakes or World Hub edits were performed.

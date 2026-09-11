@@ -1,4 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import * as IcmModel from './IcmModel.js';
+import * as FutureHand from './HorseTournamentFutureHand.js';
 import { projectTournamentFutureGame } from './HorseTournamentFutureGame.js';
 import {
   simulateTournamentContinuation,
@@ -466,6 +468,60 @@ describe('Phase 8 counterfactual selection', () => {
       expect(fresh.ledger.fired).toBe(true);
       expect(shared).toEqual(fresh);
       expect(JSON.stringify(shared.ledger)).not.toContain('continuePostflop');
+    }
+  );
+  it.each([false, true])(
+    'starts no ICM work after a future hand consumes the deadline (shared workspace: %s)',
+    (reuse) => {
+      const { gs, hero, input } = scenario();
+      let deadlinePassed = false;
+      let lateEstimates = 0;
+      const originalEstimator = IcmModel.createIcmEquityEstimator;
+      const originalFuture = FutureHand.simulateTournamentFutureHands;
+      const estimator = vi
+        .spyOn(IcmModel, 'createIcmEquityEstimator')
+        .mockImplementation((...args) => {
+          const value = originalEstimator(...args);
+          return {
+            ...value,
+            estimate: (...estimateArgs) => {
+              if (deadlinePassed) lateEstimates++;
+              return value.estimate(...estimateArgs);
+            },
+          };
+        });
+      const future = vi
+        .spyOn(FutureHand, 'simulateTournamentFutureHands')
+        .mockImplementation((args) => {
+          const result = originalFuture(args);
+          if (result) deadlinePassed = true;
+          return result;
+        });
+      try {
+        const previous = evaluateTournamentUtilityDetailed(input);
+        expect(previous.result).not.toBeNull();
+        const baseline = {
+          ...previous.result!.decision,
+          tournamentUtility: previous.result!.ledger,
+        };
+        const result = evaluateTournamentPostflop(
+          hero,
+          gs,
+          baseline,
+          input,
+          'shadow',
+          () => (deadlinePassed ? PHASE8_POLICY.workBudgetMs + 0.1 : 0),
+          reuse ? previous.continuePostflop : undefined
+        );
+        expect(deadlinePassed).toBe(true);
+        expect(result.decision).toBe(baseline);
+        expect(result.ledger.reason).toBe('continuation_operation_budget');
+        expect(result.ledger.fired).toBe(false);
+        expect(lateEstimates).toBe(0);
+      } finally {
+        future.mockRestore();
+        estimator.mockRestore();
+      }
     }
   );
   it('refuses a budget breach and a private-card boundary violation', () => {

@@ -1559,7 +1559,13 @@ function evaluateWithWorkspace(
     const key = vector.map((stack) => Math.round(stack * 100) / 100).join(',');
     const cached = estimateCache.get(key);
     if (cached) return cached;
-    if (input.withinBudget?.() === false || estimateCache.size >= MAX_ACTION_ICM_VECTORS) {
+    // A future hand can consume the continuation deadline after the sample's
+    // initial check. Do not begin another ICM pass after that budget is spent.
+    if (
+      input.withinBudget?.() === false ||
+      input.continuation?.withinBudget?.() === false ||
+      estimateCache.size >= MAX_ACTION_ICM_VECTORS
+    ) {
       operationBudgetHit = true;
       return {
         equity: 0,

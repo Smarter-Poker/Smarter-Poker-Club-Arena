@@ -2832,6 +2832,12 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         clubTournamentQuery,
         (async () => {
           try {
+            /* The third jackpot read. An arena pays no rake and banks no
+               pool, so this one asks for a row that cannot exist there;
+               the other two were closed on 2026-09-11 and this one was
+               missed because it is inlined in a Promise.all rather than
+               named like the feeds. */
+            if (automaticMembershipRef.current) return { data: null, error: null };
             // BUGFIX: resolve the CORRECT BBJ pool. Union clubs contribute to the
             // UNION pool (that's the one that grows); a club-level pool row may exist
             // but is stale. Fetch by union_id when in a union, else club_id.

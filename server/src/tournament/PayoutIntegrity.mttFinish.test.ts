@@ -37,9 +37,20 @@ const RECOVERY = read('src/tournament/tournamentRecovery.ts');
 const ATOMIC_ELIMINATION = read(
   '../supabase/migrations/20260908042000_bounty_elimination_outbox_is_atomic_and_recoverable.sql'
 );
-const migrationNames = fs
-  .readdirSync(path.join(process.cwd(), '..', 'supabase', 'migrations'))
-  .filter((name) => name.endsWith('.sql'));
+const migrationDirectory = path.join(process.cwd(), '..', 'supabase', 'migrations');
+const allMigrationNames = fs.readdirSync(migrationDirectory);
+const migrationNames = allMigrationNames.filter((name) => name.endsWith('.sql'));
+const stagedOrPromotedMigration = (logicalName: string): string => {
+  const matches = allMigrationNames.filter(
+    (name) => name.endsWith(`_${logicalName}.sql`) || name.endsWith(`_${logicalName}.sql.pending`)
+  );
+  if (matches.length !== 1) {
+    throw new Error(
+      `expected exactly one staged-or-promoted ${logicalName} migration; found ${matches.length}`
+    );
+  }
+  return read(`../supabase/migrations/${matches[0]}`);
+};
 const terminalSettlementName = migrationNames.find((name) =>
   name.includes('non_satellite_terminal_settlement_commits_one_stored_receipt')
 );
@@ -47,13 +58,7 @@ if (!terminalSettlementName) {
   throw new Error('current tournament terminal settlement migration is missing');
 }
 const TERMINAL_SETTLEMENT = read(`../supabase/migrations/${terminalSettlementName}`);
-const seatExitSettlementName = migrationNames.find((name) =>
-  name.includes('tournament_seat_exits_stay_inside_tournament_authority')
-);
-if (!seatExitSettlementName) {
-  throw new Error('current tournament seat-exit authority migration is missing');
-}
-const SEAT_EXIT_SETTLEMENT = read(`../supabase/migrations/${seatExitSettlementName}`);
+const SEAT_EXIT_SETTLEMENT = stagedOrPromotedMigration('stage_b_current_postimage_contraction');
 
 /** Strip line and block comments so a guard cannot pass on a mention in prose. */
 const code = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');

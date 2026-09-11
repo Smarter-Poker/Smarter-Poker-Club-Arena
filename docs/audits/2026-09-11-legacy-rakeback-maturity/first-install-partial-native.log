@@ -1,0 +1,3 @@
+PASS atomic first-install lock refusal preserves all original owners and creates no partial guard
+PASS exact atomic first installation overlaps actual old Round3 partially stale two-period caller
+{"mode":"first-install-partial","passed":2}

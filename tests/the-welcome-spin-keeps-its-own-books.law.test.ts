@@ -185,9 +185,9 @@ describe('once per member per host, ever', () => {
 
 describe('a welcome spin is the whole wheel or it is not offered', () => {
   it('the budget is asked once, about the biggest prize, before anything is offered', () => {
-    expect(CORE).toContain(
-      'v_welcome_spent := public.fn_wheel_welcome_spent(v_host, cfg.welcome_budget_period_days);'
-    );
+    // The spend and the top prize both come from the one helper (2026-09-11);
+    // the core used to call fn_wheel_welcome_spent and do its own arithmetic.
+    expect(CORE).toContain('FROM public.fn_wheel_welcome_room(v_host) r;');
     expect(CORE).toContain('IF v_welcome_spent + v_welcome_top > cfg.welcome_budget_chips THEN');
     expect(CORE).toContain('The Welcome Spins Here Are Gone For Now');
   });
@@ -213,9 +213,7 @@ describe('a welcome spin is the whole wheel or it is not offered', () => {
 
   it('the page asks the same question the door asks, from the same helper', () => {
     const state = body(inForce('fn_wheel_welcome_state').sql, 'fn_wheel_welcome_state');
-    expect(state).toContain(
-      'public.fn_wheel_welcome_spent(v_host, cfg.welcome_budget_period_days)'
-    );
+    expect(state).toContain('FROM public.fn_wheel_welcome_room(v_host) r;');
     expect(state).toContain("v_reason := 'pot_empty'");
     expect(state).toContain("'top_prize_chips', v_top");
   });
@@ -228,6 +226,87 @@ describe('a welcome spin is the whole wheel or it is not offered', () => {
     // 0 means for ever. A reset job would be a cron presented as the
     // resolution, which CLAUDE.md 10.12 forbids outright.
     expect(spent).toContain('COALESCE(p_days, 0) <= 0');
+  });
+});
+
+describe('one question, and every reader asks the same one', () => {
+  /**
+   * The post-phase-2 audit found fn_diamond_games_entry asking whether the
+   * budget merely EXCEEDED the spend, while the door and the page required the
+   * window to cover the TOP PRIZE. A probe on production showed the club
+   * lobby, the wallet, the cash buy-in and the tournament sign-up all saying
+   * "Welcome Spin Ready" on a host whose door then refused. Three copies of
+   * one rule is what caused it, so there is one copy.
+   */
+  const room = body(inForce('fn_wheel_welcome_room').sql, 'fn_wheel_welcome_room');
+
+  it('the helper is the only place the top prize is worked out', () => {
+    expect(room).toContain('max(CASE WHEN g.kind');
+    expect(CORE).not.toContain('max(CASE WHEN g.kind');
+    expect(body(inForce('fn_wheel_welcome_state').sql, 'fn_wheel_welcome_state')).not.toContain(
+      'max(CASE WHEN g.kind'
+    );
+  });
+
+  it('and a budget of zero is unfunded, not open with nothing in it', () => {
+    expect(room).toContain('o_open := COALESCE(cfg.welcome_budget_chips, 0) > 0');
+    expect(room).toContain('AND o_spent + o_top <= cfg.welcome_budget_chips');
+  });
+
+  it.each([
+    ['fn_wheel_spin_core', () => CORE],
+    [
+      'fn_wheel_welcome_state',
+      () => body(inForce('fn_wheel_welcome_state').sql, 'fn_wheel_welcome_state'),
+    ],
+    [
+      'fn_diamond_games_entry',
+      () => body(inForce('fn_diamond_games_entry').sql, 'fn_diamond_games_entry'),
+    ],
+  ])('%s asks it through the helper', (_name, get) => {
+    expect(get()).toContain('public.fn_wheel_welcome_room(');
+  });
+
+  it('no browser role may call the helper', () => {
+    const sql = inForce('fn_wheel_welcome_room').sql;
+    expect(sql).toContain('REVOKE ALL ON FUNCTION public.fn_wheel_welcome_room(uuid) FROM PUBLIC;');
+    expect(sql).toContain('REVOKE ALL ON FUNCTION public.fn_wheel_welcome_room(uuid) FROM anon;');
+    expect(sql).toContain(
+      'REVOKE ALL ON FUNCTION public.fn_wheel_welcome_room(uuid) FROM authenticated;'
+    );
+  });
+});
+
+describe('the operator console can see its own switch and its own window', () => {
+  /**
+   * Neither was ever in fn_wheel_state's config payload, so the page read
+   * undefined: the pill said Off however the switch was set, "Turn It Off"
+   * posted NOT false = true so it could never be turned off, and the Budget
+   * Window field always showed the 30 day default. That last one writes: the
+   * console posts budget and window together, so an operator on 7 days who
+   * saved a budget change silently put their window back to 30.
+   */
+  const state = body(inForce('fn_wheel_state').sql, 'fn_wheel_state');
+
+  it('both are in the config the console reads', () => {
+    expect(state).toContain("'welcome_spin_enabled', COALESCE(cfg.welcome_spin_enabled, false)");
+    expect(state).toContain(
+      "'welcome_budget_period_days', COALESCE(cfg.welcome_budget_period_days, 0)"
+    );
+  });
+
+  it('and the console reads them rather than assuming a default', () => {
+    const ops = readFileSync(
+      resolve(__dirname, '..', 'src/pages/club/ClubWheelOperationsPage.tsx'),
+      'utf8'
+    );
+    expect(ops).toContain('Boolean(cfg?.welcome_spin_enabled)');
+    expect(ops).toContain('String(c?.welcome_budget_period_days ?? 30)');
+    const service = readFileSync(
+      resolve(__dirname, '..', 'src/services/DiamondWheelService.ts'),
+      'utf8'
+    );
+    expect(service).toContain('welcome_budget_period_days: num(cfg.welcome_budget_period_days)');
   });
 });
 

@@ -48,7 +48,12 @@ export interface UserClub {
 export interface ClubStats {
   totalMembers: number | null;
   clubLevel: number | null;
+  /** Distinct players holding a live seat anywhere on the club's floor. */
   activePlayers: number | null;
+  /** Of those, distinct players at cash tables. */
+  activeCash?: number | null;
+  /** Of those, distinct players in tournaments, Spins and SNGs. */
+  activeEvents?: number | null;
 }
 
 export interface CarouselSectionProps {
@@ -263,6 +268,8 @@ export default function CarouselSection({
                   totalMembers={stats?.totalMembers ?? null}
                   clubLevel={stats?.clubLevel ?? null}
                   activePlayers={stats?.activePlayers ?? null}
+                  activeCash={stats?.activeCash ?? null}
+                  activeEvents={stats?.activeEvents ?? null}
                   clubId={club.club_id}
                   cardImageUrl={
                     Number(club.club_id) === SHARK_CLUB_ID

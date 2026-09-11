@@ -1,6 +1,6 @@
 # Current Work Closeout, 10 September 2026
 
-The current releasable web changes are published. The inspected audit source and proof branches are preserved remotely. The overall audit is **not complete**: Phase 3 of 12 remains open, with 4 of the original 58 controls fully verified (T12, K02, K11 and S09), and 54 open.
+The previously releasable web changes are published, and the inspected audit source and proof branches are preserved remotely. The overall audit is **not complete**. The full programme contains **216 original requirements**, including the user-excluded G07. **Phase 3 contains 58 of those requirements**: T12, K02, K11 and S09 are fully verified, and 54 remain open. The 7,038-row source inventory identifies coverage surfaces; it is not a record of line-by-line review.
 
 The [machine-readable inventory](2026-09-10-current-work-closeout.json) records exact commits, CI runs, public readbacks, archive references, worktree observations and remaining dependencies. It supersedes the release status in the earlier resume-swarm report.
 
@@ -47,4 +47,4 @@ Remaining work is explicit:
 
 The existing local clock rehearsal database is intentionally retained after automatic approval review rejected its cleanup. It is not an untracked source artifact or a production migration.
 
-No new audit phase was opened. The inspected work is either published, archived with its activation conditions, superseded by a verified successor, or explicitly blocked. This verified four-migration deployment does not close the remaining 54 controls.
+At the previous closeout, no new audit phase had been opened. The latest user request reopens the remaining in-scope work. The [12-phase plan](../CLUB-ARENA-12-PHASE-AUDIT.md), [216-requirement register](2026-09-08-platform-coverage/phase-requirements.json) and [54 open Phase 3 acceptance records](2026-09-10-phase3-independent-acceptance.json) remain authoritative. Phases 1 and 2 have scoped completion evidence, with their cross-phase obligations preserved. The four-migration deployment and this tracking correction close no additional full control.

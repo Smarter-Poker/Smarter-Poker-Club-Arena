@@ -4450,7 +4450,7 @@ export class TournamentRecurringService {
              seat-first chair from a separate booking for the same game. */
       const { data: chunk, error: seatErr } = await supabase
         .from('table_seats')
-        .select('user_id, table_id, tables!inner(status, tournament_id)')
+        .select('user_id, table_id, tables!table_seats_table_id_fkey!inner(status, tournament_id)')
         .is('left_at', null)
         .neq('tables.status', 'closed')
         /*

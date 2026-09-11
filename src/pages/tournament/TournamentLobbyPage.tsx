@@ -722,6 +722,7 @@ export default function TournamentLobbyPage() {
   return (
     <div className={styles.page} data-arena-surface="play">
       <CasinoSurfaceHeader
+        crest="vip"
         eyebrow="Play & Review / Tournament Lobby"
         title="Tournament Command"
         description="Discover Scheduled Fields, Inspect Live Events, And Enter Registration Through The Existing Tournament Service And Server-Authoritative Buy-In Flow."

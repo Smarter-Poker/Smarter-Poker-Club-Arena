@@ -25,29 +25,6 @@ export const fmtChips = (n: number | null | undefined): string => {
 };
 
 /**
- * The lobby's compact figure (Dan 2026-09-08: "once something hits over 1,000
- * use 1K, if its 1200 use 1.2K, if its 10,000 use 10K"). Whole chips under a
- * thousand, one decimal above it, trailing .0 dropped, always rounded DOWN so
- * a printed figure never overstates what a player has or is spending. Cards,
- * bays and popups use this; the felt keeps formatTableChips below.
- * @example compactChips(80)      → "80"
- * @example compactChips(1000)    → "1K"
- * @example compactChips(1250)    → "1.2K"
- * @example compactChips(10000)   → "10K"
- * @example compactChips(2500000) → "2.5M"
- */
-export const compactChips = (n: number | null | undefined): string => {
-  const v = Number(n ?? 0);
-  if (!Number.isFinite(v)) return '0';
-  const sign = v < 0 ? '-' : '';
-  const abs = Math.abs(v);
-  const oneDecimalDown = (x: number) => (Math.floor(x * 10) / 10).toFixed(1).replace(/\.0$/, '');
-  if (abs >= 1_000_000) return `${sign}${oneDecimalDown(abs / 1_000_000)}M`;
-  if (abs >= 1_000) return `${sign}${oneDecimalDown(abs / 1_000)}K`;
-  return `${sign}${Math.floor(abs + 1e-9).toLocaleString('en-US')}`;
-};
-
-/**
  * CHIPS ON THE FELT ARE NEVER ABBREVIATED (Dan 2026-08-28, binding).
  *
  * `fmtChips` above renders 117000 as "117.0K" and 247100 as "247.1K". On a
@@ -328,4 +305,32 @@ export const ordinal = (n: unknown): string => {
   if (mod100 >= 11 && mod100 <= 13) return `${v}th`;
   const suffix = ({ 1: 'st', 2: 'nd', 3: 'rd' } as Record<number, string>)[v % 10] ?? 'th';
   return `${v}${suffix}`;
+};
+
+/**
+ * #ClubArenaConsole money, forward-facing (Dan 2026-09-09): "NEVER USE DECIMAL
+ * POINTS ON ANY FORWARD FACING PAGE ... ONCE SOMETHING HITS OVER 1,000 USE 1K,
+ * IF ITS 1200 USE 1.2K, IF ITS 10,000 USE 10K." Whole numbers under 1,000; one
+ * decimal above, always rounded DOWN so a figure is never overstated, and a
+ * trailing .0 is dropped. Chips on the felt are never abbreviated: that is
+ * formatTableChips' law, and this helper is for everything outside the felt.
+ * @example compactChips(950) -> "950", compactChips(1200) -> "1.2K",
+ *          compactChips(1290) -> "1.2K", compactChips(10000) -> "10K"
+ */
+export const compactChips = (n: number | null | undefined): string => {
+  const v = Math.floor(Math.abs(Number(n) || 0));
+  const sign = Number(n) < 0 ? '-' : '';
+  const units: Array<[number, string]> = [
+    [1_000_000_000, 'B'],
+    [1_000_000, 'M'],
+    [1_000, 'K'],
+  ];
+  for (const [unit, suffix] of units) {
+    if (v >= unit) {
+      const tenths = Math.floor((v / unit) * 10) / 10;
+      const text = Number.isInteger(tenths) ? String(tenths) : tenths.toFixed(1);
+      return `${sign}${text}${suffix}`;
+    }
+  }
+  return `${sign}${v}`;
 };

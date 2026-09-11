@@ -31,7 +31,11 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { vpipFloorMul } from '../server/src/engine/HorseLogic.js';
+import {
+  VPIP_JUDGED_OVER_HANDS,
+  vpipFloorMul,
+  vpipTargetFor,
+} from '../server/src/engine/HorseLogic.js';
 
 const MIGRATION = readFileSync(
   resolve(
@@ -62,15 +66,46 @@ describe('a VPIP floor must be reachable', () => {
   });
 
   it('50 leaves the widening layer real room, and 70 did not', () => {
-    // The prior multiplier is BASE / (floor + 10pt cushion). Above the clamp
-    // means the layer can still steer; at the clamp it is pinned and the floor
-    // is unreachable however long the horse sits there.
-    const priorMulFor = (floorPct: number) =>
-      Math.max(CLAMP, Math.min(1, FLEET_BASE_VPIP / Math.min(0.95, floorPct / 100 + 0.1)));
+    /* THE LAW ASKS THE REAL FUNCTION NOW (2026-09-09). This used to restate
+       the arithmetic in a local helper - `BASE / (floor + 10pt)` - so the day
+       the cushion changed, the law would have gone on testing a formula the
+       brain no longer used and passed while saying nothing true. A law that
+       keeps its own copy of the thing it judges is not a law, it is a second
+       implementation. `vpipFloorMul` with no sample IS the prior.
+
+       Above the clamp means the layer can still steer; AT the clamp it is
+       pinned and the floor is unreachable however long the horse sits. */
+    const priorMulFor = (floorPct: number) => vpipFloorMul({ vpipFloor: floorPct });
 
     expect(priorMulFor(70)).toBeCloseTo(CLAMP, 5); // pinned - the old Madness
     expect(priorMulFor(50)).toBeGreaterThan(CLAMP); // has room - the new one
     expect(priorMulFor(30)).toBeGreaterThan(CLAMP);
+    // ...and the fleet's own base width is still what it steers from.
+    expect(FLEET_BASE_VPIP).toBeCloseTo(0.28, 5);
+  });
+
+  it('the cushion clears one standard error of the window the floor is judged over', () => {
+    /* WHY THE FLOOR WAS STILL BEING MISSED (measured 2026-09-09, 24h to
+       22:00). Both floors were reachable ON AVERAGE - Action played 47.1% into
+       a floor of 30, Madness 59.2% into 50 - and horses were still evicted at
+       the median on hand ELEVEN, the first hand the rule can fire: 27% of
+       every Action sitting and 56% of every Madness sitting ended
+       `vpip_evicted`, each one carrying a two-hour bar on that game.
+
+       `fn_nit_check` judges the CUMULATIVE rate of a sitting from ten hands
+       on, and a ten-hand proportion has a standard error near 15 points. A
+       flat ten-point cushion put the floor two thirds of one standard error
+       below the target, and 104 of 597 Madness sittings (17.4%) were already
+       under it at the very first check. Aiming a real margin above the floor
+       is the difference between a rule the fleet passes and a rule it fails
+       a sixth of the time before it has played a twelfth hand. */
+    for (const floor of [30, 50]) {
+      const p = floor / 100;
+      const se = Math.sqrt((p * (1 - p)) / VPIP_JUDGED_OVER_HANDS);
+      expect(vpipTargetFor(floor) - p, `floor ${floor}`).toBeGreaterThan(se);
+    }
+    // And the margin never pushes the target past what the layer can reach.
+    expect(vpipFloorMul({ vpipFloor: 50 })).toBeGreaterThan(CLAMP);
   });
 
   it('vpipFloorMul only ever widens, and never past its clamp', () => {

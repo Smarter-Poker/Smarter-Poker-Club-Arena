@@ -79,6 +79,7 @@
    nothing else. */
 .diamonds-to-chips,
 .lobby-diamond-games,
+.promotions-diamond-games,
 .wallet-diamond-games {
   display: block;
   width: 100%;
@@ -94,6 +95,13 @@
 
 .wallet-diamond-games {
   margin: 0.75rem auto;
+  max-width: 520px;
+}
+
+/* The promotions page carries the door too: the games ARE a promotion the club
+   runs, and the 2026-09-11 merge with main found the rewrite had dropped it. */
+.promotions-diamond-games {
+  margin: 0.75rem auto 0;
   max-width: 520px;
 }
 

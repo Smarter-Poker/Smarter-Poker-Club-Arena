@@ -295,6 +295,7 @@ export default function VIPPage() {
           description="Track Live Tier Progress, Review Earned Privileges, And Redeem VIP Rewards Through The Existing Protected Reward Services."
           art="vip"
           status="VIP TELEMETRY // SYNCING"
+          crest="vip"
           metrics={[
             { label: 'Current Points', value: 'Syncing', tone: 'attention' },
             { label: 'Monthly', value: 'Syncing', tone: 'live' },
@@ -316,6 +317,7 @@ export default function VIPPage() {
         description="Track Live Tier Progress, Review Earned Privileges, And Redeem VIP Rewards Through The Existing Protected Reward Services."
         art="vip"
         status="VIP TELEMETRY // LIVE"
+        crest="vip"
         metrics={[
           { label: 'Current Points', value: vipPoints.current.toLocaleString(), tone: 'attention' },
           { label: 'Monthly', value: vipPoints.monthly.toLocaleString(), tone: 'live' },

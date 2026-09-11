@@ -2961,7 +2961,7 @@ export abstract class TournamentManagerBase {
     const { data: seatRows, error: seatErr } = await supabase
       .from('table_seats')
       .select(
-        'user_id, table_id, seat_number, stack, tables!inner(id, tournament_id, status, current_players)'
+        'user_id, table_id, seat_number, stack, tables!table_seats_table_id_fkey!inner(id, tournament_id, status, current_players)'
       )
       .is('left_at', null)
       .eq('tables.tournament_id', this.tournamentId);
@@ -4511,7 +4511,8 @@ export abstract class TournamentManagerBase {
                 )
               : 0;
           const elapsed = Date.now() - levelStartedAt - pausedMs;
-          if (elapsed >= 0 && elapsed < durationMs * 4) {
+          // A persisted overdue level stays due, including after a long outage.
+          if (Number.isFinite(elapsed) && elapsed >= 0) {
             remainingMs = Math.max(1000, durationMs - elapsed);
           }
         }
@@ -5343,7 +5344,9 @@ export abstract class TournamentManagerBase {
 
     const { data: liveSeatRows, error: liveSeatRowsErr } = await supabase
       .from('table_seats')
-      .select('user_id, table_id, seat_number, tables!inner(tournament_id)')
+      .select(
+        'user_id, table_id, seat_number, tables!table_seats_table_id_fkey!inner(tournament_id)'
+      )
       .is('left_at', null)
       .eq('tables.tournament_id', this.tournamentId);
     if (liveSeatRowsErr) {
@@ -5651,7 +5654,7 @@ export abstract class TournamentManagerBase {
    * against Dan's 3-minute spec. The client masthead already normalizes all
    * three formats; this is the engine-side twin.
    */
-  protected levelDurationMs(levelData: any): number {
+  protected rawLevelDurationMs(levelData: any): number {
     const mins = Number(levelData?.durationMinutes ?? levelData?.duration_minutes);
     let baseMs = 10 * 60 * 1000;
     if (Number.isFinite(mins) && mins > 0) {
@@ -5660,6 +5663,11 @@ export abstract class TournamentManagerBase {
       const secs = Number(levelData?.duration);
       if (Number.isFinite(secs) && secs > 0) baseMs = secs * 1000;
     }
+    return baseMs;
+  }
+
+  protected levelDurationMs(levelData: any): number {
+    const baseMs = this.rawLevelDurationMs(levelData);
     // ACCELERATED MTT (2026-08-22 parity): once late registration has closed,
     // an accelerated tournament halves every remaining level - ceil(min/2).
     if (this.tournamentCache?.accelerated_mtt === true && this.isLateRegClosed()) {
@@ -5754,9 +5762,9 @@ export abstract class TournamentManagerBase {
       // The PERSISTED length. Nothing mutates this array any more; that is what
       // makes the answer identical across a restart.
       blindStructure.length,
-      // Format-normalized, and halved for an accelerated MTT past late reg —
-      // engine state, which is why the pure module takes it as an argument.
-      this.levelDurationMs(lastLevel) / 60000,
+      // A derived row keeps the advertised duration. Timer readers apply
+      // acceleration once, just as they do for a persisted row.
+      this.rawLevelDurationMs(lastLevel) / 60000,
       /**
        * THE LADDER'S OWN CADENCE, NOT A DOUBLING (2026-08-31).
        *
@@ -6086,7 +6094,7 @@ export abstract class TournamentManagerBase {
               small_blind: level.smallBlind,
               big_blind: level.bigBlind,
               ante: level.ante || 0,
-              duration_minutes: level.durationMinutes,
+              duration_minutes: this.levelDurationMs(level) / 60000,
               timestamp: Date.now(),
             });
           } catch {

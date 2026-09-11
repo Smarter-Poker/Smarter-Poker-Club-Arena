@@ -54,6 +54,26 @@
     no-repeat;
 }
 
+/* THE DRESS VARIES, THE STRUCTURE DOES NOT. Each of these is its own painted
+   crest (see spade-console-v1/source/README.md), seated in the master head
+   with the rails re-mitred into it. No two share a housing. Same box, same
+   ratio, same zones; only the picture changes. */
+.sc--crest-flat .sc__head {
+  background-image: url('/assets/club-buttons/console/spade-console-v1/top-flat.png');
+}
+
+.sc--crest-diamond .sc__head {
+  background-image: url('/assets/club-buttons/console/spade-console-v1/top-diamond.png');
+}
+
+.sc--crest-club .sc__head {
+  background-image: url('/assets/club-buttons/console/spade-console-v1/top-club.png');
+}
+
+.sc--crest-vip .sc__head {
+  background-image: url('/assets/club-buttons/console/spade-console-v1/top-vip.png');
+}
+
 /* Between the rails: inside x 85-915 of the master, with a little air. */
 .sc__body {
   position: relative;

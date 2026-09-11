@@ -885,6 +885,7 @@ export default function PlayerWalletPage() {
         description="One Secure Command Surface For Playable Chips, Protected Balances, Club Earnings, Promotional Value, And Diamonds. Every Figure Below Remains Connected To The Live Wallet Ledger."
         artPath="images/wallet/value-vault-hero-v1.webp"
         status="WALLET LEDGER // SYNCHRONIZED"
+        crest="diamond"
         metrics={[
           {
             label: 'Playable Now',

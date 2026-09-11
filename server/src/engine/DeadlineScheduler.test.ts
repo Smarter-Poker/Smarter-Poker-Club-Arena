@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { DeadlineScheduler, DeadlineHeap } from './DeadlineScheduler.js';
 
 // ─── Mocked time + interval harness ───────────────────────────────────────────
@@ -612,5 +612,71 @@ describe('DeadlineScheduler - C18 tick budget', () => {
     expect(fired).toBe(1);
     harness.tick();
     expect(fired).toBe(2);
+  });
+});
+
+// ─── The process singleton under fake timers ──────────────────────────────────
+//
+// 2026-09-10. `deadlineScheduler` is built when this module loads, and until
+// today it bound `Date.now` and `setInterval` at that moment. A test that
+// installed fake timers afterwards therefore got a scheduler ticking on a
+// REAL 100ms interval against the REAL clock, while every engine deadline
+// was registered from the FAKE clock set to noon: each was hours past the
+// moment it was scheduled, and fired on whichever real tick happened to land
+// inside the test. On a loaded CI runner one landed inside
+// SeatFirstActualDeal.test.ts, which then folded the first actor through an
+// "expired" time bank; on an idle Mac the same test finished in 29ms and
+// never saw a tick. These pin the contract the fix restores: the singleton
+// runs on whatever clock is installed when it runs.
+
+describe('the process singleton honours fake timers installed after import', () => {
+  it('fires exactly when the fake clock reaches the deadline, and not before', async () => {
+    const { deadlineScheduler } = await import('./DeadlineScheduler.js');
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(Date.parse('2026-09-10T12:00:00.000Z'));
+      let fired = 0;
+      deadlineScheduler.schedule({
+        tableId: 'fake-clock',
+        eventId: 'turn',
+        deadlineMs: Date.now() + 15_000,
+        callback: () => {
+          fired++;
+        },
+      });
+      // Fifteen seconds of fake time have not passed. Before the fix the real
+      // clock said they had, hours ago.
+      await vi.advanceTimersByTimeAsync(14_900);
+      expect(fired).toBe(0);
+      // ...and once they have, the fake interval is what ticks it.
+      await vi.advanceTimersByTimeAsync(200);
+      expect(fired).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('is stopped between tests: nothing scheduled by the previous test is pending', async () => {
+    const { deadlineScheduler } = await import('./DeadlineScheduler.js');
+    // src/testing/theSchedulerStopsBetweenTests.ts ran after the test above.
+    expect(deadlineScheduler.size()).toBe(0);
+    let fired = 0;
+    vi.useFakeTimers();
+    try {
+      // schedule() on a stopped singleton starts the loop again, under the
+      // timers of THIS test.
+      deadlineScheduler.schedule({
+        tableId: 'restart',
+        eventId: 'turn',
+        deadlineMs: Date.now() + 1_000,
+        callback: () => {
+          fired++;
+        },
+      });
+      await vi.advanceTimersByTimeAsync(1_100);
+      expect(fired).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

@@ -340,7 +340,7 @@ describe('LAW 4: the database applies the difference and honours the declaration
     // tournament chips from a real wallet. The live definition is what the
     // engine calls, so the pin reads the latest re-creation of the function.
     const ordered = readdirSync(migrationsDir)
-      .filter((f) => /^\d{14}_.*\.sql$/.test(f))
+      .filter((f) => /^\d{14}_.*\.sql(?:\.pending)?$/.test(f))
       .sort()
       .reverse();
     // A later forward migration may update the preserved core while retaining

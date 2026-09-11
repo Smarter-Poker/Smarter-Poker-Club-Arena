@@ -1,6 +1,6 @@
 # CLUB ARENA — OPERATIONAL HANDOFF (OPORD FORMAT)
 
-**From:** Claude (Cowork session `635ed867`, operator: Dan) · **As of:** 2026-09-11 ~13:06 UTC (last updated after live verification of the 12:55 deploy) · **Classification:** internal, contains hosts/IDs, no secrets
+**From:** Claude (Cowork session `635ed867`, operator: Dan) · **As of:** 2026-09-11 ~13:25 UTC, **v4** (v1 was sent at 12:33 UTC; see `HANDOFF-CHANGES-v1-to-v4.md` for everything that changed; every decision that earlier versions left to Dan is now made, in §10) · **Classification:** internal, contains hosts/IDs, no secrets
 
 > **Read this whole document before touching production.** Section 7 is the ordered pick-up checklist. Section 4 lists the rules; they are hard rules. Everything this document says was measured or written this session. Anything unverified is marked **UNVERIFIED**. The raw evidence is in `docs/handoffs/2026-09-11-claude/evidence/`:
 >
@@ -44,12 +44,12 @@
      - every required check has a producing workflow job
      - nothing is named as a freeze
      - only the two named scripts may write a ruleset
-   - **Remaining door (Dan's call):** agent tokens hold Administration: write, so a hand edit through the API is still possible. Restrict agent tokens to read-only on rulesets.
+   - **Remaining door, DECIDED (§10 D4):** agent tokens stop being able to write rulesets. Today the shared agent account token holds Administration: write, so a hand edit through the API is still possible.
    - The handoff itself is **#4299**.
-6. **Two backup branches must NOT be merged before their preconditions:**
-   - `backup/claude-2026-09-11/a-frozen-sweep-owes-the-balancer-a-pass-after-the-thaw`
-   - `backup/claude-2026-09-11/late-status-flip-keeps-paid-ladder`
-   - `backup/**` branches do not auto-open PRs.
+6. **Three backup branches, none merged yet, each with a precondition.** `backup/**` branches do not auto-open PRs.
+   - `backup/claude-2026-09-11/late-status-flip-keeps-paid-ladder` (`3aaf4ce0c4`): migration `20260911110000`. Review, apply, record, then PR. It goes first (D9, D10).
+   - `backup/claude-2026-09-11/freeze-deferred-balance-redrive` (`cf64e76666`): **the chosen balance fix** (D11). PR it only after the E2 rehearsal and the 7aa16fa7 ruling.
+   - `backup/claude-2026-09-11/a-frozen-sweep-owes-the-balancer-a-pass-after-the-thaw` (`2b6b5c6687`): the alternative fix. Retire it unless it adds something the redrive lacks. Its wake and re-sequence scripts stay useful references.
 
 ---
 
@@ -100,13 +100,14 @@ Horses get only their own hole cards plus public state; the worker rejects any s
 
 ### 1.5 Today's deploy timeline (UTC)
 
-| Time                | Build                                                       | What                                                                                                    |
-| ------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| 06:57               | #4225 via Dan's one-build exception (#4235, spent by #4257) | deadline clock fix                                                                                      |
-| 08:55               | `9284d7ec`                                                  | #4266 equity pool recovery, #4267 degraded-cert reads, and more                                         |
-| 10:55               | `c113fbe7`                                                  | #4274, #4276, #4275, #4277, #4279, #4281, #4285                                                         |
-| 11:56               | `80769f9b`                                                  | Codex #4289 (restart at 11:56:00; not mine)                                                             |
-| **12:55 (pending)** | **`4895030e22`**                                            | #4270, #4293, #4295. Run `34599636898` (the first run, `34598480706`, failed on the CryptoRandom flake) |
+| Time                                 | Build                                                       | What                                                                                                             |
+| ------------------------------------ | ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| 06:57                                | #4225 via Dan's one-build exception (#4235, spent by #4257) | deadline clock fix                                                                                               |
+| 08:55                                | `9284d7ec`                                                  | #4266 equity pool recovery, #4267 degraded-cert reads, and more                                                  |
+| 10:55                                | `c113fbe7`                                                  | #4274, #4276, #4275, #4277, #4279, #4281, #4285                                                                  |
+| 11:56                                | `80769f9b`                                                  | Codex #4289 (restart at 11:56:00; not mine)                                                                      |
+| **12:55 (deployed, verified 13:04)** | **`4895030e22`**                                            | #4270, #4293, #4295. Run `34599636898`, success (the first run, `34598480706`, failed on the CryptoRandom flake) |
+| 13:55 (queued)                       | latest main                                                 | #4292 mystery engine follow-up, #4296 satellite feeder                                                           |
 
 ---
 
@@ -316,11 +317,14 @@ Decisions taken, with the reasons:
 
 ### 6.1 P0 — Horse lane capacity (engine degraded)
 
-- **State:** #4295 removes the idle round-trip gap. At the 12:18 load (311 tables), arrival was about 54 completed/s plus about 13 expired/s, roughly 67/s. Worker CPU was ~80%. At 100% utilization the lane would be at about 68/s, **so it may still sit at capacity.**
+- **Verified 13:04 UTC on `4895030e`:** ~277 tables, queue 0-15, oldest ≤ 92 ms, 0 expired, ~78 jobs/s (was ~32/s), average hand 20.7 s (was 38.8 s).
+  - The post-break surge at 293 tables peaked at queue 206 / oldest 2.3 s with 0 expired, and drained in about 2 minutes.
+  - `top -H` at 13:03: horse worker ~86%, main ~76%, equity worker ~61%, host 12.7% idle.
+- **Earlier state (for the record):** #4295 removes the idle round-trip gap. At the 12:18 load (311 tables), arrival was about 54 completed/s plus about 13 expired/s, roughly 67/s. Worker CPU was ~80%. At 100% utilization the lane would be at about 68/s, **so it may still sit at capacity.**
 - **After the 12:55 cutover, measure:** `oldestQueuedAgeMs`, `expiredJobs` growth, `inFlightJobs`, `avgHandDurationMs`, worker governor scale, and `top -H`.
 - **If the queue stays above ~50 or anything expires, in order of speed:**
   1. **Equity pool priority.** The pool worker was at ~94% CPU. Find out what it computes for which tables (`ServerTableEngineRunout.ts`) and whether any gameplay step (insurance, run-it-twice) awaits it. If it is display/EV only, lower that thread's priority from inside the worker: on Linux, `os.setPriority(0, 10)` inside a worker affects that thread only. Then the dealer and horses win the CPU. Test it, document it, and ship it through the train.
-  2. **Host upgrade:** engine-01 has 3 vCPU/3.8 GB; move to a 4-8 dedicated-vCPU box. This needs Dan's decision and cost approval, and a resize reboots the box (restart only inside a break, and a resize may not fit in 5 minutes). Recommend it; don't do it without Dan.
+  2. **Host upgrade: DECIDED (§10 D2).** engine-01 is Hetzner `cpx21`, id 132435945, 3 shared vCPU / 4 GB, location `ash`, €37.49/mo gross. It moves to `ccx23` (4 dedicated vCPU / 16 GB, €102.99/mo), but only after a timed rehearsal proves the rescale fits inside a :55 break.
   3. **Horse brain separation (§8).** This is the real long-term fix.
   4. **Do NOT** raise the 8 s job timeout, or shed precision by hand. The governor already does that.
 
@@ -343,7 +347,7 @@ Decisions taken, with the reasons:
     - Make sure a late 'answered' loss from an older pass cannot override a newer proof unless it is a genuine taken/stale/missing, and reason through the DB ordering carefully.
     - Overlapping `heartbeat_table_leases_v4` calls on the same rows return `busy` rather than block. Confirm in its SQL.
   - **Tests** (fake monotonic clock, `_setTableLeaseMonotonicNowForTests`): one hung attempt plus a later healthy attempt must NOT expire dealers; a uniformly 6 s-slow DB must NOT expire dealers; three genuinely failed windows still must. Add a law test and a changelog.
-  - **Optional and larger:** fence-and-suspend instead of kill-for-restart. A later `kept` exact-generation proof would resume the same engine, which is safe because a takeover always writes a new generation. Discuss with Dan before building it.
+  - **Fence-and-suspend** (instead of kill-for-restart), **DECIDED: not now.** Ship Option B first. Build fence-and-suspend only if a kill storm still happens after Option B is live (§10 D6).
 - **Related noise after a storm:** "33 x GameServer.table_lease_lost … to another engine instance". Only one instance exists; these are re-admissions. Check them after the fix.
 
 ### 6.3 P1 — Merge and ship the open PRs
@@ -365,7 +369,7 @@ Evidence: `evidence/2026-09-11T1230-stuck-events-investigations.md` (sweep, 12:1
 - **Fix branch:** `backup/claude-2026-09-11/a-frozen-sweep-owes-the-balancer-a-pass-after-the-thaw`, head `2b6b5c6687`, code commit `26e727c8cc`:
   - `freezeState.onNextMaintenanceThaw()`
   - one urgent sweep per manager per freeze, spread over 10 s; single-table formats never arm
-- **Steps, in order:**
+- **The sweep agent's original steps. SUPERSEDED: run E2 first, then follow §10 D11's order:**
   1. Apply the **7 at-risk re-sequences** first (94 toggles; ordered lists in `scripts/deploy/2026-09-11-resequence-inputs.sql`): bee519fa 11, f922df63 12, 313a274b 9, 7aa16fa7 26, e3ef32fd 5, 8e16cdb4 11, d7997aef 20. No place money has been paid in any of them, so there is nothing to claw back. Rehearse on PG17 with `~/tmp-claude/reseq2` tooling.
   2. Run `2026-09-11-wake-the-one-seat-tables.sql`. It refuses unless still-57, outside :50-:03, and zero paid-range misorders. It emits 57 wakes via `fn_emit_tournament_manager_wake(id,'bounty_settled')`. Rehearsed: it refused with "48 standings out of order" until the toggles were applied.
   3. Open a PR from the backup branch; auto-merge and deploy.
@@ -389,13 +393,14 @@ Evidence: `evidence/2026-09-11T1230-stuck-events-investigations.md` (sweep, 12:1
 - Two candidate scripts:
   - `thaw-balance-sweep/scripts/deploy/2026-09-11-c1f15c30-keeps-the-ladder-it-paid.sql`: restores the six-place ladder as the service role; the engine completes and pays nothing new; rehearsed end to end locally, terminal completion not rehearsed
   - my earlier `c1f15c30-ruling/ruling_c1f15c30.sql`
-- Pick one after review and apply outside :50-:03.
+- **DECIDED (§10 D10):** use `ruling_c1f15c30.sql` (md5 `e688d1621e65bf09dcf3165c94bbf9d3`). Apply it after migration `20260911110000`, outside :50-:03, as the whole file, and **no re-sequence** (the completion door refuses one once settled place evidence exists).
+- Then record the **121.45 make-good** on the six-place (v3) basis with `makegood_optional.sql` (five 'proposed' `ca_manual_adjustments` rows), paid later through the make-good door. It is not waived: horses are players.
 - **Also apply the trigger fix** (`20260911110000`, backup branch `late-status-flip-keeps-paid-ladder`): review, apply, record, regenerate the manifests, open a PR. Otherwise the rewrite recurs.
 
 **D. 79 REGISTERING events from 09-08 12:49-14:51**:
 
 - horse-only, played, never went RUNNING; together they hold 2,164.60 in pools
-- they need a ruling
+- **DECIDED policy (§10 D9)**
 - moving them straight from REGISTERING to COMPLETING trips the same paid-ladder rewrite, so apply the trigger fix first
 
 **E. Orphans: 7aa16fa7 and a5aa6984.** The orphans agent finished at 12:40; full report in `evidence/…stuck-events-investigations.md` under "investigate:orphans".
@@ -412,7 +417,7 @@ Evidence: `evidence/2026-09-11T1230-stuck-events-investigations.md` (sweep, 12:1
   - **R1** `R1_a5aa6984_record_river222_bust.sql`: sets his mirror chips to 0, calls `fn_eliminate_tournament_player_atomic(tid, river222, 2, 0, 0)`, then wakes the manager. **Rehearsed on PG17 through the real final settlement: COMPLETED, 99.30 paid in true order.**
   - **R2** `R2_7aa16fa7_wake_stalled_manager.sql`: one wake, applied outside :53-:00.
   - **R3** (optional): wakes all of the 57.
-- **Dan decides:** tankChamp's 13th place (4.37) exists only because of created chips. Ruling his bust at hand 8775892 instead would drop him to 36th (1.94) and move 23 players up one place. Decide before 7aa16fa7 settles.
+- **tankChamp: DECIDED (§10 D1).** He is ranked by his true bust, hand 8775892 at 09-09 22:35:09, so he finishes **36th (1.94)** and the 23 players between move up one place. His 13th place (4.37) exists only because of chips a deleted repair created. No prize money has moved in 7aa16fa7, so nothing is clawed back. Implement it inside the 7aa16fa7 ruling, before the wake. Rehearse on PG17 first.
 - **The orphans agent touched production beyond plain SELECTs:**
   - two calls of the VOLATILE `fn_ca_tournament_place_amounts` (read only)
   - a full-schema `pg_dump` that held ACCESS SHARE locks on ~1,366 tables for ~4 minutes (nothing waited)
@@ -430,14 +435,14 @@ Evidence: `evidence/2026-09-11T1230-stuck-events-investigations.md` (sweep, 12:1
 
 - **Sweep agent:** `backup/claude-2026-09-11/a-frozen-sweep-owes-the-balancer-a-pass-after-the-thaw` (`26e727c8cc`). A thaw listener arms one urgent sweep.
 - **Orphans agent:** `fix/freeze-deferred-balance-redrive` (`cf64e76666`, **local only, not pushed**, worktree `freeze-deferred-balance-redrive`). Adds a retry when the balance step runs out of its 5 s budget. Law test `aDeferredBalanceIsStillOwed.law.test.ts`.
-- The orphans version covers the extra budget-exhaustion case. Combine the best of both into one PR.
+- **DECIDED (§10 D11):** ship the orphans version (it covers the freeze skip and the budget exhaustion). Retire the sweep branch unless its thaw listener adds something the redrive lacks.
 
 **F2. Satellite-seated PKOs with empty bounty pools (from the satellites report):**
 
 - PKOs `3f19bd70` (66 entrants) and `a21c0cb6` (155 entrants) were seated entirely by satellites last week.
 - Their bounty pools of 2,310.00 and 5,425.00 hold **no money** (`bounty_in` 0), and no bounties were paid. The critical alerts are still open.
 - This is a separate incident with no ruling yet.
-- **Product call for Dan:** the PKOs have no satellite feeders until bounty-aware satellite settlement ships. The pending Phase-3 activation script pins the settlement function and receipt reader by md5, so build bounty support on top of Phase 3.
+- **DECIDED (§10 D7):** PKO/bounty/Spin events get **no satellite feeders** until bounty-aware satellite settlement ships, built on top of Phase 3 (the Phase-3 activation script pins the settlement function and receipt reader by md5). The creation guard (migration 20260911110907) stays. The unfunded bounty pools of `3f19bd70` and `a21c0cb6` are paid through the make-good door (§10 D8), computed from each knockout record; nothing is clawed back.
 
 **F. Unexplained:**
 
@@ -450,12 +455,12 @@ Evidence: `evidence/2026-09-11T1230-stuck-events-investigations.md` (sweep, 12:1
 - `fn_settle_tournament_places_by_ruling` is broken for non-satellite events.
 - Satellites and final-table deals still rank in recording order, not bust-hand order; the #4293 migration covered settle and the doors only.
 - 271 rebuy legs recorded within 10 s of each other: possible double charges. **Uninvestigated.**
-- 15 misallocated completed events (~1,437) plus mystery make-goods need a house-funded **audited back-pay door**. Never claw back. The door does not exist yet; design it with Dan.
+- 15 misallocated completed events (~1,437) plus mystery make-goods need a house-funded **audited make-good door**. Never claw back. **DECIDED: build it (§10 D8).**
 - `SpinUnfilledBacklog`: 29 Spins past their fill deadline. `fn_spin_expire_unfilled` is supposed to run on the engine timer; investigate why it isn't.
 - `StatsAllInEquityCoverageLow` (98.4%). Probably equity-pool expirations under load (`queueExpirations`); connects to §6.1.
 - `TournamentSeatlessPhantoms` (1), `TournamentNeverStarted` (1). Identify both with the SQL in the alert descriptions (Prometheus rules).
 - Task #11 ("a table frozen mid-hand inside a break is reaped and re-parked, so a broken build can still certify") shipped as #4255. Verify at the next break: `maintenance.unparkedTables` should reach 0 and `readyForRestart` true.
-- Deploy pipeline edge cases, now covered by #4262: a pending rollback survives replacement, and a workflow-only fix starts a run. Re-verify with a real rollback drill when Dan allows.
+- Deploy pipeline edge cases, now covered by #4262: a pending rollback survives replacement, and a workflow-only fix starts a run. **DECIDED: no production rollback drill** (it would cost two real restarts). The #4238/#4262 law tests cover it; re-verify only when the train changes.
 - REGISTERING pass serial count sweep: batched by #4256 and #4274.
 - **Flaky deploy-blocking test:** `server/src/engine/CryptoRandom.test.ts` "deals the ace of spades to a uniform position".
   - A chi-square test over the real CSPRNG with a fixed critical value (32.91), so it fails by chance at roughly its significance level.
@@ -473,7 +478,7 @@ Evidence: `evidence/2026-09-11T1230-stuck-events-investigations.md` (sweep, 12:1
      - expect `expiredJobs` flat
    - the deploy run `34599636898` Verdict is green (if it failed on the CryptoRandom flake again, the train hands on; check the newest run)
    - if the cutover failed: read the run logs (`actions/jobs/<id>/logs`) and the ROLLBACK step. Do not force anything.
-2. **Watch 15 minutes of load:** Prometheus queue depth and oldest age, `avgHandDurationMs`, and `top -H`. Decide §6.1 options 1 and 2. Tell Dan about capacity with numbers.
+2. **Watch the lane through the next busy hours:** Prometheus queue depth and oldest age, `avgHandDurationMs`, and `top -H`. Execute §10 D2 (host rescale, rehearsal first) and D3 (equity-worker priority). Report capacity to Dan with numbers.
 3. **Verify the 13:55 deploy** of #4292 and #4296 (both merged). Confirm that #4299 (handoff) and the freeze-guard PR merged. If `Stage B Release Freeze`, or any required check with no producer, reappears in the `main protection` ruleset, remove it (Dan's order) and tell Dan.
 4. **Write the lease heartbeat fix** (§6.2): PR, CI, merge, deploy, verify. Next time a supabase_timeout burst hits, the kills should not happen.
 5. **Stuck tournaments** (§6.4 A/E/E2/E3):
@@ -481,16 +486,16 @@ Evidence: `evidence/2026-09-11T1230-stuck-events-investigations.md` (sweep, 12:1
    - then apply R1 for a5aa6984 (rehearsed)
    - then either the re-sequences plus wake, or the wakes directly
    - then one combined balance fix PR (E3)
-   - Dan decides tankChamp before 7aa16fa7 settles
+   - tankChamp is ranked by his true bust (§10 D1); implement it in the 7aa16fa7 ruling before the wake
 6. **c1f15c30:** trigger migration `20260911110000` (review and apply), then the ladder restore. Then a5aa6984 (rehearse, then apply).
-7. **79 REGISTERING events:** draft a ruling and get Dan's OK on the policy (refund vs complete).
+7. **79 REGISTERING events:** apply the decided policy (§10 D9).
 8. **P2 list** (§6.5), with an audit and a fix for each.
-9. **Architecture** (§8): write it up for Dan with costs. Build only after he agrees.
+9. **Architecture** (§8): **DECIDED: build the horse brain** (§10 D5), phase by phase.
 10. Keep this handoff current and append to it.
 
 ---
 
-## 8. ANNEX — HORSE BRAIN / ENGINE SEPARATION (design for Dan's decision)
+## 8. ANNEX — HORSE BRAIN / ENGINE SEPARATION (DECIDED: build it, §10 D5)
 
 ### 8.1 Is Dan right?
 
@@ -535,7 +540,7 @@ Evidence: `evidence/2026-09-11T1230-stuck-events-investigations.md` (sweep, 12:1
   2. canary: 10% of tables by hash
   3. 100%
   4. then retire the local lane to standby-only
-- **Effort and cost:** about 3-5 engineering days, plus one small dedicated server. **Needs Dan's approval.**
+- **Effort and cost:** about 3-5 engineering days, plus one Hetzner `ccx23` in `ash` (4 dedicated vCPU / 16 GB, €102.99/mo gross per the Hetzner API). Put it on a Hetzner Cloud private network (network zone `us-east`) with engine-01 attached. Provision it only when the phase-1 code is ready for shadow mode, not before. The Hetzner API token is in the shared `.env` as `HETZNER_API_TOKEN`; never print it. **Approved (§10 D5).**
 - **Interim, no new box:** pin the horse worker and equity worker threads at a lower priority than the main thread (see §6.1), or upgrade engine-01.
 
 ---
@@ -548,3 +553,117 @@ Evidence: `evidence/2026-09-11T1230-stuck-events-investigations.md` (sweep, 12:1
 - **This session's attribution** (put it on commits):
   - `Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>`
   - `Claude-Session: https://claude.ai/code/session_01HPVofHJE7bzt6h73ZhZ8BL`
+
+---
+
+## 10. DECISIONS — made 2026-09-11 ~13:20 UTC and binding for the next agent
+
+Dan (13:15 UTC): "NONE OF THESE ARE FOR ME TO DECIDE THEY ARE ALL ON YOU." Every item earlier versions left to Dan is decided below. Execute these. Do not send them back to him as questions. Report outcomes with numbers.
+
+**D1. tankChamp (7aa16fa7): ranked by his true bust.**
+
+- His real bust is hand 8775892 at 09-09 22:35:09. A since-deleted repair then re-seated him at 22:40:01 with 115,000 chips that never existed, and he busted again later.
+- A re-seat by a bug is not a rebuy, so the "latest eliminated candidate" rule does not apply to it.
+- Result: **36th (1.94)** instead of 13th (4.37); the 23 players between move up one place.
+- No prize money has moved in 7aa16fa7 (no payouts, no obligations), so nothing is clawed back. The created chips he lost were won by other players, and they keep them (the no-clawback rule).
+- **How:**
+  1. Before the 7aa16fa7 wake (R2), in one transaction and after a PG17 rehearsal through final settlement, make his elimination record carry hand 8775892's commit time. Use the same witness/commit-time source `fn_settle_tournament_places` uses (`hand_atomic_commits` / knockout candidates).
+  2. Verify the rehearsal's final standings match the orphans report's true order, with tankChamp at 36.
+  3. Then wake.
+
+**D2. Engine host: rescale `club-arena-engine` from `cpx21` (3 shared vCPU / 4 GB, €37.49/mo) to `ccx23` (4 dedicated vCPU / 16 GB, €102.99/mo), gated on a rehearsal.**
+
+- **Why:** after #4295 the lane keeps up at ~277 tables, but the host runs at ~83-87% CPU with 12.7% idle. Main thread, horse worker and equity worker each want a full core. Dedicated cores also remove noisy-neighbour steal.
+- **Rehearsal first (no production impact):**
+  1. Create a throwaway `cpx21` in `ash` from the same image family.
+  2. Put a dummy container on it with `restart: always`.
+  3. Time power-off → `change_type` to `ccx23` with `upgrade_disk: false` (keeps it reversible) → power-on → container up.
+  4. Delete the throwaway.
+- **Production:**
+  - Only if the rehearsal is ≤ 3 minutes end to end.
+  - Only in a quiet :55 break with **no deploy**, after `/health.maintenance.readyForRestart` is `true`.
+  - `docker stop -t 45 club-arena-engine` (a graceful drain inside the break), then power off, `change_type`, power on.
+  - Verify `/health` 200, version unchanged, tables resume at :00.
+- **If the rehearsal exceeds 3 minutes:** do not rescale in place; the horse brain (D5) carries the capacity instead.
+- Use `HETZNER_API_TOKEN` from `.env` and never print it. Nothing here bypasses `readyForRestart`.
+
+**D3. Equity worker priority: lower it if nothing in gameplay waits on it.**
+
+1. Read `ServerTableEngineRunout.ts` and every caller of `getEquityPool()`.
+2. If no hand-flow step (insurance offer, run-it-twice, showdown timing) awaits the pool's result, have the equity worker lower its own thread priority at start (`os.setPriority(0, 10)` inside the worker thread affects only that thread on Linux).
+3. Ship it through the train with a test, and watch `StatsAllInEquityCoverageLow`.
+4. If a gameplay step does await it, leave the priority alone and record why in the changelog.
+
+**D4. Merge freezes and ruleset writes by agents: closed.**
+
+- The unauthorized `Stage B Release Freeze` is gone. The law test (`fix/no-merge-gate-without-a-producer`, PR #4301) pins that every required check has a producer, that nothing is named as a freeze, and that only two scripts may write rulesets.
+- **Decided:** agent tokens become read-only on repository administration.
+  - Agents are barred by standing rule from creating or changing credentials, so the one physical step (regenerating the shared token with Administration: Read only, then swapping it in `.env`) has to be done from the GitHub account's settings page.
+  - Until then, the next agent re-reads the `main protection` ruleset at the start of every session and after every merge.
+  - It removes any required check that no workflow produces, and records the ruleset history version and actor.
+
+**D5. Horse brain: BUILD IT** (design §8).
+
+1. **Phase 1:** a remote lane on its own box.
+   - Provision a `ccx23` in `ash` with a private network (zone `us-east`) and attach engine-01. Do this when the code reaches shadow mode.
+   - Shadow first: the engine decides locally and the brain's decisions are only compared.
+   - Then canary 10% of tables by hash, then 100%.
+   - The in-process worker stays as the hot standby.
+2. **Phase 2:** multi-lane with replicated HorseMind.
+3. **Invariants:**
+   - no other seat's cards ever leave the engine
+   - same timers and rules as humans
+   - fallback to the local lane on any brain miss
+   - the brain has no deck, seed or money access
+
+**D6. Lease kill storms: ship Option B (hedged heartbeats) first** (§6.2). Fence-and-suspend is not built unless a storm still happens after B is live.
+
+**D7. Satellites into bounty/PKO/Spin targets stay refused** until bounty-aware satellite settlement ships, built on top of Phase 3. The creation guard stays.
+
+**D8. Build the audited make-good door (house-funded; never claw back).**
+
+- **Mechanism:**
+  - owed items are `ca_manual_adjustments` rows in status 'proposed' (as `makegood_optional.sql` writes them), each with evidence and amount
+  - one SECURITY DEFINER door pays one item from a house make-good source; it is idempotent per item, refuses negative amounts and anything already paid, and writes the ledger and an audit record
+  - the executing role is the server only (revoke PUBLIC/anon/authenticated)
+  - the pre-push check `check-no-new-band-aids` refuses migrations that declare repair/back-pay/backfill paths, so name and justify the door as the audited payment authority in that check's terms, never as a backfill
+- **Items to load, then pay:**
+  - 31.00 in undelivered rebuy charges (`MAKEGOOD_undelivered_rebuy_legs_readonly.sql`, 31 rows)
+  - 121.45 for c1f15c30 (D10)
+  - the 15 misallocated completed events (~1,437; list in the knockout/settle evidence)
+  - the mystery make-goods
+  - the unfunded bounty pools of `3f19bd70` and `a21c0cb6` (compute each knockout's bounty from its record)
+- Horses are paid like any player.
+
+**D9. The 79 REGISTERING events from 09-08 (horse-only, played, never RUNNING; 2,164.60 in pools).**
+
+1. Apply migration `20260911110000` first, so a status flip cannot rewrite a paid ladder.
+2. Then, per event, in batches of 10 or fewer, outside :50-:03, each batch rehearsed on PG17:
+   - **no place money moved and play produced a winner:** complete through the normal terminal door; `fn_settle_tournament_places` ranks by true bust time
+   - **place money already moved:** the paid record stands (no re-sequence, as with c1f15c30); restore the contract the places were paid against if it was rewritten; complete; put any true-order difference on the make-good door
+   - **no valid finish** (no winner or no bust record): refund every entry exactly with `fn_settle_tournament_refund_exact` before terminal completion
+3. Record one audit row per event.
+
+**D10. c1f15c30 Breakfast Turbo:**
+
+1. Apply migration `20260911110000` (branch `backup/claude-2026-09-11/late-status-flip-keeps-paid-ladder`, `3aaf4ce0c4`).
+2. Then apply `ruling_c1f15c30.sql` (md5 `e688d1621e65bf09dcf3165c94bbf9d3`) as the whole file. It restores the paid six-place v3 ladder, completes through `fn_complete_tournament_terminal`, pays no new prize money, and settles the 20.00 fee.
+3. No re-sequence.
+4. Record the 121.45 make-good with `makegood_optional.sql`. Not waived.
+
+**D11. The stuck-tournament balance fix:** ship the orphans agent's `fix/freeze-deferred-balance-redrive` (`cf64e76666`, pushed as `backup/claude-2026-09-11/freeze-deferred-balance-redrive`).
+
+- It covers both the freeze-skipped balance step and the budget-exhausted one.
+- Retire the sweep agent's `a-frozen-sweep-owes-the-balancer-a-pass-after-the-thaw` unless its thaw listener adds something the redrive lacks; read both and write down which.
+- Order: the E2 rehearsal, then R1 (a5aa6984), then the 7aa16fa7 ruling with D1, then the wakes (or the fix's first thaw), then the PR.
+- Add the `docs/laws.d` entry its law test needs.
+
+**D12. Other open defects, all decided "fix":**
+
+- **The seven disabled guard triggers on `tournaments`** (including `zzzz_freeze_finalized_tournament_prize_pool`): re-enable all of them in one migration after a PG17 rehearsal of start, late-reg close, completion, ruling and refund. A trigger that blocks a legitimate flow gets its logic fixed in the same migration; none stays disabled.
+- **`fn_settle_tournament_places_by_ruling`:** it fails for non-satellite events (fee order, its own frozen batch, no terminal receipt, leaves the ladder). **Retire it for non-satellite use** and standardize rulings on the c1f15c30 pattern: restore the contract, complete through the normal door, write an audit record.
+- **Satellites and final-table deals:** extend bust-time ranking to them with the same witness ordering as `fn_settle_tournament_places`.
+- **The 271 rebuy legs within 10 s:** investigate. Any double charge goes on the make-good door. The code path is already fixed (a rebuy is tied to a specific bust and seated in the same transaction).
+- **The flaky `CryptoRandom.test.ts` shuffle test:** move its critical value to p≈1e-6 (or require 3 failing trials), keeping the real CSPRNG.
+
+**Operator handover:** from ~13:20 UTC this Cowork session takes **no further production actions**. The other agent Dan started is the sole operator. Two operators on one production is how conflicting writes happen.

@@ -13,6 +13,19 @@ spec.loader.exec_module(m)
 
 
 class NativeDiagnosticsTests(unittest.TestCase):
+    def test_native_service_exit_diagnostics_are_strict(self):
+        row={'status':'failed', 'stage':'realtime-server-ready', 'error':'Error',
+             'native_service':'realtime', 'service_signal':'SIGKILL', 'service_oom_kills':1}
+        self.assertEqual(m.native_failures(json.dumps(row)), [{
+            'stage':row['stage'], 'category':'Error', 'native_service':'realtime',
+            'service_signal':'SIGKILL', 'service_oom_kills':1}])
+        for key in ['native_service', 'service_signal']:
+            for invalid in ['PRIVATE TOKEN', [], None, True]:
+                self.assertEqual(m.native_failures(json.dumps({**row, key:invalid})), [])
+        for key, limit in [('service_exit_code',255),('service_oom_kills',999999999)]:
+            for invalid in [-1,limit+1,True,None,'1',[]]:
+                self.assertEqual(m.native_failures(json.dumps({**row,key:invalid})), [])
+
     def test_listener_diagnostics_reject_unreviewed_reasons_and_counts(self):
         row = {'status': 'failed', 'stage': 'realtime-loopback-and-gateway', 'error': 'Error',
                'listener_reason': 'listener-set', 'listener_loopback4': 0,

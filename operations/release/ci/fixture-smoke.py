@@ -65,6 +65,15 @@ def native_failures(output):
         native_line = row.pop('native_line', None)
         if has_native_line and (type(native_line) is not int or not 1 <= native_line <= 9999):
             continue
+        service = {key: row.pop(key) for key in ('native_service', 'service_exit_code',
+                   'service_signal', 'service_oom_kills') if key in row}
+        if (('native_service' in service and (not isinstance(service['native_service'], str)
+                or service['native_service'] not in {'postgres', 'auth', 'postgrest', 'realtime'}))
+                or ('service_signal' in service and (not isinstance(service['service_signal'], str)
+                    or service['service_signal'] not in {'SIGKILL','SIGTERM','SIGABRT','SIGSEGV','SIGBUS','SIGILL'}))
+                or any(key in service and (type(service[key]) is not int or not 0 <= service[key] <= limit)
+                       for key, limit in [('service_exit_code', 255), ('service_oom_kills', 999999999)])):
+            continue
         listener = {key: row.pop(key) for key in ('listener_reason', 'listener_loopback4',
                     'listener_other4', 'listener_ipv6', 'listener_rows4', 'listener_rows6',
                     'listener_port4000', 'listener_http_port', 'listener_http_address') if key in row}
@@ -127,6 +136,7 @@ def native_failures(output):
             record['native_line'] = native_line
         record.update(auth)
         record.update(listener)
+        record.update(service)
         if record not in records:
             records.append(record)
     return records

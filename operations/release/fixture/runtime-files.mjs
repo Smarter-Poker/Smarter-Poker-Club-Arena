@@ -7,6 +7,23 @@ import { promisify } from 'node:util';
 
 const exec = promisify(execFile);
 
+export function nativeChildFailure(children) {
+  const child = children.find(
+    (item) => item.nativeFailed || item.exitCode !== null || item.signalCode !== null
+  );
+  if (!child) return null;
+  const error = new Error('native service exited');
+  if (new Set(['postgres', 'auth', 'postgrest', 'realtime']).has(child.nativeName))
+    error.native_service = child.nativeName;
+  if (Number.isInteger(child.exitCode) && child.exitCode >= 0 && child.exitCode <= 255)
+    error.service_exit_code = child.exitCode;
+  if (
+    new Set(['SIGKILL', 'SIGTERM', 'SIGABRT', 'SIGSEGV', 'SIGBUS', 'SIGILL']).has(child.signalCode)
+  )
+    error.service_signal = child.signalCode;
+  return error;
+}
+
 // Native smoke diagnostics must not serialize database messages, queries, or
 // service output: bootstrap queries contain fixture-only credentials.
 export function nativeFailureDiagnostic(stage, error) {
@@ -21,6 +38,20 @@ export function nativeFailureDiagnostic(stage, error) {
     'error',
   ]);
   const record = { status: 'failed', stage, error: names.has(error?.name) ? error.name : 'Error' };
+  if (new Set(['postgres', 'auth', 'postgrest', 'realtime']).has(error?.native_service))
+    record.native_service = error.native_service;
+  if (
+    Number.isInteger(error?.service_exit_code) &&
+    error.service_exit_code >= 0 &&
+    error.service_exit_code <= 255
+  )
+    record.service_exit_code = error.service_exit_code;
+  if (
+    new Set(['SIGKILL', 'SIGTERM', 'SIGABRT', 'SIGSEGV', 'SIGBUS', 'SIGILL']).has(
+      error?.service_signal
+    )
+  )
+    record.service_signal = error.service_signal;
   const frame =
     typeof error?.stack === 'string'
       ? error.stack.match(

@@ -1,9 +1,46 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createHash } from 'node:crypto';
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
+import { once } from 'node:events';
 import { promisify } from 'node:util';
-import { nativeFailureDiagnostic } from '../../operations/release/fixture/runtime-files.mjs';
+import {
+  nativeFailureDiagnostic,
+  nativeChildFailure,
+} from '../../operations/release/fixture/runtime-files.mjs';
+
+test('actual native child exit and signal retain only reviewed service identity and status', async () => {
+  const child = spawn(process.execPath, ['-e', 'process.exit(7)'], { stdio: 'ignore' });
+  child.nativeName = 'realtime';
+  assert.equal(nativeChildFailure([child]), null);
+  await once(child, 'exit');
+  const record = nativeFailureDiagnostic('realtime-server-ready', nativeChildFailure([child]));
+  assert.deepEqual(record, {
+    status: 'failed',
+    stage: 'realtime-server-ready',
+    error: 'Error',
+    native_service: 'realtime',
+    service_exit_code: 7,
+  });
+  const killed = spawn(process.execPath, ['-e', 'setInterval(()=>{},1000)'], { stdio: 'ignore' });
+  killed.nativeName = 'realtime';
+  const exited = once(killed, 'exit');
+  killed.kill('SIGKILL');
+  await exited;
+  assert.equal(
+    nativeFailureDiagnostic('realtime-server-ready', nativeChildFailure([killed])).service_signal,
+    'SIGKILL'
+  );
+  for (const value of ['PRIVATE TOKEN', [], null, true]) {
+    const hidden = nativeFailureDiagnostic('realtime-server-ready', {
+      name: 'Error',
+      native_service: value,
+      service_signal: value,
+    });
+    assert.equal(hidden.native_service, undefined);
+    assert.equal(hidden.service_signal, undefined);
+  }
+});
 
 test('listener diagnostics permit only reviewed reasons and bounded integer counts', () => {
   const endpoint = nativeFailureDiagnostic('realtime-loopback-and-gateway', {

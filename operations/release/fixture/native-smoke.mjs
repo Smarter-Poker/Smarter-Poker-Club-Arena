@@ -20,7 +20,11 @@ import {
   verifyRealtimePeerBoundary,
 } from './fixture-server.mjs';
 import { createFixtureGateway } from './gateway.mjs';
-import { nativeFailureDiagnostic, NativeDatabaseOwner } from './runtime-files.mjs';
+import {
+  nativeFailureDiagnostic,
+  NativeDatabaseOwner,
+  nativeChildFailure,
+} from './runtime-files.mjs';
 
 const exec = promisify(execFile);
 const root = '/run/native-smoke';
@@ -50,12 +54,8 @@ async function eventually(check, milliseconds = 60000) {
     databaseOwner.check();
     assert.equal(bridgeFailure, null, 'native observation bridge failed');
     assert.equal(gatewayFailure, false, 'native gateway failed');
-    assert.ok(
-      children.every(
-        (child) => !child.nativeFailed && child.exitCode === null && child.signalCode === null
-      ),
-      'a native service exited'
-    );
+    const childFailure = nativeChildFailure(children);
+    if (childFailure) throw childFailure;
     if (await check()) return;
     assert.ok(Date.now() < deadline, 'native service readiness timed out');
     await pause(200);
@@ -83,6 +83,7 @@ async function start(name, binary, args, env = {}) {
     signal: databaseOwner.signal,
     stdio: ['ignore', log.fd, log.fd],
   });
+  child.nativeName = name;
   child.on('error', () => {
     child.nativeFailed = true;
   });
@@ -580,6 +581,8 @@ async function services() {
       insecure_fallback: false,
     });
     stage = 'realtime-loopback-and-gateway';
+    const realtimeChildFailure = nativeChildFailure(children);
+    if (realtimeChildFailure) throw realtimeChildFailure;
     assertRealtimeHttpListener(
       await readFile('/proc/net/tcp', 'utf8'),
       await readFile('/proc/net/tcp6', 'utf8'),
@@ -850,14 +853,18 @@ try {
   }
 } catch (error) {
   // Keep raw service output, SQL, JWTs, session objects, and URLs out of CI logs.
-  console.error(
-    JSON.stringify(
-      nativeFailureDiagnostic(
-        databaseOwner.failure ? 'postgresql-client-connection' : stage,
-        databaseOwner.failure ?? error
-      )
-    )
+  const diagnostic = nativeFailureDiagnostic(
+    databaseOwner.failure ? 'postgresql-client-connection' : stage,
+    databaseOwner.failure ?? error
   );
+  try {
+    const events = await readFile('/sys/fs/cgroup/memory.events', 'utf8');
+    const oom = events.match(/^oom_kill ([0-9]{1,9})$/m);
+    if (oom) diagnostic.service_oom_kills = Number(oom[1]);
+  } catch {
+    /* Availability is not evidence of absence. */
+  }
+  console.error(JSON.stringify(diagnostic));
   process.exitCode = 1;
 } finally {
   clearTimeout(timer);

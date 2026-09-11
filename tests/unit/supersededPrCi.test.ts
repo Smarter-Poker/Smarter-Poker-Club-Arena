@@ -319,6 +319,32 @@ describe('only obsolete exact Club Arena pull-request CI is eligible', () => {
 });
 
 describe('fresh authority and bounded API behavior', () => {
+  it.each(['push', 'repository_dispatch', 'workflow_dispatch', 'schedule'])(
+    'refuses a %s source run before looking up or canceling other runs',
+    async (event) => {
+      const p = provider();
+      p.state.successor.event = event;
+      await expect(
+        code.inspectSupersededPrCi({ api: p.api, sourceRunId: 200, apply: true })
+      ).rejects.toThrow('not-pull-request-ci');
+      expect(p.api.get).toHaveBeenCalledTimes(2);
+      expect(p.api.cancel).not.toHaveBeenCalled();
+    }
+  );
+
+  it.each([
+    '.github/workflows/auto-deploy-hetzner.yml',
+    '.github/workflows/publish-club-arena.yml',
+  ])('refuses native operation source %s even if it carries the CI workflow ID', async (path) => {
+    const p = provider();
+    p.state.successor.path = path;
+    await expect(
+      code.inspectSupersededPrCi({ api: p.api, sourceRunId: 200, apply: true })
+    ).rejects.toThrow('foreign-run-path');
+    expect(p.api.get).toHaveBeenCalledTimes(2);
+    expect(p.api.cancel).not.toHaveBeenCalled();
+  });
+
   it('defaults to dry-run and repeats the same final authority reads without a POST', async () => {
     const p = provider();
     const result = await code.inspectSupersededPrCi({ api: p.api, sourceRunId: 200 });

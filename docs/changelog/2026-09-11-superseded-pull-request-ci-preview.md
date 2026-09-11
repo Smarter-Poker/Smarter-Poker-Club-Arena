@@ -41,7 +41,7 @@ A PR may change after the last read and before GitHub accepts the cancellation.
 The repeated reads bound that race but cannot remove it. Activation remains an
 explicit owner decision; this proposal is inactive and performs no cancellation.
 
-Validation passes 256 tests across eleven files, including 91 focused tests for
+Validation passes 262 tests across eleven files, including 97 focused tests for
 real API-shaped identities, every excluded operation type,
 current-head protection, API errors and malformed JSON, duplicate/overflowed/
 truncated inventories, changed attempts, concurrent pushes between candidates,

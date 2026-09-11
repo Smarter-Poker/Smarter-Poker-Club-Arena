@@ -10,7 +10,7 @@
 
 import nodeCrypto from 'node:crypto';
 import { UUID_SHAPE as UUID } from '../lib/uuidShape.js';
-import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
+import { isMaintenanceFrozen, onNextMaintenanceThaw } from '../maintenance/freezeState.js';
 import { supabase } from '../services/supabase.js';
 import { raiseFinancialAlert } from '../services/financialAlerts.js';
 import { reportError } from '../services/errorReporter.js';
@@ -131,6 +131,22 @@ class TerminalSettlementCommittedError extends Error {
   }
 }
 
+/**
+ * Where in the thaw's resume-wave window this tournament's owed pass lands.
+ * Deterministic per tournament, so a restart's worth of managers spreads out
+ * instead of queueing on the same instant.
+ */
+export function thawPassDelayMs(tournamentId: string, spreadMs: number): number {
+  if (!(spreadMs > 0)) return 0;
+  const head = Number.parseInt(
+    String(tournamentId ?? '')
+      .replace(/-/g, '')
+      .slice(0, 8),
+    16
+  );
+  return Number.isFinite(head) ? head % spreadMs : 0;
+}
+
 export abstract class TournamentManagerEliminations extends TournamentManagerBase {
   /**
    * Cooperative continuation through the bounded manager work unit. A slow
@@ -170,6 +186,58 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     }
     return accepted;
   }
+  /**
+   * A FROZEN SWEEP OWES THE FIELD ONE MORE PASS AFTER THE THAW (2026-09-11).
+   *
+   * Table balancing (stage 5) and table expansion (stage 6) are skipped while
+   * the platform is frozen: both open and close seats, which is exactly what
+   * the freeze forbids. Skipping is right. Forgetting was the defect.
+   *
+   * The sweep is causal, never a poll. An event whose every live table holds
+   * one player cannot deal, so it produces no bust, no hand completion and no
+   * wake of its own; the only sweep it ever gets is the one a manager requests
+   * when it adopts the event (`engine.resume`). Adoption follows an engine
+   * restart, and the restart is carried by the maintenance break, so that one
+   * sweep ran frozen, skipped the balancer, completed, and nobody asked again.
+   * The same thing happened on every restart after it.
+   *
+   * Production, 2026-09-11 11:50 UTC: 57 RUNNING events with every live table
+   * holding exactly one funded player (7d6f3d3b: 43 players on 43 tables;
+   * 2dbc9bb6: 35 on 35), frozen since between 2026-09-10 06:40 and 09:51
+   * today. Each logged `Resumed DURING a break` at 10:56, `BREAK ENDED` at
+   * 11:00:03, and then only its blind clock - level 1405 on the oldest.
+   *
+   * So a frozen skip arms ONE pass for the thaw, per manager and per freeze.
+   * It is not a poll: nothing is armed while thawed, a single-table format
+   * never arms (it has nothing to balance), and the listener is dropped with
+   * the lifecycle that armed it. The pass is spread across the resume-wave
+   * window so a restart's worth of managers does not land on :00:00 at once.
+   */
+  private thawPassArmed = false;
+
+  static readonly THAW_PASS_SPREAD_MS = 10_000;
+
+  private owePassAfterTheThaw(): void {
+    if (this.thawPassArmed || !this.mayHoldSeveralTables()) return;
+    const lifecycle = this.captureLifecycleToken();
+    if (!lifecycle) return;
+    this.thawPassArmed = true;
+    onNextMaintenanceThaw(() => {
+      this.thawPassArmed = false;
+      if (!this.lifecycleIsCurrent(lifecycle)) return;
+      this.requestUrgentEliminationSweepAfter(
+        thawPassDelayMs(this.tournamentId, TournamentManagerEliminations.THAW_PASS_SPREAD_MS)
+      );
+    });
+  }
+
+  /** A field capped at one table's seats never has anything to balance. */
+  private mayHoldSeveralTables(): boolean {
+    const cap = Number(this.tournamentCache?.max_players);
+    const tableSize = Number(this.tournamentCache?.table_size) || 9;
+    return !(Number.isFinite(cap) && cap > 0 && cap <= tableSize);
+  }
+
   /** One signal per unresolved bounty hand, cleared when its exact row lands. */
   protected bountyEvidenceDeferred = new Set<string>();
   /** A comprehensive durable-outbox drain runs once after every manager restore. */
@@ -1318,6 +1386,9 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
             );
             this.requestUrgentEliminationSweepAfter(dueIn);
           }
+        } else {
+          // Skipped, not done: the thaw owes this field a balancing pass.
+          this.owePassAfterTheThaw();
         }
         if (completedStage(6)) return;
       }
@@ -1325,6 +1396,8 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       expansionStage: {
         if (this.eliminationSweepCursor.nextStage > 6) break expansionStage;
         // FIX 155: Check if new tables need to be created during rebuy/late-reg period
+        // Skipped while frozen, and owed to the thaw like the balance step.
+        if (isMaintenanceFrozen()) this.owePassAfterTheThaw();
         if (!isMaintenanceFrozen() && !(await this.checkDynamicTableExpansion())) return;
         if (sweepStopped()) return;
         if (completedStage(7)) return;

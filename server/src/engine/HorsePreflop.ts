@@ -1358,11 +1358,22 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
     // Depth scales the bar: at 250bb a 4-bet war demands closer to the top
     // of the deck, because the hand that stacks off is playing for 2.5x
     // more than the number the thresholds were calibrated against.
-    // Tournaments are untouched (shallow, and the M-zones own short play).
+    //
+    // TOURNAMENTS TOO (2026-09-11). This read `ctx.mode === 'cash'` with the
+    // note "tournaments are untouched (shallow, and the M-zones own short
+    // play)". The early levels of this fleet's events are not shallow: a
+    // 30,000 starting stack at 25/50 is 600 big blinds, the Phase 6 atlas
+    // clamps depth at 100bb, and so the 100bb-calibrated 4-bet and 5-bet
+    // bars fired at six times the depth they were tuned for. Six of the
+    // twenty biggest showdown losses of 2026-09-10 were exactly that:
+    // AKo, AKo, QQ, KK, TT and AJs 4-bet or 5-bet jammed for 500-600bb in
+    // tournaments (reviews 399558, 399571, 399778, 399735, 400053, 400754),
+    // and the seven days to that date held 178 losing tournament preflop
+    // stack-offs of 150bb or more, -63,663bb. The M-zones still own short
+    // play - deepT is zero at 120bb and below, so nothing under that depth
+    // changes, spins and SNGs included.
     const deepT =
-      ctx.deepDiscipline === true && ctx.mode === 'cash' && stackBB > 120
-        ? Math.min(0.05, (stackBB - 120) / 2600)
-        : 0;
+      ctx.deepDiscipline === true && stackBB > 120 ? Math.min(0.05, (stackBB - 120) / 2600) : 0;
     const fourBetThresh = phase6CapBar(
       t(0.93 - (ctx.aggression - 1) * 0.04) -
         0.04 * hunted3 -

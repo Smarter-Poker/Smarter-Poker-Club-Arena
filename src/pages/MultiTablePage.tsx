@@ -601,6 +601,16 @@ export default function MultiTablePage() {
      captured one. */
   const pathnameRef = useRef(location.pathname);
   pathnameRef.current = location.pathname;
+  /* Read by updateTableInfo when a must-move re-points a tab: the table the
+     address bar names right now, not the one it named when the callback was
+     made. */
+  const routeTableIdRef = useRef(routeTableId);
+  routeTableIdRef.current = routeTableId;
+  /* And the live navigate: under BrowserRouter useNavigate returns a new
+     function on every location change, and updateTableInfo is cached per
+     table id in tableInfoCbRef, so a captured navigate would go stale. */
+  const navigateRef = useRef(navigate);
+  navigateRef.current = navigate;
   const [searchParams] = useSearchParams();
   const toast = useToast();
 
@@ -2924,6 +2934,34 @@ export default function MultiTablePage() {
         if (seatReadPendingRef.current !== 0) requestSeatResync();
       }
       if (updates.movedToTableId && updates.movedToTableId !== tableId) requestSeatResync();
+      /**
+       * THE ADDRESS BAR FOLLOWS THE CHAIR TOO (audit 2026-09-09, lane H).
+       *
+       * The tab re-point below changes which table this tab IS, and the URL
+       * used to keep naming the old one: /table/<old> while the player sat at
+       * <dest>. That URL is what a reload, browser Back and the dock all read,
+       * so a reload after a must-move re-opened the OLD table as a tab - a
+       * table the hero is no longer seated at and, after a break, one that no
+       * longer exists - and painted it first. Same rule handleTabSelect already
+       * keeps ("keep the address bar on the table the player is looking at"):
+       * when the route names the table that just moved, replace it with the
+       * destination. `replace`, so the move leaves no history entry to Back
+       * into. Off-route (the container hidden under another page) the URL names
+       * nothing to fix.
+       *
+       * Outside the updater: a setTables callback must stay pure, and navigate
+       * is a router state change of its own. React 18 batches the two into one
+       * commit, so the route effect that runs on the new URL already finds
+       * `dest` among the tabs and focuses it in place - the same index, no
+       * table switch (10.6 is about activeIndex, which this leaves alone).
+       */
+      if (
+        updates.movedToTableId &&
+        updates.movedToTableId !== tableId &&
+        routeTableIdRef.current === tableId
+      ) {
+        navigateRef.current(`/table/${updates.movedToTableId}`, { replace: true });
+      }
       setTables((prev) => {
         const idx = prev.findIndex((t) => t.id === tableId);
         if (idx === -1) return prev;
@@ -2946,8 +2984,7 @@ export default function MultiTablePage() {
             stakes: current.stakes,
             isMyTurn: false,
             pot: 0,
-            /* THE GAME DOES NOT CHANGE WHEN THE TABLE DOES (2026-09-06). A
-             must-move / seat change / balance move re-points this tab at
+            /* THE GAME DOES NOT CHANGE WHEN THE TABLE DOES (2026-09-06). A             must-move / seat change / balance move re-points this tab at
              another table OF THE SAME GAME, so the cluster is the one thing
              that certainly survives it. Dropping it here blanked
              `activeClusterId` until the remounted TablePage reported it again -

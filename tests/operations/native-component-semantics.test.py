@@ -142,6 +142,7 @@ class NativeArtifactBoundary(unittest.TestCase):
                                        if part.startswith('source=')))
                     self.assertEqual(inputs.stat().st_mode & 0o777, 0o755)
                     self.assertTrue(all(item.stat().st_mode & 0o777 == 0o444 for item in inputs.iterdir()))
+                    self.assertEqual(json.loads((inputs / 'observation-control.json').read_text()), {'version': 1, 'control_sha': request['control_sha']})
                 if args[0] == 'git':
                     value = request['control_sha'].encode()
                 elif args[-1] == 'capabilities':
@@ -189,11 +190,14 @@ class NativeArtifactBoundary(unittest.TestCase):
                              'net.ipv4.ip_unprivileged_port_start=0')
             self.assertIn('--security-opt=no-new-privileges', fixture_run)
             tmpfs = [fixture_run[i + 1] for i, arg in enumerate(fixture_run) if arg == '--tmpfs']
-            self.assertEqual(len(tmpfs), 3)
+            self.assertEqual(len(tmpfs), 4)
             parsed = {mount.split(':', 1)[0]: set(mount.split(':', 1)[1].split(',')) for mount in tmpfs}
-            self.assertEqual(set(parsed), {'/tmp', '/run', '/var/lib/postgresql'})
-            for options in parsed.values():
-                self.assertTrue({'uid=1000', 'gid=1000', 'rw', 'nosuid'} <= options)
+            self.assertEqual(set(parsed), {'/tmp', '/run', '/var/lib/postgresql', '/run/fixture-observer'})
+            for name, options in parsed.items():
+                if name == '/run/fixture-observer':
+                    self.assertTrue({'uid=1000', 'gid=1001', 'rw', 'nosuid', 'noexec', 'mode=2750'} <= options)
+                else:
+                    self.assertTrue({'uid=1000', 'gid=1000', 'rw', 'nosuid'} <= options)
             self.assertIn('mode=1777', parsed['/tmp'])
             oracle = next(args for args in calls if '/opt/qualification/node_modules/.bin/tsx' in args)
             self.assertEqual(oracle[oracle.index('--user') + 1], 'qualification')

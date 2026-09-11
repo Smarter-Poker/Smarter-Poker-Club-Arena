@@ -276,6 +276,7 @@ def qualify(request, operation, controls, output):
     with candidate_image_cleanup(plan, cleanup_report, output), tempfile.TemporaryDirectory(prefix='component-semantic-') as temp_name:
         temp = Path(temp_name)
         (temp / 'plan.json').write_text(canonical(plan))
+        (temp / 'observation-control.json').write_text(canonical({'version': 1, 'control_sha': request['control_sha']}))
         download_artifact(plan['schema'], temp / 'schema.zip')
         require({'schema.sql', 'fixture.json'} <= validate_zip(temp / 'schema.zip'))
         with zipfile.ZipFile(temp / 'schema.zip') as archive:
@@ -323,6 +324,7 @@ def qualify(request, operation, controls, output):
                          '--sysctl', 'net.ipv4.ip_unprivileged_port_start=0',
                          '--memory=8g', '--cpus=2', '--tmpfs', '/tmp:rw,nosuid,size=2g,uid=1000,gid=1000,mode=1777',
                          '--tmpfs', '/run:rw,nosuid,size=2g,uid=1000,gid=1000',
+                         '--tmpfs', '/run/fixture-observer:rw,nosuid,noexec,size=1m,uid=1000,gid=1001,mode=2750',
                          '--tmpfs', '/var/lib/postgresql:rw,nosuid,size=4g,uid=1000,gid=1000',
                          '--mount', f'type=bind,source={temp},target=/inputs,readonly',
                          '--mount', f'type=bind,source={controls},target=/opt/qualification/controls,readonly',

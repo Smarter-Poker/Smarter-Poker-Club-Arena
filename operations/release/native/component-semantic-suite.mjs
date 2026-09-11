@@ -5,10 +5,10 @@ import { requireSchemaSourceContract } from './component-source-contract.mjs';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { chromium, expect } from '@playwright/test';
-import pg from 'pg';
+import { createObservationClient } from './component-observation-client.mjs';
+import { verifyObservedHandFacts } from './component-observation-protocol.mjs';
 import { EngineSocketJournal } from '../../../tests/e2e/support/liveTableRealtime.ts';
 
-import { verifyPersistedHand, schemaCatalogue } from './component-semantic-observations.mjs';
 import { waitForExactEngineReady } from './component-semantic-readiness.mjs';
 import { prepareOracleHome } from './component-semantic-home.mjs';
 export const semanticCaseNames = Object.freeze([
@@ -19,7 +19,14 @@ export const semanticCaseNames = Object.freeze([
   'spectator-does-not-acquire-seat',
 ]);
 
-export async function qualifyProduct({ tuple, schema, runtimeImage, fixture, db, browser }) {
+export async function qualifyProduct({
+  tuple,
+  schema,
+  runtimeImage,
+  fixture,
+  observations,
+  browser,
+}) {
   requireSchemaSourceContract(fixture.source_contract);
   assert.equal(fixture.version, 1);
   assert.equal(fixture.scope, 'isolated-club-arena-fixture');
@@ -30,7 +37,9 @@ export async function qualifyProduct({ tuple, schema, runtimeImage, fixture, db,
   // host port; nothing here may fall back to the real site or database.
   assert.equal(fixture.base_url, 'https://smarter.poker/hub/club-arena/');
   assert.equal(fixture.engine_health_url, 'https://engine.smarter.poker/health');
-  assert.equal(await schemaCatalogue(db), schema.catalogue_digest);
+  assert.equal(observations.binding.table_id, fixture.table_id);
+  assert.equal(observations.binding.spectator_user_id, fixture.spectator_user_id);
+  assert.equal((await observations.catalogue()).catalogue_digest, schema.catalogue_digest);
   const context = await browser.newContext({
     ignoreHTTPSErrors: true,
     storageState: fixture.storage_state,
@@ -90,20 +99,18 @@ export async function qualifyProduct({ tuple, schema, runtimeImage, fixture, db,
     );
     // The DB writer is asynchronous. Poll only this exact known hand, with a
     // bounded deadline; no retry of gameplay and no replacement hand identity.
+    const hand = { hand_number: causal.handNumber, next_hand_number: causal.nextHandNumber };
     const deadline = Date.now() + 15000;
     for (;;) {
-      const observed = await db.query(
-        'SELECT count(*)::integer AS count FROM public.hand_history WHERE table_id=$1 AND hand_number=$2',
-        [tableId, causal.handNumber]
-      );
-      if (observed.rows[0].count > 0) break;
+      const observed = await observations.handPresence(hand);
+      if (observed.count > 0) break;
       assert.ok(Date.now() < deadline, 'browser-observed hand did not persist before the deadline');
       await new Promise((r) => setTimeout(r, 100));
     }
-    persisted = await verifyPersistedHand(db, tableId, causal, fixture.spectator_user_id);
+    persisted = verifyObservedHandFacts(await observations.handFacts(hand), hand);
     assert.deepEqual(bad, [], 'candidate browser threw an error');
     assert.equal(
-      await schemaCatalogue(db),
+      (await observations.catalogue()).catalogue_digest,
       schema.catalogue_digest,
       'application execution changed the schema'
     );
@@ -137,30 +144,22 @@ if (process.argv[1]?.endsWith('/component-semantic-suite.mjs')) {
   const plan = JSON.parse(await readFile('/inputs/plan.json', 'utf8'));
   const fixture = JSON.parse(await readFile('/run/club-arena-qualification/fixture.json', 'utf8'));
   requireSchemaSourceContract(fixture.source_contract);
-  // Only a local socket to the disposable database. Never DATABASE_URL or an
-  // inherited service credential from Actions/controller/gameplay.
-  const db = new pg.Client({
-    host: '/run/postgresql',
-    database: 'club_arena_qualification',
-    user: 'qualification_reader',
-    connectionTimeoutMillis: 5000,
-    statement_timeout: 5000,
-  });
+  const control = JSON.parse(await readFile('/inputs/observation-control.json', 'utf8'));
+  const observations = createObservationClient(fixture.observation_bridge, control);
   let browser;
   try {
-    await db.connect();
     browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] });
     const result = await qualifyProduct({
       tuple: plan.tuples[Number(process.argv[2])],
       schema: plan.schema,
       runtimeImage: process.argv[3],
       fixture,
-      db,
+      observations,
       browser,
     });
     process.stdout.write(`RELEASE_SEMANTIC_RESULT:${JSON.stringify(result)}\n`);
   } finally {
     await browser?.close();
-    await db.end();
+    observations.close();
   }
 }

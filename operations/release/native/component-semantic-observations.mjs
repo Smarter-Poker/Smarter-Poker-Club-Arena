@@ -44,6 +44,17 @@ export async function verifyPersistedHand(db, tableId, cycle, userId) {
 }
 
 export async function schemaCatalogue(db) {
+  // pg_get_* deparsers depend on search_path. Canonicalize it for producer and
+  // bridge alike without changing application ACLs or persistent settings.
+  const previous = (await db.query("SELECT current_setting('search_path') AS value")).rows[0].value;
+  await db.query("SELECT pg_catalog.set_config('search_path','pg_catalog',false)");
+  try {
+    return await canonicalSchemaCatalogue(db);
+  } finally {
+    await db.query("SELECT pg_catalog.set_config('search_path',$1,false)", [previous]);
+  }
+}
+async function canonicalSchemaCatalogue(db) {
   // Full definitions plus normalized ownership/effective ACLs. PUBLIC grants
   // remain visible; NOINHERIT is not evidence of observer isolation. Role names
   // replace OIDs and ACL entries sort independently of GRANT statement order.
@@ -126,4 +137,83 @@ export async function schemaCatalogue(db) {
       WHERE n.nspname IN ('public','auth') AND c.relkind IN ('r','p'))
     )::text AS catalogue`);
   return digest(rows[0].catalogue);
+}
+
+// Called only by the private fixed-query bridge, never through oracle SQL.
+// Lock actual base tables before checking types, closing the schema/view swap
+// race until the enclosing read-only transaction finishes.
+export async function lockObservationRelations(db) {
+  await db.query('LOCK TABLE public.hand_history, public.table_seats IN ACCESS SHARE MODE');
+  const { rows } = await db.query(`SELECT n.nspname,c.relname,c.relkind,a.attname,
+    tn.nspname AS type_schema,t.typname
+    FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace
+    JOIN pg_catalog.pg_attribute a ON a.attrelid=c.oid
+    JOIN pg_catalog.pg_type t ON t.oid=a.atttypid
+    JOIN pg_catalog.pg_namespace tn ON tn.oid=t.typnamespace
+    WHERE n.nspname='public' AND c.relname IN ('hand_history','table_seats')
+      AND a.attnum>0 AND NOT a.attisdropped`);
+  const contracts = {
+    hand_history: {
+      table_id: ['uuid'],
+      hand_number: ['int4', 'int8'],
+      pot_size: ['numeric'],
+      rake_amount: ['numeric'],
+      actions: ['jsonb'],
+      players: ['jsonb'],
+    },
+    table_seats: { table_id: ['uuid'], user_id: ['uuid'] },
+  };
+  for (const [table, columns] of Object.entries(contracts)) {
+    for (const [column, types] of Object.entries(columns)) {
+      const found = rows.filter((row) => row.relname === table && row.attname === column);
+      assert.equal(found.length, 1);
+      assert.ok(
+        ['r', 'p'].includes(found[0].relkind) &&
+          found[0].type_schema === 'pg_catalog' &&
+          types.includes(found[0].typname),
+        'observation relation contract changed'
+      );
+    }
+  }
+}
+export async function observeHandPresence(db, tableId, handNumber) {
+  await lockObservationRelations(db);
+  const { rows } = await db.query(
+    'SELECT count(*)::integer AS count FROM public.hand_history WHERE table_id=$1 AND hand_number=$2',
+    [tableId, handNumber]
+  );
+  return { count: rows[0].count };
+}
+export async function observeHandFacts(db, tableId, handNumber, spectatorId) {
+  await lockObservationRelations(db);
+  const { rows } = await db.query(
+    `SELECT count(*) OVER()::integer AS total, hand_number,
+    pot_size::text,rake_amount::text,
+    CASE WHEN jsonb_typeof(actions)='array' THEN jsonb_array_length(actions) END AS action_count,
+    CASE WHEN jsonb_typeof(players)='array' THEN jsonb_array_length(players) END AS player_count
+    FROM public.hand_history WHERE table_id=$1 AND hand_number=$2 LIMIT 2`,
+    [tableId, handNumber]
+  );
+  const seat = await db.query(
+    'SELECT count(*)::integer AS count FROM public.table_seats WHERE table_id=$1 AND user_id=$2',
+    [tableId, spectatorId]
+  );
+  return {
+    count: rows[0]?.total ?? 0,
+    rows: rows.map(({ total, hand_number, ...row }) => ({
+      hand_number: Number(hand_number),
+      ...row,
+    })),
+    seat_count: seat.rows[0].count,
+  };
+}
+export async function captureObservationHandFloor(db, tableId) {
+  await lockObservationRelations(db);
+  const { rows } = await db.query(
+    'SELECT coalesce(max(hand_number),0)::text AS hand_floor FROM public.hand_history WHERE table_id=$1',
+    [tableId]
+  );
+  const value = Number(rows[0].hand_floor);
+  assert.ok(Number.isSafeInteger(value) && value >= 0);
+  return value;
 }

@@ -628,7 +628,16 @@ export default function ClubDiamondGamesOperationsPage() {
           primary: {
             label: `Players ${word}`,
             ink: 'white',
-            onClick: () => navigate(`/clubs/${routeClubId}/${game}`),
+            /* Both targets spelled out. `/clubs/${id}/${game}` resolves at
+               runtime, but check-route-targets reads the source, not the
+               runtime, and a template it cannot resolve reads as a navigation
+               to a route nobody declared. The two literals are what the gate
+               is entitled to see, and the allowlist is for paths this router
+               does not own, which these are not. */
+            onClick: () =>
+              navigate(
+                game === 'plinko' ? `/clubs/${routeClubId}/plinko` : `/clubs/${routeClubId}/crash`
+              ),
           },
         }}
       >

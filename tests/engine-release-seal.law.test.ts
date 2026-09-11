@@ -1473,6 +1473,13 @@ describe('every host mutation path obeys the durable release authority', () => {
     expect(guard).toBe(
       '[[ "$STAGE" =~ ^/var/lib/club-arena/control-staging/[1-9][0-9]*-[1-9][0-9]*$ ]]'
     );
+    expect(hostStage).not.toContain('case "$STAGE" in');
+    expect(hostStage.indexOf('STAGE="/var/lib/club-arena/control-staging/$RUN_KEY"')).toBeLessThan(
+      hostStage.indexOf(guard ?? 'missing stage guard')
+    );
+    expect(hostStage.indexOf(guard ?? 'missing stage guard')).toBeLessThan(
+      hostStage.indexOf('rm -rf -- "$STAGE"')
+    );
 
     const accepts = (stage: string) =>
       spawnSync('bash', ['-c', guard ?? 'exit 99'], {

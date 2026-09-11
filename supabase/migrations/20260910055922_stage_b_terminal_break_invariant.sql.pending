@@ -9,7 +9,10 @@
 -- The private readiness adapter changes only the completion trigger's view of
 -- its already-canonical NEW tuple. The ordinary readiness function retains its
 -- strict stored-row contract. The unique asserted substitution fails closed if
--- the production completion guard differs from the audited postimage.
+-- the production completion guard differs from the byte-authenticated
+-- 20260911050554 final-deal-v2 postimage. The later 20260911052216 and
+-- 20260911052648 live receipts are disjoint and are authenticated by the first
+-- and final Stage-B boundaries.
 
 BEGIN;
 
@@ -221,6 +224,63 @@ BEGIN
 END;
 $require_repaired_terminal_break_postimage$;
 
+-- The candidate adapter intentionally composes over exactly one function from
+-- the final-deal-v2 receipt. Refuse before installing any invariant object if
+-- either that ledger statement or the complete mutable catalog preimage has
+-- drifted.
+DO $require_final_deal_v2_completion_guard_preimage$
+BEGIN
+  IF (SELECT count(*)
+        FROM supabase_migrations.schema_migrations m
+       WHERE m.version='20260911050554'
+         AND m.name='final_deal_receipts_survive_real_terminal_settlement'
+         AND cardinality(m.statements)=1
+         AND octet_length(m.statements[1])=82770
+         AND encode(extensions.digest(
+               convert_to(m.statements[1],'UTF8'),'sha256'),'hex')=
+             'b4af55173b825be5ecf48c6c3bbcca1e828493cdafc47becf00d73ad3186c871')<>1
+     OR NOT EXISTS (
+       SELECT 1
+         FROM pg_proc p
+         JOIN pg_language l ON l.oid=p.prolang
+        WHERE p.oid=
+              'public.fn_guard_tournament_completed_certificate()'::regprocedure
+          AND md5(p.prosrc)='d994347e1b76c936ce13361d73f94fd2'
+          AND md5(pg_get_functiondef(p.oid))=
+              '8a05956d1fd25d649f1f80b133ed3ed0'
+          AND p.proowner='postgres'::regrole
+          AND l.lanname='plpgsql'
+          AND p.prosecdef AND p.provolatile='v' AND p.proparallel='u'
+          AND NOT p.proisstrict AND NOT p.proleakproof
+          AND p.prokind='f' AND NOT p.proretset
+          AND p.prorettype='trigger'::regtype
+          AND p.pronargs=0 AND p.pronargdefaults=0
+          AND p.proconfig=ARRAY['search_path=public, pg_temp']::text[]
+          AND p.proacl::text='{postgres=X/postgres}'
+     )
+     OR NOT EXISTS (
+       SELECT 1 FROM pg_trigger tg
+        WHERE tg.tgrelid='public.tournaments'::regclass
+          AND tg.tgname='zzzzzz_tournaments_financial_certificate'
+          AND tg.tgfoid=
+              'public.fn_guard_tournament_completed_certificate()'::regprocedure
+          AND md5(pg_get_triggerdef(tg.oid,true))=
+              'cd94d89d898acd094eeb1dccc1a0a296'
+          AND tg.tgenabled='D' AND tg.tgtype=19
+          AND tg.tgattr::text='10'
+          AND md5(tg.tgqual::text)='cc90af9b34abd78a5892ac074e6d1057'
+          AND tg.tgnargs=0
+          AND octet_length(tg.tgargs)=0
+          AND NOT tg.tgisinternal AND NOT tg.tgdeferrable
+          AND NOT tg.tginitdeferred
+     ) THEN
+    RAISE EXCEPTION
+      'terminal break invariant requires the exact 20260911050554 completion-guard preimage'
+      USING ERRCODE='55000';
+  END IF;
+END;
+$require_final_deal_v2_completion_guard_preimage$;
+
 CREATE FUNCTION public.fn_guard_terminal_tournament_break_state()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -375,6 +435,8 @@ DO $make_finish_certificate_candidate_aware$
 DECLARE
   v_definition text;
   v_next text;
+  v_before jsonb;
+  v_after jsonb;
   v_old constant text := $old$  v_ready := public.fn_tournament_finish_readiness(NEW.id,v_winner);$old$;
   v_new constant text := $new$  v_ready := smarter_private.fn_tournament_finish_readiness_for_terminal_candidate(
     NEW.id,
@@ -391,21 +453,51 @@ BEGIN
       'terminal break invariant requires finish readiness and its completion guard';
   END IF;
 
-  SELECT pg_get_functiondef(
-           'public.fn_guard_tournament_completed_certificate()'::regprocedure
-         )
-    INTO STRICT v_definition;
+  SELECT pg_get_functiondef(p.oid),jsonb_build_object(
+           'owner',p.proowner,'acl',p.proacl,'config',p.proconfig,
+           'definer',p.prosecdef,'language',p.prolang,
+           'volatility',p.provolatile,'parallel',p.proparallel,
+           'strict',p.proisstrict,'leakproof',p.proleakproof,
+           'kind',p.prokind,'returns_set',p.proretset,
+           'args',p.proargtypes::text,'defaults',p.pronargdefaults,
+           'return',p.prorettype)
+    INTO STRICT v_definition,v_before
+    FROM pg_proc p
+   WHERE p.oid=
+         'public.fn_guard_tournament_completed_certificate()'::regprocedure
+     AND md5(p.prosrc)='d994347e1b76c936ce13361d73f94fd2'
+     AND md5(pg_get_functiondef(p.oid))=
+         '8a05956d1fd25d649f1f80b133ed3ed0';
 
-  IF position(v_old IN v_definition) > 0 THEN
-    IF length(v_definition) - length(replace(v_definition,v_old,''))
-         <> length(v_old) THEN
-      RAISE EXCEPTION 'finish-certificate readiness call is not unique';
-    END IF;
-    v_next := replace(v_definition,v_old,v_new);
-    EXECUTE v_next;
-  ELSIF position(v_new IN v_definition) = 0 THEN
+  IF position(v_old IN v_definition)=0
+     OR length(v_definition)-length(replace(v_definition,v_old,''))<>
+        length(v_old) THEN
+    RAISE EXCEPTION 'finish-certificate readiness call is not the unique audited preimage';
+  END IF;
+
+  v_next:=replace(v_definition,v_old,v_new);
+  EXECUTE v_next;
+
+  SELECT jsonb_build_object(
+           'owner',p.proowner,'acl',p.proacl,'config',p.proconfig,
+           'definer',p.prosecdef,'language',p.prolang,
+           'volatility',p.provolatile,'parallel',p.proparallel,
+           'strict',p.proisstrict,'leakproof',p.proleakproof,
+           'kind',p.prokind,'returns_set',p.proretset,
+           'args',p.proargtypes::text,'defaults',p.pronargdefaults,
+           'return',p.prorettype)
+    INTO STRICT v_after
+    FROM pg_proc p
+   WHERE p.oid=
+         'public.fn_guard_tournament_completed_certificate()'::regprocedure
+     AND md5(p.prosrc)='8e0d121a711f6b7afade68125d032f8d'
+     AND md5(pg_get_functiondef(p.oid))=
+         '0a3e3ba2dc6c6e09ddef561e93e67b7d';
+
+  IF v_after IS DISTINCT FROM v_before THEN
     RAISE EXCEPTION
-      'finish-certificate readiness call changed; inspect before applying';
+      'candidate-aware completion guard changed metadata outside its one audited call site'
+      USING ERRCODE='55000';
   END IF;
 END;
 $make_finish_certificate_candidate_aware$;
@@ -512,6 +604,46 @@ BEGIN
     RAISE EXCEPTION
       'finish certificate lost candidate-aware terminal break enforcement'
       USING ERRCODE = '55000';
+  END IF;
+
+  IF md5(v_certificate_source)<>'8e0d121a711f6b7afade68125d032f8d'
+     OR NOT EXISTS (
+       SELECT 1
+         FROM pg_proc p
+         JOIN pg_language l ON l.oid=p.prolang
+        WHERE p.oid=
+              'public.fn_guard_tournament_completed_certificate()'::regprocedure
+          AND md5(pg_get_functiondef(p.oid))=
+              '0a3e3ba2dc6c6e09ddef561e93e67b7d'
+          AND p.proowner='postgres'::regrole
+          AND l.lanname='plpgsql'
+          AND p.prosecdef AND p.provolatile='v' AND p.proparallel='u'
+          AND NOT p.proisstrict AND NOT p.proleakproof
+          AND p.prokind='f' AND NOT p.proretset
+          AND p.prorettype='trigger'::regtype
+          AND p.pronargs=0 AND p.pronargdefaults=0
+          AND p.proconfig=ARRAY['search_path=public, pg_temp']::text[]
+          AND p.proacl::text='{postgres=X/postgres}'
+     )
+     OR NOT EXISTS (
+       SELECT 1 FROM pg_trigger tg
+        WHERE tg.tgrelid='public.tournaments'::regclass
+          AND tg.tgname='zzzzzz_tournaments_financial_certificate'
+          AND tg.tgfoid=
+              'public.fn_guard_tournament_completed_certificate()'::regprocedure
+          AND md5(pg_get_triggerdef(tg.oid,true))=
+              'cd94d89d898acd094eeb1dccc1a0a296'
+          AND tg.tgenabled='D' AND tg.tgtype=19
+          AND tg.tgattr::text='10'
+          AND md5(tg.tgqual::text)='cc90af9b34abd78a5892ac074e6d1057'
+          AND tg.tgnargs=0
+          AND octet_length(tg.tgargs)=0
+          AND NOT tg.tgisinternal AND NOT tg.tgdeferrable
+          AND NOT tg.tginitdeferred
+     ) THEN
+    RAISE EXCEPTION
+      'candidate-aware completion guard lost its exact composed source or metadata'
+      USING ERRCODE='55000';
   END IF;
 END;
 $verify_terminal_break_invariant$;

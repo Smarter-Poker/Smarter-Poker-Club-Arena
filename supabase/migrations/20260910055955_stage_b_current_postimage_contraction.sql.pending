@@ -5,7 +5,9 @@
 -- intermediate authority, overwrite later live fixes, and split one scheduler
 -- retirement across transactions. This forward-only boundary composes their
 -- final contract over the measured catalog state through the byte-authenticated
--- 20260910063559 and 20260910064701 lease-heartbeat repairs. In particular,
+-- 20260911052648 live tail, including the 20260910063559 and 20260910064701
+-- lease-heartbeat repairs, final-deal v2, wheel free-spin retirement, and
+-- exact-generation bounty rebuy settlement. In particular,
 -- this contraction may never reinstall a lease-row FOR SHARE fence that makes
 -- a busy tournament manager starve its own heartbeat.
 --
@@ -308,7 +310,9 @@ $require_scoped_settlement_lane_postimage$;
 -- break-window bootstrap that admits this cutover plus the live function
 -- preimages this boundary actually replaces or contracts. The same proof runs
 -- again at transaction end, so every carried implementation remains exact.
-CREATE OR REPLACE FUNCTION pg_temp.assert_stage_b_owned_postimage()
+CREATE OR REPLACE FUNCTION pg_temp.assert_stage_b_owned_postimage(
+  p_after_contraction boolean DEFAULT false
+)
 RETURNS void
 LANGUAGE plpgsql
 SET search_path TO 'pg_catalog','public','extensions','pg_temp'
@@ -317,6 +321,34 @@ DECLARE
   v_count integer;
   v_bad integer;
 BEGIN
+  WITH expected(version,name,statement_bytes,statement_sha256) AS (
+    VALUES
+      ('20260911050554','final_deal_receipts_survive_real_terminal_settlement',82770,
+       'b4af55173b825be5ecf48c6c3bbcca1e828493cdafc47becf00d73ad3186c871'),
+      ('20260911052216','the_daily_free_spin_leaves_the_building',49343,
+       '4778ce9d373a98e8b10cb31e496bf18e4e527c0a158f37a4e4fcf500b3c9b995'),
+      ('20260911052648','bounty_rebuy_settles_its_exact_prior_entry_generation',22463,
+       '4f9616b84906a7479c60dd0a266c2c2d1bb056828aa53ef45095ea31d058c5e2')
+  )
+  SELECT count(*)::integer,
+         count(*) FILTER (
+           WHERE m.version IS NULL
+              OR cardinality(m.statements)<>1
+              OR octet_length(m.statements[1])<>expected.statement_bytes
+              OR encode(extensions.digest(
+                   convert_to(m.statements[1],'UTF8'),'sha256'),'hex')<>
+                   expected.statement_sha256
+         )::integer
+    INTO v_count,v_bad
+    FROM expected
+    LEFT JOIN supabase_migrations.schema_migrations m
+      ON m.version=expected.version AND m.name=expected.name;
+  IF v_count<>3 OR v_bad<>0 THEN
+    RAISE EXCEPTION
+      'Stage-B requires the three byte-exact 20260911050554..20260911052648 live-tail receipts'
+      USING ERRCODE='55000';
+  END IF;
+
   SELECT count(*)::integer INTO v_count
     FROM supabase_migrations.schema_migrations m
    WHERE m.version='20260910164655'
@@ -425,6 +457,284 @@ BEGIN
       v_bad USING ERRCODE='55000';
   END IF;
 
+  -- These are live-tail contracts that Stage B composes over but does not own.
+  -- Running this proof at both entry and exit makes an accidental wrapper,
+  -- configuration, rebuy, or settle-source rewrite part of the transaction's
+  -- atomic refusal rather than a later rehearsal discovery.
+  WITH expected(
+    identity,source_md5,definition_md5,configuration,service_execute,
+    return_type,argdefaults
+  ) AS (
+    VALUES
+      ('public.fn_complete_tournament_terminal(uuid,uuid,text)',
+       '96a61ea5e16560735bcb70b355aa79ab','480be3139fe0878e637ce54f533a2170',
+       ARRAY['search_path=public, pg_temp','statement_timeout=45s']::text[],
+       true,'jsonb',0),
+      ('public.fn_complete_tournament_terminal_pre_seat_guard(uuid,uuid,text)',
+       '90f7506df2f1a94fe22952714fcd9f85','8397b4f24c6d1a072d7b2d946f45e3d6',
+       ARRAY['search_path=public','statement_timeout=45s']::text[],
+       false,'jsonb',0),
+      ('public.fn_ca_tournament_terminal_receipt(uuid,uuid)',
+       'bb4b0e1d1c758943fca29f9a83d064e4','185dcb02134aa1f1fd2d87cdddbcfd26',
+       ARRAY['search_path=public','statement_timeout=30s']::text[],
+       false,'jsonb',1),
+      ('public.fn_ca_verify_terminal_final_deal_batch(uuid,boolean)',
+       '260c94b41d7f2bb021a88a546a1714ac','cb81d2c33985e46bd56dc3c4f1320e67',
+       ARRAY['search_path=public, pg_temp']::text[],false,'jsonb',1),
+      ('public.fn_guard_tournament_completing_claim()',
+       '82078938fd926c94a0ab778acd77dd61','311ed77e7726f0c7515859a9140d526c',
+       ARRAY['search_path=public, pg_temp']::text[],false,'trigger',0),
+      ('public.trg_tournament_atomic_place_completion_guard()',
+       '3e43d26ddd36a55e736a9a304a89ba9a','18cf8159e315f322ac7cc09e1f913671',
+       ARRAY['search_path=public']::text[],true,'trigger',0),
+      ('public.trg_lock_atomic_final_table_deal_status()',
+       'ddc5e3121ed9cc73d41525e6c1ba6c34','b16256830158e669defcff8751cb5be7',
+       ARRAY['search_path=public']::text[],true,'trigger',0),
+      ('public.fn_guard_tournament_completed_certificate()',
+       '8e0d121a711f6b7afade68125d032f8d','0a3e3ba2dc6c6e09ddef561e93e67b7d',
+       ARRAY['search_path=public, pg_temp']::text[],false,'trigger',0),
+      ('public.trg_freeze_canonical_final_deal_batch()',
+       '80362aed787137219432f6039bf03158','c5bbfca7dcc4aedc286c4004f5f5d2c1',
+       ARRAY['search_path=public, pg_temp']::text[],false,'trigger',0),
+      ('public.fn_settle_tournament_final_table_deal(uuid)',
+       'b1941b2e55dade307ecd74068ab3e500','c7bee6802ab30d625c32503a4d6609e1',
+       ARRAY['search_path=public','statement_timeout=30s']::text[],
+       true,'jsonb',0),
+      ('public.trg_atomic_final_table_deal_completion_guard()',
+       '9f5f5fefa77ae93bfeffc9f414a63a0d','38bf96ba348994fd40264584c26107d8',
+       ARRAY['search_path=public']::text[],true,'trigger',0),
+      ('public.trg_freeze_atomic_final_table_deal_obligation()',
+       'd338c5278ef1247ff0f4a7c4ba774cc5','237168031dfb0fb80bdaa8ff15f25172',
+       ARRAY['search_path=public']::text[],true,'trigger',0),
+      ('public.fn_tournament_finish_readiness(uuid,uuid)',
+       '993e6e1de9edba2fe235d86ff6c243c9','6361f556eac2ff2940e3f49f485176d0',
+       ARRAY['search_path=public, pg_temp']::text[],false,'jsonb',0),
+      ('public.fn_ca_settle_tournament_place_raw(uuid,integer,uuid,numeric)',
+       '3585ddbfdb0a197243d5e6eefb6b670f','f676b2cbb361896dfa61f7e5f9413f46',
+       ARRAY['search_path=public']::text[],false,'jsonb',0),
+      ('public.fn_ca_settle_tournament_bubble_raw(uuid,uuid,numeric)',
+       'f1fc7a0bf480b1034f0f1d9cba3b4d0b','6bbb0ff983fc61c9f8c18cc2201e0f93',
+       ARRAY['search_path=public']::text[],false,'jsonb',0),
+      ('public.fn_ca_settle_final_table_deal_share_raw(uuid,uuid,numeric)',
+       '852e35483b67c1fc59b6347b51c79cb8','3437a8e83051385947c6b48e7c399a90',
+       ARRAY['search_path=public']::text[],false,'jsonb',0)
+  )
+  SELECT count(*)::integer,
+         count(*) FILTER (
+           WHERE p.oid IS NULL
+              OR md5(p.prosrc) IS DISTINCT FROM expected.source_md5
+              OR md5(pg_get_functiondef(p.oid)) IS DISTINCT FROM
+                   expected.definition_md5
+              OR p.proowner IS DISTINCT FROM 'postgres'::regrole
+              OR l.lanname IS DISTINCT FROM 'plpgsql'
+              OR NOT p.prosecdef OR p.prokind<>'f'
+              OR p.proisstrict OR p.proleakproof OR p.proretset
+              OR p.provolatile IS DISTINCT FROM CASE
+                   WHEN expected.identity=
+                        'public.fn_ca_tournament_terminal_receipt(uuid,uuid)'
+                     THEN 's'::"char" ELSE 'v'::"char" END
+              OR p.proparallel<>'u'
+              OR p.prorettype IS DISTINCT FROM
+                   to_regtype(expected.return_type)
+              OR p.pronargdefaults IS DISTINCT FROM expected.argdefaults
+              OR p.proconfig IS DISTINCT FROM expected.configuration
+              OR p.proacl::text IS DISTINCT FROM CASE
+                   WHEN expected.identity=
+                        'public.fn_settle_tournament_final_table_deal(uuid)'
+                        AND p_after_contraction
+                     THEN '{postgres=X/postgres}'
+                   WHEN expected.service_execute
+                     THEN '{postgres=X/postgres,service_role=X/postgres}'
+                   ELSE '{postgres=X/postgres}' END
+         )::integer
+    INTO v_count,v_bad
+    FROM expected
+    LEFT JOIN pg_proc p ON p.oid=to_regprocedure(expected.identity)
+    LEFT JOIN pg_language l ON l.oid=p.prolang;
+  IF v_count<>16 OR v_bad<>0 THEN
+    RAISE EXCEPTION
+      'Stage-B found % drifted exact final-deal live-tail function definitions',
+      v_bad USING ERRCODE='55000';
+  END IF;
+
+  IF NOT EXISTS (
+       SELECT 1 FROM pg_proc p JOIN pg_language l ON l.oid=p.prolang
+        WHERE p.oid=
+              'public.fn_complete_tournament_terminal(uuid,uuid,text)'::regprocedure
+          AND md5(p.prosrc)='96a61ea5e16560735bcb70b355aa79ab'
+          AND md5(pg_get_functiondef(p.oid))=
+              '480be3139fe0878e637ce54f533a2170'
+          AND p.proowner='postgres'::regrole AND l.lanname='plpgsql'
+          AND p.prosecdef AND p.provolatile='v' AND p.proparallel='u'
+          AND NOT p.proisstrict AND NOT p.proleakproof
+          AND p.prokind='f' AND NOT p.proretset
+          AND p.prorettype='jsonb'::regtype
+          AND p.pronargs=3 AND p.pronargdefaults=0
+          AND p.proconfig=ARRAY[
+                'search_path=public, pg_temp','statement_timeout=45s']::text[]
+          AND p.proacl::text=
+                '{postgres=X/postgres,service_role=X/postgres}')
+     OR NOT EXISTS (
+       SELECT 1 FROM pg_proc p JOIN pg_language l ON l.oid=p.prolang
+        WHERE p.oid=
+              'public.fn_guard_tournament_completed_certificate()'::regprocedure
+          AND md5(p.prosrc)='8e0d121a711f6b7afade68125d032f8d'
+          AND md5(pg_get_functiondef(p.oid))=
+              '0a3e3ba2dc6c6e09ddef561e93e67b7d'
+          AND p.proowner='postgres'::regrole AND l.lanname='plpgsql'
+          AND p.prosecdef AND p.provolatile='v' AND p.proparallel='u'
+          AND NOT p.proisstrict AND NOT p.proleakproof
+          AND p.prokind='f' AND NOT p.proretset
+          AND p.prorettype='trigger'::regtype
+          AND p.pronargs=0 AND p.pronargdefaults=0
+          AND p.proconfig=ARRAY['search_path=public, pg_temp']::text[]
+          AND p.proacl::text='{postgres=X/postgres}')
+     OR NOT EXISTS (
+       SELECT 1 FROM pg_proc p JOIN pg_language l ON l.oid=p.prolang
+        WHERE p.oid=
+              'public.fn_settle_tournament_final_table_deal(uuid)'::regprocedure
+          AND md5(p.prosrc)='b1941b2e55dade307ecd74068ab3e500'
+          AND md5(pg_get_functiondef(p.oid))=
+              'c7bee6802ab30d625c32503a4d6609e1'
+          AND p.proowner='postgres'::regrole AND l.lanname='plpgsql'
+          AND p.prosecdef AND p.provolatile='v' AND p.proparallel='u'
+          AND NOT p.proisstrict AND NOT p.proleakproof
+          AND p.prokind='f' AND NOT p.proretset
+          AND p.prorettype='jsonb'::regtype
+          AND p.pronargs=1 AND p.pronargdefaults=0
+          AND p.proconfig=ARRAY[
+                'search_path=public','statement_timeout=30s']::text[]
+          AND p.proacl::text=CASE WHEN p_after_contraction
+                THEN '{postgres=X/postgres}'
+                ELSE '{postgres=X/postgres,service_role=X/postgres}' END)
+     OR NOT EXISTS (
+       SELECT 1 FROM pg_proc p JOIN pg_language l ON l.oid=p.prolang
+        WHERE p.oid=
+              'public.trg_freeze_canonical_final_deal_batch()'::regprocedure
+          AND md5(p.prosrc)='80362aed787137219432f6039bf03158'
+          AND md5(pg_get_functiondef(p.oid))=
+              'c5bbfca7dcc4aedc286c4004f5f5d2c1'
+          AND p.proowner='postgres'::regrole AND l.lanname='plpgsql'
+          AND p.prosecdef AND p.provolatile='v' AND p.proparallel='u'
+          AND NOT p.proisstrict AND NOT p.proleakproof
+          AND p.prokind='f' AND NOT p.proretset
+          AND p.prorettype='trigger'::regtype
+          AND p.pronargs=0 AND p.pronargdefaults=0
+          AND p.proconfig=ARRAY['search_path=public, pg_temp']::text[]
+          AND p.proacl::text='{postgres=X/postgres}')
+     OR NOT EXISTS (
+       SELECT 1 FROM pg_proc p JOIN pg_language l ON l.oid=p.prolang
+        WHERE p.oid=
+              'public.trg_freeze_atomic_final_table_deal_obligation()'::regprocedure
+          AND md5(p.prosrc)='d338c5278ef1247ff0f4a7c4ba774cc5'
+          AND md5(pg_get_functiondef(p.oid))=
+              '237168031dfb0fb80bdaa8ff15f25172'
+          AND p.proowner='postgres'::regrole AND l.lanname='plpgsql'
+          AND p.prosecdef AND p.provolatile='v' AND p.proparallel='u'
+          AND NOT p.proisstrict AND NOT p.proleakproof
+          AND p.prokind='f' AND NOT p.proretset
+          AND p.prorettype='trigger'::regtype
+          AND p.pronargs=0 AND p.pronargdefaults=0
+          AND p.proconfig=ARRAY['search_path=public']::text[]
+          AND p.proacl::text=
+                '{postgres=X/postgres,service_role=X/postgres}')
+     OR NOT EXISTS (
+       SELECT 1 FROM pg_proc p JOIN pg_language l ON l.oid=p.prolang
+        WHERE p.oid=
+              'public.trg_lock_atomic_final_table_deal_status()'::regprocedure
+          AND md5(p.prosrc)='ddc5e3121ed9cc73d41525e6c1ba6c34'
+          AND md5(pg_get_functiondef(p.oid))=
+              'b16256830158e669defcff8751cb5be7'
+          AND p.proowner='postgres'::regrole AND l.lanname='plpgsql'
+          AND p.prosecdef AND p.provolatile='v' AND p.proparallel='u'
+          AND NOT p.proisstrict AND NOT p.proleakproof
+          AND p.prokind='f' AND NOT p.proretset
+          AND p.prorettype='trigger'::regtype
+          AND p.pronargs=0 AND p.pronargdefaults=0
+          AND p.proconfig=ARRAY['search_path=public']::text[]
+          AND p.proacl::text=
+                '{postgres=X/postgres,service_role=X/postgres}')
+     OR NOT EXISTS (
+       SELECT 1 FROM pg_trigger tg
+        WHERE tg.tgrelid=
+              'public.tournament_final_table_deal_batches'::regclass
+          AND tg.tgname='zzzz_freeze_canonical_final_deal_batch'
+          AND tg.tgfoid=
+              'public.trg_freeze_canonical_final_deal_batch()'::regprocedure
+          AND md5(pg_get_triggerdef(tg.oid,true))=
+              '2d79c256ecf4e44b0bb51686b824807e'
+          AND tg.tgenabled='O' AND tg.tgtype=27
+          AND tg.tgattr::text='' AND tg.tgqual IS NULL
+          AND tg.tgnargs=0 AND octet_length(tg.tgargs)=0
+          AND NOT tg.tgisinternal AND NOT tg.tgdeferrable
+          AND NOT tg.tginitdeferred)
+     OR NOT EXISTS (
+       SELECT 1 FROM pg_trigger tg
+        WHERE tg.tgrelid='public.tournament_obligations'::regclass
+          AND tg.tgname='zzzzz_freeze_atomic_final_table_deal_obligation'
+          AND tg.tgfoid=
+              'public.trg_freeze_atomic_final_table_deal_obligation()'::regprocedure
+          AND md5(pg_get_triggerdef(tg.oid,true))=
+              'c9aebd8de7e6e5fef9b0c9fd3da7dc81'
+          AND tg.tgenabled='O' AND tg.tgtype=31
+          AND tg.tgattr::text='' AND tg.tgqual IS NULL
+          AND tg.tgnargs=0 AND octet_length(tg.tgargs)=0
+          AND NOT tg.tgisinternal AND NOT tg.tgdeferrable
+          AND NOT tg.tginitdeferred)
+     OR NOT EXISTS (
+       SELECT 1 FROM pg_trigger tg
+        WHERE tg.tgrelid='public.tournaments'::regclass
+          AND tg.tgname='zzzzy_lock_atomic_final_table_deal_status'
+          AND tg.tgfoid=
+              'public.trg_lock_atomic_final_table_deal_status()'::regprocedure
+          AND md5(pg_get_triggerdef(tg.oid,true))=
+              '5781f6fe63ae275fa12c4dcda74ffc6b'
+          AND tg.tgenabled='O' AND tg.tgtype=19
+          AND tg.tgattr::text='10'
+          AND md5(tg.tgqual::text)='50d33071dd4fa3af7b6afd7b598949a6'
+          AND tg.tgnargs=0 AND octet_length(tg.tgargs)=0
+          AND NOT tg.tgisinternal AND NOT tg.tgdeferrable
+          AND NOT tg.tginitdeferred)
+     OR NOT EXISTS (
+       SELECT 1 FROM pg_proc p JOIN pg_language l ON l.oid=p.prolang
+        WHERE p.oid=
+              'public.process_tournament_rebuy(uuid,uuid,text,numeric,numeric,integer,text)'::regprocedure
+          AND md5(p.prosrc)='607e4daf9060a1176e032016b8879808'
+          AND md5(pg_get_functiondef(p.oid))=
+              'a6adf208eae8476128f197c16f83d6c5'
+          AND p.proowner='postgres'::regrole AND l.lanname='plpgsql'
+          AND p.prosecdef AND p.provolatile='v' AND p.proparallel='u'
+          AND NOT p.proisstrict AND NOT p.proleakproof
+          AND p.prokind='f' AND NOT p.proretset
+          AND p.prorettype='jsonb'::regtype
+          AND p.pronargs=7 AND p.pronargdefaults=2
+          AND p.proconfig=ARRAY[
+                'search_path=public, pg_temp','statement_timeout=30s']::text[]
+          AND p.proacl::text=
+                '{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}')
+     OR NOT EXISTS (
+       SELECT 1 FROM pg_proc p JOIN pg_language l ON l.oid=p.prolang
+        WHERE p.oid=to_regprocedure(
+              'public.fn_ca_settle_bounty_rebuy_generation_v1(uuid,uuid,uuid)')
+          AND md5(p.prosrc)='f793ed628fe609fe9fe2aa30a76bc4c7'
+          AND md5(pg_get_functiondef(p.oid))=
+              '0286145366f00c7cad0a996f05630851'
+          AND p.proowner='postgres'::regrole AND l.lanname='plpgsql'
+          AND p.prosecdef AND p.provolatile='v' AND p.proparallel='u'
+          AND NOT p.proisstrict AND NOT p.proleakproof
+          AND p.prokind='f' AND NOT p.proretset
+          AND p.prorettype='jsonb'::regtype
+          AND p.pronargs=3 AND p.pronargdefaults=0
+          AND p.proconfig=ARRAY[
+                'search_path=public, pg_temp','statement_timeout=30s']::text[]
+          AND p.proacl::text='{postgres=X/postgres}')
+     OR (SELECT count(*) FROM public.ca_settle_sources
+          WHERE source='fn_collect_bounty' AND note='DB caller')<>1 THEN
+    RAISE EXCEPTION
+      'Stage-B found a drifted final-deal or bounty-rebuy live-tail contract'
+      USING ERRCODE='55000';
+  END IF;
+
   WITH expected(event_name,event_kind) AS (
     VALUES
       ('ca_break_window_refuses_ddl','ddl_command_end'),
@@ -457,7 +767,7 @@ BEGIN
 END;
 $assert_stage_b_owned_postimage$;
 
-SELECT pg_temp.assert_stage_b_owned_postimage();
+SELECT pg_temp.assert_stage_b_owned_postimage(false);
 
 -- Four live-tail functions below are deliberately wrapped or have their ACL
 -- and trusted search path tightened later in this same transaction. Pin their
@@ -1210,6 +1520,7 @@ BEGIN
     RAISE EXCEPTION 'terminal settlement requires service authority'
       USING ERRCODE='28000';
   END IF;
+  PERFORM public.fn_ca_lock_settlement_lane_global();
   v_token:=public.fn_ca_open_tournament_seat_exit_authority(
     p_tournament_id,'terminal_finish',NULL);
   BEGIN
@@ -3913,8 +4224,6 @@ ALTER FUNCTION public.fn_settle_satellite_tournament(uuid,uuid)
   SET search_path TO public,pg_temp;
 ALTER FUNCTION public.fn_settle_tournament_bubble_protection(uuid,uuid)
   SET search_path TO public,pg_temp;
-ALTER FUNCTION public.fn_settle_tournament_final_table_deal(uuid)
-  SET search_path TO public,pg_temp;
 ALTER FUNCTION public.fn_settle_tournament_obligation(
   uuid,text,integer,uuid,numeric,text,text,uuid)
   SET search_path TO public,pg_temp;
@@ -4048,6 +4357,9 @@ BEGIN
     'public.fn_register_for_tournament_with_ticket(uuid,uuid)'
   ] LOOP
     v_proc := to_regprocedure(v_signature);
+    IF v_signature='public.fn_settle_tournament_final_table_deal(uuid)' THEN
+      CONTINUE;
+    END IF;
     IF NOT EXISTS (
       SELECT 1 FROM pg_proc p
        WHERE p.oid=v_proc AND p.prosecdef
@@ -4059,6 +4371,18 @@ BEGIN
         v_signature;
     END IF;
   END LOOP;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_proc p
+     WHERE p.oid=
+           'public.fn_settle_tournament_final_table_deal(uuid)'::regprocedure
+       AND md5(p.prosrc)='b1941b2e55dade307ecd74068ab3e500'
+       AND p.proconfig=
+           ARRAY['search_path=public','statement_timeout=30s']::text[]
+  ) THEN
+    RAISE EXCEPTION
+      'final-table-deal settlement lost its exact live source or configuration';
+  END IF;
 END;
 $terminal_acl_proof$;
 
@@ -4997,18 +5321,20 @@ BEGIN
   IF v_persisted_hand_exists THEN
     RETURN jsonb_build_object('ok',false,'reason','tournament_started');
   END IF;
+  -- started_at and a completed launch receipt are durable evidence that play
+  -- actually began for every tournament product. The scheduled clock remains
+  -- an additional cutoff for timed events; it must never be the only guard.
+  SELECT r.completed_at INTO v_launch_completed_at
+    FROM public.tournament_launch_receipts r
+   WHERE r.tournament_id=p_tournament_id;
+  IF v_t.started_at IS NOT NULL OR v_launch_completed_at IS NOT NULL THEN
+    RETURN jsonb_build_object('ok',false,'reason','tournament_started');
+  END IF;
   IF v_start_authority='scheduled_clock' THEN
     IF v_t.start_time IS NULL THEN
       RETURN jsonb_build_object('ok',false,'reason','registration_schedule_unset');
     END IF;
     IF clock_timestamp()>=v_t.start_time THEN
-      RETURN jsonb_build_object('ok',false,'reason','tournament_started');
-    END IF;
-  ELSE
-    SELECT r.completed_at INTO v_launch_completed_at
-      FROM public.tournament_launch_receipts r
-     WHERE r.tournament_id=p_tournament_id;
-    IF v_t.started_at IS NOT NULL OR v_launch_completed_at IS NOT NULL THEN
       RETURN jsonb_build_object('ok',false,'reason','tournament_started');
     END IF;
   END IF;
@@ -5433,8 +5759,8 @@ BEGIN
 
   -- Re-prove the chosen start authority after all money and seat work. Timed
   -- events still use the locked schedule cutoff; every product also treats a
-  -- persisted hand as irreversible start truth; seat-first products further
-  -- use status, started_at and completed launch truth. Any loss of the race
+  -- persisted hand, started_at, completed launch receipt, or closed lifecycle
+  -- status as irreversible start truth. Any loss of the race
   -- rolls every preceding write back atomically.
   v_unregistered_at:=clock_timestamp();
   SELECT EXISTS (
@@ -5453,25 +5779,23 @@ BEGIN
       'tournament hand persisted before unregistration could commit'
       USING ERRCODE='55000';
   END IF;
-  IF v_start_authority='scheduled_clock' THEN
-    IF v_unregistered_at>=v_t.start_time THEN
-      RAISE EXCEPTION 'tournament started before unregistration could commit'
-        USING ERRCODE='55000';
-    END IF;
-  ELSE
-    SELECT t.status::text,t.started_at,launch.completed_at
-      INTO v_actual_status,v_actual_started_at,v_launch_completed_at
-      FROM public.tournaments t
-      LEFT JOIN public.tournament_launch_receipts launch
-        ON launch.tournament_id=t.id
-     WHERE t.id=p_tournament_id;
-    IF upper(COALESCE(v_actual_status,'')) NOT IN ('ANNOUNCED','REGISTERING')
-       OR v_actual_started_at IS NOT NULL
-       OR v_launch_completed_at IS NOT NULL THEN
-      RAISE EXCEPTION
-        'seat-first tournament started before unregistration could commit'
-        USING ERRCODE='55000';
-    END IF;
+  SELECT t.status::text,t.started_at,launch.completed_at
+    INTO v_actual_status,v_actual_started_at,v_launch_completed_at
+    FROM public.tournaments t
+    LEFT JOIN public.tournament_launch_receipts launch
+      ON launch.tournament_id=t.id
+   WHERE t.id=p_tournament_id;
+  IF upper(COALESCE(v_actual_status,'')) NOT IN ('ANNOUNCED','REGISTERING')
+     OR v_actual_started_at IS NOT NULL
+     OR v_launch_completed_at IS NOT NULL THEN
+    RAISE EXCEPTION
+      'tournament started before unregistration could commit'
+      USING ERRCODE='55000';
+  END IF;
+  IF v_start_authority='scheduled_clock'
+     AND v_unregistered_at>=v_t.start_time THEN
+    RAISE EXCEPTION 'tournament started before unregistration could commit'
+      USING ERRCODE='55000';
   END IF;
 
   INSERT INTO public.tournament_unregistration_receipts(
@@ -7460,6 +7784,27 @@ $require_stage_a_request_authority$;
    every format completion, certificate and pool-lifecycle trigger disabled.
    The payer and all seven guards contract in this one transaction, so no state can expose one
    strict boundary without the others. */
+CREATE TEMP TABLE stage_b_settlement_trigger_preimage
+ON COMMIT DROP
+AS
+SELECT tg.tgname,
+       tg.tgfoid AS function_oid,
+       pg_get_triggerdef(tg.oid,true) AS definition,
+       tg.tgenabled,tg.tgtype,tg.tgattr,
+       tg.tgqual::text AS trigger_when,
+       tg.tgnargs,tg.tgargs,
+       tg.tgisinternal,tg.tgdeferrable,tg.tginitdeferred
+  FROM pg_trigger tg
+ WHERE tg.tgrelid='public.tournaments'::regclass
+   AND tg.tgname IN (
+     'aaa_guard_atomic_satellite_completion',
+     'zzzz_tournaments_atomic_place_completion_guard',
+     'zzzzz_tournaments_atomic_final_table_deal_completion_guard',
+     'aa_guard_tournament_completing_claim',
+     'zzzzzz_tournaments_financial_certificate',
+     'zzzz_tournament_pool_finalization_window_guard',
+     'zzzz_freeze_finalized_tournament_prize_pool');
+
 DO $require_stage_a_tournament_settlement_expand$
 DECLARE
   v_source text;
@@ -7472,6 +7817,56 @@ DECLARE
   v_pool_window_guard_enabled boolean;
   v_pool_freeze_guard_enabled boolean;
 BEGIN
+  IF (SELECT count(*) FROM stage_b_settlement_trigger_preimage)<>7
+     OR EXISTS (
+       SELECT 1
+         FROM (VALUES
+           ('aaa_guard_atomic_satellite_completion',
+            'public.trg_guard_atomic_satellite_completion()',
+            'e7bdddc429922d39b1db20916a442351','10',NULL::text),
+           ('zzzz_tournaments_atomic_place_completion_guard',
+            'public.trg_tournament_atomic_place_completion_guard()',
+            '481ecc9520193a0ba670e1a7f2eddb41','',
+            'cc90af9b34abd78a5892ac074e6d1057'),
+           ('zzzzz_tournaments_atomic_final_table_deal_completion_guard',
+            'public.trg_atomic_final_table_deal_completion_guard()',
+            '79b2ecea0a7e0f1b4946436eb1404623','10',
+            'cc90af9b34abd78a5892ac074e6d1057'),
+           ('aa_guard_tournament_completing_claim',
+            'public.fn_guard_tournament_completing_claim()',
+            'd068b2ee511bad5e75dae19a424dde87','10',NULL::text),
+           ('zzzzzz_tournaments_financial_certificate',
+            'public.fn_guard_tournament_completed_certificate()',
+            'cd94d89d898acd094eeb1dccc1a0a296','10',
+            'cc90af9b34abd78a5892ac074e6d1057'),
+           ('zzzz_tournament_pool_finalization_window_guard',
+            'public.trg_tournament_pool_finalization_window_guard()',
+            'd79234029c6246e6431c8f6907ac935c','51',NULL::text),
+           ('zzzz_freeze_finalized_tournament_prize_pool',
+            'public.trg_freeze_finalized_tournament_prize_pool()',
+            'f75ff7a6ad7952e4ca090cde1516615c','23 8 51 16 49',NULL::text)
+         ) expected(
+           trigger_name,function_identity,definition_md5,trigger_attribute,when_md5
+         )
+         LEFT JOIN stage_b_settlement_trigger_preimage actual
+           ON actual.tgname=expected.trigger_name
+        WHERE actual.tgname IS NULL
+           OR actual.function_oid IS DISTINCT FROM
+              to_regprocedure(expected.function_identity)
+           OR md5(actual.definition)<>expected.definition_md5
+           OR actual.tgenabled<>'D'
+           OR actual.tgtype<>19
+           OR actual.tgattr::text<>expected.trigger_attribute
+           OR md5(actual.trigger_when) IS DISTINCT FROM expected.when_md5
+           OR actual.tgnargs<>0
+           OR octet_length(actual.tgargs)<>0
+           OR actual.tgisinternal OR actual.tgdeferrable
+           OR actual.tginitdeferred
+     ) THEN
+    RAISE EXCEPTION
+      'Stage-B settlement triggers are not the exact disabled Stage-A preimage';
+  END IF;
+
   IF to_regprocedure(
        'public.fn_settle_tournament_obligation_before_atomic_batch_gate(uuid,text,integer,uuid,numeric,text,text,uuid)'
      ) IS NULL
@@ -7845,9 +8240,19 @@ DECLARE
     'final_table_deal', 'satellite_remainder', 'seat'
   ];
 BEGIN
+  /* A refund needs the immutable entitlement's source wallet and exact
+     prize/bounty/fee rails. This compatibility signature cannot supply those
+     facts, so it must never enter the generic pre-batch payer. */
+  IF v_kind = 'refund' THEN
+    RETURN jsonb_build_object(
+      'ok', false, 'paid', 0, 'already_paid', 0,
+      'refused_reason', 'exact_refund_authority_required',
+      'obligation_id', NULL, 'idempotency_key', NULL);
+  END IF;
+
   /* Preserve the private core's canonical validation responses for malformed
-     calls and non-structure classes. Every valid structure class is private to
-     its complete atomic transaction, regardless of tournament format. */
+     calls and non-refund, non-structure classes. Every valid structure class is
+     private to its complete atomic transaction, regardless of tournament format. */
   IF p_tournament_id IS NULL OR p_user_id IS NULL
      OR round(COALESCE(p_amount, 0), 2) < 0
      OR v_kind NOT IN ('place','bounty','bounty_residual','mystery_bounty',
@@ -8685,6 +9090,8 @@ BEGIN
      OR position('satellite_remainder' IN v_single_obligation_source) = 0
      OR position($needle$'seat'$needle$ IN v_single_obligation_source) = 0
      OR position('atomic_batch_required' IN v_single_obligation_source) = 0
+     OR position('exact_refund_authority_required'
+                 IN v_single_obligation_source) = 0
      OR position('fn_settle_tournament_obligation_before_atomic_batch_gate('
                  IN v_single_obligation_source) = 0
      OR has_function_privilege(
@@ -8729,6 +9136,37 @@ BEGIN
        AND t.tgenabled <> 'D'
   ) <> 7 THEN
     RAISE EXCEPTION 'Stage-B finish, certificate or pool-lifecycle guard is not enabled';
+  END IF;
+
+  IF EXISTS (
+       SELECT 1
+         FROM stage_b_settlement_trigger_preimage before
+         FULL JOIN (
+           SELECT tg.*
+             FROM pg_trigger tg
+            WHERE tg.tgrelid='public.tournaments'::regclass
+              AND tg.tgname IN (
+                'aaa_guard_atomic_satellite_completion',
+                'zzzz_tournaments_atomic_place_completion_guard',
+                'zzzzz_tournaments_atomic_final_table_deal_completion_guard',
+                'aa_guard_tournament_completing_claim',
+                'zzzzzz_tournaments_financial_certificate',
+                'zzzz_tournament_pool_finalization_window_guard',
+                'zzzz_freeze_finalized_tournament_prize_pool')
+         ) after ON after.tgname=before.tgname
+        WHERE before.tgname IS NULL OR after.oid IS NULL
+           OR after.tgenabled<>'O'
+           OR after.tgfoid IS DISTINCT FROM before.function_oid
+           OR pg_get_triggerdef(after.oid,true)<>before.definition
+           OR after.tgtype<>before.tgtype OR after.tgattr<>before.tgattr
+           OR after.tgqual::text IS DISTINCT FROM before.trigger_when
+           OR after.tgnargs<>before.tgnargs OR after.tgargs<>before.tgargs
+           OR after.tgisinternal<>before.tgisinternal
+           OR after.tgdeferrable<>before.tgdeferrable
+           OR after.tginitdeferred<>before.tginitdeferred
+     ) THEN
+    RAISE EXCEPTION
+      'Stage-B settlement trigger composition changed more than D to O';
   END IF;
 
   IF EXISTS (
@@ -10698,6 +11136,6 @@ BEGIN
 END;
 $verify_stage_b_171924_mutable_sources_carried$;
 
-SELECT pg_temp.assert_stage_b_owned_postimage();
+SELECT pg_temp.assert_stage_b_owned_postimage(true);
 
 COMMIT;

@@ -3,7 +3,7 @@
 -- See docs/audits/2026-09-10-entry-refund-cancellation-acceptance-gate.json.
 -- This SQL must pass against a complete current dependency graph before release acceptance.
 -- One player has two club wallets and buys in at the tournament host club.
--- One player holds a satellite-funded seat returned to its origin wallet. Fixture-only rows
+-- One player holds a satellite-funded seat returned as an entry-only ticket. Fixture-only rows
 -- are inserted with triggers disabled, then every operation under test calls
 -- the installed production authorities with all production triggers enabled.
 \set ON_ERROR_STOP on
@@ -309,18 +309,18 @@ BEGIN
      OR v_first->>'status' IS DISTINCT FROM 'CANCELLED'
      OR (v_first->>'source_player_count')::integer IS DISTINCT FROM 2
      OR (v_first->>'refunded_count')::integer IS DISTINCT FROM 2
-     OR (v_first->>'refund_line_count')::integer IS DISTINCT FROM 2
-     OR (v_first->>'ticket_return_count')::integer IS DISTINCT FROM 0
-     OR (v_first->>'total_refunded')::numeric IS DISTINCT FROM 200::numeric
+     OR (v_first->>'refund_line_count')::integer IS DISTINCT FROM 1
+     OR (v_first->>'ticket_return_count')::integer IS DISTINCT FROM 1
+     OR (v_first->>'total_refunded')::numeric IS DISTINCT FROM 100::numeric
      OR (v_first->>'total_ticket_returned')::numeric
-          IS DISTINCT FROM 0::numeric
+          IS DISTINCT FROM 100::numeric
      OR (v_first->>'fees_reversed')::numeric IS DISTINCT FROM 20::numeric
      OR v_receipt.receipt IS DISTINCT FROM v_first
      OR v_receipt.source_player_count IS DISTINCT FROM 2
-     OR v_receipt.refund_line_count IS DISTINCT FROM 2
-     OR v_receipt.ticket_return_count IS DISTINCT FROM 0
-     OR v_receipt.total_refunded IS DISTINCT FROM 200::numeric
-     OR v_receipt.total_ticket_returned IS DISTINCT FROM 0::numeric
+     OR v_receipt.refund_line_count IS DISTINCT FROM 1
+     OR v_receipt.ticket_return_count IS DISTINCT FROM 1
+     OR v_receipt.total_refunded IS DISTINCT FROM 100::numeric
+     OR v_receipt.total_ticket_returned IS DISTINCT FROM 100::numeric
      OR v_receipt.fees_reversed IS DISTINCT FROM 20::numeric
      OR v_receipt.total_rake_before IS DISTINCT FROM 20::numeric
      OR v_receipt.total_rake_after IS DISTINCT FROM 0::numeric
@@ -328,20 +328,18 @@ BEGIN
      OR (SELECT count(*) FROM public.tournament_cancellation_receipts r
           WHERE r.tournament_id=v_target)<>1
      OR (SELECT count(*) FROM public.tournament_refund_tranches tr
-          WHERE tr.tournament_id=v_target)<>2
+          WHERE tr.tournament_id=v_target)<>1
      OR (SELECT count(*) FROM public.wallet_transactions w
           WHERE w.related_entity_id=v_target AND w.type='credit'
-            AND lower(w.category) IN ('refund','tournament_refund'))<>2
+            AND lower(w.category) IN ('refund','tournament_refund'))<>1
      OR (SELECT count(*) FROM public.wallet_transactions w
           WHERE w.related_entity_id=v_target AND w.type='credit'
             AND w.user_id=v_cash_user AND w.amount=100)<>1
-     OR (SELECT count(*) FROM public.wallet_transactions w
+     OR EXISTS(SELECT 1 FROM public.wallet_transactions w
         WHERE w.related_entity_id=v_target AND w.type='credit'
-          AND w.user_id=v_sat_user AND w.amount=100)<>1
-     OR (SELECT count(*) FROM public.tournament_refund_tranches tr
-        WHERE tr.tournament_id=v_target AND tr.user_id=v_sat_user
-          AND tr.source_wallet_club_id=v_fee_club
-          AND tr.refund_prize=90 AND tr.refund_fee=10)<>1
+          AND w.user_id=v_sat_user)
+     OR EXISTS(SELECT 1 FROM public.tournament_refund_tranches tr
+        WHERE tr.tournament_id=v_target AND tr.user_id=v_sat_user)
      OR (SELECT chip_balance FROM public.club_members
           WHERE club_id=v_funding_club AND user_id=v_cash_user)
           IS DISTINCT FROM 1000::numeric
@@ -350,11 +348,32 @@ BEGIN
           IS DISTINCT FROM 200::numeric
      OR (SELECT chip_balance FROM public.club_members
           WHERE club_id=v_fee_club AND user_id=v_sat_user)
-          IS DISTINCT FROM 400::numeric
-     OR EXISTS(SELECT 1 FROM public.tournament_tickets tk
+          IS DISTINCT FROM 300::numeric
+     OR (SELECT count(*) FROM public.tournament_tickets tk
           WHERE tk.source_tournament_id=v_target
-             OR tk.source_refund_entitlement_id=
-                  'd7000000-0000-4000-8000-000000000001')
+            AND tk.source_satellite_id=
+                  'd3000000-0000-4000-8000-000000000001'
+            AND tk.source_refund_entitlement_id=
+                  'd7000000-0000-4000-8000-000000000001'
+            AND tk.holder_id=v_sat_user
+            AND tk.status='issued'
+            AND tk.redemption_mode='tournament_entry_only'
+            AND tk.value=100 AND tk.entry_prize=90
+            AND tk.entry_bounty=0 AND tk.entry_fee=10)<>1
+     OR (SELECT count(*) FROM public.chip_ledger l
+          WHERE l.tournament_id=v_target AND l.amount=100
+            AND l.category='ticket_issue'
+            AND l.from_type='prize_liability'
+            AND l.from_entity_id=v_target
+            AND l.to_type='escrow'
+            AND l.idempotency_key='tourney:'||v_target::text
+                  ||':satellite-ticket-return:'
+                  ||'d7000000-0000-4000-8000-000000000001')<>1
+     OR (SELECT count(*) FROM public.chip_transactions ct
+          WHERE ct.transaction_type='tournament_ticket_issue'
+            AND ct.to_user_id=v_sat_user AND ct.amount=100
+            AND ct.metadata->>'entitlement_id'=
+                  'd7000000-0000-4000-8000-000000000001')<>1
      OR (SELECT count(*) FROM public.rake_records r
           WHERE r.tournament_id=v_target
             AND r.source='atomic_cancel_tournament'
@@ -397,7 +416,7 @@ BEGIN
   END IF;
 
   RAISE NOTICE
-    'AUDIT_TEST_PASS: cancellation returned each entrant exactly 100 chips to its recorded host-club wallet and created no ticket, reversed both 10 fees only at the actual fee recipient, stored one exact receipt, and same-command replay returned identical bytes without duplicate money';
+    'AUDIT_TEST_PASS: cancellation returned the cash entrant exactly 100 chips to its recorded source wallet, returned the satellite-funded entrant exactly one 100-chip entry-only ticket and no wallet chips, reversed both 10 fees only at the actual fee recipient, stored one exact receipt, and same-command replay returned identical bytes without duplicate money';
 END;
 $assert_exact_cancellation$;
 

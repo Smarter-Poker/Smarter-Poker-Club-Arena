@@ -1,7 +1,9 @@
 -- 20260910042007_stage_b_forward_authority_expansion
 --
 -- Thirteen historical Stage-B migrations are absent from production while
--- production has continued through the 20260910051447-promoted seat-move hotfix.
+-- production has continued through the byte-authenticated 20260911052648 live
+-- tail (final-deal v2, wheel free-spin retirement, and exact-generation bounty
+-- rebuy settlement), after the 20260910051447-promoted seat-move hotfix.
 -- Replaying those files
 -- would mix historical repair DML with runtime authority changes and overwrite
 -- newer production definitions. This forward expansion creates only the
@@ -467,6 +469,46 @@ BEGIN
   END IF;
 END;
 $require_current_postimage_and_clean_expansion$;
+
+-- This is the first Stage-B boundary and therefore the last place a stale
+-- release can fail before any durable Stage-B DDL. Authenticate the exact live
+-- tail over which all six boundaries were reviewed; a name-only or latest-row
+-- check would permit a same-version statement replacement.
+DO $require_exact_live_tail_receipts$
+BEGIN
+  IF (SELECT count(*)
+        FROM supabase_migrations.schema_migrations m
+       WHERE m.version='20260911050554'
+         AND m.name='final_deal_receipts_survive_real_terminal_settlement'
+         AND cardinality(m.statements)=1
+         AND octet_length(m.statements[1])=82770
+         AND encode(extensions.digest(
+               convert_to(m.statements[1],'UTF8'),'sha256'),'hex')=
+             'b4af55173b825be5ecf48c6c3bbcca1e828493cdafc47becf00d73ad3186c871')<>1
+     OR (SELECT count(*)
+           FROM supabase_migrations.schema_migrations m
+          WHERE m.version='20260911052216'
+            AND m.name='the_daily_free_spin_leaves_the_building'
+            AND cardinality(m.statements)=1
+            AND octet_length(m.statements[1])=49343
+            AND encode(extensions.digest(
+                  convert_to(m.statements[1],'UTF8'),'sha256'),'hex')=
+                '4778ce9d373a98e8b10cb31e496bf18e4e527c0a158f37a4e4fcf500b3c9b995')<>1
+     OR (SELECT count(*)
+           FROM supabase_migrations.schema_migrations m
+          WHERE m.version='20260911052648'
+            AND m.name='bounty_rebuy_settles_its_exact_prior_entry_generation'
+            AND cardinality(m.statements)=1
+            AND octet_length(m.statements[1])=22463
+            AND encode(extensions.digest(
+                  convert_to(m.statements[1],'UTF8'),'sha256'),'hex')=
+                '4f9616b84906a7479c60dd0a266c2c2d1bb056828aa53ef45095ea31d058c5e2')<>1 THEN
+    RAISE EXCEPTION
+      'Stage-B expansion requires the exact 20260911050554..20260911052648 live tail'
+      USING ERRCODE='55000';
+  END IF;
+END;
+$require_exact_live_tail_receipts$;
 
 LOCK TABLE public.tournament_seat_exit_authorizations,
            public.tournament_seat_move_receipts

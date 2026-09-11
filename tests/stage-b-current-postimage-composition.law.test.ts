@@ -268,7 +268,9 @@ describe('Stage-B contraction preserves the 035435 per-tournament settlement lan
         )
       );
       expect(wrapper).toContain(`public.${core}(`);
-      expect(wrapper).not.toContain('public.fn_ca_lock_settlement_lane_global()');
+      expect(countNeedle(wrapper, 'public.fn_ca_lock_settlement_lane_global()')).toBe(
+        name === 'fn_complete_tournament_terminal' ? 1 : 0
+      );
       expect(contractionCode).toMatch(
         new RegExp(`ALTER FUNCTION public\\.${name}\\([^;]+?\\)\\s+RENAME TO ${core};`, 's')
       );

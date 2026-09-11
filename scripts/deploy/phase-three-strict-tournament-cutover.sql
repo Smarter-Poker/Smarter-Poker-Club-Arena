@@ -1130,9 +1130,19 @@ DECLARE
     'final_table_deal', 'satellite_remainder', 'seat'
   ];
 BEGIN
+  /* A refund needs the immutable entitlement's source wallet and exact
+     prize/bounty/fee rails. This compatibility signature cannot supply those
+     facts, so it must never enter the generic pre-batch payer. */
+  IF v_kind = 'refund' THEN
+    RETURN jsonb_build_object(
+      'ok', false, 'paid', 0, 'already_paid', 0,
+      'refused_reason', 'exact_refund_authority_required',
+      'obligation_id', NULL, 'idempotency_key', NULL);
+  END IF;
+
   /* Preserve the private core's canonical validation responses for malformed
-     calls and non-structure classes. Every valid structure class is private to
-     its complete atomic transaction, regardless of tournament format. */
+     calls and non-refund, non-structure classes. Every valid structure class is
+     private to its complete atomic transaction, regardless of tournament format. */
   IF p_tournament_id IS NULL OR p_user_id IS NULL
      OR round(COALESCE(p_amount, 0), 2) < 0
      OR v_kind NOT IN ('place','bounty','bounty_residual','mystery_bounty',
@@ -1897,6 +1907,8 @@ BEGIN
      OR position('satellite_remainder' IN v_single_obligation_source) = 0
      OR position($needle$'seat'$needle$ IN v_single_obligation_source) = 0
      OR position('atomic_batch_required' IN v_single_obligation_source) = 0
+     OR position('exact_refund_authority_required'
+                 IN v_single_obligation_source) = 0
      OR position('fn_settle_tournament_obligation_before_atomic_batch_gate('
                  IN v_single_obligation_source) = 0
      OR has_function_privilege(

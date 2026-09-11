@@ -156,8 +156,12 @@ BEGIN
     '10000000-0000-4000-8000-000000000001', 'refund', NULL,
     '30000000-0000-4000-8000-000000000001', 1, 'pg17.stage_b', NULL, NULL
   );
-  IF COALESCE((v_result->>'ok')::boolean, false) IS NOT TRUE THEN
-    RAISE EXCEPTION 'public payer stopped delegating a non-pool refund: %', v_result;
+  IF COALESCE((v_result->>'ok')::boolean, true) IS NOT FALSE
+     OR v_result->>'refused_reason' IS DISTINCT FROM
+          'exact_refund_authority_required' THEN
+    RAISE EXCEPTION
+      'public payer admitted a refund without exact entitlement authority: %',
+      v_result;
   END IF;
   IF (
     SELECT count(*)

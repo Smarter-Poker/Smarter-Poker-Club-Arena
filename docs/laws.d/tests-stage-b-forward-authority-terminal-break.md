@@ -1,3 +1,3 @@
 # tests/stage-b-forward-authority-terminal-break.law.test.ts
 
-The Stage B forward chain expands its receipt authority before repairing historical rows, captures every terminal-break preimage durably, and arms the terminal invariant only after the repair has converged exactly.
+The Stage B forward chain expands its receipt authority before repairing historical rows, authenticates the exact live tail through `20260911052648`, captures every terminal-break preimage durably, and arms the terminal invariant only after the repair has converged exactly. Its only final-deal source change is the byte-pinned completion-guard readiness substitution; the terminal wrapper, final-deal payer configuration, complete welcome-wheel catalog, and exact-generation bounty-rebuy contracts remain exact, with the latter exercised after all six boundaries by its rollback probe.

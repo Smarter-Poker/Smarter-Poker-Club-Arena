@@ -65,6 +65,30 @@ therefore its definition MD5) while preserving the pinned source body. The
 immediately following strict contraction preserves terminal receipts while
 removing the legacy payload fallback.
 
+The reviewed production prerequisite tail now ends at `20260911052648`. Before
+the first Stage-B DDL, and again at entry and exit of the final contraction,
+require these exact one-statement ledger receipts:
+
+- `20260911050554_final_deal_receipts_survive_real_terminal_settlement`:
+  82,770 bytes, SHA-256
+  `b4af55173b825be5ecf48c6c3bbcca1e828493cdafc47becf00d73ad3186c871`;
+- `20260911052216_the_daily_free_spin_leaves_the_building`: 49,343 bytes,
+  SHA-256
+  `4778ce9d373a98e8b10cb31e496bf18e4e527c0a158f37a4e4fcf500b3c9b995`;
+- `20260911052648_bounty_rebuy_settles_its_exact_prior_entry_generation`:
+  22,463 bytes, SHA-256
+  `4f9616b84906a7479c60dd0a266c2c2d1bb056828aa53ef45095ea31d058c5e2`.
+
+The chain deliberately composes the final-deal completion guard from source
+MD5 `d994347e1b76c936ce13361d73f94fd2` to
+`8e0d121a711f6b7afade68125d032f8d` by replacing only its readiness call site.
+It otherwise preserves the final-deal wrapper and payer catalogs, the complete
+welcome-wheel catalog fingerprint, and the public/private bounty-rebuy pair
+plus `ca_settle_sources.fn_collect_bounty = 'DB caller'`. The disposable PG17
+rehearsal runs the exact 40,468-byte bounty-rebuy atomicity probe after all six
+boundaries; its SHA-256 is
+`69d5392b3afbf01b0be37ad94637bec19047ef79232aafd0e0cceb6f34d4b02c`.
+
 ## Preflight
 
 From the reviewed, still-unmerged release branch:

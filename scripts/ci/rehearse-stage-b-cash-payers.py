@@ -16,6 +16,8 @@ import tempfile
 
 PSQL = "/opt/homebrew/opt/postgresql@17/bin/psql"
 SOCKET = "/tmp/codex-chip-drift-cutover-e2iav203/socket"
+LANE_MIGRATION_NAME = "the_settlement_lane_is_per_tournament_not_platform_wide"
+STAGE_B_MIGRATION_NAME = "stage_b_current_postimage_contraction"
 IDENTITIES = (
     "public.fn_ca_settle_tournament_place_raw(uuid,integer,uuid,numeric)",
     "public.fn_ca_settle_tournament_bubble_raw(uuid,uuid,numeric)",
@@ -30,6 +32,8 @@ GUARDS = (
     "zzzzz_tournaments_atomic_final_table_deal_completion_guard",
     "zzzzzz_tournaments_financial_certificate",
 )
+FINAL_DEAL_TOURNAMENT_ID = "87000000-0000-0000-0000-000000000001"
+FINAL_DEAL_WINNER_SQL = "md5('atomic-deal-user:5')::uuid"
 TABLES = (
     "auth.users", "public.users", "public.profiles", "public.clubs",
     "public.club_members", "public.tournaments", "public.tournament_players",
@@ -54,8 +58,30 @@ def once(text, before, after):
         raise ValueError("expected exactly one marker: " + before[:100])
     return text.replace(before, after, 1)
 
+def exact_migration(root, migration_name):
+    migration_directory = root / "supabase/migrations"
+    matches = sorted(
+        path for path in migration_directory.iterdir()
+        if path.is_file() and re.fullmatch(
+            rf"[0-9]{{14}}_{re.escape(migration_name)}\.sql(?:\.pending)?",
+            path.name,
+        )
+    )
+    if len(matches) != 1:
+        raise RuntimeError(
+            f"Expected exactly one {migration_name} migration; found {len(matches)}"
+        )
+    return matches[0]
+
 def q(text):
     return "'" + text.replace("'", "''") + "'"
+
+def failure_classification(log):
+    if "cannot enter COMPLETING without an immutable finish claim" in log:
+        return "blocked_final_deal_claim"
+    if "COMPLETING claim has no RPC owner" in log:
+        return "blocked_final_deal_claim_owner"
+    return "failed_rehearsal"
 
 def sql(command):
     return subprocess.check_output(
@@ -86,7 +112,8 @@ def compose(root, fixed_tail, lane_path):
     spec = importlib.util.spec_from_file_location("cash_base", builder_path)
     base = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(base)
-    stage_b = (root / "scripts/deploy/phase-three-strict-tournament-cutover.sql").read_text()
+    stage_b_path = exact_migration(root, STAGE_B_MIGRATION_NAME)
+    stage_b = stage_b_path.read_text()
     blocks = re.findall(r"DO \$contract_cash_batch_payers\$.*?\$contract_cash_batch_payers\$;", stage_b, re.S)
     wrappers = re.findall(
         r"(CREATE OR REPLACE FUNCTION public\.fn_settle_tournament_obligation\(.*?"
@@ -153,7 +180,7 @@ $bad_source$;
         "ALTER TABLE public.tournaments ENABLE TRIGGER " + name + ";" for name in GUARDS)
     composed = base.compose(
         root, root / "scripts/ci/probes/versioned-final-deal-native.sql", fixed_tail,
-        lane_path)
+        lane_path, stage_b_path)
     # Seed an actual cash winner plus stone bubble during the original synthetic
     # opening fixture, before session_replication_role is restored to origin.
     composed = once(composed, "current_players,payout_structure,prize_pool_finalized,\n",
@@ -191,9 +218,37 @@ VALUES('31000000-0000-0000-0000-000000000002',
     if hits!=1 or body_hits!=1 or hashlib.md5(current_body.encode()).hexdigest()!='d0262f4928b12eea1cc5e9175cbf2737':
         raise ValueError("current normal cash body does not match verified authority")
     normal_cash = "DO $normal_cash_gate$ BEGIN IF (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.fn_settle_tournament_places(uuid,uuid)'::regprocedure) IS DISTINCT FROM " + q(hashlib.md5(old_body.encode()).hexdigest()) + " THEN RAISE EXCEPTION 'native normal cash baseline differs'; END IF; END; $normal_cash_gate$;\n" + current_definition + "\nREVOKE ALL ON FUNCTION public.fn_settle_tournament_places(uuid,uuid) FROM PUBLIC,anon,authenticated; GRANT EXECUTE ON FUNCTION public.fn_settle_tournament_places(uuid,uuid) TO service_role;\n"
+    # This focused probe enters the native final-deal cash authority directly,
+    # rather than through a whole-terminal wrapper. Supply the immutable claim
+    # and exact transaction-local owner token that the enabled Stage-A guard
+    # requires. The synthetic claim is fixture setup only; it does not claim to
+    # prove final-deal winner selection or terminal completion.
+    finish_claim = f"""
+INSERT INTO public.tournament_finish_receipts(
+  tournament_id,winner_user_id,finish_kind,claim_source)
+VALUES(
+  '{FINAL_DEAL_TOURNAMENT_ID}',{FINAL_DEAL_WINNER_SQL},'normal',
+  'synthetic-stage-b-cash-payer-fixture');
+SELECT set_config(
+  'app.tournament_finish_claim','{FINAL_DEAL_TOURNAMENT_ID}',true);
+DO $cash_fixture_finish_claim$
+BEGIN
+  PERFORM pg_temp.deal_assert(
+    EXISTS(SELECT 1 FROM public.tournament_finish_receipts f
+      WHERE f.tournament_id='{FINAL_DEAL_TOURNAMENT_ID}'::uuid
+        AND f.winner_user_id={FINAL_DEAL_WINNER_SQL}
+        AND f.finish_kind='normal'
+        AND f.claim_source='synthetic-stage-b-cash-payer-fixture')
+    AND current_setting('app.tournament_finish_claim',true)
+      ='{FINAL_DEAL_TOURNAMENT_ID}',
+    'focused cash fixture supplies the exact immutable finish-claim precondition');
+END;
+$cash_fixture_finish_claim$;
+"""
     marker = "-- This refusal trigger observes an actual earlier credit, then forces the\n"
     composed = once(composed, marker,
-                    normal_cash + strict + normalise_acl + "\n" + guard_sql + "\n" + probe + "\n" + marker)
+                    normal_cash + strict + normalise_acl + "\n" + guard_sql + "\n" + probe
+                    + "\n" + finish_claim + "\n" + marker)
     return composed
 
 def main():
@@ -219,9 +274,8 @@ def main():
         "variants": [], "before": before,
     }
     output = Path(tempfile.mkdtemp(prefix="codex-stage-b-cash-payers-"))
-    lane_name = "20260910035435_the_settlement_lane_is_per_tournament_not_platform_wide.sql"
-    lane_path = output / lane_name
-    lane_source = root / "supabase/migrations/20260910035245_the_settlement_lane_is_per_tournament_not_platform_wide.sql"
+    lane_source = exact_migration(root, LANE_MIGRATION_NAME)
+    lane_path = output / lane_source.name
     lane_bytes = lane_source.read_bytes()
     if hashlib.sha256(lane_bytes).hexdigest() != "d07cbe35f62ef4a18e29779c812526c27420da4a82c891c0bf2f136b9e6a31fe":
         raise RuntimeError("tracked settlement lane source differs")
@@ -242,6 +296,8 @@ def main():
                 "assertions": len(re.findall(r"NOTICE:\s+PASS ", log)),
                 "sql_sha256": hashlib.sha256(text.encode()).hexdigest(),
                 "exact_rollback": after == before}
+        if result.returncode:
+            item["failure_classification"] = failure_classification(log)
         evidence["variants"].append(item)
         evidence["after"] = after
         print(json.dumps(item), flush=True)
@@ -252,18 +308,29 @@ def main():
             evidence["status"] = "blocked_rollback_mismatch"
             args.evidence.write_text(json.dumps(evidence, indent=2) + "\n")
             raise SystemExit(1)
-    evidence["status"] = ("blocked_final_deal_claim" if any(
-        item["exit_code"] for item in evidence["variants"]) else "passed")
+    classifications = {
+        item["failure_classification"] for item in evidence["variants"]
+        if item["exit_code"]
+    }
+    evidence["status"] = (
+        "passed" if not classifications
+        else next(iter(classifications)) if len(classifications) == 1
+        else "failed_mixed_rehearsal"
+    )
     evidence["count_note"] = "The same assertions run against three fixed-tail states; totals are not distinct tests."
     evidence["remaining_gate"] = (
         "Current final-deal cash authority changes RUNNING to COMPLETING without the immutable finish claim required by the genuine enabled guard. This proof cannot certify terminal completion."
+        if evidence["status"] == "blocked_final_deal_claim"
+        else "Current final-deal cash authority lacks the exact transaction-local finish-claim owner required by the genuine enabled guard. This proof cannot certify terminal completion."
+        if evidence["status"] == "blocked_final_deal_claim_owner"
+        else "Focused cash-payer rehearsal failed before its intended completion; inspect each variant's causal classification and failure tail."
         if evidence["status"] != "passed" else None)
     evidence["source_sha256"] = {
         str(path.relative_to(root)): hashlib.sha256(path.read_bytes()).hexdigest()
         for path in (
             Path(__file__), root / "scripts/ci/probes/stage-b-cash-payers-native.sql",
             root / "scripts/dev/build-versioned-final-deal-probe.py",
-            root / "scripts/deploy/phase-three-strict-tournament-cutover.sql")}
+            exact_migration(root, STAGE_B_MIGRATION_NAME))}
     args.evidence.write_text(json.dumps(evidence, indent=2) + "\n")
     print("Completed all variants; original catalog/data state restored. Status: " + evidence["status"], flush=True)
     if evidence["status"] != "passed":

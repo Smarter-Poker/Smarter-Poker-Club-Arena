@@ -75,7 +75,7 @@ import {
   seatMoveNotice,
   type PendingSeatMove,
 } from '../services/supabase/seatMoves.js';
-import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
+import { isMaintenanceFrozen, isMaintenanceFrozenForTable } from '../maintenance/freezeState.js';
 import { wakeCluster } from '../cluster/ClusterController.js';
 import { ChipContinuityTracker } from './ChipContinuity.js';
 import { claimMovedPresence, depositMovedPresence } from './SeatMovePresence.js';
@@ -1487,6 +1487,10 @@ export abstract class ServerTableEngineBase {
    * is set.
    */
   protected maintenancePaused: boolean = false;
+  private maintenanceOperationInterval: string | null = null;
+  private maintenancePresenceTail: Promise<void> = Promise.resolve();
+  private maintenancePresencePending = 0;
+  private maintenancePresenceFailed = false;
 
   /**
    * A unanimous final-table deal owns its own between-hands pause.
@@ -1540,12 +1544,21 @@ export abstract class ServerTableEngineBase {
   // Serialize financial departure against asynchronous hand preparation.
   // Release after controller start, not after the hand finishes.
   protected seatBoundaryTail: Promise<void> = Promise.resolve();
+  private seatBoundaryPending = 0;
   protected async acquireSeatBoundary(): Promise<() => void> {
     if (this.terminal) throw new Error('Table Engine Is Stopping');
     const previous = this.seatBoundaryTail;
-    let release!: () => void;
+    let unlock!: () => void;
+    let released = false;
+    this.seatBoundaryPending = (this.seatBoundaryPending ?? 0) + 1;
+    const release = () => {
+      if (released) return;
+      released = true;
+      this.seatBoundaryPending -= 1;
+      unlock();
+    };
     this.seatBoundaryTail = new Promise<void>((resolve) => {
-      release = resolve;
+      unlock = resolve;
     });
     await previous;
     if (this.terminal) {
@@ -1759,7 +1772,7 @@ export abstract class ServerTableEngineBase {
       tableId,
       isCash: () =>
         !!this.tableInfo && this.tableInfo.arena?.asset !== 'diamonds' && !this.isTournamentTable(),
-      isFrozen: () => isMaintenanceFrozen(),
+      isFrozen: () => isMaintenanceFrozenForTable(this.tableId),
       canMutate: () => this.lifecycleCanMutate(),
       evaluate: evaluateCashSessions,
       report: reportError,
@@ -2510,7 +2523,11 @@ export abstract class ServerTableEngineBase {
          genuinely back loses nothing to a stale row. */
       if (!recovered) {
         try {
-          const parked = await loadPresenceFromPark(this.tableId);
+          const parked = await loadPresenceFromPark(
+            this.tableId,
+            Date.now(),
+            this.maintenanceOperationInterval
+          );
           if (!this.lifecycleCanMutate()) return;
           if (parked && Object.keys(parked).length > 0) {
             const restored = this.disconnectEngine.restoreFsmStates(this.tableId, parked);
@@ -2519,6 +2536,7 @@ export abstract class ServerTableEngineBase {
             );
           }
         } catch (err) {
+          if (this.maintenanceOperationInterval) throw err;
           reportError(err, 'ServerTableEngine.' + this.tableId + '.presence_restore');
         }
       }
@@ -3997,6 +4015,10 @@ export abstract class ServerTableEngineBase {
     return this.isTournamentTable();
   }
 
+  maintenanceClockGroup(): string {
+    return this.tableInfo?.tournament_id ?? this.tableId;
+  }
+
   /**
    * Humans (not horses) currently seated with chips. Drives the deploy drain
    * gate: restarting the engine voids whatever hand is in flight, which is
@@ -4127,14 +4149,19 @@ export abstract class ServerTableEngineBase {
    * the loop parks at the TOP of its next iteration so an idle table stops
    * too rather than dealing the moment a seat fills mid-break.
    */
-  pauseForMaintenance(maxWaitMs: number): void {
+  pauseForMaintenance(maxWaitMs: number, operationIntervalId?: string): void {
+    const firstOperationPause =
+      !!operationIntervalId && operationIntervalId !== this.maintenanceOperationInterval;
+    if (operationIntervalId) this.maintenanceOperationInterval = operationIntervalId;
     this.maintenancePaused = true;
     this.holdBeforeNextHand = true;
     // 2026-09-04 (audit item 2): the break is the restart. Persist the
     // presence FSM now, and again when the loop actually parks (a seat can
     // drop between the announcement and the park). Fire-and-forget: the
     // break must not wait on a write.
-    void this.persistPresenceForRestart('announced');
+    if (!operationIntervalId || (this.running && firstOperationPause)) {
+      void this.persistPresenceForRestart('announced');
+    }
     if (maxWaitMs > 0) {
       // Take the LONGER of the two budgets. A hand-for-hand pause armed a
       // moment ago must not shorten the break's safety window.
@@ -4465,16 +4492,45 @@ export abstract class ServerTableEngineBase {
    * parks. Never throws; a miss costs exactly what every boot cost before.
    */
   protected async persistPresenceForRestart(when: 'announced' | 'parked'): Promise<void> {
-    try {
-      const states = this.disconnectEngine.getFsmStatesForTable(this.tableId);
-      if (Object.keys(states).length === 0) return;
-      await savePresenceAtPark({
-        tableId: this.tableId,
-        disconnectStates: states,
-        engineInstance: `${INSTANCE_ID}:${when}`,
+    const interval = this.maintenanceOperationInterval;
+    this.maintenancePresencePending += 1;
+    // FIFO prevents a slow announcement write overwriting the later parked
+    // snapshot. Read the FSM when this write actually owns the boundary.
+    const write = this.maintenancePresenceTail
+      .then(async () => {
+        const states = this.disconnectEngine.getFsmStatesForTable(this.tableId);
+        if (!interval && Object.keys(states).length === 0) return;
+        const saved = await savePresenceAtPark({
+          tableId: this.tableId,
+          disconnectStates: states,
+          engineInstance: `${INSTANCE_ID}:${when}${interval ? `:maintenance:${interval}` : ''}`,
+        });
+        if (interval && !saved) throw new Error('Owned maintenance presence was not persisted');
+      })
+      .then(
+        () => {
+          this.maintenancePresenceFailed = false;
+        },
+        (err) => {
+          this.maintenancePresenceFailed = true;
+          reportError(err, 'ServerTableEngine.' + this.tableId + '.presence_persist');
+        }
+      )
+      .finally(() => {
+        this.maintenancePresencePending -= 1;
       });
-    } catch (err) {
-      reportError(err, 'ServerTableEngine.' + this.tableId + '.presence_persist');
+    this.maintenancePresenceTail = write;
+    await write;
+  }
+
+  retryMaintenancePresence(): void {
+    if (
+      this.maintenanceOperationInterval &&
+      this.maintenancePresenceFailed &&
+      this.maintenancePresencePending === 0 &&
+      this.isParkedBetweenHands()
+    ) {
+      void this.persistPresenceForRestart('parked');
     }
   }
 
@@ -4504,6 +4560,7 @@ export abstract class ServerTableEngineBase {
 
   /** Lift the maintenance break. Leaves any hand-for-hand pause in place. */
   resumeFromMaintenance(): void {
+    this.maintenanceOperationInterval = null;
     this.maintenancePaused = false;
     if (
       this.tournamentMovePauseOwners.size > 0 ||
@@ -4546,6 +4603,22 @@ export abstract class ServerTableEngineBase {
   /** True while the scheduled maintenance break is holding this table. */
   isMaintenancePaused(): boolean {
     return this.maintenancePaused;
+  }
+
+  isMaintenanceDrained(): boolean {
+    return (
+      this.maintenancePaused &&
+      this.isBetweenHands() &&
+      this.isParkedBetweenHands() &&
+      !this.hasSettlementInFlight() &&
+      this.postHandTasksPromise === null &&
+      this.maintenancePresencePending === 0 &&
+      !this.maintenancePresenceFailed &&
+      this.terminalBoundaryPendingGenerations.size === 0 &&
+      !this.actionLock &&
+      this.tournamentMoveOperations.size === 0 &&
+      (this.seatBoundaryPending ?? 0) === 0
+    );
   }
 
   /**
@@ -4739,6 +4812,7 @@ export abstract class ServerTableEngineBase {
         if (this.handForHandResolve === resolve) {
           if (
             this.pauseRequiresExplicitResume ||
+            (this.maintenancePaused && this.maintenanceOperationInterval !== null) ||
             this.terminalCloseoutPaused ||
             this.claimedTournamentMovePauseOwners.size > 0
           ) {

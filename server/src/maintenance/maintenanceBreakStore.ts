@@ -11,11 +11,13 @@
 import { maintenanceSupabase, supabase } from '../services/supabase.js';
 import { bindToProcessRoot } from '../services/supabase/dataActorContext.js';
 import type { MaintenanceBreakStore, PersistedMaintenanceBreak } from './MaintenanceBreak.js';
+import { createOperationMaintenanceStore } from './operationMaintenanceStore.js';
 
 const TABLE = 'engine_maintenance_break';
 
 export function createSupabaseMaintenanceBreakStore(version?: string): MaintenanceBreakStore {
   return {
+    operation: createOperationMaintenanceStore(version),
     loadReleaseBoundary: bindToProcessRoot(async (): Promise<number | null> => {
       const { data, error } = await maintenanceSupabase.rpc(
         'fn_active_maintenance_release_boundary'

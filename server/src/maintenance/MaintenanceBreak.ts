@@ -101,6 +101,8 @@
 import { randomUUID } from 'node:crypto';
 import { completeReconnectFreeze, completeTableReconnectFreeze } from './reconnectFreeze.js';
 import { setMaintenanceFrozen } from './freezeState.js';
+import { OperationMaintenanceRuntime, type OperationMaintenanceStore } from './OperationMaintenanceRuntime.js';
+import { operationMaintenancePolicyDigest } from './operationPolicy.js';
 import {
   assertMaintenanceThawRelease,
   MaintenanceThawError,
@@ -118,7 +120,8 @@ import {
  * See the `maintenancePaused` field on ServerTableEngineBase.
  */
 export interface PausableTableEngine {
-  pauseForMaintenance(maxWaitMs: number): void;
+  retryMaintenancePresence?(): void;
+  pauseForMaintenance(maxWaitMs: number, operationIntervalId?: string): void;
   resumeFromMaintenance(): void;
   /** Parked between hands, from EITHER loop - dealing or start-up wait. */
   isParkedBetweenHands(): boolean;
@@ -136,6 +139,9 @@ export interface PausableTableEngine {
    * cash tables - never to give either kind a different deal.
    */
   isTournament?(): boolean;
+  /** Every table in one tournament shares a clock and must resume in one wave. */
+  maintenanceClockGroup?(): string;
+  isMaintenanceDrained?(): boolean;
 }
 
 export type MaintenanceBreakPhase = 'last_hand' | 'counting_down';
@@ -158,6 +164,7 @@ export interface PersistedMaintenanceBreak {
 
 /** Durable side, so the tests can drive this without a database. */
 export interface MaintenanceBreakStore {
+  operation?: OperationMaintenanceStore;
   load(): Promise<PersistedMaintenanceBreak | null>;
   save(state: PersistedMaintenanceBreak): Promise<void>;
   /** Atomically replace an observed owner's token and return the current row. */
@@ -435,6 +442,8 @@ export class MaintenanceBreak {
   private releaseBoundaryOnly = false;
   private thawRequest: Readonly<MaintenanceThawRequest> | null = null;
   private recoveryReadPending = false;
+  private operationRuntime: OperationMaintenanceRuntime | null = null;
+  private operationStop: Promise<void> | null = null;
   static readonly THAW_RETRY_MS = 5_000;
 
   private readonly now: () => number;
@@ -470,6 +479,22 @@ export class MaintenanceBreak {
   }
 
   private async performStart(generation: number): Promise<void> {
+    if (this.deps.store.operation) {
+      if (!this.deps.thaw) throw new Error('maintenance_operation_thaw_required');
+      this.operationRuntime = new OperationMaintenanceRuntime({
+        store:this.deps.store.operation, engines:this.deps.engines, emit:this.deps.emit,
+        thaw:this.deps.thaw, planWaves:MaintenanceBreak.planOperationResumeWaves,
+        waveGapMs:MaintenanceBreak.RESUME_WAVE_GAP_MS,
+        onActivated:() => {
+          if (this.phase !== 'idle') throw new Error('maintenance_activation_during_legacy_hold');
+          if (this.announceTimer) this.clearTimer(this.announceTimer);
+          this.announceTimer = null;
+        },
+        report:error => console.error('[MaintenanceBreak] owned operation requires reconciliation', error),
+      });
+      await this.operationRuntime.start();
+      if (!this.lifecycleIsCurrent(generation) || this.operationRuntime.enabled()) return;
+    }
     await this.restoreFromStore(generation);
     if (!this.lifecycleIsCurrent(generation)) return;
     this.scheduleNextAnnouncement();
@@ -480,6 +505,7 @@ export class MaintenanceBreak {
     this.started = false;
     this.acceptingLifecycleWork = false;
     this.lifecycleAbort.abort(new Error('Maintenance break lifecycle stopped'));
+    this.operationStop = this.operationRuntime?.stop() ?? null;
     this.lifecycleGeneration += 1;
     this.resumeToken += 1;
     for (const t of [this.announceTimer, this.countdownTimer, this.endTimer]) {
@@ -495,6 +521,7 @@ export class MaintenanceBreak {
   }
 
   private async performStop(): Promise<void> {
+    await this.operationStop;
     if (this.startOperation) await this.startOperation.catch(() => undefined);
     // A starter that crossed its final await before seeing the generation
     // fence may have armed a timer. Clear the sources once more after join.
@@ -913,6 +940,7 @@ export class MaintenanceBreak {
    * platform dealing, which is both wrong and the loudest possible tell.
    */
   adopt(tableId: string, engine: PausableTableEngine): void {
+    if (this.operationRuntime?.enabled()) { this.operationRuntime.adopt(tableId,engine); return; }
     if (!this.acceptingLifecycleWork || !this.isActive()) return;
     engine.pauseForMaintenance(this.remainingParkBudgetMs());
     this.deps.emit(tableId, this.eventPayload(tableId, this.phase as MaintenanceBreakPhase));
@@ -933,6 +961,7 @@ export class MaintenanceBreak {
    * them, and DST is handled by asking the calendar rather than by arithmetic.
    */
   private scheduleNextAnnouncement(): void {
+    if (this.operationRuntime?.enabled()) return;
     if (!this.started || !this.deps.isRunning()) return;
     if (this.announceTimer) this.clearTimer(this.announceTimer);
 
@@ -1013,6 +1042,7 @@ export class MaintenanceBreak {
    * the loop cannot come back around until dealHand() resolves.
    */
   async announceLastHand(): Promise<void> {
+    if (this.operationRuntime?.enabled()) return;
     const generation = this.lifecycleGeneration;
     if (!this.lifecycleIsCurrent(generation) || !this.deps.isRunning()) return;
     if (this.isActive()) return; // already in one
@@ -1089,6 +1119,7 @@ export class MaintenanceBreak {
    * under a table that has not finished its hand.
    */
   async beginCountdown(): Promise<void> {
+    if (this.operationRuntime?.enabled()) return;
     const generation = this.lifecycleGeneration;
     if (!this.lifecycleIsCurrent(generation) || this.phase !== 'last_hand') return;
 
@@ -1262,6 +1293,7 @@ export class MaintenanceBreak {
   private ending = false;
 
   async end(): Promise<void> {
+    if (this.operationRuntime?.enabled()) return;
     const generation = this.lifecycleGeneration;
     if (!this.lifecycleIsCurrent(generation) || this.phase === 'idle' || this.ending) return;
     this.ending = true;
@@ -1595,6 +1627,25 @@ export class MaintenanceBreak {
       kind.forEach((t, k) => out[k % waves].push(t));
     }
     return out;
+  }
+
+  /** Preserve stable cash ordering, while keeping each tournament's common
+   * level/add-on clocks within one durable resume wave. */
+  static planOperationResumeWaves(tables: Array<[string,PausableTableEngine]>): Array<Array<[string,PausableTableEngine]>> {
+    const grouped = new Map<string,Array<[string,PausableTableEngine]>>();
+    for (const pair of tables) {
+      const key = pair[1].maintenanceClockGroup?.() ?? pair[0];
+      const group = grouped.get(key) ?? [];
+      group.push(pair); grouped.set(key,group);
+    }
+    const groups = [...grouped].sort((a,b)=>fnv1a(a[0])-fnv1a(b[0]) || a[0].localeCompare(b[0]));
+    const count = Math.min(MaintenanceBreak.RESUME_WAVES, Math.max(1,Math.ceil(tables.length/MaintenanceBreak.RESUME_WAVE_MIN_TABLES)));
+    const waves: Array<Array<[string,PausableTableEngine]>> = Array.from({length:count},()=>[]);
+    for (const [,group] of groups) {
+      const lightest=waves.reduce((best,wave,i)=>wave.length<waves[best].length?i:best,0);
+      waves[lightest].push(...group.sort((a,b)=>a[0].localeCompare(b[0])));
+    }
+    return waves.filter(wave=>wave.length>0);
   }
 
   /**
@@ -2001,7 +2052,12 @@ export class MaintenanceBreak {
   // ─────────────────────────────────────────────────────────────────────────
 
   isActive(): boolean {
+    if (this.operationRuntime?.enabled()) return this.operationRuntime.active();
     return this.phase !== 'idle';
+  }
+
+  holdsTableForOperation(tableId: string): boolean {
+    return this.operationRuntime?.enabled() === true && this.operationRuntime.holds(tableId);
   }
 
   remainingMs(): number {
@@ -2029,6 +2085,7 @@ export class MaintenanceBreak {
    * countdown and may land on either side of it.
    */
   endsAt(): number {
+    if (this.operationRuntime?.enabled()) return 0;
     if (this.phase === 'counting_down') return this.breakEndsAt;
     if (this.phase === 'last_hand') {
       return (
@@ -2047,6 +2104,7 @@ export class MaintenanceBreak {
    * tables again, which is where we started.
    */
   readyForRestart(): boolean {
+    if (this.operationRuntime?.enabled()) return this.operationRuntime.readyForRestart();
     if (this.phase !== 'counting_down') return false;
     if (!this.durableConfirmed) return false;
     if (this.unparkedTables().length > 0) return false;
@@ -2057,8 +2115,13 @@ export class MaintenanceBreak {
 
   /** Published on /health. */
   snapshot(): Record<string, unknown> {
+    if (this.operationRuntime?.enabled()) return { ...this.operationRuntime.snapshot(), policyDigest:operationMaintenancePolicyDigest };
     const unparked = this.isActive() ? this.unparkedTables() : [];
     return {
+      policyVersion:1,
+      supportedPolicyVersions:[1,2],
+      policyDigest:operationMaintenancePolicyDigest,
+      activationReceipt:null,
       active: this.isActive(),
       phase: this.phase,
       durableConfirmed: this.isActive() && this.durableConfirmed,

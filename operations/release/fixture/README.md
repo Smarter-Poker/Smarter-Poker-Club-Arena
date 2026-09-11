@@ -6,13 +6,13 @@ GoTrue, PostgREST, Supabase Realtime, and Chromium. API responses are not mocked
 Only synthetic credentials are created at runtime. Candidate frontend, engine,
 and schema artifacts are inputs to the separate trusted runtime/controller.
 
-**Status: updated source awaiting native qualification.** The earlier image at
-`c9e2319b93cc516f8eefa49b714b979ad45c3423` built on Linux, including its exact
-launcher/environment preimage checks, but smoke stopped at the PostgreSQL
-wal2json stage before Realtime. The loopback configuration adaptation and peer
-isolation proof below have local source/transport tests; actual image config
-preimage, Erlang authentication, listener and UID/peer isolation still need the
-next Linux smoke. The full product matrix must also pass before admission.
+**Status: updated source awaiting native qualification.** Linux run
+`34656264395` at `0a210520c17cc419920c97743e78633e4d3eaaca` built the pinned image
+and passed bootstrap identity checks, then refused the wal2json slot with SQLSTATE 42501. Sanitized source-location fingerprints identified PostgreSQL's trusted
+output-plugin check. Both runtimes now explicitly trust the required pinned
+plugins; a new native run must prove real slot creation. The image configuration
+preimages passed, while Erlang authentication, listener and UID/peer isolation
+still require native execution. The full product matrix must also pass before admission.
 Neither local tests nor a successful image build substitutes for that proof.
 
 ## Pinned inputs
@@ -44,6 +44,13 @@ includes `/usr/lib/postgresql/17/lib/wal2json.so`. The build uses the same signe
 snapshot and the native smoke must create and drop a real temporary logical
 slot using this plugin before exercising Realtime. The earlier image build
 passed the file check; real slot creation still requires a passing native smoke.
+PostgreSQL 17.11 also checks the explicit
+[`output_plugin_libraries` trust list](https://www.postgresql.org/docs/17/runtime-config-replication.html#GUC-OUTPUT-PLUGIN-LIBRARIES),
+including for superusers. Both fixture startup paths set it to
+`pgoutput,wal2json`: the built-in replication plugin and the pinned Realtime
+plugin only. The unused `test_decoding` default is excluded. The native smoke
+asserts this exact live setting before creating, inspecting and dropping its
+temporary wal2json slot. No privilege increase or plugin-check bypass is used.
 Both APT sources are frozen at `20260910T000000Z` in the official
 [Debian snapshot archive](https://snapshot.debian.org/). The exact versions were
 verified in its `trixie` and `trixie-security` amd64 package indexes. Package

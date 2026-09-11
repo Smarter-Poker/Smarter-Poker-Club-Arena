@@ -517,6 +517,8 @@ async function start(args) {
       '-c',
       'wal_level=logical',
       '-c',
+      'output_plugin_libraries=pgoutput,wal2json',
+      '-c',
       'max_replication_slots=20',
       '-c',
       'max_wal_senders=20',

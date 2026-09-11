@@ -271,6 +271,8 @@ async function services() {
     '-c',
     'wal_level=logical',
     '-c',
+    'output_plugin_libraries=pgoutput,wal2json',
+    '-c',
     'max_replication_slots=20',
     '-c',
     'max_wal_senders=20',
@@ -314,7 +316,8 @@ async function services() {
         r.rolsuper AS superuser, r.rolreplication AS replication,
         current_database() = 'club_arena_qualification' AS database,
         current_setting('data_directory') = '/var/lib/postgresql/data' AS data_directory,
-        current_setting('wal_level') = 'logical' AS logical_wal
+        current_setting('wal_level') = 'logical' AS logical_wal,
+        current_setting('output_plugin_libraries') = 'pgoutput,wal2json' AS trusted_output_plugins
       FROM pg_catalog.pg_roles r WHERE r.rolname = current_user
     `);
     assert.deepEqual(slotIdentity.rows, [
@@ -325,6 +328,7 @@ async function services() {
         database: true,
         data_directory: true,
         logical_wal: true,
+        trusted_output_plugins: true,
       },
     ]);
     stage = 'postgresql-wal2json-native-slot';

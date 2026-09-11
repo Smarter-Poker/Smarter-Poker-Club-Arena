@@ -129,6 +129,13 @@ BEGIN
 END;
 $close_seat_exit_authority$;
 
+-- Owner-only, exactly as 20260909014545 left it: only the SECURITY DEFINER
+-- wrappers that open an authority ever close one. (A no-op on production,
+-- whose ACL is already {postgres=X/postgres}; GRANT/REVOKE cause no schema
+-- cache reload.)
+REVOKE ALL ON FUNCTION public.fn_ca_close_tournament_seat_exit_authority(
+  uuid,boolean) FROM PUBLIC,anon,authenticated,service_role;
+
 DO $postflight$
 DECLARE
   v_src text;

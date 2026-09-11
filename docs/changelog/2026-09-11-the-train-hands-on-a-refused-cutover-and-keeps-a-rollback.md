@@ -11,7 +11,28 @@ in `auto-deploy-hetzner.yml`. All five are fixed here.
 | 4   | medium   | A **cancel** handed on with no bound, and GitHub reports a job timeout as a cancel, so a deterministic hang looped every 130 minutes.                                                                                                                                                        | Cancels count against the same chain bound. The read-only pre-cutover steps have `timeout-minutes` (tests 30, capture 10, pre-flight 10, pull 15, build 45), so a hang fails its step. `~/hssh` sets `ServerAliveInterval=15`/`ServerAliveCountMax=4`, so a dead connection fails in about a minute. Nothing from the certificate wait onward gets a step timeout, because a cutover must never be killed half-way. |
 | 5   | medium   | `hand_on()` turned a **rollback's** successor into a plain forward run of main, which silently dropped the owner's decision.                                                                                                                                                                 | A rollback hands on as the same rollback: same `ref_sha`, `rollback=true` and reason.                                                                                                                                                                                                                                                                                                                               |
 
-## Not fixed here, still open
+## Closed in the follow-up (same day)
+
+- **A pending rollback can no longer be lost in the queue.** A rollback run is
+  named `ROLLBACK <sha> <reason>` (`run-name`). The control step of every
+  forward run looks at the newest such run. If it was cancelled before it
+  started, within the last three hours, and at the moment a newer run was
+  queued (what a queue replacement looks like, and what a person's cancel does
+  not), the forward run dispatches the same rollback again and stands down, so
+  the rollback goes first. If the dispatch fails, the run stops instead of
+  deploying forward over the rollback.
+- **A control-plane-only fix starts a run.** `on.push.paths` now includes this
+  workflow and `scripts/ci/**`. Such a run usually carries nothing for the
+  engine, so the dedupe treats an identical `$SHA:server` tree as live (the
+  image builder labels every image with exactly that tree). The run ends in
+  about a minute and restarts nothing. A commit whose cutover failed on a
+  control-plane defect ships with the fix.
+- **"Main moved, control plane did not" checks instead of assuming.** When main
+  is ahead in the engine paths, the control step records `main_ahead`, and the
+  Verdict hands the train on after the run ships or finds its commit live. A
+  newer engine commit is never left without a run.
+
+## Were open at the time of the first change
 
 - **A pending rollback can be replaced.** The concurrency group keeps one
   pending run, and a newer push or hand-on replaces a pending rollback. That

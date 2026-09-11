@@ -14,9 +14,9 @@ The deploy train read `/health` with `curl -sf`. `-f` turns any non-2xx
 answer into an empty string, so every read failed. Run 34571396262 carried
 #4249, #4255, #4256 and #4257. It polled its break gate 175 times and logged
 `/health unreadable` on every poll. At 07:55:08 a complete restart
-certificate went by unread: counting_down, durable, 0 unparked tables,
+certificate went by unread: counting*down, durable, 0 unparked tables,
 290 s left. The run shipped nothing. The build that would have replaced the
-degraded engine could not ship _because_ the engine was degraded.
+degraded engine could not ship \_because* the engine was degraded.
 
 The host's locked re-check used the same `-f` under `set -e`, so fixing the
 runner side alone would still have refused the cutover.
@@ -26,28 +26,33 @@ check, so it routes regardless of the 503.
 
 ## The fix
 
-A read that asks **what the engine is** now reads the body whatever the
-HTTP code:
+Two changes landed within minutes of each other and are reconciled here.
 
-| Step                                               | Read                |
-| -------------------------------------------------- | ------------------- |
-| Skip if production already serves this commit      | version             |
-| Wait for the maintenance break to park every table | restart certificate |
-| Cut over to the new image (locked host re-check)   | restart certificate |
-| Verify: the public hostname check                  | version             |
-| Commit the verified SHA/image-ID release seal      | identity + liveness |
-| Verdict                                            | version             |
+#4267 (`read valid restart certificates from degraded engines`) fixed the
+two certificate reads: the runner's break gate and the host's locked
+re-check. Both now read the body of a 200 or 503 answer after a complete
+transfer, and anything else still fails closed. That form is kept as is.
+
+This change fixes the four remaining reads that ask what the engine is.
+Each one now reads the body whatever the HTTP code:
+
+| Step                                          | Read                                |
+| --------------------------------------------- | ----------------------------------- |
+| Skip if production already serves this commit | version                             |
+| Verify: the public hostname check             | version                             |
+| Commit the verified SHA/image-ID release seal | identity + liveness, under the lock |
+| Verdict                                       | version                             |
+
+The seal-commit re-check matters most. The Verify step has already required
+a routing-ready 200. A later 503, for example from a worker pool restarting
+under the thaw surge, must not refuse the seal and roll back a verified
+build.
 
 Two places keep `-f` on purpose, and each now says so:
 
 - the post-cutover **Verify** loop, because a new build is not verified
   until it answers a routing-ready 200;
 - **ROLLBACK** recovery verification, for the same reason.
-
-Output with no JSON body at all is still `ERR` and still fails closed. That
-covers a proxy error, a timeout, or a refused connection. Under `set -e`,
-the host re-check still aborts before the mutation marker when nothing
-answers.
 
 ## Pinned by
 

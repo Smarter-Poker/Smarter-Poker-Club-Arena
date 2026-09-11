@@ -994,22 +994,9 @@ jobs:
           READY=no
           for i in $(seq 1 $ATTEMPTS); do
             [ "$(date -u +%s)" -ge "$GATE_DEADLINE" ] && { echo "attempt $i/$ATTEMPTS: the gate deadline passed"; break; }
-            # ── A 503 IS AN ANSWER, NOT SILENCE (2026-09-11) ──────────────
-            # /health answers 503 whenever the engine is not ROUTING-ready
-            # (status 'degraded': equity pool, horse worker or dealer
-            # prerequisites not ready) and sends the SAME body either way;
-            # handlers/health.ts says so, naming the deploy verifier as the
-            # reader it keeps the body for. `curl -f` threw that body away.
-            # From 06:58 UTC the equity pool sat 'failed', every /health was
-            # a 503, and run 34571396262 polled 175 times, logged "/health
-            # unreadable" every time, and let a complete certificate go by
-            # (07:55:08: counting_down, durable, 0 unparked, 290s left). The
-            # build that would have replaced the degraded engine could not
-            # ship BECAUSE the engine was degraded. The certificate is in
-            # the body, so the body is what is read; routing readiness is
-            # not restart authority in either direction. No JSON at all
-            # (proxy error, timeout) is still ERR and still fails closed.
-            BODY=$(curl -s --max-time 10 "$ENGINE_URL/health" 2>/dev/null || echo "")
+            # A degraded engine can still park every table. Read only 200/503
+            # bodies after a complete transfer; the certificate below is authority.
+            BODY=$(CERT_RESPONSE=$(curl -sS --max-time 10 -w '\n%{http_code}' "$ENGINE_URL/health") && printf '%s' "$CERT_RESPONSE" | python3 -c 'import sys; body, _, status = sys.stdin.read().rpartition("\n"); print(body if status in ("200", "503") else "")') || BODY=""
             # A restart certificate is complete only while the break is
             # actively counting down, every table is parked, and enough time
             # remains for a graceful stop. Missing/legacy/straggler states are
@@ -1100,10 +1087,9 @@ jobs:
             set -euo pipefail
             exec 9>/var/lock/club-arena-engine-up.lock
             flock -w 30 9
-            # No -f here either: a degraded engine answers 503 with the same
-            # certificate body. Connection refused or a timeout still exits
-            # non-zero under set -e, before the mutation marker.
-            BODY=\$(curl -s --max-time 10 http://127.0.0.1:8080/health)
+            # A degraded engine can still park every table. Read only 200/503
+            # bodies after a complete transfer; the certificate below is authority.
+            BODY=\$(CERT_RESPONSE=\$(curl -sS --max-time 10 -w '\\n%{http_code}' http://127.0.0.1:8080/health) && printf '%s' \"\$CERT_RESPONSE\" | python3 -c 'import sys; body, _, status = sys.stdin.read().rpartition(\"\\n\"); print(body if status in (\"200\", \"503\") else \"\")')
             printf '%s' \"\$BODY\" | python3 -c 'import json,sys; d=json.load(sys.stdin); m=d.get(\"maintenance\"); ok=d.get(\"running\") is True and isinstance(m,dict) and m.get(\"active\") is True and m.get(\"phase\")==\"counting_down\" and m.get(\"durableConfirmed\") is True and m.get(\"readyForRestart\") is True and m.get(\"unparkedTables\")==0 and int(m.get(\"remainingMs\") or 0)>=180000; sys.exit(0 if ok else 75)'
             echo '$MUTATION_MARKER'
             # The stock autoheal sidecar is intentionally not release-aware.

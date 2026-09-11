@@ -114,7 +114,7 @@ describe('the restart certificate and the version are read from the body, whatev
     // before the mutation marker is printed.
     const script = runScript(cutover);
     const guard = script.indexOf('set -euo pipefail');
-    const read = script.indexOf('BODY=\\$(curl -s --max-time 10 http://127.0.0.1:8080/health)');
+    const read = script.indexOf('http://127.0.0.1:8080/health');
     const marker = script.indexOf("echo '$MUTATION_MARKER'");
     expect(guard).toBeGreaterThan(-1);
     expect(read).toBeGreaterThan(guard);

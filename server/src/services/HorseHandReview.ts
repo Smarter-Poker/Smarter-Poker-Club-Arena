@@ -1114,15 +1114,25 @@ export async function recordHorseHandReviews(input: HorseReviewInput): Promise<v
     // Retention: prune once per process lifetime, well after boot.
     if (!pruneArmed) {
       pruneArmed = true;
+      // ARMED BY A HAND, RUN FOR THE PROCESS (2026-09-11). The first hand to
+      // flag a horse arms this, and that is a tournament table's hand as often
+      // as a cash table's; a Node timer keeps the async context it was created
+      // in. Unbound, the prune - a DELETE across every horse's review and
+      // rollup rows - went out ten minutes later as that tournament's manager:
+      // admitted under its lease while it still held one, refused
+      // TOURNAMENT_MANAGER_FENCED once it had finished or lost it, which a Spin
+      // or an SNG routinely does inside ten minutes. pruneArmed is never
+      // reset, so retention then never ran again for the life of the process.
+      // Bound to the process root, like the nets flush above.
       setTimeout(
-        () => {
+        bindToProcessRoot(() => {
           // supabase-js builders are PromiseLike without .catch — wrap in a
           // real Promise so the rejection handler exists and is typed.
           void (async () => {
             const { error: perr } = await supabase.rpc('sp_prune_horse_hand_reviews');
             if (perr) reportError(new Error(perr.message), 'HorseHandReview.prune');
           })().catch((err: unknown) => reportError(err, 'HorseHandReview.prune'));
-        },
+        }),
         10 * 60 * 1000
       );
     }

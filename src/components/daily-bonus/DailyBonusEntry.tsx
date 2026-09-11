@@ -63,7 +63,8 @@ export default function DailyBonusEntry({ suspended = false }: { suspended?: boo
   const [open, setOpen] = useState(false);
   const [today, setToday] = useState<string | null>(null);
   const asked = useRef<Asked | null>(null);
-  const pending = useRef(false);
+  const active = useRef(false);
+  const pending = useRef<symbol | null>(null);
   const retries = useRef(0);
   const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const rolloverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -86,7 +87,15 @@ export default function DailyBonusEntry({ suspended = false }: { suspended?: boo
   };
 
   const ask = useCallback(async () => {
-    if (!userId || suspendedRef.current || openRef.current || pending.current) return;
+    if (
+      !active.current ||
+      !userId ||
+      userRef.current !== userId ||
+      suspendedRef.current ||
+      openRef.current ||
+      pending.current
+    )
+      return;
     if (isQuietPath(pathRef.current)) return;
     const prior = asked.current;
     if (
@@ -101,12 +110,17 @@ export default function DailyBonusEntry({ suspended = false }: { suspended?: boo
     const localToday = chicagoToday();
     if (localToday && wasSeenToday(userId, localToday)) return;
 
-    pending.current = true;
+    const request = Symbol('daily-bonus-entry-read');
+    pending.current = request;
     try {
       const status = await dailyBonusService.getStatus();
-      // The account changed while the read was in flight: the answer is
-      // somebody else's.
-      if (userRef.current !== userId) return;
+      // The request belongs to this host and account. A retired host must
+      // not spend the day's popup or release a newer account's pending read.
+      if (!active.current || pending.current !== request || userRef.current !== userId) return;
+      // Navigation and the first-run gate can change while the read waits.
+      // Ask again when the host becomes eligible instead of marking an
+      // unseen sheet as shown.
+      if (suspendedRef.current || isQuietPath(pathRef.current)) return;
       retries.current = 0;
       const resetAt = Date.parse(status.reset_at);
       const validUntil = Number.isFinite(resetAt) ? resetAt : null;
@@ -131,6 +145,7 @@ export default function DailyBonusEntry({ suspended = false }: { suspended?: boo
         markQuiet(userId, status.reset_at);
       }
     } catch (err) {
+      if (!active.current || pending.current !== request || userRef.current !== userId) return;
       // The sheet is a courtesy on entry; a failed read is not a failed page.
       // It is also not the last word: retry a few times, then on any signal.
       reportError(err, 'DailyBonusEntry.getStatus');
@@ -141,16 +156,25 @@ export default function DailyBonusEntry({ suspended = false }: { suspended?: boo
         retryTimer.current = setTimeout(() => void ask(), RETRY_DELAY_MS * retries.current);
       }
     } finally {
-      pending.current = false;
+      if (pending.current === request) pending.current = null;
     }
   }, [userId]);
 
-  // Account change: whatever was asked or shown belonged to the last account.
+  // Each mounted account owns its read and timers. Cleanup also runs
+  // during StrictMode replay; the next setup establishes a fresh owner.
   useEffect(() => {
+    active.current = true;
+    pending.current = null;
     asked.current = null;
     retries.current = 0;
+    clearTimers();
     setOpen(false);
     setToday(null);
+    return () => {
+      active.current = false;
+      pending.current = null;
+      clearTimers();
+    };
   }, [userId]);
 
   // Entry, un-suspension, navigation off a quiet path and the sheet closing
@@ -176,8 +200,6 @@ export default function DailyBonusEntry({ suspended = false }: { suspended?: boo
       window.removeEventListener('online', onSignal);
     };
   }, [ask]);
-
-  useEffect(() => () => clearTimers(), []);
 
   // The Promotions door and the nav lead to /bonuses, which renders this
   // same sheet inline; a modal copy left open above it would be two sheets.

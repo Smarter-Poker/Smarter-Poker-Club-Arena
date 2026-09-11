@@ -1,0 +1,5 @@
+{
+  "_owner": "fix/horse-finish-line",
+  "_comment": "The general played-game launch recovery (20260911173003, applied 2026-09-11 17:30 UTC), which lets the forty games dealt on 09-08 complete the launch their engine never committed. fn_complete_tournament_launch_before_lease_generation in the same migration is CREATE OR REPLACE of a function the base snapshot already knows.",
+  "functions": ["fn_prove_played_launch_recovery"]
+}

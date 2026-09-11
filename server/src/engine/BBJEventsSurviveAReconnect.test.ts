@@ -42,6 +42,15 @@ describe('every jackpot event asks the hub to keep it', () => {
 
   it('the near-miss toast does NOT ask to be retained - it is a teaching moment, not a payout', () => {
     expect(emitBlock('bbj_near_miss')).not.toMatch(/replay_until/);
+    /* Settlement emits bbj_near_miss TWICE since phase 3 - main and mini - and
+       `emitBlock` takes the first. Neither may be replayed: a near miss is a
+       teaching banner for the hand in front of you, not a thing to re-show on
+       reconnect. */
+    const emits = [...settlement.matchAll(/type: 'bbj_near_miss'/g)].map((m) => m.index ?? 0);
+    expect(emits.length, 'main and mini both emit').toBeGreaterThanOrEqual(2);
+    for (const at of emits) {
+      expect(settlement.slice(at, settlement.indexOf('});', at))).not.toMatch(/replay_until/);
+    }
   });
 });
 

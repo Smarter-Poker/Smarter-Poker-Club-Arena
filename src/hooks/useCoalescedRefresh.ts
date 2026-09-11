@@ -63,6 +63,7 @@ export function useCoalescedRefresh(
   }, []);
 
   const request = useCallback(() => {
+    if (!mountedRef.current) return;
     if (timerRef.current) return; // one already scheduled; this event rides it
     if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
       missedRef.current = true;
@@ -75,6 +76,10 @@ export function useCoalescedRefresh(
     }
     timerRef.current = setTimeout(() => {
       timerRef.current = null;
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+        missedRef.current = true;
+        return;
+      }
       run();
     }, minIntervalMs - since);
   }, [minIntervalMs, run]);
@@ -90,6 +95,11 @@ export function useCoalescedRefresh(
   useEffect(() => {
     mountedRef.current = true;
     const onVisibility = () => {
+      if (document.visibilityState === 'hidden' && timerRef.current) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+        missedRef.current = true;
+      }
       if (document.visibilityState !== 'visible') return;
       if (!missedRef.current) return;
       // Whatever was missed is one read on return, not a queue of them.

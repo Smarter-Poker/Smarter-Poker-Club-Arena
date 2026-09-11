@@ -23,6 +23,16 @@ export interface BadBeatJackpotProps {
   /** Tap handler — opens the last-5-jackpots view (Dan, 2026-08-18). */
   onOpenDetails?: () => void;
   onClaimed?: () => void;
+  /**
+   * THE MINI, UNDER THE PLATE (Dan 2026-09-11): "UNDER IT SHOULD BE A MINI BBJ
+   * AMOUNT THAT IS DYNAMIC AND ADJUSTS WITH THE TABLE. (IT SHOULD DISPLAY WHAT
+   * IT PAYS OUT UNDER IT)." The flat amount the mini pays at THIS table's
+   * stakes, from lib/bbjMiniFeed. Null or 0 draws nothing - a mini that cannot
+   * pay right now (reserve at its floor, tier disabled) must not be promised.
+   */
+  miniAmount?: number | null;
+  /** The mini's own bar at this table, for the hover summary. */
+  miniQualifyingHand?: string | null;
 }
 
 export function BadBeatJackpot({
@@ -33,6 +43,8 @@ export function BadBeatJackpot({
   payoutPercent,
   isHit = false,
   onOpenDetails,
+  miniAmount = null,
+  miniQualifyingHand = null,
 }: BadBeatJackpotProps) {
   const [displayAmount, setDisplayAmount] = useState(amount);
   // Brief scale/glow whenever the jackpot GROWS (2026-08-18) — a live pool
@@ -97,9 +109,17 @@ export function BadBeatJackpot({
         `This table hits for ${payoutPercent}% of the pool${share} - 50% bad beat / 25% winner / 25% table.`
       );
     }
+    if (typeof miniAmount === 'number' && miniAmount > 0) {
+      lines.push(
+        `Mini jackpot at these stakes: ${currency}${Math.trunc(miniAmount).toLocaleString('en-US')}` +
+          (miniQualifyingHand ? ` - ${miniQualifyingHand}.` : '.')
+      );
+    }
     lines.push('Tap for the last five jackpots.');
     return lines.join('\n');
-  }, [qualifyingHand, subText, payoutPercent, amount, currency]);
+  }, [qualifyingHand, subText, payoutPercent, amount, currency, miniAmount, miniQualifyingHand]);
+
+  const showMini = typeof miniAmount === 'number' && miniAmount > 0;
 
   return (
     <>
@@ -135,6 +155,37 @@ export function BadBeatJackpot({
               })}
         </div>
       </div>
+
+      {/* THE MINI ROW, hung under the plate. Its own element rather than a
+          third line inside the plate, because the phone plate is a DECLARED
+          22px single row (see --sp-bbj-plate-h in BadBeatJackpot.css) and the
+          felt's top reserve is measured against it. The reserve reads
+          --sp-bbj-h, which grows by this row's height when TablePage stamps
+          data-bbj-mini="1" - the same condition that renders this. The amount
+          is the flat mini for THIS table's stakes, so it changes with the
+          table, as asked. Same tap, same popup. */}
+      {showMini && (
+        <div
+          className="bbj-mini-plate"
+          role="button"
+          tabIndex={0}
+          aria-label="Mini Bad Beat Jackpot - View Recent Jackpots"
+          title={hoverSummary}
+          onClick={() => onOpenDetails?.()}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              onOpenDetails?.();
+            }
+          }}
+        >
+          <span className="bbj-mini-plate__label">MINI BBJ</span>
+          <span className="bbj-mini-plate__amount">
+            {currency}
+            {Math.trunc(miniAmount as number).toLocaleString('en-US')}
+          </span>
+        </div>
+      )}
 
       {/* Hit Animation Overlay */}
       {isHit && (

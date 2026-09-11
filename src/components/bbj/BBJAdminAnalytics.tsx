@@ -39,6 +39,18 @@ interface Analytics {
   avg_days_between_hits: number | null;
   days_since_last_hit: number | null;
   net_pool_position: number;
+  /* The mini's own numbers (2026-09-11). The columns above count every hit of
+     either kind; these say how much of that was the mini, and what the reserve
+     can still pay. Optional so a cached older row still renders. */
+  mini_enabled?: boolean | null;
+  mini_hit_count?: number | null;
+  mini_paid_all_time?: number | null;
+  mini_hits_30d?: number | null;
+  mini_paid_30d?: number | null;
+  mini_last_hit_at?: string | null;
+  mini_reserve_floor?: number | null;
+  mini_parked?: number | null;
+  mini_available?: number | null;
 }
 
 export function BBJAdminAnalytics({ poolId }: BBJAdminAnalyticsProps) {
@@ -127,6 +139,50 @@ export function BBJAdminAnalytics({ poolId }: BBJAdminAnalyticsProps) {
           </span>
           <span className="bbj-admin__stat-sub">Collected Minus Paid, All Time</span>
         </div>
+
+        {/* THE MINI (2026-09-11). Its hits are inside "Hits (All Time)" and
+            its chips inside "Paid Out"; these three say how much of each was
+            the mini, and how far the backup reserve is from the floor at
+            which the mini stops paying. */}
+        {data.mini_hit_count != null && (
+          <>
+            <div className="bbj-admin__stat">
+              <span className="bbj-admin__stat-label">Mini Hits</span>
+              <span className="bbj-admin__stat-value">
+                {Number(data.mini_hit_count).toLocaleString()}
+              </span>
+              <span className="bbj-admin__stat-sub">
+                {Number(data.mini_hits_30d ?? 0).toLocaleString()} In 30 Days
+                {data.mini_enabled === false ? ' - Switched Off' : ''}
+              </span>
+            </div>
+
+            <div className="bbj-admin__stat">
+              <span className="bbj-admin__stat-label">Mini Paid</span>
+              <span className="bbj-admin__stat-value">
+                ${money(Number(data.mini_paid_all_time ?? 0))}
+              </span>
+              <span className="bbj-admin__stat-sub">
+                ${money(Number(data.mini_paid_30d ?? 0))} In 30 Days, From The Backup Pool
+              </span>
+            </div>
+
+            <div
+              className={`bbj-admin__stat ${Number(data.mini_available ?? 0) > 0 ? 'is-positive' : 'is-negative'}`}
+            >
+              <span className="bbj-admin__stat-label">Mini Headroom</span>
+              <span className="bbj-admin__stat-value">
+                ${money(Number(data.mini_available ?? 0), 0)}
+              </span>
+              <span className="bbj-admin__stat-sub">
+                Backup Above Its ${money(Number(data.mini_reserve_floor ?? 0), 0)} Floor
+                {Number(data.mini_parked ?? 0) > 0
+                  ? ` (${money(Number(data.mini_parked), 0)} Parked)`
+                  : ''}
+              </span>
+            </div>
+          </>
+        )}
       </div>
 
       <div className="bbj-admin__bar">

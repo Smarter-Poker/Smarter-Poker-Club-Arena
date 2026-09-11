@@ -3721,8 +3721,12 @@
    responsive `.seat` rules (0,1,0) at every width. */
 .seat-wrapper--top .seat {
   /* min(), not a ratio. This is a CLEARANCE against the BBJ banner, and the
-     banner is a fixed 22px at every width (--sp-bbj-h), so the room above the
-     top row does not scale and neither may its ceiling. min() reproduces
+     banner does not scale with the viewport, so neither may its ceiling.
+     (It is no longer one number: since 2026-09-11 --sp-bbj-h is the nameplate
+     PLUS the mini row - 22px, or 36px on a phone showing a payable mini, and
+     48/64 above 768px. BadBeatJackpot.css publishes all of it. This rule uses
+     a literal min() rather than reading the variable, so the arithmetic below
+     is what to re-check if the plate grows again.) min() reproduces
      today's behaviour exactly: on a phone the full slot is already under 56px
      so nothing is capped, and on anything larger the cap binds at 56 just as
      the literal did. A `* 0.667` here would have looked equivalent on a desktop

@@ -1,0 +1,205 @@
+-- 2026-09-11-resequence-inputs.sql
+--
+-- INPUTS for the orchestrator's proven re-sequence (toggle each listed player
+-- through 'winner' and back, in the listed order, in one transaction). Read-only
+-- here. Must be applied BEFORE any of these events can deal again, i.e. before
+-- 2026-09-11-wake-the-one-seat-tables.sql or a deploy of
+-- fix/a-frozen-sweep-owes-the-balancer-a-pass-after-the-thaw.
+--
+-- True bust order = committed_at of the hand of each player's latest
+-- 'eliminated' knockout candidate, later = better; same hand: larger
+-- stack_before finishes higher; exact tie: recorded order kept.
+-- For each event the list is the minimal TOP SEGMENT that makes every place in
+-- the paid range equal true order: all eliminated players with true position
+-- <= K, earliest bust first (so the last one toggled lands just below the
+-- survivors). Verified by simulation: after the toggles, positions
+-- playing+1 .. paid places = true order, everyone else keeps recorded order
+-- below them. Nothing in these events has been paid (no place obligations, no
+-- tournament_payouts rows); the move only changes who is paid at settlement.
+--
+-- Source snapshot: production, 2026-09-11 ~11:47 UTC (all seven events are
+-- frozen, so it cannot have moved; the recompute query at the bottom proves it).
+
+
+-- EVENT 313a274b-0cc8-4b90-bada-f4a4e7deae6a: 5 playing, 13 paid places, toggle 9 (true positions 14 -> 6)
+--   deep_gumbo   25842c55-5295-4c44-ba0d-540dfaebb24a recorded   9 -> true   8; projected 11.63 -> 12.76
+--   pokerdale    c402b38e-7ba6-40bf-a2d3-d65376d28ccf recorded   8 -> true   9; projected 12.76 -> 11.63
+--   Jake         0a9625c9-f679-4d98-9ebe-d8bb005c45b6 recorded  25 -> true  13; projected 0.00 -> 8.65
+--   HeaterHawk   ccced697-01fd-444a-bf95-65b720a3adc9 recorded  13 -> true  14; projected 8.65 -> 0.00
+--   toggle order (ordinal, user_id):
+--     (1, 'ccced697-01fd-444a-bf95-65b720a3adc9'),  -- true 14 HeaterHawk
+--     (2, '0a9625c9-f679-4d98-9ebe-d8bb005c45b6'),  -- true 13 Jake
+--     (3, '4b2d172a-b413-4ae5-9965-32aeefa0e849'),  -- true 12 Tomas
+--     (4, 'f77cb4c6-6fc4-45e9-bc6b-7791205391be'),  -- true 11 TonyN
+--     (5, '5c9528bd-1166-4619-9d54-ee93fb315e7e'),  -- true 10 pokerchad
+--     (6, 'c402b38e-7ba6-40bf-a2d3-d65376d28ccf'),  -- true 9 pokerdale
+--     (7, '25842c55-5295-4c44-ba0d-540dfaebb24a'),  -- true 8 deep_gumbo
+--     (8, '47731cb8-58a5-4a83-822d-8e5f8cd8af73'),  -- true 7 Russ
+--     (9, '7d7a80a2-092c-4338-878a-0416611b249c')  -- true 6 Allin21
+
+-- EVENT 7aa16fa7-adf7-4fb9-81b9-b565d8e4af7d: 4 playing, 39 paid places, toggle 26 (true positions 30 -> 5)
+--   l0jackking   28d30605-63d5-4fc7-ba26-3ecb1a04ccd1 recorded  13 -> true  12; projected 4.37 -> 4.68
+--   tankChamp    373a7bc7-1505-4c4c-b6b0-ba437b569a8a recorded  12 -> true  13; projected 4.68 -> 4.37
+--   SDLegend     8376185d-fab8-483c-a004-52c8a5cce763 recorded  18 -> true  14; projected 3.37 -> 4.13
+--   the_donk     00000000-0000-0000-0000-000000000041 recorded  19 -> true  15; projected 3.23 -> 3.90
+--   GumboRamen   eb2e16b6-8a39-4acc-a644-1c5bf4041b0c recorded  20 -> true  16; projected 3.11 -> 3.72
+--   boat         660d14dc-9f42-425b-9985-55644a95a984 recorded  21 -> true  17; projected 2.98 -> 3.54
+--   Chad         ef1baf0a-72de-4d60-a90f-b9b608b051b3 recorded  14 -> true  18; projected 4.13 -> 3.37
+--   the_outlaw   cb50fee0-a87b-4ac8-a6fe-8e665c5ddd8c recorded  29 -> true  19; projected 2.31 -> 3.23
+--   PhillyMaya   8338bf08-f33d-481e-9072-fba81076bc9a recorded  30 -> true  20; projected 2.25 -> 3.11
+--   cbus_rashid  2143ec37-02ed-4712-9642-a56f1945c379 recorded  25 -> true  21; projected 2.60 -> 2.98
+--   STRADDLEREG  00000000-0000-0000-0000-000000000017 recorded  26 -> true  22; projected 2.51 -> 2.88
+--   binkBoss     f687be6b-fef1-4713-be59-9ed6e8b55eef recorded  27 -> true  23; projected 2.45 -> 2.78
+--   Rebuy23      57d5af45-0b1c-417c-bc41-64ca9fd1b4b9 recorded  28 -> true  24; projected 2.37 -> 2.68
+--   sneakychief  0097309f-2864-4d09-b02b-56bca012a9c3 recorded  15 -> true  25; projected 3.90 -> 2.60
+--   talia.lopez  2478c921-4ed2-40dc-b343-51c9987ba922 recorded  16 -> true  26; projected 3.72 -> 2.51
+--   NINJA        f45f73b2-edc0-44d1-9865-1c79bb4d6838 recorded  17 -> true  27; projected 3.54 -> 2.45
+--   LouIII       54a0a8e8-a5e6-4b62-8855-9d68fe69ee6d recorded  22 -> true  28; projected 2.88 -> 2.37
+--   rookiee      4aa0d45c-056b-48fa-af36-fc514aee4d57 recorded  23 -> true  29; projected 2.78 -> 2.31
+--   JulienPoker  00000000-0000-0000-0000-000000000050 recorded  24 -> true  30; projected 2.68 -> 2.25
+--   toggle order (ordinal, user_id):
+--     (1, '00000000-0000-0000-0000-000000000050'),  -- true 30 JulienPoker
+--     (2, '4aa0d45c-056b-48fa-af36-fc514aee4d57'),  -- true 29 rookiee
+--     (3, '54a0a8e8-a5e6-4b62-8855-9d68fe69ee6d'),  -- true 28 LouIII
+--     (4, 'f45f73b2-edc0-44d1-9865-1c79bb4d6838'),  -- true 27 NINJA
+--     (5, '2478c921-4ed2-40dc-b343-51c9987ba922'),  -- true 26 talia.lopez
+--     (6, '0097309f-2864-4d09-b02b-56bca012a9c3'),  -- true 25 sneakychief
+--     (7, '57d5af45-0b1c-417c-bc41-64ca9fd1b4b9'),  -- true 24 Rebuy23
+--     (8, 'f687be6b-fef1-4713-be59-9ed6e8b55eef'),  -- true 23 binkBoss
+--     (9, '00000000-0000-0000-0000-000000000017'),  -- true 22 STRADDLEREG
+--     (10, '2143ec37-02ed-4712-9642-a56f1945c379'),  -- true 21 cbus_rashid
+--     (11, '8338bf08-f33d-481e-9072-fba81076bc9a'),  -- true 20 PhillyMaya
+--     (12, 'cb50fee0-a87b-4ac8-a6fe-8e665c5ddd8c'),  -- true 19 the_outlaw
+--     (13, 'ef1baf0a-72de-4d60-a90f-b9b608b051b3'),  -- true 18 Chad
+--     (14, '660d14dc-9f42-425b-9985-55644a95a984'),  -- true 17 boat
+--     (15, 'eb2e16b6-8a39-4acc-a644-1c5bf4041b0c'),  -- true 16 GumboRamen
+--     (16, '00000000-0000-0000-0000-000000000041'),  -- true 15 the_donk
+--     (17, '8376185d-fab8-483c-a004-52c8a5cce763'),  -- true 14 SDLegend
+--     (18, '373a7bc7-1505-4c4c-b6b0-ba437b569a8a'),  -- true 13 tankChamp
+--     (19, '28d30605-63d5-4fc7-ba26-3ecb1a04ccd1'),  -- true 12 l0jackking
+--     (20, 'a0d2909b-4b76-4a44-b88d-781ccca63623'),  -- true 11 OUTLAW
+--     (21, '40f9d2b3-14d5-45f8-a3e7-f89d1449d054'),  -- true 10 KenjiReno
+--     (22, '6fa1c8e2-c2bb-4168-b121-6281a549b94f'),  -- true 9 RexSr
+--     (23, '7f348e8f-a98d-4bf8-8f59-e34a78d1f87b'),  -- true 8 ace007
+--     (24, 'f8058099-1f42-4de5-ba90-a27dde896f4a'),  -- true 7 j.petrov95
+--     (25, 'f44d72f2-a596-4938-af60-2e36b18de73f'),  -- true 6 MrGrinder
+--     (26, '3a7ad729-fef0-4091-b675-747cd760d2f8')  -- true 5 TreyJr
+
+-- EVENT 8e16cdb4-d763-47d5-8545-fdc1c151d364: 10 playing, 28 paid places, toggle 11 (true positions 21 -> 11)
+--   diego        31cf17ec-9b08-41bb-89cc-4da7fb32010c recorded  16 -> true  15; projected 14.65 -> 15.44
+--   slow_velvet  00000000-0000-0000-0000-000000000049 recorded  17 -> true  16; projected 13.93 -> 14.65
+--   nut111       81c5eb8a-3aeb-443d-a616-207527a939cf recorded  15 -> true  17; projected 15.44 -> 13.93
+--   Sir Pam      2e49e7e8-346a-49ba-91d3-699f1d9e0d6a recorded  20 -> true  19; projected 12.28 -> 12.78
+--   Trey Kenji   58584896-e942-4939-90f3-d54da2583514 recorded  21 -> true  20; projected 11.78 -> 12.28
+--   cali_ingrid  c82e74af-4101-49b0-bd0f-93755f7bb13b recorded  19 -> true  21; projected 12.78 -> 11.78
+--   toggle order (ordinal, user_id):
+--     (1, 'c82e74af-4101-49b0-bd0f-93755f7bb13b'),  -- true 21 cali_ingrid
+--     (2, '58584896-e942-4939-90f3-d54da2583514'),  -- true 20 Trey Kenji
+--     (3, '2e49e7e8-346a-49ba-91d3-699f1d9e0d6a'),  -- true 19 Sir Pam
+--     (4, '3f03e48b-e5ae-43c4-8d59-516aa26abdc8'),  -- true 18 hawkk
+--     (5, '81c5eb8a-3aeb-443d-a616-207527a939cf'),  -- true 17 nut111
+--     (6, '00000000-0000-0000-0000-000000000049'),  -- true 16 slow_velvet
+--     (7, '31cf17ec-9b08-41bb-89cc-4da7fb32010c'),  -- true 15 diego
+--     (8, '9dcf6e6b-ffae-4336-87dd-92a893d1b27b'),  -- true 14 xninja
+--     (9, '9a195ad3-15f3-4b47-aa0b-2d5f0634462b'),  -- true 13 Mrs Bob
+--     (10, '2a8c045e-cc0d-404f-896b-7e441a3c495a'),  -- true 12 reno_mia
+--     (11, '98327012-ff16-4a4c-a6b6-3f5e6e3cba2a')  -- true 11 DRAWFOX
+
+-- EVENT bee519fa-ff07-438c-9542-d386fc821908: 12 playing, 17 paid places, toggle 11 (true positions 23 -> 13)
+--   TightMonk    631a3049-dbb7-4668-8d52-c36efdb395d5 recorded 103 -> true  15; projected 0.00 -> 7.87
+--   the_jester   a0dbce6c-9df7-468c-b1ba-bfae2e31e774 recorded 104 -> true  16; projected 0.00 -> 7.48
+--   owen         4f0bbf2a-7a7e-43f1-bc19-c0f937419388 recorded 105 -> true  17; projected 0.00 -> 7.11
+--   rosanguyen   01bd8786-371e-4ba2-85d6-baab469bba07 recorded  15 -> true  20; projected 7.87 -> 0.00
+--   Zoe86        559c9e97-5961-402d-9a1f-7b17ca55d3cc recorded  16 -> true  21; projected 7.48 -> 0.00
+--   DEUCENIT     7a720598-8e36-48e1-9826-7bc99a81bdb6 recorded  17 -> true  23; projected 7.11 -> 0.00
+--   toggle order (ordinal, user_id):
+--     (1, '7a720598-8e36-48e1-9826-7bc99a81bdb6'),  -- true 23 DEUCENIT
+--     (2, '805ae5c3-5303-4aa5-b600-741afb76506e'),  -- true 22 GraceCBus
+--     (3, '559c9e97-5961-402d-9a1f-7b17ca55d3cc'),  -- true 21 Zoe86
+--     (4, '01bd8786-371e-4ba2-85d6-baab469bba07'),  -- true 20 rosanguyen
+--     (5, 'e21f87dd-4cc8-4900-ac3b-8e1946413c79'),  -- true 19 l4diesqu3en
+--     (6, '1d81eaa9-42bc-4815-9616-01ad6e6d5800'),  -- true 18 LenaIII
+--     (7, '4f0bbf2a-7a7e-43f1-bc19-c0f937419388'),  -- true 17 owen
+--     (8, 'a0dbce6c-9df7-468c-b1ba-bfae2e31e774'),  -- true 16 the_jester
+--     (9, '631a3049-dbb7-4668-8d52-c36efdb395d5'),  -- true 15 TightMonk
+--     (10, '161a15e0-f5d8-4f11-995a-20e73c5ee9ed'),  -- true 14 drew.kelly
+--     (11, '62c2fc6c-e6e2-4a6a-9b47-e038bcc5a5db')  -- true 13 angrywhale
+
+-- EVENT d7997aef-0a69-4c0a-b074-aa63d8ba40fe: 18 playing, 40 paid places, toggle 20 (true positions 38 -> 19)
+--   ohalloran    c025d7b4-b93e-4aa0-89e5-e391c246b0f2 recorded  38 -> true  37; projected 1.54 -> 1.58
+--   TPAMaya      b4cd2cf5-7b88-4383-9b3c-d1cc231828e7 recorded  37 -> true  38; projected 1.58 -> 1.54
+--   toggle order (ordinal, user_id):
+--     (1, 'b4cd2cf5-7b88-4383-9b3c-d1cc231828e7'),  -- true 38 TPAMaya
+--     (2, 'c025d7b4-b93e-4aa0-89e5-e391c246b0f2'),  -- true 37 ohalloran
+--     (3, '1d1e1921-5ec0-4bc1-8a51-e9379301e319'),  -- true 36 tilt420
+--     (4, '278e60cc-53db-413f-941a-a42fcb9bb510'),  -- true 35 xXWhaleXx
+--     (5, '4e80cb1f-6989-49ba-9d5b-6ccb32227fb8'),  -- true 34 stack_kid
+--     (6, 'face0000-0000-0000-0000-000000000002'),  -- true 33 the_hunter
+--     (7, '00000000-0000-0000-0000-000000000036'),  -- true 32 sea_zoe
+--     (8, '2f957a53-4316-49a2-8ca3-efe437a315cb'),  -- true 31 Philly_Greg
+--     (9, '55256246-48cc-4025-87ca-771e433c7044'),  -- true 30 ReidSr
+--     (10, '7f348e8f-a98d-4bf8-8f59-e34a78d1f87b'),  -- true 29 ace007
+--     (11, 'ca905025-0dfc-4353-ac1e-444ce5763c83'),  -- true 28 xmachine
+--     (12, 'e0be3976-bb22-4720-829f-791ff19df459'),  -- true 27 heater_nit
+--     (13, 'df9b5404-5652-4331-8a8e-dbff67aedc2d'),  -- true 26 rakebandit
+--     (14, '5ee0f97f-537b-41b2-a6e3-c7dc3b01938e'),  -- true 25 rookie_86
+--     (15, 'cf36cb99-888a-4a2d-ac44-6b9a2196f9ef'),  -- true 24 pam1974
+--     (16, 'de8cde57-0517-441e-9dad-6541a13b50a1'),  -- true 23 Luc
+--     (17, '4b532a4a-6b79-476b-ab05-b4e0637a52d1'),  -- true 22 SLCCamille
+--     (18, 'a497dbb8-a32c-4bb9-9ffa-beeea1d8c5d8'),  -- true 21 pokerbianca
+--     (19, '4358b50c-cc20-4e2a-a725-3ecc18e52fde'),  -- true 20 EddieRVA
+--     (20, '7f99084b-e99a-4312-a258-1be6451c0c8b')  -- true 19 YoungFrank
+
+-- EVENT e3ef32fd-0d93-4469-a249-392b408fff84: 5 playing, 11 paid places, toggle 5 (true positions 10 -> 6)
+--   NatTheGoat   b5fb0b59-88b7-47be-9f52-6946c68b31f7 recorded  10 -> true   8; projected 25.62 -> 30.60
+--   legendd      7d2a36ee-19f0-4d5e-9600-9a2cd996c0b9 recorded   8 -> true   9; projected 30.60 -> 27.90
+--   TheViking    813ddbd7-65df-4086-8556-3ea7c16ab870 recorded   9 -> true  10; projected 27.90 -> 25.62
+--   toggle order (ordinal, user_id):
+--     (1, '813ddbd7-65df-4086-8556-3ea7c16ab870'),  -- true 10 TheViking
+--     (2, '7d2a36ee-19f0-4d5e-9600-9a2cd996c0b9'),  -- true 9 legendd
+--     (3, 'b5fb0b59-88b7-47be-9f52-6946c68b31f7'),  -- true 8 NatTheGoat
+--     (4, '484d22c4-ff3c-4430-8058-b6f0d8c2387a'),  -- true 7 MsGrinder
+--     (5, '4f24efff-2858-487d-adfe-bfc1c46bb1ef')  -- true 6 button
+
+-- EVENT f922df63-a780-4482-86c4-55d8a4199311: 13 playing, 20 paid places, toggle 12 (true positions 25 -> 14)
+--   shovemoose   3b79b8a6-1b55-4ae9-9976-2f5a86d1fe82 recorded 131 -> true  17; projected 0.00 -> 5.50
+--   owen         4f0bbf2a-7a7e-43f1-bc19-c0f937419388 recorded 132 -> true  18; projected 0.00 -> 5.25
+--   xnines       632df610-5d0d-48b3-b7ca-906d3db5643e recorded 133 -> true  19; projected 0.00 -> 5.03
+--   TinyTurnKid  7817543d-9a93-4cdd-9b42-3dadac9d8b31 recorded 134 -> true  20; projected 0.00 -> 4.78
+--   beastroud    1ba20655-9335-4b3d-a81b-d4368fbad8ce recorded  17 -> true  22; projected 5.50 -> 0.00
+--   pokerruss    1179f15e-dac7-4b7e-80df-5e525a498ddd recorded  18 -> true  23; projected 5.25 -> 0.00
+--   robkim       e4894901-10b8-43cc-b7d9-cb92499c51df recorded  19 -> true  24; projected 5.03 -> 0.00
+--   SbWolf       06f16138-70cd-49e5-89b3-aec698118b81 recorded  20 -> true  25; projected 4.78 -> 0.00
+--   toggle order (ordinal, user_id):
+--     (1, '06f16138-70cd-49e5-89b3-aec698118b81'),  -- true 25 SbWolf
+--     (2, 'e4894901-10b8-43cc-b7d9-cb92499c51df'),  -- true 24 robkim
+--     (3, '1179f15e-dac7-4b7e-80df-5e525a498ddd'),  -- true 23 pokerruss
+--     (4, '1ba20655-9335-4b3d-a81b-d4368fbad8ce'),  -- true 22 beastroud
+--     (5, '294fd624-eb6c-429e-b350-d6e6ef962b77'),  -- true 21 NiceSbBoss
+--     (6, '7817543d-9a93-4cdd-9b42-3dadac9d8b31'),  -- true 20 TinyTurnKid
+--     (7, '632df610-5d0d-48b3-b7ca-906d3db5643e'),  -- true 19 xnines
+--     (8, '4f0bbf2a-7a7e-43f1-bc19-c0f937419388'),  -- true 18 owen
+--     (9, '3b79b8a6-1b55-4ae9-9976-2f5a86d1fe82'),  -- true 17 shovemoose
+--     (10, 'e8b32dc2-6c5b-407e-ab46-451422d0a6c5'),  -- true 16 PHLBandit
+--     (11, 'e8cca6bc-24c0-43ac-9b03-58fe82fd59a1'),  -- true 15 MarcusSTL
+--     (12, '66417bd4-c8e5-4666-af6f-3d85a43593d9')  -- true 14 brisket
+
+-- RECOMPUTE (read-only; returns each event's current toggle segment so the
+-- orchestrator can diff it against the lists above before applying):
+--   with ev as (select t.id, (select count(*) from tournament_players x where x.tournament_id=t.id
+--                 and x.status in ('playing','winner')) playing from tournaments t
+--                where t.id in ('7aa16fa7-adf7-4fb9-81b9-b565d8e4af7d','f922df63-a780-4482-86c4-55d8a4199311',
+--                  '8e16cdb4-d763-47d5-8545-fdc1c151d364','bee519fa-ff07-438c-9542-d386fc821908',
+--                  '313a274b-0cc8-4b90-bada-f4a4e7deae6a','e3ef32fd-0d93-4469-a249-392b408fff84',
+--                  'd7997aef-0a69-4c0a-b074-aa63d8ba40fe')),
+--   kc as (select distinct on (k.tournament_id,k.eliminated_user_id) k.tournament_id,k.eliminated_user_id,
+--            k.stack_before,h.committed_at from tournament_knockout_candidates k join ev on ev.id=k.tournament_id
+--            left join hand_atomic_commits h on h.hand_number=k.hand_number where k.state='eliminated'
+--          order by k.tournament_id,k.eliminated_user_id,k.hand_number desc,k.created_at desc)
+--   select tp.tournament_id, ev.playing + row_number() over (partition by tp.tournament_id
+--            order by kc.committed_at desc, kc.stack_before desc, tp.elimination_sequence desc) true_pos,
+--          tp.user_id, tp.position, tp.elimination_sequence
+--     from tournament_players tp join ev on ev.id=tp.tournament_id
+--     join kc on kc.tournament_id=tp.tournament_id and kc.eliminated_user_id=tp.user_id
+--    where tp.status='eliminated' order by 1, 2;
+

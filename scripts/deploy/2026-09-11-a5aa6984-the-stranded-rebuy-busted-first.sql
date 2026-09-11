@@ -1,0 +1,170 @@
+-- 2026-09-11-a5aa6984-the-stranded-rebuy-busted-first.sql
+--
+-- RULING (CLAUDE.md 10.9) for Early Bird Freeroll (NLH) a5aa6984, RUNNING since
+-- 2026-09-09 05:31, 100 entrants, pool 99.30 locked (75.00 overlay + 27 rebuys
+-- at 1.00, 10 places), both remaining players horses. NOT REHEARSED: it writes
+-- standings, so run it on a local PG17 copy together with the orchestrator's
+-- re-sequence script before applying. One transaction, outside :50-:03 UTC.
+--
+-- WHAT HAPPENED (read from rows):
+--   river222 (profile pdxpokergal) dca6c345-c2ab-456f-98d9-dfbca3a43f7d busted in
+--   hand 8569325, committed 2026-09-09 06:13:09 (stack 2330 -> 0); knockout
+--   candidate d0ac2895-ecb8-41dd-a89b-27ee58fa14d5 opened with a rebuy prompt
+--   until 06:13:39 and is STILL 'pending'. At 06:28:26 a 1.00 rebuy was charged
+--   (chip_ledger 'rebuy', player_wallet -> prize_liability) and the roster row
+--   set to chips 2500 / rebuys 1, but river222 was never seated again and the
+--   candidate never resolved. The other 98 players busted after that (the
+--   field ran to 2026-09-10 12:51). Since then: 2 'playing' rows, one seat
+--   (MIAJordan 4f7f8abb-ba34-464c-9ecb-0ab7a972a978, 320000 on table f2ad5d92
+--   seat 2), no hand possible, the pending bust invisible to the bust stage
+--   (chips 2500 > 0), and every sweep of this manager finds nothing to do. The
+--   blind clock is at level 1405+ of a 16-level structure. (The engine's chip
+--   conservation also flags this event: 320000 on the felt vs 317500 issued.)
+--
+-- RULING. The rebuy bought chips that were never put in play: river222's
+-- latest bust is hand 8569325, the first final bust of the event, so river222
+-- finishes 100th - out of the money. The 2500 undelivered chips are voided and
+-- the 1.00 river222 paid for them is RECORDED as owed back (house-funded make-
+-- good door, later). Places 2..10 go in true bust order; MIAJordan wins.
+-- At settlement (fn_settle_tournament_places, elimination_sequence order, pool
+-- 99.30): 1 MIAJordan 27.85 | 2 d.kim94 16.00 | 3 Rebuy Gia 11.57 |
+-- 4 MamaRob 9.19 | 5 UncleJules 7.69 | 6 RexSr 6.64 | 7 tim 5.87 |
+-- 8 andre 5.27 | 9 pokerchad 4.81 | 10 lake13 4.41  (sum 99.30)
+-- Without this ruling the engine, once river222 reads 0 chips, would record the
+-- bust NOW and pay river222 2nd (16.00) and shift everyone else down one place.
+-- Alternative (not recommended): re-seat river222 with 2500 against 320000 at
+-- 7937/15875 ante 15875 - a stranded rebuy would take 2nd for being stranded.
+--
+-- PRE (all must hold, else abort):
+--   tournaments a5aa6984-6c1c-4b59-aeb7-9e7878853bdd: status RUNNING,
+--     prize_pool 99.30, prize_pool_finalized true;
+--   no tournament_payouts rows, no tournament_obligations rows;
+--   exactly two 'playing' rows: 4f7f8abb (chips 320000, one live seat, stack
+--     320000) and dca6c345 (chips 2500, table_id NULL, no live seat on any
+--     a5aa6984 table);
+--   exactly one pending candidate in the event: d0ac2895 (dca6c345, hand
+--     8569325, stack_after 0);
+--   98 'eliminated' rows.
+--
+-- WRITES (in this order, one transaction):
+--   UPDATE tournament_knockout_candidates SET state='eliminated',
+--          resolved_at=clock_timestamp()
+--    WHERE id='d0ac2895-ecb8-41dd-a89b-27ee58fa14d5' AND state='pending';      -- 1 row
+--   UPDATE tournament_players SET chips=0
+--    WHERE tournament_id='a5aa6984-6c1c-4b59-aeb7-9e7878853bdd'
+--      AND user_id='dca6c345-c2ab-456f-98d9-dfbca3a43f7d'
+--      AND status='playing' AND chips=2500 AND table_id IS NULL;               -- 1 row
+--   then the orchestrator's re-sequence, toggling in this order (earliest true
+--   bust first; river222 goes 'playing' -> 'eliminated' as the first toggle).
+--   EXACT STANDINGS (99 toggles, positions 2..100 = true order):
+--     (1, 'dca6c345-c2ab-456f-98d9-dfbca3a43f7d'),  -- true 100 river222 (recorded -)
+--     (2, '00000000-0000-0000-0000-000000000038'),  -- true  99 BigDale (recorded 16)
+--     (3, 'c080ed25-5d53-460c-bdcf-64e02a9d416a'),  -- true  98 rachel1995 (recorded 14)
+--     (4, '55256246-48cc-4025-87ca-771e433c7044'),  -- true  97 ReidSr (recorded 95)
+--     (5, '83483253-cbb3-4fc9-925b-4905e5450feb'),  -- true  96 kayla.weber (recorded 13)
+--     (6, '88056a18-39c6-41d8-bd36-5fb0bfb00ce9'),  -- true  95 AuntieLuc (recorded 100)
+--     (7, '4c417026-97b3-476e-ac35-18d4455a592d'),  -- true  94 FatBinkRock (recorded 99)
+--     (8, '7effd428-e607-4430-b383-47c438b10143'),  -- true  93 SnapSniper (recorded 98)
+--     (9, '4358b50c-cc20-4e2a-a725-3ecc18e52fde'),  -- true  92 EddieRVA (recorded 67)
+--     (10, 'bb698b9a-2861-4ad4-a051-bba7b7ec4e85'),  -- true  91 analee (recorded 43)
+--     (11, '72f2fedb-a5f9-4d10-b147-d92e18102d3f'),  -- true  90 rat_74 (recorded 24)
+--     (12, 'd4133457-8650-42b6-ab32-3af289b76d16'),  -- true  89 ninja_95 (recorded 68)
+--     (13, '2f1a9ade-68d5-4b3b-8129-f89fb1868c6b'),  -- true  88 Tank (recorded 12)
+--     (14, '5e43cd75-b978-438b-ab32-3f9d74151c9e'),  -- true  87 BubbleProf (recorded 75)
+--     (15, '00000000-0000-0000-0000-000000000040'),  -- true  86 Heater (recorded 94)
+--     (16, '5e655782-c9f7-4bf1-b18c-e2a0e7974bfd'),  -- true  85 sh0vedeg3n (recorded 11)
+--     (17, '5cb613e1-c76a-4b1f-98d4-5546c1a5c4e8'),  -- true  84 RenoGreg (recorded 49)
+--     (18, 'a2e7b8de-2edc-4440-bf22-7f04bf1cb5c0'),  -- true  83 moosee (recorded 34)
+--     (19, '31eb1c41-1349-499b-844c-8c2ea0268590'),  -- true  82 cashsilva (recorded 90)
+--     (20, '652899fd-f80c-4903-bd5c-9999c946ae49'),  -- true  81 TonyNYC (recorded 61)
+--     (21, '89a23158-4840-4e26-b9b6-d837eca341ad'),  -- true  80 the_kicker (recorded 97)
+--     (22, 'baf4b2c4-c335-47bd-be52-a992d71e35d8'),  -- true  79 MayaJr (recorded 33)
+--     (23, '00000000-0000-0000-0000-000000000002'),  -- true  78 Setmine (recorded 74)
+--     (24, 'a45c237c-495f-4696-8fc1-b73f8a39fe62'),  -- true  77 gutsh07king (recorded 80)
+--     (25, '97a78c88-d500-421b-bff0-992271e24b09'),  -- true  76 PITBull (recorded 81)
+--     (26, 'bbbe8009-75ac-4c8a-a483-9bf6b60fdf53'),  -- true  75 Bea93 (recorded 32)
+--     (27, '30064fc2-f1cd-45b3-90d0-c83416a420d3'),  -- true  74 ViktorCLE (recorded 60)
+--     (28, '70fa710b-3180-4ae4-98fd-95d4f9eb8d7c'),  -- true  73 DannyTheKid (recorded 48)
+--     (29, 'd4c7cab4-cff5-464e-a611-e43011838872'),  -- true  72 queenn (recorded 31)
+--     (30, '6c0e646a-96f4-4b90-a71f-fdc400193031'),  -- true  71 SlickDoc (recorded 88)
+--     (31, '39ce9f37-11f8-4f84-a192-b4312a93ba31'),  -- true  70 xbull (recorded 47)
+--     (32, '767bd910-5e57-4df5-9a06-9fad7cc51c15'),  -- true  69 rockets007 (recorded 73)
+--     (33, 'f1042170-33c9-4063-b427-910fe1683c72'),  -- true  68 sea_val (recorded 30)
+--     (34, '476de23f-010f-4bd2-84d0-c0519f532dce'),  -- true  67 AndreJr (recorded 59)
+--     (35, '22af2652-f8ae-4b84-8f3d-d2894f435d79'),  -- true  66 SadWizard (recorded 41)
+--     (36, 'c0bc49ab-c313-4986-88e1-16835a32176a'),  -- true  65 cowboy222 (recorded 87)
+--     (37, '00000000-0000-0000-0000-000000000030'),  -- true  64 maniacc (recorded 79)
+--     (38, '4ea2c47b-b6b0-4e25-836d-0e9f7bda9d6c'),  -- true  63 sleepybear (recorded 86)
+--     (39, '8d100b96-c791-4495-a7ab-0ffff40719c9'),  -- true  62 whiskey23 (recorded 25)
+--     (40, 'e0be3976-bb22-4720-829f-791ff19df459'),  -- true  61 heater_nit (recorded 92)
+--     (41, '8480aae4-ba71-4f28-b1b8-8489808fb902'),  -- true  60 hank (recorded 85)
+--     (42, 'cd337e9e-5c1a-498b-9bbf-a4e30d00ffe6'),  -- true  59 BigJake (recorded 54)
+--     (43, 'b5b6395d-e618-4536-8ea8-5b89ee3878d1'),  -- true  58 Pocket21 (recorded 42)
+--     (44, '5f75b48b-5715-4e29-aef2-c9f8d0567ec8'),  -- true  57 flush007 (recorded 84)
+--     (45, 'b1dd1863-7dab-47b5-b35e-548f951a7619'),  -- true  56 chad.tran (recorded 40)
+--     (46, 'f69a3498-00d1-4a3b-a31b-04edd9f421e9'),  -- true  55 BOSPirate (recorded 58)
+--     (47, '4ba85a62-daee-4c8d-8931-8e4414231fd3'),  -- true  54 IvySr (recorded 83)
+--     (48, '27ebd8e0-2d90-4c96-882d-cff35f91c53b'),  -- true  53 BLUFFROCK (recorded 37)
+--     (49, '5ff11777-a6c2-41cd-b2b0-56c3576e73ae'),  -- true  52 Chad01 (recorded 96)
+--     (50, '65f99ae2-cd2e-46a2-be72-c47361552350'),  -- true  51 SlyAnteDoc (recorded 62)
+--     (51, 'ffa11ad2-d258-4171-b05a-1956276a39bf'),  -- true  50 YoungVinny (recorded 82)
+--     (52, 'f1478ac2-b524-4b56-8ce8-5f8eaef65916'),  -- true  49 ConnorPoker (recorded 36)
+--     (53, '64168748-ce1d-48f4-884d-3c77d69d53d1'),  -- true  48 texas_bob (recorded 66)
+--     (54, '4e80cb1f-6989-49ba-9d5b-6ccb32227fb8'),  -- true  47 stack_kid (recorded 53)
+--     (55, 'd88dfe5b-9086-40b7-8cc7-d44e23a7a66a'),  -- true  46 Talia69 (recorded 29)
+--     (56, '00000000-0000-0000-0000-000000000041'),  -- true  45 the_donk (recorded 65)
+--     (57, 'ad5bd851-25d0-4dab-ae73-d1297298a08f'),  -- true  44 BigVinny (recorded 78)
+--     (58, 'ae75d87e-d808-4b93-a176-c1a004a80233'),  -- true  43 dirtysensei (recorded 77)
+--     (59, '6688345d-e7be-49bd-a318-4ee1e6b10253'),  -- true  42 Philly_Reid (recorded 52)
+--     (60, 'bc2f1ea8-e757-43d5-92dd-ed586ab6685c'),  -- true  41 bluffsh4rk (recorded 39)
+--     (61, 'cb50fee0-a87b-4ac8-a6fe-8e665c5ddd8c'),  -- true  40 the_outlaw (recorded 76)
+--     (62, 'a9fbbefc-e39c-41c5-afdc-251f7eb76b4f'),  -- true  39 Wheel Kenji (recorded 55)
+--     (63, '40f9d2b3-14d5-45f8-a3e7-f89d1449d054'),  -- true  38 KenjiReno (recorded 64)
+--     (64, '5d2d902a-17fb-43c0-97bf-e4fcece2ec8f'),  -- true  37 broadway (recorded 72)
+--     (65, 'c97784d9-45ce-488f-ad17-130d569e16be'),  -- true  36 Sir Zoe (recorded 93)
+--     (66, '63a2c2a3-308b-49d7-9018-9e2d28e31f5d'),  -- true  35 Cali_Duncan (recorded 63)
+--     (67, '6a48eec0-2efe-447a-b902-13a4de739e53'),  -- true  34 Ingrid02 (recorded 26)
+--     (68, '0fb78895-f4e0-4759-9403-a49a5612e0b5'),  -- true  33 Cali_Rex (recorded 91)
+--     (69, '0f14f372-0c43-47ff-9257-1324a7e94488'),  -- true  32 DrGhost (recorded 71)
+--     (70, '5562bf52-fdca-4941-a0cb-7f994503fd47'),  -- true  31 MsMerchant (recorded 46)
+--     (71, '778cab7d-2b73-4f48-b617-bf5fec0c59ed'),  -- true  30 fastgrinder (recorded 28)
+--     (72, 'acbf88b1-55c3-4868-bff5-19b9ba9de296'),  -- true  29 KimPoker (recorded 23)
+--     (73, '9bb330b7-a66a-4c52-b19c-d932ae07a354'),  -- true  28 hawk_82 (recorded 70)
+--     (74, 'fc82ea80-c4cd-48d8-b8c5-43c01e38140c'),  -- true  27 big_garage (recorded 69)
+--     (75, '8376185d-fab8-483c-a004-52c8a5cce763'),  -- true  26 SDLegend (recorded 45)
+--     (76, 'aba9beb0-16b9-420a-8247-f5ceabe76b47'),  -- true  25 zoe1980 (recorded 44)
+--     (77, '6f5fd01a-cdbe-4c2b-b472-f4cafcfdad17'),  -- true  24 jordan (recorded 51)
+--     (78, '9da2d0b7-436d-4e47-826e-4c30077428a4'),  -- true  23 ROCSensei (recorded 57)
+--     (79, '00000000-0000-0000-0000-000000000037'),  -- true  22 NiceGhost (recorded 27)
+--     (80, 'b956dcdf-e8c5-41de-914d-63fac3989b1d'),  -- true  21 LilLiv (recorded 38)
+--     (81, '5eabbbc0-a3a3-4ff5-8329-f94c35f59722'),  -- true  20 Mama Talia (recorded 56)
+--     (82, '5330edb2-9f93-492a-aef3-c7e077c0de68'),  -- true  19 JulesSA (recorded 89)
+--     (83, 'ef5a8ddd-0a68-4ef1-b6f2-4ba9369e0318'),  -- true  18 rford (recorded 50)
+--     (84, '4b532a4a-6b79-476b-ab05-b4e0637a52d1'),  -- true  17 SLCCamille (recorded 35)
+--     (85, '302ba66b-3b1e-4747-9458-84695c70f396'),  -- true  16 KickerHawk (recorded 22)
+--     (86, '00000000-0000-0000-0000-000000000033'),  -- true  15 merchant_92 (recorded 21)
+--     (87, '4e5a0000-76ea-4bff-b44e-3c470e5f2434'),  -- true  14 muckfish23 (recorded 20)
+--     (88, '9eaea36e-45a9-4864-9773-16a0577d7f79'),  -- true  13 Cole (recorded 19)
+--     (89, '38563ca3-66a9-40bb-8053-7a698887ec93'),  -- true  12 jester_90 (recorded 15)
+--     (90, '59318ead-b66f-4beb-a217-85ecd64aee98'),  -- true  11 hustler_87 (recorded 18)
+--     (91, '70be5a51-133b-4bba-b262-6e2424c5bcfd'),  -- true  10 lake13 (recorded 17)
+--     (92, '5c9528bd-1166-4619-9d54-ee93fb315e7e'),  -- true   9 pokerchad (recorded 10)
+--     (93, 'd9025f02-260a-4c89-9311-e00b792d35c4'),  -- true   8 andre (recorded 9)
+--     (94, '29892770-7f0d-4bcf-a47f-ce790610e054'),  -- true   7 tim (recorded 8)
+--     (95, '6fa1c8e2-c2bb-4168-b121-6281a549b94f'),  -- true   6 RexSr (recorded 7)
+--     (96, '32a4fc92-d1d4-472b-a585-ac19a7e10616'),  -- true   5 UncleJules (recorded 5)
+--     (97, '5e94c522-895b-4d63-9948-fb077adc371c'),  -- true   4 MamaRob (recorded 6)
+--     (98, '5f2ab19d-c86d-4689-bb39-bd1e4cf02d32'),  -- true   3 Rebuy Gia (recorded 4)
+--     (99, '50c24ee9-9233-4c16-bc16-3d3726488264')   -- true   2 d.kim94 (recorded 3)
+--   MINIMAL (10 toggles; money identical, river222 shows 11th not 100th):
+--     dca6c345 (river222), 70be5a51 (lake13), 5c9528bd (pokerchad),
+--     d9025f02 (andre), 29892770 (tim), 6fa1c8e2 (RexSr), 32a4fc92 (UncleJules),
+--     5e94c522 (MamaRob), 5f2ab19d (Rebuy Gia), 50c24ee9 (d.kim94)
+--
+-- POST (same transaction): one 'playing' row (4f7f8abb); no pending candidate in
+-- the event; ordered by elimination_sequence desc the first nine eliminated are
+-- 50c24ee9, 5f2ab19d, 5e94c522, 32a4fc92, 6fa1c8e2, 29892770, d9025f02,
+-- 5c9528bd, 70be5a51; every eliminated row has a position.
+-- AFTER COMMIT the decided-but-RUNNING sweep finishes the event within about a
+-- minute (one playing, started > 10 minutes ago) and settles the ten places above.
+-- MAKE-GOOD RECORD: dca6c345-c2ab-456f-98d9-dfbca3a43f7d (river222) owed 1.00.

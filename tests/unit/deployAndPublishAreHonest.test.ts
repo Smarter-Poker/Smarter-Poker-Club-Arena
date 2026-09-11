@@ -250,37 +250,53 @@ describe('the engine deploy tells the truth when it skips', () => {
     //    A deliberate lease deferral hands on too: its commit still has to ship.
     const verdict = sliceYamlEntry(HETZNER, "name: 'Verdict");
     expect(verdict).toMatch(
-      /hand_on\(\) \{\s*\n\s*if gh workflow run auto-deploy-hetzner\.yml --repo "\$GITHUB_REPOSITORY" --ref main; then/
+      /elif gh workflow run auto-deploy-hetzner\.yml --repo "\$GITHUB_REPOSITORY" --ref main \\\s*\n\s*-f retries="\$\{1:-0\}"; then/
+    );
+    // (2026-09-11) A rollback hands on as the SAME rollback, never as a plain
+    // forward run of main: that silently dropped the owner's decision.
+    expect(verdict).toMatch(
+      /hand_on\(\) \{\s*\n\s*if \[ "\$ROLLBACK_REQUESTED" = "true" \]; then\s*\n\s*if gh workflow run auto-deploy-hetzner\.yml --repo "\$GITHUB_REPOSITORY" --ref main \\\s*\n\s*-f ref_sha="\$SHA" -f rollback=true -f rollback_reason="\$ROLLBACK_REASON" \\/
+    );
+    expect(verdict).toMatch(
+      /ROLLBACK_REQUESTED: \$\{\{ github\.event\.inputs\.rollback \|\| 'false' \}\}/
     );
     expect(verdict).toMatch(
       /"\$GATE_KIND" = "staged_deferred" \] \|\| \[ "\$GATE_KIND" = "no_certificate" \]; \}; then\s*\n\s*hand_on/
     );
     expect(verdict).toMatch(
-      /"\$GATE_KIND" = "lease_held_elsewhere" \]; then[\s\S]{0,300}?hand_on \|\| exit 1\s*\n\s*exit 0/
+      /"\$GATE_KIND" = "lease_held_elsewhere" \]; then[\s\S]{0,300}?hand_on 0 \|\| exit 1\s*\n\s*exit 0/
     );
     // 3. (2026-09-11) A run that never touched production heals itself: a
-    //    cancel hands on, and a failure retries up to DEPLOY_RETRY_LIMIT failed
-    //    runs per commit, counted from the API, failing closed when uncounted.
-    //    A run whose cutover RAN never hands on - that would restart production
-    //    into a broken build every hour.
+    //    cancel or a failure hands on while fewer than DEPLOY_RETRY_LIMIT runs
+    //    IN A ROW ended before their cutover. The count rides the chain as the
+    //    `retries` input (a per-commit count reset on every merge and never saw
+    //    cancels), and an unreadable count stops the train. A cutover step
+    //    that REFUSED before its mutation marker never touched production and
+    //    counts as "before". A run whose cutover RAN never hands on - that
+    //    would restart production into a broken build every hour.
     const failed = sliceBetween(
       verdict,
       'if [ "$JOB_STATUS" != "success" ]; then',
       '\n          fi\n          if [ "$SHIPPED"'
     );
     expect(failed).toMatch(
-      /if \[ -z "\$CUTOVER_OUTCOME" \] \|\| \[ "\$CUTOVER_OUTCOME" = "skipped" \]; then/
+      /if \[ -z "\$CUTOVER_OUTCOME" \] \|\| \[ "\$CUTOVER_OUTCOME" = "skipped" \] \\\s*\n\s*\|\| \{ \[ "\$CUTOVER_OUTCOME" = "failure" \] && \[ "\$CUTOVER_ATTEMPTED" != "true" \]; \}; then/
     );
+    expect(verdict).toMatch(/CUTOVER_ATTEMPTED: \$\{\{ steps\.cutover\.outputs\.attempted \}\}/);
     expect(failed).toMatch(
-      /if \[ "\$JOB_STATUS" = "cancelled" \]; then[\s\S]{0,200}?hand_on \|\| true/
+      /if \[ "\$PRIOR_RETRIES" -lt "\$DEPLOY_RETRY_LIMIT" \]; then[\s\S]{0,300}?hand_on \$\(\(PRIOR_RETRIES \+ 1\)\) \|\| true/
     );
-    expect(failed).toMatch(
-      /gh run list --repo "\$GITHUB_REPOSITORY" \\\s*\n\s*--workflow auto-deploy-hetzner\.yml --commit "\$SHA" --status failure/
-    );
-    expect(failed).toMatch(
-      /if \[ "\$FAILED_BEFORE" -lt "\$DEPLOY_RETRY_LIMIT" \]; then[\s\S]{0,300}?hand_on \|\| true/
-    );
+    expect(verdict).toMatch(/PRIOR_RETRIES: \$\{\{ github\.event\.inputs\.retries \|\| '0' \}\}/);
+    // No per-commit count and no unbounded cancel path survive.
+    expect(failed).not.toMatch(/--commit "\$SHA" --status failure/);
+    expect(failed).not.toMatch(/FAILED_BEFORE/);
     expect(failed).toMatch(/::error title=GAVE UP ON/);
+    // The input exists, so a hand-on's -f retries= is accepted.
+    const inputs = HETZNER.slice(
+      HETZNER.indexOf('  workflow_dispatch:'),
+      HETZNER.indexOf('\nconcurrency:')
+    );
+    expect(inputs).toMatch(/\n {6}retries:\n/);
     expect(failed, 'an unreadable count stops, never loops').toMatch(
       /''\|\*\[!0-9\]\*\)[\s\S]{0,400}?::error title=TRAIN STOPPED::/
     );
@@ -289,13 +305,16 @@ describe('the engine deploy tells the truth when it skips', () => {
     // Every hand-on in the failed/cancelled branch sits inside the
     // "production was never touched" guard.
     const guardAt = failed.indexOf('if [ -z "$CUTOVER_OUTCOME" ]');
-    for (const at of [...failed.matchAll(/hand_on \|\| true/g)].map((m) => m.index!)) {
+    const retryAt = [...failed.matchAll(/hand_on [^\n]*\|\| true/g)].map((m) => m.index!);
+    expect(retryAt.length).toBe(1);
+    for (const at of retryAt) {
       expect(at).toBeGreaterThan(guardAt);
     }
-    // All four hand-on sites, and no others: lease deferral, gate decline,
-    // cancel, bounded retry.
+    // All three hand-on sites, and no others: lease deferral and gate decline
+    // (both reset the chain with 0), and the bounded before-cutover retry.
     const calls = verdict.split('\n').filter((l) => /^\s*hand_on\b(?!\(\))/.test(l));
-    expect(calls.length).toBe(4);
+    expect(calls.length).toBe(3);
+    expect(calls.filter((l) => /hand_on 0 /.test(l)).length).toBe(2);
     expect(verdict).toMatch(/GH_TOKEN: \$\{\{ github\.token \}\}/);
     // A hand-on that could not be made is red, never silent.
     expect(stage).toMatch(/::error title=TRAIN STOPPED::/);
@@ -304,6 +323,39 @@ describe('the engine deploy tells the truth when it skips', () => {
     const job = sliceYamlBlock(HETZNER, '    permissions:');
     expect(job).toMatch(/actions: write/);
     expect(job).toMatch(/contents: read/);
+  });
+
+  it('a hang fails its step in minutes; nothing from the cutover on can be killed half-way (2026-09-11)', () => {
+    // A hang used to end only at the 130-minute job timeout, which GitHub
+    // reports as a CANCEL - and a cancel handed the train on unconditionally,
+    // so a deterministic hang looped every 130 minutes, forever.
+    const timeout = (name: string) =>
+      sliceYamlEntry(HETZNER, `name: ${name}`).match(/\n\s+timeout-minutes: (\d+)\n/)?.[1];
+    for (const [name, most] of [
+      ['Server tests must pass before anything is deployed', 30],
+      ['Capture pre-deploy host state', 10],
+      ['Pre-flight checks', 10],
+      ['Pull the exact commit onto the host', 15],
+      ['Build immutable image (or adopt the one already staged)', 45],
+    ] as const) {
+      expect(Number(timeout(name)), name).toBeGreaterThan(0);
+      expect(Number(timeout(name)), name).toBeLessThanOrEqual(most);
+    }
+    for (const name of [
+      'Exactly one engine may answer for this host',
+      'Install/refresh host supervisor',
+      'Wait for the maintenance break to park every table',
+      'Prepare one-use sealed cutover authority',
+      'Cut over to the new image',
+      "'PROVE the version moved: the engine wrote the new build, not just answered with it'",
+      'ROLLBACK — restore the last known-good image',
+      'Revoke unused authority and GUARANTEE the sealed engine',
+    ]) {
+      expect(timeout(name), `${name} must never be killed half-way`).toBeUndefined();
+    }
+    // A connection that died mid-command fails in about a minute.
+    const ssh = sliceYamlEntry(HETZNER, 'name: Setup SSH key');
+    expect(ssh).toMatch(/-o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=4/);
   });
 
   it('has no timezone left to get wrong', () => {

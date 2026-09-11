@@ -389,7 +389,8 @@ TimeoutStartSec=145min
 # receipt validation and durable retirement overhead.
 TimeoutStopSec=330s
 Restart=on-failure
-RestartForceExitStatus=75
+# Exit 75 is already a failure, so Restart=on-failure retries it naturally.
+# RestartForceExitStatus is invalid for Type=oneshot on production systemd.
 RestartPreventExitStatus=1
 RestartSec=30s
 KillMode=control-group

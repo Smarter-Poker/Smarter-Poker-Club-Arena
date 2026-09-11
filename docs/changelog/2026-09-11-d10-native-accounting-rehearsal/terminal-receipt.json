@@ -1,0 +1,174 @@
+{
+  "ok": true,
+  "cash": {
+    "ok": true,
+    "status": "COMPLETING",
+    "payouts": [
+      {
+        "place": 1,
+        "amount": 58.55,
+        "user_id": "5a0cd7e0-174a-466f-ba1d-6d2c80d9252a"
+      },
+      {
+        "place": 2,
+        "amount": 42.16,
+        "user_id": "face0000-0000-0000-0000-000000000001"
+      },
+      {
+        "place": 3,
+        "amount": 30.35,
+        "user_id": "57d5af45-0b1c-417c-bc41-64ca9fd1b4b9"
+      },
+      {
+        "place": 4,
+        "amount": 21.85,
+        "user_id": "1e6efb0b-61f4-4303-9ee8-1569fbf50cbd"
+      },
+      {
+        "place": 5,
+        "amount": 15.73,
+        "user_id": "00000000-0000-0000-0000-000000000006"
+      },
+      {
+        "place": 6,
+        "amount": 11.36,
+        "user_id": "e7925474-ad31-4cfb-826b-010039bcff3d"
+      }
+    ],
+    "deal_shares": [],
+    "fully_settled": true,
+    "winner_amount": 58.55,
+    "bubble_protection": null
+  },
+  "mode": "places",
+  "rake": {
+    "amount": 20.0,
+    "attributed": true,
+    "settled_at": "2026-09-11T16:28:32.605926+00:00",
+    "destination": "union:fade0000-0000-0000-0000-000000000001",
+    "attributed_at": "2026-09-11T16:28:32.605926+00:00",
+    "attributed_users": 40
+  },
+  "bounty": {
+    "ok": true,
+    "funded": true,
+    "reason": "not_a_bounty_tournament",
+    "residual": 0
+  },
+  "escrow": {
+    "closed_at": "2026-09-11T16:28:32.605926+00:00",
+    "close_note": "terminal receipt: exact zero",
+    "fee_balance": 0.0,
+    "prize_balance": 0.0,
+    "bounty_balance": 0.0
+  },
+  "status": "COMPLETED",
+  "payouts": [
+    {
+      "place": 1,
+      "amount": 58.55,
+      "user_id": "5a0cd7e0-174a-466f-ba1d-6d2c80d9252a"
+    },
+    {
+      "place": 2,
+      "amount": 42.16,
+      "user_id": "face0000-0000-0000-0000-000000000001"
+    },
+    {
+      "place": 3,
+      "amount": 30.35,
+      "user_id": "57d5af45-0b1c-417c-bc41-64ca9fd1b4b9"
+    },
+    {
+      "place": 4,
+      "amount": 21.85,
+      "user_id": "1e6efb0b-61f4-4303-9ee8-1569fbf50cbd"
+    },
+    {
+      "place": 5,
+      "amount": 15.73,
+      "user_id": "00000000-0000-0000-0000-000000000006"
+    },
+    {
+      "place": 6,
+      "amount": 11.36,
+      "user_id": "e7925474-ad31-4cfb-826b-010039bcff3d"
+    }
+  ],
+  "winner_id": "5a0cd7e0-174a-466f-ba1d-6d2c80d9252a",
+  "settled_at": "2026-09-11T16:28:32.605926+00:00",
+  "deal_shares": [],
+  "fully_settled": true,
+  "table_closure": {
+    "source_seat_ids": [
+      "22bf5b94-5758-457c-b01a-25b3c5fdc482",
+      "23440693-c8af-4d59-b51e-862ffeec15cc",
+      "261c596e-19ff-4d9e-b042-507ff815f1fd",
+      "31549a61-8ae6-4824-9175-1e759204be4c",
+      "33cc2a36-d0d8-4494-8d5a-a26dbaf9ae8f",
+      "4512d532-5737-4ae8-b108-9c4f1c6b7a7f",
+      "463bec87-1ccc-43ba-9185-baf55e19ba8c",
+      "493a3283-8fb0-4110-807c-8c179e87eed9",
+      "4ce6062c-4b80-4753-b84e-8e8648f2534e",
+      "4e7434c8-ca2a-40ac-b058-8b14a4641fca",
+      "5b40e15b-02db-477f-859e-9b822ad018cf",
+      "6b222cd4-f587-4628-929a-a373c7de3e6e",
+      "6f5db2a9-23e3-4d83-b002-784641f954c9",
+      "700d79df-d9c5-46bc-9a78-1b316e123967",
+      "72fce245-420e-4c5c-bd26-ff83747beee8",
+      "751e4b23-7c76-424e-8c9a-569fda853eb3",
+      "7725e9d1-fddc-4ef9-9bf0-03aae06116e2",
+      "78d7b5a8-9449-48f0-bea7-57bd776a1f22",
+      "7f7d144a-2757-49b6-a756-38a2723feec8",
+      "973ed2d0-029b-442a-9094-8166349a3930",
+      "98ca5273-78e5-4569-b190-37163fffdd33",
+      "acfce158-3bc7-458e-8e32-17748b330215",
+      "c72023e2-b0e7-4f76-9b12-02d65404bf48",
+      "c8909f88-c94b-430d-a3c8-d8804f807b27",
+      "c95c91bd-4206-4e4d-b723-a62b30d73cb2",
+      "dcb8452d-5a64-4488-88e4-07185064b763",
+      "e0a03a3c-2b18-41f5-b053-bf4c32a3204f",
+      "e8469c2c-d7eb-4a6c-a064-6216e5bd8b53",
+      "e905d1bd-cf16-4542-89f9-21f83a56af67",
+      "eb520499-75a5-45a6-a5ea-b2462b0b55a4",
+      "f4359f6a-edd0-41f7-b943-64b7f94fca66",
+      "f8147be9-da00-418f-b2ea-01f6fa0317e2",
+      "f92f7e6d-c82a-4f9a-b200-d7abdb945a7d",
+      "faad7736-78d2-417b-8ea5-cb01e21d6f08",
+      "ff1dbf6b-89da-47eb-b1df-43eefdbb573c",
+      "ff6ef33f-d886-466b-9130-fbc6ec38fd24"
+    ],
+    "closed_table_ids": [
+      "83cba5a0-f005-4784-95fc-53a19db6f08e",
+      "862c9d38-e44d-457f-a7ec-58e1befe3e5c",
+      "cc49e956-40e3-460d-8e50-b39408ccf1dc",
+      "ee085df0-c4f0-4532-bbf3-7a730c405d0d"
+    ],
+    "released_seat_ids": [
+      "e8469c2c-d7eb-4a6c-a064-6216e5bd8b53"
+    ],
+    "source_seat_count": 36,
+    "closed_table_count": 4,
+    "released_seat_count": 1
+  },
+  "tournament_id": "c1f15c30-33c4-4a64-85ac-44037519ca5b",
+  "winner_amount": 58.55,
+  "mystery_bounty": {
+    "ok": true,
+    "reason": "not_a_mystery_tournament",
+    "balanced": true,
+    "pool_cents": 0,
+    "settled_cents": 0,
+    "variance_cents": 0,
+    "unclaimed_cents": 0,
+    "residual_paid_cents": 0
+  },
+  "receipt_version": 1,
+  "settlement_mode": "places",
+  "bubble_protection": null,
+  "cash_payout_total": 180.0,
+  "source_seat_count": 36,
+  "closed_table_count": 4,
+  "bounty_payout_total": 0.0,
+  "released_seat_count": 1
+}

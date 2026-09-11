@@ -187,7 +187,9 @@ describe('the workflow cannot go back to reporting success dishonestly', () => {
   });
 
   it('cannot pass after production changes or loses exact provenance during the suite', () => {
-    const cleanupAt = WORKFLOW.indexOf('- name: Hard-delete the isolated production E2E account');
+    const cleanupAt = WORKFLOW.indexOf(
+      '- name: Clean and verify every exact-run fixture outside browser workers'
+    );
     const proofAt = WORKFLOW.indexOf(
       '- name: Prove production stayed on one exact release during certification'
     );
@@ -271,7 +273,7 @@ describe('the workflow cannot go back to reporting success dishonestly', () => {
   it('accepts an engine certification trigger only with one exact current component SHA', () => {
     const gate = step(WORKFLOW, 'Read The Origin Job Verdict');
     expect(WORKFLOW).toContain(
-      'run-name: Post-Deploy E2E ${{ github.event.client_payload.engine_sha || github.sha }}'
+      "format('Post-Deploy E2E {0}', github.event.client_payload.engine_sha || github.sha)"
     );
     expect(gate).toContain('if [ "$EVENT_NAME" = repository_dispatch ]');
     expect(gate).toMatch(/\[\[ "\$ENGINE_TRIGGER_SHA" =~ \^\[0-9a-f\]\{40\}\$ \]\]/);

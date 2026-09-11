@@ -1,3 +1,5 @@
+import { missionHandState, recordMissionHandCleaned } from './run-fixture-state.mjs';
+import { cleanupMissionFixtureHand } from './mission-fixture-hand.mjs';
 import { writeFile, mkdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { certificateAuthority, controlledCertificate } from './certification-client.mjs';
@@ -73,6 +75,33 @@ export async function cleanupCertificateFixtures({
       signal: AbortSignal.timeout(20000),
     });
   }
+  // Exact-run durable hand intent survives a worker timeout. Missing original
+  // records during a later recovery cannot resolve an absent ambiguous insert.
+  let handState;
+  try {
+    handState = await missionHandState(request.fixture_roster.missions.user_id, environment);
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+    // An original run can fail before the missions worker starts. An absent
+    // Auth identity then still passes the journal's independent creation-outcome
+    // gate below; a later recovery cannot infer this from its new filesystem.
+    const auth = await fetchAt(`/auth/v1/admin/users/${request.fixture_roster.missions.user_id}`);
+    handState = {
+      resolved: !environment.RELEASE_CLEANUP_RECOVERY && auth.status === 404,
+      missing: true,
+    };
+  }
+  const missionHand = await cleanupMissionFixtureHand(
+    request.fixture_roster.missions,
+    async (route, options = {}) => {
+      const response = await fetchAt(route, options);
+      need(response.ok, 'RELEASE_MISSION_HAND_CLEANUP_REFUSED');
+      return response.status === 204 ? null : response.json();
+    },
+    handState.resolved
+  );
+  if (!handState.missing)
+    await recordMissionHandCleaned(request.fixture_roster.missions.user_id, environment);
   for (const slot of fixtureSlots) {
     const account = request.fixture_roster[slot];
     let auth = await fetchAt(`/auth/v1/admin/users/${account.user_id}`);
@@ -149,6 +178,7 @@ export async function cleanupCertificateFixtures({
         user_id: account.user_id,
         auth_status: 404,
         resources: observed,
+        ...(slot === 'missions' ? { mission_hand: missionHand } : {}),
       }),
     };
   }

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { cleanupRunFixtures } from '../../operations/release/run-fixture-ledger.mjs';
 
 import { randomUUID } from 'node:crypto';
 import { appendFileSync, existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
@@ -316,7 +317,7 @@ export async function createProductionE2EAccount({
   const configuration = requireEnvironment(environment);
   if (!environment.GITHUB_ENV) throw new Error('GITHUB_ENV is required to share the account.');
   const controlled = controlledCertificate(environment);
-  if (!controlled) await cleanupStaleProductionE2EAccounts({ environment, fetchImpl });
+  // Recovery is exact-run owned; provisioning never sweeps other runs by age.
   const reservedIdentity = controlled ? await consumeFixture('postdeploy', { environment }) : null;
   const suffix = `${Date.now()}-${randomUUID()}`;
   const email = reservedIdentity?.email ?? `${ACCOUNT_PREFIX}${suffix}${ACCOUNT_SUFFIX}`;
@@ -382,8 +383,15 @@ async function main() {
   const command = process.argv[2];
   if (command === 'create') return createProductionE2EAccount();
   if (command === 'prepare-staff') return prepareProductionE2EStaffMembership();
-  if (command === 'cleanup')
-    return controlledCertificate() ? cleanupCertificateFixtures() : cleanupProductionE2EAccount();
+  if (command === 'cleanup') {
+    if (controlledCertificate()) return cleanupCertificateFixtures();
+    const results = await Promise.allSettled([cleanupRunFixtures(), cleanupProductionE2EAccount()]);
+    const errors = results
+      .filter((result) => result.status === 'rejected')
+      .map((result) => result.reason);
+    if (errors.length) throw new AggregateError(errors, 'Exact-run fixture cleanup incomplete');
+    return results;
+  }
   throw new Error('Usage: production-e2e-account.mjs <create|prepare-staff|cleanup>');
 }
 

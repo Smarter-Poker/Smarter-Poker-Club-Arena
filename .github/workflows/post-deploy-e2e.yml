@@ -616,13 +616,22 @@ jobs:
           e2e-report/daily-missions-settlement.json
           e2e-report/sweep.json
 
-      - name: Hard-delete the isolated production E2E account
+      - name: Clean and verify every exact-run fixture outside browser workers
         id: certificate_cleanup
         if: always() && steps.live.outputs.ready == 'true'
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: node scripts/ci/production-e2e-account.mjs cleanup
+
+      - name: Preserve exact-run fixture ownership and cleanup evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: exact-run-fixture-ownership-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/exact-run-fixtures/${{ github.run_id }}/${{ github.run_attempt }}/*.json
+          if-no-files-found: ignore
+          retention-days: 7
 
       # The suite runs against an unversioned public route for long enough that
       # another legitimate publisher may advance `current` while browsers are

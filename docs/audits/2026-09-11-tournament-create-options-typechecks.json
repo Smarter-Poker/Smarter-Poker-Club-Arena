@@ -1,0 +1,17 @@
+{
+  "checks": [
+    {
+      "scope": "client",
+      "project": "tsconfig.app.json",
+      "exit_code": 0,
+      "diagnostic_lines": 0
+    },
+    {
+      "scope": "server",
+      "project": "server/tsconfig.json",
+      "exit_code": 2,
+      "diagnostic_lines": 1
+    }
+  ],
+  "native_execution": false
+}

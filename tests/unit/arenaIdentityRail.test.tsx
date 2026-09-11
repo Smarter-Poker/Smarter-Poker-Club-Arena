@@ -45,7 +45,7 @@ describe('The arena identity rail', () => {
     );
     expect(screen.getByText('ACTIVE')).toBeTruthy();
     expect(screen.getByText('1,284')).toBeTruthy();
-    expect(screen.getByText('NEXT FREEROLL')).toBeTruthy();
+    expect(screen.getByText('FREEROLL')).toBeTruthy();
     expect(screen.getByRole('timer')).toHaveTextContent('4:31');
   });
 
@@ -97,6 +97,25 @@ describe('The arena identity rail', () => {
     const nodes = [...container.querySelectorAll('.club-identity__arena, .club-identity__share')];
     expect(nodes).toHaveLength(2);
     expect(nodes[0].className).toContain('club-identity__arena');
+  });
+
+  /* Both labels share a two-column rail inside about a third of the card, so
+     each has roughly 48px. "NEXT FREEROLL" did not fit and shipped clipped to
+     "NEXT FREEROL". Neither label may grow past the one that already fits. */
+  it('keeps both rail labels short enough to fit the column they share', () => {
+    render(
+      <ClubIdentityCard
+        {...base}
+        arenaStats={{ activeCount: 0, freerollText: '0:00', freerollTitle: 'No Freeroll' }}
+      />
+    );
+    const labels = [...document.querySelectorAll('.club-identity__arena-label')].map(
+      (n) => n.textContent ?? ''
+    );
+    expect(labels).toEqual(['ACTIVE', 'FREEROLL']);
+    for (const label of labels) {
+      expect(label.length, `${label} is too long for the rail`).toBeLessThanOrEqual(8);
+    }
   });
 
   /* The rail is opaque because what it retires is paint. A transparent

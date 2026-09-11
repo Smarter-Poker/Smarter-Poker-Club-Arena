@@ -250,11 +250,17 @@
   text-align: center;
 }
 
+/* The rail is two columns inside roughly a third of a 323px card, so each
+   label has about 48px to live in. "NEXT FREEROLL" at the old size and
+   tracking measured wider than that and was clipped mid-word to "NEXT
+   FREEROL" on the live arena lobby. The label is the short one now, and the
+   tracking is set so both words still fit at the narrowest card the lobby
+   renders. */
 .club-identity__arena-label {
   color: #8ea3b8;
-  font-size: 1.9cqw;
+  font-size: 1.75cqw;
   font-weight: 700;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.06em;
   line-height: 1;
   text-transform: uppercase;
   white-space: nowrap;

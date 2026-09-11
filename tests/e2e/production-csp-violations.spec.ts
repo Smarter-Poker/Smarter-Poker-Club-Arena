@@ -78,12 +78,15 @@ test.describe('the content security policy', () => {
       await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight)).catch(() => {});
       await page.waitForTimeout(2000);
       const batch = await page
-        .evaluate(() => (window as unknown as { __cspViolations?: Violation[] }).__cspViolations ?? [])
+        .evaluate(
+          () => (window as unknown as { __cspViolations?: Violation[] }).__cspViolations ?? []
+        )
         .catch(() => [] as Violation[]);
       for (const v of batch) found.push({ ...v, route: label });
     };
 
-    for (const route of ARENA_ROUTES) await visit(new URL(route, baseURL).toString(), `arena:/${route}`);
+    for (const route of ARENA_ROUTES)
+      await visit(new URL(route, baseURL).toString(), `arena:/${route}`);
     for (const route of HUB_ROUTES) await visit(`${origin}${route}`, `hub:${route}`);
 
     // ── Report before asserting, so a red run names the resource ───────────
@@ -94,10 +97,9 @@ test.describe('the content security policy', () => {
       grouped.get(key)!.routes.add(v.route);
     }
     for (const [key, { v, routes }] of grouped) {
-      // eslint-disable-next-line no-console
       console.log(
         `CSP ${v.disposition}: ${key}\n    routes: ${[...routes].join(', ')}` +
-          (v.sourceFile ? `\n    from ${v.sourceFile}:${v.lineNumber}` : ''),
+          (v.sourceFile ? `\n    from ${v.sourceFile}:${v.lineNumber}` : '')
       );
     }
 
@@ -106,11 +108,14 @@ test.describe('the content security policy', () => {
       summary,
       'An enforced Content-Security-Policy would block these. Either the ' +
         'resource belongs in next.config.js (World Hub), or the code should ' +
-        'stop loading it. Do not enforce the policy while this list is not empty.',
+        'stop loading it. Do not enforce the policy while this list is not empty.'
     ).toEqual([]);
   });
 
-  test('is still being served, and still says what it is meant to say', async ({ page, baseURL }) => {
+  test('is still being served, and still says what it is meant to say', async ({
+    page,
+    baseURL,
+  }) => {
     // A policy that silently stopped shipping would make the test above pass
     // for the worst possible reason.
     const res = await page.goto(baseURL!, { waitUntil: 'domcontentloaded', timeout: 60_000 });
@@ -136,7 +141,7 @@ test.describe('the content security policy', () => {
     // upgrade-insecure-requests is ignored inside a report-only policy, so it
     // lives in the enforced header and must stay there.
     expect(enforced, 'upgrade-insecure-requests left the enforced header').toContain(
-      'upgrade-insecure-requests',
+      'upgrade-insecure-requests'
     );
   });
 });

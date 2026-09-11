@@ -9,12 +9,15 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-const { mockRpc, mockEmit, mockUuid, mockTournamentRead } = vi.hoisted(() => ({
-  mockRpc: vi.fn(),
-  mockTournamentRead: vi.fn(async () => ({ data: null, error: null as unknown })),
-  mockEmit: vi.fn(),
-  mockUuid: vi.fn(() => '00000000-0000-4000-8000-000000000001'),
-}));
+const { mockRpc, mockEmit, mockUuid, mockTournamentRead, mockTournamentSelect } = vi.hoisted(
+  () => ({
+    mockRpc: vi.fn(),
+    mockTournamentSelect: vi.fn(),
+    mockTournamentRead: vi.fn(async () => ({ data: null, error: null as unknown })),
+    mockEmit: vi.fn(),
+    mockUuid: vi.fn(() => '00000000-0000-4000-8000-000000000001'),
+  })
+);
 
 // ─── Mock dependencies ────────────────────────────────────────────────────
 
@@ -23,6 +26,11 @@ vi.mock('../../src/lib/supabase', () => {
     const handler: ProxyHandler<any> = {
       get: (_target, prop) => {
         if (prop === 'maybeSingle' || prop === 'single') return mockTournamentRead;
+        if (prop === 'select')
+          return (columns: string) => {
+            mockTournamentSelect(columns);
+            return new Proxy({}, handler);
+          };
         if (prop === 'then')
           return (resolve: (v: any) => void) => resolve({ data: null, error: null });
         return vi.fn().mockReturnValue(new Proxy({}, handler));
@@ -639,6 +647,207 @@ describe('TournamentService', () => {
       expect(at(7).levelIndex).toBe(7);
       expect(at(7).levelIndex >= cap).toBe(false);
     });
+  });
+});
+
+describe('rebuy eligibility uses the persisted purchase window', () => {
+  const now = new Date('2026-09-11T12:00:00.000Z');
+  const event = {
+    id: 't-window',
+    status: 'RUNNING',
+    is_rebuy: true,
+    is_reentry: false,
+    starting_chips: 1000,
+    rebuy_levels: 0,
+    late_reg_levels: 8,
+    late_reg_mins: 0,
+    current_level: 2,
+    started_at: '2026-09-11T11:45:00.000Z',
+    add_on_available: false,
+    addon_period_triggered: false,
+    prize_pool_finalized: false,
+    max_rebuys: null,
+    max_reentries: null,
+  };
+  const entry = {
+    chips: 0,
+    status: 'playing',
+    prize: 0,
+    rebuys: 0,
+    rebuy_prompt_until: '2026-09-11T12:00:20.000Z',
+  };
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(now);
+    vi.spyOn(tournamentService, 'getTournament').mockResolvedValue(event as never);
+    mockTournamentRead.mockReset().mockResolvedValue({ data: entry as never, error: null });
+    mockRpc.mockClear();
+    mockTournamentSelect.mockClear();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+  });
+
+  it('loads the database add-on activation flag with the actual tournament projection', async () => {
+    vi.mocked(tournamentService.getTournament).mockRestore();
+    mockTournamentRead.mockResolvedValue({
+      data: { ...event, addon_period_triggered: true } as never,
+      error: null,
+    });
+
+    await expect(tournamentService.getTournament(event.id)).resolves.toMatchObject({
+      addon_period_triggered: true,
+    });
+    expect(mockTournamentSelect.mock.calls.at(-1)?.[0].split(', ')).toContain(
+      'addon_period_triggered'
+    );
+  });
+
+  it.each([
+    ['rebuy', true, false],
+    ['re-entry', false, true],
+  ])(
+    'offers a %s when zero rebuy levels fall back to late-registration levels',
+    async (_kind, isRebuy, isReentry) => {
+      vi.mocked(tournamentService.getTournament).mockResolvedValue({
+        ...event,
+        is_rebuy: isRebuy,
+        is_reentry: isReentry,
+      } as never);
+
+      await expect(tournamentService.canRebuy(event.id, 'u-window')).resolves.toEqual({
+        allowed: true,
+      });
+      expect(mockRpc).not.toHaveBeenCalled();
+    }
+  );
+
+  it.each([
+    ['null rebuy levels', { rebuy_levels: null }, true],
+    ['explicit rebuy cap takes priority', { rebuy_levels: 2 }, false],
+    ['fallback last open level', { current_level: 7 }, true],
+    ['fallback exact closing level', { current_level: 8 }, false],
+    ['fallback closed despite remaining minutes', { current_level: 8, late_reg_mins: 60 }, false],
+    ['unknown persisted level', { current_level: null }, false],
+    ['unknown level with an explicit cap', { rebuy_levels: 8, current_level: null }, false],
+    ['timed window without a level cap', { late_reg_levels: 0, late_reg_mins: 30 }, true],
+    ['timed window exact close', { late_reg_levels: 0, late_reg_mins: 15 }, false],
+    ['no configured window', { late_reg_levels: 0 }, false],
+    [
+      'active add-on window after the cap',
+      {
+        current_level: 8,
+        add_on_available: true,
+        addon_period_triggered: true,
+        addon_period_started_at: '2026-09-11T11:59:30.000Z',
+        addon_period_ends_at: '2026-09-11T12:00:30.000Z',
+      },
+      true,
+    ],
+    [
+      'add-on exact close',
+      {
+        current_level: 8,
+        add_on_available: true,
+        addon_period_triggered: true,
+        addon_period_started_at: '2026-09-11T11:59:00.000Z',
+        addon_period_ends_at: now.toISOString(),
+      },
+      false,
+    ],
+    [
+      'active add-on with an unknown level',
+      {
+        current_level: null,
+        add_on_available: true,
+        addon_period_triggered: true,
+        addon_period_started_at: '2026-09-11T11:59:30.000Z',
+        addon_period_ends_at: '2026-09-11T12:00:30.000Z',
+      },
+      true,
+    ],
+    [
+      'untriggered add-on despite populated timestamps',
+      {
+        current_level: 8,
+        add_on_available: true,
+        addon_period_started_at: '2026-09-11T11:59:30.000Z',
+        addon_period_ends_at: '2026-09-11T12:00:30.000Z',
+      },
+      false,
+    ],
+    [
+      'add-on missing its activation flag',
+      {
+        current_level: 8,
+        add_on_available: true,
+        addon_period_triggered: undefined,
+        addon_period_started_at: '2026-09-11T11:59:30.000Z',
+        addon_period_ends_at: '2026-09-11T12:00:30.000Z',
+      },
+      false,
+    ],
+    [
+      'add-on before its opening instant',
+      {
+        current_level: 8,
+        add_on_available: true,
+        addon_period_triggered: true,
+        addon_period_started_at: '2026-09-11T12:00:01.000Z',
+        addon_period_ends_at: '2026-09-11T12:01:01.000Z',
+      },
+      false,
+    ],
+    ['finalized pool', { prize_pool_finalized: true }, false],
+    ['completed tournament', { status: 'COMPLETED' }, false],
+    ['exhausted rebuy cap', { max_rebuys: 0 }, false],
+    ['exhausted re-entry cap', { is_rebuy: false, is_reentry: true, max_reentries: 0 }, false],
+  ])('preserves %s', async (_label, override, allowed) => {
+    vi.mocked(tournamentService.getTournament).mockResolvedValue({
+      ...event,
+      ...override,
+    } as never);
+
+    await expect(tournamentService.canRebuy(event.id, 'u-window')).resolves.toMatchObject({
+      allowed,
+    });
+    expect(mockRpc).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['funded replacement generation', { chips: 1000 }],
+    ['already paid entry', { prize: 1 }],
+    ['eliminated rebuy entry', { status: 'eliminated' }],
+    ['expired decision', { rebuy_prompt_until: now.toISOString() }],
+    ['missing decision', { rebuy_prompt_until: null }],
+  ])('still refuses a %s while the level window is open', async (_label, override) => {
+    mockTournamentRead.mockResolvedValue({ data: { ...entry, ...override } as never, error: null });
+
+    await expect(tournamentService.canRebuy(event.id, 'u-window')).resolves.toMatchObject({
+      allowed: false,
+    });
+    expect(mockRpc).not.toHaveBeenCalled();
+  });
+
+  it('retains re-entry for an unpaid eliminated generation during the fallback window', async () => {
+    vi.mocked(tournamentService.getTournament).mockResolvedValue({
+      ...event,
+      is_rebuy: false,
+      is_reentry: true,
+    } as never);
+    mockTournamentRead.mockResolvedValue({
+      data: { ...entry, status: 'eliminated', rebuy_prompt_until: null } as never,
+      error: null,
+    });
+
+    await expect(tournamentService.canRebuy(event.id, 'u-window')).resolves.toEqual({
+      allowed: true,
+    });
+    expect(mockRpc).not.toHaveBeenCalled();
   });
 });
 

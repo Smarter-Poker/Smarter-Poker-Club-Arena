@@ -820,7 +820,7 @@ class TournamentService {
     const { data, error } = await supabase
       .from('tournaments')
       .select(
-        'id, name, club_id, union_id, game_type, variant, tournament_type, buy_in_amount, buy_in_fee, starting_chips, max_players, min_players, current_players, status, prize_pool, guaranteed_prize, prize_pool_finalized, blind_structure, payout_structure, late_reg_levels, late_reg_mins, start_time, started_at, ended_at, is_rebuy, is_reentry, rebuy_cost, rebuy_chips, rebuy_levels, add_on_available, addon_cost, addon_chips, addon_levels, addon_period_started_at, addon_period_ends_at, is_bounty, bounty_amount, is_pko, is_mystery_bounty, mystery_bounty_min, mystery_bounty_max, is_multi_day, total_days, day_number, flight_number, spin_type, spin_multiplier, is_xmtt, total_rake, created_at, current_level, level_started_at, short_description, is_vip_only, ban_chat, all_in_or_fold, label_as_new, hide_club_name, action_time_seconds, table_size, accelerated_mtt, addon_break_minutes, big_blind_ante, authorized_to_register, early_bird_enabled, early_bird_chips, bubble_protection, final_table_deal_enabled, restart_every_minutes, synchronized_breaks, on_break, break_started_at, break_ends_at, max_rebuys, max_reentries, is_pinned, satellite_seats'
+        'id, name, club_id, union_id, game_type, variant, tournament_type, buy_in_amount, buy_in_fee, starting_chips, max_players, min_players, current_players, status, prize_pool, guaranteed_prize, prize_pool_finalized, blind_structure, payout_structure, late_reg_levels, late_reg_mins, start_time, started_at, ended_at, is_rebuy, is_reentry, rebuy_cost, rebuy_chips, rebuy_levels, add_on_available, addon_cost, addon_chips, addon_levels, addon_period_triggered, addon_period_started_at, addon_period_ends_at, is_bounty, bounty_amount, is_pko, is_mystery_bounty, mystery_bounty_min, mystery_bounty_max, is_multi_day, total_days, day_number, flight_number, spin_type, spin_multiplier, is_xmtt, total_rake, created_at, current_level, level_started_at, short_description, is_vip_only, ban_chat, all_in_or_fold, label_as_new, hide_club_name, action_time_seconds, table_size, accelerated_mtt, addon_break_minutes, big_blind_ante, authorized_to_register, early_bird_enabled, early_bird_chips, bubble_protection, final_table_deal_enabled, restart_every_minutes, synchronized_breaks, on_break, break_started_at, break_ends_at, max_rebuys, max_reentries, is_pinned, satellite_seats'
       )
       .eq('id', tournamentId)
       .maybeSingle();
@@ -1913,26 +1913,38 @@ class TournamentService {
     const addonEndsAt = Date.parse(String(tournament.addon_period_ends_at || ''));
     const addonWindowOpen =
       tournament.add_on_available === true &&
+      tournament.addon_period_triggered === true &&
       Number.isFinite(addonStartsAt) &&
       Number.isFinite(addonEndsAt) &&
       now >= addonStartsAt &&
       now < addonEndsAt;
-    const rebuyLevelCap = Number(tournament.rebuy_levels ?? tournament.late_reg_levels ?? 0);
-    if (rebuyLevelCap > 0) {
-      const persistedLevel = Number(tournament.current_level);
-      if (!Number.isInteger(persistedLevel) || persistedLevel < 0) {
-        return { allowed: false, reason: 'Could not verify the current tournament level' };
-      }
-      if (persistedLevel >= rebuyLevelCap && !addonWindowOpen) {
-        return { allowed: false, reason: 'Rebuy/re-entry period has ended' };
-      }
-    } else {
-      const timedMinutes = Number(tournament.late_reg_mins ?? 0);
-      const startedAt = Date.parse(String(tournament.started_at || ''));
-      const timedWindowOpen =
-        timedMinutes > 0 && Number.isFinite(startedAt) && now < startedAt + timedMinutes * 60_000;
-      if (!timedWindowOpen && !addonWindowOpen) {
-        return { allowed: false, reason: 'Rebuy/re-entry period has ended' };
+    // fn_ca_tournament_rebuy_window treats a zero level setting as unset.
+    // Minutes apply only when neither level cap is configured; an activated
+    // add-on window independently keeps the same purchase door open.
+    const configuredRebuyLevels = Number(tournament.rebuy_levels ?? 0);
+    const rebuyLevelCap =
+      configuredRebuyLevels === 0 ? Number(tournament.late_reg_levels ?? 0) : configuredRebuyLevels;
+    if (!addonWindowOpen) {
+      if (rebuyLevelCap > 0) {
+        const persistedLevel = Number(tournament.current_level);
+        if (
+          tournament.current_level == null ||
+          !Number.isInteger(persistedLevel) ||
+          persistedLevel < 0
+        ) {
+          return { allowed: false, reason: 'Could not verify the current tournament level' };
+        }
+        if (persistedLevel >= rebuyLevelCap) {
+          return { allowed: false, reason: 'Rebuy/re-entry period has ended' };
+        }
+      } else {
+        const timedMinutes = Number(tournament.late_reg_mins ?? 0);
+        const startedAt = Date.parse(String(tournament.started_at || ''));
+        const timedWindowOpen =
+          timedMinutes > 0 && Number.isFinite(startedAt) && now < startedAt + timedMinutes * 60_000;
+        if (!timedWindowOpen) {
+          return { allowed: false, reason: 'Rebuy/re-entry period has ended' };
+        }
       }
     }
 

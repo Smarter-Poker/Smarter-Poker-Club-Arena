@@ -8,6 +8,7 @@
  * declarations for the hooks each layer calls on the layer below.
  */
 
+import { EngineTelemetry } from './EngineTelemetry.js';
 import { HandController } from './HandController.js';
 import {
   isPotLimitVariant,
@@ -645,8 +646,21 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       // next seat's freshly scheduled work instead.
       this.cancelHorseDecisionWork();
       try {
-        applied = this.handController.performAction(seat, forced as any);
-        if (!applied) applied = this.handController.performAction(seat, 'fold' as any);
+        applied = EngineTelemetry.measureAcceptedAction(
+          this.engineTelemetry,
+          this.tableId,
+          p.user_id,
+          forced,
+          () => this.handController!.performAction(seat, forced as any)
+        );
+        if (!applied)
+          applied = EngineTelemetry.measureAcceptedAction(
+            this.engineTelemetry,
+            this.tableId,
+            p.user_id,
+            'fold',
+            () => this.handController!.performAction(seat, 'fold' as any)
+          );
       } catch (err) {
         reportError(err, 'ServerTableEngine.' + this.tableId + '.watchdog_force_action_failed');
       }
@@ -699,7 +713,16 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     const order: Array<'check' | 'fold'> = preferCheck ? ['check', 'fold'] : ['fold'];
     for (const a of order) {
       try {
-        if (this.handController.performAction(seat, a as any)) return true;
+        if (
+          EngineTelemetry.measureAcceptedAction(
+            this.engineTelemetry,
+            this.tableId,
+            this.seatedPlayers.find((p) => p.seat_number === seat)?.user_id ?? '',
+            a,
+            () => this.handController!.performAction(seat, a as any)
+          )
+        )
+          return true;
       } catch (err) {
         reportError(err, 'ServerTableEngine.' + this.tableId + '.force_' + a + '_threw');
       }
@@ -1841,10 +1864,12 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       // to pick up.
       const actClockWasArmed = this.lastActionAcceptedAtMs;
       this.lastActionAcceptedAtMs = Date.now();
-      const actionApplied = this.handController.performAction(
-        seat,
-        normalizedAction as any,
-        amount
+      const actionApplied = EngineTelemetry.measureAcceptedAction(
+        this.engineTelemetry,
+        this.tableId,
+        userId,
+        normalizedAction,
+        () => this.handController!.performAction(seat, normalizedAction as any, amount)
       );
       if (!actionApplied) {
         // Restore whatever was pending; this action contributed nothing.
@@ -2211,10 +2236,12 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       }
       let preApplied = false;
       try {
-        preApplied = controllerAtBeat.performAction(
-          seat,
-          preResult.action as any,
-          preResult.amount
+        preApplied = EngineTelemetry.measureAcceptedAction(
+          this.engineTelemetry,
+          this.tableId,
+          player.user_id,
+          preResult.action,
+          () => controllerAtBeat.performAction(seat, preResult.action as any, preResult.amount)
         );
       } catch (err) {
         reportError(err, 'ServerTableEngine.' + this.tableId + '.preaction_threw');
@@ -3178,7 +3205,13 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
           const worker = getLiveHorseDecisionWorker();
           worker.runWithDispatchBarrier(() => {
             try {
-              applied = handControllerRef.performAction(seat, action as any, amount);
+              applied = EngineTelemetry.measureAcceptedAction(
+                this.engineTelemetry,
+                this.tableId,
+                player.user_id,
+                action,
+                () => handControllerRef.performAction(seat, action as any, amount)
+              );
               intendedApplied = applied;
               if (applied) {
                 executedAction = action as ActionType;
@@ -3224,12 +3257,24 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
                 // above produced no broadcast, so the clock must start again for
                 // whichever of these two lands.
                 this.lastActionAcceptedAtMs = Date.now();
-                applied = handControllerRef.performAction(seat, 'check' as any);
+                applied = EngineTelemetry.measureAcceptedAction(
+                  this.engineTelemetry,
+                  this.tableId,
+                  player.user_id,
+                  'check',
+                  () => handControllerRef.performAction(seat, 'check' as any)
+                );
                 if (applied) {
                   executedAction = 'check';
                   executedAmount = null;
                 } else {
-                  applied = handControllerRef.performAction(seat, 'fold' as any);
+                  applied = EngineTelemetry.measureAcceptedAction(
+                    this.engineTelemetry,
+                    this.tableId,
+                    player.user_id,
+                    'fold',
+                    () => handControllerRef.performAction(seat, 'fold' as any)
+                  );
                   if (applied) {
                     executedAction = 'fold';
                     executedAmount = null;

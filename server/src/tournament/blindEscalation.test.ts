@@ -91,7 +91,9 @@ describe('escalation is anchored to the PERSISTED length', () => {
     // the entire point of the change.
     const r1 = escalatedBlindLevel(LAST, 14, LEN, 10).bigBlind;
     const r3 = escalatedBlindLevel(LAST, 16, LEN, 10).bigBlind;
-    expect(r3 / r1).toBeCloseTo(Math.pow(1.4, 2), 6);
+    // Whole chips now (2026-09-11), so the ratio holds to the rounding, not
+    // to six decimal places.
+    expect(r3 / r1).toBeCloseTo(Math.pow(1.4, 2), 2);
     expect(r3).toBeLessThan(l3);
   });
 });
@@ -174,5 +176,66 @@ describe('escalation starts from the last PLAYABLE level', () => {
 
   it('an all-break structure falls back to index 0 rather than looping', () => {
     expect(lastPlayableIndex([{ isBreak: true }, { isBreak: true }])).toBe(0);
+  });
+});
+
+/**
+ * AN INVENTED LEVEL IS WHOLE CHIPS (2026-09-11).
+ *
+ * At the observed 1.278 cadence, 200/400 escalated to 255.58/511.15. Tournament
+ * chips are an INTEGER column, so every hand that ended with a fractional stack
+ * failed its commit's own stack check and was rolled back whole: 22 refused
+ * hands on three heads-up SNGs in two minutes, and 12 more SNGs by 01:37.
+ */
+describe('an escalated level is whole chips', () => {
+  it('rounds the live incident shape to whole chips', () => {
+    const last = { level: 12, smallBlind: 200, bigBlind: 400, ante: 0 };
+    const lvl = escalatedBlindLevel(last, 12, 12, 5, 1.27787);
+    expect(lvl.smallBlind).toBe(256);
+    expect(lvl.bigBlind).toBe(511);
+    expect(lvl.ante).toBe(0);
+  });
+
+  it('every figure is an integer at every level and every ratio the manager can pass', () => {
+    const structures = [
+      { smallBlind: 200, bigBlind: 400, ante: 0 },
+      { smallBlind: 375, bigBlind: 750, ante: 75 },
+      { smallBlind: 1, bigBlind: 2, ante: 0 },
+      { smallBlind: 3, bigBlind: 5, ante: 1 },
+      { smallBlind: 1500, bigBlind: 3000, ante: 300 },
+    ];
+    for (const last of structures) {
+      for (const ratio of [1.15, 1.2, 1.27787, 1.33, 1.4, 1.5, 1.6]) {
+        let prevBig = 0;
+        for (let index = 10; index < 40; index++) {
+          const lvl = escalatedBlindLevel(last, index, 10, 5, ratio);
+          expect(
+            Number.isInteger(lvl.smallBlind),
+            `${JSON.stringify(last)} r=${ratio} i=${index}`
+          ).toBe(true);
+          expect(Number.isInteger(lvl.bigBlind)).toBe(true);
+          expect(Number.isInteger(lvl.ante)).toBe(true);
+          expect(lvl.smallBlind).toBeGreaterThanOrEqual(1);
+          expect(lvl.smallBlind).toBeLessThan(lvl.bigBlind);
+          // Rounding never makes a later level smaller than an earlier one.
+          expect(lvl.bigBlind).toBeGreaterThanOrEqual(prevBig);
+          prevBig = lvl.bigBlind;
+        }
+      }
+    }
+  });
+
+  it('the chip cap applied after it keeps the figures whole', () => {
+    const lvl = escalatedBlindLevel(
+      { smallBlind: 200, bigBlind: 400, ante: 40 },
+      20,
+      12,
+      5,
+      1.27787
+    );
+    const capped = capLevelToChipsInPlay(lvl, 123_457);
+    expect(Number.isInteger(capped.smallBlind)).toBe(true);
+    expect(Number.isInteger(capped.bigBlind)).toBe(true);
+    expect(Number.isInteger(capped.ante)).toBe(true);
   });
 });

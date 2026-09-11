@@ -10,7 +10,7 @@
 
 import nodeCrypto from 'node:crypto';
 import { UUID_SHAPE as UUID } from '../lib/uuidShape.js';
-import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
+import { isMaintenanceFrozen, msUntilMaintenanceResume } from '../maintenance/freezeState.js';
 import { supabase } from '../services/supabase.js';
 import { raiseFinancialAlert } from '../services/financialAlerts.js';
 import { reportError } from '../services/errorReporter.js';
@@ -139,6 +139,20 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
    * the next admission never restarts the same prefix forever.
    */
   private readonly eliminationSweepCursor = new TournamentSweepWorkCursor();
+  /**
+   * A BALANCE IS A DEBT UNTIL IT RUNS (2026-09-11). The balance stage used to
+   * be marked complete whether or not `checkTableBalance` had done anything:
+   * it returns without a word when the sweep budget runs out between its
+   * reads, and the stage is skipped outright while the platform is frozen. The
+   * cursor then handed the next admission stage 6, and a field spread one
+   * player per table - no hand to deal, no bust to record - had nothing left
+   * that would ever start another pass. `balanceRetriedThisCycle` allows one
+   * fresh-budget re-entry of the stage per cycle (so an event whose reads can
+   * never fit a budget still records its busts), and `balanceOwedAfterCycle`
+   * asks for a new cycle when even that retry ran out.
+   */
+  private balanceRetriedThisCycle = false;
+  private balanceOwedAfterCycle = false;
   /** Latest level-triggered generation observed for each durable wake identity. */
   private readonly pendingManagerWakeGenerations = new Map<number, number>();
   /**
@@ -1330,6 +1344,17 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           await this.checkTableBalance();
           if (sweepStopped()) return;
 
+          // A balance the budget cut short is re-entered with a fresh budget
+          // (once per cycle), never recorded as done. See balanceRetriedThisCycle.
+          if (this.eliminationWorkBudgetExpired()) {
+            if (!this.balanceRetriedThisCycle) {
+              this.balanceRetriedThisCycle = true;
+              this.requestEliminationSweep();
+              return;
+            }
+            this.balanceOwedAfterCycle = true;
+          }
+
           // The old five-second manager interval also happened to poll final
           // table deal votes. Preserve the feature's intended ten-second
           // cadence only after table balancing has proved the field is on one
@@ -1348,6 +1373,19 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
             );
             this.requestUrgentEliminationSweepAfter(dueIn);
           }
+        } else {
+          /* A BALANCE THE FREEZE DEFERRED IS STILL OWED (2026-09-11). Skipping
+             the move is right; forgetting it is not. A field spread one player
+             per table deals no hand and records no bust, so this sweep is the
+             last thing that will ever look at it: `$100 Freeroll 12:00 PM`
+             (7aa16fa7) recorded its last bust at 07:57 inside the 07:53
+             freeze and then sat as four players on four tables until a human
+             found it. A restart inside the freeze sends every resumed
+             manager's first sweep down this same exit (57 RUNNING events sat
+             one player per table at 12:10 UTC after the 10:55 restart). Ask
+             for one more pass after the thaw; the scheduler keeps one pending
+             wake per tournament, so this never stacks. */
+          this.requestEliminationSweepAfter(msUntilMaintenanceResume());
         }
         if (completedStage(6)) return;
       }
@@ -1357,6 +1395,9 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         // FIX 155: Check if new tables need to be created during rebuy/late-reg period
         if (!isMaintenanceFrozen() && !(await this.checkDynamicTableExpansion())) return;
         if (sweepStopped()) return;
+        // The same debt as the balance stage above: an expansion the freeze
+        // skipped is asked for again after the thaw, never dropped.
+        if (isMaintenanceFrozen()) this.requestEliminationSweepAfter(msUntilMaintenanceResume());
         if (completedStage(7)) return;
       }
 
@@ -1557,6 +1598,11 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         if (completedStage(8)) return;
       }
       this.eliminationSweepCursor.reset();
+      this.balanceRetriedThisCycle = false;
+      if (this.balanceOwedAfterCycle) {
+        this.balanceOwedAfterCycle = false;
+        this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
+      }
       completedWholeSweep = true;
     } catch (err) {
       reportError(err, 'Tournament.elimination_check_error');

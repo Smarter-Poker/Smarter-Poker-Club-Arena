@@ -1,0 +1,4 @@
+{
+  "_owner": "agent/cowork-mustmove/audit/must-move-classic-action-madness (lane B)",
+  "functions": ["fn_table_waitlist_join", "fn_table_waitlist_leave"]
+}

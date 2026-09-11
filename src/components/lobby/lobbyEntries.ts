@@ -69,6 +69,15 @@ export interface LobbyTableRow extends CashFeatureSource {
   cluster_state?: string | null;
   cluster_players?: number | null;
   cluster_tables?: number | null;
+  /**
+   * `cash_games.enabled`, when the read carried it (the club-home chain embeds
+   * the game row). A disabled game is not taking players: its door,
+   * fn_cash_game_join, refuses with GAME_CLOSED, so the board says Closed
+   * rather than offering a Join that can only fail.
+   */
+  cluster_enabled?: boolean | null;
+  /** Selected by realtime payloads; the fetches filter it to false and omit it. */
+  is_deleted?: boolean | null;
 }
 
 export interface LobbyTournamentRow {
@@ -1014,24 +1023,140 @@ export function isHiddenClusterMember(
   return !!t.cluster_id && !isClusterFront(t);
 }
 
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  ONE DEFINITION OF A GAME'S PLAYERS AND TABLES (2026-09-09, must-move audit
+ *  lane G; handoff item 5.2)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * `fn_cash_cluster_census` is what the controller decides a game's shape
+ * from, and since 20260906163151 `get_club_home` and `fn_cash_game_lobby`
+ * carry its predicate verbatim:
+ *
+ *     coalesce(is_deleted, false) = false
+ *     AND status IN ('waiting', 'running', 'active')
+ *     AND lifecycle <> 'closed'
+ *
+ * The client had a THIRD answer: `cluster_tables ?? 1` and
+ * `cluster_players ?? current_players ?? 0`, a guess for any row the fast
+ * path had not painted. Worse, the figure the fast path DID paint never moved
+ * again: realtime delivers one `tables` row at a time and carries no
+ * game-wide aggregate, the chain reload overlays its rows and keeps the old
+ * aggregate, and the fast path does not run on a warm reload at all - so a
+ * game's PLAYERS figure was frozen at first paint for the whole visit.
+ *
+ * So the board now derives both figures from the rows it holds, with the
+ * census predicate and nothing else. `tables.current_players` is the seat
+ * count `count(table_seats where left_at is null)` denormalised (read on
+ * production 2026-09-09: 137 of 137 live cluster tables agree), so summing it
+ * over the census tables of a cluster IS the census count, and it moves with
+ * every realtime seat transition. A row that carries no figure is a one-row
+ * board: the same predicate applied to the row itself.
+ *
+ * The only way this can disagree with the database is the 200-row cap on
+ * both reads, which trims the EMPTIEST tables in scope (both order by
+ * current_players first). A trimmed empty feeder would then be one table
+ * short on its game's row. The largest scope on production holds 69 tables.
+ */
+export function isCensusTable(
+  t: Pick<LobbyTableRow, 'status' | 'lifecycle'> & { is_deleted?: boolean | null }
+): boolean {
+  if (t.is_deleted === true) return false;
+  const status = String(t.status ?? '').toLowerCase();
+  if (status !== 'waiting' && status !== 'running' && status !== 'active') return false;
+  /* `lifecycle <> 'closed'` in SQL is NULL, i.e. false, for a null lifecycle;
+     the client says the same so the two can never count a table differently. */
+  return t.lifecycle != null && String(t.lifecycle) !== 'closed';
+}
+
+export interface ClusterFigures {
+  players: number;
+  tables: number;
+}
+
+export type ClusterFigureSource = Pick<
+  LobbyTableRow,
+  'cluster_id' | 'status' | 'lifecycle' | 'current_players'
+> & { is_deleted?: boolean | null };
+
+/** Players and open tables per game, from the rows on the board. */
+export function clusterFigures(
+  rows: ReadonlyArray<ClusterFigureSource>
+): Map<string, ClusterFigures> {
+  const out = new Map<string, ClusterFigures>();
+  for (const r of rows) {
+    if (!r.cluster_id) continue;
+    const id = String(r.cluster_id);
+    const fig = out.get(id) ?? { players: 0, tables: 0 };
+    if (isCensusTable(r)) {
+      fig.tables += 1;
+      fig.players += Math.max(0, Number(r.current_players) || 0);
+    }
+    out.set(id, fig);
+  }
+  return out;
+}
+
+/**
+ * Stamp every cluster row with its game's figures, derived from the whole
+ * board. The stamp overwrites whatever a read painted: the read's number was
+ * true when it was taken, and this one is true now.
+ */
+export function withClusterFigures<
+  T extends ClusterFigureSource & {
+    cluster_players?: number | null;
+    cluster_tables?: number | null;
+  },
+>(rows: ReadonlyArray<T>): T[] {
+  const figures = clusterFigures(rows);
+  return rows.map((r) => {
+    if (!r.cluster_id) return r;
+    const fig = figures.get(String(r.cluster_id));
+    if (!fig) return r;
+    if (r.cluster_players === fig.players && r.cluster_tables === fig.tables) return r;
+    return { ...r, cluster_players: fig.players, cluster_tables: fig.tables };
+  });
+}
+
+/** The figures a single row carries, or the one-row board when it carries none. */
+function clusterFiguresOf(t: LobbyTableRow): ClusterFigures {
+  const players = Number(t.cluster_players);
+  const tables = Number(t.cluster_tables);
+  if (
+    t.cluster_players != null &&
+    t.cluster_tables != null &&
+    Number.isFinite(players) &&
+    Number.isFinite(tables)
+  ) {
+    return { players: Math.max(0, players), tables: Math.max(0, tables) };
+  }
+  return clusterFigures([t]).get(String(t.cluster_id)) ?? { players: 0, tables: 0 };
+}
+
 export function cashEntry(t: LobbyTableRow, waiting = 0): LobbyEntry {
   const v = variantDisplay(t.game_variant);
-  const cluster = t.cluster_id
-    ? {
-        id: t.cluster_id,
-        mustMove: t.cluster_must_move !== false,
-        template: t.cluster_template ?? null,
-        tables: Number(t.cluster_tables ?? 1) || 1,
-        state: t.cluster_state ?? null,
-      }
-    : null;
-  const gamePlayers = cluster ? Number(t.cluster_players ?? t.current_players ?? 0) : 0;
+  const figures = t.cluster_id ? clusterFiguresOf(t) : null;
+  const cluster =
+    t.cluster_id && figures
+      ? {
+          id: t.cluster_id,
+          mustMove: t.cluster_must_move !== false,
+          template: t.cluster_template ?? null,
+          tables: figures.tables,
+          state: t.cluster_state ?? null,
+        }
+      : null;
+  const gamePlayers = figures ? figures.players : 0;
   /* R10: a game is never "full" - a full Main opens a feeder - so its status
-     is running or open, from the game-wide count, never from one table. */
+     is running or open, from the game-wide count, never from one table. A
+     game the host has disabled is Closed: its door refuses GAME_CLOSED, and
+     a Join that can only fail is not an offer (fix-first, 2026-09-09). */
   const st = cluster
-    ? gamePlayers > 0
-      ? { key: 'running' as LobbyStatusKey, label: 'Running' }
-      : { key: 'open' as LobbyStatusKey, label: 'Open' }
+    ? t.cluster_enabled === false
+      ? { key: 'closed' as LobbyStatusKey, label: 'Closed' }
+      : gamePlayers > 0
+        ? { key: 'running' as LobbyStatusKey, label: 'Running' }
+        : { key: 'open' as LobbyStatusKey, label: 'Open' }
     : cashStatus(t, waiting);
   /* Dan 2026-08-25: the lobby used to print tables.max_buy_in raw, which on 42
      of 46 live tables is 200bb — a ceiling the table's own BuyInModal will not

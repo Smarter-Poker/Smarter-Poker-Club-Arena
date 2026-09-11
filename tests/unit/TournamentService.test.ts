@@ -7,10 +7,11 @@
  * getTournament null return, and getTournaments empty return.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-const { mockRpc, mockEmit, mockUuid } = vi.hoisted(() => ({
+const { mockRpc, mockEmit, mockUuid, mockTournamentRead } = vi.hoisted(() => ({
   mockRpc: vi.fn(),
+  mockTournamentRead: vi.fn(async () => ({ data: null, error: null as unknown })),
   mockEmit: vi.fn(),
   mockUuid: vi.fn(() => '00000000-0000-4000-8000-000000000001'),
 }));
@@ -21,8 +22,7 @@ vi.mock('../../src/lib/supabase', () => {
   const buildChain = (): any => {
     const handler: ProxyHandler<any> = {
       get: (_target, prop) => {
-        if (prop === 'maybeSingle' || prop === 'single')
-          return () => Promise.resolve({ data: null, error: null });
+        if (prop === 'maybeSingle' || prop === 'single') return mockTournamentRead;
         if (prop === 'then')
           return (resolve: (v: any) => void) => resolve({ data: null, error: null });
         return vi.fn().mockReturnValue(new Proxy({}, handler));
@@ -31,6 +31,7 @@ vi.mock('../../src/lib/supabase', () => {
     return new Proxy({}, handler);
   };
   return {
+    getAuthUser: async () => ({ data: { user: { id: 'u-1' } }, error: null }),
     supabase: {
       from: () => buildChain(),
       rpc: mockRpc,
@@ -68,7 +69,16 @@ import {
 } from '../../src/services/TournamentService';
 
 describe('TournamentService', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockTournamentRead.mockReset().mockResolvedValue({ data: null, error: null });
+    localStorage.clear();
+    sessionStorage.clear();
+    vi.stubGlobal('navigator', {
+      locks: { request: (_key: string, fn: () => Promise<unknown>) => fn() },
+    });
+  });
+  afterEach(() => vi.unstubAllGlobals());
 
   // ─────────────────────────────────────────────────────────────────────────
   // BLIND STRUCTURES
@@ -239,6 +249,18 @@ describe('TournamentService', () => {
   // ─────────────────────────────────────────────────────────────────────────
 
   describe('getTournament', () => {
+    it('distinguishes an unavailable snapshot from a verified missing tournament', async () => {
+      const error = { message: 'Network Unavailable' };
+      mockTournamentRead.mockResolvedValue({ data: null, error });
+      await expect(tournamentService.getTournament('event', { throwOnError: true })).rejects.toBe(
+        error
+      );
+      mockTournamentRead.mockResolvedValue({ data: null, error: null });
+      await expect(
+        tournamentService.getTournament('missing', { throwOnError: true })
+      ).resolves.toBeNull();
+    });
+
     it('should return null when tournament not found', async () => {
       const result = await tournamentService.getTournament('nonexistent');
       expect(result).toBeNull();
@@ -325,6 +347,37 @@ describe('TournamentService', () => {
       });
     });
 
+    it('retains the original identity after both transport attempts fail', async () => {
+      mockRpc
+        .mockRejectedValueOnce(new Error('Lost Response'))
+        .mockRejectedValueOnce(new Error('Lost Replay'));
+      await expect(tournamentService.unregisterPlayer('t-1', 'u-1')).rejects.toThrow(/Confirm/);
+      const original = mockRpc.mock.calls[0][1].p_request_id;
+      mockRpc.mockImplementationOnce(async (_name, args) => ({
+        data: {
+          ok: true,
+          request_id: args.p_request_id,
+          registration_id: 'registration-1',
+          refunded_chips: 110,
+          returned_ticket_value: 0,
+          wallet_chips_from_satellite_entitlements: 0,
+        },
+        error: null,
+      }));
+      await tournamentService.unregisterPlayer('t-1', 'u-1');
+      expect(mockRpc.mock.calls.map((call) => call[1].p_request_id)).toEqual([
+        original,
+        original,
+        original,
+      ]);
+      expect(mockEmit).toHaveBeenCalledTimes(1);
+    });
+    it('refuses a stale account before submitting', async () => {
+      await expect(tournamentService.unregisterPlayer('t-1', 'another-user')).rejects.toThrow(
+        /Correct Account/
+      );
+      expect(mockRpc).not.toHaveBeenCalled();
+    });
     it('surfaces the server refusal reason rather than a generic failure', async () => {
       mockRpc.mockResolvedValue({
         data: { ok: false, reason: 'tournament_started' },
@@ -422,6 +475,32 @@ describe('TournamentService', () => {
   // on either side of the read.
 
   describe('getCurrentLevelState - level indexing', () => {
+    it.each([600000, 2399999, 2400000, 2400001, 86400000])(
+      'keeps an overdue persisted level at zero after %i milliseconds',
+      (elapsedMs) => {
+        const now = Date.now();
+        const dateNow = vi.spyOn(Date, 'now').mockReturnValue(now);
+        try {
+          const state = tournamentService.getCurrentLevelState({
+            id: 'overdue-clock',
+            status: 'RUNNING',
+            started_at: new Date(now - 86400000).toISOString(),
+            level_started_at: new Date(now - elapsedMs).toISOString(),
+            current_level: 1,
+            blind_structure: [
+              { level: 1, smallBlind: 25, bigBlind: 50, ante: 0, durationMinutes: 10 },
+              { level: 2, smallBlind: 50, bigBlind: 100, ante: 0, durationMinutes: 10 },
+            ],
+          } as never);
+          expect(state.levelIndex).toBe(1);
+          expect(state.currentLevel.bigBlind).toBe(100);
+          expect(state.timeRemainingSeconds).toBe(0);
+        } finally {
+          dateNow.mockRestore();
+        }
+      }
+    );
+
     // Four levels, each distinguishable by every field.
     const structure = [
       { level: 1, smallBlind: 25, bigBlind: 50, ante: 0, durationMinutes: 10 },

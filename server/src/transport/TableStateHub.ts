@@ -205,8 +205,22 @@ const HUB_MAX_EVENT_REPLAY_MS = 60_000;
  * worst case is 512 * 8 short-lived entries that expire on their own deadline
  * within HUB_MAX_EVENT_REPLAY_MS. `aJackpotIsNeverLost` pins the arithmetic so
  * the NEXT retained event has to come and read this.
+ *
+ * AND THE NEXT ONE CAME (2026-09-09, must-move audit). `seat_moved` is now
+ * retained too: it is the one packet that tells a hero's client their chair is
+ * at another table now, and fired once it was lost by any client that happened
+ * to be between reconnects at that instant. A BREAKING table emits one per
+ * seat AT A SINGLE HAND BOUNDARY - nine on a 9-max - so the arithmetic is no
+ * longer five:
+ *
+ *     5 jackpot beats + 9 seat_moved on a breaking 9-max = 14
+ *
+ * Sixteen is that plus a beat of headroom. Under the old eight the per-table
+ * splice below would have dropped the OLDEST, which is `bbj_hit` - the beat
+ * whose own comment above says it must survive. Still bounded: 512 * 16
+ * entries that expire on their own deadline within HUB_MAX_EVENT_REPLAY_MS.
  */
-const HUB_MAX_RETAINED_EVENTS_PER_TABLE = 8;
+const HUB_MAX_RETAINED_EVENTS_PER_TABLE = 16;
 const HUB_MAX_RETAINED_TABLES = 512;
 
 /**
@@ -546,7 +560,6 @@ export class TableStateHub {
 
     for (const entry of list) {
       if (entry.delivered.has(sub)) continue;
-      entry.delivered.add(sub);
       const message: EventMessage = {
         type: 'EVENT',
         tableId,
@@ -555,7 +568,10 @@ export class TableStateHub {
         ts: Date.now(),
         payload: { ...entry.payload, replayed: true },
       };
-      if (this.safeSend(sub, JSON.stringify(message))) this.replayedEvents++;
+      if (this.safeSend(sub, JSON.stringify(message))) {
+        entry.delivered.add(sub);
+        this.replayedEvents++;
+      }
     }
   }
 

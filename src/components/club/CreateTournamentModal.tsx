@@ -257,10 +257,6 @@ export default function CreateTournamentModal({
   // ── Spin Config ──
   const [spinType, setSpinType] = useState<'standard' | 'hyper'>('standard');
 
-  // ── Multi-Day Config ──
-  const [isMultiDay, setIsMultiDay] = useState(false);
-  const [totalDays, setTotalDays] = useState('2');
-
   // ── Advanced options (PokerBros parity, 2026-08-22). Collapsed by default
   // so the modal stays usable; every field maps to an fn_create_tournament
   // p_config key. ──
@@ -423,13 +419,27 @@ export default function CreateTournamentModal({
         const resolved = await resolveClubUUID(clubId);
         const { data } = await supabase
           .from('tournaments')
-          .select('id, name, tournament_type, status, start_time')
+          .select(
+            'id, name, tournament_type, status, start_time, variant, is_bounty, is_pko, is_mystery_bounty, is_premium_spin'
+          )
           .eq('club_id', resolved)
           .neq('tournament_type', 'satellite')
           .in('status', ['registering', 'scheduled', 'upcoming', 'announced', 'pending', 'open'])
           .order('start_time', { ascending: true })
           .limit(50);
-        if (alive) setSatelliteTargets((data || []).map((t: any) => ({ id: t.id, name: t.name })));
+        // A satellite can only award a seat the settlement authority can
+        // deliver: never into a bounty, PKO, mystery-bounty or Spin event
+        // (the database refuses that insert too, 20260911110907).
+        const deliverable = (data || []).filter(
+          (t: any) =>
+            t.is_bounty === false &&
+            t.is_pko === false &&
+            t.is_mystery_bounty === false &&
+            t.is_premium_spin === false &&
+            String(t.variant ?? '').toLowerCase() !== 'spin' &&
+            String(t.tournament_type ?? '').toUpperCase() !== 'SPIN'
+        );
+        if (alive) setSatelliteTargets(deliverable.map((t: any) => ({ id: t.id, name: t.name })));
       } catch (e) {
         reportError(e, 'CreateTournamentModal.loadSatelliteTargets');
       }
@@ -439,27 +449,15 @@ export default function CreateTournamentModal({
     };
   }, [isSatellite, clubId]);
 
-  /**
-   * ── Auto-set defaults when format changes ──
-   *
-   * MULTI-DAY IS RESET FOR EVERY FORMAT, NOT JUST TWO OF THEM (2026-08-31).
-   * The checkbox only renders for the three `mtt_*` formats, so a value set on
-   * a freezeout and then carried into Bounty or Satellite was invisible AND
-   * fatal: `trg_tournaments_refuse_unbuilt_multi_day` RAISEs 0A000 on insert,
-   * so the operator got an unexplained failure with no control on screen to
-   * undo it. Resetting before the switch means the flag can only ever be true
-   * on a format that shows it.
-   */
+  // Apply the selected format's defaults.
   const handleFormatChange = (f: TournamentFormat) => {
     setFormat(f);
-    setIsMultiDay(false);
     switch (f) {
       case 'sng':
         setMttEntryRules('freezeout');
         setMaxPlayers('6');
         setLateRegLevels('0');
         setStartTimeMode('now');
-        setIsMultiDay(false);
         setAddOnAvailable(false);
         break;
       case 'spin':
@@ -467,7 +465,6 @@ export default function CreateTournamentModal({
         setMaxPlayers('3');
         setLateRegLevels('0');
         setStartTimeMode('now');
-        setIsMultiDay(false);
         setAddOnAvailable(false);
         /* The catalogue narrows on the way IN as well as in the list. Picking
            Short Deck and then switching the format to Spin would otherwise
@@ -521,10 +518,6 @@ export default function CreateTournamentModal({
         setMaxPlayers(DEFAULT_MTT_FIELD);
         setLateRegLevels('8');
         setAddOnAvailable(false);
-        /* `setIsMultiDay(true)` lived here — "XMTTs are typically multi-day".
-           Multi-day is NOT BUILT (no day end, no Day 2 resume, no flight
-           merge) and the database refuses the flag outright, so this line
-           made the XMTT format uncreatable. The reset above covers it. */
         break;
       case 'mtt_freezeout':
       default:
@@ -810,8 +803,9 @@ export default function CreateTournamentModal({
                 seatsAwarded: Math.max(1, parseInt(satelliteSeats) || 1),
               }
             : undefined,
-        isMultiDay,
-        totalDays: isMultiDay ? parseInt(totalDays) || 2 : undefined,
+        // Day 2 resume and flight merging are unavailable; the database refuses them.
+        isMultiDay: false,
+        totalDays: undefined,
         isXmtt: !!unionId,
         unionId: unionId || undefined,
         bountyConfig:
@@ -936,7 +930,14 @@ export default function CreateTournamentModal({
         const mainTournament = await tournamentService.createTournament(clubId, tournamentConfig);
 
         // Auto Satellite Generation
-        if (!isSatellite && generateSatellites) {
+        // Satellites can only feed an event whose seat they can deliver, so a
+        // bounty, PKO, mystery-bounty or Spin main event gets none.
+        const mainTakesSatellites =
+          format !== 'bounty' &&
+          format !== 'progressive_bounty' &&
+          format !== 'mystery_bounty' &&
+          format !== 'spin';
+        if (!isSatellite && mainTakesSatellites && generateSatellites) {
           const satCount = Math.max(1, parseInt(genSatCount) || 1);
           const satBuyIn = parseInt(genSatBuyIn) || Math.max(1, Math.round(parsedBuyIn * 0.1));
           const satSeats = Math.max(1, parseInt(genSatSeats) || 1);
@@ -1852,42 +1853,18 @@ export default function CreateTournamentModal({
             </div>
           )}
 
-          {/* ── Multi-Day Toggle ── */}
+          {/* Multi-day creation is refused until Day 2 and flight merging exist. */}
           {(format === 'mtt_freezeout' || format === 'mtt_rebuy' || format === 'mtt_reentry') && (
-            <div className={styles.row}>
-              <div className={styles.col}>
-                <div className={styles.formGroup}>
-                  <label className={styles.toggleLabel}>
-                    <input
-                      type="checkbox"
-                      checked={isMultiDay}
-                      onChange={(e) => setIsMultiDay(e.target.checked)}
-                      className={styles.checkbox}
-                    />
-                    Multi-Day Tournament
-                  </label>
-                </div>
-              </div>
-              {isMultiDay && (
-                <div className={styles.col}>
-                  <div className={styles.formGroup}>
-                    <label>Total Days</label>
-                    <input
-                      type="number"
-                      className={styles.input}
-                      value={totalDays}
-                      onChange={(e) => setTotalDays(e.target.value)}
-                      min="2"
-                      max="7"
-                    />
-                  </div>
-                </div>
-              )}
+            <div className={styles.formGroup}>
+              <span className={styles.toggleLabel}>Multi-Day Tournament</span>
+              <span className={styles.helperText}>
+                Not Available Yet. Day 2 Resume And Flight Merging Are Not Supported.
+              </span>
             </div>
           )}
 
           {/* ── Auto Satellite Generation ── */}
-          {!isSatellite && (
+          {!isSatellite && !isBountyFormat && format !== 'spin' && (
             <div className={styles.row}>
               <div className={styles.col} style={{ flex: '1 1 100%' }}>
                 <div

@@ -55,13 +55,12 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { sliceBlockAfter } from '../testHelpers/sourceWindow.js';
+import { sliceBetween } from '../testHelpers/sourceWindow.js';
 
 const strip = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
 
 const read = (rel: string) => readFileSync(path.join(process.cwd(), rel), 'utf8');
 const BASE = strip(read('src/tournament/TournamentManagerBase.ts'));
-const MANAGER = strip(read('src/tournament/TournamentManager.ts'));
 const GAME_SERVER = strip(read('src/GameServer.ts'));
 
 /** Body of a named method, from its signature to its matching close brace. */
@@ -103,10 +102,14 @@ describe('DEFECT 1 - the level clock neither ticks nor advances during a break',
 
   it('does not arm a live level timer when a break began mid-transition', () => {
     // The tail used to be a bare `this.startBlindTimer(blindStructure);`.
-    const tail = advance.slice(advance.lastIndexOf('startBlindTimer') - 400);
-    expect(tail).toMatch(/if\s*\(this\.isOnBreak\(\)\)/);
-    expect(tail).toMatch(/this\.savedBlindTimerRemaining\s*=\s*this\.levelDurationMs\(/);
-    expect(tail).toMatch(/else\s*\{[\s\S]{0,120}this\.startBlindTimer\(blindStructure\);/);
+    const tail = advance.slice(advance.lastIndexOf('if (this.isOnBreak())'));
+    const breakBranch = methodBody(tail, 'if (this.isOnBreak())');
+    expect(breakBranch).toMatch(/this\.savedBlindTimerRemaining\s*=\s*this\.levelDurationMs\(/);
+    expect(breakBranch).not.toContain('this.startBlindTimer(');
+    const liveBranch = methodBody(tail, 'else');
+    expect(liveBranch).toMatch(
+      /this\.startBlindTimer\(\s*blindStructure,\s*this\.levelDurationMs\(level\)\s*-\s*\(Date\.now\(\)\s*-\s*levelStartedAt\)\s*\);/
+    );
   });
 });
 
@@ -118,7 +121,11 @@ describe('DEFECT 2 - a break with no end time yet is still a break', () => {
 
   it('reconstructs the end time from break_started_at plus grace plus break', () => {
     const at = BASE.indexOf('if (tournament.on_break)');
-    const block = sliceBlockAfter(BASE, 'if (tournament.on_break)');
+    const block = sliceBetween(
+      BASE,
+      'const breakStartedAt = tournament.break_started_at',
+      'this.startEliminationChecker();'
+    );
     expect(block).toMatch(/break_started_at/);
     expect(block).toMatch(/LAST_HAND_GRACE_MS/);
     expect(block).toMatch(/BREAK_DURATION_MS/);
@@ -180,24 +187,5 @@ describe('DEFECT 4 - a break countdown is started once, never restarted', () => 
     expect(methodBody(BASE, 'async resumeFromBreak()')).toMatch(
       /this\.breakCountdownStarted\s*=\s*false/
     );
-  });
-});
-
-describe('a registered player who cannot be seated is never silent', () => {
-  const seat = methodBody(MANAGER, 'protected async ensureLateRegSeated()');
-
-  it('reports a seat write it could not complete', () => {
-    /**
-     * Both branches were a bare `continue`. This sweep runs every five seconds,
-     * so an error does not retry into success — it retries into the same
-     * failure forever, with a paid entrant holding no seat and nothing written
-     * anywhere. A genuine unique-index race stays quiet because the resolved
-     * state is correct.
-     */
-    expect(seat).toContain('assignTournamentPlayerSeatAtomically({');
-    expect(seat).toMatch(/atomic_late_reg_seat_refused_or_unknown/);
-    expect(seat).toMatch(/requestUrgentEliminationSweepAfter/);
-    expect(seat).not.toMatch(/from\('table_seats'\)[\s\S]{0,80}\.(?:insert|update|delete)\(/);
-    expect(seat).not.toMatch(/quietRace|restore|compensat/i);
   });
 });

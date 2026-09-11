@@ -481,6 +481,14 @@ export interface FilterableRow {
    * player who asked for Action games did not ask for the untemplated ones.
    */
   style?: string | null;
+  /**
+   * Cash: true on the ONE row a must-move game gets (its Main 1, R10). The
+   * status chips then judge the GAME: it is never Full (a full Main opens a
+   * feeder), it always has Open Seats (the door seats you or holds your
+   * place), and it is Empty when nobody is inside the whole game -
+   * `seatsTaken` is the game-wide count on such a row.
+   */
+  game?: boolean;
   /** Raw record for feature lookups. */
   row: Record<string, unknown>;
   settings: Record<string, unknown>;
@@ -642,11 +650,11 @@ export function rowPassesFilter(
     const matches = v.statuses.some((key) => {
       switch (key) {
         case 'full':
-          return cap > 0 && taken >= cap;
+          return !r.game && cap > 0 && taken >= cap;
         case 'empty':
           return taken === 0;
         case 'open':
-          return cap > 0 && taken < cap;
+          return r.game === true || (cap > 0 && taken < cap);
         case 'running':
           return status === 'RUNNING' || status === 'IN_PROGRESS';
         case 'open_reg':

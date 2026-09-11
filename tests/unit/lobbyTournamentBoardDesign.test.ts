@@ -147,7 +147,12 @@ describe('Club Arena Tournament Board lobby design', () => {
 
   it('stacks the approved long wallet art beneath the BBJ with live values', () => {
     expect(page).toContain('compactLobby');
-    expect(wallet).toContain('clubLobbyWalletRows(rowRole)');
+    /* The lobby's rows still come from the visibility law, never inlined
+       here. The call gained an arena option on 2026-09-11 (Diamond Arena
+       holds no chip ledger, so it draws no club row at all), so this pins
+       the call and its role argument rather than the exact old spelling. */
+    expect(wallet).toContain('clubLobbyWalletRows(rowRole,');
+    expect(wallet).toContain('chipWallet: hasChipWallet');
     expect(wallet).toContain("row.key === 'union_bank' || row.key === 'union_rake'");
     expect(wallet).toContain('ClubWalletShell');
     expect(walletArtwork).toContain('CLUB_WALLET_ARTWORK');

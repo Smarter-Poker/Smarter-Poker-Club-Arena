@@ -59,6 +59,7 @@ import { tableCountChangedFilter } from './tables.js';
 type CashoutScope = { userId: string; tableId: string; seatNumber: number; occupancyId: string };
 
 export interface SeatCashoutReceipt {
+  asset?: 'chips' | 'diamonds';
   ok: true;
   stack: number;
   credited: boolean;
@@ -83,6 +84,7 @@ function confirmedCashout(data: unknown, scope: CashoutScope): SeatCashoutReceip
     !Number.isFinite(receipt.stack) ||
     receipt.stack < 0 ||
     Math.round(receipt.stack * 100) / 100 !== receipt.stack ||
+    (receipt.asset === 'diamonds' && !Number.isSafeInteger(receipt.stack)) ||
     receipt.seat_number !== scope.seatNumber ||
     receipt.occupancy_id !== scope.occupancyId ||
     receipt.user_id !== scope.userId ||
@@ -282,6 +284,7 @@ export async function atomicCashout(
     void notifyWaitlistSeatOpen(tableId);
     pushFinancialUpdate(userId, {
       tableId,
+      asset: receipt.asset,
       ledgerEntry:
         receipt.stack > 0 ? { direction: 'in', amount: receipt.stack, kind: 'cashout' } : null,
     });
@@ -385,7 +388,32 @@ export async function processLeavePending(
    * remain. The caller can show the countdown; losing that in-memory display
    * must not lose an accepted departure after an engine restart.
    */
-  onLocked?: (userId: string, stayRemainingMs: number, occupancyId: string) => void
+  onLocked?: (userId: string, stayRemainingMs: number, occupancyId: string) => void,
+  /**
+   * A SEAT THAT LEFT IS REPORTED THE MOMENT IT LEAVES (2026-09-11).
+   *
+   * The RETURN VALUE is the only record the caller has of who left, and the
+   * engine tears down a leaver's disconnect FSM, time bank, straddle,
+   * pre-action, stay clock and continuity entry from exactly that list. The
+   * next sweep cannot repeat the news, because a seat that left is no longer
+   * `leave_pending = true` - so anything that loses the return value loses the
+   * teardown permanently, which is the ghost state Round 57 and Round 64 exist
+   * to prevent.
+   *
+   * Two live ways to lose it, both at the caller and neither inside this loop:
+   * the sibling seat-move read rejecting AFTER this sweep resolved (settlement
+   * owns both rejections and rethrows - TheMoveIsNeverMidHand), and lifecycle
+   * authority lost between the read and the teardown.
+   *
+   * This reports each departure the moment its own transaction commits, so the
+   * news is already out before anything downstream can drop it. It carries no
+   * money and makes no decision.
+   *
+   * Not, today, a partial-loop rescue: `atomicCashout` is given `onFailed`
+   * here, so it swallows its own failure per seat and this loop continues. If
+   * that ever changes, this callback already covers it.
+   */
+  onDeparted?: (userId: string, occupancyId: string) => void
 ): Promise<Array<{ userId: string; occupancyId: string }>> {
   /* Deliberately does NOT select `stack`. This query only ENUMERATES which
      seats asked to leave; the amount comes from the locked read inside
@@ -429,6 +457,9 @@ export async function processLeavePending(
     // sweep retries it. Only a seat that actually left is reported as gone.
     if (out.failed) continue;
     cashedOut.push({ userId: seat.user_id, occupancyId: seat.occupancy_id });
+    // Reported here, not at the return, so a later seat's failure cannot take
+    // this departure down with it (see onDeparted above).
+    onDeparted?.(seat.user_id, seat.occupancy_id);
   }
 
   // Each confirmed atomicCashout already updates the player count in its

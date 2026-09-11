@@ -41,6 +41,11 @@ export default function DiamondCustodyBalance() {
     document.addEventListener('visibilitychange', onVisible);
     const offBalance = masterBus.subscribe('DIAMOND_BALANCE_CHANGED', onFocus);
     const offSpend = masterBus.subscribe('DIAMOND_SPENT', onFocus);
+    const offSeat = masterBus.subscribe('TABLE_LEFT', onFocus);
+    const offBuyIn = masterBus.subscribe('TABLE_SEATED', onFocus);
+    const offRefresh = masterBus.subscribe('BALANCE_UPDATED', onFocus);
+    // Profile UPDATE events do not require an old diamond value from replication.
+    const offProfile = masterBus.subscribe('PROFILE_UPDATED', onFocus);
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event) => {
@@ -62,6 +67,10 @@ export default function DiamondCustodyBalance() {
       subscription.unsubscribe();
       offBalance();
       offSpend();
+      offSeat();
+      offBuyIn();
+      offRefresh();
+      offProfile();
       window.removeEventListener('focus', onFocus);
       document.removeEventListener('visibilitychange', onVisible);
     };

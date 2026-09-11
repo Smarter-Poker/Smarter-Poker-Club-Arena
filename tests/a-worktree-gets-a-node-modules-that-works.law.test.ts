@@ -14,6 +14,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync, existsSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 
 const ROOT = process.cwd();
@@ -38,6 +39,38 @@ describe('the provisioner judges a node_modules by its payload', () => {
     expect(code).toContain('bash "$ROOT/scripts/check-node-modules.sh"');
   });
 
+  /**
+   * USABLE IS NOT CURRENT (2026-09-10). The Club Arena main clone sat 25
+   * commits behind origin/main; its install matched its own old lockfile and
+   * passed every test above, and every tree cut from origin/main that day came
+   * up with tsc failing on a package the tree's lockfile named and the clone's
+   * did not. The donor search compared candidates against the main clone's
+   * lockfile - the stale one - so it could never help. The reference is the
+   * lockfile the TREE will run with, for the source and for every donor.
+   */
+  it("judges an install against the tree's own lockfile, not the main clone's", () => {
+    expect(code).toMatch(/^node_modules_matches_lockfile\(\) \{/m);
+    // npm's own record of what it installed is what is compared...
+    expect(code).toContain('.package-lock.json');
+    // ...against the lockfile of the tree being provisioned, source and donor alike.
+    expect(code).toContain(
+      'node_modules_matches_lockfile "$src/node_modules" "$dst/package-lock.json"'
+    );
+    expect(code).toContain('local lock="$DIR${rel:+/$rel}/package-lock.json"');
+    expect(code).toContain('node_modules_matches_lockfile "$nm" "$lock" || continue');
+    // Optional platform packages are empty by design and must not count.
+    expect(code).toContain('v.optional) continue');
+  });
+
+  it('finishes a clone that does not satisfy the lockfile with npm ci in the tree itself', () => {
+    expect(code).toContain(
+      'node_modules_matches_lockfile "$dst/node_modules" "$dst/package-lock.json"'
+    );
+    expect(code).toContain('npm ci --no-audit --no-fund');
+    // In the TREE, never the main clone: `cd "$dst"` precedes it.
+    expect(code).toMatch(/\(cd "\$dst" && npm ci --no-audit --no-fund/);
+  });
+
   it('still calls the repair script this repo actually has', () => {
     // Invoked as `bash <path>`, so the mode does not decide whether it
     // runs: what matters is that the file the provisioner names exists.
@@ -46,5 +79,61 @@ describe('the provisioner judges a node_modules by its payload', () => {
     const repair = join(ROOT, 'scripts/check-node-modules.sh');
     expect(existsSync(repair)).toBe(true);
     expect(readFileSync(repair, 'utf8')).toContain('npm ci');
+  });
+});
+
+describe('the provisioner does not trust the copy of itself that it is', () => {
+  // 2026-09-11. The main clone's working tree is kept current by nothing. That
+  // day the Club Arena clone was 630 commits behind origin/main with 408 staged
+  // entries from an abandoned index, and two things followed in one morning:
+  // `./scripts/agent-workspace.sh` was 100644 there and refused to run, and the
+  // copy that did run was the pre-2026-09-10 provisioner, which judges
+  // node_modules against the MAIN CLONE's lockfile instead of the tree's - the
+  // bug every assertion above exists to prevent, reintroduced by a stale file.
+  //
+  // The worktree was never at risk; it is cut from origin/main either way. The
+  // risk is that the LOGIC doing the cutting is old, and the banner it prints
+  // looks identical when it is.
+
+  it('fetches and compares itself against origin/main before doing anything', () => {
+    expect(code).toMatch(/git -C "\$ROOT" fetch origin main --quiet/);
+    expect(code).toContain('git -C "$ROOT" show origin/main:scripts/agent-workspace.sh');
+    expect(code).toContain('!= "$(cat "$0")"');
+  });
+
+  it('hands over to main rather than warning, and cannot loop doing it', () => {
+    // A warning would ask an agent to decide whether a 630-commit-old
+    // provisioner matters, with nothing to decide it with.
+    expect(code).toMatch(/AGENT_WORKSPACE_REEXEC=1 exec bash "\$_MAIN_SCRIPT" "\$@"/);
+    // The guard variable is read before the comparison and set on the exec, so
+    // the copy handed to does not compare itself and hand over again.
+    expect(code).toMatch(/\[ -z "\$\{AGENT_WORKSPACE_REEXEC:-\}" \]/);
+  });
+
+  it('says how far behind the clone it was invoked from is', () => {
+    expect(code).toContain('rev-list --count HEAD..origin/main');
+  });
+
+  it('compares before it mutates anything', () => {
+    // If the handover happened after `git worktree add`, main's copy would
+    // inherit a tree the stale copy had already made, which is the one
+    // arrangement worse than either script running alone.
+    const handover = code.indexOf('AGENT_WORKSPACE_REEXEC=1 exec bash');
+    const worktreeAdd = code.indexOf('worktree add');
+    expect(handover).toBeGreaterThan(-1);
+    expect(worktreeAdd).toBeGreaterThan(-1);
+    expect(handover).toBeLessThan(worktreeAdd);
+  });
+
+  it('is executable, because the playbook tells agents to run it by path', () => {
+    // The World Hub's copy lost this bit on 2026-08-24 in a parity restore and
+    // spent eighteen days refusing `./scripts/agent-workspace.sh` with
+    // Permission denied, in the one repo where an agent is most likely to be
+    // reading instructions rather than improvising.
+    const mode = execFileSync('git', ['ls-files', '-s', 'scripts/agent-workspace.sh'], {
+      cwd: ROOT,
+      encoding: 'utf8',
+    }).split(' ')[0];
+    expect(mode, 'scripts/agent-workspace.sh is not executable in git').toBe('100755');
   });
 });

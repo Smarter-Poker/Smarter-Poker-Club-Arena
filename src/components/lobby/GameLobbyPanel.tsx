@@ -11,7 +11,7 @@
  * Desktop: right-side drawer. Small screens: full-width sheet. Esc closes.
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import CasinoPlaque, { PlaqueSeats } from './CasinoPlaque';
 import ArenaGameCard from './game-cards/ArenaGameCard';
@@ -164,6 +164,7 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
   const [tournamentFieldSize, setTournamentFieldSize] = useState<number | null>(null);
   const [waitlist, setWaitlist] = useState<WaitlistEntry[]>([]);
   const [waitlistError, setWaitlistError] = useState(false);
+  const waitlistSnapshotRef = useRef<{ tableId: string; waitlisted: boolean } | null>(null);
   const [avgPot, setAvgPot] = useState<number | null>(null);
   const [seatMap, setSeatMap] = useState<{ seat_number: number; user_id: string }[] | null>(null);
   const [tick, setTick] = useState<{
@@ -180,32 +181,12 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
     setTournamentFieldSize(null);
     setWaitlist([]);
     setWaitlistError(false);
+    waitlistSnapshotRef.current = null;
     setAvgPot(null);
     setTab('overview');
     setDetailError(false);
 
     if (isCash) {
-      waitlistService
-        .getTableWaitlist(entry.id)
-        .then((rows) => {
-          if (cancelled) return;
-          /* NULL means the READ failed (query-level, which the .catch below
-             can never see — a Supabase builder only rejects on transport).
-             "Waiting 0" beside a Join Waitlist button is a promise that you
-             are first in line; on a failed read it was a guess. The service
-             now says which is which, and '-' renders for "could not find
-             out" (ITEM E audit, 2026-08-26). */
-          if (rows === null) {
-            setWaitlistError(true);
-          } else {
-            setWaitlist(rows);
-            setWaitlistError(false);
-          }
-        })
-        .catch((e) => {
-          if (!cancelled) setWaitlistError(true);
-          reportError(e, 'GameLobbyPanel.loadWaitlist');
-        });
       tableService
         .getAveragePot(entry.id)
         .then((v: number | null) => {
@@ -240,6 +221,41 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
       cancelled = true;
     };
   }, [entry.id, isCash]);
+
+  // The parent changes waitlisted optimistically while busy. Refresh only
+  // after it settles, and remember completed reads so a refused action keeps
+  // the verified queue without another request.
+  useEffect(() => {
+    if (!isCash || busy) return;
+    const previous = waitlistSnapshotRef.current;
+    if (previous?.tableId === entry.id && previous.waitlisted === waitlisted) return;
+    let cancelled = false;
+    waitlistService
+      .getTableWaitlist(entry.id)
+      .then((rows) => {
+        if (cancelled) return;
+        if (rows === null) {
+          waitlistSnapshotRef.current = null;
+          setWaitlist([]);
+          setWaitlistError(true);
+        } else {
+          waitlistSnapshotRef.current = { tableId: entry.id, waitlisted };
+          setWaitlist(rows);
+          setWaitlistError(false);
+        }
+      })
+      .catch((e) => {
+        if (!cancelled) {
+          waitlistSnapshotRef.current = null;
+          setWaitlist([]);
+          setWaitlistError(true);
+        }
+        reportError(e, 'GameLobbyPanel.loadWaitlist');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [entry.id, isCash, busy, waitlisted]);
 
   // ── Seat map (cash only; table_seats is public-read). Keyed on
   //    entry.players so a realtime seat change refreshes the map without
@@ -340,8 +356,13 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
           kind: 'gold' as const,
           run: () => onJoinTable(entry.id),
         };
-      if (status === 'closed' || status === 'deleted')
-        return { label: game ? 'Game Closed' : 'Table Closed', kind: 'disabled' as const };
+      /* `entry.status` is 'closed' for a disabled must-move game too
+         (cashEntry reads cash_games.enabled), not only for a closed table. */
+      if (status === 'closed' || status === 'deleted' || entry.status === 'closed')
+        return {
+          label: game ? `Game ${entry.statusLabel}` : `Table ${entry.statusLabel}`,
+          kind: 'disabled' as const,
+        };
       if (status === 'paused') return { label: 'Game Paused', kind: 'disabled' as const };
       const full = entry.capacity > 0 && entry.players >= entry.capacity;
       if (full && waitlisted)
@@ -636,6 +657,7 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
         players={entry.players}
         capacity={entry.capacity}
         bareCount={entry.kind === 'mtt'}
+        gameTables={entry.game ? entry.game.tables : null}
       />
       {cta.link && !busy ? (
         <Link
@@ -743,15 +765,32 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
                       {cashMoney(minBuy)} - {cashMoney(maxBuy)}
                     </dd>
                   </div>
-                  <div>
-                    <dt>Players</dt>
-                    <dd className="glp__mono">
-                      {/* `|| '-'` to match the tournament row below: a table
-                          with no seat count rendered "3 / 0", which reads as a
-                          zero-seat table rather than an unknown one. */}
-                      {entry.players} / {entry.capacity || '-'}
-                    </dd>
-                  </div>
+                  {entry.game ? (
+                    <>
+                      {/* R10: a must-move game counts its players like a
+                          tournament, with no denominator, and says how many
+                          tables are open beside it. "57 / -" was a table's
+                          shape printed on a game. */}
+                      <div>
+                        <dt>Players</dt>
+                        <dd className="glp__mono">{entry.players.toLocaleString()}</dd>
+                      </div>
+                      <div>
+                        <dt>Tables</dt>
+                        <dd className="glp__mono">{entry.game.tables.toLocaleString()}</dd>
+                      </div>
+                    </>
+                  ) : (
+                    <div>
+                      <dt>Players</dt>
+                      <dd className="glp__mono">
+                        {/* `|| '-'` to match the tournament row below: a table
+                            with no seat count rendered "3 / 0", which reads as a
+                            zero-seat table rather than an unknown one. */}
+                        {entry.players} / {entry.capacity || '-'}
+                      </dd>
+                    </div>
+                  )}
                   {/* COLUMNS, not the settings blob. `settings` is {} on every
                       live cash table, so this branch never fired while the CARD
                       showed an ANTE medallion read off the column — the row and

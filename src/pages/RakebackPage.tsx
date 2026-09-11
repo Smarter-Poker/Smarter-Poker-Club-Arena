@@ -13,11 +13,13 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGri
 import './RakebackPage.css';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import PageSkeleton from '../components/common/PageSkeleton';
-import { retryAsync } from '../utils/retryAsync';
+import { retryFetch } from '../utils/retryFetch';
 import { formatDateShort as formatDate } from '../utils/format';
 import { reportError } from '../utils/errorReporter';
 import { ErrorState } from '../components/common/EmptyState';
 import RewardsSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
+import { getRakebackReadiness } from '../utils/rakebackReadiness';
+import { readRakebackClaimResult } from '../utils/rakebackClaimResult';
 
 interface RakebackPeriod {
   id: string;
@@ -25,9 +27,18 @@ interface RakebackPeriod {
   period_start: string;
   period_end: string;
   rake_generated: number;
-  rakeback_rate: number;
+  rakeback_rate: number | null;
   rakeback_earned: number;
   status: 'pending' | 'paid';
+}
+
+const PERIOD_COLUMNS =
+  'id, user_id, club_id, period_start, period_end, rake_generated, rakeback_rate, rakeback_earned, status';
+
+function rateLabel(rate: number | null | undefined) {
+  return typeof rate === 'number' && Number.isFinite(rate)
+    ? `${(rate * 100).toFixed(1)}%`
+    : 'Unavailable';
 }
 
 type ClaimStatus = 'idle' | 'claiming' | 'success' | 'error';
@@ -38,67 +49,119 @@ export default function RakebackPage() {
   const { user } = useAuthUser();
   const toast = useToast();
 
-  const [periods, setPeriods] = useState<RakebackPeriod[]>([]);
+  const [loadedPeriods, setPeriods] = useState<RakebackPeriod[]>([]);
+  const [readyPeriod, setReadyPeriod] = useState<RakebackPeriod | null>(null);
+  const [dataEpoch, setDataEpoch] = useState<number | null>(null);
+  const [readinessAt, setReadinessAt] = useState(Date.now);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [totalEarned, setTotalEarned] = useState(0);
-  const [currentRate, setCurrentRate] = useState(0);
   const [claimStatus, setClaimStatus] = useState<ClaimStatus>('idle');
   const [claimMessage, setClaimMessage] = useState('');
   const [visiblePeriodRows, setVisiblePeriodRows] = useState(new Set<number>());
   const claimTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const abortControllerRef = useRef<AbortController | null>(null);
+  const claimAttemptRef = useRef<{ current: boolean } | null>(null);
+  const mountedRef = useRef(true);
+  const scopeRef = useRef({ userId: user?.id, epoch: 0 });
+  // Invalidate old continuations immediately when the rendered account changes.
+  if (scopeRef.current.userId !== user?.id) {
+    scopeRef.current = { userId: user?.id, epoch: scopeRef.current.epoch + 1 };
+    if (claimAttemptRef.current) claimAttemptRef.current.current = false;
+  }
+  const loadRakebackDataRef = useRef<() => void>(() => {});
+  const loadingRef = useRef(false);
+  const reloadQueuedRef = useRef(false);
+  const ownsData = dataEpoch === scopeRef.current.epoch && !!user?.id;
+  const periods = useMemo(() => (ownsData ? loadedPeriods : []), [ownsData, loadedPeriods]);
+  const discoveredPeriods = useMemo(
+    () => (ownsData && readyPeriod ? [readyPeriod] : []),
+    [ownsData, readyPeriod]
+  );
+  const totalEarned = periods.reduce((sum, p) => sum + (Number(p.rakeback_earned) || 0), 0);
+  const currentRate = periods[0]?.rakeback_rate;
 
   useEffect(() => {
+    mountedRef.current = true;
     return () => {
+      mountedRef.current = false;
+      scopeRef.current.epoch += 1;
+      reloadQueuedRef.current = false;
+      if (claimAttemptRef.current) claimAttemptRef.current.current = false;
       if (claimTimerRef.current) clearTimeout(claimTimerRef.current);
-      if (abortControllerRef.current) abortControllerRef.current.abort();
     };
   }, []);
 
-  // Refs to avoid stale closures
-  const loadRakebackDataRef = useRef<() => void>(() => {});
-
-  const loadingRef = useRef(false);
-
-  const loadRakebackData = async (getIsMounted?: () => boolean) => {
-    if (!user?.id) return;
-    if (loadingRef.current) return;
+  const loadRakebackData = async () => {
+    const { userId, epoch } = scopeRef.current;
+    if (!userId || !mountedRef.current) return;
+    if (loadingRef.current) {
+      reloadQueuedRef.current = true;
+      return;
+    }
+    const ownsRequest = () => mountedRef.current && scopeRef.current.epoch === epoch;
     loadingRef.current = true;
-    if (!getIsMounted || getIsMounted()) setLoading(true);
-    if (!getIsMounted || getIsMounted()) setLoadError(null);
+    setLoading(true);
+    setLoadError(null);
     try {
-      const { data, error } = await supabase
-        .from('rakeback_periods')
-        .select(
-          'id, user_id, club_id, period_start, period_end, rake_generated, rakeback_rate, rakeback_earned, status'
-        )
-        .eq('user_id', user?.id)
-        .order('period_start', { ascending: false })
-        .limit(12);
-
-      if (getIsMounted && !getIsMounted()) return;
-      if (error) throw error;
-      setPeriods(data || []);
-      setTotalEarned((data || []).reduce((sum, p) => sum + (p.rakeback_earned || 0), 0));
-      if (data && data.length > 0) {
-        setCurrentRate(data[0].rakeback_rate || 0);
-      }
+      const todayUtc = new Date().toISOString().slice(0, 10);
+      const [history, eligible] = await Promise.all([
+        supabase
+          .from('rakeback_periods')
+          .select(PERIOD_COLUMNS)
+          .eq('user_id', userId)
+          .order('period_start', { ascending: false })
+          .limit(12),
+        supabase
+          .from('rakeback_periods')
+          .select(PERIOD_COLUMNS)
+          .eq('user_id', userId)
+          .eq('status', 'pending')
+          .gt('rakeback_earned', 0)
+          .lt('period_end', todayUtc)
+          .not('club_id', 'is', null)
+          .order('period_start', { ascending: false })
+          .limit(1),
+      ]);
+      if (!ownsRequest()) return;
+      if (history.error) throw history.error;
+      if (eligible.error) throw eligible.error;
+      setPeriods(history.data || []);
+      setReadyPeriod(eligible.data?.[0] || null);
+      setDataEpoch(epoch);
+      setReadinessAt(Date.now());
     } catch (error) {
-      reportError(error, 'RakebackPage.Failed_to_load_rakeback');
-      if (!getIsMounted || getIsMounted()) {
-        setLoadError('Rakeback history could not be loaded. Your balance has not been changed.');
+      if (ownsRequest() && !reloadQueuedRef.current) {
+        reportError(error, 'RakebackPage.Failed_to_load_rakeback');
+        setLoadError('Rakeback Data Could Not Be Refreshed. Please Try Again.');
+        toast.error('Failed To Load Rakeback Data.');
       }
-      if (!getIsMounted || getIsMounted()) toast.error('Failed to load rakeback data.');
     } finally {
       loadingRef.current = false;
-      if (!getIsMounted || getIsMounted()) setLoading(false);
+      if (reloadQueuedRef.current && mountedRef.current && scopeRef.current.userId) {
+        reloadQueuedRef.current = false;
+        loadRakebackDataRef.current();
+      } else if (ownsRequest()) {
+        setLoading(false);
+      }
     }
   };
+  loadRakebackDataRef.current = loadRakebackData;
 
-  // Store ref for callback use
   useEffect(() => {
-    loadRakebackDataRef.current = loadRakebackData;
+    setPeriods([]);
+    setReadyPeriod(null);
+    setDataEpoch(null);
+    setLoadError(null);
+    setClaimStatus('idle');
+    setClaimMessage('');
+    if (claimTimerRef.current) clearTimeout(claimTimerRef.current);
+    claimTimerRef.current = null;
+    claimAttemptRef.current = null;
+    setReadinessAt(Date.now());
+    if (user?.id) loadRakebackDataRef.current();
+    else {
+      reloadQueuedRef.current = false;
+      setLoading(false);
+    }
   }, [user?.id]);
 
   // Real-time updates when rakeback periods change
@@ -160,17 +223,6 @@ export default function RakebackPage() {
     return () => timers.forEach((t) => clearTimeout(t));
   }, [periods.length]);
 
-  // Initial load
-  useEffect(() => {
-    let isMounted = true;
-    if (user?.id) {
-      loadRakebackData(() => isMounted);
-    }
-    return () => {
-      isMounted = false;
-    };
-  }, [user?.id]);
-
   // Chart data (reversed for chronological order)
   const chartData = useMemo(() => {
     return [...periods]
@@ -183,14 +235,51 @@ export default function RakebackPage() {
       }));
   }, [periods]);
 
-  const pendingAmount = periods
-    .filter((p) => p.status === 'pending')
-    .reduce((sum, p) => sum + p.rakeback_earned, 0);
+  const recentReadiness = useMemo(
+    () => getRakebackReadiness(periods, readinessAt),
+    [periods, readinessAt]
+  );
+  const { readyAmount, targetClubId } = useMemo(
+    () => getRakebackReadiness(discoveredPeriods, readinessAt),
+    [discoveredPeriods, readinessAt]
+  );
+  const pendingAmount = recentReadiness.readyAmount + recentReadiness.pendingAmount;
+  const readyPeriodIds = recentReadiness.readyPeriodIds;
+
+  // Always rediscover at UTC midnight, including eligible clubs outside the recent history.
+  useEffect(() => {
+    if (!user?.id) return;
+    const now = new Date();
+    const nextMidnight = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1);
+    const timer = setTimeout(
+      () => {
+        setReadinessAt(Date.now());
+        loadRakebackDataRef.current();
+      },
+      Math.max(0, nextMidnight - Date.now())
+    );
+    return () => clearTimeout(timer);
+  }, [readinessAt, user?.id]);
 
   // ── Claim rakeback handler ──
   const handleClaimRakeback = async () => {
+    if (!ownsData || loading || loadError || claimAttemptRef.current?.current) return;
+    const epoch = scopeRef.current.epoch;
+    const initiatingUserId = user?.id;
+    const attempt = { current: true };
+    claimAttemptRef.current = attempt;
+    const ownsAttempt = () =>
+      mountedRef.current &&
+      attempt.current &&
+      scopeRef.current.epoch === epoch &&
+      scopeRef.current.userId === initiatingUserId;
+    if (claimTimerRef.current) {
+      clearTimeout(claimTimerRef.current);
+      claimTimerRef.current = null;
+    }
     setClaimStatus('claiming');
     setClaimMessage('');
+    let unconfirmedTransport = false;
     try {
       if (!user?.id) {
         setClaimStatus('error');
@@ -205,48 +294,83 @@ export default function RakebackPage() {
       // the old client-side "mark paid, then credit with a client-supplied amount" flow,
       // which could not write the wallet under RLS (leaving periods flipped to paid with
       // no chips delivered) and trusted a client-supplied amount.
-      const targetClubId = periods.find((p) => p.status === 'pending')?.club_id ?? null;
-
-      const { data: claimRes, error: claimErr } = await retryAsync(
-        () => supabase.rpc('fn_claim_rakeback', { p_club_id: targetClubId }),
-        2
-      );
-      if (claimErr) throw new Error(claimErr.message);
-
-      const claimed = (claimRes ?? {}) as { total_payout?: number; periods_claimed?: number };
-      const claimedTotal = Number(claimed.total_payout ?? 0);
-      const claimedCount = Number(claimed.periods_claimed ?? 0);
-
-      if (claimedTotal <= 0 && claimedCount === 0) {
+      // Recheck the current clock at the click boundary and always scope the legacy RPC.
+      const targetClubId = getRakebackReadiness(discoveredPeriods, Date.now()).targetClubId;
+      if (!targetClubId) {
         setClaimStatus('error');
-        setClaimMessage('No rakeback to claim.');
-        loadRakebackData();
+        setClaimMessage('No Closed Earning Periods Are Ready To Claim.');
+        setReadinessAt(Date.now());
         return;
       }
 
+      const { data: claimRes, error: claimErr } = await retryFetch(
+        async () => {
+          if (!ownsAttempt()) throw new DOMException('Claim Attempt Ended', 'AbortError');
+          try {
+            const result = await supabase.rpc('fn_claim_rakeback', { p_club_id: targetClubId });
+            if (result.error && !result.error.code) unconfirmedTransport = true;
+            return result;
+          } catch (error) {
+            unconfirmedTransport = true;
+            throw error;
+          }
+        },
+        { maxRetries: 2, isMountedRef: attempt }
+      );
+      if (!ownsAttempt()) return;
+      if (claimErr) throw new Error(claimErr.message);
+
+      const claimed = readRakebackClaimResult(claimRes);
+      if (claimed.kind === 'refused') throw new Error(claimed.message);
+      if (claimed.kind === 'unconfirmed') {
+        // A malformed reply does not establish whether money moved. Refresh authoritative reads.
+        void loadRakebackData();
+        masterBus.emit('WALLET_REFRESHED', { walletType: 'PLAYER', available: 0, total: 0 });
+        throw new Error(
+          'Claim Result Could Not Be Confirmed. Please Check Your Refreshed Balances.'
+        );
+      }
+      if (claimed.kind === 'unpaid') {
+        setClaimStatus('error');
+        setClaimMessage('No Additional Payout Was Confirmed. Pending Periods May Be Deferred.');
+        void loadRakebackData();
+        masterBus.emit('WALLET_REFRESHED', { walletType: 'PLAYER', available: 0, total: 0 });
+        return;
+      }
+
+      const claimedTotal = claimed.amount;
       setClaimStatus('success');
       setClaimMessage(`Claimed ${claimedTotal.toLocaleString()} chips!`);
       // Reload data to reflect changed status
       loadRakebackData();
-      // Notify other pages that wallet balance changed
+      // Current WALLET_REFRESHED subscribers refetch; this RPC does not return wallet balances.
       masterBus.emit('WALLET_REFRESHED', { walletType: 'PLAYER', available: 0, total: 0 });
       masterBus.emit('RAKEBACK_CLAIMED', {
         clubId: targetClubId ?? '',
         amount: claimedTotal,
-        userId: user.id,
+        userId: initiatingUserId!,
       });
       if (claimTimerRef.current) clearTimeout(claimTimerRef.current);
       claimTimerRef.current = setTimeout(() => {
+        if (!mountedRef.current || scopeRef.current.epoch !== epoch) return;
         setClaimStatus('idle');
         setClaimMessage('');
         claimTimerRef.current = null;
       }, 3000);
     } catch (err: any) {
-      if (err.name === 'AbortError') return; // Ignore voluntary aborts
+      if (!ownsAttempt() || err.name === 'AbortError') return;
       setClaimStatus('error');
-      const msg = err.message || 'Claim failed. Please try again.';
+      if (unconfirmedTransport) {
+        void loadRakebackData();
+        masterBus.emit('WALLET_REFRESHED', { walletType: 'PLAYER', available: 0, total: 0 });
+      }
+      const msg = unconfirmedTransport
+        ? 'Claim Result Could Not Be Confirmed. Please Check Your Refreshed Balances.'
+        : err.message || 'Claim Failed. Please Try Again.';
       setClaimMessage(msg);
       toast.error(msg);
+    } finally {
+      attempt.current = false;
     }
   };
 
@@ -258,41 +382,38 @@ export default function RakebackPage() {
         description="See The Value Returning From Completed Play, Inspect Every Earning Period, And Claim Eligible Funds Through The Existing Settlement Workflow."
         art="diamonds"
         status="RAKEBACK ENGINE // LIVE"
+        crest="flat"
         metrics={[
-          { label: 'Total Earned', value: totalEarned.toLocaleString(), tone: 'live' },
-          { label: 'Current Rate', value: `${(currentRate * 100).toFixed(1)}%` },
-          { label: 'Ready To Claim', value: pendingAmount.toLocaleString(), tone: 'attention' },
+          { label: 'Recent Earnings', value: totalEarned.toLocaleString(), tone: 'live' },
+          { label: 'Latest Period Rate', value: rateLabel(currentRate) },
+          { label: 'Next Ready Period', value: readyAmount.toLocaleString(), tone: 'attention' },
         ]}
       />
-      {/* Promotional Banner — WPT-style */}
-      {currentRate > 0 && (
-        <div className="rakeback-promo-banner">
-          <h3>You're Earning {(currentRate * 100).toFixed(0)}% Rakeback</h3>
-          <p>Every Hand You Play Earns You Cash Back. Keep Playing To Increase Your Rate!</p>
-        </div>
-      )}
-
       <div className="rakeback-summary">
         <div className="summary-card main">
           <span className="card-icon"></span>
           <div className="card-content">
             <span className="card-value">{totalEarned.toLocaleString()}</span>
-            <span className="card-label">Total Earned</span>
+            <span className="card-label">Recent Earnings</span>
           </div>
         </div>
         <div className="summary-row">
           <div className="summary-card">
-            <span className="card-value">{(currentRate * 100).toFixed(1)}%</span>
-            <span className="card-label">Your Rate</span>
+            <span className="card-value">{rateLabel(currentRate)}</span>
+            <span className="card-label">Latest Period Rate</span>
           </div>
           <div className="summary-card pending">
-            <span className="card-value">{pendingAmount.toLocaleString()}</span>
-            <span className="card-label">Pending</span>
-            {pendingAmount > 0 && (
+            <span className="card-value">{readyAmount.toLocaleString()}</span>
+            <span className="card-label">Next Ready Period</span>
+            <p className="card-label">Recent Pending Earnings: {pendingAmount.toLocaleString()}</p>
+            <p className="card-label">
+              Estimate For One Period. A Club Claim May Include More Periods.
+            </p>
+            {targetClubId && (
               <button
                 className="claim-btn"
                 onClick={() => handleClaimRakeback()}
-                disabled={claimStatus === 'claiming'}
+                disabled={!ownsData || loading || !!loadError || claimStatus === 'claiming'}
                 style={{
                   marginTop: '8px',
                   padding: '6px 16px',
@@ -314,7 +435,7 @@ export default function RakebackPage() {
                   ? 'Claiming...'
                   : claimStatus === 'success'
                     ? '✓ Claimed!'
-                    : 'Claim All'}
+                    : 'Claim Rakeback'}
               </button>
             )}
           </div>
@@ -344,7 +465,7 @@ export default function RakebackPage() {
         </div>
       )}
 
-      {claimMessage && (
+      {ownsData && claimMessage && (
         <div
           style={{
             padding: '10px 16px',
@@ -369,12 +490,13 @@ export default function RakebackPage() {
         <h3>How Rakeback Works</h3>
         <p>
           You Earn Back A Percentage Of The Rake You Generate At The Tables. Your Rate Increases As
-          You Play More And Move Up VIP Levels.
+          You Play More And Move Up VIP Levels. Earning Periods Close At 00:00 UTC After Their End
+          Date. Claims Are Processed One Club At A Time, And The Server Confirms The Payout.
         </p>
       </div>
 
       <div className="rakeback-history">
-        <h3>History</h3>
+        <h3>Recent History</h3>
         {loading ? (
           <div className="loading-state">
             <PageSkeleton variant="financial" />
@@ -406,16 +528,18 @@ export default function RakebackPage() {
                   <span className="rake-generated">
                     Rake: {(period.rake_generated || 0).toLocaleString()}
                   </span>
-                  <span className="rakeback-rate">
-                    {((period.rakeback_rate || 0) * 100).toFixed(1)}%
-                  </span>
+                  <span className="rakeback-rate">{rateLabel(period.rakeback_rate)}</span>
                 </div>
                 <div className="period-earned">
                   <span className={`amount ${period.status}`}>
                     {(period.rakeback_earned || 0).toLocaleString()}
                   </span>
                   <span className={`status ${period.status}`}>
-                    {period.status === 'paid' ? ' Paid' : ' Pending'}
+                    {period.status === 'paid'
+                      ? ' Paid'
+                      : readyPeriodIds.has(period.id)
+                        ? ' Ready To Claim'
+                        : ' Pending'}
                   </span>
                 </div>
               </div>

@@ -12,16 +12,83 @@ import type { Card } from '../../types.js';
 import type { EquityOptions, InsuranceEquityComponents } from './equityWorker.js';
 import { hashSeed } from './SeededRandom.js';
 
+/**
+ * ── A QUEUE WAIT IS NOT A STUCK WORKER, AND A SPENT POOL IS NOT A DEAD ONE (2026-09-11) ──
+ *
+ * At 06:57-07:00 UTC this pool went 'failed' in production and stayed there:
+ * live all-in equity and all-in insurance pricing (real money) were gone for
+ * the rest of the process's life. An engine restart had just thawed 955
+ * tables into a tournament catch-up surge - 1,927 tournament hands in two
+ * minutes, about 15x normal - and /health settled on
+ *
+ *   {"phase":"failed","configuredWorkers":1,"readyWorkers":0,
+ *    "lastError":"Equity worker operation timed out after 2500ms"}
+ *
+ * with 5,267 EquityWorkerUnavailableError and 1,628 EquityWorkerTimeoutError
+ * in the first three minutes and ~160 failures a minute from then on. The
+ * previous five-hour process had 38 timeouts and never failed.
+ *
+ * Nothing was wrong with the worker. The host has three cores, so the pool
+ * is ONE worker (availableParallelism() - 2). Each job's only timer was armed
+ * at ENQUEUE, so its wait in the queue was charged against it. In a burst the
+ * job at the head reached the worker with a few milliseconds left and "timed
+ * out" while ACTIVE; the timeout handler took that for a wedged worker,
+ * terminated the healthy, busy worker and scheduled a respawn; the
+ * replacement took the next aged job off the same queue and timed out the
+ * same way. Ten respawns without a completion spent the respawn budget, which
+ * only a completion refills, scheduleRespawn wrote 'failed', and nothing ever
+ * spawned a worker again.
+ *
+ * Fail-closed is unchanged: an operation that cannot be answered in time is
+ * rejected, and the event loop never computes it instead. What changed:
+ *
+ * TWO BUDGETS, EACH MEASURED WHERE IT MEANS SOMETHING.
+ *   caller     jobTimeoutMs from enqueue. It bounds queue plus compute latency.
+ *              If it expires in the queue, only that queued job is shed. If it
+ *              expires after dispatch, the caller fails closed but the worker
+ *              keeps computing and can prove itself healthy with a late valid
+ *              answer. Neither path spends respawn capacity.
+ *   hard hang  hardJobTimeoutMs from dispatch. Only this deadline can retire a
+ *              worker, after one poll turn of grace so a result already waiting
+ *              on the port is read before the worker is condemned.
+ *   A caller waits at most jobTimeoutMs. Insurance still goes ahead of cosmetic
+ *   equity in the queue, exactly as before.
+ *
+ * A SPENT BUDGET STARTS A COOLDOWN, NOT A FUNERAL. When respawns run out the
+ *   pool reports 'failed' (no workers left) or 'degraded' (some left). With
+ *   none left it refuses new work at once and fails what is queued; with some
+ *   left they keep serving. After the cooldown it refills its budget and
+ *   spawns again. The cooldown starts at 30 s and doubles up to 5 minutes
+ *   while recoveries end without a completion; the first completion resets
+ *   it. status().nextRecoveryAt and recoveries put it on /health. A
+ *   replacement worker must author READY within readyTimeoutMs or it is
+ *   retired too, so a hung boot cannot hold a recovery hostage either.
+ */
 const DEFAULT_JOB_TIMEOUT_MS = 2_500;
+const DEFAULT_HARD_JOB_TIMEOUT_MS = 15_000;
 const DEFAULT_READY_TIMEOUT_MS = 10_000;
 const RESPAWN_DELAY_MS = 250;
 const DEFAULT_RESPAWN_BUDGET = 10;
+const DEFAULT_RECOVERY_COOLDOWN_MS = 30_000;
+const DEFAULT_MAX_RECOVERY_COOLDOWN_MS = 300_000;
 
 export type EquityWorkerPoolPhase =
-  'idle' | 'starting' | 'ready' | 'degraded' | 'failed' | 'stopping' | 'stopped';
+  | 'idle'
+  | 'starting'
+  | 'ready'
+  | 'degraded'
+  | 'failed'
+  | 'stopping'
+  | 'stopped';
 
 export interface EquityWorkerPoolStatus {
   phase: EquityWorkerPoolPhase;
+  /** Dealer routing may survive only an immediate, bounded replacement attempt. */
+  routingReady: boolean;
+  /** New calculator work can be accepted only while at least one worker is ready. */
+  acceptingWork: boolean;
+  /** A respawn delay or replacement READY deadline is active; cooldown is excluded. */
+  recoveryInFlight: boolean;
   configuredWorkers: number;
   readyWorkers: number;
   busyWorkers: number;
@@ -29,6 +96,21 @@ export interface EquityWorkerPoolStatus {
   oldestQueuedAgeMs: number;
   lastCompletionAgeMs: number | null;
   lastError: string | null;
+  /** Operations no worker started inside the caller SLA. No worker was touched. */
+  queueExpirations: number;
+  /** Operations that crossed the hard execution deadline; each retired its worker. */
+  executionTimeouts: number;
+  /** Respawns left before the pool has to cool down. Every completion refills it. */
+  respawnBudgetRemaining: number;
+  /** Epoch ms at which a spent pool refills its budget and spawns again; null if none pending. */
+  nextRecoveryAt: number | null;
+  /** Cooldown recoveries this pool has started. */
+  recoveries: number;
+}
+
+/** Optional calculator recovery does not make an otherwise healthy dealer unroutable. */
+export function equityWorkerPoolPreservesDealerLiveness(status: EquityWorkerPoolStatus): boolean {
+  return status.routingReady;
 }
 
 export class EquityWorkerUnavailableError extends Error {
@@ -45,10 +127,22 @@ export class EquityWorkerPoolAbortedError extends EquityWorkerUnavailableError {
   }
 }
 
+/** Where an operation ran out of time: waiting for a worker, or on one. */
+export type EquityWorkerTimeoutStage = 'queue' | 'execution';
+
 export class EquityWorkerTimeoutError extends EquityWorkerUnavailableError {
-  constructor(timeoutMs: number) {
-    super(`Equity worker operation timed out after ${timeoutMs}ms`);
+  readonly stage: EquityWorkerTimeoutStage;
+
+  constructor(timeoutMs: number, stage: EquityWorkerTimeoutStage = 'execution') {
+    // Both messages keep the pre-2026-09-11 prefix, so a search for the old
+    // text still finds them; the suffix says which budget ran out.
+    super(
+      stage === 'queue'
+        ? `Equity worker operation timed out after ${timeoutMs}ms waiting in the queue; no worker was touched`
+        : `Equity worker operation timed out after ${timeoutMs}ms before its caller deadline; the active worker was preserved`
+    );
     this.name = 'EquityWorkerTimeoutError';
+    this.stage = stage;
   }
 }
 
@@ -86,7 +180,12 @@ interface Job<T = any> {
   resolve: (value: T) => void;
   reject: (error: Error) => void;
   validate: (message: Record<string, unknown>) => T;
-  timer?: ReturnType<typeof setTimeout>;
+  /** Total caller SLA: armed at enqueue and never allowed to retire a worker. */
+  softTimer?: ReturnType<typeof setTimeout>;
+  /** Execution-only hard-hang deadline armed at dispatch. */
+  hardTimer?: ReturnType<typeof setTimeout>;
+  /** One poll turn for an answer already waiting when the hard deadline ends. */
+  hardGrace?: ReturnType<typeof setImmediate>;
   settled: boolean;
 }
 
@@ -95,6 +194,8 @@ interface WorkerSlot {
   ready: boolean;
   down: boolean;
   job?: Job;
+  /** READY deadline of a replacement worker. ready() bounds the first boot instead. */
+  readyTimer?: ReturnType<typeof setTimeout>;
 }
 
 export interface EquityWorkerPoolOptions {
@@ -102,8 +203,15 @@ export interface EquityWorkerPoolOptions {
   disabled?: boolean;
   workerFactory?: () => WorkerLike;
   readyTimeoutMs?: number;
+  /** Caller-facing total queue plus compute SLA. Missing it never kills a worker. */
   jobTimeoutMs?: number;
+  /** Dispatch-only deadline that identifies a genuinely wedged worker. */
+  hardJobTimeoutMs?: number;
   respawnBudget?: number;
+  /** First cooldown once the respawn budget is spent; doubles per recovery without a completion. */
+  recoveryCooldownMs?: number;
+  /** Ceiling of the doubling cooldown. */
+  maxRecoveryCooldownMs?: number;
 }
 
 export class EquityWorkerPool {
@@ -112,6 +220,7 @@ export class EquityWorkerPool {
   private readonly workerFactory: () => WorkerLike;
   private readonly readyTimeoutMs: number;
   private readonly jobTimeoutMs: number;
+  private readonly hardJobTimeoutMs: number;
   private readonly maxRespawnBudget: number;
   private respawnBudget: number;
   private phase: EquityWorkerPoolPhase = 'idle';
@@ -127,6 +236,15 @@ export class EquityWorkerPool {
   private resolveReadiness: ((status: EquityWorkerPoolStatus) => void) | null = null;
   private rejectReadiness: ((error: Error) => void) | null = null;
   private readinessTimer?: ReturnType<typeof setTimeout>;
+  private readonly respawnTimers = new Set<ReturnType<typeof setTimeout>>();
+  private readonly baseRecoveryCooldownMs: number;
+  private readonly maxRecoveryCooldownMs: number;
+  private recoveryCooldownMs: number;
+  private recoveryTimer?: ReturnType<typeof setTimeout>;
+  private nextRecoveryAt: number | null = null;
+  private recoveries = 0;
+  private queueExpirations = 0;
+  private executionTimeouts = 0;
 
   constructor(options: EquityWorkerPoolOptions = {}) {
     // Reserve one execution context for the authoritative event loop and one
@@ -145,16 +263,42 @@ export class EquityWorkerPool {
     this.workerFactory = options.workerFactory ?? (() => new Worker(workerUrl));
     this.readyTimeoutMs = Math.max(1, options.readyTimeoutMs ?? DEFAULT_READY_TIMEOUT_MS);
     this.jobTimeoutMs = Math.max(1, options.jobTimeoutMs ?? DEFAULT_JOB_TIMEOUT_MS);
+    this.hardJobTimeoutMs = Math.max(
+      this.jobTimeoutMs + 1,
+      options.hardJobTimeoutMs ?? DEFAULT_HARD_JOB_TIMEOUT_MS
+    );
     this.maxRespawnBudget = Math.max(0, options.respawnBudget ?? DEFAULT_RESPAWN_BUDGET);
     this.respawnBudget = this.maxRespawnBudget;
+    this.baseRecoveryCooldownMs = Math.max(
+      1,
+      options.recoveryCooldownMs ?? DEFAULT_RECOVERY_COOLDOWN_MS
+    );
+    this.maxRecoveryCooldownMs = Math.max(
+      this.baseRecoveryCooldownMs,
+      options.maxRecoveryCooldownMs ?? DEFAULT_MAX_RECOVERY_COOLDOWN_MS
+    );
+    this.recoveryCooldownMs = this.baseRecoveryCooldownMs;
   }
 
   status(): EquityWorkerPoolStatus {
     const now = Date.now();
-    const readyWorkers = [...this.slots].filter((slot) => slot.ready && !slot.down).length;
+    const readyWorkers = this.readyWorkerCount();
     const busyWorkers = [...this.slots].filter((slot) => slot.job && !slot.down).length;
+    const recoveryInFlight = this.boundedRecoveryInFlight();
+    const routingReady =
+      this.hasReachedReady &&
+      this.phase !== 'stopping' &&
+      this.phase !== 'stopped' &&
+      (readyWorkers === this.size || recoveryInFlight);
+    const acceptingWork =
+      this.hasReachedReady &&
+      readyWorkers > 0 &&
+      (this.phase === 'ready' || this.phase === 'degraded');
     return {
       phase: this.phase,
+      routingReady,
+      acceptingWork,
+      recoveryInFlight,
       configuredWorkers: this.size,
       readyWorkers,
       busyWorkers,
@@ -166,12 +310,16 @@ export class EquityWorkerPool {
       lastCompletionAgeMs:
         this.lastCompletedAt === null ? null : Math.max(0, now - this.lastCompletedAt),
       lastError: this.lastError,
+      queueExpirations: this.queueExpirations,
+      executionTimeouts: this.executionTimeouts,
+      respawnBudgetRemaining: this.respawnBudget,
+      nextRecoveryAt: this.nextRecoveryAt,
+      recoveries: this.recoveries,
     };
   }
 
   isAvailable(): boolean {
-    const status = this.status();
-    return (status.phase === 'ready' || status.phase === 'degraded') && status.readyWorkers > 0;
+    return this.status().acceptingWork;
   }
 
   /** Start all configured workers and wait for worker-authored READY messages. */
@@ -282,7 +430,7 @@ export class EquityWorkerPool {
     payload: EquityPayload | InsurancePayload,
     validate: (message: Record<string, unknown>) => T
   ): Promise<T> {
-    if (this.phase !== 'ready' && this.phase !== 'degraded') {
+    if (!this.status().acceptingWork) {
       return Promise.reject(new EquityWorkerUnavailableError());
     }
     return new Promise<T>((resolve, reject) => {
@@ -295,8 +443,11 @@ export class EquityWorkerPool {
         validate,
         settled: false,
       };
-      job.timer = setTimeout(() => this.onJobTimeout(job), this.jobTimeoutMs);
-      job.timer.unref?.();
+      // One caller SLA covers queue plus computation. Its expiry can reject the
+      // caller but can never retire an active worker; only the dispatch-scoped
+      // hard deadline below may do that.
+      job.softTimer = setTimeout(() => this.onSoftDeadline(job), this.jobTimeoutMs);
+      job.softTimer.unref?.();
       if (payload.type === 'INSURANCE_ALL') {
         // Real-money pricing outranks optional percentage displays. Preserve
         // FIFO within each class; never preempt an operation already running.
@@ -326,6 +477,25 @@ export class EquityWorkerPool {
     worker.on('error', (error) => this.onWorkerDown(slot, error));
     worker.on('exit', (code) => this.onWorkerDown(slot, new Error(`Equity worker exited ${code}`)));
     worker.unref?.();
+    // ready() bounds the first boot and fails the engine's start if it hangs.
+    // A replacement (respawn or recovery) has no such caller, so it carries
+    // its own READY deadline: a boot that hangs is retired and retried through
+    // the same budget and cooldown instead of holding its slot forever.
+    if (this.phase !== 'starting') {
+      slot.readyTimer = setTimeout(() => this.onReadyDeadline(slot), this.readyTimeoutMs);
+      slot.readyTimer.unref?.();
+    }
+  }
+
+  private onReadyDeadline(slot: WorkerSlot): void {
+    slot.readyTimer = undefined;
+    if (slot.down || slot.ready) return;
+    this.retireWorker(
+      slot,
+      new EquityWorkerUnavailableError(
+        `Equity worker did not become ready within ${this.readyTimeoutMs}ms`
+      )
+    );
   }
 
   private onMessage(slot: WorkerSlot, rawMessage: unknown): void {
@@ -339,6 +509,8 @@ export class EquityWorkerPool {
         this.retireWorker(slot, new Error('Equity worker sent READY while a job was active'));
         return;
       }
+      if (slot.readyTimer) clearTimeout(slot.readyTimer);
+      slot.readyTimer = undefined;
       if (!slot.ready) {
         slot.ready = true;
         this.idle.push(slot);
@@ -362,6 +534,9 @@ export class EquityWorkerPool {
         this.resolveJob(job, job.validate(message));
         this.lastCompletedAt = Date.now();
         this.respawnBudget = this.maxRespawnBudget;
+        // A completion is the proof a recovery worked: the next spent budget
+        // cools down from the base again instead of the backed-off length.
+        this.recoveryCooldownMs = this.baseRecoveryCooldownMs;
       } catch (error) {
         this.rejectJob(job, new EquityWorkerUnavailableError(this.errorMessage(error)));
         this.retireWorker(slot, error);
@@ -372,23 +547,63 @@ export class EquityWorkerPool {
     this.pump();
   }
 
-  private onJobTimeout(job: Job): void {
+  /** The caller's latency SLA can shed work but is never evidence of a dead worker. */
+  private onSoftDeadline(job: Job): void {
+    if (job.softTimer) clearTimeout(job.softTimer);
+    job.softTimer = undefined;
     if (job.settled) return;
     const queueIndex = this.queue.indexOf(job);
-    if (queueIndex >= 0) this.queue.splice(queueIndex, 1);
-    const slot = [...this.slots].find((candidate) => candidate.job === job);
-    const error = new EquityWorkerTimeoutError(this.jobTimeoutMs);
-    this.lastError = error.message;
-    this.rejectJob(job, error);
-    if (slot) this.retireWorker(slot, error);
+    const stillQueued = queueIndex >= 0;
+    if (stillQueued) {
+      this.queue.splice(queueIndex, 1);
+      this.queueExpirations += 1;
+    }
+    this.rejectJob(
+      job,
+      new EquityWorkerTimeoutError(this.jobTimeoutMs, stillQueued ? 'queue' : 'execution'),
+      !stillQueued
+    );
+  }
+
+  /** A dispatched job crossed the hard execution deadline: the only stuck-worker signal. */
+  private onHardDeadline(slot: WorkerSlot, job: Job): void {
+    job.hardTimer = undefined;
+    if (slot.down || slot.job !== job) return;
+    // Timers run before the poll phase that delivers worker messages. After a
+    // long main-thread stall the answer may already be waiting on the port,
+    // and a worker that answered is not stuck. Look again after one poll turn
+    // (the same grace the live horse client gives its worker) and retire only
+    // a worker that is still silent.
+    job.hardGrace = setImmediate(() => {
+      job.hardGrace = undefined;
+      if (slot.down || slot.job !== job) return;
+      const error = new EquityWorkerUnavailableError(
+        `Equity worker exceeded hard execution deadline after ${this.hardJobTimeoutMs}ms`
+      );
+      this.executionTimeouts += 1;
+      this.lastError = error.message;
+      this.rejectJob(job, error);
+      this.retireWorker(slot, error);
+    });
+    job.hardGrace.unref?.();
   }
 
   private pump(): void {
     while (this.queue.length > 0 && this.idle.length > 0) {
+      // READY/results can run before overdue timer callbacks after a busy
+      // event loop. Enforce the queue deadline before dispatch, so an expired
+      // request cannot consume capacity intended for work still in budget.
+      const queued = this.queue[0];
+      if (Date.now() - queued.enqueuedAt >= this.jobTimeoutMs) {
+        this.onSoftDeadline(queued);
+        continue;
+      }
       const slot = this.idle.pop()!;
       if (slot.down || !slot.ready || slot.job) continue;
       const job = this.queue.shift()!;
       slot.job = job;
+      job.hardTimer = setTimeout(() => this.onHardDeadline(slot, job), this.hardJobTimeoutMs);
+      job.hardTimer.unref?.();
       try {
         slot.worker.postMessage({ id: job.id, ...job.payload });
       } catch (error) {
@@ -401,6 +616,8 @@ export class EquityWorkerPool {
   private retireWorker(slot: WorkerSlot, reason: unknown): void {
     if (slot.down) return;
     slot.down = true;
+    if (slot.readyTimer) clearTimeout(slot.readyTimer);
+    slot.readyTimer = undefined;
     this.lastError = this.errorMessage(reason);
     this.slots.delete(slot);
     const idleIndex = this.idle.indexOf(slot);
@@ -419,33 +636,60 @@ export class EquityWorkerPool {
   }
 
   private scheduleRespawn(): void {
-    if (
-      this.phase === 'stopping' ||
-      this.phase === 'stopped' ||
-      this.respawnBudget <= 0 ||
-      this.slots.size + this.pendingRespawns >= this.size
-    ) {
-      if (
-        this.hasReachedReady &&
-        this.respawnBudget <= 0 &&
-        this.slots.size === 0 &&
-        this.pendingRespawns === 0
-      ) {
+    if (this.phase === 'stopping' || this.phase === 'stopped') return;
+    if (this.slots.size + this.pendingRespawns >= this.size) return;
+    if (this.respawnBudget <= 0) {
+      if (this.hasReachedReady && this.slots.size === 0 && this.pendingRespawns === 0) {
         this.phase = 'failed';
+        // No worker can exist again before the cooldown ends, so nothing
+        // queued can be answered: fail it now rather than at its deadline.
+        const error = new EquityWorkerUnavailableError(
+          'Equity worker pool spent its respawn budget and is cooling down'
+        );
+        for (const job of this.queue.splice(0)) this.rejectJob(job, error);
       }
+      // Until 2026-09-11 this was the end of the pool: 'failed' with nothing
+      // left that would ever spawn a worker. Now it is a cooldown.
+      this.scheduleRecovery();
       return;
     }
     this.respawnBudget -= 1;
     this.pendingRespawns += 1;
     const timer = setTimeout(() => {
+      this.respawnTimers.delete(timer);
       this.pendingRespawns -= 1;
       this.spawnWorker();
     }, RESPAWN_DELAY_MS);
     timer.unref?.();
+    this.respawnTimers.add(timer);
+  }
+
+  private scheduleRecovery(): void {
+    if (this.recoveryTimer || this.phase === 'stopping' || this.phase === 'stopped') return;
+    const cooldownMs = this.recoveryCooldownMs;
+    this.nextRecoveryAt = Date.now() + cooldownMs;
+    this.recoveryTimer = setTimeout(() => this.recover(), cooldownMs);
+    this.recoveryTimer.unref?.();
+  }
+
+  /** The cooldown is over: refill the budget and bring the pool back to size. */
+  private recover(): void {
+    this.recoveryTimer = undefined;
+    this.nextRecoveryAt = null;
+    if (this.phase === 'stopping' || this.phase === 'stopped') return;
+    this.recoveries += 1;
+    // Back off while recoveries keep ending without a completion, so a worker
+    // that cannot survive costs at most one recovery (a spawn plus a refilled
+    // respawn budget) per 5 minutes instead of a crash loop. The first
+    // completion puts the cooldown back to its base.
+    this.recoveryCooldownMs = Math.min(this.maxRecoveryCooldownMs, this.recoveryCooldownMs * 2);
+    this.respawnBudget = this.maxRespawnBudget;
+    const missing = this.size - this.slots.size - this.pendingRespawns;
+    for (let i = 0; i < missing; i++) this.spawnWorker();
   }
 
   private updatePhaseAfterCapacityChange(): void {
-    const readyWorkers = [...this.slots].filter((slot) => slot.ready && !slot.down).length;
+    const readyWorkers = this.readyWorkerCount();
     if (readyWorkers === this.size) {
       this.hasReachedReady = true;
       this.phase = 'ready';
@@ -456,18 +700,44 @@ export class EquityWorkerPool {
     }
   }
 
+  private readyWorkerCount(): number {
+    return [...this.slots].filter((slot) => slot.ready && !slot.down).length;
+  }
+
+  /**
+   * Only an immediate respawn or a replacement bounded by its READY deadline
+   * preserves dealer routing. A spent-budget cooldown deliberately does not.
+   */
+  private boundedRecoveryInFlight(): boolean {
+    if (!this.hasReachedReady || this.nextRecoveryAt !== null) return false;
+    return (
+      this.pendingRespawns > 0 ||
+      [...this.slots].some((slot) => !slot.down && !slot.ready && slot.readyTimer !== undefined)
+    );
+  }
+
   private resolveJob<T>(job: Job<T>, result: T): void {
+    this.clearJobTimers(job);
     if (job.settled) return;
     job.settled = true;
-    if (job.timer) clearTimeout(job.timer);
     job.resolve(result);
   }
 
-  private rejectJob(job: Job, error: Error): void {
+  private rejectJob(job: Job, error: Error, keepHardDeadline = false): void {
+    this.clearJobTimers(job, keepHardDeadline);
     if (job.settled) return;
     job.settled = true;
-    if (job.timer) clearTimeout(job.timer);
     job.reject(error);
+  }
+
+  private clearJobTimers(job: Job, keepHardDeadline = false): void {
+    if (job.softTimer) clearTimeout(job.softTimer);
+    job.softTimer = undefined;
+    if (keepHardDeadline) return;
+    if (job.hardTimer) clearTimeout(job.hardTimer);
+    job.hardTimer = undefined;
+    if (job.hardGrace) clearImmediate(job.hardGrace);
+    job.hardGrace = undefined;
   }
 
   private clearReadinessWaiters(): void {
@@ -493,6 +763,14 @@ export class EquityWorkerPool {
   async shutdown(): Promise<void> {
     if (this.phase === 'stopped') return;
     this.phase = 'stopping';
+    // Nothing this pool armed may outlive it: a pending recovery or respawn
+    // would otherwise spawn a worker into a pool that has been stopped.
+    if (this.recoveryTimer) clearTimeout(this.recoveryTimer);
+    this.recoveryTimer = undefined;
+    this.nextRecoveryAt = null;
+    for (const timer of this.respawnTimers) clearTimeout(timer);
+    this.respawnTimers.clear();
+    this.pendingRespawns = 0;
     const aborted = new EquityWorkerPoolAbortedError();
     this.rejectReadiness?.(aborted);
     this.clearReadinessWaiters();
@@ -500,6 +778,8 @@ export class EquityWorkerPool {
     const terminations: Promise<number>[] = [];
     for (const slot of this.slots) {
       slot.down = true;
+      if (slot.readyTimer) clearTimeout(slot.readyTimer);
+      slot.readyTimer = undefined;
       if (slot.job) this.rejectJob(slot.job, aborted);
       terminations.push(slot.worker.terminate().catch(() => 0));
     }
@@ -526,6 +806,9 @@ export function equityWorkerPoolStatus(): EquityWorkerPoolStatus {
   return (
     pool?.status() ?? {
       phase: 'idle',
+      routingReady: false,
+      acceptingWork: false,
+      recoveryInFlight: false,
       configuredWorkers: 0,
       readyWorkers: 0,
       busyWorkers: 0,
@@ -533,6 +816,11 @@ export function equityWorkerPoolStatus(): EquityWorkerPoolStatus {
       oldestQueuedAgeMs: 0,
       lastCompletionAgeMs: null,
       lastError: null,
+      queueExpirations: 0,
+      executionTimeouts: 0,
+      respawnBudgetRemaining: 0,
+      nextRecoveryAt: null,
+      recoveries: 0,
     }
   );
 }

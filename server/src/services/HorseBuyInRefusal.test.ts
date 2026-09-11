@@ -68,3 +68,26 @@ describe('formatRefusals', () => {
     ).toBe('four_game_limit=12 table_full=3');
   });
 });
+
+describe('the two tokens the live error log named (2026-09-11)', () => {
+  it('a refusal inside the maintenance freeze is `frozen`, not the catch-all', () => {
+    // `frozen` was declared from the first version of this module and no
+    // branch ever produced it, so a seat asked for during the break - the
+    // freeze working exactly as CLAUDE.md 13 requires - was counted beside
+    // the refusals that ARE defects.
+    expect(classifyBuyInRefusal('PLATFORM_FROZEN: the platform is frozen for maintenance')).toBe(
+      'frozen'
+    );
+  });
+
+  it("the must-move door's own refusal has a name", () => {
+    expect(classifyBuyInRefusal('ALREADY_IN_GAME: player already holds a seat in this game')).toBe(
+      'already_in_game'
+    );
+  });
+
+  it('an unrecognised message is still `refused`, never a silence', () => {
+    expect(classifyBuyInRefusal('something nobody has seen yet')).toBe('refused');
+    expect(classifyBuyInRefusal(null)).toBe('refused');
+  });
+});

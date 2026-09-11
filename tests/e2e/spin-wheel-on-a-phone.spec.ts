@@ -46,6 +46,7 @@
  */
 
 import { test, expect, type Page } from '@playwright/test';
+import { loadLiveCss as loadLiveCssShared, skipUnlessLiveCss } from './lib/live-css';
 import { SPIN_REVEAL } from '../../src/config/spinSpec';
 
 /** CI runs against this commit's own build; a bare local run hits production. */
@@ -55,34 +56,13 @@ const ARENA = process.env.ARENA_BASE_URL || 'https://smarter.poker/hub/club-aren
 const PHONE = { width: 375, height: 667 };
 
 /**
- * Pull the SHIPPED stylesheets in, exactly as live-animations.spec.ts does.
- * The component CSS lives in lazy chunks that index.html does not link, so
- * they are discovered from the entry module's own graph.
+ * The shipped-CSS loader lives in tests/e2e/lib/live-css.ts. This file used
+ * to hold its own copy, which could not tell an unreadable bundle from a
+ * bundle with no animations - see the header there.
  */
-async function loadLiveCss(page: Page): Promise<void> {
-  await page.goto(`${ARENA}/index.html`, { waitUntil: 'domcontentloaded' });
-  await page.evaluate(async (base: string) => {
-    const html = await fetch(base + 'index.html').then((r) => r.text());
-    const entry = html.match(/assets\/index-[A-Za-z0-9_-]+\.js/)?.[0];
-    const js = entry ? await fetch(base + entry).then((r) => r.text()) : '';
-    const names = new Set<string>();
-    for (const m of js.matchAll(/assets\/[A-Za-z0-9_.-]+\.css/g)) names.add(m[0]);
-    for (const m of html.matchAll(/assets\/[A-Za-z0-9_.-]+\.css/g)) names.add(m[0]);
-    document.body.innerHTML = '';
-    for (const n of names) {
-      try {
-        const css = await fetch(base + n).then((r) => r.text());
-        const s = document.createElement('style');
-        s.textContent = css;
-        document.head.appendChild(s);
-      } catch {
-        /* a chunk that 404s is not this test's problem */
-      }
-    }
-    // Speed 1 = the shipped durations, unscaled. The player's Animation Speed
-    // preference may only scale this; it may never remove a beat (10.6).
-    document.documentElement.style.setProperty('--animation-speed', '1');
-  }, `${ARENA}/`);
+async function loadLiveCss(page: Page) {
+  const load = await loadLiveCssShared(page, ARENA, { animationSpeed: '1' });
+  skipUnlessLiveCss(load, ARENA);
 }
 
 /**

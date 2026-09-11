@@ -1,135 +1,81 @@
 ---
 name: deploy-hetzner
 description: >
-  Deploy the Club Arena poker engine server to Hetzner VPS via SSH + Docker.
-  Use when the user says "deploy", "push to server", "deploy to hetzner",
-  "deploy engine", "update VPS", "restart server", "ship it", "deploy to production",
-  "push server changes", or anything about getting code changes onto the live
-  engine.smarter.poker server. Also triggers on "hetzner", "VPS deploy", "docker deploy",
-  or "server deploy". Use this even if the user just says "deploy" with no qualifier —
-  Club Arena's server deployment always means Hetzner.
-version: 1.0.0
+  Dispatch and certify the Club Arena poker engine using the repository-owned,
+  exact-SHA sealed Hetzner workflow. Use for engine deploy, restart, ship, or
+  production-release requests. Never deploy through World Hub or direct SSH.
+version: 2.0.0
 ---
 
-# Deploy to Hetzner VPS — Club Arena Engine
+# Club Arena Sealed Hetzner Engine Release
 
-This skill handles deploying the Club Arena poker engine to the production Hetzner VPS.
-The engine runs at `engine.smarter.poker` and serves all real-time poker game logic.
+The sole engine release authority is
+`.github/workflows/auto-deploy-hetzner.yml` in
+`Smarter-Poker/Smarter-Poker-Club-Arena`. It builds immutable images, waits
+for the engine-authored maintenance certificate, cuts over the exact target,
+proves public and direct health, and commits the durable release seal.
 
-## Infrastructure
+## Credential Boundary
 
-| Component   | Detail                                       |
-| ----------- | -------------------------------------------- |
-| VPS IP      | `178.156.160.206`                            |
-| SSH User    | `root`                                       |
-| Repo on VPS | `/opt/club-arena`                            |
-| Container   | `club-arena-engine`                          |
-| Port        | `8080` (mapped through Docker)               |
-| Env file    | `/opt/club-arena/server/.env`                |
-| Health URL  | `https://engine.smarter.poker/health`        |
-| Docker      | Container auto-restarts (`--restart always`) |
+The workflow reads only these Club Arena repository secrets:
 
-## Pre-Deploy Checklist
+- `HETZNER_SSH_PRIVATE_KEY`
+- `HETZNER_HOST`
+- `HETZNER_HOST_KEY`
+- `DATABASE_URL` (append-only deployment receipt only)
 
-Before deploying, the agent should verify these conditions are met. If any fail, stop and fix before deploying.
+Never read, copy, print, or store their values in a workstation `.env`,
+Markdown, another repository, or a command. There is no legacy key alias,
+World Hub fallback, password path, or local SSH-key fallback.
 
-1. **TypeScript compiles cleanly**: Run `npx tsc --noEmit` in the repo root. Zero errors required.
-2. **Changes are committed and pushed**: Run `git status` — working tree must be clean. Run `git log --oneline -3` to confirm latest commit is what we want to deploy.
-3. **Health check baseline**: Hit `https://engine.smarter.poker/health` to confirm the server is currently running and note the uptime/stats before deploy (so we can compare after).
+## Preconditions
 
-## Deploy Sequence
+1. Resolve one full target SHA that is already reachable from Club Arena
+   `origin/main`.
+2. Confirm the server tests, typecheck, release-seal law, and required pull
+   request checks passed for that merged source.
+3. Record a cache-busted baseline from
+   `https://engine.smarter.poker/health`; do not mutate production while
+   collecting it.
 
-The deploy uses SSH to execute commands on the VPS. Here's the exact sequence:
+## Dispatch
 
-### Step 1: Pull latest code
-
-```bash
-ssh root@178.156.160.206 "cd /opt/club-arena && git pull origin main"
-```
-
-### Step 2: Rebuild Docker image
-
-```bash
-ssh root@178.156.160.206 "cd /opt/club-arena/server && docker build -t club-arena-engine ."
-```
-
-This takes 30-90 seconds depending on cache hits.
-
-### Step 3: Stop and remove old container
+For a merged SHA that is not yet live, dispatch immediately. This is the
+non-forced path: the workflow intentionally exposes no force or maintenance
+bypass input.
 
 ```bash
-ssh root@178.156.160.206 "docker stop club-arena-engine 2>/dev/null || true && docker rm club-arena-engine 2>/dev/null || true"
+TARGET_SHA=<exact-merged-sha>
+jq -n --arg sha "$TARGET_SHA" \
+  '{event_type:"deploy-club-arena-engine",client_payload:{ref_sha:$sha}}' |
+  gh api --method POST \
+    repos/Smarter-Poker/Smarter-Poker-Club-Arena/dispatches --input -
 ```
 
-Brief downtime starts here (typically 2-5 seconds).
+Do not wait passively for the next hourly schedule once the exact release is
+ready to stage. Do not create a second run for the same target while the first
+is active; the workflow owns serialization.
 
-### Step 4: Start new container
+## Certification
 
-```bash
-ssh root@178.156.160.206 "docker run -d --name club-arena-engine --restart always -p 8080:8080 --env-file /opt/club-arena/server/.env club-arena-engine"
-```
+The run is complete only when all of the following are true:
 
-### Step 5: Health check (wait 3 seconds for startup)
+1. The run is terminal-success for the exact target.
+2. Cutover, public/direct verification, runtime-write proof, and release-seal
+   steps actually ran; a staged-only or deferred green result does not count.
+3. A cache-busted public health response reports the exact target SHA.
+4. Liveness is healthy, the leader instance is stable, tables are dealable,
+   hands advance, and no new lease-loss/recovery storm appears across the
+   required observation windows.
 
-```bash
-sleep 3
-curl -sf "https://engine.smarter.poker/health"
-```
+If any gate fails, fix source forward and return through this same workflow.
+Never SSH, restart Docker, edit `/opt/club-arena`, prune images, or point a
+mutable tag by hand. Never ask the user to run a host command.
 
-Expected response: `{"running":true,"uptime":N,"activeTables":N,...}`
+## Recovery
 
-### Step 6: Cleanup old images
-
-```bash
-ssh root@178.156.160.206 "docker image prune -f"
-```
-
-## One-Liner (for quick deploys)
-
-If all pre-checks pass, the entire deploy can be run as a single SSH command:
-
-```bash
-ssh root@178.156.160.206 "cd /opt/club-arena && git pull origin main && cd server && docker build -t club-arena-engine . && docker stop club-arena-engine 2>/dev/null; docker rm club-arena-engine 2>/dev/null; docker run -d --name club-arena-engine --restart always -p 8080:8080 --env-file /opt/club-arena/server/.env club-arena-engine && sleep 3 && curl -sf http://localhost:8080/health"
-```
-
-## Rollback
-
-If the health check fails after deploy:
-
-1. Check container logs: `ssh root@178.156.160.206 "docker logs --tail 50 club-arena-engine"`
-2. If the new code is broken, revert to previous commit:
-   ```bash
-   ssh root@178.156.160.206 "cd /opt/club-arena && git log --oneline -5"
-   # Identify the last good commit, then:
-   ssh root@178.156.160.206 "cd /opt/club-arena && git checkout <good-commit-hash>"
-   ```
-3. Rebuild and restart using Steps 2-5 above.
-
-## SSH Access Notes
-
-The VPS uses SSH key authentication. The agent's environment needs:
-
-- An SSH private key in `~/.ssh/` that matches an authorized key on the VPS, OR
-- `sshpass` installed for password-based auth, OR
-- The user to run the commands from their local terminal (which has SSH keys configured)
-
-If SSH is not available from the current environment, generate the one-liner command and present it to the user to run from their Mac terminal where SSH keys are already set up.
-
-## Post-Deploy Verification
-
-After a successful deploy, always:
-
-1. Hit the health endpoint and confirm `"running": true`
-2. Compare uptime — it should be near zero (fresh container)
-3. Note active tables and tournaments — they should be restored from database state
-4. Update `MIGRATION-CHANGELOG.md` with the deploy timestamp and what was deployed
-
-## Environment Variables (on VPS)
-
-The container reads from `/root/.env.club-arena` which contains:
-
-- `SUPABASE_URL` — Supabase project URL
-- `SUPABASE_SERVICE_ROLE_KEY` — Service role key (bypasses RLS)
-- `PORT` — 8080
-
-These are already configured on the VPS. Do not modify them unless explicitly asked.
+The workflow does not expose an operator-selected rollback input. If a cutover
+cannot prove the requested release, the host transaction restores only the
+previously sealed desired image and records the failed immutable request. Fix
+the source forward and dispatch the resulting protected-main SHA through this
+same lane; never improvise a direct host rollback.

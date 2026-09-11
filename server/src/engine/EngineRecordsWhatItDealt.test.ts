@@ -256,8 +256,17 @@ describe('the engine records the hand it actually dealt', () => {
     hc.performAction(sb, 'fold' as any);
     await drain();
 
-    // The defect, injected: the flag moves, no card does.
+    // Completed hands now reject late runout callbacks. Prove that guard,
+    // then inject the corrupt state directly to retain this detector's
+    // negative control without reopening the production mutation door.
     hc.markFlopSeen();
+    expect(hc.getState().sawFlop).toBe(false);
+    const corrupt = hc as unknown as {
+      state: { sawFlop: boolean };
+      boardDealtOutsideState: boolean;
+    };
+    corrupt.state.sawFlop = true;
+    corrupt.boardDealtOutsideState = true;
 
     expect(() => assertRecordMatchesHand(engine, hc, events)).toThrow();
 

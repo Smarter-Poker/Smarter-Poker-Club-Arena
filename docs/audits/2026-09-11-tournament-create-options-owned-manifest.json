@@ -1,0 +1,234 @@
+{
+  "at": "2026-09-11T09:21:14.432051+00:00",
+  "scope": "CA-03-12 option wiring/persistence subtask; no production apply",
+  "files": [
+    {
+      "path": "docs/audits/2026-09-11-tournament-create-options-correction-candidate.json",
+      "sha256": "6a6893c6fcbfb54ba3698c28021c2f7f821d65ac22208f8612975ac109ee1362"
+    },
+    {
+      "path": "docs/audits/2026-09-11-tournament-create-options-current-mapping.json",
+      "sha256": "a7b00e3ff8fa8437dfee3e415c42e56cbe4e497e6f7b889fc5d436690cf9630c"
+    },
+    {
+      "path": "docs/audits/2026-09-11-tournament-create-options-enabled-after.json",
+      "sha256": "a5e951a4becfd68ea4d096935ec8f9dff575b1bf378159cf8f1b907c5f17aa80"
+    },
+    {
+      "path": "docs/audits/2026-09-11-tournament-create-options-enabled-before.json",
+      "sha256": "5403637d6b7cde7bd49c1df5f099ef0a15514947206896e6d55327c40d976295"
+    },
+    {
+      "path": "docs/audits/2026-09-11-tournament-create-options-enabled-unit-after.json",
+      "sha256": "74784fbab1c23ada7c5516a5d26a1d2ab9ca6bcbce12334cc1ccd9cd5051db9d"
+    },
+    {
+      "path": "docs/audits/2026-09-11-tournament-create-options-enabled-unit-after.log",
+      "sha256": "f59bf68619159e2de6dfc0ea5fcbc6809d89af0a9b74499c3dfdb2540d2f62a8"
+    },
+    {
+      "path": "docs/audits/2026-09-11-tournament-create-options-enabled-unit-before.json",
+      "sha256": "77335a77204905eb8c51b90060b31d812220e42e07f0fc9b9afdd831fe44ed79"
+    },
+    {
+      "path": "docs/audits/2026-09-11-tournament-create-options-enabled-unit-before.log",
+      "sha256": "2b96bb4e1f25aebaafa7559f8056d551a2303754e5fa8f239fd451b10d767716"
+    },
+    {
+      "path": "docs/audits/2026-09-11-tournament-create-options-enabled-unit-first-failure.log",
+      "sha256": "d88bc676694fe4869d26aef43ad485abc93d04406e347f71318ba61117f6cc96"
+    },
+    {
+      "path": "docs/audits/2026-09-11-tournament-create-options-final-candidate.json",
+      "sha256": "f103b24221e3553a1b05faff29fab1a7056b59e0045e88f8698932662913066f"
+    },
+    {
+      "path": "docs/audits/2026-09-11-tournament-create-options-final-source-verification.json",
+      "sha256": "7743d3a3cacededdcfcd7b987a12ada27142f69faa3f14096631227d0402839d"
+    },
+    {
+      "path": "docs/audits/2026-09-11-tournament-create-options-final-verification.md",
+      "sha256": "be790267a40d3f416a5d38fdadfb7779ad1cd328f755fbe1e2429b5413c6dd4e"
+    },
+    {
+      "path": "docs/audits/2026-09-11-tournament-create-options-free-buy-client-mapping.json",
+      "sha256": "5ae0e97e6b57c5e0efdf2827637f7b3518715783d1e029e23c49c5fbe44ddfae"
+    },
+    {
+      "path": "docs/audits/2026-09-11-tournament-create-options-free-buy-consumers.json",
+      "sha256": "aa0958ac1ff907d40f688346a7578d9660b738d88d1c9d4c4d2e55f7be250a80"
+    },
+    {
+      "path": "docs/audits/2026-09-11-tournament-create-options-free-buy-db-policy.json",
+      "sha256": "a66391b8b75f85c7fa0c1ece6b1ba9d8678a1d50369cbc9d18c664bcde40507a"
+    },
+    {
+      "path": "docs/audits/2026-09-11-tournament-create-options-free-buy-policy-metadata.json",
+      "sha256": "ebd31b4301447fa75f3cf70fddb4ee4fffea1a639b3620dfe9c7fa1d863439ba"
+    },
+    {
+      "path": "docs/audits/2026-09-11-tournament-create-options-initial-candidate.sql",
+      "sha256": "207ccdb5e6df8d532c255354dcb23dcf43cc3f9fa1cde2e39b4feb77fb76d778"
+    },
+    {
+      "path": "docs/audits/2026-09-11-tournament-create-options-matrix.json",
+      "sha256": "9d93db81776e23056b6afaf7143669af0d631c5d3fd7cbd76af5dfb4e4fd0b2b"
+    },
+    {
+      "path": "docs/audits/2026-09-11-tournament-create-options-matrix.md",
+      "sha256": "c3fd229c22aaec7003f0faa4baf89f2274c64d1a1489d0d36b01916d705f4ff7"
+    },
+    {
+      "path": "docs/audits/2026-09-11-tournament-create-options-policy-diagnostic.json",
+      "sha256": "7896b00bdfd26c1998642f9956c9df31d3e82345590df3b432f6a50a3bfc5b3c"
+    },
+    {
+      "path": "docs/audits/2026-09-11-tournament-create-options-policy-final.json",
+      "sha256": "ad0fd1bdacd63525e8914be111b2801095af553675321993b9b7b67a13feb8f9"
+    },
+    {
+      "path": "docs/audits/2026-09-11-tournament-create-options-typechecks.json",
+      "sha256": "ef46517dff8c72849fed9a793f99907d9007afc6aef0826765fd4122654e54bb"
+    },
+    {
+      "path": "scripts/ci/probes/tournament-create-options-enabled-native.sql",
+      "sha256": "49a671c195eb1cbde755b299bdbe69308b5b51c4ae19787344603d2d6548a601"
+    },
+    {
+      "path": "scripts/ci/probes/tournament-create-options-matrix.py",
+      "sha256": "d89fdc3e803694cbd53b9e330e346b4df5a7832609f402fcd8b0cc9e3985ed8f"
+    },
+    {
+      "path": "scripts/ci/probes/tournament-create-options-persist-flags-candidate.sql",
+      "sha256": "e16b3a057460833cd74c7a2da612df8b2c5269e156a7cc7b8116679d7fb6b24a"
+    },
+    {
+      "path": "scripts/ci/probes/tournament-create-options-rehearse.py",
+      "sha256": "efbac1a6b67903ef84534455a03e8c3e9e7506f3e592b9084edf1e4c5afe0b17"
+    },
+    {
+      "path": "scripts/dev/fixtures/phase-three-create-options/README.md",
+      "sha256": "4b1e74d5fac7b0f911db19ea362fa51e49ec8c82e11a22e9af94377a891be864"
+    },
+    {
+      "path": "scripts/dev/fixtures/phase-three-create-options/generate.py",
+      "sha256": "c42eb1f0954045500b79dadb32000e3cb097baee40ac5722eca370a127f524a3"
+    },
+    {
+      "path": "scripts/dev/fixtures/phase-three-create-options/manifest.json",
+      "sha256": "cf7e5803d015f3695370081efa49c4487b25c91b7e5686c0a081aeda1d692b09"
+    },
+    {
+      "path": "scripts/dev/fixtures/phase-three-create-options/phaseThreeCreateConfigCapture.test.ts.template",
+      "sha256": "61f022e9ced004b5e67a2aaf22d394b6bc8285a69afe12654c5114c7c7cadba4"
+    },
+    {
+      "path": "server/src/config/buyIn.ts",
+      "sha256": "0844854e9990f322098f0db72a88245b3cebf2c612d9977b67536a1f176b68e9"
+    },
+    {
+      "path": "src/utils/freeBuy.ts",
+      "sha256": "c1a9f4bd1d8a9f41f420608b2c14e7b3ca396c4056b731c4e21882da4d536fb2"
+    },
+    {
+      "path": "tests/law/FreerollsAreFreeBuy.law.test.ts",
+      "sha256": "9574f7a1b32c5411ce95006d9210cf1d2b4c56d6df3b8063f0766b9fafe6d679"
+    },
+    {
+      "path": "tests/unit/tournamentCreateEnabledOptionsWiring.test.ts",
+      "sha256": "ee3ee98fd649ab1cf63edc230eebbba093aaee6b06d6a9bf5b734edf44f99960"
+    }
+  ],
+  "manifest_path": "docs/audits/2026-09-11-tournament-create-options-owned-manifest.json",
+  "default_capture_test_absent": true,
+  "native_option_assertions": 14,
+  "base_creation_checks_reused": 15,
+  "candidate_applied_twice": true,
+  "readback_consumer_review": "2026-09-11-tournament-create-options-free-buy-consumers.json",
+  "formatting_provenance": {
+    "at": "2026-09-11T09:54:39.610666+00:00",
+    "reviewed_head": "ef93a89b698ea138d2ab9bbc2d89150a78b4e179",
+    "packaging_commit": "7972b0ee3ccc6525d35e7e8968b4d2fb527aa024",
+    "merged_commit": "67e946f5",
+    "scope": "Manifest-only refresh after normal formatter hooks; no source edits, test reruns, database operations, or SQL source exports.",
+    "root_reported_unit_log_adjustment": "Three unit logs had terminal blank lines trimmed before commit; their recorded hashes were already replaced before this check.",
+    "runtime_helpers_and_sql_candidate_hashes_unchanged": true,
+    "changed_entries": [
+      {
+        "path": "docs/audits/2026-09-11-tournament-create-options-correction-candidate.json",
+        "prior_sha256": "b5a6bb6f7b276ce246b2f7f3e3a47714d8e63674af558f7611b7c1f4505b3831",
+        "formatted_sha256": "6a6893c6fcbfb54ba3698c28021c2f7f821d65ac22208f8612975ac109ee1362",
+        "formatting_commit": "7972b0ee3ccc6525d35e7e8968b4d2fb527aa024",
+        "verification": "Identical parsed JSON values reproduce the prior SHA-256 under the original serialization."
+      },
+      {
+        "path": "docs/audits/2026-09-11-tournament-create-options-current-mapping.json",
+        "prior_sha256": "1393b6c68c21f4fc8e8793f281c9947f5ec09eba43eae14b5efb2cacb187b21b",
+        "formatted_sha256": "a7b00e3ff8fa8437dfee3e415c42e56cbe4e497e6f7b889fc5d436690cf9630c",
+        "formatting_commit": "7972b0ee3ccc6525d35e7e8968b4d2fb527aa024",
+        "verification": "Identical parsed JSON values reproduce the prior SHA-256 under the original serialization."
+      },
+      {
+        "path": "docs/audits/2026-09-11-tournament-create-options-enabled-unit-after.json",
+        "prior_sha256": "eb6fe95f600d3c146605b81826b06c20d8756f121701ba1752c5a098633195ba",
+        "formatted_sha256": "74784fbab1c23ada7c5516a5d26a1d2ab9ca6bcbce12334cc1ccd9cd5051db9d",
+        "formatting_commit": "7972b0ee3ccc6525d35e7e8968b4d2fb527aa024",
+        "verification": "Identical parsed JSON values reproduce the prior SHA-256 under the original serialization."
+      },
+      {
+        "path": "docs/audits/2026-09-11-tournament-create-options-free-buy-db-policy.json",
+        "prior_sha256": "8a2b07336f837a7d37c57dcaa888d9ca1919adf4ab06f5a05691beb96f4962b8",
+        "formatted_sha256": "a66391b8b75f85c7fa0c1ece6b1ba9d8678a1d50369cbc9d18c664bcde40507a",
+        "formatting_commit": "7972b0ee3ccc6525d35e7e8968b4d2fb527aa024",
+        "verification": "Identical parsed JSON values reproduce the prior SHA-256 under the original serialization."
+      },
+      {
+        "path": "docs/audits/2026-09-11-tournament-create-options-free-buy-policy-metadata.json",
+        "prior_sha256": "48ac8c7f6ee09b260886f59b76185fd30e7f26bc00d3153d6c55e9ac899097cf",
+        "formatted_sha256": "ebd31b4301447fa75f3cf70fddb4ee4fffea1a639b3620dfe9c7fa1d863439ba",
+        "formatting_commit": "7972b0ee3ccc6525d35e7e8968b4d2fb527aa024",
+        "verification": "Identical parsed JSON values reproduce the prior SHA-256 under the original serialization."
+      },
+      {
+        "path": "docs/audits/2026-09-11-tournament-create-options-matrix.json",
+        "prior_sha256": "39d19388a43126e86eecff72a3fff64d1be1b968abb528557c92f0b69ffcbbb9",
+        "formatted_sha256": "9d93db81776e23056b6afaf7143669af0d631c5d3fd7cbd76af5dfb4e4fd0b2b",
+        "formatting_commit": "7972b0ee3ccc6525d35e7e8968b4d2fb527aa024",
+        "verification": "Identical parsed JSON values reproduce the prior SHA-256 under the original serialization."
+      },
+      {
+        "path": "docs/audits/2026-09-11-tournament-create-options-matrix.md",
+        "prior_sha256": "fa989d43ff2e3ad3e1ff3a46b63c41892ba4c6b196a494bcf358aba72de43688",
+        "formatted_sha256": "c3fd229c22aaec7003f0faa4baf89f2274c64d1a1489d0d36b01916d705f4ff7",
+        "formatting_commit": "7972b0ee3ccc6525d35e7e8968b4d2fb527aa024",
+        "verification": "Root reported normal formatter-hook changes in the packaging commit; committed file is clean. Prior unformatted bytes were not retained for an independent token comparison."
+      },
+      {
+        "path": "tests/law/FreerollsAreFreeBuy.law.test.ts",
+        "prior_sha256": "fc71b4f80a302c3bef42058c6ddeaae191a5b5c21242e8ea7926dc540c69c5de",
+        "formatted_sha256": "9574f7a1b32c5411ce95006d9210cf1d2b4c56d6df3b8063f0766b9fafe6d679",
+        "formatting_commit": "7972b0ee3ccc6525d35e7e8968b4d2fb527aa024",
+        "verification": "Root reported normal formatter-hook changes in the packaging commit; committed file is clean. Prior unformatted bytes were not retained for an independent token comparison."
+      },
+      {
+        "path": "tests/unit/tournamentCreateEnabledOptionsWiring.test.ts",
+        "prior_sha256": "9a881df5ec2791f4100e10a60df85c1028d510c4627ccccc6804f4a6ee3e93be",
+        "formatted_sha256": "ee3ee98fd649ab1cf63edc230eebbba093aaee6b06d6a9bf5b734edf44f99960",
+        "formatting_commit": "7972b0ee3ccc6525d35e7e8968b4d2fb527aa024",
+        "verification": "Root reported normal formatter-hook changes in the packaging commit; committed file is clean. Prior unformatted bytes were not retained for an independent token comparison."
+      }
+    ],
+    "superseding_merged_source_verification": {
+      "path": "docs/audits/2026-09-11-phase-three-final-merged-source-verification.json",
+      "sha256": "2d7b29115e54486a0fae40409aa570fa977946eacd863f97059d41dbcc297d53",
+      "reported_by": "Coordinating root agent",
+      "head": "ef93a89b698ea138d2ab9bbc2d89150a78b4e179",
+      "focused_tests_passed": 40,
+      "maintenance_runtime_tests_passed": 18,
+      "client_typescript": "passed",
+      "server_typescript": "passed",
+      "source_files_stable": 3632,
+      "supersedes": "The earlier independent maintenance test TypeScript diagnostic in the options final-source-verification evidence; historical evidence is retained."
+    }
+  }
+}

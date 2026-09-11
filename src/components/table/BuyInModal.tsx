@@ -81,6 +81,7 @@ export function BuyInModal({
   onRetryBalance,
 }: BuyInModalProps) {
   // State
+  const wholeDiamonds = currency === 'diamonds';
   const balanceKnown = accountBalance !== null;
   // Default to MAX buy-in (capped by account balance) — Dan's directive.
   // Unknown balance: default to the table max; the confirm stays closed below.
@@ -143,8 +144,8 @@ export function BuyInModal({
      true of this component. */
   const clampedBuyIn = useMemo(() => {
     const raw = recovery?.amount ?? Math.max(effectiveMinBuyIn, Math.min(maxBuyIn, buyInAmount));
-    return Math.round(raw * 100) / 100;
-  }, [buyInAmount, effectiveMinBuyIn, maxBuyIn, recovery?.amount]);
+    return recovery ? raw : wholeDiamonds ? Math.round(raw) : Math.round(raw * 100) / 100;
+  }, [buyInAmount, effectiveMinBuyIn, maxBuyIn, recovery?.amount, wholeDiamonds]);
 
   // Calculate slider percentage
   const sliderPercent = useMemo(() => {
@@ -154,7 +155,8 @@ export function BuyInModal({
 
   // Check if user has enough balance. Unknown is not enough - and not "insufficient".
   const hasEnoughBalance = balanceKnown && accountBalance >= clampedBuyIn;
-  const canConfirm = !!recovery || hasEnoughBalance;
+  const canConfirm =
+    (!!recovery || hasEnoughBalance) && (!wholeDiamonds || Number.isSafeInteger(clampedBuyIn));
 
   // Animate amount counter when buyInAmount changes
   useEffect(() => {
@@ -349,8 +351,8 @@ export function BuyInModal({
           <div className="buy-in-modal__current-amount">
             <span className="buy-in-modal__amount-value">
               {displayAmount.toLocaleString('en-US', {
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2,
+                minimumFractionDigits: wholeDiamonds ? 0 : 2,
+                maximumFractionDigits: wholeDiamonds ? 0 : 2,
               })}
             </span>
           </div>
@@ -442,7 +444,9 @@ export function BuyInModal({
 
         {/* Balance Display */}
         <div className="buy-in-modal__balance">
-          <span className="buy-in-modal__balance-label">( Account Balance:</span>
+          <span className="buy-in-modal__balance-label">
+            {wholeDiamonds ? '( Available Diamonds:' : '( Account Balance:'}
+          </span>
           <span
             className={`buy-in-modal__balance-value ${balanceKnown && !hasEnoughBalance ? 'buy-in-modal__balance-value--insufficient' : ''}`}
           >
@@ -488,7 +492,9 @@ export function BuyInModal({
             : recovery
               ? 'Retry Original Buy-In'
               : hasEnoughBalance
-                ? 'Buy Chips'
+                ? wholeDiamonds
+                  ? 'Buy In With Diamonds'
+                  : 'Buy Chips'
                 : balanceKnown
                   ? 'Insufficient Balance'
                   : 'Balance Unavailable'}

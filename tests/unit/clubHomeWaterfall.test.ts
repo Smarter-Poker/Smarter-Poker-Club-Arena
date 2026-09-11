@@ -54,9 +54,12 @@ describe('the club lobby does not re-serialise its round trips', () => {
     /* The membership read is the first thing that used to block them. It was
        a Promise.all of the club_members row AND a DiamondService balance;
        the balance fed a `wallet` state nothing in the file ever read, so the
-       round trip is gone and this is a single awaited query now. What this
-       test pins is unchanged: both hoisted promises must be ISSUED before it. */
-    const membershipAwait = at('const memberResult = await supabase');
+       round trip is gone and this is a single awaited query now. On
+       2026-09-11 it also became conditional: an arena whose membership the
+       server grants automatically has no row to read, so it resolves an empty
+       answer instead of making the call. What this test pins is unchanged:
+       both hoisted promises must be ISSUED before the statement that blocks. */
+    const membershipAwait = at('const memberResult = automaticMembershipRef.current');
 
     expect(unionStart).toBeGreaterThan(resolved);
     expect(countStart).toBeGreaterThan(resolved);

@@ -1,0 +1,56 @@
+{
+  "source_sha256": "7cc9f9b6ee1dcb3906a31cb37558b84cf701a0ee4a92ccd775cd6ddf3e52fc8d",
+  "declarations": [
+    {
+      "kind": "InterfaceDeclaration",
+      "fields": [
+        "isRebuy",
+        "isReentry",
+        "addOnAvailable",
+        "rebuyCost",
+        "addOnCost",
+        "rebuyChips",
+        "addOnChips",
+        "rebuyLevels",
+        "addOnLevels",
+        "maxRebuys"
+      ]
+    }
+  ],
+  "excluded_type_literals": ["spin", "sng", "spins"],
+  "eligibility_property_names": [
+    "buyIn",
+    "isFinite",
+    "toUpperCase",
+    "tournamentType",
+    "toLowerCase",
+    "type",
+    "has"
+  ],
+  "return_object_shapes": [
+    {
+      "function": "freeBuyConfig",
+      "fields": []
+    },
+    {
+      "function": "freeBuyColumns",
+      "fields": []
+    },
+    {
+      "function": "freeBuyColumns",
+      "fields": [
+        "buy_in_fee",
+        "is_rebuy",
+        "is_reentry",
+        "add_on_available",
+        "rebuy_cost",
+        "addon_cost",
+        "rebuy_chips",
+        "addon_chips",
+        "rebuy_levels",
+        "addon_levels",
+        "max_rebuys"
+      ]
+    }
+  ]
+}

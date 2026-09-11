@@ -50,6 +50,14 @@ export const CLUB_IDENTITY_ZONES = {
   playerIdText: { x: 388, y: 464, width: 340, height: 62 },
   playing: { x: 880, y: 380, width: 182, height: 62 },
   level: { x: 990, y: 466, width: 325, height: 66 },
+  /* The arena rail sits over BOTH of the two zones above. A chip club's
+     master paints "PLAYING NOW" beside the count and carries a level plate;
+     an arena has neither, so its rail is opaque and covers that paint rather
+     than printing over it. The playing zone starts two pixels above the share
+     button's bottom edge, so covering it fully means clipping that corner: the
+     rail is painted BEFORE the button, which keeps the button on top and keeps
+     the 44px target its ::after already guarantees. */
+  arenaStats: { x: 852, y: 374, width: 494, height: 184 },
   share: { x: 1064, y: 188, width: 226, height: 194 },
 } satisfies Record<string, Zone>;
 
@@ -73,6 +81,21 @@ export interface ClubIdentityCardProps {
   /** A new club shows Level 1 from day one; the level sits in the blue plate. */
   level?: number | null;
   playersPlaying?: number | null;
+  /**
+   * Diamond Arena, Dan 2026-09-11: "HAVE IT SAY JUST 'ACTIVE' AND THE NUMBER
+   * UNDER IT. AND THE FREE ROLL STARTS CLOCK."
+   *
+   * The arena is one open club: it has no join code to level up and no
+   * membership to count, so neither the painted "PLAYING NOW" rail nor the
+   * level plate says anything true there. Passing this replaces both with the
+   * two figures that do: who is playing now, and when the next free seat is.
+   */
+  arenaStats?: {
+    activeCount: number | null;
+    freerollText: string;
+    freerollTitle: string;
+    freerollImminent?: boolean;
+  } | null;
   onCopyClubId?: () => void;
   onCopyPlayerId?: () => void;
   onShare?: () => void;
@@ -135,6 +158,7 @@ export function ClubIdentityCard({
   playerId,
   level,
   playersPlaying,
+  arenaStats,
   onCopyClubId,
   onCopyPlayerId,
   onShare,
@@ -187,17 +211,46 @@ export function ClubIdentityCard({
       </div>
 
       <div className="club-identity__footer">
-        {/* The count only; PLAYING NOW is painted beside it on the master. */}
-        <span
-          className="club-identity__playing"
-          style={zoneStyle(CLUB_IDENTITY_ZONES.playing)}
-          aria-live="polite"
-          aria-label={`${count} Playing Now`}
-        >
-          <strong ref={playingRef}>{count}</strong>
-        </span>
+        {!arenaStats && (
+          /* The count only; PLAYING NOW is painted beside it on the master. */
+          <span
+            className="club-identity__playing"
+            style={zoneStyle(CLUB_IDENTITY_ZONES.playing)}
+            aria-live="polite"
+            aria-label={`${count} Playing Now`}
+          >
+            <strong ref={playingRef}>{count}</strong>
+          </span>
+        )}
 
-        {level != null && (
+        {arenaStats && (
+          <span className="club-identity__arena" style={zoneStyle(CLUB_IDENTITY_ZONES.arenaStats)}>
+            <span className="club-identity__arena-stat">
+              <span className="club-identity__arena-label">ACTIVE</span>
+              <strong className="club-identity__arena-value" aria-live="polite">
+                {arenaStats.activeCount == null ? '0' : arenaStats.activeCount.toLocaleString()}
+              </strong>
+            </span>
+            <span
+              className={`club-identity__arena-stat${
+                arenaStats.freerollImminent ? ' club-identity__arena-stat--imminent' : ''
+              }`}
+              title={arenaStats.freerollTitle}
+            >
+              <span className="club-identity__arena-label">NEXT FREEROLL</span>
+              <strong
+                className="club-identity__arena-value club-identity__arena-value--timer"
+                role="timer"
+                aria-live="off"
+                aria-label={`Next Freeroll Starts In ${arenaStats.freerollText}`}
+              >
+                {arenaStats.freerollText}
+              </strong>
+            </span>
+          </span>
+        )}
+
+        {level != null && !arenaStats && (
           <span className="club-identity__level" style={zoneStyle(CLUB_IDENTITY_ZONES.level)}>
             <span>Level {level}</span>
           </span>

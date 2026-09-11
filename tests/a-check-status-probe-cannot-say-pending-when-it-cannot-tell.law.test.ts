@@ -25,6 +25,8 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { requiredContextProblems, stateForChecks } from '../scripts/ci/pr-status.mjs';
+
 const ROOT = join(__dirname, '..');
 const read = (p: string) => readFileSync(join(ROOT, p), 'utf8');
 
@@ -92,6 +94,67 @@ describe('a check-status probe cannot say pending when it cannot tell', () => {
       'pr-status.mjs must check res.ok and fail loudly. Silently defaulting a ' +
         'non-200 body to an empty list is the whole bug this law exists for.'
     ).toBe(true);
+  });
+
+  it('does not call a commit green until every required context is observed successful', () => {
+    const src = read(TOOL);
+
+    expect(src).toContain('requiredContextProblems');
+    expect(src).toContain('stateForChecks');
+    expect(src).toMatch(/requiredProblems\s*=\s*requiredContextProblems\(required,\s*allJobs\)/);
+    expect(src).toMatch(/\.filter\(\(rule\) => rule\.type === 'required_status_checks'\)/);
+    expect(src).toMatch(/\.flatMap\(\(rule\) => rule\.parameters\?\.required_status_checks/);
+    expect(src).toMatch(/return aggregateExit/);
+    expect(src).not.toMatch(/if \(JSON_OUT\) \{[\s\S]*?return 0;/);
+  });
+
+  it('treats missing, skipped, and neutral required contexts as non-green', () => {
+    const required = new Set(['Build', 'Test', 'Audit', 'Deploy']);
+    const problems = requiredContextProblems(required, [
+      { name: 'Build', status: 'completed', conclusion: 'success' },
+      { name: 'Test', status: 'completed', conclusion: 'skipped' },
+      { name: 'Audit', status: 'completed', conclusion: 'neutral' },
+    ]);
+
+    expect(problems).toEqual([
+      { context: 'Audit', state: 'not_successful', conclusions: ['neutral'] },
+      { context: 'Deploy', state: 'missing', conclusions: [] },
+      { context: 'Test', state: 'not_successful', conclusions: ['skipped'] },
+    ]);
+    expect(stateForChecks({ failures: [], activeRuns: [], requiredProblems: problems })).toBe(
+      'RED'
+    );
+    expect(
+      stateForChecks({
+        failures: [],
+        activeRuns: [{ name: 'Optional suite' }],
+        requiredProblems: problems,
+      })
+    ).toBe('RED');
+    expect(stateForChecks({ failures: [], activeRuns: [], requiredProblems: null })).toBe(
+      'UNKNOWN'
+    );
+  });
+
+  it('returns green only for a complete set of successful required contexts', () => {
+    const required = new Set(['Build', 'Test']);
+    const problems = requiredContextProblems(required, [
+      { name: 'Build', status: 'completed', conclusion: 'success' },
+      { name: 'Test', status: 'completed', conclusion: 'success' },
+    ]);
+
+    expect(problems).toEqual([]);
+    expect(stateForChecks({ failures: [], activeRuns: [], requiredProblems: problems })).toBe(
+      'GREEN'
+    );
+  });
+
+  it('never instructs an agent to manually open the pull request', () => {
+    const src = read(TOOL);
+
+    expect(src).not.toMatch(/\bopen (?:the|its|a) (?:PR|pull request)\b/i);
+    expect(src).toContain('agent-open-pr.yml');
+    expect(src).toMatch(/automatically/i);
   });
 
   it('no other agent-facing script treats /commits/:sha/status as a check oracle', () => {

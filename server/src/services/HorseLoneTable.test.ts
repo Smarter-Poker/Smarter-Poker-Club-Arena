@@ -210,6 +210,8 @@ describe('THE WIRING (source contract)', () => {
     expect(ROTATOR).toMatch(/get loneStands\(\): number/);
     expect(ROTATOR).toMatch(/loneStands=\$\{this\.lastLoneStands\}/);
     // The seat read carries the table's created_at for the opening grace.
-    expect(ROTATOR).toMatch(/main_index, lifecycle, created_at\)'/);
+    expect(ROTATOR).toMatch(
+      /main_index, lifecycle, created_at, max_players, min_buy_in, max_buy_in\)'/
+    );
   });
 });

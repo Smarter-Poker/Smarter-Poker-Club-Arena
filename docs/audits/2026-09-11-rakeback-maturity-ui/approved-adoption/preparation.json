@@ -1,0 +1,37 @@
+{
+  "prepared_at_utc": "2026-09-11T07:28:38.012838+00:00",
+  "approval": "User explicitly approved the exact a55 SQL and paired PR4252 UI publication, as relayed by root in this session.",
+  "approval_scope": "Exact reviewed standalone legacy repair only; paired reviewed UI follows successful backend application and runtime readback.",
+  "status": "EXACT SOURCE APPROVED; PREPARED; ROOT APPLICATION AND READBACK PENDING",
+  "active_migration_path": "supabase/migrations/20260911072837_legacy_rakeback_closed_period_single_payer.sql",
+  "sha256": "a55e792f12040799a20fcf6d54969059efecaea3869c3aa148191fe1b083c4c7",
+  "byte_identical_source": "docs/audits/2026-09-11-legacy-rakeback-maturity/00-apply-legacy-repair.sql",
+  "backend_source_commit": "988db864469e0d2543b969fc0032c4d8eb7b9fa3",
+  "reviewed_ui_commit": "92a43636e6b8da408fade162780c3d0478d73084",
+  "reviewed_package_commit": "36938a26c0cbea9947c648f15177a9d6f768b7ab",
+  "prior_pending_archive_commit": "ad5b0c69318cae86aba0cb08ca426bc05ac66d37",
+  "main_at_preparation": "4b9ffd3b8b5b19210da872b4e20cef581823907f",
+  "pr4252_observed_head": "36938a26c0cbea9947c648f15177a9d6f768b7ab",
+  "pr4252_observed_draft": true,
+  "expected_runtime": "docs/audits/2026-09-11-legacy-rakeback-maturity/expected-runtime.json",
+  "required_order": [
+    "Root rechecks current owner/schema/ACL and documented admission prerequisites.",
+    "Root alone applies this exact approved atomic SQL through the normal database release path.",
+    "Root verifies replacement function/guard/trigger/ACL identities against expected-runtime and the native evidence.",
+    "Only after root confirms successful application/readback, commit and push normally to the existing paired PR4252 head.",
+    "Advance paired UI publication through normal PR/CI/release gates."
+  ],
+  "historical_evidence": "The prior rejection and pending-adoption archive remain unchanged historical observations. This fresh reservation does not reuse the former 07:07 allocation.",
+  "unchanged_proof_inputs": {
+    "backend_files": 36,
+    "ui_inputs": 5,
+    "standalone_native_groups": 22,
+    "ui_component_cases": 44
+  },
+  "limits": [
+    "The author has not applied SQL or called live money functions.",
+    "Native/component evidence retains documented fixture and HTTP/RLS limits.",
+    "Calendar maturity is not common producer/bank finality.",
+    "Later full captured-source adoption must rebase and reprove its original-owner gates after standalone owner changes."
+  ]
+}

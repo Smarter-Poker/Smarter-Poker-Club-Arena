@@ -1006,6 +1006,7 @@ export default function UnionDashboardPage() {
         {success && <div className="admin-success-banner">{success}</div>}
 
         <CasinoSurfaceHeader
+          crest="club"
           eyebrow="Union Network / Operations"
           title={union?.name || 'Union Operations'}
           description="Govern Member Clubs, Agents, Treasury, Applications, Analytics, And Network Controls From One Permission-Backed Command Deck."
@@ -1323,7 +1324,10 @@ export default function UnionDashboardPage() {
                     <div className="admin-stat-value" style={{ color: '#4599FF' }}>
                       {fmt(bbjPool?.backup_balance ?? 0)}
                     </div>
-                    <div className="admin-stat-label">Backup Jackpot ›</div>
+                    {/* 2026-09-11: this bank is what the Mini Jackpot pays from
+                        (fn_bbj_mini_payout debits backup_balance), and the tile
+                        never said so. */}
+                    <div className="admin-stat-label">Backup Jackpot - Funds The Mini ›</div>
                   </button>
                   {/* Spin reserve. It is NOT a send source - the pool is priced on
                     being net-neutral over volume, and a manual withdrawal would

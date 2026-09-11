@@ -1,8 +1,8 @@
 // ---------------------------------------------------------------------------
-// LAW: this repo can see its own red main, and the alarm can actually fire.
+// LAW: this repo can see its own red main, and the audit actually fails.
 //
 // 2026-09-06. CLAUDE.md 10.83 has said since the day it was written that a
-// detector raises an issue for any workflow red on `main` with nobody watching.
+// detector reports any workflow red on `main` with nobody watching.
 // It named the World Hub's copy. CLUB ARENA DID NOT HAVE ONE - so every agent
 // reading Club Arena's CLAUDE.md was told a guard was watching this repo when
 // nothing was, which is worse than the gap, because it stops people looking.
@@ -18,8 +18,9 @@
 // read the running rules off engine-01 and REFUSED TO PASS, doing exactly what
 // 10.84 designed it to do - and the refusal reached nobody.
 //
-// So this law pins the detector AND its reader. A watchdog whose alarm cannot
-// fire is the same bug one level up (CLAUDE.md 10.86 rule 4).
+// So this law pins the detector, its durable issue reader, and its native
+// Actions verdict. A detector whose alarm cannot fire is the same bug one
+// level up.
 // ---------------------------------------------------------------------------
 import { describe, it, expect } from 'vitest';
 import { readFileSync, existsSync } from 'node:fs';
@@ -29,7 +30,7 @@ const ROOT = join(__dirname, '..');
 const read = (p: string) => readFileSync(join(ROOT, p), 'utf8');
 
 const DETECTOR = 'scripts/ci/check-main-is-green.mjs';
-const HOST = '.github/workflows/publish-watchdog.yml';
+const HOST = '.github/workflows/production-integrity-audit.yml';
 
 /** The `main_is_green` job block, from its key to the next top-level job. */
 function mainIsGreenJob(wf: string): string | null {
@@ -44,13 +45,13 @@ describe('a guard has a reader', () => {
   it('the red-main detector exists in THIS repo', () => {
     expect(
       existsSync(join(ROOT, DETECTOR)),
-      `${DETECTOR} is missing. CLAUDE.md 10.83 promises this repo raises an issue ` +
-        'for any workflow red on main with nobody watching. Without the file, that ' +
+      `${DETECTOR} is missing. CLAUDE.md 10.83 promises this repo reports ` +
+        'any workflow red on main with nobody watching. Without the file, that ' +
         'promise is a sentence describing another repository.'
     ).toBe(true);
   });
 
-  it('something actually runs it on a schedule', () => {
+  it('the read-only production integrity audit actually runs it', () => {
     const wf = read(HOST);
     expect(wf, `${HOST} must invoke ${DETECTOR}`).toContain(DETECTOR);
     expect(wf, `${HOST} must carry a schedule; a detector nothing triggers is a file`).toMatch(
@@ -60,31 +61,37 @@ describe('a guard has a reader', () => {
     expect(job, `${HOST} must define a main_is_green job`).toBeTruthy();
   });
 
-  it('the alarm runs where gh exists and may write issues', () => {
+  it('the alarm runs independently, names a reader, and carries its verdict', () => {
     const wf = read(HOST);
     const job = mainIsGreenJob(wf)!;
 
-    // `gh` is preinstalled on GitHub-hosted runners and is NOT guaranteed on
-    // the estate's self-hosted boxes. An alarm that shells out to `gh` from a
-    // runner without it fails silently - the detector goes red, the issue is
-    // never filed, and this repo is back to a guard with no reader.
+    // The audit must not share a failure domain with the self-hosted boxes it
+    // watches. The only side effect is its named, durable issue reader; it has
+    // no release, repair, or production mutation authority.
     expect(
       job,
-      'the main_is_green job must pin runs-on: ubuntu-latest. It shells out to ' +
-        '`gh`, which self-hosted runners do not guarantee, and an alarm must not ' +
-        'share a failure domain with the boxes it is watching.'
+      'the main_is_green job must pin runs-on: ubuntu-latest so the alarm does ' +
+        'not share a failure domain with the boxes it is watching.'
     ).toMatch(/runs-on:\s*ubuntu-latest/);
     expect(job, 'the alarm must not be routed to vars.CI_RUNNER').not.toMatch(/vars\.CI_RUNNER/);
 
-    // Raising and clearing are both required: an alarm that cannot close
-    // itself becomes wallpaper, and wallpaper is what 10.83 is about.
-    expect(job, 'the job must raise an issue when the detector exits 1').toMatch(/gh issue create/);
-    expect(job, 'the job must close the issue when main is green again').toMatch(/gh issue close/);
-
-    // `permissions: issues: write` is declared at workflow level here.
-    expect(wf, `${HOST} must declare issues: write, or gh issue create 403s`).toMatch(
-      /issues:\s*write/
-    );
+    expect(job).toContain('CODE: ${{ steps.main-green.outputs.code }}');
+    expect(job).toContain('exit "$CODE"');
+    expect(job).toMatch(/gh issue create/);
+    expect(job).toMatch(/gh issue edit/);
+    expect(job).toMatch(/gh issue close/);
+    expect(job).toContain("steps.main-green.outputs.code == '1'");
+    expect(job).toContain("steps.main-green.outputs.code == '0'");
+    expect(job).toContain("OK - every workflow's latest VERDICT on main is green.");
+    expect(job).toContain('Reader workflow: `Production Integrity Audit`');
+    expect(job).toContain('club-arena:production-integrity-main-health:v1');
+    expect(job).toContain('main-health-reader');
+    expect(job).toContain('--label "$LABEL"');
+    expect(job).toContain('.title == $title');
+    expect(job).toContain('contains($marker)');
+    expect(job).toContain('.name == $label');
+    expect(wf).toMatch(/issues:\s*write/);
+    expect(job).not.toMatch(/repository\/dispatches|workflow\s+(?:enable|disable)|ssh\s/);
   });
 
   it('the detector reads the exit code of the script, not of the pipe', () => {
@@ -108,6 +115,49 @@ describe('a guard has a reader', () => {
         '`tee` always succeeds, so a check piped through it and read with `$?` ' +
         'reports success no matter what the detector found.'
     ).toBe(true);
+  });
+
+  it('creates the ownership label only when an alarm needs it', () => {
+    const job = mainIsGreenJob(read(HOST))!;
+    const raiseStart = job.indexOf('- name: Raise the durable alarm');
+    const closeStart = job.indexOf('- name: Close the alarm');
+    const carryStart = job.indexOf('- name: Carry the main-health verdict');
+    const raise = job.slice(raiseStart, closeStart);
+    const close = job.slice(closeStart, carryStart);
+
+    expect(raise).toContain('gh label list');
+    expect(raise).toContain('gh label create "$LABEL"');
+    expect(raise).not.toContain('--force');
+    expect(close).toContain('gh label list');
+    expect(close).not.toContain('gh label create');
+  });
+
+  it('validates exact ownership independently before both edit and close', () => {
+    const job = mainIsGreenJob(read(HOST))!;
+    const issueLists = job.match(/gh issue list[\s\S]*?--json number,title,body,labels/g) ?? [];
+
+    expect(issueLists).toHaveLength(2);
+    for (const command of issueLists) {
+      expect(command).toContain('--label "$LABEL"');
+      expect(command).not.toContain('--search');
+    }
+    for (const exactOwnershipCheck of [
+      '.title == $title',
+      'contains($marker)',
+      'any(.labels[]?; .name == $label)',
+      'multiple exact production-integrity main-health issues',
+    ]) {
+      expect(job.split(exactOwnershipCheck)).toHaveLength(3);
+    }
+    expect(job).toMatch(/^\s*echo "\$OWNER_MARKER"$/m);
+    expect(job).toMatch(/gh issue create[\s\S]{0,180}?--label "\$LABEL"/);
+    for (const sharedIdentity of [
+      'TITLE="A workflow has been failing on main with nobody watching"',
+      'LABEL="main-health-reader"',
+      "OWNER_MARKER='<!-- club-arena:production-integrity-main-health:v1 -->'",
+    ]) {
+      expect(job.split(sharedIdentity)).toHaveLength(3);
+    }
   });
 
   it('CLAUDE.md no longer claims another repo is watching this one', () => {

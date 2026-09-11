@@ -47,6 +47,114 @@ export interface EngineAlertInput {
   summary: string;
   description?: string;
   labels?: Record<string, string>;
+  /**
+   * THE PAGE (Dan, 2026-09-11: "I SHOULD GET PUSH NOTIFICATIONS OR TEXT IF
+   * ANYTHING INSIDE THE HORSES IS FAILING OR THEY CAN'T PLAY").
+   *
+   * `raiseEngineAlert` reaches `engine_alerts` and, for a critical, an email.
+   * Measured 2026-09-11: every critical the engine raised in seven days was
+   * `notified_via = ['email']` and nothing else - `ClubArenaFleetFloorLost`
+   * fired twice on 2026-09-10 while Midway ran 0-11 live horses for five
+   * hours, and reached no phone. The phone path already exists and delivers:
+   * `fn_raise_notification` -> `notifications` -> `push_outbox` (mirrored by
+   * trigger) -> the World Hub's per-minute push dispatch -> the web/native
+   * push subscription on the phone. `financial_incident` pushes ride it today
+   * and were delivered this week. Recipients are the registry Dan owns for
+   * exactly this, `ca_incident_recipients` (active, scope platform/technical).
+   *
+   * Opt-in per alert, critical only, once per fingerprint (the same dedupe the
+   * webhook has). A kill storm that fires ten times a day is an email; the
+   * fleet unable to play is a page. Nothing here is a fix for anything (10.11):
+   * it is the delivery Dan asked for, on the conditions the callers name.
+   */
+  page?: boolean;
+}
+
+/** Test seam: the push mirror's two database calls. */
+export interface EnginePageTransport {
+  recipients: () => Promise<string[]>;
+  notify: (
+    userId: string,
+    title: string,
+    body: string,
+    data: Record<string, unknown>
+  ) => Promise<void>;
+}
+
+let pageTransport: EnginePageTransport | null = null;
+
+async function defaultPageTransport(): Promise<EnginePageTransport> {
+  const { supabase } = await import('./supabase/client.js');
+  return {
+    recipients: async () => {
+      const { data, error } = await supabase
+        .from('ca_incident_recipients')
+        .select('user_id')
+        .eq('active', true)
+        .in('scope', ['platform', 'technical']);
+      if (error) throw error;
+      return (data ?? [])
+        .map((r) => String((r as { user_id?: string }).user_id ?? ''))
+        .filter((v) => v.length > 0);
+    },
+    notify: async (userId, title, body, data) => {
+      const { error } = await supabase.rpc('fn_raise_notification', {
+        p_user_id: userId,
+        p_type: 'system',
+        p_title: title,
+        p_message: body,
+        p_link: '/hub/club-arena',
+        p_data: data,
+      });
+      if (error) throw error;
+    },
+  };
+}
+
+/**
+ * Mirror a paged critical to the phones in the platform recipient registry.
+ * Never throws (rule 1). Returns how many recipients were notified.
+ */
+async function pageRecipients(input: EngineAlertInput, startsAt: string): Promise<number> {
+  try {
+    const transport = pageTransport ?? (await defaultPageTransport());
+    const recipients = await transport.recipients();
+    if (recipients.length === 0) {
+      console.warn(
+        '[engineAlerts] page requested for ' +
+          input.alertname +
+          ' but ca_incident_recipients has no active platform/technical row - nobody was paged'
+      );
+      return 0;
+    }
+    // Title case, no em dashes: the title reaches a phone as a notification.
+    const title = 'Horse Fleet Alert: ' + input.alertname;
+    const body = (input.summary + (input.description ? ' ' + input.description : '')).slice(0, 480);
+    let n = 0;
+    for (const userId of recipients) {
+      try {
+        await transport.notify(userId, title, body, {
+          alertname: input.alertname,
+          severity: input.severity,
+          component: input.component,
+          startsAt,
+          ...(input.labels ?? {}),
+        });
+        n++;
+      } catch (err) {
+        console.warn('[engineAlerts] page to a recipient failed:', (err as Error)?.message);
+      }
+    }
+    return n;
+  } catch (err) {
+    console.warn('[engineAlerts] page failed:', (err as Error)?.message);
+    return 0;
+  }
+}
+
+/** Test seam: replace the push mirror's database calls. */
+export function __setEnginePageTransport(transport: EnginePageTransport | null): void {
+  pageTransport = transport;
 }
 
 const ALERT_URL = process.env.ALERT_WEBHOOK_URL || 'https://smarter.poker/api/alerts/engine';
@@ -110,6 +218,12 @@ export async function raiseEngineAlert(input: EngineAlertInput): Promise<boolean
     component: input.component,
     ...(input.labels ?? {}),
   });
+
+  // The page does not wait on the webhook and the webhook does not wait on
+  // the page: two deliveries, two failure domains, one fingerprint.
+  if (input.page === true && input.severity === 'critical') {
+    void pageRecipients(input, startsAt);
+  }
 
   return post({
     alerts: [

@@ -75,9 +75,12 @@ describe('running-state bookkeeping cannot pay a place', () => {
 
   it('late-reg recalculation updates only the displayed prize', () => {
     const recalc = code(sliceMethod(SOURCE, 'protected async recalculateEliminatedPrizes'));
-    expect(recalc).toMatch(/update\(\{ prize:\s*correctPrize \}\)/);
+    expect(recalc).toContain("'fn_ca_reprice_unpaid_tournament_place'");
+    expect(recalc).toContain('p_expected_prize: expectedPrize');
+    expect(recalc).not.toMatch(/\.from\('tournament_players'\)[\s\S]*?\.update\(/);
     expect(recalc).not.toMatch(/settleTournamentObligation/);
-    expect(recalc).not.toMatch(/\.rpc\(/);
+    expect(recalc.match(/supabase\.rpc\(/g)).toHaveLength(1);
+    expect(recalc).not.toMatch(/credit|wallet|pay_player/);
   });
 
   it('final-deal closeout consumes payout evidence without paying it again', () => {
@@ -108,11 +111,14 @@ describe('terminal means complete, not merely ok', () => {
     expect(terminal).toMatch(/receipt\.table_closure/);
   });
 
-  it('a malformed or partial final-deal receipt releases both local guards', () => {
+  it('preserves receipt certainty before any review fence can release', () => {
     const poll = code(sliceMethod(SOURCE, 'protected async checkFinalTableDeal'));
     const boundary = code(sliceMethod(SOURCE, 'private async completeFinalTableDealAtBoundary'));
     expect(boundary).toContain('if (!payoutShapeIsExact)');
-    expect(poll).toContain('engine.releaseTerminalCloseoutPause()');
+    expect(poll).toContain("await this.closeFinalTableDealReview('stale')");
+    const close = code(sliceMethod(SOURCE, 'private async closeFinalTableDealReview'));
+    expect(close).toContain('review.engine.releaseTerminalCloseoutPause()');
+    expect(close).toContain("data.review_state === 'cancelled' || data.review_state === 'expired'");
     expect(poll).toMatch(
       /catch \(err\) \{[\s\S]*this\.finalTableDealHandled = false;[\s\S]*this\.tournamentFinished = false;/
     );
@@ -130,8 +136,12 @@ describe('terminal means complete, not merely ok', () => {
       /Boolean\(t\.satellite_target_id \|\| t\.satellite_target\)/
     );
     expect(poll.slice(0, launch)).toMatch(/if \(isSatelliteDeal\) return/);
-    expect(code(sliceMethod(SOURCE, 'private async completeFinalTableDealAtBoundary'))).toMatch(
-      /requestTournamentTerminalReceipt\(\s*this\.tournamentId,\s*'final_table_deal',\s*null\s*\)/
+    const boundary = code(sliceMethod(SOURCE, 'private async completeFinalTableDealAtBoundary'));
+    expect(boundary).toMatch(
+      /requestTournamentTerminalReceipt\(\s*this\.tournamentId,\s*'final_table_deal',\s*null,/
+    );
+    expect(boundary).toContain(
+      'dealProposal: { proposalId: consensus.proposalId, revision: consensus.revision }'
     );
   });
 });

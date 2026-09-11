@@ -20,12 +20,8 @@ on:
   schedule:
     # Twice a day. An unrecorded migration is not an emergency, it is a debt.
     - cron: '25 7,19 * * *'
-  workflow_dispatch:
-    inputs:
-      since:
-        description: 'Version floor, e.g. 20260825000000 (default: 7 days ago)'
-        type: string
-        required: false
+  repository_dispatch:
+    types: [audit-applied-migrations]
 
 permissions:
   contents: read
@@ -51,22 +47,33 @@ jobs:
         with:
           node-version: 20
 
+      # GITHUB_TOKEN is intentionally scoped to this repository and cannot
+      # prove the World Hub half of the shared migration ledger. Mint one
+      # short-lived, read-only estate token instead of silently degrading to a
+      # Club-Arena-only answer.
+      - name: Mint a read-only estate token for the sibling migration index
+        id: estate-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ vars.AUTOPILOT_APP_ID }}
+          private-key: ${{ secrets.AUTOPILOT_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: Smarter-Poker-World-Hub
+          permission-contents: read
+
       - name: Compare the live migration history against this repo
         id: compare
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.estate-token.outputs.token }}
         run: |
           set -o pipefail
-          ARGS=""
-          if [ -n "${{ inputs.since }}" ]; then ARGS="--since ${{ inputs.since }}"; fi
-
           # --fail makes the run go red when the gap exists. The script exits 2
           # on its own errors (missing credentials, missing RPC), which is a
           # different failure and should also be visible rather than swallowed.
           set +e
-          node scripts/ci/check-applied-migrations-are-recorded.mjs $ARGS --fail 2>&1 | tee /tmp/recorded.log
+          node scripts/ci/check-applied-migrations-are-recorded.mjs --fail 2>&1 | tee /tmp/recorded.log
           echo "status=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
           set -e
 

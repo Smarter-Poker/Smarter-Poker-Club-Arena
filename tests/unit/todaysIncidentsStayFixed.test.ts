@@ -48,7 +48,7 @@ const clubHome = read('src/pages/ClubHomePage.tsx');
 const filterSpec = read('src/components/lobby/advancedFilterSpec.ts');
 const recurring = read('server/src/services/TournamentRecurringService.ts');
 const leadership = read('server/src/services/leadership.ts');
-const deployWf = read('.github/workflows/auto-deploy-hetzner.yml');
+const releaseTransaction = read('server/scripts/engine-release-transaction.sh');
 
 describe('the lobby showed zero cash tables in every club', () => {
   it('does not pass a JS array where PostgREST wants a group', () => {
@@ -148,15 +148,17 @@ describe('the engine ran eight-hour-old code behind a green pipeline', () => {
   it('verifies against the container, not the load-balanced hostname', () => {
     // Caddy failed over to an unmanaged twin while 8080 restarted, so the
     // deploy read the OTHER instance's version and rolled back a good build.
-    expect(deployWf).toMatch(/127\.0\.0\.1:\$\{PORT:-8080\}\/health/);
+    expect(releaseTransaction).toContain("health_instance 'http://127.0.0.1:8080/health'");
   });
 
   it('then requires the public hostname to serve that same SHA', () => {
-    expect(deployWf).toMatch(/does not — another instance is answering that hostname/);
+    expect(releaseTransaction).toContain('[ "$PUBLIC_INSTANCE" = "$CANDIDATE_INSTANCE" ]');
+    expect(releaseTransaction).toContain('public proxy never served the exact candidate release');
   });
 
   it('refuses to deploy while an unmanaged engine is running', () => {
-    expect(deployWf).toMatch(/Unmanaged engine container\(s\) running alongside/);
+    expect(releaseTransaction).toContain('docker ps --filter label=sp.role=engine');
+    expect(releaseTransaction).toContain('an unmanaged engine container is running on this host');
   });
 });
 

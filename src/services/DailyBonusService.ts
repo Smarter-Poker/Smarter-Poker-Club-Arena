@@ -5,8 +5,14 @@
  *
  * Two RPCs, both server-authoritative (docs/DAILY-CLUB-ARENA-BONUS.md):
  *
- *   fn_ca_daily_bonus_status()            what today offers and what is claimed
- *   fn_ca_daily_bonus_claim(slot, req)    pay one tile, exactly once
+ *   fn_ca_daily_bonus_status()                 what today offers and what is claimed
+ *   fn_ca_daily_bonus_claim(slot, req, day)    pay one tile, exactly once
+ *   fn_ca_daily_bonus_mark_shown()             today's sheet was shown (one popup per day, any device)
+ *
+ * The claim names the day the sheet showed (`p_bonus_date`). A tap that lands
+ * after Chicago midnight is refused with `day_rolled_over` and the sheet
+ * re-reads, rather than the server paying slot N of a day the player never
+ * saw (20260909203926).
  *
  * The client never sends an amount and never credits anything itself. A tile
  * pays diamonds through award_diamonds_v2 or a consumable credit in
@@ -27,12 +33,19 @@ import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { reportError } from '../utils/errorReporter';
 
+/**
+ * Phase 3 (20260910181625): a `shield` tile is a Streak Shield credit, a
+ * `boost` tile is 24 hours of 2x diamonds on Daily Missions, and a mystery
+ * tile's prize is multiplied by a lucky roll the server makes at the tap.
+ */
 export type DailyBonusTileKind =
   | 'diamonds'
   | 'throwables'
   | 'rabbit_hunts'
   | 'time_bank'
-  | 'mystery';
+  | 'mystery'
+  | 'shield'
+  | 'boost';
 
 export interface DailyBonusGranted {
   kind: Exclude<DailyBonusTileKind, 'mystery'>;
@@ -43,6 +56,36 @@ export interface DailyBonusGranted {
   diamond_transaction_id?: string;
   expires_at?: string;
   balance_after: number | null;
+  /** Mystery tiles only: the server's lucky multiplier (1-5) already applied to the amounts. */
+  lucky?: number;
+  /** Boost only. */
+  factor?: number;
+  hours?: number;
+  boost_id?: string;
+  ends_at?: string;
+}
+
+/** What a claimed mystery tile turned out to be, lucky roll applied. */
+export interface DailyBonusRevealed {
+  kind: DailyBonusTileKind;
+  diamonds: number;
+  quantity: number;
+  lucky?: number;
+}
+
+export interface DailyBonusShield {
+  /** Unspent, unexpired shields the player holds. */
+  held: number;
+  expires_at: string | null;
+}
+
+export interface DailyBonusBoost {
+  active: boolean;
+  factor?: number;
+  kind?: string;
+  ends_at?: string;
+  seconds_left?: number;
+  applied_diamonds?: number;
 }
 
 export interface DailyBonusTile {
@@ -61,6 +104,8 @@ export interface DailyBonusTile {
   locked: boolean;
   /** A diamond tile the player's remaining daily cap would trim. */
   capped: boolean;
+  /** A claimed mystery tile: what it turned out to be. */
+  revealed?: DailyBonusRevealed | null;
 }
 
 export interface DailyBonusWeekDay {
@@ -68,6 +113,8 @@ export interface DailyBonusWeekDay {
   streak: number;
   diamonds: number | null;
   extras: string | null;
+  /** Today's entry on a chest day (streak 14, 30): the strip shows the chest, not the cycle row. */
+  chest?: boolean;
   state: 'done' | 'today' | 'upcoming';
 }
 
@@ -104,12 +151,18 @@ export interface DailyBonusStatus {
   multiplier: number;
   is_vip: boolean;
   claimed_today: boolean;
+  /** The sheet has already been put in front of this player today, on any device (one popup per day). */
+  shown_today: boolean;
   unclaimed: number;
   tiles: DailyBonusTile[];
   week: DailyBonusWeekDay[];
   tomorrow: DailyBonusPreview[];
   caps: DailyBonusCaps | null;
   cents_per_diamond: number;
+  /** Phase 3: shields held, a live Mission Boost, and whether a shield saved today's streak. */
+  shield: DailyBonusShield;
+  boost: DailyBonusBoost;
+  streak_protected: boolean;
 }
 
 export interface DailyBonusClaimResult {
@@ -117,8 +170,11 @@ export interface DailyBonusClaimResult {
   reason?: string;
   idempotent?: boolean;
   slot?: number;
+  /** The Chicago day the claim was paid on (success) or the server's today (day_rolled_over). */
+  bonus_date?: string;
+  today?: string;
   granted?: DailyBonusGranted;
-  revealed?: { kind: DailyBonusTileKind; diamonds: number; quantity: number } | null;
+  revealed?: DailyBonusRevealed | null;
   streak?: number;
   first_claim_of_day?: boolean;
   detail?: unknown;
@@ -139,7 +195,14 @@ export const CLAIM_REASON_TEXT: Record<string, string> = {
   fixture: 'Not Available On This Account',
   horse: 'Not Available On This Account',
   unauthenticated: 'Sign In To Claim',
+  no_profile: 'Sign In To Claim',
   request_id_required: 'Could Not Claim, Try Again',
+  day_rolled_over: 'A New Day Has Started, Here Is Today’s Sheet',
+  boost_already_live: 'A Mission Boost Is Already Running',
+  invalid_amount: 'Nothing To Pay On This Tile',
+  award_refused: 'Could Not Claim, Try Again',
+  empty_response: 'Could Not Claim, Try Again',
+  transport: 'Could Not Claim, Try Again',
 };
 
 export function claimReasonText(reason: string | undefined): string {
@@ -196,11 +259,41 @@ class DailyBonusServiceClass {
     }
     return {
       ...status,
+      eligible: status.eligible === true,
+      shown_today: status.shown_today === true,
+      unclaimed: Number(status.unclaimed) || 0,
+      seconds_to_reset: Math.max(0, Number(status.seconds_to_reset) || 0),
       tiles: Array.isArray(status.tiles) ? status.tiles : [],
       week: Array.isArray(status.week) ? status.week : [],
       tomorrow: Array.isArray(status.tomorrow) ? status.tomorrow : [],
       caps: status.caps ?? null,
+      // Phase 3 fields: a status from before the ledger learned them reads as
+      // nothing held, nothing running, nothing protected.
+      shield: {
+        held: Math.max(0, Number(status.shield?.held) || 0),
+        expires_at: status.shield?.expires_at ?? null,
+      },
+      boost:
+        status.boost && status.boost.active === true
+          ? {
+              ...status.boost,
+              active: true,
+              seconds_left: Math.max(0, Number(status.boost.seconds_left) || 0),
+            }
+          : { active: false },
+      streak_protected: status.streak_protected === true,
     };
+  }
+
+  /**
+   * Record that today's sheet has been put in front of the player, so no
+   * other device raises the popup again today. Idempotent server-side (the
+   * first show wins); a failure is reported and otherwise ignored, the
+   * browser's own day mark covers the gap.
+   */
+  async markShown(): Promise<void> {
+    const { error } = await supabase.rpc('fn_ca_daily_bonus_mark_shown');
+    if (error) reportError(error, 'DailyBonusService.markShown.fn_ca_daily_bonus_mark_shown');
   }
 
   /**
@@ -212,6 +305,7 @@ class DailyBonusServiceClass {
     const { data, error } = await supabase.rpc('fn_ca_daily_bonus_claim', {
       p_slot: slot,
       p_request_id: requestId,
+      p_bonus_date: today,
     });
     if (error) {
       reportError(error, 'DailyBonusService.claim.fn_ca_daily_bonus_claim', { slot });
@@ -220,11 +314,19 @@ class DailyBonusServiceClass {
     const result = (data ?? { success: false, reason: 'empty_response' }) as DailyBonusClaimResult;
     if (result.success && result.granted) {
       // The header and wallet re-read their balances; the amount comes from
-      // the ledger, never from here.
+      // the ledger, never from here. When the ledger reported the balance it
+      // left behind, the header can paint it now rather than after a re-read.
       masterBus.emit('BALANCE_UPDATED', {
         source: result.granted.kind === 'diamonds' ? 'daily_bonus_diamonds' : 'daily_bonus_credit',
         slot,
       });
+      if (result.granted.kind === 'diamonds' && typeof result.granted.balance_after === 'number') {
+        masterBus.emit('DIAMOND_BALANCE_CHANGED', {
+          newBalance: result.granted.balance_after,
+          delta: result.granted.diamonds,
+          source: 'daily_bonus',
+        });
+      }
       masterBus.emit('DAILY_REWARD_CLAIMED', {
         amount:
           result.granted.kind === 'diamonds' ? result.granted.diamonds : result.granted.quantity,

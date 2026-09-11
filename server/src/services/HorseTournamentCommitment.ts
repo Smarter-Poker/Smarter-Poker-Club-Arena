@@ -14,8 +14,8 @@
  * cash tables while its tournament is two hours out. When the tournament
  * starts, `fn_enforce_four_table_limit` still refuses a fifth LIVE seat - the
  * client shows four tabs, and that invariant does not move - so the horse
- * would be seated late by `ensureLateRegSeated`, blinded off until a cash
- * session happened to end. A person does not do that. A person with a
+ * would miss the atomic launch admission while a cash session kept the fourth
+ * slot occupied. A person does not do that. A person with a
  * tournament in an hour finishes the cash session they have been in longest,
  * gets up in good time, and is in their seat when the cards go in the air.
  *

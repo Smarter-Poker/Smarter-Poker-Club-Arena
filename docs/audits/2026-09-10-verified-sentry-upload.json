@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "date": "2026-09-10",
+  "scope": "Explicit verified web release source-map upload policy",
+  "incident": "A dirty local production build instantiated the upload plugin solely because a token was configured. Upload release identity could fall back to npm package version. Native builds could instantiate the web dist uploader.",
+  "changes": [
+    "Publisher web build explicitly sets CA_SENTRY_UPLOAD=1.",
+    "Before plugin instantiation, require production web target, configured authentication, full 40-character VITE_APP_VERSION equal to Git HEAD, complete Git history, and a clean working tree.",
+    "Ignored generated artifacts do not make a release dirty. Native builds never upload a leftover web dist directory.",
+    "The upload release name uses only the verified source SHA; package-version fallback is removed.",
+    "Existing organization/project selection, authentication environment, nonblocking upload errors, and source-map deletion remain unchanged."
+  ],
+  "publisher_contract": "Resolve the tip step uses commits/main .sha or full github.sha fallback. Build checkout and VITE_APP_VERSION both use needs.publish-needed.outputs.target_sha.",
+  "tests": {
+    "count": 17,
+    "exit": 0,
+    "fixture": "Disposable real Git repositories plus actual Vite configuration import; upload plugin mocked so tests perform no external upload.",
+    "covers": [
+      "legacy token-only activation",
+      "explicit clean publisher web configuration",
+      "dirty staged unstaged untracked source",
+      "ignored build artifacts",
+      "native stale web maps",
+      "missing short package-version or mismatched release identity",
+      "real shallow checkout",
+      "unverifiable Git",
+      "nonblocking synthetic upload error",
+      "unchanged source-map deletion"
+    ]
+  },
+  "validation": {
+    "standalone_policy_typecheck_exit": 0,
+    "lint_exit": 0,
+    "normal_build_exit": 0,
+    "local_external_uploads": false,
+    "build_environment": "CA_SENTRY_UPLOAD= and SENTRY_AUTH_TOKEN= explicitly empty",
+    "node_config_baseline": "TS2769 maxParallelFileOps exists in unchanged baseline and guard candidate; root assigned a separate follow-up commit to move this Rollup option to its supported location."
+  },
+  "limits": [
+    "Policy establishes identity at Vite configuration evaluation, before upload plugin instantiation; it does not claim an immutable source snapshot against edits during a running build.",
+    "No production Sentry upload was attempted for validation.",
+    "Publisher's earlier 403 remains unresolved. Local configured upload success does not prove publisher credentials or permissions."
+  ],
+  "credentials_read_or_changed": false,
+  "organization_or_project_changed": false,
+  "pushed": false
+}

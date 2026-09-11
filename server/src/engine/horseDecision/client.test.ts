@@ -5,8 +5,10 @@ import type {
   HorseDecisionWorkerResponse,
   LiveHorseDecisionSnapshot,
 } from './protocol.js';
+import { buildHorseDecisionKey } from './protocol.js';
 import {
   HorseDecisionAbortedError,
+  HorseDecisionExpiredError,
   LiveHorseDecisionWorkerClient,
   type WorkerLike,
 } from './client.js';
@@ -62,33 +64,90 @@ class FakeWorker implements WorkerLike {
   }
 }
 
-const snapshot = (fence: string): LiveHorseDecisionSnapshot => ({
-  generation: 7,
-  fence,
-  decisionTimeMs: 1_800_000,
-  player: {
-    seat: 1,
-    user_id: 'horse-1',
-    username: 'Horse One',
-    stack: 100,
-    bet: 0,
-    totalInvested: 0,
-    cards: [],
-    is_folded: false,
-    is_all_in: false,
-    is_sitting_out: false,
-  },
-  gameState: {
-    players: [],
-    communityCards: [],
-    pot: 3,
-    currentBet: 2,
-    minRaise: 2,
-    stage: 'preflop',
-    gameVariant: 'nlh',
-    bigBlind: 2,
-  },
-});
+const snapshot = (fence: string): LiveHorseDecisionSnapshot => {
+  const value: LiveHorseDecisionSnapshot = {
+    generation: 7,
+    fence,
+    decisionKey: '',
+    decisionTimeMs: 1_800_000,
+    player: {
+      seat: 1,
+      user_id: 'horse-1',
+      username: 'Horse One',
+      stack: 100,
+      bet: 0,
+      totalInvested: 0,
+      cards: [
+        { rank: 'A', suit: 'spades' },
+        { rank: 'K', suit: 'spades' },
+      ],
+      is_folded: false,
+      is_all_in: false,
+      is_sitting_out: false,
+    },
+    gameState: {
+      stateSchemaVersion: 1,
+      heroSeat: 1,
+      currentPlayerSeat: 1,
+      legalActions: ['fold', 'call', 'raise', 'all_in'],
+      toCall: 2,
+      minRaiseTo: 4,
+      maxRaiseTo: 100,
+      bettingStructure: 'no_limit',
+      fixedBetSize: null,
+      wagersCapped: false,
+      commitmentCapRemaining: null,
+      players: [
+        {
+          seat: 1,
+          user_id: 'horse-1',
+          username: 'Horse One',
+          stack: 100,
+          bet: 0,
+          totalInvested: 0,
+          cards: [],
+          is_folded: false,
+          is_all_in: false,
+          is_sitting_out: false,
+        },
+        {
+          seat: 2,
+          user_id: 'horse-2',
+          username: 'Horse Two',
+          stack: 98,
+          bet: 2,
+          totalInvested: 2,
+          cards: [],
+          is_folded: false,
+          is_all_in: false,
+          is_sitting_out: false,
+        },
+      ],
+      communityCards: [],
+      communityCards2: [],
+      communityCards3: [],
+      pot: 2,
+      contestablePot: 2,
+      currentBet: 2,
+      minRaise: 2,
+      stage: 'preflop',
+      gameVariant: 'nlh',
+      bigBlind: 2,
+      actionHistory: [],
+      pots: [{ amount: 2, eligiblePlayers: ['horse-2'] }],
+      rakeConfig: { percent: 10, cap: 5, noFlopNoDrop: true },
+      variantRules: {
+        holeCardsDealt: 2,
+        holeCardsUse: 'any',
+        boardCardsUse: 'any',
+        deckSize: 52,
+        splitLow8OrBetter: false,
+      },
+    },
+  };
+  value.decisionKey = buildHorseDecisionKey(value);
+  return value;
+};
 
 const V31_DATASET = {
   id: '11111111-1111-4111-8111-111111111111',
@@ -132,9 +191,12 @@ const fastResult = (requestId: number, fence: string) => ({
 });
 
 describe('LiveHorseDecisionWorkerClient', () => {
-  it('holds work behind READY and posts exactly one FIFO job at a time', async () => {
+  it('holds work behind READY and, pinned to a window of one, posts exactly one FIFO job at a time', async () => {
     const worker = new FakeWorker();
-    const client = new LiveHorseDecisionWorkerClient({ workerFactory: () => worker });
+    const client = new LiveHorseDecisionWorkerClient({
+      workerFactory: () => worker,
+      maxInFlight: 1,
+    });
     const first = client.decideFast(snapshot('hand-1:seat-1'));
     const second = client.decideFast(snapshot('hand-2:seat-2'));
 
@@ -155,7 +217,10 @@ describe('LiveHorseDecisionWorkerClient', () => {
 
   it('removes queued aborts and stale-discards an active aborted result', async () => {
     const worker = new FakeWorker();
-    const client = new LiveHorseDecisionWorkerClient({ workerFactory: () => worker });
+    const client = new LiveHorseDecisionWorkerClient({
+      workerFactory: () => worker,
+      maxInFlight: 1,
+    });
     worker.emitMessage(ready);
 
     const activeAbort = new AbortController();
@@ -241,24 +306,184 @@ describe('LiveHorseDecisionWorkerClient', () => {
     expect(onFatal).toHaveBeenCalledTimes(1);
   });
 
-  it('terminal-fails a posted job that never returns instead of wedging the FIFO', async () => {
-    const worker = new FakeWorker();
-    const onFatal = vi.fn();
-    const client = new LiveHorseDecisionWorkerClient({
-      workerFactory: () => worker,
-      onFatal,
-      jobTimeoutMs: 5,
-    });
-    worker.emitMessage(ready);
-    const pending = client.decideFast(snapshot('wedged'));
+  it('terminal-fails a posted job that never returns after its full execution budget', async () => {
+    vi.useFakeTimers();
+    try {
+      const worker = new FakeWorker();
+      const onFatal = vi.fn();
+      const client = new LiveHorseDecisionWorkerClient({
+        workerFactory: () => worker,
+        onFatal,
+        jobTimeoutMs: 5,
+      });
+      worker.emitMessage(ready);
+      const pending = client.decideFast(snapshot('wedged'));
+      const rejection = expect(pending).rejects.toBeInstanceOf(HorseDecisionExpiredError);
 
-    await expect(pending).rejects.toThrow(
-      'DECIDE_FAST) exceeded its 5ms queue-plus-compute deadline'
-    );
-    await new Promise<void>((resolve) => queueMicrotask(resolve));
-    expect(client.status()).toMatchObject({ phase: 'failed', activeRequestId: null });
-    expect(worker.terminateCalls).toBe(1);
-    expect(onFatal).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(5);
+      await vi.runOnlyPendingTimersAsync();
+      await rejection;
+      await new Promise<void>((resolve) => queueMicrotask(resolve));
+      expect(client.status()).toMatchObject({
+        phase: 'failed',
+        activeRequestId: null,
+        expiredJobs: 1,
+        lastExpiredPhase: 'active',
+      });
+      expect(worker.terminateCalls).toBe(1);
+      expect(onFatal).toHaveBeenCalledTimes(1);
+      expect(onFatal).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: expect.stringContaining('execution deadline after dispatch'),
+        })
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('accepts an on-time worker response already waiting when the execution timer becomes runnable', async () => {
+    vi.useFakeTimers();
+    try {
+      const worker = new FakeWorker();
+      const onFatal = vi.fn();
+      const client = new LiveHorseDecisionWorkerClient({
+        workerFactory: () => worker,
+        onFatal,
+        jobTimeoutMs: 50,
+      });
+      worker.emitMessage(ready);
+      const pending = client.decideFast(snapshot('deadline-edge'));
+      const rejection = expect(pending).rejects.toBeInstanceOf(HorseDecisionExpiredError);
+
+      // Registration order mirrors a timer becoming runnable before a worker
+      // message already posted to its port. The caller expires, but the poll
+      // turn consumes the valid response before the integrity recheck.
+      setTimeout(() => worker.emitMessage(fastResult(1, 'deadline-edge')), 50);
+      await vi.advanceTimersByTimeAsync(50);
+      await rejection;
+      expect(client.status()).toMatchObject({
+        phase: 'ready',
+        activeRequestId: null,
+        completedJobs: 1,
+        expiredJobs: 1,
+        lastError: null,
+      });
+      expect(worker.terminateCalls).toBe(0);
+      expect(onFatal).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('expires near-deadline work after dispatch without poisoning the healthy FIFO', async () => {
+    vi.useFakeTimers();
+    try {
+      const worker = new FakeWorker();
+      const onFatal = vi.fn();
+      const client = new LiveHorseDecisionWorkerClient({
+        workerFactory: () => worker,
+        onFatal,
+        jobTimeoutMs: 50,
+      });
+      worker.emitMessage(ready);
+      const first = client.decideFast(snapshot('first'));
+      const nearDeadline = client.decideFast(snapshot('near-deadline'));
+      const nearDeadlineRejection =
+        expect(nearDeadline).rejects.toBeInstanceOf(HorseDecisionExpiredError);
+
+      await vi.advanceTimersByTimeAsync(49);
+      worker.emitMessage(fastResult(1, 'first'));
+      await first;
+      expect(worker.sent.at(-1)).toMatchObject({ type: 'DECIDE_FAST', requestId: 2 });
+
+      // Request 2 has used its table deadline, but only 1 ms of worker time.
+      // It takes the fail-safe action while the sole deterministic worker
+      // remains authoritative and drains the already-posted request.
+      await vi.advanceTimersByTimeAsync(1);
+      await nearDeadlineRejection;
+      expect(client.status()).toMatchObject({
+        phase: 'ready',
+        activeRequestId: 2,
+        expiredJobs: 1,
+        lastExpiredRequestType: 'DECIDE_FAST',
+        lastExpiredPhase: 'active',
+        lastError: null,
+      });
+      expect(worker.sent.at(-1)).toEqual({ type: 'CANCEL', requestId: 2 });
+      expect(worker.terminateCalls).toBe(0);
+      expect(onFatal).not.toHaveBeenCalled();
+
+      const successor = client.decideFast(snapshot('successor'));
+      worker.emitMessage(fastResult(2, 'near-deadline'));
+      expect(worker.sent.at(-1)).toMatchObject({ type: 'DECIDE_FAST', requestId: 3 });
+      worker.emitMessage(fastResult(3, 'successor'));
+      await expect(successor).resolves.toMatchObject({ fence: 'successor' });
+      expect(client.status()).toMatchObject({
+        phase: 'ready',
+        queueDepth: 0,
+        completedJobs: 3,
+        expiredJobs: 1,
+      });
+      expect(onFatal).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('gives a near-deadline dispatch its complete worker-integrity window before failing a wedge', async () => {
+    vi.useFakeTimers();
+    try {
+      const worker = new FakeWorker();
+      const onFatal = vi.fn();
+      const client = new LiveHorseDecisionWorkerClient({
+        workerFactory: () => worker,
+        onFatal,
+        jobTimeoutMs: 50,
+      });
+      worker.emitMessage(ready);
+      const first = client.decideFast(snapshot('first'));
+      const wedged = client.decideFast(snapshot('late-wedge'));
+      const wedgedRejection = expect(wedged).rejects.toBeInstanceOf(HorseDecisionExpiredError);
+
+      await vi.advanceTimersByTimeAsync(49);
+      worker.emitMessage(fastResult(1, 'first'));
+      await first;
+      expect(client.status()).toMatchObject({ phase: 'ready', activeRequestId: 2 });
+
+      // The caller's original queue-plus-compute budget ends after only 1 ms
+      // of execution. That expires the table action, but does not condemn the
+      // sole worker before its independently measured 50 ms integrity budget.
+      await vi.advanceTimersByTimeAsync(1);
+      await wedgedRejection;
+      await vi.advanceTimersByTimeAsync(48);
+      expect(client.status()).toMatchObject({
+        phase: 'ready',
+        activeRequestId: 2,
+        expiredJobs: 1,
+        lastError: null,
+      });
+      expect(worker.terminateCalls).toBe(0);
+      expect(onFatal).not.toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(1);
+      await vi.runOnlyPendingTimersAsync();
+      await new Promise<void>((resolve) => queueMicrotask(resolve));
+      expect(client.status()).toMatchObject({
+        phase: 'failed',
+        activeRequestId: null,
+        expiredJobs: 1,
+      });
+      expect(worker.terminateCalls).toBe(1);
+      expect(onFatal).toHaveBeenCalledTimes(1);
+      expect(onFatal).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: expect.stringContaining('execution deadline after dispatch'),
+        })
+      );
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('expires queued work against enqueue time without dispatching it or killing a healthy worker', async () => {
@@ -273,14 +498,17 @@ describe('LiveHorseDecisionWorkerClient', () => {
         jobTimeoutMs: 50,
       });
       const queued = client.decideFast(snapshot('queued-before-ready'));
-      const queuedRejection = expect(queued).rejects.toThrow(
-        'horse decision expired after 50ms before worker dispatch'
-      );
+      const queuedRejection = expect(queued).rejects.toBeInstanceOf(HorseDecisionExpiredError);
 
       await vi.advanceTimersByTimeAsync(50);
       await queuedRejection;
       expect(worker.sent).toEqual([]);
-      expect(client.status()).toMatchObject({ phase: 'starting', queueDepth: 0 });
+      expect(client.status()).toMatchObject({
+        phase: 'starting',
+        queueDepth: 0,
+        expiredJobs: 1,
+        lastExpiredPhase: 'queued',
+      });
       expect(onFatal).not.toHaveBeenCalled();
 
       worker.emitMessage(ready);
@@ -314,7 +542,10 @@ describe('LiveHorseDecisionWorkerClient', () => {
 
   it('orders an accepted action effect after older work and before synchronous successors', async () => {
     const worker = new FakeWorker();
-    const client = new LiveHorseDecisionWorkerClient({ workerFactory: () => worker });
+    const client = new LiveHorseDecisionWorkerClient({
+      workerFactory: () => worker,
+      maxInFlight: 1,
+    });
     worker.emitMessage(ready);
     const active = client.decideFast(snapshot('active'));
     const older = client.decideFast(snapshot('older'));
@@ -449,7 +680,11 @@ describe('LiveHorseDecisionWorkerClient', () => {
   it('terminal-fails the client when a typed production job returns ERROR', async () => {
     const worker = new FakeWorker();
     const onFatal = vi.fn();
-    const client = new LiveHorseDecisionWorkerClient({ workerFactory: () => worker, onFatal });
+    const client = new LiveHorseDecisionWorkerClient({
+      workerFactory: () => worker,
+      maxInFlight: 1,
+      onFatal,
+    });
     worker.emitMessage(ready);
     const active = client.decideFast(snapshot('runtime-error'));
     const queued = client.decideFast(snapshot('must-not-run'));
@@ -469,6 +704,43 @@ describe('LiveHorseDecisionWorkerClient', () => {
     expect(onFatal).toHaveBeenCalledTimes(1);
     expect(worker.terminateCalls).toBe(1);
     expect(worker.sent).toHaveLength(1);
+  });
+
+  it('isolates a recoverable request validation error and keeps FIFO running', async () => {
+    const worker = new FakeWorker();
+    const onFatal = vi.fn();
+    const client = new LiveHorseDecisionWorkerClient({ workerFactory: () => worker, onFatal });
+    worker.emitMessage(ready);
+    const active = client.decideFast(snapshot('invalid-snapshot'));
+    const queued = client.decideFast(snapshot('healthy-successor'));
+
+    worker.emitMessage({
+      type: 'ERROR',
+      requestId: 1,
+      generation: 7,
+      fence: 'invalid-snapshot',
+      message: 'horse state hero card count does not match variant/street rules',
+      recoverable: true,
+    });
+
+    await expect(active).rejects.toThrow(
+      'horse state hero card count does not match variant/street rules'
+    );
+    expect(worker.sent.at(-1)).toMatchObject({ type: 'DECIDE_FAST', requestId: 2 });
+    expect(client.status()).toMatchObject({
+      phase: 'ready',
+      queueDepth: 1,
+      recoverableRequestErrors: 1,
+      lastRecoverableRequestErrorType: 'DECIDE_FAST',
+      lastRecoverableRequestError:
+        'horse state hero card count does not match variant/street rules',
+      lastError: null,
+    });
+    worker.emitMessage(fastResult(2, 'healthy-successor'));
+    await expect(queued).resolves.toMatchObject({ type: 'FAST_RESULT', requestId: 2 });
+    expect(client.status()).toMatchObject({ phase: 'ready', queueDepth: 0, completedJobs: 1 });
+    expect(onFatal).not.toHaveBeenCalled();
+    expect(worker.terminateCalls).toBe(0);
   });
 
   it('terminal-fails an ACK that certifies the wrong durable operation', async () => {
@@ -501,7 +773,10 @@ describe('LiveHorseDecisionWorkerClient', () => {
 
   it('keeps an accepted hand observation ahead of the table next decision', async () => {
     const worker = new FakeWorker();
-    const client = new LiveHorseDecisionWorkerClient({ workerFactory: () => worker });
+    const client = new LiveHorseDecisionWorkerClient({
+      workerFactory: () => worker,
+      maxInFlight: 1,
+    });
     worker.emitMessage(ready);
     const observation = client.observeCompletedHand({
       generation: 7,
@@ -531,7 +806,10 @@ describe('LiveHorseDecisionWorkerClient', () => {
 
   it('drains accepted jobs before graceful service shutdown', async () => {
     const worker = new FakeWorker();
-    const client = new LiveHorseDecisionWorkerClient({ workerFactory: () => worker });
+    const client = new LiveHorseDecisionWorkerClient({
+      workerFactory: () => worker,
+      maxInFlight: 1,
+    });
     worker.emitMessage(ready);
     const first = client.decideFast(snapshot('first'));
     const second = client.decideFast(snapshot('second'));
@@ -576,5 +854,246 @@ describe('LiveHorseDecisionWorkerClient', () => {
     expect(worker.sent).toEqual([]);
     expect(onFatal).not.toHaveBeenCalled();
     expect(client.status()).toMatchObject({ phase: 'stopped', queueDepth: 0 });
+  });
+});
+
+/*
+ * Production keeps a window of posted jobs (client.ts, "ONE LANE, NOT ONE
+ * MESSAGE AT A TIME"). The tests above pin a window of one where they prove an
+ * exact wire sequence; these prove the same guarantees with a real window.
+ */
+describe('LiveHorseDecisionWorkerClient pipelined lane', () => {
+  const requestIds = (worker: FakeWorker) =>
+    worker.sent.map((message) => (message as { requestId?: number }).requestId ?? null);
+
+  it('keeps four jobs posted by default, refills as each answer lands, and reports both queues', async () => {
+    const worker = new FakeWorker();
+    const client = new LiveHorseDecisionWorkerClient({ workerFactory: () => worker });
+    const jobs = Array.from({ length: 6 }, (_, index) =>
+      client.decideFast(snapshot(`turn-${index + 1}`))
+    );
+
+    expect(worker.sent).toEqual([]);
+    worker.emitMessage(ready);
+    expect(requestIds(worker)).toEqual([1, 2, 3, 4]);
+    expect(client.status()).toMatchObject({ queueDepth: 6, inFlightJobs: 4, activeRequestId: 1 });
+
+    worker.emitMessage(fastResult(1, 'turn-1'));
+    await expect(jobs[0]).resolves.toMatchObject({ fence: 'turn-1' });
+    expect(requestIds(worker)).toEqual([1, 2, 3, 4, 5]);
+    expect(client.status()).toMatchObject({ queueDepth: 5, inFlightJobs: 4, activeRequestId: 2 });
+
+    for (const id of [2, 3, 4, 5, 6]) {
+      worker.emitMessage(fastResult(id, `turn-${id}`));
+      await expect(jobs[id - 1]).resolves.toMatchObject({ fence: `turn-${id}` });
+    }
+    expect(requestIds(worker)).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(client.status()).toMatchObject({
+      phase: 'ready',
+      queueDepth: 0,
+      inFlightJobs: 0,
+      activeRequestId: null,
+      completedJobs: 6,
+    });
+  });
+
+  it('treats an answer for any posted job but the oldest as terminal FIFO corruption', async () => {
+    const worker = new FakeWorker();
+    const onFatal = vi.fn();
+    const client = new LiveHorseDecisionWorkerClient({ workerFactory: () => worker, onFatal });
+    worker.emitMessage(ready);
+    const first = client.decideFast(snapshot('first'));
+    const second = client.decideFast(snapshot('second'));
+    expect(requestIds(worker)).toEqual([1, 2]);
+
+    worker.emitMessage(fastResult(2, 'second'));
+
+    await expect(first).rejects.toThrow('broke FIFO: expected 1, received 2');
+    await expect(second).rejects.toThrow('broke FIFO: expected 1, received 2');
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
+    expect(onFatal).toHaveBeenCalledTimes(1);
+    expect(worker.terminateCalls).toBe(1);
+    expect(client.status()).toMatchObject({ phase: 'failed', queueDepth: 0, inFlightJobs: 0 });
+  });
+
+  it('cancels an aborted job that is already posted and keeps its slot until the worker answers', async () => {
+    const worker = new FakeWorker();
+    const client = new LiveHorseDecisionWorkerClient({
+      workerFactory: () => worker,
+      maxInFlight: 2,
+    });
+    worker.emitMessage(ready);
+    const head = client.decideFast(snapshot('head'));
+    const abort = new AbortController();
+    const posted = client.decideFast(snapshot('posted'), abort.signal);
+    const waiting = client.decideFast(snapshot('waiting'));
+    expect(requestIds(worker)).toEqual([1, 2]);
+
+    abort.abort();
+    await expect(posted).rejects.toBeInstanceOf(HorseDecisionAbortedError);
+    expect(worker.sent.at(-1)).toEqual({ type: 'CANCEL', requestId: 2 });
+    // The cancelled job still owns its slot, so nothing overtakes it on the wire.
+    expect(client.status()).toMatchObject({ queueDepth: 3, inFlightJobs: 2, activeRequestId: 1 });
+
+    worker.emitMessage(fastResult(1, 'head'));
+    await expect(head).resolves.toMatchObject({ fence: 'head' });
+    expect(worker.sent.at(-1)).toMatchObject({ type: 'DECIDE_FAST', requestId: 3 });
+
+    worker.emitMessage({ type: 'CANCELLED', requestId: 2, generation: 7, fence: 'posted' });
+    worker.emitMessage(fastResult(3, 'waiting'));
+    await expect(waiting).resolves.toMatchObject({ fence: 'waiting' });
+    expect(client.status()).toMatchObject({ phase: 'ready', queueDepth: 0, inFlightJobs: 0 });
+  });
+
+  it('starts the integrity clock when a posted job reaches the head, not when it was posted', async () => {
+    vi.useFakeTimers();
+    try {
+      const worker = new FakeWorker();
+      const onFatal = vi.fn();
+      const client = new LiveHorseDecisionWorkerClient({
+        workerFactory: () => worker,
+        onFatal,
+        jobTimeoutMs: 50,
+      });
+      worker.emitMessage(ready);
+      const slow = client.decideFast(snapshot('slow'));
+      const behind = client.decideFast(snapshot('behind'));
+      const behindExpired = expect(behind).rejects.toBeInstanceOf(HorseDecisionExpiredError);
+      expect(requestIds(worker)).toEqual([1, 2]);
+
+      // The head takes 45 ms. 'behind' was posted at 0 ms and only now runs.
+      await vi.advanceTimersByTimeAsync(45);
+      worker.emitMessage(fastResult(1, 'slow'));
+      await slow;
+      expect(client.status()).toMatchObject({ phase: 'ready', activeRequestId: 2 });
+
+      // 90 ms after it was posted and 45 ms after it reached the head: the
+      // caller's budget is spent, so the table takes its fail-safe action, but
+      // a worker that has run it for only 45 ms is not wedged.
+      await vi.advanceTimersByTimeAsync(45);
+      await behindExpired;
+      expect(worker.sent.at(-1)).toEqual({ type: 'CANCEL', requestId: 2 });
+      expect(onFatal).not.toHaveBeenCalled();
+      expect(client.status()).toMatchObject({
+        phase: 'ready',
+        activeRequestId: 2,
+        lastError: null,
+      });
+
+      // A full 50 ms at the head with no answer is still a wedge.
+      await vi.advanceTimersByTimeAsync(5);
+      await vi.runOnlyPendingTimersAsync();
+      await new Promise<void>((resolve) => queueMicrotask(resolve));
+      expect(client.status()).toMatchObject({ phase: 'failed' });
+      expect(onFatal).toHaveBeenCalledTimes(1);
+      expect(onFatal).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: expect.stringContaining('execution deadline after dispatch'),
+        })
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('holds every post across a dispatch barrier so a priority commit still precedes its successors', async () => {
+    const worker = new FakeWorker();
+    const client = new LiveHorseDecisionWorkerClient({
+      workerFactory: () => worker,
+      maxInFlight: 2,
+    });
+    worker.emitMessage(ready);
+    const running = client.decideFast(snapshot('running'));
+    const older = client.decideFast(snapshot('older'));
+    const olderStill = client.decideFast(snapshot('older-still'));
+    expect(requestIds(worker)).toEqual([1, 2]);
+    let successor!: ReturnType<typeof client.decideFast>;
+    let committed!: ReturnType<typeof client.commitDecisionEffects>;
+
+    client.runWithDispatchBarrier(() => {
+      successor = client.decideFast(snapshot('successor'));
+      committed = client.commitDecisionEffects({ generation: 7, fence: 'accepted-action' }, [
+        { type: 'plan', handKey: 'h', userId: 'horse-1', barrelIntent: true },
+      ]);
+    });
+    expect(requestIds(worker)).toEqual([1, 2]);
+
+    worker.emitMessage(fastResult(1, 'running'));
+    await running;
+    worker.emitMessage(fastResult(2, 'older'));
+    await older;
+    // Older work first (3), then the commit (5), then its causal successor (4).
+    expect(requestIds(worker)).toEqual([1, 2, 3, 5]);
+    worker.emitMessage(fastResult(3, 'older-still'));
+    await olderStill;
+    expect(requestIds(worker)).toEqual([1, 2, 3, 5, 4]);
+    worker.emitMessage({
+      type: 'ACK',
+      requestId: 5,
+      generation: 7,
+      fence: 'accepted-action',
+      operation: 'COMMIT_DECISION_EFFECTS',
+    });
+    await committed;
+    worker.emitMessage(fastResult(4, 'successor'));
+    await successor;
+  });
+
+  it('retires a recoverable validation error at the head and keeps the window moving', async () => {
+    const worker = new FakeWorker();
+    const onFatal = vi.fn();
+    const client = new LiveHorseDecisionWorkerClient({
+      workerFactory: () => worker,
+      onFatal,
+      maxInFlight: 2,
+    });
+    worker.emitMessage(ready);
+    const bad = client.decideFast(snapshot('bad'));
+    const good = client.decideFast(snapshot('good'));
+    const later = client.decideFast(snapshot('later'));
+
+    worker.emitMessage({
+      type: 'ERROR',
+      requestId: 1,
+      generation: 7,
+      fence: 'bad',
+      message: 'invalid snapshot',
+      recoverable: true,
+    });
+    await expect(bad).rejects.toThrow('invalid snapshot');
+    expect(requestIds(worker)).toEqual([1, 2, 3]);
+    worker.emitMessage(fastResult(2, 'good'));
+    worker.emitMessage(fastResult(3, 'later'));
+    await expect(good).resolves.toMatchObject({ fence: 'good' });
+    await expect(later).resolves.toMatchObject({ fence: 'later' });
+    expect(onFatal).not.toHaveBeenCalled();
+    expect(client.status()).toMatchObject({ recoverableRequestErrors: 1, queueDepth: 0 });
+  });
+
+  it('drains the posted window and the queue before asking the worker to shut down', async () => {
+    const worker = new FakeWorker();
+    const client = new LiveHorseDecisionWorkerClient({
+      workerFactory: () => worker,
+      maxInFlight: 2,
+    });
+    worker.emitMessage(ready);
+    const jobs = ['a', 'b', 'c'].map((fence) => client.decideFast(snapshot(fence)));
+    const stopped = client.stop();
+    expect(requestIds(worker)).toEqual([1, 2]);
+
+    worker.emitMessage(fastResult(1, 'a'));
+    await jobs[0];
+    expect(requestIds(worker)).toEqual([1, 2, 3]);
+    worker.emitMessage(fastResult(2, 'b'));
+    await jobs[1];
+    expect(worker.sent).toHaveLength(3);
+    worker.emitMessage(fastResult(3, 'c'));
+    await jobs[2];
+    expect(worker.sent.at(-1)).toEqual({ type: 'SHUTDOWN' });
+
+    worker.emitMessage({ type: 'STOPPED' });
+    worker.emitExit(0);
+    await stopped;
+    expect(client.status().phase).toBe('stopped');
   });
 });

@@ -7,9 +7,10 @@ const probe = readFileSync(
   'utf8'
 );
 
-describe('entrant cancellation semantic probe stays in CI', () => {
+describe('entrant cancellation probe preserves current policy assertions', () => {
   it('runs installed registration, cancellation and durable replay authorities', () => {
-    expect(probe).toContain('public.fn_register_for_tournament(');
+    expect(probe).toContain('public.fn_register_for_tournament_request(');
+    expect(probe).not.toContain('public.fn_register_for_tournament(');
     expect(probe).toContain('public.atomic_cancel_tournament(');
     expect(probe.match(/public\.atomic_cancel_tournament\(/g)).toHaveLength(3);
     expect(probe).toContain('public.fn_ca_tournament_cancellation_receipt(');
@@ -17,12 +18,23 @@ describe('entrant cancellation semantic probe stays in CI', () => {
     expect(probe).toContain('SET CONSTRAINTS tournaments_cancel_must_refund IMMEDIATE');
   });
 
-  it('pins exact source-wallet chips, ticket-only satellite return and fee attribution', () => {
+  it('pins wallet-origin cash and returns both non-cash origins only as exact entry tickets', () => {
     expect(probe).toContain("e.entitlement_kind='wallet_charge'");
     expect(probe).toContain("'satellite_seat','satellite_seat'");
-    expect(probe).toContain("v_ticket.redemption_mode IS DISTINCT FROM 'tournament_entry_only'");
-    expect(probe).toContain('w.user_id=v_sat_user');
-    expect(probe).toContain('tr.source_wallet_club_id=v_funding_club');
+    expect(probe).toContain("'tournament_ticket','tournament_ticket'");
+    expect(probe).toContain("'ticket_gross','atomic_tournament_ticket'");
+    expect(probe).toContain("(v_first->>'ticket_return_count')::integer IS DISTINCT FROM 2");
+    expect(probe).toContain("(v_first->>'refund_line_count')::integer IS DISTINCT FROM 1");
+    expect(probe).toContain("(v_first->>'total_refunded')::numeric IS DISTINCT FROM 100::numeric");
+    expect(probe).toContain('IS DISTINCT FROM 100::numeric');
+    expect(probe).toContain("tk.redemption_mode='tournament_entry_only'");
+    expect(probe).toContain('tk.source_refund_entitlement_id=');
+    expect(probe).toContain('EXISTS(SELECT 1 FROM public.wallet_transactions w');
+    expect(probe).toContain('w.user_id IN (v_sat_user,v_ticket_user)');
+    expect(probe).toContain('EXISTS(SELECT 1 FROM public.tournament_refund_tranches tr');
+    expect(probe).toContain("l.category='ticket_issue'");
+    expect(probe).toContain("ct.transaction_type='tournament_ticket_issue'");
+    expect(probe).toContain("'d7000000-0000-4000-8000-000000000002'");
     expect(probe).toContain("r.source='atomic_cancel_tournament'");
     expect(probe).toContain("r.metadata->>'kind'='tournament_fee_refund'");
     expect(probe).toContain('r.club_id<>v_fee_club');

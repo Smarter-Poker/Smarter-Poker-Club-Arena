@@ -11,6 +11,7 @@
 import { noteFire } from './BrainTelemetry.js';
 import { resolvePersona, wantsStraddle } from './HorsePersona.js';
 import { HandController } from './HandController.js';
+import { captureHandSeatGenerations } from './handSeatGeneration.js';
 import { ShadowRecorder } from './eventlog/ShadowRecorder.js';
 import * as EngineMetrics from '../observability/engineInstruments.js';
 import { startHandSpan } from '../observability/Tracing.js';
@@ -26,7 +27,11 @@ import {
   readClubChipBalances,
 } from '../services/supabase.js';
 import { cashMinBuyIn } from '../config/cashBuyIn.js';
-import { atRebuyStopLoss, horseRebuyAmount } from '../services/HorseRebuyPolicy.js';
+import {
+  atRebuyStopLoss,
+  horseRebuyAmount,
+  rebuyStopLossReached,
+} from '../services/HorseRebuyPolicy.js';
 import type { SeatPlayer, GameVariant, HandConfig, HandEvent, SeatedPlayer } from '../types.js';
 import { reportError } from '../services/errorReporter.js';
 import { holeCardCount, deckSizeFor, maxSeatsFor } from './VariantRules.js';
@@ -290,6 +295,27 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
             // before the restart, and without it buttonEligible() falls back
             // to the whole roster for a full orbit after every deploy.
             if (this.waitingForBB.has(p.user_id)) continue;
+            /* A ROW HOLD THE RESTORE NEVER SAW (2026-09-09, must-move audit).
+               restoreEntryHoldsFromSeats runs ONCE per process, and the
+               start-up wait loop runs it first - so a chair that arrived
+               while the table was still waiting for players (a must-move or a
+               balance move landing `entry_hold = 'moved'`, a seat change
+               landing `'waiting'` + agreed) was never restored and was then
+               seeded here as a veteran with its row marker left standing. The
+               marker is a lie the moment the deal includes them, and it is a
+               lie that costs money at the next :55 restart: the restore reads
+               'waiting' on a player who has been dealt for an hour and holds
+               them for the big blind again. This first deal is the table's
+               first hand, so the blinds post by position and nobody enters
+               behind them - the marker is cleared, and the chair is NOT
+               seeded as a veteran, because it has never been dealt a hand
+               here ("a new player never gets the button"). A 'posting' hold
+               the restore DID see is left alone: its billing clears it. */
+            const rowHold = (p as { entry_hold?: string | null }).entry_hold ?? null;
+            if (rowHold !== null && !this.postingBBToEnter.has(p.user_id)) {
+              this.persistEntryHold(p.user_id, { hold: null, agreed: false });
+              continue;
+            }
             // Dan 2026-08-25, BINDING (restart fidelity): anyone already seated
             // when this engine booted was PLAYING before the restart, so they
             // are a veteran for button purposes. Without this, dealtInUserIds is
@@ -360,6 +386,47 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
             // B2: a player who has left owes this table nothing. If they come
             // back they are a fresh arrival and get classified again.
             this.mustPostBB.delete(id);
+            /* NO STALE PRESENCE ON THE OLD TABLE (2026-09-09, must-move
+               audit). A cash player can leave a roster through a path this
+               engine never ran: the OTHER table's transaction landing a swap
+               (the partner never executes here), the tab-close beacon
+               (player_leave_table), the controller cashing out a second chair
+               on a breaking table. Every leave this engine DOES run tears the
+               per-player mirrors down (settlement step 6, the idle sweep, the
+               move executor); this one left them standing, so the departed
+               player kept a presence entry the heartbeat checker marked
+               disconnected on a chair nobody sat in, a time bank, a straddle
+               and a pre-action - and getFsmStatesForTable wrote the phantom
+               into every snapshot and into the :55 park. Same teardown as the
+               other leave paths.
+
+               CASH ONLY, and the reason changed at the 2026-09-10 merge. It
+               used to be "a tournament chair has its own engine-side release";
+               that watcher is GONE. Tournament seat release now has ONE
+               transactional authority and it is in the database: the accepted
+               hand closes the exact seat generation in the same transaction as
+               the zero stack and the knockout evidence
+               (20260909014534_non_satellite_terminal_settlement_commits_one_stored_receipt),
+               and every elimination holds a scoped seat-exit capability
+               (20260909014545_tournament_seat_exits_stay_inside_tournament_authority).
+               An engine-side poll or repair here would be exactly the split
+               transaction that removal closed, and
+               TournamentGhostSeat.law pins this file against re-growing one.
+               So: this teardown stays cash-only, and a tournament seat that
+               closes is simply absent from the next loadSeatedPlayers. */
+            if (!this.isTournamentTable()) {
+              this.disconnectEngine.unregisterPlayer(this.tableId, id);
+              this.timeBankEngine.removePlayer(this.tableId, id);
+              this.straddleEngine.removePlayer(this.tableId, id);
+              this.preActionEngine.removePlayer(this.tableId, id);
+              this.leaveHeldByClock.delete(id);
+              /* `forcedLeaves` is deliberately absent: main retired that map
+                 at the 2026-09-10 merge (the leave path is occupancy-keyed
+                 now), and this list is exactly settlement step 6's teardown
+                 minus it. `chipContinuity` is absent for a different reason -
+                 its own reconcile drops any row whose player is no longer in
+                 the roster, which is the very condition we are in here. */
+            }
           }
         }
         if (rosterChanged) this.wakeClusterGame('seat_change');
@@ -732,6 +799,16 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
             this.tableFSM.transition('waiting');
           }
           this.setLoopPhase('idle_not_enough_players');
+          /* NOBODY WAITS FOR A BLIND THAT CANNOT ARRIVE (2026-09-11).
+             `activePlayers` above excludes a player waiting for the big
+             blind, so a table whose seats are mostly waiters reads as short
+             and sleeps here - and sleeping is what stops the big blind that
+             would have released them. Seven live must-move tables were shut
+             that way, one for an hour and a half with six funded seats on it.
+             See releaseWaitersNoBlindCanReach: it fires only when letting
+             everyone in actually starts the game, and the released seat is
+             still not a veteran, so the button rule is untouched. */
+          this.releaseWaitersNoBlindCanReach();
           // MUST-MOVE (Slice 2; moved here 2026-09-05): a table with no hand
           // to finish is at a hand boundary all the time, so every pending
           // move lands now, announced or not. This used to run in the
@@ -807,8 +884,10 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // this waits out whatever of it is left, records how long the felt
         // actually waited, and only then deals.
         await this.awaitNextHandRest();
-        if (this.terminalCloseoutPaused || this.tournamentMovePauseOwners.size > 0) {
-          await this.awaitPauseGate();
+        // A pause may arrive while the roster, rest or blind read is pending.
+        // Return through the owner's gate before using the prepared hand.
+        if (this.isNextHandPaused()) {
+          if (!this.adminPauseLock && !this.maintenanceLock) await this.awaitPauseGate();
           if (!this.running) break;
           continue;
         }
@@ -1275,13 +1354,24 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
 
   protected async awaitNextHandRest(): Promise<void> {
     await this.settlePreparedHandNumber();
-    if (this.nextHandNotBeforeMs === null) return;
-    const remaining = this.nextHandNotBeforeMs - Date.now();
-    if (remaining > 0) {
-      this.setLoopPhase('next_hand_rest');
-      await this.sleep(remaining);
+    if (this.nextHandNotBeforeMs !== null) {
+      const remaining = this.nextHandNotBeforeMs - Date.now();
+      if (remaining > 0) {
+        this.setLoopPhase('next_hand_rest');
+        await this.sleep(remaining);
+      }
+      this.nextHandNotBeforeMs = null;
     }
-    this.nextHandNotBeforeMs = null;
+    // A level may advance while the prepared roster waits under the rest.
+    // Read the tournament stakes here, before the caller rechecks its lease
+    // and pause gates. This replaces the earlier prefetched blind read.
+    if (this.isTournamentTable()) {
+      await this.withStepBudget(
+        'refresh_blinds',
+        ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
+        this.refreshBlinds()
+      );
+    }
     if (this.lastCompletionAtMs !== null && !this.gapSawIdle) {
       const now = Date.now();
       this.accrueGapPhase(now);
@@ -1341,7 +1431,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
   /**
    * EVERYTHING THE NEXT HAND NEEDS FROM THE DATABASE, IN ONE ROUND (2026-09-07).
    *
-   * Three independent reads and one allocation used to run one after another
+   * The independent reads and hand allocation used to run one after another
    * at the top of the iteration: the roster (itself two round trips), the
    * leave-pending sweep, and - inside dealHand - the global hand number. At
    * the 250-700ms a PostgREST call costs from the engine box that was two to
@@ -1349,7 +1439,8 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
    * slept. They now start together, under the rest.
    *
    * Independence, stated so it can be checked:
-   * - readNextHandInputs reads seats, blinds and rake; nothing here writes them.
+   * - readNextHandInputs reads seats and rake; nothing here writes them.
+   *   Tournament blinds are read after the rest, at the next-deal boundary.
    * - processLeavePending marks leaving seats left and cashes them out. It is
    *   raced with the roster read ONLY when no add-on is pending (an add-on
    *   must credit a seat before that seat can leave, so the serial order
@@ -1459,20 +1550,14 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
   }
 
   protected async readNextHandInputs(): Promise<SeatedPlayer[]> {
-    // These reads have no dependency on each other. Blinds update tournament
-    // settings; rake refresh updates cash settings; neither uses the roster.
-    // Keep every existing query and budget, but pay the slowest read instead
-    // of adding their round trips to the gap between hands.
+    // Seats and cash rake can be prepared in parallel under the rest.
+    // Tournament blinds must wait until that rest ends: a level may advance
+    // after this prepared roster is ready but before its hand is created.
     const reads = [
       this.withStepBudget(
         'load_seats',
         ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
         loadSeatedPlayers(this.tableId)
-      ),
-      this.withStepBudget(
-        'refresh_blinds',
-        ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
-        this.refreshBlinds()
       ),
       this.withStepBudget(
         'refresh_rake',
@@ -1483,9 +1568,8 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     this.setLoopPhase('load_next_hand_inputs');
     // Do not fail fast and start another iteration while a sibling read is
     // still in its budget. The old roster is retained if any input fails.
-    const [seats, blinds, rake] = await Promise.allSettled(reads);
+    const [seats, rake] = await Promise.allSettled(reads);
     if (seats.status === 'rejected') throw seats.reason;
-    if (blinds.status === 'rejected') throw blinds.reason;
     if (rake.status === 'rejected') throw rake.reason;
     return seats.value;
   }
@@ -1578,7 +1662,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       // about to be dealt; a number held for longer than that is discarded and a
       // fresh one taken here, so the ascending-by-deal-order property holds.
       this.handCount = this.takePreparedHandNumber() ?? (await this.allocateGlobalHandNumber());
-      if (this.discardPreparedHandForTerminalCloseout()) return;
+      if (this.discardPreparedHandForPause()) return;
       this.handsDealtThisSession++;
       const handNumber = this.handCount;
       const handStartMs = Date.now(); // FIX 149: Capture hand start time for telemetry
@@ -2372,6 +2456,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       }
 
       const config: HandConfig = {
+        asset: this.tableInfo.arena?.asset ?? 'chips',
         tableId: this.tableId,
         handNumber,
         /* Dan 2026-08-28, binding: a tournament showdown is always face up, so
@@ -2483,6 +2568,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       // say plo4 on a PLO4 bomb hand even at an NLH table.
       this.currentHandVariant = config.gameVariant;
 
+      this.currentHandSeatGenerations = captureHandSeatGenerations(players);
       this.handController = new HandController(config, hcPlayers, dealerSeat);
       // chip-std Lane F (2026-09-02): the stacks this hand was dealt from. The
       // tournament persist gate in postHandTasks holds the settled stacks of
@@ -2609,7 +2695,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         (p) => !this.timeBankEngine.getPlayerBank(this.tableId, p.user_id)
       );
       const tbExtras = await this.fetchTimeBankExtras(tbNewPlayers.map((p) => p.user_id));
-      if (this.discardPreparedHandForTerminalCloseout()) return;
+      if (this.discardPreparedHandForPause()) return;
       /**
        * THE ENGINE MAY HAVE BEEN TORN DOWN DURING THAT AWAIT (2026-09-06).
        *
@@ -2863,7 +2949,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           // ANIMATION AUDIT 2026-08-19: defensive — a fresh hand must never
           // inherit a stale all-in reveal flag from an abnormal exit.
           this.runoutRevealActive = false;
-          if (this.discardPreparedHandForTerminalCloseout()) {
+          if (this.discardPreparedHandForPause()) {
             releaseHandWait('terminal_closeout_before_start');
             return;
           }
@@ -3092,7 +3178,9 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
    * HORSES ARE PLAYERS (CLAUDE.md 10.5), and this is one of the two places
    * where the horse's INPUT DEVICE legitimately differs: a horse has no member
    * wallet, it is funded from the club treasury by autoRebuyHorse, and its
-   * stop-loss is two rebuys. So "can afford" is asked of the treasury path for
+   * stop-loss is its temperament's (HorseRebuyPolicy: a nit stops at two
+   * buy-ins committed, standard at three, a gambler at four). So "can afford"
+   * is asked of the treasury path for
    * a horse and of club_members.chip_balance for a human. What must not differ
    * — and does not — is the outcome: a seat that cannot fund a rebuy gets no
    * pause and is stood up, whichever kind of player is in it.
@@ -3102,17 +3190,23 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
    * cost of a wrong `false` is taking a rebuy away from someone who could pay.
    */
   protected async anyBustedPlayerCanAffordARebuy(busted: SeatedPlayer[]): Promise<boolean> {
+    if (this.tableInfo?.arena?.asset === 'diamonds') return false;
     if (busted.length === 0) return false;
 
     const minBuyIn = cashMinBuyIn(this.tableInfo);
     // A table we cannot price is not a table anyone is stood up from.
     if (!Number.isFinite(minBuyIn) || minBuyIn <= 0) return true;
 
-    // A horse below its stop-loss still has a funding route (the treasury), so
-    // it is owed the window. recoverBustedSeatedHorses does the actual attempt.
+    // A horse inside its stop-loss still has a funding route (the treasury),
+    // so it is owed the window. Settlement step 5 does the actual attempt.
+    // The stop-loss is the temperament's (HorseRebuyPolicy), the same figure
+    // that decides the reload itself - this used to hard-code `< 2`, which
+    // held the felt for a nit that was leaving and did not hold it for a
+    // gambler that was reloading (2026-09-09).
     const horses = busted.filter((p) => p.is_horse);
     for (const horse of horses) {
-      if ((this.horseRebuys.get(horse.user_id) || 0) < 2) return true;
+      if (!rebuyStopLossReached(horse.user_id, this.horseRebuys.get(horse.user_id) || 0))
+        return true;
     }
 
     const humans = busted.filter((p) => !p.is_horse);
@@ -3269,6 +3363,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
   }
 
   protected async recoverBustedSeatedHorses(): Promise<void> {
+    if (this.tableInfo?.arena?.asset === 'diamonds') return;
     if (isMaintenanceFrozen()) return;
     const bustHorses = this.seatedPlayers.filter((p) => p.is_horse && p.stack <= 0);
     if (bustHorses.length === 0) return;
@@ -3306,6 +3401,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       // horse ends up disciplined on one code path and not the other.
       const rebuyAmount = await horseRebuyAmount({
         clubId: this.tableInfo?.club_id || '',
+        tableId: this.tableId,
         userId: horse.user_id,
         bigBlind: Number(this.tableInfo?.big_blind) || 0,
         minBuyIn: this.tableInfo?.min_buy_in as number | null | undefined,

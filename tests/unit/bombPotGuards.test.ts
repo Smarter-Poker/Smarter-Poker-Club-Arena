@@ -50,6 +50,7 @@ describe('the LIVE hand variant is the one seam (spec §10.1)', () => {
   const BASE = read('server/src/engine/ServerTableEngineBase.ts');
   const ENGINE = read('server/src/engine/ServerTableEngine.ts');
   const TURNS = read('server/src/engine/ServerTableEngineTurns.ts');
+  const HAND = read('server/src/engine/HandController.ts');
   const SETTLEMENT = read('server/src/engine/ServerTableEngineSettlement.ts');
   const DEALING = read('server/src/engine/ServerTableEngineDealing.ts');
 
@@ -66,12 +67,22 @@ describe('the LIVE hand variant is the one seam (spec §10.1)', () => {
   });
 
   it('the legal-action pot-limit clamp reads the HAND variant', () => {
-    const window = sliceEnclosingBlock(TURNS, 'const structure = bettingStructureFor(variant)');
-    expect(window).toMatch(/this\.activeHandVariant\(\)/);
+    // Phase 5 removed the parallel action-menu reconstruction from Turns. Both
+    // the client and the horse now consume HandController's rule contract,
+    // whose betting state is built from the variant captured for THIS hand.
+    const clientMenu = sliceMethod(TURNS, 'getPlayerActions(userId: string)');
+    const authority = sliceMethod(HAND, 'public getAuthoritativeActionState');
+    const bettingState = sliceMethod(HAND, 'private buildBettingState');
+    expect(clientMenu).toMatch(/getAuthoritativeActionState\(userId\)/);
+    expect(authority).toMatch(/this\.buildBettingState\(player\)/);
+    expect(bettingState).toMatch(/const variant = this\.config\.gameVariant/);
+    expect(bettingState).toMatch(/isPotLimitVariant\(variant\)/);
   });
 
   it('horses evaluate the HAND variant', () => {
-    expect(TURNS).toMatch(/gameVariant: \(this\.activeHandVariant\(\) \|\| 'nlh'\)/);
+    const schedule = sliceMethod(TURNS, 'protected scheduleHorseAction(');
+    expect(schedule).toMatch(/const activeVariant = this\.activeHandVariant\(\) \|\| 'nlh'/);
+    expect(schedule).toMatch(/gameVariant: activeVariant/);
   });
 
   it('hand history records the variant the hand was DEALT as', () => {
@@ -147,7 +158,8 @@ describe('BOMB POT MAX (2026-08-28) — the round-4 seams', () => {
   it('horses average per-board equity on multi-board hands', () => {
     expect(HORSE).toMatch(/gs\.communityCards2/);
     expect(HORSE).toMatch(/equity = sum \/ boards\.length/);
-    expect(TURNS).toMatch(/communityCards2: fullState\?\.communityCards2 \?\? \[\]/);
+    const schedule = sliceMethod(TURNS, 'protected scheduleHorseAction(');
+    expect(schedule).toMatch(/communityCards2: \[\.\.\.\(state\.communityCards2 \?\? \[\]\)\]/);
   });
 
   it('the award-unit ledger covers EVERY bomb hand, idempotently', () => {
@@ -678,7 +690,10 @@ describe('ROUND 8 (2026-08-29) — the last of the open items', () => {
     // The poll is DEMOTED, not deleted — a broadcast is best-effort and an
     // engine that restarted between the click and the hand never hears it, so
     // the throttled refresh (already happening) latches the column.
-    expect(BASE).toMatch(/bomb_pot_announce_seconds, bomb_pot_manual_pending'/);
+    // (2026-09-09 must-move audit: the refresh select grew past this column, so
+    // the pin accepts the column followed by either the closing quote or the
+    // next column - it is the COLUMN being read that matters, not the list's end.)
+    expect(BASE).toMatch(/bomb_pot_announce_seconds, bomb_pot_manual_pending['|,]/);
     // And the per-hand claim only runs when something is actually armed.
     expect(DEALING).toMatch(/this\.manualBombPushed &&/);
     // Closed with the engine that opened it.
@@ -769,12 +784,23 @@ describe('ROUND 8 (2026-08-29) — the last of the open items', () => {
     // The fractional case is not lost - bomb_pot_ante_fixed is `numeric` and
     // prices the ante in chips, which is the honest way to say "two and a half
     // big blinds" anyway.
-    // 2026-09-04 (Operation Table Stakes, Slice 1): the cash form is
-    // CashGameCreateFlow, whose "Bomb Ante" slider steps by whole big blinds.
+    // 2026-09-04 (Operation Table Stakes, Slice 1): the cash form became
+    // CashGameCreateFlow, whose "Bomb Ante" slider stepped by whole big blinds.
+    // 2026-09-09 (must-move audit, lane I): that slider is GONE. The bomb ante
+    // is the template's promise (docs/changelog/2026-09-09-a-classic-game-has-
+    // no-antes-and-no-bombs.md) - fn_cash_game_create takes it from
+    // fn_cash_template_defaults (2 bb Action, 3 bb Madness, none on Classic)
+    // and reads nothing the caller sends. So the pin moves with the mechanism:
+    // the flow offers no bomb ante control at all, and the SQL that decides the
+    // ante holds it to a whole number of big blinds between 1 and 20.
     const FLOW = read('src/components/cash/CashGameCreateFlow.tsx');
-    const anteSlider = sliceEnclosingBlock(FLOW, 'label="Bomb Ante"');
-    expect(anteSlider).toMatch(/step=\{1\}/);
-    expect(blankNonCode(anteSlider)).not.toMatch(/step=\{0\.5\}/);
+    expect(FLOW).not.toContain('label="Bomb Ante"');
+    expect(blankNonCode(FLOW)).not.toMatch(/bombs\.ante_bb/);
+    const CREATE_SQL = read('supabase/migrations/20260904230000_cash_games_slice_1_hardening.sql');
+    expect(CREATE_SQL).toMatch(
+      /v_bomb_ante := public\.fn_cash_override_int\(v_bombs, 'ante_bb', NULL\)/
+    );
+    expect(CREATE_SQL).toMatch(/v_bomb_ante < 1 OR v_bomb_ante > 20/);
 
     const SETTINGS = read('src/pages/club/TableBombSettingsPage.tsx');
     // The editor rounds on the way in rather than letting Postgres do it.

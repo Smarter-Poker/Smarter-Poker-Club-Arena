@@ -12,6 +12,43 @@ is the platform failing to do that and something else tidying up afterwards.
 > better instrumented. It closes when the live path cannot produce the wrong
 > outcome and the job is **deleted**.
 
+## 2026-09-10 control-plane retirement and fee boundary
+
+The 60-second `club-arena-supervisor.service` / `.timer` mutator is retired.
+The installer disables, stops, removes, reloads, and proves both units absent.
+Its historical `engine-supervisor.sh` filename remains only because release-v1
+freezes that generation entrypoint; the executable now refuses every call
+unless the release transaction or its ExecStopPost recovery supplies all three
+causal authorities (force desired, exact health, and caller-held engine lock)
+plus an absolute deadline. Sampling counters, cache-tag reconciliation,
+heartbeat metrics, and autonomous container mutation are gone. The monitoring
+rule file is consequently `recovery-rules.yml` and observes the daily read-only
+recovery audit rather than a mutating heartbeat.
+
+Two watcher-shaped surfaces are explicitly **not closed** by that change:
+
+- `sp-autoheal` still watches Docker health and restarts an unhealthy engine.
+  Plain Docker does not act on an unhealthy healthcheck, so deleting autoheal
+  before a separately audited, causal process-failure owner lands would remove
+  the only recovery for a live-but-wedged process. It remains a named blocker,
+  not a claimed retirement.
+- GameServer's `FeeReconciler` mixes a legitimate durable obligation drain with
+  historical scans, audits, and repair calls. In particular, a BBJ payout is
+  persisted to `pending_fee_distributions` before its first delivery attempt;
+  deleting the drain can strand a real jackpot obligation. The safe split is:
+  keep an atomic claim-and-deliver outbox worker, wake it from the write that
+  creates an obligation, retry only within that causal chain, and perform one
+  bounded startup drain for crash recovery; move read-only audits out of that
+  worker; then remove the five-minute interval and the hourly/30-minute repair
+  scans only after the accepted-hand post-commit envelope is proven universal
+  and the old backlog is zero. No fee/tournament runtime was changed in this
+  control-plane pass.
+
+`scripts/ci/band-aid.allowlist.json` has no supervisor exemption to delete. Its
+BBJ repair entries remain because those database repair functions and schedules
+were not safely retired in this pass; removing only their CI names would hide
+debt rather than remove it.
+
 ---
 
 ## What this costs today, measured
@@ -488,6 +525,30 @@ still means a live write is wrong.
 | `ca-escalate-reconcile-criticals-hourly`            | `fn_ca_escalate_reconcile_criticals` | hourly    | criticals nobody actioned                       | Tier 3: a check that clears itself needs no escalator              |
 | `flag-garbage-tournaments`                          | `fn_flag_garbage_tournaments`        | nightly   | tournaments that should never have been created | refuse to create them                                              |
 | `ca-pgrst-reload-if-stale`, `pgrst-reload-watchdog` | —                                    | 5/15 min  | PostgREST schema cache not reloading            | the DDL policy in CLAUDE.md §2 — one transaction per change        |
+
+Retired 2026-09-10: `ca-eliminate-absent-players` and
+`ca-release-broke-seats`. Both wrote `tournament_players.status = 'eliminated'`
+with **no finishing place** in RUNNING events, ten minutes after an accepted
+hand had already busted the player and while the engine's knockout door was
+still holding that bust. `fn_complete_tournament_entry_reprice` counts a
+placeless eliminated row as an unfinished reprice, so the proof refused for
+ever and `runEliminationSweep` returned before its bust stage: twenty
+tournaments stopped recording eliminations entirely, and the sweep then took
+the next batch of stranded busts. All 1,270 rows it had taken carried a
+`pending` knockout candidate. Both jobs are now INACTIVE (the row is kept, not
+deleted - the unapplied retirement chain 20260910000850 captures exactly two
+and its CHECK demands two), both functions refuse any bust a hand took, and a
+DEFERRED constraint trigger refuses a placeless elimination in a live event
+whoever writes it. Root fix and measurements:
+`docs/changelog/2026-09-10-the-knockout-door-owns-every-bust.md`.
+
+**The lesson this cost:** eight hours earlier
+`docs/changelog/2026-09-10-the-felt-decides-who-busted.md` had fixed this same
+sweep to read the felt rather than a stale mirror. That fix was correct on its
+own terms and it is what made the loop possible - a broken band-aid was
+harmless, a working one raced the live path. When you find a repair job that
+is not repairing anything, do not fix the repair job; ask what the live path
+was doing with those rows.
 
 Retired 2026-09-07: `sweep-seatless-late-registrants`. The registration RPC
 now creates capacity, debits the entrant, writes the roster and claims the seat

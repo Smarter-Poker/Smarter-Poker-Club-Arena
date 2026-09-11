@@ -42,13 +42,14 @@
 import { supabase } from './supabase.js';
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { reportError } from './errorReporter.js';
-import { selectInChunks } from './supabase/chunkedIn.js';
+import { IN_LIST_CHUNK, selectInChunks } from './supabase/chunkedIn.js';
 import { fetchAllRows } from './supabase/pagination.js';
 import {
   cashTableFill,
   isActiveNow,
   isNightParkedTable,
   isRetiringTable,
+  pruneSeatChangeMemo,
   seatChangeVerdict,
   wantsTableChange,
 } from './HorseBehavior.js';
@@ -79,15 +80,36 @@ const TOPUP_STACK_FRAC = 0.45; // top up when below 45% of a standard buy-in
 const TOPUP_PROB = 0.25; // per eligible horse per cycle
 const BREAK_PROB = 0.35; // chance ONE horse somewhere takes a short break per cycle
 const BREAK_MIN_MS = 2 * 60_000;
-const BREAK_MAX_MS = 5 * 60_000;
+/**
+ * A BREAK ENDS BEFORE THE EVICTION CLOCK DOES (2026-09-09).
+ *
+ * This was five minutes, and DisconnectEngine.SITOUT_MAX_MS - the "2 orbits
+ * or 5 minutes, whichever is first" rule Dan set on 2026-08-25 - is ALSO five
+ * minutes. The sit-back below only runs on the ninety-second cycle, so a
+ * break drawn anywhere in the top ninety seconds of the range was still
+ * sitting out when the engine's own sweep reached five minutes, and the
+ * sweep does not sit a player back in: it cashes the seat out. A quarter of
+ * every "short break" was therefore a departure the rotator never counted
+ * and never logged, and a table that had just watched a horse step away for
+ * a few minutes watched it vanish instead. Three minutes plus a cycle of
+ * slack is four and a half, inside the clock with room to spare.
+ */
+const BREAK_MAX_MS = 3 * 60_000;
+
+/** What `leaveTable` answers. `code` / `stay_remaining_ms` are the stay
+ *  clock's refusal (ChipContinuity); a caller that ignores them re-asks a
+ *  question with a known answer every cycle. */
+export interface RotatorLeaveResult {
+  success: boolean;
+  error?: string;
+  immediate?: boolean;
+  code?: 'LEAVE_LOCKED' | 'STALE_OCCUPANCY';
+  stay_remaining_ms?: number;
+}
 
 /** Minimal engine surface the rotator needs (matches ServerTableEngine). */
 export interface RotatorEngine {
-  leaveTable(
-    userId: string
-  ):
-    | { success: boolean; error?: string; immediate?: boolean }
-    | Promise<{ success: boolean; error?: string; immediate?: boolean }>;
+  leaveTable(userId: string): RotatorLeaveResult | Promise<RotatorLeaveResult>;
   /** V8: hand-boundary-safe top-up (queued mid-hand; wallet-debited). */
   addChips?(
     userId: string,
@@ -135,6 +157,32 @@ export class HorseSessionRotator {
    *    cycle.
    */
   private seatChangeAsked = new Map<string, number>();
+  /** When a failed seat page was last reported. See the read in rotate(). */
+  private lastSeatReadFailureReportAt = 0;
+
+  /**
+   * A STAY CLOCK IS NOT A FAILURE, AND IT KNOWS WHEN IT LIFTS (2026-09-09).
+   *
+   * `${tableId}:${userId}` -> epoch ms until which this seat is not asked to
+   * leave. `leaveTable` answers `LEAVE_LOCKED` with `stay_remaining_ms` for a
+   * player ahead of their buy-in inside the ten-minute clock (ChipContinuity),
+   * and every certain departure in this file - a booked win, a table change,
+   * a release for a waiting person, a tournament in the hour - re-picked the
+   * same seat on the next cycle and asked again, seven refusals over the
+   * length of the clock, each one a `leave_blocked` event on the table. The
+   * Stable Hand executor already holds the pair until the clock reaches
+   * zero; this is the same courtesy here.
+   */
+  private leaveHeld = new Map<string, number>();
+
+  /**
+   * Seats this process has already sat back in from a sit-out it had no
+   * break for (`${tableId}:${userId}`). Once per seat per process: a horse
+   * that sits out AGAIN afterwards was sat out by something else - the
+   * disconnect engine's strike rule, say - and re-seating it every cycle
+   * would keep a horse that cannot act in the deal.
+   */
+  private sitBackRestoredKeys = new Set<string>();
 
   private static readonly SEAT_CHANGE_STAY_MS = 12 * 60 * 60_000;
   private static readonly SEAT_CHANGE_RETRY_MS = 30 * 60_000;
@@ -174,6 +222,40 @@ export class HorseSessionRotator {
 
   private static seatChangeKey(gameId: string, userId: string): string {
     return `${gameId}:${userId}`;
+  }
+
+  /** Is this seat inside a stay clock the door already told us about? */
+  private isLeaveHeld(tableId: string, userId: string, now: number = Date.now()): boolean {
+    const until = this.leaveHeld.get(HorseSessionRotator.breakKey(tableId, userId));
+    if (until === undefined) return false;
+    if (until <= now) {
+      this.leaveHeld.delete(HorseSessionRotator.breakKey(tableId, userId));
+      return false;
+    }
+    return true;
+  }
+
+  /** Every leave goes through here after the door answers, so a refusal that
+   *  names its own duration is remembered for exactly that long. */
+  private noteLeaveResult(tableId: string, userId: string, result: RotatorLeaveResult): void {
+    const key = HorseSessionRotator.breakKey(tableId, userId);
+    if (result.success) {
+      this.leaveHeld.delete(key);
+      return;
+    }
+    if (result.code === 'LEAVE_LOCKED') {
+      const remaining = Math.max(0, Number(result.stay_remaining_ms) || 0);
+      this.leaveHeld.set(key, Date.now() + remaining + 1_000);
+    }
+  }
+
+  /**
+   * A seat that is already on its way out: the door has been asked and the
+   * hand end will cash it out (`leave_pending`), or this cycle asked it. Such
+   * a seat is not asked again, not topped up, and not sent on a break.
+   */
+  private static isLeaving(seat: { leave_pending?: unknown }): boolean {
+    return seat.leave_pending === true;
   }
 
   constructor(private getEngine: (tableId: string) => RotatorEngine | undefined) {}
@@ -269,7 +351,15 @@ export class HorseSessionRotator {
           // (which has no seat change) and whether the table is closing.
           // created_at joined 2026-09-05 for the lone-horse pass: an opening
           // feeder younger than its grace window is being filled, not dead.
-          'table_id, user_id, seat_number, stack, joined_at, club_id, tables!table_seats_table_id_fkey!inner(id, big_blind, tournament_id, status, settings, cluster_id, role, main_index, lifecycle, created_at)'
+          // leave_pending / is_sitting_out joined 2026-09-09: a seat already
+          // leaving is not asked twice, a sit-out the engine restored from
+          // the row after a restart is sat back in (the break map is memory
+          // and the engine restarts hourly). max_players: how many chairs a
+          // waiting person can already have. min_buy_in / max_buy_in: the
+          // table's own limits, which price the reload, the swing and the
+          // session P&L - `bb * 100` is not the buy-in at a 0.50 game whose
+          // minimum is 200.
+          'table_id, user_id, seat_number, stack, joined_at, club_id, leave_pending, is_sitting_out, tables!table_seats_table_id_fkey!inner(id, big_blind, tournament_id, status, settings, cluster_id, role, main_index, lifecycle, created_at, max_players, min_buy_in, max_buy_in)'
         )
         .is('left_at', null)
         .order('table_id', { ascending: true })
@@ -279,113 +369,33 @@ export class HorseSessionRotator {
       // A failed page means an INCOMPLETE room, and rotating against half a
       // room is how a table gets picked that should not have been. Decline
       // the pass; it runs again on the next cycle.
+      //
+      // AND SAY SO (2026-09-09, CLAUDE.md 10.86). This used to be a bare
+      // `return`: a rotator that could not read the room looked exactly like
+      // a rotator with nothing to do, for as long as the read stayed broken.
+      // "I could not tell" is its own outcome and it is reported, throttled
+      // to one report per five minutes so a persistent failure stays
+      // readable rather than becoming forty identical events an hour.
       if (error || !chunk) {
-        /* AND SAY SO (2026-09-09). This was a bare `return`: the rotator
-           declined the pass and nothing anywhere recorded that it had. On
-           2026-09-09 two migrations gave `table_seats` a second and third
-           foreign key to `tables`, PostgREST refused the un-hinted embed
-           above with PGRST201 ("more than one relationship was found"), and
-           this line swallowed it on EVERY cycle for fifteen hours - no
-           session ended, no horse rotated, no top-up, no seat change, no
-           lone-horse stand, and not one log line said why. CLAUDE.md 10.86:
-           "I could not tell" is an outcome with a name, never a silence. */
-        reportError(
-          new Error(
-            `[HorseSessionRotator] live seat read failed on page ${page}; the pass is ` +
-              `declined and will run again next cycle: ${error?.message ?? 'no rows returned'}`
-          ),
-          'HorseSessionRotator.seat_read_failed'
-        );
+        const now = Date.now();
+        if (now - this.lastSeatReadFailureReportAt >= 5 * 60_000) {
+          this.lastSeatReadFailureReportAt = now;
+          reportError(
+            new Error(
+              `[HorseSessionRotator] seat read failed on page ${page} - the pass is declined ` +
+                `and NOTHING rotates until this reads clean: ${error?.message ?? 'no rows'}`
+            ),
+            'HorseSessionRotator.seat_read_failed'
+          );
+          console.warn(
+            `[SessionRotator] seat read failed (${error?.message ?? 'no rows'}) - pass declined; ` +
+              'no session ends, lone stands, tournament leaves or seat changes until it reads'
+          );
+        }
         return;
       }
       seats.push(...chunk);
       if (chunk.length < PAGE) break;
-    }
-
-    /**
-     * BANKROLL CONTEXT (Dan 2026-08-31). Two rules below need money facts the
-     * seat row does not carry:
-     *
-     *  - the ROLL, to decide whether a reload is affordable at all;
-     *  - what this seat has ALREADY cost, to know whether the session is a
-     *    winner worth booking or a loser worth leaving.
-     *
-     * The second is read from `chip_ledger` rather than a new column on
-     * `table_seats`, deliberately: the ledger already records every buy-in
-     * and top-up with a table_id and a timestamp, so the exact figure is
-     * available without touching a money path to write it.
-     *
-     * Both are loaded ONCE per cycle. A failure leaves the maps empty, and
-     * every rule below degrades to the pre-bankroll behaviour rather than
-     * guessing — a rotator that mistakes "I could not read the ledger" for
-     * "this horse is stuck" would empty the floor.
-     */
-    const rolls = new Map<string, number>();
-    const investedBySeat = new Map<string, number>();
-    try {
-      const horseSeatIds = seats.map((s) => s.user_id);
-      if (horseSeatIds.length > 0) {
-        /* CHUNKED, AND AN INCOMPLETE READ IS NOT AN EMPTY WALLET (2026-09-03).
-           Same ceiling as the horse read above, and the consequence here is a
-           money one rather than a quiet one: with `rolls` empty, `roll` is
-           undefined at the top-up below, topUpAllowance() is skipped entirely,
-           and the horse reloads the full desired amount with NO bankroll cap.
-           An unreadable roll now leaves both maps empty AND says so, and the
-           rules below already degrade to the pre-bankroll behaviour - which
-           refuses the top-up rather than uncapping it. */
-        const memRead = await selectInChunks<{
-          user_id: string;
-          club_id: string;
-          chip_balance: unknown;
-        }>(
-          horseSeatIds,
-          (batch) =>
-            supabase
-              .from('club_members')
-              .select('user_id, club_id, chip_balance')
-              .in('user_id', batch),
-          'HorseSessionRotator.bankrollRolls'
-        );
-        if (!this.lifecycleIsCurrent(generation)) return;
-        const mem = memRead.complete ? memRead.rows : [];
-        for (const m of mem ?? []) {
-          const v = Number((m as { chip_balance: unknown }).chip_balance);
-          if (Number.isFinite(v)) {
-            rolls.set(
-              `${(m as { club_id: string }).club_id}:${(m as { user_id: string }).user_id}`,
-              v
-            );
-          }
-        }
-        const oldest = seats.reduce(
-          (acc, x) => Math.min(acc, new Date(x.joined_at).getTime()),
-          Date.now()
-        );
-        const { data: led } = await supabase
-          .from('chip_ledger')
-          .select('to_entity_id, from_entity_id, table_id, amount, category, created_at')
-          .gte('created_at', new Date(oldest - 60_000).toISOString())
-          .not('table_id', 'is', null)
-          .limit(20_000);
-        if (!this.lifecycleIsCurrent(generation)) return;
-        for (const r of led ?? []) {
-          const row = r as {
-            from_entity_id: string | null;
-            table_id: string | null;
-            amount: unknown;
-          };
-          // A buy-in or top-up moves chips FROM the player, so the player is
-          // the `from` side. Anything moving TO them is a cash-out and is not
-          // money they put at risk.
-          if (!row.from_entity_id || !row.table_id) continue;
-          const amt = Number(row.amount);
-          if (!Number.isFinite(amt) || amt <= 0) continue;
-          const k = `${row.table_id}:${row.from_entity_id}`;
-          investedBySeat.set(k, (investedBySeat.get(k) ?? 0) + amt);
-        }
-      }
-    } catch (err) {
-      reportError(err, 'HorseSessionRotator.bankroll_context');
     }
 
     // Group by table; only consider cash tables with 4+ occupied seats so a
@@ -440,6 +450,180 @@ export class HorseSessionRotator {
     const horseIds = new Set(horseRead.rows.map((h) => h.id));
     const hourUTC = new Date().getUTCHours();
 
+    /**
+     * BANKROLL CONTEXT (Dan 2026-08-31). Two rules below need money facts the
+     * seat row does not carry:
+     *
+     *  - the ROLL, to decide whether a reload is affordable at all;
+     *  - what this seat has ALREADY cost, to know whether the session is a
+     *    winner worth booking or a loser worth leaving.
+     *
+     * The second is read from `chip_ledger` rather than a new column on
+     * `table_seats`, deliberately: the ledger already records every buy-in
+     * and top-up with a table_id and a timestamp, so the exact figure is
+     * available without touching a money path to write it.
+     *
+     * Both are loaded ONCE per cycle. A failure leaves the maps empty, and
+     * every rule below degrades to the pre-bankroll behaviour rather than
+     * guessing — a rotator that mistakes "I could not read the ledger" for
+     * "this horse is stuck" would empty the floor.
+     */
+    const rolls = new Map<string, number>();
+    const investedBySeat = new Map<string, number>();
+    try {
+      /* Horse seats at CASH tables: the only seats either rule below reads.
+         A tournament seat has no reload and no session P&L to book. */
+      const horseCashSeats = seats.filter(
+        (s) => horseIds.has(s.user_id) && byTable.has(s.table_id)
+      );
+      const horseSeatIds = horseCashSeats.map((s) => s.user_id);
+      if (horseSeatIds.length > 0) {
+        /* CHUNKED, AND AN INCOMPLETE READ IS NOT AN EMPTY WALLET (2026-09-03).
+           Same ceiling as the horse read above, and the consequence here is a
+           money one rather than a quiet one: with `rolls` empty, `roll` is
+           undefined at the top-up below, topUpAllowance() is skipped entirely,
+           and the horse reloads the full desired amount with NO bankroll cap.
+           An unreadable roll now leaves both maps empty AND says so, and the
+           rules below already degrade to the pre-bankroll behaviour - which
+           refuses the top-up rather than uncapping it. */
+        const memRead = await selectInChunks<{
+          user_id: string;
+          club_id: string;
+          chip_balance: unknown;
+        }>(
+          horseSeatIds,
+          (batch) =>
+            supabase
+              .from('club_members')
+              .select('user_id, club_id, chip_balance')
+              .in('user_id', batch),
+          'HorseSessionRotator.bankrollRolls'
+        );
+        if (!this.lifecycleIsCurrent(generation)) return;
+        const mem = memRead.complete ? memRead.rows : [];
+        for (const m of mem ?? []) {
+          const v = Number((m as { chip_balance: unknown }).chip_balance);
+          if (Number.isFinite(v)) {
+            rolls.set(
+              `${(m as { club_id: string }).club_id}:${(m as { user_id: string }).user_id}`,
+              v
+            );
+          }
+        }
+
+        /**
+         * ═══════════════════════════════════════════════════════════════════
+         *  WHAT EACH SEAT HAS COST - THE HORSE'S OWN ROWS, THIS SITTING ONLY
+         * ═══════════════════════════════════════════════════════════════════
+         *
+         * Two defects hid each other here until 2026-09-09.
+         *
+         * 1. The read was `chip_ledger ... .not('table_id','is',null)
+         *    .limit(20_000)`, unfiltered and unordered. PostgREST caps every
+         *    select at db-max-rows (1,000) without a word, and the window -
+         *    from the OLDEST seat on the floor, thirty hours today - holds
+         *    386,992 such rows, 98% of them rake and jackpot contributions
+         *    whose `from_entity_id` is the table, not a player. So `led` was
+         *    an arbitrary thousand of those, `investedBySeat` was empty for
+         *    nearly every seat, and the book-the-win / stop-the-loss rule
+         *    that has read as live since 2026-08-31 has never once fired on a
+         *    true figure. When a buy-in row DID land in the sample it landed
+         *    alone: a stack of 400 against a "recorded" 50 top-up read as a
+         *    seven-buy-in heater and a certain departure.
+         *
+         * 2. The window was one window for the whole floor. A horse that sat
+         *    at this table yesterday, left, and sat again today had both
+         *    sessions' buy-ins summed against today's stack: measured on the
+         *    live floor, 49 of 337 seats read as a stop-loss under that sum
+         *    and 2 under the seat's own. Forty-seven horses stood up for
+         *    money they lost on a different day.
+         *
+         * Now: the horse's own rows (`from_entity_id` in the seated horses,
+         * chunked), only chips that moved onto a felt (`to_type =
+         * 'table_stack'` - every buy-in, add-on and blind post the ledger
+         * writes for a horse carries it, and nothing else does), keyset-paged
+         * so a thousand rows is a page and not a ceiling, and each row counted
+         * for the ONE seat whose sitting it falls inside. A short read leaves
+         * the map EMPTY and says so: half a ledger reads as a heater, and the
+         * heuristic below is the honest answer when the figure is unknown.
+         *
+         * A must-move carries `joined_at` with the player but not the ledger's
+         * table_id, so a moved horse's buy-in stays at the table it bought in
+         * at and this seat reads only what was added here. That is the same
+         * "no figure -> heuristic" degrade, never a wrong figure.
+         */
+        const seatJoinedAt = new Map<string, number>();
+        let oldest = Date.now();
+        for (const s of horseCashSeats) {
+          const joined = new Date(s.joined_at).getTime();
+          if (!Number.isFinite(joined)) continue;
+          seatJoinedAt.set(`${s.table_id}:${s.user_id}`, joined);
+          if (joined < oldest) oldest = joined;
+        }
+        const since = new Date(oldest - 60_000).toISOString();
+        type LedgerRow = {
+          id: string;
+          from_entity_id: string | null;
+          table_id: string | null;
+          amount: unknown;
+          created_at: string;
+        };
+        const ledger: LedgerRow[] = [];
+        let ledgerComplete = true;
+        const uniqueHorses = [...new Set(horseSeatIds)];
+        for (let i = 0; i < uniqueHorses.length && ledgerComplete; i += IN_LIST_CHUNK) {
+          const batch = uniqueHorses.slice(i, i + IN_LIST_CHUNK);
+          const page = await fetchAllRows<LedgerRow>(
+            (cursor, want) => {
+              let q = supabase
+                .from('chip_ledger')
+                .select('id, from_entity_id, table_id, amount, created_at')
+                .in('from_entity_id', batch)
+                .eq('to_type', 'table_stack')
+                .not('table_id', 'is', null)
+                .gte('created_at', since)
+                .order('id', { ascending: true })
+                .limit(want);
+              if (cursor) q = q.gt('id', cursor);
+              return q;
+            },
+            { label: 'HorseSessionRotator.investedLedger', maxRows: 50_000 }
+          );
+          if (!this.lifecycleIsCurrent(generation)) return;
+          if (!page.complete) ledgerComplete = false;
+          else ledger.push(...page.rows);
+        }
+        if (!ledgerComplete) {
+          reportError(
+            new Error(
+              '[HorseSessionRotator] session ledger read incomplete; the book-win / ' +
+                'stop-loss rule falls back to the stack heuristic this cycle'
+            ),
+            'HorseSessionRotator.invested_ledger_incomplete'
+          );
+        } else {
+          for (const row of ledger) {
+            // A buy-in or top-up moves chips FROM the player, so the player is
+            // the `from` side. Anything moving TO them is a cash-out and is not
+            // money they put at risk.
+            if (!row.from_entity_id || !row.table_id) continue;
+            const amt = Number(row.amount);
+            if (!Number.isFinite(amt) || amt <= 0) continue;
+            const k = `${row.table_id}:${row.from_entity_id}`;
+            const joined = seatJoinedAt.get(k);
+            if (joined === undefined) continue;
+            const at = new Date(row.created_at).getTime();
+            // This sitting only: the buy-in lands a moment before the seat
+            // row's joined_at, hence the minute of slack.
+            if (!Number.isFinite(at) || at < joined - 60_000) continue;
+            investedBySeat.set(k, (investedBySeat.get(k) ?? 0) + amt);
+          }
+        }
+      }
+    } catch (err) {
+      reportError(err, 'HorseSessionRotator.bankroll_context');
+    }
+
     /* WHO IS WAITING FOR A SEAT (Dan 2026-09-02). The one reason a horse
        stands up off a full table. Counted per table, humans only - horses do
        not queue any more, and a horse in the count would make a horse stand up
@@ -451,13 +635,27 @@ export class HorseSessionRotator {
        one query timed out. */
     const humansWaiting = new Map<string, number>();
     try {
-      const { data: queued, error: qErr } = await supabase
-        .from('table_waitlist')
-        .select('table_id, user_id, status')
-        .in('status', ['waiting', 'notified']);
+      /* PAGED (2026-09-09), keyset on id, the way HorseFleetManager has read
+         this queue since 2026-09-06. A bare select is capped at db-max-rows
+         (1,000) without an error; the queue reached 10,004 rows on
+         2026-08-31, and a person past the cap was invisible to the one rule
+         that stands a horse up for them. A short read still fails CLOSED. */
+      const page = await fetchAllRows<{ id: string; table_id: string; user_id: string }>(
+        (cursor, want) => {
+          let q = supabase
+            .from('table_waitlist')
+            .select('id, table_id, user_id, status')
+            .in('status', ['waiting', 'notified'])
+            .order('id', { ascending: true })
+            .limit(want);
+          if (cursor) q = q.gt('id', cursor);
+          return q;
+        },
+        { label: 'HorseSessionRotator.humansWaiting', maxRows: 50_000 }
+      );
       if (!this.lifecycleIsCurrent(generation)) return;
-      if (qErr) throw new Error(qErr.message);
-      for (const row of queued ?? []) {
+      if (!page.complete) throw new Error('waitlist read incomplete');
+      for (const row of page.rows) {
         const r = row as { table_id?: string; user_id?: string };
         if (!r.table_id || !r.user_id || horseIds.has(r.user_id)) continue;
         humansWaiting.set(r.table_id, (humansWaiting.get(r.table_id) ?? 0) + 1);
@@ -478,6 +676,45 @@ export class HorseSessionRotator {
       } catch (err) {
         reportError(err, 'HorseSessionRotator.sitBack');
       }
+    }
+
+    /**
+     * A BREAK THE PROCESS FORGOT IS STILL A BREAK (2026-09-09).
+     *
+     * `this.breaks` is memory and the engine restarts at :55 of every hour.
+     * The engine persists `table_seats.is_sitting_out` and restores the
+     * sit-out at boot with the eviction clock seeded from `sit_out_at`, so a
+     * horse sent on a break in the last minutes before a restart came back
+     * sitting out with nobody holding its sit-back time - and the only thing
+     * that ended it was the five-minute eviction cashing the seat out. A
+     * horse sitting out at a cash table with no break on record is sat back
+     * in here, from the row rather than from memory: the row is the truth
+     * that survives the restart. A seat already leaving (`leave_pending`) is
+     * the door's business, not a break.
+     */
+    let sitBackRestored = 0;
+    for (const [tableId, tableSeats] of byTable) {
+      if (!this.lifecycleIsCurrent(generation)) return;
+      for (const seat of tableSeats) {
+        if (seat.is_sitting_out !== true || HorseSessionRotator.isLeaving(seat)) continue;
+        const userId = String(seat.user_id ?? '');
+        if (!userId || !horseIds.has(userId)) continue;
+        const key = HorseSessionRotator.breakKey(tableId, userId);
+        if (this.breaks.has(key) || this.sitBackRestoredKeys.has(key)) continue;
+        this.sitBackRestoredKeys.add(key);
+        try {
+          const res = this.getEngine(tableId)?.sitOut?.(userId, false);
+          if (res?.success) sitBackRestored++;
+        } catch (err) {
+          reportError(err, 'HorseSessionRotator.sitBackRestored');
+        }
+      }
+    }
+    if (sitBackRestored > 0) {
+      console.log(
+        `[SessionRotator] sat ${sitBackRestored} horse(s) back in from a sit-out no break ` +
+          `on record explains (a restart forgot it)`
+      );
     }
 
     /**
@@ -540,11 +777,17 @@ export class HorseSessionRotator {
       if (tableSeats.some((x) => !horseIds.has(x.user_id))) continue;
       const engine = this.getEngine(tableId);
       if (!engine) continue;
-      const horseSeat = tableSeats.find((x) => horseIds.has(x.user_id));
+      const horseSeat = tableSeats.find(
+        (x) =>
+          horseIds.has(x.user_id) &&
+          !HorseSessionRotator.isLeaving(x) &&
+          !this.isLeaveHeld(tableId, x.user_id)
+      );
       if (!horseSeat) continue;
       try {
         const result = await engine.leaveTable(horseSeat.user_id);
         if (!this.lifecycleIsCurrent(generation)) return;
+        this.noteLeaveResult(tableId, horseSeat.user_id, result);
         if (result.success) {
           this.breaks.delete(HorseSessionRotator.breakKey(tableId, horseSeat.user_id));
           console.log(
@@ -627,66 +870,44 @@ export class HorseSessionRotator {
       );
     }
 
-    let departures = 0;
-    let breakTaken = false;
+    /**
+     * ═══════════════════════════════════════════════════════════════════════
+     *  TOP-UPS, AT EVERY CASH TABLE (moved out of the departure loop 2026-09-09)
+     * ═══════════════════════════════════════════════════════════════════════
+     *
+     * V8 TOP-UPS: humans reload when short - so do (some) horses. Only the
+     * between-hands-safe engine path; wallet-empty horses silently skip,
+     * which is itself a human pattern (the broke guy plays the short stack).
+     * Never while on a break, never into a seat that is leaving.
+     *
+     * This lived inside the departure loop below, behind its population
+     * floor (`length < 4 -> continue`) and its four-departure cap (`break`),
+     * so a short-stacked horse at a three-handed table never reloaded and
+     * the fifth table in id order never reloaded on a busy cycle. A reload
+     * is not a departure and threatens no game; it runs for every table.
+     */
     for (const [tableId, tableSeats] of byTable) {
       if (!this.lifecycleIsCurrent(generation)) return;
-      if (departures >= GLOBAL_DEPARTURES_PER_CYCLE) break;
-      // A retiring table was handled above; nothing discretionary happens on
-      // it - no top-ups into a table that is closing, no breaks.
-      if (isRetiringTable((tableSeats[0] as any)?.tables)) continue;
-      // V8: tables with a HUMAN present are protected harder — never thin a
-      // human's game below 5, and horse-only tables absorb most rotation.
-      const humanPresent = tableSeats.some((x) => !horseIds.has(x.user_id));
-
-      /* ── A HORSE GETS UP FOR A PERSON, AND FOR NOTHING ELSE ──────────────
-         Dan 2026-09-02: "HORSES CAN FILL ALL SEATS, AND ONLY 'GET UP' WHEN A
-         REAL HUMAN IS ON THE WAITING LIST FOR 75% OF ALL GAMES."
-
-         `releaseWanted` is how many seats this table owes to people standing
-         in its queue right now. When it is above zero the departure is
-         CERTAIN, one per cycle, exactly like the held-empty drain this
-         replaced - somebody is waiting, so somebody stands up, and the 4-seat
-         floor below does not apply because making room is the point.
-
-         On a FULL table with nobody waiting, the discretionary departures are
-         skipped entirely further down: no table-hopping, no session-end
-         hazard. That is the other half of Dan's sentence, and without it the
-         floor drains itself back out of the seats this fills. The bankroll
-         departures - book a win, stop a loss - are NOT skipped: those are
-         money decisions, and a horse that plays past its stop-loss is a bug in
-         a different law. */
-      const releaseWanted = humansWaiting.get(tableId) ?? 0;
-      const fill = cashTableFill(tableId);
-      if (releaseWanted === 0 && tableSeats.length < (humanPresent ? 5 : 4)) continue;
-
+      const t = (tableSeats[0] as any)?.tables;
+      // No top-ups into a table that is closing.
+      if (isRetiringTable(t)) continue;
       const engine = this.getEngine(tableId);
-      if (!engine) continue; // no live engine — not our business
-
-      // One candidate per table per cycle, chosen by highest leave pressure.
-      let best: { seat: (typeof tableSeats)[number]; p: number } | null = null;
+      if (!engine?.addChips) continue;
+      const bb = Number(t?.big_blind) || 2;
+      // THE TABLE'S OWN LIMITS (2026-09-09). `bb * 100` was the buy-in here
+      // whatever the table said: a 0.50 game with a 200 minimum priced its
+      // reload, its swing and its session verdict off 50.
+      const tableMin = Number(t?.min_buy_in) > 0 ? Number(t.min_buy_in) : bb * 40;
+      const tableMax = Number(t?.max_buy_in) > 0 ? Number(t.max_buy_in) : bb * 200;
+      const buyIn = referenceBuyIn(bb, tableMin, tableMax);
       for (const seat of tableSeats) {
+        if (!this.lifecycleIsCurrent(generation)) return;
         if (!horseIds.has(seat.user_id)) continue;
-        // Somebody is waiting: certain departure, one per cycle, no hazard
-        // math. The seat this frees is offered to the head of the queue by
-        // fn_offer_open_seat, exactly as it would be for any other departure.
-        if (releaseWanted > 0) {
-          best = { seat, p: Number.POSITIVE_INFINITY };
-          break;
-        }
-        const t = (seat as any).tables;
-        const bb = Number(t?.big_blind) || 2;
-        const buyIn = bb * 100;
+        if (HorseSessionRotator.isLeaving(seat) || seat.is_sitting_out === true) continue;
+        if (this.breaks.has(HorseSessionRotator.breakKey(tableId, seat.user_id))) continue;
         const minutes = (Date.now() - new Date(seat.joined_at).getTime()) / 60000;
-
-        // V8 TOP-UPS: humans reload when short — so do (some) horses. Only
-        // between-hands-safe engine path; wallet-empty horses silently skip,
-        // which is itself a human pattern (the broke guy plays the short
-        // stack). Never while on a break.
         const stackNow = Number(seat.stack) || 0;
         if (
-          engine.addChips &&
-          !this.breaks.has(HorseSessionRotator.breakKey(tableId, seat.user_id)) &&
           minutes >= TOPUP_MIN_MINUTES &&
           stackNow > 0 &&
           stackNow < buyIn * TOPUP_STACK_FRAC &&
@@ -721,8 +942,8 @@ export class HorseSessionRotator {
               investedThisTable: investedBySeat.get(`${tableId}:${seat.user_id}`) ?? 0,
               desired: amount,
               refBuyIn: buyIn,
-              minBuyIn: bb * 40,
-              maxBuyIn: bb * 200,
+              minBuyIn: tableMin,
+              maxBuyIn: tableMax,
               policy: bankrollPolicyFor(seat.user_id),
             });
           }
@@ -744,6 +965,102 @@ export class HorseSessionRotator {
             bankrollEvent('topup_refused');
           }
         }
+      }
+    }
+
+    let departures = 0;
+    let breakTaken = false;
+    for (const [tableId, tableSeats] of byTable) {
+      if (!this.lifecycleIsCurrent(generation)) return;
+      if (departures >= GLOBAL_DEPARTURES_PER_CYCLE) break;
+      // A retiring table was handled above; nothing discretionary happens on
+      // it - no breaks.
+      if (isRetiringTable((tableSeats[0] as any)?.tables)) continue;
+      // V8: tables with a HUMAN present are protected harder - never thin a
+      // human's game below 5, and horse-only tables absorb most rotation.
+      const humanPresent = tableSeats.some((x) => !horseIds.has(x.user_id));
+
+      /* ── A HORSE GETS UP FOR A PERSON, AND FOR NOTHING ELSE ──────────────
+         Dan 2026-09-02: "HORSES CAN FILL ALL SEATS, AND ONLY 'GET UP' WHEN A
+         REAL HUMAN IS ON THE WAITING LIST FOR 75% OF ALL GAMES."
+
+         `releaseWanted` is how many seats this table owes to people standing
+         in its queue right now. When it is above zero the departure is
+         CERTAIN, one per cycle, exactly like the held-empty drain this
+         replaced - somebody is waiting, so somebody stands up, and the 4-seat
+         floor below does not apply because making room is the point.
+
+         OWED, NOT QUEUED (2026-09-09). This was the raw queue length, and the
+         queue counts a `notified` row - a person the platform has ALREADY
+         offered a chair, held for them for sixty seconds by
+         fn_offer_open_seat. So one person joining the list stood a horse up
+         at once, and then a second one ninety seconds later while their
+         offer was live, and a third if a chair was open and the offer
+         had lapsed: two or three empty chairs for one player, on a floor
+         whose rule is "exactly as many seats open as there are humans
+         waiting" (HorseBehavior.occupancyTargetFor). The chairs the table
+         already has open - a held offer sits inside them - come off the
+         count first; the Stable Hand executor's own yield, which also
+         answers this queue, frees a chair this then sees. The seat change
+         pass below still reads the raw queue: a person in line is a reason
+         not to move anybody.
+
+         On a FULL table with nobody waiting, the discretionary departures are
+         skipped entirely further down: no table-hopping, no session-end
+         hazard. That is the other half of Dan's sentence, and without it the
+         floor drains itself back out of the seats this fills. The bankroll
+         departures - book a win, stop a loss - are NOT skipped: those are
+         money decisions, and a horse that plays past its stop-loss is a bug in
+         a different law. */
+      const tableRow = (tableSeats[0] as any)?.tables;
+      const maxPlayers = Number(tableRow?.max_players) || tableSeats.length;
+      const openSeats = Math.max(0, maxPlayers - tableSeats.length);
+      const releaseWanted = Math.max(0, (humansWaiting.get(tableId) ?? 0) - openSeats);
+      const fill = cashTableFill(tableId);
+      if (releaseWanted === 0 && tableSeats.length < (humanPresent ? 5 : 4)) continue;
+
+      const engine = this.getEngine(tableId);
+      if (!engine) continue; // no live engine - not our business
+
+      const bb = Number(tableRow?.big_blind) || 2;
+      const tableMin = Number(tableRow?.min_buy_in) > 0 ? Number(tableRow.min_buy_in) : bb * 40;
+      const tableMax = Number(tableRow?.max_buy_in) > 0 ? Number(tableRow.max_buy_in) : bb * 200;
+      const buyIn = referenceBuyIn(bb, tableMin, tableMax);
+
+      /* Who may be asked to leave this table at all: a horse, not already on
+         its way out, not inside a stay clock the door has named. For a
+         release the order is the executor's (StableHand.pickYieldVictims):
+         a horse already sitting out first, then the shortest session - the
+         newest arrival is the least conspicuous player to get up. Otherwise
+         seat order, as before. */
+      const askable = tableSeats.filter(
+        (x) =>
+          horseIds.has(x.user_id) &&
+          !HorseSessionRotator.isLeaving(x) &&
+          !this.isLeaveHeld(tableId, x.user_id)
+      );
+      const order =
+        releaseWanted > 0
+          ? [...askable].sort((a, b) => {
+              const sa = a.is_sitting_out === true ? 0 : 1;
+              const sb = b.is_sitting_out === true ? 0 : 1;
+              if (sa !== sb) return sa - sb;
+              return new Date(b.joined_at).getTime() - new Date(a.joined_at).getTime();
+            })
+          : askable;
+
+      // One candidate per table per cycle, chosen by highest leave pressure.
+      let best: { seat: (typeof tableSeats)[number]; p: number } | null = null;
+      for (const seat of order) {
+        // Somebody is waiting: certain departure, one per cycle, no hazard
+        // math. The seat this frees is offered to the head of the queue by
+        // fn_offer_open_seat, exactly as it would be for any other departure.
+        if (releaseWanted > 0) {
+          best = { seat, p: Number.POSITIVE_INFINITY };
+          break;
+        }
+        const minutes = (Date.now() - new Date(seat.joined_at).getTime()) / 60000;
+        const stackNow = Number(seat.stack) || 0;
 
         // ── V14 TABLE CHANGE (Dan 2026-08-23) ──────────────────────────
         // "HORSES SHOULD BE RANDOMLY LEAVING GAMES, AND GOING TO OTHERS."
@@ -790,8 +1107,8 @@ export class HorseSessionRotator {
         /**
          * BOOK THE WIN, STOP THE LOSS (Dan 2026-08-31).
          *
-         * The swing curve below reads `stack / (bb * 100)` — an ASSUMED
-         * buy-in. A horse that sat down short and doubled its money does not
+         * The swing curve below reads `stack / buyIn` - an ASSUMED buy-in. A
+         * horse that sat down short and doubled its money does not
          * register as a winner, and one that bought in deep and is stuck
          * looks perfectly healthy. Session P&L is the honest measure:
          * everything this seat has cost, against what is in front of it now.
@@ -803,11 +1120,7 @@ export class HorseSessionRotator {
          */
         const invested = investedBySeat.get(`${tableId}:${seat.user_id}`);
         if (invested !== undefined && invested > 0) {
-          const verdict = sessionVerdict(
-            stack - invested,
-            referenceBuyIn(bb, bb * 40, bb * 200),
-            bankrollPolicyFor(seat.user_id)
-          );
+          const verdict = sessionVerdict(stack - invested, buyIn, bankrollPolicyFor(seat.user_id));
           if (verdict !== 'play_on') {
             bankrollEvent(verdict === 'book_win' ? 'session_book_win' : 'session_stop_loss');
             best = { seat, p: Number.POSITIVE_INFINITY };
@@ -839,6 +1152,7 @@ export class HorseSessionRotator {
         try {
           const result = await engine.leaveTable(best.seat.user_id);
           if (!this.lifecycleIsCurrent(generation)) return;
+          this.noteLeaveResult(tableId, best.seat.user_id, result);
           if (result.success) {
             departures++;
             departedThisCycle.add(`${tableId}:${best.seat.user_id}`);
@@ -855,15 +1169,17 @@ export class HorseSessionRotator {
         }
       } else if (
         // V8 SHORT BREAKS: at most ONE horse anywhere per cycle steps away
-        // for 2-5 minutes (dealt out via the engine's deferred sit-out, then
+        // for 2-3 minutes (dealt out via the engine's deferred sit-out, then
         // sits back in). Only at well-populated tables so the game never
         // suffers, and never the table's only action.
         !breakTaken &&
         engine.sitOut &&
         best &&
         // Not already on break at THIS table (re-setting would silently
-        // extend the sit-out and reset the sit-back clock).
+        // extend the sit-out and reset the sit-back clock), and not already
+        // sitting out for any other reason.
         !this.breaks.has(HorseSessionRotator.breakKey(tableId, best.seat.user_id)) &&
+        best.seat.is_sitting_out !== true &&
         tableSeats.length >= (humanPresent ? 6 : 5) &&
         this.breaks.size < 2 &&
         Math.random() < BREAK_PROB / Math.max(1, byTable.size)
@@ -924,6 +1240,9 @@ export class HorseSessionRotator {
       // A PERSON alone at a table is not the fleet's to stand up. (With one
       // seat, humanPresent means the one seat is not a horse.)
       if (!horseIds.has(seat.user_id)) continue;
+      // Already leaving, or inside a stay clock the door has named.
+      if (HorseSessionRotator.isLeaving(seat) || this.isLeaveHeld(tableId, seat.user_id, now))
+        continue;
       if (!this.getEngine(tableId)) continue;
       const minutesSeated = (now - new Date(seat.joined_at).getTime()) / 60000;
       const pre = loneStandVerdict({
@@ -1005,6 +1324,7 @@ export class HorseSessionRotator {
         // folds and cashes out at the hand boundary like any other leave.
         const result = await engine.leaveTable(userId);
         if (!this.lifecycleIsCurrent(generation)) return stood;
+        this.noteLeaveResult(c.tableId, userId, result);
         if (result.success) {
           stood++;
           departedThisCycle.add(`${c.tableId}:${userId}`);
@@ -1029,9 +1349,9 @@ export class HorseSessionRotator {
    *
    * Two reads, both small and both once per cycle: the bookings for
    * tournaments that start inside the window, and the same for seat-first
-   * games with no start time. A read that fails leaves nobody: the horse is
-   * seated late by `ensureLateRegSeated` as it was before today, and the
-   * beat says nothing moved.
+   * games with no start time. A read that fails leaves nobody: atomic
+   * tournament admission remains authoritative, and the beat says nothing
+   * moved.
    */
   private async leaveCashForTournaments(
     allSeats: any[],
@@ -1104,7 +1424,7 @@ export class HorseSessionRotator {
     const seatFirst = await bookingRead('seat_first');
     if (!this.lifecycleIsCurrent(generation)) return 0;
     /* A short read leaves nobody this cycle rather than guessing who is
-       committed; the horse is seated late by ensureLateRegSeated, as before. */
+       committed; atomic tournament admission remains authoritative. */
     if (!timed.complete || !seatFirst.complete) return 0;
     const bookingsByHorse = new Map<string, ImminentBooking[]>();
     const seen = new Set<string>();
@@ -1132,6 +1452,7 @@ export class HorseSessionRotator {
         const uid = String(x.user_id ?? '');
         if (!bookingsByHorse.has(uid)) continue;
         if (departedThisCycle.has(`${tableId}:${uid}`)) continue;
+        if (HorseSessionRotator.isLeaving(x) || this.isLeaveHeld(tableId, uid, now)) continue;
         const joined = Date.parse(String(x.joined_at ?? ''));
         if (!cashSeatsByHorse.has(uid)) cashSeatsByHorse.set(uid, []);
         cashSeatsByHorse.get(uid)!.push({
@@ -1163,6 +1484,7 @@ export class HorseSessionRotator {
         try {
           const result = await engine.leaveTable(uid);
           if (!this.lifecycleIsCurrent(generation)) return left;
+          this.noteLeaveResult(s.tableId, uid, result);
           if (result.success) {
             left++;
             departedThisCycle.add(`${s.tableId}:${uid}`);
@@ -1217,17 +1539,28 @@ export class HorseSessionRotator {
     if (isMaintenanceFrozen() || !this.lifecycleIsCurrent(generation)) return;
 
     const now = Date.now();
-    for (const [k, until] of [...this.seatChangeAsked]) {
-      if (until <= now) this.seatChangeAsked.delete(k);
-    }
-
     /* Only tables that belong to a must-move game. Everything else has no
        seat change to ask for, which `seatChangeVerdict` also says. */
     const clusterIds = new Set<string>();
+    /* Every (game, horse) pair that holds a seat right now: the memo below
+       is pruned against it, so a stay that has ended frees its entry. */
+    const seatedPairs = new Set<string>();
     for (const seats of byTable.values()) {
       const t = seats[0]?.tables as { cluster_id?: string | null } | undefined;
-      if (t?.cluster_id) clusterIds.add(t.cluster_id);
+      if (!t?.cluster_id) continue;
+      clusterIds.add(t.cluster_id);
+      for (const seat of seats) {
+        const uid = String(seat.user_id ?? '');
+        if (uid && horseIds.has(uid)) {
+          seatedPairs.add(HorseSessionRotator.seatChangeKey(t.cluster_id, uid));
+        }
+      }
     }
+    /* THE MEMO DIES WITH THE STAY (2026-09-09): expired entries go, and so
+       does every entry for a horse no longer seated in that game - the door's
+       once-per-stay budget is a fresh roster row on the next stay, for a
+       horse exactly as for a person. See pruneSeatChangeMemo. */
+    pruneSeatChangeMemo(this.seatChangeAsked, seatedPairs, now);
     if (clusterIds.size === 0) return;
 
     /* HOW MANY OTHER TABLES A CHANGE COULD GO TO. Read from `tables` rather

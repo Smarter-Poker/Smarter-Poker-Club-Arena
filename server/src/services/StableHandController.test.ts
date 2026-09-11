@@ -861,3 +861,116 @@ describe('SOURCE LAW: the snapshot caches only the slow number', () => {
     expect(POPULATION_MAX_AGE_MS).toBeLessThanOrEqual(60 * 60_000);
   });
 });
+
+/* ──────────────────────────────────────────────────────────────────────────
+   LANE C (2026-09-11): an open order names a game the host has.
+   The seeder refused "nlh 25/50 on host fade0000 ... switched off by an
+   operator" 328 times in 90 minutes on 2026-09-09: the planner reasoned about
+   the platform ladder, found `high` at zero seats, and asked for it on every
+   under-curve cycle. An order that can never be filled is not an order.
+   ────────────────────────────────────────────────────────────────────────── */
+describe('planFloor - an open order names a game the host has', () => {
+  // Midway Union's enabled ladder on 2026-09-11 (nothing above 2/5).
+  const MIDWAY_GAMES = [
+    { variant: 'nlh', sb: 0.05, bb: 0.1 },
+    { variant: 'nlh', sb: 0.1, bb: 0.25 },
+    { variant: 'nlh', sb: 0.25, bb: 0.5 },
+    { variant: 'nlh', sb: 1, bb: 2 },
+    { variant: 'nlh', sb: 2, bb: 5 },
+    { variant: 'plo4', sb: 0.25, bb: 0.5 },
+    { variant: 'pineapple', sb: 0.5, bb: 1 },
+  ];
+  // A floor far under its curve so the ramp asks for a table, with the seat
+  // mix that made `high` the neediest band: micro 84, low 116, mid 25.
+  const underCurve = (enabledGames?: typeof MIDWAY_GAMES) => {
+    const tables = [
+      ...Array.from({ length: 14 }, (_, i) => table({ tableId: `micro${i}`, bb: 0.5 })),
+      ...Array.from({ length: 20 }, (_, i) => table({ tableId: `low${i}`, bb: 2 })),
+      ...Array.from({ length: 4 }, (_, i) => table({ tableId: `mid${i}`, bb: 5 })),
+    ];
+    return snap({
+      chicagoHour: 19,
+      hosts: [
+        {
+          hostId: MIDWAY_UNION_ID,
+          n: 584,
+          uniqueLive: 20,
+          tables,
+          ...(enabledGames ? { enabledGames } : {}),
+        },
+      ],
+    });
+  };
+
+  it('asked for the closed high band before, from the platform ladder', () => {
+    const p = planFloor(underCurve());
+    expect(p.open.length).toBeGreaterThan(0);
+    expect(p.open.every((o) => o.band === 'high' && o.stake === undefined)).toBe(true);
+  });
+
+  it('never asks for a band the host has no enabled game in', () => {
+    const p = planFloor(underCurve(MIDWAY_GAMES));
+    expect(p.open.length).toBeGreaterThan(0);
+    for (const o of p.open) {
+      expect(o.band).not.toBe('high');
+      // ...and the rung it names is one the operator switched on.
+      expect(o.stake).toBeDefined();
+      expect(
+        MIDWAY_GAMES.some(
+          (g) => g.variant === o.variant && g.sb === o.stake!.sb && g.bb === o.stake!.bb
+        )
+      ).toBe(true);
+    }
+  });
+
+  it('names the top enabled rung of the band, nlh first', () => {
+    const p = planFloor(underCurve(MIDWAY_GAMES));
+    // mid is the neediest eligible band (25 of 225 seats against a 15% share);
+    // its only enabled nlh rung on this host is 2/5.
+    expect(p.open[0]).toMatchObject({ variant: 'nlh', band: 'mid', stake: { sb: 2, bb: 5 } });
+  });
+
+  it('opens nothing and says so when the host has no enabled game at all', () => {
+    const p = planFloor(underCurve([]));
+    expect(p.open).toEqual([]);
+    expect(p.alerts.some((a) => a.startsWith('open_suppressed_no_enabled_game'))).toBe(true);
+  });
+
+  it('falls back to a variant the host does deal when nlh has none in the band', () => {
+    const games = [
+      { variant: 'plo4', sb: 2, bb: 5 },
+      { variant: 'nlh', sb: 0.25, bb: 0.5 },
+      { variant: 'nlh', sb: 1, bb: 2 },
+    ];
+    const p = planFloor(underCurve(games));
+    expect(p.open[0]).toMatchObject({ variant: 'plo4', band: 'mid', stake: { sb: 2, bb: 5 } });
+  });
+});
+
+describe('SOURCE LAW: the snapshot reads the operator ladder and the seat clock', () => {
+  it('reads cash_games enabled and not closed, per host, uncached, and leaves an unreadable ladder OUT', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { resolve } = await import('node:path');
+    const raw = readFileSync(resolve(__dirname, 'StableHandSnapshot.ts'), 'utf8');
+    const src = raw.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+    expect(src).toContain("from('cash_games')");
+    expect(src).toContain(".eq('enabled', true)");
+    expect(src).toContain(".is('closed_at', null)");
+    expect(src).toContain("'StableHand.games'");
+    expect(src).toContain('if (!page.complete) return null;');
+    // Undefined, never an empty list: an empty list says "this host deals
+    // nothing" and would suppress every open order.
+    expect(src).toContain('...(enabledGames ? { enabledGames } : {})');
+    expect(src).not.toMatch(/cachedEnabledGames|enabledGames ?\?\? ?\[\]/);
+  });
+
+  it('gives pickYieldVictims a real sit-out flag and a real seat clock', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { resolve } = await import('node:path');
+    const src = readFileSync(resolve(__dirname, 'StableHandSnapshot.ts'), 'utf8');
+    expect(src).toContain("'table_id, user_id, stack, joined_at, is_sitting_out'");
+    expect(src).toContain('sittingOut: h.is_sitting_out === true');
+    expect(src).not.toContain('sittingOut: false');
+    expect(src).not.toContain('minutesAtTable: 0,');
+  });
+});

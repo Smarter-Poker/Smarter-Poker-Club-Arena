@@ -19,6 +19,11 @@ import { cashoutService, newOpId } from '../services/CashoutService';
 import { confirmDialog } from '../components/common/confirmDialog';
 import { WalletService } from '../services/WalletService';
 import { CreditService } from '../services/CreditService';
+import {
+  assertChipAmount,
+  runAgentWalletOperation,
+  confirmedAgentWalletReceipt,
+} from '../services/AgentWalletIntent';
 import { exportToCSV } from '../lib/export';
 import TransactionLedgerView from '../components/common/TransactionLedgerView';
 import './AdminDashboardPage.css';
@@ -133,6 +138,7 @@ export default function AgentDashboardPage() {
   const [transferTarget, setTransferTarget] = useState('');
   const [transferAmount, setTransferAmount] = useState('');
   const [transferNotes, setTransferNotes] = useState('');
+  const walletOperationInFlightRef = useRef(false);
 
   // Credit management (owner-only)
   const [creditTarget, setCreditTarget] = useState('');
@@ -683,26 +689,47 @@ export default function AgentDashboardPage() {
    * has always collected and thrown away is now the send's reason.
    */
   const executeTransfer = async () => {
-    if (!transferTarget || !transferAmount || !clubId) return;
+    if (
+      !transferTarget ||
+      !transferAmount ||
+      !clubId ||
+      !user?.id ||
+      walletOperationInFlightRef.current
+    )
+      return;
+    walletOperationInFlightRef.current = true;
     setProcessing(true);
     setError(null);
     try {
-      const uuid = await resolveClubUUID(clubId);
-      const amt = parseFloat(transferAmount);
-      if (isNaN(amt) || amt <= 0) throw new Error('Enter a valid transfer amount');
-      const { data, error: sendError } = await supabase.rpc('fn_agent_wallet_send', {
-        p_club_id: uuid,
-        p_to_user_id: transferTarget,
-        p_amount: amt,
-        p_destination: 'player_wallet',
-        p_reason: transferNotes.trim() || 'Agent transfer',
-        p_op_id: crypto.randomUUID(),
-      });
-      if (sendError) throw sendError;
-      const outcome = (data || {}) as { success?: boolean; error?: string };
-      if (!outcome.success) throw new Error(outcome.error || 'That transfer was refused.');
+      const resolvedClub = await resolveClubUUID(clubId);
+      const amt = Number(transferAmount);
+      assertChipAmount(amt);
+      await runAgentWalletOperation(
+        {
+          userId: user.id,
+          clubId: resolvedClub,
+          targetId: transferTarget,
+          kind: 'agent_send',
+          destination: 'agent_wallet',
+          amount: amt,
+        },
+        async (operation) => {
+          const { data, error: sendError } = await supabase.rpc('fn_agent_wallet_send', {
+            p_club_id: resolvedClub,
+            p_to_user_id: transferTarget,
+            p_amount: amt,
+            p_destination: 'agent_wallet',
+            p_reason: transferNotes.trim() || 'Agent transfer',
+            p_op_id: operation.operationId,
+          });
+          if (sendError) throw sendError;
+          if (!confirmedAgentWalletReceipt(data, amt, 'agent_send', 'agent_wallet')) {
+            throw new Error(data?.error || 'The Cashier Did Not Confirm That Transfer');
+          }
+        }
+      );
       setSuccess(`Transferred ${fmtChips(amt)} chips.`);
-      masterBus.emit('CHIPS_DISTRIBUTED', { clubId: uuid, amount: amt });
+      masterBus.emit('CHIPS_DISTRIBUTED', { clubId: resolvedClub, amount: amt });
       setShowTransfer(false);
       setTransferTarget('');
       setTransferAmount('');
@@ -711,6 +738,7 @@ export default function AgentDashboardPage() {
     } catch (err: unknown) {
       setError(safeErrorMessage(err));
     } finally {
+      walletOperationInFlightRef.current = false;
       setProcessing(false);
     }
   };
@@ -1668,15 +1696,13 @@ export default function AgentDashboardPage() {
                   disabled={processing || !creditTarget || !creditAmount}
                   style={{ marginTop: '4px' }}
                   onClick={async () => {
+                    if (!user?.id || !clubId || walletOperationInFlightRef.current) return;
+                    walletOperationInFlightRef.current = true;
                     setProcessing(true);
                     setError(null);
                     try {
                       const amt = Number(creditAmount);
-                      if (isNaN(amt) || amt <= 0) {
-                        setError('Enter a valid chip amount');
-                        setProcessing(false);
-                        return;
-                      }
+                      assertChipAmount(amt);
                       /*
                         ALL THREE OF THESE WERE WRONG, EACH IN ITS OWN WAY.
 
@@ -1716,22 +1742,37 @@ export default function AgentDashboardPage() {
                           note
                         );
                       } else if (creditAction === 'add_prepaid') {
-                        const { data, error: fundError } = await supabase.rpc(
-                          'fn_agent_wallet_send',
+                        await runAgentWalletOperation(
                           {
-                            p_club_id: resolvedCreditClub,
-                            p_to_user_id: creditTarget,
-                            p_amount: amt,
-                            p_destination: 'agent_wallet',
-                            p_reason: note || 'Prepaid funding',
-                            p_op_id: crypto.randomUUID(),
+                            userId: user.id,
+                            clubId: resolvedCreditClub,
+                            targetId: creditTarget,
+                            kind: 'agent_send',
+                            destination: 'agent_wallet',
+                            amount: amt,
+                          },
+                          async (operation) => {
+                            const { data, error: fundError } = await supabase.rpc(
+                              'fn_agent_wallet_send',
+                              {
+                                p_club_id: resolvedCreditClub,
+                                p_to_user_id: creditTarget,
+                                p_amount: amt,
+                                p_destination: 'agent_wallet',
+                                p_reason: note || 'Prepaid funding',
+                                p_op_id: operation.operationId,
+                              }
+                            );
+                            if (fundError) throw fundError;
+                            if (
+                              !confirmedAgentWalletReceipt(data, amt, 'agent_send', 'agent_wallet')
+                            ) {
+                              throw new Error(
+                                data?.error || 'The Cashier Did Not Confirm That Funding'
+                              );
+                            }
                           }
                         );
-                        if (fundError) throw fundError;
-                        const funded = (data || {}) as { success?: boolean; error?: string };
-                        if (!funded.success) {
-                          throw new Error(funded.error || 'That funding was refused.');
-                        }
                       } else {
                         await CreditService.lowerCreditLine(
                           creditTarget,
@@ -1756,6 +1797,7 @@ export default function AgentDashboardPage() {
                     } catch (err: unknown) {
                       setError(safeErrorMessage(err));
                     } finally {
+                      walletOperationInFlightRef.current = false;
                       setProcessing(false);
                     }
                   }}

@@ -26,34 +26,20 @@
  */
 
 import { test, expect, type Page } from '@playwright/test';
+import { loadLiveCss as loadLiveCssShared, skipUnlessLiveCss } from './lib/live-css';
 
 /** CI runs these beats against THIS COMMIT's own build served locally
  *  (ARENA_BASE_URL); a bare local run still defaults to production. */
 const ARENA = process.env.ARENA_BASE_URL || 'https://smarter.poker/hub/club-arena';
 
-/** Stylesheets that carry the multi-table styles. Resolved from the live index. */
+/**
+ * The shipped-CSS loader lives in tests/e2e/lib/live-css.ts. This file used
+ * to hold its own copy, which could not tell an unreadable bundle from a
+ * bundle with no animations - see the header there.
+ */
 async function loadLiveCss(page: Page) {
-  await page.goto(`${ARENA}/index.html`, { waitUntil: 'domcontentloaded' });
-  await page.evaluate(async (arenaBase: string) => {
-    const base = arenaBase;
-    const html = await fetch(base + 'index.html').then((r) => r.text());
-    const entry = html.match(/assets\/index-[A-Za-z0-9_-]+\.js/)?.[0];
-    const js = entry ? await fetch(base + entry).then((r) => r.text()) : '';
-    const names = new Set<string>();
-    for (const m of js.matchAll(/assets\/[A-Za-z0-9_.-]+\.css/g)) names.add(m[0]);
-    for (const m of html.matchAll(/assets\/[A-Za-z0-9_.-]+\.css/g)) names.add(m[0]);
-    document.body.innerHTML = '';
-    for (const n of names) {
-      try {
-        const css = await fetch(base + n).then((r) => r.text());
-        const s = document.createElement('style');
-        s.textContent = css;
-        document.head.appendChild(s);
-      } catch {
-        /* a chunk that 404s is not this test's problem */
-      }
-    }
-  }, `${ARENA}/`);
+  const load = await loadLiveCssShared(page, ARENA);
+  skipUnlessLiveCss(load, ARENA);
 }
 
 /** Mount the tab bar DOM exactly as TableTabBar renders it. */
@@ -85,12 +71,16 @@ async function mountTabBar(page: Page) {
   });
 }
 
-/** Apply a beat, settle two frames, return Chrome's running animations. */
+/** Apply a beat, resolve its styles, and return Chrome's running animations. */
 async function beat(page: Page, mutate: string): Promise<Record<string, number>> {
-  return page.evaluate(async (src) => {
+  return page.evaluate((src) => {
     const $ = (id: string) => document.getElementById(id)!;
     new Function('$', 'document', src)($, document);
-    await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
+    /* getAnimations() performs the style update needed to instantiate CSS
+       animations. Waiting for two requestAnimationFrame callbacks was not
+       part of the assertion and can wait forever when headless Chromium
+       throttles a reduced-motion/background page under CI contention. */
+    void document.documentElement.offsetWidth;
     const out: Record<string, number> = {};
     for (const a of document.getAnimations()) {
       const name = (a as unknown as { animationName?: string }).animationName;

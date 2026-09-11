@@ -32,3 +32,15 @@ python3 "$probe_dir/test_satellite_split.py"
 
 "$PGNODE" "$probe_dir/postgres-runtime/lease-heartbeat-concurrency.mjs"
 "$PGNODE" "$probe_dir/postgres-runtime/maintenance-expired-owner.mjs"
+
+# The prepared cutover must preserve authenticated rebuy/decline routes.
+PG17_BINDIR="$PGBIN" python3 "$probe_dir/../../../dev/probe-tournament-player-request-routes.py"
+
+# Exact occupancy identity must survive the terminal writer replacement.
+PG17_BINDIR="$PGBIN" python3 "$probe_dir/../../../dev/probe-hand-seat-generation.py"
+
+# Entry funding, charged-club receipts and HU prize payments use real local transactions.
+POKER_AUDIT_PG_BIN="$PGBIN" python3 "$probe_dir/../../../dev/probe-tournament-registration-funding-pg17.py" --with-heads-up-payout
+
+# Mystery inventory, generation binding and concurrent replay use the same PG17 binaries.
+POKER_AUDIT_PG_BIN="$PGBIN" python3 "$probe_dir/../../../dev/probe-mystery-reservation-pg17.py"

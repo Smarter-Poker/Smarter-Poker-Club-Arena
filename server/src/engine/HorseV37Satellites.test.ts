@@ -87,8 +87,50 @@ describe('V37 the brain context builds the real satellite curve', () => {
     ...o,
   });
 
+  const entitlementFidelity = (pool: number, ticketCost: number) => {
+    const seats = Math.floor(pool / ticketCost);
+    const remainder = pool - seats * ticketCost;
+    return {
+      mysteryInventory: 'known' as const,
+      satelliteEntitlements: 'known' as const,
+      entitlementRows: [
+        ...Array.from({ length: seats }, (_, index) => ({
+          position: index + 1,
+          award_kind: 'seat_or_cash',
+          ticket_value: ticketCost,
+          remainder_value: 0,
+        })),
+        ...(remainder > 0
+          ? [
+              {
+                position: seats + 1,
+                award_kind: 'cash',
+                ticket_value: 0,
+                remainder_value: remainder,
+              },
+            ]
+          : []),
+      ],
+    };
+  };
+
+  const satelliteContext = (pool: number) =>
+    deriveContext(
+      row({ prize_pool: pool, prize_pool_finalized: true }) as never,
+      10,
+      30,
+      30000,
+      [],
+      [],
+      [],
+      0,
+      {},
+      Date.now(),
+      entitlementFidelity(pool, 100)
+    );
+
   it('three seats at 100 from a 300 pool: three equal places, no remainder', () => {
-    const ctx = deriveContext(row() as never, 10, 30, 30000, [], [], [], 100);
+    const ctx = satelliteContext(300);
     expect(ctx.satellite).toBe(true);
     expect(ctx.satelliteSeats).toBe(3);
     expect(ctx.spotsPaid).toBe(3);
@@ -97,7 +139,7 @@ describe('V37 the brain context builds the real satellite curve', () => {
   });
 
   it('a 350 pool: the 50 remainder is a fourth, small place', () => {
-    const ctx = deriveContext(row({ prize_pool: 350 }) as never, 10, 30, 30000, [], [], [], 100);
+    const ctx = satelliteContext(350);
     expect(ctx.satelliteSeats).toBe(3);
     expect(ctx.payoutPct.length).toBe(4);
     expect(ctx.payoutPct[3]).toBeCloseTo((100 * 50) / 350, 6);
@@ -105,7 +147,7 @@ describe('V37 the brain context builds the real satellite curve', () => {
   });
 
   it('the pool can fund more seats than guaranteed', () => {
-    const ctx = deriveContext(row({ prize_pool: 500 }) as never, 10, 30, 30000, [], [], [], 100);
+    const ctx = satelliteContext(500);
     expect(ctx.satelliteSeats).toBe(5);
   });
 
@@ -201,6 +243,14 @@ describe('V37 satelliteRead: locked, urgent, or in the field', () => {
   it('the shortest stack on the bubble is URGENT', () => {
     const { gs, hero } = gsFor([40000, 8000, 6000, 3000, 2500], 2500, 5, 4);
     const r = satelliteRead(gs as never, hero, 12.5);
+    expect(r.locked).toBe(false);
+    expect(r.urgent).toBe(true);
+  });
+  it('uses the worst tied rank so equal boundary stacks cannot all be locked', () => {
+    const { gs, hero } = gsFor([8000, 8000, 8000, 8000], 8000, 4, 3);
+    const r = satelliteRead(gs as never, hero, 40);
+    expect(r.active).toBe(true);
+    expect(r.rank).toBe(4);
     expect(r.locked).toBe(false);
     expect(r.urgent).toBe(true);
   });

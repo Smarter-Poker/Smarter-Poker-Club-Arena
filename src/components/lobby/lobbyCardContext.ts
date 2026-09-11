@@ -19,7 +19,13 @@ export type LobbyPlayerState = 'seated' | 'waitlisted' | 'registered' | null;
 
 export function lobbyPlayerStateOf(entry: LobbyEntry, ctx: LobbyRowContext): LobbyPlayerState {
   if (entry.kind === 'cash') {
-    if (ctx.seatedIds.has(entry.id)) return 'seated';
+    /* A must-move game's row is its Main 1 (R10), but a player in the game
+       may be sitting on Main 2 or the feeder. `seatedIds` carries the GAME id
+       for every cluster seat (ClubHomePage.loadMyGameStates), so a seat
+       anywhere in the game reads Return To Game rather than offering a Join
+       to somebody who is already playing (must-move audit, 2026-09-09). */
+    if (ctx.seatedIds.has(entry.id) || (entry.game && ctx.seatedIds.has(entry.game.id)))
+      return 'seated';
     if (ctx.waitlistedIds.has(entry.id)) return 'waitlisted';
     return null;
   }

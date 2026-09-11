@@ -1,0 +1,73 @@
+/* THE ARENA NAV IS A PAINTED PLATE, NOT A CSS BUTTON.
+   Dan 2026-09-10: the gunmetal .btn-secondary read as "a boring basic button,
+   instead of a dynamic one." #ClubArenaConsole: you do not style a button, you
+   rebuild it on the approved master art. The club-nav-shell frame carries the
+   bevelled gunmetal, the blue LED corners and the mitred rails; the label is
+   the only live thing, printed into the black well in chrome-condensed caps and
+   kept clear of the rim. */
+
+.button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 344px;
+  max-width: 92vw;
+  /* The frame's own ratio (1829 x 313), so the painted well lines up with the
+     label at any width. */
+  aspect-ratio: 1829 / 313;
+  padding: 0 0 0.4cqw;
+  border: 0;
+  border-radius: 0;
+  background: url('/assets/club-buttons/club-nav-shell.webp') center / 100% 100% no-repeat;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  container-type: inline-size;
+}
+
+/* The chrome label. Engraved silver is a solid colour plus a bevel shadow -
+   never background-clip: text, which reads as a cheap sticker and breaks on
+   small type. Roboto Condensed is the chrome face used across Club Arena. */
+.label {
+  display: inline-block;
+  max-width: 78%;
+  overflow: hidden;
+  font-family: 'Roboto Condensed', 'Arial Narrow', system-ui, sans-serif;
+  font-weight: 700;
+  font-size: 4.1cqw;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: #eaf0f7;
+  text-shadow:
+    0 1px 1px rgba(0, 0, 0, 0.85),
+    0 -1px 0 rgba(255, 255, 255, 0.16);
+}
+
+.dot {
+  margin: 0 0.9cqw;
+  color: #5b9dff;
+  text-shadow: 0 0 0.8cqw rgba(49, 168, 255, 0.75);
+}
+
+/* Pressed: seat the plate a hair and lift the blue in the label, matching the
+   LED already painted along the frame. No :hover (phones do not hover). */
+.button:active {
+  transform: translateY(1px);
+}
+
+.button:active .label {
+  color: #dfeaff;
+}
+
+.button:focus-visible {
+  outline: 2px solid #8fd4ff;
+  outline-offset: 3px;
+}
+
+@media (pointer: coarse) {
+  .button {
+    min-height: 44px;
+  }
+}

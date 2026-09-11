@@ -6,6 +6,11 @@ import {
   whileConnectionBannerStaysHidden,
   type CausalHandCycle,
 } from './support/liveTableRealtime';
+import {
+  CASH_SPECTATOR_ACTION,
+  CASH_TABLE_CARD_SELECTOR,
+  collectVisibleCashCandidates,
+} from './support/cashTableCandidates';
 
 const CERTIFICATION_ENABLED = process.env.LIVE_TABLE_REALTIME_CERTIFICATION === '1';
 const CLUB_ID = process.env.E2E_CLUB_ID || 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4';
@@ -13,7 +18,7 @@ const UNION_ID = process.env.E2E_UNION_ID || 'fade0000-0000-0000-0000-0000000000
 const CLUB_LOBBY = `clubs/${CLUB_ID}`;
 const PROJECT_NAME = 'webkit-live-table-realtime';
 const ENGINE_HEALTH_URL = process.env.ENGINE_HEALTH_URL || 'https://engine.smarter.poker/health';
-const EXPECTED_ENGINE_SHA = (process.env.EXPECTED_ENGINE_SHA || '').trim().toLowerCase();
+const EXPECTED_ENGINE_SHA = (process.env.EXPECTED_ENGINE_SHA || '').trim();
 const CONNECT_DEADLINE_MS = 12_000;
 const MAX_GAMEPLAY_SILENCE_MS = 45_000;
 const CAUSAL_HAND_TIMEOUT_MS = 90_000;
@@ -43,6 +48,7 @@ interface EngineTableLiveness {
 
 interface EngineHealth {
   version: string;
+  releaseSha: string | null;
   liveness: string;
   activeTables: number;
   stalledTableCount: number;
@@ -76,7 +82,7 @@ function requireCertificationConfiguration(testInfo: TestInfo, browserName: stri
   if (!process.env.SP_EMAIL || !process.env.SP_PASS) {
     throw new Error('SP_EMAIL and SP_PASS must identify the isolated production E2E account');
   }
-  if (!/^[0-9a-f]{7,40}$/.test(EXPECTED_ENGINE_SHA)) {
+  if (!/^[0-9a-f]{40}$/.test(EXPECTED_ENGINE_SHA)) {
     throw new Error(
       'EXPECTED_ENGINE_SHA must name the exact Club Arena commit the production engine should serve'
     );
@@ -93,14 +99,6 @@ function requireCertificationConfiguration(testInfo: TestInfo, browserName: stri
   }
 }
 
-function engineVersionMatchesExpected(observed: string): boolean {
-  const normalized = observed.trim().toLowerCase();
-  return (
-    /^[0-9a-f]{7,40}$/.test(normalized) &&
-    (EXPECTED_ENGINE_SHA.startsWith(normalized) || normalized.startsWith(EXPECTED_ENGINE_SHA))
-  );
-}
-
 async function readEngineHealth(request: APIRequestContext): Promise<EngineHealth> {
   const separator = ENGINE_HEALTH_URL.includes('?') ? '&' : '?';
   const response = await request.get(`${ENGINE_HEALTH_URL}${separator}cb=${Date.now()}`, {
@@ -113,10 +111,15 @@ async function readEngineHealth(request: APIRequestContext): Promise<EngineHealt
   expect(health.stalledTableCount, 'production had stalled tables before observation').toBe(0);
   expect(health.deadStalledCount, 'production had dead stalled tables before observation').toBe(0);
   expect(health.wholeFleetStalled, 'production reported the whole fleet stalled').toBe(false);
+  const observedReleaseSha = String(health.releaseSha || '').trim();
   expect(
-    engineVersionMatchesExpected(String(health.version || '')),
-    `engine version ${health.version || '(missing)'} did not match ${EXPECTED_ENGINE_SHA}`
-  ).toBe(true);
+    observedReleaseSha,
+    'the production engine did not expose one full lowercase releaseSha'
+  ).toMatch(/^[0-9a-f]{40}$/);
+  expect(
+    observedReleaseSha,
+    `engine releaseSha ${observedReleaseSha || '(missing)'} did not exactly match ${EXPECTED_ENGINE_SHA}`
+  ).toBe(EXPECTED_ENGINE_SHA);
   if (health.maintenance?.active) {
     throw new Error(
       `production engine is in scheduled maintenance (${health.maintenance.phase || 'unknown phase'}); ` +
@@ -165,42 +168,11 @@ async function dismissClubMessage(page: Page): Promise<void> {
 }
 
 async function visibleRunningCashCandidates(page: Page): Promise<RunningTableCandidate[]> {
+  // Cluster game cards retain the representative table id. Their View/Watch
+  // Game action uses the same spectator table route as manual cash tables.
   const candidates = await page
-    .locator(
-      '.club-home__games [data-testid="arena-lobby-game-card"]' +
-        '[data-kind="cash"][data-target="table"][data-live="true"]'
-    )
-    .evaluateAll((cards) =>
-      cards
-        .map((card) => {
-          const id = card.getAttribute('data-id') || '';
-          const name =
-            card
-              .querySelector('.arena-game-card')
-              ?.getAttribute('aria-label')
-              ?.split(',')[0]
-              ?.trim() || id;
-          const players = Number(card.getAttribute('data-players'));
-          const view = [...card.querySelectorAll<HTMLElement>('button')].find((button) =>
-            /^(?:View|Watch) Table$/i.test(
-              button.getAttribute('aria-label') || button.textContent?.trim() || ''
-            )
-          );
-          const style = view ? getComputedStyle(view) : null;
-          const viewIsVisible =
-            !!view &&
-            style?.display !== 'none' &&
-            style?.visibility !== 'hidden' &&
-            view.getBoundingClientRect().width > 0 &&
-            view.getBoundingClientRect().height > 0;
-          return { id, name, players, viewIsVisible };
-        })
-        .filter(
-          (card) => /^[0-9a-f-]{8,}$/i.test(card.id) && card.players >= 2 && card.viewIsVisible
-        )
-        .sort((a, b) => b.players - a.players)
-        .map(({ id, name, players }) => ({ id, name, players }))
-    );
+    .locator(CASH_TABLE_CARD_SELECTOR)
+    .evaluateAll(collectVisibleCashCandidates, CASH_SPECTATOR_ACTION.source);
   return candidates.map((candidate) => ({ ...candidate, gameFormat: 'cash' }));
 }
 
@@ -248,7 +220,7 @@ async function selectOccupiedRunningCashTable(
   }
 
   throw new Error(
-    'The fixture club exposed no occupied (2+ players), running cash table with a read-only View Table action'
+    'The fixture club exposed no occupied (2+ players), running cash table with a read-only View/Watch Table or Game action'
   );
 }
 
@@ -375,6 +347,7 @@ function compactHealthEvidence(
 ): Record<string, unknown> {
   return {
     version: health.version,
+    releaseSha: health.releaseSha,
     liveness: health.liveness,
     activeTables: health.activeTables,
     stalledTableCount: health.stalledTableCount,
@@ -806,10 +779,10 @@ test.describe('production mobile WebKit live-table realtime continuity', () => {
     const card = page.locator(
       `[data-testid="arena-lobby-game-card"][data-kind="cash"][data-id="${candidate.id}"]`
     );
-    const view = card.getByRole('button', { name: /^(?:View|Watch) Table$/i });
+    const view = card.getByRole('button', { name: CASH_SPECTATOR_ACTION });
     await expect(
       view,
-      `occupied table ${candidate.name} lost its visible read-only View/Watch Table action`
+      `occupied table ${candidate.name} lost its visible read-only View/Watch Table or Game action`
     ).toBeVisible();
 
     const navigationStartedAt = Date.now();

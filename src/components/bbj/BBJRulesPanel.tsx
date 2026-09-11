@@ -22,6 +22,8 @@ import {
   getBBJPayoutPercentForBB,
   getBBJQualifyingInfo,
 } from '../../config/RakeConfig';
+import { getBBJMiniQualifyingInfo, BBJ_MINI_SPLIT } from '../../config/bbjMini';
+import type { BbjMiniSnapshot } from '../../lib/bbjMiniFeed';
 import './BBJRulesPanel.css';
 
 /** Stakes tiers as the SERVER pays them (server/src/config/RakeConfig.ts). */
@@ -63,15 +65,25 @@ const VARIANT_ROWS: Array<{ key: string; games: string }> = [
 export interface BBJRulesPanelProps {
   /** Live main pool, so the payout table can show real chip figures. */
   poolAmount?: number;
+  /**
+   * The mini jackpot (lib/bbjMiniFeed). When given, the panel gains a third
+   * tab, "Mini Jackpot": its bar per game and its flat amount per stakes.
+   * Dan 2026-09-09: the mini is seen and discoverable wherever the main is.
+   */
+  mini?: BbjMiniSnapshot | null;
 }
 
 function chips(n: number): string {
   return Math.round(n).toLocaleString('en-US');
 }
 
-export function BBJRulesPanel({ poolAmount = 0 }: BBJRulesPanelProps) {
-  const [tab, setTab] = useState<'qualifying' | 'payout'>('qualifying');
+type RulesTab = 'qualifying' | 'payout' | 'mini';
+
+export function BBJRulesPanel({ poolAmount = 0, mini = null }: BBJRulesPanelProps) {
+  const [tab, setTab] = useState<RulesTab>('qualifying');
   const active = tab;
+  const tabs: RulesTab[] = mini ? ['qualifying', 'payout', 'mini'] : ['qualifying', 'payout'];
+  const miniTiers = mini ? [...mini.tiers].sort((a, b) => a.maxBB - b.maxBB) : [];
 
   return (
     <div className="bbj-rules">
@@ -83,12 +95,19 @@ export function BBJRulesPanel({ poolAmount = 0 }: BBJRulesPanelProps) {
           onKeyDown={(e) => {
             // Half a tablist is worse than none: a reader announced "tab 1 of 2"
             // and the arrow keys did nothing.
-            if (e.key === 'ArrowLeft' || e.key === 'Home') {
+            const i = tabs.indexOf(tab);
+            if (e.key === 'ArrowLeft') {
               e.preventDefault();
-              setTab('qualifying');
-            } else if (e.key === 'ArrowRight' || e.key === 'End') {
+              setTab(tabs[(i - 1 + tabs.length) % tabs.length]);
+            } else if (e.key === 'ArrowRight') {
               e.preventDefault();
-              setTab('payout');
+              setTab(tabs[(i + 1) % tabs.length]);
+            } else if (e.key === 'Home') {
+              e.preventDefault();
+              setTab(tabs[0]);
+            } else if (e.key === 'End') {
+              e.preventDefault();
+              setTab(tabs[tabs.length - 1]);
             }
           }}
         >
@@ -114,8 +133,107 @@ export function BBJRulesPanel({ poolAmount = 0 }: BBJRulesPanelProps) {
           >
             What It Pays
           </button>
+          {mini && (
+            <button
+              role="tab"
+              id="bbj-rules-tab-mini"
+              aria-selected={tab === 'mini'}
+              aria-controls="bbj-rules-panel"
+              tabIndex={tab === 'mini' ? 0 : -1}
+              className={`bbj-rules__tab${tab === 'mini' ? ' is-active' : ''}`}
+              onClick={() => setTab('mini')}
+            >
+              Mini Jackpot
+            </button>
+          )}
         </div>
       }
+
+      {active === 'mini' && mini && (
+        <div
+          className="bbj-rules__body"
+          id="bbj-rules-panel"
+          role="tabpanel"
+          aria-labelledby="bbj-rules-tab-mini"
+          tabIndex={0}
+        >
+          <p className="bbj-rules__note">
+            The Mini Jackpot Pays A Flat Amount, By The Stakes You Were Playing, For The Bad Beats
+            The Main Rule Turns Away: Aces Full Or Better Losing To Quads Or Better In Hold’em, Any
+            Quads Losing To Bigger Quads Or Better In Omaha. The Winner Must Still Hold Quads Or
+            Better; The Same Pot, Player And Board Conditions Apply. It Is Paid From The Backup Pool
+            And Pauses While That Reserve Is At Its Floor. One Hand Pays One Jackpot, Never Both.
+          </p>
+
+          <table className="bbj-rules__table">
+            <thead>
+              <tr>
+                <th>Game</th>
+                <th>Losing Hand Must Be</th>
+              </tr>
+            </thead>
+            <tbody>
+              {VARIANT_ROWS.map((row) => {
+                const info = getBBJMiniQualifyingInfo(row.key);
+                return (
+                  <tr key={row.key} className={info.eligible ? '' : 'is-ineligible'}>
+                    <td>{row.games}</td>
+                    <td>{info.eligible ? info.shortLabel : 'Mini Not Available'}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+
+          {!mini.enabled ? (
+            <p className="bbj-rules__note">The Mini Jackpot Is Switched Off For This Jackpot.</p>
+          ) : (
+            <table className="bbj-rules__table">
+              <thead>
+                <tr>
+                  <th>Stakes</th>
+                  <th>Mini Pays</th>
+                  <th>Right Now</th>
+                </tr>
+              </thead>
+              <tbody>
+                {miniTiers.map((t) => (
+                  <tr key={t.tierId} className={t.enabled ? '' : 'is-ineligible'}>
+                    <td>
+                      <span className="bbj-rules__tier">{t.label}</span>
+                      <span className="bbj-rules__blinds">{t.blindRange}</span>
+                    </td>
+                    <td className="bbj-rules__money">
+                      {chips(t.amount)}
+                      <span className="bbj-rules__money-sub">
+                        Bad Beat {chips(t.amount * BBJ_MINI_SPLIT.loser)}
+                      </span>
+                    </td>
+                    <td className="bbj-rules__pct">
+                      {t.enabled ? (t.payable ? 'Pays' : 'Paused') : 'Off'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+
+          <ul className="bbj-rules__list">
+            <li>
+              Split Like The Main Jackpot: 50% To The Bad-Beat Hand, 25% To The Hand That Won, 25%
+              Between Everyone Else Dealt In
+            </li>
+            <li>
+              Reserve Floor: {chips(mini.reserveFloor)} Chips Stay In The Backup Pool; A Mini That
+              Would Take It Below That Is Not Paid
+            </li>
+            <li>
+              Last 30 Days: {mini.hits30d.toLocaleString('en-US')} Mini{' '}
+              {mini.hits30d === 1 ? 'Jackpot' : 'Jackpots'}, {chips(mini.paid30d)} Chips Paid
+            </li>
+          </ul>
+        </div>
+      )}
 
       {active === 'qualifying' && (
         <div

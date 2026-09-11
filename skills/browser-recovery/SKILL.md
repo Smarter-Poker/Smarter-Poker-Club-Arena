@@ -77,15 +77,19 @@ cd <project_root> && npm run build && npx -y serve dist -l 4001
 
 Then browse to `http://localhost:4001/`.
 
-### Step 6: Deploy and Verify on Production
+### Step 6: Verify Through The Owning Release
 
 If local browser verification is completely impossible:
 
-```bash
-cd <project_root> && vercel deploy --prod
-```
+1. Finish the change on a feature branch and pass the repository checks.
+2. Follow the pull request through merge.
+3. Let `.github/workflows/publish-club-arena.yml` publish the exact Club Arena
+   commit to its Hetzner origin.
+4. Confirm both cache-busted `build-info.json` endpoints report that exact SHA,
+   then use the browser against `https://smarter.poker/hub/club-arena/`.
 
-Then use `mcp_vercel_web_fetch_vercel_url` or the browser tool to check the live URL.
+Never run a Vercel command, copy a bundle into World Hub, or substitute an
+unpublished preview for production proof.
 
 ## AFTER RECOVERY
 

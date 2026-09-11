@@ -437,7 +437,34 @@ export function applyStakeBandSupply(bands: Iterable<HorseStakeBand>): {
  * playing mid because the high games are switched off is an ordinary thing to
  * see; a hundred names that vanish from the floor entirely is not.
  */
+let unhydratedRefusalReported = false;
+
+/** Has the assignment been loaded at all? False from boot until the first
+ *  successful HorseLaneLoader pass, and in a test that cleared the map. */
+export function stakeBandsHydrated(): boolean {
+  return assignedStakeBands.size > 0;
+}
+
 export function stakeBandAllows(horseId: string, bigBlind: number): boolean {
+  /* NOTHING LOADED IS NOT "EVERYONE IS MICRO" (2026-09-09). `stakeBandFor`
+     answers 'micro' for a horse with no record, which is right for one new
+     horse and wrong for a whole fleet whose records have not been read yet:
+     for the fleet's first cycle after a restart that made every horse a
+     micro name, so the pass that refills the floor could seat the 25/50
+     regulars at 0.05/0.10 and nobody anywhere else. An unread assignment
+     refuses, once per process out loud, and HorseLaneLoader loads at boot
+     and retries a failed first load within a minute. This is the
+     fail-closed half of the doctrine: an incomplete horse pool skips the
+     decision; it never guesses it. */
+  if (assignedStakeBands.size === 0) {
+    if (!unhydratedRefusalReported) {
+      unhydratedRefusalReported = true;
+      console.warn(
+        '[HorseBehavior] stake bands not loaded yet - the band gate refuses every seat it decides until HorseLaneLoader lands'
+      );
+    }
+    return false;
+  }
   return effectiveStakeBandFor(horseId) === stakeBandForBigBlind(bigBlind);
 }
 
@@ -644,6 +671,43 @@ export function seatChangeVerdict(s: SeatChangeSituation): SeatChangeVerdict {
 /** The boolean form, for a caller that does not care why not. */
 export function wantsSeatChange(s: SeatChangeSituation): boolean {
   return seatChangeVerdict(s) === 'ask';
+}
+
+/**
+ * THE MEMO DIES WITH THE STAY (2026-09-09).
+ *
+ * The rotator remembers every (game, horse) pair it has asked the door about
+ * so a refused horse is not re-asked every ninety seconds, and it holds a
+ * final refusal (SEAT_CHANGE_USED, NOT_FROM_MAIN, ...) for twelve hours. But
+ * the budget the door spends is PER STAY: `cash_game_roster` opens a fresh row
+ * with a fresh `seat_change_used_at` when a player leaves a game and comes
+ * back, so a person who cashes out at lunch and sits again at dinner has a
+ * seat change again. A memo keyed on the game alone outlived the stay - a
+ * horse that left and rejoined inside the twelve hours was never asked
+ * again, which is a horse denied a button a human has (CLAUDE.md 10.5).
+ *
+ * So the memo is pruned against the room every pass: an entry is kept only
+ * while it has not expired AND the horse still holds a seat in that game.
+ * `seated` is the set of `${gameId}:${horseId}` pairs seated right now.
+ * Returns how many entries were dropped because the stay had ended.
+ */
+export function pruneSeatChangeMemo(
+  memo: Map<string, number>,
+  seated: ReadonlySet<string>,
+  nowMs: number
+): number {
+  let ended = 0;
+  for (const [key, until] of [...memo]) {
+    if (until <= nowMs) {
+      memo.delete(key);
+      continue;
+    }
+    if (!seated.has(key)) {
+      memo.delete(key);
+      ended++;
+    }
+  }
+  return ended;
 }
 
 /**

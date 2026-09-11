@@ -1,132 +1,64 @@
-# smarter.poker monitoring stack — Phase 5.1.3 / 5.1.3a
+# Club Arena Monitoring On Hetzner
 
-Prometheus + AlertManager + Grafana, containerised for deployment to the
-Hetzner `cron-01` host. Scrapes `engine-01` (poker engine pm2 + node_exporter),
-cron-01 itself, and Supabase (via postgres_exporter sidecar). Alerts route
-through PagerDuty (critical) and Slack (warning/info).
+Prometheus, Alertmanager, and Grafana run on the Club Arena Hetzner estate.
+This directory is owned and published by the
+`Deploy Monitoring (on infra/monitoring changes)` workflow in the Club Arena
+repository. World Hub, Vercel, a workstation, and an unreviewed host checkout
+are not monitoring publishers.
 
-## Files
+## Release Contract
 
-- `docker-compose.yml` — the full stack, bound to 127.0.0.1 so only Caddy can
-  reach it (Caddy provides TLS + basic-auth at `monitor.smarter.poker`)
-- `prometheus.yml` — scrape config
-- `alert-rules.yml` — 16 alert rules across engine, cron, database, Vercel,
-  and host-level concerns
-- `alertmanager.yml` — routing tree + PagerDuty inhibit rules
-- `slo-rules.yml` / `slo-alerts.yml` — Phase 5.1.5 SLO recording rules + burn alerts
-- `Caddyfile` — TLS + basic-auth reverse proxy at monitor.smarter.poker (Phase 5.1.3a)
-- `deploy.sh` — one-shot idempotent deploy script (Phase 5.1.3a)
-- `.env.example` — template for secrets (Grafana admin pw, Slack webhook,
-  PagerDuty service key)
-- `grafana-provisioning/` — auto-registers the Prometheus datasource and
-  mounts the `grafana-dashboards/` folder as a dashboard provider
-- `grafana-dashboards/` — four seed dashboards (engine, postgres, cron, slo)
+- A reviewed merge to Club Arena `main` that changes this directory triggers
+  `.github/workflows/deploy-monitoring.yml`.
+- A recovery dispatch must include one full commit SHA already contained in
+  Club Arena `main`.
+- The workflow checks out that exact SHA, stamps the shipped payload, copies it
+  to the Hetzner host, and invokes `deploy.sh` with the same SHA.
+- `deploy.sh` rejects an unstamped source tree, a mismatched SHA, missing
+  runtime credentials, and placeholder Caddy configuration.
+- The workflow reads Prometheus back after deployment and fails if the active
+  rules differ from this repository. It does not retry, force-recreate, clone,
+  reset, or repair the host behind the release gate.
 
-## First deploy on cron-01 (Phase 5.1.3a — one-shot)
+The GitHub Actions release credentials are
+`HETZNER_HOST`, `HETZNER_HOST_KEY`, and `HETZNER_SSH_PRIVATE_KEY`. Their values
+belong only in Club Arena repository secrets. Do not put them in `.env`, a
+Markdown file, World Hub, or a local shell script.
 
-```bash
-# as root on cron-01 — single pipe'd install
-curl -fsSL https://raw.githubusercontent.com/Smarter-Poker/Smarter-Poker-Club-Arena/main/infra/monitoring/deploy.sh | sudo bash
-```
+## Runtime Configuration
 
-The script will:
+The workflow preserves credential-bearing files already provisioned on the
+Hetzner host:
 
-1. Verify docker / docker compose / git / caddy are installed
-2. Clone (or fast-forward) the club-arena + world-hub repos under `/opt/`
-3. Symlink stack config into `/opt/smarter-poker-monitoring/`
-4. Copy the Caddyfile to `/etc/caddy/Caddyfile` (backing up any existing)
-5. Seed `.env` from `.env.example` on first run (edit after)
-6. `docker compose up -d` and run health checks
+- `/opt/smarter-poker-monitoring/.env`
+- `/opt/smarter-poker-monitoring/cron_secret`
+- `/opt/smarter-poker-monitoring/resend_key`
+- `/etc/caddy/Caddyfile`
 
-After first run, you still need two manual touches:
+They are host runtime state, not deploy payloads. If any prerequisite is absent
+or still contains a placeholder, the release fails closed. Provisioning or
+rotating those values is a separate credential-management operation; it must
+never be hidden inside a code deployment.
 
-- Edit `/opt/smarter-poker-monitoring/.env` with real credentials
-- Generate a basic-auth hash (`caddy hash-password --plaintext 'pw'`) and replace
-  the two `REPLACE_WITH_CADDY_HASH_PASSWORD_OUTPUT` placeholders in
-  `/etc/caddy/Caddyfile`, then `systemctl reload caddy`
+## Repository Files
 
-Re-running `deploy.sh` is safe and will pick up any repo updates without
-clobbering those local edits.
+- `docker-compose.yml` defines the monitoring services and bind mounts.
+- `prometheus.yml` declares scrape targets and every loaded rule file.
+- `alertmanager.yml` declares alert routing.
+- `alert-rules.yml`, `engine-freeze-rules.yml`, `recovery-rules.yml`,
+  `tournament-rules.yml`, `spin-rules.yml`, `slo-rules.yml`, and
+  `slo-alerts.yml` contain the loaded rules.
+- `grafana-provisioning/` and `grafana-dashboards/` define Grafana state.
+- `deploy.sh` is a workflow-only Hetzner payload. It is not a manual installer.
+- `ENGINE-SETUP.md` documents the metrics exporters consumed by this stack.
 
-## Manual deploy (historic — use deploy.sh instead)
+## Changing Monitoring
 
-```bash
-# as root on cron-01
-git clone https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena.git \
-  /opt/smarter-poker-monitoring-src
-cd /opt/smarter-poker-monitoring-src/infra/monitoring
-cp .env.example .env
-$EDITOR .env                                # fill in secrets
+Change the repository declaration, run the monitoring contract tests, and use
+the normal Club Arena pull-request path. After merge, require the workflow to
+finish successfully and verify the live Prometheus rule set. A local compose
+run, a copied file, a manual reload, or a green build without read-back is not
+a published monitoring change.
 
-# Engine must also install node_exporter + pm2-metrics — see ENGINE-SETUP.md
-docker compose up -d
-
-# Sanity
-docker compose ps
-curl -s http://localhost:9090/-/ready       # Prometheus
-curl -s http://localhost:3001/api/health    # Grafana
-curl -s http://localhost:9093/-/ready       # AlertManager
-```
-
-## Engine-side setup (engine-01)
-
-Install `node_exporter` (system) and the `pm2-metrics` pm2 module so the
-stack has something to scrape. Detailed steps in `ENGINE-SETUP.md`; short
-version:
-
-```bash
-# on engine-01
-apt-get install -y prometheus-node-exporter   # binds :9100
-pm2 install @pm2/io                            # enables pm2 metrics
-# then add to the pm2 app file:
-#   tracing: { enabled: true }, io: true
-# and expose :9256 via:
-pm2 set pm2-metrics:http-port 9256
-pm2 restart all --update-env
-```
-
-Custom engine metrics (`poker_hands_dealt_total`, `active_tables`,
-`seated_players`) are exposed by a Prometheus client already wired in
-`CA/src/engine/metrics.js` — verify with `curl localhost:9256/metrics`.
-
-## Adding a new alert
-
-1. Edit `alert-rules.yml`, add a rule to the appropriate group.
-2. `docker compose exec prometheus kill -HUP 1` — Prometheus hot-reloads.
-3. Visit `https://monitor.smarter.poker/prometheus/alerts` to confirm.
-
-## Silencing during deploys
-
-```bash
-amtool --alertmanager.url=http://localhost:9093 silence add \
-  'alertname=~".*"' component=engine \
-  --duration=15m --comment "deploy $(git rev-parse --short HEAD)"
-```
-
-Our deploy script (`club-arena/deploy-production.sh`) should call this
-before starting the engine restart to avoid paging oncall on the 30s
-`up == 0` window.
-
-## Retention
-
-Prometheus keeps 15 days locally in the `prometheus-data` volume. If we ever
-need long-term metrics for capacity planning, point a Thanos sidecar at the
-same volume and ship to R2 — don't increase local retention, disk I/O on
-cron-01 is more valuable for other cron work.
-
-## Secret files (not in git, and the stack will not start without them)
-
-`docker-compose.yml` bind-mounts these by path. Docker's behaviour when a
-bind-mount source is missing is to silently create a **directory** at that path,
-so the container starts and then fails to read its own credentials — or refuses
-to start at all — with an error that does not mention the real problem. On a
-rebuilt host, create them before `docker compose up`:
-
-| file          | what it is                                                                                                                                                                                                                                                                                                                                  | how to create                                                                                                                              |
-| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `resend_key`  | Resend SMTP API key, read by Alertmanager via `smtp_auth_password_file`. Without it every alert is generated and then fails to send.                                                                                                                                                                                                        | `printf '%s' "$RESEND_API_KEY" > resend_key && chmod 600 resend_key` (see `resend_key.example`)                                            |
-| `cron_secret` | The `CRON_SECRET` the World Hub's `alertmanager-page` route checks, read by Alertmanager via `credentials_file` on the pager webhook. Without it every page returns 401 and nobody is woken; `deploy.sh` refuses to start without it. Mounted by `docker-compose.yml` since 2026-09-06 (the box had carried the mount by hand since 09-04). | `printf '%s' "$CRON_SECRET" > cron_secret && chmod 600 cron_secret` (see `cron_secret.example`; no trailing newline, same as `resend_key`) |
-| `.env`        | Grafana admin password and friends                                                                                                                                                                                                                                                                                                          | `cp .env.example .env && $EDITOR .env`                                                                                                     |
-
-There is no newline in `resend_key` on purpose — Alertmanager sends the file
-contents verbatim as the SMTP password, and a trailing newline fails auth.
+Prometheus retains 15 days locally in its managed volume. Capacity or retention
+changes follow the same reviewed release path.

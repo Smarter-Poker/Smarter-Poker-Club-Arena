@@ -157,48 +157,54 @@ export function indexFrom(files) {
  * Indexing only this checkout meant every World Hub migration - dozens on
  * 2026-09-02/03 alone - was reported here as "applied with no file", which is
  * an alarm about files that exist. So the other repo's supabase/migrations
- * listing is fetched from the GitHub API and merged into the index. If the
- * API is unreachable the check says so and carries on with this repo alone,
- * because a migration missing from BOTH is still worth reporting.
+ * listing is fetched from the GitHub API and merged into the index. If any
+ * sibling cannot be read, the estate answer is UNKNOWN and the check fails.
+ * A Club-Arena-only index cannot support the claim that every migration in a
+ * database written by both repositories is recorded.
  */
 const SIBLING_REPOS = (process.env.MIGRATION_SIBLING_REPOS || 'Smarter-Poker/Smarter-Poker-World-Hub')
   .split(',')
   .map((s) => s.trim())
   .filter(Boolean);
 
-export async function siblingMigrationFiles(repos = SIBLING_REPOS) {
-  const token = process.env.GH_TOKEN || process.env.GITHUB_TOKEN;
+export async function siblingMigrationFiles(
+  repos = SIBLING_REPOS,
+  token = process.env.GH_TOKEN || process.env.GITHUB_TOKEN || ''
+) {
   const out = [];
+  if (repos.length > 0 && !token) {
+    throw new Error('sibling migration index is UNKNOWN: no estate read token was provided');
+  }
   for (const repo of repos) {
     try {
-      // NOT the Contents API: it caps a directory listing at 1,000 entries and
-      // World Hub's supabase/migrations is past that, so the NEWEST files - the
-      // ones this check exists to find - fell off the end (verified 2026-09-03:
-      // 1000 entries returned, tonight's files absent). The Git Trees API lists
-      // the whole directory: resolve the subtree, then read it.
-      const headers = token
-        ? { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json' }
-        : { Accept: 'application/vnd.github+json' };
+      // NOT the Contents API for the migration listing: it caps a directory at
+      // 1,000 entries. Resolve the directory through Contents, then use its
+      // Git Trees endpoint to list every file.
+      const headers = {
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/vnd.github+json',
+      };
       const parent = await fetch(`https://api.github.com/repos/${repo}/contents/supabase?ref=main`, { headers });
       if (!parent.ok) {
-        console.warn(`[applied-migrations-recorded] could not read ${repo}/supabase (${parent.status}); indexing this repo only.`);
-        continue;
+        throw new Error(`could not read ${repo}/supabase (${parent.status})`);
       }
       const dir = (await parent.json()).find((e) => e && e.type === 'dir' && e.name === 'migrations');
       if (!dir) {
-        console.warn(`[applied-migrations-recorded] ${repo} has no supabase/migrations; indexing this repo only.`);
-        continue;
+        throw new Error(`${repo} has no readable supabase/migrations directory`);
       }
       const tree = await fetch(`https://api.github.com/repos/${repo}/git/trees/${dir.sha}`, { headers });
       if (!tree.ok) {
-        console.warn(`[applied-migrations-recorded] could not list ${repo}/supabase/migrations tree (${tree.status}); indexing this repo only.`);
-        continue;
+        throw new Error(`could not list ${repo}/supabase/migrations tree (${tree.status})`);
       }
       const body = await tree.json();
-      if (body.truncated) console.warn(`[applied-migrations-recorded] ${repo} migrations tree was truncated by the API; the index may be short.`);
+      if (body.truncated) {
+        throw new Error(`${repo} migrations tree was truncated by the API`);
+      }
       for (const e of body.tree || []) if (e && e.type === 'blob') out.push(e.path);
     } catch (err) {
-      console.warn(`[applied-migrations-recorded] could not reach ${repo}: ${err?.message || err}; indexing this repo only.`);
+      throw new Error(
+        `sibling migration index is UNKNOWN for ${repo}: ${err?.message || err}`
+      );
     }
   }
   return out;

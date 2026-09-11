@@ -1,0 +1,25 @@
+{
+  "_owner": "fix/hetzner-club-arena-publish-authority",
+  "removedTables": [
+    "autofix_attempts",
+    "autofix_attempts_summary",
+    "autofix_budget",
+    "autofix_config",
+    "autofix_projects",
+    "ca_deploy_dispatch_config",
+    "ca_deploy_dispatch_log",
+    "ca_engine_deploy_runs_started",
+    "ca_engine_deploy_watch_state"
+  ],
+  "removedFunctions": [
+    "autofix_attempts_touch_updated_at",
+    "autofix_budget_exhausted",
+    "autofix_daily_spend_usd",
+    "autofix_is_paused",
+    "fn_ca_deploy_dispatch_tick",
+    "fn_ca_deploy_run_exists_this_hour",
+    "fn_ca_engine_deploy_truth_watch",
+    "fn_ca_prune_deploy_run_markers",
+    "fn_ca_record_engine_deploy_start"
+  ]
+}

@@ -17,7 +17,7 @@
 
 ---
 
-## description: MANDATORY end-of-task protocol - push a branch, stop, write SQL LAST
+## description: MANDATORY end-of-task protocol - deliver the exact branch through Hetzner, write SQL LAST
 
 # Task Completion Protocol - MANDATORY FOR ALL AGENTS
 
@@ -40,23 +40,23 @@ law does not help a reader who skims into the middle of it.
 - **ONLY** claim behaviour verified on `https://smarter.poker`.
 - See `/browser-testing` for the walkthrough scripts.
 
-### Rule 2: Push a branch, and STOP
+### Rule 2: Push a branch, then certify the exact release
 
 ```bash
 # In your own worktree, never the shared clone
 npx tsc --noEmit
-git add -A && git commit -m "type(scope): what changed"
+git add path/to/file path/to/other-file
+git commit -m "type(scope): what changed"
 git push origin HEAD:refs/heads/fix/<slug>
 ```
 
-**That is the end of your job.** `agent-open-pr.yml` opens the pull request,
-`agent-autopilot.yml` squash-merges it when the six required checks are green,
-and `publish-club-arena.yml` rsyncs `dist/` to `ca-static.smarter.poker`.
-
-Do not open the pull request yourself. Do not merge. **Do not set a timer to
-watch CI** - CLAUDE.md 10.8.3 is explicit about this, and "I'll check back
-shortly" is the forbidden wait-and-merge loop written in prose. Checking ONCE
-at the end to report why something is blocked is fine.
+`agent-open-pr.yml` opens the pull request, `agent-autopilot.yml`
+squash-merges it when the required checks are green, and the Club Arena-owned
+Hetzner workflows publish it. Follow those workflows to a terminal result,
+fix forward on red, and certify the exact merged SHA at the direct origin and
+public rewrite. For a `server/` change, also certify the sealed engine
+cutover and cache-busted health SHA. Never substitute a World Hub or Vercel
+deployment for this proof.
 
 ### Rule 3: Write SQL LAST - after building and testing
 
@@ -80,15 +80,17 @@ at the end to report why something is blocked is fine.
 3. TEST           - npx vitest run <the tests covering your change>
 4. BUILD          - npm run build, if you touched src/
 5. CHANGELOG      - docs/changelog/YYYY-MM-DD-<slug>.md, YOUR OWN FILE
-6. PUSH A BRANCH  - and stop. The pipeline does the rest.
-7. WRITE SQL      - only after everything else is confirmed
-8. APPLY SQL      - Supabase MCP apply_migration, one transaction
+6. PUSH A BRANCH  - the Club Arena delivery pipeline starts
+7. CERTIFY        - required checks, merge, Hetzner publish, exact live SHA
+8. WRITE SQL      - only after everything else is confirmed
+9. APPLY SQL      - Supabase MCP apply_migration, one transaction
 ```
 
 ## Verify - by reading, never by assuming
 
 ```bash
-curl -s https://smarter.poker/hub/club-arena/build-info.json
+curl -fsS -H 'Cache-Control: no-cache' https://ca-static.smarter.poker/build-info.json
+curl -fsS -H 'Cache-Control: no-cache' https://smarter.poker/hub/club-arena/build-info.json
 ```
 
 `ca_sha` must equal the squash commit on `main`. Comparing index hashes against
@@ -115,7 +117,10 @@ possibly the same source.
       source of merge conflict in this repo)
 - [ ] Any new `*.law.test.*` registered in `docs/LAWS.md`
 - [ ] Migrations written AND applied, and mirrored into `supabase/migrations/`
-- [ ] The PR number reported, and your session ended
+- [ ] The pull request merged with required checks green
+- [ ] Both build-info endpoints serve the exact merged Club Arena SHA
+- [ ] Any server change is sealed and the engine health reports that exact SHA
+- [ ] The PR number and exact live release evidence reported
 
 > [!TIP]
 > If a change is not live, `/deploy-troubleshooting` works down the list from

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 
 const { mockEmit, mockRpc, mockUuid } = vi.hoisted(() => ({
   mockEmit: vi.fn(),
@@ -38,6 +38,7 @@ vi.mock('../../src/lib/supabase', () => {
   };
 
   return {
+    getAuthUser: async () => ({ data: { user: { id: 'user-1' } }, error: null }),
     supabase: {
       rpc: mockRpc,
       from: vi.fn((table: string) =>
@@ -69,6 +70,14 @@ import {
   tournamentUnregisterSuccessText,
 } from '../../src/services/TournamentService';
 
+beforeEach(() => {
+  localStorage.clear();
+  sessionStorage.clear();
+  vi.stubGlobal('navigator', {
+    locks: { request: (_key: string, fn: () => Promise<unknown>) => fn() },
+  });
+});
+afterEach(() => vi.unstubAllGlobals());
 describe('tournament-entry ticket client service', () => {
   beforeEach(() => {
     mockEmit.mockReset();
@@ -188,19 +197,92 @@ describe('tournament-entry ticket client service', () => {
 
   it('keeps ordinary registration on the wallet RPC', async () => {
     mockRpc.mockResolvedValue({
-      data: { ok: true, registration_id: 'registration-1' },
+      data: {
+        ok: true,
+        registration_id: 'registration-1',
+        request_id: '00000000-0000-4000-8000-000000000001',
+        tournament_id: 'tournament-1',
+        user_id: 'user-1',
+      },
       error: null,
     });
 
     await tournamentService.registerPlayer('tournament-1', 'user-1', 'Player');
 
-    expect(mockRpc).toHaveBeenCalledWith('fn_register_for_tournament', {
+    expect(mockRpc).toHaveBeenCalledWith('fn_register_for_tournament_request', {
       p_tournament_id: 'tournament-1',
+      p_request_id: '00000000-0000-4000-8000-000000000001',
     });
     expect(mockEmit).toHaveBeenCalledWith('BALANCE_UPDATED', {
       source: 'tournament_buyin',
       userId: 'user-1',
     });
+  });
+
+  it('retains an initial wallet registration request after exhausted transport attempts', async () => {
+    mockRpc.mockRejectedValue(new Error('commit response lost'));
+    await expect(
+      tournamentService.registerPlayer('tournament-1', 'user-1', 'Player')
+    ).rejects.toThrow('Could Not Confirm Tournament Registration');
+    expect(mockRpc).toHaveBeenCalledTimes(2);
+    const original = mockRpc.mock.calls[0][1].p_request_id;
+    mockUuid.mockReturnValue('00000000-0000-4000-8000-000000000002');
+    mockRpc.mockResolvedValue({
+      data: {
+        ok: true,
+        request_id: original,
+        tournament_id: 'tournament-1',
+        user_id: 'user-1',
+        registration_id: 'registration-1',
+        cost: 110,
+      },
+      error: null,
+    });
+    await tournamentService.registerPlayer('tournament-1', 'user-1', 'Player');
+    expect(mockRpc).toHaveBeenCalledTimes(3);
+    expect(mockRpc.mock.calls[2]).toEqual(mockRpc.mock.calls[0]);
+    expect(mockUuid).toHaveBeenCalledTimes(1);
+    expect(mockEmit.mock.calls.filter(([name]) => name === 'BALANCE_UPDATED')).toHaveLength(1);
+  });
+
+  it('does not use a current roster row as proof of an unknown wallet registration', async () => {
+    mockRpc.mockResolvedValue({ data: null, error: { message: 'response lost' } });
+    await expect(
+      tournamentService.registerPlayer('tournament-1', 'user-1', 'Player')
+    ).rejects.toThrow('Could Not Confirm Tournament Registration');
+    expect(mockRpc).toHaveBeenCalledTimes(2);
+    expect(mockRpc.mock.calls[0]).toEqual(mockRpc.mock.calls[1]);
+    expect(mockEmit).not.toHaveBeenCalledWith('TOURNAMENT_REGISTERED', expect.anything());
+  });
+
+  it.each([
+    { request_id: '00000000-0000-4000-8000-000000000099' },
+    { tournament_id: 'other-tournament' },
+    { user_id: 'other-user' },
+    { ok: 'true' },
+  ])('refuses an unbound registration receipt %j', async (changed) => {
+    mockRpc.mockResolvedValue({
+      data: {
+        ok: true,
+        request_id: '00000000-0000-4000-8000-000000000001',
+        tournament_id: 'tournament-1',
+        user_id: 'user-1',
+        registration_id: 'registration-1',
+        ...changed,
+      },
+      error: null,
+    });
+    await expect(
+      tournamentService.registerPlayer('tournament-1', 'user-1', 'Player')
+    ).rejects.toThrow('Could Not Confirm Tournament Registration');
+    expect(mockEmit).not.toHaveBeenCalledWith('BALANCE_UPDATED', expect.anything());
+  });
+
+  it('refuses registration under a stale client account before any purchase', async () => {
+    await expect(
+      tournamentService.registerPlayer('tournament-1', 'other-user', 'Player')
+    ).rejects.toThrow('Correct Account');
+    expect(mockRpc).not.toHaveBeenCalled();
   });
 
   it('renders ticket refusal codes as human messages', () => {
@@ -339,7 +421,125 @@ describe('tournament-entry ticket client service', () => {
     expect(mockEmit).not.toHaveBeenCalledWith('BALANCE_UPDATED', expect.anything());
   });
 
-  it('rejects legacy, mismatched, or satellite-to-wallet receipts', async () => {
+  it.each(['event', 'seat'] as const)(
+    'retires an obsolete %s refund request without treating the later registration as refunded',
+    async (scope) => {
+      const oldId = '00000000-0000-4000-8000-000000000001';
+      const newId = '00000000-0000-4000-8000-000000000002';
+      const storageKey =
+        'ca:tournament-unregister:v1:user-1:' +
+        (scope === 'event' ? 'tournament-1' : 'seat:table-1');
+      const requestRefund = () =>
+        scope === 'event'
+          ? tournamentService.unregisterPlayer('tournament-1', 'user-1')
+          : tournamentService.leaveTournamentSeatAndRefund('table-1', 'user-1');
+      const pending = JSON.stringify({ requestId: oldId, state: 'pending' });
+      localStorage.setItem(storageKey, pending);
+      sessionStorage.setItem(storageKey, pending);
+      mockUuid.mockReturnValue(newId);
+      mockRpc.mockResolvedValue({
+        data: null,
+        error: {
+          code: 'P0404',
+          message: 'unregistration request id belongs to a prior registration lifecycle',
+        },
+      });
+      await expect(requestRefund()).rejects.toThrow('Earlier Registration');
+      expect(mockRpc).toHaveBeenCalledTimes(1);
+      expect(mockEmit).not.toHaveBeenCalled();
+      expect(JSON.parse(sessionStorage.getItem(storageKey)!)).toEqual({
+        requestId: oldId,
+        state: 'resolved',
+      });
+      mockRpc.mockResolvedValueOnce({
+        data: {
+          ok: true,
+          request_id: newId,
+          registration_id: 'registration-2',
+          refunded_chips: 200,
+          returned_ticket_value: 0,
+          wallet_chips_from_satellite_entitlements: 0,
+        },
+        error: null,
+      });
+      await expect(requestRefund()).resolves.toEqual({
+        refundedChips: 200,
+        returnedTicketValue: 0,
+      });
+      expect(mockRpc.mock.calls[1][1].p_request_id).toBe(newId);
+    }
+  );
+
+  it.each([
+    { code: 'P0404', message: 'registration financial journals disagree' },
+    {
+      code: 'NETWORK',
+      message: 'unregistration request id belongs to a prior registration lifecycle',
+    },
+    { message: 'connection lost after commit' },
+  ])(
+    'retains the original request when the server has not proved its lifecycle obsolete: %o',
+    async (error) => {
+      mockRpc.mockResolvedValue({ data: null, error });
+      await expect(tournamentService.unregisterPlayer('tournament-1', 'user-1')).rejects.toThrow(
+        'Could Not Confirm Tournament Unregistration'
+      );
+      const original = mockRpc.mock.calls[0][1].p_request_id;
+      await expect(tournamentService.unregisterPlayer('tournament-1', 'user-1')).rejects.toThrow(
+        'Could Not Confirm Tournament Unregistration'
+      );
+      expect(mockRpc.mock.calls.every(([, params]) => params.p_request_id === original)).toBe(true);
+      expect(mockUuid).toHaveBeenCalledTimes(1);
+      expect(mockEmit).not.toHaveBeenCalled();
+    }
+  );
+
+  it('accepts the exact satellite cash receipt after a lost response', async () => {
+    mockRpc
+      .mockResolvedValueOnce({ data: null, error: { message: 'response lost after commit' } })
+      .mockResolvedValueOnce({
+        data: {
+          ok: true,
+          request_id: '00000000-0000-4000-8000-000000000001',
+          registration_id: 'registration-1',
+          refunded_chips: 200,
+          returned_ticket_value: 0,
+          wallet_chips_from_satellite_entitlements: 200,
+        },
+        error: null,
+      });
+    await expect(tournamentService.unregisterPlayer('tournament-1', 'user-1')).resolves.toEqual({
+      refundedChips: 200,
+      returnedTicketValue: 0,
+    });
+    expect(mockRpc).toHaveBeenCalledTimes(2);
+    expect(mockRpc.mock.calls[0]).toEqual(mockRpc.mock.calls[1]);
+    expect(mockUuid).toHaveBeenCalledTimes(1);
+    expect(mockEmit.mock.calls.filter(([name]) => name === 'BALANCE_UPDATED')).toHaveLength(1);
+  });
+
+  it.each([undefined, -1, Number.NaN])(
+    'refuses invalid satellite-cash provenance %s',
+    async (amount) => {
+      mockRpc.mockResolvedValue({
+        data: {
+          ok: true,
+          request_id: '00000000-0000-4000-8000-000000000001',
+          registration_id: 'registration-1',
+          refunded_chips: 200,
+          returned_ticket_value: 0,
+          wallet_chips_from_satellite_entitlements: amount,
+        },
+        error: null,
+      });
+      await expect(tournamentService.unregisterPlayer('tournament-1', 'user-1')).rejects.toThrow(
+        'Could Not Confirm Tournament Unregistration'
+      );
+      expect(mockEmit).not.toHaveBeenCalledWith('BALANCE_UPDATED', expect.anything());
+    }
+  );
+
+  it('rejects legacy, mismatched, or overstated satellite-cash receipts', async () => {
     mockRpc.mockResolvedValueOnce({
       data: { ok: true, refunded: 110 },
       error: null,
@@ -370,7 +570,7 @@ describe('tournament-entry ticket client service', () => {
         registration_id: 'registration-1',
         refunded_chips: 110,
         returned_ticket_value: 0,
-        wallet_chips_from_satellite_entitlements: 110,
+        wallet_chips_from_satellite_entitlements: 111,
       },
       error: null,
     });
@@ -415,6 +615,40 @@ describe('tournament-entry ticket client service', () => {
     expect(mockRpc).toHaveBeenCalledTimes(2);
     expect(mockRpc.mock.calls[0]).toEqual(mockRpc.mock.calls[1]);
     expect(mockEmit).not.toHaveBeenCalledWith('BALANCE_UPDATED', expect.anything());
+  });
+
+  it('retains a seat refund identity after exhausted transport retries and a later retry', async () => {
+    mockRpc.mockRejectedValue(new Error('response lost after commit'));
+    await expect(
+      tournamentService.leaveTournamentSeatAndRefund('table-1', 'user-1')
+    ).rejects.toThrow('Could Not Confirm Tournament Unregistration');
+    const original = mockRpc.mock.calls[0][1].p_request_id;
+    mockUuid.mockReturnValue('00000000-0000-4000-8000-000000000002');
+    mockRpc.mockResolvedValue({
+      data: {
+        ok: true,
+        request_id: original,
+        registration_id: 'registration-1',
+        refunded_chips: 110,
+        returned_ticket_value: 0,
+        wallet_chips_from_satellite_entitlements: 0,
+      },
+      error: null,
+    });
+    await expect(
+      tournamentService.leaveTournamentSeatAndRefund('table-1', 'user-1')
+    ).resolves.toEqual({ refundedChips: 110, returnedTicketValue: 0 });
+    expect(mockRpc).toHaveBeenCalledTimes(3);
+    expect(mockRpc.mock.calls[2]).toEqual(mockRpc.mock.calls[0]);
+    expect(mockUuid).toHaveBeenCalledTimes(1);
+    expect(mockEmit.mock.calls.filter(([name]) => name === 'BALANCE_UPDATED')).toHaveLength(1);
+  });
+
+  it('refuses a seat refund for a stale signed-in account before submitting', async () => {
+    await expect(
+      tournamentService.leaveTournamentSeatAndRefund('table-1', 'other-user')
+    ).rejects.toThrow('Correct Account');
+    expect(mockRpc).not.toHaveBeenCalled();
   });
 
   it('explains the real start boundary without a one-minute rule', async () => {

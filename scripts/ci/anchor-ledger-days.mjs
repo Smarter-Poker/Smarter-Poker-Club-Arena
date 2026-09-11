@@ -8,9 +8,10 @@
  * so it proves nothing to anybody who does not already trust that database
  * (roadmap 9.2).
  *
- * This copies each day's line into `docs/attestation/chip-ledger-days.tsv`,
- * which lives in git - a different owner, content-addressed history, and a
- * record Supabase cannot rewrite. One line a day.
+ * This generates each day's expected line in the current checkout and compares
+ * it with `docs/attestation/chip-ledger-days.tsv`, which lives in git - a
+ * different owner, content-addressed history, and a record Supabase cannot
+ * rewrite. In CI the checkout is disposable: source never changes remotely.
  *
  * THE POINT IS THE COMPARISON, NOT THE COPY. A day already anchored is never
  * rewritten. If the database now reports a different sha for a day this file
@@ -22,10 +23,9 @@
  *   - nothing explains it: the script FAILS. That is the alarm, and it is the
  *     only reason this file exists.
  *
- * Run by .github/workflows/schema-manifest-refresh.yml on the schedules it
- * already has (daily 05:20 UTC and hourly at :40) - the first run after the
- * 04:25 manifest cron carries the new day, and there is no new scheduled
- * trigger anywhere (CLAUDE.md 10.85).
+ * Run by .github/workflows/schema-manifest-refresh.yml on its existing audit
+ * schedules. A new or restated line makes the read-only audit fail until a
+ * reviewed source change records it; the workflow never commits or pushes.
  */
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { dirname } from 'node:path';

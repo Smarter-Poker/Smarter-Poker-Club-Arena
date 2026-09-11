@@ -1,12 +1,14 @@
-FROM node:22-slim
+# Pin the official multi-architecture Node 22 slim manifest. A mutable base tag
+# made the same protected-main SHA produce different engine bytes on rebuild.
+FROM node:22-slim@sha256:83f487e0a63425e5b4d146fb5e5be574bcbe1b7b843d3ebafdd95eaf7767a7e5
 
 WORKDIR /app
 
 # Copy package files
-COPY package.json package-lock.json* ./
+COPY package.json package-lock.json ./
 
 # Install dependencies
-RUN npm install --production=false
+RUN npm ci --include=dev --no-audit --no-fund
 
 # Copy source
 COPY tsconfig.json ./
@@ -16,7 +18,7 @@ COPY src/ ./src/
 RUN npx tsc
 
 # Remove dev dependencies
-RUN npm prune --production
+RUN npm prune --omit=dev --no-audit --no-fund
 
 # Run
 ENV NODE_ENV=production
@@ -37,6 +39,10 @@ EXPOSE 8080
 # host supervisor — reports the same truthful value.
 ARG GIT_COMMIT_SHA=unknown
 ENV GIT_COMMIT_SHA=$GIT_COMMIT_SHA
+# The release seal reads identity from image metadata, not from the mutable
+# runtime environment.  An env file can override ENV, but it cannot rewrite an
+# OCI label on an already-built image.
+LABEL org.opencontainers.image.revision=$GIT_COMMIT_SHA
 
 # 2026-08-15 SELF-HEALING. Without a HEALTHCHECK, Docker's only restart trigger
 # is process exit — so a process that is up but wedged (every table frozen) was

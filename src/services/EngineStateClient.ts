@@ -353,7 +353,12 @@ export const RESTART_WINDOW_GRACE_MS = 90_000;
 export { PROTOCOL_VERSION, engineSocketUrl } from './EngineSocketMux';
 
 export type EngineConnectionStatus =
-  'idle' | 'connecting' | 'connected' | 'reconnecting' | 'failed' | 'auth_failed';
+  | 'idle'
+  | 'connecting'
+  | 'connected'
+  | 'reconnecting'
+  | 'failed'
+  | 'auth_failed';
 
 export interface EngineStateClientOptions {
   /** Base URL, e.g. https://engine.smarter.poker. Scheme is rewritten to ws(s). */
@@ -466,6 +471,7 @@ export class EngineStateClient {
   private onVisibility: (() => void) | null = null;
   /** Dan 2026-08-21: browser 'online' hook for instant post-outage reconnect. */
   private onOnline: (() => void) | null = null;
+  private onOffline: (() => void) | null = null;
   private onResume: ((event: Event) => void) | null = null;
 
   /** How often the watchdog samples. */
@@ -533,6 +539,34 @@ export class EngineStateClient {
       };
       window.addEventListener('online', this.onOnline);
     }
+    if (this.onOffline === null && typeof window !== 'undefined') {
+      this.onOffline = () => {
+        if (this.intentionalClose) return;
+        this.connectionGeneration++;
+        this.tokenWait?.abort();
+        this.tokenWait = null;
+        this.stopWatchdog();
+        this.clearHandshakeTimer();
+        if (this.reconnectTimer !== null) {
+          window.clearTimeout(this.reconnectTimer);
+          this.reconnectTimer = null;
+        }
+        this.inbox = [];
+        const dead = this.ws;
+        this.ws = null;
+        if (dead instanceof MuxTableSocket) {
+          engineSocketMux.closeOfflineTransport();
+        } else if (dead) {
+          try {
+            dead.close(4001, 'browser offline');
+          } catch {
+            // Already detached; a native close failure cannot retain ownership.
+          }
+        }
+        this.setStatus('reconnecting');
+      };
+      window.addEventListener('offline', this.onOffline);
+    }
     if (this.onResume === null && typeof window !== 'undefined') {
       this.onResume = (event) => {
         if (this.intentionalClose || document.visibilityState !== 'visible') return;
@@ -565,6 +599,10 @@ export class EngineStateClient {
     if (this.onOnline !== null && typeof window !== 'undefined') {
       window.removeEventListener('online', this.onOnline);
       this.onOnline = null;
+    }
+    if (this.onOffline !== null && typeof window !== 'undefined') {
+      window.removeEventListener('offline', this.onOffline);
+      this.onOffline = null;
     }
     if (this.onResume !== null && typeof window !== 'undefined') {
       window.removeEventListener('pageshow', this.onResume);
@@ -612,6 +650,10 @@ export class EngineStateClient {
 
   private async openOnce(): Promise<void> {
     if (reloadingForNewBundle) return;
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      this.setStatus('reconnecting');
+      return;
+    }
     // Single-flight + live-socket guard (see `openingGeneration`). scheduleReconnect's
     // timer, the online handler and connect() can all race into here.
     const generation = this.connectionGeneration;
@@ -680,7 +722,7 @@ export class EngineStateClient {
     } else {
       try {
         ws = new WebSocket(wsUrl, ['bearer', token]);
-      } catch (err) {
+      } catch {
         this.scheduleReconnect();
         return;
       }
@@ -1434,6 +1476,10 @@ export class EngineStateClient {
 
   private scheduleReconnect(): void {
     if (reloadingForNewBundle) return;
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      this.setStatus('reconnecting');
+      return;
+    }
     if (this.reconnectTimer !== null) return;
     this.retryCount++;
     /* ═══ A SCHEDULED RESTART IS NOT A FAILURE (Phase 4, 2026-09-05) ═══════
@@ -1767,6 +1813,7 @@ export class EngineChannelClient {
   private static readonly FOREGROUND_CHANNEL_BUDGET_MS = 5_000;
   private watchdogTimer: number | null = null;
   private onOnline: (() => void) | null = null;
+  private onOffline: (() => void) | null = null;
   private onResume: ((event: Event) => void) | null = null;
   /** 2026-08-22: bounded wake grace — see startWatchdog. */
   private onVisibility: (() => void) | null = null;
@@ -1845,6 +1892,31 @@ export class EngineChannelClient {
       };
       window.addEventListener('online', this.onOnline);
     }
+    if (this.onOffline === null && typeof window !== 'undefined') {
+      this.onOffline = () => {
+        if (this.intentionalClose) return;
+        this.connectionGeneration++;
+        this.tokenWait?.abort();
+        this.tokenWait = null;
+        this.stopWatchdog();
+        this.clearHandshakeTimer();
+        if (this.reconnectTimer !== null) {
+          window.clearTimeout(this.reconnectTimer);
+          this.reconnectTimer = null;
+        }
+        const dead = this.ws;
+        this.ws = null;
+        if (dead) {
+          try {
+            dead.close(4001, 'browser offline');
+          } catch {
+            // Already detached; a native close failure cannot retain ownership.
+          }
+        }
+        this.setStatus('reconnecting');
+      };
+      window.addEventListener('offline', this.onOffline);
+    }
     if (this.onResume === null && typeof window !== 'undefined') {
       this.onResume = (event) => {
         if (this.intentionalClose || document.visibilityState !== 'visible') return;
@@ -1876,6 +1948,10 @@ export class EngineChannelClient {
     if (this.onOnline !== null && typeof window !== 'undefined') {
       window.removeEventListener('online', this.onOnline);
       this.onOnline = null;
+    }
+    if (this.onOffline !== null && typeof window !== 'undefined') {
+      window.removeEventListener('offline', this.onOffline);
+      this.onOffline = null;
     }
     if (this.onResume !== null && typeof window !== 'undefined') {
       window.removeEventListener('pageshow', this.onResume);
@@ -2018,6 +2094,10 @@ export class EngineChannelClient {
 
   private async openOnce(): Promise<void> {
     if (reloadingForNewBundle) return;
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      this.setStatus('reconnecting');
+      return;
+    }
     // Single-flight + live-socket guard — same race as EngineStateClient:
     // openOnce awaits getToken before assigning this.ws, so overlapping
     // invocations would create a second socket and orphan one.
@@ -2382,6 +2462,10 @@ export class EngineChannelClient {
 
   private scheduleReconnect(): void {
     if (reloadingForNewBundle) return;
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      this.setStatus('reconnecting');
+      return;
+    }
     if (this.reconnectTimer !== null) return;
     this.retryCount++;
     // 2026-08-22: NEVER stop trying (same contract as EngineStateClient).

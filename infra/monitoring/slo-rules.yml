@@ -36,10 +36,9 @@
 # scrapes. So these are written against gauges that exist today, and they fire
 # today.
 #
-# External reachability (is smarter.poker up from the outside) is NOT covered
-# here and cannot be from this stack — the engine cannot see itself from the
-# internet. That coverage lives in the World Hub's publish-watchdog.yml, which
-# deliberately does not share a failure domain with the pipeline it watches.
+# External reachability is not measured by this Prometheus stack. Club Arena's
+# read-only production-integrity audit verifies the Hetzner origin and public
+# rewrite without owning a retry, repair, or publish path.
 #
 # Naming: sp:<objective>:<window>. Recording rules only — the objectives
 # themselves are asserted in slo-alerts.yml.

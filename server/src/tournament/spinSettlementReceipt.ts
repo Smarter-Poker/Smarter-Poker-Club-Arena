@@ -1,3 +1,5 @@
+import { UUID_SHAPE as UUID } from '../lib/uuidShape.js';
+
 export interface SpinSettlementReceipt {
   tournamentId: string;
   multiplier: number;
@@ -14,8 +16,6 @@ interface SpinSettlementExpectation {
   seats: number;
   rakeRate: number;
 }
-
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const centsEqual = (left: unknown, right: number): boolean => {
   const value = Number(left);

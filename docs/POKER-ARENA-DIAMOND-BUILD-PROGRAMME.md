@@ -8,7 +8,19 @@ Dan explicitly authorized starting Phase 3 while Phase 2 push/publication is mon
 
 ## Execution Update, September 9, 2026
 
-Dan authorized Phase 4 development while Phase 3 publication is verified in the background. Phase 3 remains open until its remaining repairs, running-engine adoption and live regression checks pass. Pending publication is not a passed gate. This continuation preserves the prior-phase audit and does not authorize public funded Diamond games ahead of their gameplay and accounting gates.
+Dan authorized Phase 4 development while Phase 3 publication is verified in the background. Phase 3 runtime adoption and its recorded repair/regression checks are verified as of September 9 at 21:05 UTC. Pending publication is not a passed gate. This continuation preserves the prior-phase audit and does not authorize public funded Diamond games ahead of their gameplay and accounting gates.
+
+## Execution Update, September 10, 2026
+
+Dan accepted ownership of the remaining World Hub lobby image and explicitly authorized Phase 6 after the other Phase 5 implementation and publication checks passed. The image is excluded from this continuation. Phase 6 uses the shared engine and dedicated Diamond custody; public funded play remains subject to the existing accounting and release gates.
+
+The initial Phase 6 engine change enforces whole-Diamond hand amounts and fixes a reproduced duplicate runout payout. It is not a completed funded-game certificate. The remaining atomic seat/custody, accepted-hand accounting, cash-out and controlled runtime acceptance work is tracked in [the Phase 6 audit](audits/2026-09-10-diamond-phase-6-cash.md).
+
+## Execution Update, September 11, 2026
+
+Phase 6 is closed. The shared NLH Diamond cash integration is merged as 85da6479, its three approved production migrations are applied, engine adoption and frontend publication are verified, and the permitted authenticated live acceptance passed on September 11 between 13:57 and 14:23 UTC. That acceptance found one layout defect in the Diamond shell, which was repaired, merged as 29b6ae08, published and rechecked live at 15:06 UTC. Evidence is in [the Phase 6 audit](audits/2026-09-10-diamond-phase-6-cash.md) and [the integration changelog](changelog/2026-09-10-diamond-phase-6-shared-cash-integration.md).
+
+Dan's standing authorization to proceed after the Phase 6 deployment and acceptance pass now applies, and Phase 7 has started in its own owned tree with its own evidence. Dan also restated the product target for the arena itself on September 11: "DIAMOND ARENA NEEDS TO BE A 1:1 CLONE OF THE CLUB ARENA. (ONLY DIFFERENCE IS ITS ALL 'ONE OPEN CLUB' WITH NO UNIONS OR AGENTS AND ITS PLAYED WITH DIAMONDS INSTEAD OF CHIPS)". Phase 7 therefore opens on lobby parity, not on a new surface: the arena's own route renders the shared Club Arena lobby rather than a placeholder panel, while the chip operator routes underneath a club keep the safe shell so that "no unions or agents" holds on a typed URL. Public funded Diamond games remain closed behind the existing accounting and release gates, and `cash_games_enabled` remains false.
 
 ## Approved Product Contract
 
@@ -177,52 +189,62 @@ Exit: access and wrong-asset integration tests pass, merged frontend and server 
 
 ### Phase 3 Of 12: Diamond Custody, Ledger And Reconciliation
 
-- [ ] Select dedicated diamond custody records; retire dependence on chip_balance.
-- [ ] Implement atomic reserve/release and entry/seat contracts using proven Club Arena semantics.
-- [ ] Enforce nonnegative amounts, valid denominations and request-bound idempotency.
-- [ ] Inventory/forward-migrate any old arena balances without erasing history.
-- [ ] Extend all diamond supply/trial-balance/snapshot surfaces and exclude diamond holdings from chip books.
-- [ ] Preserve provenance, purchased-lot/debt treatment and audit identities.
-- [ ] Verify atomic failure rollback and management error visibility. The September 9 production cutover retired deferred custody obligations and recovery sweeps.
+- [x] Select dedicated diamond custody records; retire dependence on chip_balance.
+- [x] Implement atomic reserve/release and entry/seat contracts using proven Club Arena semantics.
+- [x] Enforce nonnegative amounts, valid denominations and request-bound idempotency.
+- [x] Inventory/forward-migrate any old arena balances without erasing history.
+- [x] Extend all diamond supply/trial-balance/snapshot surfaces and exclude diamond holdings from chip books.
+- [x] Preserve provenance, purchased-lot/debt treatment and audit identities.
+- [x] Verify atomic failure rollback and management error visibility. The September 9 production cutover retired deferred custody obligations and recovery sweeps.
 
 Exit: concurrent/replayed/failure-path movements conserve diamonds and produce zero chip effects.
 
+Runtime adoption verified September 9 at 21:05 UTC: healthy engine 561eaa52 contains final repair 4c385b09; both frontend origins serve descendant b30e1b85. See docs/audits/2026-09-08-diamond-phase-3-custody.md for exact ancestry and reused acceptance evidence.
+
 ### Phase 4 Of 12: Wallet And Player-To-Player Transfers
 
-- [ ] Inspect current platform transfer route, UI and database status; reconcile earlier retirement.
-- [ ] Reuse current wallet components/services where compatible; restore one atomic transfer path if absent.
-- [ ] Verify recipient identity, confirmation, server-side eligibility and existing policy.
-- [ ] Show available and in-play diamonds separately, with no chip conversion action.
-- [ ] Make transfer UI accessible while seated and while browsing.
-- [ ] Verify both-party ledger/balance updates and retry behavior.
-- [ ] Test transfer versus buy-in, store spend and other outgoing transfer races.
+- [x] Inspect current platform transfer route, UI and database status; reconcile earlier retirement.
+- [x] Reuse current wallet components/services where compatible; restore one atomic transfer path if absent.
+- [x] Verify recipient identity, confirmation, server-side eligibility and existing policy.
+- [x] Show available and in-play diamonds separately, with no chip conversion action.
+- [x] Make transfer UI accessible while seated and while browsing.
+- [x] Verify both-party ledger/balance updates and retry behavior.
+- [x] Test transfer versus buy-in, store spend and other outgoing transfer races.
 
 Exit: authorized test users can transfer available diamonds once; reserved game funds remain untouched.
 
+Release and acceptance verified September 9, 2026: Club Arena 70fd31cf, World Hub f278b167 plus evidence 27235a03, and applied migration 20260909200327. See docs/changelog/2026-09-09-wallet-transfers-commit-together.md for exact source, CI, SQL, publication and authenticated review evidence. Production acceptance did not submit a real-player transfer.
+
 ### Phase 5 Of 12: Poker Arena Shell And Diamond Skin
 
-- [ ] Rename visible umbrella/header/World Hub tile to Poker Arena.
-- [ ] Locate and preserve the original approved Diamond Arena card asset before cleanup (World Hub candidate: public/cards/diamond-arena.png; visually match Dan's supplied September 8 screenshot); reuse it for the Diamond club card inside Poker Arena.
-- [ ] Remove the standalone Diamond Arena card and navigation target from the World Hub on desktop and mobile, including alternate card lists and cached navigation configurations.
-- [ ] Reuse current selector: Shark default, Diamond adjacent, joined clubs included.
-- [ ] Shark nonmember sees Join, not member content; Diamond never shows Join.
-- [ ] Reuse shared lobby sections and approved game-card designs.
-- [ ] Scope labels, available balance, icons, filters and persistent preferences to selected arena.
-- [ ] Preserve active table, animation and sound behavior across navigation.
-- [ ] Keep shared Club Arena technical URLs where needed; create the new Diamond selection inside Poker Arena. Remove the old standalone Diamond route, redirects, aliases and iframe entry points.
-- [ ] Test mobile, desktop, deep links, back/refresh, auth return and old caches.
+- [x] Rename visible umbrella/header/World Hub tile to Poker Arena.
+- [x] Locate and preserve the original approved Diamond Arena card asset before cleanup (World Hub candidate: public/cards/diamond-arena.png; visually match Dan's supplied September 8 screenshot); reuse it for the Diamond club card inside Poker Arena.
+- [x] Remove the standalone Diamond Arena card and navigation target from the World Hub on desktop and mobile, including alternate card lists and cached navigation configurations.
+- [x] Reuse current selector: Shark default, Diamond adjacent, joined clubs included.
+- [x] Shark nonmember sees Join, not member content; Diamond never shows Join.
+- [x] Reuse shared lobby sections and approved game-card designs.
+- [x] Scope labels, available balance, icons, filters and persistent preferences to selected arena.
+- [x] Preserve active table, animation and sound behavior across navigation.
+- [x] Keep shared Club Arena technical URLs where needed; create the new Diamond selection inside Poker Arena. Remove the old standalone Diamond route, redirects, aliases and iframe entry points.
+- [x] Test mobile, desktop, deep links, back/refresh, auth return and old caches.
 
 Exit: correct shell/selection/access behavior without old iframe or simulated game content.
 
+Release verified September 10, 2026: Club Arena implementation bc72ffc6 plus footer repair d600427d are published through both shared frontend endpoints; World Hub entry and evidence are live at b1250716. Exact CI, authenticated navigation/table preservation, retired-route checks and the managed-browser WebGL limitation are recorded in docs/changelog/2026-09-09-poker-arena-shell-phase-5.md. No engine or database deployment was needed.
+
+Phases 3 Through 5 Recheck: the September 10 audit repaired and published the transfer session/retry defects through PR 4078, verified production contracts and live routes, and retained the user-owned World Hub image exclusion. Exact evidence is in [the prior-phase recheck](audits/2026-09-10-diamond-phases-3-through-5-recheck.md).
+
 ### Phase 6 Of 12: First Fully Playable Diamond Cash Game
 
-- [ ] Wire shared NLH engine to Diamond buy-in, actions, settlement and leave.
-- [ ] Fund seat, blinds, bets, pots and cash-out in diamonds only.
-- [ ] Wire hand history, result events and wallet refresh.
-- [ ] Test actual multi-user play in a controlled certification environment.
-- [ ] Verify all-in, side pot, tie, disconnect, restart, pending leave and response-loss retry.
+- [x] Wire shared NLH engine to Diamond buy-in, actions, settlement and leave.
+- [x] Fund seat, blinds, bets, pots and cash-out in diamonds only.
+- [x] Wire hand history, result events and wallet refresh.
+- [x] Test actual multi-user play in a controlled certification environment.
+- [x] Verify all-in, side pot, tie, disconnect, restart, pending leave and response-loss retry.
 
 Exit: complete play-and-cash-out flow reconciles every diamond; no chip or hierarchy writes.
+
+Phase 6 Of 12 Is Done, verified September 11, 2026. Implementation merge 85da6479 (PR 4088) passed required CI 34440835759; production migrations 20260910050142, 20260910050156 and 20260910050209 were applied once against approved source; engine adoption cut over at 86aab0e6 on September 10 with later descendants serving since; frontend publication was verified through both build-info endpoints; and the permitted authenticated live acceptance passed on the six Diamond and chip-club routes plus the Diamond Wallet. One layout defect in the Diamond shell was found by that acceptance, repaired in PR 4313, merged as 29b6ae08, published and rechecked live. Controlled multi-user play, all-in, side pot, tie, disconnect, restart, pending leave and response-loss retry were certified in the isolated environment, not in a public funded game, and public funded Diamond games remain closed behind the accounting release gate. Exact evidence: [Phase 6 audit](audits/2026-09-10-diamond-phase-6-cash.md) and [integration changelog](changelog/2026-09-10-diamond-phase-6-shared-cash-integration.md).
 
 ### Phase 7 Of 12: Cash Game Parity And Table Features
 
@@ -322,4 +344,4 @@ The existing seven-clean-day release condition is documented in DIAMOND-ACCOUNTI
 
 ## Immediate Next Batch
 
-Phase 2: expand current access and currency call chains, implement the player-only Diamond entitlement/policy boundary, and keep private chip-club membership enforcement intact. The inherited member-wallet funding functions are inspection/retirement targets. No new Diamond table opens until the proper diamond-only money path has been implemented and verified.
+Phase 7: cash game parity and table features, on Dan's standing authorization after the Phase 6 deployment and acceptance passed. It opens on the one-to-one lobby parity Dan restated on September 11, then enables each feature only behind its own Diamond tests, starting from a supported-feature matrix built from the current shared code and the Phase 6 admission guard. Public funded Diamond games remain subject to the gameplay and accounting release gates; no Phase 7 work is claimed by the Phase 6 release.

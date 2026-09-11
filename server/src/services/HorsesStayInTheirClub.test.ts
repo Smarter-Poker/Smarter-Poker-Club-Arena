@@ -148,7 +148,7 @@ describe('seat-first games are filled from their own club', () => {
    */
   it('narrows the platform fleet to the host club before selecting', () => {
     expect(PICK).toMatch(
-      /const clubIds = tournamentId \? await this\.clubMemberIdsForTournament\(tournamentId\) : null;/
+      /const clubIds = tournamentId\s*\?\s*await this\.clubMemberIdsForTournament\(tournamentId, pass\)\s*:\s*null;/
     );
     expect(PICK).toMatch(
       /const inClub = clubIds \? fleetIds\.filter\(\(id\) => clubIds\.has\(id\)\) : fleetIds;/
@@ -165,7 +165,7 @@ describe('seat-first games are filled from their own club', () => {
   });
 
   it('the top-up fill passes its tournament', () => {
-    expect(SRC).toMatch(/await this\.pickFreeHorses\(poolWanted, false, tournamentId\)/);
+    expect(SRC).toMatch(/await this\.pickFreeHorses\(poolWanted, false, tournamentId, pass\)/);
   });
 
   it('leaves the pool alone when the club cannot be resolved', () => {

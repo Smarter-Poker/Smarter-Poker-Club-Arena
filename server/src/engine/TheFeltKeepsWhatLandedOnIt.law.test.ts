@@ -340,28 +340,28 @@ describe('LAW 4: the database applies the difference and honours the declaration
     // tournament chips from a real wallet. The live definition is what the
     // engine calls, so the pin reads the latest re-creation of the function.
     const ordered = readdirSync(migrationsDir)
-      .filter((f) => /^\d{14}_.*\.sql$/.test(f))
+      .filter((f) => /^\d{14}_.*\.sql(?:\.pending)?$/.test(f))
       .sort()
       .reverse();
-    const latest = ordered.find((f) =>
-      /CREATE (OR REPLACE )?FUNCTION public\.fn_ca_settle_hand_stacks_absolute\(/.test(
+    // A later forward migration may update the preserved core while retaining
+    // the capability wrapper. Find each authority by its actual operation,
+    // rather than assuming the latest file must be the original rename.
+    const wrapperFile = ordered.find((f) =>
+      /RENAME TO fn_ca_settle_hand_stacks_absolute_pre_seat_exit_authority/.test(
         readFileSync(resolve(migrationsDir, f), 'utf8')
       )
     );
-    const live = readFileSync(resolve(migrationsDir, latest as string), 'utf8');
-    // The seat-exit cutover makes the public function a capability-scoped
-    // wrapper around the exact prior implementation. Prove both halves: the
-    // wrapper cannot bypass its owner-only core, and that core still carries
-    // the cash-only delta guard this law originally pinned.
-    expect(live).toMatch(/RENAME TO fn_ca_settle_hand_stacks_absolute_pre_seat_exit_authority/);
-    expect(live).toMatch(/fn_ca_settle_hand_stacks_absolute_pre_seat_exit_authority\(/);
-    const implementationFile = ordered
-      .slice(ordered.indexOf(latest as string) + 1)
-      .find((f) =>
-        /CREATE (OR REPLACE )?FUNCTION public\.fn_ca_settle_hand_stacks_absolute\(/.test(
-          readFileSync(resolve(migrationsDir, f), 'utf8')
-        )
+    expect(wrapperFile).toBeTruthy();
+    const wrapper = readFileSync(resolve(migrationsDir, wrapperFile as string), 'utf8');
+    expect(wrapper).toMatch(/fn_ca_settle_hand_stacks_absolute_pre_seat_exit_authority\(/);
+    expect(wrapper).toMatch(/fn_ca_open_tournament_hand_seat_exit_authority\(/);
+    const implementationFile = ordered.find((f) => {
+      const body = readFileSync(resolve(migrationsDir, f), 'utf8');
+      return (
+        /CREATE (OR REPLACE )?FUNCTION public\.fn_ca_settle_hand_stacks_absolute\(/.test(body) &&
+        body.includes("'late_seat_settle:'")
       );
+    });
     expect(implementationFile).toBeTruthy();
     const implementation = readFileSync(
       resolve(migrationsDir, implementationFile as string),

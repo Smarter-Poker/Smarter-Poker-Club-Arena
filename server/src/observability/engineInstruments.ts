@@ -204,8 +204,8 @@ export const engineTracer = new Tracer({
 // spins, heads up and mtt's as well. not just the cash game tables." Every
 // format already shares this engine and this socket, so they were always
 // measured - but they were one indistinguishable number, so "are Spins slow?"
-// had no answer. `format` is cash | spin | hu_sng | mtt, four values, so at
-// most eight series with audience. Still never a table_id.
+// had no answer. `format` is cash | spin | hu_sng | sng | mtt, five values,
+// so at most ten series with audience. Still never a table_id.
 //
 // Horses lose nothing here (CLAUDE.md 10.5): the same latency is observed for
 // every table; the label says who was watching, it does not change what any
@@ -230,10 +230,10 @@ export const settlementStepSlow = alwaysOnRegistry.counter(
   'Settlement step attempts taking at least 1000ms'
 );
 
-/** act -> broadcast, ms, 2 series (audience=human|horse). */
+/** act -> broadcast, ms, bounded by audience x tournament format. */
 export const actToBroadcastFleet: Histogram = alwaysOnRegistry.histogram(
   'poker_act_to_broadcast_ms',
-  'Latency from a player action being accepted to the new state reaching every seat (ms). audience=human when a human is seated at the table, else horse; format=cash|spin|hu_sng|mtt'
+  'Latency from a player action being accepted to the new state reaching every seat (ms). audience=human when a human is seated at the table, else horse; format=cash|spin|hu_sng|sng|mtt'
 );
 
 /**
@@ -281,6 +281,14 @@ export const horseDecisionWorkerReady: Gauge = alwaysOnRegistry.gauge(
 export const horseDecisionWorkerQueueDepth: Gauge = alwaysOnRegistry.gauge(
   'poker_horse_decision_worker_queue_depth',
   'Accepted live horse-decision operations either queued or actively computing in the process-wide FIFO.'
+);
+export const horseDecisionWorkerExpiredJobs: Gauge = alwaysOnRegistry.gauge(
+  'poker_horse_decision_worker_expired_jobs',
+  'Accepted horse-decision operations whose queue-plus-compute caller deadline elapsed since this worker started. Decision expirations take the legal fail-safe action without misclassifying a healthy worker as wedged.'
+);
+export const horseDecisionWorkerRecoverableRequestErrors: Gauge = alwaysOnRegistry.gauge(
+  'poker_horse_decision_worker_recoverable_request_errors',
+  'Horse-decision requests rejected at worker validation since startup. Each caller takes its legal fail-safe action; transport, lifecycle-fence, durable-effect execution, and runtime-integrity failures remain terminal.'
 );
 export const horseDecisionWorkerActiveJobAgeMs: Gauge = alwaysOnRegistry.gauge(
   'poker_horse_decision_worker_active_job_age_ms',
@@ -427,11 +435,59 @@ for (const outcome of ['completed', 'partial', 'frozen', 'error', 'coalesced']) 
   bountyRecoverySweepRunsTotal.inc(0, { outcome });
 }
 
-/** Actions processed, 2 series. */
+/** Actions processed, bounded by audience x tournament format. */
 export const actionsFleetTotal: Counter = alwaysOnRegistry.counter(
   'poker_actions_fleet_total',
-  'Player actions processed (labels: audience=human|horse, format=cash|spin|hu_sng|mtt)'
+  'Player actions processed (labels: audience=human|horse, format=cash|spin|hu_sng|sng|mtt)'
 );
+
+/**
+ * ═══ THE HORSE'S INPUT DEVICE, COUNTED (2026-09-11) ══════════════════════════
+ *
+ * Dan, 2026-09-11: "I SHOULD GET PUSH NOTIFICATIONS OR TEXT IF ANYTHING INSIDE
+ * THE HORSES IS FAILING OR THEY CAN'T PLAY." Until today the only horse series
+ * on `/metrics` described the decision WORKER (queue depth, expiries); nothing
+ * said whether a seated horse actually got its action onto the felt. These
+ * four count the ways the input device (CLAUDE.md 10.5) fails a seated horse,
+ * fleet-wide, no table or user label, so a rule can read them:
+ *
+ *   turn_timeouts    the clock resolved a horse's seat instead of the horse:
+ *                    kind=timer (17 s primary expiry) or kind=timebank (a bank
+ *                    deadline, including an orphaned one from a previous turn,
+ *                    which was 67/hour on 2026-09-11 before the settle fix);
+ *   decision_fallbacks  the worker failed or expired and the seat took the
+ *                    legal check/fold instead of a computed decision;
+ *   seat_unactable   every one of the three commit attempts was rejected and
+ *                    the seat was left to the watchdog;
+ *   forced_sit_outs  the three-strike ladder sat a horse out - a horse has no
+ *                    "I'm back" button, so this is a seat lost until eviction.
+ *
+ * Measured baseline for the thresholds lives beside the rules in
+ * `infra/monitoring/alert-rules.yml` (group `horse-fleet`).
+ */
+export const horseTurnTimeoutsTotal: Counter = alwaysOnRegistry.counter(
+  'poker_horse_turn_timeouts_total',
+  'Seated horse turns resolved by the clock instead of by the horse (label: kind=timer|timebank)'
+);
+export const horseDecisionFallbacksTotal: Counter = alwaysOnRegistry.counter(
+  'poker_horse_decision_fallbacks_total',
+  'Horse turns that took the legal check/fold because the decision worker failed or expired'
+);
+export const horseSeatUnactableTotal: Counter = alwaysOnRegistry.counter(
+  'poker_horse_seat_unactable_total',
+  'Horse turns where every commit attempt (intended, check, fold) was rejected'
+);
+export const horseForcedSitOutsTotal: Counter = alwaysOnRegistry.counter(
+  'poker_horse_forced_sit_outs_total',
+  'Horses sat out by the consecutive-timeout ladder (label: format=cash|spin|hu_sng|sng|mtt)'
+);
+horseTurnTimeoutsTotal.inc(0, { kind: 'timer' });
+horseTurnTimeoutsTotal.inc(0, { kind: 'timebank' });
+horseDecisionFallbacksTotal.inc(0);
+horseSeatUnactableTotal.inc(0);
+for (const format of ['cash', 'spin', 'hu_sng', 'sng', 'mtt']) {
+  horseForcedSitOutsTotal.inc(0, { format });
+}
 
 /**
  * Duplicate suppression on `POST /action` (Phase 3 - 2026-09-05). Three

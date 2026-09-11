@@ -1,0 +1,26 @@
+{
+  "recorded_at_utc": "2026-09-11T07:14:57.484092+00:00",
+  "status": "PENDING SPECIFIC APPROVAL; NOT APPLIED; NOT AN ACTIVE MIGRATION",
+  "reserved_active_path": "supabase/migrations/20260911070726_legacy_rakeback_closed_period_single_payer.sql",
+  "archived_prepared_path": "docs/audits/2026-09-11-rakeback-maturity-ui/pending-adoption/20260911070726_legacy_rakeback_closed_period_single_payer.sql",
+  "sha256": "a55e792f12040799a20fcf6d54969059efecaea3869c3aa148191fe1b083c4c7",
+  "byte_identical_to": "docs/audits/2026-09-11-legacy-rakeback-maturity/00-apply-legacy-repair.sql",
+  "source_commit": "988db864469e0d2543b969fc0032c4d8eb7b9fa3",
+  "prepared_package_commit": "36938a26c0cbea9947c648f15177a9d6f768b7ab",
+  "automatic_review": "Root reported production application was rejected because broad audit/publication approval did not specifically authorize the security-definer financial SQL mutation.",
+  "actions_after_rejection": "Moved the untracked reserved SQL into this dormant archive; no SQL execution, application retry, rerouting, active migration, PR readiness change, merge or UI publication.",
+  "release_hold": "PR4252 remains draft pending fresh specific approval. This archive preserves the prepared bytes and reserved name only; it does not satisfy or bypass the database publication gate.",
+  "future_order": [
+    "Obtain specific approval for the exact financial SQL application.",
+    "Recheck current owner/schema/ACL and documented admission prerequisites.",
+    "Run scripts/reserve-migration-version.sh again and check collisions; use the then-current reserved path with the exact approved SQL bytes.",
+    "Apply through the approved database release path and read back function/guard/trigger/ACL identities.",
+    "Only then advance the coordinated UI publication through normal gates."
+  ],
+  "note": "The former 07:07 filename is historical preparation metadata only. The reservation script scans active migration directories, so this archive does not retain that version allocation. Specific approval concerns exact SHA256 a55e792f12040799a20fcf6d54969059efecaea3869c3aa148191fe1b083c4c7 SQL bytes, not a particular filename.",
+  "preservation_ref": "backup/resume-poker-sep11/rakeback-adoption-preparation",
+  "unchanged_release_refs": {
+    "backup/resume-poker-sep11/rakeback-maturity-ui": "36938a26c0cbea9947c648f15177a9d6f768b7ab",
+    "backup/resume-poker-sep11/rakeback-claim-response": "92a43636e6b8da408fade162780c3d0478d73084"
+  }
+}

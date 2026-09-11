@@ -20,6 +20,7 @@ import {
   HORSE_MAX_CONCURRENT_TABLES,
   REGISTRATION_LOAD_HORIZON_MS,
 } from './TournamentRecurringService.js';
+import { BOOKING_COUNTS_WITHIN_MS } from './HorseGameLoad.js';
 
 describe('horse concurrency ceiling', () => {
   it('is four, which is the number Dan gave', () => {
@@ -181,8 +182,15 @@ describe('the double-count rule, which is the one that fails silently', () => {
     expect(body).toContain('REGISTRATION_LOAD_HORIZON_MS');
   });
 
-  it('the horizon is thirty minutes: longer than any seat-first game, shorter than any ramp', () => {
-    expect(REGISTRATION_LOAD_HORIZON_MS).toBe(30 * 60_000);
+  /**
+   * THE HORIZON IS THE DATABASE'S (2026-09-11). fn_concurrent_game_load counts
+   * a booking from sixty minutes before its start, and HorseGameLoad.ts mirrors
+   * that for the fleet. This picker counted from thirty, so it offered horses
+   * the four-table trigger refused: 21 of 1,000 measured live. One constant.
+   */
+  it('the horizon is the database window the fleet mirror already uses', () => {
+    expect(REGISTRATION_LOAD_HORIZON_MS).toBe(BOOKING_COUNTS_WITHIN_MS);
+    expect(REGISTRATION_LOAD_HORIZON_MS).toBe(60 * 60_000);
   });
 
   it('a horse seated in a running event is counted once, not twice', () => {

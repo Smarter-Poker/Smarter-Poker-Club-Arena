@@ -381,12 +381,16 @@ export function evaluatePlo4LivePolicy(
   const nutWrap = facts.nutStraightOutCards.length >= 8;
   const dominatedDraw = facts.flushes.some((f) => f.draw && f.higherFlushPossible);
   const set = facts.setRanks.length > 0;
+  const strongMade = nuts.category >= 7;
   receipt.features = [
     nutWrap && 'nut_wrap',
     facts.wrapOutCount > 0 && 'straight_redraw',
     nutDraw && 'nut_flush_draw',
     dominatedDraw && 'dominated_flush_draw',
     set && 'set',
+    nuts.category === 7 && 'full_house',
+    nuts.category === 8 && 'quads',
+    nuts.category >= 9 && 'straight_flush',
     facts.nutStraight && 'nut_straight',
     facts.nutFlushBlockerSuits.length > 0 && 'nut_flush_blocker',
     active.length > 1 && 'multiway',
@@ -409,7 +413,11 @@ export function evaluatePlo4LivePolicy(
   const upper = e ? Math.min(1, e.equity + 2.576 * e.standardError) : null;
   const pressure = (active.length - 1) * 0.025 + Number(receipt.role === 'facing_raise') * 0.04;
   if (!callCost) {
-    if (isNut || (set && (!e || e.equity > 0.55)) || (lower !== null && lower > 0.58 + pressure))
+    if (
+      isNut ||
+      ((set || strongMade) && (!e || e.equity > 0.55)) ||
+      (lower !== null && lower > 0.58 + pressure)
+    )
       return finish('postflop_value', wager(spr < 2 ? 1 : 0.66));
     if ((nutDraw || nutWrap) && active.length === 1 && receipt.position === 'button')
       return finish('postflop_nut_draw_pressure', wager(0.5));
@@ -420,6 +428,7 @@ export function evaluatePlo4LivePolicy(
   if (upper !== null && upper < price + pressure) return finish('postflop_price_fold', passive());
   if (
     dominatedDraw &&
+    !strongMade &&
     !set &&
     !facts.nutStraight &&
     spr > 3 &&
@@ -433,7 +442,7 @@ export function evaluatePlo4LivePolicy(
     receipt.role !== 'call_off'
   )
     return finish('postflop_value_raise', wager(0.66));
-  if (isNut || set || nutDraw || nutWrap || (e && e.equity >= price + pressure))
+  if (isNut || strongMade || set || nutDraw || nutWrap || (e && e.equity >= price + pressure))
     return finish('postflop_price_call', call());
   // No equity available is explicit; bounded own-card texture still owns the node.
   return finish(e ? 'postflop_bluff_catcher_fold' : 'postflop_uncalibrated_texture', passive());

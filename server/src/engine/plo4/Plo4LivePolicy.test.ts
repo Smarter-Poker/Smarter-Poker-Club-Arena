@@ -51,6 +51,36 @@ const tournament = (input: ReturnType<typeof plo4ReferenceSpot>) => {
   return input;
 };
 describe('Phase 10 complete bounded PLO4 baseline', () => {
+  it.each([
+    ['Ac Kc Qd Js', 'As Ah Ad 3c 4h', 'quads'],
+    ['Ac Kh Qd Js', 'As Ah Kc 3c 4h', 'full_house'],
+  ])(
+    'prices %s without requiring a pocket pair or a sampled-equity receipt',
+    (hole, board, feature) => {
+      const input = plo4ReferenceSpot('royal_flush');
+      input.hero.cards = plo4Cards(hole);
+      input.state.communityCards = plo4Cards(board);
+      const facing = evaluatePlo4LivePolicy(
+        input.hero,
+        input.state,
+        input.baseline,
+        null,
+        'candidate',
+        () => 0
+      );
+      expect(facing.receipt.features).toContain(feature);
+      expect(facing.decision.action).toBe('call');
+      input.state.currentBet = input.state.toCall = input.state.players[1].bet = 0;
+      input.state.legalActions = ['check', 'bet'];
+      input.state.minRaiseTo = 2;
+      input.state.maxRaiseTo = 60;
+      input.baseline = { action: 'check', thinkTime: 0 };
+      expect(
+        evaluatePlo4LivePolicy(input.hero, input.state, input.baseline, null, 'candidate', () => 0)
+          .decision.action
+      ).toBe('bet');
+    }
+  );
   it('distinguishes all-in calls from short raises using the controller flag', () => {
     const input = plo4ReferenceSpot('premium_open');
     input.state.actionHistory = [

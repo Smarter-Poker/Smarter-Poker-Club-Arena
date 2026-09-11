@@ -1,0 +1,30 @@
+# CA-03-09 clock and restart runtime acceptance
+
+The focused runtime acceptance passed both scenarios, and the complete server TypeScript check passed. CA-03-09 remains open. This proves runtime composition against explicit in-memory persistence, not current production database behavior or deployment adoption.
+
+Evidence: [runtime result and all source hashes](2026-09-11-phase-three-clock-restart-runtime.json). Tested checkout: `9cef09499abe0fd7204e1dea07c1151bb70186af`. All 1005 recorded source inputs stayed unchanged during the focused run and type check. The test source SHA-256 is `719016e27e1fcb8f42963094392a817c4451c626f9ae73103864fd5186edb39b`.
+
+| Scenario                                             | Actual behavior verified                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Real hand spans the maintenance countdown            | Imported HandController performs call/check/check/fold; PreciseActionTimer fires the final action at the original absolute deadline under tournament B authority even though the shared scheduler started in tournament A context. The actual maintenance restart gate remains closed while cards are active and while the modeled hand persistence boundary retains the controller. After the boundary, the actual table pause gate parks and the restart gate opens. Player stacks still total 2,000. |
+| Break survives maintenance ownership adoption        | The real MaintenanceBreak store claim rotates its token and retains the already announced 13:00 deadline. A different pause owner's resume cannot release maintenance. The table wakes only when maintenance ends.                                                                                                                                                                                                                                                                                      |
+| Real manager resumes under a replacement generation  | Full TournamentManagerBase.resume executes, then the real pause/countdown methods preserve 30 seconds of a 600-second blind level. The retired manager's lifecycle callback never runs and its lease renewal is rejected. A replacement restores the persisted anchor and same break end without arming the level clock during the pause. Calls made inside a different tournament context are refused before resume.                                                                                   |
+| Thaw completes five seconds after the break deadline | Maintenance remains frozen, the tournament keeps on_break=true, and the real table gate stays held while the thaw promise is pending. After completion, on_break clears once and the level clock gets exactly its remaining 30 seconds. Only the replacement generation reaches the next-level boundary, once.                                                                                                                                                                                          |
+
+The harness imports the real hand controller, deadline scheduler, action timer, MaintenanceBreak, manager resume/break/clock methods, table pause methods, lifecycle fences and data-context binding. It does not extract or rewrite their source. External boundaries are explicit fixtures: tournament read/write transport; maintenance store persistence; hand commit completion; thaw completion; dealer startup and table presence; child table-lease transport; entry-window/elimination operations; broadcast transport; and the next-level transition. The finite manager proof deadline is supplied by the fixture, so this is not an actual lease-claim/heartbeat RPC acceptance proof.
+
+Run from `server/`:
+
+```sh
+npm test -- src/tournament/PhaseThreeClockRestartAcceptance.test.ts --reporter=verbose
+npx tsc --noEmit --pretty false
+```
+
+The remaining acceptance requirements are concrete:
+
+1. Verify the exact current fn_thaw_platform composition, frozen-minute credits and replay behavior in a rollback-only native proof. The historical candidate prepared in the separate thaw lane is not certified as the current deployed authority. No database proof was executed by this runtime lane.
+2. Join an actual accepted hand/stack persistence boundary and canonical table move to maintenance/restart recovery. Existing native move races and these runtime cases remain separate; neither establishes that combined scenario.
+3. Prove the actual database lease generation/renewal and stale-writer boundaries together with that scenario. Here, in-process manager fencing is real, while persistence and child lease transport are fixtures.
+4. Verify adoption and observable clock/pause behavior on the deployed engine containing these tested sources. A previously adopted c58 build does not establish adoption of this checkout's later merged context/clock changes.
+
+No activation bundle, shared native runner, database function, production row or git commit was changed by this lane. The earlier failed runs are fixture-development history, not acceptance evidence: the final result above follows the player-specific timer lookup, explicit cross-context refusal assertion and correctly typed broadcast transport.

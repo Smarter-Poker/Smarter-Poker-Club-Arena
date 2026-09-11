@@ -1,0 +1,55 @@
+{
+  "at": "2026-09-11T09:42:01.808647+00:00",
+  "engine": {
+    "http_status": 200,
+    "version": "9284d7ec",
+    "instanceId": "1-10dda025",
+    "liveness": "ok",
+    "status": "ok",
+    "running": true,
+    "stalledTableCount": 0,
+    "blockedSettlementCount": 0,
+    "equityWorkerPool": {
+      "phase": "ready",
+      "configuredWorkers": 1,
+      "readyWorkers": 1,
+      "busyWorkers": 0,
+      "queueDepth": 0,
+      "oldestQueuedAgeMs": 0,
+      "lastCompletionAgeMs": 168,
+      "lastError": null,
+      "queueExpirations": 6,
+      "executionTimeouts": 0,
+      "respawnBudgetRemaining": 10,
+      "nextRecoveryAt": null,
+      "recoveries": 0
+    },
+    "maintenance": {
+      "active": false,
+      "phase": "idle",
+      "durableConfirmed": false,
+      "breakEndsAt": null,
+      "remainingMs": 0,
+      "unparkedTables": 0,
+      "readyForRestart": false,
+      "reason": "Scheduled Engine Maintenance",
+      "resumeWaves": {
+        "total": 8,
+        "done": 8,
+        "startedAt": 1789117203809,
+        "finishedAt": 1789117214310,
+        "tables": 693,
+        "tablesResumed": 693,
+        "gapMs": 1500
+      },
+      "dbClockSkewMs": -13
+    }
+  },
+  "frontend": {
+    "http_status": 200,
+    "ca_sha": "189471a5a066c1aa6aa2da7a4f8995a13578a574",
+    "built_at": "2026-09-11T09:31:15Z",
+    "built_by": "publish-club-arena.yml",
+    "run_id": "34584363451"
+  }
+}

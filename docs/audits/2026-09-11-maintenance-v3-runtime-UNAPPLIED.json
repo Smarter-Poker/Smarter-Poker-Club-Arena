@@ -1,0 +1,63 @@
+{
+  "status": "UNAPPLIED_REVIEW_ONLY",
+  "runtime_integration_tested": false,
+  "automatic_review_rejected": true,
+  "rejection_reason": "Broad production maintenance-thaw and recovery rewrite could keep live tables paused or disrupt releases; reviewer requires specific approval beyond general Phase3 authorization.",
+  "head": "ef93a89b698ea138d2ab9bbc2d89150a78b4e179",
+  "patch_sha256": "7fad49954a5968fdc53b36d2bfa230fe74d236897b4d251900e3f20212666953",
+  "sources": {
+    "server/src/GameServer.ts": {
+      "before_sha256": "b45bd55e08fed91ac07ed379c66a43b5d1f69306a95677e4ec258c341e24742b",
+      "candidate_sha256": "2f9ec5e1b77b93af26afc0a898f89b5c2b0665103f65532c11ad2fbbc8b79245"
+    },
+    "server/src/maintenance/MaintenanceBreak.ts": {
+      "before_sha256": "068da7d2b8a7974d982e710162fbeadac4e2417308facb4026c01c1145070bad",
+      "candidate_sha256": "6bb2fe24f2351c59fb1c35240d22717fc9dcf3aee80c0733303feba18c1c5022"
+    },
+    "server/src/maintenance/maintenanceBreakStore.ts": {
+      "before_sha256": "63b1f7fd6289c7ff6730818c2c730ee93efe46648b7a837bd5ea71c4920c7ddd",
+      "candidate_sha256": "4710568c8b036d80bbc88506f5c649f21630e6ae45e92b7ea95a266a18a4871c"
+    },
+    "server/src/maintenance/reconnectFreeze.ts": {
+      "before_sha256": "5bca74992f62898f10f4f624c57de717d7bc96f5a5c405743e66618c33de3de0",
+      "candidate_sha256": "79c34a66492553460f2cfec16cddc3832e583d990e71253539f906ae5b13b5c5"
+    }
+  },
+  "dependencies": ["server/src/maintenance/maintenanceThawV3.ts"],
+  "approval_boundary": "Specific approval required before applying or executing this integration; no alternate checkout or transport application was attempted.",
+  "syntax_parse_only": {
+    "server/src/GameServer.ts": [],
+    "server/src/maintenance/MaintenanceBreak.ts": [],
+    "server/src/maintenance/maintenanceBreakStore.ts": [],
+    "server/src/maintenance/reconnectFreeze.ts": []
+  },
+  "candidate_code_executed": false,
+  "patch_format": "zero-context unified diff",
+  "context_lines": 0,
+  "future_application_requires": "Specific approval first, then git apply --unidiff-zero docs/audits/2026-09-11-maintenance-v3-runtime-UNAPPLIED.patch",
+  "previous_patch_sha256": "a4e70828f00edf4793f465406b2373189cc22d8818f14a038733b4c97700af9d",
+  "previous_head": "550840d0b22343004dc92221350bd0dfc11d791a",
+  "packaged_at_utc": "2026-09-11T09:51:18.343835+00:00",
+  "rebase_proof": {
+    "server/src/GameServer.ts": {
+      "original_candidate_reconstructed_exactly": true,
+      "proposal_hunks_preserved_byte_for_byte": 4,
+      "incoming_source_changed": true
+    },
+    "server/src/maintenance/MaintenanceBreak.ts": {
+      "original_candidate_reconstructed_exactly": true,
+      "proposal_hunks_preserved_byte_for_byte": 15,
+      "incoming_source_changed": false
+    },
+    "server/src/maintenance/maintenanceBreakStore.ts": {
+      "original_candidate_reconstructed_exactly": true,
+      "proposal_hunks_preserved_byte_for_byte": 1,
+      "incoming_source_changed": false
+    },
+    "server/src/maintenance/reconnectFreeze.ts": {
+      "original_candidate_reconstructed_exactly": true,
+      "proposal_hunks_preserved_byte_for_byte": 2,
+      "incoming_source_changed": false
+    }
+  }
+}

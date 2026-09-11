@@ -102,3 +102,27 @@ build every hour.
 The one stall nothing inside a workflow can fix is a run whose runner dies so
 hard that its `always()` steps never execute; the watchdog's alarm (report only)
 names that one.
+
+## Follow-up, 2026-09-11: the web publisher hands itself on too
+
+`publish-club-arena.yml` already published on every push and always publishes
+the TIP of main (a replaced run is carried by the run that replaced it), and it
+already chained itself when main moved during a build. Its `*/30` cron and
+`publish-watchdog.sh`'s re-dispatch covered one remaining case: a run that
+FAILED or was CANCELLED with nothing queued behind it.
+
+- **New `hand-on` job** (GitHub-hosted, so it runs even when the self-hosted
+  runner is what failed): when any of `publish-needed`, `build-and-store`,
+  `client-tests` or `publish-to-origin` failed or was cancelled, it dispatches a
+  retry with `handed_on=true`. Bounded: after three failed runs in a row
+  (cancellations and skips are not counted) it says `PUBLISH GAVE UP` and stops;
+  an uncountable streak stops too (`PUBLISH TRAIN STOPPED`).
+- **A handed-on run asks production first** (`build-info.json`), so a retry
+  costs one curl when a newer push's run already published the tip. Pushes and
+  hand-made dispatches are still never deduped.
+- **The Converge chain** dispatches handed-on runs, and when it cannot even read
+  the tip it chains one anyway instead of trusting a cron that no longer exists.
+- **No cron.** `schedule-liveness` no longer covers the publisher.
+- **`publish-watchdog.sh` reports and never dispatches.** It escalates in-app
+  when the publisher's last three runs failed (it gave up), and names a run
+  GitHub never started - the one case no workflow can hand on.

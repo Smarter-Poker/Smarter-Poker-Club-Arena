@@ -13,6 +13,7 @@ import {
   startArguments,
   fixtureTemplate,
   observationControl,
+  NativeDatabaseOwner,
 } from './runtime-files.mjs';
 
 const exec = promisify(execFile);
@@ -218,6 +219,12 @@ export class ServiceSupervisor {
     this.failed = new Promise((resolve) => {
       this.signalFailure = resolve;
     });
+    this.databaseOwner = new NativeDatabaseOwner();
+    this.databaseOwner.signal.addEventListener(
+      'abort',
+      () => this.fail('postgresql-client-connection'),
+      { once: true }
+    );
   }
 
   fail(name) {
@@ -287,6 +294,14 @@ export class ServiceSupervisor {
   async close() {
     this.stopped = true;
     this.abort.abort();
+    try {
+      await this.closeChildren();
+    } finally {
+      await this.databaseOwner.close();
+    }
+  }
+
+  async closeChildren() {
     // Only our own direct children are signalled. The container's tini owns
     // their descendants; no process scan, external PID or port is targeted.
     // A failed spawn has no PID and never emits exit: it owns no OS process.
@@ -546,12 +561,12 @@ async function start(args) {
       query_timeout: 5000,
       statement_timeout: 5000,
     };
-    db = new pg.Client({ ...connection, database: 'postgres' });
+    db = supervisor.databaseOwner.own(new pg.Client({ ...connection, database: 'postgres' }));
     await db.connect();
     await db.query(`CREATE DATABASE ${database}`);
     await db.query('REVOKE CONNECT ON DATABASE postgres, template1 FROM PUBLIC');
-    await db.end();
-    db = new pg.Client({ ...connection, database });
+    await supervisor.databaseOwner.end(db);
+    db = supervisor.databaseOwner.own(new pg.Client({ ...connection, database }));
     await db.connect();
     await db.query(`CREATE ROLE anon NOLOGIN NOBYPASSRLS;
       CREATE ROLE authenticated NOLOGIN NOBYPASSRLS;
@@ -609,11 +624,11 @@ async function start(args) {
     const spectator = await api.enrollMfa(users[2]);
     stage = 'private-observation-bridge';
     const { startObservationBridge } = await import('./observation-bridge.mjs');
-    const observerDb = new pg.Client({ ...connection, database });
+    const observerDb = supervisor.databaseOwner.own(new pg.Client({ ...connection, database }));
     try {
       await observerDb.connect();
     } catch (error) {
-      await observerDb.end().catch(() => {});
+      await supervisor.databaseOwner.end(observerDb).catch(() => {});
       throw error;
     }
     // The bridge owns this private connection from invocation through close,
@@ -727,7 +742,6 @@ async function start(args) {
     await gateway?.close();
     await bridge?.close();
     await supervisor.close();
-    await db?.end().catch(() => {});
     process.removeListener('SIGTERM', stop);
     process.removeListener('SIGINT', stop);
   }

@@ -216,6 +216,13 @@ The root-owned runtime and schema provenance remain authoritative for complete
 fixture bootstrapping. This package's tiny native SQL table checks protocols and
 binaries; it does not claim equivalence to the application schema.
 
+Both bootstrap paths attach database error ownership before connecting. An idle
+driver failure retires full-runtime readiness and aborts an in-flight service
+command without exposing driver messages. Shutdown collects owned children and
+joins all database connection closes within the fixed database deadline. The
+native wire regression exercises the pinned pg driver and an actual child in
+both paths; it is failure-handling evidence, not an application database pass.
+
 ## Credential-free Linux CI path
 
 After the normal draft PR includes the complete reviewed runtime files, use a

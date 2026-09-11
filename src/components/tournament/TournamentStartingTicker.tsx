@@ -63,11 +63,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { reportError } from '../../utils/errorReporter';
-import { busToast } from '../../core/MasterBus';
+import { busToast, type BusPayloadMap } from '../../core/MasterBus';
 import { useTableSettings } from '../../hooks/useTableSettings';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import {
   DEFAULT_TICKER_SETTINGS,
+  resetTickerSettingsCache,
   tickerManagementService,
   type ManagedTickerSettings,
 } from '../../services/TickerManagementService';
@@ -122,6 +123,8 @@ export function TournamentStartingTicker() {
   const [managedTicker, setManagedTicker] =
     useState<ManagedTickerSettings>(DEFAULT_TICKER_SETTINGS);
   const [tickerScopeRevision, setTickerScopeRevision] = useState(0);
+  const [viewerRevision, setViewerRevision] = useState(0);
+  const scopeEpochRef = useRef(0);
 
   /* The live ticker belongs on active tables and inside a club's live lobby.
      The club route matters: its desktop reference reserves this exact strip
@@ -153,8 +156,18 @@ export function TournamentStartingTicker() {
   useEffect(() => {
     if (!onTickerRoute) return undefined;
     let cancelled = false;
+    let inFlight = false;
+    let pending = false;
+    const epoch = scopeEpochRef.current;
 
     const loadManaged = async () => {
+      if (cancelled || document.hidden || epoch !== scopeEpochRef.current) return;
+      if (inFlight) {
+        pending = true;
+        return;
+      }
+      inFlight = true;
+      pending = false;
       try {
         let clubUuid: string | null = null;
         let unionUuid: string | null = null;
@@ -180,7 +193,7 @@ export function TournamentStartingTicker() {
           unionUuid = data?.union_id || null;
         }
         const next = await tickerManagementService.get(unionUuid ? null : clubUuid, unionUuid);
-        if (!cancelled) setManagedTicker(next);
+        if (!cancelled && epoch === scopeEpochRef.current) setManagedTicker(next);
       } catch (error) {
         reportError(error, 'TournamentStartingTicker.loadManagedSettings');
         /* NOT a reset to defaults. `tickerManagementService.get` already holds
@@ -188,6 +201,9 @@ export function TournamentStartingTicker() {
            a club that switched the rail OFF stays off through a transient
            error instead of being switched back on with a different set of
            sources. See TickerManagementService. */
+      } finally {
+        inFlight = false;
+        if (pending && !cancelled && !document.hidden) void loadManaged();
       }
     };
 
@@ -195,16 +211,23 @@ export function TournamentStartingTicker() {
     const poll = setInterval(() => {
       if (!document.hidden) void loadManaged();
     }, POLL_MS);
+    const onVisibility = () => {
+      if (!document.hidden) void loadManaged();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
     return () => {
       cancelled = true;
       clearInterval(poll);
+      document.removeEventListener('visibilitychange', onVisibility);
     };
-  }, [location.pathname, onTickerRoute, tickerScopeRevision]);
+  }, [location.pathname, onTickerRoute, tickerScopeRevision, viewerRevision]);
 
   const [items, setItems] = useState<TickerItem[]>([]);
   const [now, setNow] = useState(() => Date.now());
   const [dismissed, setDismissed] = useState<Set<string>>(() => readDismissed());
   const scopeRef = useRef<Scope | null>(null);
+  const notifiedRef = useRef<Record<string, { fiveMin: boolean; ninetySec: boolean }>>({});
+  const itemsRef = useRef(items);
 
   const headerBottom = useTopChromeOffset(location.pathname);
   const tickerRef = useRef<HTMLDivElement | null>(null);
@@ -215,35 +238,71 @@ export function TournamentStartingTicker() {
      the rail scoped to the previous user's clubs. It carries the user it was
      built for and a five-minute floor now, and the two bus events that can
      make it wrong clear it immediately. */
-  const invalidateScope = useCallback(() => {
-    scopeRef.current = null;
-  }, []);
+  const invalidateScope = useCallback(
+    (
+      payload:
+        | BusPayloadMap['AUTH_STATE_CHANGED']
+        | BusPayloadMap['CLUB_JOINED']
+        | BusPayloadMap['CLUB_LEFT']
+    ) => {
+      if ('isAuthenticated' in payload) {
+        // Token rotation re-emits auth for the same viewer. Keep the confirmed
+        // rail and its toast history; there is no account transition to replay.
+        if (scopeRef.current?.userId === payload.userId) return;
+        resetTickerSettingsCache();
+      }
+      // Retire requests synchronously, before React runs effect cleanup. A slow
+      // response must not repopulate either the scope or the previous viewer's rail.
+      scopeEpochRef.current += 1;
+      scopeRef.current = null;
+      itemsRef.current = [];
+      notifiedRef.current = {};
+      setItems([]);
+      setManagedTicker((previous) => ({
+        ...previous,
+        enabled: false,
+        customMessages: [],
+        serviceMessages: [],
+      }));
+      setViewerRevision((value) => value + 1);
+    },
+    []
+  );
   useMasterBusSubscription('AUTH_STATE_CHANGED', invalidateScope);
   useMasterBusSubscription('CLUB_JOINED', invalidateScope);
+  useMasterBusSubscription('CLUB_LEFT', invalidateScope);
 
-  const loadScope = useCallback(async (): Promise<string[]> => {
-    const auth = await import('../../lib/authUtils').then((m) => m.readLocalSession());
+  const loadScope = useCallback(async (): Promise<Scope | null> => {
+    const epoch = scopeEpochRef.current;
+    const { readLocalSession } = await import('../../lib/authUtils');
+    const auth = readLocalSession();
     const uid = auth?.userId || null;
     const cached = scopeRef.current;
     if (cached && cached.userId === uid && Date.now() - cached.fetchedAt < SCOPE_TTL_MS) {
-      return cached.clubIds;
+      return cached;
     }
     if (!uid) {
       scopeRef.current = { clubIds: [], fetchedAt: Date.now(), userId: null };
-      return [];
+      return scopeRef.current;
     }
     try {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('club_members')
         .select('club_id')
         .eq('user_id', uid)
         .in('status', ['active', 'approved']);
+      if (error) throw error;
+      if (epoch !== scopeEpochRef.current || (readLocalSession()?.userId || null) !== uid) {
+        return null;
+      }
       const ids = (data || []).map((r: { club_id: string }) => r.club_id).filter(Boolean);
       scopeRef.current = { clubIds: ids, fetchedAt: Date.now(), userId: uid };
-      return ids;
+      return scopeRef.current;
     } catch (e) {
       reportError(e, 'TournamentStartingTicker.loadScope');
-      return cached?.clubIds || [];
+      // An error is not an authoritative empty membership list. Retry on the
+      // next tick without poisoning the five-minute cache or borrowing a user.
+      return null;
     }
   }, []);
 
@@ -252,11 +311,26 @@ export function TournamentStartingTicker() {
   // ── Poll for everything the enabled sources need ──
   useEffect(() => {
     let cancelled = false;
+    let inFlight = false;
+    let pending = false;
+    const epoch = scopeEpochRef.current;
 
     const fetchFeed = async () => {
-      const clubIds = await loadScope();
-      if (cancelled || clubIds.length === 0) return;
+      if (cancelled || document.hidden || epoch !== scopeEpochRef.current) return;
+      if (inFlight) {
+        pending = true;
+        return;
+      }
+      inFlight = true;
+      pending = false;
       try {
+        const scope = await loadScope();
+        if (cancelled || epoch !== scopeEpochRef.current || !scope) return;
+        const { clubIds } = scope;
+        if (clubIds.length === 0) {
+          setItems([]);
+          return;
+        }
         const nowIso = new Date().toISOString();
         const horizonIso = new Date(Date.now() + LEAD_MS).toISOString();
 
@@ -267,9 +341,8 @@ export function TournamentStartingTicker() {
            once and intersected here. */
         const registrationsPromise = sources.starting_soon
           ? (async () => {
-              const auth = await import('../../lib/authUtils').then((m) => m.readLocalSession());
-              if (!auth?.userId) return new Set<string>();
-              const { data: regData } = await supabase
+              if (!scope.userId) return new Set<string>();
+              const { data: regData, error } = await supabase
                 .from('tournament_players')
                 .select('tournament_id')
                 // The column is written by TournamentService in LOWER case
@@ -278,12 +351,16 @@ export function TournamentStartingTicker() {
                 // pre-start MTTs, so 'playing' cannot leak a running event onto
                 // the bar, and keeping it means a re-entry row mid-flip still
                 // reads as entered.
-                .eq('user_id', auth.userId)
+                .eq('user_id', scope.userId)
                 .in('status', ['registered', 'playing'])
                 // ORDER BY is required, not cosmetic: a bare LIMIT in Postgres
                 // returns ARBITRARY rows.
                 .order('registered_at', { ascending: false })
                 .limit(200);
+              if (error) {
+                reportError(error, 'TournamentStartingTicker.fetchRegistrations');
+                return null;
+              }
               return new Set(
                 (regData || []).map((r: { tournament_id: string }) => r.tournament_id)
               );
@@ -377,17 +454,18 @@ export function TournamentStartingTicker() {
           opsTablePromise,
         ]);
 
-        if (cancelled) return;
+        const auth = await import('../../lib/authUtils').then((m) => m.readLocalSession());
+        if (cancelled || epoch !== scopeEpochRef.current || (auth?.userId || null) !== scope.userId)
+          return;
 
         const current = Date.now();
         const next: TickerItem[] = [];
+        const failedKinds = new Set<TickerItem['kind']>();
 
-        if (upcomingRes.error) {
-          // Reported, not swallowed. The bar correctly renders NOTHING on a
-          // failed poll (it never claims "no tournaments"), but a silent return
-          // also meant a permanently broken query looked identical to a quiet
-          // schedule.
-          reportError(upcomingRes.error, 'TournamentStartingTicker.fetchUpcoming');
+        if (upcomingRes.error || myRegs === null) {
+          if (upcomingRes.error)
+            reportError(upcomingRes.error, 'TournamentStartingTicker.fetchUpcoming');
+          failedKinds.add('starting_soon');
         } else {
           for (const t of (upcomingRes.data || []) as Record<string, unknown>[]) {
             const upcoming: UpcomingTournament = {
@@ -407,15 +485,30 @@ export function TournamentStartingTicker() {
 
         if (overlayRes.error) {
           reportError(overlayRes.error, 'TournamentStartingTicker.fetchOverlays');
+          failedKinds.add('overlays');
         } else {
           for (const announcement of rankOverlayAnnouncements(
             (overlayRes.data ?? []) as OverlayCandidate[]
           )) {
-            next.push(overlayItem(announcement));
+            // An overlay has no fixed closing timestamp. Let a confirmed
+            // snapshot survive one failed poll, never an indefinite outage.
+            next.push({ ...overlayItem(announcement), expiresAt: current + 2 * POLL_MS });
           }
         }
 
-        for (const row of (opsTournamentRes.data || []) as Record<string, unknown>[]) {
+        if (opsTournamentRes.error) {
+          reportError(
+            opsTournamentRes.error,
+            'TournamentStartingTicker.fetchOperationalTournaments'
+          );
+          failedKinds.add('registration_closing');
+          failedKinds.add('guarantees');
+          failedKinds.add('winner_results');
+        }
+        for (const row of (opsTournamentRes.error ? [] : opsTournamentRes.data || []) as Record<
+          string,
+          unknown
+        >[]) {
           const status = String(row.status || '').toUpperCase();
           const starts = new Date(String(row.start_time || 0)).getTime();
           const id = String(row.id);
@@ -458,7 +551,14 @@ export function TournamentStartingTicker() {
           }
         }
 
-        for (const row of (opsTableRes.data || []) as Record<string, unknown>[]) {
+        if (opsTableRes.error) {
+          reportError(opsTableRes.error, 'TournamentStartingTicker.fetchTableOpenings');
+          failedKinds.add('table_openings');
+        }
+        for (const row of (opsTableRes.error ? [] : opsTableRes.data || []) as Record<
+          string,
+          unknown
+        >[]) {
           const created = new Date(String(row.created_at || 0)).getTime();
           next.push(
             tableOpeningItem(
@@ -470,9 +570,17 @@ export function TournamentStartingTicker() {
           );
         }
 
-        setItems(next);
+        // A failed source keeps its last confirmed announcements only until
+        // their existing deadlines. A successful empty result still clears it.
+        setItems((previous) => [
+          ...next,
+          ...previous.filter((entry) => failedKinds.has(entry.kind)),
+        ]);
       } catch (e) {
         reportError(e, 'TournamentStartingTicker.fetchFeed');
+      } finally {
+        inFlight = false;
+        if (pending && !cancelled && !document.hidden) void fetchFeed();
       }
     };
 
@@ -512,6 +620,7 @@ export function TournamentStartingTicker() {
     };
   }, [
     loadScope,
+    viewerRevision,
     sources.starting_soon,
     sources.overlays,
     sources.registration_closing,
@@ -545,17 +654,17 @@ export function TournamentStartingTicker() {
   const lane = useMemo(
     () =>
       tickerLaneFor(
-        [...items, ...operatorItems].filter((entry) => !dismissed.has(entry.id)),
+        [...items, ...operatorItems].filter(
+          (entry) => sources[entry.kind] && !dismissed.has(entry.id)
+        ),
         now
       ),
-    [items, operatorItems, dismissed, now]
+    [items, operatorItems, dismissed, now, sources]
   );
 
   /* ── THE ONE-SECOND TICK ──────────────────────────────────────────────────
      Only runs while something with a clock is actually on the bar. */
   const hasClock = lane.some((entry) => typeof entry.deadlineMs === 'number');
-  const notifiedRef = useRef<Record<string, { fiveMin: boolean; ninetySec: boolean }>>({});
-  const itemsRef = useRef(items);
   useEffect(() => {
     itemsRef.current = items;
   }, [items]);
@@ -574,9 +683,12 @@ export function TournamentStartingTicker() {
   const upcomingForToasts = useMemo(
     () =>
       items.filter(
-        (entry) => entry.kind === 'starting_soon' && typeof entry.deadlineMs === 'number'
+        (entry) =>
+          sources.starting_soon &&
+          entry.kind === 'starting_soon' &&
+          typeof entry.deadlineMs === 'number'
       ),
-    [items]
+    [items, sources.starting_soon]
   );
   useEffect(() => {
     if (upcomingForToasts.length === 0) return undefined;

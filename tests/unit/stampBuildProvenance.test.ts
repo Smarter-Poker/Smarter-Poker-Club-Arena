@@ -226,7 +226,17 @@ describe('actual build provenance subprocess', () => {
       const stale = stamp(dir, { GITHUB_ACTIONS: 'true' });
       expect(stale.status).toBe(1);
       expect(stale.stderr).toContain('1 commit(s) BEHIND origin/main');
-    }
+    },
+    // This case builds two fixture repositories and then spawns roughly twenty
+    // subprocesses - twelve `git` calls in shallowMerge, three `stamp` runs
+    // (each a fresh node process) and the fetches between them. The `git`
+    // helper above already allows 10s FOR ONE CALL, so a 5s budget for the
+    // whole test contradicts its own helper and can only ever have passed on an
+    // idle machine: it went red under a loaded full-suite run while every
+    // assertion in it held, and green in isolation minutes later. A test whose
+    // result depends on what else is running is not a signal (CLAUDE.md 10.86).
+    // Not one assertion is changed; only the wall clock it is allowed.
+    30_000
   );
 
   it('warns on shallow local diagnostics but refuses a strict local release', () => {

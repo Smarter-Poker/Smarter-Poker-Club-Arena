@@ -14,6 +14,7 @@ import { supabase } from './client.js';
 import { reportError } from '../errorReporter.js';
 import { raiseFinancialAlert } from '../financialAlerts.js';
 import { bbjSharesParkedTotal } from '../../observability/engineInstruments.js';
+import { isMaintenanceFrozen } from '../../maintenance/freezeState.js';
 
 /**
  * BBJ AUDIT 2026-09-05: every club that shares a jackpot pool with `clubId`.
@@ -284,6 +285,64 @@ export async function processBBJPayout(
       () => bbjPayoutQueue!.claim(params, 'write-ahead: detected, payout not yet attempted'),
       'claim'
     );
+  }
+
+  /* ═════════════════════════════════════════════════════════════════════════
+     A JACKPOT IS A CHIP MOVEMENT, AND THE PLATFORM FREEZES (2026-09-11)
+     ═════════════════════════════════════════════════════════════════════════
+
+     Dan, section 13: "THE ENTIRE PLATFORM NEEDS TO FREEZE FOR THE 5 MINUTES,
+     NO BUY INS, NO CHIP MOVEMENTS ... EVERYTHING JUST FREEZES, THEN PICKS BACK
+     UP EXACTLY AS IT WAS." Rule 5 of that section: a sweep checks
+     `isMaintenanceFrozen()` before moving money or seats. Crediting a seat
+     with a jackpot share is moving money.
+
+     WHY THE DATABASE WAS NEVER GOING TO CATCH THIS. `zz_freeze_guard` sits on
+     `table_seats` and `club_members` - the two tables this payout credits -
+     and it looks like the backstop. It is not, for the engine:
+     `fn_refuse_while_frozen` returns early for any caller whose
+     `request.jwt.claims.role` is `service_role`, and the engine holds
+     SUPABASE_SERVICE_ROLE_KEY. So the freeze is enforced against browsers and
+     not against us; on this path the engine is the only thing that can honour
+     it, and this function did not.
+
+     The header above already named "the :55 maintenance freeze refusing the
+     write" as one of the causes the queue exists to survive. It cannot refuse
+     us, so that survival path was never reached and the payout simply went
+     through.
+
+     MEASURED BEFORE IT WAS CHANGED: zero of the 27 payouts since the freeze
+     shipped on 2026-09-01 landed between :55 and :00. That is the break
+     working - tables are told to finish at :53 and parked at :55 - and not a
+     guarantee: a long hand, `drainHands()` parking mid-flight at the :57
+     restart, or a reconciler re-drive landing in the window would each put a
+     credit inside the freeze.
+
+     WHY DEFERRING COSTS NOBODY ANYTHING. The write-ahead claim above is
+     already on disk, and it is a RECORD rather than a chip movement, so it is
+     not what the freeze forbids. The row survives the :57 engine restart, the
+     reconciler re-drives it once play resumes, and the RPC is idempotent on
+     (pool, table, hand) - so a jackpot deferred by a break is paid in full a
+     few minutes later rather than not paid at all. "PICKS BACK UP EXACTLY AS
+     IT WAS" is the whole design.
+
+     AND IT IS NOT A FAILURE. Falling into the attempt loop would burn four
+     attempts against a guard that is doing its job and end in a CRITICAL
+     financial alert for a break we scheduled - the alarm-that-is-always-on
+     shape CLAUDE.md 10.84 warns about. This returns `queued` directly, with
+     no attempts and no alert. */
+  if (isMaintenanceFrozen()) {
+    const reason =
+      'platform frozen for the scheduled maintenance break; the claim is on disk ' +
+      'and the reconciler pays it when play resumes';
+    console.log(
+      `[processBBJPayout] deferring ${params.kind === 'mini' ? 'mini ' : ''}jackpot for ` +
+        `${params.tableId}#${params.handNumber}: ${reason}`
+    );
+    if (owned) {
+      await queueSafely(() => bbjPayoutQueue!.claim(params, `deferred: ${reason}`), 'claim');
+    }
+    return { status: 'queued', lastError: reason };
   }
 
   let lastError = '';

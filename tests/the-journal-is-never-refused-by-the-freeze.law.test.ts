@@ -67,3 +67,77 @@ describe('the journal is never refused by the freeze', () => {
     expect((sql.match(/^COMMIT;$/gm) || []).length).toBe(1);
   });
 });
+
+/**
+ * LAW 3 - THE LIVE PAYOUT CHECKS THE FREEZE TOO (2026-09-11).
+ *
+ * LAW 2 above pinned the REPAIR sweep. The live path was never pinned, and it
+ * never checked: `processBBJPayout` went straight to the RPC whatever the
+ * clock said.
+ *
+ * The freeze guard looked like the backstop and is not, for us. This law's own
+ * header records why in the other direction - `bbj_pools` sits OUTSIDE the
+ * guard, which is how 104 bank moves kept their write and lost their journal
+ * leg at :55. The engine's half is worse: `fn_refuse_while_frozen` returns
+ * early for any caller whose `request.jwt.claims.role` is `service_role`, and
+ * the engine holds SUPABASE_SERVICE_ROLE_KEY, so the guard on `table_seats`
+ * and `club_members` - the two tables the payout credits - never fires for the
+ * engine at all. On this path the engine is the only thing that can honour
+ * Dan's "NO CHIP MOVEMENTS".
+ *
+ * A deferred jackpot is not a lost one: the write-ahead claim is a RECORD
+ * rather than a chip movement, it survives the :57 restart, and the reconciler
+ * pays it at the thaw against an RPC that is idempotent on (pool, table, hand).
+ */
+describe('LAW 3: the live jackpot payout defers to the break', () => {
+  const SRC = resolve(HERE, '..', 'server/src/services/supabase/bbj.ts');
+  const RECON = resolve(HERE, '..', 'server/src/services/FeeReconciler.ts');
+  const payout = readFileSync(SRC, 'utf8');
+  const reconciler = readFileSync(RECON, 'utf8');
+  /* On the CODE. Both files explain in prose what the freeze guard does NOT
+     do, and asserting on raw text would make the explanation illegal. */
+  const strip = (s: string) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+
+  it('processBBJPayout asks before it pays', () => {
+    const code = strip(payout);
+    expect(code).toMatch(
+      /import \{ isMaintenanceFrozen \} from '\.\.\/\.\.\/maintenance\/freezeState\.js';/
+    );
+    expect(code).toMatch(/if \(isMaintenanceFrozen\(\)\) \{/);
+  });
+
+  it('the gate sits BEFORE the attempt loop, so no RPC is made at all', () => {
+    const code = strip(payout);
+    const gate = code.indexOf('if (isMaintenanceFrozen()) {');
+    const loop = code.indexOf('for (let attempt = 1; attempt <= BBJ_PAYOUT_ATTEMPTS; attempt++)');
+    expect(gate).toBeGreaterThan(-1);
+    expect(loop).toBeGreaterThan(-1);
+    expect(gate).toBeLessThan(loop);
+  });
+
+  it('it defers rather than failing: queued, with the claim still written', () => {
+    const code = strip(payout);
+    const block = code.slice(
+      code.indexOf('if (isMaintenanceFrozen()) {'),
+      code.indexOf('for (let attempt = 1; attempt <= BBJ_PAYOUT_ATTEMPTS; attempt++)')
+    );
+    // the durable record is not a chip movement, so it is still written
+    expect(block).toMatch(/bbjPayoutQueue!\.claim\(params,/);
+    expect(block).toMatch(/return \{ status: 'queued'/);
+    /* and it must NOT raise the critical alert the exhausted path raises - an
+       alarm that fires every hour on a scheduled break gets muted (10.84) */
+    expect(block).not.toMatch(/raiseFinancialAlert/);
+  });
+
+  it('the reconciler leaves a frozen row untouched and counts the deferral', () => {
+    const code = strip(reconciler);
+    expect(code).toMatch(
+      /import \{ isMaintenanceFrozen \} from '\.\.\/maintenance\/freezeState\.js';/
+    );
+    expect(code).toMatch(/row\.kind === 'bbj_payout' && isMaintenanceFrozen\(\)/);
+    expect(code).toMatch(/summary\.deferredFrozen\+\+;/);
+    /* deferred is its own outcome: folding it into resolved or stillFailing
+       would be a signal answering when it deliberately did not look (10.86) */
+    expect(code).toMatch(/deferredFrozen: number;/);
+  });
+});

@@ -34,7 +34,11 @@ vi.mock('../src/components/common/Toast', () => ({ useToast: () => io.toast }));
 vi.mock('../src/utils/clubIdResolver', () => ({ resolveClubUUID: async (id: string) => id }));
 vi.mock('../src/utils/errorReporter', () => ({ reportError: vi.fn() }));
 vi.mock('../src/hooks/useVisibilityRefresh', () => ({ useVisibilityRefresh: vi.fn() }));
-vi.mock('../src/lib/bbjPoolFeed', () => ({ watchBbjPool: () => () => {} }));
+vi.mock('../src/lib/bbjPoolFeed', () => ({
+  watchBbjPool: () => () => {},
+  getBbjAllocationPolicy: async () => null,
+  BBJ_PIVOT_APPROACH_FRACTION: 0.8,
+}));
 vi.mock('../src/components/club-buttons', () => ({
   ArenaJackpotDisplay: () => <div>Jackpot Display</div>,
 }));

@@ -40,6 +40,7 @@ import { processBBJPayout, setBBJPayoutQueue } from './supabase/bbj.js';
 import type { BBJPayoutParams } from './supabase/bbj.js';
 import { reportError } from './errorReporter.js';
 import { raiseFinancialAlert } from './financialAlerts.js';
+import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 
 /**
  * 'bbj_payout' (BBJ audit 2026-09-05): a jackpot the engine DETECTED but could
@@ -536,8 +537,14 @@ export async function reconcilePendingFees(): Promise<{
   resolved: number;
   stillFailing: number;
   exhausted: number;
+  /* DEFERRED IS ITS OWN OUTCOME (2026-09-11). A jackpot row skipped because
+     the platform is on its maintenance break is neither resolved nor still
+     failing, and folding it into either would be a signal answering when it
+     has deliberately not looked (CLAUDE.md 10.86). scanned - resolved -
+     stillFailing must still add up, so the deferral has to be countable. */
+  deferredFrozen: number;
 }> {
-  const summary = { scanned: 0, resolved: 0, stillFailing: 0, exhausted: 0 };
+  const summary = { scanned: 0, resolved: 0, stillFailing: 0, exhausted: 0, deferredFrozen: 0 };
 
   const { data, error } = await supabase
     .from('pending_fee_distributions')
@@ -620,6 +627,17 @@ export async function reconcilePendingFees(): Promise<{
           typeof receipt.rake_record_id === 'string' &&
           receipt.rake_record_id.trim() !== '';
         failureMessage = rdErr?.message ?? (ok ? '' : 'Rake banking receipt was not confirmed');
+      } else if (row.kind === 'bbj_payout' && isMaintenanceFrozen()) {
+        /* THE SWEEP CHECKS THE FREEZE (section 13 rule 5, added 2026-09-11).
+           Re-driving a jackpot credits a seat, which is a chip movement, and
+           the platform is stopped. `processBBJPayout` refuses it too - one
+           gate covering both callers - but it would do so by BUMPING this
+           row's attempt counter and writing a failure message, which reads in
+           the log as a payout that failed rather than a break we scheduled.
+           The row is left untouched and the next cycle after the thaw takes
+           it, which is the difference between deferred and failed. */
+        summary.deferredFrozen++;
+        continue;
       } else if (row.kind === 'bbj_payout') {
         // BBJ AUDIT 2026-09-05: re-drive a jackpot payout the live path could
         // not land. The parameter set was frozen at hit time (who was dealt

@@ -166,6 +166,46 @@ export const bbjDrillsFiredTotal: Counter = alwaysOnRegistry.counter(
 );
 
 /**
+ * THE MINI IS COUNTED SEPARATELY, AND UNTIL 2026-09-11 IT WAS COUNTED WRONGLY.
+ *
+ * The three counters above are documented as a set whose USEFUL READING IS THE
+ * DIFFERENCE: detected == paid is health, and a detected that never becomes
+ * paid or queued is the failure the whole of phase 2 exists to make
+ * impossible. The mini broke that arithmetic in both directions at once. It
+ * incremented `poker_bbj_payouts_queued_total` when a mini was queued, and
+ * incremented NOTHING when a mini was detected or when a mini was paid. So
+ * every queued mini widened `detected - queued - paid` and read exactly like
+ * the main jackpot failing to deliver, while a mini that stopped paying
+ * altogether moved no series at all.
+ *
+ * They are their own counters rather than a `kind` label on the existing ones
+ * because the two jackpots are separate products with separate economics - the
+ * mini is a flat amount out of a per-pool reserve, the main a share of a pool -
+ * and because an existing dashboard or alert reading the main's series must
+ * keep meaning what it meant before this commit.
+ *
+ * The same difference is the useful reading here: mini detected == mini paid
+ * is health, and mini detected climbing while mini paid does not is a reserve
+ * sitting on its floor.
+ */
+export const bbjMiniHitsDetectedTotal: Counter = alwaysOnRegistry.counter(
+  'poker_bbj_mini_hits_detected_total',
+  'MINI Bad Beat Jackpot hits the engine ruled qualifying at showdown (fleet total)'
+);
+export const bbjMiniPayoutsPaidTotal: Counter = alwaysOnRegistry.counter(
+  'poker_bbj_mini_payouts_paid_total',
+  'MINI Bad Beat Jackpot payouts that landed on the first live attempt (fleet total)'
+);
+export const bbjMiniPayoutsQueuedTotal: Counter = alwaysOnRegistry.counter(
+  'poker_bbj_mini_payouts_queued_total',
+  'MINI Bad Beat Jackpot payouts queued for the reconciler (fleet total)'
+);
+export const bbjMiniPayoutsRefusedTotal: Counter = alwaysOnRegistry.counter(
+  'poker_bbj_mini_payouts_refused_total',
+  'MINI Bad Beat Jackpot hits that qualified and were refused, reserve at floor included (fleet total)'
+);
+
+/**
  * Span exporter is attached ONLY when the flag is on, so span export is a no-op
  * by default. Span duration always feeds handDuration when a span is created,
  * but the engine only creates spans under the same flag, so with the flag unset
@@ -522,6 +562,13 @@ actionIdempotencyTotal.inc(0, { outcome: 'conflict' });
 bbjHitsDetectedTotal.inc(0);
 bbjPayoutsPaidTotal.inc(0);
 bbjPayoutsQueuedTotal.inc(0);
+/* At zero from boot, like every counter above: a series that only appears the
+   first time a mini fires cannot be told apart from a scrape that missed it,
+   and "no minis" and "no instrument" would read identically. */
+bbjMiniHitsDetectedTotal.inc(0);
+bbjMiniPayoutsPaidTotal.inc(0);
+bbjMiniPayoutsQueuedTotal.inc(0);
+bbjMiniPayoutsRefusedTotal.inc(0);
 bbjSharesParkedTotal.inc(0);
 bbjDrillsFiredTotal.inc(0);
 showdownHandsTotal.inc(0);

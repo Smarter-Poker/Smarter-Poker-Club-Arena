@@ -6,7 +6,12 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
-import { watchBbjPool } from '../lib/bbjPoolFeed';
+import {
+  watchBbjPool,
+  getBbjAllocationPolicy,
+  BBJ_PIVOT_APPROACH_FRACTION,
+  type BbjAllocationPolicy,
+} from '../lib/bbjPoolFeed';
 import { watchBbjMini, type BbjMiniSnapshot, type BbjMiniReadOutcome } from '../lib/bbjMiniFeed';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
@@ -70,6 +75,11 @@ export default function BadBeatJackpotPage() {
   const [justUpdated, setJustUpdated] = useState(false);
   /** True when the last read threw. Distinct from "this club has no pool". */
   const [loadFailed, setLoadFailed] = useState(false);
+  /* The allocation rule, read from the allocator rather than mirrored as a
+     constant. Null until it answers, and null FOREVER if it could not be read -
+     the approach banner renders nothing rather than counting toward a
+     threshold it invented. */
+  const [allocationPolicy, setAllocationPolicy] = useState<BbjAllocationPolicy | null>(null);
   const [playerContribution, setPlayerContribution] = useState(0);
   // 2026-08-18: real hand count + own-contribution facts, from the ledger.
   const [poolFacts, setPoolFacts] = useState<{ hands: number; chips: number } | null>(null);
@@ -141,6 +151,21 @@ export default function BadBeatJackpotPage() {
    */
   const loadRef = useRef<(getIsMounted?: () => boolean) => void>(() => {});
 
+  /* THE ALLOCATION RULE, ONCE. It is a rule and not a figure - it has changed
+     by hand once since it was written - so it is read on mount and cached for
+     the session by the feed, never polled. Its own effect because it does not
+     depend on the club: every pool on the platform is allocated by the same
+     policy row. */
+  useEffect(() => {
+    let alive = true;
+    void getBbjAllocationPolicy().then((p) => {
+      if (alive) setAllocationPolicy(p);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   useEffect(() => {
     if (!clubId) {
       // Nothing will ever call the loader, so nothing will ever clear the
@@ -167,7 +192,7 @@ export default function BadBeatJackpotPage() {
         // RAKE-AUDIT 2026-07-24: resolve the ACTUAL pool (union-level when the
         // club is in a union — that is where the server banks contributions).
         // The old `club_id=eq.` filter never fired for union clubs.
-        const { data: clubRow } = await supabase
+        const { data: clubRow, error: clubErr } = await supabase
           .from('clubs')
           .select('union_id')
           .eq('id', resolvedId)
@@ -176,9 +201,31 @@ export default function BadBeatJackpotPage() {
         poolIdQuery = clubRow?.union_id
           ? poolIdQuery.eq('union_id', clubRow.union_id)
           : poolIdQuery.eq('club_id', resolvedId);
-        const { data: poolRow } = await poolIdQuery.maybeSingle();
+        const { data: poolRow, error: poolErr } = await poolIdQuery.maybeSingle();
         if (!isMounted) return;
-        const winnersFilter = poolRow?.id ? `pool_id=eq.${poolRow.id}` : `club_id=eq.${resolvedId}`;
+        /* A FILTER BUILT ON AN UNREAD ANSWER LISTENS TO NOTHING (2026-09-11).
+           Both reads above discarded their error. A failed `clubs` read left
+           `clubRow` undefined, so a UNION club fell to the club-level branch
+           and subscribed on `club_id=eq.<club>` - a filter its jackpot rows
+           never carry. The subscription then reported itself healthy and the
+           club silently stopped hearing its own jackpot land, for the life of
+           the page. Three outcomes, not two: a pool id, no pool, and could not
+           ask (CLAUDE.md 10.86). The third one does not get to masquerade as
+           the second. The ten-second poll below still drives the figure, so
+           the page keeps working; what is skipped is the one binding that
+           would have been wrong. */
+        const readFailed = clubErr || poolErr;
+        if (readFailed) {
+          reportError(
+            (clubErr || poolErr)?.message ?? 'unknown',
+            'BadBeatJackpotPage._Realtime_pool_resolution_failed'
+          );
+        }
+        const winnersFilter = readFailed
+          ? null
+          : poolRow?.id
+            ? `pool_id=eq.${poolRow.id}`
+            : `club_id=eq.${resolvedId}`;
 
         /* THE FIGURE IS POLLED (BBJ phase 3.2, 2026-09-06). `bbj_pools`
            updated 40,219 times in twenty-four hours on production, and this
@@ -210,6 +257,10 @@ export default function BadBeatJackpotPage() {
             if (isMounted) setMiniFirstRead(outcome);
           }
         );
+
+        /* No filter means the pool could not be resolved; binding on a guess
+           is what this commit removed. The poll above keeps the number live. */
+        if (!winnersFilter) return;
 
         const channel = masterBus.getOrCreateChannel(channelKey);
         channel
@@ -314,12 +365,27 @@ export default function BadBeatJackpotPage() {
         // the money — union-level pool when the club belongs to a union, else
         // the club-level pool. Union clubs previously showed a stale/empty
         // club pool while the real jackpot accumulated in the union pool.
-        const { data: clubUnionRow } = await supabase
+        /* THE ERROR IS THE THIRD OUTCOME, AND IT WAS BEING THROWN AWAY
+           (2026-09-11). This read `const { data: clubUnionRow } = ...`.
+           supabase-js RETURNS its errors rather than throwing them, so a
+           failed read left `clubUnionRow` undefined, the query below silently
+           fell back to the CLUB pool for a union club, and the page showed an
+           empty pool under the club's own name - indistinguishable from a club
+           that has never banked a chip. Raising it is what reaches the catch
+           below, which is what sets `loadFailed`, which is what makes the
+           "Could Not Load The Jackpot" screen further down reachable at all.
+           That screen was written for this case and nothing could get to it
+           (CLAUDE.md 10.86: never coerce an unreadable answer into an empty
+           one). */
+        const { data: clubUnionRow, error: clubUnionErr } = await supabase
           .from('clubs')
           .select('union_id')
           .eq('id', resolvedId)
           .maybeSingle();
         if (!isCurrent()) return;
+        if (clubUnionErr) {
+          throw new Error(`Could not read the club's union: ${clubUnionErr.message}`);
+        }
         let jackpotQuery = supabase
           .from('bbj_pools')
           .select(
@@ -328,7 +394,13 @@ export default function BadBeatJackpotPage() {
         jackpotQuery = clubUnionRow?.union_id
           ? jackpotQuery.eq('union_id', clubUnionRow.union_id)
           : jackpotQuery.eq('club_id', resolvedId);
-        const { data: jackpotData } = await jackpotQuery.maybeSingle();
+        const { data: jackpotData, error: jackpotErr } = await jackpotQuery.maybeSingle();
+        /* Same discarded error, on the read this whole page is about. A pool
+           that could not be READ and a club with no pool are different facts,
+           and only one of them is the player's to act on. */
+        if (jackpotErr) {
+          throw new Error(`Could not read the jackpot pool: ${jackpotErr.message}`);
+        }
 
         if (!isCurrent()) return;
         if (jackpotData) {
@@ -506,62 +578,88 @@ export default function BadBeatJackpotPage() {
         />
       </div>
 
-      {/* 100K Pivot Law Threshold Alert */}
-      {/* RAKE-AUDIT 2026-07-24: alert fired at 50k (50% of pivot) while the
-          progress math used 100k — aligned to the actual 100k pivot approach
-          zone (>=80%) so the banner matches the allocation switchover. */}
-      {(jackpot?.main_balance || 0) >= 80000 && (
-        <div
-          style={{
-            margin: '0 1rem 0.75rem',
-            padding: '12px 16px',
-            background:
-              'linear-gradient(135deg, rgba(213, 218, 226,0.08) 0%, rgba(186, 193, 203,0.06) 100%)',
-            border: '1px solid rgba(213, 218, 226,0.25)',
-            borderRadius: '12px',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-          }}
-        >
-          <div>
-            <span
-              style={{
-                fontSize: '0.75rem',
-                color: '#d5dae2',
-                fontWeight: 700,
-                textTransform: 'uppercase',
-                letterSpacing: '0.5px',
-              }}
-            >
-              100K Pivot Alert
-            </span>
-            <div style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.5)', marginTop: '2px' }}>
-              Pool At {(((jackpot?.main_balance || 0) / 100000) * 100).toFixed(1)}% Of Pivot
-              Threshold
-            </div>
-          </div>
+      {/* THE PIVOT, READ FROM THE ALLOCATOR (2026-09-11).
+
+          This banner typed `>= 80000` as its trigger and divided by `100000`
+          for its percentage and its bar - the same threshold written three
+          times, none of them the authority. The authority is `ca_bbj_policy`,
+          which `fn_bbj_allocate` reads on every raked hand and which is a
+          TABLE: one UPDATE moves the real pivot with no migration and no
+          failing test, after which this banner would have gone on counting
+          toward a number the bank had stopped using.
+
+          RAKE-AUDIT 2026-07-24 had already caught these literals out of step
+          once - the alert fired at 50k while the bar measured against 100k -
+          and fixed it by typing a third literal. `allocationPolicy` is the
+          fix that ends the class: one read, one number.
+
+          `allocationPolicy` is null when the rule could not be READ, and a
+          banner counting toward a threshold it invented is worse than no
+          banner, so it renders nothing rather than guessing (10.86). */}
+      {allocationPolicy !== null &&
+        (jackpot?.main_balance || 0) >=
+          allocationPolicy.pivotThreshold * BBJ_PIVOT_APPROACH_FRACTION && (
           <div
             style={{
-              width: '80px',
-              height: '6px',
-              background: 'rgba(255,255,255,0.06)',
-              borderRadius: '3px',
-              overflow: 'hidden',
+              margin: '0 1rem 0.75rem',
+              padding: '12px 16px',
+              background:
+                'linear-gradient(135deg, rgba(213, 218, 226,0.08) 0%, rgba(186, 193, 203,0.06) 100%)',
+              border: '1px solid rgba(213, 218, 226,0.25)',
+              borderRadius: '12px',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
             }}
           >
+            <div>
+              <span
+                style={{
+                  fontSize: '0.75rem',
+                  color: '#d5dae2',
+                  fontWeight: 700,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px',
+                }}
+              >
+                Approaching {Math.round(allocationPolicy.pivotThreshold).toLocaleString('en-US')}
+              </span>
+              {/* WORDS A PLAYER CAN ACT ON. This read "100K Pivot Alert" over
+                "Pool At 82.3% Of Pivot Threshold" - internal vocabulary on a
+                page every player can open, and shaped like a warning about
+                their own jackpot. What actually happens at the threshold is
+                that each drop starts sending less to this pool and more to
+                promotions, so the jackpot keeps growing and grows more slowly.
+                The percentages are the policy's, never typed beside it. */}
+              <div style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.5)', marginTop: '2px' }}>
+                At {Math.round(allocationPolicy.pivotThreshold).toLocaleString('en-US')} Chips, Each
+                Hand Starts Sending {Math.round(allocationPolicy.pivotMain * 100)}% Of Its Jackpot
+                Drop Here Instead Of {Math.round(allocationPolicy.standardMain * 100)}%, And{' '}
+                {Math.round(allocationPolicy.pivotPromo * 100)}% To Club Promotions. The Jackpot
+                Keeps Growing, More Slowly.
+              </div>
+            </div>
             <div
               style={{
-                height: '100%',
-                width: `${Math.min(100, ((jackpot?.main_balance || 0) / 100000) * 100)}%`,
-                background: 'linear-gradient(90deg, #d5dae2, #8f97a3)',
+                width: '80px',
+                height: '6px',
+                background: 'rgba(255,255,255,0.06)',
                 borderRadius: '3px',
-                transition: 'width 1s ease',
+                overflow: 'hidden',
               }}
-            />
+            >
+              <div
+                style={{
+                  height: '100%',
+                  width: `${Math.min(100, ((jackpot?.main_balance || 0) / allocationPolicy.pivotThreshold) * 100)}%`,
+                  background: 'linear-gradient(90deg, #d5dae2, #8f97a3)',
+                  borderRadius: '3px',
+                  transition: 'width 1s ease',
+                }}
+              />
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
       {/* Triple-Bank Breakdown */}
       <div className="jackpot-info" style={{ marginBottom: '0.5rem' }}>

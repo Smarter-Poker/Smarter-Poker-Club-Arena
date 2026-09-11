@@ -1495,6 +1495,10 @@ jobs:
           GATE_REASON: ${{ steps.drain.outputs.gate_reason }}
           GH_TOKEN: ${{ github.token }}
           JOB_STATUS: ${{ job.status }}
+          # Empty or 'skipped' means production was never touched by this run.
+          CUTOVER_OUTCOME: ${{ steps.cutover.outcome }}
+          # Failed runs allowed per commit before the train stops on it.
+          DEPLOY_RETRY_LIMIT: '2'
           SHIPPED: ${{ steps.dedupe.outputs.skip != 'true' && steps.drain.outputs.skip != 'true' && steps.cutover.outcome == 'success' && steps.cutover.outputs.success == 'true' && steps.health.outputs.verified == 'true' && steps.prove.outcome == 'success' && (steps.seal_commit.outcome == 'success' || (steps.rollback.outcome == 'success' && steps.rollback.outputs.target_committed == 'true')) }}
         run: |
           SHORT="${SHA:0:8}"
@@ -1513,6 +1517,49 @@ jobs:
           }
           if [ "$JOB_STATUS" != "success" ]; then
             echo "An earlier step already failed or cancelled this run; its error is the verdict."
+            # ── A RUN THAT NEVER TOUCHED PRODUCTION HEALS ITSELF (2026-09-11) ──
+            #
+            # Dan: "i do not want any watch dogs, i want hard coded fixes ... i
+            # want any and all pushes to be published". Until now a run that
+            # failed - a flaky test, a network blip in the build, a runner that
+            # died - or that somebody cancelled simply stopped, and its commit
+            # waited for the next engine push, or for engine-watchdog.sh to
+            # notice. Neither is a guarantee.
+            #
+            # So a run that ended BEFORE its cutover step ran hands the train on:
+            #   - cancelled: always. A cancel is not a stop. To STOP deploys,
+            #     disable this workflow: a disabled workflow refuses the
+            #     dispatch below, and that refusal is the stop.
+            #   - failed: while fewer than DEPLOY_RETRY_LIMIT earlier runs have
+            #     failed on this same commit. A commit that fails the same way
+            #     three times is broken, not unlucky; the run says so loudly and
+            #     the fix's own push starts the next run.
+            # A run whose cutover RAN never hands on, whatever its outcome: a
+            # failed cutover rolled production back, and retrying it would
+            # restart production into the same broken build every hour.
+            if [ -z "$CUTOVER_OUTCOME" ] || [ "$CUTOVER_OUTCOME" = "skipped" ]; then
+              if [ "$JOB_STATUS" = "cancelled" ]; then
+                echo "Cancelled before any cutover; a cancel is not a stop, so the train goes on."
+                hand_on || true
+              else
+                FAILED_BEFORE=$(gh run list --repo "$GITHUB_REPOSITORY" \
+                  --workflow auto-deploy-hetzner.yml --commit "$SHA" --status failure \
+                  --limit 20 --json databaseId --jq 'length' 2>/dev/null || echo "")
+                case "$FAILED_BEFORE" in
+                  ''|*[!0-9]*)
+                    # Fail closed: a retry count nobody can read is how a
+                    # broken commit would loop forever.
+                    echo "::error title=TRAIN STOPPED::could not count earlier failed runs on $SHORT, so this run will not retry itself. Dispatch auto-deploy-hetzner.yml on main once the failure above is understood." ;;
+                  *)
+                    if [ "$FAILED_BEFORE" -lt "$DEPLOY_RETRY_LIMIT" ]; then
+                      echo "Failed before any cutover; $FAILED_BEFORE earlier failed run(s) on $SHORT, $DEPLOY_RETRY_LIMIT allowed. Retrying."
+                      hand_on || true
+                    else
+                      echo "::error title=GAVE UP ON $SHORT::$((FAILED_BEFORE + 1)) runs have failed on this commit before any cutover. It is broken, not unlucky: the next engine push starts the next run."
+                    fi ;;
+                esac
+              fi
+            fi
             exit 0
           fi
           if [ "$SHIPPED" = "true" ]; then

@@ -258,9 +258,44 @@ describe('the engine deploy tells the truth when it skips', () => {
     expect(verdict).toMatch(
       /"\$GATE_KIND" = "lease_held_elsewhere" \]; then[\s\S]{0,300}?hand_on \|\| exit 1\s*\n\s*exit 0/
     );
-    // hand_on is called from exactly those two places, never on a failure.
+    // 3. (2026-09-11) A run that never touched production heals itself: a
+    //    cancel hands on, and a failure retries up to DEPLOY_RETRY_LIMIT failed
+    //    runs per commit, counted from the API, failing closed when uncounted.
+    //    A run whose cutover RAN never hands on - that would restart production
+    //    into a broken build every hour.
+    const failed = sliceBetween(
+      verdict,
+      'if [ "$JOB_STATUS" != "success" ]; then',
+      '\n          fi\n          if [ "$SHIPPED"'
+    );
+    expect(failed).toMatch(
+      /if \[ -z "\$CUTOVER_OUTCOME" \] \|\| \[ "\$CUTOVER_OUTCOME" = "skipped" \]; then/
+    );
+    expect(failed).toMatch(
+      /if \[ "\$JOB_STATUS" = "cancelled" \]; then[\s\S]{0,200}?hand_on \|\| true/
+    );
+    expect(failed).toMatch(
+      /gh run list --repo "\$GITHUB_REPOSITORY" \\\s*\n\s*--workflow auto-deploy-hetzner\.yml --commit "\$SHA" --status failure/
+    );
+    expect(failed).toMatch(
+      /if \[ "\$FAILED_BEFORE" -lt "\$DEPLOY_RETRY_LIMIT" \]; then[\s\S]{0,300}?hand_on \|\| true/
+    );
+    expect(failed).toMatch(/::error title=GAVE UP ON/);
+    expect(failed, 'an unreadable count stops, never loops').toMatch(
+      /''\|\*\[!0-9\]\*\)[\s\S]{0,400}?::error title=TRAIN STOPPED::/
+    );
+    expect(verdict).toMatch(/CUTOVER_OUTCOME: \$\{\{ steps\.cutover\.outcome \}\}/);
+    expect(Number(verdict.match(/DEPLOY_RETRY_LIMIT: '(\d+)'/)![1])).toBeGreaterThan(0);
+    // Every hand-on in the failed/cancelled branch sits inside the
+    // "production was never touched" guard.
+    const guardAt = failed.indexOf('if [ -z "$CUTOVER_OUTCOME" ]');
+    for (const at of [...failed.matchAll(/hand_on \|\| true/g)].map((m) => m.index!)) {
+      expect(at).toBeGreaterThan(guardAt);
+    }
+    // All four hand-on sites, and no others: lease deferral, gate decline,
+    // cancel, bounded retry.
     const calls = verdict.split('\n').filter((l) => /^\s*hand_on\b(?!\(\))/.test(l));
-    expect(calls.length).toBe(2);
+    expect(calls.length).toBe(4);
     expect(verdict).toMatch(/GH_TOKEN: \$\{\{ github\.token \}\}/);
     // A hand-on that could not be made is red, never silent.
     expect(stage).toMatch(/::error title=TRAIN STOPPED::/);
@@ -399,7 +434,15 @@ describe('a green engine deploy means production serves the commit (2026-09-10)'
     expect(tail).not.toMatch(/exit 0/);
     // An earlier failure is already red; the verdict never double-reports it
     // and never turns a red run green.
-    expect(script).toMatch(/if \[ "\$JOB_STATUS" != "success" \]; then[\s\S]{0,200}?exit 0/);
+    const failedBranch = sliceBetween(
+      script,
+      'if [ "$JOB_STATUS" != "success" ]; then',
+      '\n          fi\n          if [ "$SHIPPED"'
+    );
+    expect(failedBranch.trim().endsWith('exit 0')).toBe(true);
+    expect(failedBranch, 'the verdict never turns a failed run red twice or green').not.toMatch(
+      /exit 1/
+    );
     expect(verdict).toMatch(/JOB_STATUS: \$\{\{ job\.status \}\}/);
   });
 

@@ -228,12 +228,14 @@ describe('the two gaps in how work reaches production', () => {
     );
   });
 
-  it('the deploy window cannot be closed by one dropped cron tick', () => {
-    // One tick per hour (2026-09-02; it was three). GitHub delivers ~10% of
-    // this repo's scheduled runs, so extra ticks only deepened the throttle.
-    // A dropped tick is now caught by publish-watchdog's schedule-liveness
-    // check, which dispatches the deploy directly off workflow_run.
-    expect(DEPLOY).toContain("- cron: '35 * * * *'"); // :35 since #3070; see deployAndPublishAreHonest
+  it('the deploy window cannot be closed by a dropped cron tick, because there is none', () => {
+    // One tick per hour (2026-09-02; it was three), and GitHub delivered 3 of
+    // ~19 of them on 2026-09-10. Since then there is no tick to drop: every
+    // engine push starts its own deploy run, which waits in its break gate for
+    // the next :55, and a run that cannot ship hands the train on itself.
+    // See deployAndPublishAreHonest for the full pin.
+    expect(DEPLOY).not.toMatch(/^\s*- cron:/m);
+    expect(DEPLOY).toMatch(/^\s{2}push:\s*\n\s{4}branches: \[main\]/m);
   });
 
   it('a deploy that shipped nothing is a warning, not a notice', () => {

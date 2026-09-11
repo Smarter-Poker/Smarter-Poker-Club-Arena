@@ -2220,7 +2220,15 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                 localSession = { userId: authRes.data.user.id } as any;
               }
             }
-            if (localSession?.userId) {
+            if (automaticMembershipRef.current) {
+              /* An arena whose membership the server grants automatically has
+                 no `club_members` row to read and no invite page to be sent
+                 to, and ArenaAccessBoundary verified the entitlement before
+                 this page mounted. Guarding only the eviction was not enough:
+                 the read itself dereferenced `home.club.id`, and the fast-path
+                 payload carries no club row for the arena, so every arena load
+                 threw here and lost the fast path with it. */
+            } else if (localSession?.userId) {
               const { data: memStat, error: memErr } = await supabase
                 .from('club_members')
                 .select('status')
@@ -2253,10 +2261,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                 reportError(memErr, 'ClubHomePage.fastPath.membership_unreadable', {
                   clubId: home.club.id,
                 });
-              } else if (
-                !automaticMembershipRef.current &&
-                (!memStat || !['active', 'approved'].includes(memStat.status))
-              ) {
+              } else if (!memStat || !['active', 'approved'].includes(memStat.status)) {
                 bounceToInvite();
                 return;
               }
@@ -2395,12 +2400,19 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
            state that nothing in this file ever read - DynamicWallet fetches
            its own - so every club load paid for a DiamondService round trip
            whose answer went straight into the bin. */
-        const memberResult = await supabase
-          .from('club_members')
-          .select('role, status')
-          .eq('club_id', resolvedId)
-          .eq('user_id', authUser.id)
-          .maybeSingle();
+        /* Skipped outright for an automatic-membership arena: there is no
+           `club_members` row to find, the entitlement is already verified, and
+           this read re-runs on every refocus, every realtime resubscribe and a
+           90 second interval. A resolved empty answer keeps the branches below
+           on their existing paths without a round trip. */
+        const memberResult = automaticMembershipRef.current
+          ? { data: null, error: null }
+          : await supabase
+              .from('club_members')
+              .select('role, status')
+              .eq('club_id', resolvedId)
+              .eq('user_id', authUser.id)
+              .maybeSingle();
 
         /* Same rule as the fast path above: eviction requires PROOF, never a
            failed read. `memberResult.error` was discarded here, so any

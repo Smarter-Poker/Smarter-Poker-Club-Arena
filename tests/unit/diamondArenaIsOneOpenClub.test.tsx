@@ -120,6 +120,30 @@ describe('One open club: the chip membership guard never evicts a Diamond player
   });
 });
 
+describe('One open club: the lobby never reads a membership row the arena has no row in', () => {
+  const page = readFileSync(join(__dirname, '..', '..', 'src/pages/ClubHomePage.tsx'), 'utf8');
+
+  /* Refusing to ACT on the read was not enough. The fast path's read also
+     dereferenced `home.club.id`, and the fast-path payload carries no club row
+     for the arena, so every arena load threw inside the try and lost the fast
+     path with it: seen live on 2026-09-11 as
+     `[ClubHomePage.fastPath] Cannot read properties of undefined (reading
+     'id')`. Both reads are skipped outright now, which is also two fewer round
+     trips on every refocus. */
+  it('skips the fast path membership read before it dereferences the club', () => {
+    const guard = page.indexOf('if (automaticMembershipRef.current) {');
+    const read = page.indexOf("eq('club_id', home.club.id)");
+    expect(guard, 'the fast path no longer guards on the arena').toBeGreaterThan(-1);
+    expect(read).toBeGreaterThan(guard);
+  });
+
+  it('skips the authoritative membership read for an automatic-membership arena', () => {
+    expect(page).toMatch(
+      /const memberResult = automaticMembershipRef\.current\s*\?\s*\{ data: null, error: null \}/
+    );
+  });
+});
+
 describe('Played with diamonds: the chip jackpot strip stays off the arena lobby', () => {
   const page = readFileSync(join(__dirname, '..', '..', 'src/pages/ClubHomePage.tsx'), 'utf8');
 

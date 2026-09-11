@@ -16,6 +16,7 @@ import subprocess
 import tempfile
 
 BASELINE="full_stage1|postgres|true|15|12|0|3|false"
+STAGE_B_RESOLVER="scripts/ci/stage_b_migration_source.py"
 R3_ARCHIVE="a37145be930ab332fbd50c0ee17546af51cefbca"
 R3_FILE="supabase/migrations/20260909211115_complete_known_satellite_adoptions_after_freeze.sql"
 R3_SHA256="e64c147b2ca53b89b1845a3d16acd29bd679d849b872c69f1164d3672c90bad1"
@@ -108,14 +109,15 @@ def main():
     p.add_argument("--delivery",choices=["cash","ticket"],required=True)
     args=p.parse_args();root=args.root.resolve()
     if "/.agent-trees/" not in str(root):raise SystemExit("requires owned repository worktree")
-    source_files=[Path(__file__),root/"scripts/ci/probes/satellite-full-terminal-native.sql",
+    stage_b=module(root/STAGE_B_RESOLVER,"satellite_delivery_stage_b_source").resolve(root)
+    source_files=[Path(__file__),root/STAGE_B_RESOLVER,stage_b,
+      root/"scripts/ci/probes/satellite-full-terminal-native.sql",
       root/"scripts/ci/rehearse-satellite-full-terminal.py",root/"scripts/ci/probes/satellite-full-delivery-assertions.sql",
       root/"scripts/ci/rehearse-satellite-cancel-current.py",root/"scripts/ci/rehearse-existing-ticket-current.py",
       root/"scripts/ci/rehearse-final-deal-current-terminal.py",
       root/"scripts/ci/rehearse-whole-phase-three-cutover.py",root/"scripts/deploy/phase-three-strict-tournament-cutover.sql",
       root/"scripts/deploy/phase-three-final-deal-terminal-v2.sql",
       root/"supabase/migrations/20260909165629_satellite_settlement_has_one_atomic_authority.sql",
-      root/"supabase/migrations/20260910000905_final_tournament_roster_seat_authority_after_scheduler_fence.sql",
       root/"supabase/migrations/20260910064305_a_union_ticket_is_issued_at_the_club_the_winner_plays_from.sql"]
     hashes={str(f.relative_to(root)):hashlib.sha256(f.read_bytes()).hexdigest() for f in source_files}
     path=root/"scripts/deploy/phase-three-current-satellite-terminal.sql"

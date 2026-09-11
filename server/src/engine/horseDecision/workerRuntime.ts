@@ -179,6 +179,14 @@ export const defaultHorseDecisionWorkerDependencies: HorseDecisionWorkerDependen
   now: () => performance.now(),
 };
 
+/**
+ * Resolve on a later event-loop turn (setImmediate's check phase), never inside
+ * the macrotask that queued it. See HorseDecisionWorkerRuntime.receive.
+ */
+function nextEventLoopTurn(): Promise<void> {
+  return new Promise((resolve) => setImmediate(resolve));
+}
+
 function asMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -207,7 +215,9 @@ export class HorseDecisionWorkerRuntime {
   private readyPromise: Promise<HorseDecisionWorkerReadiness> | null = null;
   constructor(
     private readonly send: (message: HorseDecisionWorkerResponse) => void,
-    private readonly deps: HorseDecisionWorkerDependencies = defaultHorseDecisionWorkerDependencies
+    private readonly deps: HorseDecisionWorkerDependencies = defaultHorseDecisionWorkerDependencies,
+    /** Test seam; production always yields to a real event-loop turn. */
+    private readonly turnEventLoop: () => Promise<void> = nextEventLoopTurn
   ) {}
 
   start(): Promise<HorseDecisionWorkerReadiness> {
@@ -266,7 +276,31 @@ export class HorseDecisionWorkerRuntime {
       return;
     }
     this.pendingRequestIds.add(message.requestId);
-    this.operation = this.operation.then(() => this.execute(message));
+    /*
+     * ONE JOB PER EVENT-LOOP TURN (2026-09-11)
+     *
+     * The client now posts several jobs ahead of the one running (client.ts,
+     * "ONE LANE, NOT ONE MESSAGE AT A TIME"). Node hands a port's queued
+     * messages to JS back to back - up to max(queued, 1000) per wake-up,
+     * draining microtasks after each - so chaining execute() straight onto
+     * this promise would run a whole window of synchronous HorseLogic without
+     * a single event-loop turn in between. The governor's one-second sampler,
+     * the mind-persistence and telemetry flush timers and every CANCEL would
+     * wait behind it, and under a standing backlog the port need never empty.
+     * Each job therefore starts on its own turn, after timers and newly
+     * arrived messages have run - exactly the rhythm this worker had when the
+     * client posted one job at a time. FIFO is unchanged: the chain is still
+     * the only execution lane. The yield can never reject the chain.
+     */
+    this.operation = this.operation
+      .then(async () => {
+        try {
+          await this.turnEventLoop();
+        } catch {
+          /* a failed yield must never stall or reject the only lane */
+        }
+      })
+      .then(() => this.execute(message));
   }
 
   /** Test seam and graceful-worker close join. */

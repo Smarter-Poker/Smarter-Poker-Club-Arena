@@ -1,5 +1,6 @@
 import { randomInt as nodeRandomInt, randomFillSync } from 'node:crypto';
 
+const UINT32_RANGE = 0x100000000;
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -23,13 +24,23 @@ import { randomInt as nodeRandomInt, randomFillSync } from 'node:crypto';
  * Uses rejection sampling to avoid modulo bias.
  */
 export function secureRandomInt(exclusiveMax: number): number {
-  if (exclusiveMax <= 0) return 0;
+  if (!Number.isSafeInteger(exclusiveMax)) {
+    throw new TypeError('exclusiveMax must be a safe integer');
+  }
+  if (exclusiveMax < 1 || exclusiveMax > UINT32_RANGE) {
+    throw new RangeError(`exclusiveMax must be in [1, ${UINT32_RANGE}]`);
+  }
   if (exclusiveMax === 1) return 0;
 
   // Browser: crypto.getRandomValues
   if (typeof globalThis.crypto !== 'undefined' && globalThis.crypto.getRandomValues) {
     const array = new Uint32Array(1);
-    const maxValid = Math.floor(0xffffffff / exclusiveMax) * exclusiveMax;
+    // A Uint32 draw has 2^32 possible values (0 through 2^32 - 1). The old
+    // bound used 0xffffffff as the domain size, which needlessly rejected a
+    // full residue cycle whenever exclusiveMax divided 2^32. Keeping the first
+    // complete multiple of exclusiveMax makes every returned residue have the
+    // same number of source values.
+    const maxValid = UINT32_RANGE - (UINT32_RANGE % exclusiveMax);
 
     // Rejection sampling to eliminate modulo bias
     let value: number;
@@ -65,7 +76,7 @@ export function secureRandom(): number {
   if (typeof globalThis.crypto !== 'undefined' && globalThis.crypto.getRandomValues) {
     const array = new Uint32Array(1);
     globalThis.crypto.getRandomValues(array);
-    return array[0] / 0x100000000;
+    return array[0] / UINT32_RANGE;
   }
 
   // Same defect as secureRandomInt: the old `globalThis.crypto.randomInt` test
@@ -73,7 +84,7 @@ export function secureRandom(): number {
   // bytes from node:crypto instead.
   const buf = new Uint32Array(1);
   randomFillSync(buf);
-  return buf[0] / 0x100000000;
+  return buf[0] / UINT32_RANGE;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

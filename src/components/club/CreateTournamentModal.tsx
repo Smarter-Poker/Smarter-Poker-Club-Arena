@@ -419,13 +419,27 @@ export default function CreateTournamentModal({
         const resolved = await resolveClubUUID(clubId);
         const { data } = await supabase
           .from('tournaments')
-          .select('id, name, tournament_type, status, start_time')
+          .select(
+            'id, name, tournament_type, status, start_time, variant, is_bounty, is_pko, is_mystery_bounty, is_premium_spin'
+          )
           .eq('club_id', resolved)
           .neq('tournament_type', 'satellite')
           .in('status', ['registering', 'scheduled', 'upcoming', 'announced', 'pending', 'open'])
           .order('start_time', { ascending: true })
           .limit(50);
-        if (alive) setSatelliteTargets((data || []).map((t: any) => ({ id: t.id, name: t.name })));
+        // A satellite can only award a seat the settlement authority can
+        // deliver: never into a bounty, PKO, mystery-bounty or Spin event
+        // (the database refuses that insert too, 20260911110907).
+        const deliverable = (data || []).filter(
+          (t: any) =>
+            t.is_bounty === false &&
+            t.is_pko === false &&
+            t.is_mystery_bounty === false &&
+            t.is_premium_spin === false &&
+            String(t.variant ?? '').toLowerCase() !== 'spin' &&
+            String(t.tournament_type ?? '').toUpperCase() !== 'SPIN'
+        );
+        if (alive) setSatelliteTargets(deliverable.map((t: any) => ({ id: t.id, name: t.name })));
       } catch (e) {
         reportError(e, 'CreateTournamentModal.loadSatelliteTargets');
       }
@@ -916,7 +930,14 @@ export default function CreateTournamentModal({
         const mainTournament = await tournamentService.createTournament(clubId, tournamentConfig);
 
         // Auto Satellite Generation
-        if (!isSatellite && generateSatellites) {
+        // Satellites can only feed an event whose seat they can deliver, so a
+        // bounty, PKO, mystery-bounty or Spin main event gets none.
+        const mainTakesSatellites =
+          format !== 'bounty' &&
+          format !== 'progressive_bounty' &&
+          format !== 'mystery_bounty' &&
+          format !== 'spin';
+        if (!isSatellite && mainTakesSatellites && generateSatellites) {
           const satCount = Math.max(1, parseInt(genSatCount) || 1);
           const satBuyIn = parseInt(genSatBuyIn) || Math.max(1, Math.round(parsedBuyIn * 0.1));
           const satSeats = Math.max(1, parseInt(genSatSeats) || 1);
@@ -1843,7 +1864,7 @@ export default function CreateTournamentModal({
           )}
 
           {/* ── Auto Satellite Generation ── */}
-          {!isSatellite && (
+          {!isSatellite && !isBountyFormat && format !== 'spin' && (
             <div className={styles.row}>
               <div className={styles.col} style={{ flex: '1 1 100%' }}>
                 <div

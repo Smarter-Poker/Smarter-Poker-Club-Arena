@@ -39,6 +39,8 @@ function fixture(
     betweenHands?: boolean;
     stage?: string;
     response?: { data: unknown; error: unknown };
+    /** fn_mystery_bounty_unrecorded_head_cents' answer (20260911094503). */
+    unrecorded?: { data: unknown; error: unknown };
   } = {}
 ) {
   const fresh = {
@@ -60,13 +62,16 @@ function fixture(
     eq: vi.fn(() => query),
     maybeSingle: vi.fn(async () => ({ data: fresh, error: null })),
   };
-  const rpc = vi.fn(
-    async () =>
-      options.response ?? {
-        data: { ok: true, pool_cents: 50_000 },
-        error: null,
-      }
+  const rpc = vi.fn(async (name: string) =>
+    name === 'fn_mystery_bounty_unrecorded_head_cents'
+      ? (options.unrecorded ?? { data: 0, error: null })
+      : (options.response ?? {
+          data: { ok: true, pool_cents: 50_000 },
+          error: null,
+        })
   );
+  const seedCalls = () =>
+    rpc.mock.calls.filter((call) => (call as unknown[])[0] === 'fn_mystery_bounty_seed');
   const reportError = vi.fn();
   const Subject = new Function(
     'supabase',
@@ -101,7 +106,7 @@ function fixture(
     allTablesBetweenHands: vi.fn(() => options.betweenHands ?? true),
     broadcast: vi.fn(async () => undefined),
   });
-  return { subject, rpc, query, reportError };
+  return { subject, rpc, query, reportError, seedCalls };
 }
 
 describe('mystery activation uses the closed entry pool', () => {
@@ -121,7 +126,7 @@ describe('mystery activation uses the closed entry pool', () => {
       response: { data: { ok: false, reason: 'entry_still_open' }, error: null },
     });
     await f.subject.maybeActivateMysteryBounty(27);
-    expect(f.rpc).toHaveBeenCalledOnce();
+    expect(f.seedCalls()).toHaveLength(1);
     expect(f.subject.mysteryBountyStage).toBe('pending');
     expect(f.subject.broadcast).not.toHaveBeenCalled();
     expect(f.subject.mysteryBountySeeding).toBe(false);
@@ -138,7 +143,7 @@ describe('mystery activation uses the closed entry pool', () => {
   it('builds the configured complete inventory and adopts one accepted seed', async () => {
     const f = fixture({ finalized: true });
     await f.subject.maybeActivateMysteryBounty(27);
-    const [name, args] = f.rpc.mock.calls[0] as unknown as [
+    const [name, args] = f.seedCalls()[0] as unknown as [
       string,
       {
         p_tournament_id: string;
@@ -159,8 +164,50 @@ describe('mystery activation uses the closed entry pool', () => {
       profile: 'classic',
     });
     await f.subject.maybeActivateMysteryBounty(27);
-    expect(f.rpc).toHaveBeenCalledOnce();
+    expect(f.seedCalls()).toHaveLength(1);
     expect(f.subject.broadcast).toHaveBeenCalledOnce();
+  });
+
+  it('keeps unrecorded pre-activation heads out of the inventory it builds (20260911094503)', async () => {
+    // 100,000c pool, 50/50: the mystery half is 50,000c. 60,000c of heads are
+    // earned but not yet recorded, so only 40,000c can go into the chests -
+    // exactly what fn_mystery_bounty_seed will accept.
+    const f = fixture({ finalized: true, unrecorded: { data: 60_000, error: null } });
+    await f.subject.maybeActivateMysteryBounty(27);
+    const [name, args] = f.seedCalls()[0] as unknown as [
+      string,
+      { p_chests: { amount_cents: number }[] },
+    ];
+    expect(name).toBe('fn_mystery_bounty_seed');
+    expect(args.p_chests.reduce((sum, c) => sum + c.amount_cents, 0)).toBe(40_000);
+    const unrecordedAt = f.rpc.mock.calls.findIndex(
+      (call) => (call as unknown[])[0] === 'fn_mystery_bounty_unrecorded_head_cents'
+    );
+    const seedAt = f.rpc.mock.calls.findIndex(
+      (call) => (call as unknown[])[0] === 'fn_mystery_bounty_seed'
+    );
+    expect(unrecordedAt).toBeGreaterThan(-1);
+    expect(unrecordedAt).toBeLessThan(seedAt);
+  });
+
+  it('an unreadable unrecorded-head figure is not zero: it waits and seeds nothing', async () => {
+    for (const unrecorded of [
+      { data: null, error: { message: 'connection interrupted' } },
+      { data: 12.5, error: null },
+      { data: null, error: null },
+      { data: -1, error: null },
+    ]) {
+      const f = fixture({ finalized: true, unrecorded });
+      await f.subject.maybeActivateMysteryBounty(27);
+      expect(f.seedCalls()).toHaveLength(0);
+      expect(f.subject.mysteryBountyStage).toBe('pending');
+      expect(f.subject.mysteryBountySeeding).toBe(false);
+      expect(f.subject.broadcast).not.toHaveBeenCalled();
+      expect(f.reportError).toHaveBeenCalledWith(
+        expect.anything(),
+        'Tournament.mystery_bounty_unrecorded_heads_unreadable'
+      );
+    }
   });
 
   it('leaves activation retryable after an RPC error without broadcasting success', async () => {

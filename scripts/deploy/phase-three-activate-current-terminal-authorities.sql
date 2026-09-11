@@ -2842,7 +2842,7 @@ END $postflight$;
 
 -- END ACTIVATION COMPONENT scripts/deploy/phase-three-current-satellite-terminal.sql
 
--- BEGIN ACTIVATION COMPONENT scripts/deploy/phase-three-satellite-manager-target-scope.sql SHA256 bc6e6ea0af0f2475a6f4cd3f3bfbe4732aa69bb583152f5468adf57530cdc775
+-- BEGIN ACTIVATION COMPONENT scripts/deploy/phase-three-satellite-manager-target-scope.sql SHA256 2ab1719a7c8f22ac975f232845fa145e7cb0492742bb8fd41b12e4737010bc0a
 -- Add the exact target side of the current M2 source-manager transaction.
 -- This file is composed into the single Stage B activation transaction.
 
@@ -3160,7 +3160,6 @@ BEGIN
   ('public.fn_ca_satellite_manager_target_write(text,text,jsonb,jsonb)','d1b68a808b9ee22eaee833a25bec5ca6')) e(identity,body_md5) WHERE NOT EXISTS(SELECT 1 FROM pg_proc p WHERE p.oid=to_regprocedure(e.identity) AND md5(p.prosrc)=e.body_md5 AND p.proowner='postgres'::regrole AND p.prosecdef AND p.proconfig=ARRAY['search_path=public, pg_temp']::text[] AND p.proacl=ARRAY['postgres=X/postgres']::aclitem[])) THEN RAISE EXCEPTION 'satellite manager target helper source or owner metadata differs'; END IF;
  IF NOT EXISTS(SELECT 1 FROM pg_trigger WHERE tgrelid='public.tournament_satellite_manager_targets'::regclass AND tgname='satellite_manager_target_immutable' AND tgenabled='O' AND tgfoid='public.fn_ca_satellite_manager_target_immutable()'::regprocedure AND tgtype=27) THEN RAISE EXCEPTION 'satellite target immutability trigger differs'; END IF;
 END $postflight$;
-
 
 
 -- END ACTIVATION COMPONENT scripts/deploy/phase-three-satellite-manager-target-scope.sql

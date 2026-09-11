@@ -1,0 +1,286 @@
+{
+  "ok": true,
+  "cash": {
+    "ok": true,
+    "status": "COMPLETING",
+    "payouts": [
+      {
+        "place": 1,
+        "amount": 27.85,
+        "user_id": "4f7f8abb-ba34-464c-9ecb-0ab7a972a978"
+      },
+      {
+        "place": 2,
+        "amount": 16.0,
+        "user_id": "50c24ee9-9233-4c16-bc16-3d3726488264"
+      },
+      {
+        "place": 3,
+        "amount": 11.57,
+        "user_id": "5f2ab19d-c86d-4689-bb39-bd1e4cf02d32"
+      },
+      {
+        "place": 4,
+        "amount": 9.19,
+        "user_id": "5e94c522-895b-4d63-9948-fb077adc371c"
+      },
+      {
+        "place": 5,
+        "amount": 7.69,
+        "user_id": "32a4fc92-d1d4-472b-a585-ac19a7e10616"
+      },
+      {
+        "place": 6,
+        "amount": 6.64,
+        "user_id": "6fa1c8e2-c2bb-4168-b121-6281a549b94f"
+      },
+      {
+        "place": 7,
+        "amount": 5.87,
+        "user_id": "29892770-7f0d-4bcf-a47f-ce790610e054"
+      },
+      {
+        "place": 8,
+        "amount": 5.27,
+        "user_id": "d9025f02-260a-4c89-9311-e00b792d35c4"
+      },
+      {
+        "place": 9,
+        "amount": 4.81,
+        "user_id": "5c9528bd-1166-4619-9d54-ee93fb315e7e"
+      },
+      {
+        "place": 10,
+        "amount": 4.41,
+        "user_id": "70be5a51-133b-4bba-b262-6e2424c5bcfd"
+      }
+    ],
+    "deal_shares": [],
+    "fully_settled": true,
+    "winner_amount": 27.85,
+    "bubble_protection": null
+  },
+  "mode": "places",
+  "rake": {
+    "amount": 2.7,
+    "attributed": true,
+    "settled_at": "2026-09-11T16:07:37.013913+00:00",
+    "destination": "union:fade0000-0000-0000-0000-000000000001",
+    "attributed_at": "2026-09-11T16:07:37.013913+00:00",
+    "attributed_users": 24
+  },
+  "bounty": {
+    "ok": true,
+    "funded": true,
+    "reason": "not_a_bounty_tournament",
+    "residual": 0
+  },
+  "escrow": {
+    "closed_at": "2026-09-11T16:07:37.013913+00:00",
+    "close_note": "terminal receipt: exact zero",
+    "fee_balance": 0.0,
+    "prize_balance": 0.0,
+    "bounty_balance": 0.0
+  },
+  "status": "COMPLETED",
+  "payouts": [
+    {
+      "place": 1,
+      "amount": 27.85,
+      "user_id": "4f7f8abb-ba34-464c-9ecb-0ab7a972a978"
+    },
+    {
+      "place": 2,
+      "amount": 16.0,
+      "user_id": "50c24ee9-9233-4c16-bc16-3d3726488264"
+    },
+    {
+      "place": 3,
+      "amount": 11.57,
+      "user_id": "5f2ab19d-c86d-4689-bb39-bd1e4cf02d32"
+    },
+    {
+      "place": 4,
+      "amount": 9.19,
+      "user_id": "5e94c522-895b-4d63-9948-fb077adc371c"
+    },
+    {
+      "place": 5,
+      "amount": 7.69,
+      "user_id": "32a4fc92-d1d4-472b-a585-ac19a7e10616"
+    },
+    {
+      "place": 6,
+      "amount": 6.64,
+      "user_id": "6fa1c8e2-c2bb-4168-b121-6281a549b94f"
+    },
+    {
+      "place": 7,
+      "amount": 5.87,
+      "user_id": "29892770-7f0d-4bcf-a47f-ce790610e054"
+    },
+    {
+      "place": 8,
+      "amount": 5.27,
+      "user_id": "d9025f02-260a-4c89-9311-e00b792d35c4"
+    },
+    {
+      "place": 9,
+      "amount": 4.81,
+      "user_id": "5c9528bd-1166-4619-9d54-ee93fb315e7e"
+    },
+    {
+      "place": 10,
+      "amount": 4.41,
+      "user_id": "70be5a51-133b-4bba-b262-6e2424c5bcfd"
+    }
+  ],
+  "winner_id": "4f7f8abb-ba34-464c-9ecb-0ab7a972a978",
+  "settled_at": "2026-09-11T16:07:37.013913+00:00",
+  "deal_shares": [],
+  "fully_settled": true,
+  "table_closure": {
+    "source_seat_ids": [
+      "024ac5d7-c080-4aac-8f30-2ffb52765960",
+      "046c585a-453d-4f13-9241-2e12ca272916",
+      "053d30a3-ce0f-46f8-8070-aaac4fc6ce24",
+      "05a5b776-fd48-44c8-aee8-66b09cd628bd",
+      "0bc26158-d47b-412f-80c5-17e5d0eb615a",
+      "0c12d2c6-fbc0-47e4-8711-d017115e3ba3",
+      "0c4d6604-e2b0-454f-aacc-2a4681163c3c",
+      "0cbdc2dd-3f21-4f48-a400-1ce0b2ed8a23",
+      "0ea227a7-c656-46e7-9bba-3a642ed26772",
+      "0ebf478f-824a-4d8b-b954-221287429373",
+      "12c5ea78-0a24-448c-bbe9-ad30add6e6d8",
+      "156084f6-490f-4e50-8eb5-7adb9f4ec704",
+      "17a09a19-bdfb-444b-8d50-d2542c87909b",
+      "191adb95-f32b-42a4-8c4c-510f8f42c0de",
+      "196dd5f2-0def-4ad7-84b3-75932a04e91e",
+      "19aadaf6-4cce-4cd4-9ad8-c2226e74a16f",
+      "1c2bfa9f-f559-4ed4-bcc9-26db59d70a3a",
+      "1c5e6c01-db4b-47c7-ad59-c9432dbb87cd",
+      "1e46f485-4c30-4775-ba12-5c4ec977780e",
+      "20480870-d7e4-4d7b-81db-db874ff7a10d",
+      "2195f153-3154-44fc-9b0f-f0707f1983dc",
+      "24e14be8-d376-4e19-97d4-b8d82d17bd68",
+      "271f0935-d229-4def-a940-bbfd21585729",
+      "28306871-c479-49ee-aa45-36f02d28a8a6",
+      "3267ee56-ec76-4e0c-9cd9-8ae1d807fdba",
+      "33984c8c-52bc-4253-8994-f5018defabc4",
+      "33be763f-7858-4e37-bed4-9d007541c1f4",
+      "37eaa99d-a2f1-4503-9778-ed7e3d9c3dc2",
+      "3833d954-de59-4ed8-884c-dc39120f3e70",
+      "387562e8-55a7-4b3a-a319-e91cd7dee9a6",
+      "38a05762-35f3-4783-9ab8-d3084b1ef4a8",
+      "39f1d780-93c9-463b-b920-f54621c83a32",
+      "3d1e6110-2c53-442f-ab24-b02621bafe3a",
+      "3de1ce46-4caf-46b8-bc93-bafb5a817414",
+      "40b3cff1-d5aa-42ce-bcf1-e22ad5af4f1f",
+      "40d5f233-20af-4048-a8e9-0945f8bcb491",
+      "41e82dc8-2380-48ce-b67e-1900888b91f8",
+      "44d5b63c-7edc-469d-89da-004ac88840eb",
+      "47f2dd7f-0cf4-453b-a0ab-4060ca83e373",
+      "4e8983d3-5149-4db0-bf9f-7bc4afa10a57",
+      "51d26537-2297-4aad-87fe-ebef3b4d0b91",
+      "5913ad96-2e25-4261-82d6-da2276f7f558",
+      "59d2b7c4-976e-4ba4-8d8b-5e177fc7979f",
+      "5c43f230-7771-4aad-af9d-d8d05359db21",
+      "5e15360c-9980-4e6d-ba82-3f04a2b69f38",
+      "6004f6cc-22d2-4d50-b354-ae019c9452b6",
+      "634fbcde-7c3b-4970-9f92-6cb447212e41",
+      "64fd5dcd-58c1-4341-9d82-70f282d2e20b",
+      "7090f9fd-e288-4253-9338-a1844ff897f0",
+      "76d611a3-adb4-4bc8-8492-a635af435614",
+      "785754b2-ae24-40d6-90cf-6a4477501d3c",
+      "7866bcda-d087-4427-b3f7-a5a297d3b3bf",
+      "7917b038-c446-4fea-af1f-03baf5d54e47",
+      "79fdb5f4-31a4-460e-ba2f-3f7e99cab85b",
+      "7a2a8366-8831-46ba-b55d-437b6056277a",
+      "7b2e5cb8-af9c-4971-9a9c-9bff54c8934e",
+      "80e4273f-40d7-44ed-8790-159447984955",
+      "80f0d1df-4f15-42d3-8313-02f23cb075ad",
+      "8900f290-5893-4279-a96e-71c1fa842f2e",
+      "8db5ebf9-e326-4b10-bba9-fe26f3ab88c0",
+      "8fddad02-ae15-4d71-9b55-a49d9a332c8c",
+      "90f858fa-67d5-4a3b-be94-905d3b64e2b3",
+      "942ab75e-72f8-4b6d-96f6-4f53c06f2032",
+      "94ac5aa4-38d6-4f13-b28a-da79f8be327a",
+      "9649b30f-893b-44d8-8564-a5738be727e2",
+      "9d0c1c5c-0b6d-4550-b099-928badaad315",
+      "a1abe5fe-5c86-4705-82d3-cee089ef7991",
+      "a52d485c-d2f0-48bc-be95-86dc5e8136ce",
+      "a8915d5d-f059-4f60-b4fa-9477a4026b6c",
+      "aea50c61-eedc-448b-bc12-c27fd94a0e2a",
+      "b1346f9f-4b53-4f42-ab34-4317f1e588fa",
+      "b25643e5-8e8d-46bd-897b-dbfd8437b338",
+      "b26fe4eb-9b5f-4aec-8036-8ac6a9e8f71d",
+      "b2b5f16e-2708-4f01-b29d-79b969796f75",
+      "b7622b74-0a68-411a-989c-438a11c27001",
+      "b7cc1cac-3b6c-4caf-989b-f74dc12982ac",
+      "beeb411e-76a3-4768-895a-91eab5fe5f28",
+      "bf3e3aa2-3cf8-4bab-b78b-205b8d82f81a",
+      "c4937134-4934-47d8-865f-53099ba550fd",
+      "c54cae55-ceab-4250-a18c-b370f4f29e92",
+      "c58d569c-fc66-42af-8587-a8f1934073ec",
+      "c5a2fd69-c20f-4b98-8033-a81936c2d6cf",
+      "c765b05d-22d3-40b9-851c-8b10ddf9fe29",
+      "cecd1fd2-b50b-41da-98c4-121bd8cc38d1",
+      "d138ff11-d6d7-44aa-9947-20dd9c827826",
+      "d34c66cb-cb75-44b2-a957-ca32a358e501",
+      "d5ac843d-0627-4544-b73d-8040e5a7e1a0",
+      "d9871458-570e-419b-af51-1dd4d774d912",
+      "d99777ec-0052-4bc2-b793-f424d8faba9b",
+      "da44e1e4-140d-4024-a48e-ad075ef013ab",
+      "dafdb4c4-a295-442c-84c5-4c2c6dda6c06",
+      "dc73b25f-4182-4bb3-b01f-22b14469207b",
+      "e0156b6e-38fd-42eb-a496-e4042017de21",
+      "e298ca10-6ae9-427f-b45f-3d73e71e8e9d",
+      "e8e0ea9d-ad6d-4ef9-bcbe-93773c9784cc",
+      "e93065a9-5556-4b1a-a571-05f29dd88f34",
+      "ea0cc0e0-ea4f-4bb0-a03f-fe1a74d93b00",
+      "ea586bf2-e3ea-42ec-8e9a-a55be9dc3f0e",
+      "eb245cd9-c210-459e-b2d0-20d53fb3998e",
+      "ef4e3ee7-d28f-47be-9159-b223c02a99b3",
+      "f8fa1a49-1f36-4ee9-8d6a-0f5f1f0f2231",
+      "fc1546c3-a9df-4521-847c-1808fac3b91f"
+    ],
+    "closed_table_ids": [
+      "26d115cb-d516-42b9-839b-d933380f0251",
+      "34ed6e07-0073-4438-a41d-e54e76b1d0b7",
+      "4ef77b87-ece6-4e57-830d-17cd009c3dd3",
+      "553d2b3f-8e01-4922-b9eb-5c339e9d4b97",
+      "84c6ac36-a7b3-4215-8405-306efc7ca741",
+      "9c977e42-3c66-4def-bd2a-7391a63b9bb4",
+      "b868ec4c-c465-461b-a4c2-30b97404b375",
+      "cfbc70a5-3b80-432c-958f-2a3add5e6742",
+      "d60445cc-a03b-4744-ad40-4d51db830c0a",
+      "f2ad5d92-6640-4e14-acd0-555222be14fe",
+      "fc94ffa1-bf16-43d1-af6f-a0bb9c6ddcc6",
+      "ff600839-a2b9-47ff-a6b5-f02938d50687"
+    ],
+    "released_seat_ids": ["d34c66cb-cb75-44b2-a957-ca32a358e501"],
+    "source_seat_count": 102,
+    "closed_table_count": 12,
+    "released_seat_count": 1
+  },
+  "tournament_id": "a5aa6984-6c1c-4b59-aeb7-9e7878853bdd",
+  "winner_amount": 27.85,
+  "mystery_bounty": {
+    "ok": true,
+    "reason": "not_a_mystery_tournament",
+    "balanced": true,
+    "pool_cents": 0,
+    "settled_cents": 0,
+    "variance_cents": 0,
+    "unclaimed_cents": 0,
+    "residual_paid_cents": 0
+  },
+  "receipt_version": 1,
+  "settlement_mode": "places",
+  "bubble_protection": null,
+  "cash_payout_total": 99.3,
+  "source_seat_count": 102,
+  "closed_table_count": 12,
+  "bounty_payout_total": 0.0,
+  "released_seat_count": 1
+}

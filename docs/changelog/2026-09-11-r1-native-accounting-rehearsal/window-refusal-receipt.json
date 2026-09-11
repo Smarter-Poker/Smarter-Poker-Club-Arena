@@ -1,0 +1,22 @@
+{
+  "refused": true,
+  "unchanged": true,
+  "beforeHashes": {
+    "tournaments": "4f086984ce7f6a4b8f13dd19b55a829b",
+    "tournament_players": "0f95dde6119b36ef87e16623db82ce2a",
+    "tournament_knockout_candidates": "8154b49c85bcc25e29747528e1e3176b",
+    "chip_ledger": "5d9f373ccf420dd569688c40c883440c",
+    "wallet_transactions": "5b884587b03509f2a8cee5a9d7b21e89",
+    "tournament_escrow": "aa4a7c2441446224512302fa3d356aaa",
+    "tournament_manager_wakes": "4805307688a8ff821bfcb9ddb4ae90c8"
+  },
+  "afterHashes": {
+    "tournaments": "4f086984ce7f6a4b8f13dd19b55a829b",
+    "tournament_players": "0f95dde6119b36ef87e16623db82ce2a",
+    "tournament_knockout_candidates": "8154b49c85bcc25e29747528e1e3176b",
+    "chip_ledger": "5d9f373ccf420dd569688c40c883440c",
+    "wallet_transactions": "5b884587b03509f2a8cee5a9d7b21e89",
+    "tournament_escrow": "aa4a7c2441446224512302fa3d356aaa",
+    "tournament_manager_wakes": "4805307688a8ff821bfcb9ddb4ae90c8"
+  }
+}

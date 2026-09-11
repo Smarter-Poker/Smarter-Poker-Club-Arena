@@ -1,0 +1,159 @@
+{
+  "verifiedAt": "2026-09-11T16:07:37.668523+00:00",
+  "eventId": "a5aa6984-6c1c-4b59-aeb7-9e7878853bdd",
+  "expectedOrderAll100Matches": true,
+  "riverFinalPlace": 100,
+  "resequencingToggles": 0,
+  "D8UndeliveredRebuyDebtUnchanged": {
+    "userId": "dca6c345-c2ab-456f-98d9-dfbca3a43f7d",
+    "amount": "1.00",
+    "walletReceiptId": "77480914-a763-4033-9b2e-ab3be78cac36"
+  },
+  "proof": {
+    "escrow": {
+      "fee_out": 2.7,
+      "enforced": true,
+      "gross_in": 27,
+      "bounty_in": 0,
+      "closed_at": "2026-09-11T16:07:37.013913+00:00",
+      "opened_at": "2026-09-09T05:48:47.683295+00:00",
+      "prize_out": 99.3,
+      "bounty_out": 0,
+      "close_note": "terminal receipt: exact zero",
+      "overlay_in": 75,
+      "refund_fee": 0,
+      "reserve_in": 0,
+      "updated_at": "2026-09-11T16:07:37.013913+00:00",
+      "fee_balance": 0.0,
+      "opened_from": "shadow at first sight (overlay)",
+      "reserve_out": 0,
+      "refund_prize": 0,
+      "satellite_in": 0,
+      "prize_balance": 0.0,
+      "refund_bounty": 0,
+      "tournament_id": "a5aa6984-6c1c-4b59-aeb7-9e7878853bdd",
+      "bounty_balance": 0.0,
+      "fee_entries_in": 2.7,
+      "satellite_fee_in": 0,
+      "terminal_closed_at": "2026-09-11T16:07:37.013913+00:00"
+    },
+    "status": "COMPLETED",
+    "member_credit": 99.3,
+    "pending_wakes": 0,
+    "rake_settlement": {
+      "amount": 2.7,
+      "source": "engine.fn_complete_tournament_terminal",
+      "club_id": "fade0000-0000-0000-0000-000000000001",
+      "union_id": "fade0000-0000-0000-0000-000000000001",
+      "created_at": "2026-09-11T16:07:37.013913+00:00",
+      "settled_at": "2026-09-11T16:07:37.013913+00:00",
+      "destination": "union:fade0000-0000-0000-0000-000000000001",
+      "attributed_at": "2026-09-11T16:07:37.013913+00:00",
+      "tournament_id": "a5aa6984-6c1c-4b59-aeb7-9e7878853bdd",
+      "attributed_users": 24,
+      "attribution_error": null,
+      "terminal_closed_at": "2026-09-11T16:07:37.013913+00:00"
+    },
+    "new_ledger_total": 102.0,
+    "terminal_receipts": 1,
+    "trigger_execution": "origin",
+    "union_rake_credit": 2.7,
+    "remaining_live_seats": 0,
+    "original_ledger_unchanged": true,
+    "original_entitlements_unchanged": true,
+    "original_wallet_financial_fields_unchanged": true
+  },
+  "payouts": [
+    {
+      "place": 1,
+      "userId": "4f7f8abb-ba34-464c-9ecb-0ab7a972a978",
+      "amount": 27.85
+    },
+    {
+      "place": 2,
+      "userId": "50c24ee9-9233-4c16-bc16-3d3726488264",
+      "amount": 16.0
+    },
+    {
+      "place": 3,
+      "userId": "5f2ab19d-c86d-4689-bb39-bd1e4cf02d32",
+      "amount": 11.57
+    },
+    {
+      "place": 4,
+      "userId": "5e94c522-895b-4d63-9948-fb077adc371c",
+      "amount": 9.19
+    },
+    {
+      "place": 5,
+      "userId": "32a4fc92-d1d4-472b-a585-ac19a7e10616",
+      "amount": 7.69
+    },
+    {
+      "place": 6,
+      "userId": "6fa1c8e2-c2bb-4168-b121-6281a549b94f",
+      "amount": 6.64
+    },
+    {
+      "place": 7,
+      "userId": "29892770-7f0d-4bcf-a47f-ce790610e054",
+      "amount": 5.87
+    },
+    {
+      "place": 8,
+      "userId": "d9025f02-260a-4c89-9311-e00b792d35c4",
+      "amount": 5.27
+    },
+    {
+      "place": 9,
+      "userId": "5c9528bd-1166-4619-9d54-ee93fb315e7e",
+      "amount": 4.81
+    },
+    {
+      "place": 10,
+      "userId": "70be5a51-133b-4bba-b262-6e2424c5bcfd",
+      "amount": 4.41
+    }
+  ],
+  "idempotentTerminalReplay": {
+    "unchanged": true,
+    "beforeHashes": {
+      "tournaments": "f2375651b607b565563f2804bd9f26c7",
+      "tournament_players": "4682f1030e1df4a7efeef1df6dcb6c68",
+      "tournament_payouts": "70937dc771619c40a797d2385f7e7716",
+      "tournament_obligations": "cf8756abaf52449b561df9bdc658edc0",
+      "tournament_terminal_settlements": "7e447eebe8dd9b1e314c0655d2da8576",
+      "tournament_escrow": "e015772452789b2b286d2a13a64caa72",
+      "chip_ledger": "156ff37fbf622760b658952ccbb5be59",
+      "wallet_transactions": "49802117aca039b83fc823773aac4897",
+      "club_members": "99dfd4d52e23b5ac6826f9033e2ff136",
+      "union_wallets": "bb7c600a6aae7757c855f861a64c1965",
+      "club_wallets": "9067d9dc9496f6d8d350d9f5b4bb271f",
+      "tables": "5edc94e8ed3965e03ba89f6c8247a35a",
+      "table_seats": "27e8ce2f03a15b85972ec0d0ba059216",
+      "tournament_manager_wakes": "44cda3f944d6e48233bafce313f3001e",
+      "tournament_knockout_candidates": "07c37c6336fc98dbe18cc88cad2f064b",
+      "hand_atomic_commits": "89ae9d0f18a07649fabba475f3ac41a1",
+      "tournament_refund_entitlements": "a93213327de79dcdb0d1ace7812ae7aa"
+    },
+    "afterHashes": {
+      "tournaments": "f2375651b607b565563f2804bd9f26c7",
+      "tournament_players": "4682f1030e1df4a7efeef1df6dcb6c68",
+      "tournament_payouts": "70937dc771619c40a797d2385f7e7716",
+      "tournament_obligations": "cf8756abaf52449b561df9bdc658edc0",
+      "tournament_terminal_settlements": "7e447eebe8dd9b1e314c0655d2da8576",
+      "tournament_escrow": "e015772452789b2b286d2a13a64caa72",
+      "chip_ledger": "156ff37fbf622760b658952ccbb5be59",
+      "wallet_transactions": "49802117aca039b83fc823773aac4897",
+      "club_members": "99dfd4d52e23b5ac6826f9033e2ff136",
+      "union_wallets": "bb7c600a6aae7757c855f861a64c1965",
+      "club_wallets": "9067d9dc9496f6d8d350d9f5b4bb271f",
+      "tables": "5edc94e8ed3965e03ba89f6c8247a35a",
+      "table_seats": "27e8ce2f03a15b85972ec0d0ba059216",
+      "tournament_manager_wakes": "44cda3f944d6e48233bafce313f3001e",
+      "tournament_knockout_candidates": "07c37c6336fc98dbe18cc88cad2f064b",
+      "hand_atomic_commits": "89ae9d0f18a07649fabba475f3ac41a1",
+      "tournament_refund_entitlements": "a93213327de79dcdb0d1ace7812ae7aa"
+    }
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "reviewed_at": "2026-09-11T05:29:52.435576+00:00",
+  "scope": "Independent read-only source and saved evidence review of the dormant candidate",
+  "reviewers": {
+    "seal_closeout": "Original/current/departed scope, sorted lock ownership and rechecks, private ACLs, helper15 and one observed wait",
+    "legacy_races_closeout": "Outer actors/contracts/conservation/finality/preflight; corrected replay and unsupported finality gaps; final28 evidence and exact source hashes"
+  },
+  "reviewer_runtime_execution": false,
+  "unresolved_within_reviewed_candidate": [],
+  "production_applied": false,
+  "programme_or_period_finality_certified": false,
+  "sha256": {
+    "01-source-dispatch.sql": "a79212add5575dc666019ad3a97148f9580e6ac3658baec694348bd666815956",
+    "02-outer-cascade.sql": "8e1af317d2083e69944841f67a22b263824877c445df495e8c0f9e9152f0edee",
+    "native-proof.json": "9f8ffcc7621d46328142a4da565be359c433f6bc29568489afa15520e4e205ad",
+    "outer-native-proof.json": "3d54a504b204549d6405ebaf3a00e8cb458125dffaead3abfe78ea82ad91065f",
+    "native.log": "3e59a7d24a25ecf85d749ba52196e36c27629d2536719b5cad43e8b46b2eaea6",
+    "outer-native.log": "b2d2f020924a16fdb42a34a8de38687924ef9d8693d23f17e7517c3c68f41ee5"
+  },
+  "whitespace_note": "Raw psql logs and the exact tracked finalizer fixture preserve original whitespace; candidate Python, shell and SQL edits passed their targeted whitespace checks.",
+  "holds": [
+    "Complete producer/bank/legacy/funding/payment finality is unavailable.",
+    "Actor-less service/cron invocation requires a reviewed actor contract.",
+    "No coordinated database/capability/browser activation or current-live parity certification."
+  ]
+}

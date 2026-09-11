@@ -1,0 +1,11 @@
+[
+  {
+    "signature": "fn_union_tournament_rake_by_user(uuid,timestamp with time zone,timestamp with time zone)",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_union_tournament_rake_by_user(p_union_id uuid, p_start timestamp with time zone, p_end timestamp with time zone)\n RETURNS TABLE(user_id uuid, rake_amount numeric)\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\n  WITH rr AS (\n    SELECT r.id, r.tournament_id, r.rake_amount,\n           CASE WHEN r.metadata->>'user_id' ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'\n                THEN (r.metadata->>'user_id')::uuid END AS payer\n      FROM rake_records r\n     WHERE r.is_tournament\n       AND r.created_at >= p_start AND r.created_at < p_end\n       AND r.rake_amount <> 0\n       AND (r.club_id = p_union_id\n            OR EXISTS (SELECT 1 FROM union_clubs uc\n                        WHERE uc.union_id = p_union_id AND uc.club_id = r.club_id))\n  ),\n  direct AS (\n    SELECT rr.payer AS uid, SUM(rr.rake_amount) AS amt\n      FROM rr WHERE rr.payer IS NOT NULL GROUP BY 1\n  ),\n  split AS (\n    SELECT tp.user_id AS uid, SUM(rr.rake_amount / n.cnt) AS amt\n      FROM rr\n      JOIN LATERAL (SELECT count(*)::numeric AS cnt\n                      FROM tournament_players tp0\n                     WHERE tp0.tournament_id = rr.tournament_id) n ON n.cnt > 0\n      JOIN tournament_players tp ON tp.tournament_id = rr.tournament_id\n     WHERE rr.payer IS NULL AND rr.tournament_id IS NOT NULL\n     GROUP BY 1\n  )\n  SELECT x.uid, round(SUM(x.amt), 4)\n    FROM (SELECT * FROM direct UNION ALL SELECT * FROM split) x\n   WHERE x.uid IS NOT NULL\n   GROUP BY x.uid;\n$function$\n",
+    "md5": "04ccedc5f9844001406e7416aeaa0ba6",
+    "acl": "{postgres=X/postgres,service_role=X/postgres}",
+    "grants": "{postgres=X/postgres,service_role=X/postgres}",
+    "body_md5": "04ccedc5f9844001406e7416aeaa0ba6",
+    "owner": "postgres"
+  }
+]

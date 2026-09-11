@@ -1,0 +1,850 @@
+[
+  {
+    "name": "ca_incident_recipients",
+    "schema": "public",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "default": "gen_random_uuid()",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "scope",
+        "type": "text",
+        "default": "'platform'::text",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "scope_id",
+        "type": "uuid",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "user_id",
+        "type": "uuid",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "min_severity",
+        "type": "text",
+        "default": "'warning'::text",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "senior",
+        "type": "boolean",
+        "default": "false",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "active",
+        "type": "boolean",
+        "default": "true",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      }
+    ],
+    "constraints": [
+      {
+        "name": "ca_incident_recipients_min_severity_check",
+        "type": "c",
+        "definition": "CHECK ((min_severity = ANY (ARRAY['critical'::text, 'warning'::text, 'info'::text])))"
+      },
+      {
+        "name": "ca_incident_recipients_pkey",
+        "type": "p",
+        "definition": "PRIMARY KEY (id)"
+      },
+      {
+        "name": "ca_incident_recipients_scope_check",
+        "type": "c",
+        "definition": "CHECK ((scope = ANY (ARRAY['platform'::text, 'financial_ops'::text, 'technical'::text, 'union'::text, 'club'::text])))"
+      },
+      {
+        "name": "ca_incident_recipients_scope_scope_id_user_id_key",
+        "type": "u",
+        "definition": "UNIQUE (scope, scope_id, user_id)"
+      }
+    ],
+    "indexes": [
+      {
+        "name": "ca_incident_recipients_pkey",
+        "definition": "CREATE UNIQUE INDEX ca_incident_recipients_pkey ON public.ca_incident_recipients USING btree (id)"
+      },
+      {
+        "name": "ca_incident_recipients_scope_scope_id_user_id_key",
+        "definition": "CREATE UNIQUE INDEX ca_incident_recipients_scope_scope_id_user_id_key ON public.ca_incident_recipients USING btree (scope, scope_id, user_id)"
+      }
+    ]
+  },
+  {
+    "name": "ca_union_rake_attribution",
+    "schema": "public",
+    "columns": [
+      {
+        "name": "rake_record_id",
+        "type": "uuid",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "user_id",
+        "type": "uuid",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "union_id",
+        "type": "uuid",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "table_id",
+        "type": "uuid",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "hand_id",
+        "type": "uuid",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "played_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "club_id",
+        "type": "uuid",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "rake_share",
+        "type": "numeric(14,4)",
+        "default": "0",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "attempts",
+        "type": "smallint",
+        "default": "1",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "attributed_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      }
+    ],
+    "constraints": [
+      {
+        "name": "ca_union_rake_attribution_pkey",
+        "type": "p",
+        "definition": "PRIMARY KEY (rake_record_id, user_id)"
+      }
+    ],
+    "indexes": [
+      {
+        "name": "ca_union_rake_attribution_pkey",
+        "definition": "CREATE UNIQUE INDEX ca_union_rake_attribution_pkey ON public.ca_union_rake_attribution USING btree (rake_record_id, user_id)"
+      },
+      {
+        "name": "idx_ca_union_rake_attr_basis",
+        "definition": "CREATE INDEX idx_ca_union_rake_attr_basis ON public.ca_union_rake_attribution USING btree (union_id, played_at) INCLUDE (club_id, rake_share) WHERE (club_id IS NOT NULL)"
+      },
+      {
+        "name": "idx_ca_union_rake_attr_open",
+        "definition": "CREATE INDEX idx_ca_union_rake_attr_open ON public.ca_union_rake_attribution USING btree (played_at) WHERE (club_id IS NULL)"
+      }
+    ]
+  },
+  {
+    "name": "rakeback_periods",
+    "schema": "public",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "default": "gen_random_uuid()",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "user_id",
+        "type": "uuid",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "club_id",
+        "type": "uuid",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "period_start",
+        "type": "date",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "period_end",
+        "type": "date",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "rake_generated",
+        "type": "numeric(15,2)",
+        "default": "0",
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "rakeback_rate",
+        "type": "numeric(5,4)",
+        "default": "0.10",
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "rakeback_amount",
+        "type": "numeric(15,2)",
+        "default": "0",
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "status",
+        "type": "text",
+        "default": "'pending'::text",
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "paid_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "rakeback_earned",
+        "type": "numeric(15,2)",
+        "default": "0",
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "total_rake_paid",
+        "type": "numeric(15,2)",
+        "default": "0",
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "deferred_reason",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "deferred_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "defer_count",
+        "type": "integer",
+        "default": "0",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      }
+    ],
+    "constraints": [
+      {
+        "name": "ck_whole_cents",
+        "type": "c",
+        "definition": "CHECK (((created_at < '2026-09-07 22:00:00+00'::timestamp with time zone) OR ((rakeback_amount = round(rakeback_amount, 2)) AND (rake_generated = round(rake_generated, 2))))) NOT VALID"
+      },
+      {
+        "name": "fk_rakeback_periods_user_id_profiles",
+        "type": "f",
+        "definition": "FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE"
+      },
+      {
+        "name": "rakeback_periods_club_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (club_id) REFERENCES clubs(id) ON DELETE CASCADE"
+      },
+      {
+        "name": "rakeback_periods_pkey",
+        "type": "p",
+        "definition": "PRIMARY KEY (id)"
+      },
+      {
+        "name": "rakeback_periods_status_check",
+        "type": "c",
+        "definition": "CHECK ((status = ANY (ARRAY['pending'::text, 'open'::text, 'closed'::text, 'claiming'::text, 'claimed'::text, 'paid'::text, 'expired'::text])))"
+      },
+      {
+        "name": "rakeback_periods_user_id_club_id_period_start_period_end_key",
+        "type": "u",
+        "definition": "UNIQUE (user_id, club_id, period_start, period_end)"
+      }
+    ],
+    "indexes": [
+      {
+        "name": "idx_rakeback_periods_club",
+        "definition": "CREATE INDEX idx_rakeback_periods_club ON public.rakeback_periods USING btree (club_id)"
+      },
+      {
+        "name": "idx_rakeback_periods_status",
+        "definition": "CREATE INDEX idx_rakeback_periods_status ON public.rakeback_periods USING btree (status)"
+      },
+      {
+        "name": "idx_rakeback_periods_user",
+        "definition": "CREATE INDEX idx_rakeback_periods_user ON public.rakeback_periods USING btree (user_id)"
+      },
+      {
+        "name": "rakeback_periods_drain_order_idx",
+        "definition": "CREATE INDEX rakeback_periods_drain_order_idx ON public.rakeback_periods USING btree (club_id, defer_count, period_end, id) WHERE (status = 'pending'::text)"
+      },
+      {
+        "name": "rakeback_periods_due_idx",
+        "definition": "CREATE INDEX rakeback_periods_due_idx ON public.rakeback_periods USING btree (club_id, period_end) WHERE (status = 'pending'::text)"
+      },
+      {
+        "name": "rakeback_periods_pkey",
+        "definition": "CREATE UNIQUE INDEX rakeback_periods_pkey ON public.rakeback_periods USING btree (id)"
+      },
+      {
+        "name": "rakeback_periods_user_id_club_id_period_start_period_end_key",
+        "definition": "CREATE UNIQUE INDEX rakeback_periods_user_id_club_id_period_start_period_end_key ON public.rakeback_periods USING btree (user_id, club_id, period_start, period_end)"
+      }
+    ]
+  },
+  {
+    "name": "union_rake_basis_snapshot",
+    "schema": "public",
+    "columns": [
+      {
+        "name": "union_id",
+        "type": "uuid",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "period_start",
+        "type": "timestamp with time zone",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "period_end",
+        "type": "timestamp with time zone",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "through",
+        "type": "timestamp with time zone",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "computed_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "compute_ms",
+        "type": "integer",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "detail",
+        "type": "jsonb",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      }
+    ],
+    "constraints": [
+      {
+        "name": "union_rake_basis_snapshot_pkey",
+        "type": "p",
+        "definition": "PRIMARY KEY (union_id, period_start, period_end)"
+      }
+    ],
+    "indexes": [
+      {
+        "name": "union_rake_basis_snapshot_pkey",
+        "definition": "CREATE UNIQUE INDEX union_rake_basis_snapshot_pkey ON public.union_rake_basis_snapshot USING btree (union_id, period_start, period_end)"
+      }
+    ]
+  },
+  {
+    "name": "union_rake_paid_daily_user",
+    "schema": "public",
+    "columns": [
+      {
+        "name": "union_id",
+        "type": "uuid",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "day",
+        "type": "date",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "user_id",
+        "type": "uuid",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "rake_amount",
+        "type": "numeric",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      }
+    ],
+    "constraints": [
+      {
+        "name": "chk_rake_amount_is_two_decimal_places",
+        "type": "c",
+        "definition": "CHECK (((rake_amount IS NULL) OR (rake_amount = round(rake_amount, 2)))) NOT VALID"
+      },
+      {
+        "name": "union_rake_paid_daily_user_pkey",
+        "type": "p",
+        "definition": "PRIMARY KEY (union_id, day, user_id)"
+      },
+      {
+        "name": "union_rake_paid_daily_user_union_id_day_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (union_id, day) REFERENCES union_rake_rollup_days(union_id, day) ON DELETE CASCADE"
+      }
+    ],
+    "indexes": [
+      {
+        "name": "union_rake_paid_daily_user_pkey",
+        "definition": "CREATE UNIQUE INDEX union_rake_paid_daily_user_pkey ON public.union_rake_paid_daily_user USING btree (union_id, day, user_id)"
+      }
+    ]
+  },
+  {
+    "name": "union_rake_rollup_days",
+    "schema": "public",
+    "columns": [
+      {
+        "name": "union_id",
+        "type": "uuid",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "day",
+        "type": "date",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "records_seen",
+        "type": "integer",
+        "default": "0",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "computed_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      }
+    ],
+    "constraints": [
+      {
+        "name": "union_rake_rollup_days_pkey",
+        "type": "p",
+        "definition": "PRIMARY KEY (union_id, day)"
+      }
+    ],
+    "indexes": [
+      {
+        "name": "union_rake_rollup_days_pkey",
+        "definition": "CREATE UNIQUE INDEX union_rake_rollup_days_pkey ON public.union_rake_rollup_days USING btree (union_id, day)"
+      }
+    ]
+  },
+  {
+    "name": "union_rakeback_log",
+    "schema": "public",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "default": "gen_random_uuid()",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "union_id",
+        "type": "uuid",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "period_start",
+        "type": "timestamp with time zone",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "period_end",
+        "type": "timestamp with time zone",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "total_rakeback",
+        "type": "numeric",
+        "default": "0",
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "executed_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      }
+    ],
+    "constraints": [
+      {
+        "name": "union_rakeback_log_pkey",
+        "type": "p",
+        "definition": "PRIMARY KEY (id)"
+      },
+      {
+        "name": "union_rakeback_log_union_id_period_start_period_end_key",
+        "type": "u",
+        "definition": "UNIQUE (union_id, period_start, period_end)"
+      }
+    ],
+    "indexes": [
+      {
+        "name": "union_rakeback_log_pkey",
+        "definition": "CREATE UNIQUE INDEX union_rakeback_log_pkey ON public.union_rakeback_log USING btree (id)"
+      },
+      {
+        "name": "union_rakeback_log_union_id_period_start_period_end_key",
+        "definition": "CREATE UNIQUE INDEX union_rakeback_log_union_id_period_start_period_end_key ON public.union_rakeback_log USING btree (union_id, period_start, period_end)"
+      }
+    ]
+  },
+  {
+    "name": "union_settlement_floor",
+    "schema": "public",
+    "columns": [
+      {
+        "name": "union_id",
+        "type": "uuid",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "earliest_period_start",
+        "type": "timestamp with time zone",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "reason",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      }
+    ],
+    "constraints": [
+      {
+        "name": "union_settlement_floor_pkey",
+        "type": "p",
+        "definition": "PRIMARY KEY (union_id)"
+      },
+      {
+        "name": "union_settlement_floor_union_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (union_id) REFERENCES unions(id) ON DELETE CASCADE"
+      }
+    ],
+    "indexes": [
+      {
+        "name": "union_settlement_floor_pkey",
+        "definition": "CREATE UNIQUE INDEX union_settlement_floor_pkey ON public.union_settlement_floor USING btree (union_id)"
+      }
+    ]
+  },
+  {
+    "name": "union_settlement_rounds",
+    "schema": "public",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "default": "gen_random_uuid()",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "union_id",
+        "type": "uuid",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "period_start",
+        "type": "timestamp with time zone",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "period_end",
+        "type": "timestamp with time zone",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "round_no",
+        "type": "integer",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "round_name",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "payers",
+        "type": "integer",
+        "default": "0",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "payees",
+        "type": "integer",
+        "default": "0",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "amount",
+        "type": "numeric(20,2)",
+        "default": "0",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "shortfalls",
+        "type": "integer",
+        "default": "0",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "detail",
+        "type": "jsonb",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "executed_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      }
+    ],
+    "constraints": [
+      {
+        "name": "union_settlement_rounds_pkey",
+        "type": "p",
+        "definition": "PRIMARY KEY (id)"
+      },
+      {
+        "name": "union_settlement_rounds_union_id_period_start_period_end_ro_key",
+        "type": "u",
+        "definition": "UNIQUE (union_id, period_start, period_end, round_no)"
+      }
+    ],
+    "indexes": [
+      {
+        "name": "union_settlement_rounds_pkey",
+        "definition": "CREATE UNIQUE INDEX union_settlement_rounds_pkey ON public.union_settlement_rounds USING btree (id)"
+      },
+      {
+        "name": "union_settlement_rounds_union_id_period_start_period_end_ro_key",
+        "definition": "CREATE UNIQUE INDEX union_settlement_rounds_union_id_period_start_period_end_ro_key ON public.union_settlement_rounds USING btree (union_id, period_start, period_end, round_no)"
+      }
+    ]
+  }
+]

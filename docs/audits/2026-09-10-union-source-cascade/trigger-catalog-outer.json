@@ -1,0 +1,11 @@
+[
+  {
+    "table_name": "rakeback_periods",
+    "definition": "CREATE TRIGGER poker_arena_no_hierarchy BEFORE INSERT OR UPDATE ON public.rakeback_periods FOR EACH ROW EXECUTE FUNCTION fn_poker_reject_diamond_hierarchy()",
+    "signature": "fn_poker_reject_diamond_hierarchy()",
+    "function_definition": "CREATE OR REPLACE FUNCTION public.fn_poker_reject_diamond_hierarchy()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nBEGIN\n  IF EXISTS (SELECT 1 FROM public.clubs WHERE id=NEW.club_id AND asset='diamonds') THEN\n    RAISE EXCEPTION 'Diamond Arena Has No Agents Or Commissions' USING ERRCODE='23514';\n  END IF;\n  RETURN NEW;\nEND $function$\n",
+    "body_md5": "49037a2bf4322d2a327bc9141a7a7a89",
+    "grants": "{postgres=X/postgres,service_role=X/postgres}",
+    "owner": "postgres"
+  }
+]

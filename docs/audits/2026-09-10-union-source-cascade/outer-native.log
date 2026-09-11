@@ -1,0 +1,52 @@
+ISOLATION VERIFIED: own fresh data directory, own Unix socket, no TCP listener, zero public tables
+OUTER INPUTS FROZEN: 221 actual function definitions
+{
+  "tables": 137,
+  "functions": 259,
+  "triggers": 178,
+  "missing_foreign_tables": []
+}
+
+ actual_owner_success 
+----------------------
+ t
+(1 row)
+
+ test_assert 
+-------------
+ 
+(1 row)
+
+Loaded unchanged accepted/bank owners and prospective Round1 with actual money graph
+COMPOSITION INSTALLED: actual R1, R2, R3, captured payments and outer owner
+PASS: Actor-less service dispatch refuses before cache or money
+PASS: Actual rolling bank owner accepts the original pre-capture hand
+PASS: Round 1 missing success rolls back actual bank and treasury writes
+PASS: Round 1 negative amount rolls back actual bank and treasury writes
+PASS: Round 1 fractional count rolls back actual bank and treasury writes
+PASS: Round 1 string success rolls back actual bank and treasury writes
+LEGACY BANK RESULT {"applied": true, "already_processed": false, "recovered": false, "rake_record_id": "8ef1160e-79fa-490d-9366-f81c5617ab97", "club_net_credit": 2, "spendable_route": "union_rake_wallet", "spendable_amount": 2, "union_id_out": "00000000-0000-4000-8000-000000000901"}
+ROUND1 RESULT {"success": true, "clubs_paid": 1, "period_rake": "2.00", "conservation": "asserted", "settlement_id": "0d0a9f0b-7cdf-405d-8d77-8c1d88f1b022", "total_rakeback": "1.80", "union_retained": "0.20", "retained_to_bank": "0.20", "rake_wallet_after": "20.00", "chip_balance_after": "0.20"}
+OUTER ROUND AMOUNTS ["1.80", "0.50", "0.15"]
+PASS: Full original outer invokes captured payment and preserves finality hold
+PASS: Actual mixed legacy rounds pay only historical basis
+PASS: Whole outer replay adds no cash or money receipts
+PASS: Round1 real replay negative total refuses before summary writes
+PASS: Round1 real replay fractional count refuses before summary writes
+PASS: Round1 real replay string total refuses before summary writes
+PASS: Round 2 missing amount rolls back actual money and all public rows
+PASS: Round 2 negative amount rolls back actual money and all public rows
+PASS: Round 2 fractional count rolls back actual money and all public rows
+PASS: Round 2 missing shortfalls rolls back actual money and all public rows
+PASS: Round 3 missing amount rolls back actual money and all public rows
+PASS: Round 3 negative amount rolls back actual money and all public rows
+PASS: Round 3 fractional count rolls back actual money and all public rows
+PASS: Round 3 missing shortfalls rolls back actual money and all public rows
+PASS: Unsupported common finality rolls back actual helper payments and all legacy rounds
+PASS: Last captured receipt failure rolls back legacy rounds and all captured money
+PASS: Whole dispatch retry pays historical and captured amounts exactly once
+PASS: All captured legacy projections remain unsettled and excluded
+PASS: Paid legacy periods share one exact wallet receipt per beneficiary
+PASS: Final replay has no second payouts or money receipts
+PASS: Old bank and direct Round1 cannot commit a captured credit without its exact bank receipt
+PASS: Direct Round1 provisional retained income is fully rolled back by the actual bank barrier

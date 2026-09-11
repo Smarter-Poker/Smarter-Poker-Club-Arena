@@ -1,0 +1,169 @@
+{
+  "checks": [
+    "Actor-less service dispatch refuses before cache or money",
+    "Actual rolling bank owner accepts the original pre-capture hand",
+    "Round 1 missing success rolls back actual bank and treasury writes",
+    "Round 1 negative amount rolls back actual bank and treasury writes",
+    "Round 1 fractional count rolls back actual bank and treasury writes",
+    "Round 1 string success rolls back actual bank and treasury writes",
+    "Full original outer invokes captured payment and preserves finality hold",
+    "Actual mixed legacy rounds pay only historical basis",
+    "Whole outer replay adds no cash or money receipts",
+    "Round1 real replay negative total refuses before summary writes",
+    "Round1 real replay fractional count refuses before summary writes",
+    "Round1 real replay string total refuses before summary writes",
+    "Round 2 missing amount rolls back actual money and all public rows",
+    "Round 2 negative amount rolls back actual money and all public rows",
+    "Round 2 fractional count rolls back actual money and all public rows",
+    "Round 2 missing shortfalls rolls back actual money and all public rows",
+    "Round 3 missing amount rolls back actual money and all public rows",
+    "Round 3 negative amount rolls back actual money and all public rows",
+    "Round 3 fractional count rolls back actual money and all public rows",
+    "Round 3 missing shortfalls rolls back actual money and all public rows",
+    "Unsupported common finality rolls back actual helper payments and all legacy rounds",
+    "Last captured receipt failure rolls back legacy rounds and all captured money",
+    "Whole dispatch retry pays historical and captured amounts exactly once",
+    "All captured legacy projections remain unsettled and excluded",
+    "Paid legacy periods share one exact wallet receipt per beneficiary",
+    "Final replay has no second payouts or money receipts",
+    "Old bank and direct Round1 cannot commit a captured credit without its exact bank receipt",
+    "Direct Round1 provisional retained income is fully rolled back by the actual bank barrier"
+  ],
+  "passing": 28,
+  "production_applied": false,
+  "source_commit": "d5300be77e19d08b887b3b851946c5c244b77ad9",
+  "payer_commit": "f39368fefe22b4385e9e89e5350bb671c587fb4a",
+  "first_result": {
+    "error": "source_finality_pending",
+    "success": false,
+    "union_id": "00000000-0000-4000-8000-000000000901",
+    "period_end": "2026-09-07T02:00:00-05:00",
+    "period_start": "2026-08-31T02:00:00-05:00",
+    "source_final": false,
+    "captured_source": {
+      "pools": [
+        {
+          "club_id": "00000000-0000-4000-8000-000000000900",
+          "pool_id": "898702a8-020d-421e-b77b-78b4651cd7b1",
+          "new_release": "18.0000000000000000",
+          "funding_union_id": "00000000-0000-4000-8000-000000000901",
+          "new_agent_payout": "14.0000000000000000",
+          "new_player_payout": "3.0000000000000000"
+        }
+      ],
+      "success": true,
+      "union_id": "00000000-0000-4000-8000-000000000901",
+      "shortfalls": 0,
+      "diagnostics": {
+        "liability_policy": "Exact fractions remain owed in their original compatible pool",
+        "unbanked_captured_hands": 0,
+        "admission_deferred_contributors": 0,
+        "producer_close_witness_available": false
+      },
+      "source_final": false,
+      "finality_reason": "producer_and_funding_close_witness_unavailable",
+      "new_agent_payout": "14.0000000000000000",
+      "new_club_release": "18.0000000000000000",
+      "new_player_payout": "3.0000000000000000",
+      "bank_closed_through": "2026-09-07T02:00:00-05:00",
+      "earning_closed_through": "2026-09-07"
+    },
+    "round1_union_to_clubs": {
+      "success": true,
+      "clubs_paid": 1,
+      "period_rake": "2.00",
+      "conservation": "asserted",
+      "settlement_id": "0d0a9f0b-7cdf-405d-8d77-8c1d88f1b022",
+      "total_rakeback": "1.80",
+      "union_retained": "0.20",
+      "retained_to_bank": "0.20",
+      "rake_wallet_after": "20.00",
+      "chip_balance_after": "0.20"
+    },
+    "round2_club_to_agents": {
+      "name": "club_to_agents",
+      "round": 2,
+      "amount": "0.50",
+      "detail": [],
+      "payees": 1,
+      "shortfalls": 0
+    },
+    "round3_agents_to_players": {
+      "name": "agents_to_players",
+      "round": 3,
+      "amount": "0.15",
+      "detail": [],
+      "payees": 1,
+      "shortfalls": 0
+    }
+  },
+  "retry_result": {
+    "error": "source_finality_pending",
+    "success": false,
+    "union_id": "00000000-0000-4000-8000-000000000901",
+    "period_end": "2026-09-07T02:00:00-05:00",
+    "period_start": "2026-08-31T02:00:00-05:00",
+    "source_final": false,
+    "captured_source": {
+      "pools": [
+        {
+          "club_id": "00000000-0000-4000-8000-000000000900",
+          "pool_id": "898702a8-020d-421e-b77b-78b4651cd7b1",
+          "new_release": "18.0000000000000000",
+          "funding_union_id": "00000000-0000-4000-8000-000000000901",
+          "new_agent_payout": "14.0000000000000000",
+          "new_player_payout": "3.0000000000000000"
+        }
+      ],
+      "success": true,
+      "union_id": "00000000-0000-4000-8000-000000000901",
+      "shortfalls": 0,
+      "diagnostics": {
+        "liability_policy": "Exact fractions remain owed in their original compatible pool",
+        "unbanked_captured_hands": 0,
+        "admission_deferred_contributors": 0,
+        "producer_close_witness_available": false
+      },
+      "source_final": false,
+      "finality_reason": "producer_and_funding_close_witness_unavailable",
+      "new_agent_payout": "14.0000000000000000",
+      "new_club_release": "18.0000000000000000",
+      "new_player_payout": "3.0000000000000000",
+      "bank_closed_through": "2026-09-07T02:00:00-05:00",
+      "earning_closed_through": "2026-09-07"
+    },
+    "round1_union_to_clubs": {
+      "error": "already_executed",
+      "success": false
+    },
+    "round2_club_to_agents": {
+      "name": "club_to_agents",
+      "round": 2,
+      "amount": "0.20",
+      "detail": [],
+      "payees": 1,
+      "shortfalls": 0
+    },
+    "round3_agents_to_players": {
+      "name": "agents_to_players",
+      "round": 3,
+      "amount": "0.15",
+      "detail": [],
+      "payees": 1,
+      "shortfalls": 0
+    }
+  },
+  "source_sha256": {
+    "01-source-dispatch.sql": "a79212add5575dc666019ad3a97148f9580e6ac3658baec694348bd666815956",
+    "02-outer-cascade.sql": "8e1af317d2083e69944841f67a22b263824877c445df495e8c0f9e9152f0edee",
+    "outer-native-probe.py": "7f22d114e9f6765c050dcd2fae0666fa276b8a9fc1c1b52ccb2d93d3875c53bd",
+    "prepare-outer-fixture.py": "ca24dd53963f2ce24aa4c2d9a7a8b62559cbb951d61df636c0a52827a81e7663",
+    "run-local.sh": "4db63b5cdfa77074f18d97453b86b68f3377acced06554dadc8d3a203efaa4f4",
+    "installed-period-finalizer.sql": "e4189d19adecbc53f9486e87baae75842d7c129855f8dfc3285ce530b73b8893"
+  },
+  "limits": [
+    "Historical commission and player payable rows plus attribution projections are explicit fixture inputs; accepted and bank owners are actual.",
+    "No complete producer, bank, fractional liability or common period finality is claimed.",
+    "No production activation or present-live owner hash equivalence is claimed."
+  ]
+}

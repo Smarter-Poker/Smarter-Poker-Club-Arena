@@ -1,0 +1,5 @@
+{
+  "source": "supabase/migrations/20260907173111_a_closed_period_is_closed.sql",
+  "file_sha256": "56a05f977fb548699b73143b9f365297a8b2cfd99b9296f0845e35bab1c4f70a",
+  "definition_and_acl_sha256": "74f96b382c1dfbbae6d1b7185120ae78322206d0a67c5d2b47b85a904f698724"
+}

@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "scope": "Actual captured Union source dispatch; legacy outer composition still pending",
+  "source_final": false,
+  "production_applied": false,
+  "checks": [
+    "Actor-less captured dispatch refuses before admission or money",
+    "No club lock means no source admission or money mutation",
+    "A player cannot dispatch the original Union source",
+    "Authenticated RPC role cannot call the private captured dispatcher",
+    "Actual accepted hand through bank release agent payment and player payment conserves",
+    "Complete observed receipts do not fabricate common period finality",
+    "Repeated outer source dispatch adds no cash or money receipts",
+    "Final player receipt failure rolls back every actual source round and public row",
+    "The failed whole-source dispatch retries once from durable rights",
+    "Departed club retains its original Union funding and source allocation",
+    "Another Union source cannot fund the original Union cascade",
+    "The new Union dispatches only its own captured pool",
+    "Actual commission batch refuses both unbanked source contributors",
+    "Unbanked accepted source stays visible and cannot be finalized",
+    "Observed late-club race refuses without unsorted locking or payment"
+  ],
+  "passing": 15,
+  "observed_waits": 1,
+  "input_commit": "7adbfb02544b68ccc1754c51f11d2f61fa406180",
+  "source_sha256": "a79212add5575dc666019ad3a97148f9580e6ac3658baec694348bd666815956",
+  "final_money": {
+    "agent": "5.60000000000000000000",
+    "ledger": 28,
+    "player": "1.20000000000000000000",
+    "wallet": 28,
+    "release": "7.2000000000000000",
+    "treasury": 16
+  },
+  "limits": [
+    "Local calendar fixtures create closed accepted/bank timestamps; these are not historical production source ownership.",
+    "Actual original outer legacy dispatch and coordinated legacy exclusions are not claimed by these groups.",
+    "No common producer/funding close witness exists; fractions remain owed."
+  ]
+}

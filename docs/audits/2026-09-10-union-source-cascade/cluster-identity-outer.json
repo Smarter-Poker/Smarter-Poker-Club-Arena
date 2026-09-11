@@ -1,0 +1,10 @@
+{
+  "data_directory": "/tmp/ca-union-cascade-native.Jv0Yoh/data",
+  "unix_socket_directories": "/tmp/ca-union-cascade-native.Jv0Yoh/socket",
+  "listen_addresses": "",
+  "database": "postgres",
+  "user": "postgres",
+  "tcp_address": null,
+  "public_tables": 0,
+  "version": "PostgreSQL 17.11 (Homebrew) on aarch64-apple-darwin25.6.0, compiled by Apple clang version 21.0.0 (clang-2100.1.1.101), 64-bit"
+}

@@ -34,7 +34,10 @@
 -- fn_ca_tournament_place_amounts and this event's tournament, roster and
 -- obligation rows: before 77.62/44.57/32.22/25.59 (what production derives
 -- today); after 58.55/42.16/30.35/21.85/15.73/11.36, equal to all six paid
--- obligations, sum 180.00. The terminal completion itself (engine path) was
+-- obligations, sum 180.00. This whole script also ran end to end there against
+-- copies of the event's tournament, roster, obligation, payout and escrow rows
+-- (guards pass, one row updated, post-check passes, a second run refuses); the
+-- managed-game guard trigger was not present locally. The terminal completion itself (engine path) was
 -- NOT rehearsed; if it refuses for another reason it writes nothing and the
 -- engine logs the new reason under the same tag.
 

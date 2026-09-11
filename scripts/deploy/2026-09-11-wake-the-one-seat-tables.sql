@@ -22,6 +22,13 @@
 -- true bust order, because once dealing resumes those events can finish and
 -- fn_settle_tournament_places pays in elimination_sequence order.
 --
+-- REHEARSED on a local PostgreSQL 17 holding these 57 events' production rows
+-- (tournaments, 5011 roster rows, 4905 knockout candidates, their 3975 committed
+-- hands, tables and live seats; stub emitter): as-is the guard refuses with
+-- "48 paid-range standing(s) still out of true bust order"; after applying the
+-- 94 toggles of 2026-09-11-resequence-inputs.sql in their listed order it
+-- passes and emits 57 wakes.
+--
 -- Reason 'bounty_settled' is used as the neutral wake: GameServer admits it as
 -- a plain sweep (only 'late_registration' and 'deal_vote' carry side effects).
 

@@ -1,5 +1,7 @@
 # Current terminal authority rehearsal and activation boundary
 
+Current review artifact, 2026-09-11T08:19:21.355781+00:00: SHA256 `62c98c9b9f18e0c9738c3173fc3b345bee9d6ffad72de63653be1a27548a9544`, 275855 bytes. The exact one-pass bundle passed all 138 checks again with source stability and exact rollback in `/tmp/codex-whole-phase-three-iyxtlb6h`. This supersedes the byte hash in the historical rehearsal section below after removing two extra EOF blank lines. The activation remains unapplied: automatic approval review rejected the earlier exact production request; see `2026-09-11-phase-three-activation-approval-status.json`. All 25 corrected preflight source gates passed; the three raw payers already have accepted contracted postimages and owner-only ACLs. No production guard was changed to obtain that result.
+
 The full native Stage B rehearsal passed **138 assertions**, with exact database/catalog rollback and unchanged composing source inputs. This certifies the recorded native scenario, not production activation or whole Phase 3 completion.
 
 - Evidence: [2026-09-11-whole-phase-three-cutover-native.json](2026-09-11-whole-phase-three-cutover-native.json)

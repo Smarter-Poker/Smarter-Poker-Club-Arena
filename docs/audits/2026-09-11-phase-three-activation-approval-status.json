@@ -19,5 +19,12 @@
   "native_evidence": "docs/audits/2026-09-11-exact-terminal-activation-native.json",
   "unaffected_work": "Creation15 and edit27nativechecks passed with exactrollback. Spin terminal, clock integration, option persistence and browser remain in progress.",
   "consent_status": "separate prepared activation not applied",
-  "browser_status": "signed in; terms acknowledgement requires action-time confirmation"
+  "browser_status": "signed in; terms acknowledgement requires action-time confirmation",
+  "updated_at": "2026-09-11T08:19:21.355781+00:00",
+  "attempted_sha256": "9e0771e13df999bcf4fc3809865afa53d6b70f2eb947be531c4894dca9e148b0",
+  "prepared_sha256": "62c98c9b9f18e0c9738c3173fc3b345bee9d6ffad72de63653be1a27548a9544",
+  "prepared_bytes": 275855,
+  "latest_native_assertions": 138,
+  "latest_native_exact_rollback": true,
+  "formatting_change": "Removed extra EOF blank lines from two component/probe files; regenerated bundle from exact components. Production SQL behavior unchanged; new exact artifact passed138."
 }

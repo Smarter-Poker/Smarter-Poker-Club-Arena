@@ -3,7 +3,11 @@
  * it under: the LATEST one. See bustOrder.ts for the 798866ae case.
  */
 import { describe, expect, it } from 'vitest';
-import { bindLatestKnockoutCandidates, type KnockoutCandidateOrderRow } from './bustOrder.js';
+import {
+  bindLatestKnockoutCandidates,
+  knockoutCandidateReadIsComplete,
+  type KnockoutCandidateOrderRow,
+} from './bustOrder.js';
 
 const HAWK = '9bb330b7-a66a-4c52-b19c-d932ae07a354';
 const SLY = '65f99ae2-cd2e-46a2-be72-c47361552350';
@@ -105,5 +109,32 @@ describe('the sweep binds the generation the door binds', () => {
     expect(
       bindLatestKnockoutCandidates([{ hand_number: 1, stack_before: 1, state: 'pending' }]).size
     ).toBe(0);
+  });
+});
+
+describe('a short read of the generations is not an order', () => {
+  it('is complete only when every matched row came back', () => {
+    const rows = [row(HAWK, 9166239, 30000), row(SLY, 8584595, 2500)];
+    expect(knockoutCandidateReadIsComplete(rows, 2)).toBe(true);
+    expect(knockoutCandidateReadIsComplete([], 0)).toBe(true);
+  });
+
+  it('refuses a response PostgREST cut at its row cap', () => {
+    // 1000 rows returned of 1200 matched: the oldest 200 are simply absent
+    const capped = Array.from({ length: 1000 }, (_, i) => row(HAWK, 9000000 + i, 100));
+    expect(knockoutCandidateReadIsComplete(capped, 1200)).toBe(false);
+  });
+
+  it('refuses a read whose count it was not given', () => {
+    const rows = [row(HAWK, 9166239, 30000)];
+    for (const count of [null, undefined, Number.NaN, 1.5]) {
+      expect(knockoutCandidateReadIsComplete(rows, count as number | null | undefined)).toBe(false);
+    }
+    expect(knockoutCandidateReadIsComplete(null, 0)).toBe(false);
+    expect(knockoutCandidateReadIsComplete(undefined, 0)).toBe(false);
+  });
+
+  it('refuses more rows than were counted', () => {
+    expect(knockoutCandidateReadIsComplete([row(HAWK, 1, 1), row(SLY, 2, 2)], 1)).toBe(false);
   });
 });

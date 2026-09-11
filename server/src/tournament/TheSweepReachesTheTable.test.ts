@@ -123,8 +123,10 @@ describe('a refusal cannot corrupt the global bust order', () => {
     // order is taken from the generation the door binds, the LATEST, whatever
     // its state (bustOrder.ts, 2026-09-11). An `.eq('state', 'pending')` filter
     // here is what let an orphaned older generation set a player's rank.
+    // The exact match count comes back with the rows: PostgREST truncates at
+    // its row cap without saying so, and a short read is not an order (F9).
     expect(ELIM).toMatch(
-      /\.from\('tournament_knockout_candidates'\)\s*\.select\('id, eliminated_user_id, hand_number, stack_before, state'\)\s*\.eq\('tournament_id', this\.tournamentId\)\s*\.in\('eliminated_user_id', userIds\)/
+      /\.from\('tournament_knockout_candidates'\)\s*\.select\('id, eliminated_user_id, hand_number, stack_before, state', \{\s*count: 'exact',\s*\}\)\s*\.eq\('tournament_id', this\.tournamentId\)\s*\.in\('eliminated_user_id', userIds\)/
     );
     const orderRead = ELIM.slice(
       ELIM.indexOf('const bustHandNumbers = new Map<string, number>()'),
@@ -138,9 +140,12 @@ describe('a refusal cannot corrupt the global bust order', () => {
     expect(orderReadAt).toBeGreaterThan(0);
     expect(orderReadAt).toBeLessThan(sliceAt);
     const readFailure = ELIM.slice(
-      ELIM.indexOf('if (bustHandsErr)'),
+      ELIM.indexOf(
+        'if (bustHandsErr || !knockoutCandidateReadIsComplete(bustHands, bustHandsCount))'
+      ),
       ELIM.indexOf('const bustRank =')
     );
+    expect(readFailure.length).toBeGreaterThan(0);
     expect(readFailure).toMatch(/'Tournament\.bust_order_unreadable'/);
     expect(readFailure).toContain('requestUrgentEliminationSweepAfter');
     expect(readFailure).toMatch(/\breturn;/);

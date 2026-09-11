@@ -54,7 +54,7 @@ import {
   SatelliteSettlementRefusedError,
 } from './satelliteSettlementRpc.js';
 import { horseRebuyAllowance } from '../services/FreeBuy.js';
-import { bindLatestKnockoutCandidates } from './bustOrder.js';
+import { bindLatestKnockoutCandidates, knockoutCandidateReadIsComplete } from './bustOrder.js';
 
 interface FinalTableDealConsensus {
   reviewId: string | null;
@@ -619,15 +619,32 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
             // LATEST whatever its state (bustOrder.ts). Keeping the earliest
             // pending hand ranked a player by an orphan the 2026-09-08/09 rebuy
             // chain left behind, a day before the bust the door records.
-            const { data: bustHands, error: bustHandsErr } = await supabase
+            // PostgREST truncates a response at its row cap without saying so,
+            // so the exact match count comes back with the rows and a short
+            // read is an unreadable order (knockoutCandidateReadIsComplete).
+            // Forty players would need more than 25 generations each to reach
+            // the default cap of 1000.
+            const {
+              data: bustHands,
+              error: bustHandsErr,
+              count: bustHandsCount,
+            } = await supabase
               .from('tournament_knockout_candidates')
-              .select('id, eliminated_user_id, hand_number, stack_before, state')
+              .select('id, eliminated_user_id, hand_number, stack_before, state', {
+                count: 'exact',
+              })
               .eq('tournament_id', this.tournamentId)
               .in('eliminated_user_id', userIds)
               .order('hand_number', { ascending: false });
             if (sweepStopped()) return;
-            if (bustHandsErr) {
-              reportError(bustHandsErr, 'Tournament.bust_order_unreadable');
+            if (bustHandsErr || !knockoutCandidateReadIsComplete(bustHands, bustHandsCount)) {
+              reportError(
+                bustHandsErr ??
+                  new Error(
+                    `[Tournament:${this.tournamentId.slice(0, 8)}] knockout generations read ${bustHands?.length ?? 0} of ${bustHandsCount ?? 'an unknown number of'} rows; the bust order is not known`
+                  ),
+                'Tournament.bust_order_unreadable'
+              );
               this.requestUrgentEliminationSweepAfter(
                 TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS
               );
@@ -767,6 +784,12 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
            * gives the smaller starting stack the worse finishing place. A
            * refusal may rotate only an otherwise exact tie; it can never let a
            * later hand pass an earlier one. Missing evidence sorts last.
+           *
+           * The place handed out in this order is PROVISIONAL (2026-09-11).
+           * Hand number is the deal order, which the PKO watermark needs; the
+           * finish, fn_settle_tournament_places, ranks every bust by the
+           * COMMIT time of its hand before it pays, and for busts at different
+           * tables the two orders can disagree (bustOrder.ts).
            */
           let bustedOrdered = [...busted].sort(compareBusted);
 
@@ -1012,15 +1035,13 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
                * player, and after that this pass records the rest of the field
                * and says out loud who it could not record. Skipping is the
                * lesser harm and it is bounded: hand order is preserved for
-               * everyone the door accepts, and the blocked player is stamped
-               * with the commit time of the hand that busted them when they
-               * are finally recorded (20260911062048), so
-               * fn_normalize_tournament_final_standings re-derives the place
-               * from that chronology on the prepare path. NOT on the engine's
-               * terminal path: fn_settle_tournament_places orders eliminated
-               * players by elimination_sequence, the RECORDING order, so a
-               * skipped player recorded late still finishes above everyone
-               * recorded before them there.
+               * everyone the door accepts, the blocked player is stamped with
+               * the commit time of the hand that busted them when they are
+               * finally recorded, and fn_settle_tournament_places - the
+               * engine's terminal cash authority - ranks every bust by that
+               * hand's commit time before it pays, not by when it was recorded
+               * (20260911062048). A skipped player recorded late therefore
+               * finishes where they busted.
                */
               if (streak < TournamentManagerBase.BUST_REFUSAL_SKIP_AFTER) return;
               reportError(

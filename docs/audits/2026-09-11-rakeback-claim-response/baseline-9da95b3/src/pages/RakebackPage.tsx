@@ -19,7 +19,6 @@ import { reportError } from '../utils/errorReporter';
 import { ErrorState } from '../components/common/EmptyState';
 import RewardsSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
 import { getRakebackReadiness } from '../utils/rakebackReadiness';
-import { readRakebackClaimResult } from '../utils/rakebackClaimResult';
 
 interface RakebackPeriod {
   id: string;
@@ -203,10 +202,6 @@ export default function RakebackPage() {
   // ── Claim rakeback handler ──
   const handleClaimRakeback = async () => {
     if (loading || loadError || claimStatus === 'claiming') return;
-    if (claimTimerRef.current) {
-      clearTimeout(claimTimerRef.current);
-      claimTimerRef.current = null;
-    }
     setClaimStatus('claiming');
     setClaimMessage('');
     try {
@@ -238,29 +233,22 @@ export default function RakebackPage() {
       );
       if (claimErr) throw new Error(claimErr.message);
 
-      const claimed = readRakebackClaimResult(claimRes);
-      if (claimed.kind === 'refused') throw new Error(claimed.message);
-      if (claimed.kind === 'unconfirmed') {
-        // A malformed reply does not establish whether money moved. Refresh authoritative reads.
-        void loadRakebackData();
-        masterBus.emit('WALLET_REFRESHED', { walletType: 'PLAYER', available: 0, total: 0 });
-        throw new Error(
-          'Claim Result Could Not Be Confirmed. Please Check Your Refreshed Balances.'
-        );
-      }
-      if (claimed.kind === 'unpaid') {
+      const claimed = (claimRes ?? {}) as { total_payout?: number; periods_claimed?: number };
+      const claimedTotal = Number(claimed.total_payout ?? 0);
+      const claimedCount = Number(claimed.periods_claimed ?? 0);
+
+      if (claimedTotal <= 0 && claimedCount === 0) {
         setClaimStatus('error');
-        setClaimMessage('No Rakeback Was Paid. Pending Periods May Be Deferred.');
-        void loadRakebackData();
+        setClaimMessage('No rakeback to claim.');
+        loadRakebackData();
         return;
       }
 
-      const claimedTotal = claimed.amount;
       setClaimStatus('success');
       setClaimMessage(`Claimed ${claimedTotal.toLocaleString()} chips!`);
       // Reload data to reflect changed status
       loadRakebackData();
-      // Current WALLET_REFRESHED subscribers refetch; this RPC does not return wallet balances.
+      // Notify other pages that wallet balance changed
       masterBus.emit('WALLET_REFRESHED', { walletType: 'PLAYER', available: 0, total: 0 });
       masterBus.emit('RAKEBACK_CLAIMED', {
         clubId: targetClubId ?? '',

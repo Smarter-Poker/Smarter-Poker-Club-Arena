@@ -215,6 +215,23 @@ export const BBJ_QUALIFYING_HANDS: Record<string, BBJQualifyingHand> = {
     minRankValue: 'KKKK',
   },
   // FIX 116: plo_hilo dead variant removed — plo8 and flo8 are the hi-lo variants
+  /* Mirrors the client half. `normalizeVariantKey` maps every hi-lo display
+     name to 'plo8', so this key is reached only when a caller passes the raw
+     'plo_hilo'. It exists on both sides because the two constants must be
+     identical - a key on one side and not the other is how Pineapple came to
+     be misstated for months. */
+  plo_hilo: {
+    label: 'PLO8 (Hi-Lo 8 Or Better)',
+    minLosingHand: 'KKKK2',
+    description: 'Four Of A Kind (Kings) Or Better Must LOSE - Evaluated On HIGH Hand Only',
+    rules: [
+      'Must use exactly 2 cards from hand',
+      'Both players must use two cards from their hole cards',
+      'BBJ evaluated on HIGH hand only (low hand does not qualify)',
+    ],
+    handRank: 'four_of_a_kind',
+    minRankValue: 'KKKK',
+  },
   plo5: {
     label: 'PLO5 / FLO5',
     minLosingHand: '87654',

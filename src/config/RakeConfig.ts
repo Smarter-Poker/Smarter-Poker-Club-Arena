@@ -388,6 +388,27 @@ export const BBJ_QUALIFYING_HANDS: Record<string, BBJQualifyingHand> = {
     rules: [],
     eligible: false,
   },
+  /* PINEAPPLE IS A LIVE VARIANT AND ITS BAR IS NOT HOLD'EM'S (2026-09-11).
+     The server has carried this entry all along; the client did not, and
+     `normalizeVariantKey` falls through to 'nlh' for any key it does not
+     know. So every Pineapple table told its players the HOLD'EM rule -
+     "aces full or better must lose", plus the Ace-in-the-hole and
+     both-cards-play technicalities - while the engine was enforcing Quad
+     Kings or better. Measured that day: 293 Pineapple tables, 11,606
+     BBJ-raked hands in seven days, and FOUR real jackpot hits paid under
+     the rule the client was not showing. A player holding aces full on a
+     Pineapple table was reading a qualifying hand that does not qualify. */
+  pineapple: {
+    label: 'Pineapple',
+    minLosingHand: 'KKKK2',
+    description: 'Four Of A Kind (Kings) Or Better Must LOSE',
+    rules: [
+      'Must use exactly 2 cards from hand',
+      'Both players must use two cards from their hole cards',
+    ],
+    handRank: 'four_of_a_kind',
+    minRankValue: 'KKKK',
+  },
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════

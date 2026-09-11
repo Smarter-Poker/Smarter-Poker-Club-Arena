@@ -534,20 +534,26 @@ describe('a green engine deploy means production serves the commit (2026-09-10)'
 });
 
 describe('the publish path cannot be left waiting on a push that never comes', () => {
-  it('has a catch-up schedule of its own', () => {
-    // `push` was the ONLY trigger. GitHub cancels the run that was PENDING in
-    // the concurrency group when a newer push arrives, so a publish can be
-    // cancelled and never retried if the pushes stop right afterwards.
-    expect(cronEveryMinutes(SYNC)).not.toBeNull();
+  it('needs no catch-up schedule: a run that cannot finish hands itself on', () => {
+    // `push` was the ONLY trigger once, and a run that failed or was cancelled
+    // with no newer push behind it was never retried; a */30 catch-up and the
+    // watchdog's re-dispatch covered that. Since 2026-09-11 the run itself
+    // hands on (the hand-on job) and there is no cron.
+    expect(cronEveryMinutes(SYNC)).toBeNull();
+    expect(SYNC).not.toMatch(/^\s*- cron:/m);
+    expect(SYNC).toMatch(/\n {2}hand-on:\n/);
   });
 
-  it('a scheduled cycle costs nothing when production is already current', () => {
-    // Without this the catch-up would install, test and build a bundle that is
-    // already published, every cycle, forever.
+  it('a handed-on retry costs nothing when production is already current', () => {
+    // Without this every hand-on retry would install, test and build a bundle
+    // that a newer push's run may already have published.
     expect(SYNC).toMatch(/publish-needed:/);
     expect(SYNC).toMatch(/id: dedupe/);
-    expect(SYNC).toMatch(/if: github\.event_name == 'schedule'/);
+    expect(SYNC).toMatch(/if: github\.event_name == 'workflow_dispatch' && inputs\.handed_on/);
     expect(SYNC).toMatch(/build-info\.json/);
+    expect(SYNC).toMatch(
+      /handed_on:\s*\n\s*description:[^\n]*\n\s*type: boolean\s*\n\s*default: false/
+    );
   });
 
   it('the check is a JOB, so the TEST SUITE skips with the build', () => {
@@ -569,9 +575,10 @@ describe('the publish path cannot be left waiting on a push that never comes', (
   it('a push and a manual dispatch are NEVER deduped', () => {
     // A push is by definition new work; a human dispatching this is usually
     // forcing a republish of something that looks stuck. Deduping either would
-    // be the publish bug this is meant to prevent.
+    // be the publish bug this is meant to prevent. Only a run's own handed-on
+    // retry (handed_on=true, default false) asks production first.
     const dedupe = sliceYamlEntry(SYNC, 'id: dedupe');
-    expect(dedupe).toMatch(/if: github\.event_name == 'schedule'/);
+    expect(dedupe).toMatch(/if: github\.event_name == 'workflow_dispatch' && inputs\.handed_on/);
   });
 
   it('an unreadable build-info publishes rather than assuming it is current', () => {

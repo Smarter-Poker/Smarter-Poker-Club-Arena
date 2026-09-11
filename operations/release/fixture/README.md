@@ -49,6 +49,13 @@ is disabled. PostgreSQL's package supplies the required contrib extensions;
 the image build checks for dblink, pg_stat_statements, pg_trgm, pgcrypto,
 uuid-ossp, and vector control files, and the native smoke creates all six.
 
+The minimal Realtime base does not provide a working system CA bundle for the
+HTTPS package-index fetch. Bootstrap that bundle from the pinned official Node
+binary's [bundled Mozilla roots](https://nodejs.org/docs/latest-v22.x/api/tls.html#tlsrootcertificates),
+then install Debian's signed `ca-certificates` package. TLS peer verification
+and APT signature verification stay enabled. Package-index failures terminate
+the build immediately instead of appearing later as missing dependencies.
+
 The npm lock pins `@playwright/test` 1.58.0, `pg` 8.20.0, and `tsx` 4.23.13,
 including package integrity hashes. The locked Playwright browser revision is
 installed at build time; its [Debian 13 dependencies](https://github.com/microsoft/playwright/blob/v1.58.0/packages/playwright-core/src/server/registry/nativeDeps.ts)

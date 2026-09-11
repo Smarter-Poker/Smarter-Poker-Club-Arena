@@ -28,6 +28,11 @@ COPY --from=auth /usr/local/bin/auth /usr/local/bin/auth
 COPY --from=postgrest /bin/postgrest /usr/local/bin/postgrest
 COPY --from=dependencies /opt/qualification /opt/qualification
 
+# The minimal Realtime image has no system CA bundle. Bootstrap HTTPS from the
+# pinned official Node binary's bundled Mozilla roots; APT then installs its
+# signed ca-certificates package. TLS and repository signature checks stay on.
+RUN node -e "const fs=require('node:fs'); const roots=require('node:tls').rootCertificates; if(roots.length<100) throw Error('Missing pinned TLS roots'); fs.mkdirSync('/etc/ssl/certs',{recursive:true}); fs.writeFileSync('/etc/ssl/certs/ca-certificates.crt',roots.join('\\n')+'\\n',{mode:0o644});"
+
 # A dated, signed Debian snapshot fixes transitive packages as well as PostgreSQL.
 # Expiry is disabled only for this immutable historical snapshot; signatures stay on.
 RUN test "$(dpkg --print-architecture)" = amd64 \
@@ -40,7 +45,7 @@ RUN test "$(dpkg --print-architecture)" = amd64 \
     && chmod 0755 /usr/sbin/policy-rc.d \
     && mkdir -p /etc/postgresql-common \
     && printf 'create_main_cluster = false\n' > /etc/postgresql-common/createcluster.conf \
-    && apt-get update \
+    && apt-get update -o APT::Update::Error-Mode=any \
     && apt-get install -y --no-install-recommends \
       postgresql-17=17.11-0+deb13u1 postgresql-client-17=17.11-0+deb13u1 \
       libpq5=17.11-0+deb13u1 postgresql-17-pgvector=0.8.0-1 \

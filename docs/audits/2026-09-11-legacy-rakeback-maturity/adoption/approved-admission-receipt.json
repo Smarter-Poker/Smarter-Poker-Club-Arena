@@ -1,0 +1,178 @@
+{
+  "admission": [
+    {
+      "break_window_refusal": null,
+      "checked_at": "2026-09-11 07:44:55.11709+00",
+      "owners": [
+        {
+          "acl": "{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+          "actual_md5": "930e4b70fa3580c010abe99e23181598",
+          "owner": "postgres",
+          "pass": true,
+          "proconfig": ["search_path=public, extensions"],
+          "prosecdef": true,
+          "signature": "public.fn_claim_rakeback(uuid)"
+        },
+        {
+          "acl": "{postgres=X/postgres,service_role=X/postgres}",
+          "actual_md5": "5f1b3b29c972620ca06143a2f58444c9",
+          "owner": "postgres",
+          "pass": true,
+          "proconfig": ["search_path=public"],
+          "prosecdef": true,
+          "signature": "public.fn_close_settlement_period(uuid)"
+        },
+        {
+          "acl": "{postgres=X/postgres,service_role=X/postgres}",
+          "actual_md5": "5234e460b1ea1f666fbc6bac7a9a1b17",
+          "owner": "postgres",
+          "pass": true,
+          "proconfig": ["search_path=public"],
+          "prosecdef": true,
+          "signature": "public.fn_settle_round3_agents_to_players(uuid,timestamptz,timestamptz)"
+        }
+      ],
+      "potentially_conflicting_relation_locks": 1,
+      "state": {
+        "append_only_md5": "c19c4314bcb44b29f5d15e32e4dacccd",
+        "capture_state_absent": true,
+        "new_function_names_clear": true,
+        "new_trigger_names_clear": true,
+        "receipt_unique_present": true
+      }
+    }
+  ],
+  "approval_context": "Root confirmed new explicit user approval of exact atomic SQL a55 and paired PR4252 UI release. Root is sole application coordinator.",
+  "atomic_source_sha256": "a55e792f12040799a20fcf6d54969059efecaea3869c3aa148191fe1b083c4c7",
+  "helper_query": "SET LOCAL statement_timeout='2000ms';\nWITH expected(signature,body_md5,secdef,acl) AS (VALUES\n ('public.fn_caller_is_engine()','36e18a86ba143ac90e90648b0bc020ea',false,ARRAY['authenticated=X/postgres','postgres=X/postgres','service_role=X/postgres']),\n ('public.fn_is_platform_admin()','a8d8672e0201c8036e326989ea82d05c',true,ARRAY['authenticated=X/postgres','postgres=X/postgres','service_role=X/postgres']),\n ('public.fn_platform_frozen()','112b1265824ee082b8adc67ea367d826',false,ARRAY['anon=X/postgres','authenticated=X/postgres','postgres=X/postgres','service_role=X/postgres']),\n ('public.fn_player_rakeback_rate(uuid,uuid,numeric)','0f3c31ed1a9f42ef48d1dc0392b1bd3f',true,ARRAY['authenticated=X/postgres','postgres=X/postgres','service_role=X/postgres']),\n ('public.fn_rake_record_is_ghost_twin(uuid,uuid,jsonb)','0ed6daaa5bf333aceafa413a569dce95',false,ARRAY['postgres=X/postgres','service_role=X/postgres']),\n ('public.fn_rake_shares_for_record(uuid,numeric,jsonb,text)','9e975d2d4cd8b63e677eff970a5c80b9',false,ARRAY['authenticated=X/postgres','postgres=X/postgres','service_role=X/postgres']),\n ('public.fn_allocate_rake_credits(numeric,jsonb,text)','a63ce6760dc4178f000f2214a7cf7cd6',false,ARRAY['authenticated=X/postgres','postgres=X/postgres','service_role=X/postgres']),\n ('public.atomic_credit_wallet_and_log(uuid,numeric,text,text,uuid,uuid,uuid,text)','be06a409371e63480439da6c5dfd3821',false,ARRAY['postgres=X/postgres','service_role=X/postgres']),\n ('public.fn_debit_treasury(uuid,numeric,text,jsonb)','8f43bf345fba1310ca8c3c40d6f8439d',false,ARRAY['postgres=X/postgres','service_role=X/postgres'])\n)\nSELECT statement_timestamp() checked_at,e.signature,md5(p.prosrc) actual_md5,pg_get_userbyid(p.proowner) owner,p.prosecdef,p.proacl::text acl,p.proconfig,\n COALESCE(md5(p.prosrc)=e.body_md5 AND pg_get_userbyid(p.proowner)='postgres' AND p.prosecdef=e.secdef\n AND ARRAY(SELECT a FROM unnest(p.proacl::text[]) a ORDER BY a)=e.acl,false) pass\nFROM expected e LEFT JOIN pg_proc p ON p.oid=to_regprocedure(e.signature) ORDER BY e.signature;",
+  "helpers": [
+    {
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "actual_md5": "be06a409371e63480439da6c5dfd3821",
+      "checked_at": "2026-09-11 07:45:16.926901+00",
+      "owner": "postgres",
+      "pass": true,
+      "proconfig": ["search_path=public, extensions"],
+      "prosecdef": false,
+      "signature": "public.atomic_credit_wallet_and_log(uuid,numeric,text,text,uuid,uuid,uuid,text)"
+    },
+    {
+      "acl": "{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+      "actual_md5": "a63ce6760dc4178f000f2214a7cf7cd6",
+      "checked_at": "2026-09-11 07:45:16.926901+00",
+      "owner": "postgres",
+      "pass": true,
+      "proconfig": ["search_path=public, pg_temp"],
+      "prosecdef": false,
+      "signature": "public.fn_allocate_rake_credits(numeric,jsonb,text)"
+    },
+    {
+      "acl": "{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+      "actual_md5": "36e18a86ba143ac90e90648b0bc020ea",
+      "checked_at": "2026-09-11 07:45:16.926901+00",
+      "owner": "postgres",
+      "pass": true,
+      "proconfig": ["search_path=pg_catalog, public, auth"],
+      "prosecdef": false,
+      "signature": "public.fn_caller_is_engine()"
+    },
+    {
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "actual_md5": "8f43bf345fba1310ca8c3c40d6f8439d",
+      "checked_at": "2026-09-11 07:45:16.926901+00",
+      "owner": "postgres",
+      "pass": true,
+      "proconfig": ["search_path=public, extensions"],
+      "prosecdef": false,
+      "signature": "public.fn_debit_treasury(uuid,numeric,text,jsonb)"
+    },
+    {
+      "acl": "{postgres=X/postgres,service_role=X/postgres,authenticated=X/postgres}",
+      "actual_md5": "a8d8672e0201c8036e326989ea82d05c",
+      "checked_at": "2026-09-11 07:45:16.926901+00",
+      "owner": "postgres",
+      "pass": true,
+      "proconfig": ["search_path=public"],
+      "prosecdef": true,
+      "signature": "public.fn_is_platform_admin()"
+    },
+    {
+      "acl": "{postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+      "actual_md5": "112b1265824ee082b8adc67ea367d826",
+      "checked_at": "2026-09-11 07:45:16.926901+00",
+      "owner": "postgres",
+      "pass": true,
+      "proconfig": ["search_path=public, pg_temp"],
+      "prosecdef": false,
+      "signature": "public.fn_platform_frozen()"
+    },
+    {
+      "acl": "{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+      "actual_md5": "0f3c31ed1a9f42ef48d1dc0392b1bd3f",
+      "checked_at": "2026-09-11 07:45:16.926901+00",
+      "owner": "postgres",
+      "pass": true,
+      "proconfig": ["search_path=public"],
+      "prosecdef": true,
+      "signature": "public.fn_player_rakeback_rate(uuid,uuid,numeric)"
+    },
+    {
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "actual_md5": "0ed6daaa5bf333aceafa413a569dce95",
+      "checked_at": "2026-09-11 07:45:16.926901+00",
+      "owner": "postgres",
+      "pass": true,
+      "proconfig": ["search_path=public"],
+      "prosecdef": false,
+      "signature": "public.fn_rake_record_is_ghost_twin(uuid,uuid,jsonb)"
+    },
+    {
+      "acl": "{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+      "actual_md5": "9e975d2d4cd8b63e677eff970a5c80b9",
+      "checked_at": "2026-09-11 07:45:16.926901+00",
+      "owner": "postgres",
+      "pass": true,
+      "proconfig": ["search_path=public"],
+      "prosecdef": false,
+      "signature": "public.fn_rake_shares_for_record(uuid,numeric,jsonb,text)"
+    }
+  ],
+  "immutable_readiness_commit": "6fd5fabb298ef3816cf3d2237ff19c3cd09d263a",
+  "limits": [
+    "These are timestamped admission reads, not applied runtime acceptance.",
+    "Malformed scan covers only the four predicates within the closed-pending filter; no broader accounting cleanliness claim.",
+    "No migration SQL or history reconciliation has been executed by this agent.",
+    "Actual MCP-generated migration version and stored statement representation must be captured after root's successful application; no prewritten history entry."
+  ],
+  "malformed_closed_pending": [
+    {
+      "checked_at": "2026-09-11 07:45:24.5716+00",
+      "closed_pending_scanned": 1767,
+      "complete_for_closed_pending_filter": true,
+      "invalid_positive_amounts": 0,
+      "invalid_positive_rake_basis": 0,
+      "invalid_positive_rates": 0,
+      "negative_periods": 0,
+      "row_cap": 5001
+    }
+  ],
+  "matching_history_before_apply": [],
+  "phase": "pre_apply_admission_snapshot",
+  "post_query_sha256": "60e23add8362df2b23735fd477d7044e2585bcdb9629f4251a8dbf017bc59498",
+  "production_mutations_by_payer_agent": false,
+  "project_id": "kuklfnapbkmacvwxktbh",
+  "recovery": {
+    "git_status": "clean",
+    "head": "6fd5fabb298ef3816cf3d2237ff19c3cd09d263a",
+    "production_mutations_by_payer_agent": false,
+    "unknown_receipt_write": "reconciled_absent"
+  },
+  "source_migration_reserved_version": "20260911072837",
+  "source_migration_reserved_version_provenance": "Root confirmed the normal reserved file version; this agent's saved history query also filters the unchanged semantic name.",
+  "source_readonly_query_files": [
+    "01-admission.sql",
+    "02-malformed-closed-periods.sql",
+    "03-post-apply.sql",
+    "04-migration-receipt.sql"
+  ]
+}

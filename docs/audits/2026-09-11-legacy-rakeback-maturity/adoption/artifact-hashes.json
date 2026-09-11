@@ -3,6 +3,9 @@
   "02-malformed-closed-periods.sql": "ea2802bfbf5b61f748ab511a3ae6fea1cd5f1b8e6e7c74b8d719a475f61a06bb",
   "03-post-apply.sql": "60e23add8362df2b23735fd477d7044e2585bcdb9629f4251a8dbf017bc59498",
   "04-migration-receipt.sql": "3ba05df16d6743ec0d3704d54e11397ed0588639f75dd1d8db169c3d5f2654b0",
-  "README.md": "5f70e918379fdc9977c6c585eecb0b67077e3a4afdd3c6cb5a7fd89835f433f3",
+  "README.md": "4f0360fa3fd40c097efef54346b62e6ee8e8ef665bd8e21b38e6bd4509759cd2",
+  "applied-ledger-alignment.sql.txt": "0dc3ef5121e828feb307371e3f293924175bd3bbd58f3578c274f6bc185f5c2e",
+  "approved-admission-receipt.json": "679d894b56b7d1a49f58149e10683a27e2c497d18c6bbdd1f0699c22cf478f05",
+  "approved-application-receipt.json": "54201b28ab09a951748495b2a1878234584f68b9e67c89abbeb0cb4527bcf786",
   "read-only-receipt.json": "9a16eef0860dd1383824288e0da6f05de403d0e03c548566523b815df6a85838"
 }

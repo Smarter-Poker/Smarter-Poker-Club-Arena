@@ -1,0 +1,4 @@
+{
+  "_owner": "fix/bbj-the-rules-page-and-the-engine-agree (migration 20260911210458): bbj_pools.mini_reserve_floor's column DEFAULT was the hard literal 5000.00; fn_bbj_default_mini_floor() returns three times the largest ENABLED mini tier, never below 5000, so the floor cannot silently stop covering a bad day when the tiers are retuned",
+  "functions": ["fn_bbj_default_mini_floor"]
+}

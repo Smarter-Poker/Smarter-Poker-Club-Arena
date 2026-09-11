@@ -11381,20 +11381,21 @@ export default function TablePage({
             }, 4500);
           }
 
-          // Phase E: Notify all table players via in-app Notifications tab
-          if (userId && userId !== 'guest') {
-            notificationService
-              .create({
-                userId,
-                type: 'bonus',
-                title: 'Bad Beat Jackpot Hit!',
-                message: `The BBJ paid out a total of $${totalPayout.toLocaleString()} at ${tableState.tableName}!`,
-                metadata: { tableId: tableId || '', totalPayout },
-              })
-              .catch(() => {
-                /* non-critical */
-              });
-          }
+          /* THE ENGINE WRITES THE NOTIFICATION, AND ONLY THE ENGINE (2026-09-11).
+             A client-side `notificationService.create` used to fire here, so
+             every seated player received TWO rows for one jackpot - and the
+             client's was the wrong one twice over. It was titled "Bad Beat
+             Jackpot Hit!" with no knowledge of `kind`, so every MINI announced
+             itself as the main jackpot; and it reported the table TOTAL rather
+             than the reader's own share, so a player owed 12.40 was told the
+             jackpot paid 4,075.
+             `processBBJPayout` (server/src/services/supabase/bbj.ts) already
+             inserts one row per recipient, naming the right jackpot, carrying
+             that recipient's own share and whether it is credited or pending,
+             with `kind` in the metadata. It reaches players who were dealt in
+             and have already closed the tab, which a browser never could.
+             A duplicate written from the only place that cannot see the whole
+             payout is not a second safety net, it is a second answer. */
 
           // Clear the hit ref
           bbjHitDataRef.current = null;

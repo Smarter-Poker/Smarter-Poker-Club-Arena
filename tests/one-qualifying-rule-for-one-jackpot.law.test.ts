@@ -232,3 +232,66 @@ describe('one hand produces one near miss, not two', () => {
     );
   });
 });
+
+describe('the rules page states the rule the engine applies', () => {
+  /*
+   * A FLAG A PLAYER CAN READ MUST BE A FLAG THE ENGINE OBEYS (2026-09-11).
+   *
+   * `BBJ_RULES.splitIfMultipleQualify` read `true` in both halves, and
+   * BBJQualifyingHands printed, to every player: "If More Than One Player
+   * Loses With A Qualifying Hand, The Prize Is Divided Between Them."
+   * `detectBBJHit` has never divided anything. It evaluates every loser and
+   * pays the STRONGEST qualifying hand - the worse beat - and the engine's own
+   * comment called the split "a documented aspiration" while the surface above
+   * it stated the aspiration as the rule.
+   *
+   * Two of the four flags in that object (`excludeDoubleBoard`,
+   * `onlyFirstRunout`) already had a law proving the engine enforces them.
+   * This was the third, and the only one a player could read.
+   */
+  const CLIENT_CFG = 'src/config/RakeConfig.ts';
+  const SERVER_CFG = 'server/src/config/RakeConfig.ts';
+
+  const flagValue = (file: string, flag: string): string => {
+    const src = read(file)
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/^\s*\/\/.*$/gm, '');
+    const m = new RegExp(`${flag}:\\s*(true|false)`).exec(src);
+    expect(m, `${file} must declare ${flag}`).toBeTruthy();
+    return m![1];
+  };
+
+  it('both halves agree on splitIfMultipleQualify', () => {
+    expect(flagValue(CLIENT_CFG, 'splitIfMultipleQualify')).toBe(
+      flagValue(SERVER_CFG, 'splitIfMultipleQualify')
+    );
+  });
+
+  it('it is false, because the engine pays one holder', () => {
+    /* If a split is ever built - the atomic payout RPC taking two bad-beat
+       holders - this pin moves WITH that mechanism, in the same commit. Until
+       then the flag must not claim a payout shape that cannot happen. */
+    expect(flagValue(SERVER_CFG, 'splitIfMultipleQualify')).toBe('false');
+  });
+
+  it('the engine picks the single strongest qualifying loser', () => {
+    const src = read(SERVER_CFG);
+    const loop = src.slice(
+      src.indexOf('// 3. Check each loser against the qualifying minimum.'),
+      src.indexOf('if (best) {')
+    );
+    expect(loop, 'the strongest-loser loop must exist').toBeTruthy();
+    expect(loop).toMatch(/loser\.handRanking > best\.handRanking/);
+    // one holder, named once - there is no second bad-beat recipient
+    expect(src).toMatch(/loserUserId: best\.userId/);
+  });
+
+  it('the surface has words for the rule that is actually applied', () => {
+    const panel = read('src/components/bbj/BBJQualifyingHands.tsx');
+    /* The false branch is the one players see today, so it cannot be empty:
+       silence about the multi-qualifier case is how the old sentence survived
+       unchallenged. */
+    expect(panel).toContain('The Strongest Losing Hand Takes It.');
+    expect(panel).toMatch(/BBJ_RULES\.splitIfMultipleQualify\s*\n?\s*\?/);
+  });
+});

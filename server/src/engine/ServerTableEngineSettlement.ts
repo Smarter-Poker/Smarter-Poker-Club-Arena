@@ -1182,6 +1182,11 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           );
           this.currentHandMiniBBJHit = miniResult;
           this.currentHandMiniBBJTierId = miniTierId;
+          /* The mini's OWN detected counter (2026-09-11). It must not touch
+             the main's: `bbjHitsDetectedTotal` is documented as one half of
+             the difference `detected - paid`, and a mini landing in it would
+             be read as a main jackpot that never delivered. */
+          EngineMetrics.bbjMiniHitsDetectedTotal.inc(1);
 
           /* The same event the main jackpot emits, carrying `kind: 'mini'` so
              a client can show a smaller celebration - and so an older client,
@@ -2854,7 +2859,11 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       if (!this.lifecycleCanMutate()) return;
 
       if (outcome.status === 'queued') {
-        EngineMetrics.bbjPayoutsQueuedTotal.inc(1);
+        /* THE MINI'S OWN QUEUED COUNTER (2026-09-11). This read
+           `bbjPayoutsQueuedTotal` - the MAIN's - so every queued mini inflated
+           the main jackpot's queue and skewed the one ratio those counters
+           exist to publish. */
+        EngineMetrics.bbjMiniPayoutsQueuedTotal.inc(1);
         this.hub?.emitEvent(this.tableId, {
           type: 'bbj_payout_pending',
           kind: 'mini',
@@ -2886,7 +2895,21 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
            seventeen silent days (CLAUDE.md 10.86). Same instrument, same
            table, so one query answers both "why did the main not pay" and
            "why did the mini not pay". Fire-and-forget; never gates. */
-        if (outcome.status === 'skipped') {
+        /* A REPLAY IS NOT A REFUSAL (2026-09-11). `already_paid` came back
+           through this branch and was written down as `mini_refused:
+           already_paid`, which is the one instrument built to answer "why did
+           the mini not pay" reporting a mini that DID pay. The comment above
+           was careful to exclude `queued` for exactly this reason and did not
+           exclude the other not-a-refusal beside it. Settlement can run twice
+           for one hand - that is what the idempotency key is for - and the
+           second run finding the payout already there is the key working. */
+        const refused = outcome.status === 'skipped' && outcome.reason !== 'already_paid';
+        if (refused) {
+          /* A REFUSAL IS A NUMBER (CLAUDE.md 10.84). The row below is the
+             detail; this is the series an alert can watch, because a reserve
+             that has reached its floor refuses EVERY mini at those tables and
+             the only other evidence is an absence of hits. */
+          EngineMetrics.bbjMiniPayoutsRefusedTotal.inc(1);
           void recordBBJNearMiss({
             tableId: this.tableId,
             clubId: this.tableInfo?.club_id ?? null,
@@ -2903,6 +2926,12 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         }
         return;
       }
+
+      /* THE MINI'S OWN PAID COUNTER (2026-09-11). Nothing was incremented
+         here, so `poker_bbj_mini_hits_detected_total` had no counterpart and
+         the mini's health could not be read the way the main's is: detected
+         == paid. */
+      EngineMetrics.bbjMiniPayoutsPaidTotal.inc(1);
 
       console.log(
         `[ServerTableEngine:${this.tableId}] mini jackpot paid ${outcome.total} ` +

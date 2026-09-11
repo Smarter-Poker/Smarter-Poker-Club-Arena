@@ -139,10 +139,16 @@ interface DynamicWalletProps {
    */
   roleReady?: boolean;
   /**
-   * Render the BBJ banner. Default true. The club lobby passes false because
-   * BBJTicker already owns the jackpot up there — two live copies of the same
-   * number, animating on two separate subscriptions, is the kind of duplication
-   * that eventually shows two DIFFERENT figures on one screen.
+   * Render the BBJ banner. Default true, and NO CALLER PASSES FALSE.
+   *
+   * This said the club lobby passes false "because BBJTicker already owns the
+   * jackpot up there". Checked 2026-09-11: nothing passes this prop at all,
+   * and `BBJTicker` is mounted on no page. What the club lobby actually
+   * renders is its own `ClubBBJShell` tile, so the reasoning survives even
+   * though the component named in it does not - two live copies of the same
+   * number on two subscriptions is still how one screen ends up showing two
+   * different figures. Kept as the escape hatch for a surface that grows its
+   * own jackpot tile, with the reason stated rather than a dead file cited.
    */
   showBBJ?: boolean;
   /**

@@ -153,7 +153,7 @@ export default function BadBeatJackpotPage() {
         // RAKE-AUDIT 2026-07-24: resolve the ACTUAL pool (union-level when the
         // club is in a union — that is where the server banks contributions).
         // The old `club_id=eq.` filter never fired for union clubs.
-        const { data: clubRow } = await supabase
+        const { data: clubRow, error: clubErr } = await supabase
           .from('clubs')
           .select('union_id')
           .eq('id', resolvedId)
@@ -162,9 +162,31 @@ export default function BadBeatJackpotPage() {
         poolIdQuery = clubRow?.union_id
           ? poolIdQuery.eq('union_id', clubRow.union_id)
           : poolIdQuery.eq('club_id', resolvedId);
-        const { data: poolRow } = await poolIdQuery.maybeSingle();
+        const { data: poolRow, error: poolErr } = await poolIdQuery.maybeSingle();
         if (!isMounted) return;
-        const winnersFilter = poolRow?.id ? `pool_id=eq.${poolRow.id}` : `club_id=eq.${resolvedId}`;
+        /* A FILTER BUILT ON AN UNREAD ANSWER LISTENS TO NOTHING (2026-09-11).
+           Both reads above discarded their error. A failed `clubs` read left
+           `clubRow` undefined, so a UNION club fell to the club-level branch
+           and subscribed on `club_id=eq.<club>` - a filter its jackpot rows
+           never carry. The subscription then reported itself healthy and the
+           club silently stopped hearing its own jackpot land, for the life of
+           the page. Three outcomes, not two: a pool id, no pool, and could not
+           ask (CLAUDE.md 10.86). The third one does not get to masquerade as
+           the second. The ten-second poll below still drives the figure, so
+           the page keeps working; what is skipped is the one binding that
+           would have been wrong. */
+        const readFailed = clubErr || poolErr;
+        if (readFailed) {
+          reportError(
+            (clubErr || poolErr)?.message ?? 'unknown',
+            'BadBeatJackpotPage._Realtime_pool_resolution_failed'
+          );
+        }
+        const winnersFilter = readFailed
+          ? null
+          : poolRow?.id
+            ? `pool_id=eq.${poolRow.id}`
+            : `club_id=eq.${resolvedId}`;
 
         /* THE FIGURE IS POLLED (BBJ phase 3.2, 2026-09-06). `bbj_pools`
            updated 40,219 times in twenty-four hours on production, and this
@@ -189,6 +211,10 @@ export default function BadBeatJackpotPage() {
           if (!isMounted) return;
           setPageMini(snap);
         });
+
+        /* No filter means the pool could not be resolved; binding on a guess
+           is what this commit removed. The poll above keeps the number live. */
+        if (!winnersFilter) return;
 
         const channel = masterBus.getOrCreateChannel(channelKey);
         channel
@@ -276,11 +302,26 @@ export default function BadBeatJackpotPage() {
         // the money — union-level pool when the club belongs to a union, else
         // the club-level pool. Union clubs previously showed a stale/empty
         // club pool while the real jackpot accumulated in the union pool.
-        const { data: clubUnionRow } = await supabase
+        /* THE ERROR IS THE THIRD OUTCOME, AND IT WAS BEING THROWN AWAY
+           (2026-09-11). This read `const { data: clubUnionRow } = ...`.
+           supabase-js RETURNS its errors rather than throwing them, so a
+           failed read left `clubUnionRow` undefined, the query below silently
+           fell back to the CLUB pool for a union club, and the page showed an
+           empty pool under the club's own name - indistinguishable from a club
+           that has never banked a chip. Raising it is what reaches the catch
+           below, which is what sets `loadFailed`, which is what makes the
+           "Could Not Load The Jackpot" screen further down reachable at all.
+           That screen was written for this case and nothing could get to it
+           (CLAUDE.md 10.86: never coerce an unreadable answer into an empty
+           one). */
+        const { data: clubUnionRow, error: clubUnionErr } = await supabase
           .from('clubs')
           .select('union_id')
           .eq('id', resolvedId)
           .maybeSingle();
+        if (clubUnionErr) {
+          throw new Error(`Could not read the club's union: ${clubUnionErr.message}`);
+        }
         let jackpotQuery = supabase
           .from('bbj_pools')
           .select(
@@ -289,7 +330,13 @@ export default function BadBeatJackpotPage() {
         jackpotQuery = clubUnionRow?.union_id
           ? jackpotQuery.eq('union_id', clubUnionRow.union_id)
           : jackpotQuery.eq('club_id', resolvedId);
-        const { data: jackpotData } = await jackpotQuery.maybeSingle();
+        const { data: jackpotData, error: jackpotErr } = await jackpotQuery.maybeSingle();
+        /* Same discarded error, on the read this whole page is about. A pool
+           that could not be READ and a club with no pool are different facts,
+           and only one of them is the player's to act on. */
+        if (jackpotErr) {
+          throw new Error(`Could not read the jackpot pool: ${jackpotErr.message}`);
+        }
 
         if (getIsMounted && !getIsMounted()) return;
         if (jackpotData) {

@@ -220,3 +220,76 @@ describe('the money comes out of the reserve and nowhere else', () => {
     expect(fn).not.toContain('queueUnbankedFee');
   });
 });
+
+describe('the mini is counted as the mini, never as the main', () => {
+  /*
+   * THE COUNTERS SAID A MAIN JACKPOT WAS FAILING (2026-09-11).
+   *
+   * `engineInstruments.ts` documents its BBJ counters as a set whose useful
+   * reading is the DIFFERENCE - "detected == paid is health, a detected that
+   * never becomes paid or queued is the failure the whole of phase 2 exists to
+   * make impossible". The mini broke that arithmetic in both directions at
+   * once: it incremented the MAIN's `bbjPayoutsQueuedTotal` on every queued
+   * mini, and incremented nothing at all when a mini was detected, paid, or
+   * refused. So a queued mini read as the main jackpot failing to deliver, and
+   * a mini that had stopped paying entirely moved no series anywhere.
+   *
+   * Separate counters rather than a `kind` label, so that a dashboard or alert
+   * already reading the main's series keeps meaning what it meant.
+   */
+  const instruments = read('../observability/engineInstruments.ts');
+
+  it('the mini has its own detected, paid, queued and refused counters', () => {
+    for (const name of [
+      'poker_bbj_mini_hits_detected_total',
+      'poker_bbj_mini_payouts_paid_total',
+      'poker_bbj_mini_payouts_queued_total',
+      'poker_bbj_mini_payouts_refused_total',
+    ]) {
+      expect(instruments, `${name} must be declared`).toContain(name);
+    }
+    // registered at zero from boot, or "no minis" and "no instrument" read alike
+    for (const sym of [
+      'bbjMiniHitsDetectedTotal',
+      'bbjMiniPayoutsPaidTotal',
+      'bbjMiniPayoutsQueuedTotal',
+      'bbjMiniPayoutsRefusedTotal',
+    ]) {
+      expect(instruments, `${sym} must be seeded at zero`).toContain(`${sym}.inc(0);`);
+    }
+  });
+
+  it('the mini payout step touches no MAIN counter', () => {
+    const step = settlement.slice(
+      settlement.indexOf('processMiniBBJPayout('),
+      settlement.indexOf('mini jackpot paid')
+    );
+    expect(step.length).toBeGreaterThan(200);
+    /* On the CODE, not the prose. This block explains in a comment which main
+       counter it used to increment, and asserting on raw text would make that
+       explanation illegal - which pushes the next author to delete the
+       reasoning to get the law green. The same trap the promo law documents,
+       and the same one that caught this law's own author twice. */
+    const code = step.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    for (const main of ['bbjPayoutsQueuedTotal', 'bbjPayoutsPaidTotal', 'bbjHitsDetectedTotal']) {
+      expect(code, `the mini must not increment ${main}`).not.toMatch(
+        new RegExp(`EngineMetrics\\.${main}\\b`)
+      );
+    }
+    expect(code).toContain('bbjMiniPayoutsQueuedTotal.inc(1)');
+  });
+
+  it('a mini that pays and a mini that is refused each move their own series', () => {
+    expect(settlement).toContain('bbjMiniPayoutsPaidTotal.inc(1)');
+    expect(settlement).toContain('bbjMiniPayoutsRefusedTotal.inc(1)');
+    expect(settlement).toContain('bbjMiniHitsDetectedTotal.inc(1)');
+  });
+
+  it('a replay is not a refusal', () => {
+    /* `already_paid` is settlement running twice for one hand and the
+       idempotency key doing its job. Recording it as `mini_refused:` put a
+       mini that DID pay into the one instrument built to answer "why did the
+       mini not pay". */
+    expect(settlement).toMatch(/outcome\.reason !== 'already_paid'/);
+  });
+});

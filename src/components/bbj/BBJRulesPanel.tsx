@@ -22,7 +22,12 @@ import {
   getBBJPayoutPercentForBB,
   getBBJQualifyingInfo,
 } from '../../config/RakeConfig';
-import { getBBJMiniQualifyingInfo, BBJ_MINI_SPLIT } from '../../config/bbjMini';
+import {
+  getBBJMiniQualifyingInfo,
+  BBJ_MINI_SPLIT,
+  BBJ_MINI_SPLIT_PERCENT,
+} from '../../config/bbjMini';
+import { BBJ_MAIN_SPLIT } from '../../config/RakeConfig';
 import type { BbjMiniSnapshot } from '../../lib/bbjMiniFeed';
 import './BBJRulesPanel.css';
 
@@ -222,8 +227,14 @@ export function BBJRulesPanel({ poolAmount = 0, mini = null }: BBJRulesPanelProp
           )}
 
           <ul className="bbj-rules__list">
+            {/* The percentages come from the same constant as the figure in
+                the table above (`chips(t.amount * BBJ_MINI_SPLIT.loser)`).
+                They were typed here as "50% ... 25% ... 25%", so retuning the
+                split would have left this line describing the old one while
+                the money beside it moved. */}
             <li>
-              Split Like The Main Jackpot: 50% To The Bad-Beat Hand, 25% To The Hand That Won, 25%
+              Split Like The Main Jackpot: {BBJ_MINI_SPLIT_PERCENT.loser} To The Bad-Beat Hand,{' '}
+              {BBJ_MINI_SPLIT_PERCENT.winner} To The Hand That Won, {BBJ_MINI_SPLIT_PERCENT.table}{' '}
               Between Everyone Else Dealt In
             </li>
             <li>
@@ -329,7 +340,12 @@ export function BBJRulesPanel({ poolAmount = 0, mini = null }: BBJRulesPanelProp
                     {poolAmount > 0 && (
                       <td className="bbj-rules__money">
                         {chips(total)}
-                        <span className="bbj-rules__money-sub">Bad Beat {chips(total * 0.5)}</span>
+                        {/* The MAIN's split, from the constant rather than a
+                            bare 0.5 - the same reasoning as the mini's row
+                            above it. */}
+                        <span className="bbj-rules__money-sub">
+                          Bad Beat {chips(total * BBJ_MAIN_SPLIT.loser)}
+                        </span>
                       </td>
                     )}
                   </tr>

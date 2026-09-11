@@ -133,7 +133,13 @@ describe('a refused MINI is written down too (2026-09-09)', () => {
   );
 
   it('a skipped mini reaches bbj_near_misses with the refusal reason', () => {
-    expect(miniStep).toMatch(/if \(outcome\.status === 'skipped'\) \{/);
+    /* MOVED 2026-09-11 (rule 8: a pin follows its mechanism in the same
+       commit, it is never weakened). This pinned the literal
+       `if (outcome.status === 'skipped') {`. That predicate grew a second
+       term - see the `already_paid` test below - so the pin is on the
+       predicate's MEANING: a skipped mini is what reaches the recorder. */
+    expect(miniStep).toMatch(/outcome\.status === 'skipped'/);
+    expect(miniStep).toMatch(/if \(refused\) \{/);
     expect(miniStep).toMatch(/void recordBBJNearMiss\(\{/);
     expect(miniStep).toMatch(/reason: `mini_refused:\$\{outcome\.reason \|\| 'unspecified'\}`/);
   });
@@ -145,6 +151,16 @@ describe('a refused MINI is written down too (2026-09-09)', () => {
     expect(miniStep.indexOf('mini jackpot not paid for hand')).toBeLessThan(
       miniStep.indexOf("outcome.status === 'skipped'")
     );
+  });
+
+  it('a REPLAY is not recorded as refused either (2026-09-11)', () => {
+    /* `already_paid` is settlement running twice for one hand and the
+       idempotency key doing its job. It came back through this branch and was
+       written down as `mini_refused:already_paid` - the one instrument built
+       to answer "why did the mini not pay" reporting a mini that DID pay. The
+       test above excluded `queued` for exactly this reason and the other
+       not-a-refusal beside it was left in. */
+    expect(miniStep).toMatch(/outcome\.reason !== 'already_paid'/);
   });
 
   it('cannot break settlement', () => {

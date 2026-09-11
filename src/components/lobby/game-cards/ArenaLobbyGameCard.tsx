@@ -50,6 +50,18 @@ export function arenaGameCardActionsForEntry(
     /* GATE 6 (OPORD 1.4 s2.9): a must-move game is JOIN GAME / VIEW GAME -
        the platform picks the table. A single manual table keeps its words. */
     const game = Boolean(entry.game);
+    /* The board is visible but no seat can be taken: the same shape the closed
+       branch above uses, because a button that always fails is worse than a
+       button that says so. Watching is still offered. */
+    if (ctx.seatsClosedLabel) {
+      return {
+        primaryLabel: ctx.seatsClosedLabel,
+        primaryTone: 'neutral',
+        primaryDisabled: true,
+        secondaryLabel: game ? 'View Game' : 'View Table',
+        onSecondary: () => ctx.onViewTable?.(entry),
+      };
+    }
     return {
       primaryLabel: game ? 'Join Game' : 'Join Table',
       primaryTone: 'blue',

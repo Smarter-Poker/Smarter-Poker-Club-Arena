@@ -292,78 +292,25 @@ GRANT EXECUTE ON FUNCTION public.fn_bbj_mini_payout(uuid,uuid,bigint,text,uuid,u
   TO service_role;
 
 -- ───────────────────────────────────────────────────────────────────────────
--- 3. The club's own control
+-- 3. The club's own control - DECLARED IN 20260911142515, NOT HERE
 -- ───────────────────────────────────────────────────────────────────────────
-CREATE OR REPLACE FUNCTION public.fn_bbj_set_club_mini_enabled(
-  p_club_id uuid, p_enabled boolean)
-RETURNS jsonb
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path TO 'public'
-AS $function$
-DECLARE
-  v_union uuid; v_pool uuid; v_now boolean;
-BEGIN
-  IF p_club_id IS NULL OR p_enabled IS NULL THEN
-    RETURN jsonb_build_object('ok', false, 'reason', 'club_and_state_required');
-  END IF;
-
-  -- The club must exist before anything else is said about it.
-  SELECT c.union_id INTO v_union FROM public.clubs c WHERE c.id = p_club_id;
-  IF NOT FOUND THEN
-    RETURN jsonb_build_object('ok', false, 'reason', 'club_not_found');
-  END IF;
-
-  /* WHO MAY SET IT. Dan, 2026-09-11: "club admin, owner or co owner have
-     access to all features and details like that, create a table, edit
-     settings etc." fn_is_club_admin_uid is exactly that set - read, not
-     assumed: `role IN ('owner','co_owner','admin','manager')` AND an active
-     membership - and it is the same gate the rest of the club settings page
-     uses, so this control cannot end up stricter or looser than the ones
-     beside it. It reads the CALLER, so a member of one club cannot set
-     another's switch by passing its id. */
-  IF NOT public.fn_is_club_admin_uid(p_club_id) THEN
-    RETURN jsonb_build_object('ok', false, 'reason', 'not_a_club_admin');
-  END IF;
-
-  /* A UNION CLUB DOES NOT OWN THIS SWITCH. It plays into the union's pool, so
-     flipping it would turn the mini off for every other club in that union.
-     Refused by name rather than written somewhere nothing reads. */
-  IF v_union IS NOT NULL THEN
-    RETURN jsonb_build_object('ok', false, 'reason', 'union_club_follows_the_union',
-                              'union_id', v_union);
-  END IF;
-
-  SELECT id INTO v_pool FROM public.bbj_pools
-   WHERE club_id = p_club_id AND union_id IS NULL AND status = 'active'
-   ORDER BY created_at LIMIT 1;
-
-  /* NO POOL YET IS NOT AN ERROR, and it must not silently drop the setting.
-     fn_resolve_bbj_pool creates the row on the club's first raked hand; a club
-     that sets this before then gets the row now, at zero, carrying its
-     choice. */
-  IF v_pool IS NULL THEN
-    INSERT INTO public.bbj_pools
-      (club_id, pool_amount, main_balance, backup_balance, promo_balance,
-       hands_contributed, status, mini_enabled)
-    VALUES (p_club_id, 0, 0, 0, 0, 0, 'active', p_enabled)
-    RETURNING id INTO v_pool;
-  ELSE
-    UPDATE public.bbj_pools
-       SET mini_enabled = p_enabled, updated_at = now()
-     WHERE id = v_pool;
-  END IF;
-
-  SELECT COALESCE(mini_enabled, true) INTO v_now FROM public.bbj_pools WHERE id = v_pool;
-  RETURN jsonb_build_object('ok', true, 'pool_id', v_pool, 'mini_enabled', v_now);
-END;
-$function$;
-
-REVOKE ALL ON FUNCTION public.fn_bbj_set_club_mini_enabled(uuid, boolean) FROM PUBLIC, anon;
-GRANT EXECUTE ON FUNCTION public.fn_bbj_set_club_mini_enabled(uuid, boolean) TO authenticated, service_role;
-
-COMMENT ON FUNCTION public.fn_bbj_set_club_mini_enabled(uuid, boolean) IS
-  'Turn the mini bad beat jackpot on or off for a club that has no union. Club admins only (owner, co_owner, admin, manager); a club inside a union is refused with union_club_follows_the_union, because its mini pays from the union''s shared reserve.';
+--
+-- This migration originally carried fn_bbj_set_club_mini_enabled, and that is
+-- the version production ran at 14:07. It did not name its own actor: it
+-- derived the caller through fn_is_club_admin_uid, one call down, and
+-- `check-definer-authorization` refuses a SECURITY DEFINER writer a browser
+-- can reach that never calls auth.uid(), auth.role() or auth.jwt() itself.
+-- The guard is right, and it judges each migration FILE on its own body, so a
+-- later file cannot clear an earlier one.
+--
+-- So the declaration lives in 20260911142515 alone - the version that names
+-- its actor and refuses a caller with no session - and this file carries only
+-- the column and the payout change, which are byte-for-byte what ran here.
+-- Replayed in order, a fresh database reaches the identical end state: the
+-- column and the payout gate from this file, the function from the next one.
+-- Nothing about the applied history is rewritten - 20260911142515 is recorded
+-- and re-declares the body idempotently - and no file in this repo declares a
+-- browser-reachable definer writer that cannot say who is asking.
 
 -- ───────────────────────────────────────────────────────────────────────────
 -- 4. The surfaces read it
@@ -499,10 +446,11 @@ BEGIN
     RAISE EXCEPTION 'fn_bbj_mini_for_club does not say whose switch it is';
   END IF;
 
-  IF NOT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-                  WHERE n.nspname = 'public' AND p.proname = 'fn_bbj_set_club_mini_enabled') THEN
-    RAISE EXCEPTION 'fn_bbj_set_club_mini_enabled missing';
-  END IF;
+  /* fn_bbj_set_club_mini_enabled is NOT asserted here any more. It is declared
+     by 20260911142515 (see section 3 above), which runs after this file, so a
+     fresh replay has not created it yet at this point and an existence check
+     here would fail for the wrong reason. That migration asserts it instead,
+     together with the actor check that is the whole reason it is separate. */
 END $$;
 
 COMMIT;

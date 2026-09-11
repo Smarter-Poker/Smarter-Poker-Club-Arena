@@ -421,8 +421,14 @@ describe('a club without a union owns its mini switch (Dan 2026-09-11)', () => {
   });
 
   it('only a club admin may set it, and never for a club inside a union', () => {
-    const fn = toggleSql.slice(
-      toggleSql.indexOf('CREATE OR REPLACE FUNCTION public.fn_bbj_set_club_mini_enabled')
+    /* Declared in the actor migration, not the column one: check-definer-authorization
+       judges each FILE on its own body, so the only file that declares this
+       function is the one whose body names auth.uid(). */
+    const setterSql = read(
+      'supabase/migrations/20260911142515_the_mini_switch_names_who_is_asking.sql'
+    );
+    const fn = setterSql.slice(
+      setterSql.indexOf('CREATE OR REPLACE FUNCTION public.fn_bbj_set_club_mini_enabled')
     );
     expect(fn).toMatch(
       /IF NOT public\.fn_is_club_admin_uid\(p_club_id\) THEN\s*RETURN jsonb_build_object\('ok', false, 'reason', 'not_a_club_admin'\);/
@@ -433,8 +439,12 @@ describe('a club without a union owns its mini switch (Dan 2026-09-11)', () => {
     // Authorize BEFORE explaining: a stranger must not learn a club's union
     // shape from a refusal.
     expect(fn.indexOf('fn_is_club_admin_uid')).toBeLessThan(fn.indexOf('v_union IS NOT NULL'));
-    expect(toggleSql).toContain(
+    expect(setterSql).toContain(
       'REVOKE ALL ON FUNCTION public.fn_bbj_set_club_mini_enabled(uuid, boolean) FROM PUBLIC, anon;'
+    );
+    // and the column migration must NOT declare it - one declaration, the safe one
+    expect(toggleSql).not.toContain(
+      'CREATE OR REPLACE FUNCTION public.fn_bbj_set_club_mini_enabled'
     );
   });
 

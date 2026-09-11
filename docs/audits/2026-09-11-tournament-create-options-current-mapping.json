@@ -1,0 +1,392 @@
+{
+  "current_function_body_md5": {
+    "public.fn_create_tournament_governed_legacy": "855086582b43d915ed6bc4c124a34696"
+  },
+  "tracked_source": "supabase/migrations/20260903172703_an_event_may_restart_every_week.sql",
+  "source_sha256": "793e7a8ad0b1c224314ce866079c22b77b48e6cb7e4c60caf72804e4db8e4df4",
+  "known_current_body_matches_exactly": true,
+  "db_writes": false,
+  "current_column_mapping": [
+    {
+      "column": "club_id",
+      "rpc_keys": []
+    },
+    {
+      "column": "name",
+      "rpc_keys": ["name"]
+    },
+    {
+      "column": "game_type",
+      "rpc_keys": ["gameVariant"]
+    },
+    {
+      "column": "variant",
+      "rpc_keys": ["type"]
+    },
+    {
+      "column": "tournament_type",
+      "rpc_keys": ["type"]
+    },
+    {
+      "column": "buy_in_amount",
+      "rpc_keys": ["buyIn", "maxPlayers"]
+    },
+    {
+      "column": "buy_in_fee",
+      "rpc_keys": ["buyIn", "maxPlayers"]
+    },
+    {
+      "column": "starting_chips",
+      "rpc_keys": ["startingStack"]
+    },
+    {
+      "column": "max_players",
+      "rpc_keys": ["maxPlayers"]
+    },
+    {
+      "column": "min_players",
+      "rpc_keys": ["maxPlayers", "minPlayers"]
+    },
+    {
+      "column": "current_players",
+      "rpc_keys": []
+    },
+    {
+      "column": "status",
+      "rpc_keys": []
+    },
+    {
+      "column": "blind_structure",
+      "rpc_keys": ["blindStructure"]
+    },
+    {
+      "column": "payout_structure",
+      "rpc_keys": ["payoutStructure"]
+    },
+    {
+      "column": "guaranteed_prize",
+      "rpc_keys": ["guaranteedPrize"]
+    },
+    {
+      "column": "late_reg_levels",
+      "rpc_keys": ["lateRegistrationLevels"]
+    },
+    {
+      "column": "late_reg_mins",
+      "rpc_keys": ["lateRegistrationMinutes"]
+    },
+    {
+      "column": "rebuy_levels",
+      "rpc_keys": ["lateRegistrationLevels"]
+    },
+    {
+      "column": "start_time",
+      "rpc_keys": ["startTime"]
+    },
+    {
+      "column": "is_rebuy",
+      "rpc_keys": ["isRebuy"]
+    },
+    {
+      "column": "is_reentry",
+      "rpc_keys": ["isReentry"]
+    },
+    {
+      "column": "rebuy_cost",
+      "rpc_keys": ["rebuyCost"]
+    },
+    {
+      "column": "rebuy_chips",
+      "rpc_keys": ["rebuyChips"]
+    },
+    {
+      "column": "add_on_available",
+      "rpc_keys": ["addOnAvailable"]
+    },
+    {
+      "column": "addon_cost",
+      "rpc_keys": ["addOnCost"]
+    },
+    {
+      "column": "addon_chips",
+      "rpc_keys": ["addOnChips"]
+    },
+    {
+      "column": "addon_levels",
+      "rpc_keys": ["addOnLevels"]
+    },
+    {
+      "column": "is_bounty",
+      "rpc_keys": ["type"]
+    },
+    {
+      "column": "bounty_amount",
+      "rpc_keys": ["bountyAmount"]
+    },
+    {
+      "column": "is_pko",
+      "rpc_keys": ["type"]
+    },
+    {
+      "column": "is_mystery_bounty",
+      "rpc_keys": ["type"]
+    },
+    {
+      "column": "spin_type",
+      "rpc_keys": ["spinType", "type"]
+    },
+    {
+      "column": "satellite_target_id",
+      "rpc_keys": ["satelliteTargetId"]
+    },
+    {
+      "column": "is_xmtt",
+      "rpc_keys": ["isXmtt"]
+    },
+    {
+      "column": "union_id",
+      "rpc_keys": ["isPrivate"]
+    },
+    {
+      "column": "is_private",
+      "rpc_keys": ["isPrivate"]
+    },
+    {
+      "column": "short_description",
+      "rpc_keys": ["shortDescription"]
+    },
+    {
+      "column": "is_vip_only",
+      "rpc_keys": ["isVipOnly"]
+    },
+    {
+      "column": "ban_chat",
+      "rpc_keys": ["banChat"]
+    },
+    {
+      "column": "all_in_or_fold",
+      "rpc_keys": ["allInOrFold"]
+    },
+    {
+      "column": "label_as_new",
+      "rpc_keys": ["labelAsNew"]
+    },
+    {
+      "column": "hide_club_name",
+      "rpc_keys": ["hideClubName"]
+    },
+    {
+      "column": "action_time_seconds",
+      "rpc_keys": ["actionTimeSeconds"]
+    },
+    {
+      "column": "table_size",
+      "rpc_keys": ["tableSize"]
+    },
+    {
+      "column": "accelerated_mtt",
+      "rpc_keys": ["acceleratedMtt"]
+    },
+    {
+      "column": "addon_break_minutes",
+      "rpc_keys": ["addonBreakMinutes"]
+    },
+    {
+      "column": "big_blind_ante",
+      "rpc_keys": ["bigBlindAnte"]
+    },
+    {
+      "column": "authorized_to_register",
+      "rpc_keys": ["authorizedToRegister"]
+    },
+    {
+      "column": "early_bird_enabled",
+      "rpc_keys": ["earlyBirdEnabled"]
+    },
+    {
+      "column": "early_bird_chips",
+      "rpc_keys": ["earlyBirdChips"]
+    },
+    {
+      "column": "bubble_protection",
+      "rpc_keys": ["bubbleProtection"]
+    },
+    {
+      "column": "final_table_deal_enabled",
+      "rpc_keys": ["finalTableDealEnabled"]
+    },
+    {
+      "column": "restart_every_minutes",
+      "rpc_keys": ["restartEveryMinutes"]
+    },
+    {
+      "column": "synchronized_breaks",
+      "rpc_keys": ["synchronizedBreaks"]
+    },
+    {
+      "column": "max_rebuys",
+      "rpc_keys": ["maxRebuys"]
+    },
+    {
+      "column": "max_reentries",
+      "rpc_keys": ["maxReentries"]
+    },
+    {
+      "column": "is_multi_day",
+      "rpc_keys": ["isMultiDay"]
+    },
+    {
+      "column": "total_days",
+      "rpc_keys": ["totalDays"]
+    },
+    {
+      "column": "mystery_bounty_min",
+      "rpc_keys": ["bountyAmount", "mysteryBountyMin"]
+    },
+    {
+      "column": "mystery_bounty_max",
+      "rpc_keys": ["bountyAmount", "mysteryBountyMax"]
+    },
+    {
+      "column": "is_pinned",
+      "rpc_keys": ["isFeatured"]
+    },
+    {
+      "column": "satellite_seats",
+      "rpc_keys": ["satelliteSeats"]
+    }
+  ],
+  "previously_unmapped_review": [
+    {
+      "option": "actionTimeSeconds",
+      "current_column_candidates": ["action_time_seconds"],
+      "current_creator_direct_read": true
+    },
+    {
+      "option": "addOnFromStart",
+      "current_column_candidates": [],
+      "current_creator_direct_read": false
+    },
+    {
+      "option": "addonBreakMinutes",
+      "current_column_candidates": ["addon_break_minutes"],
+      "current_creator_direct_read": true
+    },
+    {
+      "option": "blindStructure",
+      "current_column_candidates": ["blind_structure"],
+      "current_creator_direct_read": true
+    },
+    {
+      "option": "bountyAmount",
+      "current_column_candidates": ["bounty_amount", "mystery_bounty_min", "mystery_bounty_max"],
+      "current_creator_direct_read": true
+    },
+    {
+      "option": "buyIn",
+      "current_column_candidates": ["buy_in_amount", "buy_in_fee"],
+      "current_creator_direct_read": true
+    },
+    {
+      "option": "earlyBirdChips",
+      "current_column_candidates": ["early_bird_chips"],
+      "current_creator_direct_read": true
+    },
+    {
+      "option": "freeBuy",
+      "current_column_candidates": [],
+      "current_creator_direct_read": false
+    },
+    {
+      "option": "isMultiDay",
+      "current_column_candidates": ["is_multi_day"],
+      "current_creator_direct_read": true
+    },
+    {
+      "option": "isPrivate",
+      "current_column_candidates": ["union_id", "is_private"],
+      "current_creator_direct_read": true
+    },
+    {
+      "option": "maxPlayers",
+      "current_column_candidates": ["buy_in_amount", "buy_in_fee", "max_players", "min_players"],
+      "current_creator_direct_read": true
+    },
+    {
+      "option": "maxRebuys",
+      "current_column_candidates": ["max_rebuys"],
+      "current_creator_direct_read": true
+    },
+    {
+      "option": "maxReentries",
+      "current_column_candidates": ["max_reentries"],
+      "current_creator_direct_read": true
+    },
+    {
+      "option": "minPlayers",
+      "current_column_candidates": ["min_players"],
+      "current_creator_direct_read": true
+    },
+    {
+      "option": "payoutStructure",
+      "current_column_candidates": ["payout_structure"],
+      "current_creator_direct_read": true
+    },
+    {
+      "option": "restartEveryMinutes",
+      "current_column_candidates": ["restart_every_minutes"],
+      "current_creator_direct_read": true
+    },
+    {
+      "option": "satelliteSeats",
+      "current_column_candidates": ["satellite_seats"],
+      "current_creator_direct_read": true
+    },
+    {
+      "option": "satelliteTargetId",
+      "current_column_candidates": ["satellite_target_id"],
+      "current_creator_direct_read": true
+    },
+    {
+      "option": "startTime",
+      "current_column_candidates": ["start_time"],
+      "current_creator_direct_read": true
+    },
+    {
+      "option": "synchronizedBreaks",
+      "current_column_candidates": ["synchronized_breaks"],
+      "current_creator_direct_read": true
+    },
+    {
+      "option": "tableSize",
+      "current_column_candidates": ["table_size"],
+      "current_creator_direct_read": true
+    },
+    {
+      "option": "type",
+      "current_column_candidates": [
+        "variant",
+        "tournament_type",
+        "is_bounty",
+        "is_pko",
+        "is_mystery_bounty",
+        "spin_type"
+      ],
+      "current_creator_direct_read": true
+    }
+  ],
+  "remaining_unmapped_count": 2,
+  "outer_metadata": {
+    "outer_body_matches_expected": true,
+    "outer_source": "supabase/migrations/20260902014858_payout_percent_reaches_the_row_from_the_create_form.sql",
+    "outer_body_md5": "16305fb3739f13e64af6a1e8eb3bf165",
+    "outer_config_keys": ["payoutPercent"],
+    "outer_function_dependencies": ["fn_can_create_games", "fn_create_tournament_governed_legacy"],
+    "addon_from_start_migration_sources": [
+      "supabase/migrations/20260904063653_free_buy_tournaments.sql",
+      "supabase/migrations/20260906124733_published_tournament_contracts_include_every_creator_promise.sql",
+      "supabase/migrations/20260909062236_terminal_tables_cannot_commit_live_occupancies.sql"
+    ]
+  },
+  "free_buy_trigger_metadata": []
+}

@@ -1,57 +1,17 @@
 {
-  "recorded_at": "2026-09-11T08:24:28.249041+00:00",
-  "status": "passed",
-  "exit_code": 0,
-  "exact_rollback": true,
-  "source_inputs_stable": true,
-  "assertions": 15,
-  "evidence": {
-    "formats": {
-      "mtt": {
-        "buy_in": 50,
-        "status": "REGISTERING",
-        "success": true,
-        "buy_in_fee": 5.0,
-        "tournament_id": "038d6eee-1ee6-4990-a054-26cdda86dd43"
-      },
-      "sng": {
-        "buy_in": 50,
-        "status": "REGISTERING",
-        "success": true,
-        "buy_in_fee": 5.0,
-        "tournament_id": "a7b084e9-35fd-4eab-9741-dee9a5dae178"
-      },
-      "spin": {
-        "buy_in": 50,
-        "status": "REGISTERING",
-        "success": true,
-        "buy_in_fee": 0,
-        "tournament_id": "7018b638-d9f5-4643-ad15-990d9b262d51"
-      },
-      "access": {
-        "reason": "ok",
-        "allowed": true,
-        "union_id": null
-      }
-    },
-    "created_events": 3,
-    "opening_wallets_preserved": true
-  },
+  "at": "2026-09-11T08:40:46.697643+00:00",
+  "status": "failed",
+  "exit_code": 3,
   "source_sha256": {
-    "scripts/ci/rehearse-tournament-create-permissions.py": "04a102097a8750f50086a0e5338ea9355e2d4f2ad4a1e14935dcbab4e6a4c889",
+    "scripts/ci/probes/tournament-create-options-rehearse.py": "d230a98a580440137062fc21d5322c513679d84798fc51c297d6dc77ba7e8d4c",
     "scripts/ci/probes/tournament-create-permission-native.sql": "2d9d7e1c1999c41ddd59d26983f195497f0f6de3c23f9fd5c9348342a7f2d074",
-    "scripts/ci/fixtures/phase-three-creation-client-configs.json": "5f44eba165c5d473aa2f6e56e94b2290c535a6422599d15503101c80b764c3f9",
+    "scripts/ci/probes/tournament-create-options-enabled-native.sql": "a3dde29cee3f9e68e00f300774be4f37679c92b889bb73c28377b387837e5669",
     "scripts/ci/rehearse-whole-phase-three-cutover.py": "9aba08c670f152e9d1e01a8aa67ddf15a187fccf6d75db43da888eaab54cb908",
+    "scripts/ci/fixtures/phase-three-creation-client-configs.json": "5f44eba165c5d473aa2f6e56e94b2290c535a6422599d15503101c80b764c3f9",
     "src/lib/tournamentFromTableConfig.ts": "ddab8e64901a6a13a45469aabd0af7c86e16cbe4b3dcd971ac06106d1759314c",
-    "src/services/TournamentService.ts": "8040cd30c2faa2c5507e4725ed6d923343abf5d7b2b9c08365ff650d7403bcc7",
-    "tests/unit/TournamentFromTableConfig.test.ts": "0f99b2aa6fc5677b68404f38ba2999f6da91df420376f3b640f245453ed19ed5"
+    "src/services/TournamentService.ts": "8040cd30c2faa2c5507e4725ed6d923343abf5d7b2b9c08365ff650d7403bcc7"
   },
-  "function_md5": {
-    "fn_create_tournament(uuid,jsonb)": "16305fb3739f13e64af6a1e8eb3bf165",
-    "fn_create_tournament_governed_legacy(uuid,jsonb)": "855086582b43d915ed6bc4c124a34696",
-    "fn_game_creation_access(uuid)": "9e4a5c8d56a65b18468e37f2e69d0b92",
-    "fn_can_create_games(uuid,uuid)": "374920cb04b1766473797b1f5a0d728c"
-  },
+  "sources_unchanged": true,
   "before": {
     "cron.job": {
       "md5": "d41d8cd98f00b204e9800998ecf8427e",
@@ -142,7 +102,7 @@
       "count": 0
     },
     "pg_catalog.pg_class": {
-      "md5": "9c288a4ebb906f1e1feee0c8d815303e",
+      "md5": "1fb40250ee9f30eba9103b6ae69f7114",
       "count": 6619
     },
     "pg_catalog.pg_index": {
@@ -4940,7 +4900,7 @@
       "count": 0
     },
     "pg_catalog.pg_class": {
-      "md5": "9c288a4ebb906f1e1feee0c8d815303e",
+      "md5": "1fb40250ee9f30eba9103b6ae69f7114",
       "count": 6619
     },
     "pg_catalog.pg_index": {
@@ -9648,9 +9608,67 @@
       "count": 0
     }
   },
-  "output_directory": "/tmp/codex-create-permission-5s8pnk69",
-  "coverage_limits": [
-    "Edit authority, complete displayed-option matrix, and live browser are not certified by this create-only probe."
+  "exact_rollback": true,
+  "option_evidence": null,
+  "diagnostics": [
+    {
+      "persisted_free_buy": false,
+      "requested_free_buy": true,
+      "paid_addon_price_preserved": true,
+      "paid_rebuy_price_preserved": true,
+      "persisted_addon_from_start": false,
+      "requested_addon_from_start": true,
+      "zero_upfront_entry_and_fee": true
+    }
   ],
-  "failure_tail": []
+  "base_creation_checks_reused": 15,
+  "option_assertions_reached": 5,
+  "output_directory": "/tmp/codex-tournament-create-options-3dw9jqjd",
+  "log_tail": [
+    "SET",
+    "DO",
+    "RESET",
+    "|{\"sub\":\"f8100000-0000-4000-8000-000000000001\",\"role\":\"authenticated\",\"session_id\":\"f8300000-0000-4000-8000-000000000001\"}",
+    "CREATE FUNCTION",
+    "CREATE TRIGGER",
+    "SET",
+    "DO",
+    "RESET",
+    "DROP TRIGGER",
+    "CREATION_NATIVE_EVIDENCE={\"formats\": {\"mtt\": {\"buy_in\": 50, \"status\": \"REGISTERING\", \"success\": true, \"buy_in_fee\": 5.0000000000000000, \"tournament_id\": \"57b91213-5df6-47e0-ae2c-ac73274ff57e\"}, \"sng\": {\"buy_in\": 50, \"status\": \"REGISTERING\", \"success\": true, \"buy_in_fee\": 5.0000000000000000, \"tournament_id\": \"3564b334-f2f0-4c0c-89b5-bcf8f4d5768a\"}, \"spin\": {\"buy_in\": 50, \"status\": \"REGISTERING\", \"success\": true, \"buy_in_fee\": 0, \"tournament_id\": \"1fc830a4-f97b-4f65-a1cc-cc6b89210f1e\"}, \"access\": {\"reason\": \"ok\", \"allowed\": true, \"union_id\": null}}, \"created_events\": 3, \"opening_wallets_preserved\": true}",
+    "CREATE TABLE",
+    "CREATE TABLE",
+    "GRANT",
+    "GRANT",
+    "{\"sub\": \"f8100000-0000-4000-8000-000000000001\", \"role\": \"authenticated\", \"session_id\": \"f8300000-0000-4000-8000-000000000001\"}",
+    "f8100000-0000-4000-8000-000000000001",
+    "authenticated",
+    "SET",
+    "DO",
+    "RESET",
+    "",
+    "psql:/tmp/codex-tournament-create-options-3dw9jqjd/rehearsal.sql:48: NOTICE:  CREATION_PASS: actual authenticated owner may create in own club",
+    "psql:/tmp/codex-tournament-create-options-3dw9jqjd/rehearsal.sql:57: NOTICE:  CREATION_PASS: mtt actual client payload accepted",
+    "psql:/tmp/codex-tournament-create-options-3dw9jqjd/rehearsal.sql:57: NOTICE:  CREATION_PASS: mtt stored identity, format, limits and stack match client",
+    "psql:/tmp/codex-tournament-create-options-3dw9jqjd/rehearsal.sql:57: NOTICE:  CREATION_PASS: mtt creation preserves fee split without inventing funded liabilities",
+    "psql:/tmp/codex-tournament-create-options-3dw9jqjd/rehearsal.sql:57: NOTICE:  CREATION_PASS: sng actual client payload accepted",
+    "psql:/tmp/codex-tournament-create-options-3dw9jqjd/rehearsal.sql:57: NOTICE:  CREATION_PASS: sng stored identity, format, limits and stack match client",
+    "psql:/tmp/codex-tournament-create-options-3dw9jqjd/rehearsal.sql:57: NOTICE:  CREATION_PASS: sng creation preserves fee split without inventing funded liabilities",
+    "psql:/tmp/codex-tournament-create-options-3dw9jqjd/rehearsal.sql:57: NOTICE:  CREATION_PASS: spin actual client payload accepted",
+    "psql:/tmp/codex-tournament-create-options-3dw9jqjd/rehearsal.sql:57: NOTICE:  CREATION_PASS: spin stored identity, format, limits and stack match client",
+    "psql:/tmp/codex-tournament-create-options-3dw9jqjd/rehearsal.sql:57: NOTICE:  CREATION_PASS: spin creation preserves fee split without inventing funded liabilities",
+    "psql:/tmp/codex-tournament-create-options-3dw9jqjd/rehearsal.sql:57: NOTICE:  CREATION_PASS: three calls create exactly three bound events",
+    "psql:/tmp/codex-tournament-create-options-3dw9jqjd/rehearsal.sql:66: NOTICE:  CREATION_PASS: active player sees creation denied",
+    "psql:/tmp/codex-tournament-create-options-3dw9jqjd/rehearsal.sql:66: NOTICE:  CREATION_PASS: member cannot create and all business relations stay exact",
+    "psql:/tmp/codex-tournament-create-options-3dw9jqjd/rehearsal.sql:75: NOTICE:  CREATION_PASS: anonymous direct creation refuses without effects",
+    "psql:/tmp/codex-tournament-create-options-3dw9jqjd/rehearsal.sql:87: NOTICE:  CREATION_PASS: actual insertion fault rolls back every business relation",
+    "psql:/tmp/codex-tournament-create-options-3dw9jqjd/rehearsal.sql:118: NOTICE:  CREATION_PASS: OPTIONS: authorized owner creates the enabled Free Buy fixture through the real RPC",
+    "psql:/tmp/codex-tournament-create-options-3dw9jqjd/rehearsal.sql:144: NOTICE:  TOURNAMENT_CREATE_OPTIONS_DIAGNOSTIC={\"persisted_free_buy\": false, \"requested_free_buy\": true, \"paid_addon_price_preserved\": true, \"paid_rebuy_price_preserved\": true, \"persisted_addon_from_start\": false, \"requested_addon_from_start\": true, \"zero_upfront_entry_and_fee\": true}",
+    "psql:/tmp/codex-tournament-create-options-3dw9jqjd/rehearsal.sql:144: NOTICE:  CREATION_PASS: OPTIONS: Free Buy requests zero initial entry and fee",
+    "psql:/tmp/codex-tournament-create-options-3dw9jqjd/rehearsal.sql:144: NOTICE:  CREATION_PASS: OPTIONS: enabling Free Buy preserves explicitly paid rebuy and add-on prices",
+    "psql:/tmp/codex-tournament-create-options-3dw9jqjd/rehearsal.sql:144: ERROR:  FAIL OPTIONS: the enabled Free Buy choice persists on the created event",
+    "CONTEXT:  PL/pgSQL function pg_temp_76.creation_assert(boolean,text) line 2 at RAISE",
+    "SQL statement \"SELECT pg_temp.creation_assert((v_row->>'free_buy')::boolean IS TRUE,'OPTIONS: the enabled Free Buy choice persists on the created event')\"",
+    "PL/pgSQL function inline_code_block line 16 at PERFORM"
+  ]
 }

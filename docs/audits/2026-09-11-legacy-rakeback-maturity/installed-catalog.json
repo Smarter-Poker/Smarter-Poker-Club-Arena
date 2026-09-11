@@ -1,0 +1,824 @@
+{
+  "functions": [
+    {
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "definition": "CREATE OR REPLACE FUNCTION public.atomic_credit_wallet_and_log(p_user_id uuid, p_amount numeric, p_category text DEFAULT 'credit'::text, p_description text DEFAULT ''::text, p_table_id uuid DEFAULT NULL::uuid, p_hand_id uuid DEFAULT NULL::uuid, p_related_entity_id uuid DEFAULT NULL::uuid, p_idempotency_key text DEFAULT NULL::text)\n RETURNS boolean\n LANGUAGE plpgsql\n SET search_path TO 'public', 'extensions'\nAS $function$\nDECLARE\n  v_club_id uuid;\n  v_inserted integer;\n  v_new_balance numeric;\n  v_has_club boolean;\nBEGIN\n  IF p_idempotency_key IS NOT NULL THEN\n    INSERT INTO wallet_credit_idempotency (key, user_id, amount)\n    VALUES (p_idempotency_key, p_user_id, p_amount)\n    ON CONFLICT (key) DO NOTHING;\n    GET DIAGNOSTICS v_inserted = ROW_COUNT;\n    IF v_inserted = 0 THEN RETURN true; END IF;\n  END IF;\n\n  -- ZERO-DRIFT phase 5: tournament stacks are play chips and never cash\n  -- out to a wallet. Blocked here exactly as in atomic_table_cashout.\n  IF p_table_id IS NOT NULL AND EXISTS (\n       SELECT 1 FROM public.tables t WHERE t.id = p_table_id AND t.tournament_id IS NOT NULL) THEN\n    PERFORM public.fn_ca_raise_drift_incident(\n      'atomic_credit_wallet_and_log:tournament_mint_blocked', 'unauthorized_adjustment', 'info',\n      'tourney-cashout-blocked:' || to_char(now(), 'YYYY-MM-DD'),\n      p_amount, 0, p_amount, 'ledger', 'tables', p_table_id, NULL,\n      NULL, p_table_id, NULL, NULL, NULL, NULL, NULL,\n      'a tournament-table stack was about to credit a real wallet via atomic_credit_wallet_and_log - blocked. Tournament chips are play chips. This now blocks EVERY category, not just cashout; the category the caller used is in the metadata.',\n      NULL, jsonb_build_object('user_id', p_user_id, 'amount', p_amount, 'category', p_category));\n    RETURN true;\n  END IF;\n\n  /* ZERO-DRIFT (2026-08-31): tell the club_members ledger writer what this\n     credit IS. 'cashout' maps to the table_cashout flow off the felt. */\n  PERFORM set_config('app.ledger_category',\n    CASE WHEN p_category IN ('cashout') THEN 'table_cashout'\n         WHEN p_category IN ('buyin','rake','commission','transfer','rakeback',\n                             'settlement','tournament_buyin','tournament_prize',\n                             'bounty','refund','addon','rebuy','promo')\n              THEN p_category\n         ELSE 'player_funding' END, true);\n  IF p_table_id IS NOT NULL THEN\n    PERFORM set_config('app.ledger_counterparty', 'table_stack', true);\n    PERFORM set_config('app.ledger_counterparty_entity', p_table_id::text, true);\n  END IF;\n\n  IF p_table_id IS NOT NULL THEN\n    SELECT ts.club_id INTO v_club_id\n      FROM table_seats ts\n     WHERE ts.table_id = p_table_id AND ts.user_id = p_user_id\n     ORDER BY ts.joined_at DESC LIMIT 1;\n  END IF;\n  IF v_club_id IS NULL THEN\n    -- A caller that KNOWS which club a credit belongs to says so in\n    -- app.ledger_club_id. Rakeback earned at a club is paid into THAT\n    -- club's wallet, not into whichever club the player joined first.\n    -- Unset - which is every existing caller - is the old behaviour\n    -- exactly, because fn_player_home_club ignores a NULL hint.\n    v_club_id := public.fn_player_home_club(p_user_id,\n      NULLIF(current_setting('app.ledger_club_id', true), '')::uuid);\n  END IF;\n\n  IF v_club_id IS NOT NULL THEN\n    PERFORM public.fn_ensure_club_wallet(p_user_id, v_club_id);\n    UPDATE club_members\n       SET chip_balance = COALESCE(chip_balance,0) + p_amount, updated_at = now()\n     WHERE user_id = p_user_id AND club_id = v_club_id\n     RETURNING chip_balance INTO v_new_balance;\n    IF NOT FOUND THEN\n      -- A credit is not complete unless its destination balance was written.\n      -- Abort before journal rows or a caller's cashout/seat exit can commit.\n      RAISE EXCEPTION 'CLUB_CREDIT_DESTINATION_MISSING: player %, club %', p_user_id, v_club_id\n        USING ERRCODE = '23503';\n    END IF;\n  ELSE\n    SELECT EXISTS (SELECT 1 FROM club_members m WHERE m.user_id = p_user_id) INTO v_has_club;\n    IF v_has_club THEN\n      RAISE EXCEPTION 'No club wallet resolves for Club Arena credit to player %', p_user_id;\n    END IF;\n    UPDATE wallets SET balance = COALESCE(balance,0) + p_amount, updated_at = now()\n     WHERE user_id = p_user_id AND wallet_type = 'PLAYER'\n     RETURNING balance INTO v_new_balance;\n    IF NOT FOUND THEN\n      INSERT INTO wallets (user_id, wallet_type, balance, locked_balance)\n      VALUES (p_user_id, 'PLAYER', p_amount, 0)\n      ON CONFLICT (user_id, wallet_type) DO UPDATE\n        SET balance = wallets.balance + p_amount, updated_at = now()\n      RETURNING balance INTO v_new_balance;\n    END IF;\n  END IF;\n\n  IF p_category = 'cashout' THEN\n    INSERT INTO wallet_transactions (user_id, wallet_type, type, amount, category,\n                                     description, table_id, balance_after)\n    VALUES (p_user_id, 'PLAYER', 'credit', p_amount, 'cashout',\n            COALESCE(NULLIF(p_description, ''), 'Cash-out to club wallet'),\n            p_table_id, v_new_balance);\n  END IF;\n\n  IF v_club_id IS NOT NULL THEN\n    INSERT INTO chip_transactions (club_id, to_user_id, amount, transaction_type,\n                                   notes, table_id, metadata)\n    VALUES (v_club_id, p_user_id, p_amount, p_category,\n            COALESCE(NULLIF(p_description, ''), 'Wallet credit'), p_table_id,\n            CASE WHEN p_category = 'cashout'\n                 THEN jsonb_build_object('mirrored_to_wallet', true)\n                 ELSE '{}'::jsonb END);\n  END IF;\n\n  RETURN true;\nEND; $function$\n",
+      "md5": "be06a409371e63480439da6c5dfd3821",
+      "signature": "atomic_credit_wallet_and_log(uuid,numeric,text,text,uuid,uuid,uuid,text)"
+    },
+    {
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "definition": "CREATE OR REPLACE FUNCTION public.atomic_pay_player_rakeback(p_user_id uuid, p_amount numeric)\n RETURNS void\n LANGUAGE plpgsql\n SET search_path TO 'public', 'extensions'\nAS $function$\nBEGIN\n  IF p_amount <= 0 THEN RETURN; END IF;\n  -- UNION LAW: rakeback goes back to the club whose chips generated the rake.\n  PERFORM public.fn_pay_player_chips(p_user_id, p_amount, 'rakeback', 'Rakeback payout', NULL, NULL);\nEND; $function$\n",
+      "md5": "f208633d1947dd8513dd0e85dbc20edc",
+      "signature": "atomic_pay_player_rakeback(uuid,numeric)"
+    },
+    {
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "definition": "CREATE OR REPLACE FUNCTION public.atomic_pay_player_rakeback(p_snapshot_id uuid, p_player_id uuid, p_amount numeric, p_period_id uuid, p_idempotency_key text DEFAULT NULL::text)\n RETURNS void\n LANGUAGE plpgsql\n SET search_path TO 'public'\nAS $function$\nDECLARE v_inserted integer;\nBEGIN\n  IF p_amount IS NULL OR p_amount <= 0 THEN RETURN; END IF;\n\n  IF p_idempotency_key IS NOT NULL THEN\n    INSERT INTO wallet_credit_idempotency (key, user_id, amount)\n    VALUES (p_idempotency_key, p_player_id, p_amount)\n    ON CONFLICT (key) DO NOTHING;\n    GET DIAGNOSTICS v_inserted = ROW_COUNT;\n    IF v_inserted = 0 THEN RETURN; END IF;\n  END IF;\n\n  PERFORM public.fn_pay_player_chips(\n    p_player_id, p_amount, 'rakeback',\n    'Rakeback payout (snapshot ' || p_snapshot_id::text || ', period ' || p_period_id::text || ')',\n    NULL, p_snapshot_id);\nEND;\n$function$\n",
+      "md5": "095b6ffaa3b0d0fa0683d4674796b305",
+      "signature": "atomic_pay_player_rakeback(uuid,uuid,numeric,uuid,text)"
+    },
+    {
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "definition": "CREATE OR REPLACE FUNCTION public.credit_player_rakeback(p_user_id uuid, p_amount numeric, p_description text DEFAULT ''::text, p_idempotency_key text DEFAULT NULL::text)\n RETURNS boolean\n LANGUAGE plpgsql\n SET search_path TO 'public', 'extensions'\nAS $function$\nDECLARE\n  v_club_id uuid;\n  v_inserted integer;\n  v_res jsonb;\nBEGIN\n  IF p_amount <= 0 THEN RETURN false; END IF;\n\n  IF p_idempotency_key IS NOT NULL THEN\n    INSERT INTO wallet_credit_idempotency (key, user_id, amount)\n    VALUES (p_idempotency_key, p_user_id, p_amount)\n    ON CONFLICT (key) DO NOTHING;\n    GET DIAGNOSTICS v_inserted = ROW_COUNT;\n    IF v_inserted = 0 THEN RETURN false; END IF;\n  END IF;\n\n  v_res := public.fn_pay_player_chips(\n    p_user_id, p_amount, 'rakeback',\n    COALESCE(NULLIF(p_description, ''), 'Rakeback credit'), NULL, NULL);\n\n  -- Audit row. The club is the RESOLVED payout club; the old code fell back to\n  -- a hardcoded SHARK CLUB id, misattributing other clubs' rakeback.\n  v_club_id := NULLIF(v_res->>'club_id','')::uuid;\n  IF v_club_id IS NULL THEN\n    SELECT club_id INTO v_club_id FROM club_members WHERE user_id = p_user_id\n     ORDER BY joined_at ASC NULLS LAST LIMIT 1;\n  END IF;\n\n  IF v_club_id IS NOT NULL THEN\n    INSERT INTO chip_transactions (club_id, to_user_id, amount, transaction_type, notes)\n    VALUES (v_club_id, p_user_id, p_amount, 'rakeback',\n            COALESCE(NULLIF(p_description, ''), 'Rakeback credit'));\n  END IF;\n\n  RETURN true;\nEND; $function$\n",
+      "md5": "c8954025415debb1957b3f1fb1ddbc1c",
+      "signature": "credit_player_rakeback(uuid,numeric,text,text)"
+    },
+    {
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_journal_append_only()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  v_reason text := NULLIF(current_setting('app.ledger_maintenance', true), '');\n  v_allowed_update boolean := false;\n  v_kind text;\n  v_sev text;\n  v_j jsonb;\nBEGIN\n  IF TG_OP = 'UPDATE' THEN\n    IF TG_TABLE_NAME = 'chip_transactions' THEN\n      v_allowed_update :=\n        NEW.amount IS NOT DISTINCT FROM OLD.amount\n        AND NEW.transaction_type IS NOT DISTINCT FROM OLD.transaction_type\n        AND NEW.from_user_id IS NOT DISTINCT FROM OLD.from_user_id\n        AND NEW.to_user_id IS NOT DISTINCT FROM OLD.to_user_id\n        AND NEW.club_id IS NOT DISTINCT FROM OLD.club_id\n        AND NEW.created_at IS NOT DISTINCT FROM OLD.created_at;\n    ELSIF TG_TABLE_NAME = 'chip_ledger' THEN\n      v_allowed_update :=\n        NEW.amount IS NOT DISTINCT FROM OLD.amount\n        AND NEW.from_type IS NOT DISTINCT FROM OLD.from_type\n        AND NEW.from_entity_id IS NOT DISTINCT FROM OLD.from_entity_id\n        AND NEW.to_type IS NOT DISTINCT FROM OLD.to_type\n        AND NEW.to_entity_id IS NOT DISTINCT FROM OLD.to_entity_id\n        AND NEW.category IS NOT DISTINCT FROM OLD.category\n        AND NEW.created_at IS NOT DISTINCT FROM OLD.created_at\n        AND NEW.chain_seq IS NOT DISTINCT FROM OLD.chain_seq\n        AND NEW.prev_hash IS NOT DISTINCT FROM OLD.prev_hash\n        AND NEW.row_hash IS NOT DISTINCT FROM OLD.row_hash\n        AND NEW.idempotency_key IS NOT DISTINCT FROM OLD.idempotency_key\n        AND NEW.correlation_id IS NOT DISTINCT FROM OLD.correlation_id\n        AND NEW.settlement_id IS NOT DISTINCT FROM OLD.settlement_id\n        AND NEW.epoch_id IS NOT DISTINCT FROM OLD.epoch_id;\n    ELSIF TG_TABLE_NAME = 'vip_points_ledger' THEN\n      /* Phase 8 (2026-09-08). A VIP leg is written once, final: the award\n         writer no longer inserts 0 and updates it afterwards. Nothing on this\n         table may change. */\n      v_allowed_update := false;\n    ELSIF TG_TABLE_NAME = 'agent_commissions' THEN\n      /* Phase 8. A commission row is what was earned on one hand. The only\n         thing that happens to it afterwards is being settled, once. */\n      v_allowed_update :=\n        NEW.amount IS NOT DISTINCT FROM OLD.amount\n        AND NEW.club_id IS NOT DISTINCT FROM OLD.club_id\n        AND NEW.user_id IS NOT DISTINCT FROM OLD.user_id\n        AND NEW.source_type IS NOT DISTINCT FROM OLD.source_type\n        AND NEW.source_id IS NOT DISTINCT FROM OLD.source_id\n        AND NEW.commission_rate IS NOT DISTINCT FROM OLD.commission_rate\n        AND NEW.created_at IS NOT DISTINCT FROM OLD.created_at\n        AND (OLD.settled_at IS NULL OR NEW.settled_at IS NOT DISTINCT FROM OLD.settled_at);\n    ELSIF TG_TABLE_NAME = 'rakeback_period_payouts' THEN\n      /* Phase 8. What was paid, to whom, for which period, never changes;\n         status, paid_at, wallet_transaction_id and failure_reason are the\n         payout's own bookkeeping. */\n      v_allowed_update :=\n        NEW.payout_amount IS NOT DISTINCT FROM OLD.payout_amount\n        AND NEW.user_id IS NOT DISTINCT FROM OLD.user_id\n        AND NEW.club_id IS NOT DISTINCT FROM OLD.club_id\n        AND NEW.rakeback_period_id IS NOT DISTINCT FROM OLD.rakeback_period_id\n        AND NEW.currency IS NOT DISTINCT FROM OLD.currency\n        AND NEW.created_at IS NOT DISTINCT FROM OLD.created_at;\n    ELSE\n      v_allowed_update :=\n        NEW.amount IS NOT DISTINCT FROM OLD.amount\n        AND NEW.created_at IS NOT DISTINCT FROM OLD.created_at;\n    END IF;\n  END IF;\n\n  IF TG_OP = 'UPDATE' AND v_allowed_update THEN\n    RETURN NEW;\n  END IF;\n\n  /* Phase 8. fn_close_settlement_period inserts a payout row as its\n     idempotency claim BEFORE debiting the treasury and deletes it again on a\n     shortfall, inside the same transaction. That is a compensation, not a\n     mutation of history, so this table's DELETE is allowed - and RECORDED,\n     every time, so a person can tell a compensation from a hand on the\n     table. The meter counts these. */\n  IF TG_OP = 'DELETE' AND TG_TABLE_NAME = 'rakeback_period_payouts' THEN\n    INSERT INTO public.ca_ledger_mutation_log\n      (source_table, operation, db_role, application, reason, old_row, new_row)\n    VALUES (TG_TABLE_NAME, TG_OP, current_user,\n            current_setting('application_name', true),\n            COALESCE(v_reason, 'rakeback-payout-delete: compensation on a treasury shortfall, or maintenance without app.ledger_maintenance'),\n            to_jsonb(OLD), NULL);\n    RETURN OLD;\n  END IF;\n\n  IF v_reason IS NOT NULL THEN\n    INSERT INTO public.ca_ledger_mutation_log\n      (source_table, operation, db_role, application, reason, old_row, new_row)\n    VALUES (TG_TABLE_NAME, TG_OP, current_user,\n            current_setting('application_name', true), v_reason,\n            to_jsonb(OLD), CASE WHEN TG_OP='UPDATE' THEN to_jsonb(NEW) END);\n\n    BEGIN\n      v_kind := split_part(v_reason, ':', 1);\n      -- a routine, recorded maintenance is filed, not shouted about\n      SELECT k.severity INTO v_sev\n        FROM public.ca_ledger_maintenance_kinds k WHERE k.kind = v_kind;\n      v_sev := COALESCE(v_sev, 'warning');\n      PERFORM public.fn_ca_raise_drift_incident(\n        'fn_ca_journal_append_only', 'unauthorized_adjustment', v_sev,\n        'journal-bypass:' || TG_TABLE_NAME || ':' || TG_OP || ':' || v_kind,\n        0, NULL, NULL, 'ledger', TG_TABLE_NAME,\n        NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,\n        'append-only bypass used on ' || TG_TABLE_NAME || ': ' || TG_OP\n          || ' permitted because app.ledger_maintenance was set to \"' || v_reason\n          || '\". The rows are preserved whole in ca_ledger_mutation_log - this incident'\n          || ' counts them (occurrences) rather than the chips; query that table by'\n          || ' reason for the full inventory. Confirm the maintenance was intended,'\n          || ' then resolve.',\n        true,\n        jsonb_build_object('table', TG_TABLE_NAME, 'operation', TG_OP,\n                           'reason', v_reason, 'reason_kind', v_kind,\n                           'db_role', current_user,\n                           'application', current_setting('application_name', true)));\n    EXCEPTION WHEN OTHERS THEN NULL;\n    END;\n\n    -- DR5. The diamond journal is deleted from on an hourly cadence by the\n    -- certification fleet. Keep the row and say who took it. Nothing here can\n    -- refuse the DELETE the branch above has already permitted.\n    IF TG_TABLE_NAME = 'diamond_transactions' AND TG_OP = 'DELETE' THEN\n      BEGIN\n        v_j := to_jsonb(OLD);\n        INSERT INTO public.ca_diamond_journal_archive\n          (id, user_id, type, amount, balance_after, description, reference_id, created_at,\n           transaction_type, source, metadata, counterparty, issuance_class,\n           deleted_profile_id, deletion_reason)\n        VALUES\n          ((v_j->>'id')::uuid, (v_j->>'user_id')::uuid, v_j->>'type',\n           (v_j->>'amount')::integer, (v_j->>'balance_after')::integer,\n           v_j->>'description', v_j->>'reference_id', (v_j->>'created_at')::timestamptz,\n           v_j->>'transaction_type', v_j->>'source',\n           COALESCE(v_j->'metadata', '{}'::jsonb),\n           v_j->>'counterparty', v_j->>'issuance_class',\n           (v_j->>'user_id')::uuid, v_reason)\n        ON CONFLICT (id) DO NOTHING;\n\n        PERFORM public.fn_ca_diamond_incident(\n          'DR5:journal_row_deleted_under_maintenance', 'info',\n          (v_j->>'user_id')::uuid, (v_j->>'amount')::numeric,\n          'fn_ca_journal_append_only',\n          jsonb_build_object('reason', v_reason,\n                             'reference_id', v_j->>'reference_id',\n                             'type', v_j->>'type',\n                             'db_role', current_user));\n      EXCEPTION WHEN OTHERS THEN\n        RAISE WARNING 'ca_diamond_journal_archive could not preserve a journal row deleted under maintenance (%): %',\n          v_reason, SQLERRM;\n      END;\n    END IF;\n\n    IF TG_OP = 'DELETE' THEN RETURN OLD; ELSE RETURN NEW; END IF;\n  END IF;\n\n  RAISE EXCEPTION\n    '% on % is forbidden: financial journals are append-only. Corrections are new linked rows (category=correction). Set app.ledger_maintenance with an incident reference for authorized maintenance.',\n    TG_OP, TG_TABLE_NAME\n    USING ERRCODE = 'P0403';\nEND $function$\n",
+      "md5": "398286e00164ff8224a29c6223349118",
+      "signature": "fn_ca_journal_append_only()"
+    },
+    {
+      "acl": "{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_caller_is_engine()\n RETURNS boolean\n LANGUAGE sql\n STABLE\n SET search_path TO 'pg_catalog', 'public', 'auth'\nAS $function$\n  -- The engine and every server-side job authenticate as service_role. A NULL\n  -- means there is no PostgREST request context at all - psql, pg_cron, a\n  -- migration - which is equally trusted. A browser can never produce NULL:\n  -- reaching `authenticated` requires a verified JWT and PostgREST always sets\n  -- request.jwt.claims from it.\n  --\n  -- NOT current_user. Inside a SECURITY DEFINER body current_user is the\n  -- function OWNER for the browser and the engine alike, which is what made an\n  -- earlier guard on club_members a silent no-op.\n  SELECT COALESCE(auth.role(), 'service_role') = 'service_role';\n$function$\n",
+      "md5": "36e18a86ba143ac90e90648b0bc020ea",
+      "signature": "fn_caller_is_engine()"
+    },
+    {
+      "acl": "{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_claim_rakeback(p_club_id uuid DEFAULT NULL::uuid)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'extensions'\nAS $function$\nDECLARE\n  v_user    uuid := (SELECT auth.uid());\n  v_period  record;\n  v_res     jsonb;\n  v_count   int := 0;\n  v_total   numeric := 0;\nBEGIN\n  IF v_user IS NULL THEN\n    RETURN jsonb_build_object('success', false, 'error', 'authentication required');\n  END IF;\n\n  FOR v_period IN\n    SELECT id FROM public.rakeback_periods\n     WHERE user_id = v_user\n       AND status = 'pending'\n       AND (p_club_id IS NULL OR club_id = p_club_id)\n     ORDER BY period_start\n     FOR UPDATE\n  LOOP\n    v_res := public.fn_close_settlement_period(v_period.id);\n    IF COALESCE((v_res->>'success')::boolean, false) THEN\n      v_total := v_total + COALESCE((v_res->>'payout')::numeric, 0);\n      IF COALESCE((v_res->>'payout')::numeric, 0) > 0 THEN\n        v_count := v_count + 1;\n      END IF;\n    END IF;\n  END LOOP;\n\n  RETURN jsonb_build_object('success', true, 'periods_claimed', v_count, 'total_payout', v_total);\nEND;\n$function$\n",
+      "md5": "930e4b70fa3580c010abe99e23181598",
+      "signature": "fn_claim_rakeback(uuid)"
+    },
+    {
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_close_settlement_period(p_period_id uuid)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  v_period         record;\n  v_rake_total     numeric;\n  v_rate           numeric;\n  v_payout         numeric;\n  v_payout_id      uuid;\n  v_days_needed    int;\n  v_days_have      int;\n  v_from_rollup    boolean := true;\n  v_is_member      boolean;\n  v_balance        numeric;\n  v_debit          jsonb;\n  v_treasury       numeric;\nBEGIN\n  SELECT * INTO v_period FROM public.rakeback_periods WHERE id = p_period_id FOR UPDATE;\n  IF NOT FOUND THEN\n    RETURN jsonb_build_object('success', false, 'error', 'period not found');\n  END IF;\n\n  IF v_period.status IN ('paid', 'expired') THEN\n    RETURN jsonb_build_object('success', true, 'skipped', v_period.status, 'period_id', p_period_id);\n  END IF;\n\n  -- WHO IS ASKING. A grant is not an authorization check: it lives outside\n  -- the function and CREATE OR REPLACE carries it forward unexamined. This\n  -- function debits a treasury and credits a wallet, so it asks.\n  IF NOT public.fn_caller_is_engine()\n     AND (auth.uid() IS NULL\n          OR (auth.uid() <> v_period.user_id\n              AND NOT public.fn_is_platform_admin()\n              AND NOT EXISTS (SELECT 1 FROM public.clubs c\n                               WHERE c.id = v_period.club_id\n                                 AND c.owner_id = auth.uid()))) THEN\n    RETURN jsonb_build_object('success', false, 'error', 'not_authorised');\n  END IF;\n\n  -- ---- EVERY CHEAP REFUSAL FIRST -------------------------------------------\n  -- Each of these is one indexed lookup. The basis below is a rollup sum at\n  -- best and a full rake_records scan at worst, and there is no reason to pay\n  -- for it on a period that cannot be paid out either way.\n\n  -- CLAUDE.md 13 rule 5: a sweep that moves money checks the freeze first.\n  IF public.fn_platform_frozen() THEN\n    RETURN jsonb_build_object('success', false, 'deferred', 'platform_frozen',\n                              'period_id', p_period_id);\n  END IF;\n\n  -- Rakeback is earned at a club and belongs in that club's wallet. A player\n  -- with no membership there is not quietly paid somewhere else, and is not\n  -- worth a rake scan to discover that.\n  SELECT EXISTS (SELECT 1 FROM public.club_members cm\n                  WHERE cm.user_id = v_period.user_id\n                    AND cm.club_id = v_period.club_id\n                    AND cm.status IN ('active','approved'))\n    INTO v_is_member;\n\n  IF NOT v_is_member THEN\n    UPDATE public.rakeback_periods\n       SET deferred_reason = 'no_membership_at_earning_club',\n           deferred_at = NOW(), defer_count = defer_count + 1\n     WHERE id = p_period_id;\n    RETURN jsonb_build_object('success', false, 'deferred', 'no_membership_at_earning_club',\n      'period_id', p_period_id, 'club_id', v_period.club_id, 'user_id', v_period.user_id);\n  END IF;\n\n  -- Can this club fund what this period is already believed to be worth? The\n  -- estimate is the writer's own last computation, it is used ONLY to refuse,\n  -- and refusing here costs one indexed row where continuing costs a full rake\n  -- scan for a payment fn_debit_treasury would decline at the end of it.\n  IF COALESCE(v_period.rakeback_amount, v_period.rakeback_earned, 0) > 0 THEN\n    SELECT COALESCE(c.chip_treasury, 0) INTO v_treasury\n      FROM public.clubs c WHERE c.id = v_period.club_id;\n    IF v_treasury < COALESCE(v_period.rakeback_amount, v_period.rakeback_earned, 0) THEN\n      UPDATE public.rakeback_periods\n         SET deferred_reason = 'insufficient_club_treasury',\n             deferred_at = NOW(), defer_count = defer_count + 1\n       WHERE id = p_period_id;\n      RETURN jsonb_build_object('success', false, 'deferred', 'insufficient_club_treasury',\n        'period_id', p_period_id, 'club_id', v_period.club_id,\n        'estimated_payout', COALESCE(v_period.rakeback_amount, v_period.rakeback_earned, 0),\n        'treasury', round(v_treasury, 2), 'checked', 'before_basis');\n    END IF;\n  END IF;\n\n  -- ---- NOW THE WORK ---------------------------------------------------------\n  -- rakeback_daily_user is the same allocation the writer used, computed once\n  -- per club-day for every player. Where it does not cover the period - it\n  -- began 2026-08-31 and the backlog reaches to 2026-07-20 - fall back to the\n  -- original scan rather than pay somebody zero because a cache is cold.\n  v_days_needed := (v_period.period_end - v_period.period_start) + 1;\n  SELECT count(*) INTO v_days_have FROM public.rakeback_daily_state s\n   WHERE s.club_id = v_period.club_id\n     AND s.day BETWEEN v_period.period_start AND v_period.period_end;\n\n  IF v_days_have >= v_days_needed THEN\n    SELECT ROUND(COALESCE(SUM(d.cents), 0)::numeric / 100, 2)\n      INTO v_rake_total\n      FROM public.rakeback_daily_user d\n     WHERE d.club_id = v_period.club_id\n       AND d.user_id = v_period.user_id\n       AND d.day BETWEEN v_period.period_start AND v_period.period_end;\n  ELSE\n    v_from_rollup := false;\n    SELECT ROUND(COALESCE(SUM(s.credit), 0), 2)\n      INTO v_rake_total\n      FROM public.rake_records r\n      CROSS JOIN LATERAL public.fn_rake_shares_for_record(\n        r.hand_id, r.rake_amount, r.player_contributions, COALESCE(r.rake_method, 'DEALT_EQUAL')\n      ) s\n     WHERE r.club_id = v_period.club_id\n       AND r.created_at >= v_period.period_start::timestamptz\n       AND r.created_at <  (v_period.period_end + 1)::timestamptz\n       AND r.rake_amount > 0\n       AND r.player_contributions IS NOT NULL\n       AND (r.player_contributions ? v_period.user_id::text)\n       AND NOT public.fn_rake_record_is_ghost_twin(r.hand_id, r.table_id, r.metadata)\n       AND s.user_id = v_period.user_id;\n  END IF;\n\n  -- One source of truth for the rate: the player's own deal, else their agent's\n  -- standing offer, else the legacy volume ladder, never more than the upline\n  -- earns less ten points.\n  v_rate   := public.fn_player_rakeback_rate(v_period.user_id, v_period.club_id, v_rake_total);\n  v_payout := ROUND(v_rake_total * v_rate, 2);\n\n  UPDATE public.rakeback_periods\n     SET rake_generated  = v_rake_total,\n         total_rake_paid = v_rake_total,\n         rakeback_rate   = v_rate,\n         rakeback_amount = v_payout,\n         rakeback_earned = v_payout\n   WHERE id = p_period_id;\n\n  IF v_payout <= 0 THEN\n    UPDATE public.rakeback_periods\n       SET status = 'paid', paid_at = NOW(), deferred_reason = NULL, deferred_at = NULL\n     WHERE id = p_period_id;\n    RETURN jsonb_build_object('success', true, 'period_id', p_period_id, 'payout', 0,\n                              'rake_total', v_rake_total, 'rakeback_rate', v_rate,\n                              'from_rollup', v_from_rollup);\n  END IF;\n\n  INSERT INTO public.rakeback_period_payouts\n    (rakeback_period_id, club_id, user_id, user_rake_contribution,\n     rakeback_pct, payout_amount, status, paid_at)\n  VALUES\n    (p_period_id, v_period.club_id, v_period.user_id, v_rake_total,\n     ROUND(v_rate * 100, 2), round(v_payout, 2), 'paid', NOW())\n  ON CONFLICT (rakeback_period_id, user_id) DO NOTHING\n  RETURNING id INTO v_payout_id;\n\n  IF v_payout_id IS NULL THEN\n    UPDATE public.rakeback_periods\n       SET status = 'paid', paid_at = NOW(), deferred_reason = NULL, deferred_at = NULL\n     WHERE id = p_period_id;\n    RETURN jsonb_build_object('success', true, 'skipped', 'payout_exists', 'period_id', p_period_id);\n  END IF;\n\n  v_debit := public.fn_debit_treasury(\n    v_period.club_id, v_payout,\n    'Player rakeback ' || v_period.period_start::text || ' to ' || v_period.period_end::text,\n    jsonb_build_object('period_id', p_period_id, 'user_id', v_period.user_id,\n                       'rake_basis', v_rake_total, 'rate', v_rate));\n\n  IF COALESCE((v_debit->>'success')::boolean, false) IS NOT TRUE THEN\n    DELETE FROM public.rakeback_period_payouts WHERE id = v_payout_id;\n    UPDATE public.rakeback_periods\n       SET deferred_reason = 'insufficient_club_treasury',\n           deferred_at = NOW(), defer_count = defer_count + 1\n     WHERE id = p_period_id;\n    RETURN jsonb_build_object('success', false, 'deferred', 'insufficient_club_treasury',\n      'period_id', p_period_id, 'club_id', v_period.club_id, 'payout', v_payout,\n      'treasury', v_debit->'balance');\n  END IF;\n\n  PERFORM set_config('app.ledger_club_id', v_period.club_id::text, true);\n\n  PERFORM public.atomic_credit_wallet_and_log(\n    v_period.user_id, v_payout, 'rakeback',\n    'Rakeback payout ' || v_period.period_start::text || ' to ' || v_period.period_end::text,\n    NULL, NULL, v_payout_id, 'rakeback:' || p_period_id::text\n  );\n  /* THE POINTER IS WRITTEN WHERE THE MONEY MOVED (2026-09-08). The credit\n     above already stamps related_entity_id = this payout, so the link has\n     always existed in ONE direction. rakeback_period_payouts.wallet_\n     transaction_id was never written back, on any of 2,704 rows since the\n     table was created, and fn_ca_settlement_correctness_check reads that\n     direction - so every paid rakeback looked like money with no evidence.\n     PERFORM discards what the credit returns and the function returns only\n     a boolean, so the id is read back from the row it just stamped. */\n  PERFORM set_config('app.ledger_maintenance',\n                     'rakeback payout evidence pointer', true);\n  UPDATE public.rakeback_period_payouts p\n     SET wallet_transaction_id = w.id\n    FROM public.wallet_transactions w\n   WHERE p.id = v_payout_id AND w.related_entity_id = v_payout_id\n     AND p.wallet_transaction_id IS NULL;\n  PERFORM set_config('app.ledger_maintenance', '', true);\n\n  PERFORM set_config('app.ledger_club_id', '', true);\n\n  SELECT cm.chip_balance INTO v_balance\n    FROM public.club_members cm\n   WHERE cm.user_id = v_period.user_id AND cm.club_id = v_period.club_id;\n\n  INSERT INTO public.wallet_transactions\n    (user_id, wallet_type, amount, type, category, description, related_entity_id, balance_after)\n  VALUES\n    (v_period.user_id, 'PLAYER', v_payout, 'credit', 'rakeback',\n     'Rakeback payout ' || v_period.period_start::text || ' to ' || v_period.period_end::text,\n     v_payout_id, v_balance);\n\n  UPDATE public.rakeback_periods\n     SET status = 'paid', paid_at = NOW(), deferred_reason = NULL, deferred_at = NULL\n   WHERE id = p_period_id;\n\n  RETURN jsonb_build_object('success', true, 'period_id', p_period_id,\n    'rake_total', v_rake_total, 'rakeback_rate', v_rate,\n    'payout', v_payout, 'payout_id', v_payout_id, 'club_id', v_period.club_id,\n    'from_rollup', v_from_rollup, 'funded_from', 'club_chip_treasury');\nEND;\n$function$\n",
+      "md5": "5f1b3b29c972620ca06143a2f58444c9",
+      "signature": "fn_close_settlement_period(uuid)"
+    },
+    {
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_debit_treasury(p_club_id uuid, p_amount numeric, p_reason text DEFAULT NULL::text, p_metadata jsonb DEFAULT '{}'::jsonb)\n RETURNS jsonb\n LANGUAGE plpgsql\n SET search_path TO 'public', 'extensions'\nAS $function$\nDECLARE\n  v_before numeric;\n  v_after numeric;\nBEGIN\n  IF p_club_id IS NULL OR p_amount IS NULL OR p_amount <= 0 THEN\n    RETURN jsonb_build_object('success', false, 'error', 'invalid parameters');\n  END IF;\n\n  SELECT COALESCE(chip_treasury, 0) INTO v_before\n  FROM clubs WHERE id = p_club_id FOR UPDATE;\n\n  IF v_before IS NULL THEN\n    RETURN jsonb_build_object('success', false, 'error', 'club not found');\n  END IF;\n\n  IF v_before < p_amount THEN\n    RETURN jsonb_build_object(\n      'success', false,\n      'error', 'insufficient treasury',\n      'balance', v_before,\n      'requested', p_amount\n    );\n  END IF;\n\n  UPDATE clubs\n  SET chip_treasury = chip_treasury - p_amount,\n      updated_at = NOW()\n  WHERE id = p_club_id;\n  v_after := v_before - p_amount;\n\n  INSERT INTO chip_transactions (\n    id, club_id, amount, transaction_type, notes, metadata, balance_after, created_at\n  ) VALUES (\n    gen_random_uuid(), p_club_id, p_amount,\n    'treasury_debit', COALESCE(p_reason, 'Treasury debit'), p_metadata, v_after, NOW()\n  );\n\n  RETURN jsonb_build_object(\n    'success', true,\n    'amount', p_amount,\n    'balance_before', v_before,\n    'balance_after', v_after\n  );\nEND;\n$function$\n",
+      "md5": "8f43bf345fba1310ca8c3c40d6f8439d",
+      "signature": "fn_debit_treasury(uuid,numeric,text,jsonb)"
+    },
+    {
+      "acl": "{postgres=X/postgres,service_role=X/postgres,authenticated=X/postgres}",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_ensure_club_wallet(p_user_id uuid, p_club_id uuid)\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\n  SELECT EXISTS (\n    SELECT 1 FROM public.club_members cm\n     WHERE cm.user_id = p_user_id AND cm.club_id = p_club_id\n       AND cm.status IN ('active', 'approved')\n  );\n$function$\n",
+      "md5": "9a9fb5c1f8a4a88bbeed01710af6c4c2",
+      "signature": "fn_ensure_club_wallet(uuid,uuid)"
+    },
+    {
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_pay_player_chips(p_user_id uuid, p_amount numeric, p_category text, p_description text, p_club_hint uuid DEFAULT NULL::uuid, p_related_id uuid DEFAULT NULL::uuid)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE v_club uuid; v_balance numeric; v_had_cp text; v_cat text;\nBEGIN\n  IF p_amount IS NULL OR p_amount <= 0 THEN\n    RETURN jsonb_build_object('paid', false, 'reason', 'non_positive');\n  END IF;\n\n  v_club := public.fn_player_home_club(p_user_id, p_club_hint);\n\n  IF v_club IS NULL THEN\n    -- CLUB ARENA RULE: there is no shared wallet to fall back to.\n    RAISE EXCEPTION 'no club wallet resolves for player % - Club Arena money cannot be paid to a global wallet', p_user_id\n      USING HINT = 'Pass an explicit club, or ensure the player holds a club membership.';\n  END IF;\n\n  -- A club a player belongs to always has its own wallet; create if absent\n  -- rather than redirecting the money anywhere else.\n  PERFORM public.fn_ensure_club_wallet(p_user_id, v_club);\n\n  /* THE BANK IS NAMED (2026-09-09). A player paid from their club is paid\n     out of that club's treasury, and this function has already resolved which\n     club. Declaring it here is what stops the journal recording the payment\n     as an anonymous arrival out of settlement_suspense. p_category is a\n     wallet_transactions category and is only used when the ledger vocabulary\n     also has it; otherwise the leg is an adjustment, which is what it was\n     before. */\n  v_had_cp := COALESCE(NULLIF(current_setting('app.ledger_counterparty', true), ''), '');\n  IF v_had_cp = '' THEN\n    SELECT CASE WHEN EXISTS (\n             SELECT 1 FROM pg_constraint\n              WHERE conrelid = 'public.chip_ledger'::regclass\n                AND conname = 'chip_ledger_category_check'\n                AND pg_get_constraintdef(oid) LIKE '%''' || lower(btrim(COALESCE(p_category,''))) || '''%')\n           THEN lower(btrim(p_category)) ELSE 'adjustment' END\n      INTO v_cat;\n    PERFORM public.fn_ca_declare_ledger(v_cat, 'club_treasury', v_club);\n  END IF;\n\n  UPDATE club_members\n     SET chip_balance = COALESCE(chip_balance,0) + p_amount, updated_at = NOW()\n   WHERE user_id = p_user_id AND club_id = v_club\n   RETURNING chip_balance INTO v_balance;\n\n  IF v_had_cp = '' THEN\n    -- Cleared so a declaration made for THIS credit cannot label a later one.\n    PERFORM set_config('app.ledger_counterparty', '', true);\n    PERFORM set_config('app.ledger_counterparty_entity', '', true);\n    PERFORM set_config('app.ledger_category', '', true);\n  END IF;\n\n  IF v_balance IS NULL THEN\n    RAISE EXCEPTION 'club wallet for player % in club % could not be credited', p_user_id, v_club;\n  END IF;\n\n  INSERT INTO wallet_transactions\n    (user_id, wallet_type, type, amount, category, description, related_entity_id, balance_after)\n  VALUES\n    (p_user_id, 'PLAYER', 'credit', p_amount, p_category,\n     p_description || ' [club wallet]', p_related_id, v_balance);\n\n  RETURN jsonb_build_object('paid', true, 'club_id', v_club,\n                            'source', 'club_chips', 'balance_after', v_balance);\nEND $function$\n",
+      "md5": "f11a7a253e4e1d406085ac3caaeb330b",
+      "signature": "fn_pay_player_chips(uuid,numeric,text,text,uuid,uuid)"
+    },
+    {
+      "acl": "{postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_platform_frozen()\n RETURNS boolean\n LANGUAGE sql\n SET search_path TO 'public', 'pg_temp'\nAS $function$\n  SELECT EXISTS (\n           SELECT 1\n             FROM public.engine_maintenance_break b\n            WHERE b.enforce_freeze\n              AND b.announced_at < clock_timestamp() + INTERVAL '30 seconds'\n              AND (\n                (\n                  b.phase = 'last_hand'\n                  AND b.break_started_at IS NULL\n                  AND b.break_ends_at IS NULL\n                  AND b.announced_at + INTERVAL '2 minutes' <= clock_timestamp()\n                )\n                OR (\n                  b.phase = 'counting_down'\n                  AND b.break_started_at IS NOT NULL\n                  AND b.break_ends_at IS NOT NULL\n                  AND b.break_started_at >= b.announced_at\n                  AND b.break_ends_at > b.break_started_at\n                  AND b.break_ends_at < b.announced_at + INTERVAL '15 minutes'\n                )\n              )\n         )\n         OR COALESCE(\n           public.fn_active_maintenance_release_boundary() > clock_timestamp(),\n           false\n         );\n$function$\n",
+      "md5": "112b1265824ee082b8adc67ea367d826",
+      "signature": "fn_platform_frozen()"
+    },
+    {
+      "acl": "{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_player_rakeback_rate(p_user_id uuid, p_club_id uuid, p_volume numeric DEFAULT 0)\n RETURNS numeric\n LANGUAGE plpgsql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  v_deal numeric; v_agent_default numeric; v_upline_rate numeric; v_rate numeric; v_cap numeric;\nBEGIN\n  SELECT COALESCE(cm.player_rakeback_pct, 0),\n         COALESCE(a.player_rakeback_rate, 0),\n         COALESCE(a.commission_rate, 0)\n    INTO v_deal, v_agent_default, v_upline_rate\n    FROM club_members cm\n    LEFT JOIN agents a ON a.user_id = cm.agent_id AND a.club_id = cm.club_id AND a.status = 'active'\n   WHERE cm.user_id = p_user_id AND cm.club_id = p_club_id\n   LIMIT 1;\n\n  -- 1. the player's own negotiated deal\n  IF COALESCE(v_deal,0) > 0 THEN\n    v_rate := v_deal;\n  -- 2. their agent's standing offer\n  ELSIF COALESCE(v_agent_default,0) > 0 THEN\n    v_rate := v_agent_default;\n  -- 3. legacy volume ladder (players with no agent)\n  ELSE\n    v_rate := CASE WHEN p_volume >= 10000 THEN 0.30\n                   WHEN p_volume >=  2000 THEN 0.20\n                   WHEN p_volume >=   500 THEN 0.15\n                   WHEN p_volume >=   100 THEN 0.10\n                   ELSE 0.05 END;\n  END IF;\n\n  -- Never more than the upline receives, less the ten-point gap.\n  IF COALESCE(v_upline_rate,0) > 0 THEN\n    v_cap := GREATEST(v_upline_rate - 0.10, 0);\n    v_rate := LEAST(v_rate, v_cap);\n  END IF;\n\n  RETURN GREATEST(ROUND(COALESCE(v_rate,0), 4), 0);\nEND $function$\n",
+      "md5": "0f3c31ed1a9f42ef48d1dc0392b1bd3f",
+      "signature": "fn_player_rakeback_rate(uuid,uuid,numeric)"
+    },
+    {
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_settle_club_rakeback_batch(p_club_id uuid, p_max_periods integer DEFAULT 40, p_budget_seconds numeric DEFAULT 4.0, p_max_warm_days integer DEFAULT 2)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  v_started    timestamptz := clock_timestamp();\n  v_period     record;\n  v_day        record;\n  v_res        jsonb;\n  v_settled    int := 0;\n  v_deferred   int := 0;\n  v_errors     int := 0;\n  v_retries    int := 0;\n  v_warmed     int := 0;\n  v_total      numeric := 0;\n  v_reasons    jsonb := '{}'::jsonb;\n  v_reason     text;\n  v_remaining  int;\n  v_budget     numeric;\n  v_elapsed    numeric;\n  v_treasury   numeric;\n  v_smallest   numeric;\n  v_owed       numeric;\n  v_attempt    int;\n  v_sqlstate   text;\n  v_err        text;\nBEGIN\n  IF p_club_id IS NULL THEN\n    RETURN jsonb_build_object('success', false, 'error', 'p_club_id required');\n  END IF;\n\n  IF NOT public.fn_caller_is_engine()\n     AND (auth.uid() IS NULL\n          OR (NOT public.fn_is_platform_admin()\n              AND NOT EXISTS (SELECT 1 FROM public.clubs c\n                               WHERE c.id = p_club_id AND c.owner_id = auth.uid()))) THEN\n    RETURN jsonb_build_object('success', false, 'error', 'not_authorised');\n  END IF;\n\n  IF public.fn_platform_frozen() THEN\n    RETURN jsonb_build_object('success', true, 'club_id', p_club_id,\n      'periods_settled', 0, 'total_payout', 0, 'deferred', 0, 'errors', 0,\n      'note', 'platform_frozen', 'clock_ran_out', false);\n  END IF;\n\n  v_budget := GREATEST(COALESCE(p_budget_seconds, 4.0), 0.5);\n  IF p_max_periods IS NULL OR p_max_periods < 1 THEN p_max_periods := 40; END IF;\n\n  SELECT count(*), COALESCE(min(NULLIF(COALESCE(rakeback_amount, rakeback_earned, 0), 0)), 0),\n         COALESCE(sum(COALESCE(rakeback_amount, rakeback_earned, 0)), 0)\n    INTO v_remaining, v_smallest, v_owed\n    FROM public.rakeback_periods\n   WHERE club_id = p_club_id AND status = 'pending' AND period_end < CURRENT_DATE;\n\n  IF v_remaining = 0 THEN\n    RETURN jsonb_build_object('success', true, 'club_id', p_club_id,\n      'periods_settled', 0, 'total_payout', 0, 'deferred', 0, 'errors', 0,\n      'periods_remaining', 0, 'note', 'nothing due', 'clock_ran_out', false);\n  END IF;\n\n  SELECT COALESCE(chip_treasury, 0) INTO v_treasury FROM public.clubs WHERE id = p_club_id;\n  IF v_treasury < v_smallest THEN\n    UPDATE public.rakeback_periods\n       SET deferred_reason = 'insufficient_club_treasury',\n           deferred_at = NOW(), defer_count = defer_count + 1\n     WHERE club_id = p_club_id AND status = 'pending' AND period_end < CURRENT_DATE\n       AND deferred_reason IS DISTINCT FROM 'insufficient_club_treasury';\n\n    RETURN jsonb_build_object('success', true, 'club_id', p_club_id,\n      'periods_settled', 0, 'total_payout', 0, 'errors', 0,\n      'deferred', v_remaining,\n      'deferred_reasons', jsonb_build_object('insufficient_club_treasury', v_remaining),\n      'periods_remaining', v_remaining,\n      'treasury', round(v_treasury, 2), 'owed', round(v_owed, 2),\n      'shortfall', round(v_owed - v_treasury, 2),\n      'note', 'club cannot fund its smallest pending payout',\n      'elapsed_seconds', round(extract(epoch FROM (clock_timestamp() - v_started))::numeric, 3),\n      'clock_ran_out', false);\n  END IF;\n\n  FOR v_day IN\n    SELECT DISTINCT d::date AS day\n      FROM public.rakeback_periods rp\n      CROSS JOIN LATERAL generate_series(rp.period_start, rp.period_end, interval '1 day') d\n     WHERE rp.club_id = p_club_id\n       AND rp.status = 'pending'\n       AND rp.period_end < CURRENT_DATE\n       AND NOT EXISTS (SELECT 1 FROM public.rakeback_daily_state s\n                        WHERE s.club_id = p_club_id AND s.day = d::date)\n     ORDER BY 1\n     LIMIT GREATEST(COALESCE(p_max_warm_days, 2), 0)\n  LOOP\n    EXIT WHEN extract(epoch FROM (clock_timestamp() - v_started)) > v_budget * 0.6;\n    BEGIN\n      PERFORM public.fn_rakeback_recompute_day(p_club_id, v_day.day, false);\n      v_warmed := v_warmed + 1;\n    EXCEPTION WHEN OTHERS THEN\n      -- A day that will not roll up is not a reason to skip paying the\n      -- periods that do. The payer falls back to the direct scan.\n      v_errors := v_errors + 1;\n    END;\n  END LOOP;\n\n  FOR v_period IN\n    SELECT id FROM public.rakeback_periods\n     WHERE club_id = p_club_id AND status = 'pending'\n       AND period_end < CURRENT_DATE\n     -- Least-refused first. A deferred period stays pending because the\n     -- money is still owed, so ordering by age alone lets a permanently\n     -- refusing head of queue starve everything behind it.\n     ORDER BY defer_count, period_end, id\n     LIMIT p_max_periods\n  LOOP\n    EXIT WHEN extract(epoch FROM (clock_timestamp() - v_started)) > v_budget;\n\n    v_attempt := 0;\n    LOOP\n      v_attempt := v_attempt + 1;\n      BEGIN\n        v_res := public.fn_close_settlement_period(v_period.id);\n        EXIT;                                   -- closed, or refused cleanly\n      EXCEPTION WHEN OTHERS THEN\n        GET STACKED DIAGNOSTICS v_sqlstate = RETURNED_SQLSTATE, v_err = MESSAGE_TEXT;\n        -- 40P01 deadlock_detected, 55P03 lock_not_available, 40001 serialization\n        IF v_sqlstate IN ('40P01','55P03','40001') AND v_attempt < 3 THEN\n          v_retries := v_retries + 1;\n          PERFORM pg_sleep(0.05 * v_attempt);\n          CONTINUE;                              -- the period is untouched; try again\n        END IF;\n        v_res := jsonb_build_object('success', false,\n                   'deferred', 'error_' || v_sqlstate,\n                   'detail', left(v_err, 200));\n        v_errors := v_errors + 1;\n        BEGIN\n          UPDATE public.rakeback_periods\n             SET deferred_reason = 'error_' || v_sqlstate,\n                 deferred_at = NOW(), defer_count = defer_count + 1\n           WHERE id = v_period.id;\n        EXCEPTION WHEN OTHERS THEN NULL;\n        END;\n        EXIT;\n      END;\n    END LOOP;\n\n    IF COALESCE((v_res->>'success')::boolean, false) THEN\n      v_settled := v_settled + 1;\n      v_total   := v_total + COALESCE((v_res->>'payout')::numeric, 0);\n    ELSE\n      v_deferred := v_deferred + 1;\n      v_reason   := COALESCE(v_res->>'deferred', v_res->>'error', 'unknown');\n      v_reasons  := jsonb_set(v_reasons, ARRAY[v_reason],\n                      to_jsonb(COALESCE((v_reasons->>v_reason)::int, 0) + 1), true);\n    END IF;\n  END LOOP;\n\n  SELECT count(*) INTO v_remaining FROM public.rakeback_periods\n   WHERE club_id = p_club_id AND status = 'pending' AND period_end < CURRENT_DATE;\n\n  v_elapsed := round(extract(epoch FROM (clock_timestamp() - v_started))::numeric, 3);\n\n  RETURN jsonb_build_object('success', true, 'club_id', p_club_id,\n    'periods_settled', v_settled, 'total_payout', round(v_total, 2),\n    'deferred', v_deferred, 'deferred_reasons', v_reasons,\n    'errors', v_errors, 'lock_retries', v_retries,\n    'days_warmed', v_warmed, 'periods_remaining', v_remaining,\n    'treasury', round(v_treasury, 2),\n    'elapsed_seconds', v_elapsed,\n    'clock_ran_out', v_elapsed > v_budget);\nEND;\n$function$\n",
+      "md5": "8b6e4b7bf0bea186ef2828cf1b976c02",
+      "signature": "fn_settle_club_rakeback_batch(uuid,integer,numeric,integer)"
+    },
+    {
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_settle_round3_agents_to_players(p_union_id uuid, p_period_start timestamp with time zone, p_period_end timestamp with time zone)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  r record; v_agent_bal numeric; v_paid numeric := 0;\n  v_payees int := 0; v_short int := 0; v_detail jsonb := '[]'::jsonb;\nBEGIN\n\n  IF EXISTS (SELECT 1 FROM settlement_locks WHERE lock_type = 'GLOBAL_SETTLEMENT_FREEZE' AND is_active = true) THEN\n    RAISE EXCEPTION 'EMERGENCY_PROFIT_DRIFT_LOCK';\n  END IF;\n  FOR r IN\n    SELECT rp.user_id AS player_id, rp.club_id, cm.agent_id AS agent_user,\n           SUM(rp.rakeback_amount) AS owed\n      FROM rakeback_periods rp\n      JOIN union_clubs uc ON uc.club_id = rp.club_id AND uc.union_id = p_union_id\n      JOIN club_members cm ON cm.user_id = rp.user_id AND cm.club_id = rp.club_id\n     WHERE rp.status = 'pending'\n       AND rp.period_start >= p_period_start::date\n       AND rp.period_start <  p_period_end::date + 1\n       AND cm.agent_id IS NOT NULL\n     GROUP BY rp.user_id, rp.club_id, cm.agent_id\n    HAVING SUM(rp.rakeback_amount) > 0\n     ORDER BY 2,3,1\n  LOOP\n    SELECT chip_balance INTO v_agent_bal\n      FROM club_members WHERE user_id = r.agent_user AND club_id = r.club_id FOR UPDATE;\n\n    IF COALESCE(v_agent_bal,0) < r.owed THEN\n      v_short := v_short + 1;\n      v_detail := v_detail || jsonb_build_object('agent', r.agent_user, 'player', r.player_id,\n                    'owed', r.owed, 'agent_balance', COALESCE(v_agent_bal,0), 'skipped', true);\n      CONTINUE;\n    END IF;\n\n    /* ONE MOVEMENT, ONE LEG (2026-09-09). Both sides of this transfer live\n       in club_members, and the leg that names them - agent wallet to player\n       wallet - is written by hand below. Without these stand-downs the\n       club_members trigger fired twice per payment, once for the debit and\n       once for the credit, and neither knew the counterparty, so a single\n       rakeback payment reached the journal as an anonymous pair through\n       settlement_suspense PLUS the named leg. */\n    PERFORM set_config('app.ledger_autoskip_club_members', '1', true);\n    UPDATE club_members SET chip_balance = chip_balance - r.owed, updated_at = now()\n     WHERE user_id = r.agent_user AND club_id = r.club_id;\n\n    PERFORM public.fn_ensure_club_wallet(r.player_id, r.club_id);\n    UPDATE club_members SET chip_balance = COALESCE(chip_balance,0) + r.owed, updated_at = now()\n     WHERE user_id = r.player_id AND club_id = r.club_id;\n    PERFORM set_config('app.ledger_autoskip_club_members', '', true);\n\n    UPDATE rakeback_periods\n       SET status = 'paid', paid_at = now()\n     WHERE user_id = r.player_id AND club_id = r.club_id AND status = 'pending'\n       AND period_start >= p_period_start::date AND period_start < p_period_end::date + 1;\n\n    INSERT INTO wallet_transactions\n      (user_id, wallet_type, type, amount, category, description, balance_after)\n    SELECT r.player_id, 'PLAYER', 'credit', r.owed, 'rakeback',\n           'Round 3: agent -> player rakeback [club wallet]', cm.chip_balance\n      FROM club_members cm WHERE cm.user_id = r.player_id AND cm.club_id = r.club_id;\n\n    /* CONTROL (phase 8): the same movement as a balanced leg on the journal.\n       Both sides are member wallets, so the trial balance nets them to zero\n       and cannot see this; fn_ca_ledger_replay is per account owner and can. */\n    INSERT INTO public.chip_ledger\n      (performed_by, from_type, from_entity_id, to_type, to_entity_id,\n       amount, category, club_id, union_id, description, idempotency_key, metadata)\n    VALUES\n      (COALESCE(auth.uid(), '2d1cd6c3-5700-4af9-a271-d4863fdab20d'::uuid),\n       'player_wallet', r.agent_user, 'player_wallet', r.player_id,\n       round(r.owed, 2), 'rakeback', r.club_id, p_union_id,\n       'Round 3: agent -> player rakeback (period '\n         || to_char(p_period_start, 'YYYY-MM-DD') || '..'\n         || to_char(p_period_end, 'YYYY-MM-DD') || ')',\n       'round3:' || p_union_id::text || ':'\n         || to_char(p_period_start at time zone 'UTC', 'YYYY-MM-DD') || ':'\n         || r.club_id::text || ':' || r.agent_user::text || ':' || r.player_id::text,\n       jsonb_build_object('period_start', p_period_start, 'period_end', p_period_end))\n    ON CONFLICT DO NOTHING;\n\n    v_paid := v_paid + r.owed;\n    v_payees := v_payees + 1;\n  END LOOP;\n\n  RETURN jsonb_build_object('round', 3, 'name', 'agents_to_players',\n    'payees', v_payees, 'amount', round(v_paid,2), 'shortfalls', v_short, 'detail', v_detail);\nEND $function$\n",
+      "md5": "5234e460b1ea1f666fbc6bac7a9a1b17",
+      "signature": "fn_settle_round3_agents_to_players(uuid,timestamp with time zone,timestamp with time zone)"
+    },
+    {
+      "acl": "{postgres=X/postgres,service_role=X/postgres,authenticated=X/postgres}",
+      "definition": "CREATE OR REPLACE FUNCTION public.settle_club_rakeback(p_club_id uuid)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nBEGIN\n  RETURN public.fn_settle_club_rakeback_batch(p_club_id, 40, 4.0, 2);\nEND;\n$function$\n",
+      "md5": "a8ebac6edb274b1d039c01369a94d7fc",
+      "signature": "settle_club_rakeback(uuid)"
+    },
+    {
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_agent_claim_commission(p_club_id uuid, p_op_id uuid DEFAULT NULL::uuid, p_max_rows integer DEFAULT 1000)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  v_actor      uuid;\n  v_op_id      uuid := COALESCE(p_op_id, gen_random_uuid());\n  v_role       text;\n  v_amount     numeric;\n  v_rows       bigint;\n  v_bank_before numeric;\n  v_bank_after  numeric;\n  v_to_after    numeric;\n  v_prior      jsonb;\n  v_club_name  text;\n  v_batch      integer;\n  v_more       boolean;\n  v_ids        uuid[];\n  v_cutoff     timestamptz;\n  v_safe       timestamptz := now() - interval '5 minutes';\n  v_settled    uuid;\nBEGIN\n  /* ZERO-DRIFT phase 6: commission claims journal as commission. */\n  PERFORM set_config('app.ledger_category', 'commission', true);\n  PERFORM set_config('app.ledger_counterparty', 'agent_wallet', true);\n  PERFORM set_config('app.ledger_counterparty_entity', '', true);\n  -- IDENTITY. auth.uid() is the only identity a browser can establish, and this\n  -- RPC pays the caller. There is deliberately no p_user_id: a parameter naming\n  -- somebody else would make this a way to move another person's earnings, and\n  -- Dan's rule is that agents handle their own payouts.\n  v_actor := auth.uid();\n  IF v_actor IS NULL THEN\n    RETURN jsonb_build_object('success', false, 'error', 'Sign In To Claim Your Commission');\n  END IF;\n\n  -- REPLAY. Same op_id, same answer, no second payment. The client sends one\n  -- id per intent, so a double tap or a retried request settles once.\n  SELECT metadata INTO v_prior\n    FROM chip_transactions\n   WHERE club_id = p_club_id\n     AND to_user_id = v_actor\n     AND transaction_type = 'commission_claim'\n     AND metadata ->> 'op_id' = v_op_id::text\n   LIMIT 1;\n  IF v_prior IS NOT NULL THEN\n    RETURN jsonb_build_object('success', true, 'replayed', true,\n      'amount', (v_prior ->> 'amount')::numeric,\n      'rows_settled', (v_prior ->> 'rows_settled')::bigint,\n      'more', EXISTS (SELECT 1 FROM public.agent_commissions ac WHERE ac.club_id = p_club_id AND ac.user_id = v_actor AND ac.settled_at IS NULL AND NOT EXISTS (SELECT 1 FROM public.agent_commission_settlements s WHERE s.club_id = ac.club_id AND s.user_id = ac.user_id AND ac.created_at >= s.period_start AND ac.created_at < s.period_end)),\n      'op_id', v_op_id);\n  END IF;\n\n  /* ONE CLAIM PER PAIR AT A TIME (Phase 7, 20260908). The batch used to be\n     held with FOR UPDATE, which is what stopped two concurrent claims paying\n     the same rows. Nothing is stamped now, so the pair is serialised here\n     instead; every statement after this takes a fresh snapshot, so the\n     second claim sees the first one's settlement row. */\n  PERFORM pg_advisory_xact_lock(hashtextextended('agent_claim:' || p_club_id::text || ':' || v_actor::text, 42));\n\n  -- MEMBERSHIP, NOT ROLE. A demoted agent keeps what they earned - Phase 4 let\n  -- the demotion through precisely because \"the agents row survives with the\n  -- figure intact\". If claiming required an agent role, the demotion would have\n  -- quietly confiscated the money instead of deferring it.\n  SELECT cm.role INTO v_role\n    FROM club_members cm\n   WHERE cm.club_id = p_club_id\n     AND cm.user_id = v_actor\n     AND COALESCE(cm.status, 'active') IN ('active', 'approved')\n     -- FOR UPDATE, added 2026-09-02. Without it this row can be deleted\n     -- between here and the credit ninety lines below, and the credit\n     -- silently matches nothing while the bank has already been debited.\n     FOR UPDATE;\n  IF v_role IS NULL THEN\n    RETURN jsonb_build_object('success', false,\n      'error', 'You Are Not An Active Member Of This Club');\n  END IF;\n\n  -- WHAT IS OWED, LOCKED, AND BOUNDED.\n  --\n  -- MEASURED ON PRODUCTION, 2026-08-31: the largest agent has 192,135 unsettled\n  -- rows, and settling all of them in one statement took 64.6 SECONDS. The\n  -- authenticated role's statement_timeout is 8s, so the three biggest agents\n  -- (192k, 114k, 113k rows) could never have been paid at all.\n  --\n  -- The timeout is the smaller half of the problem. That statement also holds\n  -- FOR UPDATE on the clubs row for its whole life, so a single claim would\n  -- have frozen every chip movement in that club for a minute.\n  --\n  -- So a claim settles a BATCH and reports whether more is left. Measured on\n  -- production against the largest agent: 2,000 rows took 2.95s, so the default\n  -- is 1,000 - roughly 1.5s, a comfortable margin under 8s on a database that\n  -- is also serving everybody else. The caller repeats while `more` is true -\n  -- WITH A FRESH op_id EACH TIME, because op_id identifies one batch. Reusing\n  -- one is what makes a retry safe; reusing one for the NEXT batch would\n  -- replay the previous answer instead of settling anything.\n  v_batch := LEAST(GREATEST(COALESCE(p_max_rows, 1000), 1), 5000);\n\n  -- LOCK AND TOTAL THE BATCH. NOTHING IS WRITTEN YET.\n  --\n  -- ORDER MATTERS HERE AND IT IS THE WHOLE POINT. A refusal below returns\n  -- JSON, and a plain RETURN does not roll anything back - PostgREST commits\n  -- the transaction. So every write in this function happens AFTER the last\n  -- thing that can refuse. An earlier draft folded the lock, the settle and\n  -- the sum into one CTE for speed, which stamped settled_at before the club\n  -- bank had been checked: a short bank would then have returned \"cannot pay\"\n  -- while leaving the rows marked paid. That is the worst bug this function\n  -- could have had, and it is why the settle is the last write, below.\n  /* Phase 7 (20260908): the batch is the pair's OPEN rows - unstamped, and\n     not covered by a settlement row - so a claim can never re-pay a row a\n     period already covers. The anti-join rides agent_commissions_open_idx\n     and stops at the LIMIT; the ORDER BY note below is history. */\n  /* THE CUTOFF: the created_at of the batch-th oldest open row, clamped to\n     five minutes ago. Oldest-first is agent_commissions_open_idx's own\n     order, so the ORDER BY below is an index walk, not a sort. */\n  SELECT ac.created_at INTO v_cutoff\n    FROM public.agent_commissions ac\n   WHERE ac.club_id = p_club_id AND ac.user_id = v_actor\n     AND ac.settled_at IS NULL\n     AND ac.created_at < v_safe\n     AND NOT EXISTS (SELECT 1 FROM public.agent_commission_settlements s\n                      WHERE s.club_id = ac.club_id AND s.user_id = ac.user_id\n                        AND ac.created_at >= s.period_start AND ac.created_at < s.period_end)\n   ORDER BY ac.created_at\n  OFFSET v_batch LIMIT 1;\n  v_cutoff := LEAST(COALESCE(v_cutoff, v_safe), v_safe);\n  SELECT COALESCE(SUM(ac.amount), 0), COUNT(*)\n    INTO v_amount, v_rows\n    FROM (\n      SELECT ac.amount\n        FROM public.agent_commissions ac\n       WHERE ac.club_id = p_club_id AND ac.user_id = v_actor\n         AND ac.settled_at IS NULL\n         AND ac.created_at < v_cutoff\n         AND NOT EXISTS (SELECT 1 FROM public.agent_commission_settlements s\n                          WHERE s.club_id = ac.club_id AND s.user_id = ac.user_id\n                            AND ac.created_at >= s.period_start AND ac.created_at < s.period_end)\n       /* No LIMIT and no FOR UPDATE: the cutoff already bounds the set, and\n          nothing here is stamped, so there is no row to hold. The pair's\n          advisory lock above is what serialises two claims. */\n    ) ac;\n\n  IF COALESCE(v_amount, 0) <= 0 THEN\n    RETURN jsonb_build_object('success', false, 'nothing_owed', true,\n      'error', 'You Have No Commission To Claim Yet');\n  END IF;\n\n  v_amount := round(v_amount, 2);\n\n  -- THE CLUB BANK PAYS, AND IT PAYS ONLY WHAT IT HAS. Midway Union owes 568.18\n  -- against a treasury of 0.00, so this refusal is not hypothetical. Naming the\n  -- shortfall is the difference between \"try later\" and \"somebody has to fund\n  -- the bank\" - and it is the same refusal fn_club_bank_send already gives.\n  SELECT COALESCE(c.chip_treasury, 0), c.name\n    INTO v_bank_before, v_club_name\n    FROM clubs c WHERE c.id = p_club_id FOR UPDATE;\n  IF v_bank_before IS NULL THEN\n    RETURN jsonb_build_object('success', false, 'error', 'Club Not Found');\n  END IF;\n  IF v_bank_before < v_amount THEN\n    RETURN jsonb_build_object('success', false, 'bank_short', true,\n      'error', 'The Club Bank Holds '\n               || trim(to_char(v_bank_before, 'FM999,999,999,990.00'))\n               || ' Chips And Owes You '\n               || trim(to_char(v_amount, 'FM999,999,999,990.00'))\n               || '. Ask An Owner To Fund The Bank, Then Claim Again.',\n      'balance', v_bank_before, 'requested', v_amount);\n  END IF;\n\n  UPDATE clubs\n     SET chip_treasury = COALESCE(chip_treasury, 0) - v_amount,\n         updated_at = now()\n   WHERE id = p_club_id\n   RETURNING chip_treasury INTO v_bank_after;\n\n  -- INTO THEIR OWN MONEY, not the agent wallet. See the header.\n  UPDATE club_members\n     SET chip_balance = COALESCE(chip_balance, 0) + v_amount,\n         updated_at = now()\n   WHERE club_id = p_club_id AND user_id = v_actor\n   RETURNING chip_balance INTO v_to_after;\n\n  -- THE CREDIT MUST HAVE LANDED. The bank is already debited at this\n  -- point, so a credit that matched no row would leave the chips nowhere\n  -- and stamp the rows paid. The role read above holds FOR UPDATE, so\n  -- this should be unreachable; RAISE rather than RETURN because a\n  -- refusal here has to take the debit back with it, and only an\n  -- exception rolls back what PostgREST would otherwise commit.\n  IF v_to_after IS NULL THEN\n    RAISE EXCEPTION 'commission claim could not credit the member wallet'\n      USING ERRCODE = '25000';\n  END IF;\n\n  -- SETTLED, LAST. This is the line execute_commission_payout never had, and\n  -- its absence is what let that function pay the same row forever. It runs\n  -- after the bank has been debited and the agent credited, so no row is ever\n  -- marked paid by a claim that did not pay.\n  INSERT INTO public.agent_commission_settlements\n    (club_id, user_id, union_id, period_start, period_end, amount, rows_count, paid_at, settlement_ref)\n  VALUES (p_club_id, v_actor, NULL, '-infinity'::timestamptz, v_cutoff,\n          round(v_amount, 2), v_rows, now(), 'claim:' || v_op_id::text)\n  ON CONFLICT (club_id, user_id, period_start, period_end) DO NOTHING\n  RETURNING id INTO v_settled;\n  IF v_settled IS NULL THEN\n    /* A concurrent claim recorded the same cutoff. The bank is already\n       debited in this transaction, so the only safe answer is to take it\n       all back: RAISE rolls the claim back and the caller retries. */\n    RAISE EXCEPTION 'another claim recorded this window; retry'\n      USING ERRCODE = '40001';\n  END IF;\n\n  /* CONTROL (phase 8): the claim is two balanced legs on the journal, the\n       same movement chip_transactions records one-sidedly below. */\n    INSERT INTO public.chip_ledger\n      (performed_by, from_type, from_entity_id, to_type, to_entity_id,\n       amount, category, club_id, description, idempotency_key, metadata)\n    VALUES\n      (v_actor, 'club_treasury', p_club_id, 'player_wallet', v_actor,\n       round(v_amount, 2), 'commission', p_club_id,\n       'Agent claimed commission from the club bank',\n       'agent_claim:' || v_op_id::text,\n       jsonb_build_object('op_id', v_op_id, 'rows_settled', v_rows,\n                          'bank_after', v_bank_after,\n                          'agent_balance_after', v_to_after))\n    ON CONFLICT DO NOTHING;\n\n    INSERT INTO chip_transactions\n    (club_id, from_user_id, to_user_id, amount, transaction_type, notes, metadata, balance_after)\n  VALUES\n    (p_club_id, NULL, v_actor, v_amount, 'commission_claim',\n     'Commission Claimed By Agent',\n     jsonb_build_object(\n       'op_id', v_op_id,\n       'amount', v_amount,\n       'rows_settled', v_rows,\n       'role_at_claim', v_role,\n       'bank_before', v_bank_before,\n       'bank_after', v_bank_after),\n     v_to_after);\n\n  BEGIN\n    PERFORM public.fn_raise_notification(\n      v_actor, 'commission_claimed',\n      'You Claimed ' || trim(to_char(v_amount, 'FM999,999,999,990.00')) || ' Chips',\n      'Your Commission From ' || COALESCE(v_club_name, 'Your Club')\n        || ' Is Now In Your Chip Balance.',\n      '/clubs/' || p_club_id::text,\n      jsonb_build_object('club_id', p_club_id, 'amount', v_amount, 'rows_settled', v_rows));\n  EXCEPTION WHEN OTHERS THEN\n    NULL;  -- the money has moved and is recorded; the notice is a courtesy\n  END;\n\n  -- IS THERE MORE? An EXISTS, not a COUNT and a SUM.\n  --\n  -- Reporting the exact remaining figure here cost 1,474ms on production,\n  -- because it re-scans every one of the agent's remaining rows - on a call\n  -- whose entire budget is 8 seconds. EXISTS answers the only question the\n  -- caller needs in order to loop (0.25ms), and the exact figure is available\n  -- from fn_agent_unsettled_commission on a screen that can afford it.\n  SELECT EXISTS (\n    SELECT 1 FROM public.agent_commissions ac\n     WHERE ac.club_id = p_club_id AND ac.user_id = v_actor AND ac.settled_at IS NULL\n       AND NOT EXISTS (SELECT 1 FROM public.agent_commission_settlements s\n                        WHERE s.club_id = ac.club_id AND s.user_id = ac.user_id\n                          AND ac.created_at >= s.period_start AND ac.created_at < s.period_end)\n  ) INTO v_more;\n\n  RETURN jsonb_build_object('success', true, 'amount', v_amount,\n    'rows_settled', v_rows, 'chip_balance', v_to_after,\n    'bank_after', v_bank_after, 'op_id', v_op_id,\n    'more', v_more);\nEND;\n$function$\n",
+      "md5": "ecd40da476bd8dd829d381fb2ee5a03e",
+      "signature": "fn_agent_claim_commission(uuid,uuid,integer)"
+    },
+    {
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_declare_ledger(p_category text, p_counterparty text, p_counterparty_entity uuid DEFAULT NULL::uuid, p_settlement_id uuid DEFAULT NULL::uuid, p_idempotency_key text DEFAULT NULL::text, p_autoskip_tables text[] DEFAULT NULL::text[])\n RETURNS void\n LANGUAGE plpgsql\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  v_t text;\nBEGIN\n  -- validate against the LIVE vocabulary so this can never lag a CHECK change\n  IF p_category IS NULL OR NOT EXISTS (\n    SELECT 1 FROM pg_constraint\n     WHERE conrelid = 'public.chip_ledger'::regclass\n       AND conname = 'chip_ledger_category_check'\n       AND pg_get_constraintdef(oid) LIKE '%''' || p_category || '''%') THEN\n    RAISE EXCEPTION 'fn_ca_declare_ledger: category % is not in the ledger vocabulary - add it to chip_ledger_category_check FIRST, then declare it', p_category;\n  END IF;\n  IF p_counterparty IS NULL OR NOT EXISTS (\n    SELECT 1 FROM pg_constraint\n     WHERE conrelid = 'public.chip_ledger'::regclass\n       AND conname = 'chip_ledger_from_type_check'\n       AND pg_get_constraintdef(oid) LIKE '%''' || p_counterparty || '''%') THEN\n    RAISE EXCEPTION 'fn_ca_declare_ledger: counterparty % is not in the ledger vocabulary - add it to the from/to type CHECKs FIRST, then declare it', p_counterparty;\n  END IF;\n\n  PERFORM set_config('app.ledger_category', p_category, true);\n  PERFORM set_config('app.ledger_counterparty', p_counterparty, true);\n  PERFORM set_config('app.ledger_counterparty_entity',\n                     COALESCE(p_counterparty_entity::text, ''), true);\n  IF p_settlement_id IS NOT NULL THEN\n    PERFORM set_config('app.ledger_settlement', p_settlement_id::text, true);\n  END IF;\n  IF p_idempotency_key IS NOT NULL THEN\n    PERFORM set_config('app.ledger_idempotency_key', p_idempotency_key, true);\n  END IF;\n  IF p_autoskip_tables IS NOT NULL THEN\n    FOREACH v_t IN ARRAY p_autoskip_tables LOOP\n      IF v_t !~ '^[a-z_]+$' THEN\n        RAISE EXCEPTION 'fn_ca_declare_ledger: bad autoskip table name %', v_t;\n      END IF;\n      PERFORM set_config('app.ledger_autoskip_' || v_t, '1', true);\n    END LOOP;\n  END IF;\nEND $function$\n",
+      "md5": "32b44879f88b14b57fc6037605d28b1f",
+      "signature": "fn_ca_declare_ledger(text,text,uuid,uuid,text,text[])"
+    },
+    {
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_player_home_club(p_user_id uuid, p_club_hint uuid DEFAULT NULL::uuid)\n RETURNS uuid\n LANGUAGE plpgsql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE v_club uuid;\nBEGIN\n  IF p_user_id IS NULL THEN RETURN NULL; END IF;\n  IF p_club_hint IS NOT NULL AND EXISTS (\n    SELECT 1 FROM public.club_members cm\n     WHERE cm.user_id = p_user_id AND cm.club_id = p_club_hint\n       AND cm.status IN ('active','approved')\n  ) THEN RETURN p_club_hint; END IF;\n  SELECT cm.club_id INTO v_club\n    FROM public.club_members cm\n   WHERE cm.user_id = p_user_id AND cm.status IN ('active','approved')\n   ORDER BY cm.joined_at ASC NULLS LAST, cm.club_id\n   LIMIT 1;\n  RETURN v_club;\nEND;\n$function$\n",
+      "md5": "2d052a4815d033295d98772989224800",
+      "signature": "fn_player_home_club(uuid,uuid)"
+    },
+    {
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_settle_round2_club_to_agents(p_union_id uuid, p_period_start timestamp with time zone, p_period_end timestamp with time zone)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  r record; v_club_bal numeric; v_paid numeric := 0;\n  v_payees int := 0; v_short int := 0; v_detail jsonb := '[]'::jsonb;\n  v_debit jsonb; v_agent_bal numeric; v_pairs jsonb := '[]'::jsonb;\nBEGIN\n  IF NOT public.fn_caller_is_engine() AND (auth.uid() IS NULL OR NOT public.fn_is_union_overseer(p_union_id, auth.uid())) THEN\n    RAISE EXCEPTION 'not_authorised';\n  END IF;\n  IF EXISTS (SELECT 1 FROM settlement_locks WHERE lock_type = 'GLOBAL_SETTLEMENT_FREEZE' AND is_active = true) THEN\n    RAISE EXCEPTION 'EMERGENCY_PROFIT_DRIFT_LOCK';\n  END IF;\n  IF p_union_id IS NULL OR p_period_start IS NULL OR p_period_end IS NULL OR p_period_end <= p_period_start THEN\n    RETURN jsonb_build_object('round', 2, 'name', 'club_to_agents', 'success', false, 'error', 'bad_params',\n                              'payees', 0, 'amount', 0, 'shortfalls', 0, 'detail', '[]'::jsonb);\n  END IF;\n  /* A row's created_at is its transaction's start. The longest transaction that\n     writes agent_commissions is an eight-second engine call; five minutes after\n     the period closes, nothing that began inside it is still in flight. Before\n     that, a period recorded as paid could swallow a row that landed late. */\n  IF p_period_end > now() - interval '5 minutes' THEN\n    RETURN jsonb_build_object('round', 2, 'name', 'club_to_agents', 'success', false, 'retryable', true,\n                              'error', 'period_too_fresh', 'period_end', p_period_end,\n                              'payees', 0, 'amount', 0, 'shortfalls', 0, 'detail', '[]'::jsonb);\n  END IF;\n\n  /* What each pair is owed INSIDE this period: unstamped, and not already\n     covered by a settlement row. One index scan per pair, no materialised set. */\n  FOR r IN\n    SELECT ac.club_id, ac.user_id AS agent_user, SUM(ac.amount) AS owed, count(*) AS n\n      FROM agent_commissions ac\n      JOIN union_clubs uc ON uc.club_id = ac.club_id AND uc.union_id = p_union_id\n      JOIN agents a ON a.user_id = ac.user_id AND a.club_id = ac.club_id AND a.status = 'active'\n     WHERE ac.created_at >= p_period_start AND ac.created_at < p_period_end\n       AND ac.settled_at IS NULL\n       AND NOT EXISTS (SELECT 1 FROM agent_commission_settlements s\n                        WHERE s.club_id = ac.club_id AND s.user_id = ac.user_id\n                          AND ac.created_at >= s.period_start AND ac.created_at < s.period_end)\n     GROUP BY ac.club_id, ac.user_id\n    HAVING SUM(ac.amount) > 0\n     ORDER BY 1, 2\n  LOOP\n    -- Same pot Round 1 credits (clubs.chip_treasury), not club_wallets.\n    SELECT COALESCE(chip_treasury, 0) INTO v_club_bal FROM clubs WHERE id = r.club_id FOR UPDATE;\n\n    IF COALESCE(v_club_bal, 0) < r.owed THEN\n      v_short := v_short + 1;\n      v_detail := v_detail || jsonb_build_object('club_id', r.club_id, 'agent', r.agent_user,\n                    'owed', r.owed, 'club_treasury', COALESCE(v_club_bal, 0), 'skipped', true);\n      CONTINUE;\n    END IF;\n\n    /* ONE MOVEMENT, ONE LEG (2026-09-09). The leg for this payment is\n       written by hand at the bottom of this loop, carrying the period, the\n       row count and an idempotency key that a replay can recognise. Until\n       today both balance writes ALSO fired their own journal triggers, and\n       neither had been told who the counterparty was, so each wrote an\n       anonymous twin through settlement_suspense. Every commission was\n       therefore journalled twice. The two stand-downs are set immediately\n       before each write and cleared immediately after, so a CONTINUE out of\n       this iteration can never leave a later statement silently unjournalled. */\n    PERFORM set_config('app.ledger_autoskip_clubs', '1', true);\n    v_debit := public.fn_debit_treasury(\n      r.club_id, r.owed,\n      'Round 2: club -> agent commission',\n      jsonb_build_object('union_id', p_union_id, 'agent_user_id', r.agent_user,\n                         'period_start', p_period_start, 'period_end', p_period_end));\n    PERFORM set_config('app.ledger_autoskip_clubs', '', true);\n    IF COALESCE((v_debit->>'success')::boolean, false) IS NOT TRUE THEN\n      v_short := v_short + 1;\n      v_detail := v_detail || jsonb_build_object('club_id', r.club_id, 'agent', r.agent_user,\n                    'owed', r.owed, 'error', v_debit, 'skipped', true);\n      CONTINUE;\n    END IF;\n\n    PERFORM public.fn_ensure_club_wallet(r.agent_user, r.club_id);\n    PERFORM set_config('app.ledger_autoskip_club_members', '1', true);\n    UPDATE club_members\n       SET chip_balance = COALESCE(chip_balance, 0) + r.owed, updated_at = now()\n     WHERE user_id = r.agent_user AND club_id = r.club_id\n     RETURNING chip_balance INTO v_agent_bal;\n    PERFORM set_config('app.ledger_autoskip_club_members', '', true);\n\n    /* THE RECORD, instead of two million stamps: one row says this pair's\n       rows inside this period are paid. A second call finds no open rows\n       inside the period and pays nothing. */\n    INSERT INTO public.agent_commission_settlements\n      (club_id, user_id, union_id, period_start, period_end, amount, rows_count, paid_at, settlement_ref)\n    VALUES (r.club_id, r.agent_user, p_union_id, p_period_start, p_period_end, round(r.owed, 2), r.n, now(),\n            'round2:' || p_union_id::text || ':' || to_char(p_period_start at time zone 'UTC', 'YYYY-MM-DD'))\n    ON CONFLICT (club_id, user_id, period_start, period_end) DO NOTHING;\n\n    -- Both sides of the entry: club-side debit above, agent credit here.\n    INSERT INTO wallet_transactions\n      (user_id, wallet_type, type, amount, category, description, balance_after)\n    VALUES\n      (r.agent_user, 'PLAYER', 'credit', r.owed, 'commission',\n       'Round 2: club -> agent commission [club wallet]', v_agent_bal);\n\n    /* CONTROL (phase 8): the same movement as two balanced legs, on the\n       journal fn_ca_trial_balance reads. */\n    INSERT INTO public.chip_ledger\n      (performed_by, from_type, from_entity_id, to_type, to_entity_id,\n       amount, category, club_id, union_id, description, idempotency_key, metadata)\n    VALUES\n      (COALESCE(auth.uid(), '2d1cd6c3-5700-4af9-a271-d4863fdab20d'::uuid),\n       'club_treasury', r.club_id, 'player_wallet', r.agent_user,\n       round(r.owed, 2), 'commission', r.club_id, p_union_id,\n       'Round 2: club -> agent commission (period '\n         || to_char(p_period_start, 'YYYY-MM-DD') || '..'\n         || to_char(p_period_end, 'YYYY-MM-DD') || ')',\n       'round2:' || p_union_id::text || ':'\n         || to_char(p_period_start at time zone 'UTC', 'YYYY-MM-DD') || ':'\n         || r.club_id::text || ':' || r.agent_user::text,\n       jsonb_build_object('period_start', p_period_start, 'period_end', p_period_end,\n                          'rows_count', r.n, 'agent_balance_after', v_agent_bal))\n    ON CONFLICT DO NOTHING;\n\n    v_pairs := v_pairs || jsonb_build_object('club_id', r.club_id, 'user_id', r.agent_user);\n    v_paid := v_paid + r.owed;\n    v_payees := v_payees + 1;\n  END LOOP;\n\n  IF v_pairs <> '[]'::jsonb THEN\n    PERFORM public.fn_agent_commission_rollup_recompute(v_pairs);\n  END IF;\n\n  RETURN jsonb_build_object('round', 2, 'name', 'club_to_agents',\n    'payees', v_payees, 'amount', round(v_paid, 2), 'shortfalls', v_short, 'detail', v_detail);\nEND\n$function$\n",
+      "md5": "6b6e58eb5eaba25f7ff3fd69e742cb01",
+      "signature": "fn_settle_round2_club_to_agents(uuid,timestamp with time zone,timestamp with time zone)"
+    },
+    {
+      "definition": "CREATE OR REPLACE FUNCTION public.fn_union_settlement_conservation_assert(p_union_id uuid, p_from timestamp with time zone, p_to timestamp with time zone, p_r1 jsonb, p_r2 jsonb, p_r3 jsonb)\n RETURNS jsonb\n LANGUAGE plpgsql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE\n  v_rake     numeric := (p_r1->>'period_rake')::numeric;\n  v_paid     numeric := (p_r1->>'total_rakeback')::numeric;\n  v_retained numeric := (p_r1->>'union_retained')::numeric;\n  v_r2_amt   numeric := (p_r2->>'amount')::numeric;\n  v_r3_amt   numeric := (p_r3->>'amount')::numeric;\n  v_neg      text;\n  v_checked  int := 0; v_totals jsonb;\nBEGIN\n  -- Idempotent Round 1 replies omit totals. Recover its immutable finalized\n  -- settlement record for this exact union/period before asserting arithmetic.\n  IF (v_rake IS NULL OR v_paid IS NULL OR v_retained IS NULL)\n     AND p_r1->>'error'='already_executed' THEN\n    SELECT c.totals INTO v_totals FROM public.ca_settlements c\n    WHERE c.settlement_type='union_rakeback_close' AND c.union_id=p_union_id AND c.state='final'\n      AND c.external_ref=p_union_id::text || ':'\n        || to_char(p_from at time zone 'UTC','YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') || '..'\n        || to_char(p_to at time zone 'UTC','YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"');\n    v_rake := (v_totals->>'period_rake')::numeric;\n    v_paid := (v_totals->>'payout_total')::numeric;\n    v_retained := (v_totals->>'retained')::numeric;\n  END IF;\n  IF v_rake IS NULL OR v_paid IS NULL OR v_retained IS NULL OR v_r2_amt IS NULL OR v_r3_amt IS NULL THEN\n    RAISE EXCEPTION 'CONSERVATION_UNVERIFIED: settlement totals are missing';\n  END IF;\n  IF EXISTS(SELECT 1 FROM unnest(ARRAY[v_rake,v_paid,v_retained,v_r2_amt,v_r3_amt]) n\n    WHERE n::text IN ('NaN','Infinity','-Infinity') OR n<0 OR n<>round(n,2)) THEN\n    RAISE EXCEPTION 'CONSERVATION_BREACH: settlement totals must be finite nonnegative whole cents';\n  END IF;\n  IF v_rake <> v_paid+v_retained THEN\n    RAISE EXCEPTION 'CONSERVATION_BREACH round1_arithmetic: rake % <> paid % + retained %',v_rake,v_paid,v_retained;\n  END IF;\n  IF v_paid>v_rake THEN RAISE EXCEPTION 'CONSERVATION_BREACH round1_overpay'; END IF;\n  v_checked := v_checked+2;\n\n  -- 6. Rounds 2 and 3 never move a negative amount.\n  IF COALESCE(v_r2_amt, 0) < 0 THEN\n    RAISE EXCEPTION 'CONSERVATION_BREACH round2_negative_amount: %', v_r2_amt;\n  END IF;\n  IF COALESCE(v_r3_amt, 0) < 0 THEN\n    RAISE EXCEPTION 'CONSERVATION_BREACH round3_negative_amount: %', v_r3_amt;\n  END IF;\n  v_checked := v_checked + 2;\n\n  -- 3 + 4 + 5. Nothing this union touches may be negative afterwards.\n  SELECT string_agg(x.pool || ' = ' || COALESCE(x.amt::text,'NULL'), '; ') INTO v_neg\n    FROM (\n      SELECT 'union chip wallet' AS pool, w.chip_balance AS amt\n        FROM union_wallets w\n       WHERE w.union_id = p_union_id AND (w.chip_balance < 0 OR w.chip_balance IS NULL)\n      UNION ALL\n      SELECT 'union rake wallet', w.rake_wallet\n        FROM union_wallets w\n       WHERE w.union_id = p_union_id AND (w.rake_wallet < 0 OR w.rake_wallet IS NULL)\n      UNION ALL\n      SELECT 'club treasury ' || c.name, c.chip_treasury\n        FROM clubs c\n        JOIN union_clubs uc ON uc.club_id = c.id\n       WHERE uc.union_id = p_union_id AND (c.chip_treasury < 0 OR c.chip_treasury IS NULL)\n      UNION ALL\n      SELECT 'member wallet ' || cm.user_id::text, cm.chip_balance\n        FROM club_members cm\n        JOIN union_clubs uc ON uc.club_id = cm.club_id\n       WHERE uc.union_id = p_union_id AND (cm.chip_balance < 0 OR cm.chip_balance IS NULL)\n    ) x;\n\n  IF v_neg IS NOT NULL THEN\n    RAISE EXCEPTION 'CONSERVATION_BREACH negative_pool after settlement: %', left(v_neg, 400);\n  END IF;\n  v_checked := v_checked + 3;\n\n  RETURN jsonb_build_object(\n    'conservation', 'asserted',\n    'checks', v_checked,\n    'period_start', p_from, 'period_end', p_to,\n    'round1_rake', v_rake, 'round1_paid', v_paid, 'round1_retained', v_retained,\n    'round2_amount', v_r2_amt, 'round3_amount', v_r3_amt);\nEND $function$\n",
+      "md5": "96bb2899124d87b07a39491081fd1ed6",
+      "signature": "fn_union_settlement_conservation_assert(uuid,timestamp with time zone,timestamp with time zone,jsonb,jsonb,jsonb)"
+    }
+  ],
+  "tables": [
+    {
+      "columns": "id uuid DEFAULT gen_random_uuid() NOT NULL,\nuser_id uuid NOT NULL,\nclub_id uuid NOT NULL,\nmembership_id uuid,\nrole text NOT NULL,\nstatus text DEFAULT 'active'::text NOT NULL,\nparent_agent_id uuid,\ncommission_rate numeric(5,4) NOT NULL,\nplayer_rakeback_rate numeric(5,4) NOT NULL,\ncredit_limit numeric(15,2) DEFAULT 0 NOT NULL,\ncredit_used numeric(15,2) DEFAULT 0 NOT NULL,\nis_prepaid boolean DEFAULT false NOT NULL,\nbusiness_balance numeric(15,2) DEFAULT 0 NOT NULL,\nplayer_balance numeric(15,2) DEFAULT 0 NOT NULL,\npromo_balance numeric(15,2) DEFAULT 0 NOT NULL,\ntotal_players integer DEFAULT 0 NOT NULL,\nactive_player_count integer DEFAULT 0 NOT NULL,\nsub_agent_count integer DEFAULT 0 NOT NULL,\nweekly_rake_generated numeric(15,2) DEFAULT 0 NOT NULL,\nlifetime_earnings numeric(15,2) DEFAULT 0 NOT NULL,\njoined_at timestamp with time zone DEFAULT now() NOT NULL,\nlast_active_at timestamp with time zone,\ncreated_at timestamp with time zone DEFAULT now() NOT NULL,\nupdated_at timestamp with time zone DEFAULT now() NOT NULL,\nauto_rakeback_enabled boolean DEFAULT true,\nrakeback_percentage numeric(5,4) DEFAULT 0.0000,\nagent_wallet_balance numeric(18,2) DEFAULT 0,\nplayer_wallet_balance numeric(18,4) DEFAULT 0,\npromo_wallet_balance numeric(18,2) DEFAULT 0,\nlifetime_rake_generated numeric(18,4) DEFAULT 0",
+      "table_name": "agents"
+    },
+    {
+      "columns": "id uuid DEFAULT gen_random_uuid() NOT NULL,\nperformed_by uuid NOT NULL,\nfrom_type text NOT NULL,\nfrom_entity_id uuid,\nfrom_label text,\nto_type text NOT NULL,\nto_entity_id uuid,\nto_label text,\namount numeric(15,2) NOT NULL,\ncategory text DEFAULT 'transfer'::text NOT NULL,\ndescription text,\nnotes text,\nclub_id uuid,\nunion_id uuid,\ntable_id uuid,\nhand_id uuid,\ntournament_id uuid,\ncreated_at timestamp with time zone DEFAULT now() NOT NULL,\nidempotency_key text,\ncorrelation_id uuid,\ncausation_id uuid,\nsettlement_id text,\nepoch_id integer,\nactor_service text,\ndb_role text,\npre_from_balance numeric,\npost_from_balance numeric,\npre_to_balance numeric,\npost_to_balance numeric,\nstatus text DEFAULT 'posted'::text NOT NULL,\nmetadata jsonb,\nchain_seq bigint,\nprev_hash text,\nrow_hash text",
+      "table_name": "chip_ledger"
+    },
+    {
+      "columns": "id uuid DEFAULT gen_random_uuid() NOT NULL,\nclub_id uuid NOT NULL,\nfrom_user_id uuid,\nto_user_id uuid,\namount numeric(14,2) NOT NULL,\ntransaction_type text NOT NULL,\nnotes text,\nrelated_cashout_id uuid,\nmetadata jsonb DEFAULT '{}'::jsonb,\ncreated_at timestamp with time zone DEFAULT now(),\nbalance_after numeric(14,2),\nclawed_back boolean DEFAULT false,\nreversible_until timestamp with time zone,\nis_reversed boolean DEFAULT false,\ntable_id uuid",
+      "table_name": "chip_transactions"
+    },
+    {
+      "columns": "club_id uuid NOT NULL,\nuser_id uuid NOT NULL,\nrole text DEFAULT 'player'::text,\nagent_id uuid,\njoined_at timestamp with time zone DEFAULT now(),\nparent_agent_id uuid,\ninvited_by uuid,\nnotes text,\nlast_active_at timestamp with time zone,\ncreated_at timestamp with time zone DEFAULT now(),\nupdated_at timestamp with time zone DEFAULT now(),\nis_bot boolean DEFAULT false,\nstatus text DEFAULT 'active'::text,\nchip_balance numeric(20,2) DEFAULT 0 NOT NULL,\ndiamonds integer DEFAULT 0 NOT NULL,\nis_active boolean DEFAULT true,\norange_ball_status text DEFAULT 'inactive'::text,\nrank_level integer DEFAULT 1,\ncredit_limit numeric(15,2) DEFAULT 0,\ncredit_used numeric(15,2) DEFAULT 0,\nnickname text,\nlast_active timestamp with time zone DEFAULT now(),\ntier text DEFAULT 'bronze'::text,\ntrust_score integer DEFAULT 50,\nsessions_played integer DEFAULT 0,\npromo_balance numeric(14,2) DEFAULT 0,\nchips_won bigint DEFAULT 0,\nchips_lost bigint DEFAULT 0,\ncommission_rate numeric(5,2) DEFAULT 0,\nrakeback_rate numeric(5,2) DEFAULT 0,\nhands_played integer DEFAULT 0,\ntotal_rake_paid bigint DEFAULT 0,\nbiggest_pot bigint DEFAULT 0,\nlocked_chips integer DEFAULT 0,\nplayer_rakeback_pct numeric(5,4) DEFAULT 0.0000,\nheld_chips numeric DEFAULT 0,\ndisplay_name text,\nis_prepaid boolean DEFAULT true,\npromo_received_total numeric(14,2) DEFAULT 0,\npromo_wagered numeric(14,2) DEFAULT 0,\npromo_playthrough_required numeric(14,2) DEFAULT 0,\nmissions_completed integer DEFAULT 0,\nmembership_lifecycle_status text DEFAULT 'active'::text NOT NULL,\ndeparted_at timestamp with time zone,\ndeparted_by uuid,\ndeparture_reason text",
+      "table_name": "club_members"
+    },
+    {
+      "columns": "id uuid DEFAULT uuid_generate_v4() NOT NULL,\nname text NOT NULL,\ndescription text,\nowner_id uuid,\ncreated_at timestamp with time zone DEFAULT now(),\nis_union boolean DEFAULT false,\nclub_id integer DEFAULT (((10000)::double precision + floor((random() * (90000)::double precision))))::integer,\navatar_url text,\nis_public boolean DEFAULT true,\nrequires_approval boolean DEFAULT false,\ngps_restricted boolean DEFAULT false,\nsettings jsonb DEFAULT '{\"rake_cap\": 15, \"max_buy_in_bb\": 200, \"min_buy_in_bb\": 40, \"allow_straddle\": true, \"time_bank_seconds\": 30, \"allow_run_it_twice\": true, \"default_rake_percent\": 5}'::jsonb,\nupdated_at timestamp with time zone DEFAULT now(),\nunion_id uuid,\ncolor_theme text DEFAULT 'royal-blue'::text,\nslug text,\nchip_treasury numeric(18,2) DEFAULT 100000,\ntotal_rake numeric(18,2) DEFAULT 0 NOT NULL,\nonline_count integer DEFAULT 0,\ngame_types text[] DEFAULT ARRAY['NLH'::text],\nmember_count integer DEFAULT 0,\ntable_count integer DEFAULT 0,\npromo_balance numeric(14,2) DEFAULT 0,\ncode text,\nrake_percent numeric(5,2) DEFAULT 5.0,\nrake_cap_bb numeric(8,2) DEFAULT 3.0,\nmax_tables integer DEFAULT 20,\nmax_members integer DEFAULT 500,\nstatus text DEFAULT 'active'::text,\nhands_played bigint DEFAULT 0,\nlogo_url text,\nbanner_url text,\ngame_variants text[] DEFAULT ARRAY['nlh'::text],\nsettlement_locked boolean DEFAULT false,\nsettlement_locked_until timestamp with time zone,\nauto_settlement_enabled boolean DEFAULT true,\nauto_settlement_day text DEFAULT 'monday'::text,\nauto_settlement_hour integer DEFAULT 10,\nclub_commission_rate numeric(5,4) DEFAULT 0.9000,\ninsurance_balance numeric(14,2) DEFAULT 0,\nbbj_enabled boolean,\nplayer_level integer DEFAULT 1,\nhierarchy_level integer DEFAULT 1,\nlevel integer DEFAULT 1,\nplayer_threshold_current integer DEFAULT 0,\nplayer_threshold_next integer DEFAULT 30,\nhierarchy_units numeric(10,2) DEFAULT 0,\nhierarchy_units_rounded_up integer DEFAULT 0,\nhierarchy_threshold_current integer DEFAULT 0,\nhierarchy_threshold_next integer DEFAULT 2,\ntags text[] DEFAULT '{}'::text[],\naverage_rating numeric(3,2) DEFAULT 0,\ngame_type text DEFAULT 'Texas Holdem'::text,\nsettlement_lock_until timestamp with time zone,\ncard_image_url text,\nactive_players integer DEFAULT 0,\ndefault_rake_percent numeric(5,2) DEFAULT '-1'::integer,\nrake_cap numeric(18,4) DEFAULT '-1'::integer,\nmin_buyin_bb integer DEFAULT 20,\nmax_buyin_bb integer DEFAULT 200,\nallow_straddle boolean DEFAULT true,\nallow_run_it_twice boolean DEFAULT true,\nallow_rabbit_hunt boolean DEFAULT false,\nlogo text,\nis_private boolean DEFAULT false,\nmin_buy_in numeric(18,4) DEFAULT 0,\nmax_buy_in numeric(18,4) DEFAULT 0,\ndefault_game_type text DEFAULT 'NLHE'::text,\nallow_insurance boolean DEFAULT false,\nauto_approve_agents boolean DEFAULT false,\nauto_settlement boolean DEFAULT false,\nactive_tables integer DEFAULT 0,\nadmin_count integer DEFAULT 0,\nsuper_agent_count integer DEFAULT 0,\nagent_count integer DEFAULT 0,\nchip_pool numeric(18,2) DEFAULT 0 NOT NULL,\nbbj_rake_enabled boolean DEFAULT true,\nspins_enabled boolean DEFAULT false,\nspins_preseed_amount integer DEFAULT 0,\nspins_wallet_funding text DEFAULT 'PROMO'::text,\nticker_enabled boolean DEFAULT true NOT NULL,\nguarantee_treasury_floor numeric DEFAULT 0 NOT NULL,\nguarantee_enforcement_enabled boolean DEFAULT true NOT NULL,\ntagline text,\nopening_checklist_started_at timestamp with time zone,\nlobby_message text,\nlobby_message_updated_at timestamp with time zone,\nmessage_revision bigint DEFAULT 1 NOT NULL,\nlifecycle_status text DEFAULT 'active'::text NOT NULL,\nretired_at timestamp with time zone,\nretired_by uuid,\nretirement_reason text,\nasset text DEFAULT 'chips'::text NOT NULL,\nis_platform boolean DEFAULT false NOT NULL",
+      "table_name": "clubs"
+    },
+    {
+      "columns": "club_id uuid NOT NULL,\nday date NOT NULL,\nrows_seen bigint NOT NULL,\ncomputed_at timestamp with time zone DEFAULT now() NOT NULL",
+      "table_name": "rakeback_daily_state"
+    },
+    {
+      "columns": "club_id uuid NOT NULL,\nday date NOT NULL,\nuser_id uuid NOT NULL,\ncents bigint NOT NULL",
+      "table_name": "rakeback_daily_user"
+    },
+    {
+      "columns": "id uuid DEFAULT gen_random_uuid() NOT NULL,\nrakeback_period_id uuid NOT NULL,\nclub_id uuid NOT NULL,\nuser_id uuid NOT NULL,\nuser_rake_contribution numeric(20,4) NOT NULL,\nrakeback_pct numeric(5,2) NOT NULL,\npayout_amount numeric(20,4) NOT NULL,\ncurrency text DEFAULT 'CHIPS'::text NOT NULL,\nwallet_transaction_id uuid,\nstatus text DEFAULT 'paid'::text NOT NULL,\npaid_at timestamp with time zone,\nfailure_reason text,\ncreated_at timestamp with time zone DEFAULT now() NOT NULL",
+      "table_name": "rakeback_period_payouts"
+    },
+    {
+      "columns": "id uuid DEFAULT gen_random_uuid() NOT NULL,\nuser_id uuid,\nclub_id uuid NOT NULL,\nperiod_start date NOT NULL,\nperiod_end date NOT NULL,\nrake_generated numeric(15,2) DEFAULT 0,\nrakeback_rate numeric(5,4) DEFAULT 0.10,\nrakeback_amount numeric(15,2) DEFAULT 0,\nstatus text DEFAULT 'pending'::text,\npaid_at timestamp with time zone,\ncreated_at timestamp with time zone DEFAULT now(),\nrakeback_earned numeric(15,2) DEFAULT 0,\ntotal_rake_paid numeric(15,2) DEFAULT 0,\ndeferred_reason text,\ndeferred_at timestamp with time zone,\ndefer_count integer DEFAULT 0 NOT NULL",
+      "table_name": "rakeback_periods"
+    },
+    {
+      "columns": "id uuid DEFAULT gen_random_uuid() NOT NULL,\nclub_id uuid NOT NULL,\nlock_type text DEFAULT 'weekly_settlement'::text NOT NULL,\nlocked_at timestamp with time zone DEFAULT now() NOT NULL,\nunlock_at timestamp with time zone NOT NULL,\nunlocked_at timestamp with time zone,\nis_active boolean DEFAULT true NOT NULL,\nlock_reason text DEFAULT 'Weekly auto-settlement in progress'::text,\nsettlement_period_id uuid,\nmetadata jsonb DEFAULT '{}'::jsonb,\ncreated_at timestamp with time zone DEFAULT now()",
+      "table_name": "settlement_locks"
+    },
+    {
+      "columns": "id uuid DEFAULT uuid_generate_v4() NOT NULL,\ntable_id uuid NOT NULL,\nseat_number integer NOT NULL,\nuser_id uuid,\nplayer_id integer,\nmember_id uuid,\nstack numeric(15,2) DEFAULT 0,\nis_sitting_out boolean DEFAULT false,\nis_away boolean DEFAULT false,\njoined_at timestamp with time zone DEFAULT now(),\nhorse_id uuid,\nscheduled_leave_hands integer,\nleft_at timestamp with time zone,\nstatus text DEFAULT 'active'::text,\nleave_pending boolean DEFAULT false,\nauto_rebuy boolean DEFAULT false,\ntime_bank_remaining integer DEFAULT 30,\ntime_bank_uses_remaining integer DEFAULT 4,\nclub_id uuid,\nsit_out_at timestamp with time zone,\nentry_hold text,\nentry_post_agreed boolean DEFAULT false NOT NULL,\noccupancy_id uuid DEFAULT gen_random_uuid() NOT NULL,\nactive_game_scope text,\nactive_parent_key text,\nterminal_closed_at timestamp with time zone",
+      "table_name": "table_seats"
+    },
+    {
+      "columns": "id uuid DEFAULT gen_random_uuid() NOT NULL,\nclub_id uuid,\nname text NOT NULL,\ngame_type text DEFAULT 'nlhe'::text,\nstakes text,\nsmall_blind numeric(15,2) DEFAULT 1,\nbig_blind numeric(15,2) DEFAULT 2,\nmin_buy_in numeric(15,2) DEFAULT 40,\nmax_buy_in numeric(15,2) DEFAULT 200,\nmax_players integer DEFAULT 9,\ncurrent_players integer DEFAULT 0,\nstatus text DEFAULT 'waiting'::text,\nis_private boolean DEFAULT false,\nsettings jsonb DEFAULT '{}'::jsonb,\ncreated_at timestamp with time zone DEFAULT now(),\nupdated_at timestamp with time zone DEFAULT now(),\ngame_variant text DEFAULT 'nlh'::text,\nenable_straddle boolean DEFAULT true,\nrun_it_twice boolean DEFAULT true,\nauto_muck boolean DEFAULT true,\nante numeric(15,2) DEFAULT 0,\nallow_rabbit_hunt boolean DEFAULT true,\nallow_run_it_twice boolean DEFAULT true,\nallow_straddle boolean DEFAULT true,\ngame_mode character varying(10) DEFAULT 'regular'::character varying,\nis_vip_only boolean DEFAULT false,\nis_anonymous boolean DEFAULT false,\nban_chat boolean DEFAULT false,\nlabel_as_new boolean DEFAULT false,\nis_featured boolean DEFAULT false,\nhide_club_name boolean DEFAULT false,\nis_template boolean DEFAULT false,\nbomb_pot_enabled boolean DEFAULT false,\ndouble_board boolean DEFAULT false,\ntriple_board boolean DEFAULT false,\npineapple_holdem boolean DEFAULT false,\nseven_deuce_enabled boolean DEFAULT false,\nnit_game boolean DEFAULT false,\ncap_enabled boolean DEFAULT false,\nno_rathole boolean DEFAULT false,\naction_time_seconds integer DEFAULT 15,\nante_bb numeric(10,2) DEFAULT 0,\ncareer_percent_min integer DEFAULT 0,\nmaintain_percent_min integer DEFAULT 0,\nmaintain_hands integer DEFAULT 10,\nauto_start_players integer DEFAULT 2,\ngame_length_hours integer DEFAULT 12,\ncreated_by uuid,\ncalltime_enabled boolean DEFAULT false,\nauto_extension boolean DEFAULT false,\nauto_restart boolean DEFAULT false,\nauto_create_table boolean DEFAULT false,\nauto_utg_straddle boolean DEFAULT false,\nvoluntary_straddle boolean DEFAULT false,\ninsurance_enabled boolean DEFAULT false,\nrun_it_mode character varying(20) DEFAULT 'none'::character varying,\nrake_percent numeric(5,2) DEFAULT '-1'::integer,\nrake_cap_bb numeric(5,2) DEFAULT '-1'::integer,\nagent_downline_limit integer,\nbuy_in_authorization boolean DEFAULT false,\nrestrict_device boolean DEFAULT true,\nrestrict_observers boolean DEFAULT false,\ngps_restriction boolean DEFAULT true,\nip_restriction boolean DEFAULT false,\npc_emulator_restriction boolean DEFAULT false,\nphoto_rotation_verification boolean DEFAULT false,\nshort_description text DEFAULT ''::text,\naccelerated_mtt boolean DEFAULT false,\nall_in_or_fold boolean DEFAULT false,\ncustom_rebuy_reentry_cost boolean DEFAULT false,\nnumber_of_rebuys_reentries integer DEFAULT 3,\nadd_on_multiplier numeric(3,1) DEFAULT 1.0,\ncustom_add_on boolean DEFAULT false,\nadd_on_break_length_minutes integer DEFAULT 1,\nko_bounty boolean DEFAULT false,\ngtd_prize_pool boolean DEFAULT false,\nfinal_table_deal boolean DEFAULT false,\nbig_blind_ante boolean DEFAULT false,\nauthorized_to_register boolean DEFAULT false,\nlate_registration_level integer DEFAULT 6,\nearly_bird_registration boolean DEFAULT false,\nbubble_protection boolean DEFAULT false,\nfeatured_tournament boolean DEFAULT false,\nmin_players_mtt integer DEFAULT 30,\nmax_players_mtt integer DEFAULT 300,\nmulti_day_mtt boolean DEFAULT false,\nsave_start_time boolean DEFAULT false,\nstart_time timestamp with time zone,\nrestart_tournament_every boolean DEFAULT false,\ntournament_schedule boolean DEFAULT false,\nsynchronized_breaks boolean DEFAULT true,\nsng_buy_in numeric(10,2) DEFAULT 0,\nblind_structure character varying(20) DEFAULT 'standard'::character varying,\npayout_structure character varying(50) DEFAULT 'winner_takes_all'::character varying,\nstarting_chips integer DEFAULT 1500,\nblinds_up_minutes integer DEFAULT 10,\nnext_step_satellite boolean DEFAULT false,\nsng_custom_buy_in boolean DEFAULT false,\nsng_player_count integer DEFAULT 9,\nis_spins boolean DEFAULT false,\nspins_multiplier integer,\nis_deleted boolean DEFAULT false,\ndeleted_at timestamp with time zone,\ndeleted_by uuid,\nbbj_percent numeric(5,2) DEFAULT 100,\ntournament_id uuid,\nlive_state jsonb,\nunion_id uuid,\nbig_blind_ante_enabled boolean DEFAULT false,\nstraddle_enabled boolean DEFAULT false,\nstraddle_type text DEFAULT 'utg'::text,\nmax_straddles integer DEFAULT 1,\nrun_it_twice_enabled boolean DEFAULT false,\nauto_muck_enabled boolean DEFAULT true,\nshow_hand_enabled boolean DEFAULT true,\ndisconnect_timeout_seconds integer DEFAULT 30,\nmax_consecutive_timeouts integer DEFAULT 3,\nprefer_check_over_fold boolean DEFAULT true,\ntime_bank_max_uses integer DEFAULT 4,\ntime_bank_enabled boolean DEFAULT true,\nante_enabled boolean DEFAULT false,\nbomb_pot_frequency integer DEFAULT 0,\nbomb_pot_ante_multiplier integer DEFAULT 2,\nwait_for_big_blind boolean DEFAULT true NOT NULL,\nseven_deuce_amount numeric DEFAULT 2 NOT NULL,\nhands_dealt bigint DEFAULT 0 NOT NULL,\navg_pot numeric(14,2) DEFAULT 0 NOT NULL,\nbomb_pot_double_board boolean DEFAULT false NOT NULL,\ncap_bb numeric(10,2),\nbomb_pot_board_count smallint DEFAULT 1 NOT NULL,\nbomb_pot_trigger_mode text DEFAULT 'every_n_hands'::text NOT NULL,\nbomb_pot_interval_seconds integer,\nbomb_pot_min_players smallint DEFAULT 3 NOT NULL,\nbomb_pot_ante_fixed numeric,\nfirst_button_seat integer,\nbomb_pot_variant text,\nbomb_pot_next_due_at timestamp with time zone,\nbomb_pot_sched_state jsonb,\nbomb_pot_manual_pending boolean DEFAULT false NOT NULL,\nbomb_pot_button_policy text DEFAULT 'regular'::text NOT NULL,\nbomb_pot_announce_seconds integer,\nmin_buy_in_bb integer DEFAULT \nCASE\n    WHEN ((tournament_id IS NULL) AND (COALESCE(big_blind, (0)::numeric) > (0)::numeric) AND (min_buy_in IS NOT NULL)) THEN (ceil((min_buy_in / big_blind)))::integer\n    ELSE NULL::integer\nEND,\nmax_buy_in_bb integer DEFAULT \nCASE\n    WHEN ((tournament_id IS NULL) AND (COALESCE(big_blind, (0)::numeric) > (0)::numeric) AND (max_buy_in IS NOT NULL)) THEN (floor((max_buy_in / big_blind)))::integer\n    ELSE NULL::integer\nEND,\nmin_buyin integer DEFAULT \nCASE\n    WHEN ((tournament_id IS NULL) AND (COALESCE(big_blind, (0)::numeric) > (0)::numeric) AND (min_buy_in IS NOT NULL)) THEN (ceil((min_buy_in / big_blind)))::integer\n    ELSE NULL::integer\nEND,\nmax_buyin integer DEFAULT \nCASE\n    WHEN ((tournament_id IS NULL) AND (COALESCE(big_blind, (0)::numeric) > (0)::numeric) AND (max_buy_in IS NOT NULL)) THEN (floor((max_buy_in / big_blind)))::integer\n    ELSE NULL::integer\nEND,\ncluster_id uuid,\nrole text,\nmain_index integer,\nlifecycle text,\nopened_at timestamp with time zone,\nlive_at timestamp with time zone,\nbreak_started_at timestamp with time zone,\nbreak_eligible_since timestamp with time zone,\npromote_pending boolean DEFAULT false NOT NULL,\nobserver_show_cards boolean DEFAULT false NOT NULL,\nterminal_closed_at timestamp with time zone,\nseat_game_scope text,\nseat_admission_key text",
+      "table_name": "tables"
+    },
+    {
+      "columns": "id uuid DEFAULT gen_random_uuid() NOT NULL,\nunion_id uuid NOT NULL,\nclub_id uuid NOT NULL,\njoined_at timestamp with time zone DEFAULT now(),\nclub_commission_rate numeric(5,4) DEFAULT 0.9000,\nrate_cash numeric,\nrate_mtt numeric,\nrate_sng numeric,\nrate_spin numeric,\nrate_satellite numeric",
+      "table_name": "union_clubs"
+    },
+    {
+      "columns": "key text NOT NULL,\nuser_id uuid,\namount numeric,\ncreated_at timestamp with time zone DEFAULT now() NOT NULL",
+      "table_name": "wallet_credit_idempotency"
+    },
+    {
+      "columns": "id uuid DEFAULT gen_random_uuid() NOT NULL,\nuser_id uuid NOT NULL,\nwallet_type text NOT NULL,\namount numeric(15,2) NOT NULL,\ntype text NOT NULL,\ncategory text NOT NULL,\ndescription text,\nrelated_entity_id uuid,\ntable_id uuid,\nhand_id uuid,\ncreated_at timestamp with time zone DEFAULT now(),\nbalance_after numeric,\nterminal_closed_at timestamp with time zone",
+      "table_name": "wallet_transactions"
+    },
+    {
+      "columns": "id uuid DEFAULT gen_random_uuid() NOT NULL,\nuser_id uuid NOT NULL,\nwallet_type text NOT NULL,\nbalance numeric(15,2) DEFAULT 0 NOT NULL,\nlocked_balance numeric(15,2) DEFAULT 0,\nupdated_at timestamp with time zone DEFAULT now(),\ncreated_at timestamp with time zone DEFAULT now()",
+      "table_name": "wallets"
+    }
+  ],
+  "constraints": [
+    {
+      "conname": "agents_agent_wallet_balance_nonneg",
+      "contype": "c",
+      "definition": "CHECK ((agent_wallet_balance >= (0)::numeric))",
+      "table_name": "agents"
+    },
+    {
+      "conname": "agents_club_id_user_id_key",
+      "contype": "u",
+      "definition": "UNIQUE (club_id, user_id)",
+      "table_name": "agents"
+    },
+    {
+      "conname": "agents_commission_rate_check",
+      "contype": "c",
+      "definition": "CHECK (((commission_rate >= (0)::numeric) AND (commission_rate <= 0.70)))",
+      "table_name": "agents"
+    },
+    {
+      "conname": "agents_credit_used_check",
+      "contype": "c",
+      "definition": "CHECK ((credit_used >= (0)::numeric))",
+      "table_name": "agents"
+    },
+    {
+      "conname": "agents_pkey",
+      "contype": "p",
+      "definition": "PRIMARY KEY (id)",
+      "table_name": "agents"
+    },
+    {
+      "conname": "agents_player_rakeback_rate_check",
+      "contype": "c",
+      "definition": "CHECK (((player_rakeback_rate >= (0)::numeric) AND (player_rakeback_rate <= 0.50)))",
+      "table_name": "agents"
+    },
+    {
+      "conname": "agents_promo_wallet_balance_nonneg",
+      "contype": "c",
+      "definition": "CHECK ((promo_wallet_balance >= (0)::numeric))",
+      "table_name": "agents"
+    },
+    {
+      "conname": "agents_role_check",
+      "contype": "c",
+      "definition": "CHECK ((role = ANY (ARRAY['super_agent'::text, 'agent'::text, 'sub_agent'::text])))",
+      "table_name": "agents"
+    },
+    {
+      "conname": "agents_status_check",
+      "contype": "c",
+      "definition": "CHECK ((status = ANY (ARRAY['active'::text, 'suspended'::text, 'frozen'::text])))",
+      "table_name": "agents"
+    },
+    {
+      "conname": "check_credit",
+      "contype": "c",
+      "definition": "CHECK (((credit_used <= credit_limit) OR (is_prepaid = true)))",
+      "table_name": "agents"
+    },
+    {
+      "conname": "chk_player_wallet_balance_is_two_decimal_places",
+      "contype": "c",
+      "definition": "CHECK (((player_wallet_balance IS NULL) OR (player_wallet_balance = round(player_wallet_balance, 2))))",
+      "table_name": "agents"
+    },
+    {
+      "conname": "chip_ledger_amount_check",
+      "contype": "c",
+      "definition": "CHECK ((amount > (0)::numeric))",
+      "table_name": "chip_ledger"
+    },
+    {
+      "conname": "chip_ledger_category_check",
+      "contype": "c",
+      "definition": "CHECK ((category = ANY (ARRAY['buyin'::text, 'cashout'::text, 'rake'::text, 'commission'::text, 'transfer'::text, 'player_funding'::text, 'agent_funding'::text, 'mint'::text, 'burn'::text, 'legacy_seed_reconcile'::text, 'rakeback'::text, 'settlement'::text, 'tournament_buyin'::text, 'tournament_prize'::text, 'bounty'::text, 'adjustment'::text, 'refund'::text, 'addon'::text, 'rebuy'::text, 'table_cashout'::text, 'tournament_refund'::text, 'bbj_contribution'::text, 'bbj_payout'::text, 'promo'::text, 'promo_release'::text, 'promo_send'::text, 'credit_draw'::text, 'credit_repayment'::text, 'insurance'::text, 'spin_entry'::text, 'spin_prize'::text, 'overlay'::text, 'correction'::text, 'reversal'::text, 'escrow_hold'::text, 'escrow_release'::text, 'treasury_transfer'::text, 'horse_funding'::text, 'fee'::text, 'eco'::text, 'pnl_settlement'::text, 'union_send'::text, 'cashier_send'::text, 'cashier_claim_back'::text, 'ticket_issue'::text, 'ticket_redeem'::text, 'club_opening_allocation'::text, 'leaderboard_payout'::text, 'club_bank_send'::text, 'club_bank_claim'::text, 'agent_send'::text, 'agent_claim'::text, 'union_settlement'::text, 'wheel_prize'::text, 'plinko_prize'::text, 'crash_prize'::text]))) NOT VALID",
+      "table_name": "chip_ledger"
+    },
+    {
+      "conname": "chip_ledger_exact_scale",
+      "contype": "c",
+      "definition": "CHECK ((amount = round(amount, 2))) NOT VALID",
+      "table_name": "chip_ledger"
+    },
+    {
+      "conname": "chip_ledger_from_type_check",
+      "contype": "c",
+      "definition": "CHECK ((from_type = ANY (ARRAY['player_wallet'::text, 'club_treasury'::text, 'union_bank'::text, 'agent_wallet'::text, 'system_mint'::text, 'system_burn'::text, 'table_stack'::text, 'promo_wallet'::text, 'club_wallet'::text, 'union_wallet'::text, 'bbj_pool'::text, 'spin_reserve'::text, 'insurance_bank'::text, 'escrow'::text, 'prize_liability'::text, 'bounty_liability'::text, 'rakeback_payable'::text, 'refund_payable'::text, 'settlement_suspense'::text, 'issuance_reserve'::text, 'chip_retirement'::text, 'credit_facility'::text, 'credit_receivable'::text, 'opening_setup'::text, 'leaderboard_round'::text]))) NOT VALID",
+      "table_name": "chip_ledger"
+    },
+    {
+      "conname": "chip_ledger_no_diamond_category_check",
+      "contype": "c",
+      "definition": "CHECK (((category !~* '^diamond'::text) AND (category !~* '_diamond'::text)))",
+      "table_name": "chip_ledger"
+    },
+    {
+      "conname": "chip_ledger_pkey",
+      "contype": "p",
+      "definition": "PRIMARY KEY (id)",
+      "table_name": "chip_ledger"
+    },
+    {
+      "conname": "chip_ledger_positive_amount",
+      "contype": "c",
+      "definition": "CHECK ((amount > (0)::numeric))",
+      "table_name": "chip_ledger"
+    },
+    {
+      "conname": "chip_ledger_status_check",
+      "contype": "c",
+      "definition": "CHECK ((status = ANY (ARRAY['posted'::text, 'correction'::text, 'reversal'::text])))",
+      "table_name": "chip_ledger"
+    },
+    {
+      "conname": "chip_ledger_to_type_check",
+      "contype": "c",
+      "definition": "CHECK ((to_type = ANY (ARRAY['player_wallet'::text, 'club_treasury'::text, 'union_bank'::text, 'agent_wallet'::text, 'system_mint'::text, 'system_burn'::text, 'table_stack'::text, 'promo_wallet'::text, 'club_wallet'::text, 'union_wallet'::text, 'bbj_pool'::text, 'spin_reserve'::text, 'insurance_bank'::text, 'escrow'::text, 'prize_liability'::text, 'bounty_liability'::text, 'rakeback_payable'::text, 'refund_payable'::text, 'settlement_suspense'::text, 'issuance_reserve'::text, 'chip_retirement'::text, 'credit_facility'::text, 'credit_receivable'::text, 'opening_setup'::text, 'leaderboard_round'::text]))) NOT VALID",
+      "table_name": "chip_ledger"
+    },
+    {
+      "conname": "chk_post_from_balance_is_two_decimal_places",
+      "contype": "c",
+      "definition": "CHECK (((post_from_balance IS NULL) OR (post_from_balance = round(post_from_balance, 2))))",
+      "table_name": "chip_ledger"
+    },
+    {
+      "conname": "chk_post_to_balance_is_two_decimal_places",
+      "contype": "c",
+      "definition": "CHECK (((post_to_balance IS NULL) OR (post_to_balance = round(post_to_balance, 2))))",
+      "table_name": "chip_ledger"
+    },
+    {
+      "conname": "chk_pre_from_balance_is_two_decimal_places",
+      "contype": "c",
+      "definition": "CHECK (((pre_from_balance IS NULL) OR (pre_from_balance = round(pre_from_balance, 2))))",
+      "table_name": "chip_ledger"
+    },
+    {
+      "conname": "chk_pre_to_balance_is_two_decimal_places",
+      "contype": "c",
+      "definition": "CHECK (((pre_to_balance IS NULL) OR (pre_to_balance = round(pre_to_balance, 2))))",
+      "table_name": "chip_ledger"
+    },
+    {
+      "conname": "ck_whole_cents",
+      "contype": "c",
+      "definition": "CHECK (((created_at < '2026-09-07 22:00:00+00'::timestamp with time zone) OR (amount = round(amount, 2)))) NOT VALID",
+      "table_name": "chip_ledger"
+    },
+    {
+      "conname": "chip_transactions_pkey",
+      "contype": "p",
+      "definition": "PRIMARY KEY (id)",
+      "table_name": "chip_transactions"
+    },
+    {
+      "conname": "chk_held_chips_is_two_decimal_places",
+      "contype": "c",
+      "definition": "CHECK (((held_chips IS NULL) OR (held_chips = round(held_chips, 2))))",
+      "table_name": "club_members"
+    },
+    {
+      "conname": "club_members_bot_house_only",
+      "contype": "c",
+      "definition": "CHECK (((NOT COALESCE(is_bot, false)) OR fn_ca_house_board_allows_automation(club_id)))",
+      "table_name": "club_members"
+    },
+    {
+      "conname": "club_members_chip_balance_nonneg",
+      "contype": "c",
+      "definition": "CHECK ((chip_balance >= (0)::numeric))",
+      "table_name": "club_members"
+    },
+    {
+      "conname": "club_members_membership_lifecycle_check",
+      "contype": "c",
+      "definition": "CHECK ((membership_lifecycle_status = ANY (ARRAY['active'::text, 'departed'::text])))",
+      "table_name": "club_members"
+    },
+    {
+      "conname": "club_members_pkey",
+      "contype": "p",
+      "definition": "PRIMARY KEY (club_id, user_id)",
+      "table_name": "club_members"
+    },
+    {
+      "conname": "club_members_promo_balance_nonneg",
+      "contype": "c",
+      "definition": "CHECK ((promo_balance >= (0)::numeric))",
+      "table_name": "club_members"
+    },
+    {
+      "conname": "club_members_role_check",
+      "contype": "c",
+      "definition": "CHECK ((role = ANY (ARRAY['owner'::text, 'co_owner'::text, 'admin'::text, 'super_agent'::text, 'agent'::text, 'sub_agent'::text, 'player'::text])))",
+      "table_name": "club_members"
+    },
+    {
+      "conname": "clubs_asset_known",
+      "contype": "c",
+      "definition": "CHECK ((asset = ANY (ARRAY['chips'::text, 'diamonds'::text])))",
+      "table_name": "clubs"
+    },
+    {
+      "conname": "clubs_chip_pool_nonneg",
+      "contype": "c",
+      "definition": "CHECK ((chip_pool >= (0)::numeric))",
+      "table_name": "clubs"
+    },
+    {
+      "conname": "clubs_chip_treasury_nonneg",
+      "contype": "c",
+      "definition": "CHECK ((chip_treasury >= (0)::numeric))",
+      "table_name": "clubs"
+    },
+    {
+      "conname": "clubs_club_id_key",
+      "contype": "u",
+      "definition": "UNIQUE (club_id)",
+      "table_name": "clubs"
+    },
+    {
+      "conname": "clubs_default_rake_percent_range",
+      "contype": "c",
+      "definition": "CHECK (((default_rake_percent IS NULL) OR (default_rake_percent = ('-1'::integer)::numeric) OR ((default_rake_percent >= (0)::numeric) AND (default_rake_percent <= (10)::numeric)))) NOT VALID",
+      "table_name": "clubs"
+    },
+    {
+      "conname": "clubs_description_character_limit",
+      "contype": "c",
+      "definition": "CHECK ((char_length(COALESCE(description, ''::text)) <= 500))",
+      "table_name": "clubs"
+    },
+    {
+      "conname": "clubs_insurance_balance_nonneg",
+      "contype": "c",
+      "definition": "CHECK ((insurance_balance >= (0)::numeric))",
+      "table_name": "clubs"
+    },
+    {
+      "conname": "clubs_lifecycle_status_check",
+      "contype": "c",
+      "definition": "CHECK ((lifecycle_status = ANY (ARRAY['active'::text, 'retired'::text])))",
+      "table_name": "clubs"
+    },
+    {
+      "conname": "clubs_lobby_message_character_limit",
+      "contype": "c",
+      "definition": "CHECK ((char_length(COALESCE(lobby_message, ''::text)) <= 240))",
+      "table_name": "clubs"
+    },
+    {
+      "conname": "clubs_message_revision_positive",
+      "contype": "c",
+      "definition": "CHECK ((message_revision > 0))",
+      "table_name": "clubs"
+    },
+    {
+      "conname": "clubs_name_not_blank",
+      "contype": "c",
+      "definition": "CHECK ((btrim(name) <> ''::text))",
+      "table_name": "clubs"
+    },
+    {
+      "conname": "clubs_pkey",
+      "contype": "p",
+      "definition": "PRIMARY KEY (id)",
+      "table_name": "clubs"
+    },
+    {
+      "conname": "clubs_promo_balance_nonneg",
+      "contype": "c",
+      "definition": "CHECK ((promo_balance >= (0)::numeric))",
+      "table_name": "clubs"
+    },
+    {
+      "conname": "clubs_rake_cap_range",
+      "contype": "c",
+      "definition": "CHECK (((rake_cap IS NULL) OR (rake_cap = ('-1'::integer)::numeric) OR ((rake_cap >= (0)::numeric) AND (rake_cap <= (10)::numeric)))) NOT VALID",
+      "table_name": "clubs"
+    },
+    {
+      "conname": "clubs_tagline_character_limit",
+      "contype": "c",
+      "definition": "CHECK ((char_length(COALESCE(tagline, ''::text)) <= 72))",
+      "table_name": "clubs"
+    },
+    {
+      "conname": "clubs_tagline_length",
+      "contype": "c",
+      "definition": "CHECK (((tagline IS NULL) OR (char_length(tagline) <= 72)))",
+      "table_name": "clubs"
+    },
+    {
+      "conname": "poker_arena_diamond_identity",
+      "contype": "c",
+      "definition": "CHECK ((((asset = 'chips'::text) AND (NOT is_platform)) OR ((asset = 'diamonds'::text) AND is_platform AND (union_id IS NULL) AND (NOT COALESCE(is_union, false)) AND (COALESCE(chip_treasury, (0)::numeric) = (0)::numeric) AND (COALESCE(chip_pool, (0)::numeric) = (0)::numeric) AND (COALESCE(promo_balance, (0)::numeric) = (0)::numeric) AND (COALESCE(insurance_balance, (0)::numeric) = (0)::numeric))))",
+      "table_name": "clubs"
+    },
+    {
+      "conname": "rakeback_daily_state_pkey",
+      "contype": "p",
+      "definition": "PRIMARY KEY (club_id, day)",
+      "table_name": "rakeback_daily_state"
+    },
+    {
+      "conname": "rakeback_daily_user_pkey",
+      "contype": "p",
+      "definition": "PRIMARY KEY (club_id, day, user_id)",
+      "table_name": "rakeback_daily_user"
+    },
+    {
+      "conname": "chk_payout_amount_is_two_decimal_places",
+      "contype": "c",
+      "definition": "CHECK (((payout_amount IS NULL) OR (payout_amount = round(payout_amount, 2))))",
+      "table_name": "rakeback_period_payouts"
+    },
+    {
+      "conname": "ck_whole_cents",
+      "contype": "c",
+      "definition": "CHECK (((created_at < '2026-09-07 22:00:00+00'::timestamp with time zone) OR (payout_amount = round(payout_amount, 2)))) NOT VALID",
+      "table_name": "rakeback_period_payouts"
+    },
+    {
+      "conname": "rakeback_period_payouts_payout_amount_check",
+      "contype": "c",
+      "definition": "CHECK ((payout_amount >= (0)::numeric))",
+      "table_name": "rakeback_period_payouts"
+    },
+    {
+      "conname": "rakeback_period_payouts_pkey",
+      "contype": "p",
+      "definition": "PRIMARY KEY (id)",
+      "table_name": "rakeback_period_payouts"
+    },
+    {
+      "conname": "rakeback_period_payouts_rakeback_pct_check",
+      "contype": "c",
+      "definition": "CHECK (((rakeback_pct >= (0)::numeric) AND (rakeback_pct <= (100)::numeric)))",
+      "table_name": "rakeback_period_payouts"
+    },
+    {
+      "conname": "rakeback_period_payouts_rakeback_period_id_user_id_key",
+      "contype": "u",
+      "definition": "UNIQUE (rakeback_period_id, user_id)",
+      "table_name": "rakeback_period_payouts"
+    },
+    {
+      "conname": "rakeback_period_payouts_status_check",
+      "contype": "c",
+      "definition": "CHECK ((status = ANY (ARRAY['pending'::text, 'paid'::text, 'clawed_back'::text, 'failed'::text])))",
+      "table_name": "rakeback_period_payouts"
+    },
+    {
+      "conname": "rakeback_period_payouts_user_rake_contribution_check",
+      "contype": "c",
+      "definition": "CHECK ((user_rake_contribution >= (0)::numeric))",
+      "table_name": "rakeback_period_payouts"
+    },
+    {
+      "conname": "ck_whole_cents",
+      "contype": "c",
+      "definition": "CHECK (((created_at < '2026-09-07 22:00:00+00'::timestamp with time zone) OR ((rakeback_amount = round(rakeback_amount, 2)) AND (rake_generated = round(rake_generated, 2))))) NOT VALID",
+      "table_name": "rakeback_periods"
+    },
+    {
+      "conname": "rakeback_periods_pkey",
+      "contype": "p",
+      "definition": "PRIMARY KEY (id)",
+      "table_name": "rakeback_periods"
+    },
+    {
+      "conname": "rakeback_periods_status_check",
+      "contype": "c",
+      "definition": "CHECK ((status = ANY (ARRAY['pending'::text, 'open'::text, 'closed'::text, 'claiming'::text, 'claimed'::text, 'paid'::text, 'expired'::text])))",
+      "table_name": "rakeback_periods"
+    },
+    {
+      "conname": "rakeback_periods_user_id_club_id_period_start_period_end_key",
+      "contype": "u",
+      "definition": "UNIQUE (user_id, club_id, period_start, period_end)",
+      "table_name": "rakeback_periods"
+    },
+    {
+      "conname": "settlement_locks_pkey",
+      "contype": "p",
+      "definition": "PRIMARY KEY (id)",
+      "table_name": "settlement_locks"
+    },
+    {
+      "conname": "active_seat_requires_game_scope",
+      "contype": "c",
+      "definition": "CHECK ((((left_at IS NULL) AND (active_game_scope IS NOT NULL) AND (user_id IS NOT NULL) AND (table_id IS NOT NULL)) OR ((left_at IS NOT NULL) AND (active_game_scope IS NULL))))",
+      "table_name": "table_seats"
+    },
+    {
+      "conname": "active_seat_requires_open_parent",
+      "contype": "c",
+      "definition": "CHECK ((((left_at IS NULL) AND (active_parent_key IS NOT NULL) AND (active_parent_key <> 'closed'::text)) OR ((left_at IS NOT NULL) AND (active_parent_key IS NULL))))",
+      "table_name": "table_seats"
+    },
+    {
+      "conname": "one_committed_seat_per_game_player",
+      "contype": "u",
+      "definition": "UNIQUE (user_id, active_game_scope) DEFERRABLE INITIALLY DEFERRED",
+      "table_name": "table_seats"
+    },
+    {
+      "conname": "table_seats_entry_hold_check",
+      "contype": "c",
+      "definition": "CHECK (((entry_hold IS NULL) OR (entry_hold = ANY (ARRAY['waiting'::text, 'posting'::text, 'moved'::text]))))",
+      "table_name": "table_seats"
+    },
+    {
+      "conname": "table_seats_pkey",
+      "contype": "p",
+      "definition": "PRIMARY KEY (id)",
+      "table_name": "table_seats"
+    },
+    {
+      "conname": "table_seats_seat_number_check",
+      "contype": "c",
+      "definition": "CHECK (((seat_number >= 1) AND (seat_number <= 10)))",
+      "table_name": "table_seats"
+    },
+    {
+      "conname": "table_seats_stack_nonneg",
+      "contype": "c",
+      "definition": "CHECK ((stack >= (0)::numeric))",
+      "table_name": "table_seats"
+    },
+    {
+      "conname": "table_seats_table_id_seat_number_key",
+      "contype": "u",
+      "definition": "UNIQUE (table_id, seat_number)",
+      "table_name": "table_seats"
+    },
+    {
+      "conname": "table_game_scope_is_derived",
+      "contype": "c",
+      "definition": "CHECK (((seat_game_scope IS NULL) OR (seat_game_scope =\nCASE\n    WHEN (cluster_id IS NULL) THEN ('table:'::text || (id)::text)\n    ELSE ('cluster:'::text || (cluster_id)::text)\nEND)))",
+      "table_name": "tables"
+    },
+    {
+      "conname": "table_game_scope_parent_key",
+      "contype": "u",
+      "definition": "UNIQUE (id, seat_game_scope)",
+      "table_name": "tables"
+    },
+    {
+      "conname": "table_seat_admission_is_derived",
+      "contype": "c",
+      "definition": "CHECK (((seat_admission_key IS NULL) OR (seat_admission_key =\nCASE\n    WHEN ((lower(COALESCE(status, ''::text)) = ANY (ARRAY['closed'::text, 'completed'::text, 'cancelled'::text, 'finished'::text])) OR (lifecycle = 'closed'::text) OR COALESCE(is_deleted, false) OR COALESCE(is_template, false)) THEN 'closed'::text\n    WHEN (tournament_id IS NOT NULL) THEN ('tournament:'::text || (tournament_id)::text)\n    ELSE 'cash'::text\nEND)))",
+      "table_name": "tables"
+    },
+    {
+      "conname": "table_seat_admission_parent_key",
+      "contype": "u",
+      "definition": "UNIQUE (id, seat_admission_key)",
+      "table_name": "tables"
+    },
+    {
+      "conname": "tables_bomb_pot_board_count_check",
+      "contype": "c",
+      "definition": "CHECK (((bomb_pot_board_count >= 1) AND (bomb_pot_board_count <= 3)))",
+      "table_name": "tables"
+    },
+    {
+      "conname": "tables_bomb_pot_button_policy_check",
+      "contype": "c",
+      "definition": "CHECK ((bomb_pot_button_policy = ANY (ARRAY['regular'::text, 'separate'::text])))",
+      "table_name": "tables"
+    },
+    {
+      "conname": "tables_bomb_pot_trigger_mode_check",
+      "contype": "c",
+      "definition": "CHECK ((bomb_pot_trigger_mode = ANY (ARRAY['every_n_hands'::text, 'once_per_orbit'::text, 'timed'::text, 'bomb_pot_only'::text])))",
+      "table_name": "tables"
+    },
+    {
+      "conname": "tables_bomb_pot_variant_check",
+      "contype": "c",
+      "definition": "CHECK (((bomb_pot_variant IS NULL) OR ((bomb_pot_variant = ANY (ARRAY['nlh'::text, 'plo4'::text, 'plo5'::text, 'plo6'::text, 'flh'::text, 'flo8'::text])) AND ((lower(COALESCE(game_variant, 'nlh'::text)) = ANY (ARRAY['flh'::text, 'flo8'::text])) = (bomb_pot_variant = ANY (ARRAY['flh'::text, 'flo8'::text]))))))",
+      "table_name": "tables"
+    },
+    {
+      "conname": "tables_cash_needs_a_game",
+      "contype": "c",
+      "definition": "CHECK (((tournament_id IS NOT NULL) OR (cluster_id IS NOT NULL) OR (status = ANY (ARRAY['closed'::text, 'deleted'::text])) OR COALESCE(is_deleted, false) OR (club_id IS NULL) OR (game_variant IS NULL) OR (COALESCE(small_blind, (0)::numeric) <= (0)::numeric) OR (COALESCE(big_blind, (0)::numeric) <= COALESCE(small_blind, (0)::numeric))))",
+      "table_name": "tables"
+    },
+    {
+      "conname": "tables_game_type_is_format",
+      "contype": "c",
+      "definition": "CHECK ((game_type = ANY (ARRAY['cash'::text, 'tournament'::text])))",
+      "table_name": "tables"
+    },
+    {
+      "conname": "tables_lifecycle_check",
+      "contype": "c",
+      "definition": "CHECK ((lifecycle = ANY (ARRAY['opening'::text, 'live'::text, 'breaking'::text, 'closed'::text])))",
+      "table_name": "tables"
+    },
+    {
+      "conname": "tables_main_index_check",
+      "contype": "c",
+      "definition": "CHECK ((main_index >= 1))",
+      "table_name": "tables"
+    },
+    {
+      "conname": "tables_pkey",
+      "contype": "p",
+      "definition": "PRIMARY KEY (id)",
+      "table_name": "tables"
+    },
+    {
+      "conname": "tables_rake_cap_bb_range",
+      "contype": "c",
+      "definition": "CHECK (((rake_cap_bb IS NULL) OR (rake_cap_bb = ('-1'::integer)::numeric) OR ((rake_cap_bb >= (0)::numeric) AND (rake_cap_bb <= (10)::numeric)))) NOT VALID",
+      "table_name": "tables"
+    },
+    {
+      "conname": "tables_rake_percent_range",
+      "contype": "c",
+      "definition": "CHECK (((rake_percent IS NULL) OR (rake_percent = ('-1'::integer)::numeric) OR ((rake_percent >= (0)::numeric) AND (rake_percent <= (10)::numeric)))) NOT VALID",
+      "table_name": "tables"
+    },
+    {
+      "conname": "tables_role_check",
+      "contype": "c",
+      "definition": "CHECK ((role = ANY (ARRAY['main'::text, 'feeder'::text])))",
+      "table_name": "tables"
+    },
+    {
+      "conname": "tables_status_check",
+      "contype": "c",
+      "definition": "CHECK ((status = ANY (ARRAY['waiting'::text, 'active'::text, 'running'::text, 'paused'::text, 'closed'::text])))",
+      "table_name": "tables"
+    },
+    {
+      "conname": "tables_straddle_type_check",
+      "contype": "c",
+      "definition": "CHECK ((straddle_type = 'utg'::text))",
+      "table_name": "tables"
+    },
+    {
+      "conname": "tables_terminal_closed_shape",
+      "contype": "c",
+      "definition": "CHECK (((terminal_closed_at IS NULL) OR ((lower(COALESCE(status, ''::text)) = 'closed'::text) AND (lower(COALESCE(lifecycle, ''::text)) = 'closed'::text) AND (NOT (current_players IS DISTINCT FROM 0)))))",
+      "table_name": "tables"
+    },
+    {
+      "conname": "union_clubs_game_rates_are_fractions",
+      "contype": "c",
+      "definition": "CHECK ((((rate_cash IS NULL) OR ((rate_cash >= (0)::numeric) AND (rate_cash <= (1)::numeric))) AND ((rate_mtt IS NULL) OR ((rate_mtt >= (0)::numeric) AND (rate_mtt <= (1)::numeric))) AND ((rate_sng IS NULL) OR ((rate_sng >= (0)::numeric) AND (rate_sng <= (1)::numeric))) AND ((rate_spin IS NULL) OR ((rate_spin >= (0)::numeric) AND (rate_spin <= (1)::numeric))) AND ((rate_satellite IS NULL) OR ((rate_satellite >= (0)::numeric) AND (rate_satellite <= (1)::numeric)))))",
+      "table_name": "union_clubs"
+    },
+    {
+      "conname": "union_clubs_pkey",
+      "contype": "p",
+      "definition": "PRIMARY KEY (id)",
+      "table_name": "union_clubs"
+    },
+    {
+      "conname": "union_clubs_union_id_club_id_key",
+      "contype": "u",
+      "definition": "UNIQUE (union_id, club_id)",
+      "table_name": "union_clubs"
+    },
+    {
+      "conname": "wallet_credit_idempotency_pkey",
+      "contype": "p",
+      "definition": "PRIMARY KEY (key)",
+      "table_name": "wallet_credit_idempotency"
+    },
+    {
+      "conname": "chk_balance_after_is_two_decimal_places",
+      "contype": "c",
+      "definition": "CHECK (((balance_after IS NULL) OR (balance_after = round(balance_after, 2)))) NOT VALID",
+      "table_name": "wallet_transactions"
+    },
+    {
+      "conname": "wallet_transactions_amount_non_negative",
+      "contype": "c",
+      "definition": "CHECK ((amount >= (0)::numeric)) NOT VALID",
+      "table_name": "wallet_transactions"
+    },
+    {
+      "conname": "wallet_transactions_category_check",
+      "contype": "c",
+      "definition": "CHECK ((category = ANY (ARRAY['buyin'::text, 'cashout'::text, 'promo'::text, 'rake'::text, 'transfer'::text, 'tournament_buyin'::text, 'tournament_winnings'::text, 'tournament_cashout'::text, 'horse_refill'::text, 'deposit'::text, 'withdrawal'::text, 'refund'::text, 'bbj'::text, 'bonus'::text, 'mint'::text, 'settlement'::text, 'commission'::text, 'INSURANCE'::text, 'prize'::text, 'rebuy'::text, 'addon'::text, 'funding'::text, 'promotion'::text, 'rakeback'::text, 'bounty'::text, 'addon_refund'::text, 'bounty_own'::text, 'prize_reversal'::text, 'leaderboard_payout'::text]))) NOT VALID",
+      "table_name": "wallet_transactions"
+    },
+    {
+      "conname": "wallet_transactions_pkey",
+      "contype": "p",
+      "definition": "PRIMARY KEY (id)",
+      "table_name": "wallet_transactions"
+    },
+    {
+      "conname": "wallet_transactions_type_check",
+      "contype": "c",
+      "definition": "CHECK ((type = ANY (ARRAY['credit'::text, 'debit'::text])))",
+      "table_name": "wallet_transactions"
+    },
+    {
+      "conname": "wallet_transactions_wallet_type_check",
+      "contype": "c",
+      "definition": "CHECK ((wallet_type = ANY (ARRAY['PLAYER'::text, 'BUSINESS'::text, 'PROMO'::text, 'CLUB'::text, 'UNION'::text, 'PLATFORM'::text])))",
+      "table_name": "wallet_transactions"
+    },
+    {
+      "conname": "wallets_pkey",
+      "contype": "p",
+      "definition": "PRIMARY KEY (id)",
+      "table_name": "wallets"
+    },
+    {
+      "conname": "wallets_user_id_wallet_type_key",
+      "contype": "u",
+      "definition": "UNIQUE (user_id, wallet_type)",
+      "table_name": "wallets"
+    },
+    {
+      "conname": "wallets_wallet_type_check",
+      "contype": "c",
+      "definition": "CHECK ((wallet_type = ANY (ARRAY['BUSINESS'::text, 'PLAYER'::text, 'PROMO'::text])))",
+      "table_name": "wallets"
+    }
+  ],
+  "captured_at": "2026-09-10T06:11:06.798Z"
+}

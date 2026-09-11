@@ -1,0 +1,45 @@
+{
+  "recorded_at": "2026-09-11T08:18:55.089529+00:00",
+  "phase_complete": false,
+  "candidate_sha256": "9e0771e13df999bcf4fc3809865afa53d6b70f2eb947be531c4894dca9e148b0",
+  "candidate_bytes": 275856,
+  "candidate": "scripts/deploy/phase-three-activate-current-terminal-authorities.sql",
+  "native_assertions": 138,
+  "native_exact_rollback": true,
+  "native_source_inputs_stable": true,
+  "copied_native_source_inputs_identical": true,
+  "outside_window_production_guard_compatibility": true,
+  "protected_window_transport_exception_tested": false,
+  "creation_native_assertions": 15,
+  "edit_native_assertions": 27,
+  "typescript_exit": 0,
+  "creation_mapping_tests_passed": 31,
+  "deployment_attempt": {
+    "transport": "Supabase apply_migration",
+    "name": "current_tournament_terminal_authorities_activate_atomically",
+    "result": "transaction refused at bounded NOWAIT lease lock",
+    "sqlstate": "55P03",
+    "relation": "public.engine_tournament_leases",
+    "applied": false
+  },
+  "post_refusal_readback": {
+    "checked_at": "2026-09-11T08:12:25.260435Z",
+    "stage_a_hook_md5": "ab227471f29f2944ebd64909622b6af7",
+    "new_satellite_scope": null,
+    "migration_history_receipts": 0,
+    "protected_window_refusal": null,
+    "live_engine": "c58dfafd",
+    "heartbeat_age_seconds": 4.599161,
+    "active_postgrest_row_share_locks": 3,
+    "longest_observed_lease_transaction_seconds": 1.296872
+  },
+  "separate_continuation_review": {
+    "record": "docs/audits/2026-09-11-phase-three-activation-approval-status.json",
+    "status": "automatic approval review rejected exact candidate",
+    "discovered_after_this_attempt": true,
+    "no_further_production_attempt": "Production mutation is stopped pending exact approval and an audited quiet window."
+  },
+  "publication_scope": "Source and reproducible verification. Publishing does not activate pending scripts/deploy candidates. Unapplied migration reservations are excluded.",
+  "browser": "Signed in and live-connected; terms overlay prevents interactive acceptance and has not been accepted by the agent.",
+  "full_control_review": "docs/audits/2026-09-11-phase-three-control-evidence-review.md"
+}

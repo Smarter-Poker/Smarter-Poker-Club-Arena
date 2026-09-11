@@ -20,6 +20,7 @@ import {
 } from './engine/horseDecision/client.js';
 import {
   EquityWorkerPoolAbortedError,
+  equityWorkerPoolPreservesDealerLiveness,
   equityWorkerPoolStatus,
   startEquityWorkerPool,
   stopEquityWorkerPool,
@@ -2014,10 +2015,11 @@ export class GameServer {
     if (!this.directAdmissionIsCurrent(generation)) return;
 
     /**
-     * All-in equity and insurance are also hard realtime dependencies. Every
+     * All-in equity and insurance are worker-only realtime dependencies. Every
      * configured worker must author a READY handshake before table discovery
-     * can route a hand here; degraded capacity removes this process from
-     * routing instead of moving calculator work back onto the table thread.
+     * can route a hand here. After startup, callers fail closed at their own
+     * SLA while an immediate bounded replacement remains visible without
+     * taking an otherwise healthy dealer out of routing.
      */
     try {
       await startEquityWorkerPool();
@@ -3146,11 +3148,14 @@ export class GameServer {
       stalledTables: stalledTables.slice(0, 20),
       discoveryStaleMs,
       tableLiveness,
+      // Optional calculator capacity may recover after initial readiness
+      // without taking a healthy dealer out of routing. Startup, exhausted
+      // cooldown, and shutdown remain non-routing states.
       status:
         this.running &&
         this.dealerPrerequisitesReady &&
         liveHorseDecision.phase === 'ready' &&
-        equityWorkers.phase === 'ready'
+        equityWorkerPoolPreservesDealerLiveness(equityWorkers)
           ? 'ok'
           : 'degraded',
       version: process.env.GIT_COMMIT_SHA?.substring(0, 8) || process.env.ENGINE_VERSION || 'local',

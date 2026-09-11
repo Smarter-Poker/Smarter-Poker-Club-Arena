@@ -1,0 +1,53 @@
+
+[1m[30m[46m RUN [49m[39m[22m [36mv4.1.11 [39m[90m/Users/smarter.poker/Documents/.agent-trees/Smarter-Poker-Club-Arena/codex-rakeback-maturity-ui-sep11[39m
+
+ [32m✓[39m tests/components/rakeback-readiness.test.tsx[2m > [22mRakebackPage closed UTC earning periods[2m > [22mkeeps an end-today period visible as pending without offering a claim[32m 61[2mms[22m[39m
+ [32m✓[39m tests/components/rakeback-readiness.test.tsx[2m > [22mRakebackPage closed UTC earning periods[2m > [22mtargets a positive closed club across newer open, zero, missing-club and paid rows[32m 60[2mms[22m[39m
+ [32m✓[39m tests/components/rakeback-readiness.test.tsx[2m > [22mRakebackPage closed UTC earning periods[2m > [22mbecomes ready at the next UTC midnight while the page stays open[32m 19[2mms[22m[39m
+ [32m✓[39m tests/components/rakeback-readiness.test.tsx[2m > [22mRakebackPage closed UTC earning periods[2m > [22mrechecks the current clock before any RPC even if the displayed readiness is stale[32m 16[2mms[22m[39m
+ [32m✓[39m tests/components/rakeback-readiness.test.tsx[2m > [22mRakebackPage closed UTC earning periods[2m > [22mdoes not convert malformed DATE 2026-02-30 into eligibility[32m 15[2mms[22m[39m
+ [32m✓[39m tests/components/rakeback-readiness.test.tsx[2m > [22mRakebackPage closed UTC earning periods[2m > [22mdoes not convert malformed DATE unknown into eligibility[32m 21[2mms[22m[39m
+ [32m✓[39m tests/components/rakeback-readiness.test.tsx[2m > [22mRakebackPage closed UTC earning periods[2m > [22mdoes not convert malformed DATE 2026-09-10T00:00:00Z into eligibility[32m 22[2mms[22m[39m
+ [32m✓[39m tests/components/rakeback-readiness.test.tsx[2m > [22mRakebackPage closed UTC earning periods[2m > [22mdisables a stale ready claim when refreshing the earning periods fails[32m 18[2mms[22m[39m
+ [32m✓[39m tests/components/rakeback-readiness.test.tsx[2m > [22mRakebackPage installed claim response contract[2m > [22mshows an explicit RPC refusal without claiming a payout[32m 25[2mms[22m[39m
+ [32m✓[39m tests/components/rakeback-readiness.test.tsx[2m > [22mRakebackPage installed claim response contract[2m > [22mreports a valid zero aggregate as no payout rather than a successful claim[32m 23[2mms[22m[39m
+ [32m✓[39m tests/components/rakeback-readiness.test.tsx[2m > [22mRakebackPage installed claim response contract[2m > [22mreports only the server-confirmed partial payout and triggers authoritative wallet refresh[32m 33[2mms[22m[39m
+ [32m✓[39m tests/components/rakeback-readiness.test.tsx[2m > [22mRakebackPage installed claim response contract[2m > [22mkeeps a second claim pending past the previous success timer and retains its refusal[32m 48[2mms[22m[39m
+ [32m✓[39m tests/components/rakeback-readiness.test.tsx[2m > [22mRakebackPage installed claim response contract[2m > [22mnever treats a refused response with contradictory positive numbers as paid[32m 19[2mms[22m[39m
+ [32m✓[39m tests/components/rakeback-readiness.test.tsx[2m > [22mRakebackPage installed claim response contract[2m > [22mrefuses to assert a claim for missing result and refreshes the unknown outcome[32m 24[2mms[22m[39m
+ [32m✓[39m tests/components/rakeback-readiness.test.tsx[2m > [22mRakebackPage installed claim response contract[2m > [22mrefuses to assert a claim for missing success flag and refreshes the unknown outcome[32m 19[2mms[22m[39m
+ [32m✓[39m tests/components/rakeback-readiness.test.tsx[2m > [22mRakebackPage installed claim response contract[2m > [22mrefuses to assert a claim for success with error and refreshes the unknown outcome[32m 29[2mms[22m[39m
+ [32m✓[39m tests/components/rakeback-readiness.test.tsx[2m > [22mRakebackPage installed claim response contract[2m > [22mrefuses to assert a claim for non-number amount and refreshes the unknown outcome[32m 32[2mms[22m[39m
+ [32m✓[39m tests/components/rakeback-readiness.test.tsx[2m > [22mRakebackPage installed claim response contract[2m > [22mrefuses to assert a claim for infinite amount and refreshes the unknown outcome[32m 31[2mms[22m[39m
+ [32m✓[39m tests/components/rakeback-readiness.test.tsx[2m > [22mRakebackPage installed claim response contract[2m > [22mrefuses to assert a claim for negative amount and refreshes the unknown outcome[32m 41[2mms[22m[39m
+ [32m✓[39m tests/components/rakeback-readiness.test.tsx[2m > [22mRakebackPage installed claim response contract[2m > [22mrefuses to assert a claim for unsafe amount and refreshes the unknown outcome[32m 19[2mms[22m[39m
+ [32m✓[39m tests/components/rakeback-readiness.test.tsx[2m > [22mRakebackPage installed claim response contract[2m > [22mrefuses to assert a claim for fractional count and refreshes the unknown outcome[32m 20[2mms[22m[39m
+ [32m✓[39m tests/components/rakeback-readiness.test.tsx[2m > [22mRakebackPage installed claim response contract[2m > [22mrefuses to assert a claim for negative count and refreshes the unknown outcome[32m 31[2mms[22m[39m
+ [32m✓[39m tests/components/rakeback-readiness.test.tsx[2m > [22mRakebackPage installed claim response contract[2m > [22mrefuses to assert a claim for positive amount without a paid period and refreshes the unknown outcome[32m 22[2mms[22m[39m
+ [32m✓[39m tests/components/rakeback-readiness.test.tsx[2m > [22mRakebackPage installed claim response contract[2m > [22mrefuses to assert a claim for paid period without a positive amount and refreshes the unknown outcome[32m 19[2mms[22m[39m
+ [32m✓[39m tests/components/rakeback-readiness.test.tsx[2m > [22mRakebackPage installed claim response contract[2m > [22mrefuses to assert a claim for null amount and refreshes the unknown outcome[32m 20[2mms[22m[39m
+ [32m✓[39m tests/components/rakeback-readiness.test.tsx[2m > [22mRakebackPage bounded discovery and request ownership[2m > [22mdiscovers a positive closed club outside the twelve recent history rows[32m 34[2mms[22m[39m
+ [32m✓[39m tests/components/rakeback-readiness.test.tsx[2m > [22mRakebackPage bounded discovery and request ownership[2m > [22mrediscovers hidden newly mature earnings at UTC midnight with no pending history boundary[32m 34[2mms[22m[39m
+ [32m✓[39m tests/components/rakeback-readiness.test.tsx[2m > [22mRakebackPage bounded discovery and request ownership[2m > [22mkeeps a coalesced post-claim read after an in-flight snapshot (failure=false)[32m 14[2mms[22m[39m
+ [32m✓[39m tests/components/rakeback-readiness.test.tsx[2m > [22mRakebackPage bounded discovery and request ownership[2m > [22mkeeps a coalesced post-claim read after an in-flight snapshot (failure=true)[32m 24[2mms[22m[39m
+ [32m✓[39m tests/components/rakeback-readiness.test.tsx[2m > [22mRakebackPage bounded discovery and request ownership[2m > [22mqueues the new account read and discards the old account snapshot[32m 21[2mms[22m[39m
+ [32m✓[39m tests/components/rakeback-readiness.test.tsx[2m > [22mRakebackPage bounded discovery and request ownership[2m > [22mdoes not publish a prior account claim completion into the new account[32m 22[2mms[22m[39m
+ [32m✓[39m tests/components/rakeback-readiness.test.tsx[2m > [22mRakebackPage bounded discovery and request ownership[2m > [22mdoes not publish a prior account claim completion into the new account[32m 28[2mms[22m[39m
+ [32m✓[39m tests/components/rakeback-readiness.test.tsx[2m > [22mRakebackPage bounded discovery and request ownership[2m > [22mlabels the latest period rate accurately for null[32m 10[2mms[22m[39m
+ [32m✓[39m tests/components/rakeback-readiness.test.tsx[2m > [22mRakebackPage bounded discovery and request ownership[2m > [22mlabels the latest period rate accurately for undefined[32m 8[2mms[22m[39m
+ [32m✓[39m tests/components/rakeback-readiness.test.tsx[2m > [22mRakebackPage bounded discovery and request ownership[2m > [22mlabels the latest period rate accurately for NaN[32m 9[2mms[22m[39m
+ [32m✓[39m tests/components/rakeback-readiness.test.tsx[2m > [22mRakebackPage bounded discovery and request ownership[2m > [22mlabels the latest period rate accurately for Infinity[32m 6[2mms[22m[39m
+ [32m✓[39m tests/components/rakeback-readiness.test.tsx[2m > [22mRakebackPage bounded discovery and request ownership[2m > [22mlabels the latest period rate accurately for 0[32m 12[2mms[22m[39m
+ [32m✓[39m tests/components/rakeback-readiness.test.tsx[2m > [22mRakebackPage bounded discovery and request ownership[2m > [22mshows an unavailable latest rate when there are no periods[32m 5[2mms[22m[39m
+ [32m✓[39m tests/components/rakeback-readiness.test.tsx[2m > [22mRakebackPage bounded discovery and request ownership[2m > [22mretries an actual Supabase 40P01 result and reports only its later confirmed payout[32m 12[2mms[22m[39m
+ [32m✓[39m tests/components/rakeback-readiness.test.tsx[2m > [22mRakebackPage bounded discovery and request ownership[2m > [22mbounds exhausted database errors to two retries and never claims payment[32m 15[2mms[22m[39m
+ [32m✓[39m tests/components/rakeback-readiness.test.tsx[2m > [22mRakebackPage bounded discovery and request ownership[2m > [22mdoes not retry an authentication refusal[32m 19[2mms[22m[39m
+ [32m✓[39m tests/components/rakeback-readiness.test.tsx[2m > [22mRakebackPage bounded discovery and request ownership[2m > [22mcancels the old account retry before another RPC can use the new session[32m 47[2mms[22m[39m
+ [32m✓[39m tests/components/rakeback-readiness.test.tsx[2m > [22mRakebackPage uncertain transport outcomes[2m > [22mdoes not deny an earlier payment when a lost response is followed by a zero retry[32m 21[2mms[22m[39m
+ [32m✓[39m tests/components/rakeback-readiness.test.tsx[2m > [22mRakebackPage uncertain transport outcomes[2m > [22mrefreshes an exhausted lost-response attempt without asserting whether money moved[32m 25[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m44 passed[39m[22m[90m (44)[39m
+[2m   Start at [22m 01:42:21
+[2m   Duration [22m 4.08s[2m (transform 539ms, setup 658ms, import 580ms, tests 1.06s, environment 1.34s)[22m
+

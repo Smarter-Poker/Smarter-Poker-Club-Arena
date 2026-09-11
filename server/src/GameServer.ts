@@ -40,9 +40,11 @@ import { HorseFleetManager } from './services/HorseFleetManager.js';
 import { ClusterController } from './cluster/ClusterController.js';
 import { clusterMetrics } from './cluster/ClusterMetrics.js';
 import {
+  HorseTopUpPass,
   TournamentRecurringService,
   mttPrestartHorseTarget,
   MTT_PRESTART_RAMP_MS,
+  MTT_PRESTART_TICK_MS,
   seatFirstStartStalled,
   SEAT_FIRST_START_STALL_MS,
 } from './services/TournamentRecurringService.js';
@@ -188,6 +190,35 @@ export { TournamentManager };
 
 const TABLE_DISCOVERY_INTERVAL = 5000; // Check for new tables every 5 seconds
 const TOURNAMENT_DISCOVERY_INTERVAL = 5000; // Check for tournaments every 5 seconds
+/**
+ * Past-start horse top-ups one discovery pass runs at once (2026-09-11). With
+ * the fleet held once per pass (HorseTopUpPass) a top-up that seats nobody is
+ * 3-7 short sequential reads (0.35-0.8 s at ~110 ms a round trip), so four
+ * side by side walk the 150-200 boards that are due after a thaw in 13-40 s,
+ * where one at a time took 8-10 minutes at 2.6 s apiece. The seat-first fast
+ * lane already runs its fills side by side, one job per partial board
+ * (fillPartialSeatFirstGame).
+ *
+ * FOUR, NOT EIGHT. Since 20260910173147 a horse seat or registration takes the
+ * platform lane G shared and only its own tournament's lane T(id) exclusively,
+ * and a hand settlement takes B and its own T shared, never G: seats on
+ * different boards no longer queue behind each other, and no hand waits for a
+ * seat on a board that has not started. What still waits is a terminal
+ * authority, which takes G exclusively and so waits for the LONGEST seat in
+ * flight while every later seat purchase queues behind it, and the :53 break
+ * announcement, which waits for every entry door holding the maintenance
+ * boundary. Each seat run beside another lengthens both waits, and each top-up
+ * run beside another may claim from answers that one has just changed - the
+ * cash-room reserve is enforced by nobody but pickFreeHorses. Eight would save
+ * 7-20 s on a thaw pass; four halves that exposure.
+ */
+const PAST_START_TOP_UP_CONCURRENCY = 4;
+/**
+ * The longest a short past-start event waits between top-ups once they keep
+ * coming back empty: what one pass took before 2026-09-11. See the past-start
+ * branch of discoverTournaments for the backoff that reaches it.
+ */
+const PAST_START_TOP_UP_MAX_INTERVAL_MS = 10 * 60 * 1000;
 /** C19's 40ms start stagger, applied to RUNNING re-adoption as well. */
 const TOURNAMENT_RESUME_STAGGER_MS = 40;
 /**
@@ -1442,6 +1473,13 @@ export class GameServer {
    * is polling on its own clock anyway.
    */
   private lastMttRampAt: Map<string, number> = new Map();
+  /**
+   * When each REGISTERING event was last topped up past its start, and how many
+   * top-ups in a row came back empty (2026-09-11). The branch never had a
+   * throttle of its own - the pass was the throttle - and the pass is now
+   * seconds long. Pruned with lastMttRampAt.
+   */
+  private pastStartTopUpClock: Map<string, { at: number; misses: number }> = new Map();
   /**
    * When each seat-first game was FIRST seen holding every seat it sells.
    *
@@ -4954,6 +4992,12 @@ export class GameServer {
   private async discoverTournaments(): Promise<void> {
     const generation = this.lifecycleGeneration;
     while (this.directAdmissionIsCurrent(generation)) {
+      /* The past-start top-ups this pass launches beside its walk (see the
+         past-start branch below). Declared outside the try so that a pass
+         which throws part-way still waits for them after the catch: no top-up
+         outlives its pass, and the next pass never runs its own cap on top of
+         a previous pass's stragglers. */
+      const pastStartTopUps = new Set<Promise<void>>();
       try {
         // Find REGISTERING tournaments ready to start
         const registeringReadAt = Date.now();
@@ -4996,6 +5040,17 @@ export class GameServer {
           (t) => t.variant === 'spin' || (t.variant === 'sng' && Number(t.max_players) <= 2)
         );
         const paidSeatsByTournament = await this.readSeatFirstPaidSeats(seatFirstRows);
+
+        /* ONE FLEET READ PER PASS, AND THE TOP-UPS BESIDE THE WALK (2026-09-11).
+           Every top-up below re-read the fleet, its load, the cash-room reserve
+           and a club's whole membership, then ran to completion before the next
+           row: ~2.6 s apiece against ~200 short boards, so a pass took 8-10
+           minutes and the start branch below waited for it on every row. The
+           pass now holds those reads once (HorseTopUpPass), and past-start
+           top-ups run PAST_START_TOP_UP_CONCURRENCY at a time while the walk
+           goes on deciding starts. The pass waits for all of them after the
+           walk, so the next board read sees whatever they seated. */
+        const topUpPass = new HorseTopUpPass();
 
         for (const tournament of registering || []) {
           if (!this.directAdmissionIsCurrent(generation)) break;
@@ -5085,7 +5140,8 @@ export class GameServer {
                 this.lastMttRampAt.set(tournament.id, now);
                 const rampAdded = await this.tournamentRecurring.topUpWithHorses(
                   tournament.id,
-                  rampTarget
+                  rampTarget,
+                  { pass: topUpPass }
                 );
                 if (rampAdded > 0) {
                   console.log(
@@ -5115,11 +5171,51 @@ export class GameServer {
              */
             const target = tournament.max_players > 0 ? tournament.max_players : minPlayers;
 
-            const added = await this.tournamentRecurring.topUpWithHorses(tournament.id, target);
-            if (added > 0) {
-              console.log(
-                `[GameServer] Filled "${tournament.name}" with ${added} player(s) toward ${target} seats - running it instead of cancelling`
-              );
+            /* At most every 45 s (the ramp's MTT_PRESTART_TICK_MS), and an event
+               that keeps coming back empty is asked half as often each time, up
+               to PAST_START_TOP_UP_MAX_INTERVAL_MS - the same backoff
+               fillPartialSeatFirstGame applies, for the same reason: every ask
+               is reads, and a seat RPC that is refused has still taken its
+               tournament's lane, the horse's missions lock and the maintenance
+               boundary. A pass of seconds would otherwise re-ask every board
+               every few seconds. */
+            const clock = this.pastStartTopUpClock.get(tournament.id);
+            const misses = clock?.misses ?? 0;
+            const every = Math.min(
+              MTT_PRESTART_TICK_MS * 2 ** Math.min(misses, 4),
+              PAST_START_TOP_UP_MAX_INTERVAL_MS
+            );
+            if (!clock || now - clock.at >= every) {
+              while (pastStartTopUps.size >= PAST_START_TOP_UP_CONCURRENCY) {
+                await Promise.race(pastStartTopUps);
+              }
+              // Waiting for a slot can outlast the checks at the top of the
+              // loop. A top-up that never ran does not spend the event's turn,
+              // so the clock is set only once it is launched.
+              if (!this.directAdmissionIsCurrent(generation) || isMaintenanceFrozen()) continue;
+              this.pastStartTopUpClock.set(tournament.id, { at: now, misses });
+              const topUp: Promise<void> = this.tournamentRecurring
+                .topUpWithHorses(tournament.id, target, { pass: topUpPass })
+                .then((added) => {
+                  this.pastStartTopUpClock.set(tournament.id, {
+                    at: now,
+                    misses: added > 0 ? 0 : misses + 1,
+                  });
+                  if (added > 0) {
+                    console.log(
+                      `[GameServer] Filled "${tournament.name}" with ${added} player(s) toward ${target} seats - running it instead of cancelling`
+                    );
+                  }
+                })
+                .catch((err) =>
+                  reportError(err, 'GameServer.past_start_top_up_failed', {
+                    tournamentId: String(tournament.id),
+                  })
+                )
+                .finally(() => {
+                  pastStartTopUps.delete(topUp);
+                });
+              pastStartTopUps.add(topUp);
             }
             // Re-evaluate on the next discovery pass with the refreshed count.
             continue;
@@ -5208,6 +5304,10 @@ export class GameServer {
             );
           }
         }
+
+        // Every top-up this pass launched finishes inside it: the next board
+        // read must see what they seated, and none may outlive the walk.
+        await Promise.allSettled([...pastStartTopUps]);
 
         /**
          * ── FULLY PAID BUT NEVER STARTED (2026-08-24 audit, P2-7) ──
@@ -5322,10 +5422,17 @@ export class GameServer {
         // The ramp map only ever holds tournaments still in REGISTERING.
         // Without this it grows by every event the engine has ever seen and
         // is never freed for the life of the process.
-        if (this.lastMttRampAt.size > 0 || spinLaunchParks.size > 0) {
+        if (
+          this.lastMttRampAt.size > 0 ||
+          this.pastStartTopUpClock.size > 0 ||
+          spinLaunchParks.size > 0
+        ) {
           const stillRegistering = new Set((registering || []).map((r) => String(r.id)));
           for (const id of this.lastMttRampAt.keys()) {
             if (!stillRegistering.has(id)) this.lastMttRampAt.delete(id);
+          }
+          for (const id of this.pastStartTopUpClock.keys()) {
+            if (!stillRegistering.has(id)) this.pastStartTopUpClock.delete(id);
           }
           // The park registry is bounded the same way (2026-09-10): a park
           // gates a 'start', and a Spin that has left REGISTERING (RUNNING,
@@ -5860,6 +5967,9 @@ export class GameServer {
       } catch (err) {
         reportError(err, 'GameServer.Tournament_discovery_error');
       }
+      // Empty unless the walk threw before its own drain. Each top-up reports
+      // its own failure; this only makes the pass wait for it.
+      await Promise.allSettled([...pastStartTopUps]);
 
       await this.sleep(TOURNAMENT_DISCOVERY_INTERVAL);
     }

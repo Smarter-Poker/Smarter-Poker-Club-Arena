@@ -12,10 +12,7 @@
     {
       "acl": "{postgres=X/postgres,service_role=X/postgres}",
       "owner": "postgres",
-      "config": [
-        "search_path=public",
-        "statement_timeout=30s"
-      ],
+      "config": ["search_path=public", "statement_timeout=30s"],
       "body_md5": "0ee879b64942c1a1b73643e34dc62e39",
       "function": "fn_settle_tournament_places(uuid,uuid)",
       "securityDefiner": true
@@ -23,10 +20,7 @@
     {
       "acl": "{postgres=X/postgres}",
       "owner": "postgres",
-      "config": [
-        "search_path=pg_catalog, public, pg_temp",
-        "TimeZone=UTC"
-      ],
+      "config": ["search_path=pg_catalog, public, pg_temp", "TimeZone=UTC"],
       "body_md5": "3c525ec1bccfe36fe4306b3a62e33e60",
       "function": "fn_ca_legacy_tournament_finish_witness(uuid)",
       "securityDefiner": true
@@ -34,9 +28,7 @@
     {
       "acl": null,
       "owner": "postgres",
-      "config": [
-        "search_path=public, pg_temp"
-      ],
+      "config": ["search_path=public, pg_temp"],
       "body_md5": "0ba018bb1781aff4ffc0af13596c716c",
       "function": "fn_refuse_new_entries_while_frozen()",
       "securityDefiner": false
@@ -44,9 +36,7 @@
     {
       "acl": null,
       "owner": "postgres",
-      "config": [
-        "search_path=public, pg_temp"
-      ],
+      "config": ["search_path=public, pg_temp"],
       "body_md5": "db707f33692fd511fde2352a98780ebc",
       "function": "fn_ca_legacy_round3_wallet_receipt()",
       "securityDefiner": true
@@ -54,10 +44,7 @@
     {
       "acl": "{postgres=X/postgres}",
       "owner": "postgres",
-      "config": [
-        "search_path=pg_catalog, public, pg_temp",
-        "TimeZone=UTC"
-      ],
+      "config": ["search_path=pg_catalog, public, pg_temp", "TimeZone=UTC"],
       "body_md5": "5273bda4358072fc67f87b0804dd702e",
       "function": "fn_ca_legacy_finish_source_rows(uuid)",
       "securityDefiner": true
@@ -65,10 +52,7 @@
     {
       "acl": "{postgres=X/postgres}",
       "owner": "postgres",
-      "config": [
-        "search_path=pg_catalog, public, pg_temp",
-        "TimeZone=UTC"
-      ],
+      "config": ["search_path=pg_catalog, public, pg_temp", "TimeZone=UTC"],
       "body_md5": "9b20991663c50580c5e86fe17ec7b013",
       "function": "fn_ca_guard_legacy_finish_evidence()",
       "securityDefiner": true
@@ -76,10 +60,7 @@
     {
       "acl": "{postgres=X/postgres}",
       "owner": "postgres",
-      "config": [
-        "search_path=pg_catalog, public, pg_temp",
-        "TimeZone=UTC"
-      ],
+      "config": ["search_path=pg_catalog, public, pg_temp", "TimeZone=UTC"],
       "body_md5": "78bc131e70a9a57e1130b7f29beff543",
       "function": "fn_ca_legacy_finish_sealed_witness(uuid)",
       "securityDefiner": true
@@ -87,10 +68,7 @@
     {
       "acl": "{postgres=X/postgres}",
       "owner": "postgres",
-      "config": [
-        "search_path=pg_catalog, public, pg_temp",
-        "TimeZone=UTC"
-      ],
+      "config": ["search_path=pg_catalog, public, pg_temp", "TimeZone=UTC"],
       "body_md5": "f83563471a3ef99ce21989516f6fcb31",
       "function": "fn_ca_legacy_finish_standings_are_exact(uuid)",
       "securityDefiner": true
@@ -98,10 +76,7 @@
     {
       "acl": "{postgres=X/postgres}",
       "owner": "postgres",
-      "config": [
-        "search_path=pg_catalog, public, pg_temp",
-        "TimeZone=UTC"
-      ],
+      "config": ["search_path=pg_catalog, public, pg_temp", "TimeZone=UTC"],
       "body_md5": "ff4668bd085d046fa24adbb88e4e7be1",
       "function": "fn_ca_legacy_finish_must_close()",
       "securityDefiner": true
@@ -121,15 +96,13 @@
     {
       "acl": "{postgres=X/postgres}",
       "owner": "postgres",
-      "config": [
-        "search_path=public, pg_temp"
-      ],
+      "config": ["search_path=public, pg_temp"],
       "body_md5": "c13263e1ba4d0c5e28380b894cb2e74d",
       "function": "fn_ca_verify_terminal_place_batch(uuid,boolean)",
       "securityDefiner": true
     }
   ],
-  "sourceRaceWaitSeconds": 2.0093549170414917,
+  "sourceRaceWaitSeconds": 2.019356541975867,
   "eligibleCashEvents": 21,
   "completed": 21,
   "originalCohortCount": 28,
@@ -180,9 +153,9 @@
       "rake": {
         "amount": 2.0,
         "attributed": true,
-        "settled_at": "2026-09-11T17:13:46.588238+00:00",
+        "settled_at": "2026-09-11T19:34:19.941728+00:00",
         "destination": "club_treasury:2a1132b9-5ba2-42e6-9f01-30a7fcffebe3",
-        "attributed_at": "2026-09-11T17:13:46.588238+00:00",
+        "attributed_at": "2026-09-11T19:34:19.941728+00:00",
         "attributed_users": 2
       },
       "bounty": {
@@ -192,7 +165,7 @@
         "residual": 0
       },
       "escrow": {
-        "closed_at": "2026-09-11T17:13:46.588238+00:00",
+        "closed_at": "2026-09-11T19:34:19.941728+00:00",
         "close_note": "terminal receipt: exact zero",
         "fee_balance": 0.0,
         "prize_balance": 0.0,
@@ -207,7 +180,7 @@
         }
       ],
       "winner_id": "46887b99-8cd6-45db-861c-ad24232efbfe",
-      "settled_at": "2026-09-11T17:13:46.588238+00:00",
+      "settled_at": "2026-09-11T19:34:19.941728+00:00",
       "deal_shares": [],
       "fully_settled": true,
       "table_closure": {
@@ -215,12 +188,8 @@
           "e719aa73-6f05-4e02-b9d7-46335f4ee011",
           "f41b60f1-5b98-47c6-939f-f1bbb3f93632"
         ],
-        "closed_table_ids": [
-          "c2188a4f-5621-43e2-9fbb-0f5cd00b39d4"
-        ],
-        "released_seat_ids": [
-          "e719aa73-6f05-4e02-b9d7-46335f4ee011"
-        ],
+        "closed_table_ids": ["c2188a4f-5621-43e2-9fbb-0f5cd00b39d4"],
+        "released_seat_ids": ["e719aa73-6f05-4e02-b9d7-46335f4ee011"],
         "source_seat_count": 2,
         "closed_table_count": 1,
         "released_seat_count": 1
@@ -267,9 +236,9 @@
       "rake": {
         "amount": 0.5,
         "attributed": true,
-        "settled_at": "2026-09-11T17:13:46.729818+00:00",
+        "settled_at": "2026-09-11T19:34:20.062404+00:00",
         "destination": "union:fade0000-0000-0000-0000-000000000001",
-        "attributed_at": "2026-09-11T17:13:46.729818+00:00",
+        "attributed_at": "2026-09-11T19:34:20.062404+00:00",
         "attributed_users": 2
       },
       "bounty": {
@@ -279,7 +248,7 @@
         "residual": 0
       },
       "escrow": {
-        "closed_at": "2026-09-11T17:13:46.729818+00:00",
+        "closed_at": "2026-09-11T19:34:20.062404+00:00",
         "close_note": "terminal receipt: exact zero",
         "fee_balance": 0.0,
         "prize_balance": 0.0,
@@ -294,7 +263,7 @@
         }
       ],
       "winner_id": "e5a834e5-bae7-4acd-8be9-a3c995a52395",
-      "settled_at": "2026-09-11T17:13:46.729818+00:00",
+      "settled_at": "2026-09-11T19:34:20.062404+00:00",
       "deal_shares": [],
       "fully_settled": true,
       "table_closure": {
@@ -302,12 +271,8 @@
           "5d6bf250-2526-4893-a117-9e164b754d2e",
           "b728a12e-a11a-4640-9d7b-4672b580160f"
         ],
-        "closed_table_ids": [
-          "d58ff444-22bc-496a-9d7f-d0e13706910a"
-        ],
-        "released_seat_ids": [
-          "5d6bf250-2526-4893-a117-9e164b754d2e"
-        ],
+        "closed_table_ids": ["d58ff444-22bc-496a-9d7f-d0e13706910a"],
+        "released_seat_ids": ["5d6bf250-2526-4893-a117-9e164b754d2e"],
         "source_seat_count": 2,
         "closed_table_count": 1,
         "released_seat_count": 1
@@ -354,9 +319,9 @@
       "rake": {
         "amount": 24.0,
         "attributed": true,
-        "settled_at": "2026-09-11T17:13:46.870827+00:00",
+        "settled_at": "2026-09-11T19:34:20.182548+00:00",
         "destination": "union:fade0000-0000-0000-0000-000000000001",
-        "attributed_at": "2026-09-11T17:13:46.870827+00:00",
+        "attributed_at": "2026-09-11T19:34:20.182548+00:00",
         "attributed_users": 3
       },
       "bounty": {
@@ -366,7 +331,7 @@
         "residual": 0
       },
       "escrow": {
-        "closed_at": "2026-09-11T17:13:46.870827+00:00",
+        "closed_at": "2026-09-11T19:34:20.182548+00:00",
         "close_note": "terminal receipt: exact zero",
         "fee_balance": 0.0,
         "prize_balance": 0.0,
@@ -381,7 +346,7 @@
         }
       ],
       "winner_id": "aef849b8-2906-4dc0-b108-251710e76d3c",
-      "settled_at": "2026-09-11T17:13:46.870827+00:00",
+      "settled_at": "2026-09-11T19:34:20.182548+00:00",
       "deal_shares": [],
       "fully_settled": true,
       "table_closure": {
@@ -390,12 +355,8 @@
           "8b786212-a6e2-4fb2-934f-45cfdb2bb5f5",
           "fd0e0c3a-1efa-4262-8122-4c05e328f9ac"
         ],
-        "closed_table_ids": [
-          "6eaddeaf-1511-4265-bb38-37811ae82ad9"
-        ],
-        "released_seat_ids": [
-          "fd0e0c3a-1efa-4262-8122-4c05e328f9ac"
-        ],
+        "closed_table_ids": ["6eaddeaf-1511-4265-bb38-37811ae82ad9"],
+        "released_seat_ids": ["fd0e0c3a-1efa-4262-8122-4c05e328f9ac"],
         "source_seat_count": 3,
         "closed_table_count": 1,
         "released_seat_count": 1
@@ -442,9 +403,9 @@
       "rake": {
         "amount": 2.5,
         "attributed": true,
-        "settled_at": "2026-09-11T17:13:47.015725+00:00",
+        "settled_at": "2026-09-11T19:34:20.315544+00:00",
         "destination": "club_treasury:2a1132b9-5ba2-42e6-9f01-30a7fcffebe3",
-        "attributed_at": "2026-09-11T17:13:47.015725+00:00",
+        "attributed_at": "2026-09-11T19:34:20.315544+00:00",
         "attributed_users": 2
       },
       "bounty": {
@@ -454,7 +415,7 @@
         "residual": 0
       },
       "escrow": {
-        "closed_at": "2026-09-11T17:13:47.015725+00:00",
+        "closed_at": "2026-09-11T19:34:20.315544+00:00",
         "close_note": "terminal receipt: exact zero",
         "fee_balance": 0.0,
         "prize_balance": 0.0,
@@ -469,7 +430,7 @@
         }
       ],
       "winner_id": "4bdebc9a-65b1-4c5b-8f6c-012b9c31b4fe",
-      "settled_at": "2026-09-11T17:13:47.015725+00:00",
+      "settled_at": "2026-09-11T19:34:20.315544+00:00",
       "deal_shares": [],
       "fully_settled": true,
       "table_closure": {
@@ -477,12 +438,8 @@
           "985b94e1-15cd-42e4-add7-ad4cc8864b54",
           "d8670d5c-71ea-4fb2-960d-4496d9ddb0ee"
         ],
-        "closed_table_ids": [
-          "28ce5f90-a050-436f-ae98-cfa13bad9f96"
-        ],
-        "released_seat_ids": [
-          "d8670d5c-71ea-4fb2-960d-4496d9ddb0ee"
-        ],
+        "closed_table_ids": ["28ce5f90-a050-436f-ae98-cfa13bad9f96"],
+        "released_seat_ids": ["d8670d5c-71ea-4fb2-960d-4496d9ddb0ee"],
         "source_seat_count": 2,
         "closed_table_count": 1,
         "released_seat_count": 1
@@ -529,9 +486,9 @@
       "rake": {
         "amount": 5.0,
         "attributed": true,
-        "settled_at": "2026-09-11T17:13:47.152587+00:00",
+        "settled_at": "2026-09-11T19:34:20.43268+00:00",
         "destination": "union:fade0000-0000-0000-0000-000000000001",
-        "attributed_at": "2026-09-11T17:13:47.152587+00:00",
+        "attributed_at": "2026-09-11T19:34:20.43268+00:00",
         "attributed_users": 2
       },
       "bounty": {
@@ -541,7 +498,7 @@
         "residual": 0
       },
       "escrow": {
-        "closed_at": "2026-09-11T17:13:47.152587+00:00",
+        "closed_at": "2026-09-11T19:34:20.43268+00:00",
         "close_note": "terminal receipt: exact zero",
         "fee_balance": 0.0,
         "prize_balance": 0.0,
@@ -556,7 +513,7 @@
         }
       ],
       "winner_id": "57d5af45-0b1c-417c-bc41-64ca9fd1b4b9",
-      "settled_at": "2026-09-11T17:13:47.152587+00:00",
+      "settled_at": "2026-09-11T19:34:20.43268+00:00",
       "deal_shares": [],
       "fully_settled": true,
       "table_closure": {
@@ -564,12 +521,8 @@
           "12460fdb-55b4-48f3-ad7e-68c33247b65f",
           "156b9a40-38f8-4387-bb07-37cc65b65a2a"
         ],
-        "closed_table_ids": [
-          "7f93a0e8-f75f-4e7b-b7ee-b2daff488eff"
-        ],
-        "released_seat_ids": [
-          "12460fdb-55b4-48f3-ad7e-68c33247b65f"
-        ],
+        "closed_table_ids": ["7f93a0e8-f75f-4e7b-b7ee-b2daff488eff"],
+        "released_seat_ids": ["12460fdb-55b4-48f3-ad7e-68c33247b65f"],
         "source_seat_count": 2,
         "closed_table_count": 1,
         "released_seat_count": 1
@@ -616,9 +569,9 @@
       "rake": {
         "amount": 0.48,
         "attributed": true,
-        "settled_at": "2026-09-11T17:13:47.2977+00:00",
+        "settled_at": "2026-09-11T19:34:20.553924+00:00",
         "destination": "union:fade0000-0000-0000-0000-000000000001",
-        "attributed_at": "2026-09-11T17:13:47.2977+00:00",
+        "attributed_at": "2026-09-11T19:34:20.553924+00:00",
         "attributed_users": 3
       },
       "bounty": {
@@ -628,7 +581,7 @@
         "residual": 0
       },
       "escrow": {
-        "closed_at": "2026-09-11T17:13:47.2977+00:00",
+        "closed_at": "2026-09-11T19:34:20.553924+00:00",
         "close_note": "terminal receipt: exact zero",
         "fee_balance": 0.0,
         "prize_balance": 0.0,
@@ -643,7 +596,7 @@
         }
       ],
       "winner_id": "00000000-0000-0000-0000-000000000028",
-      "settled_at": "2026-09-11T17:13:47.2977+00:00",
+      "settled_at": "2026-09-11T19:34:20.553924+00:00",
       "deal_shares": [],
       "fully_settled": true,
       "table_closure": {
@@ -652,12 +605,8 @@
           "38ee3fad-bb95-4416-9e62-47f7bc81089d",
           "a0262abc-2cf1-4729-b64f-b77317c7616a"
         ],
-        "closed_table_ids": [
-          "e039d37d-3b04-4fca-9f2c-116adaa0b3e9"
-        ],
-        "released_seat_ids": [
-          "38ee3fad-bb95-4416-9e62-47f7bc81089d"
-        ],
+        "closed_table_ids": ["e039d37d-3b04-4fca-9f2c-116adaa0b3e9"],
+        "released_seat_ids": ["38ee3fad-bb95-4416-9e62-47f7bc81089d"],
         "source_seat_count": 3,
         "closed_table_count": 1,
         "released_seat_count": 1
@@ -704,9 +653,9 @@
       "rake": {
         "amount": 2.0,
         "attributed": true,
-        "settled_at": "2026-09-11T17:13:47.445933+00:00",
+        "settled_at": "2026-09-11T19:34:20.68094+00:00",
         "destination": "union:fade0000-0000-0000-0000-000000000001",
-        "attributed_at": "2026-09-11T17:13:47.445933+00:00",
+        "attributed_at": "2026-09-11T19:34:20.68094+00:00",
         "attributed_users": 2
       },
       "bounty": {
@@ -716,7 +665,7 @@
         "residual": 0
       },
       "escrow": {
-        "closed_at": "2026-09-11T17:13:47.445933+00:00",
+        "closed_at": "2026-09-11T19:34:20.68094+00:00",
         "close_note": "terminal receipt: exact zero",
         "fee_balance": 0.0,
         "prize_balance": 0.0,
@@ -731,7 +680,7 @@
         }
       ],
       "winner_id": "56315bf9-8a2b-4625-9e53-c7fe4bde9a8c",
-      "settled_at": "2026-09-11T17:13:47.445933+00:00",
+      "settled_at": "2026-09-11T19:34:20.68094+00:00",
       "deal_shares": [],
       "fully_settled": true,
       "table_closure": {
@@ -739,12 +688,8 @@
           "0007a05a-9b97-48e3-b1fd-c40c11d93660",
           "116038c4-c4c9-4855-a61a-1c54febd5841"
         ],
-        "closed_table_ids": [
-          "64f0ee4f-621f-4fae-8ce7-e6a7cff961e1"
-        ],
-        "released_seat_ids": [
-          "0007a05a-9b97-48e3-b1fd-c40c11d93660"
-        ],
+        "closed_table_ids": ["64f0ee4f-621f-4fae-8ce7-e6a7cff961e1"],
+        "released_seat_ids": ["0007a05a-9b97-48e3-b1fd-c40c11d93660"],
         "source_seat_count": 2,
         "closed_table_count": 1,
         "released_seat_count": 1
@@ -791,9 +736,9 @@
       "rake": {
         "amount": 0.48,
         "attributed": true,
-        "settled_at": "2026-09-11T17:13:47.585657+00:00",
+        "settled_at": "2026-09-11T19:34:20.801208+00:00",
         "destination": "union:fade0000-0000-0000-0000-000000000001",
-        "attributed_at": "2026-09-11T17:13:47.585657+00:00",
+        "attributed_at": "2026-09-11T19:34:20.801208+00:00",
         "attributed_users": 3
       },
       "bounty": {
@@ -803,7 +748,7 @@
         "residual": 0
       },
       "escrow": {
-        "closed_at": "2026-09-11T17:13:47.585657+00:00",
+        "closed_at": "2026-09-11T19:34:20.801208+00:00",
         "close_note": "terminal receipt: exact zero",
         "fee_balance": 0.0,
         "prize_balance": 0.0,
@@ -818,7 +763,7 @@
         }
       ],
       "winner_id": "3d85f161-27ce-45f4-b94b-1d42c62252af",
-      "settled_at": "2026-09-11T17:13:47.585657+00:00",
+      "settled_at": "2026-09-11T19:34:20.801208+00:00",
       "deal_shares": [],
       "fully_settled": true,
       "table_closure": {
@@ -827,12 +772,8 @@
           "a77d4d64-6231-41f4-80b5-ff4bfcaf1298",
           "dd1d0005-dce1-46ad-bd5d-20388bd91fe7"
         ],
-        "closed_table_ids": [
-          "776bbc54-5f2b-43b2-877c-2c6250a6b654"
-        ],
-        "released_seat_ids": [
-          "116e319b-9214-463c-b5f7-e7e68c8bc499"
-        ],
+        "closed_table_ids": ["776bbc54-5f2b-43b2-877c-2c6250a6b654"],
+        "released_seat_ids": ["116e319b-9214-463c-b5f7-e7e68c8bc499"],
         "source_seat_count": 3,
         "closed_table_count": 1,
         "released_seat_count": 1
@@ -879,9 +820,9 @@
       "rake": {
         "amount": 10.0,
         "attributed": true,
-        "settled_at": "2026-09-11T17:13:47.735427+00:00",
+        "settled_at": "2026-09-11T19:34:20.92757+00:00",
         "destination": "union:fade0000-0000-0000-0000-000000000001",
-        "attributed_at": "2026-09-11T17:13:47.735427+00:00",
+        "attributed_at": "2026-09-11T19:34:20.92757+00:00",
         "attributed_users": 2
       },
       "bounty": {
@@ -891,7 +832,7 @@
         "residual": 0
       },
       "escrow": {
-        "closed_at": "2026-09-11T17:13:47.735427+00:00",
+        "closed_at": "2026-09-11T19:34:20.92757+00:00",
         "close_note": "terminal receipt: exact zero",
         "fee_balance": 0.0,
         "prize_balance": 0.0,
@@ -906,7 +847,7 @@
         }
       ],
       "winner_id": "00000000-0000-0000-0000-000000000012",
-      "settled_at": "2026-09-11T17:13:47.735427+00:00",
+      "settled_at": "2026-09-11T19:34:20.92757+00:00",
       "deal_shares": [],
       "fully_settled": true,
       "table_closure": {
@@ -914,12 +855,8 @@
           "3f260efc-2bae-4ccd-86f8-013477d6add2",
           "41424456-04c2-4649-9681-92b42cc6f31d"
         ],
-        "closed_table_ids": [
-          "cff5c4cd-157b-4434-98f1-11382ce795a5"
-        ],
-        "released_seat_ids": [
-          "3f260efc-2bae-4ccd-86f8-013477d6add2"
-        ],
+        "closed_table_ids": ["cff5c4cd-157b-4434-98f1-11382ce795a5"],
+        "released_seat_ids": ["3f260efc-2bae-4ccd-86f8-013477d6add2"],
         "source_seat_count": 2,
         "closed_table_count": 1,
         "released_seat_count": 1
@@ -966,9 +903,9 @@
       "rake": {
         "amount": 1.2,
         "attributed": true,
-        "settled_at": "2026-09-11T17:13:47.880538+00:00",
+        "settled_at": "2026-09-11T19:34:21.048906+00:00",
         "destination": "union:fade0000-0000-0000-0000-000000000001",
-        "attributed_at": "2026-09-11T17:13:47.880538+00:00",
+        "attributed_at": "2026-09-11T19:34:21.048906+00:00",
         "attributed_users": 3
       },
       "bounty": {
@@ -978,7 +915,7 @@
         "residual": 0
       },
       "escrow": {
-        "closed_at": "2026-09-11T17:13:47.880538+00:00",
+        "closed_at": "2026-09-11T19:34:21.048906+00:00",
         "close_note": "terminal receipt: exact zero",
         "fee_balance": 0.0,
         "prize_balance": 0.0,
@@ -993,7 +930,7 @@
         }
       ],
       "winner_id": "a04d3a50-ecaf-4baa-ba5f-c5597ae5d0cc",
-      "settled_at": "2026-09-11T17:13:47.880538+00:00",
+      "settled_at": "2026-09-11T19:34:21.048906+00:00",
       "deal_shares": [],
       "fully_settled": true,
       "table_closure": {
@@ -1002,12 +939,8 @@
           "a9ce8c9a-b3c3-479d-8c77-ea9ebffb0e1b",
           "f10b0c98-f2e9-48a7-8505-096353c3cbab"
         ],
-        "closed_table_ids": [
-          "f3daebea-36fa-494f-afcd-72c37fb80d7c"
-        ],
-        "released_seat_ids": [
-          "0547e16d-2a58-4911-a55b-eacbcc9ede48"
-        ],
+        "closed_table_ids": ["f3daebea-36fa-494f-afcd-72c37fb80d7c"],
+        "released_seat_ids": ["0547e16d-2a58-4911-a55b-eacbcc9ede48"],
         "source_seat_count": 3,
         "closed_table_count": 1,
         "released_seat_count": 1
@@ -1054,9 +987,9 @@
       "rake": {
         "amount": 0.1,
         "attributed": true,
-        "settled_at": "2026-09-11T17:13:48.042507+00:00",
+        "settled_at": "2026-09-11T19:34:21.184519+00:00",
         "destination": "union:fade0000-0000-0000-0000-000000000001",
-        "attributed_at": "2026-09-11T17:13:48.042507+00:00",
+        "attributed_at": "2026-09-11T19:34:21.184519+00:00",
         "attributed_users": 2
       },
       "bounty": {
@@ -1066,7 +999,7 @@
         "residual": 0
       },
       "escrow": {
-        "closed_at": "2026-09-11T17:13:48.042507+00:00",
+        "closed_at": "2026-09-11T19:34:21.184519+00:00",
         "close_note": "terminal receipt: exact zero",
         "fee_balance": 0.0,
         "prize_balance": 0.0,
@@ -1081,7 +1014,7 @@
         }
       ],
       "winner_id": "b661053c-f8b9-4938-ab8b-92c9e2f647c1",
-      "settled_at": "2026-09-11T17:13:48.042507+00:00",
+      "settled_at": "2026-09-11T19:34:21.184519+00:00",
       "deal_shares": [],
       "fully_settled": true,
       "table_closure": {
@@ -1089,12 +1022,8 @@
           "45682312-7b3c-4139-96c4-db7c659204bb",
           "5440780b-ad89-4953-af7f-cce18bc4fb55"
         ],
-        "closed_table_ids": [
-          "2bdf523d-24ee-476f-8622-7fad7d272593"
-        ],
-        "released_seat_ids": [
-          "5440780b-ad89-4953-af7f-cce18bc4fb55"
-        ],
+        "closed_table_ids": ["2bdf523d-24ee-476f-8622-7fad7d272593"],
+        "released_seat_ids": ["5440780b-ad89-4953-af7f-cce18bc4fb55"],
         "source_seat_count": 2,
         "closed_table_count": 1,
         "released_seat_count": 1
@@ -1141,9 +1070,9 @@
       "rake": {
         "amount": 0.2,
         "attributed": true,
-        "settled_at": "2026-09-11T17:13:48.212903+00:00",
+        "settled_at": "2026-09-11T19:34:21.329317+00:00",
         "destination": "club_treasury:2a1132b9-5ba2-42e6-9f01-30a7fcffebe3",
-        "attributed_at": "2026-09-11T17:13:48.212903+00:00",
+        "attributed_at": "2026-09-11T19:34:21.329317+00:00",
         "attributed_users": 2
       },
       "bounty": {
@@ -1153,7 +1082,7 @@
         "residual": 0
       },
       "escrow": {
-        "closed_at": "2026-09-11T17:13:48.212903+00:00",
+        "closed_at": "2026-09-11T19:34:21.329317+00:00",
         "close_note": "terminal receipt: exact zero",
         "fee_balance": 0.0,
         "prize_balance": 0.0,
@@ -1168,7 +1097,7 @@
         }
       ],
       "winner_id": "127bff9a-8483-4018-80ac-21d7f76ce5c7",
-      "settled_at": "2026-09-11T17:13:48.212903+00:00",
+      "settled_at": "2026-09-11T19:34:21.329317+00:00",
       "deal_shares": [],
       "fully_settled": true,
       "table_closure": {
@@ -1176,12 +1105,8 @@
           "0b89a948-7543-463a-9f0d-933a6e6fbc49",
           "1700f54c-b0df-4540-8764-7dff32169b74"
         ],
-        "closed_table_ids": [
-          "7b01641c-ebb5-4104-b6cc-fb9f032149e6"
-        ],
-        "released_seat_ids": [
-          "0b89a948-7543-463a-9f0d-933a6e6fbc49"
-        ],
+        "closed_table_ids": ["7b01641c-ebb5-4104-b6cc-fb9f032149e6"],
+        "released_seat_ids": ["0b89a948-7543-463a-9f0d-933a6e6fbc49"],
         "source_seat_count": 2,
         "closed_table_count": 1,
         "released_seat_count": 1
@@ -1228,9 +1153,9 @@
       "rake": {
         "amount": 2.4,
         "attributed": true,
-        "settled_at": "2026-09-11T17:13:48.350903+00:00",
+        "settled_at": "2026-09-11T19:34:21.446969+00:00",
         "destination": "union:fade0000-0000-0000-0000-000000000001",
-        "attributed_at": "2026-09-11T17:13:48.350903+00:00",
+        "attributed_at": "2026-09-11T19:34:21.446969+00:00",
         "attributed_users": 3
       },
       "bounty": {
@@ -1240,7 +1165,7 @@
         "residual": 0
       },
       "escrow": {
-        "closed_at": "2026-09-11T17:13:48.350903+00:00",
+        "closed_at": "2026-09-11T19:34:21.446969+00:00",
         "close_note": "terminal receipt: exact zero",
         "fee_balance": 0.0,
         "prize_balance": 0.0,
@@ -1255,7 +1180,7 @@
         }
       ],
       "winner_id": "62f0d4da-b736-4629-ad14-894e432d0f04",
-      "settled_at": "2026-09-11T17:13:48.350903+00:00",
+      "settled_at": "2026-09-11T19:34:21.446969+00:00",
       "deal_shares": [],
       "fully_settled": true,
       "table_closure": {
@@ -1264,12 +1189,8 @@
           "7cb55091-8234-4e44-8909-c6fe2b07674b",
           "8891791c-54ea-414c-a8c2-d825c78bb4ff"
         ],
-        "closed_table_ids": [
-          "9eef9943-11af-4819-96db-455e8e12b7ce"
-        ],
-        "released_seat_ids": [
-          "7cb55091-8234-4e44-8909-c6fe2b07674b"
-        ],
+        "closed_table_ids": ["9eef9943-11af-4819-96db-455e8e12b7ce"],
+        "released_seat_ids": ["7cb55091-8234-4e44-8909-c6fe2b07674b"],
         "source_seat_count": 3,
         "closed_table_count": 1,
         "released_seat_count": 1
@@ -1316,9 +1237,9 @@
       "rake": {
         "amount": 2.5,
         "attributed": true,
-        "settled_at": "2026-09-11T17:13:48.499994+00:00",
+        "settled_at": "2026-09-11T19:34:21.573891+00:00",
         "destination": "union:fade0000-0000-0000-0000-000000000001",
-        "attributed_at": "2026-09-11T17:13:48.499994+00:00",
+        "attributed_at": "2026-09-11T19:34:21.573891+00:00",
         "attributed_users": 2
       },
       "bounty": {
@@ -1328,7 +1249,7 @@
         "residual": 0
       },
       "escrow": {
-        "closed_at": "2026-09-11T17:13:48.499994+00:00",
+        "closed_at": "2026-09-11T19:34:21.573891+00:00",
         "close_note": "terminal receipt: exact zero",
         "fee_balance": 0.0,
         "prize_balance": 0.0,
@@ -1343,7 +1264,7 @@
         }
       ],
       "winner_id": "55ee6465-bdc1-4eb1-b7fd-7630ff315e04",
-      "settled_at": "2026-09-11T17:13:48.499994+00:00",
+      "settled_at": "2026-09-11T19:34:21.573891+00:00",
       "deal_shares": [],
       "fully_settled": true,
       "table_closure": {
@@ -1351,12 +1272,8 @@
           "060d9c8a-4b0f-43e4-8445-90c18e37b853",
           "e211dfa6-7ca5-4acd-bb15-d9464be8b435"
         ],
-        "closed_table_ids": [
-          "4fa8aec3-15f9-4a4e-96cc-832b04eda075"
-        ],
-        "released_seat_ids": [
-          "e211dfa6-7ca5-4acd-bb15-d9464be8b435"
-        ],
+        "closed_table_ids": ["4fa8aec3-15f9-4a4e-96cc-832b04eda075"],
+        "released_seat_ids": ["e211dfa6-7ca5-4acd-bb15-d9464be8b435"],
         "source_seat_count": 2,
         "closed_table_count": 1,
         "released_seat_count": 1
@@ -1403,9 +1320,9 @@
       "rake": {
         "amount": 1.2,
         "attributed": true,
-        "settled_at": "2026-09-11T17:13:48.634925+00:00",
+        "settled_at": "2026-09-11T19:34:21.689885+00:00",
         "destination": "union:fade0000-0000-0000-0000-000000000001",
-        "attributed_at": "2026-09-11T17:13:48.634925+00:00",
+        "attributed_at": "2026-09-11T19:34:21.689885+00:00",
         "attributed_users": 3
       },
       "bounty": {
@@ -1415,7 +1332,7 @@
         "residual": 0
       },
       "escrow": {
-        "closed_at": "2026-09-11T17:13:48.634925+00:00",
+        "closed_at": "2026-09-11T19:34:21.689885+00:00",
         "close_note": "terminal receipt: exact zero",
         "fee_balance": 0.0,
         "prize_balance": 0.0,
@@ -1430,7 +1347,7 @@
         }
       ],
       "winner_id": "0bb5a13b-e7e5-4f87-ad4c-d102b4f4f61e",
-      "settled_at": "2026-09-11T17:13:48.634925+00:00",
+      "settled_at": "2026-09-11T19:34:21.689885+00:00",
       "deal_shares": [],
       "fully_settled": true,
       "table_closure": {
@@ -1439,12 +1356,8 @@
           "8eace653-e76b-4906-acf8-a0cfda5eedfe",
           "af729c9e-cd7f-4e18-8a18-34533f110b3e"
         ],
-        "closed_table_ids": [
-          "5fe9bcbe-2830-4ba1-8bfc-852bafa24232"
-        ],
-        "released_seat_ids": [
-          "8eace653-e76b-4906-acf8-a0cfda5eedfe"
-        ],
+        "closed_table_ids": ["5fe9bcbe-2830-4ba1-8bfc-852bafa24232"],
+        "released_seat_ids": ["8eace653-e76b-4906-acf8-a0cfda5eedfe"],
         "source_seat_count": 3,
         "closed_table_count": 1,
         "released_seat_count": 1
@@ -1491,9 +1404,9 @@
       "rake": {
         "amount": 0.72,
         "attributed": true,
-        "settled_at": "2026-09-11T17:13:48.802574+00:00",
+        "settled_at": "2026-09-11T19:34:21.831757+00:00",
         "destination": "union:fade0000-0000-0000-0000-000000000001",
-        "attributed_at": "2026-09-11T17:13:48.802574+00:00",
+        "attributed_at": "2026-09-11T19:34:21.831757+00:00",
         "attributed_users": 3
       },
       "bounty": {
@@ -1503,7 +1416,7 @@
         "residual": 0
       },
       "escrow": {
-        "closed_at": "2026-09-11T17:13:48.802574+00:00",
+        "closed_at": "2026-09-11T19:34:21.831757+00:00",
         "close_note": "terminal receipt: exact zero",
         "fee_balance": 0.0,
         "prize_balance": 0.0,
@@ -1518,7 +1431,7 @@
         }
       ],
       "winner_id": "3fff352f-7e86-4449-8262-5fc50462195e",
-      "settled_at": "2026-09-11T17:13:48.802574+00:00",
+      "settled_at": "2026-09-11T19:34:21.831757+00:00",
       "deal_shares": [],
       "fully_settled": true,
       "table_closure": {
@@ -1527,12 +1440,8 @@
           "5dde0581-ff33-4b51-87ec-e38a93f3c7e5",
           "ac187d8a-5745-4828-ab3e-873773587e46"
         ],
-        "closed_table_ids": [
-          "961e90ad-7f40-40de-849d-327d8bd7ff73"
-        ],
-        "released_seat_ids": [
-          "5dde0581-ff33-4b51-87ec-e38a93f3c7e5"
-        ],
+        "closed_table_ids": ["961e90ad-7f40-40de-849d-327d8bd7ff73"],
+        "released_seat_ids": ["5dde0581-ff33-4b51-87ec-e38a93f3c7e5"],
         "source_seat_count": 3,
         "closed_table_count": 1,
         "released_seat_count": 1
@@ -1579,9 +1488,9 @@
       "rake": {
         "amount": 5.0,
         "attributed": true,
-        "settled_at": "2026-09-11T17:13:48.953149+00:00",
+        "settled_at": "2026-09-11T19:34:21.963357+00:00",
         "destination": "club_treasury:2a1132b9-5ba2-42e6-9f01-30a7fcffebe3",
-        "attributed_at": "2026-09-11T17:13:48.953149+00:00",
+        "attributed_at": "2026-09-11T19:34:21.963357+00:00",
         "attributed_users": 2
       },
       "bounty": {
@@ -1591,7 +1500,7 @@
         "residual": 0
       },
       "escrow": {
-        "closed_at": "2026-09-11T17:13:48.953149+00:00",
+        "closed_at": "2026-09-11T19:34:21.963357+00:00",
         "close_note": "terminal receipt: exact zero",
         "fee_balance": 0.0,
         "prize_balance": 0.0,
@@ -1606,7 +1515,7 @@
         }
       ],
       "winner_id": "b82cb704-5ea3-469e-b05a-88e768e8834c",
-      "settled_at": "2026-09-11T17:13:48.953149+00:00",
+      "settled_at": "2026-09-11T19:34:21.963357+00:00",
       "deal_shares": [],
       "fully_settled": true,
       "table_closure": {
@@ -1614,12 +1523,8 @@
           "f0844164-9bc0-4e24-955f-ce5a3f7a50ee",
           "f65c0df4-03d7-4de7-8c5a-abb32b12da07"
         ],
-        "closed_table_ids": [
-          "493c3a70-0e93-4bcb-9df7-2525348f34d6"
-        ],
-        "released_seat_ids": [
-          "f0844164-9bc0-4e24-955f-ce5a3f7a50ee"
-        ],
+        "closed_table_ids": ["493c3a70-0e93-4bcb-9df7-2525348f34d6"],
+        "released_seat_ids": ["f0844164-9bc0-4e24-955f-ce5a3f7a50ee"],
         "source_seat_count": 2,
         "closed_table_count": 1,
         "released_seat_count": 1
@@ -1666,9 +1571,9 @@
       "rake": {
         "amount": 10.0,
         "attributed": true,
-        "settled_at": "2026-09-11T17:13:49.093136+00:00",
+        "settled_at": "2026-09-11T19:34:22.079727+00:00",
         "destination": "club_treasury:2a1132b9-5ba2-42e6-9f01-30a7fcffebe3",
-        "attributed_at": "2026-09-11T17:13:49.093136+00:00",
+        "attributed_at": "2026-09-11T19:34:22.079727+00:00",
         "attributed_users": 2
       },
       "bounty": {
@@ -1678,7 +1583,7 @@
         "residual": 0
       },
       "escrow": {
-        "closed_at": "2026-09-11T17:13:49.093136+00:00",
+        "closed_at": "2026-09-11T19:34:22.079727+00:00",
         "close_note": "terminal receipt: exact zero",
         "fee_balance": 0.0,
         "prize_balance": 0.0,
@@ -1693,7 +1598,7 @@
         }
       ],
       "winner_id": "a74c2c28-c2dd-4ad0-b18f-2687eba73dba",
-      "settled_at": "2026-09-11T17:13:49.093136+00:00",
+      "settled_at": "2026-09-11T19:34:22.079727+00:00",
       "deal_shares": [],
       "fully_settled": true,
       "table_closure": {
@@ -1701,12 +1606,8 @@
           "1b5d8293-694d-4658-abac-bace64f54e9d",
           "772777bc-2ce8-4538-b244-6b4d8edaab28"
         ],
-        "closed_table_ids": [
-          "ab3bcea7-9994-45e0-a09d-711ef110bd6c"
-        ],
-        "released_seat_ids": [
-          "772777bc-2ce8-4538-b244-6b4d8edaab28"
-        ],
+        "closed_table_ids": ["ab3bcea7-9994-45e0-a09d-711ef110bd6c"],
+        "released_seat_ids": ["772777bc-2ce8-4538-b244-6b4d8edaab28"],
         "source_seat_count": 2,
         "closed_table_count": 1,
         "released_seat_count": 1
@@ -1753,9 +1654,9 @@
       "rake": {
         "amount": 0.48,
         "attributed": true,
-        "settled_at": "2026-09-11T17:13:49.228301+00:00",
+        "settled_at": "2026-09-11T19:34:22.195766+00:00",
         "destination": "union:fade0000-0000-0000-0000-000000000001",
-        "attributed_at": "2026-09-11T17:13:49.228301+00:00",
+        "attributed_at": "2026-09-11T19:34:22.195766+00:00",
         "attributed_users": 3
       },
       "bounty": {
@@ -1765,7 +1666,7 @@
         "residual": 0
       },
       "escrow": {
-        "closed_at": "2026-09-11T17:13:49.228301+00:00",
+        "closed_at": "2026-09-11T19:34:22.195766+00:00",
         "close_note": "terminal receipt: exact zero",
         "fee_balance": 0.0,
         "prize_balance": 0.0,
@@ -1780,7 +1681,7 @@
         }
       ],
       "winner_id": "3d85f161-27ce-45f4-b94b-1d42c62252af",
-      "settled_at": "2026-09-11T17:13:49.228301+00:00",
+      "settled_at": "2026-09-11T19:34:22.195766+00:00",
       "deal_shares": [],
       "fully_settled": true,
       "table_closure": {
@@ -1789,12 +1690,8 @@
           "8d1e49f5-7ed9-447c-918b-8716ee1b6edf",
           "d5048f75-e5c0-46f0-838d-e86661b00563"
         ],
-        "closed_table_ids": [
-          "9bbea1b3-d699-4c73-a610-5ffa5103b768"
-        ],
-        "released_seat_ids": [
-          "8d1e49f5-7ed9-447c-918b-8716ee1b6edf"
-        ],
+        "closed_table_ids": ["9bbea1b3-d699-4c73-a610-5ffa5103b768"],
+        "released_seat_ids": ["8d1e49f5-7ed9-447c-918b-8716ee1b6edf"],
         "source_seat_count": 3,
         "closed_table_count": 1,
         "released_seat_count": 1
@@ -1841,9 +1738,9 @@
       "rake": {
         "amount": 1.0,
         "attributed": true,
-        "settled_at": "2026-09-11T17:13:49.386203+00:00",
+        "settled_at": "2026-09-11T19:34:22.331589+00:00",
         "destination": "union:fade0000-0000-0000-0000-000000000001",
-        "attributed_at": "2026-09-11T17:13:49.386203+00:00",
+        "attributed_at": "2026-09-11T19:34:22.331589+00:00",
         "attributed_users": 2
       },
       "bounty": {
@@ -1853,7 +1750,7 @@
         "residual": 0
       },
       "escrow": {
-        "closed_at": "2026-09-11T17:13:49.386203+00:00",
+        "closed_at": "2026-09-11T19:34:22.331589+00:00",
         "close_note": "terminal receipt: exact zero",
         "fee_balance": 0.0,
         "prize_balance": 0.0,
@@ -1868,7 +1765,7 @@
         }
       ],
       "winner_id": "a621706d-e8ea-43d1-8d28-76c1d82f21a1",
-      "settled_at": "2026-09-11T17:13:49.386203+00:00",
+      "settled_at": "2026-09-11T19:34:22.331589+00:00",
       "deal_shares": [],
       "fully_settled": true,
       "table_closure": {
@@ -1876,12 +1773,8 @@
           "34fce11a-1249-4ddd-b5cc-dc19d6403e1f",
           "eff567c6-7419-42f8-96bc-7ab737c17e5b"
         ],
-        "closed_table_ids": [
-          "b0f4ef37-7bdc-4106-825a-7531da09656c"
-        ],
-        "released_seat_ids": [
-          "34fce11a-1249-4ddd-b5cc-dc19d6403e1f"
-        ],
+        "closed_table_ids": ["b0f4ef37-7bdc-4106-825a-7531da09656c"],
+        "released_seat_ids": ["34fce11a-1249-4ddd-b5cc-dc19d6403e1f"],
         "source_seat_count": 2,
         "closed_table_count": 1,
         "released_seat_count": 1
@@ -1928,9 +1821,9 @@
       "rake": {
         "amount": 0.1,
         "attributed": true,
-        "settled_at": "2026-09-11T17:13:49.544269+00:00",
+        "settled_at": "2026-09-11T19:34:22.466236+00:00",
         "destination": "club_treasury:2a1132b9-5ba2-42e6-9f01-30a7fcffebe3",
-        "attributed_at": "2026-09-11T17:13:49.544269+00:00",
+        "attributed_at": "2026-09-11T19:34:22.466236+00:00",
         "attributed_users": 2
       },
       "bounty": {
@@ -1940,7 +1833,7 @@
         "residual": 0
       },
       "escrow": {
-        "closed_at": "2026-09-11T17:13:49.544269+00:00",
+        "closed_at": "2026-09-11T19:34:22.466236+00:00",
         "close_note": "terminal receipt: exact zero",
         "fee_balance": 0.0,
         "prize_balance": 0.0,
@@ -1955,7 +1848,7 @@
         }
       ],
       "winner_id": "b832b6c4-f58c-4b53-999b-48c9fbd1ec3c",
-      "settled_at": "2026-09-11T17:13:49.544269+00:00",
+      "settled_at": "2026-09-11T19:34:22.466236+00:00",
       "deal_shares": [],
       "fully_settled": true,
       "table_closure": {
@@ -1963,12 +1856,8 @@
           "34b172e6-16e7-43ed-8cdc-40950a951996",
           "82765c47-300f-475f-933d-db34c0e6828e"
         ],
-        "closed_table_ids": [
-          "c862560d-1edd-48e3-9ea5-35ba9337f064"
-        ],
-        "released_seat_ids": [
-          "34b172e6-16e7-43ed-8cdc-40950a951996"
-        ],
+        "closed_table_ids": ["c862560d-1edd-48e3-9ea5-35ba9337f064"],
+        "released_seat_ids": ["34b172e6-16e7-43ed-8cdc-40950a951996"],
         "source_seat_count": 2,
         "closed_table_count": 1,
         "released_seat_count": 1
@@ -2099,19 +1988,19 @@
   },
   "completedHashes": {
     "tournaments": {
-      "hash": "cf44e7678d07a7ed5da3ff9397caa80e",
+      "hash": "c67761aac7f966ee6c36088a76d76bbe",
       "rows": 28
     },
     "tournament_players": {
-      "hash": "1a897a838ababd2c4127013256d646b3",
+      "hash": "6447bd4cdbbd6ca8a7fcd9dbd9a4bce3",
       "rows": 67
     },
     "tables": {
-      "hash": "b6ddf323c0d4aa426cfb329b7ffd63d9",
+      "hash": "6fa0ba3a6df9454fe0a778f94967c713",
       "rows": 28
     },
     "table_seats": {
-      "hash": "69be6b45aacc625ec1737e899d80d5e0",
+      "hash": "8d575dfd8dbdf450ddbb74764ba22101",
       "rows": 67
     },
     "settlement_idempotency_keys": {
@@ -2127,27 +2016,27 @@
       "rows": 0
     },
     "tournament_escrow": {
-      "hash": "ccb7cf6f557576b9d2c22e4190a0cff6",
+      "hash": "8f7de7dca7d860b1509d48cac65ce146",
       "rows": 28
     },
     "tournament_payouts": {
-      "hash": "0c1f8b3431c66437128c78b335464bee",
+      "hash": "47a07af7a29b3dc675cede1541854b1a",
       "rows": 21
     },
     "tournament_obligations": {
-      "hash": "1dc57d4aef765db941bebecb3980559e",
+      "hash": "38ffac30a38136a78af56ce54b67e30c",
       "rows": 21
     },
     "chip_ledger": {
-      "hash": "7177e0ba8b5682f5e344cf15c1198232",
+      "hash": "c87669b1b6e8ce4d3cbc5cc644969aed",
       "rows": 131
     },
     "wallet_transactions": {
-      "hash": "ce1daddb38ec02102287901a4bc52de8",
+      "hash": "653c6f9a306bc5ef86e7548fccd74f58",
       "rows": 88
     },
     "wallet_credit_idempotency": {
-      "hash": "c18c27de3b18886cc80726b427b1d8b5",
+      "hash": "6fb62ee8023c9acac83fc74bc3ca6f6c",
       "rows": 21
     },
     "tournament_refund_entitlements": {
@@ -2155,15 +2044,15 @@
       "rows": 67
     },
     "rake_records": {
-      "hash": "918bbbeb8a9e3ba95d0358d439e2f578",
+      "hash": "3d94bb206e53bbc70dd45b3a25314df1",
       "rows": 45
     },
     "tournament_place_settlement_batches": {
-      "hash": "7ada3979b448034abde1ed92291fde3d",
+      "hash": "b8bd1cc7e75f9a372b6d97b2f9048ece",
       "rows": 21
     },
     "tournament_terminal_settlements": {
-      "hash": "3b759ffc907092b10883be3219eaf4bc",
+      "hash": "978b81b7612d576d2e3082d239a462d7",
       "rows": 21
     },
     "managed_game_contract_versions": {
@@ -2171,23 +2060,23 @@
       "rows": 38
     },
     "club_members": {
-      "hash": "ee9977e9db549b7acf8fe9415b73805c",
+      "hash": "27514e540871644bffcbe2d321d87510",
       "rows": 64
     },
     "union_wallets": {
-      "hash": "5a0eb88a288b8db9c76ff41040164a5b",
+      "hash": "6348ff03c6b6da04c5759071b61ac2cc",
       "rows": 1
     },
     "club_wallets": {
-      "hash": "d386d061657e64bf41e1861e36e0cac4",
+      "hash": "74ff29495c03cf8b5497b7d24fbf6148",
       "rows": 4
     },
     "tournament_finish_receipts": {
-      "hash": "c47e825046a8adfd0c1a487d66f42efb",
+      "hash": "e034c712c01323be09502da1c6def5b5",
       "rows": 21
     },
     "tournament_legacy_finish_evidence": {
-      "hash": "7c79fc9e6938118edd48e5ae16b542b3",
+      "hash": "e2a07fbee7b432eeeb87febbbb9aab01",
       "rows": 21
     },
     "spin_bonus_pools": {
@@ -2201,19 +2090,19 @@
   },
   "replayHashes": {
     "tournaments": {
-      "hash": "cf44e7678d07a7ed5da3ff9397caa80e",
+      "hash": "c67761aac7f966ee6c36088a76d76bbe",
       "rows": 28
     },
     "tournament_players": {
-      "hash": "1a897a838ababd2c4127013256d646b3",
+      "hash": "6447bd4cdbbd6ca8a7fcd9dbd9a4bce3",
       "rows": 67
     },
     "tables": {
-      "hash": "b6ddf323c0d4aa426cfb329b7ffd63d9",
+      "hash": "6fa0ba3a6df9454fe0a778f94967c713",
       "rows": 28
     },
     "table_seats": {
-      "hash": "69be6b45aacc625ec1737e899d80d5e0",
+      "hash": "8d575dfd8dbdf450ddbb74764ba22101",
       "rows": 67
     },
     "settlement_idempotency_keys": {
@@ -2229,27 +2118,27 @@
       "rows": 0
     },
     "tournament_escrow": {
-      "hash": "ccb7cf6f557576b9d2c22e4190a0cff6",
+      "hash": "8f7de7dca7d860b1509d48cac65ce146",
       "rows": 28
     },
     "tournament_payouts": {
-      "hash": "0c1f8b3431c66437128c78b335464bee",
+      "hash": "47a07af7a29b3dc675cede1541854b1a",
       "rows": 21
     },
     "tournament_obligations": {
-      "hash": "1dc57d4aef765db941bebecb3980559e",
+      "hash": "38ffac30a38136a78af56ce54b67e30c",
       "rows": 21
     },
     "chip_ledger": {
-      "hash": "7177e0ba8b5682f5e344cf15c1198232",
+      "hash": "c87669b1b6e8ce4d3cbc5cc644969aed",
       "rows": 131
     },
     "wallet_transactions": {
-      "hash": "ce1daddb38ec02102287901a4bc52de8",
+      "hash": "653c6f9a306bc5ef86e7548fccd74f58",
       "rows": 88
     },
     "wallet_credit_idempotency": {
-      "hash": "c18c27de3b18886cc80726b427b1d8b5",
+      "hash": "6fb62ee8023c9acac83fc74bc3ca6f6c",
       "rows": 21
     },
     "tournament_refund_entitlements": {
@@ -2257,15 +2146,15 @@
       "rows": 67
     },
     "rake_records": {
-      "hash": "918bbbeb8a9e3ba95d0358d439e2f578",
+      "hash": "3d94bb206e53bbc70dd45b3a25314df1",
       "rows": 45
     },
     "tournament_place_settlement_batches": {
-      "hash": "7ada3979b448034abde1ed92291fde3d",
+      "hash": "b8bd1cc7e75f9a372b6d97b2f9048ece",
       "rows": 21
     },
     "tournament_terminal_settlements": {
-      "hash": "3b759ffc907092b10883be3219eaf4bc",
+      "hash": "978b81b7612d576d2e3082d239a462d7",
       "rows": 21
     },
     "managed_game_contract_versions": {
@@ -2273,23 +2162,23 @@
       "rows": 38
     },
     "club_members": {
-      "hash": "ee9977e9db549b7acf8fe9415b73805c",
+      "hash": "27514e540871644bffcbe2d321d87510",
       "rows": 64
     },
     "union_wallets": {
-      "hash": "5a0eb88a288b8db9c76ff41040164a5b",
+      "hash": "6348ff03c6b6da04c5759071b61ac2cc",
       "rows": 1
     },
     "club_wallets": {
-      "hash": "d386d061657e64bf41e1861e36e0cac4",
+      "hash": "74ff29495c03cf8b5497b7d24fbf6148",
       "rows": 4
     },
     "tournament_finish_receipts": {
-      "hash": "c47e825046a8adfd0c1a487d66f42efb",
+      "hash": "e034c712c01323be09502da1c6def5b5",
       "rows": 21
     },
     "tournament_legacy_finish_evidence": {
-      "hash": "7c79fc9e6938118edd48e5ae16b542b3",
+      "hash": "e2a07fbee7b432eeeb87febbbb9aab01",
       "rows": 21
     },
     "spin_bonus_pools": {

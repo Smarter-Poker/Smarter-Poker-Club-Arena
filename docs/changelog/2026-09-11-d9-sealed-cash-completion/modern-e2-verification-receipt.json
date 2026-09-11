@@ -1,5 +1,5 @@
 {
-  "verifiedAt": "2026-09-11T17:13:53.875610+00:00",
+  "verifiedAt": "2026-09-11T19:34:26.090755+00:00",
   "eventId": "bee519fa-ff07-438c-9542-d386fc821908",
   "mode": "D12-all-seven-guards-enabled-plus-D9-no-legacy-seal",
   "resequencingToggles": 0,
@@ -15,7 +15,7 @@
       "enforced": true,
       "gross_in": 54,
       "bounty_in": 0,
-      "closed_at": "2026-09-11T17:13:53.159516+00:00",
+      "closed_at": "2026-09-11T19:34:25.476663+00:00",
       "opened_at": "2026-09-09T22:26:12.421653+00:00",
       "prize_out": 304.0,
       "bounty_out": 0,
@@ -23,7 +23,7 @@
       "overlay_in": 250,
       "refund_fee": 0,
       "reserve_in": 0,
-      "updated_at": "2026-09-11T17:13:53.159516+00:00",
+      "updated_at": "2026-09-11T19:34:25.476663+00:00",
       "fee_balance": 0.0,
       "opened_from": "shadow at first sight (overlay)",
       "reserve_out": 0,
@@ -35,7 +35,7 @@
       "bounty_balance": 0.0,
       "fee_entries_in": 0,
       "satellite_fee_in": 0,
-      "terminal_closed_at": "2026-09-11T17:13:53.159516+00:00"
+      "terminal_closed_at": "2026-09-11T19:34:25.476663+00:00"
     },
     "status": "COMPLETED",
     "active_seats": 0,
@@ -143,28 +143,28 @@
   "idempotentTerminalReplay": {
     "unchanged": true,
     "beforeHashes": {
-      "tournament_players": "fbdb3eed33c586bc9b4ec89d141bfa98",
-      "tournament_payouts": "0e24f2ab75020a58309e96db5812d6d1",
-      "tournament_obligations": "5f7f8c5c234b4369d23d2fe4d52b133f",
-      "tournament_terminal_settlements": "56e6a161364ee7a59903ca6948d27023",
-      "tournament_escrow": "2d011bdc7435d489d09605d265af17c0",
-      "chip_ledger": "6ebef08992c70a7ed9ab2ce09340e9c8",
-      "wallet_transactions": "ef9de40aa19e764dd7f938c7b43d343a",
-      "club_members": "4ee4861df958f0319acf591be443b775",
-      "tables": "3abb0c59c8927689cc460c998268eb17",
-      "table_seats": "16c6494ee516669454453f717b88b6df"
+      "tournament_players": "7347e7e870c23dae20798f5438598ce9",
+      "tournament_payouts": "3cf33936498bd8a08e43e44da890bc02",
+      "tournament_obligations": "dc02d24bc0724dc79c4aa616d6c634d0",
+      "tournament_terminal_settlements": "97bd3b62279dc4d6d72e447de108ff49",
+      "tournament_escrow": "250ad893c39fe4129e6bd0ff62fcc5dc",
+      "chip_ledger": "f2796e2110e3698b2ca0e4037005df63",
+      "wallet_transactions": "54a033a87f8700fbf80e712de3e032db",
+      "club_members": "405ec755d71ce50159c7e31ff6daeec6",
+      "tables": "c57b205cb695eee297b76ac9cd9d5327",
+      "table_seats": "389f94a0576e2cb2da1fbeaf7319a727"
     },
     "afterHashes": {
-      "tournament_players": "fbdb3eed33c586bc9b4ec89d141bfa98",
-      "tournament_payouts": "0e24f2ab75020a58309e96db5812d6d1",
-      "tournament_obligations": "5f7f8c5c234b4369d23d2fe4d52b133f",
-      "tournament_terminal_settlements": "56e6a161364ee7a59903ca6948d27023",
-      "tournament_escrow": "2d011bdc7435d489d09605d265af17c0",
-      "chip_ledger": "6ebef08992c70a7ed9ab2ce09340e9c8",
-      "wallet_transactions": "ef9de40aa19e764dd7f938c7b43d343a",
-      "club_members": "4ee4861df958f0319acf591be443b775",
-      "tables": "3abb0c59c8927689cc460c998268eb17",
-      "table_seats": "16c6494ee516669454453f717b88b6df"
+      "tournament_players": "7347e7e870c23dae20798f5438598ce9",
+      "tournament_payouts": "3cf33936498bd8a08e43e44da890bc02",
+      "tournament_obligations": "dc02d24bc0724dc79c4aa616d6c634d0",
+      "tournament_terminal_settlements": "97bd3b62279dc4d6d72e447de108ff49",
+      "tournament_escrow": "250ad893c39fe4129e6bd0ff62fcc5dc",
+      "chip_ledger": "f2796e2110e3698b2ca0e4037005df63",
+      "wallet_transactions": "54a033a87f8700fbf80e712de3e032db",
+      "club_members": "405ec755d71ce50159c7e31ff6daeec6",
+      "tables": "c57b205cb695eee297b76ac9cd9d5327",
+      "table_seats": "389f94a0576e2cb2da1fbeaf7319a727"
     }
   }
 }

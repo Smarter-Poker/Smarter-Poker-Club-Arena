@@ -16,6 +16,9 @@ BEGIN
  IF md5((SELECT prosrc FROM pg_proc WHERE oid='public.fn_settle_tournament_places(uuid,uuid)'::regprocedure)) IS DISTINCT FROM '473f67cf3949b938f5277c89fb64edef' THEN RAISE EXCEPTION 'legacy integration source differs: fn_settle_tournament_places(uuid,uuid)'; END IF;
  IF md5((SELECT prosrc FROM pg_proc WHERE oid='public.fn_refuse_new_entries_while_frozen()'::regprocedure)) IS DISTINCT FROM 'd21668d1254e1bdb49661f6365fd9cfc' THEN RAISE EXCEPTION 'legacy integration source differs: fn_refuse_new_entries_while_frozen()'; END IF;
  IF md5((SELECT prosrc FROM pg_proc WHERE oid='public.fn_ca_verify_terminal_place_batch(uuid,boolean)'::regprocedure)) IS DISTINCT FROM '8be8c827e64ac853a562e294cd25735b' THEN RAISE EXCEPTION 'legacy integration source differs: fn_ca_verify_terminal_place_batch(uuid,boolean)'; END IF;
+ IF EXISTS(SELECT 1 FROM pg_proc WHERE oid='public.fn_ca_verify_terminal_place_batch(uuid,boolean)'::regprocedure
+  AND (proowner IS DISTINCT FROM 'postgres'::regrole OR proacl IS DISTINCT FROM ARRAY['postgres=X/postgres']::aclitem[])) THEN
+  RAISE EXCEPTION 'legacy terminal verifier private permission prerequisite differs'; END IF;
 END $legacy_source_preflight$;
 CREATE TABLE public.tournament_legacy_finish_evidence (
  tournament_id uuid PRIMARY KEY REFERENCES public.tournaments(id),
@@ -1521,4 +1524,7 @@ $exact_definition$;
  SELECT to_jsonb(p)-ARRAY['prosrc','oid'] INTO after_meta FROM pg_proc p WHERE oid='public.fn_ca_verify_terminal_place_batch(uuid,boolean)'::regprocedure;
  IF before_meta IS DISTINCT FROM after_meta THEN RAISE EXCEPTION 'legacy integration changed function metadata: fn_ca_verify_terminal_place_batch'; END IF;
 END $legacy_patch$;
+-- This body replacement preserves its existing private caller contract. The
+-- prerequisite above refuses ACL drift instead of silently removing a grant.
+REVOKE ALL ON FUNCTION public.fn_ca_verify_terminal_place_batch(uuid,boolean) FROM PUBLIC,anon,authenticated,service_role;
 COMMIT;

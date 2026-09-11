@@ -226,7 +226,7 @@ describe('EquityWorkerPool fail-closed lifecycle', () => {
     await pool.shutdown();
   });
 
-  it('bounds queue plus compute time and terminates the wedged worker', async () => {
+  it('bounds compute time from dispatch and terminates the wedged worker', async () => {
     vi.useFakeTimers();
     const worker = new FakeWorker();
     const pool = new EquityWorkerPool({
@@ -242,7 +242,9 @@ describe('EquityWorkerPool fail-closed lifecycle', () => {
 
     const pending = pool.estimateEquity(hands, [], [], 1000);
     const rejection = expect(pending).rejects.toThrow('timed out after 25ms');
-    await vi.advanceTimersByTimeAsync(25);
+    // The 25ms execution deadline, then the one poll turn of grace the pool
+    // gives an answer already on its way (a fake clock runs that turn 1ms on).
+    await vi.advanceTimersByTimeAsync(26);
     await rejection;
     expect(worker.terminateCalls).toBe(1);
     await pool.shutdown();

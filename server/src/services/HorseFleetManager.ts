@@ -1686,6 +1686,14 @@ export class HorseFleetManager {
          the switch is temporary); only the band it may SIT in moves, and only
          downward. See effectiveStakeBandFor. */
       const bandsWithAGame = new Set<HorseStakeBand>();
+      /* AND THE SAME QUESTION PER HOST (2026-09-11). A horse sits only where it
+         holds a membership, and the two hosts deal different ladders: Deep
+         Stack Society micro/low/mid/high, Midway Union micro/low/mid. The
+         platform-wide set above therefore told every Midway horse that 'high'
+         had a game, so a Midway horse assigned 'high' would never step down and
+         would be refused at every Midway table - the 2026-09-05 shape, one host
+         at a time. Same scan, same predicates, keyed by the table's club. */
+      const bandsWithAGameByHost = new Map<string, Set<HorseStakeBand>>();
       /* A DRAINING TABLE IS NOT SUPPLY (2026-09-06). The scan below excludes
          breaking, closed and disabled-game tables but not the two the fleet
          also refuses: `retire_when_empty` and the night park (they build
@@ -1723,8 +1731,15 @@ export class HorseFleetManager {
         if (t.lifecycle === 'breaking' || t.lifecycle === 'closed') continue;
         if (isTableOfDisabledGame(t, disabledGameIds)) continue;
         if (drainingHere(t as { cluster_id?: string | null; settings?: unknown })) continue;
-        bandsWithAGame.add(stakeBandForBigBlind(Number(t.big_blind)));
+        const band = stakeBandForBigBlind(Number(t.big_blind));
+        bandsWithAGame.add(band);
         const hostId = String((t as { club_id?: string | null }).club_id ?? '');
+        let hostBands = bandsWithAGameByHost.get(hostId);
+        if (!hostBands) {
+          hostBands = new Set<HorseStakeBand>();
+          bandsWithAGameByHost.set(hostId, hostBands);
+        }
+        hostBands.add(band);
         let hostStakes = stakesWithAGame.get(hostId);
         if (!hostStakes) {
           hostStakes = new Set<string>();
@@ -1732,7 +1747,7 @@ export class HorseFleetManager {
         }
         hostStakes.add(Number(t.big_blind).toFixed(2));
       }
-      const bandSupply = applyStakeBandSupply(bandsWithAGame);
+      const bandSupply = applyStakeBandSupply(bandsWithAGame, bandsWithAGameByHost);
       if (bandSupply.missing.length > 0) {
         console.log(
           `[HorseFleet] band supply: no enabled game in band(s) ${bandSupply.missing.join(', ')}; ` +
@@ -2328,6 +2343,11 @@ export class HorseFleetManager {
         book,
         todayKey,
         chicagoWeekday,
+        /* ONE MOMENT FOR THE WHOLE PASS. `nowMs2` is taken once, above the tag
+           book load, so every two-hour-window verdict in this cycle is judged
+           against the same clock rather than drifting across a pass that takes
+           seconds. */
+        nowMs: nowMs2,
         killed: stableHandKilled(),
         maxTablesPerHorse: MAX_TABLES_PER_HORSE,
       };
@@ -2781,7 +2801,15 @@ export class HorseFleetManager {
               tagDropped++;
               return false;
             }
-            if (stakeOk === undefined && !stakeBandAllows(h.id, table.big_blind)) return false;
+            if (
+              stakeOk === undefined &&
+              !stakeBandAllows(
+                h.id,
+                table.big_blind,
+                String((table as { club_id?: string | null }).club_id ?? '')
+              )
+            )
+              return false;
 
             /* ── THE HORSE'S OWN DAY ────────────────────────────────────────
                A rest day and a daily cap are what stop a thousand horses

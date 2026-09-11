@@ -1,4 +1,8 @@
 import {
+  recordMissionHandStarted,
+  recordMissionHandCreated,
+} from '../../operations/release/run-fixture-state.mjs';
+import {
   devices,
   expect,
   test,
@@ -10,13 +14,15 @@ import {
 } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import { randomUUID } from 'node:crypto';
+import { missionFixtureHandId } from '../../operations/release/mission-fixture-hand.mjs';
 
 import { DAILY_MISSIONS_RESPONSE_TIMEOUT, DailyMissionsPage } from './support/DailyMissionsPage';
 import {
   callServiceRpc,
   cleanupTemporaryCustomizationAccount,
+  cleanupOwnedMissionHand,
+  insertOwnedMissionNotification,
   createTemporaryCustomizationAccount,
-  deleteServiceRows,
   insertServiceRows,
   readServiceRows,
   requireCustomizationCertificationEnvironment,
@@ -692,7 +698,7 @@ test.describe('production Daily Missions certification', () => {
       });
 
       await test.step('the settled-hand trigger preserves mixed exact threshold candidates', async () => {
-        certificationHandHistoryId = randomUUID();
+        certificationHandHistoryId = missionFixtureHandId(account!.id);
         const occurredAt = new Date().toISOString();
         const handNumber =
           1_700_000_000 +
@@ -709,6 +715,7 @@ test.describe('production Daily Missions certification', () => {
         const magnitudes = { big_pots: 500, strong_hands: 7 };
         const thresholdValues = { big_pots: [499, 500], strong_hands: [6, 7] };
 
+        await recordMissionHandStarted(account!.id);
         const inserted = await insertServiceRows<{ id: string }>(environment, 'hand_history', {
           id: certificationHandHistoryId,
           table_id: null,
@@ -735,6 +742,7 @@ test.describe('production Daily Missions certification', () => {
             },
           ],
         });
+        await recordMissionHandCreated(account!.id);
         expect(inserted).toHaveLength(1);
         expect(inserted[0]).toMatchObject({ id: certificationHandHistoryId });
 
@@ -1721,7 +1729,7 @@ test.describe('production Daily Missions certification', () => {
         expect(Number(claimReceipts[0].amount)).toBe(expectedDiamonds);
       });
 
-      await test.step('reset alert reaches notifications and push exactly once, then opt-out works', async () => {
+      await test.step('fixture reset notification reaches push once and preference controls work', async () => {
         const { error } = await account!.client
           .from('user_notification_preferences')
           .upsert(
@@ -1731,20 +1739,17 @@ test.describe('production Daily Missions certification', () => {
         if (error) throw error;
 
         const cycleDate = currentPeriodKeys().daily;
-        const inserted = await callServiceRpc<number>(
+        // Never call the global reset scheduler against production. This exact
+        // reserved account insertion qualifies notification/push delivery only.
+        // Global enqueue selection and dedup are tested in isolated PostgreSQL.
+        const inserted = await insertOwnedMissionNotification(environment, account!, cycleDate);
+        expect(inserted).toBe(1);
+        const replayedInsert = await insertOwnedMissionNotification(
           environment,
-          'enqueue_daily_mission_reset_notifications',
-          { p_cycle_date: cycleDate, p_limit: 5000 },
-          true
+          account!,
+          cycleDate
         );
-        expect(Number(inserted)).toBe(1);
-        const replayedInsert = await callServiceRpc<number>(
-          environment,
-          'enqueue_daily_mission_reset_notifications',
-          { p_cycle_date: cycleDate, p_limit: 5000 },
-          true
-        );
-        expect(Number(replayedInsert)).toBe(0);
+        expect(replayedInsert).toBe(0);
 
         const notifications = await serviceRows<{
           id: string;
@@ -1947,25 +1952,12 @@ test.describe('production Daily Missions certification', () => {
       for (const context of contexts.reverse()) {
         await context.close().catch(() => undefined);
       }
-      if (certificationHandHistoryId) {
-        await deleteServiceRows(
-          environment,
-          'hand_history',
-          new URLSearchParams({ id: `eq.${certificationHandHistoryId}` })
-        ).catch((error) => cleanupErrors.push(`hand history: ${(error as Error).message}`));
-        await readServiceRows<{ id: string }>(
-          environment,
-          'hand_history',
-          new URLSearchParams({ select: 'id', id: `eq.${certificationHandHistoryId}`, limit: '1' })
-        )
-          .then((rows) => {
-            if (rows.length > 0) cleanupErrors.push('hand history: exact fixture row remains');
-          })
-          .catch((error) =>
-            cleanupErrors.push(`hand history verification: ${(error as Error).message}`)
-          );
+      if (certificationHandHistoryId && account) {
+        await cleanupOwnedMissionHand(environment, account).catch((error) =>
+          cleanupErrors.push(`hand history: ${(error as Error).message}`)
+        );
       }
-      if (account) {
+      if (account && cleanupErrors.length === 0) {
         await cleanupTemporaryCustomizationAccount(environment, account).catch((error) =>
           cleanupErrors.push(`account: ${(error as Error).message}`)
         );

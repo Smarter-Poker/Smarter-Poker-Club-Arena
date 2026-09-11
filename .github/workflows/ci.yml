@@ -193,7 +193,7 @@ jobs:
           # it. Production froze at 19:10 while main kept moving. Same lesson
           # as the migrations line above, one directory over.
           echo "src=$(has '^src/')"       >> "$GITHUB_OUTPUT"
-          echo "server=$(has '^(server/|supabase/migrations/|scripts/dev/)')" >> "$GITHUB_OUTPUT"
+          echo "server=$(has '^(server/|supabase/migrations/|scripts/dev/|operations/release/|tests/operations/)')" >> "$GITHUB_OUTPUT"
           echo "tests=$(has '^(tests/|supabase/migrations/|server/|scripts/dev/)')"   >> "$GITHUB_OUTPUT"
           echo "phase4=$PHASE4" >> "$GITHUB_OUTPUT"
 
@@ -1089,6 +1089,12 @@ jobs:
           sudo apt-get "${pg_ci_apt[@]}" update
           printf 'create_main_cluster = false\n' | sudo tee /etc/postgresql-common/createcluster.conf >/dev/null
           sudo apt-get "${pg_ci_apt[@]}" install -y --no-install-recommends postgresql-17
+      - name: Release journal FIFO, fencing, receipts and recovery
+        env:
+          RELEASE_TEST_POSTGRES_BIN: /usr/lib/postgresql/17/bin
+        run: |
+          npm ci --ignore-scripts --prefix operations/release
+          npm test --prefix operations/release
       - name: Atomic departures, ownership, rollback and concurrency
         env:
           PGBIN: /usr/lib/postgresql/17/bin

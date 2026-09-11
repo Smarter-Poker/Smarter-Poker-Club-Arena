@@ -1,0 +1,23 @@
+[Unit]
+Description=Verify one exact Club Arena maintenance operation
+
+[Service]
+Type=exec
+User=@EXISTING_VERIFIER_USER@
+Group=@EXISTING_VERIFIER_GROUP@
+WorkingDirectory=/opt/club-arena-release-controller/current
+ExecStart=/usr/bin/node /opt/club-arena-release-controller/current/maintenance-verifier.mjs /etc/club-arena-release-controller/maintenance-verifier.json
+# Existing credential references are installed independently in a reviewed
+# drop-in; this service never inherits the controller's environment file.
+StandardInput=socket
+StandardOutput=socket
+StandardError=null
+RuntimeMaxSec=120
+TimeoutStopSec=10
+KillMode=control-group
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX

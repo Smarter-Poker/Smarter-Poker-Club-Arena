@@ -59,6 +59,7 @@ function ctxWith(over: Partial<SitVerdictContext> = {}): SitVerdictContext {
     activeClubOf: new Map(),
     activeHostOf: new Map(),
     book: null,
+    nowMs: Date.UTC(2026, 8, 11, 12, 0, 0),
     todayKey: '2026-09-05',
     chicagoWeekday: 5,
     killed: false,

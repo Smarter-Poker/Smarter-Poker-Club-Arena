@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "phase": "BOOTSTRAP_JOURNAL",
+  "mode": "OBSERVE",
+  "productionExecutionSupported": false,
+  "schema": "release_ops",
+  "notificationChannel": "release_journal_events",
+  "sessionLock": [77319011, 1],
+  "maximumConnections": 2,
+  "maximumAttempts": 3,
+  "maximumRetryDelaySeconds": 3600,
+  "connectionModes": ["direct", "session"],
+  "reconnectDelayMilliseconds": [250, 1000, 4000],
+  "participants": [
+    {
+      "target": "club-arena-engine",
+      "repository": "Smarter-Poker/Smarter-Poker-Club-Arena",
+      "project": "engine-01"
+    },
+    {
+      "target": "club-arena-web",
+      "repository": "Smarter-Poker/Smarter-Poker-Club-Arena",
+      "project": "ca-static.smarter.poker"
+    },
+    {
+      "target": "world-hub-web",
+      "repository": "Smarter-Poker/Smarter-Poker-World-Hub",
+      "project": "prj_op66GkZyZcygXQKm76iyycfVFAQx"
+    },
+    {
+      "target": "workers",
+      "repository": "Smarter-Poker/smarter-poker-workers",
+      "project": "smarter-poker-workers"
+    }
+  ],
+  "activationPrerequisites": [
+    "compatible installed journal schema version and verified existing identity role memberships",
+    "verified existing operations host and direct/session connection",
+    "trusted installed provider adapters with exact operation fencing or uncertain-outcome reconciliation",
+    "legacy writer retirement and dedicated existing identity bindings",
+    "source, target, seal and provider-operation reconciliation for the fresh epoch",
+    "installed activation and recovery receipts"
+  ],
+  "maximumRecoveryAttempts": 3,
+  "maximumRecoveryAttemptSeconds": 21600
+}

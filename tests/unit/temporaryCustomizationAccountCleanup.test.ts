@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+// These legacy account unit tests do not execute the installed policy loader.
+// Its real file/hash boundary is exercised by the native controller suites.
+vi.mock('../../operations/release/operation-policy.mjs', () => ({
+  operationPolicyDigest: '1fed78c7afc00a220839dd198f2a362befe0fbe9655b2574d9d037d2864b2bda',
+}));
+
 import {
   cleanupStaleTemporaryCustomizationAccounts,
   cleanupTemporaryCustomizationAccount,

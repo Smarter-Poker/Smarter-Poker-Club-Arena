@@ -1,0 +1,158 @@
+{
+  "schema": 1,
+  "recorded_at": "2026-09-11T16:47:20.240038+00:00",
+  "base_commit": "959e5bd8f0befd39c9c9a2c3e2d332164bc0b91d",
+  "branch": "fix/pipeline-provider-orchestration",
+  "status": "local source/provider implementation, inactive, uncommitted pending review",
+  "node_tests": {
+    "passed": 46,
+    "failed": 0,
+    "log_sha256": "f122ccb2e6145ce0f3ac9dbc7213b19bacdb962a037af2426be66f87084dd621"
+  },
+  "native_python_tests": {
+    "passed": 11,
+    "failed": 0,
+    "log_sha256": "1fe0aeec438b4a360d71c66c3e2aaeb97441bf0ab8c547792f7fa434ec397daa"
+  },
+  "production_actions": [],
+  "owned_files": {
+    ".github/workflows/release-candidate.yml": {
+      "sha256": "10f3eb89af98a9fd0781ab26254d0b2f4a4b6dead9e6b10f74ccf645df4e961e",
+      "mode": "0o644"
+    },
+    "docs/changelog/2026-09-11-provider-operation-boundary.md": {
+      "sha256": "52a7fe2204991b49490e2bf35a04042c6d1166dcbf378c1a44ab44553332f0cf",
+      "mode": "0o644"
+    },
+    "docs/operations/provider-boundary.md": {
+      "sha256": "0054ed6ba38e7b48768024565bf8c0c2b91b88edb2d929c6926e331480ebe599",
+      "mode": "0o644"
+    },
+    "docs/operations/release-policy.md": {
+      "sha256": "490617b2129789ed715573a4f10b293bf92ffe0bd8f8ee90d653c758f997b7f1",
+      "mode": "0o644"
+    },
+    "operations/release/adapters/github.mjs": {
+      "sha256": "559e1f3e42a70be6566300355377aa76932c2a0b33b7d9d0372ac42233c6cdcf",
+      "mode": "0o644"
+    },
+    "operations/release/adapters/hetzner.mjs": {
+      "sha256": "804683d322d7e2d284f6fa6a9e8a690d4b165c4c9814f7e2ed7cbab6c056a749",
+      "mode": "0o644"
+    },
+    "operations/release/adapters/vercel.mjs": {
+      "sha256": "6cbfbaa9db5e26ffdfece6233edc9060c01fa60db176abe95901794c07411d42",
+      "mode": "0o644"
+    },
+    "operations/release/build-bundle.mjs": {
+      "sha256": "59354646c841e5b73b7929830bf51bbc7ae7a11322837808e2eeeee98d9dde41",
+      "mode": "0o644"
+    },
+    "operations/release/controller.example.json": {
+      "sha256": "6ade086e85f0f92a65abc84f2d09e68dcbd81470cb92a319d72f553a9ae7c9ac",
+      "mode": "0o644"
+    },
+    "operations/release/controller.mjs": {
+      "sha256": "ab8dd2b9ee5407c162c1a591ce86cb338f2c3179f8dfbca11e4f9e82231feae8",
+      "mode": "0o644"
+    },
+    "operations/release/event-admission.mjs": {
+      "sha256": "8ff5ada6b85cf408944f49cf333a67b40d4727042f8244c836a4de0b341ee533",
+      "mode": "0o644"
+    },
+    "operations/release/installed-bundle.mjs": {
+      "sha256": "04bee0a2e2bd678aa10e26810a3cf511b06022ff0da5b41c3b3ea6c02eb931ce",
+      "mode": "0o644"
+    },
+    "operations/release/native/club-arena-release-controller-upgrade@.service": {
+      "sha256": "b765e2c6acb8cdf115b7ef87c37db22051871809b45f856bc3bb30c8755c2801",
+      "mode": "0o644"
+    },
+    "operations/release/native/club-arena-release-controller.service": {
+      "sha256": "194f68805ac31f00fbc29f4bb3c44a97d7370d504c3e07e81c037725241253d2",
+      "mode": "0o644"
+    },
+    "operations/release/native/engine-boundary.py": {
+      "sha256": "d27f26be0bbf04bde04cced7efb1f1620f162dcf21c2fd268f9ed413c36914cd",
+      "mode": "0o755"
+    },
+    "operations/release/native/install-controller.py": {
+      "sha256": "3b3272f2828c68111ad3cdc46b1184a9ebd1fe01eaec9af59c96d9494da3c3a5",
+      "mode": "0o755"
+    },
+    "operations/release/native/qualify-candidate.py": {
+      "sha256": "6d809fecb91198651e961e74bc056215bd9f24903598fa8ff8ac779302e79c64",
+      "mode": "0o755"
+    },
+    "operations/release/package.json": {
+      "sha256": "63d6a9fa1c032e4f25bf31aa7daba76327d3d6ec72b94777d55b27210f6481f2",
+      "mode": "0o644"
+    },
+    "operations/release/provider-cli.mjs": {
+      "sha256": "dbaf07343b8d78e3d8205d57875fb544ad3f4334f8fd9f70b5d0efc30b1569b9",
+      "mode": "0o644"
+    },
+    "operations/release/provider-journal.mjs": {
+      "sha256": "36bb485b54cdf455015a2301aefea3c91d7a9a90045040d5c5e18b9acd2e4034",
+      "mode": "0o644"
+    },
+    "operations/release/source-coordinator.mjs": {
+      "sha256": "6e1e6eff41c6be201fda4b7982378c55d831c8442bd6776b9b685c047152f7b0",
+      "mode": "0o644"
+    },
+    "operations/release/upgrade-check.mjs": {
+      "sha256": "cda521442b4e551435a493befa58e038a0bfc65ac983c033b6f899b4f1c76ae3",
+      "mode": "0o644"
+    },
+    "supabase/migrations/20260911160341_provider_operation_boundary.sql": {
+      "sha256": "b1cd7a0cdae6475048238f03baaadb3f279d6ec2d7a3d99977efe9cc7952559d",
+      "mode": "0o644"
+    },
+    "tests/operations/github-adapters.test.mjs": {
+      "sha256": "820b786899a9a22d852da09a08f00e500f9632de610f01d494d41b87be5f367d",
+      "mode": "0o644"
+    },
+    "tests/operations/installed-bundle.test.mjs": {
+      "sha256": "ebcf9c81e77becbbb62517edc12c26258eb97e7dcd9b366c65d796cc6dae91d1",
+      "mode": "0o644"
+    },
+    "tests/operations/native-engine.test.py": {
+      "sha256": "4c9ddbe4a367501473d150f6891bb42f92db94ec68813e928cb6d7980c9c824d",
+      "mode": "0o644"
+    },
+    "tests/operations/native-install.test.py": {
+      "sha256": "8650b4073646d4fa8e0b3645b9ff38475ef6411b9380661b6d82c1f431e92170",
+      "mode": "0o644"
+    },
+    "tests/operations/native-qualification.test.py": {
+      "sha256": "688ab39ef3b4832fb7fd0040de08b6b2037548784256f8e8f2a0a2cbbe7303a1",
+      "mode": "0o644"
+    },
+    "tests/operations/postgres-fixture.mjs": {
+      "sha256": "3c879ff9e2f8b131211613709aa963012b64e9d3555af95b975b4b6e66560894",
+      "mode": "0o644"
+    },
+    "tests/operations/provider-adapters.test.mjs": {
+      "sha256": "accca14c05081fda4677c976391e622b9d613a6b7f247a55f4a504bd9caf2c70",
+      "mode": "0o644"
+    },
+    "tests/operations/provider-runner.integration.test.mjs": {
+      "sha256": "61472eadd0c29d745d3b6e30ffa8c65fb5af554cf9439ae70028553d71eb091e",
+      "mode": "0o644"
+    },
+    "tests/operations/source-coordinator.integration.test.mjs": {
+      "sha256": "cdb2d8805f19b0fac589f563f051b90758e48003e6929283077cfd4da7a86c34",
+      "mode": "0o644"
+    }
+  },
+  "remaining_gaps": [
+    "installed constrained controller/submitter/verifier identities and authority retirement",
+    "real engine artifact transfer/staging and live readiness",
+    "automatic exact post-deploy certification",
+    "CA static source/staging/publication",
+    "World Hub Git staged builder orchestration",
+    "other registered target source adapters",
+    "provider rollback and controller-upgrade dispatch",
+    "Linux loaded native installation validation"
+  ]
+}

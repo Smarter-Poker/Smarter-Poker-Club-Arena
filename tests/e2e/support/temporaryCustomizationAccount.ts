@@ -1,5 +1,20 @@
+import {
+  missionHandState,
+  recordMissionHandCleaned,
+} from '../../../operations/release/run-fixture-state.mjs';
+import { insertMissionFixtureNotification } from '../../../operations/release/mission-fixture-notification.mjs';
+import {
+  reserveRunFixture,
+  recordRunFixtureCreated,
+} from '../../../operations/release/run-fixture-ledger.mjs';
+import { cleanupMissionFixtureHand } from '../../../operations/release/mission-fixture-hand.mjs';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { randomUUID } from 'node:crypto';
+import {
+  controlledCertificate,
+  consumeFixture,
+  recordFixtureCreated,
+} from '../../../operations/release/certification-client.mjs';
 
 const ACCOUNT_PREFIX = 'ca-customization-cert-';
 const SHARED_POST_DEPLOY_PREFIX = 'ca-customization-cert-postdeploy-';
@@ -360,15 +375,19 @@ export async function createTemporaryCustomizationAccount(
   label: string,
   diamonds: number
 ): Promise<TemporaryCustomizationAccount> {
+  const reservedIdentity = await consumeFixture(label);
   const suffix = `${Date.now()}-${randomUUID()}`;
-  const email = `${ACCOUNT_PREFIX}${label}-${suffix}@example.invalid`;
+  const email = reservedIdentity?.email ?? `${ACCOUNT_PREFIX}${label}-${suffix}@example.invalid`;
   const password = `Ca!${randomUUID()}aA7`;
+  const intendedId = reservedIdentity?.user_id ?? randomUUID();
+  await reserveRunFixture({ user_id: intendedId, email, label });
   let userId = '';
 
   try {
     const created = await serviceRequest<JsonObject>(environment, '/auth/v1/admin/users', {
       method: 'POST',
       body: JSON.stringify({
+        id: intendedId,
         email,
         password,
         email_confirm: true,
@@ -385,6 +404,9 @@ export async function createTemporaryCustomizationAccount(
     });
     userId = String(created.id || (created.user as JsonObject | undefined)?.id || '');
     if (!userId) throw new Error('Supabase Auth created no user id for the temporary account.');
+    if (userId !== intendedId) throw new Error('Reserved fixture identity mismatch.');
+    await recordRunFixtureCreated(userId);
+    if (reservedIdentity) await recordFixtureCreated(label, userId);
 
     await waitForProfile(environment, userId);
     // New player onboarding intentionally starts with promotional diamonds and
@@ -488,6 +510,7 @@ export async function cleanupStaleTemporaryCustomizationAccounts(
   environment: CustomizationCertificationEnvironment,
   minimumAgeMs = STALE_FIXTURE_MINIMUM_AGE_MS
 ): Promise<number> {
+  if (controlledCertificate()) return 0; // The exact operation roster owns recovery.
   // Never permit a caller to turn this recovery sweep into current-run cleanup.
   const safeMinimumAgeMs = Math.max(minimumAgeMs, 60_000);
   const cutoff = new Date(Date.now() - safeMinimumAgeMs).toISOString();
@@ -637,4 +660,30 @@ export function expectedUnlockForFeature(feature: string): string | null {
   const [, category, ...assetParts] = feature.split(':');
   const assetId = assetParts.join(':');
   return category && assetId ? `${category}:${assetId}` : null;
+}
+
+export async function cleanupOwnedMissionHand(
+  environment: CustomizationCertificationEnvironment,
+  account: TemporaryCustomizationAccount
+) {
+  const state = await missionHandState(account.id);
+  const result = await cleanupMissionFixtureHand(
+    { user_id: account.id, email: account.email },
+    (route: string, options = {}) => serviceRequest(environment, route, options),
+    state.resolved
+  );
+  await recordMissionHandCleaned(account.id);
+  return result;
+}
+
+export async function insertOwnedMissionNotification(
+  environment: CustomizationCertificationEnvironment,
+  account: TemporaryCustomizationAccount,
+  cycleDate: string
+) {
+  return insertMissionFixtureNotification(
+    { user_id: account.id, email: account.email },
+    cycleDate,
+    (route: string, options = {}) => serviceRequest(environment, route, options)
+  );
 }

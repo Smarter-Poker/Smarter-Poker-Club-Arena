@@ -866,9 +866,31 @@ describe('LiveHorseDecisionWorkerClient pipelined lane', () => {
   const requestIds = (worker: FakeWorker) =>
     worker.sent.map((message) => (message as { requestId?: number }).requestId ?? null);
 
-  it('keeps four jobs posted by default, refills as each answer lands, and reports both queues', async () => {
+  it('the default window is deep enough to decouple the lane from the main loop', () => {
+    // THE DEPTH IS THE LANE'S THROUGHPUT (2026-09-11, evening). Every job pays
+    // a round trip through the MAIN event loop, so the lane finishes about
+    // `maxInFlight / mainLoopRoundTrip` jobs a second. Measured on engine-01
+    // with 470 tables dealing: main loop p50 309 ms, the decision worker's own
+    // loop 22 ms, the queue 520 deep with its head pinned at the 8-second
+    // caller deadline, ~49 decisions a second EXPIRING into a blind check or
+    // fold, 13,973 of them in total. Four in flight is ~13 jobs a second
+    // against that; the worker was never the constraint.
+    //
+    // This pins the ORDER OF MAGNITUDE, not the exact number - the depth may
+    // be retuned - so that nobody quietly returns it to a single-digit window
+    // and re-serialises the lane behind a saturated loop.
+    const client = new LiveHorseDecisionWorkerClient({ workerFactory: () => new FakeWorker() });
+    expect(client.status().maxInFlight).toBeGreaterThanOrEqual(32);
+  });
+
+  it('keeps its whole window posted, refills as each answer lands, and reports both queues', async () => {
     const worker = new FakeWorker();
-    const client = new LiveHorseDecisionWorkerClient({ workerFactory: () => worker });
+    // An explicit window of four: the exact wire sequence below is what is
+    // being proved, and it is the same proof at any depth.
+    const client = new LiveHorseDecisionWorkerClient({
+      workerFactory: () => worker,
+      maxInFlight: 4,
+    });
     const jobs = Array.from({ length: 6 }, (_, index) =>
       client.decideFast(snapshot(`turn-${index + 1}`))
     );

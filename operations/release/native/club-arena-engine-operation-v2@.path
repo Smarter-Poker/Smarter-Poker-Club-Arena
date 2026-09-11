@@ -1,0 +1,9 @@
+[Unit]
+Description=Durable event for one Club Arena operation @OPERATION@
+
+[Path]
+PathExists=@FOLDER@/acceptance.json
+Unit=club-arena-engine-operation-v2@@OPERATION@.service
+
+[Install]
+WantedBy=multi-user.target

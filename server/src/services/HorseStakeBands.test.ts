@@ -148,8 +148,12 @@ describe('the shipped wiring - the rule is worthless if the seater does not cons
     // The call must be in the candidate filter, which is the only place that
     // runs before the weighted pick. Sizing a buy-in from the blinds - which
     // the file already did - never influenced WHICH horse was chosen.
-    expect(src).toContain('stakeBandAllows(h.id, table.big_blind)');
-    const filterAt = src.indexOf('stakeBandAllows(h.id, table.big_blind)');
+    // The gate also takes the TABLE'S HOST since 2026-09-11: a band is only
+    // meaningful against the ladder that host actually deals, and the platform
+    // ladder is the union of two hosts that deal different things.
+    expect(src).toContain('!stakeBandAllows(');
+    expect(src).toContain("String((table as { club_id?: string | null }).club_id ?? '')");
+    const filterAt = src.indexOf('!stakeBandAllows(');
     const pickAt = src.indexOf('const weighted = pool');
     expect(filterAt).toBeGreaterThan(0);
     expect(filterAt).toBeLessThan(pickAt);
@@ -266,8 +270,16 @@ describe('a band with no enabled game seats one band down, and never one band up
     const src = readFileSync(new URL('./HorseFleetManager.ts', import.meta.url).pathname, 'utf8');
     // Derived from the cycle's own table list; no second query.
     expect(src).toContain('const bandsWithAGame = new Set<HorseStakeBand>();');
-    expect(src).toContain('bandsWithAGame.add(stakeBandForBigBlind(Number(t.big_blind)));');
-    expect(src).toContain('const bandSupply = applyStakeBandSupply(bandsWithAGame);');
+    expect(src).toContain('const band = stakeBandForBigBlind(Number(t.big_blind));');
+    expect(src).toContain('bandsWithAGame.add(band);');
+    // AND PER HOST (2026-09-11): the same scan, keyed by the table's club, so
+    // a Deep Stack 25/50 game stops telling a Midway horse that 'high' has a
+    // game it could never sit at.
+    expect(src).toContain('const bandsWithAGameByHost = new Map<string, Set<HorseStakeBand>>();');
+    expect(src).toContain('hostBands.add(band);');
+    expect(src).toContain(
+      'const bandSupply = applyStakeBandSupply(bandsWithAGame, bandsWithAGameByHost);'
+    );
     expect(src).toContain('[HorseFleet] band supply: no enabled game in band(s) ');
     expect(src).toContain('horse(s) seat one band down');
     // A table the seeding loop would refuse is not supply.

@@ -1,0 +1,371 @@
+{
+  "schema": 1,
+  "recorded_at": "2026-09-11T18:32:09.693170+00:00",
+  "base_commit": "959e5bd8f0befd39c9c9a2c3e2d332164bc0b91d",
+  "local_branch": "fix/pipeline-provider-orchestration",
+  "status": "Source and fixture verified; held draft, not installed or activated",
+  "scope": "Native v2 wiring and the executable controller/provider dependencies in this commit; broader controller remains incomplete",
+  "tests": {
+    "operations_node": {
+      "passed": 51,
+      "failed": 0,
+      "log": "work/native-v2-node-reviewed.log",
+      "sha256": "e5b37c0a4bf24fca60ab7d25f791e11eb1f43f84afcf80b6a36f3cc4f371f9ca"
+    },
+    "native_python": {
+      "passed": 45,
+      "failed": 0,
+      "skipped": 1,
+      "skip": "actual systemd parser requires Linux; this run is macOS",
+      "log": "work/native-v2-python-reviewed.log",
+      "sha256": "64ccafca1c2bb109dc26ee7f50bb19617707786075823b688cdecb9a228a275b"
+    },
+    "required_vitest_bridge": {
+      "passed": 2,
+      "failed": 0,
+      "log": "work/native-v2-vitest-reviewed.log",
+      "sha256": "fa22010b393b1a8bcffe0dae001ba2fd9bc09c391a21d1ce37cdb84a2b9f6a05"
+    },
+    "native_pg_composition": {
+      "passed": 6,
+      "authority_bootstrap_passed": 17,
+      "receipt": "work/native-v2-final-composition/result.json",
+      "sha256": "256d8f1693d93f41b19413ac573c3f4c5ab9c0ce0bc46775390630c674ba5401",
+      "postgres": "postgres (PostgreSQL) 17.11 (Homebrew)",
+      "maintenance_migration_sha256": "532df180317398b63063b54e3746609dde523909dc9f4ff4b483c17d9a4ca14b",
+      "provider_migration_sha256": "487edd561b2936d84d0dc31a19eab67d373d6bfcb30489b3471b195424ef9773",
+      "source_fixture_sha256": "6be71661c49edd736ad78bf62582389ecce5cf06b46eb44237ff8a69833693c1",
+      "cases": [
+        {
+          "name": "native_actuator_with_real_journal_success",
+          "status": "passed",
+          "milliseconds": 821
+        },
+        {
+          "name": "native_actuator_with_real_journal_lost_response",
+          "status": "passed",
+          "milliseconds": 599
+        },
+        {
+          "name": "native_actuator_with_real_journal_owner_disconnected",
+          "status": "passed",
+          "milliseconds": 680
+        },
+        {
+          "name": "native_actuator_with_real_journal_stale_epoch",
+          "status": "passed",
+          "milliseconds": 715
+        },
+        {
+          "name": "native_actuator_with_real_journal_wrong_bundle",
+          "status": "passed",
+          "milliseconds": 915
+        },
+        {
+          "name": "native_actuator_with_real_journal_expired_step",
+          "status": "passed",
+          "milliseconds": 699
+        }
+      ],
+      "provider_inputs": {
+        "operations/release/actuator-journal.mjs": "ac199d412c4d1ddbbe89015c6f017a40bb59bb5a90cd5250cc5d52ef727eb49f",
+        "operations/release/maintenance-journal.mjs": "67c0a7ae9b60a5cdc3562694202ad0a05c38f8060145b2dcf265e22b85bb51e7",
+        "operations/release/native/engine-operation-v2.py": "5f7522d5254f4324239ed4df1ac1b296f97b24dc9f924d794a65fd6c91aeb3c3",
+        "operations/release/native/engine-native-v2.py": "69d84c75d71ac6f0bb26c2565f585982477631420d7d0fb0c8c6a257a334d897",
+        "operations/release/native/engine-boundary.py": "0d82bfca0742acf28ccc403b02bae9ac89b11e2378a38ab93b01ca538c43a931",
+        "operations/release/operationPolicy.json": "1fed78c7afc00a220839dd198f2a362befe0fbe9655b2574d9d037d2864b2bda",
+        "tests/operations/native-operation-v2.test.py": "9fc4088d03da9a2f66150445c51ccb9ac81efafb04a803a799bdea79e2228de3"
+      },
+      "fixture_inputs": {
+        "integration.mjs": "60efb062cd73f9fb1a62cac304b971831ee1c7ace06cb4bca726014f90935e58",
+        "runtime-fixture.mjs": "f8f4a99971bbf9b40517fdea82d33bcd19a03e2c703e157df54b71a2ff1a3e7b"
+      },
+      "limits": "Real socket-only PostgreSQL authority/helper; container and seal side effects are fixtures. Authority532df180 is frozen; later global-tail changes need new composition."
+    }
+  },
+  "independent_review": {
+    "path": "/Users/smarter.poker/Documents/Codex/2026-09-11/files-mentioned-by-the-user-club/work/native-v2-independent-review/review.md",
+    "sha256": "534ff2c83f9d292ba5d264699f6f5124ea9db8b156e48e979b2b1e0453616110",
+    "result": "No remaining actionable finding in bounded native wiring; peer reran operation9 and wiring19 with1 Linux skip."
+  },
+  "operator_reported_readonly_host_layout": {
+    "observed_at": "2026-09-11T18:26:00Z",
+    "source": "lead operator message; no host operation by this task",
+    "var_lock": "root-owned alias /run/lock",
+    "run_lock_mode": "0755",
+    "fixed_lock_mode": "0644",
+    "device": 28,
+    "inode": 6,
+    "purpose": "Existing lock inode compatibility only; not installed v2 proof"
+  },
+  "production_actions": [],
+  "world_hub_repository_writes": [],
+  "frozen_v1_changed": false,
+  "activation_blocks": [
+    "Existing isolated controller/verifier/actuator identities and grants not supplied or installed",
+    "Forced-command SSH boundary, TLS identity and actual LinuxPID1/Docker unit installation unverified",
+    "Six exact component compatibility and retained recovery activation receipts absent",
+    "Unprivileged candidate build authority isolation not installed",
+    "Trusted source-object transfer before host seal ancestry validation still absent",
+    "CA static and World Hub source/build/publication orchestration not implemented",
+    "Unknown native command outcome requires explicitly owned reconciliation"
+  ],
+  "owned_files": {
+    ".github/workflows/post-deploy-e2e.yml": {
+      "sha256": "241294b5eb4a872a4515ba6ef5a9ab17852bc20b441ab3125b1cf34e46fb995a",
+      "mode": "0o644"
+    },
+    ".github/workflows/release-candidate.yml": {
+      "sha256": "10f3eb89af98a9fd0781ab26254d0b2f4a4b6dead9e6b10f74ccf645df4e961e",
+      "mode": "0o644"
+    },
+    "docs/changelog/2026-09-11-engine-operation-v2-native.md": {
+      "sha256": "49f00513ec8fc131de522f17953c1694cd99b5725cf918d6b58c8e44979b5235",
+      "mode": "0o644"
+    },
+    "docs/changelog/2026-09-11-provider-operation-boundary.md": {
+      "sha256": "52a7fe2204991b49490e2bf35a04042c6d1166dcbf378c1a44ab44553332f0cf",
+      "mode": "0o644"
+    },
+    "docs/changelog/evidence/2026-09-11-provider-operation-boundary.json": {
+      "sha256": "5b0ddaf8e52e74a71385e2bcca81d90a8175ca1ec5bfeeae4bbcec59a87b97d8",
+      "mode": "0o644"
+    },
+    "docs/operations/engine-native-v2.md": {
+      "sha256": "f88ccb9496a191c5659ff82e0d44c6a18fcba1eaebf081ed672b87866654a996",
+      "mode": "0o644"
+    },
+    "docs/operations/provider-boundary.md": {
+      "sha256": "0054ed6ba38e7b48768024565bf8c0c2b91b88edb2d929c6926e331480ebe599",
+      "mode": "0o644"
+    },
+    "docs/operations/release-policy.md": {
+      "sha256": "490617b2129789ed715573a4f10b293bf92ffe0bd8f8ee90d653c758f997b7f1",
+      "mode": "0o644"
+    },
+    "operations/release/actuator-journal.mjs": {
+      "sha256": "ac199d412c4d1ddbbe89015c6f017a40bb59bb5a90cd5250cc5d52ef727eb49f",
+      "mode": "0o644"
+    },
+    "operations/release/adapters/engine-stage.mjs": {
+      "sha256": "2456f23b527470a1382e2d9695cf2f0384dd1c0dd52d217be09c4b5ded0c3201",
+      "mode": "0o644"
+    },
+    "operations/release/adapters/github-certification.mjs": {
+      "sha256": "06efcd8f0d39cda44eaade91a5847f842cc3695b88c94706bb690fa8f29f3464",
+      "mode": "0o644"
+    },
+    "operations/release/adapters/github.mjs": {
+      "sha256": "9977f014761ce602a6792e8584dcea6f4abe65d8b4b005ba341f7b4a21af42dc",
+      "mode": "0o644"
+    },
+    "operations/release/adapters/hetzner.mjs": {
+      "sha256": "9f159e289ec41a3fd1e9b2a42c6d74968f4c40fc19e0ef09d24bb99641e4d8ee",
+      "mode": "0o644"
+    },
+    "operations/release/adapters/vercel.mjs": {
+      "sha256": "6cbfbaa9db5e26ffdfece6233edc9060c01fa60db176abe95901794c07411d42",
+      "mode": "0o644"
+    },
+    "operations/release/build-bundle.mjs": {
+      "sha256": "c604c52dd5ce31b30a29a6170301a0a38cb087ea8e279e1f6a692e13d6d59a3a",
+      "mode": "0o644"
+    },
+    "operations/release/certificate-proof.mjs": {
+      "sha256": "5a16a50868fd799a168ddc90472ba0d7bc3de71a597ed2d9c0b61a2ce7ba05d8",
+      "mode": "0o644"
+    },
+    "operations/release/controller.example.json": {
+      "sha256": "6ade086e85f0f92a65abc84f2d09e68dcbd81470cb92a319d72f553a9ae7c9ac",
+      "mode": "0o644"
+    },
+    "operations/release/controller.mjs": {
+      "sha256": "01c98b3e7fbeb138ccb1eb4ed638efce64245b2f0be2370d1c0470d31bf1675f",
+      "mode": "0o644"
+    },
+    "operations/release/engine-doors-manifest.mjs": {
+      "sha256": "bfa0f7fc8018d6628dd2746f5db5fd12d547f91742b8347fb26b2f6197fed967",
+      "mode": "0o644"
+    },
+    "operations/release/engine-readiness.mjs": {
+      "sha256": "7108f00d2754c607b04424ffda9c803b854b0aef9cacd6793f5f5ac8f8368320",
+      "mode": "0o644"
+    },
+    "operations/release/event-admission.mjs": {
+      "sha256": "8ff5ada6b85cf408944f49cf333a67b40d4727042f8244c836a4de0b341ee533",
+      "mode": "0o644"
+    },
+    "operations/release/installed-bundle.mjs": {
+      "sha256": "6281adef3ae2f0b63591b154864ac357352af4ac3a702270657e3b88269698c9",
+      "mode": "0o644"
+    },
+    "operations/release/maintenance-coordinator.mjs": {
+      "sha256": "c7bb6999e1e3ca3683a686abe8c969714213dabf9b2cb4f89ad9ef764e9e1344",
+      "mode": "0o644"
+    },
+    "operations/release/maintenance-journal.mjs": {
+      "sha256": "67c0a7ae9b60a5cdc3562694202ad0a05c38f8060145b2dcf265e22b85bb51e7",
+      "mode": "0o644"
+    },
+    "operations/release/maintenance-verifier.mjs": {
+      "sha256": "fa9f3d90af29d233d86b7b1f13ca67c120d95e66f1f6f6356461642bf61c4de2",
+      "mode": "0o644"
+    },
+    "operations/release/native/club-arena-engine-operation-v2@.path": {
+      "sha256": "00a1e39106a713d7920ce59b55fcb3aad5a1fd3161f0ab6c70d576f6c55debec",
+      "mode": "0o644"
+    },
+    "operations/release/native/club-arena-engine-operation-v2@.service": {
+      "sha256": "2a0f1f4d0d0a9fdf22bba22a877d92006be7223e0816fc95521d3af82cd7c3b4",
+      "mode": "0o644"
+    },
+    "operations/release/native/club-arena-engine-stage-v1@.service": {
+      "sha256": "11ac88a556083f55c9db3dad5bb6f9d604c5dc2cfa5d519d14670f56e456a1b8",
+      "mode": "0o644"
+    },
+    "operations/release/native/club-arena-maintenance-verifier.socket": {
+      "sha256": "309da08424efc477b4046aab89ac1ad40bab16aa8535a61c0f07e4818dd6db12",
+      "mode": "0o644"
+    },
+    "operations/release/native/club-arena-maintenance-verifier@.service": {
+      "sha256": "1aaf5b84d798412eee476d4f2e8c71468d241b0e33c076a8800ef89f0f099280",
+      "mode": "0o644"
+    },
+    "operations/release/native/club-arena-release-controller-upgrade@.service": {
+      "sha256": "b765e2c6acb8cdf115b7ef87c37db22051871809b45f856bc3bb30c8755c2801",
+      "mode": "0o644"
+    },
+    "operations/release/native/club-arena-release-controller.service": {
+      "sha256": "194f68805ac31f00fbc29f4bb3c44a97d7370d504c3e07e81c037725241253d2",
+      "mode": "0o644"
+    },
+    "operations/release/native/engine-boundary.py": {
+      "sha256": "0d82bfca0742acf28ccc403b02bae9ac89b11e2378a38ab93b01ca538c43a931",
+      "mode": "0o755"
+    },
+    "operations/release/native/engine-intake-dispatch-v2.py": {
+      "sha256": "f081a679b1dc63b3ac7baf9d24741147370111a7648d4703a404b91dd460d99c",
+      "mode": "0o644"
+    },
+    "operations/release/native/engine-intake-v2.py": {
+      "sha256": "ea4a9c7f2827aa2b60698dd2542632950755e1fe4ab3b963efd2aa8e2001c65e",
+      "mode": "0o644"
+    },
+    "operations/release/native/engine-native-v2.py": {
+      "sha256": "69d84c75d71ac6f0bb26c2565f585982477631420d7d0fb0c8c6a257a334d897",
+      "mode": "0o644"
+    },
+    "operations/release/native/engine-operation-v2.py": {
+      "sha256": "5f7522d5254f4324239ed4df1ac1b296f97b24dc9f924d794a65fd6c91aeb3c3",
+      "mode": "0o644"
+    },
+    "operations/release/native/engine-stage-boundary.py": {
+      "sha256": "401088a9329ff1fbb278d310d2b68e521207d949ae30a8fed72c6d17b9c556cf",
+      "mode": "0o755"
+    },
+    "operations/release/native/install-controller.py": {
+      "sha256": "e0e4667781dd9c4a4a35ef4e956b63c17c789cd5075b7b31922e743ce50e694b",
+      "mode": "0o755"
+    },
+    "operations/release/native/install-engine-native-v2.py": {
+      "sha256": "addbb40876ca2d5ed4c82b5aa1933ea8de2161b6693e988ae15aad268be79dce",
+      "mode": "0o644"
+    },
+    "operations/release/native/qualify-candidate.py": {
+      "sha256": "51e4e1953f240c4e5af940831486cb669f4fd5450e0c2fae0f746705709bf37f",
+      "mode": "0o755"
+    },
+    "operations/release/operation-policy.mjs": {
+      "sha256": "06c33562737e58454b30436ee0e5c9884bb3d38693b845570846ae850f5197e6",
+      "mode": "0o644"
+    },
+    "operations/release/operationPolicy.json": {
+      "sha256": "1fed78c7afc00a220839dd198f2a362befe0fbe9655b2574d9d037d2864b2bda",
+      "mode": "0o644"
+    },
+    "operations/release/package.json": {
+      "sha256": "726943af72955e7ca59d137dfff4b78a8221ebcee7af1ef9b46c6b44e755b555",
+      "mode": "0o644"
+    },
+    "operations/release/provider-cli.mjs": {
+      "sha256": "dbaf07343b8d78e3d8205d57875fb544ad3f4334f8fd9f70b5d0efc30b1569b9",
+      "mode": "0o644"
+    },
+    "operations/release/provider-journal.mjs": {
+      "sha256": "e07a5f90177647dceb334a140d2cb8941a79b5b9e9c9744364966817e943ef1a",
+      "mode": "0o644"
+    },
+    "operations/release/source-coordinator.mjs": {
+      "sha256": "f7c946347a035204c3b89f1921f02352c1fa8c0a4ba29d281b9de1dd56952f11",
+      "mode": "0o644"
+    },
+    "operations/release/upgrade-check.mjs": {
+      "sha256": "cda521442b4e551435a493befa58e038a0bfc65ac983c033b6f899b4f1c76ae3",
+      "mode": "0o644"
+    },
+    "supabase/migrations/20260911160341_provider_operation_boundary.sql": {
+      "sha256": "487edd561b2936d84d0dc31a19eab67d373d6bfcb30489b3471b195424ef9773",
+      "mode": "0o644"
+    },
+    "tests/operations/actuator-maintenance-composition.mjs": {
+      "sha256": "a69159858f7223ace398ef1d70e254ed4001b5ba4b026a913d2eae1eb41fcc1b",
+      "mode": "0o644"
+    },
+    "tests/operations/engine-native-v2.native.test.ts": {
+      "sha256": "df0ff9e00a04b89721563a1f00e80da5245495831a32f34483bf7f4cd7ca90be",
+      "mode": "0o644"
+    },
+    "tests/operations/engine-proof.test.mjs": {
+      "sha256": "1d135b8191033fce54736558e43df198ad7d676191125dff3db1e2d028edfefe",
+      "mode": "0o644"
+    },
+    "tests/operations/github-adapters.test.mjs": {
+      "sha256": "820b786899a9a22d852da09a08f00e500f9632de610f01d494d41b87be5f367d",
+      "mode": "0o644"
+    },
+    "tests/operations/installed-bundle.test.mjs": {
+      "sha256": "ebcf9c81e77becbbb62517edc12c26258eb97e7dcd9b366c65d796cc6dae91d1",
+      "mode": "0o644"
+    },
+    "tests/operations/native-engine.test.py": {
+      "sha256": "4c9ddbe4a367501473d150f6891bb42f92db94ec68813e928cb6d7980c9c824d",
+      "mode": "0o644"
+    },
+    "tests/operations/native-install.test.py": {
+      "sha256": "150e22dcd94e866cbaef244110ad64e3ff432c39b29763c130dcc8b5468fa537",
+      "mode": "0o644"
+    },
+    "tests/operations/native-operation-v2.test.py": {
+      "sha256": "9fc4088d03da9a2f66150445c51ccb9ac81efafb04a803a799bdea79e2228de3",
+      "mode": "0o644"
+    },
+    "tests/operations/native-qualification.test.py": {
+      "sha256": "4c20e3fb448eaa6f7c7dd040f7bd44be5d427e9c33437ff3df3e011481576053",
+      "mode": "0o644"
+    },
+    "tests/operations/native-stage.test.py": {
+      "sha256": "aae31484f4c5fc8d67f8aee173f07b5a972398e1397e57c9836fb3638bedea60",
+      "mode": "0o644"
+    },
+    "tests/operations/native-wiring-v2.test.py": {
+      "sha256": "170663cfccc1bc314428774496db2aded21819e964edc0bdc91f6af3f39b9e1f",
+      "mode": "0o644"
+    },
+    "tests/operations/postgres-fixture.mjs": {
+      "sha256": "3c879ff9e2f8b131211613709aa963012b64e9d3555af95b975b4b6e66560894",
+      "mode": "0o644"
+    },
+    "tests/operations/provider-adapters.test.mjs": {
+      "sha256": "accca14c05081fda4677c976391e622b9d613a6b7f247a55f4a504bd9caf2c70",
+      "mode": "0o644"
+    },
+    "tests/operations/provider-runner.integration.test.mjs": {
+      "sha256": "61472eadd0c29d745d3b6e30ffa8c65fb5af554cf9439ae70028553d71eb091e",
+      "mode": "0o644"
+    },
+    "tests/operations/source-coordinator.integration.test.mjs": {
+      "sha256": "1509a8bcd60beb6bf0c85cc57a68b70aacced9b83fed9b47411adcd68a411467",
+      "mode": "0o644"
+    }
+  }
+}

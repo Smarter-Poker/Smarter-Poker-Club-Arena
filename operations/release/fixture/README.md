@@ -6,11 +6,12 @@ GoTrue, PostgREST, Supabase Realtime, and Chromium. API responses are not mocked
 Only synthetic credentials are created at runtime. Candidate frontend, engine,
 and schema artifacts are inputs to the separate trusted runtime/controller.
 
-**Status: prepared source, not a built or qualified image.** The preparation
-machine has no Linux Docker daemon. Registry manifests/configuration and signed
-Debian snapshot metadata were read; no image layers or browsers were pulled.
-The native smoke and full product matrix must run on Linux before admission.
-Neither local syntax checks nor a successful image build substitutes for them.
+**Status: updated source awaiting native qualification.** The earlier image at
+`799eebf49d4c3a36b4241adcaddb73b40733e011` built on Linux, but its native smoke
+failed. The cookie launcher adaptation below has local shell/filesystem tests;
+its actual image preimages, Erlang authentication and UID isolation still need
+the next Linux smoke. The full product matrix must also pass before admission.
+Neither local tests nor a successful image build substitutes for that proof.
 
 ## Pinned inputs
 
@@ -39,8 +40,8 @@ lists SHA-256 `70371bb2072d904ad381d29df2c50f5f2fe8c12583bc0207336b2d5772a0ac36`
 its [file inventory](https://packages.debian.org/trixie/amd64/postgresql-17-wal2json/filelist)
 includes `/usr/lib/postgresql/17/lib/wal2json.so`. The build uses the same signed
 snapshot and the native smoke must create and drop a real temporary logical
-slot using this plugin before exercising Realtime. This addition has not yet
-been built or executed in Linux; package-index and runtime proof remain required.
+slot using this plugin before exercising Realtime. The earlier image build
+passed the file check; real slot creation still requires a passing native smoke.
 Both APT sources are frozen at `20260910T000000Z` in the official
 [Debian snapshot archive](https://snapshot.debian.org/). The exact versions were
 verified in its `trixie` and `trixie-security` amd64 package indexes. Package
@@ -118,8 +119,45 @@ intended browser fixture state is observer-readable. Oracle `docker exec` uses
 `--user qualification --env HOME=/tmp/qualification
 --env XDG_CACHE_HOME=/tmp/qualification/cache`. The supervisor uses
 `/tmp/fixture`; Realtime temporary configuration and crash output use that
-private location. The release cookie is readable only by root/fixture, and the supervisor supplies a fresh runtime RELEASE_COOKIE in the private Realtime child environment. Its pgdelta cache is expanded during build, so invoking the
+private location. The supervisor creates a fresh `/tmp/fixture/.erlang.cookie`,
+owned by fixture with mode 0400, beneath its verified mode-0700 home. OTP reads
+that file itself; no cookie value is supplied through `RELEASE_COOKIE` or process
+arguments. The image's unused baked cookie stays root/fixture-readable only.
+Its pgdelta cache is expanded during build, so invoking the
 real Realtime migrations does not try to write beneath read-only `/app`.
+
+The Docker build calls `adaptRealtimeLauncher()` from the trusted runtime
+module. It accepts only the entire pinned Elixir 1.19.5 generated launcher
+(SHA256 `b35710db4fe3c141340dac83d02fbe9d3c8407ff600eb98915f54feb69e227a9`)
+and Realtime v2.134.10 release environment
+(`3fbe75e1c0ea82357e01a38af7666f2f54fac8e389c303084a45a48aeb178121`).
+Any mismatch fails the build before modification. Its counted replacements
+remove the cookie environment fallback and all four cookie argument sites;
+an explicit `RELEASE_COOKIE` now fails with a constant error. No compiled
+Erlang application or authentication implementation is replaced.
+
+The pinned [Realtime release environment](https://github.com/supabase/realtime/blob/v2.134.10/rel/env.sh.eex)
+forces named distribution. The fixture therefore explicitly uses `name`,
+preserving that actual upstream behavior instead of claiming `none` took effect.
+The [Elixir launcher](https://github.com/elixir-lang/elixir/blob/v1.19.5/lib/mix/lib/mix/tasks/release.init.ex)
+otherwise converts its cookie option into readable process arguments. Without
+that option, [OTP 28's authentication server](https://github.com/erlang/otp/blob/OTP-28.5.0.4/lib/kernel/src/auth.erl)
+loads the private home cookie and preserves genuine node/gen_rpc authentication.
+Pinned Realtime `config/runtime.exs`, `config/config.exs` and `config/prod.exs`
+do not read `RELEASE_COOKIE` or configure `gen_rpc.secret_cookie`. Its lock pins
+[gen_rpc authentication](https://github.com/emqx/gen_rpc/blob/891f90d713e83e3fca049345fb641afd9a1def28/src/gen_rpc_auth.erl#L500),
+which defaults to the OTP cookie when no application-level override is set.
+The dependency application defaults do not set an override or enable insecure
+authentication fallback.
+
+The native smoke must authenticate an actual RPC to the running named node and
+require the expected named node, compare both OTP and gen_rpc cookie hashes
+with the generated-file hash, and require no cookie override or insecure
+authentication fallback. It then keeps all
+UID 1001 environment/file/socket/argument denials and additionally denies the
+home cookie file. No cookie, authentication environment, or raw service log is
+printed. The shell tests use a capture executable only to inspect launcher
+arguments; they do not claim native Erlang, database, or browser proof.
 
 ## Genuine service bootstrap
 

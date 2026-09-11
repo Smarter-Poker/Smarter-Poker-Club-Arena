@@ -74,6 +74,11 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(m.native_failures('\n'.join(map(json.dumps, rows))),
                          [{'stage': 'initialization', 'category': 'deadline'}])
 
+    def test_native_postgres_error_name_retains_stage_without_query(self):
+        row = {'status': 'failed', 'stage': 'postgresql-wal2json-native-slot', 'error': 'error'}
+        self.assertEqual(m.native_failures(json.dumps(row)),
+                         [{'stage': row['stage'], 'category': 'error'}])
+
     def exercise(self, fault=None):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  assertFixtureAuthVersion,
   browserStorage,
   fixtureAuth,
   fixtureSecrets,
@@ -8,6 +9,16 @@ import {
   totp,
   verifyFixtureToken,
 } from '../../operations/release/fixture/auth-fixture.mjs';
+
+test('accepts the pinned native GoTrue version output and refuses changed binaries', () => {
+  // Captured from the actual successful Linux image build at 799eebf49d.
+  const nativeVersion = 'v2.196.0\n';
+  assert.equal(/\b2\.196\.0\b/.test(nativeVersion), false);
+  assert.doesNotThrow(() => assertFixtureAuthVersion(nativeVersion));
+  for (const changed of ['v2.196.1', 'v2.196.01', 'v2.196.0-dev', 'v2.196.0\nv2.197.0', '']) {
+    assert.throws(() => assertFixtureAuthVersion(changed));
+  }
+});
 
 test('synthetic service/anonymous tokens are isolated per fixture and cryptographically bound', () => {
   const one = fixtureSecrets(),

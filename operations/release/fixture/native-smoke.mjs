@@ -1,14 +1,15 @@
 // Real binaries and protocols in one disposable, network=none Linux container.
 // This deliberately does not emit a product semantic certificate.
 import assert from 'node:assert/strict';
-import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { spawn, execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { mkdir, writeFile, readFile, access, open, readdir, lstat, unlink } from 'node:fs/promises';
 import pg from 'pg';
 import { chromium } from '@playwright/test';
-import { fixtureSecrets, fixtureAuth } from './auth-fixture.mjs';
+import { fixtureSecrets, fixtureAuth, assertFixtureAuthVersion } from './auth-fixture.mjs';
 import { startObservationBridge } from './observation-bridge.mjs';
+import { prepareRealtimeCookie } from './fixture-server.mjs';
 
 const exec = promisify(execFile);
 const root = '/run/native-smoke';
@@ -95,6 +96,7 @@ async function oracle() {
     code: 'EACCES',
   });
   await assert.rejects(readFile('/app/releases/COOKIE'), { code: 'EACCES' });
+  await assert.rejects(readFile('/tmp/fixture/.erlang.cookie'), { code: 'EACCES' });
   const fixture = JSON.parse(await readFile(`${root}/oracle.json`, 'utf8'));
   await assert.rejects(readFile(`/proc/${fixture.auth_pid}/environ`), {
     code: 'EACCES',
@@ -209,9 +211,10 @@ async function services() {
   await mkdir(root, { recursive: true, mode: 0o755 });
   await mkdir(`${root}/private`, { mode: 0o700 });
   await mkdir('/tmp/fixture/realtime', { recursive: true, mode: 0o700 });
+  const realtimeCookie = await prepareRealtimeCookie();
   await mkdir('/run/postgresql', { mode: 0o700 });
   const control = await smokeControl();
-  const secrets = { ...fixtureSecrets(), realtimeCookie: randomBytes(48).toString('hex') };
+  const secrets = fixtureSecrets();
   await writeFile(`${root}/private/service.json`, JSON.stringify(secrets), {
     mode: 0o600,
   });
@@ -224,7 +227,7 @@ async function services() {
   const restVersion = await command('/usr/local/bin/postgrest', ['--version']);
   assert.match(restVersion.stdout, /\b14\.5\b/);
   const authVersion = await command('/usr/local/bin/auth', ['version']);
-  assert.match(authVersion.stdout + authVersion.stderr, /\b2\.196\.0\b/);
+  assertFixtureAuthVersion(authVersion.stdout + authVersion.stderr);
   await command(`${pgBin}/initdb`, [
     '-D',
     data,
@@ -411,8 +414,8 @@ async function services() {
       SEED_SELF_HOST: 'true',
       RUN_JANITOR: 'true',
       ERL_AFLAGS: '-proto_dist inet_tcp',
-      RELEASE_COOKIE: secrets.realtimeCookie,
-      RELEASE_DISTRIBUTION: 'none',
+      // The pinned release uses named distribution with OTP's private cookie file.
+      RELEASE_DISTRIBUTION: 'name',
       DNS_NODES: "''",
       RLIMIT_NOFILE: '10000',
     };
@@ -436,6 +439,28 @@ async function services() {
         authorization: `Bearer ${secrets.anonKey}`,
       })
     );
+    // The real named node must authenticate this RPC with the private file,
+    // and report only a hash proving it did not use the image's baked cookie.
+    const cookieProof = await command(
+      '/app/bin/realtime',
+      [
+        'rpc',
+        'hash = fn value -> Base.encode16(:crypto.hash(:sha256, value), case: :lower) end; ' +
+          'IO.write(Jason.encode!(%{node: Atom.to_string(node()), named: Node.alive?(), ' +
+          'otp: hash.(Atom.to_string(:erlang.get_cookie())), gen_rpc: hash.(:gen_rpc_auth.get_cookie()), ' +
+          'override_absent: Application.get_env(:gen_rpc, :secret_cookie) == nil, ' +
+          'insecure_fallback: Application.get_env(:gen_rpc, :insecure_auth_fallback_allowed, false)}))',
+      ],
+      realtimeEnv
+    );
+    assert.deepEqual(JSON.parse(cookieProof.stdout), {
+      node: 'realtime@127.0.0.1',
+      named: true,
+      otp: realtimeCookie.sha256,
+      gen_rpc: realtimeCookie.sha256,
+      override_absent: true,
+      insecure_fallback: false,
+    });
     const socket = new WebSocket(
       `ws://realtime-dev.supabase-realtime:4000/socket/websocket?apikey=${encodeURIComponent(secrets.anonKey)}&vsn=1.0.0`
     );
@@ -579,9 +604,12 @@ async function services() {
       `${root}/oracle.json`,
       JSON.stringify({
         auth_pid: auth.pid,
-        private_arg_hashes: Object.entries(secrets)
-          .filter(([key]) => key !== 'anonKey')
-          .map(([, value]) => createHash('sha256').update(value).digest('hex')),
+        private_arg_hashes: [
+          ...Object.entries(secrets)
+            .filter(([key]) => key !== 'anonKey')
+            .map(([, value]) => createHash('sha256').update(value).digest('hex')),
+          realtimeCookie.sha256,
+        ],
         user_id: user.id,
         access_token: user.session.access_token,
         observation_bridge: { ...bridge.binding, socket: observationSocket },

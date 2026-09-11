@@ -4,6 +4,12 @@ import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const encode = (value) => Buffer.from(JSON.stringify(value)).toString('base64url');
 
+// The pinned GoTrue binary's version command includes a literal v prefix.
+// A word-boundary before the first digit rejects that genuine output.
+export function assertFixtureAuthVersion(output) {
+  assert.equal(output.trim(), 'v2.196.0', 'unexpected fixture Auth version');
+}
+
 export function issueFixtureToken(secret, role, now = Date.now()) {
   assert.ok(secret.length >= 32);
   assert.ok(['anon', 'service_role'].includes(role));

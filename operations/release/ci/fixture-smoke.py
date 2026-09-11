@@ -24,7 +24,7 @@ NATIVE_STAGES = frozenset((
     'postgrest-14-5-authentication-and-rls', 'realtime-genuine-migrations-and-change',
     'native-observation-bridge-start', 'observer-and-browser-handoff'))
 NATIVE_ERROR_NAMES = frozenset(('Error', 'AssertionError', 'TypeError', 'RangeError',
-                                'SyntaxError', 'TimeoutError', 'AggregateError'))
+                                'SyntaxError', 'TimeoutError', 'AggregateError', 'error'))
 
 
 def native_failures(output):

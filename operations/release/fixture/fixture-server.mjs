@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { spawn, execFile } from 'node:child_process';
-import { randomBytes, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
-import { mkdir, writeFile, readFile, open, access, rm, chmod } from 'node:fs/promises';
+import { mkdir, writeFile, readFile, open, access, rm, chmod, lstat } from 'node:fs/promises';
 import { promisify } from 'node:util';
 import { pathToFileURL } from 'node:url';
 import { fixtureSecrets, fixtureAuth, browserStorage } from './auth-fixture.mjs';
@@ -39,6 +39,94 @@ const environment = Object.freeze({
   LANG: 'C.UTF-8',
 });
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Pinned Realtime v2.134.10 uses the Elixir 1.19.5 release template, rendered
+// with release name realtime and its default -mode option. The whole-file
+// preimages bind this fixture-only adaptation; an upstream change stops build.
+export function privateRealtimeLauncher(launcher, releaseEnvironment) {
+  const digest = (text) => createHash('sha256').update(text).digest('hex');
+  assert.equal(
+    digest(launcher),
+    'b35710db4fe3c141340dac83d02fbe9d3c8407ff600eb98915f54feb69e227a9',
+    'FIXTURE_REALTIME_LAUNCHER_PREIMAGE_REFUSED'
+  );
+  assert.equal(
+    digest(releaseEnvironment),
+    '3fbe75e1c0ea82357e01a38af7666f2f54fac8e389c303084a45a48aeb178121',
+    'FIXTURE_REALTIME_ENV_PREIMAGE_REFUSED'
+  );
+  const replace = (before, after, count) => {
+    assert.equal(launcher.split(before).length - 1, count);
+    launcher = launcher.split(before).join(after);
+  };
+  replace(
+    'RELEASE_COOKIE="${RELEASE_COOKIE:-"$(cat "$RELEASE_ROOT/releases/COOKIE")"}"\nexport RELEASE_COOKIE\n',
+    '# Fixture: OTP reads the private HOME/.erlang.cookie itself. Never put it in argv.\n' +
+      'if [ -n "${RELEASE_COOKIE:-}" ]; then\n' +
+      '  echo "FIXTURE_REALTIME_COOKIE_ENV_REFUSED" >&2\n  exit 1\nfi\n',
+    1
+  );
+  replace('       --cookie "$RELEASE_COOKIE" \\\n', '', 2);
+  replace('--hidden --cookie "$RELEASE_COOKIE" \\', '--hidden \\', 2);
+  assert.ok(!launcher.includes('--cookie') && !launcher.includes('-setcookie'));
+  return launcher;
+}
+
+// Build-time only, after the immutable image's release has been copied. No
+// runtime/candidate input selects a launcher path or supplies replacement code.
+export async function adaptRealtimeLauncher() {
+  assert.equal(process.getuid(), 0);
+  const launcher = '/app/bin/realtime';
+  const releaseEnvironment = '/app/releases/2.134.10/env.sh';
+  for (const file of [launcher, releaseEnvironment]) {
+    const details = await lstat(file);
+    assert.ok(details.isFile() && !details.isSymbolicLink());
+  }
+  const adapted = privateRealtimeLauncher(
+    await readFile(launcher, 'utf8'),
+    await readFile(releaseEnvironment, 'utf8')
+  );
+  await writeFile(launcher, adapted);
+  await chmod(launcher, 0o555);
+}
+
+// The optional harness is for local filesystem tests; no wire or environment
+// input can change the production home/UID. Return only an argument-scan hash.
+export async function prepareRealtimeCookie(testHarness = {}) {
+  const { home = '/tmp/fixture', uid = 1000, gid = 1000 } = testHarness;
+  assert.equal(process.getuid(), uid);
+  assert.equal(process.getgid(), gid);
+  const parent = await lstat(home);
+  assert.ok(
+    parent.isDirectory() &&
+      !parent.isSymbolicLink() &&
+      parent.uid === uid &&
+      parent.gid === gid &&
+      (parent.mode & 0o7777) === 0o700,
+    'FIXTURE_REALTIME_COOKIE_HOME_REFUSED'
+  );
+  const cookie = randomBytes(48).toString('hex');
+  const file = await open(
+    home + '/.erlang.cookie',
+    constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW,
+    0o400
+  );
+  try {
+    const details = await file.stat();
+    assert.ok(
+      details.isFile() &&
+        details.nlink === 1 &&
+        details.uid === uid &&
+        details.gid === gid &&
+        (details.mode & 0o7777) === 0o400,
+      'FIXTURE_REALTIME_COOKIE_FILE_REFUSED'
+    );
+    await file.writeFile(cookie + '\n');
+  } finally {
+    await file.close();
+  }
+  return { sha256: createHash('sha256').update(cookie).digest('hex') };
+}
 
 export class ServiceSupervisor {
   constructor({ logRoot = privateRoot, env = environment } = {}) {
@@ -267,8 +355,9 @@ function serviceEnvironments(secrets) {
       API_JWT_SECRET: secrets.jwtSecret,
       METRICS_JWT_SECRET: secrets.jwtSecret,
       SECRET_KEY_BASE: secrets.realtimeSecret,
-      RELEASE_COOKIE: randomBytes(48).toString('hex'),
-      RELEASE_DISTRIBUTION: 'none',
+      // Pinned env.sh forces name. Preserve genuine distribution/authentication;
+      // the adapted launcher lets OTP read the private cookie file, never argv.
+      RELEASE_DISTRIBUTION: 'name',
       APP_NAME: 'realtime',
       SELF_HOST_TENANT_NAME: 'realtime-dev',
       SEED_SELF_HOST: 'true',
@@ -288,6 +377,7 @@ async function start(args) {
   await chmod(root, 0o755);
   await mkdir(privateRoot, { mode: 0o700 });
   await mkdir('/tmp/fixture/realtime', { recursive: true, mode: 0o700 });
+  await prepareRealtimeCookie();
   await mkdir('/run/postgresql', { mode: 0o700 });
   const supervisor = new ServiceSupervisor();
   let db, gateway, actors, bridge;

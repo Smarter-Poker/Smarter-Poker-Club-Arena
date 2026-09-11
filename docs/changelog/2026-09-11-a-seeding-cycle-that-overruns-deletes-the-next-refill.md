@@ -49,6 +49,12 @@ Nothing is at risk that was not already. The 15-second deadline abandoned the sa
 
 The arithmetic is the point, and the test pins it: **18 s budget + 5 s abandoned call + 3.5 s Stable Hand state write = 26.5 s < 30 s tick.** The next tick always fires.
 
+## The hazard the budget itself introduced
+
+A budget measured from the start of the cycle includes the load phase — tag book, doors, policy, 5.3 s measured. If that phase ever ran past 18 seconds, an unguarded check would withhold **every** table, under a reason that reads like ordinary throttling, and the floor would stop being seeded entirely with nothing anywhere saying so. That is a worse failure than the overrun it replaces, and it is exactly the shape of thing this repository keeps finding: a guard that fails silently into looking healthy.
+
+So one table is always tried, whatever the clock says, and a load phase that has eaten the whole budget prints a line naming the number rather than passing in silence. The test pins both halves.
+
 ## What this does not fix
 
 The occupancy cap, not horse supply, is what leaves tables empty. At the time of measurement 27 of 173 cash tables had nobody at them, some for 249 hours, and 153 of the 1,000 horses held no seat at all — while both hosts sat pinned at their Stable Hand cap (238/238 and 167/167). That is a curve doing what it was told to do, and changing it is a decision about how full the floor should look, not a defect.

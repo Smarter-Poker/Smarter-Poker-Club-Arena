@@ -54,6 +54,10 @@ const client = readFileSync(resolve(here, 'supabase/client.ts'), 'utf8');
 const code = (src: string): string =>
   src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 
+/* Comment-stripped AND whitespace-collapsed. Prettier decides where a long
+   condition wraps, and a law that a reformat can break is not a law. */
+const flat = (src: string): string => code(src).replace(/\s+/g, ' ');
+
 const numberFor = (src: string, name: string): number => {
   const m = new RegExp(`${name}\\s*\\?\\?\\s*([0-9_]+)`).exec(code(src));
   expect(m, `${name} has no numeric default`).not.toBeNull();
@@ -76,8 +80,7 @@ describe('a seeding cycle finishes inside its tick', () => {
     expect(c).toMatch(/firstTableWithheld = 'cycle_time_budget'/);
     // Counted in the same beat field as the other withholdings, which is what
     // publishFleetState sends out as withheld_tables.
-    const guard = /SEED_CYCLE_SEATING_BUDGET_MS\)\s*\{\s*beat\.withheldTables\+\+/;
-    expect(c).toMatch(guard);
+    expect(flat(fleet)).toContain('SEED_CYCLE_SEATING_BUDGET_MS) { beat.withheldTables++');
   });
 
   it('the seat purchase uses the seeding deadline, not the dealing one', () => {
@@ -105,6 +108,25 @@ describe('a seeding cycle finishes inside its tick', () => {
     const TICK_MS = 30_000;
     expect(budget).toBe(18_000);
     expect(budget + seeding + STABLE_HAND_STATE_WRITE_MS).toBeLessThan(TICK_MS);
+  });
+
+  it('one table is always tried, so setup alone can never starve the floor', () => {
+    // The budget is measured from the START of the cycle, which includes the
+    // load phase (5.3 s measured). Without this, a slow load phase would
+    // withhold EVERY table under a reason that reads like ordinary throttling,
+    // and the floor would stop being seeded with nothing saying so.
+    const c = code(fleet);
+    const f = flat(fleet);
+    expect(f).toContain(
+      'tablesConsidered > 0 && Date.now() - cycleStartedAt >= SEED_CYCLE_SEATING_BUDGET_MS'
+    );
+    expect(f).toContain('tablesConsidered++');
+    expect(f).toContain('let tablesConsidered = 0');
+    // And it says so rather than passing in silence.
+    expect(f).toContain(
+      'tablesConsidered === 0 && Date.now() - cycleStartedAt >= SEED_CYCLE_SEATING_BUDGET_MS'
+    );
+    expect(f).toContain('the load phase used the whole');
   });
 
   it('both bounds are operator-overridable without a release', () => {

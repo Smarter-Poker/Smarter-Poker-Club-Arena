@@ -1933,6 +1933,9 @@ export class HorseFleetManager {
       });
       /* How many more horses may take a seat anywhere this cycle. Infinity is
          the default and means "no ceiling", which is today's behaviour. */
+      /* Tables this cycle has reached the seating stage for. Only used by the
+         time budget, which must always let the first one through. */
+      let tablesConsidered = 0;
       let seatBudget =
         globalPolicy.maxHorses === null
           ? Number.POSITIVE_INFINITY
@@ -2590,12 +2593,31 @@ export class HorseFleetManager {
              five-second seeding deadline in supabase/client.ts, the worst case
              is this budget plus one abandoned call plus the state write, which
              lands inside the tick. */
-          if (Date.now() - cycleStartedAt >= SEED_CYCLE_SEATING_BUDGET_MS) {
+          if (tablesConsidered > 0 && Date.now() - cycleStartedAt >= SEED_CYCLE_SEATING_BUDGET_MS) {
             beat.withheldTables++;
             if (firstTableWithheld === null) firstTableWithheld = 'cycle_time_budget';
             if (diag) diag.withheld = 'cycle_time_budget';
             continue;
           }
+          /* `tablesConsidered > 0` above is not a rounding detail. The budget is
+             measured from the START of the cycle, which includes the load phase
+             (tag book, doors, policy - 5.3 s measured). If that phase ever ran
+             past the budget, an unguarded check would withhold EVERY table and
+             the floor would stop being seeded at all, silently, with a reason
+             that reads like ordinary throttling. One table is always tried, so
+             a cycle can never seat nobody for want of time alone, and a load
+             phase that has eaten the budget says so on its own line. */
+          if (
+            tablesConsidered === 0 &&
+            Date.now() - cycleStartedAt >= SEED_CYCLE_SEATING_BUDGET_MS
+          ) {
+            console.warn(
+              `[HorseFleet] the load phase used the whole ${SEED_CYCLE_SEATING_BUDGET_MS}ms seating ` +
+                `budget (${Date.now() - cycleStartedAt}ms) - seeding one table anyway so the floor ` +
+                'is never starved by setup alone'
+            );
+          }
+          tablesConsidered++;
 
           const target = occupancyTargetFor(
             table.id,

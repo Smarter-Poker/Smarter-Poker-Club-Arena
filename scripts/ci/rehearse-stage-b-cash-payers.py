@@ -20,6 +20,8 @@ DEFAULT_PSQL = "/opt/homebrew/opt/postgresql@17/bin/psql"
 DISPOSABLE_ACKNOWLEDGEMENT = "DISPOSABLE_LOCAL_PG17_CLONE"
 SYSTEM_DATABASES = frozenset(("postgres", "template0", "template1"))
 LANE_MIGRATION_NAME = "the_settlement_lane_is_per_tournament_not_platform_wide"
+BUST_ORDER_MIGRATION_NAME = "a_bust_is_ranked_by_when_it_happened"
+BUST_ORDER_MIGRATION_SHA256 = "d2d0acba73031ed8617a243840eecea0e0e227a6dce5a78ce3ce2bfcfb79cf73"
 STAGE_B_MIGRATION_NAME = "stage_b_current_postimage_contraction"
 CASH_CONTRACTION_MIGRATION_NAME = "final_deal_receipts_survive_real_terminal_settlement"
 CASH_CONTRACTION_BLOCK_SHA256 = "990f20650eb18c6bd3d105018fb920ca68faa47fcd9790ec09d71fdd35fb0c20"
@@ -32,8 +34,8 @@ FINAL_DEAL_SOURCE_MD5 = "b1941b2e55dade307ecd74068ab3e500"
 FINAL_DEAL_DEFINITION_MD5 = "c7bee6802ab30d625c32503a4d6609e1"
 COMPOSER_FINAL_DEAL_SOURCE_MD5 = "141c723b5225bcec588b8957cf039184"
 NORMAL_CASH_IDENTITY = "public.fn_settle_tournament_places(uuid,uuid)"
-NORMAL_CASH_SOURCE_MD5 = "d0262f4928b12eea1cc5e9175cbf2737"
-NORMAL_CASH_DEFINITION_MD5 = "07d6c760bb8ff350280fcba1680f591d"
+NORMAL_CASH_SOURCE_MD5 = "6181734ff98555ecc04648186f6ebf24"
+NORMAL_CASH_DEFINITION_MD5 = "c412c8b17186976df139f73a706175f2"
 CASH_LEAF_POSTIMAGES = (
     (
         "public.fn_ca_settle_tournament_place_raw(uuid,integer,uuid,numeric)",
@@ -584,17 +586,16 @@ VALUES('31000000-0000-0000-0000-000000000002',
 """
     composed = once(composed, "SET LOCAL session_replication_role=origin;",
                     bubble + "\nSET LOCAL session_replication_role=origin;")
-    cash_source = (root / "supabase/migrations/20260909042455_tournament_cash_settlement_has_one_atomic_authority.sql").read_text()
+    cash_source_path = exact_migration(root, BUST_ORDER_MIGRATION_NAME)
+    cash_source_bytes = cash_source_path.read_bytes()
+    if hashlib.sha256(cash_source_bytes).hexdigest() != BUST_ORDER_MIGRATION_SHA256:
+        raise ValueError("exact live bust-order source changed")
+    cash_source = cash_source_bytes.decode()
     definitions = re.findall(r"(CREATE OR REPLACE FUNCTION public\.fn_settle_tournament_places\(.*?AS (\$[^$]*\$)(.*?)\2;)", cash_source, re.S)
-    lane_source = lane_path.read_text()
-    patterns = re.findall(r"v_excl CONSTANT text :=\s*'((?:''|[^'])*)';", lane_source)
-    replacements = re.findall(r"'fn_settle_tournament_places',\s*'([^']+)'", lane_source)
-    if len(definitions)!=1 or len(patterns)!=1 or len(replacements)!=1:
-        raise ValueError("exact current normal cash lane composition changed")
-    definition, _, old_body = definitions[0]
-    current_definition, hits = re.subn(patterns[0].replace("''", "'"),replacements[0],definition)
-    current_body, body_hits = re.subn(patterns[0].replace("''", "'"),replacements[0],old_body)
-    if hits!=1 or body_hits!=1 or hashlib.md5(current_body.encode()).hexdigest()!=NORMAL_CASH_SOURCE_MD5:
+    if len(definitions)!=1:
+        raise ValueError("exact current normal cash source is not unique")
+    current_definition, _, current_body = definitions[0]
+    if hashlib.md5(current_body.encode()).hexdigest()!=NORMAL_CASH_SOURCE_MD5:
         raise ValueError("current normal cash body does not match verified authority")
     normal_cash = """DO $normal_cash_gate$ BEGIN IF NOT EXISTS (
   SELECT 1 FROM pg_proc p JOIN pg_language l ON l.oid=p.prolang

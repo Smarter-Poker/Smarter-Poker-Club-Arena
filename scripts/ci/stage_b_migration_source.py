@@ -6,7 +6,7 @@ import re
 
 
 MIGRATION_NAME = "stage_b_current_postimage_contraction"
-SOURCE_SHA256 = "0e4de008290fd491c198779927433765149f4f42bb77efd32f4c61d9d4c93c1f"
+SOURCE_SHA256 = "7ac02aa176bfc60f0985e366c771fe1f59e4f47ff2e66ecc2c5e54f9236403b0"
 
 
 def resolve(root: Path) -> Path:

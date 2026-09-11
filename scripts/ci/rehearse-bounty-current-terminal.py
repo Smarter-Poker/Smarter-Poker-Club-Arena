@@ -26,11 +26,13 @@ ROLLING = "supabase/migrations/20260910173147_the_settlement_lane_is_per_tournam
 SWEEP = "supabase/migrations/20260910174349_the_bounty_sweep_takes_one_tournament_lane_per_call.sql"
 FELT = "supabase/migrations/20260910002804_the_felt_decides_who_busted.sql"
 LEDGER = "supabase/migrations/20260910130421_a_revealed_mystery_bounty_may_name_its_own_obligation.sql"
+BUST_ORDER = "supabase/migrations/20260911062048_a_bust_is_ranked_by_when_it_happened.sql"
 EXACT_SOURCES = {
     FELT: "d3182320e289a832f8aeb2804e6cd8cd9314d8d20bfbf7c862338261fce4868e",
     LEDGER: "2236fdbd5ce9f765dba5e9e5dc2cdb5ae5590f6e3b1f5e5180145b9918b9d400",
     ROLLING: "bc620a6b093ab9769615427168763bc35aaed44e60ee190202470dfcef0f744b",
     SWEEP: "0e209beadad2f8b52e8c72c0bd3559b6fe64fab9917bfb8ac6516a6297f66a17",
+    BUST_ORDER: "d2d0acba73031ed8617a243840eecea0e0e227a6dce5a78ce3ce2bfcfb79cf73",
 }
 CLAIM_ARGS = "uuid,uuid,integer,numeric,uuid,uuid,bigint,timestamptz,uuid,jsonb,numeric,boolean"
 OWNED_BOUNTY_GUARD = """DO $owned_baseline$ BEGIN
@@ -83,12 +85,11 @@ def narrow_authorities(root, bounty):
         if digest(text) != expected:
             raise ValueError("reviewed narrow source changed: " + relative)
         sources[relative] = text
-    m5 = bounty.source(root, bounty.M5)
     stage_b = module(root / STAGE_B_RESOLVER, "bounty_stage_b_source").resolve(root).read_text()
     claimant_name = "fn_claim_tournament_bounty_elimination"
     private_name = claimant_name + "_pre_seat_guard"
-    private = bounty.definition(m5, claimant_name)
-    if bounty.body_hash(private) != "876456f79250a307292dc6f2ae1564f3":
+    private = bounty.definition(sources[BUST_ORDER], claimant_name)
+    if bounty.body_hash(private) != "e099757eb087ef222e2fc92030ececaf":
         raise ValueError("reviewed exact-hand claimant source changed")
     # Header-only substitution retains every exact-hand and entry-generation
     # check in the private body consumed by Stage-B's current public wrapper.
@@ -105,7 +106,7 @@ def narrow_authorities(root, bounty):
             ") TO service_role;\n")
     expected_bodies = {
         claimant_name + "(" + CLAIM_ARGS + ")": "d4e6c9977aba4b1dd1972a9060cf7dc8",
-        private_name + "(" + CLAIM_ARGS + ")": "876456f79250a307292dc6f2ae1564f3",
+        private_name + "(" + CLAIM_ARGS + ")": "e099757eb087ef222e2fc92030ececaf",
     }
     # The rolling helper takes G shared and T(id) exclusive. These exact
     # current trigger bodies accept that event-local proof. No trigger is

@@ -1,7 +1,7 @@
 -- 20260910042007_stage_b_forward_authority_expansion
 --
 -- Thirteen historical Stage-B migrations are absent from production while
--- production has continued through the byte-authenticated 20260911090347 live
+-- production has continued through the byte-authenticated 20260911112409 live
 -- tail (final-deal v2, wheel free-spin retirement, exact-generation bounty
 -- rebuy settlement, welcome-spin coherence, the corrected unstarted-entry
 -- return policy, operator/player game views, retired mint reporting, and the
@@ -595,13 +595,140 @@ BEGIN
             AND octet_length(m.statements[1])=9372
             AND encode(extensions.digest(
                   convert_to(m.statements[1],'UTF8'),'sha256'),'hex')=
-                'e528b35403f6e439287b14c54b0c7308b186d0455bf9a1198b661d26e97e2d8a')<>1 THEN
+                'e528b35403f6e439287b14c54b0c7308b186d0455bf9a1198b661d26e97e2d8a')<>1
+     OR (SELECT count(*)
+           FROM supabase_migrations.schema_migrations m
+          WHERE m.version='20260911062048'
+            AND m.name='a_bust_is_ranked_by_when_it_happened'
+            AND cardinality(m.statements)=1
+            AND octet_length(m.statements[1])=150688
+            AND encode(extensions.digest(
+                  convert_to(m.statements[1],'UTF8'),'sha256'),'hex')=
+                'd2d0acba73031ed8617a243840eecea0e0e227a6dce5a78ce3ce2bfcfb79cf73')<>1
+     OR (SELECT count(*)
+           FROM supabase_migrations.schema_migrations m
+          WHERE m.version='20260911094503'
+            AND m.name='a_bust_belongs_to_the_phase_its_hand_was_played_in'
+            AND cardinality(m.statements)=1
+            AND octet_length(m.statements[1])=17270
+            AND encode(extensions.digest(
+                  convert_to(m.statements[1],'UTF8'),'sha256'),'hex')=
+                '0d620bf6061213e0ef0362126fde1e3e2feddc7b13720fa74727ad80da5fd570')<>1
+     OR (SELECT count(*)
+           FROM supabase_migrations.schema_migrations m
+          WHERE m.version='20260911110907'
+            AND m.name='a_satellite_never_feeds_a_target_its_finish_refuses'
+            AND cardinality(m.statements)=1
+            AND octet_length(m.statements[1])=7971
+            AND encode(extensions.digest(
+                  convert_to(m.statements[1],'UTF8'),'sha256'),'hex')=
+                'fcbbe600573494b1402cb2c10d8179534d1845ace630a921e25c5df68f589b33')<>1
+     OR (SELECT count(*)
+           FROM supabase_migrations.schema_migrations m
+          WHERE m.version='20260911112409'
+            AND m.name='persist_eligible_free_buy_creation_options'
+            AND cardinality(m.statements)=1
+            AND octet_length(m.statements[1])=3281
+            AND encode(extensions.digest(
+                  convert_to(m.statements[1],'UTF8'),'sha256'),'hex')=
+                'e16b3a057460833cd74c7a2da612df8b2c5269e156a7cc7b8116679d7fb6b24a')<>1 THEN
     RAISE EXCEPTION
-      'Stage-B expansion requires the exact 20260910190537 and 20260911050554..20260911090347 live tail'
+      'Stage-B expansion requires the exact reviewed live tail through 20260911112409'
       USING ERRCODE='55000';
   END IF;
 END;
 $require_exact_live_tail_receipts$;
+
+-- This is the last fail-before-DDL boundary for the six-file chain. Bind the
+-- exact live implementations that the later contraction will preserve, rename
+-- or reconfigure, not merely the receipts that originally installed them. A
+-- direct catalog writer therefore cannot let M1-M4 commit before M5 refuses.
+DO $require_current_bust_order_function_preimage$
+DECLARE
+  v_count integer;
+  v_bad integer;
+BEGIN
+  WITH expected(
+    identity,definition_md5,definition_bytes,definition_sha256,
+    source_md5,source_bytes,source_sha256,acl_text
+  ) AS (
+    VALUES
+      ('public.fn_settle_tournament_places(uuid,uuid)',
+       'c412c8b17186976df139f73a706175f2',40019,
+       '4a24b678e236f737c516253fb797ab6f5ef51c98ffb2de6606bb7e6765abf6e5',
+       '6181734ff98555ecc04648186f6ebf24',39772,
+       '78d60492fc5ad939ae3aa6e060909aee1d11d1dc62911cef682bb07fa1723dcb',
+       '{postgres=X/postgres,service_role=X/postgres}'),
+      ('public.fn_eliminate_player_legacy_candidate_20260907(uuid,uuid,integer,numeric,numeric)',
+       '7e09f2f870e542e8f509236b15f21107',7593,
+       'a2ae0c1306f1033df858fbb3e67af2bfbc5a690a7572e445fd98a89f62a96097',
+       '97abb184dc27e3c7a333a6160636f473',7288,
+       '17b0956e0ef8afa5b1ad6e3eb853c16af7a6828cf906f6313800c399ae76e97e',
+       '{postgres=X/postgres}'),
+      ('public.fn_claim_bounty_legacy_candidate_20260907(uuid,uuid,integer,numeric,uuid,uuid,bigint,timestamp with time zone,uuid,jsonb,numeric,boolean)',
+       '200abf47fbee005334b6315fce68efaf',22672,
+       '2b4d284e57a8f1b2efde5ab79c8c962c3a6a74da6cabed260a04c0430f0a91c0',
+       'd10ceaad9c867902c7407f20151f28b7',22168,
+       '8b4ee8ddd8b510a71050a64cabf7548fe59d27b135e2c473b3a0591d5bec6679',
+       '{postgres=X/postgres}'),
+      ('public.fn_eliminate_tournament_player_atomic(uuid,uuid,integer,numeric,numeric)',
+       'fa7affc52441a40dfc8f1a530f39d9e4',12162,
+       'acaa1c94f3880dfbf7c9f7fedc9965aa472dc673b170ad9c56818e22ad1ab1bd',
+       '9447da284f1a3beb6d51dd87151c080f',11865,
+       '805d55efcc4b6ca57125eab19c4167df2115450d327350203780cadcf0a46f02',
+       '{postgres=X/postgres,service_role=X/postgres}'),
+      ('public.fn_claim_tournament_bounty_elimination(uuid,uuid,integer,numeric,uuid,uuid,bigint,timestamp with time zone,uuid,jsonb,numeric,boolean)',
+       '031511013eac6b76d12efe899b8d90d3',14003,
+       '475336a3c20d8a9d3671ac459a49452867b87aecbebe9c3daa44517630f303f3',
+       'e099757eb087ef222e2fc92030ececaf',13502,
+       '35bf958971008217f7deafa54e6ac778c9ea393edc2f2bebb64f2201c8a6318f',
+       '{postgres=X/postgres,service_role=X/postgres}'),
+      ('public.fn_normalize_tournament_final_standings(uuid)',
+       'c07b97cc94392b36696ad0518598cb8b',21858,
+       '66f45d3ad2101cc1c9f6abbb773bb3aec8230ea73649ed479111ed9fcf348c0a',
+       '45b06c3f8be02940d130c427d5a32519',21658,
+       '12090919c2bff3b2813dc3293e7b95cdf4f2bf19d012584f53d8d44b765b2f8a',
+       '{postgres=X/postgres,service_role=X/postgres}'),
+      ('public.fn_ca_tournament_finished_but_not_completed(integer)',
+       '1a09ed194e3527e79e2eeef0311edfef',3835,
+       '72bc4addd452e45791cbf03b01f60193edccacd284cfb9b718da449e69ec90cd',
+       '6f153669e4b6b149bfccd36ad575bda8',3591,
+       'ce416be57108914dd098f6d9c8a0310dbb043e44de4e39193916b5000f81611b',
+       '{postgres=X/postgres,service_role=X/postgres}'),
+      ('public.fn_prepare_tournament_place_obligations(uuid,text)',
+       'be9cf45cc7a867d0b06a80648b1e0b43',37895,
+       'f70ab08cb48f16b17caf6ff71cb0867872df88b4efc6df8a908c94e2e583a59e',
+       'ca0abbc6d297f3009143676261d8cf19',37635,
+       'a528f81215fd3401485c76c4c485c125f5dcee82e69f9c4fb14387ebcff77590',
+       '{postgres=X/postgres,service_role=X/postgres}')
+  )
+  SELECT count(*)::integer,
+         count(*) FILTER (
+           WHERE p.oid IS NULL
+              OR md5(pg_get_functiondef(p.oid))<>expected.definition_md5
+              OR octet_length(pg_get_functiondef(p.oid))<>expected.definition_bytes
+              OR encode(extensions.digest(
+                   convert_to(pg_get_functiondef(p.oid),'UTF8'),'sha256'),'hex')<>
+                   expected.definition_sha256
+              OR md5(p.prosrc)<>expected.source_md5
+              OR octet_length(p.prosrc)<>expected.source_bytes
+              OR encode(extensions.digest(
+                   convert_to(p.prosrc,'UTF8'),'sha256'),'hex')<>
+                   expected.source_sha256
+              OR p.proowner<>'postgres'::regrole
+              OR p.proacl::text IS DISTINCT FROM expected.acl_text
+         )::integer
+    INTO v_count,v_bad
+    FROM expected
+    LEFT JOIN pg_proc p ON p.oid=to_regprocedure(expected.identity);
+
+  IF v_count<>8 OR v_bad<>0 THEN
+    RAISE EXCEPTION
+      'Stage-B expansion found % drifted current bust-order function preimages',
+      v_bad USING ERRCODE='55000';
+  END IF;
+END;
+$require_current_bust_order_function_preimage$;
 
 /* 20260911061723 changed unstarted satellite-seat and redeemed-ticket
    cancellation into chip refunds. Stage B preserves the funded-origin policy

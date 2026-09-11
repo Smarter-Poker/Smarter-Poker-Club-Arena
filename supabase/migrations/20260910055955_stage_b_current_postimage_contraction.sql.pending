@@ -5,7 +5,7 @@
 -- intermediate authority, overwrite later live fixes, and split one scheduler
 -- retirement across transactions. This forward-only boundary composes their
 -- final contract over the measured catalog state through the byte-authenticated
--- 20260911090347 live tail, including the 20260910063559 and 20260910064701
+-- 20260911112409 live tail, including the 20260910063559 and 20260910064701
 -- lease-heartbeat repairs, final-deal v2, wheel free-spin retirement,
 -- exact-generation bounty rebuy settlement, welcome-spin coherence, the
 -- corrected unstarted-entry return policy, canonical late-entry wallet/capacity
@@ -352,7 +352,15 @@ BEGIN
       ('20260911081910','a_seat_exit_guard_without_its_consumer_refuses_nothing',7525,
        'a1a762df5c6e9e62b63d1602a360a7349c087d652c00e22c63dac481a953a623'),
       ('20260911090347','the_prize_reprice_door_the_engine_calls_exists',9372,
-       'e528b35403f6e439287b14c54b0c7308b186d0455bf9a1198b661d26e97e2d8a')
+       'e528b35403f6e439287b14c54b0c7308b186d0455bf9a1198b661d26e97e2d8a'),
+      ('20260911062048','a_bust_is_ranked_by_when_it_happened',150688,
+       'd2d0acba73031ed8617a243840eecea0e0e227a6dce5a78ce3ce2bfcfb79cf73'),
+      ('20260911094503','a_bust_belongs_to_the_phase_its_hand_was_played_in',17270,
+       '0d620bf6061213e0ef0362126fde1e3e2feddc7b13720fa74727ad80da5fd570'),
+      ('20260911110907','a_satellite_never_feeds_a_target_its_finish_refuses',7971,
+       'fcbbe600573494b1402cb2c10d8179534d1845ace630a921e25c5df68f589b33'),
+      ('20260911112409','persist_eligible_free_buy_creation_options',3281,
+       'e16b3a057460833cd74c7a2da612df8b2c5269e156a7cc7b8116679d7fb6b24a')
   )
   SELECT count(*)::integer,
          count(*) FILTER (
@@ -367,9 +375,9 @@ BEGIN
     FROM expected
     LEFT JOIN supabase_migrations.schema_migrations m
       ON m.version=expected.version AND m.name=expected.name;
-  IF v_count<>13 OR v_bad<>0 THEN
+  IF v_count<>17 OR v_bad<>0 THEN
     RAISE EXCEPTION
-      'Stage-B requires the thirteen byte-exact 20260910190537 and 20260911050554..20260911090347 live-tail receipts'
+      'Stage-B requires the seventeen byte-exact reviewed live-tail receipts through 20260911112409'
       USING ERRCODE='55000';
   END IF;
 
@@ -505,8 +513,8 @@ BEGIN
        ARRAY['search_path=public, pg_temp','statement_timeout=30s']::text[],
        '{postgres=X/postgres,service_role=X/postgres}'),
       ('public.fn_claim_bounty_legacy_candidate_20260907(uuid,uuid,integer,numeric,uuid,uuid,bigint,timestamp with time zone,uuid,jsonb,numeric,boolean)',
-       '5437a59dbe68a08e9df13baa422a903c',
-       '590f0f782e127288f33763bbab8c89f0','plpgsql',true,'v','u',
+       '200abf47fbee005334b6315fce68efaf',
+       'd10ceaad9c867902c7407f20151f28b7','plpgsql',true,'v','u',
        false,false,'f',false,'jsonb',12,2,
        ARRAY['search_path=public, pg_temp']::text[],
        '{postgres=X/postgres}'),
@@ -925,7 +933,7 @@ $assert_stage_b_owned_postimage$;
 
 SELECT pg_temp.assert_stage_b_owned_postimage(false);
 
--- Four live-tail functions below are deliberately wrapped or have their ACL
+-- Five live-tail functions below are deliberately wrapped or have their ACL
 -- and trusted search path tightened later in this same transaction. Pin their
 -- complete 171924 preimage here, then prove at the final boundary that the
 -- audited implementation source was carried through unchanged.
@@ -952,10 +960,16 @@ BEGIN
        21367,'7f51ae874957250d6e2c5df40573170e6deaafe8f1d39b5417a41587c419a1ad',
        8,2,ARRAY['search_path=public']::text[],'{postgres=X/postgres}'),
       ('public.fn_eliminate_tournament_player_atomic(uuid,uuid,integer,numeric,numeric)',
-       'eefbf339094c8bc7420ef226132ae453','b4937067d9bf337e1466095b9e1d5424',
-       8145,'51c2f60bf067ca670e00631089e0268ecf6cb6f7c64a0401b710c200b617293d',
-       7848,'b4daec2a24918030b2bef95fab45d1518bfc57cfae8dfbe9a9d948dda369c321',
+       'fa7affc52441a40dfc8f1a530f39d9e4','9447da284f1a3beb6d51dd87151c080f',
+       12162,'acaa1c94f3880dfbf7c9f7fedc9965aa472dc673b170ad9c56818e22ad1ab1bd',
+       11865,'805d55efcc4b6ca57125eab19c4167df2115450d327350203780cadcf0a46f02',
        5,1,ARRAY['search_path=public, pg_temp']::text[],
+       '{postgres=X/postgres,service_role=X/postgres}'),
+      ('public.fn_claim_tournament_bounty_elimination(uuid,uuid,integer,numeric,uuid,uuid,bigint,timestamp with time zone,uuid,jsonb,numeric,boolean)',
+       '031511013eac6b76d12efe899b8d90d3','e099757eb087ef222e2fc92030ececaf',
+       14003,'475336a3c20d8a9d3671ac459a49452867b87aecbebe9c3daa44517630f303f3',
+       13502,'35bf958971008217f7deafa54e6ac778c9ea393edc2f2bebb64f2201c8a6318f',
+       12,2,ARRAY['search_path=public, pg_temp']::text[],
        '{postgres=X/postgres,service_role=X/postgres}'),
       ('public.fn_award_satellite_seat(uuid,uuid,uuid,text,integer)',
        '208fe48a2697811d14e55a64271083a6','2c21c56c6a9d4a2f8ee79082bd4fef57',
@@ -989,9 +1003,9 @@ BEGIN
     FROM expected
     LEFT JOIN pg_proc p ON p.oid=to_regprocedure(expected.identity)
     LEFT JOIN pg_language l ON l.oid=p.prolang;
-  IF v_count<>4 OR v_bad<>0 THEN
+  IF v_count<>5 OR v_bad<>0 THEN
     RAISE EXCEPTION
-      'Stage-B found % missing or drifted mutable 171924 function preimages',
+      'Stage-B found % missing or drifted mutable live-tail function preimages',
       v_bad USING ERRCODE='55000';
   END IF;
 END;
@@ -11092,8 +11106,14 @@ BEGIN
        SELECT 1 FROM pg_proc p
         WHERE p.oid=to_regprocedure(
           'public.fn_eliminate_tournament_player_atomic_pre_seat_guard(uuid,uuid,integer,numeric,numeric)')
-          AND md5(p.prosrc)='b4937067d9bf337e1466095b9e1d5424'
-          AND octet_length(p.prosrc)=7848)
+          AND md5(p.prosrc)='9447da284f1a3beb6d51dd87151c080f'
+          AND octet_length(p.prosrc)=11865)
+     OR NOT EXISTS (
+       SELECT 1 FROM pg_proc p
+        WHERE p.oid=to_regprocedure(
+          'public.fn_claim_tournament_bounty_elimination_pre_seat_guard(uuid,uuid,integer,numeric,uuid,uuid,bigint,timestamp with time zone,uuid,jsonb,numeric,boolean)')
+          AND md5(p.prosrc)='e099757eb087ef222e2fc92030ececaf'
+          AND octet_length(p.prosrc)=13502)
      OR NOT EXISTS (
        SELECT 1 FROM pg_proc p
         WHERE p.oid=to_regprocedure(
@@ -11112,6 +11132,111 @@ BEGIN
   END IF;
 END;
 $verify_stage_b_171924_mutable_sources_carried$;
+
+-- The current bust-order release arrived before Stage B. Prove that each of its
+-- seven replaced functions and the place-obligation dependency altered here
+-- survived the contraction: the two public elimination roots are now scoped
+-- wrappers around byte-identical private cores, while the remaining functions
+-- retain their exact reviewed implementation. ACLs are included so an exact
+-- body cannot hide a reopened browser or service door.
+DO $verify_current_bust_order_composition$
+DECLARE
+  v_count integer;
+  v_bad integer;
+BEGIN
+  WITH expected(
+    identity,definition_md5,definition_bytes,definition_sha256,
+    source_md5,source_bytes,source_sha256,acl_text
+  ) AS (
+    VALUES
+      ('public.fn_settle_tournament_places(uuid,uuid)',
+       'f8d078a36cd30f78400a2570fe177db0',40030,
+       '339c7f13922061d8f13fd75ceefd70dd9e02593e5532afcf0501e4867e548865',
+       '6181734ff98555ecc04648186f6ebf24',39772,
+       '78d60492fc5ad939ae3aa6e060909aee1d11d1dc62911cef682bb07fa1723dcb',
+       '{postgres=X/postgres}'),
+      ('public.fn_eliminate_player_legacy_candidate_20260907(uuid,uuid,integer,numeric,numeric)',
+       '7e09f2f870e542e8f509236b15f21107',7593,
+       'a2ae0c1306f1033df858fbb3e67af2bfbc5a690a7572e445fd98a89f62a96097',
+       '97abb184dc27e3c7a333a6160636f473',7288,
+       '17b0956e0ef8afa5b1ad6e3eb853c16af7a6828cf906f6313800c399ae76e97e',
+       '{postgres=X/postgres}'),
+      ('public.fn_claim_bounty_legacy_candidate_20260907(uuid,uuid,integer,numeric,uuid,uuid,bigint,timestamp with time zone,uuid,jsonb,numeric,boolean)',
+       '200abf47fbee005334b6315fce68efaf',22672,
+       '2b4d284e57a8f1b2efde5ab79c8c962c3a6a74da6cabed260a04c0430f0a91c0',
+       'd10ceaad9c867902c7407f20151f28b7',22168,
+       '8b4ee8ddd8b510a71050a64cabf7548fe59d27b135e2c473b3a0591d5bec6679',
+       '{postgres=X/postgres}'),
+      ('public.fn_eliminate_tournament_player_atomic_pre_seat_guard(uuid,uuid,integer,numeric,numeric)',
+       'f2782a382bdd341ab1730de22702d5c3',12177,
+       'de3cd473b4ca0b24e3e46a4c8544772b6e1245f91a889a9752c6440b62172420',
+       '9447da284f1a3beb6d51dd87151c080f',11865,
+       '805d55efcc4b6ca57125eab19c4167df2115450d327350203780cadcf0a46f02',
+       '{postgres=X/postgres}'),
+      ('public.fn_eliminate_tournament_player_atomic(uuid,uuid,integer,numeric,numeric)',
+       '7e1622014b531b5ac97b256e55d898c2',2051,
+       '052fa454e3f12b1856a6c81d503d7c7239ec131ce4035771dc6fefe9531b0279',
+       '37d156f47ae7a98fbc463ace4f396e60',1754,
+       '65fc308f72319f521e62c38882ad0ed6f098f5b84a6d3c3d63c5577a8174c4f3',
+       '{postgres=X/postgres,service_role=X/postgres}'),
+      ('public.fn_claim_tournament_bounty_elimination_pre_seat_guard(uuid,uuid,integer,numeric,uuid,uuid,bigint,timestamp with time zone,uuid,jsonb,numeric,boolean)',
+       'b290a3e0903d2114f8c0232e4d250386',14018,
+       '1f49c4dc1d84ae8784d974f33b334f49aa67aef1622969f23e2468370e9e839a',
+       'e099757eb087ef222e2fc92030ececaf',13502,
+       '35bf958971008217f7deafa54e6ac778c9ea393edc2f2bebb64f2201c8a6318f',
+       '{postgres=X/postgres}'),
+      ('public.fn_claim_tournament_bounty_elimination(uuid,uuid,integer,numeric,uuid,uuid,bigint,timestamp with time zone,uuid,jsonb,numeric,boolean)',
+       '4b513df1e1e4c68a916febe6aa7b996d',2716,
+       '25c3403b00c3626dc4392fe50ca9474bfe0c0b75d2a3f0d2426a301911cab0f6',
+       'd4e6c9977aba4b1dd1972a9060cf7dc8',2215,
+       '8fe61b436d3c08d8f2e48edb3847d85b5bdcd3eb92082ad86729a545d4f2b665',
+       '{postgres=X/postgres,service_role=X/postgres}'),
+      ('public.fn_normalize_tournament_final_standings(uuid)',
+       'c07b97cc94392b36696ad0518598cb8b',21858,
+       '66f45d3ad2101cc1c9f6abbb773bb3aec8230ea73649ed479111ed9fcf348c0a',
+       '45b06c3f8be02940d130c427d5a32519',21658,
+       '12090919c2bff3b2813dc3293e7b95cdf4f2bf19d012584f53d8d44b765b2f8a',
+       '{postgres=X/postgres,service_role=X/postgres}'),
+      ('public.fn_ca_tournament_finished_but_not_completed(integer)',
+       '1a09ed194e3527e79e2eeef0311edfef',3835,
+       '72bc4addd452e45791cbf03b01f60193edccacd284cfb9b718da449e69ec90cd',
+       '6f153669e4b6b149bfccd36ad575bda8',3591,
+       'ce416be57108914dd098f6d9c8a0310dbb043e44de4e39193916b5000f81611b',
+       '{postgres=X/postgres,service_role=X/postgres}'),
+      ('public.fn_prepare_tournament_place_obligations(uuid,text)',
+       '02a18d2dbc206f775301f71f7a584c7a',37906,
+       '4abf2eb6373b5b8a126921f2f03f5f30d1574e54957ee2d209a809c0bf0bdb53',
+       'ca0abbc6d297f3009143676261d8cf19',37635,
+       'a528f81215fd3401485c76c4c485c125f5dcee82e69f9c4fb14387ebcff77590',
+       '{postgres=X/postgres,service_role=X/postgres}')
+  )
+  SELECT count(*)::integer,
+         count(*) FILTER (
+           WHERE p.oid IS NULL
+              OR md5(pg_get_functiondef(p.oid))<>expected.definition_md5
+              OR octet_length(pg_get_functiondef(p.oid))<>expected.definition_bytes
+              OR encode(extensions.digest(
+                   convert_to(pg_get_functiondef(p.oid),'UTF8'),'sha256'),'hex')<>
+                   expected.definition_sha256
+              OR md5(p.prosrc)<>expected.source_md5
+              OR octet_length(p.prosrc)<>expected.source_bytes
+              OR encode(extensions.digest(
+                   convert_to(p.prosrc,'UTF8'),'sha256'),'hex')<>
+                   expected.source_sha256
+              OR p.proowner<>'postgres'::regrole
+              OR p.proacl::text IS DISTINCT FROM expected.acl_text
+         )::integer
+    INTO v_count,v_bad
+    FROM expected
+    LEFT JOIN pg_proc p ON p.oid=to_regprocedure(expected.identity);
+
+  IF v_count<>10 OR v_bad<>0 THEN
+    RAISE EXCEPTION
+      'Stage-B failed to preserve the exact current bust-order composition (% drifted)',
+      v_bad USING ERRCODE='55000';
+  END IF;
+END;
+$verify_current_bust_order_composition$;
 
 SELECT pg_temp.assert_stage_b_owned_postimage(true);
 

@@ -568,6 +568,10 @@ describe('tournament seat exits have one hard authority', () => {
   });
 
   it('executes both old-pod elimination shapes and proves replay', () => {
+    expect(Buffer.byteLength(eliminationProbe)).toBe(27351);
+    expect(createHash('sha256').update(eliminationProbe).digest('hex')).toBe(
+      'e7c6c79b91cf68c9de16cfe4ec9c9f627268f45c1c9e1bb07f1470189de97163'
+    );
     expect(eliminationProbe).toContain('fn_eliminate_tournament_player_atomic(');
     expect(eliminationProbe).toContain('fn_claim_tournament_bounty_elimination(');
     expect(eliminationProbe).toContain('settlement_idempotency_keys');

@@ -65,7 +65,7 @@ therefore its definition MD5) while preserving the pinned source body. The
 immediately following strict contraction preserves terminal receipts while
 removing the legacy payload fallback.
 
-The reviewed production prerequisite tail now ends at `20260911090347`. Before
+The reviewed production prerequisite tail now ends at `20260911112409`. Before
 the first Stage-B DDL, and again at entry and exit of the final contraction,
 require these exact one-statement ledger receipts:
 
@@ -87,6 +87,9 @@ require these exact one-statement ledger receipts:
 - `20260911061723_cancel_unstarted_entries_to_their_exact_funded_origin_wallet`:
   16,739 bytes, SHA-256
   `84f2d79130e27bd687c848a45bb65bf5b63ac2ebf0d4e9bf360dc1ec19cd284a`;
+- `20260911062048_a_bust_is_ranked_by_when_it_happened`: 150,688 bytes,
+  SHA-256
+  `d2d0acba73031ed8617a243840eecea0e0e227a6dce5a78ce3ce2bfcfb79cf73`;
 - `20260911062053_the_operator_sees_the_money_and_the_room`: 22,888 bytes,
   SHA-256
   `3f01c9da1e26451d8d8a938e1b942f70f2bdcff4db7a96e452210c5632d07648`;
@@ -107,7 +110,23 @@ require these exact one-statement ledger receipts:
   `a1a762df5c6e9e62b63d1602a360a7349c087d652c00e22c63dac481a953a623`;
 - `20260911090347_the_prize_reprice_door_the_engine_calls_exists`: 9,372 bytes,
   SHA-256
-  `e528b35403f6e439287b14c54b0c7308b186d0455bf9a1198b661d26e97e2d8a`.
+  `e528b35403f6e439287b14c54b0c7308b186d0455bf9a1198b661d26e97e2d8a`;
+- `20260911094503_a_bust_belongs_to_the_phase_its_hand_was_played_in`:
+  17,270 bytes, SHA-256
+  `0d620bf6061213e0ef0362126fde1e3e2feddc7b13720fa74727ad80da5fd570`;
+- `20260911110907_a_satellite_never_feeds_a_target_its_finish_refuses`:
+  7,971 bytes, SHA-256
+  `fcbbe600573494b1402cb2c10d8179534d1845ace630a921e25c5df68f589b33`;
+- `20260911112409_persist_eligible_free_buy_creation_options`: 3,281 bytes,
+  SHA-256
+  `e16b3a057460833cd74c7a2da612df8b2c5269e156a7cc7b8116679d7fb6b24a`.
+
+The bounded zero-data donor predates the final four receipts above. The PG17
+rehearsal keeps its original `66 / 15 / 38 / 41` donor gates, normalizes one
+disposable clone, then applies and records those four byte-exact sources in
+their observed production-apply order before creating any Stage-B scenario.
+They are current production preimage, not a seventh through tenth Stage-B
+write; the six-file production cutover never reapplies them.
 
 The Round3 receipt only restates the already server-only ACL and does not touch
 any Stage-B authority. The seat-exit receipt changes the Stage-B boundary #1
@@ -159,6 +178,9 @@ satellite-seat and redeemed-ticket return/replay (35,058 bytes,
 `ed7f2d925a2971a89bb4e88efd5250ccfc2b3b813bd8adb6dca9c3f182e1b1ad`),
 and durable-start/launch-receipt/persisted-hand refusal (21,504 bytes,
 `f9025d6c48ae00e88bca43a41f854b5766d25f596150379d445a532722ab4507`).
+The same post-six databases also execute the 27,351-byte exact-hand
+elimination/scoped-seat-exit proof, SHA-256
+`e7c6c79b91cf68c9de16cfe4ec9c9f627268f45c1c9e1bb07f1470189de97163`.
 
 ## Preflight
 

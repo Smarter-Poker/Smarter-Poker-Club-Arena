@@ -13,6 +13,7 @@ cancellation_probe="$repo_dir/scripts/ci/probes/tournament-cancellation-entrant-
 cash_unregistration_probe="$repo_dir/scripts/ci/probes/tournament-unregistration-cross-club.sql"
 satellite_ticket_return_probe="$repo_dir/scripts/ci/probes/atomic-satellite-ticket-return.sql"
 actual_start_unregistration_probe="$repo_dir/scripts/ci/probes/seat-first-unregistration-actual-start.sql"
+elimination_seat_exit_probe="$repo_dir/scripts/ci/probes/tournament-elimination-seat-exit-authority.sql"
 seat_move_hotfix_statement_sha256='b3f1bb62152627444b33c82b806c00ba3587aeebbe3d13800faf69fae7809ea2'
 manager_request_authority_statement_sha256='2cbcab5f263e8ca02b16f6c47ebbd7f6d47eb783d81c5939133c1e39b5d306f4'
 busy_manager_statement_sha256='2e95299dd7693a09ee310a4086b2dcdf16f0f942582007bdede0c4c81024e07d'
@@ -43,6 +44,7 @@ cancellation_probe_sha256='485d48aad7147ab9b54d8c0f3118a6d928948468aade3da236145
 cash_unregistration_probe_sha256='a21100a43e73cbf0398e980475bd2a6d602d8245cad821204206de13576383c1'
 satellite_ticket_return_probe_sha256='ed7f2d925a2971a89bb4e88efd5250ccfc2b3b813bd8adb6dca9c3f182e1b1ad'
 actual_start_unregistration_probe_sha256='f9025d6c48ae00e88bca43a41f854b5766d25f596150379d445a532722ab4507'
+elimination_seat_exit_probe_sha256='e7c6c79b91cf68c9de16cfe4ec9c9f627268f45c1c9e1bb07f1470189de97163'
 
 usage() {
   cat >&2 <<'USAGE'
@@ -126,6 +128,54 @@ for ((index = 0; index < ${#chain_names[@]}; index += 1)); do
   fi
   chain_files+=("$migration_file")
 done
+
+# These four migrations already exist in production but were applied after the
+# bounded donor snapshot. Compose them in their observed apply order on the one
+# disposable normalized clone; they are not part of the six-file Stage-B chain.
+current_live_tail_versions=(
+  20260911062048
+  20260911094503
+  20260911110907
+  20260911112409
+)
+current_live_tail_names=(
+  a_bust_is_ranked_by_when_it_happened
+  a_bust_belongs_to_the_phase_its_hand_was_played_in
+  a_satellite_never_feeds_a_target_its_finish_refuses
+  persist_eligible_free_buy_creation_options
+)
+current_live_tail_bytes=(150688 17270 7971 3281)
+current_live_tail_sha256=(
+  d2d0acba73031ed8617a243840eecea0e0e227a6dce5a78ce3ce2bfcfb79cf73
+  0d620bf6061213e0ef0362126fde1e3e2feddc7b13720fa74727ad80da5fd570
+  fcbbe600573494b1402cb2c10d8179534d1845ace630a921e25c5df68f589b33
+  e16b3a057460833cd74c7a2da612df8b2c5269e156a7cc7b8116679d7fb6b24a
+)
+current_live_tail_files=()
+if [[ "${#current_live_tail_versions[@]}" -ne 4 \
+   || "${#current_live_tail_names[@]}" -ne 4 \
+   || "${#current_live_tail_bytes[@]}" -ne 4 \
+   || "${#current_live_tail_sha256[@]}" -ne 4 ]]; then
+  echo 'Current live-tail rehearsal descriptors are not one-to-one.' >&2
+  exit 65
+fi
+for ((index = 0; index < ${#current_live_tail_versions[@]}; index += 1)); do
+  current_tail_file="$migration_dir/${current_live_tail_versions[$index]}_${current_live_tail_names[$index]}.sql"
+  if [[ ! -f "$current_tail_file" || -L "$current_tail_file" \
+     || "$(basename "$current_tail_file")" \
+        != "${current_live_tail_versions[$index]}_${current_live_tail_names[$index]}.sql" ]]; then
+    echo "Current live-tail source is missing, not regular, or symlinked: ${current_tail_file}." >&2
+    exit 66
+  fi
+  if [[ "$(wc -c < "$current_tail_file" | tr -d '[:space:]')" \
+        != "${current_live_tail_bytes[$index]}" \
+     || "$(shasum -a 256 "$current_tail_file" | awk '{print $1}')" \
+        != "${current_live_tail_sha256[$index]}" ]]; then
+    echo "Current live-tail source bytes are not canonical: ${current_tail_file}." >&2
+    exit 65
+  fi
+  current_live_tail_files+=("$current_tail_file")
+done
 [[ -r "$diamond_fixture" ]] || {
   echo "The current-schema Diamond accepted-hand fixture is unreadable: ${diamond_fixture}." >&2
   exit 66
@@ -153,7 +203,8 @@ fi
 for probe_spec in \
   "$cash_unregistration_probe|14986|$cash_unregistration_probe_sha256" \
   "$satellite_ticket_return_probe|35058|$satellite_ticket_return_probe_sha256" \
-  "$actual_start_unregistration_probe|21504|$actual_start_unregistration_probe_sha256"
+  "$actual_start_unregistration_probe|21504|$actual_start_unregistration_probe_sha256" \
+  "$elimination_seat_exit_probe|27351|$elimination_seat_exit_probe_sha256"
 do
   IFS='|' read -r probe_file probe_bytes probe_sha256 <<<"$probe_spec"
   [[ -r "$probe_file" ]] || {
@@ -2696,6 +2747,91 @@ create_scenario_database() {
   printf 'STAGE_B_SCENARIO_DATABASE_CREATED %s\n' "$created_scenario_database"
 }
 
+assert_current_live_tail() {
+  local database="$1"
+  local receipt_count
+  receipt_count="$("${psql_cmd[@]}" --dbname="$database" -Atq <<'SQL'
+WITH expected(version,name,statement_bytes,statement_sha256) AS (
+  VALUES
+    ('20260911062048','a_bust_is_ranked_by_when_it_happened',150688,
+     'd2d0acba73031ed8617a243840eecea0e0e227a6dce5a78ce3ce2bfcfb79cf73'),
+    ('20260911094503','a_bust_belongs_to_the_phase_its_hand_was_played_in',17270,
+     '0d620bf6061213e0ef0362126fde1e3e2feddc7b13720fa74727ad80da5fd570'),
+    ('20260911110907','a_satellite_never_feeds_a_target_its_finish_refuses',7971,
+     'fcbbe600573494b1402cb2c10d8179534d1845ace630a921e25c5df68f589b33'),
+    ('20260911112409','persist_eligible_free_buy_creation_options',3281,
+     'e16b3a057460833cd74c7a2da612df8b2c5269e156a7cc7b8116679d7fb6b24a')
+), matched AS (
+  SELECT expected.version,
+         count(m.*) AS matching_rows,
+         count(m.*) FILTER (
+           WHERE cardinality(m.statements)=1
+             AND octet_length(m.statements[1])=expected.statement_bytes
+             AND encode(extensions.digest(
+                   convert_to(m.statements[1],'UTF8'),'sha256'),'hex')=
+                 expected.statement_sha256
+         ) AS exact_rows
+    FROM expected
+    LEFT JOIN supabase_migrations.schema_migrations m
+      ON m.version=expected.version AND m.name=expected.name
+   GROUP BY expected.version
+)
+SELECT count(*) FROM matched WHERE matching_rows=1 AND exact_rows=1;
+SQL
+)"
+  if [[ "$receipt_count" != '4' ]]; then
+    echo "The disposable clone does not hold all four exact current live-tail receipts: ${receipt_count:-0}/4." >&2
+    return 1
+  fi
+  echo 'STAGE_B_CURRENT_PRODUCTION_PREIMAGE_COMPOSED'
+}
+
+compose_current_live_tail() {
+  local database="$1"
+  local existing index statement_hex
+  existing="$("${psql_cmd[@]}" --dbname="$database" -Atq <<'SQL'
+SELECT count(*)
+  FROM supabase_migrations.schema_migrations m
+ WHERE m.version IN (
+         '20260911062048','20260911094503','20260911110907','20260911112409')
+    OR m.name IN (
+         'a_bust_is_ranked_by_when_it_happened',
+         'a_bust_belongs_to_the_phase_its_hand_was_played_in',
+         'a_satellite_never_feeds_a_target_its_finish_refuses',
+         'persist_eligible_free_buy_creation_options');
+SQL
+)"
+  if [[ "$existing" != '0' ]]; then
+    echo "The normalized donor clone already contains ${existing:-unknown} current live-tail receipt(s)." >&2
+    return 1
+  fi
+
+  for ((index = 0; index < ${#current_live_tail_files[@]}; index += 1)); do
+    statement_hex="$(od -An -v -tx1 "${current_live_tail_files[$index]}" | tr -d '[:space:]')"
+    if [[ "${#statement_hex}" -ne $((current_live_tail_bytes[index] * 2)) ]]; then
+      echo "Could not encode exact current live-tail source: ${current_live_tail_files[$index]}." >&2
+      return 1
+    fi
+    {
+      printf '%s\n' '\set ON_ERROR_STOP on'
+      printf '%s\n' "\\echo COMPOSING $(basename "${current_live_tail_files[$index]}")"
+      printf '%s\n' "\\ir '${current_live_tail_files[$index]}'"
+      cat <<'SQL'
+INSERT INTO supabase_migrations.schema_migrations(version,name,statements)
+VALUES (
+  :'current_tail_version',
+  :'current_tail_name',
+  ARRAY[convert_from(decode(:'current_tail_statement_hex','hex'),'UTF8')]
+);
+SQL
+    } | "${psql_cmd[@]}" --dbname="$database" \
+          -v "current_tail_version=${current_live_tail_versions[$index]}" \
+          -v "current_tail_name=${current_live_tail_names[$index]}" \
+          -v "current_tail_statement_hex=${statement_hex}"
+  done
+  assert_current_live_tail "$database"
+}
+
 normalize_dump_lost_postgrest_role_setting() {
   local setting_state
   setting_state="$("${psql_cmd[@]}" --dbname="$expected_database" -Atq -F '|' <<'SQL'
@@ -3845,6 +3981,16 @@ run_all_unregistration_origin_proofs() {
     'AUDIT_TEST_PASS: persisted hand history independently closes Spin and Heads-Up SNG unregistration'
 }
 
+run_elimination_seat_exit_authority_proof() {
+  local database="$1"
+
+  run_post_six_rollback_probe "$database" "$elimination_seat_exit_probe" \
+    'STAGE_B_ELIMINATION_SEAT_EXIT_AUTHORITY_OK' \
+    'AUDIT_TEST_PASS: level- and minute-bounded rebuy clocks opened exact capped prompts' \
+    'non-bounty and bounty eliminations each proved a distinct hand-history id' \
+    'left no authorization row'
+}
+
 assert_donor_unchanged() {
   local donor_fingerprint_after
   restore_dump_lost_postgrest_role_setting
@@ -3863,6 +4009,7 @@ create_scenario_database 'normalized_input' "$expected_database"
 normalized_input_database="$created_scenario_database"
 normalize_dump_lost_hotfix_owner_acl "$normalized_input_database"
 normalize_dump_lost_postgrest_role_setting
+compose_current_live_tail "$normalized_input_database"
 scenario_template_database="$normalized_input_database"
 
 if [[ "$probe_mode" == 'mixed' ]]; then
@@ -3889,6 +4036,7 @@ if [[ "$probe_mode" == 'replay' ]]; then
   assert_stage_b_bounded_postimage "$replay_database"
   run_tournament_cancellation_entrant_refunds "$replay_database"
   run_bounty_rebuy_generation_atomicity "$replay_database"
+  run_elimination_seat_exit_authority_proof "$replay_database"
   run_all_unregistration_origin_proofs "$replay_database"
   echo 'STAGE_B_LEASE_KEYSHARE_REPLAY_OK'
   assert_donor_unchanged
@@ -3939,6 +4087,7 @@ run_chain_prefix 6 true "$clean_database" 5
 assert_stage_b_bounded_postimage "$clean_database"
 run_tournament_cancellation_entrant_refunds "$clean_database"
 run_bounty_rebuy_generation_atomicity "$clean_database"
+run_elimination_seat_exit_authority_proof "$clean_database"
 run_all_unregistration_origin_proofs "$clean_database"
 echo 'STAGE_B_LEASE_KEYSHARE_REPLAY_OK'
 

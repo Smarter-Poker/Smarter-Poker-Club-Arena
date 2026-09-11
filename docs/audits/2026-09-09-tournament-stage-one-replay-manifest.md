@@ -59,6 +59,21 @@ Resolve and validate the chain with
 `scripts/dev/probe-stage-b-forward-chain-pg17.sh --resolve-only`; never begin
 from an archived intermediate boundary.
 
+The bounded donor was captured before four later production receipts. Its
+original `66 / 15 / 38 / 41` receipt gates remain immutable. On the normalized
+disposable clone only, the rehearsal composes these exact sources in observed
+production-apply order before any scenario database is cloned:
+
+| Physical Version | Name                                                  |   Bytes | SHA-256                                                            |
+| ---------------- | ----------------------------------------------------- | ------: | ------------------------------------------------------------------ |
+| `20260911062048` | `a_bust_is_ranked_by_when_it_happened`                | 150,688 | `d2d0acba73031ed8617a243840eecea0e0e227a6dce5a78ce3ce2bfcfb79cf73` |
+| `20260911094503` | `a_bust_belongs_to_the_phase_its_hand_was_played_in`  |  17,270 | `0d620bf6061213e0ef0362126fde1e3e2feddc7b13720fa74727ad80da5fd570` |
+| `20260911110907` | `a_satellite_never_feeds_a_target_its_finish_refuses` |   7,971 | `fcbbe600573494b1402cb2c10d8179534d1845ace630a921e25c5df68f589b33` |
+| `20260911112409` | `persist_eligible_free_buy_creation_options`          |   3,281 | `e16b3a057460833cd74c7a2da612df8b2c5269e156a7cc7b8116679d7fb6b24a` |
+
+These four sources establish current production preimage only. They are not
+part of the six-item Stage-B apply chain and are never reapplied in production.
+
 All six boundaries run inside the same continuously frozen, stopped-engine
 window. Boundaries 2, 5, and 6 independently re-authenticate that authority,
 take the canonical relation locks, and reject fresh engine authority before

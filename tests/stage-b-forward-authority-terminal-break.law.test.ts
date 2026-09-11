@@ -67,6 +67,10 @@ const bountyRebuyProbe = readFileSync(
   resolve(root, 'scripts/ci/probes/bounty-rebuy-generation-atomicity.sql'),
   'utf8'
 );
+const eliminationSeatExitProbe = readFileSync(
+  resolve(root, 'scripts/ci/probes/tournament-elimination-seat-exit-authority.sql'),
+  'utf8'
+);
 const postSixUnregistrationProbes = [
   [
     'tournament-unregistration-cross-club.sql',
@@ -154,6 +158,19 @@ describe('the reserved Stage-B forward authority remains one bounded chain', () 
     );
     expect(harness).toContain('if [[ "$tail_functions_exact" != \'16\' ]]');
     expect(harness).toContain('assert_zero_player_data_baseline');
+    const normalizeClone = harness.indexOf(
+      'normalize_dump_lost_hotfix_owner_acl "$normalized_input_database"'
+    );
+    const composeCurrentTail = harness.indexOf(
+      'compose_current_live_tail "$normalized_input_database"'
+    );
+    const publishScenarioTemplate = harness.indexOf(
+      'scenario_template_database="$normalized_input_database"'
+    );
+    expect(normalizeClone).toBeGreaterThanOrEqual(0);
+    expect(composeCurrentTail).toBeGreaterThan(normalizeClone);
+    expect(publishScenarioTemplate).toBeGreaterThan(composeCurrentTail);
+    expect(harness).toContain('STAGE_B_CURRENT_PRODUCTION_PREIMAGE_COMPOSED');
     expect(harness).toContain('20260910164655');
     for (const exactFinalDealPrerequisite of [
       '20260911050554',
@@ -232,7 +249,7 @@ describe('the reserved Stage-B forward authority remains one bounded chain', () 
     }
   });
 
-  it('authenticates and preserves the exact live tail through 11090347', () => {
+  it('authenticates and preserves the exact live tail through 11112409', () => {
     const exactTail = [
       [
         '20260910190537',
@@ -312,6 +329,30 @@ describe('the reserved Stage-B forward authority remains one bounded chain', () 
         '9372',
         'e528b35403f6e439287b14c54b0c7308b186d0455bf9a1198b661d26e97e2d8a',
       ],
+      [
+        '20260911062048',
+        'a_bust_is_ranked_by_when_it_happened',
+        '150688',
+        'd2d0acba73031ed8617a243840eecea0e0e227a6dce5a78ce3ce2bfcfb79cf73',
+      ],
+      [
+        '20260911094503',
+        'a_bust_belongs_to_the_phase_its_hand_was_played_in',
+        '17270',
+        '0d620bf6061213e0ef0362126fde1e3e2feddc7b13720fa74727ad80da5fd570',
+      ],
+      [
+        '20260911110907',
+        'a_satellite_never_feeds_a_target_its_finish_refuses',
+        '7971',
+        'fcbbe600573494b1402cb2c10d8179534d1845ace630a921e25c5df68f589b33',
+      ],
+      [
+        '20260911112409',
+        'persist_eligible_free_buy_creation_options',
+        '3281',
+        'e16b3a057460833cd74c7a2da612df8b2c5269e156a7cc7b8116679d7fb6b24a',
+      ],
     ] as const;
     for (const descriptor of exactTail) {
       for (const value of descriptor) {
@@ -386,6 +427,26 @@ describe('the reserved Stage-B forward authority remains one bounded chain', () 
         '20260911090347_the_prize_reprice_door_the_engine_calls_exists.sql',
         9372,
         'e528b35403f6e439287b14c54b0c7308b186d0455bf9a1198b661d26e97e2d8a',
+      ],
+      [
+        '20260911062048_a_bust_is_ranked_by_when_it_happened.sql',
+        150688,
+        'd2d0acba73031ed8617a243840eecea0e0e227a6dce5a78ce3ce2bfcfb79cf73',
+      ],
+      [
+        '20260911094503_a_bust_belongs_to_the_phase_its_hand_was_played_in.sql',
+        17270,
+        '0d620bf6061213e0ef0362126fde1e3e2feddc7b13720fa74727ad80da5fd570',
+      ],
+      [
+        '20260911110907_a_satellite_never_feeds_a_target_its_finish_refuses.sql',
+        7971,
+        'fcbbe600573494b1402cb2c10d8179534d1845ace630a921e25c5df68f589b33',
+      ],
+      [
+        '20260911112409_persist_eligible_free_buy_creation_options.sql',
+        3281,
+        'e16b3a057460833cd74c7a2da612df8b2c5269e156a7cc7b8116679d7fb6b24a',
       ],
     ] as const) {
       const receipt = readFileSync(resolve(migrationsDirectory, fileName));
@@ -476,6 +537,18 @@ describe('the reserved Stage-B forward authority remains one bounded chain', () 
     expect(harness).toContain(
       'AUDIT_TEST_PASS: persisted hand history independently closes Spin and Heads-Up SNG unregistration'
     );
+  });
+
+  it('executes the exact-hand elimination and scoped seat-exit proof after all six boundaries', () => {
+    expect(Buffer.byteLength(eliminationSeatExitProbe)).toBe(27351);
+    expect(createHash('sha256').update(eliminationSeatExitProbe).digest('hex')).toBe(
+      'e7c6c79b91cf68c9de16cfe4ec9c9f627268f45c1c9e1bb07f1470189de97163'
+    );
+    expect(harness).toContain('tournament-elimination-seat-exit-authority.sql');
+    expect(harness).toContain('e7c6c79b91cf68c9de16cfe4ec9c9f627268f45c1c9e1bb07f1470189de97163');
+    expect(harness).toContain('run_elimination_seat_exit_authority_proof "$clean_database"');
+    expect(harness).toContain('run_elimination_seat_exit_authority_proof "$replay_database"');
+    expect(harness).toContain('STAGE_B_ELIMINATION_SEAT_EXIT_AUTHORITY_OK');
   });
 
   it('changes only the audited final-deal completion-guard call site', () => {

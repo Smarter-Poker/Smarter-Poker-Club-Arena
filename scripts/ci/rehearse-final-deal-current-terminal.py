@@ -15,6 +15,10 @@ SOCKET = "/tmp/codex-chip-drift-cutover-e2iav203/socket"
 DB = "full_stage1"
 TID = "87000000-0000-0000-0000-000000000001"
 STAGE_B_RESOLVER = "scripts/ci/stage_b_migration_source.py"
+BUST_ORDER = "supabase/migrations/20260911062048_a_bust_is_ranked_by_when_it_happened.sql"
+BUST_ORDER_SHA256 = "d2d0acba73031ed8617a243840eecea0e0e227a6dce5a78ce3ce2bfcfb79cf73"
+BUST_ORDER_PLACE_SOURCE_MD5 = "6181734ff98555ecc04648186f6ebf24"
+CANONICAL_CURRENT_PLACE_SOURCE_MD5 = "473f67cf3949b938f5277c89fb64edef"
 GUARDS = ("aa_guard_tournament_completing_claim",
  "zzzz_freeze_finalized_tournament_prize_pool",
  "zzzz_tournament_pool_finalization_window_guard",
@@ -89,6 +93,30 @@ def block(path, marker):
     end = "-- END " + marker
     b = text.index(end, a) + len(end)
     return text[a:b] + "\n"
+
+def current_place_contract(path):
+    """Retarget the reviewed canonical contract to the exact live preimage."""
+    text = block(path, "CANONICAL TERMINAL PLACE BATCH CONTRACT")
+    text = once(
+        text,
+        "IF md5(v_source) NOT IN ('d0262f4928b12eea1cc5e9175cbf2737',"
+        "'2fb9eb9761e248315f36df617e519512') THEN",
+        "IF md5(v_source) NOT IN ('" + BUST_ORDER_PLACE_SOURCE_MD5 + "',"
+        "'" + CANONICAL_CURRENT_PLACE_SOURCE_MD5 + "') THEN",
+    )
+    text = once(
+        text,
+        "IF md5(v_source)='d0262f4928b12eea1cc5e9175cbf2737' THEN",
+        "IF md5(v_source)='" + BUST_ORDER_PLACE_SOURCE_MD5 + "' THEN",
+    )
+    text = once(
+        text,
+        "IF md5(v_source)<>'2fb9eb9761e248315f36df617e519512' OR "
+        "v_before IS DISTINCT FROM v_after THEN",
+        "IF md5(v_source)<>'" + CANONICAL_CURRENT_PLACE_SOURCE_MD5 + "' OR "
+        "v_before IS DISTINCT FROM v_after THEN",
+    )
+    return text
 
 def compose(root, variant, probe_path=None):
     base = module(root / "scripts/dev/build-versioned-final-deal-probe.py", "deal_base")
@@ -166,7 +194,9 @@ def runtime_sql(root):
     # Install exact current narrow authorities inside this transaction only.
     m5 = root / "supabase/migrations/20260909014534_non_satellite_terminal_settlement_commits_one_stored_receipt.sql"
     stage_b = module(root / STAGE_B_RESOLVER, "final_deal_stage_b_source").resolve(root)
-    m4 = root / "supabase/migrations/20260909042455_tournament_cash_settlement_has_one_atomic_authority.sql"
+    bust_order = root / BUST_ORDER
+    if hashlib.sha256(bust_order.read_bytes()).hexdigest() != BUST_ORDER_SHA256:
+        raise ValueError("reviewed live bust-order source changed")
     stage = root / "scripts/deploy/phase-three-strict-tournament-cutover.sql"
     lane = root / "supabase/migrations/20260910035435_the_settlement_lane_is_per_tournament_not_platform_wide.sql"
     runtime = ""
@@ -197,7 +227,7 @@ def runtime_sql(root):
         (m5, "fn_complete_tournament_terminal", "589388ad7204fef460a1deebf32ecb69", "f4275f9fa8cb2711f19ffdf7b16a04e6"),
         (m5, "fn_resolve_tournament_terminal_outcome", "4c151073f56b53e4b0363bdd916b78d4", "022c1883533939caf8ebed0cb5699e8c"),
         (m5, "fn_settle_tournament_rake", "b945872c72d3414909d4b4b41cfb7849", "05a512317bb7bdcecfaec19ef8ee4e63"),
-        (m4, "fn_settle_tournament_places", "351bfe3e401ad90eeb9b40bad366bb0e", "d0262f4928b12eea1cc5e9175cbf2737"),
+        (bust_order, "fn_settle_tournament_places", BUST_ORDER_PLACE_SOURCE_MD5, None),
     ]:
         text = definition(path, name, before, after)
         runtime += text + "\n"
@@ -250,8 +280,8 @@ def runtime_sql(root):
     bundle = re.sub(r"^(BEGIN|COMMIT);$", "", bundle, flags=re.M)
     # Exercise every deployment preflight/postflight and exact reapplication.
     runtime += bundle + "\n" + bundle + "\n"
-    for marker in ("CANONICAL TERMINAL PLACE BATCH CONTRACT", "CANONICAL TERMINAL READINESS DISPATCH"):
-        runtime += block(stage, marker)
+    runtime += current_place_contract(stage)
+    runtime += block(stage, "CANONICAL TERMINAL READINESS DISPATCH")
     runtime += definition(stage, "fn_settle_tournament_obligation", "642b0a5a4b5cd5ab2194e265eadba75c") + "\n"
     runtime += "\n".join("ALTER TABLE public.tournaments ENABLE TRIGGER " + name + ";" for name in GUARDS) + "\n"
     runtime += "SELECT 'FINAL_DEAL_NATIVE_COMPOSITION='||jsonb_build_object('functions',(SELECT jsonb_agg(jsonb_build_object('signature',oid::regprocedure::text,'body_md5',md5(prosrc),'definition_md5',md5(pg_get_functiondef(oid)),'owner',pg_get_userbyid(proowner),'acl',proacl,'config',proconfig,'security_definer',prosecdef) ORDER BY oid::regprocedure::text) FROM pg_proc WHERE oid IN (to_regprocedure('public.fn_settle_tournament_final_table_deal(uuid)'),to_regprocedure('public.fn_ca_verify_terminal_final_deal_batch(uuid,boolean)'),to_regprocedure('public.trg_freeze_canonical_final_deal_batch()'),to_regprocedure('public.trg_freeze_atomic_final_table_deal_obligation()'),to_regprocedure('public.fn_claim_tournament_finish(uuid,uuid,text)'),to_regprocedure('public.fn_ca_tournament_terminal_receipt(uuid,uuid)'),to_regprocedure('public.fn_guard_tournament_completing_claim()'),to_regprocedure('public.trg_lock_atomic_final_table_deal_status()'),to_regprocedure('public.fn_guard_tournament_completed_certificate()'),to_regprocedure('public.fn_complete_tournament_terminal(uuid,uuid,text)'),to_regprocedure('public.fn_complete_tournament_terminal_pre_seat_guard(uuid,uuid,text)'),to_regprocedure('public.fn_resolve_tournament_terminal_outcome(uuid,uuid,text)'),to_regprocedure('public.fn_complete_tournament_terminal_proposal(uuid,uuid,text,uuid,text)'),to_regprocedure('public.fn_resolve_tournament_terminal_proposal_outcome(uuid,uuid,text,uuid,text)'),to_regprocedure('public.fn_tournament_finish_readiness(uuid,uuid)'),to_regprocedure('public.fn_ca_open_tournament_seat_exit_authority(uuid,text,uuid)'),to_regprocedure('public.fn_ca_close_tournament_seat_exit_authority(uuid,boolean)'),to_regprocedure('public.fn_tournament_live_seat_exit_requires_authority()'),to_regprocedure('public.fn_settle_tournament_rake(uuid,text)'),to_regprocedure('public.fn_ca_settle_tournament_place_raw(uuid,integer,uuid,numeric)'),to_regprocedure('public.fn_ca_settle_tournament_bubble_raw(uuid,uuid,numeric)'),to_regprocedure('public.fn_ca_settle_final_table_deal_share_raw(uuid,uuid,numeric)'),to_regprocedure('public.fn_settle_tournament_obligation(uuid,text,integer,uuid,numeric,text,text,uuid)'),to_regprocedure('public.fn_settle_tournament_obligation_before_atomic_batch_gate(uuid,text,integer,uuid,numeric,text,text,uuid)'),to_regprocedure('public.trg_atomic_final_table_deal_completion_guard()'),to_regprocedure('public.fn_stamp_tournament_terminal_evidence_markers()'),to_regprocedure('public.fn_settle_tournament_places(uuid,uuid)'),to_regprocedure('public.fn_ca_verify_terminal_place_batch(uuid,boolean)'))),'guards',(SELECT jsonb_agg(jsonb_build_object('name',tgname,'enabled',tgenabled,'definition',pg_get_triggerdef(oid)) ORDER BY tgname) FROM pg_trigger WHERE NOT tgisinternal AND tgname ~ '(atomic.*(place|deal)|financial.*certif|completing.*claim|seat_exit|terminal_receipt|pending_bounty|canonical_final_deal_batch)'),'batch_constraints',(SELECT jsonb_agg(jsonb_build_object('name',conname,'definition',pg_get_constraintdef(oid),'md5',md5(pg_get_constraintdef(oid))) ORDER BY conname) FROM pg_constraint WHERE conrelid='public.tournament_final_table_deal_batches'::regclass),'batch_version_column',(SELECT jsonb_build_object('type',atttypid::regtype::text,'not_null',attnotnull,'default',pg_get_expr(d.adbin,d.adrelid)) FROM pg_attribute a LEFT JOIN pg_attrdef d ON d.adrelid=a.attrelid AND d.adnum=a.attnum WHERE a.attrelid='public.tournament_final_table_deal_batches'::regclass AND a.attname='contract_version'))::text;\n"

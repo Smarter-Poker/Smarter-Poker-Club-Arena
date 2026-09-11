@@ -17,7 +17,7 @@ vi.mock('../../src/lib/supabase', () => ({
   supabase: { rpc: (...args: unknown[]) => rpc(...args) },
 }));
 
-import DiamondWheelService, { mergeSpinHistory } from '../../src/services/DiamondWheelService';
+import DiamondWheelService from '../../src/services/DiamondWheelService';
 import { pickOrd, pointFromRoll, verifyWheelSpin } from '../../src/utils/wheelFairness';
 
 const SEED = 'a3f1c2d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90';
@@ -198,27 +198,20 @@ describe('the service reads the free spin as the server shapes it', () => {
     });
     const r = await DiamondWheelService.setFreeSpin('club-1', {
       free_spin_enabled: false,
-      free_spin_daily_budget_diamonds: 500,
+      welcome_budget_chips: 50,
     });
     expect(rpc).toHaveBeenCalledWith('fn_wheel_set_free_spin', {
       p_club_id: 'club-1',
-      p_patch: { free_spin_enabled: false, free_spin_daily_budget_diamonds: 500 },
+      p_patch: { free_spin_enabled: false, welcome_budget_chips: 50 },
     });
     expect(r).toEqual({ ok: false, error: 'Only The Host’s Owners And Admins Run The Wheel' });
   });
 });
 
-describe('one history', () => {
-  const at = (iso: string, free: boolean, id: string) =>
-    ({ spin_id: id, free, created_at: iso }) as unknown as Parameters<
-      typeof mergeSpinHistory
-    >[0][number];
-
-  it('prints paid and free spins together, newest first', () => {
-    const merged = mergeSpinHistory(
-      [at('2026-09-09T10:00:00Z', false, 'p-old'), at('2026-09-09T12:00:00Z', false, 'p-new')],
-      [at('2026-09-09T11:00:00Z', true, 'f-mid')]
-    );
-    expect(merged.map((s) => s.spin_id)).toEqual(['p-new', 'f-mid', 'p-old']);
-  });
-});
+/* THE MERGE TEST RETIRED WITH THE MERGE (2026-09-11). There were two histories
+   because a free spin was recorded in wheel_free_spins; the welcome spin is a
+   row in wheel_spins like any other now and carries its own `free` flag, so
+   fn_wheel_history returns one list already in order and there is nothing to
+   merge. What used to be asserted here is asserted on the server instead, in
+   tests/the-welcome-spin-keeps-its-own-books.law.test.ts: a welcome spin says
+   it is one, wherever it is shown. */

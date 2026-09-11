@@ -82,7 +82,7 @@ export default function DiamondsToChipsButton({
     <ClubButtonsSurface className={className ?? 'diamonds-to-chips'}>
       <ArenaActionButton
         icon="diamond"
-        label={entry?.free_spin_ready ? 'Free Spin Ready' : label}
+        label={entry?.welcome_spin_ready ? 'Welcome Spin Ready' : label}
         sublabel={entrySublabel(entry)}
         size={size}
         value={entry ? compactChips(entry.diamonds) : undefined}

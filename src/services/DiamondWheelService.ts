@@ -21,7 +21,7 @@
  * day on the house, per player per host, paying diamonds only and never
  * chips: a free spin takes nothing in, and the games never pay out more than
  * they take in. It has its own table (fn_wheel_free_state hands it back), its
- * own record (fn_wheel_free_spin, fn_wheel_free_history) and the SAME commit
+ * own door (fn_wheel_free_spin) and the SAME commit
  * and derivation as a paid spin, so the verifier below checks it unchanged.
  */
 
@@ -436,14 +436,6 @@ function normaliseSpin(raw: Record<string, unknown>): WheelSpinResult {
 }
 
 /** Paid and free spins in one list, newest first, for the player's own history. */
-export function mergeSpinHistory(
-  paid: WheelSpinResult[],
-  free: WheelSpinResult[]
-): WheelSpinResult[] {
-  return [...paid, ...free].sort(
-    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-  );
-}
 
 function normaliseFreeState(raw: Record<string, unknown>): WheelFreeState {
   const reason = raw.reason ? String(raw.reason) : null;
@@ -539,15 +531,6 @@ const DiamondWheelService = {
     });
     if (error) throw error;
     return normaliseSpin((data ?? {}) as Record<string, unknown>);
-  },
-
-  async freeHistory(clubId: string, limit = 25): Promise<WheelSpinResult[]> {
-    const { data, error } = await supabase.rpc('fn_wheel_free_history', {
-      p_club_id: clubId,
-      p_limit: limit,
-    });
-    if (error) throw error;
-    return Array.isArray(data) ? (data as Record<string, unknown>[]).map(normaliseSpin) : [];
   },
 
   /** The operator's switch and daily pot for the free spin. The RPC decides who may. */

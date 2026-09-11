@@ -298,7 +298,12 @@ export interface DiamondGamesEntry {
   chips_from_diamonds: number;
   is_member: boolean;
   member_chips: number | null;
-  free_spin_ready: boolean;
+  /**
+   * This member still has their one free welcome spin here (2026-09-11). The
+   * server answers under both names while the older one is still on the wire;
+   * `free_spin_ready` was accurate when the spin was a daily one.
+   */
+  welcome_spin_ready: boolean;
   frozen: boolean;
 }
 
@@ -765,7 +770,7 @@ const DiamondGamesService = {
       is_member: Boolean(raw.is_member),
       member_chips:
         raw.member_chips === null || raw.member_chips === undefined ? null : num(raw.member_chips),
-      free_spin_ready: Boolean(raw.free_spin_ready),
+      welcome_spin_ready: Boolean(raw.welcome_spin_ready ?? raw.free_spin_ready),
       frozen: Boolean(raw.frozen),
     };
   },

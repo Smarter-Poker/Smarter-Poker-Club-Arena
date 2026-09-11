@@ -43,7 +43,6 @@ import { SpadeConsole } from '../components/console/SpadeConsole';
 import { DeckConsole } from '../components/console/DeckConsole';
 import { useMeasuredWidth } from '../hooks/useMeasuredWidth';
 import DiamondWheelService, {
-  mergeSpinHistory,
   type WheelFreeState,
   type WheelSegment,
   type WheelSpinResult,
@@ -167,14 +166,14 @@ export default function DiamondWheelPage() {
   const loadHistory = useCallback(
     async (uuid: string) => {
       try {
-        const [paid, onTheHouse] = await Promise.all([
-          DiamondWheelService.history(uuid, 25),
-          DiamondWheelService.freeHistory(uuid, 25).catch((err) => {
-            reportError(err, 'DiamondWheelPage.freeHistory');
-            return [] as WheelSpinResult[];
-          }),
-        ]);
-        if (live()) setHistory(mergeSpinHistory(paid, onTheHouse));
+        /* ONE HISTORY (2026-09-11). The welcome spin is a row in wheel_spins
+           like any other and carries its own `free` flag, so fn_wheel_history
+           already returns it in order. There used to be a second read against
+           wheel_free_spins and a merge; that table has not been written to
+           since the welcome spin moved onto the real wheel, so the second read
+           was a round trip for an empty array on every load. */
+        const spins = await DiamondWheelService.history(uuid, 25);
+        if (live()) setHistory(spins);
       } catch (err) {
         reportError(err, 'DiamondWheelPage.history');
       }
@@ -484,7 +483,7 @@ export default function DiamondWheelPage() {
 
       <div ref={oddsRef}>
         <SpadeConsole
-          eyebrow={freeMode ? 'On The House' : 'The Prizes'}
+          eyebrow={freeMode ? 'On The Club' : 'The Prizes'}
           title={freeMode ? 'Welcome Spin Odds' : 'Odds'}
           foot="foot"
         >

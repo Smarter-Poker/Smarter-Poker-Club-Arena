@@ -84,7 +84,7 @@ MD5 `d994347e1b76c936ce13361d73f94fd2` to
 `8e0d121a711f6b7afade68125d032f8d` by replacing only its readiness call site.
 It otherwise preserves the final-deal wrapper and payer catalogs, the complete
 welcome-wheel catalog fingerprint, and the public/private bounty-rebuy pair
-plus `ca_settle_sources.fn_collect_bounty = 'DB caller'`. The disposable PG17
+plus the exact `ca_settle_sources.fn_collect_bounty` live-tail note (`Exact-generation fixed and PKO bounty payer used by the atomic live authority.`). The disposable PG17
 rehearsal runs the exact 40,468-byte bounty-rebuy atomicity probe after all six
 boundaries; its SHA-256 is
 `69d5392b3afbf01b0be37ad94637bec19047ef79232aafd0e0cceb6f34d4b02c`.

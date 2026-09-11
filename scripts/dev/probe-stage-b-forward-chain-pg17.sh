@@ -2249,7 +2249,8 @@ BEGIN
                 'search_path=public, pg_temp','statement_timeout=30s']::text[]
           AND p.proacl::text='{postgres=X/postgres}')
      OR (SELECT count(*) FROM public.ca_settle_sources
-          WHERE source='fn_collect_bounty' AND note='DB caller')<>1 THEN
+          WHERE source='fn_collect_bounty'
+            AND note='Exact-generation fixed and PKO bounty payer used by the atomic live authority.')<>1 THEN
     RAISE EXCEPTION 'STAGE_B_11052648_BOUNTY_REBUY_POSTIMAGE_CHANGED'
       USING ERRCODE='55000';
   END IF;

@@ -280,7 +280,7 @@ describe('the reserved Stage-B forward authority remains one bounded chain', () 
       'STAGE_B_11052216_WHEEL_CATALOG_PRESERVED',
       '607e4daf9060a1176e032016b8879808',
       'f793ed628fe609fe9fe2aa30a76bc4c7',
-      "source='fn_collect_bounty' AND note='DB caller'",
+      "source='fn_collect_bounty'\n            AND note='Exact-generation fixed and PKO bounty payer used by the atomic live authority.'",
       'STAGE_B_11052648_BOUNTY_REBUY_ATOMICITY_OK',
     ]) {
       expect(harness).toContain(exactPreservation);

@@ -79,6 +79,9 @@ function deferred() {
   return { promise, resolve };
 }
 class MemoryStore implements MaintenanceBreakStore {
+  async loadReleaseBoundary(): Promise<number | null> {
+    return null;
+  }
   row: PersistedMaintenanceBreak | null = null;
   async load() {
     return this.row && { ...this.row };
@@ -144,7 +147,15 @@ function maintenance(store: MemoryStore, engines: Map<string, any>, thaw = async
     isRunning: () => true,
     emit: vi.fn(),
     store,
-    thaw,
+    thaw: async (request) => {
+      await thaw();
+      store.row = null; // Synthetic v3 transaction releases this owned row.
+      return {
+        ...request,
+        creditedThroughAt: Date.now(),
+        effectiveFrozenSeconds: (Date.now() - request.freezeStartedAt) / 1000,
+      };
+    },
     now: () => Date.now(),
   });
   breaks.push(owner);

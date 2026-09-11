@@ -60,7 +60,7 @@ export async function findLiveSeatsInTournament(
   try {
     const { data, error } = await client
       .from('table_seats')
-      .select('id, table_id, seat_number, tables!inner(tournament_id)')
+      .select('id, table_id, seat_number, tables!table_seats_table_id_fkey!inner(tournament_id)')
       .is('left_at', null)
       .eq('tables.tournament_id', tournamentId)
       .eq('user_id', userId);

@@ -26,6 +26,7 @@
 
 import { supabase } from './supabase/client.js';
 import { reportError } from './errorReporter.js';
+import { bindToProcessRoot } from './supabase/dataActorContext.js';
 import { allocateWeightedShareCents } from './rakeAllocation.js';
 import { accumulatePlayStats, type HandRow, type PlayStats } from './HorsePlayStats.js';
 import {
@@ -819,9 +820,17 @@ export function accumulateHorseNets(input: HorseReviewInput): void {
       );
     }
     if (!netFlushTimer) {
-      netFlushTimer = setInterval(() => {
-        void flushHorseNets().catch((err: unknown) => reportError(err, 'HorseHandReview.netFlush'));
-      }, NET_FLUSH_MS);
+      // Started by the first settled hand, which may be a tournament table's:
+      // bound to the process root so the one flush for every horse never
+      // carries that tournament's authority (see bindToProcessRoot).
+      netFlushTimer = setInterval(
+        bindToProcessRoot(() => {
+          void flushHorseNets().catch((err: unknown) =>
+            reportError(err, 'HorseHandReview.netFlush')
+          );
+        }),
+        NET_FLUSH_MS
+      );
       netFlushTimer.unref?.();
     }
   } catch (err) {

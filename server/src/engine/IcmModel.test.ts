@@ -46,6 +46,18 @@ describe('icmEquity', () => {
     expect(e0 + e1 + e2).toBeCloseTo(100, 6);
   });
 
+  it('prices every finishing place symmetrically at the ten-player exact boundary', () => {
+    const stacks = Array.from({ length: 10 }, () => 1000);
+    // A unit prize at one rank isolates that rank's probability. Exchangeable
+    // stacks must give every hero exactly 1/10, including the deepest rank.
+    for (let rank = 0; rank < 10; rank++) {
+      const prizes = Array.from({ length: 10 }, (_, i) => Number(i === rank));
+      const equities = stacks.map((_, hero) => icmEquity(stacks, prizes, hero));
+      for (const equity of equities) expect(equity).toBeCloseTo(0.1, 12);
+      expect(equities.reduce((sum, equity) => sum + equity, 0)).toBeCloseTo(1, 12);
+    }
+  });
+
   it('a chip lead is worth LESS than proportional (the ICM curve)', () => {
     // 3 players, hero has half the chips: chip-proportional share of the
     // 100 pool would be 50; ICM must be less (flat payout curvature).

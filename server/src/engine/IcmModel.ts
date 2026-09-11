@@ -98,11 +98,14 @@ export function exactIcmEquity(stacks: number[], payouts: number[], heroIdx: num
   const n = clean.length;
   const fullMask = (1 << n) - 1;
   const paidDepth = Math.min(n, prizes.length);
-  const memo = new Map<number, number>();
+  // At most 1,024 masks: indexed storage avoids hashing and per-entry allocation
+  // on every candidate vector while retaining the exact recursion and sum order.
+  const memo = new Float64Array(1 << n);
+  memo.fill(Number.NaN);
 
   const recurse = (mask: number): number => {
-    const cached = memo.get(mask);
-    if (cached !== undefined) return cached;
+    const cached = memo[mask];
+    if (!Number.isNaN(cached)) return cached;
     if ((mask & (1 << compactHero)) === 0) return 0;
 
     let remaining = 0;
@@ -124,7 +127,7 @@ export function exactIcmEquity(stacks: number[], payouts: number[], heroIdx: num
           ? probability * prizes[place]
           : probability * recurse(mask & ~(1 << winner));
     }
-    memo.set(mask, equity);
+    memo[mask] = equity;
     return equity;
   };
 

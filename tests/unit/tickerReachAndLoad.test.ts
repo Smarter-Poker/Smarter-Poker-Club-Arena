@@ -149,6 +149,27 @@ describe('settings fail closed', () => {
     expect(await tickerManagementService.get('club-9', null)).toEqual(DEFAULT_TICKER_SETTINGS);
   });
 
+  it('an account transition retires both the cached settings and a late response', async () => {
+    mocks.rpc.mockResolvedValueOnce({
+      data: { custom_messages: ['Previous account notice'] },
+      error: null,
+    });
+    await tickerManagementService.get('club-1', null);
+    let finish!: (value: unknown) => void;
+    mocks.rpc.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        })
+    );
+    const stale = tickerManagementService.get('club-1', null);
+    resetTickerSettingsCache();
+    finish({ data: { custom_messages: ['Late previous account notice'] }, error: null });
+    expect(await stale).toEqual(DEFAULT_TICKER_SETTINGS);
+    mocks.rpc.mockResolvedValueOnce({ data: null, error: { message: 'connection interrupted' } });
+    expect(await tickerManagementService.get('club-1', null)).toEqual(DEFAULT_TICKER_SETTINGS);
+  });
+
   it('and the container does not overwrite it with defaults on a throw', () => {
     /* The effect used to `setManagedTicker(DEFAULT_TICKER_SETTINGS)` in its
        catch, which put the rail back on from the other direction. */
